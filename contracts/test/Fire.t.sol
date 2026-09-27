@@ -375,10 +375,18 @@ contract FireTest is Test {
         assertApproxEqRel(c1, 2 * c2, 1e15);
     }
 
-    function test_stale_eth_feed_reverts() public {
+    function test_stale_eth_feed_closes_only_the_eth_path() public {
         vm.warp(block.timestamp + 2 hours);
         vm.expectRevert(Fire.StaleFeed.selector);
-        fire.quote(1);
+        fire.ethPerTicket();
+        (uint256 p, uint256 k, uint256 e) = fire.quote(10);
+        assertEq(p, 9.7e18);
+        assertEq(k, PLANK_T * 97 / 10);
+        assertEq(e, 0, "eth leg unquoted while stale");
+        _buy(alice, 10); // PAPER path unaffected
+        vm.prank(bob);
+        vm.expectRevert(Fire.StaleFeed.selector);
+        fire.buyTicketsWithEth{value: 0}(10, "");
     }
 
     function test_plank_leg_ratchets_5pct_per_night_toward_target() public {

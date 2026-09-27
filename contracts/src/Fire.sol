@@ -180,11 +180,22 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         return ETH_USD_PER_TICKET * 1e18 / uint256(px);
     }
 
+    /// @notice Cost of n tickets. ethCost is 0 while the ETH/USD feed is stale (the ETH path is closed then);
+    ///         the PAPER path never depends on the ETH feed.
     function quote(uint256 n) public view returns (uint256 paperCost, uint256 plankCost, uint256 ethCost) {
+        (paperCost, plankCost) = _legs(n);
+        (, int256 px,, uint256 updatedAt,) = ETH_USD.latestRoundData();
+        if (px > 0 && block.timestamp - updatedAt <= 1 hours) ethCost = _ethCost(n);
+    }
+
+    function _legs(uint256 n) internal view returns (uint256 paperCost, uint256 plankCost) {
         uint256 bps = priceBps(n);
         paperCost = n * PAPER_PER_TICKET * bps / BPS;
         plankCost = n * plankPerTicket * bps / BPS;
-        ethCost = n * ethPerTicket() * bps / BPS;
+    }
+
+    function _ethCost(uint256 n) internal view returns (uint256) {
+        return n * ethPerTicket() * priceBps(n) / BPS;
     }
 
     /// @notice Tickets this wallet can still buy today.
@@ -199,7 +210,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     function buyTickets(uint256 n, string calldata note) external nonReentrant {
         if (pendingRequest != 0) revert RollPending();
         if (n == 0) revert BadAmount();
-        (uint256 paperCost, uint256 plankCost,) = quote(n);
+        (uint256 paperCost, uint256 plankCost) = _legs(n);
         PAPER.safeTransferFrom(msg.sender, DEAD, paperCost);
         _takePlank(msg.sender, plankCost);
         _addTickets(msg.sender, n);
@@ -210,8 +221,8 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     function buyTicketsWithEth(uint256 n, string calldata note) external payable nonReentrant {
         if (pendingRequest != 0) revert RollPending();
         if (n == 0) revert BadAmount();
-        (, uint256 plankCost, uint256 ethCost) = quote(n);
-        if (msg.value != ethCost) revert BadAmount();
+        (, uint256 plankCost) = _legs(n);
+        if (msg.value != _ethCost(n)) revert BadAmount(); // reverts StaleFeed if the ETH/USD feed is stale
         _takePlank(msg.sender, plankCost);
         _addTickets(msg.sender, n);
         emit TicketsBought(fireId, msg.sender, n, true, note);
