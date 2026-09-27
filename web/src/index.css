@@ -162,3 +162,4 @@ a { color: var(--flame); }
 .pick input { display: none; }
 .pick .avatar { box-shadow: 0 0 0 2px var(--line); }
 .profile-name { font-size: 1.05rem; }
+.demo button { background: transparent; color: var(--paper-dim); border: 1px solid var(--line); border-radius: 8px; padding: 0.15rem 0.45rem; font-size: 0.75rem; }

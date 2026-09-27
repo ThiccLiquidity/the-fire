@@ -3,6 +3,7 @@
 // Ported from the design demo; kept as one self-contained module.
 
 import { CEREMONY as C, type Storm } from "../data/types";
+import { createWildlife, drawMill, drawRiver, type Kind } from "./wildlife";
 
 export interface SceneInput {
   /** 0..1: fire height. 1 = reaching the pot text. */
@@ -42,7 +43,8 @@ export function createScene(canvas: HTMLCanvasElement) {
   // ---- scenery
   const farPts: number[] = []; for (let i = 0; i <= 140; i++) farPts.push(0.45 + fbm(i * .35, 3) * 0.35);
   const trees: { x: number; s: number; y: number }[] = [];
-  for (let i = 0; i < 48; i++) { const side = i % 2 ? 1 : -1; const tx = side * (330 + i * 52 + ((i * 37) % 50)); if (tx > 300 && tx < 600) continue; /* a clearing for the mill */ trees.push({ x: tx, s: 0.85 + ((i * 7) % 6) * 0.11, y: (i * 13) % 30 }); }
+  for (let i = 0; i < 48; i++) { const side = i % 2 ? 1 : -1; const tx = side * (330 + i * 52 + ((i * 37) % 50)); if (tx > 250 && tx < 560) continue; /* a clearing for the mill */ trees.push({ x: tx, s: 0.85 + ((i * 7) % 6) * 0.11, y: (i * 13) % 30 }); }
+  const wild = createWildlife(trees.map((tr) => tr.x));
   const stars = Array.from({ length: 90 }, () => [Math.random(), Math.random() * .55, .6 + Math.random() * 1.2, .3 + Math.random() * .6]);
   const clouds = Array.from({ length: 14 }, (_, i) => ({ x: (i / 14) * 1.6 - 0.3, y: 0.02 + ((i * 37) % 50) / 100 * 0.28, s: 0.7 + ((i * 13) % 7) * 0.12, v: 0.0006 + ((i * 7) % 5) * 0.0002 }));
   const embers = Array.from({ length: 220 }, () => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1 }));
@@ -99,44 +101,6 @@ export function createScene(canvas: HTMLCanvasElement) {
   }
 
   // ---- drawing helpers
-  /** The mill, back-right in the clearing: timber house, green roof, chimney, water wheel on a little stream. */
-  function mill(px: number, py: number, sc: number, night: number, warm: number) {
-    x.save(); x.translate(px, py); x.scale(sc, sc);
-    const shade = (c: number[]) => `rgb(${c.map((v) => Math.round(v * (0.35 + 0.65 * (1 - night) + warm * 0.25))).join(",")})`;
-    // stream
-    x.fillStyle = shade([120, 170, 190]); x.beginPath(); x.moveTo(60, 8); x.lineTo(210, 8); x.lineTo(260, 30); x.lineTo(20, 30); x.closePath(); x.fill();
-    // stone base
-    x.fillStyle = shade([120, 118, 110]); x.fillRect(-120, -8, 190, 16);
-    // walls
-    x.fillStyle = shade([150, 105, 60]); x.fillRect(-110, -110, 170, 102);
-    x.fillStyle = shade([175, 128, 78]); x.fillRect(-100, -100, 150, 44);
-    // sign
-    x.fillStyle = shade([30, 90, 70]); x.fillRect(-96, -96, 142, 16);
-    x.fillStyle = shade([230, 190, 90]); x.font = "bold 9px sans-serif"; x.textAlign = "center"; x.fillText("PLANK & PAPER", -25, -84);
-    // windows (glow at night)
-    const wg = night > 0.5 ? `rgba(255,190,90,${0.85 * night})` : shade([230, 220, 190]);
-    x.fillStyle = wg; x.fillRect(-90, -50, 30, 28); x.fillRect(10, -50, 30, 28);
-    x.strokeStyle = shade([70, 45, 20]); x.lineWidth = 2; x.strokeRect(-90, -50, 30, 28); x.strokeRect(10, -50, 30, 28);
-    x.beginPath(); x.moveTo(-75, -50); x.lineTo(-75, -22); x.moveTo(-90, -36); x.lineTo(-60, -36); x.moveTo(25, -50); x.lineTo(25, -22); x.moveTo(10, -36); x.lineTo(40, -36); x.stroke();
-    // round window in the gable
-    x.fillStyle = wg; x.beginPath(); x.arc(-25, -128, 12, 0, 7); x.fill(); x.strokeStyle = shade([200, 160, 70]); x.lineWidth = 2; x.stroke();
-    // gable + roof
-    x.fillStyle = shade([160, 112, 66]); x.beginPath(); x.moveTo(-125, -110); x.lineTo(-25, -170); x.lineTo(75, -110); x.closePath(); x.fill();
-    x.fillStyle = shade([52, 120, 100]); x.beginPath(); x.moveTo(-135, -106); x.lineTo(-25, -178); x.lineTo(85, -106); x.lineTo(70, -106); x.lineTo(-25, -166); x.lineTo(-120, -106); x.closePath(); x.fill();
-    x.fillStyle = shade([40, 100, 85]); x.beginPath(); x.moveTo(-25, -178); x.lineTo(85, -106); x.lineTo(70, -106); x.lineTo(-25, -166); x.closePath(); x.fill();
-    // chimney + smoke
-    x.fillStyle = shade([130, 125, 115]); x.fillRect(30, -190, 18, 60); x.fillStyle = shade([40, 100, 85]); x.fillRect(26, -196, 26, 8);
-    x.fillStyle = `rgba(200,200,210,${0.18 + 0.1 * (1 - night)})`; for (let i = 0; i < 4; i++) { const u = ((t * 0.004 + i * 0.25) % 1); x.beginPath(); x.arc(39 + Math.sin(u * 6 + i) * 8, -200 - u * 70, 5 + u * 12, 0, 7); x.fill(); }
-    // water wheel (turns)
-    x.save(); x.translate(100, -40); x.rotate(t * 0.006);
-    x.strokeStyle = shade([175, 128, 78]); x.lineWidth = 4;
-    for (let i = 0; i < 8; i++) { x.beginPath(); x.moveTo(0, 0); x.lineTo(Math.cos(i * Math.PI / 4) * 46, Math.sin(i * Math.PI / 4) * 46); x.stroke(); }
-    x.lineWidth = 7; x.strokeStyle = shade([50, 100, 85]); x.beginPath(); x.arc(0, 0, 46, 0, 7); x.stroke();
-    x.lineWidth = 3; x.strokeStyle = shade([175, 128, 78]); x.beginPath(); x.arc(0, 0, 30, 0, 7); x.stroke();
-    x.fillStyle = shade([175, 128, 78]); for (let i = 0; i < 12; i++) { x.save(); x.rotate(i * Math.PI / 6); x.fillRect(38, -6, 14, 12); x.restore(); }
-    x.restore();
-    x.restore();
-  }
   function pine(px: number, py: number, s: number, col: string) { x.fillStyle = col; x.beginPath(); x.moveTo(px, py - 150 * s); x.lineTo(px - 42 * s, py - 60 * s); x.lineTo(px - 22 * s, py - 60 * s); x.lineTo(px - 58 * s, py + 10 * s); x.lineTo(px - 12 * s, py + 10 * s); x.lineTo(px - 12 * s, py + 40 * s); x.lineTo(px + 12 * s, py + 40 * s); x.lineTo(px + 12 * s, py + 10 * s); x.lineTo(px + 58 * s, py + 10 * s); x.lineTo(px + 22 * s, py - 60 * s); x.lineTo(px + 42 * s, py - 60 * s); x.closePath(); x.fill(); }
   function flame(pts: number[][], fill: string | CanvasGradient, speed: number, ph: number, skewAmt: number) {
     const sk = Math.sin(t * speed + ph) * skewAmt, sy = 1 + Math.sin(t * speed * 1.3 + ph) * 0.06;
@@ -196,7 +160,9 @@ export function createScene(canvas: HTMLCanvasElement) {
     const lw = 0.9 + fsW * 0.25;
     const gg = x.createRadialGradient(600, base, 10, 600, base, 700 * Math.sqrt(fsW)); gg.addColorStop(0, `rgba(255,150,50,${.55 * flick})`); gg.addColorStop(.5, "rgba(70,60,30,.35)"); gg.addColorStop(1, "rgba(10,14,10,0)");
     x.fillStyle = night ? "#121a12" : "#2f3d26"; x.fillRect(-3000, base - 20, 6000, 3000); x.fillStyle = gg; x.fillRect(-3000, base - 20, 6000, 3000);
-    mill(600 + 445, base - 24, 0.6, night, Math.max(0, lit * 0.5));
+    drawRiver(x, t, night, Math.max(0, lit * 0.5));
+    drawMill(x, t, 600 + 400, base - 24, 0.62, night, Math.max(0, lit * 0.4));
+    wild.draw(x, t, night, "back");
     for (const tr of trees) { const px = 600 + tr.x, py = base - 10 + tr.y; const d = Math.abs(tr.x) / 400; const warm = Math.max(0, lit * 1.2 - d * .4); pine(px, py, tr.s, night ? `rgb(${8 + warm * 70},${12 + warm * 30},${22})` : `rgb(${30 + warm * 40},${58 + warm * 20},${40})`); }
     x.save(); x.translate(600, 600); x.scale(lw, Math.min(lw, 1.6)); x.translate(-600, -600);
     x.fillStyle = "#3e424c"; for (const s of [[470, 600, 26, 10], [520, 612, 22, 9], [600, 618, 30, 10], [680, 612, 22, 9], [730, 600, 26, 10]]) { x.beginPath(); x.ellipse(s[0], s[1], s[2], s[3], 0, 0, 7); x.fill(); }
@@ -237,6 +203,8 @@ export function createScene(canvas: HTMLCanvasElement) {
       x.fillStyle = `rgba(90,90,100,${a})`; x.beginPath(); x.arc(s.x, s.y, s.r, 0, 7); x.fill();
     }
 
+    wild.draw(x, t, night, "front"); wild.step(night);
+
     // rain + flash
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
     const r = st.rainA; if (r > 0) {
@@ -259,6 +227,8 @@ export function createScene(canvas: HTMLCanvasElement) {
   frame();
   return {
     update(next: SceneInput) { inp = next; },
+    /** demo: summon a visitor now */
+    visitor(kind: Kind) { wild.spawn(kind); },
     destroy() { stopped = true; cancelAnimationFrame(raf); ro.disconnect(); },
   };
 }
