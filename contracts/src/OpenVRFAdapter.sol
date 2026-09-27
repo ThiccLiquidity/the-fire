@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 /**
- * @notice Adapter between Fire.sol and Robinhood's OpenVRF (drand-backed) router.
- *         https://github.com/Robinhood-OSS/OpenVRF (read at commit 9fb960c)
+ * @notice Adapter between Fire.sol and a drand router with OpenVRF's interface — in production our OpenDrandRouter
+ *         (OpenVRF with open fulfillment; see its header). https://github.com/Robinhood-OSS/OpenVRF @ 9fb960c
  *
  *         Fire.roll() -> request() -> router.requestRandomness{value: requestFee}(CALLBACK_GAS)
  *         router.fulfill() -> rawFulfillRandomness(id, word) -> Fire.onRandomness(id, word)

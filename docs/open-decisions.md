@@ -12,12 +12,13 @@ Decided: no long wait. Built on how OpenVRF works (it stores each fulfilled numb
 - Payouts that fail carry to the next pot; a broken PLANK feed can't revert the night.
 - `ops/keeper` does all of this automatically; the site shows a button as a backup.
 
-## 2. Who can hurt the game via OpenVRF (trust model)
+## 2. Who can hurt the game via randomness — DONE
 
-Our deployer owns the OpenVRF router: it can de-authorize the adapter or raise the fee (either freezes the game, see 1),
-and we run the only whitelisted relayer, which can delay any roll. It can't choose the number. The README says "the
-deploy wallet has no special powers", which isn't true. **Recommendation:** after setup, transfer router ownership to a
-multisig or renounce it if OpenVRF allows, whitelist a second independent relayer, and fix the README wording.
+Review finding (merge blocker): OpenVRF's `fulfill()` is relayer-only, so the relayer could withhold a number it
+disliked, wait 30 min, and have the Fire re-roll — as many times as it liked. Fixed by deploying our own
+`OpenDrandRouter` (OpenVRF with no owner, no fees, no allowlists): anyone can submit drand's signature, so a withheld
+number gets delivered by someone else and `reroll()` never becomes possible while drand is up. There is no router
+owner left to freeze or re-price anything; the deploy wallet has no powers after deploy.
 
 ## 3. Adapter pays its whole balance per request (audit M2) — DONE (was a real bug)
 

@@ -1,22 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 import {Test} from "forge-std/Test.sol";
-import {OpenVRF} from "./vendor/OpenVRF.sol";
+import {OpenDrandRouter} from "../src/OpenDrandRouter.sol";
 import {Fire} from "../src/Fire.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
 import {MockERC20, MockMill, MockFeed} from "./Mocks.sol";
 
-/// Fire + our adapter against Robinhood's real OpenVRF router, with a real drand evmnet proof (round 1000).
+/// Fire + our adapter + our open drand router (OpenVRF minus owner/fees/allowlists), with a real drand evmnet proof
+/// (round 1000).
 contract RealRouterTest is Test {
     uint256 constant ROUND_TIME = 1727521075 + 999 * 3;
     bytes constant SIG = hex"06fd5996329504d3a56b482d9222bf7205857d0a9559ddd216ca31a286f6a8cc0a120f021aac2f13553fb164f62bc3a5ca32c76dea88a777b39bcf3cac5fdbd6";
     address relayer = address(0x1234);
     address alice = address(0xA11CE);
-    OpenVRF router; OpenVRFAdapter adapter; Fire fire; MockFeed plankFeed; MockERC20 plank;
+    OpenDrandRouter router; OpenVRFAdapter adapter; Fire fire; MockFeed plankFeed; MockERC20 plank;
 
     function setUp() public {
         vm.warp(ROUND_TIME - 2 - 1 hours);
-        router = new OpenVRF(address(this), relayer, 0);
+        router = new OpenDrandRouter();
         MockERC20 paper = new MockERC20("PAPER", "PAPER"); plank = new MockERC20("PLANK", "PLANK");
         MockMill mill = new MockMill(address(plank), 1e18);
         MockFeed ethFeed = new MockFeed(3_333_00000000); plankFeed = new MockFeed(90_000_000_000);
@@ -27,7 +28,6 @@ contract RealRouterTest is Test {
             paperPerTicket: 1e18, plankPerTicket0: 10_000_000e18, plankUsdPerTicket: 90_000_000, ethUsdPerTicket: 100_000_000,
             millBidBase: 0.03 ether, rollTimeOfDay: (ROUND_TIME - 2) % 1 days}));
         assertEq(address(fire), predicted);
-        router.setConsumerAuthorization(address(adapter), true);
         paper.mint(alice, 1e24); plank.mint(alice, 1e30);
         vm.startPrank(alice); paper.approve(address(fire), type(uint256).max); plank.approve(address(fire), type(uint256).max);
         fire.buyTickets(10, "real"); vm.stopPrank();
@@ -86,16 +86,49 @@ contract RealRouterTest is Test {
     }
 
     function test_stray_eth_no_longer_breaks_rolls() public {
-        payable(address(adapter)).transfer(1 wei); // anyone can do this
-        _roll(); // old adapter forwarded its balance -> IncorrectFee
+        payable(address(adapter)).transfer(1 ether); // anyone can do this
+        _roll(); // adapter pays requestFee() = 0, not its balance
+        assertEq(address(adapter).balance, 1 ether);
     }
 
-    function test_paid_fee_is_exact() public {
-        router.setRequestFee(0.001 ether);
-        vm.expectRevert(OpenVRFAdapter.FeeUnpaid.selector);
-        fire.roll();
-        payable(address(adapter)).transfer(0.0105 ether);
-        _roll();
-        assertEq(address(adapter).balance, 0.0095 ether, "paid exactly one fee");
+    /// The fix for "relayer picks among draws": a withheld number can be delivered by anyone, so the Fire never
+    /// re-rolls while a valid number exists.
+    function test_anyone_delivers_a_withheld_number_so_no_reroll() public {
+        uint256 id = _roll();
+        vm.warp(ROUND_TIME); // drand has published; our relayer stays silent
+        address stranger = address(0x5712A);
+        vm.prank(stranger); router.fulfill(id, SIG);
+        assertEq(fire.night(), 1, "stranger's submission resolved the night");
+        vm.warp(block.timestamp + 1 hours);
+        vm.expectRevert(Fire.BadRequest.selector); // nothing pending to re-roll
+        fire.reroll();
+    }
+
+    function test_forged_signature_rejected() public {
+        uint256 id = _roll();
+        vm.warp(ROUND_TIME);
+        bytes memory bad = SIG; bad[5] ^= 0x01;
+        vm.expectRevert();
+        router.fulfill(id, bad);
+        assertEq(fire.pendingRequest(), id, "still pending");
+    }
+
+    function test_too_little_gas_cannot_sabotage_delivery() public {
+        uint256 id = _roll();
+        vm.warp(ROUND_TIME);
+        // a griefer sends just enough gas to verify the proof but not to run the callback
+        (bool ok,) = address(router).call{gas: 450_000}(abi.encodeCall(OpenDrandRouter.fulfill, (id, SIG)));
+        assertFalse(ok, "reverts instead of recording a failed delivery");
+        (,,, bool fulfilled,,,) = router.requests(id);
+        assertFalse(fulfilled);
+        router.fulfill(id, SIG); // an honest submission still works
+        assertEq(fire.night(), 1);
+    }
+
+    function test_request_with_eth_rejected() public {
+        vm.prank(address(adapter)); // a contract, so only the fee check can fail
+        vm.deal(address(adapter), 1 ether);
+        vm.expectRevert(OpenDrandRouter.IncorrectFee.selector);
+        router.requestRandomness{value: 1}(100_000);
     }
 }

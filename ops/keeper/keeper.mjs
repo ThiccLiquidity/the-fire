@@ -1,11 +1,14 @@
-// The Fire keeper: the jobs nobody should have to press a button for. Runs next to the relayer.
+// The Fire keeper: the jobs nobody should have to press a button for.
 //   - roll()             once the nightly roll time has passed
-//   - adapter.settle(id) if OpenVRF has the number but the callback didn't land
-//   - reroll()           if a roll has had no answer for 30 minutes (the contract enforces both rules)
+//   - router.fulfill()   fetch the drand signature for the roll's round and submit it (anyone may; the router
+//                        verifies it, so the keeper can't change the number — it's just the fastest deliverer)
+//   - adapter.settle(id) if the router has the number but the callback didn't land
+//   - reroll()           if a roll has had no answer for 30 minutes (only if drand itself is unreachable)
 //   - twap.checkpoint()  once the PLANK/USD window is 20h+ old
 //   - sweep the mill floor: buy the cheapest OpenSea listing at or under the fire's bid that the fund can pay
 //     (only if OPENSEA_API_KEY is set; checks every SWEEP_EVERY_SEC, default 300, to respect API limits)
 // Every call here is permissionless: the keeper has no special powers, it's just reliably awake.
+// Optional: DRAND_URLS (comma-separated; default the three public api*.drand.sh relays).
 // Env: RPC_URL, FIRE, KEEPER_KEY_FILE (or KEEPER_KEY), optional TWAP, INTERVAL_SEC (default 30), ONCE=1 for a single pass.
 //      Sweeping: OPENSEA_API_KEY (or OPENSEA_API_KEY_FILE), COLLECTION (default the-plank-press), OPENSEA_API (default
 //      https://api.opensea.io).
@@ -34,7 +37,28 @@ const fireAbi = parseAbi([
   "function roll()",
   "function reroll()",
 ]);
-const adapterAbi = parseAbi(["function answered(uint256) view returns (bool)", "function settle(uint256)"]);
+const adapterAbi = parseAbi(["function answered(uint256) view returns (bool)", "function settle(uint256)", "function ROUTER() view returns (address)"]);
+const routerAbi = parseAbi([
+  "function requests(uint256) view returns (address consumer, uint64 round, uint32 callbackGasLimit, bool fulfilled, bool delivered, uint256 randomWord, uint256 fee)",
+  "function fulfill(uint256 id, bytes signature)",
+  "function GENESIS() view returns (uint256)",
+  "function PERIOD() view returns (uint256)",
+  "function CHAIN_HASH() view returns (bytes32)",
+]);
+const DRAND_URLS = env("DRAND_URLS", "https://api.drand.sh,https://api2.drand.sh,https://api3.drand.sh").split(",").map((u) => u.trim().replace(/\/$/, ""));
+
+/** The drand evmnet signature for a round (64 bytes hex), from the first relay that has it. The router verifies it. */
+async function drandSignature(chainHash, round) {
+  for (const base of DRAND_URLS) {
+    try {
+      const r = await fetch(`${base}/${chainHash.slice(2)}/public/${round}`, { signal: AbortSignal.timeout(10_000) });
+      if (!r.ok) continue;
+      const b = await r.json();
+      if (String(b.round) === String(round) && /^[0-9a-f]{128}$/i.test(b.signature)) return `0x${b.signature}`;
+    } catch { /* next relay */ }
+  }
+  return undefined;
+}
 const millAbi = parseAbi([
   "function millBid() view returns (uint256)",
   "function USDG() view returns (address)",
@@ -136,11 +160,20 @@ async function tick() {
   if (pending === 0n) {
     if (now >= nextRollAt) await send(FIRE, fireAbi, "roll");
   } else if (await read(adapter, adapterAbi, "answered", [pending])) {
-    // The router has the number. Give its own callback a minute, then deliver it ourselves.
+    // The router has the number but the Fire doesn't: its callback failed. Deliver it.
     if (now >= since + 60n) await send(adapter, adapterAbi, "settle", [pending]);
-  } else if (now >= since + rerollAfter) {
-    log(`request ${pending} unanswered for ${now - since}s — rerolling`);
-    await send(FIRE, fireAbi, "reroll");
+  } else {
+    // Waiting on drand. Once the round is out, submit its signature. A late number always beats a re-roll.
+    const router = await read(adapter, adapterAbi, "ROUTER");
+    const [[, round], genesis, period, chainHash] = await Promise.all([
+      read(router, routerAbi, "requests", [pending]), read(router, routerAbi, "GENESIS"), read(router, routerAbi, "PERIOD"), read(router, routerAbi, "CHAIN_HASH"),
+    ]);
+    const sig = now >= genesis + (round - 1n) * period ? await drandSignature(chainHash, round) : undefined;
+    if (sig) await send(router, routerAbi, "fulfill", [pending, sig]);
+    else if (now >= since + rerollAfter) {
+      log(`request ${pending}: no drand signature for round ${round} after ${now - since}s — rerolling`);
+      await send(FIRE, fireAbi, "reroll");
+    } else log(`request ${pending}: waiting for drand round ${round}`);
   }
   try { await sweep(now); } catch (e) { log("sweep failed:", e.shortMessage ?? e.message); }
   if (TWAP) {

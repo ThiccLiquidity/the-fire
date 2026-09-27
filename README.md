@@ -4,7 +4,7 @@ Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds 
 
 - `docs/spec.md` — the design, numbers, and why. Start here.
 - `docs/randomness.md` — which randomness provider to use on Robinhood Chain (OpenVRF).
-- `contracts/` — Foundry project. `Fire.sol` is the game, `Profiles.sol` is names + pictures for wallets (picture bytes live in the event log, hash in storage). 62 tests (two suites run against the real OpenVRF router and real Seaport 1.6 code).
+- `contracts/` — Foundry project. `Fire.sol` is the game, `Profiles.sol` is names + pictures for wallets (picture bytes live in the event log, hash in storage). 71 tests (two suites run against a real drand proof and real Seaport 1.6 code).
 - `web/` — the site (Vite + React). Runs on a built-in mock until the contract is deployed.
 - `sim/` — the Python simulation the numbers came from.
 
@@ -56,6 +56,6 @@ The pot lives inside `Fire.sol`. There is no owner, no withdraw, no pause. PLANK
 ## Before mainnet
 
 - Confirm the Seaport 1.6 address on Robinhood Chain (the fire fills OpenSea listings through it).
-- Pin the OpenVRF router address and consumer interface; test the adapter on Robinhood testnet (chain id 46630).
+- Test router + adapter + keeper on Robinhood testnet (chain id 46630) against live drand.
 - Verify PAPER/PLANK decimals; set `ETH_PER_TICKET` and `MILL_BID_BASE` from launch-day prices.
 - Light fire #1 small.

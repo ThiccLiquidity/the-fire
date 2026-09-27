@@ -31,12 +31,15 @@
 - **ETH/USD standard proxy (mainnet): `0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9`** (8 decimals). SVR proxy exists but not needed.
 - No Chainlink VRF on this chain.
 
-## Randomness — OpenVRF (drand-backed), self-hosted
-- **There is no shared router or hosted relayer.** We deploy our own `OpenVRF` router (owner = our deployer; controls consumer/relayer whitelist and fee; **cannot bias results** — the drand proof decides) and run the relayer: Docker + PostgreSQL on a small VPS, with a dedicated relayer wallet holding gas.
-- Consumer inherits `RandomnessConsumer(router)`, calls `requestRandomness{value: fee}(callbackGas)` (25k–1M gas), receives `rawFulfillRandomness(id, word)` → `_fulfillRandomness`. Router: `src/OpenVRF.sol`, compiler 0.8.28, `MIN_DELAY = 2` (beacon round 2–4 s after the request block).
-- Observed latency ~10 s request → callback. Liveness depends on our relayer being up; if it's down the night's roll waits (no redraw possible — same word on retry).
-- Ops cost: a $5–10/mo VPS + relayer gas (~$0.001/request cap by default).
-- Honest framing for the community: *nobody* controls the pot or the rules; we run the randomness *relay*, which can delay a roll but can't choose it, and anyone can verify each roll with their `verify-request.mjs` script.
+## Randomness — our OpenDrandRouter (drand evmnet)
+- Robinhood's OpenVRF has no shared deployment, and its `fulfill()` is relayer-only: the single relayer could hold back
+  a number it dislikes until the Fire re-rolls. So we deploy `OpenDrandRouter` (OpenVRF minus owner, fees and
+  allowlists): anyone may submit the drand signature, the router verifies it on-chain (pinned evmnet key), and there's
+  one valid number per request.
+- Round = the drand evmnet round 2-4 s after the request. Public relays: api.drand.sh, api2.drand.sh, api3.drand.sh.
+- `ops/keeper` submits signatures; the site's button and anyone with `cast` can too. `Fire.reroll()` is possible
+  only after 30 min with no number delivered — i.e. a drand outage.
+- No owner anywhere: nobody can pause, re-point or re-price randomness.
 
 ## Seaport (checked on-chain Sep 27 2026)
 - **Seaport 1.6: `0x0000000000000068F116a894984e2DB1123eB395`** (deployed, 23,981 bytes). Seaport 1.5 is not deployed.
