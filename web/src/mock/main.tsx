@@ -5,7 +5,7 @@ import { Scene, sceneRef } from "../components/Scene";
 import { phoenixHour, type Storm } from "../data/types";
 import "../index.css";
 
-const KINDS = ["deer", "rabbit", "squirrel", "skunk", "birds", "heron", "bear"] as const;
+const KINDS = ["deer", "rabbit", "squirrel", "skunk", "birds", "heron", "frog", "bear"] as const;
 
 function Mock() {
   const [hour, setHour] = useState<number | null>(null);

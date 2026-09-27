@@ -105,13 +105,13 @@ export function drawMill(x: Ctx, t: number, px: number, py: number, sc: number, 
 }
 
 // ---------- visitors
-export type Kind = "deer" | "rabbit" | "skunk" | "bear" | "squirrel" | "birds" | "heron";
+export type Kind = "deer" | "rabbit" | "skunk" | "bear" | "squirrel" | "birds" | "heron" | "frog";
 interface Animal { kind: Kind; age: number; dead: boolean; dir: 1 | -1; phase: "in" | "pause" | "out"; pauseT: number; pauseLen: number; x: number; y: number; v: number; stopAt: number; n?: number; climb?: number; fly?: boolean }
 const GROUND = 600;
 
 export function createWildlife(treeXs: number[]) {
   const animals: Animal[] = [];
-  let nextVisit = Date.now() + rnd(2, 6) * 60_000; // first visitor a few minutes after load
+  let nextVisit = Date.now() + rnd(4, 12) * 60_000; // first visitor a while after load
   const fireflies = Array.from({ length: 26 }, (_, i) => ({ x: rnd(-520, 520), y: rnd(-120, 60), p: i * 1.7, s: rnd(0.6, 1.4) }));
 
   function spawn(kind: Kind) {
@@ -123,6 +123,7 @@ export function createWildlife(treeXs: number[]) {
       case "bear": a.v = 0.8; a.y = 26; a.dir = -1; a.stopAt = 300; a.pauseLen = 560; break;
       case "heron": a.v = 0.9; a.y = 0; a.dir = -1; a.x = 1200; a.stopAt = riverAt(0.3)[0] - 600; a.pauseLen = 700; a.fly = true; break;
       case "squirrel": { a.v = 2.2; a.y = 44; const tx = treeXs[Math.floor(Math.random() * treeXs.length)]; a.dir = tx > 0 ? 1 : -1; a.stopAt = tx - a.dir * 14; a.x = a.stopAt - a.dir * 300; a.pauseLen = 220; break; }
+      case "frog": { a.v = 0; a.y = 0; const u = 0.1 + Math.random() * 0.2; const [fx, fy, ang] = riverAt(u); const side = Math.random() < 0.5 ? 1 : -1; a.x = fx + -Math.sin(ang) * (rw(u) + 12) * side - 600; a.y = fy + Math.cos(ang) * (rw(u) + 12) * side - GROUND; a.dir = side === 1 ? -1 : 1; a.stopAt = a.x; a.pauseLen = 500 + Math.random() * 400; break; }
       case "birds": a.v = 1.4; a.y = -320 - rnd(0, 120); a.n = 3 + Math.floor(rnd(0, 4)); a.stopAt = 9999 * a.dir; a.fly = true; break;
     }
     if (a.x === 0) a.x = a.dir < 0 ? 720 : -720;
@@ -133,14 +134,15 @@ export function createWildlife(treeXs: number[]) {
       a.age++;
       if (a.phase === "in") { a.x += a.v * a.dir; if ((a.dir > 0 && a.x >= a.stopAt) || (a.dir < 0 && a.x <= a.stopAt)) { a.phase = a.pauseLen ? "pause" : "out"; a.pauseT = 0; } }
       else if (a.phase === "pause") { a.pauseT++; if (a.pauseT > a.pauseLen) { a.phase = "out"; if (a.kind === "squirrel") a.climb = 0; if (a.kind === "bear" || a.kind === "heron") a.dir = a.dir === 1 ? -1 : 1; } }
+      else if (a.kind === "frog") { a.climb = (a.climb ?? 0) + 1; if (a.climb > 110) a.dead = true; }
       else { if (a.kind === "squirrel") { a.climb = (a.climb ?? 0) + 2.4; if (a.climb > 150) a.dead = true; } else { a.x += a.v * (a.kind === "skunk" ? 1 : 1.3) * a.dir; if (a.kind === "heron") a.y -= 1.6; } }
       if (Math.abs(a.x) > 1500) a.dead = true;
     }
     for (let i = animals.length - 1; i >= 0; i--) if (animals[i].dead) animals.splice(i, 1);
-    // real pacing: a visitor every 10–30 minutes; bears only after dark, birds/heron/squirrel by day
+    // a treat, not a fixture: one visitor every 15–40 minutes, never two at once; bears only after dark
     if (Date.now() > nextVisit && animals.length === 0) {
-      nextVisit = Date.now() + rnd(10, 30) * 60_000;
-      const pool: Kind[] = night > 0.6 ? ["bear", "deer", "skunk", "rabbit", "skunk", "deer"] : ["deer", "rabbit", "squirrel", "birds", "birds", "heron", "skunk", "squirrel"];
+      nextVisit = Date.now() + rnd(15, 40) * 60_000;
+      const pool: Kind[] = night > 0.6 ? ["bear", "deer", "skunk", "rabbit", "frog", "frog", "deer"] : ["deer", "rabbit", "squirrel", "birds", "heron", "skunk", "frog", "frog"];
       spawn(pool[Math.floor(Math.random() * pool.length)]);
     }
   }
@@ -225,6 +227,22 @@ const DRAW: Record<Kind, (x: Ctx, a: Animal, night: number) => void> = {
     eye(x, 16, -23, 1.6);
     const nib = a.phase === "pause" ? Math.sin(a.pauseT * 0.5) * 1.5 : 0; blob(x, 21, -12 + nib, 3.2, 3.2, 0, sh([150, 100, 50], night));
     x.fillStyle = body; x.fillRect(12, -14 + nib, 6, 3);
+    x.restore();
+  },
+  frog(x, a, night) {
+    O(x, night); const g1 = sh([92, 160, 78], night), g2 = sh([150, 200, 110], night);
+    const hopT = a.phase === "out" ? (a.climb ?? 0) : 0, hopN = Math.floor(hopT / 30), hu = (hopT % 30) / 30, air = a.phase === "out" && hopN < 3 ? Math.sin(hu * Math.PI) * 14 : 0;
+    if (a.phase === "out" && hopN >= 3) { // splash
+      x.save(); x.scale(1.7, 1.7); x.translate(42, 0); const su = (hopT - 90) / 20; x.strokeStyle = `rgba(230,245,255,${Math.max(0, 1 - su)})`; x.lineWidth = 2; x.beginPath(); x.ellipse(0, 0, 6 + su * 18, 2.5 + su * 7, 0, 0, 7); x.stroke();
+      x.fillStyle = `rgba(235,248,255,${Math.max(0, 0.9 - su)})`; for (let i = 0; i < 5; i++) { x.beginPath(); x.arc((i - 2) * 5, -su * 22 * Math.sin(i + 1) - 2, 1.5, 0, 7); x.fill(); } x.restore(); return;
+    }
+    const puff = a.phase === "pause" ? Math.max(0, Math.sin(a.pauseT * 0.12)) : 0;
+    x.save(); x.scale(1.7, 1.7); x.translate(hopN * 14, -air);
+    x.fillStyle = g1; x.beginPath(); x.moveTo(-9, -1); x.lineTo(-13, -8); x.lineTo(-6, -6); x.closePath(); x.fill(); x.stroke(); // back leg
+    blob(x, 0, -6, 10, 6, 0, g1); blob(x, 7, -9, 6, 4.5, 0, g1); // body, head
+    x.fillStyle = g2; x.beginPath(); x.ellipse(1, -4, 6, 2.5, 0, 0, 7); x.fill();
+    if (puff > 0) { x.fillStyle = sh([215, 235, 200], night); x.beginPath(); x.ellipse(9, -5, 3 + puff * 3, 2 + puff * 2.5, 0, 0, 7); x.fill(); } // throat
+    blob(x, 5, -13, 2.2, 2.2, 0, g1); blob(x, 10, -13, 2.2, 2.2, 0, g1); eye(x, 5, -13, 1); eye(x, 10, -13, 1);
     x.restore();
   },
   birds(x, a, night) {
