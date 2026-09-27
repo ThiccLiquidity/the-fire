@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
 import {IERC721Receiver} from "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
@@ -71,7 +72,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public constant TRAILING = 7;
     uint256 public constant BID_RISE_BPS_PER_DAY = 2_500; // mill bid climbs 25% of its start per day, linearly
     uint256 public constant BID_RESTART_BPS = 9_000; // after a buy the bid restarts at 90% of the price paid
-    uint256 public constant BID_MAX_MULT = 3; // and never climbs past 3x its restart point
+    uint256 public constant BID_MAX_MULT = 10; // and never climbs past 10x its restart point (the first floor is unknown)
     uint256 public constant DAILY_CAP = 500; // tickets per wallet per day
     uint256 public constant TX_CAP = 10; // tickets per transaction
     uint256 public constant PLANK_RATCHET_BPS = 500; // PLANK leg moves at most 5% per night toward target
@@ -87,12 +88,14 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     ISeaport public immutable SEAPORT; // address(0) disables mill buying entirely
     address public immutable ROYALTY_POOL;
     uint256 public immutable PAPER_PER_TICKET; // in PAPER wei (1 PAPER)
-    uint256 public immutable ETH_USD_PER_TICKET; // "paper from the fire" price, USD 8-decimals (e.g. 1e8 = $1)
+    uint256 public immutable ETH_USD_PER_TICKET; // "paper from the fire" price in USD, 8 decimals (1e8 = $1), paid in ETH or USDG
     uint256 public immutable PLANK_USD_PER_TICKET; // PLANK leg target, USD 8-decimals
     IPriceFeed public immutable ETH_USD; // Chainlink ETH/USD
     IPriceFeed public immutable PLANK_USD; // PLANK/USD, **18 decimals** (our TWAP adapter)
     uint256 public plankPerTicket; // in PLANK wei; ratchets nightly toward the USD target
-    uint256 public immutable MILL_BID_BASE; // starting ETH bid for a mill, in wei
+    uint256 public immutable MILL_BID_BASE; // starting bid for a mill, USD 8 decimals (mill listings are priced in USDG or ETH)
+    IERC20 public immutable USDG; // dollar stablecoin mills are listed in on OpenSea; address(0) disables the USDG paths
+    uint256 public immutable USDG_UNIT; // 10 ** USDG decimals
     uint256 public immutable ROLL_TIME_OF_DAY; // seconds after 00:00 UTC (8pm Phoenix = 03:00 UTC = 10800)
 
     IRandomness public randomness;
@@ -128,14 +131,16 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public pendingSince; // when it was requested
 
     // ---------------------------------------------------------------- events
-    event TicketsBought(uint256 indexed fireId, address indexed buyer, uint256 tickets, bool withEth, string note);
+    /// @param paperFromFire true when the PAPER leg was paid in ETH or USDG ("buy paper from the fire")
+    event TicketsBought(uint256 indexed fireId, address indexed buyer, uint256 tickets, bool paperFromFire, string note);
     event RollRequested(uint256 indexed fireId, uint256 night, uint256 requestId);
     event Rerolled(uint256 indexed fireId, uint256 night, uint256 oldRequestId, uint256 newRequestId);
     event PayoutCarried(address indexed to, uint256 amount); // a payout transfer failed; its PLANK stays in the next pot
     event Survived(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm);
     event WentOut(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm, address winner, uint256 paid);
     event Lit(uint256 indexed fireId, uint256 carried);
-    event MillEaten(uint256 indexed tokenId, address seller, uint256 paidEth, uint256 plankToRoyalty);
+    /// @param currency address(0) for ETH, else the USDG address; paid is in that currency's units; paidUsd has 8 decimals
+    event MillEaten(uint256 indexed tokenId, address seller, address currency, uint256 paid, uint256 paidUsd, uint256 plankToRoyalty);
 
     error NotYet();
     error RollPending();
@@ -161,6 +166,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         address randomness;
         address ethUsdFeed;
         address plankUsdFeed;
+        address usdg;
         uint256 paperPerTicket;
         uint256 plankPerTicket0;
         uint256 plankUsdPerTicket;
@@ -183,6 +189,8 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         PLANK_USD_PER_TICKET = c.plankUsdPerTicket;
         ETH_USD_PER_TICKET = c.ethUsdPerTicket;
         MILL_BID_BASE = c.millBidBase;
+        USDG = IERC20(c.usdg);
+        USDG_UNIT = c.usdg == address(0) ? 0 : 10 ** IERC20Metadata(c.usdg).decimals();
         ROLL_TIME_OF_DAY = c.rollTimeOfDay;
         millBidStart = c.millBidBase;
         millBidSince = block.timestamp;
@@ -197,9 +205,14 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
 
     /// @notice ETH per ticket right now, from the ETH/USD feed. Reverts if the feed has missed its heartbeat.
     function ethPerTicket() public view returns (uint256) {
+        return ETH_USD_PER_TICKET * 1e18 / _ethUsd();
+    }
+
+    /// @dev ETH/USD, 8 decimals. Reverts if the feed has missed its heartbeat.
+    function _ethUsd() internal view returns (uint256) {
         (, int256 px,, uint256 updatedAt,) = ETH_USD.latestRoundData();
         if (px <= 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > ETH_FEED_MAX_AGE) revert StaleFeed();
-        return ETH_USD_PER_TICKET * 1e18 / uint256(px);
+        return uint256(px);
     }
 
     /// @notice Cost of n tickets. ethCost is 0 while the ETH/USD feed is stale (the ETH path is closed then);
@@ -254,6 +267,24 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
             (bool ok,) = msg.sender.call{value: msg.value - ethCost}("");
             if (!ok) revert BadAmount();
         }
+    }
+
+    /// @notice Same as buyTicketsWithEth, but the PAPER leg is paid in USDG (no price feed involved). It feeds the mill
+    ///         fund's USDG side, which pays for mills listed in USDG.
+    function buyTicketsWithUsdg(uint256 n, string calldata note) external nonReentrant {
+        if (pendingRequest != 0) revert RollPending();
+        if (n == 0) revert BadAmount();
+        if (address(USDG) == address(0)) revert BadRequest();
+        (, uint256 plankCost) = _legs(n);
+        USDG.safeTransferFrom(msg.sender, address(this), usdgCost(n));
+        _takePlank(msg.sender, plankCost);
+        _addTickets(msg.sender, n);
+        emit TicketsBought(fireId, msg.sender, n, true, note);
+    }
+
+    /// @notice USDG for the PAPER leg of n tickets ("paper from the fire", paid in USDG).
+    function usdgCost(uint256 n) public view returns (uint256) {
+        return n * ETH_USD_PER_TICKET * USDG_UNIT / 1e8 * priceBps(n) / BPS;
     }
 
     function _takePlank(address from, uint256 amount) internal {
@@ -436,11 +467,12 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     // ---------------------------------------------------------------- the mill fund
-    /// @notice The most the fire will pay for a mill right now. It's a reverse auction that follows the floor:
-    ///         the bid climbs 25% of its starting point per day (about 1% an hour) while nobody sells, and after
-    ///         each purchase it restarts at 90% of the price just paid. Sellers compete to hit it, so it settles
-    ///         where holders actually sell. It never climbs past 3x its starting point. The fire pays the
-    ///         listing's own price, not the bid, so any listing at or under the bid is swept at its price.
+    /// @notice The most the fire will pay for a mill right now, in USD (8 decimals). A reverse auction that follows the
+    ///         floor: the bid climbs 25% of its starting point per day (about 1% an hour) while nobody sells, and after
+    ///         each purchase it restarts at 90% of the price just paid. Sellers compete to hit it, so it settles where
+    ///         holders actually sell. It never climbs past 10x its starting point. Listings in USDG are taken at face
+    ///         value and ETH listings are converted at the ETH/USD feed. The fire pays the listing's own price in the
+    ///         listing's currency, so any listing at or under the bid is swept at its price.
     ///         The fire only ever buys on the open market; nobody hands the fire a mill.
     function millBid() public view returns (uint256) {
         uint256 start = millBidStart;
@@ -466,6 +498,12 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         plankPerTicket = target > maxUp ? maxUp : target < maxDown ? maxDown : target;
     }
 
+    /// @notice The mill fund's USDG side.
+    function millFundUsdg() public view returns (uint256) {
+        return address(USDG) == address(0) ? 0 : USDG.balanceOf(address(this));
+    }
+
+    /// @notice The mill fund's ETH side.
     function millFund() public view returns (uint256) {
         return address(this).balance;
     }
@@ -474,36 +512,46 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     ///         then burn it. The listing's total ETH consideration must be <= millBid.
     /// @param extraData the listing's zone data, if its zone needs any (OpenSea supplies it with the listing's
     ///        fulfillment data for this fire as the fulfiller); empty for an open listing.
-    function eatMillFromSeaport(ISeaport.Order calldata order, bytes calldata extraData) external nonReentrant {
+    function eatMillFromSeaport(ISeaport.Order calldata order, bytes calldata extraData) external payable nonReentrant {
         if (address(SEAPORT) == address(0)) revert NoSeaport();
         ISeaport.OrderParameters calldata p = order.parameters;
         if (p.offer.length != 1 || p.offer[0].token != address(MILL) || p.offer[0].itemType != 2) revert BadRequest();
         // No fulfiller "tips": Seaport pays consideration items beyond totalOriginalConsiderationItems without the
         // seller's signature covering them, so a caller could fill a cheap listing and tip itself up to millBid.
-        if (p.consideration.length != p.totalOriginalConsiderationItems) revert BadRequest();
+        if (p.consideration.length != p.totalOriginalConsiderationItems || p.consideration.length == 0) revert BadRequest();
+        // Every item in one currency: all native ETH, or all USDG.
+        bool inEth = p.consideration[0].itemType == 0;
         uint256 tokenId = p.offer[0].identifierOrCriteria;
         uint256 total;
         for (uint256 i; i < p.consideration.length; i++) {
             ISeaport.ConsiderationItem calldata c = p.consideration[i];
-            if (c.itemType != 0) revert BadRequest(); // native ETH only
+            if (inEth ? c.itemType != 0 : (c.itemType != 1 || c.token != address(USDG) || address(USDG) == address(0))) {
+                revert BadRequest();
+            }
             total += c.startAmount > c.endAmount ? c.startAmount : c.endAmount; // worst case of a timed price
         }
-        uint256 fee = MILL.burnFee();
-        if (total > millBid()) revert TooExpensive();
-        if (address(this).balance < total + fee) revert FundTooSmall();
-        bool ok = SEAPORT.fulfillAdvancedOrder{value: total}(
+        uint256 usd = inEth ? total * _ethUsd() / 1e18 : total * 1e8 / USDG_UNIT;
+        if (usd > millBid()) revert TooExpensive();
+        uint256 fee = MILL.burnFee(); // always ETH; a caller may attach it (msg.value joins the fund)
+        if (address(this).balance < (inEth ? total : 0) + fee) revert FundTooSmall();
+        if (!inEth) {
+            if (USDG.balanceOf(address(this)) < total) revert FundTooSmall();
+            USDG.forceApprove(address(SEAPORT), total);
+        }
+        bool ok = SEAPORT.fulfillAdvancedOrder{value: inEth ? total : 0}(
             ISeaport.AdvancedOrder({parameters: p, numerator: 1, denominator: 1, signature: order.signature, extraData: extraData}),
             new ISeaport.CriteriaResolver[](0),
             bytes32(0),
             address(this)
         );
+        if (!inEth) USDG.forceApprove(address(SEAPORT), 0);
         require(ok && MILL.ownerOf(tokenId) == address(this), "fill failed");
         uint256 released = _burnMill(tokenId, fee);
-        uint256 restart = total * BID_RESTART_BPS / BPS;
+        uint256 restart = usd * BID_RESTART_BPS / BPS;
         uint256 minStart = MILL_BID_BASE / 10; // a free or near-free listing can't park the bid at ~0
         millBidStart = restart > minStart ? restart : minStart;
         millBidSince = block.timestamp;
-        emit MillEaten(tokenId, p.offerer, total, released);
+        emit MillEaten(tokenId, p.offerer, inEth ? address(0) : address(USDG), total, usd, released);
     }
 
     function _burnMill(uint256 tokenId, uint256 fee) internal returns (uint256 released) {

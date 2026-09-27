@@ -6,7 +6,7 @@ export interface Buy {
   id: number;
   who: string;
   tickets: number;
-  withEth: boolean;
+  fromFire: boolean; // the PAPER leg was bought from the fire (ETH or USDG)
   note: string;
   title: string;
   at: number; // ms
@@ -69,13 +69,15 @@ export interface FireState {
   /** 0..1: how threatening tonight looks. Not a number for the UI to display — drives the sky. */
   threat: number;
   nextRollAt: number; // ms
-  you: { address?: string; tickets: number; paper: number; plank: number; eth: number; remainingToday: number; isWinner: boolean; profile?: Profile };
+  you: { address?: string; tickets: number; paper: number; plank: number; eth: number; usdg: number; remainingToday: number; isWinner: boolean; profile?: Profile };
   profiles: Record<string, Profile>; // lowercase address → profile
   burnedPaperAllTime: number;
   burnedPlankAllTime: number;
   millsEaten: number;
-  millFundEth: number;
-  millBidEth: number;
+  millFundEth: number; // the mill fund's ETH side
+  millFundUsdg: number; // and its USDG side
+  millBidUsd: number; // what the fire will pay for a mill right now, in dollars
+  usdgEnabled: boolean;
   feed: Buy[];
   past: PastFire[];
   storm?: Storm;
@@ -104,13 +106,13 @@ export function priceMult(n: number) {
 
 export function quote(n: number, plankPerTicket: number, ethUsd: number) {
   const m = priceMult(n);
-  return { paper: n * m, plank: n * m * plankPerTicket, eth: (n * m * ETH_USD_PER_TICKET) / ethUsd };
+  return { paper: n * m, plank: n * m * plankPerTicket, eth: (n * m * ETH_USD_PER_TICKET) / ethUsd, usdg: n * m * ETH_USD_PER_TICKET };
 }
 
 export interface FireApi {
   state(): FireState;
   subscribe(fn: (s: FireState) => void): () => void;
-  buy(n: number, withEth: boolean, note: string): Promise<void>;
+  buy(n: number, pay: Pay, note: string): Promise<void>;
   setProfile(name: string, image: Uint8Array | null): Promise<void>; // null = keep the current picture
   /** live only: ask the wallet for an account so balances and the buy buttons light up */
   connect?(): Promise<void>;
@@ -120,8 +122,11 @@ export interface FireApi {
   demoStorm?(): void;
 }
 
-export function titleFor(lifetime: number, withEth: boolean) {
-  if (withEth) return "Paper buyer";
+/** How the PAPER leg is paid: real PAPER, or "paper from the fire" in ETH or USDG. */
+export type Pay = "paper" | "eth" | "usdg";
+
+export function titleFor(lifetime: number, fromFire: boolean) {
+  if (fromFire) return "Paper buyer";
   if (lifetime >= 1000) return "Arsonist";
   if (lifetime >= 200) return "Lumberjack";
   if (lifetime >= 20) return "Paper boy";

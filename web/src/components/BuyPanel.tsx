@@ -1,15 +1,16 @@
 import { useState } from "react";
-import { DAILY_CAP, TX_CAP, quote } from "../data/types";
+import { DAILY_CAP, TX_CAP, type Pay, quote } from "../data/types";
 
 const OPENSEA = "https://opensea.io/collection/the-plank-press";
 const fmtPlank = (p: number) => p >= 1e9 ? `${(p / 1e9).toFixed(2)}B` : `${(p / 1e6).toFixed(0)}M`;
 
 export function BuyPanel({
-  you, plankPerTicket, ethUsd, onBuy, onConnect, paused,
+  you, plankPerTicket, ethUsd, onBuy, onConnect, paused, usdgEnabled,
 }: {
-  you: { address?: string; paper: number; plank: number; eth: number; remainingToday: number };
+  you: { address?: string; paper: number; plank: number; eth: number; usdg: number; remainingToday: number };
   plankPerTicket: number; ethUsd: number;
-  onBuy: (n: number, withEth: boolean, note: string) => Promise<void>;
+  onBuy: (n: number, pay: Pay, note: string) => Promise<void>;
+  usdgEnabled?: boolean;
   onConnect?: () => Promise<void>;
   paused?: boolean;
 }) {
@@ -21,13 +22,14 @@ export function BuyPanel({
   const off = Math.round((1 - q.paper / n) * 100);
   const canPaper = you.paper >= q.paper && you.plank >= q.plank;
   const canEth = you.eth >= q.eth && you.plank >= q.plank;
+  const canUsdg = !!usdgEnabled && you.usdg >= q.usdg && you.plank >= q.plank;
   const overCap = n > you.remainingToday;
   const affordable = Math.min(Math.floor(you.paper), Math.floor(you.plank / plankPerTicket));
   const maxNow = Math.max(0, Math.min(affordable, you.remainingToday, TX_CAP));
 
-  async function go(withEth: boolean) {
+  async function go(pay: Pay) {
     setBusy(true); setErr("");
-    try { await onBuy(n, withEth, note.trim()); setNote(""); }
+    try { await onBuy(n, pay, note.trim()); setNote(""); }
     catch (e) { setErr((e as Error).message.split("\n")[0].slice(0, 160)); }
     finally { setBusy(false); }
   }
@@ -68,7 +70,7 @@ export function BuyPanel({
       {/* Path A: real PAPER */}
       <div className="path">
         <div className="path-head"><b>With your PAPER</b><span>{q.paper.toLocaleString()} PAPER + {fmtPlank(q.plank)} PLANK{off > 0 ? ` · ${off}% off` : ""}</span></div>
-        <button className="cta" disabled={busy || paused || !canPaper || overCap} onClick={() => go(false)}>
+        <button className="cta" disabled={busy || paused || !canPaper || overCap} onClick={() => go("paper")}>
           {busy ? "Throwing…" : `Throw ${n} ${n === 1 ? "ticket" : "tickets"} in`}
         </button>
         {!canPaper && you.paper < q.paper && (
@@ -84,9 +86,12 @@ export function BuyPanel({
 
       {/* Path B: paper from the fire */}
       <div className="path eth">
-        <div className="path-head"><b>No PAPER? Buy paper from the fire</b><span>{q.eth.toFixed(4)} ETH + {fmtPlank(q.plank)} PLANK</span></div>
-        <p className="hint strong">You're paying with ETH instead of PAPER — same ticket, at a premium (${(q.eth * ethUsd / n).toFixed(2)} a ticket for the paper leg, roughly 3× what real PAPER costs). The ETH goes to buying mills and burning them.</p>
-        <button className="cta ghost" disabled={busy || paused || !canEth || overCap} onClick={() => go(true)}>Buy {n} with ETH</button>
+        <div className="path-head"><b>No PAPER? Buy paper from the fire</b><span>${q.usdg.toFixed(2)} in {usdgEnabled ? "ETH or USDG" : "ETH"} + {fmtPlank(q.plank)} PLANK</span></div>
+        <p className="hint strong">You pay dollars instead of PAPER — same ticket, at a premium (${(q.usdg / n).toFixed(2)} a ticket for the paper leg, roughly 3× what real PAPER costs). It goes to buying mills off the floor and burning them.</p>
+        <div className="pay-row">
+          <button className="cta ghost" disabled={busy || paused || !canEth || overCap} onClick={() => go("eth")}>Buy {n} with ETH <small>{q.eth.toFixed(4)}</small></button>
+          {usdgEnabled && <button className="cta ghost" disabled={busy || paused || !canUsdg || overCap} onClick={() => go("usdg")}>Buy {n} with USDG <small>${q.usdg.toFixed(2)}</small></button>}
+        </div>
       </div>
 
       {err && <p className="hint">{err}</p>}

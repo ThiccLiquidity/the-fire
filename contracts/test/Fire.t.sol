@@ -3,12 +3,13 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Fire, ISeaport} from "../src/Fire.sol";
-import {MockERC20, MockMill, MockRandomness, MockFeed, MockSeaport} from "./Mocks.sol";
+import {MockERC20, MockUSDG, MockMill, MockRandomness, MockFeed, MockSeaport} from "./Mocks.sol";
 
 contract FireTest is Test {
     Fire fire;
     MockERC20 paper;
     MockERC20 plank;
+    MockUSDG usdg;
     MockMill mill;
     MockRandomness rng;
     MockFeed ethFeed;
@@ -23,7 +24,7 @@ contract FireTest is Test {
     uint256 constant PAPER_T = 1e18;
     uint256 constant PLANK_T = 10_000_000e18;
     uint256 constant ETH_T = 0.0003 ether; // $1 at $3,333/ETH (set below)
-    uint256 constant MILL_BID = 0.03 ether;
+    uint256 constant MILL_BID = 100e8; // $100, USD 8 decimals
     uint256 constant ROLL_TOD = 3 hours; // 8pm Phoenix
     uint256 constant PLANK_IN_MILL = 800_000_000e18;
 
@@ -36,13 +37,14 @@ contract FireTest is Test {
         vm.warp(1_800_000_000);
         paper = new MockERC20("PAPER", "PAPER");
         plank = new MockERC20("PLANK", "PLANK");
+        usdg = new MockUSDG();
         mill = new MockMill(address(plank), PLANK_IN_MILL);
         rng = new MockRandomness();
         ethFeed = new MockFeed(3_333_33333333); // $3,333.33 -> $1 = 0.0003 ETH
         plankFeed = new MockFeed(90_000_000_000); // $9e-8 per PLANK in 18-dec -> $0.90 for 10M PLANK
         fire = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(0), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
             paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000 /* $0.90 */,
             ethUsdPerTicket: 100_000_000 /* $1.00 */, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
@@ -281,15 +283,15 @@ contract FireTest is Test {
         assertEq(fire.millBid(), MILL_BID * 1125 / 1000, "+12.5% after half a day");
         vm.warp(block.timestamp + 12 hours);
         assertEq(fire.millBid(), MILL_BID * 125 / 100, "+25% after a day");
-        vm.warp(block.timestamp + 30 days);
-        assertEq(fire.millBid(), MILL_BID * 3, "never past 3x");
+        vm.warp(block.timestamp + 60 days);
+        assertEq(fire.millBid(), MILL_BID * 10, "never past 10x");
     }
 
     function _seaportFire() internal returns (Fire f2, MockSeaport sea) {
         sea = new MockSeaport(address(mill));
         f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
             paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
@@ -300,11 +302,14 @@ contract FireTest is Test {
     function test_mill_bid_restarts_below_the_price_paid() public {
         (Fire f2, MockSeaport sea) = _seaportFire();
         vm.warp(block.timestamp + 2 days); // bid has climbed to 1.5x
+        ethFeed.set(ethFeed.answer()); // keep the ETH/USD feed inside its heartbeat
         vm.prank(alice); uint256 id = mill.mint(alice);
-        f2.eatMillFromSeaport(sea.listing(alice, id, 0.04 ether), ""); // a floor listing under the bid
-        assertEq(f2.millBid(), 0.036 ether, "restarts at 90% of what it paid");
+        f2.eatMillFromSeaport(sea.listing(alice, id, 0.04 ether), ""); // $133.33 at $3,333.33/ETH, under the $150 bid
+        uint256 paidUsd = 0.04 ether * uint256(ethFeed.answer()) / 1e18;
+        uint256 restart = paidUsd * 9_000 / 10_000;
+        assertEq(f2.millBid(), restart, "restarts at 90% of what it paid, in dollars");
         vm.warp(block.timestamp + 1 days);
-        assertEq(f2.millBid(), 0.045 ether, "then climbs again");
+        assertEq(f2.millBid(), restart + restart * 2_500 / 10_000, "then climbs again");
     }
 
     function test_restricted_listing_passes_zone_data_through() public {
@@ -313,6 +318,71 @@ contract FireTest is Test {
         f2.eatMillFromSeaport(sea.listing(alice, id, 0.02 ether), hex"c0ffee");
         assertEq(sea.lastExtraData(), hex"c0ffee");
         assertEq(plank.balanceOf(royalty), PLANK_IN_MILL, "mill burned, PLANK to the pool");
+    }
+
+    function _usdgListing(MockSeaport sea, uint256 id, uint256 amount) internal view returns (ISeaport.Order memory o) {
+        o = sea.listing(alice, id, 0);
+        o.parameters.consideration[0].itemType = 1;
+        o.parameters.consideration[0].token = address(usdg);
+        o.parameters.consideration[0].startAmount = amount;
+        o.parameters.consideration[0].endAmount = amount;
+    }
+
+    function test_usdg_tickets_feed_the_usdg_fund() public {
+        vm.startPrank(bob);
+        usdg.mint(bob, 100e6); usdg.approve(address(fire), type(uint256).max);
+        fire.buyTicketsWithUsdg(10, "dollars");
+        vm.stopPrank();
+        assertEq(fire.usdgCost(10), 9.7e6, "$1 each, 3% off a full 10");
+        assertEq(fire.millFundUsdg(), 9.7e6);
+        assertEq(fire.pot(), 97 * PLANK_T / 20, "PLANK leg as usual");
+        (uint256 mine,) = fire.odds(bob);
+        assertEq(mine, 10);
+    }
+
+    function test_usdg_listing_paid_from_usdg_fund() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        usdg.mint(address(f2), 500e6);
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        vm.warp(block.timestamp + 1 days); // bid $125
+        uint256 ethBefore = address(f2).balance;
+        f2.eatMillFromSeaport(_usdgListing(sea, id, 120e6), "");
+        assertEq(usdg.balanceOf(alice), 120e6, "seller paid in USDG");
+        assertEq(usdg.balanceOf(address(f2)), 380e6);
+        assertEq(ethBefore - address(f2).balance, 0.0003 ether, "only the burn fee in ETH");
+        assertEq(usdg.allowance(address(f2), address(sea)), 0, "no approval left behind");
+        assertEq(f2.millBid(), 108e8, "restart at 90% of $120");
+    }
+
+    function test_usdg_listing_over_bid_rejected() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        usdg.mint(address(f2), 500e6);
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        ISeaport.Order memory o = _usdgListing(sea, id, 101e6);
+        vm.expectRevert(Fire.TooExpensive.selector);
+        f2.eatMillFromSeaport(o, "");
+    }
+
+    function test_mixed_or_foreign_currency_listing_rejected() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        ISeaport.Order memory o = _usdgListing(sea, id, 50e6);
+        o.parameters.consideration[0].token = address(paper); // some other ERC-20
+        vm.expectRevert(Fire.BadRequest.selector);
+        f2.eatMillFromSeaport(o, "");
+    }
+
+    function test_caller_can_attach_the_burn_fee() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        vm.deal(address(f2), 0); // fund has no ETH, only USDG
+        usdg.mint(address(f2), 500e6);
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        ISeaport.Order memory o = _usdgListing(sea, id, 90e6);
+        vm.expectRevert(Fire.FundTooSmall.selector);
+        f2.eatMillFromSeaport(o, "");
+        f2.eatMillFromSeaport{value: 0.0003 ether}(o, "");
+        vm.expectRevert();
+        mill.ownerOf(id);
     }
 
     function test_free_listing_cannot_park_the_bid_at_zero() public {
@@ -337,7 +407,7 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
             paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
@@ -362,13 +432,13 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
             paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether);
         vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); uint256 id = mill.mint(alice); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
-        ISeaport.Order memory o = sea.listing(alice, id, MILL_BID + 1);
+        ISeaport.Order memory o = sea.listing(alice, id, 0.031 ether); // $103 > $100 bid
         vm.expectRevert(Fire.TooExpensive.selector);
         f2.eatMillFromSeaport(o, "");
     }
@@ -377,7 +447,7 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
             paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
@@ -387,7 +457,7 @@ contract FireTest is Test {
         ISeaport.Order memory o = sea.listing(alice, id, 0.01 ether);
         ISeaport.ConsiderationItem[] memory cons = new ISeaport.ConsiderationItem[](2);
         cons[0] = o.parameters.consideration[0];
-        cons[1] = ISeaport.ConsiderationItem({itemType: 0, token: address(0), identifierOrCriteria: 0, startAmount: MILL_BID - 0.01 ether, endAmount: MILL_BID - 0.01 ether, recipient: payable(carol)});
+        cons[1] = ISeaport.ConsiderationItem({itemType: 0, token: address(0), identifierOrCriteria: 0, startAmount: 0.02 ether, endAmount: 0.02 ether, recipient: payable(carol)});
         o.parameters.consideration = cons;
         vm.expectRevert(Fire.BadRequest.selector);
         f2.eatMillFromSeaport(o, "");
@@ -397,14 +467,14 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
             paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether);
         vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); uint256 id = mill.mint(alice); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
         ISeaport.Order memory o = sea.listing(alice, id, 0.01 ether);
-        o.parameters.consideration[0].startAmount = MILL_BID + 1; // a declining auction that starts over the bid
+        o.parameters.consideration[0].startAmount = 0.031 ether; // a declining auction that starts over the $100 bid
         vm.expectRevert(Fire.TooExpensive.selector);
         f2.eatMillFromSeaport(o, "");
     }

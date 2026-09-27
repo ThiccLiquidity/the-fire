@@ -2,12 +2,12 @@
 // Reads poll every 8s; writes go through the injected wallet (MetaMask etc.).
 
 import {
-  createPublicClient, createWalletClient, custom, http, formatUnits, parseAbi, type Abi, type Address, type Hex, defineChain,
+  createPublicClient, createWalletClient, custom, http, formatUnits, parseAbi, zeroAddress, type Abi, type Address, type Hex, defineChain,
 } from "viem";
 import fireAbi from "./fireAbi.json";
 import profilesAbi from "./profilesAbi.json";
 import { bytesToHex, hexToBytes } from "viem";
-import { type Buy, type FireApi, type FireState, type PastFire, DAILY_CAP, FULL_DAYS, nextRollTime, stormBase, titleFor } from "./types";
+import { type Buy, type FireApi, type Pay, type FireState, type PastFire, DAILY_CAP, FULL_DAYS, nextRollTime, stormBase, titleFor } from "./types";
 
 const PROFILES = import.meta.env.VITE_PROFILES_ADDRESS as Address | undefined;
 const PROFILES_FROM = BigInt(import.meta.env.VITE_PROFILES_FROM_BLOCK || 0); // Profiles deploy block
@@ -25,6 +25,7 @@ const adapterAbi = parseAbi(["function answered(uint256) view returns (bool)", "
 
 const erc20 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
+  "function decimals() view returns (uint8)",
   "function allowance(address,address) view returns (uint256)",
   "function approve(address,uint256) returns (bool)",
 ]);
@@ -36,7 +37,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
   const pub = createPublicClient({ chain: robinhood, transport: http(undefined, { batch: true }) });
   const abi = fireAbi as unknown as Abi;
   let account: Address | undefined;
-  let paperAddr: Address | undefined, plankAddr: Address | undefined, adapterAddr: Address | undefined;
+  let paperAddr: Address | undefined, plankAddr: Address | undefined, adapterAddr: Address | undefined, usdgAddr: Address | undefined, usdgDec = 6;
   let pendingId = 0n;
   let s: FireState = empty();
   const subs = new Set<(s: FireState) => void>();
@@ -66,18 +67,26 @@ export function makeChainApi(fireAddress: Address): FireApi {
     if (pending === 0n) { if (nowSec >= nextRollAt) rollAction = "roll"; }
     else if (await pub.readContract({ address: adapterAddr, abi: adapterAbi, functionName: "answered", args: [pending] })) { if (nowSec >= pendingSince + 60n) rollAction = "settle"; }
     else if (nowSec >= pendingSince + rerollAfter) rollAction = "reroll";
-    if (!paperAddr) { paperAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "PAPER" })) as Address; plankAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "PLANK" })) as Address; }
+    if (!paperAddr) {
+      paperAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "PAPER" })) as Address;
+      plankAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "PLANK" })) as Address;
+      usdgAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "USDG" })) as Address;
+      if (usdgAddr === zeroAddress) usdgAddr = undefined;
+      else usdgDec = Number(await pub.readContract({ address: usdgAddr, abi: erc20, functionName: "decimals" }));
+    }
+    const fundUsdg = usdgAddr ? await r("millFundUsdg") : 0n;
     let ethPerTicket = 0n; try { ethPerTicket = await r("ethPerTicket"); } catch { /* stale feed */ }
     let you = s.you;
     if (account) {
-      const [paper, plank, eth, mine, bought] = await Promise.all([
+      const [paper, plank, eth, mine, bought, usdg] = await Promise.all([
         pub.readContract({ address: paperAddr!, abi: erc20, functionName: "balanceOf", args: [account] }),
         pub.readContract({ address: plankAddr!, abi: erc20, functionName: "balanceOf", args: [account] }),
         pub.getBalance({ address: account }),
         pub.readContract({ address: fireAddress, abi, functionName: "ticketsOf", args: [fireId, account] }) as Promise<bigint>,
         pub.readContract({ address: fireAddress, abi, functionName: "boughtOnDay", args: [dayIndex, account] }) as Promise<bigint>,
+        usdgAddr ? pub.readContract({ address: usdgAddr, abi: erc20, functionName: "balanceOf", args: [account] }) : Promise.resolve(0n),
       ]);
-      you = { address: account, tickets: Number(mine), paper: Number(formatUnits(paper, 18)), plank: Number(formatUnits(plank, 18)), eth: Number(formatUnits(eth, 18)), remainingToday: DAILY_CAP - Number(bought), isWinner: s.you.isWinner, profile: s.profiles[account.toLowerCase()] };
+      you = { address: account, tickets: Number(mine), paper: Number(formatUnits(paper, 18)), plank: Number(formatUnits(plank, 18)), eth: Number(formatUnits(eth, 18)), usdg: Number(formatUnits(usdg, usdgDec)), remainingToday: DAILY_CAP - Number(bought), isWinner: s.you.isWinner, profile: s.profiles[account.toLowerCase()] };
     }
     const trailing = Number(trailingAvg) || 1;
     const n = Number(night);
@@ -86,7 +95,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
       ethUsd: ethPerTicket > 0n ? 1 / Number(formatUnits(ethPerTicket, 18)) : s.ethUsd,
       ticketsToday: Number(ticketsToday), ticketsTotal: Number(ticketsTotal), fireSize: Number(fireSize), trailingAvg: trailing,
       threat: Math.max(0.1, Math.min(1, stormBase(n + 1, trailing) / (trailing * 2))),
-      nextRollAt: Number(nextRollAt) * 1000 || nextRollTime(), millBidEth: Number(formatUnits(millBid, 18)), millFundEth: Number(formatUnits(millFund, 18)), you,
+      nextRollAt: Number(nextRollAt) * 1000 || nextRollTime(), millBidUsd: Number(formatUnits(millBid, 8)), millFundEth: Number(formatUnits(millFund, 18)), millFundUsdg: Number(formatUnits(fundUsdg, usdgDec)), usdgEnabled: !!usdgAddr, you,
       rollPending: pending !== 0n, rollAction,
     };
   }
@@ -114,10 +123,10 @@ export function makeChainApi(fireAddress: Address): FireApi {
       const ev = (l as unknown as { eventName: string }).eventName;
       const at = whenMs((l as unknown as { blockNumber: bigint }).blockNumber);
       if (ev === "TicketsBought") {
-        const who = String(a.buyer), n = Number(a.tickets), withEth = Boolean(a.withEth);
+        const who = String(a.buyer), n = Number(a.tickets), fromFire = Boolean(a.paperFromFire);
         const life = (lifetime.get(who) ?? 0) + n; lifetime.set(who, life);
-        feed.unshift({ id: ++feedId, who, tickets: n, withEth, note: String(a.note ?? ""), title: titleFor(life, withEth), at });
-        if (!withEth) burnedPaper += n;
+        feed.unshift({ id: ++feedId, who, tickets: n, fromFire, note: String(a.note ?? ""), title: titleFor(life, fromFire), at });
+        if (!fromFire) burnedPaper += n;
         burnedPlank += n * s.plankPerTicket * 0.5;
       } else if (ev === "Survived") {
         const size = Number(a.fireSize), strength = Number(a.storm);
@@ -202,12 +211,16 @@ export function makeChainApi(fireAddress: Address): FireApi {
       const h = await wc.writeContract({ address: PROFILES, abi: profilesAbi as unknown as Abi, functionName: "set", args: [name, bytesToHex(bytes)], account: account!, chain: robinhood });
       await pub.waitForTransactionReceipt({ hash: h }); await refresh();
     },
-    async buy(n, withEth, note) {
+    async buy(n, pay: Pay, note) {
       const wc = await wallet();
       const [paperCost, plankCost, ethCost] = (await pub.readContract({ address: fireAddress, abi, functionName: "quote", args: [BigInt(n)] })) as [bigint, bigint, bigint];
       await ensureAllowance(wc, plankAddr!, plankCost);
       let h: Hex;
-      if (withEth) {
+      if (pay === "usdg") {
+        const cost = (await pub.readContract({ address: fireAddress, abi, functionName: "usdgCost", args: [BigInt(n)] })) as bigint;
+        await ensureAllowance(wc, usdgAddr!, cost);
+        h = await wc.writeContract({ address: fireAddress, abi, functionName: "buyTicketsWithUsdg", args: [BigInt(n), note], account: account!, chain: robinhood });
+      } else if (pay === "eth") {
         if (ethCost === 0n) throw new Error("The ETH price feed is stale, so buying with ETH is paused. Use PAPER, or try again shortly.");
         // 1% headroom in case the feed ticks before the tx lands; the fire refunds anything over the price.
         h = await wc.writeContract({ address: fireAddress, abi, functionName: "buyTicketsWithEth", args: [BigInt(n), note], value: ethCost * 101n / 100n, account: account!, chain: robinhood });
@@ -220,7 +233,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
 
 function empty(): FireState {
   return { fireId: 0, night: 0, potPlank: 0, plankUsd: 1.06e-9, ethUsd: 3333, plankPerTicket: 852_000_000, ticketsToday: 0, ticketsTotal: 0, fireSize: 0, trailingAvg: 1, threat: 0.2, nextRollAt: nextRollTime(),
-    you: { tickets: 0, paper: 0, plank: 0, eth: 0, remainingToday: DAILY_CAP, isWinner: false }, profiles: {}, burnedPaperAllTime: 0, burnedPlankAllTime: 0, millsEaten: 0, millFundEth: 0, millBidEth: 0, feed: [], past: [] };
+    you: { tickets: 0, paper: 0, plank: 0, eth: 0, usdg: 0, remainingToday: DAILY_CAP, isWinner: false }, profiles: {}, burnedPaperAllTime: 0, burnedPlankAllTime: 0, millsEaten: 0, millFundEth: 0, millFundUsdg: 0, millBidUsd: 0, usdgEnabled: false, feed: [], past: [] };
 }
 
 /** Event bytes → a data: URL the <img> can show. Sniffs the format from the magic bytes. */

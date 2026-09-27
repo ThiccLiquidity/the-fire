@@ -23,7 +23,7 @@ contract RealRouterTest is Test {
         address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         adapter = new OpenVRFAdapter(address(router), predicted);
         fire = new Fire(Fire.Config({paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(0),
-            royaltyPool: address(0xB0B), randomness: address(adapter), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            royaltyPool: address(0xB0B), randomness: address(adapter), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(0),
             paperPerTicket: 1e18, plankPerTicket0: 10_000_000e18, plankUsdPerTicket: 90_000_000, ethUsdPerTicket: 100_000_000,
             millBidBase: 0.03 ether, rollTimeOfDay: (ROUND_TIME - 2) % 1 days}));
         assertEq(address(fire), predicted);

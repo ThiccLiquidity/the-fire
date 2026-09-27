@@ -9,12 +9,14 @@ import { robinhood } from "../data/chain";
 export const ROUTER: Address = "0x89e5DB8B5aA49aA85AC63f691524311AEB649eba";
 export const WETH: Address = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 const PAPER = (import.meta.env.VITE_PAPER_ADDRESS as Address | undefined) || undefined;
+const USDG = (import.meta.env.VITE_USDG_ADDRESS as Address | undefined) || undefined;
 
 type Tok = { symbol: string; address: Address | "ETH"; decimals: number };
 const BASE: Tok[] = [
   { symbol: "ETH", address: "ETH", decimals: 18 },
   { symbol: "PLANK", address: "0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc", decimals: 18 },
   ...(PAPER ? [{ symbol: "PAPER", address: PAPER, decimals: 18 } as Tok] : []),
+  ...(USDG ? [{ symbol: "USDG", address: USDG, decimals: 6 } as Tok] : []),
 ];
 
 const routerAbi = parseAbi([

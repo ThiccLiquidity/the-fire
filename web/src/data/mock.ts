@@ -2,6 +2,7 @@ import {
   type Buy,
   type FireApi,
   type FireState,
+  type Pay,
   type Profile,
   DAILY_CAP,
   FULL_DAYS,
@@ -44,13 +45,15 @@ export function makeMockApi(): FireApi {
     trailingAvg: 520,
     threat: 0.45,
     nextRollAt: nextRollTime(),
-    you: { address: YOU, tickets: 12, paper: 7, plank: 9_000_000_000, eth: 0.08, remainingToday: DAILY_CAP - 12, isWinner: false },
+    you: { address: YOU, tickets: 12, paper: 7, plank: 9_000_000_000, eth: 0.08, usdg: 25, remainingToday: DAILY_CAP - 12, isWinner: false },
     profiles: demoProfiles,
     burnedPaperAllTime: 61_400,
     burnedPlankAllTime: 300_000_000_000_000,
     millsEaten: 9,
     millFundEth: 0.021,
-    millBidEth: 0.031,
+    millFundUsdg: 212,
+    millBidUsd: 740,
+    usdgEnabled: true,
     feed: [],
     past: [
       { id: 13, nights: 3, potPlank: 870_000_000_000, winner: wallets[3], peakSize: 520 },
@@ -63,17 +66,18 @@ export function makeMockApi(): FireApi {
   const subs = new Set<(s: FireState) => void>();
   const emit = () => subs.forEach((f) => f(s));
 
-  function push(who: string, tickets: number, withEth: boolean, note: string, at = Date.now()) {
+  function push(who: string, tickets: number, fromFire: boolean, note: string, at = Date.now()) {
     const life = (lifetime.get(who) ?? 0) + tickets;
     lifetime.set(who, life);
-    const b: Buy = { id: nextId++, who, tickets, withEth, note, title: titleFor(life, withEth), at };
+    const b: Buy = { id: nextId++, who, tickets, fromFire, note, title: titleFor(life, fromFire), at };
     s = { ...s, feed: [b, ...s.feed].slice(0, 40) };
   }
   for (let i = 0; i < 12; i++) push(wallets[rnd(wallets.length)], [1, 1, 10, 10, 100][rnd(5)], Math.random() < 0.15, notes[rnd(notes.length)], Date.now() - (12 - i) * 5 * 60_000);
 
-  function applyBuy(who: string, n: number, withEth: boolean, note: string) {
+  function applyBuy(who: string, n: number, pay: Pay, note: string) {
     const q = quote(n, s.plankPerTicket, s.ethUsd);
-    push(who, n, withEth, note);
+    const withEth = pay === "eth", withUsdg = pay === "usdg";
+    push(who, n, pay !== "paper", note);
     s = {
       ...s,
       ticketsToday: s.ticketsToday + n,
@@ -81,19 +85,21 @@ export function makeMockApi(): FireApi {
       fireSize: s.fireSize + n,
       potPlank: s.potPlank + q.plank / 2,
       burnedPlankAllTime: s.burnedPlankAllTime + q.plank / 2,
-      burnedPaperAllTime: withEth ? s.burnedPaperAllTime : s.burnedPaperAllTime + q.paper,
+      burnedPaperAllTime: pay !== "paper" ? s.burnedPaperAllTime : s.burnedPaperAllTime + q.paper,
       millFundEth: withEth ? s.millFundEth + q.eth : s.millFundEth,
+      millFundUsdg: withUsdg ? s.millFundUsdg + q.usdg : s.millFundUsdg,
     };
     if (who === YOU) {
       s = { ...s, you: { ...s.you, tickets: s.you.tickets + n, remainingToday: s.you.remainingToday - n,
-        paper: withEth ? s.you.paper : s.you.paper - q.paper, plank: s.you.plank - q.plank, eth: withEth ? s.you.eth - q.eth : s.you.eth } };
+        paper: pay !== "paper" ? s.you.paper : s.you.paper - q.paper, plank: s.you.plank - q.plank, eth: withEth ? s.you.eth - q.eth : s.you.eth,
+        usdg: withUsdg ? s.you.usdg - q.usdg : s.you.usdg } };
     }
-    if (s.millFundEth >= s.millBidEth) s = { ...s, millFundEth: s.millFundEth - s.millBidEth, millsEaten: s.millsEaten + 1 };
+    if (s.millFundUsdg + s.millFundEth * s.ethUsd >= s.millBidUsd) s = { ...s, millFundUsdg: 0, millFundEth: 0, millsEaten: s.millsEaten + 1 };
     emit();
   }
 
   setInterval(() => {
-    if (Math.random() < 0.5) applyBuy(wallets[rnd(wallets.length)], [1, 1, 1, 10, 10, 100][rnd(6)], Math.random() < 0.15, notes[rnd(notes.length)]);
+    if (Math.random() < 0.5) applyBuy(wallets[rnd(wallets.length)], [1, 1, 1, 10, 10, 100][rnd(6)], (Math.random() < 0.15 ? (Math.random() < 0.5 ? "eth" : "usdg") : "paper") as Pay, notes[rnd(notes.length)]);
   }, 5_000);
 
   function storm() {
@@ -132,7 +138,7 @@ export function makeMockApi(): FireApi {
   return {
     state: () => s,
     subscribe(fn) { subs.add(fn); fn(s); return () => subs.delete(fn); },
-    async buy(n, withEth, note) { await new Promise((r) => setTimeout(r, 400)); applyBuy(YOU, n, withEth, note); },
+    async buy(n, pay, note) { await new Promise((r) => setTimeout(r, 400)); applyBuy(YOU, n, pay, note); },
     async setProfile(name, image) {
       await new Promise((r) => setTimeout(r, 400));
       const prev = s.profiles[YOU.toLowerCase()];

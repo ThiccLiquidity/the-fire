@@ -45,5 +45,12 @@
   WETH `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`. The PLANK pair's token0 = WETH, token1 = PLANK.
 - ETH/USD feed update gaps observed: 0.4–6h (deviation-triggered; 24h heartbeat).
 
+## Mill listings on OpenSea (checked Sep 27 2026, via the OpenSea API)
+- 4 listings, all priced in **USDG** (not ETH): ~$786, $787, $888.42, and $88,842. Mills are still minting until the
+  Oct 1 sunset, so this isn't a real floor yet; later listings may be in ETH too.
+- All are plain open orders (orderType 0, no zone) with 3 consideration items (seller, OpenSea fee, royalty),
+  on Seaport 1.6. The Fire pays USDG listings from its USDG side and ETH listings from its ETH side.
+- USDG address on Robinhood Chain: TODO — read it from a listing's consideration token.
+
 ## Mill floor (OpenSea, Seaport)
 - Collection https://opensea.io/collection/the-plank-press. Seaport on Robinhood Chain: confirm the deployed Seaport 1.6 address before wiring the fill path. No standing bid, no sell-to-fire: the fire only buys listings.

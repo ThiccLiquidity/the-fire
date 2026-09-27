@@ -168,3 +168,7 @@ a { color: var(--flame); }
 .roll-btn:hover:not(:disabled) { background: rgba(255, 201, 60, 0.15); }
 .roll-btn:focus-visible { outline: 2px solid var(--flame); outline-offset: 2px; }
 .roll-btn:disabled { opacity: 0.6; cursor: default; }
+
+.pay-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.pay-row .cta { flex: 1 1 10rem; }
+.pay-row .cta small { opacity: 0.7; margin-left: 0.3rem; font-weight: 400; }

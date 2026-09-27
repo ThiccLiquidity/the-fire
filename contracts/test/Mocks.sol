@@ -15,6 +15,12 @@ contract MockERC20 is ERC20 {
     function mint(address to, uint256 amt) external { _mint(to, amt); }
 }
 
+/// @dev USDG stand-in: 6 decimals.
+contract MockUSDG is MockERC20 {
+    constructor() MockERC20("Global Dollar", "USDG") {}
+    function decimals() public pure override returns (uint8) { return 6; }
+}
+
 /// @dev Stand-in for the Paper Mill NFT: holds PLANK per mill, burn() releases it to the owner.
 contract MockMill is ERC721 {
     IERC20 public plank;
@@ -87,11 +93,13 @@ contract MockSeaport {
         lastExtraData = order.extraData;
         ISeaport.OrderParameters calldata p = order.parameters;
         uint256 total;
-        for (uint256 i; i < p.consideration.length; i++) total += p.consideration[i].endAmount;
+        for (uint256 i; i < p.consideration.length; i++) if (p.consideration[i].itemType == 0) total += p.consideration[i].endAmount;
         require(msg.value == total, "price");
         nft.transferFrom(p.offerer, recipient, p.offer[0].identifierOrCriteria);
         for (uint256 i; i < p.consideration.length; i++) {
-            (bool ok,) = p.consideration[i].recipient.call{value: p.consideration[i].endAmount}("");
+            ISeaport.ConsiderationItem calldata c = p.consideration[i];
+            if (c.itemType == 1) { IERC20(c.token).transferFrom(msg.sender, c.recipient, c.endAmount); continue; }
+            (bool ok,) = c.recipient.call{value: c.endAmount}("");
             require(ok);
         }
         return true;

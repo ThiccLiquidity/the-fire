@@ -138,7 +138,7 @@ export default function App() {
           <div className="ticker" aria-label="Recent buys">
             {s.feed.slice(0, 8).map((b) => (
               <span key={b.id} className="tick">
-                <Avatar addr={b.who} profile={prof(b.who)} size={18} /> <span className="tick-name" title={b.who}>{name(b.who)}</span> <em>{b.title}</em> {b.tickets} {b.tickets === 1 ? "ticket" : "tickets"}{b.withEth ? " (ETH)" : ""}
+                <Avatar addr={b.who} profile={prof(b.who)} size={18} /> <span className="tick-name" title={b.who}>{name(b.who)}</span> <em>{b.title}</em> {b.tickets} {b.tickets === 1 ? "ticket" : "tickets"}{b.fromFire ? " · paper from the fire" : ""}
               </span>
             ))}
           </div>
@@ -151,7 +151,7 @@ export default function App() {
                 <dt>{mPlank(s.burnedPlankAllTime)}</dt><dd>PLANK burned</dd>
                 <dt>{s.millsEaten}</dt><dd>mills eaten</dd>
               </dl>
-              <p className="fine">ETH from "paper from the fire" buys mills off the floor and burns them. The PLANK inside goes to every mill holder. Next mill: {s.millBidEth.toFixed(4)} ETH bid, {s.millFundEth.toFixed(4)} saved.</p>
+              <p className="fine">Money from "paper from the fire" buys mills off the floor and burns them. The PLANK inside goes to every mill holder. Next mill: the fire bids ${Math.round(s.millBidUsd).toLocaleString()}, and has {s.millFundEth.toFixed(4)} ETH{s.usdgEnabled ? ` + $${Math.round(s.millFundUsdg).toLocaleString()} USDG` : ""} saved.</p>
             </div>
             <div className="archive">
               <h2>Past fires</h2>
@@ -166,7 +166,7 @@ export default function App() {
 
         <div className="right">
           <ProfileEditor addr={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onSave={api.setProfile} />
-          <BuyPanel you={s.you} plankPerTicket={s.plankPerTicket} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} />
+          <BuyPanel you={s.you} plankPerTicket={s.plankPerTicket} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} usdgEnabled={s.usdgEnabled} />
           <Swap />
         </div>
       </main>

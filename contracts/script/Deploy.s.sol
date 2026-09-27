@@ -22,7 +22,9 @@ import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
  * PLANK_PER_TICKET0    = starting PLANK per ticket in wei (~$0.90 of PLANK on launch day)
  * PLANK_USD_PER_TICKET = 90000000 ($0.90, 8 decimals) — the leg ratchets toward this
  * ETH_USD_PER_TICKET   = 100000000 ($1.00) — "paper from the fire" price
- * MILL_BID_BASE     = wei, just under the mill floor on launch day
+ * MILL_BID_BASE     = starting mill bid in USD, 8 decimals (e.g. 50000000000 = $500). It climbs ~1%/hour until a mill
+ *                     sells, so start at or below where you expect the floor. Listings may be in USDG or ETH.
+ * USDG              = the USDG token on Robinhood Chain (mill listings are priced in it)
  * ROLL_TIME_OF_DAY  = 10800 (03:00 UTC = 8:00 PM Phoenix)
  */
 contract Deploy is Script {
@@ -43,6 +45,7 @@ contract Deploy is Script {
             randomness: address(adapter),
             ethUsdFeed: vm.envAddress("ETH_USD_FEED"),
             plankUsdFeed: vm.envAddress("PLANK_USD_FEED"),
+            usdg: vm.envAddress("USDG"),
             paperPerTicket: vm.envUint("PAPER_PER_TICKET"),
             plankPerTicket0: vm.envUint("PLANK_PER_TICKET0"),
             plankUsdPerTicket: vm.envUint("PLANK_USD_PER_TICKET"),
