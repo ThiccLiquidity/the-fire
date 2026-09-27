@@ -84,7 +84,7 @@ export interface FireState {
   /** a roll is waiting on its random number; buying is paused until it lands */
   rollPending?: boolean;
   /** live only: what the "roll" button would do right now, if anything */
-  rollAction?: "roll" | "settle" | "reroll";
+  rollAction?: "roll" | "deliver" | "settle" | "reroll";
 }
 
 export const DAILY_CAP = 500;

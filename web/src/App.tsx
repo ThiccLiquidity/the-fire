@@ -13,6 +13,7 @@ const api: FireApi = FIRE_ADDRESS ? makeChainApi(FIRE_ADDRESS) : makeMockApi();
 const LIVE = !!FIRE_ADDRESS;
 
 function usd(plank: number, px: number) {
+  if (!px) return "$—"; // no PLANK price yet: say so rather than guess
   const v = plank * px;
   return `$${Math.round(v).toLocaleString()}`;
 }
@@ -103,7 +104,7 @@ export default function App() {
     setRolling(true); setRollErr("");
     try { await api.rollStorm!(); } catch (e) { setRollErr((e as Error).message.split("\n")[0].slice(0, 140)); } finally { setRolling(false); }
   }
-  const rollLabel = s.rollAction === "settle" ? "Deliver tonight's storm" : s.rollAction === "reroll" ? "The storm is late. Roll it again" : "Roll the storm";
+  const rollLabel = s.rollAction === "settle" || s.rollAction === "deliver" ? "Deliver tonight's storm" : s.rollAction === "reroll" ? "The storm is late. Roll it again" : "Roll the storm";
 
   return (
     <div className="page">

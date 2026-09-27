@@ -21,7 +21,27 @@ export const robinhood = defineChain({
   blockExplorers: { default: { name: "Blockscout", url: "https://robinhoodchain.blockscout.com" } },
 });
 
-const adapterAbi = parseAbi(["function answered(uint256) view returns (bool)", "function settle(uint256)"]);
+const adapterAbi = parseAbi(["function answered(uint256) view returns (bool)", "function settle(uint256)", "function ROUTER() view returns (address)"]);
+const routerAbi = parseAbi([
+  "function requests(uint256) view returns (address consumer, uint64 round, uint32 callbackGasLimit, bool fulfilled, bool delivered, uint256 randomWord, uint256 fee)",
+  "function fulfill(uint256 id, bytes signature)",
+]);
+const feedAbi = parseAbi(["function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)"]);
+// drand evmnet: the chain OpenDrandRouter verifies. Public relays; the router checks every signature on-chain.
+const DRAND_CHAIN = "04f1e9062b8a81f848fded9c12306733282b2727ecced50032187751166ec8c3";
+const DRAND_GENESIS = 1727521075n, DRAND_PERIOD = 3n;
+const DRAND_URLS = ["https://api.drand.sh", "https://api2.drand.sh", "https://api3.drand.sh"];
+async function drandSignature(round: bigint): Promise<Hex | undefined> {
+  for (const base of DRAND_URLS) {
+    try {
+      const r = await fetch(`${base}/${DRAND_CHAIN}/public/${round}`, { signal: AbortSignal.timeout(10_000) });
+      if (!r.ok) continue;
+      const b = (await r.json()) as { round: number; signature: string };
+      if (String(b.round) === String(round) && /^[0-9a-f]{128}$/i.test(b.signature)) return `0x${b.signature}`;
+    } catch { /* next relay */ }
+  }
+  return undefined;
+}
 
 const erc20 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
@@ -38,7 +58,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
   const abi = fireAbi as unknown as Abi;
   let account: Address | undefined;
   let paperAddr: Address | undefined, plankAddr: Address | undefined, adapterAddr: Address | undefined, usdgAddr: Address | undefined, usdgDec = 6;
-  let pendingId = 0n;
+  let pendingId = 0n, routerAddr: Address | undefined, plankFeedAddr: Address | undefined;
   let s: FireState = empty();
   const subs = new Set<(s: FireState) => void>();
   const emit = () => subs.forEach((f) => f(s));
@@ -60,13 +80,24 @@ export function makeChainApi(fireAddress: Address): FireApi {
       r("fireId"), r("night"), r("pot"), r("ticketsToday"), r("ticketsTotal"), r("fireSize"), r("trailingAverage"), r("nextRollAt"), r("plankPerTicket"), r("millBid"), r("millFund"), r("dayIndex"),
       r("pendingRequest"), r("pendingSince"), r("REROLL_AFTER"),
     ]);
-    if (!adapterAddr) adapterAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "randomness" })) as Address;
+    if (!adapterAddr) {
+      adapterAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "randomness" })) as Address;
+      routerAddr = (await pub.readContract({ address: adapterAddr, abi: adapterAbi, functionName: "ROUTER" })) as Address;
+      plankFeedAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "PLANK_USD" })) as Address;
+    }
+    // USD per PLANK from the Fire's own PLANK/USD feed (18 decimals). 0 = no price yet: the page shows "$—", never a guess.
+    let plankUsd = 0;
+    try { const [, px] = await pub.readContract({ address: plankFeedAddr!, abi: feedAbi, functionName: "latestRoundData" }); if (px > 0n) plankUsd = Number(formatUnits(px, 18)); } catch { /* feed unavailable */ }
     pendingId = pending;
     const nowSec = (await pub.getBlock()).timestamp; // the contract judges time by the chain's clock
     let rollAction: FireState["rollAction"];
     if (pending === 0n) { if (nowSec >= nextRollAt) rollAction = "roll"; }
     else if (await pub.readContract({ address: adapterAddr, abi: adapterAbi, functionName: "answered", args: [pending] })) { if (nowSec >= pendingSince + 60n) rollAction = "settle"; }
-    else if (nowSec >= pendingSince + rerollAfter) rollAction = "reroll";
+    else {
+      // Anyone may deliver drand's number once its round is out; re-roll only if it still isn't there after 30 min.
+      const [, round] = await pub.readContract({ address: routerAddr!, abi: routerAbi, functionName: "requests", args: [pending] });
+      if (nowSec >= DRAND_GENESIS + (round - 1n) * DRAND_PERIOD + 5n) rollAction = nowSec >= pendingSince + rerollAfter ? "reroll" : "deliver";
+    }
     if (!paperAddr) {
       paperAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "PAPER" })) as Address;
       plankAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "PLANK" })) as Address;
@@ -96,7 +127,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
       ticketsToday: Number(ticketsToday), ticketsTotal: Number(ticketsTotal), fireSize: Number(fireSize), trailingAvg: trailing,
       threat: Math.max(0.1, Math.min(1, stormBase(n + 1, trailing) / (trailing * 2))),
       nextRollAt: Number(nextRollAt) * 1000 || nextRollTime(), millBidUsd: Number(formatUnits(millBid, 8)), millFundEth: Number(formatUnits(millFund, 18)), millFundUsdg: Number(formatUnits(fundUsdg, usdgDec)), usdgEnabled: !!usdgAddr, you,
-      rollPending: pending !== 0n, rollAction,
+      rollPending: pending !== 0n, rollAction, plankUsd,
     };
   }
 
@@ -194,11 +225,19 @@ export function makeChainApi(fireAddress: Address): FireApi {
       const wc = await wallet();
       const a = s.rollAction;
       if (!a) return;
-      const h = a === "settle"
-        ? await wc.writeContract({ address: adapterAddr!, abi: adapterAbi, functionName: "settle", args: [pendingId], account: account!, chain: robinhood })
-        : await wc.writeContract({ address: fireAddress, abi, functionName: a, args: [], account: account!, chain: robinhood });
+      let h: Hex;
+      if (a === "settle") h = await wc.writeContract({ address: adapterAddr!, abi: adapterAbi, functionName: "settle", args: [pendingId], account: account!, chain: robinhood });
+      else if (a === "deliver" || a === "reroll") {
+        // A number from drand always beats a re-roll: try it first.
+        const [, round] = await pub.readContract({ address: routerAddr!, abi: routerAbi, functionName: "requests", args: [pendingId] });
+        const sig = await drandSignature(round);
+        if (sig) h = await wc.writeContract({ address: routerAddr!, abi: routerAbi, functionName: "fulfill", args: [pendingId, sig], account: account!, chain: robinhood });
+        else if (a === "reroll") h = await wc.writeContract({ address: fireAddress, abi, functionName: "reroll", args: [], account: account!, chain: robinhood });
+        else throw new Error("Couldn't reach drand for tonight's number. Try again in a moment.");
+      } else h = await wc.writeContract({ address: fireAddress, abi, functionName: "roll", args: [], account: account!, chain: robinhood });
       await pub.waitForTransactionReceipt({ hash: h }); await refresh();
     },
+
     subscribe(fn) { subs.add(fn); fn(s); return () => subs.delete(fn); },
     async setProfile(name, image) {
       if (!PROFILES) throw new Error("Profiles aren't live yet.");
@@ -232,7 +271,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
 }
 
 function empty(): FireState {
-  return { fireId: 0, night: 0, potPlank: 0, plankUsd: 1.06e-9, ethUsd: 3333, plankPerTicket: 852_000_000, ticketsToday: 0, ticketsTotal: 0, fireSize: 0, trailingAvg: 1, threat: 0.2, nextRollAt: nextRollTime(),
+  return { fireId: 0, night: 0, potPlank: 0, plankUsd: 0, ethUsd: 3333, plankPerTicket: 852_000_000, ticketsToday: 0, ticketsTotal: 0, fireSize: 0, trailingAvg: 1, threat: 0.2, nextRollAt: nextRollTime(),
     you: { tickets: 0, paper: 0, plank: 0, eth: 0, usdg: 0, remainingToday: DAILY_CAP, isWinner: false }, profiles: {}, burnedPaperAllTime: 0, burnedPlankAllTime: 0, millsEaten: 0, millFundEth: 0, millFundUsdg: 0, millBidUsd: 0, usdgEnabled: false, feed: [], past: [] };
 }
 
