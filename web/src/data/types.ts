@@ -26,8 +26,9 @@ export interface Storm {
   at: number;
   strength: number; // in tickets
   size: number; // fire size at the roll
+  sizeAfter?: number; // 0..1 display size after the storm (survived only)
   survived: boolean;
-  intensity: number; // 0..1 — how big relative to the fire; drives lightning/thunder
+  intensity: number; // 0..1 — how violent it looks/sounds
   winner?: string;
   paidPlank?: number;
 }
@@ -42,6 +43,8 @@ export interface FireState {
   plankPerTicket: number; // ratchets toward $0.90
   ticketsToday: number;
   ticketsTotal: number;
+  fireSize: number; // persistent, in tickets: buys add, storms subtract, burns down to 60% each night
+  trailingAvg: number; // 7-night avg of daily tickets; storm scale
   /** 0..1: how threatening tonight looks. Not a number for the UI to display — drives the sky. */
   threat: number;
   nextRollAt: number; // ms
@@ -57,6 +60,14 @@ export interface FireState {
 }
 
 export const DAILY_CAP = 500;
+export const KEEP = 0.6;
+export const FULL_DAYS = 5; // a fire worth 5 days of buys is "full height" on screen
+/** Storm median for a night: trailingAvg × ((n-1)/8)^1.5 (night 1: none, night 24+: infinite). */
+export function stormBase(night: number, trailingAvg: number) {
+  if (night >= 24) return Infinity;
+  if (night <= 1) return 0;
+  return trailingAvg * Math.pow((night - 1) / 8, 1.5);
+}
 export const TX_CAP = 10;
 export const ETH_USD_PER_TICKET = 1.0;
 export const PLANK_USD_PER_TICKET = 0.9;

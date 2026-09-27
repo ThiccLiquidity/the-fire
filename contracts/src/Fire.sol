@@ -43,7 +43,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public constant TITHE_BPS = 500; // of the winner slice -> royalty pool
     uint256 public constant PLANK_BURN_BPS = 5_000; // of every PLANK feed
     uint256 public constant MAX_NIGHTS = 24; // the night-24 storm is infinite
-    uint256 public constant STORM_SCALE_NIGHT = 8; // storm ~ trailing avg at this age
+    uint256 public constant KEEP_BPS = 6_000; // the fire keeps 60% of its size overnight
     uint256 public constant TRAILING = 7;
     uint256 public constant BID_STEP_BPS = 500; // mill bid +5% per unfilled night
     uint256 public constant DAILY_CAP = 500; // tickets per wallet per day
@@ -78,6 +78,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public pot; // PLANK wei
     uint256 public nextRollAt;
     uint256 public ticketsToday;
+    uint256 public fireSize; // persistent: buys add, storms subtract, burns down 40% each night
     uint256 public ticketsTotal;
     address public lastWinner;
 
@@ -218,6 +219,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         boughtOnDay[dayIndex][buyer] += n;
         ticketsTotal += n;
         ticketsToday += n;
+        fireSize += n;
         ticketsOf[fireId][buyer] += n;
         _entries[fireId].push(Entry({buyer: buyer, cumEnd: uint128(ticketsTotal)}));
     }
@@ -239,40 +241,51 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         pendingRequest = 0;
 
         night += 1;
-        uint256 fireSize = ticketsToday;
         uint256 storm = stormStrength(night, rnd);
+        uint256 sizeBefore = fireSize;
 
-        _pushTrail(fireSize);
+        _pushTrail(ticketsToday);
         ticketsToday = 0;
         dayIndex += 1;
         nextRollAt = _nextRollTime(block.timestamp);
         _ratchetMillBid();
         _ratchetPlankLeg();
 
-        // night 1 always survives; after that a fire with no fuel goes out, and a fire beats the storm only if it's at least as big
-        if (night == 1 || (fireSize > 0 && fireSize >= storm && night < MAX_NIGHTS)) {
-            emit Survived(fireId, night, fireSize, storm);
+        // The storm takes a bite. What's left burns down to 60% overnight and is tomorrow's starting size.
+        // Night 1 has no storm. Night 24 is infinite. A fire with nothing in it goes out.
+        if (night == 1 || (night < MAX_NIGHTS && sizeBefore > storm)) {
+            fireSize = (sizeBefore - storm) * KEEP_BPS / BPS;
+            emit Survived(fireId, night, sizeBefore, storm);
             return;
         }
-        _goOut(fireSize, storm, rnd);
+        _goOut(sizeBefore, storm, rnd);
     }
 
-    /// @notice Storm on a given night for a given random word. Base = trailingAvg x night / 8,
-    ///         times a lognormal-ish multiplier (sigma~0.55) drawn from the random word.
-    ///         Night 24+ is infinite. Night 1 never rolls a storm (handled by caller).
+    /// @notice Storm on a given night for a given random word (tuned in sim/storm_v3.py):
+    ///         storm = trailingAvg x ((night-1)/8)^1.5 x L, with L ~ lognormal(0, 0.9).
+    ///         Night 1: no storm. Night 24+: infinite.
     function stormStrength(uint256 n, uint256 rnd) public view returns (uint256) {
         if (n >= MAX_NIGHTS) return type(uint256).max;
-        uint256 base = trailingAverage() * n / STORM_SCALE_NIGHT;
-        return base * _noiseBps(rnd) / BPS;
+        if (n <= 1) return 0;
+        return trailingAverage() * _ageBps(n) / BPS * _luckBps(rnd) / BPS;
     }
 
-    /// @dev 16-point table of e^(0.55·z) at evenly spaced quantiles; picks by the low 4 bits.
-    function _noiseBps(uint256 rnd) internal pure returns (uint256) {
-        uint16[16] memory table = [
-            uint16(3900), 5000, 5800, 6500, 7200, 7900, 8600, 9300,
-            10700, 11600, 12700, 13900, 15400, 17200, 19900, 25600
+    /// @dev ((n-1)/8)^1.5 in bps, n = 2..23.
+    function _ageBps(uint256 n) internal pure returns (uint256) {
+        uint24[22] memory a = [
+            uint24(442), 1250, 2296, 3536, 4941, 6495, 8185, 10000, 11932, 13975, 16123,
+            18371, 20715, 23150, 25674, 28284, 30977, 33750, 36601, 39528, 42530, 45604
         ];
-        return table[rnd & 15];
+        return a[n - 2];
+    }
+
+    /// @dev 32-point quantile table of e^(0.9 z), picked by the low 5 bits of the random word.
+    function _luckBps(uint256 rnd) internal pure returns (uint256) {
+        uint24[32] memory q = [
+            uint24(1439), 2213, 2791, 3306, 3792, 4265, 4736, 5210, 5692, 6187, 6699, 7232, 7789, 8375, 8994, 9654,
+            10359, 11118, 11941, 12839, 13828, 14927, 16162, 17568, 19195, 21116, 23446, 26373, 30249, 35823, 45192, 69482
+        ];
+        return q[rnd & 31];
     }
 
     function trailingAverage() public view returns (uint256) {
@@ -339,6 +352,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         pot = carried;
         ticketsTotal = 0;
         ticketsToday = 0;
+        fireSize = 0;
         fireNameId = 0;
         nextRollAt = _nextRollTime(block.timestamp);
         emit Lit(fireId, carried);

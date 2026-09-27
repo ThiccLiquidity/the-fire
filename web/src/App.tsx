@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { type FireApi, type FireState, phoenixHour, short } from "./data/types";
+import { type FireApi, type FireState, FULL_DAYS, phoenixHour, short } from "./data/types";
 import { makeMockApi } from "./data/mock";
 import { FIRE_NAMES } from "./data/names";
 import { Scene } from "./components/Scene";
@@ -36,21 +36,20 @@ export default function App() {
 
   const msToRoll = s.nextRollAt - now;
   const hour = demoHour ?? phoenixHour(now);
-  const expected = 520 * ((s.night + 1) / 8); // rough "normal" size for the visual only
-  const size = s.ticketsToday / expected;
-  const dead = !!s.storm && !s.storm.survived && now - s.storm.at < 11_000;
-  const showVerdict = !!s.storm && now - s.storm.at < 11_000 && now - s.storm.at > 3_500;
+  const size = Math.min(1, s.fireSize / (s.trailingAvg * FULL_DAYS)); // 1 = a fire worth 5 days of buys
+  const showVerdict = !!s.storm && now - s.storm.at < 14_000 && now - s.storm.at > 7_000;
+  const last = s.feed[0];
   const odds = s.ticketsTotal ? (s.you.tickets / s.ticketsTotal) * 100 : 0;
 
   return (
     <div className="page">
-      <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} recent={s.feed} dead={dead} />
+      <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && (last.stoke || last.tickets >= 10)} />
 
       <header className="top">
         <div className="brand">The Fire</div>
         <div className="forecast" role="status">
-          {s.storm && now - s.storm.at < 11_000
-            ? <><span className="fc-text">{s.storm.survived ? "Storm passing." : "It's raining."}</span><span className="fc-when">Night {s.night}</span></>
+          {s.storm && now - s.storm.at < 14_000
+            ? <><span className="fc-text">{now - s.storm.at < 6_000 ? "Storm rolling in." : s.storm.survived ? "Storm passing." : "It's raining."}</span><span className="fc-when">Night {s.night}</span></>
             : <><span className="fc-text">{weather(s.threat, msToRoll / 3_600_000)}</span><span className="fc-when">Storm rolls in {countdown(msToRoll)} · 8:00 PM Arizona</span></>}
         </div>
       </header>
@@ -63,7 +62,7 @@ export default function App() {
       {showVerdict && s.storm && (
         <div className={"verdict " + (s.storm.survived ? "ok" : "out")} role="alert">
           {s.storm.survived
-            ? <><b>The fire survived.</b> Night {s.night}. The clouds rolled by.</>
+            ? <><b>The fire survived night {s.night}.</b> The storm took {Math.min(99, Math.round(s.storm.strength / Math.max(1, s.storm.size) * 100))}% of it.</>
             : <><b>The fire went out.</b> {s.storm.winner === "0xYOU0000000000000000000000000000000000d00d" ? "You won" : `${short(s.storm.winner ?? "")} won`} {usd(s.storm.paidPlank ?? 0, s.plankUsd)}. Fire #{s.fireId} is lit.</>}
         </div>
       )}
@@ -82,7 +81,7 @@ export default function App() {
           <div className="you">
             <div><b>{s.you.tickets.toLocaleString()}</b><span>your tickets in this fire</span></div>
             <div><b>{odds === 0 ? "0" : odds < 0.01 ? "<0.01" : odds.toFixed(2)}%</b><span>your odds if it goes out tonight</span></div>
-            <div><b>{s.ticketsToday.toLocaleString()}</b><span>tickets on the fire today</span></div>
+            <div><b>{Math.round(s.fireSize).toLocaleString()}</b><span>fire size (tickets) · {s.ticketsToday.toLocaleString()} added today</span></div>
           </div>
 
           <div className="ticker" aria-label="Recent buys">

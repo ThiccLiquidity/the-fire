@@ -3,7 +3,10 @@ import {
   type FireApi,
   type FireState,
   DAILY_CAP,
+  FULL_DAYS,
+  KEEP,
   PLANK_USD_PER_TICKET,
+  stormBase,
   nextRollTime,
   quote,
   titleFor,
@@ -34,7 +37,9 @@ export function makeMockApi(): FireApi {
     plankPerTicket,
     ticketsToday: 410,
     ticketsTotal: 4_120,
-    threat: 0.55,
+    fireSize: 1_150,
+    trailingAvg: 520,
+    threat: 0.45,
     nextRollAt: nextRollTime(),
     you: { tickets: 12, paper: 7, plank: 120_000_000, eth: 0.08, remainingToday: DAILY_CAP - 12, isWinner: false },
     burnedPaperAllTime: 61_400,
@@ -69,6 +74,7 @@ export function makeMockApi(): FireApi {
       ...s,
       ticketsToday: s.ticketsToday + n,
       ticketsTotal: s.ticketsTotal + n,
+      fireSize: s.fireSize + n,
       potPlank: s.potPlank + q.plank / 2,
       burnedPlankAllTime: s.burnedPlankAllTime + q.plank / 2,
       burnedPaperAllTime: withEth ? s.burnedPaperAllTime : s.burnedPaperAllTime + q.paper,
@@ -87,13 +93,17 @@ export function makeMockApi(): FireApi {
   }, 5_000);
 
   function storm() {
-    const base = 520 * ((s.night + 1) / 8);
-    const strength = Math.round(base * Math.exp((Math.random() - 0.5) * 1.1));
-    const size = s.ticketsToday;
-    const survived = size > 0 && size >= strength;
-    const intensity = Math.max(0.15, Math.min(1, strength / Math.max(1, size) / 2));
+    const night = s.night + 1;
+    const luck = Math.exp(0.9 * (rng() + rng() + rng() + rng() - 2) * Math.sqrt(3)); // ~N(0,1) via sum of uniforms
+    const strength = Math.round(stormBase(night, s.trailingAvg) * luck);
+    const size = s.fireSize;
+    const survived = night === 1 || (night < 24 && size > strength);
+    const intensity = Math.max(0.15, Math.min(1, strength / Math.max(1, s.trailingAvg * FULL_DAYS) * 2.5));
+    const trailingAvg = (s.trailingAvg * 6 + s.ticketsToday) / 7;
     if (survived) {
-      s = { ...s, night: s.night + 1, ticketsToday: 0, storm: { at: Date.now(), strength, size, survived, intensity },
+      const after = Math.max(0, (size - strength) * KEEP);
+      s = { ...s, night, fireSize: after, trailingAvg, ticketsToday: 0,
+        storm: { at: Date.now(), strength, size, survived, intensity, sizeAfter: after / (trailingAvg * FULL_DAYS) },
         you: { ...s.you, remainingToday: DAILY_CAP } };
     } else {
       const winner = Math.random() < 0.2 ? YOU : wallets[rnd(wallets.length)];
@@ -102,17 +112,18 @@ export function makeMockApi(): FireApi {
         ...s,
         storm: { at: Date.now(), strength, size, survived, intensity, winner, paidPlank: paid },
         past: [{ id: s.fireId, nameId: s.nameId, nights: s.night, potPlank: s.potPlank, winner, peakSize: size }, ...s.past],
-        fireId: s.fireId + 1, nameId: 0, night: 0,
+        fireId: s.fireId + 1, nameId: 0, night: 0, fireSize: 0, trailingAvg,
         potPlank: s.potPlank * 0.3,
         burnedPlankAllTime: s.burnedPlankAllTime + s.potPlank * 0.3,
         ticketsToday: 0, ticketsTotal: 0,
         you: { ...s.you, tickets: 0, remainingToday: DAILY_CAP, isWinner: winner === YOU, plank: winner === YOU ? s.you.plank + paid : s.you.plank },
       };
     }
-    const nb = 520 * ((s.night + 1) / 8);
-    s = { ...s, threat: Math.max(0.1, Math.min(1, nb / 900)), nextRollAt: nextRollTime() };
+    const nb = stormBase(s.night + 1, s.trailingAvg);
+    s = { ...s, threat: Math.max(0.1, Math.min(1, nb / (s.trailingAvg * 2))), nextRollAt: nextRollTime() };
     emit();
   }
+  function rng() { return Math.random(); }
 
   return {
     state: () => s,

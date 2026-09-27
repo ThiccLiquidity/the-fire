@@ -28,8 +28,9 @@ contract FireTest is Test {
     uint256 constant PLANK_IN_MILL = 800_000_000e18;
 
     // rnd values that pick specific noise-table slots (low 4 bits)
-    uint256 constant RND_CALM = 0; // 0.39x
-    uint256 constant RND_MONSTER = 15; // 2.56x
+    uint256 constant RND_CALM = 0; // luck 0.144x (gentlest of 32)
+    uint256 constant RND_MONSTER = 31; // luck 6.95x (worst of 32)
+    uint256 constant RND_MID = 16; // luck 1.036x
 
     function setUp() public {
         vm.warp(1_800_000_000);
@@ -158,38 +159,59 @@ contract FireTest is Test {
         fire.onRandomness(1, 1);
     }
 
-    function test_storm_scales_with_trailing_avg_and_night() public {
+    function test_storm_formula() public {
         _buy(alice, 400); _buy(bob, 400);
-        _roll(RND_CALM); // night 1, trail = [800]
-        // night 2 base = 800 * 2 / 8 = 200; noise slot 0 = 0.39x -> 78
-        assertEq(fire.stormStrength(2, RND_CALM), 78);
-        // slot 15 = 2.56x -> 512
-        assertEq(fire.stormStrength(2, RND_MONSTER), 512);
-        assertEq(fire.stormStrength(24, 0), type(uint256).max, "night 24 infinite");
+        _roll(RND_MID); // night 1: no storm; trail = [800]
+        // night 2: base = 800 * ((2-1)/8)^1.5 = 800 * 0.0442 = 35.4; luck mid 1.036 -> 36
+        assertEq(fire.stormStrength(2, RND_MID), 36);
+        // night 9: base = 800 * 1.0 -> 800 * 1.036 = 828
+        assertEq(fire.stormStrength(9, RND_MID), 828);
+        // luck extremes
+        assertEq(fire.stormStrength(9, RND_CALM), 115);
+        assertEq(fire.stormStrength(9, RND_MONSTER), 5558);
+        assertEq(fire.stormStrength(1, RND_MONSTER), 0, "night 1 no storm");
+        assertEq(fire.stormStrength(24, RND_CALM), type(uint256).max, "night 24 infinite");
     }
 
-    function test_big_fire_survives_small_fire_dies() public {
-        _buy(alice, 400); _buy(bob, 400);
-        _roll(RND_CALM); // night 1
-        _buy(bob, 100); // night 2: storm(monster) = 512 > 100 -> out
-        uint256 idBefore = fire.fireId();
-        _roll(RND_MONSTER);
-        assertEq(fire.fireId(), idBefore + 1, "new fire lit");
-        assertEq(fire.night(), 0);
-    }
-
-    function test_survives_when_size_beats_storm() public {
-        _buy(alice, 400); _buy(bob, 400);
-        _roll(RND_CALM);
-        _buy(bob, 400); _buy(carol, 200); // storm(monster) 512 < 600
-        _roll(RND_MONSTER);
-        assertEq(fire.night(), 2);
+    function test_fire_size_persists_and_burns_down() public {
+        _buy(alice, 500);
+        assertEq(fire.fireSize(), 500);
+        _roll(RND_MID); // night 1: no storm; size = 500 * 0.6 = 300
+        assertEq(fire.fireSize(), 300);
+        _buy(bob, 200); // size 500
+        // night 2 storm at mid luck = trail(500,200 -> avg 350) * 0.0442 * 1.036 = 16
+        uint256 storm = fire.stormStrength(2, RND_MID);
+        _roll(RND_MID);
+        assertEq(fire.fireSize(), (500 - storm) * 6000 / 10000, "size minus storm, then 60%");
         assertEq(fire.fireId(), 1);
     }
 
+    function test_small_fire_dies_to_big_storm_big_fire_survives() public {
+        // build a trailing average of ~500/day over a few calm nights
+        for (uint256 i; i < 4; i++) { _buy(alice, 500); _roll(RND_CALM); }
+        // night 5: monster luck. base = 500*0.3536 = 177; x6.95 = 1229
+        uint256 storm = fire.stormStrength(5, RND_MONSTER);
+        assertGt(storm, 1000);
+        // fire has ~500*0.6 + ... buffer; check it's below the storm -> dies
+        uint256 size = fire.fireSize();
+        _buy(carol, 10); // tiny top-up
+        if (size + 10 <= storm) {
+            _roll(RND_MONSTER);
+            assertEq(fire.fireId(), 2, "small fire died");
+        }
+        // new fire: feed it hard for 4 nights, then a monster on night 5 should NOT kill it
+        for (uint256 i; i < 4; i++) { _buy(alice, 500); _buy(bob, 500); _buy(carol, 500); _roll(RND_CALM); }
+        uint256 before = fire.fireSize();
+        uint256 storm2 = fire.stormStrength(5, RND_MONSTER);
+        _buy(alice, 500); _buy(bob, 500); _buy(carol, 500);
+        assertGt(before + 1500, storm2, "well-fed fire outweighs a monster night 5");
+        uint256 id = fire.fireId();
+        _roll(RND_MONSTER);
+        assertEq(fire.fireId(), id, "survived");
+    }
+
     function test_no_fire_outlives_night_24() public {
-        // Three wallets at the daily cap every day. The ramp still wins by night ~21 with calm storms;
-        // and night 24 is infinite regardless. Either way: no fire reaches night 24 alive.
+        // Three wallets at the daily cap every day with the gentlest possible luck: still dies by night 24.
         for (uint256 n = 1; n <= 24; n++) {
             _buy(alice, 500); _buy(bob, 500); _buy(carol, 500);
             _roll(RND_CALM);
@@ -208,10 +230,12 @@ contract FireTest is Test {
     function test_payout_40_30_30_and_tithe() public {
         _buy(alice, 500); // alice is the only ticket holder
         uint256 p = fire.pot();
-        _roll(RND_CALM); // night 1 survive
+        _roll(RND_CALM); // night 1 survive; size 300
         uint256 deadBefore = plank.balanceOf(DEAD);
         uint256 aliceBefore = plank.balanceOf(alice);
-        _roll(RND_MONSTER); // 0 tickets today -> out
+        _roll(RND_MONSTER); // night 2 monster: 500*0.0442*6.95 = 153 < 300 ... need bigger. roll more.
+        // keep rolling monsters until it dies
+        while (fire.fireId() == 1) _roll(RND_MONSTER);
         uint256 winner = p * 4000 / 10000;
         uint256 tithe = winner * 500 / 10000;
         assertEq(plank.balanceOf(alice) - aliceBefore, winner - tithe, "winner 40% minus tithe");
@@ -224,9 +248,9 @@ contract FireTest is Test {
 
     function test_no_tickets_at_all_rolls_winner_slice_forward() public {
         vm.prank(carol);
-        fire.stoke(1_000e18); // pot 500, no tickets
-        _roll(RND_CALM);
-        _roll(RND_MONSTER);
+        fire.stoke(1_000e18); // pot 500, no tickets, size 0
+        _roll(RND_CALM); // night 1 survives regardless
+        _roll(RND_MONSTER); // size 0 -> goes out
         assertEq(fire.lastWinner(), address(0));
         assertEq(fire.pot(), 350e18, "40% + 30% carried");
         assertEq(plank.balanceOf(royalty), 0);
@@ -236,12 +260,14 @@ contract FireTest is Test {
         _buy(alice, 450);
         _buy(bob, 50);
         _roll(RND_CALM);
+        // burn the size down with calm nights so a monster kills it in one roll
+        _roll(RND_CALM); _roll(RND_CALM); _roll(RND_CALM);
         uint256 aliceWins;
         uint256 snap = vm.snapshotState();
         for (uint256 i; i < 200; i++) {
             vm.revertToState(snap);
             snap = vm.snapshotState();
-            _roll((i << 4) | RND_MONSTER); // monster storm, varying winner seed
+            _roll((i << 5) | RND_MONSTER); // monster storm, varying winner seed
             if (fire.lastWinner() == alice) aliceWins++;
         }
         // 90% expected; allow wide tolerance
@@ -252,7 +278,7 @@ contract FireTest is Test {
     function test_winner_names_fire() public {
         _buy(alice, 5);
         _roll(RND_CALM);
-        _roll(RND_MONSTER);
+        while (fire.fireId() == 1) _roll(RND_MONSTER);
         vm.prank(bob);
         vm.expectRevert(Fire.NotWinner.selector);
         fire.nameFire(3);
@@ -380,7 +406,7 @@ contract FireTest is Test {
         fire.buyTicketsWithEth{value: ethCost}(10, "");
         assertEq(plank.balanceOf(address(fire)), fire.pot());
         _roll(RND_CALM);
-        _roll(RND_MONSTER);
+        while (fire.fireId() == 1) _roll(RND_MONSTER);
         assertEq(plank.balanceOf(address(fire)), fire.pot());
     }
 
