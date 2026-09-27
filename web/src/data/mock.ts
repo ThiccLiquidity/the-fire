@@ -12,7 +12,7 @@ import {
   titleFor,
 } from "./types";
 
-const PLANK_USD = 750_000 / 8_000_000_000_000;
+const PLANK_USD = 1.056e-9; // from the V2 pool, Sep 27 2026
 const ETH_USD = 3_333;
 const YOU = "0xYOU0000000000000000000000000000000000d00d";
 
@@ -30,7 +30,7 @@ export function makeMockApi(): FireApi {
   let s: FireState = {
     fireId: 14,
     night: 6,
-    potPlank: 31_000_000_000,
+    potPlank: 2_750_000_000_000, // ~$2,900
     plankUsd: PLANK_USD,
     ethUsd: ETH_USD,
     plankPerTicket,
@@ -40,18 +40,18 @@ export function makeMockApi(): FireApi {
     trailingAvg: 520,
     threat: 0.45,
     nextRollAt: nextRollTime(),
-    you: { tickets: 12, paper: 7, plank: 120_000_000, eth: 0.08, remainingToday: DAILY_CAP - 12, isWinner: false },
+    you: { tickets: 12, paper: 7, plank: 9_000_000_000, eth: 0.08, remainingToday: DAILY_CAP - 12, isWinner: false },
     burnedPaperAllTime: 61_400,
-    burnedPlankAllTime: 320_000_000_000,
+    burnedPlankAllTime: 300_000_000_000_000,
     millsEaten: 9,
     millFundEth: 0.021,
     millBidEth: 0.031,
     feed: [],
     past: [
-      { id: 13, nights: 3, potPlank: 9_800_000_000, winner: wallets[3], peakSize: 520 },
-      { id: 12, nights: 17, potPlank: 158_000_000_000, winner: wallets[11], peakSize: 2_140 },
-      { id: 11, nights: 9, potPlank: 44_000_000_000, winner: wallets[7], peakSize: 900 },
-      { id: 10, nights: 12, potPlank: 71_000_000_000, winner: wallets[22], peakSize: 1_300 },
+      { id: 13, nights: 3, potPlank: 870_000_000_000, winner: wallets[3], peakSize: 520 },
+      { id: 12, nights: 17, potPlank: 14_000_000_000_000, winner: wallets[11], peakSize: 2_140 },
+      { id: 11, nights: 9, potPlank: 3_900_000_000_000, winner: wallets[7], peakSize: 900 },
+      { id: 10, nights: 12, potPlank: 6_300_000_000_000, winner: wallets[22], peakSize: 1_300 },
     ],
   };
 

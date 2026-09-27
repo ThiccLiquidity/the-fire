@@ -116,7 +116,11 @@ a { color: var(--flame); }
 
 @media (max-width: 900px) {
   .stage { grid-template-columns: 1fr; }
-  .buy { position: static; }
+  .buy { position: static; order: -1; }
+  .pot { top: clamp(7.5rem, 20vh, 10rem); }
+  .top { gap: .5rem; }
+  .forecast { padding: .4rem .7rem; }
+  .fc-text { font-size: .95rem; }
   .small-grid { grid-template-columns: 1fr; }
   .top { flex-direction: column; align-items: stretch; }
   .forecast { text-align: left; }

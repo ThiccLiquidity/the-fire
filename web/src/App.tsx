@@ -14,7 +14,7 @@ function usd(plank: number, px: number) {
   const v = plank * px;
   return `$${Math.round(v).toLocaleString()}`;
 }
-function mPlank(p: number) { return p >= 1e9 ? `${(p / 1e9).toFixed(1)}B` : `${(p / 1e6).toFixed(0)}M`; }
+function mPlank(p: number) { return p >= 1e12 ? `${(p / 1e12).toFixed(2)}T` : p >= 1e9 ? `${(p / 1e9).toFixed(1)}B` : `${(p / 1e6).toFixed(0)}M`; }
 function countdown(ms: number) {
   if (ms <= 0) return "now";
   const h = Math.floor(ms / 3_600_000), m = Math.floor((ms % 3_600_000) / 60_000);
@@ -90,7 +90,7 @@ export default function App() {
             <div className="burn">
               <h2>Gone forever</h2>
               <dl>
-                <dt>{s.burnedPaperAllTime.toLocaleString()}</dt><dd>PAPER burned</dd>
+                <dt>{Math.round(s.burnedPaperAllTime).toLocaleString()}</dt><dd>PAPER burned</dd>
                 <dt>{mPlank(s.burnedPlankAllTime)}</dt><dd>PLANK burned</dd>
                 <dt>{s.millsEaten}</dt><dd>mills eaten</dd>
               </dl>

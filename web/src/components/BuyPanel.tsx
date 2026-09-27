@@ -2,6 +2,7 @@ import { useState } from "react";
 import { DAILY_CAP, TX_CAP, quote } from "../data/types";
 
 const OPENSEA = "https://opensea.io/collection/the-plank-press";
+const fmtPlank = (p: number) => p >= 1e9 ? `${(p / 1e9).toFixed(2)}B` : `${(p / 1e6).toFixed(0)}M`;
 
 export function BuyPanel({
   you, plankPerTicket, plankUsd, ethUsd, onBuy, onStoke,
@@ -15,7 +16,7 @@ export function BuyPanel({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [pyro, setPyro] = useState(false);
-  const [pyroAmt, setPyroAmt] = useState(50);
+  const [pyroAmt, setPyroAmt] = useState(2);
   const [pyroSure, setPyroSure] = useState(false);
   const q = quote(n, plankPerTicket, ethUsd);
   const off = Math.round((1 - q.paper / n) * 100);
@@ -31,14 +32,14 @@ export function BuyPanel({
   }
   async function burn() {
     setBusy(true);
-    try { await onStoke(pyroAmt * 1_000_000, note.trim() || "just here to burn plank"); setPyroSure(false); setNote(""); } finally { setBusy(false); }
+    try { await onStoke(pyroAmt * 1_000_000_000, note.trim() || "just here to burn plank"); setPyroSure(false); setNote(""); } finally { setBusy(false); }
   }
 
   return (
     <aside className="buy">
       <div className="wallet">
         <div><b>{you.paper.toLocaleString(undefined, { maximumFractionDigits: 1 })}</b><span>PAPER</span></div>
-        <div><b>{(you.plank / 1e6).toLocaleString(undefined, { maximumFractionDigits: 0 })}M</b><span>PLANK</span></div>
+        <div><b>{you.plank >= 1e9 ? `${(you.plank / 1e9).toFixed(1)}B` : `${(you.plank / 1e6).toFixed(0)}M`}</b><span>PLANK</span></div>
         <div><b>{affordable}</b><span>tickets you can buy now</span></div>
       </div>
 
@@ -56,7 +57,7 @@ export function BuyPanel({
 
       {/* Path A: real PAPER */}
       <div className="path">
-        <div className="path-head"><b>With your PAPER</b><span>{q.paper.toLocaleString()} PAPER + {(q.plank / 1e6).toFixed(0)}M PLANK{off > 0 ? ` · ${off}% off` : ""}</span></div>
+        <div className="path-head"><b>With your PAPER</b><span>{q.paper.toLocaleString()} PAPER + {fmtPlank(q.plank)} PLANK{off > 0 ? ` · ${off}% off` : ""}</span></div>
         <button className="cta" disabled={busy || !canPaper || overCap} onClick={() => go(false)}>
           {busy ? "Throwing…" : `Throw ${n} ${n === 1 ? "ticket" : "tickets"} in`}
         </button>
@@ -73,7 +74,7 @@ export function BuyPanel({
 
       {/* Path B: paper from the fire */}
       <div className="path eth">
-        <div className="path-head"><b>No PAPER? Buy paper from the fire</b><span>{q.eth.toFixed(4)} ETH + {(q.plank / 1e6).toFixed(0)}M PLANK</span></div>
+        <div className="path-head"><b>No PAPER? Buy paper from the fire</b><span>{q.eth.toFixed(4)} ETH + {fmtPlank(q.plank)} PLANK</span></div>
         <p className="hint strong">You're paying with ETH instead of PAPER — same ticket, at a premium (${(q.eth * ethUsd / n).toFixed(2)} a ticket for the paper leg, roughly 3× what real PAPER costs). The ETH goes to buying mills and burning them.</p>
         <button className="cta ghost" disabled={busy || !canEth || overCap} onClick={() => go(true)}>Buy {n} with ETH</button>
       </div>
@@ -91,18 +92,18 @@ export function BuyPanel({
               <em> someone else</em> to win. You get a "Pyro" tag next to your name and the warm feeling of having set money on fire.
             </p>
             <div className="stoke-row">
-              <input type="number" min={1} value={pyroAmt} onChange={(e) => setPyroAmt(Number(e.target.value))} aria-label="Million PLANK" />
-              <span>M PLANK (${(pyroAmt * 1e6 * plankUsd).toFixed(2)}) — {(pyroAmt / 2).toFixed(0)}M gone forever, {(pyroAmt / 2).toFixed(0)}M to the pot</span>
+              <input type="number" min={1} value={pyroAmt} onChange={(e) => setPyroAmt(Number(e.target.value))} aria-label="Billion PLANK" />
+              <span>B PLANK (${(pyroAmt * 1e9 * plankUsd).toFixed(2)}) — {(pyroAmt / 2).toFixed(1)}B gone forever, {(pyroAmt / 2).toFixed(1)}B to the pot</span>
             </div>
             <label className="switch"><input type="checkbox" checked={pyroSure} onChange={(e) => setPyroSure(e.target.checked)} /><span>I understand I get absolutely nothing for this and I'm doing it anyway.</span></label>
-            <button className="cta danger" disabled={busy || !pyroSure || you.plank < pyroAmt * 1e6} onClick={burn}>
+            <button className="cta danger" disabled={busy || !pyroSure || you.plank < pyroAmt * 1e9} onClick={burn}>
               {busy ? "Burning…" : "Burn it. I'm a pyro. 🔥"}
             </button>
           </div>
         )}
       </div>
 
-      <p className="fine">1 ticket = 1 PAPER + about $0.90 of PLANK (right now {(plankPerTicket / 1e6).toFixed(1)}M). PAPER burns. Half the PLANK burns, half feeds the pot. Every ticket counts until the fire goes out. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day.</p>
+      <p className="fine">1 ticket = 1 PAPER + about $0.90 of PLANK (right now {fmtPlank(plankPerTicket)}). PAPER burns. Half the PLANK burns, half feeds the pot. Every ticket counts until the fire goes out. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day.</p>
     </aside>
   );
 }
