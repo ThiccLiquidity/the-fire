@@ -194,7 +194,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     // ---------------------------------------------------------------- buying
+    /// @dev Buying is closed while a roll is in flight: the drand beacon is public a few seconds before the
+    ///      callback lands, and a buy in that gap could pick the winning ticket (or rescue the fire).
     function buyTickets(uint256 n, string calldata note) external nonReentrant {
+        if (pendingRequest != 0) revert RollPending();
         if (n == 0) revert BadAmount();
         (uint256 paperCost, uint256 plankCost,) = quote(n);
         PAPER.safeTransferFrom(msg.sender, DEAD, paperCost);
@@ -205,6 +208,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
 
     /// @notice No PAPER? Buy it from the fire with ETH. The ETH feeds the mill fund.
     function buyTicketsWithEth(uint256 n, string calldata note) external payable nonReentrant {
+        if (pendingRequest != 0) revert RollPending();
         if (n == 0) revert BadAmount();
         (, uint256 plankCost, uint256 ethCost) = quote(n);
         if (msg.value != ethCost) revert BadAmount();

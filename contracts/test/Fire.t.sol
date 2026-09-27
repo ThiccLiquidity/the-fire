@@ -333,6 +333,22 @@ contract FireTest is Test {
         fire.eatMillFromSeaport(o);
     }
 
+    function test_no_buys_while_roll_pending() public {
+        _buy(alice, 10);
+        vm.warp(fire.nextRollAt());
+        ethFeed.set(ethFeed.answer());
+        fire.roll();
+        vm.prank(bob);
+        vm.expectRevert(Fire.RollPending.selector);
+        fire.buyTickets(10, "last look");
+        (, , uint256 c) = fire.quote(10);
+        vm.prank(bob);
+        vm.expectRevert(Fire.RollPending.selector);
+        fire.buyTicketsWithEth{value: c}(10, "last look");
+        rng.fulfill(rng.last(), RND_CALM);
+        _buy(bob, 10); // open again once the night resolves
+    }
+
     function test_tx_cap_10() public {
         vm.prank(alice);
         vm.expectRevert(Fire.TxCap.selector);
