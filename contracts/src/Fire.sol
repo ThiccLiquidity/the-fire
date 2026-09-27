@@ -217,15 +217,21 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         emit TicketsBought(fireId, msg.sender, n, false, note);
     }
 
-    /// @notice No PAPER? Buy it from the fire with ETH. The ETH feeds the mill fund.
+    /// @notice No PAPER? Buy it from the fire with ETH. The ETH feeds the mill fund. Send a little over the
+    ///         quote (the feed can tick before the tx lands); anything above the price comes straight back.
     function buyTicketsWithEth(uint256 n, string calldata note) external payable nonReentrant {
         if (pendingRequest != 0) revert RollPending();
         if (n == 0) revert BadAmount();
         (, uint256 plankCost) = _legs(n);
-        if (msg.value != _ethCost(n)) revert BadAmount(); // reverts StaleFeed if the ETH/USD feed is stale
+        uint256 ethCost = _ethCost(n); // reverts StaleFeed if the ETH/USD feed is stale
+        if (msg.value < ethCost) revert BadAmount();
         _takePlank(msg.sender, plankCost);
         _addTickets(msg.sender, n);
         emit TicketsBought(fireId, msg.sender, n, true, note);
+        if (msg.value > ethCost) {
+            (bool ok,) = msg.sender.call{value: msg.value - ethCost}("");
+            if (!ok) revert BadAmount();
+        }
     }
 
     function _takePlank(address from, uint256 amount) internal {

@@ -385,6 +385,18 @@ contract FireTest is Test {
         _buy(bob, 10); // open again once the night resolves
     }
 
+    function test_eth_buy_refunds_overpay_and_rejects_underpay() public {
+        (, , uint256 c) = fire.quote(10);
+        uint256 before = carol.balance;
+        vm.prank(carol);
+        fire.buyTicketsWithEth{value: c * 101 / 100}(10, "1% slippage");
+        assertEq(before - carol.balance, c, "paid exactly the price");
+        assertEq(fire.millFund(), c);
+        vm.prank(carol);
+        vm.expectRevert(Fire.BadAmount.selector);
+        fire.buyTicketsWithEth{value: c - 1}(10, "");
+    }
+
     function test_tx_cap_10() public {
         vm.prank(alice);
         vm.expectRevert(Fire.TxCap.selector);
