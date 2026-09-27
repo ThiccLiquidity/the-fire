@@ -21,11 +21,20 @@ the number; it can only be late. It runs on a $6/month VPS.
    and start watching. Ctrl+C leaves it running.
 
 ## Day to day
-- Nothing. Check `docker compose logs --tail=50 relayer` if a storm hasn't rolled by 8:05 PM.
-- Top up the relayer wallet when it drops under ~$5 of ETH.
+- Nothing. If a storm hasn't rolled by 8:05 PM, check `docker logs --tail=50 fire-keeper` and
+  `docker compose logs --tail=50 relayer`.
+- Top up the relayer wallet when it drops under ~$5 of ETH, and the keeper wallet under ~$2.
 - Updates: `cd /root/openvrf && git pull && docker compose up -d --build`.
 
-## Nightly roll + price checkpoint
-Anyone can call `Fire.roll()` after 8 PM Phoenix and `PlankUsdTwap.checkpoint()` any time. Cheapest reliable way is
-a cron on the same box (`ops/nightly.sh`, installed by the setup script in a later step) using `cast` with the
-relayer key. If it ever misses, the site shows a "Roll the storm" button anyone can click.
+## The keeper (`ops/keeper/`)
+A small Node program on the same box that does the jobs nobody should have to click:
+- `Fire.roll()` once 8 PM Phoenix has passed;
+- `adapter.settle(id)` if OpenVRF has the number but its callback didn't reach the Fire;
+- `Fire.reroll()` if a roll has had no answer for 30 minutes (the contract only allows it while OpenVRF has no number);
+- `PlankUsdTwap.checkpoint()` once the price window is 20h+ old.
+
+Every one of those is permissionless — the keeper has no special powers, it's just always awake. It uses its own small
+wallet (~$5 of ETH; separate from the relayer so their transactions never collide). The setup script asks for that
+key and prints the `docker run` line. Check it with `docker logs --tail=50 fire-keeper`.
+
+If the keeper is ever down, anyone can do the same from the site's "Roll the storm" button.

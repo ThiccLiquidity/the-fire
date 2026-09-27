@@ -34,6 +34,17 @@ if [ ! -f secrets/relayer-key ]; then
   printf '%s' "$KEY" > secrets/relayer-key
 fi
 chown 1000:1000 secrets/relayer-key && chmod 600 secrets/relayer-key
+
+echo "== keeper key"
+KDIR=/root/fire-keeper; mkdir -p $KDIR && chmod 700 $KDIR
+if [ ! -f $KDIR/keeper-key ]; then
+  echo "Paste the KEEPER wallet's private key (a third small wallet, ~\$5 of ETH — not the relayer, not the deployer), then Enter:"
+  read -r -s KKEY </dev/tty; echo
+  printf '%s' "$KKEY" | grep -Eq '^(0x)?[0-9a-fA-F]{64}$' || { echo "That doesn't look like a private key (64 hex characters)."; exit 1; }
+  printf '%s' "$KKEY" > $KDIR/keeper-key
+fi
+chown 1000:1000 $KDIR/keeper-key && chmod 600 $KDIR/keeper-key
+if [ ! -d /root/the-fire ]; then git clone -q https://github.com/ThiccLiquidity/the-fire /root/the-fire; fi
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 grep -q '^POSTGRES_PASSWORD=' .env && sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$POSTGRES_PASSWORD/" .env || echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> .env
 
@@ -51,6 +62,12 @@ Done. Now edit /root/openvrf/.env  (nano /root/openvrf/.env) and set:
 
 Then:
   cd /root/openvrf && docker compose up -d --build && docker compose logs -f relayer
+
+Keeper (rolls the storm nightly, re-rolls/settles stuck rolls, checkpoints the price feed):
+  cd /root/the-fire/ops/keeper && docker build -t fire-keeper . && docker run -d --name fire-keeper --restart unless-stopped \\
+    -e RPC_URL=<https RPC> -e FIRE=<Fire address> -e TWAP=<PlankUsdTwap address> \\
+    -v /root/fire-keeper/keeper-key:/run/secrets/keeper-key:ro fire-keeper
+  docker logs -f fire-keeper
 
 Note: Docker-published ports skip ufw. Check \`docker compose ps\` shows no Postgres port bound to 0.0.0.0
 (bind it to 127.0.0.1 or don't publish it).
