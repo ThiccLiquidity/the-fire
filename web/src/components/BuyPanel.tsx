@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { DAILY_CAP, TX_CAP, quote } from "../data/types";
 
-const OPENSEA = "https://opensea.io/collection/paper-mills"; // TODO: real collection URL
+const OPENSEA = "https://opensea.io/collection/the-plank-press";
 
 export function BuyPanel({
   you, plankPerTicket, plankUsd, ethUsd, onBuy, onStoke,

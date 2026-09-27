@@ -52,7 +52,6 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 
 ### The drawing
 - When the fire goes out, one random number (the same VRF request that rolled the storm) picks one ticket. Winner is paid in PLANK, same transaction. No claim step.
-- Winner gets to name the next fire (a text field; cosmetic).
 
 ### The mill fund
 - ETH from "buy paper from the fire" accumulates. When it can afford the floor mill, the fire **buys it and burns it in one transaction**. The ~800M PLANK inside goes to the **royalty pool** — every remaining mill gets paid, emission drops forever.
@@ -60,7 +59,7 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 - Build detail still open: which marketplace mills trade on (a Seaport-style contract is a clean call; if not, the fire posts its own standing WETH bid — same result).
 
 ### The drawing, cont.
-- When the fire goes out, the same random number picks one ticket, weighted by count. Paid in PLANK in the same transaction. **The winner names the next fire from a list of 48** (on the site; the chain stores the index). No free text.
+- When the fire goes out, the same random number picks one ticket, weighted by count. Paid in PLANK in the same transaction. Fires go by number; no naming.
 
 ---
 
@@ -144,9 +143,8 @@ Things worth knowing:
 - Claim deadlines / let-it-ride — unnecessary once the ending is random.
 
 ## 7. Still to settle
-1. Which marketplace mills trade on (decides how the fire buys the floor), and the mill contract address (to confirm a contract can hold and burn one).
+1. Mills trade on OpenSea (Seaport — the fire can fill the floor directly) and possibly a community marketplace; the standing bid stays as the fallback. Mill contract `0x8daa…dfc9`, PLANK `0x6942…2DDc`. Still to confirm from the mill contract: a contract can hold and burn one, and where the royalty pool lives.
 2. OpenVRF router address on Robinhood Chain (repo found; address to pin).
 3. A PLANK/USD price source for the ratchet — our own TWAP adapter over the main pool, updated by anyone.
-4. Community swap aggregator embed URL; real OpenSea collection URL.
-5. Veto pass on the 48 fire names.
+4. Community swap aggregator embed URL (waiting on a DM). OpenSea: opensea.io/collection/the-plank-press.
 6. Name/domain.

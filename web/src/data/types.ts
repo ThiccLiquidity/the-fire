@@ -15,7 +15,6 @@ export interface Buy {
 
 export interface PastFire {
   id: number;
-  nameId: number; // 0 = unnamed
   nights: number;
   potPlank: number;
   winner: string;
@@ -35,7 +34,6 @@ export interface Storm {
 
 export interface FireState {
   fireId: number;
-  nameId: number;
   night: number; // nights survived
   potPlank: number;
   plankUsd: number;
@@ -86,7 +84,6 @@ export interface FireApi {
   subscribe(fn: (s: FireState) => void): () => void;
   buy(n: number, withEth: boolean, note: string): Promise<void>;
   stoke(plank: number, note: string): Promise<void>;
-  nameFire(nameId: number): Promise<void>;
   /** demo only: force tonight's storm now */
   demoStorm?(): void;
 }

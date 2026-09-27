@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { type FireApi, type FireState, FULL_DAYS, phoenixHour, short } from "./data/types";
 import { makeMockApi } from "./data/mock";
-import { FIRE_NAMES } from "./data/names";
 import { Scene } from "./components/Scene";
 import { BuyPanel } from "./components/BuyPanel";
 
@@ -18,7 +17,6 @@ function countdown(ms: number) {
   const h = Math.floor(ms / 3_600_000), m = Math.floor((ms % 3_600_000) / 60_000);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
-function nameOf(id: number) { return id ? FIRE_NAMES[id - 1] : ""; }
 function weather(threat: number, hoursLeft: number) {
   if (hoursLeft > 12) return "Clear for now.";
   if (threat < 0.3) return "Light rain possible tonight.";
@@ -56,7 +54,7 @@ export default function App() {
 
       <div className="pot">
         <span className="pot-usd">{usd(s.potPlank, s.plankUsd)}</span>
-        <span className="pot-sub">{mPlank(s.potPlank)} PLANK · Fire #{s.fireId}{s.nameId ? ` "${nameOf(s.nameId)}"` : ""} · {s.night === 0 ? "lit today" : `${s.night} ${s.night === 1 ? "night" : "nights"} survived`}</span>
+        <span className="pot-sub">{mPlank(s.potPlank)} PLANK · Fire #{s.fireId} · {s.night === 0 ? "lit today" : `${s.night} ${s.night === 1 ? "night" : "nights"} survived`}</span>
       </div>
 
       {showVerdict && s.storm && (
@@ -64,15 +62,6 @@ export default function App() {
           {s.storm.survived
             ? <><b>The fire survived night {s.night}.</b> The storm took {Math.min(99, Math.round(s.storm.strength / Math.max(1, s.storm.size) * 100))}% of it.</>
             : <><b>The fire went out.</b> {s.storm.winner === "0xYOU0000000000000000000000000000000000d00d" ? "You won" : `${short(s.storm.winner ?? "")} won`} {usd(s.storm.paidPlank ?? 0, s.plankUsd)}. Fire #{s.fireId} is lit.</>}
-        </div>
-      )}
-
-      {s.you.isWinner && (
-        <div className="namer">
-          <b>You won. Name the fire your win lit:</b>
-          <div className="name-grid">
-            {FIRE_NAMES.map((nm, i) => <button key={nm} onClick={() => api.nameFire(i + 1)}>{nm}</button>)}
-          </div>
         </div>
       )}
 
@@ -113,7 +102,7 @@ export default function App() {
               <h2>Past fires</h2>
               <ol>
                 {s.past.slice(0, 5).map((f) => (
-                  <li key={f.id}><span className="pf-name">#{f.id} {nameOf(f.nameId) || "unnamed"}</span><span className="pf-meta">{f.nights} nights · {usd(f.potPlank, s.plankUsd)} · {short(f.winner)}</span></li>
+                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{f.nights} nights · {usd(f.potPlank, s.plankUsd)} · {short(f.winner)}</span></li>
                 ))}
               </ol>
             </div>

@@ -275,25 +275,6 @@ contract FireTest is Test {
         assertLt(aliceWins, 200);
     }
 
-    function test_winner_names_fire() public {
-        _buy(alice, 5);
-        _roll(RND_CALM);
-        while (fire.fireId() == 1) _roll(RND_MONSTER);
-        vm.prank(bob);
-        vm.expectRevert(Fire.NotWinner.selector);
-        fire.nameFire(3);
-        vm.startPrank(alice);
-        vm.expectRevert(Fire.BadName.selector);
-        fire.nameFire(0);
-        vm.expectRevert(Fire.BadName.selector);
-        fire.nameFire(49);
-        fire.nameFire(7);
-        assertEq(fire.fireNameId(), 7);
-        vm.expectRevert(Fire.BadName.selector);
-        fire.nameFire(8); // can't rename
-        vm.stopPrank();
-    }
-
     // ------------------------------------------------------------ mill fund
     function test_mill_bid_ratchets_and_resets() public {
         assertEq(fire.millBid(), MILL_BID);

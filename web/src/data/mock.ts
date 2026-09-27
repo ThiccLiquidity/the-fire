@@ -29,7 +29,6 @@ export function makeMockApi(): FireApi {
   const plankPerTicket = PLANK_USD_PER_TICKET / PLANK_USD;
   let s: FireState = {
     fireId: 14,
-    nameId: 3,
     night: 6,
     potPlank: 31_000_000_000,
     plankUsd: PLANK_USD,
@@ -49,10 +48,10 @@ export function makeMockApi(): FireApi {
     millBidEth: 0.031,
     feed: [],
     past: [
-      { id: 13, nameId: 16, nights: 3, potPlank: 9_800_000_000, winner: wallets[3], peakSize: 520 },
-      { id: 12, nameId: 3, nights: 17, potPlank: 158_000_000_000, winner: wallets[11], peakSize: 2_140 },
-      { id: 11, nameId: 2, nights: 9, potPlank: 44_000_000_000, winner: wallets[7], peakSize: 900 },
-      { id: 10, nameId: 1, nights: 12, potPlank: 71_000_000_000, winner: wallets[22], peakSize: 1_300 },
+      { id: 13, nights: 3, potPlank: 9_800_000_000, winner: wallets[3], peakSize: 520 },
+      { id: 12, nights: 17, potPlank: 158_000_000_000, winner: wallets[11], peakSize: 2_140 },
+      { id: 11, nights: 9, potPlank: 44_000_000_000, winner: wallets[7], peakSize: 900 },
+      { id: 10, nights: 12, potPlank: 71_000_000_000, winner: wallets[22], peakSize: 1_300 },
     ],
   };
 
@@ -111,8 +110,8 @@ export function makeMockApi(): FireApi {
       s = {
         ...s,
         storm: { at: Date.now(), strength, size, survived, intensity, winner, paidPlank: paid },
-        past: [{ id: s.fireId, nameId: s.nameId, nights: s.night, potPlank: s.potPlank, winner, peakSize: size }, ...s.past],
-        fireId: s.fireId + 1, nameId: 0, night: 0, fireSize: 0, trailingAvg,
+        past: [{ id: s.fireId, nights: s.night, potPlank: s.potPlank, winner, peakSize: size }, ...s.past],
+        fireId: s.fireId + 1, night: 0, fireSize: 0, trailingAvg,
         potPlank: s.potPlank * 0.3,
         burnedPlankAllTime: s.burnedPlankAllTime + s.potPlank * 0.3,
         ticketsToday: 0, ticketsTotal: 0,
@@ -135,7 +134,6 @@ export function makeMockApi(): FireApi {
       s = { ...s, potPlank: s.potPlank + plank / 2, burnedPlankAllTime: s.burnedPlankAllTime + plank / 2, you: { ...s.you, plank: s.you.plank - plank } };
       emit();
     },
-    async nameFire(nameId) { s = { ...s, nameId, you: { ...s.you, isWinner: false } }; emit(); },
     demoStorm: storm,
   };
 }

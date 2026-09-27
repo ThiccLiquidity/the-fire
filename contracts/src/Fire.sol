@@ -49,7 +49,6 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public constant DAILY_CAP = 500; // tickets per wallet per day
     uint256 public constant TX_CAP = 10; // tickets per transaction
     uint256 public constant PLANK_RATCHET_BPS = 500; // PLANK leg moves at most 5% per night toward target
-    uint256 public constant NAME_COUNT = 48;
 
     // ---------------------------------------------------------------- immutables
     IERC20 public immutable PAPER;
@@ -86,7 +85,6 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     mapping(uint256 => mapping(address => uint256)) public ticketsOf; // fireId -> buyer -> tickets
     mapping(uint256 => mapping(address => uint256)) public boughtOnDay; // dayIndex -> buyer -> tickets
     uint256 public dayIndex; // increments every roll
-    uint8 public fireNameId; // index into the name list (0 = unnamed)
 
     uint256[TRAILING] internal _trail;
     uint256 internal _trailCount;
@@ -105,7 +103,6 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     event WentOut(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm, address winner, uint256 paid);
     event Lit(uint256 indexed fireId, uint256 carried);
     event MillEaten(uint256 indexed tokenId, address seller, uint256 paidEth, uint256 plankToRoyalty);
-    event Named(uint256 indexed fireId, uint8 nameId);
 
     error NotYet();
     error RollPending();
@@ -116,7 +113,6 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     error NotWinner();
     error DailyCap();
     error TxCap();
-    error BadName();
     error StaleFeed();
 
     struct Config {
@@ -353,18 +349,8 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         ticketsTotal = 0;
         ticketsToday = 0;
         fireSize = 0;
-        fireNameId = 0;
         nextRollAt = _nextRollTime(block.timestamp);
         emit Lit(fireId, carried);
-    }
-
-    /// @notice The last winner names the fire their win lit, picking from the list (1..NAME_COUNT).
-    ///         The list itself lives on the site; the chain stores the index.
-    function nameFire(uint8 nameId) external {
-        if (msg.sender != lastWinner) revert NotWinner();
-        if (nameId == 0 || nameId > NAME_COUNT || fireNameId != 0) revert BadName();
-        fireNameId = nameId;
-        emit Named(fireId, nameId);
     }
 
     // ---------------------------------------------------------------- the mill fund
