@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { type FireApi, type FireState, FULL_DAYS, phoenixHour, short } from "./data/types";
 import { makeMockApi } from "./data/mock";
+import { makeChainApi } from "./data/chain";
 import { Scene } from "./components/Scene";
 import { BuyPanel } from "./components/BuyPanel";
 
-const api: FireApi = makeMockApi();
+const FIRE_ADDRESS = import.meta.env.VITE_FIRE_ADDRESS as `0x${string}` | undefined;
+const api: FireApi = FIRE_ADDRESS ? makeChainApi(FIRE_ADDRESS) : makeMockApi();
+const LIVE = !!FIRE_ADDRESS;
 const SWAP_URL = ""; // TODO: community aggregator embed URL
 
 function usd(plank: number, px: number) {
@@ -44,7 +47,7 @@ export default function App() {
       <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && (last.stoke || last.tickets >= 10)} />
 
       <header className="top">
-        <div className="brand">The Fire</div>
+        <div className="brand">The Fire{!LIVE && <span className="demo-tag">demo</span>}</div>
         <div className="forecast" role="status">
           {s.storm && now - s.storm.at < 14_000
             ? <><span className="fc-text">{now - s.storm.at < 6_000 ? "Storm rolling in." : s.storm.survived ? "Storm passing." : "It's raining."}</span><span className="fc-when">Night {s.night}</span></>

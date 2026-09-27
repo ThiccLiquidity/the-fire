@@ -29,7 +29,8 @@ a { color: var(--flame); }
 
 /* ------------------------------------------------------------- overlays on the scene */
 .top { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; justify-content: space-between; align-items: flex-start; padding: 1rem clamp(1rem, 4vw, 3rem) 0; gap: 1rem; }
-.brand { font-family: var(--display); font-weight: 700; font-size: 1.6rem; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+.brand { font-family: var(--display); font-weight: 700; font-size: 1.6rem; text-shadow: 0 2px 12px rgba(0,0,0,0.6); display:flex; gap:.5rem; align-items:center; }
+.demo-tag { font-size:.65rem; letter-spacing:.08em; padding:.15rem .45rem; border-radius:6px; background:rgba(243,233,210,.15); color:var(--paper-dim); text-shadow:none; }
 .forecast { display: grid; text-align: right; line-height: 1.25; padding: 0.55rem 0.9rem; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(6px); }
 .fc-text { font-family: var(--display); font-weight: 600; font-size: 1.05rem; }
 .fc-when { font-size: 0.8rem; color: var(--paper-dim); }
