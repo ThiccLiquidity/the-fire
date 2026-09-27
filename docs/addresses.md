@@ -50,7 +50,9 @@
   Oct 1 sunset, so this isn't a real floor yet; later listings may be in ETH too.
 - All are plain open orders (orderType 0, no zone) with 3 consideration items (seller, OpenSea fee, royalty),
   on Seaport 1.6. The Fire pays USDG listings from its USDG side and ETH listings from its ETH side.
-- USDG address on Robinhood Chain: TODO — read it from a listing's consideration token.
+- **USDG: `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`** (6 decimals), read from a live listing's consideration.
+- A $786 listing splits: seller $699.54, OpenSea fee 1% ($7.86, `0x0000a26b00c1F0DF003000390027140000fAa719`),
+  creator royalty 10% ($78.60, to the Plank Press royalty recipient `0xb495…a806`). OpenSea's chain slug: `robinhood`.
 
 ## Mill floor (OpenSea, Seaport)
 - Collection https://opensea.io/collection/the-plank-press. Seaport on Robinhood Chain: confirm the deployed Seaport 1.6 address before wiring the fill path. No standing bid, no sell-to-fire: the fire only buys listings.
