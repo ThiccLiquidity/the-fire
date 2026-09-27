@@ -373,8 +373,9 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     // ---------------------------------------------------------------- the mill fund
-    /// @notice The fire's standing ETH bid for a mill. Ticks up 5% every night nobody sells,
-    ///         resets to base when one does.
+    /// @notice The most the fire will pay for a floor mill on OpenSea. Ticks up 5% every night it doesn't
+    ///         manage to buy one, resets to base when it does. The fire only ever buys on the open market;
+    ///         nobody hands the fire a mill.
     function _ratchetMillBid() internal {
         if (_millBoughtSinceRoll) {
             millBid = MILL_BID_BASE;
@@ -399,20 +400,6 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
 
     function millFund() public view returns (uint256) {
         return address(this).balance;
-    }
-
-    /// @notice Sell a mill to the fire at its current bid. The fire burns it in the same transaction, pays the
-    ///         Plank Press burn fee, and sends the PLANK inside to the royalty pool.
-    function sellMillToFire(uint256 tokenId) external nonReentrant {
-        uint256 bid = millBid;
-        uint256 fee = MILL.burnFee();
-        if (address(this).balance < bid + fee) revert FundTooSmall();
-        MILL.transferFrom(msg.sender, address(this), tokenId);
-        uint256 released = _burnMill(tokenId, fee);
-        _millBoughtSinceRoll = true;
-        (bool ok,) = msg.sender.call{value: bid}("");
-        require(ok, "pay failed");
-        emit MillEaten(tokenId, msg.sender, bid, released);
     }
 
     /// @notice Anyone: fill an OpenSea (Seaport) fixed-price ETH listing for a mill at or under the fire's bid,

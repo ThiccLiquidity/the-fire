@@ -56,7 +56,7 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 ### The mill fund
 - ETH from "buy paper from the fire" accumulates. When it can afford the floor mill, the fire **buys it and burns it in one transaction**. The ~800M PLANK inside goes to the **royalty pool** — every remaining mill gets paid, emission drops forever.
 - The fire never sells PLANK or PAPER to do this. It only spends ETH outsiders chose to bring.
-- Build detail still open: which marketplace mills trade on (a Seaport-style contract is a clean call; if not, the fire posts its own standing WETH bid — same result).
+- The fire buys the floor listing on OpenSea (Seaport). It never accepts a mill from anyone directly.
 
 ### The drawing, cont.
 - When the fire goes out, the same random number picks one ticket, weighted by count. Paid in PLANK in the same transaction. Fires go by number; no naming.
@@ -143,7 +143,7 @@ Things worth knowing:
 - Claim deadlines / let-it-ride — unnecessary once the ending is random.
 
 ## 7. Still to settle
-1. Mills trade on OpenSea (Seaport — the fire can fill the floor directly) and possibly a community marketplace; the standing bid stays as the fallback. Mill contract `0x8daa…dfc9`, PLANK `0x6942…2DDc`. Still to confirm from the mill contract: a contract can hold and burn one, and where the royalty pool lives.
+1. Mills trade on OpenSea (Seaport — the fire fills the floor listing directly; it never takes a mill from anyone). Mill contract `0x8daa…dfc9`, PLANK `0x6942…2DDc`. Still to confirm from the mill contract: a contract can hold and burn one, and where the royalty pool lives.
 2. OpenVRF router address on Robinhood Chain (repo found; address to pin).
 3. A PLANK/USD price source for the ratchet — our own TWAP adapter over the main pool, updated by anyone.
 4. Community swap aggregator embed URL (waiting on a DM). OpenSea: opensea.io/collection/the-plank-press.

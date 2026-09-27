@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Fire, ISeaport} from "../src/Fire.sol";
-import {MockERC20, MockMill, MockRandomness, MockFeed} from "./Mocks.sol";
+import {MockERC20, MockMill, MockRandomness, MockFeed, MockSeaport} from "./Mocks.sol";
 
 contract FireTest is Test {
     Fire fire;
@@ -284,37 +284,45 @@ contract FireTest is Test {
         assertEq(fire.millBid(), MILL_BID * 10500 / 10000 * 10500 / 10000);
     }
 
-    function test_sell_mill_to_fire_burns_and_pays_royalty() public {
-        // fund the fire with ETH via outsider tickets
-        _buyEth(bob, 500);
-        assertGe(fire.millFund(), MILL_BID);
-        // alice mints a mill
+    function test_seaport_fill_burns_mill_and_pays_royalty() public {
+        // a fire wired to a mock Seaport that hands over the listed mill for the ETH
+        MockSeaport sea = new MockSeaport(address(mill));
+        Fire f2 = new Fire(Fire.Config({
+            paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
+        }));
+        vm.deal(address(f2), 1 ether); // stands in for ETH from "paper from the fire" buys
+        // alice lists a mill on "OpenSea" at 0.02 ETH (under the bid)
         vm.startPrank(alice);
         plank.approve(address(mill), type(uint256).max);
         uint256 id = mill.mint(alice);
-        mill.approve(address(fire), id);
-        uint256 ethBefore = alice.balance;
-        fire.sellMillToFire(id);
+        mill.setApprovalForAll(address(sea), true);
         vm.stopPrank();
-        assertEq(alice.balance - ethBefore, MILL_BID, "seller paid the bid");
-        assertEq(address(mill).balance, 0.0003 ether, "burn fee paid to the mill contract (mock keeps it)");
+        ISeaport.Order memory o = sea.listing(alice, id, 0.02 ether);
+        uint256 aliceBefore = alice.balance;
+        f2.eatMillFromSeaport(o);
+        assertEq(alice.balance - aliceBefore, 0.02 ether, "seller got the listing price");
         assertEq(plank.balanceOf(royalty), PLANK_IN_MILL, "plank inside -> royalty pool");
         vm.expectRevert();
         mill.ownerOf(id); // burned
-        _roll(RND_CALM);
-        assertEq(fire.millBid(), MILL_BID, "bid reset after a purchase");
+        assertEq(address(f2).balance, 1 ether - 0.02 ether - 0.0003 ether, "fund paid price + burn fee");
     }
 
-    function test_sell_mill_reverts_before_sunset() public {
-        _buyEth(bob, 500);
-        mill.setSunset(block.timestamp + 1 days);
-        vm.startPrank(alice);
-        plank.approve(address(mill), type(uint256).max);
-        uint256 id = mill.mint(alice);
-        mill.approve(address(fire), id);
-        vm.expectRevert(Fire.NotBurnableYet.selector);
-        fire.sellMillToFire(id);
-        vm.stopPrank();
+    function test_seaport_fill_rejects_overpriced_listing() public {
+        MockSeaport sea = new MockSeaport(address(mill));
+        Fire f2 = new Fire(Fire.Config({
+            paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
+        }));
+        vm.deal(address(f2), 1 ether);
+        vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); uint256 id = mill.mint(alice); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
+        ISeaport.Order memory o = sea.listing(alice, id, MILL_BID + 1);
+        vm.expectRevert(Fire.TooExpensive.selector);
+        f2.eatMillFromSeaport(o);
     }
 
     function test_seaport_path_disabled_without_seaport() public {
@@ -326,17 +334,6 @@ contract FireTest is Test {
         fire.eatMillFromSeaport(o);
     }
 
-    function test_sell_mill_reverts_when_fund_too_small() public {
-        vm.startPrank(alice);
-        plank.approve(address(mill), type(uint256).max);
-        uint256 id = mill.mint(alice);
-        mill.approve(address(fire), id);
-        vm.expectRevert(Fire.FundTooSmall.selector);
-        fire.sellMillToFire(id);
-        vm.stopPrank();
-    }
-
-    // ------------------------------------------------------------ cap, pricing, names
     function test_tx_cap_10() public {
         vm.prank(alice);
         vm.expectRevert(Fire.TxCap.selector);

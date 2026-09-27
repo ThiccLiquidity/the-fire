@@ -51,11 +51,11 @@ Deploy env vars are listed at the top of `script/Deploy.s.sol`. Never put a priv
 
 ## Security model, in one paragraph
 
-The pot lives inside `Fire.sol`. There is no owner, no withdraw, no pause. PLANK only leaves through the rules (winner / burn / carry / tithe). ETH only leaves through `sellMillToFire`, which pays out only if a mill arrives and is burned in the same transaction. The deploy wallet has no special powers after deployment.
+The pot lives inside `Fire.sol`. There is no owner, no withdraw, no pause. PLANK only leaves through the rules (winner / burn / carry / tithe). ETH only leaves through `eatMillFromSeaport`, which pays only if the OpenSea listing fills and the mill is burned in the same transaction. Nobody can hand the fire a mill. The deploy wallet has no special powers after deployment.
 
 ## Before mainnet
 
-- Read the Paper Mill contract: confirm a contract can own a mill and what `burn()` does (`sellMillToFire` is a stub until then).
+- Confirm the Seaport 1.6 address on Robinhood Chain (the fire fills OpenSea listings through it).
 - Pin the OpenVRF router address and consumer interface; test the adapter on Robinhood testnet (chain id 46630).
 - Verify PAPER/PLANK decimals; set `ETH_PER_TICKET` and `MILL_BID_BASE` from launch-day prices.
 - Run fire #1 on testnet with the community for a week.

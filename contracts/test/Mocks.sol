@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {ISeaport} from "../src/Fire.sol";
 
 interface IFireCallback {
     function onRandomness(uint256 requestId, uint256 rnd) external;
@@ -54,5 +55,26 @@ contract MockFeed {
     function set(int256 a) external { answer = a; updatedAt = block.timestamp; }
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
         return (0, answer, 0, updatedAt, 0);
+    }
+}
+
+/// @dev Stand-in for Seaport: a fixed-price ETH listing that transfers the NFT to the caller and pays the offerer.
+contract MockSeaport {
+    ERC721 public nft;
+    constructor(address nft_) { nft = ERC721(nft_); }
+    function listing(address offerer, uint256 tokenId, uint256 priceWei) external view returns (ISeaport.Order memory o) {
+        ISeaport.OfferItem[] memory offer = new ISeaport.OfferItem[](1);
+        offer[0] = ISeaport.OfferItem({itemType: 2, token: address(nft), identifierOrCriteria: tokenId, startAmount: 1, endAmount: 1});
+        ISeaport.ConsiderationItem[] memory cons = new ISeaport.ConsiderationItem[](1);
+        cons[0] = ISeaport.ConsiderationItem({itemType: 0, token: address(0), identifierOrCriteria: 0, startAmount: priceWei, endAmount: priceWei, recipient: payable(offerer)});
+        o.parameters.offerer = offerer; o.parameters.offer = offer; o.parameters.consideration = cons;
+    }
+    function fulfillOrder(ISeaport.Order calldata order, bytes32) external payable returns (bool) {
+        ISeaport.OrderParameters calldata p = order.parameters;
+        require(msg.value == p.consideration[0].endAmount, "price");
+        nft.transferFrom(p.offerer, msg.sender, p.offer[0].identifierOrCriteria);
+        (bool ok,) = p.consideration[0].recipient.call{value: msg.value}("");
+        require(ok);
+        return true;
     }
 }

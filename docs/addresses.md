@@ -39,4 +39,4 @@
 - Honest framing for the community: *nobody* controls the pot or the rules; we run the randomness *relay*, which can delay a roll but can't choose it, and anyone can verify each roll with their `verify-request.mjs` script.
 
 ## Mill floor (OpenSea, Seaport)
-- Collection https://opensea.io/collection/the-plank-press. Seaport on Robinhood Chain: confirm the deployed Seaport 1.6 address before wiring the fill path. Standing bid remains the fallback.
+- Collection https://opensea.io/collection/the-plank-press. Seaport on Robinhood Chain: confirm the deployed Seaport 1.6 address before wiring the fill path. No standing bid, no sell-to-fire: the fire only buys listings.
