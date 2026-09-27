@@ -1,12 +1,12 @@
-# The Fire — v2 Spec (storm nights)
+# The Fire — v3 Spec (storm nights, persistent fire)
 
-*September 26, 2026. Replaces the v1 spec. Everything here was chosen in conversation today and checked against the simulation in `sim/fire_v2.py`. Numbers marked **fixed** don't change after launch; numbers marked *set at launch* are chosen once.*
+*September 26, 2026 (v3, evening). Replaces v1 and v2. Everything here was chosen in conversation today and checked against the simulation in `sim/fire_v2.py`. Numbers marked **fixed** don't change after launch; numbers marked *set at launch* are chosen once.*
 
 ---
 
 ## 1. The game, in one breath
 
-> **Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every night a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins the pot.**
+> **Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every ticket makes the fire bigger. Every night a storm takes a bite out of it — keep it fed or it goes out. When it does, one ticket wins the pot.**
 
 That's everything a player needs. The rest of this doc is the numbers behind it and the build.
 
@@ -17,9 +17,10 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 ### Tickets
 - **1 ticket = 1 PAPER + 10,000,000 PLANK** (**fixed**, in tokens, never repriced). ~$0.94 of PLANK today; PAPER's fair value is ~$0.20–0.40, so the two legs start close. If prices drift, the ticket leans toward whichever token got expensive, which is self-correcting: whoever's short on the pricey leg has to buy it.
 - **No PAPER? Buy it from the fire with ETH.** Same ticket, the PAPER leg replaced by *set at launch* **~$1.00 in ETH** (fixed ETH amount, no oracle). Priced deliberately 3–5× above where PAPER should trade so it's a convenience for outsiders, not a replacement for buying real PAPER. This is not a token — it's just a second checkout path. Optional later: ratchet ±5%/fire based on how much it sells.
-- **Bundles:** 10 tickets for the price of 9, 100 for the price of 80, 1,000 for the price of 700. Same PAPER:PLANK ratio at every tier. Bulk buyers get up to 43% more odds per dollar — normal for a raffle; don't go steeper. Sim: bundle discounts barely change who wins (whales' return per dollar ends up within a few points of small holders').
+- **Per buy: up to 10 tickets. Per wallet per day: 500.** A full 10 is 3% off; that's the only discount, so a whale's built-in edge is 3%. The 500 cap forces big buyers to spread over days, which is what makes rallies and streaks a community thing.
+- **Priced in dollars, not tokens.** The PAPER leg is 1 PAPER. The ETH leg ("paper from the fire") is $1.00 of ETH via a price feed. The PLANK leg targets $0.90 of PLANK and ratchets at most 5% per night toward that target, so a pump or dump moves it over days, not minutes — a thin pool can't be gamed inside a night.
 - **Every ticket counts until the fire goes out.** No expiry, no decay. Buy on night 1 or night 19, same ticket.
-- **Stoke:** throw PLANK with no ticket. 50% burns, 50% to the pot. For people who just want a bigger fire.
+- **Pyro mode:** throw PLANK with no ticket. 50% burns, 50% to the pot. Labeled loudly as "you get nothing for this." It's a joke and a burn, not a strategy.
 
 ### Where the tokens go
 | | Burned | Pot | Mill fund |
@@ -35,15 +36,19 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 - When the fire goes out: **40% to the winner, 30% burned, 30% relights the next fire** (**fixed**). Sim: 40/30/30 grows the next fire ~4× faster than 50/25/25 at the same burn.
 - **5% of the winner's slice goes to the Paper Mill royalty pool** — every mill holder gets PLANK every time a fire ends. One transfer to an address that already exists. *(Founder note: you hold a large bag, so you're the largest recipient of your own contract's tithe. It's the community's norm and there's no exploit, but say it out loud.)*
 
+### The fire's size (this is the game)
+- The fire has a **size, in tickets**. Every ticket bought adds one. This is what you see on screen: a fire worth 5 days of the community's normal buying is "full height" under the pot.
+- **Overnight the fire burns down to 60% of its size.** A fire nobody feeds shrinks on its own.
+- **Every night at 8:00 PM Arizona a storm hits and subtracts its strength from the size.** If the size hits zero, the fire's out and the drawing happens. Otherwise what's left (then ×0.6) is tomorrow's starting size.
+
 ### Storm nights
-- **Night 1: no storm.** The fire always survives its first night.
-- Every night after, at a fixed time (**8:00 PM Arizona**), the storm rolls:
-  - Fire size = tickets bought in the last 24 hours (all paths).
-  - Storm strength = a random number, drawn from a range that **grows with the fire's age**. On average, a storm on night N is about **N/8 × the community's recent daily volume** (7-night trailing average), with wide randomness — a night-3 storm can occasionally be a monster, a night-12 storm can occasionally be a breeze.
-  - **Fire size ≥ storm → survives.** Otherwise it goes out and the drawing happens.
-- **Night 24: the storm is infinite.** No fire survives it. (*set at launch*; 24 is the cap that gives "24 hours to 24 days".)
-- The forecast is public all day: "Tonight's storm: 400–900 tickets." That's what makes the rally ("we need 300 more before 8") a thing.
-- Scaling the storm to the community's own trailing volume means the game balances itself at 1,000 mills or 5,000, and after mills get eaten.
+- **Night 1: no storm.** A new fire always gets its first night.
+- **Storm strength = (the community's 7-night average daily buys) × ((night − 1) / 8)^1.5 × luck.** The first factor makes it self-scaling — the same game at 100 tickets a day or 5,000. The middle factor is the age curve: night 2's average storm is ~4% of a day's buys, night 5 is ~35%, night 9 is a full day, night 17 is nearly three days. **Luck is a random draw** (lognormal, σ = 0.9): a gentle night is a fifth of average, a brutal one is five times. Storms are random, not a ramp — the *odds* shift with age.
+- **Night 24: the storm is infinite.** No fire survives it.
+- The randomness comes from OpenVRF (drand); one request per night decides the storm and, if the fire dies, the winner. Nobody, including us, knows the roll in advance.
+- The site never shows the number. The sky is the forecast: clearer or darker, "light rain possible" vs "a monster is rolling in." You feel the danger; you don't compute it.
+
+**Tuned in `sim/storm_v3.py`** (4,000 simulated nights per setting). With normal feeding: fires live **4–21 nights, average ~10**; **none die in their first 3 nights**, 2% by night 5; half reach night 10; 5% reach night 15; night 20+ is rare. A neglected fire (30% of normal buys) lasts about 6. Rallies extend life and are what build the big pots. Identical at any community size.
 
 ### The drawing
 - When the fire goes out, one random number (the same VRF request that rolled the storm) picks one ticket. Winner is paid in PLANK, same transaction. No claim step.
@@ -54,8 +59,8 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 - The fire never sells PLANK or PAPER to do this. It only spends ETH outsiders chose to bring.
 - Build detail still open: which marketplace mills trade on (a Seaport-style contract is a clean call; if not, the fire posts its own standing WETH bid — same result).
 
-### Death
-- The fire only ends by storm. There's no zero-ticket death rule because a night with zero tickets loses to any storm anyway.
+### The drawing, cont.
+- When the fire goes out, the same random number picks one ticket, weighted by count. Paid in PLANK in the same transaction. **The winner names the next fire from a list of 48** (on the site; the chain stores the index). No free text.
 
 ---
 
@@ -95,15 +100,16 @@ Things worth knowing:
 
 | Parameter | Value |
 |---|---|
-| Ticket | 1 PAPER + 10M PLANK (fixed) |
-| ETH paper | ~$1.00 in ETH per ticket, fixed ETH amount set at launch |
-| Bundles | 10 / 100 / 1,000 at 0.9 / 0.8 / 0.7 per ticket |
+| Ticket | 1 PAPER + $0.90 of PLANK (PLANK leg ratchets ≤5%/night toward target) |
+| ETH paper | $1.00 of ETH per ticket, via ETH/USD feed (reverts if stale >1h) |
+| Per buy / per day | 10 / 500 tickets; a full 10 is 3% off |
 | PLANK split | 50% burn / 50% pot |
 | Payout | 40% winner / 30% burn / 30% relight |
 | Tithe | 5% of winner slice → royalty pool |
 | Storm time | 8:00 PM America/Phoenix, nightly |
-| Storm base | night N: N/8 × 7-night trailing avg daily tickets; night 1 none; night 24 infinite |
-| Storm noise | lognormal σ = 0.55 |
+| Fire size | persistent; +1 per ticket; ×0.6 overnight |
+| Storm | trailingAvg × ((N−1)/8)^1.5 × lognormal(0, 0.9); night 1 none; night 24 infinite |
+| Storm luck | 32-point quantile table of lognormal(0, 0.9), picked by the random word |
 | Mill fund | 100% of ETH; buys floor mill when affordable; PLANK inside → royalty pool |
 | Founder seed | $0 opening pot needed. $200 → first PLANK feed to light fire #1 (PLANK, so it's a real pot from minute one); $50 gas/randomness reserve |
 
@@ -118,11 +124,11 @@ Things worth knowing:
 - Security path: testnet → mainnet with fire #1 capped at 3 nights → bug bounty in PLANK → audit before removing caps.
 
 **Site (one screen)**
-- **The fire.** Sized by the last 24h of tickets. Flares when a buy lands (every purchase pushes a "stoke" animation with the buyer's title and note). Shrinks visibly through a quiet afternoon.
-- **The sky.** Forecast card all day: "Tonight's storm: 400–900." Clouds gather toward 8pm. At 8pm: clouds roll by (fire roars, "NIGHT 7 SURVIVED") or rain (hiss, smoke, dark screen, then the winner's address lights up and the payout plays).
-- **Numbers:** pot in PLANK and $, nights survived, tickets today vs forecast, your tickets and your odds, PAPER burned and PLANK burned all-time, mills eaten, "N days until your next ticket" for small holders.
-- **Buttons:** Buy tickets (PAPER+PLANK) · Buy paper from the fire (ETH+PLANK) · Stoke · one-click PLANK swap via the chain's DEX.
-- **Feed:** every buy with a 32-character note ("gm from 1 mill"), cosmetic titles by lifetime thrown (Kindling, Paper Boy, Lumberjack, Arsonist, Fire Marshal for 10 straight nights).
+- **The fire.** Canvas scene: a fire in the woods, fixed camera, height = fire size. Paper and logs fly in on every buy; burn notes drift up through the flames. Real day/night cycle on the Arizona clock.
+- **The sky.** Clouds gather as 8pm approaches and the forecast card reads the threat in words, never numbers. At 8pm: clouds roll in, lightning flickers inside them (bolts on big storms), real thunder recordings (nine CC0 clips, distant ones muffled and delayed, close ones with a clap), then rain — angled, layered, with splashes. The fire is beaten down to what's left. If it dies: smoke, dark, the winner lights up.
+- **Numbers:** pot in PLANK and $, nights survived, fire size, your tickets and odds, your PAPER and PLANK balances and how many tickets they buy, PAPER/PLANK burned all-time, mills eaten.
+- **Buy panel:** 1 / 5 / 10 / Max (Max = smallest of what you can afford, 10, and what's left of your 500). Two clearly separate paths: "With your PAPER" and "No PAPER? Buy paper from the fire" (ETH, premium spelled out). OpenSea link with a hover explainer for mills. Pyro mode behind a red PYRO tag with an "I understand I get nothing" checkbox. Swap aggregator embed (community's, TBD).
+- **Feed:** a one-line ticker under the fire, not a wall. Notes drift over the flames instead.
 - **Archive:** every fire named and recorded — nights survived, peak size, pot, winner, storm replay. "The October fire lasted 17 nights and paid $3,900."
 - **Share cards** auto-generated at 8pm every night, and on every death.
 - Art: stick-figure world. PAPER is kindling, PLANK is logs, ETH buyers are "buying paper from the fire," an umbrella guy shows up when it rains.
@@ -138,7 +144,9 @@ Things worth knowing:
 - Claim deadlines / let-it-ride — unnecessary once the ending is random.
 
 ## 7. Still to settle
-1. Which marketplace mills trade on (decides how the fire buys the floor).
-2. Confirm Gelato VRF or Pyth Entropy is live on Robinhood Chain before contract work.
-3. Exact ETH amount for "paper from the fire" (set on launch day from ETH price).
-4. Name/domain. "The Fire" works; "BONFIRE" was suggested.
+1. Which marketplace mills trade on (decides how the fire buys the floor), and the mill contract address (to confirm a contract can hold and burn one).
+2. OpenVRF router address on Robinhood Chain (repo found; address to pin).
+3. A PLANK/USD price source for the ratchet — our own TWAP adapter over the main pool, updated by anyone.
+4. Community swap aggregator embed URL; real OpenSea collection URL.
+5. Veto pass on the 48 fire names.
+6. Name/domain.
