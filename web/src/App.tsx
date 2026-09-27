@@ -129,8 +129,6 @@ export default function App() {
             ))}
           </div>
 
-          <Swap />
-
           <div className="small-grid">
             <div className="burn">
               <h2>Gone forever</h2>
@@ -155,6 +153,7 @@ export default function App() {
         <div className="right">
           <ProfileEditor addr={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onSave={api.setProfile} />
           <BuyPanel you={s.you} plankPerTicket={s.plankPerTicket} ethUsd={s.ethUsd} onBuy={api.buy} />
+          <Swap />
         </div>
       </main>
 

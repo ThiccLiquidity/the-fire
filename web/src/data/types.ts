@@ -35,7 +35,7 @@ export interface Storm {
   tickets?: number; // tickets that were in the fire (out only)
 }
 
-export interface Profile { name: string; pfp: string } // pfp: image URL, "mill:<tokenId>", or ""
+export interface Profile { name: string; pfp: string } // pfp: an image URL the site can render (data:/blob:), or ""
 
 /**
  * The ceremony, in ms after the roll. Storm and page both read this so the sky and the words agree.
@@ -107,7 +107,7 @@ export interface FireApi {
   state(): FireState;
   subscribe(fn: (s: FireState) => void): () => void;
   buy(n: number, withEth: boolean, note: string): Promise<void>;
-  setProfile(name: string, pfp: string): Promise<void>;
+  setProfile(name: string, image: Uint8Array | null): Promise<void>; // null = keep the current picture
   /** demo only: force tonight's storm now */
   demoStorm?(): void;
 }

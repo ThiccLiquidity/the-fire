@@ -6,10 +6,10 @@ import {
 } from "viem";
 import fireAbi from "./fireAbi.json";
 import profilesAbi from "./profilesAbi.json";
+import { bytesToHex, hexToBytes } from "viem";
 import { type Buy, type FireApi, type FireState, type PastFire, DAILY_CAP, FULL_DAYS, nextRollTime, stormBase, titleFor } from "./types";
 
 const PROFILES = import.meta.env.VITE_PROFILES_ADDRESS as Address | undefined;
-export const MILL: Address = "0x8DaA534c13C8b6164D73163F521fE3c94889dFC9";
 
 export const robinhood = defineChain({
   id: 4663,
@@ -19,7 +19,6 @@ export const robinhood = defineChain({
   blockExplorers: { default: { name: "Blockscout", url: "https://robinhoodchain.blockscout.com" } },
 });
 
-const erc721 = parseAbi(["function tokenURI(uint256) view returns (string)", "function ownerOf(uint256) view returns (address)"]);
 const erc20 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
@@ -118,7 +117,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
     lastProfileBlock = head;
     if (!logs.length) return;
     const profiles = { ...s.profiles };
-    for (const l of logs) { const a = (l as unknown as { args: Record<string, unknown> }).args; profiles[String(a.who).toLowerCase()] = { name: String(a.name ?? ""), pfp: String(a.pfp ?? "") }; }
+    for (const l of logs) { const a = (l as unknown as { args: Record<string, unknown> }).args; profiles[String(a.who).toLowerCase()] = { name: String(a.name ?? ""), pfp: imageUrl(String(a.image ?? "0x")) }; }
     s = { ...s, profiles };
   }
 
@@ -133,14 +132,15 @@ export function makeChainApi(fireAddress: Address): FireApi {
   return {
     state: () => s,
     subscribe(fn) { subs.add(fn); fn(s); return () => subs.delete(fn); },
-    async setProfile(name, pfp) {
+    async setProfile(name, image) {
       if (!PROFILES) throw new Error("Profiles aren't live yet.");
       const wc = await wallet();
-      const pabi = profilesAbi as unknown as Abi;
-      const m = /^mill:(\d+)$/.exec(pfp);
-      const h = m
-        ? await wc.writeContract({ address: PROFILES, abi: pabi, functionName: "setWithMill", args: [name, BigInt(m[1])], account: account!, chain: robinhood })
-        : await wc.writeContract({ address: PROFILES, abi: pabi, functionName: "set", args: [name, pfp], account: account!, chain: robinhood });
+      let bytes = image;
+      if (!bytes) { // keep the current picture: re-send its bytes (the contract stores only the hash)
+        const cur = s.profiles[account!.toLowerCase()]?.pfp;
+        bytes = cur && cur.startsWith("data:") ? hexToBytes(("0x" + Buffer_from(cur)) as Hex) : new Uint8Array();
+      }
+      const h = await wc.writeContract({ address: PROFILES, abi: profilesAbi as unknown as Abi, functionName: "set", args: [name, bytesToHex(bytes)], account: account!, chain: robinhood });
       await pub.waitForTransactionReceipt({ hash: h }); await refresh();
     },
     async buy(n, withEth, note) {
@@ -160,23 +160,18 @@ function empty(): FireState {
     you: { tickets: 0, paper: 0, plank: 0, eth: 0, remainingToday: DAILY_CAP, isWinner: false }, profiles: {}, burnedPaperAllTime: 0, burnedPlankAllTime: 0, millsEaten: 0, millFundEth: 0, millBidEth: 0, feed: [], past: [] };
 }
 
-/** Resolve "mill:<id>" to an image URL by reading the mill's tokenURI (data: JSON, ipfs:// or https://). Cached. */
-const millImg = new Map<string, Promise<string>>();
-export function millImage(tokenId: string): Promise<string> {
-  let p = millImg.get(tokenId);
-  if (!p) {
-    p = (async () => {
-      const pub = createPublicClient({ chain: robinhood, transport: http() });
-      let uri = await pub.readContract({ address: MILL, abi: erc721, functionName: "tokenURI", args: [BigInt(tokenId)] });
-      uri = ipfs(uri);
-      let meta: { image?: string };
-      if (uri.startsWith("data:application/json;base64,")) meta = JSON.parse(atob(uri.slice(29)));
-      else if (uri.startsWith("data:application/json,")) meta = JSON.parse(decodeURIComponent(uri.slice(22)));
-      else meta = await (await fetch(uri)).json();
-      return ipfs(meta.image ?? "");
-    })().catch(() => "");
-    millImg.set(tokenId, p);
-  }
-  return p;
+/** Event bytes → a data: URL the <img> can show. Sniffs the format from the magic bytes. */
+function imageUrl(hex: string): string {
+  if (!hex || hex === "0x") return "";
+  const b = hexToBytes(hex as Hex);
+  const mime = b[0] === 0x52 && b[8] === 0x57 ? "image/webp" : b[0] === 0x89 ? "image/png" : b[0] === 0xff ? "image/jpeg" : b[0] === 0x47 ? "image/gif" : "";
+  if (!mime) return "";
+  let bin = ""; for (let i = 0; i < b.length; i++) bin += String.fromCharCode(b[i]);
+  return `data:${mime};base64,${btoa(bin)}`;
 }
-function ipfs(u: string) { return u.startsWith("ipfs://") ? "https://ipfs.io/ipfs/" + u.slice(7) : u; }
+/** data: URL → hex string of its bytes (without 0x). */
+function Buffer_from(dataUrl: string): string {
+  const bin = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+  let out = ""; for (let i = 0; i < bin.length; i++) out += bin.charCodeAt(i).toString(16).padStart(2, "0");
+  return out;
+}

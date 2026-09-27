@@ -67,14 +67,10 @@ a { color: var(--flame); }
 /* profile */
 .profile { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; backdrop-filter: blur(8px); overflow: hidden; }
 .profile-btn { width: 100%; display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 0.9rem; background: transparent; border: 0; color: var(--paper); text-align: left; font: inherit; }
-.profile-btn span { flex: 1; font-weight: 600; }
+.profile-btn > span:not(.avatar) { flex: 1; font-weight: 600; }
 .profile-btn small { color: var(--paper-dim); }
 .profile-body { display: grid; gap: 0.55rem; padding: 0 0.9rem 0.9rem; }
-.profile-preview { display: flex; align-items: center; gap: 0.8rem; font-family: var(--display); font-size: 1.2rem; }
 .profile-body input { width: 100%; padding: 0.55rem 0.8rem; border-radius: 10px; border: 1px solid var(--line); background: rgba(0,0,0,0.3); color: var(--paper); font: inherit; }
-.profile-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
-.profile-mode button { padding: 0.45rem; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--paper); font: inherit; }
-.profile-mode button.on { background: rgba(255, 201, 60, 0.15); border-color: var(--flame); }
 
 /* ------------------------------------------------------------- below the fire */
 .stage { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: 1.5rem; align-items: start; padding: 1.25rem clamp(1rem, 4vw, 3rem) 2rem; }
@@ -85,14 +81,7 @@ a { color: var(--flame); }
 .you span { font-size: 0.78rem; color: var(--paper-dim); }
 .ticker { display: flex; gap: 1.2rem; overflow: hidden; white-space: nowrap; padding: 0.5rem 0.8rem; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 0.85rem; mask-image: linear-gradient(90deg, #000 85%, transparent); }
 .ticker em { font-style: normal; color: var(--paper-dim); }
-.swap, .burn, .archive { padding: 0.9rem 1rem; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
-.swap { display:grid; gap:.5rem; }
-.swap-row { display:grid; grid-template-columns: 1fr auto; gap:.4rem; }
-.swap-row input, .swap-row select, .swap-custom input { padding:.55rem .7rem; border-radius:10px; border:1px solid var(--line); background:rgba(0,0,0,.3); color:var(--paper); font:inherit; min-width:0; }
-.swap-row select { min-width:7rem; }
-.flip { justify-self:center; width:2.2rem; height:2.2rem; border-radius:999px; border:1px solid var(--line); background:transparent; color:var(--paper); }
-.swap-custom { display:grid; grid-template-columns:1fr auto; gap:.4rem; margin-top:.3rem; }
-.swap-custom button { padding:.5rem .8rem; border-radius:10px; border:1px solid var(--line); background:transparent; color:var(--paper); }
+.burn, .archive { padding: 0.9rem 1rem; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
 .small-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .burn dl { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.7rem; margin: 0 0 0.5rem; align-items: baseline; }
 .burn dt { font-family: var(--display); font-weight: 600; font-size: 1.2rem; }
@@ -152,3 +141,24 @@ a { color: var(--flame); }
 }
 @media (prefers-reduced-motion: reduce) {
 }
+
+/* swap: small, collapsed, under the buy panel */
+.swap { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; backdrop-filter: blur(8px); overflow: hidden; }
+.swap-toggle { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.6rem 0.9rem; background: transparent; border: 0; color: var(--paper-dim); font: inherit; font-size: 0.88rem; text-align: left; }
+.swap-toggle b { color: var(--paper); }
+.swap-toggle small { color: var(--paper-dim); }
+.swap-body { display: grid; gap: 0.45rem; padding: 0 0.9rem 0.8rem; }
+.swap-row { display: grid; grid-template-columns: 2.4rem 1fr auto; gap: 0.4rem; align-items: center; font-size: 0.85rem; color: var(--paper-dim); }
+.swap-row input, .swap-row select, .swap-custom input { padding: 0.45rem 0.6rem; border-radius: 9px; border: 1px solid var(--line); background: rgba(0,0,0,.3); color: var(--paper); font: inherit; font-size: 0.92rem; min-width: 0; width: 100%; }
+.swap-row select { width: auto; }
+.swap-actions { display: grid; grid-template-columns: 2.2rem 1fr; gap: 0.4rem; }
+.swap-actions .cta { padding: 0.55rem 0.8rem; font-size: 0.95rem; }
+.flip { height: 100%; border-radius: 9px; border: 1px solid var(--line); background: transparent; color: var(--paper); }
+.swap-custom { display: grid; grid-template-columns: 1fr auto; gap: 0.4rem; }
+.swap-custom button { padding: 0.4rem 0.7rem; border-radius: 9px; border: 1px solid var(--line); background: transparent; color: var(--paper); font: inherit; font-size: 0.85rem; }
+/* profile editor */
+.profile-row { display: grid; grid-template-columns: auto 1fr; gap: 0.8rem; align-items: center; }
+.pick { display: grid; justify-items: center; gap: 0.25rem; cursor: pointer; font-size: 0.75rem; color: var(--paper-dim); }
+.pick input { display: none; }
+.pick .avatar { box-shadow: 0 0 0 2px var(--line); }
+.profile-name { font-size: 1.05rem; }

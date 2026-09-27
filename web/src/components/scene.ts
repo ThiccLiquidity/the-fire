@@ -204,7 +204,7 @@ export function createScene(canvas: HTMLCanvasElement) {
     const eb = x.createRadialGradient(600, 575, 5, 600, 575, 110 * lw); const emberGlow = Math.max(.9 * flick, st.dead * (0.28 + 0.14 * Math.sin(t * 0.035))); eb.addColorStop(0, `rgba(255,120,30,${emberGlow})`); eb.addColorStop(1, "rgba(255,60,10,0)"); x.fillStyle = eb; x.fillRect(600 - 130 * lw, 540, 260 * lw, 60);
 
     // flames
-    if (st.dead < 0.98) {
+    if (st.dead < 0.9) {
       x.save(); x.translate(600, base - 38); x.scale(fsW, fsH);
       const G = (y0: number, y1: number, stops: [number, string][]) => { const gr = x.createLinearGradient(0, y0, 0, y1); for (const [o, c] of stops) gr.addColorStop(o, c); return gr; };
       const gO = G(0, -230, [[0, "#c8330f"], [.5, "#ff7a1a"], [1, "#ffd166"]]), gI = G(0, -140, [[0, "#ff8c2a"], [1, "#fff2b8"]]);

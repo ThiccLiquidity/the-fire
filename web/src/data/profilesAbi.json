@@ -1,14 +1,16 @@
 [
   {
-    "type": "constructor",
-    "inputs": [
+    "type": "function",
+    "name": "MAX_IMAGE",
+    "inputs": [],
+    "outputs": [
       {
-        "name": "mill",
-        "type": "address",
-        "internalType": "contract IERC721"
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -19,32 +21,6 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_PFP",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MILL",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IERC721"
       }
     ],
     "stateMutability": "view"
@@ -71,9 +47,9 @@
             "internalType": "string"
           },
           {
-            "name": "pfp",
-            "type": "string",
-            "internalType": "string"
+            "name": "imageHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           }
         ]
       }
@@ -102,9 +78,9 @@
             "internalType": "string"
           },
           {
-            "name": "pfp",
-            "type": "string",
-            "internalType": "string"
+            "name": "imageHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           }
         ]
       }
@@ -121,27 +97,9 @@
         "internalType": "string"
       },
       {
-        "name": "pfp",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setWithMill",
-    "inputs": [
-      {
-        "name": "name",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "image",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "outputs": [],
@@ -164,10 +122,10 @@
         "internalType": "string"
       },
       {
-        "name": "pfp",
-        "type": "string",
+        "name": "image",
+        "type": "bytes",
         "indexed": false,
-        "internalType": "string"
+        "internalType": "bytes"
       }
     ],
     "anonymous": false
@@ -175,11 +133,6 @@
   {
     "type": "error",
     "name": "BadName",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotYourMill",
     "inputs": []
   },
   {

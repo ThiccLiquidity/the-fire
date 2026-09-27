@@ -57,4 +57,4 @@ node scripts/verify-request.mjs --rpc $RPC --router $ROUTER --request-id N --fro
 
 ## Profiles (any time)
 
-`forge script script/DeployProfiles.s.sol --rpc-url $RPC --account deployer --broadcast --verify` with `MILL` set. Standalone, no owner. Put the address in the site's `VITE_PROFILES_ADDRESS`. Until it's set the site shows short addresses.
+`forge script script/DeployProfiles.s.sol --rpc-url $RPC --account deployer --broadcast --verify` Standalone, no owner, no constructor args. Put the address in the site's `VITE_PROFILES_ADDRESS`. Until it's set the site shows short addresses.

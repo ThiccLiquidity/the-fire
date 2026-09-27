@@ -40,6 +40,7 @@ export function Swap() {
   const [custom_, setCustom] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [open, setOpen] = useState(false);
   const pub = createPublicClient({ chain: robinhood, transport: http() });
 
   const path = (a: Tok, b: Tok): Address[] => {
@@ -106,15 +107,23 @@ export function Swap() {
   );
 
   return (
-    <div className="swap">
-      <h2>Swap</h2>
-      <div className="swap-row"><input type="number" min="0" step="any" value={amt} onChange={(e) => setAmt(e.target.value)} aria-label="Amount" /><Sel v={from} set={setFrom} /></div>
-      <button className="flip" onClick={() => { const f = from; setFrom(to); setTo(f); }} aria-label="Flip">⇅</button>
-      <div className="swap-row"><input readOnly value={out ? Number(out).toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"} aria-label="You get" /><Sel v={to} set={setTo} /></div>
-      <button className="cta" disabled={busy || !out} onClick={swap}>{busy ? "Swapping…" : `Swap ${from.symbol} → ${to.symbol}`}</button>
-      <div className="swap-custom"><input placeholder="Any token address (0x…)" value={custom_} onChange={(e) => setCustom(e.target.value)} /><button onClick={addCustom}>Add</button></div>
-      {msg && <p className="fine">{msg}</p>}
-      <p className="fine muted">Uniswap V2 on Robinhood Chain, 3% max slippage. Routes through WETH.</p>
+    <div className={"swap" + (open ? " open" : "")}>
+      <button className="swap-toggle" onClick={() => setOpen(!open)}>
+        <span>Need PLANK? <b>Swap</b> ETH or any token for it</span><small>{open ? "close" : "open"}</small>
+      </button>
+      {open && (
+        <div className="swap-body">
+          <div className="swap-row"><span>Pay</span><input type="number" min="0" step="any" value={amt} onChange={(e) => setAmt(e.target.value)} aria-label="Amount" /><Sel v={from} set={setFrom} /></div>
+          <div className="swap-row"><span>Get</span><input readOnly value={out ? Number(out).toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"} aria-label="You get" /><Sel v={to} set={setTo} /></div>
+          <div className="swap-actions">
+            <button className="flip" onClick={() => { const f = from; setFrom(to); setTo(f); }} aria-label="Flip">⇅</button>
+            <button className="cta" disabled={busy || !out} onClick={swap}>{busy ? "Swapping…" : `Swap ${from.symbol} → ${to.symbol}`}</button>
+          </div>
+          <div className="swap-custom"><input placeholder="Other token address (0x…)" value={custom_} onChange={(e) => setCustom(e.target.value)} /><button onClick={addCustom}>Add</button></div>
+          {msg && <p className="fine">{msg}</p>}
+          <p className="fine muted">Uniswap V2 on Robinhood Chain · 3% max slippage · routes through WETH.</p>
+        </div>
+      )}
     </div>
   );
 }

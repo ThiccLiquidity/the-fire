@@ -25,7 +25,7 @@ const notes = [
 function rnd(n: number) { return Math.floor(Math.random() * n); }
 const demoNames = ["plankdaddy", "MillOwner420", "Cinder", "sawdust.eth", "Brisket", "log_lady", "not_a_bot", "Fireside Phil", "matchstick", "Torch"];
 const demoProfiles: Record<string, Profile> = {};
-demoNames.forEach((name, i) => { demoProfiles[wallets[i].toLowerCase()] = { name, pfp: i % 3 === 0 ? "mill:" + (100 + i * 37) : "" }; });
+demoNames.forEach((name, i) => { demoProfiles[wallets[i].toLowerCase()] = { name, pfp: "" }; });
 
 export function makeMockApi(): FireApi {
   const lifetime = new Map<string, number>();
@@ -133,9 +133,10 @@ export function makeMockApi(): FireApi {
     state: () => s,
     subscribe(fn) { subs.add(fn); fn(s); return () => subs.delete(fn); },
     async buy(n, withEth, note) { await new Promise((r) => setTimeout(r, 400)); applyBuy(YOU, n, withEth, note); },
-    async setProfile(name, pfp) {
+    async setProfile(name, image) {
       await new Promise((r) => setTimeout(r, 400));
-      const prof = { name, pfp };
+      const prev = s.profiles[YOU.toLowerCase()];
+      const prof = { name, pfp: image ? URL.createObjectURL(new Blob([image as BlobPart])) : prev?.pfp ?? "" };
       s = { ...s, profiles: { ...s.profiles, [YOU.toLowerCase()]: prof }, you: { ...s.you, profile: prof } };
       emit();
     },
