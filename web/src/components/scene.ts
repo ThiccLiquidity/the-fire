@@ -3,6 +3,7 @@
 // Ported from the design demo; kept as one self-contained module.
 
 import { CEREMONY as C, type Storm } from "../data/types";
+import { createWildlife, drawMill, drawRiver, type Kind } from "./wildlife";
 
 export interface SceneInput {
   /** 0..1: fire height. 1 = reaching the pot text. */
@@ -15,6 +16,8 @@ export interface SceneInput {
   /** ms timestamp of the most recent buy, for a paper-toss */
   lastBuyAt: number;
   lastBuyBig: boolean;
+  /** the redrawn press, the stream and the visitors (off until approved) */
+  wild?: boolean;
 }
 
 const THUNDER = ["clap1", "sr1", "sr2", "sr3", "sr4", "dry1", "dry2", "dry3", "dry4"];
@@ -43,6 +46,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   const farPts: number[] = []; for (let i = 0; i <= 140; i++) farPts.push(0.45 + fbm(i * .35, 3) * 0.35);
   const trees: { x: number; s: number; y: number }[] = [];
   for (let i = 0; i < 48; i++) { const side = i % 2 ? 1 : -1; const tx = side * (330 + i * 52 + ((i * 37) % 50)); if (tx > 300 && tx < 600) continue; /* a clearing for the mill */ trees.push({ x: tx, s: 0.85 + ((i * 7) % 6) * 0.11, y: (i * 13) % 30 }); }
+  const wild = createWildlife(trees.map((tr) => tr.x));
   const stars = Array.from({ length: 90 }, () => [Math.random(), Math.random() * .55, .6 + Math.random() * 1.2, .3 + Math.random() * .6]);
   const clouds = Array.from({ length: 14 }, (_, i) => ({ x: (i / 14) * 1.6 - 0.3, y: 0.02 + ((i * 37) % 50) / 100 * 0.28, s: 0.7 + ((i * 13) % 7) * 0.12, v: 0.0006 + ((i * 7) % 5) * 0.0002 }));
   const embers = Array.from({ length: 220 }, () => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1 }));
@@ -196,8 +200,9 @@ export function createScene(canvas: HTMLCanvasElement) {
     const lw = 0.9 + fsW * 0.25;
     const gg = x.createRadialGradient(600, base, 10, 600, base, 700 * Math.sqrt(fsW)); gg.addColorStop(0, `rgba(255,150,50,${.55 * flick})`); gg.addColorStop(.5, "rgba(70,60,30,.35)"); gg.addColorStop(1, "rgba(10,14,10,0)");
     x.fillStyle = night ? "#121a12" : "#2f3d26"; x.fillRect(-3000, base - 20, 6000, 3000); x.fillStyle = gg; x.fillRect(-3000, base - 20, 6000, 3000);
-    mill(600 + 445, base - 24, 0.6, night, Math.max(0, lit * 0.5));
-    for (const tr of trees) { const px = 600 + tr.x, py = base - 10 + tr.y; const d = Math.abs(tr.x) / 400; const warm = Math.max(0, lit * 1.2 - d * .4); pine(px, py, tr.s, night ? `rgb(${8 + warm * 70},${12 + warm * 30},${22})` : `rgb(${30 + warm * 40},${58 + warm * 20},${40})`); }
+    if (inp.wild) { drawRiver(x, t, night, Math.max(0, lit * 0.5)); drawMill(x, t, 600 + 400, base - 24, 0.62, night, Math.max(0, lit * 0.4)); wild.draw(x, t, night, "back"); }
+    else mill(600 + 445, base - 24, 0.6, night, Math.max(0, lit * 0.5));
+    for (const tr of trees) { if (inp.wild && tr.x > 250 && tr.x < 300) continue; const px = 600 + tr.x, py = base - 10 + tr.y; const d = Math.abs(tr.x) / 400; const warm = Math.max(0, lit * 1.2 - d * .4); pine(px, py, tr.s, night ? `rgb(${8 + warm * 70},${12 + warm * 30},${22})` : `rgb(${30 + warm * 40},${58 + warm * 20},${40})`); }
     x.save(); x.translate(600, 600); x.scale(lw, Math.min(lw, 1.6)); x.translate(-600, -600);
     x.fillStyle = "#3e424c"; for (const s of [[470, 600, 26, 10], [520, 612, 22, 9], [600, 618, 30, 10], [680, 612, 22, 9], [730, 600, 26, 10]]) { x.beginPath(); x.ellipse(s[0], s[1], s[2], s[3], 0, 0, 7); x.fill(); }
     x.fillStyle = "#5b3a1c"; x.fillRect(500, 570, 200, 22); x.save(); x.translate(600, 569); x.rotate(-.14); x.fillStyle = "#7d4f27"; x.fillRect(-80, -11, 160, 22); x.rotate(.3); x.fillStyle = "#4a2e14"; x.fillRect(-80, -11, 160, 22); x.restore(); x.restore();
@@ -237,6 +242,8 @@ export function createScene(canvas: HTMLCanvasElement) {
       x.fillStyle = `rgba(90,90,100,${a})`; x.beginPath(); x.arc(s.x, s.y, s.r, 0, 7); x.fill();
     }
 
+    if (inp.wild) { wild.draw(x, t, night, "front"); wild.step(night); }
+
     // rain + flash
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
     const r = st.rainA; if (r > 0) {
@@ -259,6 +266,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   frame();
   return {
     update(next: SceneInput) { inp = next; },
+    visitor(kind: Kind) { wild.spawn(kind); },
     destroy() { stopped = true; cancelAnimationFrame(raf); ro.disconnect(); },
   };
 }
