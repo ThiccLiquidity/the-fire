@@ -68,13 +68,20 @@ contract MockSeaport {
         ISeaport.ConsiderationItem[] memory cons = new ISeaport.ConsiderationItem[](1);
         cons[0] = ISeaport.ConsiderationItem({itemType: 0, token: address(0), identifierOrCriteria: 0, startAmount: priceWei, endAmount: priceWei, recipient: payable(offerer)});
         o.parameters.offerer = offerer; o.parameters.offer = offer; o.parameters.consideration = cons;
+        o.parameters.totalOriginalConsiderationItems = 1;
     }
+    /// @dev Like Seaport, pays every consideration item — including fulfiller-appended "tips" past the original count.
+
     function fulfillOrder(ISeaport.Order calldata order, bytes32) external payable returns (bool) {
         ISeaport.OrderParameters calldata p = order.parameters;
-        require(msg.value == p.consideration[0].endAmount, "price");
+        uint256 total;
+        for (uint256 i; i < p.consideration.length; i++) total += p.consideration[i].endAmount;
+        require(msg.value == total, "price");
         nft.transferFrom(p.offerer, msg.sender, p.offer[0].identifierOrCriteria);
-        (bool ok,) = p.consideration[0].recipient.call{value: msg.value}("");
-        require(ok);
+        for (uint256 i; i < p.consideration.length; i++) {
+            (bool ok,) = p.consideration[i].recipient.call{value: p.consideration[i].endAmount}("");
+            require(ok);
+        }
         return true;
     }
 }

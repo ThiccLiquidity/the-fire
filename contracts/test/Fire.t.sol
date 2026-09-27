@@ -324,6 +324,42 @@ contract FireTest is Test {
         f2.eatMillFromSeaport(o);
     }
 
+    function test_seaport_fill_rejects_fulfiller_tips() public {
+        MockSeaport sea = new MockSeaport(address(mill));
+        Fire f2 = new Fire(Fire.Config({
+            paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
+        }));
+        vm.deal(address(f2), 1 ether);
+        vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); uint256 id = mill.mint(alice); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
+        // a cheap listing, with the filler appending a tip to itself for the rest of the bid
+        ISeaport.Order memory o = sea.listing(alice, id, 0.01 ether);
+        ISeaport.ConsiderationItem[] memory cons = new ISeaport.ConsiderationItem[](2);
+        cons[0] = o.parameters.consideration[0];
+        cons[1] = ISeaport.ConsiderationItem({itemType: 0, token: address(0), identifierOrCriteria: 0, startAmount: MILL_BID - 0.01 ether, endAmount: MILL_BID - 0.01 ether, recipient: payable(carol)});
+        o.parameters.consideration = cons;
+        vm.expectRevert(Fire.BadRequest.selector);
+        f2.eatMillFromSeaport(o);
+    }
+
+    function test_seaport_fill_prices_timed_listing_at_its_high() public {
+        MockSeaport sea = new MockSeaport(address(mill));
+        Fire f2 = new Fire(Fire.Config({
+            paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
+        }));
+        vm.deal(address(f2), 1 ether);
+        vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); uint256 id = mill.mint(alice); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
+        ISeaport.Order memory o = sea.listing(alice, id, 0.01 ether);
+        o.parameters.consideration[0].startAmount = MILL_BID + 1; // a declining auction that starts over the bid
+        vm.expectRevert(Fire.TooExpensive.selector);
+        f2.eatMillFromSeaport(o);
+    }
+
     function test_seaport_path_disabled_without_seaport() public {
         ISeaport.OfferItem[] memory offer = new ISeaport.OfferItem[](1);
         ISeaport.ConsiderationItem[] memory cons = new ISeaport.ConsiderationItem[](1);

@@ -415,11 +415,15 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         if (address(SEAPORT) == address(0)) revert NoSeaport();
         ISeaport.OrderParameters calldata p = order.parameters;
         if (p.offer.length != 1 || p.offer[0].token != address(MILL) || p.offer[0].itemType != 2) revert BadRequest();
+        // No fulfiller "tips": Seaport pays consideration items beyond totalOriginalConsiderationItems without the
+        // seller's signature covering them, so a caller could fill a cheap listing and tip itself up to millBid.
+        if (p.consideration.length != p.totalOriginalConsiderationItems) revert BadRequest();
         uint256 tokenId = p.offer[0].identifierOrCriteria;
         uint256 total;
         for (uint256 i; i < p.consideration.length; i++) {
-            if (p.consideration[i].itemType != 0) revert BadRequest(); // native ETH only
-            total += p.consideration[i].endAmount;
+            ISeaport.ConsiderationItem calldata c = p.consideration[i];
+            if (c.itemType != 0) revert BadRequest(); // native ETH only
+            total += c.startAmount > c.endAmount ? c.startAmount : c.endAmount; // worst case of a timed price
         }
         uint256 fee = MILL.burnFee();
         if (total > millBid) revert TooExpensive();
