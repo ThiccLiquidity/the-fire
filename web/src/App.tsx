@@ -4,11 +4,11 @@ import { makeMockApi } from "./data/mock";
 import { makeChainApi } from "./data/chain";
 import { Scene } from "./components/Scene";
 import { BuyPanel } from "./components/BuyPanel";
+import { Swap } from "./components/Swap";
 
 const FIRE_ADDRESS = import.meta.env.VITE_FIRE_ADDRESS as `0x${string}` | undefined;
 const api: FireApi = FIRE_ADDRESS ? makeChainApi(FIRE_ADDRESS) : makeMockApi();
 const LIVE = !!FIRE_ADDRESS;
-const SWAP_URL = ""; // TODO: community aggregator embed URL
 
 function usd(plank: number, px: number) {
   const v = plank * px;
@@ -84,12 +84,7 @@ export default function App() {
             ))}
           </div>
 
-          <div className="swap">
-            <h2>Need PAPER or PLANK?</h2>
-            {SWAP_URL
-              ? <iframe title="Swap" src={SWAP_URL} />
-              : <p className="fine">Swap widget goes here (community aggregator). Until then: PLANK and PAPER trade on the chain's DEX.</p>}
-          </div>
+          <Swap />
 
           <div className="small-grid">
             <div className="burn">
