@@ -8,8 +8,11 @@ import {IERC721Receiver} from "openzeppelin-contracts/contracts/token/ERC721/IER
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 /// @notice Randomness adapter. Fire calls request(); the adapter later calls Fire.onRandomness().
+///         answered(id) is true once the provider has a final result for that request (even if it hasn't
+///         been delivered yet), which is what makes a re-roll safe: an answered request can't be redrawn.
 interface IRandomness {
     function request() external returns (uint256 requestId);
+    function answered(uint256 requestId) external view returns (bool);
 }
 
 /// @notice Chainlink-style USD price feed (8 decimals).
@@ -61,6 +64,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public constant DAILY_CAP = 500; // tickets per wallet per day
     uint256 public constant TX_CAP = 10; // tickets per transaction
     uint256 public constant PLANK_RATCHET_BPS = 500; // PLANK leg moves at most 5% per night toward target
+    uint256 public constant REROLL_AFTER = 30 minutes; // a roll normally resolves in ~10s
+    /// @dev Chainlink ETH/USD updates on price deviation plus a 24h heartbeat; on Robinhood Chain gaps of 3-6h are
+    ///      normal (observed Sep 2026). A quiet feed is still accurate, so only a missed heartbeat counts as stale.
+    uint256 public constant ETH_FEED_MAX_AGE = 25 hours;
 
     // ---------------------------------------------------------------- immutables
     IERC20 public immutable PAPER;
@@ -107,10 +114,13 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     bool internal _millBoughtSinceRoll;
 
     uint256 public pendingRequest; // randomness request in flight (0 = none)
+    uint256 public pendingSince; // when it was requested
 
     // ---------------------------------------------------------------- events
     event TicketsBought(uint256 indexed fireId, address indexed buyer, uint256 tickets, bool withEth, string note);
     event RollRequested(uint256 indexed fireId, uint256 night, uint256 requestId);
+    event Rerolled(uint256 indexed fireId, uint256 night, uint256 oldRequestId, uint256 newRequestId);
+    event PayoutCarried(address indexed to, uint256 amount); // a payout transfer failed; its PLANK stays in the next pot
     event Survived(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm);
     event WentOut(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm, address winner, uint256 paid);
     event Lit(uint256 indexed fireId, uint256 carried);
@@ -129,6 +139,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     error DailyCap();
     error TxCap();
     error StaleFeed();
+    error Answered();
 
     struct Config {
         address paper;
@@ -172,10 +183,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         return n >= TX_CAP ? 9_700 : BPS;
     }
 
-    /// @notice ETH per ticket right now, from the ETH/USD feed. Reverts if the feed is stale (>1h).
+    /// @notice ETH per ticket right now, from the ETH/USD feed. Reverts if the feed has missed its heartbeat.
     function ethPerTicket() public view returns (uint256) {
         (, int256 px,, uint256 updatedAt,) = ETH_USD.latestRoundData();
-        if (px <= 0 || block.timestamp - updatedAt > 1 hours) revert StaleFeed();
+        if (px <= 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > ETH_FEED_MAX_AGE) revert StaleFeed();
         return ETH_USD_PER_TICKET * 1e18 / uint256(px);
     }
 
@@ -184,7 +195,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     function quote(uint256 n) public view returns (uint256 paperCost, uint256 plankCost, uint256 ethCost) {
         (paperCost, plankCost) = _legs(n);
         (, int256 px,, uint256 updatedAt,) = ETH_USD.latestRoundData();
-        if (px > 0 && block.timestamp - updatedAt <= 1 hours) ethCost = _ethCost(n);
+        if (px > 0 && updatedAt <= block.timestamp && block.timestamp - updatedAt <= ETH_FEED_MAX_AGE) ethCost = _ethCost(n);
     }
 
     function _legs(uint256 n) internal view returns (uint256 paperCost, uint256 plankCost) {
@@ -259,7 +270,23 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         if (pendingRequest != 0) revert RollPending();
         uint256 id = randomness.request();
         pendingRequest = id;
+        pendingSince = block.timestamp;
         emit RollRequested(fireId, night + 1, id);
+    }
+
+    /// @notice Anyone, if a roll has had no answer for REROLL_AFTER: ask for a fresh random number.
+    ///         Only possible while the provider has no result for the pending request. Once it has one, that
+    ///         result is final — deliver it with the adapter's settle() instead — so a known number can't be
+    ///         thrown away for a new draw.
+    function reroll() external {
+        uint256 old = pendingRequest;
+        if (old == 0) revert BadRequest();
+        if (block.timestamp < pendingSince + REROLL_AFTER) revert NotYet();
+        if (randomness.answered(old)) revert Answered();
+        uint256 id = randomness.request();
+        pendingRequest = id;
+        pendingSince = block.timestamp;
+        emit Rerolled(fireId, night + 1, old, id);
     }
 
     function onRandomness(uint256 requestId, uint256 rnd) external nonReentrant {
@@ -346,17 +373,30 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         uint256 tithe = winnerSlice * TITHE_BPS / BPS;
 
         pot = 0;
+        uint256 paid;
+        // A payout that fails (e.g. the token refuses a recipient) must not revert the night — that would leave the
+        // roll pending forever. Whatever can't be sent stays in the contract and relights the next fire.
         if (winner != address(0)) {
-            PLANK.safeTransfer(winner, winnerSlice - tithe);
-            PLANK.safeTransfer(ROYALTY_POOL, tithe);
+            if (_trySend(winner, winnerSlice - tithe)) paid = winnerSlice - tithe;
+            else carry += winnerSlice - tithe;
+            if (!_trySend(ROYALTY_POOL, tithe)) carry += tithe;
         } else {
             // no tickets at all: winner slice rolls into the carry
             carry += winnerSlice;
         }
-        PLANK.safeTransfer(DEAD, burnSlice);
+        if (!_trySend(DEAD, burnSlice)) carry += burnSlice;
         lastWinner = winner;
-        emit WentOut(fireId, night, sizeBefore, storm, winner, winner == address(0) ? 0 : winnerSlice - tithe);
+        emit WentOut(fireId, night, sizeBefore, storm, winner, paid);
         _light(carry);
+    }
+
+    /// @dev PLANK transfer that reports failure instead of reverting (handles tokens with or without a bool return).
+    function _trySend(address to, uint256 amount) internal returns (bool ok) {
+        if (amount == 0) return true;
+        bytes memory ret;
+        (ok, ret) = address(PLANK).call(abi.encodeCall(IERC20.transfer, (to, amount)));
+        ok = ok && (ret.length == 0 ? address(PLANK).code.length > 0 : ret.length >= 32 && uint256(bytes32(ret)) == 1);
+        if (!ok) emit PayoutCarried(to, amount);
     }
 
     function _pickWinner(uint256 rnd) internal view returns (address) {
@@ -400,8 +440,12 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     /// @dev Move plankPerTicket at most 5% per night toward the USD target. A thin pool can be pushed for
     ///      minutes, not for days, so the leg can't be gamed inside a night. If the feed is stale, hold.
     function _ratchetPlankLeg() internal {
-        (, int256 px,, uint256 updatedAt,) = PLANK_USD.latestRoundData();
-        if (px <= 0 || block.timestamp - updatedAt > 2 days) return;
+        int256 px;
+        uint256 updatedAt;
+        // A broken feed must not revert the night; the leg just holds.
+        try PLANK_USD.latestRoundData() returns (uint80, int256 a, uint256, uint256 u, uint80) { (px, updatedAt) = (a, u); }
+        catch { return; }
+        if (px <= 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > 2 days) return;
         // plank wei per ticket = (USD per ticket, 8 dec) * 1e18 wei/PLANK * 1e10 / (USD per PLANK, 18 dec)
         uint256 target = PLANK_USD_PER_TICKET * 1e28 / uint256(px);
         uint256 cur = plankPerTicket;

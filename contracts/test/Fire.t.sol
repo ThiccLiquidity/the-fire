@@ -397,6 +397,53 @@ contract FireTest is Test {
         fire.buyTicketsWithEth{value: c - 1}(10, "");
     }
 
+    // ------------------------------------------------------------ stuck rolls
+    function test_reroll_after_30_min_with_no_answer() public {
+        _buy(alice, 10);
+        vm.warp(fire.nextRollAt());
+        ethFeed.set(ethFeed.answer()); plankFeed.set(plankFeed.answer());
+        fire.roll();
+        uint256 first = fire.pendingRequest();
+        vm.expectRevert(Fire.NotYet.selector);
+        fire.reroll();
+        vm.warp(block.timestamp + 30 minutes);
+        vm.prank(carol); // anyone
+        fire.reroll();
+        uint256 second = fire.pendingRequest();
+        assertTrue(second != first);
+        // the stale request can no longer resolve the night
+        vm.expectRevert(Fire.BadRequest.selector);
+        rng.fulfill(first, RND_MONSTER);
+        rng.fulfill(second, RND_CALM);
+        assertEq(fire.night(), 1);
+        assertEq(fire.pendingRequest(), 0);
+    }
+
+    function test_no_reroll_once_answered() public {
+        vm.warp(fire.nextRollAt());
+        fire.roll();
+        uint256 id = fire.pendingRequest();
+        rng.answerSilently(id); // provider has the number; delivery failed
+        vm.warp(block.timestamp + 2 hours);
+        vm.expectRevert(Fire.Answered.selector);
+        fire.reroll();
+    }
+
+    function test_no_reroll_without_pending_roll() public {
+        vm.expectRevert(Fire.BadRequest.selector);
+        fire.reroll();
+    }
+
+    function test_broken_plank_feed_does_not_block_the_night() public {
+        _buy(alice, 10);
+        vm.warp(fire.nextRollAt());
+        plankFeed.setBroken(true);
+        fire.roll();
+        rng.fulfill(rng.last(), RND_CALM);
+        assertEq(fire.night(), 1, "night resolved");
+        assertEq(fire.plankPerTicket(), PLANK_T, "leg held");
+    }
+
     function test_tx_cap_10() public {
         vm.prank(alice);
         vm.expectRevert(Fire.TxCap.selector);
@@ -423,8 +470,15 @@ contract FireTest is Test {
         assertApproxEqRel(c1, 2 * c2, 1e15);
     }
 
+    function test_quiet_eth_feed_still_prices_tickets() public {
+        vm.warp(block.timestamp + 6 hours); // gaps like this are normal on Robinhood Chain
+        assertGt(fire.ethPerTicket(), 0);
+        (, , uint256 e) = fire.quote(10);
+        assertGt(e, 0);
+    }
+
     function test_stale_eth_feed_closes_only_the_eth_path() public {
-        vm.warp(block.timestamp + 2 hours);
+        vm.warp(block.timestamp + 26 hours); // missed the 24h heartbeat
         vm.expectRevert(Fire.StaleFeed.selector);
         fire.ethPerTicket();
         (uint256 p, uint256 k, uint256 e) = fire.quote(10);

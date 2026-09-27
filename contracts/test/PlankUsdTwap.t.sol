@@ -74,7 +74,7 @@ contract PlankUsdTwapTest is Test {
     }
 
     function test_stale_eth_feed_reports_zero() public {
-        vm.warp(block.timestamp + 24 hours); twap.checkpoint(); // eth feed now 24h old
+        vm.warp(block.timestamp + 26 hours); twap.checkpoint(); // eth feed missed its 24h heartbeat
         assertEq(_price(), 0);
     }
     function test_frequent_checkpoints_cannot_freeze_or_shorten_the_window() public {

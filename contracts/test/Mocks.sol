@@ -45,15 +45,22 @@ contract MockRandomness {
     address public fire;
     uint256 public last;
     function setFire(address f) external { fire = f; }
+    mapping(uint256 => bool) public answered;
     function request() external returns (uint256) { last += 1; return last; }
-    function fulfill(uint256 id, uint256 value) external { IFireCallback(fire).onRandomness(id, value); }
+    function fulfill(uint256 id, uint256 value) external { answered[id] = true; IFireCallback(fire).onRandomness(id, value); }
+    /// @dev The provider has a result for `id` but the callback never landed.
+    function answerSilently(uint256 id) external { answered[id] = true; }
 }
 
 contract MockFeed {
-    int256 public answer; uint256 public updatedAt;
+    int256 public answer; uint256 public updatedAt; bool public broken;
+    function setBroken(bool b) external { broken = b; }
+    bool public burnGas; function setBurnGas(bool b) external { burnGas = b; }
     constructor(int256 a) { answer = a; updatedAt = block.timestamp; }
     function set(int256 a) external { answer = a; updatedAt = block.timestamp; }
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        require(!broken, "feed down");
+        if (burnGas) { uint256 i; while (gasleft() > 1000) i++; }
         return (0, answer, 0, updatedAt, 0);
     }
 }

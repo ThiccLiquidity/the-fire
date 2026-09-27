@@ -29,6 +29,7 @@ contract PlankUsdTwap {
     bool public immutable PLANK_IS_TOKEN0;
     uint256 public constant MIN_WINDOW = 20 hours; // checkpoints closer together than this are ignored
     uint256 public constant MAX_AGE = 3 days; // older than this and the feed reports stale
+    uint256 public constant ETH_FEED_MAX_AGE = 25 hours; // Chainlink ETH/USD: deviation updates + 24h heartbeat
 
     struct Obs { uint256 cum; uint32 ts; }
     Obs public prev; // window start
@@ -72,7 +73,7 @@ contract PlankUsdTwap {
         if (last.ts == prev.ts) return 0;
         uint256 avgWethPerPlankQ112 = (last.cum - prev.cum) / (last.ts - prev.ts);
         (, int256 ethUsd,, uint256 upd,) = ETH_USD.latestRoundData();
-        if (ethUsd <= 0 || block.timestamp - upd > 1 hours) return 0;
+        if (ethUsd <= 0 || upd > block.timestamp || block.timestamp - upd > ETH_FEED_MAX_AGE) return 0;
         // USD per PLANK, 18 dec = (WETH per PLANK, Q112) * (USD per ETH, 8 dec) * 1e10 / 2^112
         plankUsd18 = (avgWethPerPlankQ112 * uint256(ethUsd) * 1e10) >> 112;
     }

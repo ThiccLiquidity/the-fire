@@ -3,16 +3,22 @@ pragma solidity ^0.8.24;
 
 /**
  * @notice Adapter between Fire.sol and Robinhood's OpenVRF (drand-backed) router.
- *         https://github.com/Robinhood-OSS/OpenVRF
+ *         https://github.com/Robinhood-OSS/OpenVRF (read at commit 9fb960c)
  *
- *         Fire.roll() -> request() -> router.requestRandomness{value: fee}(callbackGas)
- *         router -> rawFulfillRandomness(id, word) -> Fire.onRandomness(id, word)
+ *         Fire.roll() -> request() -> router.requestRandomness{value: requestFee}(CALLBACK_GAS)
+ *         router.fulfill() -> rawFulfillRandomness(id, word) -> Fire.onRandomness(id, word)
  *
- *         TODO before deploy: pin the exact OpenVRF RandomnessConsumer base + router address from the
- *         repo's deployments folder (not in the README as of Sep 26 2026), and confirm the fee model.
+ *         If the router has a result but its callback didn't reach the Fire (out of gas, a revert that has
+ *         since cleared), anyone can call settle(id) to deliver the stored result. The router never changes
+ *         a result once fulfilled, so settle() can't be used to pick a different number.
  */
 interface IOpenVRFRouter {
     function requestRandomness(uint32 callbackGas) external payable returns (uint256);
+    function requestFee() external view returns (uint256);
+    function requests(uint256 id)
+        external
+        view
+        returns (address consumer, uint64 round, uint32 callbackGasLimit, bool fulfilled, bool delivered, uint256 randomWord, uint256 fee);
 }
 
 interface IFireRandomnessSink {
@@ -26,22 +32,39 @@ contract OpenVRFAdapter {
 
     error OnlyFire();
     error OnlyRouter();
+    error NotFulfilled();
+    error FeeUnpaid();
 
     constructor(address router, address fire) {
         ROUTER = IOpenVRFRouter(router);
         FIRE = fire;
     }
 
-    /// @dev Fire calls this. The adapter holds a little ETH to pay request fees (if the router charges).
+    /// @dev Fire calls this. The router requires the exact fee (0 on our deployment); a paid fee comes from
+    ///      ETH sent to this adapter ahead of time. Stray ETH here can no longer break requests.
     function request() external returns (uint256 id) {
         if (msg.sender != FIRE) revert OnlyFire();
-        id = ROUTER.requestRandomness{value: address(this).balance}(CALLBACK_GAS);
+        uint256 fee = ROUTER.requestFee();
+        if (address(this).balance < fee) revert FeeUnpaid();
+        id = ROUTER.requestRandomness{value: fee}(CALLBACK_GAS);
     }
 
-    /// @dev Router callback. Name/signature per OpenVRF's RandomnessConsumer.
+    /// @notice True once the router holds the final random word for this request.
+    function answered(uint256 id) external view returns (bool fulfilled) {
+        (,,, fulfilled,,,) = ROUTER.requests(id);
+    }
+
+    /// @dev Router callback (OpenVRF's IRandomnessConsumer).
     function rawFulfillRandomness(uint256 requestId, uint256 randomWord) external {
         if (msg.sender != address(ROUTER)) revert OnlyRouter();
         IFireRandomnessSink(FIRE).onRandomness(requestId, randomWord);
+    }
+
+    /// @notice Anyone: deliver a result the router already holds but whose callback didn't land.
+    function settle(uint256 id) external {
+        (address consumer,,, bool fulfilled,, uint256 word,) = ROUTER.requests(id);
+        if (!fulfilled || consumer != address(this)) revert NotFulfilled();
+        IFireRandomnessSink(FIRE).onRandomness(id, word);
     }
 
     receive() external payable {}
