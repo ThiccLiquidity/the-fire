@@ -277,15 +277,6 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ mill fund
-    function test_mill_bid_climbs_with_time_and_caps() public {
-        assertEq(fire.millBid(), MILL_BID);
-        vm.warp(block.timestamp + 12 hours);
-        assertEq(fire.millBid(), MILL_BID * 1125 / 1000, "+12.5% after half a day");
-        vm.warp(block.timestamp + 12 hours);
-        assertEq(fire.millBid(), MILL_BID * 125 / 100, "+25% after a day");
-        vm.warp(block.timestamp + 60 days);
-        assertEq(fire.millBid(), MILL_BID * 10, "never past 10x");
-    }
 
     function _seaportFire() internal returns (Fire f2, MockSeaport sea) {
         sea = new MockSeaport(address(mill));
@@ -295,13 +286,67 @@ contract FireTest is Test {
             paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
-        vm.deal(address(f2), 1 ether);
+        vm.deal(address(f2), 1 ether); // ~$3,333 of ETH-ticket money
+        f2.pokeMillBid();
         vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
+    }
+
+    // ------------------------------------------------------------ mill bid: climbs only while the fund can pay
+    function test_empty_fund_bid_never_climbs() public {
+        assertEq(fire.millBid(), MILL_BID);
+        vm.warp(block.timestamp + 30 days);
+        assertEq(fire.millBid(), MILL_BID, "no money, no climb");
+    }
+
+    function test_bid_climbs_25pct_per_day_while_funded_and_caps_at_3x() public {
+        usdg.mint(address(fire), 10_000e6); fire.pokeMillBid();
+        vm.warp(block.timestamp + 12 hours);
+        assertEq(fire.millBid(), MILL_BID * 1125 / 1000, "+12.5% after half a day");
+        vm.warp(block.timestamp + 12 hours);
+        assertEq(fire.millBid(), MILL_BID * 125 / 100, "+25% after a day");
+        vm.warp(block.timestamp + 60 days);
+        assertEq(fire.millBid(), MILL_BID * 3, "never past 3x");
+    }
+
+    function test_bid_never_climbs_above_the_fund() public {
+        usdg.mint(address(fire), 120e6); fire.pokeMillBid(); // $120 in the fund, bid starts at $100
+        vm.warp(block.timestamp + 10 days);
+        assertEq(fire.millBid(), 120e8, "stops at what the fund holds");
+        usdg.mint(address(fire), 30e6); fire.pokeMillBid(); // more money arrives
+        vm.warp(block.timestamp + 10 days);
+        assertEq(fire.millBid(), 150e8, "then climbs to the new amount, gradually");
+    }
+
+    function test_money_arriving_later_does_not_find_a_high_bid() public {
+        vm.warp(block.timestamp + 30 days); // a month with an empty fund
+        vm.startPrank(bob); usdg.mint(bob, 1_000e6); usdg.approve(address(fire), type(uint256).max);
+        for (uint256 i; i < 50; i++) fire.buyTicketsWithUsdg(10, ""); // $485 arrives
+        vm.stopPrank();
+        assertEq(fire.millBid(), MILL_BID, "starts climbing from the base only now");
+        vm.warp(block.timestamp + 1 days);
+        assertEq(fire.millBid(), MILL_BID * 125 / 100);
+    }
+
+    function test_nightly_roll_refreshes_the_bid() public {
+        usdg.mint(address(fire), 10_000e6); // sent directly: nobody poked
+        vm.warp(block.timestamp + 1 days);
+        assertEq(fire.millBid(), MILL_BID, "not counted yet");
+        _roll(RND_CALM); // the roll counts it
+        vm.warp(block.timestamp + 1 days);
+        assertEq(fire.millBid(), MILL_BID * 125 / 100);
+    }
+
+    function test_stale_eth_feed_counts_eth_side_as_zero_without_reverting() public {
+        vm.deal(address(fire), 10 ether);
+        vm.warp(block.timestamp + 26 hours); // ETH feed missed its heartbeat
+        fire.pokeMillBid();
+        vm.warp(block.timestamp + 1 days);
+        assertEq(fire.millBid(), MILL_BID, "ETH not counted while its price is unknown");
     }
 
     function test_mill_bid_restarts_below_the_price_paid() public {
         (Fire f2, MockSeaport sea) = _seaportFire();
-        vm.warp(block.timestamp + 2 days); // bid has climbed to 1.5x
+        vm.warp(block.timestamp + 2 days); // funded, so the bid has climbed to 1.5x
         ethFeed.set(ethFeed.answer()); // keep the ETH/USD feed inside its heartbeat
         vm.prank(alice); uint256 id = mill.mint(alice);
         f2.eatMillFromSeaport(sea.listing(alice, id, 0.04 ether), ""); // $133.33 at $3,333.33/ETH, under the $150 bid
@@ -309,7 +354,7 @@ contract FireTest is Test {
         uint256 restart = paidUsd * 9_000 / 10_000;
         assertEq(f2.millBid(), restart, "restarts at 90% of what it paid, in dollars");
         vm.warp(block.timestamp + 1 days);
-        assertEq(f2.millBid(), restart + restart * 2_500 / 10_000, "then climbs again");
+        assertEq(f2.millBid(), restart + restart * 2_500 / 10_000, "then climbs again (fund still covers it)");
     }
 
     function test_restricted_listing_passes_zone_data_through() public {
@@ -344,7 +389,7 @@ contract FireTest is Test {
         (Fire f2, MockSeaport sea) = _seaportFire();
         usdg.mint(address(f2), 500e6);
         vm.prank(alice); uint256 id = mill.mint(alice);
-        vm.warp(block.timestamp + 1 days); // bid $125
+        vm.warp(block.timestamp + 1 days); // funded, so the bid climbed to $125
         uint256 ethBefore = address(f2).balance;
         f2.eatMillFromSeaport(_usdgListing(sea, id, 120e6), "");
         assertEq(usdg.balanceOf(alice), 120e6, "seller paid in USDG");
@@ -392,15 +437,6 @@ contract FireTest is Test {
         assertEq(f2.millBid(), MILL_BID / 10);
     }
 
-    function test_mill_bid_ignores_rolls() public {
-        vm.warp(block.timestamp + 1 hours);
-        uint256 b = fire.millBid();
-        vm.warp(fire.nextRollAt());
-        uint256 atRoll = fire.millBid();
-        _roll(RND_CALM);
-        assertEq(fire.millBid(), atRoll);
-        assertGt(atRoll, b);
-    }
 
     function test_seaport_fill_burns_mill_and_pays_royalty() public {
         // a fire wired to a mock Seaport that hands over the listed mill for the ETH

@@ -33,7 +33,8 @@ exactly `requestFee()`. Tested against the real router code with a real drand pr
   takes $1 of ETH or USDG, each kept on its own side of the fund (no swaps), and the fire pays each listing in its own
   currency.
 - The bid is in USD: +25% of its start per day (~1%/hour) while nobody sells, restarts at 90% of each price paid,
-  capped at 10x. Starting bid (MILL_BID_BASE, USD 8 decimals) is set at deploy; mills are still minting, so there's no
+  capped at 3x — and only while the fund could pay it, never above what the fund holds (review finding: an empty fund
+  used to build up a high bid for the first dollars to be sold into). Starting bid (MILL_BID_BASE, USD 8 decimals) is set at deploy; mills are still minting, so there's no
   real floor yet — start at or below the expected floor and let it climb.
 - Fills use fulfillAdvancedOrder (works for open and zone-restricted listings); tested against real Seaport 1.6 code.
 - `ops/keeper` sweeps the floor with an OpenSea API key: cheapest listing at or under the bid that the fund can pay.

@@ -72,7 +72,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public constant TRAILING = 7;
     uint256 public constant BID_RISE_BPS_PER_DAY = 2_500; // mill bid climbs 25% of its start per day, linearly
     uint256 public constant BID_RESTART_BPS = 9_000; // after a buy the bid restarts at 90% of the price paid
-    uint256 public constant BID_MAX_MULT = 10; // and never climbs past 10x its restart point (the first floor is unknown)
+    uint256 public constant BID_MAX_MULT = 3; // and never climbs past 3x its restart point
     uint256 public constant DAILY_CAP = 500; // tickets per wallet per day
     uint256 public constant TX_CAP = 10; // tickets per transaction
     uint256 public constant PLANK_RATCHET_BPS = 500; // PLANK leg moves at most 5% per night toward target
@@ -124,8 +124,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 internal _trailCount;
     uint256 internal _trailIdx;
 
-    uint256 public millBidStart; // where the current mill bid started, in wei
-    uint256 public millBidSince; // when it started
+    uint256 public millBidStart; // where the current mill bid restarted (USD, 8 dec); the rate and cap are relative to it
+    uint256 public millBidBanked; // the bid as of millBidSince
+    uint256 public millBidSince; // when the bid was last brought up to date
+    uint256 public millFundUsdAt; // what the fund could pay then (USD, 8 dec): the bid only climbs below this
 
     uint256 public pendingRequest; // randomness request in flight (0 = none)
     uint256 public pendingSince; // when it was requested
@@ -141,6 +143,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     event Lit(uint256 indexed fireId, uint256 carried);
     /// @param currency address(0) for ETH, else the USDG address; paid is in that currency's units; paidUsd has 8 decimals
     event MillEaten(uint256 indexed tokenId, address seller, address currency, uint256 paid, uint256 paidUsd, uint256 plankToRoyalty);
+    event MillBidUpdated(uint256 bid, uint256 fundUsd);
 
     error NotYet();
     error RollPending();
@@ -193,6 +196,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         USDG_UNIT = c.usdg == address(0) ? 0 : 10 ** IERC20Metadata(c.usdg).decimals();
         ROLL_TIME_OF_DAY = c.rollTimeOfDay;
         millBidStart = c.millBidBase;
+        millBidBanked = c.millBidBase;
         millBidSince = block.timestamp;
         _light(0);
     }
@@ -267,6 +271,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
             (bool ok,) = msg.sender.call{value: msg.value - ethCost}("");
             if (!ok) revert BadAmount();
         }
+        _pokeMillBid();
     }
 
     /// @notice Same as buyTicketsWithEth, but the PAPER leg is paid in USDG (no price feed involved). It feeds the mill
@@ -280,6 +285,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         _takePlank(msg.sender, plankCost);
         _addTickets(msg.sender, n);
         emit TicketsBought(fireId, msg.sender, n, true, note);
+        _pokeMillBid();
     }
 
     /// @notice USDG for the PAPER leg of n tickets ("paper from the fire", paid in USDG).
@@ -346,6 +352,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         dayIndex += 1;
         nextRollAt = _nextRollTime(block.timestamp);
         _ratchetPlankLeg();
+        _pokeMillBid();
 
         // The storm takes a bite. What's left burns down to 60% overnight and is tomorrow's starting size.
         // Night 1 has no storm. Night 24 is infinite. A fire with nothing in it goes out.
@@ -468,17 +475,46 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
 
     // ---------------------------------------------------------------- the mill fund
     /// @notice The most the fire will pay for a mill right now, in USD (8 decimals). A reverse auction that follows the
-    ///         floor: the bid climbs 25% of its starting point per day (about 1% an hour) while nobody sells, and after
-    ///         each purchase it restarts at 90% of the price just paid. Sellers compete to hit it, so it settles where
-    ///         holders actually sell. It never climbs past 10x its starting point. Listings in USDG are taken at face
-    ///         value and ETH listings are converted at the ETH/USD feed. The fire pays the listing's own price in the
-    ///         listing's currency, so any listing at or under the bid is swept at its price.
-    ///         The fire only ever buys on the open market; nobody hands the fire a mill.
+    ///         floor: while nobody sells, the bid climbs 25% of its restart point per day (about 1% an hour) — but only
+    ///         while the fund could actually pay it, and never above what the fund held when last counted, nor past 3x
+    ///         its restart point. An empty fund doesn't build up a high bid for the next dollar to be sold into. After
+    ///         each purchase the bid restarts at 90% of the price paid. Listings in USDG are taken at face value and ETH
+    ///         listings are converted at the ETH/USD feed; the fire pays the listing's own price in its own currency, so
+    ///         any listing at or under the bid is swept at its price. The fire only ever buys on the open market.
     function millBid() public view returns (uint256) {
+        uint256 banked = millBidBanked;
+        uint256 ceiling = millFundUsdAt;
+        if (ceiling <= banked) return banked; // the fund can't pay more than this: hold
         uint256 start = millBidStart;
-        uint256 bid = start + start * BID_RISE_BPS_PER_DAY * (block.timestamp - millBidSince) / BPS / 1 days;
         uint256 cap = start * BID_MAX_MULT;
-        return bid > cap ? cap : bid;
+        if (cap < ceiling) ceiling = cap;
+        uint256 bid = banked + start * BID_RISE_BPS_PER_DAY * (block.timestamp - millBidSince) / BPS / 1 days;
+        return bid > ceiling ? (ceiling > banked ? ceiling : banked) : bid;
+    }
+
+    /// @notice Anyone: bring the mill bid up to date with the fund (e.g. after someone sent the fund USDG or ETH
+    ///         directly). Ticket buys, mill purchases and every roll do this already.
+    function pokeMillBid() external nonReentrant {
+        _pokeMillBid();
+    }
+
+    function _pokeMillBid() internal {
+        millBidBanked = millBid();
+        millBidSince = block.timestamp;
+        millFundUsdAt = _fundUsd();
+        emit MillBidUpdated(millBidBanked, millFundUsdAt);
+    }
+
+    /// @dev What the fund could pay for one mill, in USD (8 dec): the larger side, since a listing is paid in one
+    ///      currency. A stale or broken ETH feed counts the ETH side as 0 (never reverts; called from the nightly roll).
+    function _fundUsd() internal view returns (uint256 usd) {
+        if (address(USDG) != address(0)) usd = USDG.balanceOf(address(this)) * 1e8 / USDG_UNIT;
+        (bool ok, bytes memory ret) = address(ETH_USD).staticcall(abi.encodeCall(IPriceFeed.latestRoundData, ()));
+        if (!ok || ret.length < 160) return usd;
+        (, int256 px,, uint256 updatedAt,) = abi.decode(ret, (uint80, int256, uint256, uint256, uint80));
+        if (px <= 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > ETH_FEED_MAX_AGE) return usd;
+        uint256 ethSide = address(this).balance * uint256(px) / 1e18;
+        if (ethSide > usd) usd = ethSide;
     }
 
     /// @dev Move plankPerTicket at most 5% per night toward the USD target. A thin pool can be pushed for
@@ -550,7 +586,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         uint256 restart = usd * BID_RESTART_BPS / BPS;
         uint256 minStart = MILL_BID_BASE / 10; // a free or near-free listing can't park the bid at ~0
         millBidStart = restart > minStart ? restart : minStart;
+        millBidBanked = millBidStart;
         millBidSince = block.timestamp;
+        millFundUsdAt = _fundUsd();
+        emit MillBidUpdated(millBidBanked, millFundUsdAt);
         emit MillEaten(tokenId, p.offerer, inEth ? address(0) : address(USDG), total, usd, released);
     }
 
