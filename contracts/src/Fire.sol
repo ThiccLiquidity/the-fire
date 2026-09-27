@@ -60,7 +60,9 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public constant MAX_NIGHTS = 24; // the night-24 storm is infinite
     uint256 public constant KEEP_BPS = 6_000; // the fire keeps 60% of its size overnight
     uint256 public constant TRAILING = 7;
-    uint256 public constant BID_STEP_BPS = 500; // mill bid +5% per unfilled night
+    uint256 public constant BID_RISE_BPS_PER_DAY = 2_500; // mill bid climbs 25% of its start per day, linearly
+    uint256 public constant BID_RESTART_BPS = 9_000; // after a buy the bid restarts at 90% of the price paid
+    uint256 public constant BID_MAX_MULT = 3; // and never climbs past 3x its restart point
     uint256 public constant DAILY_CAP = 500; // tickets per wallet per day
     uint256 public constant TX_CAP = 10; // tickets per transaction
     uint256 public constant PLANK_RATCHET_BPS = 500; // PLANK leg moves at most 5% per night toward target
@@ -110,8 +112,8 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 internal _trailCount;
     uint256 internal _trailIdx;
 
-    uint256 public millBid; // current ETH bid for one mill
-    bool internal _millBoughtSinceRoll;
+    uint256 public millBidStart; // where the current mill bid started, in wei
+    uint256 public millBidSince; // when it started
 
     uint256 public pendingRequest; // randomness request in flight (0 = none)
     uint256 public pendingSince; // when it was requested
@@ -173,7 +175,8 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         ETH_USD_PER_TICKET = c.ethUsdPerTicket;
         MILL_BID_BASE = c.millBidBase;
         ROLL_TIME_OF_DAY = c.rollTimeOfDay;
-        millBid = c.millBidBase;
+        millBidStart = c.millBidBase;
+        millBidSince = block.timestamp;
         _light(0);
     }
 
@@ -302,7 +305,6 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         ticketsToday = 0;
         dayIndex += 1;
         nextRollAt = _nextRollTime(block.timestamp);
-        _ratchetMillBid();
         _ratchetPlankLeg();
 
         // The storm takes a bite. What's left burns down to 60% overnight and is tomorrow's starting size.
@@ -425,16 +427,17 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     // ---------------------------------------------------------------- the mill fund
-    /// @notice The most the fire will pay for a floor mill on OpenSea. Ticks up 5% every night it doesn't
-    ///         manage to buy one, resets to base when it does. The fire only ever buys on the open market;
-    ///         nobody hands the fire a mill.
-    function _ratchetMillBid() internal {
-        if (_millBoughtSinceRoll) {
-            millBid = MILL_BID_BASE;
-            _millBoughtSinceRoll = false;
-        } else {
-            millBid = millBid * (BPS + BID_STEP_BPS) / BPS;
-        }
+    /// @notice The most the fire will pay for a mill right now. It's a reverse auction that follows the floor:
+    ///         the bid climbs 25% of its starting point per day (about 1% an hour) while nobody sells, and after
+    ///         each purchase it restarts at 90% of the price just paid. Sellers compete to hit it, so it settles
+    ///         where holders actually sell. It never climbs past 3x its starting point. The fire pays the
+    ///         listing's own price, not the bid, so any listing at or under the bid is swept at its price.
+    ///         The fire only ever buys on the open market; nobody hands the fire a mill.
+    function millBid() public view returns (uint256) {
+        uint256 start = millBidStart;
+        uint256 bid = start + start * BID_RISE_BPS_PER_DAY * (block.timestamp - millBidSince) / BPS / 1 days;
+        uint256 cap = start * BID_MAX_MULT;
+        return bid > cap ? cap : bid;
     }
 
     /// @dev Move plankPerTicket at most 5% per night toward the USD target. A thin pool can be pushed for
@@ -475,12 +478,15 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
             total += c.startAmount > c.endAmount ? c.startAmount : c.endAmount; // worst case of a timed price
         }
         uint256 fee = MILL.burnFee();
-        if (total > millBid) revert TooExpensive();
+        if (total > millBid()) revert TooExpensive();
         if (address(this).balance < total + fee) revert FundTooSmall();
         bool ok = SEAPORT.fulfillOrder{value: total}(order, bytes32(0));
         require(ok && MILL.ownerOf(tokenId) == address(this), "fill failed");
         uint256 released = _burnMill(tokenId, fee);
-        _millBoughtSinceRoll = true;
+        uint256 restart = total * BID_RESTART_BPS / BPS;
+        uint256 minStart = MILL_BID_BASE / 10; // a free or near-free listing can't park the bid at ~0
+        millBidStart = restart > minStart ? restart : minStart;
+        millBidSince = block.timestamp;
         emit MillEaten(tokenId, p.offerer, total, released);
     }
 

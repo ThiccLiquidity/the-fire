@@ -275,12 +275,53 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ mill fund
-    function test_mill_bid_ratchets_and_resets() public {
+    function test_mill_bid_climbs_with_time_and_caps() public {
         assertEq(fire.millBid(), MILL_BID);
+        vm.warp(block.timestamp + 12 hours);
+        assertEq(fire.millBid(), MILL_BID * 1125 / 1000, "+12.5% after half a day");
+        vm.warp(block.timestamp + 12 hours);
+        assertEq(fire.millBid(), MILL_BID * 125 / 100, "+25% after a day");
+        vm.warp(block.timestamp + 30 days);
+        assertEq(fire.millBid(), MILL_BID * 3, "never past 3x");
+    }
+
+    function _seaportFire() internal returns (Fire f2, MockSeaport sea) {
+        sea = new MockSeaport(address(mill));
+        f2 = new Fire(Fire.Config({
+            paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
+        }));
+        vm.deal(address(f2), 1 ether);
+        vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
+    }
+
+    function test_mill_bid_restarts_below_the_price_paid() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        vm.warp(block.timestamp + 2 days); // bid has climbed to 1.5x
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        f2.eatMillFromSeaport(sea.listing(alice, id, 0.04 ether)); // a floor listing under the bid
+        assertEq(f2.millBid(), 0.036 ether, "restarts at 90% of what it paid");
+        vm.warp(block.timestamp + 1 days);
+        assertEq(f2.millBid(), 0.045 ether, "then climbs again");
+    }
+
+    function test_free_listing_cannot_park_the_bid_at_zero() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        f2.eatMillFromSeaport(sea.listing(alice, id, 0));
+        assertEq(f2.millBid(), MILL_BID / 10);
+    }
+
+    function test_mill_bid_ignores_rolls() public {
+        vm.warp(block.timestamp + 1 hours);
+        uint256 b = fire.millBid();
+        vm.warp(fire.nextRollAt());
+        uint256 atRoll = fire.millBid();
         _roll(RND_CALM);
-        assertEq(fire.millBid(), MILL_BID * 10500 / 10000);
-        _roll(RND_CALM);
-        assertEq(fire.millBid(), MILL_BID * 10500 / 10000 * 10500 / 10000);
+        assertEq(fire.millBid(), atRoll);
+        assertGt(atRoll, b);
     }
 
     function test_seaport_fill_burns_mill_and_pays_royalty() public {
