@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { type FireApi, type FireState, CEREMONY as C, FULL_DAYS, nameOf, phoenixHour, short } from "./data/types";
 import { makeMockApi } from "./data/mock";
 import { makeChainApi } from "./data/chain";
-import { Scene, sceneRef } from "./components/Scene";
+import { Scene } from "./components/Scene";
 import { BuyPanel } from "./components/BuyPanel";
 import { Swap } from "./components/Swap";
 import { Avatar } from "./components/Avatar";
@@ -161,7 +161,6 @@ export default function App() {
         <p>Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every night a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins 40% of the pot; 30% burns; 30% lights the next fire.</p>
         <div className="demo-row">
           {api.demoStorm && <button className="demo" onClick={api.demoStorm}>Demo: roll tonight's storm now</button>}
-          {!LIVE && <label className="demo">Visitor {(["deer", "rabbit", "squirrel", "skunk", "birds", "heron", "bear"] as const).map((k) => <button key={k} onClick={() => sceneRef.visitor?.(k)}>{k}</button>)}</label>}
           <label className="demo">Demo time of day <input type="range" min={0} max={24} step={0.25} value={demoHour ?? hour} onChange={(e) => setDemoHour(Number(e.target.value))} /> {demoHour !== null && <button onClick={() => setDemoHour(null)}>real</button>}</label>
         </div>
       </footer>
