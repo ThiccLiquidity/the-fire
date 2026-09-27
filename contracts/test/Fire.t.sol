@@ -3,12 +3,13 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Fire, ISeaport} from "../src/Fire.sol";
-import {MockERC20, MockMill, MockRandomness, MockFeed, MockSeaport} from "./Mocks.sol";
+import {MockERC20, MockUSDG, MockMill, MockRandomness, MockFeed, MockSeaport} from "./Mocks.sol";
 
 contract FireTest is Test {
     Fire fire;
     MockERC20 paper;
     MockERC20 plank;
+    MockUSDG usdg;
     MockMill mill;
     MockRandomness rng;
     MockFeed ethFeed;
@@ -23,11 +24,11 @@ contract FireTest is Test {
     uint256 constant PAPER_T = 1e18;
     uint256 constant PLANK_T = 10_000_000e18;
     uint256 constant ETH_T = 0.0003 ether; // $1 at $3,333/ETH (set below)
-    uint256 constant MILL_BID = 0.03 ether;
+    uint256 constant MILL_BID = 100e8; // $100, USD 8 decimals
     uint256 constant ROLL_TOD = 3 hours; // 8pm Phoenix
     uint256 constant PLANK_IN_MILL = 800_000_000e18;
 
-    // rnd values that pick specific noise-table slots (low 4 bits)
+    // rnd values that pick specific luck-table slots (low 5 bits)
     uint256 constant RND_CALM = 0; // luck 0.144x (gentlest of 32)
     uint256 constant RND_MONSTER = 31; // luck 6.95x (worst of 32)
     uint256 constant RND_MID = 16; // luck 1.036x
@@ -36,13 +37,14 @@ contract FireTest is Test {
         vm.warp(1_800_000_000);
         paper = new MockERC20("PAPER", "PAPER");
         plank = new MockERC20("PLANK", "PLANK");
+        usdg = new MockUSDG();
         mill = new MockMill(address(plank), PLANK_IN_MILL);
         rng = new MockRandomness();
         ethFeed = new MockFeed(3_333_33333333); // $3,333.33 -> $1 = 0.0003 ETH
         plankFeed = new MockFeed(90_000_000_000); // $9e-8 per PLANK in 18-dec -> $0.90 for 10M PLANK
         fire = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(0), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
             paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000 /* $0.90 */,
             ethUsdPerTicket: 100_000_000 /* $1.00 */, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
@@ -275,20 +277,173 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ mill fund
-    function test_mill_bid_ratchets_and_resets() public {
-        assertEq(fire.millBid(), MILL_BID);
-        _roll(RND_CALM);
-        assertEq(fire.millBid(), MILL_BID * 10500 / 10000);
-        _roll(RND_CALM);
-        assertEq(fire.millBid(), MILL_BID * 10500 / 10000 * 10500 / 10000);
+
+    function _seaportFire() internal returns (Fire f2, MockSeaport sea) {
+        sea = new MockSeaport(address(mill));
+        f2 = new Fire(Fire.Config({
+            paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
+        }));
+        vm.deal(address(f2), 1 ether); // ~$3,333 of ETH-ticket money
+        f2.pokeMillBid();
+        vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
     }
+
+    // ------------------------------------------------------------ mill bid: climbs only while the fund can pay
+    function test_empty_fund_bid_never_climbs() public {
+        assertEq(fire.millBid(), MILL_BID);
+        vm.warp(block.timestamp + 30 days);
+        assertEq(fire.millBid(), MILL_BID, "no money, no climb");
+    }
+
+    function test_bid_climbs_25pct_per_day_while_funded_and_caps_at_3x() public {
+        usdg.mint(address(fire), 10_000e6); fire.pokeMillBid();
+        vm.warp(block.timestamp + 12 hours);
+        assertEq(fire.millBid(), MILL_BID * 1125 / 1000, "+12.5% after half a day");
+        vm.warp(block.timestamp + 12 hours);
+        assertEq(fire.millBid(), MILL_BID * 125 / 100, "+25% after a day");
+        vm.warp(block.timestamp + 60 days);
+        assertEq(fire.millBid(), MILL_BID * 3, "never past 3x");
+    }
+
+    function test_bid_never_climbs_above_the_fund() public {
+        usdg.mint(address(fire), 120e6); fire.pokeMillBid(); // $120 in the fund, bid starts at $100
+        vm.warp(block.timestamp + 10 days);
+        assertEq(fire.millBid(), 120e8, "stops at what the fund holds");
+        usdg.mint(address(fire), 30e6); fire.pokeMillBid(); // more money arrives
+        vm.warp(block.timestamp + 10 days);
+        assertEq(fire.millBid(), 150e8, "then climbs to the new amount, gradually");
+    }
+
+    function test_money_arriving_later_does_not_find_a_high_bid() public {
+        vm.warp(block.timestamp + 30 days); // a month with an empty fund
+        vm.startPrank(bob); usdg.mint(bob, 1_000e6); usdg.approve(address(fire), type(uint256).max);
+        for (uint256 i; i < 50; i++) fire.buyTicketsWithUsdg(10, ""); // $485 arrives
+        vm.stopPrank();
+        assertEq(fire.millBid(), MILL_BID, "starts climbing from the base only now");
+        vm.warp(block.timestamp + 1 days);
+        assertEq(fire.millBid(), MILL_BID * 125 / 100);
+    }
+
+    function test_nightly_roll_refreshes_the_bid() public {
+        usdg.mint(address(fire), 10_000e6); // sent directly: nobody poked
+        vm.warp(block.timestamp + 1 days);
+        assertEq(fire.millBid(), MILL_BID, "not counted yet");
+        _roll(RND_CALM); // the roll counts it
+        vm.warp(block.timestamp + 1 days);
+        assertEq(fire.millBid(), MILL_BID * 125 / 100);
+    }
+
+    function test_stale_eth_feed_counts_eth_side_as_zero_without_reverting() public {
+        vm.deal(address(fire), 10 ether);
+        vm.warp(block.timestamp + 26 hours); // ETH feed missed its heartbeat
+        fire.pokeMillBid();
+        vm.warp(block.timestamp + 1 days);
+        assertEq(fire.millBid(), MILL_BID, "ETH not counted while its price is unknown");
+    }
+
+    function test_mill_bid_restarts_below_the_price_paid() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        vm.warp(block.timestamp + 2 days); // funded, so the bid has climbed to 1.5x
+        ethFeed.set(ethFeed.answer()); // keep the ETH/USD feed inside its heartbeat
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        f2.eatMillFromSeaport(sea.listing(alice, id, 0.04 ether), ""); // $133.33 at $3,333.33/ETH, under the $150 bid
+        uint256 paidUsd = 0.04 ether * uint256(ethFeed.answer()) / 1e18;
+        uint256 restart = paidUsd * 9_000 / 10_000;
+        assertEq(f2.millBid(), restart, "restarts at 90% of what it paid, in dollars");
+        vm.warp(block.timestamp + 1 days);
+        assertEq(f2.millBid(), restart + restart * 2_500 / 10_000, "then climbs again (fund still covers it)");
+    }
+
+    function test_restricted_listing_passes_zone_data_through() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        f2.eatMillFromSeaport(sea.listing(alice, id, 0.02 ether), hex"c0ffee");
+        assertEq(sea.lastExtraData(), hex"c0ffee");
+        assertEq(plank.balanceOf(royalty), PLANK_IN_MILL, "mill burned, PLANK to the pool");
+    }
+
+    function _usdgListing(MockSeaport sea, uint256 id, uint256 amount) internal view returns (ISeaport.Order memory o) {
+        o = sea.listing(alice, id, 0);
+        o.parameters.consideration[0].itemType = 1;
+        o.parameters.consideration[0].token = address(usdg);
+        o.parameters.consideration[0].startAmount = amount;
+        o.parameters.consideration[0].endAmount = amount;
+    }
+
+    function test_usdg_tickets_feed_the_usdg_fund() public {
+        vm.startPrank(bob);
+        usdg.mint(bob, 100e6); usdg.approve(address(fire), type(uint256).max);
+        fire.buyTicketsWithUsdg(10, "dollars");
+        vm.stopPrank();
+        assertEq(fire.usdgCost(10), 9.7e6, "$1 each, 3% off a full 10");
+        assertEq(fire.millFundUsdg(), 9.7e6);
+        assertEq(fire.pot(), 97 * PLANK_T / 20, "PLANK leg as usual");
+        (uint256 mine,) = fire.odds(bob);
+        assertEq(mine, 10);
+    }
+
+    function test_usdg_listing_paid_from_usdg_fund() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        usdg.mint(address(f2), 500e6);
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        vm.warp(block.timestamp + 1 days); // funded, so the bid climbed to $125
+        uint256 ethBefore = address(f2).balance;
+        f2.eatMillFromSeaport(_usdgListing(sea, id, 120e6), "");
+        assertEq(usdg.balanceOf(alice), 120e6, "seller paid in USDG");
+        assertEq(usdg.balanceOf(address(f2)), 380e6);
+        assertEq(ethBefore - address(f2).balance, 0.0003 ether, "only the burn fee in ETH");
+        assertEq(usdg.allowance(address(f2), address(sea)), 0, "no approval left behind");
+        assertEq(f2.millBid(), 108e8, "restart at 90% of $120");
+    }
+
+    function test_usdg_listing_over_bid_rejected() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        usdg.mint(address(f2), 500e6);
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        ISeaport.Order memory o = _usdgListing(sea, id, 101e6);
+        vm.expectRevert(Fire.TooExpensive.selector);
+        f2.eatMillFromSeaport(o, "");
+    }
+
+    function test_mixed_or_foreign_currency_listing_rejected() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        ISeaport.Order memory o = _usdgListing(sea, id, 50e6);
+        o.parameters.consideration[0].token = address(paper); // some other ERC-20
+        vm.expectRevert(Fire.BadRequest.selector);
+        f2.eatMillFromSeaport(o, "");
+    }
+
+    function test_caller_can_attach_the_burn_fee() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        vm.deal(address(f2), 0); // fund has no ETH, only USDG
+        usdg.mint(address(f2), 500e6);
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        ISeaport.Order memory o = _usdgListing(sea, id, 90e6);
+        vm.expectRevert(Fire.FundTooSmall.selector);
+        f2.eatMillFromSeaport(o, "");
+        f2.eatMillFromSeaport{value: 0.0003 ether}(o, "");
+        vm.expectRevert();
+        mill.ownerOf(id);
+    }
+
+    function test_free_listing_cannot_park_the_bid_at_zero() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        f2.eatMillFromSeaport(sea.listing(alice, id, 0), "");
+        assertEq(f2.millBid(), MILL_BID / 10);
+    }
+
 
     function test_seaport_fill_burns_mill_and_pays_royalty() public {
         // a fire wired to a mock Seaport that hands over the listed mill for the ETH
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
             paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
@@ -301,7 +456,7 @@ contract FireTest is Test {
         vm.stopPrank();
         ISeaport.Order memory o = sea.listing(alice, id, 0.02 ether);
         uint256 aliceBefore = alice.balance;
-        f2.eatMillFromSeaport(o);
+        f2.eatMillFromSeaport(o, "");
         assertEq(alice.balance - aliceBefore, 0.02 ether, "seller got the listing price");
         assertEq(plank.balanceOf(royalty), PLANK_IN_MILL, "plank inside -> royalty pool");
         vm.expectRevert();
@@ -313,15 +468,51 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
             paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether);
         vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); uint256 id = mill.mint(alice); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
-        ISeaport.Order memory o = sea.listing(alice, id, MILL_BID + 1);
+        ISeaport.Order memory o = sea.listing(alice, id, 0.031 ether); // $103 > $100 bid
         vm.expectRevert(Fire.TooExpensive.selector);
-        f2.eatMillFromSeaport(o);
+        f2.eatMillFromSeaport(o, "");
+    }
+
+    function test_seaport_fill_rejects_fulfiller_tips() public {
+        MockSeaport sea = new MockSeaport(address(mill));
+        Fire f2 = new Fire(Fire.Config({
+            paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
+        }));
+        vm.deal(address(f2), 1 ether);
+        vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); uint256 id = mill.mint(alice); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
+        // a cheap listing, with the filler appending a tip to itself for the rest of the bid
+        ISeaport.Order memory o = sea.listing(alice, id, 0.01 ether);
+        ISeaport.ConsiderationItem[] memory cons = new ISeaport.ConsiderationItem[](2);
+        cons[0] = o.parameters.consideration[0];
+        cons[1] = ISeaport.ConsiderationItem({itemType: 0, token: address(0), identifierOrCriteria: 0, startAmount: 0.02 ether, endAmount: 0.02 ether, recipient: payable(carol)});
+        o.parameters.consideration = cons;
+        vm.expectRevert(Fire.BadRequest.selector);
+        f2.eatMillFromSeaport(o, "");
+    }
+
+    function test_seaport_fill_prices_timed_listing_at_its_high() public {
+        MockSeaport sea = new MockSeaport(address(mill));
+        Fire f2 = new Fire(Fire.Config({
+            paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
+        }));
+        vm.deal(address(f2), 1 ether);
+        vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); uint256 id = mill.mint(alice); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
+        ISeaport.Order memory o = sea.listing(alice, id, 0.01 ether);
+        o.parameters.consideration[0].startAmount = 0.031 ether; // a declining auction that starts over the $100 bid
+        vm.expectRevert(Fire.TooExpensive.selector);
+        f2.eatMillFromSeaport(o, "");
     }
 
     function test_seaport_path_disabled_without_seaport() public {
@@ -330,7 +521,82 @@ contract FireTest is Test {
         ISeaport.Order memory o;
         o.parameters.offer = offer; o.parameters.consideration = cons;
         vm.expectRevert(Fire.NoSeaport.selector);
-        fire.eatMillFromSeaport(o);
+        fire.eatMillFromSeaport(o, "");
+    }
+
+    function test_no_buys_while_roll_pending() public {
+        _buy(alice, 10);
+        vm.warp(fire.nextRollAt());
+        ethFeed.set(ethFeed.answer());
+        fire.roll();
+        vm.prank(bob);
+        vm.expectRevert(Fire.RollPending.selector);
+        fire.buyTickets(10, "last look");
+        (, , uint256 c) = fire.quote(10);
+        vm.prank(bob);
+        vm.expectRevert(Fire.RollPending.selector);
+        fire.buyTicketsWithEth{value: c}(10, "last look");
+        rng.fulfill(rng.last(), RND_CALM);
+        _buy(bob, 10); // open again once the night resolves
+    }
+
+    function test_eth_buy_refunds_overpay_and_rejects_underpay() public {
+        (, , uint256 c) = fire.quote(10);
+        uint256 before = carol.balance;
+        vm.prank(carol);
+        fire.buyTicketsWithEth{value: c * 101 / 100}(10, "1% slippage");
+        assertEq(before - carol.balance, c, "paid exactly the price");
+        assertEq(fire.millFund(), c);
+        vm.prank(carol);
+        vm.expectRevert(Fire.BadAmount.selector);
+        fire.buyTicketsWithEth{value: c - 1}(10, "");
+    }
+
+    // ------------------------------------------------------------ stuck rolls
+    function test_reroll_after_30_min_with_no_answer() public {
+        _buy(alice, 10);
+        vm.warp(fire.nextRollAt());
+        ethFeed.set(ethFeed.answer()); plankFeed.set(plankFeed.answer());
+        fire.roll();
+        uint256 first = fire.pendingRequest();
+        vm.expectRevert(Fire.NotYet.selector);
+        fire.reroll();
+        vm.warp(block.timestamp + 30 minutes);
+        vm.prank(carol); // anyone
+        fire.reroll();
+        uint256 second = fire.pendingRequest();
+        assertTrue(second != first);
+        // the stale request can no longer resolve the night
+        vm.expectRevert(Fire.BadRequest.selector);
+        rng.fulfill(first, RND_MONSTER);
+        rng.fulfill(second, RND_CALM);
+        assertEq(fire.night(), 1);
+        assertEq(fire.pendingRequest(), 0);
+    }
+
+    function test_no_reroll_once_answered() public {
+        vm.warp(fire.nextRollAt());
+        fire.roll();
+        uint256 id = fire.pendingRequest();
+        rng.answerSilently(id); // provider has the number; delivery failed
+        vm.warp(block.timestamp + 2 hours);
+        vm.expectRevert(Fire.Answered.selector);
+        fire.reroll();
+    }
+
+    function test_no_reroll_without_pending_roll() public {
+        vm.expectRevert(Fire.BadRequest.selector);
+        fire.reroll();
+    }
+
+    function test_broken_plank_feed_does_not_block_the_night() public {
+        _buy(alice, 10);
+        vm.warp(fire.nextRollAt());
+        plankFeed.setBroken(true);
+        fire.roll();
+        rng.fulfill(rng.last(), RND_CALM);
+        assertEq(fire.night(), 1, "night resolved");
+        assertEq(fire.plankPerTicket(), PLANK_T, "leg held");
     }
 
     function test_tx_cap_10() public {
@@ -359,10 +625,25 @@ contract FireTest is Test {
         assertApproxEqRel(c1, 2 * c2, 1e15);
     }
 
-    function test_stale_eth_feed_reverts() public {
-        vm.warp(block.timestamp + 2 hours);
+    function test_quiet_eth_feed_still_prices_tickets() public {
+        vm.warp(block.timestamp + 6 hours); // gaps like this are normal on Robinhood Chain
+        assertGt(fire.ethPerTicket(), 0);
+        (, , uint256 e) = fire.quote(10);
+        assertGt(e, 0);
+    }
+
+    function test_stale_eth_feed_closes_only_the_eth_path() public {
+        vm.warp(block.timestamp + 26 hours); // missed the 24h heartbeat
         vm.expectRevert(Fire.StaleFeed.selector);
-        fire.quote(1);
+        fire.ethPerTicket();
+        (uint256 p, uint256 k, uint256 e) = fire.quote(10);
+        assertEq(p, 9.7e18);
+        assertEq(k, PLANK_T * 97 / 10);
+        assertEq(e, 0, "eth leg unquoted while stale");
+        _buy(alice, 10); // PAPER path unaffected
+        vm.prank(bob);
+        vm.expectRevert(Fire.StaleFeed.selector);
+        fire.buyTicketsWithEth{value: 0}(10, "");
     }
 
     function test_plank_leg_ratchets_5pct_per_night_toward_target() public {

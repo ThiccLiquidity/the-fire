@@ -6,7 +6,7 @@ export interface Buy {
   id: number;
   who: string;
   tickets: number;
-  withEth: boolean;
+  fromFire: boolean; // the PAPER leg was bought from the fire (ETH or USDG)
   note: string;
   title: string;
   at: number; // ms
@@ -69,16 +69,22 @@ export interface FireState {
   /** 0..1: how threatening tonight looks. Not a number for the UI to display — drives the sky. */
   threat: number;
   nextRollAt: number; // ms
-  you: { address?: string; tickets: number; paper: number; plank: number; eth: number; remainingToday: number; isWinner: boolean; profile?: Profile };
+  you: { address?: string; tickets: number; paper: number; plank: number; eth: number; usdg: number; remainingToday: number; isWinner: boolean; profile?: Profile };
   profiles: Record<string, Profile>; // lowercase address → profile
   burnedPaperAllTime: number;
   burnedPlankAllTime: number;
   millsEaten: number;
-  millFundEth: number;
-  millBidEth: number;
+  millFundEth: number; // the mill fund's ETH side
+  millFundUsdg: number; // and its USDG side
+  millBidUsd: number; // what the fire will pay for a mill right now, in dollars
+  usdgEnabled: boolean;
   feed: Buy[];
   past: PastFire[];
   storm?: Storm;
+  /** a roll is waiting on its random number; buying is paused until it lands */
+  rollPending?: boolean;
+  /** live only: what the "roll" button would do right now, if anything */
+  rollAction?: "roll" | "deliver" | "settle" | "reroll";
 }
 
 export const DAILY_CAP = 500;
@@ -100,20 +106,29 @@ export function priceMult(n: number) {
 
 export function quote(n: number, plankPerTicket: number, ethUsd: number) {
   const m = priceMult(n);
-  return { paper: n * m, plank: n * m * plankPerTicket, eth: (n * m * ETH_USD_PER_TICKET) / ethUsd };
+  return { paper: n * m, plank: n * m * plankPerTicket, eth: (n * m * ETH_USD_PER_TICKET) / ethUsd, usdg: n * m * ETH_USD_PER_TICKET };
 }
 
 export interface FireApi {
   state(): FireState;
   subscribe(fn: (s: FireState) => void): () => void;
-  buy(n: number, withEth: boolean, note: string): Promise<void>;
+  buy(n: number, pay: Pay, note: string): Promise<void>;
   setProfile(name: string, image: Uint8Array | null): Promise<void>; // null = keep the current picture
+  /** live only: ask the wallet for an account so balances and the buy buttons light up */
+  connect?(): Promise<void>;
+  /** live only: roll tonight's storm, deliver a stuck answer, or re-roll — whichever the contract allows now */
+  rollStorm?(): Promise<void>;
   /** demo only: force tonight's storm now */
   demoStorm?(): void;
+  /** demo only: the playground's hooks into the simulated game */
+  demo?: DemoControls;
 }
 
-export function titleFor(lifetime: number, withEth: boolean) {
-  if (withEth) return "Paper buyer";
+/** How the PAPER leg is paid: real PAPER, or "paper from the fire" in ETH or USDG. */
+export type Pay = "paper" | "eth" | "usdg";
+
+export function titleFor(lifetime: number, fromFire: boolean) {
+  if (fromFire) return "Paper buyer";
   if (lifetime >= 1000) return "Arsonist";
   if (lifetime >= 200) return "Lumberjack";
   if (lifetime >= 20) return "Paper boy";
@@ -138,4 +153,27 @@ export function nextRollTime(now = Date.now()) {
 export function phoenixHour(now = Date.now()) {
   const ms = (now - 7 * 3_600_000) % 86_400_000;
   return (ms < 0 ? ms + 86_400_000 : ms) / 3_600_000;
+}
+
+/** Demo-only controls: drive every state of the site without a chain. */
+export interface DemoControls {
+  /** roll tonight: "random" uses the real storm formula; "survive"/"out"/"you-win" force the result; luck 0..31 picks the quantile */
+  roll(outcome: "random" | "survive" | "out" | "you-win", luck?: number): void;
+  /** advance n nights instantly, no ceremony (fires may die and relight) */
+  skipNights(n: number): void;
+  /** hold the storm: buying paused, "deliver" button shown; release it with roll() or setPending(false) */
+  setPending(on: boolean): void;
+  set(patch: Partial<Pick<FireState, "fireSize" | "potPlank" | "night" | "trailingAvg" | "ticketsTotal" | "ticketsToday" | "threat" | "plankUsd" | "ethUsd" | "millBidUsd" | "millFundUsdg" | "millFundEth" | "usdgEnabled">>): void;
+  setYou(patch: Partial<FireState["you"]>): void;
+  /** connect/disconnect the demo wallet */
+  setConnected(on: boolean): void;
+  /** crowd buys per minute (0 = quiet) */
+  setCrowd(perMinute: number): void;
+  /** one crowd buy right now */
+  crowdBuy(tickets: number, pay?: Pay): void;
+  /** the fire eats a mill right now */
+  eatMill(): void;
+  /** ETH/USD feed stale: the ETH path closes */
+  setEthFeedStale(on: boolean): void;
+  reset(): void;
 }

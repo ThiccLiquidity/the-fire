@@ -48,6 +48,11 @@
             "internalType": "address"
           },
           {
+            "name": "usdg",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "paperPerTicket",
             "type": "uint256",
             "internalType": "uint256"
@@ -88,7 +93,33 @@
   },
   {
     "type": "function",
-    "name": "BID_STEP_BPS",
+    "name": "BID_MAX_MULT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "BID_RESTART_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "BID_RISE_BPS_PER_DAY",
     "inputs": [],
     "outputs": [
       {
@@ -160,6 +191,19 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "ETH_FEED_MAX_AGE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -335,6 +379,19 @@
   },
   {
     "type": "function",
+    "name": "REROLL_AFTER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "ROLL_TIME_OF_DAY",
     "inputs": [],
     "outputs": [
@@ -401,6 +458,32 @@
   {
     "type": "function",
     "name": "TX_CAP",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "USDG",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IERC20"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "USDG_UNIT",
     "inputs": [],
     "outputs": [
       {
@@ -483,6 +566,24 @@
     ],
     "outputs": [],
     "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "buyTicketsWithUsdg",
+    "inputs": [
+      {
+        "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "note",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -633,10 +734,15 @@
             "internalType": "bytes"
           }
         ]
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -718,7 +824,72 @@
   },
   {
     "type": "function",
+    "name": "millBidBanked",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "millBidSince",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "millBidStart",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "millFund",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "millFundUsdAt",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "millFundUsdg",
     "inputs": [],
     "outputs": [
       {
@@ -846,6 +1017,19 @@
   },
   {
     "type": "function",
+    "name": "pendingSince",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "plankPerTicket",
     "inputs": [],
     "outputs": [
@@ -856,6 +1040,13 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pokeMillBid",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -952,6 +1143,13 @@
   },
   {
     "type": "function",
+    "name": "reroll",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "roll",
     "inputs": [],
     "outputs": [],
@@ -1045,6 +1243,25 @@
     "stateMutability": "view"
   },
   {
+    "type": "function",
+    "name": "usdgCost",
+    "inputs": [
+      {
+        "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "event",
     "name": "Lit",
     "inputs": [
@@ -1056,6 +1273,25 @@
       },
       {
         "name": "carried",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MillBidUpdated",
+    "inputs": [
+      {
+        "name": "bid",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "fundUsd",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1080,13 +1316,75 @@
         "internalType": "address"
       },
       {
-        "name": "paidEth",
+        "name": "currency",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "paid",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "paidUsd",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
         "name": "plankToRoyalty",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PayoutCarried",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Rerolled",
+    "inputs": [
+      {
+        "name": "fireId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "night",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "oldRequestId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "newRequestId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1173,7 +1471,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "withEth",
+        "name": "paperFromFire",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
@@ -1229,6 +1527,11 @@
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "Answered",
+    "inputs": []
   },
   {
     "type": "error",

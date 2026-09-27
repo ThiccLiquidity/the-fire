@@ -15,6 +15,12 @@ contract MockERC20 is ERC20 {
     function mint(address to, uint256 amt) external { _mint(to, amt); }
 }
 
+/// @dev USDG stand-in: 6 decimals.
+contract MockUSDG is MockERC20 {
+    constructor() MockERC20("Global Dollar", "USDG") {}
+    function decimals() public pure override returns (uint8) { return 6; }
+}
+
 /// @dev Stand-in for the Paper Mill NFT: holds PLANK per mill, burn() releases it to the owner.
 contract MockMill is ERC721 {
     IERC20 public plank;
@@ -45,15 +51,22 @@ contract MockRandomness {
     address public fire;
     uint256 public last;
     function setFire(address f) external { fire = f; }
+    mapping(uint256 => bool) public answered;
     function request() external returns (uint256) { last += 1; return last; }
-    function fulfill(uint256 id, uint256 value) external { IFireCallback(fire).onRandomness(id, value); }
+    function fulfill(uint256 id, uint256 value) external { answered[id] = true; IFireCallback(fire).onRandomness(id, value); }
+    /// @dev The provider has a result for `id` but the callback never landed.
+    function answerSilently(uint256 id) external { answered[id] = true; }
 }
 
 contract MockFeed {
-    int256 public answer; uint256 public updatedAt;
+    int256 public answer; uint256 public updatedAt; bool public broken;
+    function setBroken(bool b) external { broken = b; }
+    bool public burnGas; function setBurnGas(bool b) external { burnGas = b; }
     constructor(int256 a) { answer = a; updatedAt = block.timestamp; }
     function set(int256 a) external { answer = a; updatedAt = block.timestamp; }
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        require(!broken, "feed down");
+        if (burnGas) { uint256 i; while (gasleft() > 1000) i++; }
         return (0, answer, 0, updatedAt, 0);
     }
 }
@@ -68,13 +81,27 @@ contract MockSeaport {
         ISeaport.ConsiderationItem[] memory cons = new ISeaport.ConsiderationItem[](1);
         cons[0] = ISeaport.ConsiderationItem({itemType: 0, token: address(0), identifierOrCriteria: 0, startAmount: priceWei, endAmount: priceWei, recipient: payable(offerer)});
         o.parameters.offerer = offerer; o.parameters.offer = offer; o.parameters.consideration = cons;
+        o.parameters.totalOriginalConsiderationItems = 1;
     }
-    function fulfillOrder(ISeaport.Order calldata order, bytes32) external payable returns (bool) {
+    /// @dev Like Seaport, pays every consideration item — including fulfiller-appended "tips" past the original count.
+
+    bytes public lastExtraData;
+    function fulfillAdvancedOrder(ISeaport.AdvancedOrder calldata order, ISeaport.CriteriaResolver[] calldata, bytes32, address recipient)
+        external payable returns (bool)
+    {
+        require(order.numerator == 1 && order.denominator == 1, "full fill");
+        lastExtraData = order.extraData;
         ISeaport.OrderParameters calldata p = order.parameters;
-        require(msg.value == p.consideration[0].endAmount, "price");
-        nft.transferFrom(p.offerer, msg.sender, p.offer[0].identifierOrCriteria);
-        (bool ok,) = p.consideration[0].recipient.call{value: msg.value}("");
-        require(ok);
+        uint256 total;
+        for (uint256 i; i < p.consideration.length; i++) if (p.consideration[i].itemType == 0) total += p.consideration[i].endAmount;
+        require(msg.value == total, "price");
+        nft.transferFrom(p.offerer, recipient, p.offer[0].identifierOrCriteria);
+        for (uint256 i; i < p.consideration.length; i++) {
+            ISeaport.ConsiderationItem calldata c = p.consideration[i];
+            if (c.itemType == 1) { IERC20(c.token).transferFrom(msg.sender, c.recipient, c.endAmount); continue; }
+            (bool ok,) = c.recipient.call{value: c.endAmount}("");
+            require(ok);
+        }
         return true;
     }
 }

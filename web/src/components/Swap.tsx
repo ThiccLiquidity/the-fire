@@ -9,12 +9,14 @@ import { robinhood } from "../data/chain";
 export const ROUTER: Address = "0x89e5DB8B5aA49aA85AC63f691524311AEB649eba";
 export const WETH: Address = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 const PAPER = (import.meta.env.VITE_PAPER_ADDRESS as Address | undefined) || undefined;
+const USDG = (import.meta.env.VITE_USDG_ADDRESS as Address | undefined) || undefined;
 
 type Tok = { symbol: string; address: Address | "ETH"; decimals: number };
 const BASE: Tok[] = [
   { symbol: "ETH", address: "ETH", decimals: 18 },
   { symbol: "PLANK", address: "0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc", decimals: 18 },
   ...(PAPER ? [{ symbol: "PAPER", address: PAPER, decimals: 18 } as Tok] : []),
+  ...(USDG ? [{ symbol: "USDG", address: USDG, decimals: 6 } as Tok] : []),
 ];
 
 const routerAbi = parseAbi([
@@ -30,6 +32,14 @@ const erc20 = parseAbi([
   "function allowance(address,address) view returns (uint256)",
   "function approve(address,uint256) returns (bool)",
 ]);
+
+function Sel({ tokens, v, set }: { tokens: Tok[]; v: Tok; set: (t: Tok) => void }) {
+  return (
+    <select value={v.address} onChange={(e) => set(tokens.find((t) => t.address === e.target.value)!)} aria-label="Token">
+      {tokens.map((t) => <option key={t.address} value={t.address}>{t.symbol}</option>)}
+    </select>
+  );
+}
 
 export function Swap() {
   const [tokens, setTokens] = useState<Tok[]>(BASE);
@@ -100,12 +110,6 @@ export function Swap() {
     finally { setBusy(false); }
   }
 
-  const Sel = ({ v, set }: { v: Tok; set: (t: Tok) => void }) => (
-    <select value={v.address} onChange={(e) => set(tokens.find((t) => t.address === e.target.value)!)} aria-label="Token">
-      {tokens.map((t) => <option key={t.address} value={t.address}>{t.symbol}</option>)}
-    </select>
-  );
-
   return (
     <div className={"swap" + (open ? " open" : "")}>
       <button className="swap-toggle" onClick={() => setOpen(!open)}>
@@ -113,8 +117,8 @@ export function Swap() {
       </button>
       {open && (
         <div className="swap-body">
-          <div className="swap-row"><span>Pay</span><input type="number" min="0" step="any" value={amt} onChange={(e) => setAmt(e.target.value)} aria-label="Amount" /><Sel v={from} set={setFrom} /></div>
-          <div className="swap-row"><span>Get</span><input readOnly value={out ? Number(out).toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"} aria-label="You get" /><Sel v={to} set={setTo} /></div>
+          <div className="swap-row"><span>Pay</span><input type="number" min="0" step="any" value={amt} onChange={(e) => setAmt(e.target.value)} aria-label="Amount" /><Sel tokens={tokens} v={from} set={setFrom} /></div>
+          <div className="swap-row"><span>Get</span><input readOnly value={out ? Number(out).toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"} aria-label="You get" /><Sel tokens={tokens} v={to} set={setTo} /></div>
           <div className="swap-actions">
             <button className="flip" onClick={() => { const f = from; setFrom(to); setTo(f); }} aria-label="Flip">⇅</button>
             <button className="cta" disabled={busy || !out} onClick={swap}>{busy ? "Swapping…" : `Swap ${from.symbol} → ${to.symbol}`}</button>

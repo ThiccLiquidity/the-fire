@@ -4,44 +4,49 @@ pragma solidity ^0.8.24;
 import {Script, console} from "forge-std/Script.sol";
 import {Fire} from "../src/Fire.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
+import {OpenDrandRouter} from "../src/OpenDrandRouter.sol";
 
 /**
  * Deploy order (see ../docs/deploy.md):
- *   0. OpenVRF router: from the OpenVRF repo with THEIR script (pnpm run deploy:mainnet). Owner = our deployer.
- *   1. PlankUsdTwap (script/DeployTwap.s.sol), >= 24h before step 2, then call checkpoint() once a day.
- *   2. This script: OpenVRFAdapter + Fire.
- *   3. On the router: setConsumerAuthorization(adapter, true). Fund the adapter with a little ETH if requestFee > 0.
+ *   1. PlankUsdTwap (script/DeployTwap.s.sol), >= 24h before step 2; call checkpoint() 20h+ after deploy, then daily.
+ *   2. This script: OpenDrandRouter + OpenVRFAdapter + Fire. None of them has an owner; nothing to configure after.
+ *   3. Start ops/keeper (rolls, delivers drand proofs, recovers stuck rolls, checkpoints, sweeps the mill floor).
  *   4. Ask Plank Press admin: PulpPool.addRewardToken(PLANK).
  *
  *   forge script script/Deploy.s.sol --rpc-url $RPC --account deployer --broadcast --verify
  *
- * PAPER, PLANK, MILL, ROYALTY_POOL, VRF_ROUTER = addresses on Robinhood Chain
- * ETH_USD_FEED, PLANK_USD_FEED = Chainlink-style feeds (8 decimals). PLANK feed = our TWAP adapter.
+ * PAPER, PLANK, MILL, ROYALTY_POOL = addresses on Robinhood Chain
+ * ETH_USD_FEED   = Chainlink ETH/USD (8 decimals).
+ * PLANK_USD_FEED = our PlankUsdTwap (**18 decimals** — an 8-decimal feed here would misprice the PLANK leg by 1e10).
  * PAPER_PER_TICKET     = 1e18 (1 PAPER, assuming 18 decimals — verify)
  * PLANK_PER_TICKET0    = starting PLANK per ticket in wei (~$0.90 of PLANK on launch day)
  * PLANK_USD_PER_TICKET = 90000000 ($0.90, 8 decimals) — the leg ratchets toward this
  * ETH_USD_PER_TICKET   = 100000000 ($1.00) — "paper from the fire" price
- * MILL_BID_BASE     = wei, just under the mill floor on launch day
+ * MILL_BID_BASE     = starting mill bid in USD, 8 decimals (e.g. 50000000000 = $500). It climbs ~1%/hour until a mill
+ *                     sells, so start at or below where you expect the floor. Listings may be in USDG or ETH.
+ * USDG              = the USDG token on Robinhood Chain (mill listings are priced in it)
  * ROLL_TIME_OF_DAY  = 10800 (03:00 UTC = 8:00 PM Phoenix)
  */
 contract Deploy is Script {
     function run() external {
         vm.startBroadcast();
-        // The adapter needs the Fire address and vice versa: predict the Fire address (nonce+1).
+        // Router, then adapter, then Fire. The adapter needs the Fire's address and vice versa: predict it (nonce+2).
         address deployer = msg.sender;
         uint64 nonce = vm.getNonce(deployer);
-        address predictedFire = vm.computeCreateAddress(deployer, nonce + 1);
+        address predictedFire = vm.computeCreateAddress(deployer, nonce + 2);
 
-        OpenVRFAdapter adapter = new OpenVRFAdapter(vm.envAddress("VRF_ROUTER"), predictedFire);
+        OpenDrandRouter router = new OpenDrandRouter();
+        OpenVRFAdapter adapter = new OpenVRFAdapter(address(router), predictedFire);
         Fire fire = new Fire(Fire.Config({
             paper: vm.envAddress("PAPER"),
             plank: vm.envAddress("PLANK"),
             mill: vm.envAddress("MILL"),
-            seaport: vm.envOr("SEAPORT", address(0)),
+            seaport: vm.envAddress("SEAPORT"), // required: without it, ETH from ETH tickets could never leave the Fire
             royaltyPool: vm.envAddress("ROYALTY_POOL"),
             randomness: address(adapter),
             ethUsdFeed: vm.envAddress("ETH_USD_FEED"),
             plankUsdFeed: vm.envAddress("PLANK_USD_FEED"),
+            usdg: vm.envAddress("USDG"),
             paperPerTicket: vm.envUint("PAPER_PER_TICKET"),
             plankPerTicket0: vm.envUint("PLANK_PER_TICKET0"),
             plankUsdPerTicket: vm.envUint("PLANK_USD_PER_TICKET"),
@@ -52,6 +57,7 @@ contract Deploy is Script {
         require(address(fire) == predictedFire, "address prediction failed");
         console.log("Fire:", address(fire));
         console.log("Adapter:", address(adapter));
+        console.log("Router:", address(router));
         vm.stopBroadcast();
     }
 }

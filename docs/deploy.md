@@ -3,57 +3,47 @@
 Everything below is signed from a **fresh deployer wallet** with ~$50 of ETH. Keys live in a Foundry keystore
 (`cast wallet import deployer --interactive`), never in files or command lines.
 
-## 0. OpenVRF router (theirs, once)
-```powershell
-git clone https://github.com/Robinhood-OSS/OpenVRF; cd OpenVRF
-git submodule update --init --recursive; pnpm install; forge build; forge test
-# .env: RPC_URL, WS_URL, CHAIN_ID=4663, DEPLOYER_ACCOUNT=deployer, DEPLOYER_ADDRESS, OWNER_ADDRESS (=deployer),
-#       RELAYER_ADDRESS (a second fresh wallet, ~$20 ETH), REQUEST_FEE_WEI=0
-pnpm run deploy:mainnet                 # simulate
-pnpm run deploy:mainnet -- --broadcast  # deploy; note ROUTER_ADDRESS and START_BLOCK
-```
-Then stand up the relayer (Docker + Postgres) on a small VPS per their `docs/operator-runbook.md`, with
-`RELAY_ALL_CONSUMERS=true`. The relayer wallet pays gas for every fulfilment (~$0.001 cap each by default).
-
 ## 1. PLANK/USD TWAP feed (ours)
 ```powershell
 cd the-fire\contracts; copy .env.example .env   # fill PLANK_WETH_V2_PAIR, PLANK, ETH_USD_FEED
 forge script script/DeployTwap.s.sol --rpc-url $env:RPC --account deployer --broadcast --verify
 ```
-Put the address in `.env` as `PLANK_USD_FEED`. Call `checkpoint()` now and again **24h later** (and daily after —
-a cron/keeper; anyone can call it). The Fire's ratchet holds still until the feed has a full window.
+Put the address in `.env` as `PLANK_USD_FEED`. Call `checkpoint()` **20h+ after deploy** and then once a day (a cron/keeper;
+anyone can call it). Calls less than 20h after the last accepted checkpoint are ignored, so extra calls are harmless.
+The feed reports 0 until its first full window, and the Fire's ratchet holds still until then.
 
-## 2. Adapter + Fire (ours)
-Fill the rest of `.env` (PAPER once it exists; VRF_ROUTER; PLANK_PER_TICKET0 from the feed's price; MILL_BID_BASE
-just under the OpenSea floor; SEAPORT if the Seaport 1.6 address on this chain is confirmed, else leave unset).
+## 2. Router + adapter + Fire (ours)
+Fill the rest of `.env` (PAPER once it exists; PLANK_PER_TICKET0 from the feed's price; MILL_BID_BASE in USD with 8
+decimals; SEAPORT = `0x0000000000000068F116a894984e2DB1123eB395`, Seaport 1.6, confirmed deployed on Robinhood Chain
+Sep 27 2026 — required; USDG = `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`).
 ```powershell
 forge script script/Deploy.s.sol --rpc-url $env:RPC --account deployer --broadcast --verify
 ```
-Note the Fire and Adapter addresses.
+It deploys `OpenDrandRouter`, `OpenVRFAdapter` and `Fire`. None has an owner and there is nothing to configure
+afterwards: the deploy wallet has no powers once this finishes. Note the three addresses.
 
-## 3. Authorize + fund
-```powershell
-cast send $ROUTER "setConsumerAuthorization(address,bool)" $ADAPTER true --rpc-url $env:RPC --account deployer
-```
-If the router charges a request fee, send that much ETH × ~30 nights to the adapter (it forwards its balance
-per request). With `REQUEST_FEE_WEI=0` nothing is needed; the relayer wallet covers gas.
+## 3. Keeper
+Set up the keeper box per `ops/README.md` (one script, one `docker run`). It rolls, delivers drand's number, recovers
+stuck rolls, checkpoints the TWAP and sweeps the mill floor.
 
 ## 4. Plank Press admin
 Ask them to call `PulpPool.addRewardToken(0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc)` so PLANK we send to the
 pool counts toward every mill's share.
 
 ## 5. Nightly roll
-Anyone can call `Fire.roll()` after 8:00 PM Phoenix. Set a cron (or Gelato Automate) to call it at 8:00:30 PM and
-`PlankUsdTwap.checkpoint()` at the same time. The site also offers a "roll now" button once the time has passed.
+The keeper does it. Anyone can also call `Fire.roll()` after 8:00 PM Phoenix, and the site shows a button when a roll,
+a delivery or a re-roll is due.
 
 ## 6. Light fire #1
-Throw the first PLANK in yourself (pyro mode, a few dollars). Site flips from mock to live with `VITE_FIRE_ADDRESS`.
+Pyro mode was removed from the contract, so seed fire #1 by buying its first tickets yourself. **Don't send PLANK
+straight to the Fire address** — it never counts toward the pot and can't be recovered. Site flips from mock to live
+with `VITE_FIRE_ADDRESS` (set `VITE_PROFILES_ADDRESS` + `VITE_PROFILES_FROM_BLOCK` too; see `web/.env.example`).
 
 ## Verify a roll (anyone)
-```
-node scripts/verify-request.mjs --rpc $RPC --router $ROUTER --request-id N --from-block $START_BLOCK
-```
-(from the OpenVRF repo) — checks the drand signature and the derived word against chain state.
+Each `RandomnessFulfilled(id, word)` on the router can be checked against drand: take the request's round from
+`router.requests(id)`, fetch `https://api.drand.sh/04f1e9062b8a81f848fded9c12306733282b2727ecced50032187751166ec8c3/public/<round>`,
+and the word is `keccak256(abi.encode(CHAIN_HASH, sha256(signature), chainid, router, id, adapter))`. The router
+already rejected any signature drand didn't make.
 
 ## Profiles (any time)
 
