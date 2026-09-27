@@ -2,7 +2,7 @@
 // gather toward the roll, and the storm (clouds in → lightning + thunder → rain → fire beaten down).
 // Ported from the design demo; kept as one self-contained module.
 
-import type { Storm } from "../data/types";
+import { CEREMONY as C, type Storm } from "../data/types";
 
 export interface SceneInput {
   /** 0..1: fire height. 1 = reaching the pot text. */
@@ -42,7 +42,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   // ---- scenery
   const farPts: number[] = []; for (let i = 0; i <= 140; i++) farPts.push(0.45 + fbm(i * .35, 3) * 0.35);
   const trees: { x: number; s: number; y: number }[] = [];
-  for (let i = 0; i < 48; i++) { const side = i % 2 ? 1 : -1; trees.push({ x: side * (330 + i * 52 + ((i * 37) % 50)), s: 0.85 + ((i * 7) % 6) * 0.11, y: (i * 13) % 30 }); }
+  for (let i = 0; i < 48; i++) { const side = i % 2 ? 1 : -1; const tx = side * (330 + i * 52 + ((i * 37) % 50)); if (tx > 300 && tx < 600) continue; /* a clearing for the mill */ trees.push({ x: tx, s: 0.85 + ((i * 7) % 6) * 0.11, y: (i * 13) % 30 }); }
   const stars = Array.from({ length: 90 }, () => [Math.random(), Math.random() * .55, .6 + Math.random() * 1.2, .3 + Math.random() * .6]);
   const clouds = Array.from({ length: 14 }, (_, i) => ({ x: (i / 14) * 1.6 - 0.3, y: 0.02 + ((i * 37) % 50) / 100 * 0.28, s: 0.7 + ((i * 13) % 7) * 0.12, v: 0.0006 + ((i * 7) % 5) * 0.0002 }));
   const embers = Array.from({ length: 220 }, () => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1 }));
@@ -54,7 +54,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   let gust = 0;
 
   // ---- storm playback
-  const st = { phase: "none" as "none" | "in" | "strike" | "rain" | "out", vis: 0.5, cover: 0, rainA: 0, start: 0, survived: true, dead: 0, bolts: [] as { x: number; cloud: boolean; age: number; life: number; pts: number[][] }[], nextBolt: 0, seen: 0, flash: 0, sizeFrom: 0, sizeTo: 0, sizeNow: 0 };
+  const st = { phase: "none" as "none" | "in" | "strike" | "rain" | "ashes" | "relight" | "out", vis: 0.5, cover: 0, rainA: 0, at: 0, survived: true, dead: 0, bolts: [] as { x: number; cloud: boolean; age: number; life: number; pts: number[][] }[], nextBolt: 0, seen: 0, flash: 0, sizeFrom: 0, sizeTo: 0, sizeNow: 0 };
   let ac: AudioContext | null = null; const bufs: Record<string, AudioBuffer> = {}; let loading = false;
   async function loadThunder() {
     try { ac ??= new AudioContext(); if (ac.state === "suspended") void ac.resume(); if (loading) return; loading = true;
@@ -77,20 +77,66 @@ export function createScene(canvas: HTMLCanvasElement) {
     st.flash = (inCloud ? 0.18 : 0.5) + I * 0.35; setTimeout(() => (st.flash = 0), 60 + Math.random() * 90);
   }
   function startStorm(s: Storm) {
-    st.seen = s.at; st.phase = "in"; st.start = t; st.bolts = []; st.dead = 0; st.cover = Math.max(st.cover, 0.05);
+    st.seen = s.at; st.at = s.at; st.phase = "in"; st.bolts = []; st.dead = 0; st.cover = Math.max(st.cover, 0.05);
     st.survived = s.survived; st.vis = s.intensity; st.sizeFrom = inp.size; st.sizeTo = s.survived ? s.sizeAfter ?? inp.size * 0.6 : 0; st.sizeNow = inp.size;
     void loadThunder();
   }
+  // Phases are driven by wall-clock ms since the roll (CEREMONY), so a reload mid-storm lands in the right place.
   function stepStorm() {
-    const I = st.vis, age = t - st.start;
-    if (st.phase === "in") { st.cover = Math.min(1, st.cover + 0.006 * (0.6 + I)); if (st.cover > 0.55 && Math.random() < 0.006 * (0.3 + I * 2)) bolt(); if (age > 170) st.phase = "strike"; }
-    else if (st.phase === "strike") { st.cover = Math.min(1, st.cover + 0.01); if (t >= st.nextBolt) { bolt(); st.nextBolt = t + (20 + Math.random() * 60) * (1.3 - I); } if (age > 170 + 140 * (0.6 + I)) { st.phase = "rain"; st.nextBolt = t + 40; } }
-    else if (st.phase === "rain") { st.rainA = Math.min(1, st.rainA + 0.02); if (Math.random() < 0.004 * (0.2 + I * 2)) bolt(); st.sizeNow += (st.sizeTo - st.sizeNow) * 0.03; if (!st.survived) st.dead = Math.min(1, st.dead + 0.012); if (age > 170 + 140 * (0.6 + I) + 520) st.phase = "out"; }
-    else if (st.phase === "out") { st.rainA = Math.max(0, st.rainA - 0.012); st.cover = Math.max(0, st.cover - 0.004); if (st.rainA === 0 && st.cover === 0) { st.phase = "none"; st.dead = 0; } }
+    const I = st.vis, age = Date.now() - st.at;
+    if (st.phase === "in") { st.cover = Math.min(1, st.cover + 0.003 * (0.6 + I)); if (st.cover > 0.55 && Math.random() < 0.004 * (0.3 + I * 2)) bolt(); if (age > C.IN) st.phase = "strike"; }
+    else if (st.phase === "strike") { st.cover = Math.min(1, st.cover + 0.006); if (t >= st.nextBolt) { bolt(); st.nextBolt = t + (30 + Math.random() * 90) * (1.3 - I); } if (age > C.STRIKE) { st.phase = "rain"; st.nextBolt = t + 60; } }
+    else if (st.phase === "rain") {
+      st.rainA = Math.min(1, st.rainA + 0.01); if (Math.random() < 0.003 * (0.2 + I * 2)) bolt();
+      st.sizeNow += (st.sizeTo - st.sizeNow) * 0.012;
+      if (!st.survived && age > C.STRIKE + 6_000) st.dead = Math.min(1, st.dead + 0.004); // dies slowly in the rain
+      if (age > C.RAIN) st.phase = st.survived ? "out" : "ashes";
+    }
+    else if (st.phase === "ashes") { st.rainA = Math.max(0, st.rainA - 0.004); st.cover = Math.max(0.35, st.cover - 0.002); st.dead = Math.min(1, st.dead + 0.01); if (age > C.RELIGHT) { st.phase = "relight"; st.sizeNow = 0; } }
+    else if (st.phase === "relight") { st.dead = Math.max(0, st.dead - 0.006); st.sizeNow += (inp.size - st.sizeNow) * 0.02; st.rainA = Math.max(0, st.rainA - 0.01); st.cover = Math.max(0, st.cover - 0.003); if (st.dead === 0 && st.cover === 0) st.phase = "none"; }
+    else if (st.phase === "out") { st.rainA = Math.max(0, st.rainA - 0.006); st.cover = Math.max(0, st.cover - 0.003); if (st.rainA === 0 && st.cover === 0) { st.phase = "none"; st.dead = 0; } }
     for (const b of st.bolts) b.age++; st.bolts = st.bolts.filter((b) => b.age < b.life);
   }
 
   // ---- drawing helpers
+  /** The mill, back-right in the clearing: timber house, green roof, chimney, water wheel on a little stream. */
+  function mill(px: number, py: number, sc: number, night: number, warm: number) {
+    x.save(); x.translate(px, py); x.scale(sc, sc);
+    const shade = (c: number[]) => `rgb(${c.map((v) => Math.round(v * (0.35 + 0.65 * (1 - night) + warm * 0.25))).join(",")})`;
+    // stream
+    x.fillStyle = shade([120, 170, 190]); x.beginPath(); x.moveTo(60, 8); x.lineTo(210, 8); x.lineTo(260, 30); x.lineTo(20, 30); x.closePath(); x.fill();
+    // stone base
+    x.fillStyle = shade([120, 118, 110]); x.fillRect(-120, -8, 190, 16);
+    // walls
+    x.fillStyle = shade([150, 105, 60]); x.fillRect(-110, -110, 170, 102);
+    x.fillStyle = shade([175, 128, 78]); x.fillRect(-100, -100, 150, 44);
+    // sign
+    x.fillStyle = shade([30, 90, 70]); x.fillRect(-96, -96, 142, 16);
+    x.fillStyle = shade([230, 190, 90]); x.font = "bold 9px sans-serif"; x.textAlign = "center"; x.fillText("PLANK & PAPER", -25, -84);
+    // windows (glow at night)
+    const wg = night > 0.5 ? `rgba(255,190,90,${0.85 * night})` : shade([230, 220, 190]);
+    x.fillStyle = wg; x.fillRect(-90, -50, 30, 28); x.fillRect(10, -50, 30, 28);
+    x.strokeStyle = shade([70, 45, 20]); x.lineWidth = 2; x.strokeRect(-90, -50, 30, 28); x.strokeRect(10, -50, 30, 28);
+    x.beginPath(); x.moveTo(-75, -50); x.lineTo(-75, -22); x.moveTo(-90, -36); x.lineTo(-60, -36); x.moveTo(25, -50); x.lineTo(25, -22); x.moveTo(10, -36); x.lineTo(40, -36); x.stroke();
+    // round window in the gable
+    x.fillStyle = wg; x.beginPath(); x.arc(-25, -128, 12, 0, 7); x.fill(); x.strokeStyle = shade([200, 160, 70]); x.lineWidth = 2; x.stroke();
+    // gable + roof
+    x.fillStyle = shade([160, 112, 66]); x.beginPath(); x.moveTo(-125, -110); x.lineTo(-25, -170); x.lineTo(75, -110); x.closePath(); x.fill();
+    x.fillStyle = shade([52, 120, 100]); x.beginPath(); x.moveTo(-135, -106); x.lineTo(-25, -178); x.lineTo(85, -106); x.lineTo(70, -106); x.lineTo(-25, -166); x.lineTo(-120, -106); x.closePath(); x.fill();
+    x.fillStyle = shade([40, 100, 85]); x.beginPath(); x.moveTo(-25, -178); x.lineTo(85, -106); x.lineTo(70, -106); x.lineTo(-25, -166); x.closePath(); x.fill();
+    // chimney + smoke
+    x.fillStyle = shade([130, 125, 115]); x.fillRect(30, -190, 18, 60); x.fillStyle = shade([40, 100, 85]); x.fillRect(26, -196, 26, 8);
+    x.fillStyle = `rgba(200,200,210,${0.18 + 0.1 * (1 - night)})`; for (let i = 0; i < 4; i++) { const u = ((t * 0.004 + i * 0.25) % 1); x.beginPath(); x.arc(39 + Math.sin(u * 6 + i) * 8, -200 - u * 70, 5 + u * 12, 0, 7); x.fill(); }
+    // water wheel (turns)
+    x.save(); x.translate(100, -40); x.rotate(t * 0.006);
+    x.strokeStyle = shade([175, 128, 78]); x.lineWidth = 4;
+    for (let i = 0; i < 8; i++) { x.beginPath(); x.moveTo(0, 0); x.lineTo(Math.cos(i * Math.PI / 4) * 46, Math.sin(i * Math.PI / 4) * 46); x.stroke(); }
+    x.lineWidth = 7; x.strokeStyle = shade([50, 100, 85]); x.beginPath(); x.arc(0, 0, 46, 0, 7); x.stroke();
+    x.lineWidth = 3; x.strokeStyle = shade([175, 128, 78]); x.beginPath(); x.arc(0, 0, 30, 0, 7); x.stroke();
+    x.fillStyle = shade([175, 128, 78]); for (let i = 0; i < 12; i++) { x.save(); x.rotate(i * Math.PI / 6); x.fillRect(38, -6, 14, 12); x.restore(); }
+    x.restore();
+    x.restore();
+  }
   function pine(px: number, py: number, s: number, col: string) { x.fillStyle = col; x.beginPath(); x.moveTo(px, py - 150 * s); x.lineTo(px - 42 * s, py - 60 * s); x.lineTo(px - 22 * s, py - 60 * s); x.lineTo(px - 58 * s, py + 10 * s); x.lineTo(px - 12 * s, py + 10 * s); x.lineTo(px - 12 * s, py + 40 * s); x.lineTo(px + 12 * s, py + 40 * s); x.lineTo(px + 12 * s, py + 10 * s); x.lineTo(px + 58 * s, py + 10 * s); x.lineTo(px + 22 * s, py - 60 * s); x.lineTo(px + 42 * s, py - 60 * s); x.closePath(); x.fill(); }
   function flame(pts: number[][], fill: string | CanvasGradient, speed: number, ph: number, skewAmt: number) {
     const sk = Math.sin(t * speed + ph) * skewAmt, sy = 1 + Math.sin(t * speed * 1.3 + ph) * 0.06;
@@ -111,12 +157,12 @@ export function createScene(canvas: HTMLCanvasElement) {
     if (stopped) return;
     t++;
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (inp.storm && inp.storm.at !== st.seen && Date.now() - inp.storm.at < 15000) startStorm(inp.storm);
+    if (inp.storm && inp.storm.at !== st.seen && Date.now() - inp.storm.at < C.DONE) startStorm(inp.storm);
     stepStorm();
     const hour = inp.hour;
     const night = hour < 6 || hour > 19.5 ? 1 : hour < 7 ? 7 - hour : hour > 18.5 ? hour - 18.5 : 0;
     const maxH = (H * 0.86 - 175) / 232;
-    const size = st.phase === "rain" || st.phase === "out" ? st.sizeNow : inp.size;
+    const size = st.phase === "rain" || st.phase === "out" || st.phase === "ashes" || st.phase === "relight" ? st.sizeNow : inp.size;
     const fsH = (0.4 + (maxH - 0.4) * Math.max(0, Math.min(1, size))) * (1 - st.dead * 0.97);
     const fsW = 0.55 + fsH * 0.55;
     const flick = (0.85 + fbm(t * .05, 9) * 0.3) * (1 - st.dead * 0.9);
@@ -124,7 +170,7 @@ export function createScene(canvas: HTMLCanvasElement) {
 
     // sky
     const sk = skyStops(hour);
-    const dark = st.phase === "strike" || st.phase === "rain" ? 0.7 : st.cover * 0.5 + inp.threat * 0.35;
+    const dark = st.phase === "strike" || st.phase === "rain" ? 0.7 : st.phase === "ashes" ? 0.6 : st.cover * 0.5 + inp.threat * 0.35;
     const top = lerp(sk.top, [15, 18, 28], dark), bot = lerp(sk.bot, [38, 44, 59], dark);
     const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, rgb(top)); g.addColorStop(.75, rgb(bot)); x.fillStyle = g; x.fillRect(0, 0, W, H);
     if (skyGlow > 0) { const sg = x.createRadialGradient(W / 2, H, 0, W / 2, H, H * 1.1); sg.addColorStop(0, `rgba(255,110,30,${.7 * skyGlow * flick})`); sg.addColorStop(1, "rgba(255,110,30,0)"); x.fillStyle = sg; x.fillRect(0, 0, W, H); }
@@ -150,11 +196,12 @@ export function createScene(canvas: HTMLCanvasElement) {
     const lw = 0.9 + fsW * 0.25;
     const gg = x.createRadialGradient(600, base, 10, 600, base, 700 * Math.sqrt(fsW)); gg.addColorStop(0, `rgba(255,150,50,${.55 * flick})`); gg.addColorStop(.5, "rgba(70,60,30,.35)"); gg.addColorStop(1, "rgba(10,14,10,0)");
     x.fillStyle = night ? "#121a12" : "#2f3d26"; x.fillRect(-3000, base - 20, 6000, 3000); x.fillStyle = gg; x.fillRect(-3000, base - 20, 6000, 3000);
+    mill(600 + 445, base - 24, 0.6, night, Math.max(0, lit * 0.5));
     for (const tr of trees) { const px = 600 + tr.x, py = base - 10 + tr.y; const d = Math.abs(tr.x) / 400; const warm = Math.max(0, lit * 1.2 - d * .4); pine(px, py, tr.s, night ? `rgb(${8 + warm * 70},${12 + warm * 30},${22})` : `rgb(${30 + warm * 40},${58 + warm * 20},${40})`); }
     x.save(); x.translate(600, 600); x.scale(lw, Math.min(lw, 1.6)); x.translate(-600, -600);
     x.fillStyle = "#3e424c"; for (const s of [[470, 600, 26, 10], [520, 612, 22, 9], [600, 618, 30, 10], [680, 612, 22, 9], [730, 600, 26, 10]]) { x.beginPath(); x.ellipse(s[0], s[1], s[2], s[3], 0, 0, 7); x.fill(); }
     x.fillStyle = "#5b3a1c"; x.fillRect(500, 570, 200, 22); x.save(); x.translate(600, 569); x.rotate(-.14); x.fillStyle = "#7d4f27"; x.fillRect(-80, -11, 160, 22); x.rotate(.3); x.fillStyle = "#4a2e14"; x.fillRect(-80, -11, 160, 22); x.restore(); x.restore();
-    const eb = x.createRadialGradient(600, 575, 5, 600, 575, 110 * lw); eb.addColorStop(0, `rgba(255,120,30,${.9 * flick})`); eb.addColorStop(1, "rgba(255,60,10,0)"); x.fillStyle = eb; x.fillRect(600 - 130 * lw, 540, 260 * lw, 60);
+    const eb = x.createRadialGradient(600, 575, 5, 600, 575, 110 * lw); const emberGlow = Math.max(.9 * flick, st.dead * (0.28 + 0.14 * Math.sin(t * 0.035))); eb.addColorStop(0, `rgba(255,120,30,${emberGlow})`); eb.addColorStop(1, "rgba(255,60,10,0)"); x.fillStyle = eb; x.fillRect(600 - 130 * lw, 540, 260 * lw, 60);
 
     // flames
     if (st.dead < 0.98) {
@@ -170,14 +217,16 @@ export function createScene(canvas: HTMLCanvasElement) {
     }
     // paper / log tosses
     if (inp.lastBuyAt && (scraps.length === 0 || scraps[scraps.length - 1].t0 !== inp.lastBuyAt)) scraps.push({ t0: inp.lastBuyAt, big: inp.lastBuyBig, x0: (Math.random() - .5) * 200 });
-    while (scraps.length && Date.now() - scraps[0].t0 > 1300) scraps.shift();
-    for (const s of scraps) { const u = (Date.now() - s.t0) / 1300; const px = 600 + s.x0 * (1 - u), py = base + 120 - Math.sin(u * Math.PI) * 300 * fsH - u * 60; x.save(); x.translate(px, py); x.rotate(u * 6); x.globalAlpha = 1 - u * u; x.fillStyle = s.big ? "#a06a35" : "#f3e9d2"; if (s.big) x.fillRect(-20, -6, 40, 12); else x.fillRect(-8, -10, 16, 20); x.restore(); }
+    while (scraps.length && Date.now() - scraps[0].t0 > 1600) scraps.shift();
+    for (const s of scraps) { const u = (Date.now() - s.t0) / 1600; const px = 600 + s.x0 * (1 - u), py = base + 120 - Math.sin(u * Math.PI) * 300 * fsH - u * 60; x.save(); x.translate(px, py); x.rotate(u * 5); x.globalAlpha = u < 0.75 ? 1 : 1 - (u - 0.75) * 4; x.scale(1.3, 1.3); if (s.big) { x.fillStyle = "#6b4423"; x.fillRect(-26, -8, 52, 16); x.fillStyle = "#c9a26b"; x.beginPath(); x.ellipse(26, 0, 4, 8, 0, 0, 7); x.fill(); x.strokeStyle = "#3b2410"; x.lineWidth = 1; x.beginPath(); x.moveTo(-20, -3); x.lineTo(18, -3); x.moveTo(-14, 3); x.lineTo(12, 3); x.stroke(); }
+      else { x.fillStyle = "#b8874a"; x.fillRect(-18, -4, 36, 8); x.strokeStyle = "#7a5228"; x.lineWidth = 1; x.beginPath(); x.moveTo(-14, -1); x.lineTo(10, -1); x.moveTo(-8, 2); x.lineTo(14, 2); x.stroke(); }
+      x.restore(); }
 
     // embers & smoke
     x.globalCompositeOperation = "lighter";
     const spawnRate = 0.15 + fsH * 0.12;
     for (const e of embers) {
-      if (e.life <= 0) { if (Math.random() < spawnRate && st.dead < 0.5) { e.x = 600 + (Math.random() - .5) * 110 * fsW; e.y = base - 40 - Math.random() * 150 * fsH; e.vx = (Math.random() - .5) * .8; e.vy = -(1.5 + Math.random() * 2.5) * Math.sqrt(fsH); e.life = e.max = 50 + Math.random() * 90; } continue; }
+      if (e.life <= 0) { if (Math.random() < (st.dead > 0.5 ? 0.02 : spawnRate)) { e.x = 600 + (Math.random() - .5) * 110 * fsW; e.y = base - 40 - Math.random() * 150 * fsH; e.vx = (Math.random() - .5) * .8; e.vy = -(1.5 + Math.random() * 2.5) * Math.sqrt(fsH); e.life = e.max = 50 + Math.random() * 90; } continue; }
       e.life--; e.x += e.vx + (fbm(e.y * .01, t * .02 + e.x * .001) - .5) * 2.5; e.y += e.vy; const a = e.life / e.max;
       x.fillStyle = `rgba(255,${150 + a * 90 | 0},60,${a})`; const r = 1.2 + a * 1.6 * Math.sqrt(fsH); x.fillRect(e.x - r / 2, e.y - r / 2, r, r);
     }

@@ -959,19 +959,6 @@
   },
   {
     "type": "function",
-    "name": "stoke",
-    "inputs": [
-      {
-        "name": "plankAmount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "stormStrength",
     "inputs": [
       {
@@ -1125,31 +1112,6 @@
       },
       {
         "name": "requestId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "Stoked",
-    "inputs": [
-      {
-        "name": "fireId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "who",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "plank",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"

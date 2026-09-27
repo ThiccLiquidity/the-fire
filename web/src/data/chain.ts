@@ -5,7 +5,11 @@ import {
   createPublicClient, createWalletClient, custom, http, formatUnits, parseAbi, type Abi, type Address, type Hex, defineChain,
 } from "viem";
 import fireAbi from "./fireAbi.json";
+import profilesAbi from "./profilesAbi.json";
 import { type Buy, type FireApi, type FireState, type PastFire, DAILY_CAP, FULL_DAYS, nextRollTime, stormBase, titleFor } from "./types";
+
+const PROFILES = import.meta.env.VITE_PROFILES_ADDRESS as Address | undefined;
+export const MILL: Address = "0x8DaA534c13C8b6164D73163F521fE3c94889dFC9";
 
 export const robinhood = defineChain({
   id: 4663,
@@ -15,6 +19,7 @@ export const robinhood = defineChain({
   blockExplorers: { default: { name: "Blockscout", url: "https://robinhoodchain.blockscout.com" } },
 });
 
+const erc721 = parseAbi(["function tokenURI(uint256) view returns (string)", "function ownerOf(uint256) view returns (address)"]);
 const erc20 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
@@ -33,7 +38,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
   const subs = new Set<(s: FireState) => void>();
   const emit = () => subs.forEach((f) => f(s));
   const lifetime = new Map<string, number>();
-  let lastBlock = 0n;
+  let lastBlock = 0n, lastProfileBlock = 0n;
 
   async function wallet() {
     if (!window.ethereum) throw new Error("No wallet found. Install MetaMask.");
@@ -60,7 +65,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
         pub.readContract({ address: fireAddress, abi, functionName: "ticketsOf", args: [fireId, account] }) as Promise<bigint>,
         pub.readContract({ address: fireAddress, abi, functionName: "boughtOnDay", args: [dayIndex, account] }) as Promise<bigint>,
       ]);
-      you = { tickets: Number(mine), paper: Number(formatUnits(paper, 18)), plank: Number(formatUnits(plank, 18)), eth: Number(formatUnits(eth, 18)), remainingToday: DAILY_CAP - Number(bought), isWinner: false };
+      you = { address: account, tickets: Number(mine), paper: Number(formatUnits(paper, 18)), plank: Number(formatUnits(plank, 18)), eth: Number(formatUnits(eth, 18)), remainingToday: DAILY_CAP - Number(bought), isWinner: s.you.isWinner, profile: s.profiles[account.toLowerCase()] };
     }
     const trailing = Number(trailingAvg) || 1;
     const n = Number(night);
@@ -91,16 +96,12 @@ export function makeChainApi(fireAddress: Address): FireApi {
         feed.unshift({ id: feed.length + 1, who, tickets: n, withEth, note: String(a.note ?? ""), title: titleFor(life, withEth), at });
         if (!withEth) burnedPaper += n;
         burnedPlank += n * s.plankPerTicket * 0.5;
-      } else if (ev === "Stoked") {
-        const who = String(a.who), plank = Number(formatUnits(a.plank as bigint, 18));
-        feed.unshift({ id: feed.length + 1, who, tickets: 0, withEth: false, stoke: true, note: "", title: "Pyro", at });
-        burnedPlank += plank * 0.5;
       } else if (ev === "Survived") {
         const size = Number(a.fireSize), strength = Number(a.storm);
-        storm = { at, strength, size, survived: true, intensity: Math.max(0.15, Math.min(1, strength / Math.max(1, s.trailingAvg * FULL_DAYS) * 2.5)), sizeAfter: Math.max(0, (size - strength) * 0.6) / (s.trailingAvg * FULL_DAYS) };
+        storm = { at, fireId: Number(a.fireId), night: Number(a.night), strength, size, survived: true, intensity: Math.max(0.15, Math.min(1, strength / Math.max(1, s.trailingAvg * FULL_DAYS) * 2.5)), sizeAfter: Math.max(0, (size - strength) * 0.6) / (s.trailingAvg * FULL_DAYS) };
       } else if (ev === "WentOut") {
         const size = Number(a.fireSize), strength = Number(a.storm), winner = String(a.winner), paid = Number(formatUnits(a.paid as bigint, 18));
-        storm = { at, strength, size, survived: false, intensity: 1, winner, paidPlank: paid };
+        storm = { at, fireId: Number(a.fireId), night: Number(a.night), strength, size, survived: false, intensity: 1, winner, paidPlank: paid, potPlank: paid / 0.38, tickets: s.ticketsTotal };
         past.unshift({ id: Number(a.fireId), nights: Number(a.night), potPlank: paid / 0.38, winner, peakSize: size });
         if (account && winner.toLowerCase() === account.toLowerCase()) s = { ...s, you: { ...s.you, isWinner: true } };
       } else if (ev === "MillEaten") { mills += 1; }
@@ -108,7 +109,20 @@ export function makeChainApi(fireAddress: Address): FireApi {
     s = { ...s, feed: feed.slice(0, 40), past: past.slice(0, 10), storm, burnedPaperAllTime: burnedPaper, burnedPlankAllTime: burnedPlank, millsEaten: mills };
   }
 
-  async function refresh() { try { await readAll(); await readEvents(); emit(); } catch (e) { console.warn("refresh failed", e); } }
+  async function readProfiles() {
+    if (!PROFILES) return;
+    const head = await pub.getBlockNumber();
+    const from = lastProfileBlock ? lastProfileBlock + 1n : 0n;
+    if (from > head) return;
+    const logs = await pub.getContractEvents({ address: PROFILES, abi: profilesAbi as unknown as Abi, eventName: "ProfileSet", fromBlock: from, toBlock: head });
+    lastProfileBlock = head;
+    if (!logs.length) return;
+    const profiles = { ...s.profiles };
+    for (const l of logs) { const a = (l as unknown as { args: Record<string, unknown> }).args; profiles[String(a.who).toLowerCase()] = { name: String(a.name ?? ""), pfp: String(a.pfp ?? "") }; }
+    s = { ...s, profiles };
+  }
+
+  async function refresh() { try { await readAll(); await readEvents(); await readProfiles(); emit(); } catch (e) { console.warn("refresh failed", e); } }
   void refresh(); setInterval(refresh, 8000);
 
   async function ensureAllowance(wc: ReturnType<typeof createWalletClient>, token: Address, amount: bigint) {
@@ -119,6 +133,16 @@ export function makeChainApi(fireAddress: Address): FireApi {
   return {
     state: () => s,
     subscribe(fn) { subs.add(fn); fn(s); return () => subs.delete(fn); },
+    async setProfile(name, pfp) {
+      if (!PROFILES) throw new Error("Profiles aren't live yet.");
+      const wc = await wallet();
+      const pabi = profilesAbi as unknown as Abi;
+      const m = /^mill:(\d+)$/.exec(pfp);
+      const h = m
+        ? await wc.writeContract({ address: PROFILES, abi: pabi, functionName: "setWithMill", args: [name, BigInt(m[1])], account: account!, chain: robinhood })
+        : await wc.writeContract({ address: PROFILES, abi: pabi, functionName: "set", args: [name, pfp], account: account!, chain: robinhood });
+      await pub.waitForTransactionReceipt({ hash: h }); await refresh();
+    },
     async buy(n, withEth, note) {
       const wc = await wallet();
       const [paperCost, plankCost, ethCost] = (await pub.readContract({ address: fireAddress, abi, functionName: "quote", args: [BigInt(n)] })) as [bigint, bigint, bigint];
@@ -128,16 +152,31 @@ export function makeChainApi(fireAddress: Address): FireApi {
       else { await ensureAllowance(wc, paperAddr!, paperCost); h = await wc.writeContract({ address: fireAddress, abi, functionName: "buyTickets", args: [BigInt(n), note], account: account!, chain: robinhood }); }
       await pub.waitForTransactionReceipt({ hash: h }); await refresh();
     },
-    async stoke(plank) {
-      const wc = await wallet(); const amt = BigInt(Math.floor(plank)) * 10n ** 18n;
-      await ensureAllowance(wc, plankAddr!, amt);
-      const h = await wc.writeContract({ address: fireAddress, abi, functionName: "stoke", args: [amt], account: account!, chain: robinhood });
-      await pub.waitForTransactionReceipt({ hash: h }); await refresh();
-    },
   };
 }
 
 function empty(): FireState {
   return { fireId: 0, night: 0, potPlank: 0, plankUsd: 1.06e-9, ethUsd: 3333, plankPerTicket: 852_000_000, ticketsToday: 0, ticketsTotal: 0, fireSize: 0, trailingAvg: 1, threat: 0.2, nextRollAt: nextRollTime(),
-    you: { tickets: 0, paper: 0, plank: 0, eth: 0, remainingToday: DAILY_CAP, isWinner: false }, burnedPaperAllTime: 0, burnedPlankAllTime: 0, millsEaten: 0, millFundEth: 0, millBidEth: 0, feed: [], past: [] };
+    you: { tickets: 0, paper: 0, plank: 0, eth: 0, remainingToday: DAILY_CAP, isWinner: false }, profiles: {}, burnedPaperAllTime: 0, burnedPlankAllTime: 0, millsEaten: 0, millFundEth: 0, millBidEth: 0, feed: [], past: [] };
 }
+
+/** Resolve "mill:<id>" to an image URL by reading the mill's tokenURI (data: JSON, ipfs:// or https://). Cached. */
+const millImg = new Map<string, Promise<string>>();
+export function millImage(tokenId: string): Promise<string> {
+  let p = millImg.get(tokenId);
+  if (!p) {
+    p = (async () => {
+      const pub = createPublicClient({ chain: robinhood, transport: http() });
+      let uri = await pub.readContract({ address: MILL, abi: erc721, functionName: "tokenURI", args: [BigInt(tokenId)] });
+      uri = ipfs(uri);
+      let meta: { image?: string };
+      if (uri.startsWith("data:application/json;base64,")) meta = JSON.parse(atob(uri.slice(29)));
+      else if (uri.startsWith("data:application/json,")) meta = JSON.parse(decodeURIComponent(uri.slice(22)));
+      else meta = await (await fetch(uri)).json();
+      return ipfs(meta.image ?? "");
+    })().catch(() => "");
+    millImg.set(tokenId, p);
+  }
+  return p;
+}
+function ipfs(u: string) { return u.startsWith("ipfs://") ? "https://ipfs.io/ipfs/" + u.slice(7) : u; }

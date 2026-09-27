@@ -4,7 +4,7 @@ Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds 
 
 - `docs/spec.md` — the design, numbers, and why. Start here.
 - `docs/randomness.md` — which randomness provider to use on Robinhood Chain (OpenVRF).
-- `contracts/` — Foundry project. `Fire.sol` is the game. 23 tests.
+- `contracts/` — Foundry project. `Fire.sol` is the game, `Profiles.sol` is names + pictures for wallets. 38 tests.
 - `web/` — the site (Vite + React). Runs on a built-in mock until the contract is deployed.
 - `sim/` — the Python simulation the numbers came from.
 
@@ -51,7 +51,7 @@ Deploy env vars are listed at the top of `script/Deploy.s.sol`. Never put a priv
 
 ## Security model, in one paragraph
 
-The pot lives inside `Fire.sol`. There is no owner, no withdraw, no pause. PLANK only leaves through the rules (winner / burn / carry / tithe). ETH only leaves through `eatMillFromSeaport`, which pays only if the OpenSea listing fills and the mill is burned in the same transaction. Nobody can hand the fire a mill. The deploy wallet has no special powers after deployment.
+The pot lives inside `Fire.sol`. There is no owner, no withdraw, no pause. PLANK only enters through ticket buys and only leaves through the rules (winner / burn / carry / tithe). ETH only leaves through `eatMillFromSeaport`, which pays only if the OpenSea listing fills and the mill is burned in the same transaction. Nobody can hand the fire a mill. The deploy wallet has no special powers after deployment.
 
 ## Before mainnet
 

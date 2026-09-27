@@ -7,7 +7,6 @@ export interface Buy {
   who: string;
   tickets: number;
   withEth: boolean;
-  stoke?: boolean; // pyro mode: PLANK burned, no ticket
   note: string;
   title: string;
   at: number; // ms
@@ -23,6 +22,8 @@ export interface PastFire {
 
 export interface Storm {
   at: number;
+  fireId: number; // the fire this storm hit
+  night: number; // the night number of this storm
   strength: number; // in tickets
   size: number; // fire size at the roll
   sizeAfter?: number; // 0..1 display size after the storm (survived only)
@@ -30,7 +31,29 @@ export interface Storm {
   intensity: number; // 0..1 — how violent it looks/sounds
   winner?: string;
   paidPlank?: number;
+  potPlank?: number; // the pot the fire died with (out only)
+  tickets?: number; // tickets that were in the fire (out only)
 }
+
+export interface Profile { name: string; pfp: string } // pfp: image URL, "mill:<tokenId>", or ""
+
+/**
+ * The ceremony, in ms after the roll. Storm and page both read this so the sky and the words agree.
+ * Survived: clouds → lightning → rain beats the fire down → verdict lingers → clears.
+ * Out: same storm, but the fire dies in the rain, sits as embers, the winner is revealed and lingers,
+ * and only then is the next fire lit. The old fire's pot stays on screen until the relight.
+ */
+export const CEREMONY = {
+  IN: 8_000, // clouds roll in
+  STRIKE: 16_000, // lightning
+  RAIN: 34_000, // rain; fire beaten down (or dies)
+  VERDICT: 28_000, // survived: card appears
+  VERDICT_END: 44_000,
+  OUT_CARD: 34_000, // out: "the fire went out"
+  WINNER: 44_000, // out: winner revealed
+  RELIGHT: 90_000, // out: next fire lit
+  DONE: 105_000,
+};
 
 export interface FireState {
   fireId: number;
@@ -46,7 +69,8 @@ export interface FireState {
   /** 0..1: how threatening tonight looks. Not a number for the UI to display — drives the sky. */
   threat: number;
   nextRollAt: number; // ms
-  you: { tickets: number; paper: number; plank: number; eth: number; remainingToday: number; isWinner: boolean };
+  you: { address?: string; tickets: number; paper: number; plank: number; eth: number; remainingToday: number; isWinner: boolean; profile?: Profile };
+  profiles: Record<string, Profile>; // lowercase address → profile
   burnedPaperAllTime: number;
   burnedPlankAllTime: number;
   millsEaten: number;
@@ -83,13 +107,12 @@ export interface FireApi {
   state(): FireState;
   subscribe(fn: (s: FireState) => void): () => void;
   buy(n: number, withEth: boolean, note: string): Promise<void>;
-  stoke(plank: number, note: string): Promise<void>;
+  setProfile(name: string, pfp: string): Promise<void>;
   /** demo only: force tonight's storm now */
   demoStorm?(): void;
 }
 
-export function titleFor(lifetime: number, withEth: boolean, stoke?: boolean) {
-  if (stoke) return "Pyro";
+export function titleFor(lifetime: number, withEth: boolean) {
   if (withEth) return "Paper buyer";
   if (lifetime >= 1000) return "Arsonist";
   if (lifetime >= 200) return "Lumberjack";
@@ -99,6 +122,9 @@ export function titleFor(lifetime: number, withEth: boolean, stoke?: boolean) {
 
 export function short(addr: string) {
   return addr.slice(0, 6) + "…" + addr.slice(-4);
+}
+export function nameOf(addr: string, profiles: Record<string, Profile>) {
+  return profiles[addr.toLowerCase()]?.name || short(addr);
 }
 
 export function nextRollTime(now = Date.now()) {

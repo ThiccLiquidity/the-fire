@@ -126,13 +126,6 @@ contract FireTest is Test {
         fire.buyTicketsWithEth{value: 1}(1, "");
     }
 
-    function test_stoke_no_tickets() public {
-        vm.prank(carol);
-        fire.stoke(1_000e18);
-        assertEq(fire.pot(), 500e18);
-        assertEq(fire.ticketsTotal(), 0);
-    }
-
     // ------------------------------------------------------------ storms
     function test_night_one_always_survives_even_with_zero_tickets() public {
         _roll(RND_MONSTER);
@@ -247,13 +240,19 @@ contract FireTest is Test {
     }
 
     function test_no_tickets_at_all_rolls_winner_slice_forward() public {
-        vm.prank(carol);
-        fire.stoke(1_000e18); // pot 500, no tickets, size 0
+        // Fire 1 has tickets and goes out; fire 2 starts with the carry and nobody buys.
+        _buy(alice, 10);
+        _roll(RND_CALM);
+        while (fire.fireId() == 1) _roll(RND_MONSTER);
+        uint256 carried = fire.pot();
+        assertGt(carried, 0);
+        uint256 royaltyBefore = plank.balanceOf(royalty);
         _roll(RND_CALM); // night 1 survives regardless
-        _roll(RND_MONSTER); // size 0 -> goes out
+        _roll(RND_MONSTER); // size 0 -> goes out with no tickets
+        assertEq(fire.fireId(), 3);
         assertEq(fire.lastWinner(), address(0));
-        assertEq(fire.pot(), 350e18, "40% + 30% carried");
-        assertEq(plank.balanceOf(royalty), 0);
+        assertEq(fire.pot(), carried * 70 / 100, "40% + 30% carried, 30% burned");
+        assertEq(plank.balanceOf(royalty), royaltyBefore, "no tithe without a winner");
     }
 
     function test_winner_is_ticket_weighted() public {
@@ -399,8 +398,6 @@ contract FireTest is Test {
 
     function test_plank_balance_always_equals_pot() public {
         _buy(alice, 123);
-        vm.prank(bob);
-        fire.stoke(777e18);
         (, , uint256 ethCost) = fire.quote(10);
         vm.prank(carol);
         fire.buyTicketsWithEth{value: ethCost}(10, "");

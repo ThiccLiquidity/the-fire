@@ -26,7 +26,7 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 | | Burned | Pot | Mill fund |
 |---|---|---|---|
 | PAPER (ticket) | 100% | — | — |
-| PLANK (ticket or stoke) | 50% | 50% | — |
+| PLANK (ticket) | 50% | 50% | — |
 | ETH ("buy paper from the fire") | — | — | 100% |
 
 "Burned" = sent to `0x…dead`. No permission from any token contract needed.
@@ -117,7 +117,7 @@ Things worth knowing:
 ## 5. Build
 
 **Contracts**
-- `Fire.sol` — state: current fire (id, night, pot, tickets ledger as cumulative ranges per buyer for O(1) winner lookup), trailing volume, mill fund balance. Functions: `buyTickets(n)`, `buyTicketsWithEth(n)`, `stoke(plankAmount)`, `roll()` (permissionless, callable once per night window after the randomness lands), `eatMill()` (permissionless once fund ≥ floor). No admin functions after launch except a 48-hour-timelocked pause that refunds nothing (there's nothing to refund — tickets are burns).
+- `Fire.sol` — state: current fire (id, night, pot, tickets ledger as cumulative ranges per buyer for O(1) winner lookup), trailing volume, mill fund balance. Functions: `buyTickets(n)`, `buyTicketsWithEth(n)`, `roll()` (permissionless, callable once per night window after the randomness lands), `eatMill()` (permissionless once fund ≥ floor). No admin functions after launch except a 48-hour-timelocked pause that refunds nothing (there's nothing to refund — tickets are burns).
 - Randomness: **no Chainlink VRF on Robinhood Chain.** Use Gelato VRF (drand-backed, built for Orbit chains), fallback Pyth Entropy, fallback self-relayed drand. Never blockhash/prevrandao — the sequencer can grind it. One request per night: it decides the storm and, if the fire dies, the winner.
 - Nightly roll runs on a keeper (Gelato Automate or our own cron); anyone can also call it.
 - Security path: testnet → mainnet with fire #1 capped at 3 nights → bug bounty in PLANK → audit before removing caps.

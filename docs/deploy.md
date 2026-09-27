@@ -54,3 +54,7 @@ Throw the first PLANK in yourself (pyro mode, a few dollars). Site flips from mo
 node scripts/verify-request.mjs --rpc $RPC --router $ROUTER --request-id N --from-block $START_BLOCK
 ```
 (from the OpenVRF repo) — checks the drand signature and the derived word against chain state.
+
+## Profiles (any time)
+
+`forge script script/DeployProfiles.s.sol --rpc-url $RPC --account deployer --broadcast --verify` with `MILL` set. Standalone, no owner. Put the address in the site's `VITE_PROFILES_ADDRESS`. Until it's set the site shows short addresses.

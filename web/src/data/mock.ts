@@ -2,6 +2,7 @@ import {
   type Buy,
   type FireApi,
   type FireState,
+  type Profile,
   DAILY_CAP,
   FULL_DAYS,
   KEEP,
@@ -22,6 +23,9 @@ const notes = [
   "logs on the fire", "not tonight storm", "one more for luck", "paper go brrr", "we ride at 8", "", "", "",
 ];
 function rnd(n: number) { return Math.floor(Math.random() * n); }
+const demoNames = ["plankdaddy", "MillOwner420", "Cinder", "sawdust.eth", "Brisket", "log_lady", "not_a_bot", "Fireside Phil", "matchstick", "Torch"];
+const demoProfiles: Record<string, Profile> = {};
+demoNames.forEach((name, i) => { demoProfiles[wallets[i].toLowerCase()] = { name, pfp: i % 3 === 0 ? "mill:" + (100 + i * 37) : "" }; });
 
 export function makeMockApi(): FireApi {
   const lifetime = new Map<string, number>();
@@ -40,7 +44,8 @@ export function makeMockApi(): FireApi {
     trailingAvg: 520,
     threat: 0.45,
     nextRollAt: nextRollTime(),
-    you: { tickets: 12, paper: 7, plank: 9_000_000_000, eth: 0.08, remainingToday: DAILY_CAP - 12, isWinner: false },
+    you: { address: YOU, tickets: 12, paper: 7, plank: 9_000_000_000, eth: 0.08, remainingToday: DAILY_CAP - 12, isWinner: false },
+    profiles: demoProfiles,
     burnedPaperAllTime: 61_400,
     burnedPlankAllTime: 300_000_000_000_000,
     millsEaten: 9,
@@ -58,13 +63,13 @@ export function makeMockApi(): FireApi {
   const subs = new Set<(s: FireState) => void>();
   const emit = () => subs.forEach((f) => f(s));
 
-  function push(who: string, tickets: number, withEth: boolean, note: string, stoke = false, at = Date.now()) {
+  function push(who: string, tickets: number, withEth: boolean, note: string, at = Date.now()) {
     const life = (lifetime.get(who) ?? 0) + tickets;
     lifetime.set(who, life);
-    const b: Buy = { id: nextId++, who, tickets, withEth, stoke, note, title: titleFor(life, withEth, stoke), at };
+    const b: Buy = { id: nextId++, who, tickets, withEth, note, title: titleFor(life, withEth), at };
     s = { ...s, feed: [b, ...s.feed].slice(0, 40) };
   }
-  for (let i = 0; i < 12; i++) push(wallets[rnd(wallets.length)], [1, 1, 10, 10, 100][rnd(5)], Math.random() < 0.15, notes[rnd(notes.length)], false, Date.now() - (12 - i) * 5 * 60_000);
+  for (let i = 0; i < 12; i++) push(wallets[rnd(wallets.length)], [1, 1, 10, 10, 100][rnd(5)], Math.random() < 0.15, notes[rnd(notes.length)], Date.now() - (12 - i) * 5 * 60_000);
 
   function applyBuy(who: string, n: number, withEth: boolean, note: string) {
     const q = quote(n, s.plankPerTicket, s.ethUsd);
@@ -102,14 +107,14 @@ export function makeMockApi(): FireApi {
     if (survived) {
       const after = Math.max(0, (size - strength) * KEEP);
       s = { ...s, night, fireSize: after, trailingAvg, ticketsToday: 0,
-        storm: { at: Date.now(), strength, size, survived, intensity, sizeAfter: after / (trailingAvg * FULL_DAYS) },
+        storm: { at: Date.now(), fireId: s.fireId, night, strength, size, survived, intensity, sizeAfter: after / (trailingAvg * FULL_DAYS) },
         you: { ...s.you, remainingToday: DAILY_CAP } };
     } else {
       const winner = Math.random() < 0.2 ? YOU : wallets[rnd(wallets.length)];
       const paid = s.potPlank * 0.4 * 0.95;
       s = {
         ...s,
-        storm: { at: Date.now(), strength, size, survived, intensity, winner, paidPlank: paid },
+        storm: { at: Date.now(), fireId: s.fireId, night, strength, size, survived, intensity, winner, paidPlank: paid, potPlank: s.potPlank, tickets: s.ticketsTotal },
         past: [{ id: s.fireId, nights: s.night, potPlank: s.potPlank, winner, peakSize: size }, ...s.past],
         fireId: s.fireId + 1, night: 0, fireSize: 0, trailingAvg,
         potPlank: s.potPlank * 0.3,
@@ -128,10 +133,10 @@ export function makeMockApi(): FireApi {
     state: () => s,
     subscribe(fn) { subs.add(fn); fn(s); return () => subs.delete(fn); },
     async buy(n, withEth, note) { await new Promise((r) => setTimeout(r, 400)); applyBuy(YOU, n, withEth, note); },
-    async stoke(plank, note) {
+    async setProfile(name, pfp) {
       await new Promise((r) => setTimeout(r, 400));
-      push(YOU, 0, false, note, true);
-      s = { ...s, potPlank: s.potPlank + plank / 2, burnedPlankAllTime: s.burnedPlankAllTime + plank / 2, you: { ...s.you, plank: s.you.plank - plank } };
+      const prof = { name, pfp };
+      s = { ...s, profiles: { ...s.profiles, [YOU.toLowerCase()]: prof }, you: { ...s.you, profile: prof } };
       emit();
     },
     demoStorm: storm,

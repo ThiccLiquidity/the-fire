@@ -111,7 +111,6 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
 
     // ---------------------------------------------------------------- events
     event TicketsBought(uint256 indexed fireId, address indexed buyer, uint256 tickets, bool withEth, string note);
-    event Stoked(uint256 indexed fireId, address indexed who, uint256 plank);
     event RollRequested(uint256 indexed fireId, uint256 night, uint256 requestId);
     event Survived(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm);
     event WentOut(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm, address winner, uint256 paid);
@@ -212,13 +211,6 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         _takePlank(msg.sender, plankCost);
         _addTickets(msg.sender, n);
         emit TicketsBought(fireId, msg.sender, n, true, note);
-    }
-
-    /// @notice Throw PLANK in with no ticket. Half burns, half feeds the pot.
-    function stoke(uint256 plankAmount) external nonReentrant {
-        if (plankAmount == 0) revert BadAmount();
-        _takePlank(msg.sender, plankAmount);
-        emit Stoked(fireId, msg.sender, plankAmount);
     }
 
     function _takePlank(address from, uint256 amount) internal {
