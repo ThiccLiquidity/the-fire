@@ -10,7 +10,12 @@ const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
 // ---------- the stream: from under the wheel, toward the viewer, then along the bottom and off the right edge.
 // Cut into the ground (mud edge, bank, shallow sides, deeper middle), noise ripples drifting downstream.
-const riverPts = [[1093, 566], [1088, 592], [1072, 622], [1062, 652], [1082, 682], [1130, 702], [1200, 716], [1290, 728], [1400, 740]];
+const RIVER_V1 = [[1093, 566], [1088, 592], [1072, 622], [1062, 652], [1082, 682], [1130, 702], [1200, 716], [1290, 728], [1400, 740]];
+const RIVER_V2 = [[1126, 594], [1112, 612], [1086, 636], [1066, 660], [1082, 684], [1130, 702], [1200, 716], [1290, 728], [1400, 740]];
+let riverPts = RIVER_V1;
+let poolAt: [number, number] = [1093, 574];
+/** pick the stream head that matches the press being drawn */
+export function useRiver(v2: boolean) { riverPts = v2 ? RIVER_V2 : RIVER_V1; poolAt = v2 ? [1126, 598] : [1093, 574]; }
 export function riverAt(u: number): [number, number, number] {
   const P = riverPts, n = P.length - 1, i = Math.min(n - 1, Math.floor(u * n)), f = u * n - i;
   const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(n, i + 2)];
@@ -28,9 +33,9 @@ function riverOutline(x: Ctx, pad: number) {
   x.closePath();
 }
 export function drawRiver(x: Ctx, t: number, night: number, warm: number) {
-  x.fillStyle = sh([58, 52, 38], night); x.beginPath(); x.ellipse(1093, 574, 46, 15, 0, 0, 7); x.fill();
-  x.fillStyle = sh([150, 146, 134], night); x.beginPath(); x.ellipse(1093, 572, 42, 12, 0, 0, 7); x.fill();
-  x.fillStyle = sh([70, 118, 140], night); x.beginPath(); x.ellipse(1093, 574, 38, 9, 0, 0, 7); x.fill();
+  x.fillStyle = sh([58, 52, 38], night); x.beginPath(); x.ellipse(poolAt[0], poolAt[1], 46, 15, 0, 0, 7); x.fill();
+  x.fillStyle = sh([150, 146, 134], night); x.beginPath(); x.ellipse(poolAt[0], poolAt[1] - 2, 42, 12, 0, 0, 7); x.fill();
+  x.fillStyle = sh([70, 118, 140], night); x.beginPath(); x.ellipse(poolAt[0], poolAt[1], 38, 9, 0, 0, 7); x.fill();
   riverOutline(x, 7); x.fillStyle = sh([58, 52, 38], night); x.fill();
   riverOutline(x, 3); x.fillStyle = sh([96, 84, 58], night); x.fill();
   riverOutline(x, 0); x.save(); x.clip();
@@ -101,6 +106,142 @@ export function drawMill(x: Ctx, t: number, px: number, py: number, sc: number, 
   x.fillStyle = sh([246, 240, 226], night); x.beginPath(); x.ellipse(-102, -20, 12, 12, 0, 0, 7); x.fill(); x.beginPath(); x.moveTo(-102, -32); x.lineTo(-44, -32); x.lineTo(-44, -6); x.lineTo(-102, -8); x.closePath(); x.fill();
   x.fillStyle = sh([226, 218, 200], night); x.fillRect(-102, -31, 58, 2);
   x.fillStyle = teal; x.beginPath(); x.arc(-52, -8, 8, 0, 7); x.fill(); x.fillStyle = gold; x.beginPath(); x.arc(-52, -8, 3, 0, 7); x.fill();
+  x.restore();
+}
+
+// ---------- the press, v2: matched to the Plank Press reference (front view, drum wheel on the right)
+export function drawMill2(x: Ctx, t: number, px: number, py: number, sc: number, night: number, warm: number) {
+  x.save(); x.translate(px, py); x.scale(sc, sc);
+  const C = {
+    roof: sh([46, 104, 92], night), roofD: sh([32, 78, 70], night), roofL: sh([88, 150, 132], night),
+    beam: sh([122, 78, 40], night), beamD: sh([84, 52, 26], night), wall: sh([214, 176, 118], night, warm), wallD: sh([186, 146, 92], night),
+    plaster: sh([236, 218, 170], night, warm), cream: sh([244, 232, 196], night), gold: sh([222, 176, 78], night), goldD: sh([170, 128, 50], night),
+    green: sh([36, 92, 82], night), greenD: sh([24, 66, 60], night), stone: sh([214, 208, 190], night), stoneG: sh([170, 176, 168], night), stoneD: sh([150, 146, 132], night),
+    steel: sh([150, 190, 196], night), steelD: sh([98, 140, 150], night), paper: sh([248, 244, 232], night), paperD: sh([220, 212, 196], night),
+    water: sh([88, 190, 200], night), waterD: sh([54, 140, 156], night),
+  };
+  const wg = night > 0.4 ? `rgba(255,200,110,${0.9 * night})` : C.cream;
+  const R = (xx: number, yy: number, w: number, h: number, c: string) => { x.fillStyle = c; x.fillRect(xx, yy, w, h); };
+  const RR = (xx: number, yy: number, w: number, h: number, r: number, c: string) => { x.fillStyle = c; x.beginPath(); x.roundRect(xx, yy, w, h, r); x.fill(); };
+
+  // ---- ground shadow, footing
+  x.fillStyle = 'rgba(0,0,0,0.25)'; x.beginPath(); x.ellipse(10, 6, 250, 16, 0, 0, 7); x.fill();
+  R(-190, -14, 380, 18, C.beamD); R(-186, -18, 372, 6, C.beam);
+
+  // ---- main box: timber frame, tan plank infill
+  const L = -150, Rt = 150, top = -200, bot = -12;
+  R(L, top, Rt - L, bot - top, C.wall);
+  x.strokeStyle = C.wallD; x.lineWidth = 1.5; for (let vx = L + 12; vx < Rt; vx += 12) { x.beginPath(); x.moveTo(vx, top); x.lineTo(vx, bot); x.stroke(); } // vertical planks
+  R(L - 8, top, 12, bot - top, C.beam); R(Rt - 4, top, 12, bot - top, C.beam); // corner posts
+  R(L - 8, top - 4, Rt - L + 16, 10, C.beam); // eave beam
+
+  // sign band
+  R(L + 6, -190, Rt - L - 12, 34, C.plaster);
+  RR(-112, -186, 224, 26, 4, C.green); x.strokeStyle = C.gold; x.lineWidth = 2; x.beginPath(); x.roundRect(-112, -186, 224, 26, 4); x.stroke();
+  x.fillStyle = C.gold; x.font = '800 15px Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('PLANK & PAPER', 0, -173);
+  R(L + 6, -156, Rt - L - 12, 6, C.beam); // beam under the sign
+
+  // windows: two big 2x3 grid windows, gold frames
+  for (const wx of [-134, 64]) {
+    R(wx - 4, -140, 78, 76, C.beam); R(wx, -136, 70, 68, wg);
+    x.strokeStyle = C.gold; x.lineWidth = 4; x.strokeRect(wx, -136, 70, 68);
+    x.lineWidth = 3; x.beginPath(); x.moveTo(wx + 35, -136); x.lineTo(wx + 35, -68); x.moveTo(wx, -102); x.lineTo(wx + 70, -102); x.stroke();
+    R(wx - 8, -68, 86, 6, C.beam); // sill
+  }
+  // central bay: an open panel of vertical slats (the workshop), darker
+  R(-56, -146, 112, 134, C.wallD); x.strokeStyle = C.beamD; x.lineWidth = 1.5; for (let vx = -50; vx < 56; vx += 8) { x.beginPath(); x.moveTo(vx, -146); x.lineTo(vx, -12); x.stroke(); }
+  R(-60, -150, 120, 6, C.beam); R(-60, -150, 6, 138, C.beam); R(54, -150, 6, 138, C.beam);
+
+  // ---- gable: cream plaster with timber frame, round window
+  x.fillStyle = C.plaster; x.beginPath(); x.moveTo(L - 8, top); x.lineTo(0, -360); x.lineTo(Rt + 8, top); x.closePath(); x.fill();
+  x.strokeStyle = C.beam; x.lineWidth = 8; x.beginPath(); x.moveTo(L - 2, top - 2); x.lineTo(0, -354); x.lineTo(Rt + 2, top - 2); x.stroke();
+  x.lineWidth = 6; x.beginPath(); x.moveTo(-110, -240); x.lineTo(110, -240); x.moveTo(-110, -240); x.lineTo(-60, top); x.moveTo(110, -240); x.lineTo(60, top); x.stroke();
+  R(L - 8, top - 6, Rt - L + 16, 10, C.beam);
+  // round window
+  x.fillStyle = C.goldD; x.beginPath(); x.arc(0, -284, 30, 0, 7); x.fill();
+  x.fillStyle = wg; x.beginPath(); x.arc(0, -284, 24, 0, 7); x.fill();
+  x.strokeStyle = C.gold; x.lineWidth = 5; x.beginPath(); x.arc(0, -284, 27, 0, 7); x.stroke();
+  x.lineWidth = 4; x.beginPath(); x.moveTo(0, -308); x.lineTo(0, -260); x.moveTo(-24, -284); x.lineTo(24, -284); x.stroke();
+
+  // ---- chimney: stacked stone blocks, green cap, smoke (left of the ridge, behind the roof)
+  const cx = -80, cw = 46;
+  for (let i = 0; i < 12; i++) { const yy = -420 + i * 16; R(cx, yy, cw, 14, i % 2 ? C.stone : C.stoneG); x.strokeStyle = C.stoneD; x.lineWidth = 1; x.strokeRect(cx, yy, cw, 14); }
+  R(cx - 6, -432, cw + 12, 14, C.green); R(cx - 4, -444, cw + 8, 12, C.roof); R(cx - 8, -448, cw + 16, 6, C.greenD);
+  for (let i = 0; i < 5; i++) { const u = (t * 0.003 + i * 0.2) % 1; x.fillStyle = `rgba(215,215,225,${(0.22 - u * 0.2) * (1 - night * 0.4)})`; x.beginPath(); x.arc(cx + cw / 2 + Math.sin(u * 6 + i) * 10 + u * 18, -456 - u * 90, 6 + u * 16, 0, 7); x.fill(); }
+
+  // ---- roof: thick, overhangs, lighter edge, shingle rows
+  const RY = -372, OV = 44, TH = 26; // ridge y, overhang, slab thickness
+  // underside / dark slab
+  x.fillStyle = C.roofD; x.beginPath(); x.moveTo(L - OV, top + 10); x.lineTo(0, RY); x.lineTo(Rt + OV, top + 10); x.lineTo(Rt + OV, top + 10 + TH); x.lineTo(0, RY + TH); x.lineTo(L - OV, top + 10 + TH); x.closePath(); x.fill();
+  // top face with shingle rows
+  x.save(); x.beginPath(); x.moveTo(L - OV, top + 10); x.lineTo(0, RY); x.lineTo(Rt + OV, top + 10); x.lineTo(Rt + OV, top + 24); x.lineTo(0, RY + 14); x.lineTo(L - OV, top + 24); x.closePath(); x.clip();
+  x.fillStyle = C.roof; x.fillRect(-300, -420, 600, 320);
+  x.fillStyle = C.roofD; for (let r = 0; r < 24; r++) { const yy = top + 22 - r * 8; for (let i = 0; i < 44; i++) x.fillRect(-300 + i * 14 + (r & 1) * 7, yy - 4, 12, 2.5); }
+  x.restore();
+  x.strokeStyle = C.roofL; x.lineWidth = 6; x.beginPath(); x.moveTo(L - OV, top + 10); x.lineTo(0, RY); x.lineTo(Rt + OV, top + 10); x.stroke(); // bright edge
+  x.strokeStyle = C.greenD; x.lineWidth = 3; x.beginPath(); x.moveTo(L - OV, top + 10 + TH); x.lineTo(0, RY + TH); x.lineTo(Rt + OV, top + 10 + TH); x.stroke();
+
+  // ---- the water wheel, edge-on with a hint of 3/4: a big drum on the right wall. Paddles scroll down the face.
+  const W = { x: Rt - 6, w: 128, cy: -122, r: 116 };
+  const axle = t * 0.012;
+  
+  // the far rim (back edge) as a darker slab
+  RR(W.x + 2, W.cy - W.r - 6, W.w - 12, W.r * 2 + 12, 22, C.beamD);
+  // paddles: y = cy + r*sin(th), thickness by cos(th); front half only
+  for (let i = 0; i < 16; i++) {
+    const th = (i / 16) * Math.PI * 2 + axle; const sn = Math.sin(th), c = Math.cos(th);
+    if (c <= 0.02) continue;
+    const yy = W.cy + W.r * sn, h = 5 + 13 * c, k = 0.5 + 0.5 * c;
+    x.fillStyle = `rgb(${Math.round(214 * k)},${Math.round(168 * k)},${Math.round(96 * k)})`; x.beginPath(); x.roundRect(W.x, yy - h / 2, W.w - 6, h, 3); x.fill();
+    x.fillStyle = `rgb(${Math.round(124 * k)},${Math.round(84 * k)},${Math.round(42 * k)})`; x.fillRect(W.x, yy + h / 2 - 3, W.w - 6, 3);
+  }
+  // near rim on the right: the wheel's circle seen at a steep angle — a narrow ellipse with spokes, axle end sticking out
+  const RX = W.x + W.w - 8;
+  x.fillStyle = C.beam; x.beginPath(); x.ellipse(RX, W.cy, 24, W.r + 4, 0, 0, 7); x.fill();
+  x.strokeStyle = C.green; x.lineWidth = 9; x.beginPath(); x.ellipse(RX, W.cy, 22, W.r, 0, 0, 7); x.stroke();
+  x.strokeStyle = C.gold; x.lineWidth = 3; x.beginPath(); x.ellipse(RX, W.cy, 15, W.r - 9, 0, 0, 7); x.stroke();
+  x.strokeStyle = C.beamD; x.lineWidth = 4; for (let i = 0; i < 8; i++) { const th = i * Math.PI / 8 + axle; x.beginPath(); x.moveTo(RX - 15 * Math.cos(th), W.cy - (W.r - 9) * Math.sin(th)); x.lineTo(RX + 15 * Math.cos(th), W.cy + (W.r - 9) * Math.sin(th)); x.stroke(); }
+  x.fillStyle = C.gold; x.beginPath(); x.ellipse(RX, W.cy, 7, 11, 0, 0, 7); x.fill();
+  R(RX + 6, W.cy - 7, 26, 14, C.greenD); R(RX + 28, W.cy - 10, 8, 20, C.green); // axle end + bearing post
+  R(RX + 30, W.cy, 8, W.r + 12, C.green); // post to the ground
+  // far-left rim edge peeking out
+  x.strokeStyle = C.green; x.lineWidth = 6; x.beginPath(); x.moveTo(W.x + 2, W.cy - W.r + 10); x.lineTo(W.x + 2, W.cy + W.r - 10); x.stroke();
+  // water: flume drops onto the top of the wheel; tailrace channel at the bottom running toward the viewer
+  R(W.x + 16, W.cy - W.r - 40, W.w - 30, 12, C.beamD); x.fillStyle = C.water; x.fillRect(W.x + 18, W.cy - W.r - 38, W.w - 34, 6);
+  x.fillStyle = `rgba(150,220,230,${0.7 - night * 0.25})`; for (let i = 0; i < 10; i++) { const u = (t * 0.05 + i * 0.1) % 1; x.fillRect(W.x + 26 + (i * 9) % (W.w - 44), W.cy - W.r - 30 + u * 26, 3, 9); }
+  const ty = W.cy + W.r - 6;
+  x.fillStyle = C.stoneG; x.beginPath(); x.moveTo(W.x - 6, ty); x.lineTo(W.x + W.w + 10, ty); x.lineTo(W.x + W.w + 30, ty + 44); x.lineTo(W.x - 26, ty + 44); x.closePath(); x.fill();
+  x.fillStyle = C.waterD; x.beginPath(); x.moveTo(W.x + 2, ty + 4); x.lineTo(W.x + W.w + 2, ty + 4); x.lineTo(W.x + W.w + 18, ty + 36); x.lineTo(W.x - 14, ty + 36); x.closePath(); x.fill();
+  for (let i = 0; i < 5; i++) { const yy = ty + 6 + i * 6; x.fillStyle = i % 2 ? C.water : C.waterD; x.fillRect(W.x - 2 - i * 2, yy, W.w + 4 + i * 4, 4); }
+  x.fillStyle = `rgba(230,250,255,${0.6 - night * 0.2})`; for (let i = 0; i < 12; i++) { const u = (t * 0.03 + i * 0.083) % 1; x.fillRect(W.x + ((i * 17) % (W.w + 8)) - u * 6, ty + 4 + u * 30, 4, 2); }
+  x.fillStyle = C.stone; x.fillRect(W.x - 28, ty + 40, W.w + 60, 8); x.fillRect(W.x - 10, ty - 4, 10, 46); x.fillRect(W.x + W.w + 4, ty - 4, 10, 46);
+
+  // ---- the paper machine out front: two green posts, a wide steel roller, a big white sheet hanging to the ground
+  const M = { x: -150, y: -12, w: 250 };
+  for (const pxx of [M.x, M.x + M.w - 12]) { R(pxx, M.y - 96, 12, 96, C.green); R(pxx - 10, M.y - 8, 32, 8, C.greenD); R(pxx + 3, M.y - 96, 3, 96, C.roofL); }
+  R(M.x - 4, M.y - 104, M.w + 8, 10, C.green); R(M.x - 4, M.y - 104, M.w + 8, 3, C.roofL);
+  // gears on the left post
+  for (const [gx, gy, gr, sp] of [[M.x + 6, M.y - 66, 12, 1], [M.x + 6, M.y - 40, 9, -1.3]] as [number, number, number, number][]) { x.fillStyle = C.gold; x.beginPath(); x.arc(gx, gy, gr, 0, 7); x.fill(); x.fillStyle = C.goldD; for (let i = 0; i < 8; i++) { x.save(); x.translate(gx, gy); x.rotate(i * Math.PI / 4 + t * 0.03 * sp); x.fillRect(gr - 2, -2.5, 5, 5); x.restore(); } x.fillStyle = C.greenD; x.beginPath(); x.arc(gx, gy, 3, 0, 7); x.fill(); }
+  // the steel roller across the top
+  x.fillStyle = C.steelD; x.beginPath(); x.roundRect(M.x + 14, M.y - 92, M.w - 40, 32, 16); x.fill();
+  x.fillStyle = C.steel; x.beginPath(); x.roundRect(M.x + 16, M.y - 90, M.w - 44, 14, 7); x.fill();
+  x.fillStyle = C.gold; for (const gx of [M.x + 14, M.x + M.w - 26]) { x.beginPath(); x.arc(gx, M.y - 76, 7, 0, 7); x.fill(); }
+  // a second, smaller roller below on the right, brass ends
+  x.fillStyle = C.steelD; x.beginPath(); x.roundRect(M.x + 120, M.y - 50, M.w - 150, 18, 9); x.fill(); x.fillStyle = C.gold; x.beginPath(); x.arc(M.x + 120, M.y - 41, 6, 0, 7); x.arc(M.x + M.w - 30, M.y - 41, 6, 0, 7); x.fill();
+  // the paper: comes off the big roller on the left and hangs down as a wide white sheet, curling at the floor
+  x.fillStyle = C.paper; x.beginPath(); x.moveTo(M.x + 30, M.y - 78); x.lineTo(M.x + 150, M.y - 78); x.lineTo(M.x + 150, M.y - 14); x.quadraticCurveTo(M.x + 150, M.y + 2, M.x + 130, M.y + 2); x.lineTo(M.x + 40, M.y + 2); x.quadraticCurveTo(M.x + 26, M.y + 2, M.x + 30, M.y - 14); x.closePath(); x.fill();
+  x.fillStyle = C.paperD; x.fillRect(M.x + 30, M.y - 78, 120, 3); x.fillRect(M.x + 146, M.y - 74, 4, 72);
+  x.fillStyle = C.paper; x.beginPath(); x.roundRect(M.x + 24, M.y - 92, 132, 30, 15); x.fill(); // the roll itself over the roller
+  x.fillStyle = C.paperD; x.beginPath(); x.ellipse(M.x + 154, M.y - 77, 7, 14, 0, 0, 7); x.fill(); x.fillStyle = C.paper; x.beginPath(); x.ellipse(M.x + 154, M.y - 77, 3, 6, 0, 0, 7); x.fill();
+  // a green wheel on the left post, a drive belt to the right
+  x.fillStyle = C.green; x.beginPath(); x.arc(M.x + 6, M.y - 20, 11, 0, 7); x.fill(); x.fillStyle = C.gold; x.beginPath(); x.arc(M.x + 6, M.y - 20, 4, 0, 7); x.fill();
+  x.strokeStyle = C.greenD; x.lineWidth = 3; x.beginPath(); x.moveTo(M.x + 160, M.y - 34); x.lineTo(M.x + M.w - 30, M.y - 34); x.stroke();
+
+  // ---- a little pine and grass to the left, like the reference
+  x.fillStyle = C.roof; x.beginPath(); x.moveTo(-262, -12); x.lineTo(-228, -150); x.lineTo(-194, -12); x.closePath(); x.fill();
+  x.fillStyle = C.roofD; x.beginPath(); x.moveTo(-262, -12); x.lineTo(-228, -150); x.lineTo(-228, -12); x.closePath(); x.fill();
+  R(-231, -12, 6, 8, C.beamD);
+  x.fillStyle = C.roofL; for (const [gx, gy] of [[-236, -6], [-170, -4], [230, -6]] as [number, number][]) { x.beginPath(); x.ellipse(gx, gy, 8, 4, 0, 0, 7); x.fill(); }
   x.restore();
 }
 

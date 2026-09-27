@@ -14,7 +14,8 @@ export function BuyPanel({
   onConnect?: () => Promise<void>;
   paused?: boolean;
 }) {
-  const [n, setN] = useState(10);
+  const [n, setNRaw] = useState(1);
+  const setN = (v: number) => setNRaw(Math.max(1, Math.min(TX_CAP, Math.floor(v) || 1)));
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -54,15 +55,12 @@ export function BuyPanel({
         <div><b>{affordable}</b><span>tickets you can buy now</span></div>
       </div>
 
-      <div className="tiers" role="radiogroup" aria-label="How many tickets">
-        {[1, 5, 10].map((t) => (
-          <button key={t} role="radio" aria-checked={n === t} className={"tier" + (n === t ? " on" : "")} onClick={() => setN(t)}>
-            <b>{t}</b><small>{t === 1 ? "ticket" : t === 10 ? "3% off" : "tickets"}</small>
-          </button>
-        ))}
-        <button role="radio" aria-checked={n === maxNow && maxNow > 0} className={"tier max" + (n === maxNow && maxNow > 0 ? " on" : "")} disabled={maxNow === 0} onClick={() => setN(maxNow)}>
-          <b>Max</b><small>{maxNow} now</small>
-        </button>
+      <div className="qty">
+        <button className="qty-btn" aria-label="One fewer" disabled={n <= 1} onClick={() => setN(n - 1)}>−</button>
+        <input className="qty-in" type="number" inputMode="numeric" min={1} max={TX_CAP} value={n} aria-label="Tickets" onChange={(e) => setN(Number(e.target.value))} />
+        <button className="qty-btn" aria-label="One more" disabled={n >= TX_CAP} onClick={() => setN(n + 1)}>+</button>
+        <button className="qty-max" disabled={maxNow === 0} onClick={() => setN(maxNow)}>Max <small>{maxNow}</small></button>
+        <span className="qty-hint">{n === 1 ? "ticket" : "tickets"} · up to {TX_CAP} per buy{n >= TX_CAP ? " · 3% off" : ` · ${TX_CAP} gets 3% off`}</span>
       </div>
       <input className="note" maxLength={32} placeholder="Burn note — 32 characters, drifts over the fire" value={note} onChange={(e) => setNote(e.target.value)} />
 
@@ -89,7 +87,9 @@ export function BuyPanel({
         <div className="path-head"><b>No PAPER? Buy paper from the fire</b><span>${q.usdg.toFixed(2)} in {usdgEnabled ? "ETH or USDG" : "ETH"} + {fmtPlank(q.plank)} PLANK</span></div>
         <p className="hint strong">You pay dollars instead of PAPER — same ticket, at a premium (${(q.usdg / n).toFixed(2)} a ticket for the paper leg, roughly 3× what real PAPER costs). It goes to buying mills off the floor and burning them.</p>
         <div className="pay-row">
-          <button className="cta ghost" disabled={busy || paused || !canEth || overCap} onClick={() => go("eth")}>Buy {n} with ETH <small>{q.eth.toFixed(4)}</small></button>
+          {ethUsd > 0
+            ? <button className="cta ghost" disabled={busy || paused || !canEth || overCap} onClick={() => go("eth")}>Buy {n} with ETH <small>{q.eth.toFixed(4)}</small></button>
+            : <button className="cta ghost" disabled>ETH price feed is stale — ETH buys are closed for now</button>}
           {usdgEnabled && <button className="cta ghost" disabled={busy || paused || !canUsdg || overCap} onClick={() => go("usdg")}>Buy {n} with USDG <small>${q.usdg.toFixed(2)}</small></button>}
         </div>
       </div>

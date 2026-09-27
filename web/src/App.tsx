@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { type FireApi, type FireState, CEREMONY as C, FULL_DAYS, nameOf, phoenixHour, short } from "./data/types";
 import { makeMockApi } from "./data/mock";
 import { makeChainApi } from "./data/chain";
-import { Scene, sceneRef } from "./components/Scene";
+import { Scene } from "./components/Scene";
+import { Playground } from "./components/Playground";
 import { BuyPanel } from "./components/BuyPanel";
 import { Swap } from "./components/Swap";
 import { Avatar } from "./components/Avatar";
@@ -37,6 +38,7 @@ export default function App() {
   const [s, setS] = useState<FireState>(api.state());
   const [now, setNow] = useState(Date.now());
   const [demoHour, setDemoHour] = useState<number | null>(null);
+  const [press2, setPress2] = useState(false);
   useEffect(() => api.subscribe(setS), []);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t); }, []);
 
@@ -108,7 +110,7 @@ export default function App() {
 
   return (
     <div className="page">
-      <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && last.tickets >= 10} wild />
+      <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && last.tickets >= 10} wild press2={press2} />
 
       <header className="top">
         <div className="brand">The Fire{!LIVE && <span className="demo-tag">demo</span>}</div>
@@ -174,11 +176,7 @@ export default function App() {
 
       <footer className="foot">
         <p>Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every night a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins 40% of the pot; 30% burns; 30% lights the next fire.</p>
-        <div className="demo-row">
-          {api.demoStorm && <button className="demo" onClick={api.demoStorm}>Demo: roll tonight's storm now</button>}
-          {!LIVE && <label className="demo">Visitor {(["deer", "rabbit", "squirrel", "skunk", "birds", "heron", "frog", "bear"] as const).map((k) => <button key={k} onClick={() => sceneRef.visitor?.(k)}>{k}</button>)}</label>}
-          <label className="demo">Demo time of day <input type="range" min={0} max={24} step={0.25} value={demoHour ?? hour} onChange={(e) => setDemoHour(Number(e.target.value))} /> {demoHour !== null && <button onClick={() => setDemoHour(null)}>real</button>}</label>
-        </div>
+        {api.demo && <Playground s={s} d={api.demo} hour={demoHour} onHour={setDemoHour} onSceneOpt={(k, v) => { if (k === "press2") setPress2(v); }} />}
       </footer>
     </div>
   );

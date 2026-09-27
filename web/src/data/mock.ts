@@ -1,5 +1,6 @@
 import {
   type Buy,
+  type DemoControls,
   type FireApi,
   type FireState,
   type Pay,
@@ -32,7 +33,7 @@ export function makeMockApi(): FireApi {
   const lifetime = new Map<string, number>();
   let nextId = 1;
   const plankPerTicket = PLANK_USD_PER_TICKET / PLANK_USD;
-  let s: FireState = {
+  const initial = (): FireState => ({
     fireId: 14,
     night: 6,
     potPlank: 2_750_000_000_000, // ~$2,900
@@ -61,7 +62,8 @@ export function makeMockApi(): FireApi {
       { id: 11, nights: 9, potPlank: 3_900_000_000_000, winner: wallets[7], peakSize: 900 },
       { id: 10, nights: 12, potPlank: 6_300_000_000_000, winner: wallets[22], peakSize: 1_300 },
     ],
-  };
+  });
+  let s: FireState = initial();
 
   const subs = new Set<(s: FireState) => void>();
   const emit = () => subs.forEach((f) => f(s));
@@ -98,16 +100,20 @@ export function makeMockApi(): FireApi {
     emit();
   }
 
-  setInterval(() => {
-    if (Math.random() < 0.5) applyBuy(wallets[rnd(wallets.length)], [1, 1, 1, 10, 10, 100][rnd(6)], (Math.random() < 0.15 ? (Math.random() < 0.5 ? "eth" : "usdg") : "paper") as Pay, notes[rnd(notes.length)]);
-  }, 5_000);
+  let crowdPerMin = 6;
+  const crowdBuy = (n?: number, pay?: Pay) => applyBuy(wallets[rnd(wallets.length)], n ?? [1, 1, 2, 5, 10, 10][rnd(6)], pay ?? ((Math.random() < 0.15 ? (Math.random() < 0.5 ? "eth" : "usdg") : "paper") as Pay), notes[rnd(notes.length)]);
+  setInterval(() => { if (!s.rollPending && Math.random() < crowdPerMin / 60) crowdBuy(); }, 1_000);
 
-  function storm() {
+  // the contract's 32-point luck table (e^(0.9 z) quantiles), so the demo storms match the chain
+  const LUCK = [1439, 2213, 2791, 3306, 3792, 4265, 4736, 5210, 5692, 6187, 6699, 7232, 7789, 8375, 8994, 9654, 10359, 11118, 11941, 12839, 13828, 14927, 16162, 17568, 19195, 21116, 23446, 26373, 30249, 35823, 45192, 69482];
+  function storm(outcome: "random" | "survive" | "out" | "you-win" = "random", luckIdx?: number, quiet = false) {
     const night = s.night + 1;
-    const luck = Math.exp(0.9 * (rng() + rng() + rng() + rng() - 2) * Math.sqrt(3)); // ~N(0,1) via sum of uniforms
-    const strength = Math.round(stormBase(night, s.trailingAvg) * luck);
+    const luck = LUCK[luckIdx ?? rnd(32)] / 10_000;
+    let strength = Math.round(stormBase(night, s.trailingAvg) * luck);
     const size = s.fireSize;
-    const survived = night === 1 || (night < 24 && size > strength);
+    if (outcome === "survive") strength = Math.min(strength, Math.max(0, Math.floor(size * 0.6)));
+    if (outcome === "out" || outcome === "you-win") strength = Math.max(strength, size + 1);
+    const survived = night === 1 && outcome !== "out" && outcome !== "you-win" ? true : (night < 24 && size > strength);
     const intensity = Math.max(0.15, Math.min(1, strength / Math.max(1, s.trailingAvg * FULL_DAYS) * 2.5));
     const trailingAvg = (s.trailingAvg * 6 + s.ticketsToday) / 7;
     if (survived) {
@@ -116,7 +122,7 @@ export function makeMockApi(): FireApi {
         storm: { at: Date.now(), fireId: s.fireId, night, strength, size, survived, intensity, sizeAfter: after / (trailingAvg * FULL_DAYS) },
         you: { ...s.you, remainingToday: DAILY_CAP } };
     } else {
-      const winner = Math.random() < 0.2 ? YOU : wallets[rnd(wallets.length)];
+      const winner = outcome === "you-win" || (s.ticketsTotal > 0 && Math.random() < s.you.tickets / s.ticketsTotal) ? YOU : wallets[rnd(wallets.length)];
       const paid = s.potPlank * 0.4 * 0.95;
       s = {
         ...s,
@@ -130,10 +136,25 @@ export function makeMockApi(): FireApi {
       };
     }
     const nb = stormBase(s.night + 1, s.trailingAvg);
-    s = { ...s, threat: Math.max(0.1, Math.min(1, nb / (s.trailingAvg * 2))), nextRollAt: nextRollTime() };
+    s = { ...s, threat: Math.max(0.1, Math.min(1, nb / (s.trailingAvg * 2))), nextRollAt: nextRollTime(), rollPending: false, rollAction: undefined };
+    if (quiet) s = { ...s, storm: undefined };
     emit();
   }
-  function rng() { return Math.random(); }
+  let ethFeedStale = false;
+  const demo: DemoControls = {
+    roll: (o, luck) => storm(o, luck),
+    skipNights: (n) => { for (let i = 0; i < n; i++) { s = { ...s, ticketsToday: Math.round(s.trailingAvg * (0.6 + Math.random() * 0.8)), fireSize: s.fireSize + Math.round(s.trailingAvg * 0.7) }; storm("random", undefined, true); } },
+    setPending: (on) => { s = { ...s, rollPending: on, rollAction: on ? "deliver" : undefined }; emit(); },
+    set: (patch) => { s = { ...s, ...patch }; if (patch.plankUsd) s = { ...s, plankPerTicket: PLANK_USD_PER_TICKET / patch.plankUsd }; emit(); },
+    setYou: (patch) => { s = { ...s, you: { ...s.you, ...patch } }; emit(); },
+    setConnected: (on) => { s = { ...s, you: { ...s.you, address: on ? YOU : undefined } }; emit(); },
+    setCrowd: (perMin) => { crowdPerMin = perMin; },
+    crowdBuy: (n, pay) => crowdBuy(n, pay),
+    eatMill: () => { push(wallets[rnd(wallets.length)], 0, false, "sold a mill to the fire"); s = { ...s, millsEaten: s.millsEaten + 1, millFundUsdg: 0, millBidUsd: Math.round(s.millBidUsd * 0.9) }; emit(); },
+    setEthFeedStale: (on) => { ethFeedStale = on; s = { ...s, ethUsd: on ? 0 : ETH_USD }; emit(); },
+    reset: () => { s = initial(); lifetime.clear(); for (let i = 0; i < 12; i++) push(wallets[rnd(wallets.length)], [1, 1, 10, 10, 100][rnd(5)], Math.random() < 0.15, notes[rnd(notes.length)], Date.now() - (12 - i) * 5 * 60_000); emit(); },
+  };
+  void ethFeedStale;
 
   return {
     state: () => s,
@@ -146,6 +167,9 @@ export function makeMockApi(): FireApi {
       s = { ...s, profiles: { ...s.profiles, [YOU.toLowerCase()]: prof }, you: { ...s.you, profile: prof } };
       emit();
     },
-    demoStorm: storm,
+    async connect() { s = { ...s, you: { ...s.you, address: YOU } }; emit(); },
+    async rollStorm() { storm(); },
+    demoStorm: () => storm(),
+    demo,
   };
 }

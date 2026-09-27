@@ -3,7 +3,7 @@
 // Ported from the design demo; kept as one self-contained module.
 
 import { CEREMONY as C, type Storm } from "../data/types";
-import { createWildlife, drawMill, drawRiver, type Kind } from "./wildlife";
+import { createWildlife, drawMill, drawMill2, drawRiver, useRiver, type Kind } from "./wildlife";
 
 export interface SceneInput {
   /** 0..1: fire height. 1 = reaching the pot text. */
@@ -18,6 +18,8 @@ export interface SceneInput {
   lastBuyBig: boolean;
   /** the redrawn press, the stream and the visitors (off until approved) */
   wild?: boolean;
+  /** demo: the redrawn press instead of the current one */
+  press2?: boolean;
 }
 
 const THUNDER = ["clap1", "sr1", "sr2", "sr3", "sr4", "dry1", "dry2", "dry3", "dry4"];
@@ -200,9 +202,9 @@ export function createScene(canvas: HTMLCanvasElement) {
     const lw = 0.9 + fsW * 0.25;
     const gg = x.createRadialGradient(600, base, 10, 600, base, 700 * Math.sqrt(fsW)); gg.addColorStop(0, `rgba(255,150,50,${.55 * flick})`); gg.addColorStop(.5, "rgba(70,60,30,.35)"); gg.addColorStop(1, "rgba(10,14,10,0)");
     x.fillStyle = night ? "#121a12" : "#2f3d26"; x.fillRect(-3000, base - 20, 6000, 3000); x.fillStyle = gg; x.fillRect(-3000, base - 20, 6000, 3000);
-    if (inp.wild) { drawRiver(x, t, night, Math.max(0, lit * 0.5)); drawMill(x, t, 600 + 400, base - 24, 0.62, night, Math.max(0, lit * 0.4)); wild.draw(x, t, night, "back"); }
+    if (inp.wild) { useRiver(!!inp.press2); drawRiver(x, t, night, Math.max(0, lit * 0.5)); if (inp.press2) drawMill2(x, t, 600 + 420, base - 18, 0.5, night, Math.max(0, lit * 0.4)); else drawMill(x, t, 600 + 400, base - 24, 0.62, night, Math.max(0, lit * 0.4)); wild.draw(x, t, night, "back"); }
     else mill(600 + 445, base - 24, 0.6, night, Math.max(0, lit * 0.5));
-    for (const tr of trees) { if (inp.wild && tr.x > 250 && tr.x < 300) continue; const px = 600 + tr.x, py = base - 10 + tr.y; const d = Math.abs(tr.x) / 400; const warm = Math.max(0, lit * 1.2 - d * .4); pine(px, py, tr.s, night ? `rgb(${8 + warm * 70},${12 + warm * 30},${22})` : `rgb(${30 + warm * 40},${58 + warm * 20},${40})`); }
+    for (const tr of trees) { if (inp.wild && tr.x > 250 && tr.x < (inp.press2 ? 690 : 300)) continue; const px = 600 + tr.x, py = base - 10 + tr.y; const d = Math.abs(tr.x) / 400; const warm = Math.max(0, lit * 1.2 - d * .4); pine(px, py, tr.s, night ? `rgb(${8 + warm * 70},${12 + warm * 30},${22})` : `rgb(${30 + warm * 40},${58 + warm * 20},${40})`); }
     x.save(); x.translate(600, 600); x.scale(lw, Math.min(lw, 1.6)); x.translate(-600, -600);
     x.fillStyle = "#3e424c"; for (const s of [[470, 600, 26, 10], [520, 612, 22, 9], [600, 618, 30, 10], [680, 612, 22, 9], [730, 600, 26, 10]]) { x.beginPath(); x.ellipse(s[0], s[1], s[2], s[3], 0, 0, 7); x.fill(); }
     x.fillStyle = "#5b3a1c"; x.fillRect(500, 570, 200, 22); x.save(); x.translate(600, 569); x.rotate(-.14); x.fillStyle = "#7d4f27"; x.fillRect(-80, -11, 160, 22); x.rotate(.3); x.fillStyle = "#4a2e14"; x.fillRect(-80, -11, 160, 22); x.restore(); x.restore();

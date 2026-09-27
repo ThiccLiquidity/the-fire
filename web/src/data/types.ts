@@ -120,6 +120,8 @@ export interface FireApi {
   rollStorm?(): Promise<void>;
   /** demo only: force tonight's storm now */
   demoStorm?(): void;
+  /** demo only: the playground's hooks into the simulated game */
+  demo?: DemoControls;
 }
 
 /** How the PAPER leg is paid: real PAPER, or "paper from the fire" in ETH or USDG. */
@@ -151,4 +153,27 @@ export function nextRollTime(now = Date.now()) {
 export function phoenixHour(now = Date.now()) {
   const ms = (now - 7 * 3_600_000) % 86_400_000;
   return (ms < 0 ? ms + 86_400_000 : ms) / 3_600_000;
+}
+
+/** Demo-only controls: drive every state of the site without a chain. */
+export interface DemoControls {
+  /** roll tonight: "random" uses the real storm formula; "survive"/"out"/"you-win" force the result; luck 0..31 picks the quantile */
+  roll(outcome: "random" | "survive" | "out" | "you-win", luck?: number): void;
+  /** advance n nights instantly, no ceremony (fires may die and relight) */
+  skipNights(n: number): void;
+  /** hold the storm: buying paused, "deliver" button shown; release it with roll() or setPending(false) */
+  setPending(on: boolean): void;
+  set(patch: Partial<Pick<FireState, "fireSize" | "potPlank" | "night" | "trailingAvg" | "ticketsTotal" | "ticketsToday" | "threat" | "plankUsd" | "ethUsd" | "millBidUsd" | "millFundUsdg" | "millFundEth" | "usdgEnabled">>): void;
+  setYou(patch: Partial<FireState["you"]>): void;
+  /** connect/disconnect the demo wallet */
+  setConnected(on: boolean): void;
+  /** crowd buys per minute (0 = quiet) */
+  setCrowd(perMinute: number): void;
+  /** one crowd buy right now */
+  crowdBuy(tickets: number, pay?: Pay): void;
+  /** the fire eats a mill right now */
+  eatMill(): void;
+  /** ETH/USD feed stale: the ETH path closes */
+  setEthFeedStale(on: boolean): void;
+  reset(): void;
 }
