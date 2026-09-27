@@ -85,7 +85,7 @@ export default function App() {
     } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT) {
       const w = st.winner ?? "";
       card = (
-        <div className={"winner" + (youWon ? " you" : "")} role="alert" style={{ animationDelay: "0s" }}>
+        <div className={"winner" + (youWon ? " mine" : "")} role="alert" style={{ animationDelay: "0s" }}>
           <div className="winner-kicker">{youWon ? "YOU WON" : "The winner"}</div>
           <Avatar addr={w} profile={prof(w)} size={84} />
           <div className="winner-name">{youWon ? "You" : name(w)}</div>
