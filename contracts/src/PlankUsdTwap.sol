@@ -7,7 +7,8 @@ pragma solidity ^0.8.24;
  *         cumulative prices (a ~24h TWAP) and Chainlink ETH/USD.
  *
  *         Anyone can call `checkpoint()` at any time; the feed reports the average price between the
- *         two most recent checkpoints that are at least MIN_WINDOW apart. A thin pool can be pushed
+ *         two most recent checkpoints, which are always at least MIN_WINDOW apart (the first window opens
+ *         MIN_WINDOW after deploy; until then the feed reports 0 and the Fire's ratchet holds). A thin pool can be pushed
  *         for minutes; it can't be held for a day without real money, and the Fire's ratchet then
  *         only moves 5% per night on top of that. No owner, no admin.
  */
@@ -26,7 +27,7 @@ contract PlankUsdTwap {
     IUniswapV2Pair public immutable PAIR;
     IEthUsdFeed public immutable ETH_USD;
     bool public immutable PLANK_IS_TOKEN0;
-    uint256 public constant MIN_WINDOW = 20 hours; // a checkpoint younger than this doesn't replace the last one
+    uint256 public constant MIN_WINDOW = 20 hours; // checkpoints closer together than this are ignored
     uint256 public constant MAX_AGE = 3 days; // older than this and the feed reports stale
 
     struct Obs { uint256 cum; uint32 ts; }
@@ -56,14 +57,13 @@ contract PlankUsdTwap {
         }
     }
 
-    /// @notice Anyone. Rolls the window forward when the last checkpoint is old enough.
+    /// @notice Anyone. Rolls the window forward once the last checkpoint is at least MIN_WINDOW old; earlier calls
+    ///         are no-ops. Both ends of the window only ever move together, so the reported average always spans
+    ///         >= MIN_WINDOW and calling often can neither shorten it nor pin its start in the past.
     function checkpoint() external {
         (uint256 cum, uint32 ts) = _current();
-        if (ts - last.ts >= MIN_WINDOW) {
-            prev = last;
-        } else if (ts - prev.ts < MIN_WINDOW) {
-            // window too short to move yet; just refresh the end so the average keeps extending
-        }
+        if (ts - last.ts < MIN_WINDOW) return;
+        prev = last;
         last = Obs(cum, ts);
         emit Checkpoint(ts, _price());
     }

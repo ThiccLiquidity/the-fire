@@ -77,4 +77,23 @@ contract PlankUsdTwapTest is Test {
         vm.warp(block.timestamp + 24 hours); twap.checkpoint(); // eth feed now 24h old
         assertEq(_price(), 0);
     }
+    function test_frequent_checkpoints_cannot_freeze_or_shorten_the_window() public {
+        // someone calls every 19h: only calls >= 20h after the last accepted one move the window
+        for (uint256 i; i < 6; i++) { vm.warp(block.timestamp + 19 hours); twap.checkpoint(); }
+        (, uint32 prevTs) = twap.prev();
+        (, uint32 lastTs) = twap.last();
+        assertGe(lastTs - prevTs, twap.MIN_WINDOW(), "window always >= MIN_WINDOW");
+        assertGt(prevTs, 1_800_000_000, "window start moved off deploy");
+        // a call minutes after an accepted checkpoint changes nothing
+        vm.warp(block.timestamp + 20 hours); twap.checkpoint();
+        (, uint32 l1) = twap.last();
+        vm.warp(block.timestamp + 5 minutes); twap.checkpoint();
+        (, uint32 l2) = twap.last();
+        assertEq(l1, l2);
+    }
+
+    function test_no_short_first_window() public {
+        vm.warp(block.timestamp + 1 minutes); twap.checkpoint();
+        assertEq(_price(), 0, "a 1-minute window is not a price");
+    }
 }
