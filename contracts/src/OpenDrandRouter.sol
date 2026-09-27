@@ -25,7 +25,9 @@ interface IRandomnessConsumer {
 contract OpenDrandRouter is EvmnetRegistry {
     uint256 public constant GENESIS = 1727521075;
     uint256 public constant PERIOD = 3;
-    uint256 public constant MIN_DELAY = 2;
+    /// @dev Rounds are 3 s apart. 30 s ahead (10 rounds) keeps the chosen round in the future even if the sequencer
+    ///      clock lags real time by a few seconds; otherwise whoever calls roll() could pick a round already public.
+    uint256 public constant MIN_DELAY = 30;
     uint32 public constant MAX_CALLBACK_GAS = 1_000_000;
     bytes32 public constant CHAIN_HASH = 0x04f1e9062b8a81f848fded9c12306733282b2727ecced50032187751166ec8c3;
 
@@ -73,7 +75,7 @@ contract OpenDrandRouter is EvmnetRegistry {
         if (msg.sender.code.length == 0 || callbackGasLimit < 25_000 || callbackGasLimit > MAX_CALLBACK_GAS) {
             revert InvalidRequest();
         }
-        // The earliest evmnet round at least MIN_DELAY seconds ahead (2-4 seconds).
+        // The earliest evmnet round at least MIN_DELAY seconds ahead (30-33 seconds).
         uint256 roundValue = (block.timestamp + MIN_DELAY - GENESIS + PERIOD - 1) / PERIOD + 1;
         if (roundValue > type(uint64).max) revert InvalidRequest();
         // forge-lint: disable-next-line(unsafe-typecast)

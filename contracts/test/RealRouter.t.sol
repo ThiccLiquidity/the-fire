@@ -16,7 +16,7 @@ contract RealRouterTest is Test {
     OpenDrandRouter router; OpenVRFAdapter adapter; Fire fire; MockFeed plankFeed; MockERC20 plank;
 
     function setUp() public {
-        vm.warp(ROUND_TIME - 2 - 1 hours);
+        vm.warp(ROUND_TIME - 30 - 1 hours);
         router = new OpenDrandRouter();
         MockERC20 paper = new MockERC20("PAPER", "PAPER"); plank = new MockERC20("PLANK", "PLANK");
         MockMill mill = new MockMill(address(plank), 1e18);
@@ -26,12 +26,12 @@ contract RealRouterTest is Test {
         fire = new Fire(Fire.Config({paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(0),
             royaltyPool: address(0xB0B), randomness: address(adapter), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(0),
             paperPerTicket: 1e18, plankPerTicket0: 10_000_000e18, plankUsdPerTicket: 90_000_000, ethUsdPerTicket: 100_000_000,
-            millBidBase: 0.03 ether, rollTimeOfDay: (ROUND_TIME - 2) % 1 days}));
+            millBidBase: 0.03 ether, rollTimeOfDay: (ROUND_TIME - 30) % 1 days}));
         assertEq(address(fire), predicted);
         paper.mint(alice, 1e24); plank.mint(alice, 1e30);
         vm.startPrank(alice); paper.approve(address(fire), type(uint256).max); plank.approve(address(fire), type(uint256).max);
         fire.buyTickets(10, "real"); vm.stopPrank();
-        vm.warp(ROUND_TIME - 2);
+        vm.warp(ROUND_TIME - 30); // request 30 s (MIN_DELAY) before round 1000
         plankFeed.set(90_000_000_000);
     }
 
