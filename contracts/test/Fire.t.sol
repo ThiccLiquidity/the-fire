@@ -27,7 +27,7 @@ contract FireTest is Test {
     uint256 constant ROLL_TOD = 3 hours; // 8pm Phoenix
     uint256 constant PLANK_IN_MILL = 800_000_000e18;
 
-    // rnd values that pick specific noise-table slots (low 4 bits)
+    // rnd values that pick specific luck-table slots (low 5 bits)
     uint256 constant RND_CALM = 0; // luck 0.144x (gentlest of 32)
     uint256 constant RND_MONSTER = 31; // luck 6.95x (worst of 32)
     uint256 constant RND_MID = 16; // luck 1.036x

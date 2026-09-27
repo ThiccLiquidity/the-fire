@@ -17,7 +17,6 @@ interface IPriceFeed {
     function latestRoundData() external view returns (uint80, int256 answer, uint256, uint256 updatedAt, uint80);
 }
 
-/// @notice The Paper Mill contract's burn. Exact signature TBD once the contract is read.
 /// @notice Plank Press (the mills). burn() is payable (burnFee), only after mintingSunset, caller must own it;
 ///         returns plankPerNFT PLANK to the caller.
 interface IMill is IERC721 {
@@ -338,7 +337,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     // ---------------------------------------------------------------- going out
-    function _goOut(uint256 fireSize, uint256 storm, uint256 rnd) internal {
+    function _goOut(uint256 sizeBefore, uint256 storm, uint256 rnd) internal {
         address winner = _pickWinner(rnd);
         uint256 p = pot;
         uint256 winnerSlice = p * WINNER_BPS / BPS;
@@ -356,7 +355,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         }
         PLANK.safeTransfer(DEAD, burnSlice);
         lastWinner = winner;
-        emit WentOut(fireId, night, fireSize, storm, winner, winner == address(0) ? 0 : winnerSlice - tithe);
+        emit WentOut(fireId, night, sizeBefore, storm, winner, winner == address(0) ? 0 : winnerSlice - tithe);
         _light(carry);
     }
 
