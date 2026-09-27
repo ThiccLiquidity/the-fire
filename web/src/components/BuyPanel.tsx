@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DAILY_CAP, quote } from "../data/types";
+import { DAILY_CAP, TX_CAP, quote } from "../data/types";
 
 const OPENSEA = "https://opensea.io/collection/paper-mills"; // TODO: real collection URL
 
@@ -23,6 +23,7 @@ export function BuyPanel({
   const canEth = you.eth >= q.eth && you.plank >= q.plank;
   const overCap = n > you.remainingToday;
   const affordable = Math.min(Math.floor(you.paper), Math.floor(you.plank / plankPerTicket));
+  const maxNow = Math.max(0, Math.min(affordable, you.remainingToday, TX_CAP));
 
   async function go(withEth: boolean) {
     setBusy(true);
@@ -42,11 +43,14 @@ export function BuyPanel({
       </div>
 
       <div className="tiers" role="radiogroup" aria-label="How many tickets">
-        {[1, 10, 100, 500].map((t) => (
+        {[1, 5, 10].map((t) => (
           <button key={t} role="radio" aria-checked={n === t} className={"tier" + (n === t ? " on" : "")} onClick={() => setN(t)}>
-            <b>{t}</b><small>{t === 1 ? "ticket" : t === 10 ? "3% off" : t === 100 ? "5% off" : "8% off"}</small>
+            <b>{t}</b><small>{t === 1 ? "ticket" : t === 10 ? "3% off" : "tickets"}</small>
           </button>
         ))}
+        <button role="radio" aria-checked={n === maxNow && maxNow > 0} className={"tier max" + (n === maxNow && maxNow > 0 ? " on" : "")} disabled={maxNow === 0} onClick={() => setN(maxNow)}>
+          <b>Max</b><small>{maxNow} now</small>
+        </button>
       </div>
       <input className="note" maxLength={32} placeholder="Burn note — 32 characters, drifts over the fire" value={note} onChange={(e) => setNote(e.target.value)} />
 
@@ -77,22 +81,28 @@ export function BuyPanel({
       {/* Pyro */}
       <div className={"pyro" + (pyro ? " open" : "")}>
         <button className="pyro-toggle" onClick={() => { setPyro(!pyro); setPyroSure(false); }}>
-          🔥 Don't want a ticket. Just want to burn PLANK.
+          <span className="pyro-tag">PYRO</span> I don't want a ticket. I just want to watch PLANK burn.
         </button>
         {pyro && (
           <div className="pyro-body">
-            <p><b>Pyro mode.</b> No ticket. No odds. Nothing back. Half of this PLANK is destroyed forever and half goes in the pot for someone else to win. You're doing this because you like fire.</p>
+            <p className="pyro-warn">
+              <b>Read this twice.</b> There is no ticket. There are no odds. You will not win anything, ever, from this button.
+              Half of your PLANK is sent to the dead address and is gone from the universe. The other half goes in the pot — for
+              <em> someone else</em> to win. You get a "Pyro" tag next to your name and the warm feeling of having set money on fire.
+            </p>
             <div className="stoke-row">
               <input type="number" min={1} value={pyroAmt} onChange={(e) => setPyroAmt(Number(e.target.value))} aria-label="Million PLANK" />
-              <span>M PLANK (${(pyroAmt * 1e6 * plankUsd).toFixed(2)})</span>
+              <span>M PLANK (${(pyroAmt * 1e6 * plankUsd).toFixed(2)}) — {(pyroAmt / 2).toFixed(0)}M gone forever, {(pyroAmt / 2).toFixed(0)}M to the pot</span>
             </div>
-            <label className="switch"><input type="checkbox" checked={pyroSure} onChange={(e) => setPyroSure(e.target.checked)} /><span>I understand I get nothing for this.</span></label>
-            <button className="cta danger" disabled={busy || !pyroSure || you.plank < pyroAmt * 1e6} onClick={burn}>Burn it. I'm a pyro.</button>
+            <label className="switch"><input type="checkbox" checked={pyroSure} onChange={(e) => setPyroSure(e.target.checked)} /><span>I understand I get absolutely nothing for this and I'm doing it anyway.</span></label>
+            <button className="cta danger" disabled={busy || !pyroSure || you.plank < pyroAmt * 1e6} onClick={burn}>
+              {busy ? "Burning…" : "Burn it. I'm a pyro. 🔥"}
+            </button>
           </div>
         )}
       </div>
 
-      <p className="fine">1 ticket = 1 PAPER + about $0.90 of PLANK (right now {(plankPerTicket / 1e6).toFixed(1)}M). PAPER burns. Half the PLANK burns, half feeds the pot. Every ticket counts until the fire goes out. {DAILY_CAP} per wallet per day.</p>
+      <p className="fine">1 ticket = 1 PAPER + about $0.90 of PLANK (right now {(plankPerTicket / 1e6).toFixed(1)}M). PAPER burns. Half the PLANK burns, half feeds the pot. Every ticket counts until the fire goes out. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day.</p>
     </aside>
   );
 }

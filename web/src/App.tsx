@@ -88,7 +88,7 @@ export default function App() {
           <div className="ticker" aria-label="Recent buys">
             {s.feed.slice(0, 8).map((b) => (
               <span key={b.id} className="tick">
-                {b.stoke ? "🔥" : b.tickets >= 100 ? "🪵" : "📄"} {short(b.who)} <em>{b.title}</em> {b.stoke ? "burned PLANK for nothing" : `${b.tickets} ${b.tickets === 1 ? "ticket" : "tickets"}`}{b.withEth ? " (ETH)" : ""}
+                {b.stoke ? "🔥" : b.tickets >= 10 ? "🪵" : "📄"} {short(b.who)} <em className={b.stoke ? "pyro-em" : ""}>{b.title}</em> {b.stoke ? "set PLANK on fire for no reason" : `${b.tickets} ${b.tickets === 1 ? "ticket" : "tickets"}`}{b.withEth ? " (ETH)" : ""}
               </span>
             ))}
           </div>

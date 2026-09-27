@@ -80,6 +80,7 @@ a { color: var(--flame); }
 .you span { font-size: 0.78rem; color: var(--paper-dim); }
 .ticker { display: flex; gap: 1.2rem; overflow: hidden; white-space: nowrap; padding: 0.5rem 0.8rem; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 0.85rem; mask-image: linear-gradient(90deg, #000 85%, transparent); }
 .ticker em { font-style: normal; color: var(--paper-dim); }
+.ticker .pyro-em { color: var(--bad); font-weight: 700; }
 .swap, .burn, .archive { padding: 0.9rem 1rem; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
 .swap iframe { width: 100%; height: 420px; border: 0; border-radius: 10px; }
 .small-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -103,6 +104,8 @@ a { color: var(--flame); }
 .tier b { font-family: var(--display); font-size: 1.1rem; font-weight: 600; }
 .tier small { font-size: 0.68rem; color: var(--paper-dim); }
 .tier.on { border-color: var(--flame); background: rgba(255, 201, 60, 0.12); }
+.tier.max b { color: var(--flame); }
+.tier:disabled { opacity: 0.4; cursor: not-allowed; }
 .tier:focus-visible, .cta:focus-visible, .note:focus-visible, .pyro-toggle:focus-visible { outline: 2px solid var(--flame); outline-offset: 2px; }
 .note { width: 100%; padding: 0.55rem 0.8rem; border-radius: 10px; border: 1px solid var(--line); background: rgba(0,0,0,0.3); color: var(--paper); }
 .path { display: grid; gap: 0.5rem; padding: 0.7rem 0.8rem; border-radius: 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); }
@@ -121,7 +124,10 @@ a { color: var(--flame); }
 .switch { display: flex; gap: 0.5rem; align-items: flex-start; font-size: 0.88rem; }
 .switch input { margin-top: 0.2rem; accent-color: var(--flame); }
 .pyro { border-radius: 12px; border: 1px solid rgba(255, 107, 107, 0.35); overflow: hidden; }
-.pyro-toggle { width: 100%; text-align: left; padding: 0.6rem 0.8rem; background: transparent; color: var(--paper); border: 0; font-weight: 700; }
+.pyro-toggle { width: 100%; text-align: left; padding: 0.6rem 0.8rem; background: transparent; color: var(--paper); border: 0; font-weight: 700; display: flex; gap: 0.5rem; align-items: center; }
+.pyro-tag { font-family: var(--display); font-weight: 700; font-size: 0.7rem; letter-spacing: 0.08em; padding: 0.15rem 0.45rem; border-radius: 6px; background: var(--bad); color: #2a0a0a; }
+.pyro-warn { padding: 0.6rem 0.7rem; border-radius: 10px; background: rgba(255, 107, 107, 0.12); border: 1px solid rgba(255, 107, 107, 0.4); }
+.pyro-warn em { color: var(--bad); font-style: normal; font-weight: 700; }
 .pyro-body { display: grid; gap: 0.6rem; padding: 0 0.8rem 0.8rem; }
 .pyro-body p { margin: 0; font-size: 0.88rem; }
 .stoke-row { display: flex; gap: 0.5rem; align-items: center; }

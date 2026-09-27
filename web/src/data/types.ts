@@ -57,14 +57,12 @@ export interface FireState {
 }
 
 export const DAILY_CAP = 500;
+export const TX_CAP = 10;
 export const ETH_USD_PER_TICKET = 1.0;
 export const PLANK_USD_PER_TICKET = 0.9;
 
 export function priceMult(n: number) {
-  if (n >= 500) return 0.92;
-  if (n >= 100) return 0.95;
-  if (n >= 10) return 0.97;
-  return 1;
+  return n >= TX_CAP ? 0.97 : 1;
 }
 
 export function quote(n: number, plankPerTicket: number, ethUsd: number) {

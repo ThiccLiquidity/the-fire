@@ -47,6 +47,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public constant TRAILING = 7;
     uint256 public constant BID_STEP_BPS = 500; // mill bid +5% per unfilled night
     uint256 public constant DAILY_CAP = 500; // tickets per wallet per day
+    uint256 public constant TX_CAP = 10; // tickets per transaction
     uint256 public constant PLANK_RATCHET_BPS = 500; // PLANK leg moves at most 5% per night toward target
     uint256 public constant NAME_COUNT = 48;
 
@@ -113,6 +114,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     error FundTooSmall();
     error NotWinner();
     error DailyCap();
+    error TxCap();
     error BadName();
     error StaleFeed();
 
@@ -151,12 +153,9 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     // ---------------------------------------------------------------- pricing
-    /// @notice Bundle discount in bps of full price: 500 -> 92%, 100+ -> 95%, 10+ -> 97%, else 100%.
+    /// @notice Bundle discount in bps of full price: a full 10 -> 97%, else 100%.
     function priceBps(uint256 n) public pure returns (uint256) {
-        if (n >= 500) return 9_200;
-        if (n >= 100) return 9_500;
-        if (n >= 10) return 9_700;
-        return BPS;
+        return n >= TX_CAP ? 9_700 : BPS;
     }
 
     /// @notice ETH per ticket right now, from the ETH/USD feed. Reverts if the feed is stale (>1h).
@@ -214,6 +213,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     function _addTickets(address buyer, uint256 n) internal {
+        if (n > TX_CAP) revert TxCap();
         if (boughtOnDay[dayIndex][buyer] + n > DAILY_CAP) revert DailyCap();
         boughtOnDay[dayIndex][buyer] += n;
         ticketsTotal += n;

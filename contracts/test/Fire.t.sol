@@ -60,8 +60,21 @@ contract FireTest is Test {
 
     // ------------------------------------------------------------ helpers
     function _buy(address who, uint256 n) internal {
-        vm.prank(who);
-        fire.buyTickets(n, "gm");
+        while (n > 0) {
+            uint256 k = n > 10 ? 10 : n;
+            vm.prank(who);
+            fire.buyTickets(k, "gm");
+            n -= k;
+        }
+    }
+    function _buyEth(address who, uint256 n) internal {
+        while (n > 0) {
+            uint256 k = n > 10 ? 10 : n;
+            (, , uint256 c) = fire.quote(k);
+            vm.prank(who);
+            fire.buyTicketsWithEth{value: c}(k, "");
+            n -= k;
+        }
     }
 
     function _roll(uint256 rnd) internal {
@@ -75,13 +88,11 @@ contract FireTest is Test {
     // ------------------------------------------------------------ pricing
     function test_quote_bundles() public view {
         (uint256 p1,, ) = fire.quote(1);
+        (uint256 p5,,) = fire.quote(5);
         (uint256 p10,,) = fire.quote(10);
-        (uint256 p100,,) = fire.quote(100);
-        (uint256 p1000,,) = fire.quote(1000);
         assertEq(p1, 1e18);
+        assertEq(p5, 5e18);
         assertEq(p10, 9.7e18);
-        assertEq(p100, 95e18);
-        assertEq(p1000, 920e18); // 500+ tier applies to any n >= 500 (cap makes 1000 unbuyable in one day)
     }
 
     function test_buy_burns_paper_splits_plank() public {
@@ -98,13 +109,13 @@ contract FireTest is Test {
     }
 
     function test_buy_with_eth_feeds_mill_fund() public {
-        (, , uint256 ethCost) = fire.quote(100);
-        assertApproxEqRel(ethCost, 95 * ETH_T, 1e15, "$1 each at $3333/ETH, 5% off");
+        (, , uint256 ethCost) = fire.quote(10);
+        assertApproxEqRel(ethCost, 9.7 * 0.0003 ether, 1e15, "$1 each at $3333/ETH, 3% off");
         vm.prank(bob);
-        fire.buyTicketsWithEth{value: ethCost}(100, "outsider");
+        fire.buyTicketsWithEth{value: ethCost}(10, "outsider");
         assertEq(fire.millFund(), ethCost);
         (uint256 mine,) = fire.odds(bob);
-        assertEq(mine, 100);
+        assertEq(mine, 10);
         assertEq(paper.balanceOf(DEAD), 0, "no paper involved");
     }
 
@@ -268,9 +279,7 @@ contract FireTest is Test {
 
     function test_sell_mill_to_fire_burns_and_pays_royalty() public {
         // fund the fire with ETH via outsider tickets
-        (, , uint256 ethCost) = fire.quote(500);
-        vm.prank(bob);
-        fire.buyTicketsWithEth{value: ethCost}(500, "");
+        _buyEth(bob, 500);
         assertGe(fire.millFund(), MILL_BID);
         // alice mints a mill
         vm.startPrank(alice);
@@ -299,12 +308,19 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ cap, pricing, names
+    function test_tx_cap_10() public {
+        vm.prank(alice);
+        vm.expectRevert(Fire.TxCap.selector);
+        fire.buyTickets(11, "");
+        _buy(alice, 10);
+    }
+
     function test_daily_cap_500_per_wallet() public {
-        _buy(alice, 400);
+        _buy(alice, 495);
         vm.prank(alice);
         vm.expectRevert(Fire.DailyCap.selector);
-        fire.buyTickets(101, "");
-        _buy(alice, 100);
+        fire.buyTickets(6, "");
+        _buy(alice, 5);
         assertEq(fire.remainingToday(alice), 0);
         _roll(RND_CALM); // new day
         assertEq(fire.remainingToday(alice), 500);
