@@ -1,86 +1,98 @@
 import { useState } from "react";
-import { ETH_PER_TICKET, PLANK_PER_TICKET, quote } from "../data/types";
+import { DAILY_CAP, quote } from "../data/types";
+
+const OPENSEA = "https://opensea.io/collection/paper-mills"; // TODO: real collection URL
 
 export function BuyPanel({
-  yourPaper,
-  onBuy,
-  onStoke,
+  you, plankPerTicket, plankUsd, ethUsd, onBuy, onStoke,
 }: {
-  yourPaper: number;
+  you: { paper: number; plank: number; eth: number; remainingToday: number };
+  plankPerTicket: number; plankUsd: number; ethUsd: number;
   onBuy: (n: number, withEth: boolean, note: string) => Promise<void>;
-  onStoke: (plank: number) => Promise<void>;
+  onStoke: (plank: number, note: string) => Promise<void>;
 }) {
   const [n, setN] = useState(10);
-  const [withEth, setWithEth] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [stokeAmt, setStokeAmt] = useState(50);
-  const q = quote(n);
-  const savings = Math.round((1 - q.paper / n) * 100);
+  const [pyro, setPyro] = useState(false);
+  const [pyroAmt, setPyroAmt] = useState(50);
+  const [pyroSure, setPyroSure] = useState(false);
+  const q = quote(n, plankPerTicket, ethUsd);
+  const off = Math.round((1 - q.paper / n) * 100);
+  const canPaper = you.paper >= q.paper && you.plank >= q.plank;
+  const canEth = you.eth >= q.eth && you.plank >= q.plank;
+  const overCap = n > you.remainingToday;
+  const affordable = Math.min(Math.floor(you.paper), Math.floor(you.plank / plankPerTicket));
 
-  async function go() {
+  async function go(withEth: boolean) {
     setBusy(true);
     try { await onBuy(n, withEth, note.trim()); setNote(""); } finally { setBusy(false); }
   }
-  async function stoke() {
+  async function burn() {
     setBusy(true);
-    try { await onStoke(stokeAmt * 1_000_000); } finally { setBusy(false); }
+    try { await onStoke(pyroAmt * 1_000_000, note.trim() || "just here to burn plank"); setPyroSure(false); setNote(""); } finally { setBusy(false); }
   }
 
   return (
     <aside className="buy">
-      <h2>Feed the fire</h2>
+      <div className="wallet">
+        <div><b>{you.paper.toLocaleString(undefined, { maximumFractionDigits: 1 })}</b><span>PAPER</span></div>
+        <div><b>{(you.plank / 1e6).toLocaleString(undefined, { maximumFractionDigits: 0 })}M</b><span>PLANK</span></div>
+        <div><b>{affordable}</b><span>tickets you can buy now</span></div>
+      </div>
+
       <div className="tiers" role="radiogroup" aria-label="How many tickets">
-        {[1, 10, 100, 1000].map((t) => (
+        {[1, 10, 100, 500].map((t) => (
           <button key={t} role="radio" aria-checked={n === t} className={"tier" + (n === t ? " on" : "")} onClick={() => setN(t)}>
-            <b>{t.toLocaleString()}</b>
-            <small>{t === 1 ? "ticket" : t === 10 ? "9 for 10" : t === 100 ? "80 for 100" : "700 for 1,000"}</small>
+            <b>{t}</b><small>{t === 1 ? "ticket" : t === 10 ? "3% off" : t === 100 ? "5% off" : "8% off"}</small>
           </button>
         ))}
       </div>
+      <input className="note" maxLength={32} placeholder="Burn note — 32 characters, drifts over the fire" value={note} onChange={(e) => setNote(e.target.value)} />
 
-      <div className="legs">
-        <div className="leg">
-          <span className="leg-label">Paper</span>
-          {withEth ? (
-            <span className="leg-val">{q.eth.toFixed(4)} ETH <small>bought from the fire</small></span>
-          ) : (
-            <span className="leg-val">{q.paper.toLocaleString()} PAPER</span>
-          )}
-        </div>
-        <div className="leg">
-          <span className="leg-label">Plank</span>
-          <span className="leg-val">{(q.plank / 1_000_000).toLocaleString()}M PLANK</span>
-        </div>
-        {savings > 0 && <p className="save">Bundle price — {savings}% off both legs.</p>}
+      {/* Path A: real PAPER */}
+      <div className="path">
+        <div className="path-head"><b>With your PAPER</b><span>{q.paper.toLocaleString()} PAPER + {(q.plank / 1e6).toFixed(0)}M PLANK{off > 0 ? ` · ${off}% off` : ""}</span></div>
+        <button className="cta" disabled={busy || !canPaper || overCap} onClick={() => go(false)}>
+          {busy ? "Throwing…" : `Throw ${n} ${n === 1 ? "ticket" : "tickets"} in`}
+        </button>
+        {!canPaper && you.paper < q.paper && (
+          <p className="hint">
+            Not enough PAPER. Mills print it daily — <a href={OPENSEA} target="_blank" rel="noreferrer">get a mill on OpenSea</a>
+            <span className="info" tabIndex={0}>ⓘ<span className="tip">A Paper Mill is an NFT with ~$75 of PLANK locked inside. It prints 1 PAPER a day, forever, to whoever holds it. Burn the mill any time and the PLANK comes back to you.</span></span>
+            {" "}— or buy paper from the fire below.
+          </p>
+        )}
+        {!canPaper && you.plank < q.plank && <p className="hint">Not enough PLANK. Swap for some in the box below.</p>}
+        {overCap && <p className="hint">Max {DAILY_CAP} tickets per wallet per day — you have {you.remainingToday} left today.</p>}
       </div>
 
-      <label className="switch">
-        <input type="checkbox" checked={withEth} onChange={(e) => setWithEth(e.target.checked)} />
-        <span>I don't have PAPER — buy it from the fire with ETH</span>
-      </label>
-      {!withEth && yourPaper < q.paper && (
-        <p className="warn">You have {yourPaper} PAPER. Claim from your mills, or buy from the fire with ETH.</p>
-      )}
+      {/* Path B: paper from the fire */}
+      <div className="path eth">
+        <div className="path-head"><b>No PAPER? Buy paper from the fire</b><span>{q.eth.toFixed(4)} ETH + {(q.plank / 1e6).toFixed(0)}M PLANK</span></div>
+        <p className="hint strong">You're paying with ETH instead of PAPER — same ticket, at a premium (${(q.eth * ethUsd / n).toFixed(2)} a ticket for the paper leg, roughly 3× what real PAPER costs). The ETH goes to buying mills and burning them.</p>
+        <button className="cta ghost" disabled={busy || !canEth || overCap} onClick={() => go(true)}>Buy {n} with ETH</button>
+      </div>
 
-      <input className="note" maxLength={32} placeholder="Burn note (32 characters, shows on the fire)" value={note} onChange={(e) => setNote(e.target.value)} />
+      {/* Pyro */}
+      <div className={"pyro" + (pyro ? " open" : "")}>
+        <button className="pyro-toggle" onClick={() => { setPyro(!pyro); setPyroSure(false); }}>
+          🔥 Don't want a ticket. Just want to burn PLANK.
+        </button>
+        {pyro && (
+          <div className="pyro-body">
+            <p><b>Pyro mode.</b> No ticket. No odds. Nothing back. Half of this PLANK is destroyed forever and half goes in the pot for someone else to win. You're doing this because you like fire.</p>
+            <div className="stoke-row">
+              <input type="number" min={1} value={pyroAmt} onChange={(e) => setPyroAmt(Number(e.target.value))} aria-label="Million PLANK" />
+              <span>M PLANK (${(pyroAmt * 1e6 * plankUsd).toFixed(2)})</span>
+            </div>
+            <label className="switch"><input type="checkbox" checked={pyroSure} onChange={(e) => setPyroSure(e.target.checked)} /><span>I understand I get nothing for this.</span></label>
+            <button className="cta danger" disabled={busy || !pyroSure || you.plank < pyroAmt * 1e6} onClick={burn}>Burn it. I'm a pyro.</button>
+          </div>
+        )}
+      </div>
 
-      <button className="cta" disabled={busy || (!withEth && yourPaper < q.paper)} onClick={go}>
-        {busy ? "Throwing…" : `Throw ${n.toLocaleString()} ${n === 1 ? "ticket" : "tickets"} in`}
-      </button>
-      <p className="fine">PAPER burns. Half the PLANK burns, half feeds the pot. Every ticket counts until the fire goes out.</p>
-
-      <details className="stoke">
-        <summary>Just want a bigger fire? Stoke it with PLANK</summary>
-        <div className="stoke-row">
-          <input type="number" min={1} value={stokeAmt} onChange={(e) => setStokeAmt(Number(e.target.value))} aria-label="Million PLANK" />
-          <span>M PLANK</span>
-          <button className="cta small" disabled={busy} onClick={stoke}>Stoke</button>
-        </div>
-        <p className="fine">No ticket. Half burns, half goes in the pot.</p>
-      </details>
-
-      <p className="fine muted">1 ticket = 1 PAPER + {(PLANK_PER_TICKET / 1e6).toLocaleString()}M PLANK, or {ETH_PER_TICKET} ETH + PLANK. Fixed forever.</p>
+      <p className="fine">1 ticket = 1 PAPER + about $0.90 of PLANK (right now {(plankPerTicket / 1e6).toFixed(1)}M). PAPER burns. Half the PLANK burns, half feeds the pot. Every ticket counts until the fire goes out. {DAILY_CAP} per wallet per day.</p>
     </aside>
   );
 }

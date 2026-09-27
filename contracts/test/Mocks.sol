@@ -42,3 +42,12 @@ contract MockRandomness {
     function request() external returns (uint256) { last += 1; return last; }
     function fulfill(uint256 id, uint256 value) external { IFireCallback(fire).onRandomness(id, value); }
 }
+
+contract MockFeed {
+    int256 public answer; uint256 public updatedAt;
+    constructor(int256 a) { answer = a; updatedAt = block.timestamp; }
+    function set(int256 a) external { answer = a; updatedAt = block.timestamp; }
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        return (0, answer, 0, updatedAt, 0);
+    }
+}

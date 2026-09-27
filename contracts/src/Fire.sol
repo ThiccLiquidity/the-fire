@@ -12,6 +12,11 @@ interface IRandomness {
     function request() external returns (uint256 requestId);
 }
 
+/// @notice Chainlink-style USD price feed (8 decimals).
+interface IPriceFeed {
+    function latestRoundData() external view returns (uint80, int256 answer, uint256, uint256 updatedAt, uint80);
+}
+
 /// @notice The Paper Mill contract's burn. Exact signature TBD once the contract is read.
 interface IMill is IERC721 {
     function burn(uint256 tokenId) external;
@@ -41,15 +46,21 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public constant STORM_SCALE_NIGHT = 8; // storm ~ trailing avg at this age
     uint256 public constant TRAILING = 7;
     uint256 public constant BID_STEP_BPS = 500; // mill bid +5% per unfilled night
+    uint256 public constant DAILY_CAP = 500; // tickets per wallet per day
+    uint256 public constant PLANK_RATCHET_BPS = 500; // PLANK leg moves at most 5% per night toward target
+    uint256 public constant NAME_COUNT = 48;
 
     // ---------------------------------------------------------------- immutables
     IERC20 public immutable PAPER;
     IERC20 public immutable PLANK;
     IMill public immutable MILL;
     address public immutable ROYALTY_POOL;
-    uint256 public immutable PAPER_PER_TICKET; // in PAPER wei
-    uint256 public immutable PLANK_PER_TICKET; // in PLANK wei
-    uint256 public immutable ETH_PER_TICKET; // "buy paper from the fire", in wei
+    uint256 public immutable PAPER_PER_TICKET; // in PAPER wei (1 PAPER)
+    uint256 public immutable ETH_USD_PER_TICKET; // "paper from the fire" price, USD 8-decimals (e.g. 1e8 = $1)
+    uint256 public immutable PLANK_USD_PER_TICKET; // PLANK leg target, USD 8-decimals
+    IPriceFeed public immutable ETH_USD; // Chainlink ETH/USD
+    IPriceFeed public immutable PLANK_USD; // PLANK/USD (TWAP adapter, may be a slow-moving source)
+    uint256 public plankPerTicket; // in PLANK wei; ratchets nightly toward the USD target
     uint256 public immutable MILL_BID_BASE; // starting ETH bid for a mill, in wei
     uint256 public immutable ROLL_TIME_OF_DAY; // seconds after 00:00 UTC (8pm Phoenix = 03:00 UTC = 10800)
 
@@ -67,11 +78,13 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public nextRollAt;
     uint256 public ticketsToday;
     uint256 public ticketsTotal;
-    string public fireName;
     address public lastWinner;
 
     mapping(uint256 => Entry[]) internal _entries; // fireId -> entries
     mapping(uint256 => mapping(address => uint256)) public ticketsOf; // fireId -> buyer -> tickets
+    mapping(uint256 => mapping(address => uint256)) public boughtOnDay; // dayIndex -> buyer -> tickets
+    uint256 public dayIndex; // increments every roll
+    uint8 public fireNameId; // index into the name list (0 = unnamed)
 
     uint256[TRAILING] internal _trail;
     uint256 internal _trailCount;
@@ -90,7 +103,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     event WentOut(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm, address winner, uint256 paid);
     event Lit(uint256 indexed fireId, uint256 carried);
     event MillEaten(uint256 indexed tokenId, address seller, uint256 paidEth, uint256 plankToRoyalty);
-    event Named(uint256 indexed fireId, string name);
+    event Named(uint256 indexed fireId, uint8 nameId);
 
     error NotYet();
     error RollPending();
@@ -99,47 +112,71 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     error BadRequest();
     error FundTooSmall();
     error NotWinner();
+    error DailyCap();
+    error BadName();
+    error StaleFeed();
 
-    constructor(
-        address paper,
-        address plank,
-        address mill,
-        address royaltyPool,
-        address randomness_,
-        uint256 paperPerTicket,
-        uint256 plankPerTicket,
-        uint256 ethPerTicket,
-        uint256 millBidBase,
-        uint256 rollTimeOfDay
-    ) {
-        PAPER = IERC20(paper);
-        PLANK = IERC20(plank);
-        MILL = IMill(mill);
-        ROYALTY_POOL = royaltyPool;
-        randomness = IRandomness(randomness_);
-        PAPER_PER_TICKET = paperPerTicket;
-        PLANK_PER_TICKET = plankPerTicket;
-        ETH_PER_TICKET = ethPerTicket;
-        MILL_BID_BASE = millBidBase;
-        ROLL_TIME_OF_DAY = rollTimeOfDay;
-        millBid = millBidBase;
+    struct Config {
+        address paper;
+        address plank;
+        address mill;
+        address royaltyPool;
+        address randomness;
+        address ethUsdFeed;
+        address plankUsdFeed;
+        uint256 paperPerTicket;
+        uint256 plankPerTicket0;
+        uint256 plankUsdPerTicket;
+        uint256 ethUsdPerTicket;
+        uint256 millBidBase;
+        uint256 rollTimeOfDay;
+    }
+
+    constructor(Config memory c) {
+        PAPER = IERC20(c.paper);
+        PLANK = IERC20(c.plank);
+        MILL = IMill(c.mill);
+        ROYALTY_POOL = c.royaltyPool;
+        randomness = IRandomness(c.randomness);
+        ETH_USD = IPriceFeed(c.ethUsdFeed);
+        PLANK_USD = IPriceFeed(c.plankUsdFeed);
+        PAPER_PER_TICKET = c.paperPerTicket;
+        plankPerTicket = c.plankPerTicket0;
+        PLANK_USD_PER_TICKET = c.plankUsdPerTicket;
+        ETH_USD_PER_TICKET = c.ethUsdPerTicket;
+        MILL_BID_BASE = c.millBidBase;
+        ROLL_TIME_OF_DAY = c.rollTimeOfDay;
+        millBid = c.millBidBase;
         _light(0);
     }
 
     // ---------------------------------------------------------------- pricing
-    /// @notice Bundle discount in bps of full price: 1000+ -> 70%, 100+ -> 80%, 10+ -> 90%, else 100%.
+    /// @notice Bundle discount in bps of full price: 500 -> 92%, 100+ -> 95%, 10+ -> 97%, else 100%.
     function priceBps(uint256 n) public pure returns (uint256) {
-        if (n >= 1000) return 7_000;
-        if (n >= 100) return 8_000;
-        if (n >= 10) return 9_000;
+        if (n >= 500) return 9_200;
+        if (n >= 100) return 9_500;
+        if (n >= 10) return 9_700;
         return BPS;
+    }
+
+    /// @notice ETH per ticket right now, from the ETH/USD feed. Reverts if the feed is stale (>1h).
+    function ethPerTicket() public view returns (uint256) {
+        (, int256 px,, uint256 updatedAt,) = ETH_USD.latestRoundData();
+        if (px <= 0 || block.timestamp - updatedAt > 1 hours) revert StaleFeed();
+        return ETH_USD_PER_TICKET * 1e18 / uint256(px);
     }
 
     function quote(uint256 n) public view returns (uint256 paperCost, uint256 plankCost, uint256 ethCost) {
         uint256 bps = priceBps(n);
         paperCost = n * PAPER_PER_TICKET * bps / BPS;
-        plankCost = n * PLANK_PER_TICKET * bps / BPS;
-        ethCost = n * ETH_PER_TICKET * bps / BPS;
+        plankCost = n * plankPerTicket * bps / BPS;
+        ethCost = n * ethPerTicket() * bps / BPS;
+    }
+
+    /// @notice Tickets this wallet can still buy today.
+    function remainingToday(address who) public view returns (uint256) {
+        uint256 b = boughtOnDay[dayIndex][who];
+        return b >= DAILY_CAP ? 0 : DAILY_CAP - b;
     }
 
     // ---------------------------------------------------------------- buying
@@ -177,6 +214,8 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     function _addTickets(address buyer, uint256 n) internal {
+        if (boughtOnDay[dayIndex][buyer] + n > DAILY_CAP) revert DailyCap();
+        boughtOnDay[dayIndex][buyer] += n;
         ticketsTotal += n;
         ticketsToday += n;
         ticketsOf[fireId][buyer] += n;
@@ -205,8 +244,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
 
         _pushTrail(fireSize);
         ticketsToday = 0;
+        dayIndex += 1;
         nextRollAt = _nextRollTime(block.timestamp);
         _ratchetMillBid();
+        _ratchetPlankLeg();
 
         // night 1 always survives; after that a fire with no fuel goes out, and a fire beats the storm only if it's at least as big
         if (night == 1 || (fireSize > 0 && fireSize >= storm && night < MAX_NIGHTS)) {
@@ -298,17 +339,18 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         pot = carried;
         ticketsTotal = 0;
         ticketsToday = 0;
-        fireName = "";
+        fireNameId = 0;
         nextRollAt = _nextRollTime(block.timestamp);
         emit Lit(fireId, carried);
     }
 
-    /// @notice The last winner names the fire that their win lit.
-    function nameFire(string calldata name) external {
+    /// @notice The last winner names the fire their win lit, picking from the list (1..NAME_COUNT).
+    ///         The list itself lives on the site; the chain stores the index.
+    function nameFire(uint8 nameId) external {
         if (msg.sender != lastWinner) revert NotWinner();
-        if (bytes(name).length > 32) revert BadAmount();
-        fireName = name;
-        emit Named(fireId, name);
+        if (nameId == 0 || nameId > NAME_COUNT || fireNameId != 0) revert BadName();
+        fireNameId = nameId;
+        emit Named(fireId, nameId);
     }
 
     // ---------------------------------------------------------------- the mill fund
@@ -321,6 +363,18 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         } else {
             millBid = millBid * (BPS + BID_STEP_BPS) / BPS;
         }
+    }
+
+    /// @dev Move plankPerTicket at most 5% per night toward the USD target. A thin pool can be pushed for
+    ///      minutes, not for days, so the leg can't be gamed inside a night. If the feed is stale, hold.
+    function _ratchetPlankLeg() internal {
+        (, int256 px,, uint256 updatedAt,) = PLANK_USD.latestRoundData();
+        if (px <= 0 || block.timestamp - updatedAt > 2 days) return;
+        uint256 target = PLANK_USD_PER_TICKET * 1e18 / uint256(px);
+        uint256 cur = plankPerTicket;
+        uint256 maxUp = cur * (BPS + PLANK_RATCHET_BPS) / BPS;
+        uint256 maxDown = cur * (BPS - PLANK_RATCHET_BPS) / BPS;
+        plankPerTicket = target > maxUp ? maxUp : target < maxDown ? maxDown : target;
     }
 
     function millFund() public view returns (uint256) {

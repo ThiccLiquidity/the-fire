@@ -1,14 +1,13 @@
 // Data layer. `FireApi` is what the UI talks to. `mockApi` runs the whole game in the browser so the
-// site works before the contract is deployed; `chainApi` (later) will implement the same interface
-// with viem against Fire.sol.
-
-export type Tier = 1 | 10 | 100 | 1000;
+// site works before the contract is deployed; `chainApi` (later) implements the same interface with
+// viem against Fire.sol.
 
 export interface Buy {
   id: number;
   who: string;
   tickets: number;
   withEth: boolean;
+  stoke?: boolean; // pyro mode: PLANK burned, no ticket
   note: string;
   title: string;
   at: number; // ms
@@ -16,26 +15,37 @@ export interface Buy {
 
 export interface PastFire {
   id: number;
-  name: string;
+  nameId: number; // 0 = unnamed
   nights: number;
   potPlank: number;
   winner: string;
   peakSize: number;
 }
 
+export interface Storm {
+  at: number;
+  strength: number; // in tickets
+  size: number; // fire size at the roll
+  survived: boolean;
+  intensity: number; // 0..1 — how big relative to the fire; drives lightning/thunder
+  winner?: string;
+  paidPlank?: number;
+}
+
 export interface FireState {
   fireId: number;
-  fireName: string;
+  nameId: number;
   night: number; // nights survived
   potPlank: number;
   plankUsd: number;
+  ethUsd: number;
+  plankPerTicket: number; // ratchets toward $0.90
   ticketsToday: number;
   ticketsTotal: number;
-  forecastLow: number; // tonight's storm range, in tickets
-  forecastHigh: number;
+  /** 0..1: how threatening tonight looks. Not a number for the UI to display — drives the sky. */
+  threat: number;
   nextRollAt: number; // ms
-  yourTickets: number;
-  yourPaper: number; // PAPER in wallet
+  you: { tickets: number; paper: number; plank: number; eth: number; remainingToday: number; isWinner: boolean };
   burnedPaperAllTime: number;
   burnedPlankAllTime: number;
   millsEaten: number;
@@ -43,34 +53,37 @@ export interface FireState {
   millBidEth: number;
   feed: Buy[];
   past: PastFire[];
-  storm?: { at: number; strength: number; survived: boolean; size: number };
+  storm?: Storm;
 }
 
-export const PLANK_PER_TICKET = 10_000_000;
-export const ETH_PER_TICKET = 0.0003;
+export const DAILY_CAP = 500;
+export const ETH_USD_PER_TICKET = 1.0;
+export const PLANK_USD_PER_TICKET = 0.9;
 
 export function priceMult(n: number) {
-  if (n >= 1000) return 0.7;
-  if (n >= 100) return 0.8;
-  if (n >= 10) return 0.9;
+  if (n >= 500) return 0.92;
+  if (n >= 100) return 0.95;
+  if (n >= 10) return 0.97;
   return 1;
 }
 
-export function quote(n: number) {
+export function quote(n: number, plankPerTicket: number, ethUsd: number) {
   const m = priceMult(n);
-  return { paper: n * m, plank: n * m * PLANK_PER_TICKET, eth: n * m * ETH_PER_TICKET };
+  return { paper: n * m, plank: n * m * plankPerTicket, eth: (n * m * ETH_USD_PER_TICKET) / ethUsd };
 }
 
 export interface FireApi {
   state(): FireState;
   subscribe(fn: (s: FireState) => void): () => void;
   buy(n: number, withEth: boolean, note: string): Promise<void>;
-  stoke(plank: number): Promise<void>;
+  stoke(plank: number, note: string): Promise<void>;
+  nameFire(nameId: number): Promise<void>;
   /** demo only: force tonight's storm now */
   demoStorm?(): void;
 }
 
-export function titleFor(lifetime: number, withEth: boolean) {
+export function titleFor(lifetime: number, withEth: boolean, stoke?: boolean) {
+  if (stoke) return "Pyro";
   if (withEth) return "Paper buyer";
   if (lifetime >= 1000) return "Arsonist";
   if (lifetime >= 200) return "Lumberjack";
@@ -83,8 +96,14 @@ export function short(addr: string) {
 }
 
 export function nextRollTime(now = Date.now()) {
-  // 8:00 PM America/Phoenix = 03:00 UTC
+  // 8:00 PM America/Phoenix = 03:00 UTC (Arizona doesn't observe DST)
   const d = new Date(now);
   const t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 3, 0, 0);
   return t <= now ? t + 86_400_000 : t;
+}
+
+/** Hour of day in Phoenix, fractional (0..24). */
+export function phoenixHour(now = Date.now()) {
+  const ms = (now - 7 * 3_600_000) % 86_400_000;
+  return (ms < 0 ? ms + 86_400_000 : ms) / 3_600_000;
 }

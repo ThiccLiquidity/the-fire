@@ -2,40 +2,41 @@ import {
   type Buy,
   type FireApi,
   type FireState,
-  PLANK_PER_TICKET,
+  DAILY_CAP,
+  PLANK_USD_PER_TICKET,
   nextRollTime,
   quote,
   titleFor,
 } from "./types";
 
 const PLANK_USD = 750_000 / 8_000_000_000_000;
+const ETH_USD = 3_333;
 const YOU = "0xYOU0000000000000000000000000000000000d00d";
 
-const names = ["The Great Fire", "Night of Logs", "Lumberjack's Revenge", "Kindling Sunday", "The Big One"];
 const wallets = Array.from({ length: 40 }, (_, i) => "0x" + (0x7a3e1c + i * 9973).toString(16).padStart(40, "a"));
 const notes = [
   "gm from 1 mill", "for the boys", "wildfire or nothing", "burn it all", "printed this morning",
-  "logs on the fire", "not tonight storm", "one more for luck", "paper go brrr", "we ride at 8",
+  "logs on the fire", "not tonight storm", "one more for luck", "paper go brrr", "we ride at 8", "", "", "",
 ];
-
 function rnd(n: number) { return Math.floor(Math.random() * n); }
 
 export function makeMockApi(): FireApi {
   const lifetime = new Map<string, number>();
   let nextId = 1;
+  const plankPerTicket = PLANK_USD_PER_TICKET / PLANK_USD;
   let s: FireState = {
     fireId: 14,
-    fireName: "The October Fire",
+    nameId: 3,
     night: 6,
     potPlank: 31_000_000_000,
     plankUsd: PLANK_USD,
+    ethUsd: ETH_USD,
+    plankPerTicket,
     ticketsToday: 410,
     ticketsTotal: 4_120,
-    forecastLow: 380,
-    forecastHigh: 890,
+    threat: 0.55,
     nextRollAt: nextRollTime(),
-    yourTickets: 12,
-    yourPaper: 7,
+    you: { tickets: 12, paper: 7, plank: 120_000_000, eth: 0.08, remainingToday: DAILY_CAP - 12, isWinner: false },
     burnedPaperAllTime: 61_400,
     burnedPlankAllTime: 320_000_000_000,
     millsEaten: 9,
@@ -43,32 +44,26 @@ export function makeMockApi(): FireApi {
     millBidEth: 0.031,
     feed: [],
     past: [
-      { id: 13, name: "Kindling Sunday", nights: 3, potPlank: 9_800_000_000, winner: wallets[3], peakSize: 520 },
-      { id: 12, name: "Lumberjack's Revenge", nights: 17, potPlank: 158_000_000_000, winner: wallets[11], peakSize: 2_140 },
-      { id: 11, name: "Night of Logs", nights: 9, potPlank: 44_000_000_000, winner: wallets[7], peakSize: 900 },
-      { id: 10, name: "The Great Fire", nights: 12, potPlank: 71_000_000_000, winner: wallets[22], peakSize: 1_300 },
+      { id: 13, nameId: 16, nights: 3, potPlank: 9_800_000_000, winner: wallets[3], peakSize: 520 },
+      { id: 12, nameId: 3, nights: 17, potPlank: 158_000_000_000, winner: wallets[11], peakSize: 2_140 },
+      { id: 11, nameId: 2, nights: 9, potPlank: 44_000_000_000, winner: wallets[7], peakSize: 900 },
+      { id: 10, nameId: 1, nights: 12, potPlank: 71_000_000_000, winner: wallets[22], peakSize: 1_300 },
     ],
   };
-
-  // seed the feed
-  for (let i = 0; i < 14; i++) {
-    const who = wallets[rnd(wallets.length)];
-    const t = [1, 1, 10, 10, 100][rnd(5)];
-    push(who, t, Math.random() < 0.15, notes[rnd(notes.length)], Date.now() - (14 - i) * 6 * 60_000);
-  }
 
   const subs = new Set<(s: FireState) => void>();
   const emit = () => subs.forEach((f) => f(s));
 
-  function push(who: string, tickets: number, withEth: boolean, note: string, at = Date.now()) {
+  function push(who: string, tickets: number, withEth: boolean, note: string, stoke = false, at = Date.now()) {
     const life = (lifetime.get(who) ?? 0) + tickets;
     lifetime.set(who, life);
-    const b: Buy = { id: nextId++, who, tickets, withEth, note, title: titleFor(life, withEth), at };
-    s = { ...s, feed: [b, ...s.feed].slice(0, 60) };
+    const b: Buy = { id: nextId++, who, tickets, withEth, stoke, note, title: titleFor(life, withEth, stoke), at };
+    s = { ...s, feed: [b, ...s.feed].slice(0, 40) };
   }
+  for (let i = 0; i < 12; i++) push(wallets[rnd(wallets.length)], [1, 1, 10, 10, 100][rnd(5)], Math.random() < 0.15, notes[rnd(notes.length)], false, Date.now() - (12 - i) * 5 * 60_000);
 
   function applyBuy(who: string, n: number, withEth: boolean, note: string) {
-    const q = quote(n);
+    const q = quote(n, s.plankPerTicket, s.ethUsd);
     push(who, n, withEth, note);
     s = {
       ...s,
@@ -79,46 +74,43 @@ export function makeMockApi(): FireApi {
       burnedPaperAllTime: withEth ? s.burnedPaperAllTime : s.burnedPaperAllTime + q.paper,
       millFundEth: withEth ? s.millFundEth + q.eth : s.millFundEth,
     };
-    if (who === YOU) s = { ...s, yourTickets: s.yourTickets + n, yourPaper: withEth ? s.yourPaper : Math.max(0, s.yourPaper - q.paper) };
+    if (who === YOU) {
+      s = { ...s, you: { ...s.you, tickets: s.you.tickets + n, remainingToday: s.you.remainingToday - n,
+        paper: withEth ? s.you.paper : s.you.paper - q.paper, plank: s.you.plank - q.plank, eth: withEth ? s.you.eth - q.eth : s.you.eth } };
+    }
     if (s.millFundEth >= s.millBidEth) s = { ...s, millFundEth: s.millFundEth - s.millBidEth, millsEaten: s.millsEaten + 1 };
     emit();
   }
 
-  // ambient buys so the fire feels alive
   setInterval(() => {
-    if (Math.random() < 0.55) {
-      const t = [1, 1, 1, 10, 10, 100][rnd(6)];
-      applyBuy(wallets[rnd(wallets.length)], t, Math.random() < 0.15, notes[rnd(notes.length)]);
-    }
-  }, 4_500);
+    if (Math.random() < 0.5) applyBuy(wallets[rnd(wallets.length)], [1, 1, 1, 10, 10, 100][rnd(6)], Math.random() < 0.15, notes[rnd(notes.length)]);
+  }, 5_000);
 
   function storm() {
-    const strength = Math.round(s.forecastLow + Math.random() * (s.forecastHigh - s.forecastLow) * 1.4);
-    const survived = s.ticketsToday >= strength;
+    const base = 520 * ((s.night + 1) / 8);
+    const strength = Math.round(base * Math.exp((Math.random() - 0.5) * 1.1));
     const size = s.ticketsToday;
+    const survived = size > 0 && size >= strength;
+    const intensity = Math.max(0.15, Math.min(1, strength / Math.max(1, size) / 2));
     if (survived) {
-      s = { ...s, night: s.night + 1, ticketsToday: 0, storm: { at: Date.now(), strength, survived, size } };
+      s = { ...s, night: s.night + 1, ticketsToday: 0, storm: { at: Date.now(), strength, size, survived, intensity },
+        you: { ...s.you, remainingToday: DAILY_CAP } };
     } else {
-      const winner = wallets[rnd(wallets.length)];
-      const paid = s.potPlank * 0.4;
+      const winner = Math.random() < 0.2 ? YOU : wallets[rnd(wallets.length)];
+      const paid = s.potPlank * 0.4 * 0.95;
       s = {
         ...s,
-        storm: { at: Date.now(), strength, survived, size },
-        past: [{ id: s.fireId, name: s.fireName, nights: s.night, potPlank: s.potPlank, winner, peakSize: size }, ...s.past],
-        fireId: s.fireId + 1,
-        fireName: names[rnd(names.length)],
-        night: 0,
+        storm: { at: Date.now(), strength, size, survived, intensity, winner, paidPlank: paid },
+        past: [{ id: s.fireId, nameId: s.nameId, nights: s.night, potPlank: s.potPlank, winner, peakSize: size }, ...s.past],
+        fireId: s.fireId + 1, nameId: 0, night: 0,
         potPlank: s.potPlank * 0.3,
         burnedPlankAllTime: s.burnedPlankAllTime + s.potPlank * 0.3,
-        ticketsToday: 0,
-        ticketsTotal: 0,
-        yourTickets: 0,
+        ticketsToday: 0, ticketsTotal: 0,
+        you: { ...s.you, tickets: 0, remainingToday: DAILY_CAP, isWinner: winner === YOU, plank: winner === YOU ? s.you.plank + paid : s.you.plank },
       };
-      void paid;
     }
-    // next forecast scales with the new night
-    const base = 520 * ((s.night + 1) / 8);
-    s = { ...s, forecastLow: Math.round(base * 0.5), forecastHigh: Math.round(base * 1.6), nextRollAt: nextRollTime() };
+    const nb = 520 * ((s.night + 1) / 8);
+    s = { ...s, threat: Math.max(0.1, Math.min(1, nb / 900)), nextRollAt: nextRollTime() };
     emit();
   }
 
@@ -126,13 +118,13 @@ export function makeMockApi(): FireApi {
     state: () => s,
     subscribe(fn) { subs.add(fn); fn(s); return () => subs.delete(fn); },
     async buy(n, withEth, note) { await new Promise((r) => setTimeout(r, 400)); applyBuy(YOU, n, withEth, note); },
-    async stoke(plank) {
+    async stoke(plank, note) {
       await new Promise((r) => setTimeout(r, 400));
-      s = { ...s, potPlank: s.potPlank + plank / 2, burnedPlankAllTime: s.burnedPlankAllTime + plank / 2 };
+      push(YOU, 0, false, note, true);
+      s = { ...s, potPlank: s.potPlank + plank / 2, burnedPlankAllTime: s.burnedPlankAllTime + plank / 2, you: { ...s.you, plank: s.you.plank - plank } };
       emit();
     },
+    async nameFire(nameId) { s = { ...s, nameId, you: { ...s.you, isWinner: false } }; emit(); },
     demoStorm: storm,
   };
 }
-
-export { PLANK_PER_TICKET };
