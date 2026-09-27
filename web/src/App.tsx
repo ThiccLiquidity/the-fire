@@ -152,7 +152,7 @@ export default function App() {
 
         <div className="right">
           <ProfileEditor addr={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onSave={api.setProfile} />
-          <BuyPanel you={s.you} plankPerTicket={s.plankPerTicket} ethUsd={s.ethUsd} onBuy={api.buy} />
+          <BuyPanel you={s.you} plankPerTicket={s.plankPerTicket} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} />
           <Swap />
         </div>
       </main>

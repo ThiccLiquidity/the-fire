@@ -10,6 +10,8 @@ import { bytesToHex, hexToBytes } from "viem";
 import { type Buy, type FireApi, type FireState, type PastFire, DAILY_CAP, FULL_DAYS, nextRollTime, stormBase, titleFor } from "./types";
 
 const PROFILES = import.meta.env.VITE_PROFILES_ADDRESS as Address | undefined;
+const PROFILES_FROM = BigInt(import.meta.env.VITE_PROFILES_FROM_BLOCK || 0); // Profiles deploy block
+const LOG_CHUNK = 50_000n;
 
 export const robinhood = defineChain({
   id: 4663,
@@ -29,7 +31,7 @@ type EthereumProvider = { request: (a: { method: string; params?: unknown[] }) =
 declare global { interface Window { ethereum?: EthereumProvider } }
 
 export function makeChainApi(fireAddress: Address): FireApi {
-  const pub = createPublicClient({ chain: robinhood, transport: http() });
+  const pub = createPublicClient({ chain: robinhood, transport: http(undefined, { batch: true }) });
   const abi = fireAbi as unknown as Abi;
   let account: Address | undefined;
   let paperAddr: Address | undefined, plankAddr: Address | undefined;
@@ -37,7 +39,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
   const subs = new Set<(s: FireState) => void>();
   const emit = () => subs.forEach((f) => f(s));
   const lifetime = new Map<string, number>();
-  let lastBlock = 0n, lastProfileBlock = 0n;
+  let lastBlock = 0n, lastProfileBlock = 0n, feedId = 0;
 
   async function wallet() {
     if (!window.ethereum) throw new Error("No wallet found. Install MetaMask.");
@@ -92,7 +94,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
       if (ev === "TicketsBought") {
         const who = String(a.buyer), n = Number(a.tickets), withEth = Boolean(a.withEth);
         const life = (lifetime.get(who) ?? 0) + n; lifetime.set(who, life);
-        feed.unshift({ id: feed.length + 1, who, tickets: n, withEth, note: String(a.note ?? ""), title: titleFor(life, withEth), at });
+        feed.unshift({ id: ++feedId, who, tickets: n, withEth, note: String(a.note ?? ""), title: titleFor(life, withEth), at });
         if (!withEth) burnedPaper += n;
         burnedPlank += n * s.plankPerTicket * 0.5;
       } else if (ev === "Survived") {
@@ -111,18 +113,43 @@ export function makeChainApi(fireAddress: Address): FireApi {
   async function readProfiles() {
     if (!PROFILES) return;
     const head = await pub.getBlockNumber();
-    const from = lastProfileBlock ? lastProfileBlock + 1n : 0n;
-    if (from > head) return;
-    const logs = await pub.getContractEvents({ address: PROFILES, abi: profilesAbi as unknown as Abi, eventName: "ProfileSet", fromBlock: from, toBlock: head });
-    lastProfileBlock = head;
-    if (!logs.length) return;
-    const profiles = { ...s.profiles };
-    for (const l of logs) { const a = (l as unknown as { args: Record<string, unknown> }).args; profiles[String(a.who).toLowerCase()] = { name: String(a.name ?? ""), pfp: imageUrl(String(a.image ?? "0x")) }; }
-    s = { ...s, profiles };
+    let from = lastProfileBlock ? lastProfileBlock + 1n : PROFILES_FROM;
+    // RPCs cap eth_getLogs ranges, so walk the history in chunks; each chunk is applied as it lands.
+    while (from <= head) {
+      const to = from + LOG_CHUNK - 1n < head ? from + LOG_CHUNK - 1n : head;
+      const logs = await pub.getContractEvents({ address: PROFILES, abi: profilesAbi as unknown as Abi, eventName: "ProfileSet", fromBlock: from, toBlock: to });
+      if (logs.length) {
+        const profiles = { ...s.profiles };
+        for (const l of logs) { const a = (l as unknown as { args: Record<string, unknown> }).args; profiles[String(a.who).toLowerCase()] = { name: String(a.name ?? ""), pfp: imageUrl(String(a.image ?? "0x")) }; }
+        s = { ...s, profiles };
+      }
+      lastProfileBlock = to; from = to + 1n;
+    }
   }
 
-  async function refresh() { try { await readAll(); await readEvents(); await readProfiles(); emit(); } catch (e) { console.warn("refresh failed", e); } }
-  void refresh(); setInterval(refresh, 8000);
+  // Each step is independent: a failed log query must not hold back the live numbers.
+  // One refresh at a time (a slow first profile scan must not stack up polls). A call made mid-refresh — e.g.
+  // right after a buy lands — gets one more pass once the current one finishes, so it sees the new state.
+  let running: Promise<void> | null = null, again = false;
+  async function refresh(): Promise<void> {
+    if (running) { again = true; return running; }
+    running = (async () => {
+      do {
+        again = false;
+        for (const step of [readAll, readEvents, readProfiles]) {
+          try { await step(); } catch (e) { console.warn(`refresh: ${step.name} failed`, e); }
+        }
+        emit();
+      } while (again);
+    })().finally(() => { running = null; });
+    return running;
+  }
+  // Pick up an already-authorized wallet without a prompt, so returning players see their balances.
+  void (async () => {
+    try { const [a] = ((await window.ethereum?.request({ method: "eth_accounts" })) ?? []) as Address[]; if (a) account = a; } catch { /* no wallet */ }
+    await refresh();
+  })();
+  setInterval(refresh, 8000);
 
   async function ensureAllowance(wc: ReturnType<typeof createWalletClient>, token: Address, amount: bigint) {
     const cur = (await pub.readContract({ address: token, abi: erc20, functionName: "allowance", args: [account!, fireAddress] })) as bigint;
@@ -131,6 +158,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
 
   return {
     state: () => s,
+    async connect() { await wallet(); await refresh(); },
     subscribe(fn) { subs.add(fn); fn(s); return () => subs.delete(fn); },
     async setProfile(name, image) {
       if (!PROFILES) throw new Error("Profiles aren't live yet.");
@@ -148,7 +176,11 @@ export function makeChainApi(fireAddress: Address): FireApi {
       const [paperCost, plankCost, ethCost] = (await pub.readContract({ address: fireAddress, abi, functionName: "quote", args: [BigInt(n)] })) as [bigint, bigint, bigint];
       await ensureAllowance(wc, plankAddr!, plankCost);
       let h: Hex;
-      if (withEth) h = await wc.writeContract({ address: fireAddress, abi, functionName: "buyTicketsWithEth", args: [BigInt(n), note], value: ethCost, account: account!, chain: robinhood });
+      if (withEth) {
+        if (ethCost === 0n) throw new Error("The ETH price feed is stale, so buying with ETH is paused. Use PAPER, or try again shortly.");
+        // 1% headroom in case the feed ticks before the tx lands; the fire refunds anything over the price.
+        h = await wc.writeContract({ address: fireAddress, abi, functionName: "buyTicketsWithEth", args: [BigInt(n), note], value: ethCost * 101n / 100n, account: account!, chain: robinhood });
+      }
       else { await ensureAllowance(wc, paperAddr!, paperCost); h = await wc.writeContract({ address: fireAddress, abi, functionName: "buyTickets", args: [BigInt(n), note], account: account!, chain: robinhood }); }
       await pub.waitForTransactionReceipt({ hash: h }); await refresh();
     },

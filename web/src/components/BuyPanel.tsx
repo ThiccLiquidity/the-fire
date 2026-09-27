@@ -5,15 +5,17 @@ const OPENSEA = "https://opensea.io/collection/the-plank-press";
 const fmtPlank = (p: number) => p >= 1e9 ? `${(p / 1e9).toFixed(2)}B` : `${(p / 1e6).toFixed(0)}M`;
 
 export function BuyPanel({
-  you, plankPerTicket, ethUsd, onBuy,
+  you, plankPerTicket, ethUsd, onBuy, onConnect,
 }: {
-  you: { paper: number; plank: number; eth: number; remainingToday: number };
+  you: { address?: string; paper: number; plank: number; eth: number; remainingToday: number };
   plankPerTicket: number; ethUsd: number;
   onBuy: (n: number, withEth: boolean, note: string) => Promise<void>;
+  onConnect?: () => Promise<void>;
 }) {
   const [n, setN] = useState(10);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
   const q = quote(n, plankPerTicket, ethUsd);
   const off = Math.round((1 - q.paper / n) * 100);
   const canPaper = you.paper >= q.paper && you.plank >= q.plank;
@@ -23,9 +25,23 @@ export function BuyPanel({
   const maxNow = Math.max(0, Math.min(affordable, you.remainingToday, TX_CAP));
 
   async function go(withEth: boolean) {
-    setBusy(true);
-    try { await onBuy(n, withEth, note.trim()); setNote(""); } finally { setBusy(false); }
+    setBusy(true); setErr("");
+    try { await onBuy(n, withEth, note.trim()); setNote(""); }
+    catch (e) { setErr((e as Error).message.split("\n")[0].slice(0, 160)); }
+    finally { setBusy(false); }
   }
+  async function connect() {
+    setBusy(true); setErr("");
+    try { await onConnect!(); } catch (e) { setErr((e as Error).message.split("\n")[0].slice(0, 160)); } finally { setBusy(false); }
+  }
+
+  if (!you.address && onConnect) return (
+    <aside className="buy">
+      <button className="cta" disabled={busy} onClick={connect}>{busy ? "Connecting…" : "Connect wallet to buy tickets"}</button>
+      {err && <p className="hint">{err}</p>}
+      <p className="fine">1 ticket = 1 PAPER + about $0.90 of PLANK. PAPER burns. Half the PLANK burns, half feeds the pot. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day.</p>
+    </aside>
+  );
 
   return (
     <aside className="buy">
@@ -71,6 +87,7 @@ export function BuyPanel({
         <button className="cta ghost" disabled={busy || !canEth || overCap} onClick={() => go(true)}>Buy {n} with ETH</button>
       </div>
 
+      {err && <p className="hint">{err}</p>}
       <p className="fine">1 ticket = 1 PAPER + about $0.90 of PLANK (right now {fmtPlank(plankPerTicket)}). PAPER burns. Half the PLANK burns, half feeds the pot. Every ticket counts until the fire goes out. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day.</p>
     </aside>
   );

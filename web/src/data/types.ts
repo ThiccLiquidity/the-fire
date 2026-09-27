@@ -108,6 +108,8 @@ export interface FireApi {
   subscribe(fn: (s: FireState) => void): () => void;
   buy(n: number, withEth: boolean, note: string): Promise<void>;
   setProfile(name: string, image: Uint8Array | null): Promise<void>; // null = keep the current picture
+  /** live only: ask the wallet for an account so balances and the buy buttons light up */
+  connect?(): Promise<void>;
   /** demo only: force tonight's storm now */
   demoStorm?(): void;
 }
