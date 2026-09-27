@@ -49,8 +49,9 @@ export default function App() {
       <header className="top">
         <div className="brand">The Fire</div>
         <div className="forecast" role="status">
-          <span className="fc-text">{weather(s.threat, msToRoll / 3_600_000)}</span>
-          <span className="fc-when">Storm rolls in {countdown(msToRoll)} · 8:00 PM Arizona</span>
+          {s.storm && now - s.storm.at < 11_000
+            ? <><span className="fc-text">{s.storm.survived ? "Storm passing." : "It's raining."}</span><span className="fc-when">Night {s.night}</span></>
+            : <><span className="fc-text">{weather(s.threat, msToRoll / 3_600_000)}</span><span className="fc-when">Storm rolls in {countdown(msToRoll)} · 8:00 PM Arizona</span></>}
         </div>
       </header>
 

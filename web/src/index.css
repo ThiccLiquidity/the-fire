@@ -64,7 +64,7 @@ a { color: var(--flame); }
 .pot { position: absolute; z-index: 4; top: clamp(4rem, 12vh, 7rem); left: 0; right: 0; display: grid; justify-items: center; text-align: center; pointer-events: none; line-height: 1.05; }
 .pot-usd { font-family: var(--display); font-weight: 700; font-size: clamp(3rem, 10vw, 6.5rem); color: var(--flame); text-shadow: 0 0 40px rgba(255, 201, 60, 0.45), 0 2px 14px rgba(0,0,0,0.6); }
 .pot-sub { font-size: 1rem; color: var(--paper); text-shadow: 0 1px 8px rgba(0,0,0,0.8); margin-top: 0.35rem; }
-.verdict { position: absolute; z-index: 5; left: 50%; top: 42%; transform: translateX(-50%); padding: 0.9rem 1.4rem; border-radius: 14px; font-size: 1.15rem; background: rgba(10, 14, 26, 0.85); border: 1px solid rgba(127, 209, 139, 0.6); backdrop-filter: blur(8px); text-align: center; max-width: 90vw; }
+.verdict { position: absolute; z-index: 5; left: 50%; top: clamp(15rem, 34vh, 22rem); transform: translateX(-50%); padding: 0.9rem 1.4rem; border-radius: 14px; font-size: 1.15rem; background: rgba(10, 14, 26, 0.85); border: 1px solid rgba(127, 209, 139, 0.6); backdrop-filter: blur(8px); text-align: center; max-width: 90vw; }
 .verdict.out { border-color: rgba(255, 107, 107, 0.6); }
 .namer { position: relative; z-index: 4; margin: -2rem clamp(1rem, 4vw, 3rem) 1rem; padding: 1rem; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); }
 .name-grid { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
