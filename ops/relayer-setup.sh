@@ -44,6 +44,11 @@ if [ ! -f $KDIR/keeper-key ]; then
   printf '%s' "$KKEY" > $KDIR/keeper-key
 fi
 chown 1000:1000 $KDIR/keeper-key && chmod 600 $KDIR/keeper-key
+if [ ! -f $KDIR/opensea-key ]; then
+  echo "Paste your OpenSea API key (lets the keeper sweep the mill floor; Enter to skip):"
+  read -r -s OKEY </dev/tty; echo
+  if [ -n "$OKEY" ]; then printf '%s' "$OKEY" > $KDIR/opensea-key; chown 1000:1000 $KDIR/opensea-key; chmod 600 $KDIR/opensea-key; fi
+fi
 if [ ! -d /root/the-fire ]; then git clone -q https://github.com/ThiccLiquidity/the-fire /root/the-fire; fi
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 grep -q '^POSTGRES_PASSWORD=' .env && sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$POSTGRES_PASSWORD/" .env || echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> .env
@@ -66,7 +71,9 @@ Then:
 Keeper (rolls the storm nightly, re-rolls/settles stuck rolls, checkpoints the price feed):
   cd /root/the-fire/ops/keeper && docker build -t fire-keeper . && docker run -d --name fire-keeper --restart unless-stopped \\
     -e RPC_URL=<https RPC> -e FIRE=<Fire address> -e TWAP=<PlankUsdTwap address> \\
-    -v /root/fire-keeper/keeper-key:/run/secrets/keeper-key:ro fire-keeper
+    -v /root/fire-keeper/keeper-key:/run/secrets/keeper-key:ro \\
+    -e OPENSEA_API_KEY_FILE=/run/secrets/opensea-key -v /root/fire-keeper/opensea-key:/run/secrets/opensea-key:ro fire-keeper
+  (drop the last line's two OpenSea options if you skipped the key; the keeper then does everything except sweep)
   docker logs -f fire-keeper
 
 Note: Docker-published ports skip ufw. Check \`docker compose ps\` shows no Postgres port bound to 0.0.0.0

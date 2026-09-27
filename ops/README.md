@@ -31,7 +31,11 @@ A small Node program on the same box that does the jobs nobody should have to cl
 - `Fire.roll()` once 8 PM Phoenix has passed;
 - `adapter.settle(id)` if OpenVRF has the number but its callback didn't reach the Fire;
 - `Fire.reroll()` if a roll has had no answer for 30 minutes (the contract only allows it while OpenVRF has no number);
-- `PlankUsdTwap.checkpoint()` once the price window is 20h+ old.
+- `PlankUsdTwap.checkpoint()` once the price window is 20h+ old;
+- sweeps the mill floor (every 5 minutes, only with an OpenSea API key): prices every OpenSea listing in dollars
+  (USDG at face value, ETH at the price feed), and buys the cheapest one at or under the Fire's bid that the fund can
+  pay, using OpenSea's fulfillment data with the Fire as the buyer. When the fund holds only USDG it attaches the
+  0.0003 ETH burn fee itself.
 
 Every one of those is permissionless — the keeper has no special powers, it's just always awake. It uses its own small
 wallet (~$5 of ETH; separate from the relayer so their transactions never collide). The setup script asks for that
