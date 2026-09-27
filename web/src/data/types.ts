@@ -79,6 +79,10 @@ export interface FireState {
   feed: Buy[];
   past: PastFire[];
   storm?: Storm;
+  /** a roll is waiting on its random number; buying is paused until it lands */
+  rollPending?: boolean;
+  /** live only: what the "roll" button would do right now, if anything */
+  rollAction?: "roll" | "settle" | "reroll";
 }
 
 export const DAILY_CAP = 500;
@@ -110,6 +114,8 @@ export interface FireApi {
   setProfile(name: string, image: Uint8Array | null): Promise<void>; // null = keep the current picture
   /** live only: ask the wallet for an account so balances and the buy buttons light up */
   connect?(): Promise<void>;
+  /** live only: roll tonight's storm, deliver a stuck answer, or re-roll — whichever the contract allows now */
+  rollStorm?(): Promise<void>;
   /** demo only: force tonight's storm now */
   demoStorm?(): void;
 }

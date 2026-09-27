@@ -5,12 +5,13 @@ const OPENSEA = "https://opensea.io/collection/the-plank-press";
 const fmtPlank = (p: number) => p >= 1e9 ? `${(p / 1e9).toFixed(2)}B` : `${(p / 1e6).toFixed(0)}M`;
 
 export function BuyPanel({
-  you, plankPerTicket, ethUsd, onBuy, onConnect,
+  you, plankPerTicket, ethUsd, onBuy, onConnect, paused,
 }: {
   you: { address?: string; paper: number; plank: number; eth: number; remainingToday: number };
   plankPerTicket: number; ethUsd: number;
   onBuy: (n: number, withEth: boolean, note: string) => Promise<void>;
   onConnect?: () => Promise<void>;
+  paused?: boolean;
 }) {
   const [n, setN] = useState(10);
   const [note, setNote] = useState("");
@@ -63,10 +64,11 @@ export function BuyPanel({
       </div>
       <input className="note" maxLength={32} placeholder="Burn note — 32 characters, drifts over the fire" value={note} onChange={(e) => setNote(e.target.value)} />
 
+      {paused && <p className="hint strong">The storm is rolling in. Buying reopens as soon as tonight's result lands, usually within seconds.</p>}
       {/* Path A: real PAPER */}
       <div className="path">
         <div className="path-head"><b>With your PAPER</b><span>{q.paper.toLocaleString()} PAPER + {fmtPlank(q.plank)} PLANK{off > 0 ? ` · ${off}% off` : ""}</span></div>
-        <button className="cta" disabled={busy || !canPaper || overCap} onClick={() => go(false)}>
+        <button className="cta" disabled={busy || paused || !canPaper || overCap} onClick={() => go(false)}>
           {busy ? "Throwing…" : `Throw ${n} ${n === 1 ? "ticket" : "tickets"} in`}
         </button>
         {!canPaper && you.paper < q.paper && (
@@ -84,7 +86,7 @@ export function BuyPanel({
       <div className="path eth">
         <div className="path-head"><b>No PAPER? Buy paper from the fire</b><span>{q.eth.toFixed(4)} ETH + {fmtPlank(q.plank)} PLANK</span></div>
         <p className="hint strong">You're paying with ETH instead of PAPER — same ticket, at a premium (${(q.eth * ethUsd / n).toFixed(2)} a ticket for the paper leg, roughly 3× what real PAPER costs). The ETH goes to buying mills and burning them.</p>
-        <button className="cta ghost" disabled={busy || !canEth || overCap} onClick={() => go(true)}>Buy {n} with ETH</button>
+        <button className="cta ghost" disabled={busy || paused || !canEth || overCap} onClick={() => go(true)}>Buy {n} with ETH</button>
       </div>
 
       {err && <p className="hint">{err}</p>}

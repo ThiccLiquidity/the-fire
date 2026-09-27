@@ -163,3 +163,8 @@ a { color: var(--flame); }
 .pick .avatar { box-shadow: 0 0 0 2px var(--line); }
 .profile-name { font-size: 1.05rem; }
 .demo button { background: transparent; color: var(--paper-dim); border: 1px solid var(--line); border-radius: 8px; padding: 0.15rem 0.45rem; font-size: 0.75rem; }
+
+.roll-btn { margin-top: 0.4rem; padding: 0.35rem 0.8rem; border-radius: 999px; border: 1px solid var(--flame); background: transparent; color: var(--paper); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.roll-btn:hover:not(:disabled) { background: rgba(255, 201, 60, 0.15); }
+.roll-btn:focus-visible { outline: 2px solid var(--flame); outline-offset: 2px; }
+.roll-btn:disabled { opacity: 0.6; cursor: default; }

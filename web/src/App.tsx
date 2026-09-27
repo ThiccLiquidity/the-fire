@@ -30,6 +30,7 @@ function weather(threat: number, hoursLeft: number) {
   return "A monster is rolling in tonight.";
 }
 const nights = (n: number) => `${n} ${n === 1 ? "night" : "nights"}`;
+const NOBODY = /^0x0{40}$/i; // a fire that went out with no tickets has no winner
 
 export default function App() {
   const [s, setS] = useState<FireState>(api.state());
@@ -61,7 +62,8 @@ export default function App() {
     : s.night === 0 ? (st && !st.survived && age < C.DONE ? "just lit" : "lit today") : `${nights(s.night)} survived`;
 
   let forecast: [string, string];
-  if (!inCeremony) forecast = [weather(s.threat, msToRoll / 3_600_000), `Storm rolls in ${countdown(msToRoll)} · 8:00 PM Arizona`];
+  if (!inCeremony && s.rollPending) forecast = ["The storm is on its way.", `Night ${s.night + 1} · buying reopens when it lands`];
+  else if (!inCeremony) forecast = [weather(s.threat, msToRoll / 3_600_000), `Storm rolls in ${countdown(msToRoll)} · 8:00 PM Arizona`];
   else if (age < C.IN) forecast = ["Storm rolling in.", `Night ${st!.night}`];
   else if (age < C.STRIKE) forecast = ["It's here.", `Night ${st!.night}`];
   else if (age < C.RAIN) forecast = [st!.survived ? "Pouring." : "Pouring. The fire is losing.", `Night ${st!.night}`];
@@ -75,6 +77,8 @@ export default function App() {
       card = <div className="verdict ok" role="alert"><b>The fire survived night {st.night}.</b> The storm took {Math.min(99, Math.round(st.strength / Math.max(1, st.size) * 100))}% of it.</div>;
     } else if (!st.survived && age >= C.OUT_CARD && age < C.WINNER) {
       card = <div className="verdict out" role="alert"><b>The fire went out.</b> Fire #{st.fireId} burned for {nights(st.night)} with {(st.tickets ?? 0).toLocaleString()} tickets in it. One of them wins.</div>;
+    } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT && NOBODY.test(st.winner ?? "")) {
+      card = <div className="verdict out" role="alert"><b>Nobody had a ticket in fire #{st.fireId}.</b> The whole pot carries to the next fire.</div>;
     } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT) {
       const w = st.winner ?? "";
       card = (
@@ -93,6 +97,13 @@ export default function App() {
     }
   }
   const lastWinner = s.past[0];
+  const [rolling, setRolling] = useState(false);
+  const [rollErr, setRollErr] = useState("");
+  async function rollStorm() {
+    setRolling(true); setRollErr("");
+    try { await api.rollStorm!(); } catch (e) { setRollErr((e as Error).message.split("\n")[0].slice(0, 140)); } finally { setRolling(false); }
+  }
+  const rollLabel = s.rollAction === "settle" ? "Deliver tonight's storm" : s.rollAction === "reroll" ? "The storm is late. Roll it again" : "Roll the storm";
 
   return (
     <div className="page">
@@ -100,13 +111,16 @@ export default function App() {
 
       <header className="top">
         <div className="brand">The Fire{!LIVE && <span className="demo-tag">demo</span>}</div>
-        <div className="forecast" role="status"><span className="fc-text">{forecast[0]}</span><span className="fc-when">{forecast[1]}</span></div>
+        <div className="forecast" role="status"><span className="fc-text">{forecast[0]}</span><span className="fc-when">{forecast[1]}</span>
+          {api.rollStorm && s.rollAction && !inCeremony && <button className="roll-btn" disabled={rolling} onClick={rollStorm}>{rolling ? "Rolling…" : rollLabel}</button>}
+          {rollErr && <span className="fc-when">{rollErr}</span>}
+        </div>
       </header>
 
       <div className={"pot" + (wake ? " wake" : "")}>
         <span className="pot-usd">{usd(potPlank, s.plankUsd)}</span>
         <span className="pot-sub">{mPlank(potPlank)} PLANK · Fire #{fireId} · {potSub}</span>
-        {!wake && s.night === 0 && lastWinner && (
+        {!wake && s.night === 0 && lastWinner && !NOBODY.test(lastWinner.winner) && (
           <span className="pot-last"><Avatar addr={lastWinner.winner} profile={prof(lastWinner.winner)} size={18} /> {name(lastWinner.winner)} won {usd(lastWinner.potPlank * 0.38, s.plankUsd)} last night</span>
         )}
       </div>
@@ -143,7 +157,7 @@ export default function App() {
               <h2>Past fires</h2>
               <ol>
                 {s.past.slice(0, 5).map((f) => (
-                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta"><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> · {nights(f.nights)} · {usd(f.potPlank * 0.38, s.plankUsd)}</span></li>
+                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{NOBODY.test(f.winner) ? <>no tickets · {nights(f.nights)} · pot carried</> : <><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> · {nights(f.nights)} · {usd(f.potPlank * 0.38, s.plankUsd)}</>}</span></li>
                 ))}
               </ol>
             </div>
@@ -152,7 +166,7 @@ export default function App() {
 
         <div className="right">
           <ProfileEditor addr={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onSave={api.setProfile} />
-          <BuyPanel you={s.you} plankPerTicket={s.plankPerTicket} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} />
+          <BuyPanel you={s.you} plankPerTicket={s.plankPerTicket} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} />
           <Swap />
         </div>
       </main>

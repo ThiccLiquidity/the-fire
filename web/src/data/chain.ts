@@ -21,6 +21,8 @@ export const robinhood = defineChain({
   blockExplorers: { default: { name: "Blockscout", url: "https://robinhoodchain.blockscout.com" } },
 });
 
+const adapterAbi = parseAbi(["function answered(uint256) view returns (bool)", "function settle(uint256)"]);
+
 const erc20 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
@@ -34,7 +36,8 @@ export function makeChainApi(fireAddress: Address): FireApi {
   const pub = createPublicClient({ chain: robinhood, transport: http(undefined, { batch: true }) });
   const abi = fireAbi as unknown as Abi;
   let account: Address | undefined;
-  let paperAddr: Address | undefined, plankAddr: Address | undefined;
+  let paperAddr: Address | undefined, plankAddr: Address | undefined, adapterAddr: Address | undefined;
+  let pendingId = 0n;
   let s: FireState = empty();
   const subs = new Set<(s: FireState) => void>();
   const emit = () => subs.forEach((f) => f(s));
@@ -52,9 +55,17 @@ export function makeChainApi(fireAddress: Address): FireApi {
 
   async function readAll() {
     const r = (fn: string, args: unknown[] = []) => pub.readContract({ address: fireAddress, abi, functionName: fn, args }) as Promise<bigint>;
-    const [fireId, night, pot, ticketsToday, ticketsTotal, fireSize, trailingAvg, nextRollAt, plankPerTicket, millBid, millFund, dayIndex] = await Promise.all([
+    const [fireId, night, pot, ticketsToday, ticketsTotal, fireSize, trailingAvg, nextRollAt, plankPerTicket, millBid, millFund, dayIndex, pending, pendingSince, rerollAfter] = await Promise.all([
       r("fireId"), r("night"), r("pot"), r("ticketsToday"), r("ticketsTotal"), r("fireSize"), r("trailingAverage"), r("nextRollAt"), r("plankPerTicket"), r("millBid"), r("millFund"), r("dayIndex"),
+      r("pendingRequest"), r("pendingSince"), r("REROLL_AFTER"),
     ]);
+    if (!adapterAddr) adapterAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "randomness" })) as Address;
+    pendingId = pending;
+    const nowSec = (await pub.getBlock()).timestamp; // the contract judges time by the chain's clock
+    let rollAction: FireState["rollAction"];
+    if (pending === 0n) { if (nowSec >= nextRollAt) rollAction = "roll"; }
+    else if (await pub.readContract({ address: adapterAddr, abi: adapterAbi, functionName: "answered", args: [pending] })) { if (nowSec >= pendingSince + 60n) rollAction = "settle"; }
+    else if (nowSec >= pendingSince + rerollAfter) rollAction = "reroll";
     if (!paperAddr) { paperAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "PAPER" })) as Address; plankAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "PLANK" })) as Address; }
     let ethPerTicket = 0n; try { ethPerTicket = await r("ethPerTicket"); } catch { /* stale feed */ }
     let you = s.you;
@@ -76,21 +87,32 @@ export function makeChainApi(fireAddress: Address): FireApi {
       ticketsToday: Number(ticketsToday), ticketsTotal: Number(ticketsTotal), fireSize: Number(fireSize), trailingAvg: trailing,
       threat: Math.max(0.1, Math.min(1, stormBase(n + 1, trailing) / (trailing * 2))),
       nextRollAt: Number(nextRollAt) * 1000 || nextRollTime(), millBidEth: Number(formatUnits(millBid, 18)), millFundEth: Number(formatUnits(millFund, 18)), you,
+      rollPending: pending !== 0n, rollAction,
     };
   }
 
   async function readEvents() {
-    const head = await pub.getBlockNumber();
+    const headBlock = await pub.getBlock();
+    const head = headBlock.number;
     const from = lastBlock ? lastBlock + 1n : (head > 50_000n ? head - 50_000n : 0n);
     if (from > head) return;
     const logs = await pub.getContractEvents({ address: fireAddress, abi, fromBlock: from, toBlock: head });
     lastBlock = head;
+    // When each event happened, by the chain's clock, mapped onto this browser's clock. Using "now" instead made
+    // every page load replay the last storm as if it were happening live. Only the events the page animates need it.
+    const named = logs as unknown as { eventName: string; blockNumber: bigint }[];
+    const buys = named.filter((l) => l.eventName === "TicketsBought").slice(-8);
+    const wanted = new Set(named.filter((l) => l.eventName === "Survived" || l.eventName === "WentOut").concat(buys).map((l) => l.blockNumber));
+    const blockTime = new Map<bigint, bigint>();
+    await Promise.all([...wanted].map(async (n) => { blockTime.set(n, (await pub.getBlock({ blockNumber: n })).timestamp); }));
+    const nowMs = Date.now();
+    const whenMs = (n: bigint) => { const t = blockTime.get(n); return t === undefined ? 0 : nowMs - Number(headBlock.timestamp - t) * 1000; };
     const feed: Buy[] = [...s.feed]; const past: PastFire[] = [...s.past]; let storm = s.storm;
     let burnedPaper = s.burnedPaperAllTime, burnedPlank = s.burnedPlankAllTime, mills = s.millsEaten;
     for (const l of logs) {
       const a = (l as unknown as { args: Record<string, unknown>; eventName: string; blockNumber: bigint; transactionHash: Hex }).args;
       const ev = (l as unknown as { eventName: string }).eventName;
-      const at = Date.now(); // block timestamps would need another call; fine for a feed
+      const at = whenMs((l as unknown as { blockNumber: bigint }).blockNumber);
       if (ev === "TicketsBought") {
         const who = String(a.buyer), n = Number(a.tickets), withEth = Boolean(a.withEth);
         const life = (lifetime.get(who) ?? 0) + n; lifetime.set(who, life);
@@ -159,6 +181,15 @@ export function makeChainApi(fireAddress: Address): FireApi {
   return {
     state: () => s,
     async connect() { await wallet(); await refresh(); },
+    async rollStorm() {
+      const wc = await wallet();
+      const a = s.rollAction;
+      if (!a) return;
+      const h = a === "settle"
+        ? await wc.writeContract({ address: adapterAddr!, abi: adapterAbi, functionName: "settle", args: [pendingId], account: account!, chain: robinhood })
+        : await wc.writeContract({ address: fireAddress, abi, functionName: a, args: [], account: account!, chain: robinhood });
+      await pub.waitForTransactionReceipt({ hash: h }); await refresh();
+    },
     subscribe(fn) { subs.add(fn); fn(s); return () => subs.delete(fn); },
     async setProfile(name, image) {
       if (!PROFILES) throw new Error("Profiles aren't live yet.");
