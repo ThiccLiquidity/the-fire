@@ -8,7 +8,7 @@ import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
 /**
  * Deploy order (see ../docs/deploy.md):
  *   0. OpenVRF router: from the OpenVRF repo with THEIR script (pnpm run deploy:mainnet). Owner = our deployer.
- *   1. PlankUsdTwap (script/DeployTwap.s.sol), >= 24h before step 2, then call checkpoint() once a day.
+ *   1. PlankUsdTwap (script/DeployTwap.s.sol), >= 24h before step 2; call checkpoint() 20h+ after deploy, then daily.
  *   2. This script: OpenVRFAdapter + Fire.
  *   3. On the router: setConsumerAuthorization(adapter, true). Fund the adapter with a little ETH if requestFee > 0.
  *   4. Ask Plank Press admin: PulpPool.addRewardToken(PLANK).
@@ -16,7 +16,8 @@ import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
  *   forge script script/Deploy.s.sol --rpc-url $RPC --account deployer --broadcast --verify
  *
  * PAPER, PLANK, MILL, ROYALTY_POOL, VRF_ROUTER = addresses on Robinhood Chain
- * ETH_USD_FEED, PLANK_USD_FEED = Chainlink-style feeds (8 decimals). PLANK feed = our TWAP adapter.
+ * ETH_USD_FEED   = Chainlink ETH/USD (8 decimals).
+ * PLANK_USD_FEED = our PlankUsdTwap (**18 decimals** — an 8-decimal feed here would misprice the PLANK leg by 1e10).
  * PAPER_PER_TICKET     = 1e18 (1 PAPER, assuming 18 decimals — verify)
  * PLANK_PER_TICKET0    = starting PLANK per ticket in wei (~$0.90 of PLANK on launch day)
  * PLANK_USD_PER_TICKET = 90000000 ($0.90, 8 decimals) — the leg ratchets toward this

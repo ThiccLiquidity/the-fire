@@ -4,7 +4,7 @@ Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds 
 
 - `docs/spec.md` — the design, numbers, and why. Start here.
 - `docs/randomness.md` — which randomness provider to use on Robinhood Chain (OpenVRF).
-- `contracts/` — Foundry project. `Fire.sol` is the game, `Profiles.sol` is names + pictures for wallets (picture bytes live in the event log, hash in storage). 38 tests.
+- `contracts/` — Foundry project. `Fire.sol` is the game, `Profiles.sol` is names + pictures for wallets (picture bytes live in the event log, hash in storage). 44 tests.
 - `web/` — the site (Vite + React). Runs on a built-in mock until the contract is deployed.
 - `sim/` — the Python simulation the numbers came from.
 
@@ -47,7 +47,7 @@ forge test                                  # run the suite
 forge script script/Deploy.s.sol --rpc-url $env:RPC --broadcast --verify
 ```
 
-Deploy env vars are listed at the top of `script/Deploy.s.sol`. Never put a private key in this repo; use `--account` (Foundry keystore) or `--ledger`.
+Deploy env vars: copy `contracts/.env.example` to `contracts/.env` (details at the top of `script/Deploy.s.sol`). Site env vars: `web/.env.example`. Never put a private key in this repo; use `--account` (Foundry keystore) or `--ledger`.
 
 ## Security model, in one paragraph
 

@@ -20,8 +20,9 @@ Then stand up the relayer (Docker + Postgres) on a small VPS per their `docs/ope
 cd the-fire\contracts; copy .env.example .env   # fill PLANK_WETH_V2_PAIR, PLANK, ETH_USD_FEED
 forge script script/DeployTwap.s.sol --rpc-url $env:RPC --account deployer --broadcast --verify
 ```
-Put the address in `.env` as `PLANK_USD_FEED`. Call `checkpoint()` now and again **24h later** (and daily after —
-a cron/keeper; anyone can call it). The Fire's ratchet holds still until the feed has a full window.
+Put the address in `.env` as `PLANK_USD_FEED`. Call `checkpoint()` **20h+ after deploy** and then once a day (a cron/keeper;
+anyone can call it). Calls less than 20h after the last accepted checkpoint are ignored, so extra calls are harmless.
+The feed reports 0 until its first full window, and the Fire's ratchet holds still until then.
 
 ## 2. Adapter + Fire (ours)
 Fill the rest of `.env` (PAPER once it exists; VRF_ROUTER; PLANK_PER_TICKET0 from the feed's price; MILL_BID_BASE
@@ -44,10 +45,13 @@ pool counts toward every mill's share.
 
 ## 5. Nightly roll
 Anyone can call `Fire.roll()` after 8:00 PM Phoenix. Set a cron (or Gelato Automate) to call it at 8:00:30 PM and
-`PlankUsdTwap.checkpoint()` at the same time. The site also offers a "roll now" button once the time has passed.
+`PlankUsdTwap.checkpoint()` at the same time. There is no "roll now" button on the site yet, so the cron is what keeps
+the game moving.
 
 ## 6. Light fire #1
-Throw the first PLANK in yourself (pyro mode, a few dollars). Site flips from mock to live with `VITE_FIRE_ADDRESS`.
+Pyro mode was removed from the contract, so seed fire #1 by buying its first tickets yourself. **Don't send PLANK
+straight to the Fire address** — it never counts toward the pot and can't be recovered. Site flips from mock to live
+with `VITE_FIRE_ADDRESS` (set `VITE_PROFILES_ADDRESS` + `VITE_PROFILES_FROM_BLOCK` too; see `web/.env.example`).
 
 ## Verify a roll (anyone)
 ```
