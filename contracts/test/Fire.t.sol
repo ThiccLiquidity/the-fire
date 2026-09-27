@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {Fire} from "../src/Fire.sol";
+import {Fire, ISeaport} from "../src/Fire.sol";
 import {MockERC20, MockMill, MockRandomness, MockFeed} from "./Mocks.sol";
 
 contract FireTest is Test {
@@ -39,9 +39,9 @@ contract FireTest is Test {
         mill = new MockMill(address(plank), PLANK_IN_MILL);
         rng = new MockRandomness();
         ethFeed = new MockFeed(3_333_33333333); // $3,333.33 -> $1 = 0.0003 ETH
-        plankFeed = new MockFeed(9); // $0.00000009 per PLANK (8-dec: 9e-8) -> $0.90 for 10M
+        plankFeed = new MockFeed(90_000_000_000); // $9e-8 per PLANK in 18-dec -> $0.90 for 10M PLANK
         fire = new Fire(Fire.Config({
-            paper: address(paper), plank: address(plank), mill: address(mill), royaltyPool: royalty,
+            paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(0), royaltyPool: royalty,
             randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
             paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000 /* $0.90 */,
             ethUsdPerTicket: 100_000_000 /* $1.00 */, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
@@ -297,11 +297,33 @@ contract FireTest is Test {
         fire.sellMillToFire(id);
         vm.stopPrank();
         assertEq(alice.balance - ethBefore, MILL_BID, "seller paid the bid");
+        assertEq(address(mill).balance, 0.0003 ether, "burn fee paid to the mill contract (mock keeps it)");
         assertEq(plank.balanceOf(royalty), PLANK_IN_MILL, "plank inside -> royalty pool");
         vm.expectRevert();
         mill.ownerOf(id); // burned
         _roll(RND_CALM);
         assertEq(fire.millBid(), MILL_BID, "bid reset after a purchase");
+    }
+
+    function test_sell_mill_reverts_before_sunset() public {
+        _buyEth(bob, 500);
+        mill.setSunset(block.timestamp + 1 days);
+        vm.startPrank(alice);
+        plank.approve(address(mill), type(uint256).max);
+        uint256 id = mill.mint(alice);
+        mill.approve(address(fire), id);
+        vm.expectRevert(Fire.NotBurnableYet.selector);
+        fire.sellMillToFire(id);
+        vm.stopPrank();
+    }
+
+    function test_seaport_path_disabled_without_seaport() public {
+        ISeaport.OfferItem[] memory offer = new ISeaport.OfferItem[](1);
+        ISeaport.ConsiderationItem[] memory cons = new ISeaport.ConsiderationItem[](1);
+        ISeaport.Order memory o;
+        o.parameters.offer = offer; o.parameters.consideration = cons;
+        vm.expectRevert(Fire.NoSeaport.selector);
+        fire.eatMillFromSeaport(o);
     }
 
     function test_sell_mill_reverts_when_fund_too_small() public {
@@ -351,18 +373,18 @@ contract FireTest is Test {
         // target = $0.90 / $0.00000009 = 10M PLANK: already there
         _roll(RND_CALM);
         assertEq(fire.plankPerTicket(), PLANK_T);
-        plankFeed.set(18); // PLANK doubles -> target 5M, but only 5% per night
+        plankFeed.set(180_000_000_000); // PLANK doubles -> target 5M, but only 5% per night
         _roll(RND_CALM);
         assertEq(fire.plankPerTicket(), PLANK_T * 9_500 / 10_000);
         _roll(RND_CALM);
         assertEq(fire.plankPerTicket(), PLANK_T * 9_500 / 10_000 * 9_500 / 10_000);
-        plankFeed.set(9); // back to $0.9e-7 -> target 10M, moves up
+        plankFeed.set(90_000_000_000); // back -> target 10M, moves up
         _roll(RND_CALM);
         assertGt(fire.plankPerTicket(), PLANK_T * 9_500 / 10_000 * 9_500 / 10_000);
     }
 
     function test_stale_plank_feed_holds_price() public {
-        plankFeed.set(1); // would slash the target...
+        plankFeed.set(10_000_000_000); // would slash the target...
         vm.warp(fire.nextRollAt() + 3 days); // ...but the feed is now stale
         ethFeed.set(3_333_33333333); // keep ETH fresh so quotes work
         fire.roll();

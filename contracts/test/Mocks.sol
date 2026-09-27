@@ -27,7 +27,12 @@ contract MockMill is ERC721 {
         plank.transferFrom(msg.sender, address(this), plankPerMill);
         _mint(to, id);
     }
-    function burn(uint256 id) external {
+    uint256 public constant burnFee = 0.0003 ether;
+    uint256 public mintingSunset;
+    function setSunset(uint256 t) external { mintingSunset = t; }
+    function burn(uint256 id) external payable {
+        require(block.timestamp >= mintingSunset, "Burning not allowed yet");
+        require(msg.value == burnFee, "Incorrect fee");
         require(ownerOf(id) == msg.sender, "not owner");
         _burn(id);
         plank.transfer(msg.sender, plankPerMill);

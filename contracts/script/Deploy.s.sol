@@ -6,8 +6,14 @@ import {Fire} from "../src/Fire.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
 
 /**
- * Deploy: fill the env vars, then
- *   forge script script/Deploy.s.sol --rpc-url $RPC --broadcast --verify
+ * Deploy order (see ../docs/deploy.md):
+ *   0. OpenVRF router: from the OpenVRF repo with THEIR script (pnpm run deploy:mainnet). Owner = our deployer.
+ *   1. PlankUsdTwap (script/DeployTwap.s.sol), >= 24h before step 2, then call checkpoint() once a day.
+ *   2. This script: OpenVRFAdapter + Fire.
+ *   3. On the router: setConsumerAuthorization(adapter, true). Fund the adapter with a little ETH if requestFee > 0.
+ *   4. Ask Plank Press admin: PulpPool.addRewardToken(PLANK).
+ *
+ *   forge script script/Deploy.s.sol --rpc-url $RPC --account deployer --broadcast --verify
  *
  * PAPER, PLANK, MILL, ROYALTY_POOL, VRF_ROUTER = addresses on Robinhood Chain
  * ETH_USD_FEED, PLANK_USD_FEED = Chainlink-style feeds (8 decimals). PLANK feed = our TWAP adapter.
@@ -31,6 +37,7 @@ contract Deploy is Script {
             paper: vm.envAddress("PAPER"),
             plank: vm.envAddress("PLANK"),
             mill: vm.envAddress("MILL"),
+            seaport: vm.envOr("SEAPORT", address(0)),
             royaltyPool: vm.envAddress("ROYALTY_POOL"),
             randomness: address(adapter),
             ethUsdFeed: vm.envAddress("ETH_USD_FEED"),

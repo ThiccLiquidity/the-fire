@@ -18,8 +18,21 @@ interface IPriceFeed {
 }
 
 /// @notice The Paper Mill contract's burn. Exact signature TBD once the contract is read.
+/// @notice Plank Press (the mills). burn() is payable (burnFee), only after mintingSunset, caller must own it;
+///         returns plankPerNFT PLANK to the caller.
 interface IMill is IERC721 {
-    function burn(uint256 tokenId) external;
+    function burn(uint256 tokenId) external payable;
+    function burnFee() external view returns (uint256);
+    function mintingSunset() external view returns (uint256);
+}
+
+/// @notice Minimal Seaport 1.6 surface for filling a fixed-price ETH listing.
+interface ISeaport {
+    struct OfferItem { uint8 itemType; address token; uint256 identifierOrCriteria; uint256 startAmount; uint256 endAmount; }
+    struct ConsiderationItem { uint8 itemType; address token; uint256 identifierOrCriteria; uint256 startAmount; uint256 endAmount; address payable recipient; }
+    struct OrderParameters { address offerer; address zone; OfferItem[] offer; ConsiderationItem[] consideration; uint8 orderType; uint256 startTime; uint256 endTime; bytes32 zoneHash; uint256 salt; bytes32 conduitKey; uint256 totalOriginalConsiderationItems; }
+    struct Order { OrderParameters parameters; bytes signature; }
+    function fulfillOrder(Order calldata order, bytes32 fulfillerConduitKey) external payable returns (bool fulfilled);
 }
 
 /**
@@ -54,12 +67,13 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     IERC20 public immutable PAPER;
     IERC20 public immutable PLANK;
     IMill public immutable MILL;
+    ISeaport public immutable SEAPORT; // may be address(0): then only the standing bid works
     address public immutable ROYALTY_POOL;
     uint256 public immutable PAPER_PER_TICKET; // in PAPER wei (1 PAPER)
     uint256 public immutable ETH_USD_PER_TICKET; // "paper from the fire" price, USD 8-decimals (e.g. 1e8 = $1)
     uint256 public immutable PLANK_USD_PER_TICKET; // PLANK leg target, USD 8-decimals
     IPriceFeed public immutable ETH_USD; // Chainlink ETH/USD
-    IPriceFeed public immutable PLANK_USD; // PLANK/USD (TWAP adapter, may be a slow-moving source)
+    IPriceFeed public immutable PLANK_USD; // PLANK/USD, **18 decimals** (our TWAP adapter)
     uint256 public plankPerTicket; // in PLANK wei; ratchets nightly toward the USD target
     uint256 public immutable MILL_BID_BASE; // starting ETH bid for a mill, in wei
     uint256 public immutable ROLL_TIME_OF_DAY; // seconds after 00:00 UTC (8pm Phoenix = 03:00 UTC = 10800)
@@ -110,6 +124,9 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     error NotRandomness();
     error BadRequest();
     error FundTooSmall();
+    error TooExpensive();
+    error NotBurnableYet();
+    error NoSeaport();
     error NotWinner();
     error DailyCap();
     error TxCap();
@@ -119,6 +136,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         address paper;
         address plank;
         address mill;
+        address seaport;
         address royaltyPool;
         address randomness;
         address ethUsdFeed;
@@ -135,6 +153,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         PAPER = IERC20(c.paper);
         PLANK = IERC20(c.plank);
         MILL = IMill(c.mill);
+        SEAPORT = ISeaport(c.seaport);
         ROYALTY_POOL = c.royaltyPool;
         randomness = IRandomness(c.randomness);
         ETH_USD = IPriceFeed(c.ethUsdFeed);
@@ -370,7 +389,8 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     function _ratchetPlankLeg() internal {
         (, int256 px,, uint256 updatedAt,) = PLANK_USD.latestRoundData();
         if (px <= 0 || block.timestamp - updatedAt > 2 days) return;
-        uint256 target = PLANK_USD_PER_TICKET * 1e18 / uint256(px);
+        // plank wei per ticket = (USD per ticket, 8 dec) * 1e18 wei/PLANK * 1e10 / (USD per PLANK, 18 dec)
+        uint256 target = PLANK_USD_PER_TICKET * 1e28 / uint256(px);
         uint256 cur = plankPerTicket;
         uint256 maxUp = cur * (BPS + PLANK_RATCHET_BPS) / BPS;
         uint256 maxDown = cur * (BPS - PLANK_RATCHET_BPS) / BPS;
@@ -381,21 +401,48 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         return address(this).balance;
     }
 
-    /// @notice Sell a mill to the fire at its current bid. The fire burns it in the same
-    ///         transaction and sends the PLANK inside to the royalty pool.
-    ///         STUB: depends on the Paper Mill contract's real burn semantics.
+    /// @notice Sell a mill to the fire at its current bid. The fire burns it in the same transaction, pays the
+    ///         Plank Press burn fee, and sends the PLANK inside to the royalty pool.
     function sellMillToFire(uint256 tokenId) external nonReentrant {
         uint256 bid = millBid;
-        if (address(this).balance < bid) revert FundTooSmall();
+        uint256 fee = MILL.burnFee();
+        if (address(this).balance < bid + fee) revert FundTooSmall();
         MILL.transferFrom(msg.sender, address(this), tokenId);
-        uint256 before = PLANK.balanceOf(address(this));
-        MILL.burn(tokenId);
-        uint256 released = PLANK.balanceOf(address(this)) - before;
-        if (released > 0) PLANK.safeTransfer(ROYALTY_POOL, released);
+        uint256 released = _burnMill(tokenId, fee);
         _millBoughtSinceRoll = true;
         (bool ok,) = msg.sender.call{value: bid}("");
         require(ok, "pay failed");
         emit MillEaten(tokenId, msg.sender, bid, released);
+    }
+
+    /// @notice Anyone: fill an OpenSea (Seaport) fixed-price ETH listing for a mill at or under the fire's bid,
+    ///         then burn it. The listing's total ETH consideration must be <= millBid.
+    function eatMillFromSeaport(ISeaport.Order calldata order) external nonReentrant {
+        if (address(SEAPORT) == address(0)) revert NoSeaport();
+        ISeaport.OrderParameters calldata p = order.parameters;
+        if (p.offer.length != 1 || p.offer[0].token != address(MILL) || p.offer[0].itemType != 2) revert BadRequest();
+        uint256 tokenId = p.offer[0].identifierOrCriteria;
+        uint256 total;
+        for (uint256 i; i < p.consideration.length; i++) {
+            if (p.consideration[i].itemType != 0) revert BadRequest(); // native ETH only
+            total += p.consideration[i].endAmount;
+        }
+        uint256 fee = MILL.burnFee();
+        if (total > millBid) revert TooExpensive();
+        if (address(this).balance < total + fee) revert FundTooSmall();
+        bool ok = SEAPORT.fulfillOrder{value: total}(order, bytes32(0));
+        require(ok && MILL.ownerOf(tokenId) == address(this), "fill failed");
+        uint256 released = _burnMill(tokenId, fee);
+        _millBoughtSinceRoll = true;
+        emit MillEaten(tokenId, p.offerer, total, released);
+    }
+
+    function _burnMill(uint256 tokenId, uint256 fee) internal returns (uint256 released) {
+        if (block.timestamp < MILL.mintingSunset()) revert NotBurnableYet();
+        uint256 before = PLANK.balanceOf(address(this));
+        MILL.burn{value: fee}(tokenId);
+        released = PLANK.balanceOf(address(this)) - before;
+        if (released > 0) PLANK.safeTransfer(ROYALTY_POOL, released);
     }
 
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
