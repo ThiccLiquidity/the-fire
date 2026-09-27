@@ -4,21 +4,13 @@ The clear bugs from the audit are fixed on branch `claude/practical-gates-va0gq1
 items that change the game's rules or trust model, so they need a call from you before anyone writes code.
 Each has a recommendation; none is implemented.
 
-## 1. A stuck roll freezes the game forever (audit C2) — decide before mainnet
+## 1. A stuck roll freezes the game forever (audit C2) — DONE
 
-If the randomness callback never lands (relayer down for good, router owner de-authorizes the adapter or raises the
-fee, or the callback reverts — e.g. a PLANK transfer fails), `pendingRequest` stays set, `roll()` reverts forever,
-and the pot is locked. There is no admin to fix it. Since the C1 fix, buying is also paused while a roll is pending,
-so a slow relayer now stops sales too.
-
-| Option | Upside | Downside |
-|---|---|---|
-| **A. Public re-request after a timeout** (e.g. 6h) | Anyone can unstick it; no admin | A re-request is a second draw. Whoever can see the first word (the relayer operator) could withhold a bad one and wait for the timeout. Mitigate: long timeout, and the re-request only allowed if the *router* never fulfilled (check its state). |
-| **B. Emergency "end the fire" after a long timeout** (e.g. 7 days) — refunds nothing, burns the pot or carries it | Guarantees funds never sit frozen | Players lose their shot at that pot |
-| **C. Timelocked admin that can swap the randomness adapter** | Handles every failure mode | Adds the owner the README says doesn't exist |
-
-**Recommendation: A with a long timeout plus the router-state check, and wrap the winner/tithe PLANK transfers so a
-single bad recipient can't revert the whole night.**
+Decided: no long wait. Built on how OpenVRF works (it stores each fulfilled number on-chain, unchangeable):
+- `adapter.settle(id)`: anyone delivers a number the router already holds if its callback didn't land.
+- `Fire.reroll()`: anyone, after 30 min with no answer, and only while the router has no number for that request.
+- Payouts that fail carry to the next pot; a broken PLANK feed can't revert the night.
+- `ops/keeper` does all of this automatically; the site shows a button as a backup.
 
 ## 2. Who can hurt the game via OpenVRF (trust model)
 
@@ -27,20 +19,23 @@ and we run the only whitelisted relayer, which can delay any roll. It can't choo
 deploy wallet has no special powers", which isn't true. **Recommendation:** after setup, transfer router ownership to a
 multisig or renounce it if OpenVRF allows, whitelist a second independent relayer, and fix the README wording.
 
-## 3. Adapter pays its whole balance per request (audit M2)
+## 3. Adapter pays its whole balance per request (audit M2) — DONE (was a real bug)
 
-`OpenVRFAdapter.request()` forwards `address(this).balance`. With `REQUEST_FEE_WEI=0` it doesn't matter; with a fee,
-the first request spends every night's pre-funding (or reverts if the router wants the exact fee). Needs the real
-router's fee getter. **Recommendation:** read the fee from the router and forward exactly that — once the OpenVRF
-interface is pinned (it's still a TODO in the adapter).
+OpenVRF requires the exact fee, so 1 wei sent to the adapter by anyone made every roll revert. The adapter now pays
+exactly `requestFee()`. Tested against the real router code with a real drand proof.
 
 ## 4. Mill bid and Seaport (audit H4 / M5)
 
-- `millBid` rises 5% every night with no cap (4.3x after 30 nights; overflows after ~7 years and would then brick
-  rolls). **Recommendation:** cap it, e.g. at 3x `MILL_BID_BASE`.
-- If `SEAPORT` is left unset at deploy, the ETH from every ETH ticket is locked in the Fire forever (no setter).
-  **Recommendation:** don't deploy until the Seaport 1.6 address is confirmed; otherwise, disable the ETH ticket path
-  while Seaport is unset.
+- Mill bid — DONE. It's now a reverse auction that tracks the floor: +25% of its start per day while nobody sells
+  (capped at 3x), restarting at 90% of each price paid. The fire pays the listing's own price.
+- Still open: a bot that finds the cheapest OpenSea listing and hands it to the fire. Needs an OpenSea API key and a
+  look at a real listing (some OpenSea listings need an extra zone signature the basic fill can't provide).
+- Still open: confirm the Seaport 1.6 address on Robinhood Chain (PowerShell check sent; waiting on its top lines).
+
+## 4b. ETH/USD feed age — DONE
+
+On-chain check (Sep 27 2026): the feed updates every ~0.4–6h. The old 1h staleness limit would have closed ETH
+tickets and zeroed the PLANK price feed most of the day. Both now allow 25h (24h heartbeat + margin).
 
 ## 5. Tithe and mill PLANK go to a pool that doesn't count PLANK yet
 
