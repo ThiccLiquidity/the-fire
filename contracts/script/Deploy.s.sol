@@ -38,7 +38,7 @@ contract Deploy is Script {
             paper: vm.envAddress("PAPER"),
             plank: vm.envAddress("PLANK"),
             mill: vm.envAddress("MILL"),
-            seaport: vm.envOr("SEAPORT", address(0)),
+            seaport: vm.envAddress("SEAPORT"), // required: without it, ETH from ETH tickets could never leave the Fire
             royaltyPool: vm.envAddress("ROYALTY_POOL"),
             randomness: address(adapter),
             ethUsdFeed: vm.envAddress("ETH_USD_FEED"),

@@ -38,5 +38,12 @@
 - Ops cost: a $5–10/mo VPS + relayer gas (~$0.001/request cap by default).
 - Honest framing for the community: *nobody* controls the pot or the rules; we run the randomness *relay*, which can delay a roll but can't choose it, and anyone can verify each roll with their `verify-request.mjs` script.
 
+## Seaport (checked on-chain Sep 27 2026)
+- **Seaport 1.6: `0x0000000000000068F116a894984e2DB1123eB395`** (deployed, 23,981 bytes). Seaport 1.5 is not deployed.
+- ConduitController `0x00000000F9490004C11Cef243f5400493c00Ad63` deployed.
+- Uniswap V2 router `0x89e5DB8B5aA49aA85AC63f691524311AEB649eba`: factory `0x8bceaa40b9acdfaedf85adf4ff01f5ad6517937f`,
+  WETH `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`. The PLANK pair's token0 = WETH, token1 = PLANK.
+- ETH/USD feed update gaps observed: 0.4–6h (deviation-triggered; 24h heartbeat).
+
 ## Mill floor (OpenSea, Seaport)
 - Collection https://opensea.io/collection/the-plank-press. Seaport on Robinhood Chain: confirm the deployed Seaport 1.6 address before wiring the fill path. No standing bid, no sell-to-fire: the fire only buys listings.

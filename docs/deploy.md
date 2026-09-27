@@ -26,7 +26,8 @@ The feed reports 0 until its first full window, and the Fire's ratchet holds sti
 
 ## 2. Adapter + Fire (ours)
 Fill the rest of `.env` (PAPER once it exists; VRF_ROUTER; PLANK_PER_TICKET0 from the feed's price; MILL_BID_BASE
-just under the OpenSea floor; SEAPORT if the Seaport 1.6 address on this chain is confirmed, else leave unset).
+just under the OpenSea floor; SEAPORT = `0x0000000000000068F116a894984e2DB1123eB395`, Seaport 1.6, confirmed deployed on
+Robinhood Chain Sep 27 2026 — don't leave it unset, or ETH from ETH tickets can never leave the Fire).
 ```powershell
 forge script script/Deploy.s.sol --rpc-url $env:RPC --account deployer --broadcast --verify
 ```

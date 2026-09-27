@@ -28,13 +28,22 @@ interface IMill is IERC721 {
     function mintingSunset() external view returns (uint256);
 }
 
-/// @notice Minimal Seaport 1.6 surface for filling a fixed-price ETH listing.
+/// @notice Minimal Seaport 1.6 surface for filling an ETH listing. Deployed on Robinhood Chain at the canonical
+///         0x0000000000000068F116a894984e2DB1123eB395 (checked Sep 27 2026). Uses fulfillAdvancedOrder so restricted
+///         listings (a zone such as OpenSea's SignedZone that needs extraData) can be filled as well as open ones.
 interface ISeaport {
     struct OfferItem { uint8 itemType; address token; uint256 identifierOrCriteria; uint256 startAmount; uint256 endAmount; }
     struct ConsiderationItem { uint8 itemType; address token; uint256 identifierOrCriteria; uint256 startAmount; uint256 endAmount; address payable recipient; }
     struct OrderParameters { address offerer; address zone; OfferItem[] offer; ConsiderationItem[] consideration; uint8 orderType; uint256 startTime; uint256 endTime; bytes32 zoneHash; uint256 salt; bytes32 conduitKey; uint256 totalOriginalConsiderationItems; }
     struct Order { OrderParameters parameters; bytes signature; }
-    function fulfillOrder(Order calldata order, bytes32 fulfillerConduitKey) external payable returns (bool fulfilled);
+    struct AdvancedOrder { OrderParameters parameters; uint120 numerator; uint120 denominator; bytes signature; bytes extraData; }
+    struct CriteriaResolver { uint256 orderIndex; uint8 side; uint256 index; uint256 identifier; bytes32[] criteriaProof; }
+    function fulfillAdvancedOrder(
+        AdvancedOrder calldata advancedOrder,
+        CriteriaResolver[] calldata criteriaResolvers,
+        bytes32 fulfillerConduitKey,
+        address recipient
+    ) external payable returns (bool fulfilled);
 }
 
 /**
@@ -463,7 +472,9 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
 
     /// @notice Anyone: fill an OpenSea (Seaport) fixed-price ETH listing for a mill at or under the fire's bid,
     ///         then burn it. The listing's total ETH consideration must be <= millBid.
-    function eatMillFromSeaport(ISeaport.Order calldata order) external nonReentrant {
+    /// @param extraData the listing's zone data, if its zone needs any (OpenSea supplies it with the listing's
+    ///        fulfillment data for this fire as the fulfiller); empty for an open listing.
+    function eatMillFromSeaport(ISeaport.Order calldata order, bytes calldata extraData) external nonReentrant {
         if (address(SEAPORT) == address(0)) revert NoSeaport();
         ISeaport.OrderParameters calldata p = order.parameters;
         if (p.offer.length != 1 || p.offer[0].token != address(MILL) || p.offer[0].itemType != 2) revert BadRequest();
@@ -480,7 +491,12 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         uint256 fee = MILL.burnFee();
         if (total > millBid()) revert TooExpensive();
         if (address(this).balance < total + fee) revert FundTooSmall();
-        bool ok = SEAPORT.fulfillOrder{value: total}(order, bytes32(0));
+        bool ok = SEAPORT.fulfillAdvancedOrder{value: total}(
+            ISeaport.AdvancedOrder({parameters: p, numerator: 1, denominator: 1, signature: order.signature, extraData: extraData}),
+            new ISeaport.CriteriaResolver[](0),
+            bytes32(0),
+            address(this)
+        );
         require(ok && MILL.ownerOf(tokenId) == address(this), "fill failed");
         uint256 released = _burnMill(tokenId, fee);
         uint256 restart = total * BID_RESTART_BPS / BPS;

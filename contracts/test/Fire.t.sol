@@ -301,16 +301,24 @@ contract FireTest is Test {
         (Fire f2, MockSeaport sea) = _seaportFire();
         vm.warp(block.timestamp + 2 days); // bid has climbed to 1.5x
         vm.prank(alice); uint256 id = mill.mint(alice);
-        f2.eatMillFromSeaport(sea.listing(alice, id, 0.04 ether)); // a floor listing under the bid
+        f2.eatMillFromSeaport(sea.listing(alice, id, 0.04 ether), ""); // a floor listing under the bid
         assertEq(f2.millBid(), 0.036 ether, "restarts at 90% of what it paid");
         vm.warp(block.timestamp + 1 days);
         assertEq(f2.millBid(), 0.045 ether, "then climbs again");
     }
 
+    function test_restricted_listing_passes_zone_data_through() public {
+        (Fire f2, MockSeaport sea) = _seaportFire();
+        vm.prank(alice); uint256 id = mill.mint(alice);
+        f2.eatMillFromSeaport(sea.listing(alice, id, 0.02 ether), hex"c0ffee");
+        assertEq(sea.lastExtraData(), hex"c0ffee");
+        assertEq(plank.balanceOf(royalty), PLANK_IN_MILL, "mill burned, PLANK to the pool");
+    }
+
     function test_free_listing_cannot_park_the_bid_at_zero() public {
         (Fire f2, MockSeaport sea) = _seaportFire();
         vm.prank(alice); uint256 id = mill.mint(alice);
-        f2.eatMillFromSeaport(sea.listing(alice, id, 0));
+        f2.eatMillFromSeaport(sea.listing(alice, id, 0), "");
         assertEq(f2.millBid(), MILL_BID / 10);
     }
 
@@ -342,7 +350,7 @@ contract FireTest is Test {
         vm.stopPrank();
         ISeaport.Order memory o = sea.listing(alice, id, 0.02 ether);
         uint256 aliceBefore = alice.balance;
-        f2.eatMillFromSeaport(o);
+        f2.eatMillFromSeaport(o, "");
         assertEq(alice.balance - aliceBefore, 0.02 ether, "seller got the listing price");
         assertEq(plank.balanceOf(royalty), PLANK_IN_MILL, "plank inside -> royalty pool");
         vm.expectRevert();
@@ -362,7 +370,7 @@ contract FireTest is Test {
         vm.startPrank(alice); plank.approve(address(mill), type(uint256).max); uint256 id = mill.mint(alice); mill.setApprovalForAll(address(sea), true); vm.stopPrank();
         ISeaport.Order memory o = sea.listing(alice, id, MILL_BID + 1);
         vm.expectRevert(Fire.TooExpensive.selector);
-        f2.eatMillFromSeaport(o);
+        f2.eatMillFromSeaport(o, "");
     }
 
     function test_seaport_fill_rejects_fulfiller_tips() public {
@@ -382,7 +390,7 @@ contract FireTest is Test {
         cons[1] = ISeaport.ConsiderationItem({itemType: 0, token: address(0), identifierOrCriteria: 0, startAmount: MILL_BID - 0.01 ether, endAmount: MILL_BID - 0.01 ether, recipient: payable(carol)});
         o.parameters.consideration = cons;
         vm.expectRevert(Fire.BadRequest.selector);
-        f2.eatMillFromSeaport(o);
+        f2.eatMillFromSeaport(o, "");
     }
 
     function test_seaport_fill_prices_timed_listing_at_its_high() public {
@@ -398,7 +406,7 @@ contract FireTest is Test {
         ISeaport.Order memory o = sea.listing(alice, id, 0.01 ether);
         o.parameters.consideration[0].startAmount = MILL_BID + 1; // a declining auction that starts over the bid
         vm.expectRevert(Fire.TooExpensive.selector);
-        f2.eatMillFromSeaport(o);
+        f2.eatMillFromSeaport(o, "");
     }
 
     function test_seaport_path_disabled_without_seaport() public {
@@ -407,7 +415,7 @@ contract FireTest is Test {
         ISeaport.Order memory o;
         o.parameters.offer = offer; o.parameters.consideration = cons;
         vm.expectRevert(Fire.NoSeaport.selector);
-        fire.eatMillFromSeaport(o);
+        fire.eatMillFromSeaport(o, "");
     }
 
     function test_no_buys_while_roll_pending() public {

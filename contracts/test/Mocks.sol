@@ -79,12 +79,17 @@ contract MockSeaport {
     }
     /// @dev Like Seaport, pays every consideration item — including fulfiller-appended "tips" past the original count.
 
-    function fulfillOrder(ISeaport.Order calldata order, bytes32) external payable returns (bool) {
+    bytes public lastExtraData;
+    function fulfillAdvancedOrder(ISeaport.AdvancedOrder calldata order, ISeaport.CriteriaResolver[] calldata, bytes32, address recipient)
+        external payable returns (bool)
+    {
+        require(order.numerator == 1 && order.denominator == 1, "full fill");
+        lastExtraData = order.extraData;
         ISeaport.OrderParameters calldata p = order.parameters;
         uint256 total;
         for (uint256 i; i < p.consideration.length; i++) total += p.consideration[i].endAmount;
         require(msg.value == total, "price");
-        nft.transferFrom(p.offerer, msg.sender, p.offer[0].identifierOrCriteria);
+        nft.transferFrom(p.offerer, recipient, p.offer[0].identifierOrCriteria);
         for (uint256 i; i < p.consideration.length; i++) {
             (bool ok,) = p.consideration[i].recipient.call{value: p.consideration[i].endAmount}("");
             require(ok);
