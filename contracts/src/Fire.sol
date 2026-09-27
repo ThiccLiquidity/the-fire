@@ -67,7 +67,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     IERC20 public immutable PAPER;
     IERC20 public immutable PLANK;
     IMill public immutable MILL;
-    ISeaport public immutable SEAPORT; // may be address(0): then only the standing bid works
+    ISeaport public immutable SEAPORT; // address(0) disables mill buying entirely
     address public immutable ROYALTY_POOL;
     uint256 public immutable PAPER_PER_TICKET; // in PAPER wei (1 PAPER)
     uint256 public immutable ETH_USD_PER_TICKET; // "paper from the fire" price, USD 8-decimals (e.g. 1e8 = $1)

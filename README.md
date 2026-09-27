@@ -58,4 +58,4 @@ The pot lives inside `Fire.sol`. There is no owner, no withdraw, no pause. PLANK
 - Confirm the Seaport 1.6 address on Robinhood Chain (the fire fills OpenSea listings through it).
 - Pin the OpenVRF router address and consumer interface; test the adapter on Robinhood testnet (chain id 46630).
 - Verify PAPER/PLANK decimals; set `ETH_PER_TICKET` and `MILL_BID_BASE` from launch-day prices.
-- Run fire #1 on testnet with the community for a week.
+- Light fire #1 small.
