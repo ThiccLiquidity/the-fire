@@ -72,7 +72,7 @@ export function BuyPanel({
         {!canPaper && you.paper < q.paper && (
           <p className="hint">
             Not enough PAPER. Mills print it daily — <a href={OPENSEA} target="_blank" rel="noreferrer">get a mill on OpenSea</a>
-            <span className="info" tabIndex={0}>ⓘ<span className="tip">A Paper Mill is an NFT with ~$75 of PLANK locked inside. It prints 1 PAPER a day, forever, to whoever holds it. Burn the mill any time and the PLANK comes back to you.</span></span>
+            <span className="info" tabIndex={0}>ⓘ<span className="tip">A Paper Mill is an NFT with about 89 billion PLANK (~$90 at today's price) locked inside. It prints 1 PAPER a day, forever, to whoever holds it. Burn the mill (allowed from Oct 1, 2026) and the PLANK comes back to you.</span></span>
             {" "}— or buy paper from the fire below.
           </p>
         )}

@@ -31,6 +31,14 @@ const erc20 = parseAbi([
   "function approve(address,uint256) returns (bool)",
 ]);
 
+function Sel({ tokens, v, set }: { tokens: Tok[]; v: Tok; set: (t: Tok) => void }) {
+  return (
+    <select value={v.address} onChange={(e) => set(tokens.find((t) => t.address === e.target.value)!)} aria-label="Token">
+      {tokens.map((t) => <option key={t.address} value={t.address}>{t.symbol}</option>)}
+    </select>
+  );
+}
+
 export function Swap() {
   const [tokens, setTokens] = useState<Tok[]>(BASE);
   const [from, setFrom] = useState<Tok>(BASE[0]);
@@ -100,12 +108,6 @@ export function Swap() {
     finally { setBusy(false); }
   }
 
-  const Sel = ({ v, set }: { v: Tok; set: (t: Tok) => void }) => (
-    <select value={v.address} onChange={(e) => set(tokens.find((t) => t.address === e.target.value)!)} aria-label="Token">
-      {tokens.map((t) => <option key={t.address} value={t.address}>{t.symbol}</option>)}
-    </select>
-  );
-
   return (
     <div className={"swap" + (open ? " open" : "")}>
       <button className="swap-toggle" onClick={() => setOpen(!open)}>
@@ -113,8 +115,8 @@ export function Swap() {
       </button>
       {open && (
         <div className="swap-body">
-          <div className="swap-row"><span>Pay</span><input type="number" min="0" step="any" value={amt} onChange={(e) => setAmt(e.target.value)} aria-label="Amount" /><Sel v={from} set={setFrom} /></div>
-          <div className="swap-row"><span>Get</span><input readOnly value={out ? Number(out).toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"} aria-label="You get" /><Sel v={to} set={setTo} /></div>
+          <div className="swap-row"><span>Pay</span><input type="number" min="0" step="any" value={amt} onChange={(e) => setAmt(e.target.value)} aria-label="Amount" /><Sel tokens={tokens} v={from} set={setFrom} /></div>
+          <div className="swap-row"><span>Get</span><input readOnly value={out ? Number(out).toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"} aria-label="You get" /><Sel tokens={tokens} v={to} set={setTo} /></div>
           <div className="swap-actions">
             <button className="flip" onClick={() => { const f = from; setFrom(to); setTo(f); }} aria-label="Flip">⇅</button>
             <button className="cta" disabled={busy || !out} onClick={swap}>{busy ? "Swapping…" : `Swap ${from.symbol} → ${to.symbol}`}</button>
