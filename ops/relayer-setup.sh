@@ -16,8 +16,11 @@ ufw --force reset >/dev/null; ufw default deny incoming >/dev/null; ufw default 
 
 echo "== 4/5 OpenVRF"
 cd /root
+# Pin the OpenVRF commit you reviewed: OPENVRF_REF=<commit> before running. Unpinned = whatever main is today.
 if [ ! -d openvrf ]; then git clone -q https://github.com/Robinhood-OSS/OpenVRF openvrf; fi
-cd openvrf && git submodule update --init --recursive -q
+cd openvrf
+if [ -n "${OPENVRF_REF:-}" ]; then git fetch -q origin && git checkout -q "$OPENVRF_REF"; else echo "   (warning: OpenVRF not pinned; set OPENVRF_REF to a reviewed commit)"; fi
+git submodule update --init --recursive -q
 cp -n .env.example .env
 mkdir -p secrets && chmod 700 secrets
 
@@ -25,7 +28,9 @@ echo "== 5/5 relayer key"
 if [ ! -f secrets/relayer-key ]; then
   echo
   echo "Paste the RELAYER wallet's private key (the small, dedicated wallet — never the deployer), then Enter:"
-  read -r -s KEY; echo
+  # Read from the terminal, not stdin: under `curl | bash` stdin is this script, and `read` would swallow its next lines.
+  read -r -s KEY </dev/tty; echo
+  printf '%s' "$KEY" | grep -Eq '^(0x)?[0-9a-fA-F]{64}$' || { echo "That doesn't look like a private key (64 hex characters)."; exit 1; }
   printf '%s' "$KEY" > secrets/relayer-key
 fi
 chown 1000:1000 secrets/relayer-key && chmod 600 secrets/relayer-key
@@ -46,6 +51,9 @@ Done. Now edit /root/openvrf/.env  (nano /root/openvrf/.env) and set:
 
 Then:
   cd /root/openvrf && docker compose up -d --build && docker compose logs -f relayer
+
+Note: Docker-published ports skip ufw. Check \`docker compose ps\` shows no Postgres port bound to 0.0.0.0
+(bind it to 127.0.0.1 or don't publish it).
 
 The relayer wallet needs ~\$20 of ETH on Robinhood Chain for gas. Top it up when it gets low.
 EOF
