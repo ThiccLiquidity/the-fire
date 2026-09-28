@@ -1,4 +1,5 @@
-// Forest + campfire soundscape, synthesized with Web Audio (no files, no licences). It follows the scene:
+// Forest + campfire soundscape. Recorded loops (web/public/ambience, Pixabay; see CREDITS.md) mixed live to follow
+// the scene, with a synthesized stand-in for any layer whose file hasn't loaded (or failed). It follows the scene:
 // the fire's crackle grows with its size and dies in the rain; birds sing by day (a chorus at dawn), crickets and
 // the odd owl take over at night; wind and the stream run underneath; rain hisses during a storm and the forest
 // goes quiet under it. Everything (thunder too) goes through one master gain, so the header toggle mutes it all.
@@ -100,6 +101,34 @@ export function createAmbience(ac: AudioContext) {
     for (const [at, d] of notes) tone(t + at, f * 1.02, f * 0.94, d, amp, pan, "sine", 900);
   }
 
+  // ---- recorded layers: fetched once sound is first turned on; each fades in over its synth stand-in
+  const REC = ["campfire", "forest-day", "forest-dawn", "forest-night", "wind", "stream", "rain"] as const;
+  type Rec = (typeof REC)[number];
+  const rec: Partial<Record<Rec, GainNode>> = {};
+  let owlBuf: AudioBuffer | null = null, loading = false;
+  async function loadRecordings() {
+    if (loading) return; loading = true;
+    // the fire first, then whatever the time of day needs, then the rest
+    for (const name of [...REC, "owl"]) {
+      try {
+        const r = await fetch(`/ambience/${name}.mp3`); if (!r.ok) continue;
+        const buf = await ac.decodeAudioData(await r.arrayBuffer());
+        if (name === "owl") { owlBuf = buf; continue; }
+        const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+        src.loopStart = 0.03; src.loopEnd = buf.duration - 0.03; // skip the mp3 encoder's padding so the loop is seamless
+        const g = ac.createGain(); g.gain.value = 0;
+        src.connect(g).connect(master); src.start(0, Math.random() * (buf.duration - 1));
+        rec[name as Rec] = g;
+      } catch { /* keep the synth stand-in */ }
+    }
+  }
+  function owlRec(amp: number) {
+    if (!owlBuf) return false;
+    const s = ac.createBufferSource(); s.buffer = owlBuf; s.playbackRate.value = 0.95 + Math.random() * 0.1;
+    const g = ac.createGain(); g.gain.value = amp; const p = ac.createStereoPanner(); p.pan.value = Math.random() * 1.4 - 0.7;
+    s.connect(g).connect(p).connect(master); s.start(); return true;
+  }
+
   // ---- the mix, stepped once per animation frame
   let on = false, last = ac.currentTime, nextBird = 0, nextOwl = ac.currentTime + 20, windTarget = 420, streamT = 0;
   const crickets = [0, 1, 2].map((i) => ({ pitch: 4200 + i * 350 + Math.random() * 200, period: 0.75 + Math.random() * 0.5, next: 0, pan: -0.6 + i * 0.6 }));
@@ -113,33 +142,46 @@ export function createAmbience(ac: AudioContext) {
     const hush = Math.max(s.rain, s.cover * 0.6); // the forest quiets as the storm comes in
     const fire = Math.max(0, Math.min(1, s.size)) * (1 - s.dead);
 
-    set(fireRoar, (0.05 + fire * 0.16) * (1 - s.rain * 0.5));
+    const day = 1 - night, dawnMix = Math.min(1, dawn * 1.5);
+    const fireLevel = s.dead > 0.9 ? 0 : (0.3 + fire * 0.7) * (1 - s.rain * 0.6);
+    // Recorded layers (levels are relative: every loop is normalized to the same loudness)
+    if (rec.campfire) set(rec.campfire, 0.9 * fireLevel, 0.6);
+    if (rec["forest-day"]) set(rec["forest-day"], 0.45 * day * (1 - dawnMix * 0.6) * (1 - hush), 2);
+    if (rec["forest-dawn"]) set(rec["forest-dawn"], 0.5 * dawnMix * (1 - hush), 2);
+    if (rec["forest-night"]) set(rec["forest-night"], 0.55 * night * (1 - hush * 0.7), 2);
+    if (rec.wind) set(rec.wind, 0.22 + s.cover * 0.45 + s.rain * 0.25, 1.5);
+    if (rec.stream) set(rec.stream, s.stream ? 0.35 * (1 - s.rain * 0.4) : 0, 1);
+    if (rec.rain) set(rec.rain, s.rain * 0.85, 1);
+
+    // Synth stand-ins, only for layers without a recording
+    set(fireRoar, rec.campfire ? 0 : (0.05 + fire * 0.16) * (1 - s.rain * 0.5));
     set(sizzle, s.rain * fire * 0.05);
-    set(rain, s.rain * 0.22, 0.8);
+    set(rain, rec.rain ? 0 : s.rain * 0.22, 0.8);
     windTarget += (Math.random() - 0.5) * 40; windTarget = Math.max(250, Math.min(800, windTarget));
     windBand.frequency.setTargetAtTime(windTarget, now, 1.5);
-    set(wind, 0.03 + night * 0.015 + s.cover * 0.06 + s.rain * 0.05, 1.2);
+    set(wind, rec.wind ? 0 : 0.03 + night * 0.015 + s.cover * 0.06 + s.rain * 0.05, 1.2);
     streamT += dt; streamBand.frequency.setTargetAtTime(1600 + Math.sin(streamT * 1.7) * 300 + Math.random() * 200, now, 0.08);
-    set(stream, s.stream ? 0.035 * (1 - s.rain * 0.4) : 0, 0.1);
+    set(stream, s.stream && !rec.stream ? 0.035 * (1 - s.rain * 0.4) : 0, 0.1);
 
     // crackles: a few a second from a small fire, a busy pop and snap from a big one
-    const rate = (0.8 + fire * 9) * (1 - s.rain * 0.7) * (s.dead > 0.9 ? 0 : 1);
+    const rate = rec.campfire ? 0 : (0.8 + fire * 9) * (1 - s.rain * 0.7) * (s.dead > 0.9 ? 0 : 1);
     if (Math.random() < rate * dt) crackle(Math.random() < 0.07);
 
     // birds by day, a chorus at dawn; none at night or in the rain
-    if (night < 0.6 && now >= nextBird) {
+    if (!rec["forest-day"] && night < 0.6 && now >= nextBird) {
       if (hush < 0.5) bird(0.035 * (1 - night) * (1 - hush));
       const gap = dawn > 0 ? 0.6 + Math.random() * 1.5 : 2.5 + Math.random() * 6;
       nextBird = now + gap * (1 + night * 3);
     }
     // crickets at night, each on its own rhythm
-    if (night > 0.2 && s.rain < 0.3) for (const c of crickets) if (now >= c.next) { cricket(c.pitch, c.pan, 0.012 * night * (1 - hush)); c.next = now + c.period * (0.9 + Math.random() * 0.2) + (Math.random() < 0.08 ? 3 + Math.random() * 5 : 0); }
+    if (!rec["forest-night"] && night > 0.2 && s.rain < 0.3) for (const c of crickets) if (now >= c.next) { cricket(c.pitch, c.pan, 0.012 * night * (1 - hush)); c.next = now + c.period * (0.9 + Math.random() * 0.2) + (Math.random() < 0.08 ? 3 + Math.random() * 5 : 0); }
     // an owl now and then, deep in the night
-    if (night > 0.8 && now >= nextOwl) { if (hush < 0.3) owl(0.05); nextOwl = now + 25 + Math.random() * 50; }
+    if (night > 0.8 && now >= nextOwl) { if (hush < 0.3 && !owlRec(0.35)) owl(0.05); nextOwl = now + 40 + Math.random() * 60; }
   }
 
   function setOn(v: boolean) {
     on = v;
+    if (v) void loadRecordings();
     master.gain.cancelScheduledValues(ac.currentTime);
     master.gain.setTargetAtTime(v ? 0.9 : 0, ac.currentTime, v ? 1.2 : 0.15);
   }
