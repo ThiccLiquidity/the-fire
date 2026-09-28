@@ -3,7 +3,8 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Fire, ISeaport} from "../src/Fire.sol";
-import {MockERC20, MockUSDG, MockMill, MockRandomness, MockFeed, MockSeaport} from "./Mocks.sol";
+import {MockERC20, MockUSDG, MockMill, MockRandomness, MockFeed, MockSeaport, BlockingERC20} from "./Mocks.sol";
+import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
 
 contract FireTest is Test {
     Fire fire;
@@ -14,6 +15,7 @@ contract FireTest is Test {
     MockRandomness rng;
     MockFeed ethFeed;
     MockFeed plankFeed;
+    MockFeed paperFeed;
 
     address royalty = address(0xB0B);
     address alice = address(0xA11CE);
@@ -41,11 +43,12 @@ contract FireTest is Test {
         mill = new MockMill(address(plank), PLANK_IN_MILL);
         rng = new MockRandomness();
         ethFeed = new MockFeed(3_333_33333333); // $3,333.33 -> $1 = 0.0003 ETH
-        plankFeed = new MockFeed(90_000_000_000); // $9e-8 per PLANK in 18-dec -> $0.90 for 10M PLANK
+        plankFeed = new MockFeed(90_000_000_000);
+        paperFeed = new MockFeed(0); // no PAPER market yet // $9e-8 per PLANK in 18-dec -> $0.90 for 10M PLANK
         fire = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(0), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000 /* $0.90 */,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000 /* $0.90 */,
             ethUsdPerTicket: 100_000_000 /* $1.00 */, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         rng.setFire(address(fire));
@@ -62,20 +65,21 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ helpers
+    /// Buys exactly n tickets, in 9s (a full buy of 10 would give 11).
     function _buy(address who, uint256 n) internal {
         while (n > 0) {
-            uint256 k = n > 10 ? 10 : n;
+            uint256 k = n > 9 ? 9 : n;
             vm.prank(who);
-            fire.buyTickets(k, "gm");
+            fire.buyTickets(k, type(uint256).max, type(uint256).max, "gm");
             n -= k;
         }
     }
     function _buyEth(address who, uint256 n) internal {
         while (n > 0) {
-            uint256 k = n > 10 ? 10 : n;
+            uint256 k = n > 9 ? 9 : n;
             (, , uint256 c) = fire.quote(k);
             vm.prank(who);
-            fire.buyTicketsWithEth{value: c}(k, "");
+            fire.buyTicketsWithEth{value: c}(k, type(uint256).max, "");
             n -= k;
         }
     }
@@ -89,22 +93,59 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ pricing
-    function test_quote_bundles() public view {
+    function test_quote_is_full_price_and_10_buys_11() public view {
         (uint256 p1,, ) = fire.quote(1);
         (uint256 p5,,) = fire.quote(5);
         (uint256 p10,,) = fire.quote(10);
         assertEq(p1, 1e18);
         assertEq(p5, 5e18);
-        assertEq(p10, 9.7e18);
+        assertEq(p10, 10e18, "no discount on the price");
+        assertEq(fire.ticketsFor(9), 9);
+        assertEq(fire.ticketsFor(10), 11, "buy 10, get 1 free");
+    }
+
+    function test_buy_10_get_11_tickets() public {
+        uint256 deadPaper = paper.balanceOf(DEAD);
+        uint256 id = fire.fireId();
+        vm.expectEmit(true, true, false, true);
+        emit Fire.TicketsBought(id, alice, 11, false, "ten");
+        vm.prank(alice);
+        fire.buyTickets(10, type(uint256).max, type(uint256).max, "ten");
+        assertEq(paper.balanceOf(DEAD) - deadPaper, 10e18, "pays for 10");
+        assertEq(fire.pot(), 10 * PLANK_T / 2, "10 tickets' PLANK: the free one adds none");
+        (uint256 mine, uint256 total) = fire.odds(alice);
+        assertEq(mine, 11, "holds 11");
+        assertEq(total, 11);
+        assertEq(fire.fireSize(), 11);
+        assertEq(fire.remainingToday(alice), 489, "all 11 count toward the daily cap");
+    }
+
+    function test_free_ticket_needs_room_under_the_daily_cap() public {
+        _buy(alice, 490);
+        vm.prank(alice);
+        vm.expectRevert(Fire.DailyCap.selector);
+        fire.buyTickets(10, type(uint256).max, type(uint256).max, ""); // would be 501
+        vm.prank(alice);
+        fire.buyTickets(9, type(uint256).max, type(uint256).max, ""); // 499 is fine
+        assertEq(fire.remainingToday(alice), 1);
+    }
+
+    function test_eth_and_usdg_buys_of_10_also_get_11() public {
+        (, , uint256 c) = fire.quote(10);
+        vm.prank(bob); fire.buyTicketsWithEth{value: c}(10, type(uint256).max, "");
+        vm.startPrank(carol); usdg.mint(carol, 10e6); usdg.approve(address(fire), type(uint256).max); fire.buyTicketsWithUsdg(10, type(uint256).max, ""); vm.stopPrank();
+        (uint256 b,) = fire.odds(bob); (uint256 k,) = fire.odds(carol);
+        assertEq(b, 11); assertEq(k, 11);
+        assertEq(fire.millFundUsdg(), 10e6, "10 dollars for 11 tickets");
     }
 
     function test_buy_burns_paper_splits_plank() public {
         uint256 deadPaper = paper.balanceOf(DEAD);
         uint256 deadPlank = plank.balanceOf(DEAD);
         _buy(alice, 10);
-        assertEq(paper.balanceOf(DEAD) - deadPaper, 9.7e18, "paper 100% burned");
-        assertEq(plank.balanceOf(DEAD) - deadPlank, 97 * PLANK_T / 20, "half plank burned");
-        assertEq(fire.pot(), 97 * PLANK_T / 20, "half plank to pot");
+        assertEq(paper.balanceOf(DEAD) - deadPaper, 10e18, "paper 100% burned");
+        assertEq(plank.balanceOf(DEAD) - deadPlank, 10 * PLANK_T / 2, "half plank burned");
+        assertEq(fire.pot(), 10 * PLANK_T / 2, "half plank to pot");
         (uint256 mine, uint256 total) = fire.odds(alice);
         assertEq(mine, 10);
         assertEq(total, 10);
@@ -113,19 +154,19 @@ contract FireTest is Test {
 
     function test_buy_with_eth_feeds_mill_fund() public {
         (, , uint256 ethCost) = fire.quote(10);
-        assertApproxEqRel(ethCost, 9.7 * 0.0003 ether, 1e15, "$1 each at $3333/ETH, 3% off");
+        assertApproxEqRel(ethCost, 10 * 0.0003 ether, 1e15, "$1 each at $3333/ETH");
         vm.prank(bob);
-        fire.buyTicketsWithEth{value: ethCost}(10, "outsider");
+        fire.buyTicketsWithEth{value: ethCost}(10, type(uint256).max, "outsider");
         assertEq(fire.millFund(), ethCost);
         (uint256 mine,) = fire.odds(bob);
-        assertEq(mine, 10);
+        assertEq(mine, 11, "10 bought + 1 free");
         assertEq(paper.balanceOf(DEAD), 0, "no paper involved");
     }
 
     function test_buy_with_wrong_eth_reverts() public {
         vm.prank(bob);
         vm.expectRevert(Fire.BadAmount.selector);
-        fire.buyTicketsWithEth{value: 1}(1, "");
+        fire.buyTicketsWithEth{value: 1}(1, type(uint256).max, "");
     }
 
     // ------------------------------------------------------------ storms
@@ -222,7 +263,7 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ payout
-    function test_payout_40_30_30_and_tithe() public {
+    function test_payout_40_winner_25_burn_5_royalty_30_carry() public {
         _buy(alice, 500); // alice is the only ticket holder
         uint256 p = fire.pot();
         _roll(RND_CALM); // night 1 survive; size 300
@@ -232,11 +273,12 @@ contract FireTest is Test {
         // keep rolling monsters until it dies
         while (fire.fireId() == 1) _roll(RND_MONSTER);
         uint256 winner = p * 4000 / 10000;
-        uint256 tithe = winner * 500 / 10000;
-        assertEq(plank.balanceOf(alice) - aliceBefore, winner - tithe, "winner 40% minus tithe");
-        assertEq(plank.balanceOf(royalty), tithe, "tithe to royalty pool");
-        assertEq(plank.balanceOf(DEAD) - deadBefore, p * 3000 / 10000, "30% burned");
-        assertEq(fire.pot(), p - winner - p * 3000 / 10000, "30% carried");
+        uint256 royaltyCut = p * 500 / 10000;
+        assertEq(plank.balanceOf(alice) - aliceBefore, winner, "winner gets the full 40%");
+        assertEq(plank.balanceOf(royalty), royaltyCut, "5% of the pot to the Paper Mill royalty pool");
+        assertEq(plank.balanceOf(DEAD) - deadBefore, p * 2500 / 10000, "25% burned");
+        assertEq(fire.pot(), p - winner - royaltyCut - p * 2500 / 10000, "30% carried");
+        assertEq(fire.pot(), p * 3000 / 10000, "which is exactly 30%");
         assertEq(fire.lastWinner(), alice);
         assertEq(fire.ticketsTotal(), 0, "tickets reset");
     }
@@ -253,8 +295,8 @@ contract FireTest is Test {
         _roll(RND_MONSTER); // size 0 -> goes out with no tickets
         assertEq(fire.fireId(), 3);
         assertEq(fire.lastWinner(), address(0));
-        assertEq(fire.pot(), carried * 70 / 100, "40% + 30% carried, 30% burned");
-        assertEq(plank.balanceOf(royalty), royaltyBefore, "no tithe without a winner");
+        assertEq(fire.pot(), carried * 75 / 100, "40% + 5% + 30% carried, 25% burned");
+        assertEq(plank.balanceOf(royalty), royaltyBefore, "nothing to the pool without a winner");
     }
 
     function test_winner_is_ticket_weighted() public {
@@ -282,8 +324,8 @@ contract FireTest is Test {
         sea = new MockSeaport(address(mill));
         f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether); // ~$3,333 of ETH-ticket money
@@ -320,7 +362,7 @@ contract FireTest is Test {
     function test_money_arriving_later_does_not_find_a_high_bid() public {
         vm.warp(block.timestamp + 30 days); // a month with an empty fund
         vm.startPrank(bob); usdg.mint(bob, 1_000e6); usdg.approve(address(fire), type(uint256).max);
-        for (uint256 i; i < 50; i++) fire.buyTicketsWithUsdg(10, ""); // $485 arrives
+        for (uint256 i; i < 45; i++) fire.buyTicketsWithUsdg(10, type(uint256).max, ""); // $450 arrives (495 tickets)
         vm.stopPrank();
         assertEq(fire.millBid(), MILL_BID, "starts climbing from the base only now");
         vm.warp(block.timestamp + 1 days);
@@ -376,13 +418,13 @@ contract FireTest is Test {
     function test_usdg_tickets_feed_the_usdg_fund() public {
         vm.startPrank(bob);
         usdg.mint(bob, 100e6); usdg.approve(address(fire), type(uint256).max);
-        fire.buyTicketsWithUsdg(10, "dollars");
+        fire.buyTicketsWithUsdg(10, type(uint256).max, "dollars");
         vm.stopPrank();
-        assertEq(fire.usdgCost(10), 9.7e6, "$1 each, 3% off a full 10");
-        assertEq(fire.millFundUsdg(), 9.7e6);
-        assertEq(fire.pot(), 97 * PLANK_T / 20, "PLANK leg as usual");
+        assertEq(fire.usdgCost(10), 10e6, "$1 each");
+        assertEq(fire.millFundUsdg(), 10e6);
+        assertEq(fire.pot(), 10 * PLANK_T / 2, "PLANK leg as usual");
         (uint256 mine,) = fire.odds(bob);
-        assertEq(mine, 10);
+        assertEq(mine, 11, "10 bought + 1 free");
     }
 
     function test_usdg_listing_paid_from_usdg_fund() public {
@@ -443,8 +485,8 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether); // stands in for ETH from "paper from the fire" buys
@@ -468,8 +510,8 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether);
@@ -483,8 +525,8 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether);
@@ -503,8 +545,8 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether);
@@ -531,11 +573,11 @@ contract FireTest is Test {
         fire.roll();
         vm.prank(bob);
         vm.expectRevert(Fire.RollPending.selector);
-        fire.buyTickets(10, "last look");
+        fire.buyTickets(10, type(uint256).max, type(uint256).max, "last look");
         (, , uint256 c) = fire.quote(10);
         vm.prank(bob);
         vm.expectRevert(Fire.RollPending.selector);
-        fire.buyTicketsWithEth{value: c}(10, "last look");
+        fire.buyTicketsWithEth{value: c}(10, type(uint256).max, "last look");
         rng.fulfill(rng.last(), RND_CALM);
         _buy(bob, 10); // open again once the night resolves
     }
@@ -544,16 +586,16 @@ contract FireTest is Test {
         (, , uint256 c) = fire.quote(10);
         uint256 before = carol.balance;
         vm.prank(carol);
-        fire.buyTicketsWithEth{value: c * 101 / 100}(10, "1% slippage");
+        fire.buyTicketsWithEth{value: c * 101 / 100}(10, type(uint256).max, "1% slippage");
         assertEq(before - carol.balance, c, "paid exactly the price");
         assertEq(fire.millFund(), c);
         vm.prank(carol);
         vm.expectRevert(Fire.BadAmount.selector);
-        fire.buyTicketsWithEth{value: c - 1}(10, "");
+        fire.buyTicketsWithEth{value: c - 1}(10, type(uint256).max, "");
     }
 
     // ------------------------------------------------------------ stuck rolls
-    function test_reroll_after_30_min_with_no_answer() public {
+    function test_reroll_after_the_wait_with_no_answer() public {
         _buy(alice, 10);
         vm.warp(fire.nextRollAt());
         ethFeed.set(ethFeed.answer()); plankFeed.set(plankFeed.answer());
@@ -561,7 +603,7 @@ contract FireTest is Test {
         uint256 first = fire.pendingRequest();
         vm.expectRevert(Fire.NotYet.selector);
         fire.reroll();
-        vm.warp(block.timestamp + 30 minutes);
+        vm.warp(block.timestamp + fire.REROLL_AFTER());
         vm.prank(carol); // anyone
         fire.reroll();
         uint256 second = fire.pendingRequest();
@@ -599,10 +641,64 @@ contract FireTest is Test {
         assertEq(fire.plankPerTicket(), PLANK_T, "leg held");
     }
 
+    // ------------------------------------------------------------ PAPER leg: never worth more than $0.33
+    function _rollWithPaperAt(int256 paperUsd18) internal {
+        vm.warp(fire.nextRollAt());
+        ethFeed.set(ethFeed.answer()); plankFeed.set(plankFeed.answer()); paperFeed.set(paperUsd18);
+        fire.roll();
+        rng.fulfill(rng.last(), RND_CALM);
+    }
+
+    function test_paper_leg_stays_1_while_paper_is_cheap_or_unpriced() public {
+        _roll(RND_CALM); // no PAPER market: price 0
+        assertEq(fire.paperPerTicket(), 1e18);
+        _rollWithPaperAt(0.001e18); // a tenth of a cent
+        assertEq(fire.paperPerTicket(), 1e18, "never more than 1 PAPER");
+        _rollWithPaperAt(0.33e18); // right at the cap
+        assertEq(fire.paperPerTicket(), 1e18);
+    }
+
+    function test_paper_leg_shrinks_5pct_a_night_toward_the_cap_when_paper_is_expensive() public {
+        _rollWithPaperAt(5e18); // PAPER at $5: target 0.066 PAPER, but only 5% a night
+        assertEq(fire.paperPerTicket(), 0.95e18);
+        _rollWithPaperAt(5e18);
+        assertEq(fire.paperPerTicket(), 0.9025e18);
+        for (uint256 i; i < 60; i++) _rollWithPaperAt(5e18);
+        assertEq(fire.paperPerTicket(), uint256(33_000_000) * 1e28 / 5e18, "settles at $0.33 of PAPER");
+        (uint256 paperCost,,) = fire.quote(1);
+        assertEq(paperCost, 0.066e18);
+        // tickets burn exactly that much PAPER
+        uint256 dead = paper.balanceOf(DEAD);
+        _buy(alice, 1);
+        assertEq(paper.balanceOf(DEAD) - dead, 0.066e18);
+    }
+
+    function test_paper_leg_climbs_back_to_1_when_paper_falls() public {
+        for (uint256 i; i < 70; i++) _rollWithPaperAt(5e18);
+        uint256 low = fire.paperPerTicket();
+        _rollWithPaperAt(0.01e18);
+        assertEq(fire.paperPerTicket(), low * 10_500 / 10_000, "back up 5% a night");
+        for (uint256 i; i < 100; i++) _rollWithPaperAt(0.01e18);
+        assertEq(fire.paperPerTicket(), 1e18, "and stops at 1 PAPER");
+    }
+
+    function test_broken_or_stale_paper_feed_holds_and_never_blocks_the_night() public {
+        for (uint256 i; i < 3; i++) _rollWithPaperAt(5e18);
+        uint256 held = fire.paperPerTicket();
+        paperFeed.setBroken(true);
+        _roll(RND_CALM);
+        assertEq(fire.paperPerTicket(), held, "broken feed: hold");
+        paperFeed.setBroken(false);
+        vm.warp(fire.nextRollAt() + 2 days); // PAPER feed not refreshed for 3+ days: stale
+        ethFeed.set(ethFeed.answer()); plankFeed.set(plankFeed.answer());
+        fire.roll(); rng.fulfill(rng.last(), RND_CALM);
+        assertEq(fire.paperPerTicket(), held, "stale feed: hold");
+    }
+
     function test_tx_cap_10() public {
         vm.prank(alice);
         vm.expectRevert(Fire.TxCap.selector);
-        fire.buyTickets(11, "");
+        fire.buyTickets(11, type(uint256).max, type(uint256).max, "");
         _buy(alice, 10);
     }
 
@@ -610,7 +706,7 @@ contract FireTest is Test {
         _buy(alice, 495);
         vm.prank(alice);
         vm.expectRevert(Fire.DailyCap.selector);
-        fire.buyTickets(6, "");
+        fire.buyTickets(6, type(uint256).max, type(uint256).max, "");
         _buy(alice, 5);
         assertEq(fire.remainingToday(alice), 0);
         _roll(RND_CALM); // new day
@@ -637,13 +733,13 @@ contract FireTest is Test {
         vm.expectRevert(Fire.StaleFeed.selector);
         fire.ethPerTicket();
         (uint256 p, uint256 k, uint256 e) = fire.quote(10);
-        assertEq(p, 9.7e18);
-        assertEq(k, PLANK_T * 97 / 10);
+        assertEq(p, 10e18);
+        assertEq(k, PLANK_T * 10);
         assertEq(e, 0, "eth leg unquoted while stale");
         _buy(alice, 10); // PAPER path unaffected
         vm.prank(bob);
         vm.expectRevert(Fire.StaleFeed.selector);
-        fire.buyTicketsWithEth{value: 0}(10, "");
+        fire.buyTicketsWithEth{value: 0}(10, type(uint256).max, "");
     }
 
     function test_plank_leg_ratchets_5pct_per_night_toward_target() public {
@@ -681,7 +777,7 @@ contract FireTest is Test {
         _buy(alice, 123);
         (, , uint256 ethCost) = fire.quote(10);
         vm.prank(carol);
-        fire.buyTicketsWithEth{value: ethCost}(10, "");
+        fire.buyTicketsWithEth{value: ethCost}(10, type(uint256).max, "");
         assertEq(plank.balanceOf(address(fire)), fire.pot());
         _roll(RND_CALM);
         while (fire.fireId() == 1) _roll(RND_MONSTER);
@@ -699,4 +795,166 @@ contract FireTest is Test {
             assertLe(fire.night(), 23);
         }
     }
+
+    // ------------------------------------------------------------ user-fund safety (beta audit)
+    function _cfg() internal view returns (Fire.Config memory) {
+        return Fire.Config({
+            paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(0), royaltyPool: royalty,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
+        });
+    }
+
+    function test_buy_never_charges_more_than_the_buyer_agreed() public {
+        (uint256 paperCost, uint256 plankCost,) = fire.quote(5);
+        vm.startPrank(alice);
+        vm.expectRevert(Fire.PriceMoved.selector);
+        fire.buyTickets(5, paperCost - 1, plankCost, "");
+        vm.expectRevert(Fire.PriceMoved.selector);
+        fire.buyTickets(5, paperCost, plankCost - 1, "");
+        fire.buyTickets(5, paperCost, plankCost, ""); // exactly the quote is fine
+        (,, uint256 ethCost) = fire.quote(5);
+        vm.expectRevert(Fire.PriceMoved.selector);
+        fire.buyTicketsWithEth{value: ethCost}(5, plankCost - 1, "");
+        usdg.mint(alice, 100e6); usdg.approve(address(fire), type(uint256).max);
+        vm.expectRevert(Fire.PriceMoved.selector);
+        fire.buyTicketsWithUsdg(5, plankCost - 1, "");
+        vm.stopPrank();
+    }
+
+    function test_a_buy_signed_before_the_storm_reverts_if_the_price_rose() public {
+        (, uint256 plankBefore,) = fire.quote(1);
+        _roll(RND_CALM);
+        plankFeed.set(plankFeed.answer() / 2); // PLANK halves: the leg rises 5% tonight
+        _roll(RND_CALM);
+        (, uint256 plankAfter,) = fire.quote(1);
+        assertGt(plankAfter, plankBefore);
+        vm.prank(alice);
+        vm.expectRevert(Fire.PriceMoved.selector);
+        fire.buyTickets(1, 1e18, plankBefore, "stale quote");
+    }
+
+    function test_winner_whose_transfer_fails_keeps_the_prize_to_claim() public {
+        BlockingERC20 bp = new BlockingERC20();
+        Fire.Config memory c = _cfg(); c.plank = address(bp);
+        Fire f2 = new Fire(c);
+        rng.setFire(address(f2));
+        bp.mint(alice, 1e16 * 1e18);
+        vm.startPrank(alice); paper.approve(address(f2), type(uint256).max); bp.approve(address(f2), type(uint256).max);
+        for (uint256 i; i < 10; i++) f2.buyTickets(9, type(uint256).max, type(uint256).max, "");
+        vm.stopPrank();
+        uint256 p = f2.pot();
+        bp.block_(alice, true); // alice can't receive PLANK right now
+        while (f2.fireId() == 1) { vm.warp(f2.nextRollAt()); ethFeed.set(ethFeed.answer()); plankFeed.set(plankFeed.answer()); f2.roll(); rng.fulfill(rng.last(), RND_MONSTER); }
+        assertEq(f2.lastWinner(), alice);
+        assertEq(f2.unclaimed(alice), p * 4000 / 10000, "prize kept for her");
+        assertEq(f2.pot(), p * 3000 / 10000, "the next fire gets only its 30%");
+        (uint256 prize,) = f2.claimable(alice);
+        assertEq(prize, p * 4000 / 10000);
+        vm.prank(alice); f2.claim(bob); // to any address she controls
+        assertEq(bp.balanceOf(bob), p * 4000 / 10000);
+        assertEq(f2.unclaimed(alice), 0);
+        vm.prank(alice); vm.expectRevert(Fire.Nothing.selector); f2.claim(bob);
+        assertEq(bp.balanceOf(address(f2)), f2.pot(), "every PLANK accounted for");
+    }
+
+    function test_randomness_gone_for_a_week_refunds_ticket_holders() public {
+        _buy(alice, 300);
+        _buy(bob, 100);
+        uint256 p = fire.pot();
+        vm.warp(fire.nextRollAt());
+        fire.roll(); // ...and randomness never answers
+        vm.expectRevert(Fire.NotYet.selector);
+        fire.abandon();
+        vm.warp(block.timestamp + fire.ABANDON_AFTER());
+        vm.prank(carol); fire.abandon(); // anyone
+        assertTrue(fire.abandoned());
+        vm.prank(alice); vm.expectRevert(Fire.Over.selector); fire.buyTickets(1, type(uint256).max, type(uint256).max, "");
+        vm.expectRevert(Fire.Over.selector); fire.roll();
+        uint256 a0 = plank.balanceOf(alice); uint256 b0 = plank.balanceOf(bob);
+        vm.prank(alice); fire.refund();
+        vm.prank(bob); fire.refund();
+        assertEq(plank.balanceOf(alice) - a0, p * 300 / 400);
+        assertEq(plank.balanceOf(bob) - b0, p * 100 / 400);
+        vm.prank(alice); vm.expectRevert(Fire.Nothing.selector); fire.refund();
+        vm.prank(carol); vm.expectRevert(Fire.Nothing.selector); fire.refund(); // no tickets, no share
+        // a late answer for the old request can't restart anything
+        uint256 old = rng.last();
+        vm.expectRevert(Fire.BadRequest.selector);
+        rng.fulfill(old, RND_CALM);
+    }
+
+    function test_a_result_that_cannot_be_delivered_is_also_recoverable() public {
+        _buy(alice, 10);
+        vm.warp(fire.nextRollAt());
+        fire.roll();
+        rng.answerSilently(fire.pendingRequest()); // answered, never delivered
+        vm.warp(block.timestamp + fire.REROLL_AFTER());
+        vm.expectRevert(Fire.Answered.selector); fire.reroll();
+        vm.warp(block.timestamp + fire.ABANDON_AFTER());
+        fire.abandon();
+        uint256 a0 = plank.balanceOf(alice);
+        vm.prank(alice); fire.refund();
+        assertGt(plank.balanceOf(alice), a0);
+    }
+
+    function test_a_feed_with_no_code_cannot_freeze_the_game() public {
+        Fire.Config memory c = _cfg();
+        Fire f2 = new Fire(c);
+        rng.setFire(address(f2));
+        vm.etch(address(plankFeed), ""); // the PLANK feed disappears (or was never a contract)
+        vm.etch(address(paperFeed), hex"00"); // the PAPER feed returns nothing
+        vm.warp(f2.nextRollAt());
+        f2.roll();
+        rng.fulfill(rng.last(), RND_CALM); // must not revert
+        assertEq(f2.night(), 1);
+        assertEq(f2.plankPerTicket(), PLANK_T, "leg held");
+    }
+
+    function test_constructor_refuses_a_broken_config() public {
+        Fire.Config memory c = _cfg(); c.plankUsdFeed = address(0x1234); // not a contract
+        vm.expectRevert(Fire.BadRequest.selector); new Fire(c);
+        c = _cfg(); c.plankPerTicket0 = 0;
+        vm.expectRevert(Fire.BadAmount.selector); new Fire(c);
+        c = _cfg(); c.millBidBase = 0;
+        vm.expectRevert(Fire.BadAmount.selector); new Fire(c);
+        c = _cfg(); c.rollTimeOfDay = 1 days;
+        vm.expectRevert(Fire.BadAmount.selector); new Fire(c);
+    }
+
+    function test_constructor_refuses_an_adapter_wired_to_another_fire() public {
+        WrongAdapter w = new WrongAdapter();
+        Fire.Config memory c = _cfg(); c.randomness = address(w);
+        vm.expectRevert(Fire.BadRequest.selector); new Fire(c);
+    }
+
+    function test_a_mill_safe_sent_by_mistake_bounces() public {
+        vm.startPrank(alice);
+        plank.approve(address(mill), type(uint256).max);
+        uint256 id = mill.mint(alice);
+        vm.expectRevert();
+        IERC721(address(mill)).safeTransferFrom(alice, address(fire), id);
+        vm.stopPrank();
+        assertEq(mill.ownerOf(id), alice, "she keeps it");
+    }
+
+    function test_eth_price_rounds_up_never_under_a_dollar() public view {
+        uint256 e = fire.ethPerTicket();
+        assertGe(e * 3_333_33333333, 100_000_000 * 1e18, "at least $1");
+    }
+
+    function test_storm_floors_once() public {
+        // trailing average 22 on night 2: exact 22 * 0.0442 * luck; flooring twice made every night-2 storm 0
+        _buy(alice, 22);
+        _roll(RND_CALM); // night 1 records 22
+        assertEq(fire.stormStrength(2, RND_MONSTER), uint256(22) * 442 * 69482 / 1e8);
+        assertGt(fire.stormStrength(2, RND_MONSTER), 0);
+    }
+}
+
+contract WrongAdapter {
+    function FIRE() external pure returns (address) { return address(0xBEEF); }
+    function request() external pure returns (uint256) { return 1; }
+    function answered(uint256) external pure returns (bool) { return false; }
 }

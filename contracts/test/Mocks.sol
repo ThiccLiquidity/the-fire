@@ -15,6 +15,17 @@ contract MockERC20 is ERC20 {
     function mint(address to, uint256 amt) external { _mint(to, amt); }
 }
 
+/// @dev A token that refuses transfers to blocked addresses (like a blacklist or max-wallet rule).
+contract BlockingERC20 is MockERC20 {
+    mapping(address => bool) public blocked;
+    constructor() MockERC20("PLANK", "PLANK") {}
+    function block_(address a, bool b) external { blocked[a] = b; }
+    function _update(address from, address to, uint256 v) internal override {
+        require(!blocked[to], "blocked");
+        super._update(from, to, v);
+    }
+}
+
 /// @dev USDG stand-in: 6 decimals.
 contract MockUSDG is MockERC20 {
     constructor() MockERC20("Global Dollar", "USDG") {}

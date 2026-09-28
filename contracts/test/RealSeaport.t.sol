@@ -40,8 +40,8 @@ contract RealSeaportTest is Test {
         mill = new MockMill(address(plank), 88_842_006_942e18);
         MockRandomness rng = new MockRandomness();
         fire = new Fire(Fire.Config({paper: address(new MockERC20("PAPER", "PAPER")), plank: address(plank), mill: address(mill), seaport: address(sea),
-            royaltyPool: royalty, randomness: address(rng), ethUsdFeed: address(new MockFeed(3_333_00000000)), plankUsdFeed: address(new MockFeed(90_000_000_000)), usdg: address(usdg),
-            paperPerTicket: 1e18, plankPerTicket0: 1e25, plankUsdPerTicket: 90_000_000, ethUsdPerTicket: 100_000_000, millBidBase: 100e8, rollTimeOfDay: 10800}));
+            royaltyPool: royalty, randomness: address(rng), ethUsdFeed: address(new MockFeed(3_333_00000000)), plankUsdFeed: address(new MockFeed(90_000_000_000)), paperUsdFeed: address(0), usdg: address(usdg),
+            paperPerTicket: 1e18, paperUsdCap: 33_000_000, plankPerTicket0: 1e25, plankUsdPerTicket: 90_000_000, ethUsdPerTicket: 100_000_000, millBidBase: 100e8, rollTimeOfDay: 10800}));
         vm.deal(address(fire), 1 ether);
         zone = new MarkerZone();
         plank.mint(alice, 1e30);

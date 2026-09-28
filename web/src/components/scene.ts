@@ -49,6 +49,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   const trees: { x: number; s: number; y: number }[] = [];
   for (let i = 0; i < 48; i++) { const side = i % 2 ? 1 : -1; const tx = side * (330 + i * 52 + ((i * 37) % 50)); if (tx > 300 && tx < 600) continue; /* a clearing for the mill */ trees.push({ x: tx, s: 0.85 + ((i * 7) % 6) * 0.11, y: (i * 13) % 30 }); }
   const wild = createWildlife(trees.map((tr) => tr.x));
+  const SCRAPS = Array.from({ length: 220 }, () => ({ phase: Math.random() * 6.283, r: 0.4 + Math.random() * 0.6, h: 0.7 + Math.random() * 0.5, spin: Math.random() * 2, delay: Math.random() }));
   const stars = Array.from({ length: 90 }, () => [Math.random(), Math.random() * .55, .6 + Math.random() * 1.2, .3 + Math.random() * .6]);
   const clouds = Array.from({ length: 14 }, (_, i) => ({ x: (i / 14) * 1.6 - 0.3, y: 0.02 + ((i * 37) % 50) / 100 * 0.28, s: 0.7 + ((i * 13) % 7) * 0.12, v: 0.0006 + ((i * 7) % 5) * 0.0002 }));
   const embers = Array.from({ length: 220 }, () => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1 }));
@@ -204,7 +205,9 @@ export function createScene(canvas: HTMLCanvasElement) {
     x.fillStyle = night ? "#121a12" : "#2f3d26"; x.fillRect(-3000, base - 20, 6000, 3000); x.fillStyle = gg; x.fillRect(-3000, base - 20, 6000, 3000);
     if (inp.wild) { useRiver(!!inp.press2); drawRiver(x, t, night, Math.max(0, lit * 0.5)); if (inp.press2) drawMill2(x, t, 600 + 420, base - 18, 0.5, night, Math.max(0, lit * 0.4)); else drawMill(x, t, 600 + 400, base - 24, 0.62, night, Math.max(0, lit * 0.4)); wild.draw(x, t, night, "back"); }
     else mill(600 + 445, base - 24, 0.6, night, Math.max(0, lit * 0.5));
-    for (const tr of trees) { if (inp.wild && tr.x > 250 && tr.x < (inp.press2 ? 690 : 300)) continue; const px = 600 + tr.x, py = base - 10 + tr.y; const d = Math.abs(tr.x) / 400; const warm = Math.max(0, lit * 1.2 - d * .4); pine(px, py, tr.s, night ? `rgb(${8 + warm * 70},${12 + warm * 30},${22})` : `rgb(${30 + warm * 40},${58 + warm * 20},${40})`); }
+    const hiddenTree = (tr: { x: number }) => inp.wild && tr.x > 250 && tr.x < (inp.press2 ? 690 : 300);
+    const drawTree = (tr: { x: number; s: number; y: number }) => { const px = 600 + tr.x, py = base - 10 + tr.y; const d = Math.abs(tr.x) / 400; const warm = Math.max(0, lit * 1.2 - d * .4); pine(px, py, tr.s, night ? `rgb(${8 + warm * 70},${12 + warm * 30},${22})` : `rgb(${30 + warm * 40},${58 + warm * 20},${40})`);};
+    for (const tr of trees) if (!hiddenTree(tr)) drawTree(tr);
     x.save(); x.translate(600, 600); x.scale(lw, Math.min(lw, 1.6)); x.translate(-600, -600);
     x.fillStyle = "#3e424c"; for (const s of [[470, 600, 26, 10], [520, 612, 22, 9], [600, 618, 30, 10], [680, 612, 22, 9], [730, 600, 26, 10]]) { x.beginPath(); x.ellipse(s[0], s[1], s[2], s[3], 0, 0, 7); x.fill(); }
     x.fillStyle = "#5b3a1c"; x.fillRect(500, 570, 200, 22); x.save(); x.translate(600, 569); x.rotate(-.14); x.fillStyle = "#7d4f27"; x.fillRect(-80, -11, 160, 22); x.rotate(.3); x.fillStyle = "#4a2e14"; x.fillRect(-80, -11, 160, 22); x.restore(); x.restore();
@@ -244,7 +247,55 @@ export function createScene(canvas: HTMLCanvasElement) {
       x.fillStyle = `rgba(90,90,100,${a})`; x.beginPath(); x.arc(s.x, s.y, s.r, 0, 7); x.fill();
     }
 
-    if (inp.wild) { wild.draw(x, t, night, "front"); wild.step(night); }
+    // Animals walk among the trees: after each one, redraw the trees that stand nearer the viewer (their trunk base is
+    // lower on screen than the animal's feet) and overlap it, so the animal passes behind them instead of over them.
+    // A squirrel's own tree stays behind it so it can be seen climbing.
+    if (inp.wild) {
+      wild.draw(x, t, night, "front", (a, footY) => {
+        for (const tr of trees) {
+          if (hiddenTree(tr) || base - 10 + tr.y + 40 * tr.s <= footY + 2) continue;
+          if (Math.abs(tr.x - a.x) > 58 * tr.s + 70) continue;
+          if (a.kind === "squirrel" && Math.abs(tr.x - a.stopAt) < 40) continue;
+          drawTree(tr);
+        }
+      });
+      wild.step(night);
+    }
+
+    // the reveal: when the fire has died, every ticket rises out of the embers as a glowing scrap, swirls up,
+    // and thins to one that drifts down to where the winner card appears
+    if (inp.storm && !inp.storm.survived) {
+      const age = Date.now() - inp.storm.at, start = C.OUT_CARD - 3_000, end = C.WINNER + 1_500;
+      if (age > start && age < end) {
+        const p = (age - start) / (end - start); // 0..1
+        const nT = Math.min(SCRAPS.length, Math.max(12, Math.round(Math.sqrt(inp.storm.tickets ?? 100) * 6)));
+        x.save(); x.globalCompositeOperation = "lighter";
+        for (let i = 0; i < nT; i++) {
+          const sc = SCRAPS[i];
+          const born = sc.delay * 0.35; // stagger: scraps keep leaving the embers through the first third
+          if (p < born) continue;
+          const q = Math.min(1, (p - born) / (1 - born)); // this scrap's own progress
+          const survives = i === 0; // scrap 0 is the winner
+          // rising spiral: angle turns with time, radius swells then narrows, height climbs
+          const ang = sc.phase + q * (5 + sc.spin) * Math.PI;
+          const rad = (30 + 200 * Math.sin(q * Math.PI) * sc.r) * (survives ? Math.max(0.15, 1 - Math.max(0, q - 0.7) / 0.3) : 1);
+          const px = 600 + Math.cos(ang) * rad, py = base - 30 - q * 250 * sc.h + Math.sin(ang) * rad * 0.18;
+          // everyone else burns away over the last third; the winner grows and settles
+          const fade = survives ? 1 : Math.max(0, 1 - Math.max(0, q - 0.62) / 0.3);
+          if (fade <= 0) continue;
+          const size = (survives ? 6 + q * 14 : 5 + sc.r * 4) * (0.8 + 0.2 * Math.sin(t * 0.2 + i));
+          const settle = survives ? Math.max(0, (q - 0.8) / 0.2) : 0; // the winner glides to where its card will appear
+          x.save(); x.translate(px + (600 - px) * settle, py + (340 - py) * settle); x.rotate(ang * 0.6 + sc.phase);
+          x.globalAlpha = fade * (0.55 + 0.45 * Math.sin(t * 0.15 + i));
+          // glow without shadowBlur (which stalls the frame with hundreds of scraps): a soft halo then the scrap
+          x.fillStyle = survives ? "rgba(255,170,60,0.35)" : "rgba(255,140,40,0.22)"; x.fillRect(-size * 1.3, -size * 1.5, size * 2.6, size * 3);
+          x.fillStyle = survives ? "#ffd166" : `hsl(${28 + sc.r * 20} 100% ${60 + sc.r * 15}%)`;
+          x.fillRect(-size * 0.6, -size * 0.8, size * 1.2, size * 1.6);
+          x.restore();
+        }
+        x.restore();
+      }
+    }
 
     // rain + flash
     x.setTransform(dpr, 0, 0, dpr, 0, 0);

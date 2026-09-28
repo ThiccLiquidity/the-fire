@@ -1,66 +1,29 @@
-## Foundry
+# The Fire — contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+Foundry project. `src/Fire.sol` is the game; `OpenDrandRouter.sol` + `OpenVRFAdapter.sol` bring in drand's number;
+`PlankUsdTwap.sol` and `PaperUsdTwap.sol` are the price feeds; `Profiles.sol` is names and pictures for wallets.
+None has an owner.
 
-Foundry consists of:
-
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
+## Build and test
 
 ```shell
-$ forge build
+forge build
+FOUNDRY_SOLC=/root/.foundry/bin/solc forge test --offline   # 103 tests
 ```
 
-### Test
+`--offline` and `FOUNDRY_SOLC` (a local solc 0.8.x) keep forge from downloading a compiler. On your own machine,
+`forge test` works as long as forge can fetch solc. Two suites run against a real drand proof and real Seaport 1.6 code.
+
+## Deploy
+
+Full runbook: `../docs/deploy.md`. Inputs: copy `.env.example` to `.env`; every variable is explained at the top of
+`script/Deploy.s.sol`, which checks them all before it sends anything.
+
+Sign with a Foundry keystore (`cast wallet import deployer --interactive`) or `--ledger`:
 
 ```shell
-$ forge test
+forge script script/Deploy.s.sol --rpc-url $RPC --account deployer --sender <deployer address> --slow --broadcast \
+  --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
 ```
 
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+**Never use `--private-key`**, and never put a key in `.env` or this repo.

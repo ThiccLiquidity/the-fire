@@ -24,13 +24,13 @@ contract RealRouterTest is Test {
         address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         adapter = new OpenVRFAdapter(address(router), predicted);
         fire = new Fire(Fire.Config({paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(0),
-            royaltyPool: address(0xB0B), randomness: address(adapter), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(0),
-            paperPerTicket: 1e18, plankPerTicket0: 10_000_000e18, plankUsdPerTicket: 90_000_000, ethUsdPerTicket: 100_000_000,
+            royaltyPool: address(0xB0B), randomness: address(adapter), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(0), usdg: address(0),
+            paperPerTicket: 1e18, paperUsdCap: 33_000_000, plankPerTicket0: 10_000_000e18, plankUsdPerTicket: 90_000_000, ethUsdPerTicket: 100_000_000,
             millBidBase: 0.03 ether, rollTimeOfDay: (ROUND_TIME - 30) % 1 days}));
         assertEq(address(fire), predicted);
         paper.mint(alice, 1e24); plank.mint(alice, 1e30);
         vm.startPrank(alice); paper.approve(address(fire), type(uint256).max); plank.approve(address(fire), type(uint256).max);
-        fire.buyTickets(10, "real"); vm.stopPrank();
+        fire.buyTickets(10, type(uint256).max, type(uint256).max, "real"); vm.stopPrank();
         vm.warp(ROUND_TIME - 30); // request 30 s (MIN_DELAY) before round 1000
         plankFeed.set(90_000_000_000);
     }
@@ -58,7 +58,7 @@ contract RealRouterTest is Test {
         (,,, bool fulfilled, bool delivered, uint256 word,) = router.requests(id);
         assertTrue(fulfilled); assertFalse(delivered, "callback failed");
         assertEq(fire.night(), 0);
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 2 hours);
         vm.expectRevert(Fire.Answered.selector);
         fire.reroll(); // the number exists; no redraw
         plankFeed.setBurnGas(false);
@@ -69,7 +69,7 @@ contract RealRouterTest is Test {
 
     function test_silent_relayer_reroll_then_late_answer_is_ignored() public {
         uint256 id = _roll();
-        vm.warp(ROUND_TIME + 30 minutes);
+        vm.warp(ROUND_TIME + 2 hours);
         fire.reroll();
         uint256 id2 = fire.pendingRequest();
         assertTrue(id2 != id);

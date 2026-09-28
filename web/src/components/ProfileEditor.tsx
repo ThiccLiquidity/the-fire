@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Profile } from "../data/types";
 import { Avatar } from "./Avatar";
+import { friendly } from "../data/wallet";
 
 const SIZE = 128, MAX_BYTES = 12_000;
 
@@ -19,12 +20,13 @@ async function shrink(file: File): Promise<{ bytes: Uint8Array; url: string }> {
   throw new Error("That picture won't compress small enough. Try a simpler one.");
 }
 
-export function ProfileEditor({ addr, profile, onSave }: { addr?: string; profile?: Profile; onSave: (name: string, image: Uint8Array | null) => Promise<void> }) {
+export function ProfileEditor({ addr, profile, onSave, demo }: { addr?: string; profile?: Profile; onSave: (name: string, image: Uint8Array | null) => Promise<void>; demo?: boolean }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(profile?.name ?? "");
   const [pic, setPic] = useState<{ bytes: Uint8Array; url: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [nameNote, setNameNote] = useState("");
   const who = addr ?? "0x0000000000000000000000000000000000000000";
   const preview: Profile = { name, pfp: pic?.url ?? profile?.pfp ?? "" };
 
@@ -35,7 +37,7 @@ export function ProfileEditor({ addr, profile, onSave }: { addr?: string; profil
   async function save() {
     setBusy(true); setMsg("");
     try { await onSave(name.trim(), pic ? pic.bytes : null); setOpen(false); setPic(null); }
-    catch (e) { setMsg((e as Error).message.split("\n")[0].slice(0, 140)); }
+    catch (e) { setMsg(friendly(e)); }
     finally { setBusy(false); }
   }
 
@@ -54,9 +56,11 @@ export function ProfileEditor({ addr, profile, onSave }: { addr?: string; profil
               <input type="file" accept="image/*" onChange={(e) => pick(e.target.files?.[0])} />
               <span>{pic ? "Change" : "Choose photo"}</span>
             </label>
-            <input className="profile-name" maxLength={24} placeholder="Your name" value={name} onChange={(e) => setName(e.target.value.replace(/[^\x20-\x7e]/g, ""))} />
+            <input className="profile-name" maxLength={24} placeholder="Your name" value={name} aria-describedby="name-rules"
+              onChange={(e) => { const raw = e.target.value; const ok = raw.replace(/[^\x20-\x7e]/g, ""); setName(ok); setNameNote(ok !== raw ? "Left out: only letters, numbers and basic punctuation work (no emoji or accents)." : ""); }} />
           </div>
-          <p className="fine muted">Shrunk to 128px and written on-chain with your name — one transaction, about a cent, only you can change it. Names aren't unique; your address is what wins, and shows on hover.</p>
+          <p className="fine" id="name-rules">{nameNote || `Letters, numbers and basic punctuation, up to 24 (${name.length}/24).`}</p>
+          {demo ? <p className="fine muted">Demo: saved in this browser only. On the real site it's written on-chain with your wallet.</p> : <p className="fine muted">Shrunk to 128px and written on-chain with your name — one transaction, about a cent, only you can change it. Names aren't unique; your address is what wins, and shows on hover.</p>}
           <button className="cta ghost" disabled={busy || (!name.trim() && !pic)} onClick={save}>{busy ? "Saving…" : "Save profile"}</button>
           {msg && <p className="fine">{msg}</p>}
         </div>

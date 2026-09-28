@@ -5,7 +5,6 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
-import {IERC721Receiver} from "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 /// @notice Randomness adapter. Fire calls request(); the adapter later calls Fire.onRandomness().
@@ -51,21 +50,24 @@ interface ISeaport {
  * @title The Fire
  * @notice Buy tickets with PAPER + PLANK. PAPER burns. Half the PLANK burns, half feeds the fire.
  *         Every night a storm rolls in; a big fire survives, a small one dies. When the fire goes
- *         out, one ticket wins 40% of the pot, 30% burns, 30% relights the next fire.
+ *         out, one ticket wins 40% of the pot, 25% burns, 5% goes to the Paper Mill royalty pool, 30% relights
+ *         the next fire.
  *
- *         There is no function that withdraws the pot or the ETH fund. Funds only leave through
- *         the rules below.
+ *         There is no owner and no function that withdraws the pot or the mill fund. Funds only leave through
+ *         the rules below. Every buy names the most it will pay, so a buyer is never charged more than they saw.
+ *         If randomness ever stops for ABANDON_AFTER, the fire ends for good and its pot is refunded to the
+ *         ticket holders pro rata.
  */
-contract Fire is IERC721Receiver, ReentrancyGuard {
+contract Fire is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ---------------------------------------------------------------- constants
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint256 public constant BPS = 10_000;
-    uint256 public constant WINNER_BPS = 4_000;
-    uint256 public constant BURN_BPS = 3_000;
-    uint256 public constant CARRY_BPS = 3_000;
-    uint256 public constant TITHE_BPS = 500; // of the winner slice -> royalty pool
+    uint256 public constant WINNER_BPS = 4_000; // all of it to the winner
+    uint256 public constant BURN_BPS = 2_500;
+    uint256 public constant ROYALTY_BPS = 500; // to the Paper Mill royalty pool (PulpPool)
+    uint256 public constant CARRY_BPS = 3_000; // relights the next fire (the remainder, so rounding dust stays in)
     uint256 public constant PLANK_BURN_BPS = 5_000; // of every PLANK feed
     uint256 public constant MAX_NIGHTS = 24; // the night-24 storm is infinite
     uint256 public constant KEEP_BPS = 6_000; // the fire keeps 60% of its size overnight
@@ -74,9 +76,16 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public constant BID_RESTART_BPS = 9_000; // after a buy the bid restarts at 90% of the price paid
     uint256 public constant BID_MAX_MULT = 3; // and never climbs past 3x its restart point
     uint256 public constant DAILY_CAP = 500; // tickets per wallet per day
-    uint256 public constant TX_CAP = 10; // tickets per transaction
+    uint256 public constant TX_CAP = 10; // tickets paid for per transaction
+    uint256 public constant FREE_WITH_FULL_BUY = 1; // buy 10, get 1 free
     uint256 public constant PLANK_RATCHET_BPS = 500; // PLANK leg moves at most 5% per night toward target
-    uint256 public constant REROLL_AFTER = 30 minutes; // a roll normally resolves in ~10s
+    /// @dev A roll normally resolves ~35s after it's requested. The wait before a re-roll is long on purpose: drand's
+    ///      number is public ~30s after the roll, so a short wait would let someone who dislikes it re-roll whenever
+    ///      nobody has delivered it yet. Two hours gives the keeper's alarm (and anyone on the site) time to deliver.
+    uint256 public constant REROLL_AFTER = 2 hours;
+    /// @dev Last resort: if a roll has been stuck this long (randomness gone for good, or a result that can't be
+    ///      delivered), anyone can end the game and every ticket holder of the current fire claims their share.
+    uint256 public constant ABANDON_AFTER = 7 days;
     /// @dev Chainlink ETH/USD updates on price deviation plus a 24h heartbeat; on Robinhood Chain gaps of 3-6h are
     ///      normal (observed Sep 2026). A quiet feed is still accurate, so only a missed heartbeat counts as stale.
     uint256 public constant ETH_FEED_MAX_AGE = 25 hours;
@@ -87,8 +96,11 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     IMill public immutable MILL;
     ISeaport public immutable SEAPORT; // address(0) disables mill buying entirely
     address public immutable ROYALTY_POOL;
-    uint256 public immutable PAPER_PER_TICKET; // in PAPER wei (1 PAPER)
-    uint256 public immutable ETH_USD_PER_TICKET; // "paper from the fire" price in USD, 8 decimals (1e8 = $1), paid in ETH or USDG
+    uint256 public immutable PAPER_PER_TICKET; // the most PAPER a ticket ever takes, in PAPER wei (1 PAPER)
+    uint256 public immutable PAPER_USD_CAP; // the PAPER leg never costs more than this, USD 8 decimals ($0.33)
+    IPriceFeed public immutable PAPER_USD; // PAPER/USD, **18 decimals** (PaperUsdTwap); 0 until PAPER has a market
+    uint256 public paperPerTicket; // PAPER wei per ticket: PAPER_PER_TICKET, or less once PAPER is worth > the cap
+    uint256 public immutable ETH_USD_PER_TICKET; // price of the PAPER part when paid in ETH or USDG, USD 8 decimals (1e8 = $1)
     uint256 public immutable PLANK_USD_PER_TICKET; // PLANK leg target, USD 8-decimals
     IPriceFeed public immutable ETH_USD; // Chainlink ETH/USD
     IPriceFeed public immutable PLANK_USD; // PLANK/USD, **18 decimals** (our TWAP adapter)
@@ -132,12 +144,27 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public pendingRequest; // randomness request in flight (0 = none)
     uint256 public pendingSince; // when it was requested
 
+    /// @notice PLANK a winner is owed because the transfer to them failed when the fire went out. Claim with claim().
+    mapping(address => uint256) public unclaimed;
+    uint256 public unclaimedTotal;
+
+    /// @notice Set once, by abandon(): the game is over and the last fire's pot is refunded pro rata.
+    bool public abandoned;
+    uint256 public refundPot; // PLANK set aside for refunds
+    uint256 public refundTickets; // tickets in the abandoned fire
+    mapping(address => bool) public refunded;
+
     // ---------------------------------------------------------------- events
-    /// @param paperFromFire true when the PAPER leg was paid in ETH or USDG ("buy paper from the fire")
+    /// @param tickets tickets received, including the free one on a full buy of 10
+    /// @param paperFromFire true when the PAPER part was paid $1 a ticket in ETH or USDG
     event TicketsBought(uint256 indexed fireId, address indexed buyer, uint256 tickets, bool paperFromFire, string note);
     event RollRequested(uint256 indexed fireId, uint256 night, uint256 requestId);
     event Rerolled(uint256 indexed fireId, uint256 night, uint256 oldRequestId, uint256 newRequestId);
-    event PayoutCarried(address indexed to, uint256 amount); // a payout transfer failed; its PLANK stays in the next pot
+    event PayoutCarried(address indexed to, uint256 amount); // a pool/burn transfer failed; its PLANK stays in the next pot
+    event PayoutOwed(address indexed winner, uint256 amount); // the winner's transfer failed; they claim() it later
+    event Claimed(address indexed winner, address to, uint256 amount);
+    event Abandoned(uint256 indexed fireId, uint256 pot, uint256 tickets);
+    event Refunded(address indexed holder, uint256 amount);
     event Survived(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm);
     event WentOut(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm, address winner, uint256 paid);
     event Lit(uint256 indexed fireId, uint256 carried);
@@ -159,6 +186,9 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     error TxCap();
     error StaleFeed();
     error Answered();
+    error PriceMoved();
+    error Over();
+    error Nothing();
 
     struct Config {
         address paper;
@@ -169,8 +199,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         address randomness;
         address ethUsdFeed;
         address plankUsdFeed;
+        address paperUsdFeed;
         address usdg;
         uint256 paperPerTicket;
+        uint256 paperUsdCap;
         uint256 plankPerTicket0;
         uint256 plankUsdPerTicket;
         uint256 ethUsdPerTicket;
@@ -179,6 +211,12 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     constructor(Config memory c) {
+        // Everything is immutable, so a bad address or a zero price would be permanent. Refuse them here.
+        if (c.paper.code.length == 0 || c.plank.code.length == 0 || c.randomness.code.length == 0) revert BadRequest();
+        if (c.ethUsdFeed.code.length == 0 || c.plankUsdFeed.code.length == 0) revert BadRequest();
+        if (c.paperUsdFeed != address(0) && c.paperUsdFeed.code.length == 0) revert BadRequest();
+        if (c.paperPerTicket == 0 || c.plankPerTicket0 == 0 || c.plankUsdPerTicket == 0 || c.ethUsdPerTicket == 0) revert BadAmount();
+        if (c.millBidBase == 0 || c.rollTimeOfDay >= 1 days) revert BadAmount();
         PAPER = IERC20(c.paper);
         PLANK = IERC20(c.plank);
         MILL = IMill(c.mill);
@@ -188,6 +226,9 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         ETH_USD = IPriceFeed(c.ethUsdFeed);
         PLANK_USD = IPriceFeed(c.plankUsdFeed);
         PAPER_PER_TICKET = c.paperPerTicket;
+        paperPerTicket = c.paperPerTicket;
+        PAPER_USD_CAP = c.paperUsdCap;
+        PAPER_USD = IPriceFeed(c.paperUsdFeed);
         plankPerTicket = c.plankPerTicket0;
         PLANK_USD_PER_TICKET = c.plankUsdPerTicket;
         ETH_USD_PER_TICKET = c.ethUsdPerTicket;
@@ -195,6 +236,9 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         USDG = IERC20(c.usdg);
         USDG_UNIT = c.usdg == address(0) ? 0 : 10 ** IERC20Metadata(c.usdg).decimals();
         ROLL_TIME_OF_DAY = c.rollTimeOfDay;
+        // The randomness adapter is deployed first and must name this contract, or no roll could ever resolve.
+        (bool ok, bytes memory ret) = c.randomness.staticcall(abi.encodeWithSignature("FIRE()"));
+        if (ok && ret.length >= 32 && abi.decode(ret, (address)) != address(this)) revert BadRequest();
         millBidStart = c.millBidBase;
         millBidBanked = c.millBidBase;
         millBidSince = block.timestamp;
@@ -202,14 +246,16 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     // ---------------------------------------------------------------- pricing
-    /// @notice Bundle discount in bps of full price: a full 10 -> 97%, else 100%.
-    function priceBps(uint256 n) public pure returns (uint256) {
-        return n >= TX_CAP ? 9_700 : BPS;
+    /// @notice Buy 10, get 1 free: a full buy of TX_CAP pays for TX_CAP tickets and gets TX_CAP + 1. That's the only
+    ///         discount. The free ticket counts like any other (odds, fire size, the daily cap) but adds no PLANK.
+    function ticketsFor(uint256 n) public pure returns (uint256) {
+        return n == TX_CAP ? n + FREE_WITH_FULL_BUY : n;
     }
 
     /// @notice ETH per ticket right now, from the ETH/USD feed. Reverts if the feed has missed its heartbeat.
     function ethPerTicket() public view returns (uint256) {
-        return ETH_USD_PER_TICKET * 1e18 / _ethUsd();
+        uint256 px = _ethUsd();
+        return (ETH_USD_PER_TICKET * 1e18 + px - 1) / px; // rounded up: never under the $1
     }
 
     /// @dev ETH/USD, 8 decimals. Reverts if the feed has missed its heartbeat.
@@ -223,18 +269,17 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     ///         the PAPER path never depends on the ETH feed.
     function quote(uint256 n) public view returns (uint256 paperCost, uint256 plankCost, uint256 ethCost) {
         (paperCost, plankCost) = _legs(n);
-        (, int256 px,, uint256 updatedAt,) = ETH_USD.latestRoundData();
+        (int256 px, uint256 updatedAt) = _feed(ETH_USD);
         if (px > 0 && updatedAt <= block.timestamp && block.timestamp - updatedAt <= ETH_FEED_MAX_AGE) ethCost = _ethCost(n);
     }
 
     function _legs(uint256 n) internal view returns (uint256 paperCost, uint256 plankCost) {
-        uint256 bps = priceBps(n);
-        paperCost = n * PAPER_PER_TICKET * bps / BPS;
-        plankCost = n * plankPerTicket * bps / BPS;
+        paperCost = n * paperPerTicket;
+        plankCost = n * plankPerTicket;
     }
 
     function _ethCost(uint256 n) internal view returns (uint256) {
-        return n * ethPerTicket() * priceBps(n) / BPS;
+        return n * ethPerTicket();
     }
 
     /// @notice Tickets this wallet can still buy today.
@@ -246,27 +291,32 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     // ---------------------------------------------------------------- buying
     /// @dev Buying is closed while a roll is in flight: the drand beacon is public a few seconds before the
     ///      callback lands, and a buy in that gap could pick the winning ticket (or rescue the fire).
-    function buyTickets(uint256 n, string calldata note) external nonReentrant {
-        if (pendingRequest != 0) revert RollPending();
+    /// @param maxPaper,maxPlank the most PAPER / PLANK (wei) the buyer agrees to pay for these n tickets. The legs move
+    ///        a little each night; if they moved after the buyer saw the price, the buy reverts instead of charging more.
+    function buyTickets(uint256 n, uint256 maxPaper, uint256 maxPlank, string calldata note) external nonReentrant {
+        _open();
         if (n == 0) revert BadAmount();
         (uint256 paperCost, uint256 plankCost) = _legs(n);
+        if (paperCost > maxPaper || plankCost > maxPlank) revert PriceMoved();
         PAPER.safeTransferFrom(msg.sender, DEAD, paperCost);
         _takePlank(msg.sender, plankCost);
-        _addTickets(msg.sender, n);
-        emit TicketsBought(fireId, msg.sender, n, false, note);
+        uint256 got = _addTickets(msg.sender, n);
+        emit TicketsBought(fireId, msg.sender, got, false, note);
     }
 
-    /// @notice No PAPER? Buy it from the fire with ETH. The ETH feeds the mill fund. Send a little over the
+    /// @notice No PAPER? Pay $1 a ticket in ETH instead. The ETH feeds the mill fund. Send a little over the
     ///         quote (the feed can tick before the tx lands); anything above the price comes straight back.
-    function buyTicketsWithEth(uint256 n, string calldata note) external payable nonReentrant {
-        if (pendingRequest != 0) revert RollPending();
+    ///         msg.value is the most ETH the buyer pays; maxPlank the most PLANK.
+    function buyTicketsWithEth(uint256 n, uint256 maxPlank, string calldata note) external payable nonReentrant {
+        _open();
         if (n == 0) revert BadAmount();
         (, uint256 plankCost) = _legs(n);
+        if (plankCost > maxPlank) revert PriceMoved();
         uint256 ethCost = _ethCost(n); // reverts StaleFeed if the ETH/USD feed is stale
         if (msg.value < ethCost) revert BadAmount();
         _takePlank(msg.sender, plankCost);
-        _addTickets(msg.sender, n);
-        emit TicketsBought(fireId, msg.sender, n, true, note);
+        uint256 got = _addTickets(msg.sender, n);
+        emit TicketsBought(fireId, msg.sender, got, true, note);
         if (msg.value > ethCost) {
             (bool ok,) = msg.sender.call{value: msg.value - ethCost}("");
             if (!ok) revert BadAmount();
@@ -276,21 +326,28 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
 
     /// @notice Same as buyTicketsWithEth, but the PAPER leg is paid in USDG (no price feed involved). It feeds the mill
     ///         fund's USDG side, which pays for mills listed in USDG.
-    function buyTicketsWithUsdg(uint256 n, string calldata note) external nonReentrant {
-        if (pendingRequest != 0) revert RollPending();
+    ///         The USDG price is fixed ($1 a ticket); maxPlank is the most PLANK the buyer pays.
+    function buyTicketsWithUsdg(uint256 n, uint256 maxPlank, string calldata note) external nonReentrant {
+        _open();
         if (n == 0) revert BadAmount();
         if (address(USDG) == address(0)) revert BadRequest();
         (, uint256 plankCost) = _legs(n);
+        if (plankCost > maxPlank) revert PriceMoved();
         USDG.safeTransferFrom(msg.sender, address(this), usdgCost(n));
         _takePlank(msg.sender, plankCost);
-        _addTickets(msg.sender, n);
-        emit TicketsBought(fireId, msg.sender, n, true, note);
+        uint256 got = _addTickets(msg.sender, n);
+        emit TicketsBought(fireId, msg.sender, got, true, note);
         _pokeMillBid();
     }
 
-    /// @notice USDG for the PAPER leg of n tickets ("paper from the fire", paid in USDG).
+    /// @notice USDG for the PAPER part of n tickets, paid in dollars.
     function usdgCost(uint256 n) public view returns (uint256) {
-        return n * ETH_USD_PER_TICKET * USDG_UNIT / 1e8 * priceBps(n) / BPS;
+        return n * ETH_USD_PER_TICKET * USDG_UNIT / 1e8;
+    }
+
+    function _open() internal view {
+        if (abandoned) revert Over();
+        if (pendingRequest != 0) revert RollPending();
     }
 
     function _takePlank(address from, uint256 amount) internal {
@@ -300,14 +357,16 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         pot += amount - burn;
     }
 
-    function _addTickets(address buyer, uint256 n) internal {
+    /// @dev n = tickets paid for; returns tickets received (n, or n + 1 for a full buy of 10).
+    function _addTickets(address buyer, uint256 n) internal returns (uint256 got) {
         if (n > TX_CAP) revert TxCap();
-        if (boughtOnDay[dayIndex][buyer] + n > DAILY_CAP) revert DailyCap();
-        boughtOnDay[dayIndex][buyer] += n;
-        ticketsTotal += n;
-        ticketsToday += n;
-        fireSize += n;
-        ticketsOf[fireId][buyer] += n;
+        got = ticketsFor(n);
+        if (boughtOnDay[dayIndex][buyer] + got > DAILY_CAP) revert DailyCap();
+        boughtOnDay[dayIndex][buyer] += got;
+        ticketsTotal += got;
+        ticketsToday += got;
+        fireSize += got;
+        ticketsOf[fireId][buyer] += got;
         _entries[fireId].push(Entry({buyer: buyer, cumEnd: uint128(ticketsTotal)}));
     }
 
@@ -315,6 +374,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     /// @notice Anyone can call once the roll time has passed. Requests randomness; the adapter
     ///         calls back onRandomness() to resolve the night.
     function roll() external {
+        if (abandoned) revert Over();
         if (block.timestamp < nextRollAt) revert NotYet();
         if (pendingRequest != 0) revert RollPending();
         uint256 id = randomness.request();
@@ -338,6 +398,47 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         emit Rerolled(fireId, night + 1, old, id);
     }
 
+    /// @notice Anyone, last resort: a roll has been stuck for ABANDON_AFTER (randomness gone for good, or a result
+    ///         that can't be delivered). Ends the game for good. The current fire's pot is set aside and each of its
+    ///         ticket holders claims their share with refund(). Buying and rolling stop; the mill fund keeps buying
+    ///         mills as before. With no tickets in the fire, the pot is burned.
+    function abandon() external nonReentrant {
+        if (pendingRequest == 0 || abandoned) revert BadRequest();
+        if (block.timestamp < pendingSince + ABANDON_AFTER) revert NotYet();
+        abandoned = true;
+        pendingRequest = 0;
+        uint256 p = pot;
+        pot = 0;
+        emit Abandoned(fireId, p, ticketsTotal);
+        if (ticketsTotal == 0) {
+            if (!_trySend(DEAD, p)) refundPot = p; // unreachable in practice; kept rather than lost
+            return;
+        }
+        refundPot = p;
+        refundTickets = ticketsTotal;
+    }
+
+    /// @notice After abandon(): your share of the last fire's pot, by tickets held. Once per wallet.
+    function refund() external nonReentrant {
+        if (!abandoned || refundTickets == 0) revert BadRequest();
+        uint256 mine = ticketsOf[fireId][msg.sender];
+        if (mine == 0 || refunded[msg.sender]) revert Nothing();
+        refunded[msg.sender] = true;
+        uint256 amount = refundPot * mine / refundTickets;
+        PLANK.safeTransfer(msg.sender, amount);
+        emit Refunded(msg.sender, amount);
+    }
+
+    /// @notice A winner whose prize couldn't be sent when the fire went out claims it here, to any address.
+    function claim(address to) external nonReentrant {
+        uint256 amount = unclaimed[msg.sender];
+        if (amount == 0) revert Nothing();
+        unclaimed[msg.sender] = 0;
+        unclaimedTotal -= amount;
+        PLANK.safeTransfer(to, amount);
+        emit Claimed(msg.sender, to, amount);
+    }
+
     function onRandomness(uint256 requestId, uint256 rnd) external nonReentrant {
         if (msg.sender != address(randomness)) revert NotRandomness();
         if (requestId != pendingRequest || requestId == 0) revert BadRequest();
@@ -352,6 +453,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         dayIndex += 1;
         nextRollAt = _nextRollTime(block.timestamp);
         _ratchetPlankLeg();
+        _ratchetPaperLeg();
         _pokeMillBid();
 
         // The storm takes a bite. What's left burns down to 60% overnight and is tomorrow's starting size.
@@ -370,7 +472,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     function stormStrength(uint256 n, uint256 rnd) public view returns (uint256) {
         if (n >= MAX_NIGHTS) return type(uint256).max;
         if (n <= 1) return 0;
-        return trailingAverage() * _ageBps(n) / BPS * _luckBps(rnd) / BPS;
+        return trailingAverage() * _ageBps(n) * _luckBps(rnd) / (BPS * BPS);
     }
 
     /// @dev ((n-1)/8)^1.5 in bps, n = 2..23.
@@ -418,20 +520,25 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         uint256 p = pot;
         uint256 winnerSlice = p * WINNER_BPS / BPS;
         uint256 burnSlice = p * BURN_BPS / BPS;
-        uint256 carry = p - winnerSlice - burnSlice;
-        uint256 tithe = winnerSlice * TITHE_BPS / BPS;
+        uint256 royaltySlice = p * ROYALTY_BPS / BPS;
+        uint256 carry = p - winnerSlice - burnSlice - royaltySlice;
 
         pot = 0;
         uint256 paid;
         // A payout that fails (e.g. the token refuses a recipient) must not revert the night — that would leave the
-        // roll pending forever. Whatever can't be sent stays in the contract and relights the next fire.
+        // roll pending forever. The winner's prize is kept for them to claim(); a failed pool or burn transfer stays
+        // in the contract and relights the next fire.
         if (winner != address(0)) {
-            if (_trySend(winner, winnerSlice - tithe)) paid = winnerSlice - tithe;
-            else carry += winnerSlice - tithe;
-            if (!_trySend(ROYALTY_POOL, tithe)) carry += tithe;
+            if (_trySend(winner, winnerSlice)) paid = winnerSlice;
+            else {
+                unclaimed[winner] += winnerSlice;
+                unclaimedTotal += winnerSlice;
+                emit PayoutOwed(winner, winnerSlice);
+            }
+            if (!_trySend(ROYALTY_POOL, royaltySlice)) carry += royaltySlice;
         } else {
-            // no tickets at all: winner slice rolls into the carry
-            carry += winnerSlice;
+            // no tickets at all: the winner's and the royalty pool's slices roll into the next fire
+            carry += winnerSlice + royaltySlice;
         }
         if (!_trySend(DEAD, burnSlice)) carry += burnSlice;
         lastWinner = winner;
@@ -508,23 +615,28 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     /// @dev What the fund could pay for one mill, in USD (8 dec): the larger side, since a listing is paid in one
     ///      currency. A stale or broken ETH feed counts the ETH side as 0 (never reverts; called from the nightly roll).
     function _fundUsd() internal view returns (uint256 usd) {
-        if (address(USDG) != address(0)) usd = USDG.balanceOf(address(this)) * 1e8 / USDG_UNIT;
-        (bool ok, bytes memory ret) = address(ETH_USD).staticcall(abi.encodeCall(IPriceFeed.latestRoundData, ()));
-        if (!ok || ret.length < 160) return usd;
-        (, int256 px,, uint256 updatedAt,) = abi.decode(ret, (uint80, int256, uint256, uint256, uint80));
+        if (address(USDG) != address(0)) {
+            (bool okb, bytes memory rb) = address(USDG).staticcall(abi.encodeCall(IERC20.balanceOf, (address(this))));
+            if (okb && rb.length >= 32) usd = abi.decode(rb, (uint256)) * 1e8 / USDG_UNIT;
+        }
+        (int256 px, uint256 updatedAt) = _feed(ETH_USD);
         if (px <= 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > ETH_FEED_MAX_AGE) return usd;
         uint256 ethSide = address(this).balance * uint256(px) / 1e18;
         if (ethSide > usd) usd = ethSide;
     }
 
+    /// @dev A price feed read that never reverts (no code, a revert, or a short/garbled answer all read as 0), so a
+    ///      broken feed can only make a leg hold — never block the nightly roll.
+    function _feed(IPriceFeed f) internal view returns (int256 px, uint256 updatedAt) {
+        (bool ok, bytes memory ret) = address(f).staticcall(abi.encodeCall(IPriceFeed.latestRoundData, ()));
+        if (!ok || ret.length < 160) return (0, 0);
+        (, px,, updatedAt,) = abi.decode(ret, (uint80, int256, uint256, uint256, uint80));
+    }
+
     /// @dev Move plankPerTicket at most 5% per night toward the USD target. A thin pool can be pushed for
     ///      minutes, not for days, so the leg can't be gamed inside a night. If the feed is stale, hold.
     function _ratchetPlankLeg() internal {
-        int256 px;
-        uint256 updatedAt;
-        // A broken feed must not revert the night; the leg just holds.
-        try PLANK_USD.latestRoundData() returns (uint80, int256 a, uint256, uint256 u, uint80) { (px, updatedAt) = (a, u); }
-        catch { return; }
+        (int256 px, uint256 updatedAt) = _feed(PLANK_USD); // a broken feed must not revert the night; the leg holds
         if (px <= 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > 2 days) return;
         // plank wei per ticket = (USD per ticket, 8 dec) * 1e18 wei/PLANK * 1e10 / (USD per PLANK, 18 dec)
         uint256 target = PLANK_USD_PER_TICKET * 1e28 / uint256(px);
@@ -532,6 +644,23 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         uint256 maxUp = cur * (BPS + PLANK_RATCHET_BPS) / BPS;
         uint256 maxDown = cur * (BPS - PLANK_RATCHET_BPS) / BPS;
         plankPerTicket = target > maxUp ? maxUp : target < maxDown ? maxDown : target;
+    }
+
+    /// @dev Keep the PAPER leg worth at most PAPER_USD_CAP: 1 PAPER while PAPER is cheap, fewer once it trades above
+    ///      the cap, so a PAPER rally never makes tickets expensive (the prize is PLANK). Moves at most 5% a night, from
+    ///      a >= 20h average price. No price (no PAPER market yet, stale or broken feed): hold.
+    function _ratchetPaperLeg() internal {
+        if (address(PAPER_USD) == address(0)) return;
+        (int256 px, uint256 updatedAt) = _feed(PAPER_USD);
+        if (px <= 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > 2 days) return;
+        // PAPER wei worth the cap = (USD cap, 8 dec) * 1e28 / (USD per PAPER, 18 dec); never more than PAPER_PER_TICKET
+        uint256 target = PAPER_USD_CAP * 1e28 / uint256(px);
+        if (target > PAPER_PER_TICKET) target = PAPER_PER_TICKET;
+        uint256 cur = paperPerTicket;
+        uint256 maxUp = cur * (BPS + PLANK_RATCHET_BPS) / BPS;
+        uint256 maxDown = cur * (BPS - PLANK_RATCHET_BPS) / BPS;
+        uint256 next = target > maxUp ? maxUp : target < maxDown ? maxDown : target;
+        paperPerTicket = next > PAPER_PER_TICKET ? PAPER_PER_TICKET : next;
     }
 
     /// @notice The mill fund's USDG side.
@@ -544,8 +673,9 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         return address(this).balance;
     }
 
-    /// @notice Anyone: fill an OpenSea (Seaport) fixed-price ETH listing for a mill at or under the fire's bid,
-    ///         then burn it. The listing's total ETH consideration must be <= millBid.
+    /// @notice Anyone: fill a Seaport listing for a mill (priced in ETH or USDG) at or under the fire's bid, then burn
+    ///         it. Anyone may call this with any signed listing, including their own: the bid is a standing offer.
+    ///         A caller may attach the mill's ETH burn fee; anything attached above it is refunded.
     /// @param extraData the listing's zone data, if its zone needs any (OpenSea supplies it with the listing's
     ///        fulfillment data for this fire as the fulfiller); empty for an open listing.
     function eatMillFromSeaport(ISeaport.Order calldata order, bytes calldata extraData) external payable nonReentrant {
@@ -568,7 +698,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         }
         uint256 usd = inEth ? total * _ethUsd() / 1e18 : total * 1e8 / USDG_UNIT;
         if (usd > millBid()) revert TooExpensive();
-        uint256 fee = MILL.burnFee(); // always ETH; a caller may attach it (msg.value joins the fund)
+        uint256 fee = MILL.burnFee(); // always ETH; a caller may attach it (up to fee; the rest comes back below)
         if (address(this).balance < (inEth ? total : 0) + fee) revert FundTooSmall();
         if (!inEth) {
             if (USDG.balanceOf(address(this)) < total) revert FundTooSmall();
@@ -591,6 +721,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         millFundUsdAt = _fundUsd();
         emit MillBidUpdated(millBidBanked, millFundUsdAt);
         emit MillEaten(tokenId, p.offerer, inEth ? address(0) : address(USDG), total, usd, released);
+        if (msg.value > fee) {
+            (bool sent,) = msg.sender.call{value: msg.value - fee}("");
+            if (!sent) revert BadAmount();
+        }
     }
 
     function _burnMill(uint256 tokenId, uint256 fee) internal returns (uint256 released) {
@@ -601,11 +735,16 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         if (released > 0) PLANK.safeTransfer(ROYALTY_POOL, released);
     }
 
-    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
-        return IERC721Receiver.onERC721Received.selector;
-    }
+    // No onERC721Received: Seaport moves the mill with transferFrom, and a mill "safe-sent" here by mistake bounces
+    // instead of being stuck forever.
 
     // ---------------------------------------------------------------- views
+    /// @notice What the wallet can claim: an unpaid prize, and (after abandon) its refund share.
+    function claimable(address who) external view returns (uint256 prize, uint256 refundShare) {
+        prize = unclaimed[who];
+        if (abandoned && refundTickets > 0 && !refunded[who]) refundShare = refundPot * ticketsOf[fireId][who] / refundTickets;
+    }
+
     function entriesLength() external view returns (uint256) {
         return _entries[fireId].length;
     }

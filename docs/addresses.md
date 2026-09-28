@@ -24,7 +24,7 @@
 - Top holders: `0x6d05f45b602397eC1842395b2b465298BC36e5fB` (unverified contract, **56%** — locker/treasury? ask), Uniswap V2 pair (10%), PlankPress (9.4%, the mills' locked PLANK).
 - **Main pool: Uniswap V2 pair `0x01b1BEf6fBA02c846eA5c4Ff59193988B5f86F73`** — 28.1 WETH / 88.7T PLANK ≈ **$0.00000000106 per PLANK** (1.06e-9) at $3,333 ETH → mcap ≈ $940k; a mill's PLANK ≈ $94.
 - Uniswap V3 pool `0x3CE05Efe2e7C9c136f12a1Be695f75F807B6c69E` is tiny (0.8 WETH). Ignore.
-- Ratchet price source: **Uniswap V2 cumulative-price TWAP** on the V2 pair (24h window, anyone can checkpoint) × Chainlink ETH/USD.
+- Ratchet price source: **Uniswap V2 cumulative-price TWAP** on the V2 pair (≥20h window, anyone can checkpoint; `PlankUsdTwap`) × Chainlink ETH/USD.
 - At $0.90 per ticket the PLANK leg ≈ **852M PLANK** at today's price.
 
 ## Chainlink
@@ -36,9 +36,11 @@
   a number it dislikes until the Fire re-rolls. So we deploy `OpenDrandRouter` (OpenVRF minus owner, fees and
   allowlists): anyone may submit the drand signature, the router verifies it on-chain (pinned evmnet key), and there's
   one valid number per request.
-- Round = the drand evmnet round 2-4 s after the request. Public relays: api.drand.sh, api2.drand.sh, api3.drand.sh.
+- Round = the drand evmnet round 30–33 s after the request (rounds are 3 s apart). Public relays: api.drand.sh,
+  api2.drand.sh, api3.drand.sh.
 - `ops/keeper` submits signatures; the site's button and anyone with `cast` can too. `Fire.reroll()` is possible
-  only after 30 min with no number delivered — i.e. a drand outage.
+  only after 2 hours with no number delivered and while the router has no number for the request — i.e. a drand
+  outage. After 7 days stuck, anyone can `abandon()` and ticket holders `refund()` (see `docs/randomness.md`).
 - No owner anywhere: nobody can pause, re-point or re-price randomness.
 
 ## Seaport (checked on-chain Sep 27 2026)
@@ -46,7 +48,7 @@
 - ConduitController `0x00000000F9490004C11Cef243f5400493c00Ad63` deployed.
 - Uniswap V2 router `0x89e5DB8B5aA49aA85AC63f691524311AEB649eba`: factory `0x8bceaa40b9acdfaedf85adf4ff01f5ad6517937f`,
   WETH `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`. The PLANK pair's token0 = WETH, token1 = PLANK.
-- ETH/USD feed update gaps observed: 0.4–6h (deviation-triggered; 24h heartbeat).
+- ETH/USD feed update gaps observed: 0.4–6h (deviation-triggered; 24h heartbeat). The Fire treats it as stale after 25h.
 
 ## Mill listings on OpenSea (checked Sep 27 2026, via the OpenSea API)
 - 4 listings, all priced in **USDG** (not ETH): ~$786, $787, $888.42, and $88,842. Mills are still minting until the
@@ -58,4 +60,8 @@
   creator royalty 10% ($78.60, to the Plank Press royalty recipient `0xb495…a806`). OpenSea's chain slug: `robinhood`.
 
 ## Mill floor (OpenSea, Seaport)
-- Collection https://opensea.io/collection/the-plank-press. Seaport on Robinhood Chain: confirm the deployed Seaport 1.6 address before wiring the fill path. No standing bid, no sell-to-fire: the fire only buys listings.
+- Collection https://opensea.io/collection/the-plank-press. The fire fills listings through Seaport 1.6 (above).
+- The mill bid is a standing offer: anyone can call `eatMillFromSeaport` with any Seaport listing (their own included)
+  priced at or under the bid, and the fire buys and burns it in one transaction. OpenSea listings are what the keeper
+  sweeps. The fire takes no mill any other way: a mill safe-sent to it bounces (no `onERC721Received`); one pushed in with a
+  plain `transferFrom` is stuck for good, so don't.

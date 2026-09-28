@@ -1,23 +1,29 @@
 # Open decisions (from the Sep 27 2026 audit)
 
-The clear bugs from the audit are fixed on branch `claude/practical-gates-va0gq1` (one commit each). These are the
-items that change the game's rules or trust model, so they need a call from you before anyone writes code.
-Each has a recommendation; none is implemented.
+The audit's items that changed the game's rules or trust model. Items marked DONE are built and tested in
+`contracts/` (103 tests); the rest still need a call from you.
 
 ## 1. A stuck roll freezes the game forever (audit C2) — DONE
 
 Decided: no long wait. Built on how OpenVRF works (it stores each fulfilled number on-chain, unchangeable):
 - `adapter.settle(id)`: anyone delivers a number the router already holds if its callback didn't land.
-- `Fire.reroll()`: anyone, after 30 min with no answer, and only while the router has no number for that request.
-- Payouts that fail carry to the next pot; a broken PLANK feed can't revert the night.
+- `Fire.reroll()`: anyone, after 2 hours with no answer, and only while the router has no number for that request.
+  (It was 30 min. drand's number is public ~30 s after the roll, so a short wait let someone re-roll a known bad
+  result whenever nobody had delivered it.)
+- `Fire.abandon()`: anyone, after 7 days stuck (randomness gone, or a result that can't be delivered). The game ends for
+  good; each ticket holder of the current fire calls `refund()` for pot × their tickets ÷ total. No tickets → the pot
+  burns. The mill fund keeps working.
+- A winner whose PLANK transfer fails keeps the prize in `unclaimed[winner]` and calls `claim(to)`. Failed royalty or
+  burn transfers carry to the next pot. Feed reads can't revert the night.
 - `ops/keeper` does all of this automatically; the site shows a button as a backup.
 
 ## 2. Who can hurt the game via randomness — DONE
 
 Review finding (merge blocker): OpenVRF's `fulfill()` is relayer-only, so the relayer could withhold a number it
-disliked, wait 30 min, and have the Fire re-roll — as many times as it liked. Fixed by deploying our own
-`OpenDrandRouter` (OpenVRF with no owner, no fees, no allowlists): anyone can submit drand's signature, so a withheld
-number gets delivered by someone else and `reroll()` never becomes possible while drand is up. There is no router
+disliked, wait for the re-roll window, and have the Fire re-roll — as many times as it liked. Fixed by deploying our
+own `OpenDrandRouter` (OpenVRF with no owner, no fees, no allowlists): anyone can submit drand's signature, so a
+withheld number can be delivered by anyone. `reroll()` still opens after 2 hours if nobody delivered — the keeper, its
+healthcheck alarm and the site's button are what make sure someone does — and never once the router holds the number. There is no router
 owner left to freeze or re-price anything; the deploy wallet has no powers after deploy.
 
 ## 3. Adapter pays its whole balance per request (audit M2) — DONE (was a real bug)
@@ -38,7 +44,10 @@ exactly `requestFee()`. Tested against the real router code with a real drand pr
   real floor yet — start at or below the expected floor and let it climb.
 - Fills use fulfillAdvancedOrder (works for open and zone-restricted listings); tested against real Seaport 1.6 code.
 - `ops/keeper` sweeps the floor with an OpenSea API key: cheapest listing at or under the bid that the fund can pay.
-- Heads-up: the sim assumed ~$100 mills (~170 eaten/yr). At the ~$786 listings seen so far, expect ~20/yr.
+- The bid is a standing offer: anyone can fill it with any Seaport listing (their own included) at or under the bid.
+  `eatMillFromSeaport` refunds any ETH attached above the burn fee.
+- The sim at 5 outsiders/day (~$11k/yr): ~110 mills eaten a year at a $100 floor, ~37 at $300, ~13 at the ~$786 listings
+  seen so far.
 
 ## 4b. ETH/USD feed age — DONE
 
@@ -51,12 +60,10 @@ PulpPool only counts whitelisted tokens and PLANK isn't one. Until the Plank Pre
 `addRewardToken(PLANK)`, every tithe and eaten-mill PLANK sits there uncounted. **Recommendation:** get that call done
 (or a written yes) before launch.
 
-## 6. Spec vs code
+## 6. Spec vs code — DONE
 
-The spec still describes things the contract doesn't do. Pick which is true and update the other:
-- Ticket priced as a fixed 10M PLANK with no oracle → code prices the PLANK leg in USD (ratchet) and ETH via Chainlink.
-- A 48h-timelocked pause, and fire #1 capped at 3 nights until audit → neither exists in the contract.
-- Pyro mode → removed; the deploy doc now says to seed fire #1 by buying tickets.
+`docs/spec.md` now matches the contract: USD-priced legs with 5%/night ratchets, max-price buys, no pause, no launch
+cap, no Pyro mode, drand via `OpenDrandRouter`, 2h reroll and 7-day abandon.
 
 ## 7. Smaller policy calls
 
@@ -65,5 +72,5 @@ The spec still describes things the contract doesn't do. Pick which is true and 
 - **Profiles have no moderation.** Any image (up to 12 KB) shows on the winner card and the ticker. Options: a
   site-side hide list, or show pictures only for wallets that have bought tickets.
 - **Swap panel slippage is 3%** on a thin pool, which gives sandwich bots room. Consider 1% default with a user setting.
-- **Storm balance:** a contract-faithful sim gives ~9.3-night average lives, 45% reach night 10 and only ~1.4% reach
-  night 15 (the spec says 5%); night 24 is essentially never reached. Fine if intended; otherwise bump the age curve.
+- **Storm balance:** the contract-faithful sim (`docs/sim-results.md`) gives ~9.6-night average lives, about half reach
+  night 10, ~5% reach night 15, longest 19; night 24 is never reached. Fine if intended; otherwise bump the age curve.

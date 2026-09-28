@@ -1,23 +1,20 @@
-// Any-token swap on the Uniswap V2 router that hosts the PLANK/WETH pool. Works with any injected wallet.
-// Token list is a starting point; users can paste any ERC-20 address. Replace with the community aggregator later
-// by swapping this component out (App.tsx renders <Swap/> in one place).
+// Swap for PLANK or PAPER. Live: any token on the Uniswap V2 router that hosts the PLANK/WETH pool, through any
+// injected wallet. Demo: the same panel on pretend pools with play money: it never touches a wallet or an RPC.
+// Replace with the community aggregator later by swapping this component out (App.tsx renders <Swap/> in one place).
 
-import { useEffect, useState } from "react";
-import { createPublicClient, createWalletClient, custom, http, formatUnits, parseUnits, parseAbi, type Address, isAddress } from "viem";
-import { robinhood } from "../data/chain";
+import { useEffect, useRef, useState } from "react";
+import { createPublicClient, http, formatUnits, parseUnits, parseAbi, type Address, type PublicClient, isAddress } from "viem";
+import type { DemoControls, DemoToken, FireState } from "../data/types";
+import { fmtAmt, fmtUsd } from "../format";
+import { robinhood, connectWallet, waitOk, txUrl, TxPending, friendly } from "../data/wallet";
 
 export const ROUTER: Address = "0x89e5DB8B5aA49aA85AC63f691524311AEB649eba";
 export const WETH: Address = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
-const PAPER = (import.meta.env.VITE_PAPER_ADDRESS as Address | undefined) || undefined;
-const USDG = (import.meta.env.VITE_USDG_ADDRESS as Address | undefined) || undefined;
+const PLANK_FALLBACK: Address = "0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc";
+const STALE_MS = 20_000; // a quote older than this can't be swapped on
+const IMPACT_WARN = 0.03;
 
-type Tok = { symbol: string; address: Address | "ETH"; decimals: number };
-const BASE: Tok[] = [
-  { symbol: "ETH", address: "ETH", decimals: 18 },
-  { symbol: "PLANK", address: "0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc", decimals: 18 },
-  ...(PAPER ? [{ symbol: "PAPER", address: PAPER, decimals: 18 } as Tok] : []),
-  ...(USDG ? [{ symbol: "USDG", address: USDG, decimals: 6 } as Tok] : []),
-];
+type Tok = { symbol: string; address: Address | "ETH"; decimals: number; unverified?: boolean };
 
 const routerAbi = parseAbi([
   "function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)",
@@ -28,104 +25,212 @@ const routerAbi = parseAbi([
 const erc20 = parseAbi([
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
-  "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
   "function approve(address,uint256) returns (bool)",
 ]);
 
-function Sel({ tokens, v, set }: { tokens: Tok[]; v: Tok; set: (t: Tok) => void }) {
+// Live only: created on first use, never in the demo.
+let pubClient: PublicClient | undefined;
+async function livePub() {
+  return (pubClient ??= createPublicClient({ chain: robinhood, transport: http() }) as PublicClient);
+}
+
+function baseTokens(demo: boolean, t?: FireState["tokens"]): Tok[] {
+  if (demo) return (["ETH", "PLANK", "PAPER", "USDG"] as const).map((s, i) => ({ symbol: s, address: (s === "ETH" ? "ETH" : `0x${String(i).repeat(40)}`) as Tok["address"], decimals: 18 }));
+  return [
+    { symbol: "ETH", address: "ETH", decimals: 18 },
+    { symbol: "PLANK", address: (t?.plank as Address) || PLANK_FALLBACK, decimals: 18 },
+    ...(t?.paper ? [{ symbol: "PAPER", address: t.paper as Address, decimals: 18 }] : []),
+    ...(t?.usdg ? [{ symbol: "USDG", address: t.usdg as Address, decimals: t.usdgDecimals }] : []),
+  ];
+}
+
+function Sel({ tokens, v, set, label }: { tokens: Tok[]; v: Tok; set: (t: Tok) => void; label: string }) {
   return (
-    <select value={v.address} onChange={(e) => set(tokens.find((t) => t.address === e.target.value)!)} aria-label="Token">
-      {tokens.map((t) => <option key={t.address} value={t.address}>{t.symbol}</option>)}
+    <select value={v.address} onChange={(e) => set(tokens.find((t) => t.address === e.target.value)!)} aria-label={label}>
+      {tokens.map((t) => <option key={t.address} value={t.address}>{t.symbol}{t.unverified ? " (unverified)" : ""}</option>)}
     </select>
   );
 }
 
-export function Swap() {
-  const [tokens, setTokens] = useState<Tok[]>(BASE);
-  const [from, setFrom] = useState<Tok>(BASE[0]);
-  const [to, setTo] = useState<Tok>(BASE[1]);
+type Quote = { key: string; at: number; out: number; outRaw?: bigint; path?: Address[]; impact: number };
+
+export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
+  const isDemo = !!demo;
+  const [extra, setExtra] = useState<Tok[]>([]);
+  const tokens = [...baseTokens(isDemo, s.tokens), ...extra];
+  const [fromSym, setFromSym] = useState<string>("ETH");
+  const [toSym, setToSym] = useState<string>("PLANK");
+  const from = tokens.find((t) => t.address === fromSym || t.symbol === fromSym) ?? tokens[0];
+  const to = tokens.find((t) => t.address === toSym || t.symbol === toSym) ?? tokens[1];
   const [amt, setAmt] = useState("0.01");
-  const [out, setOut] = useState<string>("");
+  const [q, setQ] = useState<Quote | null>(null);
+  const [loading, setLoading] = useState(false);
   const [custom_, setCustom] = useState("");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState<React.ReactNode>("");
   const [open, setOpen] = useState(false);
-  const pub = createPublicClient({ chain: robinhood, transport: http() });
+  const [slip, setSlip] = useState(0.01);
+  const [impactOk, setImpactOk] = useState(false);
+  const [pendingHash, setPendingHash] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const key = `${from.address}|${to.address}|${amt}`;
+  const seq = useRef(0);
 
-  const path = (a: Tok, b: Tok): Address[] => {
+  // PAPER (or any token) may be paired with WETH, USDG or PLANK, so try every route through up to two of those and
+  // keep the one that gives the most out. Routes that don't exist just fail their quote and drop out.
+  const hub = (t?: string) => t as Address | undefined;
+  const routes = (a: Tok, b: Tok): Address[][] => {
     const A = a.address === "ETH" ? WETH : a.address, B = b.address === "ETH" ? WETH : b.address;
-    return A === WETH || B === WETH ? [A, B] : [A, WETH, B];
+    const hops = [WETH, hub(s.tokens?.usdg), hub(s.tokens?.plank) ?? PLANK_FALLBACK].filter((h): h is Address => !!h && h.toLowerCase() !== A.toLowerCase() && h.toLowerCase() !== B.toLowerCase());
+    const two = hops.flatMap((x) => hops.filter((y) => y !== x).map((y) => [A, x, y, B]));
+    return [[A, B], ...hops.map((h) => [A, h, B]), ...two];
   };
+  async function bestRoute(a: Tok, b: Tok, amountIn: bigint, only?: Address[]): Promise<{ path: Address[]; out: bigint } | undefined> {
+    const pub = await livePub();
+    const quotes = await Promise.all((only ? [only] : routes(a, b)).map(async (path) => {
+      try { const am = await pub.readContract({ address: ROUTER, abi: routerAbi, functionName: "getAmountsOut", args: [amountIn, path] }); return { path, out: am[am.length - 1] }; }
+      catch { return undefined; }
+    }));
+    return quotes.filter((x): x is { path: Address[]; out: bigint } => !!x && x.out > 0n).sort((x, y) => (y.out > x.out ? 1 : y.out < x.out ? -1 : 0))[0];
+  }
 
+  async function getQuote(): Promise<Quote | null> {
+    const n = Number(amt);
+    if (!(n > 0) || from.address === to.address) return null;
+    if (demo) {
+      const r = demo.swapQuote(from.symbol as DemoToken, to.symbol as DemoToken, n);
+      return r ? { key, at: Date.now(), out: r.out, impact: r.impact } : null;
+    }
+    let amountIn: bigint;
+    try { amountIn = parseUnits(amt, from.decimals); } catch { return null; }
+    const best = await bestRoute(from, to, amountIn);
+    if (!best) return null;
+    // price impact: this amount's rate vs a tiny amount's rate on the same route
+    const tiny = amountIn / 1000n > 0n ? amountIn / 1000n : 1n;
+    const spot = await bestRoute(from, to, tiny, best.path);
+    const rate = Number(best.out) / Number(amountIn), spotRate = spot ? Number(spot.out) / Number(tiny) : rate;
+    return { key, at: Date.now(), out: Number(formatUnits(best.out, to.decimals)), outRaw: best.out, path: best.path, impact: spotRate > 0 ? Math.max(0, 1 - rate / spotRate) : 0 };
+  }
+  async function requote() {
+    const id = ++seq.current;
+    setLoading(true);
+    try { const r = await getQuote(); if (id === seq.current) setQ(r); }
+    catch { if (id === seq.current) setQ(null); }
+    finally { if (id === seq.current) setLoading(false); }
+  }
+
+  // Quotes only while the panel is open. Live: never on page load, refreshed every 15s so it can't go stale.
   useEffect(() => {
-    let dead = false;
-    (async () => {
-      try {
-        const n = Number(amt); if (!n || from.address === to.address) { setOut(""); return; }
-        const amounts = await pub.readContract({ address: ROUTER, abi: routerAbi, functionName: "getAmountsOut", args: [parseUnits(amt, from.decimals), path(from, to)] });
-        if (!dead) setOut(formatUnits(amounts[amounts.length - 1], to.decimals));
-      } catch { if (!dead) setOut(""); }
-    })();
-    return () => { dead = true; };
-  }, [amt, from, to]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!open) return;
+    setImpactOk(false);
+    const t0 = setTimeout(requote, 250);
+    const t = setInterval(requote, isDemo ? 5_000 : 15_000);
+    return () => { clearTimeout(t0); clearInterval(t); };
+  }, [open, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!open) return; const t = setInterval(() => setNow(Date.now()), 1_000); return () => clearInterval(t); }, [open]);
+
+  const stale = !q || q.key !== key || now - q.at > STALE_MS;
+  const bigImpact = !!q && q.impact > IMPACT_WARN;
+  const unverified = [from, to].find((t) => t.unverified);
+  const have = (t: Tok) => (t.symbol === "ETH" && !t.unverified ? s.you.eth : t.symbol === "PLANK" && !t.unverified ? s.you.plank : t.symbol === "PAPER" && !t.unverified ? s.you.paper : t.symbol === "USDG" && !t.unverified ? s.you.usdg : undefined);
 
   async function addCustom() {
     if (!isAddress(custom_)) { setMsg("That's not a token address."); return; }
     try {
+      const pub = await livePub();
       const [sym, dec] = await Promise.all([
         pub.readContract({ address: custom_, abi: erc20, functionName: "symbol" }),
         pub.readContract({ address: custom_, abi: erc20, functionName: "decimals" }),
       ]);
-      const t: Tok = { symbol: sym, address: custom_, decimals: Number(dec) };
-      setTokens((ts) => ts.some((x) => x.address === t.address) ? ts : [...ts, t]);
-      setTo(t); setCustom(""); setMsg("");
+      if (tokens.some((x) => x.address !== "ETH" && x.address.toLowerCase() === custom_.toLowerCase())) { setMsg("Already in the list."); return; }
+      // anyone can deploy a token called PLANK: a pasted token may never pass as one of ours
+      if (["ETH", "WETH", "PLANK", "PAPER", "USDG"].includes(String(sym).trim().toUpperCase())) { setMsg(`That token calls itself ${sym}, but it isn't the real one. Not added.`); return; }
+      const t: Tok = { symbol: String(sym).slice(0, 12), address: custom_, decimals: Number(dec), unverified: true };
+      setExtra((ts) => [...ts, t]);
+      setToSym(t.address); setCustom(""); setMsg("");
     } catch { setMsg("Couldn't read that token. Is it an ERC-20 on Robinhood Chain?"); }
   }
 
   async function swap() {
+    if (!q || stale) return;
+    if (bigImpact && !impactOk) { setImpactOk(true); return; } // first press shows the warning; the second one swaps
     setBusy(true); setMsg("");
+    const seen = q;
     try {
-      if (!window.ethereum) throw new Error("No wallet found. Install MetaMask.");
-      const wc = createWalletClient({ chain: robinhood, transport: custom(window.ethereum) });
-      const [acct] = await wc.requestAddresses();
-      try { await wc.switchChain({ id: robinhood.id }); } catch { await wc.addChain({ chain: robinhood }); }
-      const amountIn = parseUnits(amt, from.decimals);
-      const p = path(from, to);
-      const amounts = await pub.readContract({ address: ROUTER, abi: routerAbi, functionName: "getAmountsOut", args: [amountIn, p] });
-      const minOut = (amounts[amounts.length - 1] * 97n) / 100n; // 3% slippage
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
-      let hash: `0x${string}`;
-      if (from.address === "ETH") {
-        hash = await wc.writeContract({ address: ROUTER, abi: routerAbi, functionName: "swapExactETHForTokensSupportingFeeOnTransferTokens", args: [minOut, p, acct, deadline], value: amountIn, account: acct, chain: robinhood });
+      if (demo) {
+        const got = await demo.swap(from.symbol as DemoToken, to.symbol as DemoToken, Number(amt), seen.out * (1 - slip));
+        setMsg(`Swapped (play money). You got ${fmtAmt(got)} ${to.symbol}.`);
       } else {
-        const allowance = await pub.readContract({ address: from.address, abi: erc20, functionName: "allowance", args: [acct, ROUTER] });
-        if (allowance < amountIn) { const h = await wc.writeContract({ address: from.address, abi: erc20, functionName: "approve", args: [ROUTER, amountIn], account: acct, chain: robinhood }); await pub.waitForTransactionReceipt({ hash: h }); }
-        const fn = to.address === "ETH" ? "swapExactTokensForETHSupportingFeeOnTransferTokens" : "swapExactTokensForTokensSupportingFeeOnTransferTokens";
-        hash = await wc.writeContract({ address: ROUTER, abi: routerAbi, functionName: fn, args: [amountIn, minOut, p, acct, deadline], account: acct, chain: robinhood });
+        const { wc, account: acct } = await connectWallet();
+        const pub = await livePub();
+        const amountIn = parseUnits(amt, from.decimals);
+        // minOut comes from the quote you saw; if the market has already moved past your slippage, stop here.
+        const slipBps = BigInt(Math.round(slip * 10_000));
+        const minOut = (seen.outRaw! * (10_000n - slipBps)) / 10_000n;
+        const fresh = await bestRoute(from, to, amountIn, seen.path);
+        if (!fresh || fresh.out < minOut) throw new Error(`The price moved more than your ${slip * 100}% slippage. Check the new quote.`);
+        const p = seen.path!;
+        const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
+        let hash: `0x${string}`;
+        if (from.address === "ETH") {
+          hash = await wc.writeContract({ address: ROUTER, abi: routerAbi, functionName: "swapExactETHForTokensSupportingFeeOnTransferTokens", args: [minOut, p, acct, deadline], value: amountIn, account: acct, chain: robinhood });
+        } else {
+          const allowance = await pub.readContract({ address: from.address, abi: erc20, functionName: "allowance", args: [acct, ROUTER] });
+          if (allowance < amountIn) {
+            const h = await wc.writeContract({ address: from.address, abi: erc20, functionName: "approve", args: [ROUTER, amountIn], account: acct, chain: robinhood });
+            await waitOk(pub, h, `approving ${from.symbol}`);
+          }
+          const fn = to.address === "ETH" ? "swapExactTokensForETHSupportingFeeOnTransferTokens" : "swapExactTokensForTokensSupportingFeeOnTransferTokens";
+          hash = await wc.writeContract({ address: ROUTER, abi: routerAbi, functionName: fn, args: [amountIn, minOut, p, acct, deadline], account: acct, chain: robinhood });
+        }
+        await waitOk(pub, hash, "the swap");
+        setMsg(<>Swapped. <a href={txUrl(hash)} target="_blank" rel="noreferrer">View on explorer</a></>);
       }
-      await pub.waitForTransactionReceipt({ hash });
-      setMsg(`Swapped. ${hash.slice(0, 10)}…`);
-    } catch (e) { setMsg((e as Error).message.split("\n")[0].slice(0, 160)); }
-    finally { setBusy(false); }
+      setImpactOk(false);
+      void requote();
+    } catch (e) {
+      if (!demo) {
+        if (e instanceof TxPending) {
+          setPendingHash(e.hash);
+          setMsg(<>Still pending. <a href={txUrl(e.hash)} target="_blank" rel="noreferrer">Check it on the explorer</a>.</>);
+          void e.later.then((ok) => { setPendingHash(""); setMsg(ok ? "Your swap landed." : "Your swap failed on-chain. Nothing was swapped."); });
+        } else setMsg(friendly(e));
+      } else setMsg((e as Error).message);
+    } finally { setBusy(false); }
   }
 
+  const fromHave = have(from);
+  const short = fromHave !== undefined && !!s.you.address && Number(amt) > fromHave;
   return (
     <div className={"swap" + (open ? " open" : "")}>
-      <button className="swap-toggle" onClick={() => setOpen(!open)}>
-        <span>Need PLANK? <b>Swap</b> ETH or any token for it</span><small>{open ? "close" : "open"}</small>
+      <button className="swap-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span>Need PLANK or PAPER? <b>Swap for it</b>{isDemo ? " (play money)" : ""}</span><small>{open ? "close" : "open"}</small>
       </button>
       {open && (
         <div className="swap-body">
-          <div className="swap-row"><span>Pay</span><input type="number" min="0" step="any" value={amt} onChange={(e) => setAmt(e.target.value)} aria-label="Amount" /><Sel tokens={tokens} v={from} set={setFrom} /></div>
-          <div className="swap-row"><span>Get</span><input readOnly value={out ? Number(out).toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"} aria-label="You get" /><Sel tokens={tokens} v={to} set={setTo} /></div>
-          <div className="swap-actions">
-            <button className="flip" onClick={() => { const f = from; setFrom(to); setTo(f); }} aria-label="Flip">⇅</button>
-            <button className="cta" disabled={busy || !out} onClick={swap}>{busy ? "Swapping…" : `Swap ${from.symbol} → ${to.symbol}`}</button>
+          <div className="swap-row"><span>Pay</span><input type="number" min="0" step="any" value={amt} onChange={(e) => setAmt(e.target.value)} aria-label="Amount" /><Sel tokens={tokens} v={from} set={(t) => setFromSym(t.address)} label="Pay with token" /></div>
+          {fromHave !== undefined && s.you.address && <p className="fine swap-have">You have {fmtAmt(fromHave)} {from.symbol} <button className="linkish" onClick={() => setAmt(String(from.symbol === "ETH" ? Math.max(0, fromHave - 0.0005) : fromHave))}>use all</button></p>}
+          <div className="swap-row"><span>Get</span><input readOnly value={loading && !q ? "…" : q && q.key === key ? fmtAmt(q.out) : "—"} aria-label="You get" /><Sel tokens={tokens} v={to} set={(t) => setToSym(t.address)} label="Get token" /></div>
+          {q && q.key === key && (
+            <p className={"fine" + (bigImpact ? " warn" : "")}>Price impact {q.impact < 0.001 ? "<0.1" : (q.impact * 100).toFixed(1)}%{bigImpact ? " — high. You'd get noticeably less than the market price." : ""}</p>
+          )}
+          {!loading && !q && Number(amt) > 0 && from.address !== to.address && <p className="fine">No pool trades {from.symbol} for {to.symbol} yet.</p>}
+          {unverified && <p className="fine warn">⚠ Unverified token: {unverified.address}. Anyone can make a token with any name. Check this address before you swap.</p>}
+          <div className="swap-slip" role="radiogroup" aria-label="Max slippage">
+            <span>Max slippage</span>
+            {[0.005, 0.01, 0.03].map((v) => <button key={v} role="radio" aria-checked={slip === v} className={slip === v ? "on" : ""} onClick={() => setSlip(v)}>{v * 100}%</button>)}
           </div>
-          <div className="swap-custom"><input placeholder="Other token address (0x…)" value={custom_} onChange={(e) => setCustom(e.target.value)} /><button onClick={addCustom}>Add</button></div>
-          {msg && <p className="fine">{msg}</p>}
-          <p className="fine muted">Uniswap V2 on Robinhood Chain · 3% max slippage · routes through WETH.</p>
+          <div className="swap-actions">
+            <button className="flip" onClick={() => { const f = from.address; setFromSym(to.address); setToSym(f); }} aria-label="Flip">⇅</button>
+            <button className={"cta" + (bigImpact && impactOk ? " danger" : "")} disabled={busy || loading || stale || short || !!pendingHash} onClick={swap}>
+              {busy ? "Swapping…" : short ? `Not enough ${from.symbol}` : loading && stale ? "Getting a price…" : stale ? "Swap" : bigImpact && impactOk ? `Swap anyway (${(q!.impact * 100).toFixed(1)}% impact)` : `Swap ${from.symbol} → ${to.symbol}`}
+            </button>
+          </div>
+          {q && q.key === key && !stale && <p className="fine muted">You get at least {fmtAmt(q.out * (1 - slip))} {to.symbol}{isDemo && to.symbol === "PLANK" ? ` (${fmtUsd(q.out * s.plankUsd)})` : ""}, or it doesn't go through.</p>}
+          {!isDemo && <div className="swap-custom"><input placeholder="Other token address (0x…)" value={custom_} onChange={(e) => setCustom(e.target.value)} /><button onClick={addCustom}>Add</button></div>}
+          {msg && <p className="fine">{msg}{pendingHash && <> <button className="linkish" onClick={() => { setPendingHash(""); setMsg(""); }}>Dismiss</button></>}</p>}
+          <p className="fine muted">{isDemo ? "Demo swap: pretend pools, play money. " : "Uniswap V2 on Robinhood Chain. "}Routes through WETH, USDG or PLANK, whichever gives the most.</p>
         </div>
       )}
     </div>
