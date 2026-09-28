@@ -64,9 +64,10 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ helpers
+    /// Buys exactly n tickets, in 9s (a full buy of 10 would give 11).
     function _buy(address who, uint256 n) internal {
         while (n > 0) {
-            uint256 k = n > 10 ? 10 : n;
+            uint256 k = n > 9 ? 9 : n;
             vm.prank(who);
             fire.buyTickets(k, "gm");
             n -= k;
@@ -74,7 +75,7 @@ contract FireTest is Test {
     }
     function _buyEth(address who, uint256 n) internal {
         while (n > 0) {
-            uint256 k = n > 10 ? 10 : n;
+            uint256 k = n > 9 ? 9 : n;
             (, , uint256 c) = fire.quote(k);
             vm.prank(who);
             fire.buyTicketsWithEth{value: c}(k, "");
@@ -91,22 +92,59 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ pricing
-    function test_quote_bundles() public view {
+    function test_quote_is_full_price_and_10_buys_11() public view {
         (uint256 p1,, ) = fire.quote(1);
         (uint256 p5,,) = fire.quote(5);
         (uint256 p10,,) = fire.quote(10);
         assertEq(p1, 1e18);
         assertEq(p5, 5e18);
-        assertEq(p10, 9.7e18);
+        assertEq(p10, 10e18, "no discount on the price");
+        assertEq(fire.ticketsFor(9), 9);
+        assertEq(fire.ticketsFor(10), 11, "buy 10, get 1 free");
+    }
+
+    function test_buy_10_get_11_tickets() public {
+        uint256 deadPaper = paper.balanceOf(DEAD);
+        uint256 id = fire.fireId();
+        vm.expectEmit(true, true, false, true);
+        emit Fire.TicketsBought(id, alice, 11, false, "ten");
+        vm.prank(alice);
+        fire.buyTickets(10, "ten");
+        assertEq(paper.balanceOf(DEAD) - deadPaper, 10e18, "pays for 10");
+        assertEq(fire.pot(), 10 * PLANK_T / 2, "10 tickets' PLANK: the free one adds none");
+        (uint256 mine, uint256 total) = fire.odds(alice);
+        assertEq(mine, 11, "holds 11");
+        assertEq(total, 11);
+        assertEq(fire.fireSize(), 11);
+        assertEq(fire.remainingToday(alice), 489, "all 11 count toward the daily cap");
+    }
+
+    function test_free_ticket_needs_room_under_the_daily_cap() public {
+        _buy(alice, 490);
+        vm.prank(alice);
+        vm.expectRevert(Fire.DailyCap.selector);
+        fire.buyTickets(10, ""); // would be 501
+        vm.prank(alice);
+        fire.buyTickets(9, ""); // 499 is fine
+        assertEq(fire.remainingToday(alice), 1);
+    }
+
+    function test_eth_and_usdg_buys_of_10_also_get_11() public {
+        (, , uint256 c) = fire.quote(10);
+        vm.prank(bob); fire.buyTicketsWithEth{value: c}(10, "");
+        vm.startPrank(carol); usdg.mint(carol, 10e6); usdg.approve(address(fire), type(uint256).max); fire.buyTicketsWithUsdg(10, ""); vm.stopPrank();
+        (uint256 b,) = fire.odds(bob); (uint256 k,) = fire.odds(carol);
+        assertEq(b, 11); assertEq(k, 11);
+        assertEq(fire.millFundUsdg(), 10e6, "10 dollars for 11 tickets");
     }
 
     function test_buy_burns_paper_splits_plank() public {
         uint256 deadPaper = paper.balanceOf(DEAD);
         uint256 deadPlank = plank.balanceOf(DEAD);
         _buy(alice, 10);
-        assertEq(paper.balanceOf(DEAD) - deadPaper, 9.7e18, "paper 100% burned");
-        assertEq(plank.balanceOf(DEAD) - deadPlank, 97 * PLANK_T / 20, "half plank burned");
-        assertEq(fire.pot(), 97 * PLANK_T / 20, "half plank to pot");
+        assertEq(paper.balanceOf(DEAD) - deadPaper, 10e18, "paper 100% burned");
+        assertEq(plank.balanceOf(DEAD) - deadPlank, 10 * PLANK_T / 2, "half plank burned");
+        assertEq(fire.pot(), 10 * PLANK_T / 2, "half plank to pot");
         (uint256 mine, uint256 total) = fire.odds(alice);
         assertEq(mine, 10);
         assertEq(total, 10);
@@ -115,12 +153,12 @@ contract FireTest is Test {
 
     function test_buy_with_eth_feeds_mill_fund() public {
         (, , uint256 ethCost) = fire.quote(10);
-        assertApproxEqRel(ethCost, 9.7 * 0.0003 ether, 1e15, "$1 each at $3333/ETH, 3% off");
+        assertApproxEqRel(ethCost, 10 * 0.0003 ether, 1e15, "$1 each at $3333/ETH");
         vm.prank(bob);
         fire.buyTicketsWithEth{value: ethCost}(10, "outsider");
         assertEq(fire.millFund(), ethCost);
         (uint256 mine,) = fire.odds(bob);
-        assertEq(mine, 10);
+        assertEq(mine, 11, "10 bought + 1 free");
         assertEq(paper.balanceOf(DEAD), 0, "no paper involved");
     }
 
@@ -323,7 +361,7 @@ contract FireTest is Test {
     function test_money_arriving_later_does_not_find_a_high_bid() public {
         vm.warp(block.timestamp + 30 days); // a month with an empty fund
         vm.startPrank(bob); usdg.mint(bob, 1_000e6); usdg.approve(address(fire), type(uint256).max);
-        for (uint256 i; i < 50; i++) fire.buyTicketsWithUsdg(10, ""); // $485 arrives
+        for (uint256 i; i < 45; i++) fire.buyTicketsWithUsdg(10, ""); // $450 arrives (495 tickets)
         vm.stopPrank();
         assertEq(fire.millBid(), MILL_BID, "starts climbing from the base only now");
         vm.warp(block.timestamp + 1 days);
@@ -381,11 +419,11 @@ contract FireTest is Test {
         usdg.mint(bob, 100e6); usdg.approve(address(fire), type(uint256).max);
         fire.buyTicketsWithUsdg(10, "dollars");
         vm.stopPrank();
-        assertEq(fire.usdgCost(10), 9.7e6, "$1 each, 3% off a full 10");
-        assertEq(fire.millFundUsdg(), 9.7e6);
-        assertEq(fire.pot(), 97 * PLANK_T / 20, "PLANK leg as usual");
+        assertEq(fire.usdgCost(10), 10e6, "$1 each");
+        assertEq(fire.millFundUsdg(), 10e6);
+        assertEq(fire.pot(), 10 * PLANK_T / 2, "PLANK leg as usual");
         (uint256 mine,) = fire.odds(bob);
-        assertEq(mine, 10);
+        assertEq(mine, 11, "10 bought + 1 free");
     }
 
     function test_usdg_listing_paid_from_usdg_fund() public {
@@ -694,8 +732,8 @@ contract FireTest is Test {
         vm.expectRevert(Fire.StaleFeed.selector);
         fire.ethPerTicket();
         (uint256 p, uint256 k, uint256 e) = fire.quote(10);
-        assertEq(p, 9.7e18);
-        assertEq(k, PLANK_T * 97 / 10);
+        assertEq(p, 10e18);
+        assertEq(k, PLANK_T * 10);
         assertEq(e, 0, "eth leg unquoted while stale");
         _buy(alice, 10); // PAPER path unaffected
         vm.prank(bob);

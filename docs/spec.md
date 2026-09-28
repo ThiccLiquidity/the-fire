@@ -17,7 +17,7 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 ### Tickets
 - **1 ticket = 1 PAPER + 10,000,000 PLANK** (**fixed**, in tokens, never repriced). ~$0.94 of PLANK today; PAPER's fair value is ~$0.20–0.40, so the two legs start close. If prices drift, the ticket leans toward whichever token got expensive, which is self-correcting: whoever's short on the pricey leg has to buy it.
 - **No PAPER? Buy it from the fire with ETH.** Same ticket, the PAPER leg replaced by *set at launch* **~$1.00 in ETH** (fixed ETH amount, no oracle). Priced deliberately 3–5× above where PAPER should trade so it's a convenience for outsiders, not a replacement for buying real PAPER. This is not a token — it's just a second checkout path. Optional later: ratchet ±5%/fire based on how much it sells.
-- **Per buy: up to 10 tickets. Per wallet per day: 500.** A full 10 is 3% off; that's the only discount, so a whale's built-in edge is 3%. The 500 cap forces big buyers to spread over days, which is what makes rallies and streaks a community thing.
+- **Per buy: up to 10 tickets. Per wallet per day: 500.** **Buy 10, get 1 free**: a full buy of 10 pays for 10 and gets 11 tickets (~9% off). That's the only discount. The free ticket counts toward the 500/day cap and adds no PLANK to the pot. The 500 cap forces big buyers to spread over days, which is what makes rallies and streaks a community thing.
 - **Priced in dollars, not tokens.** The PAPER leg is 1 PAPER. The ETH leg ("paper from the fire") is $1.00 of ETH via a price feed. The PLANK leg targets $0.90 of PLANK and ratchets at most 5% per night toward that target, so a pump or dump moves it over days, not minutes — a thin pool can't be gamed inside a night.
 - **Every ticket counts until the fire goes out.** No expiry, no decay. Buy on night 1 or night 19, same ticket.
 - **Pyro mode:** throw PLANK with no ticket. 50% burns, 50% to the pot. Labeled loudly as "you get nothing for this." It's a joke and a burn, not a strategy.
@@ -101,7 +101,7 @@ Things worth knowing:
 |---|---|
 | Ticket | 1 PAPER + $0.90 of PLANK (PLANK leg ratchets ≤5%/night toward target) |
 | ETH paper | $1.00 of ETH per ticket, via ETH/USD feed (reverts if stale >1h) |
-| Per buy / per day | 10 / 500 tickets; a full 10 is 3% off |
+| Per buy / per day | 10 / 500 tickets; buy 10, get 1 free |
 | PLANK split | 50% burn / 50% pot |
 | Payout | 40% winner / 25% burn / 5% mill holders' pool / 30% relight |
 | Storm time | 8:00 PM America/Phoenix, nightly |

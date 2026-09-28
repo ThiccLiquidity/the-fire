@@ -75,7 +75,8 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public constant BID_RESTART_BPS = 9_000; // after a buy the bid restarts at 90% of the price paid
     uint256 public constant BID_MAX_MULT = 3; // and never climbs past 3x its restart point
     uint256 public constant DAILY_CAP = 500; // tickets per wallet per day
-    uint256 public constant TX_CAP = 10; // tickets per transaction
+    uint256 public constant TX_CAP = 10; // tickets paid for per transaction
+    uint256 public constant FREE_WITH_FULL_BUY = 1; // buy 10, get 1 free
     uint256 public constant PLANK_RATCHET_BPS = 500; // PLANK leg moves at most 5% per night toward target
     uint256 public constant REROLL_AFTER = 30 minutes; // a roll normally resolves in ~10s
     /// @dev Chainlink ETH/USD updates on price deviation plus a 24h heartbeat; on Robinhood Chain gaps of 3-6h are
@@ -137,7 +138,8 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     uint256 public pendingSince; // when it was requested
 
     // ---------------------------------------------------------------- events
-    /// @param paperFromFire true when the PAPER leg was paid in ETH or USDG ("buy paper from the fire")
+    /// @param tickets tickets received, including the free one on a full buy of 10
+    /// @param paperFromFire true when the PAPER part was paid $1 a ticket in ETH or USDG
     event TicketsBought(uint256 indexed fireId, address indexed buyer, uint256 tickets, bool paperFromFire, string note);
     event RollRequested(uint256 indexed fireId, uint256 night, uint256 requestId);
     event Rerolled(uint256 indexed fireId, uint256 night, uint256 oldRequestId, uint256 newRequestId);
@@ -211,9 +213,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     // ---------------------------------------------------------------- pricing
-    /// @notice Bundle discount in bps of full price: a full 10 -> 97%, else 100%.
-    function priceBps(uint256 n) public pure returns (uint256) {
-        return n >= TX_CAP ? 9_700 : BPS;
+    /// @notice Buy 10, get 1 free: a full buy of TX_CAP pays for TX_CAP tickets and gets TX_CAP + 1. That's the only
+    ///         discount. The free ticket counts like any other (odds, fire size, the daily cap) but adds no PLANK.
+    function ticketsFor(uint256 n) public pure returns (uint256) {
+        return n == TX_CAP ? n + FREE_WITH_FULL_BUY : n;
     }
 
     /// @notice ETH per ticket right now, from the ETH/USD feed. Reverts if the feed has missed its heartbeat.
@@ -237,13 +240,12 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     }
 
     function _legs(uint256 n) internal view returns (uint256 paperCost, uint256 plankCost) {
-        uint256 bps = priceBps(n);
-        paperCost = n * paperPerTicket * bps / BPS;
-        plankCost = n * plankPerTicket * bps / BPS;
+        paperCost = n * paperPerTicket;
+        plankCost = n * plankPerTicket;
     }
 
     function _ethCost(uint256 n) internal view returns (uint256) {
-        return n * ethPerTicket() * priceBps(n) / BPS;
+        return n * ethPerTicket();
     }
 
     /// @notice Tickets this wallet can still buy today.
@@ -261,8 +263,8 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         (uint256 paperCost, uint256 plankCost) = _legs(n);
         PAPER.safeTransferFrom(msg.sender, DEAD, paperCost);
         _takePlank(msg.sender, plankCost);
-        _addTickets(msg.sender, n);
-        emit TicketsBought(fireId, msg.sender, n, false, note);
+        uint256 got = _addTickets(msg.sender, n);
+        emit TicketsBought(fireId, msg.sender, got, false, note);
     }
 
     /// @notice No PAPER? Buy it from the fire with ETH. The ETH feeds the mill fund. Send a little over the
@@ -274,8 +276,8 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         uint256 ethCost = _ethCost(n); // reverts StaleFeed if the ETH/USD feed is stale
         if (msg.value < ethCost) revert BadAmount();
         _takePlank(msg.sender, plankCost);
-        _addTickets(msg.sender, n);
-        emit TicketsBought(fireId, msg.sender, n, true, note);
+        uint256 got = _addTickets(msg.sender, n);
+        emit TicketsBought(fireId, msg.sender, got, true, note);
         if (msg.value > ethCost) {
             (bool ok,) = msg.sender.call{value: msg.value - ethCost}("");
             if (!ok) revert BadAmount();
@@ -292,14 +294,14 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         (, uint256 plankCost) = _legs(n);
         USDG.safeTransferFrom(msg.sender, address(this), usdgCost(n));
         _takePlank(msg.sender, plankCost);
-        _addTickets(msg.sender, n);
-        emit TicketsBought(fireId, msg.sender, n, true, note);
+        uint256 got = _addTickets(msg.sender, n);
+        emit TicketsBought(fireId, msg.sender, got, true, note);
         _pokeMillBid();
     }
 
     /// @notice USDG for the PAPER leg of n tickets ("paper from the fire", paid in USDG).
     function usdgCost(uint256 n) public view returns (uint256) {
-        return n * ETH_USD_PER_TICKET * USDG_UNIT / 1e8 * priceBps(n) / BPS;
+        return n * ETH_USD_PER_TICKET * USDG_UNIT / 1e8;
     }
 
     function _takePlank(address from, uint256 amount) internal {
@@ -309,14 +311,16 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         pot += amount - burn;
     }
 
-    function _addTickets(address buyer, uint256 n) internal {
+    /// @dev n = tickets paid for; returns tickets received (n, or n + 1 for a full buy of 10).
+    function _addTickets(address buyer, uint256 n) internal returns (uint256 got) {
         if (n > TX_CAP) revert TxCap();
-        if (boughtOnDay[dayIndex][buyer] + n > DAILY_CAP) revert DailyCap();
-        boughtOnDay[dayIndex][buyer] += n;
-        ticketsTotal += n;
-        ticketsToday += n;
-        fireSize += n;
-        ticketsOf[fireId][buyer] += n;
+        got = ticketsFor(n);
+        if (boughtOnDay[dayIndex][buyer] + got > DAILY_CAP) revert DailyCap();
+        boughtOnDay[dayIndex][buyer] += got;
+        ticketsTotal += got;
+        ticketsToday += got;
+        fireSize += got;
+        ticketsOf[fireId][buyer] += got;
         _entries[fireId].push(Entry({buyer: buyer, cumEnd: uint128(ticketsTotal)}));
     }
 

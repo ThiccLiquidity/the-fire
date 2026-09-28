@@ -4,7 +4,7 @@ The Fire — full economy simulation (v3 rules).
 Everything on the site and in the contract, day by day, per wallet, vectorized:
 
   Mills → PAPER emission (1/mill/day) → wallets accumulate PAPER (claimed), sell some, buy tickets
-  Ticket = 1 PAPER + $0.90 PLANK (or $1.00 ETH + $0.90 PLANK for outsiders); max 10/tx, 500/wallet/day; 3% off a full 10
+  Ticket = 1 PAPER + $0.90 PLANK (or $1.00 ETH + $0.90 PLANK for outsiders); max 10/tx, 500/wallet/day; buy 10, get 1 free
   PAPER burned 100%; PLANK 50% burned / 50% pot; ETH 100% → mill fund
   Fire size += tickets; each night: storm = trail7 × ((n-1)/8)^1.5 × lognormal(0,0.9); size -= storm; ×0.6 overnight
   Night 1 no storm; night 24 infinite. Dead → one ticket wins 40%, 25% burned, 5% to the royalty pool, 30% carried.
@@ -104,11 +104,12 @@ def run(sc: Scenario) -> dict:
         # PLANK leg: assume holders buy the PLANK they need (it's $0.90/ticket) — no PLANK balance constraint
         tix = np.floor(want)
         capped = tix > DAY_CAP; T["cap_hits"] += capped.sum(); tix = np.minimum(tix, DAY_CAP)
-        # per-tx cap only affects discount: full 10s get 3% off the PAPER+PLANK legs
+        # buy 10, get 1 free: every full 10 paid for brings a free 11th ticket (no PAPER or PLANK for it)
         full_tens = np.floor(tix / TX_CAP); rest = tix - full_tens * TX_CAP
-        paper_cost = (full_tens * TX_CAP * 0.97 + rest) * ppt
-        plank_cost_usd = (full_tens * TX_CAP * 0.97 + rest) * PLANK_LEG_USD
+        paper_cost = tix * ppt
+        plank_cost_usd = tix * PLANK_LEG_USD
         T["tx_count"] += (full_tens + (rest > 0)).sum()
+        tix = tix + full_tens  # tickets received
         paper -= paper_cost; T["paper_burned"] += paper_cost.sum()
         plank_in = plank_cost_usd.sum() / PLANK_USD
         # --- outsiders
@@ -116,8 +117,8 @@ def run(sc: Scenario) -> dict:
         out_t = 0.0
         for _ in range(n_out):
             k = int(rng.choice([1, 1, 5, 10, 10, 10]))
-            eth_usd = k * ETH_LEG_USD * (0.97 if k >= 10 else 1); eth_fund += eth_usd; T["eth_in"] += eth_usd
-            plank_in += k * PLANK_LEG_USD * (0.97 if k >= 10 else 1) / PLANK_USD; out_t += k
+            eth_usd = k * ETH_LEG_USD; eth_fund += eth_usd; T["eth_in"] += eth_usd
+            plank_in += k * PLANK_LEG_USD / PLANK_USD; out_t += k + (1 if k >= 10 else 0)
         T["outsider_tickets"] += out_t; T["holder_tickets"] += tix.sum()
         # --- PLANK split
         T["plank_in"] += plank_in; pot_plank += plank_in * 0.5; T["plank_burned"] += plank_in * 0.5
@@ -126,7 +127,7 @@ def run(sc: Scenario) -> dict:
         # --- fire
         today = tix.sum() + out_t
         fire_size += today; tickets_in_fire += today; fire_ticket_owner += tix; outsider_tickets_fire += out_t
-        tickets_bought += tix; spent_usd += tix * (ppt * sc.paper_usd + PLANK_LEG_USD)
+        tickets_bought += tix; spent_usd += paper_cost * sc.paper_usd + plank_cost_usd  # paid tickets only
         trail.append(today); trail = trail[-7:]; ref = float(np.mean(trail))
         # --- mill fund eats mills
         if not bought_since_roll: mill_bid *= 1.05
