@@ -10,11 +10,12 @@ export const ROUTER: Address = "0x89e5DB8B5aA49aA85AC63f691524311AEB649eba";
 export const WETH: Address = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 const PAPER = (import.meta.env.VITE_PAPER_ADDRESS as Address | undefined) || undefined;
 const USDG = (import.meta.env.VITE_USDG_ADDRESS as Address | undefined) || undefined;
+const PLANK: Address = "0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc";
 
 type Tok = { symbol: string; address: Address | "ETH"; decimals: number };
 const BASE: Tok[] = [
   { symbol: "ETH", address: "ETH", decimals: 18 },
-  { symbol: "PLANK", address: "0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc", decimals: 18 },
+  { symbol: "PLANK", address: PLANK, decimals: 18 },
   ...(PAPER ? [{ symbol: "PAPER", address: PAPER, decimals: 18 } as Tok] : []),
   ...(USDG ? [{ symbol: "USDG", address: USDG, decimals: 6 } as Tok] : []),
 ];
@@ -53,18 +54,29 @@ export function Swap() {
   const [open, setOpen] = useState(false);
   const pub = createPublicClient({ chain: robinhood, transport: http() });
 
-  const path = (a: Tok, b: Tok): Address[] => {
+  // PAPER (or any token) may be paired with WETH, USDG or PLANK, so try every route through up to two of those and
+  // keep the one that gives the most out. Routes that don't exist just fail their quote and drop out.
+  const routes = (a: Tok, b: Tok): Address[][] => {
     const A = a.address === "ETH" ? WETH : a.address, B = b.address === "ETH" ? WETH : b.address;
-    return A === WETH || B === WETH ? [A, B] : [A, WETH, B];
+    const hops = [WETH, USDG, PLANK].filter((h): h is Address => !!h && h.toLowerCase() !== A.toLowerCase() && h.toLowerCase() !== B.toLowerCase());
+    const two = hops.flatMap((x) => hops.filter((y) => y !== x).map((y) => [A, x, y, B]));
+    return [[A, B], ...hops.map((h) => [A, h, B]), ...two];
   };
+  async function bestRoute(a: Tok, b: Tok, amountIn: bigint): Promise<{ path: Address[]; out: bigint } | undefined> {
+    const quotes = await Promise.all(routes(a, b).map(async (path) => {
+      try { const am = await pub.readContract({ address: ROUTER, abi: routerAbi, functionName: "getAmountsOut", args: [amountIn, path] }); return { path, out: am[am.length - 1] }; }
+      catch { return undefined; }
+    }));
+    return quotes.filter((q): q is { path: Address[]; out: bigint } => !!q && q.out > 0n).sort((x, y) => (y.out > x.out ? 1 : y.out < x.out ? -1 : 0))[0];
+  }
 
   useEffect(() => {
     let dead = false;
     (async () => {
       try {
         const n = Number(amt); if (!n || from.address === to.address) { setOut(""); return; }
-        const amounts = await pub.readContract({ address: ROUTER, abi: routerAbi, functionName: "getAmountsOut", args: [parseUnits(amt, from.decimals), path(from, to)] });
-        if (!dead) setOut(formatUnits(amounts[amounts.length - 1], to.decimals));
+        const best = await bestRoute(from, to, parseUnits(amt, from.decimals));
+        if (!dead) setOut(best ? formatUnits(best.out, to.decimals) : "");
       } catch { if (!dead) setOut(""); }
     })();
     return () => { dead = true; };
@@ -91,9 +103,10 @@ export function Swap() {
       const [acct] = await wc.requestAddresses();
       try { await wc.switchChain({ id: robinhood.id }); } catch { await wc.addChain({ chain: robinhood }); }
       const amountIn = parseUnits(amt, from.decimals);
-      const p = path(from, to);
-      const amounts = await pub.readContract({ address: ROUTER, abi: routerAbi, functionName: "getAmountsOut", args: [amountIn, p] });
-      const minOut = (amounts[amounts.length - 1] * 97n) / 100n; // 3% slippage
+      const best = await bestRoute(from, to, amountIn);
+      if (!best) throw new Error(`No pool trades ${from.symbol} for ${to.symbol} yet.`);
+      const p = best.path;
+      const minOut = (best.out * 97n) / 100n; // 3% slippage
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
       let hash: `0x${string}`;
       if (from.address === "ETH") {
