@@ -337,7 +337,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
       const maxPaper = N * raw.paperPerTicket, maxPlank = N * raw.plankPerTicket;
       const [paperCost, plankCost, ethCost] = (await pub.readContract({ address: fireAddress, abi, functionName: "quote", args: [N] })) as [bigint, bigint, bigint];
       if (plankCost > maxPlank || (pay === "paper" && paperCost > maxPaper)) throw new Error(PRICE_MOVED);
-      if (pay === "eth" && ethCost > (N * raw.ethPerTicket * 101n) / 100n) throw new Error("The ETH price moved. Check the new price and try again.");
+      if (pay === "eth" && ethCost > N * raw.ethPerTicket) throw new Error("The ETH price just changed. Check the new price and try again.");
       await ensureAllowance(wc, acct, check, plankAddr!, maxPlank, "PLANK");
       if (pay === "usdg") {
         const cost = (await pub.readContract({ address: fireAddress, abi, functionName: "usdgCost", args: [N] })) as bigint;
@@ -345,8 +345,9 @@ export function makeChainApi(fireAddress: Address): FireApi {
         await send(wc, acct, check, "buyTicketsWithUsdg", [N, maxPlank, note], "the buy");
       } else if (pay === "eth") {
         if (raw.ethPerTicket === 0n) throw new Error("ETH is paused (price feed late). Pay with PAPER or USDG.");
-        // msg.value is the most ETH this buy can take: the price shown plus 1% in case the feed ticks; the fire refunds the rest.
-        await send(wc, acct, check, "buyTicketsWithEth", [N, maxPlank, note], "the buy", (N * raw.ethPerTicket * 101n) / 100n);
+        // Send exactly the ETH the buyer was shown, so the wallet shows the same amount. The price was re-checked just
+        // above; if the feed ticks in the seconds before the tx lands, the buy reverts and nothing is spent but gas.
+        await send(wc, acct, check, "buyTicketsWithEth", [N, maxPlank, note], "the buy", N * raw.ethPerTicket);
       } else {
         await ensureAllowance(wc, acct, check, paperAddr!, maxPaper, "PAPER");
         await send(wc, acct, check, "buyTickets", [N, maxPaper, maxPlank, note], "the buy");

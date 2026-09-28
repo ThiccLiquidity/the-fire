@@ -6,7 +6,7 @@ import { fmtAmt, fmtCount, fmtPlank, fmtUsd } from "../format";
 
 const OPENSEA = "https://opensea.io/collection/the-plank-press";
 const GAS_ETH = 0.0003; // left in the wallet for gas when paying with ETH
-const ETH_HEADROOM = 1.01; // an ETH buy sends up to 1% over the price; the fire refunds the rest
+const ETH_HEADROOM = 1; // an ETH buy sends exactly the price shown
 
 type Frozen = { n: number; pay: Pay; seen: PriceSeen; q: ReturnType<typeof quote> };
 
@@ -163,7 +163,7 @@ export function BuyPanel({
         )}
         {confirming && (
           <div className="confirm" role="alertdialog" aria-label="Confirm payment">
-            <p>You're spending <b>{plankUsd > 0 ? fmtUsd(totalOf(confirming.q, confirming.pay)) : legText(confirming.q, confirming.pay)}</b>: {legText(confirming.q, confirming.pay)} and {fmtPlank(confirming.q.plank)} PLANK, for {ticketsFor(confirming.n)} {ticketsFor(confirming.n) === 1 ? "ticket" : "tickets"}{ticketsFor(confirming.n) > confirming.n ? ` (${confirming.n} + 1 free)` : ""}.{confirming.pay === "eth" ? " Up to 1% more ETH is sent in case the price ticks; the rest comes straight back." : ""} {demo ? "Play money." : "Your wallet asks you to approve it next."}</p>
+            <p>You're spending <b>{plankUsd > 0 ? fmtUsd(totalOf(confirming.q, confirming.pay)) : legText(confirming.q, confirming.pay)}</b>: {legText(confirming.q, confirming.pay)} and {fmtPlank(confirming.q.plank)} PLANK, for {ticketsFor(confirming.n)} {ticketsFor(confirming.n) === 1 ? "ticket" : "tickets"}{ticketsFor(confirming.n) > confirming.n ? ` (${confirming.n} + 1 free)` : ""}.{demo ? "Play money." : "Your wallet asks you to approve it next."}</p>
             <div className="confirm-row">
               <button className="cta ghost" onClick={() => setConfirming(null)}>Cancel</button>
               <button className="cta" disabled={locked} onClick={() => go(confirming)}>{busy ? "Throwing…" : `Pay ${plankUsd > 0 ? fmtUsd(totalOf(confirming.q, confirming.pay)) : ""}`.trim()}</button>
