@@ -14,8 +14,14 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
         <ol className="how-steps">
           <li><b>Buy tickets.</b> A ticket is 1 PAPER (or $0.33 worth, whichever is less) plus about $0.90 of PLANK. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day; buy {TX_CAP}, get 1 free (the free one counts toward the {DAILY_CAP}). No PAPER? Pay $1 in ETH or USDG instead of the PAPER. Same ticket either way.</li>
           <li><b>PAPER burns, PLANK feeds the fire.</b> The PAPER is destroyed. All the PLANK goes into the fire's pot. Dollars paid in place of PAPER go to the mill fund (below).</li>
-          <li><b>Every ticket makes the fire bigger.</b> Every ticket adds 1 to the fire's size. Storms knock it down, and each night it burns down to 60% of what's left, so a fire nobody feeds shrinks. Your tickets never shrink: they all stay in until the fire goes out.</li>
-          <li><b>Every night at 8 PM MST, a storm hits.</b> Its strength is random, scaled to an average day's buys over the last week, and it grows with the fire's age: night 1 never kills; a typical storm is about 1.2 days of buys on night 10 and 2.8 days on night 17, but about 1 night in 5 it's 4 times that or worse, so even a young fire can go out; night 24 always puts the fire out. If the storm is bigger than the fire, the fire goes out.</li>
+          <li><b>Every ticket is a log on the fire.</b> Each one makes the fire 1 bigger. Overnight the fire burns down a little (it keeps 85%), so a fire nobody feeds shrinks and a fire people pile into grows. Your tickets never shrink: they all stay in until the fire goes out.</li>
+          <li><b>Every night at 8 PM MST, a storm hits</b> and knocks tickets off the fire. If the storm is bigger than the fire, the fire goes out.
+            <ul className="how-sub">
+              <li><b>How big?</b> It's sized to a normal night of buying, and it grows with the fire's age: nothing on night 1, about an eighth of a normal night on night 2, a full normal night by night 9, about two by night 17. Night 24 always puts the fire out.</li>
+              <li><b>A big fire has a real shot.</b> The storm's "normal night" catches up slowly when buying jumps and drops quickly when it slows. So when people pile in, the fire gets far bigger than the storm expects and can ride that for weeks.</li>
+              <li><b>Then luck.</b> Most nights are near normal, but about 1 night in 5 the storm is 3 times normal or worse. A fire nobody feeds can go out early.</li>
+              <li><b>Example:</b> at about 100 tickets a day, a normal night-9 storm knocks off about 100. A fire that's been fed well shrugs it off; one nobody's fed goes out.</li>
+            </ul></li>
           <li><b>When the fire goes out, one ticket wins.</b> Every ticket in that fire has the same chance. The winner gets 40% of the pot. 25% is destroyed, 5% goes to the Paper Mill royalty pool, and 30% lights the next fire. If nobody bought a ticket, nothing burns and the whole pot lights the next fire. Then it starts again.</li>
         </ol>
 

@@ -3,11 +3,12 @@ The fire, night by night, exactly as Fire.sol runs it. The only input is how man
 
 Contract rules mirrored here (integer math, same order as Fire.onRandomness):
   - buys add to ticketsToday and to fireSizeMilli (the fire is measured in thousandths of a ticket)
-  - at the roll: night += 1; storm = trailingMilli * AGE[night] * LUCK[rnd & 31] / 1e8   (floored once, in thousandths)
-      trailingMilli = 1000 x mean of the last <=7 nights' ticketsToday, floored (today excluded; before any night: today)
-      night 1: no storm. night 24: infinite.
-  - then today's count goes into the trailing window and resets
-  - survive if night == 1 or (night < 24 and size > storm): size = (size - storm) * 6000 / 10000
+  - at the roll: night += 1; storm = base * AGE[night] * LUCK[rnd & 31] / 1e8   (floored once, in thousandths)
+      base = the storm's normal level (stormBaseMilli); before the first roll ever: today's buys x 1000
+      AGE[night] = (night-1)/8; LUCK = 32 quantiles of lognormal(0, 1.2). night 1: no storm. night 24: infinite.
+  - then today's count goes into the 7-night window, and the normal level moves toward that window's average
+    (trailingMilli): up by 3% of the gap, down by 30% of the gap
+  - survive if night == 1 or (night < 24 and size > storm): size = (size - storm) * 8500 / 10000
   - otherwise it goes out: a new fire is lit with size 0, night 0 (the trailing window carries over). A fire nobody
     bought into carries its whole pot; otherwise 40% winner, 25% burned, 5% royalty pool, 30% carried.
 On the site the storm "looks" (intensity) and the fire's drawn height use the site's formulas (web/src/data/types.ts).
@@ -20,11 +21,11 @@ Usage:
 """
 import json, math, random, statistics as st, sys, os
 
-AGE = [442, 1250, 2296, 3536, 4941, 6495, 8185, 10000, 11932, 13975, 16123,
-       18371, 20715, 23150, 25674, 28284, 30977, 33750, 36601, 39528, 42530, 45604]  # nights 2..23, bps
-LUCK = [395, 810, 1192, 1581, 1986, 2417, 2877, 3373, 3910, 4493, 5129, 5826, 6593, 7440, 8381, 9429,
-        10605, 11932, 13440, 15167, 17163, 19496, 22258, 25578, 29647, 34756, 41378, 50343, 63268, 83871, 123531, 253002]  # e^(1.5 z)
-MAX_NIGHTS, KEEP_BPS, BPS, TRAILING, MILLI = 24, 6000, 10000, 7, 1000
+AGE = [1250 * (n - 1) for n in range(2, 24)]  # (night-1)/8 in bps, nights 2..23
+LUCK = [754, 1338, 1824, 2286, 2744, 3211, 3691, 4192, 4717, 5272, 5862, 6491, 7166, 7894, 8682, 9541,
+        10481, 11518, 12668, 13955, 15406, 17059, 18967, 21198, 23855, 27091, 31147, 36438, 43747, 54814, 74717, 132586]  # e^(1.2 z)
+BASE_UP_BPS, BASE_DOWN_BPS = 300, 3000  # the storm's normal level: 3% of the gap a night up, 30% down
+MAX_NIGHTS, KEEP_BPS, BPS, TRAILING, MILLI = 24, 8500, 10000, 7, 1000
 FULL_DAYS = 2.5  # site: a fire worth 2.5 days of buys is drawn full height
 INF = 2**256 - 1
 
@@ -40,6 +41,10 @@ class Fire:
     def __init__(self):
         self.night = 0; self.fire_size = 0; self.tickets_today = 0; self.tickets_total = 0
         self.trail = [0] * TRAILING; self.trail_count = 0; self.trail_idx = 0; self.fire_id = 1
+        self.base = 0  # stormBaseMilli
+
+    def storm_base(self):
+        return self.tickets_today * MILLI if self.trail_count == 0 else self.base
 
     def trailing_milli(self):
         if self.trail_count == 0: return self.tickets_today * MILLI
@@ -49,7 +54,7 @@ class Fire:
     def storm(self, n, luck_idx):
         if n >= MAX_NIGHTS: return INF
         if n <= 1: return 0
-        return self.trailing_milli() * AGE[n - 2] * LUCK[luck_idx] // (BPS * BPS)
+        return self.storm_base() * AGE[n - 2] * LUCK[luck_idx] // (BPS * BPS)
 
     def buy(self, t):
         self.tickets_today += t; self.tickets_total += t; self.fire_size += t * MILLI
@@ -59,8 +64,11 @@ class Fire:
         avg = self.trailing_milli()
         storm = self.storm(self.night, luck_idx)
         size_before = self.fire_size
+        base = self.storm_base()
         today = self.tickets_today
         self.trail[self.trail_idx] = today; self.trail_idx = (self.trail_idx + 1) % TRAILING; self.trail_count += 1
+        recent = self.trailing_milli()
+        self.base = base + (recent - base) * BASE_UP_BPS // BPS if recent > base else base - (base - recent) * BASE_DOWN_BPS // BPS
         self.tickets_today = 0
         rec = {"fire": self.fire_id, "night": self.night, "size": size_before, "storm": storm, "avg": avg, "today": today}  # sizes in thousandths
         if self.night == 1 or (self.night < MAX_NIGHTS and size_before > storm):

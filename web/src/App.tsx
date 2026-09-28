@@ -172,7 +172,7 @@ export default function App() {
           <div className="you">
             <div><b>{connected ? fmtCount(v.youTickets) : "—"}</b><span>{connected ? "your tickets in this fire" : "connect to see your tickets"}</span></div>
             <div><b>{connected ? `${odds === 0 ? "0" : odds < 0.01 ? "<0.01" : odds.toFixed(2)}%` : "—"}</b><span>your odds if it goes out tonight</span></div>
-            <div title="Fire size is what keeps the fire alive: every ticket adds 1, storms knock it down, and it burns down to 60% each night. Your tickets never shrink."><b>{fmtCount(Math.round(v.fireSize))}</b><span>fire size · {fmtCount(v.ticketsToday)} added today</span><span className="you-fine">burns down each night; tickets don't</span></div>
+            <div title="Fire size is what keeps the fire alive: every ticket adds 1, storms knock it down, and it burns down to 85% each night. Your tickets never shrink."><b>{fmtCount(Math.round(v.fireSize))}</b><span>fire size · {fmtCount(v.ticketsToday)} added today</span><span className="you-fine">burns down each night; tickets don't</span></div>
           </div>
 
           <div className="ticker" aria-label="Recent buys">

@@ -114,10 +114,13 @@ export function prizeOf(pot: number, carriedIn: number, tickets: number) {
   if (tickets <= 0) return 0;
   return Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - carriedIn)) * 0.4;
 }
-export const KEEP = 0.6;
+export const KEEP = 0.85; // the fire keeps 85% of its size overnight
 export const FULL_DAYS = 2.5; // a fire worth 2.5 days of buys is "full height" on screen (fires settle at ~1-2 days)
 /** Fire.sol's storm luck: 32 quantiles of e^(1.5 z), in bps. */
-export const LUCK_BPS = [395, 810, 1192, 1581, 1986, 2417, 2877, 3373, 3910, 4493, 5129, 5826, 6593, 7440, 8381, 9429, 10605, 11932, 13440, 15167, 17163, 19496, 22258, 25578, 29647, 34756, 41378, 50343, 63268, 83871, 123531, 253002];
+export const LUCK_BPS = [754, 1338, 1824, 2286, 2744, 3211, 3691, 4192, 4717, 5272, 5862, 6491, 7166, 7894, 8682, 9541, 10481, 11518, 12668, 13955, 15406, 17059, 18967, 21198, 23855, 27091, 31147, 36438, 43747, 54814, 74717, 132586];
+/** The storm's normal level moves toward the last 7 nights' average: 3% of the gap a night up, 30% down (Fire.sol). */
+export const BASE_UP = 0.03, BASE_DOWN = 0.3;
+export function nextStormBase(base: number, recent: number) { return recent > base ? base + (recent - base) * BASE_UP : base - (base - recent) * BASE_DOWN; }
 /** How heavy the rain is drawn (0.15..1): as heavy as the call was close. A storm that barely touched the fire is a
  *  drizzle, a near miss is a downpour; a storm that puts the fire out is always full force. Same as sim/fire_sim.py. */
 export function stormLook(strength: number, size: number, survived: boolean) {
@@ -125,10 +128,10 @@ export function stormLook(strength: number, size: number, survived: boolean) {
   return Math.max(0.15, Math.min(1, 0.15 + 0.85 * Math.pow(strength / size, 0.8)));
 }
 /** Storm median for a night: trailingAvg × ((n-1)/8)^1.5 (night 1: none, night 24+: infinite). */
-export function stormBase(night: number, trailingAvg: number) {
+export function stormBase(night: number, normalLevel: number) {
   if (night >= 24) return Infinity;
   if (night <= 1) return 0;
-  return trailingAvg * Math.pow((night - 1) / 8, 1.5);
+  return normalLevel * (night - 1) / 8; // Fire.sol: the storm's normal level x (night-1)/8, before luck
 }
 export const TX_CAP = 10;
 export const ETH_USD_PER_TICKET = 1.0;

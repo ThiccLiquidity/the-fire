@@ -52,12 +52,12 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 
 ### The fire's size (this is the game)
 - The fire has a **size, in tickets**. Every ticket bought adds one. This is what you see on screen: a fire worth 5 days of the community's normal buying is "full height" under the pot.
-- **Overnight the fire burns down to 60% of its size.** A fire nobody feeds shrinks on its own.
+- **Overnight the fire burns down to 85% of its size.** A fire nobody feeds shrinks on its own; a fire people pile into grows and stays big.
 - **Every night at 8:00 PM MST a storm hits and subtracts its strength from the size.** If the size hits zero, the fire's out and the drawing happens. Otherwise what's left (then ×0.6) is tomorrow's starting size.
 
 ### Storm nights
 - **Night 1: no storm.** A new fire always gets its first night.
-- **Storm strength = (the community's 7-night average daily buys) × ((night − 1) / 8)^1.5 × luck.** The first factor makes it self-scaling — the same game at 100 tickets a day or 5,000. The middle factor is the age curve: night 2's average storm is ~4% of a day's buys, night 5 is ~35%, night 9 is a full day, night 17 is nearly three days. **Luck is a random draw** from a 32-point table of lognormal(0, 1.5) (`word & 31`): the gentlest night is 0.04× average, the most brutal 25×, and about 1 night in 5 is 4× or worse, so a young fire can go out early. The 7-night average doesn't include today's buys. The fire and the storm are counted in thousandths of a ticket (`fireSizeMilli`), so a small fire isn't rounded away overnight. `sim/fire_sim.py` mirrors this exactly and `test/FireSimParity.t.sol` checks it night for night (results: `docs/fire-sim.md`). Storms are random, not a ramp — the *odds* shift with age.
+- **Storm strength = the storm's normal level × (night − 1) / 8 × luck.** The normal level (`stormBaseMilli`) follows the last 7 nights' average buying, but asymmetrically: it rises by 3% of the gap a night and falls by 30%. So the game self-scales (the same at 100 tickets a day or 5,000), a fire people pile into gets far ahead of the storm and can ride a rally for weeks, and a slump doesn't leave oversized storms beating on small fires. The age factor grows steadily: night 2 is 1/8 of a normal night, night 9 a full night, night 17 two. **Luck is a random draw** from a 32-point table of lognormal(0, 1.2) (`word & 31`): the gentlest night is 0.075× normal, the most brutal 13×, and about 1 night in 5 is 3× or worse. The 7-night average doesn't include today's buys. The fire and the storm are counted in thousandths of a ticket (`fireSizeMilli`), so a small fire isn't rounded away overnight. `sim/fire_sim.py` mirrors this exactly and `test/FireSimParity.t.sol` checks it night for night (results: `docs/fire-sim.md`). Storms are random, not a ramp — the *odds* shift with age.
 - **Night 24: the storm is infinite.** No fire survives it.
 - The randomness comes from drand through our ownerless `OpenDrandRouter` (see `docs/randomness.md`); one request per night decides the storm and, if the fire dies, the winner. Nobody, including us, knows the roll in advance.
 - The site never shows the number. The sky is the forecast: clearer or darker, "light rain possible" vs "a monster is rolling in." You feel the danger; you don't compute it.
@@ -123,7 +123,7 @@ Things worth knowing:
 | Storm time | 8:00 PM MST (03:00 UTC), nightly |
 | Fire size | persistent; +1 per ticket; ×0.6 overnight |
 | Storm | 7-night avg (today excluded) × ((N−1)/8)^1.5 × luck; night 1 none; night 24 infinite |
-| Storm luck | 32-point quantile table of lognormal(0, 1.5), picked by `word & 31`; fire size and storm in thousandths of a ticket |
+| Storm | normal level (up 3%/night, down 30%/night toward the 7-night average) × (night−1)/8 × luck; luck = 32-point table of lognormal(0, 1.2), `word & 31`; fire keeps 85% overnight; sizes in thousandths of a ticket |
 | Randomness | `OpenDrandRouter` (drand evmnet, round 30–33 s ahead, anyone fulfills); reroll after 2h; abandon after 7 days |
 | Mill fund | 100% of the ETH/USDG; USD bid from `MILL_BID_BASE` (*set at launch*), +25%/day of its start, ≤3×, ≤ fund; restarts at 90% of price paid |
 | Founder seed | $0 opening pot needed. Buy fire #1's first tickets; ~$10 of ETH for the keeper wallet |

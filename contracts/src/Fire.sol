@@ -73,7 +73,12 @@ contract Fire is ReentrancyGuard {
     ///      ticket or two from taking 40% of a pot that earlier fires (or the seed) built.
     uint256 public constant PRIZE_CAP_MULT = 20;
     uint256 public constant MAX_NIGHTS = 24; // the night-24 storm is infinite
-    uint256 public constant KEEP_BPS = 6_000; // the fire keeps 60% of its size overnight
+    uint256 public constant KEEP_BPS = 8_500; // the fire keeps 85% of its size overnight, so a big fire stays big
+    /// @dev The storm is sized to a "normal level" of buying that creeps up slowly (3% of the gap a night) and drops fast
+    ///      (30% a night). When people pile in, the fire gets far bigger than the storm expects and has a real shot;
+    ///      when buying slumps, storms shrink quickly instead of beating on small fires.
+    uint256 public constant BASE_UP_BPS = 300;
+    uint256 public constant BASE_DOWN_BPS = 3_000;
     /// @dev The fire is measured in thousandths of a ticket, so a small fire isn't rounded away overnight.
     uint256 public constant MILLI = 1_000;
     uint256 public constant TRAILING = 7;
@@ -143,6 +148,7 @@ contract Fire is ReentrancyGuard {
     uint256 public dayIndex; // increments every roll
 
     uint256[TRAILING] internal _trail;
+    uint256 public stormBaseMilli; // the storm's normal level, thousandths of a ticket a night (set at the first roll)
     uint256 internal _trailCount;
     uint256 internal _trailIdx;
 
@@ -459,8 +465,12 @@ contract Fire is ReentrancyGuard {
         night += 1;
         uint256 storm = stormStrength(night, rnd);
         uint256 sizeBefore = fireSizeMilli;
+        uint256 base = _stormBase();
 
         _pushTrail(ticketsToday);
+        // move the storm's normal level toward the last 7 nights: slowly up, quickly down
+        uint256 recent = _trailingMilli();
+        stormBaseMilli = recent > base ? base + (recent - base) * BASE_UP_BPS / BPS : base - (base - recent) * BASE_DOWN_BPS / BPS;
         ticketsToday = 0;
         dayIndex += 1;
         nextRollAt = _nextRollTime(block.timestamp);
@@ -468,7 +478,7 @@ contract Fire is ReentrancyGuard {
         _ratchetPaperLeg();
         _pokeMillBid();
 
-        // The storm takes a bite. What's left burns down to 60% overnight and is tomorrow's starting size.
+        // The storm takes a bite. What's left burns down to 85% overnight and is tomorrow's starting size.
         // Night 1 has no storm. Night 24 is infinite. A fire with nothing in it goes out.
         if (night == 1 || (night < MAX_NIGHTS && sizeBefore > storm)) {
             fireSizeMilli = (sizeBefore - storm) * KEEP_BPS / BPS;
@@ -480,29 +490,30 @@ contract Fire is ReentrancyGuard {
 
     /// @notice Storm on a given night for a given random word, in thousandths of a ticket (checked night for night
     ///         against sim/fire_sim.py by test/FireSimParity.t.sol):
-    ///         storm = trailingAvg x ((night-1)/8)^1.5 x L, with L ~ lognormal(0, 1.5).
+    ///         storm = the storm's normal level x (night-1)/8 x L, with L ~ lognormal(0, 1.2).
     ///         Night 1: no storm. Night 24+: infinite.
     function stormStrength(uint256 n, uint256 rnd) public view returns (uint256) {
         if (n >= MAX_NIGHTS) return type(uint256).max;
         if (n <= 1) return 0;
-        return _trailingMilli() * _ageBps(n) * _luckBps(rnd) / (BPS * BPS);
+        return _stormBase() * _ageBps(n) * _luckBps(rnd) / (BPS * BPS);
     }
 
-    /// @dev ((n-1)/8)^1.5 in bps, n = 2..23.
+    /// @dev The storm's normal level: before the first roll, today's buys; after, the slow-up/fast-down level.
+    function _stormBase() internal view returns (uint256) {
+        return _trailCount == 0 ? ticketsToday * MILLI : stormBaseMilli;
+    }
+
+    /// @dev (night-1)/8 in bps, n = 2..23: storms grow steadily with the fire's age.
     function _ageBps(uint256 n) internal pure returns (uint256) {
-        uint24[22] memory a = [
-            uint24(442), 1250, 2296, 3536, 4941, 6495, 8185, 10000, 11932, 13975, 16123,
-            18371, 20715, 23150, 25674, 28284, 30977, 33750, 36601, 39528, 42530, 45604
-        ];
-        return a[n - 2];
+        return (n - 1) * 1250;
     }
 
-    /// @dev 32-point quantile table of e^(1.5 z), picked by the low 5 bits of the random word. Wide on purpose: most
-    ///      nights are mild, but now and then a storm is many times the usual, so a young fire can go out early.
+    /// @dev 32-point quantile table of e^(1.2 z), picked by the low 5 bits of the random word. Most nights are near
+    ///      normal; now and then a storm is several times it, so a fire nobody feeds can go out early.
     function _luckBps(uint256 rnd) internal pure returns (uint256) {
         uint24[32] memory q = [
-            uint24(395), 810, 1192, 1581, 1986, 2417, 2877, 3373, 3910, 4493, 5129, 5826, 6593, 7440, 8381, 9429,
-            10605, 11932, 13440, 15167, 17163, 19496, 22258, 25578, 29647, 34756, 41378, 50343, 63268, 83871, 123531, 253002
+            uint24(754), 1338, 1824, 2286, 2744, 3211, 3691, 4192, 4717, 5272, 5862, 6491, 7166, 7894, 8682, 9541,
+            10481, 11518, 12668, 13955, 15406, 17059, 18967, 21198, 23855, 27091, 31147, 36438, 43747, 54814, 74717, 132586
         ];
         return q[rnd & 31];
     }

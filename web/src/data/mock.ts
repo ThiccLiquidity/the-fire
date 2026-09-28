@@ -19,6 +19,7 @@ import {
   PLANK_USD_PER_TICKET,
   TX_CAP,
   stormBase,
+  nextStormBase,
   nextRollTime,
   quote,
   ticketsFor,
@@ -46,7 +47,7 @@ const demoProfiles: Record<string, Profile> = {};
 demoNames.forEach((name, i) => { demoProfiles[wallets[i].toLowerCase()] = { name, pfp: "" }; });
 
 // Fire.sol's tables: storm age factor ((n-1)/8)^1.5 for nights 2..23, and the 32-point luck table (e^(0.9 z) quantiles), in bps.
-const AGE = [442, 1250, 2296, 3536, 4941, 6495, 8185, 10000, 11932, 13975, 16123, 18371, 20715, 23150, 25674, 28284, 30977, 33750, 36601, 39528, 42530, 45604];
+const AGE = Array.from({ length: 22 }, (_, i) => 1250 * (i + 1)); // (night-1)/8 in bps, nights 2..23
 const LUCK = LUCK_BPS;
 const RATCHET = 0.05; // ticket legs move at most 5% a night toward their target
 
@@ -64,6 +65,7 @@ interface World {
   lifetime: Record<string, number>;
   paperBuyers: string[];
   trail: number[]; // the last 7 nights' ticketsToday, oldest first (today excluded)
+  base?: number; // the storm's normal level (Fire.stormBaseMilli / 1000)
   day: number;
   refundPot: number;
   refundTickets: number;
@@ -251,7 +253,8 @@ export function makeMockApi(): FireApi {
     const luck = LUCK[luckIdx ?? rnd(32)];
     const size = s.fireSize;
     // Fire.sol: storm = trailingAvg × ageBps × luckBps / 1e8, to the thousandth of a ticket; night 1 none, night 24+ infinite
-    let strength = night >= 24 ? Infinity : night <= 1 ? 0 : Math.floor((avg * 1000 * AGE[night - 2] * luck) / 1e8) / 1000;
+    const base = w.base ?? (w.trail.length ? avg : s.ticketsToday); // the storm's normal level
+    let strength = night >= 24 ? Infinity : night <= 1 ? 0 : Math.floor((base * 1000 * AGE[night - 2] * luck) / 1e8) / 1000;
     if (outcome === "survive") strength = Math.min(strength, Math.max(0, size * 0.6));
     if (outcome === "out" || outcome === "you-win") strength = Math.max(strength, size + 1);
     const survived = night === 1 && outcome !== "out" && outcome !== "you-win" ? true : night < 24 && size > strength;
@@ -260,6 +263,7 @@ export function makeMockApi(): FireApi {
 
     // the night turns over: today's tickets join the 7-night average, the daily cap resets, the ticket legs ratchet
     w.trail = [...w.trail, s.ticketsToday].slice(-7);
+    w.base = nextStormBase(base, w.trail.reduce((x, y) => x + y, 0) / w.trail.length);
     w.day += 1;
     const legs = { plankPerTicket: ratchet(s.plankPerTicket, plankTarget()), paperPerTicket: Math.min(1, ratchet(s.paperPerTicket, paperPerTicketAt(s.paperUsd))) };
     if (survived) {
@@ -299,7 +303,7 @@ export function makeMockApi(): FireApi {
       };
     }
     const nextAvg = Math.max(1, Math.floor(w.trail.reduce((x, y) => x + y, 0) / w.trail.length));
-    const nb = stormBase(w.s.night + 1, nextAvg);
+    const nb = stormBase(w.s.night + 1, w.base ?? nextAvg);
     w.s = { ...w.s, threat: Math.max(0.1, Math.min(1, nb / (nextAvg * 2))), nextRollAt: nextRollTime(), rollPending: false, rollAction: undefined };
     if (quiet) w.s = { ...w.s, storm: undefined };
     emit();

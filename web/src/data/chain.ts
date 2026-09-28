@@ -84,9 +84,9 @@ export function makeChainApi(fireAddress: Address): FireApi {
 
   async function readAll() {
     const r = (fn: string, args: unknown[] = []) => pub.readContract({ address: fireAddress, abi, functionName: fn, args }) as Promise<bigint>;
-    const [fireId, night, pot, ticketsToday, ticketsTotal, fireSize, trailingAvg, nextRollAt, plankPerTicket, millBid, millFund, dayIndex, pending, pendingSince, rerollAfter, potCarriedIn] = await Promise.all([
+    const [fireId, night, pot, ticketsToday, ticketsTotal, fireSize, trailingAvg, nextRollAt, plankPerTicket, millBid, millFund, dayIndex, pending, pendingSince, rerollAfter, potCarriedIn, stormBaseMilli] = await Promise.all([
       r("fireId"), r("night"), r("pot"), r("ticketsToday"), r("ticketsTotal"), r("fireSizeMilli"), r("trailingAverage"), r("nextRollAt"), r("plankPerTicket"), r("millBid"), r("millFund"), r("dayIndex"),
-      r("pendingRequest"), r("pendingSince"), r("REROLL_AFTER"), r("potCarriedIn"),
+      r("pendingRequest"), r("pendingSince"), r("REROLL_AFTER"), r("potCarriedIn"), r("stormBaseMilli"),
     ]);
     const abandoned = (await pub.readContract({ address: fireAddress, abi, functionName: "abandoned" })) as boolean;
     if (!adapterAddr) {
@@ -148,7 +148,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
       ...s, fireId: Number(fireId), night: n, potPlank: Number(formatUnits(pot, 18)), potCarriedIn: Number(formatUnits(potCarriedIn, 18)), plankPerTicket: Number(formatUnits(plankPerTicket, 18)),
       ethUsd: ethPerTicket > 0n ? 1 / Number(formatUnits(ethPerTicket, 18)) : 0,
       ticketsToday: Number(ticketsToday), ticketsTotal: Number(ticketsTotal), fireSize: Number(fireSize) / 1000, trailingAvg: trailing,
-      threat: Math.max(0.1, Math.min(1, stormBase(n + 1, trailing) / (trailing * 2))),
+      threat: Math.max(0.1, Math.min(1, stormBase(n + 1, Number(stormBaseMilli) / 1000 || trailing) / (trailing * 2))),
       nextRollAt: Number(nextRollAt) * 1000 || nextRollTime(), millBidUsd: Number(formatUnits(millBid, 8)), millFundEth: Number(formatUnits(millFund, 18)), millFundUsdg: Number(formatUnits(fundUsdg, usdgDec)), usdgEnabled: !!usdgAddr, you,
       rollPending: pending !== 0n, rollAction, plankUsd, paperPerTicket, paperUsd, abandoned,
       raw: { plankPerTicket, paperPerTicket: paperWei, ethPerTicket },
@@ -200,7 +200,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
       } else if (ev === "Survived") {
         const size = Number(a.fireSizeMilli) / 1000, strength = Number(a.stormMilli) / 1000, fid = Number(a.fireId), night = Number(a.night);
         const tickets = await atBlock("ticketsTotal", l.blockNumber);
-        storm = { at, fireId: fid, night, strength, size, survived: true, intensity: stormLook(strength, size, true), sizeAfter: Math.max(0, (size - strength) * 0.6) / (s.trailingAvg * FULL_DAYS),
+        storm = { at, fireId: fid, night, strength, size, survived: true, intensity: stormLook(strength, size, true), sizeAfter: Math.max(0, (size - strength) * 0.85) / (s.trailingAvg * FULL_DAYS),
           before: live ? await snap(fid, night, size, l.blockNumber, s.potPlank, tickets !== undefined ? Number(tickets) : undefined) : undefined };
       } else if (ev === "WentOut") {
         const size = Number(a.fireSizeMilli) / 1000, strength = a.stormMilli === 2n ** 256n - 1n ? Infinity : Number(a.stormMilli) / 1000, winner = String(a.winner), fid = Number(a.fireId), night = Number(a.night);
