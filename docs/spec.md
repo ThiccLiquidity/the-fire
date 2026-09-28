@@ -20,10 +20,12 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
     (`PaperUsdTwap`). Before PAPER has a market it's 1 PAPER. It moves at most 5% a night toward its target, so it lags
     a rally: ~22 nights to catch up with a 3× move above the cap, ~45 with a 10× move. Until then a PAPER-path ticket
     costs more than ~$1.23.
-  - **PLANK leg:** targets $0.90 of PLANK from a ≥20h TWAP of the PLANK/WETH pool × Chainlink ETH/USD (`PlankUsdTwap`)
-    and moves at most 5% a night toward it, so a pump or dump moves it over days, not minutes — a thin pool can't be
-    gamed inside a night. It starts at `PLANK_PER_TICKET0` (*set at launch*, within 10% of $0.90). If the feed is
-    stale (>2 days) or broken, the leg holds.
+  - **PLANK leg:** $0.90 of PLANK at the big PLANK/WETH pool's ~30-minute average price × Chainlink ETH/USD
+    (`PlankUsdTwap`, checkpointed by the keeper whenever `due()`), read live at every buy. A pump shows up in log prices
+    within about an hour, so buyers don't overpay. A flash loan can't move it (it lasts one transaction and adds nothing
+    to a time-weighted average); moving it means holding the pool off its price for half an hour against arbitrage.
+    `PLANK_PER_TICKET0` (*set at launch*) is the price until the first 30-minute window closes; if the feed is broken or
+    >2 days old, logs cost the last price the fire saw (`plankPerTicketLast`, refreshed every night).
 - **No PAPER? Pay $1 instead.** The PAPER leg can be paid as **$1.00 of ETH** (Chainlink ETH/USD; the ETH path closes if
   the feed has missed its 24h heartbeat, i.e. is >25h old; the ETH price rounds up) or **$1.00 of USDG**. Same ticket,
   same PLANK. The dollar goes to the mill fund. It's a convenience for outsiders, priced above where PAPER should trade.
@@ -52,17 +54,17 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 
 ### The fire's size (this is the game)
 - The fire has a **size, in tickets**. Every ticket bought adds one. This is what you see on screen: a fire worth 5 days of the community's normal buying is "full height" under the pot.
-- **Overnight the fire burns down to 60% of its size.** A fire nobody feeds shrinks on its own.
-- **Every night at 8:00 PM MST a storm hits and subtracts its strength from the size.** If the size hits zero, the fire's out and the drawing happens. Otherwise what's left (then ×0.6) is tomorrow's starting size.
+- **Overnight the fire burns down to 85% of its size.** A fire nobody feeds shrinks on its own; a fire people pile into grows and stays big.
+- **Every night at 8:00 PM MST a storm hits.** If the storm is at least as big as the fire, the fire's out and the drawing happens. Otherwise the storm's size comes off the fire and what's left (then ×0.85) is tomorrow's starting size.
 
 ### Storm nights
 - **Night 1: no storm.** A new fire always gets its first night.
-- **Storm strength = (the community's 7-night average daily buys) × ((night − 1) / 8)^1.5 × luck.** The first factor makes it self-scaling — the same game at 100 tickets a day or 5,000. The middle factor is the age curve: night 2's average storm is ~4% of a day's buys, night 5 is ~35%, night 9 is a full day, night 17 is nearly three days. **Luck is a random draw** from a 32-point table of lognormal(0, 1.5) (`word & 31`): the gentlest night is 0.04× average, the most brutal 25×, and about 1 night in 5 is 4× or worse, so a young fire can go out early. The 7-night average doesn't include today's buys. The fire and the storm are counted in thousandths of a ticket (`fireSizeMilli`), so a small fire isn't rounded away overnight. `sim/fire_sim.py` mirrors this exactly and `test/FireSimParity.t.sol` checks it night for night (results: `docs/fire-sim.md`). Storms are random, not a ramp — the *odds* shift with age.
+- **The storm ladder.** Every storm is one of 20 fixed sizes, in logs: 5, 8, 12, 19, 30, 47, 74, 115, 180, 283, 442, 693, 1,084, 1,698, 2,658, 4,161, 6,515, 10,199, 15,968, 25,000 (`STORM_LOGS`). Storms never grow. What changes with the fire's age is the **odds**: night 2 draws mostly 5-30 log storms, and the likely size moves up 0.75 of a rung each night (a bell curve over the rungs, width 2.5; `STORM_ODDS`, the running odds out of 10,000 for nights 2-23). By night 12 most storms are 180-1,000 logs, by night 16 half are 1,700+, by night 23 almost all are. The rung is picked by `word % 10,000`. Because storms are real log counts, volume is what matters: a 10-a-day fire lives ~3 nights, 100 a day ~9, 1,000 a day ~17, 3,000 a day ~20. The fire and the storm are counted in thousandths of a log (`fireSizeMilli`). `sim/fire_sim.py` builds the table (`storm_ladder()`) and mirrors the contract exactly; `test/FireSimParity.t.sol` checks every rung and 600 nights (results: `docs/fire-sim.md`).
 - **Night 24: the storm is infinite.** No fire survives it.
 - The randomness comes from drand through our ownerless `OpenDrandRouter` (see `docs/randomness.md`); one request per night decides the storm and, if the fire dies, the winner. Nobody, including us, knows the roll in advance.
 - The site never shows the number. The sky is the forecast: clearer or darker, "light rain possible" vs "a monster is rolling in." You feel the danger; you don't compute it.
 
-**Tuned in `sim/storm_v3.py`, checked against the contract's tables in `sim/economy.py`** (324 year-long runs, `docs/sim-results.md`): fires live **~9.6 nights on average** (8.5–10.9 across scenarios), ~37 a year; 1% die by night 3; about half reach night 10; ~5% reach night 15; the longest seen was 19 nights and night 24 was never reached. Rallies extend life and are what build the big pots. Identical at any community size.
+**Simulated in `sim/fire_sim.py`** (150 years per buying pattern, `docs/fire-sim.md`): fire life follows volume. Under ~10 logs a day fires go out in 2-3 nights; 100 a day, ~9 nights (half reach 10); 300 a day, ~13; 1,000 a day, ~17 (90% reach 15); 3,000 a day, ~20; 10,000+ a day reaches night 24. Low volume doesn't linger; high volume can go deep, never forever.
 
 ### The drawing
 - When the fire goes out, the same random number picks one ticket, weighted by count. Winner is paid in PLANK in the same transaction. If that transfer fails (the token refuses the address), the prize is kept for them: `unclaimed[winner]`, collected with `claim(to)` to any address. A failed royalty or burn transfer carries into the next pot. Fires go by number; no naming.
@@ -92,8 +94,8 @@ flat: PLANK $1.056e-9, ETH $3,333, PAPER $0.25. 1,000 mills, 5 outsiders/day, $3
 
 Things worth knowing:
 - **The participation numbers are guesses.** Plan on the low row at launch and quote those numbers publicly.
-- **Fire life doesn't move with community size.** The storm scales to the 7-night average, so 1,000 mills or 10,000
-  give the same ~9.6-night fires; pots scale with volume (10,000 mills: ~$43k median).
+- **Fire life follows volume** (storm ladder, Sep 28): bigger communities build bigger fires that last longer. The table
+  above predates the ladder; see `docs/fire-sim.md` and `docs/pot-sim.md` for current numbers.
 - **Rallies are what make legends.** A community that saves a fire on night 9 has just built a monster pot for night 10.
 - **The ramp matters.** Pure random storms with no age ramp kill the fire every ~3 nights. Random *with* the ramp gives
   both: freak early storms and old fires that feel doomed.
@@ -112,18 +114,17 @@ Things worth knowing:
 
 | Parameter | Value |
 |---|---|
-| Ticket | PAPER leg + $0.90 of PLANK; both legs ratchet ≤5%/night toward target |
+| Ticket | PAPER leg + $0.90 of PLANK (live, ~30-min pool average); PAPER leg ratchets ≤5%/night toward target |
 | PAPER leg | min(1 PAPER, $0.33 worth) from `PaperUsdTwap`; 1 PAPER until PAPER has a market |
-| PLANK leg | $0.90 target from `PlankUsdTwap`; starts at `PLANK_PER_TICKET0` (*set at launch*, ±10% of $0.90) |
+| PLANK leg | $0.90 at `PlankUsdTwap` (30-min window), read at every buy; `PLANK_PER_TICKET0` until the first window closes; last price seen if the feed breaks |
 | Instead of PAPER | $1.00 of ETH (Chainlink ETH/USD, closed if >25h old) or $1.00 of USDG |
 | Max price | every buy names its max PAPER/PLANK (ETH: msg.value, excess refunded); reverts `PriceMoved` above it |
 | Per buy / per day | 10 paid / 500 received per wallet; buy 10, get 1 free |
 | PLANK split | 50% burn / 50% pot |
 | Payout | 40% winner / 25% burn / 5% Paper Mill royalty pool / 30% relight; no tickets → the whole pot carries |
 | Storm time | 8:00 PM MST (03:00 UTC), nightly |
-| Fire size | persistent; +1 per ticket; ×0.6 overnight |
-| Storm | 7-night avg (today excluded) × ((N−1)/8)^1.5 × luck; night 1 none; night 24 infinite |
-| Storm luck | 32-point quantile table of lognormal(0, 1.5), picked by `word & 31`; fire size and storm in thousandths of a ticket |
+| Fire size | persistent; +1 per log; ×0.85 overnight; thousandths of a log |
+| Storm | a fixed ladder of 20 sizes, 5-25,000 logs; odds per night tilt up 0.75 rung a night; `word % 10,000`; night 1 none; night 24 infinite |
 | Randomness | `OpenDrandRouter` (drand evmnet, round 30–33 s ahead, anyone fulfills); reroll after 2h; abandon after 7 days |
 | Mill fund | 100% of the ETH/USDG; USD bid from `MILL_BID_BASE` (*set at launch*), +25%/day of its start, ≤3×, ≤ fund; restarts at 90% of price paid |
 | Founder seed | $0 opening pot needed. Buy fire #1's first tickets; ~$10 of ETH for the keeper wallet |

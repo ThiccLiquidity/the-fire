@@ -259,7 +259,33 @@
   },
   {
     "type": "function",
-    "name": "FREE_WITH_FULL_BUY",
+    "name": "FREE_DAY1",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "FREE_DAY2",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "FREE_LATER",
     "inputs": [],
     "outputs": [
       {
@@ -363,6 +389,19 @@
   },
   {
     "type": "function",
+    "name": "PAPER_RATCHET_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "PAPER_USD",
     "inputs": [],
     "outputs": [
@@ -402,7 +441,7 @@
   },
   {
     "type": "function",
-    "name": "PLANK_RATCHET_BPS",
+    "name": "PLANK_FEED_MAX_AGE",
     "inputs": [],
     "outputs": [
       {
@@ -526,6 +565,19 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "STORM_SIZES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -1187,6 +1239,19 @@
   },
   {
     "type": "function",
+    "name": "plankPerTicketLast",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pokeMillBid",
     "inputs": [],
     "outputs": [],
@@ -1386,6 +1451,30 @@
   },
   {
     "type": "function",
+    "name": "stormOdds",
+    "inputs": [
+      {
+        "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "logs",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
     "name": "stormStrength",
     "inputs": [
       {
@@ -1406,7 +1495,7 @@
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -1425,7 +1514,7 @@
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "pure"
+    "stateMutability": "view"
   },
   {
     "type": "function",

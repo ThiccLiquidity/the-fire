@@ -9,7 +9,7 @@ import {
 import fireAbi from "./fireAbi.json";
 import profilesAbi from "./profilesAbi.json";
 import { bytesToHex, hexToBytes } from "viem";
-import { type Buy, type FireApi, type Pay, type FireState, type PastFire, type Snapshot, CEREMONY, DAILY_CAP, FULL_DAYS, nextRollTime, stormBase, stormLook, titleFor } from "./types";
+import { type Buy, type FireApi, type Pay, type FireState, type PastFire, type Snapshot, CEREMONY, DAILY_CAP, FULL_DAYS, nextRollTime, stormOdds, stormLook, titleFor } from "./types";
 import { robinhood, connectWallet, waitOk, PRICE_MOVED } from "./wallet";
 
 export { robinhood };
@@ -148,7 +148,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
       ...s, fireId: Number(fireId), night: n, potPlank: Number(formatUnits(pot, 18)), potCarriedIn: Number(formatUnits(potCarriedIn, 18)), plankPerTicket: Number(formatUnits(plankPerTicket, 18)),
       ethUsd: ethPerTicket > 0n ? 1 / Number(formatUnits(ethPerTicket, 18)) : 0,
       ticketsToday: Number(ticketsToday), ticketsTotal: Number(ticketsTotal), fireSize: Number(fireSize) / 1000, trailingAvg: trailing,
-      threat: Math.max(0.1, Math.min(1, stormBase(n + 1, trailing) / (trailing * 2))),
+      threat: Math.max(0.1, Math.min(1, stormOdds(n + 1, Number(fireSize) / 1000) * 1.5)), // the chance tonight's storm beats the fire
       nextRollAt: Number(nextRollAt) * 1000 || nextRollTime(), millBidUsd: Number(formatUnits(millBid, 8)), millFundEth: Number(formatUnits(millFund, 18)), millFundUsdg: Number(formatUnits(fundUsdg, usdgDec)), usdgEnabled: !!usdgAddr, you,
       rollPending: pending !== 0n, rollAction, plankUsd, paperPerTicket, paperUsd, abandoned,
       raw: { plankPerTicket, paperPerTicket: paperWei, ethPerTicket },
@@ -200,7 +200,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
       } else if (ev === "Survived") {
         const size = Number(a.fireSizeMilli) / 1000, strength = Number(a.stormMilli) / 1000, fid = Number(a.fireId), night = Number(a.night);
         const tickets = await atBlock("ticketsTotal", l.blockNumber);
-        storm = { at, fireId: fid, night, strength, size, survived: true, intensity: stormLook(strength, size, true), sizeAfter: Math.max(0, (size - strength) * 0.6) / (s.trailingAvg * FULL_DAYS),
+        storm = { at, fireId: fid, night, strength, size, survived: true, intensity: stormLook(strength, size, true), sizeAfter: Math.max(0, (size - strength) * 0.85) / (s.trailingAvg * FULL_DAYS),
           before: live ? await snap(fid, night, size, l.blockNumber, s.potPlank, tickets !== undefined ? Number(tickets) : undefined) : undefined };
       } else if (ev === "WentOut") {
         const size = Number(a.fireSizeMilli) / 1000, strength = a.stormMilli === 2n ** 256n - 1n ? Infinity : Number(a.stormMilli) / 1000, winner = String(a.winner), fid = Number(a.fireId), night = Number(a.night);

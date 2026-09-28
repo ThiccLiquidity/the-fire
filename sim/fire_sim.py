@@ -3,12 +3,13 @@ The fire, night by night, exactly as Fire.sol runs it. The only input is how man
 
 Contract rules mirrored here (integer math, same order as Fire.onRandomness):
   - buys add to ticketsToday and to fireSizeMilli (the fire is measured in thousandths of a ticket)
-  - at the roll: night += 1; storm = trailingMilli * AGE[night] * LUCK[rnd & 31] / 1e8   (floored once, in thousandths)
-      trailingMilli = 1000 x mean of the last <=7 nights' ticketsToday, floored (today excluded; before any night: today)
-      night 1: no storm. night 24: infinite.
-  - then today's count goes into the trailing window and resets
-  - survive if night == 1 or (night < 24 and size > storm): size = (size - storm) * 6000 / 10000
-  - otherwise it goes out: a new fire is lit with size 0, night 0 (the trailing window carries over). A fire nobody
+  - at the roll: night += 1; storm = one rung of the storm ladder, in logs x 1000:
+      STORM_LOGS = 20 fixed sizes, 5 .. 25,000 logs, each ~1.56x the last
+      the rung: the first i with (rnd % 10,000) < STORM_ODDS[night][i] (running odds out of 10,000; storm_ladder())
+      night 1: no storm. night 24: infinite. Storms never grow; each night the odds tilt toward the bigger rungs.
+  - today's count goes into the 7-night window (only used to draw the fire on the site)
+  - survive if night == 1 or (night < 24 and size > storm): size = (size - storm) * 8500 / 10000
+  - otherwise it goes out: a new fire is lit with size 0, night 0. A fire nobody
     bought into carries its whole pot; otherwise 40% winner, 25% burned, 5% royalty pool, 30% carried.
 On the site the storm "looks" (intensity) and the fire's drawn height use the site's formulas (web/src/data/types.ts).
 
@@ -20,11 +21,24 @@ Usage:
 """
 import json, math, random, statistics as st, sys, os
 
-AGE = [442, 1250, 2296, 3536, 4941, 6495, 8185, 10000, 11932, 13975, 16123,
-       18371, 20715, 23150, 25674, 28284, 30977, 33750, 36601, 39528, 42530, 45604]  # nights 2..23, bps
-LUCK = [395, 810, 1192, 1581, 1986, 2417, 2877, 3373, 3910, 4493, 5129, 5826, 6593, 7440, 8381, 9429,
-        10605, 11932, 13440, 15167, 17163, 19496, 22258, 25578, 29647, 34756, 41378, 50343, 63268, 83871, 123531, 253002]  # e^(1.5 z)
-MAX_NIGHTS, KEEP_BPS, BPS, TRAILING, MILLI = 24, 6000, 10000, 7, 1000
+
+def storm_ladder(n=20, lo=5, hi=25000, start=2.0, step=0.75, width=2.5):
+    """The storm ladder baked into Fire.sol: n sizes from lo to hi logs (geometric), and for nights 2..23 the running
+    odds (out of 10,000) of each size: a bell curve over the rungs, centered `start` rungs up on night 2 and moving up
+    `step` rungs a night."""
+    sizes = [round(lo * (hi / lo) ** (i / (n - 1))) for i in range(n)]
+    odds = []
+    for night in range(2, 24):
+        c = start + step * (night - 2)
+        w = [math.exp(-0.5 * ((i - c) / width) ** 2) for i in range(n)]
+        t, cum, row = sum(w), 0.0, []
+        for x in w: cum += x; row.append(round(10000 * cum / t))
+        row[-1] = 10000; odds.append(row)
+    return sizes, odds
+
+
+STORM_LOGS, STORM_ODDS = storm_ladder()
+MAX_NIGHTS, KEEP_BPS, BPS, TRAILING, MILLI = 24, 8500, 10000, 7, 1000
 FULL_DAYS = 2.5  # site: a fire worth 2.5 days of buys is drawn full height
 INF = 2**256 - 1
 
@@ -46,10 +60,13 @@ class Fire:
         c = min(self.trail_count, TRAILING)
         return sum(self.trail[:c]) * MILLI // c
 
-    def storm(self, n, luck_idx):
+    @staticmethod
+    def storm(n, rnd):
         if n >= MAX_NIGHTS: return INF
         if n <= 1: return 0
-        return self.trailing_milli() * AGE[n - 2] * LUCK[luck_idx] // (BPS * BPS)
+        r, row, i = rnd % BPS, STORM_ODDS[n - 2], 0
+        while i < len(STORM_LOGS) - 1 and r >= row[i]: i += 1
+        return STORM_LOGS[i] * MILLI
 
     def buy(self, t):
         self.tickets_today += t; self.tickets_total += t; self.fire_size += t * MILLI
@@ -161,7 +178,7 @@ def monte_carlo(key, runs=150, days=365, seed=1):
     for i in range(runs):
         r = random.Random(hash((key, i, seed)) & 0xffffffff)
         d = scenario(key, r, days)
-        luck = [r.randrange(32) for _ in range(days)]
+        luck = [r.randrange(10000) for _ in range(days)]
         allrecs += run(d, luck)
     return summarize(allrecs, days * runs)
 
@@ -194,7 +211,7 @@ def write_parity_test(path):
     for i, (key, n) in enumerate(PARITY):
         r = random.Random(1000 + i)
         d = scenario(key, r, n)
-        luck = [r.randrange(32) for _ in range(n)]
+        luck = [r.randrange(10000) for _ in range(n)]
         recs = run(d, luck)
         cases.append((key, d, luck, recs))
     arr = lambda xs: "[" + ", ".join(f"uint256({x})" if j == 0 else str(x) for j, x in enumerate(xs)) + "]"
@@ -216,6 +233,9 @@ def write_parity_test(path):
             assertEq(fire.pot(), pot[d], string.concat("pot, day ", vm.toString(d)));
         }}
     }}""")
+    u16 = lambda xs: "[" + ", ".join(f"uint16({x})" if j == 0 else str(x) for j, x in enumerate(xs)) + "]"
+    ladder_sizes = u16(STORM_LOGS)
+    ladder_odds = "[" + ", ".join(u16(row) for row in STORM_ODDS) + "]"
     sol = f"""// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
@@ -238,7 +258,7 @@ contract FireSimParityTest is Test {{
         vm.warp(1_800_000_000);
         paper = new MockERC20("PAPER", "PAPER"); plank = new MockERC20("PLANK", "PLANK");
         rng = new MockRandomness();
-        ethFeed = new MockFeed(3_333_33333333); plankFeed = new MockFeed(90_000_000_000);
+        ethFeed = new MockFeed(3_333_33333333); plankFeed = new MockFeed(0); // no PLANK price: logs cost the starting 2 wei
         fire = new Fire(Fire.Config({{
             paper: address(paper), plank: address(plank), mill: address(new MockMill(address(plank), 1)), seaport: address(0),
             royaltyPool: address(0xB0B), randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
@@ -277,6 +297,23 @@ contract FireSimParityTest is Test {{
         assertEq(fire.fireSizeMilli(), afterSize, string.concat("fire size, day ", vm.toString(d)));
         assertEq(fire.fireId(), fireId, string.concat("fire id (did it go out?), day ", vm.toString(d)));
     }}
+
+    /// Every rung boundary of every night: the contract's storm ladder is the simulator's.
+    function test_ladder_matches_sim() public view {{
+        uint16[20] memory sizes = {ladder_sizes};
+        uint16[20][22] memory odds = {ladder_odds};
+        for (uint256 n = 2; n < 24; n++) {{
+            uint256 lo;
+            for (uint256 i; i < 20; i++) {{
+                uint256 hi = odds[n - 2][i];
+                if (hi > lo) {{
+                    assertEq(fire.stormStrength(n, lo), uint256(sizes[i]) * 1000);
+                    assertEq(fire.stormStrength(n, hi - 1), uint256(sizes[i]) * 1000);
+                }}
+                lo = hi;
+            }}
+        }}
+    }}
 {''.join(body)}
 }}
 """
@@ -310,7 +347,10 @@ if __name__ == "__main__" and "--pots" not in sys.argv:
 # held flat, so the pot is in today's dollars. When a fire with tickets goes out, the split is taken from the pot or from
 # 20x what that fire's own tickets put in, whichever is smaller: 40% winner, 25% burned, 5% royalty pool, the rest
 # carries. A fire nobody bought into carries 100%. The seed counts as carried-in pot.
-POT_PER_TICKET = 0.90 * 10 / 11
+POT_PER_TICKET = 0.90 * 10 / 11  # a log thrown on day 3+ (10 paid + 1 free)
+def pot_per_log(night):  # night = nights the fire has survived when the log is thrown (0 = its first day)
+    free = 3 if night == 0 else 2 if night == 1 else 1
+    return 0.90 * 10 / (10 + free)
 SEED = 250.0
 
 POT_SCENARIOS = [
@@ -340,7 +380,7 @@ def pot_run(days_t, luck):
     """Nightly pot (after the roll) and one record per fire that went out."""
     f = Fire(); pot = SEED; carried = SEED; nightly = []; ends = []
     for d, t in enumerate(days_t):
-        f.buy(t); pot += t * POT_PER_TICKET
+        pot += t * pot_per_log(f.night); f.buy(t)
         rec = f.roll(luck[d])
         if not rec["survived"]:
             if rec["tickets"] > 0:
@@ -358,7 +398,7 @@ def pot_monte_carlo(key, runs=200, days=365):
     curves, ends = [], []
     for i in range(runs):
         r = random.Random(hash((key, "pot", i)) & 0xffffffff)
-        d = pot_scenario(key, r, days); luck = [r.randrange(32) for _ in range(days)]
+        d = pot_scenario(key, r, days); luck = [r.randrange(10000) for _ in range(days)]
         c, e = pot_run(d, luck); curves.append(c); ends += [dict(x, run=i) for x in e]
     q = lambda xs, p: sorted(xs)[min(len(xs) - 1, int(p * len(xs)))]
     band = [(q([c[t] for c in curves], 0.1), q([c[t] for c in curves], 0.5), q([c[t] for c in curves], 0.9)) for t in range(days)]

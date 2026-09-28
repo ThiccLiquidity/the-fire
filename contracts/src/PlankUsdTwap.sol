@@ -4,13 +4,14 @@ pragma solidity ^0.8.24;
 /**
  * @title PlankUsdTwap
  * @notice A Chainlink-style PLANK/USD feed (**18 decimals** — PLANK is ~1e-9 USD, 8 decimals would round to 0) built from the Uniswap V2 PLANK/WETH pair's
- *         cumulative prices (a ~24h TWAP) and Chainlink ETH/USD.
+ *         cumulative prices (a ~30-minute TWAP) and Chainlink ETH/USD.
  *
  *         Anyone can call `checkpoint()` at any time; the feed reports the average price between the
  *         two most recent checkpoints, which are always at least MIN_WINDOW apart (the first window opens
- *         MIN_WINDOW after deploy; until then the feed reports 0 and the Fire's ratchet holds). A thin pool can be pushed
- *         for minutes; it can't be held for a day without real money, and the Fire's ratchet then
- *         only moves 5% per night on top of that. No owner, no admin.
+ *         MIN_WINDOW after deploy; until then the feed reports 0 and the Fire keeps its starting price). The keeper
+ *         checkpoints whenever `due()`, so log prices follow PLANK within about an hour. A flash loan lives for one
+ *         transaction and adds nothing to a time-weighted average; moving it means holding the pool off its price for
+ *         half an hour against arbitrage. No owner, no admin.
  */
 interface IUniswapV2Pair {
     function token0() external view returns (address);
@@ -28,7 +29,7 @@ contract PlankUsdTwap {
     IUniswapV2Pair public immutable PAIR;
     IEthUsdFeed public immutable ETH_USD;
     bool public immutable PLANK_IS_TOKEN0;
-    uint256 public constant MIN_WINDOW = 20 hours; // checkpoints closer together than this are ignored
+    uint256 public constant MIN_WINDOW = 30 minutes; // checkpoints closer together than this are ignored
     uint256 public constant ETH_FEED_MAX_AGE = 25 hours; // Chainlink ETH/USD: deviation updates + 24h heartbeat
 
     struct Obs { uint256 cum; uint32 ts; }
@@ -68,6 +69,11 @@ contract PlankUsdTwap {
         prev = last;
         last = Obs(cum, ts);
         emit Checkpoint(ts, _price());
+    }
+
+    /// @notice True when checkpoint() would roll the window forward (the keeper's cue).
+    function due() external view returns (bool) {
+        return block.timestamp - last.ts >= MIN_WINDOW;
     }
 
     function _price() internal view returns (uint256 plankUsd18) {

@@ -1,6 +1,6 @@
 import { PlankIcon } from "./PlankIcon";
 import { useState } from "react";
-import { DAILY_CAP, TX_CAP, type FireState, type Pay, type PriceSeen, quote, ticketsFor } from "../data/types";
+import { DAILY_CAP, TX_CAP, type FireState, type Pay, type PriceSeen, freeLogs, quote, ticketsFor } from "../data/types";
 import { TxPending, friendly, txUrl } from "../data/wallet";
 import { fmtAmt, fmtCount, fmtPlank, fmtUsd } from "../format";
 
@@ -11,7 +11,7 @@ const ETH_HEADROOM = 1; // an ETH buy sends exactly the price shown
 type Frozen = { n: number; pay: Pay; seen: PriceSeen; q: ReturnType<typeof quote> };
 
 export function BuyPanel({
-  you, plankPerTicket, paperPerTicket = 1, paperUsd = 0, plankUsd, ethUsd, onBuy, onConnect, paused, usdgEnabled, raw, abandoned, hold, demo,
+  you, plankPerTicket, paperPerTicket = 1, paperUsd = 0, plankUsd, ethUsd, onBuy, onConnect, paused, usdgEnabled, raw, abandoned, hold, demo, night = 2,
 }: {
   you: FireState["you"];
   plankPerTicket: number; paperPerTicket?: number; paperUsd?: number; plankUsd: number; ethUsd: number;
@@ -24,6 +24,8 @@ export function BuyPanel({
   /** the storm is mid-ceremony: buying waits until the result is shown */
   hold?: string;
   demo?: boolean;
+  /** nights the fire has survived: free logs are 3 on its first day, 2 on its second, 1 after */
+  night?: number;
 }) {
   const [n, setNRaw] = useState(1);
   const [note, setNoteRaw] = useState("");
@@ -59,9 +61,9 @@ export function BuyPanel({
     : usdgEnabled ? Math.floor(you.usdg + 1e-9) : 0;
   const affordable = Math.max(0, Math.min(byPlank, byMethod));
   const canToday = Math.min(affordable, you.remainingToday);
-  // the free 11th ticket counts toward the daily cap, so 10 only fits with room for 11
-  const maxNow = Math.max(0, Math.min(affordable, TX_CAP, you.remainingToday >= ticketsFor(TX_CAP) ? TX_CAP : Math.min(you.remainingToday, TX_CAP - 1)));
-  const got = ticketsFor(n); // tickets you'll hold for this buy
+  // the free logs count toward the daily cap, so 10 only fits with room for all of them
+  const maxNow = Math.max(0, Math.min(affordable, TX_CAP, you.remainingToday >= ticketsFor(TX_CAP, night) ? TX_CAP : Math.min(you.remainingToday, TX_CAP - 1)));
+  const got = ticketsFor(n, night); // logs you'll hold for this throw
   const bonus = got > n;
   const overCap = got > you.remainingToday;
   const legText = (x: ReturnType<typeof quote>, p: Pay) => (p === "paper" ? `${fmtPaper(x.paper)} PAPER` : p === "eth" ? `${fmtAmt(x.eth)} ETH` : `${fmtAmt(x.usdg)} USDG`);
@@ -74,11 +76,11 @@ export function BuyPanel({
 
   async function go(f: Frozen) {
     setBusy(true); setErr(""); setDone(null); setConfirming(null);
-    try { await onBuy(f.n, f.pay, note.trim(), f.seen); setNoteRaw(""); setDone({ n: ticketsFor(f.n), total: you.tickets + ticketsFor(f.n) }); }
+    try { await onBuy(f.n, f.pay, note.trim(), f.seen); setNoteRaw(""); setDone({ n: ticketsFor(f.n, night), total: you.tickets + ticketsFor(f.n, night) }); }
     catch (e) {
       if (e instanceof TxPending) {
         setPending(e.hash);
-        void e.later.then((ok) => { setPending(""); if (ok) setDone({ n: ticketsFor(f.n), total: you.tickets + ticketsFor(f.n) }); else setErr("That transaction failed on-chain. Nothing more was sent."); });
+        void e.later.then((ok) => { setPending(""); if (ok) setDone({ n: ticketsFor(f.n, night), total: you.tickets + ticketsFor(f.n, night) }); else setErr("That transaction failed on-chain. Nothing more was sent."); });
       } else setErr(friendly(e));
     }
     finally { setBusy(false); }
@@ -88,18 +90,18 @@ export function BuyPanel({
     try { await onConnect!(); } catch (e) { setErr(friendly(e)); } finally { setBusy(false); }
   }
 
-  const rules = <p className="fine">1 ticket = 1 PAPER (or $0.33 worth, whichever is less) + about $0.90 of PLANK. No PAPER? Pay $1 in ETH or USDG instead. Up to {TX_CAP} a buy ({TX_CAP} gets you {ticketsFor(TX_CAP)}), {DAILY_CAP} a day.</p>;
+  const rules = <p className="fine">1 log = 1 PAPER (or $0.33 worth, whichever is less) + about $0.90 of PLANK, and every log is a ticket to win. No PAPER? Pay $1 in ETH or USDG instead. Up to {TX_CAP} a throw, {DAILY_CAP} a day. Throw {TX_CAP} and get free logs: 3 on a fire's first day, 2 on its second, 1 after that.</p>;
 
   if (abandoned) return (
     <aside className="buy">
       <p className="hint strong"><b>The game has ended. Buying is closed.</b></p>
-      <p className="fine">Tonight's storm never arrived for 7 days, so the fire was ended for good. If you held tickets in the last fire, take your share of its pot above.</p>
+      <p className="fine">Tonight's storm never arrived for 7 days, so the fire was ended for good. If you had logs in the last fire, take your share of its pot above.</p>
     </aside>
   );
 
   if (!you.address && onConnect) return (
     <aside className="buy">
-      <button className="cta" disabled={busy} onClick={connect}>{busy ? "Connecting…" : demo ? "Connect the demo wallet to play" : "Connect wallet to buy tickets"}</button>
+      <button className="cta" disabled={busy} onClick={connect}>{busy ? "Connecting…" : demo ? "Connect the demo wallet to play" : "Connect wallet to throw logs"}</button>
       {err && <p className="hint">{err}</p>}
       {rules}
     </aside>
@@ -117,23 +119,23 @@ export function BuyPanel({
       <div className="wallet">
         <div><b>{fmtPaper(you.paper)}</b><span>PAPER{paperUsd > 0 ? ` · ${fmtUsd(you.paper * paperUsd)}` : ""}</span></div>
         <div><b><PlankIcon />{fmtPlank(you.plank)}</b><span>PLANK · {usdOrDash(you.plank * plankUsd, plankUsd)}</span></div>
-        <div><b>{fmtCount(canToday)}</b><span>tickets you can buy today with {pay === "paper" ? "PAPER" : pay.toUpperCase()}</span></div>
+        <div><b>{fmtCount(canToday)}</b><span>logs you can throw today with {pay === "paper" ? "PAPER" : pay.toUpperCase()}</span></div>
       </div>
 
       <div className="qty">
         <button className="qty-btn" aria-label="One fewer" disabled={n <= 1} onClick={() => setN(n - 1)}>−</button>
-        <input className="qty-in" type="number" inputMode="numeric" min={1} max={TX_CAP} value={n} aria-label="Tickets" onChange={(e) => setN(Number(e.target.value))} />
+        <input className="qty-in" type="number" inputMode="numeric" min={1} max={TX_CAP} value={n} aria-label="Logs" onChange={(e) => setN(Number(e.target.value))} />
         <button className="qty-btn" aria-label="One more" disabled={n >= TX_CAP} onClick={() => setN(n + 1)}>+</button>
         <button className="qty-max" disabled={maxNow === 0} onClick={() => setN(maxNow)}>Max <small>{maxNow}</small></button>
         {bonus
-          ? <span className="bonus on">🎁 {n} + 1 free = <b>{got} tickets</b></span>
-          : <button className="bonus" onClick={() => setN(TX_CAP)}>🎁 Buy {TX_CAP}, get 1 free</button>}
+          ? <span className="bonus on">🎁 {n} + {freeLogs(night)} free = <b>{got} logs</b></span>
+          : <button className="bonus" onClick={() => setN(TX_CAP)}>🎁 Throw {TX_CAP}, get {freeLogs(night)} free{night === 0 ? " (first-day bonus)" : night === 1 ? " (second-day bonus)" : ""}</button>}
       </div>
       <input className="note" maxLength={32} placeholder="Burn note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
 
       {paused && <p className="hint strong">The storm is rolling in. Buying reopens as soon as tonight's result lands.</p>}
       {hold && !paused && <p className="hint strong">{hold}</p>}
-      {done && !busy && <p className="done">🔥 {done.n} {done.n === 1 ? "ticket" : "tickets"} in. You hold {fmtCount(done.total)} in this fire.</p>}
+      {done && !busy && <p className="done">🔥 {done.n} {done.n === 1 ? "log" : "logs"} on the fire. You hold {fmtCount(done.total)} in this fire.</p>}
       {pending && (
         <p className="hint strong">Still pending. <a href={txUrl(pending)} target="_blank" rel="noreferrer">Check it on the explorer</a>. Buying stays locked until it lands. <button className="linkish" onClick={() => setPending("")}>Dismiss</button></p>
       )}
@@ -141,11 +143,11 @@ export function BuyPanel({
       {/* 1. choose how to pay for the PAPER part (nothing is spent here) */}
       <div className="payfor">
         <div className="payfor-head"><span>Pay with</span><button className="info-btn" onClick={() => setWhy(!why)} aria-expanded={why}>why $1?</button></div>
-        {why && <p className="fine">No PAPER? Pay $1 a ticket in ETH or USDG instead. That $1 goes toward buying mills off the floor and burning them, which sends the PLANK inside to the Paper Mill royalty pool. Same ticket, same PLANK.</p>}
+        {why && <p className="fine">No PAPER? Pay $1 a log in ETH or USDG instead. That $1 goes toward buying mills off the floor and burning them, which sends the PLANK inside to the Paper Mill royalty pool. Same log, same PLANK.</p>}
         <div className="seg" role="radiogroup" aria-label="Pay with">
-          <button role="radio" aria-checked={pay === "paper"} className={pay === "paper" ? "on" : ""} onClick={() => choose("paper")}>PAPER<small>{fmtPaper(paperPerTicket)} a ticket</small></button>
-          <button role="radio" aria-checked={pay === "eth"} className={pay === "eth" ? "on" : ""} disabled={!ethOn} onClick={() => choose("eth")}>ETH<small>{ethOn ? "$1 a ticket" : "paused (price feed late)"}</small></button>
-          {usdgEnabled && <button role="radio" aria-checked={pay === "usdg"} className={pay === "usdg" ? "on" : ""} onClick={() => choose("usdg")}>USDG<small>$1 a ticket</small></button>}
+          <button role="radio" aria-checked={pay === "paper"} className={pay === "paper" ? "on" : ""} onClick={() => choose("paper")}>PAPER<small>{fmtPaper(paperPerTicket)} a log</small></button>
+          <button role="radio" aria-checked={pay === "eth"} className={pay === "eth" ? "on" : ""} disabled={!ethOn} onClick={() => choose("eth")}>ETH<small>{ethOn ? "$1 a log" : "paused (price feed late)"}</small></button>
+          {usdgEnabled && <button role="radio" aria-checked={pay === "usdg"} className={pay === "usdg" ? "on" : ""} onClick={() => choose("usdg")}>USDG<small>$1 a log</small></button>}
         </div>
       </div>
 
@@ -158,12 +160,12 @@ export function BuyPanel({
         </div>
         {!confirming && (
           <button className="cta" disabled={locked || !canPay || overCap} onClick={() => { const f: Frozen = { n, pay, seen: seenNow(), q }; if (dollars) setConfirming(f); else void go(f); }}>
-            {busy ? "Throwing…" : `Throw ${got} ${got === 1 ? "ticket" : "tickets"} in`}
+            {busy ? "Throwing…" : `Throw ${got} ${got === 1 ? "log" : "logs"} on the fire`}
           </button>
         )}
         {confirming && (
           <div className="confirm" role="alertdialog" aria-label="Confirm payment">
-            <p>You're spending <b>{plankUsd > 0 ? fmtUsd(totalOf(confirming.q, confirming.pay)) : legText(confirming.q, confirming.pay)}</b>: {legText(confirming.q, confirming.pay)} and {fmtPlank(confirming.q.plank)} PLANK, for {ticketsFor(confirming.n)} {ticketsFor(confirming.n) === 1 ? "ticket" : "tickets"}{ticketsFor(confirming.n) > confirming.n ? ` (${confirming.n} + 1 free)` : ""}.{demo ? "Play money." : "Your wallet asks you to approve it next."}</p>
+            <p>You're spending <b>{plankUsd > 0 ? fmtUsd(totalOf(confirming.q, confirming.pay)) : legText(confirming.q, confirming.pay)}</b>: {legText(confirming.q, confirming.pay)} and {fmtPlank(confirming.q.plank)} PLANK, for {ticketsFor(confirming.n, night)} {ticketsFor(confirming.n, night) === 1 ? "log" : "logs"}{ticketsFor(confirming.n, night) > confirming.n ? ` (${confirming.n} + ${freeLogs(night)} free)` : ""}.{demo ? "Play money." : "Your wallet asks you to approve it next."}</p>
             <div className="confirm-row">
               <button className="cta ghost" onClick={() => setConfirming(null)}>Cancel</button>
               <button className="cta" disabled={locked} onClick={() => go(confirming)}>{busy ? "Throwing…" : `Pay ${plankUsd > 0 ? fmtUsd(totalOf(confirming.q, confirming.pay)) : ""}`.trim()}</button>
@@ -176,12 +178,12 @@ export function BuyPanel({
           <p className="hint">{hints.join(" ")} {plankShort || pay !== "paper" ? "Swap for some below." : <>Pick ETH or USDG above, swap for PAPER below, or <a href={OPENSEA} target="_blank" rel="noreferrer">get a mill</a> (it prints 1 PAPER a day).</>}</p>
         )}
         {overCap && (
-          <p className="hint">{you.remainingToday === 0 ? `You've hit today's ${DAILY_CAP}. More after tonight's storm.` : n === TX_CAP && you.remainingToday >= TX_CAP ? `A buy of ${TX_CAP} gives ${ticketsFor(TX_CAP)} — pick ${TX_CAP - 1} or fewer today.` : `${you.remainingToday} left today (cap ${DAILY_CAP} a wallet).`}</p>
+          <p className="hint">{you.remainingToday === 0 ? `You've hit today's ${DAILY_CAP}. More after tonight's storm.` : n === TX_CAP && you.remainingToday >= TX_CAP ? `A buy of ${TX_CAP} gives ${ticketsFor(TX_CAP, night)} — pick ${TX_CAP - 1} or fewer today.` : `${you.remainingToday} left today (cap ${DAILY_CAP} a wallet).`}</p>
         )}
       </div>
 
       {err && <p className="hint">{err}</p>}
-      <p className="fine muted">PAPER burns. All the PLANK goes into the fire's pot. Every ticket stays in until the fire goes out.</p>
+      <p className="fine muted">PAPER burns. All the PLANK goes into the fire's pot. Every log is a ticket to win, and it stays in the draw until the fire goes out.</p>
     </aside>
   );
 }

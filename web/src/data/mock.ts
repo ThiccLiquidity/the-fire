@@ -13,12 +13,12 @@ import {
   DAILY_CAP,
   FULL_DAYS,
   PRIZE_CAP_MULT,
-  LUCK_BPS,
   stormLook,
   KEEP,
   PLANK_USD_PER_TICKET,
   TX_CAP,
-  stormBase,
+  stormFor,
+  stormOdds,
   nextRollTime,
   quote,
   ticketsFor,
@@ -32,7 +32,7 @@ const PAPER_USD = 0.2; // demo only: a pretend PAPER market so PAPER has a price
 const YOU = "0xd00d000000000000000000000000000000000001";
 const FRIEND = "0xb0b0000000000000000000000000000000000002"; // "Switch wallet" in the demo flips to this one
 const NOBODY = "0x0000000000000000000000000000000000000000";
-const STORE = "the-fire-demo-v3";
+const STORE = "the-fire-demo-v4";
 const PRICE_MOVED = "The price moved at tonight's storm — check the new price and try again.";
 
 const wallets = Array.from({ length: 40 }, (_, i) => "0x" + (0x7a3e1c + i * 9973).toString(16).padStart(40, "a"));
@@ -45,10 +45,7 @@ const demoNames = ["plankdaddy", "MillOwner420", "Cinder", "sawdust.eth", "Brisk
 const demoProfiles: Record<string, Profile> = {};
 demoNames.forEach((name, i) => { demoProfiles[wallets[i].toLowerCase()] = { name, pfp: "" }; });
 
-// Fire.sol's tables: storm age factor ((n-1)/8)^1.5 for nights 2..23, and the 32-point luck table (e^(0.9 z) quantiles), in bps.
-const AGE = [442, 1250, 2296, 3536, 4941, 6495, 8185, 10000, 11932, 13975, 16123, 18371, 20715, 23150, 25674, 28284, 30977, 33750, 36601, 39528, 42530, 45604];
-const LUCK = LUCK_BPS;
-const RATCHET = 0.05; // ticket legs move at most 5% a night toward their target
+const RATCHET = 0.05; // the PAPER leg moves at most 5% a night toward its target (PLANK is live)
 
 /** One demo wallet's money and tickets. */
 interface Acct { paper: number; plank: number; eth: number; usdg: number; tickets: number; fire: number; bought: number; day: number; prize: number; refunded: boolean }
@@ -73,7 +70,9 @@ interface World {
 }
 
 export function makeMockApi(): FireApi {
-  const plankTarget = () => PLANK_USD_PER_TICKET / w.s.plankUsd;
+  const plankTarget = () => PLANK_USD_PER_TICKET / w.s.plankUsd; // live, like the contract's 30-minute average
+  /** How dark tonight's sky is: the chance tonight's storm beats the fire (never shown as a number). */
+  const threatOf = (s: FireState) => Math.max(0.1, Math.min(1, stormOdds(s.night + 1, s.fireSize) * 1.5));
   const fresh = (): World => {
     const trail = [470, 540, 505, 560, 490, 530, 545]; // mean 520
     const s: FireState = {
@@ -197,7 +196,7 @@ export function makeMockApi(): FireApi {
     if (s.rollPending) throw new Error("The storm is rolling in. Try again once it lands.");
     if (n < 1 || n > TX_CAP) throw new Error(`Up to ${TX_CAP} a buy.`);
     const q = quote(n, s.plankPerTicket, s.ethUsd, s.paperPerTicket); // priced on tickets paid for
-    const got = ticketsFor(n); // buy 10, get 1 free: 11 in, priced on the 10
+    const got = ticketsFor(n, s.night); // throw 10, get 3/2/1 free logs by the fire's day; priced on the 10
     const mine = w.accounts[who];
     if (mine) {
       // never charge more than the buyer was shown
@@ -228,6 +227,7 @@ export function makeMockApi(): FireApi {
       millFundEth: pay === "eth" ? s.millFundEth + q.eth : s.millFundEth,
       millFundUsdg: pay === "usdg" ? s.millFundUsdg + q.usdg : s.millFundUsdg,
     };
+    w.s = { ...w.s, threat: threatOf(w.s) }; // a bigger fire, a lighter sky
     if (pay !== "paper") maybeEatMill();
     emit();
   }
@@ -242,26 +242,24 @@ export function makeMockApi(): FireApi {
   /** Move a ticket leg at most 5% toward its target, like the contract does each night. */
   const ratchet = (cur: number, target: number) => Math.min(cur * (1 + RATCHET), Math.max(cur * (1 - RATCHET), target));
 
-  function storm(outcome: "random" | "survive" | "out" | "you-win" = "random", luckIdx?: number, quiet = false) {
+  function storm(outcome: "random" | "survive" | "out" | "you-win" = "random", draw?: number, quiet = false) {
     const s = w.s;
     if (s.abandoned) return;
     const before: Snapshot = { fireId: s.fireId, night: s.night, potPlank: s.potPlank, fireSize: s.fireSize, ticketsTotal: s.ticketsTotal, ticketsToday: s.ticketsToday, youTickets: s.you.tickets, youPlank: s.you.plank };
     const night = s.night + 1;
-    const avg = Math.floor(w.trail.reduce((x, y) => x + y, 0) * 1000 / Math.max(1, w.trail.length)) / 1000; // to the thousandth, like the contract
-    const luck = LUCK[luckIdx ?? rnd(32)];
     const size = s.fireSize;
-    // Fire.sol: storm = trailingAvg × ageBps × luckBps / 1e8, to the thousandth of a ticket; night 1 none, night 24+ infinite
-    let strength = night >= 24 ? Infinity : night <= 1 ? 0 : Math.floor((avg * 1000 * AGE[night - 2] * luck) / 1e8) / 1000;
+    // Fire.sol: one rung of the storm ladder, drawn with this night's odds; night 1 none, night 24+ infinite
+    let strength = stormFor(night, draw ?? rnd(10000));
     if (outcome === "survive") strength = Math.min(strength, Math.max(0, size * 0.6));
     if (outcome === "out" || outcome === "you-win") strength = Math.max(strength, size + 1);
     const survived = night === 1 && outcome !== "out" && outcome !== "you-win" ? true : night < 24 && size > strength;
     const shown = Number.isFinite(strength) ? strength : size * 3 + 1;
     const intensity = stormLook(shown, size, survived);
 
-    // the night turns over: today's tickets join the 7-night average, the daily cap resets, the ticket legs ratchet
+    // the night turns over: today's logs join the 7-night average, the daily cap resets, the PAPER leg ratchets
     w.trail = [...w.trail, s.ticketsToday].slice(-7);
     w.day += 1;
-    const legs = { plankPerTicket: ratchet(s.plankPerTicket, plankTarget()), paperPerTicket: Math.min(1, ratchet(s.paperPerTicket, paperPerTicketAt(s.paperUsd))) };
+    const legs = { plankPerTicket: plankTarget(), paperPerTicket: Math.min(1, ratchet(s.paperPerTicket, paperPerTicketAt(s.paperUsd))) };
     if (survived) {
       const after = Math.max(0, (size - shown) * KEEP);
       const newAvg = Math.max(1, Math.floor(w.trail.reduce((x, y) => x + y, 0) / w.trail.length));
@@ -298,9 +296,7 @@ export function makeMockApi(): FireApi {
         ticketsToday: 0, ticketsTotal: 0,
       };
     }
-    const nextAvg = Math.max(1, Math.floor(w.trail.reduce((x, y) => x + y, 0) / w.trail.length));
-    const nb = stormBase(w.s.night + 1, nextAvg);
-    w.s = { ...w.s, threat: Math.max(0.1, Math.min(1, nb / (nextAvg * 2))), nextRollAt: nextRollTime(), rollPending: false, rollAction: undefined };
+    w.s = { ...w.s, threat: threatOf(w.s), nextRollAt: nextRollTime(), rollPending: false, rollAction: undefined };
     if (quiet) w.s = { ...w.s, storm: undefined };
     emit();
   }

@@ -1,16 +1,16 @@
 // Demo-only control deck: drive every state of the site without a chain. Rendered only when the site runs on the mock.
 import { useState } from "react";
-import { LUCK_BPS, type DemoControls, type FireState } from "../data/types";
+import { stormFor, type DemoControls, type FireState } from "../data/types";
 import { sceneRef } from "./Scene";
 
 const KINDS = ["deer", "rabbit", "squirrel", "skunk", "birds", "heron", "frog", "bear"] as const;
-const LUCK_X = LUCK_BPS.map((b) => +(b / 10000).toFixed(b < 10000 ? 2 : 1));
 
 export function Playground({ s, d, hour, onHour, onSceneOpt }: {
   s: FireState; d: DemoControls; hour: number | null; onHour: (h: number | null) => void; onSceneOpt?: (k: string, v: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [luck, setLuck] = useState(16);
+  const [pct, setPct] = useState(50);
+  const luck = Math.min(9999, pct * 100 + 50); // the random draw, 0..9,999
   const [crowd, setCrowd] = useState(6);
   const [ethStale, setEthStale] = useState(false);
   const usd = (plank: number) => Math.round(plank * s.plankUsd);
@@ -31,7 +31,7 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
               <button onClick={() => d.roll("out", luck)}>Force: fire goes out</button>
               <button className="hot" onClick={() => d.roll("you-win", luck)}>Force: you win</button>
             </div>
-            <label>Storm luck ×{LUCK_X[luck]} <input type="range" min={0} max={31} value={luck} onChange={(e) => setLuck(num(e.target.value))} /> <small>the contract's 32 quantiles; median ×1.0</small></label>
+            <label>Storm draw {pct}% → {(() => { const n = stormFor(s.night + 1, luck); return Number.isFinite(n) ? n.toLocaleString() + " logs" : "infinite"; })()} vs a {Math.round(s.fireSize).toLocaleString()}-log fire <input type="range" min={0} max={99} value={pct} onChange={(e) => setPct(num(e.target.value))} /> <small>the contract's storm ladder; higher = a bigger storm for tonight</small></label>
             <div className="pg-row">
               <label><input type="checkbox" checked={!!s.rollPending} onChange={(e) => d.setPending(e.target.checked)} /> Storm pending (buying paused, "Bring in tonight's storm" shown)</label>
               <button onClick={() => d.skipNights(1)}>Skip 1 night</button>
@@ -47,7 +47,7 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
             <h3>The fire</h3>
             <div className="pg-grid">
               <label>Night <input type="number" value={s.night} onChange={(e) => d.set({ night: num(e.target.value) })} /></label>
-              <label>Fire size (tickets) <input type="number" value={Math.round(s.fireSize)} onChange={(e) => d.set({ fireSize: num(e.target.value) })} /></label>
+              <label>Fire size (logs) <input type="number" value={Math.round(s.fireSize)} onChange={(e) => d.set({ fireSize: num(e.target.value) })} /></label>
               <label>Pot ($) <input type="number" value={usd(s.potPlank)} onChange={(e) => d.set({ potPlank: num(e.target.value) / s.plankUsd })} /></label>
               <label>Tickets in this fire <input type="number" value={s.ticketsTotal} onChange={(e) => d.set({ ticketsTotal: num(e.target.value) })} /></label>
               <label>7-night avg (storm scale) <input type="number" value={Math.round(s.trailingAvg)} onChange={(e) => d.set({ trailingAvg: Math.max(1, num(e.target.value)) })} /></label>
@@ -57,7 +57,7 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
 
           <section>
             <h3>Prices and feeds</h3>
-            <p className="fine">A ticket's PLANK and PAPER amounts follow a price change at most 5% a night, like the contract.</p>
+            <p className="fine">A log's PLANK and PAPER amounts follow a price change at most 5% a night, like the contract.</p>
             <div className="pg-grid">
               <label>PLANK price ($ per 1B) <input type="number" step={0.1} value={+(s.plankUsd * 1e9).toFixed(3)} onChange={(e) => d.set({ plankUsd: Math.max(0.01, num(e.target.value)) / 1e9 })} /></label>
               <label>PAPER price ($, 0 = no market) <input type="number" step={0.01} min={0} value={s.paperUsd} onChange={(e) => d.set({ paperUsd: Math.max(0, num(e.target.value)) })} /></label>
@@ -79,7 +79,7 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
               <label>PLANK (billions) <input type="number" step={0.1} value={+(s.you.plank / 1e9).toFixed(2)} onChange={(e) => d.setYou({ plank: num(e.target.value) * 1e9 })} /></label>
               <label>ETH <input type="number" step={0.01} value={s.you.eth} onChange={(e) => d.setYou({ eth: num(e.target.value) })} /></label>
               <label>USDG <input type="number" value={s.you.usdg} onChange={(e) => d.setYou({ usdg: num(e.target.value) })} /></label>
-              <label>Your tickets in this fire <input type="number" value={s.you.tickets} onChange={(e) => d.setYou({ tickets: num(e.target.value) })} /></label>
+              <label>Your logs in this fire <input type="number" value={s.you.tickets} onChange={(e) => d.setYou({ tickets: num(e.target.value) })} /></label>
               <label>Left today (cap 500) <input type="number" value={s.you.remainingToday} onChange={(e) => d.setYou({ remainingToday: num(e.target.value) })} /></label>
             </div>
             <div className="pg-row">
