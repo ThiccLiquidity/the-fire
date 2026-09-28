@@ -56,3 +56,23 @@ Wallets hitting the 500/day cap: 0.00 per day on average, max 0.0 — only whale
 - **Fire lifetimes are stable everywhere** (mean 9.6 nights, max 18) because the storm scales to the community's own volume. That was the design goal and it holds at 1k mills and 10k.
 - **Fairness holds.** Whale, mid and small holders all get back ~20¢ per dollar. The caps and the tiny discount do their job. The daily cap essentially never binds.
 - Not modeled: PAPER/PLANK price dynamics, wallet splitting to dodge the 500 cap (it's gas and effort; unlikely at this scale), founder behaviour, secondary-market mill floor changes as mills get eaten.
+
+
+## PAPER price scenarios (Sep 28 2026, `sim/economy.py`, baseline participation, 3 seeds)
+
+A ticket takes 1 PAPER, or less once PAPER trades above $0.33 (`Fire.PAPER_USD_CAP`), so the PAPER part never costs
+more than $0.33 and a PAPER-path ticket never more than ~$1.23 however high PAPER goes. The $1 ETH/USDG option is
+unchanged. "Tickets/day" assumes holders keep their buying habit and keep the PAPER they save (`paper_demand="tickets"`);
+the last two columns assume they burn as much PAPER as before and buy more tickets (`"paper"`, optimistic: needs
+proportionally more PLANK).
+
+| PAPER price | PAPER per ticket | Ticket cost (PAPER path) | Tickets/day | Share of printed PAPER burned | Median pot | Tickets/day if people burn the same PAPER | Median pot then |
+|---|---|---|---|---|---|---|---|
+| $0.001 | 1 | $0.90 | 741 | 74% | $4,600 | 741 | $4,600 |
+| $0.1 | 1 | $1.00 | 741 | 74% | $4,600 | 741 | $4,600 |
+| $0.33 | 1 | $1.23 | 741 | 74% | $4,600 | 741 | $4,600 |
+| $1 | 0.33 | $1.23 | 1319 | 44% | $7,926 | 2276 | $13,750 |
+| $5 | 0.066 | $1.23 | 1924 | 13% | $11,802 | 10106 | $61,233 |
+
+Reading it: at a penny or at 33¢ nothing changes. Above 33¢ tickets stay at ~$1.23; holders' PAPER stretches further,
+so they play more and pots grow, while a smaller share of printed PAPER is burned (fewer PAPER per ticket).

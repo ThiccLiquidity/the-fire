@@ -24,6 +24,7 @@ PLANK_LEG_USD = 0.90
 ETH_LEG_USD = 1.00
 TX_CAP, DAY_CAP = 10, 500
 KEEP = 0.6
+PAPER_USD_CAP = 0.33               # the PAPER leg never costs more than this (Fire.PAPER_USD_CAP)
 C, P, SIGMA = 1.0, 1.5, 0.9
 
 @dataclass
@@ -32,7 +33,11 @@ class Scenario:
     participation: str = "med"     # low / med / high
     outsiders_per_day: float = 5   # ETH ticket buyers per day (Poisson)
     mill_floor_usd: float = 100.0  # what the fire pays for a mill
-    paper_usd: float = 0.25        # only used to report $ values of PAPER
+    paper_usd: float = 0.25        # PAPER's market price; above PAPER_USD_CAP a ticket takes less than 1 PAPER
+    # When PAPER is worth more than the cap, a ticket needs less of it. "tickets": holders buy as many tickets as they
+    # would anyway and keep the PAPER they save (conservative). "paper": they burn as much PAPER as before and so buy
+    # more tickets (optimistic; needs proportionally more PLANK).
+    paper_demand: str = "tickets"
     days: int = 365
     seed: int = 0
     rally: bool = True
@@ -94,12 +99,14 @@ def run(sc: Scenario) -> dict:
             if fire_size < danger:
                 want += paper * rally_frac * 0.5 * min(1.5, (danger - fire_size) / max(1, danger))
         want = np.minimum(want, paper)
+        ppt = min(1.0, PAPER_USD_CAP / sc.paper_usd)  # PAPER per ticket
+        if sc.paper_demand == "paper": want = want / ppt  # same PAPER burned buys more tickets
         # PLANK leg: assume holders buy the PLANK they need (it's $0.90/ticket) — no PLANK balance constraint
         tix = np.floor(want)
         capped = tix > DAY_CAP; T["cap_hits"] += capped.sum(); tix = np.minimum(tix, DAY_CAP)
         # per-tx cap only affects discount: full 10s get 3% off the PAPER+PLANK legs
         full_tens = np.floor(tix / TX_CAP); rest = tix - full_tens * TX_CAP
-        paper_cost = full_tens * TX_CAP * 0.97 + rest
+        paper_cost = (full_tens * TX_CAP * 0.97 + rest) * ppt
         plank_cost_usd = (full_tens * TX_CAP * 0.97 + rest) * PLANK_LEG_USD
         T["tx_count"] += (full_tens + (rest > 0)).sum()
         paper -= paper_cost; T["paper_burned"] += paper_cost.sum()
@@ -119,7 +126,7 @@ def run(sc: Scenario) -> dict:
         # --- fire
         today = tix.sum() + out_t
         fire_size += today; tickets_in_fire += today; fire_ticket_owner += tix; outsider_tickets_fire += out_t
-        tickets_bought += tix; spent_usd += tix * (1 * sc.paper_usd + PLANK_LEG_USD)
+        tickets_bought += tix; spent_usd += tix * (ppt * sc.paper_usd + PLANK_LEG_USD)
         trail.append(today); trail = trail[-7:]; ref = float(np.mean(trail))
         # --- mill fund eats mills
         if not bought_since_roll: mill_bid *= 1.05

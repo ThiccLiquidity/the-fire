@@ -14,6 +14,7 @@ contract FireTest is Test {
     MockRandomness rng;
     MockFeed ethFeed;
     MockFeed plankFeed;
+    MockFeed paperFeed;
 
     address royalty = address(0xB0B);
     address alice = address(0xA11CE);
@@ -41,11 +42,12 @@ contract FireTest is Test {
         mill = new MockMill(address(plank), PLANK_IN_MILL);
         rng = new MockRandomness();
         ethFeed = new MockFeed(3_333_33333333); // $3,333.33 -> $1 = 0.0003 ETH
-        plankFeed = new MockFeed(90_000_000_000); // $9e-8 per PLANK in 18-dec -> $0.90 for 10M PLANK
+        plankFeed = new MockFeed(90_000_000_000);
+        paperFeed = new MockFeed(0); // no PAPER market yet // $9e-8 per PLANK in 18-dec -> $0.90 for 10M PLANK
         fire = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(0), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000 /* $0.90 */,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000 /* $0.90 */,
             ethUsdPerTicket: 100_000_000 /* $1.00 */, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         rng.setFire(address(fire));
@@ -283,8 +285,8 @@ contract FireTest is Test {
         sea = new MockSeaport(address(mill));
         f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether); // ~$3,333 of ETH-ticket money
@@ -444,8 +446,8 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether); // stands in for ETH from "paper from the fire" buys
@@ -469,8 +471,8 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether);
@@ -484,8 +486,8 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether);
@@ -504,8 +506,8 @@ contract FireTest is Test {
         MockSeaport sea = new MockSeaport(address(mill));
         Fire f2 = new Fire(Fire.Config({
             paper: address(paper), plank: address(plank), mill: address(mill), seaport: address(sea), royaltyPool: royalty,
-            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), usdg: address(usdg),
-            paperPerTicket: PAPER_T, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
+            randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed), paperUsdFeed: address(paperFeed), usdg: address(usdg),
+            paperPerTicket: PAPER_T, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_T, plankUsdPerTicket: 90_000_000,
             ethUsdPerTicket: 100_000_000, millBidBase: MILL_BID, rollTimeOfDay: ROLL_TOD
         }));
         vm.deal(address(f2), 1 ether);
@@ -598,6 +600,60 @@ contract FireTest is Test {
         rng.fulfill(rng.last(), RND_CALM);
         assertEq(fire.night(), 1, "night resolved");
         assertEq(fire.plankPerTicket(), PLANK_T, "leg held");
+    }
+
+    // ------------------------------------------------------------ PAPER leg: never worth more than $0.33
+    function _rollWithPaperAt(int256 paperUsd18) internal {
+        vm.warp(fire.nextRollAt());
+        ethFeed.set(ethFeed.answer()); plankFeed.set(plankFeed.answer()); paperFeed.set(paperUsd18);
+        fire.roll();
+        rng.fulfill(rng.last(), RND_CALM);
+    }
+
+    function test_paper_leg_stays_1_while_paper_is_cheap_or_unpriced() public {
+        _roll(RND_CALM); // no PAPER market: price 0
+        assertEq(fire.paperPerTicket(), 1e18);
+        _rollWithPaperAt(0.001e18); // a tenth of a cent
+        assertEq(fire.paperPerTicket(), 1e18, "never more than 1 PAPER");
+        _rollWithPaperAt(0.33e18); // right at the cap
+        assertEq(fire.paperPerTicket(), 1e18);
+    }
+
+    function test_paper_leg_shrinks_5pct_a_night_toward_the_cap_when_paper_is_expensive() public {
+        _rollWithPaperAt(5e18); // PAPER at $5: target 0.066 PAPER, but only 5% a night
+        assertEq(fire.paperPerTicket(), 0.95e18);
+        _rollWithPaperAt(5e18);
+        assertEq(fire.paperPerTicket(), 0.9025e18);
+        for (uint256 i; i < 60; i++) _rollWithPaperAt(5e18);
+        assertEq(fire.paperPerTicket(), uint256(33_000_000) * 1e28 / 5e18, "settles at $0.33 of PAPER");
+        (uint256 paperCost,,) = fire.quote(1);
+        assertEq(paperCost, 0.066e18);
+        // tickets burn exactly that much PAPER
+        uint256 dead = paper.balanceOf(DEAD);
+        _buy(alice, 1);
+        assertEq(paper.balanceOf(DEAD) - dead, 0.066e18);
+    }
+
+    function test_paper_leg_climbs_back_to_1_when_paper_falls() public {
+        for (uint256 i; i < 70; i++) _rollWithPaperAt(5e18);
+        uint256 low = fire.paperPerTicket();
+        _rollWithPaperAt(0.01e18);
+        assertEq(fire.paperPerTicket(), low * 10_500 / 10_000, "back up 5% a night");
+        for (uint256 i; i < 100; i++) _rollWithPaperAt(0.01e18);
+        assertEq(fire.paperPerTicket(), 1e18, "and stops at 1 PAPER");
+    }
+
+    function test_broken_or_stale_paper_feed_holds_and_never_blocks_the_night() public {
+        for (uint256 i; i < 3; i++) _rollWithPaperAt(5e18);
+        uint256 held = fire.paperPerTicket();
+        paperFeed.setBroken(true);
+        _roll(RND_CALM);
+        assertEq(fire.paperPerTicket(), held, "broken feed: hold");
+        paperFeed.setBroken(false);
+        vm.warp(fire.nextRollAt() + 2 days); // PAPER feed not refreshed for 3+ days: stale
+        ethFeed.set(ethFeed.answer()); plankFeed.set(plankFeed.answer());
+        fire.roll(); rng.fulfill(rng.last(), RND_CALM);
+        assertEq(fire.paperPerTicket(), held, "stale feed: hold");
     }
 
     function test_tx_cap_10() public {

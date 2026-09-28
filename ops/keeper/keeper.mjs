@@ -4,7 +4,8 @@
 //                        verifies it, so the keeper can't change the number — it's just the fastest deliverer)
 //   - adapter.settle(id) if the router has the number but the callback didn't land
 //   - reroll()           if a roll has had no answer for 30 minutes (only if drand itself is unreachable)
-//   - twap.checkpoint()  once the PLANK/USD window is 20h+ old
+//   - twap.checkpoint()  once the PLANK/USD window is 20h+ old; the PAPER/USD feed whenever it says it's due
+//                        (adopting PAPER's pool once someone creates one)
 //   - sweep the mill floor: buy the cheapest OpenSea listing at or under the fire's bid that the fund can pay
 //     (only if OPENSEA_API_KEY is set; checks every SWEEP_EVERY_SEC, default 300, to respect API limits)
 // Every call here is permissionless: the keeper has no special powers, it's just reliably awake.
@@ -70,6 +71,8 @@ const millAbi = parseAbi([
 const feedAbi = parseAbi(["function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)"]);
 const burnFeeAbi = parseAbi(["function burnFee() view returns (uint256)"]);
 const decimalsAbi = parseAbi(["function decimals() view returns (uint8)"]);
+const paperTwapAbi = parseAbi(["function due() view returns (bool)", "function checkpoint()"]);
+const paperFeedAbi = parseAbi(["function PAPER_USD() view returns (address)"]);
 const twapAbi = parseAbi(["function last() view returns (uint256 cum, uint32 ts)", "function MIN_WINDOW() view returns (uint256)", "function checkpoint()"]);
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
@@ -176,6 +179,11 @@ async function tick() {
     } else log(`request ${pending}: waiting for drand round ${round}`);
   }
   try { await sweep(now); } catch (e) { log("sweep failed:", e.shortMessage ?? e.message); }
+  // PAPER/USD feed (found through the Fire): adopts PAPER's pool once one exists, then rolls its window daily.
+  const paperTwap = await read(FIRE, paperFeedAbi, "PAPER_USD").catch(() => undefined);
+  if (paperTwap && paperTwap !== "0x0000000000000000000000000000000000000000" && (await read(paperTwap, paperTwapAbi, "due").catch(() => false))) {
+    await send(paperTwap, paperTwapAbi, "checkpoint");
+  }
   if (TWAP) {
     const [[, lastTs], minWindow] = await Promise.all([read(TWAP, twapAbi, "last"), read(TWAP, twapAbi, "MIN_WINDOW")]);
     if (now >= BigInt(lastTs) + minWindow) await send(TWAP, twapAbi, "checkpoint");

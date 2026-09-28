@@ -88,7 +88,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     IMill public immutable MILL;
     ISeaport public immutable SEAPORT; // address(0) disables mill buying entirely
     address public immutable ROYALTY_POOL;
-    uint256 public immutable PAPER_PER_TICKET; // in PAPER wei (1 PAPER)
+    uint256 public immutable PAPER_PER_TICKET; // the most PAPER a ticket ever takes, in PAPER wei (1 PAPER)
+    uint256 public immutable PAPER_USD_CAP; // the PAPER leg never costs more than this, USD 8 decimals ($0.33)
+    IPriceFeed public immutable PAPER_USD; // PAPER/USD, **18 decimals** (PaperUsdTwap); 0 until PAPER has a market
+    uint256 public paperPerTicket; // PAPER wei per ticket: PAPER_PER_TICKET, or less once PAPER is worth > the cap
     uint256 public immutable ETH_USD_PER_TICKET; // "paper from the fire" price in USD, 8 decimals (1e8 = $1), paid in ETH or USDG
     uint256 public immutable PLANK_USD_PER_TICKET; // PLANK leg target, USD 8-decimals
     IPriceFeed public immutable ETH_USD; // Chainlink ETH/USD
@@ -170,8 +173,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         address randomness;
         address ethUsdFeed;
         address plankUsdFeed;
+        address paperUsdFeed;
         address usdg;
         uint256 paperPerTicket;
+        uint256 paperUsdCap;
         uint256 plankPerTicket0;
         uint256 plankUsdPerTicket;
         uint256 ethUsdPerTicket;
@@ -189,6 +194,9 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         ETH_USD = IPriceFeed(c.ethUsdFeed);
         PLANK_USD = IPriceFeed(c.plankUsdFeed);
         PAPER_PER_TICKET = c.paperPerTicket;
+        paperPerTicket = c.paperPerTicket;
+        PAPER_USD_CAP = c.paperUsdCap;
+        PAPER_USD = IPriceFeed(c.paperUsdFeed);
         plankPerTicket = c.plankPerTicket0;
         PLANK_USD_PER_TICKET = c.plankUsdPerTicket;
         ETH_USD_PER_TICKET = c.ethUsdPerTicket;
@@ -230,7 +238,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
 
     function _legs(uint256 n) internal view returns (uint256 paperCost, uint256 plankCost) {
         uint256 bps = priceBps(n);
-        paperCost = n * PAPER_PER_TICKET * bps / BPS;
+        paperCost = n * paperPerTicket * bps / BPS;
         plankCost = n * plankPerTicket * bps / BPS;
     }
 
@@ -353,6 +361,7 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         dayIndex += 1;
         nextRollAt = _nextRollTime(block.timestamp);
         _ratchetPlankLeg();
+        _ratchetPaperLeg();
         _pokeMillBid();
 
         // The storm takes a bite. What's left burns down to 60% overnight and is tomorrow's starting size.
@@ -533,6 +542,26 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         uint256 maxUp = cur * (BPS + PLANK_RATCHET_BPS) / BPS;
         uint256 maxDown = cur * (BPS - PLANK_RATCHET_BPS) / BPS;
         plankPerTicket = target > maxUp ? maxUp : target < maxDown ? maxDown : target;
+    }
+
+    /// @dev Keep the PAPER leg worth at most PAPER_USD_CAP: 1 PAPER while PAPER is cheap, fewer once it trades above
+    ///      the cap, so a PAPER rally never makes tickets expensive (the prize is PLANK). Moves at most 5% a night, from
+    ///      a >= 20h average price. No price (no PAPER market yet, stale or broken feed): hold.
+    function _ratchetPaperLeg() internal {
+        if (address(PAPER_USD) == address(0)) return;
+        int256 px;
+        uint256 updatedAt;
+        try PAPER_USD.latestRoundData() returns (uint80, int256 a, uint256, uint256 u, uint80) { (px, updatedAt) = (a, u); }
+        catch { return; }
+        if (px <= 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > 2 days) return;
+        // PAPER wei worth the cap = (USD cap, 8 dec) * 1e28 / (USD per PAPER, 18 dec); never more than PAPER_PER_TICKET
+        uint256 target = PAPER_USD_CAP * 1e28 / uint256(px);
+        if (target > PAPER_PER_TICKET) target = PAPER_PER_TICKET;
+        uint256 cur = paperPerTicket;
+        uint256 maxUp = cur * (BPS + PLANK_RATCHET_BPS) / BPS;
+        uint256 maxDown = cur * (BPS - PLANK_RATCHET_BPS) / BPS;
+        uint256 next = target > maxUp ? maxUp : target < maxDown ? maxDown : target;
+        paperPerTicket = next > PAPER_PER_TICKET ? PAPER_PER_TICKET : next;
     }
 
     /// @notice The mill fund's USDG side.

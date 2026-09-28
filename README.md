@@ -4,7 +4,7 @@ Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds 
 
 - `docs/spec.md` — the design, numbers, and why. Start here.
 - `docs/randomness.md` — which randomness provider to use on Robinhood Chain (OpenVRF).
-- `contracts/` — Foundry project. `Fire.sol` is the game, `Profiles.sol` is names + pictures for wallets (picture bytes live in the event log, hash in storage). 75 tests (two suites run against a real drand proof and real Seaport 1.6 code).
+- `contracts/` — Foundry project. `Fire.sol` is the game, `Profiles.sol` is names + pictures for wallets (picture bytes live in the event log, hash in storage). 86 tests (two suites run against a real drand proof and real Seaport 1.6 code).
 - `web/` — the site (Vite + React). Runs on a built-in mock until the contract is deployed.
 - `sim/` — the Python simulation the numbers came from.
 
