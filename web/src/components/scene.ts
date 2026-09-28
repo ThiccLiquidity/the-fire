@@ -69,7 +69,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   let amb: ReturnType<typeof createAmbience> | null = null;
   // Plank, PLANK's mascot, leans on a log by the fire. Tinted on a small offscreen canvas: dark at night, warm on
   // the side facing the flames, flickering with them.
-  const plankImg = new Image(); plankImg.src = "/plank.webp";
+  const plankImg = new Image(); plankImg.src = import.meta.env.BASE_URL + "plank.webp";
   const pc = document.createElement("canvas"); const pcx = pc.getContext("2d");
   function drawPlank(px: number, py: number, h: number, dark: number, warm: number) {
     if (!pcx || !plankImg.complete || !plankImg.naturalWidth) return;
@@ -91,7 +91,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   }
   async function loadThunder() {
     try { audio(); if (!ac) return; if (loading) return; loading = true;
-      for (const k of THUNDER) { if (bufs[k]) continue; const r = await fetch(`/thunder/${k}.mp3`); bufs[k] = await ac.decodeAudioData(await r.arrayBuffer()); }
+      for (const k of THUNDER) { if (bufs[k]) continue; const r = await fetch(`${import.meta.env.BASE_URL}thunder/${k}.mp3`); bufs[k] = await ac.decodeAudioData(await r.arrayBuffer()); }
     } catch { /* no audio */ }
   }
   function thunder(I: number, delay: number) {

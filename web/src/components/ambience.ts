@@ -111,7 +111,7 @@ export function createAmbience(ac: AudioContext) {
     // the fire first, then whatever the time of day needs, then the rest
     for (const name of [...REC, "owl"]) {
       try {
-        const r = await fetch(`/ambience/${name}.mp3`); if (!r.ok) continue;
+        const r = await fetch(`${import.meta.env.BASE_URL}ambience/${name}.mp3`); if (!r.ok) continue;
         const buf = await ac.decodeAudioData(await r.arrayBuffer());
         if (name === "owl") { owlBuf = buf; continue; }
         const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
