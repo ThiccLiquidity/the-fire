@@ -1,3 +1,4 @@
+import { PlankIcon } from "./PlankIcon";
 import { useState } from "react";
 import { DAILY_CAP, TX_CAP, type FireState, type Pay, type PriceSeen, quote, ticketsFor } from "../data/types";
 import { TxPending, friendly, txUrl } from "../data/wallet";
@@ -115,7 +116,7 @@ export function BuyPanel({
     <aside className="buy">
       <div className="wallet">
         <div><b>{fmtPaper(you.paper)}</b><span>PAPER{paperUsd > 0 ? ` · ${fmtUsd(you.paper * paperUsd)}` : ""}</span></div>
-        <div><b>{fmtPlank(you.plank)}</b><span>PLANK · {usdOrDash(you.plank * plankUsd, plankUsd)}</span></div>
+        <div><b><PlankIcon />{fmtPlank(you.plank)}</b><span>PLANK · {usdOrDash(you.plank * plankUsd, plankUsd)}</span></div>
         <div><b>{fmtCount(canToday)}</b><span>tickets you can buy today with {pay === "paper" ? "PAPER" : pay.toUpperCase()}</span></div>
       </div>
 
@@ -152,7 +153,7 @@ export function BuyPanel({
       <div className="path">
         <div className="spend">
           <span className="spend-label">You pay</span>
-          <span className="spend-items">{legText(q, pay)}{dollars ? <small> ({fmtUsd(q.usdg)})</small> : paperUsd > 0 ? <small> ({fmtUsd(q.paper * paperUsd)})</small> : null} + {fmtPlank(q.plank)} PLANK <small>({usdOrDash(q.plank * plankUsd, plankUsd)})</small></span>
+          <span className="spend-items">{legText(q, pay)}{dollars ? <small> ({fmtUsd(q.usdg)})</small> : paperUsd > 0 ? <small> ({fmtUsd(q.paper * paperUsd)})</small> : null} + <PlankIcon />{fmtPlank(q.plank)} PLANK <small>({usdOrDash(q.plank * plankUsd, plankUsd)})</small></span>
           {showTotal && <span className="spend-total">{fmtUsd(total)} total</span>}
         </div>
         {!confirming && (

@@ -67,6 +67,21 @@ export function createScene(canvas: HTMLCanvasElement) {
   const st = { phase: "none" as "none" | "in" | "strike" | "rain" | "ashes" | "relight" | "out", vis: 0.5, cover: 0, rainA: 0, at: 0, survived: true, dead: 0, bolts: [] as { x: number; cloud: boolean; age: number; life: number; pts: number[][] }[], nextBolt: 0, seen: 0, flash: 0, sizeFrom: 0, sizeTo: 0, sizeNow: 0 };
   let ac: AudioContext | null = null; const bufs: Record<string, AudioBuffer> = {}; let loading = false;
   let amb: ReturnType<typeof createAmbience> | null = null;
+  // Plank, PLANK's mascot, leans on a log by the fire. Tinted on a small offscreen canvas: dark at night, warm on
+  // the side facing the flames, flickering with them.
+  const plankImg = new Image(); plankImg.src = "/plank.webp";
+  const pc = document.createElement("canvas"); const pcx = pc.getContext("2d");
+  function drawPlank(px: number, py: number, h: number, dark: number, warm: number) {
+    if (!pcx || !plankImg.complete || !plankImg.naturalWidth) return;
+    const w = h * plankImg.naturalWidth / plankImg.naturalHeight, cw = Math.ceil(w * dpr * 1.5), ch = Math.ceil(h * dpr * 1.5);
+    if (pc.width !== cw || pc.height !== ch) { pc.width = cw; pc.height = ch; }
+    pcx.globalCompositeOperation = "source-over"; pcx.clearRect(0, 0, cw, ch); pcx.drawImage(plankImg, 0, 0, cw, ch);
+    pcx.globalCompositeOperation = "source-atop";
+    if (dark > 0) { pcx.fillStyle = `rgba(6,10,26,${dark})`; pcx.fillRect(0, 0, cw, ch); }
+    if (warm > 0) { const wg = pcx.createLinearGradient(0, 0, cw, 0); wg.addColorStop(0, "rgba(255,120,30,0)"); wg.addColorStop(1, `rgba(255,140,40,${warm})`); pcx.fillStyle = wg; pcx.fillRect(0, 0, cw, ch); }
+    x.fillStyle = `rgba(0,0,0,${0.35 + dark * 0.2})`; x.beginPath(); x.ellipse(px + w * 0.1, py - 2, w * 0.55, 6, 0, 0, 7); x.fill();
+    x.save(); x.translate(px, py); x.rotate(0.12); x.drawImage(pc, -w / 2, -h, w, h); x.restore();
+  }
   // Browsers only start audio after the visitor clicks or taps. Every gesture tries; the first one that works wins.
   function audio() {
     try {
@@ -227,6 +242,13 @@ export function createScene(canvas: HTMLCanvasElement) {
     x.fillStyle = "#3e424c"; for (const s of [[470, 600, 26, 10], [520, 612, 22, 9], [600, 618, 30, 10], [680, 612, 22, 9], [730, 600, 26, 10]]) { x.beginPath(); x.ellipse(s[0], s[1], s[2], s[3], 0, 0, 7); x.fill(); }
     x.fillStyle = "#5b3a1c"; x.fillRect(500, 570, 200, 22); x.save(); x.translate(600, 569); x.rotate(-.14); x.fillStyle = "#7d4f27"; x.fillRect(-80, -11, 160, 22); x.rotate(.3); x.fillStyle = "#4a2e14"; x.fillRect(-80, -11, 160, 22); x.restore(); x.restore();
     const eb = x.createRadialGradient(600, 575, 5, 600, 575, 110 * lw); const emberGlow = Math.max(.9 * flick, st.dead * (0.28 + 0.14 * Math.sin(t * 0.035))); eb.addColorStop(0, `rgba(255,120,30,${emberGlow})`); eb.addColorStop(1, "rgba(255,60,10,0)"); x.fillStyle = eb; x.fillRect(600 - 130 * lw, 540, 260 * lw, 60);
+
+    // Plank, sitting by the fire (left of the stones)
+    { const fireLight = Math.min(1, fsH / 1.2) * flick * (1 - st.dead);
+      const dark = Math.max(0, night * (0.72 - fireLight * 0.45) + st.cover * 0.25 * (1 - night));
+      // on a narrow screen the stones reach the edge: he sits in front of them instead, a little smaller
+      const narrow = W < 720;
+      drawPlank(narrow ? 600 - W / 2 + 44 : 600 - 150 * lw - 55, narrow ? base + 70 : base + 16, narrow ? 78 : 92, Math.min(0.85, dark), (0.12 + night * 0.4) * fireLight); }
 
     // flames
     if (st.dead < 0.9) {
