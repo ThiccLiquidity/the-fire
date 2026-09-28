@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { type FireApi, type FireState, CEREMONY as C, FULL_DAYS, nameOf, phoenixHour, prizeOf, short } from "./data/types";
-import { friendly } from "./data/wallet";
+import { friendly, TESTNET } from "./data/wallet";
+import { TestnetFaucet } from "./components/TestnetFaucet";
 import { fmtAmt, fmtCount, fmtPlank, usdOf } from "./format";
 import { makeMockApi } from "./data/mock";
 import { makeChainApi } from "./data/chain";
@@ -137,6 +138,7 @@ export default function App() {
   return (
     <div className="page">
       {!LIVE && <div className="demo-banner" role="note"><b>Demo</b> — play money. Nothing here touches a real wallet.</div>}
+      {LIVE && TESTNET && <TestnetFaucet s={s} />}
       <div className="hero">
       <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && last.tickets >= 10} wild press2={press2} sound={sound} />
 
@@ -235,7 +237,7 @@ export default function App() {
           {connected && <ProfileEditor key={s.you.address} addr={s.you.address} profile={prof(s.you.address!)} onSave={api.setProfile} demo={!LIVE} />}
           <BuyPanel you={shownYou} plankPerTicket={s.plankPerTicket} paperPerTicket={s.paperPerTicket} paperUsd={s.paperUsd} plankUsd={s.plankUsd} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} usdgEnabled={s.usdgEnabled}
             raw={s.raw} abandoned={s.abandoned} night={v.night} hold={b ? "The storm is here. Buying reopens once it passes." : undefined} demo={!LIVE} />
-          <Swap demo={api.demo} s={s} />
+          {!(LIVE && TESTNET) && <Swap demo={api.demo} s={s} />}
         </div>
       </main>
 

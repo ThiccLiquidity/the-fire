@@ -6,14 +6,16 @@ import {
   type Hex, type PublicClient, type WalletClient,
 } from "viem";
 
-export const PUBLIC_RPC = "https://rpc.mainnet.chain.robinhood.com";
-export const EXPLORER = "https://robinhoodchain.blockscout.com";
+/** VITE_CHAIN=testnet: the rehearsal on Robinhood Chain testnet (46630), play tokens only. */
+export const TESTNET = import.meta.env.VITE_CHAIN === "testnet";
+export const PUBLIC_RPC = TESTNET ? "https://rpc.testnet.chain.robinhood.com/rpc" : "https://rpc.mainnet.chain.robinhood.com";
+export const EXPLORER = TESTNET ? "https://explorer.testnet.chain.robinhood.com" : "https://robinhoodchain.blockscout.com";
 export const txUrl = (hash: string) => `${EXPLORER}/tx/${hash}`;
 
 /** What the site reads through (may be a private RPC from VITE_RPC_URL). */
 export const robinhood = defineChain({
-  id: 4663,
-  name: "Robinhood Chain",
+  id: TESTNET ? 46630 : 4663,
+  name: TESTNET ? "Robinhood Chain Testnet" : "Robinhood Chain",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: [import.meta.env.VITE_RPC_URL || PUBLIC_RPC] } },
   blockExplorers: { default: { name: "Blockscout", url: EXPLORER } },
@@ -70,7 +72,7 @@ export async function waitOk(pub: PublicClient, hash: Hex, what: string): Promis
   if (status !== "success") throw new Error(`${what[0].toUpperCase()}${what.slice(1)} failed on-chain. Nothing more was sent.`);
 }
 
-export const PRICE_MOVED = "The price moved at tonight's storm — check the new price and try again.";
+export const PRICE_MOVED = "The price just moved. Check the new price and try again.";
 const NAMED: Record<string, string> = {
   PriceMoved: PRICE_MOVED,
   Over: "The game has ended. Buying is closed.",

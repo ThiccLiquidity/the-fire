@@ -24,7 +24,7 @@ interface IPair2 {
 
 /**
  * Deploy order (see ../docs/deploy.md):
- *   1. PlankUsdTwap (script/DeployTwap.s.sol), >= 24h before step 2; call checkpoint() 30+ min after deploy, then every 30 min (keeper).
+ *   1. PlankUsdTwap (script/DeployTwap.s.sol), >= 30 min before step 2; call checkpoint() 30+ min after deploy, then every 30 min (keeper).
  *   2. This script: PaperUsdTwap + OpenDrandRouter + OpenVRFAdapter + Fire (four contracts). None has an owner;
  *      nothing to configure after. Everything is immutable, so the script checks every input first and refuses to
  *      deploy on a mistake. Deploy just after 03:00 UTC so fire #1 gets a full first day.
