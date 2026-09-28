@@ -50,7 +50,7 @@ const erc20 = parseAbi([
   "function approve(address,uint256) returns (bool)",
 ]);
 
-type EthereumProvider = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> };
+type EthereumProvider = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown>; on?: (ev: string, fn: (arg: unknown) => void) => void };
 declare global { interface Window { ethereum?: EthereumProvider } }
 
 export function makeChainApi(fireAddress: Address): FireApi {
@@ -73,6 +73,13 @@ export function makeChainApi(fireAddress: Address): FireApi {
     try { await wc.switchChain({ id: robinhood.id }); } catch { await wc.addChain({ chain: robinhood }); }
     return wc;
   }
+  // follow the wallet: switching accounts in MetaMask re-reads as the new account; disconnecting there clears it
+  if (window.ethereum?.on) {
+    window.ethereum.on("accountsChanged", (accs: unknown) => { const a = (accs as string[])[0]; account = a ? (a as Address) : undefined; if (!account) s = { ...s, you: { ...empty().you } }; void refresh(); });
+    window.ethereum.on("chainChanged", () => void refresh());
+  }
+  // silently pick up an already-authorized account on load (no prompt)
+  void (async () => { try { const accs = (await window.ethereum?.request({ method: "eth_accounts" })) as string[] | undefined; if (accs?.[0]) { account = accs[0] as Address; await refresh(); } } catch { /* no wallet */ } })();
 
   async function readAll() {
     const r = (fn: string, args: unknown[] = []) => pub.readContract({ address: fireAddress, abi, functionName: fn, args }) as Promise<bigint>;
@@ -221,6 +228,13 @@ export function makeChainApi(fireAddress: Address): FireApi {
   return {
     state: () => s,
     async connect() { await wallet(); await refresh(); },
+    async switchWallet() {
+      if (!window.ethereum) throw new Error("No wallet found.");
+      // asks MetaMask to show the account picker again; the accountsChanged listener does the rest
+      await window.ethereum.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
+      await wallet(); await refresh();
+    },
+    disconnect() { account = undefined; s = { ...s, you: { ...empty().you } }; emit(); },
     async rollStorm() {
       const wc = await wallet();
       const a = s.rollAction;

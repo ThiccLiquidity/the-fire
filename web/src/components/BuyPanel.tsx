@@ -8,7 +8,7 @@ const $ = (v: number) => `$${v.toFixed(2)}`;
 export function BuyPanel({
   you, plankPerTicket, plankUsd, ethUsd, onBuy, onConnect, paused, usdgEnabled,
 }: {
-  you: { address?: string; paper: number; plank: number; eth: number; usdg: number; remainingToday: number };
+  you: { address?: string; tickets: number; paper: number; plank: number; eth: number; usdg: number; remainingToday: number };
   plankPerTicket: number; plankUsd: number; ethUsd: number;
   onBuy: (n: number, pay: Pay, note: string) => Promise<void>;
   usdgEnabled?: boolean;
@@ -20,19 +20,25 @@ export function BuyPanel({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [done, setDone] = useState<{ n: number; total: number } | null>(null);
+  const [why, setWhy] = useState(false);
+
   const q = quote(n, plankPerTicket, ethUsd);
-  const off = Math.round((1 - q.paper / n) * 100);
-  const canPaper = you.paper >= q.paper && you.plank >= q.plank;
-  const canEth = you.eth >= q.eth && you.plank >= q.plank;
-  const canUsdg = !!usdgEnabled && you.usdg >= q.usdg && you.plank >= q.plank;
+  const plankUsdCost = q.plank * plankUsd;
+  const havePlank = you.plank >= q.plank;
+  const canPaper = havePlank && you.paper >= q.paper;
+  const canEth = havePlank && ethUsd > 0 && you.eth >= q.eth;
+  const canUsdg = havePlank && !!usdgEnabled && you.usdg >= q.usdg;
   const overCap = n > you.remainingToday;
-  const plankUsdCost = q.plank * plankUsd; // dollar value of the PLANK leg
-  const affordable = Math.min(Math.floor(you.paper), Math.floor(you.plank / plankPerTicket));
+  // how many tickets you could buy right now, by whichever way you can pay for the paper leg
+  const byPlank = Math.floor(you.plank / plankPerTicket);
+  const byPaperLeg = Math.max(Math.floor(you.paper), ethUsd > 0 ? Math.floor(you.eth * ethUsd) : 0, usdgEnabled ? Math.floor(you.usdg) : 0);
+  const affordable = Math.max(0, Math.min(byPlank, byPaperLeg));
   const maxNow = Math.max(0, Math.min(affordable, you.remainingToday, TX_CAP));
 
   async function go(pay: Pay) {
-    setBusy(true); setErr("");
-    try { await onBuy(n, pay, note.trim()); setNote(""); }
+    setBusy(true); setErr(""); setDone(null);
+    try { await onBuy(n, pay, note.trim()); setNote(""); setDone({ n, total: you.tickets + n }); }
     catch (e) { setErr((e as Error).message.split("\n")[0].slice(0, 160)); }
     finally { setBusy(false); }
   }
@@ -45,7 +51,7 @@ export function BuyPanel({
     <aside className="buy">
       <button className="cta" disabled={busy} onClick={connect}>{busy ? "Connecting…" : "Connect wallet to buy tickets"}</button>
       {err && <p className="hint">{err}</p>}
-      <p className="fine">1 ticket = 1 PAPER + about $0.90 of PLANK. PAPER burns. Half the PLANK burns, half feeds the pot. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day.</p>
+      <p className="fine">1 ticket = 1 PAPER + about $0.90 of PLANK. Up to {TX_CAP} a buy, {DAILY_CAP} a day.</p>
     </aside>
   );
 
@@ -53,7 +59,7 @@ export function BuyPanel({
     <aside className="buy">
       <div className="wallet">
         <div><b>{you.paper.toLocaleString(undefined, { maximumFractionDigits: 1 })}</b><span>PAPER</span></div>
-        <div><b>{you.plank >= 1e9 ? `${(you.plank / 1e9).toFixed(1)}B` : `${(you.plank / 1e6).toFixed(0)}M`}</b><span>PLANK · {$(you.plank * plankUsd)}</span></div>
+        <div><b>{fmtPlank(you.plank)}</b><span>PLANK · {$(you.plank * plankUsd)}</span></div>
         <div><b>{affordable}</b><span>tickets you can buy now</span></div>
       </div>
 
@@ -62,44 +68,39 @@ export function BuyPanel({
         <input className="qty-in" type="number" inputMode="numeric" min={1} max={TX_CAP} value={n} aria-label="Tickets" onChange={(e) => setN(Number(e.target.value))} />
         <button className="qty-btn" aria-label="One more" disabled={n >= TX_CAP} onClick={() => setN(n + 1)}>+</button>
         <button className="qty-max" disabled={maxNow === 0} onClick={() => setN(maxNow)}>Max <small>{maxNow}</small></button>
-        <span className="qty-hint">{n === 1 ? "ticket" : "tickets"} · up to {TX_CAP} per buy{n >= TX_CAP ? " · 3% off" : ` · ${TX_CAP} gets 3% off`}</span>
+        <span className="qty-hint">{n === 1 ? "ticket" : "tickets"} · up to {TX_CAP} a buy{n >= TX_CAP ? " · 3% off" : ""}</span>
       </div>
-      <input className="note" maxLength={32} placeholder="Burn note — 32 characters, drifts over the fire" value={note} onChange={(e) => setNote(e.target.value)} />
+      <input className="note" maxLength={32} placeholder="Burn note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
 
-      {paused && <p className="hint strong">The storm is rolling in. Buying reopens as soon as tonight's result lands, usually within seconds.</p>}
-      {/* Path A: real PAPER */}
+      {paused && <p className="hint strong">The storm is rolling in. Buying reopens as soon as tonight's result lands.</p>}
+      {done && !busy && <p className="done">🔥 {done.n} {done.n === 1 ? "ticket" : "tickets"} in. You hold {done.total.toLocaleString()} in this fire.</p>}
+
+      {/* the buy */}
       <div className="path">
-        <div className="path-head"><b>With your PAPER</b><span>{q.paper.toLocaleString()} PAPER + {fmtPlank(q.plank)} PLANK{off > 0 ? ` · ${off}% off` : ""}</span></div>
-        <p className="put-in">You're putting in <b>{$(plankUsdCost)} of PLANK</b> <small>+ {q.paper.toLocaleString()} PAPER (no market price yet)</small></p>
+        <div className="cost"><span>{q.paper.toLocaleString()} PAPER</span><span>+</span><span>{fmtPlank(q.plank)} PLANK <small>({$(plankUsdCost)})</small></span></div>
         <button className="cta" disabled={busy || paused || !canPaper || overCap} onClick={() => go("paper")}>
           {busy ? "Throwing…" : `Throw ${n} ${n === 1 ? "ticket" : "tickets"} in`}
         </button>
-        {!canPaper && you.paper < q.paper && (
-          <p className="hint">
-            Not enough PAPER. Mills print it daily — <a href={OPENSEA} target="_blank" rel="noreferrer">get a mill on OpenSea</a>
-            <span className="info" tabIndex={0}>ⓘ<span className="tip">A Paper Mill is an NFT with about 89 billion PLANK (~$90 at today's price) locked inside. It prints 1 PAPER a day, forever, to whoever holds it. Burn the mill (allowed from Oct 1, 2026) and the PLANK comes back to you.</span></span>
-            {" "}— or buy paper from the fire below.
-          </p>
-        )}
-        {!canPaper && you.plank < q.plank && <p className="hint">Not enough PLANK — you're {$((q.plank - you.plank) * plankUsd)} short. Swap for some in the box below.</p>}
-        {overCap && <p className="hint">Max {DAILY_CAP} tickets per wallet per day — you have {you.remainingToday} left today.</p>}
+        {!havePlank && <p className="hint">You're {$((q.plank - you.plank) * plankUsd)} short on PLANK. Swap for some below.</p>}
+        {havePlank && you.paper < q.paper && <p className="hint">Not enough PAPER — pay dollars instead ↓, or <a href={OPENSEA} target="_blank" rel="noreferrer">get a mill</a> (it prints 1 PAPER a day).</p>}
+        {overCap && <p className="hint">{you.remainingToday} left today (cap {DAILY_CAP} a wallet).</p>}
       </div>
 
-      {/* Path B: paper from the fire */}
-      <div className="path eth">
-        <div className="path-head"><b>No PAPER? Buy paper from the fire</b><span>${q.usdg.toFixed(2)} in {usdgEnabled ? "ETH or USDG" : "ETH"} + {fmtPlank(q.plank)} PLANK</span></div>
-        <p className="put-in">You're putting in <b>{$(q.usdg + plankUsdCost)}</b> <small>({$(q.usdg)} for the paper + {$(plankUsdCost)} of PLANK)</small></p>
-        <p className="hint strong">You pay dollars instead of PAPER — same ticket, at a premium (${(q.usdg / n).toFixed(2)} a ticket for the paper leg, roughly 3× what real PAPER costs). It goes to buying mills off the floor and burning them.</p>
+      {/* no PAPER: pay $1 a ticket for the paper leg */}
+      <div className="path alt">
+        <div className="cost"><span>No PAPER? Pay <b>$1</b> a ticket instead</span><button className="info-btn" onClick={() => setWhy(!why)} aria-expanded={why}>why $1?</button></div>
+        {why && <p className="fine">Real PAPER costs about a third of that. The extra buys mills off the floor and burns them, which sends the PLANK inside to every mill holder. You still put in the same PLANK and get the same ticket.</p>}
         <div className="pay-row">
           {ethUsd > 0
-            ? <button className="cta ghost" disabled={busy || paused || !canEth || overCap} onClick={() => go("eth")}>Buy {n} with ETH <small>{q.eth.toFixed(4)}</small></button>
-            : <button className="cta ghost" disabled>ETH price feed is stale — ETH buys are closed for now</button>}
-          {usdgEnabled && <button className="cta ghost" disabled={busy || paused || !canUsdg || overCap} onClick={() => go("usdg")}>Buy {n} with USDG <small>${q.usdg.toFixed(2)}</small></button>}
+            ? <button className="cta ghost" disabled={busy || paused || !canEth || overCap} onClick={() => go("eth")}>ETH <small>{q.eth.toFixed(4)} · {$(q.usdg)}</small></button>
+            : <button className="cta ghost" disabled>ETH price feed stale</button>}
+          {usdgEnabled && <button className="cta ghost" disabled={busy || paused || !canUsdg || overCap} onClick={() => go("usdg")}>USDG <small>{$(q.usdg)}</small></button>}
         </div>
+        <p className="fine muted">Total {$(q.usdg + plankUsdCost)}: {$(q.usdg)} for the paper leg + {$(plankUsdCost)} of PLANK.</p>
       </div>
 
       {err && <p className="hint">{err}</p>}
-      <p className="fine">1 ticket = 1 PAPER + about $0.90 of PLANK (right now {fmtPlank(plankPerTicket)}). PAPER burns. Half the PLANK burns, half feeds the pot. Every ticket counts until the fire goes out. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day.</p>
+      <p className="fine muted">PAPER burns. Half the PLANK burns, half feeds the pot. Every ticket stays in until the fire goes out.</p>
     </aside>
   );
 }

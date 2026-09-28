@@ -168,6 +168,8 @@ export function makeMockApi(): FireApi {
       emit();
     },
     async connect() { s = { ...s, you: { ...s.you, address: YOU } }; emit(); },
+    async switchWallet() { await new Promise((r) => setTimeout(r, 300)); const alt = wallets[3]; s = { ...s, you: { ...s.you, address: s.you.address === YOU ? alt : YOU } }; emit(); },
+    disconnect() { s = { ...s, you: { ...s.you, address: undefined } }; emit(); },
     async rollStorm() { storm(); },
     demoStorm: () => storm(),
     demo,

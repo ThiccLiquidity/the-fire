@@ -4,6 +4,7 @@ import { makeMockApi } from "./data/mock";
 import { makeChainApi } from "./data/chain";
 import { Scene } from "./components/Scene";
 import { Playground } from "./components/Playground";
+import { WalletChip } from "./components/WalletChip";
 import { BuyPanel } from "./components/BuyPanel";
 import { Swap } from "./components/Swap";
 import { Avatar } from "./components/Avatar";
@@ -115,9 +116,12 @@ export default function App() {
 
       <header className="top">
         <div className="brand">The Fire{!LIVE && <span className="demo-tag">demo</span>}</div>
+        <div className="top-right">
+        <WalletChip address={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onConnect={api.connect} onSwitch={api.switchWallet} onDisconnect={api.disconnect} />
         <div className="forecast" role="status"><span className="fc-text">{forecast[0]}</span><span className="fc-when">{forecast[1]}</span>
           {api.rollStorm && s.rollAction && !inCeremony && <button className="roll-btn" disabled={rolling} onClick={rollStorm}>{rolling ? "Rolling…" : rollLabel}</button>}
           {rollErr && <span className="fc-when">{rollErr}</span>}
+        </div>
         </div>
       </header>
 

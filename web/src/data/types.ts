@@ -116,6 +116,10 @@ export interface FireApi {
   setProfile(name: string, image: Uint8Array | null): Promise<void>; // null = keep the current picture
   /** live only: ask the wallet for an account so balances and the buy buttons light up */
   connect?(): Promise<void>;
+  /** ask the wallet to pick a different account */
+  switchWallet?(): Promise<void>;
+  /** forget the connected account on this page (the wallet itself stays unlocked) */
+  disconnect?(): void;
   /** live only: roll tonight's storm, deliver a stuck answer, or re-roll — whichever the contract allows now */
   rollStorm?(): Promise<void>;
   /** demo only: force tonight's storm now */
