@@ -7,6 +7,7 @@ import { makeChainApi } from "./data/chain";
 import { Scene } from "./components/Scene";
 import { Playground } from "./components/Playground";
 import { WalletChip } from "./components/WalletChip";
+import { PlankIcon } from "./components/PlankIcon";
 import { HowItWorks } from "./components/HowItWorks";
 import { BuyPanel } from "./components/BuyPanel";
 import { Swap } from "./components/Swap";
@@ -41,6 +42,9 @@ export default function App() {
   const [demoHour, setDemoHour] = useState<number | null>(null);
   const [press2, setPress2] = useState(false);
   const [how, setHow] = useState(false);
+  // Sound is on unless the visitor turned it off (remembered per browser). Browsers still wait for a first click.
+  const [sound, setSound] = useState(() => { try { return localStorage.getItem("the-fire-sound") !== "off"; } catch { return true; } });
+  const toggleSound = () => setSound((v) => { try { localStorage.setItem("the-fire-sound", v ? "off" : "on"); } catch { /* private mode */ } return !v; });
   useEffect(() => api.subscribe(setS), []);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t); }, []);
 
@@ -103,9 +107,9 @@ export default function App() {
           <Avatar addr={w} profile={prof(w)} size={84} />
           <div className="winner-name">{youWon ? "You" : name(w)}</div>
           {name(w) !== short(w) && <div className="winner-addr">{short(w)}</div>}
-          <div className="winner-amt">{usd(st.paidPlank ?? 0, s.plankUsd)}</div>
+          <div className="winner-amt"><PlankIcon big />{usd(st.paidPlank ?? 0, s.plankUsd)}</div>
           {st.prizeOwed && <div className="winner-sub"><b>Prize waiting to be claimed</b></div>}
-          <div className="winner-sub">{mPlank(st.paidPlank ?? 0)} PLANK · Fire #{st.fireId} · {nights(st.night)} · {fmtCount(st.tickets ?? 0)} tickets</div>
+          <div className="winner-sub"><PlankIcon />{mPlank(st.paidPlank ?? 0)} PLANK · Fire #{st.fireId} · {nights(st.night)} · {fmtCount(st.tickets ?? 0)} tickets</div>
           <div className="winner-foot">{Math.max(0, Math.ceil((C.RELIGHT - age) / 1000))}s until the next fire is lit</div>
         </div>
       );
@@ -134,11 +138,12 @@ export default function App() {
     <div className="page">
       {!LIVE && <div className="demo-banner" role="note"><b>Demo</b> — play money. Nothing here touches a real wallet.</div>}
       <div className="hero">
-      <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && last.tickets >= 10} wild press2={press2} />
+      <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && last.tickets >= 10} wild press2={press2} sound={sound} />
 
       <div className="hud">
       <header className="top">
-        <div className="brand">The Fire{!LIVE && <span className="demo-tag">demo</span>}<button className="how-link" onClick={() => setHow(true)}>How it works</button></div>
+        <div className="brand">The Fire{!LIVE && <span className="demo-tag">demo</span>}<button className="how-link" onClick={() => setHow(true)}>How it works</button>
+          <button className="how-link sound-btn" onClick={toggleSound} aria-pressed={sound} title={sound ? "Sound on: the forest, the fire and the storm. Click to mute." : "Sound off. Click for the forest, the fire and the storm."}>{sound ? "🔊" : "🔇"}<span className="sound-label">{sound ? " Sound" : " Muted"}</span></button></div>
         <div className="top-right">
         <WalletChip address={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onConnect={api.connect} onSwitch={api.switchWallet} onDisconnect={api.disconnect} demo={!LIVE} />
         <div className="forecast" role="status"><span className="fc-text">{forecast[0]}</span><span className="fc-when">{forecast[1]}</span>
@@ -149,9 +154,9 @@ export default function App() {
       </header>
 
       <div className={"pot" + (wake ? " wake" : "")}>
-        <span className="pot-usd">{usd(potPlank, s.plankUsd)}</span>
+        <span className="pot-row"><PlankIcon big /><span className="pot-usd">{usd(potPlank, s.plankUsd)}</span></span>
         {!wake && !s.abandoned && <span className="pot-take">winner takes <b>{usd(potPlank * 0.4, s.plankUsd)}</b></span>}
-        <span className="pot-sub">{mPlank(potPlank)} PLANK · Fire #{fireId} · {potSub}</span>
+        <span className="pot-sub"><PlankIcon />{mPlank(potPlank)} PLANK · Fire #{fireId} · {potSub}</span>
         {!wake && v.night === 0 && !b && lastWinner && !NOBODY.test(lastWinner.winner) && (
           <span className="pot-last"><Avatar addr={lastWinner.winner} profile={prof(lastWinner.winner)} size={18} /> {name(lastWinner.winner)} won {usd(lastWinner.potPlank * 0.4, s.plankUsd)} last night</span>
         )}
@@ -217,11 +222,11 @@ export default function App() {
           {connected && (prize > 0 || (s.abandoned && refund > 0)) && (
             <div className="claim" role="region" aria-label="Claim">
               {prize > 0 && <>
-                <p><b>You have a prize waiting:</b> {usd(prize, s.plankUsd)} ({mPlank(prize)} PLANK). It couldn't be sent when the fire went out, so it's held for you.</p>
+                <p><b>You have a prize waiting:</b> {usd(prize, s.plankUsd)} (<PlankIcon />{mPlank(prize)} PLANK). It couldn't be sent when the fire went out, so it's held for you.</p>
                 <button className="cta" disabled={claimBusy} onClick={() => take(api.claim)}>{claimBusy ? "Claiming…" : "Claim your prize"}</button>
               </>}
               {s.abandoned && refund > 0 && <>
-                <p><b>The game has ended.</b> Your share of the last fire's pot: {usd(refund, s.plankUsd)} ({mPlank(refund)} PLANK).</p>
+                <p><b>The game has ended.</b> Your share of the last fire's pot: {usd(refund, s.plankUsd)} (<PlankIcon />{mPlank(refund)} PLANK).</p>
                 <button className="cta" disabled={claimBusy} onClick={() => take(api.refund)}>{claimBusy ? "Claiming…" : "Claim your refund"}</button>
               </>}
               {claimMsg && <p className="hint">{claimMsg}</p>}

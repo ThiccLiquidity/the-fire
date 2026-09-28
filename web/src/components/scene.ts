@@ -3,6 +3,7 @@
 // Ported from the design demo; kept as one self-contained module.
 
 import { CEREMONY as C, type Storm } from "../data/types";
+import { createAmbience } from "./ambience";
 import { createWildlife, drawMill, drawMill2, drawRiver, useRiver, type Kind } from "./wildlife";
 
 export interface SceneInput {
@@ -20,6 +21,8 @@ export interface SceneInput {
   wild?: boolean;
   /** demo: the redrawn press instead of the current one */
   press2?: boolean;
+  /** forest, campfire and storm sound (the header toggle) */
+  sound?: boolean;
 }
 
 const THUNDER = ["clap1", "sr1", "sr2", "sr3", "sr4", "dry1", "dry2", "dry3", "dry4"];
@@ -63,9 +66,32 @@ export function createScene(canvas: HTMLCanvasElement) {
   // ---- storm playback
   const st = { phase: "none" as "none" | "in" | "strike" | "rain" | "ashes" | "relight" | "out", vis: 0.5, cover: 0, rainA: 0, at: 0, survived: true, dead: 0, bolts: [] as { x: number; cloud: boolean; age: number; life: number; pts: number[][] }[], nextBolt: 0, seen: 0, flash: 0, sizeFrom: 0, sizeTo: 0, sizeNow: 0 };
   let ac: AudioContext | null = null; const bufs: Record<string, AudioBuffer> = {}; let loading = false;
+  let amb: ReturnType<typeof createAmbience> | null = null;
+  // Plank, PLANK's mascot, leans on a log by the fire. Tinted on a small offscreen canvas: dark at night, warm on
+  // the side facing the flames, flickering with them.
+  const plankImg = new Image(); plankImg.src = import.meta.env.BASE_URL + "plank.webp";
+  const pc = document.createElement("canvas"); const pcx = pc.getContext("2d");
+  function drawPlank(px: number, py: number, h: number, dark: number, warm: number) {
+    if (!pcx || !plankImg.complete || !plankImg.naturalWidth) return;
+    const w = h * plankImg.naturalWidth / plankImg.naturalHeight, cw = Math.ceil(w * dpr * 1.5), ch = Math.ceil(h * dpr * 1.5);
+    if (pc.width !== cw || pc.height !== ch) { pc.width = cw; pc.height = ch; }
+    pcx.globalCompositeOperation = "source-over"; pcx.clearRect(0, 0, cw, ch); pcx.drawImage(plankImg, 0, 0, cw, ch);
+    pcx.globalCompositeOperation = "source-atop";
+    if (dark > 0) { pcx.fillStyle = `rgba(6,10,26,${dark})`; pcx.fillRect(0, 0, cw, ch); }
+    if (warm > 0) { const wg = pcx.createLinearGradient(0, 0, cw, 0); wg.addColorStop(0, "rgba(255,120,30,0)"); wg.addColorStop(1, `rgba(255,140,40,${warm})`); pcx.fillStyle = wg; pcx.fillRect(0, 0, cw, ch); }
+    x.fillStyle = `rgba(0,0,0,${0.35 + dark * 0.2})`; x.beginPath(); x.ellipse(px + w * 0.1, py - 2, w * 0.55, 6, 0, 0, 7); x.fill();
+    x.save(); x.translate(px, py); x.rotate(0.12); x.drawImage(pc, -w / 2, -h, w, h); x.restore();
+  }
+  // Browsers only start audio after the visitor clicks or taps. Every gesture tries; the first one that works wins.
+  function audio() {
+    try {
+      ac ??= new AudioContext(); amb ??= createAmbience(ac);
+      if (ac.state === "suspended" && inp.sound && !document.hidden) void ac.resume();
+    } catch { /* no audio */ }
+  }
   async function loadThunder() {
-    try { ac ??= new AudioContext(); if (ac.state === "suspended") void ac.resume(); if (loading) return; loading = true;
-      for (const k of THUNDER) { if (bufs[k]) continue; const r = await fetch(`/thunder/${k}.mp3`); bufs[k] = await ac.decodeAudioData(await r.arrayBuffer()); }
+    try { audio(); if (!ac) return; if (loading) return; loading = true;
+      for (const k of THUNDER) { if (bufs[k]) continue; const r = await fetch(`${import.meta.env.BASE_URL}thunder/${k}.mp3`); bufs[k] = await ac.decodeAudioData(await r.arrayBuffer()); }
     } catch { /* no audio */ }
   }
   function thunder(I: number, delay: number) {
@@ -73,7 +99,7 @@ export function createScene(canvas: HTMLCanvasElement) {
       const pool = I > 0.6 ? keys : keys.filter((k) => !k.startsWith("clap")); const k = pool[Math.floor(Math.random() * pool.length)];
       const src = ac.createBufferSource(); src.buffer = bufs[k]; src.playbackRate.value = 0.92 + Math.random() * 0.16;
       const g = ac.createGain(); g.gain.value = 0.25 + I * 0.55; const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 400 + I * 5000;
-      src.connect(lp).connect(g).connect(ac.destination); src.start(ac.currentTime + delay);
+      src.connect(lp).connect(g).connect(amb ? amb.out : ac.destination); src.start(ac.currentTime + delay);
     } catch { /* ignore */ }
   }
   function bolt() {
@@ -173,6 +199,10 @@ export function createScene(canvas: HTMLCanvasElement) {
     const fsH = (0.4 + (maxH - 0.4) * Math.max(0, Math.min(1, size))) * (1 - st.dead * 0.97);
     const fsW = 0.55 + fsH * 0.55;
     const flick = (0.85 + fbm(t * .05, 9) * 0.3) * (1 - st.dead * 0.9);
+    if (amb) {
+      if (amb.on !== !!inp.sound) { amb.setOn(!!inp.sound); if (inp.sound) audio(); }
+      amb.update({ hour, size: Math.max(0, Math.min(1, size)), rain: st.rainA, cover: st.cover, dead: st.dead, stream: !!inp.wild });
+    }
     const skyGlow = Math.max(0, (size - 0.45) * 1.7) * (1 - st.cover * 0.8) * night;
 
     // sky
@@ -212,6 +242,13 @@ export function createScene(canvas: HTMLCanvasElement) {
     x.fillStyle = "#3e424c"; for (const s of [[470, 600, 26, 10], [520, 612, 22, 9], [600, 618, 30, 10], [680, 612, 22, 9], [730, 600, 26, 10]]) { x.beginPath(); x.ellipse(s[0], s[1], s[2], s[3], 0, 0, 7); x.fill(); }
     x.fillStyle = "#5b3a1c"; x.fillRect(500, 570, 200, 22); x.save(); x.translate(600, 569); x.rotate(-.14); x.fillStyle = "#7d4f27"; x.fillRect(-80, -11, 160, 22); x.rotate(.3); x.fillStyle = "#4a2e14"; x.fillRect(-80, -11, 160, 22); x.restore(); x.restore();
     const eb = x.createRadialGradient(600, 575, 5, 600, 575, 110 * lw); const emberGlow = Math.max(.9 * flick, st.dead * (0.28 + 0.14 * Math.sin(t * 0.035))); eb.addColorStop(0, `rgba(255,120,30,${emberGlow})`); eb.addColorStop(1, "rgba(255,60,10,0)"); x.fillStyle = eb; x.fillRect(600 - 130 * lw, 540, 260 * lw, 60);
+
+    // Plank, sitting by the fire (left of the stones)
+    { const fireLight = Math.min(1, fsH / 1.2) * flick * (1 - st.dead);
+      const dark = Math.max(0, night * (0.72 - fireLight * 0.45) + st.cover * 0.25 * (1 - night));
+      // on a narrow screen the stones reach the edge: he sits in front of them instead, a little smaller
+      const narrow = W < 720;
+      drawPlank(narrow ? 600 - W / 2 + 44 : 600 - 150 * lw - 55, narrow ? base + 70 : base + 16, narrow ? 78 : 92, Math.min(0.85, dark), (0.12 + night * 0.4) * fireLight); }
 
     // flames
     if (st.dead < 0.9) {
@@ -315,11 +352,19 @@ export function createScene(canvas: HTMLCanvasElement) {
 
   function resize() { const r = canvas.getBoundingClientRect(); dpr = Math.min(2, devicePixelRatio || 1); canvas.width = r.width * dpr; canvas.height = r.height * dpr; W = r.width; H = r.height; }
   resize(); const ro = new ResizeObserver(resize); ro.observe(canvas);
-  document.addEventListener("pointerdown", () => void loadThunder(), { once: true });
+  const gesture = () => { audio(); void loadThunder(); };
+  document.addEventListener("pointerdown", gesture);
+  document.addEventListener("keydown", gesture);
+  const vis = () => { if (!ac) return; if (document.hidden) void ac.suspend(); else if (inp.sound) void ac.resume(); };
+  document.addEventListener("visibilitychange", vis);
   frame();
   return {
     update(next: SceneInput) { inp = next; },
     visitor(kind: Kind) { wild.spawn(kind); },
-    destroy() { stopped = true; cancelAnimationFrame(raf); ro.disconnect(); },
+    destroy() {
+      stopped = true; cancelAnimationFrame(raf); ro.disconnect();
+      document.removeEventListener("pointerdown", gesture); document.removeEventListener("keydown", gesture); document.removeEventListener("visibilitychange", vis);
+      void ac?.close();
+    },
   };
 }
