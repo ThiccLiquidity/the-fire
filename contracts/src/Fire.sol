@@ -74,14 +74,38 @@ contract Fire is ReentrancyGuard {
     uint256 public constant PRIZE_CAP_MULT = 20;
     uint256 public constant MAX_NIGHTS = 24; // the night-24 storm is infinite
     uint256 public constant KEEP_BPS = 8_500; // the fire keeps 85% of its size overnight, so a big fire stays big
-    /// @dev The storm is sized to a "normal level" of buying that creeps up slowly (3% of the gap a night) and drops fast
-    ///      (30% a night). When people pile in, the fire gets far bigger than the storm expects and has a real shot;
-    ///      when buying slumps, storms shrink quickly instead of beating on small fires.
-    ///      The fast drop only applies to a real slump (the week's buying under half the normal level), so the random
-    ///      day-to-day swings of a small game don't drag the level down and make storms too easy at low volume.
-    uint256 public constant BASE_UP_BPS = 300;
-    uint256 public constant BASE_DOWN_BPS = 3_000;
-    uint256 public constant SLUMP_BPS = 5_000;
+    /// @dev The storm ladder: 20 fixed storm sizes, in logs, each ~1.56x the last (5 up to 25,000). A storm is a real
+    ///      number of logs, so a big fire really can ride out storms a small one can't. Storms never grow; what changes
+    ///      is the odds. Early nights draw mostly small storms, and each night the odds tilt toward bigger ones.
+    uint256 public constant STORM_SIZES = 20;
+    bytes internal constant STORM_LOGS = hex"00050008000c0013001e002f004a007300b4011b01ba02b5043c06a20a621041197327d73e6061a8";
+    /// @dev Chance of each size, per night (2..23), as a running total out of 10,000: storm i is picked when
+    ///      (random word % 10,000) is under entry i and not under entry i-1. Built by sim/fire_sim.py (storm_ladder):
+    ///      a bell curve over the ladder, centered 2 sizes up on night 2 and moving up 0.75 of a size each night.
+    bytes internal constant STORM_ODDS =
+        hex"055f0c3213971a6b1fc923632571267126db2701270c270f27102710271027102710271027102710" // night 2
+        hex"03c309280fbe16991cae2146243c25dc269e26ec2706270e27102710271027102710271027102710" // night 3
+        hex"027906780bf8126d18e21e62226124d9262726bd26f72709270e2710271027102710271027102710" // night 4
+        hex"01830444088b0e3414951ab61fbb233c2551265f26d326fe270b270f271027102710271027102710" // night 5
+        hex"00db029d05b00a46101b166d1c4220d823ec25ad268826e32703270d270f27102710271027102710" // night 6
+        hex"0072017a038306f00bd811d718141d9d21cb247d25f726a826ef2707270e27102710271027102710" // night 7
+        hex"003600c50201045a08240d5c137c199c1ed4229e24f7263326c126f8270a270f2710271027102710" // night 8
+        hex"0018005e010e02870535095e0ee015151b0c1fee2356255d266326d526fe270c270f271027102710" // night 9
+        hex"000a00290083015b031706200aa7106816a51c6620ed23f625b2268a26e42703270d270f27102710" // night 10
+        hex"00030011003a00ac01b203b807200c0111f7182b1dab21d3248125f926a926ef2707270e27102710" // night 11
+        hex"000100060018004e00dc0218046f08370d6c138819a41ed922a124f8263426c226f8270a270f2710" // night 12
+        hex"000000020009002100670117028f053d09650ee515191b0f1ff02358255e266426d626ff270d2710" // night 13
+        hex"000000010003000d002c0086015e031a06230aaa106b16a81c6920f023f925b5268d26e727062710" // night 14
+        hex"00000000000100040012003b00ad01b303ba07220c0411fb18301db221db2489260226b226f82710" // night 15
+        hex"000000000000000100060018004f00dd02190472083c0d74139419b41eec22b6250f264b26da2710" // night 16
+        hex"0000000000000000000200090021006801190293054509730efc15391b382020238d2596269e2710" // night 17
+        hex"000000000000000000010003000d002d00880163032406380ace10a316f51cca2160247326352710" // night 18
+        hex"00000000000000000000000100050012003d00b101bf03d407550c5a127b18dc1e8522cc258d2710" // night 19
+        hex"000000000000000000000000000200070019005300e9023704af08ae0e2e14a31b18209824972710" // night 20
+        hex"00000000000000000000000000000002000a00240072013402d405ca0a62107717521de8234d2710" // night 21
+        hex"000000000000000000000000000000010004000f0035009f019f03ad07470ca513791ade21b12710" // night 22
+        hex"00000000000000000000000000000000000100060017004e00e3023d04e709620fcf17a71fd22710" // night 23
+        ;
     /// @dev The fire is measured in thousandths of a ticket, so a small fire isn't rounded away overnight.
     uint256 public constant MILLI = 1_000;
     uint256 public constant TRAILING = 7;
@@ -96,7 +120,10 @@ contract Fire is ReentrancyGuard {
     uint256 public constant FREE_DAY1 = 3;
     uint256 public constant FREE_DAY2 = 2;
     uint256 public constant FREE_LATER = 1;
-    uint256 public constant PLANK_RATCHET_BPS = 500; // PLANK leg moves at most 5% per night toward target
+    uint256 public constant PAPER_RATCHET_BPS = 500; // PAPER leg moves at most 5% per night toward target
+    /// @dev The PLANK price feed is a ~30-minute average of the big PLANK pool (PlankUsdTwap). An average older than
+    ///      this (nobody has updated it for 2 days) or a broken feed: logs keep the last price the fire saw.
+    uint256 public constant PLANK_FEED_MAX_AGE = 2 days;
     /// @dev A roll normally resolves ~35s after it's requested. The wait before a re-roll is long on purpose: drand's
     ///      number is public ~30s after the roll, so a short wait would let someone who dislikes it re-roll whenever
     ///      nobody has delivered it yet. Two hours gives the keeper's alarm (and anyone on the site) time to deliver.
@@ -121,8 +148,8 @@ contract Fire is ReentrancyGuard {
     uint256 public immutable ETH_USD_PER_TICKET; // price of the PAPER part when paid in ETH or USDG, USD 8 decimals (1e8 = $1)
     uint256 public immutable PLANK_USD_PER_TICKET; // PLANK leg target, USD 8-decimals
     IPriceFeed public immutable ETH_USD; // Chainlink ETH/USD
-    IPriceFeed public immutable PLANK_USD; // PLANK/USD, **18 decimals** (our TWAP adapter)
-    uint256 public plankPerTicket; // in PLANK wei; ratchets nightly toward the USD target
+    IPriceFeed public immutable PLANK_USD; // PLANK/USD, **18 decimals** (PlankUsdTwap: a ~30-minute pool average)
+    uint256 public plankPerTicketLast; // in PLANK wei: the last live price seen, used only if the feed breaks
     uint256 public immutable MILL_BID_BASE; // starting bid for a mill, USD 8 decimals (mill listings are priced in USDG or ETH)
     IERC20 public immutable USDG; // dollar stablecoin mills are listed in on OpenSea; address(0) disables the USDG paths
     uint256 public immutable USDG_UNIT; // 10 ** USDG decimals
@@ -156,7 +183,6 @@ contract Fire is ReentrancyGuard {
     uint256 public dayIndex; // increments every roll
 
     uint256[TRAILING] internal _trail;
-    uint256 public stormBaseMilli; // the storm's normal level, thousandths of a ticket a night (set at the first roll)
     uint256 internal _trailCount;
     uint256 internal _trailIdx;
 
@@ -256,7 +282,7 @@ contract Fire is ReentrancyGuard {
         paperPerTicket = c.paperPerTicket;
         PAPER_USD_CAP = c.paperUsdCap;
         PAPER_USD = IPriceFeed(c.paperUsdFeed);
-        plankPerTicket = c.plankPerTicket0;
+        plankPerTicketLast = c.plankPerTicket0;
         PLANK_USD_PER_TICKET = c.plankUsdPerTicket;
         ETH_USD_PER_TICKET = c.ethUsdPerTicket;
         MILL_BID_BASE = c.millBidBase;
@@ -303,7 +329,7 @@ contract Fire is ReentrancyGuard {
 
     function _legs(uint256 n) internal view returns (uint256 paperCost, uint256 plankCost) {
         paperCost = n * paperPerTicket;
-        plankCost = n * plankPerTicket;
+        plankCost = n * plankPerTicket();
     }
 
     function _ethCost(uint256 n) internal view returns (uint256) {
@@ -474,17 +500,12 @@ contract Fire is ReentrancyGuard {
         night += 1;
         uint256 storm = stormStrength(night, rnd);
         uint256 sizeBefore = fireSizeMilli;
-        uint256 base = _stormBase();
 
         _pushTrail(ticketsToday);
-        // move the storm's normal level toward the last 7 nights: slowly up, quickly down
-        uint256 recent = _trailingMilli();
-        if (recent >= base) stormBaseMilli = base + (recent - base) * BASE_UP_BPS / BPS;
-        else stormBaseMilli = base - (base - recent) * (recent * BPS < base * SLUMP_BPS ? BASE_DOWN_BPS : BASE_UP_BPS) / BPS;
         ticketsToday = 0;
         dayIndex += 1;
         nextRollAt = _nextRollTime(block.timestamp);
-        _ratchetPlankLeg();
+        _syncPlankLeg();
         _ratchetPaperLeg();
         _pokeMillBid();
 
@@ -498,43 +519,40 @@ contract Fire is ReentrancyGuard {
         _goOut(sizeBefore, storm, rnd);
     }
 
-    /// @notice Storm on a given night for a given random word, in thousandths of a ticket (checked night for night
-    ///         against sim/fire_sim.py by test/FireSimParity.t.sol):
-    ///         storm = the storm's normal level x (night-1)/8 x L, with L ~ lognormal(0, 1.2).
-    ///         Night 1: no storm. Night 24+: infinite.
-    function stormStrength(uint256 n, uint256 rnd) public view returns (uint256) {
+    /// @notice Storm on a given night for a given random word, in thousandths of a log (checked night for night
+    ///         against sim/fire_sim.py by test/FireSimParity.t.sol): one size off the storm ladder, drawn with that
+    ///         night's odds. Night 1: no storm. Night 24+: infinite.
+    function stormStrength(uint256 n, uint256 rnd) public pure returns (uint256) {
         if (n >= MAX_NIGHTS) return type(uint256).max;
         if (n <= 1) return 0;
-        return _stormBase() * _ageBps(n) * _luckBps(rnd) / (BPS * BPS);
+        return _stormLogs(_stormIndex(n, rnd)) * MILLI;
     }
 
-    /// @dev The storm's normal level: before the first roll, today's buys; after, the slow-up/fast-down level.
-    function _stormBase() internal view returns (uint256) {
-        return _trailCount == 0 ? ticketsToday * MILLI : stormBaseMilli;
+    /// @notice Which rung of the storm ladder (0 = smallest) a random word draws on night n (2..23).
+    function _stormIndex(uint256 n, uint256 rnd) internal pure returns (uint256 i) {
+        uint256 r = rnd % BPS;
+        uint256 row = (n - 2) * STORM_SIZES * 2;
+        bytes memory t = STORM_ODDS;
+        while (i < STORM_SIZES - 1 && r >= (uint256(uint8(t[row + 2 * i])) << 8 | uint8(t[row + 2 * i + 1]))) i++;
     }
 
-    /// @dev (night-1)/8 in bps, n = 2..23: storms grow steadily with the fire's age.
-    function _ageBps(uint256 n) internal pure returns (uint256) {
-        return (n - 1) * 1250;
+    function _stormLogs(uint256 i) internal pure returns (uint256) {
+        bytes memory t = STORM_LOGS;
+        return uint256(uint8(t[2 * i])) << 8 | uint8(t[2 * i + 1]);
     }
 
-    /// @dev 32-point quantile table of e^(1.2 z), picked by the low 5 bits of the random word. Most nights are near
-    ///      normal; now and then a storm is several times it, so a fire nobody feeds can go out early.
-    function _luckBps(uint256 rnd) internal pure returns (uint256) {
-        uint24[32] memory q = [
-            uint24(754), 1338, 1824, 2286, 2744, 3211, 3691, 4192, 4717, 5272, 5862, 6491, 7166, 7894, 8682, 9541,
-            10481, 11518, 12668, 13955, 15406, 17059, 18967, 21198, 23855, 27091, 31147, 36438, 43747, 54814, 74717, 132586
-        ];
-        return q[rnd & 31];
-    }
-
-    /// @dev The trailing average in thousandths of a ticket (exact to the thousandth, so 1.4 a day stays 1.4).
-    function _trailingMilli() internal view returns (uint256) {
-        if (_trailCount == 0) return ticketsToday * MILLI;
-        uint256 sum;
-        uint256 c = _trailCount < TRAILING ? _trailCount : TRAILING;
-        for (uint256 i; i < c; i++) sum += _trail[i];
-        return sum * MILLI / c;
+    /// @notice Chance out of 10,000 that night n's storm is at least `logs` logs (so a fire of that size goes out).
+    function stormOdds(uint256 n, uint256 logs) external pure returns (uint256) {
+        if (n >= MAX_NIGHTS) return BPS;
+        if (n <= 1) return 0;
+        bytes memory t = STORM_ODDS;
+        uint256 row = (n - 2) * STORM_SIZES * 2;
+        uint256 below;
+        for (uint256 i; i < STORM_SIZES; i++) {
+            if (_stormLogs(i) >= logs) break;
+            below = uint256(uint8(t[row + 2 * i])) << 8 | uint8(t[row + 2 * i + 1]);
+        }
+        return BPS - below;
     }
 
     /// @notice Tickets per night over the last (up to) 7 nights, whole tickets. The storm uses the exact value.
@@ -704,17 +722,21 @@ contract Fire is ReentrancyGuard {
         (, px,, updatedAt,) = abi.decode(ret, (uint80, int256, uint256, uint256, uint80));
     }
 
-    /// @dev Move plankPerTicket at most 5% per night toward the USD target. A thin pool can be pushed for
-    ///      minutes, not for days, so the leg can't be gamed inside a night. If the feed is stale, hold.
-    function _ratchetPlankLeg() internal {
-        (int256 px, uint256 updatedAt) = _feed(PLANK_USD); // a broken feed must not revert the night; the leg holds
-        if (px <= 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > 2 days) return;
+    /// @notice PLANK wei per log right now: $0.90 (PLANK_USD_PER_TICKET) at the PLANK pool's ~30-minute average price,
+    ///         so a pump shows up in log prices within the hour and logs never cost more PLANK than they should for long.
+    ///         A 30-minute average can't be moved by a flash loan (that lasts one transaction). If the feed is broken or
+    ///         nobody has updated it for PLANK_FEED_MAX_AGE, the last price the fire saw.
+    function plankPerTicket() public view returns (uint256) {
+        (int256 px, uint256 updatedAt) = _feed(PLANK_USD); // a broken feed must not revert a buy or the night
+        if (px <= 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > PLANK_FEED_MAX_AGE) return plankPerTicketLast;
         // plank wei per ticket = (USD per ticket, 8 dec) * 1e18 wei/PLANK * 1e10 / (USD per PLANK, 18 dec)
-        uint256 target = PLANK_USD_PER_TICKET * 1e28 / uint256(px);
-        uint256 cur = plankPerTicket;
-        uint256 maxUp = cur * (BPS + PLANK_RATCHET_BPS) / BPS;
-        uint256 maxDown = cur * (BPS - PLANK_RATCHET_BPS) / BPS;
-        plankPerTicket = target > maxUp ? maxUp : target < maxDown ? maxDown : target;
+        uint256 v = PLANK_USD_PER_TICKET * 1e28 / uint256(px);
+        return v == 0 ? plankPerTicketLast : v;
+    }
+
+    /// @dev Nightly: remember today's live price, for the fallback.
+    function _syncPlankLeg() internal {
+        plankPerTicketLast = plankPerTicket();
     }
 
     /// @dev Keep the PAPER leg worth at most PAPER_USD_CAP: 1 PAPER while PAPER is cheap, fewer once it trades above
@@ -728,8 +750,8 @@ contract Fire is ReentrancyGuard {
         uint256 target = PAPER_USD_CAP * 1e28 / uint256(px);
         if (target > PAPER_PER_TICKET) target = PAPER_PER_TICKET;
         uint256 cur = paperPerTicket;
-        uint256 maxUp = cur * (BPS + PLANK_RATCHET_BPS) / BPS;
-        uint256 maxDown = cur * (BPS - PLANK_RATCHET_BPS) / BPS;
+        uint256 maxUp = cur * (BPS + PAPER_RATCHET_BPS) / BPS;
+        uint256 maxDown = cur * (BPS - PAPER_RATCHET_BPS) / BPS;
         uint256 next = target > maxUp ? maxUp : target < maxDown ? maxDown : target;
         paperPerTicket = next > PAPER_PER_TICKET ? PAPER_PER_TICKET : next;
     }

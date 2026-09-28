@@ -24,7 +24,7 @@ interface IPair2 {
 
 /**
  * Deploy order (see ../docs/deploy.md):
- *   1. PlankUsdTwap (script/DeployTwap.s.sol), >= 24h before step 2; call checkpoint() 20h+ after deploy, then daily.
+ *   1. PlankUsdTwap (script/DeployTwap.s.sol), >= 24h before step 2; call checkpoint() 30+ min after deploy, then every 30 min (keeper).
  *   2. This script: PaperUsdTwap + OpenDrandRouter + OpenVRFAdapter + Fire (four contracts). None has an owner;
  *      nothing to configure after. Everything is immutable, so the script checks every input first and refuses to
  *      deploy on a mistake. Deploy just after 03:00 UTC so fire #1 gets a full first day.
@@ -43,7 +43,7 @@ interface IPair2 {
  * PAPER_USD_CAP        = 33000000 ($0.33, default): once PAPER trades above this, a ticket takes less than 1 PAPER
  * UNIV2_FACTORY, WETH  = Uniswap V2 factory + WETH on Robinhood Chain (the PAPER feed finds PAPER's pool there)
  * PLANK_PER_TICKET0    = starting PLANK per ticket in wei (~$0.90 of PLANK on launch day)
- * PLANK_USD_PER_TICKET = 90000000 ($0.90, 8 decimals) — the leg ratchets toward this
+ * PLANK_USD_PER_TICKET = 90000000 ($0.90, 8 decimals) — logs cost this much PLANK at the live (~30-min average) price
  * ETH_USD_PER_TICKET   = 100000000 ($1.00) — price of the PAPER part when paid in ETH or USDG
  * MILL_BID_BASE     = starting mill bid in USD, 8 decimals (e.g. 50000000000 = $500). It climbs ~1%/hour until a mill
  *                     sells, so start at or below where you expect the floor. Listings may be in USDG or ETH.
@@ -120,7 +120,7 @@ contract Deploy is Script {
         address plank = vm.envAddress("PLANK");
         require(IPair2(pair).token0() == plank || IPair2(pair).token1() == plank, "PLANK_USD_FEED is not on a PLANK pool");
         (, int256 px,, uint256 upd,) = plankFeed.latestRoundData();
-        require(px > 0 && block.timestamp - upd < 2 days, "PLANK_USD_FEED has no fresh price yet: checkpoint it 20h+ after its deploy");
+        require(px > 0 && block.timestamp - upd < 2 days, "PLANK_USD_FEED has no fresh price yet: checkpoint it 30+ min after its deploy");
         (, int256 eth,, uint256 eupd,) = IFeed18(vm.envAddress("ETH_USD_FEED")).latestRoundData();
         require(eth > 0 && block.timestamp - eupd < 25 hours, "ETH_USD_FEED is stale");
 

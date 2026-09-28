@@ -69,13 +69,13 @@ export interface FireState {
   potCarriedIn: number; // the part of the pot this fire started with (carry or seed), PLANK
   plankUsd: number;
   ethUsd: number;
-  plankPerTicket: number; // ratchets toward $0.90
+  plankPerTicket: number; // $0.90 of PLANK at the pool's ~30-minute average
   paperPerTicket: number; // 1, or less once PAPER trades above $0.33
   paperUsd: number; // PAPER's price from the Fire's feed; 0 = no market yet
   ticketsToday: number;
   ticketsTotal: number;
-  fireSize: number; // persistent, in tickets: buys add, storms subtract, burns down to 60% each night
-  trailingAvg: number; // 7-night avg of daily tickets; storm scale
+  fireSize: number; // persistent, in logs: buys add, storms subtract, keeps 85% each night
+  trailingAvg: number; // 7-night avg of daily logs; how tall the fire is drawn
   /** 0..1: how threatening tonight looks. Not a number for the UI to display — drives the sky. */
   threat: number;
   nextRollAt: number; // ms
@@ -116,22 +116,33 @@ export function prizeOf(pot: number, carriedIn: number, tickets: number) {
 }
 export const KEEP = 0.85; // the fire keeps 85% of its size overnight
 export const FULL_DAYS = 2.5; // a fire worth 2.5 days of buys is "full height" on screen (fires settle at ~1-2 days)
-/** Fire.sol's storm luck: 32 quantiles of e^(1.5 z), in bps. */
-export const LUCK_BPS = [754, 1338, 1824, 2286, 2744, 3211, 3691, 4192, 4717, 5272, 5862, 6491, 7166, 7894, 8682, 9541, 10481, 11518, 12668, 13955, 15406, 17059, 18967, 21198, 23855, 27091, 31147, 36438, 43747, 54814, 74717, 132586];
-/** The storm's normal level moves toward the last 7 nights' average: 3% of the gap a night up, 30% down (Fire.sol). */
-export const BASE_UP = 0.03, BASE_DOWN = 0.3;
-export function nextStormBase(base: number, recent: number) { return recent > base ? base + (recent - base) * BASE_UP : base - (base - recent) * BASE_DOWN; }
+/** Fire.sol's storm ladder: 20 fixed storm sizes, in logs. Storms never grow; the odds move with the fire's age. */
+export const STORM_LOGS = [5, 8, 12, 19, 30, 47, 74, 115, 180, 283, 442, 693, 1084, 1698, 2658, 4161, 6515, 10199, 15968, 25000];
+/** Running odds out of 10,000 of each size, for nights 2..23 (Fire.STORM_ODDS, built by sim/fire_sim.py storm_ladder()). */
+export const STORM_ODDS: number[][] = [[1375, 3122, 5015, 6763, 8137, 9059, 9585, 9841, 9947, 9985, 9996, 9999, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000], [963, 2344, 4030, 5785, 7342, 8518, 9276, 9692, 9886, 9964, 9990, 9998, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000], [633, 1656, 3064, 4717, 6370, 7778, 8801, 9433, 9767, 9917, 9975, 9993, 9998, 10000, 10000, 10000, 10000, 10000, 10000, 10000], [387, 1092, 2187, 3636, 5269, 6838, 8123, 9020, 9553, 9823, 9939, 9982, 9995, 9999, 10000, 10000, 10000, 10000, 10000, 10000], [219, 669, 1456, 2630, 4123, 5741, 7234, 8408, 9196, 9645, 9864, 9955, 9987, 9997, 9999, 10000, 10000, 10000, 10000, 10000], [114, 378, 899, 1776, 3032, 4567, 6164, 7581, 8651, 9341, 9719, 9896, 9967, 9991, 9998, 10000, 10000, 10000, 10000, 10000], [54, 197, 513, 1114, 2084, 3420, 4988, 6556, 7892, 8862, 9463, 9779, 9921, 9976, 9994, 9999, 10000, 10000, 10000, 10000], [24, 94, 270, 647, 1333, 2398, 3808, 5397, 6924, 8174, 9046, 9565, 9827, 9941, 9982, 9996, 9999, 10000, 10000, 10000], [10, 41, 131, 347, 791, 1568, 2727, 4200, 5797, 7270, 8429, 9206, 9650, 9866, 9956, 9987, 9997, 9999, 10000, 10000], [3, 17, 58, 172, 434, 952, 1824, 3073, 4599, 6187, 7595, 8659, 9345, 9721, 9897, 9967, 9991, 9998, 10000, 10000], [1, 6, 24, 78, 220, 536, 1135, 2103, 3436, 5000, 6564, 7897, 8865, 9464, 9780, 9922, 9976, 9994, 9999, 10000], [0, 2, 9, 33, 103, 279, 655, 1341, 2405, 3813, 5401, 6927, 8176, 9048, 9566, 9828, 9942, 9983, 9997, 10000], [0, 1, 3, 13, 44, 134, 350, 794, 1571, 2730, 4203, 5800, 7273, 8432, 9209, 9653, 9869, 9959, 9990, 10000], [0, 0, 1, 4, 18, 59, 173, 435, 954, 1826, 3076, 4603, 6192, 7602, 8667, 9353, 9730, 9906, 9976, 10000], [0, 0, 0, 1, 6, 24, 79, 221, 537, 1138, 2108, 3444, 5012, 6580, 7916, 8886, 9487, 9803, 9946, 10000], [0, 0, 0, 0, 2, 9, 33, 104, 281, 659, 1349, 2419, 3836, 5433, 6968, 8224, 9101, 9622, 9886, 10000], [0, 0, 0, 0, 1, 3, 13, 45, 136, 355, 804, 1592, 2766, 4259, 5877, 7370, 8544, 9331, 9781, 10000], [0, 0, 0, 0, 0, 1, 5, 18, 61, 177, 447, 980, 1877, 3162, 4731, 6364, 7813, 8908, 9613, 10000], [0, 0, 0, 0, 0, 0, 2, 7, 25, 83, 233, 567, 1199, 2222, 3630, 5283, 6936, 8344, 9367, 10000], [0, 0, 0, 0, 0, 0, 0, 2, 10, 36, 114, 308, 724, 1482, 2658, 4215, 5970, 7656, 9037, 10000], [0, 0, 0, 0, 0, 0, 0, 1, 4, 15, 53, 159, 415, 941, 1863, 3237, 4985, 6878, 8625, 10000], [0, 0, 0, 0, 0, 0, 0, 0, 1, 6, 23, 78, 227, 573, 1255, 2402, 4047, 6055, 8146, 10000]];
+/** The storm a random draw r (0..9,999) brings on night n, in logs (night 1: none, night 24+: infinite). */
+export function stormFor(night: number, r: number) {
+  if (night >= 24) return Infinity;
+  if (night <= 1) return 0;
+  const row = STORM_ODDS[night - 2];
+  let i = 0;
+  while (i < STORM_LOGS.length - 1 && r % 10000 >= row[i]) i++;
+  return STORM_LOGS[i];
+}
+/** Chance (0..1) that night n's storm is at least `size` logs, i.e. that a fire this size goes out (Fire.stormOdds). */
+export function stormOdds(night: number, size: number) {
+  if (night >= 24) return 1;
+  if (night <= 1) return 0;
+  const row = STORM_ODDS[night - 2];
+  let below = 0;
+  for (let i = 0; i < STORM_LOGS.length && STORM_LOGS[i] < size; i++) below = row[i];
+  return 1 - below / 10000;
+}
 /** How heavy the rain is drawn (0.15..1): as heavy as the call was close. A storm that barely touched the fire is a
  *  drizzle, a near miss is a downpour; a storm that puts the fire out is always full force. Same as sim/fire_sim.py. */
 export function stormLook(strength: number, size: number, survived: boolean) {
   if (!survived || size <= 0) return 1;
   return Math.max(0.15, Math.min(1, 0.15 + 0.85 * Math.pow(strength / size, 0.8)));
-}
-/** Storm median for a night: trailingAvg × ((n-1)/8)^1.5 (night 1: none, night 24+: infinite). */
-export function stormBase(night: number, normalLevel: number) {
-  if (night >= 24) return Infinity;
-  if (night <= 1) return 0;
-  return normalLevel * (night - 1) / 8; // Fire.sol: the storm's normal level x (night-1)/8, before luck
 }
 export const TX_CAP = 10;
 export const ETH_USD_PER_TICKET = 1.0;
@@ -217,8 +228,8 @@ export type DemoToken = "ETH" | "PLANK" | "PAPER" | "USDG";
 
 /** Demo-only controls: drive every state of the site without a chain. */
 export interface DemoControls {
-  /** roll tonight: "random" uses the real storm formula; "survive"/"out"/"you-win" force the result; luck 0..31 picks the quantile */
-  roll(outcome: "random" | "survive" | "out" | "you-win", luck?: number): void;
+  /** roll tonight: "random" uses the real storm ladder; "survive"/"out"/"you-win" force the result; draw 0..9,999 picks the storm */
+  roll(outcome: "random" | "survive" | "out" | "you-win", draw?: number): void;
   /** advance n nights instantly, no ceremony (fires may die and relight) */
   skipNights(n: number): void;
   /** hold the storm: buying paused, "deliver" button shown; release it with roll() or setPending(false) */

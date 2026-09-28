@@ -78,7 +78,7 @@ contract PlankUsdTwapTest is Test {
         assertEq(_price(), 0);
     }
     function test_frequent_checkpoints_cannot_freeze_or_shorten_the_window() public {
-        // someone calls every 19h: only calls >= 20h after the last accepted one move the window
+        // someone calls often: only calls >= MIN_WINDOW after the last accepted one move the window
         for (uint256 i; i < 6; i++) { vm.warp(block.timestamp + 19 hours); twap.checkpoint(); }
         (, uint32 prevTs) = twap.prev();
         (, uint32 lastTs) = twap.last();
@@ -95,5 +95,33 @@ contract PlankUsdTwapTest is Test {
     function test_no_short_first_window() public {
         vm.warp(block.timestamp + 1 minutes); twap.checkpoint();
         assertEq(_price(), 0, "a 1-minute window is not a price");
+    }
+
+    function test_window_is_30_minutes_and_due_says_when() public {
+        assertEq(twap.MIN_WINDOW(), 30 minutes);
+        assertFalse(twap.due());
+        vm.warp(block.timestamp + 30 minutes);
+        assertTrue(twap.due());
+        twap.checkpoint();
+        assertFalse(twap.due());
+    }
+
+    function test_a_flash_pump_inside_one_transaction_moves_nothing() public {
+        vm.warp(block.timestamp + 30 minutes); twap.checkpoint();
+        uint256 before = _price();
+        vm.warp(block.timestamp + 30 minutes);
+        // pump 100x, checkpoint, dump: all in the same block
+        pair.set(R_PLANK, R_WETH * 100);
+        twap.checkpoint();
+        pair.set(R_PLANK, R_WETH);
+        assertEq(_price(), before, "the pumped reserves were never in the pool for any time");
+    }
+
+    function test_a_real_pump_shows_up_within_the_hour() public {
+        vm.warp(block.timestamp + 30 minutes); twap.checkpoint();
+        uint256 before = _price();
+        pair.set(R_PLANK, R_WETH * 2); // PLANK doubles and holds
+        vm.warp(block.timestamp + 30 minutes); twap.checkpoint();
+        assertApproxEqRel(_price(), before * 2, 1e15, "30 minutes later: logs cost half the PLANK");
     }
 }

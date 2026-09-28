@@ -12,15 +12,14 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
         <p className="how-lede">A campfire that runs on PAPER and PLANK. Throw logs on it, keep it alive through the nightly storms, and when it finally goes out one log wins the pot. Every log is a ticket to win.</p>
 
         <ol className="how-steps">
-          <li><b>Throw logs.</b> A log is 1 PAPER (or $0.33 worth, whichever is less) plus about $0.90 of PLANK. Up to {TX_CAP} per throw, {DAILY_CAP} per wallet per day. Throw {TX_CAP} and get free logs: 3 on a fire's first day, 2 on its second, 1 after that (free logs count toward the {DAILY_CAP}). No PAPER? Pay $1 in ETH or USDG instead of the PAPER. Same log either way.</li>
+          <li><b>Throw logs.</b> A log is 1 PAPER (or $0.33 worth, whichever is less) plus $0.90 of PLANK at the live price (it follows the PLANK pool within about an hour, so a pump means fewer PLANK per log). Up to {TX_CAP} per throw, {DAILY_CAP} per wallet per day. Throw {TX_CAP} and get free logs: 3 on a fire's first day, 2 on its second, 1 after that (free logs count toward the {DAILY_CAP}). No PAPER? Pay $1 in ETH or USDG instead of the PAPER. Same log either way.</li>
           <li><b>PAPER burns, PLANK feeds the fire.</b> The PAPER is destroyed. All the PLANK goes into the fire's pot. Dollars paid in place of PAPER go to the mill fund (below).</li>
           <li><b>Every log feeds the fire.</b> Each one makes the fire 1 bigger. Overnight the fire burns down a little (it keeps 85%), so a fire nobody feeds shrinks and a fire people pile into grows. The fire burns down, but your logs never leave the draw: every one stays in until the fire goes out.</li>
           <li><b>Every night at 8 PM MST, a storm hits</b> and knocks the fire down. If the storm is bigger than the fire, the fire goes out.
             <ul className="how-sub">
-              <li><b>How big?</b> It's sized to a normal night of buying, and it grows with the fire's age: nothing on night 1, about an eighth of a normal night on night 2, a full normal night by night 9, about two by night 17. Night 24 always puts the fire out.</li>
-              <li><b>A big fire has a real shot.</b> The storm's "normal night" catches up slowly when buying jumps and drops quickly when it slows. So when people pile in, the fire gets far bigger than the storm expects and can ride that for weeks.</li>
-              <li><b>Then luck.</b> Most nights are near normal, but about 1 night in 5 the storm is 3 times normal or worse. A fire nobody feeds can go out early.</li>
-              <li><b>Example:</b> at about 100 logs a day, a normal night-9 storm knocks the fire down by about 100. A fire that's been fed well shrugs it off; one nobody's fed goes out.</li>
+              <li><b>How big?</b> Every storm is one of 20 fixed sizes, from 5 logs up to 25,000. Storms never get stronger. What changes is the odds: early on it's almost always a small storm, and every night the odds tilt a little toward the big ones. Nothing on night 1; night 24 always puts the fire out.</li>
+              <li><b>Big fires last.</b> The storm is a real number of logs, so size is what counts. A 50-log fire can't ride out a 180-log storm; a 5,000-log fire barely notices it. A fire that people keep feeding can go deep. One nobody feeds goes out in a night or two.</li>
+              <li><b>Example:</b> on night 2 most storms are 5 to 30 logs. By night 12 most are 180 to 1,000. By night 20 most are over 1,700. At about 100 logs a day a fire usually lasts around 9 nights; at 1,000 a day, around 17.</li>
             </ul></li>
           <li><b>When the fire goes out, one log wins.</b> Every log in that fire has the same chance. The winner gets 40% of the pot. 25% is destroyed, 5% goes to the Paper Mill royalty pool, and 30% lights the next fire. If nobody threw a log, nothing burns and the whole pot lights the next fire. Then it starts again.</li>
         </ol>

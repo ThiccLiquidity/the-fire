@@ -6,7 +6,7 @@
 //   - reroll()           if a roll has had no answer for REROLL_AFTER (2h) AND the drand relays say the round isn't out
 //                        yet (drand stalled). If the keeper just can't reach drand it doesn't reroll: a published
 //                        number must never be thrown away because of our network.
-//   - checkpoint()       the Fire's PLANK/USD feed once its window is 20h+ old; the PAPER/USD feed when due()
+//   - checkpoint()       the Fire's PLANK/USD feed every 30 minutes (its window); the PAPER/USD feed when due()
 //                        (adopting PAPER's pool once someone creates one)
 //   - sweep the mill floor: buy the cheapest OpenSea listing at or under the fire's bid that the fund can pay
 //     (only if OPENSEA_API_KEY is set; checks every SWEEP_EVERY_SEC, default 300, to respect API limits)
@@ -233,7 +233,7 @@ async function tick() {
   const now = (await pub.getBlock()).timestamp; // the contracts judge time by the chain's clock, so do we
   const results = await Promise.all([
     job("randomness", () => randomnessJob(now)),
-    // PLANK/USD feed (found through the Fire): rolls its window once it's 20h+ old.
+    // PLANK/USD feed (found through the Fire): rolls its window every 30 minutes (MIN_WINDOW).
     job("plank feed", async () => {
       plankTwap ??= await read(FIRE, fireAbi, "PLANK_USD");
       const [[, lastTs], minWindow] = await Promise.all([read(plankTwap, twapAbi, "last"), read(plankTwap, twapAbi, "MIN_WINDOW")]);

@@ -10,8 +10,8 @@ forge script script/DeployTwap.s.sol --rpc-url $env:RPC --account deployer --bro
   --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
 ```
 Put the address in `.env` as `PLANK_USD_FEED`. The constructor refuses a pair without PLANK in it. Call
-`checkpoint()` **20h+ after deploy** and then once a day (the keeper does it once it's running; anyone can). Calls less
-than 20h after the last accepted checkpoint are ignored, so extra calls are harmless. The feed reports 0 until its
+`checkpoint()` **30+ minutes after deploy** and then every 30 minutes (the keeper does it once it's running; anyone can).
+Calls less than 30 minutes after the last accepted checkpoint are ignored, so extra calls are harmless. The feed reports 0 until its
 first full window; step 2 refuses to run until it has a fresh price.
 
 ## 2. PAPER feed + router + adapter + Fire (ours)

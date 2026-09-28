@@ -116,32 +116,6 @@
   },
   {
     "type": "function",
-    "name": "BASE_DOWN_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "BASE_UP_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "BID_MAX_MULT",
     "inputs": [],
     "outputs": [
@@ -415,6 +389,19 @@
   },
   {
     "type": "function",
+    "name": "PAPER_RATCHET_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "PAPER_USD",
     "inputs": [],
     "outputs": [
@@ -454,7 +441,7 @@
   },
   {
     "type": "function",
-    "name": "PLANK_RATCHET_BPS",
+    "name": "PLANK_FEED_MAX_AGE",
     "inputs": [],
     "outputs": [
       {
@@ -584,7 +571,7 @@
   },
   {
     "type": "function",
-    "name": "SLUMP_BPS",
+    "name": "STORM_SIZES",
     "inputs": [],
     "outputs": [
       {
@@ -1252,6 +1239,19 @@
   },
   {
     "type": "function",
+    "name": "plankPerTicketLast",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pokeMillBid",
     "inputs": [],
     "outputs": [],
@@ -1451,8 +1451,19 @@
   },
   {
     "type": "function",
-    "name": "stormBaseMilli",
-    "inputs": [],
+    "name": "stormOdds",
+    "inputs": [
+      {
+        "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "logs",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -1460,7 +1471,7 @@
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -1484,7 +1495,7 @@
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",

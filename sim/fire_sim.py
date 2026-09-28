@@ -3,13 +3,13 @@ The fire, night by night, exactly as Fire.sol runs it. The only input is how man
 
 Contract rules mirrored here (integer math, same order as Fire.onRandomness):
   - buys add to ticketsToday and to fireSizeMilli (the fire is measured in thousandths of a ticket)
-  - at the roll: night += 1; storm = base * AGE[night] * LUCK[rnd & 31] / 1e8   (floored once, in thousandths)
-      base = the storm's normal level (stormBaseMilli); before the first roll ever: today's buys x 1000
-      AGE[night] = (night-1)/8; LUCK = 32 quantiles of lognormal(0, 1.2). night 1: no storm. night 24: infinite.
-  - then today's count goes into the 7-night window, and the normal level moves toward that window's average
-    (trailingMilli): up by 3% of the gap; down by 3%, or by 30% in a real slump (the week under half the level)
+  - at the roll: night += 1; storm = one rung of the storm ladder, in logs x 1000:
+      STORM_LOGS = 20 fixed sizes, 5 .. 25,000 logs, each ~1.56x the last
+      the rung: the first i with (rnd % 10,000) < STORM_ODDS[night][i] (running odds out of 10,000; storm_ladder())
+      night 1: no storm. night 24: infinite. Storms never grow; each night the odds tilt toward the bigger rungs.
+  - today's count goes into the 7-night window (only used to draw the fire on the site)
   - survive if night == 1 or (night < 24 and size > storm): size = (size - storm) * 8500 / 10000
-  - otherwise it goes out: a new fire is lit with size 0, night 0 (the trailing window carries over). A fire nobody
+  - otherwise it goes out: a new fire is lit with size 0, night 0. A fire nobody
     bought into carries its whole pot; otherwise 40% winner, 25% burned, 5% royalty pool, 30% carried.
 On the site the storm "looks" (intensity) and the fire's drawn height use the site's formulas (web/src/data/types.ts).
 
@@ -21,10 +21,23 @@ Usage:
 """
 import json, math, random, statistics as st, sys, os
 
-AGE = [1250 * (n - 1) for n in range(2, 24)]  # (night-1)/8 in bps, nights 2..23
-LUCK = [754, 1338, 1824, 2286, 2744, 3211, 3691, 4192, 4717, 5272, 5862, 6491, 7166, 7894, 8682, 9541,
-        10481, 11518, 12668, 13955, 15406, 17059, 18967, 21198, 23855, 27091, 31147, 36438, 43747, 54814, 74717, 132586]  # e^(1.2 z)
-BASE_UP_BPS, BASE_DOWN_BPS, SLUMP_BPS = 300, 3000, 5000  # normal level: 3% of the gap a night; 30% down in a real slump (week under half of normal)
+
+def storm_ladder(n=20, lo=5, hi=25000, start=2.0, step=0.75, width=2.5):
+    """The storm ladder baked into Fire.sol: n sizes from lo to hi logs (geometric), and for nights 2..23 the running
+    odds (out of 10,000) of each size: a bell curve over the rungs, centered `start` rungs up on night 2 and moving up
+    `step` rungs a night."""
+    sizes = [round(lo * (hi / lo) ** (i / (n - 1))) for i in range(n)]
+    odds = []
+    for night in range(2, 24):
+        c = start + step * (night - 2)
+        w = [math.exp(-0.5 * ((i - c) / width) ** 2) for i in range(n)]
+        t, cum, row = sum(w), 0.0, []
+        for x in w: cum += x; row.append(round(10000 * cum / t))
+        row[-1] = 10000; odds.append(row)
+    return sizes, odds
+
+
+STORM_LOGS, STORM_ODDS = storm_ladder()
 MAX_NIGHTS, KEEP_BPS, BPS, TRAILING, MILLI = 24, 8500, 10000, 7, 1000
 FULL_DAYS = 2.5  # site: a fire worth 2.5 days of buys is drawn full height
 INF = 2**256 - 1
@@ -41,20 +54,19 @@ class Fire:
     def __init__(self):
         self.night = 0; self.fire_size = 0; self.tickets_today = 0; self.tickets_total = 0
         self.trail = [0] * TRAILING; self.trail_count = 0; self.trail_idx = 0; self.fire_id = 1
-        self.base = 0  # stormBaseMilli
-
-    def storm_base(self):
-        return self.tickets_today * MILLI if self.trail_count == 0 else self.base
 
     def trailing_milli(self):
         if self.trail_count == 0: return self.tickets_today * MILLI
         c = min(self.trail_count, TRAILING)
         return sum(self.trail[:c]) * MILLI // c
 
-    def storm(self, n, luck_idx):
+    @staticmethod
+    def storm(n, rnd):
         if n >= MAX_NIGHTS: return INF
         if n <= 1: return 0
-        return self.storm_base() * AGE[n - 2] * LUCK[luck_idx] // (BPS * BPS)
+        r, row, i = rnd % BPS, STORM_ODDS[n - 2], 0
+        while i < len(STORM_LOGS) - 1 and r >= row[i]: i += 1
+        return STORM_LOGS[i] * MILLI
 
     def buy(self, t):
         self.tickets_today += t; self.tickets_total += t; self.fire_size += t * MILLI
@@ -64,12 +76,8 @@ class Fire:
         avg = self.trailing_milli()
         storm = self.storm(self.night, luck_idx)
         size_before = self.fire_size
-        base = self.storm_base()
         today = self.tickets_today
         self.trail[self.trail_idx] = today; self.trail_idx = (self.trail_idx + 1) % TRAILING; self.trail_count += 1
-        recent = self.trailing_milli()
-        if recent >= base: self.base = base + (recent - base) * BASE_UP_BPS // BPS
-        else: self.base = base - (base - recent) * (BASE_DOWN_BPS if recent * BPS < base * SLUMP_BPS else BASE_UP_BPS) // BPS
         self.tickets_today = 0
         rec = {"fire": self.fire_id, "night": self.night, "size": size_before, "storm": storm, "avg": avg, "today": today}  # sizes in thousandths
         if self.night == 1 or (self.night < MAX_NIGHTS and size_before > storm):
@@ -170,7 +178,7 @@ def monte_carlo(key, runs=150, days=365, seed=1):
     for i in range(runs):
         r = random.Random(hash((key, i, seed)) & 0xffffffff)
         d = scenario(key, r, days)
-        luck = [r.randrange(32) for _ in range(days)]
+        luck = [r.randrange(10000) for _ in range(days)]
         allrecs += run(d, luck)
     return summarize(allrecs, days * runs)
 
@@ -203,7 +211,7 @@ def write_parity_test(path):
     for i, (key, n) in enumerate(PARITY):
         r = random.Random(1000 + i)
         d = scenario(key, r, n)
-        luck = [r.randrange(32) for _ in range(n)]
+        luck = [r.randrange(10000) for _ in range(n)]
         recs = run(d, luck)
         cases.append((key, d, luck, recs))
     arr = lambda xs: "[" + ", ".join(f"uint256({x})" if j == 0 else str(x) for j, x in enumerate(xs)) + "]"
@@ -225,6 +233,9 @@ def write_parity_test(path):
             assertEq(fire.pot(), pot[d], string.concat("pot, day ", vm.toString(d)));
         }}
     }}""")
+    u16 = lambda xs: "[" + ", ".join(f"uint16({x})" if j == 0 else str(x) for j, x in enumerate(xs)) + "]"
+    ladder_sizes = u16(STORM_LOGS)
+    ladder_odds = "[" + ", ".join(u16(row) for row in STORM_ODDS) + "]"
     sol = f"""// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
@@ -247,7 +258,7 @@ contract FireSimParityTest is Test {{
         vm.warp(1_800_000_000);
         paper = new MockERC20("PAPER", "PAPER"); plank = new MockERC20("PLANK", "PLANK");
         rng = new MockRandomness();
-        ethFeed = new MockFeed(3_333_33333333); plankFeed = new MockFeed(90_000_000_000);
+        ethFeed = new MockFeed(3_333_33333333); plankFeed = new MockFeed(0); // no PLANK price: logs cost the starting 2 wei
         fire = new Fire(Fire.Config({{
             paper: address(paper), plank: address(plank), mill: address(new MockMill(address(plank), 1)), seaport: address(0),
             royaltyPool: address(0xB0B), randomness: address(rng), ethUsdFeed: address(ethFeed), plankUsdFeed: address(plankFeed),
@@ -285,6 +296,23 @@ contract FireSimParityTest is Test {{
         rng.fulfill(rng.last(), luck);
         assertEq(fire.fireSizeMilli(), afterSize, string.concat("fire size, day ", vm.toString(d)));
         assertEq(fire.fireId(), fireId, string.concat("fire id (did it go out?), day ", vm.toString(d)));
+    }}
+
+    /// Every rung boundary of every night: the contract's storm ladder is the simulator's.
+    function test_ladder_matches_sim() public view {{
+        uint16[20] memory sizes = {ladder_sizes};
+        uint16[20][22] memory odds = {ladder_odds};
+        for (uint256 n = 2; n < 24; n++) {{
+            uint256 lo;
+            for (uint256 i; i < 20; i++) {{
+                uint256 hi = odds[n - 2][i];
+                if (hi > lo) {{
+                    assertEq(fire.stormStrength(n, lo), uint256(sizes[i]) * 1000);
+                    assertEq(fire.stormStrength(n, hi - 1), uint256(sizes[i]) * 1000);
+                }}
+                lo = hi;
+            }}
+        }}
     }}
 {''.join(body)}
 }}
@@ -370,7 +398,7 @@ def pot_monte_carlo(key, runs=200, days=365):
     curves, ends = [], []
     for i in range(runs):
         r = random.Random(hash((key, "pot", i)) & 0xffffffff)
-        d = pot_scenario(key, r, days); luck = [r.randrange(32) for _ in range(days)]
+        d = pot_scenario(key, r, days); luck = [r.randrange(10000) for _ in range(days)]
         c, e = pot_run(d, luck); curves.append(c); ends += [dict(x, run=i) for x in e]
     q = lambda xs, p: sorted(xs)[min(len(xs) - 1, int(p * len(xs)))]
     band = [(q([c[t] for c in curves], 0.1), q([c[t] for c in curves], 0.5), q([c[t] for c in curves], 0.9)) for t in range(days)]

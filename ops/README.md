@@ -32,7 +32,7 @@ Every 30 seconds:
 - `adapter.settle(id)` if the router has the number but its callback didn't reach the Fire;
 - `Fire.reroll()` only if a roll has waited 2 hours (`REROLL_AFTER`) **and** the drand relays report the round isn't published yet
   (a real drand stall). If the keeper just can't reach drand, it logs `ALERT` and does not reroll;
-- `PlankUsdTwap.checkpoint()` once the price window is 20h+ old, and `PaperUsdTwap.checkpoint()` whenever it's
+- `PlankUsdTwap.checkpoint()` every 30 minutes (the price window; ~48 tiny transactions a day), and `PaperUsdTwap.checkpoint()` whenever it's
   `due()` (both found through the Fire);
 - every 5 minutes, with an OpenSea key: sweeps the mill floor. It prices every listing in dollars (USDG at face value,
   ETH at the price feed) and buys the cheapest one at or under the Fire's bid that the fund can pay. When the fund
