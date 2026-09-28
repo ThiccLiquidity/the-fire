@@ -102,8 +102,9 @@ export const TX_CAP = 10;
 export const ETH_USD_PER_TICKET = 1.0;
 export const PLANK_USD_PER_TICKET = 0.9;
 
-export function priceMult(n: number) {
-  return n >= TX_CAP ? 0.97 : 1;
+/** Buy 10, get 1 free: tickets received for n paid (Fire.ticketsFor). */
+export function ticketsFor(n: number) {
+  return n === TX_CAP ? n + 1 : n;
 }
 
 export const PAPER_USD_CAP = 0.33; // the PAPER part never costs more than this (Fire.PAPER_USD_CAP)
@@ -113,8 +114,7 @@ export function paperPerTicketAt(paperUsd: number) {
 }
 
 export function quote(n: number, plankPerTicket: number, ethUsd: number, paperPerTicket = 1) {
-  const m = priceMult(n);
-  return { paper: n * m * paperPerTicket, plank: n * m * plankPerTicket, eth: (n * m * ETH_USD_PER_TICKET) / ethUsd, usdg: n * m * ETH_USD_PER_TICKET };
+  return { paper: n * paperPerTicket, plank: n * plankPerTicket, eth: (n * ETH_USD_PER_TICKET) / ethUsd, usdg: n * ETH_USD_PER_TICKET };
 }
 
 export interface FireApi {

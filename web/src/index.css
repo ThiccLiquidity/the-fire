@@ -262,3 +262,10 @@ a { color: var(--flame); }
 .confirm { display: grid; gap: 0.6rem; padding: 0.7rem 0.8rem; border-radius: 12px; border: 1px solid var(--flame); background: rgba(255, 201, 60, 0.08); }
 .confirm p { margin: 0; font-size: 0.9rem; }
 .confirm-row { display: grid; grid-template-columns: 1fr 1.4fr; gap: 0.5rem; }
+
+/* buy 10, get 1 free */
+.bonus { grid-column: 1 / -1; justify-self: start; display: inline-flex; gap: 0.35rem; align-items: center; padding: 0.3rem 0.7rem; border-radius: 999px; font: inherit; font-size: 0.85rem; font-weight: 600; border: 1px dashed rgba(127, 209, 139, 0.6); background: transparent; color: var(--ok); cursor: pointer; }
+.bonus:hover { background: rgba(127, 209, 139, 0.1); }
+.bonus:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+.bonus.on { border-style: solid; background: rgba(127, 209, 139, 0.14); cursor: default; }
+.bonus.on b { font-family: var(--display); }

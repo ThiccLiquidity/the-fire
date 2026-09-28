@@ -12,7 +12,7 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
         <p className="how-lede">A campfire that runs on PAPER and PLANK. Feed it, keep it alive through the nightly storms, and when it finally goes out one ticket wins the pot.</p>
 
         <ol className="how-steps">
-          <li><b>Buy tickets.</b> A ticket is 1 PAPER plus about $0.90 of PLANK. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day; a full {TX_CAP} is 3% off. No PAPER? Pay $1 for the paper leg in ETH or USDG instead. Same ticket either way.</li>
+          <li><b>Buy tickets.</b> A ticket is 1 PAPER plus about $0.90 of PLANK. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day; buy {TX_CAP}, get 1 free. No PAPER? Pay $1 for the paper leg in ETH or USDG instead. Same ticket either way.</li>
           <li><b>Everything burns or feeds the fire.</b> The PAPER is destroyed. Half the PLANK is destroyed, the other half feeds the fire. Dollars paid in place of PAPER go to the mill fund (below).</li>
           <li><b>Every ticket makes the fire bigger.</b> Fire size is the number of tickets it has taken in. Each night it burns down to 60% of itself, so a fire nobody feeds shrinks.</li>
           <li><b>Every night at 8 PM MST, a storm hits.</b> Its strength is random, scaled to how busy the fire has been over the last week, and it grows with the fire's age: night 1 never kills, by night 10 it takes a fire the size of a normal week's buys, and no fire survives night 24. If the storm is bigger than the fire, the fire goes out.</li>

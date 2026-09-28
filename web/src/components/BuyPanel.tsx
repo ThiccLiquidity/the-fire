@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DAILY_CAP, TX_CAP, type Pay, quote } from "../data/types";
+import { DAILY_CAP, TX_CAP, type Pay, quote, ticketsFor } from "../data/types";
 
 const OPENSEA = "https://opensea.io/collection/the-plank-press";
 const fmtPlank = (p: number) => p >= 1e9 ? `${(p / 1e9).toFixed(2)}B` : `${(p / 1e6).toFixed(0)}M`;
@@ -33,12 +33,15 @@ export function BuyPanel({
   const canPaper = havePlank && you.paper >= q.paper;
   const canEth = havePlank && ethUsd > 0 && you.eth >= q.eth;
   const canUsdg = havePlank && !!usdgEnabled && you.usdg >= q.usdg;
-  const overCap = n > you.remainingToday;
+  const overCap = ticketsFor(n) > you.remainingToday; // the free ticket counts toward the cap
   // how many tickets you could buy right now, by whichever way you can pay for the paper leg
   const byPlank = Math.floor(you.plank / plankPerTicket);
   const byPaperLeg = Math.max(Math.floor(you.paper / paperPerTicket), ethUsd > 0 ? Math.floor(you.eth * ethUsd) : 0, usdgEnabled ? Math.floor(you.usdg) : 0);
   const affordable = Math.max(0, Math.min(byPlank, byPaperLeg));
-  const maxNow = Math.max(0, Math.min(affordable, you.remainingToday, TX_CAP));
+  // the free 11th ticket counts toward the daily cap, so 10 only fits with room for 11
+  const maxNow = Math.max(0, Math.min(affordable, TX_CAP, you.remainingToday >= ticketsFor(TX_CAP) ? TX_CAP : Math.min(you.remainingToday, TX_CAP - 1)));
+  const got = ticketsFor(n); // tickets you'll hold for this buy
+  const bonus = got > n;
   // Default to PAPER when you have it, else the first dollar option you can use.
   const pay: Pay = payPick ?? (you.paper >= paperPerTicket ? "paper" : ethUsd > 0 ? "eth" : usdgEnabled ? "usdg" : "paper");
   const canPay = pay === "paper" ? canPaper : pay === "eth" ? canEth : canUsdg;
@@ -49,7 +52,7 @@ export function BuyPanel({
 
   async function go(pay: Pay) {
     setBusy(true); setErr(""); setDone(null); setConfirming(false);
-    try { await onBuy(n, pay, note.trim()); setNote(""); setDone({ n, total: you.tickets + n }); }
+    try { await onBuy(n, pay, note.trim()); setNote(""); setDone({ n: got, total: you.tickets + got }); }
     catch (e) { setErr((e as Error).message.split("\n")[0].slice(0, 160)); }
     finally { setBusy(false); }
   }
@@ -79,7 +82,9 @@ export function BuyPanel({
         <input className="qty-in" type="number" inputMode="numeric" min={1} max={TX_CAP} value={n} aria-label="Tickets" onChange={(e) => setN(Number(e.target.value))} />
         <button className="qty-btn" aria-label="One more" disabled={n >= TX_CAP} onClick={() => setN(n + 1)}>+</button>
         <button className="qty-max" disabled={maxNow === 0} onClick={() => setN(maxNow)}>Max <small>{maxNow}</small></button>
-        <span className="qty-hint">{n === 1 ? "ticket" : "tickets"} · up to {TX_CAP} a buy{n >= TX_CAP ? " · 3% off" : ""}</span>
+        {bonus
+          ? <span className="bonus on">🎁 {n} + 1 free = <b>{got} tickets</b></span>
+          : <button className="bonus" onClick={() => setN(TX_CAP)}>🎁 Buy {TX_CAP}, get 1 free</button>}
       </div>
       <input className="note" maxLength={32} placeholder="Burn note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
 
@@ -106,12 +111,12 @@ export function BuyPanel({
         </div>
         {!confirming && (
           <button className="cta" disabled={busy || paused || !canPay || overCap} onClick={() => (dollars ? setConfirming(true) : go("paper"))}>
-            {busy ? "Throwing…" : `Throw ${n} ${n === 1 ? "ticket" : "tickets"} in`}
+            {busy ? "Throwing…" : `Throw ${got} ${got === 1 ? "ticket" : "tickets"} in`}
           </button>
         )}
         {confirming && (
           <div className="confirm" role="alertdialog" aria-label="Confirm payment">
-            <p>You're spending <b>{$(total)}</b>: {legText} and {fmtPlank(q.plank)} PLANK, for {n} {n === 1 ? "ticket" : "tickets"}. Your wallet asks you to approve it next.</p>
+            <p>You're spending <b>{$(total)}</b>: {legText} and {fmtPlank(q.plank)} PLANK, for {got} {got === 1 ? "ticket" : "tickets"}{bonus ? ` (${n} + 1 free)` : ""}. Your wallet asks you to approve it next.</p>
             <div className="confirm-row">
               <button className="cta ghost" onClick={() => setConfirming(false)}>Cancel</button>
               <button className="cta" disabled={busy} onClick={() => go(pay)}>{busy ? "Throwing…" : `Pay ${$(total)}`}</button>

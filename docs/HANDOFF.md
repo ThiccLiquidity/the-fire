@@ -37,8 +37,8 @@ Updated Sep 27 2026, 5:35 PM Arizona. Read this whole file before changing anyth
 | 12 | PAPER may trade high: don't let tickets get expensive (the prize is PLANK); swap must include PAPER | **Contract done:** a ticket takes 1 PAPER, or less once PAPER trades above $0.33 (`PAPER_USD_CAP`), moving ≤5%/night from a ≥20h average (`PaperUsdTwap`, which finds the PAPER/WETH or PAPER/USDG pool by itself once one exists, and switches to a pool with 2× the liquidity). No market → stays 1 PAPER. $1 ETH/USDG option unchanged. Keeper checkpoints the feed when `due()`. Sim table in `docs/sim-results.md`. **Site pending:** PAPER amount/$ on the buy panel (mock), multi-route swaps (PAPER tradable whatever it's paired with). **Site part approved Sep 28, on `wip/pending-approval`.** |
 | 13 | Wording: "Pay for the PAPER part with" → "Pay with"; "half feeds the pot" → "half feeds the fire"; drop "paper from the fire" (→ "Every $1 paid in ETH or USDG goes toward buying mills off the floor and burning them", owner reviewing) | Pending, goes in the next mock. **Site part approved Sep 28, on `wip/pending-approval`.** |
 | 14 | Animals walked over the trees instead of behind/in front | Built (mock v6): after each animal is drawn, trees nearer the viewer (trunk base lower on screen than its feet) that overlap it are redrawn on top, so it passes behind near trees and in front of far ones; a squirrel's own tree stays behind it. Checked frame by frame: the deer walks out behind the two big left trees. **Approved Sep 28, on `wip/pending-approval`.** |
-| 15 | "Buy 10, get 1 free" instead of 3% off a full 10; must be obvious in the UI | **Contract done** (`ticketsFor(10) = 11`, `FREE_WITH_FULL_BUY`, `priceBps` removed; the free ticket counts toward the 500/day cap and adds no PLANK; `TicketsBought.tickets` = tickets received), tests, sim, spec. **Site pending (mock).** |
-| 16 | Frog hopped sideways and "splashed" on grass | Built, pending (mock): its three hops aim at the middle of the stream, and the splash lands on the water. |
+| 15 | "Buy 10, get 1 free" instead of 3% off a full 10; must be obvious in the UI | **Contract done** (`ticketsFor(10) = 11`, `FREE_WITH_FULL_BUY`, `priceBps` removed; the free ticket counts toward the 500/day cap and adds no PLANK; `TicketsBought.tickets` = tickets received), tests, sim, spec. Site: "🎁 Buy 10, get 1 free" chip (jumps to 10) → "🎁 10 + 1 free = 11 tickets", button "Throw 11 tickets in", confirm step "(10 + 1 free)" (mock v7). **Approved Sep 28, on `wip/pending-approval`.** |
+| 16 | Frog hopped sideways and "splashed" on grass | Built (mock v7): its three hops aim at the middle of the stream, and the splash lands on the water. **Approved Sep 28, on `wip/pending-approval`.** |
 
 He also asked (answered, no code): "how do we track fake paper?" — there is none. ETH/USDG buyers get
 tickets directly; `ticketsOf[fire][wallet]` and the `TicketsBought` event (flag `paperFromFire`) record
@@ -83,7 +83,7 @@ header so visitors can turn it on deliberately and see that sound exists.
 ## Verify
 
 ```
-cd contracts; forge test          # 75 passed
+cd contracts; forge test          # 89 passed
 cd web; npx tsc -b; npm run build # clean
 ```
 

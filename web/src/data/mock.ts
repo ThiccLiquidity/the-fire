@@ -12,6 +12,7 @@ import {
   stormBase,
   nextRollTime,
   quote,
+  ticketsFor,
   paperPerTicketAt,
   titleFor,
 } from "./types";
@@ -80,8 +81,9 @@ export function makeMockApi(): FireApi {
   for (let i = 0; i < 12; i++) push(wallets[rnd(wallets.length)], [1, 1, 10, 10, 100][rnd(5)], Math.random() < 0.15, notes[rnd(notes.length)], Date.now() - (12 - i) * 5 * 60_000);
 
   function applyBuy(who: string, n: number, pay: Pay, note: string) {
-    const q = quote(n, s.plankPerTicket, s.ethUsd, s.paperPerTicket);
+    const q = quote(n, s.plankPerTicket, s.ethUsd, s.paperPerTicket); // priced on tickets paid for
     const withEth = pay === "eth", withUsdg = pay === "usdg";
+    n = ticketsFor(n); // buy 10, get 1 free: 11 in, priced on the 10 above
     push(who, n, pay !== "paper", note);
     s = {
       ...s,

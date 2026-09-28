@@ -263,7 +263,7 @@ export function drawMill2(x: Ctx, t: number, px: number, py: number, sc: number,
 
 // ---------- visitors
 export type Kind = "deer" | "rabbit" | "skunk" | "bear" | "squirrel" | "birds" | "heron" | "frog";
-export interface Animal { kind: Kind; age: number; dead: boolean; dir: 1 | -1; phase: "in" | "pause" | "out"; pauseT: number; pauseLen: number; x: number; y: number; v: number; stopAt: number; n?: number; climb?: number; fly?: boolean }
+export interface Animal { kind: Kind; age: number; dead: boolean; dir: 1 | -1; phase: "in" | "pause" | "out"; pauseT: number; pauseLen: number; x: number; y: number; v: number; stopAt: number; n?: number; climb?: number; fly?: boolean; tx?: number; ty?: number }
 const GROUND = 600;
 
 export function createWildlife(treeXs: number[]) {
@@ -280,7 +280,7 @@ export function createWildlife(treeXs: number[]) {
       case "bear": a.v = 0.8; a.y = 26; a.dir = -1; a.stopAt = 300; a.pauseLen = 560; break;
       case "heron": a.v = 0.9; a.y = 0; a.dir = -1; a.x = 1200; a.stopAt = riverAt(0.3)[0] - 600; a.pauseLen = 700; a.fly = true; break;
       case "squirrel": { a.v = 2.2; a.y = 44; const tx = treeXs[Math.floor(Math.random() * treeXs.length)]; a.dir = tx > 0 ? 1 : -1; a.stopAt = tx - a.dir * 14; a.x = a.stopAt - a.dir * 300; a.pauseLen = 220; break; }
-      case "frog": { a.v = 0; a.y = 0; const u = 0.1 + Math.random() * 0.2; const [fx, fy, ang] = riverAt(u); const side = Math.random() < 0.5 ? 1 : -1; a.x = fx + -Math.sin(ang) * (rw(u) + 12) * side - 600; a.y = fy + Math.cos(ang) * (rw(u) + 12) * side - GROUND; a.dir = side === 1 ? -1 : 1; a.stopAt = a.x; a.pauseLen = 500 + Math.random() * 400; break; }
+      case "frog": { a.v = 0; a.y = 0; const u = 0.1 + Math.random() * 0.2; const [fx, fy, ang] = riverAt(u); const side = Math.random() < 0.5 ? 1 : -1; a.x = fx + -Math.sin(ang) * (rw(u) + 12) * side - 600; a.y = fy + Math.cos(ang) * (rw(u) + 12) * side - GROUND; /* hops aim at the middle of the stream, so it always lands in the water */ a.tx = fx - 600 - a.x; a.ty = fy - GROUND - a.y; a.dir = a.tx < 0 ? -1 : 1; a.stopAt = a.x; a.pauseLen = 500 + Math.random() * 400; break; }
       case "birds": a.v = 1.4; a.y = -320 - rnd(0, 120); a.n = 3 + Math.floor(rnd(0, 4)); a.stopAt = 9999 * a.dir; a.fly = true; break;
     }
     if (a.x === 0) a.x = a.dir < 0 ? 720 : -720;
@@ -392,12 +392,14 @@ const DRAW: Record<Kind, (x: Ctx, a: Animal, night: number) => void> = {
   frog(x, a, night) {
     O(x, night); const g1 = sh([92, 160, 78], night), g2 = sh([150, 200, 110], night);
     const hopT = a.phase === "out" ? (a.climb ?? 0) : 0, hopN = Math.floor(hopT / 30), hu = (hopT % 30) / 30, air = a.phase === "out" && hopN < 3 ? Math.sin(hu * Math.PI) * 14 : 0;
+    // Three hops from the bank to the middle of the stream (local x is mirrored by dir, so use the distance), then a splash there.
+    const dx = Math.abs(a.tx ?? 42 * 1.7), dy = a.ty ?? 0, p = Math.min(1, hopT / 90);
     if (a.phase === "out" && hopN >= 3) { // splash
-      x.save(); x.scale(1.7, 1.7); x.translate(42, 0); const su = (hopT - 90) / 20; x.strokeStyle = `rgba(230,245,255,${Math.max(0, 1 - su)})`; x.lineWidth = 2; x.beginPath(); x.ellipse(0, 0, 6 + su * 18, 2.5 + su * 7, 0, 0, 7); x.stroke();
+      x.save(); x.translate(dx, dy); x.scale(1.7, 1.7); const su = (hopT - 90) / 20; x.strokeStyle = `rgba(230,245,255,${Math.max(0, 1 - su)})`; x.lineWidth = 2; x.beginPath(); x.ellipse(0, 0, 6 + su * 18, 2.5 + su * 7, 0, 0, 7); x.stroke();
       x.fillStyle = `rgba(235,248,255,${Math.max(0, 0.9 - su)})`; for (let i = 0; i < 5; i++) { x.beginPath(); x.arc((i - 2) * 5, -su * 22 * Math.sin(i + 1) - 2, 1.5, 0, 7); x.fill(); } x.restore(); return;
     }
     const puff = a.phase === "pause" ? Math.max(0, Math.sin(a.pauseT * 0.12)) : 0;
-    x.save(); x.scale(1.7, 1.7); x.translate(hopN * 14, -air);
+    x.save(); x.translate(dx * p, dy * p - air * 1.7); x.scale(1.7, 1.7);
     x.fillStyle = g1; x.beginPath(); x.moveTo(-9, -1); x.lineTo(-13, -8); x.lineTo(-6, -6); x.closePath(); x.fill(); x.stroke(); // back leg
     blob(x, 0, -6, 10, 6, 0, g1); blob(x, 7, -9, 6, 4.5, 0, g1); // body, head
     x.fillStyle = g2; x.beginPath(); x.ellipse(1, -4, 6, 2.5, 0, 0, 7); x.fill();
