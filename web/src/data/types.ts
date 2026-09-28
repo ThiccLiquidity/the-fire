@@ -6,8 +6,9 @@ export interface Buy {
   id: number;
   who: string;
   tickets: number;
-  fromFire: boolean; // the PAPER leg was bought from the fire (ETH or USDG)
+  fromFire: boolean; // the PAPER part was paid in dollars (ETH or USDG)
   note: string;
+  kind?: "mill"; // not a buy: the fire bought a mill off the floor and burned it
   title: string;
   at: number; // ms
 }
@@ -33,7 +34,12 @@ export interface Storm {
   paidPlank?: number;
   potPlank?: number; // the pot the fire died with (out only)
   tickets?: number; // tickets that were in the fire (out only)
+  prizeOwed?: boolean; // out only: the prize couldn't be sent; the winner claims it
+  /** what the page showed just before the roll, held on screen until the ceremony reveals the result */
+  before?: Snapshot;
 }
+
+export interface Snapshot { fireId: number; night: number; potPlank: number; fireSize: number; ticketsTotal: number; ticketsToday: number; youTickets: number; youPlank: number }
 
 export interface Profile { name: string; pfp: string } // pfp: an image URL the site can render (data:/blob:), or ""
 
@@ -71,7 +77,17 @@ export interface FireState {
   /** 0..1: how threatening tonight looks. Not a number for the UI to display — drives the sky. */
   threat: number;
   nextRollAt: number; // ms
-  you: { address?: string; tickets: number; paper: number; plank: number; eth: number; usdg: number; remainingToday: number; isWinner: boolean; profile?: Profile };
+  you: { address?: string; tickets: number; paper: number; plank: number; eth: number; usdg: number; remainingToday: number; isWinner: boolean; profile?: Profile;
+    /** PLANK prize waiting for this wallet to claim (a payout that couldn't be sent) */
+    prize?: number;
+    /** abandoned game only: this wallet's share of the last pot, not yet taken */
+    refund?: number };
+  /** the game was ended for good (a roll stuck for 7 days): no buying, ticket holders take their refund */
+  abandoned?: boolean;
+  /** live only: exact per-ticket prices in wei, so a buy can cap what it pays at exactly what was shown */
+  raw?: { plankPerTicket: bigint; paperPerTicket: bigint; ethPerTicket: bigint };
+  /** live only: token addresses as the Fire contract reports them */
+  tokens?: { paper: string; plank: string; usdg?: string; usdgDecimals: number };
   profiles: Record<string, Profile>; // lowercase address → profile
   burnedPaperAllTime: number;
   burnedPlankAllTime: number;
@@ -113,6 +129,9 @@ export function paperPerTicketAt(paperUsd: number) {
   return paperUsd > PAPER_USD_CAP ? PAPER_USD_CAP / paperUsd : 1;
 }
 
+/** The prices the buyer was shown; a buy never pays more than this. */
+export interface PriceSeen { plankPerTicket: number; paperPerTicket: number; ethUsd: number; raw?: FireState["raw"] }
+
 export function quote(n: number, plankPerTicket: number, ethUsd: number, paperPerTicket = 1) {
   return { paper: n * paperPerTicket, plank: n * plankPerTicket, eth: (n * ETH_USD_PER_TICKET) / ethUsd, usdg: n * ETH_USD_PER_TICKET };
 }
@@ -120,7 +139,11 @@ export function quote(n: number, plankPerTicket: number, ethUsd: number, paperPe
 export interface FireApi {
   state(): FireState;
   subscribe(fn: (s: FireState) => void): () => void;
-  buy(n: number, pay: Pay, note: string): Promise<void>;
+  buy(n: number, pay: Pay, note: string, seen: PriceSeen): Promise<void>;
+  /** take a prize that couldn't be sent when the fire went out */
+  claim?(): Promise<void>;
+  /** abandoned game: take your share of the last pot */
+  refund?(): Promise<void>;
   setProfile(name: string, image: Uint8Array | null): Promise<void>; // null = keep the current picture
   /** live only: ask the wallet for an account so balances and the buy buttons light up */
   connect?(): Promise<void>;
@@ -139,8 +162,9 @@ export interface FireApi {
 /** How the PAPER part is paid: real PAPER, or $1 a ticket in ETH or USDG. */
 export type Pay = "paper" | "eth" | "usdg";
 
-export function titleFor(lifetime: number, fromFire: boolean) {
-  if (fromFire) return "Cash buyer";
+/** cashOnly: this wallet has never paid with PAPER */
+export function titleFor(lifetime: number, cashOnly: boolean) {
+  if (cashOnly) return "Cash buyer";
   if (lifetime >= 1000) return "Arsonist";
   if (lifetime >= 200) return "Lumberjack";
   if (lifetime >= 20) return "Paper boy";
@@ -155,17 +179,19 @@ export function nameOf(addr: string, profiles: Record<string, Profile>) {
 }
 
 export function nextRollTime(now = Date.now()) {
-  // 8:00 PM America/Phoenix = 03:00 UTC (Arizona doesn't observe DST)
+  // 8:00 PM MST = 03:00 UTC (MST all year, no daylight saving)
   const d = new Date(now);
   const t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 3, 0, 0);
   return t <= now ? t + 86_400_000 : t;
 }
 
-/** Hour of day in Phoenix, fractional (0..24). */
+/** Hour of day in MST, fractional (0..24). */
 export function phoenixHour(now = Date.now()) {
   const ms = (now - 7 * 3_600_000) % 86_400_000;
   return (ms < 0 ? ms + 86_400_000 : ms) / 3_600_000;
 }
+
+export type DemoToken = "ETH" | "PLANK" | "PAPER" | "USDG";
 
 /** Demo-only controls: drive every state of the site without a chain. */
 export interface DemoControls {
@@ -187,5 +213,12 @@ export interface DemoControls {
   eatMill(): void;
   /** ETH/USD feed stale: the ETH path closes */
   setEthFeedStale(on: boolean): void;
+  /** end the game for good (a roll stuck 7 days): buying closes, ticket holders get refunds */
+  setAbandoned(on: boolean): void;
+  /** leave a prize waiting for you to claim (as when a payout can't be sent) */
+  setPrizeStuck(on: boolean): void;
+  /** simulated swaps on play money */
+  swapQuote(from: DemoToken, to: DemoToken, amountIn: number): { out: number; impact: number } | undefined;
+  swap(from: DemoToken, to: DemoToken, amountIn: number, minOut: number): Promise<number>;
   reset(): void;
 }

@@ -4,8 +4,8 @@ import type { Profile } from "../data/types";
 import { short } from "../data/types";
 import { Avatar } from "./Avatar";
 
-export function WalletChip({ address, profile, onConnect, onSwitch, onDisconnect }: {
-  address?: string; profile?: Profile; onConnect?: () => Promise<void>; onSwitch?: () => Promise<void>; onDisconnect?: () => void;
+export function WalletChip({ address, profile, onConnect, onSwitch, onDisconnect, demo }: {
+  address?: string; profile?: Profile; onConnect?: () => Promise<void>; onSwitch?: () => Promise<void>; onDisconnect?: () => void; demo?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -20,7 +20,7 @@ export function WalletChip({ address, profile, onConnect, onSwitch, onDisconnect
 
   if (!address) return (
     <div className="wchip-wrap">
-      <button className="wchip connect" disabled={busy || !onConnect} onClick={() => run(onConnect)}>{busy ? "Connecting…" : "Connect wallet"}</button>
+      <button className="wchip connect" disabled={busy || !onConnect} onClick={() => run(onConnect)}>{busy ? "Connecting…" : demo ? "Connect demo wallet" : "Connect wallet"}</button>
       {err && <span className="wchip-err">{err}</span>}
     </div>
   );
@@ -33,8 +33,8 @@ export function WalletChip({ address, profile, onConnect, onSwitch, onDisconnect
       </button>
       {open && (
         <div className="wchip-menu" role="menu">
-          <div className="wchip-addr">{address}</div>
-          <button role="menuitem" disabled={busy || !onSwitch} onClick={() => run(onSwitch)}>Switch wallet</button>
+          <div className="wchip-addr">{demo ? "Demo wallet (play money) · " : ""}{address}</div>
+          <button role="menuitem" disabled={busy || !onSwitch} onClick={() => run(onSwitch)}>{demo ? "Switch to the other demo wallet" : "Switch wallet"}</button>
           <button role="menuitem" disabled={busy || !onDisconnect} onClick={() => run(onDisconnect)}>Disconnect</button>
           {err && <span className="wchip-err">{err}</span>}
         </div>

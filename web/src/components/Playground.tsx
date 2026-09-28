@@ -19,7 +19,7 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
   return (
     <div className={"pg" + (open ? " open" : "")}>
       <button className="pg-toggle" onClick={() => setOpen(!open)}>
-        <span><b>Playground</b> — drive every state of the site (demo only)</span><small>{open ? "close" : "open"}</small>
+        <span><b>Playground</b> — make the storm come now, change prices, etc. (demo only)</span><small>{open ? "close" : "open"}</small>
       </button>
       {open && (
         <div className="pg-body">
@@ -33,9 +33,13 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
             </div>
             <label>Storm luck ×{LUCK_X[luck]} <input type="range" min={0} max={31} value={luck} onChange={(e) => setLuck(num(e.target.value))} /> <small>the contract's 32 quantiles; median ×1.0</small></label>
             <div className="pg-row">
-              <label><input type="checkbox" checked={!!s.rollPending} onChange={(e) => d.setPending(e.target.checked)} /> Storm pending (buying paused, "deliver" button shown)</label>
+              <label><input type="checkbox" checked={!!s.rollPending} onChange={(e) => d.setPending(e.target.checked)} /> Storm pending (buying paused, "Bring in tonight's storm" shown)</label>
               <button onClick={() => d.skipNights(1)}>Skip 1 night</button>
               <button onClick={() => d.skipNights(7)}>Skip a week</button>
+            </div>
+            <div className="pg-row">
+              <label><input type="checkbox" checked={!!s.abandoned} onChange={(e) => d.setAbandoned(e.target.checked)} /> Game abandoned (refunds)</label>
+              <label><input type="checkbox" checked={(s.you.prize ?? 0) > 0} disabled={!s.you.address} onChange={(e) => d.setPrizeStuck(e.target.checked)} /> Prize stuck (claim)</label>
             </div>
           </section>
 
@@ -53,6 +57,7 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
 
           <section>
             <h3>Prices and feeds</h3>
+            <p className="fine">A ticket's PLANK and PAPER amounts follow a price change at most 5% a night, like the contract.</p>
             <div className="pg-grid">
               <label>PLANK price ($ per 1B) <input type="number" step={0.1} value={+(s.plankUsd * 1e9).toFixed(3)} onChange={(e) => d.set({ plankUsd: Math.max(0.01, num(e.target.value)) / 1e9 })} /></label>
               <label>PAPER price ($, 0 = no market) <input type="number" step={0.01} min={0} value={s.paperUsd} onChange={(e) => d.set({ paperUsd: Math.max(0, num(e.target.value)) })} /></label>

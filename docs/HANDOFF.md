@@ -1,6 +1,6 @@
 # Handoff — where the work stands
 
-Updated Sep 27 2026, 5:35 PM Arizona. Read this whole file before changing anything.
+Updated Sep 28 2026 (beta audit merged). Read this whole file before changing anything.
 
 ## Rules from the owner (ThiccLiquidity)
 
@@ -15,7 +15,7 @@ Updated Sep 27 2026, 5:35 PM Arizona. Read this whole file before changing anyth
 
 ## Branches
 
-- `main` — live site (demo mode). Has the merged audit work (`claude/practical-gates-va0gq1`, merge `c8c6d70`).
+- `main` — live site (demo mode). Has everything through edit #17 (beta audit).
 - `wip/pending-approval` — **this branch.** Everything below that's "built, awaiting approval". Not merged.
   Vercel builds a preview for it automatically; that preview URL is a good way for him to review.
 
@@ -39,6 +39,7 @@ Updated Sep 27 2026, 5:35 PM Arizona. Read this whole file before changing anyth
 | 14 | Animals walked over the trees instead of behind/in front | Built (mock v6): after each animal is drawn, trees nearer the viewer (trunk base lower on screen than its feet) that overlap it are redrawn on top, so it passes behind near trees and in front of far ones; a squirrel's own tree stays behind it. Checked frame by frame: the deer walks out behind the two big left trees. **Approved Sep 28, on `wip/pending-approval`.** |
 | 15 | "Buy 10, get 1 free" instead of 3% off a full 10; must be obvious in the UI | **Contract done** (`ticketsFor(10) = 11`, `FREE_WITH_FULL_BUY`, `priceBps` removed; the free ticket counts toward the 500/day cap and adds no PLANK; `TicketsBought.tickets` = tickets received), tests, sim, spec. Site: "🎁 Buy 10, get 1 free" chip (jumps to 10) → "🎁 10 + 1 free = 11 tickets", button "Throw 11 tickets in", confirm step "(10 + 1 free)" (mock v7). **Approved Sep 28, on `wip/pending-approval`.** |
 | 16 | Frog hopped sideways and "splashed" on grass | Built (mock v7): its three hops aim at the middle of the stream, and the splash lands on the water. **Approved Sep 28, on `wip/pending-approval`.** |
+| 17 | Final audit (words, math, back end, user funds) + a demo friends can play on the live site | **Done, merged to `main` Sep 28 with his OK.** Five audits; every fund-safety finding fixed: max-price buys, winner claim, 7-day abandon/refund, non-reverting feeds, 2h reroll, exact approvals, receipt checks, swap slippage/impact guard, security headers, demo can't touch a wallet. Site: demo banner, persistent play wallet, simulated swaps, spoiler fix, copy/number/phone fixes. Go-live checklist: see the audit report artifact. |
 
 He also asked (answered, no code): "how do we track fake paper?" — there is none. ETH/USDG buyers get
 tickets directly; `ticketsOf[fire][wallet]` and the `TicketsBought` event (flag `paperFromFire`) record
@@ -83,7 +84,7 @@ header so visitors can turn it on deliberately and see that sound exists.
 ## Verify
 
 ```
-cd contracts; forge test          # 89 passed
+cd contracts; forge test          # 103 passed
 cd web; npx tsc -b; npm run build # clean
 ```
 

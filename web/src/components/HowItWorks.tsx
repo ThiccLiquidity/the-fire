@@ -12,10 +12,10 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
         <p className="how-lede">A campfire that runs on PAPER and PLANK. Feed it, keep it alive through the nightly storms, and when it finally goes out one ticket wins the pot.</p>
 
         <ol className="how-steps">
-          <li><b>Buy tickets.</b> A ticket is 1 PAPER plus about $0.90 of PLANK. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day; buy {TX_CAP}, get 1 free. No PAPER? Pay $1 for the paper leg in ETH or USDG instead. Same ticket either way.</li>
+          <li><b>Buy tickets.</b> A ticket is 1 PAPER (or $0.33 worth, whichever is less) plus about $0.90 of PLANK. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day; buy {TX_CAP}, get 1 free (the free one counts toward the {DAILY_CAP}). No PAPER? Pay $1 in ETH or USDG instead of the PAPER. Same ticket either way.</li>
           <li><b>Everything burns or feeds the fire.</b> The PAPER is destroyed. Half the PLANK is destroyed, the other half feeds the fire. Dollars paid in place of PAPER go to the mill fund (below).</li>
-          <li><b>Every ticket makes the fire bigger.</b> Fire size is the number of tickets it has taken in. Each night it burns down to 60% of itself, so a fire nobody feeds shrinks.</li>
-          <li><b>Every night at 8 PM MST, a storm hits.</b> Its strength is random, scaled to how busy the fire has been over the last week, and it grows with the fire's age: night 1 never kills, by night 10 it takes a fire the size of a normal week's buys, and no fire survives night 24. If the storm is bigger than the fire, the fire goes out.</li>
+          <li><b>Every ticket makes the fire bigger.</b> Every ticket adds 1 to the fire's size. Storms knock it down, and each night it burns down to 60% of what's left, so a fire nobody feeds shrinks. Your tickets never shrink: they all stay in until the fire goes out.</li>
+          <li><b>Every night at 8 PM MST, a storm hits.</b> Its strength is random, scaled to an average day's buys over the last week, and it grows with the fire's age: night 1 never kills; a typical storm is about 1.2 days of buys on night 10 and 2.8 days on night 17; night 24 always puts the fire out. If the storm is bigger than the fire, the fire goes out.</li>
           <li><b>When the fire goes out, one ticket wins.</b> Every ticket in that fire has the same chance. The winner gets 40% of the pot. 25% is destroyed, 5% goes to the Paper Mill royalty pool, and 30% lights the next fire. Then it starts again.</li>
         </ol>
 
@@ -23,7 +23,7 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
         <div className="flow">
           <div className="flow-col">
             <div className="flow-box fb-in">1 ticket</div>
-            <div className="flow-sub">1 PAPER + $0.90 PLANK<br />or $1 + $0.90 PLANK</div>
+            <div className="flow-sub">1 PAPER (max $0.33) + $0.90 PLANK<br />or $1 + $0.90 PLANK</div>
           </div>
           <div className="flow-arrows" aria-hidden="true">→</div>
           <div className="flow-col">
@@ -40,11 +40,11 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
         </div>
 
         <h3>Your odds</h3>
-        <p>Your chance of winning is your tickets divided by all tickets in the fire, shown live on the page. Tickets never expire within a fire and don't carry to the next one. Buying pauses for a few seconds each night while the storm is rolling, so nobody can buy after the result is known.</p>
+        <p>Your chance of winning is your tickets divided by all tickets in the fire, shown live on the page. Tickets never expire within a fire and don't carry to the next one. Buying pauses for about 30 seconds each night while the storm's number arrives, so nobody can buy after the result is known.</p>
 
         <h3>What nobody controls</h3>
         <ul>
-          <li>The contract has no owner, no pause, and no withdraw. PLANK only leaves through the rules above; the mill fund only leaves by buying a listed mill and burning it in the same transaction.</li>
+          <li>The contract has no owner and no withdraw, and nobody can switch it off. One safety valve: if a storm's number never arrives for 7 days, anyone can end the game, and the last fire's ticket holders split its pot. PLANK only leaves through these rules; the mill fund only leaves by buying a listed mill and burning it in the same transaction.</li>
           <li>The random number comes from drand, a public randomness beacon, checked on-chain. Anyone can deliver it; nobody can pick it.</li>
           <li>The nightly roll, the mill buying, and the price checkpoints are all public functions. We run a bot that calls them on time; if it's down, anyone else can, and the page has a button for it.</li>
           <li>Names and pictures live on-chain too. Only your wallet can set yours.</li>
