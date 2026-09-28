@@ -38,7 +38,7 @@ const PRICE_MOVED = "The price moved at tonight's storm — check the new price 
 
 const wallets = Array.from({ length: 40 }, (_, i) => "0x" + (0x7a3e1c + i * 9973).toString(16).padStart(40, "a"));
 const notes = [
-  "gm from 1 mill", "for the boys", "wildfire or nothing", "burn it all", "printed this morning",
+  "gm from 1 press", "for the boys", "wildfire or nothing", "burn it all", "printed this morning",
   "logs on the fire", "not tonight storm", "one more for luck", "paper go brrr", "we ride at 8", "", "", "",
 ];
 function rnd(n: number) { return Math.floor(Math.random() * n); }
@@ -173,7 +173,7 @@ export function makeMockApi(): FireApi {
     w.s = { ...w.s, feed: [b, ...w.s.feed].slice(0, 40) };
   }
 
-  /** The fire buys a mill off the floor with one side of the fund (a listing is in ETH or USDG), then burns it. */
+  /** The fire buys a press off the floor with one side of the fund (a listing is in ETH or USDG), then burns it. */
   function eatMill(paidUsd: number, side: "eth" | "usdg") {
     const s = w.s;
     w.s = {
@@ -280,7 +280,7 @@ export function makeMockApi(): FireApi {
       }
       const pot = s.potPlank;
       const nobody = winner === NOBODY;
-      // 40% to the winner, 25% burns, 5% to the Paper Mill royalty pool, the rest carries. The split is taken from the pot or
+      // 40% to the winner, 25% burns, 5% to the Paper Press royalty pool, the rest carries. The split is taken from the pot or
       // from 20x what this fire's tickets put in, if smaller (Fire.sol's prize cap). No tickets: the whole pot carries.
       const base = nobody ? 0 : Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - s.potCarriedIn));
       const paid = base * 0.4;
