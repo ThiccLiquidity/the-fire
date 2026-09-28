@@ -13,6 +13,7 @@ import {
   DAILY_CAP,
   FULL_DAYS,
   PRIZE_CAP_MULT,
+  SWAP_FEE_BPS,
   stormLook,
   KEEP,
   PLANK_USD_PER_TICKET,
@@ -327,12 +328,12 @@ export function makeMockApi(): FireApi {
     if (from === to || !(amountIn > 0)) return undefined;
     const pa = price(from), pb = price(to);
     if (!(pa > 0) || !(pb > 0)) return undefined; // no market (e.g. PAPER at $0)
-    const x = amountIn * pa * 0.997;
+    const x = amountIn * (1 - SWAP_FEE_BPS / 10_000) * pa * 0.997; // The Fire's 0.5% comes off the top, like the live swap
     const usd = from === "USDG" ? x : (DEPTH[from] * x) / (DEPTH[from] + x);
     const y = usd * (to === "USDG" ? 1 : 0.997);
     const outUsd = to === "USDG" ? y : (DEPTH[to] * y) / (DEPTH[to] + y);
     const out = outUsd / pb;
-    const spot = (amountIn * pa) / pb * 0.997 * (from === "USDG" || to === "USDG" ? 1 : 0.997);
+    const spot = (amountIn * (1 - SWAP_FEE_BPS / 10_000) * pa) / pb * 0.997 * (from === "USDG" || to === "USDG" ? 1 : 0.997);
     return { out, impact: Math.max(0, 1 - out / spot) };
   }
   const bal = (a: Acct, t: DemoToken) => (t === "ETH" ? a.eth : t === "PLANK" ? a.plank : t === "PAPER" ? a.paper : a.usdg);
@@ -350,8 +351,10 @@ export function makeMockApi(): FireApi {
     },
     setPending: (on) => { w.s = { ...w.s, rollPending: on, rollAction: on ? "deliver" : undefined }; emit(); },
     set: (patch) => {
-      // Prices move the market; the ticket's PLANK and PAPER amounts follow at most 5% a night, like the contract.
+      // Prices move the market. The PLANK part of a log follows right away (the contract reads a 30-minute average);
+      // the PAPER part follows at most 5% a night, like the contract.
       w.s = { ...w.s, ...patch };
+      if (patch.plankUsd) w.s = { ...w.s, plankPerTicket: plankTarget() };
       emit();
     },
     setYou: (patch) => {

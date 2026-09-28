@@ -107,6 +107,10 @@ export interface FireState {
   rollAction?: "roll" | "deliver" | "settle" | "reroll";
 }
 
+/** The Fire's swap fee: 0.5% of what the buyer pays, sent by KyberSwap straight to SWAP_FEE_WALLET in the same transaction. */
+export const SWAP_FEE_BPS = 50;
+/** Owner's fee wallet (public address only). Until it's set, swaps run with no fee. */
+export const SWAP_FEE_WALLET: `0x${string}` | undefined = undefined;
 export const DAILY_CAP = 500;
 export const PRIZE_CAP_MULT = 20;
 /** Fire.prizeNow(): the winner's 40%, taken from the pot or from 20x what this fire's tickets put in, if smaller. */
