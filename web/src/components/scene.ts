@@ -71,7 +71,9 @@ export function createScene(canvas: HTMLCanvasElement) {
   // the side facing the flames, flickering with them.
   const plankImg = new Image(); plankImg.src = import.meta.env.BASE_URL + "plank.webp";
   const pc = document.createElement("canvas"); const pcx = pc.getContext("2d");
+  let plankAt: [number, number, number, number, number] | null = null; // last draw: x, y (feet), height, dark, warm
   function drawPlank(px: number, py: number, h: number, dark: number, warm: number) {
+    plankAt = [px, py, h, dark, warm];
     if (!pcx || !plankImg.complete || !plankImg.naturalWidth) return;
     const w = h * plankImg.naturalWidth / plankImg.naturalHeight, cw = Math.ceil(w * dpr * 1.5), ch = Math.ceil(h * dpr * 1.5);
     if (pc.width !== cw || pc.height !== ch) { pc.width = cw; pc.height = ch; }
@@ -243,12 +245,12 @@ export function createScene(canvas: HTMLCanvasElement) {
     x.fillStyle = "#5b3a1c"; x.fillRect(500, 570, 200, 22); x.save(); x.translate(600, 569); x.rotate(-.14); x.fillStyle = "#7d4f27"; x.fillRect(-80, -11, 160, 22); x.rotate(.3); x.fillStyle = "#4a2e14"; x.fillRect(-80, -11, 160, 22); x.restore(); x.restore();
     const eb = x.createRadialGradient(600, 575, 5, 600, 575, 110 * lw); const emberGlow = Math.max(.9 * flick, st.dead * (0.28 + 0.14 * Math.sin(t * 0.035))); eb.addColorStop(0, `rgba(255,120,30,${emberGlow})`); eb.addColorStop(1, "rgba(255,60,10,0)"); x.fillStyle = eb; x.fillRect(600 - 130 * lw, 540, 260 * lw, 60);
 
-    // Plank, sitting by the fire (left of the stones)
+    // Plank, sitting by the fire (left of the stones), a step nearer the viewer than the animals' path so they pass behind him
     { const fireLight = Math.min(1, fsH / 1.2) * flick * (1 - st.dead);
       const dark = Math.max(0, night * (0.72 - fireLight * 0.45) + st.cover * 0.25 * (1 - night));
       // on a narrow screen the stones reach the edge: he sits in front of them instead, a little smaller
       const narrow = W < 720;
-      drawPlank(narrow ? 600 - W / 2 + 44 : 600 - 150 * lw - 55, narrow ? base + 70 : base + 16, narrow ? 78 : 92, Math.min(0.85, dark), (0.12 + night * 0.4) * fireLight); }
+      drawPlank(narrow ? 600 - W / 2 + 44 : 600 - 150 * lw - 70, narrow ? base + 70 : base + 58, narrow ? 78 : 92, Math.min(0.85, dark), (0.12 + night * 0.4) * fireLight); }
 
     // flames
     if (st.dead < 0.9) {
@@ -295,6 +297,8 @@ export function createScene(canvas: HTMLCanvasElement) {
           if (a.kind === "squirrel" && Math.abs(tr.x - a.stopAt) < 40) continue;
           drawTree(tr);
         }
+        // Plank stands by the fire: an animal walking behind him (feet higher up the screen) passes behind him
+        if (plankAt && plankAt[1] > footY + 2 && Math.abs(plankAt[0] - 600 - a.x) < plankAt[2] * 0.5 + 60) drawPlank(...plankAt);
       });
       wild.step(night);
     }
