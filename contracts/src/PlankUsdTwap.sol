@@ -14,6 +14,7 @@ pragma solidity ^0.8.24;
  */
 interface IUniswapV2Pair {
     function token0() external view returns (address);
+    function token1() external view returns (address);
     function price0CumulativeLast() external view returns (uint256);
     function price1CumulativeLast() external view returns (uint256);
     function getReserves() external view returns (uint112, uint112, uint32);
@@ -28,7 +29,6 @@ contract PlankUsdTwap {
     IEthUsdFeed public immutable ETH_USD;
     bool public immutable PLANK_IS_TOKEN0;
     uint256 public constant MIN_WINDOW = 20 hours; // checkpoints closer together than this are ignored
-    uint256 public constant MAX_AGE = 3 days; // older than this and the feed reports stale
     uint256 public constant ETH_FEED_MAX_AGE = 25 hours; // Chainlink ETH/USD: deviation updates + 24h heartbeat
 
     struct Obs { uint256 cum; uint32 ts; }
@@ -41,6 +41,7 @@ contract PlankUsdTwap {
         PAIR = IUniswapV2Pair(pair);
         ETH_USD = IEthUsdFeed(ethUsd);
         PLANK_IS_TOKEN0 = IUniswapV2Pair(pair).token0() == plank;
+        require(PLANK_IS_TOKEN0 || IUniswapV2Pair(pair).token1() == plank, "pair has no PLANK");
         (uint256 cum, uint32 ts) = _current();
         prev = Obs(cum, ts);
         last = Obs(cum, ts);
@@ -54,7 +55,7 @@ contract PlankUsdTwap {
         if (tLast != ts && r0 > 0 && r1 > 0) {
             // price of PLANK in WETH = reserveWETH / reservePLANK, as UQ112x112
             uint256 px = PLANK_IS_TOKEN0 ? (uint256(r1) << 112) / r0 : (uint256(r0) << 112) / r1;
-            cum += px * (ts - tLast);
+            unchecked { cum += px * (ts - tLast); } // V2 cumulatives are meant to wrap
         }
     }
 
@@ -71,14 +72,15 @@ contract PlankUsdTwap {
 
     function _price() internal view returns (uint256 plankUsd18) {
         if (last.ts == prev.ts) return 0;
-        uint256 avgWethPerPlankQ112 = (last.cum - prev.cum) / (last.ts - prev.ts);
+        uint256 avgWethPerPlankQ112;
+        unchecked { avgWethPerPlankQ112 = (last.cum - prev.cum) / (last.ts - prev.ts); }
         (, int256 ethUsd,, uint256 upd,) = ETH_USD.latestRoundData();
         if (ethUsd <= 0 || upd > block.timestamp || block.timestamp - upd > ETH_FEED_MAX_AGE) return 0;
         // USD per PLANK, 18 dec = (WETH per PLANK, Q112) * (USD per ETH, 8 dec) * 1e10 / 2^112
         plankUsd18 = (avgWethPerPlankQ112 * uint256(ethUsd) * 1e10) >> 112;
     }
 
-    /// @notice Chainlink-compatible read. `updatedAt` is the window end; consumers should treat > MAX_AGE as stale.
+    /// @notice Chainlink-compatible read. `updatedAt` is the window end; the Fire treats > 2 days as stale.
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
         uint256 p = _price();
         return (0, int256(p), 0, last.ts, 0);

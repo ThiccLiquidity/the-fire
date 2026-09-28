@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # The Fire — keeper box. Run as root on a fresh Ubuntu 24.04 VPS:
-#   curl -fsSL https://raw.githubusercontent.com/ThiccLiquidity/the-fire/main/ops/keeper-setup.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ThiccLiquidity/the-fire/<release tag>/ops/keeper-setup.sh | RELEASE=<release tag> bash
+# RELEASE pins the keeper's code to the tag the contracts were deployed from (never a moving branch).
 # It installs Docker, locks the firewall to SSH, asks for the keeper wallet's key (and optionally an OpenSea API key),
 # then prints the one command that starts the keeper.
 set -euo pipefail
+RELEASE="${RELEASE:?set RELEASE to the release tag the contracts were deployed from, e.g. RELEASE=v1.0.0}"
 
 echo "== 1/4 system packages"
 apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl git ufw >/dev/null
@@ -17,6 +19,7 @@ ufw --force reset >/dev/null; ufw default deny incoming >/dev/null; ufw default 
 
 echo "== 4/4 keeper"
 if [ ! -d /root/the-fire ]; then git clone -q https://github.com/ThiccLiquidity/the-fire /root/the-fire; fi
+git -C /root/the-fire fetch -q --tags && git -C /root/the-fire checkout -q "$RELEASE"
 KDIR=/root/fire-keeper; mkdir -p $KDIR && chmod 700 $KDIR
 if [ ! -f $KDIR/keeper-key ]; then
   echo
@@ -34,16 +37,26 @@ if [ ! -f $KDIR/opensea-key ]; then
   if [ -n "$OKEY" ]; then printf '%s' "$OKEY" > $KDIR/opensea-key; chown 1000:1000 $KDIR/opensea-key; chmod 600 $KDIR/opensea-key; fi
 fi
 [ -f $KDIR/opensea-key ] && OS_OPTS="-e OPENSEA_API_KEY_FILE=/run/secrets/opensea-key -v $KDIR/opensea-key:/run/secrets/opensea-key:ro"
+if [ ! -f $KDIR/rpc-url ]; then
+  echo "Paste your https RPC URL (it may contain a provider key, so it's stored in a file, not on the command line):"
+  read -r -s RPCU </dev/tty; echo
+  case "$RPCU" in https://*) ;; *) echo "That isn't an https URL."; exit 1;; esac
+  printf '%s' "$RPCU" > $KDIR/rpc-url
+fi
+chown 1000:1000 $KDIR/rpc-url && chmod 600 $KDIR/rpc-url
 
 cat <<EOF
 
-Done. Start the keeper (fill in the three addresses and an https RPC; Alchemy recommended):
+Done. Start the keeper (fill in the Fire address; the price feeds are read from the Fire itself):
 
   cd /root/the-fire/ops/keeper && docker build -t fire-keeper . && docker run -d --name fire-keeper --restart unless-stopped \\
-    -e RPC_URL=<https RPC> -e FIRE=<Fire address> -e TWAP=<PlankUsdTwap address> \\
+    --read-only --cap-drop ALL --security-opt no-new-privileges --memory 256m \\
+    --log-opt max-size=10m --log-opt max-file=3 \\
+    -e FIRE=<Fire address> -e HEALTHCHECK_URL=<healthchecks.io ping URL> \\
+    -e RPC_URL_FILE=/run/secrets/rpc-url -v $KDIR/rpc-url:/run/secrets/rpc-url:ro \\
     -v $KDIR/keeper-key:/run/secrets/keeper-key:ro $OS_OPTS fire-keeper
   docker logs -f fire-keeper
 
-It rolls the storm at 8 PM Arizona time, delivers drand's number, recovers stuck rolls, checkpoints the price feed,
-and sweeps the mill floor. Top up the keeper wallet when it drops under ~\$2 of ETH.
+It rolls the storm at 8 PM MST, delivers drand's number, recovers stuck rolls, checkpoints both price feeds,
+and sweeps the mill floor. Lines starting with ALERT need you. Top up the keeper wallet when it drops under ~\$5 of ETH.
 EOF
