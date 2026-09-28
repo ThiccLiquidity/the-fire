@@ -120,10 +120,9 @@ Nothing here goes in the repo until he gives it. **Public addresses only; privat
 | PAPER token | `PAPER` | Not deployed yet (Oct 1) |
 | PLANK / PLANK-WETH V2 pair | `PLANK`, `PlankUsdTwap` pair | Known: see `docs/addresses.md` |
 | Press NFT, Pulp Pool (royalty pool), Seaport, USDG, Chainlink ETH/USD | `MILL`, `ROYALTY_POOL`, `SEAPORT`, `USDG`, `ETH_USD_FEED` | Known: see `docs/addresses.md` |
-| PLANK as a Pulp Pool reward token | `PulpPool.addRewardToken(PLANK)`, by the Plank Press admin | Ask them |
-| Starting press bid | `MILL_BID_BASE` | He decides |
+| PLANK as a Pulp Pool reward token | `PulpPool.addRewardToken(PLANK)`, by the Plank Press admin | **Done** (the admin added it) |
+| Starting press bid | `MILL_BID_BASE` | The press floor price on OpenSea at launch |
 | Starting PLANK per log | `PLANK_PER_TICKET0` (within 10% of $0.90 at deploy) | Set from the pool price on deploy day |
 | KyberSwap router on Robinhood Chain | The swap guard only allows `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5` | Check it has code on the explorer |
-| Sound credits | 8 Pixabay page links for `web/public/ambience/CREDITS.md` | He sends them |
 | Go live | Site out of demo mode (`VITE_FIRE_ADDRESS` etc. on Vercel), keeper running, dry run | Only on his word |
 
