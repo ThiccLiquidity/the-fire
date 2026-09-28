@@ -3,7 +3,7 @@
 //   - router.fulfill()   fetch the drand signature for the roll's round and submit it (anyone may; the router
 //                        verifies it, so the keeper can't change the number — it's just the fastest deliverer)
 //   - adapter.settle(id) if the router has the number but the callback didn't land
-//   - reroll()           if a roll has had no answer for 30 minutes AND the drand relays say the round isn't out
+//   - reroll()           if a roll has had no answer for REROLL_AFTER (2h) AND the drand relays say the round isn't out
 //                        yet (drand stalled). If the keeper just can't reach drand it doesn't reroll: a published
 //                        number must never be thrown away because of our network.
 //   - checkpoint()       the Fire's PLANK/USD feed once its window is 20h+ old; the PAPER/USD feed when due()

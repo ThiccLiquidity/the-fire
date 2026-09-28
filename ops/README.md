@@ -30,7 +30,7 @@ Every 30 seconds:
 - `OpenDrandRouter.fulfill(id, signature)` once drand has published the roll's round (it fetches the signature from
   the public drand relays; `DRAND_URLS` overrides them);
 - `adapter.settle(id)` if the router has the number but its callback didn't reach the Fire;
-- `Fire.reroll()` only if a roll has waited 30 minutes **and** the drand relays report the round isn't published yet
+- `Fire.reroll()` only if a roll has waited 2 hours (`REROLL_AFTER`) **and** the drand relays report the round isn't published yet
   (a real drand stall). If the keeper just can't reach drand, it logs `ALERT` and does not reroll;
 - `PlankUsdTwap.checkpoint()` once the price window is 20h+ old, and `PaperUsdTwap.checkpoint()` whenever it's
   `due()` (both found through the Fire);
