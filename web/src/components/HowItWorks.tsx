@@ -33,7 +33,6 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
           <div className="flow-arrows" aria-hidden="true">→</div>
           <div className="flow-col">
             <div className="flow-box fb-burn">PAPER → burned</div>
-            <div className="flow-box fb-burn">PAPER → burned</div>
             <div className="flow-box fb-pot">All the PLANK → the pot</div>
             <div className="flow-box fb-fund">$1 → mill fund</div>
           </div>
