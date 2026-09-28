@@ -41,6 +41,9 @@ export default function App() {
   const [demoHour, setDemoHour] = useState<number | null>(null);
   const [press2, setPress2] = useState(false);
   const [how, setHow] = useState(false);
+  // Sound is on unless the visitor turned it off (remembered per browser). Browsers still wait for a first click.
+  const [sound, setSound] = useState(() => { try { return localStorage.getItem("the-fire-sound") !== "off"; } catch { return true; } });
+  const toggleSound = () => setSound((v) => { try { localStorage.setItem("the-fire-sound", v ? "off" : "on"); } catch { /* private mode */ } return !v; });
   useEffect(() => api.subscribe(setS), []);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t); }, []);
 
@@ -134,11 +137,12 @@ export default function App() {
     <div className="page">
       {!LIVE && <div className="demo-banner" role="note"><b>Demo</b> — play money. Nothing here touches a real wallet.</div>}
       <div className="hero">
-      <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && last.tickets >= 10} wild press2={press2} />
+      <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && last.tickets >= 10} wild press2={press2} sound={sound} />
 
       <div className="hud">
       <header className="top">
-        <div className="brand">The Fire{!LIVE && <span className="demo-tag">demo</span>}<button className="how-link" onClick={() => setHow(true)}>How it works</button></div>
+        <div className="brand">The Fire{!LIVE && <span className="demo-tag">demo</span>}<button className="how-link" onClick={() => setHow(true)}>How it works</button>
+          <button className="how-link sound-btn" onClick={toggleSound} aria-pressed={sound} title={sound ? "Sound on: the forest, the fire and the storm. Click to mute." : "Sound off. Click for the forest, the fire and the storm."}>{sound ? "🔊" : "🔇"}<span className="sound-label">{sound ? " Sound" : " Muted"}</span></button></div>
         <div className="top-right">
         <WalletChip address={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onConnect={api.connect} onSwitch={api.switchWallet} onDisconnect={api.disconnect} demo={!LIVE} />
         <div className="forecast" role="status"><span className="fc-text">{forecast[0]}</span><span className="fc-when">{forecast[1]}</span>

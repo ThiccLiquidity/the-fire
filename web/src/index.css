@@ -231,6 +231,8 @@ a { color: var(--flame); }
 /* how it works */
 .brand { display: flex; align-items: center; gap: 0.6rem; }
 .how-link { background: transparent; border: 1px solid var(--line); color: var(--paper-dim); border-radius: 999px; padding: 0.2rem 0.7rem; font: inherit; font-size: 0.8rem; pointer-events: auto; }
+.sound-btn { margin-left: 0.35rem; }
+@media (max-width: 480px) { .sound-label { display: none; } }
 .how-link.inline { border: 0; padding: 0; color: var(--paper); text-decoration: underline; font-size: inherit; }
 .how-back { position: fixed; inset: 0; z-index: 50; background: rgba(5, 8, 16, 0.75); backdrop-filter: blur(6px); display: grid; place-items: start center; overflow: auto; padding: 4vh 1rem; }
 .how { position: relative; max-width: 46rem; width: 100%; background: #101627; border: 1px solid var(--line); border-radius: 18px; padding: 1.6rem clamp(1rem, 4vw, 2.2rem) 1.8rem; display: grid; gap: 0.9rem; color: var(--paper); line-height: 1.55; }
