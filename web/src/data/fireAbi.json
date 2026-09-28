@@ -311,6 +311,19 @@
   },
   {
     "type": "function",
+    "name": "MILLI",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MILL_BID_BASE",
     "inputs": [],
     "outputs": [
@@ -389,19 +402,6 @@
   },
   {
     "type": "function",
-    "name": "PLANK_BURN_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "PLANK_RATCHET_BPS",
     "inputs": [],
     "outputs": [
@@ -429,6 +429,19 @@
   {
     "type": "function",
     "name": "PLANK_USD_PER_TICKET",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PRIZE_CAP_MULT",
     "inputs": [],
     "outputs": [
       {
@@ -500,6 +513,19 @@
         "name": "",
         "type": "address",
         "internalType": "contract ISeaport"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "SEEDER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -924,7 +950,7 @@
   },
   {
     "type": "function",
-    "name": "fireSize",
+    "name": "fireSizeMilli",
     "inputs": [],
     "outputs": [
       {
@@ -1181,6 +1207,32 @@
   },
   {
     "type": "function",
+    "name": "potCarriedIn",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "prizeNow",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "quote",
     "inputs": [
       {
@@ -1305,6 +1357,32 @@
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "seed",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "seeded",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1709,6 +1787,19 @@
   },
   {
     "type": "event",
+    "name": "Seeded",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Survived",
     "inputs": [
       {
@@ -1724,13 +1815,13 @@
         "internalType": "uint256"
       },
       {
-        "name": "fireSize",
+        "name": "fireSizeMilli",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "storm",
+        "name": "stormMilli",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1792,13 +1883,13 @@
         "internalType": "uint256"
       },
       {
-        "name": "fireSize",
+        "name": "fireSizeMilli",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "storm",
+        "name": "stormMilli",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"

@@ -48,7 +48,7 @@ interface ISeaport {
 
 /**
  * @title The Fire
- * @notice Buy tickets with PAPER + PLANK. PAPER burns. Half the PLANK burns, half feeds the fire.
+ * @notice Buy tickets with PAPER + PLANK. PAPER burns. All the PLANK goes into the fire's pot.
  *         Every night a storm rolls in; a big fire survives, a small one dies. When the fire goes
  *         out, one ticket wins 40% of the pot, 25% burns, 5% goes to the Paper Mill royalty pool, 30% relights
  *         the next fire.
@@ -68,9 +68,14 @@ contract Fire is ReentrancyGuard {
     uint256 public constant BURN_BPS = 2_500;
     uint256 public constant ROYALTY_BPS = 500; // to the Paper Mill royalty pool (PulpPool)
     uint256 public constant CARRY_BPS = 3_000; // relights the next fire (the remainder, so rounding dust stays in)
-    uint256 public constant PLANK_BURN_BPS = 5_000; // of every PLANK feed
+    /// @dev A fire pays out on at most PRIZE_CAP_MULT x the PLANK its own tickets put into the pot; the rest carries.
+    ///      At normal volume a fire's own tickets are most of the pot and this never binds. It stops a fire with a
+    ///      ticket or two from taking 40% of a pot that earlier fires (or the seed) built.
+    uint256 public constant PRIZE_CAP_MULT = 20;
     uint256 public constant MAX_NIGHTS = 24; // the night-24 storm is infinite
     uint256 public constant KEEP_BPS = 6_000; // the fire keeps 60% of its size overnight
+    /// @dev The fire is measured in thousandths of a ticket, so a small fire isn't rounded away overnight.
+    uint256 public constant MILLI = 1_000;
     uint256 public constant TRAILING = 7;
     uint256 public constant BID_RISE_BPS_PER_DAY = 2_500; // mill bid climbs 25% of its start per day, linearly
     uint256 public constant BID_RESTART_BPS = 9_000; // after a buy the bid restarts at 90% of the price paid
@@ -111,6 +116,10 @@ contract Fire is ReentrancyGuard {
     uint256 public immutable ROLL_TIME_OF_DAY; // seconds after 00:00 UTC (8pm Phoenix = 03:00 UTC = 10800)
 
     IRandomness public randomness;
+    /// @notice The deployer: may add the launch seed to the first fire's pot, once, before the first storm. It can only
+    ///         add PLANK; it can't take anything out or change anything else.
+    address public immutable SEEDER;
+    bool public seeded;
 
     // ---------------------------------------------------------------- fire state
     struct Entry {
@@ -121,9 +130,10 @@ contract Fire is ReentrancyGuard {
     uint256 public fireId;
     uint256 public night; // nights this fire has survived (0 = lit today)
     uint256 public pot; // PLANK wei
+    uint256 public potCarriedIn; // the part of the pot this fire started with (the carry, or the seed)
     uint256 public nextRollAt;
     uint256 public ticketsToday;
-    uint256 public fireSize; // persistent: buys add, storms subtract, burns down 40% each night
+    uint256 public fireSizeMilli; // in thousandths of a ticket. Buys add, storms subtract, burns down 40% each night
     uint256 public ticketsTotal;
     address public lastWinner;
 
@@ -161,12 +171,14 @@ contract Fire is ReentrancyGuard {
     event RollRequested(uint256 indexed fireId, uint256 night, uint256 requestId);
     event Rerolled(uint256 indexed fireId, uint256 night, uint256 oldRequestId, uint256 newRequestId);
     event PayoutCarried(address indexed to, uint256 amount); // a pool/burn transfer failed; its PLANK stays in the next pot
-    event PayoutOwed(address indexed winner, uint256 amount); // the winner's transfer failed; they claim() it later
+    event PayoutOwed(address indexed winner, uint256 amount);
+    event Seeded(uint256 amount); // the winner's transfer failed; they claim() it later
     event Claimed(address indexed winner, address to, uint256 amount);
     event Abandoned(uint256 indexed fireId, uint256 pot, uint256 tickets);
     event Refunded(address indexed holder, uint256 amount);
-    event Survived(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm);
-    event WentOut(uint256 indexed fireId, uint256 night, uint256 fireSize, uint256 storm, address winner, uint256 paid);
+    /// @dev fireSizeMilli and stormMilli are in thousandths of a ticket.
+    event Survived(uint256 indexed fireId, uint256 night, uint256 fireSizeMilli, uint256 stormMilli);
+    event WentOut(uint256 indexed fireId, uint256 night, uint256 fireSizeMilli, uint256 stormMilli, address winner, uint256 paid);
     event Lit(uint256 indexed fireId, uint256 carried);
     /// @param currency address(0) for ETH, else the USDG address; paid is in that currency's units; paidUsd has 8 decimals
     event MillEaten(uint256 indexed tokenId, address seller, address currency, uint256 paid, uint256 paidUsd, uint256 plankToRoyalty);
@@ -217,6 +229,7 @@ contract Fire is ReentrancyGuard {
         if (c.paperUsdFeed != address(0) && c.paperUsdFeed.code.length == 0) revert BadRequest();
         if (c.paperPerTicket == 0 || c.plankPerTicket0 == 0 || c.plankUsdPerTicket == 0 || c.ethUsdPerTicket == 0) revert BadAmount();
         if (c.millBidBase == 0 || c.rollTimeOfDay >= 1 days) revert BadAmount();
+        SEEDER = msg.sender;
         PAPER = IERC20(c.paper);
         PLANK = IERC20(c.plank);
         MILL = IMill(c.mill);
@@ -350,11 +363,10 @@ contract Fire is ReentrancyGuard {
         if (pendingRequest != 0) revert RollPending();
     }
 
+    /// @dev All of a ticket's PLANK goes into the pot. PLANK burns when a fire goes out (25% of what it pays out on).
     function _takePlank(address from, uint256 amount) internal {
-        uint256 burn = amount * PLANK_BURN_BPS / BPS;
-        PLANK.safeTransferFrom(from, DEAD, burn);
-        PLANK.safeTransferFrom(from, address(this), amount - burn);
-        pot += amount - burn;
+        PLANK.safeTransferFrom(from, address(this), amount);
+        pot += amount;
     }
 
     /// @dev n = tickets paid for; returns tickets received (n, or n + 1 for a full buy of 10).
@@ -365,7 +377,7 @@ contract Fire is ReentrancyGuard {
         boughtOnDay[dayIndex][buyer] += got;
         ticketsTotal += got;
         ticketsToday += got;
-        fireSize += got;
+        fireSizeMilli += got * MILLI;
         ticketsOf[fireId][buyer] += got;
         _entries[fireId].push(Entry({buyer: buyer, cumEnd: uint128(ticketsTotal)}));
     }
@@ -446,7 +458,7 @@ contract Fire is ReentrancyGuard {
 
         night += 1;
         uint256 storm = stormStrength(night, rnd);
-        uint256 sizeBefore = fireSize;
+        uint256 sizeBefore = fireSizeMilli;
 
         _pushTrail(ticketsToday);
         ticketsToday = 0;
@@ -459,20 +471,21 @@ contract Fire is ReentrancyGuard {
         // The storm takes a bite. What's left burns down to 60% overnight and is tomorrow's starting size.
         // Night 1 has no storm. Night 24 is infinite. A fire with nothing in it goes out.
         if (night == 1 || (night < MAX_NIGHTS && sizeBefore > storm)) {
-            fireSize = (sizeBefore - storm) * KEEP_BPS / BPS;
+            fireSizeMilli = (sizeBefore - storm) * KEEP_BPS / BPS;
             emit Survived(fireId, night, sizeBefore, storm);
             return;
         }
         _goOut(sizeBefore, storm, rnd);
     }
 
-    /// @notice Storm on a given night for a given random word (tuned in sim/storm_v3.py):
-    ///         storm = trailingAvg x ((night-1)/8)^1.5 x L, with L ~ lognormal(0, 0.9).
+    /// @notice Storm on a given night for a given random word, in thousandths of a ticket (checked night for night
+    ///         against sim/fire_sim.py by test/FireSimParity.t.sol):
+    ///         storm = trailingAvg x ((night-1)/8)^1.5 x L, with L ~ lognormal(0, 1.5).
     ///         Night 1: no storm. Night 24+: infinite.
     function stormStrength(uint256 n, uint256 rnd) public view returns (uint256) {
         if (n >= MAX_NIGHTS) return type(uint256).max;
         if (n <= 1) return 0;
-        return trailingAverage() * _ageBps(n) * _luckBps(rnd) / (BPS * BPS);
+        return _trailingMilli() * _ageBps(n) * _luckBps(rnd) / (BPS * BPS);
     }
 
     /// @dev ((n-1)/8)^1.5 in bps, n = 2..23.
@@ -484,15 +497,26 @@ contract Fire is ReentrancyGuard {
         return a[n - 2];
     }
 
-    /// @dev 32-point quantile table of e^(0.9 z), picked by the low 5 bits of the random word.
+    /// @dev 32-point quantile table of e^(1.5 z), picked by the low 5 bits of the random word. Wide on purpose: most
+    ///      nights are mild, but now and then a storm is many times the usual, so a young fire can go out early.
     function _luckBps(uint256 rnd) internal pure returns (uint256) {
         uint24[32] memory q = [
-            uint24(1439), 2213, 2791, 3306, 3792, 4265, 4736, 5210, 5692, 6187, 6699, 7232, 7789, 8375, 8994, 9654,
-            10359, 11118, 11941, 12839, 13828, 14927, 16162, 17568, 19195, 21116, 23446, 26373, 30249, 35823, 45192, 69482
+            uint24(395), 810, 1192, 1581, 1986, 2417, 2877, 3373, 3910, 4493, 5129, 5826, 6593, 7440, 8381, 9429,
+            10605, 11932, 13440, 15167, 17163, 19496, 22258, 25578, 29647, 34756, 41378, 50343, 63268, 83871, 123531, 253002
         ];
         return q[rnd & 31];
     }
 
+    /// @dev The trailing average in thousandths of a ticket (exact to the thousandth, so 1.4 a day stays 1.4).
+    function _trailingMilli() internal view returns (uint256) {
+        if (_trailCount == 0) return ticketsToday * MILLI;
+        uint256 sum;
+        uint256 c = _trailCount < TRAILING ? _trailCount : TRAILING;
+        for (uint256 i; i < c; i++) sum += _trail[i];
+        return sum * MILLI / c;
+    }
+
+    /// @notice Tickets per night over the last (up to) 7 nights, whole tickets. The storm uses the exact value.
     function trailingAverage() public view returns (uint256) {
         if (_trailCount == 0) return ticketsToday;
         uint256 sum;
@@ -518,9 +542,10 @@ contract Fire is ReentrancyGuard {
     function _goOut(uint256 sizeBefore, uint256 storm, uint256 rnd) internal {
         address winner = _pickWinner(rnd);
         uint256 p = pot;
-        uint256 winnerSlice = p * WINNER_BPS / BPS;
-        uint256 burnSlice = p * BURN_BPS / BPS;
-        uint256 royaltySlice = p * ROYALTY_BPS / BPS;
+        uint256 base = _payoutBase(p);
+        uint256 winnerSlice = base * WINNER_BPS / BPS;
+        uint256 burnSlice = base * BURN_BPS / BPS;
+        uint256 royaltySlice = base * ROYALTY_BPS / BPS;
         uint256 carry = p - winnerSlice - burnSlice - royaltySlice;
 
         pot = 0;
@@ -537,13 +562,37 @@ contract Fire is ReentrancyGuard {
             }
             if (!_trySend(ROYALTY_POOL, royaltySlice)) carry += royaltySlice;
         } else {
-            // no tickets at all: the winner's and the royalty pool's slices roll into the next fire
-            carry += winnerSlice + royaltySlice;
+            // Nobody had a ticket: nothing burns, nothing is paid; the whole pot waits for the next fire.
+            carry = p;
+            burnSlice = 0;
         }
         if (!_trySend(DEAD, burnSlice)) carry += burnSlice;
         lastWinner = winner;
         emit WentOut(fireId, night, sizeBefore, storm, winner, paid);
         _light(carry);
+    }
+
+    /// @dev What the split is taken from: the whole pot, or PRIZE_CAP_MULT x what this fire's tickets added, if smaller.
+    function _payoutBase(uint256 p) internal view returns (uint256) {
+        uint256 own = p > potCarriedIn ? p - potCarriedIn : 0;
+        uint256 cap = own * PRIZE_CAP_MULT;
+        return cap < p ? cap : p;
+    }
+
+    /// @notice What the winner would take if the fire went out now, in PLANK wei.
+    function prizeNow() external view returns (uint256) {
+        return ticketsTotal == 0 ? 0 : _payoutBase(pot) * WINNER_BPS / BPS;
+    }
+
+    /// @notice The deployer only, once, before the first storm: put the launch seed into fire #1's pot. It counts as
+    ///         carried-in pot, so it pays out once a fire's own tickets have put in 1/20 as much (the cap).
+    function seed(uint256 amount) external nonReentrant {
+        if (msg.sender != SEEDER || seeded || dayIndex != 0 || pendingRequest != 0 || amount == 0) revert BadRequest();
+        seeded = true;
+        PLANK.safeTransferFrom(msg.sender, address(this), amount);
+        pot += amount;
+        potCarriedIn += amount;
+        emit Seeded(amount);
     }
 
     /// @dev PLANK transfer that reports failure instead of reverting (handles tokens with or without a bool return).
@@ -573,9 +622,10 @@ contract Fire is ReentrancyGuard {
         fireId += 1;
         night = 0;
         pot = carried;
+        potCarriedIn = carried;
         ticketsTotal = 0;
         ticketsToday = 0;
-        fireSize = 0;
+        fireSizeMilli = 0;
         nextRollAt = _nextRollTime(block.timestamp);
         emit Lit(fireId, carried);
     }

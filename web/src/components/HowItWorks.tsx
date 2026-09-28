@@ -13,10 +13,10 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
 
         <ol className="how-steps">
           <li><b>Buy tickets.</b> A ticket is 1 PAPER (or $0.33 worth, whichever is less) plus about $0.90 of PLANK. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day; buy {TX_CAP}, get 1 free (the free one counts toward the {DAILY_CAP}). No PAPER? Pay $1 in ETH or USDG instead of the PAPER. Same ticket either way.</li>
-          <li><b>Everything burns or feeds the fire.</b> The PAPER is destroyed. Half the PLANK is destroyed, the other half feeds the fire. Dollars paid in place of PAPER go to the mill fund (below).</li>
+          <li><b>PAPER burns, PLANK feeds the fire.</b> The PAPER is destroyed. All the PLANK goes into the fire's pot. Dollars paid in place of PAPER go to the mill fund (below).</li>
           <li><b>Every ticket makes the fire bigger.</b> Every ticket adds 1 to the fire's size. Storms knock it down, and each night it burns down to 60% of what's left, so a fire nobody feeds shrinks. Your tickets never shrink: they all stay in until the fire goes out.</li>
-          <li><b>Every night at 8 PM MST, a storm hits.</b> Its strength is random, scaled to an average day's buys over the last week, and it grows with the fire's age: night 1 never kills; a typical storm is about 1.2 days of buys on night 10 and 2.8 days on night 17; night 24 always puts the fire out. If the storm is bigger than the fire, the fire goes out.</li>
-          <li><b>When the fire goes out, one ticket wins.</b> Every ticket in that fire has the same chance. The winner gets 40% of the pot. 25% is destroyed, 5% goes to the Paper Mill royalty pool, and 30% lights the next fire. Then it starts again.</li>
+          <li><b>Every night at 8 PM MST, a storm hits.</b> Its strength is random, scaled to an average day's buys over the last week, and it grows with the fire's age: night 1 never kills; a typical storm is about 1.2 days of buys on night 10 and 2.8 days on night 17, but about 1 night in 5 it's 4 times that or worse, so even a young fire can go out; night 24 always puts the fire out. If the storm is bigger than the fire, the fire goes out.</li>
+          <li><b>When the fire goes out, one ticket wins.</b> Every ticket in that fire has the same chance. The winner gets 40% of the pot. 25% is destroyed, 5% goes to the Paper Mill royalty pool, and 30% lights the next fire. If nobody bought a ticket, nothing burns and the whole pot lights the next fire. Then it starts again.</li>
         </ol>
 
         <h3>Where the money goes</h3>
@@ -28,8 +28,8 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
           <div className="flow-arrows" aria-hidden="true">→</div>
           <div className="flow-col">
             <div className="flow-box fb-burn">PAPER → burned</div>
-            <div className="flow-box fb-burn">½ PLANK → burned</div>
-            <div className="flow-box fb-pot">½ PLANK → the pot</div>
+            <div className="flow-box fb-burn">PAPER → burned</div>
+            <div className="flow-box fb-pot">All the PLANK → the pot</div>
             <div className="flow-box fb-fund">$1 → mill fund</div>
           </div>
           <div className="flow-arrows" aria-hidden="true">→</div>

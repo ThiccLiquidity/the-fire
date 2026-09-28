@@ -87,6 +87,14 @@ contract Deploy is Script {
             rollTimeOfDay: vm.envUint("ROLL_TIME_OF_DAY")
         }));
         require(address(fire) == predictedFire, "address prediction failed");
+        // Optional launch seed: SEED_PLANK (wei) of the deployer's PLANK into fire #1's pot. Only the deployer can do this,
+        // once, before the first storm (Fire.seed). It can also be done later by hand: approve, then fire.seed(amount).
+        uint256 seedAmount = vm.envOr("SEED_PLANK", uint256(0));
+        if (seedAmount > 0) {
+            IERC20Metadata(vm.envAddress("PLANK")).approve(address(fire), seedAmount);
+            fire.seed(seedAmount);
+            console.log("Seeded pot (PLANK wei):", seedAmount);
+        }
         console.log("Fire:", address(fire));
         console.log("Adapter:", address(adapter));
         console.log("Router:", address(router));

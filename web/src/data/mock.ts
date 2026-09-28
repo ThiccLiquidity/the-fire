@@ -12,6 +12,9 @@ import {
   type Snapshot,
   DAILY_CAP,
   FULL_DAYS,
+  PRIZE_CAP_MULT,
+  LUCK_BPS,
+  stormLook,
   KEEP,
   PLANK_USD_PER_TICKET,
   TX_CAP,
@@ -44,7 +47,7 @@ demoNames.forEach((name, i) => { demoProfiles[wallets[i].toLowerCase()] = { name
 
 // Fire.sol's tables: storm age factor ((n-1)/8)^1.5 for nights 2..23, and the 32-point luck table (e^(0.9 z) quantiles), in bps.
 const AGE = [442, 1250, 2296, 3536, 4941, 6495, 8185, 10000, 11932, 13975, 16123, 18371, 20715, 23150, 25674, 28284, 30977, 33750, 36601, 39528, 42530, 45604];
-const LUCK = [1439, 2213, 2791, 3306, 3792, 4265, 4736, 5210, 5692, 6187, 6699, 7232, 7789, 8375, 8994, 9654, 10359, 11118, 11941, 12839, 13828, 14927, 16162, 17568, 19195, 21116, 23446, 26373, 30249, 35823, 45192, 69482];
+const LUCK = LUCK_BPS;
 const RATCHET = 0.05; // ticket legs move at most 5% a night toward their target
 
 /** One demo wallet's money and tickets. */
@@ -77,6 +80,7 @@ export function makeMockApi(): FireApi {
       fireId: 14,
       night: 6,
       potPlank: 2_750_000_000_000, // ~$2,900
+      potCarriedIn: 800_000_000_000, // what fire #14 started with
       plankUsd: PLANK_USD,
       paperUsd: PAPER_USD,
       paperPerTicket: paperPerTicketAt(PAPER_USD),
@@ -219,8 +223,7 @@ export function makeMockApi(): FireApi {
       ticketsToday: s.ticketsToday + got,
       ticketsTotal: s.ticketsTotal + got,
       fireSize: s.fireSize + got,
-      potPlank: s.potPlank + q.plank / 2,
-      burnedPlankAllTime: s.burnedPlankAllTime + q.plank / 2,
+      potPlank: s.potPlank + q.plank, // all the PLANK goes into the pot
       burnedPaperAllTime: pay !== "paper" ? s.burnedPaperAllTime : s.burnedPaperAllTime + q.paper,
       millFundEth: pay === "eth" ? s.millFundEth + q.eth : s.millFundEth,
       millFundUsdg: pay === "usdg" ? s.millFundUsdg + q.usdg : s.millFundUsdg,
@@ -244,16 +247,16 @@ export function makeMockApi(): FireApi {
     if (s.abandoned) return;
     const before: Snapshot = { fireId: s.fireId, night: s.night, potPlank: s.potPlank, fireSize: s.fireSize, ticketsTotal: s.ticketsTotal, ticketsToday: s.ticketsToday, youTickets: s.you.tickets, youPlank: s.you.plank };
     const night = s.night + 1;
-    const avg = Math.max(0, Math.floor(w.trail.reduce((x, y) => x + y, 0) / Math.max(1, w.trail.length)));
+    const avg = Math.floor(w.trail.reduce((x, y) => x + y, 0) * 1000 / Math.max(1, w.trail.length)) / 1000; // to the thousandth, like the contract
     const luck = LUCK[luckIdx ?? rnd(32)];
     const size = s.fireSize;
-    // Fire.sol: storm = floor(trailingAvg × ageBps × luckBps / 1e8); night 1 none, night 24+ infinite
-    let strength = night >= 24 ? Infinity : night <= 1 ? 0 : Math.floor((avg * AGE[night - 2] * luck) / 1e8);
-    if (outcome === "survive") strength = Math.min(strength, Math.max(0, Math.floor(size * 0.6)));
+    // Fire.sol: storm = trailingAvg × ageBps × luckBps / 1e8, to the thousandth of a ticket; night 1 none, night 24+ infinite
+    let strength = night >= 24 ? Infinity : night <= 1 ? 0 : Math.floor((avg * 1000 * AGE[night - 2] * luck) / 1e8) / 1000;
+    if (outcome === "survive") strength = Math.min(strength, Math.max(0, size * 0.6));
     if (outcome === "out" || outcome === "you-win") strength = Math.max(strength, size + 1);
     const survived = night === 1 && outcome !== "out" && outcome !== "you-win" ? true : night < 24 && size > strength;
     const shown = Number.isFinite(strength) ? strength : size * 3 + 1;
-    const intensity = Math.max(0.15, Math.min(1, (shown / Math.max(1, avg * FULL_DAYS)) * 2.5));
+    const intensity = stormLook(shown, size, survived);
 
     // the night turns over: today's tickets join the 7-night average, the daily cap resets, the ticket legs ratchet
     w.trail = [...w.trail, s.ticketsToday].slice(-7);
@@ -278,17 +281,20 @@ export function makeMockApi(): FireApi {
       }
       const pot = s.potPlank;
       const nobody = winner === NOBODY;
-      const paid = nobody ? 0 : pot * 0.4; // 40% to the winner; 25% burns; 5% to the Paper Mill royalty pool; 30% carries
-      const carry = nobody ? pot * 0.75 : pot * 0.3; // no tickets: 25% burns, the rest carries
+      // 40% to the winner, 25% burns, 5% to the Paper Mill royalty pool, the rest carries. The split is taken from the pot or
+      // from 20x what this fire's tickets put in, if smaller (Fire.sol's prize cap). No tickets: the whole pot carries.
+      const base = nobody ? 0 : Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - s.potCarriedIn));
+      const paid = base * 0.4;
+      const carry = pot - base * 0.7;
       if (w.accounts[winner]) w.accounts[winner].plank += paid;
       w.lastWinner = winner;
       w.s = {
         ...s, ...legs,
         storm: { at: Date.now(), fireId: s.fireId, night, strength: shown, size, survived, intensity, winner, paidPlank: paid, potPlank: pot, tickets: s.ticketsTotal, before },
-        past: [{ id: s.fireId, nights: night, potPlank: pot, winner, peakSize: size }, ...s.past].slice(0, 20),
+        past: [{ id: s.fireId, nights: night, potPlank: pot, prizePlank: paid, winner, peakSize: size }, ...s.past].slice(0, 20),
         fireId: s.fireId + 1, night: 0, fireSize: 0,
-        potPlank: carry,
-        burnedPlankAllTime: s.burnedPlankAllTime + pot * 0.25,
+        potPlank: carry, potCarriedIn: carry,
+        burnedPlankAllTime: s.burnedPlankAllTime + base * 0.25,
         ticketsToday: 0, ticketsTotal: 0,
       };
     }

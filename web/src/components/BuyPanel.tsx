@@ -181,7 +181,7 @@ export function BuyPanel({
       </div>
 
       {err && <p className="hint">{err}</p>}
-      <p className="fine muted">PAPER burns. Half the PLANK burns, half feeds the fire. Every ticket stays in until the fire goes out.</p>
+      <p className="fine muted">PAPER burns. All the PLANK goes into the fire's pot. Every ticket stays in until the fire goes out.</p>
     </aside>
   );
 }

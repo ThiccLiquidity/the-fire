@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { type FireApi, type FireState, CEREMONY as C, FULL_DAYS, nameOf, phoenixHour, short } from "./data/types";
+import { type FireApi, type FireState, CEREMONY as C, FULL_DAYS, nameOf, phoenixHour, prizeOf, short } from "./data/types";
 import { friendly } from "./data/wallet";
 import { fmtAmt, fmtCount, fmtPlank, usdOf } from "./format";
 import { makeMockApi } from "./data/mock";
@@ -69,7 +69,7 @@ export default function App() {
   const odds = v.ticketsTotal ? (v.youTickets / v.ticketsTotal) * 100 : 0;
   const wake = !!st && !st.survived && age >= C.OUT_CARD && age < C.RELIGHT; // the fire is out; its pot stays on screen
   const youWon = !!st && !st.survived && connected && st.winner?.toLowerCase() === s.you.address!.toLowerCase();
-  const toSize = (fs: number) => Math.min(1, fs / (s.trailingAvg * FULL_DAYS)); // 1 = a fire worth 5 days of buys
+  const toSize = (fs: number) => Math.min(1, fs / (s.trailingAvg * FULL_DAYS)); // 1 = a fire worth 2.5 days of buys
   const size = b && age < C.RAIN ? toSize(b.fireSize) : wake ? 0 : toSize(s.fireSize);
 
   // pot header: during the wake, keep showing the fire that died
@@ -98,7 +98,7 @@ export default function App() {
     } else if (!st.survived && age >= C.OUT_CARD && age < C.WINNER) {
       card = null; // the tickets rise out of the embers in the scene; the winner card follows
     } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT && NOBODY.test(st.winner ?? "")) {
-      card = <div className="verdict out" role="alert"><b>Nobody had a ticket in fire #{st.fireId}.</b> 25% of the pot burned; 75% carries to the next fire.</div>;
+      card = <div className="verdict out" role="alert"><b>Nobody had a ticket in fire #{st.fireId}.</b> The whole pot carries to the next fire.</div>;
     } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT) {
       const w = st.winner ?? "";
       card = (
@@ -155,7 +155,7 @@ export default function App() {
 
       <div className={"pot" + (wake ? " wake" : "")}>
         <span className="pot-row"><PlankIcon big /><span className="pot-usd">{usd(potPlank, s.plankUsd)}</span></span>
-        {!wake && !s.abandoned && <span className="pot-take">winner takes <b>{usd(potPlank * 0.4, s.plankUsd)}</b></span>}
+        {!wake && !s.abandoned && (() => { const prize = prizeOf(potPlank, s.potCarriedIn, v.ticketsTotal), full = potPlank * 0.4; return v.ticketsTotal === 0 ? <span className="pot-take">first ticket in starts the prize</span> : <span className="pot-take">winner takes <b>{usd(prize, s.plankUsd)}</b>{prize < full * 0.999 && <small className="pot-grow"> · grows with this fire, up to {usd(full, s.plankUsd)}</small>}</span>; })()}
         <span className="pot-sub"><PlankIcon />{mPlank(potPlank)} PLANK · Fire #{fireId} · {potSub}</span>
         {!wake && v.night === 0 && !b && lastWinner && !NOBODY.test(lastWinner.winner) && (
           <span className="pot-last"><Avatar addr={lastWinner.winner} profile={prof(lastWinner.winner)} size={18} /> {name(lastWinner.winner)} won {usd(lastWinner.potPlank * 0.4, s.plankUsd)} last night</span>
@@ -172,7 +172,7 @@ export default function App() {
           <div className="you">
             <div><b>{connected ? fmtCount(v.youTickets) : "—"}</b><span>{connected ? "your tickets in this fire" : "connect to see your tickets"}</span></div>
             <div><b>{connected ? `${odds === 0 ? "0" : odds < 0.01 ? "<0.01" : odds.toFixed(2)}%` : "—"}</b><span>your odds if it goes out tonight</span></div>
-            <div title="Fire size is what keeps the fire alive: every ticket adds 1, storms knock it down, and it burns down to 60% each night. Your tickets never shrink."><b>{fmtCount(v.fireSize)}</b><span>fire size · {fmtCount(v.ticketsToday)} added today</span><span className="you-fine">burns down each night; tickets don't</span></div>
+            <div title="Fire size is what keeps the fire alive: every ticket adds 1, storms knock it down, and it burns down to 60% each night. Your tickets never shrink."><b>{fmtCount(Math.round(v.fireSize))}</b><span>fire size · {fmtCount(v.ticketsToday)} added today</span><span className="you-fine">burns down each night; tickets don't</span></div>
           </div>
 
           <div className="ticker" aria-label="Recent buys">
@@ -211,7 +211,7 @@ export default function App() {
               <h2>Past fires</h2>
               <ol>
                 {s.past.slice(0, 5).map((f) => (
-                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{NOBODY.test(f.winner) ? <>no tickets · {nights(f.nights)} · 75% carried</> : <><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> won {usd(f.potPlank * 0.4, s.plankUsd)} · {nights(f.nights)}</>}</span></li>
+                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{NOBODY.test(f.winner) ? <>no tickets · {nights(f.nights)} · pot carried</> : <><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> won {usd(f.prizePlank ?? f.potPlank * 0.4, s.plankUsd)} · {nights(f.nights)}</>}</span></li>
                 ))}
               </ol>
             </div>
@@ -240,7 +240,7 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every night at 8 PM MST a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins 40% of the pot; 25% burns; 5% goes to the Paper Mill royalty pool; 30% lights the next fire.</p>
+        <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Buy tickets with PAPER and PLANK. PAPER burns. All the PLANK goes into the fire's pot. Every night at 8 PM MST a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins 40% of the pot; 25% burns; 5% goes to the Paper Mill royalty pool; 30% lights the next fire.</p>
         {api.demo && <Playground s={s} d={api.demo} hour={demoHour} onHour={setDemoHour} onSceneOpt={(k, on) => { if (k === "press2") setPress2(on); }} />}
       </footer>
     </div>

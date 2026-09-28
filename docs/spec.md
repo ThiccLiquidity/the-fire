@@ -6,7 +6,7 @@
 
 ## 1. The game, in one breath
 
-> **Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every ticket makes the fire bigger. Every night a storm takes a bite out of it — keep it fed or it goes out. When it does, one ticket wins the pot.**
+> **Buy tickets with PAPER and PLANK. PAPER burns. All the PLANK goes into the fire's pot. Every ticket makes the fire bigger. Every night a storm takes a bite out of it — keep it fed or it goes out. When it does, one ticket wins the pot.**
 
 That's everything a player needs. The rest of this doc is the numbers behind it and the build.
 
@@ -47,7 +47,7 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 
 ### The pot
 - Held in PLANK. **The fire is a PLANK bag that never sells.** If PLANK doubles, the pot doubles.
-- When the fire goes out: **40% to the winner, 25% burned, 5% to the Paper Mill royalty pool, 30% relights the next fire** (**fixed**). The winner keeps the whole 40%; the pool's share comes out of the pot, not the winner's prize. With no tickets at all, 25% burns and 75% carries into the next fire.
+- When the fire goes out: **40% to the winner, 25% burned, 5% to the Paper Mill royalty pool, 30% relights the next fire** (**fixed**). The winner keeps the whole 40%; the pool's share comes out of the pot, not the winner's prize. With no tickets at all, nothing burns and the whole pot carries into the next fire.
 - **The 5% goes to the Paper Mill royalty pool** (PulpPool), which splits it across every live mill each time a fire ends. One transfer to an address that already exists. *(Founder note: you hold a large bag, so you're the largest recipient of this share. It's the community's norm and there's no exploit, but say it out loud.)*
 
 ### The fire's size (this is the game)
@@ -57,7 +57,7 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 
 ### Storm nights
 - **Night 1: no storm.** A new fire always gets its first night.
-- **Storm strength = (the community's 7-night average daily buys) × ((night − 1) / 8)^1.5 × luck.** The first factor makes it self-scaling — the same game at 100 tickets a day or 5,000. The middle factor is the age curve: night 2's average storm is ~4% of a day's buys, night 5 is ~35%, night 9 is a full day, night 17 is nearly three days. **Luck is a random draw** from a 32-point table of lognormal(0, 0.9) (`word & 31`): the gentlest night is 0.14× average, the most brutal 6.9×. The 7-night average doesn't include today's buys, and the storm rounds down once. Storms are random, not a ramp — the *odds* shift with age.
+- **Storm strength = (the community's 7-night average daily buys) × ((night − 1) / 8)^1.5 × luck.** The first factor makes it self-scaling — the same game at 100 tickets a day or 5,000. The middle factor is the age curve: night 2's average storm is ~4% of a day's buys, night 5 is ~35%, night 9 is a full day, night 17 is nearly three days. **Luck is a random draw** from a 32-point table of lognormal(0, 1.5) (`word & 31`): the gentlest night is 0.04× average, the most brutal 25×, and about 1 night in 5 is 4× or worse, so a young fire can go out early. The 7-night average doesn't include today's buys. The fire and the storm are counted in thousandths of a ticket (`fireSizeMilli`), so a small fire isn't rounded away overnight. `sim/fire_sim.py` mirrors this exactly and `test/FireSimParity.t.sol` checks it night for night (results: `docs/fire-sim.md`). Storms are random, not a ramp — the *odds* shift with age.
 - **Night 24: the storm is infinite.** No fire survives it.
 - The randomness comes from drand through our ownerless `OpenDrandRouter` (see `docs/randomness.md`); one request per night decides the storm and, if the fire dies, the winner. Nobody, including us, knows the roll in advance.
 - The site never shows the number. The sky is the forecast: clearer or darker, "light rain possible" vs "a monster is rolling in." You feel the danger; you don't compute it.
@@ -119,11 +119,11 @@ Things worth knowing:
 | Max price | every buy names its max PAPER/PLANK (ETH: msg.value, excess refunded); reverts `PriceMoved` above it |
 | Per buy / per day | 10 paid / 500 received per wallet; buy 10, get 1 free |
 | PLANK split | 50% burn / 50% pot |
-| Payout | 40% winner / 25% burn / 5% Paper Mill royalty pool / 30% relight; no tickets → 25% burn / 75% carry |
+| Payout | 40% winner / 25% burn / 5% Paper Mill royalty pool / 30% relight; no tickets → the whole pot carries |
 | Storm time | 8:00 PM MST (03:00 UTC), nightly |
 | Fire size | persistent; +1 per ticket; ×0.6 overnight |
 | Storm | 7-night avg (today excluded) × ((N−1)/8)^1.5 × luck; night 1 none; night 24 infinite |
-| Storm luck | 32-point quantile table of lognormal(0, 0.9), picked by `word & 31` |
+| Storm luck | 32-point quantile table of lognormal(0, 1.5), picked by `word & 31`; fire size and storm in thousandths of a ticket |
 | Randomness | `OpenDrandRouter` (drand evmnet, round 30–33 s ahead, anyone fulfills); reroll after 2h; abandon after 7 days |
 | Mill fund | 100% of the ETH/USDG; USD bid from `MILL_BID_BASE` (*set at launch*), +25%/day of its start, ≤3×, ≤ fund; restarts at 90% of price paid |
 | Founder seed | $0 opening pot needed. Buy fire #1's first tickets; ~$10 of ETH for the keeper wallet |

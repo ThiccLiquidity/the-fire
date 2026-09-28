@@ -1,6 +1,6 @@
 # The Fire
 
-Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every night a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins the pot.
+Buy tickets with PAPER and PLANK. PAPER burns. All the PLANK goes into the fire's pot. Every night a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins the pot.
 
 - `docs/spec.md` — the design, numbers, and why. Start here.
 - `docs/randomness.md` — where the nightly number comes from (drand, through our ownerless `OpenDrandRouter`) and how to verify a roll.
@@ -58,7 +58,7 @@ Deploy env vars: copy `contracts/.env.example` to `contracts/.env` (details at t
   price for the tickets in that buy. Every buy carries the most you agreed to pay; if the price moved past it, the buy
   fails and nothing is taken. Extra ETH comes straight back. The site asks for an exact approval for each buy, never an
   open-ended one.
-- **Where it goes:** PAPER is burned. Half your PLANK is burned, half goes into the pot. The $1 in ETH or USDG goes to
+- **Where it goes:** PAPER is burned. All your PLANK goes into the pot; 25% of every pot that pays out is burned. The $1 in ETH or USDG goes to
   the mill fund, which can only buy a mill at or under the fire's bid and burn it in the same transaction.
 - **The pot only leaves by the rules:** when the fire goes out, 40% to the winner, 25% burned, 5% to the Paper Mill
   royalty pool, 30% to the next fire. If the prize can't be sent, it waits for the winner to `claim` it.

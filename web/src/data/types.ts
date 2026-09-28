@@ -17,6 +17,7 @@ export interface PastFire {
   id: number;
   nights: number;
   potPlank: number;
+  prizePlank?: number; // what the winner actually got (the pot's 40%, or less if the prize cap applied)
   winner: string;
   peakSize: number;
 }
@@ -65,6 +66,7 @@ export interface FireState {
   fireId: number;
   night: number; // nights survived
   potPlank: number;
+  potCarriedIn: number; // the part of the pot this fire started with (carry or seed), PLANK
   plankUsd: number;
   ethUsd: number;
   plankPerTicket: number; // ratchets toward $0.90
@@ -106,8 +108,22 @@ export interface FireState {
 }
 
 export const DAILY_CAP = 500;
+export const PRIZE_CAP_MULT = 20;
+/** Fire.prizeNow(): the winner's 40%, taken from the pot or from 20x what this fire's tickets put in, if smaller. */
+export function prizeOf(pot: number, carriedIn: number, tickets: number) {
+  if (tickets <= 0) return 0;
+  return Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - carriedIn)) * 0.4;
+}
 export const KEEP = 0.6;
-export const FULL_DAYS = 5; // a fire worth 5 days of buys is "full height" on screen
+export const FULL_DAYS = 2.5; // a fire worth 2.5 days of buys is "full height" on screen (fires settle at ~1-2 days)
+/** Fire.sol's storm luck: 32 quantiles of e^(1.5 z), in bps. */
+export const LUCK_BPS = [395, 810, 1192, 1581, 1986, 2417, 2877, 3373, 3910, 4493, 5129, 5826, 6593, 7440, 8381, 9429, 10605, 11932, 13440, 15167, 17163, 19496, 22258, 25578, 29647, 34756, 41378, 50343, 63268, 83871, 123531, 253002];
+/** How heavy the rain is drawn (0.15..1): as heavy as the call was close. A storm that barely touched the fire is a
+ *  drizzle, a near miss is a downpour; a storm that puts the fire out is always full force. Same as sim/fire_sim.py. */
+export function stormLook(strength: number, size: number, survived: boolean) {
+  if (!survived || size <= 0) return 1;
+  return Math.max(0.15, Math.min(1, 0.15 + 0.85 * Math.pow(strength / size, 0.8)));
+}
 /** Storm median for a night: trailingAvg × ((n-1)/8)^1.5 (night 1: none, night 24+: infinite). */
 export function stormBase(night: number, trailingAvg: number) {
   if (night >= 24) return Infinity;

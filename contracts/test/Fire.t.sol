@@ -112,11 +112,11 @@ contract FireTest is Test {
         vm.prank(alice);
         fire.buyTickets(10, type(uint256).max, type(uint256).max, "ten");
         assertEq(paper.balanceOf(DEAD) - deadPaper, 10e18, "pays for 10");
-        assertEq(fire.pot(), 10 * PLANK_T / 2, "10 tickets' PLANK: the free one adds none");
+        assertEq(fire.pot(), 10 * PLANK_T, "10 tickets' PLANK, all into the pot: the free one adds none");
         (uint256 mine, uint256 total) = fire.odds(alice);
         assertEq(mine, 11, "holds 11");
         assertEq(total, 11);
-        assertEq(fire.fireSize(), 11);
+        assertEq(fire.fireSizeMilli(), 11_000);
         assertEq(fire.remainingToday(alice), 489, "all 11 count toward the daily cap");
     }
 
@@ -139,13 +139,13 @@ contract FireTest is Test {
         assertEq(fire.millFundUsdg(), 10e6, "10 dollars for 11 tickets");
     }
 
-    function test_buy_burns_paper_splits_plank() public {
+    function test_buy_burns_paper_and_all_plank_feeds_the_pot() public {
         uint256 deadPaper = paper.balanceOf(DEAD);
         uint256 deadPlank = plank.balanceOf(DEAD);
         _buy(alice, 10);
         assertEq(paper.balanceOf(DEAD) - deadPaper, 10e18, "paper 100% burned");
-        assertEq(plank.balanceOf(DEAD) - deadPlank, 10 * PLANK_T / 2, "half plank burned");
-        assertEq(fire.pot(), 10 * PLANK_T / 2, "half plank to pot");
+        assertEq(plank.balanceOf(DEAD) - deadPlank, 0, "no PLANK burns at purchase");
+        assertEq(fire.pot(), 10 * PLANK_T, "all the PLANK goes into the pot");
         (uint256 mine, uint256 total) = fire.odds(alice);
         assertEq(mine, 10);
         assertEq(total, 10);
@@ -198,52 +198,55 @@ contract FireTest is Test {
     function test_storm_formula() public {
         _buy(alice, 400); _buy(bob, 400);
         _roll(RND_MID); // night 1: no storm; trail = [800]
-        // night 2: base = 800 * ((2-1)/8)^1.5 = 800 * 0.0442 = 35.4; luck mid 1.036 -> 36
-        assertEq(fire.stormStrength(2, RND_MID), 36);
-        // night 9: base = 800 * 1.0 -> 800 * 1.036 = 828
-        assertEq(fire.stormStrength(9, RND_MID), 828);
-        // luck extremes
-        assertEq(fire.stormStrength(9, RND_CALM), 115);
-        assertEq(fire.stormStrength(9, RND_MONSTER), 5558);
+        // storms are in thousandths of a ticket. night 2: 800 * ((2-1)/8)^1.5 = 35.4 tickets; luck slot 16 = x1.06
+        assertEq(fire.stormStrength(2, RND_MID), 37499);
+        // night 9: 800 * 1.0 * 1.06
+        assertEq(fire.stormStrength(9, RND_MID), 848400);
+        // luck extremes: x0.04 and x25.3
+        assertEq(fire.stormStrength(9, RND_CALM), 31600);
+        assertEq(fire.stormStrength(9, RND_MONSTER), 20240160);
         assertEq(fire.stormStrength(1, RND_MONSTER), 0, "night 1 no storm");
         assertEq(fire.stormStrength(24, RND_CALM), type(uint256).max, "night 24 infinite");
     }
 
     function test_fire_size_persists_and_burns_down() public {
         _buy(alice, 500);
-        assertEq(fire.fireSize(), 500);
+        assertEq(fire.fireSizeMilli(), 500_000);
         _roll(RND_MID); // night 1: no storm; size = 500 * 0.6 = 300
-        assertEq(fire.fireSize(), 300);
+        assertEq(fire.fireSizeMilli(), 300_000);
         _buy(bob, 200); // size 500
         // night 2 storm at mid luck = trail(500,200 -> avg 350) * 0.0442 * 1.036 = 16
         uint256 storm = fire.stormStrength(2, RND_MID);
         _roll(RND_MID);
-        assertEq(fire.fireSize(), (500 - storm) * 6000 / 10000, "size minus storm, then 60%");
+        assertEq(fire.fireSizeMilli(), (500_000 - storm) * 6000 / 10000, "size minus storm, then 60%");
         assertEq(fire.fireId(), 1);
     }
 
     function test_small_fire_dies_to_big_storm_big_fire_survives() public {
-        // build a trailing average of ~500/day over a few calm nights
+        // build a trailing average of 500/day over a few calm nights, then let the fire starve
         for (uint256 i; i < 4; i++) { _buy(alice, 500); _roll(RND_CALM); }
-        // night 5: monster luck. base = 500*0.3536 = 177; x6.95 = 1229
-        uint256 storm = fire.stormStrength(5, RND_MONSTER);
-        assertGt(storm, 1000);
-        // fire has ~500*0.6 + ... buffer; check it's below the storm -> dies
-        uint256 size = fire.fireSize();
-        _buy(carol, 10); // tiny top-up
-        if (size + 10 <= storm) {
-            _roll(RND_MONSTER);
-            assertEq(fire.fireId(), 2, "small fire died");
-        }
-        // new fire: feed it hard for 4 nights, then a monster on night 5 should NOT kill it
+        uint256 storm = fire.stormStrength(5, 28); // a strong night (x6.3): 500 * 0.354 * 6.3 = 1,119 tickets
+        assertGt(storm, 1_000_000);
+        _buy(carol, 10); // a starved fire: tiny top-up
+        assertLt(fire.fireSizeMilli(), storm);
+        _roll(28);
+        assertEq(fire.fireId(), 2, "small fire died");
+        // new fire: fed hard for 4 nights; the same kind of night-5 storm doesn't kill it
         for (uint256 i; i < 4; i++) { _buy(alice, 500); _buy(bob, 500); _buy(carol, 500); _roll(RND_CALM); }
-        uint256 before = fire.fireSize();
-        uint256 storm2 = fire.stormStrength(5, RND_MONSTER);
         _buy(alice, 500); _buy(bob, 500); _buy(carol, 500);
-        assertGt(before + 1500, storm2, "well-fed fire outweighs a monster night 5");
+        assertGt(fire.fireSizeMilli(), fire.stormStrength(5, 28), "well-fed fire outweighs a strong night 5");
         uint256 id = fire.fireId();
-        _roll(RND_MONSTER);
+        _roll(28);
         assertEq(fire.fireId(), id, "survived");
+    }
+
+    function test_a_one_ticket_fire_survives_a_calm_night() public {
+        // counted in thousandths, a 1-ticket fire keeps 0.6 of a ticket overnight instead of rounding to nothing
+        _buy(alice, 1);
+        _roll(RND_MID);
+        assertEq(fire.fireSizeMilli(), 600);
+        _roll(RND_CALM); // night 2, nobody bought: storm 1 * 0.044 * 0.04 = 0.0017 tickets
+        assertEq(fire.fireId(), 1, "still burning");
     }
 
     function test_no_fire_outlives_night_24() public {
@@ -295,7 +298,7 @@ contract FireTest is Test {
         _roll(RND_MONSTER); // size 0 -> goes out with no tickets
         assertEq(fire.fireId(), 3);
         assertEq(fire.lastWinner(), address(0));
-        assertEq(fire.pot(), carried * 75 / 100, "40% + 5% + 30% carried, 25% burned");
+        assertEq(fire.pot(), carried, "nobody had a ticket: the whole pot carries, nothing burns");
         assertEq(plank.balanceOf(royalty), royaltyBefore, "nothing to the pool without a winner");
     }
 
@@ -422,7 +425,7 @@ contract FireTest is Test {
         vm.stopPrank();
         assertEq(fire.usdgCost(10), 10e6, "$1 each");
         assertEq(fire.millFundUsdg(), 10e6);
-        assertEq(fire.pot(), 10 * PLANK_T / 2, "PLANK leg as usual");
+        assertEq(fire.pot(), 10 * PLANK_T, "PLANK leg as usual: all of it into the pot");
         (uint256 mine,) = fire.odds(bob);
         assertEq(mine, 11, "10 bought + 1 free");
     }
@@ -948,10 +951,75 @@ contract FireTest is Test {
         // trailing average 22 on night 2: exact 22 * 0.0442 * luck; flooring twice made every night-2 storm 0
         _buy(alice, 22);
         _roll(RND_CALM); // night 1 records 22
-        assertEq(fire.stormStrength(2, RND_MONSTER), uint256(22) * 442 * 69482 / 1e8);
+        assertEq(fire.stormStrength(2, RND_MONSTER), uint256(22_000) * 442 * 253002 / 1e8);
         assertGt(fire.stormStrength(2, RND_MONSTER), 0);
     }
+
+    // ------------------------------------------------------------ the launch seed and the prize cap
+    uint256 constant SEED = 280 * PLANK_T; // like the real launch: $250 of PLANK vs $0.90 of pot per ticket
+
+    function _seed() internal {
+        plank.mint(address(this), SEED);
+        plank.approve(address(fire), SEED);
+        fire.seed(SEED);
+    }
+
+    function test_only_the_deployer_seeds_once_before_the_first_storm() public {
+        vm.prank(alice); vm.expectRevert(Fire.BadRequest.selector); fire.seed(1);
+        _seed();
+        assertEq(fire.pot(), SEED);
+        assertTrue(fire.seeded());
+        plank.mint(address(this), 1); plank.approve(address(fire), 1);
+        vm.expectRevert(Fire.BadRequest.selector); fire.seed(1); // only once
+    }
+
+    function test_no_seed_after_the_first_storm() public {
+        _roll(RND_CALM);
+        plank.mint(address(this), SEED); plank.approve(address(fire), SEED);
+        vm.expectRevert(Fire.BadRequest.selector); fire.seed(SEED);
+    }
+
+    function test_a_one_ticket_fire_cannot_take_the_seed() public {
+        _seed();
+        _buy(alice, 1);
+        uint256 own = fire.pot() - SEED; // what alice's ticket put in
+        assertEq(fire.prizeNow(), own * 20 * 4000 / 10000, "prize capped at 20x her ticket's PLANK, 40% of that");
+        uint256 a0 = plank.balanceOf(alice);
+        _roll(RND_CALM);
+        while (fire.fireId() == 1) _roll(RND_MONSTER);
+        assertEq(plank.balanceOf(alice) - a0, own * 20 * 4000 / 10000, "she wins the capped prize");
+        uint256 base = own * 20;
+        uint256 left = SEED + own - base * 4000 / 10000 - base * 2500 / 10000 - base * 500 / 10000;
+        assertEq(fire.pot(), left, "the rest of the seed carries");
+        assertEq(fire.potCarriedIn(), left);
+    }
+
+    function test_a_real_fire_takes_the_full_prize() public {
+        _seed();
+        _buy(alice, 40); _buy(bob, 40); // 80 tickets put in far more than 1/20 of the pot
+        uint256 p = fire.pot();
+        assertEq(fire.prizeNow(), p * 4000 / 10000, "not capped");
+        _roll(RND_CALM);
+        while (fire.fireId() == 1) _roll(RND_MONSTER);
+        assertEq(fire.pot(), p - p * 4000 / 10000 - p * 2500 / 10000 - p * 500 / 10000, "normal 30% carry");
+    }
+
+    function test_the_cap_carries_forward_to_later_fires() public {
+        _buy(alice, 400);
+        _roll(RND_CALM);
+        while (fire.fireId() == 1) _roll(RND_MONSTER);
+        uint256 carried = fire.pot();
+        assertEq(fire.potCarriedIn(), carried);
+        _buy(bob, 1); // fire 2: one ticket on a big carry
+        assertLt(fire.prizeNow(), carried * 4000 / 10000, "a 1-ticket fire can't take 40% of what fire 1 left");
+    }
+
+    function test_no_prize_shown_with_no_tickets() public {
+        _seed();
+        assertEq(fire.prizeNow(), 0);
+    }
 }
+
 
 contract WrongAdapter {
     function FIRE() external pure returns (address) { return address(0xBEEF); }

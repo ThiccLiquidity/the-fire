@@ -1,10 +1,10 @@
 // Demo-only control deck: drive every state of the site without a chain. Rendered only when the site runs on the mock.
 import { useState } from "react";
-import type { DemoControls, FireState } from "../data/types";
+import { LUCK_BPS, type DemoControls, type FireState } from "../data/types";
 import { sceneRef } from "./Scene";
 
 const KINDS = ["deer", "rabbit", "squirrel", "skunk", "birds", "heron", "frog", "bear"] as const;
-const LUCK_X = [0.14, 0.22, 0.28, 0.33, 0.38, 0.43, 0.47, 0.52, 0.57, 0.62, 0.67, 0.72, 0.78, 0.84, 0.9, 0.97, 1.04, 1.11, 1.19, 1.28, 1.38, 1.49, 1.62, 1.76, 1.92, 2.11, 2.34, 2.64, 3.02, 3.58, 4.52, 6.95];
+const LUCK_X = LUCK_BPS.map((b) => +(b / 10000).toFixed(b < 10000 ? 2 : 1));
 
 export function Playground({ s, d, hour, onHour, onSceneOpt }: {
   s: FireState; d: DemoControls; hour: number | null; onHour: (h: number | null) => void; onSceneOpt?: (k: string, v: boolean) => void;

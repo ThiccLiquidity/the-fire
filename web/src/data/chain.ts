@@ -9,7 +9,7 @@ import {
 import fireAbi from "./fireAbi.json";
 import profilesAbi from "./profilesAbi.json";
 import { bytesToHex, hexToBytes } from "viem";
-import { type Buy, type FireApi, type Pay, type FireState, type PastFire, type Snapshot, CEREMONY, DAILY_CAP, FULL_DAYS, nextRollTime, stormBase, titleFor } from "./types";
+import { type Buy, type FireApi, type Pay, type FireState, type PastFire, type Snapshot, CEREMONY, DAILY_CAP, FULL_DAYS, nextRollTime, stormBase, stormLook, titleFor } from "./types";
 import { robinhood, connectWallet, waitOk, PRICE_MOVED } from "./wallet";
 
 export { robinhood };
@@ -84,9 +84,9 @@ export function makeChainApi(fireAddress: Address): FireApi {
 
   async function readAll() {
     const r = (fn: string, args: unknown[] = []) => pub.readContract({ address: fireAddress, abi, functionName: fn, args }) as Promise<bigint>;
-    const [fireId, night, pot, ticketsToday, ticketsTotal, fireSize, trailingAvg, nextRollAt, plankPerTicket, millBid, millFund, dayIndex, pending, pendingSince, rerollAfter] = await Promise.all([
-      r("fireId"), r("night"), r("pot"), r("ticketsToday"), r("ticketsTotal"), r("fireSize"), r("trailingAverage"), r("nextRollAt"), r("plankPerTicket"), r("millBid"), r("millFund"), r("dayIndex"),
-      r("pendingRequest"), r("pendingSince"), r("REROLL_AFTER"),
+    const [fireId, night, pot, ticketsToday, ticketsTotal, fireSize, trailingAvg, nextRollAt, plankPerTicket, millBid, millFund, dayIndex, pending, pendingSince, rerollAfter, potCarriedIn] = await Promise.all([
+      r("fireId"), r("night"), r("pot"), r("ticketsToday"), r("ticketsTotal"), r("fireSizeMilli"), r("trailingAverage"), r("nextRollAt"), r("plankPerTicket"), r("millBid"), r("millFund"), r("dayIndex"),
+      r("pendingRequest"), r("pendingSince"), r("REROLL_AFTER"), r("potCarriedIn"),
     ]);
     const abandoned = (await pub.readContract({ address: fireAddress, abi, functionName: "abandoned" })) as boolean;
     if (!adapterAddr) {
@@ -145,9 +145,9 @@ export function makeChainApi(fireAddress: Address): FireApi {
     const n = Number(night);
     ticketsSeen.set(Number(fireId), Number(ticketsTotal));
     s = {
-      ...s, fireId: Number(fireId), night: n, potPlank: Number(formatUnits(pot, 18)), plankPerTicket: Number(formatUnits(plankPerTicket, 18)),
+      ...s, fireId: Number(fireId), night: n, potPlank: Number(formatUnits(pot, 18)), potCarriedIn: Number(formatUnits(potCarriedIn, 18)), plankPerTicket: Number(formatUnits(plankPerTicket, 18)),
       ethUsd: ethPerTicket > 0n ? 1 / Number(formatUnits(ethPerTicket, 18)) : 0,
-      ticketsToday: Number(ticketsToday), ticketsTotal: Number(ticketsTotal), fireSize: Number(fireSize), trailingAvg: trailing,
+      ticketsToday: Number(ticketsToday), ticketsTotal: Number(ticketsTotal), fireSize: Number(fireSize) / 1000, trailingAvg: trailing,
       threat: Math.max(0.1, Math.min(1, stormBase(n + 1, trailing) / (trailing * 2))),
       nextRollAt: Number(nextRollAt) * 1000 || nextRollTime(), millBidUsd: Number(formatUnits(millBid, 8)), millFundEth: Number(formatUnits(millFund, 18)), millFundUsdg: Number(formatUnits(fundUsdg, usdgDec)), usdgEnabled: !!usdgAddr, you,
       rollPending: pending !== 0n, rollAction, plankUsd, paperPerTicket, paperUsd, abandoned,
@@ -198,25 +198,25 @@ export function makeChainApi(fireAddress: Address): FireApi {
         if (!fromFire) paperBuyers.add(who.toLowerCase());
         feed.unshift({ id: ++feedId, who, tickets: n, fromFire, note: String(a.note ?? ""), title: titleFor(life, !paperBuyers.has(who.toLowerCase())), at });
       } else if (ev === "Survived") {
-        const size = Number(a.fireSize), strength = Number(a.storm), fid = Number(a.fireId), night = Number(a.night);
+        const size = Number(a.fireSizeMilli) / 1000, strength = Number(a.stormMilli) / 1000, fid = Number(a.fireId), night = Number(a.night);
         const tickets = await atBlock("ticketsTotal", l.blockNumber);
-        storm = { at, fireId: fid, night, strength, size, survived: true, intensity: Math.max(0.15, Math.min(1, strength / Math.max(1, s.trailingAvg * FULL_DAYS) * 2.5)), sizeAfter: Math.max(0, (size - strength) * 0.6) / (s.trailingAvg * FULL_DAYS),
+        storm = { at, fireId: fid, night, strength, size, survived: true, intensity: stormLook(strength, size, true), sizeAfter: Math.max(0, (size - strength) * 0.6) / (s.trailingAvg * FULL_DAYS),
           before: live ? await snap(fid, night, size, l.blockNumber, s.potPlank, tickets !== undefined ? Number(tickets) : undefined) : undefined };
       } else if (ev === "WentOut") {
-        const size = Number(a.fireSize), strength = Number(a.storm), winner = String(a.winner), fid = Number(a.fireId), night = Number(a.night);
+        const size = Number(a.fireSizeMilli) / 1000, strength = a.stormMilli === 2n ** 256n - 1n ? Infinity : Number(a.stormMilli) / 1000, winner = String(a.winner), fid = Number(a.fireId), night = Number(a.night);
         const inTx = all.filter((x) => x.transactionHash === l.transactionHash);
         const owed = inTx.find((x) => x.eventName === "PayoutOwed");
         const lit = inTx.find((x) => x.eventName === "Lit");
         const nobody = /^0x0{40}$/i.test(winner);
         // the pot and ticket count the fire died with: read just before the storm, else work them back from the relight
         const potWei = await atBlock("pot", l.blockNumber);
-        const pot = potWei !== undefined ? Number(formatUnits(potWei, 18)) : lit ? Number(formatUnits(lit.args.carried as bigint, 18)) / (nobody ? 0.75 : 0.3) : 0;
+        const pot = potWei !== undefined ? Number(formatUnits(potWei, 18)) : lit ? Number(formatUnits(lit.args.carried as bigint, 18)) / (nobody ? 1 : 0.3) : 0;
         const tWei = await atBlock("ticketsTotal", l.blockNumber);
         const tickets = tWei !== undefined ? Number(tWei) : ticketsSeen.get(fid) ?? all.filter((x) => x.eventName === "TicketsBought" && Number(x.args.fireId) === fid).reduce((t, x) => t + Number(x.args.tickets), 0);
         const prize = owed ? Number(formatUnits(owed.args.amount as bigint, 18)) : Number(formatUnits(a.paid as bigint, 18));
         storm = { at, fireId: fid, night, strength, size, survived: false, intensity: 1, winner, paidPlank: prize, prizeOwed: !!owed, potPlank: pot, tickets,
           before: live ? await snap(fid, night, size, l.blockNumber, pot, tickets) : undefined };
-        past.unshift({ id: fid, nights: night, potPlank: pot, winner, peakSize: size });
+        past.unshift({ id: fid, nights: night, potPlank: pot, prizePlank: prize, winner, peakSize: size });
         if (account && winner.toLowerCase() === account.toLowerCase()) s = { ...s, you: { ...s.you, isWinner: true } };
       } else if (ev === "MillEaten") {
         mills += 1;
@@ -369,7 +369,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
 
 function empty(): FireState {
   return { fireId: 0, night: 0, potPlank: 0, plankUsd: 0, paperUsd: 0, paperPerTicket: 1, ethUsd: 0, plankPerTicket: 852_000_000, ticketsToday: 0, ticketsTotal: 0, fireSize: 0, trailingAvg: 1, threat: 0.2, nextRollAt: nextRollTime(),
-    you: { tickets: 0, paper: 0, plank: 0, eth: 0, usdg: 0, remainingToday: DAILY_CAP, isWinner: false }, profiles: {}, burnedPaperAllTime: 0, burnedPlankAllTime: 0, millsEaten: 0, millFundEth: 0, millFundUsdg: 0, millBidUsd: 0, usdgEnabled: false, feed: [], past: [] };
+    potCarriedIn: 0, you: { tickets: 0, paper: 0, plank: 0, eth: 0, usdg: 0, remainingToday: DAILY_CAP, isWinner: false }, profiles: {}, burnedPaperAllTime: 0, burnedPlankAllTime: 0, millsEaten: 0, millFundEth: 0, millFundUsdg: 0, millBidUsd: 0, usdgEnabled: false, feed: [], past: [] };
 }
 
 /** Event bytes → a data: URL the <img> can show. Sniffs the format from the magic bytes. */
