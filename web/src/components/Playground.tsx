@@ -55,6 +55,7 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
             <h3>Prices and feeds</h3>
             <div className="pg-grid">
               <label>PLANK price ($ per 1B) <input type="number" step={0.1} value={+(s.plankUsd * 1e9).toFixed(3)} onChange={(e) => d.set({ plankUsd: Math.max(0.01, num(e.target.value)) / 1e9 })} /></label>
+              <label>PAPER price ($, 0 = no market) <input type="number" step={0.01} min={0} value={s.paperUsd} onChange={(e) => d.set({ paperUsd: Math.max(0, num(e.target.value)) })} /></label>
               <label>ETH price ($) <input type="number" value={Math.round(s.ethUsd)} disabled={ethStale} onChange={(e) => d.set({ ethUsd: Math.max(1, num(e.target.value)) })} /></label>
               <label>Mill bid ($) <input type="number" value={Math.round(s.millBidUsd)} onChange={(e) => d.set({ millBidUsd: num(e.target.value) })} /></label>
               <label>Mill fund USDG ($) <input type="number" value={Math.round(s.millFundUsdg)} onChange={(e) => d.set({ millFundUsdg: num(e.target.value) })} /></label>

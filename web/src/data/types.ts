@@ -62,6 +62,8 @@ export interface FireState {
   plankUsd: number;
   ethUsd: number;
   plankPerTicket: number; // ratchets toward $0.90
+  paperPerTicket: number; // 1, or less once PAPER trades above $0.33
+  paperUsd: number; // PAPER's price from the Fire's feed; 0 = no market yet
   ticketsToday: number;
   ticketsTotal: number;
   fireSize: number; // persistent, in tickets: buys add, storms subtract, burns down to 60% each night
@@ -104,9 +106,15 @@ export function priceMult(n: number) {
   return n >= TX_CAP ? 0.97 : 1;
 }
 
-export function quote(n: number, plankPerTicket: number, ethUsd: number) {
+export const PAPER_USD_CAP = 0.33; // the PAPER part never costs more than this (Fire.PAPER_USD_CAP)
+/** PAPER per ticket: 1, or less once PAPER trades above the cap. 0 / unknown price = 1. */
+export function paperPerTicketAt(paperUsd: number) {
+  return paperUsd > PAPER_USD_CAP ? PAPER_USD_CAP / paperUsd : 1;
+}
+
+export function quote(n: number, plankPerTicket: number, ethUsd: number, paperPerTicket = 1) {
   const m = priceMult(n);
-  return { paper: n * m, plank: n * m * plankPerTicket, eth: (n * m * ETH_USD_PER_TICKET) / ethUsd, usdg: n * m * ETH_USD_PER_TICKET };
+  return { paper: n * m * paperPerTicket, plank: n * m * plankPerTicket, eth: (n * m * ETH_USD_PER_TICKET) / ethUsd, usdg: n * m * ETH_USD_PER_TICKET };
 }
 
 export interface FireApi {
@@ -128,11 +136,11 @@ export interface FireApi {
   demo?: DemoControls;
 }
 
-/** How the PAPER leg is paid: real PAPER, or "paper from the fire" in ETH or USDG. */
+/** How the PAPER part is paid: real PAPER, or $1 a ticket in ETH or USDG. */
 export type Pay = "paper" | "eth" | "usdg";
 
 export function titleFor(lifetime: number, fromFire: boolean) {
-  if (fromFire) return "Paper buyer";
+  if (fromFire) return "Cash buyer";
   if (lifetime >= 1000) return "Arsonist";
   if (lifetime >= 200) return "Lumberjack";
   if (lifetime >= 20) return "Paper boy";
@@ -167,7 +175,7 @@ export interface DemoControls {
   skipNights(n: number): void;
   /** hold the storm: buying paused, "deliver" button shown; release it with roll() or setPending(false) */
   setPending(on: boolean): void;
-  set(patch: Partial<Pick<FireState, "fireSize" | "potPlank" | "night" | "trailingAvg" | "ticketsTotal" | "ticketsToday" | "threat" | "plankUsd" | "ethUsd" | "millBidUsd" | "millFundUsdg" | "millFundEth" | "usdgEnabled">>): void;
+  set(patch: Partial<Pick<FireState, "fireSize" | "potPlank" | "night" | "trailingAvg" | "ticketsTotal" | "ticketsToday" | "threat" | "plankUsd" | "paperUsd" | "ethUsd" | "millBidUsd" | "millFundUsdg" | "millFundEth" | "usdgEnabled">>): void;
   setYou(patch: Partial<FireState["you"]>): void;
   /** connect/disconnect the demo wallet */
   setConnected(on: boolean): void;

@@ -58,7 +58,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
   const abi = fireAbi as unknown as Abi;
   let account: Address | undefined;
   let paperAddr: Address | undefined, plankAddr: Address | undefined, adapterAddr: Address | undefined, usdgAddr: Address | undefined, usdgDec = 6;
-  let pendingId = 0n, routerAddr: Address | undefined, plankFeedAddr: Address | undefined;
+  let pendingId = 0n, routerAddr: Address | undefined, plankFeedAddr: Address | undefined, paperFeedAddr: Address | undefined;
   let s: FireState = empty();
   const subs = new Set<(s: FireState) => void>();
   const emit = () => subs.forEach((f) => f(s));
@@ -91,10 +91,15 @@ export function makeChainApi(fireAddress: Address): FireApi {
       adapterAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "randomness" })) as Address;
       routerAddr = (await pub.readContract({ address: adapterAddr, abi: adapterAbi, functionName: "ROUTER" })) as Address;
       plankFeedAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "PLANK_USD" })) as Address;
+      paperFeedAddr = (await pub.readContract({ address: fireAddress, abi, functionName: "PAPER_USD" })) as Address;
     }
     // USD per PLANK from the Fire's own PLANK/USD feed (18 decimals). 0 = no price yet: the page shows "$—", never a guess.
     let plankUsd = 0;
     try { const [, px] = await pub.readContract({ address: plankFeedAddr!, abi: feedAbi, functionName: "latestRoundData" }); if (px > 0n) plankUsd = Number(formatUnits(px, 18)); } catch { /* feed unavailable */ }
+    // PAPER: how much a ticket takes right now (1, or less once PAPER trades above $0.33), and its price if it has one.
+    const paperPerTicket = Number(formatUnits(await r("paperPerTicket"), 18));
+    let paperUsd = 0;
+    try { const [, px] = await pub.readContract({ address: paperFeedAddr!, abi: feedAbi, functionName: "latestRoundData" }); if (px > 0n) paperUsd = Number(formatUnits(px, 18)); } catch { /* no PAPER market yet */ }
     pendingId = pending;
     const nowSec = (await pub.getBlock()).timestamp; // the contract judges time by the chain's clock
     let rollAction: FireState["rollAction"];
@@ -134,7 +139,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
       ticketsToday: Number(ticketsToday), ticketsTotal: Number(ticketsTotal), fireSize: Number(fireSize), trailingAvg: trailing,
       threat: Math.max(0.1, Math.min(1, stormBase(n + 1, trailing) / (trailing * 2))),
       nextRollAt: Number(nextRollAt) * 1000 || nextRollTime(), millBidUsd: Number(formatUnits(millBid, 8)), millFundEth: Number(formatUnits(millFund, 18)), millFundUsdg: Number(formatUnits(fundUsdg, usdgDec)), usdgEnabled: !!usdgAddr, you,
-      rollPending: pending !== 0n, rollAction, plankUsd,
+      rollPending: pending !== 0n, rollAction, plankUsd, paperPerTicket, paperUsd,
     };
   }
 
@@ -171,8 +176,8 @@ export function makeChainApi(fireAddress: Address): FireApi {
         storm = { at, fireId: Number(a.fireId), night: Number(a.night), strength, size, survived: true, intensity: Math.max(0.15, Math.min(1, strength / Math.max(1, s.trailingAvg * FULL_DAYS) * 2.5)), sizeAfter: Math.max(0, (size - strength) * 0.6) / (s.trailingAvg * FULL_DAYS) };
       } else if (ev === "WentOut") {
         const size = Number(a.fireSize), strength = Number(a.storm), winner = String(a.winner), paid = Number(formatUnits(a.paid as bigint, 18));
-        storm = { at, fireId: Number(a.fireId), night: Number(a.night), strength, size, survived: false, intensity: 1, winner, paidPlank: paid, potPlank: paid / 0.38, tickets: s.ticketsTotal };
-        past.unshift({ id: Number(a.fireId), nights: Number(a.night), potPlank: paid / 0.38, winner, peakSize: size });
+        storm = { at, fireId: Number(a.fireId), night: Number(a.night), strength, size, survived: false, intensity: 1, winner, paidPlank: paid, potPlank: paid / 0.4, tickets: s.ticketsTotal };
+        past.unshift({ id: Number(a.fireId), nights: Number(a.night), potPlank: paid / 0.4, winner, peakSize: size });
         if (account && winner.toLowerCase() === account.toLowerCase()) s = { ...s, you: { ...s.you, isWinner: true } };
       } else if (ev === "MillEaten") { mills += 1; }
     }
@@ -285,7 +290,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
 }
 
 function empty(): FireState {
-  return { fireId: 0, night: 0, potPlank: 0, plankUsd: 0, ethUsd: 3333, plankPerTicket: 852_000_000, ticketsToday: 0, ticketsTotal: 0, fireSize: 0, trailingAvg: 1, threat: 0.2, nextRollAt: nextRollTime(),
+  return { fireId: 0, night: 0, potPlank: 0, plankUsd: 0, paperUsd: 0, paperPerTicket: 1, ethUsd: 3333, plankPerTicket: 852_000_000, ticketsToday: 0, ticketsTotal: 0, fireSize: 0, trailingAvg: 1, threat: 0.2, nextRollAt: nextRollTime(),
     you: { tickets: 0, paper: 0, plank: 0, eth: 0, usdg: 0, remainingToday: DAILY_CAP, isWinner: false }, profiles: {}, burnedPaperAllTime: 0, burnedPlankAllTime: 0, millsEaten: 0, millFundEth: 0, millFundUsdg: 0, millBidUsd: 0, usdgEnabled: false, feed: [], past: [] };
 }
 

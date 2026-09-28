@@ -12,6 +12,7 @@ import {
   stormBase,
   nextRollTime,
   quote,
+  paperPerTicketAt,
   titleFor,
 } from "./types";
 
@@ -38,6 +39,8 @@ export function makeMockApi(): FireApi {
     night: 6,
     potPlank: 2_750_000_000_000, // ~$2,900
     plankUsd: PLANK_USD,
+    paperUsd: 0,
+    paperPerTicket: 1,
     ethUsd: ETH_USD,
     plankPerTicket,
     ticketsToday: 410,
@@ -77,7 +80,7 @@ export function makeMockApi(): FireApi {
   for (let i = 0; i < 12; i++) push(wallets[rnd(wallets.length)], [1, 1, 10, 10, 100][rnd(5)], Math.random() < 0.15, notes[rnd(notes.length)], Date.now() - (12 - i) * 5 * 60_000);
 
   function applyBuy(who: string, n: number, pay: Pay, note: string) {
-    const q = quote(n, s.plankPerTicket, s.ethUsd);
+    const q = quote(n, s.plankPerTicket, s.ethUsd, s.paperPerTicket);
     const withEth = pay === "eth", withUsdg = pay === "usdg";
     push(who, n, pay !== "paper", note);
     s = {
@@ -123,14 +126,14 @@ export function makeMockApi(): FireApi {
         you: { ...s.you, remainingToday: DAILY_CAP } };
     } else {
       const winner = outcome === "you-win" || (s.ticketsTotal > 0 && Math.random() < s.you.tickets / s.ticketsTotal) ? YOU : wallets[rnd(wallets.length)];
-      const paid = s.potPlank * 0.4 * 0.95;
+      const paid = s.potPlank * 0.4; // 40% to the winner; 25% burns, 5% to mill holders, 30% carries
       s = {
         ...s,
         storm: { at: Date.now(), fireId: s.fireId, night, strength, size, survived, intensity, winner, paidPlank: paid, potPlank: s.potPlank, tickets: s.ticketsTotal },
         past: [{ id: s.fireId, nights: s.night, potPlank: s.potPlank, winner, peakSize: size }, ...s.past],
         fireId: s.fireId + 1, night: 0, fireSize: 0, trailingAvg,
         potPlank: s.potPlank * 0.3,
-        burnedPlankAllTime: s.burnedPlankAllTime + s.potPlank * 0.3,
+        burnedPlankAllTime: s.burnedPlankAllTime + s.potPlank * 0.25,
         ticketsToday: 0, ticketsTotal: 0,
         you: { ...s.you, tickets: 0, remainingToday: DAILY_CAP, isWinner: winner === YOU, plank: winner === YOU ? s.you.plank + paid : s.you.plank },
       };
@@ -145,7 +148,7 @@ export function makeMockApi(): FireApi {
     roll: (o, luck) => storm(o, luck),
     skipNights: (n) => { for (let i = 0; i < n; i++) { s = { ...s, ticketsToday: Math.round(s.trailingAvg * (0.6 + Math.random() * 0.8)), fireSize: s.fireSize + Math.round(s.trailingAvg * 0.7) }; storm("random", undefined, true); } },
     setPending: (on) => { s = { ...s, rollPending: on, rollAction: on ? "deliver" : undefined }; emit(); },
-    set: (patch) => { s = { ...s, ...patch }; if (patch.plankUsd) s = { ...s, plankPerTicket: PLANK_USD_PER_TICKET / patch.plankUsd }; emit(); },
+    set: (patch) => { s = { ...s, ...patch }; if (patch.plankUsd) s = { ...s, plankPerTicket: PLANK_USD_PER_TICKET / patch.plankUsd }; if (patch.paperUsd !== undefined) s = { ...s, paperPerTicket: paperPerTicketAt(patch.paperUsd) }; emit(); },
     setYou: (patch) => { s = { ...s, you: { ...s.you, ...patch } }; emit(); },
     setConnected: (on) => { s = { ...s, you: { ...s.you, address: on ? YOU : undefined } }; emit(); },
     setCrowd: (perMin) => { crowdPerMin = perMin; },

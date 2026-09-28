@@ -244,3 +244,21 @@ a { color: var(--flame); }
 .flow-sub { font-size: 0.75rem; color: var(--paper-dim); text-align: center; }
 .flow-arrows { color: var(--paper-dim); font-size: 1.4rem; }
 @media (max-width: 640px) { .flow { grid-template-columns: 1fr; } .flow-arrows { transform: rotate(90deg); text-align: center; } }
+
+/* buy panel: choose how to pay, see exactly what you spend, confirm real money */
+.payfor { display: grid; gap: 0.4rem; }
+.payfor-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.85rem; color: var(--paper-dim); }
+.seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 0.35rem; }
+.seg button { display: grid; gap: 0.1rem; padding: 0.5rem 0.4rem; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--paper); font-family: var(--display); font-weight: 600; font-size: 1rem; }
+.seg button small { font-family: var(--body); font-weight: 500; font-size: 0.72rem; color: var(--paper-dim); }
+.seg button.on { border-color: var(--flame); background: rgba(255, 201, 60, 0.1); }
+.seg button:disabled { opacity: 0.4; }
+.seg button:focus-visible { outline: 2px solid var(--flame); outline-offset: 2px; }
+.spend { display: grid; gap: 0.1rem; }
+.spend-label { font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--paper-dim); }
+.spend-items { font-size: 0.95rem; }
+.spend-items small { color: var(--paper-dim); }
+.spend-total { font-family: var(--display); font-weight: 700; font-size: 1.15rem; color: var(--paper); }
+.confirm { display: grid; gap: 0.6rem; padding: 0.7rem 0.8rem; border-radius: 12px; border: 1px solid var(--flame); background: rgba(255, 201, 60, 0.08); }
+.confirm p { margin: 0; font-size: 0.9rem; }
+.confirm-row { display: grid; grid-template-columns: 1fr 1.4fr; gap: 0.5rem; }

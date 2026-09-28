@@ -70,7 +70,7 @@ export default function App() {
 
   let forecast: [string, string];
   if (!inCeremony && s.rollPending) forecast = ["The storm is on its way.", `Night ${s.night + 1} · buying reopens when it lands`];
-  else if (!inCeremony) forecast = [weather(s.threat, msToRoll / 3_600_000), `Storm rolls in ${countdown(msToRoll)} · 8:00 PM Arizona`];
+  else if (!inCeremony) forecast = [weather(s.threat, msToRoll / 3_600_000), `Storm rolls in ${countdown(msToRoll)} · 8:00 PM MST`];
   else if (age < C.IN) forecast = ["Storm rolling in.", `Night ${st!.night}`];
   else if (age < C.STRIKE) forecast = ["It's here.", `Night ${st!.night}`];
   else if (age < C.RAIN) forecast = [st!.survived ? "Pouring." : "Pouring. The fire is losing.", `Night ${st!.night}`];
@@ -129,10 +129,10 @@ export default function App() {
 
       <div className={"pot" + (wake ? " wake" : "")}>
         <span className="pot-usd">{usd(potPlank, s.plankUsd)}</span>
-        {!wake && <span className="pot-take">winner takes <b>{usd(potPlank * 0.38, s.plankUsd)}</b></span>}
+        {!wake && <span className="pot-take">winner takes <b>{usd(potPlank * 0.4, s.plankUsd)}</b></span>}
         <span className="pot-sub">{mPlank(potPlank)} PLANK · Fire #{fireId} · {potSub}</span>
         {!wake && s.night === 0 && lastWinner && !NOBODY.test(lastWinner.winner) && (
-          <span className="pot-last"><Avatar addr={lastWinner.winner} profile={prof(lastWinner.winner)} size={18} /> {name(lastWinner.winner)} won {usd(lastWinner.potPlank * 0.38, s.plankUsd)} last night</span>
+          <span className="pot-last"><Avatar addr={lastWinner.winner} profile={prof(lastWinner.winner)} size={18} /> {name(lastWinner.winner)} won {usd(lastWinner.potPlank * 0.4, s.plankUsd)} last night</span>
         )}
       </div>
 
@@ -150,7 +150,7 @@ export default function App() {
           <div className="ticker" aria-label="Recent buys">
             {s.feed.slice(0, 8).map((b) => (
               <span key={b.id} className="tick">
-                <Avatar addr={b.who} profile={prof(b.who)} size={18} /> <span className="tick-name" title={b.who}>{name(b.who)}</span> <em>{b.title}</em> {b.tickets} {b.tickets === 1 ? "ticket" : "tickets"}{b.fromFire ? " · paper from the fire" : ""}
+                <Avatar addr={b.who} profile={prof(b.who)} size={18} /> <span className="tick-name" title={b.who}>{name(b.who)}</span> <em>{b.title}</em> {b.tickets} {b.tickets === 1 ? "ticket" : "tickets"}{b.fromFire ? " · paid in dollars" : ""}
               </span>
             ))}
           </div>
@@ -163,13 +163,13 @@ export default function App() {
                 <dt>{mPlank(s.burnedPlankAllTime)}</dt><dd>PLANK burned</dd>
                 <dt>{s.millsEaten}</dt><dd>mills eaten</dd>
               </dl>
-              <p className="fine">Money from "paper from the fire" buys mills off the floor and burns them. The PLANK inside goes to every mill holder. Next mill: the fire bids ${Math.round(s.millBidUsd).toLocaleString()}, and has {s.millFundEth.toFixed(4)} ETH{s.usdgEnabled ? ` + $${Math.round(s.millFundUsdg).toLocaleString()} USDG` : ""} saved.</p>
+              <p className="fine">Every $1 paid in ETH or USDG goes toward buying mills off the floor and burning them. The PLANK inside goes to the Paper Mill royalty pool. Next mill: the fire bids ${Math.round(s.millBidUsd).toLocaleString()}, and has {s.millFundEth.toFixed(4)} ETH{s.usdgEnabled ? ` + $${Math.round(s.millFundUsdg).toLocaleString()} USDG` : ""} saved.</p>
             </div>
             <div className="archive">
               <h2>Past fires</h2>
               <ol>
                 {s.past.slice(0, 5).map((f) => (
-                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{NOBODY.test(f.winner) ? <>no tickets · {nights(f.nights)} · pot carried</> : <><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> · {nights(f.nights)} · {usd(f.potPlank * 0.38, s.plankUsd)}</>}</span></li>
+                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{NOBODY.test(f.winner) ? <>no tickets · {nights(f.nights)} · pot carried</> : <><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> · {nights(f.nights)} · {usd(f.potPlank * 0.4, s.plankUsd)}</>}</span></li>
                 ))}
               </ol>
             </div>
@@ -178,13 +178,13 @@ export default function App() {
 
         <div className="right">
           <ProfileEditor addr={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onSave={api.setProfile} />
-          <BuyPanel you={s.you} plankPerTicket={s.plankPerTicket} plankUsd={s.plankUsd} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} usdgEnabled={s.usdgEnabled} />
+          <BuyPanel you={s.you} plankPerTicket={s.plankPerTicket} paperPerTicket={s.paperPerTicket} paperUsd={s.paperUsd} plankUsd={s.plankUsd} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} usdgEnabled={s.usdgEnabled} />
           <Swap />
         </div>
       </main>
 
       <footer className="foot">
-        <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every night a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins 40% of the pot; 30% burns; 30% lights the next fire.</p>
+        <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every night a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins 40% of the pot; 25% burns; 5% goes to the Paper Mill royalty pool; 30% lights the next fire.</p>
         {api.demo && <Playground s={s} d={api.demo} hour={demoHour} onHour={setDemoHour} onSceneOpt={(k, v) => { if (k === "press2") setPress2(v); }} />}
       </footer>
     </div>

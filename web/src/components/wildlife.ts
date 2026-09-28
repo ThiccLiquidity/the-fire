@@ -263,7 +263,7 @@ export function drawMill2(x: Ctx, t: number, px: number, py: number, sc: number,
 
 // ---------- visitors
 export type Kind = "deer" | "rabbit" | "skunk" | "bear" | "squirrel" | "birds" | "heron" | "frog";
-interface Animal { kind: Kind; age: number; dead: boolean; dir: 1 | -1; phase: "in" | "pause" | "out"; pauseT: number; pauseLen: number; x: number; y: number; v: number; stopAt: number; n?: number; climb?: number; fly?: boolean }
+export interface Animal { kind: Kind; age: number; dead: boolean; dir: 1 | -1; phase: "in" | "pause" | "out"; pauseT: number; pauseLen: number; x: number; y: number; v: number; stopAt: number; n?: number; climb?: number; fly?: boolean }
 const GROUND = 600;
 
 export function createWildlife(treeXs: number[]) {
@@ -304,7 +304,9 @@ export function createWildlife(treeXs: number[]) {
     }
   }
   const back = (a: Animal) => a.kind === "bear" || a.kind === "heron";
-  function draw(x: Ctx, t: number, night: number, layer: "back" | "front") {
+  /** afterEach: called after each animal is drawn, with its feet's y (world units), so the scene can redraw anything
+   *  nearer the viewer on top of it — e.g. a tree the animal is walking behind. */
+  function draw(x: Ctx, t: number, night: number, layer: "back" | "front", afterEach?: (a: Animal, footY: number) => void) {
     if (layer === "front" && night > 0.6) { x.fillStyle = "#d9ff7a"; for (const f of fireflies) { const a = Math.max(0, Math.sin(t * 0.05 + f.p)) ** 3 * night; if (a < 0.05) continue; x.globalAlpha = a * 0.9; x.beginPath(); x.arc(600 + f.x + Math.sin(t * 0.01 + f.p) * 18, 520 + f.y + Math.cos(t * 0.013 + f.p) * 10, 1.6 * f.s, 0, 7); x.fill(); } x.globalAlpha = 1; }
     for (const a of animals) {
       if (back(a) !== (layer === "back")) continue;
@@ -313,6 +315,7 @@ export function createWildlife(treeXs: number[]) {
       x.translate(600 + a.x, wy); x.scale(a.dir, 1);
       DRAW[a.kind](x, a, night);
       x.restore();
+      if (!a.fly) afterEach?.(a, wy);
     }
   }
   return { step, draw, spawn, count: () => animals.length };

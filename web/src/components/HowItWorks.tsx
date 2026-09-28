@@ -13,10 +13,10 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
 
         <ol className="how-steps">
           <li><b>Buy tickets.</b> A ticket is 1 PAPER plus about $0.90 of PLANK. Up to {TX_CAP} per buy, {DAILY_CAP} per wallet per day; a full {TX_CAP} is 3% off. No PAPER? Pay $1 for the paper leg in ETH or USDG instead. Same ticket either way.</li>
-          <li><b>Everything burns or feeds the pot.</b> The PAPER is destroyed. Half the PLANK is destroyed, the other half goes into the pot. Dollars paid in place of PAPER go to the mill fund (below).</li>
+          <li><b>Everything burns or feeds the fire.</b> The PAPER is destroyed. Half the PLANK is destroyed, the other half feeds the fire. Dollars paid in place of PAPER go to the mill fund (below).</li>
           <li><b>Every ticket makes the fire bigger.</b> Fire size is the number of tickets it has taken in. Each night it burns down to 60% of itself, so a fire nobody feeds shrinks.</li>
-          <li><b>Every night at 8 PM Arizona, a storm hits.</b> Its strength is random, scaled to how busy the fire has been over the last week, and it grows with the fire's age: night 1 never kills, by night 10 it takes a fire the size of a normal week's buys, and no fire survives night 24. If the storm is bigger than the fire, the fire goes out.</li>
-          <li><b>When the fire goes out, one ticket wins.</b> Every ticket in that fire has the same chance. 40% of the pot goes to the winner (5% of that to the mill holders' pool), 30% is destroyed, 30% lights the next fire. Then it starts again.</li>
+          <li><b>Every night at 8 PM MST, a storm hits.</b> Its strength is random, scaled to how busy the fire has been over the last week, and it grows with the fire's age: night 1 never kills, by night 10 it takes a fire the size of a normal week's buys, and no fire survives night 24. If the storm is bigger than the fire, the fire goes out.</li>
+          <li><b>When the fire goes out, one ticket wins.</b> Every ticket in that fire has the same chance. The winner gets 40% of the pot. 25% is destroyed, 5% goes to the Paper Mill royalty pool, and 30% lights the next fire. Then it starts again.</li>
         </ol>
 
         <h3>Where the money goes</h3>
@@ -34,8 +34,8 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
           </div>
           <div className="flow-arrows" aria-hidden="true">→</div>
           <div className="flow-col">
-            <div className="flow-box fb-pot">Pot, when the fire dies:<br /><small>40% winner · 30% burned · 30% next fire</small></div>
-            <div className="flow-box fb-fund">Mill fund buys the cheapest mill on OpenSea and burns it.<br /><small>The PLANK inside goes to every mill holder.</small></div>
+            <div className="flow-box fb-pot">Pot, when the fire dies:<br /><small>40% winner · 25% burned · 5% Paper Mill royalty pool · 30% next fire</small></div>
+            <div className="flow-box fb-fund">Mill fund buys the cheapest mill on OpenSea and burns it.<br /><small>The PLANK inside goes to the Paper Mill royalty pool.</small></div>
           </div>
         </div>
 

@@ -205,7 +205,9 @@ export function createScene(canvas: HTMLCanvasElement) {
     x.fillStyle = night ? "#121a12" : "#2f3d26"; x.fillRect(-3000, base - 20, 6000, 3000); x.fillStyle = gg; x.fillRect(-3000, base - 20, 6000, 3000);
     if (inp.wild) { useRiver(!!inp.press2); drawRiver(x, t, night, Math.max(0, lit * 0.5)); if (inp.press2) drawMill2(x, t, 600 + 420, base - 18, 0.5, night, Math.max(0, lit * 0.4)); else drawMill(x, t, 600 + 400, base - 24, 0.62, night, Math.max(0, lit * 0.4)); wild.draw(x, t, night, "back"); }
     else mill(600 + 445, base - 24, 0.6, night, Math.max(0, lit * 0.5));
-    for (const tr of trees) { if (inp.wild && tr.x > 250 && tr.x < (inp.press2 ? 690 : 300)) continue; const px = 600 + tr.x, py = base - 10 + tr.y; const d = Math.abs(tr.x) / 400; const warm = Math.max(0, lit * 1.2 - d * .4); pine(px, py, tr.s, night ? `rgb(${8 + warm * 70},${12 + warm * 30},${22})` : `rgb(${30 + warm * 40},${58 + warm * 20},${40})`); }
+    const hiddenTree = (tr: { x: number }) => inp.wild && tr.x > 250 && tr.x < (inp.press2 ? 690 : 300);
+    const drawTree = (tr: { x: number; s: number; y: number }) => { const px = 600 + tr.x, py = base - 10 + tr.y; const d = Math.abs(tr.x) / 400; const warm = Math.max(0, lit * 1.2 - d * .4); pine(px, py, tr.s, night ? `rgb(${8 + warm * 70},${12 + warm * 30},${22})` : `rgb(${30 + warm * 40},${58 + warm * 20},${40})`);};
+    for (const tr of trees) if (!hiddenTree(tr)) drawTree(tr);
     x.save(); x.translate(600, 600); x.scale(lw, Math.min(lw, 1.6)); x.translate(-600, -600);
     x.fillStyle = "#3e424c"; for (const s of [[470, 600, 26, 10], [520, 612, 22, 9], [600, 618, 30, 10], [680, 612, 22, 9], [730, 600, 26, 10]]) { x.beginPath(); x.ellipse(s[0], s[1], s[2], s[3], 0, 0, 7); x.fill(); }
     x.fillStyle = "#5b3a1c"; x.fillRect(500, 570, 200, 22); x.save(); x.translate(600, 569); x.rotate(-.14); x.fillStyle = "#7d4f27"; x.fillRect(-80, -11, 160, 22); x.rotate(.3); x.fillStyle = "#4a2e14"; x.fillRect(-80, -11, 160, 22); x.restore(); x.restore();
@@ -245,7 +247,20 @@ export function createScene(canvas: HTMLCanvasElement) {
       x.fillStyle = `rgba(90,90,100,${a})`; x.beginPath(); x.arc(s.x, s.y, s.r, 0, 7); x.fill();
     }
 
-    if (inp.wild) { wild.draw(x, t, night, "front"); wild.step(night); }
+    // Animals walk among the trees: after each one, redraw the trees that stand nearer the viewer (their trunk base is
+    // lower on screen than the animal's feet) and overlap it, so the animal passes behind them instead of over them.
+    // A squirrel's own tree stays behind it so it can be seen climbing.
+    if (inp.wild) {
+      wild.draw(x, t, night, "front", (a, footY) => {
+        for (const tr of trees) {
+          if (hiddenTree(tr) || base - 10 + tr.y + 40 * tr.s <= footY + 2) continue;
+          if (Math.abs(tr.x - a.x) > 58 * tr.s + 70) continue;
+          if (a.kind === "squirrel" && Math.abs(tr.x - a.stopAt) < 40) continue;
+          drawTree(tr);
+        }
+      });
+      wild.step(night);
+    }
 
     // the reveal: when the fire has died, every ticket rises out of the embers as a glowing scrap, swirls up,
     // and thins to one that drifts down to where the winner card appears
