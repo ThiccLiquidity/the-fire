@@ -14,6 +14,7 @@ On the site the storm "looks" (intensity) and the fire's drawn height use the si
 
 Usage:
   python3 sim/fire_sim.py                 # every scenario, Monte Carlo, writes docs/fire-sim.md + sim/fire_sim_results.json
+  python3 sim/fire_sim.py --pots          # the pot from a $250 seed over a year, per buying pattern
   python3 sim/fire_sim.py --difftest      # also writes contracts/test/FireSimParity.t.sol (the contract replays the same
                                            # nights and must match this file night for night)
 """
@@ -271,5 +272,89 @@ def main():
     json.dump(res, open(os.path.join(root, "sim/fire_sim_results.json"), "w"), indent=1)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and "--pots" not in sys.argv:
     main()
+
+
+# ---------------------------------------------------------------- the pot
+# Each ticket's PLANK is $0.90: half burns, half feeds the pot. A buy of 10 gets 11 tickets for 10 paid, and the free
+# one adds no PLANK, so (conservatively) every buy is a 10-pack: the pot gets $0.45 x 10/11 per ticket. PLANK's price is
+# held flat, so the pot is in today's dollars. When a fire with tickets goes out: 40% winner, 25% burned, 5% royalty
+# pool, 30% carries. A fire nobody bought into carries 100%.
+POT_PER_TICKET = 0.45 * 10 / 11
+SEED = 250.0
+
+POT_SCENARIOS = [
+    ("flat:0", "Nobody ever buys"), ("oneweek", "1 ticket a week"), ("flat:1", "1 a day"), ("flat:3", "3 a day"),
+    ("flat:10", "10 a day"), ("flat:30", "30 a day"), ("flat:100", "100 a day"), ("flat:300", "300 a day"),
+    ("flat:1000", "1,000 a day"), ("flat:10000", "10,000 a day"),
+    ("mixdays", "Mixed days: each day either 10 or 1,000"), ("mixweeks", "Mixed weeks: a quiet week (10/day), a busy week (1,000/day)"),
+    ("mixmonths", "Mixed months: a dead month (0-2/day), then a busy month (500/day)"),
+    ("launchfade", "Launch 1,000/day, fades to 5/day by month 4"), ("fadetozero", "Starts at 300/day, fades to nothing by month 6"),
+    ("growth", "Grows 10 -> 1,000 a day over the year"), ("drought:200", "200 a day, 2 empty weeks every 2 months"),
+]
+
+
+def pot_scenario(key, r, n):
+    nz = lambda lam: poisson(r, lam)
+    if key == "oneweek": return [1 if d % 7 == 3 else 0 for d in range(n)]
+    if key == "mixdays": return [nz(10 if r.random() < 0.5 else 1000) for _ in range(n)]
+    if key == "mixweeks": return [nz(10 if (d // 7) % 2 == 0 else 1000) for d in range(n)]
+    if key == "mixmonths": return [nz(r.choice([0, 0.5, 2])) if (d // 30) % 2 == 0 else nz(500) for d in range(n)]
+    if key == "launchfade": return [nz(max(5, 1000 * math.exp(-d / 25))) for d in range(n)]
+    if key == "fadetozero": return [nz(300 * max(0.0, 1 - d / 180) ** 2) for d in range(n)]
+    if key == "flat:0": return [0] * n
+    return scenario(key, r, n)
+
+
+def pot_run(days_t, luck):
+    """Nightly pot (after the roll) and one record per fire that went out."""
+    f = Fire(); pot = SEED; nightly = []; ends = []
+    for d, t in enumerate(days_t):
+        f.buy(t); pot += t * POT_PER_TICKET
+        rec = f.roll(luck[d])
+        if not rec["survived"]:
+            if rec["tickets"] > 0:
+                ends.append(dict(day=d, pot=pot, prize=pot * 0.40, burned=pot * 0.25, royalty=pot * 0.05, tickets=rec["tickets"], nights=rec["night"]))
+                pot *= 0.30
+            else:
+                ends.append(dict(day=d, pot=pot, prize=0.0, burned=0.0, royalty=0.0, tickets=0, nights=rec["night"]))
+        nightly.append(pot)
+    return nightly, ends
+
+
+def pot_monte_carlo(key, runs=200, days=365):
+    curves, ends = [], []
+    for i in range(runs):
+        r = random.Random(hash((key, "pot", i)) & 0xffffffff)
+        d = pot_scenario(key, r, days); luck = [r.randrange(32) for _ in range(days)]
+        c, e = pot_run(d, luck); curves.append(c); ends += [dict(x, run=i) for x in e]
+    q = lambda xs, p: sorted(xs)[min(len(xs) - 1, int(p * len(xs)))]
+    band = [(q([c[t] for c in curves], 0.1), q([c[t] for c in curves], 0.5), q([c[t] for c in curves], 0.9)) for t in range(days)]
+    won = [x for x in ends if x["tickets"] > 0]
+    tot = lambda k: sum(x[k] for x in ends) / runs
+    added = sum(sum(pot_scenario(key, random.Random(hash((key, "pot", i)) & 0xffffffff), days)) for i in range(runs)) / runs * POT_PER_TICKET
+    out = dict(band=band, fires_won=len(won) / runs,
+               median_prize=q([x["prize"] for x in won], 0.5) if won else 0, top_prize=max((x["prize"] for x in won), default=0),
+               median_pot_at_end=q([x["pot"] for x in won], 0.5) if won else 0,
+               snipes=sum(1 for x in won if x["tickets"] <= 3) / runs,  # fires won with 3 or fewer tickets in them
+               snipe_prize=q([x["prize"] for x in won if x["tickets"] <= 3], 0.5) if any(x["tickets"] <= 3 for x in won) else 0,
+               paid=tot("prize"), burned=tot("burned"), royalty=tot("royalty"), added=added,
+               below_seed=sum(1 for c in curves for v in c if v < SEED) / (runs * days))
+    for t in (30, 90, 180, 364): out[f"d{t}"] = band[t]
+    return out
+
+
+def pots_main(root):
+    res = {}
+    for key, label in POT_SCENARIOS:
+        s = pot_monte_carlo(key); s["label"] = label; res[key] = s
+        print(f"{label:62s} pot day30 {s['d30'][1]:>8,.0f} day180 {s['d180'][1]:>8,.0f} day365 {s['d364'][1]:>8,.0f} (10-90%: {s['d364'][0]:,.0f}-{s['d364'][2]:,.0f})  "
+              f"prize med {s['median_prize']:>7,.0f} top {s['top_prize']:>8,.0f}  fires won/yr {s['fires_won']:4.1f}  snipes/yr {s['snipes']:4.1f}  "
+              f"in {s['added']:>9,.0f} paid {s['paid']:>9,.0f} burned {s['burned']:>8,.0f}  below seed {s['below_seed']:.0%}")
+    json.dump(res, open(os.path.join(root, "sim/pot_sim_results.json"), "w"))
+    return res
+
+
+if __name__ == "__main__" and "--pots" in sys.argv:
+    pots_main(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
