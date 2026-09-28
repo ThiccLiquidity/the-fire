@@ -112,7 +112,7 @@ contract FireTest is Test {
         vm.prank(alice);
         fire.buyTickets(10, type(uint256).max, type(uint256).max, "ten");
         assertEq(paper.balanceOf(DEAD) - deadPaper, 10e18, "pays for 10");
-        assertEq(fire.pot(), 10 * PLANK_T / 2, "10 tickets' PLANK: the free one adds none");
+        assertEq(fire.pot(), 10 * PLANK_T, "10 tickets' PLANK, all into the pot: the free one adds none");
         (uint256 mine, uint256 total) = fire.odds(alice);
         assertEq(mine, 11, "holds 11");
         assertEq(total, 11);
@@ -139,13 +139,13 @@ contract FireTest is Test {
         assertEq(fire.millFundUsdg(), 10e6, "10 dollars for 11 tickets");
     }
 
-    function test_buy_burns_paper_splits_plank() public {
+    function test_buy_burns_paper_and_all_plank_feeds_the_pot() public {
         uint256 deadPaper = paper.balanceOf(DEAD);
         uint256 deadPlank = plank.balanceOf(DEAD);
         _buy(alice, 10);
         assertEq(paper.balanceOf(DEAD) - deadPaper, 10e18, "paper 100% burned");
-        assertEq(plank.balanceOf(DEAD) - deadPlank, 10 * PLANK_T / 2, "half plank burned");
-        assertEq(fire.pot(), 10 * PLANK_T / 2, "half plank to pot");
+        assertEq(plank.balanceOf(DEAD) - deadPlank, 0, "no PLANK burns at purchase");
+        assertEq(fire.pot(), 10 * PLANK_T, "all the PLANK goes into the pot");
         (uint256 mine, uint256 total) = fire.odds(alice);
         assertEq(mine, 10);
         assertEq(total, 10);
@@ -425,7 +425,7 @@ contract FireTest is Test {
         vm.stopPrank();
         assertEq(fire.usdgCost(10), 10e6, "$1 each");
         assertEq(fire.millFundUsdg(), 10e6);
-        assertEq(fire.pot(), 10 * PLANK_T / 2, "PLANK leg as usual");
+        assertEq(fire.pot(), 10 * PLANK_T, "PLANK leg as usual: all of it into the pot");
         (uint256 mine,) = fire.odds(bob);
         assertEq(mine, 11, "10 bought + 1 free");
     }
@@ -956,7 +956,7 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ the launch seed and the prize cap
-    uint256 constant SEED = 550 * PLANK_T / 2; // like the real launch: $250 of PLANK vs $0.45 of pot per ticket
+    uint256 constant SEED = 280 * PLANK_T; // like the real launch: $250 of PLANK vs $0.90 of pot per ticket
 
     function _seed() internal {
         plank.mint(address(this), SEED);

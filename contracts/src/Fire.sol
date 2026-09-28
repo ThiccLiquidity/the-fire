@@ -48,7 +48,7 @@ interface ISeaport {
 
 /**
  * @title The Fire
- * @notice Buy tickets with PAPER + PLANK. PAPER burns. Half the PLANK burns, half feeds the fire.
+ * @notice Buy tickets with PAPER + PLANK. PAPER burns. All the PLANK goes into the fire's pot.
  *         Every night a storm rolls in; a big fire survives, a small one dies. When the fire goes
  *         out, one ticket wins 40% of the pot, 25% burns, 5% goes to the Paper Mill royalty pool, 30% relights
  *         the next fire.
@@ -72,7 +72,6 @@ contract Fire is ReentrancyGuard {
     ///      At normal volume a fire's own tickets are most of the pot and this never binds. It stops a fire with a
     ///      ticket or two from taking 40% of a pot that earlier fires (or the seed) built.
     uint256 public constant PRIZE_CAP_MULT = 20;
-    uint256 public constant PLANK_BURN_BPS = 5_000; // of every PLANK feed
     uint256 public constant MAX_NIGHTS = 24; // the night-24 storm is infinite
     uint256 public constant KEEP_BPS = 6_000; // the fire keeps 60% of its size overnight
     /// @dev The fire is measured in thousandths of a ticket, so a small fire isn't rounded away overnight.
@@ -364,11 +363,10 @@ contract Fire is ReentrancyGuard {
         if (pendingRequest != 0) revert RollPending();
     }
 
+    /// @dev All of a ticket's PLANK goes into the pot. PLANK burns when a fire goes out (25% of what it pays out on).
     function _takePlank(address from, uint256 amount) internal {
-        uint256 burn = amount * PLANK_BURN_BPS / BPS;
-        PLANK.safeTransferFrom(from, DEAD, burn);
-        PLANK.safeTransferFrom(from, address(this), amount - burn);
-        pot += amount - burn;
+        PLANK.safeTransferFrom(from, address(this), amount);
+        pot += amount;
     }
 
     /// @dev n = tickets paid for; returns tickets received (n, or n + 1 for a full buy of 10).

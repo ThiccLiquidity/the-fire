@@ -402,19 +402,6 @@
   },
   {
     "type": "function",
-    "name": "PLANK_BURN_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "PLANK_RATCHET_BPS",
     "inputs": [],
     "outputs": [

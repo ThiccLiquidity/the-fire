@@ -171,7 +171,7 @@ def run(sc: Scenario) -> dict:
                 live_mills = mills_of.sum()
         T["outsider_tickets"] += out_t; T["holder_tickets"] += tix.sum()
         # --- PLANK split
-        T["plank_in"] += plank_in; pot_plank += plank_in * 0.5; T["plank_burned"] += plank_in * 0.5
+        T["plank_in"] += plank_in; pot_plank += plank_in  # all of a ticket's PLANK goes into the pot
         # --- sell some of what's left
         sold = paper * pp["sell"] * 0.1; paper -= sold; T["paper_sold"] += sold.sum()
         # --- fire

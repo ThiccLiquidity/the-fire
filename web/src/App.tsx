@@ -240,7 +240,7 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every night at 8 PM MST a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins 40% of the pot; 25% burns; 5% goes to the Paper Mill royalty pool; 30% lights the next fire.</p>
+        <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Buy tickets with PAPER and PLANK. PAPER burns. All the PLANK goes into the fire's pot. Every night at 8 PM MST a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins 40% of the pot; 25% burns; 5% goes to the Paper Mill royalty pool; 30% lights the next fire.</p>
         {api.demo && <Playground s={s} d={api.demo} hour={demoHour} onHour={setDemoHour} onSceneOpt={(k, on) => { if (k === "press2") setPress2(on); }} />}
       </footer>
     </div>

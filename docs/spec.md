@@ -6,7 +6,7 @@
 
 ## 1. The game, in one breath
 
-> **Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every ticket makes the fire bigger. Every night a storm takes a bite out of it — keep it fed or it goes out. When it does, one ticket wins the pot.**
+> **Buy tickets with PAPER and PLANK. PAPER burns. All the PLANK goes into the fire's pot. Every ticket makes the fire bigger. Every night a storm takes a bite out of it — keep it fed or it goes out. When it does, one ticket wins the pot.**
 
 That's everything a player needs. The rest of this doc is the numbers behind it and the build.
 

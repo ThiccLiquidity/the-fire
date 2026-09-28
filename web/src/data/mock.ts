@@ -223,8 +223,7 @@ export function makeMockApi(): FireApi {
       ticketsToday: s.ticketsToday + got,
       ticketsTotal: s.ticketsTotal + got,
       fireSize: s.fireSize + got,
-      potPlank: s.potPlank + q.plank / 2,
-      burnedPlankAllTime: s.burnedPlankAllTime + q.plank / 2,
+      potPlank: s.potPlank + q.plank, // all the PLANK goes into the pot
       burnedPaperAllTime: pay !== "paper" ? s.burnedPaperAllTime : s.burnedPaperAllTime + q.paper,
       millFundEth: pay === "eth" ? s.millFundEth + q.eth : s.millFundEth,
       millFundUsdg: pay === "usdg" ? s.millFundUsdg + q.usdg : s.millFundUsdg,
