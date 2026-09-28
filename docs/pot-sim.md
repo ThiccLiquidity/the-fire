@@ -39,3 +39,21 @@
 | 10 a day, but every 4th week nobody buys | 71 | 5.1 | 44% | 10% | 65 | $15 | $22 | $13 | $22 | day 6 |
 
 At 5-10 a day every fire has 36-73 tickets, so the cap never binds: the first fire wins most of the seed (about $100-130) in week one, then the pot settles at $13-27 and a typical winner gets $9-17. Releasing the seed 5-10% per fire instead would keep prizes a few dollars higher for 3-6 months and change nothing after that.
+
+## Average 5 to 100 tickets a day, 3 years (300 runs each; days wobble around the average)
+
+| Tickets/day (avg) | Tickets per fire | Typical prize | 1 in 10 prizes over | Biggest | Pot (typical, 8 in 10 between) | Into pot/yr | To winners/yr | Burned/yr | Royalty pool/yr |
+|---|---|---|---|---|---|---|---|---|---|
+| 5 | 35 | $8 | $12 | $25 | $13 ($6-$23) | $748 | $473 | $295 | $59 |
+| 10 | 71 | $17 | $24 | $47 | $26 ($13-$46) | $1,493 | $896 | $560 | $112 |
+| 15 | 106 | $25 | $36 | $69 | $39 ($19-$68) | $2,242 | $1,321 | $825 | $165 |
+| 20 | 142 | $34 | $48 | $128 | $51 ($26-$91) | $2,995 | $1,749 | $1,093 | $219 |
+| 25 | 176 | $42 | $60 | $113 | $64 ($32-$113) | $3,727 | $2,164 | $1,353 | $271 |
+| 30 | 213 | $50 | $72 | $126 | $77 ($38-$136) | $4,482 | $2,593 | $1,621 | $324 |
+| 40 | 285 | $67 | $96 | $187 | $103 ($51-$182) | $5,968 | $3,436 | $2,148 | $430 |
+| 50 | 356 | $84 | $119 | $225 | $129 ($64-$227) | $7,468 | $4,289 | $2,681 | $536 |
+| 60 | 428 | $101 | $144 | $263 | $155 ($77-$273) | $8,963 | $5,136 | $3,210 | $642 |
+| 75 | 535 | $126 | $180 | $310 | $193 ($96-$341) | $11,207 | $6,413 | $4,008 | $802 |
+| 100 | 715 | $169 | $240 | $523 | $259 ($129-$456) | $14,933 | $8,527 | $5,330 | $1,066 |
+
+Fires: ~50 a year, 7.2-7.4 nights on average, ~5% out by night 3, ~19% reach night 10 at every average. Rule of thumb: typical prize is about $1.70 and the pot about $2.60 per ticket bought per day. The prize cap never binds at 5+ a day (fires hold 35+ tickets). Prizes after the first month; the first winner also takes most of the $250 seed.
