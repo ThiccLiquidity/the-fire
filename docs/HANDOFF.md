@@ -43,12 +43,23 @@ so plainly.
 - **Sandbox** (the whole site in demo mode with every edit): https://claude.ai/artifact/5KmWw8okEpANftasNN9RX3
   Rebuild: `cd web; npm run build`, then inline `dist/assets/index-*.js` and the CSS into one HTML page
   (replace `` await import(`./ccip-….js`) `` with `({offchainLookup:null,offchainLookupSignature:null})`;
-  keep the Google Fonts `@import` as a `<link>`). Or just point him at the Vercel preview for this branch.
+  keep the Google Fonts `@import` as a `<link>`). The artifact has no `/thunder/` folder, so also inline the
+  nine `web/public/thunder/*.mp3` clips as base64 and add a tiny `fetch` shim that answers `/thunder/<name>.mp3`
+  from them (the current sandbox does this) — otherwise the storm is silent. Or just point him at the Vercel
+  preview for this branch, which serves the real files.
 - **Press side-by-side vs the reference render:** https://claude.ai/artifact/MEnjrp5NG9iEz9y1bJMjFU
 - **Branch review + the four audit reports:** https://claude.ai/artifact/QVvsKS4C83jv7GfmRd5HwB
 - The **Playground** drawer at the bottom of the demo site drives every state: force survive / out /
   you-win, storm luck, pending roll, prices, stale ETH feed, wallet balances, connect, crowd, time of day,
   visitors, Press v2 toggle, reset.
+
+## Thunder (checked Sep 27, 5:55 PM)
+
+Not lost in the code: the live site serves all nine clips (200, audio/mpeg) and a headless run of this
+branch played 12 thunder claps in one storm. It was silent in the **sandbox artifact** only (no mp3 files
+there) — fixed in sandbox v4. Browsers also block sound until the visitor has clicked or tapped the page
+once, so someone who only watches never hears it. Suggested next item: a small sound toggle (🔊) in the
+header so visitors can turn it on deliberately and see that sound exists.
 
 ## Open, not code
 
