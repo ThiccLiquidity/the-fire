@@ -51,7 +51,7 @@ Deploy env vars: copy `contracts/.env.example` to `contracts/.env` (details at t
 
 ## Security model, in one paragraph
 
-The pot lives inside `Fire.sol`. There is no owner, no withdraw, no pause. PLANK only enters through ticket buys and only leaves through the rules (winner / burn / carry / tithe). ETH only leaves through `eatMillFromSeaport`, which pays only if the OpenSea listing fills and the mill is burned in the same transaction. Nobody can hand the fire a mill. The deploy wallet has no special powers after deployment.
+The pot lives inside `Fire.sol`. There is no owner, no withdraw, no pause. PLANK only enters through ticket buys and only leaves through the rules (winner 40% / burn 25% / mill holders' pool 5% / next fire 30%). ETH only leaves through `eatMillFromSeaport`, which pays only if the OpenSea listing fills and the mill is burned in the same transaction. Nobody can hand the fire a mill. The deploy wallet has no special powers after deployment.
 
 ## Before mainnet
 

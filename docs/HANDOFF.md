@@ -31,6 +31,8 @@ Updated Sep 27 2026, 5:35 PM Arizona. Read this whole file before changing anyth
 | 6 | Buy panel is a mess, too many words | Built: rewrite — tiles, stepper, one cost line + button, a "No PAPER? Pay $1 a ticket instead" row with ETH/USDG, explanation behind "why $1?", green confirmation after a buy. Awaiting approval. |
 | 7 | Wallet connect: where it is, show which wallet, switch wallets | Built: header chip (Connect / avatar+name), menu with full address, Switch wallet (MetaMask picker), Disconnect; follows MetaMask account changes; reconnects silently on load. Awaiting approval. |
 | 8 | "How the fire works" explainer — the game and where the funds go | Built: overlay from a pill next to the title and a footer link; five steps, money-flow diagram, odds, "what nobody controls". Awaiting approval. |
+| 9 | Paying with ETH/USDG felt like one tap spends real money | Built, **not pushed** (stash on the cloud session + mock https://claude.ai/artifact/EMB6Kj1pMCCk3EJ6vDPP4y): "Pay for the PAPER part with PAPER / ETH / USDG" is a choice that spends nothing; a "You pay" line shows exactly what leaves the wallet with a $ total; one "Throw N tickets in" button; ETH/USDG get a confirm step ("You're spending $1.90 … [Cancel] [Pay $1.90]"). Awaiting approval. |
+| 10 | Stop taking the 5% from the winner: 40% winner, 25% burn, 5% mill holders' pool, 30% next fire | **Contract done** (`WINNER_BPS 4000, BURN_BPS 2500, ROYALTY_BPS 500`, carry = remainder; no tickets → winner's + pool's shares carry), tests, sim, spec, README. **Site copy pending approval** with #9: "winner takes" becomes 40% of the pot (was 38%), How-it-works and footer text show the new split. |
 
 He also asked (answered, no code): "how do we track fake paper?" — there is none. ETH/USDG buyers get
 tickets directly; `ticketsOf[fire][wallet]` and the `TicketsBought` event (flag `paperFromFire`) record
@@ -63,9 +65,11 @@ header so visitors can turn it on deliberately and see that sound exists.
 
 ## Open, not code
 
-- Plank Press admin must call `PulpPool.addRewardToken(PLANK)`.
+- Plank Press admin will call `PulpPool.addRewardToken(PLANK)` (owner: "that will get done for sure").
 - PAPER contract address (Oct 1 2026).
-- Starting mill bid in dollars (suggested ~$700; listings seen at ~$786).
+- Starting mill bid: owner says ~$700 is far too high — listings so far are wild because there's no market yet.
+  Suggested: start at the PLANK inside one mill (~$90); the bid only climbs while the fund can pay it, caps at 3x
+  until a real purchase resets it. Not decided.
 - Re-run `sim/economy.py` with real mill prices (~$786) and a moving PLANK price; refresh `docs/sim-results.md`.
 - Spec vs code: `docs/spec.md` still lists a pause, a 3-night cap and fixed-PLANK pricing — none exist.
 - README trust wording: router is now ownerless (`OpenDrandRouter`), keeper has no powers.

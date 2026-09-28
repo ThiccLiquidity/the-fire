@@ -51,7 +51,8 @@ interface ISeaport {
  * @title The Fire
  * @notice Buy tickets with PAPER + PLANK. PAPER burns. Half the PLANK burns, half feeds the fire.
  *         Every night a storm rolls in; a big fire survives, a small one dies. When the fire goes
- *         out, one ticket wins 40% of the pot, 30% burns, 30% relights the next fire.
+ *         out, one ticket wins 40% of the pot, 25% burns, 5% goes to the mill holders' pool, 30% relights the next
+ *         fire.
  *
  *         There is no function that withdraws the pot or the ETH fund. Funds only leave through
  *         the rules below.
@@ -62,10 +63,10 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
     // ---------------------------------------------------------------- constants
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint256 public constant BPS = 10_000;
-    uint256 public constant WINNER_BPS = 4_000;
-    uint256 public constant BURN_BPS = 3_000;
-    uint256 public constant CARRY_BPS = 3_000;
-    uint256 public constant TITHE_BPS = 500; // of the winner slice -> royalty pool
+    uint256 public constant WINNER_BPS = 4_000; // all of it to the winner
+    uint256 public constant BURN_BPS = 2_500;
+    uint256 public constant ROYALTY_BPS = 500; // to the mill holders' pool (PulpPool)
+    uint256 public constant CARRY_BPS = 3_000; // relights the next fire (the remainder, so rounding dust stays in)
     uint256 public constant PLANK_BURN_BPS = 5_000; // of every PLANK feed
     uint256 public constant MAX_NIGHTS = 24; // the night-24 storm is infinite
     uint256 public constant KEEP_BPS = 6_000; // the fire keeps 60% of its size overnight
@@ -418,20 +419,20 @@ contract Fire is IERC721Receiver, ReentrancyGuard {
         uint256 p = pot;
         uint256 winnerSlice = p * WINNER_BPS / BPS;
         uint256 burnSlice = p * BURN_BPS / BPS;
-        uint256 carry = p - winnerSlice - burnSlice;
-        uint256 tithe = winnerSlice * TITHE_BPS / BPS;
+        uint256 royaltySlice = p * ROYALTY_BPS / BPS;
+        uint256 carry = p - winnerSlice - burnSlice - royaltySlice;
 
         pot = 0;
         uint256 paid;
         // A payout that fails (e.g. the token refuses a recipient) must not revert the night — that would leave the
         // roll pending forever. Whatever can't be sent stays in the contract and relights the next fire.
         if (winner != address(0)) {
-            if (_trySend(winner, winnerSlice - tithe)) paid = winnerSlice - tithe;
-            else carry += winnerSlice - tithe;
-            if (!_trySend(ROYALTY_POOL, tithe)) carry += tithe;
+            if (_trySend(winner, winnerSlice)) paid = winnerSlice;
+            else carry += winnerSlice;
+            if (!_trySend(ROYALTY_POOL, royaltySlice)) carry += royaltySlice;
         } else {
-            // no tickets at all: winner slice rolls into the carry
-            carry += winnerSlice;
+            // no tickets at all: the winner's and the mill holders' slices roll into the next fire
+            carry += winnerSlice + royaltySlice;
         }
         if (!_trySend(DEAD, burnSlice)) carry += burnSlice;
         lastWinner = winner;

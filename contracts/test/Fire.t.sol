@@ -222,7 +222,7 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ payout
-    function test_payout_40_30_30_and_tithe() public {
+    function test_payout_40_winner_25_burn_5_royalty_30_carry() public {
         _buy(alice, 500); // alice is the only ticket holder
         uint256 p = fire.pot();
         _roll(RND_CALM); // night 1 survive; size 300
@@ -232,11 +232,12 @@ contract FireTest is Test {
         // keep rolling monsters until it dies
         while (fire.fireId() == 1) _roll(RND_MONSTER);
         uint256 winner = p * 4000 / 10000;
-        uint256 tithe = winner * 500 / 10000;
-        assertEq(plank.balanceOf(alice) - aliceBefore, winner - tithe, "winner 40% minus tithe");
-        assertEq(plank.balanceOf(royalty), tithe, "tithe to royalty pool");
-        assertEq(plank.balanceOf(DEAD) - deadBefore, p * 3000 / 10000, "30% burned");
-        assertEq(fire.pot(), p - winner - p * 3000 / 10000, "30% carried");
+        uint256 royaltyCut = p * 500 / 10000;
+        assertEq(plank.balanceOf(alice) - aliceBefore, winner, "winner gets the full 40%");
+        assertEq(plank.balanceOf(royalty), royaltyCut, "5% of the pot to the mill holders' pool");
+        assertEq(plank.balanceOf(DEAD) - deadBefore, p * 2500 / 10000, "25% burned");
+        assertEq(fire.pot(), p - winner - royaltyCut - p * 2500 / 10000, "30% carried");
+        assertEq(fire.pot(), p * 3000 / 10000, "which is exactly 30%");
         assertEq(fire.lastWinner(), alice);
         assertEq(fire.ticketsTotal(), 0, "tickets reset");
     }
@@ -253,8 +254,8 @@ contract FireTest is Test {
         _roll(RND_MONSTER); // size 0 -> goes out with no tickets
         assertEq(fire.fireId(), 3);
         assertEq(fire.lastWinner(), address(0));
-        assertEq(fire.pot(), carried * 70 / 100, "40% + 30% carried, 30% burned");
-        assertEq(plank.balanceOf(royalty), royaltyBefore, "no tithe without a winner");
+        assertEq(fire.pot(), carried * 75 / 100, "40% + 5% + 30% carried, 25% burned");
+        assertEq(plank.balanceOf(royalty), royaltyBefore, "nothing to the pool without a winner");
     }
 
     function test_winner_is_ticket_weighted() public {

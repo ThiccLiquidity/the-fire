@@ -7,7 +7,7 @@ Everything on the site and in the contract, day by day, per wallet, vectorized:
   Ticket = 1 PAPER + $0.90 PLANK (or $1.00 ETH + $0.90 PLANK for outsiders); max 10/tx, 500/wallet/day; 3% off a full 10
   PAPER burned 100%; PLANK 50% burned / 50% pot; ETH 100% → mill fund
   Fire size += tickets; each night: storm = trail7 × ((n-1)/8)^1.5 × lognormal(0,0.9); size -= storm; ×0.6 overnight
-  Night 1 no storm; night 24 infinite. Dead → one ticket wins 40% (5% of that to royalty pool), 30% burned, 30% carried.
+  Night 1 no storm; night 24 infinite. Dead → one ticket wins 40%, 25% burned, 5% to the royalty pool, 30% carried.
   Mill fund buys the floor mill when it can; mill burned; its PLANK → royalty pool; emission -1/day forever.
   Royalty pool splits evenly across live mills (we track $ paid per mill).
 
@@ -142,21 +142,20 @@ def run(sc: Scenario) -> dict:
             fire_size = max(0.0, fire_size - X)
         else:
             total = fire_ticket_owner.sum() + outsider_tickets_fire
-            winner_tier = -1; paid = pot_plank * 0.4; tithe = paid * 0.05
+            winner_tier = -1; pot0 = pot_plank
+            paid, royalty, burn = pot0 * 0.40, pot0 * 0.05, pot0 * 0.25  # 30% carries
             if total > 0:
                 u = rng.random() * total
                 if u < outsider_tickets_fire: winner_tier = 3
                 else:
                     cum = np.cumsum(fire_ticket_owner); idx = int(np.searchsorted(cum, u - outsider_tickets_fire)); winner_tier = int(tier[idx])
-                    won_usd[idx] += (paid - tithe) * PLANK_USD
-                royalty_plank += tithe; T["plank_paid"] += paid - tithe
+                    won_usd[idx] += paid * PLANK_USD
+                royalty_plank += royalty; T["plank_paid"] += paid
+                carry = pot0 - paid - royalty - burn
             else:
-                pot_plank -= paid; paid = 0  # nobody: winner slice rolls forward (handled below)
-                pot_plank += 0
-            burn = (pot_plank if total > 0 else pot_plank + paid) * 0.3
+                carry = pot0 - burn  # nobody: winner's and pool's slices roll forward
             T["plank_burned"] += burn
-            carry = pot_plank - (paid if total > 0 else 0) - burn
-            fires.append((night, pot_plank * PLANK_USD, winner_tier, total))
+            fires.append((night, pot0 * PLANK_USD, winner_tier, total))
             pot_plank = carry; fire_size = 0.0; night = 0; fire_id += 1
             fire_ticket_owner[:] = 0; outsider_tickets_fire = 0.0; tickets_in_fire = 0.0
         daily.append((today, fire_size, pot_plank * PLANK_USD, live_mills))

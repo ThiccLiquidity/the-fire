@@ -33,8 +33,8 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 
 ### The pot
 - Held in PLANK. **The fire is a PLANK bag that never sells.** If PLANK doubles, the pot doubles.
-- When the fire goes out: **40% to the winner, 30% burned, 30% relights the next fire** (**fixed**). Sim: 40/30/30 grows the next fire ~4× faster than 50/25/25 at the same burn.
-- **5% of the winner's slice goes to the Paper Mill royalty pool** — every mill holder gets PLANK every time a fire ends. One transfer to an address that already exists. *(Founder note: you hold a large bag, so you're the largest recipient of your own contract's tithe. It's the community's norm and there's no exploit, but say it out loud.)*
+- When the fire goes out: **40% to the winner, 25% burned, 5% to the mill holders' pool, 30% relights the next fire** (**fixed**). The winner keeps the whole 40%; the pool's share comes out of the pot, not the winner's prize. With no tickets at all, the winner's and the pool's shares roll into the next fire.
+- **The 5% goes to the Paper Mill royalty pool** — every mill holder gets PLANK every time a fire ends. One transfer to an address that already exists. *(Founder note: you hold a large bag, so you're the largest recipient of this share. It's the community's norm and there's no exploit, but say it out loud.)*
 
 ### The fire's size (this is the game)
 - The fire has a **size, in tickets**. Every ticket bought adds one. This is what you see on screen: a fire worth 5 days of the community's normal buying is "full height" under the pot.
@@ -103,8 +103,7 @@ Things worth knowing:
 | ETH paper | $1.00 of ETH per ticket, via ETH/USD feed (reverts if stale >1h) |
 | Per buy / per day | 10 / 500 tickets; a full 10 is 3% off |
 | PLANK split | 50% burn / 50% pot |
-| Payout | 40% winner / 30% burn / 30% relight |
-| Tithe | 5% of winner slice → royalty pool |
+| Payout | 40% winner / 25% burn / 5% mill holders' pool / 30% relight |
 | Storm time | 8:00 PM America/Phoenix, nightly |
 | Fire size | persistent; +1 per ticket; ×0.6 overnight |
 | Storm | trailingAvg × ((N−1)/8)^1.5 × lognormal(0, 0.9); night 1 none; night 24 infinite |
