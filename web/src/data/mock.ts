@@ -199,7 +199,7 @@ export function makeMockApi(): FireApi {
     if (s.rollPending) throw new Error("The storm is rolling in. Try again once it lands.");
     if (n < 1 || n > TX_CAP) throw new Error(`Up to ${TX_CAP} a buy.`);
     const q = quote(n, s.plankPerTicket, s.ethUsd, s.paperPerTicket); // priced on tickets paid for
-    const got = ticketsFor(n); // buy 10, get 1 free: 11 in, priced on the 10
+    const got = ticketsFor(n, s.night); // throw 10, get 3/2/1 free logs by the fire's day; priced on the 10
     const mine = w.accounts[who];
     if (mine) {
       // never charge more than the buyer was shown

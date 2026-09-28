@@ -7,7 +7,7 @@ Contract rules mirrored here (integer math, same order as Fire.onRandomness):
       base = the storm's normal level (stormBaseMilli); before the first roll ever: today's buys x 1000
       AGE[night] = (night-1)/8; LUCK = 32 quantiles of lognormal(0, 1.2). night 1: no storm. night 24: infinite.
   - then today's count goes into the 7-night window, and the normal level moves toward that window's average
-    (trailingMilli): up by 3% of the gap, down by 30% of the gap
+    (trailingMilli): up by 3% of the gap; down by 3%, or by 30% in a real slump (the week under half the level)
   - survive if night == 1 or (night < 24 and size > storm): size = (size - storm) * 8500 / 10000
   - otherwise it goes out: a new fire is lit with size 0, night 0 (the trailing window carries over). A fire nobody
     bought into carries its whole pot; otherwise 40% winner, 25% burned, 5% royalty pool, 30% carried.
@@ -24,7 +24,7 @@ import json, math, random, statistics as st, sys, os
 AGE = [1250 * (n - 1) for n in range(2, 24)]  # (night-1)/8 in bps, nights 2..23
 LUCK = [754, 1338, 1824, 2286, 2744, 3211, 3691, 4192, 4717, 5272, 5862, 6491, 7166, 7894, 8682, 9541,
         10481, 11518, 12668, 13955, 15406, 17059, 18967, 21198, 23855, 27091, 31147, 36438, 43747, 54814, 74717, 132586]  # e^(1.2 z)
-BASE_UP_BPS, BASE_DOWN_BPS = 300, 3000  # the storm's normal level: 3% of the gap a night up, 30% down
+BASE_UP_BPS, BASE_DOWN_BPS, SLUMP_BPS = 300, 3000, 5000  # normal level: 3% of the gap a night; 30% down in a real slump (week under half of normal)
 MAX_NIGHTS, KEEP_BPS, BPS, TRAILING, MILLI = 24, 8500, 10000, 7, 1000
 FULL_DAYS = 2.5  # site: a fire worth 2.5 days of buys is drawn full height
 INF = 2**256 - 1
@@ -68,7 +68,8 @@ class Fire:
         today = self.tickets_today
         self.trail[self.trail_idx] = today; self.trail_idx = (self.trail_idx + 1) % TRAILING; self.trail_count += 1
         recent = self.trailing_milli()
-        self.base = base + (recent - base) * BASE_UP_BPS // BPS if recent > base else base - (base - recent) * BASE_DOWN_BPS // BPS
+        if recent >= base: self.base = base + (recent - base) * BASE_UP_BPS // BPS
+        else: self.base = base - (base - recent) * (BASE_DOWN_BPS if recent * BPS < base * SLUMP_BPS else BASE_UP_BPS) // BPS
         self.tickets_today = 0
         rec = {"fire": self.fire_id, "night": self.night, "size": size_before, "storm": storm, "avg": avg, "today": today}  # sizes in thousandths
         if self.night == 1 or (self.night < MAX_NIGHTS and size_before > storm):
@@ -318,7 +319,10 @@ if __name__ == "__main__" and "--pots" not in sys.argv:
 # held flat, so the pot is in today's dollars. When a fire with tickets goes out, the split is taken from the pot or from
 # 20x what that fire's own tickets put in, whichever is smaller: 40% winner, 25% burned, 5% royalty pool, the rest
 # carries. A fire nobody bought into carries 100%. The seed counts as carried-in pot.
-POT_PER_TICKET = 0.90 * 10 / 11
+POT_PER_TICKET = 0.90 * 10 / 11  # a log thrown on day 3+ (10 paid + 1 free)
+def pot_per_log(night):  # night = nights the fire has survived when the log is thrown (0 = its first day)
+    free = 3 if night == 0 else 2 if night == 1 else 1
+    return 0.90 * 10 / (10 + free)
 SEED = 250.0
 
 POT_SCENARIOS = [
@@ -348,7 +352,7 @@ def pot_run(days_t, luck):
     """Nightly pot (after the roll) and one record per fire that went out."""
     f = Fire(); pot = SEED; carried = SEED; nightly = []; ends = []
     for d, t in enumerate(days_t):
-        f.buy(t); pot += t * POT_PER_TICKET
+        pot += t * pot_per_log(f.night); f.buy(t)
         rec = f.roll(luck[d])
         if not rec["survived"]:
             if rec["tickets"] > 0:

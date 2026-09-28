@@ -47,7 +47,7 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
             <h3>The fire</h3>
             <div className="pg-grid">
               <label>Night <input type="number" value={s.night} onChange={(e) => d.set({ night: num(e.target.value) })} /></label>
-              <label>Fire size (tickets) <input type="number" value={Math.round(s.fireSize)} onChange={(e) => d.set({ fireSize: num(e.target.value) })} /></label>
+              <label>Fire size (logs) <input type="number" value={Math.round(s.fireSize)} onChange={(e) => d.set({ fireSize: num(e.target.value) })} /></label>
               <label>Pot ($) <input type="number" value={usd(s.potPlank)} onChange={(e) => d.set({ potPlank: num(e.target.value) / s.plankUsd })} /></label>
               <label>Tickets in this fire <input type="number" value={s.ticketsTotal} onChange={(e) => d.set({ ticketsTotal: num(e.target.value) })} /></label>
               <label>7-night avg (storm scale) <input type="number" value={Math.round(s.trailingAvg)} onChange={(e) => d.set({ trailingAvg: Math.max(1, num(e.target.value)) })} /></label>
@@ -57,7 +57,7 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
 
           <section>
             <h3>Prices and feeds</h3>
-            <p className="fine">A ticket's PLANK and PAPER amounts follow a price change at most 5% a night, like the contract.</p>
+            <p className="fine">A log's PLANK and PAPER amounts follow a price change at most 5% a night, like the contract.</p>
             <div className="pg-grid">
               <label>PLANK price ($ per 1B) <input type="number" step={0.1} value={+(s.plankUsd * 1e9).toFixed(3)} onChange={(e) => d.set({ plankUsd: Math.max(0.01, num(e.target.value)) / 1e9 })} /></label>
               <label>PAPER price ($, 0 = no market) <input type="number" step={0.01} min={0} value={s.paperUsd} onChange={(e) => d.set({ paperUsd: Math.max(0, num(e.target.value)) })} /></label>
@@ -79,7 +79,7 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
               <label>PLANK (billions) <input type="number" step={0.1} value={+(s.you.plank / 1e9).toFixed(2)} onChange={(e) => d.setYou({ plank: num(e.target.value) * 1e9 })} /></label>
               <label>ETH <input type="number" step={0.01} value={s.you.eth} onChange={(e) => d.setYou({ eth: num(e.target.value) })} /></label>
               <label>USDG <input type="number" value={s.you.usdg} onChange={(e) => d.setYou({ usdg: num(e.target.value) })} /></label>
-              <label>Your tickets in this fire <input type="number" value={s.you.tickets} onChange={(e) => d.setYou({ tickets: num(e.target.value) })} /></label>
+              <label>Your logs in this fire <input type="number" value={s.you.tickets} onChange={(e) => d.setYou({ tickets: num(e.target.value) })} /></label>
               <label>Left today (cap 500) <input type="number" value={s.you.remainingToday} onChange={(e) => d.setYou({ remainingToday: num(e.target.value) })} /></label>
             </div>
             <div className="pg-row">

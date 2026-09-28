@@ -49,6 +49,7 @@ Updated Sep 28 2026 (beta audit merged). Read this whole file before changing an
 | 24 | Pot: simulate from a $250 seed; protect it; seed only by him | Contract: `Fire.seed(amount)`: deployer only, once, before the first storm, add-only (also `SEED_PLANK` in Deploy.s.sol). **Prize cap:** a fire pays out on at most 20x what its own tickets put in (`PRIZE_CAP_MULT`, `potCarriedIn`, `prizeNow()`); ~30 tickets in one fire unlock the full seed; never binds at normal volume. Site shows the capped "winner takes" ("grows with this fire, up to $X"). Sim + parity test now check the pot every night. Results: `docs/pot-sim.md` (incl. 5-10 tickets/day for 3 years). 119 tests. **Approved Sep 28, merged to `main`.** |
 | 25 | He never meant half the ticket PLANK to burn up front | Built: all of a ticket's PLANK goes into the pot (`_takePlank`, `PLANK_BURN_BPS` removed); PLANK burns only when a fire pays out (25%). Prizes ~2x at every volume, PLANK burn ~1/2. ~15 tickets in one fire now unlock the full seed. Site/README/spec copy updated; sims + parity regenerated; `docs/pot-sim.md` new numbers. 119 tests. **Approved Sep 28, merged to `main`.** |
 | 26 | A big fire in the moment should get a real shot; no too-early deaths, no small pots lingering | Built (option D): fire keeps 85% overnight; storm = its "normal level" x (night-1)/8 x luck, where the normal level follows the 7-night average up 3%/night and down 30%/night (`stormBaseMilli`); luck lognormal(0, 1.2). Steady volume: ~9.5 nights, ~4% out by night 3. A 10x night-17 surge then a fizzle: 26% still burning after night 20 (was 0%). Rallies reach night 20 up to ~10%. How-it-works storm text rewritten in plain words. 120 tests incl. parity. **Awaiting approval.** |
+| 27 | Tickets are "logs" (still a ticket to win); early-buyer bonus: throw 10 on day 1 get 3 free, day 2 get 2, day 3+ get 1; low volume must not get longer fires than high volume | Built: site copy says logs everywhere ("every log is a ticket to win"); `Fire.ticketsFor` gives 3/2/1 free logs by the fire's day (free logs count toward the 500/day cap, add no PLANK). Low-volume bias fixed: the storm level drops fast only in a real slump (`SLUMP_BPS`, week under half the level), so steady volume gets the same odds at any level. 121 tests incl. parity. **Awaiting approval** with #26. |
 
 He also asked (answered, no code): "how do we track fake paper?" — there is none. ETH/USDG buyers get
 tickets directly; `ticketsOf[fire][wallet]` and the `TicketsBought` event (flag `paperFromFire`) record
@@ -93,7 +94,7 @@ header so visitors can turn it on deliberately and see that sound exists.
 ## Verify
 
 ```
-cd contracts; forge test          # 120 passed
+cd contracts; forge test          # 121 passed
 cd web; npx tsc -b; npm run build # clean
 ```
 

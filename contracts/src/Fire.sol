@@ -77,8 +77,11 @@ contract Fire is ReentrancyGuard {
     /// @dev The storm is sized to a "normal level" of buying that creeps up slowly (3% of the gap a night) and drops fast
     ///      (30% a night). When people pile in, the fire gets far bigger than the storm expects and has a real shot;
     ///      when buying slumps, storms shrink quickly instead of beating on small fires.
+    ///      The fast drop only applies to a real slump (the week's buying under half the normal level), so the random
+    ///      day-to-day swings of a small game don't drag the level down and make storms too easy at low volume.
     uint256 public constant BASE_UP_BPS = 300;
     uint256 public constant BASE_DOWN_BPS = 3_000;
+    uint256 public constant SLUMP_BPS = 5_000;
     /// @dev The fire is measured in thousandths of a ticket, so a small fire isn't rounded away overnight.
     uint256 public constant MILLI = 1_000;
     uint256 public constant TRAILING = 7;
@@ -87,7 +90,12 @@ contract Fire is ReentrancyGuard {
     uint256 public constant BID_MAX_MULT = 3; // and never climbs past 3x its restart point
     uint256 public constant DAILY_CAP = 500; // tickets per wallet per day
     uint256 public constant TX_CAP = 10; // tickets paid for per transaction
-    uint256 public constant FREE_WITH_FULL_BUY = 1; // buy 10, get 1 free
+    /// @dev Throw 10 logs (tickets) and get free ones: 3 on a fire's first day, 2 on its second, 1 after that. Early logs
+    ///      get a fire going and the pot growing. Free logs count like any other (odds, fire size, the daily cap) but
+    ///      add no PLANK.
+    uint256 public constant FREE_DAY1 = 3;
+    uint256 public constant FREE_DAY2 = 2;
+    uint256 public constant FREE_LATER = 1;
     uint256 public constant PLANK_RATCHET_BPS = 500; // PLANK leg moves at most 5% per night toward target
     /// @dev A roll normally resolves ~35s after it's requested. The wait before a re-roll is long on purpose: drand's
     ///      number is public ~30s after the roll, so a short wait would let someone who dislikes it re-roll whenever
@@ -265,10 +273,11 @@ contract Fire is ReentrancyGuard {
     }
 
     // ---------------------------------------------------------------- pricing
-    /// @notice Buy 10, get 1 free: a full buy of TX_CAP pays for TX_CAP tickets and gets TX_CAP + 1. That's the only
-    ///         discount. The free ticket counts like any other (odds, fire size, the daily cap) but adds no PLANK.
-    function ticketsFor(uint256 n) public pure returns (uint256) {
-        return n == TX_CAP ? n + FREE_WITH_FULL_BUY : n;
+    /// @notice Logs received for n paid, right now: a full buy of TX_CAP gets free logs (3 on the fire's first day, 2 on
+    ///         its second, 1 after that). That's the only discount.
+    function ticketsFor(uint256 n) public view returns (uint256) {
+        if (n != TX_CAP) return n;
+        return n + (night == 0 ? FREE_DAY1 : night == 1 ? FREE_DAY2 : FREE_LATER);
     }
 
     /// @notice ETH per ticket right now, from the ETH/USD feed. Reverts if the feed has missed its heartbeat.
@@ -470,7 +479,8 @@ contract Fire is ReentrancyGuard {
         _pushTrail(ticketsToday);
         // move the storm's normal level toward the last 7 nights: slowly up, quickly down
         uint256 recent = _trailingMilli();
-        stormBaseMilli = recent > base ? base + (recent - base) * BASE_UP_BPS / BPS : base - (base - recent) * BASE_DOWN_BPS / BPS;
+        if (recent >= base) stormBaseMilli = base + (recent - base) * BASE_UP_BPS / BPS;
+        else stormBaseMilli = base - (base - recent) * (recent * BPS < base * SLUMP_BPS ? BASE_DOWN_BPS : BASE_UP_BPS) / BPS;
         ticketsToday = 0;
         dayIndex += 1;
         nextRollAt = _nextRollTime(block.timestamp);

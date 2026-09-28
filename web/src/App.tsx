@@ -76,7 +76,7 @@ export default function App() {
   const potPlank = wake ? st!.potPlank ?? v.potPlank : v.potPlank;
   const fireId = wake ? st!.fireId : v.fireId;
   const potSub = s.abandoned ? "the game has ended"
-    : wake ? `went out on night ${st!.night}${st!.tickets ? ` · ${fmtCount(st!.tickets)} tickets` : ""}`
+    : wake ? `went out on night ${st!.night}${st!.tickets ? ` · ${fmtCount(st!.tickets)} logs` : ""}`
     : v.night === 0 ? (st && !st.survived && age < C.DONE ? "just lit" : "lit today") : `${nights(v.night)} survived`;
 
   let forecast: [string, string];
@@ -98,7 +98,7 @@ export default function App() {
     } else if (!st.survived && age >= C.OUT_CARD && age < C.WINNER) {
       card = null; // the tickets rise out of the embers in the scene; the winner card follows
     } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT && NOBODY.test(st.winner ?? "")) {
-      card = <div className="verdict out" role="alert"><b>Nobody had a ticket in fire #{st.fireId}.</b> The whole pot carries to the next fire.</div>;
+      card = <div className="verdict out" role="alert"><b>Nobody threw a log on fire #{st.fireId}.</b> The whole pot carries to the next fire.</div>;
     } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT) {
       const w = st.winner ?? "";
       card = (
@@ -109,7 +109,7 @@ export default function App() {
           {name(w) !== short(w) && <div className="winner-addr">{short(w)}</div>}
           <div className="winner-amt"><PlankIcon big />{usd(st.paidPlank ?? 0, s.plankUsd)}</div>
           {st.prizeOwed && <div className="winner-sub"><b>Prize waiting to be claimed</b></div>}
-          <div className="winner-sub"><PlankIcon />{mPlank(st.paidPlank ?? 0)} PLANK · Fire #{st.fireId} · {nights(st.night)} · {fmtCount(st.tickets ?? 0)} tickets</div>
+          <div className="winner-sub"><PlankIcon />{mPlank(st.paidPlank ?? 0)} PLANK · Fire #{st.fireId} · {nights(st.night)} · {fmtCount(st.tickets ?? 0)} logs</div>
           <div className="winner-foot">{Math.max(0, Math.ceil((C.RELIGHT - age) / 1000))}s until the next fire is lit</div>
         </div>
       );
@@ -170,9 +170,9 @@ export default function App() {
       <main className="stage">
         <div className="left">
           <div className="you">
-            <div><b>{connected ? fmtCount(v.youTickets) : "—"}</b><span>{connected ? "your tickets in this fire" : "connect to see your tickets"}</span></div>
+            <div><b>{connected ? fmtCount(v.youTickets) : "—"}</b><span>{connected ? "your logs in this fire" : "connect to see your logs"}</span></div>
             <div><b>{connected ? `${odds === 0 ? "0" : odds < 0.01 ? "<0.01" : odds.toFixed(2)}%` : "—"}</b><span>your odds if it goes out tonight</span></div>
-            <div title="Fire size is what keeps the fire alive: every ticket adds 1, storms knock it down, and it burns down to 85% each night. Your tickets never shrink."><b>{fmtCount(Math.round(v.fireSize))}</b><span>fire size · {fmtCount(v.ticketsToday)} added today</span><span className="you-fine">burns down each night; tickets don't</span></div>
+            <div title="Fire size is what keeps the fire alive: every log adds 1, storms knock it down, and it burns down to 85% each night. Your logs never leave the draw."><b>{fmtCount(Math.round(v.fireSize))}</b><span>fire size · {fmtCount(v.ticketsToday)} added today</span><span className="you-fine">burns down each night; tickets don't</span></div>
           </div>
 
           <div className="ticker" aria-label="Recent buys">
@@ -180,7 +180,7 @@ export default function App() {
               <span key={f.id} className="tick">🔥 The fire bought a mill off the floor and burned it</span>
             ) : (
               <span key={f.id} className="tick">
-                <Avatar addr={f.who} profile={prof(f.who)} size={18} /> <span className="tick-name" title={f.who}>{name(f.who)}</span> <em>{f.title}</em> {f.tickets} {f.tickets === 1 ? "ticket" : "tickets"}{f.fromFire ? " · paid in dollars" : ""}
+                <Avatar addr={f.who} profile={prof(f.who)} size={18} /> <span className="tick-name" title={f.who}>{name(f.who)}</span> <em>{f.title}</em> {f.tickets} {f.tickets === 1 ? "log" : "logs"}{f.fromFire ? " · paid in dollars" : ""}
               </span>
             ))}
           </div>
@@ -211,7 +211,7 @@ export default function App() {
               <h2>Past fires</h2>
               <ol>
                 {s.past.slice(0, 5).map((f) => (
-                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{NOBODY.test(f.winner) ? <>no tickets · {nights(f.nights)} · pot carried</> : <><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> won {usd(f.prizePlank ?? f.potPlank * 0.4, s.plankUsd)} · {nights(f.nights)}</>}</span></li>
+                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{NOBODY.test(f.winner) ? <>no logs · {nights(f.nights)} · pot carried</> : <><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> won {usd(f.prizePlank ?? f.potPlank * 0.4, s.plankUsd)} · {nights(f.nights)}</>}</span></li>
                 ))}
               </ol>
             </div>
@@ -234,13 +234,13 @@ export default function App() {
           )}
           {connected && <ProfileEditor key={s.you.address} addr={s.you.address} profile={prof(s.you.address!)} onSave={api.setProfile} demo={!LIVE} />}
           <BuyPanel you={shownYou} plankPerTicket={s.plankPerTicket} paperPerTicket={s.paperPerTicket} paperUsd={s.paperUsd} plankUsd={s.plankUsd} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} usdgEnabled={s.usdgEnabled}
-            raw={s.raw} abandoned={s.abandoned} hold={b ? "The storm is here. Buying reopens once it passes." : undefined} demo={!LIVE} />
+            raw={s.raw} abandoned={s.abandoned} night={v.night} hold={b ? "The storm is here. Buying reopens once it passes." : undefined} demo={!LIVE} />
           <Swap demo={api.demo} s={s} />
         </div>
       </main>
 
       <footer className="foot">
-        <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Buy tickets with PAPER and PLANK. PAPER burns. All the PLANK goes into the fire's pot. Every night at 8 PM MST a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins 40% of the pot; 25% burns; 5% goes to the Paper Mill royalty pool; 30% lights the next fire.</p>
+        <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Throw logs on the fire with PAPER and PLANK; every log is a ticket to win. PAPER burns. All the PLANK goes into the fire's pot. Every night at 8 PM MST a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one log wins 40% of the pot; 25% burns; 5% goes to the Paper Mill royalty pool; 30% lights the next fire.</p>
         {api.demo && <Playground s={s} d={api.demo} hour={demoHour} onHour={setDemoHour} onSceneOpt={(k, on) => { if (k === "press2") setPress2(on); }} />}
       </footer>
     </div>

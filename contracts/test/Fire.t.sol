@@ -93,7 +93,7 @@ contract FireTest is Test {
     }
 
     // ------------------------------------------------------------ pricing
-    function test_quote_is_full_price_and_10_buys_11() public view {
+    function test_quote_is_full_price_for_the_10_paid() public view {
         (uint256 p1,, ) = fire.quote(1);
         (uint256 p5,,) = fire.quote(5);
         (uint256 p10,,) = fire.quote(10);
@@ -101,23 +101,34 @@ contract FireTest is Test {
         assertEq(p5, 5e18);
         assertEq(p10, 10e18, "no discount on the price");
         assertEq(fire.ticketsFor(9), 9);
-        assertEq(fire.ticketsFor(10), 11, "buy 10, get 1 free");
+        assertEq(fire.ticketsFor(10), 13, "day 1: throw 10, get 3 free");
     }
 
-    function test_buy_10_get_11_tickets() public {
+    function test_throw_10_on_day_1_get_13_logs() public {
         uint256 deadPaper = paper.balanceOf(DEAD);
         uint256 id = fire.fireId();
         vm.expectEmit(true, true, false, true);
-        emit Fire.TicketsBought(id, alice, 11, false, "ten");
+        emit Fire.TicketsBought(id, alice, 13, false, "ten");
         vm.prank(alice);
         fire.buyTickets(10, type(uint256).max, type(uint256).max, "ten");
         assertEq(paper.balanceOf(DEAD) - deadPaper, 10e18, "pays for 10");
         assertEq(fire.pot(), 10 * PLANK_T, "10 tickets' PLANK, all into the pot: the free one adds none");
         (uint256 mine, uint256 total) = fire.odds(alice);
-        assertEq(mine, 11, "holds 11");
-        assertEq(total, 11);
-        assertEq(fire.fireSizeMilli(), 11_000);
-        assertEq(fire.remainingToday(alice), 489, "all 11 count toward the daily cap");
+        assertEq(mine, 13, "holds 13");
+        assertEq(total, 13);
+        assertEq(fire.fireSizeMilli(), 13_000);
+        assertEq(fire.remainingToday(alice), 487, "all 13 count toward the daily cap");
+    }
+
+    function test_free_logs_are_3_then_2_then_1() public {
+        assertEq(fire.ticketsFor(10), 13, "the fire's first day");
+        assertEq(fire.ticketsFor(9), 9, "only a full buy of 10 gets free logs");
+        _roll(RND_CALM); // night 1 survived: its second day
+        assertEq(fire.ticketsFor(10), 12);
+        _buy(alice, 5); _roll(RND_CALM); // third day on
+        assertEq(fire.ticketsFor(10), 11);
+        (uint256 paperCost,,) = fire.quote(10);
+        assertEq(paperCost, 10e18, "always priced on the 10 paid");
     }
 
     function test_free_ticket_needs_room_under_the_daily_cap() public {
@@ -130,13 +141,13 @@ contract FireTest is Test {
         assertEq(fire.remainingToday(alice), 1);
     }
 
-    function test_eth_and_usdg_buys_of_10_also_get_11() public {
+    function test_eth_and_usdg_buys_of_10_also_get_free_logs() public {
         (, , uint256 c) = fire.quote(10);
         vm.prank(bob); fire.buyTicketsWithEth{value: c}(10, type(uint256).max, "");
         vm.startPrank(carol); usdg.mint(carol, 10e6); usdg.approve(address(fire), type(uint256).max); fire.buyTicketsWithUsdg(10, type(uint256).max, ""); vm.stopPrank();
         (uint256 b,) = fire.odds(bob); (uint256 k,) = fire.odds(carol);
-        assertEq(b, 11); assertEq(k, 11);
-        assertEq(fire.millFundUsdg(), 10e6, "10 dollars for 11 tickets");
+        assertEq(b, 13); assertEq(k, 13);
+        assertEq(fire.millFundUsdg(), 10e6, "10 dollars for 13 logs on day 1");
     }
 
     function test_buy_burns_paper_and_all_plank_feeds_the_pot() public {
@@ -159,7 +170,7 @@ contract FireTest is Test {
         fire.buyTicketsWithEth{value: ethCost}(10, type(uint256).max, "outsider");
         assertEq(fire.millFund(), ethCost);
         (uint256 mine,) = fire.odds(bob);
-        assertEq(mine, 11, "10 bought + 1 free");
+        assertEq(mine, 13, "10 bought + 3 free on day 1");
         assertEq(paper.balanceOf(DEAD), 0, "no paper involved");
     }
 
@@ -375,7 +386,7 @@ contract FireTest is Test {
     function test_money_arriving_later_does_not_find_a_high_bid() public {
         vm.warp(block.timestamp + 30 days); // a month with an empty fund
         vm.startPrank(bob); usdg.mint(bob, 1_000e6); usdg.approve(address(fire), type(uint256).max);
-        for (uint256 i; i < 45; i++) fire.buyTicketsWithUsdg(10, type(uint256).max, ""); // $450 arrives (495 tickets)
+        for (uint256 i; i < 38; i++) fire.buyTicketsWithUsdg(10, type(uint256).max, ""); // $380 arrives (494 logs on day 1)
         vm.stopPrank();
         assertEq(fire.millBid(), MILL_BID, "starts climbing from the base only now");
         vm.warp(block.timestamp + 1 days);
@@ -437,7 +448,7 @@ contract FireTest is Test {
         assertEq(fire.millFundUsdg(), 10e6);
         assertEq(fire.pot(), 10 * PLANK_T, "PLANK leg as usual: all of it into the pot");
         (uint256 mine,) = fire.odds(bob);
-        assertEq(mine, 11, "10 bought + 1 free");
+        assertEq(mine, 13, "10 bought + 3 free on day 1");
     }
 
     function test_usdg_listing_paid_from_usdg_fund() public {

@@ -138,8 +138,11 @@ export const ETH_USD_PER_TICKET = 1.0;
 export const PLANK_USD_PER_TICKET = 0.9;
 
 /** Buy 10, get 1 free: tickets received for n paid (Fire.ticketsFor). */
-export function ticketsFor(n: number) {
-  return n === TX_CAP ? n + 1 : n;
+/** Free logs with a full throw of 10: 3 on a fire's first day, 2 on its second, 1 after that (Fire.ticketsFor). */
+export function freeLogs(night: number) { return night === 0 ? 3 : night === 1 ? 2 : 1; }
+/** Logs received for n paid, on a fire that has survived `night` nights. Every log is a ticket to win. */
+export function ticketsFor(n: number, night: number) {
+  return n === TX_CAP ? n + freeLogs(night) : n;
 }
 
 export const PAPER_USD_CAP = 0.33; // the PAPER part never costs more than this (Fire.PAPER_USD_CAP)
