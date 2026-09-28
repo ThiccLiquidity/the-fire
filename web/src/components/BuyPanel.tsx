@@ -3,12 +3,13 @@ import { DAILY_CAP, TX_CAP, type Pay, quote } from "../data/types";
 
 const OPENSEA = "https://opensea.io/collection/the-plank-press";
 const fmtPlank = (p: number) => p >= 1e9 ? `${(p / 1e9).toFixed(2)}B` : `${(p / 1e6).toFixed(0)}M`;
+const $ = (v: number) => `$${v.toFixed(2)}`;
 
 export function BuyPanel({
-  you, plankPerTicket, ethUsd, onBuy, onConnect, paused, usdgEnabled,
+  you, plankPerTicket, plankUsd, ethUsd, onBuy, onConnect, paused, usdgEnabled,
 }: {
   you: { address?: string; paper: number; plank: number; eth: number; usdg: number; remainingToday: number };
-  plankPerTicket: number; ethUsd: number;
+  plankPerTicket: number; plankUsd: number; ethUsd: number;
   onBuy: (n: number, pay: Pay, note: string) => Promise<void>;
   usdgEnabled?: boolean;
   onConnect?: () => Promise<void>;
@@ -25,6 +26,7 @@ export function BuyPanel({
   const canEth = you.eth >= q.eth && you.plank >= q.plank;
   const canUsdg = !!usdgEnabled && you.usdg >= q.usdg && you.plank >= q.plank;
   const overCap = n > you.remainingToday;
+  const plankUsdCost = q.plank * plankUsd; // dollar value of the PLANK leg
   const affordable = Math.min(Math.floor(you.paper), Math.floor(you.plank / plankPerTicket));
   const maxNow = Math.max(0, Math.min(affordable, you.remainingToday, TX_CAP));
 
@@ -51,7 +53,7 @@ export function BuyPanel({
     <aside className="buy">
       <div className="wallet">
         <div><b>{you.paper.toLocaleString(undefined, { maximumFractionDigits: 1 })}</b><span>PAPER</span></div>
-        <div><b>{you.plank >= 1e9 ? `${(you.plank / 1e9).toFixed(1)}B` : `${(you.plank / 1e6).toFixed(0)}M`}</b><span>PLANK</span></div>
+        <div><b>{you.plank >= 1e9 ? `${(you.plank / 1e9).toFixed(1)}B` : `${(you.plank / 1e6).toFixed(0)}M`}</b><span>PLANK · {$(you.plank * plankUsd)}</span></div>
         <div><b>{affordable}</b><span>tickets you can buy now</span></div>
       </div>
 
@@ -68,6 +70,7 @@ export function BuyPanel({
       {/* Path A: real PAPER */}
       <div className="path">
         <div className="path-head"><b>With your PAPER</b><span>{q.paper.toLocaleString()} PAPER + {fmtPlank(q.plank)} PLANK{off > 0 ? ` · ${off}% off` : ""}</span></div>
+        <p className="put-in">You're putting in <b>{$(plankUsdCost)} of PLANK</b> <small>+ {q.paper.toLocaleString()} PAPER (no market price yet)</small></p>
         <button className="cta" disabled={busy || paused || !canPaper || overCap} onClick={() => go("paper")}>
           {busy ? "Throwing…" : `Throw ${n} ${n === 1 ? "ticket" : "tickets"} in`}
         </button>
@@ -78,13 +81,14 @@ export function BuyPanel({
             {" "}— or buy paper from the fire below.
           </p>
         )}
-        {!canPaper && you.plank < q.plank && <p className="hint">Not enough PLANK. Swap for some in the box below.</p>}
+        {!canPaper && you.plank < q.plank && <p className="hint">Not enough PLANK — you're {$((q.plank - you.plank) * plankUsd)} short. Swap for some in the box below.</p>}
         {overCap && <p className="hint">Max {DAILY_CAP} tickets per wallet per day — you have {you.remainingToday} left today.</p>}
       </div>
 
       {/* Path B: paper from the fire */}
       <div className="path eth">
         <div className="path-head"><b>No PAPER? Buy paper from the fire</b><span>${q.usdg.toFixed(2)} in {usdgEnabled ? "ETH or USDG" : "ETH"} + {fmtPlank(q.plank)} PLANK</span></div>
+        <p className="put-in">You're putting in <b>{$(q.usdg + plankUsdCost)}</b> <small>({$(q.usdg)} for the paper + {$(plankUsdCost)} of PLANK)</small></p>
         <p className="hint strong">You pay dollars instead of PAPER — same ticket, at a premium (${(q.usdg / n).toFixed(2)} a ticket for the paper leg, roughly 3× what real PAPER costs). It goes to buying mills off the floor and burning them.</p>
         <div className="pay-row">
           {ethUsd > 0

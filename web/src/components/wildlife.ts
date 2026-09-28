@@ -10,12 +10,12 @@ const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
 // ---------- the stream: from under the wheel, toward the viewer, then along the bottom and off the right edge.
 // Cut into the ground (mud edge, bank, shallow sides, deeper middle), noise ripples drifting downstream.
-const RIVER_V1 = [[1093, 566], [1088, 592], [1072, 622], [1062, 652], [1082, 682], [1130, 702], [1200, 716], [1290, 728], [1400, 740]];
-const RIVER_V2 = [[1126, 594], [1112, 612], [1086, 636], [1066, 660], [1082, 684], [1130, 702], [1200, 716], [1290, 728], [1400, 740]];
+const RIVER_V1 = [[1093, 566], [1088, 592], [1072, 622], [1062, 652], [1082, 682], [1130, 702], [1200, 716], [1290, 728], [1420, 744], [1700, 790], [2200, 900]];
+const RIVER_V2 = [[1124, 582], [1112, 606], [1088, 632], [1070, 660], [1086, 686], [1130, 704], [1200, 716], [1290, 728], [1420, 744], [1700, 790], [2200, 900]];
 let riverPts = RIVER_V1;
 let poolAt: [number, number] = [1093, 574];
 /** pick the stream head that matches the press being drawn */
-export function useRiver(v2: boolean) { riverPts = v2 ? RIVER_V2 : RIVER_V1; poolAt = v2 ? [1126, 598] : [1093, 574]; }
+export function useRiver(v2: boolean) { riverPts = v2 ? RIVER_V2 : RIVER_V1; poolAt = v2 ? [1124, 586] : [1093, 574]; }
 export function riverAt(u: number): [number, number, number] {
   const P = riverPts, n = P.length - 1, i = Math.min(n - 1, Math.floor(u * n)), f = u * n - i;
   const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(n, i + 2)];
@@ -23,7 +23,7 @@ export function riverAt(u: number): [number, number, number] {
   const dcr = (a: number, b: number, c: number, d: number, t: number) => 0.5 * ((-a + c) + 2 * (2 * a - 5 * b + 4 * c - d) * t + 3 * (-a + 3 * b - 3 * c + d) * t * t);
   return [cr(p0[0], p1[0], p2[0], p3[0], f), cr(p0[1], p1[1], p2[1], p3[1], f), Math.atan2(dcr(p0[1], p1[1], p2[1], p3[1], f), dcr(p0[0], p1[0], p2[0], p3[0], f))];
 }
-const rw = (u: number) => 7 + u * u * 34 + u * 10;
+const rw = (u: number) => Math.min(44, 7 + u * u * 34 + u * 10);
 const NP = new Uint8Array(512); for (let i = 0; i < 256; i++) NP[i] = i; for (let i = 255; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [NP[i], NP[j]] = [NP[j], NP[i]]; } for (let i = 0; i < 256; i++) NP[i + 256] = NP[i];
 function vnoise(xx: number, yy: number) { const X = Math.floor(xx) & 255, Y = Math.floor(yy) & 255; const fx = xx - Math.floor(xx), fy = yy - Math.floor(yy); const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy); const h = (a: number, b: number) => NP[NP[a] + b] / 255; return lerp(lerp(h(X, Y), h(X + 1, Y), u), lerp(h(X, Y + 1), h(X + 1, Y + 1), u), v); }
 function riverOutline(x: Ctx, pad: number) {
@@ -181,61 +181,77 @@ export function drawMill2(x: Ctx, t: number, px: number, py: number, sc: number,
   x.strokeStyle = C.roofL; x.lineWidth = 6; x.beginPath(); x.moveTo(L - OV, top + 10); x.lineTo(0, RY); x.lineTo(Rt + OV, top + 10); x.stroke(); // bright edge
   x.strokeStyle = C.greenD; x.lineWidth = 3; x.beginPath(); x.moveTo(L - OV, top + 10 + TH); x.lineTo(0, RY + TH); x.lineTo(Rt + OV, top + 10 + TH); x.stroke();
 
-  // ---- the water wheel, edge-on with a hint of 3/4: a big drum on the right wall. Paddles scroll down the face.
-  const W = { x: Rt - 6, w: 128, cy: -122, r: 116 };
-  const axle = t * 0.012;
-  
-  // the far rim (back edge) as a darker slab
-  RR(W.x + 2, W.cy - W.r - 6, W.w - 12, W.r * 2 + 12, 22, C.beamD);
-  // paddles: y = cy + r*sin(th), thickness by cos(th); front half only
-  for (let i = 0; i < 16; i++) {
-    const th = (i / 16) * Math.PI * 2 + axle; const sn = Math.sin(th), c = Math.cos(th);
-    if (c <= 0.02) continue;
-    const yy = W.cy + W.r * sn, h = 5 + 13 * c, k = 0.5 + 0.5 * c;
-    x.fillStyle = `rgb(${Math.round(214 * k)},${Math.round(168 * k)},${Math.round(96 * k)})`; x.beginPath(); x.roundRect(W.x, yy - h / 2, W.w - 6, h, 3); x.fill();
-    x.fillStyle = `rgb(${Math.round(124 * k)},${Math.round(84 * k)},${Math.round(42 * k)})`; x.fillRect(W.x, yy + h / 2 - 3, W.w - 6, 3);
-  }
-  // near rim on the right: the wheel's circle seen at a steep angle — a narrow ellipse with spokes, axle end sticking out
-  const RX = W.x + W.w - 8;
-  x.fillStyle = C.beam; x.beginPath(); x.ellipse(RX, W.cy, 24, W.r + 4, 0, 0, 7); x.fill();
-  x.strokeStyle = C.green; x.lineWidth = 9; x.beginPath(); x.ellipse(RX, W.cy, 22, W.r, 0, 0, 7); x.stroke();
-  x.strokeStyle = C.gold; x.lineWidth = 3; x.beginPath(); x.ellipse(RX, W.cy, 15, W.r - 9, 0, 0, 7); x.stroke();
-  x.strokeStyle = C.beamD; x.lineWidth = 4; for (let i = 0; i < 8; i++) { const th = i * Math.PI / 8 + axle; x.beginPath(); x.moveTo(RX - 15 * Math.cos(th), W.cy - (W.r - 9) * Math.sin(th)); x.lineTo(RX + 15 * Math.cos(th), W.cy + (W.r - 9) * Math.sin(th)); x.stroke(); }
-  x.fillStyle = C.gold; x.beginPath(); x.ellipse(RX, W.cy, 7, 11, 0, 0, 7); x.fill();
-  R(RX + 6, W.cy - 7, 26, 14, C.greenD); R(RX + 28, W.cy - 10, 8, 20, C.green); // axle end + bearing post
-  R(RX + 30, W.cy, 8, W.r + 12, C.green); // post to the ground
-  // far-left rim edge peeking out
-  x.strokeStyle = C.green; x.lineWidth = 6; x.beginPath(); x.moveTo(W.x + 2, W.cy - W.r + 10); x.lineTo(W.x + 2, W.cy + W.r - 10); x.stroke();
-  // water: flume drops onto the top of the wheel; tailrace channel at the bottom running toward the viewer
-  R(W.x + 16, W.cy - W.r - 40, W.w - 30, 12, C.beamD); x.fillStyle = C.water; x.fillRect(W.x + 18, W.cy - W.r - 38, W.w - 34, 6);
-  x.fillStyle = `rgba(150,220,230,${0.7 - night * 0.25})`; for (let i = 0; i < 10; i++) { const u = (t * 0.05 + i * 0.1) % 1; x.fillRect(W.x + 26 + (i * 9) % (W.w - 44), W.cy - W.r - 30 + u * 26, 3, 9); }
-  const ty = W.cy + W.r - 6;
-  x.fillStyle = C.stoneG; x.beginPath(); x.moveTo(W.x - 6, ty); x.lineTo(W.x + W.w + 10, ty); x.lineTo(W.x + W.w + 30, ty + 44); x.lineTo(W.x - 26, ty + 44); x.closePath(); x.fill();
-  x.fillStyle = C.waterD; x.beginPath(); x.moveTo(W.x + 2, ty + 4); x.lineTo(W.x + W.w + 2, ty + 4); x.lineTo(W.x + W.w + 18, ty + 36); x.lineTo(W.x - 14, ty + 36); x.closePath(); x.fill();
-  for (let i = 0; i < 5; i++) { const yy = ty + 6 + i * 6; x.fillStyle = i % 2 ? C.water : C.waterD; x.fillRect(W.x - 2 - i * 2, yy, W.w + 4 + i * 4, 4); }
-  x.fillStyle = `rgba(230,250,255,${0.6 - night * 0.2})`; for (let i = 0; i < 12; i++) { const u = (t * 0.03 + i * 0.083) % 1; x.fillRect(W.x + ((i * 17) % (W.w + 8)) - u * 6, ty + 4 + u * 30, 4, 2); }
-  x.fillStyle = C.stone; x.fillRect(W.x - 28, ty + 40, W.w + 60, 8); x.fillRect(W.x - 10, ty - 4, 10, 46); x.fillRect(W.x + W.w + 4, ty - 4, 10, 46);
+  // ---- the water wheel: a real cylinder, axle running into the wall, seen from slightly to the right and above.
+  // Points on the drum: angle th around the axle -> y = cy + r sin(th), depth z = r cos(th) (toward the viewer).
+  // The view yaw shifts screen x by z * YAW, so paddles at the front bulge right and the rims are thin ellipses.
+  const W = { xL: Rt - 2, xR: Rt + 118, cy: -124, r: 112, rin: 84 };
+  const YAW = 0.19, PITCH = 0.10; // sin of the viewing angles
+  const axle = t * 0.012, N = 16;
+  const P = (xx: number, th: number, rr: number): [number, number] => [xx + rr * Math.cos(th) * YAW, W.cy + rr * Math.sin(th) - rr * Math.cos(th) * PITCH];
+  const paddle = (i: number, front: boolean) => {
+    const th = (i / N) * Math.PI * 2 + axle, c = Math.cos(th);
+    if (front ? c < 0 : c >= 0) return;
+    const a1 = P(W.xL, th, W.rin), a2 = P(W.xR, th, W.rin), b2 = P(W.xR, th, W.r), b1 = P(W.xL, th, W.r);
+    const k = front ? 0.55 + 0.45 * c : 0.28 + 0.12 * (1 + c);
+    x.fillStyle = `rgb(${Math.round(222 * k)},${Math.round(176 * k)},${Math.round(100 * k)})`;
+    x.beginPath(); x.moveTo(a1[0], a1[1]); x.lineTo(a2[0], a2[1]); x.lineTo(b2[0], b2[1]); x.lineTo(b1[0], b1[1]); x.closePath(); x.fill();
+    x.strokeStyle = `rgba(60,36,14,${front ? 0.7 : 0.4})`; x.lineWidth = 1.5; x.stroke();
+    // a lighter lip along the outer edge where the light catches it
+    x.strokeStyle = `rgba(255,236,190,${front ? 0.35 * k : 0})`; x.lineWidth = 2; x.beginPath(); x.moveTo(b1[0], b1[1]); x.lineTo(b2[0], b2[1]); x.stroke();
+  };
+  const order = (front: boolean) => Array.from({ length: N }, (_, i) => i).sort((i, j) => { const ci = Math.cos((i / N) * Math.PI * 2 + axle), cj = Math.cos((j / N) * Math.PI * 2 + axle); return front ? ci - cj : cj - ci; });
+  const rim = (xx: number, near: boolean) => {
+    const rx = W.r * YAW, ry = W.r;
+    x.save(); x.translate(xx, W.cy); x.rotate(-PITCH * 0.5);
+    x.strokeStyle = near ? C.green : C.greenD; x.lineWidth = near ? 11 : 8; x.beginPath(); x.ellipse(0, 0, rx, ry, 0, 0, 7); x.stroke();
+    x.strokeStyle = C.goldD; x.lineWidth = 2; x.beginPath(); x.ellipse(0, 0, rx * 0.8, ry - 7, 0, 0, 7); x.stroke();
+    if (near) { x.strokeStyle = C.beam; x.lineWidth = 4; for (let i = 0; i < 8; i++) { const th = i * Math.PI / 8 + axle; x.beginPath(); x.moveTo(0, 0); x.lineTo(rx * Math.cos(th), ry * Math.sin(th)); x.moveTo(0, 0); x.lineTo(-rx * Math.cos(th), -ry * Math.sin(th)); x.stroke(); }
+      x.fillStyle = C.gold; x.beginPath(); x.ellipse(0, 0, rx * 0.35, 12, 0, 0, 7); x.fill(); }
+    x.restore();
+  };
+  // shadow on the wall behind the wheel, then far rim, back paddles, hub shaft, front paddles, near rim
+  x.fillStyle = 'rgba(0,0,0,0.25)'; x.beginPath(); x.ellipse((W.xL + W.xR) / 2 - 6, W.cy + 10, (W.xR - W.xL) / 2 + 30, W.r + 16, 0, 0, 7); x.fill();
+  rim(W.xL, false);
+  for (const i of order(false)) paddle(i, false);
+  x.strokeStyle = C.beamD; x.lineWidth = 10; x.beginPath(); x.moveTo(W.xL, W.cy); x.lineTo(W.xR + 30, W.cy); x.stroke();
+  for (const i of order(true)) paddle(i, true);
+  rim(W.xR, true);
+  // axle end and bearing post to the ground
+  x.fillStyle = C.greenD; x.beginPath(); x.roundRect(W.xR + 14, W.cy - 9, 30, 18, 4); x.fill();
+  R(W.xR + 36, W.cy, 10, W.r + 12, C.green); R(W.xR + 28, W.cy + W.r + 6, 26, 6, C.greenD);
+  // water: the flume drops a sheet onto the top of the drum; it sheets down the front face and off the bottom
+  const fl = { x: W.xL + 10, y: W.cy - W.r - 46, w: W.xR - W.xL - 20 };
+  R(fl.x - 2, fl.y, fl.w + 4, 12, C.beamD); x.fillStyle = C.water; x.fillRect(fl.x, fl.y + 2, fl.w, 6);
+  x.fillStyle = `rgba(160,225,235,${0.75 - night * 0.25})`;
+  for (let i = 0; i < 14; i++) { const u = (t * 0.045 + i * 0.071) % 1; const xx = fl.x + 4 + (i * 13) % (fl.w - 8); x.fillRect(xx, fl.y + 10 + u * 34, 3, 10); }
+  for (let i = 0; i < 18; i++) { const u = (t * 0.03 + i * 0.055) % 1; const th = -Math.PI / 2 + u * Math.PI; const [px, py] = P(W.xL + 6 + (i * 17) % (W.xR - W.xL - 12), th, W.r + 5); x.globalAlpha = (0.7 - night * 0.2) * Math.sin(u * Math.PI); x.beginPath(); x.arc(px, py, 2, 0, 7); x.fill(); }
+  x.globalAlpha = 1;
+  // tailrace: stone channel running out toward the viewer
+  const ty = W.cy + W.r + 4;
+  x.fillStyle = C.stoneG; x.beginPath(); x.moveTo(W.xL - 6, ty); x.lineTo(W.xR + 16, ty); x.lineTo(W.xR + 36, ty + 44); x.lineTo(W.xL - 26, ty + 44); x.closePath(); x.fill();
+  x.fillStyle = C.waterD; x.beginPath(); x.moveTo(W.xL + 2, ty + 4); x.lineTo(W.xR + 8, ty + 4); x.lineTo(W.xR + 24, ty + 36); x.lineTo(W.xL - 14, ty + 36); x.closePath(); x.fill();
+  for (let i = 0; i < 5; i++) { const yy = ty + 6 + i * 6; x.fillStyle = i % 2 ? C.water : C.waterD; x.fillRect(W.xL - 2 - i * 2, yy, W.xR - W.xL + 12 + i * 4, 4); }
+  x.fillStyle = `rgba(230,250,255,${0.6 - night * 0.2})`; for (let i = 0; i < 12; i++) { const u = (t * 0.03 + i * 0.083) % 1; x.fillRect(W.xL + ((i * 17) % (W.xR - W.xL + 8)) - u * 6, ty + 4 + u * 30, 4, 2); }
+  x.fillStyle = C.stone; x.fillRect(W.xL - 28, ty + 40, W.xR - W.xL + 68, 8); x.fillRect(W.xL - 10, ty - 4, 10, 46); x.fillRect(W.xR + 10, ty - 4, 10, 46);
 
-  // ---- the paper machine out front: two green posts, a wide steel roller, a big white sheet hanging to the ground
+  // ---- the paper machine out front, kept to shapes that read at half size: two green posts, a steel roller,
+  // and a big white sheet coming off a roll and hanging to the ground
   const M = { x: -150, y: -12, w: 250 };
-  for (const pxx of [M.x, M.x + M.w - 12]) { R(pxx, M.y - 96, 12, 96, C.green); R(pxx - 10, M.y - 8, 32, 8, C.greenD); R(pxx + 3, M.y - 96, 3, 96, C.roofL); }
-  R(M.x - 4, M.y - 104, M.w + 8, 10, C.green); R(M.x - 4, M.y - 104, M.w + 8, 3, C.roofL);
-  // gears on the left post
-  for (const [gx, gy, gr, sp] of [[M.x + 6, M.y - 66, 12, 1], [M.x + 6, M.y - 40, 9, -1.3]] as [number, number, number, number][]) { x.fillStyle = C.gold; x.beginPath(); x.arc(gx, gy, gr, 0, 7); x.fill(); x.fillStyle = C.goldD; for (let i = 0; i < 8; i++) { x.save(); x.translate(gx, gy); x.rotate(i * Math.PI / 4 + t * 0.03 * sp); x.fillRect(gr - 2, -2.5, 5, 5); x.restore(); } x.fillStyle = C.greenD; x.beginPath(); x.arc(gx, gy, 3, 0, 7); x.fill(); }
-  // the steel roller across the top
-  x.fillStyle = C.steelD; x.beginPath(); x.roundRect(M.x + 14, M.y - 92, M.w - 40, 32, 16); x.fill();
-  x.fillStyle = C.steel; x.beginPath(); x.roundRect(M.x + 16, M.y - 90, M.w - 44, 14, 7); x.fill();
-  x.fillStyle = C.gold; for (const gx of [M.x + 14, M.x + M.w - 26]) { x.beginPath(); x.arc(gx, M.y - 76, 7, 0, 7); x.fill(); }
-  // a second, smaller roller below on the right, brass ends
-  x.fillStyle = C.steelD; x.beginPath(); x.roundRect(M.x + 120, M.y - 50, M.w - 150, 18, 9); x.fill(); x.fillStyle = C.gold; x.beginPath(); x.arc(M.x + 120, M.y - 41, 6, 0, 7); x.arc(M.x + M.w - 30, M.y - 41, 6, 0, 7); x.fill();
-  // the paper: comes off the big roller on the left and hangs down as a wide white sheet, curling at the floor
-  x.fillStyle = C.paper; x.beginPath(); x.moveTo(M.x + 30, M.y - 78); x.lineTo(M.x + 150, M.y - 78); x.lineTo(M.x + 150, M.y - 14); x.quadraticCurveTo(M.x + 150, M.y + 2, M.x + 130, M.y + 2); x.lineTo(M.x + 40, M.y + 2); x.quadraticCurveTo(M.x + 26, M.y + 2, M.x + 30, M.y - 14); x.closePath(); x.fill();
-  x.fillStyle = C.paperD; x.fillRect(M.x + 30, M.y - 78, 120, 3); x.fillRect(M.x + 146, M.y - 74, 4, 72);
-  x.fillStyle = C.paper; x.beginPath(); x.roundRect(M.x + 24, M.y - 92, 132, 30, 15); x.fill(); // the roll itself over the roller
-  x.fillStyle = C.paperD; x.beginPath(); x.ellipse(M.x + 154, M.y - 77, 7, 14, 0, 0, 7); x.fill(); x.fillStyle = C.paper; x.beginPath(); x.ellipse(M.x + 154, M.y - 77, 3, 6, 0, 0, 7); x.fill();
-  // a green wheel on the left post, a drive belt to the right
-  x.fillStyle = C.green; x.beginPath(); x.arc(M.x + 6, M.y - 20, 11, 0, 7); x.fill(); x.fillStyle = C.gold; x.beginPath(); x.arc(M.x + 6, M.y - 20, 4, 0, 7); x.fill();
-  x.strokeStyle = C.greenD; x.lineWidth = 3; x.beginPath(); x.moveTo(M.x + 160, M.y - 34); x.lineTo(M.x + M.w - 30, M.y - 34); x.stroke();
+  for (const pxx of [M.x, M.x + M.w - 14]) { R(pxx, M.y - 98, 14, 98, C.green); R(pxx - 10, M.y - 8, 34, 8, C.greenD); R(pxx + 4, M.y - 98, 3, 98, C.roofL); }
+  R(M.x - 4, M.y - 106, M.w + 8, 12, C.green); R(M.x - 4, M.y - 106, M.w + 8, 3, C.roofL);
+  // steel roller across the top
+  x.fillStyle = C.steelD; x.beginPath(); x.roundRect(M.x + 16, M.y - 94, M.w - 32, 34, 17); x.fill();
+  x.fillStyle = C.steel; x.beginPath(); x.roundRect(M.x + 18, M.y - 92, M.w - 36, 14, 7); x.fill();
+  x.fillStyle = C.gold; for (const gx of [M.x + 16, M.x + M.w - 16]) { x.beginPath(); x.arc(gx, M.y - 77, 8, 0, 7); x.fill(); }
+  // the sheet: wide, white, outlined, curling at the floor
+  x.beginPath(); x.moveTo(M.x + 40, M.y - 78); x.lineTo(M.x + 170, M.y - 78); x.lineTo(M.x + 170, M.y - 14); x.quadraticCurveTo(M.x + 170, M.y + 4, M.x + 150, M.y + 4); x.lineTo(M.x + 52, M.y + 4); x.quadraticCurveTo(M.x + 36, M.y + 4, M.x + 40, M.y - 14); x.closePath();
+  x.fillStyle = C.paper; x.fill(); x.strokeStyle = C.paperD; x.lineWidth = 2; x.stroke();
+  x.fillStyle = C.paperD; x.fillRect(M.x + 40, M.y - 78, 130, 3); x.fillRect(M.x + 165, M.y - 74, 4, 72);
+  // the roll itself over the roller, with its end showing
+  x.fillStyle = C.paper; x.beginPath(); x.roundRect(M.x + 34, M.y - 96, 142, 34, 17); x.fill(); x.strokeStyle = C.paperD; x.lineWidth = 2; x.stroke();
+  x.fillStyle = C.paperD; x.beginPath(); x.ellipse(M.x + 176, M.y - 79, 8, 16, 0, 0, 7); x.fill(); x.fillStyle = C.paper; x.beginPath(); x.ellipse(M.x + 176, M.y - 79, 3.5, 7, 0, 0, 7); x.fill();
+  // one gear on the left post, brass
+  x.fillStyle = C.gold; x.beginPath(); x.arc(M.x + 7, M.y - 50, 13, 0, 7); x.fill(); x.fillStyle = C.goldD; for (let i = 0; i < 8; i++) { x.save(); x.translate(M.x + 7, M.y - 50); x.rotate(i * Math.PI / 4 + t * 0.03); x.fillRect(11, -3, 6, 6); x.restore(); } x.fillStyle = C.greenD; x.beginPath(); x.arc(M.x + 7, M.y - 50, 3.5, 0, 7); x.fill();
 
   // ---- a little pine and grass to the left, like the reference
   x.fillStyle = C.roof; x.beginPath(); x.moveTo(-262, -12); x.lineTo(-228, -150); x.lineTo(-194, -12); x.closePath(); x.fill();

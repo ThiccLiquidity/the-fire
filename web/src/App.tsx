@@ -12,6 +12,7 @@ import { ProfileEditor } from "./components/ProfileEditor";
 const FIRE_ADDRESS = import.meta.env.VITE_FIRE_ADDRESS as `0x${string}` | undefined;
 const api: FireApi = FIRE_ADDRESS ? makeChainApi(FIRE_ADDRESS) : makeMockApi();
 const LIVE = !!FIRE_ADDRESS;
+if (!LIVE) (window as unknown as { __fire?: FireApi }).__fire = api; // demo: lets the playground/tests poke the mock
 
 function usd(plank: number, px: number) {
   if (!px) return "$—"; // no PLANK price yet: say so rather than guess
@@ -61,7 +62,7 @@ export default function App() {
   const potPlank = wake ? st!.potPlank ?? s.potPlank : s.potPlank;
   const fireId = wake ? st!.fireId : s.fireId;
   const potSub = wake
-    ? `went out on night ${st!.night}`
+    ? `went out on night ${st!.night}${st!.tickets ? ` · ${st!.tickets.toLocaleString()} tickets` : ""}`
     : s.night === 0 ? (st && !st.survived && age < C.DONE ? "just lit" : "lit today") : `${nights(s.night)} survived`;
 
   let forecast: [string, string];
@@ -79,7 +80,7 @@ export default function App() {
     if (st.survived && age >= C.VERDICT && age < C.VERDICT_END) {
       card = <div className="verdict ok" role="alert"><b>The fire survived night {st.night}.</b> The storm took {Math.min(99, Math.round(st.strength / Math.max(1, st.size) * 100))}% of it.</div>;
     } else if (!st.survived && age >= C.OUT_CARD && age < C.WINNER) {
-      card = <div className="verdict out" role="alert"><b>The fire went out.</b> Fire #{st.fireId} burned for {nights(st.night)} with {(st.tickets ?? 0).toLocaleString()} tickets in it. One of them wins.</div>;
+      card = null; // the tickets rise out of the embers in the scene; the winner card follows
     } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT && NOBODY.test(st.winner ?? "")) {
       card = <div className="verdict out" role="alert"><b>Nobody had a ticket in fire #{st.fireId}.</b> The whole pot carries to the next fire.</div>;
     } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT) {
@@ -122,6 +123,7 @@ export default function App() {
 
       <div className={"pot" + (wake ? " wake" : "")}>
         <span className="pot-usd">{usd(potPlank, s.plankUsd)}</span>
+        {!wake && <span className="pot-take">winner takes <b>{usd(potPlank * 0.38, s.plankUsd)}</b></span>}
         <span className="pot-sub">{mPlank(potPlank)} PLANK · Fire #{fireId} · {potSub}</span>
         {!wake && s.night === 0 && lastWinner && !NOBODY.test(lastWinner.winner) && (
           <span className="pot-last"><Avatar addr={lastWinner.winner} profile={prof(lastWinner.winner)} size={18} /> {name(lastWinner.winner)} won {usd(lastWinner.potPlank * 0.38, s.plankUsd)} last night</span>
@@ -169,7 +171,7 @@ export default function App() {
 
         <div className="right">
           <ProfileEditor addr={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onSave={api.setProfile} />
-          <BuyPanel you={s.you} plankPerTicket={s.plankPerTicket} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} usdgEnabled={s.usdgEnabled} />
+          <BuyPanel you={s.you} plankPerTicket={s.plankPerTicket} plankUsd={s.plankUsd} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} usdgEnabled={s.usdgEnabled} />
           <Swap />
         </div>
       </main>

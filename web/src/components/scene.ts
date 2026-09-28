@@ -49,6 +49,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   const trees: { x: number; s: number; y: number }[] = [];
   for (let i = 0; i < 48; i++) { const side = i % 2 ? 1 : -1; const tx = side * (330 + i * 52 + ((i * 37) % 50)); if (tx > 300 && tx < 600) continue; /* a clearing for the mill */ trees.push({ x: tx, s: 0.85 + ((i * 7) % 6) * 0.11, y: (i * 13) % 30 }); }
   const wild = createWildlife(trees.map((tr) => tr.x));
+  const SCRAPS = Array.from({ length: 220 }, () => ({ phase: Math.random() * 6.283, r: 0.4 + Math.random() * 0.6, h: 0.7 + Math.random() * 0.5, spin: Math.random() * 2, delay: Math.random() }));
   const stars = Array.from({ length: 90 }, () => [Math.random(), Math.random() * .55, .6 + Math.random() * 1.2, .3 + Math.random() * .6]);
   const clouds = Array.from({ length: 14 }, (_, i) => ({ x: (i / 14) * 1.6 - 0.3, y: 0.02 + ((i * 37) % 50) / 100 * 0.28, s: 0.7 + ((i * 13) % 7) * 0.12, v: 0.0006 + ((i * 7) % 5) * 0.0002 }));
   const embers = Array.from({ length: 220 }, () => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1 }));
@@ -245,6 +246,41 @@ export function createScene(canvas: HTMLCanvasElement) {
     }
 
     if (inp.wild) { wild.draw(x, t, night, "front"); wild.step(night); }
+
+    // the reveal: when the fire has died, every ticket rises out of the embers as a glowing scrap, swirls up,
+    // and thins to one that drifts down to where the winner card appears
+    if (inp.storm && !inp.storm.survived) {
+      const age = Date.now() - inp.storm.at, start = C.OUT_CARD - 3_000, end = C.WINNER + 1_500;
+      if (age > start && age < end) {
+        const p = (age - start) / (end - start); // 0..1
+        const nT = Math.min(SCRAPS.length, Math.max(12, Math.round(Math.sqrt(inp.storm.tickets ?? 100) * 6)));
+        x.save(); x.globalCompositeOperation = "lighter";
+        for (let i = 0; i < nT; i++) {
+          const sc = SCRAPS[i];
+          const born = sc.delay * 0.35; // stagger: scraps keep leaving the embers through the first third
+          if (p < born) continue;
+          const q = Math.min(1, (p - born) / (1 - born)); // this scrap's own progress
+          const survives = i === 0; // scrap 0 is the winner
+          // rising spiral: angle turns with time, radius swells then narrows, height climbs
+          const ang = sc.phase + q * (5 + sc.spin) * Math.PI;
+          const rad = (30 + 200 * Math.sin(q * Math.PI) * sc.r) * (survives ? Math.max(0.15, 1 - Math.max(0, q - 0.7) / 0.3) : 1);
+          const px = 600 + Math.cos(ang) * rad, py = base - 30 - q * 250 * sc.h + Math.sin(ang) * rad * 0.18;
+          // everyone else burns away over the last third; the winner grows and settles
+          const fade = survives ? 1 : Math.max(0, 1 - Math.max(0, q - 0.62) / 0.3);
+          if (fade <= 0) continue;
+          const size = (survives ? 6 + q * 14 : 5 + sc.r * 4) * (0.8 + 0.2 * Math.sin(t * 0.2 + i));
+          const settle = survives ? Math.max(0, (q - 0.8) / 0.2) : 0; // the winner glides to where its card will appear
+          x.save(); x.translate(px + (600 - px) * settle, py + (340 - py) * settle); x.rotate(ang * 0.6 + sc.phase);
+          x.globalAlpha = fade * (0.55 + 0.45 * Math.sin(t * 0.15 + i));
+          // glow without shadowBlur (which stalls the frame with hundreds of scraps): a soft halo then the scrap
+          x.fillStyle = survives ? "rgba(255,170,60,0.35)" : "rgba(255,140,40,0.22)"; x.fillRect(-size * 1.3, -size * 1.5, size * 2.6, size * 3);
+          x.fillStyle = survives ? "#ffd166" : `hsl(${28 + sc.r * 20} 100% ${60 + sc.r * 15}%)`;
+          x.fillRect(-size * 0.6, -size * 0.8, size * 1.2, size * 1.6);
+          x.restore();
+        }
+        x.restore();
+      }
+    }
 
     // rain + flash
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
