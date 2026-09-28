@@ -177,7 +177,7 @@ export default function App() {
 
           <div className="ticker" aria-label="Recent buys">
             {s.feed.slice(0, 8).map((f) => f.kind === "mill" ? (
-              <span key={f.id} className="tick">🔥 The fire bought a mill off the floor and burned it</span>
+              <span key={f.id} className="tick">🔥 The fire bought a press off the floor and burned it</span>
             ) : (
               <span key={f.id} className="tick">
                 <Avatar addr={f.who} profile={prof(f.who)} size={18} /> <span className="tick-name" title={f.who}>{name(f.who)}</span> <em>{f.title}</em> {f.tickets} {f.tickets === 1 ? "log" : "logs"}{f.fromFire ? " · paid in dollars" : ""}
@@ -201,11 +201,11 @@ export default function App() {
                   <dl>
                     <dt>{fmtCount(s.burnedPaperAllTime)}</dt><dd>PAPER burned</dd>
                     <dt>{mPlank(s.burnedPlankAllTime)}</dt><dd>PLANK burned</dd>
-                    <dt>{fmtCount(s.millsEaten)}</dt><dd>mills eaten</dd>
+                    <dt>{fmtCount(s.millsEaten)}</dt><dd>presses eaten</dd>
                   </dl>
                 </>
               )}
-              <p className="fine">Every $1 paid in ETH or USDG goes toward buying mills off the floor and burning them. The PLANK inside goes to the Paper Mill royalty pool. Next mill: the fire bids ${fmtCount(s.millBidUsd)}, and has {fmtAmt(s.millFundEth)} ETH{s.usdgEnabled ? ` + $${fmtCount(s.millFundUsdg)} USDG` : ""} saved.</p>
+              <p className="fine">Every $1 paid in ETH or USDG goes toward buying presses off the floor and burning them. The PLANK inside goes to the Paper Press royalty pool. Next press: the fire bids ${fmtCount(s.millBidUsd)}, and has {fmtAmt(s.millFundEth)} ETH{s.usdgEnabled ? ` + $${fmtCount(s.millFundUsdg)} USDG` : ""} saved.</p>
             </div>
             <div className="archive">
               <h2>Past fires</h2>
@@ -240,7 +240,7 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Throw logs on the fire with PAPER and PLANK; every log is a ticket to win. PAPER burns. All the PLANK goes into the fire's pot. Every night at 8 PM MST a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one log wins 40% of the pot; 25% burns; 5% goes to the Paper Mill royalty pool; 30% lights the next fire.</p>
+        <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Throw logs on the fire with PAPER and PLANK; every log is a ticket to win. PAPER burns. All the PLANK goes into the fire's pot. Every night at 8 PM MST a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one log wins 40% of the pot; 25% burns; 5% goes to the Paper Press royalty pool; 30% lights the next fire.</p>
         {api.demo && <Playground s={s} d={api.demo} hour={demoHour} onHour={setDemoHour} onSceneOpt={(k, on) => { if (k === "press2") setPress2(on); }} />}
       </footer>
     </div>

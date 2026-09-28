@@ -1,12 +1,15 @@
-// Swap for PLANK or PAPER. Live: any token on the Uniswap V2 router that hosts the PLANK/WETH pool, through any
-// injected wallet. Demo: the same panel on pretend pools with play money: it never touches a wallet or an RPC.
-// Replace with the community aggregator later by swapping this component out (App.tsx renders <Swap/> in one place).
+// Swap for PLANK or PAPER, or anything. ETH, PLANK, PAPER and USDG are the presets; any other token by address.
+// Live: KyberSwap's aggregator (best price across every pool, The Fire's 0.5% fee), every transaction checked by
+// checkSwap() before the wallet sees it; if KyberSwap can't quote, the Uniswap V2 router that hosts the PLANK/WETH pool
+// (no fee). Demo: the same panel on pretend pools with play money: it never touches a wallet or an RPC.
 
 import { useEffect, useRef, useState } from "react";
 import { createPublicClient, http, formatUnits, parseUnits, parseAbi, type Address, type PublicClient, isAddress } from "viem";
 import type { DemoControls, DemoToken, FireState } from "../data/types";
 import { fmtAmt, fmtUsd } from "../format";
 import { robinhood, connectWallet, waitOk, txUrl, TxPending, friendly } from "../data/wallet";
+import { kyberRoute, kyberBuild, checkSwap, KYBER_ROUTER, type KyberRoute } from "../data/kyber";
+import { SWAP_FEE_BPS, SWAP_FEE_WALLET } from "../data/types";
 
 export const ROUTER: Address = "0x89e5DB8B5aA49aA85AC63f691524311AEB649eba";
 export const WETH: Address = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
@@ -53,7 +56,8 @@ function Sel({ tokens, v, set, label }: { tokens: Tok[]; v: Tok; set: (t: Tok) =
   );
 }
 
-type Quote = { key: string; at: number; out: number; outRaw?: bigint; path?: Address[]; impact: number };
+type Quote = { key: string; at: number; out: number; outRaw?: bigint; path?: Address[]; impact: number; kyber?: KyberRoute; fee: number };
+const FEE = SWAP_FEE_BPS / 10_000;
 
 export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
   const isDemo = !!demo;
@@ -100,17 +104,28 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
     if (!(n > 0) || from.address === to.address) return null;
     if (demo) {
       const r = demo.swapQuote(from.symbol as DemoToken, to.symbol as DemoToken, n);
-      return r ? { key, at: Date.now(), out: r.out, impact: r.impact } : null;
+      return r ? { key, at: Date.now(), out: r.out, impact: r.impact, fee: n * FEE } : null;
     }
     let amountIn: bigint;
     try { amountIn = parseUnits(amt, from.decimals); } catch { return null; }
+    // KyberSwap first (8s at most); the direct V2 route if it has nothing.
+    try {
+      const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 8_000);
+      const k = await kyberRoute(from.address, to.address, amountIn, ac.signal).finally(() => clearTimeout(t));
+      if (k) {
+        const sm = k.summary as { amountInUsd?: string; amountOutUsd?: string };
+        const inUsd = Number(sm.amountInUsd), outUsd = Number(sm.amountOutUsd);
+        const impact = inUsd > 0 && outUsd > 0 ? Math.max(0, 1 - outUsd / (inUsd * (SWAP_FEE_WALLET ? 1 - FEE : 1))) : 0;
+        return { key, at: Date.now(), out: Number(formatUnits(k.amountOut, to.decimals)), outRaw: k.amountOut, impact, kyber: k, fee: SWAP_FEE_WALLET ? n * FEE : 0 };
+      }
+    } catch { /* fall through to the V2 route */ }
     const best = await bestRoute(from, to, amountIn);
     if (!best) return null;
     // price impact: this amount's rate vs a tiny amount's rate on the same route
     const tiny = amountIn / 1000n > 0n ? amountIn / 1000n : 1n;
     const spot = await bestRoute(from, to, tiny, best.path);
     const rate = Number(best.out) / Number(amountIn), spotRate = spot ? Number(spot.out) / Number(tiny) : rate;
-    return { key, at: Date.now(), out: Number(formatUnits(best.out, to.decimals)), outRaw: best.out, path: best.path, impact: spotRate > 0 ? Math.max(0, 1 - rate / spotRate) : 0 };
+    return { key, at: Date.now(), out: Number(formatUnits(best.out, to.decimals)), outRaw: best.out, path: best.path, impact: spotRate > 0 ? Math.max(0, 1 - rate / spotRate) : 0, fee: 0 };
   }
   async function requote() {
     const id = ++seq.current;
@@ -168,6 +183,23 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
         // minOut comes from the quote you saw; if the market has already moved past your slippage, stop here.
         const slipBps = BigInt(Math.round(slip * 10_000));
         const minOut = (seen.outRaw! * (10_000n - slipBps)) / 10_000n;
+        if (seen.kyber) {
+          const tx = await kyberBuild(seen.kyber, acct, Number(slipBps));
+          checkSwap(tx, { from: from.address, to: to.address, amountIn, minOut, account: acct }); // throws before the wallet sees anything wrong
+          if (from.address !== "ETH") {
+            const allowance = await pub.readContract({ address: from.address, abi: erc20, functionName: "allowance", args: [acct, KYBER_ROUTER] });
+            if (allowance < amountIn) { // exactly this swap's amount, never unlimited
+              const h = await wc.writeContract({ address: from.address, abi: erc20, functionName: "approve", args: [KYBER_ROUTER, amountIn], account: acct, chain: robinhood });
+              await waitOk(pub, h, `approving ${from.symbol}`);
+            }
+          }
+          const hash = await wc.sendTransaction({ to: KYBER_ROUTER, data: tx.data, value: tx.value, account: acct, chain: robinhood });
+          await waitOk(pub, hash, "the swap");
+          setMsg(<>Swapped. <a href={txUrl(hash)} target="_blank" rel="noreferrer">View on explorer</a></>);
+          setImpactOk(false);
+          void requote();
+          return;
+        }
         const fresh = await bestRoute(from, to, amountIn, seen.path);
         if (!fresh || fresh.out < minOut) throw new Error(`The price moved more than your ${slip * 100}% slippage. Check the new quote.`);
         const p = seen.path!;
@@ -227,10 +259,11 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
               {busy ? "Swapping…" : short ? `Not enough ${from.symbol}` : loading && stale ? "Getting a price…" : stale ? "Swap" : bigImpact && impactOk ? `Swap anyway (${(q!.impact * 100).toFixed(1)}% impact)` : `Swap ${from.symbol} → ${to.symbol}`}
             </button>
           </div>
+          {q && q.key === key && q.fee > 0 && <p className="fine muted">Swap fee {SWAP_FEE_BPS / 100}% ({fmtAmt(q.fee)} {from.symbol}) goes to The Fire.</p>}
           {q && q.key === key && !stale && <p className="fine muted">You get at least {fmtAmt(q.out * (1 - slip))} {to.symbol}{isDemo && to.symbol === "PLANK" ? ` (${fmtUsd(q.out * s.plankUsd)})` : ""}, or it doesn't go through.</p>}
           {!isDemo && <div className="swap-custom"><input placeholder="Other token address (0x…)" value={custom_} onChange={(e) => setCustom(e.target.value)} /><button onClick={addCustom}>Add</button></div>}
           {msg && <p className="fine">{msg}{pendingHash && <> <button className="linkish" onClick={() => { setPendingHash(""); setMsg(""); }}>Dismiss</button></>}</p>}
-          <p className="fine muted">{isDemo ? "Demo swap: pretend pools, play money. " : "Uniswap V2 on Robinhood Chain. "}Routes through WETH, USDG or PLANK, whichever gives the most.</p>
+          <p className="fine muted">{isDemo ? "Demo swap: pretend pools, play money. " : q?.kyber ? "Best price across every pool on Robinhood Chain, by KyberSwap. Your wallet only approves this swap's exact amount. " : "Uniswap V2 on Robinhood Chain, no fee (KyberSwap had no route). "}{isDemo || !q?.kyber ? "Routes through WETH, USDG or PLANK, whichever gives the most." : ""}</p>
         </div>
       )}
     </div>

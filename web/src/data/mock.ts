@@ -13,6 +13,7 @@ import {
   DAILY_CAP,
   FULL_DAYS,
   PRIZE_CAP_MULT,
+  SWAP_FEE_BPS,
   stormLook,
   KEEP,
   PLANK_USD_PER_TICKET,
@@ -37,7 +38,7 @@ const PRICE_MOVED = "The price moved at tonight's storm — check the new price 
 
 const wallets = Array.from({ length: 40 }, (_, i) => "0x" + (0x7a3e1c + i * 9973).toString(16).padStart(40, "a"));
 const notes = [
-  "gm from 1 mill", "for the boys", "wildfire or nothing", "burn it all", "printed this morning",
+  "gm from 1 press", "for the boys", "wildfire or nothing", "burn it all", "printed this morning",
   "logs on the fire", "not tonight storm", "one more for luck", "paper go brrr", "we ride at 8", "", "", "",
 ];
 function rnd(n: number) { return Math.floor(Math.random() * n); }
@@ -172,7 +173,7 @@ export function makeMockApi(): FireApi {
     w.s = { ...w.s, feed: [b, ...w.s.feed].slice(0, 40) };
   }
 
-  /** The fire buys a mill off the floor with one side of the fund (a listing is in ETH or USDG), then burns it. */
+  /** The fire buys a press off the floor with one side of the fund (a listing is in ETH or USDG), then burns it. */
   function eatMill(paidUsd: number, side: "eth" | "usdg") {
     const s = w.s;
     w.s = {
@@ -279,7 +280,7 @@ export function makeMockApi(): FireApi {
       }
       const pot = s.potPlank;
       const nobody = winner === NOBODY;
-      // 40% to the winner, 25% burns, 5% to the Paper Mill royalty pool, the rest carries. The split is taken from the pot or
+      // 40% to the winner, 25% burns, 5% to the Paper Press royalty pool, the rest carries. The split is taken from the pot or
       // from 20x what this fire's tickets put in, if smaller (Fire.sol's prize cap). No tickets: the whole pot carries.
       const base = nobody ? 0 : Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - s.potCarriedIn));
       const paid = base * 0.4;
@@ -327,12 +328,12 @@ export function makeMockApi(): FireApi {
     if (from === to || !(amountIn > 0)) return undefined;
     const pa = price(from), pb = price(to);
     if (!(pa > 0) || !(pb > 0)) return undefined; // no market (e.g. PAPER at $0)
-    const x = amountIn * pa * 0.997;
+    const x = amountIn * (1 - SWAP_FEE_BPS / 10_000) * pa * 0.997; // The Fire's 0.5% comes off the top, like the live swap
     const usd = from === "USDG" ? x : (DEPTH[from] * x) / (DEPTH[from] + x);
     const y = usd * (to === "USDG" ? 1 : 0.997);
     const outUsd = to === "USDG" ? y : (DEPTH[to] * y) / (DEPTH[to] + y);
     const out = outUsd / pb;
-    const spot = (amountIn * pa) / pb * 0.997 * (from === "USDG" || to === "USDG" ? 1 : 0.997);
+    const spot = (amountIn * (1 - SWAP_FEE_BPS / 10_000) * pa) / pb * 0.997 * (from === "USDG" || to === "USDG" ? 1 : 0.997);
     return { out, impact: Math.max(0, 1 - out / spot) };
   }
   const bal = (a: Acct, t: DemoToken) => (t === "ETH" ? a.eth : t === "PLANK" ? a.plank : t === "PAPER" ? a.paper : a.usdg);
@@ -350,8 +351,10 @@ export function makeMockApi(): FireApi {
     },
     setPending: (on) => { w.s = { ...w.s, rollPending: on, rollAction: on ? "deliver" : undefined }; emit(); },
     set: (patch) => {
-      // Prices move the market; the ticket's PLANK and PAPER amounts follow at most 5% a night, like the contract.
+      // Prices move the market. The PLANK part of a log follows right away (the contract reads a 30-minute average);
+      // the PAPER part follows at most 5% a night, like the contract.
       w.s = { ...w.s, ...patch };
+      if (patch.plankUsd) w.s = { ...w.s, plankPerTicket: plankTarget() };
       emit();
     },
     setYou: (patch) => {

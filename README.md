@@ -59,24 +59,24 @@ Deploy env vars: copy `contracts/.env.example` to `contracts/.env` (details at t
   fails and nothing is taken. Extra ETH comes straight back. The site asks for an exact approval for each buy, never an
   open-ended one.
 - **Where it goes:** PAPER is burned. All your PLANK goes into the pot; 25% of every pot that pays out is burned. The $1 in ETH or USDG goes to
-  the mill fund, which can only buy a mill at or under the fire's bid and burn it in the same transaction.
-- **The pot only leaves by the rules:** when the fire goes out, 40% to the winner, 25% burned, 5% to the Paper Mill
+  the press fund, which can only buy a press at or under the fire's bid and burn it in the same transaction.
+- **The pot only leaves by the rules:** when the fire goes out, 40% to the winner, 25% burned, 5% to the Paper Press
   royalty pool, 30% to the next fire. If the prize can't be sent, it waits for the winner to `claim` it.
 - **If the randomness dies for 7 days,** anyone can end the game and every ticket holder of the current fire takes back
   their share of the pot with `refund`.
-- **Out of our control:** the PLANK and USDG token contracts' own rules; the Paper Mill contract's admin (it can pause the
-  mill contract, and decides whether the royalty pool counts PLANK); Chainlink's ETH/USD feed (if it stops, the ETH
-  option closes, the PLANK price holds, and the mill fund can only spend its USDG); drand (if it stops, rolls wait, then re-roll, then the 7-day refund).
+- **Out of our control:** the PLANK and USDG token contracts' own rules; the Paper Press contract's admin (it can pause the
+  press contract, and decides whether the royalty pool counts PLANK); Chainlink's ETH/USD feed (if it stops, the ETH
+  option closes, the PLANK price holds, and the press fund can only spend its USDG); drand (if it stops, rolls wait, then re-roll, then the 7-day refund).
 - Tickets are a burn, not an investment. Expect back ~22¢ per dollar on average; the rest is burned or funds the game.
 
 ## Security model, in one paragraph
 
 The pot lives inside `Fire.sol`. There is no owner, no withdraw, no pause. PLANK enters through ticket buys (and the
-PLANK released by burning a mill, which is passed straight to the Paper Mill royalty pool); pot PLANK only leaves
-through the rules (winner 40% / burn 25% / Paper Mill royalty pool 5% / next fire 30%), an unpaid prize's `claim`, or
+PLANK released by burning a press, which is passed straight to the Paper Press royalty pool); pot PLANK only leaves
+through the rules (winner 40% / burn 25% / Paper Press royalty pool 5% / next fire 30%), an unpaid prize's `claim`, or
 the 7-day `refund`. ETH and USDG only leave through `eatMillFromSeaport`, which pays only if a Seaport listing at or
-under the bid fills and the mill is burned in the same transaction. Anyone can fill the bid with any listing,
-their own included; that's the point. A mill safe-sent to the Fire bounces. Randomness comes from drand through an
+under the bid fills and the press is burned in the same transaction. Anyone can fill the bid with any listing,
+their own included; that's the point. A press safe-sent to the Fire bounces. Randomness comes from drand through an
 ownerless router that anyone can fulfill. The deploy wallet and the keeper have no special powers.
 
 ## Before mainnet

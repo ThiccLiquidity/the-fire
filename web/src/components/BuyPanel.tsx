@@ -143,7 +143,7 @@ export function BuyPanel({
       {/* 1. choose how to pay for the PAPER part (nothing is spent here) */}
       <div className="payfor">
         <div className="payfor-head"><span>Pay with</span><button className="info-btn" onClick={() => setWhy(!why)} aria-expanded={why}>why $1?</button></div>
-        {why && <p className="fine">No PAPER? Pay $1 a log in ETH or USDG instead. That $1 goes toward buying mills off the floor and burning them, which sends the PLANK inside to the Paper Mill royalty pool. Same log, same PLANK.</p>}
+        {why && <p className="fine">No PAPER? Pay $1 a log in ETH or USDG instead. That $1 goes toward buying presses off the floor and burning them, which sends the PLANK inside to the Paper Press royalty pool. Same log, same PLANK.</p>}
         <div className="seg" role="radiogroup" aria-label="Pay with">
           <button role="radio" aria-checked={pay === "paper"} className={pay === "paper" ? "on" : ""} onClick={() => choose("paper")}>PAPER<small>{fmtPaper(paperPerTicket)} a log</small></button>
           <button role="radio" aria-checked={pay === "eth"} className={pay === "eth" ? "on" : ""} disabled={!ethOn} onClick={() => choose("eth")}>ETH<small>{ethOn ? "$1 a log" : "paused (price feed late)"}</small></button>
@@ -175,7 +175,7 @@ export function BuyPanel({
         {deadEnd ? (
           <p className="hint">You have no PAPER, ETH is paused (price feed late){usdgEnabled ? "" : " and USDG is off"}. Swap for PAPER below, or come back when ETH reopens.</p>
         ) : hints.length > 0 && (
-          <p className="hint">{hints.join(" ")} {plankShort || pay !== "paper" ? "Swap for some below." : <>Pick ETH or USDG above, swap for PAPER below, or <a href={OPENSEA} target="_blank" rel="noreferrer">get a mill</a> (it prints 1 PAPER a day).</>}</p>
+          <p className="hint">{hints.join(" ")} {plankShort || pay !== "paper" ? "Swap for some below." : <>Pick ETH or USDG above, swap for PAPER below, or <a href={OPENSEA} target="_blank" rel="noreferrer">get a press</a> (it prints 1 PAPER a day).</>}</p>
         )}
         {overCap && (
           <p className="hint">{you.remainingToday === 0 ? `You've hit today's ${DAILY_CAP}. More after tonight's storm.` : n === TX_CAP && you.remainingToday >= TX_CAP ? `A buy of ${TX_CAP} gives ${ticketsFor(TX_CAP, night)} — pick ${TX_CAP - 1} or fewer today.` : `${you.remainingToday} left today (cap ${DAILY_CAP} a wallet).`}</p>

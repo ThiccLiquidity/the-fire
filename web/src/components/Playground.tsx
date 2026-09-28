@@ -62,13 +62,13 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
               <label>PLANK price ($ per 1B) <input type="number" step={0.1} value={+(s.plankUsd * 1e9).toFixed(3)} onChange={(e) => d.set({ plankUsd: Math.max(0.01, num(e.target.value)) / 1e9 })} /></label>
               <label>PAPER price ($, 0 = no market) <input type="number" step={0.01} min={0} value={s.paperUsd} onChange={(e) => d.set({ paperUsd: Math.max(0, num(e.target.value)) })} /></label>
               <label>ETH price ($) <input type="number" value={Math.round(s.ethUsd)} disabled={ethStale} onChange={(e) => d.set({ ethUsd: Math.max(1, num(e.target.value)) })} /></label>
-              <label>Mill bid ($) <input type="number" value={Math.round(s.millBidUsd)} onChange={(e) => d.set({ millBidUsd: num(e.target.value) })} /></label>
-              <label>Mill fund USDG ($) <input type="number" value={Math.round(s.millFundUsdg)} onChange={(e) => d.set({ millFundUsdg: num(e.target.value) })} /></label>
+              <label>Press bid ($) <input type="number" value={Math.round(s.millBidUsd)} onChange={(e) => d.set({ millBidUsd: num(e.target.value) })} /></label>
+              <label>Press fund USDG ($) <input type="number" value={Math.round(s.millFundUsdg)} onChange={(e) => d.set({ millFundUsdg: num(e.target.value) })} /></label>
             </div>
             <div className="pg-row">
               <label><input type="checkbox" checked={ethStale} onChange={(e) => { setEthStale(e.target.checked); d.setEthFeedStale(e.target.checked); }} /> ETH/USD feed stale (ETH path closes)</label>
               <label><input type="checkbox" checked={s.usdgEnabled} onChange={(e) => d.set({ usdgEnabled: e.target.checked })} /> USDG path on</label>
-              <button onClick={() => d.eatMill()}>The fire eats a mill now</button>
+              <button onClick={() => d.eatMill()}>The fire eats a press now</button>
             </div>
           </section>
 

@@ -28,7 +28,7 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
     >2 days old, logs cost the last price the fire saw (`plankPerTicketLast`, refreshed every night).
 - **No PAPER? Pay $1 instead.** The PAPER leg can be paid as **$1.00 of ETH** (Chainlink ETH/USD; the ETH path closes if
   the feed has missed its 24h heartbeat, i.e. is >25h old; the ETH price rounds up) or **$1.00 of USDG**. Same ticket,
-  same PLANK. The dollar goes to the mill fund. It's a convenience for outsiders, priced above where PAPER should trade.
+  same PLANK. The dollar goes to the press fund. It's a convenience for outsiders, priced above where PAPER should trade.
 - **Every buy names its max.** `buyTickets(n, maxPaper, maxPlank, note)`, `buyTicketsWithEth(n, maxPlank, note)` (the
   ETH sent is the max; anything above the price comes straight back), `buyTicketsWithUsdg(n, maxPlank, note)`. If a leg
   moved above what the buyer agreed to, the buy reverts (`PriceMoved`) instead of charging more.
@@ -39,7 +39,7 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 - Buying is closed while a roll is pending (~35 s a night): drand's number is public a few seconds before it lands.
 
 ### Where the tokens go
-| | Burned | Pot | Mill fund |
+| | Burned | Pot | Press fund |
 |---|---|---|---|
 | PAPER (ticket) | 100% | — | — |
 | PLANK (ticket) | 50% | 50% | — |
@@ -49,8 +49,8 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 
 ### The pot
 - Held in PLANK. **The fire is a PLANK bag that never sells.** If PLANK doubles, the pot doubles.
-- When the fire goes out: **40% to the winner, 25% burned, 5% to the Paper Mill royalty pool, 30% relights the next fire** (**fixed**). The winner keeps the whole 40%; the pool's share comes out of the pot, not the winner's prize. With no tickets at all, nothing burns and the whole pot carries into the next fire.
-- **The 5% goes to the Paper Mill royalty pool** (PulpPool), which splits it across every live mill each time a fire ends. One transfer to an address that already exists. *(Founder note: you hold a large bag, so you're the largest recipient of this share. It's the community's norm and there's no exploit, but say it out loud.)*
+- When the fire goes out: **40% to the winner, 25% burned, 5% to the Paper Press royalty pool, 30% relights the next fire** (**fixed**). The winner keeps the whole 40%; the pool's share comes out of the pot, not the winner's prize. With no tickets at all, nothing burns and the whole pot carries into the next fire.
+- **The 5% goes to the Paper Press royalty pool** (PulpPool), which splits it across every live press each time a fire ends. One transfer to an address that already exists. *(Founder note: you hold a large bag, so you're the largest recipient of this share. It's the community's norm and there's no exploit, but say it out loud.)*
 
 ### The fire's size (this is the game)
 - The fire has a **size, in tickets**. Every ticket bought adds one. This is what you see on screen: a fire worth 5 days of the community's normal buying is "full height" under the pot.
@@ -71,20 +71,20 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 
 ### If randomness dies
 - A roll with no answer for **2 hours** can be re-rolled by anyone, only while drand has no result for it.
-- A roll stuck for **7 days** lets anyone call `abandon()`: the game ends for good, buys and rolls stop, and each ticket holder of the current fire calls `refund()` for pot × their tickets ÷ total. With no tickets, the pot burns. The mill fund keeps working.
+- A roll stuck for **7 days** lets anyone call `abandon()`: the game ends for good, buys and rolls stop, and each ticket holder of the current fire calls `refund()` for pot × their tickets ÷ total. With no tickets, the pot burns. The press fund keeps working.
 
-### The mill fund
-- The $1s paid in ETH or USDG accumulate, each on its own side (no swaps). The fire **bids for a mill in USD**: the bid starts at `MILL_BID_BASE` (*set at launch*), climbs 25% of its start per day (~1%/hour) while nobody sells — only while the fund could pay it, never above the fund's value, never past 3× its start. After each purchase it restarts at 90% of the price paid (never below `MILL_BID_BASE`/10).
-- The bid is a standing offer: anyone can fill it with any Seaport listing (their own included) at or under the bid, via `eatMillFromSeaport`. The fire pays the listing's own price in its own currency (USDG at face value, ETH at the Chainlink price), then **burns the mill in the same transaction**; the PLANK inside (~88.8B, ~$94 today) goes to the **Paper Mill royalty pool** — every remaining mill gets paid, emission drops forever. Any ETH attached above the mill's burn fee comes back. The keeper sweeps OpenSea listings.
+### The press fund
+- The $1s paid in ETH or USDG accumulate, each on its own side (no swaps). The fire **bids for a press in USD**: the bid starts at `MILL_BID_BASE` (*set at launch*), climbs 25% of its start per day (~1%/hour) while nobody sells — only while the fund could pay it, never above the fund's value, never past 3× its start. After each purchase it restarts at 90% of the price paid (never below `MILL_BID_BASE`/10).
+- The bid is a standing offer: anyone can fill it with any Seaport listing (their own included) at or under the bid, via `eatMillFromSeaport`. The fire pays the listing's own price in its own currency (USDG at face value, ETH at the Chainlink price), then **burns the press in the same transaction**; the PLANK inside (~88.8B, ~$94 today) goes to the **Paper Press royalty pool** — every remaining press gets paid, emission drops forever. Any ETH attached above the press's burn fee comes back. The keeper sweeps OpenSea listings.
 - The fire never sells PLANK or PAPER to do this. It only spends the dollars outsiders chose to bring.
-- It never takes a mill any other way: a mill safe-sent to it bounces.
+- It never takes a press any other way: a press safe-sent to it bounces.
 
 ---
 
 ## 3. What the simulation says
 
 `sim/economy.py`, 324 year-long runs, rules matched to the contract; full tables in `docs/sim-results.md`. Prices held
-flat: PLANK $1.056e-9, ETH $3,333, PAPER $0.25. 1,000 mills, 5 outsiders/day, $300 mill floor:
+flat: PLANK $1.056e-9, ETH $3,333, PAPER $0.25. 1,000 presses, 5 outsiders/day, $300 press floor:
 
 | Participation (share of daily PAPER spent) | Tickets/day | Fire life (min–max) | Pot median / max | PLANK burned/yr | Share of PAPER printed that burns |
 |---|---|---|---|---|---|
@@ -102,9 +102,9 @@ Things worth knowing:
 - **PLANK demand is large relative to the market.** At medium participation the game burns ~18% of PLANK's supply a
   year at today's price. The sim holds prices flat; reality won't. PLANK up → the $0.90 leg needs fewer PLANK and the
   pot grows in dollars.
-- **The mill fund is outsider-driven.** 5 outsiders/day (~$11k/yr) eats ~37 mills a year at a $300 floor, ~13 at the
-  ~$786 listings seen so far, ~110 at $100. No outsiders, no mills eaten.
-- **Small holders under-buy** because a 1–3 mill wallet prints less than a ticket a day. They play by saving up or in
+- **The press fund is outsider-driven.** 5 outsiders/day (~$11k/yr) eats ~37 presses a year at a $300 floor, ~13 at the
+  ~$786 listings seen so far, ~110 at $100. No outsiders, no presses eaten.
+- **Small holders under-buy** because a 1–3 press wallet prints less than a ticket a day. They play by saving up or in
   rallies. Show "N days until your next ticket" on the site.
 - Players get back ~22¢ per dollar in expectation, whales and small holders alike. It's a burn game; that's the design.
 
@@ -121,12 +121,12 @@ Things worth knowing:
 | Max price | every buy names its max PAPER/PLANK (ETH: msg.value, excess refunded); reverts `PriceMoved` above it |
 | Per buy / per day | 10 paid / 500 received per wallet; buy 10, get 1 free |
 | PLANK split | 50% burn / 50% pot |
-| Payout | 40% winner / 25% burn / 5% Paper Mill royalty pool / 30% relight; no tickets → the whole pot carries |
+| Payout | 40% winner / 25% burn / 5% Paper Press royalty pool / 30% relight; no tickets → the whole pot carries |
 | Storm time | 8:00 PM MST (03:00 UTC), nightly |
 | Fire size | persistent; +1 per log; ×0.85 overnight; thousandths of a log |
 | Storm | a fixed ladder of 20 sizes, 5-25,000 logs; odds per night tilt up 0.75 rung a night; `word % 10,000`; night 1 none; night 24 infinite |
 | Randomness | `OpenDrandRouter` (drand evmnet, round 30–33 s ahead, anyone fulfills); reroll after 2h; abandon after 7 days |
-| Mill fund | 100% of the ETH/USDG; USD bid from `MILL_BID_BASE` (*set at launch*), +25%/day of its start, ≤3×, ≤ fund; restarts at 90% of price paid |
+| Press fund | 100% of the ETH/USDG; USD bid from `MILL_BID_BASE` (*set at launch*), +25%/day of its start, ≤3×, ≤ fund; restarts at 90% of price paid |
 | Founder seed | $0 opening pot needed. Buy fire #1's first tickets; ~$10 of ETH for the keeper wallet |
 
 ---
@@ -147,13 +147,13 @@ Things worth knowing:
   pool needs $1,000 on its dollar side, becomes a candidate, and is adopted only if it qualifies at every checkpoint for
   20h, so a flash loan can't force a switch. No adopt or switch while the ETH feed is stale.
 - `Profiles.sol` — a name and a picture per wallet.
-- `ops/keeper` rolls, delivers drand's number, recovers stuck rolls, checkpoints both feeds and sweeps the mill floor.
+- `ops/keeper` rolls, delivers drand's number, recovers stuck rolls, checkpoints both feeds and sweeps the press floor.
   Anyone can do each of those; the site shows a button for the storm steps.
 
 **Site (one screen)**
 - **The fire.** Canvas scene: a fire in the woods, fixed camera, height = fire size. Paper and logs fly in on every buy; burn notes drift up through the flames. Real day/night cycle on MST.
 - **The sky.** Clouds gather as 8pm approaches and the forecast card reads the threat in words, never numbers. At 8pm: clouds roll in, lightning flickers inside them (bolts on big storms), real thunder recordings (nine CC0 clips, distant ones muffled and delayed, close ones with a clap), then rain — angled, layered, with splashes. The fire is beaten down to what's left. If it dies: smoke, dark, the winner lights up.
-- **Numbers:** pot in PLANK and $, nights survived, fire size, your tickets and odds, your PAPER and PLANK balances and how many tickets they buy, PAPER/PLANK burned all-time, mills eaten.
+- **Numbers:** pot in PLANK and $, nights survived, fire size, your tickets and odds, your PAPER and PLANK balances and how many tickets they buy, PAPER/PLANK burned all-time, presses eaten.
 - **Buy panel:** 1 / 5 / 10 / Max. Pay with PAPER, ETH or USDG; a "You pay" line shows exactly what leaves the wallet; exact token approvals; the buy carries the price the buyer saw as its max. OpenSea link with a hover explainer for mills.
 - **Feed:** a one-line ticker under the fire, not a wall. Notes drift over the flames instead.
 - **Archive:** every fire recorded — nights survived, peak size, pot, winner, storm replay.
@@ -164,8 +164,8 @@ Things worth knowing:
 
 ## 6. Rejected (so we don't relitigate)
 - Second token (OJ), blind commit-reveal showdown, floating ratios — too much to explain.
-- Holding anyone's mills (parking, sacrifice) — a mill the fire buys is burned in the same transaction.
-- Any rule that sells PLANK or PAPER — the fire only ever buys mills with the dollars outsiders brought.
+- Holding anyone's presses (parking, sacrifice) — a press the fire buys is burned in the same transaction.
+- Any rule that sells PLANK or PAPER — the fire only ever buys presses with the dollars outsiders brought.
 - Pyro mode (PLANK with no ticket) — removed.
 - A pause, an owner, a launch cap on fire #1 — none exist; the 7-day abandon/refund is the only exit.
 - Fixed 3-day rounds — replaced by storm nights (kills last-minute sniping without an anti-cheat rule).
@@ -175,7 +175,7 @@ Things worth knowing:
 ## 7. Still to settle
 1. Plank Press admin calls `PulpPool.addRewardToken(PLANK)`, or the royalty PLANK sits uncounted.
 2. PAPER contract address (Oct 1 2026).
-3. `MILL_BID_BASE`: the starting mill bid. Listings so far are $786+ with no real market yet; the PLANK inside a mill is
+3. `MILL_BID_BASE`: the starting press bid. Listings so far are $786+ with no real market yet; the PLANK inside a press is
    ~$94.
 4. Community swap aggregator embed URL. OpenSea: opensea.io/collection/the-plank-press.
 5. Name/domain.
