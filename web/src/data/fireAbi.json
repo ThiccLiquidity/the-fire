@@ -311,6 +311,19 @@
   },
   {
     "type": "function",
+    "name": "MILLI",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MILL_BID_BASE",
     "inputs": [],
     "outputs": [
@@ -924,7 +937,7 @@
   },
   {
     "type": "function",
-    "name": "fireSize",
+    "name": "fireSizeMilli",
     "inputs": [],
     "outputs": [
       {
@@ -1724,13 +1737,13 @@
         "internalType": "uint256"
       },
       {
-        "name": "fireSize",
+        "name": "fireSizeMilli",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "storm",
+        "name": "stormMilli",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1792,13 +1805,13 @@
         "internalType": "uint256"
       },
       {
-        "name": "fireSize",
+        "name": "fireSizeMilli",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "storm",
+        "name": "stormMilli",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"

@@ -20,7 +20,7 @@ export function WalletChip({ address, profile, onConnect, onSwitch, onDisconnect
 
   if (!address) return (
     <div className="wchip-wrap">
-      <button className="wchip connect" disabled={busy || !onConnect} onClick={() => run(onConnect)}>{busy ? "Connecting…" : <>Connect<span className="wchip-long">{demo ? " demo wallet" : " wallet"}</span></>}</button>
+      <button className="wchip connect" disabled={busy || !onConnect} onClick={() => run(onConnect)}>{busy ? "Connecting…" : <span>Connect<span className="wchip-long">{demo ? " demo wallet" : " wallet"}</span></span>}</button>
       {err && <span className="wchip-err">{err}</span>}
     </div>
   );

@@ -69,7 +69,7 @@ export default function App() {
   const odds = v.ticketsTotal ? (v.youTickets / v.ticketsTotal) * 100 : 0;
   const wake = !!st && !st.survived && age >= C.OUT_CARD && age < C.RELIGHT; // the fire is out; its pot stays on screen
   const youWon = !!st && !st.survived && connected && st.winner?.toLowerCase() === s.you.address!.toLowerCase();
-  const toSize = (fs: number) => Math.min(1, fs / (s.trailingAvg * FULL_DAYS)); // 1 = a fire worth 5 days of buys
+  const toSize = (fs: number) => Math.min(1, fs / (s.trailingAvg * FULL_DAYS)); // 1 = a fire worth 2.5 days of buys
   const size = b && age < C.RAIN ? toSize(b.fireSize) : wake ? 0 : toSize(s.fireSize);
 
   // pot header: during the wake, keep showing the fire that died
@@ -98,7 +98,7 @@ export default function App() {
     } else if (!st.survived && age >= C.OUT_CARD && age < C.WINNER) {
       card = null; // the tickets rise out of the embers in the scene; the winner card follows
     } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT && NOBODY.test(st.winner ?? "")) {
-      card = <div className="verdict out" role="alert"><b>Nobody had a ticket in fire #{st.fireId}.</b> 25% of the pot burned; 75% carries to the next fire.</div>;
+      card = <div className="verdict out" role="alert"><b>Nobody had a ticket in fire #{st.fireId}.</b> The whole pot carries to the next fire.</div>;
     } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT) {
       const w = st.winner ?? "";
       card = (
@@ -172,7 +172,7 @@ export default function App() {
           <div className="you">
             <div><b>{connected ? fmtCount(v.youTickets) : "—"}</b><span>{connected ? "your tickets in this fire" : "connect to see your tickets"}</span></div>
             <div><b>{connected ? `${odds === 0 ? "0" : odds < 0.01 ? "<0.01" : odds.toFixed(2)}%` : "—"}</b><span>your odds if it goes out tonight</span></div>
-            <div title="Fire size is what keeps the fire alive: every ticket adds 1, storms knock it down, and it burns down to 60% each night. Your tickets never shrink."><b>{fmtCount(v.fireSize)}</b><span>fire size · {fmtCount(v.ticketsToday)} added today</span><span className="you-fine">burns down each night; tickets don't</span></div>
+            <div title="Fire size is what keeps the fire alive: every ticket adds 1, storms knock it down, and it burns down to 60% each night. Your tickets never shrink."><b>{fmtCount(Math.round(v.fireSize))}</b><span>fire size · {fmtCount(v.ticketsToday)} added today</span><span className="you-fine">burns down each night; tickets don't</span></div>
           </div>
 
           <div className="ticker" aria-label="Recent buys">
@@ -211,7 +211,7 @@ export default function App() {
               <h2>Past fires</h2>
               <ol>
                 {s.past.slice(0, 5).map((f) => (
-                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{NOBODY.test(f.winner) ? <>no tickets · {nights(f.nights)} · 75% carried</> : <><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> won {usd(f.potPlank * 0.4, s.plankUsd)} · {nights(f.nights)}</>}</span></li>
+                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{NOBODY.test(f.winner) ? <>no tickets · {nights(f.nights)} · pot carried</> : <><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> won {usd(f.potPlank * 0.4, s.plankUsd)} · {nights(f.nights)}</>}</span></li>
                 ))}
               </ol>
             </div>

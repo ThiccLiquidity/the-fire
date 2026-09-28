@@ -2,14 +2,15 @@
 The fire, night by night, exactly as Fire.sol runs it. The only input is how many tickets people buy each day.
 
 Contract rules mirrored here (integer math, same order as Fire.onRandomness):
-  - buys add to ticketsToday and to fireSize
-  - at the roll: night += 1; storm = trailingAverage() * AGE[night] * LUCK[rnd & 31] / 1e8   (floored once)
-      trailingAverage() = mean of the last <=7 nights' ticketsToday (today excluded; before any night: today)
+  - buys add to ticketsToday and to fireSizeMilli (the fire is measured in thousandths of a ticket)
+  - at the roll: night += 1; storm = trailingMilli * AGE[night] * LUCK[rnd & 31] / 1e8   (floored once, in thousandths)
+      trailingMilli = 1000 x mean of the last <=7 nights' ticketsToday, floored (today excluded; before any night: today)
       night 1: no storm. night 24: infinite.
   - then today's count goes into the trailing window and resets
-  - survive if night == 1 or (night < 24 and fireSize > storm): fireSize = (fireSize - storm) * 6000 / 10000
-  - otherwise it goes out: a new fire is lit with size 0, night 0 (the trailing window carries over)
-On the site the storm "looks" (intensity) and the fire's drawn height use the site's formulas (web/src/data/chain.ts).
+  - survive if night == 1 or (night < 24 and size > storm): size = (size - storm) * 6000 / 10000
+  - otherwise it goes out: a new fire is lit with size 0, night 0 (the trailing window carries over). A fire nobody
+    bought into carries its whole pot; otherwise 40% winner, 25% burned, 5% royalty pool, 30% carried.
+On the site the storm "looks" (intensity) and the fire's drawn height use the site's formulas (web/src/data/types.ts).
 
 Usage:
   python3 sim/fire_sim.py                 # every scenario, Monte Carlo, writes docs/fire-sim.md + sim/fire_sim_results.json
@@ -20,11 +21,17 @@ import json, math, random, statistics as st, sys, os
 
 AGE = [442, 1250, 2296, 3536, 4941, 6495, 8185, 10000, 11932, 13975, 16123,
        18371, 20715, 23150, 25674, 28284, 30977, 33750, 36601, 39528, 42530, 45604]  # nights 2..23, bps
-LUCK = [1439, 2213, 2791, 3306, 3792, 4265, 4736, 5210, 5692, 6187, 6699, 7232, 7789, 8375, 8994, 9654,
-        10359, 11118, 11941, 12839, 13828, 14927, 16162, 17568, 19195, 21116, 23446, 26373, 30249, 35823, 45192, 69482]
-MAX_NIGHTS, KEEP_BPS, BPS, TRAILING = 24, 6000, 10000, 7
-FULL_DAYS = 5  # site: a fire worth 5 days of buys is drawn full height
+LUCK = [395, 810, 1192, 1581, 1986, 2417, 2877, 3373, 3910, 4493, 5129, 5826, 6593, 7440, 8381, 9429,
+        10605, 11932, 13440, 15167, 17163, 19496, 22258, 25578, 29647, 34756, 41378, 50343, 63268, 83871, 123531, 253002]  # e^(1.5 z)
+MAX_NIGHTS, KEEP_BPS, BPS, TRAILING, MILLI = 24, 6000, 10000, 7, 1000
+FULL_DAYS = 2.5  # site: a fire worth 2.5 days of buys is drawn full height
 INF = 2**256 - 1
+
+
+def storm_look(storm, size):
+    """0.15..1: how heavy the rain is drawn. Light for a storm that barely touched the fire, full for a near miss."""
+    if size <= 0: return 1.0
+    return max(0.15, min(1.0, 0.15 + 0.85 * (storm / size) ** 0.8))
 
 
 class Fire:
@@ -33,38 +40,38 @@ class Fire:
         self.night = 0; self.fire_size = 0; self.tickets_today = 0; self.tickets_total = 0
         self.trail = [0] * TRAILING; self.trail_count = 0; self.trail_idx = 0; self.fire_id = 1
 
-    def trailing_average(self):
-        if self.trail_count == 0: return self.tickets_today
+    def trailing_milli(self):
+        if self.trail_count == 0: return self.tickets_today * MILLI
         c = min(self.trail_count, TRAILING)
-        return sum(self.trail[:c]) // c
+        return sum(self.trail[:c]) * MILLI // c
 
     def storm(self, n, luck_idx):
         if n >= MAX_NIGHTS: return INF
         if n <= 1: return 0
-        return self.trailing_average() * AGE[n - 2] * LUCK[luck_idx] // (BPS * BPS)
+        return self.trailing_milli() * AGE[n - 2] * LUCK[luck_idx] // (BPS * BPS)
 
     def buy(self, t):
-        self.tickets_today += t; self.tickets_total += t; self.fire_size += t
+        self.tickets_today += t; self.tickets_total += t; self.fire_size += t * MILLI
 
     def roll(self, luck_idx):
         self.night += 1
-        avg = self.trailing_average()
+        avg = self.trailing_milli()
         storm = self.storm(self.night, luck_idx)
         size_before = self.fire_size
         today = self.tickets_today
         self.trail[self.trail_idx] = today; self.trail_idx = (self.trail_idx + 1) % TRAILING; self.trail_count += 1
         self.tickets_today = 0
-        rec = {"fire": self.fire_id, "night": self.night, "size": size_before, "storm": storm, "avg": avg, "today": today}
+        rec = {"fire": self.fire_id, "night": self.night, "size": size_before, "storm": storm, "avg": avg, "today": today}  # sizes in thousandths
         if self.night == 1 or (self.night < MAX_NIGHTS and size_before > storm):
             self.fire_size = (size_before - storm) * KEEP_BPS // BPS
             rec.update(survived=True, after=self.fire_size)
         else:
             rec.update(survived=False, after=0, tickets=self.tickets_total)
             self.fire_id += 1; self.night = 0; self.fire_size = 0; self.tickets_total = 0
-        # what the site shows (chain.ts): how violent the storm looks, and how tall the fire is drawn afterwards
-        ref = max(1, avg * FULL_DAYS)
-        rec["look"] = 1.0 if not rec["survived"] else max(0.15, min(1.0, (storm / ref) * 2.5))
-        rec["drawn"] = min(1.0, rec["after"] / ref) if avg > 0 else 0.0
+        # what the site shows (types.ts stormLook / drawnHeight): the rain is as heavy as the call was close, and the fire
+        # is drawn against 2.5 days of buys
+        rec["look"] = 1.0 if not rec["survived"] else storm_look(storm, size_before)
+        rec["drawn"] = min(1.0, rec["after"] / (avg * FULL_DAYS)) if avg > 0 else 0.0
         return rec
 
 
@@ -238,7 +245,7 @@ contract FireSimParityTest is Test {{
         assertEq(fire.stormStrength(night, luck), expectStorm, string.concat("storm, day ", vm.toString(d)));
         fire.roll();
         rng.fulfill(rng.last(), luck);
-        assertEq(fire.fireSize(), afterSize, string.concat("fire size, day ", vm.toString(d)));
+        assertEq(fire.fireSizeMilli(), afterSize, string.concat("fire size, day ", vm.toString(d)));
         assertEq(fire.fireId(), fireId, string.concat("fire id (did it go out?), day ", vm.toString(d)));
     }}
 {''.join(body)}

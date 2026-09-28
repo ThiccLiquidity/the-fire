@@ -116,7 +116,7 @@ contract FireTest is Test {
         (uint256 mine, uint256 total) = fire.odds(alice);
         assertEq(mine, 11, "holds 11");
         assertEq(total, 11);
-        assertEq(fire.fireSize(), 11);
+        assertEq(fire.fireSizeMilli(), 11_000);
         assertEq(fire.remainingToday(alice), 489, "all 11 count toward the daily cap");
     }
 
@@ -198,52 +198,55 @@ contract FireTest is Test {
     function test_storm_formula() public {
         _buy(alice, 400); _buy(bob, 400);
         _roll(RND_MID); // night 1: no storm; trail = [800]
-        // night 2: base = 800 * ((2-1)/8)^1.5 = 800 * 0.0442 = 35.4; luck mid 1.036 -> 36
-        assertEq(fire.stormStrength(2, RND_MID), 36);
-        // night 9: base = 800 * 1.0 -> 800 * 1.036 = 828
-        assertEq(fire.stormStrength(9, RND_MID), 828);
-        // luck extremes
-        assertEq(fire.stormStrength(9, RND_CALM), 115);
-        assertEq(fire.stormStrength(9, RND_MONSTER), 5558);
+        // storms are in thousandths of a ticket. night 2: 800 * ((2-1)/8)^1.5 = 35.4 tickets; luck slot 16 = x1.06
+        assertEq(fire.stormStrength(2, RND_MID), 37499);
+        // night 9: 800 * 1.0 * 1.06
+        assertEq(fire.stormStrength(9, RND_MID), 848400);
+        // luck extremes: x0.04 and x25.3
+        assertEq(fire.stormStrength(9, RND_CALM), 31600);
+        assertEq(fire.stormStrength(9, RND_MONSTER), 20240160);
         assertEq(fire.stormStrength(1, RND_MONSTER), 0, "night 1 no storm");
         assertEq(fire.stormStrength(24, RND_CALM), type(uint256).max, "night 24 infinite");
     }
 
     function test_fire_size_persists_and_burns_down() public {
         _buy(alice, 500);
-        assertEq(fire.fireSize(), 500);
+        assertEq(fire.fireSizeMilli(), 500_000);
         _roll(RND_MID); // night 1: no storm; size = 500 * 0.6 = 300
-        assertEq(fire.fireSize(), 300);
+        assertEq(fire.fireSizeMilli(), 300_000);
         _buy(bob, 200); // size 500
         // night 2 storm at mid luck = trail(500,200 -> avg 350) * 0.0442 * 1.036 = 16
         uint256 storm = fire.stormStrength(2, RND_MID);
         _roll(RND_MID);
-        assertEq(fire.fireSize(), (500 - storm) * 6000 / 10000, "size minus storm, then 60%");
+        assertEq(fire.fireSizeMilli(), (500_000 - storm) * 6000 / 10000, "size minus storm, then 60%");
         assertEq(fire.fireId(), 1);
     }
 
     function test_small_fire_dies_to_big_storm_big_fire_survives() public {
-        // build a trailing average of ~500/day over a few calm nights
+        // build a trailing average of 500/day over a few calm nights, then let the fire starve
         for (uint256 i; i < 4; i++) { _buy(alice, 500); _roll(RND_CALM); }
-        // night 5: monster luck. base = 500*0.3536 = 177; x6.95 = 1229
-        uint256 storm = fire.stormStrength(5, RND_MONSTER);
-        assertGt(storm, 1000);
-        // fire has ~500*0.6 + ... buffer; check it's below the storm -> dies
-        uint256 size = fire.fireSize();
-        _buy(carol, 10); // tiny top-up
-        if (size + 10 <= storm) {
-            _roll(RND_MONSTER);
-            assertEq(fire.fireId(), 2, "small fire died");
-        }
-        // new fire: feed it hard for 4 nights, then a monster on night 5 should NOT kill it
+        uint256 storm = fire.stormStrength(5, 28); // a strong night (x6.3): 500 * 0.354 * 6.3 = 1,119 tickets
+        assertGt(storm, 1_000_000);
+        _buy(carol, 10); // a starved fire: tiny top-up
+        assertLt(fire.fireSizeMilli(), storm);
+        _roll(28);
+        assertEq(fire.fireId(), 2, "small fire died");
+        // new fire: fed hard for 4 nights; the same kind of night-5 storm doesn't kill it
         for (uint256 i; i < 4; i++) { _buy(alice, 500); _buy(bob, 500); _buy(carol, 500); _roll(RND_CALM); }
-        uint256 before = fire.fireSize();
-        uint256 storm2 = fire.stormStrength(5, RND_MONSTER);
         _buy(alice, 500); _buy(bob, 500); _buy(carol, 500);
-        assertGt(before + 1500, storm2, "well-fed fire outweighs a monster night 5");
+        assertGt(fire.fireSizeMilli(), fire.stormStrength(5, 28), "well-fed fire outweighs a strong night 5");
         uint256 id = fire.fireId();
-        _roll(RND_MONSTER);
+        _roll(28);
         assertEq(fire.fireId(), id, "survived");
+    }
+
+    function test_a_one_ticket_fire_survives_a_calm_night() public {
+        // counted in thousandths, a 1-ticket fire keeps 0.6 of a ticket overnight instead of rounding to nothing
+        _buy(alice, 1);
+        _roll(RND_MID);
+        assertEq(fire.fireSizeMilli(), 600);
+        _roll(RND_CALM); // night 2, nobody bought: storm 1 * 0.044 * 0.04 = 0.0017 tickets
+        assertEq(fire.fireId(), 1, "still burning");
     }
 
     function test_no_fire_outlives_night_24() public {
@@ -295,7 +298,7 @@ contract FireTest is Test {
         _roll(RND_MONSTER); // size 0 -> goes out with no tickets
         assertEq(fire.fireId(), 3);
         assertEq(fire.lastWinner(), address(0));
-        assertEq(fire.pot(), carried * 75 / 100, "40% + 5% + 30% carried, 25% burned");
+        assertEq(fire.pot(), carried, "nobody had a ticket: the whole pot carries, nothing burns");
         assertEq(plank.balanceOf(royalty), royaltyBefore, "nothing to the pool without a winner");
     }
 
@@ -948,7 +951,7 @@ contract FireTest is Test {
         // trailing average 22 on night 2: exact 22 * 0.0442 * luck; flooring twice made every night-2 storm 0
         _buy(alice, 22);
         _roll(RND_CALM); // night 1 records 22
-        assertEq(fire.stormStrength(2, RND_MONSTER), uint256(22) * 442 * 69482 / 1e8);
+        assertEq(fire.stormStrength(2, RND_MONSTER), uint256(22_000) * 442 * 253002 / 1e8);
         assertGt(fire.stormStrength(2, RND_MONSTER), 0);
     }
 }

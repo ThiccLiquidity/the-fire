@@ -45,8 +45,8 @@ BID_RISE_PER_DAY, BID_RESTART, BID_MAX_MULT = 0.25, 0.90, 3
 AGE_BPS = [442, 1250, 2296, 3536, 4941, 6495, 8185, 10000, 11932, 13975, 16123,
            18371, 20715, 23150, 25674, 28284, 30977, 33750, 36601, 39528, 42530, 45604]
 # Fire._luckBps: 32-point quantile table of e^(0.9 z)
-LUCK_BPS = [1439, 2213, 2791, 3306, 3792, 4265, 4736, 5210, 5692, 6187, 6699, 7232, 7789, 8375, 8994, 9654,
-            10359, 11118, 11941, 12839, 13828, 14927, 16162, 17568, 19195, 21116, 23446, 26373, 30249, 35823, 45192, 69482]
+LUCK_BPS = [395, 810, 1192, 1581, 1986, 2417, 2877, 3373, 3910, 4493, 5129, 5826, 6593, 7440, 8381, 9429,
+            10605, 11932, 13440, 15167, 17163, 19496, 22258, 25578, 29647, 34756, 41378, 50343, 63268, 83871, 123531, 253002]  # e^(1.5 z)
 
 @dataclass
 class Scenario:
@@ -133,8 +133,8 @@ def run(sc: Scenario) -> dict:
         want = mint * spend + (paper - mint) * spend * 0.10
         if sc.rally and night > 1:
             danger = r * ((night) / 8) ** 1.5
-            if fire_size < danger:
-                want += paper * rally_frac * 0.5 * min(1.5, (danger - fire_size) / max(1, danger))
+            if fire_size / 1000 < danger:
+                want += paper * rally_frac * 0.5 * min(1.5, (danger - fire_size / 1000) / max(1, danger))
         want = np.minimum(want, paper)
         if sc.paper_demand == "paper": want = want / ppt  # same PAPER burned buys more tickets
         # PLANK leg: assume holders buy the PLANK they need (it's $0.90/ticket) — no PLANK balance constraint
@@ -176,10 +176,10 @@ def run(sc: Scenario) -> dict:
         sold = paper * pp["sell"] * 0.1; paper -= sold; T["paper_sold"] += sold.sum()
         # --- fire
         today = int(tix.sum()) + out_t
-        fire_size += today; fire_ticket_owner += tix; outsider_tickets_fire += out_t
+        fire_size += today * 1000; fire_ticket_owner += tix; outsider_tickets_fire += out_t
         tickets_bought += tix
         # --- the roll: storm from the trailing average *before* today's buys join it
-        trail_avg = (sum(trail[-7:]) // len(trail[-7:])) if trail else today
+        trail_avg = (sum(trail[-7:]) * 1000 // len(trail[-7:])) if trail else today * 1000  # thousandths, like the contract
         X = storm(trail_avg, night, int(rng.integers(0, 32)))
         trail.append(today)
         poke(d + 1)
@@ -202,12 +202,12 @@ def run(sc: Scenario) -> dict:
                 royalty_plank += royalty; T["plank_paid"] += paid
                 carry = pot0 - paid - royalty - burn
             else:
-                carry = pot0 - burn  # nobody: winner's and pool's slices roll forward
+                burn = 0; carry = pot0  # nobody had a ticket: nothing burns, the whole pot carries
             T["plank_burned"] += burn
             fires.append((night, pot0 * PLANK_USD, winner_tier, total))
             pot_plank = carry; fire_size = 0; night = 0; fire_id += 1
             fire_ticket_owner[:] = 0; outsider_tickets_fire = 0
-        daily.append((today, fire_size, pot_plank * PLANK_USD, live_mills))
+        daily.append((today, fire_size / 1000, pot_plank * PLANK_USD, live_mills))
 
     # ---- summary
     lives = np.array([f[0] for f in fires]) if fires else np.array([0])

@@ -325,7 +325,7 @@ a { color: var(--flame); }
   .brand .how-link { font-size: 0.72rem; padding: 0.15rem 0.55rem; white-space: nowrap; margin-left: 0; }
   .top-right { gap: 0.3rem; flex-shrink: 0; max-width: 58vw; }
   .wchip { font-size: 0.75rem; padding: 0.25rem 0.55rem 0.25rem 0.3rem; gap: 0.3rem; }
-  .wchip > span { max-width: 6.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wchip:not(.connect) > span { max-width: 6.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wchip.connect { padding: 0.3rem 0.7rem; }
   .wchip-long { display: none; }
   .forecast { text-align: right; padding: 0.3rem 0.55rem; border-radius: 10px; }

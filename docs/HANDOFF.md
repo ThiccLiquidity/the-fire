@@ -45,6 +45,7 @@ Updated Sep 28 2026 (beta audit merged). Read this whole file before changing an
 | 20 | Phone: wallet pill + storm tracker too low (should sit in the top-right corner); Playground didn't fit the screen | Built: phone header is title + pills on the left, wallet and a compact storm tracker in the top-right corner ("Connect" shortens on phones); Playground wraps to one column inside the panel. **Approved Sep 28, merged to `main`.** |
 | 21 | Animals walked over Plank by the fire | Built: Plank stands a step nearer the viewer than every animal's path, and is redrawn over any animal passing behind him (same trick as the trees). Checked frame by frame with a deer and a skunk. **Approved Sep 28, merged to `main`.** |
 | 22 | "Up to 1% more ETH is sent" felt sketchy | Built: an ETH buy sends exactly the ETH shown on "You pay", so the wallet shows the same number; the line is gone. The price is re-checked right before sending; if the feed ticked, it stops with "The ETH price just changed. Check the new price and try again." **Approved Sep 28, merged to `main`.** |
+| 23 | Fire simulation (volume only, low to high) and his 4 decisions | Sim: `sim/fire_sim.py` mirrors the contract night for night (`contracts/test/FireSimParity.t.sol` checks 600 nights); results in `docs/fire-sim.md`. Decisions built: (1) fire counted in thousandths of a ticket (`fireSizeMilli`), so tiny fires aren't rounded away; (2) a fire nobody bought into carries its whole pot, no burn; (3) storm luck widened to lognormal(0, 1.5): avg life 7.5 nights, ~3% out by night 3, ~21% reach night 10; (4) site: full height = 2.5 days of buys, rain as heavy as the call was close. Contract + ABI + site + docs + economy sim updated. 113 tests. **Site part awaiting approval.** |
 
 He also asked (answered, no code): "how do we track fake paper?" — there is none. ETH/USDG buyers get
 tickets directly; `ticketsOf[fire][wallet]` and the `TicketsBought` event (flag `paperFromFire`) record
@@ -89,7 +90,7 @@ header so visitors can turn it on deliberately and see that sound exists.
 ## Verify
 
 ```
-cd contracts; forge test          # 103 passed
+cd contracts; forge test          # 113 passed
 cd web; npx tsc -b; npm run build # clean
 ```
 
