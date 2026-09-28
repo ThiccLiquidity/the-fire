@@ -219,3 +219,28 @@ a { color: var(--flame); }
 .path.alt { border-style: dashed; }
 .done { margin: 0; padding: 0.55rem 0.8rem; border-radius: 10px; background: rgba(127, 209, 139, 0.12); border: 1px solid rgba(127, 209, 139, 0.5); color: var(--ok); font-weight: 600; }
 .pay-row .cta small { display: block; font-weight: 500; font-size: 0.75rem; color: var(--paper-dim); }
+
+/* how it works */
+.brand { display: flex; align-items: center; gap: 0.6rem; }
+.how-link { background: transparent; border: 1px solid var(--line); color: var(--paper-dim); border-radius: 999px; padding: 0.2rem 0.7rem; font: inherit; font-size: 0.8rem; pointer-events: auto; }
+.how-link.inline { border: 0; padding: 0; color: var(--paper); text-decoration: underline; font-size: inherit; }
+.how-back { position: fixed; inset: 0; z-index: 50; background: rgba(5, 8, 16, 0.75); backdrop-filter: blur(6px); display: grid; place-items: start center; overflow: auto; padding: 4vh 1rem; }
+.how { position: relative; max-width: 46rem; width: 100%; background: #101627; border: 1px solid var(--line); border-radius: 18px; padding: 1.6rem clamp(1rem, 4vw, 2.2rem) 1.8rem; display: grid; gap: 0.9rem; color: var(--paper); line-height: 1.55; }
+.how h2 { margin: 0; font-family: var(--display); font-size: 1.8rem; }
+.how h3 { margin: 0.6rem 0 0; font-family: var(--display); font-size: 1.15rem; color: var(--flame); }
+.how p, .how li { margin: 0; }
+.how-lede { color: var(--paper-dim); font-size: 1.02rem; }
+.how-steps { margin: 0; padding-left: 1.3rem; display: grid; gap: 0.55rem; }
+.how ul { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.4rem; }
+.how-close { position: absolute; top: 0.6rem; right: 0.8rem; width: 2.2rem; height: 2.2rem; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--paper); font-size: 1.3rem; }
+.flow { display: grid; grid-template-columns: 1fr auto 1.2fr auto 1.6fr; gap: 0.5rem; align-items: center; }
+.flow-col { display: grid; gap: 0.4rem; }
+.flow-box { padding: 0.5rem 0.7rem; border-radius: 10px; font-size: 0.88rem; font-weight: 600; border: 1px solid var(--line); background: rgba(0,0,0,0.3); }
+.flow-box small { display: block; font-weight: 400; color: var(--paper-dim); margin-top: 0.15rem; }
+.flow-box.fb-in { border-color: var(--flame); color: var(--flame); text-align: center; font-family: var(--display); font-size: 1.1rem; }
+.flow-box.fb-burn { border-color: rgba(255, 107, 107, 0.5); color: var(--bad); }
+.flow-box.fb-pot { border-color: rgba(255, 201, 60, 0.5); }
+.flow-box.fb-fund { border-color: rgba(127, 209, 139, 0.5); }
+.flow-sub { font-size: 0.75rem; color: var(--paper-dim); text-align: center; }
+.flow-arrows { color: var(--paper-dim); font-size: 1.4rem; }
+@media (max-width: 640px) { .flow { grid-template-columns: 1fr; } .flow-arrows { transform: rotate(90deg); text-align: center; } }

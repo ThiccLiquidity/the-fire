@@ -5,6 +5,7 @@ import { makeChainApi } from "./data/chain";
 import { Scene } from "./components/Scene";
 import { Playground } from "./components/Playground";
 import { WalletChip } from "./components/WalletChip";
+import { HowItWorks } from "./components/HowItWorks";
 import { BuyPanel } from "./components/BuyPanel";
 import { Swap } from "./components/Swap";
 import { Avatar } from "./components/Avatar";
@@ -41,6 +42,7 @@ export default function App() {
   const [now, setNow] = useState(Date.now());
   const [demoHour, setDemoHour] = useState<number | null>(null);
   const [press2, setPress2] = useState(false);
+  const [how, setHow] = useState(false);
   useEffect(() => api.subscribe(setS), []);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t); }, []);
 
@@ -115,7 +117,7 @@ export default function App() {
       <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && last.tickets >= 10} wild press2={press2} />
 
       <header className="top">
-        <div className="brand">The Fire{!LIVE && <span className="demo-tag">demo</span>}</div>
+        <div className="brand">The Fire{!LIVE && <span className="demo-tag">demo</span>}<button className="how-link" onClick={() => setHow(true)}>How it works</button></div>
         <div className="top-right">
         <WalletChip address={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onConnect={api.connect} onSwitch={api.switchWallet} onDisconnect={api.disconnect} />
         <div className="forecast" role="status"><span className="fc-text">{forecast[0]}</span><span className="fc-when">{forecast[1]}</span>
@@ -135,6 +137,7 @@ export default function App() {
       </div>
 
       {card}
+      {how && <HowItWorks onClose={() => setHow(false)} />}
 
       <main className="stage">
         <div className="left">
@@ -181,7 +184,7 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <p>Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every night a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins 40% of the pot; 30% burns; 30% lights the next fire.</p>
+        <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Buy tickets with PAPER and PLANK. PAPER burns. Half the PLANK burns, half feeds the fire. Every night a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins 40% of the pot; 30% burns; 30% lights the next fire.</p>
         {api.demo && <Playground s={s} d={api.demo} hour={demoHour} onHour={setDemoHour} onSceneOpt={(k, v) => { if (k === "press2") setPress2(v); }} />}
       </footer>
     </div>
