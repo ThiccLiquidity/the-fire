@@ -3,7 +3,7 @@
 Everything below is signed from a **fresh deployer wallet** with ~$50 of ETH. Keys live in a Foundry keystore
 (`cast wallet import deployer --interactive`) or a Ledger, never in files or command lines. Never `--private-key`.
 
-## 1. PLANK/USD TWAP feed (ours) — at least 24h before step 2
+## 1. PLANK/USD TWAP feed (ours) — at least 30 minutes before step 2 (first-timer version: `docs/launch-day.md`)
 ```powershell
 cd the-fire\contracts; copy .env.example .env   # fill RPC, PLANK_WETH_V2_PAIR, PLANK, ETH_USD_FEED
 forge script script/DeployTwap.s.sol --rpc-url $env:RPC --account deployer --broadcast `
@@ -19,7 +19,7 @@ Fill the rest of `.env`:
 - `PAPER` once it exists (18 decimals, checked).
 - `PLANK_PER_TICKET0`: $0.90 of PLANK in wei at the feed's price, i.e. `90000000 * 1e28 / <feed price>`. The script
   refuses anything more than 10% off and prints the right number.
-- `MILL_BID_BASE`: starting mill bid in USD, 8 decimals, between $10 and $5,000 (`30000000000` = $300). It climbs 25% of
+- `MILL_BID_BASE`: the press floor on OpenSea at launch (his call), as a starting bid in USD, 8 decimals, between $10 and $5,000 (`30000000000` = $300). It climbs 25% of
   its starting value per day while the fund can pay it, so start at or below the floor you expect.
 - `SEAPORT` = `0x0000000000000068F116a894984e2DB1123eB395` (Seaport 1.6, checked on-chain Sep 27 2026), `USDG` =
   `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`, `UNIV2_FACTORY`, `WETH` — prefilled in `.env.example`.
@@ -48,16 +48,16 @@ stuck rolls, checkpoints both price feeds and sweeps the mill floor. It only nee
 from the Fire.
 
 ## 4. Plank Press admin
-Ask them to call `PulpPool.addRewardToken(0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc)` so PLANK we send to the
-pool counts toward every mill's share.
+Done: the admin added PLANK as a Pulp Pool reward token (Sep 28).
 
 ## 5. Nightly roll
 The keeper does it. Anyone can also call `Fire.roll()` after 8:00 PM MST, and the site shows a button when a roll,
 a delivery or a re-roll is due.
 
 ## 6. Light fire #1
-Seed fire #1 by buying its first tickets yourself. **Don't send PLANK straight to the Fire address** — it never counts
-toward the pot and can't be recovered. Site flips from mock to live with `VITE_FIRE_ADDRESS` (set
+The $250 seed goes in during step 2 (`SEED_PLANK`, from the deployer's PLANK), or later by hand with approve +
+`Fire.seed(amount)` (deployer only, once, before the first storm). **Don't send PLANK straight to the Fire address** — it
+never counts toward the pot and can't be recovered. Set `SWAP_FEE_WALLET` in `web/src/data/types.ts`. Site flips from mock to live with `VITE_FIRE_ADDRESS` (set
 `VITE_PROFILES_ADDRESS` + `VITE_PROFILES_FROM_BLOCK` too; see `web/.env.example`).
 
 ## Verify a roll (anyone)
