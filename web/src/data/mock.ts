@@ -199,7 +199,7 @@ export function makeMockApi(): FireApi {
       // never charge more than the buyer was shown
       if (seen && (s.plankPerTicket > seen.plankPerTicket * (1 + 1e-9) || (pay === "paper" && s.paperPerTicket > seen.paperPerTicket * (1 + 1e-9)))) throw new Error(PRICE_MOVED);
       if (pay === "eth" && !(s.ethUsd > 0)) throw new Error("ETH is paused (price feed late). Pay with PAPER or USDG.");
-      if (pay === "eth" && seen && q.eth > (n / seen.ethUsd) * 1.01) throw new Error(PRICE_MOVED);
+      if (pay === "eth" && seen && q.eth > (n / seen.ethUsd) * (1 + 1e-9)) throw new Error(PRICE_MOVED);
       if (pay === "usdg" && !s.usdgEnabled) throw new Error("USDG isn't on.");
       if (boughtToday(mine) + got > DAILY_CAP) throw new Error(`That's over your ${DAILY_CAP} a day.`);
       if (mine.plank < q.plank - 1e-6) throw new Error("Not enough PLANK.");
