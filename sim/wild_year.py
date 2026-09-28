@@ -10,7 +10,7 @@ Each day's logs come from:
   - whales: a few days a year someone throws in hundreds to thousands of logs
   - day-to-day noise and busier weekends
 PLANK's price wanders (6% a day, with occasional pumps and dumps); a log always costs $0.90 of PLANK at the day's price,
-so the pot is counted in PLANK and shown in dollars at that day's price. $250 seed, 40/25/5/30 split, 20x prize cap,
+so the pot is counted in PLANK and shown in dollars at that day's price. $250 seed, 40/25/5/30 split, 5x prize cap,
 3/2/1 free logs per 10.
 
   python3 sim/wild_year.py [years=2000] [grounded|wild]

@@ -112,8 +112,8 @@ export const SWAP_FEE_BPS = 50;
 /** Owner's fee wallet (public address only). Until it's set, swaps run with no fee. */
 export const SWAP_FEE_WALLET: `0x${string}` | undefined = undefined;
 export const DAILY_CAP = 500;
-export const PRIZE_CAP_MULT = 20;
-/** Fire.prizeNow(): the winner's 40%, taken from the pot or from 20x what this fire's tickets put in, if smaller. */
+export const PRIZE_CAP_MULT = 5;
+/** Fire.prizeNow(): the winner's 40%, taken from the pot or from 5x what this fire's tickets put in, if smaller. */
 export function prizeOf(pot: number, carriedIn: number, tickets: number) {
   if (tickets <= 0) return 0;
   return Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - carriedIn)) * 0.4;

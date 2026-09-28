@@ -49,7 +49,7 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 
 ### The pot
 - Held in PLANK. **The fire is a PLANK bag that never sells.** If PLANK doubles, the pot doubles.
-- When the fire goes out: **40% to the winner, 25% burned, 5% to the Paper Press royalty pool, 30% relights the next fire** (**fixed**). The winner keeps the whole 40%; the pool's share comes out of the pot, not the winner's prize. With no tickets at all, nothing burns and the whole pot carries into the next fire.
+- When the fire goes out: **40% to the winner, 25% burned, 5% to the Paper Press royalty pool, 30% relights the next fire** (**fixed**). The winner keeps the whole 40%; the pool's share comes out of the pot, not the winner's prize. With no tickets at all, nothing burns and the whole pot carries into the next fire. **Prize cap:** the split is taken from the whole pot or from 5× what this fire's own tickets put in, whichever is smaller (`PRIZE_CAP_MULT`, `potCarriedIn`); the rest carries. So a small fire during a dry spell can't take 40% of a pot earlier fires (or the seed) built; once a fire's own tickets are a fifth of the pot, it pays the full 40%.
 - **The 5% goes to the Paper Press royalty pool** (PulpPool), which splits it across every live press each time a fire ends. One transfer to an address that already exists. *(Founder note: you hold a large bag, so you're the largest recipient of this share. It's the community's norm and there's no exploit, but say it out loud.)*
 
 ### The fire's size (this is the game)

@@ -189,7 +189,7 @@ PARITY = [("flat:1", 70), ("flat:3", 70), ("swingy:5", 70), ("deaddays:20", 70),
 
 
 PARITY_SEED = 10000  # wei; each parity ticket adds 2 wei of PLANK to the pot
-PRIZE_CAP_MULT = 20
+PRIZE_CAP_MULT = 5
 
 
 def pot_wei(recs, days_t, seed=PARITY_SEED):
@@ -345,7 +345,7 @@ if __name__ == "__main__" and "--pots" not in sys.argv:
 # Each ticket's PLANK is $0.90 and all of it goes into the pot. A buy of 10 gets 11 tickets for 10 paid, and the free
 # one adds no PLANK, so (conservatively) every buy is a 10-pack: the pot gets $0.90 x 10/11 per ticket. PLANK's price is
 # held flat, so the pot is in today's dollars. When a fire with tickets goes out, the split is taken from the pot or from
-# 20x what that fire's own tickets put in, whichever is smaller: 40% winner, 25% burned, 5% royalty pool, the rest
+# 5x what that fire's own tickets put in, whichever is smaller: 40% winner, 25% burned, 5% royalty pool, the rest
 # carries. A fire nobody bought into carries 100%. The seed counts as carried-in pot.
 POT_PER_TICKET = 0.90 * 10 / 11  # a log thrown on day 3+ (10 paid + 1 free)
 def pot_per_log(night):  # night = nights the fire has survived when the log is thrown (0 = its first day)
@@ -384,7 +384,7 @@ def pot_run(days_t, luck):
         rec = f.roll(luck[d])
         if not rec["survived"]:
             if rec["tickets"] > 0:
-                base = min(pot, PRIZE_CAP_MULT * (pot - carried))  # a fire pays out on at most 20x what its tickets put in
+                base = min(pot, PRIZE_CAP_MULT * (pot - carried))  # a fire pays out on at most 5x what its tickets put in
                 ends.append(dict(day=d, pot=pot, prize=base * 0.40, burned=base * 0.25, royalty=base * 0.05, tickets=rec["tickets"], nights=rec["night"], capped=base < pot))
                 pot -= base * 0.70
             else:

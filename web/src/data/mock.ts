@@ -281,7 +281,7 @@ export function makeMockApi(): FireApi {
       const pot = s.potPlank;
       const nobody = winner === NOBODY;
       // 40% to the winner, 25% burns, 5% to the Paper Press royalty pool, the rest carries. The split is taken from the pot or
-      // from 20x what this fire's tickets put in, if smaller (Fire.sol's prize cap). No tickets: the whole pot carries.
+      // from 5x what this fire's tickets put in, if smaller (Fire.sol's prize cap). No tickets: the whole pot carries.
       const base = nobody ? 0 : Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - s.potCarriedIn));
       const paid = base * 0.4;
       const carry = pot - base * 0.7;

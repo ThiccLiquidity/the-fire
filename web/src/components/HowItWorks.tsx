@@ -21,7 +21,11 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
               <li><b>Big fires last.</b> The storm is a real number of logs, so size is what counts. A 50-log fire can't ride out a 180-log storm; a 5,000-log fire barely notices it. A fire that people keep feeding can go deep. One nobody feeds goes out in a night or two.</li>
               <li><b>Example:</b> on night 2 most storms are 5 to 30 logs. By night 12 most are 180 to 1,000. By night 20 most are over 1,700. At about 100 logs a day a fire usually lasts around 9 nights; at 1,000 a day, around 17.</li>
             </ul></li>
-          <li><b>When the fire goes out, one log wins.</b> Every log in that fire has the same chance. The winner gets 40% of the pot. 25% is destroyed, 5% goes to the Paper Press royalty pool, and 30% lights the next fire. If nobody threw a log, nothing burns and the whole pot lights the next fire. Then it starts again.</li>
+          <li><b>When the fire goes out, one log wins.</b> Every log in that fire has the same chance. The winner gets 40% of the pot. 25% is destroyed, 5% goes to the Paper Press royalty pool, and 30% lights the next fire. If nobody threw a log, nothing burns and the whole pot lights the next fire. Then it starts again.
+            <ul className="how-sub">
+              <li><b>A small fire can't take a big pot.</b> Part of every pot was built by earlier fires (and the launch seed). A fire pays out on at most 5 times what its own logs put in; the rest waits for the next fire. The prize on the page always shows what the winner would take right now.</li>
+              <li><b>Example:</b> a fire starts with $1,000 carried in, and its logs add $20 before it goes out. The payout is figured on 5 × $20 = $100: the winner gets $40, $25 burns, $5 goes to the pool, and about $950 carries to the next fire. If its logs had added $250 (a fifth of the $1,250 pot), the winner would get the full 40%: $500.</li>
+            </ul></li>
         </ol>
 
         <h3>Where the money goes</h3>
