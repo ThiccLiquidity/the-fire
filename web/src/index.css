@@ -346,3 +346,5 @@ a { color: var(--flame); }
   .pg input[type=range] { width: 100%; max-width: 14rem; }
   .pg-toggle { font-size: 0.8rem; }
 }
+
+.pot-grow { font-size: 0.82rem; color: var(--paper-dim); }

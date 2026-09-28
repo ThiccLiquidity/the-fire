@@ -954,7 +954,72 @@ contract FireTest is Test {
         assertEq(fire.stormStrength(2, RND_MONSTER), uint256(22_000) * 442 * 253002 / 1e8);
         assertGt(fire.stormStrength(2, RND_MONSTER), 0);
     }
+
+    // ------------------------------------------------------------ the launch seed and the prize cap
+    uint256 constant SEED = 550 * PLANK_T / 2; // like the real launch: $250 of PLANK vs $0.45 of pot per ticket
+
+    function _seed() internal {
+        plank.mint(address(this), SEED);
+        plank.approve(address(fire), SEED);
+        fire.seed(SEED);
+    }
+
+    function test_only_the_deployer_seeds_once_before_the_first_storm() public {
+        vm.prank(alice); vm.expectRevert(Fire.BadRequest.selector); fire.seed(1);
+        _seed();
+        assertEq(fire.pot(), SEED);
+        assertTrue(fire.seeded());
+        plank.mint(address(this), 1); plank.approve(address(fire), 1);
+        vm.expectRevert(Fire.BadRequest.selector); fire.seed(1); // only once
+    }
+
+    function test_no_seed_after_the_first_storm() public {
+        _roll(RND_CALM);
+        plank.mint(address(this), SEED); plank.approve(address(fire), SEED);
+        vm.expectRevert(Fire.BadRequest.selector); fire.seed(SEED);
+    }
+
+    function test_a_one_ticket_fire_cannot_take_the_seed() public {
+        _seed();
+        _buy(alice, 1);
+        uint256 own = fire.pot() - SEED; // what alice's ticket put in
+        assertEq(fire.prizeNow(), own * 20 * 4000 / 10000, "prize capped at 20x her ticket's PLANK, 40% of that");
+        uint256 a0 = plank.balanceOf(alice);
+        _roll(RND_CALM);
+        while (fire.fireId() == 1) _roll(RND_MONSTER);
+        assertEq(plank.balanceOf(alice) - a0, own * 20 * 4000 / 10000, "she wins the capped prize");
+        uint256 base = own * 20;
+        uint256 left = SEED + own - base * 4000 / 10000 - base * 2500 / 10000 - base * 500 / 10000;
+        assertEq(fire.pot(), left, "the rest of the seed carries");
+        assertEq(fire.potCarriedIn(), left);
+    }
+
+    function test_a_real_fire_takes_the_full_prize() public {
+        _seed();
+        _buy(alice, 40); _buy(bob, 40); // 80 tickets put in far more than 1/20 of the pot
+        uint256 p = fire.pot();
+        assertEq(fire.prizeNow(), p * 4000 / 10000, "not capped");
+        _roll(RND_CALM);
+        while (fire.fireId() == 1) _roll(RND_MONSTER);
+        assertEq(fire.pot(), p - p * 4000 / 10000 - p * 2500 / 10000 - p * 500 / 10000, "normal 30% carry");
+    }
+
+    function test_the_cap_carries_forward_to_later_fires() public {
+        _buy(alice, 400);
+        _roll(RND_CALM);
+        while (fire.fireId() == 1) _roll(RND_MONSTER);
+        uint256 carried = fire.pot();
+        assertEq(fire.potCarriedIn(), carried);
+        _buy(bob, 1); // fire 2: one ticket on a big carry
+        assertLt(fire.prizeNow(), carried * 4000 / 10000, "a 1-ticket fire can't take 40% of what fire 1 left");
+    }
+
+    function test_no_prize_shown_with_no_tickets() public {
+        _seed();
+        assertEq(fire.prizeNow(), 0);
+    }
 }
+
 
 contract WrongAdapter {
     function FIRE() external pure returns (address) { return address(0xBEEF); }

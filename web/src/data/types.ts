@@ -17,6 +17,7 @@ export interface PastFire {
   id: number;
   nights: number;
   potPlank: number;
+  prizePlank?: number; // what the winner actually got (the pot's 40%, or less if the prize cap applied)
   winner: string;
   peakSize: number;
 }
@@ -65,6 +66,7 @@ export interface FireState {
   fireId: number;
   night: number; // nights survived
   potPlank: number;
+  potCarriedIn: number; // the part of the pot this fire started with (carry or seed), PLANK
   plankUsd: number;
   ethUsd: number;
   plankPerTicket: number; // ratchets toward $0.90
@@ -106,6 +108,12 @@ export interface FireState {
 }
 
 export const DAILY_CAP = 500;
+export const PRIZE_CAP_MULT = 20;
+/** Fire.prizeNow(): the winner's 40%, taken from the pot or from 20x what this fire's tickets put in, if smaller. */
+export function prizeOf(pot: number, carriedIn: number, tickets: number) {
+  if (tickets <= 0) return 0;
+  return Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - carriedIn)) * 0.4;
+}
 export const KEEP = 0.6;
 export const FULL_DAYS = 2.5; // a fire worth 2.5 days of buys is "full height" on screen (fires settle at ~1-2 days)
 /** Fire.sol's storm luck: 32 quantiles of e^(1.5 z), in bps. */

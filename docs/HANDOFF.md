@@ -46,6 +46,7 @@ Updated Sep 28 2026 (beta audit merged). Read this whole file before changing an
 | 21 | Animals walked over Plank by the fire | Built: Plank stands a step nearer the viewer than every animal's path, and is redrawn over any animal passing behind him (same trick as the trees). Checked frame by frame with a deer and a skunk. **Approved Sep 28, merged to `main`.** |
 | 22 | "Up to 1% more ETH is sent" felt sketchy | Built: an ETH buy sends exactly the ETH shown on "You pay", so the wallet shows the same number; the line is gone. The price is re-checked right before sending; if the feed ticked, it stops with "The ETH price just changed. Check the new price and try again." **Approved Sep 28, merged to `main`.** |
 | 23 | Fire simulation (volume only, low to high) and his 4 decisions | Sim: `sim/fire_sim.py` mirrors the contract night for night (`contracts/test/FireSimParity.t.sol` checks 600 nights); results in `docs/fire-sim.md`. Decisions built: (1) fire counted in thousandths of a ticket (`fireSizeMilli`), so tiny fires aren't rounded away; (2) a fire nobody bought into carries its whole pot, no burn; (3) storm luck widened to lognormal(0, 1.5): avg life 7.5 nights, ~3% out by night 3, ~21% reach night 10; (4) site: full height = 2.5 days of buys, rain as heavy as the call was close. Contract + ABI + site + docs + economy sim updated. 113 tests. **Site part awaiting approval.** |
+| 24 | Pot: simulate from a $250 seed; protect it; seed only by him | Contract: `Fire.seed(amount)`: deployer only, once, before the first storm, add-only (also `SEED_PLANK` in Deploy.s.sol). **Prize cap:** a fire pays out on at most 20x what its own tickets put in (`PRIZE_CAP_MULT`, `potCarriedIn`, `prizeNow()`); ~30 tickets in one fire unlock the full seed; never binds at normal volume. Site shows the capped "winner takes" ("grows with this fire, up to $X"). Sim + parity test now check the pot every night. Results: `docs/pot-sim.md` (incl. 5-10 tickets/day for 3 years). 119 tests. **Awaiting approval** with #23. |
 
 He also asked (answered, no code): "how do we track fake paper?" — there is none. ETH/USDG buyers get
 tickets directly; `ticketsOf[fire][wallet]` and the `TicketsBought` event (flag `paperFromFire`) record
@@ -90,7 +91,7 @@ header so visitors can turn it on deliberately and see that sound exists.
 ## Verify
 
 ```
-cd contracts; forge test          # 113 passed
+cd contracts; forge test          # 119 passed
 cd web; npx tsc -b; npm run build # clean
 ```
 

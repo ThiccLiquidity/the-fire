@@ -12,6 +12,7 @@ import {
   type Snapshot,
   DAILY_CAP,
   FULL_DAYS,
+  PRIZE_CAP_MULT,
   LUCK_BPS,
   stormLook,
   KEEP,
@@ -79,6 +80,7 @@ export function makeMockApi(): FireApi {
       fireId: 14,
       night: 6,
       potPlank: 2_750_000_000_000, // ~$2,900
+      potCarriedIn: 800_000_000_000, // what fire #14 started with
       plankUsd: PLANK_USD,
       paperUsd: PAPER_USD,
       paperPerTicket: paperPerTicketAt(PAPER_USD),
@@ -280,17 +282,20 @@ export function makeMockApi(): FireApi {
       }
       const pot = s.potPlank;
       const nobody = winner === NOBODY;
-      const paid = nobody ? 0 : pot * 0.4; // 40% to the winner; 25% burns; 5% to the Paper Mill royalty pool; 30% carries
-      const carry = nobody ? pot : pot * 0.3; // no tickets: nothing burns, the whole pot carries
+      // 40% to the winner, 25% burns, 5% to the Paper Mill royalty pool, the rest carries. The split is taken from the pot or
+      // from 20x what this fire's tickets put in, if smaller (Fire.sol's prize cap). No tickets: the whole pot carries.
+      const base = nobody ? 0 : Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - s.potCarriedIn));
+      const paid = base * 0.4;
+      const carry = pot - base * 0.7;
       if (w.accounts[winner]) w.accounts[winner].plank += paid;
       w.lastWinner = winner;
       w.s = {
         ...s, ...legs,
         storm: { at: Date.now(), fireId: s.fireId, night, strength: shown, size, survived, intensity, winner, paidPlank: paid, potPlank: pot, tickets: s.ticketsTotal, before },
-        past: [{ id: s.fireId, nights: night, potPlank: pot, winner, peakSize: size }, ...s.past].slice(0, 20),
+        past: [{ id: s.fireId, nights: night, potPlank: pot, prizePlank: paid, winner, peakSize: size }, ...s.past].slice(0, 20),
         fireId: s.fireId + 1, night: 0, fireSize: 0,
-        potPlank: carry,
-        burnedPlankAllTime: s.burnedPlankAllTime + (nobody ? 0 : pot * 0.25),
+        potPlank: carry, potCarriedIn: carry,
+        burnedPlankAllTime: s.burnedPlankAllTime + base * 0.25,
         ticketsToday: 0, ticketsTotal: 0,
       };
     }
