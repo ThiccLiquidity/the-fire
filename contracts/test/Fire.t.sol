@@ -27,7 +27,7 @@ contract FireTest is Test {
     uint256 constant PLANK_T = 10_000_000e18;
     uint256 constant ETH_T = 0.0003 ether; // $1 at $3,333/ETH (set below)
     uint256 constant MILL_BID = 100e8; // $100, USD 8 decimals
-    uint256 constant ROLL_TOD = 3 hours; // 8pm Phoenix
+    uint256 constant ROLL_TOD = 75600; // 21:00 UTC (2pm Phoenix), the production value
     uint256 constant PLANK_IN_MILL = 800_000_000e18;
 
     // rnd values for the storm draw (rnd % 10,000 against the night's odds)
@@ -908,6 +908,53 @@ contract FireTest is Test {
         uint256 old = rng.last();
         vm.expectRevert(Fire.BadRequest.selector);
         rng.fulfill(old, RND_CALM);
+    }
+
+    function test_rerolls_cannot_postpone_abandon() public {
+        _buy(alice, 300);
+        _buy(bob, 100);
+        uint256 p = fire.pot();
+        vm.warp(fire.nextRollAt());
+        fire.roll(); // drand stalls for good
+        uint256 started = block.timestamp;
+        assertEq(fire.rollStartedAt(), started);
+        // the keeper (or anyone) rerolls every REROLL_AFTER, as keeper.mjs does when the relays say drand is behind
+        while (block.timestamp + fire.REROLL_AFTER() < started + fire.ABANDON_AFTER() + 1 days) {
+            vm.warp(block.timestamp + fire.REROLL_AFTER());
+            vm.prank(carol); fire.reroll();
+            assertEq(fire.pendingSince(), block.timestamp, "reroll still restarts its own clock");
+            assertEq(fire.rollStartedAt(), started, "reroll leaves the abandon clock alone");
+            if (block.timestamp < started + fire.ABANDON_AFTER()) {
+                vm.expectRevert(Fire.NotYet.selector);
+                fire.abandon();
+            }
+        }
+        assertGt(block.timestamp - started, fire.ABANDON_AFTER());
+        // a reroll just before is still pending, but abandon counts from the first roll
+        vm.prank(carol); fire.abandon();
+        assertTrue(fire.abandoned());
+        assertEq(fire.pendingRequest(), 0);
+        uint256 a0 = plank.balanceOf(alice); uint256 b0 = plank.balanceOf(bob);
+        vm.prank(alice); fire.refund();
+        vm.prank(bob); fire.refund();
+        assertEq(plank.balanceOf(alice) - a0, p * 300 / 400);
+        assertEq(plank.balanceOf(bob) - b0, p * 100 / 400);
+    }
+
+    function test_abandon_clock_restarts_each_night() public {
+        _buy(alice, 10);
+        vm.warp(fire.nextRollAt());
+        fire.roll();
+        rng.fulfill(rng.last(), RND_CALM); // night 1 resolves normally
+        vm.warp(fire.nextRollAt());
+        fire.roll();
+        assertEq(fire.rollStartedAt(), block.timestamp);
+        vm.warp(block.timestamp + fire.ABANDON_AFTER() - 1);
+        vm.expectRevert(Fire.NotYet.selector);
+        fire.abandon();
+        vm.warp(block.timestamp + 1);
+        fire.abandon();
+        assertTrue(fire.abandoned());
     }
 
     function test_a_result_that_cannot_be_delivered_is_also_recoverable() public {

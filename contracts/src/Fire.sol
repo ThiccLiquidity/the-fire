@@ -128,8 +128,8 @@ contract Fire is ReentrancyGuard {
     ///      number is public ~30s after the roll, so a short wait would let someone who dislikes it re-roll whenever
     ///      nobody has delivered it yet. Two hours gives the keeper's alarm (and anyone on the site) time to deliver.
     uint256 public constant REROLL_AFTER = 2 hours;
-    /// @dev Last resort: if a roll has been stuck this long (randomness gone for good, or a result that can't be
-    ///      delivered), anyone can end the game and every ticket holder of the current fire claims their share.
+    /// @dev Last resort: if a night's roll has been stuck this long, counted from its first roll() so rerolls can't
+    ///      postpone it (randomness gone for good, or a result that can't be delivered), anyone can end the game and every ticket holder of the current fire claims their share.
     uint256 public constant ABANDON_AFTER = 7 days;
     /// @dev Chainlink ETH/USD updates on price deviation plus a 24h heartbeat; on Robinhood Chain gaps of 3-6h are
     ///      normal (observed Sep 2026). A quiet feed is still accurate, so only a missed heartbeat counts as stale.
@@ -173,7 +173,7 @@ contract Fire is ReentrancyGuard {
     uint256 public potCarriedIn; // the part of the pot this fire started with (the carry, or the seed)
     uint256 public nextRollAt;
     uint256 public ticketsToday;
-    uint256 public fireSizeMilli; // in thousandths of a ticket. Buys add, storms subtract, burns down 40% each night
+    uint256 public fireSizeMilli; // in thousandths of a ticket. Buys add, storms subtract, keeps 85% each night it survives
     uint256 public ticketsTotal;
     address public lastWinner;
 
@@ -192,7 +192,8 @@ contract Fire is ReentrancyGuard {
     uint256 public millFundUsdAt; // what the fund could pay then (USD, 8 dec): the bid only climbs below this
 
     uint256 public pendingRequest; // randomness request in flight (0 = none)
-    uint256 public pendingSince; // when it was requested
+    uint256 public pendingSince; // when the pending request was made (reset by reroll; REROLL_AFTER counts from it)
+    uint256 public rollStartedAt; // when this night's roll() first ran (reroll leaves it; ABANDON_AFTER counts from it)
 
     /// @notice PLANK a winner is owed because the transfer to them failed when the fire went out. Claim with claim().
     mapping(address => uint256) public unclaimed;
@@ -410,7 +411,7 @@ contract Fire is ReentrancyGuard {
         pot += amount;
     }
 
-    /// @dev n = tickets paid for; returns tickets received (n, or n + 1 for a full buy of 10).
+    /// @dev n = tickets paid for; returns tickets received (n, or n + 3/2/1 free logs for a full buy of 10 by fire day).
     function _addTickets(address buyer, uint256 n) internal returns (uint256 got) {
         if (n > TX_CAP) revert TxCap();
         got = ticketsFor(n);
@@ -433,6 +434,7 @@ contract Fire is ReentrancyGuard {
         uint256 id = randomness.request();
         pendingRequest = id;
         pendingSince = block.timestamp;
+        rollStartedAt = block.timestamp;
         emit RollRequested(fireId, night + 1, id);
     }
 
@@ -451,13 +453,14 @@ contract Fire is ReentrancyGuard {
         emit Rerolled(fireId, night + 1, old, id);
     }
 
-    /// @notice Anyone, last resort: a roll has been stuck for ABANDON_AFTER (randomness gone for good, or a result
+    /// @notice Anyone, last resort: a night's roll has been stuck for ABANDON_AFTER since roll() first ran (rerolls
+    ///         don't restart the clock), because randomness is gone for good or a result
     ///         that can't be delivered). Ends the game for good. The current fire's pot is set aside and each of its
     ///         ticket holders claims their share with refund(). Buying and rolling stop; the mill fund keeps buying
     ///         mills as before. With no tickets in the fire, the pot is burned.
     function abandon() external nonReentrant {
         if (pendingRequest == 0 || abandoned) revert BadRequest();
-        if (block.timestamp < pendingSince + ABANDON_AFTER) revert NotYet();
+        if (block.timestamp < rollStartedAt + ABANDON_AFTER) revert NotYet();
         abandoned = true;
         pendingRequest = 0;
         uint256 p = pot;

@@ -12,13 +12,17 @@
 //     (only if OPENSEA_API_KEY is set; checks every SWEEP_EVERY_SEC, default 300, to respect API limits)
 // Every call here is permissionless: the keeper has no special powers, it's just reliably awake.
 // Optional: DRAND_URLS (comma-separated; default the three public api*.drand.sh relays).
-// Env: RPC_URL (or RPC_URL_FILE), FIRE, KEEPER_KEY_FILE (or KEEPER_KEY), EXPECTED_CHAIN_ID (default 4663),
-//      INTERVAL_SEC (default 30), ONCE=1 for a single pass, HEALTHCHECK_URL (pinged after every good pass; point a
-//      dead-man's switch like healthchecks.io at it), MAX_FEE_GWEI (optional cap), LOW_BALANCE_ETH (default 0.002).
+// Env: RPC_URL (or RPC_URL_FILE), FIRE, KEEPER_KEY_FILE (default /run/secrets/keeper-key), EXPECTED_CHAIN_ID
+//      (default 4663), FALLBACK_RPC_URL (default the public Robinhood Chain RPC on 4663; "none" to disable),
+//      INTERVAL_SEC (default 30), ONCE=1 for a single pass, MAX_FEE_GWEI (optional cap), LOW_BALANCE_ETH (default 0.002),
+//      HEALTHCHECK_URL: a healthchecks.io ping URL. Pinged only when the game is actually moving (no job failing, no
+//      overdue roll, no unanswered request, no stuck transaction, balance OK); otherwise <url>/fail gets the reason.
+//      The key comes from the file only. KEEPER_KEY in the environment is refused (it leaks into `docker inspect` and
+//      shell history) unless ALLOW_KEY_ENV=1 is set, for local dev.
 //      Sweeping: OPENSEA_API_KEY (or OPENSEA_API_KEY_FILE), COLLECTION (default the-plank-press), OPENSEA_API (default
 //      https://api.opensea.io).
 import { readFileSync } from "node:fs";
-import { createPublicClient, createWalletClient, http, parseAbi, defineChain } from "viem";
+import { createPublicClient, createWalletClient, http, fallback, parseAbi, defineChain } from "viem";
 import { privateKeyToAccount, nonceManager } from "viem/accounts";
 
 const env = (k, d) => (process.env[k] === undefined || process.env[k] === "" ? d : process.env[k]);
@@ -28,26 +32,43 @@ const RPC = fileOr("RPC_URL", "RPC_URL_FILE");
 const FIRE = env("FIRE");
 const EXPECTED_CHAIN_ID = Number(env("EXPECTED_CHAIN_ID", "4663"));
 if (!RPC || !FIRE) { console.error("Set RPC_URL (or RPC_URL_FILE) and FIRE"); process.exit(1); }
-const key = fileOr("KEEPER_KEY", "KEEPER_KEY_FILE", "/run/secrets/keeper-key");
-if (!key) { console.error("No keeper key: set KEEPER_KEY_FILE"); process.exit(1); }
+// The key comes from a file (written by keeper-setup.sh from a hidden tty prompt), never from the environment.
+const ALLOW_KEY_ENV = env("ALLOW_KEY_ENV") === "1";
+if (env("KEEPER_KEY") && !ALLOW_KEY_ENV) {
+  console.error("KEEPER_KEY in the environment is refused: it ends up in `docker inspect` and shell history. Mount the key file (KEEPER_KEY_FILE) instead. (ALLOW_KEY_ENV=1 allows it for local dev only.)");
+  process.exit(1);
+}
+const key = (ALLOW_KEY_ENV && env("KEEPER_KEY")) || tryRead(env("KEEPER_KEY_FILE", "/run/secrets/keeper-key"));
+if (!key) { console.error("No keeper key: mount it and set KEEPER_KEY_FILE"); process.exit(1); }
 const account = privateKeyToAccount(key.startsWith("0x") ? key : `0x${key}`, { nonceManager });
 const errMsg = (e) => e?.shortMessage ?? String(e?.message ?? e).split("\n")[0]; // never the full error: it can carry the RPC URL
 
-const pub = createPublicClient({ transport: http(RPC) });
+// RPC: the configured one first, then the public Robinhood Chain RPC if the first is down (mainnet only by default).
+const PUBLIC_RPC = "https://rpc.mainnet.chain.robinhood.com";
+const FALLBACK_RPC = env("FALLBACK_RPC_URL", EXPECTED_CHAIN_ID === 4663 ? PUBLIC_RPC : "none");
+const RPCS = [RPC, ...(FALLBACK_RPC !== "none" && FALLBACK_RPC !== RPC ? [FALLBACK_RPC] : [])];
+const transport = RPCS.length > 1 ? fallback(RPCS.map((u) => http(u))) : http(RPC);
+
+const pub = createPublicClient({ transport });
 let chain;
 try {
-  const id = await pub.getChainId();
+  const id = await createPublicClient({ transport: http(RPC) }).getChainId();
   if (id !== EXPECTED_CHAIN_ID) throw new Error(`RPC is on chain ${id}, expected ${EXPECTED_CHAIN_ID}`);
+  if (RPCS.length > 1) {
+    const fid = await createPublicClient({ transport: http(RPCS[1]) }).getChainId().catch((e) => { console.error("warning: fallback RPC unreachable at startup:", errMsg(e)); return id; });
+    if (fid !== EXPECTED_CHAIN_ID) throw new Error(`fallback RPC is on chain ${fid}, expected ${EXPECTED_CHAIN_ID} (set FALLBACK_RPC_URL, or none)`);
+  }
   if (!(await pub.getCode({ address: FIRE }))) throw new Error(`no contract at FIRE ${FIRE}`);
-  chain = defineChain({ id, name: "chain", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [RPC] } } });
+  chain = defineChain({ id, name: "chain", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: RPCS } } });
 } catch (e) { console.error("startup failed:", errMsg(e)); process.exit(1); }
-const wallet = createWalletClient({ account, chain, transport: http(RPC) });
+const wallet = createWalletClient({ account, chain, transport });
 const MAX_FEE = env("MAX_FEE_GWEI") ? BigInt(Math.round(Number(env("MAX_FEE_GWEI")) * 1e9)) : undefined;
 
 const fireAbi = parseAbi([
   "function nextRollAt() view returns (uint256)",
   "function pendingRequest() view returns (uint256)",
   "function pendingSince() view returns (uint256)",
+  "function abandoned() view returns (bool)",
   "function randomness() view returns (address)",
   "function REROLL_AFTER() view returns (uint256)",
   "function PLANK_USD() view returns (address)",
@@ -102,29 +123,127 @@ const twapAbi = parseAbi(["function last() view returns (uint256 cum, uint32 ts)
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const read = (address, abi, functionName, args = []) => pub.readContract({ address, abi, functionName, args });
 
-// One transaction in flight per job. If a receipt doesn't come back in time, the next pass checks that hash
-// instead of sending a duplicate.
+// One transaction in flight per job, tracked as { hashes, nonce, fee, firstSentAt, sentAt } plus the call itself.
+// While it's in flight the job doesn't send again. reconcile() runs at the start of every pass and checks each one:
+//   - a receipt (for any of its hashes): done;
+//   - the node no longer knows it (dropped) after DROP_GRACE, or still unmined after STUCK: if its nonce is still open,
+//     re-send at the SAME nonce with a higher fee (the original call if it would still succeed, else a 0-ETH transfer
+//     to ourselves to fill the nonce). Same nonce means at most one of them can ever land, so nothing is done twice,
+//     and later transactions aren't stuck behind a gap. If something else already used that nonce, forget it and
+//     reset the nonce manager, so the job re-sends (if still needed) with a fresh nonce.
 const inflight = new Map();
+const STUCK_MS = 10 * 60_000, DROP_GRACE_MS = 60_000, HEALTH_TX_MS = 15 * 60_000;
+const nonceKey = () => ({ address: account.address, chainId: chain.id });
+const resetNonce = () => account.nonceManager.reset(nonceKey());
+// Nonce allocation and broadcast happen one at a time (the jobs run in parallel).
+let lock = Promise.resolve();
+const serial = (fn) => { const p = lock.then(fn, fn); lock = p.catch(() => {}); return p; };
+const notFound = (e) => e?.name === "TransactionNotFoundError" || e?.name === "TransactionReceiptNotFoundError";
+
+/** Fees for a new send, or (with prev) for a same-nonce replacement: at least 25% above prev, as nodes require. */
+async function fees(prev) {
+  const est = await pub.estimateFeesPerGas();
+  let prio = est.maxPriorityFeePerGas ?? 0n, max = est.maxFeePerGas;
+  if (prev) {
+    const bump = (x) => (x * 5n) / 4n + 1n;
+    if (bump(prev.maxPriorityFeePerGas) > prio) prio = bump(prev.maxPriorityFeePerGas);
+    if (bump(prev.maxFeePerGas) > max) max = bump(prev.maxFeePerGas);
+  }
+  if (max < prio) max = prio;
+  if (MAX_FEE && max > MAX_FEE) {
+    if (prev) return undefined; // can't outbid the stuck one under the cap
+    max = MAX_FEE;
+    if (prio > max) prio = max;
+  }
+  return { maxFeePerGas: max, maxPriorityFeePerGas: prio };
+}
+const write = (c, nonce, fee) => wallet.writeContract({ address: c.address, abi: c.abi, functionName: c.functionName, args: c.args, value: c.value, nonce, ...fee });
+
 async function send(address, abi, functionName, args = [], value = 0n) {
   const job = `${address}:${functionName}`;
   const prev = inflight.get(job);
-  if (prev) {
-    const r = await pub.getTransactionReceipt({ hash: prev }).catch(() => undefined);
-    if (!r) { log(`${functionName}: still waiting on ${prev}`); return false; }
-    inflight.delete(job);
-    log(`${functionName} ${r.status} ${prev} (late receipt)`);
-    return r.status === "success";
-  }
+  if (prev) { log(`${functionName}: still waiting on ${prev.hashes.at(-1)} (nonce ${prev.nonce})`); return false; }
   // Simulate first: if the contract says no (someone else already did it), skip quietly.
   try { await pub.simulateContract({ account, address, abi, functionName, args, value }); }
   catch (e) { log(`skip ${functionName}: ${errMsg(e)}`); return false; }
-  const hash = await wallet.writeContract({ address, abi, functionName, args, value, ...(MAX_FEE ? { maxFeePerGas: MAX_FEE } : {}) });
-  inflight.set(job, hash);
+  const call = { address, abi, functionName, args, value };
+  const entry = await serial(async () => {
+    const fee = await fees();
+    const nonce = await account.nonceManager.consume({ ...nonceKey(), client: pub });
+    let hash;
+    try { hash = await write(call, nonce, fee); }
+    catch (e) { resetNonce(); throw e; } // the nonce wasn't used: re-read it from the chain next time
+    const t = Date.now();
+    const en = { ...call, hashes: [hash], cancels: new Set(), nonce, fee, firstSentAt: t, sentAt: t };
+    inflight.set(job, en);
+    return en;
+  });
+  const hash = entry.hashes[0];
   const r = await pub.waitForTransactionReceipt({ hash, timeout: 120_000 }).catch(() => undefined);
-  if (!r) { log(`${functionName}: sent ${hash}, no receipt yet`); return false; }
+  if (!r) { log(`${functionName}: sent ${hash} (nonce ${entry.nonce}), no receipt yet`); return false; }
   inflight.delete(job);
   log(`${functionName} ${r.status} ${hash}`);
   return r.status === "success";
+}
+
+async function receiptOf(hashes) {
+  for (const hash of hashes) {
+    try { return await pub.getTransactionReceipt({ hash }); } catch (e) { if (!notFound(e)) throw e; }
+  }
+  return undefined;
+}
+async function knownAny(hashes) {
+  for (const hash of hashes) {
+    try { await pub.getTransaction({ hash }); return true; } catch (e) { if (!notFound(e)) throw e; }
+  }
+  return false;
+}
+
+async function reconcile() {
+  for (const [job, e] of inflight) {
+    const last = e.hashes.at(-1);
+    try {
+      const r = await receiptOf(e.hashes);
+      if (r) {
+        inflight.delete(job);
+        log(e.cancels.has(r.transactionHash) ? `${e.functionName}: nonce ${e.nonce} filled by cancel ${r.transactionHash}` : `${e.functionName} ${r.status} ${r.transactionHash} (late receipt)`);
+        continue;
+      }
+      const age = Date.now() - e.sentAt;
+      const known = await knownAny(e.hashes);
+      if (known ? age < STUCK_MS : age < DROP_GRACE_MS) { log(`${e.functionName}: still waiting on ${last} (nonce ${e.nonce})`); continue; }
+      const why = known ? `stuck ${Math.round(age / 60_000)} min` : "dropped";
+      const used = await pub.getTransactionCount({ address: account.address, blockTag: "latest" });
+      if (used > e.nonce) {
+        const r2 = await receiptOf(e.hashes); // it may have just landed
+        inflight.delete(job);
+        resetNonce();
+        log(r2 ? `${e.functionName} ${r2.status} ${r2.transactionHash} (late receipt)` : `${e.functionName}: ${why}; nonce ${e.nonce} was used by another transaction. Dropped ${last}; will re-send if still needed`);
+        continue;
+      }
+      // A lower nonce we aren't tracking (say, a send that errored but reached the node and was later dropped) would
+      // hold this one back forever: fill it with a 0-ETH transfer to ourselves.
+      const tracked = new Set([...inflight.values()].map((x) => x.nonce));
+      for (let n = Number(used); n < e.nonce; n++) {
+        if (tracked.has(n)) continue;
+        const gapFee = await fees();
+        const h = await serial(() => wallet.sendTransaction({ to: account.address, value: 0n, nonce: n, ...gapFee })).catch((err) => { log(`nonce gap ${n}: fill failed: ${errMsg(err)}`); });
+        if (!h) continue;
+        const t = Date.now(); // tracked like any other job, so it gets bumped or dropped the same way
+        inflight.set(`gap:${n}`, { functionName: `nonce-gap ${n}`, cancelOnly: true, hashes: [h], cancels: new Set([h]), nonce: n, fee: gapFee, firstSentAt: t, sentAt: t });
+        log(`nonce gap ${n} (below ${e.functionName}'s ${e.nonce}): filled with ${h}`);
+      }
+      const fee = await fees(e.fee);
+      if (!fee) { log(`ALERT ${e.functionName}: ${why} tx ${last} needs a fee above MAX_FEE_GWEI to replace; still waiting`); continue; }
+      let still = !e.cancelOnly;
+      if (still) try { await pub.simulateContract({ account, address: e.address, abi: e.abi, functionName: e.functionName, args: e.args, value: e.value }); }
+      catch { still = false; }
+      const hash = await serial(() => (still ? write(e, e.nonce, fee) : wallet.sendTransaction({ to: account.address, value: 0n, nonce: e.nonce, ...fee })));
+      e.hashes.push(hash); e.fee = fee; e.sentAt = Date.now();
+      if (!still) e.cancels.add(hash);
+      log(`${e.functionName}: ${why} tx ${last}; ${still ? "re-sent" : "no longer needed, cancelled"} at nonce ${e.nonce} as ${hash}`);
+    } catch (err) { log(`${e.functionName}: couldn't check/replace ${last}: ${errMsg(err)}`); }
+  }
 }
 
 // ---------------------------------------------------------------- mill floor sweep
@@ -204,10 +323,11 @@ let plankTwap;
 async function job(name, fn) { try { await fn(); return true; } catch (e) { log(`${name} failed: ${errMsg(e)}`); return false; } }
 
 async function randomnessJob(now) {
-  const [nextRollAt, pending, since, adapter, rerollAfter] = await Promise.all([
+  const [nextRollAt, pending, since, adapter, rerollAfter, abandoned] = await Promise.all([
     read(FIRE, fireAbi, "nextRollAt"), read(FIRE, fireAbi, "pendingRequest"), read(FIRE, fireAbi, "pendingSince"),
-    read(FIRE, fireAbi, "randomness"), read(FIRE, fireAbi, "REROLL_AFTER"),
+    read(FIRE, fireAbi, "randomness"), read(FIRE, fireAbi, "REROLL_AFTER"), read(FIRE, fireAbi, "abandoned"),
   ]);
+  if (abandoned) return; // the game is over: nothing to roll (the mill sweep goes on)
   if (pending === 0n) {
     if (now >= nextRollAt) await send(FIRE, fireAbi, "roll");
   } else if (await read(adapter, adapterAbi, "answered", [pending])) {
@@ -229,7 +349,38 @@ async function randomnessJob(now) {
   }
 }
 
+/** What's wrong with the game right now, judged from the chain after this pass's jobs ran ([] = healthy). */
+async function problems(results) {
+  const p = [];
+  if (!results.every(Boolean)) p.push("a keeper job failed (docker logs)");
+  const [now, nextRollAt, pending, since, abandoned] = await Promise.all([
+    pub.getBlock().then((b) => b.timestamp), read(FIRE, fireAbi, "nextRollAt"), read(FIRE, fireAbi, "pendingRequest"),
+    read(FIRE, fireAbi, "pendingSince"), read(FIRE, fireAbi, "abandoned"),
+  ]);
+  if (!abandoned) {
+    if (pending === 0n && now > nextRollAt + 600n) p.push(`storm overdue: no roll ${(now - nextRollAt) / 60n} min after roll time`);
+    // pendingSince restarts at each reroll, so a drand stall shows here until the 2h reroll, then again 15 min later.
+    if (pending !== 0n && now > since + 900n) p.push(`roll request unanswered for ${(now - since) / 60n} min`);
+  }
+  for (const e of inflight.values()) {
+    const age = Date.now() - e.firstSentAt;
+    if (age > HEALTH_TX_MS) p.push(`${e.functionName} tx in flight ${Math.round(age / 60_000)} min (nonce ${e.nonce})`);
+  }
+  const bal = await pub.getBalance({ address: account.address });
+  if (bal < LOW_BALANCE) p.push(`keeper balance low: ${Number(bal) / 1e18} ETH`);
+  return p;
+}
+
+const HEALTH = env("HEALTHCHECK_URL")?.replace(/\/$/, "");
+async function ping(p) {
+  if (p.length) log(`ALERT unhealthy: ${p.join("; ")}`);
+  if (!HEALTH) return;
+  const signal = AbortSignal.timeout(10_000);
+  await (p.length ? fetch(`${HEALTH}/fail`, { method: "POST", body: p.join("; ").slice(0, 2000), signal }) : fetch(HEALTH, { signal })).catch(() => {});
+}
+
 async function tick() {
+  await reconcile(); // first: settle, re-send or cancel anything left in flight from earlier passes
   const now = (await pub.getBlock()).timestamp; // the contracts judge time by the chain's clock, so do we
   const results = await Promise.all([
     job("randomness", () => randomnessJob(now)),
@@ -248,17 +399,16 @@ async function tick() {
     }),
   ]);
   await job("sweep", () => sweep(now));
-  const bal = await pub.getBalance({ address: account.address }).catch(() => undefined);
-  if (bal !== undefined && bal < LOW_BALANCE) log(`ALERT keeper balance ${Number(bal) / 1e18} ETH — top it up`);
-  if (results.every(Boolean) && env("HEALTHCHECK_URL")) await fetch(env("HEALTHCHECK_URL"), { signal: AbortSignal.timeout(10_000) }).catch(() => {});
+  await ping(await problems(results).catch((e) => [`health check failed: ${errMsg(e)}`]));
 }
 
-log(`keeper ${account.address} watching Fire ${FIRE} on chain ${chain.id}`);
+log(`keeper ${account.address} watching Fire ${FIRE} on chain ${chain.id} (${RPCS.length > 1 ? "with fallback RPC" : "no fallback RPC"})`);
+if (!HEALTH) log("WARNING HEALTHCHECK_URL is not set: nobody will hear about a stalled game. Set it in production.");
 if (env("ONCE")) await tick().catch((e) => { log("tick failed:", errMsg(e)); process.exitCode = 1; });
 else {
   const every = Number(env("INTERVAL_SEC", "30")) * 1000;
   for (;;) {
-    try { await tick(); } catch (e) { log("tick failed:", errMsg(e)); }
+    try { await tick(); } catch (e) { log("tick failed:", errMsg(e)); await ping([`pass failed: ${errMsg(e)}`]); }
     await new Promise((r) => setTimeout(r, every));
   }
 }

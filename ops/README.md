@@ -20,7 +20,8 @@ separate relayer, no database and no owner key.
    ```
    (use the release tag the contracts were deployed from). It installs Docker, locks the firewall to SSH, and asks
    for the **keeper wallet's** private key (a small dedicated wallet, ~$10 of ETH — never the deployer), your RPC URL
-   (stored in a file, since it may hold a provider key) and, optionally, your OpenSea API key.
+   (stored in a file, since it may hold a provider key) and your OpenSea API key. That key is required for launch: without it the press fund never buys a press (ETH and
+   USDG from tickets just pile up in the Fire). You can press Enter to skip it for now and re-run the script later.
 4. Make a free check at healthchecks.io (period 5 min, grace 5 min) with email/phone alerts; copy its ping URL.
 5. Run the `docker run …` line it prints, with the Fire address and the ping URL filled in.
 
@@ -40,11 +41,15 @@ Every 30 seconds:
 
 Every one of those is permissionless. If the keeper is down, the site's button covers the storm (roll, deliver,
 settle, reroll); the price feeds and the mill sweep can be done by anyone with `cast`. After every good pass it pings
-`HEALTHCHECK_URL`, so a dead keeper texts you within 10 minutes. Lines starting with `ALERT` (can't reach drand, low
-balance) need a look.
+`HEALTHCHECK_URL` only when the game is actually moving; if a roll is 10+ minutes overdue, a roll request has gone
+15+ minutes unanswered, one of its transactions has been in flight 15+ minutes, a job is failing or its balance is low,
+it pings `<url>/fail` with the reason instead. Either way (dead keeper or stalled game) healthchecks.io texts you.
+Lines starting with `ALERT` need a look. A transaction the RPC drops, or one stuck 10+ minutes, is re-sent at the same
+nonce with a higher fee (or cancelled if no longer needed), so it can't block the keeper. If your RPC is down it falls
+back to the public Robinhood Chain RPC.
 
 ## Day to day
-- Nothing. If a storm hasn't rolled by 8:05 PM, check `docker logs --tail=50 fire-keeper`.
+- Nothing. If a storm hasn't rolled by 2:05 PM MST (21:05 UTC), check `docker logs --tail=50 fire-keeper`.
 - Top up the keeper wallet when it drops under ~$5 of ETH (the keeper logs `ALERT` below 0.002 ETH).
 - Updates: `cd /root/the-fire && git fetch --tags && git checkout <new tag> && cd ops/keeper && docker build -t fire-keeper . && docker rm -f fire-keeper`,
   then the same `docker run` line.

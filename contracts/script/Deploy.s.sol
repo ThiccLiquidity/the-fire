@@ -29,7 +29,8 @@ interface IPair2 {
  *      nothing to configure after. Everything is immutable, so the script checks every input first and refuses to
  *      deploy on a mistake. Deploy just after 21:00 UTC so fire #1 gets a full first day.
  *   3. Start ops/keeper (rolls, delivers drand proofs, recovers stuck rolls, checkpoints, sweeps the mill floor).
- *   4. Ask Plank Press admin: PulpPool.addRewardToken(PLANK).
+ *   4. (Done already: the Plank Press admin whitelisted PLANK on PulpPool. Confirm PLANK is in its reward-token list on
+ *      the explorer before announcing.)
  *
  *   forge script script/Deploy.s.sol --rpc-url $RPC --account deployer --sender <deployer address> --slow --broadcast \
  *     --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
@@ -42,13 +43,15 @@ interface IPair2 {
  * PAPER_PER_TICKET     = 1e18 (1 PAPER, assuming 18 decimals — verify): the most PAPER a ticket ever takes
  * PAPER_USD_CAP        = 33000000 ($0.33, default): once PAPER trades above this, a ticket takes less than 1 PAPER
  * UNIV2_FACTORY, WETH  = Uniswap V2 factory + WETH on Robinhood Chain (the PAPER feed finds PAPER's pool there)
- * PLANK_PER_TICKET0    = starting PLANK per ticket in wei (~$0.90 of PLANK on launch day)
+ * PLANK_PER_TICKET0    = starting PLANK per ticket in wei (~$0.90 of PLANK on launch day). Leave it blank and run the
+ *                        script once without --broadcast: it stops and prints the right number from the feed.
  * PLANK_USD_PER_TICKET = 90000000 ($0.90, 8 decimals) — logs cost this much PLANK at the live (~30-min average) price
  * ETH_USD_PER_TICKET   = 100000000 ($1.00) — price of the PAPER part when paid in ETH or USDG
- * MILL_BID_BASE     = starting mill bid in USD, 8 decimals (e.g. 50000000000 = $500). It climbs ~1%/hour until a mill
- *                     sells, so start at or below where you expect the floor. Listings may be in USDG or ETH.
+ * MILL_BID_BASE     = starting mill bid in USD, 8 decimals (e.g. 50000000000 = $500). It climbs 25% of the start per day
+ *                     (linear, at most 3x, and never past what the fund holds) until a mill sells, so start at or below where you expect the floor. Listings may be in USDG or ETH.
  * USDG              = the USDG token on Robinhood Chain (mill listings are priced in it)
- * ROLL_TIME_OF_DAY  = 75600 (21:00 UTC = 2:00 PM MST)
+ * ROLL_TIME_OF_DAY  = 75600 (21:00 UTC = 2:00 PM MST); the script refuses anything else (the site says 21:00 UTC)
+ * SEED_PLANK        = launch seed in PLANK wei for fire #1's pot. Required unless NO_SEED=true is set on purpose.
  */
 contract Deploy is Script {
     function run() external {
@@ -80,7 +83,7 @@ contract Deploy is Script {
             usdg: vm.envAddress("USDG"),
             paperPerTicket: vm.envUint("PAPER_PER_TICKET"),
             paperUsdCap: vm.envOr("PAPER_USD_CAP", uint256(33_000_000)), // $0.33
-            plankPerTicket0: vm.envUint("PLANK_PER_TICKET0"),
+            plankPerTicket0: vm.envOr("PLANK_PER_TICKET0", uint256(0)),
             plankUsdPerTicket: vm.envUint("PLANK_USD_PER_TICKET"),
             ethUsdPerTicket: vm.envUint("ETH_USD_PER_TICKET"),
             millBidBase: vm.envUint("MILL_BID_BASE"),
@@ -112,26 +115,34 @@ contract Deploy is Script {
         require(vm.envAddress("ROYALTY_POOL").code.length > 0, "ROYALTY_POOL has no contract code");
         require(IERC20Metadata(vm.envAddress("PAPER")).decimals() == 18, "PAPER is not 18 decimals: the PAPER leg math assumes 18");
         require(IERC20Metadata(vm.envAddress("PLANK")).decimals() == 18, "PLANK is not 18 decimals");
+        require(IFeed18(vm.envAddress("ETH_USD_FEED")).decimals() == 8, "ETH_USD_FEED must have 8 decimals");
         require(vm.envUint("PAPER_PER_TICKET") == 1e18, "PAPER_PER_TICKET should be 1e18 (1 PAPER)");
 
         IFeed18 plankFeed = IFeed18(vm.envAddress("PLANK_USD_FEED"));
         require(plankFeed.decimals() == 18, "PLANK_USD_FEED must be the 18-decimal PlankUsdTwap");
         address pair = IPlankTwap(address(plankFeed)).PAIR();
         address plank = vm.envAddress("PLANK");
-        require(IPair2(pair).token0() == plank || IPair2(pair).token1() == plank, "PLANK_USD_FEED is not on a PLANK pool");
+        address t0 = IPair2(pair).token0();
+        address t1 = IPair2(pair).token1();
+        require(t0 == plank || t1 == plank, "PLANK_USD_FEED is not on a PLANK pool");
+        require((t0 == plank ? t1 : t0) == vm.envAddress("WETH"), "PLANK_USD_FEED's pool is not PLANK/WETH (it prices PLANK in ETH)");
         (, int256 px,, uint256 upd,) = plankFeed.latestRoundData();
         require(px > 0 && block.timestamp - upd < 2 days, "PLANK_USD_FEED has no fresh price yet: checkpoint it 30+ min after its deploy");
         (, int256 eth,, uint256 eupd,) = IFeed18(vm.envAddress("ETH_USD_FEED")).latestRoundData();
         require(eth > 0 && block.timestamp - eupd < 25 hours, "ETH_USD_FEED is stale");
 
         uint256 usdPerTicket = vm.envUint("PLANK_USD_PER_TICKET");
+        require(usdPerTicket == 90_000_000, "PLANK_USD_PER_TICKET should be 90000000 ($0.90)");
+        require(vm.envOr("PAPER_USD_CAP", uint256(33_000_000)) == 33_000_000, "PAPER_USD_CAP should be 33000000 ($0.33)");
         uint256 target = usdPerTicket * 1e28 / uint256(px);
-        uint256 start = vm.envUint("PLANK_PER_TICKET0");
+        uint256 start = vm.envOr("PLANK_PER_TICKET0", uint256(0)); // blank or missing -> 0 -> the require below prints the target
         require(start * 10 >= target * 9 && start * 10 <= target * 11,
             string.concat("PLANK_PER_TICKET0 should be within 10% of ", vm.toString(target), " (today's $ target)"));
         require(vm.envUint("ETH_USD_PER_TICKET") == 1e8, "ETH_USD_PER_TICKET should be 100000000 ($1)");
         uint256 bid = vm.envUint("MILL_BID_BASE");
         require(bid >= 10e8 && bid <= 5_000e8, "MILL_BID_BASE looks wrong (8 decimals: $300 = 30000000000)");
-        require(vm.envUint("ROLL_TIME_OF_DAY") < 1 days, "ROLL_TIME_OF_DAY must be seconds after 00:00 UTC");
+        require(vm.envUint("ROLL_TIME_OF_DAY") == 75600, "ROLL_TIME_OF_DAY must be 75600: the site says 21:00 UTC");
+        require(vm.envOr("SEED_PLANK", uint256(0)) > 0 || vm.envOr("NO_SEED", false),
+            "SEED_PLANK is not set: fill in the launch seed (PLANK wei), or set NO_SEED=true to deploy without one");
     }
 }

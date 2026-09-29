@@ -2,7 +2,8 @@
 # The Fire — keeper box. Run as root on a fresh Ubuntu 24.04 VPS:
 #   curl -fsSL https://raw.githubusercontent.com/ThiccLiquidity/the-fire/<release tag>/ops/keeper-setup.sh | RELEASE=<release tag> bash
 # RELEASE pins the keeper's code to the tag the contracts were deployed from (never a moving branch).
-# It installs Docker, locks the firewall to SSH, asks for the keeper wallet's key (and optionally an OpenSea API key),
+# It installs Docker, locks the firewall to SSH, asks for the keeper wallet's key and an OpenSea API key (needed for
+# the press fund to buy anything),
 # then prints the one command that starts the keeper.
 set -euo pipefail
 RELEASE="${RELEASE:?set RELEASE to the release tag the contracts were deployed from, e.g. RELEASE=v1.0.0}"
@@ -32,9 +33,14 @@ fi
 chown 1000:1000 $KDIR/keeper-key && chmod 600 $KDIR/keeper-key
 OS_OPTS=""
 if [ ! -f $KDIR/opensea-key ]; then
-  echo "Paste your OpenSea API key (lets the keeper sweep the mill floor; Enter to skip):"
+  echo
+  echo "Paste your OpenSea API key (REQUIRED for launch):"
+  echo "  The keeper finds press listings through OpenSea's API. Without a key the press fund NEVER buys a press:"
+  echo "  every \$1 paid in ETH or USDG just piles up in the Fire. Get one from OpenSea's developer portal."
+  echo "  Press Enter only if you'll add it later (then re-run this script and restart the keeper)."
   read -r -s OKEY </dev/tty; echo
-  if [ -n "$OKEY" ]; then printf '%s' "$OKEY" > $KDIR/opensea-key; chown 1000:1000 $KDIR/opensea-key; chmod 600 $KDIR/opensea-key; fi
+  if [ -n "$OKEY" ]; then printf '%s' "$OKEY" > $KDIR/opensea-key; chown 1000:1000 $KDIR/opensea-key; chmod 600 $KDIR/opensea-key
+  else echo "!! Skipped: NO OpenSea key. The press fund will not buy presses until you add one."; fi
 fi
 [ -f $KDIR/opensea-key ] && OS_OPTS="-e OPENSEA_API_KEY_FILE=/run/secrets/opensea-key -v $KDIR/opensea-key:/run/secrets/opensea-key:ro"
 if [ ! -f $KDIR/rpc-url ]; then
