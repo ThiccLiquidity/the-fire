@@ -31,14 +31,16 @@ export interface SceneInput {
 /** Where the fire is on screen (CSS px inside the scene), so the page can float the pot right above it. */
 export interface SceneView { fireX: number; fireTop: number; width: number; height: number }
 
+// The art is painted at twice the size it is drawn (AR), so it stays sharp on big and high-density screens.
+const AR = 2, aw = (i: { width: number }) => i.width / AR, ah = (i: { height: number }) => i.height / AR;
 const W = 1942, H = 809, ZOOM = 1.1, FIRE = { x: 958, y: 605 }, PIT = { x: 958, y: 634 }, LOGS_AT = { x: 825, y: 584 };
 const BASE = import.meta.env.BASE_URL;
 const THUNDER = ["clap1", "sr1", "sr2", "sr3", "sr4", "dry1", "dry2", "dry3", "dry4"];
-const IMAGES = ["a-land.webp", "a-water.png", "a-logs.png", "a-tufts.png", "a-canopy.png", ...PAINT.clouds.map((c) => c.f),
-  ...["bend", "backA", "backB", "frontC", "frontD"].map((n) => `deer-${n}.png`),
-  ...["body", "ears", "backNear", "backFar", "frontNear", "frontFar"].map((n) => `rabbit-${n}.png`),
-  ...["body", "tail", "backNear", "backFar", "frontNear", "frontFar"].map((n) => `squirrel-${n}.png`),
-  "frog-sit.png", "frog-jump.png", "bear.png", "heron.png"];
+const IMAGES = ["a-land.webp", "a-water.webp", "a-logs.webp", "a-tufts.webp", "a-canopy.webp", ...PAINT.clouds.map((c) => c.f),
+  ...["bend", "backA", "backB", "frontC", "frontD"].map((n) => `deer-${n}.webp`),
+  ...["body", "ears", "backNear", "backFar", "frontNear", "frontFar"].map((n) => `rabbit-${n}.webp`),
+  ...["body", "tail", "backNear", "backFar", "frontNear", "frontFar"].map((n) => `squirrel-${n}.webp`),
+  "frog-sit.webp", "frog-jump.webp", "bear.webp", "heron.webp"];
 
 // ---- small helpers
 const VN = Array.from({ length: 256 }, () => Math.random() * 2 - 1);
@@ -122,7 +124,12 @@ function glFire(canvas: HTMLCanvasElement) {
 
 export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) => void) {
   const out = canvas.getContext("2d")!;
-  const world = mk(), ctx = world.getContext("2d")!;
+  // how many pixels each painting pixel gets: 1 on a small screen, up to 2 on a big or high-density one (picked once;
+  // the layers below are that much bigger and every draw into them is scaled, so world coordinates stay the same)
+  let R = (() => { const rc = canvas.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1);
+    const s = Math.max((rc.width || innerWidth) * d / W, (rc.height || innerHeight * 0.86) * d / H) * ZOOM; return s > 1.6 ? 2 : s > 1.1 ? 1.5 : 1; })();
+  const mkL = () => { const c = mk(Math.round(W * R), Math.round(H * R)); c.getContext("2d")!.setTransform(R, 0, 0, R, 0, 0); return c; };
+  let world = mkL(), ctx = world.getContext("2d")!;
   let inp: SceneInput = { size: 0.5, hour: 20, threat: 0.2, lastBuyAt: 0, lastBuyBig: false };
   let raf = 0, stopped = false, dpr = 1, cw = 0, ch = 0;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -157,8 +164,25 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   }
 
   // ---- layers, built once the art has loaded
-  const land = mk(), lx = land.getContext("2d")!, water = mk(), wx = water.getContext("2d")!, cl = mk(), cx = cl.getContext("2d")!;
-  const actors = mk(), ax = actors.getContext("2d")!, glowC = mk(), glowX = glowC.getContext("2d")!;
+  let land = mkL(), lx = land.getContext("2d")!, water = mkL(), wx = water.getContext("2d")!, cl = mkL(), cx = cl.getContext("2d")!;
+  let actors = mkL(), ax = actors.getContext("2d")!, glowC = mkL(), glowX = glowC.getContext("2d")!;
+  // a device that can't keep up at the sharp size drops back to the painting's own size, once: measured over ~3 s
+  // (up to 90 frames) starting a couple of seconds after the art is up
+  const perf = { from: 0, n: 0, sum: 0, last: 0 };
+  function checkSpeed(now: number) {
+    if (R === 1 || perf.from === Infinity || document.hidden) { perf.last = 0; return; }
+    const d = perf.last ? now - perf.last : 0; perf.last = now;
+    if (!perf.from) { perf.from = now + 2; return; }
+    if (now < perf.from || !d || d > 3) return; // a gap that long is a paused tab, not a slow frame
+    perf.n++; perf.sum += d;
+    if (perf.n < 90 && !(perf.n >= 5 && now - perf.from > 3)) return;
+    perf.from = Infinity;
+    if (perf.sum / perf.n > 1 / 40) {
+      R = 1; world = mkL(); ctx = world.getContext("2d")!;
+      land = mkL(); lx = land.getContext("2d")!; water = mkL(); wx = water.getContext("2d")!; cl = mkL(); cx = cl.getContext("2d")!;
+      actors = mkL(); ax = actors.getContext("2d")!; glowC = mkL(); glowX = glowC.getContext("2d")!;
+    }
+  }
   const haze = document.createElement("canvas"), hx = haze.getContext("2d")!;
   const glc = mk(800, 900), glDraw = glFire(glc);
   let clouds: { f: string; x: number; y: number; img?: HTMLImageElement; speed: number }[] = [];
@@ -166,14 +190,14 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   function setup() {
     clouds = PAINT.clouds.map((c, i) => ({ ...c, img: assets[c.f], speed: 0.5 + i * 0.3 })); // px per step: a slow drift
     // the stones on the near side of the fire ring, drawn over any animal whose feet are behind them
-    { const c = mk(), x = c.getContext("2d", { willReadFrequently: true })!; x.drawImage(assets["a-land.webp"], 0, 0);
-      const d = x.getImageData(700, 560, 520, 190), a = d.data;
-      for (let i = 0; i < a.length; i += 4) { const r = a[i], g = a[i + 1], b = a[i + 2], y = 560 + Math.floor(i / 4 / 520);
+    { const c = mk(W * AR, H * AR), x = c.getContext("2d", { willReadFrequently: true })!; x.drawImage(assets["a-land.webp"], 0, 0);
+      const d = x.getImageData(700 * AR, 560 * AR, 520 * AR, 190 * AR), a = d.data;
+      for (let i = 0; i < a.length; i += 4) { const r = a[i], g = a[i + 1], b = a[i + 2], y = 560 + Math.floor(i / 4 / (520 * AR)) / AR;
         const stone = Math.abs(r - g) < 18 && Math.abs(g - b) < 22 && r > 95 && r < 215, inkp = r < 60 && g < 60 && b < 60;
         if (!((stone || inkp) && y > 612)) a[i + 3] = 0; }
-      ringFront = mk(520, 190); ringFront.getContext("2d")!.putImageData(d, 0, 0); }
+      ringFront = mk(520 * AR, 190 * AR); ringFront.getContext("2d")!.putImageData(d, 0, 0); }
     // the stream's course, read from its mask: for each column, the middle and half-width of the water
-    { const m = assets["a-water.png"]; if (m) { const c = mk(), x = c.getContext("2d", { willReadFrequently: true })!; x.drawImage(m, 0, 0);
+    { const m = assets["a-water.webp"]; if (m) { const c = mk(), x = c.getContext("2d", { willReadFrequently: true })!; x.drawImage(m, 0, 0, W, H);
       const d = x.getImageData(0, 0, W, H).data, mid = new Float32Array(W), half = new Float32Array(W); let x0 = W, x1 = 0;
       for (let q = 0; q < W; q++) { let lo = -1, hi = -1; for (let y = 480; y < H; y++) if (d[(y * W + q) * 4 + 3] > 128) { if (lo < 0) lo = y; hi = y; }
         if (lo >= 0 && hi - lo > 6) { mid[q] = (lo + hi) / 2; half[q] = (hi - lo) / 2; x0 = Math.min(x0, q); x1 = Math.max(x1, q); } }
@@ -246,12 +270,12 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   // glowing cracks on the logs where they meet the fire: an ember texture and a warm tint, masked to the logs
   let emberTex: HTMLCanvasElement | null = null, tl: HTMLCanvasElement | null = null, hcv: HTMLCanvasElement | null = null;
   function embersOnLogs(img: HTMLImageElement) {
-    if (emberTex) return emberTex; const c = mk(img.width, img.height), x = c.getContext("2d")!, r = rnd(42);
-    for (let i = 0; i < 160; i++) { const px = r() * c.width, py = r() * c.height * (0.35 + 0.65 * r()), rr = 3 + r() * 11;
+    if (emberTex) return emberTex; const c = mk(img.width, img.height), x = c.getContext("2d")!, r = rnd(42), lw = aw(img), lh = ah(img); x.scale(AR, AR);
+    for (let i = 0; i < 160; i++) { const px = r() * lw, py = r() * lh * (0.35 + 0.65 * r()), rr = 3 + r() * 11;
       const g = x.createRadialGradient(px, py, 0, px, py, rr); g.addColorStop(0, r() < 0.5 ? "rgba(255,190,80,1)" : "rgba(255,110,30,1)"); g.addColorStop(1, "rgba(255,60,10,0)"); x.fillStyle = g; x.fillRect(px - rr, py - rr, rr * 2, rr * 2); }
     x.strokeStyle = "rgba(255,150,50,0.9)"; x.lineWidth = 2;
-    for (let i = 0; i < 26; i++) { let px = r() * c.width, py = r() * c.height; x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 4; k++) { px += (r() - 0.5) * 26; py += (r() - 0.5) * 10; x.lineTo(px, py); } x.stroke(); }
-    x.globalCompositeOperation = "destination-in"; x.drawImage(img, 0, 0); return (emberTex = c);
+    for (let i = 0; i < 26; i++) { let px = r() * lw, py = r() * lh; x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 4; k++) { px += (r() - 0.5) * 26; py += (r() - 0.5) * 10; x.lineTo(px, py); } x.stroke(); }
+    x.globalCompositeOperation = "destination-in"; x.drawImage(img, 0, 0, lw, lh); return (emberTex = c);
   }
   function tintedLogs(img: HTMLImageElement) {
     if (tl) return tl; tl = mk(img.width, img.height); const x = tl.getContext("2d")!;
@@ -264,18 +288,18 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       if (dk < 0.6) { ctx.save(); ctx.globalAlpha = 0.28 * (1 - dk / 0.6); ctx.drawImage(glc, 558, -226); ctx.restore(); }
     }
     heat += ((fs > 0.01 ? 0.35 + 0.65 * Math.min(1, fs) : 0) - heat) * Math.min(1, dt * (fs > 0.01 ? 2 : 0.12)); // logs keep glowing a while after it dies
-    const img = assets["a-logs.png"];
+    const img = assets["a-logs.webp"];
     if (img) {
-      ctx.drawImage(img, LOGS_AT.x, LOGS_AT.y);
+      ctx.drawImage(img, LOGS_AT.x, LOGS_AT.y, aw(img), ah(img));
       if (heat > 0.02) {
         hcv ??= mk(img.width, img.height); const x = hcv.getContext("2d")!;
         x.globalCompositeOperation = "source-over"; x.clearRect(0, 0, hcv.width, hcv.height);
         x.drawImage(tintedLogs(img), 0, 0); x.globalAlpha = 0.9; x.drawImage(embersOnLogs(img), 0, 0); x.globalAlpha = 1;
-        const gx = PIT.x - LOGS_AT.x, gy = PIT.y - 30 - LOGS_AT.y, rad = 55 + 55 * Math.min(1, heat);
+        const gx = (PIT.x - LOGS_AT.x) * AR, gy = (PIT.y - 30 - LOGS_AT.y) * AR, rad = (55 + 55 * Math.min(1, heat)) * AR;
         const g = x.createRadialGradient(gx, gy, 0, gx, gy, rad); g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.55, "rgba(0,0,0,0.75)"); g.addColorStop(1, "rgba(0,0,0,0)");
         x.globalCompositeOperation = "destination-in"; x.fillStyle = g; x.fillRect(0, 0, hcv.width, hcv.height);
-        ctx.save(); ctx.globalAlpha = Math.min(1, heat * (0.8 + 0.2 * vnoise(t * 1.3 + 5))); ctx.drawImage(hcv, LOGS_AT.x, LOGS_AT.y);
-        ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.25 * heat * flick; ctx.drawImage(hcv, LOGS_AT.x, LOGS_AT.y); ctx.restore();
+        ctx.save(); ctx.globalAlpha = Math.min(1, heat * (0.8 + 0.2 * vnoise(t * 1.3 + 5))); ctx.drawImage(hcv, LOGS_AT.x, LOGS_AT.y, aw(hcv), ah(hcv));
+        ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.25 * heat * flick; ctx.drawImage(hcv, LOGS_AT.x, LOGS_AT.y, aw(hcv), ah(hcv)); ctx.restore();
       }
     }
     // smoke from a big fire, lit warm from below at night; thin grey smoke when it's out
@@ -327,8 +351,8 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   function drawWheel(frame: number) {
     const wh = PAINT.wheel, off = (frame * 6) % wh.h;
     ctx.save(); ctx.beginPath(); ctx.rect(wh.x, wh.y, wh.w, wh.h); ctx.clip();
-    ctx.drawImage(land, wh.x, wh.y, wh.w, wh.h, wh.x, wh.y + off, wh.w, wh.h);
-    ctx.drawImage(land, wh.x, wh.y, wh.w, wh.h, wh.x, wh.y + off - wh.h, wh.w, wh.h);
+    ctx.drawImage(land, wh.x * R, wh.y * R, wh.w * R, wh.h * R, wh.x, wh.y + off, wh.w, wh.h);
+    ctx.drawImage(land, wh.x * R, wh.y * R, wh.w * R, wh.h * R, wh.x, wh.y + off - wh.h, wh.w, wh.h);
     ctx.restore();
   }
   function drawSun(px: number, py: number) {
@@ -378,8 +402,8 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
 
   // ---- depth: after an animal is drawn, any weed or bush whose base is lower on screen than its feet goes back over it
   function inFront(x: CanvasRenderingContext2D, footY: number, xa: number, xb: number) {
-    const img = assets["a-tufts.png"]; if (!img) return;
-    for (const [sx, sy, w, h, base] of TUFTS) if (base > footY && sx < xb && sx + w > xa) x.drawImage(img, sx, sy, w, h, sx, sy, w, h);
+    const img = assets["a-tufts.webp"]; if (!img) return;
+    for (const [sx, sy, w, h, base] of TUFTS) if (base > footY && sx < xb && sx + w > xa) x.drawImage(img, sx * AR, sy * AR, w * AR, h * AR, sx, sy, w, h);
   }
   // ---- the deer: walks in from the left, grazes, turns back (land animals never cross the stream)
   const deer = { active: false, x: -200, dir: 1, phase: 0, graze: 0, mode: "walk", until: 0, stopAt: 380 };
@@ -397,18 +421,18 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     const sw = Math.sin(deer.phase) * 0.3, bob = deer.mode === "walk" ? -Math.abs(Math.sin(deer.phase)) * 3 : 0;
     x.save(); x.translate(deer.x, 0); x.scale(deer.dir, 1);
     const ox = -DEER.W * k / 2, oy = groundY - DEER.foot * k;
-    const part = (name: "backA" | "backB" | "frontC" | "frontD", ang: number) => { const pp = DEER[name], img = assets[`deer-${name}.png`]; if (!img) return;
-      x.save(); x.translate(ox + pp.px * k, oy + pp.py * k); x.rotate(ang); x.drawImage(img, (pp.x - pp.px) * k, (pp.y - pp.py) * k, img.width * k, img.height * k); x.restore(); };
+    const part = (name: "backA" | "backB" | "frontC" | "frontD", ang: number) => { const pp = DEER[name], img = assets[`deer-${name}.webp`]; if (!img) return;
+      x.save(); x.translate(ox + pp.px * k, oy + pp.py * k); x.rotate(ang); x.drawImage(img, (pp.x - pp.px) * k, (pp.y - pp.py) * k, aw(img) * k, ah(img) * k); x.restore(); };
     const g = deer.graze, e = ease(g), tilt = 0.1 * e, hip = DEER.backA;
     part("backB", -sw); part("backA", sw);
     x.save(); x.translate(ox + hip.px * k, oy + hip.py * k + bob); x.rotate(tilt); x.translate(-(ox + hip.px * k), -(oy + hip.py * k + bob));
     part("frontC", -sw - tilt * 0.8); part("frontD", sw - tilt * 0.8);
     // body + neck are one pre-bent drawing (12 poses, head up -> nose in the grass), so the shoulder never splits
-    const nibble = g > 0.85 ? Math.max(0, Math.sin(t * 2.3)) * 1.4 : 0, sheet = assets["deer-bend.png"];
+    const nibble = g > 0.85 ? Math.max(0, Math.sin(t * 2.3)) * 1.4 : 0, sheet = assets["deer-bend.webp"];
     const fi = Math.max(0, Math.min(10, Math.round(e * 10 - nibble))); // pose 11 of the sheet clips the nose, so the graze stops at 10
-    if (sheet) { const fw = sheet.width / 12; x.drawImage(sheet, fi * fw, 0, fw, sheet.height, ox, oy + bob, fw * k, sheet.height * k); }
+    if (sheet) { const fw = sheet.width / 4, fh = sheet.height / 3; x.drawImage(sheet, (fi % 4) * fw, Math.floor(fi / 4) * fh, fw, fh, ox, oy + bob, fw / AR * k, fh / AR * k); } // 12 poses, 4 x 3
     x.restore(); x.restore();
-    if (ringFront && deer.x > 640 && deer.x < 1280) x.drawImage(ringFront, 700, 560);
+    if (ringFront && deer.x > 640 && deer.x < 1280) x.drawImage(ringFront, 700, 560, 520, 190);
     inFront(x, groundY, deer.x - 95, deer.x + 95);
   }
   // ---- the frog: surfaces in the stream by the near bank, hops along the grass, hops back and dives in
@@ -447,7 +471,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     } else if (kind === "look") { if (u > 0.45 && !frog.turned) { frog.turned = true; frog.dir = 1; } sy = 1 + Math.max(0, Math.sin(t * 9)) * 0.03; }
     else if (kind === "sit" || kind === "wait") { sy = 1 + Math.max(0, Math.sin(t * 9)) * 0.03; if (u < 0.2 && frog.i > 1) sy *= 1 - 0.08 * (1 - u / 0.2); }
     if (kind !== "gone") {
-      const info = SOLO[sprite], img = assets[`${sprite}.png`], k = 0.34;
+      const info = SOLO[sprite], img = assets[`${sprite}.webp`], k = 0.34;
       x.save();
       x.beginPath(); x.rect(0, 0, W, H); x.moveTo(1600, F_IN.y); x.lineTo(1600, H); x.lineTo(W, H); x.lineTo(W, F_IN.y); x.closePath(); x.clip("evenodd"); // below the water line it's hidden
       x.translate(frog.x, frog.y - lift); x.scale(frog.dir, 1);
@@ -483,11 +507,11 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     const tail = moving ? Math.sin(p * Math.PI * 2) * 0.12 : (sq.mode === "sit" ? Math.max(0, Math.sin(t * 7)) ** 3 * 0.25 : 0);
     const face = sq.look ? -sq.dir : sq.dir;
     x.save(); x.translate(sq.x, sq.y); x.scale(face, 1); x.rotate(face === sq.dir ? sq.rot : -sq.rot); x.translate(0, -lift);
-    const part = (name: "tail" | "backFar" | "frontFar" | "backNear" | "frontNear" | "body", ang: number) => { const pp = SQ[name], img = assets[`squirrel-${name}.png`]; if (!img) return;
-      x.save(); x.translate((pp.px - ccx) * k, (pp.py - ccy) * k); x.rotate(ang); x.drawImage(img, (pp.x - pp.px) * k, (pp.y - pp.py) * k, img.width * k, img.height * k); x.restore(); };
+    const part = (name: "tail" | "backFar" | "frontFar" | "backNear" | "frontNear" | "body", ang: number) => { const pp = SQ[name], img = assets[`squirrel-${name}.webp`]; if (!img) return;
+      x.save(); x.translate((pp.px - ccx) * k, (pp.py - ccy) * k); x.rotate(ang); x.drawImage(img, (pp.x - pp.px) * k, (pp.y - pp.py) * k, aw(img) * k, ah(img) * k); x.restore(); };
     part("tail", -tail); part("backFar", legB * 0.85); part("frontFar", legF * 0.85); part("backNear", legB); part("frontNear", legF); part("body", 0);
     x.restore();
-    const can = assets["a-canopy.png"]; if (can && sq.mode !== "run" && sq.mode !== "sit") x.drawImage(can, 110, 380); // on a trunk the branches stay in front
+    const can = assets["a-canopy.webp"]; if (can && sq.mode !== "run" && sq.mode !== "sit") x.drawImage(can, 110, 380, aw(can), ah(can)); // on a trunk the branches stay in front
     inFront(x, sq.y + half, sq.x - 25, sq.x + 25);
   }
   // ---- the bear (bottom-left bush) and the heron (bottom-right bush) peek up over the leaves, look around, sink back
@@ -511,9 +535,9 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     const holding = a > T1 + H1 + T2 && a < T1 + H1 + T2 + H2;
     const look = (a > T1 ? Math.sin((a - T1) * 0.9) : 0) * (name === "heron" ? 0.13 : 0.07);
     const blink = a % 2.9 > 2.75 || (holding && (a - T1 - H1 - T2) % 3.7 > 3.58);
-    const info = SOLO[name], img = assets[`${name}.png`]; if (!img) return;
+    const info = SOLO[name], img = assets[`${name}.webp`]; if (!img) return;
     x.save(); x.translate(pk.x, pk.pivot); x.rotate(look); x.translate(-pk.x, -pk.pivot);
-    const ox = pk.x - info.w / 2; x.drawImage(img, ox, top);
+    const ox = pk.x - info.w / 2; x.drawImage(img, ox, top, info.w, info.h);
     if (blink) { x.fillStyle = `rgb(${info.lid.join(",")})`; x.strokeStyle = "#1b1712"; x.lineWidth = 1;
       for (const [ex, ey, rx, ry] of info.eyes) { x.beginPath(); x.ellipse(ox + ex, top + ey, rx, ry, 0, 0, Math.PI * 2); x.fill(); x.beginPath(); x.moveTo(ox + ex - rx, top + ey + ry * 0.2); x.quadraticCurveTo(ox + ex, top + ey + ry * 0.7, ox + ex + rx, top + ey + ry * 0.2); x.stroke(); } }
     x.restore();
@@ -557,8 +581,8 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     x.save(); x.translate(rab.x, 0); x.scale(face, 1);
     const ox = -RAB.cx * k, oy = groundY - RAB.foot * k - lift + sniff, cx0 = ox + 170 * k, cy0 = groundY - lift;
     x.translate(cx0, cy0); x.rotate(pitch); x.scale(sx, sy); x.translate(-cx0, -cy0);
-    const part = (name: "ears" | "body" | "backNear" | "backFar" | "frontNear" | "frontFar", ang: number) => { const pp = RAB[name], img = assets[`rabbit-${name}.png`]; if (!img) return;
-      x.save(); x.translate(ox + pp.px * k, oy + pp.py * k); x.rotate(ang); x.drawImage(img, (pp.x - pp.px) * k, (pp.y - pp.py) * k, img.width * k, img.height * k); x.restore(); };
+    const part = (name: "ears" | "body" | "backNear" | "backFar" | "frontNear" | "frontFar", ang: number) => { const pp = RAB[name], img = assets[`rabbit-${name}.webp`]; if (!img) return;
+      x.save(); x.translate(ox + pp.px * k, oy + pp.py * k); x.rotate(ang); x.drawImage(img, (pp.x - pp.px) * k, (pp.y - pp.py) * k, aw(img) * k, ah(img) * k); x.restore(); };
     part("backFar", legB * 0.85); part("frontFar", legF * 0.85); part("ears", -earAng); part("backNear", legB); part("frontNear", legF); part("body", 0);
     x.restore();
     inFront(x, 776, rab.x - 60, rab.x + 60);
@@ -659,6 +683,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     if (!ready || !cw || !ch) return;
     const tNow = now / 1000;
     if (!reduced && now - lastStep >= 100) { lastStep = now; frame++; } // scenery steps at 10 fps; the fire moves every frame
+    checkSpeed(tNow);
     const t = reduced ? lastT : tNow, dt = Math.max(0, Math.min(0.05, t - lastT)); lastT = t;
     if (inp.storm && inp.storm.at !== ost.seen && Date.now() - inp.storm.at < C.DONE) startStorm(inp.storm);
     const sdt = Math.max(0, Math.min(0.5, tNow - lastStorm)); lastStorm = tNow; // the storm keeps real time even on a slow device
@@ -694,12 +719,12 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     cx.clearRect(0, 0, W, H);
     for (const cl0 of clouds) {
       if (!cl0.img) continue;
-      const span = W + cl0.img.width, px = ((cl0.x + frame * cl0.speed * (1 + 0.4 * cc)) % span + span) % span - cl0.img.width;
-      cx.drawImage(cl0.img, px, cl0.y);
+      const cw0 = aw(cl0.img), span = W + cw0, px = ((cl0.x + frame * cl0.speed * (1 + 0.4 * cc)) % span + span) % span - cw0;
+      cx.drawImage(cl0.img, px, cl0.y, cw0, ah(cl0.img));
     }
     const cloudTint = mix(mix([255, 255, 255], s.land, 0.9), [95, 100, 115], cc);
     cx.save(); cx.globalCompositeOperation = "source-atop"; cx.fillStyle = rgb(cloudTint); cx.globalAlpha = Math.max(0.85 * cc, 0.6 * (1 - (s.land[0] + s.land[1] + s.land[2]) / 765)); cx.fillRect(0, 0, W, H); cx.restore();
-    ctx.save(); ctx.globalAlpha = Math.max(0, 1 - cc * 1.8); ctx.drawImage(cl, 0, 0); ctx.restore(); // the painted clouds fade out as the storm arrives
+    ctx.save(); ctx.globalAlpha = Math.max(0, 1 - cc * 1.8); ctx.drawImage(cl, 0, 0, W, H); ctx.restore(); // the painted clouds fade out as the storm arrives
     drawBirds(t, reduced ? 0 : Math.min(0.25, sdt), Math.max(0, 1 - cc * 2)); // real time, so they cross at the same pace on a slow device
     if (cc > 0) { // the storm's own clouds roll in over the painted ones, with lightning glowing inside
       const nt = s.dark > 0.5;
@@ -717,11 +742,11 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       }
     }
     // the ground: tinted by the hour and the storm, lit by the fire; the animals on their own layer so the stream never covers them
-    lx.clearRect(0, 0, W, H); lx.globalCompositeOperation = "source-over"; lx.drawImage(assets["a-land.webp"], 0, 0); drawSign(lx); drawPlank(lx, t);
+    lx.clearRect(0, 0, W, H); lx.globalCompositeOperation = "source-over"; lx.drawImage(assets["a-land.webp"], 0, 0, W, H); drawSign(lx); drawPlank(lx, t);
     ax.clearRect(0, 0, W, H); wildlife(tNow);
     if (tNow > nextFlock) { nextFlock = tNow + 180 + Math.random() * 300; if (s.dark < 0.4 && cc < 0.05) sendBirds(); }
     drawSquirrel(ax, t, dt); drawDeer(ax, t, dt); drawFrog(ax, t); drawFrogRings(ax, t); drawRabbit(ax, t, dt); drawPeek(ax, t, "heron"); drawPeek(ax, t, "bear");
-    lx.drawImage(actors, 0, 0);
+    lx.drawImage(actors, 0, 0, W, H);
     const tint = mix(s.land, mix(s.land, [110, 116, 140], 0.7), sd / 0.7);
     if (tint.join() !== "255,255,255") { lx.globalCompositeOperation = "multiply"; lx.fillStyle = rgb(tint); lx.fillRect(0, 0, W, H); lx.globalCompositeOperation = "source-over"; }
     if (fs > 0.01) {
@@ -731,15 +756,15 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       glowX.globalCompositeOperation = "source-over"; glowX.clearRect(0, 0, W, H); glowX.fillStyle = gl; glowX.fillRect(0, 0, W, H);
       const fade = glowX.createLinearGradient(0, 470, 0, 560); fade.addColorStop(0, "rgba(0,0,0,0)"); fade.addColorStop(1, "rgba(0,0,0,1)");
       glowX.globalCompositeOperation = "destination-in"; glowX.fillStyle = fade; glowX.fillRect(0, 0, W, H); // the light stays on the nearby ground
-      lx.globalCompositeOperation = "lighter"; lx.drawImage(glowC, 0, 0);
+      lx.globalCompositeOperation = "lighter"; lx.drawImage(glowC, 0, 0, W, H);
       const mill = 0.22 * Math.min(1, fs) * dark * flick;
       gl = lx.createRadialGradient(1470, 470, 10, 1470, 470, 230); gl.addColorStop(0, `rgba(255,150,70,${mill})`); gl.addColorStop(1, "rgba(255,120,50,0)");
       lx.fillStyle = gl; lx.fillRect(1200, 200, 560, 500);
     }
-    lx.globalCompositeOperation = "destination-in"; lx.drawImage(assets["a-land.webp"], 0, 0); lx.globalCompositeOperation = "source-over";
+    lx.globalCompositeOperation = "destination-in"; lx.drawImage(assets["a-land.webp"], 0, 0, W, H); lx.globalCompositeOperation = "source-over";
     ctx.save(); ctx.translate(FIRE.x, H); ctx.scale(ZOOM, ZOOM); ctx.translate(-FIRE.x, -H);
-    ctx.drawImage(land, 0, 0);
-    const wm = assets["a-water.png"];
+    ctx.drawImage(land, 0, 0, W, H);
+    const wm = assets["a-water.webp"];
     if (wm) { // ripples follow the stream's curve downstream; at night they catch the firelight
       wx.clearRect(0, 0, W, H); wx.globalCompositeOperation = "source-over";
       const fireGlint = Math.min(1, fs) * dark * flick;
@@ -757,9 +782,9 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
         }
       }
       if (fireGlint > 0.02) { const gw = wx.createRadialGradient(1640, 560, 10, 1640, 560, 260); gw.addColorStop(0, `rgba(255,140,60,${0.35 * fireGlint})`); gw.addColorStop(1, "rgba(255,120,40,0)"); wx.fillStyle = gw; wx.fillRect(1400, 380, 560, 380); }
-      wx.globalCompositeOperation = "destination-in"; wx.drawImage(wm, 0, 0);
-      wx.globalCompositeOperation = "destination-out"; wx.drawImage(actors, 0, 0);
-      ctx.drawImage(water, 0, 0);
+      wx.globalCompositeOperation = "destination-in"; wx.drawImage(wm, 0, 0, W, H);
+      wx.globalCompositeOperation = "destination-out"; wx.drawImage(actors, 0, 0, W, H);
+      ctx.drawImage(water, 0, 0, W, H);
     }
     drawWheel(frame);
     drawFire(t, dt, fs, flick, dark);
@@ -771,10 +796,11 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       const x0 = Math.round(sxz(PIT.x - 170)), x1 = Math.round(sxz(PIT.x + 170)), y0 = Math.max(0, Math.round(syz(flameTop(fs) - 140))), y1 = Math.round(syz(PIT.y - 110));
       const w = x1 - x0, hh = y1 - y0;
       if (w > 0 && hh > 0) {
-        if (haze.width !== w || haze.height !== hh) { haze.width = w; haze.height = hh; }
-        hx.clearRect(0, 0, w, hh); hx.drawImage(world, x0, y0, w, hh, 0, 0, w, hh);
+        const hw = Math.round(w * R), hh2 = Math.round(hh * R);
+        if (haze.width !== hw || haze.height !== hh2) { haze.width = hw; haze.height = hh2; }
+        hx.clearRect(0, 0, hw, hh2); hx.drawImage(world, x0 * R, y0 * R, hw, hh2, 0, 0, hw, hh2);
         const amp = 2.2 * (fs - 0.45) / 0.55 * ZOOM;
-        for (let y = 0; y < hh; y += 3) { const k = Math.sin(y * 0.07 - t * 5) * Math.sin(y * 0.023 + t * 1.7); ctx.drawImage(haze, 0, y, w, 3, x0 + k * amp, y0 + y, w, 3); }
+        for (let y = 0; y < hh; y += 3) { const k = Math.sin(y * 0.07 - t * 5) * Math.sin(y * 0.023 + t * 1.7); ctx.drawImage(haze, 0, y * R, hw, 3 * R, x0 + k * amp, y0 + y, w, 3); }
       }
     }
     // rain: three depths of drops, a gusting slant, splashes on the ground; and the lightning flash
