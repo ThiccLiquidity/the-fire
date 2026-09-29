@@ -328,20 +328,6 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     ctx.drawImage(land, wh.x, wh.y, wh.w, wh.h, wh.x, wh.y + off - wh.h, wh.w, wh.h);
     ctx.restore();
   }
-  // a tiny splash where the wheel dips in: a thin churn of foam, a few droplets, one ripple drifting off
-  function drawMillSplash(t: number, dark: number) {
-    const a = 1 - dark * 0.45, y0 = 515;
-    ctx.save();
-    ctx.fillStyle = `rgba(235,250,255,${0.85 * a})`;
-    for (let i = 0; i < 7; i++) { const x = 1600 + i * 6.3, r = 2.6 + 1.1 * Math.sin(t * 5.2 + i * 1.9);
-      ctx.beginPath(); ctx.ellipse(x, y0 + 1.5 + 0.8 * Math.sin(t * 3.7 + i), r + 1.2, r * 0.55, 0, 0, Math.PI * 2); ctx.fill(); }
-    for (let i = 0; i < 4; i++) { const ph = (t * 0.9 + i * 0.37) % 1, x = 1606 + i * 9 + ph * (i % 2 ? 7 : -5), y = y0 - Math.sin(ph * Math.PI) * (6 + i % 2 * 3);
-      ctx.fillStyle = `rgba(235,250,255,${(1 - ph) * 0.9 * a})`; ctx.beginPath(); ctx.arc(x, y, 1.6, 0, Math.PI * 2); ctx.fill(); }
-    const rp = (t * 0.45) % 1;
-    ctx.strokeStyle = `rgba(235,250,255,${(1 - rp) * 0.55 * a})`; ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.ellipse(1622 + rp * 14, y0 + 5 + rp * 5, 10 + rp * 16, 2.2 + rp * 2, 0, 0.15, Math.PI - 0.15); ctx.stroke();
-    ctx.restore();
-  }
   function drawSun(px: number, py: number) {
     ctx.save(); ctx.translate(px, py); ctx.lineWidth = 4; ctx.strokeStyle = "#1b1712"; ctx.lineJoin = "round";
     ctx.beginPath(); for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; ctx.lineTo(Math.cos(a) * 78, Math.sin(a) * 78); ctx.lineTo(Math.cos(a + 0.26) * 58, Math.sin(a + 0.26) * 58); }
@@ -744,7 +730,6 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       ctx.drawImage(water, 0, 0);
     }
     drawWheel(frame);
-    drawMillSplash(t, dark);
     drawFire(t, dt, fs, flick, dark);
     drawFlyingLogs(t);
     drawScraps(t);
