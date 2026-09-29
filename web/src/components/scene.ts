@@ -267,16 +267,8 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       ctx.fillStyle = "#7a4a22"; ctx.fillRect(-33, -9, 66, 18); ctx.fillStyle = "#c9955a"; ctx.beginPath(); ctx.ellipse(33, 0, 5, 9, 0, 0, 7); ctx.fill(); ctx.restore();
     }
   }
-  // glowing cracks on the logs where they meet the fire: an ember texture and a warm tint, masked to the logs
-  let emberTex: HTMLCanvasElement | null = null, tl: HTMLCanvasElement | null = null, hcv: HTMLCanvasElement | null = null;
-  function embersOnLogs(img: HTMLImageElement) {
-    if (emberTex) return emberTex; const c = mk(img.width, img.height), x = c.getContext("2d")!, r = rnd(42), lw = aw(img), lh = ah(img); x.scale(AR, AR);
-    for (let i = 0; i < 160; i++) { const px = r() * lw, py = r() * lh * (0.35 + 0.65 * r()), rr = 3 + r() * 11;
-      const g = x.createRadialGradient(px, py, 0, px, py, rr); g.addColorStop(0, r() < 0.5 ? "rgba(255,190,80,1)" : "rgba(255,110,30,1)"); g.addColorStop(1, "rgba(255,60,10,0)"); x.fillStyle = g; x.fillRect(px - rr, py - rr, rr * 2, rr * 2); }
-    x.strokeStyle = "rgba(255,150,50,0.9)"; x.lineWidth = 2;
-    for (let i = 0; i < 26; i++) { let px = r() * lw, py = r() * lh; x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 4; k++) { px += (r() - 0.5) * 26; py += (r() - 0.5) * 10; x.lineTo(px, py); } x.stroke(); }
-    x.globalCompositeOperation = "destination-in"; x.drawImage(img, 0, 0, lw, lh); return (emberTex = c);
-  }
+  // the logs glow warm where they meet the fire: an orange tint, masked to the logs, strongest at the pit's middle
+  let tl: HTMLCanvasElement | null = null, hcv: HTMLCanvasElement | null = null, lc: HTMLCanvasElement | null = null;
   function tintedLogs(img: HTMLImageElement) {
     if (tl) return tl; tl = mk(img.width, img.height); const x = tl.getContext("2d")!;
     x.drawImage(img, 0, 0); x.globalCompositeOperation = "source-atop"; x.fillStyle = "rgb(236,96,28)"; x.fillRect(0, 0, img.width, img.height); return tl;
@@ -289,18 +281,26 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     }
     heat += ((fs > 0.01 ? 0.35 + 0.65 * Math.min(1, fs) : 0) - heat) * Math.min(1, dt * (fs > 0.01 ? 2 : 0.12)); // logs keep glowing a while after it dies
     const img = assets["a-logs.webp"];
-    if (img) {
-      ctx.drawImage(img, LOGS_AT.x, LOGS_AT.y, aw(img), ah(img));
+    if (img) { // built on their own small canvas so the glow and the fading tip stay on the logs
+      lc ??= mk(img.width, img.height); const L = lc.getContext("2d")!;
+      L.globalCompositeOperation = "source-over"; L.globalAlpha = 1; L.clearRect(0, 0, lc.width, lc.height); L.drawImage(img, 0, 0);
       if (heat > 0.02) {
         hcv ??= mk(img.width, img.height); const x = hcv.getContext("2d")!;
-        x.globalCompositeOperation = "source-over"; x.clearRect(0, 0, hcv.width, hcv.height);
-        x.drawImage(tintedLogs(img), 0, 0); x.globalAlpha = 0.9; x.drawImage(embersOnLogs(img), 0, 0); x.globalAlpha = 1;
+        x.globalCompositeOperation = "source-over"; x.clearRect(0, 0, hcv.width, hcv.height); x.drawImage(tintedLogs(img), 0, 0);
         const gx = (PIT.x - LOGS_AT.x) * AR, gy = (PIT.y - 30 - LOGS_AT.y) * AR, rad = (55 + 55 * Math.min(1, heat)) * AR;
         const g = x.createRadialGradient(gx, gy, 0, gx, gy, rad); g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(0.55, "rgba(0,0,0,0.75)"); g.addColorStop(1, "rgba(0,0,0,0)");
         x.globalCompositeOperation = "destination-in"; x.fillStyle = g; x.fillRect(0, 0, hcv.width, hcv.height);
-        ctx.save(); ctx.globalAlpha = Math.min(1, heat * (0.8 + 0.2 * vnoise(t * 1.3 + 5))); ctx.drawImage(hcv, LOGS_AT.x, LOGS_AT.y, aw(hcv), ah(hcv));
-        ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.25 * heat * flick; ctx.drawImage(hcv, LOGS_AT.x, LOGS_AT.y, aw(hcv), ah(hcv)); ctx.restore();
+        L.globalAlpha = Math.min(1, heat * (0.8 + 0.2 * vnoise(t * 1.3 + 5))); L.drawImage(hcv, 0, 0);
+        L.globalCompositeOperation = "lighter"; L.globalAlpha = 0.25 * heat * flick; L.drawImage(hcv, 0, 0);
+        L.globalCompositeOperation = "source-over"; L.globalAlpha = 1;
       }
+      const lit = Math.min(1, fs * 1.6);
+      if (lit > 0.01) { // the broken end of the right-hand log sits in the flames: it burns into their colour (plain wood again when the fire is out)
+        L.save(); L.scale(AR, AR); L.beginPath(); L.moveTo(194, 4); L.lineTo(242, 4); L.lineTo(242, 38); L.lineTo(214, 54); L.lineTo(194, 52); L.closePath(); L.clip();
+        const f = L.createLinearGradient(203, 25, 230, 41); f.addColorStop(0, `rgba(255,236,190,${lit})`); f.addColorStop(0.45, `rgba(255,170,70,${0.75 * lit})`); f.addColorStop(1, "rgba(255,120,40,0)");
+        L.globalCompositeOperation = "source-atop"; L.fillStyle = f; L.fillRect(190, 0, 60, 60); L.restore();
+      }
+      ctx.drawImage(lc, LOGS_AT.x, LOGS_AT.y, aw(img), ah(img));
     }
     // smoke from a big fire, lit warm from below at night; thin grey smoke when it's out
     const top = flameTop(Math.max(fs, 0.2));
