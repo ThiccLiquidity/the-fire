@@ -33,7 +33,7 @@ export interface SceneView { fireX: number; fireTop: number; width: number; heig
 
 // The art is painted at twice the size it is drawn (AR), so it stays sharp on big and high-density screens.
 const AR = 2, aw = (i: { width: number }) => i.width / AR, ah = (i: { height: number }) => i.height / AR;
-const W = 1942, H = 809, ZOOM = 1.1, FIRE = { x: 958, y: 605 }, PIT = { x: 958, y: 634 }, LOGS_AT = { x: 819, y: 584 };
+const W = 1942, H = 809, ZOOM = 1.1, FIRE = { x: 958, y: 605 }, PIT = { x: 958, y: 634 }, LOGS_AT = { x: 807, y: 584 };
 const BASE = import.meta.env.BASE_URL;
 const THUNDER = ["clap1", "sr1", "sr2", "sr3", "sr4", "dry1", "dry2", "dry3", "dry4"];
 const IMAGES = ["a-land.webp", "a-water.webp", "a-logs.webp", "a-logs-lit.webp", "a-tufts.webp", "a-canopy.webp", ...PAINT.clouds.map((c) => c.f),
