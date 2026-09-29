@@ -36,7 +36,7 @@ const AR = 2, aw = (i: { width: number }) => i.width / AR, ah = (i: { height: nu
 const W = 1942, H = 809, ZOOM = 1.1, FIRE = { x: 958, y: 605 }, PIT = { x: 958, y: 634 }, COALS = { x: 822, y: 579.5 }, PITART = { x: 721, y: 522 };
 const BASE = import.meta.env.BASE_URL;
 const THUNDER = ["clap1", "sr1", "sr2", "sr3", "sr4", "dry1", "dry2", "dry3", "dry4"];
-const IMAGES = ["a-land.webp", "a-water.webp", "a-coals.webp", "a-logs-front.webp", "a-tufts.webp", "a-canopy.webp", ...PAINT.clouds.map((c) => c.f),
+const IMAGES = ["a-land.webp", "a-water.webp", "a-coals.webp", "a-logs-front.webp", "a-logs-edge.webp", "a-tufts.webp", "a-canopy.webp", ...PAINT.clouds.map((c) => c.f),
   ...["bend", "backA", "backB", "frontC", "frontD"].map((n) => `deer-${n}.webp`),
   ...["body", "ears", "backNear", "backFar", "frontNear", "frontFar"].map((n) => `rabbit-${n}.webp`),
   ...["body", "tail", "backNear", "backFar", "frontNear", "frontFar"].map((n) => `squirrel-${n}.webp`),
@@ -308,6 +308,9 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       x.drawImage(land, PITART.x * R, PITART.y * R, aw(front) * R, ah(front) * R, 0, 0, fl.width, fl.height);
       x.globalCompositeOperation = "destination-in"; x.drawImage(front, 0, 0, fl.width, fl.height);
       ctx.drawImage(fl, PITART.x, PITART.y, aw(front), ah(front));
+      const edge = assets["a-logs-edge.webp"]; // the cut edges smoulder like the coals
+      if (edge) { ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.min(1, (0.35 + 0.65 * heat) * (0.55 + 0.3 * vnoise(lastT * 1.7) + 0.15 * vnoise(lastT * 6.1 + 3)));
+        ctx.drawImage(edge, PITART.x, PITART.y, aw(edge), ah(edge)); ctx.restore(); }
     }
     heat += ((fs > 0.01 ? 0.35 + 0.65 * Math.min(1, fs) : 0) - heat) * Math.min(1, dt * (fs > 0.01 ? 2 : 0.12)); // logs keep glowing a while after it dies
     // smoke from a big fire, lit warm from below at night
