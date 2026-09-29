@@ -1,6 +1,6 @@
 # The Fire — full economy simulation
 
-*Sep 28 2026. Model: `sim/economy.py` (`python3 sim/economy.py`, ~30 s; `--paper` for the PAPER table). Rules match `contracts/src/Fire.sol`.*
+*Sep 28 2026. Model: `sim/economy.py` (`python3 sim/economy.py`, ~30 s; `--paper` for the PAPER table). Rules matched the contract on Sep 28; **superseded** since (storm ladder, 85% keep, 3/2/1 free logs, 5× cap). Current numbers: `docs/fire-sim.md`, `docs/pot-sim.md`.*
 
 **Runs:** 324 year-long runs: mills ∈ {1k, 2.5k, 5k, 10k} × participation ∈ {low, medium, high} × outsiders ∈ {0, 5, 25}/day × mill floor ∈ {$100, $300, $786} × 3 seeds.
 

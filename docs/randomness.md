@@ -1,7 +1,7 @@
 # Randomness: OpenDrandRouter (drand evmnet)
 
-One random number a night decides the storm and, if the fire goes out, the winner. It comes from drand, a public
-randomness beacon, through our own router. Nobody owns it, nobody is paid, and nobody can pick the number.
+One random number a day (21:00 UTC, 2:00 PM MST) decides the storm and, if the fire goes out, the winner. It comes
+from drand, a public randomness beacon, through our own router. Nobody owns it, nobody is paid, and nobody can pick the number.
 
 ## How a roll works
 1. After 21:00 UTC anyone calls `Fire.roll()`. The Fire asks `OpenVRFAdapter`, which calls
@@ -11,8 +11,12 @@ randomness beacon, through our own router. Nobody owns it, nobody is paid, and n
 2. drand publishes the round. **Anyone** calls `router.fulfill(id, signature)` with its BLS signature: our keeper, the
    site's button, or a stranger. The router checks the signature on-chain against drand's pinned evmnet key and derives
    the request's word. There is exactly one valid word per request, so whoever delivers it can't change it.
-3. The router calls the adapter, the adapter calls `Fire.onRandomness(id, word)`, and the night resolves:
-   storm luck = `word & 31` (a 32-point table), winner ticket = `keccak256(abi.encode(word, "winner")) % tickets + 1`.
+3. The router calls the adapter, the adapter calls `Fire.onRandomness(id, word)`, and the day resolves
+   (`Fire.stormStrength(day, word)`, `day` = the fire's day number after this roll):
+   - storm rung = the first `i` (0-19) where `word % 10000 < STORM_ODDS[day-2][i]`; storm = `STORM_LOGS[i]` logs.
+     Day 1: no storm. Day 24: infinite. `STORM_ODDS` rows run days 2-23 and each ends at 10000.
+   - The fire goes out if the storm is as big as the fire or bigger (ties go out).
+   - winner ticket = `keccak256(abi.encode(word, "winner")) % tickets + 1`.
 
 ## When something goes wrong
 - **Callback didn't land** (out of gas, a revert that has since cleared): the router still holds the word. Anyone
@@ -23,7 +27,8 @@ randomness beacon, through our own router. Nobody owns it, nobody is paid, and n
   whenever nobody had delivered it yet. Two hours gives the keeper, its alarm and anyone on the site time to deliver.
   The keeper rerolls only when the drand relays report the round isn't published — never just because it can't reach
   drand.
-- **Stuck for 7 days** (randomness gone for good, or a word that can't be delivered): anyone calls `Fire.abandon()`.
+- **Stuck for 7 days** (randomness gone for good, or a word that can't be delivered), counted from that day's **first**
+  `roll()` (`rollStartedAt`; rerolls don't restart it): anyone calls `Fire.abandon()`.
   The game ends for good: buys and rolls stop, and each ticket holder of the current fire calls `refund()` for
   pot × their tickets ÷ total tickets. With no tickets in the fire, the pot is burned. The mill fund keeps working.
 

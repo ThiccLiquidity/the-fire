@@ -1,7 +1,7 @@
 # Robinhood Chain addresses and findings (Sep 27 2026)
 
 ## Chain
-- Mainnet chain ID **4663**, gas in ETH. Public RPC `https://rpc.mainnet.chain.robinhood.com` (rate-limited; use Alchemy for production). Explorer: https://robinhoodchain.blockscout.com
+- Mainnet chain ID **4663**, gas in ETH. Public RPC `https://rpc.mainnet.chain.robinhood.com` (rate-limited; use Alchemy for the deploy and the keeper). If the site gets its own `VITE_RPC_URL`, add its host to `connect-src` in `web/vercel.json` or the browser blocks it. Explorer: https://robinhoodchain.blockscout.com
 - Testnet chain ID 46630.
 
 ## Paper Mills = "Plank Press" (`PlankPress.sol`, verified)
@@ -15,8 +15,10 @@
 ## Pulp Pool (`PulpPool.sol`, verified) — the royalty pool
 - **`0x85715BbE2707476294B0c20B7DfbE32cCcADD0E1`**
 - Splits every whitelisted reward token evenly across all live mills (per-NFT accumulator). `receive()` auto-wraps ETH → WETH. A burned mill's unclaimed share rolls to the survivors.
-- **Only whitelisted tokens count.** Whitelist is admin-controlled (`addRewardToken`); WETH is in by default. **PLANK is not.** PLANK sent before whitelisting sits uncounted until an admin adds it.
-- **Done:** the Plank Press admin added PLANK as a reward token (`addRewardToken(0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc)`), per the owner, Sep 28.
+- **Only whitelisted tokens count.** Whitelist is admin-controlled (`addRewardToken`); WETH is in by default; PLANK was not. PLANK sent before whitelisting sits uncounted until an admin adds it.
+- **Done, per the owner (Sep 28):** PLANK is on the PulpPool reward list (`addRewardToken(0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc)`).
+  Not yet checked on-chain: **confirm on the explorer on deploy day** (PulpPool's reward-token list includes PLANK) and
+  note the tx hash here.
 - Rewards claimable only after `mintingSunset`.
 
 ## PLANK (`RobinWood`, 18 decimals)
@@ -24,7 +26,7 @@
 - Top holders: `0x6d05f45b602397eC1842395b2b465298BC36e5fB` (unverified contract, **56%** — locker/treasury? ask), Uniswap V2 pair (10%), PlankPress (9.4%, the mills' locked PLANK).
 - **Main pool: Uniswap V2 pair `0x01b1BEf6fBA02c846eA5c4Ff59193988B5f86F73`** — 28.1 WETH / 88.7T PLANK ≈ **$0.00000000106 per PLANK** (1.06e-9) at $3,333 ETH → mcap ≈ $940k; a mill's PLANK ≈ $94.
 - Uniswap V3 pool `0x3CE05Efe2e7C9c136f12a1Be695f75F807B6c69E` is tiny (0.8 WETH). Ignore.
-- Ratchet price source: **Uniswap V2 cumulative-price TWAP** on the V2 pair (≥20h window, anyone can checkpoint; `PlankUsdTwap`) × Chainlink ETH/USD.
+- PLANK price source: **Uniswap V2 cumulative-price TWAP** on the V2 pair (30-minute window, anyone can checkpoint; `PlankUsdTwap`) × Chainlink ETH/USD. Read live at every buy, so log prices follow the pool within about an hour. (The ≥20h window is `PaperUsdTwap`'s.)
 - At $0.90 per ticket the PLANK leg ≈ **852M PLANK** at today's price.
 
 ## Chainlink

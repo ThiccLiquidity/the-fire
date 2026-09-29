@@ -40,7 +40,7 @@ Same as `ops/README.md`, with a second small testnet wallet as the keeper (test 
 `-e EXPECTED_CHAIN_ID=46630`. Without a keeper, the site shows a button to bring in each storm; that works too.
 
 ## 5. Play it for a few days
-- Connect MetaMask on the testnet site, press **Get play tokens**, throw logs, watch the 8 PM storms.
-- Try the edge cases: a buy right before 8 PM, a PLANK pump (Claude gives you the one-line `cast` command to move the
+- Connect MetaMask on the testnet site, press **Get play tokens**, throw logs, watch the daily storms at 2 PM MST (21:00 UTC).
+- Try the edge cases: a buy right before 2 PM MST, a PLANK pump (Claude gives you the one-line `cast` command to move the
   play pool), a night nobody buys.
 - Tell Claude anything that looks wrong. Fixes are free here; on mainnet they aren't.

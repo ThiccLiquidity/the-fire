@@ -1,10 +1,10 @@
 # The Fire
 
-Buy tickets with PAPER and PLANK. PAPER burns. All the PLANK goes into the fire's pot. Every night a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins the pot.
+Buy tickets with PAPER and PLANK. PAPER burns. All the PLANK goes into the fire's pot. Every day at 21:00 UTC (2:00 PM MST) a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins the pot.
 
 - `docs/spec.md` — the design, numbers, and why. Start here.
-- `docs/randomness.md` — where the nightly number comes from (drand, through our ownerless `OpenDrandRouter`) and how to verify a roll.
-- `contracts/` — Foundry project. `Fire.sol` is the game, `Profiles.sol` is names + pictures for wallets (picture bytes live in the event log, hash in storage). 103 tests (two suites run against a real drand proof and real Seaport 1.6 code). See `contracts/README.md`.
+- `docs/randomness.md` — where the daily number comes from (drand, through our ownerless `OpenDrandRouter`) and how to verify a roll.
+- `contracts/` — Foundry project. `Fire.sol` is the game, `Profiles.sol` is names + pictures for wallets (picture bytes live in the event log, hash in storage). 124 tests at the Sep 29 audit (two suites run against a real drand proof and real Seaport 1.6 code). See `contracts/README.md`.
 - `web/` — the site (Vite + React). Runs on a built-in mock until the contract is deployed.
 - `sim/` — the Python simulation the numbers came from.
 
@@ -62,12 +62,12 @@ Deploy env vars: copy `contracts/.env.example` to `contracts/.env` (details at t
   the press fund, which can only buy a press at or under the fire's bid and burn it in the same transaction.
 - **The pot only leaves by the rules:** when the fire goes out, 40% to the winner, 25% burned, 5% to the Paper Press
   royalty pool, 30% to the next fire. If the prize can't be sent, it waits for the winner to `claim` it.
-- **If the randomness dies for 7 days,** anyone can end the game and every ticket holder of the current fire takes back
+- **If the randomness dies for 7 days** (counted from that day's first roll; rerolls don't restart it), anyone can end the game and every ticket holder of the current fire takes back
   their share of the pot with `refund`.
 - **Out of our control:** the PLANK and USDG token contracts' own rules; the Paper Press contract's admin (it can pause the
   press contract, and decides whether the royalty pool counts PLANK); Chainlink's ETH/USD feed (if it stops, the ETH
   option closes, the PLANK price holds, and the press fund can only spend its USDG); drand (if it stops, rolls wait, then re-roll, then the 7-day refund).
-- Tickets are a burn, not an investment. Expect back ~22¢ per dollar on average; the rest is burned or funds the game.
+- Tickets are a burn, not an investment. On average most of each dollar is burned or funds the game.
 
 ## Security model, in one paragraph
 
@@ -82,7 +82,8 @@ ownerless router that anyone can fulfill. The deploy wallet and the keeper have 
 ## Before mainnet
 
 - Test router + adapter + keeper on Robinhood testnet (chain id 46630) against live drand.
-- Set `PLANK_PER_TICKET0` (the deploy script prints the right number from the feed) and `MILL_BID_BASE` from
-  launch-day prices. `ETH_USD_PER_TICKET` is $1; the script refuses anything else.
-- Get `PulpPool.addRewardToken(PLANK)` done.
-- Light fire #1 small.
+- Set `PLANK_PER_TICKET0` (the deploy script prints the right number from the feed), `SEED_PLANK` ($250) and
+  `MILL_BID_BASE` from launch-day prices. The script refuses an empty `PLANK_PER_TICKET0`, a missing seed (unless
+  `NO_SEED=true`), a roll time other than 75600 and an `ETH_USD_PER_TICKET` other than $1.
+- PLANK is on the PulpPool reward list (per the owner); confirm on the explorer on deploy day.
+- Full checklist: `docs/HANDOFF.md` ("Before deploy") and `docs/launch-day.md`.
