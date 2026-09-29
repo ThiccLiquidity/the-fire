@@ -185,7 +185,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   }
   const haze = document.createElement("canvas"), hx = haze.getContext("2d")!;
   const glc = mk(800, 900), glDraw = glFire(glc);
-  let fb: HTMLCanvasElement | null = null, fb2: HTMLCanvasElement | null = null;
+  let fb: HTMLCanvasElement | null = null, fb2: HTMLCanvasElement | null = null, pc: HTMLCanvasElement | null = null, pm: HTMLCanvasElement | null = null;
   let clouds: { f: string; x: number; y: number; img?: HTMLImageElement; speed: number }[] = [];
   let ringFront: HTMLCanvasElement | null = null, course: { mid: Float32Array; half: Float32Array; x0: number; x1: number } | null = null;
   function setup() {
@@ -771,6 +771,19 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       const mill = 0.22 * Math.min(1, fs) * dark * flick;
       gl = lx.createRadialGradient(1470, 470, 10, 1470, 470, 230); gl.addColorStop(0, `rgba(255,150,70,${mill})`); gl.addColorStop(1, "rgba(255,120,50,0)");
       lx.fillStyle = gl; lx.fillRect(1200, 200, 560, 500);
+      // firelight on Plank and his chair: the side facing the fire lights up warm (light colours glow, the ink stays dark)
+      const pa = 0.6 * Math.min(1, fs * 1.3) * dark * flick;
+      if (pa > 0.02) {
+        const X0 = 500, Y0 = 500, PW = 420, PH = 250;
+        pc ??= mk(Math.round(PW * R), Math.round(PH * R)); const x = pc.getContext("2d")!;
+        x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = "source-over"; x.clearRect(0, 0, pc.width, pc.height);
+        x.setTransform(R, 0, 0, R, -X0 * R, -Y0 * R); drawPlank(x, t);
+        pm ??= mk(pc.width, pc.height); const mx = pm.getContext("2d")!; mx.clearRect(0, 0, pm.width, pm.height); mx.drawImage(pc, 0, 0); // his shape, to trim the light to
+        const lg = x.createLinearGradient(540, 0, 800, 0); lg.addColorStop(0, "rgb(40,15,0)"); lg.addColorStop(0.5, "rgb(230,120,40)"); lg.addColorStop(1, "rgb(255,160,70)");
+        x.globalCompositeOperation = "multiply"; x.fillStyle = lg; x.fillRect(X0, Y0, PW, PH);
+        x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = "destination-in"; x.drawImage(pm, 0, 0);
+        lx.globalCompositeOperation = "lighter"; lx.globalAlpha = Math.min(1, pa); lx.drawImage(pc, X0, Y0, PW, PH); lx.globalAlpha = 1;
+      }
     }
     const coals = assets["a-coals.webp"];
     if (coals) { // the hot coals breathe: a slow flicker, brightest while the fire burns, still glowing a while after
