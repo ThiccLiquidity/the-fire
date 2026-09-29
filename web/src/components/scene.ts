@@ -185,7 +185,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   }
   const haze = document.createElement("canvas"), hx = haze.getContext("2d")!;
   const glc = mk(800, 900), glDraw = glFire(glc);
-  let fb: HTMLCanvasElement | null = null;
+  let fb: HTMLCanvasElement | null = null, fb2: HTMLCanvasElement | null = null;
   let clouds: { f: string; x: number; y: number; img?: HTMLImageElement; speed: number }[] = [];
   let ringFront: HTMLCanvasElement | null = null, course: { mid: Float32Array; half: Float32Array; x0: number; x1: number } | null = null;
   function setup() {
@@ -300,9 +300,15 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       // thin at the base: the logs show through, with the flames licking up over them, and no hard bottom edge
       fb ??= mk(glc.width, glc.height); const fx = fb.getContext("2d")!;
       fx.globalCompositeOperation = "source-over"; fx.clearRect(0, 0, fb.width, fb.height); fx.drawImage(glc, 0, 0);
-      const fm = fx.createLinearGradient(0, 770, 0, 884); fm.addColorStop(0, "rgba(0,0,0,1)"); fm.addColorStop(0.5, "rgba(0,0,0,0.88)"); fm.addColorStop(0.82, "rgba(0,0,0,0.5)"); fm.addColorStop(1, "rgba(0,0,0,0)");
+      const fm = fx.createLinearGradient(0, 0, 0, 884); fm.addColorStop(0, "rgba(0,0,0,0.7)"); fm.addColorStop(0.55, "rgba(0,0,0,0.88)"); fm.addColorStop(0.87, "rgba(0,0,0,1)"); fm.addColorStop(0.935, "rgba(0,0,0,0.88)"); fm.addColorStop(0.97, "rgba(0,0,0,0.5)"); fm.addColorStop(1, "rgba(0,0,0,0)"); // fuller low down, thinning to the tips
       fx.globalCompositeOperation = "destination-in"; fx.fillStyle = fm; fx.fillRect(0, 0, fb.width, fb.height);
       ctx.save(); ctx.globalCompositeOperation = "screen"; ctx.drawImage(fb, 558, -226); ctx.restore();
+      // a little extra body in the lower flame
+      fb2 ??= mk(glc.width, glc.height); const f2 = fb2.getContext("2d")!;
+      f2.globalCompositeOperation = "source-over"; f2.clearRect(0, 0, fb2.width, fb2.height); f2.drawImage(fb, 0, 0);
+      const fm2 = f2.createLinearGradient(0, 560, 0, 860); fm2.addColorStop(0, "rgba(0,0,0,0)"); fm2.addColorStop(0.7, "rgba(0,0,0,1)"); fm2.addColorStop(1, "rgba(0,0,0,0.6)");
+      f2.globalCompositeOperation = "destination-in"; f2.fillStyle = fm2; f2.fillRect(0, 0, fb2.width, fb2.height);
+      ctx.save(); ctx.globalCompositeOperation = "screen"; ctx.globalAlpha = 0.35; ctx.drawImage(fb2, 558, -226); ctx.restore();
       if (dk < 0.6) { ctx.save(); ctx.globalAlpha = 0.28 * (1 - dk / 0.6); ctx.drawImage(fb, 558, -226); ctx.restore(); }
     }
     drawSmoke(true, dt, fs, dk);
