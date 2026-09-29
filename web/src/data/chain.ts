@@ -309,7 +309,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
         check();
         if (sig) h = await wc.writeContract({ address: routerAddr!, abi: routerAbi, functionName: "fulfill", args: [pendingId, sig], account: acct, chain: robinhood });
         else if (a === "reroll") h = await wc.writeContract({ address: fireAddress, abi, functionName: "reroll", args: [], account: acct, chain: robinhood });
-        else throw new Error("Couldn't reach drand for tonight's number. Try again in a moment.");
+        else throw new Error("Couldn't reach drand for the storm's number. Try again in a moment.");
       } else h = await wc.writeContract({ address: fireAddress, abi, functionName: "roll", args: [], account: acct, chain: robinhood });
       await waitOk(pub, h, "bringing in the storm"); await refresh();
     },

@@ -26,7 +26,7 @@ separate relayer, no database and no owner key.
 
 ## What the keeper does
 Every 30 seconds:
-- `Fire.roll()` once 8 PM MST has passed;
+- `Fire.roll()` once 21:00 UTC (2 PM MST) has passed;
 - `OpenDrandRouter.fulfill(id, signature)` once drand has published the roll's round (it fetches the signature from
   the public drand relays; `DRAND_URLS` overrides them);
 - `adapter.settle(id)` if the router has the number but its callback didn't reach the Fire;

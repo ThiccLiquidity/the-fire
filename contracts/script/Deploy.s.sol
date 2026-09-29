@@ -27,7 +27,7 @@ interface IPair2 {
  *   1. PlankUsdTwap (script/DeployTwap.s.sol), >= 30 min before step 2; call checkpoint() 30+ min after deploy, then every 30 min (keeper).
  *   2. This script: PaperUsdTwap + OpenDrandRouter + OpenVRFAdapter + Fire (four contracts). None has an owner;
  *      nothing to configure after. Everything is immutable, so the script checks every input first and refuses to
- *      deploy on a mistake. Deploy just after 03:00 UTC so fire #1 gets a full first day.
+ *      deploy on a mistake. Deploy just after 21:00 UTC so fire #1 gets a full first day.
  *   3. Start ops/keeper (rolls, delivers drand proofs, recovers stuck rolls, checkpoints, sweeps the mill floor).
  *   4. Ask Plank Press admin: PulpPool.addRewardToken(PLANK).
  *
@@ -48,7 +48,7 @@ interface IPair2 {
  * MILL_BID_BASE     = starting mill bid in USD, 8 decimals (e.g. 50000000000 = $500). It climbs ~1%/hour until a mill
  *                     sells, so start at or below where you expect the floor. Listings may be in USDG or ETH.
  * USDG              = the USDG token on Robinhood Chain (mill listings are priced in it)
- * ROLL_TIME_OF_DAY  = 10800 (03:00 UTC = 8:00 PM MST)
+ * ROLL_TIME_OF_DAY  = 75600 (21:00 UTC = 2:00 PM MST)
  */
 contract Deploy is Script {
     function run() external {

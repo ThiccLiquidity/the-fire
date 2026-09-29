@@ -153,7 +153,7 @@ contract Fire is ReentrancyGuard {
     uint256 public immutable MILL_BID_BASE; // starting bid for a mill, USD 8 decimals (mill listings are priced in USDG or ETH)
     IERC20 public immutable USDG; // dollar stablecoin mills are listed in on OpenSea; address(0) disables the USDG paths
     uint256 public immutable USDG_UNIT; // 10 ** USDG decimals
-    uint256 public immutable ROLL_TIME_OF_DAY; // seconds after 00:00 UTC (8pm Phoenix = 03:00 UTC = 10800)
+    uint256 public immutable ROLL_TIME_OF_DAY; // seconds after 00:00 UTC (21:00 UTC = 75600)
 
     IRandomness public randomness;
     /// @notice The deployer: may add the launch seed to the first fire's pot, once, before the first storm. It can only

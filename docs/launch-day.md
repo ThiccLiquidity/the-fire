@@ -22,20 +22,20 @@ or stop them, including us.** So everything is checked before the real send, and
    simulation and sends nothing. Any problem shows up here for free.
 
 ## Launch day (on or after Oct 1: PAPER must exist; presses can only be burned from Oct 1)
-Times are MST. The storm is at 8:00 PM.
+Times are MST. The storm is at 2:00 PM MST (21:00 UTC).
 
 | When | Who | What |
 |---|---|---|
 | Morning | Claude | Fills in `contracts\.env.example` values (PAPER address, press floor → starting bid), sets the swap fee wallet in the site, tags the release. |
-| 7:15 PM | You | **Step 1: price feed.** `forge script script/DeployTwap.s.sol ... --broadcast` (exact line from Claude). Copy the address it prints into `.env` as `PLANK_USD_FEED`. |
-| 7:50 PM | You | **Checkpoint** the feed (one `cast send` line from Claude). It now has its first 30-minute price. |
-| 7:55 PM | You | **Rehearse step 2**: the Fire deploy without `--broadcast`. It checks every address, both prices, the starting PLANK per log and the bid; if anything is off it stops and says what. |
-| 8:05 PM | You | **Step 2: the Fire.** Same line with `--broadcast`. Four contracts go up one at a time (~1 minute), then the $250 seed goes into fire #1's pot. Copy the four addresses it prints. |
-| 8:10 PM | Claude | Checks on the explorer: the randomness adapter points at the Fire, the pot holds the seed, nothing owns anything. |
-| 8:15 PM | You | **Step 3: keeper.** On the droplet, one `docker run` line with the Fire address. Healthchecks texts you if it ever stops. |
-| 8:20 PM | Claude | **Step 4: site.** Puts the addresses in the site and takes it out of demo mode. Merged to `main` **only on your word.** |
-| 8:30 PM | You | **Step 5: dry run.** Connect your wallet, swap a little ETH for PLANK, throw 1 log. Check it shows in the feed and the pot went up. |
-| Next day 8 PM | Keeper | Night 1 (no storm, fire #1 always survives it). Watch the first real storm the night after. |
+| 1:15 PM | You | **Step 1: price feed.** `forge script script/DeployTwap.s.sol ... --broadcast` (exact line from Claude). Copy the address it prints into `.env` as `PLANK_USD_FEED`. |
+| 1:50 PM | You | **Checkpoint** the feed (one `cast send` line from Claude). It now has its first 30-minute price. |
+| 1:55 PM | You | **Rehearse step 2**: the Fire deploy without `--broadcast`. It checks every address, both prices, the starting PLANK per log and the bid; if anything is off it stops and says what. |
+| 2:05 PM | You | **Step 2: the Fire.** Same line with `--broadcast`. Four contracts go up one at a time (~1 minute), then the $250 seed goes into fire #1's pot. Copy the four addresses it prints. |
+| 2:10 PM | Claude | Checks on the explorer: the randomness adapter points at the Fire, the pot holds the seed, nothing owns anything. |
+| 2:15 PM | You | **Step 3: keeper.** On the droplet, one `docker run` line with the Fire address. Healthchecks texts you if it ever stops. |
+| 2:20 PM | Claude | **Step 4: site.** Puts the addresses in the site and takes it out of demo mode. Merged to `main` **only on your word.** |
+| 2:30 PM | You | **Step 5: dry run.** Connect your wallet, swap a little ETH for PLANK, throw 1 log. Check it shows in the feed and the pot went up. |
+| Next day 2 PM | Keeper | Day 1 (no storm, fire #1 always survives it). Watch the first real storm the day after. |
 
 ## If something goes wrong
 - **The script stops before sending**: nothing happened, nothing spent. Fix the value it names and run again.

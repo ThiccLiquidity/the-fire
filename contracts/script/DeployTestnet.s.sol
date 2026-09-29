@@ -12,7 +12,7 @@ import {TestToken, TestFeed, TestPair} from "../testnet/TestnetKit.sol";
 /**
  * TESTNET REHEARSAL (Robinhood Chain testnet, chain 46630). The real Fire, router, adapter and PLANK price feed, on
  * play tokens with a faucet, a play PLANK pool and an always-fresh ETH/USD feed. Same settings as mainnet ($0.90 of PLANK
- * a log at today's price, 8 PM MST storms, a $250 seed). Only the deployer's testnet ETH is spent.
+ * a log at today's price, 21:00 UTC storms, a $250 seed). Only the deployer's testnet ETH is spent.
  *
  *   forge script script/DeployTestnet.s.sol --rpc-url https://rpc.testnet.chain.robinhood.com/rpc --account deployer --slow --broadcast
  */
@@ -44,7 +44,7 @@ contract DeployTestnet is Script {
             paper: address(paper), plank: address(plank), mill: address(press), seaport: address(0), royaltyPool: me,
             randomness: address(adapter), ethUsdFeed: address(ethUsd), plankUsdFeed: address(plankUsd), paperUsdFeed: address(0),
             usdg: address(usdg), paperPerTicket: 1e18, paperUsdCap: 33_000_000, plankPerTicket0: PLANK_PER_TICKET0,
-            plankUsdPerTicket: 90_000_000, ethUsdPerTicket: 100_000_000, millBidBase: 300e8, rollTimeOfDay: 10800
+            plankUsdPerTicket: 90_000_000, ethUsdPerTicket: 100_000_000, millBidBase: 300e8, rollTimeOfDay: 75600
         }));
         require(address(fire) == predictedFire, "address prediction failed");
         require(adapter.FIRE() == address(fire), "adapter points elsewhere");

@@ -2,7 +2,7 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Scene, sceneRef } from "../components/Scene";
-import { phoenixHour, stormLook, type Storm } from "../data/types";
+import { localHour, stormLook, type Storm } from "../data/types";
 import { KINDS } from "../components/scene";
 import "../index.css";
 
@@ -13,13 +13,13 @@ function Mock() {
   const [storm, setStorm] = useState<Storm | undefined>();
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
-  const h = hour ?? phoenixHour(now);
+  const h = hour ?? localHour(now);
   const fmt = (v: number) => { const hh = Math.floor(v), mm = Math.round((v - hh) * 60); return `${((hh + 11) % 12) + 1}:${String(mm).padStart(2, "0")} ${hh >= 12 ? "PM" : "AM"}`; };
   return (
     <div className="page">
       <Scene size={size} hour={h} threat={0.3} storm={storm} lastBuyAt={0} lastBuyBig={false} />
       <header className="top"><div className="brand">The Fire<span className="demo-tag">scene mock</span></div></header>
-      <div className="pot"><span className="pot-usd">$2,904</span><span className="pot-sub">2.75T PLANK · Fire #14 · 6 nights survived</span></div>
+      <div className="pot"><span className="pot-usd">$2,904</span><span className="pot-sub">2.75T PLANK · Fire #14 · 6 days survived</span></div>
       <footer className="foot" style={{ position: "relative", zIndex: 2 }}>
         <div className="demo-row">
           <label className="demo">Visitor {KINDS.map((k) => <button key={k} onClick={() => sceneRef.visitor?.(k)}>{k}</button>)}</label>

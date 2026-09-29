@@ -5,7 +5,7 @@
 // goes quiet under it. Everything (thunder too) goes through one master gain, so the header toggle mutes it all.
 
 export interface AmbienceInput {
-  /** MST hour 0..24 */
+  /** the player's local hour 0..24 */
   hour: number;
   /** 0..1 fire size as drawn */
   size: number;

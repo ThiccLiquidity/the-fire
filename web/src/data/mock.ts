@@ -34,12 +34,12 @@ const YOU = "0xd00d000000000000000000000000000000000001";
 const FRIEND = "0xb0b0000000000000000000000000000000000002"; // "Switch wallet" in the demo flips to this one
 const NOBODY = "0x0000000000000000000000000000000000000000";
 const STORE = "the-fire-demo-v4";
-const PRICE_MOVED = "The price moved at tonight's storm — check the new price and try again.";
+const PRICE_MOVED = "The price moved at the storm — check the new price and try again.";
 
 const wallets = Array.from({ length: 40 }, (_, i) => "0x" + (0x7a3e1c + i * 9973).toString(16).padStart(40, "a"));
 const notes = [
   "gm from 1 press", "for the boys", "wildfire or nothing", "burn it all", "printed this morning",
-  "logs on the fire", "not tonight storm", "one more for luck", "paper go brrr", "we ride at 8", "", "", "",
+  "logs on the fire", "not today storm", "one more for luck", "paper go brrr", "we ride at 21:00", "", "", "",
 ];
 function rnd(n: number) { return Math.floor(Math.random() * n); }
 const demoNames = ["plankdaddy", "MillOwner420", "Cinder", "sawdust.eth", "Brisket", "log_lady", "not_a_bot", "Fireside Phil", "matchstick", "Torch"];

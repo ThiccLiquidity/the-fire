@@ -23,17 +23,17 @@ export function Playground({ s, d, hour, onHour }: {
       {open && (
         <div className="pg-body">
           <section>
-            <h3>Tonight's storm</h3>
+            <h3>The next storm</h3>
             <div className="pg-row">
               <button onClick={() => d.roll("random", luck)}>Roll (real formula)</button>
               <button onClick={() => d.roll("survive", luck)}>Force: survives</button>
               <button onClick={() => d.roll("out", luck)}>Force: fire goes out</button>
               <button className="hot" onClick={() => d.roll("you-win", luck)}>Force: you win</button>
             </div>
-            <label>Storm draw {pct}% → {(() => { const n = stormFor(s.night + 1, luck); return Number.isFinite(n) ? n.toLocaleString() + " logs" : "infinite"; })()} vs a {Math.round(s.fireSize).toLocaleString()}-log fire <input type="range" min={0} max={99} value={pct} onChange={(e) => setPct(num(e.target.value))} /> <small>the contract's storm ladder; higher = a bigger storm for tonight</small></label>
+            <label>Storm draw {pct}% → {(() => { const n = stormFor(s.night + 1, luck); return Number.isFinite(n) ? n.toLocaleString() + " logs" : "infinite"; })()} vs a {Math.round(s.fireSize).toLocaleString()}-log fire <input type="range" min={0} max={99} value={pct} onChange={(e) => setPct(num(e.target.value))} /> <small>the contract's storm ladder; higher = a bigger next storm</small></label>
             <div className="pg-row">
-              <label><input type="checkbox" checked={!!s.rollPending} onChange={(e) => d.setPending(e.target.checked)} /> Storm pending (buying paused, "Bring in tonight's storm" shown)</label>
-              <button onClick={() => d.skipNights(1)}>Skip 1 night</button>
+              <label><input type="checkbox" checked={!!s.rollPending} onChange={(e) => d.setPending(e.target.checked)} /> Storm pending (buying paused, "Bring in the storm" shown)</label>
+              <button onClick={() => d.skipNights(1)}>Skip 1 day</button>
               <button onClick={() => d.skipNights(7)}>Skip a week</button>
             </div>
             <div className="pg-row">
@@ -45,18 +45,18 @@ export function Playground({ s, d, hour, onHour }: {
           <section>
             <h3>The fire</h3>
             <div className="pg-grid">
-              <label>Night <input type="number" value={s.night} onChange={(e) => d.set({ night: num(e.target.value) })} /></label>
+              <label>Day <input type="number" value={s.night} onChange={(e) => d.set({ night: num(e.target.value) })} /></label>
               <label>Fire size (logs) <input type="number" value={Math.round(s.fireSize)} onChange={(e) => d.set({ fireSize: num(e.target.value) })} /></label>
               <label>Pot ($) <input type="number" value={usd(s.potPlank)} onChange={(e) => d.set({ potPlank: num(e.target.value) / s.plankUsd })} /></label>
               <label>Tickets in this fire <input type="number" value={s.ticketsTotal} onChange={(e) => d.set({ ticketsTotal: num(e.target.value) })} /></label>
-              <label>7-night avg (storm scale) <input type="number" value={Math.round(s.trailingAvg)} onChange={(e) => d.set({ trailingAvg: Math.max(1, num(e.target.value)) })} /></label>
+              <label>7-day avg (storm scale) <input type="number" value={Math.round(s.trailingAvg)} onChange={(e) => d.set({ trailingAvg: Math.max(1, num(e.target.value)) })} /></label>
               <label>Sky threat 0–1 <input type="number" step={0.05} min={0} max={1} value={s.threat} onChange={(e) => d.set({ threat: Math.max(0, Math.min(1, num(e.target.value))) })} /></label>
             </div>
           </section>
 
           <section>
             <h3>Prices and feeds</h3>
-            <p className="fine">A log's PLANK and PAPER amounts follow a price change at most 5% a night, like the contract.</p>
+            <p className="fine">A log's PLANK and PAPER amounts follow a price change at most 5% a day, like the contract.</p>
             <div className="pg-grid">
               <label>PLANK price ($ per 1B) <input type="number" step={0.1} value={+(s.plankUsd * 1e9).toFixed(3)} onChange={(e) => d.set({ plankUsd: Math.max(0.01, num(e.target.value)) / 1e9 })} /></label>
               <label>PAPER price ($, 0 = no market) <input type="number" step={0.01} min={0} value={s.paperUsd} onChange={(e) => d.set({ paperUsd: Math.max(0, num(e.target.value)) })} /></label>

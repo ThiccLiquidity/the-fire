@@ -1,5 +1,6 @@
 // The campfire scene: the painted clearing (Plank in his chair, the Plank & Paper press on the stream), a WebGL fire
-// whose height follows the fire's log count, the storm that rolls in at 8 PM MST, and the animals that wander by.
+// whose height follows the fire's log count, the daily storm (21:00 UTC), and the animals that wander by. The sky follows
+// the player's own clock.
 // Ported from the approved scene mock (docs/HANDOFF.md, scene makeover). The whole painting is drawn at its own size
 // (1942 x 809) on an offscreen canvas, then cropped to fill the page: on a wide screen it's centred on the fire; on an
 // upright phone it frames Plank and the fire, can be dragged left and right, and pans to an animal that shows up.
@@ -14,10 +15,12 @@ export const KINDS: Kind[] = ["deer", "rabbit", "squirrel", "heron", "frog", "be
 export interface SceneInput {
   /** 0..1: how big the fire is drawn (fireLook of its log count) */
   size: number;
-  /** MST hour 0..24 */
+  /** the player's local hour 0..24: sun, moon and stars follow it */
   hour: number;
-  /** 0..1: how threatening tonight looks. Darkens the sky and gathers clouds. */
+  /** 0..1: how threatening the next storm looks. Darkens the sky and gathers clouds. */
   threat: number;
+  /** hours until the storm: its clouds gather over the last 3 */
+  stormIn?: number;
   storm?: Storm;
   /** ms timestamp of the most recent buy: logs fly into the fire */
   lastBuyAt: number;
@@ -662,12 +665,12 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     const useStorm = ost.phase === "rain" || ost.phase === "out" || ost.phase === "ashes" || ost.phase === "relight";
     const fs = Math.max(0, (useStorm ? ost.sizeNow : inp.size) * (1 - ost.dead * 0.97));
     firePhase += dt * (0.9 + 0.2 * Math.min(1, fs) + 0.9 * Math.min(1, fs) ** 3);
-    // tonight's forecast only shows in the sky in the last hours before the 8 PM storm: clouds gather from 5 PM
-    const gather = inp.hour >= 17 && inp.hour < 20 ? (inp.hour - 17) / 3 : 0;
+    // the forecast only shows in the sky in the last 3 hours before the storm, whatever the player's time of day
+    const gather = inp.stormIn !== undefined && inp.stormIn > 0 && inp.stormIn < 3 ? (3 - inp.stormIn) / 3 : 0;
     const s = sky(inp.hour), c = ost.cover, threat = ost.phase === "none" ? inp.threat * gather : 0;
     night = s.dark;
-    const sd = ost.phase === "strike" || ost.phase === "rain" ? 0.7 : ost.phase === "ashes" ? 0.6 : c * 0.5 + threat * 0.3; // how dark the storm (or tonight's forecast) makes the sky
-    const cc = Math.max(c, threat * 0.45); // storm clouds: tonight's forecast gathers a few, the storm brings them all
+    const sd = ost.phase === "strike" || ost.phase === "rain" ? 0.7 : ost.phase === "ashes" ? 0.6 : c * 0.5 + threat * 0.3; // how dark the storm (or its forecast) makes the sky
+    const cc = Math.max(c, threat * 0.45); // storm clouds: the forecast gathers a few, the storm brings them all
     const dark = Math.max(s.dark, sd), flick = fireLight(t);
     if (amb) {
       if (amb.on !== !!inp.sound) { amb.setOn(!!inp.sound); if (inp.sound) { audio(); void loadThunder(); } }

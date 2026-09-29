@@ -57,6 +57,6 @@ Done. Start the keeper (fill in the Fire address; the price feeds are read from 
     -v $KDIR/keeper-key:/run/secrets/keeper-key:ro $OS_OPTS fire-keeper
   docker logs -f fire-keeper
 
-It rolls the storm at 8 PM MST, delivers drand's number, recovers stuck rolls, checkpoints both price feeds,
+It rolls the storm at 21:00 UTC, delivers drand's number, recovers stuck rolls, checkpoints both price feeds,
 and sweeps the mill floor. Lines starting with ALERT need you. Top up the keeper wallet when it drops under ~\$5 of ETH.
 EOF

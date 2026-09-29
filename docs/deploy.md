@@ -24,9 +24,9 @@ Fill the rest of `.env`:
 - `SEAPORT` = `0x0000000000000068F116a894984e2DB1123eB395` (Seaport 1.6, checked on-chain Sep 27 2026), `USDG` =
   `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`, `UNIV2_FACTORY`, `WETH` — prefilled in `.env.example`.
 - `PAPER_PER_TICKET=1e18`, `PAPER_USD_CAP=33000000`, `PLANK_USD_PER_TICKET=90000000`, `ETH_USD_PER_TICKET=100000000`,
-  `ROLL_TIME_OF_DAY=10800` (03:00 UTC = 8:00 PM MST) — prefilled.
+  `ROLL_TIME_OF_DAY=75600` (21:00 UTC = 2:00 PM MST) — prefilled.
 
-Deploy just after 03:00 UTC so fire #1 gets a full first day:
+Deploy just after 21:00 UTC so fire #1 gets a full first day:
 ```powershell
 forge script script/Deploy.s.sol --rpc-url $env:RPC --account deployer --sender <deployer address> --slow --broadcast `
   --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
@@ -51,7 +51,7 @@ from the Fire.
 Done: the admin added PLANK as a Pulp Pool reward token (Sep 28).
 
 ## 5. Nightly roll
-The keeper does it. Anyone can also call `Fire.roll()` after 8:00 PM MST, and the site shows a button when a roll,
+The keeper does it. Anyone can also call `Fire.roll()` after 21:00 UTC, and the site shows a button when a roll,
 a delivery or a re-roll is due.
 
 ## 6. Light fire #1

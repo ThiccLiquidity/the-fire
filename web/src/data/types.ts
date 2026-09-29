@@ -224,17 +224,22 @@ export function nameOf(addr: string, profiles: Record<string, Profile>) {
   return profiles[addr.toLowerCase()]?.name || short(addr);
 }
 
+/** The storm hits every day at 21:00 UTC: the same moment for everyone, whatever their time zone. */
+export const ROLL_UTC_HOUR = 21;
 export function nextRollTime(now = Date.now()) {
-  // 8:00 PM MST = 03:00 UTC (MST all year, no daylight saving)
   const d = new Date(now);
-  const t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 3, 0, 0);
+  const t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), ROLL_UTC_HOUR, 0, 0);
   return t <= now ? t + 86_400_000 : t;
 }
 
-/** Hour of day in MST, fractional (0..24). */
-export function phoenixHour(now = Date.now()) {
-  const ms = (now - 7 * 3_600_000) % 86_400_000;
-  return (ms < 0 ? ms + 86_400_000 : ms) / 3_600_000;
+/** Hour of day on the player's own clock, fractional (0..24): the scene's sky follows it. */
+export function localHour(now = Date.now()) {
+  const d = new Date(now);
+  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+}
+/** A time on the player's own clock: "2:00 PM" (or "14:00" where that's the custom). */
+export function localClock(at = Date.now()) {
+  return new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 export type DemoToken = "ETH" | "PLANK" | "PAPER" | "USDG";
