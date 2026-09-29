@@ -21,6 +21,7 @@ import {
   stormFor,
   stormOdds,
   nextRollTime,
+  ROLL_UTC_HOUR,
   quote,
   ticketsFor,
   paperPerTicketAt,
@@ -133,6 +134,8 @@ export function makeMockApi(): FireApi {
       if (!raw) return undefined;
       const x = JSON.parse(raw) as World;
       if (!x?.s || !x.accounts || !x.trail) return undefined;
+      // a demo saved before the storm moved to 21:00 UTC still holds the old time: move it to the next storm
+      if (!x.s.rollPending && new Date(x.s.nextRollAt).getUTCHours() !== ROLL_UTC_HOUR) x.s.nextRollAt = nextRollTime();
       return x;
     } catch { return undefined; }
   }
@@ -316,7 +319,7 @@ export function makeMockApi(): FireApi {
   setInterval(() => {
     const s = w.s;
     if (s.abandoned) return;
-    if (!s.rollPending && Date.now() >= s.nextRollAt) { storm(); return; } // 8 PM MST: the storm comes by itself
+    if (!s.rollPending && Date.now() >= s.nextRollAt) { storm(); return; } // 21:00 UTC: the storm comes by itself
     if (!s.rollPending && Math.random() < w.crowdPerMin / 60) crowdBuy();
   }, 1_000);
 
