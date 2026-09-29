@@ -124,7 +124,7 @@ export default function App() {
         </div>
       );
     } else if (!st.survived && age >= C.RELIGHT) {
-      card = <div className="verdict lit" role="alert"><b>Fire #{s.fireId} is lit.</b> {usd(s.potPlank, s.plankUsd)} carried over. The first night is always calm.</div>;
+      card = <div className="verdict lit" role="alert"><b>Fire #{s.fireId} is lit.</b> {usd(s.potPlank, s.plankUsd)} carried over.</div>;
     }
   }
   const lastWinner = s.past[0];
