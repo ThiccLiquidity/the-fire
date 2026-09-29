@@ -1,16 +1,21 @@
-@import url("https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Chewy&family=Nunito:ital,wght@0,500;0,700;0,800;0,900;1,500&display=swap");
 
 :root {
   --ember: #ff7a1a;
   --flame: #ffc93c;
   --paper: #f3e9d2;
   --paper-dim: #c9bfa9;
-  --panel: rgba(10, 14, 26, 0.68);
+  --panel: #141a2e;
   --line: rgba(243, 233, 210, 0.16);
   --ok: #7fd18b;
   --bad: #ff6b6b;
-  --display: "Fredoka", system-ui, sans-serif;
-  --body: "Nunito Sans", system-ui, sans-serif;
+  --display: "Chewy", "Fredoka", system-ui, cursive;
+  --body: "Nunito", system-ui, sans-serif;
+  --ink: #1b1712;
+  /* the hand-drawn look: ink outlines, a hard cartoon shadow, slightly wobbly corners */
+  --wobble: 16px 22px 14px 24px / 22px 14px 24px 16px;
+  --float: -2px -2px 0 var(--ink), 2px -2px 0 var(--ink), -2px 2px 0 var(--ink), 2px 2px 0 var(--ink), 0 3px 0 var(--ink), 0 4px 14px rgba(0,0,0,.55);
+  --float-big: -3px -3px 0 var(--ink), 3px -3px 0 var(--ink), -3px 3px 0 var(--ink), 3px 3px 0 var(--ink), 0 5px 0 var(--ink), 4px 6px 0 var(--ink), 0 8px 24px rgba(0,0,0,.55);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -350,3 +355,134 @@ a { color: var(--flame); }
 .pot-grow { font-size: 0.82rem; color: var(--paper-dim); }
 
 .how-sub { margin: 0.4rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.3rem; font-size: 0.95em; }
+
+/* ============================================================= the re-drawn look (approved Sep 28)
+   The scene takes most of the screen; the pot, the clock and the title float over it as outlined cartoon text; below
+   it the page stays dark, with ink-outlined panels. Phones get a strip under the scene instead of text over it. */
+body { font-weight: 500; }
+h2 { font-weight: 400; font-size: 1.6rem; color: var(--flame); letter-spacing: 0.02em; }
+.scene { height: clamp(460px, 86vh, 900px); background: #0b1020; touch-action: pan-y; }
+.hud { pointer-events: none; }
+.top { align-items: center; padding: 1rem clamp(1rem, 2.2vw, 2rem) 0; }
+.brand { font-family: var(--display); font-weight: 400; font-size: 3.4rem; line-height: 1; gap: 0.9rem; text-shadow: none; }
+.brand-name { color: var(--flame); text-shadow: var(--float-big); transform: rotate(-3deg); display: inline-block; }
+.brand .demo-tag { font-family: var(--body); font-size: 0.7rem; font-weight: 800; color: var(--ink); background: var(--flame); border: 2px solid var(--ink); transform: rotate(3deg); }
+.chip { pointer-events: auto; border: 2px solid var(--ink); box-shadow: 2px 3px 0 var(--ink); border-radius: 12px 16px 11px 17px / 16px 11px 17px 12px; background: var(--paper); color: var(--ink); font-family: var(--body); font-weight: 900; }
+.how-chip { font-size: 0.95rem; padding: 0.4rem 0.9rem; margin-top: 0.3rem; }
+.how-short { display: none; }
+.top-right { display: flex; align-items: center; gap: 0.8rem; }
+.sound-btn { width: 44px; height: 44px; display: grid; place-items: center; padding: 0; margin: 0; }
+.clock { display: grid; justify-items: end; text-align: right; line-height: 1.15; pointer-events: auto; }
+.clock-line { font-family: var(--display); font-size: 1.65rem; color: var(--paper); text-shadow: var(--float); white-space: nowrap; }
+.clock-timer { color: var(--flame); }
+.clock-timer.hot { color: var(--ember); }
+.clock-sub { font-size: 0.9rem; font-weight: 800; color: var(--paper); text-shadow: var(--float); }
+.roll-btn { background: var(--paper); color: var(--ink); border: 2px solid var(--ink); box-shadow: 2px 3px 0 var(--ink); font-weight: 900; }
+.wchip { background: var(--paper); color: var(--ink); border: 2px solid var(--ink); box-shadow: 2px 3px 0 var(--ink); font-weight: 900; backdrop-filter: none; }
+.wchip small { color: #5b5346; }
+.wchip.connect { background: var(--ember); color: var(--ink); border-color: var(--ink); padding: 0.55rem 1rem; }
+.wchip-menu { border: 2px solid rgba(243,233,210,.18); border-radius: var(--wobble); box-shadow: 4px 5px 0 #05070f; }
+
+/* the pot floats right above the fire (the scene reports where the fire is: --fire-x) */
+.pot { top: clamp(4.5rem, 13vh, 7rem); left: var(--fire-x, 50%); right: auto; transform: translateX(-50%); width: max-content; max-width: 96vw; }
+.pot-row { font-size: clamp(3.4rem, 7.2vw, 6.5rem); }
+.pot-usd { position: relative; font-family: var(--display); font-weight: 400; color: var(--flame); text-shadow: var(--float-big); line-height: 1; }
+.pot-usd .plank-big { position: absolute; right: 100%; top: 50%; height: 0.62em; margin: -0.34em 0.18em 0 0; }
+.pot-take { font-weight: 900; font-size: 1.35rem; text-shadow: var(--float); margin-top: 0.1rem; }
+.pot-take b { font-family: var(--display); font-weight: 400; font-size: 1.75rem; color: var(--ok); }
+.pot-grow { color: var(--paper); font-weight: 800; }
+.pot-sub { font-weight: 800; font-size: 0.95rem; text-shadow: var(--float); }
+.pot-sub .plank-ic { display: none; }
+.pot.wake .pot-usd { color: var(--paper-dim); text-shadow: var(--float-big); }
+.pot-last { font-weight: 800; background: rgba(11,16,32,.55); border: 2px solid var(--ink); text-shadow: none; }
+.strip { display: none; }
+
+/* the story cards over the scene: cartoon cards with an ink outline, centred on the fire */
+.verdict, .winner { left: var(--fire-x, 50%); color: var(--ink); border: 3px solid var(--ink); box-shadow: 5px 6px 0 var(--ink); border-radius: 18px 26px 16px 28px / 26px 16px 28px 18px; backdrop-filter: none; }
+.verdict { top: clamp(17rem, 40vh, 22rem); background: #f3e9d2; font-weight: 800; font-size: 1.05rem; padding: 0.9rem 1.5rem; max-width: min(34rem, 92vw); }
+.verdict b { display: block; font-family: var(--display); font-weight: 400; font-size: 2rem; line-height: 1.1; }
+.verdict.ok { background: var(--ok); border-color: var(--ink); }
+.verdict.out { background: #ff9b8f; border-color: var(--ink); }
+.verdict.lit { background: var(--flame); border-color: var(--ink); }
+.winner { top: clamp(15rem, 36vh, 20rem); background: var(--flame); box-shadow: 5px 6px 0 var(--ink); }
+.winner.mine { border-color: var(--ink); box-shadow: 5px 6px 0 var(--ink), 0 0 80px rgba(255,201,60,.55); }
+.winner-kicker, .winner.mine .winner-kicker { color: var(--ink); font-weight: 900; }
+.winner .avatar { box-shadow: 0 0 0 3px var(--ink); }
+.winner-name { font-weight: 400; }
+.winner-addr, .winner-foot, .winner-sub { color: var(--ink); font-weight: 700; }
+.winner-amt { color: var(--ink); text-shadow: none; font-weight: 400; }
+
+/* below the scene: dark panels with an ink edge */
+.you div, .ticker, .burn, .archive, .buy, .swap, .profile, .claim, .pg { background: var(--panel); border: 2px solid rgba(243,233,210,.18); border-radius: var(--wobble); box-shadow: 4px 5px 0 #05070f; backdrop-filter: none; }
+.claim { border-color: var(--ok); }
+.ticker { background: #0f1426; font-weight: 700; }
+.you b { font-weight: 400; font-size: 2.4rem; line-height: 1; }
+.you div:nth-child(1) b { color: var(--flame); }
+.you div:nth-child(2) b { color: var(--ok); }
+.you div:nth-child(3) b { color: var(--ember); }
+.you span { font-weight: 800; font-size: 0.85rem; color: var(--paper); }
+.you .you-fine { color: var(--paper-dim); font-weight: 700; }
+.burn dt { font-weight: 400; font-size: 1.6rem; }
+.wallet b, .qty-in, .seg button, .spend-total, .flow-box.fb-in, .how h2, .how h3 { font-weight: 400; }
+.cta { font-weight: 400; font-size: 1.5rem; border: 3px solid var(--ink); box-shadow: 4px 5px 0 #05070f; border-radius: 12px 16px 11px 17px / 16px 11px 17px 12px; }
+.cta.ghost { border: 2px solid rgba(243,233,210,.35); box-shadow: none; }
+.seg button.on { background: var(--ember); color: var(--ink); border: 2px solid var(--ink); }
+.seg button.on small { color: var(--ink); }
+.how { border: 2px solid rgba(243,233,210,.18); border-radius: var(--wobble); box-shadow: 6px 7px 0 #05070f; }
+.how h2 { font-size: 2.4rem; color: var(--flame); }
+.foot { font-weight: 700; }
+
+/* narrow screens: the header wraps, the pot shrinks */
+@media (max-width: 900px) {
+  .pot { position: absolute; top: clamp(5.5rem, 14vh, 7rem); margin: 0; }
+  .brand { font-size: 2.6rem; }
+  .top { flex-direction: row; align-items: center; }
+  .clock { text-align: right; }
+}
+
+/* upright phones: a taller view that frames Plank and the fire, the clock on its own line, the forecast and the fire's
+   details in a strip under the scene, and the story cards over the fire */
+@media (max-width: 640px) {
+  .scene { height: min(520px, 70vh); min-height: 420px; }
+  .top { flex-wrap: wrap; padding: 0.6rem 0.75rem 0; row-gap: 0.2rem; }
+  .brand { font-size: 2rem; gap: 0.5rem; }
+  .brand .demo-tag { display: none; }
+  .how-chip { width: 30px; height: 30px; padding: 0; border-radius: 50%; margin-top: 0.2rem; font-size: 1rem; }
+  .how-long { display: none; }
+  .how-short { display: inline; }
+  .top-right { display: contents; }
+  .sound-btn { order: 2; margin-left: auto; }
+  .wchip-wrap { order: 3; }
+  .clock { order: 4; flex-basis: 100%; justify-items: start; text-align: left; }
+  .clock-line { font-size: 1.05rem; }
+  .clock-sub { display: none; }
+  .clock .roll-btn { font-size: 0.8rem; }
+  .pot { top: 6.6rem; left: auto; right: 0.6rem; transform: none; } /* the fire sits right of centre here: keep the pot over it, and on screen */
+  .pot-row { font-size: 3.4rem; }
+  .pot-take { font-size: 1rem; }
+  .pot-take b { font-size: 1.25rem; }
+  .pot-grow, .pot-sub, .pot-last { display: none; }
+  .strip { display: grid; gap: 0.1rem; padding: 0.5rem 0.9rem; background: #0f1426; border-bottom: 2px solid rgba(243,233,210,.16); font-size: 0.82rem; font-weight: 800; line-height: 1.35; }
+  .strip-sub { color: var(--paper-dim); }
+  .strip-last { color: var(--ok); }
+  .verdict, .winner { left: auto; right: 0.75rem; transform: none; width: min(17rem, calc(100vw - 1.5rem)); animation-name: rise-phone; }
+  .verdict { top: 12.5rem; font-size: 0.88rem; padding: 0.7rem 0.9rem; }
+  .verdict b { font-size: 1.35rem; }
+  .winner { top: 11.5rem; }
+  @keyframes rise-phone { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+}
+/* a phone turned sideways: the whole scene, edge to edge */
+@media (max-height: 500px) and (orientation: landscape) {
+  .scene { height: 100vh; height: 100dvh; min-height: 0; }
+  .brand { font-size: 1.9rem; }
+  .how-long { display: none; }
+  .how-short { display: inline; }
+  .how-chip { width: 30px; height: 30px; padding: 0; border-radius: 50%; }
+  .clock-line { font-size: 1.1rem; }
+  .clock-sub { font-size: 0.75rem; }
+  .pot { top: 3.8rem; }
+  .pot-row { font-size: 3.2rem; }
+  .pot-sub { display: none; }
+  .verdict { top: 9rem; }
+  .winner { top: 6rem; transform: translateX(-50%) scale(0.8); transform-origin: top center; }
+}

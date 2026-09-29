@@ -39,14 +39,22 @@ def storm_ladder(n=20, lo=5, hi=25000, start=2.0, step=0.75, width=2.5):
 
 STORM_LOGS, STORM_ODDS = storm_ladder()
 MAX_NIGHTS, KEEP_BPS, BPS, TRAILING, MILLI = 24, 8500, 10000, 7, 1000
-FULL_DAYS = 2.5  # site: a fire worth 2.5 days of buys is drawn full height
 INF = 2**256 - 1
 
 
-def storm_look(storm, size):
-    """0.15..1: how heavy the rain is drawn. Light for a storm that barely touched the fire, full for a near miss."""
-    if size <= 0: return 1.0
-    return max(0.15, min(1.0, 0.15 + 0.85 * (storm / size) ** 0.8))
+def storm_look(storm):
+    """0.15..1: how hard the storm hits on screen (types.ts stormLook): set by its rung on the ladder, a drizzle for the
+    5-log storm up to full force for the 25,000-log one (and night 24's)."""
+    if storm >= INF: return 1.0
+    logs = storm / MILLI
+    rung = next((i for i, v in enumerate(STORM_LOGS) if v >= logs), len(STORM_LOGS) - 1)
+    return 0.15 + 0.85 * rung / (len(STORM_LOGS) - 1)
+
+
+def fire_look(logs):
+    """0.12..1: how big the fire is drawn for its size in logs (types.ts fireLook): the same count always looks the same."""
+    u = math.log(1 + max(0, logs) / 5) / math.log(1 + 12000 / 5)
+    return 0.12 + 0.88 * min(1.0, u)
 
 
 class Fire:
@@ -86,10 +94,9 @@ class Fire:
         else:
             rec.update(survived=False, after=0, tickets=self.tickets_total)
             self.fire_id += 1; self.night = 0; self.fire_size = 0; self.tickets_total = 0
-        # what the site shows (types.ts stormLook / drawnHeight): the rain is as heavy as the call was close, and the fire
-        # is drawn against 2.5 days of buys
-        rec["look"] = 1.0 if not rec["survived"] else storm_look(storm, size_before)
-        rec["drawn"] = min(1.0, rec["after"] / (avg * FULL_DAYS)) if avg > 0 else 0.0
+        # what the site shows (types.ts stormLook / fireLook): the storm looks as big as its rung, the fire as big as its logs
+        rec["look"] = storm_look(storm)
+        rec["drawn"] = fire_look(rec["after"] / MILLI) if rec["survived"] else 0.0
         return rec
 
 

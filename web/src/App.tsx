@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { type FireApi, type FireState, CEREMONY as C, FULL_DAYS, nameOf, phoenixHour, prizeOf, short } from "./data/types";
+import { useEffect, useRef, useState } from "react";
+import { type FireApi, type FireState, CEREMONY as C, fireLook, nameOf, phoenixHour, prizeOf, short } from "./data/types";
 import { friendly, TESTNET } from "./data/wallet";
 import { TestnetFaucet } from "./components/TestnetFaucet";
 import { fmtAmt, fmtCount, fmtPlank, usdOf } from "./format";
@@ -22,10 +22,15 @@ if (!LIVE) (window as unknown as { __fire?: FireApi }).__fire = api; // demo: le
 
 const usd = usdOf; // "$—" when there's no PLANK price yet: say so rather than guess
 const mPlank = fmtPlank;
-function countdown(ms: number) {
-  if (ms <= 0) return "now";
-  const h = Math.floor(ms / 3_600_000), m = Math.floor((ms % 3_600_000) / 60_000);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+/** time to the storm, to the second: "6:54:58" */
+function hms(ms: number) {
+  const t = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+/** the clock in MST (the game's time zone, no daylight saving): "7:05 PM" */
+function mstClock(hour: number) {
+  const h = Math.floor(hour) % 24, m = Math.floor((hour - Math.floor(hour)) * 60);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 }
 function weather(threat: number, hoursLeft: number) {
   if (hoursLeft > 12) return "Clear for now.";
@@ -41,7 +46,6 @@ export default function App() {
   const [s, setS] = useState<FireState>(api.state());
   const [now, setNow] = useState(Date.now());
   const [demoHour, setDemoHour] = useState<number | null>(null);
-  const [press2, setPress2] = useState(false);
   const [how, setHow] = useState(false);
   // Sound is on unless the visitor turned it off (remembered per browser). Browsers still wait for a first click.
   const [sound, setSound] = useState(() => { try { return localStorage.getItem("the-fire-sound") !== "off"; } catch { return true; } });
@@ -70,8 +74,8 @@ export default function App() {
   const odds = v.ticketsTotal ? (v.youTickets / v.ticketsTotal) * 100 : 0;
   const wake = !!st && !st.survived && age >= C.OUT_CARD && age < C.RELIGHT; // the fire is out; its pot stays on screen
   const youWon = !!st && !st.survived && connected && st.winner?.toLowerCase() === s.you.address!.toLowerCase();
-  const toSize = (fs: number) => Math.min(1, fs / (s.trailingAvg * FULL_DAYS)); // 1 = a fire worth 2.5 days of buys
-  const size = b && age < C.RAIN ? toSize(b.fireSize) : wake ? 0 : toSize(s.fireSize);
+  // the fire is drawn for its size in logs: the same count always looks the same (fireLook)
+  const size = b && age < C.RAIN ? fireLook(b.fireSize) : wake ? 0 : fireLook(s.fireSize);
 
   // pot header: during the wake, keep showing the fire that died
   const potPlank = wake ? st!.potPlank ?? v.potPlank : v.potPlank;
@@ -80,17 +84,22 @@ export default function App() {
     : wake ? `went out on night ${st!.night}${st!.tickets ? ` · ${fmtCount(st!.tickets)} logs` : ""}`
     : v.night === 0 ? (st && !st.survived && age < C.DONE ? "just lit" : "lit today") : `${nights(v.night)} survived`;
 
-  let forecast: [string, string];
-  if (s.abandoned) forecast = ["The game has ended.", "No more storms"];
-  else if (!inCeremony && s.rollPending) forecast = ["The storm is on its way.", `Night ${s.night + 1} · buying reopens when it lands`];
-  else if (!inCeremony && s.night + 1 >= 24) forecast = ["Tonight's storm can't be survived — last night to get in.", `Storm rolls in ${countdown(msToRoll)} · 8:00 PM MST`];
-  else if (!inCeremony) forecast = [weather(s.threat, msToRoll / 3_600_000), `Storm rolls in ${countdown(msToRoll)} · 8:00 PM MST`];
-  else if (age < C.IN) forecast = ["Storm rolling in.", `Night ${st!.night}`];
-  else if (age < C.STRIKE) forecast = ["It's here.", `Night ${st!.night}`];
-  else if (age < C.RAIN) forecast = [st!.survived ? "Pouring." : "Pouring. The fire is losing.", `Night ${st!.night}`];
-  else if (st!.survived) forecast = ["Storm passing.", `Night ${st!.night}`];
-  else if (age < C.RELIGHT) forecast = ["Ashes.", `Fire #${st!.fireId} is out`];
-  else forecast = ["Clearing.", `Fire #${s.fireId}`];
+  // The clock line: the time in MST and the countdown to the 8 PM storm (or what the storm is doing), and under it
+  // tonight's forecast. The countdown turns orange in the last 10 minutes and while the storm plays.
+  const clock = `${mstClock(hour)} MST`;
+  let timer: string, forecast: string;
+  const tonight = (w: string) => `${w.replace(/\.$/, "")} · 8:00 PM MST`;
+  if (s.abandoned) { timer = "The game has ended."; forecast = "No more storms"; }
+  else if (!inCeremony && s.rollPending) { timer = "The storm is on its way."; forecast = `Night ${s.night + 1} · buying reopens when it lands`; }
+  else if (!inCeremony) { timer = msToRoll > 0 ? `storm in ${hms(msToRoll)}` : "the storm is due"; forecast = s.night + 1 >= 24 ? "Tonight's storm can't be survived: last night to get in" : tonight(weather(s.threat, msToRoll / 3_600_000)); }
+  else if (age < C.IN) { timer = "Storm rolling in."; forecast = `Night ${st!.night} · buying reopens when it passes`; }
+  else if (age < C.STRIKE) { timer = "It's here."; forecast = `Night ${st!.night}`; }
+  else if (age < C.RAIN) { timer = st!.survived ? "Pouring." : "Pouring. The fire is losing."; forecast = `Night ${st!.night}`; }
+  else if (st!.survived) { timer = "Storm passing."; forecast = `Night ${st!.night}`; }
+  else if (age < C.RELIGHT) { timer = "Ashes."; forecast = `Fire #${st!.fireId} is out`; }
+  else { timer = "Clearing."; forecast = `Fire #${s.fireId}`; }
+  const hot = !s.abandoned && (inCeremony || s.rollPending || msToRoll < 10 * 60_000);
+  const heroRef = useRef<HTMLDivElement>(null);
 
   let card: React.ReactNode = null;
   if (st && inCeremony) {
@@ -139,24 +148,29 @@ export default function App() {
     <div className="page">
       {!LIVE && <div className="demo-banner" role="note"><b>Demo</b> — play money. Nothing here touches a real wallet.</div>}
       {LIVE && TESTNET && <TestnetFaucet s={s} />}
-      <div className="hero">
-      <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && last.tickets >= 10} wild press2={press2} sound={sound} />
+      <div className="hero" ref={heroRef}>
+      <Scene size={size} hour={hour} threat={s.threat} storm={s.storm} lastBuyAt={last?.at ?? 0} lastBuyBig={!!last && last.tickets >= 10} sound={sound}
+        onView={(vw) => { const el = heroRef.current; if (el) { el.style.setProperty("--fire-x", `${vw.fireX}px`); el.style.setProperty("--scene-w", `${vw.width}px`); } }} />
 
       <div className="hud">
       <header className="top">
-        <div className="brand">The Fire{!LIVE && <span className="demo-tag">demo</span>}<button className="how-link" onClick={() => setHow(true)}>How it works</button>
-          <button className="how-link sound-btn" onClick={toggleSound} aria-pressed={sound} title={sound ? "Sound on: the forest, the fire and the storm. Click to mute." : "Sound off. Click for the forest, the fire and the storm."}>{sound ? "🔊" : "🔇"}<span className="sound-label">{sound ? " Sound" : " Muted"}</span></button></div>
+        <div className="brand"><span className="brand-name">The Fire</span>{!LIVE && <span className="demo-tag">demo</span>}
+          <button className="chip how-chip" onClick={() => setHow(true)} aria-label="How it works"><span className="how-long">How it works</span><span className="how-short" aria-hidden="true">?</span></button></div>
         <div className="top-right">
-        <WalletChip address={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onConnect={api.connect} onSwitch={api.switchWallet} onDisconnect={api.disconnect} demo={!LIVE} />
-        <div className="forecast" role="status"><span className="fc-text">{forecast[0]}</span><span className="fc-when">{forecast[1]}</span>
-          {api.rollStorm && s.rollAction && !inCeremony && <button className="roll-btn" disabled={rolling} onClick={rollStorm}>{rolling ? "Rolling…" : rollLabel}</button>}
-          {rollErr && <span className="fc-when">{rollErr}</span>}
-        </div>
+          <div className="clock">
+            <span className="clock-line"><span className="clock-now">{clock}</span> <span className={"clock-timer" + (hot ? " hot" : "")}>· {timer}</span></span>
+            <span className="clock-sub" role="status">{forecast}</span>
+            {api.rollStorm && s.rollAction && !inCeremony && <button className="roll-btn" disabled={rolling} onClick={rollStorm}>{rolling ? "Rolling…" : rollLabel}</button>}
+            {rollErr && <span className="clock-sub">{rollErr}</span>}
+          </div>
+          <button className="chip sound-btn" onClick={toggleSound} aria-pressed={sound} aria-label={sound ? "Sound on" : "Sound off"} title={sound ? "Sound on: the forest, the fire and the storm. Click to mute." : "Sound off. Click for the forest, the fire and the storm."}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" />{sound ? <><path d="M16.5 8.5a5 5 0 0 1 0 7" /><path d="M19 6a8.5 8.5 0 0 1 0 12" /></> : <path d="M17 9l5 6M22 9l-5 6" />}</svg></button>
+          <WalletChip address={s.you.address} profile={s.you.address ? prof(s.you.address) : undefined} onConnect={api.connect} onSwitch={api.switchWallet} onDisconnect={api.disconnect} demo={!LIVE} />
         </div>
       </header>
 
       <div className={"pot" + (wake ? " wake" : "")}>
-        <span className="pot-row"><PlankIcon big /><span className="pot-usd">{usd(potPlank, s.plankUsd)}</span></span>
+        <span className="pot-row"><span className="pot-usd"><PlankIcon big />{usd(potPlank, s.plankUsd)}</span></span>
         {!wake && !s.abandoned && (() => { const prize = prizeOf(potPlank, s.potCarriedIn, v.ticketsTotal), full = potPlank * 0.4; return v.ticketsTotal === 0 ? <span className="pot-take">first ticket in starts the prize</span> : <span className="pot-take">winner takes <b>{usd(prize, s.plankUsd)}</b>{prize < full * 0.999 && <small className="pot-grow"> · grows with this fire, up to {usd(full, s.plankUsd)}</small>}</span>; })()}
         <span className="pot-sub"><PlankIcon />{mPlank(potPlank)} PLANK · Fire #{fireId} · {potSub}</span>
         {!wake && v.night === 0 && !b && lastWinner && !NOBODY.test(lastWinner.winner) && (
@@ -166,6 +180,12 @@ export default function App() {
       </div>
 
       {card}
+      </div>
+      {/* phone: what floats over the scene on a big screen sits in a strip under it, so the scene stays clear */}
+      <div className="strip">
+        <span role="status">{forecast}</span>
+        <span className="strip-sub">{mPlank(potPlank)} PLANK · Fire #{fireId} · {potSub}</span>
+        {!wake && v.night === 0 && !b && lastWinner && !NOBODY.test(lastWinner.winner) && <span className="strip-last">{name(lastWinner.winner)} won {usd(lastWinner.potPlank * 0.4, s.plankUsd)} last night</span>}
       </div>
       {how && <HowItWorks onClose={() => setHow(false)} />}
 
@@ -243,7 +263,7 @@ export default function App() {
 
       <footer className="foot">
         <p><button className="how-link inline" onClick={() => setHow(true)}>How the fire works</button> · Throw logs on the fire with PAPER and PLANK; every log is a ticket to win. PAPER burns. All the PLANK goes into the fire's pot. Every night at 8 PM MST a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one log wins 40% of the pot; 25% burns; 5% goes to the Paper Press royalty pool; 30% lights the next fire.</p>
-        {api.demo && <Playground s={s} d={api.demo} hour={demoHour} onHour={setDemoHour} onSceneOpt={(k, on) => { if (k === "press2") setPress2(on); }} />}
+        {api.demo && <Playground s={s} d={api.demo} hour={demoHour} onHour={setDemoHour} />}
       </footer>
     </div>
   );

@@ -149,8 +149,8 @@ export function createAmbience(ac: AudioContext) {
     if (rec["forest-day"]) set(rec["forest-day"], 0.45 * day * (1 - dawnMix * 0.6) * (1 - hush), 2);
     if (rec["forest-dawn"]) set(rec["forest-dawn"], 0.5 * dawnMix * (1 - hush), 2);
     if (rec["forest-night"]) set(rec["forest-night"], 0.55 * night * (1 - hush * 0.7), 2);
-    if (rec.wind) set(rec.wind, 0.22 + s.cover * 0.45 + s.rain * 0.25, 1.5);
-    if (rec.stream) set(rec.stream, s.stream ? 0.35 * (1 - s.rain * 0.4) : 0, 1);
+    if (rec.wind) set(rec.wind, 0.07 + s.cover * 0.55 + s.rain * 0.25, 1.5); // quiet on a still night, up with the storm
+    if (rec.stream) set(rec.stream, s.stream ? 0.12 * (1 - s.rain * 0.4) : 0, 1);
     if (rec.rain) set(rec.rain, s.rain * 0.85, 1);
 
     // Synth stand-ins, only for layers without a recording

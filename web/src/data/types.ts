@@ -28,7 +28,7 @@ export interface Storm {
   night: number; // the night number of this storm
   strength: number; // in tickets
   size: number; // fire size at the roll
-  sizeAfter?: number; // 0..1 display size after the storm (survived only)
+  sizeAfter?: number; // 0..1 display size after the storm (fireLook of what it keeps; survived only)
   survived: boolean;
   intensity: number; // 0..1 — how violent it looks/sounds
   winner?: string;
@@ -119,7 +119,13 @@ export function prizeOf(pot: number, carriedIn: number, tickets: number) {
   return Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - carriedIn)) * 0.4;
 }
 export const KEEP = 0.85; // the fire keeps 85% of its size overnight
-export const FULL_DAYS = 2.5; // a fire worth 2.5 days of buys is "full height" on screen (fires settle at ~1-2 days)
+/** How big the fire is drawn (0..1) for its size in logs. The same log count always looks the same: a handful of logs
+ *  is a small campfire, about 100 is a steady fire, about 1,000 a big one, and 12,000+ roars at full height. A lit fire
+ *  with no logs yet still shows a small flame. Same as sim/fire_sim.py. */
+export function fireLook(logs: number) {
+  const u = Math.log(1 + Math.max(0, logs) / 5) / Math.log(1 + 12000 / 5);
+  return 0.12 + 0.88 * Math.min(1, u);
+}
 /** Fire.sol's storm ladder: 20 fixed storm sizes, in logs. Storms never grow; the odds move with the fire's age. */
 export const STORM_LOGS = [5, 8, 12, 19, 30, 47, 74, 115, 180, 283, 442, 693, 1084, 1698, 2658, 4161, 6515, 10199, 15968, 25000];
 /** Running odds out of 10,000 of each size, for nights 2..23 (Fire.STORM_ODDS, built by sim/fire_sim.py storm_ladder()). */
@@ -142,11 +148,14 @@ export function stormOdds(night: number, size: number) {
   for (let i = 0; i < STORM_LOGS.length && STORM_LOGS[i] < size; i++) below = row[i];
   return 1 - below / 10000;
 }
-/** How heavy the rain is drawn (0.15..1): as heavy as the call was close. A storm that barely touched the fire is a
- *  drizzle, a near miss is a downpour; a storm that puts the fire out is always full force. Same as sim/fire_sim.py. */
-export function stormLook(strength: number, size: number, survived: boolean) {
-  if (!survived || size <= 0) return 1;
-  return Math.max(0.15, Math.min(1, 0.15 + 0.85 * Math.pow(strength / size, 0.8)));
+/** How hard the storm hits on screen and in your ears (0.15..1): set by its size on the ladder. The smallest storm (5
+ *  logs) is a drizzle with far-off rumbles; the biggest (25,000) is a black sky, sideways rain and cracking thunder.
+ *  Night 24's storm (Infinity) is the biggest there is. Same as sim/fire_sim.py. */
+export function stormLook(strength: number) {
+  if (!Number.isFinite(strength)) return 1;
+  let rung = STORM_LOGS.findIndex((v) => v >= strength);
+  if (rung < 0) rung = STORM_LOGS.length - 1;
+  return 0.15 + 0.85 * rung / (STORM_LOGS.length - 1);
 }
 export const TX_CAP = 10;
 export const ETH_USD_PER_TICKET = 1.0;

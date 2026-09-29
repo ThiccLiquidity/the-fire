@@ -11,7 +11,7 @@ import {
   type Profile,
   type Snapshot,
   DAILY_CAP,
-  FULL_DAYS,
+  fireLook,
   PRIZE_CAP_MULT,
   SWAP_FEE_BPS,
   stormLook,
@@ -255,7 +255,7 @@ export function makeMockApi(): FireApi {
     if (outcome === "out" || outcome === "you-win") strength = Math.max(strength, size + 1);
     const survived = night === 1 && outcome !== "out" && outcome !== "you-win" ? true : night < 24 && size > strength;
     const shown = Number.isFinite(strength) ? strength : size * 3 + 1;
-    const intensity = stormLook(shown, size, survived);
+    const intensity = stormLook(strength);
 
     // the night turns over: today's logs join the 7-night average, the daily cap resets, the PAPER leg ratchets
     w.trail = [...w.trail, s.ticketsToday].slice(-7);
@@ -263,9 +263,8 @@ export function makeMockApi(): FireApi {
     const legs = { plankPerTicket: plankTarget(), paperPerTicket: Math.min(1, ratchet(s.paperPerTicket, paperPerTicketAt(s.paperUsd))) };
     if (survived) {
       const after = Math.max(0, (size - shown) * KEEP);
-      const newAvg = Math.max(1, Math.floor(w.trail.reduce((x, y) => x + y, 0) / w.trail.length));
       w.s = { ...s, ...legs, night, fireSize: after, ticketsToday: 0,
-        storm: { at: Date.now(), fireId: s.fireId, night, strength: shown, size, survived, intensity, sizeAfter: after / (newAvg * FULL_DAYS), before } };
+        storm: { at: Date.now(), fireId: s.fireId, night, strength: shown, size, survived, intensity, sizeAfter: fireLook(after), before } };
     } else {
       // pick the winning ticket: our demo wallets hold real tickets; the rest belong to the crowd
       let winner = NOBODY;

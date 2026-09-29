@@ -2,11 +2,10 @@
 import { useState } from "react";
 import { stormFor, type DemoControls, type FireState } from "../data/types";
 import { sceneRef } from "./Scene";
+import { KINDS } from "./scene";
 
-const KINDS = ["deer", "rabbit", "squirrel", "skunk", "birds", "heron", "frog", "bear"] as const;
-
-export function Playground({ s, d, hour, onHour, onSceneOpt }: {
-  s: FireState; d: DemoControls; hour: number | null; onHour: (h: number | null) => void; onSceneOpt?: (k: string, v: boolean) => void;
+export function Playground({ s, d, hour, onHour }: {
+  s: FireState; d: DemoControls; hour: number | null; onHour: (h: number | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pct, setPct] = useState(50);
@@ -102,7 +101,6 @@ export function Playground({ s, d, hour, onHour, onSceneOpt }: {
             <div className="pg-row">
               <label>Time of day <input type="range" min={0} max={24} step={0.25} value={hour ?? 12} onChange={(e) => onHour(num(e.target.value))} /> {hour !== null && <button onClick={() => onHour(null)}>real time</button>}</label>
               <label>Visitor {KINDS.map((k) => <button key={k} onClick={() => sceneRef.visitor?.(k)}>{k}</button>)}</label>
-              {onSceneOpt && <label><input type="checkbox" onChange={(e) => onSceneOpt("press2", e.target.checked)} /> Press v2 (front-view wheel)</label>}
             </div>
           </section>
 
