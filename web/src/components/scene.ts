@@ -8,8 +8,8 @@ import { CEREMONY as C, type Storm } from "../data/types";
 import { createAmbience } from "./ambience";
 import { DEER, PAINT, RAB, SOLO, SQ, TUFTS } from "./sceneData";
 
-export type Kind = "deer" | "rabbit" | "squirrel" | "skunk" | "birds" | "heron" | "frog" | "bear";
-export const KINDS: Kind[] = ["deer", "rabbit", "squirrel", "heron", "frog", "bear"];
+export type Kind = "deer" | "rabbit" | "squirrel" | "birds" | "heron" | "frog" | "bear";
+export const KINDS: Kind[] = ["deer", "rabbit", "squirrel", "heron", "frog", "bear", "birds"];
 
 export interface SceneInput {
   /** 0..1: how big the fire is drawn (fireLook of its log count) */
@@ -562,7 +562,32 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   // comes at night; the squirrel and the heron by day.
   let nextVisit = performance.now() / 1000 + 240 + Math.random() * 480, night = 0;
   const busy = () => deer.active || rab.active || frog.active || sq.active || peekers.bear.active || peekers.heron.active;
+  // ---- birds: a few classic black "m" strokes flapping across the daytime sky every few minutes
+  type Bird = { x: number; y: number; s: number; ph: number; glide: number };
+  const flock = { active: false, dir: 1, v: 70, birds: [] as Bird[] };
+  let nextFlock = performance.now() / 1000 + 40 + Math.random() * 80;
+  function sendBirds() {
+    if (flock.active) return;
+    const dir = Math.random() < 0.5 ? 1 : -1, n = 2 + Math.floor(Math.random() * 4), y0 = 110 + Math.random() * 170, x0 = dir > 0 ? -60 : W + 60;
+    flock.birds = Array.from({ length: n }, (_, i) => ({ x: x0 - dir * (i * (40 + Math.random() * 30)), y: y0 + (Math.random() - 0.5) * 70, s: 0.7 + Math.random() * 0.5, ph: Math.random() * 6, glide: 0 }));
+    Object.assign(flock, { active: true, dir, v: 55 + Math.random() * 35 });
+  }
+  function drawBirds(t: number, dt: number, fade: number) {
+    if (!flock.active) return;
+    ctx.save(); ctx.strokeStyle = `rgba(27,23,18,${fade})`; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    for (const b of flock.birds) {
+      b.x += flock.dir * flock.v * b.s * dt; b.y += Math.sin(t * 0.7 + b.ph) * 4 * dt;
+      if (b.glide > 0) b.glide -= dt; else { b.ph += dt * 9; if (Math.random() < dt * 0.25) b.glide = 0.8 + Math.random() * 1.2; }
+      const span = 19 * b.s, flap = b.glide > 0 ? 0.25 : Math.sin(b.ph), tip = -flap * 9 * b.s, mid = 4 * b.s;
+      ctx.lineWidth = 3.2 * b.s; ctx.beginPath();
+      ctx.moveTo(b.x - span, b.y + tip); ctx.quadraticCurveTo(b.x - span * 0.45, b.y - 8 * b.s + tip * 0.3, b.x, b.y + mid);
+      ctx.quadraticCurveTo(b.x + span * 0.45, b.y - 8 * b.s + tip * 0.3, b.x + span, b.y + tip); ctx.stroke();
+    }
+    ctx.restore();
+    if (flock.birds.every((b) => (flock.dir > 0 ? b.x > W + 60 : b.x < -60))) flock.active = false;
+  }
   function visitor(kind: Kind) {
+    if (kind === "birds") { sendBirds(); return; }
     if (kind === "deer") sendDeer(); else if (kind === "rabbit") sendRabbit(); else if (kind === "frog") sendFrog();
     else if (kind === "squirrel") sendSquirrel(); else if (kind === "bear" || kind === "heron") sendPeek(kind);
   }
@@ -670,6 +695,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     const cloudTint = mix(mix([255, 255, 255], s.land, 0.9), [95, 100, 115], cc);
     cx.save(); cx.globalCompositeOperation = "source-atop"; cx.fillStyle = rgb(cloudTint); cx.globalAlpha = Math.max(0.85 * cc, 0.6 * (1 - (s.land[0] + s.land[1] + s.land[2]) / 765)); cx.fillRect(0, 0, W, H); cx.restore();
     ctx.save(); ctx.globalAlpha = Math.max(0, 1 - cc * 1.8); ctx.drawImage(cl, 0, 0); ctx.restore(); // the painted clouds fade out as the storm arrives
+    drawBirds(t, reduced ? 0 : Math.min(0.25, sdt), Math.max(0, 1 - cc * 2)); // real time, so they cross at the same pace on a slow device
     if (cc > 0) { // the storm's own clouds roll in over the painted ones, with lightning glowing inside
       const nt = s.dark > 0.5;
       for (const k of sclouds) {
@@ -688,6 +714,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     // the ground: tinted by the hour and the storm, lit by the fire; the animals on their own layer so the stream never covers them
     lx.clearRect(0, 0, W, H); lx.globalCompositeOperation = "source-over"; lx.drawImage(assets["a-land.webp"], 0, 0); drawSign(lx); drawPlank(lx, t);
     ax.clearRect(0, 0, W, H); wildlife(tNow);
+    if (tNow > nextFlock) { nextFlock = tNow + 180 + Math.random() * 300; if (s.dark < 0.4 && cc < 0.05) sendBirds(); }
     drawSquirrel(ax, t, dt); drawDeer(ax, t, dt); drawFrog(ax, t); drawFrogRings(ax, t); drawRabbit(ax, t, dt); drawPeek(ax, t, "heron"); drawPeek(ax, t, "bear");
     lx.drawImage(actors, 0, 0);
     const tint = mix(s.land, mix(s.land, [110, 116, 140], 0.7), sd / 0.7);
