@@ -1,27 +1,27 @@
 # Pot simulation
 
-`python3 sim/fire_sim.py --pots`. $250 PLANK seed (deployer's one-time `Fire.seed`). Rules: all of a log's PLANK into the pot; 40/25/5/30 split when a fire goes out; the 20x prize cap; empty fires carry everything; the storm ladder (docs/fire-sim.md). Each log adds $0.90 x 10/(10 + free logs) (every buy a 10-pack: 13 logs on a fire's first day, 12 on its second, 11 after). PLANK price flat. The parity test checks the pot against the contract every night.
+`python3 sim/fire_sim.py --pots`. $250 PLANK seed (deployer's one-time `Fire.seed`). Rules: all of a log's PLANK into the pot; 40/25/5/30 split when a fire goes out; the 5x prize cap (a fire pays out on at most 5x what its own logs put in; the rest carries); empty fires carry everything; the storm ladder (docs/fire-sim.md). Each log adds $0.90 x 10/(10 + free logs) (every buy a 10-pack: 13 logs on a fire's first day, 12 on its second, 11 after). PLANK price flat. The parity test checks the pot against the contract every night.
 
 ## Buying patterns, one year
 
 | Buying pattern | Pot day 30 | Pot 6 mo | Pot 1 yr | Typical prize | Biggest prize | Winners/yr |
 |---|---|---|---|---|---|---|
 | Nobody ever buys | $250 | $250 | $250 | $0 | $0 | 0 |
-| 1 ticket a week | $213 | $6 | $0 | $6 | $6 | 52 |
-| 1 a day | $3 | $1 | $1 | $1 | $52 | 157 |
-| 3 a day | $3 | $3 | $3 | $3 | $106 | 172 |
-| 10 a day | $16 | $15 | $14 | $12 | $127 | 125 |
-| 30 a day | $107 | $103 | $99 | $69 | $211 | 71 |
-| 100 a day | $572 | $642 | $621 | $424 | $640 | 39 |
-| 300 a day | $2,410 | $2,759 | $2,935 | $1,786 | $2,431 | 28 |
-| 1,000 a day | $14,896 | $12,818 | $12,288 | $7,738 | $9,785 | 21 |
-| 10,000 a day | $113,771 | $187,857 | $122,480 | $110,937 | $111,642 | 15 |
-| Mixed days: each day either 10 or 1,000 | $3,733 | $4,989 | $4,944 | $3,108 | $6,138 | 29 |
-| Mixed weeks: a quiet week (10/day), a busy week (1,000/day) | $7,288 | $7,112 | $7,946 | $3,145 | $5,243 | 33 |
-| Mixed months: a dead month (0-2/day), then a busy month (500/day) | $379 | $3,010 | $2,551 | $17 | $4,198 | 68 |
-| Launch 1,000/day, fades to 5/day by month 4 | $2,734 | $6 | $6 | $5 | $4,531 | 122 |
-| Starts at 300/day, fades to nothing by month 6 | $1,980 | $0 | $0 | $42 | $1,672 | 32 |
-| Grows 10 -> 1,000 a day over the year | $28 | $536 | $10,773 | $87 | $7,149 | 51 |
-| 200 a day, 2 empty weeks every 2 months | $1,776 | $1,652 | $1,092 | $974 | $1,457 | 27 |
+| 1 ticket a week | $243 | $203 | $156 | $2 | $2 | 52 |
+| 1 a day | $197 | $1 | $1 | $1 | $18 | 158 |
+| 3 a day | $87 | $3 | $3 | $3 | $32 | 172 |
+| 10 a day | $16 | $15 | $17 | $12 | $116 | 124 |
+| 30 a day | $101 | $110 | $97 | $68 | $198 | 71 |
+| 100 a day | $578 | $628 | $582 | $421 | $643 | 40 |
+| 300 a day | $2,353 | $2,647 | $2,582 | $1,791 | $2,400 | 28 |
+| 1,000 a day | $14,984 | $12,624 | $12,807 | $7,699 | $9,723 | 21 |
+| 10,000 a day | $113,733 | $187,886 | $122,586 | $110,937 | $111,632 | 15 |
+| Mixed days: each day either 10 or 1,000 | $3,935 | $5,011 | $5,355 | $3,085 | $6,738 | 29 |
+| Mixed weeks: a quiet week (10/day), a busy week (1,000/day) | $7,354 | $7,197 | $7,997 | $3,187 | $5,224 | 33 |
+| Mixed months: a dead month (0-2/day), then a busy month (500/day) | $554 | $3,050 | $2,587 | $4 | $3,937 | 68 |
+| Launch 1,000/day, fades to 5/day by month 4 | $2,806 | $6 | $6 | $5 | $4,626 | 122 |
+| Starts at 300/day, fades to nothing by month 6 | $1,938 | $0 | $0 | $41 | $1,638 | 31 |
+| Grows 10 -> 1,000 a day over the year | $30 | $568 | $10,436 | $82 | $7,354 | 51 |
+| 200 a day, 2 empty weeks every 2 months | $1,838 | $1,688 | $1,508 | $974 | $1,500 | 27 |
 
-Low volume under the ladder: fires die in 2-3 nights, so a game of under ~30 logs a day pays out many small prizes and the $250 seed is paid out within weeks (the 20x cap limits each fire to 20x what its own logs put in). At 100+ a day the pot holds above the seed.
+Low volume under the ladder: fires die in 2-3 nights, so a game of under ~30 logs a day pays out many small prizes. The 5x cap keeps each of those from taking more than 5x what its own logs put in, so the seed and earlier fires' carry drain slowly and wait for a real fire. See also `docs/wild-year.md` (random moods, FOMO, dry spells).

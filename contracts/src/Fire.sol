@@ -69,9 +69,9 @@ contract Fire is ReentrancyGuard {
     uint256 public constant ROYALTY_BPS = 500; // to the Paper Mill royalty pool (PulpPool)
     uint256 public constant CARRY_BPS = 3_000; // relights the next fire (the remainder, so rounding dust stays in)
     /// @dev A fire pays out on at most PRIZE_CAP_MULT x the PLANK its own tickets put into the pot; the rest carries.
-    ///      At normal volume a fire's own tickets are most of the pot and this never binds. It stops a fire with a
-    ///      ticket or two from taking 40% of a pot that earlier fires (or the seed) built.
-    uint256 public constant PRIZE_CAP_MULT = 20;
+    ///      Once a fire's own tickets have put in 1/5 of the pot it never binds. It stops a small fire (a few
+    ///      tickets during a dry spell) from taking 40% of a pot that earlier fires (or the seed) built.
+    uint256 public constant PRIZE_CAP_MULT = 5;
     uint256 public constant MAX_NIGHTS = 24; // the night-24 storm is infinite
     uint256 public constant KEEP_BPS = 8_500; // the fire keeps 85% of its size overnight, so a big fire stays big
     /// @dev The storm ladder: 20 fixed storm sizes, in logs, each ~1.56x the last (5 up to 25,000). A storm is a real
@@ -153,7 +153,7 @@ contract Fire is ReentrancyGuard {
     uint256 public immutable MILL_BID_BASE; // starting bid for a mill, USD 8 decimals (mill listings are priced in USDG or ETH)
     IERC20 public immutable USDG; // dollar stablecoin mills are listed in on OpenSea; address(0) disables the USDG paths
     uint256 public immutable USDG_UNIT; // 10 ** USDG decimals
-    uint256 public immutable ROLL_TIME_OF_DAY; // seconds after 00:00 UTC (8pm Phoenix = 03:00 UTC = 10800)
+    uint256 public immutable ROLL_TIME_OF_DAY; // seconds after 00:00 UTC (21:00 UTC = 75600)
 
     IRandomness public randomness;
     /// @notice The deployer: may add the launch seed to the first fire's pot, once, before the first storm. It can only
@@ -624,7 +624,7 @@ contract Fire is ReentrancyGuard {
     }
 
     /// @notice The deployer only, once, before the first storm: put the launch seed into fire #1's pot. It counts as
-    ///         carried-in pot, so it pays out once a fire's own tickets have put in 1/20 as much (the cap).
+    ///         carried-in pot, so it pays out once a fire's own tickets have put in 1/5 as much (the cap).
     function seed(uint256 amount) external nonReentrant {
         if (msg.sender != SEEDER || seeded || dayIndex != 0 || pendingRequest != 0 || amount == 0) revert BadRequest();
         seeded = true;

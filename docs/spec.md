@@ -49,13 +49,13 @@ That's everything a player needs. The rest of this doc is the numbers behind it 
 
 ### The pot
 - Held in PLANK. **The fire is a PLANK bag that never sells.** If PLANK doubles, the pot doubles.
-- When the fire goes out: **40% to the winner, 25% burned, 5% to the Paper Press royalty pool, 30% relights the next fire** (**fixed**). The winner keeps the whole 40%; the pool's share comes out of the pot, not the winner's prize. With no tickets at all, nothing burns and the whole pot carries into the next fire.
+- When the fire goes out: **40% to the winner, 25% burned, 5% to the Paper Press royalty pool, 30% relights the next fire** (**fixed**). The winner keeps the whole 40%; the pool's share comes out of the pot, not the winner's prize. With no tickets at all, nothing burns and the whole pot carries into the next fire. **Prize cap:** the split is taken from the whole pot or from 5× what this fire's own tickets put in, whichever is smaller (`PRIZE_CAP_MULT`, `potCarriedIn`); the rest carries. So a small fire during a dry spell can't take 40% of a pot earlier fires (or the seed) built; once a fire's own tickets are a fifth of the pot, it pays the full 40%.
 - **The 5% goes to the Paper Press royalty pool** (PulpPool), which splits it across every live press each time a fire ends. One transfer to an address that already exists. *(Founder note: you hold a large bag, so you're the largest recipient of this share. It's the community's norm and there's no exploit, but say it out loud.)*
 
 ### The fire's size (this is the game)
 - The fire has a **size, in tickets**. Every ticket bought adds one. This is what you see on screen: a fire worth 5 days of the community's normal buying is "full height" under the pot.
 - **Overnight the fire burns down to 85% of its size.** A fire nobody feeds shrinks on its own; a fire people pile into grows and stays big.
-- **Every night at 8:00 PM MST a storm hits.** If the storm is at least as big as the fire, the fire's out and the drawing happens. Otherwise the storm's size comes off the fire and what's left (then ×0.85) is tomorrow's starting size.
+- **Every day at 21:00 UTC a storm hits.** If the storm is at least as big as the fire, the fire's out and the drawing happens. Otherwise the storm's size comes off the fire and what's left (then ×0.85) is tomorrow's starting size.
 
 ### Storm nights
 - **Night 1: no storm.** A new fire always gets its first night.
@@ -122,7 +122,7 @@ Things worth knowing:
 | Per buy / per day | 10 paid / 500 received per wallet; buy 10, get 1 free |
 | PLANK split | 50% burn / 50% pot |
 | Payout | 40% winner / 25% burn / 5% Paper Press royalty pool / 30% relight; no tickets → the whole pot carries |
-| Storm time | 8:00 PM MST (03:00 UTC), nightly |
+| Storm time | 21:00 UTC (2:00 PM MST), daily; the site shows it on each player's own clock |
 | Fire size | persistent; +1 per log; ×0.85 overnight; thousandths of a log |
 | Storm | a fixed ladder of 20 sizes, 5-25,000 logs; odds per night tilt up 0.75 rung a night; `word % 10,000`; night 1 none; night 24 infinite |
 | Randomness | `OpenDrandRouter` (drand evmnet, round 30–33 s ahead, anyone fulfills); reroll after 2h; abandon after 7 days |
@@ -151,7 +151,7 @@ Things worth knowing:
   Anyone can do each of those; the site shows a button for the storm steps.
 
 **Site (one screen)**
-- **The fire.** Canvas scene: a fire in the woods, fixed camera, height = fire size. Paper and logs fly in on every buy; burn notes drift up through the flames. Real day/night cycle on MST.
+- **The fire.** Canvas scene: a fire in the woods, fixed camera, height = fire size. Paper and logs fly in on every buy; burn notes drift up through the flames. Real day/night cycle on the player's own clock.
 - **The sky.** Clouds gather as 8pm approaches and the forecast card reads the threat in words, never numbers. At 8pm: clouds roll in, lightning flickers inside them (bolts on big storms), real thunder recordings (nine CC0 clips, distant ones muffled and delayed, close ones with a clap), then rain — angled, layered, with splashes. The fire is beaten down to what's left. If it dies: smoke, dark, the winner lights up.
 - **Numbers:** pot in PLANK and $, nights survived, fire size, your tickets and odds, your PAPER and PLANK balances and how many tickets they buy, PAPER/PLANK burned all-time, presses eaten.
 - **Buy panel:** 1 / 5 / 10 / Max. Pay with PAPER, ETH or USDG; a "You pay" line shows exactly what leaves the wallet; exact token approvals; the buy carries the price the buyer saw as its max. OpenSea link with a hover explainer for mills.

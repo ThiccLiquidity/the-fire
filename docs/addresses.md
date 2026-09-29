@@ -16,7 +16,7 @@
 - **`0x85715BbE2707476294B0c20B7DfbE32cCcADD0E1`**
 - Splits every whitelisted reward token evenly across all live mills (per-NFT accumulator). `receive()` auto-wraps ETH → WETH. A burned mill's unclaimed share rolls to the survivors.
 - **Only whitelisted tokens count.** Whitelist is admin-controlled (`addRewardToken`); WETH is in by default. **PLANK is not.** PLANK sent before whitelisting sits uncounted until an admin adds it.
-- **Ask for the Plank Press admin: call `addRewardToken(0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc)`.** Fallback if refused: pay the fire's tithe and eaten-mill PLANK to the pool as ETH/WETH instead (would need a swap — undesirable), or send the tithe in WETH from the ETH fund.
+- **Done:** the Plank Press admin added PLANK as a reward token (`addRewardToken(0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc)`), per the owner, Sep 28.
 - Rewards claimable only after `mintingSunset`.
 
 ## PLANK (`RobinWood`, 18 decimals)

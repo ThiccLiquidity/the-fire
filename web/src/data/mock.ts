@@ -11,7 +11,7 @@ import {
   type Profile,
   type Snapshot,
   DAILY_CAP,
-  FULL_DAYS,
+  fireLook,
   PRIZE_CAP_MULT,
   SWAP_FEE_BPS,
   stormLook,
@@ -21,6 +21,7 @@ import {
   stormFor,
   stormOdds,
   nextRollTime,
+  ROLL_UTC_HOUR,
   quote,
   ticketsFor,
   paperPerTicketAt,
@@ -34,12 +35,12 @@ const YOU = "0xd00d000000000000000000000000000000000001";
 const FRIEND = "0xb0b0000000000000000000000000000000000002"; // "Switch wallet" in the demo flips to this one
 const NOBODY = "0x0000000000000000000000000000000000000000";
 const STORE = "the-fire-demo-v4";
-const PRICE_MOVED = "The price moved at tonight's storm — check the new price and try again.";
+const PRICE_MOVED = "The price moved at the storm — check the new price and try again.";
 
 const wallets = Array.from({ length: 40 }, (_, i) => "0x" + (0x7a3e1c + i * 9973).toString(16).padStart(40, "a"));
 const notes = [
   "gm from 1 press", "for the boys", "wildfire or nothing", "burn it all", "printed this morning",
-  "logs on the fire", "not tonight storm", "one more for luck", "paper go brrr", "we ride at 8", "", "", "",
+  "logs on the fire", "not today storm", "one more for luck", "paper go brrr", "we ride at 21:00", "", "", "",
 ];
 function rnd(n: number) { return Math.floor(Math.random() * n); }
 const demoNames = ["plankdaddy", "MillOwner420", "Cinder", "sawdust.eth", "Brisket", "log_lady", "not_a_bot", "Fireside Phil", "matchstick", "Torch"];
@@ -133,6 +134,8 @@ export function makeMockApi(): FireApi {
       if (!raw) return undefined;
       const x = JSON.parse(raw) as World;
       if (!x?.s || !x.accounts || !x.trail) return undefined;
+      // a demo saved before the storm moved to 21:00 UTC still holds the old time: move it to the next storm
+      if (!x.s.rollPending && new Date(x.s.nextRollAt).getUTCHours() !== ROLL_UTC_HOUR) x.s.nextRollAt = nextRollTime();
       return x;
     } catch { return undefined; }
   }
@@ -255,7 +258,7 @@ export function makeMockApi(): FireApi {
     if (outcome === "out" || outcome === "you-win") strength = Math.max(strength, size + 1);
     const survived = night === 1 && outcome !== "out" && outcome !== "you-win" ? true : night < 24 && size > strength;
     const shown = Number.isFinite(strength) ? strength : size * 3 + 1;
-    const intensity = stormLook(shown, size, survived);
+    const intensity = stormLook(strength);
 
     // the night turns over: today's logs join the 7-night average, the daily cap resets, the PAPER leg ratchets
     w.trail = [...w.trail, s.ticketsToday].slice(-7);
@@ -263,9 +266,8 @@ export function makeMockApi(): FireApi {
     const legs = { plankPerTicket: plankTarget(), paperPerTicket: Math.min(1, ratchet(s.paperPerTicket, paperPerTicketAt(s.paperUsd))) };
     if (survived) {
       const after = Math.max(0, (size - shown) * KEEP);
-      const newAvg = Math.max(1, Math.floor(w.trail.reduce((x, y) => x + y, 0) / w.trail.length));
       w.s = { ...s, ...legs, night, fireSize: after, ticketsToday: 0,
-        storm: { at: Date.now(), fireId: s.fireId, night, strength: shown, size, survived, intensity, sizeAfter: after / (newAvg * FULL_DAYS), before } };
+        storm: { at: Date.now(), fireId: s.fireId, night, strength: shown, size, survived, intensity, sizeAfter: fireLook(after), before } };
     } else {
       // pick the winning ticket: our demo wallets hold real tickets; the rest belong to the crowd
       let winner = NOBODY;
@@ -281,7 +283,7 @@ export function makeMockApi(): FireApi {
       const pot = s.potPlank;
       const nobody = winner === NOBODY;
       // 40% to the winner, 25% burns, 5% to the Paper Press royalty pool, the rest carries. The split is taken from the pot or
-      // from 20x what this fire's tickets put in, if smaller (Fire.sol's prize cap). No tickets: the whole pot carries.
+      // from 5x what this fire's tickets put in, if smaller (Fire.sol's prize cap). No tickets: the whole pot carries.
       const base = nobody ? 0 : Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - s.potCarriedIn));
       const paid = base * 0.4;
       const carry = pot - base * 0.7;
@@ -317,7 +319,7 @@ export function makeMockApi(): FireApi {
   setInterval(() => {
     const s = w.s;
     if (s.abandoned) return;
-    if (!s.rollPending && Date.now() >= s.nextRollAt) { storm(); return; } // 8 PM MST: the storm comes by itself
+    if (!s.rollPending && Date.now() >= s.nextRollAt) { storm(); return; } // 21:00 UTC: the storm comes by itself
     if (!s.rollPending && Math.random() < w.crowdPerMin / 60) crowdBuy();
   }, 1_000);
 

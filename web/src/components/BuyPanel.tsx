@@ -95,7 +95,7 @@ export function BuyPanel({
   if (abandoned) return (
     <aside className="buy">
       <p className="hint strong"><b>The game has ended. Buying is closed.</b></p>
-      <p className="fine">Tonight's storm never arrived for 7 days, so the fire was ended for good. If you had logs in the last fire, take your share of its pot above.</p>
+      <p className="fine">The storm never arrived for 7 days, so the fire was ended for good. If you had logs in the last fire, take your share of its pot above.</p>
     </aside>
   );
 
@@ -133,7 +133,7 @@ export function BuyPanel({
       </div>
       <input className="note" maxLength={32} placeholder="Burn note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
 
-      {paused && <p className="hint strong">The storm is rolling in. Buying reopens as soon as tonight's result lands.</p>}
+      {paused && <p className="hint strong">The storm is rolling in. Buying reopens as soon as the result lands.</p>}
       {hold && !paused && <p className="hint strong">{hold}</p>}
       {done && !busy && <p className="done">🔥 {done.n} {done.n === 1 ? "log" : "logs"} on the fire. You hold {fmtCount(done.total)} in this fire.</p>}
       {pending && (
@@ -178,7 +178,7 @@ export function BuyPanel({
           <p className="hint">{hints.join(" ")} {plankShort || pay !== "paper" ? "Swap for some below." : <>Pick ETH or USDG above, swap for PAPER below, or <a href={OPENSEA} target="_blank" rel="noreferrer">get a press</a> (it prints 1 PAPER a day).</>}</p>
         )}
         {overCap && (
-          <p className="hint">{you.remainingToday === 0 ? `You've hit today's ${DAILY_CAP}. More after tonight's storm.` : n === TX_CAP && you.remainingToday >= TX_CAP ? `A buy of ${TX_CAP} gives ${ticketsFor(TX_CAP, night)} — pick ${TX_CAP - 1} or fewer today.` : `${you.remainingToday} left today (cap ${DAILY_CAP} a wallet).`}</p>
+          <p className="hint">{you.remainingToday === 0 ? `You've hit today's ${DAILY_CAP}. More after the next storm.` : n === TX_CAP && you.remainingToday >= TX_CAP ? `A buy of ${TX_CAP} gives ${ticketsFor(TX_CAP, night)} — pick ${TX_CAP - 1} or fewer today.` : `${you.remainingToday} left today (cap ${DAILY_CAP} a wallet).`}</p>
         )}
       </div>
 

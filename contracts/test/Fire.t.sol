@@ -997,12 +997,12 @@ contract FireTest is Test {
         _seed();
         _buy(alice, 1);
         uint256 own = fire.pot() - SEED; // what alice's ticket put in
-        assertEq(fire.prizeNow(), own * 20 * 4000 / 10000, "prize capped at 20x her ticket's PLANK, 40% of that");
+        assertEq(fire.prizeNow(), own * 5 * 4000 / 10000, "prize capped at 5x her ticket's PLANK, 40% of that");
         uint256 a0 = plank.balanceOf(alice);
         _roll(RND_CALM);
         while (fire.fireId() == 1) _roll(RND_MONSTER);
-        assertEq(plank.balanceOf(alice) - a0, own * 20 * 4000 / 10000, "she wins the capped prize");
-        uint256 base = own * 20;
+        assertEq(plank.balanceOf(alice) - a0, own * 5 * 4000 / 10000, "she wins the capped prize");
+        uint256 base = own * 5;
         uint256 left = SEED + own - base * 4000 / 10000 - base * 2500 / 10000 - base * 500 / 10000;
         assertEq(fire.pot(), left, "the rest of the seed carries");
         assertEq(fire.potCarriedIn(), left);
@@ -1010,7 +1010,7 @@ contract FireTest is Test {
 
     function test_a_real_fire_takes_the_full_prize() public {
         _seed();
-        _buy(alice, 40); _buy(bob, 40); // 80 tickets put in far more than 1/20 of the pot
+        _buy(alice, 40); _buy(bob, 40); // 80 tickets put in more than 1/5 of the pot
         uint256 p = fire.pot();
         assertEq(fire.prizeNow(), p * 4000 / 10000, "not capped");
         _roll(RND_CALM);

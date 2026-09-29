@@ -28,7 +28,7 @@ export interface Storm {
   night: number; // the night number of this storm
   strength: number; // in tickets
   size: number; // fire size at the roll
-  sizeAfter?: number; // 0..1 display size after the storm (survived only)
+  sizeAfter?: number; // 0..1 display size after the storm (fireLook of what it keeps; survived only)
   survived: boolean;
   intensity: number; // 0..1 — how violent it looks/sounds
   winner?: string;
@@ -112,14 +112,20 @@ export const SWAP_FEE_BPS = 50;
 /** Owner's fee wallet (public address only). Until it's set, swaps run with no fee. */
 export const SWAP_FEE_WALLET: `0x${string}` | undefined = undefined;
 export const DAILY_CAP = 500;
-export const PRIZE_CAP_MULT = 20;
-/** Fire.prizeNow(): the winner's 40%, taken from the pot or from 20x what this fire's tickets put in, if smaller. */
+export const PRIZE_CAP_MULT = 5;
+/** Fire.prizeNow(): the winner's 40%, taken from the pot or from 5x what this fire's tickets put in, if smaller. */
 export function prizeOf(pot: number, carriedIn: number, tickets: number) {
   if (tickets <= 0) return 0;
   return Math.min(pot, PRIZE_CAP_MULT * Math.max(0, pot - carriedIn)) * 0.4;
 }
 export const KEEP = 0.85; // the fire keeps 85% of its size overnight
-export const FULL_DAYS = 2.5; // a fire worth 2.5 days of buys is "full height" on screen (fires settle at ~1-2 days)
+/** How big the fire is drawn (0..1) for its size in logs. The same log count always looks the same: a handful of logs
+ *  is a small campfire, about 100 is a steady fire, about 1,000 a big one, and 12,000+ roars at full height. A lit fire
+ *  with no logs yet still shows a small flame. Same as sim/fire_sim.py. */
+export function fireLook(logs: number) {
+  const u = Math.log(1 + Math.max(0, logs) / 5) / Math.log(1 + 12000 / 5);
+  return 0.12 + 0.88 * Math.min(1, u);
+}
 /** Fire.sol's storm ladder: 20 fixed storm sizes, in logs. Storms never grow; the odds move with the fire's age. */
 export const STORM_LOGS = [5, 8, 12, 19, 30, 47, 74, 115, 180, 283, 442, 693, 1084, 1698, 2658, 4161, 6515, 10199, 15968, 25000];
 /** Running odds out of 10,000 of each size, for nights 2..23 (Fire.STORM_ODDS, built by sim/fire_sim.py storm_ladder()). */
@@ -142,11 +148,14 @@ export function stormOdds(night: number, size: number) {
   for (let i = 0; i < STORM_LOGS.length && STORM_LOGS[i] < size; i++) below = row[i];
   return 1 - below / 10000;
 }
-/** How heavy the rain is drawn (0.15..1): as heavy as the call was close. A storm that barely touched the fire is a
- *  drizzle, a near miss is a downpour; a storm that puts the fire out is always full force. Same as sim/fire_sim.py. */
-export function stormLook(strength: number, size: number, survived: boolean) {
-  if (!survived || size <= 0) return 1;
-  return Math.max(0.15, Math.min(1, 0.15 + 0.85 * Math.pow(strength / size, 0.8)));
+/** How hard the storm hits on screen and in your ears (0.15..1): set by its size on the ladder. The smallest storm (5
+ *  logs) is a drizzle with far-off rumbles; the biggest (25,000) is a black sky, sideways rain and cracking thunder.
+ *  Night 24's storm (Infinity) is the biggest there is. Same as sim/fire_sim.py. */
+export function stormLook(strength: number) {
+  if (!Number.isFinite(strength)) return 1;
+  let rung = STORM_LOGS.findIndex((v) => v >= strength);
+  if (rung < 0) rung = STORM_LOGS.length - 1;
+  return 0.15 + 0.85 * rung / (STORM_LOGS.length - 1);
 }
 export const TX_CAP = 10;
 export const ETH_USD_PER_TICKET = 1.0;
@@ -215,17 +224,22 @@ export function nameOf(addr: string, profiles: Record<string, Profile>) {
   return profiles[addr.toLowerCase()]?.name || short(addr);
 }
 
+/** The storm hits every day at 21:00 UTC: the same moment for everyone, whatever their time zone. */
+export const ROLL_UTC_HOUR = 21;
 export function nextRollTime(now = Date.now()) {
-  // 8:00 PM MST = 03:00 UTC (MST all year, no daylight saving)
   const d = new Date(now);
-  const t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 3, 0, 0);
+  const t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), ROLL_UTC_HOUR, 0, 0);
   return t <= now ? t + 86_400_000 : t;
 }
 
-/** Hour of day in MST, fractional (0..24). */
-export function phoenixHour(now = Date.now()) {
-  const ms = (now - 7 * 3_600_000) % 86_400_000;
-  return (ms < 0 ? ms + 86_400_000 : ms) / 3_600_000;
+/** Hour of day on the player's own clock, fractional (0..24): the scene's sky follows it. */
+export function localHour(now = Date.now()) {
+  const d = new Date(now);
+  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+}
+/** A time on the player's own clock: "2:00 PM" (or "14:00" where that's the custom). */
+export function localClock(at = Date.now()) {
+  return new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 export type DemoToken = "ETH" | "PLANK" | "PAPER" | "USDG";

@@ -4,7 +4,7 @@ One random number a night decides the storm and, if the fire goes out, the winne
 randomness beacon, through our own router. Nobody owns it, nobody is paid, and nobody can pick the number.
 
 ## How a roll works
-1. After 8:00 PM MST anyone calls `Fire.roll()`. The Fire asks `OpenVRFAdapter`, which calls
+1. After 21:00 UTC anyone calls `Fire.roll()`. The Fire asks `OpenVRFAdapter`, which calls
    `OpenDrandRouter.requestRandomness`. The router commits the request to the drand evmnet round **30–33 seconds in
    the future** (rounds are 3 s apart). Nobody, us included, knows that round's value yet. Buying is closed while the
    roll is pending.

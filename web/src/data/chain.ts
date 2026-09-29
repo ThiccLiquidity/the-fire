@@ -9,7 +9,7 @@ import {
 import fireAbi from "./fireAbi.json";
 import profilesAbi from "./profilesAbi.json";
 import { bytesToHex, hexToBytes } from "viem";
-import { type Buy, type FireApi, type Pay, type FireState, type PastFire, type Snapshot, CEREMONY, DAILY_CAP, FULL_DAYS, nextRollTime, stormOdds, stormLook, titleFor } from "./types";
+import { type Buy, type FireApi, type Pay, type FireState, type PastFire, type Snapshot, CEREMONY, DAILY_CAP, fireLook, nextRollTime, stormOdds, stormLook, titleFor } from "./types";
 import { robinhood, connectWallet, waitOk, PRICE_MOVED } from "./wallet";
 
 export { robinhood };
@@ -200,7 +200,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
       } else if (ev === "Survived") {
         const size = Number(a.fireSizeMilli) / 1000, strength = Number(a.stormMilli) / 1000, fid = Number(a.fireId), night = Number(a.night);
         const tickets = await atBlock("ticketsTotal", l.blockNumber);
-        storm = { at, fireId: fid, night, strength, size, survived: true, intensity: stormLook(strength, size, true), sizeAfter: Math.max(0, (size - strength) * 0.85) / (s.trailingAvg * FULL_DAYS),
+        storm = { at, fireId: fid, night, strength, size, survived: true, intensity: stormLook(strength), sizeAfter: fireLook(Math.max(0, (size - strength) * 0.85)),
           before: live ? await snap(fid, night, size, l.blockNumber, s.potPlank, tickets !== undefined ? Number(tickets) : undefined) : undefined };
       } else if (ev === "WentOut") {
         const size = Number(a.fireSizeMilli) / 1000, strength = a.stormMilli === 2n ** 256n - 1n ? Infinity : Number(a.stormMilli) / 1000, winner = String(a.winner), fid = Number(a.fireId), night = Number(a.night);
@@ -214,7 +214,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
         const tWei = await atBlock("ticketsTotal", l.blockNumber);
         const tickets = tWei !== undefined ? Number(tWei) : ticketsSeen.get(fid) ?? all.filter((x) => x.eventName === "TicketsBought" && Number(x.args.fireId) === fid).reduce((t, x) => t + Number(x.args.tickets), 0);
         const prize = owed ? Number(formatUnits(owed.args.amount as bigint, 18)) : Number(formatUnits(a.paid as bigint, 18));
-        storm = { at, fireId: fid, night, strength, size, survived: false, intensity: 1, winner, paidPlank: prize, prizeOwed: !!owed, potPlank: pot, tickets,
+        storm = { at, fireId: fid, night, strength, size, survived: false, intensity: stormLook(strength), winner, paidPlank: prize, prizeOwed: !!owed, potPlank: pot, tickets,
           before: live ? await snap(fid, night, size, l.blockNumber, pot, tickets) : undefined };
         past.unshift({ id: fid, nights: night, potPlank: pot, prizePlank: prize, winner, peakSize: size });
         if (account && winner.toLowerCase() === account.toLowerCase()) s = { ...s, you: { ...s.you, isWinner: true } };
@@ -309,7 +309,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
         check();
         if (sig) h = await wc.writeContract({ address: routerAddr!, abi: routerAbi, functionName: "fulfill", args: [pendingId, sig], account: acct, chain: robinhood });
         else if (a === "reroll") h = await wc.writeContract({ address: fireAddress, abi, functionName: "reroll", args: [], account: acct, chain: robinhood });
-        else throw new Error("Couldn't reach drand for tonight's number. Try again in a moment.");
+        else throw new Error("Couldn't reach drand for the storm's number. Try again in a moment.");
       } else h = await wc.writeContract({ address: fireAddress, abi, functionName: "roll", args: [], account: acct, chain: robinhood });
       await waitOk(pub, h, "bringing in the storm"); await refresh();
     },
