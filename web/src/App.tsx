@@ -252,7 +252,7 @@ export default function App() {
             </div>
           )}
           {connected && <ProfileEditor key={s.you.address} addr={s.you.address} profile={prof(s.you.address!)} onSave={api.setProfile} demo={!LIVE} />}
-          <BuyPanel key={s.you.address ?? "-"} you={shownYou} plankPerTicket={s.plankPerTicket} paperPerTicket={s.paperPerTicket} paperUsd={s.paperUsd} plankUsd={s.plankUsd} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} usdgEnabled={s.usdgEnabled}
+          <BuyPanel key={`buy-${s.you.address ?? ""}`} you={shownYou} plankPerTicket={s.plankPerTicket} paperPerTicket={s.paperPerTicket} paperUsd={s.paperUsd} plankUsd={s.plankUsd} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} usdgEnabled={s.usdgEnabled}
             raw={s.raw} abandoned={s.abandoned} night={v.night} hold={b ? "The storm is here. Buying reopens once it passes." : undefined} demo={!LIVE} />
           {!(LIVE && TESTNET) && <Swap demo={api.demo} s={s} />}
         </div>
