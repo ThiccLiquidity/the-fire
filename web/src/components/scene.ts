@@ -251,6 +251,13 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   const sparks: { x: number; y: number; vx: number; vy: number; life: number; max: number }[] = [];
   const smoke: { x: number; y: number; r: number; life: number; max: number }[] = [];
   const flying: { t0: number; x0: number; big: boolean }[] = [];
+  const white: { x: number; y: number; r: number; life: number; max: number; ph: number }[] = [];
+  const puffs: Record<string, HTMLCanvasElement> = {};
+  function puff(rgb: string) { // one soft round puff, drawn once and reused
+    if (puffs[rgb]) return puffs[rgb]; const c = mk(128, 128), x = c.getContext("2d")!, g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, `rgba(${rgb},1)`); g.addColorStop(0.55, `rgba(${rgb},0.85)`); g.addColorStop(1, `rgba(${rgb},0)`); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return (puffs[rgb] = c);
+  }
+  let outK = 0, wacc = 0;
   let sacc = 0, smacc = 0, heat = 0, lastT = 0, firePhase = 0, seenBuy = -1;
   const flameTop = (fs: number) => PIT.y - (0.2 + 0.28 * fs + 0.75 * fs * fs * fs) * 479;
   const fireLight = (t: number) => 0.93 + 0.05 * vnoise(t * 0.9) + 0.025 * vnoise(t * 2.7 + 11) + 0.012 * vnoise(t * 6.1 + 23); // the light breathes
@@ -281,10 +288,9 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     }
     heat += ((fs > 0.01 ? 0.35 + 0.65 * Math.min(1, fs) : 0) - heat) * Math.min(1, dt * (fs > 0.01 ? 2 : 0.12)); // logs keep glowing a while after it dies
     const img = assets["a-logs.webp"], litImg = assets["a-logs-lit.webp"];
-    if (img) { // built on their own canvas so the glow stays on the logs. While the fire burns, the ends that sit in the
-      // flames melt into them (a-logs-lit); once it's out they're whole logs again.
+    if (img) { // built on their own canvas so the glow stays on the logs; the ends that sit in the flames melt into them (a-logs-lit)
       lc ??= mk(img.width, img.height); lb ??= mk(img.width, img.height);
-      const B = lb.getContext("2d")!, L = lc.getContext("2d")!, lit = litImg ? Math.min(1, fs * 1.6) : 0;
+      const B = lb.getContext("2d")!, L = lc.getContext("2d")!, lit = litImg ? 1 : 0; // the logs never change; when the fire dies, smoke covers the pit
       B.globalAlpha = 1; B.globalCompositeOperation = "source-over"; B.clearRect(0, 0, lb.width, lb.height);
       if (lit > 0) B.drawImage(litImg, 0, 0);
       if (lit < 1) { B.globalAlpha = 1 - lit; B.drawImage(img, 0, 0); B.globalAlpha = 1; }
@@ -302,15 +308,28 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       }
       ctx.drawImage(lc, LOGS_AT.x, LOGS_AT.y, aw(img), ah(img));
     }
-    // smoke from a big fire, lit warm from below at night; thin grey smoke when it's out
+    // smoke from a big fire, lit warm from below at night
     const top = flameTop(Math.max(fs, 0.2));
-    smacc += dt * (fs > 0.4 ? 3 + 9 * fs : fs <= 0.01 && heat > 0.05 ? 3 : 0);
+    smacc += dt * (fs > 0.4 ? 3 + 9 * fs : 0);
     while (smacc > 1) { smacc--; smoke.push({ x: PIT.x + (Math.random() - 0.5) * 60 * (0.5 + fs), y: fs > 0.01 ? top + 30 : PIT.y - 30, r: 14 + 20 * fs, life: 0, max: 5 + Math.random() * 3 }); }
     for (let i = smoke.length - 1; i >= 0; i--) {
       const m = smoke[i]; m.life += dt; if (m.life > m.max) { smoke.splice(i, 1); continue; }
       const u = m.life / m.max; m.y -= (40 + 30 * fs) * dt; m.x += (14 + 20 * u) * dt; m.r += (10 + 14 * fs) * dt;
       const c = mix([78, 76, 82], [170, 95, 55], Math.max(0, 1 - u * 3) * dk * Math.min(1, fs * 1.5));
       ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${0.12 * Math.min(1, m.life * 0.7) * (1 - u)})`; ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, 7); ctx.fill();
+    }
+    // a dead fire: thick white smoke pours off the pit (covering it, like the flames do) and climbs high into the sky
+    outK += ((fs <= 0.02 ? 1 : 0) - outK) * Math.min(1, dt * (fs <= 0.02 ? 2.5 : 0.8));
+    wacc += dt * 17 * outK;
+    while (wacc > 1) { wacc--; white.push({ x: PIT.x - 118 + Math.random() * 236, y: PIT.y - 12 - Math.random() * 40, r: 38 + Math.random() * 26, life: 0, max: 17 + Math.random() * 6, ph: Math.random() * 6 }); }
+    if (white.length) {
+      const sp = puff(dk > 0.5 ? "205,210,220" : "240,240,238");
+      for (let i = white.length - 1; i >= 0; i--) {
+        const m = white[i]; m.life += dt; if (m.life > m.max) { white.splice(i, 1); continue; }
+        const u = m.life / m.max; m.y -= (18 + 50 * Math.min(1, u * 4)) * dt; // it hangs thick over the pit, then climbs m.x += (6 + 22 * u + Math.sin(m.life * 0.9 + m.ph) * 8) * dt; m.r += (9 + 10 * u) * dt;
+        ctx.globalAlpha = 0.72 * Math.min(1, m.life * 2) * (1 - u) ** 1.2; ctx.drawImage(sp, m.x - m.r, m.y - m.r, m.r * 2, m.r * 2);
+      }
+      ctx.globalAlpha = 1;
     }
     if (fs > 0.01) sacc += dt * (2 + 8 * fs + 10 * fs * fs * fs);
     while (sacc > 1) { sacc--; sparks.push({ x: PIT.x + (Math.random() - 0.5) * (60 + 120 * fs), y: PIT.y - 40 - Math.random() * 80, vx: (Math.random() - 0.5) * 50, vy: -(90 + 150 * Math.min(1, fs)) * (0.5 + Math.random()), life: 0, max: 1 + Math.random() * 1.6 }); }
