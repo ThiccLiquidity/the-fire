@@ -1,12 +1,11 @@
 import { PlankIcon } from "./PlankIcon";
 import { useState } from "react";
-import { DAILY_CAP, TX_CAP, type FireState, type Pay, type PriceSeen, freeLogs, quote, ticketsFor } from "../data/types";
+import { DAILY_CAP, ETH_HEADROOM, TX_CAP, type FireState, type Pay, type PriceSeen, freeLogs, quote, ticketsFor } from "../data/types";
 import { TxPending, friendly, txUrl } from "../data/wallet";
 import { fmtAmt, fmtCount, fmtPlank, fmtUsd } from "../format";
 
 const OPENSEA = "https://opensea.io/collection/the-plank-press";
 const GAS_ETH = 0.0003; // left in the wallet for gas when paying with ETH
-const ETH_HEADROOM = 1; // an ETH buy sends exactly the price shown
 
 type Frozen = { n: number; pay: Pay; seen: PriceSeen; q: ReturnType<typeof quote> };
 
@@ -27,7 +26,10 @@ export function BuyPanel({
   /** nights the fire has survived: free logs are 3 on its first day, 2 on its second, 1 after */
   night?: number;
 }) {
-  const [n, setNRaw] = useState(1);
+  const [qty, setQty] = useState("1"); // the box's text as typed; parsed below, clamped on blur
+  const typed = Number(qty);
+  const qtyOk = qty.trim() !== "" && Number.isInteger(typed) && typed >= 1 && typed <= TX_CAP;
+  const n = qtyOk ? typed : Math.max(1, Math.min(TX_CAP, Math.floor(typed) || 1)); // prices show for the nearest valid amount
   const [note, setNoteRaw] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -37,7 +39,8 @@ export function BuyPanel({
   const [confirming, setConfirming] = useState<Frozen | null>(null); // ETH/USDG: a review step before real money moves
   const [pending, setPending] = useState<string>(""); // a tx hash still waiting after 3 minutes: the panel stays locked
   const touched = () => { setDone(null); setErr(""); setConfirming(null); };
-  const setN = (v: number) => { setNRaw(Math.max(1, Math.min(TX_CAP, Math.floor(v) || 1))); touched(); };
+  const setN = (v: number) => { setQty(String(Math.max(1, Math.min(TX_CAP, Math.floor(v) || 1)))); touched(); };
+  const clampQty = () => { if (qty.trim() !== "" && Number.isFinite(typed)) setQty(String(n)); }; // blur: "15" → 10, "2.7" → 2; empty stays empty
   const setNote = (v: string) => { setNoteRaw(v); setDone(null); };
 
   const q = quote(n, plankPerTicket, ethUsd, paperPerTicket);
@@ -80,7 +83,9 @@ export function BuyPanel({
     catch (e) {
       if (e instanceof TxPending) {
         setPending(e.hash);
-        void e.later.then((ok) => { setPending(""); if (ok) setDone({ n: ticketsFor(f.n, night), total: you.tickets + ticketsFor(f.n, night) }); else setErr("That transaction failed on-chain. Nothing more was sent."); });
+        // a late approval only allowed the spend: the buy itself was never sent
+        if (e.kind === "approve") void e.later.then((ok) => { setPending(""); setErr(ok ? "Approval landed. Press Throw again to buy." : "The approval failed on-chain. Nothing was bought."); });
+        else void e.later.then((ok) => { setPending(""); if (ok) setDone({ n: ticketsFor(f.n, night), total: you.tickets + ticketsFor(f.n, night) }); else setErr("That transaction failed on-chain. Nothing more was sent."); });
       } else setErr(friendly(e));
     }
     finally { setBusy(false); }
@@ -90,7 +95,7 @@ export function BuyPanel({
     try { await onConnect!(); } catch (e) { setErr(friendly(e)); } finally { setBusy(false); }
   }
 
-  const rules = <p className="fine">1 log = 1 PAPER (or $0.33 worth, whichever is less) + about $0.90 of PLANK, and every log is a ticket to win. No PAPER? Pay $1 in ETH or USDG instead. Up to {TX_CAP} a throw, {DAILY_CAP} a day. Throw {TX_CAP} and get free logs: 3 on a fire's first day, 2 on its second, 1 after that.</p>;
+  const rules = <p className="fine">1 log = 1 PAPER (once PAPER trades above $0.33, the PAPER amount drifts toward $0.33 worth, at most 5% a day) + about $0.90 of PLANK, and every log is a ticket to win. No PAPER? Pay $1 in ETH or USDG instead. Up to {TX_CAP} a throw, {DAILY_CAP} a day. Throw {TX_CAP} and get free logs: 3 on a fire's first day, 2 on its second, 1 after that.</p>;
 
   if (abandoned) return (
     <aside className="buy">
@@ -124,9 +129,11 @@ export function BuyPanel({
 
       <div className="qty">
         <button className="qty-btn" aria-label="One fewer" disabled={n <= 1} onClick={() => setN(n - 1)}>−</button>
-        <input className="qty-in" type="number" inputMode="numeric" min={1} max={TX_CAP} value={n} aria-label="Logs" onChange={(e) => setN(Number(e.target.value))} />
+        <input className="qty-in" type="number" inputMode="numeric" min={1} max={TX_CAP} value={qty} aria-label="Logs" aria-invalid={!qtyOk}
+          onChange={(e) => { setQty(e.target.value); touched(); }} onBlur={clampQty} onKeyDown={(e) => { if (e.key === "Enter") clampQty(); }} />
         <button className="qty-btn" aria-label="One more" disabled={n >= TX_CAP} onClick={() => setN(n + 1)}>+</button>
         <button className="qty-max" disabled={maxNow === 0} onClick={() => setN(maxNow)}>Max <small>{maxNow}</small></button>
+        {!qtyOk && <span className="qty-hint">{qty.trim() === "" ? "How many logs?" : `1 to ${TX_CAP} logs a throw.`}</span>}
         {bonus
           ? <span className="bonus on">🎁 {n} + {freeLogs(night)} free = <b>{got} logs</b></span>
           : <button className="bonus" onClick={() => setN(TX_CAP)}>🎁 Throw {TX_CAP}, get {freeLogs(night)} free{night === 0 ? " (first-day bonus)" : night === 1 ? " (second-day bonus)" : ""}</button>}
@@ -159,13 +166,15 @@ export function BuyPanel({
           {showTotal && <span className="spend-total">{fmtUsd(total)} total</span>}
         </div>
         {!confirming && (
-          <button className="cta" disabled={locked || !canPay || overCap} onClick={() => { const f: Frozen = { n, pay, seen: seenNow(), q }; if (dollars) setConfirming(f); else void go(f); }}>
+          <button className="cta" disabled={locked || !qtyOk || !canPay || overCap} onClick={() => { if (!qtyOk) return; const f: Frozen = { n, pay, seen: seenNow(), q }; if (dollars) setConfirming(f); else void go(f); }}>
             {busy ? "Throwing…" : `Throw ${got} ${got === 1 ? "log" : "logs"} on the fire`}
           </button>
         )}
         {confirming && (
           <div className="confirm" role="alertdialog" aria-label="Confirm payment">
-            <p>You're spending <b>{plankUsd > 0 ? fmtUsd(totalOf(confirming.q, confirming.pay)) : legText(confirming.q, confirming.pay)}</b>: {legText(confirming.q, confirming.pay)} and {fmtPlank(confirming.q.plank)} PLANK, for {ticketsFor(confirming.n, night)} {ticketsFor(confirming.n, night) === 1 ? "log" : "logs"}{ticketsFor(confirming.n, night) > confirming.n ? ` (${confirming.n} + ${freeLogs(night)} free)` : ""}.{demo ? "Play money." : "Your wallet asks you to approve it next."}</p>
+            <p>You're spending <b>{plankUsd > 0 ? fmtUsd(totalOf(confirming.q, confirming.pay)) : legText(confirming.q, confirming.pay)}</b>: {legText(confirming.q, confirming.pay)} and {fmtPlank(confirming.q.plank)} PLANK, for {ticketsFor(confirming.n, night)} {ticketsFor(confirming.n, night) === 1 ? "log" : "logs"}{ticketsFor(confirming.n, night) > confirming.n ? ` (${confirming.n} + ${freeLogs(night)} free)` : ""}.
+              {confirming.pay === "eth" && ` Up to ${fmtAmt(confirming.q.eth * ETH_HEADROOM)} ETH is sent, in case the price ticks; any extra comes back.`}
+              {demo ? " Play money." : " Your wallet asks you to approve it next."}</p>
             <div className="confirm-row">
               <button className="cta ghost" onClick={() => setConfirming(null)}>Cancel</button>
               <button className="cta" disabled={locked} onClick={() => go(confirming)}>{busy ? "Throwing…" : `Pay ${plankUsd > 0 ? fmtUsd(totalOf(confirming.q, confirming.pay)) : ""}`.trim()}</button>

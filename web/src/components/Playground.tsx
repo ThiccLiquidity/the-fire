@@ -45,7 +45,7 @@ export function Playground({ s, d, hour, onHour }: {
           <section>
             <h3>The fire</h3>
             <div className="pg-grid">
-              <label>Day <input type="number" value={s.night} onChange={(e) => d.set({ night: num(e.target.value) })} /></label>
+              <label>Day <input type="number" value={s.night} min={0} max={30} step={1} onChange={(e) => d.set({ night: Math.max(0, Math.min(30, Math.floor(num(e.target.value)))) })} /></label>
               <label>Fire size (logs) <input type="number" value={Math.round(s.fireSize)} onChange={(e) => d.set({ fireSize: num(e.target.value) })} /></label>
               <label>Pot ($) <input type="number" value={usd(s.potPlank)} onChange={(e) => d.set({ potPlank: num(e.target.value) / s.plankUsd })} /></label>
               <label>Tickets in this fire <input type="number" value={s.ticketsTotal} onChange={(e) => d.set({ ticketsTotal: num(e.target.value) })} /></label>
@@ -56,7 +56,7 @@ export function Playground({ s, d, hour, onHour }: {
 
           <section>
             <h3>Prices and feeds</h3>
-            <p className="fine">A log's PLANK and PAPER amounts follow a price change at most 5% a day, like the contract.</p>
+            <p className="fine">PAPER amounts move at most 5% a day; PLANK follows the live price.</p>
             <div className="pg-grid">
               <label>PLANK price ($ per 1B) <input type="number" step={0.1} value={+(s.plankUsd * 1e9).toFixed(3)} onChange={(e) => d.set({ plankUsd: Math.max(0.01, num(e.target.value)) / 1e9 })} /></label>
               <label>PAPER price ($, 0 = no market) <input type="number" step={0.01} min={0} value={s.paperUsd} onChange={(e) => d.set({ paperUsd: Math.max(0, num(e.target.value)) })} /></label>

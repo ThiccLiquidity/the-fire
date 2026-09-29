@@ -141,8 +141,10 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
 
   // ---- sound: the forest/campfire ambience plus thunder, all through one master gain (the header toggle)
   let ac: AudioContext | null = null, amb: ReturnType<typeof createAmbience> | null = null, loadingThunder = false;
+  let gestured = false; // browsers refuse audio before a click, tap or key: nothing is created or resumed until then
   const thunderBufs: Record<string, AudioBuffer> = {};
   function audio() {
+    if (!gestured) return;
     try {
       ac ??= new AudioContext(); amb ??= createAmbience(ac);
       if (ac.state === "suspended" && inp.sound && !document.hidden) void ac.resume();
@@ -855,8 +857,8 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
   }
   resize(); const ro = new ResizeObserver(resize); ro.observe(canvas);
-  // browsers only start audio after a click or tap: every gesture tries, the first that works wins
-  const gesture = () => { if (!inp.sound) return; audio(); void loadThunder(); };
+  // browsers only start audio after a click, tap or key: the first one unlocks it (sound on now, or when turned on later)
+  const gesture = () => { gestured = true; if (!inp.sound) return; audio(); void loadThunder(); };
   document.addEventListener("pointerdown", gesture); document.addEventListener("keydown", gesture);
   const vis = () => { if (!ac) return; if (document.hidden) void ac.suspend(); else if (inp.sound) void ac.resume(); };
   document.addEventListener("visibilitychange", vis);

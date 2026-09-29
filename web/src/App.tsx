@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { type FireApi, type FireState, CEREMONY as C, fireLook, localClock, localHour, nameOf, prizeOf, short } from "./data/types";
+import { type FireApi, type FireState, CEREMONY as C, KEEP, fireLook, localClock, localHour, nameOf, prizeOf, short } from "./data/types";
 import { friendly, TESTNET } from "./data/wallet";
 import { TestnetFaucet } from "./components/TestnetFaucet";
 import { fmtAmt, fmtCount, fmtPlank, usdOf } from "./format";
@@ -40,6 +40,7 @@ function weather(threat: number, hoursLeft: number) {
   return "A monster is rolling in.";
 }
 const days = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
+const logs = (n: number) => `${fmtCount(n)} ${Math.round(n) === 1 ? "log" : "logs"}`;
 const NOBODY = /^0x0{40}$/i; // a fire that went out with no tickets has no winner
 
 export default function App() {
@@ -76,12 +77,18 @@ export default function App() {
   const youWon = !!st && !st.survived && connected && st.winner?.toLowerCase() === s.you.address!.toLowerCase();
   // the fire is drawn for its size in logs: the same count always looks the same (fireLook)
   const size = b && age < C.RAIN ? fireLook(b.fireSize) : wake ? 0 : fireLook(s.fireSize);
+  // the fire that went out, its winner and its burn stay off the lower panels until the winner card shows
+  const hideOut = inCeremony && !st!.survived && age < C.WINNER;
+  const past = hideOut ? s.past.filter((f) => f.id !== st!.fireId) : s.past;
+  const pre = hideOut ? st!.before : undefined;
+  const burnedPaper = pre?.burnedPaperAllTime ?? s.burnedPaperAllTime, burnedPlank = pre?.burnedPlankAllTime ?? s.burnedPlankAllTime;
+  const lastPrize = (f: { potPlank: number; prizePlank?: number }) => f.prizePlank ?? f.potPlank * 0.4; // the prize paid (capped), not 40% of the pot
 
   // pot header: during the wake, keep showing the fire that died
   const potPlank = wake ? st!.potPlank ?? v.potPlank : v.potPlank;
   const fireId = wake ? st!.fireId : v.fireId;
   const potSub = s.abandoned ? "the game has ended"
-    : wake ? `went out on day ${st!.night}${st!.tickets ? ` · ${fmtCount(st!.tickets)} logs` : ""}`
+    : wake ? `went out on day ${st!.night}${st!.tickets ? ` · ${logs(st!.tickets)}` : ""}`
     : v.night === 0 ? (st && !st.survived && age < C.DONE ? "just lit" : "lit today") : `${days(v.night)} survived`;
 
   // The clock line: the player's own time and the countdown to the storm (21:00 UTC, the same moment for everyone), or
@@ -104,7 +111,8 @@ export default function App() {
   let card: React.ReactNode = null;
   if (st && inCeremony) {
     if (st.survived && age >= C.VERDICT && age < C.VERDICT_END) {
-      card = <div className="verdict ok" role="alert"><b>The fire survived day {st.night}.</b> The storm took {Math.min(99, Math.round(st.strength / Math.max(1, st.size) * 100))}% of it.</div>;
+      // the storm's bite, then the nightly burn-down to 85%: the same drop the fire-size tile shows
+      card = <div className="verdict ok" role="alert"><b>The fire survived day {st.night}.</b> The storm took {logs(Math.min(st.strength, st.size))}, and overnight it burned down to {fmtCount(Math.max(0, (st.size - st.strength) * KEEP))}.</div>;
     } else if (!st.survived && age >= C.OUT_CARD && age < C.WINNER) {
       card = null; // the tickets rise out of the embers in the scene; the winner card follows
     } else if (!st.survived && age >= C.WINNER && age < C.RELIGHT && NOBODY.test(st.winner ?? "")) {
@@ -119,7 +127,7 @@ export default function App() {
           {name(w) !== short(w) && <div className="winner-addr">{short(w)}</div>}
           <div className="winner-amt"><PlankIcon big />{usd(st.paidPlank ?? 0, s.plankUsd)}</div>
           {st.prizeOwed && <div className="winner-sub"><b>Prize waiting to be claimed</b></div>}
-          <div className="winner-sub"><PlankIcon />{mPlank(st.paidPlank ?? 0)} PLANK · Fire #{st.fireId} · {days(st.night)} · {fmtCount(st.tickets ?? 0)} logs</div>
+          <div className="winner-sub"><PlankIcon />{mPlank(st.paidPlank ?? 0)} PLANK · Fire #{st.fireId} · {days(st.night)} · {logs(st.tickets ?? 0)}</div>
           <div className="winner-foot">{Math.max(0, Math.ceil((C.RELIGHT - age) / 1000))}s until the next fire is lit</div>
         </div>
       );
@@ -127,7 +135,7 @@ export default function App() {
       card = <div className="verdict lit" role="alert"><b>Fire #{s.fireId} is lit.</b> {usd(s.potPlank, s.plankUsd)} carried over.</div>;
     }
   }
-  const lastWinner = s.past[0];
+  const lastWinner = past[0];
   const [rolling, setRolling] = useState(false);
   const [rollErr, setRollErr] = useState("");
   async function rollStorm() {
@@ -171,10 +179,10 @@ export default function App() {
 
       <div className={"pot" + (wake ? " wake" : "")}>
         <span className="pot-row"><span className="pot-usd"><PlankIcon big />{usd(potPlank, s.plankUsd)}</span></span>
-        {!wake && !s.abandoned && (() => { const prize = prizeOf(potPlank, s.potCarriedIn, v.ticketsTotal), full = potPlank * 0.4; return v.ticketsTotal === 0 ? <span className="pot-take">first ticket in starts the prize</span> : <span className="pot-take">winner takes <b>{usd(prize, s.plankUsd)}</b>{prize < full * 0.999 && <small className="pot-grow"> · grows with this fire, up to {usd(full, s.plankUsd)}</small>}</span>; })()}
+        {!wake && !s.abandoned && (() => { const prize = prizeOf(potPlank, b?.potCarriedIn ?? s.potCarriedIn, v.ticketsTotal), full = potPlank * 0.4; return v.ticketsTotal === 0 ? <span className="pot-take">first ticket in starts the prize</span> : <span className="pot-take">winner takes <b>{usd(prize, s.plankUsd)}</b>{prize < full * 0.999 && <small className="pot-grow"> · grows with this fire, up to {usd(full, s.plankUsd)}</small>}</span>; })()}
         <span className="pot-sub"><PlankIcon />{mPlank(potPlank)} PLANK · Fire #{fireId} · {potSub}</span>
         {!wake && v.night === 0 && !b && lastWinner && !NOBODY.test(lastWinner.winner) && (
-          <span className="pot-last"><Avatar addr={lastWinner.winner} profile={prof(lastWinner.winner)} size={18} /> {name(lastWinner.winner)} won {usd(lastWinner.potPlank * 0.4, s.plankUsd)} last fire</span>
+          <span className="pot-last"><Avatar addr={lastWinner.winner} profile={prof(lastWinner.winner)} size={18} /> {name(lastWinner.winner)} won {usd(lastPrize(lastWinner), s.plankUsd)} last fire</span>
         )}
       </div>
       </div>
@@ -185,7 +193,7 @@ export default function App() {
       <div className="strip">
         <span role="status">{forecast}</span>
         <span className="strip-sub">{mPlank(potPlank)} PLANK · Fire #{fireId} · {potSub}</span>
-        {!wake && v.night === 0 && !b && lastWinner && !NOBODY.test(lastWinner.winner) && <span className="strip-last">{name(lastWinner.winner)} won {usd(lastWinner.potPlank * 0.4, s.plankUsd)} last fire</span>}
+        {!wake && v.night === 0 && !b && lastWinner && !NOBODY.test(lastWinner.winner) && <span className="strip-last">{name(lastWinner.winner)} won {usd(lastPrize(lastWinner), s.plankUsd)} last fire</span>}
       </div>
       {how && <HowItWorks onClose={() => setHow(false)} />}
 
@@ -202,38 +210,27 @@ export default function App() {
               <span key={f.id} className="tick">🔥 The fire bought a press off the floor and burned it</span>
             ) : (
               <span key={f.id} className="tick">
-                <Avatar addr={f.who} profile={prof(f.who)} size={18} /> <span className="tick-name" title={f.who}>{name(f.who)}</span> <em>{f.title}</em> {f.tickets} {f.tickets === 1 ? "log" : "logs"}{f.fromFire ? " · paid in dollars" : ""}
+                <Avatar addr={f.who} profile={prof(f.who)} size={18} /> <span className="tick-name" title={f.who}>{name(f.who)}</span> <em>{f.title}</em> {f.tickets} {f.tickets === 1 ? "log" : "logs"}{f.fromFire ? " · paid in dollars" : ""}{f.note?.trim() && <q className="tick-note">{f.note.trim().slice(0, 32)}</q>}
               </span>
             ))}
           </div>
 
           <div className="small-grid">
             <div className="burn">
-              {LIVE ? (
-                <>
-                  <h2>So far</h2>
-                  <dl>
-                    <dt>{fmtCount(v.ticketsTotal)}</dt><dd>tickets in this fire</dd>
-                    <dt>{fmtCount(Math.max(0, v.fireId - 1))}</dt><dd>fires gone out</dd>
-                  </dl>
-                </>
-              ) : (
-                <>
-                  <h2>Gone forever</h2>
-                  <dl>
-                    <dt>{fmtCount(s.burnedPaperAllTime)}</dt><dd>PAPER burned</dd>
-                    <dt>{mPlank(s.burnedPlankAllTime)}</dt><dd>PLANK burned</dd>
-                    <dt>{fmtCount(s.millsEaten)}</dt><dd>presses eaten</dd>
-                  </dl>
-                </>
-              )}
+              <h2>Gone forever</h2>
+              <dl>
+                <dt>{fmtCount(burnedPaper)}</dt><dd>PAPER burned</dd>
+                <dt>{mPlank(burnedPlank)}</dt><dd>PLANK burned</dd>
+                <dt>{fmtCount(s.millsEaten)}</dt><dd>presses eaten</dd>
+              </dl>
+              {s.historyLoading && <p className="fine">Still counting from the first fire…</p>}
               <p className="fine">Every $1 paid in ETH or USDG goes toward buying presses off the floor and burning them. The PLANK inside goes to the Paper Press royalty pool. Next press: the fire bids ${fmtCount(s.millBidUsd)}, and has {fmtAmt(s.millFundEth)} ETH{s.usdgEnabled ? ` + $${fmtCount(s.millFundUsdg)} USDG` : ""} saved.</p>
             </div>
             <div className="archive">
               <h2>Past fires</h2>
               <ol>
-                {s.past.slice(0, 5).map((f) => (
-                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{NOBODY.test(f.winner) ? <>no logs · {days(f.nights)} · pot carried</> : <><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> won {usd(f.prizePlank ?? f.potPlank * 0.4, s.plankUsd)} · {days(f.nights)}</>}</span></li>
+                {past.slice(0, 5).map((f) => (
+                  <li key={f.id}><span className="pf-name">Fire #{f.id}</span><span className="pf-meta">{NOBODY.test(f.winner) ? <>no logs · {days(f.nights)} · pot carried</> : <><Avatar addr={f.winner} profile={prof(f.winner)} size={16} /> <span title={f.winner}>{name(f.winner)}</span> won {usd(lastPrize(f), s.plankUsd)} · {days(f.nights)}</>}</span></li>
                 ))}
               </ol>
             </div>
@@ -255,7 +252,7 @@ export default function App() {
             </div>
           )}
           {connected && <ProfileEditor key={s.you.address} addr={s.you.address} profile={prof(s.you.address!)} onSave={api.setProfile} demo={!LIVE} />}
-          <BuyPanel you={shownYou} plankPerTicket={s.plankPerTicket} paperPerTicket={s.paperPerTicket} paperUsd={s.paperUsd} plankUsd={s.plankUsd} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} usdgEnabled={s.usdgEnabled}
+          <BuyPanel key={s.you.address ?? "-"} you={shownYou} plankPerTicket={s.plankPerTicket} paperPerTicket={s.paperPerTicket} paperUsd={s.paperUsd} plankUsd={s.plankUsd} ethUsd={s.ethUsd} onBuy={api.buy} onConnect={api.connect} paused={s.rollPending} usdgEnabled={s.usdgEnabled}
             raw={s.raw} abandoned={s.abandoned} night={v.night} hold={b ? "The storm is here. Buying reopens once it passes." : undefined} demo={!LIVE} />
           {!(LIVE && TESTNET) && <Swap demo={api.demo} s={s} />}
         </div>

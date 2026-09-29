@@ -16,6 +16,7 @@ export const WETH: Address = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 const PLANK_FALLBACK: Address = "0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc";
 const STALE_MS = 20_000; // a quote older than this can't be swapped on
 const IMPACT_WARN = 0.03;
+const GAS_RESERVE = 500_000_000_000_000n; // 0.0005 ETH left for gas when "use all" spends ETH
 
 type Tok = { symbol: string; address: Address | "ETH"; decimals: number; unverified?: boolean };
 
@@ -28,6 +29,7 @@ const routerAbi = parseAbi([
 const erc20 = parseAbi([
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
+  "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
   "function approve(address,uint256) returns (bool)",
 ]);
@@ -47,6 +49,9 @@ function baseTokens(demo: boolean, t?: FireState["tokens"]): Tok[] {
     ...(t?.usdg ? [{ symbol: "USDG", address: t.usdg as Address, decimals: t.usdgDecimals }] : []),
   ];
 }
+
+/** A play-money amount as a plain decimal string ("0.0000005", never "5e-7"). */
+function plain(v: number) { return v.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 18 }); }
 
 function Sel({ tokens, v, set, label }: { tokens: Tok[]; v: Tok; set: (t: Tok) => void; label: string }) {
   return (
@@ -80,6 +85,7 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
   const [now, setNow] = useState(Date.now());
   const key = `${from.address}|${to.address}|${amt}`;
   const seq = useRef(0);
+  const keepMsg = useRef(false); // the next amount change comes with its own message: don't clear it
 
   // PAPER (or any token) may be paired with WETH, USDG or PLANK, so try every route through up to two of those and
   // keep the one that gives the most out. Routes that don't exist just fail their quote and drop out.
@@ -104,7 +110,7 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
     if (!(n > 0) || from.address === to.address) return null;
     if (demo) {
       const r = demo.swapQuote(from.symbol as DemoToken, to.symbol as DemoToken, n);
-      return r ? { key, at: Date.now(), out: r.out, impact: r.impact, fee: n * FEE } : null;
+      return r && Number.isFinite(r.out) && Number.isFinite(r.impact) && Number.isFinite(n * FEE) ? { key, at: Date.now(), out: r.out, impact: r.impact, fee: n * FEE } : null;
     }
     let amountIn: bigint;
     try { amountIn = parseUnits(amt, from.decimals); } catch { return null; }
@@ -144,11 +150,16 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
     return () => { clearTimeout(t0); clearInterval(t); };
   }, [open, key]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!open) return; const t = setInterval(() => setNow(Date.now()), 1_000); return () => clearInterval(t); }, [open]);
+  // a new pair or amount: the last swap's message no longer applies (a pending tx keeps its notice)
+  useEffect(() => { if (keepMsg.current) keepMsg.current = false; else if (!pendingHash) setMsg(""); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stale = !q || q.key !== key || now - q.at > STALE_MS;
   const bigImpact = !!q && q.impact > IMPACT_WARN;
   const unverified = [from, to].find((t) => t.unverified);
   const have = (t: Tok) => (t.symbol === "ETH" && !t.unverified ? s.you.eth : t.symbol === "PLANK" && !t.unverified ? s.you.plank : t.symbol === "PAPER" && !t.unverified ? s.you.paper : t.symbol === "USDG" && !t.unverified ? s.you.usdg : undefined);
+  /** live: the exact balance in the token's smallest unit, so "use all" and "Not enough" never round */
+  const haveRaw = (t: Tok) => { const r = s.you.raw; return !r || t.unverified ? undefined : t.symbol === "ETH" ? r.eth : t.symbol === "PLANK" ? r.plank : t.symbol === "PAPER" ? r.paper : t.symbol === "USDG" ? r.usdg : undefined; };
+  const parsedAmt = (() => { try { return parseUnits(amt, from.decimals); } catch { return undefined; } })();
 
   async function addCustom() {
     if (!isAddress(custom_)) { setMsg("That's not a token address."); return; }
@@ -179,10 +190,19 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
       } else {
         const { wc, account: acct } = await connectWallet();
         const pub = await livePub();
-        const amountIn = parseUnits(amt, from.decimals);
+        let amountIn = parseUnits(amt, from.decimals);
+        // never ask for more than the wallet holds right now (ETH keeps a little for gas), before any approval is sent
+        const bal = from.address === "ETH" ? await pub.getBalance({ address: acct }) : await pub.readContract({ address: from.address, abi: erc20, functionName: "balanceOf", args: [acct] });
+        const spendable = from.address === "ETH" ? (bal > GAS_RESERVE ? bal - GAS_RESERVE : 0n) : bal;
+        if (spendable === 0n) throw new Error(`You have no ${from.symbol} to swap.`);
+        if (amountIn > spendable) {
+          if (seen.kyber || amountIn - spendable > amountIn / 1000n) { const all = formatUnits(spendable, from.decimals); keepMsg.current = all !== amt; setAmt(all); throw new Error(`That's more ${from.symbol} than you have. The amount is now your balance: check the new quote.`); }
+          amountIn = spendable; // a rounding hair over: swap exactly the balance
+        }
         // minOut comes from the quote you saw; if the market has already moved past your slippage, stop here.
         const slipBps = BigInt(Math.round(slip * 10_000));
-        const minOut = (seen.outRaw! * (10_000n - slipBps)) / 10_000n;
+        const quotedIn = parseUnits(amt, from.decimals);
+        const minOut = (seen.outRaw! * (10_000n - slipBps) * amountIn) / (10_000n * quotedIn); // scaled if amountIn was trimmed to the balance
         if (seen.kyber) {
           const tx = await kyberBuild(seen.kyber, acct, Number(slipBps));
           checkSwap(tx, { from: from.address, to: to.address, amountIn, minOut, account: acct }); // throws before the wallet sees anything wrong
@@ -190,7 +210,7 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
             const allowance = await pub.readContract({ address: from.address, abi: erc20, functionName: "allowance", args: [acct, KYBER_ROUTER] });
             if (allowance < amountIn) { // exactly this swap's amount, never unlimited
               const h = await wc.writeContract({ address: from.address, abi: erc20, functionName: "approve", args: [KYBER_ROUTER, amountIn], account: acct, chain: robinhood });
-              await waitOk(pub, h, `approving ${from.symbol}`);
+              await waitOk(pub, h, `approving ${from.symbol}`, "approve");
             }
           }
           const hash = await wc.sendTransaction({ to: KYBER_ROUTER, data: tx.data, value: tx.value, account: acct, chain: robinhood });
@@ -211,7 +231,7 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
           const allowance = await pub.readContract({ address: from.address, abi: erc20, functionName: "allowance", args: [acct, ROUTER] });
           if (allowance < amountIn) {
             const h = await wc.writeContract({ address: from.address, abi: erc20, functionName: "approve", args: [ROUTER, amountIn], account: acct, chain: robinhood });
-            await waitOk(pub, h, `approving ${from.symbol}`);
+            await waitOk(pub, h, `approving ${from.symbol}`, "approve");
           }
           const fn = to.address === "ETH" ? "swapExactTokensForETHSupportingFeeOnTransferTokens" : "swapExactTokensForTokensSupportingFeeOnTransferTokens";
           hash = await wc.writeContract({ address: ROUTER, abi: routerAbi, functionName: fn, args: [amountIn, minOut, p, acct, deadline], account: acct, chain: robinhood });
@@ -226,14 +246,21 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
         if (e instanceof TxPending) {
           setPendingHash(e.hash);
           setMsg(<>Still pending. <a href={txUrl(e.hash)} target="_blank" rel="noreferrer">Check it on the explorer</a>.</>);
-          void e.later.then((ok) => { setPendingHash(""); setMsg(ok ? "Your swap landed." : "Your swap failed on-chain. Nothing was swapped."); });
+          // a late approval only allowed the spend: the swap itself was never sent
+          if (e.kind === "approve") void e.later.then((ok) => { setPendingHash(""); setMsg(ok ? "Approval landed. Press Swap again to swap." : "The approval failed on-chain. Nothing was swapped."); });
+          else void e.later.then((ok) => { setPendingHash(""); setMsg(ok ? "Your swap landed." : "Your swap failed on-chain. Nothing was swapped."); });
         } else setMsg(friendly(e));
       } else setMsg((e as Error).message);
     } finally { setBusy(false); }
   }
 
-  const fromHave = have(from);
-  const short = fromHave !== undefined && !!s.you.address && Number(amt) > fromHave;
+  const fromHave = have(from), fromRaw = haveRaw(from);
+  // live: compare in the token's own units; the demo's play balances are plain numbers
+  const short = !!s.you.address && (fromRaw !== undefined ? parsedAmt !== undefined && parsedAmt > fromRaw : fromHave !== undefined && Number(amt) > fromHave);
+  const useAll = () => {
+    if (fromRaw !== undefined) setAmt(formatUnits(from.symbol === "ETH" ? (fromRaw > GAS_RESERVE ? fromRaw - GAS_RESERVE : 0n) : fromRaw, from.decimals));
+    else if (fromHave !== undefined) setAmt(plain(from.symbol === "ETH" ? Math.max(0, fromHave - 0.0005) : fromHave));
+  };
   return (
     <div className={"swap" + (open ? " open" : "")}>
       <button className="swap-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
@@ -242,7 +269,7 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
       {open && (
         <div className="swap-body">
           <div className="swap-row"><span>Pay</span><input type="number" min="0" step="any" value={amt} onChange={(e) => setAmt(e.target.value)} aria-label="Amount" /><Sel tokens={tokens} v={from} set={(t) => setFromSym(t.address)} label="Pay with token" /></div>
-          {fromHave !== undefined && s.you.address && <p className="fine swap-have">You have {fmtAmt(fromHave)} {from.symbol} <button className="linkish" onClick={() => setAmt(String(from.symbol === "ETH" ? Math.max(0, fromHave - 0.0005) : fromHave))}>use all</button></p>}
+          {fromHave !== undefined && s.you.address && <p className="fine swap-have">You have {fmtAmt(fromHave)} {from.symbol} <button className="linkish" onClick={useAll}>use all</button></p>}
           <div className="swap-row"><span>Get</span><input readOnly value={loading && !q ? "…" : q && q.key === key ? fmtAmt(q.out) : "—"} aria-label="You get" /><Sel tokens={tokens} v={to} set={(t) => setToSym(t.address)} label="Get token" /></div>
           {q && q.key === key && (
             <p className={"fine" + (bigImpact ? " warn" : "")}>Price impact {q.impact < 0.001 ? "<0.1" : (q.impact * 100).toFixed(1)}%{bigImpact ? " — high. You'd get noticeably less than the market price." : ""}</p>

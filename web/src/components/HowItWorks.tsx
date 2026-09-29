@@ -12,10 +12,10 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
         <p className="how-lede">A campfire that runs on PAPER and PLANK. Throw logs on it, keep it alive through the daily storms, and when it finally goes out one log wins the pot. Every log is a ticket to win.</p>
 
         <ol className="how-steps">
-          <li><b>Throw logs.</b> A log is 1 PAPER (or $0.33 worth, whichever is less) plus $0.90 of PLANK at the live price (it follows the PLANK pool within about an hour, so a pump means fewer PLANK per log). Up to {TX_CAP} per throw, {DAILY_CAP} per wallet per day. Throw {TX_CAP} and get free logs: 3 on a fire's first day, 2 on its second, 1 after that (free logs count toward the {DAILY_CAP}). No PAPER? Pay $1 in ETH or USDG instead of the PAPER. Same log either way.</li>
+          <li><b>Throw logs.</b> A log is 1 PAPER (once PAPER trades above $0.33, the PAPER amount drifts toward $0.33 worth, at most 5% a day) plus $0.90 of PLANK at the live price (it follows the PLANK pool within about an hour, so a pump means fewer PLANK per log). Up to {TX_CAP} per throw, {DAILY_CAP} per wallet per day. Throw {TX_CAP} and get free logs: 3 on a fire's first day, 2 on its second, 1 after that (free logs count toward the {DAILY_CAP}). No PAPER? Pay $1 in ETH or USDG instead of the PAPER. Same log either way.</li>
           <li><b>PAPER burns, PLANK feeds the fire.</b> The PAPER is destroyed. All the PLANK goes into the fire's pot. Dollars paid in place of PAPER go to the press fund (below).</li>
           <li><b>Every log feeds the fire.</b> Each one makes the fire 1 bigger. Each day the fire burns down a little (it keeps 85%), so a fire nobody feeds shrinks and a fire people pile into grows. The fire burns down, but your logs never leave the draw: every one stays in until the fire goes out.</li>
-          <li><b>Every day at 21:00 UTC ({localClock(nextRollTime())} your time), a storm hits</b> and knocks the fire down. If the storm is bigger than the fire, the fire goes out.
+          <li><b>Every day at 21:00 UTC ({localClock(nextRollTime())} your time), a storm hits</b> and knocks the fire down. If the storm is as big as the fire or bigger, the fire goes out.
             <ul className="how-sub">
               <li><b>How big?</b> Every storm is one of 20 fixed sizes, from 5 logs up to 25,000. Storms never get stronger. What changes is the odds: early on it's almost always a small storm, and every day the odds tilt a little toward the big ones. Nothing on day 1; day 24 always puts the fire out.</li>
               <li><b>Big fires last.</b> The storm is a real number of logs, so size is what counts. A 50-log fire can't ride out a 180-log storm; a 5,000-log fire barely notices it. A fire that people keep feeding can go deep. One nobody feeds goes out in a day or two.</li>
@@ -31,7 +31,7 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
         <div className="flow">
           <div className="flow-col">
             <div className="flow-box fb-in">1 log</div>
-            <div className="flow-sub">1 PAPER (max $0.33) + $0.90 PLANK<br />or $1 + $0.90 PLANK</div>
+            <div className="flow-sub">1 PAPER (drifts toward $0.33 worth) + $0.90 PLANK<br />or $1 + $0.90 PLANK</div>
           </div>
           <div className="flow-arrows" aria-hidden="true">→</div>
           <div className="flow-col">

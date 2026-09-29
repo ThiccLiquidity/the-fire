@@ -9,14 +9,18 @@ import {
 import fireAbi from "./fireAbi.json";
 import profilesAbi from "./profilesAbi.json";
 import { bytesToHex, hexToBytes } from "viem";
-import { type Buy, type FireApi, type Pay, type FireState, type PastFire, type Snapshot, CEREMONY, DAILY_CAP, fireLook, nextRollTime, stormOdds, stormLook, titleFor } from "./types";
+import { type Buy, type FireApi, type Pay, type FireState, type PastFire, type Snapshot, CEREMONY, DAILY_CAP, ETH_HEADROOM, fireLook, nextRollTime, stormOdds, stormLook, titleFor } from "./types";
 import { robinhood, connectWallet, waitOk, PRICE_MOVED } from "./wallet";
 
 export { robinhood };
 
 const PROFILES = import.meta.env.VITE_PROFILES_ADDRESS as Address | undefined;
 const PROFILES_FROM = BigInt(import.meta.env.VITE_PROFILES_FROM_BLOCK || 0); // Profiles deploy block
+// The Fire's deploy block: past fires, burns, presses eaten and buyer titles are counted from here. Unset: the last 50k blocks only.
+const FIRE_FROM = import.meta.env.VITE_FIRE_FROM_BLOCK ? BigInt(import.meta.env.VITE_FIRE_FROM_BLOCK) : undefined;
 const LOG_CHUNK = 50_000n;
+const DEAD: Address = "0x000000000000000000000000000000000000dEaD";
+const transferAbi = parseAbi(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
 
 const adapterAbi = parseAbi(["function answered(uint256) view returns (bool)", "function settle(uint256)", "function ROUTER() view returns (address)"]);
 const routerAbi = parseAbi([
@@ -54,14 +58,15 @@ export function makeChainApi(fireAddress: Address): FireApi {
   let accountEpoch = 0; // bumps whenever the wallet's account changes; a flow started under an older epoch stops
   let paperAddr: Address | undefined, plankAddr: Address | undefined, adapterAddr: Address | undefined, usdgAddr: Address | undefined, usdgDec = 6;
   let pendingId = 0n, routerAddr: Address | undefined, plankFeedAddr: Address | undefined, paperFeedAddr: Address | undefined;
-  let s: FireState = empty();
+  let s: FireState = { ...empty(), historyLoading: true };
   const subs = new Set<(s: FireState) => void>();
   const emit = () => subs.forEach((f) => f(s));
   const lifetime = new Map<string, number>();
   const paperBuyers = new Set<string>();
   const ticketsSeen = new Map<number, number>(); // fireId → the last ticketsTotal this page read for it
-  let lastBlock = 0n, lastProfileBlock = 0n, feedId = 0;
-  let prev: FireState | undefined; // the state as shown before this refresh: what a storm's ceremony holds on screen
+  let lastBlock: bigint | undefined, lastProfileBlock = 0n, feedId = 0;
+  let burnedPaper = 0n, burnedPlank = 0n; // wei sent to 0x…dEaD by the game, summed by the history scan
+  let prev: FireState | undefined; // the state as shown before the last roll landed: what a storm's ceremony holds on screen
 
   async function wallet(): Promise<WalletClient> {
     const { wc, account: a } = await connectWallet();
@@ -83,6 +88,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
   }
 
   async function readAll() {
+    const acct = account, epoch = accountEpoch; // one account for the whole read; a switch part-way drops the result
     const r = (fn: string, args: unknown[] = []) => pub.readContract({ address: fireAddress, abi, functionName: fn, args }) as Promise<bigint>;
     const [fireId, night, pot, ticketsToday, ticketsTotal, fireSize, trailingAvg, nextRollAt, plankPerTicket, millBid, millFund, dayIndex, pending, pendingSince, rerollAfter, potCarriedIn] = await Promise.all([
       r("fireId"), r("night"), r("pot"), r("ticketsToday"), r("ticketsTotal"), r("fireSizeMilli"), r("trailingAverage"), r("nextRollAt"), r("plankPerTicket"), r("millBid"), r("millFund"), r("dayIndex"),
@@ -125,25 +131,28 @@ export function makeChainApi(fireAddress: Address): FireApi {
     // A stale ETH/USD feed makes ethPerTicket revert: the ETH path is closed, and the page says so.
     let ethPerTicket = 0n; try { ethPerTicket = await r("ethPerTicket"); } catch { /* stale feed */ }
     let you: FireState["you"] = { ...empty().you };
-    if (account) {
+    if (acct) {
       const [paper, plank, eth, mine, bought, usdg, claimable] = await Promise.all([
-        pub.readContract({ address: paperAddr!, abi: erc20, functionName: "balanceOf", args: [account] }),
-        pub.readContract({ address: plankAddr!, abi: erc20, functionName: "balanceOf", args: [account] }),
-        pub.getBalance({ address: account }),
-        pub.readContract({ address: fireAddress, abi, functionName: "ticketsOf", args: [fireId, account] }) as Promise<bigint>,
-        pub.readContract({ address: fireAddress, abi, functionName: "boughtOnDay", args: [dayIndex, account] }) as Promise<bigint>,
-        usdgAddr ? pub.readContract({ address: usdgAddr, abi: erc20, functionName: "balanceOf", args: [account] }) : Promise.resolve(0n),
-        pub.readContract({ address: fireAddress, abi, functionName: "claimable", args: [account] }) as Promise<readonly [bigint, bigint]>,
+        pub.readContract({ address: paperAddr!, abi: erc20, functionName: "balanceOf", args: [acct] }),
+        pub.readContract({ address: plankAddr!, abi: erc20, functionName: "balanceOf", args: [acct] }),
+        pub.getBalance({ address: acct }),
+        pub.readContract({ address: fireAddress, abi, functionName: "ticketsOf", args: [fireId, acct] }) as Promise<bigint>,
+        pub.readContract({ address: fireAddress, abi, functionName: "boughtOnDay", args: [dayIndex, acct] }) as Promise<bigint>,
+        usdgAddr ? pub.readContract({ address: usdgAddr, abi: erc20, functionName: "balanceOf", args: [acct] }) : Promise.resolve(0n),
+        pub.readContract({ address: fireAddress, abi, functionName: "claimable", args: [acct] }) as Promise<readonly [bigint, bigint]>,
       ]);
       you = {
-        address: account, tickets: Number(mine), paper: Number(formatUnits(paper, 18)), plank: Number(formatUnits(plank, 18)), eth: Number(formatUnits(eth, 18)), usdg: Number(formatUnits(usdg, usdgDec)),
-        remainingToday: Math.max(0, DAILY_CAP - Number(bought)), isWinner: s.you.address === account && s.you.isWinner, profile: s.profiles[account.toLowerCase()],
+        address: acct, tickets: Number(mine), paper: Number(formatUnits(paper, 18)), plank: Number(formatUnits(plank, 18)), eth: Number(formatUnits(eth, 18)), usdg: Number(formatUnits(usdg, usdgDec)),
+        remainingToday: Math.max(0, DAILY_CAP - Number(bought)), isWinner: s.you.address === acct && s.you.isWinner, profile: s.profiles[acct.toLowerCase()],
         prize: Number(formatUnits(claimable[0], 18)), refund: Number(formatUnits(claimable[1], 18)),
+        raw: { eth, plank, paper, usdg },
       };
     }
+    if (epoch !== accountEpoch) return; // the wallet switched mid-read: the queued pass reads the new account
     const trailing = Number(trailingAvg) || 1;
     const n = Number(night);
     ticketsSeen.set(Number(fireId), Number(ticketsTotal));
+    if (s.fireId > 0 && (Number(fireId) !== s.fireId || n !== s.night)) prev = s; // a roll landed: keep what was on screen before it
     s = {
       ...s, fireId: Number(fireId), night: n, potPlank: Number(formatUnits(pot, 18)), potCarriedIn: Number(formatUnits(potCarriedIn, 18)), plankPerTicket: Number(formatUnits(plankPerTicket, 18)),
       ethUsd: ethPerTicket > 0n ? 1 / Number(formatUnits(ethPerTicket, 18)) : 0,
@@ -156,19 +165,25 @@ export function makeChainApi(fireAddress: Address): FireApi {
     };
   }
 
-  async function readEvents() {
-    const headBlock = await pub.getBlock();
+  /** One chunk of the Fire's history, in order: buys, storms, presses, and the game's burns (PLANK the Fire sent to
+   *  0x…dEaD, PAPER a buyer sent there in a buy). The Fire emits no burn amounts, so they're read off the token transfers. */
+  async function readEvents(from: bigint, to: bigint, headBlock: { number: bigint; timestamp: bigint }) {
     const head = headBlock.number;
-    const from = lastBlock ? lastBlock + 1n : (head > 50_000n ? head - 50_000n : 0n);
-    if (from > head) return;
-    const logs = await pub.getContractEvents({ address: fireAddress, abi, fromBlock: from, toBlock: head });
-    lastBlock = head;
-    type Log = { args: Record<string, unknown>; eventName: string; blockNumber: bigint; transactionHash: Hex };
-    const all = logs as unknown as Log[];
+    type Log = { args: Record<string, unknown>; eventName: string; blockNumber: bigint; logIndex: number; transactionHash: Hex; token?: "paper" | "plank" };
+    const [fireLogs, plankBurns, paperBurns] = (await Promise.all([
+      pub.getContractEvents({ address: fireAddress, abi, fromBlock: from, toBlock: to }),
+      pub.getContractEvents({ address: plankAddr!, abi: transferAbi, eventName: "Transfer", args: { from: fireAddress, to: DEAD }, fromBlock: from, toBlock: to }),
+      pub.getContractEvents({ address: paperAddr!, abi: transferAbi, eventName: "Transfer", args: { to: DEAD }, fromBlock: from, toBlock: to }),
+    ])) as unknown as [Log[], Log[], Log[]];
+    const paperBuyTx = new Set(fireLogs.filter((l) => l.eventName === "TicketsBought" && !l.args.paperFromFire).map((l) => l.transactionHash));
+    const all = [...fireLogs, ...plankBurns.map((l) => ({ ...l, token: "plank" as const })), ...paperBurns.filter((l) => paperBuyTx.has(l.transactionHash)).map((l) => ({ ...l, token: "paper" as const }))]
+      .sort((x, y) => (x.blockNumber === y.blockNumber ? x.logIndex - y.logIndex : x.blockNumber < y.blockNumber ? -1 : 1));
     // When each event happened, by the chain's clock, mapped onto this browser's clock. Using "now" instead made
-    // every page load replay the last storm as if it were happening live. Only the events the page animates need it.
+    // every page load replay the last storm as if it were happening live. Only the events the page animates need it,
+    // and only near the head: an old chunk of the backfill never animates.
     const buys = all.filter((l) => l.eventName === "TicketsBought").slice(-8);
-    const wanted = new Set(all.filter((l) => l.eventName === "Survived" || l.eventName === "WentOut" || l.eventName === "MillEaten").concat(buys).map((l) => l.blockNumber));
+    const near = to + 5_000n >= head;
+    const wanted = new Set(near ? all.filter((l) => l.eventName === "Survived" || l.eventName === "WentOut" || l.eventName === "MillEaten").concat(buys).map((l) => l.blockNumber) : []);
     const blockTime = new Map<bigint, bigint>();
     await Promise.all([...wanted].map(async (n) => { blockTime.set(n, (await pub.getBlock({ blockNumber: n })).timestamp); }));
     const nowMs = Date.now();
@@ -180,16 +195,21 @@ export function makeChainApi(fireAddress: Address): FireApi {
     const feed: Buy[] = [...s.feed]; const past: PastFire[] = [...s.past]; let storm = s.storm;
     let mills = s.millsEaten;
     const before = prev && prev.fireId > 0 ? prev : undefined;
-    const snap = async (fireId: number, night: number, size: number, bn: bigint, pot: number, tickets: number | undefined): Promise<Snapshot> => {
+    const plankNum = (x: bigint) => Number(formatUnits(x, 18));
+    const snap = async (fireId: number, night: number, size: number, bn: bigint, pot: number, tickets: number | undefined, burnPlank: bigint): Promise<Snapshot> => {
+      const burns = { burnedPaperAllTime: plankNum(burnedPaper), burnedPlankAllTime: plankNum(burnPlank) }; // the totals before this storm
       if (before && before.fireId === fireId && before.night === night - 1) {
-        return { fireId, night: night - 1, potPlank: before.potPlank, fireSize: before.fireSize, ticketsTotal: before.ticketsTotal, ticketsToday: before.ticketsToday, youTickets: before.you.tickets, youPlank: before.you.plank };
+        return { fireId, night: night - 1, potPlank: before.potPlank, fireSize: before.fireSize, ticketsTotal: before.ticketsTotal, ticketsToday: before.ticketsToday, youTickets: before.you.tickets, youPlank: before.you.plank, potCarriedIn: before.potCarriedIn, ...burns };
       }
       const today = await atBlock("ticketsToday", bn);
+      const carried = await atBlock("potCarriedIn", bn);
       const mine = account ? await atBlock("ticketsOf", bn, [BigInt(fireId), account]) : 0n;
-      return { fireId, night: night - 1, potPlank: pot, fireSize: size, ticketsTotal: tickets ?? s.ticketsTotal, ticketsToday: today !== undefined ? Number(today) : 0, youTickets: Number(mine ?? 0n), youPlank: s.you.plank };
+      return { fireId, night: night - 1, potPlank: pot, fireSize: size, ticketsTotal: tickets ?? s.ticketsTotal, ticketsToday: today !== undefined ? Number(today) : 0, youTickets: Number(mine ?? 0n), youPlank: s.you.plank,
+        potCarriedIn: carried !== undefined ? plankNum(carried) : undefined, ...burns };
     };
     for (const l of all) {
       const a = l.args, ev = l.eventName;
+      if (l.token) { if (l.token === "plank") burnedPlank += a.value as bigint; else burnedPaper += a.value as bigint; continue; }
       const at = whenMs(l.blockNumber);
       const live = nowMs - at < CEREMONY.DONE; // only a storm still playing needs what the page showed before it
       if (ev === "TicketsBought") {
@@ -199,23 +219,25 @@ export function makeChainApi(fireAddress: Address): FireApi {
         feed.unshift({ id: ++feedId, who, tickets: n, fromFire, note: String(a.note ?? ""), title: titleFor(life, !paperBuyers.has(who.toLowerCase())), at });
       } else if (ev === "Survived") {
         const size = Number(a.fireSizeMilli) / 1000, strength = Number(a.stormMilli) / 1000, fid = Number(a.fireId), night = Number(a.night);
-        const tickets = await atBlock("ticketsTotal", l.blockNumber);
+        const tickets = live ? await atBlock("ticketsTotal", l.blockNumber) : undefined;
         storm = { at, fireId: fid, night, strength, size, survived: true, intensity: stormLook(strength), sizeAfter: fireLook(Math.max(0, (size - strength) * 0.85)),
-          before: live ? await snap(fid, night, size, l.blockNumber, s.potPlank, tickets !== undefined ? Number(tickets) : undefined) : undefined };
+          before: live ? await snap(fid, night, size, l.blockNumber, s.potPlank, tickets !== undefined ? Number(tickets) : undefined, burnedPlank) : undefined };
       } else if (ev === "WentOut") {
         const size = Number(a.fireSizeMilli) / 1000, strength = a.stormMilli === 2n ** 256n - 1n ? Infinity : Number(a.stormMilli) / 1000, winner = String(a.winner), fid = Number(a.fireId), night = Number(a.night);
         const inTx = all.filter((x) => x.transactionHash === l.transactionHash);
         const owed = inTx.find((x) => x.eventName === "PayoutOwed");
         const lit = inTx.find((x) => x.eventName === "Lit");
         const nobody = /^0x0{40}$/i.test(winner);
+        // this storm's burn landed just before WentOut: the snapshot shows the totals from before it
+        const txBurn = inTx.filter((x) => x.token === "plank").reduce((t, x) => t + (x.args.value as bigint), 0n);
         // the pot and ticket count the fire died with: read just before the storm, else work them back from the relight
         const potWei = await atBlock("pot", l.blockNumber);
-        const pot = potWei !== undefined ? Number(formatUnits(potWei, 18)) : lit ? Number(formatUnits(lit.args.carried as bigint, 18)) / (nobody ? 1 : 0.3) : 0;
+        const pot = potWei !== undefined ? plankNum(potWei) : lit ? plankNum(lit.args.carried as bigint) / (nobody ? 1 : 0.3) : 0;
         const tWei = await atBlock("ticketsTotal", l.blockNumber);
         const tickets = tWei !== undefined ? Number(tWei) : ticketsSeen.get(fid) ?? all.filter((x) => x.eventName === "TicketsBought" && Number(x.args.fireId) === fid).reduce((t, x) => t + Number(x.args.tickets), 0);
-        const prize = owed ? Number(formatUnits(owed.args.amount as bigint, 18)) : Number(formatUnits(a.paid as bigint, 18));
+        const prize = owed ? plankNum(owed.args.amount as bigint) : plankNum(a.paid as bigint);
         storm = { at, fireId: fid, night, strength, size, survived: false, intensity: stormLook(strength), winner, paidPlank: prize, prizeOwed: !!owed, potPlank: pot, tickets,
-          before: live ? await snap(fid, night, size, l.blockNumber, pot, tickets) : undefined };
+          before: live ? await snap(fid, night, size, l.blockNumber, pot, tickets, burnedPlank - txBurn) : undefined };
         past.unshift({ id: fid, nights: night, potPlank: pot, prizePlank: prize, winner, peakSize: size });
         if (account && winner.toLowerCase() === account.toLowerCase()) s = { ...s, you: { ...s.you, isWinner: true } };
       } else if (ev === "MillEaten") {
@@ -223,40 +245,69 @@ export function makeChainApi(fireAddress: Address): FireApi {
         feed.unshift({ id: ++feedId, who: zeroAddress, tickets: 0, fromFire: false, note: "", title: "", at, kind: "mill" });
       }
     }
-    s = { ...s, feed: feed.slice(0, 40), past: past.slice(0, 10), storm, millsEaten: mills };
+    s = { ...s, feed: feed.slice(0, 40), past: past.slice(0, 10), storm, millsEaten: mills, burnedPaperAllTime: plankNum(burnedPaper), burnedPlankAllTime: plankNum(burnedPlank) };
   }
 
+  /** Walks the Fire's logs from its deploy block to the head in chunks, in the background; each chunk shows as it lands. */
+  let scanning = false, scanAgain = false;
+  async function scan() {
+    if (!plankAddr || !paperAddr) return; // readAll hasn't found the tokens yet
+    if (scanning) { scanAgain = true; return; }
+    scanning = true;
+    try {
+      do {
+        scanAgain = false;
+        const head = await pub.getBlock();
+        if (lastBlock === undefined && FIRE_FROM === undefined) console.warn("VITE_FIRE_FROM_BLOCK is unset: history covers only the last 50,000 blocks");
+        let from = lastBlock !== undefined ? lastBlock + 1n : FIRE_FROM ?? (head.number > 50_000n ? head.number - 50_000n : 0n);
+        while (from <= head.number) {
+          const to = from + LOG_CHUNK - 1n < head.number ? from + LOG_CHUNK - 1n : head.number;
+          await readEvents(from, to, head);
+          lastBlock = to; from = to + 1n;
+          emit();
+        }
+        if (s.historyLoading) { s = { ...s, historyLoading: false }; emit(); }
+      } while (scanAgain);
+    } catch (e) { console.warn("refresh: history scan failed", e); }
+    finally { scanning = false; }
+  }
+
+  let profScanning = false;
   async function readProfiles() {
-    if (!PROFILES) return;
-    const head = await pub.getBlockNumber();
-    let from = lastProfileBlock ? lastProfileBlock + 1n : PROFILES_FROM;
-    // RPCs cap eth_getLogs ranges, so walk the history in chunks; each chunk is applied as it lands.
-    while (from <= head) {
-      const to = from + LOG_CHUNK - 1n < head ? from + LOG_CHUNK - 1n : head;
-      const logs = await pub.getContractEvents({ address: PROFILES, abi: profilesAbi as unknown as Abi, eventName: "ProfileSet", fromBlock: from, toBlock: to });
-      if (logs.length) {
-        const profiles = { ...s.profiles };
-        for (const l of logs) { const a = (l as unknown as { args: Record<string, unknown> }).args; profiles[String(a.who).toLowerCase()] = { name: String(a.name ?? ""), pfp: imageUrl(String(a.image ?? "0x")) }; }
-        s = { ...s, profiles };
+    if (!PROFILES || profScanning) return;
+    profScanning = true;
+    try {
+      const head = await pub.getBlockNumber();
+      let from = lastProfileBlock ? lastProfileBlock + 1n : PROFILES_FROM;
+      // RPCs cap eth_getLogs ranges, so walk the history in chunks; each chunk is shown as it lands.
+      while (from <= head) {
+        const to = from + LOG_CHUNK - 1n < head ? from + LOG_CHUNK - 1n : head;
+        const logs = await pub.getContractEvents({ address: PROFILES, abi: profilesAbi as unknown as Abi, eventName: "ProfileSet", fromBlock: from, toBlock: to });
+        if (logs.length) {
+          const profiles = { ...s.profiles };
+          for (const l of logs) { const a = (l as unknown as { args: Record<string, unknown> }).args; profiles[String(a.who).toLowerCase()] = { name: String(a.name ?? ""), pfp: imageUrl(String(a.image ?? "0x")) }; }
+          s = { ...s, profiles, you: s.you.address ? { ...s.you, profile: profiles[s.you.address.toLowerCase()] } : s.you };
+          emit();
+        }
+        lastProfileBlock = to; from = to + 1n;
       }
-      lastProfileBlock = to; from = to + 1n;
-    }
+    } catch (e) { console.warn("refresh: profile scan failed", e); }
+    finally { profScanning = false; }
   }
 
-  // Each step is independent: a failed log query must not hold back the live numbers.
-  // One refresh at a time (a slow first profile scan must not stack up polls). A call made mid-refresh — e.g.
-  // right after a buy lands — gets one more pass once the current one finishes, so it sees the new state.
+  // The live numbers go out as soon as readAll lands; the history scan and the profile names run in the background
+  // (the first visit's backfill can take a while) and show chunk by chunk. A failed log query never holds back the numbers.
+  // One refresh at a time. A call made mid-refresh — e.g. right after a buy lands — gets one more pass once the
+  // current one finishes, so it sees the new state.
   let running: Promise<void> | null = null, again = false;
   async function refresh(): Promise<void> {
     if (running) { again = true; return running; }
     running = (async () => {
       do {
         again = false;
-        prev = s;
-        for (const step of [readAll, readEvents, readProfiles]) {
-          try { await step(); } catch (e) { console.warn(`refresh: ${step.name} failed`, e); }
-        }
+        try { await readAll(); } catch (e) { console.warn("refresh: readAll failed", e); }
         emit();
+        void scan(); void readProfiles();
       } while (again);
     })().finally(() => { running = null; });
     return running;
@@ -274,7 +325,7 @@ export function makeChainApi(fireAddress: Address): FireApi {
     if (cur >= amount) return;
     check();
     const h = await wc.writeContract({ address: token, abi: erc20, functionName: "approve", args: [fireAddress, amount], account: acct, chain: robinhood });
-    await waitOk(pub, h, `approving ${what}`);
+    await waitOk(pub, h, `approving ${what}`, "approve"); // pending past 3 min: the buy itself was never sent
   }
   /** Simulate first (a revert shows its reason instead of costing gas), then send from the flow's account. */
   async function send(wc: WalletClient, acct: Address, check: () => void, fn: string, args: unknown[], what: string, value?: bigint) {
@@ -337,7 +388,9 @@ export function makeChainApi(fireAddress: Address): FireApi {
       const maxPaper = N * raw.paperPerTicket, maxPlank = N * raw.plankPerTicket;
       const [paperCost, plankCost, ethCost] = (await pub.readContract({ address: fireAddress, abi, functionName: "quote", args: [N] })) as [bigint, bigint, bigint];
       if (plankCost > maxPlank || (pay === "paper" && paperCost > maxPaper)) throw new Error(PRICE_MOVED);
-      if (pay === "eth" && ethCost > N * raw.ethPerTicket) throw new Error("The ETH price just changed. Check the new price and try again.");
+      // ETH: send 1% over the quote shown; the contract takes the live price and refunds the rest in the same tx.
+      const ethMax = (N * raw.ethPerTicket * BigInt(Math.round(ETH_HEADROOM * 10_000))) / 10_000n;
+      if (pay === "eth" && ethCost > ethMax) throw new Error("The ETH price just changed. Check the new price and try again.");
       await ensureAllowance(wc, acct, check, plankAddr!, maxPlank, "PLANK");
       if (pay === "usdg") {
         const cost = (await pub.readContract({ address: fireAddress, abi, functionName: "usdgCost", args: [N] })) as bigint;
@@ -345,9 +398,8 @@ export function makeChainApi(fireAddress: Address): FireApi {
         await send(wc, acct, check, "buyTicketsWithUsdg", [N, maxPlank, note], "the buy");
       } else if (pay === "eth") {
         if (raw.ethPerTicket === 0n) throw new Error("ETH is paused (price feed late). Pay with PAPER or USDG.");
-        // Send exactly the ETH the buyer was shown, so the wallet shows the same amount. The price was re-checked just
-        // above; if the feed ticks in the seconds before the tx lands, the buy reverts and nothing is spent but gas.
-        await send(wc, acct, check, "buyTicketsWithEth", [N, maxPlank, note], "the buy", N * raw.ethPerTicket);
+        // Up to 1% over the price shown (the review screen says so); anything above the live price comes straight back.
+        await send(wc, acct, check, "buyTicketsWithEth", [N, maxPlank, note], "the buy", ethMax);
       } else {
         await ensureAllowance(wc, acct, check, paperAddr!, maxPaper, "PAPER");
         await send(wc, acct, check, "buyTickets", [N, maxPaper, maxPlank, note], "the buy");

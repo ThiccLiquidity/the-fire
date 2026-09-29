@@ -18,13 +18,13 @@ export const fmtPlank = fmtBig;
 
 /** Small token amounts (ETH, PAPER): enough significant digits that it never reads "0.0000". */
 export function fmtAmt(v: number, maxDp = 4): string {
-  if (!isFinite(v) || v === 0) return "0";
+  if (!isFinite(v) || Math.abs(v) < 1e-18) return "0"; // below 1 wei: nothing a wallet can hold
   if (Math.abs(v) >= 1e6) return fmtBig(v);
   if (Math.abs(v) >= 1000) return v.toLocaleString(L, { maximumFractionDigits: 0 });
   if (Math.abs(v) >= 1) return v.toLocaleString(L, { maximumFractionDigits: 2 });
   // under 1: 3 significant digits, trailing zeros dropped
   const s = Number(v.toPrecision(3));
-  return s.toLocaleString(L, { maximumFractionDigits: Math.max(maxDp, 1 - Math.floor(Math.log10(Math.abs(s))) + 2) });
+  return s.toLocaleString(L, { maximumFractionDigits: Math.min(20, Math.max(maxDp, 1 - Math.floor(Math.log10(Math.abs(s))) + 2)) }); // Intl throws past 100
 }
 export const fmtEth = (v: number) => `${fmtAmt(v)} ETH`;
 

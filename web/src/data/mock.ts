@@ -11,6 +11,7 @@ import {
   type Profile,
   type Snapshot,
   DAILY_CAP,
+  ETH_HEADROOM,
   fireLook,
   PRIZE_CAP_MULT,
   SWAP_FEE_BPS,
@@ -133,11 +134,26 @@ export function makeMockApi(): FireApi {
       const raw = localStorage.getItem(STORE);
       if (!raw) return undefined;
       const x = JSON.parse(raw) as World;
-      if (!x?.s || !x.accounts || !x.trail) return undefined;
+      if (!sane(x)) return undefined; // corrupted or an older shape: start fresh rather than crash on every load
       // a demo saved before the storm moved to 21:00 UTC still holds the old time: move it to the next storm
       if (!x.s.rollPending && new Date(x.s.nextRollAt).getUTCHours() !== ROLL_UTC_HOUR) x.s.nextRollAt = nextRollTime();
       return x;
     } catch { return undefined; }
+  }
+  /** Does a saved demo have every field the page reads, with real numbers? */
+  function sane(x: World): boolean {
+    const num = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+    const obj = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v);
+    const s = x?.s;
+    if (!obj(x) || !obj(s) || !obj(x.accounts) || !obj(x.lifetime) || !obj(s.profiles) || !obj(s.you)) return false;
+    if (!Array.isArray(x.trail) || !x.trail.every(num) || !Array.isArray(x.paperBuyers) || typeof x.active !== "string") return false;
+    if (!Array.isArray(s.feed) || !s.feed.every((b) => obj(b) && num(b.id) && num(b.tickets) && typeof b.who === "string")) return false;
+    if (!Array.isArray(s.past) || !s.past.every((f) => obj(f) && num(f.id) && num(f.nights) && num(f.potPlank) && typeof f.winner === "string")) return false;
+    const nums: (keyof FireState)[] = ["fireId", "night", "potPlank", "potCarriedIn", "plankUsd", "paperUsd", "paperPerTicket", "ethUsd", "plankPerTicket", "ticketsToday", "ticketsTotal", "fireSize", "trailingAvg", "threat", "nextRollAt", "burnedPaperAllTime", "burnedPlankAllTime", "millsEaten", "millFundEth", "millFundUsdg", "millBidUsd"];
+    if (!nums.every((k) => num(s[k]) && (s[k] as number) >= 0) || !Number.isInteger(s.night) || !Number.isInteger(s.fireId)) return false;
+    const acctKeys: (keyof Acct)[] = ["paper", "plank", "eth", "usdg", "tickets", "fire", "bought", "day", "prize"];
+    return Object.values(x.accounts).every((a) => obj(a) && acctKeys.every((k) => num(a[k]) && (a[k] as number) >= 0))
+      && (s.storm === undefined || (obj(s.storm) && num(s.storm.at) && num(s.storm.night)));
   }
   let saveT: ReturnType<typeof setTimeout> | undefined;
   const flush = () => { clearTimeout(saveT); saveT = undefined; try { localStorage.setItem(STORE, JSON.stringify(w)); } catch { /* private mode / full: the demo still works, it just forgets */ } };
@@ -206,7 +222,7 @@ export function makeMockApi(): FireApi {
       // never charge more than the buyer was shown
       if (seen && (s.plankPerTicket > seen.plankPerTicket * (1 + 1e-9) || (pay === "paper" && s.paperPerTicket > seen.paperPerTicket * (1 + 1e-9)))) throw new Error(PRICE_MOVED);
       if (pay === "eth" && !(s.ethUsd > 0)) throw new Error("ETH is paused (price feed late). Pay with PAPER or USDG.");
-      if (pay === "eth" && seen && q.eth > (n / seen.ethUsd) * (1 + 1e-9)) throw new Error(PRICE_MOVED);
+      if (pay === "eth" && seen && q.eth > (n / seen.ethUsd) * ETH_HEADROOM) throw new Error(PRICE_MOVED); // like the live buy: up to 1% over, the rest refunded
       if (pay === "usdg" && !s.usdgEnabled) throw new Error("USDG isn't on.");
       if (boughtToday(mine) + got > DAILY_CAP) throw new Error(`That's over your ${DAILY_CAP} a day.`);
       if (mine.plank < q.plank - 1e-6) throw new Error("Not enough PLANK.");
@@ -249,7 +265,8 @@ export function makeMockApi(): FireApi {
   function storm(outcome: "random" | "survive" | "out" | "you-win" = "random", draw?: number, quiet = false) {
     const s = w.s;
     if (s.abandoned) return;
-    const before: Snapshot = { fireId: s.fireId, night: s.night, potPlank: s.potPlank, fireSize: s.fireSize, ticketsTotal: s.ticketsTotal, ticketsToday: s.ticketsToday, youTickets: s.you.tickets, youPlank: s.you.plank };
+    const before: Snapshot = { fireId: s.fireId, night: s.night, potPlank: s.potPlank, fireSize: s.fireSize, ticketsTotal: s.ticketsTotal, ticketsToday: s.ticketsToday, youTickets: s.you.tickets, youPlank: s.you.plank,
+      potCarriedIn: s.potCarriedIn, burnedPaperAllTime: s.burnedPaperAllTime, burnedPlankAllTime: s.burnedPlankAllTime };
     const night = s.night + 1;
     const size = s.fireSize;
     // Fire.sol: one rung of the storm ladder, drawn with this night's odds; night 1 none, night 24+ infinite
@@ -336,7 +353,8 @@ export function makeMockApi(): FireApi {
     const outUsd = to === "USDG" ? y : (DEPTH[to] * y) / (DEPTH[to] + y);
     const out = outUsd / pb;
     const spot = (amountIn * (1 - SWAP_FEE_BPS / 10_000) * pa) / pb * 0.997 * (from === "USDG" || to === "USDG" ? 1 : 0.997);
-    return { out, impact: Math.max(0, 1 - out / spot) };
+    const impact = Math.max(0, 1 - out / spot);
+    return Number.isFinite(out) && Number.isFinite(impact) && out > 0 ? { out, impact } : undefined; // absurd amounts: no quote
   }
   const bal = (a: Acct, t: DemoToken) => (t === "ETH" ? a.eth : t === "PLANK" ? a.plank : t === "PAPER" ? a.paper : a.usdg);
   const addBal = (a: Acct, t: DemoToken, v: number) => { if (t === "ETH") a.eth += v; else if (t === "PLANK") a.plank += v; else if (t === "PAPER") a.paper += v; else a.usdg += v; };

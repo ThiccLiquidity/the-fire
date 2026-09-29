@@ -49,23 +49,24 @@ export async function connectWallet(): Promise<{ wc: WalletClient; account: `0x$
   return { wc, account };
 }
 
-/** A transaction that hasn't landed after 3 minutes. `later` settles when it finally does (true = success). */
+/** A transaction that hasn't landed after 3 minutes. `later` settles when it finally does (true = success).
+ *  kind "approve": only the allowance was pending, so the buy or swap itself was never sent. */
 export class TxPending extends Error {
-  hash: Hex; later: Promise<boolean>;
-  constructor(hash: Hex, what: string, later: Promise<boolean>) {
+  hash: Hex; later: Promise<boolean>; kind: "approve" | "tx";
+  constructor(hash: Hex, what: string, later: Promise<boolean>, kind: "approve" | "tx" = "tx") {
     super(`Still pending: ${what}. It may still land — check it on the explorer.`);
-    this.hash = hash; this.later = later;
+    this.hash = hash; this.later = later; this.kind = kind;
   }
 }
 
 /** Wait for a receipt and insist it succeeded. Throws TxPending after 180s, and a plain error if it reverted. */
-export async function waitOk(pub: PublicClient, hash: Hex, what: string): Promise<void> {
+export async function waitOk(pub: PublicClient, hash: Hex, what: string, kind: "approve" | "tx" = "tx"): Promise<void> {
   let status: "success" | "reverted";
   try { status = (await pub.waitForTransactionReceipt({ hash, timeout: 180_000 })).status; }
   catch (e) {
     if (e instanceof WaitForTransactionReceiptTimeoutError || (e as Error)?.name === "WaitForTransactionReceiptTimeoutError") {
       const later = pub.waitForTransactionReceipt({ hash, timeout: 3_600_000 }).then((r) => r.status === "success", () => false);
-      throw new TxPending(hash, what, later);
+      throw new TxPending(hash, what, later, kind);
     }
     throw e;
   }
