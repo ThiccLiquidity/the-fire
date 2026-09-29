@@ -584,9 +584,12 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   const cam = { x: FIRE.x, drag: null as null | { x0: number; cam0: number; id: number }, lastDrag: -99, placed: false };
   const zx = (px: number) => FIRE.x + (px - FIRE.x) * ZOOM; // painting x after the scene's 1.1x zoom on the ground
   function camRange(scale: number) { const half = cw / 2 / scale; return [half, W - half]; } // limits for the view centre
-  function homeX() { return cw / ch < 1.2 ? 0.42 * W : FIRE.x; }
+  // Only an upright phone moves: it frames Plank and the fire, can be dragged, and nudges over to a visiting animal.
+  // Anything wider (desktop, tablet, a phone on its side) holds perfectly still, centred on the fire.
+  const upright = () => cw / ch < 1.2;
+  function homeX() { return upright() ? 0.42 * W : FIRE.x; }
   function onDown(e: PointerEvent) {
-    const scale = ch / H; if (W * scale <= cw + 2) return;
+    const scale = ch / H; if (!upright() || W * scale <= cw + 2) return;
     cam.drag = { x0: e.clientX, cam0: cam.x, id: e.pointerId }; canvas.setPointerCapture(e.pointerId);
   }
   function onMove(e: PointerEvent) {
@@ -601,8 +604,8 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   function blit(t: number, dt: number) {
     const scale = Math.max(cw / W, ch / H); // cover
     const [a, b] = camRange(scale);
-    if (!cam.placed) { cam.x = homeX(); cam.placed = true; } // start framed, don't slide in
-    if (!cam.drag && a < b) {
+    if (!cam.placed || !upright()) { cam.x = homeX(); cam.placed = true; cam.drag = null; } // start framed; a wide screen never moves
+    else if (!cam.drag && a < b) {
       // an animal out of frame: move just enough to bring it in (with a margin), not all the way to it
       const f = actorFocus(), idle = t - cam.lastDrag > 3, half = cw / 2 / scale, m = Math.min(260, half * 0.6);
       const home = homeX(), fx = f === null ? 0 : zx(f);
