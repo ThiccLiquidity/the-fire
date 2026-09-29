@@ -347,8 +347,10 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     x.save(); x.fillStyle = "#1b1712"; x.fillRect(sx - 3, sy - 3, w + 6, h + 6); x.fillStyle = "#1f5a45"; x.fillRect(sx, sy, w, h);
     x.strokeStyle = "#d8ae4a"; x.lineWidth = 1.6; x.strokeRect(sx + 3, sy + 3, w - 6, h - 6);
     x.fillStyle = "#2a2014"; for (const nx of [sx + 7, sx + w - 7]) { x.beginPath(); x.arc(nx, sy + h / 2, 1.6, 0, 7); x.fill(); }
-    x.font = "700 11.5px Georgia, 'Times New Roman', serif"; x.textAlign = "center"; x.textBaseline = "middle";
-    if ("letterSpacing" in x) (x as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = "0.6px";
+    x.textAlign = "center"; x.textBaseline = "middle";
+    if ("letterSpacing" in x) (x as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = "0.4px";
+    // the widest size that fits between the two nails (fonts differ by device, so measure rather than guess)
+    for (let px = 11.5; px >= 7; px -= 0.5) { x.font = `700 ${px}px Georgia, 'Times New Roman', serif`; if (x.measureText("PLANK & PAPER").width <= w - 24) break; }
     x.fillStyle = "#0e2a20"; x.fillText("PLANK & PAPER", sx + w / 2 + 0.8, sy + h / 2 + 1.6); x.fillStyle = "#f2c85e"; x.fillText("PLANK & PAPER", sx + w / 2, sy + h / 2 + 0.8);
     x.restore();
   }
