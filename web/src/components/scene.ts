@@ -775,7 +775,8 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       const pa = 0.6 * Math.min(1, fs * 1.3) * dark * flick;
       if (pa > 0.02) {
         const X0 = 500, Y0 = 500, PW = 420, PH = 250;
-        pc ??= mk(Math.round(PW * R), Math.round(PH * R)); const x = pc.getContext("2d")!;
+        if (!pc || pc.width !== Math.round(PW * R)) { pc = mk(Math.round(PW * R), Math.round(PH * R)); pm = null; } // rebuilt if the scene drops to 1x
+        const x = pc.getContext("2d")!;
         x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = "source-over"; x.clearRect(0, 0, pc.width, pc.height);
         x.setTransform(R, 0, 0, R, -X0 * R, -Y0 * R); drawPlank(x, t);
         pm ??= mk(pc.width, pc.height); const mx = pm.getContext("2d")!; mx.clearRect(0, 0, pm.width, pm.height); mx.drawImage(pc, 0, 0); // his shape, to trim the light to
