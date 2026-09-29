@@ -19,7 +19,6 @@ export function HowItWorks({ onClose }: { onClose: () => void }) {
             <ul className="how-sub">
               <li><b>How big?</b> Every storm is one of 20 fixed sizes, from 5 logs up to 25,000. Storms never get stronger. What changes is the odds: early on it's almost always a small storm, and every day the odds tilt a little toward the big ones. Nothing on day 1; day 24 always puts the fire out.</li>
               <li><b>Big fires last.</b> The storm is a real number of logs, so size is what counts. A 50-log fire can't ride out a 180-log storm; a 5,000-log fire barely notices it. A fire that people keep feeding can go deep. One nobody feeds goes out in a day or two.</li>
-              <li><b>Example:</b> on day 2 most storms are 5 to 30 logs. By day 12 most are 180 to 1,000. By day 20 most are over 1,700. At about 100 logs a day a fire usually lasts around 9 days; at 1,000 a day, around 17.</li>
             </ul></li>
           <li><b>When the fire goes out, one log wins.</b> Every log in that fire has the same chance. The winner gets 40% of the pot. 25% is destroyed, 5% goes to the Paper Press royalty pool, and 30% lights the next fire. If nobody threw a log, nothing burns and the whole pot lights the next fire. Then it starts again.
             <ul className="how-sub">
