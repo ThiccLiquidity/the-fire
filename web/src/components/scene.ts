@@ -33,10 +33,10 @@ export interface SceneView { fireX: number; fireTop: number; width: number; heig
 
 // The art is painted at twice the size it is drawn (AR), so it stays sharp on big and high-density screens.
 const AR = 2, aw = (i: { width: number }) => i.width / AR, ah = (i: { height: number }) => i.height / AR;
-const W = 1942, H = 809, ZOOM = 1.1, FIRE = { x: 958, y: 605 }, PIT = { x: 958, y: 634 }, LOGS_AT = { x: 825, y: 584 };
+const W = 1942, H = 809, ZOOM = 1.1, FIRE = { x: 958, y: 605 }, PIT = { x: 958, y: 634 }, LOGS_AT = { x: 819, y: 584 };
 const BASE = import.meta.env.BASE_URL;
 const THUNDER = ["clap1", "sr1", "sr2", "sr3", "sr4", "dry1", "dry2", "dry3", "dry4"];
-const IMAGES = ["a-land.webp", "a-water.webp", "a-logs.webp", "a-tufts.webp", "a-canopy.webp", ...PAINT.clouds.map((c) => c.f),
+const IMAGES = ["a-land.webp", "a-water.webp", "a-logs.webp", "a-logs-lit.webp", "a-tufts.webp", "a-canopy.webp", ...PAINT.clouds.map((c) => c.f),
   ...["bend", "backA", "backB", "frontC", "frontD"].map((n) => `deer-${n}.webp`),
   ...["body", "ears", "backNear", "backFar", "frontNear", "frontFar"].map((n) => `rabbit-${n}.webp`),
   ...["body", "tail", "backNear", "backFar", "frontNear", "frontFar"].map((n) => `squirrel-${n}.webp`),
@@ -268,7 +268,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     }
   }
   // the logs glow warm where they meet the fire: an orange tint, masked to the logs, strongest at the pit's middle
-  let tl: HTMLCanvasElement | null = null, hcv: HTMLCanvasElement | null = null, lc: HTMLCanvasElement | null = null;
+  let tl: HTMLCanvasElement | null = null, hcv: HTMLCanvasElement | null = null, lc: HTMLCanvasElement | null = null, lb: HTMLCanvasElement | null = null;
   function tintedLogs(img: HTMLImageElement) {
     if (tl) return tl; tl = mk(img.width, img.height); const x = tl.getContext("2d")!;
     x.drawImage(img, 0, 0); x.globalCompositeOperation = "source-atop"; x.fillStyle = "rgb(236,96,28)"; x.fillRect(0, 0, img.width, img.height); return tl;
@@ -280,10 +280,15 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       if (dk < 0.6) { ctx.save(); ctx.globalAlpha = 0.28 * (1 - dk / 0.6); ctx.drawImage(glc, 558, -226); ctx.restore(); }
     }
     heat += ((fs > 0.01 ? 0.35 + 0.65 * Math.min(1, fs) : 0) - heat) * Math.min(1, dt * (fs > 0.01 ? 2 : 0.12)); // logs keep glowing a while after it dies
-    const img = assets["a-logs.webp"];
-    if (img) { // built on their own small canvas so the glow and the fading tip stay on the logs
-      lc ??= mk(img.width, img.height); const L = lc.getContext("2d")!;
-      L.globalCompositeOperation = "source-over"; L.globalAlpha = 1; L.clearRect(0, 0, lc.width, lc.height); L.drawImage(img, 0, 0);
+    const img = assets["a-logs.webp"], litImg = assets["a-logs-lit.webp"];
+    if (img) { // built on their own canvas so the glow stays on the logs. While the fire burns, the ends that sit in the
+      // flames melt into them (a-logs-lit); once it's out they're whole logs again.
+      lc ??= mk(img.width, img.height); lb ??= mk(img.width, img.height);
+      const B = lb.getContext("2d")!, L = lc.getContext("2d")!, lit = litImg ? Math.min(1, fs * 1.6) : 0;
+      B.globalAlpha = 1; B.globalCompositeOperation = "source-over"; B.clearRect(0, 0, lb.width, lb.height);
+      if (lit > 0) B.drawImage(litImg, 0, 0);
+      if (lit < 1) { B.globalAlpha = 1 - lit; B.drawImage(img, 0, 0); B.globalAlpha = 1; }
+      L.globalAlpha = 1; L.globalCompositeOperation = "source-over"; L.clearRect(0, 0, lc.width, lc.height); L.drawImage(lb, 0, 0);
       if (heat > 0.02) {
         hcv ??= mk(img.width, img.height); const x = hcv.getContext("2d")!;
         x.globalCompositeOperation = "source-over"; x.clearRect(0, 0, hcv.width, hcv.height); x.drawImage(tintedLogs(img), 0, 0);
@@ -292,13 +297,8 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
         x.globalCompositeOperation = "destination-in"; x.fillStyle = g; x.fillRect(0, 0, hcv.width, hcv.height);
         L.globalAlpha = Math.min(1, heat * (0.8 + 0.2 * vnoise(t * 1.3 + 5))); L.drawImage(hcv, 0, 0);
         L.globalCompositeOperation = "lighter"; L.globalAlpha = 0.25 * heat * flick; L.drawImage(hcv, 0, 0);
-        L.globalCompositeOperation = "source-over"; L.globalAlpha = 1;
-      }
-      const lit = Math.min(1, fs * 1.6);
-      if (lit > 0.01) { // the broken end of the right-hand log sits in the flames: it burns into their colour (plain wood again when the fire is out)
-        L.save(); L.scale(AR, AR); L.beginPath(); L.moveTo(194, 4); L.lineTo(242, 4); L.lineTo(242, 38); L.lineTo(214, 54); L.lineTo(194, 52); L.closePath(); L.clip();
-        const f = L.createLinearGradient(203, 25, 230, 41); f.addColorStop(0, `rgba(255,236,190,${lit})`); f.addColorStop(0.45, `rgba(255,170,70,${0.75 * lit})`); f.addColorStop(1, "rgba(255,120,40,0)");
-        L.globalCompositeOperation = "source-atop"; L.fillStyle = f; L.fillRect(190, 0, 60, 60); L.restore();
+        L.globalCompositeOperation = "destination-in"; L.globalAlpha = 1; L.drawImage(lb, 0, 0); // the glow never shows where a log has melted away
+        L.globalCompositeOperation = "source-over";
       }
       ctx.drawImage(lc, LOGS_AT.x, LOGS_AT.y, aw(img), ah(img));
     }
