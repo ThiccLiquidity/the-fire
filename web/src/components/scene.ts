@@ -33,7 +33,7 @@ export interface SceneView { fireX: number; fireTop: number; width: number; heig
 
 // The art is painted at twice the size it is drawn (AR), so it stays sharp on big and high-density screens.
 const AR = 2, aw = (i: { width: number }) => i.width / AR, ah = (i: { height: number }) => i.height / AR;
-const W = 1942, H = 809, ZOOM = 1.1, FIRE = { x: 958, y: 605 }, PIT = { x: 958, y: 634 }, LOGS_AT = { x: 807, y: 584 };
+const W = 1942, H = 809, ZOOM = 1.1, FIRE = { x: 958, y: 605 }, PIT = { x: 958, y: 634 }, LOGS_AT = { x: 817, y: 584 };
 const BASE = import.meta.env.BASE_URL;
 const THUNDER = ["clap1", "sr1", "sr2", "sr3", "sr4", "dry1", "dry2", "dry3", "dry4"];
 const IMAGES = ["a-land.webp", "a-water.webp", "a-logs.webp", "a-logs-lit.webp", "a-tufts.webp", "a-canopy.webp", ...PAINT.clouds.map((c) => c.f),
@@ -251,11 +251,11 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   const sparks: { x: number; y: number; vx: number; vy: number; life: number; max: number }[] = [];
   const smoke: { x: number; y: number; r: number; life: number; max: number }[] = [];
   const flying: { t0: number; x0: number; big: boolean }[] = [];
-  const white: { x: number; y: number; r: number; life: number; max: number; ph: number }[] = [];
+  const white: { x: number; y: number; r: number; life: number; max: number; ph: number; g: number; back: boolean }[] = [];
   const puffs: Record<string, HTMLCanvasElement> = {};
   function puff(rgb: string) { // one soft round puff, drawn once and reused
     if (puffs[rgb]) return puffs[rgb]; const c = mk(128, 128), x = c.getContext("2d")!, g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
-    g.addColorStop(0, `rgba(${rgb},1)`); g.addColorStop(0.55, `rgba(${rgb},0.85)`); g.addColorStop(1, `rgba(${rgb},0)`); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return (puffs[rgb] = c);
+    g.addColorStop(0, `rgba(${rgb},1)`); g.addColorStop(0.4, `rgba(${rgb},0.8)`); g.addColorStop(0.75, `rgba(${rgb},0.3)`); g.addColorStop(1, `rgba(${rgb},0)`); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return (puffs[rgb] = c);
   }
   let outK = 0, wacc = 0;
   let sacc = 0, smacc = 0, heat = 0, lastT = 0, firePhase = 0, seenBuy = -1;
@@ -280,12 +280,35 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     if (tl) return tl; tl = mk(img.width, img.height); const x = tl.getContext("2d")!;
     x.drawImage(img, 0, 0); x.globalCompositeOperation = "source-atop"; x.fillStyle = "rgb(236,96,28)"; x.fillRect(0, 0, img.width, img.height); return tl;
   }
+  // Smoke off the pit that grows as the fire dies down: it covers the pit behind the logs where the flames no longer
+  // reach, dark grey while the fire still burns and nearly white once it's out, and climbs high into the sky. While the
+  // fire burns it rises from behind the logs; a dead fire's smoke pours over them.
+  function drawSmoke(back: boolean, dt: number, fs: number, dk: number) {
+    if (back) {
+      outK += ((fs <= 0.02 ? 1 : 0) - outK) * Math.min(1, dt * (fs <= 0.02 ? 2.5 : 0.8));
+      const cover = Math.max(outK, Math.min(1, Math.max(0, (0.7 - fs) / 0.6)));
+      wacc += dt * 13 * cover;
+      const g = Math.round((90 + 150 * Math.min(1, Math.max(0, 1 - fs / 0.45))) * (1 - 0.12 * dk) / 10) * 10;
+      while (wacc > 1) { wacc--; white.push({ x: PIT.x - 118 + Math.random() * 236, y: PIT.y - 12 - Math.random() * 40, r: 38 + Math.random() * 26, life: 0, max: 17 + Math.random() * 6, ph: Math.random() * 6, g: Math.max(60, Math.min(250, g + Math.round((Math.random() - 0.5) * 3) * 10)), back: fs > 0.02 }); }
+      for (let i = white.length - 1; i >= 0; i--) {
+        const m = white[i]; m.life += dt; if (m.life > m.max) { white.splice(i, 1); continue; }
+        const u = m.life / m.max; m.y -= (18 + 50 * Math.min(1, u * 4)) * dt; // it hangs thick over the pit, then climbs
+        m.x += (6 + 22 * u + Math.sin(m.life * 0.9 + m.ph) * 16) * dt; m.r += (9 + 10 * u) * dt;
+      }
+    }
+    for (const m of white) {
+      if (m.back !== back) continue; const u = m.life / m.max;
+      ctx.globalAlpha = 0.62 * Math.min(1, m.life * 2) * (1 - u) ** 1.2; ctx.drawImage(puff(`${m.g},${m.g},${Math.min(255, m.g + 4)}`), m.x - m.r, m.y - m.r, m.r * 2, m.r * 2);
+    }
+    ctx.globalAlpha = 1;
+  }
   function drawFire(t: number, dt: number, fs: number, flick: number, dk: number) {
     if (fs > 0.01 && glDraw) {
       glDraw(firePhase, flick, fs);
       ctx.save(); ctx.globalCompositeOperation = "screen"; ctx.drawImage(glc, 558, -226); ctx.restore();
       if (dk < 0.6) { ctx.save(); ctx.globalAlpha = 0.28 * (1 - dk / 0.6); ctx.drawImage(glc, 558, -226); ctx.restore(); }
     }
+    drawSmoke(true, dt, fs, dk);
     heat += ((fs > 0.01 ? 0.35 + 0.65 * Math.min(1, fs) : 0) - heat) * Math.min(1, dt * (fs > 0.01 ? 2 : 0.12)); // logs keep glowing a while after it dies
     const img = assets["a-logs.webp"], litImg = assets["a-logs-lit.webp"];
     if (img) { // built on their own canvas so the glow stays on the logs; the ends that sit in the flames melt into them (a-logs-lit)
@@ -318,19 +341,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       const c = mix([78, 76, 82], [170, 95, 55], Math.max(0, 1 - u * 3) * dk * Math.min(1, fs * 1.5));
       ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${0.12 * Math.min(1, m.life * 0.7) * (1 - u)})`; ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, 7); ctx.fill();
     }
-    // a dead fire: thick white smoke pours off the pit (covering it, like the flames do) and climbs high into the sky
-    outK += ((fs <= 0.02 ? 1 : 0) - outK) * Math.min(1, dt * (fs <= 0.02 ? 2.5 : 0.8));
-    wacc += dt * 17 * outK;
-    while (wacc > 1) { wacc--; white.push({ x: PIT.x - 118 + Math.random() * 236, y: PIT.y - 12 - Math.random() * 40, r: 38 + Math.random() * 26, life: 0, max: 17 + Math.random() * 6, ph: Math.random() * 6 }); }
-    if (white.length) {
-      const sp = puff(dk > 0.5 ? "205,210,220" : "240,240,238");
-      for (let i = white.length - 1; i >= 0; i--) {
-        const m = white[i]; m.life += dt; if (m.life > m.max) { white.splice(i, 1); continue; }
-        const u = m.life / m.max; m.y -= (18 + 50 * Math.min(1, u * 4)) * dt; // it hangs thick over the pit, then climbs m.x += (6 + 22 * u + Math.sin(m.life * 0.9 + m.ph) * 8) * dt; m.r += (9 + 10 * u) * dt;
-        ctx.globalAlpha = 0.72 * Math.min(1, m.life * 2) * (1 - u) ** 1.2; ctx.drawImage(sp, m.x - m.r, m.y - m.r, m.r * 2, m.r * 2);
-      }
-      ctx.globalAlpha = 1;
-    }
+    drawSmoke(false, dt, fs, dk);
     if (fs > 0.01) sacc += dt * (2 + 8 * fs + 10 * fs * fs * fs);
     while (sacc > 1) { sacc--; sparks.push({ x: PIT.x + (Math.random() - 0.5) * (60 + 120 * fs), y: PIT.y - 40 - Math.random() * 80, vx: (Math.random() - 0.5) * 50, vy: -(90 + 150 * Math.min(1, fs)) * (0.5 + Math.random()), life: 0, max: 1 + Math.random() * 1.6 }); }
     ctx.save(); ctx.globalCompositeOperation = "lighter";
