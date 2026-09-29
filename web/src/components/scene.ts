@@ -328,6 +328,20 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     ctx.drawImage(land, wh.x, wh.y, wh.w, wh.h, wh.x, wh.y + off - wh.h, wh.w, wh.h);
     ctx.restore();
   }
+  // a tiny splash where the wheel dips in: a thin churn of foam, a few droplets, one ripple drifting off
+  function drawMillSplash(t: number, dark: number) {
+    const a = 1 - dark * 0.45, y0 = 515;
+    ctx.save();
+    ctx.fillStyle = `rgba(235,250,255,${0.85 * a})`;
+    for (let i = 0; i < 7; i++) { const x = 1600 + i * 6.3, r = 2.6 + 1.1 * Math.sin(t * 5.2 + i * 1.9);
+      ctx.beginPath(); ctx.ellipse(x, y0 + 1.5 + 0.8 * Math.sin(t * 3.7 + i), r + 1.2, r * 0.55, 0, 0, Math.PI * 2); ctx.fill(); }
+    for (let i = 0; i < 4; i++) { const ph = (t * 0.9 + i * 0.37) % 1, x = 1606 + i * 9 + ph * (i % 2 ? 7 : -5), y = y0 - Math.sin(ph * Math.PI) * (6 + i % 2 * 3);
+      ctx.fillStyle = `rgba(235,250,255,${(1 - ph) * 0.9 * a})`; ctx.beginPath(); ctx.arc(x, y, 1.6, 0, Math.PI * 2); ctx.fill(); }
+    const rp = (t * 0.45) % 1;
+    ctx.strokeStyle = `rgba(235,250,255,${(1 - rp) * 0.55 * a})`; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.ellipse(1622 + rp * 14, y0 + 5 + rp * 5, 10 + rp * 16, 2.2 + rp * 2, 0, 0.15, Math.PI - 0.15); ctx.stroke();
+    ctx.restore();
+  }
   function drawSun(px: number, py: number) {
     ctx.save(); ctx.translate(px, py); ctx.lineWidth = 4; ctx.strokeStyle = "#1b1712"; ctx.lineJoin = "round";
     ctx.beginPath(); for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; ctx.lineTo(Math.cos(a) * 78, Math.sin(a) * 78); ctx.lineTo(Math.cos(a + 0.26) * 58, Math.sin(a + 0.26) * 58); }
@@ -400,7 +414,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     part("frontC", -sw - tilt * 0.8); part("frontD", sw - tilt * 0.8);
     // body + neck are one pre-bent drawing (12 poses, head up -> nose in the grass), so the shoulder never splits
     const nibble = g > 0.85 ? Math.max(0, Math.sin(t * 2.3)) * 1.4 : 0, sheet = assets["deer-bend.png"];
-    const fi = Math.max(0, Math.min(11, Math.round(e * 11 - nibble)));
+    const fi = Math.max(0, Math.min(10, Math.round(e * 10 - nibble))); // pose 11 of the sheet clips the nose, so the graze stops at 10
     if (sheet) { const fw = sheet.width / 12; x.drawImage(sheet, fi * fw, 0, fw, sheet.height, ox, oy + bob, fw * k, sheet.height * k); }
     x.restore(); x.restore();
     if (ringFront && deer.x > 640 && deer.x < 1280) x.drawImage(ringFront, 700, 560);
@@ -518,7 +532,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
   const rab = { active: false, x: 1760, dir: -1, mode: "hop", hop: 0, burst: 3, until: 0, stopAt: 1300, flee: false, look: 0, ear: 0, visits: 0 };
   function sendRabbit() { if (rab.active) return; Object.assign(rab, { active: true, x: 1730, dir: -1, mode: "hop", hop: 0, burst: 3, until: 0, flee: false, look: 0, stopAt: 1300 + Math.random() * 180, visits: 1 + Math.floor(Math.random() * 2) }); }
   function startle() { for (const pk of Object.values(peekers)) if (pk.active && !pk.duck) pk.duck = 1;
-    if (rab.active && !rab.flee && rab.dir < 0) { rab.flee = true; rab.dir = 1; rab.mode = "hop"; rab.hop = 0; } }
+    if (rab.active && !rab.flee && rab.dir < 0) { rab.flee = true; rab.dir = 1; rab.mode = "hop"; rab.hop = 0; rab.look = 0; } }
   function drawRabbit(x: CanvasRenderingContext2D, t: number, dt: number) {
     if (!rab.active) return;
     const k = 0.42, groundY = 776, hopLen = rab.flee ? 66 : 40, hopT = rab.flee ? 0.3 : 0.38;
@@ -535,7 +549,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       if (Math.random() < dt * 0.5) rab.ear = t;
       if (!rab.look && Math.random() < dt * 0.25) rab.look = t;
       if (rab.look && t - rab.look > 0.9) rab.look = 0;
-      if (t > rab.until) { rab.visits--;
+      if (t > rab.until) { rab.visits--; rab.look = 0;
         if (rab.visits > 0) { rab.stopAt = Math.max(1280, rab.x - 50 - Math.random() * 70); rab.mode = "hop"; rab.burst = 2; }
         else { rab.dir = 1; rab.mode = "hop"; rab.burst = 9; } }
     }
@@ -545,7 +559,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
     const legB = inAir ? kf(p, [[0, 0], [0.3, 0.95], [0.62, 0.55], [0.88, -0.4], [1, 0]]) : 0;
     const legF = inAir ? kf(p, [[0, 0], [0.25, 0.25], [0.6, -0.55], [0.8, 0.05], [1, 0]]) : 0;
     const sx = inAir ? 1 + 0.08 * Math.sin(Math.PI * q) : 1, sy = inAir ? kf(p, [[0, 0.95], [0.12, 1.02], [0.8, 1], [0.9, 0.94], [1, 1]]) : 1;
-    const face = rab.look ? -rab.dir : rab.dir;
+    const face = rab.look && rab.mode === "alert" ? -rab.dir : rab.dir;
     const sniff = rab.mode === "alert" || rab.mode === "pause" ? Math.max(0, Math.sin(t * 14)) * 0.5 : 0;
     const flick = rab.ear && t - rab.ear < 0.35 ? Math.sin((t - rab.ear) / 0.35 * Math.PI) * 0.22 : 0;
     const earAng = flick + (inAir ? -0.2 * Math.sin(Math.PI * q) + kf(p, [[0, 0], [0.85, 0], [0.93, 0.12], [1, 0]]) : 0);
@@ -730,6 +744,7 @@ export function createScene(canvas: HTMLCanvasElement, onView?: (v: SceneView) =
       ctx.drawImage(water, 0, 0);
     }
     drawWheel(frame);
+    drawMillSplash(t, dark);
     drawFire(t, dt, fs, flick, dark);
     drawFlyingLogs(t);
     drawScraps(t);
