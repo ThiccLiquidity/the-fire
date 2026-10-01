@@ -1,0 +1,140 @@
+import type { Accumulators, DealResult } from './deal'
+import type { Material } from './rules'
+
+export type Variant = 'normal' | 'holo'
+export const VARIANTS: Variant[] = ['normal', 'holo']
+
+/** One uploaded character image. The original is always kept; when keyMagenta is on, the keyed PNG is used. */
+export interface ImageSlot {
+  originalKey: string
+  processedKey?: string
+  keyMagenta: boolean
+  /** RGB distance from #FF00FF below which a pixel is fully transparent (0-200). */
+  tolerance: number
+  /** Width of the soft edge above the tolerance, in the same RGB distance units (1-200). */
+  feather: number
+  /** 0-1: how strongly magenta fringe is pulled out of edge pixels. */
+  despill: number
+  width: number
+  height: number
+  fileName: string
+  updatedAt: number
+}
+
+export interface Character {
+  id: string
+  name: string
+  shortId: string
+  images: Partial<Record<Material, Partial<Record<Variant, ImageSlot>>>>
+  createdAt: number
+  updatedAt: number
+  /** Created by "Load sample assets". */
+  placeholder?: boolean
+}
+
+export interface FrameAsset {
+  key: string
+  width: number
+  height: number
+  fileName: string
+  updatedAt: number
+  placeholder?: boolean
+}
+export type FrameSet = Partial<Record<Variant, FrameAsset>>
+
+export interface Rect { x: number; y: number; w: number; h: number }
+
+export type Align = 'left' | 'center' | 'right'
+export interface TextStyle {
+  /** CSS font-family list, e.g. `Georgia, serif` or `"CS-font-abc"` for an uploaded font. */
+  font: string
+  bold: boolean
+  italic: boolean
+  /** Maximum size in px; text auto-shrinks to fit the box width (and height) down to minSize. */
+  size: number
+  minSize: number
+  color: string
+  outlineColor: string
+  outlineWidth: number
+  align: Align
+  uppercase: boolean
+}
+
+export type TextField = 'name' | 'material' | 'edition' | 'serial'
+export const TEXT_FIELDS: TextField[] = ['name', 'material', 'edition', 'serial']
+export const TEXT_FIELD_LABEL: Record<TextField, string> = { name: 'Name', material: 'Material label', edition: 'Edition line', serial: 'Serial' }
+
+export interface TextBox { box: Rect; style: TextStyle; visible: boolean }
+export interface PsaBox extends TextBox { fill: string; border: string; borderWidth: number; radius: number }
+
+export type Layering = 'art-behind' | 'art-above'
+export interface ArtWindow {
+  box: Rect
+  fit: 'cover' | 'contain'
+  /** Extra zoom on top of the fit (1 = exact fit). */
+  scale: number
+  /** Nudge in card px. */
+  offsetX: number
+  offsetY: number
+  /** Fill behind the art inside the window ('' = none, leave transparent). Keyed art on a frame with a transparent
+   *  window would otherwise leave a hole in the finished card. */
+  background: string
+}
+
+export interface Layout {
+  material: Material
+  layering: Layering
+  art: ArtWindow
+  text: Record<TextField, TextBox>
+  psa: PsaBox
+  updatedAt: number
+}
+
+export interface FontAsset { id: string; family: string; fileName: string; key: string; updatedAt: number }
+
+export type FireStatus = 'draft' | 'dealt' | 'approved' | 'uploaded'
+
+export interface UploadState {
+  imagesCid?: string
+  metadataCid?: string
+  imagesAt?: number
+  metadataAt?: number
+  format?: OutputFormat
+  mock?: boolean
+}
+
+export type OutputFormat = 'webp' | 'png'
+
+export interface BuildState {
+  format: OutputFormat
+  count: number
+  builtAt: number
+}
+
+export interface FireRecord {
+  number: number
+  characterIds: string[]
+  packs: number
+  seed: string
+  /** Set once the deal is locked: the global accumulators and serial counter have moved on. */
+  deal?: DealResult
+  approvedAt?: number
+  build?: BuildState
+  upload?: UploadState
+  createdAt: number
+  updatedAt: number
+}
+
+export interface GlobalState {
+  accumulators: Accumulators
+  /** Next global serial to hand out (never resets). */
+  nextSerial: number
+  nextFireNumber: number
+}
+
+export function fireStatus(f: FireRecord): FireStatus {
+  if (f.upload?.metadataCid) return 'uploaded'
+  if (f.approvedAt) return 'approved'
+  if (f.deal) return 'dealt'
+  return 'draft'
+}
