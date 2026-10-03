@@ -21,17 +21,20 @@ export interface CardView {
   name: string
   materialLabel: string
   categoryLabel: string
+  /** "Forged · Fire #7": the Fire the card came from. */
+  forgedLabel: string
   /** '?' until the grade is paid for and revealed, then the number. */
   psaValue: string
   wear: WearLook
 }
 
-export function cardView(card: Pick<DealtCard, 'material' | 'grade'>, characterName: string, category?: Category): CardView {
+export function cardView(card: Pick<DealtCard, 'material' | 'grade' | 'fire'>, characterName: string, category?: Category): CardView {
   return {
     material: card.material,
     name: characterName,
     materialLabel: MATERIAL_LABEL[card.material],
     categoryLabel: category ? CATEGORY_LABEL[category] : '',
+    forgedLabel: `Forged · Fire #${card.fire > 0 ? card.fire : 1}`,
     psaValue: card.grade == null ? '?' : String(card.grade),
     wear: wearLookOf(card.grade),
   }
@@ -207,6 +210,7 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
   drawText(ctx, view.name, tb(layout.text.name))
   drawText(ctx, view.materialLabel, tb(layout.text.material))
   drawText(ctx, view.categoryLabel, tb(layout.text.category))
+  drawText(ctx, view.forgedLabel, tb(layout.text.forged))
   drawPsa(ctx, view.psaValue, layout.psa, view.wear === 'clean' ? null : GRADE_COLOR[view.wear])
   ctx.restore()
 }

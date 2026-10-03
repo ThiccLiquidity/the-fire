@@ -1,6 +1,7 @@
 /** Shared images (decided Oct 3): every card with the same character, material, holo frame, holo picture and wear
  *  look shares one image. Only those are printed on the card; serial, edition and Fire # are per card and go in the
- *  metadata. So a Fire builds a few dozen images, not one per card, and the same image is reused every Fire. */
+ *  metadata. So a Fire builds a few dozen images, not one per card. (Every Fire has new characters and its own
+ *  "Forged · Fire #" line, so images are never shared across Fires.) */
 
 import type { DealtCard } from './deal'
 import { MATERIAL_LABEL, holoTypeOf, wearLookOf, type HoloType, type Material, type WearLook } from './rules'
@@ -12,14 +13,16 @@ export interface Look {
   holoFrame: boolean
   holoPicture: boolean
   wear: WearLook
+  /** The Fire: printed on the card ("Forged · Fire #7"), so each Fire has its own images. */
+  fire: number
 }
 
 export function lookOf(card: DealtCard): Look {
-  return { characterId: card.characterId, material: card.material, holoFrame: card.holoFrame, holoPicture: card.holoPicture, wear: wearLookOf(card.grade) }
+  return { characterId: card.characterId, material: card.material, holoFrame: card.holoFrame, holoPicture: card.holoPicture, wear: wearLookOf(card.grade), fire: card.fire }
 }
 
 export function lookKey(l: Look): string {
-  return `${l.characterId}:${l.material}:${l.holoFrame ? 1 : 0}${l.holoPicture ? 1 : 0}:${l.wear}`
+  return `${l.fire}:${l.characterId}:${l.material}:${l.holoFrame ? 1 : 0}${l.holoPicture ? 1 : 0}:${l.wear}`
 }
 
 export function holoOfLook(l: Look): HoloType {
@@ -30,10 +33,10 @@ function slug(s: string): string {
   return s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'character'
 }
 
-/** Readable and unique: "rabbit-1a2b3c-wood-frame-clean.webp". The id part keeps two characters with the same name
+/** Readable and unique: "fire7-rabbit-1a2b3c-wood-frame-clean.webp". The id part keeps two characters with the same name
  *  apart. */
 export function lookFileName(l: Look, c: Pick<Character, 'id' | 'name'>, format: OutputFormat): string {
-  return `${slug(c.name)}-${c.id.slice(0, 6).toLowerCase()}-${slug(MATERIAL_LABEL[l.material])}-${holoOfLook(l)}-${l.wear.toLowerCase()}.${format}`
+  return `fire${l.fire}-${slug(c.name)}-${c.id.slice(0, 6).toLowerCase()}-${slug(MATERIAL_LABEL[l.material])}-${holoOfLook(l)}-${l.wear.toLowerCase()}.${format}`
 }
 
 /** The distinct looks among `cards`, each with one representative card to render it from (first by serial). */

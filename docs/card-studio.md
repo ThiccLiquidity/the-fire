@@ -59,7 +59,8 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
   | 4 | PSA 5-4 |
   | 5 | PSA 3-2 |
   | 6 | PSA 1 (unique) |
-- **Shared images, not one per card.** One image per character x material x holo type x wear look, reused every Fire
+- **Shared images, not one per card.** One image per character x material x holo type x wear look within a Fire
+  (each Fire has brand-new characters and its own "Forged · Fire #" line, so nothing is shared across Fires)
   (~110 MB per character instead of ~450 MB per Fire). Printed on the image: name, material, PSA grade (and category,
   if printed). Serial, edition and Fire # go in each NFT's metadata (traits) and in a live `animation_url` version
   that draws them on the card. The metadata must be updatable for the grade reveal (pack contract).
@@ -69,6 +70,8 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
 - **Category per character** (set once in the Library), first match wins: Person (fictional only), Animal, Plant,
   Place, Object, Element, Idea.
 
+- **Bottom panel:** material, category, and **Forged · Fire #** (the Fire the card came from), with the PSA seal on
+  the right.
 - **Material name:** the third tier is called **Fire** (was Burning; the studio's internal id stays `burning`).
 - **PSA seal:** the grade shows as a round wax seal on the right of the bottom panel, matched to each frame (Paper
   graphite, Wood walnut, Fire ember, Charcoal silver-graphite, Diamond icy crystal) with a thin gold rim, "PSA" small on top and **?** in the middle until the
@@ -86,6 +89,8 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
   randomness arrives a few seconds later and draws that pack's 6 cards from what's left in the Fire's pool, keeping
   the pack guarantees. Nobody, including the owner, can know a sealed pack's contents in advance, and the Fire's
   totals stay exact. The cards are minted to the holder and the site plays the opening animation from them.
+- **Pack art:** every sealed pack uses the same master graphic (being made in ChatGPT) with the Fire number stamped on
+  it by the generator ("FIRE #7"), so each Fire's pack is its own NFT image and doubles as the opening-animation art.
 - **Images** depend only on the Fire's characters (shared images), so they're built before the fire goes out; each
   card's metadata points at its shared image.
 - To check before launch: marketplace support for Robinhood Chain, and a lawyer's read on selling and reselling

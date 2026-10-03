@@ -30,12 +30,14 @@ export function Preview() {
   useEffect(() => {
     if (!char) return
     const my = ++gen.current
+    // the Fire this character is in (latest), or the next Fire if it isn't in one yet
+    const fire = [...s.fires].reverse().find((f) => f.characterIds.includes(char.id))?.number ?? s.global.nextFireNumber
     const list: DealtCard[] = []
     for (const material of MATERIALS) {
       for (const holo of HOLO_TYPES) {
         if (!exists(material, holo)) continue
         list.push({
-          serial: 0, fire: 0, pack: 0, slot: 0, material, characterId: char.id, edition: 1, editionOf: 1, grade,
+          serial: 0, fire, pack: 0, slot: 0, material, characterId: char.id, edition: 1, editionOf: 1, grade,
           holoFrame: holo === 'frame' || holo === 'full', holoPicture: holo === 'picture' || holo === 'full', holo,
         })
       }
@@ -66,7 +68,7 @@ export function Preview() {
         if (gen.current === my) setProgress(null)
       }
     })()
-  }, [char?.id, char?.updatedAt, grade, s.layouts, s.fonts])
+  }, [char?.id, char?.updatedAt, grade, s.layouts, s.fonts, s.fires, s.global.nextFireNumber])
 
   if (!char) return <section className="panel grow"><p className="muted">Add a character in the Library first.</p></section>
   const n = completeness(char)

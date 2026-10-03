@@ -35,8 +35,8 @@ describe('shared images', () => {
 
   it('file names are readable and unique per character', () => {
     const l = lookOf(card({ holoFrame: true, holoPicture: true, holo: 'full', grade: 10 }))
-    expect(lookFileName(l, { id: 'abcdef123', name: 'Red Fox!' }, 'webp')).toBe('red-fox-abcdef-wood-full-l1.webp')
-    expect(lookFileName(lookOf(card({})), { id: 'zz9999', name: 'Red Fox' }, 'png')).toBe('red-fox-zz9999-wood-none-clean.png')
+    expect(lookFileName(l, { id: 'abcdef123', name: 'Red Fox!' }, 'webp')).toBe('fire1-red-fox-abcdef-wood-full-l1.webp')
+    expect(lookFileName(lookOf(card({})), { id: 'zz9999', name: 'Red Fox' }, 'png')).toBe('fire1-red-fox-zz9999-wood-none-clean.png')
   })
 
   it('metadata keeps the per-card details and points at the shared image', () => {

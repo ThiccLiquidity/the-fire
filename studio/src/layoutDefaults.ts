@@ -16,7 +16,7 @@ export const BUILTIN_FONTS: { label: string; css: string }[] = [
 
 /** Layouts saved before the built-in frames existed were made for placeholder frames; they are replaced by the
  *  defaults below. Bump when the default layout changes in a way old saved layouts must not keep. */
-export const LAYOUT_VERSION = 3
+export const LAYOUT_VERSION = 4
 
 /** Text colours per frame: Paper, Wood and Diamond have light panels (dark ink); Burning and Charcoal have dark panels
  *  (light ink). `window` fills the art window behind keyed art. */
@@ -59,8 +59,9 @@ export function defaultLayout(material: Material): Layout {
     art: { box: { ...g.art }, fit: 'cover', scale: 1, offsetX: 0, offsetY: 0, background: ink.window },
     text: {
       name: tb({ ...g.nameBar }, { ...c, size: 104, align: 'center' }),
-      material: tb({ x: info.x, y: info.y + 10, w: textW, h: 120 }, { ...c, size: 100, uppercase: true }),
-      category: tb({ x: info.x, y: info.y + 140, w: textW, h: 90 }, { ...c, size: 66, bold: false }),
+      material: tb({ x: info.x, y: info.y + 4, w: textW, h: 110 }, { ...c, size: 96, uppercase: true }),
+      category: tb({ x: info.x, y: info.y + 118, w: textW, h: 66 }, { ...c, size: 58, bold: false }),
+      forged: tb({ x: info.x, y: info.y + 186, w: textW, h: 58 }, { ...c, size: 48, bold: false, italic: true }),
     },
     psa,
     updatedAt: 0,
@@ -70,9 +71,21 @@ export function defaultLayout(material: Material): Layout {
 /** Fill in any field missing from a stored layout (forward compatibility). */
 export function normalizeLayout(material: Material, stored: Partial<Layout> | undefined): Layout {
   const d = defaultLayout(material)
-  if (!stored || (stored.version !== LAYOUT_VERSION && stored.version !== 2)) return d
+  if (!stored || !stored.version || stored.version < 2 || stored.version > LAYOUT_VERSION) return d
   // v2 -> v3: the PSA badge became the seal; keep everything else the owner set
   if (stored.version === 2) stored = { ...stored, psa: d.psa }
+  // v3 -> v4: a 4th line (Forged · Fire #) joined the bottom panel; the bottom boxes and sizes move to make room,
+  // fonts and colours stay
+  if ((stored.version ?? 0) < 4 && stored.text) {
+    const t = { ...stored.text }
+    for (const f of ['material', 'category'] as const) {
+      const st = t[f]
+      if (st) t[f] = { ...st, box: { ...d.text[f].box }, style: { ...st.style, size: d.text[f].style.size } }
+    }
+    const font = t.name?.style.font
+    t.forged = { ...d.text.forged, style: { ...d.text.forged.style, ...(font ? { font, color: t.category?.style.color ?? d.text.forged.style.color } : {}) } }
+    stored = { ...stored, text: t }
+  }
   return {
     ...d,
     ...stored,

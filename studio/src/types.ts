@@ -65,9 +65,9 @@ export interface TextStyle {
 
 /** What's printed on the card image. Serial, edition and Fire # are per card, so they live in the metadata (and the
  *  live version), not on the shared image. */
-export type TextField = 'name' | 'material' | 'category'
-export const TEXT_FIELDS: TextField[] = ['name', 'material', 'category']
-export const TEXT_FIELD_LABEL: Record<TextField, string> = { name: 'Name', material: 'Material', category: 'Category' }
+export type TextField = 'name' | 'material' | 'category' | 'forged'
+export const TEXT_FIELDS: TextField[] = ['name', 'material', 'category', 'forged']
+export const TEXT_FIELD_LABEL: Record<TextField, string> = { name: 'Name', material: 'Material', category: 'Category', forged: 'Forged (Fire #)' }
 
 export interface TextBox { box: Rect; style: TextStyle; visible: boolean }
 export interface PsaBox extends TextBox { fill: string; border: string; borderWidth: number; radius: number }
