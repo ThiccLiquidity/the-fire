@@ -20,6 +20,7 @@ export function Deal({ fire }: { fire: FireRecord }) {
     const c = s.characters.find((x) => x.id === id)
     if (!c) problems.push('A picked character no longer exists.')
     else if (completeness(c) < 10) problems.push(`${c.name} has ${completeness(c)}/10 images.`)
+    else if (!c.category) problems.push(`${c.name} has no category (Library).`)
   }
   const earlierOpen = s.fires.filter((f) => f.number < fire.number && !f.deal)
   if (earlierOpen.length) problems.push(`Lock Fire #${earlierOpen.map((f) => f.number).join(', #')} first (serials go in Fire order).`)

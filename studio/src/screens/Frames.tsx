@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { DropZone, Field, Notice, NumberInput, useAction } from '../components'
-import { BUILTIN_FRAMES, frameBlob } from '../frames'
+import { BUILTIN_FRAMES, frameBlob, hasFrame } from '../frames'
 import { getBlob } from '../db'
 import type { DealtCard } from '../deal'
 import { BUILTIN_FONTS, defaultLayout } from '../layoutDefaults'
 import { cardView, drawCard } from '../render'
-import { CARD_H, CARD_W, MATERIALS, MATERIAL_LABEL, holoTypeOf, type Material } from '../rules'
+import { CARD_H, CARD_W, MATERIALS, MATERIAL_LABEL, WEAR_LABEL, WEAR_LEVELS, holoTypeOf, type Material } from '../rules'
 import {
   addFont, deleteFont, effectiveKey, fontFamilyCss, onBlobChanged, saveLayout, useStudio,
 } from '../store'
@@ -55,6 +55,11 @@ function FrameGallery({ m }: { m: Material }) {
           )
         })}
       </div>
+      <p className="muted small" data-testid={`wear-${m}`}>
+        PSA wear frames: {VARIANTS.flatMap((v) => WEAR_LEVELS.filter((w) => hasFrame(m, v, w))).length} of {VARIANTS.length * WEAR_LEVELS.length} delivered
+        ({WEAR_LEVELS.map((w) => WEAR_LABEL[w]).join(', ')}; normal + holo). Until a level is delivered, cards with that
+        grade can't be approved.
+      </p>
     </div>
   )
 }
@@ -126,7 +131,7 @@ function LayoutEditor({ m }: { m: Material }) {
   useEffect(() => {
     const ctx = canvas.current?.getContext('2d')
     if (!ctx) return
-    const raf = requestAnimationFrame(() => drawCard(ctx, { frame: frameBmp, art: artBmp }, layout, cardView(sampleCard, char?.name ?? 'Character Name')))
+    const raf = requestAnimationFrame(() => drawCard(ctx, { frame: frameBmp, art: artBmp }, layout, cardView(sampleCard, char?.name ?? 'Character Name', char?.category ?? 'animal')))
     return () => cancelAnimationFrame(raf)
   }, [layout, frameBmp, artBmp, sampleCard, char?.name, s.fonts])
 

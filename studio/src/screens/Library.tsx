@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { DropZone, Field, Notice, useAction } from '../components'
 import { newId } from '../db'
-import { MATERIALS, MATERIAL_LABEL, type Material } from '../rules'
+import { CATEGORIES, CATEGORY_HINT, CATEGORY_LABEL, MATERIALS, MATERIAL_LABEL, type Category, type Material } from '../rules'
 import {
-  completeness, deleteCharacter, effectiveKey, removeCharacterImage, saveCharacter, setCharacterImage, updateImageKey,
+  completeness, deleteCharacter, isReady, effectiveKey, removeCharacterImage, saveCharacter, setCharacterImage, updateImageKey,
   useBlobUrl, useStudio,
 } from '../store'
 import { VARIANTS, type Character, type ImageSlot, type Variant } from '../types'
@@ -38,7 +38,7 @@ export function Library() {
               <li key={c.id} className={current?.id === c.id ? 'active' : ''} onClick={() => setSelected(c.id)}>
                 <span className="char-name">{c.name}{c.shortId && <small> {c.shortId}</small>}</span>
                 {c.placeholder && <span className="tag">placeholder</span>}
-                <span className={`badge ${n === 10 ? 'badge-ok' : 'badge-warn'}`}>{n}/10</span>
+                <span className={`badge ${isReady(c) ? 'badge-ok' : 'badge-warn'}`}>{n}/10{c.category ? '' : ' · ?'}</span>
               </li>
             )
           })}
@@ -61,21 +61,28 @@ export function Library() {
 function CharacterEditor({ c }: { c: Character }) {
   const [name, setName] = useState(c.name)
   const [shortId, setShortId] = useState(c.shortId)
+  const [category, setCategory] = useState<Category | ''>(c.category ?? '')
   const [busy, error, run] = useAction()
-  const dirty = name !== c.name || shortId !== c.shortId
+  const dirty = name !== c.name || shortId !== c.shortId || category !== (c.category ?? '')
   const n = completeness(c)
   return (
     <div>
       <div className="row wrap">
         <Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Short id"><input value={shortId} onChange={(e) => setShortId(e.target.value)} /></Field>
-        <button disabled={!dirty || busy || !name.trim()} onClick={() => run(() => saveCharacter({ ...c, name: name.trim(), shortId: shortId.trim() }))}>Save</button>
+        <Field label="Category" hint={category ? CATEGORY_HINT[category] : 'first one that fits, top to bottom'}>
+          <select value={category} onChange={(e) => setCategory(e.target.value as Category | '')} data-testid="category">
+            <option value="">(pick one)</option>
+            {CATEGORIES.map((k) => <option key={k} value={k}>{CATEGORY_LABEL[k]}</option>)}
+          </select>
+        </Field>
+        <button disabled={!dirty || busy || !name.trim()} onClick={() => run(() => saveCharacter({ ...c, name: name.trim(), shortId: shortId.trim(), category: category || undefined }))}>Save</button>
         <span className="spacer" />
         <span className={`badge big ${n === 10 ? 'badge-ok' : 'badge-warn'}`} data-testid="completeness">{n}/10 images</span>
         <button className="danger" onClick={() => { if (confirm(`Delete ${c.name} and its images?`)) void run(() => deleteCharacter(c.id)) }}>Delete</button>
       </div>
       {error && <Notice kind="error">{error}</Notice>}
-      {n < 10 && <Notice kind="info">A character can go into a Fire once all 10 images are in (5 materials x normal + holo).</Notice>}
+      {!isReady(c) && <Notice kind="info">A character can go into a Fire once all 10 images are in (5 materials x normal + holo) and it has a category.</Notice>}
       <div className="slot-grid">
         <div />
         {VARIANTS.map((v) => <div key={v} className="slot-head">{v === 'normal' ? 'Normal' : 'Holo'}</div>)}

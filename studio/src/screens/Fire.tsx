@@ -3,7 +3,7 @@ import { AccumulatorBars, Field, Notice, NumberInput, useAction } from '../compo
 import { computePool } from '../deal'
 import { randomSeed } from '../prng'
 import { MATERIALS, MATERIAL_LABEL } from '../rules'
-import { completeness, deleteFire, getStudio, saveFire, saveGlobal, updateFire, useStudio } from '../store'
+import { completeness, deleteFire, isReady, getStudio, saveFire, saveGlobal, updateFire, useStudio } from '../store'
 import { fireStatus, type FireRecord } from '../types'
 
 export function FireList({ selected, onSelect }: { selected: number | null; onSelect: (n: number) => void }) {
@@ -56,7 +56,7 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
   const toggle = (id: string, on: boolean) => update({ characterIds: on ? [...fire.characterIds, id] : fire.characterIds.filter((x) => x !== id) })
   const missing = fire.characterIds.filter((id) => {
     const c = s.characters.find((x) => x.id === id)
-    return !c || completeness(c) < 10
+    return !c || !isReady(c)
   })
 
   return (
@@ -78,14 +78,14 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
           <ul className="pick-list" data-testid="fire-chars">
             {s.characters.map((c) => {
               const n = completeness(c)
-              const ok = n === 10
+              const ok = isReady(c)
               const on = fire.characterIds.includes(c.id)
               return (
                 <li key={c.id} className={ok ? '' : 'disabled'}>
                   <label className="check">
                     <input type="checkbox" checked={on} disabled={locked || (!ok && !on)} onChange={(e) => toggle(c.id, e.target.checked)} data-testid={`pick-${c.name}`} />
                     {c.name} {c.placeholder && <span className="tag">placeholder</span>}
-                    <span className={`badge ${ok ? 'badge-ok' : 'badge-warn'}`}>{n}/10</span>
+                    <span className={`badge ${ok ? 'badge-ok' : 'badge-warn'}`}>{n}/10{c.category ? '' : ' · no category'}</span>
                   </label>
                 </li>
               )
@@ -94,7 +94,7 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
           </ul>
           {!locked && (
             <div className="row">
-              <button onClick={() => update({ characterIds: s.characters.filter((c) => completeness(c) === 10).map((c) => c.id) })}>Pick all complete</button>
+              <button onClick={() => update({ characterIds: s.characters.filter(isReady).map((c) => c.id) })}>Pick all complete</button>
               <button onClick={() => update({ characterIds: [] })}>Clear</button>
             </div>
           )}

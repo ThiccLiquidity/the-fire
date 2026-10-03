@@ -13,7 +13,7 @@ import paper from './assets/frames/paper.webp'
 import paperHolo from './assets/frames/paper-holo.webp'
 import wood from './assets/frames/wood.webp'
 import woodHolo from './assets/frames/wood-holo.webp'
-import { MATERIALS, type Material } from './rules'
+import { MATERIALS, type Material, type WearLevel, type WearLook } from './rules'
 import { VARIANTS, type Rect, type Variant } from './types'
 
 export const BUILTIN_FRAMES: Record<Material, Partial<Record<Variant, string>>> = {
@@ -24,22 +24,41 @@ export const BUILTIN_FRAMES: Record<Material, Partial<Record<Variant, string>>> 
   diamond: { normal: diamond, holo: diamondHolo },
 }
 
-/** Bump when a frame file is added or changed: approvals made before this go stale and must be redone. */
-export const FRAMES_UPDATED_AT = Date.UTC(2026, 9, 3, 12)
+/** PSA wear frames, one per material x variant x wear level (6 x 5 x 2 = 60). Being made now; add each file to
+ *  src/assets/frames as <material>[-holo]-l<1-6>.webp (through clean_frames.py) and list it here. */
+export const BUILTIN_WEAR_FRAMES: Record<Material, Partial<Record<Variant, Partial<Record<WearLevel, string>>>>> = {
+  paper: {}, wood: {}, burning: {}, charcoal: {}, diamond: {},
+}
 
-/** Measured from the templates (1500 x 2100). Identical on every frame. */
+/** Bump (to a time in the past, e.g. when the change is made) when a frame file is added or changed: approvals made
+ *  before this go stale and must be redone. */
+export const FRAMES_UPDATED_AT = Date.UTC(2026, 9, 3, 5, 0)
+
+/** From the templates' layout.json (750 x 1050), doubled to 1500 x 2100. Identical on every frame. */
 export const FRAME_GEOMETRY = {
   /** The transparent square the art shows through. */
   art: { x: 128, y: 296, w: 1244, h: 1244 } as Rect,
-  /** Inside of the top name bar. */
-  nameBar: { x: 97, y: 83, w: 1306, h: 154 } as Rect,
-  /** Inside of the bottom info panel. */
-  infoPanel: { x: 99, y: 1611, w: 1305, h: 406 } as Rect,
+  /** Safe area for the name, inside the top bar. */
+  nameBar: { x: 160, y: 96, w: 1180, h: 128 } as Rect,
+  /** Safe area for the info text, inside the bottom panel. */
+  infoPanel: { x: 160, y: 1620, w: 1180, h: 360 } as Rect,
+  /** Where the bottom text actually goes: inside the smallest bottom panel (Diamond's thick facets end at about
+   *  x 170-1330, y 1685-1945), so every material lines up the same. */
+  infoText: { x: 200, y: 1690, w: 1110, h: 250 } as Rect,
   cornerRadius: 93,
 }
 
-export function hasFrame(m: Material, v: Variant): boolean {
-  return !!BUILTIN_FRAMES[m][v]
+/** The file for this frame: the clean frame, or the worn one for a revealed grade. */
+export function frameUrl(m: Material, v: Variant, wear: WearLook = 'clean'): string | undefined {
+  return wear === 'clean' ? BUILTIN_FRAMES[m][v] : BUILTIN_WEAR_FRAMES[m][v]?.[wear]
+}
+
+export function hasFrame(m: Material, v: Variant, wear: WearLook = 'clean'): boolean {
+  return !!frameUrl(m, v, wear)
+}
+
+export function frameId(m: Material, v: Variant, wear: WearLook): string {
+  return `${m}:${v}:${wear}`
 }
 
 export function missingFrames(): { material: Material; variant: Variant }[] {
@@ -49,8 +68,8 @@ export function missingFrames(): { material: Material; variant: Variant }[] {
 const cache = new Map<string, Promise<Blob>>()
 
 /** The frame file as a Blob (fetched once per session), or undefined if that frame doesn't exist yet. */
-export function frameBlob(m: Material, v: Variant): Promise<Blob> | undefined {
-  const url = BUILTIN_FRAMES[m][v]
+export function frameBlob(m: Material, v: Variant, wear: WearLook = 'clean'): Promise<Blob> | undefined {
+  const url = frameUrl(m, v, wear)
   if (!url) return undefined
   let p = cache.get(url)
   if (!p) {

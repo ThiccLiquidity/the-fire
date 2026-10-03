@@ -4,8 +4,9 @@ import { Notice, ProgressBar, useAction } from '../components'
 import { blobKeys, deleteBlobsWithPrefix, getBlob, putBlobs } from '../db'
 import type { DealtCard } from '../deal'
 import { hasFrame } from '../frames'
+import { distinctLooks, lookKey, lookOf } from '../looks'
 import { cardTitle } from '../render'
-import { HOLO_LABEL, HOLO_TYPES, MATERIALS, MATERIAL_LABEL, type HoloType, type Material } from '../rules'
+import { HOLO_LABEL, HOLO_TYPES, MATERIALS, MATERIAL_LABEL, WEAR_LABEL, wearLookOf, type HoloType, type Material } from '../rules'
 import { lastAssetChange, updateFire, useStudio } from '../store'
 import type { FireRecord, OutputFormat } from '../types'
 
@@ -56,8 +57,8 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
   const buildStale = !!fire.build && assetsChanged > fire.build.builtAt
   const samplesReady = samples.every((x) => x.url)
   // frames this Fire's cards need that haven't been delivered yet
-  const missing = [...new Set(deal.cards.filter((c) => !hasFrame(c.material, c.holoFrame ? 'holo' : 'normal'))
-    .map((c) => `${MATERIAL_LABEL[c.material]} ${c.holoFrame ? 'holo' : 'normal'}`))]
+  const missing = [...new Set(deal.cards.filter((c) => !hasFrame(c.material, c.holoFrame ? 'holo' : 'normal', wearLookOf(c.grade)))
+    .map((c) => `${MATERIAL_LABEL[c.material]} ${c.holoFrame ? 'holo' : 'normal'}${c.grade == null ? '' : ` ${WEAR_LABEL[wearLookOf(c.grade)]}`}`))]
 
   // free sample object URLs on unmount
   const urls = useRef<string[]>([])
@@ -106,12 +107,14 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
     await updateFire(fire.number, { build: undefined })
     const r = await BatchRenderer.create(deal.characterIds)
     const t0 = performance.now()
+    // one image per look, shared by every card that looks the same
+    const looks = distinctLooks(deal.cards)
     try {
-      await r.renderAll(deal.cards, format, {
+      await r.renderAll(looks.map((l) => l.card), format, {
         batchSize: 4,
         signal: abort.current.signal,
-        onProgress: (p) => setProgress({ ...p, what: `Building ${format.toUpperCase()} (${r.mode})` }),
-        onBatch: (cards, blobs) => putBlobs(cards.map((c, i) => [renderKey(fire.number, c.serial), blobs[i]])),
+        onProgress: (p) => setProgress({ ...p, what: `Building ${looks.length} images for ${deal.cards.length} cards, ${format.toUpperCase()} (${r.mode})` }),
+        onBatch: (_cards, blobs, start) => putBlobs(blobs.map((b, i) => [renderKey(fire.number, looks[start + i].key), b])),
       })
     } finally {
       r.dispose()
@@ -120,7 +123,7 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
     }
     const count = (await blobKeys(`render:${fire.number}:`)).length
     await updateFire(fire.number, { build: { format, count, builtAt: Date.now() } })
-    console.info(`Card Studio: built ${count} cards in ${((performance.now() - t0) / 1000).toFixed(1)}s`)
+    console.info(`Card Studio: built ${count} images in ${((performance.now() - t0) / 1000).toFixed(1)}s`)
   })
 
   const openSample = (x: Sample) => x.url && setBig({
@@ -159,13 +162,13 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
         ))}
       </div>
 
-      <h3>2. Build every card ({deal.cards.length})</h3>
+      <h3>2. Build the images ({distinctLooks(deal.cards).length} shared by {deal.cards.length} cards)</h3>
       <div className="row wrap">
         <label className="check"><input type="radio" checked={format === 'webp'} onChange={() => setFormat('webp')} /> WEBP (q 0.92)</label>
         <label className="check"><input type="radio" checked={format === 'png'} onChange={() => setFormat('png')} /> PNG</label>
-        <button className="primary" onClick={build} disabled={busy} data-testid="build-all">Build all {deal.cards.length} cards</button>
+        <button className="primary" onClick={build} disabled={busy} data-testid="build-all">Build all images</button>
         {abort.current && <button onClick={() => abort.current?.abort()}>Cancel</button>}
-        {fire.build && <span className={`badge ${buildStale ? 'badge-warn' : 'badge-ok'}`} data-testid="build-status">Built {fire.build.count} {fire.build.format.toUpperCase()} · {new Date(fire.build.builtAt).toLocaleTimeString()}{buildStale ? ' · stale, rebuild' : ''}</span>}
+        {fire.build && <span className={`badge ${buildStale ? 'badge-warn' : 'badge-ok'}`} data-testid="build-status">Built {fire.build.count} images, {fire.build.format.toUpperCase()} · {new Date(fire.build.builtAt).toLocaleTimeString()}{buildStale ? ' · stale, rebuild' : ''}</span>}
       </div>
       {error && <Notice kind="error">{error}</Notice>}
 
@@ -205,7 +208,7 @@ function CardList({ fire, names, onOpen }: { fire: FireRecord; names: Record<str
   }, [filtered])
 
   const open = async (c: DealtCard) => {
-    const b = await getBlob(renderKey(fire.number, c.serial))
+    const b = await getBlob(renderKey(fire.number, lookKey(lookOf(c))))
     if (!b) {
       alert('Not built yet: use "Build all" first.')
       return

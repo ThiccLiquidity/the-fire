@@ -3,7 +3,9 @@ import { renderKey } from '../builder'
 import { Field, Notice, ProgressBar, useAction } from '../components'
 import { getBlob } from '../db'
 import { ZipWriter, blobBytes, downloadBlob } from '../files'
-import { cardMetadata, imageFileName, metadataFileName } from '../metadata'
+import type { DealtCard } from '../deal'
+import { distinctLooks, lookFileName, lookOf } from '../looks'
+import { cardMetadata, metadataFileName } from '../metadata'
 import { clearPinataJwt, hasPinataJwt, mockTransport, realTransport, setPinataJwt, uploadFire, type UploadFile } from '../pinata'
 import { sha256Hex } from '../prng'
 import { lastAssetChange, updateFire, useStudio } from '../store'
@@ -14,6 +16,8 @@ export function Export({ fire }: { fire: FireRecord }) {
   const s = useStudio()
   const flags = useDevFlags()
   const names = Object.fromEntries(s.characters.map((c) => [c.id, c.name]))
+  const chars = Object.fromEntries(s.characters.map((c) => [c.id, c]))
+  const charOf = (id: string) => ({ id, name: chars[id]?.name ?? id, category: chars[id]?.category })
   const [busy, error, run] = useAction()
   const [progress, setProgress] = useState<{ value: number; label: string } | null>(null)
   const [log, setLog] = useState<string[]>([])
@@ -29,20 +33,24 @@ export function Export({ fire }: { fire: FireRecord }) {
     else if (changed > fire.approvedAt) blockers.push('Assets changed after approval: re-approve on Build & Review.')
     if (!fire.build) blockers.push('Build all cards first (Build & Review).')
     else {
-      if (fire.build.count !== deal.cards.length) blockers.push(`Only ${fire.build.count} of ${deal.cards.length} cards are built: rebuild.`)
+      const want = distinctLooks(deal.cards).length
+      if (fire.build.count !== want) blockers.push(`Only ${fire.build.count} of ${want} images are built: rebuild.`)
       if (changed > fire.build.builtAt) blockers.push('Assets changed after the build: rebuild.')
     }
   }
   const ready = blockers.length === 0
   const format = fire.build?.format ?? 'webp'
+  /** The shared image file this card points at. */
+  const fileOf = (c: DealtCard) => lookFileName(lookOf(c), charOf(c.characterId), format)
 
+  /** One file per look (shared image), not per card. */
   async function imageFiles(onEach?: (i: number) => void): Promise<UploadFile[]> {
     const out: UploadFile[] = []
     let i = 0
-    for (const c of deal!.cards) {
-      const b = await getBlob(renderKey(fire.number, c.serial))
-      if (!b) throw new Error(`Card #${c.serial} is missing from the build; rebuild.`)
-      out.push({ name: imageFileName(c, format), blob: b })
+    for (const l of distinctLooks(deal!.cards)) {
+      const b = await getBlob(renderKey(fire.number, l.key))
+      if (!b) throw new Error(`An image (${l.key}) is missing from the build; rebuild.`)
+      out.push({ name: fileOf(l.card), blob: b })
       onEach?.(++i)
     }
     return out
@@ -53,12 +61,10 @@ export function Export({ fire }: { fire: FireRecord }) {
     const total = deal!.cards.length
     let i = 0
     const imagesCid = fire.upload?.imagesCid
+    for (const f of await imageFiles()) zip.addStored(`images/${f.name}`, await blobBytes(f.blob))
     for (const c of deal!.cards) {
-      const b = await getBlob(renderKey(fire.number, c.serial))
-      if (!b) throw new Error(`Card #${c.serial} is missing from the build; rebuild.`)
-      const img = imageFileName(c, format)
-      zip.addStored(`images/${img}`, await blobBytes(b))
-      const meta = cardMetadata(c, names[c.characterId] ?? c.characterId, imagesCid ? `ipfs://${imagesCid}/${img}` : `images/${img}`)
+      const img = fileOf(c)
+      const meta = cardMetadata(c, charOf(c.characterId), imagesCid ? `ipfs://${imagesCid}/${img}` : `images/${img}`)
       zip.addText(`metadata/${metadataFileName(c)}`, JSON.stringify(meta, null, 2))
       if (++i % 25 === 0) {
         setProgress({ value: i / total, label: `Zipping ${i} / ${total}` })
@@ -90,7 +96,7 @@ export function Export({ fire }: { fire: FireRecord }) {
     setLog([])
     const say = (t: string) => setLog((l) => [...l, `${new Date().toLocaleTimeString()} ${t}`])
     setProgress({ value: 0, label: 'Reading built cards...' })
-    const files = await imageFiles((i) => { if (i % 50 === 0) setProgress({ value: 0, label: `Reading built cards ${i}/${deal!.cards.length}` }) })
+    const files = await imageFiles((i) => { if (i % 50 === 0) setProgress({ value: 0, label: `Reading built images ${i}` }) })
     // Directory names carry a fingerprint of their contents, so "find an earlier finished upload by name" can only
     // ever match an upload of exactly these files.
     const imgFp = sha256Hex(files.map((f) => `${f.name}:${f.blob.size}`).join('|')).slice(0, 10)
@@ -103,7 +109,7 @@ export function Export({ fire }: { fire: FireRecord }) {
       metadataDirName: undefined,
       makeMetadata: (cid) => deal!.cards.map((c) => ({
         name: metadataFileName(c),
-        blob: new Blob([JSON.stringify(cardMetadata(c, names[c.characterId] ?? c.characterId, `ipfs://${cid}/${imageFileName(c, format)}`), null, 2)], { type: 'application/json' }),
+        blob: new Blob([JSON.stringify(cardMetadata(c, charOf(c.characterId), `ipfs://${cid}/${fileOf(c)}`), null, 2)], { type: 'application/json' }),
       })),
       existing: { imagesCid: current.imagesCid, metadataCid: current.metadataCid },
       save: async (patch) => {
@@ -134,7 +140,7 @@ export function Export({ fire }: { fire: FireRecord }) {
       {!ready && <Notice kind="warn">{blockers.map((b) => <div key={b}>{b}</div>)}</Notice>}
 
       <h3>Download</h3>
-      <p className="muted small">A zip with images/&lt;serial&gt;.{format}, metadata/&lt;serial&gt;.json (ERC-721 style) and fire.json (the deal record).</p>
+      <p className="muted small">A zip with images/ (one shared image per look, e.g. rabbit-1a2b3c-wood-frame-clean.{format}), metadata/&lt;serial&gt;.json (ERC-721 style, one per card, pointing at its shared image) and fire.json (the deal record).</p>
       <button className="primary" disabled={!ready || busy} onClick={downloadZip} data-testid="download-zip">Download zip</button>
 
       <h3>Upload to Pinata (IPFS)</h3>

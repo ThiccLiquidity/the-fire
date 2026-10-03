@@ -61,6 +61,8 @@ export interface DealtCard {
   edition: number
   /** N in "k of N · Fire #F". */
   editionOf: number
+  /** PSA grade 1-10 once revealed (by the pack contract); absent until then. */
+  grade?: number | null
 }
 
 export interface PoolResult {

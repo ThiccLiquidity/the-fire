@@ -2,9 +2,9 @@
  *  (HTMLCanvasElement or OffscreenCanvas) and in a worker (OffscreenCanvas). No React, no IndexedDB. */
 
 import type { DealtCard } from './deal'
-import { CARD_H, CARD_W, HOLO_LABEL, MATERIAL_LABEL, type Material } from './rules'
+import { CARD_H, CARD_W, CATEGORY_LABEL, HOLO_LABEL, MATERIAL_LABEL, type Category, type Material } from './rules'
 import type { Layout, OutputFormat, PsaBox, Rect, TextBox, TextStyle } from './types'
-import { applyWear, type Ctx2D, type PsaGrade } from './wear'
+import type { Ctx2D } from './wear'
 
 export type ImgSrc = ImageBitmap | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas
 
@@ -14,28 +14,23 @@ export interface CardAssets {
   art: ImgSrc | null
 }
 
-/** Everything printed on a card. */
+/** Everything printed on a card. Only what's shared by every card of the same look (looks.ts): no serial, no
+ *  edition, no Fire #. Those are in the metadata. */
 export interface CardView {
-  serial: number
   material: Material
   name: string
   materialLabel: string
-  editionText: string
-  serialText: string
+  categoryLabel: string
   psaText: string
-  grade: PsaGrade
 }
 
-export function cardView(card: DealtCard, characterName: string): CardView {
+export function cardView(card: Pick<DealtCard, 'material' | 'grade'>, characterName: string, category?: Category): CardView {
   return {
-    serial: card.serial,
     material: card.material,
     name: characterName,
     materialLabel: MATERIAL_LABEL[card.material],
-    editionText: `${card.edition} of ${card.editionOf} · Fire #${card.fire}`,
-    serialText: card.serial > 0 ? `#${card.serial}` : '#—',
-    psaText: 'PSA ?',
-    grade: null,
+    categoryLabel: category ? CATEGORY_LABEL[category] : '',
+    psaText: card.grade == null ? 'PSA ?' : `PSA ${card.grade}`,
   }
 }
 
@@ -168,7 +163,7 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
   ctx.save()
   ctx.clearRect(0, 0, CARD_W, CARD_H)
   if (!assets.frame) {
-    // No frame uploaded yet: a neutral background so the layout is still visible.
+    // Frame missing (e.g. a wear level not delivered yet): a neutral background so the layout is still visible.
     ctx.fillStyle = '#2b2b30'
     ctx.fillRect(0, 0, CARD_W, CARD_H)
   }
@@ -181,10 +176,8 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
   }
   drawText(ctx, view.name, layout.text.name)
   drawText(ctx, view.materialLabel, layout.text.material)
-  drawText(ctx, view.editionText, layout.text.edition)
-  drawText(ctx, view.serialText, layout.text.serial)
+  drawText(ctx, view.categoryLabel, layout.text.category)
   drawPsa(ctx, view.psaText, layout.psa)
-  applyWear(ctx, { serial: view.serial }, view.grade)
   ctx.restore()
 }
 

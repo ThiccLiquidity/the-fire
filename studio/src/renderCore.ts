@@ -3,17 +3,20 @@
 
 import type { DealtCard } from './deal'
 import { cardView, renderCardBlob, type CardAssets } from './render'
-import { CARD_H, CARD_W, type Material } from './rules'
+import { frameId } from './frames'
+import { CARD_H, CARD_W, wearLookOf, type Category, type Material, type WearLook } from './rules'
 import type { Layout, OutputFormat, Variant } from './types'
 
 export type VariantBlobs = Partial<Record<Variant, Blob>>
 
 export interface AssetBundle {
   layouts: Record<Material, Layout>
-  frames: Record<Material, VariantBlobs>
+  /** By frameId(material, variant, wear): every frame that exists. */
+  frames: Record<string, Blob>
   /** art[characterId][material][variant] */
   art: Record<string, Partial<Record<Material, VariantBlobs>>>
   names: Record<string, string>
+  categories: Record<string, Category | undefined>
   /** Uploaded fonts (registered in the worker's FontFaceSet; the main thread already has them). */
   fonts: { family: string; data: ArrayBuffer }[]
 }
@@ -50,10 +53,11 @@ export class CardRenderer {
     return p
   }
 
-  private frame(m: Material, v: Variant): Promise<ImageBitmap | null> {
-    // a missing holo frame falls back to the normal one (the review screen flags it)
-    const blob = this.bundle.frames[m]?.[v] ?? this.bundle.frames[m]?.normal
-    return this.bitmap(`frame:${m}:${v}`, async () => (blob ? createImageBitmap(blob) : null))
+  private frame(m: Material, v: Variant, wear: WearLook): Promise<ImageBitmap | null> {
+    // a missing frame is flagged on the review screen and blocks approval; render without it meanwhile
+    const id = frameId(m, v, wear)
+    const blob = this.bundle.frames[id]
+    return this.bitmap(`frame:${id}`, async () => (blob ? createImageBitmap(blob) : null))
   }
 
   private art(charId: string, m: Material, v: Variant): Promise<ImageBitmap | null> {
@@ -75,7 +79,7 @@ export class CardRenderer {
 
   async assetsFor(card: DealtCard): Promise<CardAssets> {
     const [frame, art] = await Promise.all([
-      this.frame(card.material, card.holoFrame ? 'holo' : 'normal'),
+      this.frame(card.material, card.holoFrame ? 'holo' : 'normal', wearLookOf(card.grade)),
       this.art(card.characterId, card.material, card.holoPicture ? 'holo' : 'normal'),
     ])
     return { frame, art }
@@ -83,7 +87,7 @@ export class CardRenderer {
 
   async render(card: DealtCard, format: OutputFormat): Promise<Blob> {
     const assets = await this.assetsFor(card)
-    const view = cardView(card, this.bundle.names[card.characterId] ?? card.characterId)
+    const view = cardView(card, this.bundle.names[card.characterId] ?? card.characterId, this.bundle.categories[card.characterId])
     return renderCardBlob(assets, this.bundle.layouts[card.material], view, format, this.canvas)
   }
 

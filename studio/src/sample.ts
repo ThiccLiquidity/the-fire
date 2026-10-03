@@ -3,7 +3,7 @@
  *  Everything is clearly labelled PLACEHOLDER on the image itself. */
 
 import * as db from './db'
-import { MATERIALS, MATERIAL_LABEL, type Material } from './rules'
+import { MATERIALS, MATERIAL_LABEL, type Category, type Material } from './rules'
 import { saveCharacter, setCharacterImage } from './store'
 import type { Character, Variant } from './types'
 
@@ -96,16 +96,16 @@ export async function makePlaceholderArt(name: string, shape: Shape, m: Material
   return c.convertToBlob({ type: 'image/png' })
 }
 
-export const SAMPLE_CHARACTERS: { name: string; shortId: string; shape: Shape }[] = [
-  { name: 'Rabbit', shortId: 'RAB', shape: 'rabbit' },
-  { name: 'Bird', shortId: 'BRD', shape: 'bird' },
-  { name: 'Fox', shortId: 'FOX', shape: 'fox' },
+export const SAMPLE_CHARACTERS: { name: string; shortId: string; shape: Shape; category: Category }[] = [
+  { name: 'Rabbit', shortId: 'RAB', shape: 'rabbit', category: 'animal' },
+  { name: 'Bird', shortId: 'BRD', shape: 'bird', category: 'animal' },
+  { name: 'Fox', shortId: 'FOX', shape: 'fox', category: 'animal' },
 ]
 
 export async function loadSampleAssets(onStatus: (s: string) => void): Promise<void> {
   for (const s of SAMPLE_CHARACTERS) {
     const now = Date.now()
-    const c: Character = { id: db.newId(), name: s.name, shortId: s.shortId, images: {}, createdAt: now, updatedAt: now, placeholder: true }
+    const c: Character = { id: db.newId(), name: s.name, shortId: s.shortId, category: s.category, images: {}, createdAt: now, updatedAt: now, placeholder: true }
     await saveCharacter(c)
     for (const m of MATERIALS) {
       for (const v of ['normal', 'holo'] as Variant[]) {

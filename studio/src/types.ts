@@ -1,5 +1,5 @@
 import type { Accumulators, DealResult } from './deal'
-import type { Material } from './rules'
+import type { Category, Material } from './rules'
 
 export type Variant = 'normal' | 'holo'
 export const VARIANTS: Variant[] = ['normal', 'holo']
@@ -25,6 +25,8 @@ export interface Character {
   id: string
   name: string
   shortId: string
+  /** Set once; printed on the card and a trait in the metadata. Required before the character can go into a Fire. */
+  category?: Category
   images: Partial<Record<Material, Partial<Record<Variant, ImageSlot>>>>
   createdAt: number
   updatedAt: number
@@ -61,9 +63,11 @@ export interface TextStyle {
   uppercase: boolean
 }
 
-export type TextField = 'name' | 'material' | 'edition' | 'serial'
-export const TEXT_FIELDS: TextField[] = ['name', 'material', 'edition', 'serial']
-export const TEXT_FIELD_LABEL: Record<TextField, string> = { name: 'Name', material: 'Material label', edition: 'Edition line', serial: 'Serial' }
+/** What's printed on the card image. Serial, edition and Fire # are per card, so they live in the metadata (and the
+ *  live version), not on the shared image. */
+export type TextField = 'name' | 'material' | 'category'
+export const TEXT_FIELDS: TextField[] = ['name', 'material', 'category']
+export const TEXT_FIELD_LABEL: Record<TextField, string> = { name: 'Name', material: 'Material', category: 'Category' }
 
 export interface TextBox { box: Rect; style: TextStyle; visible: boolean }
 export interface PsaBox extends TextBox { fill: string; border: string; borderWidth: number; radius: number }

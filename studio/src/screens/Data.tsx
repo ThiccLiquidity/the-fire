@@ -5,7 +5,7 @@ import { requestPersistence } from '../db'
 import { setMockFailNext, setMockPinata, useDevFlags } from '../devFlags'
 import { downloadBlob } from '../files'
 import { loadSampleAssets } from '../sample'
-import { completeness, useStudio } from '../store'
+import { isReady, useStudio } from '../store'
 
 export function Data() {
   const s = useStudio()
@@ -57,7 +57,7 @@ export function Data() {
       <section className="panel">
         <h2>State</h2>
         <div className="row wrap">
-          <span>Characters: <b>{s.characters.length}</b> ({s.characters.filter((c) => completeness(c) === 10).length} complete)</span>
+          <span>Characters: <b>{s.characters.length}</b> ({s.characters.filter(isReady).length} ready)</span>
           <span>Fires: <b>{s.fires.length}</b></span>
           <span>Next Fire: <b>#{s.global.nextFireNumber}</b></span>
           <span>Next global serial: <b>#{s.global.nextSerial}</b></span>

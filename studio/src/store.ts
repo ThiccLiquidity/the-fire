@@ -188,6 +188,11 @@ export function completeness(c: Character): number {
   return n
 }
 
+/** Can go into a Fire: all 10 images and a category. */
+export function isReady(c: Character): boolean {
+  return completeness(c) === 10 && !!c.category
+}
+
 // ---------- layouts, fonts ----------
 
 export async function saveLayout(layout: Layout): Promise<void> {

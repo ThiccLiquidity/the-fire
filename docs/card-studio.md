@@ -12,8 +12,9 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
    character must be complete.
 4. **Deal.** After the Fire ends, its card pool is dealt into the bought packs (for now: a sample deal on the real
    rules, until the pack contract exists).
-5. **Build.** Every card is assembled automatically from frame + art + text. Each card is its own image file; the art
-   and frames are shared.
+5. **Build.** One image per look (character x material x holo frame x holo picture x wear), assembled from frame + art
+   + text, shared by every card with that look (a 900-card Fire is a few dozen images). Each card's metadata points at
+   its shared image and carries its serial, edition and Fire #.
 6. **Approval.** The owner reviews **one sample of every character x material x holo type** and approves them all at
    once. Nothing is uploaded before that.
 7. **Upload.** Images and metadata go to **IPFS via Pinata**. The Pinata key is typed into the page each session and
@@ -34,9 +35,9 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
   | Burning | 50% | 29.3% | 20.7% | 20.7% | 8.6% |
   | Charcoal | 90% | 68.4% | 21.6% | 21.6% | 46.8% |
   | Diamond | 100% | 100% | 0 | 0 | 100% |
-- Printed on the card: character name, material, **edition** ("12 of 43 · Fire #7" = this card's place among that
-  character + material in that Fire), **global serial** (never resets), and the PSA grade once revealed. No separate
-  "overall" count, since the serial covers that.
+- Printed on the card: character name (top bar, centered), material, category and the PSA grade ("PSA ?" until
+  revealed). **Edition** ("12 of 43" in Fire #7) and the **global serial** (never resets) are in the metadata, not on
+  the image (shared images, decided Oct 3).
 
 ## Decided Oct 3
 - **Frames are built in and locked.** The owner's master frames ship with the studio (`studio/src/assets/frames`,
@@ -65,7 +66,8 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
   Place, Object, Element, Idea.
 
 ## Left open
-- Whether the category is printed on the card or metadata only.
+- Category is printed on the card for now (it can be hidden per material in Frames & Layout).
+- The 60 PSA wear frames are being made; until a level is in, cards with that grade can't be approved.
 - The pack contract (deal, accumulators, drand grades, reveal fee) and the token standard come next. The studio's
   deal step is written so the real contract result can replace the sample deal.
 - Whether the Fire scene stays as the home for packs isn't decided. The studio doesn't depend on it.

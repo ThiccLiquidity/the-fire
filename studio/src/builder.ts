@@ -3,29 +3,32 @@
 
 import * as db from './db'
 import type { DealtCard } from './deal'
-import { frameBlob } from './frames'
+import { frameBlob, frameId } from './frames'
 import { CardRenderer, type AssetBundle, type RenderJob, type VariantBlobs } from './renderCore'
-import { MATERIALS, type Material } from './rules'
+import { MATERIALS, WEAR_LEVELS, type WearLook } from './rules'
 import { effectiveKey, getStudio } from './store'
 import { VARIANTS, type OutputFormat } from './types'
 import type { WorkerIn, WorkerOut } from './build.worker'
 
 export async function collectBundle(characterIds: string[]): Promise<AssetBundle> {
   const s = getStudio()
-  const frames = {} as Record<Material, VariantBlobs>
+  const frames: AssetBundle['frames'] = {}
   for (const m of MATERIALS) {
-    frames[m] = {}
     for (const v of VARIANTS) {
-      const b = frameBlob(m, v)
-      if (b) frames[m][v] = await b
+      for (const w of ['clean', ...WEAR_LEVELS] as WearLook[]) {
+        const b = frameBlob(m, v, w)
+        if (b) frames[frameId(m, v, w)] = await b
+      }
     }
   }
   const art: AssetBundle['art'] = {}
   const names: Record<string, string> = {}
+  const categories: AssetBundle['categories'] = {}
   for (const id of characterIds) {
     const c = s.characters.find((x) => x.id === id)
     if (!c) continue
     names[id] = c.name
+    categories[id] = c.category
     art[id] = {}
     for (const m of MATERIALS) {
       const vb: VariantBlobs = {}
@@ -42,7 +45,7 @@ export async function collectBundle(characterIds: string[]): Promise<AssetBundle
     const b = await db.getBlob(f.key)
     if (b) fonts.push({ family: f.family, data: await b.arrayBuffer() })
   }
-  return { layouts: s.layouts, frames, art, names, fonts }
+  return { layouts: s.layouts, frames, art, names, categories, fonts }
 }
 
 const yieldToUi = () => new Promise<void>((r) => setTimeout(r, 0))
@@ -166,6 +169,7 @@ export class BatchRenderer {
   }
 }
 
-export function renderKey(fire: number, serial: number): string {
-  return `render:${fire}:${serial}`
+/** Where a built image is stored: one per look (looks.ts), not per card. */
+export function renderKey(fire: number, lookKey: string): string {
+  return `render:${fire}:${lookKey}`
 }

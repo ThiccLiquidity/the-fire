@@ -1,6 +1,6 @@
 import type { Material } from './rules'
 import { FRAME_GEOMETRY } from './frames'
-import type { Layout, PsaBox, Rect, TextBox, TextStyle } from './types'
+import { TEXT_FIELDS, type Layout, type PsaBox, type Rect, type TextBox, type TextStyle } from './types'
 
 /** Built-in font choices: web-safe stacks only (no Google Fonts, nothing fetched). Uploaded fonts are added on top. */
 export const BUILTIN_FONTS: { label: string; css: string }[] = [
@@ -16,15 +16,16 @@ export const BUILTIN_FONTS: { label: string; css: string }[] = [
 
 /** Layouts saved before the built-in frames existed were made for placeholder frames; they are replaced by the
  *  defaults below. Bump when the default layout changes in a way old saved layouts must not keep. */
-export const LAYOUT_VERSION = 1
+export const LAYOUT_VERSION = 2
 
-/** Text colours per frame: Paper and Wood have light panels (dark ink), Burning has dark panels (light ink). */
+/** Text colours per frame: Paper, Wood and Diamond have light panels (dark ink); Burning and Charcoal have dark panels
+ *  (light ink). `window` fills the art window behind keyed art. */
 const INK: Record<Material, { color: string; outline: string; outlineWidth: number; window: string }> = {
   paper: { color: '#2b2622', outline: '#ffffff', outlineWidth: 0, window: '#f4f0e6' },
   wood: { color: '#3a2412', outline: '#ffffff', outlineWidth: 0, window: '#f1e4cc' },
   burning: { color: '#ffe9c4', outline: '#1a0904', outlineWidth: 5, window: '#24100a' },
-  charcoal: { color: '#ececf0', outline: '#0e0e10', outlineWidth: 5, window: '#26262a' },
-  diamond: { color: '#0f3442', outline: '#ffffff', outlineWidth: 0, window: '#eef8fb' },
+  charcoal: { color: '#ececf0', outline: '#0e0e10', outlineWidth: 4, window: '#26262a' },
+  diamond: { color: '#12324a', outline: '#ffffff', outlineWidth: 0, window: '#eef6fb' },
 }
 
 function style(over: Partial<TextStyle>): TextStyle {
@@ -42,10 +43,11 @@ export function defaultLayout(material: Material): Layout {
   const ink = INK[material]
   const c = { color: ink.color, outlineColor: ink.outline, outlineWidth: ink.outlineWidth }
   const g = FRAME_GEOMETRY
-  const left = g.infoPanel.x + 50, textW = 820
+  const info = g.infoText
+  const textW = 780
   const psa: PsaBox = {
-    ...tb({ x: 1090, y: 1716, w: 270, h: 196 }, { size: 72, color: '#1a1a1a', outlineWidth: 0, align: 'center', font: BUILTIN_FONTS[2].css }),
-    fill: '#f4efe4', border: '#1a1a1a', borderWidth: 6, radius: 18,
+    ...tb({ x: info.x + info.w - 260, y: info.y + 15, w: 260, h: 220 }, { size: 80, minSize: 30, color: '#1a1a1a', outlineWidth: 0, align: 'center', font: BUILTIN_FONTS[2].css }),
+    fill: '#f4efe4', border: '#1a1a1a', borderWidth: 6, radius: 22,
   }
   return {
     material,
@@ -53,10 +55,9 @@ export function defaultLayout(material: Material): Layout {
     layering: 'art-behind',
     art: { box: { ...g.art }, fit: 'cover', scale: 1, offsetX: 0, offsetY: 0, background: ink.window },
     text: {
-      name: tb({ x: g.nameBar.x + 50, y: g.nameBar.y + 14, w: g.nameBar.w - 100, h: g.nameBar.h - 28 }, { ...c, size: 104, align: 'center' }),
-      material: tb({ x: left, y: 1648, w: textW, h: 110 }, { ...c, size: 88, uppercase: true }),
-      edition: tb({ x: left, y: 1772, w: textW, h: 86 }, { ...c, size: 58, bold: false }),
-      serial: tb({ x: left, y: 1870, w: textW, h: 110 }, { ...c, size: 84, font: BUILTIN_FONTS[6].css }),
+      name: tb({ ...g.nameBar }, { ...c, size: 104, align: 'center' }),
+      material: tb({ x: info.x, y: info.y + 10, w: textW, h: 120 }, { ...c, size: 100, uppercase: true }),
+      category: tb({ x: info.x, y: info.y + 140, w: textW, h: 90 }, { ...c, size: 66, bold: false }),
     },
     psa,
     updatedAt: 0,
@@ -75,12 +76,10 @@ export function normalizeLayout(material: Material, stored: Partial<Layout> | un
     // the frames are fixed, so the art window and layering are too
     layering: 'art-behind',
     art: { ...d.art, ...stored.art, box: { ...FRAME_GEOMETRY.art } },
-    text: {
-      name: { ...d.text.name, ...stored.text?.name, style: { ...d.text.name.style, ...stored.text?.name?.style } },
-      material: { ...d.text.material, ...stored.text?.material, style: { ...d.text.material.style, ...stored.text?.material?.style } },
-      edition: { ...d.text.edition, ...stored.text?.edition, style: { ...d.text.edition.style, ...stored.text?.edition?.style } },
-      serial: { ...d.text.serial, ...stored.text?.serial, style: { ...d.text.serial.style, ...stored.text?.serial?.style } },
-    },
+    text: Object.fromEntries(TEXT_FIELDS.map((f) => {
+      const st = stored.text?.[f]
+      return [f, { ...d.text[f], ...st, style: { ...d.text[f].style, ...st?.style } }]
+    })) as Layout['text'],
     psa: { ...d.psa, ...stored.psa, style: { ...d.psa.style, ...stored.psa?.style } },
   }
 }
