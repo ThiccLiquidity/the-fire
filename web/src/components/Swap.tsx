@@ -82,7 +82,7 @@ export function Swap({ demo, s }: { demo?: DemoControls; s: FireState }) {
   const [slip, setSlip] = useState(0.01);
   const [impactOk, setImpactOk] = useState(false);
   const [pendingHash, setPendingHash] = useState("");
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   const key = `${from.address}|${to.address}|${amt}`;
   const seq = useRef(0);
   const keepMsg = useRef(false); // the next amount change comes with its own message: don't clear it

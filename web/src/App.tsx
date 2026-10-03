@@ -45,7 +45,7 @@ const NOBODY = /^0x0{40}$/i; // a fire that went out with no tickets has no winn
 
 export default function App() {
   const [s, setS] = useState<FireState>(api.state());
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   const [demoHour, setDemoHour] = useState<number | null>(null);
   const [how, setHow] = useState(false);
   // Sound is on unless the visitor turned it off (remembered per browser). Browsers still wait for a first click.

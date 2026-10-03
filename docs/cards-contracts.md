@@ -45,10 +45,23 @@
 - a contract that refuses NFTs can't stall the queue
 - permissions, burns, royalties, metadata
 
+## Deploying
+
+`contracts/script/DeployCards.s.sol` deploys FirePacks, FireCards and a drand adapter pointed at FireCards, wires them,
+sets the royalty, and hands ownership to the multisig (`OWNER`), which must then call `acceptOwnership()` on both. It
+checks every input first and refuses a plain wallet as owner unless told otherwise. Settings: `.env.example` (card
+contracts section). No keys in `.env`: sign with the Foundry keystore or a Ledger. A test runs the same steps.
+
+The site has the ABIs: `web/src/data/fireCardsAbi.json`, `firePacksAbi.json`.
+
+## Money and the economy
+
+Decided Oct 3. See `docs/omni-economy.md`. The contracts never hold funds: whatever is paid is forwarded or
+burned in the same transaction.
+
 ## Still open
 
-- **The sale contract:** pack price and currency, where the money goes, and how the fire/storm decides when a Fire
-  ends (it calls `mint` and `closeFire`).
-- **PSA reveal:** the fee, the grade odds, and the reveal step (it sets the grade, so the card's metadata and image
-  switch to the right wear frame).
-- Deploying a drand adapter instance for `FireCards` (the existing `OpenVRFAdapter`, pointed at it).
+- **The sale contract:** build it to `docs/omni-economy.md`. It mints packs and calls `closeFire` when a drop sells
+  out. It also needs per-wallet free-pack credits and the 42.0 burn count.
+- **PSA reveal:** the fee and odds are decided (`docs/omni-economy.md`). Still to build: the reveal step, which sets
+  the grade so the card's metadata and image switch to the right wear frame.

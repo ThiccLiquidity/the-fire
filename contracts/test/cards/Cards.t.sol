@@ -6,6 +6,7 @@ import {stdJson} from "forge-std/StdJson.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {CardRules} from "../../src/cards/CardRules.sol";
+import {DeployCards} from "../../script/DeployCards.s.sol";
 
 /// @dev Stands in for the drand adapter: hands out ids, the test delivers words.
 contract MockRandomness {
@@ -368,5 +369,29 @@ contract CardsTest is Test {
         if (a.length < b.length) return false;
         for (uint256 i; i < b.length; i++) if (a[i] != b[i]) return false;
         return true;
+    }
+}
+
+
+contract DeployCardsTest is Test {
+    function test_deployWiresEverythingAndHandsOwnershipToTheMultisig() public {
+        DeployCards s = new DeployCards();
+        address safe = address(0x5AFE);
+        address router = address(0xD5A1);
+        DeployCards.Deployed memory d = s.deploy(router, safe, safe, 500, "ipfs://packs/", address(s));
+        assertEq(address(d.cards.PACKS()), address(d.packs));
+        assertEq(d.packs.cards(), address(d.cards));
+        assertEq(address(d.cards.randomness()), address(d.adapter));
+        assertEq(d.adapter.FIRE(), address(d.cards));
+        assertEq(address(d.adapter.ROUTER()), router);
+        assertEq(d.packs.pendingOwner(), safe);
+        assertEq(d.cards.pendingOwner(), safe);
+        vm.prank(safe); d.packs.acceptOwnership();
+        vm.prank(safe); d.cards.acceptOwnership();
+        assertEq(d.packs.owner(), safe);
+        assertEq(d.cards.owner(), safe);
+        (address r, uint256 amt) = d.cards.royaltyInfo(1, 10_000);
+        assertEq(r, safe); assertEq(amt, 500);
+        assertEq(d.packs.packImageBase(), "ipfs://packs/");
     }
 }

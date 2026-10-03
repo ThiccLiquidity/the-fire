@@ -11,7 +11,7 @@ function Mock() {
   const [hour, setHour] = useState<number | null>(null);
   const [size, setSize] = useState(0.5);
   const [storm, setStorm] = useState<Storm | undefined>();
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
   const h = hour ?? localHour(now);
   const fmt = (v: number) => { const hh = Math.floor(v), mm = Math.round((v - hh) * 60); return `${((hh + 11) % 12) + 1}:${String(mm).padStart(2, "0")} ${hh >= 12 ? "PM" : "AM"}`; };
