@@ -24,15 +24,27 @@ export const BUILTIN_FRAMES: Record<Material, Partial<Record<Variant, string>>> 
   diamond: { normal: diamond, holo: diamondHolo },
 }
 
-/** PSA wear frames, one per material x variant x wear level (6 x 5 x 2 = 60). Being made now; add each file to
- *  src/assets/frames as <material>[-holo]-l<1-6>.webp (through clean_frames.py) and list it here. */
+/** PSA wear frames: src/assets/frames/<material>[-holo]-l<2-6>.webp, made by clean_frames.py from
+ *  frames-src/originals/wear. Level 1 (PSA 10) is the clean frame itself. */
+const wearFiles = import.meta.glob('./assets/frames/*-l[2-6].webp', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
 export const BUILTIN_WEAR_FRAMES: Record<Material, Partial<Record<Variant, Partial<Record<WearLevel, string>>>>> = {
   paper: {}, wood: {}, burning: {}, charcoal: {}, diamond: {},
+}
+for (const [path, url] of Object.entries(wearFiles)) {
+  const m = /\/(\w+?)(-holo)?-l([2-6])\.webp$/.exec(path)
+  if (!m || !(MATERIALS as readonly string[]).includes(m[1])) continue
+  const v: Variant = m[2] ? 'holo' : 'normal'
+  const set = (BUILTIN_WEAR_FRAMES[m[1] as Material][v] ??= {})
+  set[`L${m[3]}` as WearLevel] = url
+}
+for (const mat of MATERIALS) for (const v of VARIANTS) {
+  const clean = BUILTIN_FRAMES[mat][v]
+  if (clean) (BUILTIN_WEAR_FRAMES[mat][v] ??= {}).L1 = clean // PSA 10 = pristine
 }
 
 /** Bump (to a time in the past, e.g. when the change is made) when a frame file is added or changed: approvals made
  *  before this go stale and must be redone. */
-export const FRAMES_UPDATED_AT = Date.UTC(2026, 9, 3, 5, 0)
+export const FRAMES_UPDATED_AT = Date.UTC(2026, 9, 3, 6, 0)
 
 /** From the templates' layout.json (750 x 1050), doubled to 1500 x 2100. Identical on every frame. */
 export const FRAME_GEOMETRY = {

@@ -36,6 +36,19 @@ export function holoRollChance(m: Material): number {
   return 1 - Math.sqrt(1 - HOLO_RATE[m])
 }
 
+/** A card's holo from two uniform draws in [0, 1). Diamond (always holo) is split evenly between frame only, picture
+ *  only and full (1/3 each, decided Oct 3), so a full-holo Diamond is the rarest Diamond. Every other material rolls
+ *  frame and picture independently at holoRollChance. */
+export function rollHolo(m: Material, u1: number, u2: number): { frame: boolean; picture: boolean } {
+  if (HOLO_RATE[m] >= 1) {
+    if (u1 < 1 / 3) return { frame: true, picture: false }
+    if (u1 < 2 / 3) return { frame: false, picture: true }
+    return { frame: true, picture: true }
+  }
+  const p = holoRollChance(m)
+  return { frame: u1 < p, picture: u2 < p }
+}
+
 export const HOLO_TYPES = ['none', 'frame', 'picture', 'full'] as const
 export type HoloType = (typeof HOLO_TYPES)[number]
 export const HOLO_LABEL: Record<HoloType, string> = { none: 'None', frame: 'Frame', picture: 'Picture', full: 'Full' }

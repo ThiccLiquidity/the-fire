@@ -67,7 +67,7 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
   const renderSamples = () => run(async () => {
     const list = sampleCards(fire)
     setSamples(list)
-    const r = await BatchRenderer.create(deal.characterIds)
+    const r = await BatchRenderer.create(deal.characterIds, deal.cards.some((c) => c.grade != null))
     try {
       const next = [...list]
       await r.renderAll(list.map((x) => x.card), 'webp', {
@@ -105,7 +105,7 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
     abort.current = new AbortController()
     await deleteBlobsWithPrefix(`render:${fire.number}:`)
     await updateFire(fire.number, { build: undefined })
-    const r = await BatchRenderer.create(deal.characterIds)
+    const r = await BatchRenderer.create(deal.characterIds, deal.cards.some((c) => c.grade != null))
     const t0 = performance.now()
     // one image per look, shared by every card that looks the same
     const looks = distinctLooks(deal.cards)

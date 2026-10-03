@@ -10,12 +10,13 @@ import { effectiveKey, getStudio } from './store'
 import { VARIANTS, type OutputFormat } from './types'
 import type { WorkerIn, WorkerOut } from './build.worker'
 
-export async function collectBundle(characterIds: string[]): Promise<AssetBundle> {
+/** `withWear`: also load the PSA wear frames (only needed once cards have grades). */
+export async function collectBundle(characterIds: string[], withWear = false): Promise<AssetBundle> {
   const s = getStudio()
   const frames: AssetBundle['frames'] = {}
   for (const m of MATERIALS) {
     for (const v of VARIANTS) {
-      for (const w of ['clean', ...WEAR_LEVELS] as WearLook[]) {
+      for (const w of (withWear ? ['clean', ...WEAR_LEVELS] : ['clean']) as WearLook[]) {
         const b = frameBlob(m, v, w)
         if (b) frames[frameId(m, v, w)] = await b
       }
@@ -67,8 +68,8 @@ export class BatchRenderer {
     this.bundle = bundle
   }
 
-  static async create(characterIds: string[]): Promise<BatchRenderer> {
-    const r = new BatchRenderer(await collectBundle(characterIds))
+  static async create(characterIds: string[], withWear = false): Promise<BatchRenderer> {
+    const r = new BatchRenderer(await collectBundle(characterIds, withWear))
     await r.start()
     return r
   }

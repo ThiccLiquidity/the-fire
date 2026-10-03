@@ -11,12 +11,13 @@
  *     nothing about a card's pack slot or material.
  *  4. Character: uniform among the Fire's characters, per card (seeded).
  *  5. Holo: two independent rolls per card (frame, picture), each p = 1 - sqrt(1 - rate); both = full holo.
+ *     Diamond is always holo: 1/3 frame only, 1/3 picture only, 1/3 full (rollHolo).
  *  6. Edition: within this Fire, per character + material, cards are numbered 1..N in serial order.
  *  PSA grades are NOT rolled here (they come from drand, committed on-chain, hidden until the paid reveal). */
 
 import { Stream } from './prng'
 import {
-  CARDS_PER_PACK, HOLO_TYPES, MATERIALS, RARITY_UNITS, RATE_SCALE, holoRollChance, holoTypeOf, type HoloType, type Material,
+  CARDS_PER_PACK, HOLO_TYPES, MATERIALS, RARITY_UNITS, RATE_SCALE, holoTypeOf, rollHolo, type HoloType, type Material,
 } from './rules'
 
 export const DEAL_METHOD = 'sample-sha256ctr-v1'
@@ -193,9 +194,9 @@ export function dealFire(input: DealInput): DealResult {
   const holoStream = new Stream(seed, 'holo')
   const cards: DealtCard[] = bySerial.map((p) => {
     const characterId = characterIds[charStream.int(characterIds.length)]
-    const pRoll = holoRollChance(p.material)
-    const holoFrame = holoStream.float() < pRoll
-    const holoPicture = holoStream.float() < pRoll
+    const u1 = holoStream.float()
+    const u2 = holoStream.float() // always two draws per card, so one card's rule never shifts another's rolls
+    const { frame: holoFrame, picture: holoPicture } = rollHolo(p.material, u1, u2)
     return {
       serial: p.serial, fire, pack: p.pack, slot: p.slot, material: p.material, characterId,
       holoFrame, holoPicture, holo: holoTypeOf(holoFrame, holoPicture), edition: 0, editionOf: 0,

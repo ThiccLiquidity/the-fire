@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { computePool, dealFire, holoCounts, packRespectsFloor, zeroAccumulators, type Accumulators, type DealInput } from './deal'
 import { sha256Hex, Stream } from './prng'
-import { HOLO_RATE, MATERIALS, RARITY_UNITS, RATE_SCALE, holoRollChance } from './rules'
+import { HOLO_RATE, MATERIALS, RARITY_UNITS, RATE_SCALE, holoRollChance, rollHolo } from './rules'
 
 const CHARS = ['rabbit', 'bird', 'fox']
 
@@ -150,7 +150,7 @@ describe('dealFire', () => {
       const anyHolo = n - hc[m].none
       const rate = HOLO_RATE[m]
       if (m === 'diamond') {
-        expect(hc[m].full).toBe(n)
+        expect(hc[m].none).toBe(0) // always holo; the 1/3 split is checked in the rollHolo test
         continue
       }
       const sd = Math.sqrt((rate * (1 - rate)) / n)
@@ -165,6 +165,19 @@ describe('dealFire', () => {
       expect(Math.abs(fo - p * (1 - p))).toBeLessThan(4 * oneSd + 1e-9)
       expect(Math.abs(po - p * (1 - p))).toBeLessThan(4 * oneSd + 1e-9)
     }
+  })
+
+  it('Diamond is always holo, split 1/3 frame, 1/3 picture, 1/3 full', () => {
+    const n = 30_000
+    const tally = { frame: 0, picture: 0, full: 0, none: 0 }
+    for (let i = 0; i < n; i++) {
+      const r = rollHolo('diamond', (i + 0.5) / n, 0.999)
+      tally[r.frame && r.picture ? 'full' : r.frame ? 'frame' : r.picture ? 'picture' : 'none']++
+    }
+    expect(tally).toEqual({ frame: 10_000, picture: 10_000, full: 10_000, none: 0 })
+    // the other materials are unchanged: independent rolls at holoRollChance
+    const p = holoRollChance('paper')
+    expect(rollHolo('paper', p - 1e-9, p + 1e-9)).toEqual({ frame: true, picture: false })
   })
 
   it('rejects bad input', () => {

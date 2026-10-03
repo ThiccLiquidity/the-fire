@@ -2,7 +2,7 @@
  *  (HTMLCanvasElement or OffscreenCanvas) and in a worker (OffscreenCanvas). No React, no IndexedDB. */
 
 import type { DealtCard } from './deal'
-import { CARD_H, CARD_W, CATEGORY_LABEL, HOLO_LABEL, MATERIAL_LABEL, type Category, type Material } from './rules'
+import { CARD_H, CARD_W, CATEGORY_LABEL, HOLO_LABEL, MATERIAL_LABEL, wearLookOf, type Category, type Material, type WearLook } from './rules'
 import type { Layout, OutputFormat, PsaBox, Rect, TextBox, TextStyle } from './types'
 import type { Ctx2D } from './wear'
 
@@ -22,6 +22,7 @@ export interface CardView {
   materialLabel: string
   categoryLabel: string
   psaText: string
+  wear: WearLook
 }
 
 export function cardView(card: Pick<DealtCard, 'material' | 'grade'>, characterName: string, category?: Category): CardView {
@@ -31,6 +32,7 @@ export function cardView(card: Pick<DealtCard, 'material' | 'grade'>, characterN
     materialLabel: MATERIAL_LABEL[card.material],
     categoryLabel: category ? CATEGORY_LABEL[category] : '',
     psaText: card.grade == null ? 'PSA ?' : `PSA ${card.grade}`,
+    wear: wearLookOf(card.grade),
   }
 }
 
@@ -174,9 +176,12 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
     if (assets.frame) drawFrame(ctx, assets.frame)
     if (assets.art) drawArt(ctx, assets.art, layout)
   }
-  drawText(ctx, view.name, layout.text.name)
-  drawText(ctx, view.materialLabel, layout.text.material)
-  drawText(ctx, view.categoryLabel, layout.text.category)
+  // heavy wear (PSA 3-1) puts scorch and stains under the text: give un-outlined text its outline so it stays readable
+  const worn = view.wear === 'L5' || view.wear === 'L6'
+  const tb = (b: TextBox): TextBox => (worn && b.style.outlineWidth === 0 ? { ...b, style: { ...b.style, outlineWidth: 6 } } : b)
+  drawText(ctx, view.name, tb(layout.text.name))
+  drawText(ctx, view.materialLabel, tb(layout.text.material))
+  drawText(ctx, view.categoryLabel, tb(layout.text.category))
   drawPsa(ctx, view.psaText, layout.psa)
   ctx.restore()
 }

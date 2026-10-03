@@ -27,6 +27,8 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
 - Pack (6 cards): slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6 Burning-or-better.
 - Holo: chance a card is holo at all stays **5 / 10 / 50 / 90 / 100%** (Paper -> Diamond). It's two equal, independent
   rolls, one for a holo frame and one for a holo picture, each at p = 1 - sqrt(1 - rate). Both hitting = **full holo**.
+  Diamond is always holo, split evenly: 1/3 frame only, 1/3 picture only, 1/3 full (decided Oct 3), so a full-holo
+  Diamond is the rarest Diamond.
 
   | Material | Holo (any) | Each roll | Frame only | Picture only | Full holo |
   |---|---|---|---|---|---|
@@ -34,7 +36,7 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
   | Wood | 10% | 5.13% | 4.87% | 4.87% | 0.26% (1 in ~380) |
   | Burning | 50% | 29.3% | 20.7% | 20.7% | 8.6% |
   | Charcoal | 90% | 68.4% | 21.6% | 21.6% | 46.8% |
-  | Diamond | 100% | 100% | 0 | 0 | 100% |
+  | Diamond | 100% | - | 33.3% | 33.3% | 33.3% |
 - Printed on the card: character name (top bar, centered), material, category and the PSA grade ("PSA ?" until
   revealed). **Edition** ("12 of 43" in Fire #7) and the **global serial** (never resets) are in the metadata, not on
   the image (shared images, decided Oct 3).
@@ -45,7 +47,9 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
   The set is the 10 "OMNI Prismatic" frames (all 5 materials, normal + holo), approved Oct 3.
 - **Holo comes from the frame art itself**, not a code effect. Procedural foils were prototyped and rejected.
 - **PSA wear is designed into the frames:** 6 wear levels, each a full frame per material x normal/holo
-  (6 x 5 x 2 = 60 frames). The clean frame is used before the grade is revealed.
+  (6 x 5 x 2 = 60 frames; PSA 10 is the clean frame itself, so 50 worn files, in `studio/frames-src/originals/wear`).
+  The clean frame is used before the grade is revealed. On PSA 3-2 and 1, dark text gets a light outline so it stays
+  readable over the scorch marks.
 
   | Level | Grades |
   |---|---|
@@ -65,9 +69,25 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
 - **Category per character** (set once in the Library), first match wins: Person (fictional only), Animal, Plant,
   Place, Object, Element, Idea.
 
+## Packs and opening (decided Oct 3)
+- **Two collections.** *The Fire: Packs*: sealed packs, one stackable token type per Fire (ERC-1155), so "Fire #7
+  Sealed Pack x 3" lists and trades like any item and each Fire has its own floor. *The Fire: Cards*: every card a
+  unique NFT (ERC-721) with its serial, edition, material, holo, category and grade as traits.
+- **Buying:** packs are bought while the fire burns and are tradeable sealed from then on.
+- **When the fire goes out:** the contract freezes the pack count and computes the Fire's pool from the rarity math and
+  carry-over (the same math as the studio, ported exactly, with a parity test).
+- **Contents stay secret until opened.** Opening is two steps: the holder taps Open (the pack is burned), fresh drand
+  randomness arrives a few seconds later and draws that pack's 6 cards from what's left in the Fire's pool, keeping
+  the pack guarantees. Nobody, including the owner, can know a sealed pack's contents in advance, and the Fire's
+  totals stay exact. The cards are minted to the holder and the site plays the opening animation from them.
+- **Images** depend only on the Fire's characters (shared images), so they're built before the fire goes out; each
+  card's metadata points at its shared image.
+- To check before launch: marketplace support for Robinhood Chain, and a lawyer's read on selling and reselling
+  sealed packs with random contents.
+
 ## Left open
 - Category is printed on the card for now (it can be hidden per material in Frames & Layout).
-- The 60 PSA wear frames are being made; until a level is in, cards with that grade can't be approved.
+- PSA 9-8 frames are slightly softer than PSA 10 (ChatGPT redrew the texture); the owner may have them redone.
 - The pack contract (deal, accumulators, drand grades, reveal fee) and the token standard come next. The studio's
   deal step is written so the real contract result can replace the sample deal.
 - Whether the Fire scene stays as the home for packs isn't decided. The studio doesn't depend on it.

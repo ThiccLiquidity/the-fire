@@ -5,7 +5,7 @@ import { getBlob } from '../db'
 import type { DealtCard } from '../deal'
 import { BUILTIN_FONTS, defaultLayout } from '../layoutDefaults'
 import { cardView, drawCard } from '../render'
-import { CARD_H, CARD_W, MATERIALS, MATERIAL_LABEL, WEAR_LABEL, WEAR_LEVELS, holoTypeOf, type Material } from '../rules'
+import { CARD_H, CARD_W, MATERIALS, MATERIAL_LABEL, WEAR_LABEL, WEAR_LEVELS, holoTypeOf, wearLookOf, type Material, type WearLook } from '../rules'
 import {
   addFont, deleteFont, effectiveKey, fontFamilyCss, onBlobChanged, saveLayout, useStudio,
 } from '../store'
@@ -56,23 +56,23 @@ function FrameGallery({ m }: { m: Material }) {
         })}
       </div>
       <p className="muted small" data-testid={`wear-${m}`}>
-        PSA wear frames: {VARIANTS.flatMap((v) => WEAR_LEVELS.filter((w) => hasFrame(m, v, w))).length} of {VARIANTS.length * WEAR_LEVELS.length} delivered
-        ({WEAR_LEVELS.map((w) => WEAR_LABEL[w]).join(', ')}; normal + holo). Until a level is delivered, cards with that
-        grade can't be approved.
+        PSA wear frames: {VARIANTS.flatMap((v) => WEAR_LEVELS.filter((w) => hasFrame(m, v, w))).length} of {VARIANTS.length * WEAR_LEVELS.length} in
+        ({WEAR_LEVELS.map((w) => WEAR_LABEL[w]).join(', ')}; normal + holo; PSA 10 is the clean frame). Use "PSA preview"
+        below to see any grade.
       </p>
     </div>
   )
 }
 
 /** Decoded bitmap of a built-in frame. */
-function useFrameBitmap(m: Material, v: Variant): ImageBitmap | null {
+function useFrameBitmap(m: Material, v: Variant, wear: WearLook): ImageBitmap | null {
   const [bmp, setBmp] = useState<ImageBitmap | null>(null)
   useEffect(() => {
     let live = true
     let made: ImageBitmap | null = null
     setBmp(null)
     // a missing holo frame previews with the normal one, like the renderer
-    const p = frameBlob(m, v) ?? frameBlob(m, 'normal')
+    const p = frameBlob(m, v, wear)
     void p?.then(async (b) => {
       if (!live) return
       made = await createImageBitmap(b)
@@ -80,7 +80,7 @@ function useFrameBitmap(m: Material, v: Variant): ImageBitmap | null {
       else made.close()
     })
     return () => { live = false; made?.close() }
-  }, [m, v])
+  }, [m, v, wear])
   return bmp
 }
 
@@ -112,6 +112,7 @@ function LayoutEditor({ m }: { m: Material }) {
   const [charId, setCharId] = useState<string>('')
   const [frameHolo, setFrameHolo] = useState(false)
   const [picHolo, setPicHolo] = useState(false)
+  const [grade, setGrade] = useState<number | null>(null)
   const [showBoxes, setShowBoxes] = useState(true)
   const [busy, error, run] = useAction()
   const [savedMsg, setSavedMsg] = useState('')
@@ -119,14 +120,14 @@ function LayoutEditor({ m }: { m: Material }) {
 
   const char = s.characters.find((c) => c.id === charId) ?? s.characters[0]
   const artSlot = char?.images[m]?.[picHolo ? 'holo' : 'normal'] ?? char?.images[m]?.normal
-  const frameBmp = useFrameBitmap(m, frameHolo ? 'holo' : 'normal')
+  const frameBmp = useFrameBitmap(m, frameHolo ? 'holo' : 'normal', wearLookOf(grade))
   const artBmp = useBitmap(artSlot ? effectiveKey(artSlot) : undefined)
 
   const canvas = useRef<HTMLCanvasElement>(null)
   const sampleCard: DealtCard = useMemo(() => ({
     serial: 1234, fire: Math.max(1, s.global.nextFireNumber - 1), pack: 1, slot: 1, material: m, characterId: char?.id ?? '',
-    holoFrame: frameHolo, holoPicture: picHolo, holo: holoTypeOf(frameHolo, picHolo), edition: 12, editionOf: 43,
-  }), [m, char?.id, frameHolo, picHolo, s.global.nextFireNumber])
+    holoFrame: frameHolo, holoPicture: picHolo, holo: holoTypeOf(frameHolo, picHolo), edition: 12, editionOf: 43, grade,
+  }), [m, char?.id, frameHolo, picHolo, grade, s.global.nextFireNumber])
 
   useEffect(() => {
     const ctx = canvas.current?.getContext('2d')
@@ -191,6 +192,12 @@ function LayoutEditor({ m }: { m: Material }) {
         </Field>
         <label className="check"><input type="checkbox" checked={frameHolo} onChange={(e) => setFrameHolo(e.target.checked)} /> holo frame</label>
         <label className="check"><input type="checkbox" checked={picHolo} onChange={(e) => setPicHolo(e.target.checked)} /> holo picture</label>
+        <Field label="PSA preview">
+          <select value={grade ?? ''} onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : null)} data-testid="psa-preview">
+            <option value="">Unrevealed</option>
+            {[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((g) => <option key={g} value={g}>PSA {g}</option>)}
+          </select>
+        </Field>
         <label className="check"><input type="checkbox" checked={showBoxes} onChange={(e) => setShowBoxes(e.target.checked)} /> show boxes</label>
       </div>
       <div className="editor">
