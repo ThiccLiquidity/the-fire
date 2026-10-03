@@ -41,7 +41,7 @@ export function Export({ fire }: { fire: FireRecord }) {
   const ready = blockers.length === 0
   const format = fire.build?.format ?? 'webp'
   /** The shared image file this card points at. */
-  const fileOf = (c: DealtCard) => lookFileName(lookOf(c), charOf(c.characterId), format)
+  const fileOf = (c: DealtCard) => lookFileName(lookOf(c), deal!.characterIds.indexOf(c.characterId), format)
 
   /** One file per look (shared image), not per card. */
   async function imageFiles(onEach?: (i: number) => void): Promise<UploadFile[]> {
@@ -140,7 +140,7 @@ export function Export({ fire }: { fire: FireRecord }) {
       {!ready && <Notice kind="warn">{blockers.map((b) => <div key={b}>{b}</div>)}</Notice>}
 
       <h3>Download</h3>
-      <p className="muted small">A zip with images/ (one shared image per look, e.g. rabbit-1a2b3c-wood-frame-clean.{format}), metadata/&lt;serial&gt;.json (ERC-721 style, one per card, pointing at its shared image) and fire.json (the deal record).</p>
+      <p className="muted small">A zip with images/ (one shared image per look, e.g. c0-wood-frame-clean.{format}, the names the card contract expects), metadata/&lt;serial&gt;.json (ERC-721 style, one per card, pointing at its shared image) and fire.json (the deal record).</p>
       <button className="primary" disabled={!ready || busy} onClick={downloadZip} data-testid="download-zip">Download zip</button>
 
       <h3>Upload to Pinata (IPFS)</h3>

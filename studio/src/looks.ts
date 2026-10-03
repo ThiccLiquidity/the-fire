@@ -5,7 +5,7 @@
 
 import type { DealtCard } from './deal'
 import { MATERIAL_LABEL, holoTypeOf, wearLookOf, type HoloType, type Material, type WearLook } from './rules'
-import type { Character, OutputFormat } from './types'
+import type { OutputFormat } from './types'
 
 export interface Look {
   characterId: string
@@ -33,10 +33,11 @@ function slug(s: string): string {
   return s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'character'
 }
 
-/** Readable and unique: "fire7-rabbit-1a2b3c-wood-frame-clean.webp". The id part keeps two characters with the same name
- *  apart. */
-export function lookFileName(l: Look, c: Pick<Character, 'id' | 'name'>, format: OutputFormat): string {
-  return `fire${l.fire}-${slug(c.name)}-${c.id.slice(0, 6).toLowerCase()}-${slug(MATERIAL_LABEL[l.material])}-${holoOfLook(l)}-${l.wear.toLowerCase()}.${format}`
+/** The image's name inside its Fire's image folder: "c<character>-<material>-<holo>-<wear>.<ext>", e.g.
+ *  "c0-wood-frame-clean.webp", where <character> is the character's position in the Fire's list. The card contract
+ *  (contracts/src/cards/FireCards.sol, imageFile) builds exactly this name, so on-chain metadata finds the image. */
+export function lookFileName(l: Look, characterIndex: number, format: OutputFormat): string {
+  return `c${characterIndex}-${slug(MATERIAL_LABEL[l.material])}-${holoOfLook(l)}-${l.wear.toLowerCase()}.${format}`
 }
 
 /** The distinct looks among `cards`, each with one representative card to render it from (first by serial). */

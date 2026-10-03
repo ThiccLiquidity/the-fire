@@ -41,6 +41,9 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
   revealed). **Edition** ("12 of 43" in Fire #7) and the **global serial** (never resets) are in the metadata, not on
   the image (shared images, decided Oct 3).
 
+## Name
+**Omni** — tagline **"Forged in Fire"** (decided Oct 3). Run a trademark search before launch.
+
 ## Decided Oct 3
 - **Frames are built in and locked.** The owner's master frames ship with the studio (`studio/src/assets/frames`,
   cleaned from `studio/frames-src` by `clean_frames.py`). The only thing dropped in per card is the character image.

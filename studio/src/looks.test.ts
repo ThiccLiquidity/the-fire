@@ -33,10 +33,10 @@ describe('shared images', () => {
     expect(looks.map((l) => l.card.serial)).toEqual([1, 3, 4, 5])
   })
 
-  it('file names are readable and unique per character', () => {
+  it('file names match the card contract', () => {
     const l = lookOf(card({ holoFrame: true, holoPicture: true, holo: 'full', grade: 10 }))
-    expect(lookFileName(l, { id: 'abcdef123', name: 'Red Fox!' }, 'webp')).toBe('fire1-red-fox-abcdef-wood-full-l1.webp')
-    expect(lookFileName(lookOf(card({})), { id: 'zz9999', name: 'Red Fox' }, 'png')).toBe('fire1-red-fox-zz9999-wood-none-clean.png')
+    expect(lookFileName(l, 0, 'webp')).toBe('c0-wood-full-l1.webp')
+    expect(lookFileName(lookOf(card({ material: 'burning', grade: 5 })), 2, 'png')).toBe('c2-fire-none-l4.png') // same names as FireCards.imageFile
   })
 
   it('metadata keeps the per-card details and points at the shared image', () => {
