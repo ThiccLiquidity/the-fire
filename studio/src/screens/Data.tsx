@@ -67,10 +67,10 @@ export function Data() {
 
       <section className="panel dev">
         <h2>Dev / testing</h2>
-        <Notice kind="warn">Placeholders only: generated test frames and characters, clearly labelled PLACEHOLDER. Replace them with real art.</Notice>
+        <Notice kind="warn">Placeholders only: three generated test characters, clearly labelled PLACEHOLDER. Replace them with real art. (Frames are built in.)</Notice>
         <div className="row wrap">
           <button onClick={() => void run(async () => { await loadSampleAssets(setStatus) })} disabled={busy} data-testid="load-samples">
-            Load sample assets (10 frames + 3 characters)
+            Load sample characters (3)
           </button>
         </div>
         <div className="row wrap">

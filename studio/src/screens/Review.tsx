@@ -3,6 +3,7 @@ import { BatchRenderer, renderKey } from '../builder'
 import { Notice, ProgressBar, useAction } from '../components'
 import { blobKeys, deleteBlobsWithPrefix, getBlob, putBlobs } from '../db'
 import type { DealtCard } from '../deal'
+import { hasFrame } from '../frames'
 import { cardTitle } from '../render'
 import { HOLO_LABEL, HOLO_TYPES, MATERIALS, MATERIAL_LABEL, type HoloType, type Material } from '../rules'
 import { lastAssetChange, updateFire, useStudio } from '../store'
@@ -54,6 +55,9 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
   const approvalStale = !!fire.approvedAt && assetsChanged > fire.approvedAt
   const buildStale = !!fire.build && assetsChanged > fire.build.builtAt
   const samplesReady = samples.every((x) => x.url)
+  // frames this Fire's cards need that haven't been delivered yet
+  const missing = [...new Set(deal.cards.filter((c) => !hasFrame(c.material, c.holoFrame ? 'holo' : 'normal'))
+    .map((c) => `${MATERIAL_LABEL[c.material]} ${c.holoFrame ? 'holo' : 'normal'}`))]
 
   // free sample object URLs on unmount
   const urls = useRef<string[]>([])
@@ -92,6 +96,7 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
 
   const approve = () => run(async () => {
     if (!samplesReady) throw new Error('Render the samples first.')
+    if (missing.length) throw new Error(`Missing frames: ${missing.join(', ')}.`)
     await updateFire(fire.number, { approvedAt: Date.now() })
   })
 
@@ -133,10 +138,12 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
       </div>
       {approvalStale && <Notice kind="warn">Art, frames, layouts or fonts changed after approval. Re-render the samples and approve again.</Notice>}
 
+      {missing.length > 0 && <Notice kind="warn">This Fire deals cards whose frame isn't delivered yet: {missing.join(', ')}. Approval is blocked until they're added.</Notice>}
+
       <h3>1. Samples: one per character x material x holo type ({samples.length})</h3>
       <div className="row wrap">
         <button onClick={renderSamples} disabled={busy}>Re-render samples</button>
-        <button className="primary" onClick={approve} disabled={busy || !samplesReady || (!!fire.approvedAt && !approvalStale)} data-testid="approve-all">Approve all</button>
+        <button className="primary" onClick={approve} disabled={busy || !samplesReady || missing.length > 0 || (!!fire.approvedAt && !approvalStale)} data-testid="approve-all">Approve all</button>
         <span className="muted small">Nothing is uploaded before approval.</span>
       </div>
       {progress && <ProgressBar value={progress.done / Math.max(1, progress.total)} label={`${progress.what}: ${progress.done} / ${progress.total}`} />}

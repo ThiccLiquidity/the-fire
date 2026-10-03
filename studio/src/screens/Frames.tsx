@@ -1,18 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { DropZone, Field, Notice, NumberInput, useAction } from '../components'
+import { BUILTIN_FRAMES, frameBlob } from '../frames'
 import { getBlob } from '../db'
 import type { DealtCard } from '../deal'
 import { BUILTIN_FONTS, defaultLayout } from '../layoutDefaults'
 import { cardView, drawCard } from '../render'
 import { CARD_H, CARD_W, MATERIALS, MATERIAL_LABEL, holoTypeOf, type Material } from '../rules'
 import {
-  addFont, deleteFont, effectiveKey, fontFamilyCss, onBlobChanged, removeFrame, saveLayout, setFrame, useBlobUrl, useStudio,
+  addFont, deleteFont, effectiveKey, fontFamilyCss, onBlobChanged, saveLayout, useStudio,
 } from '../store'
 import { TEXT_FIELDS, TEXT_FIELD_LABEL, VARIANTS, type Layout, type PsaBox, type Rect, type TextBox, type TextField, type Variant } from '../types'
 
 type BoxId = 'art' | TextField | 'psa'
 const BOX_LABEL: Record<BoxId, string> = { art: 'Art window', ...TEXT_FIELD_LABEL, psa: 'PSA badge' }
 const BOX_IDS: BoxId[] = ['art', ...TEXT_FIELDS, 'psa']
+/** The art window is fixed by the frames: shown, never moved. */
+const LOCKED: BoxId[] = ['art']
 
 export function Frames() {
   const [m, setM] = useState<Material>('paper')
@@ -23,47 +26,57 @@ export function Frames() {
           <button key={x} className={x === m ? 'active' : ''} onClick={() => setM(x)} data-testid={`mat-${x}`}>{MATERIAL_LABEL[x]}</button>
         ))}
       </div>
-      <FrameUploads key={`f-${m}`} m={m} />
+      <FrameGallery key={`f-${m}`} m={m} />
       <LayoutEditor key={`l-${m}`} m={m} />
       <FontManager />
     </div>
   )
 }
 
-function FrameUploads({ m }: { m: Material }) {
-  const s = useStudio()
+function FrameGallery({ m }: { m: Material }) {
   return (
     <div className="panel">
-      <h3>{MATERIAL_LABEL[m]} frames</h3>
-      <p className="muted small">Expected 1500 x 2100 PNG with a transparent art window (or opaque, with "art above frame"). Other sizes are scaled to fit.</p>
+      <h3>{MATERIAL_LABEL[m]} frames <span className="tag">built in · locked</span></h3>
+      <p className="muted small">
+        The collection's master frames. They ship with the studio and can't be uploaded or edited here; every frame shares the
+        same art window and panels, so the layout below fits them all.
+      </p>
       <div className="row wrap">
-        {VARIANTS.map((v) => <FrameSlot key={v} m={m} v={v} asset={s.frames[m][v]} />)}
+        {VARIANTS.map((v) => {
+          const url = BUILTIN_FRAMES[m][v]
+          return (
+            <div key={v} className="frame-slot" data-testid={`frame-${m}-${v}`}>
+              <div className="slot-head">{v === 'normal' ? 'Normal frame' : 'Holo frame'}</div>
+              <div className="frame-drop">
+                {url ? <img src={url} className="checker" alt={`${m} ${v} frame`} /> : <span className="muted">Not delivered yet</span>}
+              </div>
+              {!url && <Notice kind="warn">Missing. Fires that deal this card can't be approved until it's added.</Notice>}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-function FrameSlot({ m, v, asset }: { m: Material; v: Variant; asset?: { key: string; width: number; height: number; fileName: string; placeholder?: boolean } }) {
-  const url = useBlobUrl(asset?.key)
-  const [busy, error, run] = useAction()
-  const wrongSize = asset && (asset.width !== CARD_W || asset.height !== CARD_H)
-  return (
-    <div className="frame-slot" data-testid={`frame-${m}-${v}`}>
-      <div className="slot-head">{v === 'normal' ? 'Normal frame' : 'Holo frame'}</div>
-      <DropZone accept="image/*" className="frame-drop" onFiles={(files) => run(async () => { await setFrame(m, v, files[0], files[0].name) })}>
-        {url ? <img src={url} className="checker" alt={`${m} ${v} frame`} /> : <span className="muted">Drop frame or click</span>}
-        {busy && <span className="slot-busy">saving...</span>}
-      </DropZone>
-      {asset && (
-        <div className="small">
-          {asset.placeholder && <span className="tag">placeholder</span>} {asset.fileName} · {asset.width}x{asset.height}
-          <button className="link danger" onClick={() => void run(() => removeFrame(m, v))}>Remove</button>
-        </div>
-      )}
-      {wrongSize && <Notice kind="warn">Not 1500 x 2100: it will be scaled to fit (centered).</Notice>}
-      {error && <Notice kind="error">{error}</Notice>}
-    </div>
-  )
+/** Decoded bitmap of a built-in frame. */
+function useFrameBitmap(m: Material, v: Variant): ImageBitmap | null {
+  const [bmp, setBmp] = useState<ImageBitmap | null>(null)
+  useEffect(() => {
+    let live = true
+    let made: ImageBitmap | null = null
+    setBmp(null)
+    // a missing holo frame previews with the normal one, like the renderer
+    const p = frameBlob(m, v) ?? frameBlob(m, 'normal')
+    void p?.then(async (b) => {
+      if (!live) return
+      made = await createImageBitmap(b)
+      if (live) setBmp(made)
+      else made.close()
+    })
+    return () => { live = false; made?.close() }
+  }, [m, v])
+  return bmp
 }
 
 /** Decoded bitmap for a stored blob, refreshed when the blob changes. */
@@ -100,9 +113,8 @@ function LayoutEditor({ m }: { m: Material }) {
   const dirty = JSON.stringify({ ...layout, updatedAt: 0 }) !== JSON.stringify({ ...saved, updatedAt: 0 })
 
   const char = s.characters.find((c) => c.id === charId) ?? s.characters[0]
-  const frameAsset = s.frames[m][frameHolo ? 'holo' : 'normal'] ?? s.frames[m].normal
   const artSlot = char?.images[m]?.[picHolo ? 'holo' : 'normal'] ?? char?.images[m]?.normal
-  const frameBmp = useBitmap(frameAsset?.key)
+  const frameBmp = useFrameBitmap(m, frameHolo ? 'holo' : 'normal')
   const artBmp = useBitmap(artSlot ? effectiveKey(artSlot) : undefined)
 
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -133,6 +145,7 @@ function LayoutEditor({ m }: { m: Material }) {
     e.stopPropagation()
     e.preventDefault()
     setSel(id)
+    if (LOCKED.includes(id)) return
     ;(e.target as Element).setPointerCapture(e.pointerId)
     drag.current = { id, mode, sx: e.clientX, sy: e.clientY, start: rectOf(id) }
   }
@@ -190,23 +203,19 @@ function LayoutEditor({ m }: { m: Material }) {
                   data-testid={`lbox-${id}`}
                 >
                   <span className="lbox-label">{BOX_LABEL[id]}</span>
-                  <span className="lbox-handle" onPointerDown={onDown(id, 'resize')} />
+                  {!LOCKED.includes(id) && <span className="lbox-handle" onPointerDown={onDown(id, 'resize')} />}
                 </div>
               )
             })}
           </div>
         </div>
         <div className="editor-props">
-          <Field label="Layering">
-            <select value={layout.layering} onChange={(e) => setLayout({ ...layout, layering: e.target.value as Layout['layering'] })} data-testid="layering">
-              <option value="art-behind">Art behind frame (frame has a transparent window)</option>
-              <option value="art-above">Art above frame</option>
-            </select>
-          </Field>
           <div className="box-pick">
             {BOX_IDS.map((id) => <button key={id} className={id === sel ? 'active' : ''} onClick={() => setSel(id)}>{BOX_LABEL[id]}</button>)}
           </div>
-          <RectFields r={rectOf(sel)} onChange={(r) => setRect(sel, r)} />
+          {LOCKED.includes(sel)
+            ? <p className="muted small">Art window: fixed by the frames ({layout.art.box.w} x {layout.art.box.h} at {layout.art.box.x}, {layout.art.box.y}).</p>
+            : <RectFields r={rectOf(sel)} onChange={(r) => setRect(sel, r)} />}
           {sel === 'art' && (
             <>
               <div className="row wrap">

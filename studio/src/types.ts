@@ -40,6 +40,7 @@ export interface FrameAsset {
   updatedAt: number
   placeholder?: boolean
 }
+/** Legacy: frames used to be uploaded. They are built in now (src/frames.ts); old records are ignored. */
 export type FrameSet = Partial<Record<Variant, FrameAsset>>
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -83,6 +84,8 @@ export interface ArtWindow {
 
 export interface Layout {
   material: Material
+  /** LAYOUT_VERSION it was saved under (see layoutDefaults.ts). */
+  version: number
   layering: Layering
   art: ArtWindow
   text: Record<TextField, TextBox>

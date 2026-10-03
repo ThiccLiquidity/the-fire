@@ -1,22 +1,11 @@
 /** PLACEHOLDER test assets, generated in code, for exercising the whole flow before real art exists.
- *  Frames: a distinct colour per material with a transparent art window (DEFAULT_ART_BOX).
  *  Characters: three simple shapes with a label, drawn on flat magenta so the chroma key gets tested.
  *  Everything is clearly labelled PLACEHOLDER on the image itself. */
 
 import * as db from './db'
-import { DEFAULT_ART_BOX } from './layoutDefaults'
-import { CARD_H, CARD_W, MATERIALS, MATERIAL_LABEL, type Material } from './rules'
-import { saveCharacter, setCharacterImage, setFrame } from './store'
+import { MATERIALS, MATERIAL_LABEL, type Material } from './rules'
+import { saveCharacter, setCharacterImage } from './store'
 import type { Character, Variant } from './types'
-
-const FRAME_COLOR: Record<Material, [string, string]> = {
-  paper: ['#efe4cb', '#c9b48a'],
-  wood: ['#9a6434', '#5b3718'],
-  burning: ['#f07a28', '#8e1f0b'],
-  charcoal: ['#4a4a52', '#16161a'],
-  diamond: ['#c9f3ff', '#5fb7d6'],
-}
-const INK: Record<Material, string> = { paper: '#3b2f1e', wood: '#f6e3c8', burning: '#fff1d6', charcoal: '#e8e8ee', diamond: '#0d3a4a' }
 
 type Ctx = OffscreenCanvasRenderingContext2D
 
@@ -25,69 +14,6 @@ function rainbow(ctx: Ctx, w: number, h: number): CanvasGradient {
   const cols = ['#ff4d6d', '#ffb347', '#fff275', '#7dff9a', '#58c7ff', '#a77dff', '#ff4d6d']
   cols.forEach((c, i) => g.addColorStop(i / (cols.length - 1), c))
   return g
-}
-
-function roundRectPath(ctx: Ctx, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath()
-  ctx.roundRect(x, y, w, h, r)
-}
-
-export async function makePlaceholderFrame(m: Material, holo: boolean): Promise<Blob> {
-  const c = new OffscreenCanvas(CARD_W, CARD_H)
-  const ctx = c.getContext('2d')!
-  const [light, dark] = FRAME_COLOR[m]
-  const g = ctx.createLinearGradient(0, 0, CARD_W, CARD_H)
-  g.addColorStop(0, light)
-  g.addColorStop(1, dark)
-  ctx.fillStyle = g
-  roundRectPath(ctx, 0, 0, CARD_W, CARD_H, 60)
-  ctx.fill()
-  if (holo) {
-    ctx.save()
-    ctx.globalAlpha = 0.5
-    ctx.globalCompositeOperation = 'overlay'
-    ctx.fillStyle = rainbow(ctx, CARD_W, CARD_H)
-    ctx.fillRect(0, 0, CARD_W, CARD_H)
-    ctx.globalAlpha = 0.18
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.fillStyle = '#ffffff'
-    for (let x = -CARD_H; x < CARD_W; x += 120) {
-      ctx.beginPath()
-      ctx.moveTo(x, CARD_H); ctx.lineTo(x + 40, CARD_H); ctx.lineTo(x + 40 + CARD_H, 0); ctx.lineTo(x + CARD_H, 0)
-      ctx.fill()
-    }
-    ctx.restore()
-  }
-  // inner border and plates
-  ctx.strokeStyle = INK[m]
-  ctx.lineWidth = 10
-  roundRectPath(ctx, 50, 50, CARD_W - 100, CARD_H - 100, 40)
-  ctx.stroke()
-  ctx.fillStyle = 'rgba(0,0,0,0.28)'
-  roundRectPath(ctx, 110, 110, CARD_W - 220, 160, 30); ctx.fill()
-  roundRectPath(ctx, 110, 1490, CARD_W - 220, 120, 30); ctx.fill()
-  roundRectPath(ctx, 110, 1830, 900, 150, 30); ctx.fill()
-  // art window: punch a transparent hole, then outline it
-  const a = DEFAULT_ART_BOX
-  ctx.save()
-  ctx.globalCompositeOperation = 'destination-out'
-  ctx.fillStyle = '#000' // fully opaque, so the window is fully cleared
-  roundRectPath(ctx, a.x, a.y, a.w, a.h, 24)
-  ctx.fill()
-  ctx.restore()
-  ctx.strokeStyle = INK[m]
-  ctx.lineWidth = 8
-  roundRectPath(ctx, a.x - 4, a.y - 4, a.w + 8, a.h + 8, 28)
-  ctx.stroke()
-  // label
-  ctx.fillStyle = INK[m]
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.font = '700 46px Arial, sans-serif'
-  ctx.fillText(`PLACEHOLDER FRAME · ${MATERIAL_LABEL[m].toUpperCase()}${holo ? ' · HOLO' : ''}`, CARD_W / 2, 1700)
-  ctx.font = '400 34px Arial, sans-serif'
-  ctx.fillText('replace with the real frame in Frames & Layout', CARD_W / 2, 1760)
-  return c.convertToBlob({ type: 'image/png' })
 }
 
 const BODY: Record<Material, string> = { paper: '#fbf8f1', wood: '#a46a3a', burning: '#c8662a', charcoal: '#2a2a2e', diamond: '#bdf2ff' }
@@ -177,12 +103,6 @@ export const SAMPLE_CHARACTERS: { name: string; shortId: string; shape: Shape }[
 ]
 
 export async function loadSampleAssets(onStatus: (s: string) => void): Promise<void> {
-  for (const m of MATERIALS) {
-    for (const v of ['normal', 'holo'] as Variant[]) {
-      onStatus(`Frame: ${m} ${v}`)
-      await setFrame(m, v, await makePlaceholderFrame(m, v === 'holo'), `placeholder-frame-${m}-${v}.png`, true)
-    }
-  }
   for (const s of SAMPLE_CHARACTERS) {
     const now = Date.now()
     const c: Character = { id: db.newId(), name: s.name, shortId: s.shortId, images: {}, createdAt: now, updatedAt: now, placeholder: true }

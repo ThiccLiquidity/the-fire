@@ -4,14 +4,14 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { DEFAULT_KEY, keyMagentaBlob, type KeyOptions } from './chroma'
 import * as db from './db'
 import { zeroAccumulators } from './deal'
+import { FRAMES_UPDATED_AT } from './frames'
 import { normalizeLayout } from './layoutDefaults'
 import { MATERIALS, type Material } from './rules'
-import type { Character, FireRecord, FontAsset, FrameSet, GlobalState, ImageSlot, Layout, Variant } from './types'
+import type { Character, FireRecord, FontAsset, GlobalState, ImageSlot, Layout, Variant } from './types'
 
 export interface StudioData {
   loaded: boolean
   characters: Character[]
-  frames: Record<Material, FrameSet>
   layouts: Record<Material, Layout>
   fonts: FontAsset[]
   fires: FireRecord[]
@@ -19,14 +19,12 @@ export interface StudioData {
 }
 
 function emptyData(): StudioData {
-  const frames = {} as Record<Material, FrameSet>
   const layouts = {} as Record<Material, Layout>
   for (const m of MATERIALS) {
-    frames[m] = {}
     layouts[m] = normalizeLayout(m, undefined)
   }
   return {
-    loaded: false, characters: [], frames, layouts, fonts: [], fires: [],
+    loaded: false, characters: [], layouts, fonts: [], fires: [],
     global: { accumulators: zeroAccumulators(), nextSerial: 1, nextFireNumber: 1 },
   }
 }
@@ -60,7 +58,7 @@ export async function loadStudio(): Promise<void> {
   const d = emptyData()
   for (const [k, v] of recs) {
     if (k.startsWith('char:')) d.characters.push(v as Character)
-    else if (k.startsWith('frame:')) d.frames[k.slice(6) as Material] = v as FrameSet
+    else if (k.startsWith('frame:')) continue // legacy uploaded frames: the frames are built in now (frames.ts)
     else if (k.startsWith('layout:')) {
       const m = k.slice(7) as Material
       if (MATERIALS.includes(m)) d.layouts[m] = normalizeLayout(m, v as Partial<Layout>)
@@ -190,33 +188,7 @@ export function completeness(c: Character): number {
   return n
 }
 
-// ---------- frames, layouts, fonts ----------
-
-export async function setFrame(m: Material, v: Variant, file: Blob, fileName: string, placeholder = false): Promise<{ width: number; height: number }> {
-  const { width, height } = await imageSize(file)
-  const old = data.frames[m][v]
-  if (old) {
-    await db.deleteBlob(old.key)
-    blobChanged(old.key)
-  }
-  const key = `frame:${m}:${v}:${db.newId()}`
-  await db.putBlob(key, file)
-  const next: FrameSet = { ...data.frames[m], [v]: { key, width, height, fileName, updatedAt: Date.now(), placeholder } }
-  await db.putRecord(`frame:${m}`, next)
-  set({ frames: { ...data.frames, [m]: next } })
-  return { width, height }
-}
-
-export async function removeFrame(m: Material, v: Variant): Promise<void> {
-  const old = data.frames[m][v]
-  if (!old) return
-  await db.deleteBlob(old.key)
-  blobChanged(old.key)
-  const next = { ...data.frames[m] }
-  delete next[v]
-  await db.putRecord(`frame:${m}`, next)
-  set({ frames: { ...data.frames, [m]: next } })
-}
+// ---------- layouts, fonts ----------
 
 export async function saveLayout(layout: Layout): Promise<void> {
   const next = { ...layout, updatedAt: Date.now() }
@@ -295,13 +267,13 @@ export async function saveGlobal(g: GlobalState): Promise<void> {
 /** Latest time any asset that goes into a card changed (art, keyed art, frames, layouts, fonts). Approval must be
  *  newer than this, or the owner approved something that has since changed. */
 export function lastAssetChange(characterIds?: string[]): number {
-  let t = 0
+  let t = FRAMES_UPDATED_AT
   for (const c of data.characters) {
     if (characterIds && !characterIds.includes(c.id)) continue
     t = Math.max(t, c.updatedAt)
   }
   for (const m of MATERIALS) {
-    t = Math.max(t, data.layouts[m].updatedAt, data.frames[m].normal?.updatedAt ?? 0, data.frames[m].holo?.updatedAt ?? 0)
+    t = Math.max(t, data.layouts[m].updatedAt)
   }
   for (const f of data.fonts) t = Math.max(t, f.updatedAt)
   return t

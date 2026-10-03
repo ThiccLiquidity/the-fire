@@ -3,6 +3,7 @@
 
 import * as db from './db'
 import type { DealtCard } from './deal'
+import { frameBlob } from './frames'
 import { CardRenderer, type AssetBundle, type RenderJob, type VariantBlobs } from './renderCore'
 import { MATERIALS, type Material } from './rules'
 import { effectiveKey, getStudio } from './store'
@@ -15,9 +16,8 @@ export async function collectBundle(characterIds: string[]): Promise<AssetBundle
   for (const m of MATERIALS) {
     frames[m] = {}
     for (const v of VARIANTS) {
-      const f = s.frames[m][v]
-      const b = f ? await db.getBlob(f.key) : undefined
-      if (b) frames[m][v] = b
+      const b = frameBlob(m, v)
+      if (b) frames[m][v] = await b
     }
   }
   const art: AssetBundle['art'] = {}
