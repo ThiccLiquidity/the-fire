@@ -1,4 +1,4 @@
-"""Turns the owner's frame templates (frames-src/originals/*.webp, 750 x 1050) into the master frames the studio ships
+"""Turns the owner's frame templates (frames-src/originals/*.png, 750 x 1050) into the master frames the studio ships
 (src/assets/frames/*.webp, 1500 x 2100, lossless). Every frame gets exactly the same treatment, so they stay identical:
 
   1. faithful 2x upscale (premultiplied-alpha Lanczos + light unsharp mask; no AI, the texture is not repainted)
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     outer = outline()
     os.makedirs(OUT, exist_ok=True)
     for f in sorted(os.listdir(SRC)):
-        if not f.endswith('.webp'):
+        if not f.endswith(('.webp', '.png')):
             continue
-        Image.fromarray(clean(upscale(os.path.join(SRC, f)), outer)).save(os.path.join(OUT, f), 'WEBP', lossless=True, quality=100, method=6)
+        Image.fromarray(clean(upscale(os.path.join(SRC, f)), outer)).save(os.path.join(OUT, os.path.splitext(f)[0] + '.webp'), 'WEBP', lossless=True, quality=100, method=6)
         print('ok', f)

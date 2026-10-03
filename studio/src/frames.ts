@@ -3,24 +3,29 @@
  *  Every frame shares FRAME_GEOMETRY, so one layout fits them all. A missing frame blocks approval of any Fire that
  *  deals that material + variant. */
 
+import burning from './assets/frames/burning.webp'
 import burningHolo from './assets/frames/burning-holo.webp'
-import paperHolo from './assets/frames/paper-holo.webp'
+import charcoal from './assets/frames/charcoal.webp'
+import charcoalHolo from './assets/frames/charcoal-holo.webp'
+import diamond from './assets/frames/diamond.webp'
+import diamondHolo from './assets/frames/diamond-holo.webp'
 import paper from './assets/frames/paper.webp'
-import woodHolo from './assets/frames/wood-holo.webp'
+import paperHolo from './assets/frames/paper-holo.webp'
 import wood from './assets/frames/wood.webp'
+import woodHolo from './assets/frames/wood-holo.webp'
 import { MATERIALS, type Material } from './rules'
 import { VARIANTS, type Rect, type Variant } from './types'
 
 export const BUILTIN_FRAMES: Record<Material, Partial<Record<Variant, string>>> = {
   paper: { normal: paper, holo: paperHolo },
   wood: { normal: wood, holo: woodHolo },
-  burning: { holo: burningHolo },
-  charcoal: {},
-  diamond: {},
+  burning: { normal: burning, holo: burningHolo },
+  charcoal: { normal: charcoal, holo: charcoalHolo },
+  diamond: { normal: diamond, holo: diamondHolo },
 }
 
 /** Bump when a frame file is added or changed: approvals made before this go stale and must be redone. */
-export const FRAMES_UPDATED_AT = Date.UTC(2026, 9, 3)
+export const FRAMES_UPDATED_AT = Date.UTC(2026, 9, 3, 12)
 
 /** Measured from the templates (1500 x 2100). Identical on every frame. */
 export const FRAME_GEOMETRY = {

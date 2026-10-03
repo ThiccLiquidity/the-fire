@@ -41,7 +41,7 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
 ## Decided Oct 3
 - **Frames are built in and locked.** The owner's master frames ship with the studio (`studio/src/assets/frames`,
   cleaned from `studio/frames-src` by `clean_frames.py`). The only thing dropped in per card is the character image.
-  A full new set (with a better holo) is being made in ChatGPT and will replace the current five.
+  The set is the 10 "OMNI Prismatic" frames (all 5 materials, normal + holo), approved Oct 3.
 - **Holo comes from the frame art itself**, not a code effect. Procedural foils were prototyped and rejected.
 - **PSA wear is designed into the frames:** 6 wear levels, each a full frame per material x normal/holo
   (6 x 5 x 2 = 60 frames). The clean frame is used before the grade is revealed.
