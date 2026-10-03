@@ -8,13 +8,14 @@
 |---|---|
 | `FirePacks` | Sealed packs, ERC-1155: one stackable token type per Fire (token id = Fire number). The seller mints; only `FireCards` burns, when a pack is opened. Pack art: `<packImageBase>fire<N>.webp`. Royalty (ERC-2981). |
 | `FireCards` | The cards, ERC-721 (token id = global serial). Closes Fires, opens packs, deals cards, on-chain metadata. Royalty (ERC-2981), ERC-4906 metadata updates. |
+| `FireSale` | Sells the packs (`docs/omni-economy.md`): per-drop settings, PLANK-only first packs, PAPER per pack burned, 30% to the PLANK burn, press-holder starters, free pack credits (42 cards burned or a picked suggestion), suggestions. Closes the Fire when a drop sells out. Never holds funds. |
 | `CardRules` | The rarity rules, ported exactly from the Card Studio: pool sizes from the carried accumulators (`computePool`), holo rolls (Diamond always holo, 1/3 each), the pack floor. |
 
 ## The flow
 
 1. **Before a Fire:** the owner calls `configureFire(fire, names, categories, imagesBase)`: the Fire's characters in the
    studio's order and the folder its card images live in (IPFS or Arweave). `lockFire` freezes it.
-2. **While it burns:** the seller (the sale contract, still to build) mints packs to buyers. They're tradeable sealed.
+2. **While it burns:** the seller (`FireSale`) mints packs to buyers. They're tradeable sealed.
 3. **It goes out:** the seller calls `closeFire(fire)`. The pack count freezes and the pool is worked out from the
    rarity math and the carry-over. The pool is public (`poolOf`).
 4. **Opening:** a holder calls `open(fire, count)` (up to 10). Their packs are burned and drand randomness is
@@ -61,7 +62,7 @@ burned in the same transaction.
 
 ## Still open
 
-- **The sale contract:** build it to `docs/omni-economy.md`. It mints packs and calls `closeFire` when a drop sells
-  out. It also needs per-wallet free-pack credits and the 42.0 burn count.
+- **The sale contract:** built (`FireSale.sol`, 28 tests in `test/cards/Sale.t.sol`). Still to do: add it to the
+  deploy script and make it the seller of both contracts (`setSeller`, once each).
 - **PSA reveal:** the fee and odds are decided (`docs/omni-economy.md`). Still to build: the reveal step, which sets
   the grade so the card's metadata and image switch to the right wear frame.

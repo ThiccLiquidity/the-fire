@@ -113,6 +113,24 @@
   },
   {
     "type": "function",
+    "name": "burnFor",
+    "inputs": [
+      {
+        "name": "from",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "ids",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "cardOf",
     "inputs": [
       {
@@ -1455,6 +1473,11 @@
   {
     "type": "error",
     "name": "NotConfigured",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotHolder",
     "inputs": []
   },
   {

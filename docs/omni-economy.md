@@ -1,7 +1,8 @@
 # Omni economy
 
 Decided with the owner on Oct 3 2026, one piece at a time. This replaces the earlier economy notes in
-`docs/cards-contracts.md`. Nothing here is built yet. The sale contract still has to be written to match it.
+`docs/cards-contracts.md`. Built in `contracts/src/cards/FireSale.sol` (tests: `contracts/test/cards/Sale.t.sol`),
+except the PSA reveal, which belongs in the card contract and is still to build.
 Sims are in `sim/omni/`. The visual map is `docs/omni-money-map.html` (also published as the "Omni Money Map" artifact).
 
 ## The story
@@ -11,7 +12,9 @@ made of it. Each drop opens with PLANK lighting the forge.
 
 ## Every number is set per drop
 
-The owner sets these for each drop (each Fire) before it launches. They lock when the first pack sells. The
+The owner sets these for each drop (each Fire) before it launches (`configureDrop`). They lock when the drop opens
+(its start time), so nothing can change while people are buying. The Fire's characters must be set in the card
+contract (`configureFire`) before its drop can be set up. The
 numbers below are the starting values.
 
 | Setting | Start |
@@ -32,7 +35,8 @@ numbers below are the starting values.
 1. **Launch.** Two things open at once:
    - **Starter packs for press holders.**
    - **The paid sale, PLANK only, for the first 50 packs.**
-2. **After 50 PLANK packs:** ETH and USDG can buy too.
+2. **After 50 PLANK packs:** ETH and USDG can buy too. Safety valve: if the PLANK-only packs haven't sold by the time
+   the wallet limit lifts (e.g. the PLANK price feed is down), ETH and USDG open anyway so a drop can't get stuck.
 3. **24 hours:** the starter window closes. Unclaimed starters join the paid supply.
 4. **48 hours, if not sold out:** the 5-per-wallet limit lifts completely.
 5. **Sold out:** the drop is over.
@@ -52,7 +56,12 @@ numbers below are the starting values.
     purchase still succeeds. A mint never fails because of PLANK. The burn wallet only ever buys and burns PLANK.
   - **70% goes to the revenue wallet.** It's the owner's; the owner announces what they do with it.
   - The contract keeps nothing.
-- **Gas:** about 200k gas per purchase (any number of packs), about 1–3 cents on Robinhood Chain. Measure in tests.
+- **Gas (measured in tests, mock router):** about 93k for a 1-pack PLANK buy and 95k for ETH. A real Uniswap swap adds
+  about 60–90k more, so roughly 100k (PLANK) to 180k (ETH/USDG) per purchase, any number of packs. That's cents or less
+  on Robinhood Chain.
+- **The swap's floor:** it must get at least 90% of the PLANK that the 30-minute average price says. If the pool is
+  pumped or manipulated beyond that, the swap is skipped and the burn share goes to the burn wallet.
+- **If the drop never sells out:** the owner can end it (`endDrop`). The Fire closes with the packs that were minted.
 
 ## Starter packs
 
@@ -156,6 +165,8 @@ PLANK burned at that pace: about $3,900–7,800 a year.
 
 ## Still open
 
-- The sale contract itself, built to this doc, with tests and gas measured.
+- A deploy script for the sale contract, and wiring it as the seller of packs and cards.
+- The PSA reveal (in the card contract).
+- Gas measured against the real Uniswap router (fork test).
 - Marketplace support on Robinhood Chain.
 - Before launch: a trademark search, a lawyer's read on sealed packs, an audit, and a testnet run.

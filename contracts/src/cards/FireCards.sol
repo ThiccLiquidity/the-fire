@@ -109,6 +109,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     error NothingLeft();
     error NotStuck();
     error BadLength();
+    error NotHolder();
 
     constructor(address owner_, address packs_) ERC721("The Fire Cards", "FIRECARD") Ownable(owner_) {
         if (packs_ == address(0)) revert ZeroAddress();
@@ -183,6 +184,17 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         f.flexWoodLeft = uint32(pool[CardRules.WOOD] - packs);
         poolOf[fire] = pool;
         emit FireClosed(fire, packs, pool);
+    }
+
+    /// @notice The seller burns cards for their holder (the sale contract's burnCards, which counts them toward free
+    ///         pack credits). The holder is whoever called the seller, so no approval is needed and nobody else's
+    ///         cards can be burned.
+    function burnFor(address from, uint256[] calldata ids) external {
+        if (msg.sender != seller) revert NotSeller();
+        for (uint256 i; i < ids.length; i++) {
+            if (_ownerOf(ids[i]) != from) revert NotHolder();
+            _burn(ids[i]);
+        }
     }
 
     function accumulators() external view returns (int256[5] memory) {
