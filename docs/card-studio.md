@@ -6,9 +6,8 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
 ## What it does, every Fire
 1. **Library.** The owner adds characters, which are saved and reusable across Fires. A character can't go into a Fire until it has
    all **10 images**: Paper, Wood, Burning, Charcoal, Diamond, plus a holo version of each.
-2. **Frames.** The owner makes a **normal and a holo frame for each material** (10 files, 1500 x 2100). Once per
-   frame, the owner drags boxes in the studio for the art window and each text field and picks font, size and colour.
-   The layout is saved and reused every Fire.
+2. **Frames.** Built in and locked (see "Decided Oct 3"). The owner sets each text field's font, size and colour once;
+   the art window is fixed by the frames.
 3. **Fire setup.** The owner picks any number of characters for the Fire (modular: new, returning or mixed). Every
    character must be complete.
 4. **Deal.** After the Fire ends, its card pool is dealt into the bought packs (for now: a sample deal on the real
@@ -39,10 +38,34 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
   character + material in that Fire), **global serial** (never resets), and the PSA grade once revealed. No separate
   "overall" count, since the serial covers that.
 
+## Decided Oct 3
+- **Frames are built in and locked.** The owner's master frames ship with the studio (`studio/src/assets/frames`,
+  cleaned from `studio/frames-src` by `clean_frames.py`). The only thing dropped in per card is the character image.
+  A full new set (with a better holo) is being made in ChatGPT and will replace the current five.
+- **Holo comes from the frame art itself**, not a code effect. Procedural foils were prototyped and rejected.
+- **PSA wear is designed into the frames:** 6 wear levels, each a full frame per material x normal/holo
+  (6 x 5 x 2 = 60 frames). The clean frame is used before the grade is revealed.
+
+  | Level | Grades |
+  |---|---|
+  | 1 | PSA 10 (unique) |
+  | 2 | PSA 9-8 |
+  | 3 | PSA 7-6 |
+  | 4 | PSA 5-4 |
+  | 5 | PSA 3-2 |
+  | 6 | PSA 1 (unique) |
+- **Shared images, not one per card.** One image per character x material x holo type x wear look, reused every Fire
+  (~110 MB per character instead of ~450 MB per Fire). Printed on the image: name, material, PSA grade (and category,
+  if printed). Serial, edition and Fire # go in each NFT's metadata (traits) and in a live `animation_url` version
+  that draws them on the card. The metadata must be updatable for the grade reveal (pack contract).
+- **Storage:** Arweave (one-time, permanent) looks best for shared images: roughly $40-300 total over two years
+  depending on how many characters are made. IPFS (Storacha / Filebase / Pinata) is the alternative at $0-20 a month.
+  Check live prices before choosing.
+- **Category per character** (set once in the Library), first match wins: Person (fictional only), Animal, Plant,
+  Place, Object, Element, Idea.
+
 ## Left open
-- **PSA wear look.** It's a separate, swappable render step. Two prototypes will be built for the owner to compare: a
-  fixed overlay per grade, and a per-card version seeded from the serial (same grade, slightly different damage on
-  every card).
+- Whether the category is printed on the card or metadata only.
 - The pack contract (deal, accumulators, drand grades, reveal fee) and the token standard come next. The studio's
   deal step is written so the real contract result can replace the sample deal.
 - Whether the Fire scene stays as the home for packs isn't decided. The studio doesn't depend on it.
