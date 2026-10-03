@@ -3,7 +3,7 @@
  *  metadata. So a Fire builds a few dozen images, not one per card, and the same image is reused every Fire. */
 
 import type { DealtCard } from './deal'
-import { holoTypeOf, wearLookOf, type HoloType, type Material, type WearLook } from './rules'
+import { MATERIAL_LABEL, holoTypeOf, wearLookOf, type HoloType, type Material, type WearLook } from './rules'
 import type { Character, OutputFormat } from './types'
 
 export interface Look {
@@ -33,7 +33,7 @@ function slug(s: string): string {
 /** Readable and unique: "rabbit-1a2b3c-wood-frame-clean.webp". The id part keeps two characters with the same name
  *  apart. */
 export function lookFileName(l: Look, c: Pick<Character, 'id' | 'name'>, format: OutputFormat): string {
-  return `${slug(c.name)}-${c.id.slice(0, 6).toLowerCase()}-${l.material}-${holoOfLook(l)}-${l.wear.toLowerCase()}.${format}`
+  return `${slug(c.name)}-${c.id.slice(0, 6).toLowerCase()}-${slug(MATERIAL_LABEL[l.material])}-${holoOfLook(l)}-${l.wear.toLowerCase()}.${format}`
 }
 
 /** The distinct looks among `cards`, each with one representative card to render it from (first by serial). */

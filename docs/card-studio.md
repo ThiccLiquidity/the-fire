@@ -5,7 +5,7 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
 
 ## What it does, every Fire
 1. **Library.** The owner adds characters, which are saved and reusable across Fires. A character can't go into a Fire until it has
-   all **10 images**: Paper, Wood, Burning, Charcoal, Diamond, plus a holo version of each.
+   all **10 images**: Paper, Wood, Fire, Charcoal, Diamond, plus a holo version of each.
 2. **Frames.** Built in and locked (see "Decided Oct 3"). The owner sets each text field's font, size and colour once;
    the art window is fixed by the frames.
 3. **Fire setup.** The owner picks any number of characters for the Fire (modular: new, returning or mixed). Every
@@ -22,9 +22,9 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
 
 ## Locked numbers
 - Card: **1500 x 2100 px** (2.5 x 3.5).
-- Rarity per card: **Paper 50%, Wood 30%, Burning 15%, Charcoal 4.90%, Diamond 0.10%** (Charcoal 4.90% approved Oct 1).
+- Rarity per card: **Paper 50%, Wood 30%, Fire 15%, Charcoal 4.90%, Diamond 0.10%** (Charcoal 4.90% approved Oct 1).
   Fractional accumulators carry across Fires.
-- Pack (6 cards): slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6 Burning-or-better.
+- Pack (6 cards): slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6 Fire-or-better.
 - Holo: chance a card is holo at all stays **5 / 10 / 50 / 90 / 100%** (Paper -> Diamond). It's two equal, independent
   rolls, one for a holo frame and one for a holo picture, each at p = 1 - sqrt(1 - rate). Both hitting = **full holo**.
   Diamond is always holo, split evenly: 1/3 frame only, 1/3 picture only, 1/3 full (decided Oct 3), so a full-holo
@@ -34,7 +34,7 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
   |---|---|---|---|---|---|
   | Paper | 5% | 2.53% | 2.47% | 2.47% | 0.064% (1 in ~1,560) |
   | Wood | 10% | 5.13% | 4.87% | 4.87% | 0.26% (1 in ~380) |
-  | Burning | 50% | 29.3% | 20.7% | 20.7% | 8.6% |
+  | Fire | 50% | 29.3% | 20.7% | 20.7% | 8.6% |
   | Charcoal | 90% | 68.4% | 21.6% | 21.6% | 46.8% |
   | Diamond | 100% | - | 33.3% | 33.3% | 33.3% |
 - Printed on the card: character name (top bar, centered), material, category and the PSA grade ("PSA ?" until
@@ -68,6 +68,12 @@ Owner decisions, Oct 1 2026, on top of `NFT_Card_Fire_System_Handoff` (Sept 30).
   Check live prices before choosing.
 - **Category per character** (set once in the Library), first match wins: Person (fictional only), Animal, Plant,
   Place, Object, Element, Idea.
+
+- **Material name:** the third tier is called **Fire** (was Burning; the studio's internal id stays `burning`).
+- **PSA seal:** the grade shows as a round wax seal on the right of the bottom panel, matched to each frame (Paper
+  graphite, Wood walnut, Fire ember, Charcoal silver-graphite, Diamond icy crystal) with a thin gold rim, "PSA" small on top and **?** in the middle until the
+  grade is paid for, then the number. A revealed seal gets a glowing ring in the grade's colour: 10 green, 9-8 teal,
+  7-6 sky blue, 5-4 blue, 3-2 orange, 1 red (over a thin dark edge so it reads on every seal).
 
 ## Packs and opening (decided Oct 3)
 - **Two collections.** *The Fire: Packs*: sealed packs, one stackable token type per Fire (ERC-1155), so "Fire #7

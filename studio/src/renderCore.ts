@@ -18,7 +18,7 @@ export interface AssetBundle {
   names: Record<string, string>
   categories: Record<string, Category | undefined>
   /** Uploaded fonts (registered in the worker's FontFaceSet; the main thread already has them). */
-  fonts: { family: string; data: ArrayBuffer }[]
+  fonts: { family: string; data: ArrayBuffer; weight?: string }[]
 }
 
 export interface RenderJob {

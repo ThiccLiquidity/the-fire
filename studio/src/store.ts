@@ -315,3 +315,15 @@ export function useBlobUrl(key: string | undefined): string | null {
   }, [key])
   return url
 }
+
+/** Bumps when the page's fonts finish loading, so canvases drawn before then can redraw with the right font. */
+export function useFontsVersion(): number {
+  const [v, setV] = useState(0)
+  useEffect(() => {
+    const bump = () => setV((x) => x + 1)
+    document.fonts.addEventListener('loadingdone', bump)
+    void document.fonts.ready.then(bump)
+    return () => document.fonts.removeEventListener('loadingdone', bump)
+  }, [])
+  return v
+}

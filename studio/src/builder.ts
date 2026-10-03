@@ -3,6 +3,7 @@
 
 import * as db from './db'
 import type { DealtCard } from './deal'
+import { bundledFontData } from './fonts'
 import { frameBlob, frameId } from './frames'
 import { CardRenderer, type AssetBundle, type RenderJob, type VariantBlobs } from './renderCore'
 import { MATERIALS, WEAR_LEVELS, type WearLook } from './rules'
@@ -46,6 +47,9 @@ export async function collectBundle(characterIds: string[], withWear = false): P
     const b = await db.getBlob(f.key)
     if (b) fonts.push({ family: f.family, data: await b.arrayBuffer() })
   }
+  // bundled fonts the layouts use (the page has all of them; workers only get what they need)
+  const used = MATERIALS.flatMap((m) => [...Object.values(s.layouts[m].text).map((t) => t.style.font), s.layouts[m].psa.style.font])
+  fonts.push(...(await bundledFontData(used)))
   return { layouts: s.layouts, frames, art, names, categories, fonts }
 }
 

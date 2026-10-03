@@ -6,12 +6,15 @@ import { Export } from './screens/Export'
 import { FireList, FireSetup } from './screens/Fire'
 import { Frames } from './screens/Frames'
 import { Library } from './screens/Library'
+import { Preview } from './screens/Preview'
 import { Review } from './screens/Review'
+import { loadBundledFonts } from './fonts'
 import { loadStudio, useStudio } from './store'
 
 const TABS = [
   { id: 'library', label: '1 Library' },
   { id: 'frames', label: '2 Frames & Layout' },
+  { id: 'preview', label: 'Preview' },
   { id: 'fire', label: '3 Fire' },
   { id: 'deal', label: '4 Deal' },
   { id: 'review', label: '5 Build & Review' },
@@ -33,6 +36,7 @@ export default function App() {
 
   useEffect(() => {
     loadStudio().catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
+    void loadBundledFonts()
     const onHash = () => setTab(readTab())
     addEventListener('hashchange', onHash)
     return () => removeEventListener('hashchange', onHash)
@@ -61,6 +65,7 @@ export default function App() {
         {!s.loaded && !loadError && <p className="muted">Loading library...</p>}
         {s.loaded && tab === 'library' && <Library />}
         {s.loaded && tab === 'frames' && <Frames />}
+        {s.loaded && tab === 'preview' && <Preview />}
         {s.loaded && tab === 'data' && <Data />}
         {s.loaded && perFire && (
           <div className="split">

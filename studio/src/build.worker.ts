@@ -26,7 +26,7 @@ scope.onmessage = async (e: MessageEvent<WorkerIn>) => {
   if (msg.type === 'init') {
     for (const f of msg.bundle.fonts) {
       try {
-        const face = new FontFace(f.family, f.data)
+        const face = new FontFace(f.family, f.data, f.weight ? { weight: f.weight } : undefined)
         await face.load()
         scope.fonts.add(face)
       } catch {

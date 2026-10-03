@@ -6,7 +6,7 @@ export type Material = (typeof MATERIALS)[number]
 export const MATERIAL_LABEL: Record<Material, string> = {
   paper: 'Paper',
   wood: 'Wood',
-  burning: 'Burning',
+  burning: 'Fire', // shown as Fire everywhere (renamed Oct 3); the id stays 'burning' so saved data keeps working
   charcoal: 'Charcoal',
   diamond: 'Diamond',
 }
@@ -85,6 +85,12 @@ export type WearLevel = (typeof WEAR_LEVELS)[number]
 export type WearLook = WearLevel | 'clean'
 export const WEAR_LABEL: Record<WearLook, string> = {
   clean: 'Unrevealed', L1: 'PSA 10', L2: 'PSA 9-8', L3: 'PSA 7-6', L4: 'PSA 5-4', L5: 'PSA 3-2', L6: 'PSA 1',
+}
+
+/** The ring colour on a revealed PSA seal, by wear level (decided Oct 3): 10 green, 9-8 teal, 7-6 sky blue,
+ *  5-4 blue, 3-2 orange, 1 red. */
+export const GRADE_COLOR: Record<WearLevel, string> = {
+  L1: '#2ecc71', L2: '#1abc9c', L3: '#3aa0ff', L4: '#3b5bdb', L5: '#f08c00', L6: '#e03131',
 }
 
 export function wearLookOf(grade: number | null | undefined): WearLook {

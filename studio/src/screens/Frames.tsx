@@ -3,16 +3,17 @@ import { DropZone, Field, Notice, NumberInput, useAction } from '../components'
 import { BUILTIN_FRAMES, frameBlob, hasFrame } from '../frames'
 import { getBlob } from '../db'
 import type { DealtCard } from '../deal'
-import { BUILTIN_FONTS, defaultLayout } from '../layoutDefaults'
+import { defaultLayout } from '../layoutDefaults'
+import { CardTextStyle, useFontOptions } from './TextStyle'
 import { cardView, drawCard } from '../render'
 import { CARD_H, CARD_W, MATERIALS, MATERIAL_LABEL, WEAR_LABEL, WEAR_LEVELS, holoTypeOf, wearLookOf, type Material, type WearLook } from '../rules'
 import {
-  addFont, deleteFont, effectiveKey, fontFamilyCss, onBlobChanged, saveLayout, useStudio,
+  addFont, deleteFont, effectiveKey, fontFamilyCss, getStudio, onBlobChanged, saveLayout, useFontsVersion, useStudio,
 } from '../store'
 import { TEXT_FIELDS, TEXT_FIELD_LABEL, VARIANTS, type Layout, type PsaBox, type Rect, type TextBox, type TextField, type Variant } from '../types'
 
 type BoxId = 'art' | TextField | 'psa'
-const BOX_LABEL: Record<BoxId, string> = { art: 'Art window', ...TEXT_FIELD_LABEL, psa: 'PSA badge' }
+const BOX_LABEL: Record<BoxId, string> = { art: 'Art window', ...TEXT_FIELD_LABEL, psa: 'PSA seal' }
 const BOX_IDS: BoxId[] = ['art', ...TEXT_FIELDS, 'psa']
 /** The art window is fixed by the frames: shown, never moved. */
 const LOCKED: BoxId[] = ['art']
@@ -107,6 +108,7 @@ function useBitmap(key: string | undefined): ImageBitmap | null {
 function LayoutEditor({ m }: { m: Material }) {
   const s = useStudio()
   const saved = s.layouts[m]
+  const fontsVersion = useFontsVersion()
   const [layout, setLayout] = useState<Layout>(saved)
   const [sel, setSel] = useState<BoxId>('name')
   const [charId, setCharId] = useState<string>('')
@@ -134,7 +136,7 @@ function LayoutEditor({ m }: { m: Material }) {
     if (!ctx) return
     const raf = requestAnimationFrame(() => drawCard(ctx, { frame: frameBmp, art: artBmp }, layout, cardView(sampleCard, char?.name ?? 'Character Name', char?.category ?? 'animal')))
     return () => cancelAnimationFrame(raf)
-  }, [layout, frameBmp, artBmp, sampleCard, char?.name, s.fonts])
+  }, [layout, frameBmp, artBmp, sampleCard, char?.name, s.fonts, fontsVersion])
 
   const rectOf = (id: BoxId): Rect => (id === 'art' ? layout.art.box : id === 'psa' ? layout.psa.box : layout.text[id].box)
   const setRect = (id: BoxId, r: Rect) => setLayout((l) => {
@@ -170,7 +172,20 @@ function LayoutEditor({ m }: { m: Material }) {
   }
   const onUp = () => { drag.current = null }
 
-  const fontOptions = [...BUILTIN_FONTS, ...s.fonts.map((f) => ({ label: `${f.fileName} (uploaded)`, css: fontFamilyCss(f) }))]
+  const fontOptions = useFontOptions()
+
+  /** Put this font on every material: this one in the editor (save to keep), the others saved now. */
+  const fontToAll = (css: string) => run(async () => {
+    if (!confirm('Use this font for the text on all five materials? (Colours stay per material.)')) return
+    const withFont = (l: Layout): Layout => ({
+      ...l,
+      text: Object.fromEntries(TEXT_FIELDS.map((f) => [f, { ...l.text[f], style: { ...l.text[f].style, font: css } }])) as Layout['text'],
+      psa: { ...l.psa, style: { ...l.psa.style, font: css } },
+    })
+    for (const other of MATERIALS) if (other !== m) await saveLayout(withFont(getStudio().layouts[other]))
+    setLayout(withFont)
+    setSavedMsg('Font set on the other materials and saved. Save this one to keep it here too.')
+  })
 
   const copyToAll = () => run(async () => {
     if (!confirm(`Copy this ${MATERIAL_LABEL[m]} layout to all other materials (overwriting theirs)?`)) return
@@ -222,6 +237,9 @@ function LayoutEditor({ m }: { m: Material }) {
           </div>
         </div>
         <div className="editor-props">
+          <CardTextStyle m={m} layout={layout} setLayout={setLayout} sample={char?.name ?? 'Rabbit'} onFontToAll={fontToAll} />
+          <details className="advanced" data-testid="advanced">
+          <summary>Advanced: move boxes, sizes and per-field settings</summary>
           <div className="box-pick">
             {BOX_IDS.map((id) => <button key={id} className={id === sel ? 'active' : ''} onClick={() => setSel(id)}>{BOX_LABEL[id]}</button>)}
           </div>
@@ -265,6 +283,7 @@ function LayoutEditor({ m }: { m: Material }) {
               psa={sel === 'psa'}
             />
           )}
+          </details>
           <div className="row wrap sticky-actions">
             <button className="primary" disabled={!dirty || busy} onClick={() => run(async () => { await saveLayout(layout); setSavedMsg('Saved.') })} data-testid="save-layout">
               Save {MATERIAL_LABEL[m]} layout
@@ -334,10 +353,8 @@ function TextFields({ tb, onChange, fontOptions, psa }: {
       </div>
       {psa && 'fill' in tb && (
         <div className="row wrap">
-          <Field label="Badge fill"><input type="color" value={tb.fill} onChange={(e) => onChange({ ...tb, fill: e.target.value })} /></Field>
-          <Field label="Badge border"><input type="color" value={tb.border} onChange={(e) => onChange({ ...tb, border: e.target.value })} /></Field>
-          <Field label="Border width"><NumberInput min={0} value={tb.borderWidth} onChange={(n) => onChange({ ...tb, borderWidth: Math.max(0, n) })} /></Field>
-          <Field label="Corner radius"><NumberInput min={0} value={tb.radius} onChange={(n) => onChange({ ...tb, radius: Math.max(0, n) })} /></Field>
+          <Field label="Seal colour (light)"><input type="color" value={tb.fill} onChange={(e) => onChange({ ...tb, fill: e.target.value })} /></Field>
+          <Field label="Seal colour (dark)"><input type="color" value={tb.border} onChange={(e) => onChange({ ...tb, border: e.target.value })} /></Field>
         </div>
       )}
     </div>

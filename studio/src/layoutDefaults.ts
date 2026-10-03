@@ -16,16 +16,18 @@ export const BUILTIN_FONTS: { label: string; css: string }[] = [
 
 /** Layouts saved before the built-in frames existed were made for placeholder frames; they are replaced by the
  *  defaults below. Bump when the default layout changes in a way old saved layouts must not keep. */
-export const LAYOUT_VERSION = 2
+export const LAYOUT_VERSION = 3
 
 /** Text colours per frame: Paper, Wood and Diamond have light panels (dark ink); Burning and Charcoal have dark panels
  *  (light ink). `window` fills the art window behind keyed art. */
-const INK: Record<Material, { color: string; outline: string; outlineWidth: number; window: string }> = {
-  paper: { color: '#2b2622', outline: '#ffffff', outlineWidth: 0, window: '#f4f0e6' },
-  wood: { color: '#3a2412', outline: '#ffffff', outlineWidth: 0, window: '#f1e4cc' },
-  burning: { color: '#ffe9c4', outline: '#1a0904', outlineWidth: 5, window: '#24100a' },
-  charcoal: { color: '#ececf0', outline: '#0e0e10', outlineWidth: 4, window: '#26262a' },
-  diamond: { color: '#12324a', outline: '#ffffff', outlineWidth: 0, window: '#eef6fb' },
+/** `seal` = the PSA seal's light and dark colours and its text colour, matched to each frame: pencil graphite on
+ *  Paper, walnut on Wood, ember on Fire, black and silver on Charcoal, icy crystal on Diamond. */
+const INK: Record<Material, { color: string; outline: string; outlineWidth: number; window: string; seal: [string, string, string] }> = {
+  paper: { color: '#2b2622', outline: '#ffffff', outlineWidth: 0, window: '#f4f0e6', seal: ['#8a8a8a', '#2f2f31', '#f3efe6'] },
+  wood: { color: '#3a2412', outline: '#ffffff', outlineWidth: 0, window: '#f1e4cc', seal: ['#9a6230', '#4a2810', '#f6e2c0'] },
+  burning: { color: '#ffe9c4', outline: '#1a0904', outlineWidth: 5, window: '#24100a', seal: ['#f08a2a', '#7a1606', '#fff1d6'] },
+  charcoal: { color: '#ececf0', outline: '#0e0e10', outlineWidth: 4, window: '#26262a', seal: ['#8a8b93', '#2c2c31', '#f2f3f6'] },
+  diamond: { color: '#12324a', outline: '#ffffff', outlineWidth: 0, window: '#eef6fb', seal: ['#f4fbff', '#9cc0d8', '#12324a'] },
 }
 
 function style(over: Partial<TextStyle>): TextStyle {
@@ -46,8 +48,9 @@ export function defaultLayout(material: Material): Layout {
   const info = g.infoText
   const textW = 780
   const psa: PsaBox = {
-    ...tb({ x: info.x + info.w - 260, y: info.y + 15, w: 260, h: 220 }, { size: 80, minSize: 30, color: '#1a1a1a', outlineWidth: 0, align: 'center', font: BUILTIN_FONTS[2].css }),
-    fill: '#f4efe4', border: '#1a1a1a', borderWidth: 6, radius: 22,
+    // the seal: a 236 px circle centred at (1170, 1815); fill/border are its light/dark wax colours
+    ...tb({ x: 1052, y: 1697, w: 236, h: 236 }, { size: 112, minSize: 24, color: ink.seal[2], outlineWidth: 0, align: 'center' }),
+    fill: ink.seal[0], border: ink.seal[1], borderWidth: 0, radius: 0,
   }
   return {
     material,
@@ -67,7 +70,9 @@ export function defaultLayout(material: Material): Layout {
 /** Fill in any field missing from a stored layout (forward compatibility). */
 export function normalizeLayout(material: Material, stored: Partial<Layout> | undefined): Layout {
   const d = defaultLayout(material)
-  if (!stored || stored.version !== LAYOUT_VERSION) return d
+  if (!stored || (stored.version !== LAYOUT_VERSION && stored.version !== 2)) return d
+  // v2 -> v3: the PSA badge became the seal; keep everything else the owner set
+  if (stored.version === 2) stored = { ...stored, psa: d.psa }
   return {
     ...d,
     ...stored,

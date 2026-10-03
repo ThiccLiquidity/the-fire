@@ -2,7 +2,7 @@
  *  (HTMLCanvasElement or OffscreenCanvas) and in a worker (OffscreenCanvas). No React, no IndexedDB. */
 
 import type { DealtCard } from './deal'
-import { CARD_H, CARD_W, CATEGORY_LABEL, HOLO_LABEL, MATERIAL_LABEL, wearLookOf, type Category, type Material, type WearLook } from './rules'
+import { CARD_H, CARD_W, CATEGORY_LABEL, GRADE_COLOR, HOLO_LABEL, MATERIAL_LABEL, wearLookOf, type Category, type Material, type WearLook } from './rules'
 import type { Layout, OutputFormat, PsaBox, Rect, TextBox, TextStyle } from './types'
 import type { Ctx2D } from './wear'
 
@@ -21,7 +21,8 @@ export interface CardView {
   name: string
   materialLabel: string
   categoryLabel: string
-  psaText: string
+  /** '?' until the grade is paid for and revealed, then the number. */
+  psaValue: string
   wear: WearLook
 }
 
@@ -31,7 +32,7 @@ export function cardView(card: Pick<DealtCard, 'material' | 'grade'>, characterN
     name: characterName,
     materialLabel: MATERIAL_LABEL[card.material],
     categoryLabel: category ? CATEGORY_LABEL[category] : '',
-    psaText: card.grade == null ? 'PSA ?' : `PSA ${card.grade}`,
+    psaValue: card.grade == null ? '?' : String(card.grade),
     wear: wearLookOf(card.grade),
   }
 }
@@ -97,31 +98,55 @@ function drawText(ctx: Ctx2D, raw: string, tb: TextBox): void {
   ctx.restore()
 }
 
-function roundRect(ctx: Ctx2D, r: Rect, radius: number): void {
-  const rad = Math.max(0, Math.min(radius, r.w / 2, r.h / 2))
-  ctx.beginPath()
-  ctx.moveTo(r.x + rad, r.y)
-  ctx.arcTo(r.x + r.w, r.y, r.x + r.w, r.y + r.h, rad)
-  ctx.arcTo(r.x + r.w, r.y + r.h, r.x, r.y + r.h, rad)
-  ctx.arcTo(r.x, r.y + r.h, r.x, r.y, rad)
-  ctx.arcTo(r.x, r.y, r.x + r.w, r.y, rad)
-  ctx.closePath()
-}
-
-function drawPsa(ctx: Ctx2D, text: string, psa: PsaBox): void {
+/** The PSA seal (decided Oct 3): a round wax seal stamped on the bottom panel, tinted per material (`fill` = light,
+ *  `border` = dark), "PSA" small at the top and the grade (or "?") big in the middle, in the card's font. */
+function drawPsa(ctx: Ctx2D, value: string, psa: PsaBox, ringColor: string | null): void {
   if (!psa.visible) return
+  const R = Math.min(psa.box.w, psa.box.h) / 2
+  const cx = psa.box.x + psa.box.w / 2
+  const cy = psa.box.y + psa.box.h / 2
+  const k = R / 118
   ctx.save()
-  roundRect(ctx, psa.box, psa.radius)
-  ctx.fillStyle = psa.fill
+  // scalloped wax edge (fixed wobble so every card is identical)
+  ctx.beginPath()
+  for (let i = 0; i <= 64; i++) {
+    const a = (i / 64) * Math.PI * 2
+    const r = R + ((i % 2 ? 6 : -4) + Math.sin(i * 1.7) * 3) * k
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
+  }
+  const g = ctx.createRadialGradient(cx - 35 * k, cy - 40 * k, 10 * k, cx, cy, R + 10 * k)
+  g.addColorStop(0, psa.fill)
+  g.addColorStop(1, psa.border)
+  ctx.fillStyle = g
+  ctx.shadowColor = 'rgba(0,0,0,.45)'
+  ctx.shadowBlur = 18 * k
+  ctx.shadowOffsetY = 6 * k
   ctx.fill()
-  if (psa.borderWidth > 0) {
-    ctx.lineWidth = psa.borderWidth
-    ctx.strokeStyle = psa.border
-    ctx.stroke()
+  ctx.shadowColor = 'transparent'
+  // thin metallic gold rim along the scalloped edge
+  const gold = ctx.createLinearGradient(cx - R, cy - R, cx + R, cy + R)
+  gold.addColorStop(0, '#fff3c4'); gold.addColorStop(0.35, '#e0b04a'); gold.addColorStop(0.6, '#9c7424'); gold.addColorStop(1, '#f5d77e')
+  ctx.lineJoin = 'round'
+  ctx.lineWidth = 4.5 * k; ctx.strokeStyle = gold; ctx.stroke()
+  // pressed inner ring, edged in faint gold
+  ctx.beginPath(); ctx.arc(cx, cy, R - 24 * k, 0, Math.PI * 2)
+  ctx.lineWidth = 5 * k; ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.stroke()
+  ctx.lineWidth = 2 * k; ctx.strokeStyle = 'rgba(224,176,74,.75)'; ctx.stroke()
+  ctx.beginPath(); ctx.arc(cx, cy + 2 * k, R - 24 * k, 0, Math.PI * 2)
+  ctx.lineWidth = 3 * k; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.stroke()
+  if (ringColor) {
+    // revealed: a ring in the grade's colour with a soft glow, over a dark edge so it never washes into the seal
+    ctx.beginPath(); ctx.arc(cx, cy, R - 24 * k, 0, Math.PI * 2)
+    ctx.lineWidth = 15 * k; ctx.strokeStyle = 'rgba(10,8,6,.7)'; ctx.stroke()
+    ctx.shadowColor = ringColor; ctx.shadowBlur = 16 * k
+    ctx.lineWidth = 9 * k; ctx.strokeStyle = ringColor; ctx.stroke()
+    ctx.shadowColor = 'transparent'
+    ctx.lineWidth = 2 * k; ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.stroke()
   }
   ctx.restore()
-  const inset = Math.max(psa.borderWidth, psa.radius * 0.4)
-  drawText(ctx, text, { ...psa, box: { x: psa.box.x + inset, y: psa.box.y, w: psa.box.w - inset * 2, h: psa.box.h } })
+  const st = { ...psa.style, outlineWidth: 0, uppercase: false, align: 'center' as const }
+  drawText(ctx, 'PSA', { box: { x: cx - 80 * k, y: cy - 74 * k, w: 160 * k, h: 44 * k }, style: { ...st, bold: true, size: 34 * k, minSize: 12, color: st.color }, visible: true })
+  drawText(ctx, value, { box: { x: cx - 85 * k, y: cy - 42 * k, w: 170 * k, h: 120 * k }, style: { ...st, bold: true, size: 112 * k, minSize: 24 }, visible: true })
 }
 
 function drawArt(ctx: Ctx2D, art: ImgSrc, layout: Layout): void {
@@ -182,7 +207,7 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
   drawText(ctx, view.name, tb(layout.text.name))
   drawText(ctx, view.materialLabel, tb(layout.text.material))
   drawText(ctx, view.categoryLabel, tb(layout.text.category))
-  drawPsa(ctx, view.psaText, layout.psa)
+  drawPsa(ctx, view.psaValue, layout.psa, view.wear === 'clean' ? null : GRADE_COLOR[view.wear])
   ctx.restore()
 }
 

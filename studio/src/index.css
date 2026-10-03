@@ -168,3 +168,28 @@ table.cards-table tbody tr:hover { background: var(--panel-2); }
   .split, .editor, .cols { display: block; }
   .list-panel { width: auto; position: static; }
 }
+
+/* card text style + font picker */
+.text-style { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+.text-style h4 { margin-top: 2px; }
+.font-picker { margin: 8px 0; }
+.font-search { min-width: 180px; }
+.font-groups { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+.font-groups button { padding: 3px 9px; font-size: 12px; }
+.font-groups button.active { border-color: var(--accent); color: var(--accent); }
+.font-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; max-height: 300px; overflow-y: auto; padding-right: 4px; }
+.font-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px; background: var(--panel); text-align: center; }
+.font-tile.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.font-sample { font-size: 22px; line-height: 1.15; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-name { font-size: 11px; color: var(--muted); }
+.advanced { margin: 6px 0 12px; }
+.advanced > summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
+
+/* preview: every card a character can be */
+.preview-grid { display: grid; grid-template-columns: 90px repeat(4, minmax(120px, 220px)); gap: 10px; align-items: center; margin-top: 12px; }
+.preview-head { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; text-align: center; }
+.preview-label { font-weight: 600; }
+.preview-cell { padding: 0; background: transparent; border: 1px solid transparent; border-radius: 10px; aspect-ratio: 5 / 7; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.preview-cell:hover:not(:disabled) { border-color: var(--accent); }
+.preview-cell img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.preview-cell.none { border: 1px dashed var(--line); text-align: center; padding: 8px; }
