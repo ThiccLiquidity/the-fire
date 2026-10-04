@@ -31,9 +31,11 @@ numbers below are the starting values.
 | Wallet limit lifts after | 48 hours |
 | PSA odds | 2 / 10 / 38 / 38 / 10 / 2% |
 
-## The owner's setup screen (to build with the site)
+## The owner's setup screen (in the Card Studio, not the public site)
 
-The owner enters **total packs** (167) and **starter packs** (50); the screen shows the **paid packs** left (117) and
+It lives in the Card Studio, which runs only on the owner's computer; the public site has no admin pages. It holds no
+keys: every action is a transaction the owner's multisig signs (and the Safe shows what it does before signing). The
+owner enters **total packs** (167) and **starter packs** (50); the screen shows the **paid packs** left (117) and
 sends that as `packs` (the contract counts paid packs; starters come on top of that). It also takes every other
 per-drop number, the holder-window snapshot root, and the picks.
 
