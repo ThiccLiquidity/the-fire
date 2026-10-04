@@ -5,14 +5,14 @@ PACK_USD = 1.00          # dollar price of a normal pack
 LANE_RATE = 100          # PAPER-lane pack: min(100 PAPER, $1 of PAPER at TWAP)  -> floor $0.01
 LANE_SHARE = 0.25        # share of each drop's packs sold in the PAPER lane
 LANE_WALLET_CAP = 5      # PAPER-lane packs per wallet per drop
-PSA_PAPER = 5            # PSA reveal: min(5 PAPER, $0.25 at TWAP), or $0.25 in ETH/USDG -> floor $0.05
+PSA_PAPER = 5            # PDA reveal: min(5 PAPER, $0.25 at TWAP), or $0.25 in ETH/USDG -> floor $0.05
 PSA_USD = 0.25
 STARTER = 50             # 1-PAPER starter packs per drop
 SUGGEST_USD_CAP = 0.25   # suggestion: min(1 PAPER, $0.25 at TWAP)
 PLANK_IN_PRESS = 94.0
 PRESSES0 = 1000
 
-# participation: packs sold / month at 1 drop/mo, suggestions/drop, share of cards PSA-revealed,
+# participation: packs sold / month at 1 drop/mo, suggestions/drop, share of cards PDA-revealed,
 # share of reveals paid in PAPER, presses the press fund burns / month
 PART = {
     "low":  dict(packs=500,  sugg=50,  psa=0.10, psa_paper=0.6, press_burn=2),
@@ -40,7 +40,7 @@ def sim(cad, price, p):
         psa_n = cards * P["psa"] * P["psa_paper"]
         b_psa = psa_n * psa_cost(price)
         burned += b_lane + b_start + b_sugg + b_psa
-        # $ of utility delivered: lane pack worth $1, starter pack $1, PSA reveal $0.25, suggestion valued at market
+        # $ of utility delivered: lane pack worth $1, starter pack $1, PDA reveal $0.25, suggestion valued at market
         util_usd += lane * PACK_USD + STARTER * cad * PACK_USD + psa_n * PSA_USD + b_sugg * price
         presses -= P["press_burn"]
     return dict(printed=printed, burned=burned, net=printed - burned, util=util_usd,
@@ -52,7 +52,7 @@ def main():
     print("| Sink | PAPER cost | $ it replaces | Floor $/PAPER | Arbitrage? |\n|---|---|---|---|---|")
     rows = [("Suggestion", "1", "none (fun)", "0", "no: nothing resellable"),
             ("Starter pack (50/drop, 1/wallet, PLANK allowlist)", "1", "$1 pack", "$1.00 (only 50 PAPER/drop)", "bots/sybils; allowlist + 1/wallet"),
-            ("PSA reveal", "min(5, $0.25 TWAP)", "$0.25 fee", "$0.05", "no: reveal is per card, not resellable"),
+            ("PDA reveal", "min(5, $0.25 TWAP)", "$0.25 fee", "$0.05", "no: reveal is per card, not resellable"),
             ("PAPER lane pack", "min(100, $1 TWAP)", "$1 pack", "$0.01", "yes below $0.01 -> capped 25%/drop, 5/wallet"),
             ("Fixed 100 PAPER, uncapped", "100", "$1 pack", "$0.01", "YES: at $0.002 a pack costs $0.20, whole sale drains"),
             ("Forging (burn N cards + PAPER)", "-", "-", "-", "breaks the exact per-Fire pool; skip"),
@@ -83,7 +83,7 @@ def main():
         print(f"| {pr} | {p} | ${yr:.2f} | ${PLANK_IN_PRESS+2*yr:.0f} | ${PLANK_IN_PRESS+3*yr:.0f} |")
 
     print("\n## 5. If PAPER pumps (fixed costs vs TWAP-capped costs)\n")
-    print("| PAPER $ | Fixed 100/pack ($) | Capped lane (PAPER / $) | PSA fixed 5 ($) | PSA capped (PAPER) | Suggestion capped (PAPER) |\n|---|---|---|---|---|---|")
+    print("| PAPER $ | Fixed 100/pack ($) | Capped lane (PAPER / $) | PDA fixed 5 ($) | PDA capped (PAPER) | Suggestion capped (PAPER) |\n|---|---|---|---|---|---|")
     for pr in [0.01, 0.05, 0.25, 1.0, 5.0]:
         print(f"| {pr} | ${100*pr:,.0f} | {lane_cost(pr):g} / ${lane_cost(pr)*pr:.2f} | ${5*pr:.2f} | {psa_cost(pr):g} | {sugg_cost(pr):g} |")
 

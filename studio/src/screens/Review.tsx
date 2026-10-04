@@ -40,7 +40,7 @@ function sampleCards(fire: FireRecord): Sample[] {
 
 export function Review({ fire }: { fire: FireRecord }) {
   const s = useStudio()
-  if (!fire.deal) return <section className="panel grow"><Notice kind="warn">Lock the deal for Fire #{fire.number} first (Deal tab).</Notice></section>
+  if (!fire.deal) return <section className="panel grow"><Notice kind="warn">Lock the deal for Series {fire.number} first (Deal tab).</Notice></section>
   return <ReviewInner fire={fire} names={Object.fromEntries(s.characters.map((c) => [c.id, c.name]))} />
 }
 
@@ -56,7 +56,7 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
   const approvalStale = !!fire.approvedAt && assetsChanged > fire.approvedAt
   const buildStale = !!fire.build && assetsChanged > fire.build.builtAt
   const samplesReady = samples.every((x) => x.url)
-  // frames this Fire's cards need that haven't been delivered yet
+  // frames this Series' cards need that haven't been delivered yet
   const missing = [...new Set(deal.cards.filter((c) => !hasFrame(c.material, c.holoFrame ? 'holo' : 'normal', wearLookOf(c.grade)))
     .map((c) => `${MATERIAL_LABEL[c.material]} ${c.holoFrame ? 'holo' : 'normal'}${c.grade == null ? '' : ` ${WEAR_LABEL[wearLookOf(c.grade)]}`}`))]
 
@@ -129,19 +129,19 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
   const openSample = (x: Sample) => x.url && setBig({
     url: x.url,
     title: `${names[x.characterId]} · ${MATERIAL_LABEL[x.material]} · holo: ${HOLO_LABEL[x.holo]}`,
-    detail: x.dealt ? `${x.dealt} card(s) like this in Fire #${fire.number}; showing #${x.card.serial}.` : 'Not dealt in this Fire (sample render only).',
+    detail: x.dealt ? `${x.dealt} card(s) like this in Series ${fire.number}; showing #${x.card.serial}.` : 'Not dealt in this Series (sample render only).',
   })
 
   return (
     <section className="panel grow">
       <div className="row wrap">
-        <h2>Build &amp; Review · Fire #{fire.number}</h2>
+        <h2>Build &amp; Review · Series {fire.number}</h2>
         <span className="spacer" />
         {fire.approvedAt && !approvalStale ? <span className="badge badge-ok" data-testid="approved">Approved {new Date(fire.approvedAt).toLocaleString()}</span> : null}
       </div>
       {approvalStale && <Notice kind="warn">Art, frames, layouts or fonts changed after approval. Re-render the samples and approve again.</Notice>}
 
-      {missing.length > 0 && <Notice kind="warn">This Fire deals cards whose frame isn't delivered yet: {missing.join(', ')}. Approval is blocked until they're added.</Notice>}
+      {missing.length > 0 && <Notice kind="warn">This Series deals cards whose frame isn't delivered yet: {missing.join(', ')}. Approval is blocked until they're added.</Notice>}
 
       <h3>1. Samples: one per character x material x holo type ({samples.length})</h3>
       <div className="row wrap">
@@ -246,7 +246,7 @@ function CardList({ fire, names, onOpen }: { fire: FireRecord; names: Record<str
           {filtered.slice(0, limit).map((c) => (
             <tr key={c.serial} onClick={() => void open(c)}>
               <td>#{c.serial}</td><td>{names[c.characterId]}</td><td><span className={`chip mat-${c.material}`}>{MATERIAL_LABEL[c.material]}</span></td>
-              <td>{HOLO_LABEL[c.holo]}</td><td>{c.edition} of {c.editionOf} · Fire #{c.fire}</td><td>{c.pack}/{c.slot}</td>
+              <td>{HOLO_LABEL[c.holo]}</td><td>{c.edition} of {c.editionOf} · Series {c.fire}</td><td>{c.pack}/{c.slot}</td>
             </tr>
           ))}
         </tbody>

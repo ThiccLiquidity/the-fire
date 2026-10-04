@@ -1,6 +1,4 @@
 import { useRef, useState, type ReactNode } from 'react'
-import type { Accumulators } from './deal'
-import { MATERIALS, MATERIAL_LABEL, RATE_SCALE } from './rules'
 
 export function ProgressBar({ value, label, tone }: { value: number; label?: ReactNode; tone?: string }) {
   const pct = Math.max(0, Math.min(1, value)) * 100
@@ -8,30 +6,6 @@ export function ProgressBar({ value, label, tone }: { value: number; label?: Rea
     <div className="progress" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
       <div className="progress-fill" style={{ width: `${pct}%`, background: tone }} />
       {label !== undefined && <span className="progress-label">{label}</span>}
-    </div>
-  )
-}
-
-const TONE: Record<string, string> = { paper: '#d9c9a3', wood: '#a0683a', burning: '#f07a28', charcoal: '#7c7c88', diamond: '#7fe0ff' }
-
-/** Rarity accumulator progress toward each tier's next card. Negative = a residual card was borrowed. */
-export function AccumulatorBars({ acc, title }: { acc: Accumulators; title: string }) {
-  return (
-    <div className="acc">
-      <h4>{title}</h4>
-      {MATERIALS.map((m) => {
-        const v = acc[m] / RATE_SCALE
-        const frac = v - Math.floor(v)
-        const text = v < 0
-          ? `${(v * 100).toFixed(1)}% (got a rounding card early; repays from the next Fire)`
-          : v >= 1 ? `${(v * 100).toFixed(1)}% (${Math.floor(v)} card owed + ${(frac * 100).toFixed(1)}%)` : `${(v * 100).toFixed(1)}%`
-        return (
-          <div className="acc-row" key={m} data-material={m}>
-            <span className="acc-name">{MATERIAL_LABEL[m]}</span>
-            <ProgressBar value={v < 0 ? 0 : frac} tone={TONE[m]} label={text} />
-          </div>
-        )
-      })}
     </div>
   )
 }

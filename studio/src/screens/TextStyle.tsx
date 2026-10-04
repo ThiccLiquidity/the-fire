@@ -67,7 +67,7 @@ export function CardTextStyle({ m, layout, setLayout, sample, onFontToAll }: {
   return (
     <div className="text-style" data-testid="card-text-style">
       <h4>{MATERIAL_LABEL[m]} card text</h4>
-      <p className="muted small">Applies to the name, material and category on every {MATERIAL_LABEL[m]} card (the font also goes on the PSA badge).{mixed ? ' The fields differ right now; picking here makes them match.' : ''}</p>
+      <p className="muted small">Applies to the name, material and category on every {MATERIAL_LABEL[m]} card (the font also goes on the PDA badge).{mixed ? ' The fields differ right now; picking here makes them match.' : ''}</p>
       <FontPicker value={st.font} sample={sample} onPick={(css) => setAll({ font: css }, true)} />
       <div className="row wrap">
         <Field label="Text colour"><input type="color" value={st.color} onChange={(e) => setAll({ color: e.target.value })} data-testid="text-color" /></Field>

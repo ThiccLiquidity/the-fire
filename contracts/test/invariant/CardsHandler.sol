@@ -9,7 +9,7 @@ import {FirePsa} from "../../src/cards/FirePsa.sol";
 import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness} from "../Mocks.sol";
 import {InvRouter} from "./InvRouter.sol";
 
-/// @dev Drives the whole card system (sale, packs, cards, PSA) with bounded random actions by several actors, and
+/// @dev Drives the whole card system (sale, packs, cards, PDA) with bounded random actions by several actors, and
 ///      keeps ghost accounting the invariant test checks against the contracts.
 contract CardsHandler is Test {
     function _na() internal pure returns (FireSale.Access memory a) {
@@ -76,7 +76,7 @@ contract CardsHandler is Test {
     mapping(uint256 => uint256) public ghostGradedTimes;
 
     uint256[] internal _cardReqs; // card randomness requests not yet delivered
-    uint256[] internal _psaReqs; // PSA randomness requests not yet delivered
+    uint256[] internal _psaReqs; // PDA randomness requests not yet delivered
     uint256 public revealsFinished;
 
     // violations seen during actions (checked by the invariant test)
@@ -487,6 +487,14 @@ contract CardsHandler is Test {
         try psa.setOdds(fire, odds) { calls["setOdds.ok"]++; } catch {}
     }
 
+    /// The Series' Diamond setting (small numbers, so it often exceeds the pack count and the cap kicks in).
+    function setDiamonds(uint256 fireSeed, uint256 n) external at {
+        calls["setDiamonds"]++;
+        uint256 fire = 2 + fireSeed % (FIRES - 1);
+        vm.prank(owner, owner);
+        try cards.setDiamonds(fire, bound(n, 1, 20)) { calls["setDiamonds.ok"]++; } catch {}
+    }
+
     function endDrop(uint256 fireSeed) external at {
         calls["endDrop"]++;
         vm.prank(owner, owner);
@@ -593,7 +601,7 @@ contract CardsHandler is Test {
 
     function ghostMat(uint256 fire, uint256 m) external view returns (uint256) { return _ghostMat[fire][m]; }
 
-    // ================================================================ PSA
+    // ================================================================ PDA
 
     function reveal(uint256 actorSeed, uint256 k, uint256 seed) external at {
         calls["reveal"]++;

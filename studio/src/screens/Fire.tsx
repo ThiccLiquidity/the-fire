@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
-import { AccumulatorBars, Field, Notice, NumberInput, useAction } from '../components'
-import { computePool } from '../deal'
+import { Field, Notice, NumberInput, useAction } from '../components'
+import { computePool, effectiveDiamonds } from '../deal'
 import { randomSeed } from '../prng'
-import { MATERIALS, MATERIAL_LABEL } from '../rules'
+import { CARDS_PER_PACK, MATERIALS, MATERIAL_LABEL, MAX_DIAMONDS, expectedHolos, type Material } from '../rules'
 import { completeness, deleteFire, isReady, getStudio, saveFire, saveGlobal, updateFire, useStudio } from '../store'
 import { fireStatus, type FireRecord } from '../types'
 
@@ -12,25 +12,25 @@ export function FireList({ selected, onSelect }: { selected: number | null; onSe
   const create = () => run(async () => {
     const n = getStudio().global.nextFireNumber
     const now = Date.now()
-    const f: FireRecord = { number: n, characterIds: [], packs: 150, seed: randomSeed(), createdAt: now, updatedAt: now }
+    const f: FireRecord = { number: n, characterIds: [], packs: 150, diamonds: 1, seed: randomSeed(), createdAt: now, updatedAt: now }
     await saveFire(f)
     await saveGlobal({ ...getStudio().global, nextFireNumber: n + 1 })
     onSelect(n)
   })
   return (
     <aside className="panel list-panel">
-      <h3>Fires</h3>
+      <h3>Series</h3>
       <ul className="char-list" data-testid="fire-list">
         {s.fires.map((f) => (
           <li key={f.number} className={selected === f.number ? 'active' : ''} onClick={() => onSelect(f.number)}>
-            <span className="char-name">Fire #{f.number}</span>
+            <span className="char-name">Series {f.number}</span>
             <span className="muted small">{f.packs} packs · {f.characterIds.length} chars</span>
             <span className={`badge status-${fireStatus(f)}`}>{fireStatus(f)}</span>
           </li>
         ))}
-        {!s.fires.length && <li className="muted">No Fires yet.</li>}
+        {!s.fires.length && <li className="muted">No Series yet.</li>}
       </ul>
-      <button className="primary" onClick={create} disabled={busy} data-testid="new-fire">New Fire #{s.global.nextFireNumber}</button>
+      <button className="primary" onClick={create} disabled={busy} data-testid="new-fire">New Series {s.global.nextFireNumber}</button>
       {error && <Notice kind="error">{error}</Notice>}
       <div className="muted small global-info">Next global serial: <b data-testid="next-serial">#{s.global.nextSerial}</b></div>
     </aside>
@@ -43,15 +43,15 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
   const locked = !!fire.deal
   const update = (patch: Partial<FireRecord>) => run(() => updateFire(fire.number, patch))
 
-  const projection = useMemo(() => {
-    if (fire.deal) return { before: fire.deal.accumulatorsBefore, after: fire.deal.accumulatorsAfter, counts: fire.deal.pool }
+  const diamonds = effectiveDiamonds(fire.diamonds)
+  const counts = useMemo(() => {
+    if (fire.deal) return fire.deal.pool
     try {
-      const p = computePool(s.global.accumulators, fire.packs)
-      return { before: p.before, after: p.after, counts: p.counts }
+      return computePool(fire.packs, diamonds)
     } catch {
       return null
     }
-  }, [fire.deal, fire.packs, s.global.accumulators])
+  }, [fire.deal, fire.packs, diamonds])
 
   const toggle = (id: string, on: boolean) => update({ characterIds: on ? [...fire.characterIds, id] : fire.characterIds.filter((x) => x !== id) })
   const missing = fire.characterIds.filter((id) => {
@@ -62,16 +62,16 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
   return (
     <section className="panel grow">
       <div className="row wrap">
-        <h2>Fire #{fire.number}</h2>
+        <h2>Series {fire.number}</h2>
         <span className={`badge status-${fireStatus(fire)}`}>{fireStatus(fire)}</span>
         <span className="spacer" />
         {!locked && (
           <button className="danger" onClick={() => {
-            if (confirm(`Delete draft Fire #${fire.number}?`)) void run(async () => { await deleteFire(fire.number); onDeleted() })
+            if (confirm(`Delete draft Series ${fire.number}?`)) void run(async () => { await deleteFire(fire.number); onDeleted() })
           }}>Delete draft</button>
         )}
       </div>
-      {locked && <Notice kind="info">The deal for this Fire is locked; its setup can't change. (Undo the lock on the Deal tab if it's the latest Fire and not uploaded.)</Notice>}
+      {locked && <Notice kind="info">The deal for this Series is locked; its setup can't change. (Undo the lock on the Deal tab if it's the latest Series and not uploaded.)</Notice>}
       <div className="cols">
         <div>
           <h4>Characters ({fire.characterIds.length} picked)</h4>
@@ -100,28 +100,57 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
           )}
           {missing.length > 0 && <Notice kind="error">Some picked characters are incomplete; finish their 10 images or unpick them.</Notice>}
           <div className="row wrap">
-            <Field label="Packs sold (sample)" hint="6 cards per pack">
+            <Field label="Packs" hint="6 cards per pack">
               <NumberInput min={0} value={fire.packs} onChange={(n) => !locked && update({ packs: Math.max(0, Math.floor(n)) })} data-testid="packs" />
             </Field>
+            <Field label="Diamonds" hint="at least 1">
+              <NumberInput min={1} max={MAX_DIAMONDS} value={diamonds} onChange={(n) => !locked && update({ diamonds: Math.min(MAX_DIAMONDS, Math.max(1, Math.floor(n) || 1)) })} data-testid="diamonds" />
+            </Field>
           </div>
-          {projection && (
-            <table className="mini">
-              <thead><tr><th>Material</th>{MATERIALS.map((m) => <th key={m}>{MATERIAL_LABEL[m]}</th>)}<th>Total</th></tr></thead>
-              <tbody><tr><td>Pool</td>{MATERIALS.map((m) => <td key={m} data-testid={`pool-${m}`}>{projection.counts[m]}</td>)}<td>{fire.packs * 6}</td></tr></tbody>
-            </table>
-          )}
         </div>
         <div>
-          {projection ? (
-            <>
-              <AccumulatorBars acc={projection.before} title={locked ? 'Accumulators before this Fire' : 'Accumulators now (carried from previous Fires)'} />
-              <AccumulatorBars acc={projection.after} title={locked ? 'Accumulators after this Fire' : 'After this Fire (projected)'} />
-            </>
-          ) : <Notice kind="error">Invalid pack count.</Notice>}
+          {counts ? <SeriesMakes counts={counts} packs={fire.packs} diamonds={diamonds} /> : <Notice kind="error">Invalid pack count.</Notice>}
         </div>
       </div>
       {error && <Notice kind="error">{error}</Notice>}
       {busy && <span className="muted small">saving...</span>}
     </section>
+  )
+}
+
+const fmtAbout = (x: number) => (x === 0 ? '0' : `≈ ${x < 10 ? x.toFixed(1) : Math.round(x).toLocaleString()}`)
+
+/** What this Series will make: exact card counts per material, and the holos to expect (holo is random per card). */
+function SeriesMakes({ counts, packs, diamonds }: { counts: Record<Material, number>; packs: number; diamonds: number }) {
+  const rows = MATERIALS.map((m) => ({ m, n: counts[m], h: expectedHolos(m, counts[m]) }))
+  const sum = (k: 'frame' | 'picture' | 'full' | 'total') => rows.reduce((t, r) => t + r.h[k], 0)
+  return (
+    <div data-testid="series-makes">
+      <h4>This Series will make</h4>
+      <table className="mini">
+        <thead>
+          <tr><th rowSpan={2}>Material</th><th rowSpan={2}>Cards</th><th colSpan={4}>Holos (about; holo is random per card)</th></tr>
+          <tr><th>Frame only</th><th>Picture only</th><th>Full</th><th>Total</th></tr>
+        </thead>
+        <tbody>
+          {rows.map(({ m, n, h }) => (
+            <tr key={m}>
+              <td>{MATERIAL_LABEL[m]}</td>
+              <td data-testid={`pool-${m}`}><b>{n.toLocaleString()}</b></td>
+              <td>{fmtAbout(h.frame)}</td><td>{fmtAbout(h.picture)}</td><td>{fmtAbout(h.full)}</td><td>{fmtAbout(h.total)}</td>
+            </tr>
+          ))}
+          <tr>
+            <td><b>Total</b></td><td><b>{(packs * CARDS_PER_PACK).toLocaleString()}</b></td>
+            <td>{fmtAbout(sum('frame'))}</td><td>{fmtAbout(sum('picture'))}</td><td>{fmtAbout(sum('full'))}</td><td>{fmtAbout(sum('total'))}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="muted small">
+        Card counts are exact: each Series stands alone. Paper is half, Fire 15%, Charcoal 4.9%, Diamond as set
+        {packs > 0 && diamonds > packs ? ` (capped at one per pack: ${counts.diamond})` : ''}, Wood the rest. Every pack still
+        gets 3 Paper, a Wood and a Fire-or-better.
+      </p>
+    </div>
   )
 }

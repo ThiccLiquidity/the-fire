@@ -6,6 +6,7 @@ import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {CardsHandler} from "./CardsHandler.sol";
+import {CardRules} from "../../src/cards/CardRules.sol";
 
 /// @dev Handler-based invariants over the whole card system: FireSale, FirePacks, FireCards, FirePsa.
 /// forge-config: default.invariant.runs = 64
@@ -46,12 +47,13 @@ contract CardsInvariantTest is StdInvariant, Test {
         sels[i++] = h.warp.selector; // weighted
         sels[i++] = h.routerMood.selector;
         // lower-weight actions ride along below
-        bytes4[] memory all = new bytes4[](i + 4);
+        bytes4[] memory all = new bytes4[](i + 5);
         for (uint256 j; j < i; j++) all[j] = sels[j];
         all[i] = h.setPrices.selector;
         all[i + 1] = h.setPaperPrice.selector;
         all[i + 2] = h.passPress.selector;
         all[i + 3] = h.setOdds.selector;
+        all[i + 4] = h.setDiamonds.selector;
         targetSelector(FuzzSelector({addr: address(h), selectors: all}));
     }
 
@@ -162,6 +164,10 @@ contract CardsInvariantTest is StdInvariant, Test {
             uint256 poolTotal;
             for (uint256 m; m < 5; m++) poolTotal += cards.poolOf(f, m);
             assertEq(poolTotal, 6 * uint256(nPacks), "pool == 6 x packs");
+            // each Series stands alone: its pool is the rule applied to its own packs and Diamond setting
+            uint256[5] memory want = CardRules.computePool(nPacks, cards.diamondsFor(f));
+            for (uint256 m; m < 5; m++) assertEq(cards.poolOf(f, m), want[m], "pool == computePool(packs, diamonds)");
+            if (nPacks > 0) assertGe(cards.poolOf(f, 4), 1, "at least one Diamond");
             if (dealt == nPacks) {
                 for (uint256 m; m < 5; m++) assertEq(h.ghostMat(f, m), cards.poolOf(f, m), "fully dealt: totals == pool");
             } else {
@@ -181,7 +187,7 @@ contract CardsInvariantTest is StdInvariant, Test {
             assertLe(grade, 10, "grade 0..10");
             assertEq(grade, h.ghostGrade(s), "grade only set by finish, as logged");
             bool p = h.psa().pending(s);
-            assertEq(cards.gradePending(s), p, "card and PSA agree on pending");
+            assertEq(cards.gradePending(s), p, "card and PDA agree on pending");
             if (p) assertEq(grade, 0, "pending cards are ungraded");
         }
     }

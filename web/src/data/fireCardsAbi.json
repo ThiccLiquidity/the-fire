@@ -30,6 +30,19 @@
   },
   {
     "type": "function",
+    "name": "MAX_DIAMONDS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_OPEN",
     "inputs": [],
     "outputs": [
@@ -86,19 +99,6 @@
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "accumulators",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "int256[5]",
-        "internalType": "int256[5]"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -269,6 +269,44 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "diamondsFor",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "diamondsOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -931,6 +969,24 @@
   },
   {
     "type": "function",
+    "name": "setDiamonds",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setGrade",
     "inputs": [
       {
@@ -1202,6 +1258,25 @@
       },
       {
         "name": "character",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "DiamondsSet",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "diamonds",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1544,6 +1619,11 @@
   {
     "type": "error",
     "name": "BadCount",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadDiamonds",
     "inputs": []
   },
   {

@@ -1,5 +1,5 @@
-/** Whole-studio backup as one .zip: every record (characters, frames, layouts, fonts, Fires, accumulators, serial
- *  counter) plus every stored file (original + keyed art, frames, fonts). Rendered cards are NOT included (they are
+/** Whole-studio backup as one .zip: every record (characters, frames, layouts, fonts, Series, serial counter)
+ *  plus every stored file (original + keyed art, frames, fonts). Rendered cards are NOT included (they are
  *  rebuilt from the assets in Build & Review), which keeps backups small. */
 
 import { unzipSync } from 'fflate'
@@ -50,7 +50,7 @@ export async function importLibrary(file: Blob): Promise<{ records: number; file
     if (!data) throw new Error(`Backup is missing ${b.path}.`)
     blobs.push([b.key, new Blob([data as BlobPart], { type: b.type || mimeOfExt(b.path) })])
   }
-  // Rendered cards aren't in backups, so a Fire's build has to be redone on this machine.
+  // Rendered cards aren't in backups, so a Series' build has to be redone on this machine.
   const records = manifest.records.map(([k, v]): [string, unknown] => {
     if (k.startsWith('fire:')) {
       const f = { ...(v as FireRecord) }

@@ -2,7 +2,7 @@
 
 Decided with the owner on Oct 3 2026, one piece at a time. This replaces the earlier economy notes in
 `docs/cards-contracts.md`. Built in `contracts/src/cards/FireSale.sol` (tests: `contracts/test/cards/Sale.t.sol`) and
-`contracts/src/cards/FirePsa.sol` (the PSA reveal; tests: `contracts/test/cards/Psa.t.sol`).
+`contracts/src/cards/FirePsa.sol` (the PDA reveal; tests: `contracts/test/cards/Psa.t.sol`).
 Sims are in `sim/omni/`. The visual map is `docs/omni-money-map.html` (also published as the "Omni Money Map" artifact).
 
 ## The story
@@ -12,14 +12,15 @@ made of it. Each drop opens with PLANK lighting the forge.
 
 ## Every number is set per drop
 
-The owner sets these for each drop (each Fire) before it launches (`configureDrop`). They lock when the drop opens
-(its start time), so nothing can change while people are buying. The Fire's characters must be set in the card
+The owner sets these for each drop (each Series) before it launches (`configureDrop`). They lock when the drop opens
+(its start time), so nothing can change while people are buying. The Series' characters must be set in the card
 contract (`configureFire`) before its drop can be set up. The
 numbers below are the starting values.
 
 | Setting | Start |
 |---|---|
-| Packs in the drop | 167 **total, starters included** (about 1,000 cards). Sold out means gone: no more packs for that Fire, ever. |
+| Packs in the drop | 167 **total, starters included** (about 1,000 cards). Sold out means gone: no more packs for that Series, ever. |
+| Diamonds | 1 (at least 1; set per Series in the card contract, `setDiamonds`, before its packs sell) |
 | Pack price | $2.50 |
 | PAPER per pack | 1 |
 | PLANK burn share | 30% |
@@ -29,7 +30,7 @@ numbers below are the starting values.
 | Holder window | 24 hours: only wallets with a Paper Press or $69+ of PLANK (secret snapshot) can buy paid packs |
 | Wallet limit (paid packs) | 5 |
 | Wallet limit lifts after | 48 hours |
-| PSA odds | 2 / 10 / 38 / 38 / 10 / 2% |
+| PDA odds | 10: 1% · 9: 17% · 8: 24% · 7: 25% · 6: 18% · 5: 7% · 4: 3.5% · 3: 2% · 2: 1.5% · 1: 1% |
 
 ## The owner's setup screen (in the Card Studio, not the public site)
 
@@ -84,9 +85,11 @@ per-drop number, the holder-window snapshot root, and the picks.
   pumped or manipulated beyond that, the swap is skipped and the burn share goes to the burn wallet.
 - **If the drop never sells out:** the owner can end it (`endDrop`) once the wallet limit has lifted (48h), so the
   starter window and the limited phase always run in full. If the owner doesn't, anyone can, 7 days after that, so
-  packs are never stranded. The Fire closes with the packs that were minted.
-- **One drop at a time.** The next drop can only be set up once the current one has closed. (A Fire's pool is
-  decided when it closes; two drops at once would let whoever closes one first steer a carried rare card.)
+  packs are never stranded. The Series closes with the packs that were minted.
+- **One drop at a time.** The next drop can only be set up once the current one has closed.
+- **Each Series stands alone (decided Oct 4).** Its cards come only from its own packs: Paper half, Fire 15%,
+  Charcoal 4.9%, Diamond as set (at least 1), Wood the rest. Nothing carries over between Series. Example: 167 packs
+  and 1 Diamond make 501 Paper, 301 Wood, 150 Fire, 49 Charcoal, 1 Diamond.
 - **Every purchase names its limits:** the most PLANK/USDG (or the ETH sent), and the most PAPER. If a number moved,
   the purchase fails and costs nothing.
 - **Price feeds and the router** can be replaced by the owner only between drops (a retired Chainlink feed, a moved
@@ -119,8 +122,8 @@ window, the PLANK-only packs and the wallet limit don't apply to them. Two ways 
   - Sim (`sim/omni/burn/`): about 1 free pack per 100 sold if people burn their Paper cards, about 5 per 100 if
     everyone burns all Paper and Wood. Below about 12 it gets close to an endless loop (a pack has 6 cards).
     Commons gain a floor of about 6¢ ($2.50 ÷ 42).
-- **Your character suggestion gets picked.** The owner grants these while setting up that Fire's drop (before it
-  opens), no more picks than the Fire has characters, and each suggestion once. With one drop at a time, picks only
+- **Your character suggestion gets picked.** The owner grants these while setting up that Series' drop (before it
+  opens), no more picks than the Series has characters, and each suggestion once. With one drop at a time, picks only
   happen while no drop is running. A picked credit is an ordinary credit: any drop, any time.
 
 The site tells the two stories differently ("You burned 42.0" vs. "Your character made it"). The contract uses
@@ -133,8 +136,8 @@ Every PAPER spent anywhere is burned.
 | Use | Cost |
 |---|---|
 | Any pack (paid, starter or free) | 1 PAPER per pack |
-| Character suggestion | 1 PAPER. Open all the time. The list clears after every picking session: picking for a Fire takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
-| PSA reveal | The most whole PAPER that stays at or under $0.25 (at least 1). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1. Uses `PaperUsdTwap`; a set number until PAPER has a real market. PAPER only. |
+| Character suggestion | 1 PAPER. Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
+| PDA reveal | The most whole PAPER that stays at or under $0.25 (at least 1). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1. Uses `PaperUsdTwap`; a set number until PAPER has a real market. PAPER only. |
 
 - **Get PAPER on the site:** a small box where you type how many PAPER you want, see the ETH price, and press one
   button. It uses the existing KyberSwap swap with the 0.5% fee to the swap-fee wallet. In the buy panel it shows
@@ -142,12 +145,14 @@ Every PAPER spent anywhere is burned.
 - **Scale:** 167 packs × 2 drops a month burns about 334 PAPER a month against about 30,000 printed. This is a
   reason to hold PAPER more than a big burn.
 
-## PSA reveal
+## PDA reveal
+
+**PDA** stands for Professional Digital Authenticators, our own nod to real-world card grading (renamed from "PSA" on Oct 4: PSA is a real company's trademark).
 
 - Once per card, up to 10 at a time. The PAPER is burned, then drand picks the grade. It sets the grade, and the card
   switches to that wear frame and seal ring colour.
 - Before PAPER has a price, a reveal costs a set number of PAPER (5 to start, the owner can change it).
-- The owner can give a Fire different odds, but only before its first pack exists, so every buyer knows the odds.
+- The owner can give a Series different odds, but only before its first pack exists, so every buyer knows the odds.
 - **If randomness is gone for good** (no answer for 7 days), anyone can cancel a reveal: the cards unlock, still
   unrevealed. The PAPER was burned. Opens work the same way: a stuck open can be cancelled after 7 days and the packs
   come back sealed.
@@ -155,16 +160,21 @@ Every PAPER spent anywhere is burned.
 - **While a card is being graded it can't be transferred** (it can still be burned), so nobody can sell a card
   whose drand number they've already seen as "Unrevealed".
 - **During a gap in the PAPER price feed,** reveals cost the last price-based amount, not the starting number.
-- **Odds** are a perfect curve, the same for every material:
+- **Odds** (owner's call, Oct 4: most cards land 6-9 and a 10 is rare; this replaced the earlier even curve), the
+  same for every material:
 
-| Grade | Odds |
-|---|---|
-| 10 | 2% |
-| 9–8 | 10% |
-| 7–6 | 38% |
-| 5–4 | 38% |
-| 3–2 | 10% |
-| 1 | 2% |
+| Grade | Odds | Out of 10,000 | Wear frame |
+|---|---|---|---|
+| 10 | 1% | 100 | Clean frame + gold glow |
+| 9 | 17% | 1,700 | Level 2 |
+| 8 | 24% | 2,400 | Level 2 |
+| 7 | 25% | 2,500 | Level 3 |
+| 6 | 18% | 1,800 | Level 3 |
+| 5 | 7% | 700 | Level 4 |
+| 4 | 3.5% | 350 | Level 4 |
+| 3 | 2% | 200 | Level 5 |
+| 2 | 1.5% | 150 | Level 5 |
+| 1 | 1% | 100 | Level 6 |
 
 ## Wallets (separate jobs)
 
@@ -194,7 +204,7 @@ PLANK burned at that pace: about $3,900–7,800 a year.
 
 ## Why these numbers (from the sims)
 
-- **167 packs** is the size that sells out with normal demand. A sold-out Fire's packs resell above their
+- **167 packs** is the size that sells out with normal demand. A sold-out Series' packs resell above their
   price, and bigger or open-ended drops don't.
   - Viral demand is answered with more drops, not bigger ones.
 - **A flat $2.50** is fair to everyone.

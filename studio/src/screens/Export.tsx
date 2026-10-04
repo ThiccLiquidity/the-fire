@@ -3,7 +3,7 @@ import { renderKey } from '../builder'
 import { Field, Notice, ProgressBar, useAction } from '../components'
 import { getBlob } from '../db'
 import { ZipWriter, blobBytes, downloadBlob } from '../files'
-import type { DealtCard } from '../deal'
+import { effectiveDiamonds, type DealtCard } from '../deal'
 import { distinctLooks, lookFileName, lookOf } from '../looks'
 import { cardMetadata, metadataFileName } from '../metadata'
 import { clearPinataJwt, hasPinataJwt, mockTransport, realTransport, setPinataJwt, uploadFire, type UploadFile } from '../pinata'
@@ -73,8 +73,8 @@ export function Export({ fire }: { fire: FireRecord }) {
     }
     zip.addText('fire.json', JSON.stringify({
       fire: fire.number, packs: deal!.packs, seed: deal!.seed, method: deal!.method, characters: deal!.characterIds.map((id) => ({ id, name: names[id] })),
-      pool: deal!.pool, firstSerial: deal!.firstSerial, lastSerial: deal!.nextSerial - 1, accumulatorsBefore: deal!.accumulatorsBefore,
-      accumulatorsAfter: deal!.accumulatorsAfter, packContents: deal!.packContents, upload: fire.upload ?? null,
+      pool: deal!.pool, firstSerial: deal!.firstSerial, lastSerial: deal!.nextSerial - 1,
+      diamonds: effectiveDiamonds(deal!.diamonds ?? fire.diamonds), packContents: deal!.packContents, upload: fire.upload ?? null,
       note: imagesCid ? 'image fields point at the uploaded images directory' : 'image fields are relative paths inside this zip until the images are uploaded',
     }, null, 1))
     setProgress({ value: 1, label: 'Finishing zip...' })
@@ -127,14 +127,14 @@ export function Export({ fire }: { fire: FireRecord }) {
   }
 
   const resetUpload = () => run(async () => {
-    if (!confirm('Forget the saved CIDs for this Fire? (Nothing is deleted on Pinata.)')) return
+    if (!confirm('Forget the saved CIDs for this Series? (Nothing is deleted on Pinata.)')) return
     await updateFire(fire.number, { upload: undefined })
   })
 
   return (
     <section className="panel grow">
       <div className="row wrap">
-        <h2>Export &amp; Upload · Fire #{fire.number}</h2>
+        <h2>Export &amp; Upload · Series {fire.number}</h2>
         <span className={`badge status-${fireStatus(fire)}`}>{fireStatus(fire)}</span>
       </div>
       {!ready && <Notice kind="warn">{blockers.map((b) => <div key={b}>{b}</div>)}</Notice>}
@@ -147,7 +147,7 @@ export function Export({ fire }: { fire: FireRecord }) {
       <p className="muted small">
         The JWT is kept in this tab's memory only: never saved, never logged. Reloading forgets it. Images go up as one
         folder, then the metadata folder pointing at ipfs://&lt;images CID&gt;/&lt;file&gt;. Finished steps are saved
-        on the Fire and skipped if you run it again.
+        on the Series and skipped if you run it again.
       </p>
       {flags.mockPinata && <Notice kind="warn">Mock Pinata is ON (Data tab): nothing leaves this machine, CIDs are fake.</Notice>}
       <form className="row wrap" onSubmit={(e) => { e.preventDefault(); setPinataJwt(jwtInput); setJwtInput(''); setKeySet(hasPinataJwt()) }}>

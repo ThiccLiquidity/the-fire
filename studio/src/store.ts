@@ -3,7 +3,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { DEFAULT_KEY, keyMagentaBlob, type KeyOptions } from './chroma'
 import * as db from './db'
-import { zeroAccumulators } from './deal'
 import { FRAMES_UPDATED_AT } from './frames'
 import { normalizeLayout } from './layoutDefaults'
 import { MATERIALS, type Material } from './rules'
@@ -25,7 +24,7 @@ function emptyData(): StudioData {
   }
   return {
     loaded: false, characters: [], layouts, fonts: [], fires: [],
-    global: { accumulators: zeroAccumulators(), nextSerial: 1, nextFireNumber: 1 },
+    global: { nextSerial: 1, nextFireNumber: 1 },
   }
 }
 
@@ -64,7 +63,11 @@ export async function loadStudio(): Promise<void> {
       if (MATERIALS.includes(m)) d.layouts[m] = normalizeLayout(m, v as Partial<Layout>)
     } else if (k.startsWith('font:')) d.fonts.push(v as FontAsset)
     else if (k.startsWith('fire:')) d.fires.push(v as FireRecord)
-    else if (k === 'global') d.global = { ...d.global, ...(v as GlobalState) }
+    else if (k === 'global') {
+      // older saves and backups also hold the rarity accumulators (dropped Oct 4: each Series stands alone); ignore them
+      const { nextSerial, nextFireNumber } = v as GlobalState
+      d.global = { nextSerial: nextSerial ?? d.global.nextSerial, nextFireNumber: nextFireNumber ?? d.global.nextFireNumber }
+    }
   }
   d.characters.sort((a, b) => a.createdAt - b.createdAt)
   d.fires.sort((a, b) => a.number - b.number)
@@ -188,7 +191,7 @@ export function completeness(c: Character): number {
   return n
 }
 
-/** Can go into a Fire: all 10 images and a category. */
+/** Can go into a Series: all 10 images and a category. */
 export function isReady(c: Character): boolean {
   return completeness(c) === 10 && !!c.category
 }
@@ -251,10 +254,10 @@ export async function saveFire(f: FireRecord): Promise<void> {
   await db.putRecord(`fire:${f.number}`, next)
 }
 
-/** Patch the latest copy of a Fire (use this rather than spreading a possibly stale prop). */
+/** Patch the latest copy of a Series (use this rather than spreading a possibly stale prop). */
 export async function updateFire(n: number, patch: Partial<FireRecord> | ((f: FireRecord) => Partial<FireRecord>)): Promise<void> {
   const cur = data.fires.find((x) => x.number === n)
-  if (!cur) throw new Error(`Fire #${n} not found`)
+  if (!cur) throw new Error(`Series ${n} not found`)
   await saveFire({ ...cur, ...(typeof patch === 'function' ? patch(cur) : patch) })
 }
 

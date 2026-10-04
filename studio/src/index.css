@@ -81,8 +81,6 @@ main { padding: 16px; }
 .progress { position: relative; height: 20px; background: #111114; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin: 6px 0; min-width: 160px; }
 .progress-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); transition: width .2s; }
 .progress-label { position: relative; font-size: 11px; padding: 0 8px; line-height: 18px; text-shadow: 0 0 3px #000, 0 0 2px #000; white-space: nowrap; }
-.acc { margin: 6px 0 12px; }
-.acc-row { display: grid; grid-template-columns: 80px 1fr; gap: 8px; align-items: center; }
 
 .char-list, .pick-list, .font-list { list-style: none; padding: 0; margin: 0 0 10px; }
 .char-list li { display: flex; gap: 6px; align-items: center; padding: 7px 8px; border-radius: 6px; cursor: pointer; flex-wrap: wrap; }

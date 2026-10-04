@@ -32,15 +32,16 @@ interface IPsaFeed {
 
 /**
  * @title FirePsa
- * @notice The PSA reveal (docs/omni-economy.md). A card holder pays PAPER (burned) to reveal a card's grade, 1 to 10,
+ * @notice The PDA reveal (docs/omni-economy.md). A card holder pays PAPER (burned) to reveal a card's grade, 1 to 10,
  *         once. The grade comes from drand randomness requested after payment, so nobody can know it in advance; the
  *         card then shows that grade's wear frame and seal colour.
  *
  *         Price: the most whole PAPER that stays at or under $0.25 (at least 1), from the PAPER price feed. Until PAPER
  *         has a market (no price), a set number of PAPER the owner chooses.
  *
- *         Odds: a perfect curve by default (10: 2%, 9-8: 10%, 7-6: 38%, 5-4: 38%, 3-2: 10%, 1: 2%). The owner can set
- *         different odds for a Fire before it closes, so they're fixed before any of its cards exist.
+ *         Odds by default, out of 10,000: 10: 1%, 9: 17%, 8: 24%, 7: 25%, 6: 18%, 5: 7%, 4: 3.5%, 3: 2%, 2: 1.5%,
+ *         1: 1%. Most cards land 6-9; a 10 is rare. The owner can set different odds for a Series before it closes,
+ *         so they're fixed before any of its cards exist.
  */
 contract FirePsa is Ownable2Step {
     using SafeERC20 for IERC20;
@@ -69,7 +70,7 @@ contract FirePsa is Ownable2Step {
     ///         can't make reveals cheap (or let the owner's fallback number apply again).
     uint256 public lastPaper;
 
-    /// @dev Chance of each grade 1..10, out of ODDS_TOTAL, for Fires the owner gave their own odds.
+    /// @dev Chance of each grade 1..10, out of ODDS_TOTAL, for Series the owner gave their own odds.
     mapping(uint256 fire => uint16[10]) internal _odds;
     mapping(uint256 fire => bool) public customOdds;
 
@@ -142,7 +143,7 @@ contract FirePsa is Ownable2Step {
         emit FallbackPaperSet(paper);
     }
 
-    /// @notice Odds for a Fire's cards, grade 1 first, out of 10,000. Only before any of its packs exist, so
+    /// @notice Odds for a Series' cards, grade 1 first, out of 10,000. Only before any of its packs exist, so
     ///         everyone who buys a pack knows the odds.
     function setOdds(uint256 fire, uint16[10] calldata odds) external onlyOwner {
         (bool closed,,,,,,,,,) = CARDS.fires(fire);
@@ -271,10 +272,10 @@ contract FirePsa is Ownable2Step {
 
     function oddsOf(uint256 fire) public view returns (uint16[10] memory o) {
         if (customOdds[fire]) return _odds[fire];
-        o = [uint16(200), 500, 500, 1900, 1900, 1900, 1900, 500, 500, 200];
+        o = [uint16(100), 150, 200, 350, 700, 1800, 2500, 2400, 1700, 100];
     }
 
-    /// @notice The grade a random number gives for a Fire's odds.
+    /// @notice The grade a random number gives for a Series' odds.
     function gradeFor(uint256 fire, uint256 rnd) public view returns (uint256) {
         uint16[10] memory o = oddsOf(fire);
         uint256 x = rnd % ODDS_TOTAL;

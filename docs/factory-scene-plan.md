@@ -35,7 +35,7 @@ Fuel comes in top-left, packs leave top-right.
 | PLANK-only packs | A tag on the chute "PLANK ONLY 12/50"; drops off after. |
 | Sold out / closed | The last stamp, the belt stops, the fire banks to embers, the board reads SOLD OUT (or CLOSED), the open bench's padlock falls off. |
 | Open (after the Fire closes) | Your sealed packs sit on the open bench (from your wallet), padlocked until then. Lamp on, a pack slides to the pad, tears open, 6 cards fan out. |
-| PSA reveal | A card slides under the magnifier, the lens glows, a stamp comes down; the card shows its wear frame and grade colour. |
+| PDA reveal | A card slides under the magnifier, the lens glows, a stamp comes down; the card shows its wear frame and grade colour. |
 | Burn | A card flips into the ash bin with a puff; the dial ticks n/42.0; at 42 a brass free-pack token pops out. Your credits show on the open bench. |
 | Suggest | A slip drops into the post box; its window fills. After a picking session the box empties. |
 | Idle | Low fire, slow flywheel, belt still, lanterns sway. Between drops the board reads "Next Fire soon". |

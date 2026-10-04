@@ -1,7 +1,7 @@
 /** Shared images (decided Oct 3): every card with the same character, material, holo frame, holo picture and wear
- *  look shares one image. Only those are printed on the card; serial, edition and Fire # are per card and go in the
- *  metadata. So a Fire builds a few dozen images, not one per card. (Every Fire has new characters and its own
- *  "Forged · Fire #" line, so images are never shared across Fires.) */
+ *  look shares one image. Only those are printed on the card; serial, edition and Series # are per card and go in the
+ *  metadata. So a Series builds a few dozen images, not one per card. (Every Series has new characters and its own
+ *  "Forged · Series " line, so images are never shared across Series.) */
 
 import type { DealtCard } from './deal'
 import { MATERIAL_LABEL, holoTypeOf, wearLookOf, type HoloType, type Material, type WearLook } from './rules'
@@ -13,7 +13,7 @@ export interface Look {
   holoFrame: boolean
   holoPicture: boolean
   wear: WearLook
-  /** The Fire: printed on the card ("Forged · Fire #7"), so each Fire has its own images. */
+  /** The Series: printed on the card ("Forged · Series 7"), so each Series has its own images. */
   fire: number
 }
 
@@ -33,8 +33,8 @@ function slug(s: string): string {
   return s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'character'
 }
 
-/** The image's name inside its Fire's image folder: "c<character>-<material>-<holo>-<wear>.<ext>", e.g.
- *  "c0-wood-frame-clean.webp", where <character> is the character's position in the Fire's list. The card contract
+/** The image's name inside its Series' image folder: "c<character>-<material>-<holo>-<wear>.<ext>", e.g.
+ *  "c0-wood-frame-clean.webp", where <character> is the character's position in the Series' list. The card contract
  *  (contracts/src/cards/FireCards.sol, imageFile) builds exactly this name, so on-chain metadata finds the image. */
 export function lookFileName(l: Look, characterIndex: number, format: OutputFormat): string {
   return `c${characterIndex}-${slug(MATERIAL_LABEL[l.material])}-${holoOfLook(l)}-${l.wear.toLowerCase()}.${format}`

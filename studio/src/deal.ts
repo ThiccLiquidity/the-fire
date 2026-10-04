@@ -5,51 +5,42 @@
  *  downstream (build, review, export, upload) keeps working unchanged.
  *
  *  Steps
- *  1. Pool sizes from the fractional accumulators (computePool).
+ *  1. Pool sizes from this Series' pack count and Diamond setting (computePool). Each Series stands alone.
  *  2. Seeded deal into packs respecting the floor: slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6 Burning-or-better.
- *  3. Global serials: a seeded permutation of this Fire's cards onto the next block of serials, so a serial says
+ *  3. Global serials: a seeded permutation of this Series' cards onto the next block of serials, so a serial says
  *     nothing about a card's pack slot or material.
- *  4. Character: uniform among the Fire's characters, per card (seeded).
+ *  4. Character: uniform among the Series' characters, per card (seeded).
  *  5. Holo: two independent rolls per card (frame, picture), each p = 1 - sqrt(1 - rate); both = full holo.
  *     Diamond is always holo: 1/3 frame only, 1/3 picture only, 1/3 full (rollHolo).
- *  6. Edition: within this Fire, per character + material, cards are numbered 1..N in serial order.
- *  PSA grades are NOT rolled here (they come from drand, committed on-chain, hidden until the paid reveal). */
+ *  6. Edition: within this Series, per character + material, cards are numbered 1..N in serial order.
+ *  PDA grades are NOT rolled here (they come from drand, committed on-chain, hidden until the paid reveal). */
 
 import { Stream } from './prng'
 import {
-  CARDS_PER_PACK, HOLO_TYPES, MATERIALS, RARITY_UNITS, RATE_SCALE, holoTypeOf, rollHolo, type HoloType, type Material,
+  CARDS_PER_PACK, HOLO_TYPES, MATERIALS, SHARE_SCALE, SHARE_UNITS, holoTypeOf, rollHolo, type HoloType, type Material,
 } from './rules'
 
 export const DEAL_METHOD = 'sample-sha256ctr-v1'
 
-/** Carried accumulator state in integer units of 1/RATE_SCALE of a card. A value of 82_000 for diamond means
- *  "82% of the way to the next Diamond". It can be slightly negative after a tier was handed a rounding residual
- *  ("borrowed" a card); it then pays that back from the next Fire's accrual. */
-export type Accumulators = Record<Material, number>
-
-export function zeroAccumulators(): Accumulators {
-  return { paper: 0, wood: 0, burning: 0, charcoal: 0, diamond: 0 }
-}
-
 export interface DealInput {
-  /** Fire number (printed as "Fire #F"). */
+  /** Series number (printed as "Series F"). */
   fire: number
-  /** Packs sold in this Fire. Pool size is exactly packs * 6. */
+  /** Packs sold in this Series. Pool size is exactly packs * 6. */
   packs: number
-  /** The Fire's characters (any number >= 1). Order matters for determinism. */
+  /** The Series' characters (any number >= 1). Order matters for determinism. */
   characterIds: string[]
   /** Stand-in for the drand round's randomness. */
   seed: string
-  /** Accumulator state carried from the previous Fire. */
-  accumulators: Accumulators
-  /** First global serial for this Fire (last Fire's nextSerial; 1 for the very first Fire). */
+  /** Diamonds the owner set for this Series (at least 1 is always made; capped at one per pack). */
+  diamonds: number
+  /** First global serial for this Series (last Series' nextSerial; 1 for the very first Series). */
   firstSerial: number
 }
 
 export interface DealtCard {
   serial: number
   fire: number
-  /** 1-based pack number within this Fire. */
+  /** 1-based pack number within this Series. */
   pack: number
   /** 1..6, the pack slot (1-3 Paper, 4 Wood, 5 Wood+, 6 Burning+). */
   slot: number
@@ -58,18 +49,12 @@ export interface DealtCard {
   holoFrame: boolean
   holoPicture: boolean
   holo: HoloType
-  /** k in "k of N · Fire #F". */
+  /** k in "k of N · Series F". */
   edition: number
-  /** N in "k of N · Fire #F". */
+  /** N in "k of N · Series F". */
   editionOf: number
-  /** PSA grade 1-10 once revealed (by the pack contract); absent until then. */
+  /** PDA grade 1-10 once revealed (by the pack contract); absent until then. */
   grade?: number | null
-}
-
-export interface PoolResult {
-  counts: Record<Material, number>
-  before: Accumulators
-  after: Accumulators
 }
 
 export interface DealResult {
@@ -79,10 +64,10 @@ export interface DealResult {
   seed: string
   characterIds: string[]
   pool: Record<Material, number>
-  accumulatorsBefore: Accumulators
-  accumulatorsAfter: Accumulators
+  /** The Series' Diamond setting the pool was worked out with. */
+  diamonds: number
   firstSerial: number
-  /** First serial for the next Fire. */
+  /** First serial for the next Series. */
   nextSerial: number
   /** All cards, sorted by serial. */
   cards: DealtCard[]
@@ -90,77 +75,53 @@ export interface DealResult {
   packContents: number[][]
 }
 
-const UPGRADE: Material[] = ['wood', 'burning', 'charcoal', 'diamond'] // the half of the pool that isn't Paper
 const BURNING_PLUS: Material[] = ['burning', 'charcoal', 'diamond']
 
-/** Pool sizes for a Fire of `packs` packs, from the carried accumulators.
- *
- *  Method (integer arithmetic throughout, units of 1/RATE_SCALE card):
- *  a. Every tier accrues rate * (packs * 6): acc[t] = before[t] + RARITY_UNITS[t] * cards.
- *  b. Paper is exactly 3 * packs: the floor demands it, and Paper's 50% rate accrues exactly that, so its carry never
- *     moves.
- *  c. The other four tiers take the integer part of their accumulator: floor(acc / SCALE).
- *  d. Those floors can sum to a little less (or, from an imported/odd state, more) than the 3 * packs non-Paper
- *     cards the pool needs. Residual cards go one at a time to the tier whose remaining fraction
- *     (acc - count * SCALE) is the LARGEST (ties: the more common tier); a surplus is taken one at a time from the
- *     tier whose remaining fraction is the SMALLEST among tiers that have a card.
- *  e. The pack floor needs Wood >= packs and packs <= Burning-or-better <= 2 * packs. If Burning-or-better is short,
- *     cards move from Wood to the Burning-or-better tier with the largest fraction; if it is over, cards move from the
- *     Burning-or-better tier with the smallest fraction back to Wood. (Only matters for very small Fires.)
- *  f. Carry = acc - count * SCALE. A tier that received a residual carries a negative fraction (it borrowed a card) and
- *     repays it from the next Fire's accrual; a tier that lost one carries > 1 card and gets it next time. Because
- *     the rates sum to exactly 100% and every Fire takes exactly packs * 6 cards, the carries always sum to the same
- *     total (0 from a fresh start), so nothing is ever created or lost across Fires. */
-export function computePool(before: Accumulators, packs: number): PoolResult {
+/** The Diamond setting actually used: at least 1, whatever was saved. */
+export function effectiveDiamonds(diamonds: number | undefined): number {
+  return Math.max(1, diamonds ?? 1)
+}
+
+/** Pool sizes for one Series of `packs` packs (N = 6 x packs cards). Each Series stands alone: no carry-over.
+ *  Integer arithmetic only, the same steps as the contract's CardRules.computePool:
+ *  a. Paper = 3 x packs.
+ *  b. Fire = N x 15% and Charcoal = N x 4.9%, each rounded half up.
+ *  c. Diamond = the Series' setting (at least 1), but never more than one per pack; 0 when there are no packs.
+ *  d. Wood = the rest of the non-Paper half.
+ *  e. Pack floor: Fire-or-better must be between packs and 2 x packs (so Wood >= packs). Over: move Fire (then
+ *     Charcoal) to Wood one at a time. Under: move Wood to Fire. (Only matters for tiny Series or many Diamonds.) */
+export function computePool(packs: number, diamonds = 1): Record<Material, number> {
   if (!Number.isInteger(packs) || packs < 0) throw new Error(`packs must be a whole number >= 0 (got ${packs})`)
-  for (const m of MATERIALS) {
-    if (!Number.isInteger(before[m])) throw new Error(`accumulator ${m} must be an integer number of units`)
+  if (packs > 0xffff_ffff) throw new Error(`packs must fit in 32 bits, like the contract (got ${packs})`)
+  if (!Number.isInteger(diamonds)) throw new Error(`diamonds must be a whole number (got ${diamonds})`)
+  const n = packs * CARDS_PER_PACK
+  const half = SHARE_SCALE / 2
+  let fire = Math.floor((SHARE_UNITS.burning * n + half) / SHARE_SCALE)
+  let charcoal = Math.floor((SHARE_UNITS.charcoal * n + half) / SHARE_SCALE)
+  const diamond = packs === 0 ? 0 : Math.min(effectiveDiamonds(diamonds), packs)
+  // the floor, in one step each (same result as moving one card at a time; the contract does the same)
+  const bp = fire + charcoal + diamond
+  if (bp > 2 * packs) {
+    const over = bp - 2 * packs
+    const fromFire = Math.min(over, fire)
+    fire -= fromFire
+    charcoal -= over - fromFire
+  } else if (bp < packs) {
+    fire += packs - bp
   }
-  const cards = packs * CARDS_PER_PACK
-  const acc = {} as Accumulators
-  for (const m of MATERIALS) acc[m] = before[m] + RARITY_UNITS[m] * cards
-  const counts: Record<Material, number> = { paper: 3 * packs, wood: 0, burning: 0, charcoal: 0, diamond: 0 }
-  for (const m of UPGRADE) counts[m] = Math.max(0, Math.floor(acc[m] / RATE_SCALE))
-  const frac = (m: Material) => acc[m] - counts[m] * RATE_SCALE
-
-  const giveOne = (tiers: Material[]): Material => {
-    let best = tiers[0]
-    for (const t of tiers) if (frac(t) > frac(best)) best = t
-    counts[best]++
-    return best
-  }
-  const takeOne = (tiers: Material[]): Material => {
-    let worst: Material | null = null
-    for (const t of tiers) if (counts[t] > 0 && (worst === null || frac(t) < frac(worst))) worst = t
-    if (worst === null) throw new Error('computePool: nothing to take')
-    counts[worst]--
-    return worst
-  }
-
-  const need = 3 * packs
-  let have = UPGRADE.reduce((s, m) => s + counts[m], 0)
-  while (have < need) { giveOne(UPGRADE); have++ }
-  while (have > need) { takeOne(UPGRADE); have-- }
-
-  let bp = BURNING_PLUS.reduce((s, m) => s + counts[m], 0)
-  while (bp < packs) { counts.wood--; giveOne(BURNING_PLUS); bp++ }
-  while (bp > 2 * packs) { takeOne(BURNING_PLUS); counts.wood++; bp-- }
-
-  const after = {} as Accumulators
-  for (const m of MATERIALS) after[m] = acc[m] - counts[m] * RATE_SCALE
-  return { counts, before: { ...before }, after }
+  const wood = 3 * packs - fire - charcoal - diamond
+  return { paper: 3 * packs, wood, burning: fire, charcoal, diamond }
 }
 
 export function dealFire(input: DealInput): DealResult {
-  const { fire, packs, characterIds, seed, accumulators, firstSerial } = input
+  const { fire, packs, characterIds, seed, diamonds, firstSerial } = input
   if (!Number.isInteger(fire) || fire < 1) throw new Error('fire must be a whole number >= 1')
   if (!Number.isInteger(firstSerial) || firstSerial < 1) throw new Error('firstSerial must be a whole number >= 1')
-  if (characterIds.length < 1) throw new Error('a Fire needs at least one character')
-  if (new Set(characterIds).size !== characterIds.length) throw new Error('duplicate character in the Fire')
+  if (characterIds.length < 1) throw new Error('a Series needs at least one character')
+  if (new Set(characterIds).size !== characterIds.length) throw new Error('duplicate character in the Series')
   if (!seed) throw new Error('seed is required')
 
-  const pool = computePool(accumulators, packs)
-  const c = pool.counts
+  const c = computePool(packs, diamonds)
 
   // Deal into packs. Slots 1-3 and 4 are fixed materials, so only slots 5 and 6 need shuffling:
   // shuffle all Burning-or-better cards; the first `packs` of them fill slot 6 (one per pack), the rest join the
@@ -182,7 +143,7 @@ export function dealFire(input: DealInput): DealResult {
     mats.forEach((material, s) => pending.push({ pack: p + 1, slot: s + 1, material }))
   }
 
-  // Serials: a seeded permutation of this Fire's block [firstSerial, firstSerial + cards).
+  // Serials: a seeded permutation of this Series' block [firstSerial, firstSerial + cards).
   const order = pending.map((_, i) => i)
   new Stream(seed, 'serial').shuffle(order)
   const serialOf = new Array<number>(pending.length)
@@ -203,7 +164,7 @@ export function dealFire(input: DealInput): DealResult {
     }
   })
 
-  // Edition: k of N within this Fire, per character + material, in serial order.
+  // Edition: k of N within this Series, per character + material, in serial order.
   const groups = new Map<string, DealtCard[]>()
   for (const card of cards) {
     const key = `${card.characterId}\u0000${card.material}`
@@ -220,8 +181,7 @@ export function dealFire(input: DealInput): DealResult {
     method: DEAL_METHOD,
     fire, packs, seed, characterIds: [...characterIds],
     pool: { ...c },
-    accumulatorsBefore: { ...accumulators },
-    accumulatorsAfter: pool.after,
+    diamonds: effectiveDiamonds(diamonds),
     firstSerial,
     nextSerial: firstSerial + cards.length,
     cards,
@@ -246,9 +206,4 @@ export function packRespectsFloor(mats: Material[]): boolean {
   const rank = (m: Material) => MATERIALS.indexOf(m)
   return mats[0] === 'paper' && mats[1] === 'paper' && mats[2] === 'paper' && mats[3] === 'wood' &&
     rank(mats[4]) >= rank('wood') && rank(mats[5]) >= rank('burning')
-}
-
-/** Accumulator progress toward the next card, as a fraction (can be < 0 after borrowing a residual card). */
-export function progress(acc: Accumulators, m: Material): number {
-  return acc[m] / RATE_SCALE
 }

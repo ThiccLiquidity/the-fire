@@ -15,17 +15,19 @@ export interface CardAssets {
 }
 
 /** Everything printed on a card. Only what's shared by every card of the same look (looks.ts): no serial, no
- *  edition, no Fire #. Those are in the metadata. */
+ *  edition, no Series #. Those are in the metadata. */
 export interface CardView {
   material: Material
   name: string
   materialLabel: string
   categoryLabel: string
-  /** "Forged · Fire #7": the Fire the card came from. */
+  /** "Forged · Series 7": the Series the card came from. */
   forgedLabel: string
   /** '?' until the grade is paid for and revealed, then the number. */
   psaValue: string
   wear: WearLook
+  /** PDA 10 only: the gold edge glow and corner sparkles (drawn here, the frames stay locked). */
+  pda10: boolean
 }
 
 export function cardView(card: Pick<DealtCard, 'material' | 'grade' | 'fire'>, characterName: string, category?: Category): CardView {
@@ -34,9 +36,10 @@ export function cardView(card: Pick<DealtCard, 'material' | 'grade' | 'fire'>, c
     name: characterName,
     materialLabel: MATERIAL_LABEL[card.material],
     categoryLabel: category ? CATEGORY_LABEL[category] : '',
-    forgedLabel: `Forged · Fire #${card.fire > 0 ? card.fire : 1}`,
+    forgedLabel: `Forged · Series ${card.fire > 0 ? card.fire : 1}`,
     psaValue: card.grade == null ? '?' : String(card.grade),
     wear: wearLookOf(card.grade),
+    pda10: card.grade === 10,
   }
 }
 
@@ -101,8 +104,8 @@ function drawText(ctx: Ctx2D, raw: string, tb: TextBox): void {
   ctx.restore()
 }
 
-/** The PSA seal (decided Oct 3): a round wax seal stamped on the bottom panel, tinted per material (`fill` = light,
- *  `border` = dark), "PSA" small at the top and the grade (or "?") big in the middle, in the card's font. */
+/** The PDA seal (decided Oct 3): a round wax seal stamped on the bottom panel, tinted per material (`fill` = light,
+ *  `border` = dark), "PDA" small at the top and the grade (or "?") big in the middle, in the card's font. */
 function drawPsa(ctx: Ctx2D, value: string, psa: PsaBox, ringColor: string | null): void {
   if (!psa.visible) return
   const R = Math.min(psa.box.w, psa.box.h) / 2
@@ -148,7 +151,7 @@ function drawPsa(ctx: Ctx2D, value: string, psa: PsaBox, ringColor: string | nul
   }
   ctx.restore()
   const st = { ...psa.style, outlineWidth: 0, uppercase: false, align: 'center' as const }
-  drawText(ctx, 'PSA', { box: { x: cx - 80 * k, y: cy - 74 * k, w: 160 * k, h: 44 * k }, style: { ...st, bold: true, size: 34 * k, minSize: 12, color: st.color }, visible: true })
+  drawText(ctx, 'PDA', { box: { x: cx - 80 * k, y: cy - 74 * k, w: 160 * k, h: 44 * k }, style: { ...st, bold: true, size: 34 * k, minSize: 12, color: st.color }, visible: true })
   drawText(ctx, value, { box: { x: cx - 85 * k, y: cy - 42 * k, w: 170 * k, h: 120 * k }, style: { ...st, bold: true, size: 112 * k, minSize: 24 }, visible: true })
 }
 
@@ -188,6 +191,97 @@ function drawFrame(ctx: Ctx2D, frame: ImgSrc): void {
   ctx.drawImage(frame, (CARD_W - w * s) / 2, (CARD_H - h * s) / 2, w * s, h * s)
 }
 
+/** The card's outer outline, shared by every frame (measured from their alpha: 8 px clear margin, 92 px corners). */
+export const CARD_OUTLINE = { inset: 8, radius: 92 }
+
+/** PDA 10 sparkles: centre and size (outer radius, px), fixed so every PDA 10 of a look renders identically. All sit
+ *  in the frame's outer border, clear of the name bar, the art window and the seal. */
+export const PDA10_SPARKLES: readonly { x: number; y: number; r: number; tilt: number }[] = [
+  { x: 56, y: 60, r: 32, tilt: 0 },
+  { x: 100, y: 32, r: 13, tilt: 0.35 },
+  { x: 1442, y: 60, r: 22, tilt: 0 },
+  { x: 40, y: 2020, r: 17, tilt: 0.3 },
+  { x: 1444, y: 2040, r: 32, tilt: 0 },
+  { x: 1400, y: 2068, r: 12, tilt: 0.4 },
+]
+
+function outlinePath(ctx: Ctx2D, inset: number): void {
+  const o = CARD_OUTLINE.inset + inset
+  const r = Math.max(0, CARD_OUTLINE.radius - inset)
+  ctx.beginPath()
+  ctx.roundRect(o, o, CARD_W - 2 * o, CARD_H - 2 * o, r)
+}
+
+/** A four-point star: long thin rays with concave sides, a soft gold halo and a bright warm core. */
+function sparkle(ctx: Ctx2D, x: number, y: number, r: number, tilt: number): void {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(tilt)
+  const w = r * 0.2
+  ctx.beginPath()
+  for (let i = 0; i < 4; i++) {
+    const a = (i * Math.PI) / 2
+    const tip = [Math.cos(a) * r, Math.sin(a) * r]
+    const next = [Math.cos(a + Math.PI / 2) * r, Math.sin(a + Math.PI / 2) * r]
+    if (i === 0) ctx.moveTo(tip[0], tip[1])
+    ctx.quadraticCurveTo(Math.cos(a + Math.PI / 4) * w, Math.sin(a + Math.PI / 4) * w, next[0], next[1])
+  }
+  ctx.closePath()
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r)
+  g.addColorStop(0, '#fffbe8')
+  g.addColorStop(0.25, '#ffe39a')
+  g.addColorStop(0.7, '#e9b44c')
+  g.addColorStop(1, 'rgba(201,140,40,0.85)')
+  ctx.shadowColor = 'rgba(255,190,70,0.95)'
+  ctx.shadowBlur = r * 0.9
+  ctx.fillStyle = g
+  ctx.fill()
+  ctx.shadowBlur = 0
+  ctx.lineWidth = Math.max(1.2, r * 0.06)
+  ctx.strokeStyle = 'rgba(122,78,10,0.75)'
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** PDA 10 (decided Oct 4): a thin warm-gold glow hugging the card's outer edge, plus a few small sparkles near the
+ *  corners. Gold on every material (it never goes white on Diamond). Masked by the frame's alpha so it stays inside
+ *  the card's rounded outline; it lives in the outer border only, never over the name, art or seal. */
+function drawPda10(ctx: Ctx2D, frame: ImgSrc | null): void {
+  const c = new OffscreenCanvas(CARD_W, CARD_H)
+  const g = c.getContext('2d')
+  if (!g) return
+  const metal = g.createLinearGradient(0, 0, CARD_W, CARD_H)
+  metal.addColorStop(0, '#ffe7a6'); metal.addColorStop(0.22, '#d9a23a'); metal.addColorStop(0.45, '#fff0bf')
+  metal.addColorStop(0.7, '#c88d2a'); metal.addColorStop(1, '#ffe39a')
+  // soft warm bloom, strongest at the edge and gone ~40 px in
+  outlinePath(g, 0)
+  g.shadowColor = 'rgba(255,184,64,0.9)'
+  g.shadowBlur = 34
+  g.lineWidth = 24
+  g.strokeStyle = 'rgba(240,170,60,0.62)'
+  g.stroke()
+  g.shadowBlur = 0
+  // a dark amber hairline so the gold reads on light frames (Paper, Diamond), then the metallic gold line
+  outlinePath(g, 9)
+  g.lineWidth = 7
+  g.strokeStyle = 'rgba(110,68,8,0.55)'
+  g.stroke()
+  g.lineWidth = 4
+  g.strokeStyle = metal
+  g.stroke()
+  for (const s of PDA10_SPARKLES) sparkle(g, s.x, s.y, s.r, s.tilt)
+  if (frame) {
+    g.globalCompositeOperation = 'destination-in'
+    drawFrame(g, frame)
+  } else {
+    g.globalCompositeOperation = 'destination-in'
+    outlinePath(g, 0)
+    g.fillStyle = '#000'
+    g.fill()
+  }
+  ctx.drawImage(c, 0, 0)
+}
+
 /** Draw a full card onto a 1500 x 2100 context. */
 export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardView): void {
   ctx.save()
@@ -204,7 +298,8 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
     if (assets.frame) drawFrame(ctx, assets.frame)
     if (assets.art) drawArt(ctx, assets.art, layout)
   }
-  // heavy wear (PSA 3-1) puts scorch and stains under the text: give un-outlined text its outline so it stays readable
+  if (view.pda10 && typeof OffscreenCanvas !== 'undefined') drawPda10(ctx, assets.frame)
+  // heavy wear (PDA 3-1) puts scorch and stains under the text: give un-outlined text its outline so it stays readable
   const worn = view.wear === 'L5' || view.wear === 'L6'
   const tb = (b: TextBox): TextBox => (worn && b.style.outlineWidth === 0 ? { ...b, style: { ...b.style, outlineWidth: 6 } } : b)
   drawText(ctx, view.name, tb(layout.text.name))

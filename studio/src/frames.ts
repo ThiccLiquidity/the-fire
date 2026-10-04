@@ -1,6 +1,6 @@
 /** The collection's frames: the owner's master templates, built into the studio and never uploaded or edited here.
  *  Sources: frames-src/originals (as delivered), cleaned by frames-src/clean_frames.py into src/assets/frames.
- *  Every frame shares FRAME_GEOMETRY, so one layout fits them all. A missing frame blocks approval of any Fire that
+ *  Every frame shares FRAME_GEOMETRY, so one layout fits them all. A missing frame blocks approval of any Series that
  *  deals that material + variant. */
 
 import burning from './assets/frames/burning.webp'
@@ -24,8 +24,8 @@ export const BUILTIN_FRAMES: Record<Material, Partial<Record<Variant, string>>> 
   diamond: { normal: diamond, holo: diamondHolo },
 }
 
-/** PSA wear frames: src/assets/frames/<material>[-holo]-l<2-6>.webp, made by clean_frames.py from
- *  frames-src/originals/wear. Level 1 (PSA 10) is the clean frame itself. */
+/** PDA wear frames: src/assets/frames/<material>[-holo]-l<2-6>.webp, made by clean_frames.py from
+ *  frames-src/originals/wear. Level 1 (PDA 10) is the clean frame itself. */
 const wearFiles = import.meta.glob('./assets/frames/*-l[2-6].webp', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
 export const BUILTIN_WEAR_FRAMES: Record<Material, Partial<Record<Variant, Partial<Record<WearLevel, string>>>>> = {
   paper: {}, wood: {}, burning: {}, charcoal: {}, diamond: {},
@@ -39,7 +39,7 @@ for (const [path, url] of Object.entries(wearFiles)) {
 }
 for (const mat of MATERIALS) for (const v of VARIANTS) {
   const clean = BUILTIN_FRAMES[mat][v]
-  if (clean) (BUILTIN_WEAR_FRAMES[mat][v] ??= {}).L1 = clean // PSA 10 = pristine
+  if (clean) (BUILTIN_WEAR_FRAMES[mat][v] ??= {}).L1 = clean // PDA 10 = pristine
 }
 
 /** Bump (to a time in the past, e.g. when the change is made) when a frame file is added or changed: approvals made

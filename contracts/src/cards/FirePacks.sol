@@ -8,8 +8,8 @@ import {Base64} from "openzeppelin-contracts/contracts/utils/Base64.sol";
 import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
 
 /**
- * @notice Sealed packs. One stackable token type per Fire (token id = Fire number), so "Fire #7 Sealed Pack x 3"
- *         lists and trades like any item and each Fire has its own floor. Contents are not decided until a pack is
+ * @notice Sealed packs. One stackable token type per Series (token id = Series number), so "Series 7 Sealed Pack x 3"
+ *         lists and trades like any item and each Series has its own floor. Contents are not decided until a pack is
  *         opened (FireCards), so a sealed pack carries no hidden information anyone could read.
  *
  *         Only the seller (the pack sale contract) mints, and only the card contract burns, when a pack is opened.
@@ -20,7 +20,7 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
 
     address public seller;
     address public cards;
-    /// @dev Pack art: <packImageBase>fire<N>.webp, one image per Fire (the master graphic with the Fire number).
+    /// @dev Pack art: <packImageBase>fire<N>.webp, one image per Series (the master graphic with the Series number).
     string public packImageBase;
     mapping(uint256 fire => uint256) public minted;
     mapping(uint256 fire => uint256) public burned;
@@ -92,10 +92,10 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     function uri(uint256 fire) public view override returns (string memory) {
         string memory n = fire.toString();
         bytes memory json = abi.encodePacked(
-            '{"name":"The Fire - Sealed Pack - Fire #', n,
-            '","description":"A sealed pack of 6 cards from Fire #', n,
+            '{"name":"The Fire - Sealed Pack - Series ', n,
+            '","description":"A sealed pack of 6 cards from Series ', n,
             '. What is inside is decided only when it is opened.","image":"', packImageBase, 'fire', n,
-            '.webp","attributes":[{"trait_type":"Fire","value":', n, ',"display_type":"number"},{"trait_type":"State","value":"Sealed"}]}'
+            '.webp","attributes":[{"trait_type":"Series","value":', n, ',"display_type":"number"},{"trait_type":"State","value":"Sealed"}]}'
         );
         return string.concat("data:application/json;base64,", Base64.encode(json));
     }

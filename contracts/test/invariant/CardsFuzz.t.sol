@@ -11,12 +11,12 @@ import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness} from "../Mocks.
 import {InvRouter} from "./InvRouter.sol";
 
 contract FuzzPoolHarness {
-    function pool(int256[5] memory before, uint256 packs) external pure returns (uint256[5] memory, int256[5] memory) {
-        return CardRules.computePool(before, packs);
+    function pool(uint256 packs, uint256 diamonds) external pure returns (uint256[5] memory) {
+        return CardRules.computePool(packs, diamonds);
     }
 }
 
-/// @dev Stateless fuzz tests: pricing math, the burn split, PSA grades and price, and the pool math.
+/// @dev Stateless fuzz tests: pricing math, the burn split, PDA grades and price, and the pool math.
 contract CardsFuzzTest is Test {
     function _na() internal pure returns (FireSale.Access memory a) {
         a.proof = new bytes32[](0);
@@ -181,7 +181,7 @@ contract CardsFuzzTest is Test {
         assertEq(paper.balanceOf(DEAD), n * 1e18, "1 PAPER per pack burned");
     }
 
-    // ---------------------------------------------------------------- PSA
+    // ---------------------------------------------------------------- PDA
 
     /// forge-config: default.fuzz.runs = 1000
     function testFuzz_gradeForAlways1to10(uint256 word, uint256 fire) public view {
@@ -249,53 +249,68 @@ contract CardsFuzzTest is Test {
 
     // ---------------------------------------------------------------- pool math
 
-    function _checkPool(int256[5] memory before, uint256 n, uint256[5] memory c, int256[5] memory carry) internal pure {
+    function _checkPool(uint256 n, uint256 d, uint256[5] memory c) internal pure {
+        assertEq(c[0] + c[1] + c[2] + c[3] + c[4], 6 * n, "counts sum to 6 x packs");
         assertEq(c[0], 3 * n, "Paper == 3 x packs");
-        assertEq(c[1] + c[2] + c[3] + c[4], 3 * n, "Wood + better == 3 x packs");
         assertGe(c[1], n, "Wood >= packs");
         uint256 bp = c[2] + c[3] + c[4];
         assertGe(bp, n, "Fire-or-better >= packs");
         assertLe(bp, 2 * n, "Fire-or-better <= 2 x packs");
-        int256 sumBefore;
-        int256 sumAfter;
-        for (uint256 m; m < 5; m++) {
-            int256 acc = before[m] + CardRules.rarityUnits(m) * int256(n * 6);
-            assertEq(carry[m], acc - int256(c[m]) * 100_000, "carry == accumulator - counts");
-            sumBefore += before[m];
-            sumAfter += carry[m];
+        if (n == 0) {
+            assertEq(c[4], 0, "no packs, no Diamond");
+        } else {
+            assertGe(c[4], 1, "at least one Diamond");
+            assertEq(c[4], (d == 0 ? 1 : d) < n ? (d == 0 ? 1 : d) : n, "Diamond == min(setting, packs)");
         }
-        assertEq(sumAfter, sumBefore, "nothing created or lost");
-    }
-
-    /// Chained Fires from a clean start (the real path): random pack counts, accumulators carried.
-    /// forge-config: default.fuzz.runs = 1000
-    function testFuzz_computePoolChained(uint256 seed, uint8 fires) public view {
-        uint256 k = bound(fires, 1, 12);
-        int256[5] memory acc;
-        for (uint256 i; i < k; i++) {
-            uint256 n = uint256(keccak256(abi.encode(seed, i))) % 600; // 0..599 packs (0: a drop ended with none)
-            (uint256[5] memory c, int256[5] memory carry) = harness.pool(acc, n);
-            _checkPool(acc, n, c, carry);
-            for (uint256 m; m < 5; m++) {
-                assertLt(carry[m], 2 * 100_000, "carry stays under two cards");
-                assertGt(carry[m], -2 * 100_000, "borrow stays under two cards");
-            }
-            acc = carry;
+        // Fire and Charcoal are their rounded shares unless the pack floor had to move cards
+        uint256 fire = (15_000 * 6 * n + 50_000) / 100_000;
+        uint256 charcoal = (4_900 * 6 * n + 50_000) / 100_000;
+        uint256 raw = fire + charcoal + c[4];
+        if (raw >= n && raw <= 2 * n) {
+            assertEq(c[2], fire, "Fire share");
+            assertEq(c[3], charcoal, "Charcoal share");
+        } else if (raw > 2 * n) {
+            assertEq(bp, 2 * n, "over the floor: trimmed to 2 x packs");
+            assertLe(c[2], fire);
+            assertLe(c[3], charcoal);
+            if (c[3] < charcoal) assertEq(c[2], 0, "Charcoal only trimmed once Fire is gone");
+        } else {
+            assertEq(bp, n, "under the floor: topped up to packs");
+            assertEq(c[3], charcoal);
         }
     }
 
-    /// Any accumulators of up to ±3 cards per tier that sum to zero (as carries always do).
-    /// forge-config: default.fuzz.runs = 1000
-    function testFuzz_computePoolRandomAccumulators(int256[4] memory a, uint256 n) public view {
-        n = bound(n, 1, 5_000);
-        int256[5] memory before;
-        int256 sum;
-        for (uint256 m; m < 4; m++) {
-            before[m + 1] = bound(a[m], -300_000, 300_000);
-            sum += before[m + 1];
-        }
-        before[0] = -sum;
-        (uint256[5] memory c, int256[5] memory carry) = harness.pool(before, n);
-        _checkPool(before, n, c, carry);
+    /// The rule's invariants over any pack count and any Diamond setting up to the pack count (and beyond: capped).
+    /// forge-config: default.fuzz.runs = 2000
+    function testFuzz_computePool(uint256 n, uint256 d) public view {
+        n = bound(n, 0, type(uint32).max);
+        d = n == 0 ? bound(d, 1, 1000) : bound(d, 1, n + 1000);
+        _checkPool(n, d, harness.pool(n, d));
+    }
+
+    /// Small Series, where the floor and the Diamond cap bite: every setting up to the contract's 1000.
+    /// forge-config: default.fuzz.runs = 2000
+    function testFuzz_computePoolSmall(uint256 n, uint256 d) public view {
+        n = bound(n, 0, 60);
+        d = bound(d, 1, 1000);
+        _checkPool(n, d, harness.pool(n, d));
+    }
+
+    /// Each Series stands alone: the same inputs always give the same pool, and more Diamonds only take from Wood
+    /// (or, at tiny sizes, from Fire/Charcoal through the floor), never change Paper.
+    function testFuzz_computePoolMoreDiamonds(uint256 n, uint256 d) public view {
+        n = bound(n, 1, 100_000);
+        d = bound(d, 1, 999);
+        uint256[5] memory a = harness.pool(n, d);
+        uint256[5] memory b = harness.pool(n, d + 1);
+        assertEq(a[0], b[0]);
+        assertGe(b[4], a[4]);
+        assertLe(b[1], a[1]);
+        assertEq(a[1] + a[2] + a[3] + a[4], b[1] + b[2] + b[3] + b[4]);
+    }
+
+    function test_computePoolTooManyPacks() public {
+        vm.expectRevert(CardRules.BadPacks.selector);
+        harness.pool(uint256(type(uint32).max) + 1, 1);
     }
 }

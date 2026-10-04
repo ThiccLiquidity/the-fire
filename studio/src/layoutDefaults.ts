@@ -20,7 +20,7 @@ export const LAYOUT_VERSION = 4
 
 /** Text colours per frame: Paper, Wood and Diamond have light panels (dark ink); Burning and Charcoal have dark panels
  *  (light ink). `window` fills the art window behind keyed art. */
-/** `seal` = the PSA seal's light and dark colours and its text colour, matched to each frame: pencil graphite on
+/** `seal` = the PDA seal's light and dark colours and its text colour, matched to each frame: pencil graphite on
  *  Paper, walnut on Wood, ember on Fire, black and silver on Charcoal, icy crystal on Diamond. */
 const INK: Record<Material, { color: string; outline: string; outlineWidth: number; window: string; seal: [string, string, string] }> = {
   paper: { color: '#2b2622', outline: '#ffffff', outlineWidth: 0, window: '#f4f0e6', seal: ['#8a8a8a', '#2f2f31', '#f3efe6'] },
@@ -72,9 +72,9 @@ export function defaultLayout(material: Material): Layout {
 export function normalizeLayout(material: Material, stored: Partial<Layout> | undefined): Layout {
   const d = defaultLayout(material)
   if (!stored || !stored.version || stored.version < 2 || stored.version > LAYOUT_VERSION) return d
-  // v2 -> v3: the PSA badge became the seal; keep everything else the owner set
+  // v2 -> v3: the PDA badge became the seal; keep everything else the owner set
   if (stored.version === 2) stored = { ...stored, psa: d.psa }
-  // v3 -> v4: a 4th line (Forged · Fire #) joined the bottom panel; the bottom boxes and sizes move to make room,
+  // v3 -> v4: a 4th line (Forged · Series #) joined the bottom panel; the bottom boxes and sizes move to make room,
   // fonts and colours stay
   if ((stored.version ?? 0) < 4 && stored.text) {
     const t = { ...stored.text }

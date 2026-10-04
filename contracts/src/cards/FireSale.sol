@@ -153,7 +153,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     /// @notice The list new suggestions join. A picking session takes everything in the current list and starts a new
     ///         one, so the list clears after every session and unpicked suggestions don't carry over.
     uint32 public currentRound;
-    /// @notice The Fire being picked for, and the list it picks from.
+    /// @notice The Series being picked for, and the list it picks from.
     uint256 public sessionFire;
     uint32 public sessionRound;
 
@@ -274,10 +274,10 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         // the wallet limit (and the PLANK-only safety valve) needs a real period, the starter window fits inside it
         if (c.liftAfter == 0 || c.liftAfter > MAX_WINDOW || c.starterWindow > c.liftAfter || c.holderWindow > c.liftAfter
             || (c.starters > 0 && c.starterWindow == 0)) revert BadConfig();
-        // The Fire's characters must be set in the card contract first, or the sale that sells it out couldn't close it.
+        // The Series' characters must be set in the card contract first, or the sale that sells it out couldn't close it.
         (bool closed,, uint8 characters,,,,,,,) = CARDS.fires(fire);
         if (closed || characters == 0) revert BadConfig();
-        // One drop at a time: a Fire's pool (and the carried rare cards) is decided when it closes, so two drops
+        // One drop at a time: a Series' pool (and the carried rare cards) is decided when it closes, so two drops
         // running together would let whoever closes one first steer a carried Diamond.
         if (d.start == 0) {
             if (activeDrops != 0) revert AnotherDropActive();
@@ -300,7 +300,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
 
     /// @notice Give a free pack credit to each picked suggestion's author. Only while setting up a drop (before it
     ///         opens; with one drop at a time no drop is running then), each suggestion once, and no more picks than
-    ///         the Fire has characters.
+    ///         the Series has characters.
     function pickSuggestions(uint256 fire, uint256[] calldata ids) external onlyOwner {
         Drop storage d = drops[fire];
         if (d.start == 0) revert BadConfig();
@@ -308,7 +308,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         (,, uint8 characters,,,,,,,) = CARDS.fires(fire);
         if (picksOf[fire] + ids.length > characters) revert BadAmount();
         picksOf[fire] += ids.length;
-        // The first pick for a new Fire starts a session: it picks from the current list, and new suggestions from
+        // The first pick for a new Series starts a session: it picks from the current list, and new suggestions from
         // now on go into a fresh list for the next session. Unpicked ones from older lists can't be picked again.
         if (sessionFire != fire || currentRound == 0) {
             sessionFire = fire;
@@ -328,7 +328,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
 
     /// @notice End a drop that hasn't sold out. The owner can once its wallet limit has lifted (so the starter window
     ///         and the limited phase always run in full); anyone can END_GRACE after that, so packs never get stranded.
-    ///         No more packs are sold; the Fire closes with what was minted.
+    ///         No more packs are sold; the Series closes with what was minted.
     function endDrop(uint256 fire) external {
         Drop storage d = drops[fire];
         if (d.start == 0 || d.closed) revert NotLive();
@@ -430,7 +430,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         emit CardsBurned(msg.sender, ids.length, earned, total % CARDS_PER_CREDIT);
     }
 
-    /// @notice Suggest a character for a future Fire. The PAPER is burned.
+    /// @notice Suggest a character for a future Series. The PAPER is burned.
     function suggest(string calldata text) external returns (uint256 id) {
         uint256 len = bytes(text).length;
         if (len == 0 || len > 280) revert BadAmount();

@@ -151,7 +151,7 @@ input[type=range] { width: 100%; accent-color: var(--ember) }
         <div class="field"><label for="c-packs">Packs sold <output id="o-packs"></output></label><input id="c-packs" type="range" min="0" max="500" step="1" value="167"></div>
         <div class="field"><label for="c-price">Pack price <output id="o-price"></output></label><input id="c-price" type="range" min="1" max="5" step="0.25" value="2.5"></div>
         <div class="field"><label for="c-starters">Starter packs claimed <output id="o-starters"></output></label><input id="c-starters" type="range" min="0" max="50" step="1" value="50"></div>
-        <div class="field"><label for="c-psa">PSA reveals <output id="o-psa"></output></label><input id="c-psa" type="range" min="0" max="1000" step="10" value="200"></div>
+        <div class="field"><label for="c-psa">PDA reveals <output id="o-psa"></output></label><input id="c-psa" type="range" min="0" max="1000" step="10" value="200"></div>
         <div class="field"><label for="c-sugg">Character suggestions <output id="o-sugg"></output></label><input id="c-sugg" type="range" min="0" max="500" step="5" value="60"></div>
         <div class="field"><label for="c-pp">PAPER price <output id="o-pp"></output></label><input id="c-pp" type="range" min="0" max="7" step="1" value="3"></div>
       </div>
@@ -159,7 +159,7 @@ input[type=range] { width: 100%; accent-color: var(--ember) }
         <div class="res safe"><span>To your revenue wallet</span><b id="r-safe"></b></div>
         <div class="res burn"><span>PLANK bought and burned</span><b id="r-plank"></b></div>
         <div class="res paper"><span>PAPER burned</span><b id="r-paper"></b></div>
-        <div class="res"><span>PSA reveal price</span><b id="r-psa"></b></div>
+        <div class="res"><span>PDA reveal price</span><b id="r-psa"></b></div>
         <div class="res"><span>Cards minted</span><b id="r-cards"></b></div>
         <p class="note" id="r-note"></p>
       </div>
@@ -174,7 +174,7 @@ input[type=range] { width: 100%; accent-color: var(--ember) }
       <div class="rule"><h3>Contents are secret until opened</h3><p>A pack's cards don't exist until it's opened and drand's random number arrives. Nobody can peek, including you.</p></div>
       <div class="rule"><h3>Buyers name their max</h3><p>Every purchase carries the most the buyer agreed to pay. If a price moved, the purchase fails and costs nothing.</p></div>
       <div class="rule"><h3>A mint never fails on PLANK</h3><p>If the PLANK swap can't go through, the 30% goes to the burn wallet to burn later and the purchase still succeeds.</p></div>
-      <div class="rule"><h3>Dealt cards can't be changed</h3><p>Once minted, a card is final. Only the PSA reveal changes it, by setting its grade once.</p></div>
+      <div class="rule"><h3>Dealt cards can't be changed</h3><p>Once minted, a card is final. Only the PDA reveal changes it, by setting its grade once.</p></div>
     </div>
   </section>
 
@@ -245,10 +245,10 @@ const ITEMS = [
     qs: [],
   },
   {
-    id: 'psa', name: 'PSA reveal', tag: 'under $0.25 in PAPER', status: 'ok', who: 'Any card holder, once per card.',
+    id: 'psa', name: 'PDA reveal', tag: 'under $0.25 in PAPER', status: 'ok', who: 'Any card holder, once per card.',
     flows: [
       { from: P('paper','PAPER'), via: 'Most whole PAPER that stays under $0.25 (at least 1)', amt: 'PAPER $0.05 → 5 · $0.03 → 8 · $0.30 → 1', to: P('burn','Burned') },
-      { from: '<span class="pill plain">Randomness</span>', via: 'Sets the grade on a perfect curve', amt: '10: 2% · 9–8: 10% · 7–6: 38% · 5–4: 38% · 3–2: 10% · 1: 2%', to: P('nft','Card gets its grade') },
+      { from: '<span class="pill plain">Randomness</span>', via: 'Sets the grade (most land 6–9)', amt: '10: 1% · 9: 17% · 8: 24% · 7: 25% · 6: 18% · 5: 7% · 4: 3.5% · 3: 2% · 2: 1.5% · 1: 1%', to: P('nft','Card gets its grade') },
       { from: '<span class="pill plain">Grade</span>', via: 'Card switches to that wear frame and seal colour', amt: '10 clean · 1 battered', to: P('nft','New look') },
     ],
     steps: ['Reads the PAPER price feed (a set number until PAPER has a real market).', 'Burns the PAPER.', 'Requests randomness, then sets the grade. The image and metadata update.'],

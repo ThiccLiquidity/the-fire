@@ -23,20 +23,21 @@ interface IFirePacks {
  * @notice The cards. Every card is a unique ERC-721 (token id = its global serial).
  *
  *         How a pack is opened:
- *         1. When a Fire goes out, the seller closes it: the contract freezes the pack count and works out the Fire's
- *            pool from the rarity math and the carry-over (CardRules.computePool, ported exactly from the studio).
+ *         1. When a Series goes out, the seller closes it: the contract freezes the pack count and works out the Series'
+ *            pool from that count and the Series' Diamond setting (CardRules.computePool, ported exactly from the
+ *            studio). Each Series stands alone: nothing carries over from earlier Series.
  *         2. A holder calls open(): their sealed pack is burned and fresh drand randomness is requested. Nothing about
  *            the pack existed before this; its cards depend on randomness that doesn't exist yet. (The leftover
- *            pool is public, so the very last pack of a Fire gets exactly what's left: a cost of exact totals.)
+ *            pool is public, so the very last pack of a Series gets exactly what's left: a cost of exact totals.)
  *         3. When the randomness arrives, anyone calls process() (the site does it right away). Packs are dealt
- *            strictly in the order they were opened, each drawing its 6 cards from what is left of the Fire's pool
+ *            strictly in the order they were opened, each drawing its 6 cards from what is left of the Series' pool
  *            while keeping the pack guarantees (slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6 Fire-or-better). The
  *            result of a pack depends only on the random words and the order of open() calls, so nobody can gain by
- *            choosing when to process, and the Fire's totals come out exact.
+ *            choosing when to process, and the Series' totals come out exact.
  *         Cards are minted without the receiver callback, so no holder's contract can stall the queue for others.
  *
- *         The owner configures each Fire before it closes (its characters, names and categories, and where its
- *         images live), can lock that per Fire, and sets the royalty. Nobody can change a card once it is dealt.
+ *         The owner configures each Series before its packs sell (its characters, names and categories, where its
+ *         images live, and how many Diamonds it makes: at least 1), can lock that per Series, and sets the royalty. Nobody can change a card once it is dealt.
  */
 contract FireCards is ERC721, ERC2981, Ownable2Step {
     using Strings for uint256;
@@ -47,6 +48,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     ///      they can already see re-roll while the keeper is down. Anyone (the site, the keeper) can deliver a word.
     uint256 public constant REREQUEST_AFTER = 1 days;
     uint96 public constant MAX_ROYALTY_BPS = 1_000;
+    uint256 public constant MAX_DIAMONDS = 1_000;
     /// @dev Last resort if randomness is gone for good: an open with no answer this long can be cancelled and its
     ///      packs go back to the holder, sealed. (A week is far past any normal delay.)
     uint256 public constant CANCEL_AFTER = 7 days;
@@ -54,7 +56,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     IFirePacks public immutable PACKS;
     IRandomnessSource public randomness;
     address public seller;
-    /// @notice The PSA reveal contract (FirePsa): the only one that can set a card's grade, once.
+    /// @notice The PDA reveal contract (FirePsa): the only one that can set a card's grade, once.
     address public psa;
 
     struct FireInfo {
@@ -81,12 +83,13 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     }
 
     mapping(uint256 fire => FireInfo) public fires;
-    mapping(uint256 fire => uint256[5]) public poolOf; // the Fire's pool at close, for anyone to check
+    mapping(uint256 fire => uint256[5]) public poolOf; // the Series' pool at close, for anyone to check
     mapping(uint256 fire => string[]) internal _names;
     mapping(uint256 fire => uint8[]) internal _categories;
     mapping(uint256 fire => string) public imagesBase;
 
-    int256[5] internal _acc; // carried rarity accumulators (units of 1/100,000 card)
+    /// @notice Diamonds the owner set for a Series (0 = not set, which means 1). See diamondsFor.
+    mapping(uint256 fire => uint256) public diamondsOf;
     uint256 public nextSerial = 1;
 
     Open[] public opens;
@@ -97,7 +100,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     ///      edition (64-95), grade 0 = unrevealed (96-103).
     mapping(uint256 tokenId => uint256) internal _card;
     mapping(bytes32 => uint32) internal _editions; // (fire, character, material) -> cards dealt so far
-    /// @notice A PSA reveal is waiting for its randomness: the card can't move until its grade is set, so nobody can
+    /// @notice A PDA reveal is waiting for its randomness: the card can't move until its grade is set, so nobody can
     ///         sell a card whose (already public) grade they know is bad as "Unrevealed".
     mapping(uint256 tokenId => bool) public gradePending;
 
@@ -111,6 +114,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     event SellerSet(address seller);
     event FireConfigured(uint256 indexed fire, uint256 characters, string imagesBase);
     event FireLocked(uint256 indexed fire);
+    event DiamondsSet(uint256 indexed fire, uint256 diamonds);
     event FireClosed(uint256 indexed fire, uint256 packs, uint256[5] pool);
     event PacksOpened(uint256 indexed openIndex, address indexed holder, uint256 indexed fire, uint256 count, uint256 requestId);
     event OpenReady(uint256 indexed openIndex, uint256 word);
@@ -136,6 +140,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     error BadText();
     error GradingInProgress();
     error RoyaltyTooHigh();
+    error BadDiamonds();
 
     constructor(address owner_, address packs_) ERC721("The Fire Cards", "FIRECARD") Ownable(owner_) {
         if (packs_ == address(0)) revert ZeroAddress();
@@ -165,16 +170,16 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         emit PsaSet(p);
     }
 
-    /// @notice A Fire's characters (names and categories, in the studio's order) and where its card images live
-    ///         (ipfs://<CID>/ or ar://<id>/). Allowed until the Fire is locked.
+    /// @notice A Series' characters (names and categories, in the studio's order) and where its card images live
+    ///         (ipfs://<CID>/ or ar://<id>/). Allowed until the Series is locked.
     function configureFire(uint256 fire, string[] calldata names, uint8[] calldata categories, string calldata base)
         external
         onlyOwner
     {
-        if (fire > type(uint32).max) revert BadLength(); // cards store the Fire in 32 bits
+        if (fire > type(uint32).max) revert BadLength(); // cards store the Series in 32 bits
         FireInfo storage f = fires[fire];
         if (f.locked) revert FireIsLocked();
-        // once its packs are selling, a Fire's characters are fixed (names can't change under buyers, and the number
+        // once its packs are selling, a Series' characters are fixed (names can't change under buyers, and the number
         // of characters caps suggestion picks)
         if (PACKS.minted(fire) != 0) revert FireIsLocked();
         _checkText(base);
@@ -193,6 +198,22 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         if (nextSerial > 1) emit BatchMetadataUpdate(1, nextSerial - 1);
     }
 
+    /// @notice How many Diamonds a Series makes (1 to MAX_DIAMONDS; never more than one per pack). Fixed the same way
+    ///         its characters are: not once the Series is locked, its packs are selling, or it is closed.
+    function setDiamonds(uint256 fire, uint256 n) external onlyOwner {
+        if (n == 0 || n > MAX_DIAMONDS) revert BadDiamonds();
+        FireInfo storage f = fires[fire];
+        if (f.locked || f.closed || PACKS.minted(fire) != 0) revert FireIsLocked();
+        diamondsOf[fire] = n;
+        emit DiamondsSet(fire, n);
+    }
+
+    /// @notice The Diamond setting a Series uses: what the owner set, or 1.
+    function diamondsFor(uint256 fire) public view returns (uint256) {
+        uint256 d = diamondsOf[fire];
+        return d == 0 ? 1 : d;
+    }
+
     function lockFire(uint256 fire) external onlyOwner {
         if (fires[fire].characterCount == 0) revert NotConfigured();
         fires[fire].locked = true;
@@ -205,17 +226,16 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         _setDefaultRoyalty(receiver, bps);
     }
 
-    // ---------- the Fire goes out ----------
+    // ---------- the Series goes out ----------
 
-    /// @notice The seller closes a Fire when it goes out: the pack count is frozen and the pool is worked out.
+    /// @notice The seller closes a Series when it goes out: the pack count is frozen and the pool is worked out.
     function closeFire(uint256 fire) external {
         if (msg.sender != seller) revert NotSeller();
         FireInfo storage f = fires[fire];
         if (f.closed) revert FireIsClosed();
         if (f.characterCount == 0) revert NotConfigured();
         uint256 packs = PACKS.minted(fire);
-        (uint256[5] memory pool, int256[5] memory carry) = CardRules.computePool(_acc, packs);
-        _acc = carry;
+        uint256[5] memory pool = CardRules.computePool(packs, diamondsFor(fire));
         f.closed = true;
         f.packs = uint32(packs);
         f.packsLeft = uint32(packs);
@@ -238,7 +258,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         }
     }
 
-    /// @notice The PSA contract marks cards whose reveal is waiting for randomness (they can't be transferred until
+    /// @notice The PDA contract marks cards whose reveal is waiting for randomness (they can't be transferred until
     ///         graded) and clears the mark.
     function setGradePending(uint256 serial, bool pending_) external {
         if (msg.sender != psa) revert NotPsa();
@@ -246,7 +266,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         emit GradePending(serial, pending_);
     }
 
-    /// @notice The PSA contract sets a card's grade (1-10), once. Its image switches to that wear frame.
+    /// @notice The PDA contract sets a card's grade (1-10), once. Its image switches to that wear frame.
     function setGrade(uint256 serial, uint256 grade) external {
         if (msg.sender != psa) revert NotPsa();
         if (gradePending[serial]) {
@@ -261,15 +281,11 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         emit MetadataUpdate(serial);
     }
 
-    /// @notice For the PSA contract: whether a card exists, its Fire and its grade (0 = unrevealed).
+    /// @notice For the PDA contract: whether a card exists, its Series and its grade (0 = unrevealed).
     function gradeInfo(uint256 serial) external view returns (bool exists, uint256 fire, uint256 grade) {
         if (_ownerOf(serial) == address(0)) return (false, 0, 0);
         uint256 d = _card[serial];
         return (true, uint32(d), uint8(d >> 96));
-    }
-
-    function accumulators() external view returns (int256[5] memory) {
-        return _acc;
     }
 
     // ---------- opening ----------
@@ -366,7 +382,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
             f.flexWoodLeft--;
         }
         f.dealt++;
-        // the Fire's last pack: every card of it now shows "k of N" as its Edition (these 6 included)
+        // the Series' last pack: every card of it now shows "k of N" as its Edition (these 6 included)
         if (f.dealt == f.packs) emit BatchMetadataUpdate(1, nextSerial + 5);
 
         // mint order: shuffle the six
@@ -410,7 +426,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         bool holoPicture;
         uint256 character;
         uint256 edition;
-        uint256 editionOf; // 0 until every pack of the Fire is dealt
+        uint256 editionOf; // 0 until every pack of the Series is dealt
         uint256 grade; // 0 = unrevealed
     }
 
@@ -439,7 +455,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }
 
-    /// @notice The card's shared image in its Fire's image folder: c<character>-<material>-<holo>-<wear>.webp
+    /// @notice The card's shared image in its Series' image folder: c<character>-<material>-<holo>-<wear>.webp
     ///         (the Card Studio's export names files the same way).
     function imageFile(Card memory c) public pure returns (string memory) {
         return string.concat(
@@ -450,14 +466,17 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     function _attributes(Card memory c, string memory name, uint256 serial) private view returns (string memory) {
         string memory edition = c.editionOf == 0 ? c.edition.toString() : string.concat(c.edition.toString(), " of ", c.editionOf.toString());
         uint8 cat = c.character < _categories[c.fire].length ? _categories[c.fire][c.character] : 255;
-        return string.concat(
+        string memory head = string.concat( // in two parts: one concat of everything is too deep for the stack
             '[{"trait_type":"Character","value":"', name,
             '"},{"trait_type":"Category","value":"', _category(cat),
             '"},{"trait_type":"Material","value":"', _materialLabel(c.material),
-            '"},{"trait_type":"Holo","value":"', _holoLabel(c.holoFrame, c.holoPicture),
-            '"},{"trait_type":"Fire","value":', c.fire.toString(), ',"display_type":"number"},{"trait_type":"Edition","value":"', edition,
-            '"},{"trait_type":"Serial","value":', serial.toString(), ',"display_type":"number"},{"trait_type":"PSA","value":"',
-            c.grade == 0 ? "Unrevealed" : string.concat("PSA ", c.grade.toString()), '"}]'
+            '"},{"trait_type":"Holo","value":"', _holoLabel(c.holoFrame, c.holoPicture)
+        );
+        return string.concat(
+            head,
+            '"},{"trait_type":"Series","value":', c.fire.toString(), ',"display_type":"number"},{"trait_type":"Edition","value":"', edition,
+            '"},{"trait_type":"Serial","value":', serial.toString(), ',"display_type":"number"},{"trait_type":"PDA","value":"',
+            c.grade == 0 ? "Unrevealed" : string.concat("PDA ", c.grade.toString()), '"}]'
         );
     }
 
@@ -477,7 +496,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         return f && p ? "Full" : f ? "Frame" : p ? "Picture" : "None";
     }
 
-    /// @dev PSA grade -> wear frame level, as in the studio: 10 = l1, 9-8 l2, 7-6 l3, 5-4 l4, 3-2 l5, 1 l6.
+    /// @dev PDA grade -> wear frame level, as in the studio: 10 = l1, 9-8 l2, 7-6 l3, 5-4 l4, 3-2 l5, 1 l6.
     function _wear(uint256 g) private pure returns (string memory) {
         if (g == 0) return "clean";
         if (g == 10) return "l1";

@@ -1,4 +1,4 @@
-import type { Accumulators, DealResult } from './deal'
+import type { DealResult } from './deal'
 import type { Category, Material } from './rules'
 
 export type Variant = 'normal' | 'holo'
@@ -25,7 +25,7 @@ export interface Character {
   id: string
   name: string
   shortId: string
-  /** Set once; printed on the card and a trait in the metadata. Required before the character can go into a Fire. */
+  /** Set once; printed on the card and a trait in the metadata. Required before the character can go into a Series. */
   category?: Category
   images: Partial<Record<Material, Partial<Record<Variant, ImageSlot>>>>
   createdAt: number
@@ -63,11 +63,11 @@ export interface TextStyle {
   uppercase: boolean
 }
 
-/** What's printed on the card image. Serial, edition and Fire # are per card, so they live in the metadata (and the
+/** What's printed on the card image. Serial, edition and Series # are per card, so they live in the metadata (and the
  *  live version), not on the shared image. */
 export type TextField = 'name' | 'material' | 'category' | 'forged'
 export const TEXT_FIELDS: TextField[] = ['name', 'material', 'category', 'forged']
-export const TEXT_FIELD_LABEL: Record<TextField, string> = { name: 'Name', material: 'Material', category: 'Category', forged: 'Forged (Fire #)' }
+export const TEXT_FIELD_LABEL: Record<TextField, string> = { name: 'Name', material: 'Material', category: 'Category', forged: 'Forged (Series #)' }
 
 export interface TextBox { box: Rect; style: TextStyle; visible: boolean }
 export interface PsaBox extends TextBox { fill: string; border: string; borderWidth: number; radius: number }
@@ -122,8 +122,11 @@ export interface FireRecord {
   number: number
   characterIds: string[]
   packs: number
+  /** Diamonds this Series makes (at least 1, the default; never more than one per pack). Missing on Series saved
+   *  before Oct 4, which read as 1. */
+  diamonds?: number
   seed: string
-  /** Set once the deal is locked: the global accumulators and serial counter have moved on. */
+  /** Set once the deal is locked: the global serial counter has moved on. */
   deal?: DealResult
   approvedAt?: number
   build?: BuildState
@@ -133,7 +136,6 @@ export interface FireRecord {
 }
 
 export interface GlobalState {
-  accumulators: Accumulators
   /** Next global serial to hand out (never resets). */
   nextSerial: number
   nextFireNumber: number

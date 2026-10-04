@@ -15,7 +15,7 @@ const TABS = [
   { id: 'library', label: '1 Library' },
   { id: 'frames', label: '2 Frames & Layout' },
   { id: 'preview', label: 'Preview' },
-  { id: 'fire', label: '3 Fire' },
+  { id: 'fire', label: '3 Series' },
   { id: 'deal', label: '4 Deal' },
   { id: 'review', label: '5 Build & Review' },
   { id: 'export', label: '6 Export & Upload' },
@@ -70,7 +70,7 @@ export default function App() {
         {s.loaded && perFire && (
           <div className="split">
             <FireList selected={fire?.number ?? null} onSelect={setFireNo} />
-            {!fire && <section className="panel grow"><p className="muted">Create a Fire to start.</p></section>}
+            {!fire && <section className="panel grow"><p className="muted">Create a Series to start.</p></section>}
             {fire && tab === 'fire' && <FireSetup key={fire.number} fire={fire} onDeleted={() => setFireNo(null)} />}
             {fire && tab === 'deal' && <Deal key={fire.number} fire={fire} />}
             {fire && tab === 'review' && <Review key={fire.number} fire={fire} />}

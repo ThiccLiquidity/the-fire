@@ -36,8 +36,8 @@ contract Grumpy {
 }
 
 contract PoolHarness {
-    function pool(int256[5] memory before, uint256 packs) external pure returns (uint256[5] memory, int256[5] memory) {
-        return CardRules.computePool(before, packs);
+    function pool(uint256 packs, uint256 diamonds) external pure returns (uint256[5] memory) {
+        return CardRules.computePool(packs, diamonds);
     }
 }
 
@@ -110,21 +110,25 @@ contract CardsTest is Test {
     function test_poolParityWithStudio() public {
         PoolHarness h = new PoolHarness();
         string memory json = vm.readFile("test/cards/pool-fixture.json");
-        uint256 rows = 300;
+        uint256 rows;
+        while (json.keyExists(string.concat(".rows[", vm.toString(rows), "]"))) rows++;
+        assertGt(rows, 300, "fixture has its rows");
+        bool sawCap; // a row where the Diamond setting is above the pack count
+        bool sawFloor; // a row where the pack floor moved cards
         for (uint256 i; i < rows; i++) {
             string memory p = string.concat(".rows[", vm.toString(i), "]");
             uint256 n = json.readUint(string.concat(p, ".packs"));
-            int256[] memory before = json.readIntArray(string.concat(p, ".before"));
+            uint256 d = json.readUint(string.concat(p, ".diamonds"));
             uint256[] memory counts = json.readUintArray(string.concat(p, ".counts"));
-            int256[] memory after_ = json.readIntArray(string.concat(p, ".after"));
-            int256[5] memory b;
-            for (uint256 m; m < 5; m++) b[m] = before[m];
-            (uint256[5] memory c, int256[5] memory a) = h.pool(b, n);
-            for (uint256 m; m < 5; m++) {
-                assertEq(c[m], counts[m], string.concat("count row ", vm.toString(i)));
-                assertEq(a[m], after_[m], string.concat("carry row ", vm.toString(i)));
-            }
+            uint256[5] memory c = h.pool(n, d);
+            for (uint256 m; m < 5; m++) assertEq(c[m], counts[m], string.concat("count row ", vm.toString(i)));
+            if (n > 0 && d > n) sawCap = true;
+            if (c[2] != (15_000 * 6 * n + 50_000) / 100_000) sawFloor = true;
         }
+        assertTrue(sawCap && sawFloor, "fixture covers the Diamond cap and the pack floor");
+        // the owner's worked example
+        uint256[5] memory e = h.pool(167, 1);
+        assertEq(e[0], 501); assertEq(e[1], 301); assertEq(e[2], 150); assertEq(e[3], 49); assertEq(e[4], 1);
     }
 
     // ---------- every pack keeps the guarantees and the Fire's totals come out exact ----------
@@ -359,11 +363,113 @@ contract CardsTest is Test {
         cards.configureFire(1, names, cats, "x");
     }
 
-    function test_carryOverAcrossFires() public {
+    // ---------- Diamonds per Series (Oct 4: each Series stands alone) ----------
+
+    event DiamondsSet(uint256 indexed fire, uint256 diamonds);
+
+    function test_diamondsDefaultToOne() public {
+        assertEq(cards.diamondsOf(1), 0);
+        assertEq(cards.diamondsFor(1), 1);
         _sellAndClose(1, 150);
-        int256[5] memory acc = cards.accumulators();
-        assertEq(acc[3], 10_000); // Charcoal 44.1 -> 44, carries 0.1
-        assertEq(acc[4], -10_000); // Diamond 0.9 -> 1, owes 0.1
+        assertEq(cards.poolOf(1, 4), 1);
+        assertEq(cards.poolOf(1, 1), 270);
+    }
+
+    function test_setDiamonds() public {
+        vm.expectEmit(address(cards));
+        emit DiamondsSet(1, 3);
+        vm.prank(owner);
+        cards.setDiamonds(1, 3);
+        assertEq(cards.diamondsOf(1), 3);
+        assertEq(cards.diamondsFor(1), 3);
+        vm.prank(owner);
+        cards.setDiamonds(1, 2); // can change until the packs sell
+        assertEq(cards.diamondsFor(1), 2);
+        assertEq(cards.diamondsFor(2), 1, "other Series untouched");
+    }
+
+    function test_setDiamondsOnlyOwnerAndBounds() public {
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", address(this)));
+        cards.setDiamonds(1, 2);
+        vm.startPrank(owner);
+        vm.expectRevert(FireCards.BadDiamonds.selector);
+        cards.setDiamonds(1, 0);
+        vm.expectRevert(FireCards.BadDiamonds.selector);
+        cards.setDiamonds(1, 1001);
+        cards.setDiamonds(1, 1000);
+        cards.setDiamonds(1, 1);
+        vm.stopPrank();
+    }
+
+    function test_setDiamondsLocks() public {
+        // locked Series
+        vm.startPrank(owner);
+        cards.lockFire(1);
+        vm.expectRevert(FireCards.FireIsLocked.selector);
+        cards.setDiamonds(1, 2);
+        vm.stopPrank();
+        // after the first pack sells
+        _configure(2, 3);
+        vm.prank(seller);
+        packs.mint(_holder(0), 2, 1);
+        vm.prank(owner);
+        vm.expectRevert(FireCards.FireIsLocked.selector);
+        cards.setDiamonds(2, 2);
+        // closed (even with no packs sold)
+        _configure(3, 3);
+        vm.prank(seller);
+        cards.closeFire(3);
+        vm.prank(owner);
+        vm.expectRevert(FireCards.FireIsLocked.selector);
+        cards.setDiamonds(3, 2);
+    }
+
+    function test_diamondsSetTheClosedPool() public {
+        vm.prank(owner);
+        cards.setDiamonds(1, 3);
+        _sellAndClose(1, 167);
+        uint256[5] memory want = [uint256(501), 299, 150, 49, 3];
+        for (uint256 m; m < 5; m++) assertEq(cards.poolOf(1, m), want[m]);
+        (,,,,,,, uint32 charcoalLeft, uint32 diamondLeft, uint32 flexWood) = cards.fires(1);
+        assertEq(charcoalLeft, 49);
+        assertEq(diamondLeft, 3);
+        assertEq(flexWood, 299 - 167);
+        // every Diamond is dealt
+        uint256[6][] memory perPack = _openAll(1, 167, 3);
+        uint256 dia;
+        for (uint256 p; p < 167; p++) for (uint256 k; k < 6; k++) if (perPack[p][k] == 4) dia++;
+        assertEq(dia, 3);
+    }
+
+    function test_diamondsCappedAtOnePerPack() public {
+        vm.prank(owner);
+        cards.setDiamonds(1, 1000);
+        _sellAndClose(1, 4);
+        assertEq(cards.poolOf(1, 4), 4);
+        assertEq(cards.poolOf(1, 1), 4, "Wood >= packs");
+        uint256[6][] memory perPack = _openAll(1, 4, 9);
+        uint256 dia;
+        for (uint256 p; p < 4; p++) {
+            uint256 paper; uint256 wood; uint256 bp;
+            for (uint256 k; k < 6; k++) {
+                uint256 m = perPack[p][k];
+                if (m == 0) paper++;
+                else if (m == 1) wood++;
+                else bp++;
+                if (m == 4) dia++;
+            }
+            assertEq(paper, 3);
+            assertGe(wood, 1);
+            assertGe(bp, 1);
+        }
+        assertEq(dia, 4);
+    }
+
+    function test_eachSeriesStandsAlone() public {
+        _configure(2, 3);
+        _sellAndClose(1, 150);
+        _sellAndClose(2, 150);
+        for (uint256 m; m < 5; m++) assertEq(cards.poolOf(2, m), cards.poolOf(1, m), "same packs, same pool");
     }
 
     function _startsWith(string memory s, string memory p) internal pure returns (bool) {

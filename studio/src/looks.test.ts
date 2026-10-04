@@ -45,6 +45,6 @@ describe('shared images', () => {
     expect(metadataFileName(c)).toBe('42.json')
     expect(m.image).toBe('ipfs://cid/rabbit.webp')
     const t = Object.fromEntries(m.attributes.map((a) => [a.trait_type, a.value]))
-    expect(t).toMatchObject({ Serial: 42, Edition: '3 of 9', Fire: 5, Category: 'Animal', PSA: 'Unrevealed' })
+    expect(t).toMatchObject({ Serial: 42, Edition: '3 of 9', Series: 5, Category: 'Animal', PDA: 'Unrevealed' })
   })
 })

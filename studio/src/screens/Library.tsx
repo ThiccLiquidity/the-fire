@@ -82,7 +82,7 @@ function CharacterEditor({ c }: { c: Character }) {
         <button className="danger" onClick={() => { if (confirm(`Delete ${c.name} and its images?`)) void run(() => deleteCharacter(c.id)) }}>Delete</button>
       </div>
       {error && <Notice kind="error">{error}</Notice>}
-      {!isReady(c) && <Notice kind="info">A character can go into a Fire once all 10 images are in (5 materials x normal + holo) and it has a category.</Notice>}
+      {!isReady(c) && <Notice kind="info">A character can go into a Series once all 10 images are in (5 materials x normal + holo) and it has a category.</Notice>}
       <div className="slot-grid">
         <div />
         {VARIANTS.map((v) => <div key={v} className="slot-head">{v === 'normal' ? 'Normal' : 'Holo'}</div>)}

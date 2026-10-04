@@ -11,16 +11,18 @@ export const MATERIAL_LABEL: Record<Material, string> = {
   diamond: 'Diamond',
 }
 
-/** Rarity accumulators work in integer units of 1/RATE_SCALE of a card so carry-over is exact (no float drift).
- *  The five rates sum to exactly RATE_SCALE (50 + 30 + 15 + 4.9 + 0.1 = 100%). */
-export const RATE_SCALE = 100_000
-export const RARITY_UNITS: Record<Material, number> = {
-  paper: 50_000, // 50%
-  wood: 30_000, // 30%
+/** Each Series stands alone (decided Oct 4): its pool is worked out from its own pack count, nothing carries over.
+ *  Fire and Charcoal take their share of the Series' cards, in integer units of 1/SHARE_SCALE of a card:
+ *  Fire 15%, Charcoal 4.9% (approved Oct 1). Paper is always half (3 per pack), Diamond is set per Series
+ *  (at least 1), and Wood takes the rest. See computePool in deal.ts. */
+export const SHARE_SCALE = 100_000
+export const SHARE_UNITS = {
   burning: 15_000, // 15%
-  charcoal: 4_900, // 4.90% (approved Oct 1)
-  diamond: 100, // 0.10%
-}
+  charcoal: 4_900, // 4.90%
+} as const
+
+/** Most Diamonds the owner can set for one Series (the contract's limit too). */
+export const MAX_DIAMONDS = 1000
 
 /** Chance that a card of this material is holo at all (frame and/or picture). */
 export const HOLO_RATE: Record<Material, number> = {
@@ -47,6 +49,15 @@ export function rollHolo(m: Material, u1: number, u2: number): { frame: boolean;
   }
   const p = holoRollChance(m)
   return { frame: u1 < p, picture: u2 < p }
+}
+
+/** Expected holos among `count` cards of a material (holo is random per card, so these are averages, not promises):
+ *  frame only, picture only, full (both). Diamond is always holo, a third each. */
+export function expectedHolos(m: Material, count: number): { frame: number; picture: number; full: number; total: number } {
+  if (HOLO_RATE[m] >= 1) return { frame: count / 3, picture: count / 3, full: count / 3, total: count }
+  const p = holoRollChance(m)
+  const one = count * p * (1 - p)
+  return { frame: one, picture: one, full: count * p * p, total: count * HOLO_RATE[m] }
 }
 
 export const HOLO_TYPES = ['none', 'frame', 'picture', 'full'] as const
@@ -77,17 +88,17 @@ export const CATEGORY_HINT: Record<Category, string> = {
   idea: 'abstract things',
 }
 
-/** PSA wear is designed into the frames: one worn frame per level (decided Oct 3). PSA 10 and PSA 1 are unique;
+/** PDA wear is designed into the frames: one worn frame per level (decided Oct 3). PDA 10 and PDA 1 are unique;
  *  the rest come in pairs. Before the grade is revealed the clean frame is used. */
 export const WEAR_LEVELS = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6'] as const
 export type WearLevel = (typeof WEAR_LEVELS)[number]
 /** 'clean' = grade not revealed yet. */
 export type WearLook = WearLevel | 'clean'
 export const WEAR_LABEL: Record<WearLook, string> = {
-  clean: 'Unrevealed', L1: 'PSA 10', L2: 'PSA 9-8', L3: 'PSA 7-6', L4: 'PSA 5-4', L5: 'PSA 3-2', L6: 'PSA 1',
+  clean: 'Unrevealed', L1: 'PDA 10', L2: 'PDA 9-8', L3: 'PDA 7-6', L4: 'PDA 5-4', L5: 'PDA 3-2', L6: 'PDA 1',
 }
 
-/** The ring colour on a revealed PSA seal, by wear level (decided Oct 3): 10 green, 9-8 teal, 7-6 sky blue,
+/** The ring colour on a revealed PDA seal, by wear level (decided Oct 3): 10 green, 9-8 teal, 7-6 sky blue,
  *  5-4 blue, 3-2 orange, 1 red. */
 export const GRADE_COLOR: Record<WearLevel, string> = {
   L1: '#2ecc71', L2: '#1abc9c', L3: '#3aa0ff', L4: '#3b5bdb', L5: '#f08c00', L6: '#e03131',
@@ -95,7 +106,7 @@ export const GRADE_COLOR: Record<WearLevel, string> = {
 
 export function wearLookOf(grade: number | null | undefined): WearLook {
   if (grade == null) return 'clean'
-  if (!Number.isInteger(grade) || grade < 1 || grade > 10) throw new Error(`Bad PSA grade ${grade}`)
+  if (!Number.isInteger(grade) || grade < 1 || grade > 10) throw new Error(`Bad PDA grade ${grade}`)
   if (grade === 10) return 'L1'
   if (grade === 1) return 'L6'
   return (['L5', 'L5', 'L4', 'L4', 'L3', 'L3', 'L2', 'L2'] as const)[grade - 2]

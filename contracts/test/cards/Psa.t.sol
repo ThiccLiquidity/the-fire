@@ -185,16 +185,43 @@ contract PsaTest is Test {
         assertGt(cards.cardOf(1).grade, 0);
     }
 
-    function test_defaultOddsAreThePerfectCurve() public view {
+    function test_defaultOddsTable() public view {
+        uint16[10] memory o = psa.oddsOf(1);
+        uint16[10] memory want = [uint16(100), 150, 200, 350, 700, 1800, 2500, 2400, 1700, 100];
+        uint256 sum;
+        for (uint256 i; i < 10; i++) {
+            assertEq(o[i], want[i], vm.toString(i + 1));
+            sum += o[i];
+        }
+        assertEq(sum, psa.ODDS_TOTAL());
+        assertFalse(psa.customOdds(1));
+    }
+
+    /// Each grade's slice of 0..9,999: first and last number of every slice, plus the wrap at 10,000.
+    function test_defaultOddsBoundaries() public view {
+        // grade:        1    2    3    4    5     6     7     8     9    10
+        uint256[11] memory start = [uint256(0), 100, 250, 450, 800, 1500, 3300, 5800, 8200, 9900, 10_000];
+        for (uint256 g = 1; g <= 10; g++) {
+            assertEq(psa.gradeFor(1, start[g - 1]), g, string.concat("start of ", vm.toString(g)));
+            assertEq(psa.gradeFor(1, start[g] - 1), g, string.concat("end of ", vm.toString(g)));
+        }
+        assertEq(psa.gradeFor(1, 10_000), 1, "wraps");
+        assertEq(psa.gradeFor(1, 19_999), 10, "wraps");
+        assertEq(psa.gradeFor(1, type(uint256).max), psa.gradeFor(1, type(uint256).max % 10_000));
+    }
+
+    function test_defaultOddsCurveFromHashedWords() public view {
         uint256[11] memory n;
         uint256 runs = 40_000;
         for (uint256 i; i < runs; i++) n[psa.gradeFor(1, uint256(keccak256(abi.encode(i))))]++;
-        // expected per grade: 1 & 10: 2%, 2,3,8,9: 5%, 4-7: 19%
-        uint256[11] memory pct = [uint256(0), 200, 500, 500, 1900, 1900, 1900, 1900, 500, 500, 200];
+        // expected per grade: 1: 1%, 2: 1.5%, 3: 2%, 4: 3.5%, 5: 7%, 6: 18%, 7: 25%, 8: 24%, 9: 17%, 10: 1%
+        uint256[11] memory pct = [uint256(0), 100, 150, 200, 350, 700, 1800, 2500, 2400, 1700, 100];
         for (uint256 g = 1; g <= 10; g++) {
             uint256 expected = runs * pct[g] / 10_000;
-            assertApproxEqRel(n[g], expected, 0.12e18, vm.toString(g));
+            // ~3 standard deviations, or 5% for the common grades
+            assertApproxEqRel(n[g], expected, pct[g] < 1000 ? 0.16e18 : 0.05e18, vm.toString(g));
         }
+        assertGt(n[6] + n[7] + n[8] + n[9], runs * 80 / 100, "most cards land 6-9");
     }
 
     function test_customOdds_onlyBeforeTheFireCloses() public {
@@ -205,7 +232,7 @@ contract PsaTest is Test {
         vm.prank(owner);
         psa.setOdds(2, odds);
         assertEq(psa.oddsOf(2)[0], 1000);
-        assertEq(psa.oddsOf(1)[0], 200, "default");
+        assertEq(psa.oddsOf(1)[0], 100, "default");
         odds[0] = 999;
         vm.prank(owner);
         vm.expectRevert(FirePsa.BadOdds.selector);

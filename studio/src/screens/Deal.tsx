@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { AccumulatorBars, Field, Notice, useAction } from '../components'
+import { Field, Notice, useAction } from '../components'
 import { deleteBlobsWithPrefix } from '../db'
-import { dealFire, holoCounts, type DealResult } from '../deal'
+import { dealFire, effectiveDiamonds, holoCounts, type DealResult } from '../deal'
 import { randomSeed } from '../prng'
 import { HOLO_LABEL, HOLO_TYPES, MATERIALS, MATERIAL_LABEL, type Material } from '../rules'
 import { completeness, getStudio, saveGlobal, updateFire, useStudio } from '../store'
@@ -15,7 +15,7 @@ export function Deal({ fire }: { fire: FireRecord }) {
   const names = Object.fromEntries(s.characters.map((c) => [c.id, c.name]))
 
   const problems: string[] = []
-  if (!fire.characterIds.length) problems.push('Pick at least one character on the Fire tab.')
+  if (!fire.characterIds.length) problems.push('Pick at least one character on the Series tab.')
   for (const id of fire.characterIds) {
     const c = s.characters.find((x) => x.id === id)
     if (!c) problems.push('A picked character no longer exists.')
@@ -23,7 +23,7 @@ export function Deal({ fire }: { fire: FireRecord }) {
     else if (!c.category) problems.push(`${c.name} has no category (Library).`)
   }
   const earlierOpen = s.fires.filter((f) => f.number < fire.number && !f.deal)
-  if (earlierOpen.length) problems.push(`Lock Fire #${earlierOpen.map((f) => f.number).join(', #')} first (serials go in Fire order).`)
+  if (earlierOpen.length) problems.push(`Lock Series ${earlierOpen.map((f) => f.number).join(', #')} first (serials go in Fire order).`)
   if (!fire.seed.trim()) problems.push('Enter a seed.')
 
   const preview: DealResult | null = useMemo(() => {
@@ -32,7 +32,7 @@ export function Deal({ fire }: { fire: FireRecord }) {
     try {
       return dealFire({
         fire: fire.number, packs: fire.packs, characterIds: fire.characterIds, seed: fire.seed.trim(),
-        accumulators: s.global.accumulators, firstSerial: s.global.nextSerial,
+        diamonds: effectiveDiamonds(fire.diamonds), firstSerial: s.global.nextSerial,
       })
     } catch {
       return null
@@ -41,17 +41,17 @@ export function Deal({ fire }: { fire: FireRecord }) {
 
   const lock = () => run(async () => {
     if (!preview || problems.length) throw new Error(problems[0] ?? 'Nothing to lock.')
-    // Commit: the deal is stored on the Fire and the global state moves on (accumulators, serial counter).
+    // Commit: the deal is stored on the Series and the global serial counter moves on.
     await updateFire(fire.number, { deal: preview, approvedAt: undefined, build: undefined })
-    await saveGlobal({ ...getStudio().global, accumulators: preview.accumulatorsAfter, nextSerial: preview.nextSerial })
+    await saveGlobal({ ...getStudio().global, nextSerial: preview.nextSerial })
   })
 
   const latestLocked = Math.max(0, ...s.fires.filter((f) => f.deal).map((f) => f.number))
   const canUnlock = locked && fire.number === latestLocked && !fire.upload?.imagesCid && !fire.upload?.metadataCid
   const unlock = () => run(async () => {
     if (!fire.deal) return
-    if (!confirm(`Undo the deal lock of Fire #${fire.number}? Accumulators and the serial counter go back to before this Fire, and its approval and built images are discarded.`)) return
-    await saveGlobal({ ...getStudio().global, accumulators: fire.deal.accumulatorsBefore, nextSerial: fire.deal.firstSerial })
+    if (!confirm(`Undo the deal lock of Series ${fire.number}? The serial counter goes back to before this Series, and its approval and built images are discarded.`)) return
+    await saveGlobal({ ...getStudio().global, nextSerial: fire.deal.firstSerial })
     await deleteBlobsWithPrefix(`render:${fire.number}:`)
     await updateFire(fire.number, { deal: undefined, approvedAt: undefined, build: undefined })
   })
@@ -62,11 +62,11 @@ export function Deal({ fire }: { fire: FireRecord }) {
   return (
     <section className="panel grow">
       <div className="row wrap">
-        <h2>Deal · Fire #{fire.number}</h2>
+        <h2>Deal · Series {fire.number}</h2>
         <span className="badge">{locked ? 'locked' : 'preview (not saved)'}</span>
       </div>
       <Notice kind="info">
-        Sample deal on the real rules (src/deal.ts). The seed stands in for the drand round drawn after the Fire ends;
+        Sample deal on the real rules (src/deal.ts). The seed stands in for the drand round drawn after the Series ends;
         the same seed always gives the same deal. When the pack contract exists, its result replaces this step.
       </Notice>
       <div className="row wrap">
@@ -105,10 +105,6 @@ export function Deal({ fire }: { fire: FireRecord }) {
               })}
             </tbody>
           </table>
-          <div className="cols">
-            <AccumulatorBars acc={preview.accumulatorsBefore} title="Accumulators before" />
-            <AccumulatorBars acc={preview.accumulatorsAfter} title="Accumulators after" />
-          </div>
           <h4>Packs (first {Math.min(packsShown, preview.packs)} of {preview.packs})</h4>
           <div className="packs">
             {preview.packContents.slice(0, packsShown).map((pack, i) => (

@@ -1,0 +1,54 @@
+/* Omni Forge: shared tokens and components. Dark by design (one look), colours from the card frames. */
+:root {
+  --bg: #000; --panel: #15100c; --panel-2: #1f1710; --line: #4a3626; --line-2: #6b4a2a;
+  --ink: #f6e8cf; --muted: #b9a385; --dim: #8a775e;
+  --brass: #e9b45a; --ember: #ff7a2e; --gold: #ffd27a;
+  --paper: #f0ece5; --wood: #dca356; --fire: #e0341c; --charcoal: #5b5b60; --diamond: #a9cbf2;
+  --good: #6fcf7a; --bad: #ff6b5a;
+  --display: "Russo One", "Arial Black", sans-serif; --body: Nunito, system-ui, sans-serif; --chalk: Kalam, cursive;
+  --r: 14px; --tap: 44px;
+  color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); font: 600 15px/1.4 var(--body); overflow: hidden; -webkit-tap-highlight-color: transparent }
+[hidden] { display: none !important }
+button { font: inherit; color: inherit }
+:focus-visible { outline: 2px solid #fff; outline-offset: 2px }
+
+/* buttons */
+.btn { min-height: var(--tap); display: inline-flex; align-items: center; justify-content: center; gap: .5em; padding: 0 1.1em; border-radius: 12px;
+  border: 1.5px solid var(--line-2); background: var(--panel-2); color: var(--ink); font: 800 15px var(--body); cursor: pointer; white-space: nowrap }
+.btn:hover { border-color: var(--brass) }
+.btn.primary { background: linear-gradient(#ffb357, #e0661f); color: #1b0f06; border-color: #ffd28a }
+.btn.gold { background: linear-gradient(#ffe39a, #e8b54a); color: #2a1a05; border-color: #fff0bf }
+.btn[disabled] { opacity: .45; cursor: default }
+.btn.small { min-height: 34px; padding: 0 .8em; font-size: 13px }
+
+/* sheets (dialogs) */
+dialog.sheet { border: 1px solid var(--line-2); border-radius: 18px; padding: 0; background: var(--panel); color: var(--ink); width: min(560px, calc(100vw - 24px));
+  max-height: calc(100dvh - 40px); box-shadow: 0 20px 60px rgba(0,0,0,.7); display: flex; flex-direction: column }
+dialog.sheet:not([open]) { display: none }
+dialog.sheet.wide { width: min(1100px, calc(100vw - 24px)); height: calc(100dvh - 40px) }
+dialog.sheet::backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(2px) }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--line) }
+.sheet-head h2 { margin: 0; font: 400 20px var(--display); letter-spacing: .04em; color: var(--brass) }
+.sheet-head .x { width: var(--tap); height: var(--tap); border-radius: 50%; border: 1px solid var(--line-2); background: var(--panel-2); font-size: 22px; cursor: pointer }
+.sheet-body { padding: 14px 16px 18px; overflow: auto; min-height: 0; flex: 1 }
+@media (max-width: 600px) { dialog.sheet, dialog.sheet.wide { width: 100vw; max-width: 100vw; height: auto; max-height: 92dvh; margin: auto 0 0; border-radius: 18px 18px 0 0 } dialog.sheet.wide { height: 92dvh } }
+
+/* toasts */
+.toasts { position: fixed; top: 66px; right: 12px; display: grid; gap: 8px; z-index: 50; pointer-events: none }
+.toast { background: var(--panel); border: 1px solid var(--line-2); color: var(--gold); font: 800 14px var(--body); padding: 9px 14px; border-radius: 12px;
+  opacity: 0; transform: translateY(-6px); transition: opacity .3s, transform .3s; box-shadow: 0 6px 18px rgba(0,0,0,.5) }
+.toast.on { opacity: 1; transform: none } .toast.bad { color: var(--bad) } .toast.good { color: var(--good) }
+
+/* material chips, styled after each card frame */
+.mat { display: inline-block; font: 400 12px var(--display); letter-spacing: .04em; border-radius: 999px; padding: 4px 11px; position: relative; overflow: hidden;
+  background-size: cover; background-position: center; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.18), 0 2px 6px rgba(0,0,0,.5) }
+.mat.paper { background-image: url(../build3/mat-paper.webp); color: #3b3127 }
+.mat.wood { background-image: url(../build3/mat-wood.webp); color: #3a1f06 }
+.mat.fire { background: radial-gradient(120% 140% at 50% 120%, #ffb070 0%, #ff4a1c 35%, #d0160c 65%, #7a0604 100%); color: #fff6ec; text-shadow: 0 1px 2px #4a0500 }
+.mat.charcoal { background-image: url(../build3/mat-charcoal.webp); color: #e8e8ee; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.35), 0 2px 6px rgba(0,0,0,.5) }
+.mat.diamond { background-image: url(../build3/mat-diamond.webp); color: #1d3554 }
+.mat.charcoal::after, .mat.diamond::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,.55) 45%, transparent 60%) -150% 0 / 250% 100% no-repeat; animation: sweep 3.4s ease-in-out infinite }
+@keyframes sweep { 0%, 35% { background-position: 150% 0 } 100% { background-position: -150% 0 } }
+@media (prefers-reduced-motion: reduce) { *, *::after, *::before { animation: none !important; transition: none !important } }

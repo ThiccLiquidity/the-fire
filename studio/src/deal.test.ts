@@ -1,22 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { computePool, dealFire, holoCounts, packRespectsFloor, zeroAccumulators, type Accumulators, type DealInput } from './deal'
+import { computePool, dealFire, holoCounts, packRespectsFloor, type DealInput } from './deal'
 import { sha256Hex, Stream } from './prng'
-import { HOLO_RATE, MATERIALS, RARITY_UNITS, RATE_SCALE, holoRollChance, rollHolo } from './rules'
+import { HOLO_RATE, MATERIALS, expectedHolos, holoRollChance, rollHolo } from './rules'
 
 const CHARS = ['rabbit', 'bird', 'fox']
 
 function input(over: Partial<DealInput> = {}): DealInput {
-  return { fire: 1, packs: 150, characterIds: CHARS, seed: 'seed-1', accumulators: zeroAccumulators(), firstSerial: 1, ...over }
+  return { fire: 1, packs: 150, characterIds: CHARS, seed: 'seed-1', diamonds: 1, firstSerial: 1, ...over }
 }
 
-/** Run `n` Fires back to back, carrying accumulators and serials like the app does. */
+/** Run `n` Series back to back, carrying serials like the app does (nothing else carries). */
 function runFires(n: number, packsOf: (i: number) => number, seedPrefix = 's') {
-  let acc = zeroAccumulators()
   let serial = 1
   const results = []
   for (let i = 0; i < n; i++) {
-    const r = dealFire(input({ fire: i + 1, packs: packsOf(i), seed: `${seedPrefix}${i}`, accumulators: acc, firstSerial: serial }))
-    acc = r.accumulatorsAfter
+    const r = dealFire(input({ fire: i + 1, packs: packsOf(i), seed: `${seedPrefix}${i}`, firstSerial: serial }))
     serial = r.nextSerial
     results.push(r)
   }
@@ -37,33 +35,89 @@ describe('prng', () => {
   })
 })
 
+/** The rule written out once more, step by step, as the owner gave it (Oct 4). */
+function reference(P: number, D: number) {
+  const N = 6 * P
+  let fire = Math.floor((15000 * N + 50000) / 100000)
+  let charcoal = Math.floor((4900 * N + 50000) / 100000)
+  const diamond = P === 0 ? 0 : Math.min(Math.max(1, D), P)
+  let wood = 3 * P - fire - charcoal - diamond
+  while (fire + charcoal + diamond > 2 * P) { if (fire > 0) fire--; else charcoal--; wood++ }
+  while (fire + charcoal + diamond < P) { wood--; fire++ }
+  return { paper: 3 * P, wood, burning: fire, charcoal, diamond }
+}
+
+function checkInvariants(P: number, D: number) {
+  const c = computePool(P, D)
+  expect(MATERIALS.reduce((s, m) => s + c[m], 0)).toBe(6 * P)
+  expect(c.paper).toBe(3 * P)
+  expect(c.wood).toBeGreaterThanOrEqual(P)
+  const fob = c.burning + c.charcoal + c.diamond
+  expect(fob).toBeGreaterThanOrEqual(P)
+  expect(fob).toBeLessThanOrEqual(2 * P)
+  for (const m of MATERIALS) expect(c[m]).toBeGreaterThanOrEqual(0)
+  if (P > 0) expect(c.diamond).toBe(Math.min(Math.max(1, D), P))
+  else expect(c.diamond).toBe(0)
+  expect(c).toEqual(reference(P, D))
+}
+
 describe('computePool', () => {
-  it('150 packs from a fresh start: 450 / 270 / 135 / 44 / 1 with carries', () => {
-    const p = computePool(zeroAccumulators(), 150)
-    // Raw: wood 270, burning 135, charcoal 44.1, diamond 0.9 -> floors sum to 449 of 450; the residual goes to the
-    // largest fraction (diamond .9), which then carries -0.1 (borrowed).
-    expect(p.counts).toEqual({ paper: 450, wood: 270, burning: 135, charcoal: 44, diamond: 1 })
-    expect(p.after).toEqual({ paper: 0, wood: 0, burning: 0, charcoal: 10_000, diamond: -10_000 })
+  it('167 packs: 501 / 301 / 150 / 49 / 1, and 3 Diamonds come out of Wood', () => {
+    expect(computePool(167, 1)).toEqual({ paper: 501, wood: 301, burning: 150, charcoal: 49, diamond: 1 })
+    expect(computePool(167, 3)).toEqual({ paper: 501, wood: 299, burning: 150, charcoal: 49, diamond: 3 })
+    expect(computePool(167)).toEqual(computePool(167, 1)) // default is 1
   })
-  it('totals are exact and the floor is satisfiable for every pack count 0..400 and odd carries', () => {
-    const carries: Accumulators[] = [zeroAccumulators(), { paper: 0, wood: 99_999, burning: -99_999, charcoal: 50_000, diamond: -50_000 }]
-    for (const before of carries) {
-      for (let packs = 0; packs <= 400; packs++) {
-        const p = computePool(before, packs)
-        const total = MATERIALS.reduce((s, m) => s + p.counts[m], 0)
-        expect(total).toBe(packs * 6)
-        expect(p.counts.paper).toBe(3 * packs)
-        expect(p.counts.wood).toBeGreaterThanOrEqual(packs)
-        const bp = p.counts.burning + p.counts.charcoal + p.counts.diamond
-        expect(bp).toBeGreaterThanOrEqual(packs)
-        expect(bp).toBeLessThanOrEqual(2 * packs)
-        for (const m of MATERIALS) expect(p.counts[m]).toBeGreaterThanOrEqual(0)
-        // conservation: nothing created or lost
-        const sumBefore = MATERIALS.reduce((s, m) => s + before[m], 0)
-        const sumAfter = MATERIALS.reduce((s, m) => s + p.after[m], 0)
-        expect(sumAfter).toBe(sumBefore)
-      }
+  it('every Series has at least one Diamond, even a tiny one; none when there are no packs', () => {
+    expect(computePool(0, 1)).toEqual({ paper: 0, wood: 0, burning: 0, charcoal: 0, diamond: 0 })
+    expect(computePool(1, 1)).toEqual({ paper: 3, wood: 1, burning: 1, charcoal: 0, diamond: 1 })
+    expect(computePool(2, 1)).toEqual({ paper: 6, wood: 2, burning: 2, charcoal: 1, diamond: 1 })
+    expect(computePool(3, 1)).toEqual({ paper: 9, wood: 4, burning: 3, charcoal: 1, diamond: 1 })
+    expect(computePool(10, 1)).toEqual({ paper: 30, wood: 17, burning: 9, charcoal: 3, diamond: 1 })
+    expect(computePool(5, 0).diamond).toBe(1) // a setting below 1 still makes one
+  })
+  it('more Diamonds than packs is capped at one per pack; the floor still holds', () => {
+    expect(computePool(3, 10)).toEqual({ paper: 9, wood: 3, burning: 2, charcoal: 1, diamond: 3 })
+    expect(computePool(1, 1000)).toEqual({ paper: 3, wood: 1, burning: 1, charcoal: 0, diamond: 1 })
+    expect(computePool(1000, 1000)).toEqual({ paper: 3000, wood: 1000, burning: 706, charcoal: 294, diamond: 1000 })
+    expect(computePool(10, 10)).toEqual({ paper: 30, wood: 10, burning: 7, charcoal: 3, diamond: 10 })
+  })
+  it('the same Series always gets the same pool: nothing carries from one Series to the next', () => {
+    const a = runFires(3, () => 150).map((r) => r.pool)
+    expect(a[1]).toEqual(a[0])
+    expect(a[2]).toEqual(a[0])
+  })
+  it('counts sum to 6P, Paper 3P, Wood >= P, P <= Fire-or-better <= 2P, Diamond >= 1 for P 0..400 and D 1..P', () => {
+    for (let P = 0; P <= 400; P++) {
+      for (const D of [1, 2, 3, 5, Math.floor(P / 3), Math.floor(P / 2), P - 1, P, P + 1]) checkInvariants(P, Math.max(1, D))
     }
+    for (let P = 0; P <= 40; P++) for (let D = 1; D <= P + 2; D++) checkInvariants(P, D)
+  })
+  it('large Series: invariants hold and the shares match', () => {
+    for (const P of [1000, 4_999, 65_535, 1_000_000, 4_294_967_295]) {
+      for (const D of [1, 7, 1000]) checkInvariants(P, D)
+    }
+    const c = computePool(10_000, 1)
+    expect(c).toEqual({ paper: 30_000, wood: 18_059, burning: 9_000, charcoal: 2_940, diamond: 1 })
+  })
+  it('rejects bad input', () => {
+    expect(() => computePool(-1)).toThrow()
+    expect(() => computePool(1.5)).toThrow()
+    expect(() => computePool(10, 1.5)).toThrow()
+    expect(() => computePool(4_294_967_296)).toThrow() // the contract's limit
+  })
+})
+
+describe('expectedHolos', () => {
+  it('splits each material by its holo rate; Diamond is a third each', () => {
+    const p = holoRollChance('burning')
+    const e = expectedHolos('burning', 150)
+    expect(e.frame).toBeCloseTo(150 * p * (1 - p))
+    expect(e.picture).toBeCloseTo(e.frame)
+    expect(e.full).toBeCloseTo(150 * p * p)
+    expect(e.total).toBeCloseTo(75)
+    expect(e.frame + e.picture + e.full).toBeCloseTo(e.total)
+    expect(expectedHolos('diamond', 3)).toEqual({ frame: 1, picture: 1, full: 1, total: 3 })
+    expect(expectedHolos('paper', 0).total).toBe(0)
   })
 })
 
@@ -95,7 +149,7 @@ describe('dealFire', () => {
     expect(b).toEqual(a)
     const c = dealFire(input({ seed: 'drand-12346' }))
     expect(c.cards).not.toEqual(a.cards)
-    expect(c.pool).toEqual(a.pool) // pool sizes depend only on accumulators + packs
+    expect(c.pool).toEqual(a.pool) // pool sizes depend only on packs + diamonds
   })
 
   it('numbers editions 1..N per character + material in serial order', () => {
@@ -117,28 +171,22 @@ describe('dealFire', () => {
     }
   })
 
-  it('carries accumulators and serials across Fires; long-run counts match the rates exactly', () => {
-    const packs = [150, 37, 212, 1, 99, 150, 64, 5, 180, 112]
+  it('carries serials across Series', () => {
+    const packs = [150, 37, 212, 1, 99]
     const results = runFires(packs.length, (i) => packs[i])
-    for (let i = 1; i < results.length; i++) {
-      expect(results[i].accumulatorsBefore).toEqual(results[i - 1].accumulatorsAfter)
-      expect(results[i].firstSerial).toBe(results[i - 1].nextSerial)
-    }
-    const totalCards = packs.reduce((s, p) => s + p * 6, 0)
-    const last = results[results.length - 1]
-    for (const m of MATERIALS) {
-      const dealt = results.reduce((s, r) => s + r.pool[m], 0)
-      // dealt + carried == exact accrual, and the carry is always within (-2, 2) cards
-      expect(dealt * RATE_SCALE + last.accumulatorsAfter[m]).toBe(RARITY_UNITS[m] * totalCards)
-      expect(Math.abs(last.accumulatorsAfter[m])).toBeLessThan(2 * RATE_SCALE)
-    }
+    for (let i = 1; i < results.length; i++) expect(results[i].firstSerial).toBe(results[i - 1].nextSerial)
   })
 
-  it('one Diamond per 1,000 cards over the long run', () => {
-    // 100 Fires x 150 packs = 90,000 cards -> 90 Diamonds (+/- the carry)
-    const results = runFires(100, () => 150, 'dia')
-    const diamonds = results.reduce((s, r) => s + r.pool.diamond, 0)
-    expect(Math.abs(diamonds - 90)).toBeLessThanOrEqual(1)
+  it('makes the Series\' Diamonds (default 1, or as set)', () => {
+    expect(dealFire(input()).cards.filter((c) => c.material === 'diamond')).toHaveLength(1)
+    const r = dealFire(input({ diamonds: 4 }))
+    expect(r.diamonds).toBe(4)
+    expect(r.pool.diamond).toBe(4)
+    expect(r.cards.filter((c) => c.material === 'diamond')).toHaveLength(4)
+    const tiny = dealFire(input({ packs: 2, diamonds: 5 }))
+    expect(tiny.pool.diamond).toBe(2)
+    const bySerial = new Map(tiny.cards.map((c) => [c.serial, c]))
+    for (const pack of tiny.packContents) expect(packRespectsFloor(pack.map((s) => bySerial.get(s)!.material))).toBe(true)
   })
 
   it('holo rates converge to 5/10/50/90/100% with each roll at 1 - sqrt(1 - rate)', () => {
@@ -192,7 +240,7 @@ describe('dealFire', () => {
     const r = dealFire(input({ packs: 0, firstSerial: 42 }))
     expect(r.cards).toHaveLength(0)
     expect(r.nextSerial).toBe(42)
-    expect(r.accumulatorsAfter).toEqual(r.accumulatorsBefore)
+    expect(r.pool).toEqual({ paper: 0, wood: 0, burning: 0, charcoal: 0, diamond: 0 })
   })
 })
 

@@ -1,38 +1,179 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Omni Forge</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cabin+Sketch:wght@700&family=Cinzel:wght@700;900&family=Nunito:wght@600;800&display=swap">
+<link rel="stylesheet" href="ui/fonts.css">
 <style>
 /* One screen: the factory fills the window; demo controls float at the bottom. Dark by design. */
-:root { --bg: #1e2530; --ink: #f3e9dc; --muted: #b9ab9a; --ember: #ff7a2e; --brass: #d8a64a; --panel: rgba(24,18,14,.92); color-scheme: dark }
+:root { --fire: #e0341c; --fire-deep: #5a0d06; --paper: #f0ece5; --wood: #dca356; --burning: #ee8a29; --charcoal: #5b5b60; --diamond: #a9cbf2; --bg: #000; --ink: #f3e9dc; --muted: #b9ab9a; --ember: #ff7a2e; --brass: #d8a64a; --panel: rgba(24,18,14,.92); color-scheme: dark }
 html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); font-family: Nunito, system-ui, sans-serif; overflow: hidden }
 [hidden] { display: none !important }
 canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block }
-.bar { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; gap: 8px; align-items: center; background: var(--panel); border: 1px solid #4a3828; border-radius: 14px; padding: 8px 10px; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 32px) }
-.bar button { font: 800 14px Nunito, sans-serif; color: #1b120b; background: var(--brass); border: 0; border-radius: 10px; padding: 9px 14px; cursor: pointer }
+.bar { position: fixed; right: 16px; left: auto; top: auto; bottom: calc(var(--stripH, 118px) + 10px); --b: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 6px; align-items: center; background: var(--panel); border: 1px solid #4a3828; border-radius: 12px; padding: 6px 8px; opacity: .8; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 32px) }
+.bar button { font: 800 12px Nunito, sans-serif; color: #1b120b; background: var(--brass); border: 0; border-radius: 10px; padding: 9px 14px; cursor: pointer }
 .bar button.alt { background: #3a2c20; color: var(--ink) }
 .bar button:focus-visible, .card button:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px }
 .bar span { color: var(--muted); font-size: 13px; padding: 0 6px }
+/* pills: placed in the scene, they follow it as it scales */
+.ui { position: fixed; inset: 0; pointer-events: none }
+.pill { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; display: inline-flex; align-items: center; gap: .5em; white-space: nowrap;
+  font: 800 var(--fs, 15px)/1.1 Nunito, sans-serif; color: #f6e2b8; background: linear-gradient(#2c1f15, #17100b); border: 1.5px solid #b98a3e;
+  border-radius: 999px; padding: .55em 1.05em .55em .8em; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,220,150,.18); transition: transform .15s, box-shadow .15s, border-color .15s }
+.pill:hover, .pill:focus-visible { transform: translate(-50%, -50%) scale(1.06); border-color: #f2c063; box-shadow: 0 0 0 3px rgba(255,150,60,.25), 0 6px 20px rgba(0,0,0,.5); outline: none }
+.pill svg { width: 1.25em; height: 1.25em; flex: none; stroke: #e9b45a; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+.pill[data-c] { border-color: var(--c) } .pill[data-c] svg { stroke: var(--c) }
+.pill[data-c]:hover, .pill[data-c]:focus-visible { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 30%, transparent), 0 6px 20px rgba(0,0,0,.5) }
+.pill small { display: block; font-weight: 600; font-size: .78em; color: #c9ad86; margin-top: .15em }
+.pill .badge { font-size: .8em; background: #e07a2a; color: #1b0f06; border-radius: 999px; padding: .1em .55em; margin-left: .2em }
+.pill.big { font-size: calc(var(--fs, 15px) * 1.2); padding: .55em 1.2em .55em .95em; color: #1b0f06; background: linear-gradient(#ffb357, #e0661f); border-color: #ffd28a;
+  box-shadow: 0 0 24px rgba(255,120,40,.45), 0 6px 18px rgba(0,0,0,.5); animation: glow 2.4s ease-in-out infinite }
+.pill.big svg { stroke: #1b0f06 } .pill.big small { color: #4a2408 }
+@keyframes glow { 50% { box-shadow: 0 0 40px rgba(255,130,40,.75), 0 6px 18px rgba(0,0,0,.5) } }
+.topbar { position: fixed; left: 0; right: 0; top: 0; height: 54px; display: flex; align-items: center; gap: 10px; padding: 0 16px; box-sizing: border-box;
+  background: #000; border-bottom: 0 }
+.topbar::after, .strip::before { content: ''; position: absolute; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--paper) 0 20%, var(--wood) 20% 40%, var(--burning) 40% 60%, var(--charcoal) 60% 80%, var(--diamond) 80%) }
+.topbar::after { bottom: 0 } .strip::before { top: 0 }
+.brand { font: 900 22px "Russo One", sans-serif; color: #f2c063; letter-spacing: .06em; text-shadow: 0 0 12px rgba(255,140,50,.35); white-space: nowrap }
+.brand { display: flex; align-items: center; gap: 8px }
+.brand .tag { font: italic 700 13px Nunito, sans-serif; color: #c9ad86; margin-left: 6px; white-space: nowrap }
+.brand img { height: 30px; display: block } .brand img.mark { height: 34px; filter: drop-shadow(0 0 8px rgba(255,110,30,.45)) }
+.brand .forge { font: 400 25px "Russo One", sans-serif; letter-spacing: .04em; color: #f9e2b4; -webkit-text-stroke: 1.6px #0d141c; paint-order: stroke fill;
+  text-shadow: 0 2.5px 0 #0d141c, 0 0 14px rgba(255,120,40,.35); }
+.chip { font: 800 13px Nunito, sans-serif; color: #f6e2b8; background: #21170f; border: 1px solid #6b4a2a; border-radius: 999px; padding: 6px 12px; white-space: nowrap; cursor: pointer }
+.chip.info { cursor: default; color: #e6cfa6 } .chip.info b { color: #ffb357 }
+.chip.round { width: 32px; height: 32px; padding: 0; display: grid; place-items: center }
+.topbar .grow { flex: 1 }
+.topbar .pill { position: static; transform: none; font-size: 14px }
+.topbar .pill:hover { transform: scale(1.05) }
+@media (max-width: 1180px) { .brand .tag { display: none } }
+@media (max-width: 960px) { .brand img { height: 22px } .brand .forge { font-size: 18px } .chip.info.hide-sm { display: none } }
+@media (max-width: 560px) { .topbar .chip:not(.round), .topbar .chip[data-act=feed] { display: none } }
+.buybox { flex-direction: column; gap: .35em; padding: .45em; cursor: default; background: linear-gradient(#2c1f15ee, #17100bee) }
+.buybox:hover { transform: translate(-50%, -50%) }
+.buybox .phase { font-size: .78em; font-weight: 800; color: #ffb357; letter-spacing: .04em; text-transform: uppercase; padding: .1em .6em 0 }
+.buybox .opts { display: flex; gap: .4em }
+.opt { font: 800 calc(var(--fs) * 1.12) / 1.1 Nunito, sans-serif; border-radius: 999px; padding: .5em 1.1em; cursor: pointer; text-align: center; color: #1b0f06;
+  background: linear-gradient(#ffb357, #e0661f); border: 1.5px solid #ffd28a; box-shadow: 0 0 18px rgba(255,120,40,.4); white-space: nowrap }
+.opt { display: inline-flex; align-items: center; gap: .5em } .opt img.mini { height: 2.3em; transform: rotate(-8deg); filter: drop-shadow(0 2px 3px rgba(0,0,0,.5)) }
+.opt small { display: block; font-weight: 700; font-size: .7em; color: #4a2408; margin-top: .12em }
+.opt.alt { background: linear-gradient(#3a2a1c, #241810); color: #f6e2b8; border-color: #b98a3e; box-shadow: none } .opt.alt small { color: #c9ad86 }
+.opt.free { background: linear-gradient(#ffe39a, #e8b54a); border-color: #fff0bf }
+.opt:hover, .opt:focus-visible { filter: brightness(1.08); outline: none; box-shadow: 0 0 0 3px rgba(255,150,60,.3), 0 0 18px rgba(255,120,40,.5) }
+.opt[disabled] { filter: grayscale(.7) brightness(.7); cursor: default; box-shadow: none }
+/* below the scene: this Series' pack and the characters in it */
+.types { border-collapse: separate; border-spacing: 6px 2px; margin-left: -6px }
+.types th { font: 700 10.5px Nunito, sans-serif; color: #9c8a70; text-align: left; padding-right: 4px; white-space: nowrap }
+.types td { font: 800 12px Nunito, sans-serif; color: #f1e3c8; text-align: center; white-space: nowrap }
+.types td.span { color: #c9ad86; font-weight: 700; font-size: 11px } .types td.gold { color: #ffe08a }
+.mat { display: inline-block; min-width: 74px; font: 400 12.5px "Russo One", sans-serif; letter-spacing: .04em; border-radius: 999px; padding: 5px 12px; position: relative; overflow: hidden;
+  background-size: cover; background-position: center; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.18), 0 3px 8px rgba(0,0,0,.6) }
+.m-paper { background-image: url(a/mat-paper.webp); color: #3b3127 }
+.m-wood { background-image: url(a/mat-wood.webp); color: #3a1f06; text-shadow: 0 1px 0 rgba(255,230,180,.5) }
+.m-fire { background: radial-gradient(120% 140% at 50% 120%, #ffb070 0%, #ff4a1c 35%, #d0160c 65%, #7a0604 100%); color: #fff6ec;
+  text-shadow: 0 0 6px #ff7a2a, 0 1px 2px #4a0500; box-shadow: inset 0 0 0 1.5px rgba(255,190,140,.45), 0 0 14px rgba(255,50,20,.55), 0 3px 8px rgba(0,0,0,.6) }
+.m-char { background-image: url(a/mat-charcoal.webp); color: #e8e8ee }
+.m-char::after, .m-dia::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,.55) 45%, transparent 60%) -150% 0 / 250% 100% no-repeat; animation: sweep 3.4s ease-in-out infinite }
+.m-dia { background-image: url(a/mat-diamond.webp); color: #1d3554; text-shadow: 0 1px 0 rgba(255,255,255,.7) }
+.m-dia::after { animation-duration: 2.4s }
+@keyframes sweep { 0%, 35% { background-position: 150% 0 } 100% { background-position: -150% 0 } }
+.chars { display: grid; gap: 6px; min-width: 0; margin-left: 10px; padding-left: 16px; border-left: 1px solid rgba(185,138,62,.3); align-self: stretch; align-content: center }
+.chars .names { max-height: 58px }
+.strip { position: fixed; left: 0; right: 0; bottom: 0; height: var(--stripH, 118px); display: flex; align-items: center; gap: 14px; padding: 8px 16px; box-sizing: border-box;
+  background: #000; overflow: hidden }
+.strip img.packart { height: 100%; filter: drop-shadow(0 0 14px rgba(255,120,30,.55)) drop-shadow(0 4px 10px rgba(0,0,0,.6)); animation: bob 3.2s ease-in-out infinite }
+@keyframes bob { 0%, 100% { transform: rotate(-5deg) translateY(1px) } 50% { transform: rotate(-2deg) translateY(-3px) } }
+@media (prefers-reduced-motion: reduce) { .strip img, .mat, .mat::after, .pill.big { animation: none !important } }
+.strip .what { display: grid; gap: 4px; min-width: 0 }
+.strip h3 { margin: 0; font: 400 15px "Russo One", sans-serif; color: #f2c063; letter-spacing: .04em; white-space: nowrap }
+.strip h3 .fire-word { background: linear-gradient(90deg, #ffc061, #ee8a29, #ff5a1f); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 400 }
+.strip h3 span { font: 700 12px Nunito, sans-serif; color: #c9ad86; letter-spacing: 0; margin-left: 8px }
+.mats { display: flex; gap: 6px; align-items: center; flex-wrap: wrap }
+.mats span { font: 800 11.5px Nunito, sans-serif; color: #120c07; border-radius: 999px; padding: 3px 10px; white-space: nowrap; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 2px 6px rgba(0,0,0,.5) }
+.mats .m-paper { background: repeating-linear-gradient(115deg, #f4f0e8 0 6px, #e6e0d4 6px 7px) }
+.mats .m-wood { background: repeating-linear-gradient(100deg, #e2ad62 0 5px, #c98c3e 5px 6px, #dca356 6px 11px); color: #2a1606 }
+.mats .m-fire { background: linear-gradient(100deg, #7a2a0c, #ee8a29 55%, #ffc061); color: #fff4e0; text-shadow: 0 1px 2px rgba(80,20,0,.8) }
+.mats .m-char { background: linear-gradient(#4a4a50, #26262a); color: #e9e9ee }
+.mats .m-dia { background: linear-gradient(110deg, #b7d4f5 20%, #ffffff 35%, #b7d4f5 50%) 0 0 / 300% 100%; animation: shimmer 3s linear infinite; color: #12304f }
+@keyframes shimmer { to { background-position: -300% 0 } }
+.mats i { font: 700 11px Nunito, sans-serif; color: #9c8a70; font-style: normal; margin-left: 6px }
+.mats .dots { background: none; padding: 0; display: inline-flex; gap: 3px } .mats .dots b { width: 9px; height: 9px; border-radius: 50%; display: block }
+.names { display: flex; gap: 6px; flex-wrap: wrap; max-height: 26px; overflow: hidden }
+.names span { font: 800 12px Nunito, sans-serif; color: #f6e2b8; background: linear-gradient(#2a1d13, #160f0a); border: 1.5px solid var(--c, #6b4a2a); border-radius: 999px; padding: 4px 11px; white-space: nowrap; transition: transform .15s, box-shadow .15s }
+.names span:hover { transform: translateY(-2px); box-shadow: 0 0 12px var(--c) }
+.names span:nth-child(5n+1) { --c: #e6dfd2 } .names span:nth-child(5n+2) { --c: #dca356 } .names span:nth-child(5n+3) { --c: #ee8a29 } .names span:nth-child(5n+4) { --c: #8a8a92 } .names span:nth-child(5n) { --c: #a9cbf2 }
+#walletPill { font-size: 14px }
+/* the main feature: bigger, brighter, text always inside */
+.buybox { border-radius: 18px !important; padding: .45em .5em .5em !important; gap: .45em !important; border: 2px solid #ffbf5e !important;
+  box-shadow: 0 0 0 4px rgba(255,120,40,.18), 0 0 38px rgba(255,100,30,.45), 0 8px 24px rgba(0,0,0,.6) !important; animation: buyglow 2.6s ease-in-out infinite }
+@keyframes buyglow { 50% { box-shadow: 0 0 0 5px rgba(255,120,40,.28), 0 0 56px rgba(255,110,30,.7), 0 8px 24px rgba(0,0,0,.6) } }
+.buybox .phase { font-size: .8em !important; text-align: center; white-space: nowrap }
+.buybox .opts { gap: .55em !important }
+.buybox .opt { font-size: calc(var(--fs) * 1.15) !important; padding: .45em 1em .5em .8em !important; border-radius: 14px !important; line-height: 1.15 }
+.buybox .opt span { display: block; text-align: left }
+.buybox .opt small { font-size: .62em !important; line-height: 1.3; white-space: nowrap }
+.buybox .opt img.mini { height: 2.4em !important }
+.buybox .opt[data-buy=buy] { position: relative; overflow: hidden }
+.buybox .opt[data-buy=buy]::before { content: ''; position: absolute; inset: -40%; background: conic-gradient(from 0deg, transparent 0 70%, #fff3c4 80%, #ff7a1f 88%, transparent 96%); animation: ember 2.8s linear infinite; z-index: 0 }
+.buybox .opt[data-buy=buy]::after { content: ''; position: absolute; inset: 2px; border-radius: 12px; background: linear-gradient(#ffb357, #e0661f); z-index: 0 }
+.buybox .opt[data-buy=buy] > * { position: relative; z-index: 1 }
+@keyframes ember { to { transform: rotate(1turn) } }
+@media (prefers-reduced-motion: reduce) { .buybox .opt[data-buy=buy]::before { animation: none } }
+@media (prefers-reduced-motion: reduce) { .buybox { animation: none } }
 .tip { position: fixed; pointer-events: none; background: var(--panel); border: 1px solid #6b4a2a; color: var(--ink); font: 800 14px Nunito, sans-serif; padding: 6px 10px; border-radius: 8px; transform: translate(-50%, -130%); white-space: nowrap }
 .toast { position: fixed; right: 16px; top: 16px; background: var(--panel); border: 1px solid #6b4a2a; color: var(--brass); font: 800 15px Nunito, sans-serif; padding: 8px 14px; border-radius: 10px; transition: opacity .4s, transform .4s; opacity: 0; transform: translateY(-8px) }
 .toast.on { opacity: 1; transform: none }
 .modal { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.55); padding: 16px }
 .card { background: var(--panel); border: 1px solid #6b4a2a; border-radius: 16px; padding: 22px; max-width: 420px; width: 100%; display: grid; gap: 10px; box-sizing: border-box }
-.card h2 { font: 900 24px Cinzel, serif; margin: 0; color: var(--brass); letter-spacing: .03em }
+.card h2 { font: 900 24px "Russo One", sans-serif; margin: 0; color: var(--brass); letter-spacing: .03em }
 .card p { margin: 0; color: var(--muted); line-height: 1.5 }
 .card button { justify-self: start; font: 800 14px Nunito, sans-serif; background: var(--brass); color: #1b120b; border: 0; border-radius: 10px; padding: 9px 14px; cursor: pointer }
 </style>
 
 <canvas id="c" aria-label="The Omni forge: a fire-powered machine that prints card packs"></canvas>
+<header class="topbar" aria-label="Omni Forge">
+  <div class="brand"><img class="mark" src="ui/omni-mark.webp" alt=""><img src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">FORGE</span><em class="tag">Card packs forged in fire</em></div>
+  <button class="chip info hide-sm" type="button" id="fireChip">Series 7 · <b id="leftChip">117</b> left · holders first 17h</button>
+  <div class="grow"></div>
+  <button class="chip" type="button" data-act="paper"><svg style="width:15px;height:15px;vertical-align:-3px;stroke:#e9b45a;fill:none;stroke-width:2" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M15 3v3h3M9 11h6M9 15h6"/></svg> Get PAPER</button>
+  <button class="chip round" type="button" data-act="feed" aria-label="Activity"><svg style="width:16px;height:16px;stroke:#e9b45a;fill:none;stroke-width:2" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h13"/></svg></button>
+  <button class="chip round" type="button" data-act="sound" aria-label="Sound"><svg style="width:16px;height:16px;stroke:#e9b45a;fill:none;stroke-width:2" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg></button>
+  <button class="chip round" type="button" data-act="help" aria-label="How it works">?</button>
+  <div style="width:var(--walletGap,180px)"></div>
+</header>
+<div class="ui" id="ui">
+  <div id="walletLine" style="position:absolute;top:50px;width:2px;margin-left:-1px;background:linear-gradient(#e9b45a,rgba(233,180,90,0));"></div>
+  <button class="pill" id="walletPill" type="button" data-act="wallet" data-c style="--c: var(--diamond)" data-x="3640" data-y="-1" style="z-index:3"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14.5h2"/></svg><span>Connect wallet</span></button>
+  <div class="pill buybox" id="buybox" data-x="1480" data-y="235"></div>
+  <button style="display:none" class="pill big" type="button" data-act="buy-old" data-x="1480" data-y="250"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c1 3 4 4.5 4 8.5A4 4 0 0 1 8 11.5C8 9 10 8 10 5c1.2.8 2 1.6 2-2z"/><path d="M12 21a6 6 0 0 0 6-6"/></svg><span>Buy packs<small>$2.50 + 1 PAPER</small></span></button>
+  <button class="pill" type="button" data-act="open" data-c style="--c: var(--wood)" data-x="1385" data-y="1395"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 7h6M12 11v6"/></svg><span>Open packs<small>3 sealed · opens when the Series closes</small></span></button>
+  <button class="pill" type="button" data-act="grade" data-c style="--c: var(--diamond)" data-x="2390" data-y="1225"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5"/></svg><span>PDA grading<small>~5 PAPER a card</small></span></button>
+  <button class="pill" type="button" data-act="burn" data-c style="--c: var(--fire)" data-x="320" data-y="1035"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c2 4 6 6 6 11a6 6 0 0 1-12 0c0-3 2-4 2-7 1.5 1 2.5 2 4-4z"/></svg><span>Burn cards<small>12 / 42.0 to a free pack</small></span></button>
+  <button class="pill" type="button" data-act="suggest" data-c style="--c: var(--paper)" data-x="3590" data-y="1185"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg><span>Suggest<small>1 PAPER</small></span></button>
+  <button class="pill" type="button" data-act="profile" data-x="1850" data-y="1820" style="display:none"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Profile</span></button>
+</div>
+<footer class="strip" aria-label="In this Series' packs">
+  <img class="packart" src="ui/omni-pack.webp" alt="Series 7 pack">
+  <div class="what">
+    <h3><b class="fire-word">FIRE #7</b> · IN THE PACKS<span>6 cards a pack</span></h3>
+    <table class="types" aria-label="Card types">
+      <tr><th scope="row">Card</th>
+        <td><span class="mat m-paper">Paper</span></td><td><span class="mat m-wood">Wood</span></td><td><span class="mat m-fire">Fire</span></td>
+        <td><span class="mat m-char">Charcoal</span></td><td><span class="mat m-dia">Diamond</span></td></tr>
+      <tr><th scope="row">In a pack</th><td>3</td><td>1–2</td><td colspan="3" class="span">1 or more of these, rarest last</td></tr>
+    </table>
+  </div>
+  <div class="chars">
+    <h3>CHARACTERS<span>examples</span></h3>
+    <div class="names"><span>Ember Fox</span><span>Old Plank</span><span>Paper Crane</span><span>Ash Owl</span><span>Kettle Knight</span><span>Cinder Cat</span><span>Bellows Bear</span><span>Soot Sprite</span><span>Iron Moth</span><span>Spark Hare</span></div>
+  </div>
+</footer>
 <div class="bar" role="group" aria-label="Demo">
   <button id="b1" type="button">Buy 1 pack</button>
   <button id="b5" type="button">Buy 5</button>
   <button id="burn" class="alt" type="button">Burn a card</button>
   <button id="auto" class="alt" type="button" aria-pressed="false">Auto demo</button>
   <button id="fin" class="alt" type="button">Sold-out show</button>
-  <span id="st">Fire #7 · 117 left</span>
+  <button id="phaseBtn" class="alt" type="button">Next phase</button>
+  <span id="st">Series 7 · 117 left</span>
 </div>
 <div id="tip" class="tip" hidden></div>
 <div id="toast" class="toast" role="status"></div>
@@ -44,7 +185,7 @@ const SW = 3840, SH = 2160, A = 'build3/';
 const G = await (await fetch(A + 'scene.json')).json();
 const load = (n) => new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = A + n + '.webp'; });
 const names = ['plate', 'belt', 'chain-up', 'chain-lo', 'front-stand', 'roll-0', 'roll-1', 'pack', 's-flywheel', 's-gear-big-a', 's-gear-big-b',
-  's-gear-small', 's-pulley', 's-rod', 's-conrod', 's-capsule', 's-padlock', 's-token', 's-log0', 's-log1', 's-log2', 's-paper0', 's-paper1', 's-paper2', 'card'];
+  's-gear-small', 'belt-light', 'p-0', 'p-1', 'p-2', 'p-3', 'p-4', 'p-5', 's-rod', 's-conrod', 's-capsule', 's-padlock', 's-token', 's-log0', 's-log1', 's-log2', 's-paper0', 's-paper1', 's-paper2', 'card'];
 const img = {}; (await Promise.all(names.map(load))).forEach((im, k) => img[names[k]] = im);
 const logs = [img['s-log0'], img['s-log1'], img['s-log2']], papers = [img['s-paper0'], img['s-paper1'], img['s-paper2']];
 
@@ -53,10 +194,25 @@ let dpr = 1, scale = 1, ox = 0, oy = 0;
 function fit() {
   dpr = Math.min(2, devicePixelRatio || 1);
   cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr);
-  scale = Math.min(cv.width / SW, cv.height / SH);
-  ox = (cv.width - SW * scale) / 2; oy = (cv.height - SH * scale) / 2;
+  const bar = 54 * dpr; // the scene sits under the top bar, never behind it
+  const strip = (innerHeight < 500 ? 64 : 118) * dpr; document.documentElement.style.setProperty('--stripH', strip / dpr + 'px');
+  scale = Math.min(cv.width / SW, (cv.height - bar - strip) / SH);
+  ox = (cv.width - SW * scale) / 2; oy = bar + (cv.height - bar - strip - SH * scale) / 2;
 }
-addEventListener('resize', fit); fit();
+function placeUI() { // scene px -> CSS px; pill size follows the scene, within limits
+  const k = scale / dpr, fs = Math.max(11, Math.min(14, 31 * k));
+  document.documentElement.style.setProperty('--fs', fs + 'px');
+  for (const el of document.querySelectorAll('.ui .pill')) {
+    const x = +el.dataset.x, y = +el.dataset.y;
+    let left = ox / dpr + x * k;
+    if (y < 0) { const half = el.offsetWidth / 2; left = Math.min(innerWidth - 12 - half, left);
+      const ln = document.getElementById('walletLine'); ln.style.left = (ox / dpr + x * k) + 'px'; ln.style.height = Math.max(0, oy / dpr + 40 * k - 50) + 'px'; }
+    el.style.left = left + 'px';
+    if (y < 0) document.documentElement.style.setProperty('--walletGap', Math.max(0, innerWidth - (left - el.offsetWidth / 2) - 16 + 10) + 'px'); // keep the bar's chips clear of it
+    el.style.top = y < 0 ? '27px' : (oy / dpr + y * k) + 'px'; // y < 0: in the top bar
+  }
+}
+addEventListener('resize', () => { fit(); placeUI(); }); fit(); placeUI();
 
 // ---------- the flame: the site's WebGL fire on its own small canvas
 const FRAG = `#version 300 es
@@ -114,11 +270,11 @@ const FB_X = 380, FB_Y = 560, fireBuf = document.createElement('canvas'); fireBu
 const FIREBOX = { x0: 402, x1: 852, cx: 627, archY: 800, archRy: 84, base: 1046, flameX: 630, flameY: 1004 };
 const ASHBIN = [[70, 1100], [497, 1092], [425, 1277], [95, 1238]]; // inside the bin, down to the front rim
 const DIAL_HOOD = [695, 455, 41], DIAL_ASH = [393, 1355, 36];
-const BOARD = { x: 2656, y: 432, w: 176, h: 198 };
+const BOARD = { x: 2660, y: 452, w: 166, h: 179 };
 const TUBE = [[3560, 860], [3590, 629], [3590, 432], [3623, 239], [3650, -60]];
 const WINDOWS = [[3590, 629, 31], [3590, 432, 31], [3623, 239, 31]];
 const PACK_FROM = 2296, PACK_TO = 3412, PACK_Y = 1003;
-const LANTERNS = [[235, 465], [40, 790], [3375, 300]];
+const LANTERNS = [[235, 465], [40, 790], [3412, 300]];
 const PADLOCK = [1290, 1528];
 
 // ---------- state
@@ -127,11 +283,11 @@ let left = TOTAL, queue = 0, ready = [], burned = 12, credits = 0;
 if (location.search.includes('sold')) left = 0;
 if (location.search.includes('finale')) left = 2; // preview the sold-out show
 let speed = 0.15, target = 0.15;
-let wheelA = +(new URLSearchParams(location.search).get("wheel") || 0), beltX = 0, chainX = 0, rollS = 0, ft = 0, at = 0, flare = 0, stamp = 0;
+let beltSp = 0.32, wheelA = +(new URLSearchParams(location.search).get("wheel") || 0), beltX = 0, chainX = 0, rollS = 0, ft = 0, at = 0, flare = 0, stamp = 0;
 const items = [], packs = [], caps = [], tokens = [];
 let nextPackAt = 0, now = 0, lockFall = left > 0 ? -1 : 1;
 const st = document.getElementById('st'), toastEl = document.getElementById('toast');
-const status = () => st.textContent = left > 0 ? `Fire #7 · ${left} left` : 'Fire #7 · SOLD OUT';
+const status = () => { st.textContent = left > 0 ? `Series 7 · ${left} left` : 'Series 7 · SOLD OUT'; const c = document.getElementById('fireChip'); if (left <= 0 && typeof renderBuy === 'function') renderBuy(); if (c) c.innerHTML = left > 0 ? `Series 7 · <b>${left}</b> left · holders first 17h` : 'Series 7 · <b>SOLD OUT</b>'; };
 let toastT = 0;
 function toast(t) { toastEl.textContent = t; toastEl.classList.add('on'); toastT = now + 2.2; }
 
@@ -168,6 +324,41 @@ function drawCards() { // from the open bench, an arc into the ash bin's fire
   }
 }
 document.getElementById('b1').onclick = () => buy(1);
+// the mint's phases (mock): the buy box says where we are, or shows each option when there are several
+const PHASES = [
+  { phase: 'Holders first · 17h left', opts: [['buy', 'Buy card packs', '$2.50 + 1 PAPER<br>PLANK only · 38 of 50 left'], ['starter', 'Claim starter pack', 'press holders · 1 PAPER<br>23 left', 'alt']] },
+  { phase: 'Holders first · 9h left', opts: [['buy', 'Buy card packs', '$2.50 + 1 PAPER<br>pay in PLANK, ETH or USDG']] },
+  { phase: 'Open to all · max 5 each', opts: [['buy', 'Buy card packs', '$2.50 + 1 PAPER<br>5 per wallet · lifts in 14h']] },
+  { phase: 'Open to all · no limit', opts: [['buy', 'Buy card packs', '$2.50 + 1 PAPER']] },
+  { phase: 'Series 7 sold out', opts: [['none', 'Sold out', 'Series 8 soon', 'alt', true]] },
+];
+let phaseI = 0, freeCredits = 1;
+function renderBuy() {
+  const P = left <= 0 ? PHASES[4] : PHASES[phaseI], box = document.getElementById('buybox');
+  const opts = [...P.opts]; if (freeCredits > 0 && left > 0) opts.push(['free', `Use free pack (${freeCredits})`, 'just 1 PAPER', 'free']);
+  box.innerHTML = `<div class="phase">Series 7 · ${P.phase}</div><div class="opts">` + opts.map(([k, t, sub, cls = '', dis]) =>
+    `<button class="opt ${cls}" type="button" data-buy="${k}" ${dis ? 'disabled' : ''}>${k === 'buy' ? '<img class="mini" src="a/pack.webp" alt="">' : ''}<span>${t}<small>${sub}</small></span></button>`).join('') + '</div>';
+  for (const b of box.querySelectorAll('[data-buy]')) b.onclick = () => { const k = b.dataset.buy; if (k === 'free') { freeCredits--; buy(1); renderBuy(); } else if (k !== 'none') buy(1); };
+  placeUI();
+}
+document.getElementById('phaseBtn').onclick = () => { phaseI = (phaseI + 1) % 4; renderBuy(); };
+const INFO = {
+  buy: ['Buy card packs', '$2.50 + 1 PAPER a pack, in PLANK, ETH or USDG. First 24 hours: press holders and PLANK holders. Your pack goes straight to your wallet; it opens once the Series closes. (Mock: this buys one.)'],
+  open: ['Open packs', 'Your sealed packs, padlocked until the Series closes. Then open them and your 6 cards come out. Free pack credits live here too.'],
+  grade: ['PDA grading', 'Reveal a card’s grade, 1 to 10, for the most whole PAPER under $0.25.'],
+  burn: ['Burn cards', 'Throw cards you don’t want into the ash bin. Every 42.0 burned earns a free pack credit. (Mock: this burns one.)'],
+  suggest: ['Suggest a character', '1 PAPER. The next Series’s characters are picked from these; a picked one earns a free pack.'],
+  wallet: ['Wallet', 'Connect with MetaMask, Rabby or OKX. Your packs land here when they shoot up the tube. Once connected: your name and photo, packs, cards, credits.'],
+  paper: ['Get PAPER', 'Type how many PAPER you want, see the ETH price, one tap. Every pack and grade uses PAPER.'],
+  feed: ['Activity', 'Recent packs, burns, grades and picks, live.'],
+  help: ['How Omni Forge works', 'PLANK feeds the fire, the fire runs the machine, the machine prints packs from PAPER.'],
+  sound: ['Sound', 'Machine clanks, steam and fire. Off until you turn it on.'],
+};
+for (const el of document.querySelectorAll('[data-act]')) el.addEventListener('click', () => {
+  const k = el.dataset.act; if (k === 'buy') buy(1); if (k === 'burn') burn();
+  if (k === 'buy' || k === 'burn') return;
+  const [t, p] = INFO[k]; document.getElementById('mt').textContent = t; document.getElementById('mp').textContent = p; modal.hidden = false; document.getElementById('mc').focus();
+});
 document.getElementById('b5').onclick = () => buy(5);
 document.getElementById('burn').onclick = burn;
 document.getElementById('fin').onclick = () => { if (left <= 0) { location.reload(); return; } if (queue === 0) { left = 2; status(); buy(2); } };
@@ -184,6 +375,20 @@ function packAt(x, y, w, a = 1, flat = 0.62) {
   ctx.restore();
 }
 function spin(im, cx, cy, a) { ctx.save(); ctx.translate(cx, cy); ctx.rotate(a); ctx.drawImage(im, -im.width / 2, -im.height / 2); ctx.restore(); }
+const board = { key: '', c: document.createElement('canvas') };
+board.c.width = 332; board.c.height = 358; // twice the board's size, for crisp chalk
+function drawBoard(lines) { // chalk: off-white strokes, grainy where the chalk skipped, a faint dusty smudge
+  const c = board.c, g = c.getContext('2d'), W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H); g.textAlign = 'center'; g.textBaseline = 'middle';
+  const write = (blur, alpha) => { g.save(); g.filter = blur ? `blur(${blur}px)` : 'none'; g.fillStyle = `rgba(238,236,226,${alpha})`;
+    for (const [t, size, y] of lines) { let s = size * 2; g.font = `700 ${s}px Kalam, cursive`; while (g.measureText(t).width > W - 56 && s > 12) { s -= 2; g.font = `700 ${s}px Kalam, cursive`; } // 14px clear of the frame
+      g.fillText(t, W / 2, y * 2); } g.restore(); };
+  write(7, 0.18); write(0, 0.95);
+  g.globalCompositeOperation = 'destination-out'; // the grain: chalk skips over the board's texture
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 9000; i++) { g.fillStyle = `rgba(0,0,0,${0.25 + rnd() * 0.6})`; g.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 2.2, 1 + rnd() * 1.4); }
+  g.globalCompositeOperation = 'source-over';
+}
 function chalk(text, x, y, size, w, alpha = 0.88) {
   ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   let s = size; ctx.font = `700 ${s}px "Cabin Sketch", cursive`;
@@ -192,7 +397,7 @@ function chalk(text, x, y, size, w, alpha = 0.88) {
   ctx.fillText(text, x, y); ctx.restore();
 }
 function dialText(text, x, y, size, color = '#3b2412') {
-  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `900 ${size}px Cinzel, serif`;
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `900 ${size}px "Russo One", sans-serif`;
   ctx.fillStyle = 'rgba(255,236,190,.5)'; ctx.fillText(text, x + 1, y + 1.5); ctx.fillStyle = color; ctx.fillText(text, x, y); ctx.restore();
 }
 const along = (pts, u) => { // u 0..1 along a polyline -> [x, y, angle]
@@ -206,28 +411,9 @@ const along = (pts, u) => { // u 0..1 along a polyline -> [x, y, angle]
   }
 };
 
-// ---------- hotspots
-const HOT = [
-  ['buy', [380, 560, 1080, 1100], 'Buy packs', 'Feed the fire: $2.50 + 1 PAPER a pack, in PLANK, ETH or USDG. The first 24 hours are for press holders and PLANK holders. Your pack goes straight to your wallet; you can open it once the Fire closes.'],
-  ['burn', [60, 1080, 570, 1470], 'Ash bin', 'Burn cards you don’t want. Every 42.0 burned earns a free pack credit.'],
-  ['open', [960, 1380, 1810, 1720], 'Open packs', 'Your sealed packs wait here, padlocked until the Fire closes. Then open them and watch your 6 cards come out.'],
-  ['grade', [2000, 1260, 2780, 1720], 'PSA grading', 'Reveal a card’s grade, 1 to 10, for the most whole PAPER under $0.25.'],
-  ['suggest', [3460, 1180, 3740, 1770], 'Suggest a character', '1 PAPER. The next Fire’s characters are picked from these; a picked suggestion earns a free pack.'],
-  ['board', [2636, 412, 2852, 650], 'This Fire', 'Fire #7. Packs left, and who can buy right now.'],
-].map(([k, r, title, text]) => ({ k, r, title, text }));
-let hover = null;
+// ---------- dialogs (stations open only from their pills)
 const tip = document.getElementById('tip');
-function toScene(ev) { const r = cv.getBoundingClientRect(); return [((ev.clientX - r.left) * dpr - ox) / scale, ((ev.clientY - r.top) * dpr - oy) / scale]; }
-cv.addEventListener('pointermove', (ev) => {
-  const [x, y] = toScene(ev);
-  hover = HOT.find((h) => x >= h.r[0] && x <= h.r[2] && y >= h.r[1] && y <= h.r[3]) || null;
-  cv.style.cursor = hover ? 'pointer' : 'default';
-  if (hover) { tip.hidden = false; tip.textContent = hover.title; tip.style.left = ev.clientX + 'px'; tip.style.top = ev.clientY + 'px'; } else tip.hidden = true;
-});
-cv.addEventListener('pointerleave', () => { hover = null; tip.hidden = true; });
 const modal = document.getElementById('modal');
-cv.addEventListener('click', (ev) => { const [x, y] = toScene(ev); const h = HOT.find((h) => x >= h.r[0] && x <= h.r[2] && y >= h.r[1] && y <= h.r[3]);
-  if (!h) return; document.getElementById('mt').textContent = h.title; document.getElementById('mp').textContent = h.text; modal.hidden = false; document.getElementById('mc').focus(); });
 document.getElementById('mc').onclick = () => modal.hidden = true;
 modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
 addEventListener('keydown', (e) => { if (e.key === 'Escape') modal.hidden = true; });
@@ -245,12 +431,16 @@ function drawRolls() { // the print on the rollers turns; drawn as a multiply la
   });
   ctx.restore();
 }
-function drawBelt() {
-  const b = G.belt, off = beltX % b.period;
-  ctx.save(); ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip();
-  ctx.drawImage(img.belt, 0, 0, b.period * 2, b.h, b.x + off - b.period * 2, b.y, b.period * 2, b.h);
+function drawBelt() { // one exact slat tiled (seamless), shifted along; the room's light laid on top, fixed
+  const b = G.belt, P = b.period, off = beltX % P;
+  ctx.save(); ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(3430, b.y); ctx.quadraticCurveTo(3446, 1000, 3446, b.y + b.h); ctx.lineTo(b.x, b.y + b.h); ctx.closePath(); ctx.clip(); // ends at the drum's curved rim
+  for (let x = b.x + off - P; x < b.x + b.w; x += P) ctx.drawImage(img.belt, x, b.y);
+  ctx.globalCompositeOperation = 'multiply'; ctx.drawImage(img['belt-light'], b.x, b.y);
+  const dk = ctx.createLinearGradient(3392, 0, 3446, 0); dk.addColorStop(0, 'rgba(255,255,255,1)'); dk.addColorStop(1, 'rgba(70,60,55,1)'); // into the drum's shadow
+  ctx.fillStyle = dk; ctx.fillRect(3392, b.y, 60, b.h);
   ctx.restore();
 }
+function drawChainStill() { for (const k of ['up', 'lo']) ctx.drawImage(img['chain-' + k], G.chain[k].pos[0], G.chain[k].pos[1]); }
 function drawChain() { // each strand slides along itself (the loop: top goes one way, bottom the other)
   for (const [k, dir] of [['up', 1], ['lo', -1]]) {
     const c = G.chain[k], im = img['chain-' + k], [ax, ay] = c.a, [bx, by] = c.b;
@@ -265,18 +455,18 @@ function drawChain() { // each strand slides along itself (the loop: top goes on
 }
 function drawEngine() {
   const F = G.fly, ga = wheelA * 1.35;
-  for (const [cx, cy] of G.pulleys) spin(img['s-pulley'], cx, cy, beltX / 40);
+  G.pulleys.forEach(([cx, cy, r], i) => spin(img['p-' + i], cx, cy, beltX / r)); // the painted wheels themselves, turning
   G.gears.forEach((g, i) => spin(img['s-' + g.n], g.cx, g.cy, i === 1 ? -ga * 2 + 0.1 : ga + i * 0.05));
+  ctx.drawImage(img['front-stand'], G.front.stand[0], G.front.stand[1]); // the stand and its base, behind the wheel
   spin(img['s-flywheel'], F.cx, F.cy, wheelA);
-  // the piston rod: rigid, slides into the cylinder's gland, pinned to the crank
-  const r0 = Math.hypot(F.pin[0] - F.cx, F.pin[1] - F.cy), a0 = Math.atan2(F.pin[1] - F.cy, F.pin[0] - F.cx);
+  // the piston rod: rigid, slides into the cylinder's gland, pinned to the crank on a spoke (spokes at 30° + k·60° on the sprite)
+  const r0 = 136, a0 = 210 * Math.PI / 180;
   const px = F.cx + r0 * Math.cos(a0 + wheelA), py = F.cy + r0 * Math.sin(a0 + wheelA);
   const [gx, gy] = G.gland, ang = Math.atan2(gy - py, gx - px), rod = img['s-rod'];
   ctx.save(); ctx.beginPath(); ctx.rect(gx - 4, 600, 800, 500); ctx.clip();
   ctx.translate(px, py); ctx.rotate(ang); ctx.drawImage(rod, 0, -rod.height / 2); ctx.restore();
-  ctx.save(); ctx.translate(px, py); ctx.rotate(ang + Math.PI); const e = img['s-conrod']; ctx.drawImage(e, -e.width / 2 - 3, -e.height / 2); ctx.restore();
-  // the stand last: the wheel, the crank and the rod all pass behind it
-  ctx.drawImage(img['front-stand'], G.front.stand[0], G.front.stand[1]);
+  ctx.save(); ctx.translate(px, py); ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.arc(3, 4, 30, 0, Math.PI * 2); ctx.fill(); // its shadow on the spoke
+  ctx.rotate(ang + Math.PI); const e = img['s-conrod']; ctx.drawImage(e, -e.width / 2 - 3, -e.height / 2); ctx.restore();
 }
 function drawFires(fl) {
   if (fire) {
@@ -309,10 +499,13 @@ function drawFires(fl) {
   let g = ctx.createRadialGradient(630, 960, 30, 630, 960, 820);
   g.addColorStop(0, `rgba(255,120,40,${0.07 * fl})`); g.addColorStop(1, 'rgba(255,90,20,0)');
   ctx.fillStyle = g; ctx.fillRect(0, 140, 1460, 1640);
-  for (const [lx, ly] of LANTERNS) {
-    const lf = 0.035 + 0.012 * Math.sin(now * 5 + lx);
-    g = ctx.createRadialGradient(lx, ly, 4, lx, ly, 150); g.addColorStop(0, `rgba(255,190,110,${lf})`); g.addColorStop(1, 'rgba(255,190,110,0)');
-    ctx.fillStyle = g; ctx.fillRect(lx - 150, ly - 150, 300, 300);
+  for (const [lx, ly] of LANTERNS) { // a candle-like flicker: slow breathing plus small quick dips
+    const n = Math.sin(now * 2.3 + lx) * 0.5 + Math.sin(now * 7.1 + ly) * 0.3 + Math.sin(now * 17.3 + lx * 0.7) * 0.2;
+    const lf = 0.06 + 0.03 * n;
+    g = ctx.createRadialGradient(lx, ly, 2, lx, ly, 170); g.addColorStop(0, `rgba(255,190,110,${lf})`); g.addColorStop(1, 'rgba(255,190,110,0)');
+    ctx.fillStyle = g; ctx.fillRect(lx - 170, ly - 170, 340, 340);
+    g = ctx.createRadialGradient(lx, ly, 1, lx, ly, 34); g.addColorStop(0, `rgba(255,215,150,${0.22 + 0.12 * n})`); g.addColorStop(1, 'rgba(255,200,120,0)'); // the flame inside
+    ctx.fillStyle = g; ctx.fillRect(lx - 34, ly - 34, 68, 68);
   }
   if (stamp > 0) { // the press glows as it stamps a pack
     g = ctx.createRadialGradient(2296, 820, 10, 2296, 820, 230); g.addColorStop(0, `rgba(255,170,80,${0.22 * stamp})`); g.addColorStop(1, 'rgba(255,140,60,0)');
@@ -347,11 +540,11 @@ function drawItems() { // logs drop into the firebox; PAPER sheets drop onto the
 function drawPacks(dt) {
   ctx.save(); ctx.beginPath(); ctx.rect(2140, 880, PACK_TO - 2140, 200); ctx.clip();
   for (let i = packs.length - 1; i >= 0; i--) {
-    const p = packs[i]; p.d += dt * speed * 190;
+    const p = packs[i]; p.d += dt * beltSp * 190; // packs ride the belt at its speed
     const x = PACK_FROM + p.d;
     if (x > PACK_TO + 50) { packs.splice(i, 1); caps.push({ t0: now }); continue; }
     const drop = Math.min(1, p.d / 26), y = PACK_Y - 26 * (1 - drop) * (1 - drop);
-    packAt(x, y, 90 * (0.85 + 0.15 * drop), Math.min(1, p.d / 14) * (1 - Math.max(0, (x - (PACK_TO - 30)) / 60)));
+    packAt(x, y, 108 * (0.85 + 0.15 * drop), Math.min(1, p.d / 14) * (1 - Math.max(0, (x - (PACK_TO - 30)) / 60)));
   }
   ctx.restore();
 }
@@ -359,7 +552,7 @@ function drawCapsules() { // through the tube's three windows, up and out to the
   for (let i = caps.length - 1; i >= 0; i--) {
     const c = caps[i], t = (now - c.t0 - 0.25) / 1.1;
     if (t < 0) continue;
-    if (t >= 1) { caps.splice(i, 1); toast('+1 pack in your wallet'); continue; }
+    if (t >= 1) { caps.splice(i, 1); toast('+1 card pack (6 cards) in your wallet'); continue; }
     const [x, y, a] = along(TUBE, t * t), cap = img['s-capsule'];
     for (const [wx, wy, wr] of WINDOWS) {
       if (Math.abs(y - wy) > wr + 60) continue;
@@ -371,22 +564,38 @@ function drawCapsules() { // through the tube's three windows, up and out to the
     }
   }
 }
+function gauge(x, y, r, frac, arc) { // a brass gauge: ticks, a coloured arc, a needle
+  const a0 = Math.PI * 0.75, span = Math.PI * 1.5, an = a0 + span * frac + Math.sin(now * 9) * 0.006;
+  ctx.save(); ctx.lineCap = 'round';
+  for (let k = 0; k <= 6; k++) { const t = a0 + span * k / 6; ctx.strokeStyle = 'rgba(50,28,12,.6)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x + Math.cos(t) * (r - 8), y + Math.sin(t) * (r - 8)); ctx.lineTo(x + Math.cos(t) * (r - 14), y + Math.sin(t) * (r - 14)); ctx.stroke(); }
+  if (frac > 0) { ctx.strokeStyle = arc; ctx.lineWidth = 3.5; ctx.shadowColor = arc; ctx.shadowBlur = 6; ctx.beginPath(); ctx.arc(x, y, r - 5, a0, a0 + span * frac); ctx.stroke(); ctx.shadowBlur = 0; }
+  ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x + 2, y + 3); ctx.lineTo(x + 2 + Math.cos(an) * (r - 11), y + 3 + Math.sin(an) * (r - 11)); ctx.stroke();
+  ctx.strokeStyle = '#2a1608'; ctx.beginPath(); ctx.moveTo(x - Math.cos(an) * 6, y - Math.sin(an) * 6); ctx.lineTo(x + Math.cos(an) * (r - 11), y + Math.sin(an) * (r - 11)); ctx.stroke();
+  const hub = ctx.createRadialGradient(x - 1.5, y - 1.5, 0.5, x, y, 5); hub.addColorStop(0, '#f6d48a'); hub.addColorStop(1, '#6b4316');
+  ctx.fillStyle = hub; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
 function drawBoardAndDials() {
   const b = BOARD, cx = b.x + b.w / 2;
-  chalk('FIRE #7', cx, b.y + 36, 34, b.w - 24);
-  const fin = finale >= 0 ? now - finale : 99, blink = fin < 4 ? (Math.sin(fin * 9) > -0.2 ? 1 : 0.15) : 0.88;
-  chalk(left > 0 ? `${left} left` : 'SOLD OUT', cx, b.y + 92, left > 0 ? 38 : 34, b.w - 20, left > 0 ? 0.88 : blink);
-  chalk(left > 0 ? 'holders first' : 'thank you', cx, b.y + 150, 24, b.w - 24, 0.7);
+  const fin = finale >= 0 ? now - finale : 99, blink = fin < 4 ? (Math.sin(fin * 9) > -0.2 ? 1 : 0.2) : 1;
+  const key = left > 0 ? 'L' + left : 'S';
+  if (board.key !== key) { board.key = key; drawBoard(left > 0 ? [['FIRE #7', 24, 32], [String(left), 70, 92], ['packs left', 24, 150]] : [['FIRE #7', 24, 32], ['SOLD', 48, 86], ['OUT', 48, 140]]); }
+  ctx.save(); ctx.globalAlpha = blink; ctx.drawImage(board.c, b.x, b.y, b.w, b.h); ctx.restore();
   // hood dial: the holder window, an amber arc that empties over 24h (demo: 17h left)
   { const [x, y, r] = DIAL_HOOD, frac = left > 0 ? 17 / 24 : 0;
-    ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(40,22,10,.35)';
-    ctx.beginPath(); ctx.arc(x, y, r - 10, -Math.PI / 2, Math.PI * 1.5); ctx.stroke();
-    if (frac > 0) { ctx.strokeStyle = 'rgba(255,150,40,.9)'; ctx.shadowColor = 'rgba(255,140,40,.8)'; ctx.shadowBlur = 8;
-      ctx.beginPath(); ctx.arc(x, y, r - 10, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2); ctx.stroke(); }
-    ctx.restore(); dialText(left > 0 ? '17H' : 'OPEN', x, y + 1, 18); }
-  { const [x, y] = DIAL_ASH; dialText(`${burned % 42}`, x, y - 8, 20); dialText('42.0', x, y + 13, 12); }
+    const a0 = Math.PI * 0.75, span = Math.PI * 1.5, an = a0 + span * frac + Math.sin(now * 9) * 0.006; // a gauge: 7 o'clock to 5 o'clock
+    ctx.save(); ctx.lineCap = 'round';
+    for (let k = 0; k <= 8; k++) { const t = a0 + span * k / 8; ctx.strokeStyle = 'rgba(50,28,12,.6)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x + Math.cos(t) * (r - 9), y + Math.sin(t) * (r - 9)); ctx.lineTo(x + Math.cos(t) * (r - 15), y + Math.sin(t) * (r - 15)); ctx.stroke(); }
+    if (frac > 0) { ctx.strokeStyle = 'rgba(255,150,40,.75)'; ctx.lineWidth = 3.5; ctx.shadowColor = 'rgba(255,140,40,.8)'; ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.arc(x, y, r - 6, a0, a0 + span * frac); ctx.stroke(); ctx.shadowBlur = 0; }
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.moveTo(x + 2, y + 3); ctx.lineTo(x + 2 + Math.cos(an) * (r - 12), y + 3 + Math.sin(an) * (r - 12)); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.stroke();
+    ctx.strokeStyle = '#2a1608'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - Math.cos(an) * 6, y - Math.sin(an) * 6); ctx.lineTo(x + Math.cos(an) * (r - 12), y + Math.sin(an) * (r - 12)); ctx.stroke();
+    const hub = ctx.createRadialGradient(x - 1.5, y - 1.5, 0.5, x, y, 5.5); hub.addColorStop(0, '#f6d48a'); hub.addColorStop(1, '#6b4316');
+    ctx.fillStyle = hub; ctx.beginPath(); ctx.arc(x, y, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+  gauge(...DIAL_ASH, (burned % 42) / 42, 'rgba(235,60,28,.8)'); // the ash bin: how close to a free pack
 }
-function drawPadlock(dt) { // on the open bench until the Fire closes, then it drops off
+function drawPadlock(dt) { // on the open bench until the Series closes, then it drops off
   const im = img['s-padlock']; if (!im) return;
   if (left <= 0 && lockFall < 0) lockFall = 0;
   if (lockFall >= 0) lockFall += dt * 0.9;
@@ -472,12 +681,14 @@ let last = performance.now();
 const FIXED = location.search.includes('fixed');
 window.__frames = 0;
 function frame(tms) {
+  if (window.__paused && !(window.__steps > 0)) { requestAnimationFrame(frame); return; } // test hook: step frame by frame
+  if (window.__steps > 0) window.__steps--;
   const dt = FIXED ? 1 / 30 : Math.min(0.05, (tms - last) / 1000); last = tms; now += dt;
   if (auto && now >= autoNext && left - queue > 0) { buy(Math.random() < .25 ? 3 : 1); autoNext = now + 2.4 + Math.random() * 2.6; }
   if (auto && Math.random() < dt * 0.25) burn();
   target = left <= 0 && !packs.length ? 0 : queue > 0 || packs.length ? 1 : 0.15;
   speed += (target - speed) * Math.min(1, dt * 1.4);
-  wheelA += dt * speed * 2.6; beltX += dt * speed * 190; chainX += dt * speed * 190; rollS += dt * speed * 150;
+  wheelA += dt * speed * 2.6; beltSp += (Math.max(speed, 0.32) - beltSp) * Math.min(1, dt * 2); beltX += dt * beltSp * 190; chainX += dt * speed * 190; rollS += dt * speed * 150;
   ft += dt * (0.9 + speed * 0.6); at += dt * 0.8;
   flare = Math.max(0, flare - dt * 0.7); ashFlare = Math.max(0, ashFlare - dt * 0.8); stamp = Math.max(0, stamp - dt * 1.6);
   if (toastT && now > toastT) { toastEl.classList.remove('on'); toastT = 0; }
@@ -486,7 +697,7 @@ function frame(tms) {
   }
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#1e2530'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
   updateFx(dt);
   const sk = shake * shake * 7 * scale;
   ctx.setTransform(scale, 0, 0, scale, ox + rnd(-sk, sk), oy + rnd(-sk, sk));
@@ -494,7 +705,6 @@ function frame(tms) {
   drawRolls();
   drawBelt();
   drawPacks(dt);
-  drawChain();
   drawEngine();
   const fl = left <= 0 ? 0.5 : 0.85 + 0.15 * Math.sin(now * 7.3) * Math.sin(now * 3.1) + flare * 0.35;
   drawItems();
@@ -505,14 +715,12 @@ function frame(tms) {
   drawPadlock(dt);
   drawCards();
   drawTokens();
-  if (hover) { const r = hover.r;
-    ctx.save(); ctx.strokeStyle = 'rgba(255,190,90,.9)'; ctx.lineWidth = 6; ctx.shadowColor = 'rgba(255,150,60,.9)'; ctx.shadowBlur = 30;
-    ctx.beginPath(); ctx.roundRect(r[0], r[1], r[2] - r[0], r[3] - r[1], 24); ctx.stroke(); ctx.restore(); }
+
   window.__frames++;
   requestAnimationFrame(frame);
 }
-await document.fonts.ready;
-status();
+await Promise.all([document.fonts.ready, document.fonts.load("700 40px Kalam"), document.fonts.load("40px \"Russo One\"")]).catch(() => {});
+status(); renderBuy();
 requestAnimationFrame(frame);
 if (location.hash === '#auto') autoBtn.click();
 })();

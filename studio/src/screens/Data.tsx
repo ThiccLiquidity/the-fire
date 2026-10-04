@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { exportLibrary, importLibrary } from '../backup'
-import { AccumulatorBars, DropZone, Notice, NumberInput, ProgressBar, useAction } from '../components'
+import { DropZone, Notice, NumberInput, ProgressBar, useAction } from '../components'
 import { requestPersistence } from '../db'
 import { setMockFailNext, setMockPinata, useDevFlags } from '../devFlags'
 import { downloadBlob } from '../files'
@@ -25,10 +25,10 @@ export function Data() {
   })
 
   const doImport = (files: File[]) => run(async () => {
-    if (!confirm('Import replaces EVERYTHING in this Card Studio (library, frames, layouts, fonts, Fires, accumulators, serial counter) with the backup. Continue?')) return
+    if (!confirm('Import replaces EVERYTHING in this Card Studio (library, frames, layouts, fonts, Series, serial counter) with the backup. Continue?')) return
     setStatus('Importing...')
     const r = await importLibrary(files[0])
-    setStatus(`Imported ${r.records} records and ${r.files} files. Rebuild cards for any Fire you still need to export.`)
+    setStatus(`Imported ${r.records} records and ${r.files} files. Rebuild cards for any Series you still need to export.`)
   })
 
   return (
@@ -37,7 +37,7 @@ export function Data() {
         <h2>Backup &amp; move machines</h2>
         <p className="muted">
           Everything lives in this browser's IndexedDB on this machine. Export makes one .zip with the whole library,
-          frames, layouts, fonts, Fires, rarity accumulators and the serial counter. Built card images aren't included
+          frames, layouts, fonts, Series and the serial counter. Built card images aren't included
           (rebuild them in Build &amp; Review). Import replaces everything with the backup.
         </p>
         <div className="row wrap">
@@ -58,11 +58,10 @@ export function Data() {
         <h2>State</h2>
         <div className="row wrap">
           <span>Characters: <b>{s.characters.length}</b> ({s.characters.filter(isReady).length} ready)</span>
-          <span>Fires: <b>{s.fires.length}</b></span>
-          <span>Next Fire: <b>#{s.global.nextFireNumber}</b></span>
+          <span>Series: <b>{s.fires.length}</b></span>
+          <span>Next Series: <b>#{s.global.nextFireNumber}</b></span>
           <span>Next global serial: <b>#{s.global.nextSerial}</b></span>
         </div>
-        <AccumulatorBars acc={s.global.accumulators} title="Rarity accumulators (carried into the next Fire)" />
       </section>
 
       <section className="panel dev">

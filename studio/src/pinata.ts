@@ -5,8 +5,8 @@
  *  "<dirName>/<fileName>", plus `pinataMetadata` ({"name": ...}) and `pinataOptions` ({"cidVersion": 1}). The
  *  response's `IpfsHash` is the directory's CID, so a file is at ipfs://<CID>/<fileName>.
  *
- *  Two directories per Fire: images first, then metadata whose `image` fields point at ipfs://<imagesCid>/<file>.
- *  Resume: each finished directory's CID is saved on the Fire right away and skipped next time; before uploading a
+ *  Two directories per Series: images first, then metadata whose `image` fields point at ipfs://<imagesCid>/<file>.
+ *  Resume: each finished directory's CID is saved on the Series right away and skipped next time; before uploading a
  *  directory we also ask Pinata (GET /data/pinList?status=pinned&metadata[name]=...) whether a pin with that exact name
  *  already exists (an upload that finished after the tab closed) and reuse it.
  *

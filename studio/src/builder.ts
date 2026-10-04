@@ -11,7 +11,7 @@ import { effectiveKey, getStudio } from './store'
 import { VARIANTS, type OutputFormat } from './types'
 import type { WorkerIn, WorkerOut } from './build.worker'
 
-/** `withWear`: also load the PSA wear frames (only needed once cards have grades). */
+/** `withWear`: also load the PDA wear frames (only needed once cards have grades). */
 export async function collectBundle(characterIds: string[], withWear = false): Promise<AssetBundle> {
   const s = getStudio()
   const frames: AssetBundle['frames'] = {}

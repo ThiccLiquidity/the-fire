@@ -12,7 +12,7 @@ const key = (m: Material, h: HoloType) => `${m}:${h}`
 const exists = (m: Material, h: HoloType) => !(m === 'diamond' && h === 'none')
 
 /** Every card a character can be, rendered exactly as the build will make it: 5 materials x 4 holo types, at any
- *  PSA grade. Click a card to see it full size. */
+ *  PDA grade. Click a card to see it full size. */
 export function Preview() {
   const s = useStudio()
   const [charId, setCharId] = useState('')
@@ -30,7 +30,7 @@ export function Preview() {
   useEffect(() => {
     if (!char) return
     const my = ++gen.current
-    // the Fire this character is in (latest), or the next Fire if it isn't in one yet
+    // the Series this character is in (latest), or the next Series if it isn't in one yet
     const fire = [...s.fires].reverse().find((f) => f.characterIds.includes(char.id))?.number ?? s.global.nextFireNumber
     const list: DealtCard[] = []
     for (const material of MATERIALS) {
@@ -82,10 +82,10 @@ export function Preview() {
             {s.characters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
-        <Field label="PSA">
+        <Field label="PDA">
           <select value={grade ?? ''} onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : null)} data-testid="preview-psa">
             <option value="">Unrevealed</option>
-            {[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((g) => <option key={g} value={g}>PSA {g}</option>)}
+            {[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((g) => <option key={g} value={g}>PDA {g}</option>)}
           </select>
         </Field>
         <span className="muted small">Exactly what the NFTs will look like. Click a card to see it full size.</span>
@@ -107,8 +107,8 @@ export function Preview() {
             <img src={big.url} alt="" />
             <div>
               <h3>{char.name} · {MATERIAL_LABEL[big.material]}</h3>
-              <p className="muted">Holo: {big.holo === 'none' ? 'none' : HOLO_LABEL[big.holo]}<br />PSA: {grade == null ? 'unrevealed' : `${grade} (${WEAR_LABEL[wearLookOf(grade)]} frame)`}</p>
-              <p className="muted small">Every {MATERIAL_LABEL[big.material]} {char.name} with this holo{grade == null ? '' : ' and grade'} shares this image. Serial, edition and Fire # are in each NFT's data.</p>
+              <p className="muted">Holo: {big.holo === 'none' ? 'none' : HOLO_LABEL[big.holo]}<br />PDA: {grade == null ? 'unrevealed' : `${grade} (${WEAR_LABEL[wearLookOf(grade)]} frame)`}</p>
+              <p className="muted small">Every {MATERIAL_LABEL[big.material]} {char.name} with this holo{grade == null ? '' : ' and grade'} shares this image. Serial, edition and Series # are in each NFT's data.</p>
               <button onClick={() => setBig(null)}>Close</button>
             </div>
           </div>

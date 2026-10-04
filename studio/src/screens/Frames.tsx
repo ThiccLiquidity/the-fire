@@ -13,7 +13,7 @@ import {
 import { TEXT_FIELDS, TEXT_FIELD_LABEL, VARIANTS, type Layout, type PsaBox, type Rect, type TextBox, type TextField, type Variant } from '../types'
 
 type BoxId = 'art' | TextField | 'psa'
-const BOX_LABEL: Record<BoxId, string> = { art: 'Art window', ...TEXT_FIELD_LABEL, psa: 'PSA seal' }
+const BOX_LABEL: Record<BoxId, string> = { art: 'Art window', ...TEXT_FIELD_LABEL, psa: 'PDA seal' }
 const BOX_IDS: BoxId[] = ['art', ...TEXT_FIELDS, 'psa']
 /** The art window is fixed by the frames: shown, never moved. */
 const LOCKED: BoxId[] = ['art']
@@ -51,14 +51,14 @@ function FrameGallery({ m }: { m: Material }) {
               <div className="frame-drop">
                 {url ? <img src={url} className="checker" alt={`${m} ${v} frame`} /> : <span className="muted">Not delivered yet</span>}
               </div>
-              {!url && <Notice kind="warn">Missing. Fires that deal this card can't be approved until it's added.</Notice>}
+              {!url && <Notice kind="warn">Missing. Series that deal this card can't be approved until it's added.</Notice>}
             </div>
           )
         })}
       </div>
       <p className="muted small" data-testid={`wear-${m}`}>
-        PSA wear frames: {VARIANTS.flatMap((v) => WEAR_LEVELS.filter((w) => hasFrame(m, v, w))).length} of {VARIANTS.length * WEAR_LEVELS.length} in
-        ({WEAR_LEVELS.map((w) => WEAR_LABEL[w]).join(', ')}; normal + holo; PSA 10 is the clean frame). Use "PSA preview"
+        PDA wear frames: {VARIANTS.flatMap((v) => WEAR_LEVELS.filter((w) => hasFrame(m, v, w))).length} of {VARIANTS.length * WEAR_LEVELS.length} in
+        ({WEAR_LEVELS.map((w) => WEAR_LABEL[w]).join(', ')}; normal + holo; PDA 10 is the clean frame). Use "PDA preview"
         below to see any grade.
       </p>
     </div>
@@ -207,10 +207,10 @@ function LayoutEditor({ m }: { m: Material }) {
         </Field>
         <label className="check"><input type="checkbox" checked={frameHolo} onChange={(e) => setFrameHolo(e.target.checked)} /> holo frame</label>
         <label className="check"><input type="checkbox" checked={picHolo} onChange={(e) => setPicHolo(e.target.checked)} /> holo picture</label>
-        <Field label="PSA preview">
+        <Field label="PDA preview">
           <select value={grade ?? ''} onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : null)} data-testid="psa-preview">
             <option value="">Unrevealed</option>
-            {[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((g) => <option key={g} value={g}>PSA {g}</option>)}
+            {[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((g) => <option key={g} value={g}>PDA {g}</option>)}
           </select>
         </Field>
         <label className="check"><input type="checkbox" checked={showBoxes} onChange={(e) => setShowBoxes(e.target.checked)} /> show boxes</label>
