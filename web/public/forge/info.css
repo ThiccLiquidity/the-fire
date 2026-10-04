@@ -1,0 +1,160 @@
+/* info.css: the Info panel (window.Info). Everything is scoped under .inf */
+.inf { max-width: 760px; margin: 0 auto; font-size: 15px; line-height: 1.5 }
+.inf b { color: var(--gold); font-weight: 800 }
+.inf .mat { font-size: 13px; padding: 3px 10px; white-space: nowrap }
+
+.inf-welcome { margin: 2px 0 12px; color: var(--ink); font-size: 16px }
+
+/* section index */
+.inf-index { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px }
+.inf-jump { min-height: var(--tap); padding: 0 13px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--panel-2);
+  font: 800 13px var(--body); color: var(--muted); cursor: pointer }
+.inf-jump:hover { color: var(--ink); border-color: var(--brass) }
+.inf-jump.hot { color: var(--gold); border-color: var(--brass); background: linear-gradient(#2a1d10, #1f1710) }
+
+/* rarity at a glance */
+.inf-glance { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 16px }
+.inf-glance button { min-height: var(--tap); text-align: left; padding: 10px 12px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--line-2); background: radial-gradient(120% 140% at 0% 0%, rgba(255,122,46,.16), transparent 60%), var(--panel-2);
+  display: grid; gap: 2px; font: 600 13px/1.35 var(--body); color: var(--muted) }
+.inf-glance button:hover { border-color: var(--brass) }
+.inf-glance b { font: 400 20px var(--display); color: var(--gold); letter-spacing: .02em }
+@media (max-width: 600px) { .inf-glance { grid-template-columns: 1fr; gap: 6px }
+  .inf-glance button { grid-template-columns: auto 1fr; align-items: center; column-gap: 10px; padding: 8px 12px }
+  .inf-glance b { font-size: 17px } }
+
+/* collapsible sections */
+.inf-sec { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); margin: 0 0 8px; scroll-margin-top: 8px }
+.inf-sec.hot { border-color: var(--line-2) }
+.inf-sec[open] { background: #1a130d }
+.inf-sec summary { list-style: none; cursor: pointer; min-height: var(--tap); padding: 11px 44px 11px 14px; position: relative; display: grid; gap: 1px; border-radius: var(--r) }
+.inf-sec summary::-webkit-details-marker { display: none }
+.inf-sec summary::after { content: ''; position: absolute; right: 18px; top: 50%; width: 9px; height: 9px; margin-top: -7px;
+  border: solid var(--brass); border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform .2s }
+.inf-sec[open] summary::after { transform: rotate(-135deg); margin-top: -2px }
+.inf-sec summary:hover .inf-st { color: var(--gold) }
+.inf-st { font: 400 17px var(--display); letter-spacing: .03em; color: var(--brass); display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+.inf-st em { font: 800 13px var(--body); font-style: normal; letter-spacing: .06em; text-transform: uppercase; color: #1b0f06;
+  background: linear-gradient(#ffb357, #e0661f); border-radius: 999px; padding: 1px 8px }
+.inf-ss { color: var(--muted); font-size: 14px }
+.inf-body { padding: 0 14px 14px; border-top: 1px solid var(--line); animation: inf-in .25s ease-out }
+@keyframes inf-in { from { opacity: 0; transform: translateY(-4px) } }
+.inf-body ul { margin: 12px 0; padding-left: 20px }
+.inf-body li { margin: 0 0 6px }
+.inf-body li::marker { color: var(--ember) }
+.inf-sub { margin: 14px 0 6px; font: 400 14px var(--display); letter-spacing: .04em; color: var(--ink) }
+.inf-note { margin: 6px 0 0; font-size: 13px; color: var(--muted) }
+
+/* chart plates */
+.inf-plate { margin: 14px 0; padding: 14px 14px 12px; border-radius: 14px; border: 1px solid var(--line-2);
+  background: radial-gradient(120% 90% at 50% 0%, rgba(233,180,90,.08), transparent 70%), #110c08; box-shadow: inset 0 1px 0 rgba(255,255,255,.04) }
+.inf-plate figcaption { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 0 0 12px }
+.inf-plate figcaption b { font: 400 16px var(--display); color: var(--gold); letter-spacing: .04em }
+.inf-plate figcaption span { font-size: 13px; color: var(--muted) }
+
+/* PDA bar chart */
+.inf-pda, .inf-pwear { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; align-items: end }
+.inf-pcol { display: grid; justify-items: center; gap: 6px; min-width: 0 }
+.inf-pplot { height: 150px; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px;
+  border-bottom: 1px solid var(--line-2) }
+.inf-pval { font: 800 14px var(--body); color: var(--ink) }
+.inf-pbar { width: min(46px, 80%); height: calc(var(--h) * 118px); min-height: 3px; border-radius: 4px 4px 0 0; background: var(--c);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35); transform-origin: bottom; animation: inf-grow .6s cubic-bezier(.2,.8,.2,1) both }
+@keyframes inf-grow { from { transform: scaleY(0) } }
+.inf-pg { font: 400 14px var(--display); color: var(--ink); white-space: nowrap }
+.inf-pcol.top .inf-pbar { box-shadow: 0 0 10px rgba(255,210,122,.85), inset 0 1px 0 rgba(255,255,255,.5) }
+.inf-pcol.top .inf-pg, .inf-pcol.top .inf-pval { color: var(--gold) }
+.inf-pwear { align-items: start; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line) }
+.inf-wear { display: grid; justify-items: center; gap: 4px; min-width: 0; text-align: center }
+.inf-wear img { width: 52px; height: 73px; display: block; border-radius: 3px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.6)) }
+.inf-wear.gold img { filter: drop-shadow(0 0 6px rgba(255,205,100,.9)) drop-shadow(0 0 2px rgba(255,235,170,.9)) }
+.inf-wear span { font-size: 12px; line-height: 1.2; color: var(--muted) }
+.inf-wear.gold span { color: var(--gold) }
+.inf-big { margin: 12px 0 0; text-align: center; font: 400 17px/1.3 var(--display); color: var(--gold); letter-spacing: .02em }
+
+/* materials chart */
+.inf-mat { display: grid; gap: 8px }
+.inf-mrow { display: grid; grid-template-columns: 92px 1fr 60px; align-items: center; gap: 10px }
+.inf-mrow .mat { justify-self: start }
+.inf-mtrack { height: 16px; border-radius: 4px; background: rgba(255,255,255,.05); position: relative; overflow: hidden }
+.inf-mfill { position: absolute; inset: 0 auto 0 0; width: max(3px, calc(var(--w) * 100%)); border-radius: 0 4px 4px 0; overflow: hidden;
+  transform-origin: left; animation: inf-growx .7s cubic-bezier(.2,.8,.2,1) both }
+@keyframes inf-growx { from { transform: scaleX(0) } }
+.inf-mfill.paper { background: var(--paper) } .inf-mfill.wood { background: var(--wood) } .inf-mfill.fire { background: var(--fire) }
+.inf-mfill.charcoal { background: #8d8d94 } .inf-mfill.diamond { background: var(--diamond) }
+.inf-mval { text-align: right; font: 800 15px/1.1 var(--body); font-variant-numeric: tabular-nums; display: grid }
+.inf-mval small { font: 600 13px var(--body); color: var(--muted) }
+.inf-legend { margin: 10px 0 0; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px }
+
+/* holo table */
+.inf-tablewrap { overflow-x: auto }
+.inf-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums }
+.inf-table th, .inf-table td { padding: 7px 6px; text-align: right; border-bottom: 1px solid var(--line) }
+.inf-table th[scope=row], .inf-table thead th:first-child { text-align: left }
+.inf-table thead th { font: 800 13px/1.25 var(--body); color: var(--muted); vertical-align: bottom }
+.inf-table td { font-weight: 800 }
+.inf-table tbody tr:last-child th, .inf-table tbody tr:last-child td { border-bottom: 0 }
+.inf .mat.inf-full { font-size: 14px; padding: 4px 12px;  background-image: url(a/mat-paper.webp), linear-gradient(90deg, #ff6ad5, #ffd36a, #6affc1, #6ac8ff); background-blend-mode: multiply }
+
+.inf-callout { margin: 14px 0 2px; padding: 12px; border-radius: 12px; border: 1px dashed var(--brass); background: rgba(233,180,90,.06) }
+.inf-callout p { margin: 0; font-size: 15px; text-align: center }
+.inf-callout p + p { margin-top: 8px }
+.inf-lead { margin: -4px 0 10px; font-size: 15px; color: var(--ink) }
+.inf-holo td { vertical-align: top }
+.inf-holo td b { display: block; color: var(--ink); font-size: 15px; white-space: nowrap }
+.inf-holo td b span { font-weight: 600; color: var(--muted); font-size: 13px }
+.inf-holo td small { display: block; font: 600 13px var(--body); color: var(--muted) }
+.inf-holo td:nth-child(4) b { color: var(--gold) }
+.inf-holo thead th span { font-weight: 600 }
+.inf-holo td.inf-none b { color: var(--muted) }
+.inf-holo td.inf-nil { color: var(--dim); font-weight: 600 }
+.inf-holo th[scope=row] { vertical-align: middle }
+
+/* pack slots */
+.inf-pack { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px }
+.inf-slot { display: grid; justify-items: center; gap: 6px; padding: 8px 2px; border-radius: 10px; border: 1px solid var(--line); background: #110c08; min-width: 0 }
+.inf-slot i { font: 400 13px var(--display); font-style: normal; color: var(--dim) }
+.inf-slot .mat { padding: 3px 7px; font-size: 13px }
+@media (max-width: 600px) { .inf-pack { grid-template-columns: repeat(3, 1fr) } }
+
+/* timeline */
+.inf-time { list-style: none; margin: 6px 0 12px; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; counter-reset: t }
+.inf-time li { margin: 0; padding: 10px; border-radius: 10px; background: #110c08; border: 1px solid var(--line); border-top: 3px solid var(--ember); display: grid; gap: 3px; align-content: start }
+.inf-time b { font: 400 14px var(--display); color: var(--gold) }
+.inf-time span { font-size: 13.5px; color: var(--ink) }
+@media (max-width: 600px) { .inf-time { grid-template-columns: 1fr }
+  .inf-time li { grid-template-columns: 78px 1fr; align-items: baseline; border-top-width: 1px; border-left: 3px solid var(--ember) } }
+
+/* link + FAQ */
+.inf-link { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); padding: 0 16px; border-radius: 12px; border: 1.5px solid var(--line-2);
+  background: var(--panel); color: var(--gold); font: 800 14px var(--body); text-decoration: none; margin: 2px 0 2px }
+.inf-link:hover { border-color: var(--brass) }
+.inf-faq { margin: 12px 0 0 }
+.inf-faq dt { font: 800 15px var(--body); color: var(--gold); margin: 12px 0 2px }
+.inf-faq dt:first-child { margin-top: 0 }
+.inf-faq dd { margin: 0; color: var(--ink) }
+
+@media (max-width: 600px) {
+  .inf { font-size: 14.5px }
+  .inf-plate { padding: 12px 10px 10px }
+  .inf-pda { gap: 3px }
+  .inf-pplot { height: 130px }
+  .inf-pbar { height: calc(var(--h) * 100px) }
+  .inf-pda, .inf-pwear { gap: 2px }
+  .inf-pval { font-size: 11px; letter-spacing: -.03em }
+  .inf-pg { font-size: 13px }
+  .inf-wear img { width: 30px; height: 42px }
+  .inf-wear span { font-size: 10.5px; letter-spacing: -.01em }
+  .inf-mrow { grid-template-columns: 84px 1fr 56px; gap: 8px }
+  .inf-table th, .inf-table td { padding: 7px 4px }
+  .inf-table thead th { font-size: 13px }
+  .inf-holo { font-size: 13px } .inf-holo .mat { padding: 3px 7px }
+  .inf-holo td b { font-size: 14px } .inf-holo td b span { display: block; line-height: 1.1 }
+  .inf-holo thead th span { display: block }
+}
+@media (prefers-reduced-motion: reduce) { .inf-body, .inf-pbar, .inf-mfill { animation: none } .inf-sec summary::after { transition: none } }
+
+.inf-cas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px }
+.inf-ca { cursor: pointer; font: inherit; color: inherit; background: transparent }
+.inf-ca code { font-family: inherit; opacity: .75; font-weight: 600 }
+.inf-ca .cp { font-size: .8em; color: var(--brass) }
