@@ -1,0 +1,225 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.28;
+
+import {Test} from "forge-std/Test.sol";
+import {FirePacks} from "../../src/cards/FirePacks.sol";
+import {FireCards} from "../../src/cards/FireCards.sol";
+import {FirePsa} from "../../src/cards/FirePsa.sol";
+import {MockERC20, MockFeed, MockRandomness} from "../Mocks.sol";
+
+contract PsaTest is Test {
+    address constant DEAD = 0x000000000000000000000000000000000000dEaD;
+    address owner = address(0xA11CE0);
+    address seller = address(0x5E11);
+    address alice = address(0xA1);
+    address bob = address(0xB2);
+
+    MockERC20 paper;
+    MockFeed paperFeed;
+    MockRandomness cardRng;
+    MockRandomness psaRng;
+    FirePacks packs;
+    FireCards cards;
+    FirePsa psa;
+    FirePsa psaNoFeed;
+
+    function setUp() public {
+        vm.warp(1_800_000_000);
+        paper = new MockERC20("PAPER", "PAPER");
+        paperFeed = new MockFeed(0.05e18); // PAPER at $0.05
+        cardRng = new MockRandomness();
+        psaRng = new MockRandomness();
+        packs = new FirePacks(owner);
+        cards = new FireCards(owner, address(packs));
+        cardRng.setFire(address(cards));
+        psa = new FirePsa(owner, address(cards), address(paper), address(paperFeed));
+        psaRng.setFire(address(psa));
+        psaNoFeed = new FirePsa(owner, address(cards), address(paper), address(0));
+        vm.startPrank(owner);
+        packs.setSeller(seller);
+        packs.setCards(address(cards));
+        cards.setSeller(seller);
+        cards.setRandomness(address(cardRng));
+        cards.setPsa(address(psa));
+        psa.setRandomness(address(psaRng));
+        vm.stopPrank();
+
+        string[] memory names = new string[](2);
+        uint8[] memory cats = new uint8[](2);
+        names[0] = "Ember Fox"; names[1] = "Ash Wolf";
+        vm.prank(owner);
+        cards.configureFire(1, names, cats, "ipfs://x/");
+
+        // alice gets 2 packs' worth of cards (serials 1..12)
+        vm.startPrank(seller);
+        packs.mint(alice, 1, 2);
+        cards.closeFire(1);
+        vm.stopPrank();
+        vm.prank(alice);
+        cards.open(1, 2);
+        cardRng.fulfill(cardRng.last(), 7);
+        cards.process(10);
+        assertEq(cards.balanceOf(alice), 12);
+
+        paper.mint(alice, 1_000e18);
+        vm.prank(alice);
+        paper.approve(address(psa), type(uint256).max);
+    }
+
+    function _ids(uint256 from, uint256 n) internal pure returns (uint256[] memory ids) {
+        ids = new uint256[](n);
+        for (uint256 i; i < n; i++) ids[i] = from + i;
+    }
+
+    function _reveal(uint256 from, uint256 n, uint256 word) internal returns (uint256 index) {
+        vm.prank(alice);
+        index = psa.reveal(_ids(from, n));
+        psaRng.fulfill(psaRng.last(), word);
+        psa.finish(index);
+    }
+
+    function test_revealSetsAGradeAndBurnsPaper() public {
+        uint256 before = paper.balanceOf(DEAD);
+        _reveal(1, 3, 42);
+        assertEq(paper.balanceOf(DEAD) - before, 15e18, "5 PAPER each at $0.05");
+        for (uint256 id = 1; id <= 3; id++) {
+            FireCards.Card memory c = cards.cardOf(id);
+            assertGe(c.grade, 1);
+            assertLe(c.grade, 10);
+            assertFalse(psa.pending(id));
+        }
+        FireCards.Card memory c4 = cards.cardOf(4);
+        assertEq(c4.grade, 0, "untouched");
+    }
+
+    function test_imageSwitchesToTheWearFrame() public {
+        assertTrue(_contains(cards.imageFile(cards.cardOf(1)), "-clean.webp"));
+        _reveal(1, 1, 99);
+        uint256 g = cards.cardOf(1).grade;
+        string memory wear = g == 10 ? "-l1.webp" : g == 1 ? "-l6.webp" : string.concat("-l", vm.toString(6 - g / 2), ".webp");
+        assertTrue(_contains(cards.imageFile(cards.cardOf(1)), wear));
+        cards.tokenURI(1); // still renders
+    }
+
+    function test_priceFollowsPaper() public {
+        assertEq(psa.paperPerReveal(), 5e18); // $0.05 -> 5
+        paperFeed.set(0.03e18);
+        assertEq(psa.paperPerReveal(), 8e18); // $0.03 -> 8 ($0.24)
+        paperFeed.set(0.2e18);
+        assertEq(psa.paperPerReveal(), 1e18);
+        paperFeed.set(0.3e18);
+        assertEq(psa.paperPerReveal(), 1e18, "at least 1");
+        vm.warp(block.timestamp + 3 days);
+        assertEq(psa.paperPerReveal(), 5e18, "stale feed: the set number");
+        assertEq(psaNoFeed.paperPerReveal(), 5e18, "no market yet: the set number");
+        vm.prank(owner);
+        psaNoFeed.setFallbackPaper(3);
+        assertEq(psaNoFeed.paperPerReveal(), 3e18);
+    }
+
+    function test_onlyYourCards_onceEach() public {
+        vm.prank(bob);
+        vm.expectRevert(FirePsa.NotHolder.selector);
+        psa.reveal(_ids(1, 1));
+        vm.prank(alice);
+        psa.reveal(_ids(1, 1));
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.Pending.selector);
+        psa.reveal(_ids(1, 1));
+        psaRng.fulfill(psaRng.last(), 5);
+        psa.finish(0);
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.AlreadyGraded.selector);
+        psa.reveal(_ids(1, 1));
+        vm.expectRevert(FirePsa.NotReady.selector);
+        psa.finish(0); // can't finish twice
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.BadAmount.selector);
+        psa.reveal(_ids(1, 11));
+    }
+
+    function test_finishWaitsForRandomness() public {
+        vm.prank(alice);
+        uint256 i = psa.reveal(_ids(1, 1));
+        vm.expectRevert(FirePsa.NotReady.selector);
+        psa.finish(i);
+    }
+
+    function test_onlyPsaSetsGrades() public {
+        vm.expectRevert(FireCards.NotPsa.selector);
+        cards.setGrade(1, 10);
+        vm.startPrank(address(psa));
+        cards.setGrade(1, 10);
+        vm.expectRevert(FireCards.AlreadyGraded.selector);
+        cards.setGrade(1, 9);
+        vm.expectRevert(FireCards.BadGrade.selector);
+        cards.setGrade(2, 11);
+        vm.stopPrank();
+        vm.prank(owner);
+        vm.expectRevert(FireCards.AlreadySet.selector);
+        cards.setPsa(address(0xBAD));
+    }
+
+    function test_cardBurnedBeforeFinishIsSkipped() public {
+        vm.prank(alice);
+        uint256 i = psa.reveal(_ids(1, 2));
+        vm.prank(seller);
+        cards.burnFor(alice, _ids(1, 1));
+        psaRng.fulfill(psaRng.last(), 1);
+        psa.finish(i);
+        assertGt(cards.cardOf(2).grade, 0);
+    }
+
+    function test_rerequestWhenStuck() public {
+        vm.prank(alice);
+        uint256 i = psa.reveal(_ids(1, 1));
+        vm.expectRevert(FirePsa.NotStuck.selector);
+        psa.rerequest(i);
+        vm.warp(block.timestamp + 1 hours);
+        psa.rerequest(i);
+        psaRng.fulfill(psaRng.last(), 3);
+        psa.finish(i);
+        assertGt(cards.cardOf(1).grade, 0);
+    }
+
+    function test_defaultOddsAreThePerfectCurve() public view {
+        uint256[11] memory n;
+        uint256 runs = 40_000;
+        for (uint256 i; i < runs; i++) n[psa.gradeFor(1, uint256(keccak256(abi.encode(i))))]++;
+        // expected per grade: 1 & 10: 2%, 2,3,8,9: 5%, 4-7: 19%
+        uint256[11] memory pct = [uint256(0), 200, 500, 500, 1900, 1900, 1900, 1900, 500, 500, 200];
+        for (uint256 g = 1; g <= 10; g++) {
+            uint256 expected = runs * pct[g] / 10_000;
+            assertApproxEqRel(n[g], expected, 0.12e18, vm.toString(g));
+        }
+    }
+
+    function test_customOdds_onlyBeforeTheFireCloses() public {
+        uint16[10] memory odds = [uint16(1000), 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000];
+        vm.prank(owner);
+        vm.expectRevert(FirePsa.FireIsClosed.selector);
+        psa.setOdds(1, odds);
+        vm.prank(owner);
+        psa.setOdds(2, odds);
+        assertEq(psa.oddsOf(2)[0], 1000);
+        assertEq(psa.oddsOf(1)[0], 200, "default");
+        odds[0] = 999;
+        vm.prank(owner);
+        vm.expectRevert(FirePsa.BadOdds.selector);
+        psa.setOdds(3, odds);
+    }
+
+    // ---------- helpers ----------
+
+    function _contains(string memory hay, string memory needle) internal pure returns (bool) {
+        bytes memory h = bytes(hay);
+        bytes memory n = bytes(needle);
+        if (n.length > h.length) return false;
+        for (uint256 i; i <= h.length - n.length; i++) {
+            bool ok = true;
+            for (uint256 j; j < n.length; j++) if (h[i + j] != n[j]) { ok = false; break; }
+            if (ok) return true;
+        }
+        return false;
+    }
+}

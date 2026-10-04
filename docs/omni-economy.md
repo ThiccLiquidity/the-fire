@@ -1,8 +1,8 @@
 # Omni economy
 
 Decided with the owner on Oct 3 2026, one piece at a time. This replaces the earlier economy notes in
-`docs/cards-contracts.md`. Built in `contracts/src/cards/FireSale.sol` (tests: `contracts/test/cards/Sale.t.sol`),
-except the PSA reveal, which belongs in the card contract and is still to build.
+`docs/cards-contracts.md`. Built in `contracts/src/cards/FireSale.sol` (tests: `contracts/test/cards/Sale.t.sol`) and
+`contracts/src/cards/FirePsa.sol` (the PSA reveal; tests: `contracts/test/cards/Psa.t.sol`).
 Sims are in `sim/omni/`. The visual map is `docs/omni-money-map.html` (also published as the "Omni Money Map" artifact).
 
 ## The story
@@ -110,7 +110,10 @@ Every PAPER spent anywhere is burned.
 
 ## PSA reveal
 
-- Once per card. It sets the grade, and the card switches to that wear frame and seal ring colour.
+- Once per card, up to 10 at a time. The PAPER is burned, then drand picks the grade. It sets the grade, and the card
+  switches to that wear frame and seal ring colour.
+- Before PAPER has a price, a reveal costs a set number of PAPER (5 to start, the owner can change it).
+- The owner can give a Fire different odds, but only before it closes (before any of its cards exist).
 - **Odds** are a perfect curve, the same for every material:
 
 | Grade | Odds |
@@ -165,8 +168,7 @@ PLANK burned at that pace: about $3,900–7,800 a year.
 
 ## Still open
 
-- A deploy script for the sale contract, and wiring it as the seller of packs and cards.
-- The PSA reveal (in the card contract).
-- Gas measured against the real Uniswap router (fork test).
+- Gas measured against the real Uniswap router: `test/cards/SaleFork.t.sol` is ready to run from PowerShell.
+- The site screens for all of this (with the redesign).
 - Marketplace support on Robinhood Chain.
 - Before launch: a trademark search, a lawyer's read on sealed packs, an audit, and a testnet run.

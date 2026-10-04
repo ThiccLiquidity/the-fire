@@ -179,7 +179,7 @@ Things worth knowing:
 ## 7. Still to settle
 1. ~~Plank Press admin calls `PulpPool.addRewardToken(PLANK)`~~ Done per the owner (Sep 28); confirm PLANK is on the
    PulpPool reward list on the explorer on deploy day.
-2. PAPER contract address (Oct 1 2026).
+2. ~~PAPER contract address~~ `0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6` (Oct 4 2026). Check 18 decimals on chain.
 3. `MILL_BID_BASE`: the starting press bid — the owner's number, set on deploy day (default: the OpenSea floor at launch).
    Listings so far are $786+ with no real market yet; the PLANK inside a press is ~$94, and ~$90 has been suggested.
 4. Community swap aggregator embed URL. OpenSea: opensea.io/collection/the-plank-press.

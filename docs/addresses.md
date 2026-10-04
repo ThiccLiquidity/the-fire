@@ -10,7 +10,7 @@
 - `burn(tokenId)`: **payable, `burnFee = 0.0003 ETH`** (forwarded to their `feeRecipient`), caller must be `ownerOf`, **allowed only after `mintingSunset` = Oct 1 2026 00:00 UTC**. Calls `pulpPool.releaseBurned(tokenId)` then `_burn` then transfers `plankPerNFT` PLANK to the caller. → **A contract that owns a mill can burn it and receives the PLANK.** Our Seaport fill must send `0.0003 ETH` with the burn.
 - Mint fee 0.0003 ETH. Pausable by admin; AccessControl admin `0x196254c3ad32f7735420f40DA387387D5DCBd8D5`.
 - Royalties recipient (ERC-2981): `0xb495e814EFAB946e6CdCA3B344aa3A96ead5a806`. Fee recipient: `0x4B53E3D48B49f71A0E4A2BDb518efc2c8795BDe1`.
-- **PAPER is not in this contract.** Printing/claiming lives in a separate PAPER contract, not deployed yet. Plug in on deploy day.
+- **PAPER is not in this contract.** Printing/claiming lives in a separate PAPER contract: **`0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6`** (from the owner, Oct 4 2026). Not yet checked on chain from here: confirm it has 18 decimals (the Fire, FireSale and FirePsa assume 18) and that `transferFrom` to `0x…dEaD` works.
 
 ## Pulp Pool (`PulpPool.sol`, verified) — the royalty pool
 - **`0x85715BbE2707476294B0c20B7DfbE32cCcADD0E1`**

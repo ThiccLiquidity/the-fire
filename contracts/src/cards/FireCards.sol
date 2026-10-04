@@ -45,6 +45,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     IFirePacks public immutable PACKS;
     IRandomnessSource public randomness;
     address public seller;
+    /// @notice The PSA reveal contract (FirePsa): the only one that can set a card's grade, once.
+    address public psa;
 
     struct FireInfo {
         bool closed;
@@ -88,6 +90,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     mapping(bytes32 => uint32) internal _editions; // (fire, character, material) -> cards dealt so far
 
     event RandomnessSet(address source);
+    event PsaSet(address psa);
+    event MetadataUpdate(uint256 tokenId); // ERC-4906
     event SellerSet(address seller);
     event FireConfigured(uint256 indexed fire, uint256 characters, string imagesBase);
     event FireLocked(uint256 indexed fire);
@@ -110,6 +114,9 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     error NotStuck();
     error BadLength();
     error NotHolder();
+    error NotPsa();
+    error AlreadyGraded();
+    error BadGrade();
 
     constructor(address owner_, address packs_) ERC721("The Fire Cards", "FIRECARD") Ownable(owner_) {
         if (packs_ == address(0)) revert ZeroAddress();
@@ -130,6 +137,13 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         if (s == address(0)) revert ZeroAddress();
         seller = s;
         emit SellerSet(s);
+    }
+
+    function setPsa(address p) external onlyOwner {
+        if (psa != address(0)) revert AlreadySet();
+        if (p == address(0)) revert ZeroAddress();
+        psa = p;
+        emit PsaSet(p);
     }
 
     /// @notice A Fire's characters (names and categories, in the studio's order) and where its card images live
@@ -195,6 +209,24 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
             if (_ownerOf(ids[i]) != from) revert NotHolder();
             _burn(ids[i]);
         }
+    }
+
+    /// @notice The PSA contract sets a card's grade (1-10), once. Its image switches to that wear frame.
+    function setGrade(uint256 serial, uint256 grade) external {
+        if (msg.sender != psa) revert NotPsa();
+        if (grade == 0 || grade > 10) revert BadGrade();
+        _requireOwned(serial);
+        uint256 d = _card[serial];
+        if (uint8(d >> 96) != 0) revert AlreadyGraded();
+        _card[serial] = d | (grade << 96);
+        emit MetadataUpdate(serial);
+    }
+
+    /// @notice For the PSA contract: whether a card exists, its Fire and its grade (0 = unrevealed).
+    function gradeInfo(uint256 serial) external view returns (bool exists, uint256 fire, uint256 grade) {
+        if (_ownerOf(serial) == address(0)) return (false, 0, 0);
+        uint256 d = _card[serial];
+        return (true, uint32(d), uint8(d >> 96));
     }
 
     function accumulators() external view returns (int256[5] memory) {

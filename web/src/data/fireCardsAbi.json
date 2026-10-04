@@ -316,6 +316,35 @@
   },
   {
     "type": "function",
+    "name": "gradeInfo",
+    "inputs": [
+      {
+        "name": "serial",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "exists",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "grade",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "head",
     "inputs": [],
     "outputs": [
@@ -669,6 +698,19 @@
   },
   {
     "type": "function",
+    "name": "psa",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "randomness",
     "inputs": [],
     "outputs": [
@@ -824,6 +866,37 @@
         "name": "bps",
         "type": "uint96",
         "internalType": "uint96"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setGrade",
+    "inputs": [
+      {
+        "name": "serial",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "grade",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setPsa",
+    "inputs": [
+      {
+        "name": "p",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -1125,6 +1198,19 @@
   },
   {
     "type": "event",
+    "name": "MetadataUpdate",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "OpenReady",
     "inputs": [
       {
@@ -1219,6 +1305,19 @@
   },
   {
     "type": "event",
+    "name": "PsaSet",
+    "inputs": [
+      {
+        "name": "psa",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "RandomnessSet",
     "inputs": [
       {
@@ -1270,12 +1369,22 @@
   },
   {
     "type": "error",
+    "name": "AlreadyGraded",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "AlreadySet",
     "inputs": []
   },
   {
     "type": "error",
     "name": "BadCount",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadGrade",
     "inputs": []
   },
   {
@@ -1478,6 +1587,11 @@
   {
     "type": "error",
     "name": "NotHolder",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotPsa",
     "inputs": []
   },
   {

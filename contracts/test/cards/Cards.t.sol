@@ -7,6 +7,7 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {CardRules} from "../../src/cards/CardRules.sol";
 import {DeployCards} from "../../script/DeployCards.s.sol";
+import {MockERC20, MockUSDG, MockFeed} from "../Mocks.sol";
 
 /// @dev Stands in for the drand adapter: hands out ids, the test delivers words.
 contract MockRandomness {
@@ -377,21 +378,50 @@ contract DeployCardsTest is Test {
     function test_deployWiresEverythingAndHandsOwnershipToTheMultisig() public {
         DeployCards s = new DeployCards();
         address safe = address(0x5AFE);
-        address router = address(0xD5A1);
-        DeployCards.Deployed memory d = s.deploy(router, safe, safe, 500, "ipfs://packs/", address(s));
+        address drand = address(new MockRandomness()); // any contract: the adapters only store it
+        MockERC20 paper = new MockERC20("PAPER", "PAPER");
+        MockUSDG usdg = new MockUSDG();
+        DeployCards.Params memory p = DeployCards.Params({
+            router: drand, owner: safe, royaltyTo: safe, royaltyBps: 500, packBase: "ipfs://packs/",
+            paper: address(paper), plank: address(new MockERC20("PLANK", "PLANK")), usdg: address(usdg),
+            weth: address(new MockERC20("WETH", "WETH")), press: address(new MockERC20("PRESS", "PRESS")),
+            ethUsd: address(new MockFeed(3_333e8)), plankUsd: address(new MockFeed(1e9)), paperUsd: address(0),
+            v2Router: address(new MockRandomness()), revenueWallet: address(0xBEEF), burnWallet: address(0xB0B)
+        });
+        DeployCards.Deployed memory d = s.deploy(p, address(s));
+
         assertEq(address(d.cards.PACKS()), address(d.packs));
         assertEq(d.packs.cards(), address(d.cards));
+        assertEq(d.packs.seller(), address(d.sale));
+        assertEq(d.cards.seller(), address(d.sale));
+        assertEq(d.cards.psa(), address(d.psa));
         assertEq(address(d.cards.randomness()), address(d.adapter));
         assertEq(d.adapter.FIRE(), address(d.cards));
-        assertEq(address(d.adapter.ROUTER()), router);
+        assertEq(address(d.psa.randomness()), address(d.psaAdapter));
+        assertEq(d.psaAdapter.FIRE(), address(d.psa));
+        assertEq(address(d.adapter.ROUTER()), drand);
+        assertEq(address(d.sale.PACKS()), address(d.packs));
+        assertEq(address(d.sale.CARDS()), address(d.cards));
+        assertEq(d.sale.revenueWallet(), address(0xBEEF));
+        assertEq(d.sale.burnWallet(), address(0xB0B));
+        assertEq(d.sale.USDG_UNIT(), 1e6);
+        assertEq(d.sale.owner(), safe, "the sale is the multisig's from the start");
         assertEq(d.packs.pendingOwner(), safe);
         assertEq(d.cards.pendingOwner(), safe);
+        assertEq(d.psa.pendingOwner(), safe);
         vm.prank(safe); d.packs.acceptOwnership();
         vm.prank(safe); d.cards.acceptOwnership();
+        vm.prank(safe); d.psa.acceptOwnership();
         assertEq(d.packs.owner(), safe);
         assertEq(d.cards.owner(), safe);
+        assertEq(d.psa.owner(), safe);
         (address r, uint256 amt) = d.cards.royaltyInfo(1, 10_000);
         assertEq(r, safe); assertEq(amt, 500);
         assertEq(d.packs.packImageBase(), "ipfs://packs/");
+        vm.setEnv("ALLOW_EOA_OWNER", "false");
+        vm.expectRevert(bytes("OWNER should be a multisig (set ALLOW_EOA_OWNER=true to override)"));
+        s.check(p); // 0x5AFE has no code here
+        vm.setEnv("ALLOW_EOA_OWNER", "true");
+        s.check(p);
     }
 }
