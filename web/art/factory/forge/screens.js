@@ -33,6 +33,18 @@
   const getPaperBtn = () => btn('Get PAPER', 'gold', () => (window.UI?.openGetPaper ? window.UI.openGetPaper() : toast('Get PAPER is coming soon')));
   const byId = (id) => S().cards.find((c) => c.id === id);
   const rarity = (c) => RANK[c.material] * 4 + HRANK[c.holo || 'none'];
+  // tiers that get the light leak (and a Share button): Legendary = any Diamond, full-holo Charcoal or Paper, any PDA 10;
+  // Epic = holo Charcoal (frame or picture), full-holo Fire or Wood. Everything else: null.
+  function tierOf(c) {
+    const m = c.material, hl = c.holo || 'none';
+    if (m === 'diamond' || c.grade === 10 || (hl === 'full' && (m === 'charcoal' || m === 'paper'))) return 'legendary';
+    if ((m === 'charcoal' && hl !== 'none') || (hl === 'full' && (m === 'fire' || m === 'wood'))) return 'epic';
+    return null;
+  }
+  const tierRank = (c) => ({ legendary: 2, epic: 1 }[tierOf(c)] || 0);
+  const pullRank = (c) => tierRank(c) * 100 + rarity(c); // rarest last when opening, "Best" in the summary
+  // light-leak colours per material: [hot core, glow]
+  const LEAK = { paper: ['#fff6dc', '#ffd98a'], wood: ['#ffd9a0', '#ff9f2e'], fire: ['#ffd27a', '#ff5a12'], charcoal: ['#ffb08a', '#e0260c'], diamond: ['#ffffff', '#bfe6ff'] };
   const edNum = (c) => parseInt(c.edition, 10) || 0;
   const offs = {}; // one store subscription per open station
   const listen = (name, fn) => { offs[name]?.(); offs[name] = Store.on(fn); };
@@ -79,6 +91,13 @@
         const notes = rank >= 4 ? [880, 1108.7, 1318.5, 1760, 2217.5] : rank === 3 ? [659.3, 987.8, 1318.5] : [784, 1174.7];
         notes.forEach((f, i) => { tone(t + i * 0.07, f, { peak: 0.1, dec: 1.3 }); tone(t + i * 0.07, f * 2.01, { peak: 0.03, dec: 0.8 }); }); },
       boom() { if (!ac()) return; const t = ctx.currentTime; tone(t, 120, { peak: 0.35, a: 0.005, dec: 0.6, to: 38 }); hiss(t, { type: 'lowpass', f: 900, peak: 0.25, dec: 0.45 }); },
+      // the light leak: a rising shimmer (three glides) under a crackle that gets denser and louder, d seconds long
+      leak(m, d, leg) { if (!ac()) return; const t = ctx.currentTime, f = { paper: 520, wood: 330, fire: 262, charcoal: 196, diamond: 660 }[m] || 400;
+        [1, 1.5, 2.01].forEach((k, i) => tone(t, f * k, { type: i ? 'sine' : 'triangle', peak: (leg ? 0.06 : 0.04) / (i + 1), a: d, dec: 0.16, to: f * k * (leg ? 2.6 : 2) }));
+        const n = leg ? 30 : 16; for (let i = 0; i < n; i++) { const u = Math.sqrt(i / n);
+          hiss(t + u * d, { f: 2200 + Math.random() * 4500, q: 2.2, peak: 0.025 + u * (leg ? 0.15 : 0.1), dec: 0.01 + Math.random() * 0.02 }); } },
+      pop(leg) { if (!ac()) return; const t = ctx.currentTime; hiss(t, { type: 'highpass', f: 2400, q: 0.6, peak: leg ? 0.24 : 0.16, a: 0.006, dec: leg ? 0.5 : 0.3 });
+        tone(t, leg ? 1760 : 1318.5, { peak: 0.05, dec: 0.9 }); },
     };
   })();
 
@@ -105,6 +124,64 @@
     if (selectable) b.setAttribute('aria-pressed', String(selected));
     return b;
   }
+
+  // ---------- share your pull: a 1080 x 1350 PNG of the card, its odds and the wordmark, then the share sheet (or a download)
+  const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
+  const holoLabel = (c) => { const hl = c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none'; return hl === 'none' ? '' : HOLO[hl]; };
+  const pullLine = (c) => { const n = window.Info?.pullOdds?.(c.material, c.holo || 'none'); return (n ? `1 in ${n}` : '') + (c.grade === 10 ? (n ? ' · ' : '') + 'PDA 10' : ''); };
+  async function shareImage(c) {
+    const W = 1080, H = 1350, [core, glow] = LEAK[c.material], tier = tierOf(c);
+    await Promise.all(['400 64px "Russo One"', '800 36px Nunito', '600 30px Nunito'].map((f) => document.fonts.load(f).catch(() => {})));
+    await document.fonts.ready;
+    const [strip, word] = await Promise.all([loadImg(Store.cardImg(c)), loadImg('ui/omni-wordmark.webp').catch(() => null)]);
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+    // the forge: warm planks, an ember glow behind the card, dark edges
+    let gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#3b2614'); gr.addColorStop(0.55, '#22150b'); gr.addColorStop(1, '#0d0805');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(0,0,0,.14)'; for (let x = 88; x < W; x += 180) g.fillRect(x, 0, 3, H);
+    gr = g.createRadialGradient(W / 2, 470, 40, W / 2, 470, 640); gr.addColorStop(0, tier ? glow + 'aa' : 'rgba(255,150,60,.42)'); gr.addColorStop(0.45, 'rgba(255,120,40,.14)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    gr = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.8); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.6)');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    // the card: its slice of the strip (ungraded, then PDA 1-10)
+    const sw = strip.naturalWidth / 11, sh = strip.naturalHeight, ch = 760, cw = Math.round(ch * sw / sh), cx = (W - cw) / 2, cy = 92;
+    g.save(); g.shadowColor = tier ? glow : 'rgba(0,0,0,.8)'; g.shadowBlur = tier ? 70 : 40; g.shadowOffsetY = tier ? 0 : 14;
+    g.drawImage(strip, (c.grade == null ? 0 : c.grade) * sw, 0, sw, sh, cx, cy, cw, ch); g.restore();
+    g.drawImage(strip, (c.grade == null ? 0 : c.grade) * sw, 0, sw, sh, cx, cy, cw, ch); // once more, crisp over its own glow
+    // text
+    const fit = (txt, font, px, max) => { let s = px; do g.font = font.replace('{}', s + 'px'); while (g.measureText(txt).width > max && (s -= 2) > 20); };
+    g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+    fit(c.character, '400 {} "Russo One", sans-serif', 66, W - 120); g.fillStyle = '#f6e8cf'; g.shadowColor = '#000'; g.shadowBlur = 0; g.shadowOffsetY = 4;
+    g.fillText(c.character, W / 2, 940); g.shadowOffsetY = 0;
+    const kind = [Store.MAT_LABEL[c.material], holoLabel(c)].filter(Boolean).join(' · ');
+    fit(kind, '800 {} Nunito, sans-serif', 38, W - 160); g.fillStyle = core; g.shadowColor = glow; g.shadowBlur = 18; g.fillText(kind, W / 2, 1000); g.shadowBlur = 0;
+    const odds = pullLine(c);
+    if (odds) { fit(odds, '400 {} "Russo One", sans-serif', 76, W - 120); g.fillStyle = '#ffd27a'; g.shadowColor = 'rgba(255,170,60,.7)'; g.shadowBlur = 24; g.fillText(odds, W / 2, 1102); g.shadowBlur = 0; }
+    g.font = '600 30px Nunito, sans-serif'; g.fillStyle = '#b9a385'; g.fillText(`Pull odds · Series ${c.series}`, W / 2, 1152);
+    // the wordmark, small: the Omni mark + FORGE, like the top bar
+    g.font = '400 40px "Russo One", sans-serif'; const fw = g.measureText('FORGE').width, wh = 46, ww = word ? wh * word.naturalWidth / word.naturalHeight : 0, gap = word ? 12 : 0;
+    const x0 = (W - ww - gap - fw) / 2, by = 1262;
+    if (word) g.drawImage(word, x0, by - wh + 6, ww, wh);
+    g.textAlign = 'left'; g.lineJoin = 'round'; g.lineWidth = 6; g.strokeStyle = '#0d141c'; g.strokeText('FORGE', x0 + ww + gap, by); g.fillStyle = '#f9e2b4'; g.fillText('FORGE', x0 + ww + gap, by);
+    return new Promise((ok, no) => cv.toBlob((b) => (b ? ok(b) : no(new Error('toBlob'))), 'image/png'));
+  }
+  async function shareCard(c, from) {
+    if (from) { if (from.getAttribute('aria-busy') === 'true') return; from.setAttribute('aria-busy', 'true'); }
+    try {
+      const blob = await shareImage(c), slug = c.character.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const name = `omni-forge-${slug}.png`, file = new File([blob], name, { type: 'image/png' });
+      const kind = [Store.MAT_LABEL[c.material], holoLabel(c)].filter(Boolean).join(' · '), odds = pullLine(c);
+      const title = `${c.character}, ${kind}`, text = `I pulled ${c.character} (${kind}${odds ? ', ' + odds : ''}) at the Omni Forge.`;
+      if (navigator.canShare?.({ files: [file] })) {
+        try { await navigator.share({ files: [file], title, text }); } catch (e) { if (e?.name !== 'AbortError') toast('Couldn’t share it', 'bad'); }
+        return;
+      }
+      const url = URL.createObjectURL(blob), a = h('a', { href: url, download: name, hidden: true });
+      (from?.closest('dialog') || document.body).append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast('Saved', 'good');
+    } catch { toast('Couldn’t make the image', 'bad'); } finally { from?.removeAttribute('aria-busy'); }
+  }
+  const shareBtn = (c, cls = '') => { const b = btn('Share', 'share-b ' + cls, () => shareCard(c, b), { 'aria-label': `Share your ${c.character}, ${[Store.MAT_LABEL[c.material], holoLabel(c)].filter(Boolean).join(' ')}` }); return b; };
 
   // ---------- pack contents: 3 Paper, 1 Wood, 1 Wood or better, 1 Fire or better
   function roll(table) { let u = Math.random(), acc = 0; for (const [v, p] of table) { acc += p; if (u < acc) return v; } return table[table.length - 1][0]; }
@@ -205,9 +282,11 @@
       if (busy) return; busy = true;
       const prior = new Map(); S().cards.forEach((c) => { const k = dupKey(c); prior.set(k, (prior.get(k) || 0) + 1); });
       const packs = []; for (let i = 0; i < n; i++) packs.push(makePack(series));
+      // test hook (harmless): window.__forcePull = [{ material: 'diamond', holo: 'full' }, ...] sets the first pack's last cards, once
+      if (Array.isArray(window.__forcePull)) { window.__forcePull.forEach((o, k) => packs[0][5 - k] && Object.assign(packs[0][5 - k], o)); delete window.__forcePull; }
       let id = Math.max(999, ...S().cards.map((c) => c.id)), serial = Math.max(0, ...S().cards.map((c) => c.serial));
       packs.flat().forEach((c) => { c.id = ++id; c.serial = ++serial; }); // makePack numbers each pack from the same start
-      packs.forEach((p) => p.sort((a, b) => rarity(a) - rarity(b))); // rarest last (ties: holo after plain)
+      packs.forEach((p) => p.sort((a, b) => pullRank(a) - pullRank(b))); // rarest last: Legendary, then Epic, then by material and holo
       const cards = packs.flat(); cards.forEach((c) => hide.add(c.id));
       Store.update((s) => { s.sealed[series] -= n; s.cards.push(...cards); Store.log(`Opened ${n === 1 ? 'a' : n} Series ${series} pack${n > 1 ? 's' : ''}`); });
       packsEl.hidden = true; stage.hidden = false;
@@ -235,7 +314,7 @@
         put(meta); const label = n > 1 ? `Pack ${p + 1} of ${n}` : `Series ${series} pack`;
         const from = await race(ripPack({ area, msg, label, tag: n > 1 ? `${p + 1} / ${n}` : null, halted, pause }));
         if (halted()) break;
-        await race(runStack({ order: packs[p], from, area, msg, meta, op, halted, pause, tilt, lastPack: p === n - 1 }));
+        await race(runStack({ order: packs[p], from, area, msg, meta, op, ctrls, halted, pause, tilt, lastPack: p === n - 1 }));
       }
       tilt.stop(); ac.abort();
       if (!root.isConnected || !root.closest('dialog')?.open) return;
@@ -320,7 +399,7 @@
     }
 
     // the stack: face down, the top card turns over; swipe it away (or tap / Enter) for the next one
-    function runStack({ order, from, area, msg, meta, op, halted, pause, tilt, lastPack }) {
+    function runStack({ order, from, area, msg, meta, op, ctrls, halted, pause, tilt, lastPack }) {
       return new Promise((resolve) => {
         const els = order.map((c) => {
           const back = h('div', { class: 'face back2' }, h('img', { src: BACK, alt: '', draggable: 'false' }), h('i', { class: 'tease-fx', 'aria-hidden': 'true' }));
@@ -341,29 +420,36 @@
         } else stk.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300 });
 
         async function reveal() {
-          const el = rest[0], c = el._c, i = order.length - rest.length, last = rest.length === 1, r = RANK[c.material];
+          const el = rest[0], c = el._c, i = order.length - rest.length, last = rest.length === 1, r = RANK[c.material], tier = tierOf(c), rm = reduced();
           el.inert = false; el.setAttribute('aria-label', `Card ${i + 1} of ${order.length}, face down`); el.focus({ preventScroll: true });
           put(meta, h('span', { class: 'op-n', text: `${i + 1} / ${order.length}` }));
           await pause(i === 0 ? 600 : 160); if (halted()) return;
-          if (last && r >= 2) { // tease the rare: the back glows in its material before it turns
+          if (last && r >= 2) { // tease the rare: the back glows in its material before it turns (a short tease leads into the leak)
             msg.textContent = 'Something’s glowing…';
             el.classList.add('tease', 't-' + c.material); Sfx.tease(c.material);
-            await pause({ fire: 850, charcoal: 1000, diamond: 1200 }[c.material]); if (halted()) return;
-            el.classList.remove('tease');
-          } else if (last) msg.textContent = 'Last card…';
-          el.classList.add('flipped'); Sfx.flip();
+            await pause(tier ? 520 : { fire: 850, charcoal: 1000, diamond: 1200 }[c.material]); if (halted()) return;
+            if (!tier) el.classList.remove('tease');
+          } else if (last && !tier) msg.textContent = 'Last card…';
+          const slow = tier && !rm;
+          if (tier) { await leak(el, c, tier === 'legendary', msg, pause); if (halted()) return; }
+          el.classList.toggle('slow', !!slow); el.classList.add('flipped'); Sfx.flip();
+          if (tier) { el.classList.remove('tease'); el._lk?.(); if (rm) el.querySelector('.face.front').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 350 }); }
           const name = `${Store.MAT_LABEL[c.material]}${c.holo !== 'none' ? ' · ' + HOLO[c.holo] : ''}${c.grade === 10 ? ' · PDA 10' : ''}`;
-          if (r >= 2) { el.classList.add('rare', 'burst'); Sfx.chime(r); msg.textContent = name + '!'; }
+          if (r >= 2 || tier) { el.classList.add('rare', 'burst'); Sfx.chime(tier === 'legendary' ? 4 : tier ? 3 : r); msg.textContent = name + '!'; }
           else msg.textContent = c.holo !== 'none' ? name + '!' : last ? name : 'Swipe or tap for the next card';
-          if (c.material === 'diamond' || c.grade === 10) bigMoment(c, el, op);
           put(meta, h('span', { class: 'op-n', text: `${i + 1} / ${order.length}` }), matChip(c.material), holoBadge(c.holo));
           el.setAttribute('aria-label', `${describe(c)}. ${last ? (lastPack ? 'Press to see all your cards' : 'Press for the next pack') : 'Press for the next card'}`);
+          if (tier === 'legendary') { await pause(slow ? 700 : 0); if (halted()) return; bigMoment(c, el, op); }
           if (c.holo !== 'none') tilt.start(el);
           ready = true;
+          if (tier) { // once the moment settles: Share
+            await pause(tier === 'legendary' ? 2300 : slow ? 1000 : 300); if (halted() || rest[0] !== el) return;
+            ctrls.querySelector('.share-b')?.remove(); ctrls.prepend(shareBtn(c, 'gold'));
+          }
         }
         async function next(sign = 1) {
           if (!ready) return; ready = false; tilt.stop();
-          const el = rest.shift(); el.inert = true; Sfx.slide();
+          const el = rest.shift(); el.inert = true; Sfx.slide(); ctrls.querySelector('.share-b')?.remove();
           el.style.transition = reduced() ? 'opacity .25s' : 'transform .4s cubic-bezier(.4,.1,.7,.7), opacity .4s .05s';
           if (!reduced()) el.style.transform = `translate(${sign * 125}%, -10%) rotate(${sign * 22}deg)`;
           el.style.opacity = 0;
@@ -398,20 +484,80 @@
       });
     }
 
-    // a Diamond or a PDA 10: flash, a burst of sparks, then settle
+    // the light leak (Epic and Legendary): the card hesitates, light cracks out of its edges and through jagged seams across
+    // the back, brighter and brighter, then it bursts open. Reduced motion: a short static glow, then the card fades in.
+    async function leak(el, c, leg, msg, pause) {
+      const [core, glow] = LEAK[c.material], dur = leg ? 1100 : 600, rm = reduced(), back = el.querySelector('.back2');
+      el.style.setProperty('--lk', glow); el.style.setProperty('--lkc', core);
+      const halo = h('i', { class: 'lk-halo', 'aria-hidden': 'true' }), edge = h('i', { class: 'lk-edge', 'aria-hidden': 'true' });
+      el.prepend(halo); back.append(edge); el.classList.add('leak', leg ? 'lk-leg' : 'lk-epic');
+      msg.textContent = leg ? 'Light’s pouring out…' : 'Something’s breaking through…';
+      Sfx.leak(c.material, dur / 1000, leg);
+      const anims = [];
+      el._lk = () => { // on the flip: the back turns away, the halo fades
+        anims.forEach((a) => a.cancel()); el.classList.remove('leak');
+        halo.animate([{ opacity: 1 }, { opacity: 0 }], { duration: rm ? 300 : 1000, easing: 'ease-out', fill: 'forwards' }).finished.then(() => halo.remove(), () => {});
+      };
+      if (rm) { await pause(leg ? 650 : 420); return; }
+      const sv = seams(leg ? 6 : 4, c.material); back.append(sv);
+      const flick = (n, lo, hi) => Array.from({ length: n + 1 }, (_, k) => { const u = k / n; return { opacity: u === 1 ? 1 : Math.min(1, lo + (hi - lo) * u * u + (k % 2 ? 0.12 : -0.08) * u) }; });
+      const T = { duration: dur, easing: 'linear', fill: 'forwards' };
+      anims.push(halo.animate(flick(leg ? 14 : 8, 0.05, 1), T), edge.animate(flick(leg ? 12 : 7, 0.1, 1), T),
+        back.querySelector('img').animate([{ filter: 'brightness(1)' }, { filter: `brightness(${leg ? 0.38 : 0.5}) saturate(.7)`, offset: 0.35 }, { filter: `brightness(${leg ? 0.3 : 0.42}) saturate(.6)` }], T),
+        halo.animate([{ transform: 'scale(.97)' }, { transform: `scale(${leg ? 1.05 : 1.02})` }], { ...T, easing: 'ease-in' }));
+      sv.querySelectorAll('path').forEach((pa, k) => { // each crack runs across the back, the later ones start later
+        const d0 = (pa.dataset.d || 0) * dur * 0.45;
+        anims.push(pa.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: Math.max(140, dur * 0.7 - d0 * 0.5), delay: d0, easing: 'cubic-bezier(.3,.1,.6,1)', fill: 'both' }));
+      });
+      anims.push(sv.animate(flick(leg ? 16 : 9, 0.35, 1), T));
+      const shake = leg ? [0, -1.2, 1.4, -1.8, 2.2, -2.4, 2.8, -2.6, 3, -1.5, 0] : [0, -0.8, 1, -1.2, 1.2, -0.6, 0];
+      anims.push(el.querySelector('.sc-tilt').animate(shake.map((a, k) => ({ transform: `translate(${(k % 2 ? 1 : -1) * Math.abs(a) * 0.6}px, 0) rotate(${a * 0.5}deg) scale(${1 + (k / shake.length) * (leg ? 0.045 : 0.025)})` })),
+        { duration: dur, easing: 'ease-in' }));
+      await pause(dur);
+      Sfx.pop(leg);
+      const fl = h('i', { class: 'lk-flash', 'aria-hidden': 'true' }); el.append(fl);
+      fl.animate([{ opacity: 0, transform: 'scale(.5)' }, { opacity: 1, transform: 'scale(.95)', offset: 0.25 }, { opacity: 0, transform: `scale(${leg ? 1.6 : 1.3})` }],
+        { duration: leg ? 700 : 520, easing: 'ease-out' }).finished.then(() => fl.remove(), () => fl.remove());
+    }
+    // jagged seams: a few cracks from the edges across the back (viewBox 100 x 140 is the card's shape, so strokes stay even)
+    function seams(n, m) {
+      const NS = 'http://www.w3.org/2000/svg', sv = document.createElementNS(NS, 'svg'), id = 'lkg' + Math.random().toString(36).slice(2, 8);
+      sv.setAttribute('viewBox', '0 0 100 140'); sv.setAttribute('preserveAspectRatio', 'none'); sv.setAttribute('class', 'lk-seams'); sv.setAttribute('aria-hidden', 'true');
+      if (m === 'diamond') sv.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">${['#ff8ae0', '#ffe98a', '#8affd0', '#8ad8ff', '#c48aff', '#ffffff'].map((col, k) => `<stop offset="${k / 5}" stop-color="${col}"/>`).join('')}</linearGradient></defs>`;
+      const crack = (x, y, a, len, seg) => { const pts = [[x, y]]; let left = len;
+        while (left > 0) { a += (Math.random() - 0.5) * 1.3; const s = seg * (0.6 + Math.random() * 0.8);
+          x = Math.max(1.5, Math.min(98.5, x + Math.cos(a) * s)); y = Math.max(1.5, Math.min(138.5, y + Math.sin(a) * s)); pts.push([x, y]); left -= s; // stays on the card
+          a += (Math.atan2(70 - y, 50 - x) - a) * 0.18; } // drift toward the middle
+        return pts; };
+      const d = (pts) => 'M' + pts.map(([x, y]) => x.toFixed(1) + ' ' + y.toFixed(1)).join('L');
+      const add = (pts, k) => ['g', 'c'].forEach((cl) => { const pa = document.createElementNS(NS, 'path'); pa.setAttribute('d', d(pts)); pa.setAttribute('class', cl); pa.setAttribute('pathLength', '1');
+        if (cl === 'g' && m === 'diamond') pa.setAttribute('stroke', `url(#${id})`); pa.dataset.d = k; sv.append(pa); });
+      for (let k = 0; k < n; k++) {
+        const side = k % 4, u = 0.15 + Math.random() * 0.7; // from each edge in turn, aimed inward
+        const [x, y, a] = side === 0 ? [u * 100, 0, Math.PI / 2] : side === 1 ? [100, u * 140, Math.PI] : side === 2 ? [u * 100, 140, -Math.PI / 2] : [0, u * 140, 0];
+        const pts = crack(x, y, a + (Math.random() - 0.5) * 0.9, 36 + Math.random() * 40, 6); add(pts, k / n);
+        if (Math.random() < 0.7) { const j = 2 + Math.floor(Math.random() * (pts.length - 3)), [bx, by] = pts[Math.max(1, j)]; add(crack(bx, by, a + (Math.random() < 0.5 ? 1 : -1) * (0.7 + Math.random() * 0.6), 12 + Math.random() * 16, 4), k / n + 0.25); }
+      }
+      return sv;
+    }
+
+    // a Legendary card (Diamond, full-holo Charcoal or Paper, PDA 10): flash, a burst of sparks, then settle
+    const BM_SPARKS = { dia: ['#ffffff', '#d8f0ff', '#9fd8ff', '#c9b6ff', '#ffd27a', '#ff9a3c'], g10: ['#fff6d6', '#ffd27a', '#ffb347', '#ff7a2e', '#ffffff'],
+      charcoal: ['#fff2e0', '#ffb070', '#ff6a2a', '#ff3a1a', '#ffd27a'], paper: ['#ffffff', '#fff4d6', '#ffe7a8', '#ffd27a', '#f6e8cf'] };
     function bigMoment(c, el, op) {
-      const dia = c.material === 'diamond';
+      const dia = c.material === 'diamond', g10 = c.grade === 10, fh = !dia && c.holo === 'full' && (c.material === 'charcoal' || c.material === 'paper');
+      const base = dia ? 'Diamond' : fh ? 'Full-holo ' + Store.MAT_LABEL[c.material] : null;
+      const kind = dia ? 'dia' : fh ? c.material : 'g10';
       const cv = h('canvas', { class: 'bm-cv' });
-      const ov = h('div', { class: 'bigm ' + (dia ? 'dia' : 'g10'), 'aria-hidden': 'true' }, h('i', { class: 'bm-flash' }), h('i', { class: 'bm-glow' }), cv,
-        h('b', { class: 'bm-t', text: dia && c.grade === 10 ? 'Diamond · PDA 10' : dia ? 'Diamond!' : 'PDA 10!' }));
+      const ov = h('div', { class: 'bigm ' + (fh ? 'fh fh-' + kind : kind), 'aria-hidden': 'true' }, h('i', { class: 'bm-flash' }), h('i', { class: 'bm-glow' }), cv,
+        h('b', { class: 'bm-t', text: base ? base + (g10 ? ' · PDA 10' : '!') : 'PDA 10!' }));
       (op.closest('dialog') || op).append(ov); Sfx.boom(); op.classList.add('big'); setTimeout(() => op.classList.remove('big'), 2300);
-      if (!reduced()) { sparks(cv, el.getBoundingClientRect(), dia); const q = op.querySelector('.op-area'); q.classList.add('quake'); setTimeout(() => q.classList.remove('quake'), 450); }
+      if (!reduced()) { sparks(cv, el.getBoundingClientRect(), BM_SPARKS[kind]); const q = op.querySelector('.op-area'); q.classList.add('quake'); setTimeout(() => q.classList.remove('quake'), 450); }
       setTimeout(() => ov.classList.add('out'), 1900); setTimeout(() => ov.remove(), 2500);
     }
-    function sparks(cv, r, dia) {
+    function sparks(cv, r, cols) {
       const dpr = Math.min(1.5, devicePixelRatio || 1), W = innerWidth, H = innerHeight;
       cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext('2d'); g.scale(dpr, dpr);
-      const cols = dia ? ['#ffffff', '#d8f0ff', '#9fd8ff', '#c9b6ff', '#ffd27a', '#ff9a3c'] : ['#fff6d6', '#ffd27a', '#ffb347', '#ff7a2e', '#ffffff'];
       const ox = r.left + r.width / 2, oy = r.top + r.height / 2, sp = Math.max(W, H) / 900; // time-based: px per second, seconds of life
       const ps = Array.from({ length: 180 }, (_, i) => { const a = Math.random() * Math.PI * 2, v = (260 + Math.random() * 900) * sp;
         return { x: ox + Math.cos(a) * r.width * 0.3, y: oy + Math.sin(a) * r.height * 0.3, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 180 * sp, life: 0.7 + Math.random() * 1.1,
@@ -462,10 +608,11 @@
       const tiles = cards.map((c) => {
         const k = dupKey(c), isNew = !seen.get(k); seen.set(k, (seen.get(k) || 0) + 1);
         const tag = isNew ? h('span', { class: 'new-t', text: 'New' }) : h('span', { class: 'dup-b', text: `Duplicate ×${dups.get(c.id)?.n || seen.get(k)}` });
-        return cardTile(c, { tag, onTap: (card) => openDetail(card.id) });
+        const tile = cardTile(c, { tag, onTap: (card) => openDetail(card.id) });
+        return tierOf(c) ? h('div', { class: 'sum-cell' }, tile, shareBtn(c, 'small')) : tile;
       });
       cards.forEach((c) => { hide.delete(c.id); fresh.add(c.id); });
-      const best = [...cards].sort((a, b) => rarity(b) - rarity(a))[0];
+      const best = [...cards].sort((a, b) => pullRank(b) - pullRank(a))[0];
       const close = () => { busy = false; stage.hidden = true; stage.classList.remove('opening'); packsEl.hidden = false; put(stage); render(); };
       const go = (name) => { close(); Sheet.close('table'); Stations.open(name); };
       const left = S().sealed[series];
@@ -500,6 +647,7 @@
         h('div', { class: 'row' },
           btn('Grade', 'primary', () => goto('grade'), { disabled: !canGrade }),
           btn('Burn', '', () => goto('burn'), { disabled: c.pending }),
+          shareBtn(c),
           h('a', { class: 'btn', href: 'https://opensea.io/', target: '_blank', rel: 'noopener' }, 'View on OpenSea')),
         !canGrade ? h('p', { class: 'muted small', text: c.pending ? 'Being graded right now.' : 'Already graded.' }) : null));
     Sheet.open('card', { title: c.character, body });

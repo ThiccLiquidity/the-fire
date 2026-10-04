@@ -279,6 +279,13 @@
   }
 
   window.Info = {
+    // pull odds for one card of a material + holo, from the same numbers as the tables above ("1 in 3,120")
+    pullOdds(material, holo = 'none') {
+      const m = M[material]; if (!m) return null;
+      const share = m.count / SERIES_CARDS, h = material === 'diamond' && holo === 'none' ? 'full' : holo;
+      const p = share * (h === 'full' ? m.full : h === 'none' ? m.none : m.frame); // picture only = frame only
+      return p > 0 ? oneIn(p) : null;
+    },
     open(sectionId) {
       const root = build();
       root.addEventListener('click', (e) => {

@@ -173,9 +173,34 @@ a.btn { text-decoration: none }
 .bigm.g10 { --bmc: rgba(255,205,110,.45) }
 .bm-t { top: 7%; font: 400 clamp(30px, 8vw, 54px)/1 var(--display); letter-spacing: .05em; color: #fff; text-shadow: 0 0 18px var(--diamond), 0 3px 0 #0d141c; animation: bm-pop .6s cubic-bezier(.3,1.6,.5,1) both }
 .bigm.g10 .bm-t { color: #fff3c4; text-shadow: 0 0 18px var(--gold), 0 3px 0 #2a1a05 }
+.bigm.fh-charcoal { --bmc: rgba(255,80,30,.42) } .bigm.fh-charcoal .bm-t { color: #ffe2cc; text-shadow: 0 0 18px #ff4a1a, 0 3px 0 #1a0602 }
+.bigm.fh-paper { --bmc: rgba(255,232,170,.45) } .bigm.fh-paper .bm-t { color: #fffaf0; text-shadow: 0 0 18px var(--gold), 0 3px 0 #2a1a05 }
 @keyframes bm-flash { 0% { opacity: .9 } 100% { opacity: 0 } }
 @keyframes bm-glow { 0% { opacity: 0 } 15% { opacity: 1 } 100% { opacity: .5 } }
 @keyframes bm-pop { from { transform: scale(.3); opacity: 0 } to { transform: none; opacity: 1 } }
+
+/* the light leak (Epic, Legendary): light at the card's edges, jagged seams across the darkened back, then a burst */
+.lk-halo { position: absolute; inset: 0; z-index: -1; border-radius: 4.2% / 3%; pointer-events: none; opacity: 0;
+  box-shadow: 0 0 6px 2px var(--lkc), 0 0 26px 8px var(--lk), 0 0 70px 20px var(--lk) }
+.lk-leg .lk-halo { box-shadow: 0 0 8px 3px var(--lkc), 0 0 30px 10px var(--lk), 0 0 80px 22px var(--lk), 0 0 130px 30px color-mix(in srgb, var(--lk) 40%, transparent) }
+.sc.m-diamond .lk-halo { box-shadow: 0 0 8px 3px #fff, -14px -10px 40px 10px #ff8ae0, 14px -12px 44px 10px #ffe98a, 16px 12px 44px 12px #8affd0, -14px 14px 44px 12px #8ad8ff,
+  0 0 80px 20px rgba(200,170,255,.7), 0 0 130px 28px rgba(190,230,255,.35) }
+.lk-edge { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
+  box-shadow: inset 0 0 0 2px var(--lkc), inset 0 0 12px 4px var(--lk), inset 0 0 46px 10px color-mix(in srgb, var(--lk) 70%, transparent) }
+.lk-seams { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible;
+  filter: drop-shadow(0 0 2px var(--lk)) drop-shadow(0 0 8px var(--lk)) }
+.lk-seams path { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1 }
+.lk-seams .g { stroke: var(--lk); stroke-width: 3 }
+.lk-seams .c { stroke: var(--lkc); stroke-width: 1 }
+.lk-leg .lk-seams .g { stroke-width: 3.4 } .lk-leg .lk-seams .c { stroke-width: 1.2; stroke: #fff }
+.lk-flash { position: absolute; inset: -30%; z-index: 6; pointer-events: none; border-radius: 50%; opacity: 0;
+  background: radial-gradient(closest-side, #fff 0%, var(--lkc) 30%, var(--lk) 55%, transparent 100%) }
+.sc.slow .inner { transition-duration: 1.2s; transition-timing-function: cubic-bezier(.25,.55,.25,1.06) }
+/* reduced motion: no seams, no slow-mo, just a steady glow */
+@media (prefers-reduced-motion: reduce) { .sc.leak .lk-halo { opacity: .9 } .sc.leak .lk-edge { opacity: 1 } }
+.stage-ctrls .share-b { order: -1 }
+.sum-cell { display: grid; grid-template-rows: 1fr auto; gap: 4px; min-width: 0 }
+.sum-cell .share-b { justify-self: center; min-height: 34px; padding: 0 1em }
 
 /* the summary */
 .op-sum-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap }
