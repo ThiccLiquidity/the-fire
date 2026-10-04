@@ -19,7 +19,7 @@ numbers below are the starting values.
 
 | Setting | Start |
 |---|---|
-| Packs in the drop | 167 (about 1,000 cards). Sold out means gone: no more packs for that Fire, ever. |
+| Packs in the drop | 167 **total, starters included** (about 1,000 cards). Sold out means gone: no more packs for that Fire, ever. |
 | Pack price | $2.50 |
 | PAPER per pack | 1 |
 | PLANK burn share | 30% |
@@ -30,6 +30,12 @@ numbers below are the starting values.
 | Wallet limit (paid packs) | 5 |
 | Wallet limit lifts after | 48 hours |
 | PSA odds | 2 / 10 / 38 / 38 / 10 / 2% |
+
+## The owner's setup screen (to build with the site)
+
+The owner enters **total packs** (167) and **starter packs** (50); the screen shows the **paid packs** left (117) and
+sends that as `packs` (the contract counts paid packs; starters come on top of that). It also takes every other
+per-drop number, the holder-window snapshot root, and the picks.
 
 ## Holders first, and no bot contracts
 
