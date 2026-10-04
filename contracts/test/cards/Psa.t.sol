@@ -73,7 +73,7 @@ contract PsaTest is Test {
 
     function _reveal(uint256 from, uint256 n, uint256 word) internal returns (uint256 index) {
         vm.prank(alice);
-        index = psa.reveal(_ids(from, n));
+        index = psa.reveal(_ids(from, n), type(uint256).max);
         psaRng.fulfill(psaRng.last(), word);
         psa.finish(index);
     }
@@ -120,27 +120,27 @@ contract PsaTest is Test {
     function test_onlyYourCards_onceEach() public {
         vm.prank(bob);
         vm.expectRevert(FirePsa.NotHolder.selector);
-        psa.reveal(_ids(1, 1));
+        psa.reveal(_ids(1, 1), type(uint256).max);
         vm.prank(alice);
-        psa.reveal(_ids(1, 1));
+        psa.reveal(_ids(1, 1), type(uint256).max);
         vm.prank(alice);
         vm.expectRevert(FirePsa.Pending.selector);
-        psa.reveal(_ids(1, 1));
+        psa.reveal(_ids(1, 1), type(uint256).max);
         psaRng.fulfill(psaRng.last(), 5);
         psa.finish(0);
         vm.prank(alice);
         vm.expectRevert(FirePsa.AlreadyGraded.selector);
-        psa.reveal(_ids(1, 1));
+        psa.reveal(_ids(1, 1), type(uint256).max);
         vm.expectRevert(FirePsa.NotReady.selector);
         psa.finish(0); // can't finish twice
         vm.prank(alice);
         vm.expectRevert(FirePsa.BadAmount.selector);
-        psa.reveal(_ids(1, 11));
+        psa.reveal(_ids(1, 11), type(uint256).max);
     }
 
     function test_finishWaitsForRandomness() public {
         vm.prank(alice);
-        uint256 i = psa.reveal(_ids(1, 1));
+        uint256 i = psa.reveal(_ids(1, 1), type(uint256).max);
         vm.expectRevert(FirePsa.NotReady.selector);
         psa.finish(i);
     }
@@ -162,7 +162,7 @@ contract PsaTest is Test {
 
     function test_cardBurnedBeforeFinishIsSkipped() public {
         vm.prank(alice);
-        uint256 i = psa.reveal(_ids(1, 2));
+        uint256 i = psa.reveal(_ids(1, 2), type(uint256).max);
         vm.prank(seller);
         cards.burnFor(alice, _ids(1, 1));
         psaRng.fulfill(psaRng.last(), 1);
@@ -172,10 +172,13 @@ contract PsaTest is Test {
 
     function test_rerequestWhenStuck() public {
         vm.prank(alice);
-        uint256 i = psa.reveal(_ids(1, 1));
+        uint256 i = psa.reveal(_ids(1, 1), type(uint256).max);
         vm.expectRevert(FirePsa.NotStuck.selector);
         psa.rerequest(i);
         vm.warp(block.timestamp + 1 hours);
+        vm.expectRevert(FirePsa.NotStuck.selector);
+        psa.rerequest(i); // an hour isn't enough: a keeper outage must not let the holder re-roll a grade they can see
+        vm.warp(block.timestamp + 1 days);
         psa.rerequest(i);
         psaRng.fulfill(psaRng.last(), 3);
         psa.finish(i);
@@ -207,6 +210,52 @@ contract PsaTest is Test {
         vm.prank(owner);
         vm.expectRevert(FirePsa.BadOdds.selector);
         psa.setOdds(3, odds);
+    }
+
+
+    // ---------- audit fixes (Oct 4) ----------
+
+    function test_audit_maxPaper() public {
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.PriceMoved.selector);
+        psa.reveal(_ids(1, 2), 9e18); // 2 cards x 5 PAPER = 10
+    }
+
+    function test_audit_cardCantMoveWhileGrading() public {
+        vm.prank(alice);
+        uint256 i = psa.reveal(_ids(1, 1), type(uint256).max);
+        assertTrue(cards.gradePending(1));
+        vm.prank(alice);
+        vm.expectRevert(FireCards.GradingInProgress.selector);
+        cards.transferFrom(alice, bob, 1); // can't dump a card whose public drand number says it grades badly
+        psaRng.fulfill(psaRng.last(), 11);
+        psa.finish(i);
+        assertFalse(cards.gradePending(1));
+        vm.prank(alice);
+        cards.transferFrom(alice, bob, 1);
+        assertEq(cards.ownerOf(1), bob);
+    }
+
+    function test_audit_feedGapKeepsTheLastPrice() public {
+        paperFeed.set(0.005e18); // PAPER at half a cent: 50 PAPER a card
+        _reveal(1, 1, 1);
+        assertEq(psa.lastPaper(), 50);
+        vm.warp(block.timestamp + 3 days); // feed gap
+        assertEq(psa.paperPerReveal(), 50e18, "not the fallback 5");
+    }
+
+    function test_audit_oddsLockOncePacksExist() public {
+        string[] memory names = new string[](1);
+        uint8[] memory cats = new uint8[](1);
+        names[0] = "A";
+        vm.prank(owner);
+        cards.configureFire(2, names, cats, "ipfs://y/");
+        vm.prank(seller);
+        packs.mint(bob, 2, 1); // a sealed pack of Fire 2 exists
+        uint16[10] memory odds = [uint16(1000), 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000];
+        vm.prank(owner);
+        vm.expectRevert(FirePsa.FireIsClosed.selector);
+        psa.setOdds(2, odds);
     }
 
     // ---------- helpers ----------

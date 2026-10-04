@@ -6,7 +6,7 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
-import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness} from "../Mocks.sol";
+import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockPlankTwap, MockPair} from "../Mocks.sol";
 
 /// @dev A Uniswap V2 router stand-in with a fixed PLANK price (it holds PLANK and pays it out). It can be told to fail,
 ///      and it enforces amountOutMin like the real one.
@@ -433,9 +433,13 @@ contract SaleTest is Test {
         sale.close(1);
     }
 
-    function test_ownerCanEndADrop() public {
+    function test_ownerCanEndADrop_onlyAfterTheLimitLifts() public {
         _open();
         _plankOnlyDone(alice);
+        vm.prank(owner);
+        vm.expectRevert(FireSale.TooEarly.selector);
+        sale.endDrop(1); // the starter window and the limited phase always run in full
+        _warp(start + 48 hours);
         vm.prank(owner);
         sale.endDrop(1);
         (bool closed,,, uint32 packCount,,,,,,) = cards.fires(1);
@@ -506,7 +510,10 @@ contract SaleTest is Test {
         picked[0] = id;
         vm.prank(owner);
         sale.pickSuggestions(2, picked);
-        assertEq(sale.credits(alice), 3);
+        assertEq(sale.credits(alice), 2, "burn credits: any drop");
+        assertEq(sale.pickCredits(2, alice), 1, "picked credit: this Fire's drop");
+        assertEq(sale.creditsFor(2, alice), 3);
+        assertEq(sale.creditsFor(1, alice), 2);
 
         vm.prank(alice);
         vm.expectRevert(FireSale.NotLive.selector);
@@ -518,7 +525,7 @@ contract SaleTest is Test {
         vm.prank(alice);
         sale.useCredits(2, 3);
         assertEq(packs.balanceOf(alice, 2), 3);
-        assertEq(sale.credits(alice), 0);
+        assertEq(sale.creditsFor(2, alice), 0);
         assertEq(paper.balanceOf(DEAD) - deadPaper, 3e18, "1 PAPER each");
         assertEq(plank.balanceOf(revenue), revBefore, "nothing else paid");
         (,,,, uint256 paidLeft,) = sale.phase(2);
@@ -539,7 +546,8 @@ contract SaleTest is Test {
         ids[0] = id;
         vm.prank(owner);
         sale.pickSuggestions(1, ids);
-        assertEq(sale.credits(bob), 1);
+        assertEq(sale.pickCredits(1, bob), 1);
+        assertEq(sale.credits(bob), 0, "only usable in Fire 1's drop");
         vm.prank(owner);
         vm.expectRevert(FireSale.AlreadyClaimed.selector);
         sale.pickSuggestions(1, ids); // once each
@@ -580,5 +588,132 @@ contract SaleTest is Test {
         vm.prank(bob);
         sale.buyWithEth{value: cost}(1, 5);
         emit log_named_uint("ETH, 5 packs (with PLANK swap)", g - gasleft());
+    }
+
+
+    /// The suggestion list clears after every picking session: unpicked suggestions don't carry over.
+    function test_suggestionListClearsAfterEachPickingSession() public {
+        vm.startPrank(bob);
+        uint256 a = sale.suggest("Ember Fox");
+        uint256 b = sale.suggest("Ash Wolf");
+        vm.stopPrank();
+        uint256[] memory one = new uint256[](1);
+        one[0] = a;
+        vm.prank(owner);
+        sale.pickSuggestions(1, one); // session for Fire 1: picks from the list a and b are in
+        assertEq(sale.currentRound(), 1, "new suggestions now go into a fresh list");
+        vm.prank(alice);
+        uint256 c = sale.suggest("Cinder Owl"); // made during/after the session: next list
+
+        // next session, for Fire 2
+        vm.prank(owner);
+        sale.configureDrop(2, _cfg(uint64(block.timestamp + 2 hours), 10, 0, 0, 5));
+        one[0] = b;
+        vm.prank(owner);
+        vm.expectRevert(FireSale.NotThisRound.selector);
+        sale.pickSuggestions(2, one); // b wasn't picked last time: it's gone
+        one[0] = c;
+        vm.prank(owner);
+        sale.pickSuggestions(2, one);
+        assertEq(sale.pickCredits(2, alice), 1);
+        assertEq(sale.currentRound(), 2);
+    }
+
+    // ---------------------------------------------------------------- audit fixes (Oct 4)
+
+    /// Picked-suggestion credits only work in that Fire's drop, so they can't take packs from a live drop.
+    function test_audit_pickCreditsOnlyForThatFire() public {
+        _open(); // drop 1 is live
+        vm.prank(owner);
+        sale.configureDrop(2, _cfg(uint64(block.timestamp + 365 days), 10, 0, 0, 5)); // a far-off drop 2
+        vm.prank(alice);
+        uint256 id = sale.suggest("Sock puppet");
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = id;
+        vm.prank(owner);
+        sale.pickSuggestions(2, ids);
+        vm.prank(alice);
+        vm.expectRevert(FireSale.NoCredits.selector);
+        sale.useCredits(1, 1);
+    }
+
+    function test_audit_picksCappedByCharacters() public {
+        uint256[] memory ids = new uint256[](4);
+        for (uint256 i; i < 4; i++) { vm.prank(bob); ids[i] = sale.suggest("x"); }
+        vm.prank(owner);
+        vm.expectRevert(FireSale.BadAmount.selector);
+        sale.pickSuggestions(1, ids); // Fire 1 has 3 characters
+    }
+
+    function test_audit_fireNumberFitsIn32Bits() public {
+        vm.prank(owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(uint256(type(uint32).max) + 8, _cfg(start, 10, 0, 0, 5));
+        string[] memory names = new string[](1);
+        uint8[] memory cats = new uint8[](1);
+        names[0] = "A";
+        vm.prank(owner);
+        vm.expectRevert(FireCards.BadLength.selector);
+        cards.configureFire(uint256(type(uint32).max) + 8, names, cats, "ipfs://x/");
+    }
+
+    function test_audit_timingsChecked() public {
+        FireSale.DropConfig memory c = _cfg(start, 10, 3, 0, 5);
+        c.liftAfter = 0;
+        vm.prank(owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(1, c); // would silently turn off PLANK-only and the wallet limit
+        c = _cfg(start, 10, 3, 0, 5);
+        c.starterWindow = 72 hours; // longer than the limited phase
+        vm.prank(owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(1, c);
+        c = _cfg(start, 10, 3, 0, 5);
+        c.starterWindow = 0; // starters with no window
+        vm.prank(owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(1, c);
+    }
+
+    function test_audit_walletsLockedWhileADropIsSetUp() public {
+        vm.prank(owner);
+        vm.expectRevert(FireSale.DropsActive.selector);
+        sale.setWallets(address(0x1111), address(0x2222));
+        _drop(1, start, 4, 0, 0, 5);
+        _open();
+        vm.prank(alice);
+        sale.buyWithPlank(1, 4, type(uint256).max); // sells out, closes
+        assertEq(sale.activeDrops(), 0);
+        vm.prank(owner);
+        sale.setWallets(address(0x1111), address(0x2222));
+        assertEq(sale.revenueWallet(), address(0x1111));
+    }
+
+    function test_audit_stalePlankPricePausesPlankAndSkipsTheSwap() public {
+        _open();
+        _plankOnlyDone(bob);
+        vm.warp(block.timestamp + 3 hours); // keeper down: the average is 3 hours old
+        ethFeed.set(ETH_USD);
+        vm.prank(alice);
+        vm.expectRevert(FireSale.FeedUnavailable.selector);
+        sale.buyWithPlank(1, 1, type(uint256).max);
+        uint256 cost = sale.quoteEth(1, 1);
+        vm.prank(alice);
+        sale.buyWithEth{value: cost}(1, 1);
+        assertEq(burnW.balance, cost * 3_000 / 10_000, "no swap on an old price");
+    }
+
+    function test_audit_longWindowAfterAKeeperGapRejected() public {
+        MockPlankTwap twap = new MockPlankTwap(PLANK_USD, address(new MockPair(address(0xE7), address(plank))));
+        FireSale s2 = new FireSale(FireSale.Config({
+            owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
+            press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
+            plankUsd: address(twap), router: address(router), revenueWallet: revenue, burnWallet: burnW,
+            paperPerSuggestion: 1e18
+        }));
+        s2.quotePlank(1, 1); // a normal 30-minute window: fine
+        twap.setWindow(PLANK_USD, 6 days); // a checkpoint after a 6-day gap: fresh-looking, but a 6-day average
+        vm.expectRevert(FireSale.FeedUnavailable.selector);
+        s2.quotePlank(1, 1);
     }
 }

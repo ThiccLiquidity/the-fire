@@ -8,11 +8,17 @@ import {Ownable2Step, Ownable} from "openzeppelin-contracts/contracts/access/Own
 
 interface IPsaCards is IERC721 {
     function setGrade(uint256 serial, uint256 grade) external;
+    function setGradePending(uint256 serial, bool pending) external;
+    function PACKS() external view returns (address);
     function gradeInfo(uint256 serial) external view returns (bool exists, uint256 fire, uint256 grade);
     function fires(uint256 fire)
         external
         view
         returns (bool closed, bool locked, uint8 characterCount, uint32, uint32, uint32, uint32, uint32, uint32, uint32);
+}
+
+interface IPsaPacks {
+    function minted(uint256 fire) external view returns (uint256);
 }
 
 interface IPsaRandomness {
@@ -41,7 +47,9 @@ contract FirePsa is Ownable2Step {
 
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint256 public constant MAX_REVEAL = 10;
-    uint256 public constant REREQUEST_AFTER = 1 hours;
+    /// @dev Same reasoning as FireCards: drand's number is public ~30s before delivery, so a reveal can only be asked
+    ///      for again after a full day with no answer (anyone can deliver; the keeper does it within seconds).
+    uint256 public constant REREQUEST_AFTER = 1 days;
     uint256 public constant PRICE_USD18 = 0.25e18; // $0.25
     uint256 public constant PAPER_FEED_MAX_AGE = 2 days;
     uint256 public constant ODDS_TOTAL = 10_000;
@@ -51,8 +59,11 @@ contract FirePsa is Ownable2Step {
     IPsaFeed public immutable PAPER_USD; // 18 decimals (PaperUsdTwap); address(0) until PAPER has a market
 
     IPsaRandomness public randomness;
-    /// @notice Whole PAPER per reveal while there is no PAPER price.
+    /// @notice Whole PAPER per reveal before PAPER has ever had a price.
     uint256 public fallbackPaper = 5;
+    /// @notice The last price-based cost seen (whole PAPER per card). Used whenever the feed has a gap, so a gap
+    ///         can't make reveals cheap (or let the owner's fallback number apply again).
+    uint256 public lastPaper;
 
     /// @dev Chance of each grade 1..10, out of ODDS_TOTAL, for Fires the owner gave their own odds.
     mapping(uint256 fire => uint16[10]) internal _odds;
@@ -78,6 +89,7 @@ contract FirePsa is Ownable2Step {
     event RevealRequested(uint256 indexed index, address indexed by, uint256[] ids, uint256 paper, uint256 requestId);
     event RevealReady(uint256 indexed index, uint256 word);
     event Graded(uint256 indexed serial, uint256 grade);
+    event Rerequested(uint256 indexed index, uint256 requestId);
 
     error AlreadySet();
     error ZeroAddress();
@@ -90,6 +102,7 @@ contract FirePsa is Ownable2Step {
     error NotStuck();
     error BadOdds();
     error FireIsClosed();
+    error PriceMoved();
 
     constructor(address owner_, address cards, address paper, address paperUsd) Ownable(owner_) {
         if (cards == address(0) || paper == address(0)) revert ZeroAddress();
@@ -114,10 +127,11 @@ contract FirePsa is Ownable2Step {
         emit FallbackPaperSet(paper);
     }
 
-    /// @notice Odds for a Fire's cards, grade 1 first, out of 10,000. Only before the Fire closes.
+    /// @notice Odds for a Fire's cards, grade 1 first, out of 10,000. Only before any of its packs exist, so
+    ///         everyone who buys a pack knows the odds.
     function setOdds(uint256 fire, uint16[10] calldata odds) external onlyOwner {
         (bool closed,,,,,,,,,) = CARDS.fires(fire);
-        if (closed) revert FireIsClosed();
+        if (closed || IPsaPacks(CARDS.PACKS()).minted(fire) != 0) revert FireIsClosed();
         uint256 sum;
         for (uint256 i; i < 10; i++) sum += odds[i];
         if (sum != ODDS_TOTAL) revert BadOdds();
@@ -129,8 +143,9 @@ contract FirePsa is Ownable2Step {
     // ================================================================ revealing
 
     /// @notice Reveal up to 10 of your cards. The PAPER is burned now; grades are set when the randomness arrives
-    ///         (anyone can then call finish; the site does it right away).
-    function reveal(uint256[] calldata ids) external returns (uint256 index) {
+    ///         (anyone can then call finish; the site does it right away). Until then the cards can't be transferred.
+    ///         `maxPaper` is the most PAPER (wei, for all the cards) the holder agrees to pay.
+    function reveal(uint256[] calldata ids, uint256 maxPaper) external returns (uint256 index) {
         uint256 n = ids.length;
         if (n == 0 || n > MAX_REVEAL) revert BadAmount();
         for (uint256 i; i < n; i++) {
@@ -140,8 +155,11 @@ contract FirePsa is Ownable2Step {
             if (grade != 0) revert AlreadyGraded();
             if (pending[id]) revert Pending();
             pending[id] = true;
+            CARDS.setGradePending(id, true);
         }
-        uint256 paper = n * paperPerReveal();
+        uint256 per = _priceNow();
+        uint256 paper = n * per;
+        if (paper > maxPaper) revert PriceMoved();
         PAPER.safeTransferFrom(msg.sender, DEAD, paper);
         uint256 rid = randomness.request();
         index = _reveals.length;
@@ -172,7 +190,7 @@ contract FirePsa is Ownable2Step {
             uint256 id = r.ids[i];
             delete pending[id];
             (bool exists, uint256 fire, uint256 grade) = CARDS.gradeInfo(id);
-            if (!exists || grade != 0) continue; // burned in the meantime
+            if (!exists || grade != 0) continue; // burned in the meantime (a burned card's pending mark doesn't matter)
             uint256 g = gradeFor(fire, uint256(keccak256(abi.encode(r.word, id))));
             CARDS.setGrade(id, g);
             emit Graded(id, g);
@@ -188,16 +206,28 @@ contract FirePsa is Ownable2Step {
         r.requestId = rid;
         r.requestedAt = uint64(block.timestamp);
         _revealOf[rid] = index + 1;
+        emit Rerequested(index, rid);
     }
 
     // ================================================================ views
 
-    /// @notice PAPER (wei) per card right now: the most whole PAPER at or under $0.25, at least 1.
+    /// @notice PAPER (wei) per card right now: the most whole PAPER at or under $0.25, at least 1. During a gap in
+    ///         the price feed, the last price-based cost; before PAPER has ever had a price, the set number.
     function paperPerReveal() public view returns (uint256) {
         uint256 px = _paperUsd();
-        if (px == 0) return fallbackPaper * 1e18;
+        if (px == 0) return (lastPaper != 0 ? lastPaper : fallbackPaper) * 1e18;
         uint256 whole = PRICE_USD18 / px;
         return (whole == 0 ? 1 : whole) * 1e18;
+    }
+
+    /// @dev paperPerReveal, remembering a fresh price-based cost for later gaps.
+    function _priceNow() internal returns (uint256) {
+        uint256 px = _paperUsd();
+        if (px == 0) return (lastPaper != 0 ? lastPaper : fallbackPaper) * 1e18;
+        uint256 whole = PRICE_USD18 / px;
+        if (whole == 0) whole = 1;
+        lastPaper = whole;
+        return whole * 1e18;
     }
 
     function oddsOf(uint256 fire) public view returns (uint16[10] memory o) {

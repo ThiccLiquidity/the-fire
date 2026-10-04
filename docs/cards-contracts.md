@@ -20,7 +20,9 @@
 3. **It goes out:** the seller calls `closeFire(fire)`. The pack count freezes and the pool is worked out from the
    rarity math and the carry-over. The pool is public (`poolOf`).
 4. **Opening:** a holder calls `open(fire, count)` (up to 10). Their packs are burned and drand randomness is
-   requested. **Nothing about the pack exists before this**, so a sealed pack can't be read in advance.
+   requested. **Nothing about the pack exists before this**: which cards it gets is decided by randomness that
+   doesn't exist yet. (The Fire's leftover pool is public, so the odds of a pack shift as others open, and the very
+   last unopened pack of a Fire gets exactly what's left. That comes with exact totals.)
 5. **Dealing:** when the randomness arrives, anyone calls `process()` (the site does it). Packs are dealt strictly in
    the order they were opened. Each draws slot 6 from the Fire-or-better cards left, slot 5 from the flexible pile
    (Fire-or-better not needed for later packs plus spare Wood), then character and holo per card. The six are minted
@@ -74,4 +76,5 @@ burned in the same transaction.
 - **Run the real-chain gas test** (above). It couldn't reach Robinhood Chain from the build machine.
 - **PAPER:** `0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6`. Confirm on chain that it has 18 decimals.
 - **The site:** the sale, starter, credits, burn and PSA screens (comes with the redesign).
-- **Before launch:** audit and a testnet run.
+- **Before launch:** a second internal audit round, fuzz and invariant tests, and a testnet run. No professional audit
+  (owner's call). The first audit is in `docs/audit-2026-10.md`.

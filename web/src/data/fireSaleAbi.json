@@ -175,6 +175,19 @@
   },
   {
     "type": "function",
+    "name": "MAX_WINDOW",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "PACKS",
     "inputs": [],
     "outputs": [
@@ -247,6 +260,19 @@
         "name": "",
         "type": "address",
         "internalType": "contract ISaleFeed"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PLANK_WINDOW_MAX",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -335,6 +361,19 @@
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "activeDrops",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -567,6 +606,43 @@
   },
   {
     "type": "function",
+    "name": "creditsFor",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "who",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "currentRound",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "dropOf",
     "inputs": [
       {
@@ -789,6 +865,30 @@
   },
   {
     "type": "function",
+    "name": "pickCredits",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pickSuggestions",
     "inputs": [
       {
@@ -804,6 +904,25 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "picksOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -923,6 +1042,32 @@
   },
   {
     "type": "function",
+    "name": "sessionFire",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sessionRound",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "setWallets",
     "inputs": [
       {
@@ -1020,6 +1165,11 @@
         "name": "granted",
         "type": "bool",
         "internalType": "bool"
+      },
+      {
+        "name": "round",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "stateMutability": "view"
@@ -1290,6 +1440,25 @@
   },
   {
     "type": "event",
+    "name": "PickingSession",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "round",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "StarterClaimed",
     "inputs": [
       {
@@ -1328,6 +1497,12 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      },
+      {
+        "name": "round",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
       },
       {
         "name": "text",
@@ -1404,6 +1579,11 @@
   },
   {
     "type": "error",
+    "name": "DropsActive",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "FeedUnavailable",
     "inputs": []
   },
@@ -1425,6 +1605,11 @@
   {
     "type": "error",
     "name": "NotSoldOut",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotThisRound",
     "inputs": []
   },
   {
@@ -1488,6 +1673,11 @@
   {
     "type": "error",
     "name": "StarterWindowClosed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooEarly",
     "inputs": []
   },
   {

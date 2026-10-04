@@ -61,7 +61,11 @@ numbers below are the starting values.
   on Robinhood Chain.
 - **The swap's floor:** it must get at least 90% of the PLANK that the 30-minute average price says. If the pool is
   pumped or manipulated beyond that, the swap is skipped and the burn share goes to the burn wallet.
-- **If the drop never sells out:** the owner can end it (`endDrop`). The Fire closes with the packs that were minted.
+- **If the drop never sells out:** the owner can end it (`endDrop`), but only after the wallet limit has lifted (48h),
+  so the starter window and the limited phase always run in full. The Fire closes with the packs that were minted.
+- **The PLANK price must be fresh:** the 30-minute average must have ended within the last 2 hours and cover at most
+  2 hours. Otherwise PLANK purchases pause and the burn share of ETH/USDG sales goes to the burn wallet, until the
+  keeper checkpoints again (it does every 30 minutes).
 
 ## Starter packs
 
@@ -86,8 +90,9 @@ credit waits for the next drop. Two ways to earn one:
   - Sim (`sim/omni/burn/`): about 1 free pack per 100 sold if people burn their Paper cards, about 5 per 100 if
     everyone burns all Paper and Wood. Below about 12 it gets close to an endless loop (a pack has 6 cards).
     Commons gain a floor of about 6¢ ($2.50 ÷ 42).
-- **Your character suggestion gets picked.** The owner grants these, but only while setting up that Fire's
-  characters, and only for that Fire's picked suggestions. There is no other way to grant credits.
+- **Your character suggestion gets picked.** The owner grants these while setting up that Fire's drop (before it
+  opens), at most one per character, and each suggestion once. A picked credit can only be used in **that Fire's
+  drop** (burn credits work in any drop), so picks can never take packs from another drop.
 
 The site tells the two stories differently ("You burned 42.0" vs. "Your character made it"). The contract uses
 one credit count for both.
@@ -99,7 +104,7 @@ Every PAPER spent anywhere is burned.
 | Use | Cost |
 |---|---|
 | Any pack (paid, starter or free) | 1 PAPER per pack |
-| Character suggestion | 1 PAPER |
+| Character suggestion | 1 PAPER. Open all the time. The list clears after every picking session: picking for a Fire takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
 | PSA reveal | The most whole PAPER that stays under $0.25 (at least 1). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1. Uses `PaperUsdTwap`; a set number until PAPER has a real market. PAPER only. |
 
 - **Get PAPER on the site:** a small box where you type how many PAPER you want, see the ETH price, and press one
@@ -113,7 +118,11 @@ Every PAPER spent anywhere is burned.
 - Once per card, up to 10 at a time. The PAPER is burned, then drand picks the grade. It sets the grade, and the card
   switches to that wear frame and seal ring colour.
 - Before PAPER has a price, a reveal costs a set number of PAPER (5 to start, the owner can change it).
-- The owner can give a Fire different odds, but only before it closes (before any of its cards exist).
+- The owner can give a Fire different odds, but only before its first pack exists, so every buyer knows the odds.
+- **The holder names the most PAPER they'll pay;** if the price moved, the reveal fails and costs nothing.
+- **While a card is being graded it can't be transferred** (it can still be burned), so nobody can sell a card
+  whose drand number they've already seen as "Unrevealed".
+- **During a gap in the PAPER price feed,** reveals cost the last price-based amount, not the starting number.
 - **Odds** are a perfect curve, the same for every material:
 
 | Grade | Odds |
@@ -129,7 +138,7 @@ Every PAPER spent anywhere is burned.
 
 | Wallet | Gets |
 |---|---|
-| Revenue | 70% of every sale. Nothing else. |
+| Revenue | 70% of every sale. Nothing else. The wallets can only be changed while no drop is set up or running. |
 | Burn | The 30% when a PLANK swap fails. Only ever buys and burns PLANK. |
 | Royalty | 5% resale royalty (ERC-2981), where marketplaces honour it. |
 | Swap fee | 0.5% of site swaps (existing `SWAP_FEE_WALLET`). |

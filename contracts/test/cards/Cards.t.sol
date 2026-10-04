@@ -7,7 +7,8 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {CardRules} from "../../src/cards/CardRules.sol";
 import {DeployCards} from "../../script/DeployCards.s.sol";
-import {MockERC20, MockUSDG, MockFeed} from "../Mocks.sol";
+import {MockERC20, MockUSDG, MockFeed, MockPlankTwap, MockPair} from "../Mocks.sol";
+import {OpenDrandRouter} from "../../src/OpenDrandRouter.sol";
 
 /// @dev Stands in for the drand adapter: hands out ids, the test delivers words.
 contract MockRandomness {
@@ -288,7 +289,7 @@ contract CardsTest is Test {
         cards.onRandomness(1, 5);
         vm.expectRevert(FireCards.NotStuck.selector);
         cards.rerequest(0); // too early
-        vm.warp(block.timestamp + 1 hours + 1);
+        vm.warp(block.timestamp + 1 days + 1);
         cards.rerequest(0); // now allowed: never answered
         uint256 newId = rng.next() - 1;
         rng.deliver(1, 42); // the old id is stale and ignored
@@ -371,21 +372,64 @@ contract CardsTest is Test {
         for (uint256 i; i < b.length; i++) if (a[i] != b[i]) return false;
         return true;
     }
+
+    // ---------- audit fixes (Oct 4) ----------
+
+    event BatchMetadataUpdate(uint256 fromTokenId, uint256 toTokenId);
+
+    function test_audit_lastPackDealtRefreshesEditions() public {
+        _sellAndClose(1, 2);
+        vm.prank(_holder(0)); cards.open(1, 1);
+        vm.prank(_holder(1)); cards.open(1, 1);
+        rng.deliver(1, 5);
+        rng.deliver(2, 6);
+        cards.process(1); // first pack: no refresh
+        vm.expectEmit(address(cards));
+        emit BatchMetadataUpdate(1, 12); // the last pack: every card's Edition becomes "k of N"
+        cards.process(1);
+    }
+
+    function test_audit_textThatWouldBreakJsonIsRejected() public {
+        string[] memory names = new string[](1);
+        uint8[] memory cats = new uint8[](1);
+        names[0] = 'Bad "quote';
+        vm.prank(owner);
+        vm.expectRevert(FireCards.BadText.selector);
+        cards.configureFire(5, names, cats, "ipfs://x/");
+        names[0] = "Fine";
+        vm.prank(owner);
+        vm.expectRevert(FireCards.BadText.selector);
+        cards.configureFire(5, names, cats, "ipfs://x\\/");
+    }
+
+    function test_audit_royaltyCappedAt10Percent() public {
+        vm.startPrank(owner);
+        vm.expectRevert(FireCards.RoyaltyTooHigh.selector);
+        cards.setDefaultRoyalty(owner, 1_001);
+        vm.expectRevert(FirePacks.RoyaltyTooHigh.selector);
+        packs.setDefaultRoyalty(owner, 1_001);
+        vm.stopPrank();
+    }
 }
+
 
 
 contract DeployCardsTest is Test {
     function test_deployWiresEverythingAndHandsOwnershipToTheMultisig() public {
+        vm.warp(1_800_000_000);
         DeployCards s = new DeployCards();
         address safe = address(0x5AFE);
-        address drand = address(new MockRandomness()); // any contract: the adapters only store it
+        address drand = address(new OpenDrandRouter());
         MockERC20 paper = new MockERC20("PAPER", "PAPER");
         MockUSDG usdg = new MockUSDG();
+        MockERC20 plank = new MockERC20("PLANK", "PLANK");
+        MockERC20 weth = new MockERC20("WETH", "WETH");
         DeployCards.Params memory p = DeployCards.Params({
             router: drand, owner: safe, royaltyTo: safe, royaltyBps: 500, packBase: "ipfs://packs/",
-            paper: address(paper), plank: address(new MockERC20("PLANK", "PLANK")), usdg: address(usdg),
-            weth: address(new MockERC20("WETH", "WETH")), press: address(new MockERC20("PRESS", "PRESS")),
-            ethUsd: address(new MockFeed(3_333e8)), plankUsd: address(new MockFeed(1e9)), paperUsd: address(0),
+            paper: address(paper), plank: address(plank), usdg: address(usdg),
+            weth: address(weth), press: address(new MockERC20("PRESS", "PRESS")),
+            ethUsd: address(new MockFeed(3_333e8)),
+            plankUsd: address(new MockPlankTwap(1e9, address(new MockPair(address(weth), address(plank))))), paperUsd: address(0),
             v2Router: address(new MockRandomness()), revenueWallet: address(0xBEEF), burnWallet: address(0xB0B)
         });
         DeployCards.Deployed memory d = s.deploy(p, address(s));
@@ -422,6 +466,21 @@ contract DeployCardsTest is Test {
         vm.expectRevert(bytes("OWNER should be a multisig (set ALLOW_EOA_OWNER=true to override)"));
         s.check(p); // 0x5AFE has no code here
         vm.setEnv("ALLOW_EOA_OWNER", "true");
+        s.check(p);
+
+        // the checks that catch a permanent mistake (memory structs alias, so change one thing and put it back)
+        p.router = address(d.adapter); // the adapter printed next to the router by the Fire deploy
+        vm.expectRevert(bytes("DRAND_ROUTER is not the OpenDrandRouter"));
+        s.check(p);
+        p.router = drand;
+        (p.ethUsd, p.plankUsd) = (p.plankUsd, p.ethUsd); // swapped feeds
+        vm.expectRevert(bytes("ETH_USD_FEED must have 8 decimals (Chainlink ETH/USD)"));
+        s.check(p);
+        (p.ethUsd, p.plankUsd) = (p.plankUsd, p.ethUsd);
+        p.paper = address(usdg); // 6 decimals
+        vm.expectRevert(bytes("PAPER is not 18 decimals"));
+        s.check(p);
+        p.paper = address(paper);
         s.check(p);
     }
 }

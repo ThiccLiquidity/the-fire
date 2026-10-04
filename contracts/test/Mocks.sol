@@ -71,6 +71,7 @@ contract MockRandomness {
 
 contract MockFeed {
     int256 public answer; uint256 public updatedAt; bool public broken;
+    uint8 public decimals = 8; function setDecimals(uint8 d) external { decimals = d; }
     function setBroken(bool b) external { broken = b; }
     bool public burnGas; function setBurnGas(bool b) external { burnGas = b; }
     constructor(int256 a) { answer = a; updatedAt = block.timestamp; }
@@ -115,4 +116,23 @@ contract MockSeaport {
         }
         return true;
     }
+}
+
+/// @dev A PLANK/USD feed shaped like PlankUsdTwap: price, its pool, and the two checkpoints of its window.
+contract MockPlankTwap {
+    int256 public answer; uint256 public updatedAt; address public PAIR;
+    struct Obs { uint256 cum; uint32 ts; }
+    Obs public prev; Obs public last;
+    constructor(int256 a, address pair) { answer = a; PAIR = pair; set(a); }
+    function decimals() external pure returns (uint8) { return 18; }
+    /// A normal 30-minute window ending now.
+    function set(int256 a) public { answer = a; updatedAt = block.timestamp; prev = Obs(0, uint32(block.timestamp - 30 minutes)); last = Obs(0, uint32(block.timestamp)); }
+    /// A window of `len` seconds ending now (what a checkpoint after a keeper gap produces).
+    function setWindow(int256 a, uint256 len) external { answer = a; updatedAt = block.timestamp; prev = Obs(0, uint32(block.timestamp - len)); last = Obs(0, uint32(block.timestamp)); }
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) { return (0, answer, 0, updatedAt, 0); }
+}
+
+contract MockPair {
+    address public token0; address public token1;
+    constructor(address a, address b) { token0 = a; token1 = b; }
 }

@@ -557,6 +557,25 @@
   },
   {
     "type": "event",
+    "name": "RoyaltySet",
+    "inputs": [
+      {
+        "name": "receiver",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "bps",
+        "type": "uint96",
+        "indexed": false,
+        "internalType": "uint96"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "SellerSet",
     "inputs": [
       {
@@ -863,6 +882,11 @@
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "RoyaltyTooHigh",
+    "inputs": []
   },
   {
     "type": "error",

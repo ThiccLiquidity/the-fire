@@ -25,6 +25,12 @@ interface ISaleFeed {
     function latestRoundData() external view returns (uint80, int256 answer, uint256, uint256 updatedAt, uint80);
 }
 
+/// @notice PlankUsdTwap's two checkpoints: the reported price is the average between them.
+interface ISaleTwap {
+    function prev() external view returns (uint256 cum, uint32 ts);
+    function last() external view returns (uint256 cum, uint32 ts);
+}
+
 /// @notice Uniswap V2 router (Robinhood Chain: 0x89e5DB8B5aA49aA85AC63f691524311AEB649eba).
 interface IV2Router {
     function swapExactETHForTokens(uint256 amountOutMin, address[] calldata path, address to, uint256 deadline)
@@ -66,7 +72,12 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     ///      (the burn share then goes to the burn wallet). Guards against a pumped or manipulated pool.
     uint256 public constant SWAP_MIN_BPS = 9_000;
     uint256 public constant ETH_FEED_MAX_AGE = 25 hours; // Chainlink ETH/USD: deviation updates + 24h heartbeat
-    uint256 public constant PLANK_FEED_MAX_AGE = 2 days;
+    /// @dev The PLANK price must be recent: its window must have ended within PLANK_FEED_MAX_AGE and be no longer than
+    ///      PLANK_WINDOW_MAX (a long window after a keeper gap would hide a recent move). Otherwise PLANK purchases pause
+    ///      and the burn share of ETH/USDG sales goes to the burn wallet until the keeper checkpoints again.
+    uint256 public constant PLANK_FEED_MAX_AGE = 2 hours;
+    uint256 public constant PLANK_WINDOW_MAX = 2 hours;
+    uint256 public constant MAX_WINDOW = 30 days; // longest starter window / wallet-limit period
     uint256 public constant MAX_PER_TX = 50;
 
     IERC20 public immutable PAPER;
@@ -112,18 +123,31 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     mapping(uint256 fire => mapping(address => bool)) public starterClaimedBy;
     mapping(uint256 fire => mapping(uint256 pressId => bool)) public pressUsed;
 
+    /// @notice Free pack credits from burning cards: usable in any drop.
     mapping(address => uint256) public credits;
+    /// @notice Free pack credits from a picked suggestion: usable in that Fire's drop.
+    mapping(uint256 fire => mapping(address => uint256)) public pickCredits;
+    mapping(uint256 fire => uint256) public picksOf;
+    /// @notice Drops configured and not yet closed. Wallets can only change while this is 0.
+    uint256 public activeDrops;
     mapping(address => uint256) public burnCount; // cards burned toward the next credit (0..41)
 
-    struct Suggestion { address by; uint64 at; bool granted; }
+    struct Suggestion { address by; uint64 at; bool granted; uint32 round; }
     Suggestion[] public suggestions;
+    /// @notice The list new suggestions join. A picking session takes everything in the current list and starts a new
+    ///         one, so the list clears after every session and unpicked suggestions don't carry over.
+    uint32 public currentRound;
+    /// @notice The Fire being picked for, and the list it picks from.
+    uint256 public sessionFire;
+    uint32 public sessionRound;
 
     event DropConfigured(uint256 indexed fire, DropConfig config);
     event PacksBought(uint256 indexed fire, address indexed buyer, uint256 count, Pay pay, uint256 paid, uint256 burnShare, bool plankBurned);
     event StarterClaimed(uint256 indexed fire, address indexed buyer, uint256 indexed pressId);
     event CreditsUsed(uint256 indexed fire, address indexed buyer, uint256 count);
     event CardsBurned(address indexed holder, uint256 count, uint256 creditsEarned, uint256 burnCount);
-    event Suggested(uint256 indexed id, address indexed by, string text);
+    event Suggested(uint256 indexed id, address indexed by, uint32 indexed round, string text);
+    event PickingSession(uint256 indexed fire, uint32 round);
     event SuggestionPicked(uint256 indexed fire, uint256 indexed id, address indexed by);
     event DropClosed(uint256 indexed fire, uint256 packs);
     event WalletsSet(address revenue, address burn);
@@ -145,6 +169,9 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     error NotSoldOut();
     error TransferFailed();
     error ZeroAddress();
+    error DropsActive();
+    error TooEarly();
+    error NotThisRound();
 
     struct Config {
         address owner;
@@ -185,7 +212,10 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
 
     // ================================================================ owner
 
+    /// @notice Change the revenue and burn wallets. Only while no drop is set up or running, so a drop's money always
+    ///      goes where it did when it was announced.
     function setWallets(address revenue, address burn) external onlyOwner {
+        if (activeDrops != 0) revert DropsActive();
         _setWallets(revenue, burn);
     }
 
@@ -207,11 +237,15 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     function configureDrop(uint256 fire, DropConfig calldata c) external onlyOwner {
         Drop storage d = drops[fire];
         if (d.start != 0 && block.timestamp >= d.start) revert DropStarted();
-        if (c.start <= block.timestamp || c.packs == 0 || c.plankOnly > c.packs || c.walletLimit == 0
-            || c.plankBurnBps > BPS || c.priceUsd == 0 || c.paperPerPack == 0) revert BadConfig();
+        if (fire > type(uint32).max || c.start <= block.timestamp || c.packs == 0 || c.plankOnly > c.packs
+            || c.walletLimit == 0 || c.plankBurnBps > BPS || c.priceUsd == 0 || c.paperPerPack == 0) revert BadConfig();
+        // the wallet limit (and the PLANK-only safety valve) needs a real period, the starter window fits inside it
+        if (c.liftAfter == 0 || c.liftAfter > MAX_WINDOW || c.starterWindow > c.liftAfter
+            || (c.starters > 0 && c.starterWindow == 0)) revert BadConfig();
         // The Fire's characters must be set in the card contract first, or the sale that sells it out couldn't close it.
         (bool closed,, uint8 characters,,,,,,,) = CARDS.fires(fire);
         if (closed || characters == 0) revert BadConfig();
+        if (d.start == 0) activeDrops += 1;
         d.start = c.start;
         d.packs = c.packs;
         d.starters = c.starters;
@@ -225,25 +259,40 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         emit DropConfigured(fire, c);
     }
 
-    /// @notice Give a free pack credit to each picked suggestion's author. Only while setting up a drop (before it
-    ///         opens), and each suggestion can be picked once, so credits can't be handed out any other way.
+    /// @notice Give a free pack credit to each picked suggestion's author, for this Fire's drop. Only while setting up
+    ///         the drop (before it opens), each suggestion once, and no more picks than the Fire has characters. The
+    ///         credit can only be used in this Fire's drop, so picks can't be used to take packs from another drop.
     function pickSuggestions(uint256 fire, uint256[] calldata ids) external onlyOwner {
         Drop storage d = drops[fire];
         if (d.start == 0) revert BadConfig();
         if (block.timestamp >= d.start) revert DropStarted();
+        (,, uint8 characters,,,,,,,) = CARDS.fires(fire);
+        if (picksOf[fire] + ids.length > characters) revert BadAmount();
+        picksOf[fire] += ids.length;
+        // The first pick for a new Fire starts a session: it picks from the current list, and new suggestions from
+        // now on go into a fresh list for the next session. Unpicked ones from older lists can't be picked again.
+        if (sessionFire != fire || currentRound == 0) {
+            sessionFire = fire;
+            sessionRound = currentRound;
+            currentRound += 1;
+            emit PickingSession(fire, sessionRound);
+        }
         for (uint256 i; i < ids.length; i++) {
             Suggestion storage s = suggestions[ids[i]];
+            if (s.round != sessionRound) revert NotThisRound();
             if (s.granted) revert AlreadyClaimed();
             s.granted = true;
-            credits[s.by] += 1;
+            pickCredits[fire][s.by] += 1;
             emit SuggestionPicked(fire, ids[i], s.by);
         }
     }
 
-    /// @notice End a live drop that hasn't sold out. No more packs are sold; the Fire closes with what was minted.
+    /// @notice End a drop that hasn't sold out, once its wallet limit has lifted (so the starter window and the
+    ///         limited phase always run in full). No more packs are sold; the Fire closes with what was minted.
     function endDrop(uint256 fire) external onlyOwner {
         Drop storage d = drops[fire];
-        if (d.start == 0 || block.timestamp < d.start) revert NotLive();
+        if (d.start == 0 || d.closed) revert NotLive();
+        if (block.timestamp < uint256(d.start) + d.liftAfter) revert TooEarly();
         _close(fire, d);
     }
 
@@ -311,12 +360,16 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     }
 
     /// @notice Spend `n` free pack credits in a live drop: the PAPER alone. Packs come out of the paid supply.
+    ///         Credits from a suggestion picked for this Fire are used first, then credits from burning cards.
     function useCredits(uint256 fire, uint256 n) external nonReentrant {
         if (n == 0 || n > MAX_PER_TX) revert BadAmount();
-        if (credits[msg.sender] < n) revert NoCredits();
+        uint256 picked = pickCredits[fire][msg.sender];
+        if (picked + credits[msg.sender] < n) revert NoCredits();
         Drop storage d = _live(fire);
         if (n > _paidLeft(d)) revert SoldOut();
-        credits[msg.sender] -= n;
+        uint256 fromPicked = picked < n ? picked : n;
+        if (fromPicked > 0) pickCredits[fire][msg.sender] = picked - fromPicked;
+        if (n > fromPicked) credits[msg.sender] -= n - fromPicked;
         d.creditPacks += uint32(n);
         _burnPaper(d, n);
         PACKS.mint(msg.sender, fire, n);
@@ -343,8 +396,8 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         if (len == 0 || len > 280) revert BadAmount();
         PAPER.safeTransferFrom(msg.sender, DEAD, PAPER_PER_SUGGESTION);
         id = suggestions.length;
-        suggestions.push(Suggestion(msg.sender, uint64(block.timestamp), false));
-        emit Suggested(id, msg.sender, text);
+        suggestions.push(Suggestion(msg.sender, uint64(block.timestamp), false, currentRound));
+        emit Suggested(id, msg.sender, currentRound, text);
     }
 
     /// @notice Anyone can close a sold-out drop (normally the last purchase does it).
@@ -355,6 +408,11 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     }
 
     // ================================================================ views
+
+    /// @notice Credits this wallet can spend in `fire`'s drop (picked-for-this-Fire plus burn credits).
+    function creditsFor(uint256 fire, address who) external view returns (uint256) {
+        return pickCredits[fire][who] + credits[who];
+    }
 
     function phase(uint256 fire) external view returns (bool live, bool plankOnly, bool limitLifted, bool startersOpen, uint256 paidLeft, uint256 startersLeft) {
         Drop storage d = drops[fire];
@@ -428,6 +486,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     function _close(uint256 fire, Drop storage d) internal {
         if (d.closed) revert NotLive();
         d.closed = true;
+        activeDrops -= 1;
         CARDS.closeFire(fire);
         emit DropClosed(fire, uint256(d.paidSold) + d.creditPacks + d.startersClaimed);
     }
@@ -440,10 +499,17 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         return uint256(px);
     }
 
-    /// @dev USD per PLANK, 18 decimals; 0 if the average is missing or stale.
+    /// @dev USD per PLANK, 18 decimals; 0 if the average is missing, stale, or spans too long a window.
     function _plankUsd() internal view returns (uint256) {
         (int256 px, uint256 at) = _feed(PLANK_USD);
         if (px <= 0 || at > block.timestamp || block.timestamp - at > PLANK_FEED_MAX_AGE) return 0;
+        (bool ok1, bytes memory r1) = address(PLANK_USD).staticcall(abi.encodeCall(ISaleTwap.prev, ()));
+        (bool ok2, bytes memory r2) = address(PLANK_USD).staticcall(abi.encodeCall(ISaleTwap.last, ()));
+        if (ok1 && ok2 && r1.length >= 64 && r2.length >= 64) {
+            (, uint32 t0) = abi.decode(r1, (uint256, uint32));
+            (, uint32 t1) = abi.decode(r2, (uint256, uint32));
+            if (t1 < t0 || t1 - t0 > PLANK_WINDOW_MAX) return 0;
+        }
         return uint256(px);
     }
 

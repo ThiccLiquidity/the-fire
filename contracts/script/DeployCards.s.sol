@@ -7,6 +7,24 @@ import {FireCards} from "../src/cards/FireCards.sol";
 import {FireSale} from "../src/cards/FireSale.sol";
 import {FirePsa} from "../src/cards/FirePsa.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
+import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
+interface ICardsDrandRouter {
+    function requestFee() external view returns (uint256);
+}
+
+interface ICardsFeed {
+    function decimals() external view returns (uint8);
+}
+
+interface ICardsPlankTwap {
+    function PAIR() external view returns (address);
+}
+
+interface ICardsPair {
+    function token0() external view returns (address);
+    function token1() external view returns (address);
+}
 
 /**
  * Deploys every Omni card contract (see ../docs/cards-contracts.md and ../docs/omni-economy.md) and wires them:
@@ -140,5 +158,20 @@ contract DeployCards is Script {
         require(p.revenueWallet != address(0) && p.burnWallet != address(0) && p.revenueWallet != p.burnWallet,
             "REVENUE_WALLET and BURN_WALLET must be set and different");
         require(p.royaltyBps <= 1000, "ROYALTY_BPS above 10%");
+
+        // The randomness wiring is permanent: make sure DRAND_ROUTER really is the OpenDrandRouter (not, say, the
+        // Fire's adapter printed next to it by the Fire deploy).
+        (bool ok, bytes memory ret) = p.router.staticcall(abi.encodeCall(ICardsDrandRouter.requestFee, ()));
+        require(ok && ret.length == 32 && abi.decode(ret, (uint256)) == 0, "DRAND_ROUTER is not the OpenDrandRouter");
+        // The price math assumes these decimals.
+        require(IERC20Metadata(p.paper).decimals() == 18, "PAPER is not 18 decimals");
+        require(IERC20Metadata(p.plank).decimals() == 18, "PLANK is not 18 decimals");
+        require(ICardsFeed(p.ethUsd).decimals() == 8, "ETH_USD_FEED must have 8 decimals (Chainlink ETH/USD)");
+        require(ICardsFeed(p.plankUsd).decimals() == 18, "PLANK_USD_FEED must be the 18-decimal PlankUsdTwap");
+        require(p.paperUsd == address(0) || ICardsFeed(p.paperUsd).decimals() == 18, "PAPER_USD_FEED must be the 18-decimal PaperUsdTwap");
+        address pair = ICardsPlankTwap(p.plankUsd).PAIR();
+        address t0 = ICardsPair(pair).token0();
+        address t1 = ICardsPair(pair).token1();
+        require((t0 == p.plank && t1 == p.weth) || (t1 == p.plank && t0 == p.weth), "PLANK_USD_FEED is not on the PLANK/WETH pool");
     }
 }

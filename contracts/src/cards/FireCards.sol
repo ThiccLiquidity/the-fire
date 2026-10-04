@@ -25,7 +25,8 @@ interface IFirePacks {
  *         1. When a Fire goes out, the seller closes it: the contract freezes the pack count and works out the Fire's
  *            pool from the rarity math and the carry-over (CardRules.computePool, ported exactly from the studio).
  *         2. A holder calls open(): their sealed pack is burned and fresh drand randomness is requested. Nothing about
- *            the pack existed before this, so a sealed pack can never be read in advance.
+ *            the pack existed before this; its cards depend on randomness that doesn't exist yet. (The leftover
+ *            pool is public, so the very last pack of a Fire gets exactly what's left: a cost of exact totals.)
  *         3. When the randomness arrives, anyone calls process() (the site does it right away). Packs are dealt
  *            strictly in the order they were opened, each drawing its 6 cards from what is left of the Fire's pool
  *            while keeping the pack guarantees (slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6 Fire-or-better). The
@@ -40,7 +41,11 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     using Strings for uint256;
 
     uint256 public constant MAX_OPEN = 10;
-    uint256 public constant REREQUEST_AFTER = 1 hours;
+    /// @dev An open's randomness can be asked for again only after a full day with no answer. drand publishes each
+    ///      round's number ~30s before anyone delivers it, so a short wait would let an opener who dislikes the cards
+    ///      they can already see re-roll while the keeper is down. Anyone (the site, the keeper) can deliver a word.
+    uint256 public constant REREQUEST_AFTER = 1 days;
+    uint96 public constant MAX_ROYALTY_BPS = 1_000;
 
     IFirePacks public immutable PACKS;
     IRandomnessSource public randomness;
@@ -88,9 +93,15 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     ///      edition (64-95), grade 0 = unrevealed (96-103).
     mapping(uint256 tokenId => uint256) internal _card;
     mapping(bytes32 => uint32) internal _editions; // (fire, character, material) -> cards dealt so far
+    /// @notice A PSA reveal is waiting for its randomness: the card can't move until its grade is set, so nobody can
+    ///         sell a card whose (already public) grade they know is bad as "Unrevealed".
+    mapping(uint256 tokenId => bool) public gradePending;
 
     event RandomnessSet(address source);
     event PsaSet(address psa);
+    event Rerequested(uint256 indexed openIndex, uint256 requestId);
+    event RoyaltySet(address receiver, uint96 bps);
+    event GradePending(uint256 indexed tokenId, bool pending);
     event MetadataUpdate(uint256 tokenId); // ERC-4906
     event SellerSet(address seller);
     event FireConfigured(uint256 indexed fire, uint256 characters, string imagesBase);
@@ -117,6 +128,9 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     error NotPsa();
     error AlreadyGraded();
     error BadGrade();
+    error BadText();
+    error GradingInProgress();
+    error RoyaltyTooHigh();
 
     constructor(address owner_, address packs_) ERC721("The Fire Cards", "FIRECARD") Ownable(owner_) {
         if (packs_ == address(0)) revert ZeroAddress();
@@ -152,8 +166,11 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         external
         onlyOwner
     {
+        if (fire > type(uint32).max) revert BadLength(); // cards store the Fire in 32 bits
         FireInfo storage f = fires[fire];
         if (f.locked) revert FireIsLocked();
+        _checkText(base);
+        for (uint256 i; i < names.length; i++) _checkText(names[i]);
         if (names.length == 0 || names.length > 255 || names.length != categories.length) revert BadLength();
         if (f.closed && names.length != f.characterCount) revert BadLength(); // dealt cards point at these indexes
         delete _names[fire];
@@ -175,6 +192,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     }
 
     function setDefaultRoyalty(address receiver, uint96 bps) external onlyOwner {
+        if (bps > MAX_ROYALTY_BPS) revert RoyaltyTooHigh();
+        emit RoyaltySet(receiver, bps);
         _setDefaultRoyalty(receiver, bps);
     }
 
@@ -211,9 +230,21 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         }
     }
 
+    /// @notice The PSA contract marks cards whose reveal is waiting for randomness (they can't be transferred until
+    ///         graded) and clears the mark.
+    function setGradePending(uint256 serial, bool pending_) external {
+        if (msg.sender != psa) revert NotPsa();
+        gradePending[serial] = pending_;
+        emit GradePending(serial, pending_);
+    }
+
     /// @notice The PSA contract sets a card's grade (1-10), once. Its image switches to that wear frame.
     function setGrade(uint256 serial, uint256 grade) external {
         if (msg.sender != psa) revert NotPsa();
+        if (gradePending[serial]) {
+            delete gradePending[serial];
+            emit GradePending(serial, false);
+        }
         if (grade == 0 || grade > 10) revert BadGrade();
         _requireOwned(serial);
         uint256 d = _card[serial];
@@ -269,6 +300,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         o.requestId = id;
         o.requestedAt = uint64(block.timestamp);
         _openOf[id] = index + 1;
+        emit Rerequested(index, id);
     }
 
     /// @notice Deal ready opens, oldest first, until one isn't ready or `maxOpens` are done. Anyone may call.
@@ -313,6 +345,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
             f.flexWoodLeft--;
         }
         f.dealt++;
+        // the Fire's last pack: every card of it now shows "k of N" as its Edition (these 6 included)
+        if (f.dealt == f.packs) emit BatchMetadataUpdate(1, nextSerial + 5);
 
         // mint order: shuffle the six
         uint256[6] memory order = [uint256(0), 1, 2, 3, 4, 5];
@@ -433,6 +467,20 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     function _category(uint8 c) private pure returns (string memory) {
         if (c > 6) return "";
         return ["Person", "Animal", "Plant", "Place", "Object", "Element", "Idea"][c];
+    }
+
+    /// @dev A card being graded can be burned but not transferred.
+    function _update(address to, uint256 tokenId, address auth) internal override returns (address from) {
+        from = super._update(to, tokenId, auth);
+        if (from != address(0) && to != address(0) && gradePending[tokenId]) revert GradingInProgress();
+    }
+
+    /// @dev Names and the image folder go into JSON as-is: no quotes, backslashes or control characters.
+    function _checkText(string calldata t) private pure {
+        bytes calldata b = bytes(t);
+        for (uint256 i; i < b.length; i++) {
+            if (b[i] == '"' || b[i] == "\\" || uint8(b[i]) < 0x20) revert BadText();
+        }
     }
 
     function supportsInterface(bytes4 id) public view override(ERC721, ERC2981) returns (bool) {

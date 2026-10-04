@@ -28,11 +28,13 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     event SellerSet(address seller);
     event CardsSet(address cards);
     event PackImageBaseSet(string base);
+    event RoyaltySet(address receiver, uint96 bps);
 
     error AlreadySet();
     error NotSeller();
     error NotCards();
     error ZeroAddress();
+    error RoyaltyTooHigh();
 
     constructor(address owner_) ERC1155("") Ownable(owner_) {}
 
@@ -59,6 +61,8 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     }
 
     function setDefaultRoyalty(address receiver, uint96 bps) external onlyOwner {
+        if (bps > 1_000) revert RoyaltyTooHigh(); // 10% at most
+        emit RoyaltySet(receiver, bps);
         _setDefaultRoyalty(receiver, bps);
     }
 
