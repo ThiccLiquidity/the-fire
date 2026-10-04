@@ -26,13 +26,26 @@ numbers below are the starting values.
 | PLANK-only packs at the start | 50 |
 | Starter packs | 50 |
 | Starter window | 24 hours |
+| Holder window | 24 hours: only wallets with a Paper Press or $69+ of PLANK (secret snapshot) can buy paid packs |
 | Wallet limit (paid packs) | 5 |
 | Wallet limit lifts after | 48 hours |
 | PSA odds | 2 / 10 / 38 / 38 / 10 / 2% |
 
+## Holders first, and no bot contracts
+
+- **The holder window (first 24 hours):** paid packs can only be bought by wallets that own at least one Paper
+  Press, or that held at least $69 of PLANK at a secret snapshot taken before the drop.
+  - **Press holders:** each press lets in one wallet per drop, so a press can't be passed around.
+  - **PLANK holders:** the snapshot is taken with `ops/snapshot` (README there). It prints one code, the "root",
+    which goes into the drop's settings. The site loads each buyer's proof automatically, so buyers do nothing extra.
+  - **Not sold out after 24 hours:** it opens to everyone.
+- **Regular wallets only while the wallet limit is on (48h).** MetaMask, Rabby, OKX and the like are regular wallets.
+  A bot contract can't spin up throwaway wallets to sweep a drop in one transaction.
+- **Free pack credits** work at any time, including the holder window.
+
 ## A drop, start to finish
 
-1. **Launch.** Two things open at once:
+1. **Launch.** The holder window starts (24h: press holders and snapshot PLANK holders only). Two things open:
    - **Starter packs for press holders.**
    - **The paid sale, PLANK only, for the first 50 packs.**
 2. **After 50 PLANK packs:** ETH and USDG can buy too. Safety valve: if the PLANK-only packs haven't sold by the time
@@ -88,8 +101,8 @@ numbers below are the starting values.
 
 Each wallet has a count of free pack credits. Credits **stack** and never expire. A credit is used in any live
 drop: mint 1 pack for 1 PAPER (burned), out of that drop's supply. If no drop is live, or it's sold out, the
-credit waits for the next drop. Like ETH and USDG, credits wait until PLANK has lit the forge (the PLANK-only packs
-are sold, or the limit has lifted), and they count toward the 5-per-wallet limit while it's on. Two ways to earn one:
+credit waits for the next drop. **Credits work at any time during any live drop** (owner's call, Oct 4): the holder
+window, the PLANK-only packs and the wallet limit don't apply to them. Two ways to earn one:
 
 - **Burn 42.0 cards.** Shown as "42.0" on the site.
   - Each wallet keeps a running burn count that never resets: 3 one day + 2 the next = 5 of 42.
@@ -99,9 +112,8 @@ are sold, or the limit has lifted), and they count toward the 5-per-wallet limit
     everyone burns all Paper and Wood. Below about 12 it gets close to an endless loop (a pack has 6 cards).
     Commons gain a floor of about 6¢ ($2.50 ÷ 42).
 - **Your character suggestion gets picked.** The owner grants these while setting up that Fire's drop (before it
-  opens), no more picks than the Fire has characters, and each suggestion once. A picked credit is for **that Fire's
-  drop**; if that drop closes before it's used, it turns into an ordinary credit for any drop (`convertPickCredits`,
-  the site does it), so it never expires.
+  opens), no more picks than the Fire has characters, and each suggestion once. With one drop at a time, picks only
+  happen while no drop is running. A picked credit is an ordinary credit: any drop, any time.
 
 The site tells the two stories differently ("You burned 42.0" vs. "Your character made it"). The contract uses
 one credit count for both.

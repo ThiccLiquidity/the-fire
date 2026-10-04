@@ -129,11 +129,10 @@ contract CardsInvariantTest is StdInvariant, Test {
         for (uint256 i; i < h.actorCount(); i++) {
             address a = h.actors(i);
             uint256 burned = h.ghostBurned(a);
-            assertEq(sale.credits(a) + h.ghostBurnCreditsUsed(a), burned / 42, "burn credits == floor(burned / 42)");
+            uint256 picks;
+            for (uint256 f = 1; f <= h.FIRES(); f++) picks += h.ghostPicks(f, a);
+            assertEq(sale.credits(a) + h.ghostBurnCreditsUsed(a), burned / 42 + picks, "credits == floor(burned / 42) + picks");
             assertEq(sale.burnCount(a), burned % 42, "running count");
-            for (uint256 f = 1; f <= h.FIRES(); f++) {
-                assertEq(sale.pickCredits(f, a) + h.ghostPicksUsed(f, a), h.ghostPicks(f, a), "pick credits");
-            }
         }
     }
 

@@ -53,3 +53,19 @@ back to the public Robinhood Chain RPC.
 - Top up the keeper wallet when it drops under ~$5 of ETH (the keeper logs `ALERT` below 0.002 ETH).
 - Updates: `cd /root/the-fire && git fetch --tags && git checkout <new tag> && cd ops/keeper && docker build -t fire-keeper . && docker rm -f fire-keeper`,
   then the same `docker run` line.
+
+## Snapshot (holder window)
+
+`ops/snapshot` takes the secret PLANK-holder snapshot for a drop's holder window: every regular wallet holding $69+
+of PLANK, priced with the same 30-minute average the sale uses. From PowerShell:
+
+```powershell
+cd C:\Users\DubT1\the-fire\ops\snapshot
+npm install
+$env:RPC = "https://rpc.mainnet.chain.robinhood.com"
+$env:PLANK_USD_FEED = "<PlankUsdTwap address>"
+node snapshot.mjs --min-usd 69 --out fire-7-holders.json
+```
+
+It prints the **root**: paste it as `holderRoot` when you set up the drop. Give the JSON file to the site so buyers'
+proofs load automatically. Run it at a moment nobody knows in advance.

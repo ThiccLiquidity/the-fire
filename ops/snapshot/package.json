@@ -1,0 +1,7 @@
+{
+  "name": "omni-snapshot",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node snapshot.mjs", "selftest": "node snapshot.mjs --selftest" },
+  "dependencies": { "viem": "^2.56.9" }
+}

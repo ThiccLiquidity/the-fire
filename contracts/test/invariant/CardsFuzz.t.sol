@@ -18,6 +18,10 @@ contract FuzzPoolHarness {
 
 /// @dev Stateless fuzz tests: pricing math, the burn split, PSA grades and price, and the pool math.
 contract CardsFuzzTest is Test {
+    function _na() internal pure returns (FireSale.Access memory a) {
+        a.proof = new bytes32[](0);
+    }
+
     address constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address owner = address(0xA11CE0);
     address revenue = address(0xBEEF);
@@ -60,7 +64,7 @@ contract CardsFuzzTest is Test {
             paperPerSuggestion: 1e18
         }));
         psa = new FirePsa(owner, address(cards), address(paper), address(paperFeed));
-        vm.startPrank(owner);
+        vm.startPrank(owner, owner);
         packs.setSeller(address(sale));
         packs.setCards(address(cards));
         cards.setSeller(address(sale));
@@ -70,7 +74,7 @@ contract CardsFuzzTest is Test {
         string[] memory names = new string[](3);
         uint8[] memory cats = new uint8[](3);
         for (uint256 i; i < 3; i++) names[i] = string.concat("Char", vm.toString(i));
-        vm.prank(owner);
+        vm.prank(owner, owner);
         cards.configureFire(1, names, cats, "ipfs://x/");
         harness = new FuzzPoolHarness();
 
@@ -78,7 +82,7 @@ contract CardsFuzzTest is Test {
         plank.mint(alice, type(uint128).max);
         usdg.mint(alice, type(uint128).max);
         vm.deal(alice, type(uint128).max);
-        vm.startPrank(alice);
+        vm.startPrank(alice, alice);
         paper.approve(address(sale), type(uint256).max);
         plank.approve(address(sale), type(uint256).max);
         usdg.approve(address(sale), type(uint256).max);
@@ -87,9 +91,9 @@ contract CardsFuzzTest is Test {
 
     function _drop(uint128 price, uint16 bps) internal returns (uint64 start) {
         start = uint64(block.timestamp + 1);
-        vm.prank(owner);
+        vm.prank(owner, owner);
         sale.configureDrop(1, FireSale.DropConfig({start: start, packs: 1_000, starters: 0, plankOnly: 0, walletLimit: 1_000,
-            starterWindow: 0, liftAfter: 1 hours, plankBurnBps: bps, priceUsd: price, paperPerPack: 1e18}));
+            starterWindow: 0, liftAfter: 1 hours, plankBurnBps: bps, priceUsd: price, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0)}));
     }
 
     function _setFeeds(int256 ethPx, int256 plankPx) internal {
@@ -142,16 +146,16 @@ contract CardsFuzzTest is Test {
         if (pay == 0) {
             cost = sale.quotePlank(1, n);
             uint256 bal = plank.balanceOf(alice);
-            vm.prank(alice);
-            sale.buyWithPlank(1, n, cost, type(uint256).max);
+            vm.prank(alice, alice);
+            sale.buyWithPlank(1, n, cost, type(uint256).max, _na());
             assertEq(bal - plank.balanceOf(alice), cost, "paid");
             assertEq(plank.balanceOf(DEAD), cost * bps / 10_000, "burn share burned");
             assertEq(plank.balanceOf(revenue) + plank.balanceOf(DEAD), cost, "revenue + burn == cost");
         } else if (pay == 1) {
             cost = sale.quoteEth(1, n);
             uint256 bal = alice.balance;
-            vm.prank(alice);
-            sale.buyWithEth{value: cost + 12345}(1, n, type(uint256).max);
+            vm.prank(alice, alice);
+            sale.buyWithEth{value: cost + 12345}(1, n, type(uint256).max, _na());
             assertEq(bal - alice.balance, cost, "paid (excess refunded)");
             uint256 share = cost * bps / 10_000;
             assertEq(burnW.balance + address(router).balance, share, "burn share: swapped or to the burn wallet");
@@ -165,8 +169,8 @@ contract CardsFuzzTest is Test {
         } else {
             cost = sale.quoteUsdg(1, n);
             uint256 bal = usdg.balanceOf(alice);
-            vm.prank(alice);
-            sale.buyWithUsdg(1, n, cost, type(uint256).max);
+            vm.prank(alice, alice);
+            sale.buyWithUsdg(1, n, cost, type(uint256).max, _na());
             assertEq(bal - usdg.balanceOf(alice), cost, "paid");
             uint256 share = cost * bps / 10_000;
             assertEq(usdg.balanceOf(burnW) + usdg.balanceOf(address(router)), share, "burn share");
@@ -197,7 +201,7 @@ contract CardsFuzzTest is Test {
             left -= o;
         }
         odds[9] = uint16(left);
-        vm.prank(owner);
+        vm.prank(owner, owner);
         psa.setOdds(7, odds);
         uint256 grade = psa.gradeFor(7, word);
         assertGe(grade, 1);

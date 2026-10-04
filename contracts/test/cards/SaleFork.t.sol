@@ -13,6 +13,11 @@ import {MockERC20, MockMill} from "../Mocks.sol";
 ///   forge test --match-path test/cards/SaleFork.t.sol -vv
 /// Uses the real PLANK, WETH, Uniswap V2 router and pair, and Chainlink ETH/USD; a stand-in PAPER and press.
 contract SaleForkTest is Test {
+    function _na() internal pure returns (FireSale.Access memory a) {
+        a.proof = new bytes32[](0);
+    }
+
+
     address constant PLANK = 0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc;
     address constant WETH = 0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73;
     address constant ROUTER = 0x89e5DB8B5aA49aA85AC63f691524311AEB649eba;
@@ -49,28 +54,28 @@ contract SaleForkTest is Test {
         names[0] = "Test";
         cards.configureFire(1, names, cats, "ipfs://x/");
         sale.configureDrop(1, FireSale.DropConfig({start: uint64(block.timestamp + 1), packs: 100, starters: 0, plankOnly: 0,
-            walletLimit: 50, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18}));
+            walletLimit: 50, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0)}));
         vm.warp(block.timestamp + 1);
 
         address buyer = address(0xA1);
         paper.mint(buyer, 100e18);
         vm.deal(buyer, 1 ether);
-        vm.prank(buyer);
+        vm.prank(buyer, buyer);
         paper.approve(address(sale), type(uint256).max);
 
         uint256 dead = MockERC20(PLANK).balanceOf(DEAD);
         uint256 cost = sale.quoteEth(1, 1);
         uint256 g = gasleft();
-        vm.prank(buyer);
-        sale.buyWithEth{value: cost}(1, 1, type(uint256).max);
+        vm.prank(buyer, buyer);
+        sale.buyWithEth{value: cost}(1, 1, type(uint256).max, _na());
         emit log_named_uint("ETH, 1 pack, real swap: gas", g - gasleft());
         assertGt(MockERC20(PLANK).balanceOf(DEAD), dead, "PLANK burned");
         assertEq(address(0xB0B).balance, 0, "the swap went through, nothing to the burn wallet");
 
         cost = sale.quoteEth(1, 5);
         g = gasleft();
-        vm.prank(buyer);
-        sale.buyWithEth{value: cost}(1, 5, type(uint256).max);
+        vm.prank(buyer, buyer);
+        sale.buyWithEth{value: cost}(1, 5, type(uint256).max, _na());
         emit log_named_uint("ETH, 5 packs, real swap: gas", g - gasleft());
         assertEq(address(sale).balance, 0);
     }
