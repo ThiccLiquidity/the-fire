@@ -57,7 +57,6 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     function setPackImageBase(string calldata base) external onlyOwner {
         packImageBase = base;
         emit PackImageBaseSet(base);
-        emit URI(base, 0);
     }
 
     function setDefaultRoyalty(address receiver, uint96 bps) external onlyOwner {
@@ -79,6 +78,13 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
         if (msg.sender != cards) revert NotCards();
         burned[fire] += amount;
         _burn(from, fire, amount);
+    }
+
+    /// @notice A cancelled open (randomness gone for good) gives its packs back, sealed. Only the card contract.
+    function returnPacks(address to, uint256 fire, uint256 amount) external {
+        if (msg.sender != cards) revert NotCards();
+        burned[fire] -= amount;
+        _mint(to, fire, amount, "");
     }
 
     // ---------- metadata ----------

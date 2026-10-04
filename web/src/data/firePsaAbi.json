@@ -27,6 +27,19 @@
   },
   {
     "type": "function",
+    "name": "CANCEL_AFTER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "CARDS",
     "inputs": [],
     "outputs": [
@@ -146,6 +159,19 @@
     "type": "function",
     "name": "acceptOwnership",
     "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "cancelReveal",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -328,6 +354,13 @@
   },
   {
     "type": "function",
+    "name": "pokePrice",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "randomness",
     "inputs": [],
     "outputs": [
@@ -485,6 +518,19 @@
   },
   {
     "type": "function",
+    "name": "setPaperFeed",
+    "inputs": [
+      {
+        "name": "feed",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setRandomness",
     "inputs": [
       {
@@ -534,6 +580,19 @@
       },
       {
         "name": "grade",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LastPaperSet",
+    "inputs": [
+      {
+        "name": "paper",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -600,6 +659,19 @@
   },
   {
     "type": "event",
+    "name": "PaperFeedSet",
+    "inputs": [
+      {
+        "name": "feed",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "RandomnessSet",
     "inputs": [
       {
@@ -625,6 +697,19 @@
         "name": "requestId",
         "type": "uint256",
         "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RevealCancelled",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "indexed": true,
         "internalType": "uint256"
       }
     ],

@@ -136,6 +136,19 @@
   },
   {
     "type": "function",
+    "name": "END_GRACE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "ETH_FEED_MAX_AGE",
     "inputs": [],
     "outputs": [
@@ -433,6 +446,11 @@
         "name": "n",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "maxPaper",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -454,6 +472,11 @@
       },
       {
         "name": "maxPlank",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxPaper",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -479,6 +502,11 @@
         "name": "maxUsdg",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "maxPaper",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -495,6 +523,11 @@
       },
       {
         "name": "pressId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxPaper",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -580,6 +613,19 @@
             "internalType": "uint128"
           }
         ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "convertPickCredits",
+    "inputs": [
+      {
+        "name": "fires",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
     "outputs": [],
@@ -831,34 +877,56 @@
     ],
     "outputs": [
       {
-        "name": "live",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "plankOnly",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "limitLifted",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "startersOpen",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "paidLeft",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "startersLeft",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "p",
+        "type": "tuple",
+        "internalType": "struct FireSale.Phase",
+        "components": [
+          {
+            "name": "configured",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "live",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "closed",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "plankOnly",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "limitLifted",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "startersOpen",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "plankPriceOk",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "paidLeft",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "startersLeft",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
       }
     ],
     "stateMutability": "view"
@@ -1068,6 +1136,29 @@
   },
   {
     "type": "function",
+    "name": "setFeeds",
+    "inputs": [
+      {
+        "name": "ethUsd",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "plankUsd",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "router",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setWallets",
     "inputs": [
       {
@@ -1198,6 +1289,11 @@
       },
       {
         "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxPaper",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1353,6 +1449,31 @@
   },
   {
     "type": "event",
+    "name": "FeedsSet",
+    "inputs": [
+      {
+        "name": "ethUsd",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "plankUsd",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "router",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "OwnershipTransferStarted",
     "inputs": [
       {
@@ -1434,6 +1555,31 @@
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PickCreditsConverted",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "who",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "credits",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1560,6 +1706,11 @@
   {
     "type": "error",
     "name": "AlreadyClaimed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AnotherDropActive",
     "inputs": []
   },
   {

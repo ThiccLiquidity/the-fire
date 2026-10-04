@@ -49,7 +49,7 @@ contract SaleForkTest is Test {
         names[0] = "Test";
         cards.configureFire(1, names, cats, "ipfs://x/");
         sale.configureDrop(1, FireSale.DropConfig({start: uint64(block.timestamp + 1), packs: 100, starters: 0, plankOnly: 0,
-            walletLimit: 50, starterWindow: 0, liftAfter: 0, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18}));
+            walletLimit: 50, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18}));
         vm.warp(block.timestamp + 1);
 
         address buyer = address(0xA1);
@@ -62,7 +62,7 @@ contract SaleForkTest is Test {
         uint256 cost = sale.quoteEth(1, 1);
         uint256 g = gasleft();
         vm.prank(buyer);
-        sale.buyWithEth{value: cost}(1, 1);
+        sale.buyWithEth{value: cost}(1, 1, type(uint256).max);
         emit log_named_uint("ETH, 1 pack, real swap: gas", g - gasleft());
         assertGt(MockERC20(PLANK).balanceOf(DEAD), dead, "PLANK burned");
         assertEq(address(0xB0B).balance, 0, "the swap went through, nothing to the burn wallet");
@@ -70,7 +70,7 @@ contract SaleForkTest is Test {
         cost = sale.quoteEth(1, 5);
         g = gasleft();
         vm.prank(buyer);
-        sale.buyWithEth{value: cost}(1, 5);
+        sale.buyWithEth{value: cost}(1, 5, type(uint256).max);
         emit log_named_uint("ETH, 5 packs, real swap: gas", g - gasleft());
         assertEq(address(sale).balance, 0);
     }

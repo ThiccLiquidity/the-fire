@@ -144,7 +144,7 @@ contract SaleTest is Test {
 
     function _plankOnlyDone(address who) internal {
         vm.prank(who);
-        sale.buyWithPlank(1, 4, type(uint256).max);
+        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max);
     }
 
     function _assertHoldsNothing() internal view {
@@ -160,7 +160,7 @@ contract SaleTest is Test {
     function test_notLiveBeforeStart() public {
         vm.prank(alice);
         vm.expectRevert(FireSale.NotLive.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max);
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max);
     }
 
     function test_configLocksWhenTheDropOpens() public {
@@ -195,13 +195,13 @@ contract SaleTest is Test {
         _open();
         vm.prank(alice);
         vm.expectRevert(FireSale.PlankOnly.selector);
-        sale.buyWithEth{value: 1 ether}(1, 1);
+        sale.buyWithEth{value: 1 ether}(1, 1, type(uint256).max);
         vm.prank(alice);
         vm.expectRevert(FireSale.PlankOnly.selector);
-        sale.buyWithUsdg(1, 1, type(uint256).max);
+        sale.buyWithUsdg(1, 1, type(uint256).max, type(uint256).max);
         _plankOnlyDone(alice);
         vm.prank(bob);
-        sale.buyWithEth{value: 1 ether}(1, 1); // open to ETH now
+        sale.buyWithEth{value: 1 ether}(1, 1, type(uint256).max); // open to ETH now
         assertEq(packs.balanceOf(bob, 1), 1);
     }
 
@@ -211,7 +211,7 @@ contract SaleTest is Test {
         assertEq(cost, 5e27, "2 packs = $5 = 5e9 PLANK");
         uint256 before = plank.balanceOf(alice);
         vm.prank(alice);
-        sale.buyWithPlank(1, 2, cost);
+        sale.buyWithPlank(1, 2, cost, type(uint256).max);
         assertEq(before - plank.balanceOf(alice), cost);
         assertEq(plank.balanceOf(DEAD), cost * 3_000 / 10_000, "30% burned");
         assertEq(plank.balanceOf(revenue), cost - cost * 3_000 / 10_000, "70% revenue");
@@ -225,7 +225,7 @@ contract SaleTest is Test {
         uint256 cost = sale.quotePlank(1, 1);
         vm.prank(alice);
         vm.expectRevert(FireSale.PriceMoved.selector);
-        sale.buyWithPlank(1, 1, cost - 1);
+        sale.buyWithPlank(1, 1, cost - 1, type(uint256).max);
     }
 
     function test_paperIsRequired() public {
@@ -234,7 +234,7 @@ contract SaleTest is Test {
         paper.approve(address(sale), 0);
         vm.prank(alice);
         vm.expectRevert();
-        sale.buyWithPlank(1, 1, type(uint256).max);
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max);
     }
 
     // ---------------------------------------------------------------- ETH and USDG
@@ -248,7 +248,7 @@ contract SaleTest is Test {
         uint256 deadBefore = plank.balanceOf(DEAD);
         uint256 balBefore = alice.balance;
         vm.prank(alice);
-        sale.buyWithEth{value: cost + 0.01 ether}(1, 2);
+        sale.buyWithEth{value: cost + 0.01 ether}(1, 2, type(uint256).max);
         assertEq(balBefore - alice.balance, cost, "excess refunded");
         assertEq(revenue.balance, cost - burnShare, "70% revenue");
         assertEq(plank.balanceOf(DEAD) - deadBefore, burnShare * PER_ETH, "30% bought PLANK, burned");
@@ -262,7 +262,7 @@ contract SaleTest is Test {
         router.setFail(true);
         uint256 cost = sale.quoteEth(1, 1);
         vm.prank(alice);
-        sale.buyWithEth{value: cost}(1, 1);
+        sale.buyWithEth{value: cost}(1, 1, type(uint256).max);
         assertEq(burnW.balance, cost * 3_000 / 10_000, "burn wallet");
         assertEq(revenue.balance, cost - cost * 3_000 / 10_000);
         assertEq(packs.balanceOf(alice, 1), 1, "the purchase still went through");
@@ -275,7 +275,7 @@ contract SaleTest is Test {
         router.setRates(PER_ETH * 85 / 100, PER_USDG * 85 / 100); // pool 15% worse than the 30-minute average
         uint256 cost = sale.quoteEth(1, 1);
         vm.prank(alice);
-        sale.buyWithEth{value: cost}(1, 1);
+        sale.buyWithEth{value: cost}(1, 1, type(uint256).max);
         assertEq(burnW.balance, cost * 3_000 / 10_000, "falls back instead of overpaying");
         _assertHoldsNothing();
     }
@@ -287,7 +287,7 @@ contract SaleTest is Test {
         assertEq(cost, 5e6, "$5.00");
         uint256 deadBefore = plank.balanceOf(DEAD);
         vm.prank(alice);
-        sale.buyWithUsdg(1, 2, cost);
+        sale.buyWithUsdg(1, 2, cost, type(uint256).max);
         assertEq(usdg.balanceOf(revenue), 3_500_000, "70%");
         assertEq(usdg.balanceOf(address(router)), 1_500_000, "30% swapped");
         assertEq(plank.balanceOf(DEAD) - deadBefore, 1_500_000 * PER_USDG);
@@ -299,7 +299,7 @@ contract SaleTest is Test {
         _plankOnlyDone(bob);
         router.setFail(true);
         vm.prank(alice);
-        sale.buyWithUsdg(1, 1, type(uint256).max);
+        sale.buyWithUsdg(1, 1, type(uint256).max, type(uint256).max);
         assertEq(usdg.balanceOf(burnW), 750_000);
         assertEq(usdg.balanceOf(revenue), 1_750_000);
         _assertHoldsNothing();
@@ -312,7 +312,7 @@ contract SaleTest is Test {
         plankFeed.set(PLANK_USD);
         vm.prank(alice);
         vm.expectRevert(FireSale.FeedUnavailable.selector);
-        sale.buyWithEth{value: 1 ether}(1, 1);
+        sale.buyWithEth{value: 1 ether}(1, 1, type(uint256).max);
     }
 
     function test_plankFeedDown_drop_doesNotGetStuck() public {
@@ -320,15 +320,15 @@ contract SaleTest is Test {
         plankFeed.setBroken(true);
         vm.prank(alice);
         vm.expectRevert(FireSale.FeedUnavailable.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max);
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max);
         vm.prank(alice);
         vm.expectRevert(FireSale.PlankOnly.selector);
-        sale.buyWithEth{value: 1 ether}(1, 1);
+        sale.buyWithEth{value: 1 ether}(1, 1, type(uint256).max);
         vm.warp(start + 48 hours);
         ethFeed.set(ETH_USD);
         uint256 cost = sale.quoteEth(1, 1);
         vm.prank(alice);
-        sale.buyWithEth{value: cost}(1, 1); // ETH opens when the limit lifts; no price → burn share to burn wallet
+        sale.buyWithEth{value: cost}(1, 1, type(uint256).max); // ETH opens when the limit lifts; no price → burn share to burn wallet
         assertEq(burnW.balance, cost * 3_000 / 10_000);
     }
 
@@ -338,13 +338,13 @@ contract SaleTest is Test {
         _drop(1, start, 20, 0, 0, 5);
         _open();
         vm.startPrank(alice);
-        sale.buyWithPlank(1, 5, type(uint256).max);
+        sale.buyWithPlank(1, 5, type(uint256).max, type(uint256).max);
         vm.expectRevert(FireSale.WalletLimit.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max);
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max);
         vm.stopPrank();
         _warp(start + 48 hours);
         vm.prank(alice);
-        sale.buyWithPlank(1, 6, type(uint256).max);
+        sale.buyWithPlank(1, 6, type(uint256).max, type(uint256).max);
         assertEq(packs.balanceOf(alice, 1), 11);
     }
 
@@ -357,38 +357,40 @@ contract SaleTest is Test {
         _open();
         uint256 deadPaper = paper.balanceOf(DEAD);
         vm.prank(alice);
-        sale.claimStarter(1, p1);
+        sale.claimStarter(1, p1, type(uint256).max);
         assertEq(packs.balanceOf(alice, 1), 1);
         assertEq(paper.balanceOf(DEAD) - deadPaper, 1e18, "only the PAPER");
         assertEq(plank.balanceOf(revenue), 0);
         vm.prank(alice);
         vm.expectRevert(FireSale.AlreadyClaimed.selector);
-        sale.claimStarter(1, p2); // 1 per wallet
+        sale.claimStarter(1, p2, type(uint256).max); // 1 per wallet
         vm.prank(bob);
         vm.expectRevert(FireSale.NotPressOwner.selector);
-        sale.claimStarter(1, p1); // not bob's press
+        sale.claimStarter(1, p1, type(uint256).max); // not bob's press
         vm.prank(alice);
         press.transferFrom(alice, bob, p1);
         vm.prank(bob);
         vm.expectRevert(FireSale.PressUsed.selector);
-        sale.claimStarter(1, p1); // each press once per drop
+        sale.claimStarter(1, p1, type(uint256).max); // each press once per drop
         vm.prank(bob);
-        sale.claimStarter(1, p3);
+        sale.claimStarter(1, p3, type(uint256).max);
         _warp(start + 24 hours);
         address carol = address(0xC3);
         uint256 p4 = press.mint(carol);
         vm.prank(carol);
         vm.expectRevert(FireSale.StarterWindowClosed.selector);
-        sale.claimStarter(1, p4);
+        sale.claimStarter(1, p4, type(uint256).max);
     }
 
     function test_leftoverStartersJoinPaidSupply() public {
         _open();
-        (,,,, uint256 paidLeft, uint256 startersLeft) = sale.phase(1);
+        uint256 paidLeft = sale.phase(1).paidLeft;
+        uint256 startersLeft = sale.phase(1).startersLeft;
         assertEq(paidLeft, 10);
         assertEq(startersLeft, 3);
         _warp(start + 24 hours);
-        (,,,, paidLeft, startersLeft) = sale.phase(1);
+        paidLeft = sale.phase(1).paidLeft;
+        startersLeft = sale.phase(1).startersLeft;
         assertEq(paidLeft, 13, "3 unclaimed starters added");
         assertEq(startersLeft, 0);
     }
@@ -397,7 +399,7 @@ contract SaleTest is Test {
         uint256 p1 = press.mint(alice);
         _open();
         vm.prank(alice);
-        sale.claimStarter(1, p1);
+        sale.claimStarter(1, p1, type(uint256).max);
         vm.prank(alice);
         packs.safeTransferFrom(alice, bob, 1, 1, "");
         assertEq(packs.balanceOf(bob, 1), 1);
@@ -409,12 +411,12 @@ contract SaleTest is Test {
         _drop(1, start, 10, 0, 0, 10);
         _open();
         vm.prank(alice);
-        sale.buyWithPlank(1, 10, type(uint256).max);
+        sale.buyWithPlank(1, 10, type(uint256).max, type(uint256).max);
         (bool closed,,,,,,,,,) = cards.fires(1);
         assertTrue(closed, "the last purchase closed the Fire");
         vm.prank(bob);
         vm.expectRevert(FireSale.NotLive.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max);
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max);
     }
 
     function test_cantOversell() public {
@@ -422,7 +424,7 @@ contract SaleTest is Test {
         _open();
         vm.prank(alice);
         vm.expectRevert(FireSale.SoldOut.selector);
-        sale.buyWithPlank(1, 4, type(uint256).max);
+        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max);
     }
 
     function test_close_needsSoldOutAndAConfiguredDrop() public {
@@ -454,7 +456,7 @@ contract SaleTest is Test {
         _drop(1, start, uint32(nPacks), 0, 0, uint32(nPacks));
         _open();
         vm.prank(alice);
-        sale.buyWithPlank(1, nPacks, type(uint256).max); // sells out, closes the Fire
+        sale.buyWithPlank(1, nPacks, type(uint256).max, type(uint256).max); // sells out, closes the Fire
         uint256 opened;
         while (opened < nPacks) {
             uint256 c = nPacks - opened > 10 ? 10 : nPacks - opened;
@@ -517,22 +519,22 @@ contract SaleTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(FireSale.NotLive.selector);
-        sale.useCredits(2, 1); // no drop live: credits wait
+        sale.useCredits(2, 1, type(uint256).max); // no drop live: credits wait
 
         _warp(s2);
         uint256 deadPaper = paper.balanceOf(DEAD);
         uint256 revBefore = plank.balanceOf(revenue);
         vm.prank(alice);
-        sale.useCredits(2, 3);
+        sale.useCredits(2, 3, type(uint256).max);
         assertEq(packs.balanceOf(alice, 2), 3);
         assertEq(sale.creditsFor(2, alice), 0);
         assertEq(paper.balanceOf(DEAD) - deadPaper, 3e18, "1 PAPER each");
         assertEq(plank.balanceOf(revenue), revBefore, "nothing else paid");
-        (,,,, uint256 paidLeft,) = sale.phase(2);
+        uint256 paidLeft = sale.phase(2).paidLeft;
         assertEq(paidLeft, 7, "out of the drop's supply");
         vm.prank(alice);
         vm.expectRevert(FireSale.NoCredits.selector);
-        sale.useCredits(2, 1);
+        sale.useCredits(2, 1, type(uint256).max);
     }
 
     // ---------------------------------------------------------------- suggestions
@@ -569,30 +571,31 @@ contract SaleTest is Test {
         _drop(1, start, 100, 0, 0, 50);
         _open();
         vm.prank(bob);
-        sale.buyWithPlank(1, 1, type(uint256).max); // warm the counters
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max); // warm the counters
         uint256 g = gasleft();
         vm.prank(alice);
-        sale.buyWithPlank(1, 1, type(uint256).max);
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max);
         emit log_named_uint("PLANK, 1 pack", g - gasleft());
         g = gasleft();
         vm.prank(alice);
-        sale.buyWithPlank(1, 5, type(uint256).max);
+        sale.buyWithPlank(1, 5, type(uint256).max, type(uint256).max);
         emit log_named_uint("PLANK, 5 packs", g - gasleft());
         uint256 cost = sale.quoteEth(1, 1);
         g = gasleft();
         vm.prank(bob);
-        sale.buyWithEth{value: cost}(1, 1);
+        sale.buyWithEth{value: cost}(1, 1, type(uint256).max);
         emit log_named_uint("ETH, 1 pack (with PLANK swap)", g - gasleft());
         cost = sale.quoteEth(1, 5);
         g = gasleft();
         vm.prank(bob);
-        sale.buyWithEth{value: cost}(1, 5);
+        sale.buyWithEth{value: cost}(1, 5, type(uint256).max);
         emit log_named_uint("ETH, 5 packs (with PLANK swap)", g - gasleft());
     }
 
 
     /// The suggestion list clears after every picking session: unpicked suggestions don't carry over.
     function test_suggestionListClearsAfterEachPickingSession() public {
+        _drop(1, start, 4, 0, 0, 5);
         vm.startPrank(bob);
         uint256 a = sale.suggest("Ember Fox");
         uint256 b = sale.suggest("Ash Wolf");
@@ -603,8 +606,11 @@ contract SaleTest is Test {
         sale.pickSuggestions(1, one); // session for Fire 1: picks from the list a and b are in
         assertEq(sale.currentRound(), 1, "new suggestions now go into a fresh list");
         vm.prank(alice);
-        uint256 c = sale.suggest("Cinder Owl"); // made during/after the session: next list
+        uint256 c = sale.suggest("Cinder Owl"); // made after the session started: next list
 
+        _open();
+        vm.prank(alice);
+        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max); // drop 1 sells out
         // next session, for Fire 2
         vm.prank(owner);
         sale.configureDrop(2, _cfg(uint64(block.timestamp + 2 hours), 10, 0, 0, 5));
@@ -619,22 +625,106 @@ contract SaleTest is Test {
         assertEq(sale.currentRound(), 2);
     }
 
+
+    // ---------------------------------------------------------------- audit round 2 (Oct 4)
+
+    function test_audit2_anyoneCanEndAStalledDropAfterAGracePeriod() public {
+        _open();
+        _plankOnlyDone(alice);
+        _warp(start + 48 hours);
+        vm.prank(bob);
+        vm.expectRevert(FireSale.TooEarly.selector);
+        sale.endDrop(1); // the owner's turn first
+        _warp(start + 48 hours + 7 days);
+        vm.prank(bob);
+        sale.endDrop(1); // the owner never acted: anyone can, so the packs can be opened
+        assertTrue(sale.phase(1).closed);
+    }
+
+    function test_audit2_buyerNamesTheMostPaper() public {
+        _open();
+        vm.prank(alice);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.buyWithPlank(1, 2, type(uint256).max, 1e18); // 2 packs need 2 PAPER
+    }
+
+    function test_audit2_feedsReplaceableOnlyBetweenDrops() public {
+        vm.prank(owner);
+        vm.expectRevert(FireSale.DropsActive.selector);
+        sale.setFeeds(address(ethFeed), address(plankFeed), address(router));
+        _drop(1, start, 4, 0, 0, 5);
+        _open();
+        vm.prank(alice);
+        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max);
+        MockFeed newEth = new MockFeed(ETH_USD);
+        vm.prank(owner);
+        sale.setFeeds(address(newEth), address(plankFeed), address(router));
+        assertEq(address(sale.ETH_USD()), address(newEth));
+    }
+
+    function test_audit2_creditsWaitForPlankAndCountTowardTheLimit() public {
+        _aliceGetsCards(14); // closes Fire 1
+        vm.prank(alice);
+        sale.burnCards(_ids(1, 84)); // 2 credits
+        uint64 s2 = uint64(block.timestamp + 1 hours);
+        vm.prank(owner);
+        sale.configureDrop(2, _cfg(s2, 20, 0, 4, 3));
+        _warp(s2);
+        vm.prank(alice);
+        vm.expectRevert(FireSale.PlankOnly.selector);
+        sale.useCredits(2, 1, type(uint256).max); // PLANK lights the forge first
+        vm.prank(bob);
+        sale.buyWithPlank(2, 3, type(uint256).max, type(uint256).max);
+        vm.prank(bob);
+        vm.expectRevert(FireSale.WalletLimit.selector);
+        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max);
+        vm.prank(alice);
+        sale.buyWithPlank(2, 2, type(uint256).max, type(uint256).max); // 4 PLANK packs sold: forge lit
+        vm.prank(alice);
+        vm.expectRevert(FireSale.WalletLimit.selector);
+        sale.useCredits(2, 2, type(uint256).max); // 2 bought + 2 credits > limit of 3
+        vm.prank(alice);
+        sale.useCredits(2, 1, type(uint256).max);
+    }
+
+    function test_audit2_phaseShowsTheValveAndState() public {
+        assertTrue(sale.phase(1).configured);
+        assertFalse(sale.phase(7).configured);
+        assertFalse(sale.phase(7).limitLifted);
+        _open();
+        assertTrue(sale.phase(1).plankOnly);
+        assertTrue(sale.phase(1).plankPriceOk);
+        _warp(start + 48 hours);
+        assertFalse(sale.phase(1).plankOnly, "ETH and USDG are open after the valve");
+    }
+
     // ---------------------------------------------------------------- audit fixes (Oct 4)
 
-    /// Picked-suggestion credits only work in that Fire's drop, so they can't take packs from a live drop.
-    function test_audit_pickCreditsOnlyForThatFire() public {
-        _open(); // drop 1 is live
+    /// Only one drop at a time, so picks for another Fire can't be spent in a live drop. A picked credit works in its
+    /// own drop, and becomes an ordinary credit once that drop closes (it never expires).
+    function test_audit_oneDropAtATime_pickCreditsNeverExpire() public {
         vm.prank(owner);
-        sale.configureDrop(2, _cfg(uint64(block.timestamp + 365 days), 10, 0, 0, 5)); // a far-off drop 2
+        vm.expectRevert(FireSale.AnotherDropActive.selector);
+        sale.configureDrop(2, _cfg(uint64(block.timestamp + 365 days), 10, 0, 0, 5));
+
+        _drop(1, start, 4, 0, 0, 5);
         vm.prank(alice);
-        uint256 id = sale.suggest("Sock puppet");
+        uint256 id = sale.suggest("Ember Fox");
         uint256[] memory ids = new uint256[](1);
         ids[0] = id;
         vm.prank(owner);
-        sale.pickSuggestions(2, ids);
+        sale.pickSuggestions(1, ids);
+        assertEq(sale.creditsFor(1, alice), 1);
+        _open();
+        vm.prank(bob);
+        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max); // sells out before alice uses it
+        assertTrue(sale.phase(1).closed);
+        uint256[] memory fires = new uint256[](1);
+        fires[0] = 1;
         vm.prank(alice);
-        vm.expectRevert(FireSale.NoCredits.selector);
-        sale.useCredits(1, 1);
+        sale.convertPickCredits(fires);
+        assertEq(sale.credits(alice), 1, "now usable in any drop");
+        assertEq(sale.pickCredits(1, alice), 0);
     }
 
     function test_audit_picksCappedByCharacters() public {
@@ -682,7 +772,7 @@ contract SaleTest is Test {
         _drop(1, start, 4, 0, 0, 5);
         _open();
         vm.prank(alice);
-        sale.buyWithPlank(1, 4, type(uint256).max); // sells out, closes
+        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max); // sells out, closes
         assertEq(sale.activeDrops(), 0);
         vm.prank(owner);
         sale.setWallets(address(0x1111), address(0x2222));
@@ -696,10 +786,10 @@ contract SaleTest is Test {
         ethFeed.set(ETH_USD);
         vm.prank(alice);
         vm.expectRevert(FireSale.FeedUnavailable.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max);
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max);
         uint256 cost = sale.quoteEth(1, 1);
         vm.prank(alice);
-        sale.buyWithEth{value: cost}(1, 1);
+        sale.buyWithEth{value: cost}(1, 1, type(uint256).max);
         assertEq(burnW.balance, cost * 3_000 / 10_000, "no swap on an old price");
     }
 

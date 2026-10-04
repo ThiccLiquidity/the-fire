@@ -35,7 +35,9 @@
 
 - Results depend only on the random words and the open order, not on who calls `process()` or when.
 - Cards are minted without the receiver callback, so a holder's contract can't stall the queue for everyone else.
-- If an open's randomness never arrives (an hour, and the router has no answer), anyone can `rerequest` it.
+- If an open's randomness never arrives (a day, and the router has no answer), anyone can `rerequest` it. After 7
+  days with no answer (randomness gone for good), anyone can `cancelOpen`: the packs go back to the holder, sealed.
+- The owner can't change a Fire's characters once its packs are selling.
 - The owner can't change a dealt card. It can change a Fire's names and image folder until `lockFire`.
 
 ## Tests
@@ -61,6 +63,12 @@ FireCards and FirePsa; FireSale is its own from the start. The script checks eve
 wallet as owner unless told otherwise. A test runs the same steps.
 
 - **Settings:** `.env.example` (card contracts section). No keys in `.env`: sign with the Foundry keystore or a Ledger.
+- **Right after the deploy:** the multisig calls `acceptOwnership()` on FirePacks, FireCards and FirePsa, then checks
+  the wiring it now owns: the seller is FireSale on packs and cards, cards point at packs, the PSA is FirePsa,
+  randomness points at the two adapters, no Fire is configured or locked yet, and the royalty is what was set.
+  Until it accepts, the deployer key controls those three contracts.
+- **Keeper:** checkpoints the PLANK price every 30 minutes, delivers drand numbers, and calls `FirePsa.pokePrice()`
+  now and then.
 - **Before deploy day:** run the real-chain gas test from PowerShell:
   `$env:FORK_RPC = "https://rpc.mainnet.chain.robinhood.com"; forge test --match-path test/cards/SaleFork.t.sol -vv`
 

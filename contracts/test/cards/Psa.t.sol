@@ -258,6 +258,43 @@ contract PsaTest is Test {
         psa.setOdds(2, odds);
     }
 
+
+    // ---------- audit round 2 (Oct 4) ----------
+
+    function test_audit2_stuckRevealCanBeCancelledAfterAWeek() public {
+        vm.prank(alice);
+        uint256 i = psa.reveal(_ids(1, 1), type(uint256).max);
+        vm.warp(block.timestamp + 6 days);
+        vm.expectRevert(FirePsa.NotStuck.selector);
+        psa.cancelReveal(i);
+        vm.warp(block.timestamp + 1 days);
+        psa.cancelReveal(i); // randomness gone for good: the card unlocks, still unrevealed
+        assertFalse(cards.gradePending(1));
+        assertFalse(psa.pending(1));
+        vm.prank(alice);
+        cards.transferFrom(alice, bob, 1);
+        psaRng.fulfill(psaRng.last(), 3); // a late answer is ignored
+        vm.expectRevert(FirePsa.NotReady.selector);
+        psa.finish(i);
+    }
+
+    function test_audit2_paperFeedCanBeSetOnceLater() public {
+        vm.prank(owner);
+        psaNoFeed.setPaperFeed(address(paperFeed));
+        assertEq(psaNoFeed.paperPerReveal(), 5e18); // from the feed now ($0.05)
+        vm.prank(owner);
+        vm.expectRevert(FirePsa.AlreadySet.selector);
+        psaNoFeed.setPaperFeed(address(paperFeed));
+    }
+
+    function test_audit2_keeperPokeRemembersThePrice() public {
+        paperFeed.set(0.01e18); // 25 PAPER
+        psa.pokePrice();
+        assertEq(psa.lastPaper(), 25);
+        vm.warp(block.timestamp + 3 days); // gap with no reveals in between
+        assertEq(psa.paperPerReveal(), 25e18);
+    }
+
     // ---------- helpers ----------
 
     function _contains(string memory hay, string memory needle) internal pure returns (bool) {

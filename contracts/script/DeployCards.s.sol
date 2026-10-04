@@ -21,6 +21,15 @@ interface ICardsPlankTwap {
     function PAIR() external view returns (address);
 }
 
+interface ICardsV2Router {
+    function WETH() external view returns (address);
+    function factory() external view returns (address);
+}
+
+interface ICardsV2Factory {
+    function getPair(address a, address b) external view returns (address);
+}
+
 interface ICardsPair {
     function token0() external view returns (address);
     function token1() external view returns (address);
@@ -173,5 +182,10 @@ contract DeployCards is Script {
         address t0 = ICardsPair(pair).token0();
         address t1 = ICardsPair(pair).token1();
         require((t0 == p.plank && t1 == p.weth) || (t1 == p.plank && t0 == p.weth), "PLANK_USD_FEED is not on the PLANK/WETH pool");
+        // the router must trade on the same WETH and the same PLANK pool the price comes from, or every burn swap
+        // would quietly fail over to the burn wallet
+        require(ICardsV2Router(p.v2Router).WETH() == p.weth, "V2_ROUTER uses a different WETH");
+        require(ICardsV2Factory(ICardsV2Router(p.v2Router).factory()).getPair(p.plank, p.weth) == pair,
+            "V2_ROUTER's factory doesn't own the PLANK_USD_FEED pool");
     }
 }

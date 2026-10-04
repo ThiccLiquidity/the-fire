@@ -61,8 +61,15 @@ numbers below are the starting values.
   on Robinhood Chain.
 - **The swap's floor:** it must get at least 90% of the PLANK that the 30-minute average price says. If the pool is
   pumped or manipulated beyond that, the swap is skipped and the burn share goes to the burn wallet.
-- **If the drop never sells out:** the owner can end it (`endDrop`), but only after the wallet limit has lifted (48h),
-  so the starter window and the limited phase always run in full. The Fire closes with the packs that were minted.
+- **If the drop never sells out:** the owner can end it (`endDrop`) once the wallet limit has lifted (48h), so the
+  starter window and the limited phase always run in full. If the owner doesn't, anyone can, 7 days after that, so
+  packs are never stranded. The Fire closes with the packs that were minted.
+- **One drop at a time.** The next drop can only be set up once the current one has closed. (A Fire's pool is
+  decided when it closes; two drops at once would let whoever closes one first steer a carried rare card.)
+- **Every purchase names its limits:** the most PLANK/USDG (or the ETH sent), and the most PAPER. If a number moved,
+  the purchase fails and costs nothing.
+- **Price feeds and the router** can be replaced by the owner only between drops (a retired Chainlink feed, a moved
+  PLANK pool or a new router).
 - **The PLANK price must be fresh:** the 30-minute average must have ended within the last 2 hours and cover at most
   2 hours. Otherwise PLANK purchases pause and the burn share of ETH/USDG sales goes to the burn wallet, until the
   keeper checkpoints again (it does every 30 minutes).
@@ -81,7 +88,8 @@ numbers below are the starting values.
 
 Each wallet has a count of free pack credits. Credits **stack** and never expire. A credit is used in any live
 drop: mint 1 pack for 1 PAPER (burned), out of that drop's supply. If no drop is live, or it's sold out, the
-credit waits for the next drop. Two ways to earn one:
+credit waits for the next drop. Like ETH and USDG, credits wait until PLANK has lit the forge (the PLANK-only packs
+are sold, or the limit has lifted), and they count toward the 5-per-wallet limit while it's on. Two ways to earn one:
 
 - **Burn 42.0 cards.** Shown as "42.0" on the site.
   - Each wallet keeps a running burn count that never resets: 3 one day + 2 the next = 5 of 42.
@@ -91,8 +99,9 @@ credit waits for the next drop. Two ways to earn one:
     everyone burns all Paper and Wood. Below about 12 it gets close to an endless loop (a pack has 6 cards).
     Commons gain a floor of about 6¢ ($2.50 ÷ 42).
 - **Your character suggestion gets picked.** The owner grants these while setting up that Fire's drop (before it
-  opens), at most one per character, and each suggestion once. A picked credit can only be used in **that Fire's
-  drop** (burn credits work in any drop), so picks can never take packs from another drop.
+  opens), no more picks than the Fire has characters, and each suggestion once. A picked credit is for **that Fire's
+  drop**; if that drop closes before it's used, it turns into an ordinary credit for any drop (`convertPickCredits`,
+  the site does it), so it never expires.
 
 The site tells the two stories differently ("You burned 42.0" vs. "Your character made it"). The contract uses
 one credit count for both.
@@ -105,7 +114,7 @@ Every PAPER spent anywhere is burned.
 |---|---|
 | Any pack (paid, starter or free) | 1 PAPER per pack |
 | Character suggestion | 1 PAPER. Open all the time. The list clears after every picking session: picking for a Fire takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
-| PSA reveal | The most whole PAPER that stays under $0.25 (at least 1). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1. Uses `PaperUsdTwap`; a set number until PAPER has a real market. PAPER only. |
+| PSA reveal | The most whole PAPER that stays at or under $0.25 (at least 1). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1. Uses `PaperUsdTwap`; a set number until PAPER has a real market. PAPER only. |
 
 - **Get PAPER on the site:** a small box where you type how many PAPER you want, see the ETH price, and press one
   button. It uses the existing KyberSwap swap with the 0.5% fee to the swap-fee wallet. In the buy panel it shows
@@ -119,6 +128,9 @@ Every PAPER spent anywhere is burned.
   switches to that wear frame and seal ring colour.
 - Before PAPER has a price, a reveal costs a set number of PAPER (5 to start, the owner can change it).
 - The owner can give a Fire different odds, but only before its first pack exists, so every buyer knows the odds.
+- **If randomness is gone for good** (no answer for 7 days), anyone can cancel a reveal: the cards unlock, still
+  unrevealed. The PAPER was burned. Opens work the same way: a stuck open can be cancelled after 7 days and the packs
+  come back sealed.
 - **The holder names the most PAPER they'll pay;** if the price moved, the reveal fails and costs nothing.
 - **While a card is being graded it can't be transferred** (it can still be burned), so nobody can sell a card
   whose drand number they've already seen as "Unrevealed".

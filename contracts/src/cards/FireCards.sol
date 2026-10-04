@@ -15,6 +15,7 @@ interface IRandomnessSource {
 
 interface IFirePacks {
     function burnForOpen(address from, uint256 fire, uint256 amount) external;
+    function returnPacks(address to, uint256 fire, uint256 amount) external;
     function minted(uint256 fire) external view returns (uint256);
 }
 
@@ -46,6 +47,9 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     ///      they can already see re-roll while the keeper is down. Anyone (the site, the keeper) can deliver a word.
     uint256 public constant REREQUEST_AFTER = 1 days;
     uint96 public constant MAX_ROYALTY_BPS = 1_000;
+    /// @dev Last resort if randomness is gone for good: an open with no answer this long can be cancelled and its
+    ///      packs go back to the holder, sealed. (A week is far past any normal delay.)
+    uint256 public constant CANCEL_AFTER = 7 days;
 
     IFirePacks public immutable PACKS;
     IRandomnessSource public randomness;
@@ -100,6 +104,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     event RandomnessSet(address source);
     event PsaSet(address psa);
     event Rerequested(uint256 indexed openIndex, uint256 requestId);
+    event OpenCancelled(uint256 indexed openIndex, address indexed holder, uint256 fire, uint256 count);
     event RoyaltySet(address receiver, uint96 bps);
     event GradePending(uint256 indexed tokenId, bool pending);
     event MetadataUpdate(uint256 tokenId); // ERC-4906
@@ -169,6 +174,9 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         if (fire > type(uint32).max) revert BadLength(); // cards store the Fire in 32 bits
         FireInfo storage f = fires[fire];
         if (f.locked) revert FireIsLocked();
+        // once its packs are selling, a Fire's characters are fixed (names can't change under buyers, and the number
+        // of characters caps suggestion picks)
+        if (PACKS.minted(fire) != 0) revert FireIsLocked();
         _checkText(base);
         for (uint256 i; i < names.length; i++) _checkText(names[i]);
         if (names.length == 0 || names.length > 255 || names.length != categories.length) revert BadLength();
@@ -291,7 +299,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         emit OpenReady(i - 1, word);
     }
 
-    /// @notice If an open's randomness never arrived (an hour on, and the router has no answer), anyone can ask again.
+    /// @notice If an open's randomness never arrived (a day on, and the router has no answer), anyone can ask again.
     function rerequest(uint256 index) external {
         Open storage o = opens[index];
         if (o.ready || block.timestamp < o.requestedAt + REREQUEST_AFTER || randomness.answered(o.requestId)) revert NotStuck();
@@ -301,6 +309,19 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         o.requestedAt = uint64(block.timestamp);
         _openOf[id] = index + 1;
         emit Rerequested(index, id);
+    }
+
+    /// @notice If an open's randomness has had no answer for CANCEL_AFTER (randomness gone for good), anyone can
+    ///         cancel it: its packs go back to the holder, sealed, and the queue moves on.
+    function cancelOpen(uint256 index) external {
+        Open storage o = opens[index];
+        if (o.ready || block.timestamp < o.requestedAt + CANCEL_AFTER || randomness.answered(o.requestId)) revert NotStuck();
+        delete _openOf[o.requestId];
+        uint256 count = o.count;
+        o.count = 0; // dealt as nothing when the queue reaches it
+        o.ready = true;
+        PACKS.returnPacks(o.to, o.fire, count);
+        emit OpenCancelled(index, o.to, o.fire, count);
     }
 
     /// @notice Deal ready opens, oldest first, until one isn't ready or `maxOpens` are done. Anyone may call.

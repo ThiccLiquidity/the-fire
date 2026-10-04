@@ -136,3 +136,15 @@ contract MockPair {
     address public token0; address public token1;
     constructor(address a, address b) { token0 = a; token1 = b; }
 }
+
+/// @dev Just enough of a Uniswap V2 router and factory for the deploy checks.
+contract MockV2Factory {
+    address public pair;
+    constructor(address p) { pair = p; }
+    function getPair(address, address) external view returns (address) { return pair; }
+}
+
+contract MockRouterInfo {
+    address public WETH; address public factory;
+    constructor(address w, address f) { WETH = w; factory = f; }
+}

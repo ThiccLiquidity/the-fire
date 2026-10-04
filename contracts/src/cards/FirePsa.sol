@@ -53,10 +53,14 @@ contract FirePsa is Ownable2Step {
     uint256 public constant PRICE_USD18 = 0.25e18; // $0.25
     uint256 public constant PAPER_FEED_MAX_AGE = 2 days;
     uint256 public constant ODDS_TOTAL = 10_000;
+    /// @dev Last resort if randomness is gone for good: a reveal with no answer this long can be cancelled, unlocking
+    ///      its cards (still unrevealed). The PAPER was burned and can't come back.
+    uint256 public constant CANCEL_AFTER = 7 days;
 
     IPsaCards public immutable CARDS;
     IERC20 public immutable PAPER;
-    IPsaFeed public immutable PAPER_USD; // 18 decimals (PaperUsdTwap); address(0) until PAPER has a market
+    /// @notice PAPER/USD, 18 decimals (PaperUsdTwap). Can be left empty at deploy and set once later.
+    IPsaFeed public PAPER_USD;
 
     IPsaRandomness public randomness;
     /// @notice Whole PAPER per reveal before PAPER has ever had a price.
@@ -90,6 +94,9 @@ contract FirePsa is Ownable2Step {
     event RevealReady(uint256 indexed index, uint256 word);
     event Graded(uint256 indexed serial, uint256 grade);
     event Rerequested(uint256 indexed index, uint256 requestId);
+    event RevealCancelled(uint256 indexed index);
+    event PaperFeedSet(address feed);
+    event LastPaperSet(uint256 paper);
 
     error AlreadySet();
     error ZeroAddress();
@@ -118,6 +125,14 @@ contract FirePsa is Ownable2Step {
         if (source == address(0)) revert ZeroAddress();
         randomness = IPsaRandomness(source);
         emit RandomnessSet(source);
+    }
+
+    /// @notice Set the PAPER price feed, once, if it was left empty at deploy.
+    function setPaperFeed(address feed) external onlyOwner {
+        if (address(PAPER_USD) != address(0)) revert AlreadySet();
+        if (feed == address(0)) revert ZeroAddress();
+        PAPER_USD = IPsaFeed(feed);
+        emit PaperFeedSet(feed);
     }
 
     /// @notice Whole PAPER per reveal while PAPER has no price.
@@ -197,7 +212,28 @@ contract FirePsa is Ownable2Step {
         }
     }
 
-    /// @notice If a reveal's randomness never arrived (an hour on, and the router has no answer), anyone can ask again.
+    /// @notice Anyone (the keeper): remember the current price-based cost, so a later gap in the feed uses it.
+    function pokePrice() external {
+        _priceNow();
+    }
+
+    /// @notice If a reveal's randomness has had no answer for CANCEL_AFTER (randomness gone for good), anyone can
+    ///         cancel it: its cards unlock, still unrevealed, and can be revealed again later.
+    function cancelReveal(uint256 index) external {
+        Reveal storage r = _reveals[index];
+        if (r.ready || r.done || block.timestamp < r.requestedAt + CANCEL_AFTER || randomness.answered(r.requestId)) revert NotStuck();
+        r.done = true;
+        delete _revealOf[r.requestId];
+        for (uint256 i; i < r.ids.length; i++) {
+            uint256 id = r.ids[i];
+            delete pending[id];
+            (bool exists,,) = CARDS.gradeInfo(id);
+            if (exists) CARDS.setGradePending(id, false);
+        }
+        emit RevealCancelled(index);
+    }
+
+    /// @notice If a reveal's randomness never arrived (a day on, and the router has no answer), anyone can ask again.
     function rerequest(uint256 index) external {
         Reveal storage r = _reveals[index];
         if (r.ready || block.timestamp < r.requestedAt + REREQUEST_AFTER || randomness.answered(r.requestId)) revert NotStuck();
@@ -226,7 +262,10 @@ contract FirePsa is Ownable2Step {
         if (px == 0) return (lastPaper != 0 ? lastPaper : fallbackPaper) * 1e18;
         uint256 whole = PRICE_USD18 / px;
         if (whole == 0) whole = 1;
-        lastPaper = whole;
+        if (lastPaper != whole) {
+            lastPaper = whole;
+            emit LastPaperSet(whole);
+        }
         return whole * 1e18;
     }
 

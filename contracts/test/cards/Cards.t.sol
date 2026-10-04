@@ -7,7 +7,7 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {CardRules} from "../../src/cards/CardRules.sol";
 import {DeployCards} from "../../script/DeployCards.s.sol";
-import {MockERC20, MockUSDG, MockFeed, MockPlankTwap, MockPair} from "../Mocks.sol";
+import {MockERC20, MockUSDG, MockFeed, MockPlankTwap, MockPair, MockV2Factory, MockRouterInfo} from "../Mocks.sol";
 import {OpenDrandRouter} from "../../src/OpenDrandRouter.sol";
 
 /// @dev Stands in for the drand adapter: hands out ids, the test delivers words.
@@ -410,7 +410,39 @@ contract CardsTest is Test {
         packs.setDefaultRoyalty(owner, 1_001);
         vm.stopPrank();
     }
+
+    // ---------- audit round 2 (Oct 4) ----------
+
+    function test_audit2_charactersFixedOncePacksSell() public {
+        vm.prank(seller);
+        packs.mint(_holder(0), 1, 1);
+        string[] memory names = new string[](5);
+        uint8[] memory cats = new uint8[](5);
+        for (uint256 i; i < 5; i++) names[i] = "X";
+        vm.prank(owner);
+        vm.expectRevert(FireCards.FireIsLocked.selector);
+        cards.configureFire(1, names, cats, "ipfs://x/");
+    }
+
+    function test_audit2_stuckOpenCanBeCancelledAfterAWeek() public {
+        _sellAndClose(1, 2);
+        vm.prank(_holder(0)); cards.open(1, 1);
+        vm.prank(_holder(1)); cards.open(1, 1);
+        vm.warp(block.timestamp + 7 days);
+        cards.cancelOpen(0); // randomness gone for good: the pack comes back sealed
+        assertEq(packs.balanceOf(_holder(0), 1), 1);
+        rng.deliver(2, 9);
+        assertEq(cards.process(10), 2, "the queue moves past the cancelled open");
+        assertEq(cards.balanceOf(_holder(1)), 6);
+        vm.prank(_holder(0)); cards.open(1, 1); // and the returned pack can be opened later
+        rng.deliver(3, 4);
+        cards.process(10);
+        assertEq(cards.balanceOf(_holder(0)), 6);
+        vm.expectRevert(FirePacks.NotCards.selector);
+        packs.returnPacks(_holder(0), 1, 1);
+    }
 }
+
 
 
 
@@ -424,13 +456,15 @@ contract DeployCardsTest is Test {
         MockUSDG usdg = new MockUSDG();
         MockERC20 plank = new MockERC20("PLANK", "PLANK");
         MockERC20 weth = new MockERC20("WETH", "WETH");
+        MockPlankTwap twap = new MockPlankTwap(1e9, address(new MockPair(address(weth), address(plank))));
         DeployCards.Params memory p = DeployCards.Params({
             router: drand, owner: safe, royaltyTo: safe, royaltyBps: 500, packBase: "ipfs://packs/",
             paper: address(paper), plank: address(plank), usdg: address(usdg),
             weth: address(weth), press: address(new MockERC20("PRESS", "PRESS")),
             ethUsd: address(new MockFeed(3_333e8)),
-            plankUsd: address(new MockPlankTwap(1e9, address(new MockPair(address(weth), address(plank))))), paperUsd: address(0),
-            v2Router: address(new MockRandomness()), revenueWallet: address(0xBEEF), burnWallet: address(0xB0B)
+            plankUsd: address(twap), paperUsd: address(0),
+            v2Router: address(new MockRouterInfo(address(weth), address(new MockV2Factory(twap.PAIR())))),
+            revenueWallet: address(0xBEEF), burnWallet: address(0xB0B)
         });
         DeployCards.Deployed memory d = s.deploy(p, address(s));
 
@@ -482,5 +516,13 @@ contract DeployCardsTest is Test {
         s.check(p);
         p.paper = address(paper);
         s.check(p);
+        address goodRouter = p.v2Router;
+        p.v2Router = address(new MockRouterInfo(address(usdg), address(new MockV2Factory(twap.PAIR()))));
+        vm.expectRevert(bytes("V2_ROUTER uses a different WETH"));
+        s.check(p);
+        p.v2Router = address(new MockRouterInfo(address(weth), address(new MockV2Factory(address(0xDEAD)))));
+        vm.expectRevert(bytes("V2_ROUTER's factory doesn't own the PLANK_USD_FEED pool"));
+        s.check(p);
+        p.v2Router = goodRouter;
     }
 }
