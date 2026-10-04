@@ -116,7 +116,7 @@
     if (sold()) return { line: `Series ${S.series.no} sold out`, opts: [['table', 'Open your packs', `Series ${S.series.no + 1} soon`, 'alt']] };
     let sub2 = ph.plankOnly ? `PLANK only · ${S.series.plankOnly - S.series.plankSold} left` : ph.sub;
     out.push(['buy', 'Buy packs', `$2.50 + 1 PAPER<br>${sub2}`, 'main']);
-    if (S.series.phase <= 1 && !w.starterClaimed && S.series.startersClaimed < S.series.starters) out.push(['starter', 'Starter pack', 'Press holders<br>1 PAPER', 'alt']);
+    if (S.series.phase <= 1 && !w.starterClaimed && S.series.startersClaimed < S.series.starters) out.push(['starter', 'Press pack', 'Press holders<br>1 PAPER', 'alt']);
     if (w.credits > 0) out.push(['free', `Free pack (${w.credits})`, '1 PAPER<br>any time', 'gold']);
     return { line: ph.window ? `${ph.line} · ${ph.window}h left` : ph.limit ? `${ph.line} · max 5 for ${ph.limit}h` : ph.line, opts: out };
   }
@@ -218,8 +218,8 @@
   }
   function starter() {
     needWallet(() => {
-      if (!S.wallet.isPressHolder) return Sheet.open('nope', { title: 'Starter packs', body: '<p class="lead">Starter packs are for Paper Press holders: one per wallet, 1 PAPER each.</p>' });
-      const d = Sheet.open('starter', { title: 'Starter pack', body: `<p class="lead">One pack for 1 PAPER, for Paper Press holders. ${S.series.starters - S.series.startersClaimed} left.</p><button class="btn primary go" type="button">Claim for 1 PAPER</button>` });
+      if (!S.wallet.isPressHolder) return Sheet.open('nope', { title: 'Press packs', body: '<p class="lead">Press packs are for Paper Press holders: one per wallet, 1 PAPER each.</p>' });
+      const d = Sheet.open('starter', { title: 'Press pack', body: `<p class="lead">One pack for 1 PAPER, for Paper Press holders. ${S.series.starters - S.series.startersClaimed} left.</p><button class="btn primary go" type="button">Claim for 1 PAPER</button>` });
       d.querySelector('.go').onclick = () => { d.close(); Store.update((s) => { s.wallet.starterClaimed = true; s.wallet.balances.PAPER -= 1; s.series.startersClaimed++; s.series.sold--; }); pendingDeliver++; Scene?.buy(1); };
     });
   }

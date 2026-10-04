@@ -73,16 +73,17 @@ export function holoTypeOf(frame: boolean, picture: boolean): HoloType {
 }
 
 /** What a character is. Sorting rule: take the first one that fits, in this order (decided Oct 3). */
-export const CATEGORIES = ['person', 'animal', 'plant', 'place', 'object', 'element', 'idea'] as const
+export const CATEGORIES = ['person', 'animal', 'plant', 'place', 'sports', 'object', 'element', 'idea'] as const
 export type Category = (typeof CATEGORIES)[number]
 export const CATEGORY_LABEL: Record<Category, string> = {
-  person: 'Person', animal: 'Animal', plant: 'Plant', place: 'Place', object: 'Object', element: 'Element', idea: 'Idea',
+  person: 'Person', animal: 'Animal', plant: 'Plant', place: 'Place', sports: 'Sports', object: 'Object', element: 'Element', idea: 'Idea',
 }
 export const CATEGORY_HINT: Record<Category, string> = {
   person: 'made-up humans and human-like characters (never a real person)',
   animal: 'any creature, real or mythical',
   plant: 'living things that grow',
   place: 'somewhere you can be',
+  sports: 'sports gear and games',
   object: 'things that are made or held',
   element: 'forces of nature and raw materials',
   idea: 'abstract things',

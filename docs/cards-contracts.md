@@ -9,7 +9,7 @@
 | `FirePacks` | Sealed packs, ERC-1155: one stackable token type per Series (token id = Series number). The seller mints; only `FireCards` burns, when a pack is opened. Pack art: `<packImageBase>fire<N>.webp`. Royalty (ERC-2981). |
 | `FireCards` | The cards, ERC-721 (token id = global serial). Closes Series, opens packs, deals cards, on-chain metadata. Royalty (ERC-2981), ERC-4906 metadata updates. |
 | `FireSale` | Sells the packs (`docs/omni-economy.md`): per-drop settings, PLANK-only first packs, PAPER per pack burned, 30% to the PLANK burn, press-holder starters, free pack credits (42 cards burned or a picked suggestion), suggestions. Closes the Series when a drop sells out. Never holds funds. |
-| `FirePsa` | The PDA reveal: a holder burns PAPER (the most whole PAPER at or under $0.25, or a set number before PAPER has a price) to reveal up to 10 cards; drand picks each grade on the Series' odds (default, grade 10 down to 1: 1/17/24/25/18/7/3.5/2/1.5/1%), and the card switches to that wear frame. The only contract that can set a grade, once per card. |
+| `FirePsa` | The PDA reveal: a holder burns PAPER (the most whole PAPER at or under $0.25; 1 PAPER up to $1 a PAPER; $1 worth past that; a set number before the feed has a price) to reveal up to 10 cards; drand picks each grade on the Series' odds (default, grade 10 down to 1: 1/17/24/25/18/7/3.5/2/1.5/1%), and the card switches to that wear frame. The only contract that can set a grade, once per card. |
 | `CardRules` | The rarity rules, ported exactly from the Card Studio: pool sizes for one Series from its packs and Diamond setting (`computePool`), holo rolls (Diamond always holo, 1/3 each), the pack floor. |
 
 ## The flow

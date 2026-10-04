@@ -36,7 +36,8 @@ interface IPsaFeed {
  *         once. The grade comes from drand randomness requested after payment, so nobody can know it in advance; the
  *         card then shows that grade's wear frame and seal colour.
  *
- *         Price: the most whole PAPER that stays at or under $0.25 (at least 1), from the PAPER price feed. Until PAPER
+ *         Price, from the PAPER price feed: the most whole PAPER that stays at or under $0.25. If 1 PAPER is worth
+ *         more than $0.25, 1 PAPER, up to a hard cap of $1: past $1 a PAPER, $1 worth (part of a PAPER). Until PAPER
  *         has a market (no price), a set number of PAPER the owner chooses.
  *
  *         Odds by default, out of 10,000: 10: 1%, 9: 17%, 8: 24%, 7: 25%, 6: 18%, 5: 7%, 4: 3.5%, 3: 2%, 2: 1.5%,
@@ -52,6 +53,7 @@ contract FirePsa is Ownable2Step {
     ///      for again after a full day with no answer (anyone can deliver; the keeper does it within seconds).
     uint256 public constant REREQUEST_AFTER = 1 days;
     uint256 public constant PRICE_USD18 = 0.25e18; // $0.25
+    uint256 public constant CAP_USD18 = 1e18; // $1, the most a reveal ever costs
     uint256 public constant PAPER_FEED_MAX_AGE = 2 days;
     uint256 public constant ODDS_TOTAL = 10_000;
     /// @dev Last resort if randomness is gone for good: a reveal with no answer this long can be cancelled, unlocking
@@ -66,9 +68,9 @@ contract FirePsa is Ownable2Step {
     IPsaRandomness public randomness;
     /// @notice Whole PAPER per reveal before PAPER has ever had a price.
     uint256 public fallbackPaper = 5;
-    /// @notice The last price-based cost seen (whole PAPER per card). Used whenever the feed has a gap, so a gap
+    /// @notice The last price-based cost seen (PAPER wei per card). Used whenever the feed has a gap, so a gap
     ///         can't make reveals cheap (or let the owner's fallback number apply again).
-    uint256 public lastPaper;
+    uint256 public lastCost;
 
     /// @dev Chance of each grade 1..10, out of ODDS_TOTAL, for Series the owner gave their own odds.
     mapping(uint256 fire => uint16[10]) internal _odds;
@@ -97,7 +99,7 @@ contract FirePsa is Ownable2Step {
     event Rerequested(uint256 indexed index, uint256 requestId);
     event RevealCancelled(uint256 indexed index);
     event PaperFeedSet(address feed);
-    event LastPaperSet(uint256 paper);
+    event LastCostSet(uint256 paperWei);
 
     error AlreadySet();
     error ZeroAddress();
@@ -248,26 +250,33 @@ contract FirePsa is Ownable2Step {
 
     // ================================================================ views
 
-    /// @notice PAPER (wei) per card right now: the most whole PAPER at or under $0.25, at least 1. During a gap in
-    ///         the price feed, the last price-based cost; before PAPER has ever had a price, the set number.
+    /// @notice PAPER (wei) per card right now: the most whole PAPER at or under $0.25; 1 PAPER while a PAPER is worth
+    ///         $0.25 to $1; $1 worth past that. During a gap in the price feed, the last price-based cost; before
+    ///         PAPER has ever had a price, the set number.
     function paperPerReveal() public view returns (uint256) {
         uint256 px = _paperUsd();
-        if (px == 0) return (lastPaper != 0 ? lastPaper : fallbackPaper) * 1e18;
-        uint256 whole = PRICE_USD18 / px;
-        return (whole == 0 ? 1 : whole) * 1e18;
+        if (px == 0) return lastCost != 0 ? lastCost : fallbackPaper * 1e18;
+        return _costAt(px);
     }
 
     /// @dev paperPerReveal, remembering a fresh price-based cost for later gaps.
     function _priceNow() internal returns (uint256) {
         uint256 px = _paperUsd();
-        if (px == 0) return (lastPaper != 0 ? lastPaper : fallbackPaper) * 1e18;
-        uint256 whole = PRICE_USD18 / px;
-        if (whole == 0) whole = 1;
-        if (lastPaper != whole) {
-            lastPaper = whole;
-            emit LastPaperSet(whole);
+        if (px == 0) return lastCost != 0 ? lastCost : fallbackPaper * 1e18;
+        uint256 cost = _costAt(px);
+        if (lastCost != cost) {
+            lastCost = cost;
+            emit LastCostSet(cost);
         }
-        return whole * 1e18;
+        return cost;
+    }
+
+    /// @dev Cost in PAPER wei at a PAPER/USD price (18 decimals, nonzero).
+    function _costAt(uint256 px) internal pure returns (uint256) {
+        uint256 whole = PRICE_USD18 / px;
+        if (whole != 0) return whole * 1e18;
+        if (px <= CAP_USD18) return 1e18;
+        return CAP_USD18 * 1e18 / px; // $1 worth, under 1 PAPER
     }
 
     function oddsOf(uint256 fire) public view returns (uint16[10] memory o) {

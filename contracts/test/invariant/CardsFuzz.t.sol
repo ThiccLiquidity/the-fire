@@ -240,6 +240,11 @@ contract CardsFuzzTest is Test {
         px = bound(px, 1, 1e30); // PAPER at 1e-18 .. 1e12 USD
         paperFeed.set(int256(px));
         uint256 cost = psa.paperPerReveal();
+        if (px > 1e18) {
+            assertEq(cost, uint256(1e36) / px, "past $1 a PAPER: $1 worth");
+            assertLe(cost * px / 1e18, 1e18, "never over $1");
+            return;
+        }
         assertEq(cost % 1e18, 0, "whole PAPER");
         uint256 whole = cost / 1e18;
         assertGe(whole, 1, "at least 1");

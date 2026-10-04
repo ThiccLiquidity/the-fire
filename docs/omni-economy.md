@@ -137,7 +137,7 @@ Every PAPER spent anywhere is burned.
 |---|---|
 | Any pack (paid, starter or free) | 1 PAPER per pack |
 | Character suggestion | 1 PAPER. Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
-| PDA reveal | The most whole PAPER that stays at or under $0.25 (at least 1). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1. Uses `PaperUsdTwap`; a set number until PAPER has a real market. PAPER only. |
+| PDA reveal | The most whole PAPER that stays at or under $0.25. Past $0.25 a PAPER, 1 PAPER, capped at $1: past $1 a PAPER, $1 worth (part of a PAPER). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1; $4 → 0.25. Uses `PaperUsdTwap` (PAPER already has a live pool, so point `PAPER_USD_FEED` at it on deploy); a set number only if the feed has no price yet. PAPER only. |
 
 - **Get PAPER on the site:** a small box where you type how many PAPER you want, see the ETH price, and press one
   button. It uses the existing KyberSwap swap with the 0.5% fee to the swap-fee wallet. In the buy panel it shows

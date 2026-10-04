@@ -3,8 +3,10 @@
 (() => {
   const MATS = ['paper', 'wood', 'fire', 'charcoal', 'diamond'];
   const MAT_LABEL = { paper: 'Paper', wood: 'Wood', fire: 'Fire', charcoal: 'Charcoal', diamond: 'Diamond' };
-  const NAMES = ['Ember Fox', 'Old Plank', 'Paper Crane', 'Ash Owl', 'Kettle Knight', 'Cinder Cat', 'Bellows Bear', 'Soot Sprite'];
-  // demo collection: cards from Series 5 and 6 (already closed), with a spread of materials, holos and grades
+  // the demo cast: real card art, rendered by the Card Studio's own card builder into cards/<id>/<material>-<holo>-<grade|u>.webp
+  const CHARS = { 'Bowling Ball': { id: 'bowling', category: 'Sports' }, Jellyfish: { id: 'jellyfish', category: 'Animal' }, Cactus: { id: 'cactus', category: 'Plant' } };
+  const NAMES = Object.keys(CHARS);
+  // demo collection: cards from Series 6 (already closed; the card images print "Forged · Series 6"), with a spread of materials, holos and grades
   let seed = 7; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const pickMat = () => { const u = R(); return u < 0.5 ? 'paper' : u < 0.8 ? 'wood' : u < 0.95 ? 'fire' : u < 0.995 ? 'charcoal' : 'diamond'; };
   const cards = [];
@@ -12,7 +14,7 @@
     const material = i === 3 ? 'diamond' : i === 9 ? 'charcoal' : pickMat();
     const holoRate = { paper: 0.05, wood: 0.1, fire: 0.5, charcoal: 0.9, diamond: 1 }[material];
     const holo = i === 5 ? 'full' : R() < holoRate ? ['frame', 'picture', 'full'][Math.floor(R() * 3)] : 'none';
-    const series = i < 20 ? 5 : 6;
+    const series = 6;
     const g = R();
     cards.push({
       id: 1000 + i, serial: 300 + i * 7, series, character: NAMES[Math.floor(R() * NAMES.length)], material,
@@ -31,24 +33,25 @@
       balances: { ETH: 0.42, PLANK: 1250000000, PAPER: 24, USDG: 50 },
       credits: 1, burnCount: 12, starterClaimed: false, bought: 0, pending: [],
     },
-    sealed: { 7: 0, 6: 2, 5: 1 }, // sealed packs owned, by Series (5 and 6 are closed: they can be opened)
+    sealed: { 7: 0, 6: 3 }, // sealed packs owned, by Series (6 is closed: it can be opened)
     cards,
     suggestions: [{ text: 'A lighthouse keeper', at: 'Series 6', picked: true }, { text: 'Grandma’s cast-iron pan', at: 'Series 7', picked: false }],
     activity: [],
   };
   const listeners = new Set();
   const Store = {
-    state, MATS, MAT_LABEL,
+    state, MATS, MAT_LABEL, CHARS, NAMES,
     get(path) { return path.split('.').reduce((o, k) => o?.[k], state); },
     update(fn) { fn(state); listeners.forEach((l) => l(state)); },
     on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     left() { const s = state.series; return s.phase >= 4 ? 0 : Math.max(0, s.total - s.startersClaimed - s.sold); },
     paidLeft() { const s = state.series; return Math.max(0, s.total - s.starters - s.sold + (s.phase >= 2 ? s.starters - s.startersClaimed : 0)); },
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },
-    cardImg(c) { // frame thumbnail for a card: material, holo frame, wear level by grade
-      const lvl = c.grade == null || c.grade === 10 ? '' : c.grade === 1 ? '-l6' : '-l' + (6 - Math.floor(c.grade / 2));
-      const holo = c.holo === 'frame' || c.holo === 'full' ? '-holo' : '';
-      return `ui/frames/${c.material}${holo}${lvl}.webp`;
+    cardImg(c) { // the finished card image: character, material, holo, and PDA grade (every grade 1-10, ungraded = 'u')
+      const id = (CHARS[c.character] || CHARS[NAMES[0]]).id;
+      const holo = c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none';
+      const g = c.grade == null ? 'u' : c.grade;
+      return `cards/${id}/${c.material}-${holo}-${g}.webp`;
     },
   };
 

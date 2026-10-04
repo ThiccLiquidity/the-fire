@@ -153,3 +153,8 @@
   .inf-holo thead th span { display: block }
 }
 @media (prefers-reduced-motion: reduce) { .inf-body, .inf-pbar, .inf-mfill { animation: none } .inf-sec summary::after { transition: none } }
+
+.inf-cas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px }
+.inf-ca { cursor: pointer; font: inherit; color: inherit; background: transparent }
+.inf-ca code { font-family: inherit; opacity: .75; font-weight: 600 }
+.inf-ca .cp { font-size: .8em; color: var(--brass) }

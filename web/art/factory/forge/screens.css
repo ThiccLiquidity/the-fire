@@ -44,7 +44,9 @@ a.btn { text-decoration: none }
 .ctile { display: flex; flex-direction: column; gap: 6px; padding: 6px; margin: 0; background: none; border: 2px solid transparent; border-radius: 12px; cursor: pointer; text-align: left; min-width: 0 }
 .ctile:hover { background: rgba(255,255,255,.04) }
 .cwrap { position: relative }
-.pda { position: absolute; z-index: 4; top: -6px; right: -6px; font: 400 12px/1 var(--display); letter-spacing: .03em; padding: 5px 8px; border-radius: 999px; white-space: nowrap;
+.ctile .cwrap { margin-bottom: 8px }
+/* the PDA badge straddles the card's bottom edge, clear of the printed name, text and seal */
+.pda { position: absolute; z-index: 4; bottom: 0; left: 50%; transform: translate(-50%, 50%); font: 400 12px/1 var(--display); letter-spacing: .03em; padding: 5px 8px; border-radius: 999px; white-space: nowrap;
   background: linear-gradient(#ffe39a, #d8a23f); color: #2a1a05; border: 1.5px solid #fff0bf; box-shadow: 0 2px 6px rgba(0,0,0,.6) }
 .pda.none { background: rgba(21,16,12,.88); color: var(--muted); border: 1.5px dashed var(--line-2) }
 .pda.wait { background: #2b2140; color: #d9c8ff; border-color: #7a64b8 }
@@ -75,52 +77,114 @@ a.btn { text-decoration: none }
 .pinfo { display: grid; gap: 6px; justify-items: start }
 .lock-note { font: 700 14px/1.3 var(--chalk); color: var(--gold) }
 
-/* ---------- workbench: the opening table */
+/* ---------- workbench: the opening table (rip the pack, a stack of cards, the summary) */
 .stage { position: relative; border-radius: 16px; padding: 14px 14px 16px; border: 1px solid var(--line-2);
   background: radial-gradient(80% 60% at 50% 35%, rgba(255,150,60,.16), transparent 70%), repeating-linear-gradient(90deg, rgba(0,0,0,.12) 0 2px, transparent 2px 90px), linear-gradient(#3b2614, #22150b) }
 .stage-msg { text-align: center; font: 700 22px/1.2 var(--chalk); color: var(--gold); min-height: 28px; margin-bottom: 10px !important }
 .stage-ctrls { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; min-height: var(--tap) }
-.table-top { position: relative; min-height: 300px; display: flex; align-items: center; justify-content: center }
-.landing { display: grid; grid-template-columns: repeat(6, minmax(0, 150px)); gap: 14px; justify-content: center; width: 100% }
-.landing.many { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)) }
-.slot { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0 }
-.slot.wait { opacity: 0 }
-.slot > .cmeta { opacity: 0; transition: opacity .3s .35s; min-height: 22px }
-.slot.flipped > .cmeta { opacity: 1 }
-.flipper { display: block; width: 100%; padding: 0; margin: 0; border: 0; background: none; cursor: pointer; perspective: 900px; border-radius: 6px }
-.flipper .inner { position: relative; aspect-ratio: 240 / 336; transform-style: preserve-3d; transition: transform .6s cubic-bezier(.3,.7,.3,1.15) }
-.slot.flipped .inner { transform: rotateY(180deg) }
 .face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden }
 .face.front { transform: rotateY(180deg) }
-.face.back { border-radius: 7%; border: 2px solid #8a6236; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 12px rgba(0,0,0,.55);
-  background: radial-gradient(circle at 50% 45%, #4a2e16, #1a0f07 75%), #1a0f07 }
-.face.back::before { content: ''; position: absolute; inset: 6%; border: 1.5px solid rgba(233,180,90,.45); border-radius: 5% }
-.face.back img { width: 66%; height: auto; opacity: .9 }
-.slot.landed:not(.flipped) .flipper:hover .inner { transform: translateY(-4px) }
-.slot.charge { animation: charge-shake .12s linear infinite }
-.slot.charge .flipper { animation: charge-glow .5s ease-in-out infinite alternate }
-.slot.rare .flipper { filter: drop-shadow(0 0 10px var(--glow)) drop-shadow(0 0 3px var(--glow)) }
-.slot.m-diamond.rare .flipper { animation: rare-pulse 1.8s ease-in-out infinite alternate }
-.slot.burst::after { content: ''; position: absolute; left: 50%; top: 40%; width: 160%; aspect-ratio: 1; z-index: 5; pointer-events: none; border-radius: 50%; opacity: 0;
-  background: radial-gradient(circle, #fff 0%, var(--glow) 25%, transparent 62%); transform: translate(-50%, -50%) scale(.2); animation: burst .7s ease-out .25s }
-@keyframes charge-shake { 0% { transform: translate(0, 0) } 25% { transform: translate(-1.5px, 1px) } 50% { transform: translate(1.5px, -1px) } 75% { transform: translate(-1px, -1px) } }
-@keyframes charge-glow { from { filter: drop-shadow(0 0 4px var(--glow)) } to { filter: drop-shadow(0 0 26px var(--glow)) drop-shadow(0 0 8px var(--glow)) } }
-@keyframes rare-pulse { from { filter: drop-shadow(0 0 8px var(--glow)) } to { filter: drop-shadow(0 0 22px var(--glow)) drop-shadow(0 0 6px #fff) } }
+.op { --cw: min(300px, 70vw, 38dvh); display: grid; justify-items: center; user-select: none; -webkit-user-select: none }
+.op .stage-msg { margin-bottom: 4px !important }
+.op-area { position: relative; display: grid; place-items: center; width: 100%; min-height: calc(var(--cw) * 1.4 + 44px) }
+.op-area > * { grid-area: 1 / 1 }
+.op-meta { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 8px; min-height: 26px }
+.op-n { font: 400 14px var(--display); color: var(--muted); letter-spacing: .04em }
+.op .stage-ctrls { margin-top: 6px }
+.op-area.quake { animation: quake .45s linear }
+@keyframes quake { 0%, 100% { transform: none } 20% { transform: translate(-4px, 2px) } 40% { transform: translate(4px, -3px) } 60% { transform: translate(-3px, -1px) } 80% { transform: translate(2px, 2px) } }
+
+/* the pack: art below the tear line, the foil strip above it (torn piece + the part still attached), the cards inside */
+.pk2 { position: relative; width: var(--cw); aspect-ratio: 240 / 336; padding: 0; margin: 0; border: 0; background: none; border-radius: 10px; cursor: grab; touch-action: none;
+  filter: drop-shadow(0 10px 14px rgba(0,0,0,.6)) }
+.pk2:active { cursor: grabbing }
+.pk2.open { cursor: default }
+.pk2 > * { position: absolute; inset: 0; pointer-events: none }
+.pk-body, .pk-strip { background: url(../build3/pack.webp) center / 100% 100% no-repeat }
+.pk-strip.torn { will-change: transform }
+.pk-cards { inset: auto; left: 12%; top: 4.6%; width: 76%; aspect-ratio: 480 / 672; transition: transform .55s cubic-bezier(.3,1.25,.5,1) }
+.pk-cards img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 4.2% / 3% }
+.pk-cards img:nth-child(1) { transform: translate(-2.5%, 1.2%) rotate(-1.2deg) } .pk-cards img:nth-child(2) { transform: translate(2%, .6%) rotate(1deg) }
+.pk-cards.peek { transform: translateY(-8%) }
+.pk-edge svg { width: 100%; height: 100%; overflow: visible }
+.pk-edge polyline { fill: none; stroke: #fffaf0; stroke-width: 2.4; stroke-linejoin: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 3px rgba(255,179,87,.95)) }
+.pk-hint { inset: auto 7% auto 7% !important; top: 13.7% !important; height: 0; border-top: 2px dashed rgba(255,250,235,.9) }
+.pk-hint::after { content: ''; position: absolute; top: -9px; left: 0; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 0 12px 4px var(--gold); animation: hint-swipe 1.8s ease-in-out infinite }
+@keyframes hint-swipe { 0% { left: 0; opacity: 0 } 15% { opacity: 1 } 75% { left: calc(100% - 16px); opacity: 1 } 100% { left: calc(100% - 16px); opacity: 0 } }
+.pk-n { inset: auto -10px 7% auto !important; z-index: 3; font: 400 16px/1 var(--display); padding: 6px 9px; border-radius: 999px; background: var(--brass); color: #2a1a05 }
+
+/* the stack: one button per card, only the top one is live */
+.stk { position: relative; width: var(--cw); aspect-ratio: 480 / 672 }
+.sc { position: absolute; inset: 0; padding: 0; margin: 0; border: 0; background: none; border-radius: 4.2% / 3%; cursor: grab; touch-action: none; perspective: 1100px;
+  transition: transform .3s cubic-bezier(.3,1.2,.5,1) }
+.sc:focus-visible { outline: 2px solid rgba(255,240,210,.7); outline-offset: 6px }
+.sc-tilt { position: absolute; inset: 0; transform-style: preserve-3d; --mx: .2; --my: .3 }
+.sc .inner { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .6s cubic-bezier(.3,.7,.3,1.12) }
+.sc.flipped .inner { transform: rotateY(180deg) }
+.back2 { border-radius: 4.2% / 3%; box-shadow: 0 8px 16px rgba(0,0,0,.55) }
+.back2 img { display: block; width: 100%; height: 100% }
+.sc .face.front .cface { width: 100% }
+.tease-fx { position: absolute; inset: 0; border-radius: inherit; opacity: 0; pointer-events: none; transition: opacity .3s }
+.sc.rare { filter: drop-shadow(0 0 12px var(--glow)) drop-shadow(0 0 3px var(--glow)) }
+.sc.m-diamond.rare { animation: rare-pulse 1.8s ease-in-out infinite alternate }
+.sc.burst::after { content: ''; position: absolute; left: 50%; top: 45%; width: 170%; aspect-ratio: 1; z-index: 5; pointer-events: none; border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle, #fff 0%, var(--glow) 25%, transparent 62%); transform: translate(-50%, -50%) scale(.2); animation: burst .7s ease-out .3s }
+@keyframes rare-pulse { from { filter: drop-shadow(0 0 8px var(--glow)) } to { filter: drop-shadow(0 0 24px var(--glow)) drop-shadow(0 0 6px #fff) } }
 @keyframes burst { 0% { opacity: .95; transform: translate(-50%, -50%) scale(.2) } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.15) } }
-/* the pack */
-.pk { position: absolute; left: 50%; top: 50%; width: 180px; aspect-ratio: 240 / 336; transform: translate(-50%, -50%); z-index: 6; transition: opacity .45s, transform .45s }
-.pk-top, .pk-bot { position: absolute; inset: 0; background: url(../build3/pack.webp) center / 100% 100% no-repeat; filter: drop-shadow(0 8px 10px rgba(0,0,0,.6)) }
-.pk-top { transition: transform .75s cubic-bezier(.3,.6,.35,1), opacity .75s .15s; transform-origin: 85% 22% }
-.pk.torn .pk-top { transform: translate(90px, -190px) rotate(38deg); opacity: 0 }
-.tear { position: absolute; inset: 0; z-index: 2; pointer-events: none }
-.tear svg { width: 100%; height: 100%; overflow: visible }
-.tear polyline { fill: none; stroke: #fff6dc; stroke-width: 2.5; stroke-dasharray: 300; stroke-dashoffset: 300; stroke-linejoin: round; filter: drop-shadow(0 0 3px #ffb357) }
-.pk.cut .tear polyline { transition: stroke-dashoffset .5s ease-in; stroke-dashoffset: 0 }
-.pk.torn .tear { opacity: 0; transition: opacity .3s .2s }
-.pk.shuffle { animation: wobble .22s ease-in-out infinite }
-.pk.gone { opacity: 0; transform: translate(-50%, -40%) scale(.85); pointer-events: none }
-.pk-n { position: absolute; right: -10px; bottom: 8%; z-index: 3; font: 400 18px/1 var(--display); padding: 6px 9px; border-radius: 999px; background: var(--brass); color: #2a1a05 }
-@keyframes wobble { 0%, 100% { transform: translate(-50%, -50%) rotate(0) } 25% { transform: translate(-51%, -50%) rotate(-2deg) } 75% { transform: translate(-49%, -50%) rotate(2deg) } }
+
+/* tease the rare: the back glows in its material before it turns (glow on ::before, outside the 3D flip) */
+.sc::before { content: ''; position: absolute; inset: 0; border-radius: inherit; opacity: 0; pointer-events: none; transition: opacity .35s }
+.sc.tease::before { opacity: 1 }
+.sc.tease .tease-fx { opacity: 1 }
+.sc.t-fire::before { box-shadow: 0 0 26px 8px rgba(255,120,20,.9), 0 0 70px 18px rgba(255,60,0,.6); animation: flick-glow .13s steps(2) infinite alternate }
+.sc.t-fire .tease-fx { mix-blend-mode: screen; box-shadow: inset 0 0 34px 6px rgba(255,130,30,.85);
+  background: radial-gradient(130% 60% at 50% 112%, rgba(255,150,40,.95), rgba(255,70,0,.55) 45%, transparent 75%); animation: flicker .11s steps(2) infinite alternate }
+@keyframes flick-glow { 0% { box-shadow: 0 0 20px 6px rgba(255,110,20,.8), 0 0 56px 14px rgba(255,60,0,.5) } 100% { box-shadow: 0 0 32px 10px rgba(255,160,40,.95), 0 0 84px 22px rgba(255,80,0,.65) } }
+@keyframes flicker { 0% { opacity: .6 } 50% { opacity: 1 } 100% { opacity: .78 } }
+.sc.t-charcoal::before { box-shadow: 0 0 24px 7px rgba(200,30,8,.9), 0 0 64px 16px rgba(120,0,0,.65); animation: smoulder 1.1s ease-in-out infinite alternate }
+.sc.t-charcoal .tease-fx { box-shadow: inset 0 0 40px 10px rgba(140,10,0,.9); mix-blend-mode: hard-light;
+  background: radial-gradient(4px 4px at 20% 82%, #ffb070 40%, transparent), radial-gradient(3px 3px at 70% 74%, #ff8040 40%, transparent), radial-gradient(5px 5px at 45% 92%, #ffcf8a 40%, transparent),
+    radial-gradient(3px 3px at 82% 88%, #ff6a2a 40%, transparent), radial-gradient(4px 4px at 32% 64%, #ff9050 40%, transparent), radial-gradient(3px 3px at 60% 56%, #ffb070 40%, transparent),
+    radial-gradient(120% 90% at 50% 55%, rgba(60,0,0,.15) 40%, rgba(150,12,0,.7)); animation: embers 1s ease-in forwards }
+@keyframes smoulder { from { opacity: .65 } to { opacity: 1 } }
+@keyframes embers { from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0 } to { background-position: 0 -50px, 0 -80px, 0 -60px, 0 -100px, 0 -70px, 0 -90px, 0 0 } }
+@property --tza { syntax: '<angle>'; inherits: false; initial-value: 0deg }
+.sc.t-diamond::before { animation: prism 1.2s linear both }
+.sc.t-diamond .tease-fx { mix-blend-mode: soft-light; box-shadow: inset 0 0 30px 6px rgba(220,240,255,.8);
+  background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.95) 48%, transparent 62%) -100% 0 / 300% 100% no-repeat, conic-gradient(from var(--tza), #ff6ad5, #ffe36a, #6affc0, #6ad0ff, #b66aff, #ff6ad5);
+  animation: prism-spin 1.2s linear forwards }
+@keyframes prism { 0% { box-shadow: 0 0 10px 2px rgba(160,220,255,.4) } 25% { box-shadow: 0 0 30px 8px rgba(255,130,230,.85) } 50% { box-shadow: 0 0 34px 9px rgba(255,235,120,.85) }
+  75% { box-shadow: 0 0 36px 10px rgba(120,255,200,.85) } 100% { box-shadow: 0 0 46px 14px rgba(150,215,255,1), 0 0 100px 24px rgba(255,255,255,.55) } }
+@keyframes prism-spin { from { --tza: 0deg; background-position: -100% 0, 0 0 } to { --tza: 540deg; background-position: 200% 0, 0 0 } }
+
+/* holo you can tilt: a rainbow band and a glare follow the pointer (or the phone's tilt) */
+.sc .sheen { position: absolute; inset: 0; z-index: 4; pointer-events: none; border-radius: 4.2% / 3%; mix-blend-mode: color-dodge; opacity: .6;
+  background: radial-gradient(farthest-corner circle at calc(var(--mx) * 100%) calc(var(--my) * 100%), rgba(255,255,255,.75), rgba(255,255,255,.12) 22%, transparent 45%),
+    linear-gradient(115deg, transparent 18%, #ff4fd8 30%, #ffe14f 38%, #4fffb0 46%, #4fc3ff 54%, #b04fff 62%, transparent 74%) calc(var(--mx) * 100%) calc(var(--my) * 100%) / 260% 260% no-repeat }
+.sc .h-frame ~ .sheen { opacity: .4 }
+
+/* big moment: Diamond or PDA 10 */
+.bigm { position: fixed; inset: 0; z-index: 60; pointer-events: none; display: grid; place-items: center; transition: opacity .6s }
+.bigm.out { opacity: 0 }
+.bigm > * { position: absolute }
+.bm-cv { inset: 0; width: 100%; height: 100% }
+.bm-flash { inset: 0; background: #fff; opacity: 0; animation: bm-flash .5s ease-out }
+.bm-glow { inset: 0; background: radial-gradient(55% 45% at 50% 50%, var(--bmc, rgba(160,215,255,.45)), transparent 70%); animation: bm-glow 2.4s ease-out both }
+.bigm.g10 { --bmc: rgba(255,205,110,.45) }
+.bm-t { top: 7%; font: 400 clamp(30px, 8vw, 54px)/1 var(--display); letter-spacing: .05em; color: #fff; text-shadow: 0 0 18px var(--diamond), 0 3px 0 #0d141c; animation: bm-pop .6s cubic-bezier(.3,1.6,.5,1) both }
+.bigm.g10 .bm-t { color: #fff3c4; text-shadow: 0 0 18px var(--gold), 0 3px 0 #2a1a05 }
+@keyframes bm-flash { 0% { opacity: .9 } 100% { opacity: 0 } }
+@keyframes bm-glow { 0% { opacity: 0 } 15% { opacity: 1 } 100% { opacity: .5 } }
+@keyframes bm-pop { from { transform: scale(.3); opacity: 0 } to { transform: none; opacity: 1 } }
+
+/* the summary */
+.op-sum-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap }
+.op-sum-h h3 { margin: 0 }
+.op-sum { display: grid; gap: 12px; width: 100% }
+.op-sum-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px 12px; width: 100%; max-width: 980px; margin: 0 auto }
+.op-sum-grid.many { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); max-width: none }
+.op.big .stage-msg { visibility: hidden }
+.new-t { font: 800 12px/1 var(--body); padding: 4px 8px; border-radius: 999px; background: var(--ember); color: #1b0f06; white-space: nowrap }
 
 /* ---------- collection */
 .coll-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px }
@@ -218,9 +282,8 @@ a.btn { text-decoration: none }
   .cgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 6px }
   .ctile { padding: 3px }
   .filters { grid-template-columns: repeat(3, minmax(0, 1fr)) }
-  .landing, .landing.many { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 10px }
-  .pk { width: 140px }
-  .table-top { min-height: 260px }
+  .op-sum-grid, .op-sum-grid.many { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 6px }
+  .stage.opening { padding: 10px 8px 12px }
   .ptiles { grid-template-columns: 1fr }
   .detail { grid-template-columns: 1fr; justify-items: center }
   .detail .big { width: 200px }
@@ -233,4 +296,11 @@ a.btn { text-decoration: none }
   .stage-msg { font-size: 20px }
 }
 @media (max-width: 360px) { .cgrid { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
-@media (prefers-reduced-motion: reduce) { .slot.wait { opacity: 1 } .pk { display: none } }
+@media (prefers-reduced-motion: reduce) {
+  .pk-hint::after { animation: none; left: calc(50% - 8px) }
+  .sc, .sc .inner, .pk-cards { transition-property: opacity }
+  .sc .inner { transition: none }
+  .sc.tease .tease-fx, .sc.m-diamond.rare, .sc.burst::after, .bm-t, .bm-glow { animation: none !important }
+  .sc.tease::before { animation: none !important } .sc.t-diamond::before { box-shadow: 0 0 40px 12px rgba(150,215,255,.95) }
+  .bm-flash { display: none }
+}

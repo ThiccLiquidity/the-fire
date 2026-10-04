@@ -109,6 +109,12 @@ contract PsaTest is Test {
         assertEq(psa.paperPerReveal(), 1e18);
         paperFeed.set(0.3e18);
         assertEq(psa.paperPerReveal(), 1e18, "at least 1");
+        paperFeed.set(1e18);
+        assertEq(psa.paperPerReveal(), 1e18, "1 PAPER up to $1");
+        paperFeed.set(4e18);
+        assertEq(psa.paperPerReveal(), 0.25e18, "past $1: $1 worth");
+        paperFeed.set(3e18);
+        assertEq(psa.paperPerReveal(), uint256(1e36) / 3e18, "past $1: $1 worth, rounded down");
         vm.warp(block.timestamp + 3 days);
         assertEq(psa.paperPerReveal(), 5e18, "stale feed: the set number");
         assertEq(psaNoFeed.paperPerReveal(), 5e18, "no market yet: the set number");
@@ -266,7 +272,7 @@ contract PsaTest is Test {
     function test_audit_feedGapKeepsTheLastPrice() public {
         paperFeed.set(0.005e18); // PAPER at half a cent: 50 PAPER a card
         _reveal(1, 1, 1);
-        assertEq(psa.lastPaper(), 50);
+        assertEq(psa.lastCost(), 50e18);
         vm.warp(block.timestamp + 3 days); // feed gap
         assertEq(psa.paperPerReveal(), 50e18, "not the fallback 5");
     }
@@ -314,10 +320,19 @@ contract PsaTest is Test {
         psaNoFeed.setPaperFeed(address(paperFeed));
     }
 
+    function test_capGapKeepsTheFractionalCost() public {
+        paperFeed.set(2e18); // $2 a PAPER: half a PAPER a card
+        psa.pokePrice();
+        assertEq(psa.lastCost(), 0.5e18);
+        vm.warp(block.timestamp + 3 days);
+        assertEq(psa.paperPerReveal(), 0.5e18, "gap keeps the capped cost");
+    }
+
+
     function test_audit2_keeperPokeRemembersThePrice() public {
         paperFeed.set(0.01e18); // 25 PAPER
         psa.pokePrice();
-        assertEq(psa.lastPaper(), 25);
+        assertEq(psa.lastCost(), 25e18);
         vm.warp(block.timestamp + 3 days); // gap with no reveals in between
         assertEq(psa.paperPerReveal(), 25e18);
     }

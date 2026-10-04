@@ -107,9 +107,9 @@
 
   function timeline() {
     return `<ol class="inf-time">
-      <li><b>0–24 h</b><span>Holders first. The first 50 paid packs are PLANK only.</span></li>
-      <li><b>24 h</b><span>Open to everyone. Unclaimed starter packs join the sale.</span></li>
-      <li><b>48 h</b><span>The 5-per-wallet limit lifts.</span></li>
+      <li><b>First 24 h</b><span>Holders first. The first 50 paid packs take PLANK only, to get the fire stoked.</span></li>
+      <li><b>After 24 h</b><span>Open to everyone. Unclaimed Press packs join the sale.</span></li>
+      <li><b>After 48 h</b><span>The 5-per-wallet limit lifts.</span></li>
       <li><b>Sold out</b><span>The Series closes and packs can be opened.</span></li>
     </ol>`;
   }
@@ -122,17 +122,17 @@
     return [
       sec('about', 'What is Omni Forge', 'A forge for collectible NFT cards, released in numbered Series.', `
         <ul>
-          <li>Omni Forge makes collectible cards on Robinhood Chain. They come out in Series; this one is <b>Series ${no}</b>.</li>
+          <li>Omni Forge mints collectible cards on Robinhood Chain, released in numbered Series.</li>
           <li>The story: PLANK is the wood. It feeds the fire, and the fire runs the card press. The press needs PAPER, so every pack takes 1.</li>
-          <li>You buy sealed packs. When the Series is over, you open them and the cards are yours.</li>
-          <li>Every card is its own NFT: character, material, holo, edition and grade. Sealed packs are NFTs too, one kind per Series.</li>
+          <li>Sealed packs are their own NFTs. Trade them sealed, or open them once the Series ends and keep the cards.</li>
+          <li>Every card is its own NFT: character, material, holo, edition and grade.</li>
           <li>Each Series has its own cast of characters, so a card always tells you where it came from.</li>
         </ul>`),
       sec('buy', 'Buying packs', '$2.50 plus 1 PAPER a pack, paid in PLANK, ETH or USDG.', `
         <ul>
-          <li>For this Series: <b>167 packs</b> in total, <b>50</b> of them starter packs. When they're gone, they're gone.</li>
+          <li>For this Series: <b>167 packs</b> in total, <b>50</b> of them Press packs. When they're gone, they're gone.</li>
           <li>A pack is currently <b>$2.50 + 1 PAPER</b>. You pay in PLANK, ETH or USDG. The PAPER is burned.</li>
-          <li><b>30%</b> of every sale buys PLANK and burns it. <b>70%</b> goes to the revenue wallet. The contract keeps nothing.</li>
+          <li><b>30%</b> of every sale buys PLANK and burns it. The contract keeps nothing.</li>
           <li>You set the most you'll pay. If the price moves past it, the purchase fails and costs nothing.</li>
           <li>Short on PAPER? You can get it right in the buy panel.</li>
         </ul>
@@ -143,13 +143,13 @@
           <li>Up to <b>5 paid packs per wallet</b> for the first 48 hours.</li>
           <li>These numbers are set for each Series before it opens, and can't change once it does.</li>
         </ul>`),
-      sec('free', 'Starter & free packs', 'Press holders claim a starter pack. Free packs are earned and never expire.', `
-        <p class="inf-sub">Starter packs</p>
+      sec('free', 'Press & free packs', 'Paper Press holders claim a Press pack. Free packs are earned and never expire.', `
+        <p class="inf-sub">Press packs</p>
         <ul>
-          <li>For Paper Press holders. A starter pack costs 1 PAPER and nothing else.</li>
+          <li>For Paper Press holders. A Press pack costs 1 PAPER and nothing else.</li>
           <li>One per wallet, and each press counts once per Series. First come, first served.</li>
           <li>They're claimable for the first 24 hours. Any left over join the paid sale.</li>
-          <li>A starter pack is a normal pack: open it, or trade it sealed.</li>
+          <li>A Press pack is a normal pack: open it, or trade it sealed.</li>
         </ul>
         <p class="inf-sub">Free packs</p>
         <ul>
@@ -160,7 +160,7 @@
         </ul>`),
       sec('open', 'Opening packs', 'Packs open once the Series sells out. Nobody knows what’s inside until then.', `
         <ul>
-          <li>Packs open after the Series sells out, or is ended. Until then, keep them or trade them sealed.</li>
+          <li>You can open your packs once the Series sells out or ends. Until then, keep them or trade them sealed.</li>
           <li>Open up to 10 at a time. The packs are burned, and fresh randomness deals your cards a few seconds later.</li>
           <li>A pack's cards are decided at that moment, from what's left in the Series. Nobody, the owner included, can know a sealed pack's contents in advance.</li>
         </ul>
@@ -180,14 +180,14 @@
         ${holoTable()}
         <ul>
           <li>Printed on the card: the character's name, material, category, “Forged · Series ${no}” and the PDA seal.</li>
-          <li>Categories: Person, Animal, Plant, Place, Object, Element, Idea.</li>
+          <li>Every character has a category, like Person, Animal, Place or Idea. New ones arrive as the Series go on.</li>
           <li>In the card's details: its edition (like “12 of 43”, final once every pack in the Series is dealt) and a serial number that never resets.</li>
         </ul>`, 'Rarity'),
       sec('pda', 'PDA grading', 'Spend a little PAPER and the card gets its grade, 1 to 10.', `
         <ul>
           <li>PDA stands for Professional Digital Authenticators: our nod to real card grading.</li>
           <li>Every card starts as “PDA ?”. Reveal its grade once, whenever you like, up to 10 cards at a time.</li>
-          <li>It costs about $0.25 in PAPER (5 PAPER for now), and that PAPER is burned.</li>
+          <li>It costs as many whole PAPER as fit under $0.25, and never more than $1. That PAPER is burned.</li>
         </ul>
         ${pdaChart()}
         <ul>
@@ -206,17 +206,20 @@
       sec('suggest', 'Suggesting characters', 'Pitch a character for 1 PAPER. If it’s picked, you get a free pack.', `
         <ul>
           <li>Anything goes. A suggestion costs 1 PAPER, burned, and the box is always open.</li>
-          <li>Before each Series, the owner picks from the list. A picked suggestion earns a free pack.</li>
+          <li>Before each Series, the artist picks from the list. A picked suggestion earns a free pack.</li>
           <li>The list clears after every picking round. Not picked? Suggest it again.</li>
         </ul>`),
-      sec('paper', 'PAPER, PLANK & the Paper Press', 'PLANK fuels the forge. PAPER feeds the press.', `
+      sec('paper', 'Fuel & paper', 'The forge runs on assets it doesn’t make. It burns them.', `
         <ul>
-          <li><b>PLANK</b> is the wood. 30% of every sale buys and burns it, and the first 50 paid packs of a Series take PLANK only.</li>
-          <li><b>PAPER</b> is what every card is made of. Each pack, suggestion and grade burns some. You never pay for a pack in PAPER: it comes along with the price.</li>
-          <li>The <b>Paper Press</b> is an NFT. It prints 1 PAPER a day. Don't print, and it builds up in the press until you do.</li>
-          <li>Press holders get starter packs and early access to every Series.</li>
+          <li><b>PLANK is the fuel.</b> Every sale feeds the fire: 30% buys PLANK and burns it, and each Series opens on PLANK alone to get the fire stoked.</li>
+          <li><b>PAPER is what every card is printed on.</b> Each pack, grade and suggestion burns a little.</li>
+          <li><b>The Paper Press prints PAPER.</b> Holding one puts you first in line every Series.</li>
         </ul>
-        <a class="inf-link" href="https://opensea.io/" target="_blank" rel="noopener">See Paper Presses on OpenSea <span aria-hidden="true">↗</span></a>`),
+        <div class="inf-cas">
+          <button class="inf-link inf-ca" type="button" data-ca="0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc">PLANK <code>0x6942…2DDc</code> <span class="cp">Copy</span></button>
+          <button class="inf-link inf-ca" type="button" data-ca="0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6">PAPER <code>0x0642…e3c6</code> <span class="cp">Copy</span></button>
+          <a class="inf-link" href="https://opensea.io/collection/the-plank-press" target="_blank" rel="noopener">Paper Press on OpenSea <span aria-hidden="true">↗</span></a>
+        </div>`),
       sec('fair', 'Fairness', 'Randomness nobody controls, and odds fixed before anyone buys.', `
         <ul>
           <li>Cards and grades come from drand, a public randomness source nobody controls, the owner included.</li>
@@ -231,8 +234,7 @@
         <dl class="inf-faq">
           <dt>When can I open my packs?</dt><dd>Once the Series sells out, or is ended. Until then they stay sealed.</dd>
           <dt>Can I sell a pack without opening it?</dt><dd>Yes. Sealed packs trade like any NFT, one kind per Series.</dd>
-          <dt>Why do I need PAPER as well as money?</dt><dd>The press needs paper. Every pack burns 1 PAPER, including starter and free packs.</dd>
-          <dt>Are Paper cards worth keeping?</dt><dd>Look for the shimmer. Only 1 Paper in ${oneIn(M.paper.holo)} is holo, and a full-holo Paper (1 in ${oneIn(M.paper.full)}) is one of the rarest cards in the forge. The rest make good fuel: 42 burned is a free pack.</dd>
+          <dt>Why do I need PAPER as well as money?</dt><dd>The press needs paper. Every pack burns 1 PAPER, including Press and free packs.</dd>
           <dt>Do free packs expire?</dt><dd>No. They stack, and work in any Series while it's on sale.</dd>
           <dt>Should I grade every card?</dt><dd>Up to you. A grade is drawn once and it's final. ${PDA_LINE}</dd>
           <dt>What if opening gets stuck?</dt><dd>If no randomness arrives within a day, it can be asked for again. After 7 days, anyone can cancel and your packs come back sealed.</dd>
@@ -279,6 +281,11 @@
   window.Info = {
     open(sectionId) {
       const root = build();
+      root.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-ca]'); if (!b) return;
+        const done = () => { const c = b.querySelector('.cp'); c.textContent = 'Copied'; setTimeout(() => (c.textContent = 'Copy'), 1500); };
+        try { navigator.clipboard.writeText(b.dataset.ca).then(done, done); } catch { done(); }
+      });
       const dlg = Sheet.open('info', { title: 'Info', body: root, wide: true });
       dlg.querySelector('.sheet-body').scrollTop = 0;
       if (sectionId) go(root, sectionId);

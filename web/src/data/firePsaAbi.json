@@ -40,6 +40,19 @@
   },
   {
     "type": "function",
+    "name": "CAP_USD18",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "CARDS",
     "inputs": [],
     "outputs": [
@@ -246,7 +259,7 @@
   },
   {
     "type": "function",
-    "name": "lastPaper",
+    "name": "lastCost",
     "inputs": [],
     "outputs": [
       {
@@ -589,10 +602,10 @@
   },
   {
     "type": "event",
-    "name": "LastPaperSet",
+    "name": "LastCostSet",
     "inputs": [
       {
-        "name": "paper",
+        "name": "paperWei",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
