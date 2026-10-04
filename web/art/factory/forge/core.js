@@ -47,12 +47,12 @@
     left() { const s = state.series; return s.phase >= 4 ? 0 : Math.max(0, s.total - s.startersClaimed - s.sold); },
     paidLeft() { const s = state.series; return Math.max(0, s.total - s.starters - s.sold + (s.phase >= 2 ? s.starters - s.startersClaimed : 0)); },
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },
-    cardImg(c) { // the finished card image: character, material, holo, and PDA grade (every grade 1-10, ungraded = 'u')
+    cardImg(c) { // the finished card images for a look (character, material, holo): one strip, ungraded then PDA 1-10
       const id = (CHARS[c.character] || CHARS[NAMES[0]]).id;
       const holo = c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none';
-      const g = c.grade == null ? 'u' : c.grade;
-      return `cards/${id}/${c.material}-${holo}-${g}.webp`;
+      return `cards/${id}/${c.material}-${holo}.webp`;
     },
+    cardPos(c) { return `${(c.grade == null ? 0 : c.grade) * 10}% 0`; }, // which card in the strip (object-position)
   };
 
   // toasts: short, stacked under the top bar

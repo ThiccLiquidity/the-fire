@@ -86,7 +86,7 @@
   function cardFace(c) {
     const holo = c.holo || 'none';
     return h('div', { class: `cface m-${c.material} h-${holo}${c.grade === 10 ? ' g10' : ''}` },
-      h('img', { class: 'cframe', src: Store.cardImg(c), alt: `${c.character}, ${Store.MAT_LABEL[c.material]} card`, draggable: 'false' }),
+      h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: `${c.character}, ${Store.MAT_LABEL[c.material]} card`, draggable: 'false' }),
       holo !== 'none' ? h('i', { class: 'shine', 'aria-hidden': 'true' }) : null);
   }
   const gradeBadge = (c) => c.pending ? h('span', { class: 'pda wait', text: 'Grading' })
@@ -568,7 +568,7 @@
       for (const w of tiles) {
         const g = drawGrade(); got.push(g);
         Store.update((s) => { const c = s.cards.find((x) => x.id === w._id); if (c) { c.grade = g; c.pending = false; } });
-        const c = byId(w._id); if (c) w.querySelector('.cframe').src = Store.cardImg(c);
+        const c = byId(w._id); if (c) { const f = w.querySelector('.cframe'); f.src = Store.cardImg(c); f.style.objectPosition = Store.cardPos(c); }
         w.querySelector('.cface').classList.toggle('g10', g === 10);
         w.querySelector('.cwrap').append(h('span', { class: 'stamp g' + g, 'aria-hidden': 'true' }, h('small', { text: 'PDA' }), h('b', { text: g })));
         w.classList.add('stamped'); w.setAttribute('aria-label', `PDA ${g}`);
