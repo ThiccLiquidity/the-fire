@@ -53,6 +53,27 @@
       return `cards/${id}/${c.material}-${holo}.webp`;
     },
     cardPos(c) { return `${(c.grade == null ? 0 : c.grade) * 10}% 0`; }, // which card in the strip (object-position)
+    // true rarity of one card: P(material) x P(its holo for that material) x P(its PDA grade) when graded (ungraded: no grade factor).
+    // Same maths as the Info tables (Info.pullP / Info.gradeP). Tier by odds: Rare rarer than 1 in 50, Epic 1 in 300, Legendary 1 in 1,500.
+    trueOdds(c) {
+      const I = window.Info; if (!I?.pullP) return { p: 1, n: 1, label: '', tier: null };
+      const p = I.pullP(c.material, c.holo || 'none') * (c.grade == null ? 1 : I.gradeP(c.grade));
+      const n = p > 0 ? 1 / p : Infinity;
+      return { p, n, label: p > 0 ? '1 in ' + I.oneIn(p) : '', tier: n > 1500 ? 'legendary' : n > 300 ? 'epic' : n > 50 ? 'rare' : null };
+    },
+    // DEMO DATA: a made-up OpenSea floor for this exact type (character + material + holo, + grade when graded), in ETH.
+    // Deterministic, and rarer means higher: 0.0001 ETH x N^0.75 for "1 in N", nudged +-12% per type so they don't look formulaic.
+    floor(c) {
+      const k = [c.character, c.material, c.holo || 'none', c.grade ?? 'u'].join('|');
+      let hs = 2166136261; for (let i = 0; i < k.length; i++) hs = Math.imul(hs ^ k.charCodeAt(i), 16777619);
+      const v = 0.0001 * Math.pow(Store.trueOdds(c).n, 0.75) * (0.88 + ((hs >>> 0) % 1000) / 1000 * 0.24);
+      return +v.toPrecision(2);
+    },
+    collectionFloor() { return Math.min(...NAMES.map((character) => Store.floor({ character, material: 'paper', holo: 'none', grade: null }))); }, // the commonest type's floor
+    eth(v) { return v.toLocaleString('en-US', { maximumSignificantDigits: 2 }) + ' ETH'; },
+    // OpenSea: the collection slug is a PLACEHOLDER until the contract is deployed. With a contract + token ids, item() links the card itself.
+    OPENSEA: { collection: 'https://opensea.io/collection/omni-cards', account: 'https://opensea.io/account', chain: null, contract: null },
+    openSeaItem(c) { const o = Store.OPENSEA; return o.contract && c.tokenId != null ? `https://opensea.io/item/${o.chain}/${o.contract}/${c.tokenId}` : o.collection; },
   };
 
   // toasts: short, stacked under the top bar

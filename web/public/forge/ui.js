@@ -15,6 +15,7 @@
     mute: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l4 6M21 9l-4 6"/>',
     feed: '<path d="M4 6h16M4 12h10M4 18h13"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    cards: '<rect x="3.5" y="6" width="11" height="15" rx="1.8"/><path d="M8.5 3.5l9.6 1.7a1.8 1.8 0 0 1 1.5 2.1l-2 11.1"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
   };
   const svg = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
@@ -29,8 +30,9 @@
     <button class="chip series" id="seriesChip" type="button"></button>
     <div class="grow"></div>
     <nav class="tools" aria-label="Tools">
-      <button class="chip" type="button" data-go="paper">${svg('paper')}<span>Get PAPER</span></button>
-      <button class="chip" type="button" data-go="info">${svg('info')}<span>Info</span></button>
+      <button class="chip mycards" type="button" data-st="cards" aria-label="My cards">${svg('cards')}<span>My cards</span></button>
+      <button class="chip" type="button" data-go="paper" aria-label="Get PAPER">${svg('paper')}<span>Get PAPER</span></button>
+      <button class="chip" type="button" data-go="info" aria-label="Info">${svg('info')}<span>Info</span></button>
       <button class="chip round" type="button" data-go="feed" aria-label="Activity">${svg('feed')}</button>
       <button class="chip round" type="button" id="soundBtn" aria-label="Sound" aria-pressed="false">${svg('mute')}</button>
       <button class="chip demo" type="button" data-go="demo">Demo</button>
@@ -42,15 +44,16 @@
   <div class="ui" id="pills">
     <div class="buybox" id="buybox" data-x="1480" data-y="250"></div>
     <button class="pill" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
-    <button class="pill" type="button" data-st="table" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span>Open packs<small id="pOpen"></small></span></button>
+    <button class="pill openp" type="button" data-st="open" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
     <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Grade<small>~5 PAPER</small></span></button>
     <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small>1 PAPER</small></span></button>
   </div>
   <section class="stations" aria-label="Stations">
     <button class="station" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
-    <button class="station" type="button" data-st="table" style="--c: var(--wood)">${svg('pack')}<b>Open packs</b><small id="sOpen"></small></button>
+    <button class="station" type="button" data-st="cards" style="--c: var(--wood)">${svg('cards')}<b>My cards</b><small id="sCards"></small></button>
     <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Grade</b><small>~5 PAPER</small></button>
     <button class="station" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small>1 PAPER</small></button>
+    <button class="openbtn" type="button" data-st="open" id="openBtn">${svg('pack')}<span><b id="sOpenT">Open packs</b><small id="sOpen"></small></span></button>
   </section>
   <footer class="strip" aria-label="What's in a pack">
     <img class="packart" src="ui/omni-pack.webp" alt="Series 7 pack">
@@ -58,7 +61,7 @@
       <h3><b class="sw">SERIES 7</b> PACK<span>6 cards</span></h3>
       <table class="types" aria-label="Cards in a pack">
         <tr><th scope="row">Material</th><td><span class="mat paper">Paper</span></td><td><span class="mat wood">Wood</span></td><td><span class="mat fire">Fire</span></td><td><span class="mat charcoal">Coal</span></td><td><span class="mat diamond">Diamond</span></td></tr>
-        <tr><th scope="row">Per pack</th><td>3</td><td>1–2</td><td colspan="3" class="span">1+ · rarest last</td></tr>
+        <tr><th scope="row">Per pack</th><td>3</td><td>1–2</td><td colspan="3" class="span">At least 1 of these</td></tr>
       </table>
     </div>
     <button class="btn small more" type="button" data-go="info-cards">Rarity</button>
@@ -75,7 +78,8 @@
     document.body.dataset.mode = mode;
     if (!window.Scene) return;
     if (mode === 'port') {
-      const sh = Math.round(Math.min(H * 0.42, W * 0.9));
+      const bb = document.querySelector('.buybar')?.offsetHeight || 190, st = document.querySelector('.stations')?.offsetHeight || 150;
+      const sh = Math.round(Math.max(160, Math.min(H * 0.42, W * 0.9, H - bar - st - bb - 24))); // stations must stay clear of the Buy bar on short phones
       Scene.setView({ x: 0, y: bar, w: W, h: sh, mode: 'cover', focus: 0.42, follow: true }); // the camera follows the action
       document.documentElement.style.setProperty('--sceneH', sh + 'px');
     } else if (mode === 'land') {
@@ -116,7 +120,7 @@
   }
   function buyButtons() {
     const ph = PH[S.series.phase], w = S.wallet, out = [];
-    if (sold()) return { line: `Series ${S.series.no} sold out`, opts: [['table', 'Open your packs', `Series ${S.series.no + 1} soon`, 'alt']] };
+    if (sold()) return { line: `Series ${S.series.no} sold out`, opts: [Stations.openableCount() ? ['open', 'Open your packs', `Series ${S.series.no + 1} soon`, 'alt'] : ['cards', 'My cards', `Series ${S.series.no + 1} soon`, 'alt']] };
     let sub2 = ph.plankOnly ? `PLANK only · ${S.series.plankOnly - S.series.plankSold} left` : ph.sub;
     out.push(['buy', 'Buy packs', `$2.50 + 1 PAPER<br>${sub2}`, 'main']);
     if (S.series.phase <= 1 && !w.starterClaimed && S.series.startersClaimed < S.series.starters) out.push(['starter', 'Press pack', 'Press holders<br>1 PAPER', 'alt']);
@@ -129,26 +133,40 @@
       `<button class="opt ${cls}" type="button" data-buy="${k}">${k === 'buy' ? '<img class="mini" src="a/pack.webp" alt="">' : ''}<span>${t}<small>${sub}</small></span></button>`).join('') + '</div>';
     $('#buybox').innerHTML = html; $('#buybar').innerHTML = html;
     $('#buybox').classList.toggle('calm', sold()); $('#buybar').classList.toggle('calm', sold());
-    for (const b of document.querySelectorAll('[data-buy]')) b.onclick = () => ({ buy: checkout, starter, free: useFree, table: () => Stations.open('table') })[b.dataset.buy]?.();
+    for (const b of document.querySelectorAll('[data-buy]')) b.onclick = () => ({ buy: checkout, starter, free: useFree, open: () => openStation('open'), cards: () => openStation('cards') })[b.dataset.buy]?.();
   }
   function renderCounts() {
     const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0), b = S.wallet.burnCount % 42;
     for (const id of ['pBurn', 'sBurn']) $('#' + id).textContent = `${b} / 42`;
-    for (const id of ['pOpen', 'sOpen']) $('#' + id).textContent = sealed ? `${sealed} sealed` : 'Your cards';
+    // Open packs: what can be opened now (the live Series' packs stay sealed until it sells out)
+    const ready = Stations.openable(), n = ready.reduce((a, o) => a + o.n, 0), locked = sealed - n;
+    const title = n ? `Open packs (${n})` : 'No packs', sub = n ? `Series ${ready[0].series}${ready.length > 1 ? ' first' : ''}` : locked ? 'Open at sell-out' : 'Buy one first';
+    const why = n ? `Open packs: ${n} sealed ${n === 1 ? 'pack' : 'packs'} ready to open` : locked
+      ? `No packs to open yet. Your ${locked} Series ${S.series.no} ${locked === 1 ? 'pack opens' : 'packs open'} when the Series sells out`
+      : 'No packs to open. Buy packs to get some';
+    for (const [t, s, b] of [['pOpenT', 'pOpen', '.pill.openp'], ['sOpenT', 'sOpen', '#openBtn']]) {
+      $('#' + t).textContent = title; $('#' + s).textContent = sub;
+      const el = $(b); el.classList.toggle('none', !n); el.setAttribute('aria-label', why); el.setAttribute('aria-disabled', String(!n));
+    }
+    $('#sCards').textContent = `${S.cards.length} ${S.cards.length === 1 ? 'card' : 'cards'} · ${sealed} ${sealed === 1 ? 'pack' : 'packs'}`;
     const wb = $('#walletBtn span');
     const nm = mode === 'port' ? '' : S.wallet.name; // phones: just the balance (and no icon), so the button fits beside the brand
     wb.textContent = S.wallet.connected ? `${nm ? nm + ' · ' : ''}${S.wallet.balances.PAPER} PAPER` : 'Connect';
     $('#walletBtn').classList.toggle('on', S.wallet.connected);
   }
-  function render() { renderChip(); renderBuy(); renderCounts(); syncScene(); placePills(); }
+  let bbH = 0;
+  function render() {
+    renderChip(); renderBuy(); renderCounts(); syncScene(); placePills();
+    const h = mode === 'port' ? $('#buybar').offsetHeight : 0; if (h !== bbH) { bbH = h; if (h) layout(); } // the Buy bar changed height: keep the stations clear of it
+  }
   Store.on(render);
 
   // ---------- wallet
-  function needWallet(then) {
+  function needWallet(then) { // demo: one click connects a demo wallet; the real site opens the standard wallet window
     if (S.wallet.connected) return then();
-    const d = Sheet.open('connect', { title: 'Connect', body: `<p class="lead">Use any regular wallet.</p><p class="demo-line lead"><b>Demo</b>Pick any to try the site. No wallet is used.</p><div class="wallets">
-      ${['MetaMask', 'Rabby', 'OKX Wallet', 'Coinbase Wallet'].map((n) => `<button class="btn" type="button">${n}</button>`).join('')}</div>` });
-    d.querySelectorAll('.wallets .btn').forEach((b) => b.onclick = () => { d.close(); Store.update((s) => { s.wallet.connected = true; }); toast('Connected', 'good'); setTimeout(then, 200); });
+    Store.update((s) => { s.wallet.connected = true; });
+    toast('Demo wallet connected. No real wallet is used.', 'good');
+    setTimeout(then, 200);
   }
   $('#walletBtn').onclick = () => needWallet(openWallet);
   function openWallet() {
@@ -164,10 +182,10 @@
           <div><span>Cards</span><b>${S.cards.length}</b></div>
           ${w.pending.length ? `<div><span>Pending</span><b>${w.pending.length}</b></div>` : ''}
         </div>
-        <div class="acts"><button class="btn primary" type="button" data-w="cards">My packs & cards</button><button class="btn" type="button" data-w="paper">Get PAPER</button></div>
+        <div class="acts"><button class="btn primary" type="button" data-w="cards">My cards</button><button class="btn" type="button" data-w="paper">Get PAPER</button></div>
         <div class="acts"><button class="btn small" type="button" data-w="switch">Switch wallet</button><button class="btn small" type="button" data-w="out">Disconnect</button></div>
       </div>` });
-    d.querySelector('[data-w=cards]').onclick = () => { d.close(); Stations.open('table'); };
+    d.querySelector('[data-w=cards]').onclick = () => { d.close(); openStation('cards'); };
     d.querySelector('[data-w=paper]').onclick = () => { d.close(); openGetPaper(); };
     d.querySelector('[data-w=out]').onclick = () => { d.close(); Store.update((s) => { s.wallet.connected = false; }); };
     d.querySelector('[data-w=switch]').onclick = () => { d.close(); Store.update((s) => { s.wallet.connected = false; }); needWallet(openWallet); };
@@ -267,6 +285,7 @@
   }
   function openMenu() {
     const d = Sheet.open('menu', { title: 'Menu', body: `<div class="menu">
+      <button class="btn" type="button" data-m="cards">${svg('cards')}My cards</button><button class="btn" type="button" data-m="open">${svg('pack')}Open packs${Stations.openableCount() ? ` (${Stations.openableCount()})` : ''}</button>
       <button class="btn" type="button" data-m="paper">${svg('paper')}Get PAPER</button><button class="btn" type="button" data-m="info">${svg('info')}Info</button>
       <button class="btn" type="button" data-m="feed">${svg('feed')}Activity</button><button class="btn" type="button" data-m="sound">${svg('sound')}Sound ${sound ? 'on' : 'off'}</button>
       <button class="btn" type="button" data-m="demo">Demo controls</button></div>` });
@@ -295,10 +314,21 @@
   function go(k) {
     if (k === 'paper') openGetPaper(); if (k === 'info') Info.open(); if (k === 'info-cards') Info.open('cards'); if (k === 'feed') openFeed();
     if (k === 'menu') openMenu(); if (k === 'demo') openDemo(); if (k === 'sound') $('#soundBtn').click();
+    if (k === 'cards' || k === 'open') openStation(k);
+  }
+  // My cards opens the collection; Open packs goes straight to tearing the next pack, or (none to open) says why and points at Buy
+  function openStation(k) {
+    if (k !== 'open' || Stations.openableCount()) return Stations.open(k);
+    const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0);
+    if (sealed) return toast(`Your Series ${S.series.no} packs open when it sells out`);
+    if (sold()) return toast(`No packs to open. Series ${S.series.no + 1} is coming soon`);
+    toast('No packs to open yet. Buy one first!');
+    const b = $(mode === 'desk' ? '#buybox [data-buy]' : '#buybar [data-buy]'); if (!b) return;
+    b.focus({ preventScroll: true }); b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge');
   }
   document.querySelectorAll('[data-go]').forEach((b) => b.onclick = () => go(b.dataset.go));
   $('#seriesChip').onclick = () => Info.open('buying');
-  document.querySelectorAll('[data-st]').forEach((b) => b.onclick = () => Stations.open(b.dataset.st));
+  document.querySelectorAll('[data-st]').forEach((b) => b.onclick = () => openStation(b.dataset.st));
 
   // ---------- the scene's events: a pack made is a pack sold; delivered packs land in the wallet
   let pendingDeliver = 0, crowd = 0;

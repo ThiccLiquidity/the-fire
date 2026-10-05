@@ -280,12 +280,15 @@
 
   window.Info = {
     // pull odds for one card of a material + holo, from the same numbers as the tables above ("1 in 3,120")
-    pullOdds(material, holo = 'none') {
-      const m = M[material]; if (!m) return null;
+    pullOdds(material, holo = 'none') { const p = this.pullP(material, holo); return p > 0 ? oneIn(p) : null; },
+    // the same, as a probability: P(material) x P(this holo for that material)
+    pullP(material, holo = 'none') {
+      const m = M[material]; if (!m) return 0;
       const share = m.count / SERIES_CARDS, h = material === 'diamond' && holo === 'none' ? 'full' : holo;
-      const p = share * (h === 'full' ? m.full : h === 'none' ? m.none : m.frame); // picture only = frame only
-      return p > 0 ? oneIn(p) : null;
+      return share * (h === 'full' ? m.full : h === 'none' ? m.none : m.frame); // picture only = frame only
     },
+    gradeP(g) { const b = PDA.find((x) => x.g === g); return b ? b.p / 100 : 1; }, // PDA odds for one grade; ungraded = 1 (no grade factor)
+    PDA, oneIn,
     open(sectionId) {
       const root = build();
       root.addEventListener('click', (e) => {

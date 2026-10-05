@@ -3,7 +3,7 @@ import { defineConfig, loadEnv, type Plugin } from 'vite'
 
 /** Production build guard: the site's CSP (vercel.json connect-src) must allow the RPC it reads through, or every read
  *  is blocked in production only (vite preview doesn't apply vercel.json). */
-function launchChecks(mode: string): Plugin {
+export function launchChecks(mode: string): Plugin {
   return {
     name: 'forge-launch-checks',
     apply: 'build',
@@ -24,8 +24,9 @@ function launchChecks(mode: string): Plugin {
 }
 
 // The live site is the static Forge in public/forge (copied as-is into dist). index.html only points / at it;
-// Vercel also redirects / to /forge/ (vercel.json). src/lib holds the chain, wallet, swap and card-ABI modules the
-// real Forge will use; `tsc -b` type-checks them.
+// Vercel also redirects / to /forge/ (vercel.json). src/lib holds the chain, wallet, swap and card-ABI modules;
+// `tsc -b` type-checks them. The wallet bundle for the Forge (src/forge-wallet.ts, vite.wallet.config.ts) is ready
+// but not wired into the site yet; `npm run build:wallet` builds it.
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
   plugins: [launchChecks(mode)],
