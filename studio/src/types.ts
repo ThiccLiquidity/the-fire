@@ -109,14 +109,29 @@ export interface UploadState {
   metadataAt?: number
   format?: OutputFormat
   mock?: boolean
+  /** The images folder name the images CID belongs to (it carries a fingerprint of the files). A rebuild changes it,
+   *  so the saved CIDs are not reused for different images. Missing on uploads saved by older versions. */
+  imagesDir?: string
 }
 
+/** Series builds are always WEBP (the contract names every image .webp). 'png' only appears on builds saved by older
+ *  versions, which must be rebuilt. */
 export type OutputFormat = 'webp' | 'png'
+
+/** Bumped when what a build contains changes; builds saved under another version must be redone. 1 = the full grid
+ *  (looks.ts seriesGrid: 209 images per character, keyed by grade). */
+export const BUILD_GRID_VERSION = 1
 
 export interface BuildState {
   format: OutputFormat
   count: number
   builtAt: number
+  /** BUILD_GRID_VERSION it was built under; missing on older (sample-deal-only) builds. */
+  grid?: number
+  /** Total size of the built images, bytes. */
+  bytes?: number
+  /** How long the build took, ms. */
+  ms?: number
 }
 
 export interface FireRecord {

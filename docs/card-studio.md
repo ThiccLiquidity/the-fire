@@ -13,7 +13,9 @@ encoded once in `studio/src/rules.ts` and `studio/src/deal.ts` and ported exactl
 - **Printed on the image:** character name (top bar), and in the bottom panel the material, the category and
   "Forged · Series #", with the PDA seal on the right.
 - **In the metadata only:** the global serial (never resets) and the edition ("12 of 43"). This lets every card with
-  the same look share one image.
+  the same look and grade share one image.
+- **Name** per character: at most 64 bytes of UTF-8 (the contract's `MAX_NAME_BYTES`), no `"`, `\` or control
+  characters. A Series has at most 255 characters.
 - **Category** per character: free text, typed in the Library. There is no preset list; the field suggests the
   categories already used, so the list builds up as categories are added. Spaces are trimmed and collapsed, the
   capitalisation typed is what prints, and the same word in other capitalisation is saved with the spelling already
@@ -87,20 +89,25 @@ Odds are `FirePsa.oddsOf`'s defaults and can be changed per Series before any of
 
 ## Shared images
 
-One image per character x material x holo type x wear look within a Series. Each Series has new characters and its
-own "Forged · Series #" line, so images are never shared across Series. A Series builds a few dozen images per
-character, not one per card. Each card's metadata points at its shared image.
+One image per character x material x holo type x grade within a Series. Each grade has its own image (the seal prints
+the number), even where two grades share a wear frame. Per character: 4 materials x 4 holo types + Diamond x 3 (always
+holo) = 19 looks, each in 11 grade states (unrevealed, PDA 1 to 10) = **209 images**, WEBP only. Every one is built
+before upload, since grades are revealed on-chain later and any card may need any of them. Each Series has new
+characters and its own "Forged · Series #" line, so images are never shared across Series. Each card's metadata
+points at its shared image.
 
 ## Collections
 
 - **Omni Card Packs** (`FirePacks`, ERC-1155): one stackable token type per Series, so "Series 7 Sealed Pack x 3"
   lists and trades like any item. Pack art is `<packImageBase>fire<N>.webp`.
 - **Omni Cards** (`FireCards`, ERC-721): every card unique, with character, category, material, holo, Series,
-  edition, serial and PDA grade as traits. Image file names match the studio's export:
-  `c<character>-<material>-<holo>-<wear>.webp`.
+  edition, serial and PDA grade as traits. Image file names match the studio's export and `FireCards.imageFile`:
+  `c<character>-<material>-<holo>-<grade>.webp`, with `material` one of `paper`, `wood`, `fire`, `coal`, `diamond`,
+  `holo` one of `none`, `frame`, `picture`, `full` (Diamond has no `none`), and `grade` `u` (unrevealed) or `1` to
+  `10`. Example: `c0-wood-none-u.webp`, `c2-coal-full-10.webp`.
 
-A pack's contents are decided only when it is opened: the pack is burned, drand randomness arrives a few seconds
-later and its 6 cards are drawn from what is left in the Series' pool, keeping the pack guarantees. See
+A pack's contents are decided only when it is opened: the pack is burned, drand randomness arrives about 30 seconds
+later (the router commits to a drand round 30 to 33 seconds ahead) and its 6 cards are drawn from what is left in the Series' pool, keeping the pack guarantees. See
 `docs/cards-contracts.md`.
 
 ## Studio workflow, per Series
@@ -109,14 +116,23 @@ later and its 6 cards are drawn from what is left in the Series' pool, keeping t
    10 images (each material, normal and holo).
 2. **Frames & Layout:** text fields' font, size and colour are set once per material; the art window is fixed by
    the frames.
-3. **Series:** pick the characters, the pack count and the Diamonds. The tab shows the exact pool and the expected
-   holos.
-4. **Deal:** a sample deal on the real rules, seeded by a string. The contract's result replaces it in the same shape.
+3. **Series:** pick the characters (at most 255), the pack count (1 to 100,000) and the Diamonds. The tab shows the
+   exact pool and the expected holos.
+4. **Deal:** a sample deal on the real rules, seeded by a string, dealt in a background worker. The contract's
+   result replaces it in the same shape. Locking the deal advances the studio's own serial counter; it is not the
+   contract's (on-chain serials come from `FireCards` as packs are dealt).
 5. **Build & Review:** one sample of every character x material x holo type renders for review; **Approve all**, then
-   **Build all**. Any later asset change requires approving again.
+   **Build all images** builds the full grid (209 WEBP images per character) in background workers. Any later asset
+   change requires approving again.
 6. **Export & Upload:** a zip of images, per-card ERC-721 metadata and `fire.json` (which includes the
    `configureFire` arguments: names and categories in order, and the images folder once uploaded), or an upload to
-   IPFS through Pinata. The Pinata key is typed in per session and never stored.
+   IPFS through Pinata: the images folder (`fire-<n>-images-<fingerprint>`), then the metadata folder
+   (`fire-<n>-metadata-<last 10 characters of the images CID>`). The Pinata key is typed in per session and never
+   stored.
+
+Only the images folder is used on-chain: its `ipfs://<CID>/` is the `imagesBase` passed to `configureFire` (or
+`setImagesBase`), and `FireCards.tokenURI` builds each card's JSON itself. The studio's per-card metadata is for
+preview and reference only.
 
 ## Storage
 

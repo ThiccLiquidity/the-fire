@@ -6,6 +6,10 @@
  *  response's `IpfsHash` is the directory's CID, so a file is at ipfs://<CID>/<fileName>.
  *
  *  Two directories per Series: images first, then metadata whose `image` fields point at ipfs://<imagesCid>/<file>.
+ *  Only the images folder is used on-chain: FireCards.configureFire stores ipfs://<imagesCid>/ as the Series' imagesBase
+ *  and tokenURI builds each card's JSON itself. The metadata folder (one ERC-721 JSON per card of the sample deal) is
+ *  for preview and reference only. Its name carries the images CID (metadataDirName), so metadata made for an older
+ *  build of the images is never found and reused by name.
  *  Resume: each finished directory's CID is saved on the Series right away and skipped next time; before uploading a
  *  directory we also ask Pinata (GET /data/pinList?status=pinned&metadata[name]=...) whether a pin with that exact name
  *  already exists (an upload that finished after the tab closed) and reuse it.
@@ -149,9 +153,14 @@ export interface UploadPlan {
   save: (patch: { imagesCid?: string; metadataCid?: string }) => Promise<void>
   onStatus: (text: string) => void
   onProgress: (fraction: number) => void
-  /** Folder names; a suffix lets a re-upload with changed files avoid reusing an old pin of the same name. */
+  /** Images folder name; a suffix (a fingerprint of the files) lets a re-upload with changed files avoid reusing an
+   *  old pin of the same name. The metadata folder is always metadataDirName(fire, imagesCid). */
   imagesDirName?: string
-  metadataDirName?: string
+}
+
+/** "fire-<n>-metadata-<last 10 chars of the images CID>": tied to the exact images it points at. */
+export function metadataDirName(fire: number, imagesCid: string): string {
+  return `fire-${fire}-metadata-${imagesCid.slice(-10)}`
 }
 
 async function withRetry<T>(what: string, fn: () => Promise<T>, onStatus: (t: string) => void, attempts = 3): Promise<T> {
@@ -172,7 +181,6 @@ export async function uploadFire(plan: UploadPlan, transport: PinataTransport): 
   const jwt = sessionJwt
   if (!jwt) throw new Error('Enter the Pinata JWT first.')
   const imagesDir = plan.imagesDirName ?? `fire-${plan.fire}-images`
-  const metaDir = plan.metadataDirName ?? `fire-${plan.fire}-metadata`
 
   plan.onStatus('Checking the Pinata key...')
   await withRetry('Key check', () => transport.testAuth(jwt), plan.onStatus)
@@ -191,6 +199,7 @@ export async function uploadFire(plan: UploadPlan, transport: PinataTransport): 
   }
   plan.onProgress(0.9)
 
+  const metaDir = metadataDirName(plan.fire, imagesCid)
   let metadataCid = plan.existing.metadataCid
   if (metadataCid) {
     plan.onStatus(`Metadata already uploaded (${metadataCid}), skipping.`)

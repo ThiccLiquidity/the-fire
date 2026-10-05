@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  MAX_CATEGORY_BYTES, categoryKey, categoryProblem, categorySuggestions, hasCategory, migrateCharacterCategory, migrateLegacyCategory,
+  MAX_CATEGORY_BYTES, MAX_NAME_BYTES, categoryKey, hasValidName, nameProblem, normalizeName, categoryProblem, categorySuggestions, hasCategory, migrateCharacterCategory, migrateLegacyCategory,
   normalizeCategory,
 } from './categories'
 import type { Character } from './types'
@@ -44,5 +44,25 @@ describe('categories', () => {
     expect(migrateCharacterCategory(old).category).toBe('Animal')
     expect('category' in migrateCharacterCategory(char(''))).toBe(false)
     expect(migrateCharacterCategory(char()).name).toBe('A')
+  })
+
+  it('validates names like the contract: non-empty, at most 64 bytes of UTF-8, no quote, backslash or control characters', () => {
+    expect(MAX_NAME_BYTES).toBe(64)
+    expect(nameProblem('Rabbit')).toBeNull()
+    expect(nameProblem("Rock 'n' Roll Rabbit")).toBeNull()
+    expect(nameProblem('x'.repeat(64))).toBeNull()
+    expect(nameProblem('é'.repeat(32))).toBeNull() // 64 bytes
+    expect(nameProblem('é'.repeat(33))).toMatch(/Too long: 66 bytes, at most 64/)
+    expect(nameProblem('x'.repeat(65))).toMatch(/Too long: 65 bytes/)
+    expect(nameProblem('')).toMatch(/name/)
+    expect(nameProblem('The "Rabbit"')).toMatch(/quotes/)
+    expect(nameProblem('a\\b')).toMatch(/backslash/)
+    expect(nameProblem('tab\there')).toMatch(/control/)
+    expect(nameProblem('line\nbreak')).toMatch(/control/)
+    expect(nameProblem('\u001f')).toMatch(/control/)
+    expect(nameProblem('del\u007f ok')).toBeNull() // the contract only rejects bytes below 0x20
+    expect(normalizeName('  Rabbit ')).toBe('Rabbit')
+    expect(hasValidName({ name: '  ' })).toBe(false)
+    expect(hasValidName({ name: ' Fox ' })).toBe(true)
   })
 })

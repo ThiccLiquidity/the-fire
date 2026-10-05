@@ -6,7 +6,8 @@ import {PlankUsdTwap} from "../src/PlankUsdTwap.sol";
 
 /// Step 1 of deploy: the PLANK/USD TWAP feed (FireSale prices PLANK with it). Deploy it at least 30 minutes before the
 /// card contracts, then checkpoint() it 30+ min after deploy and every 30 min after that (keeper).
-///   forge script script/DeployTwap.s.sol --rpc-url $RPC --account deployer --broadcast --verify
+///   forge script script/DeployTwap.s.sol --rpc-url $RPC --account deployer --broadcast \
+///     --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
 contract DeployTwap is Script {
     function run() external {
         require(block.chainid == 4663, "not Robinhood Chain (4663)");

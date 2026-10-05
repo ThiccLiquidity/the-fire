@@ -1,14 +1,14 @@
 # Omni pack supply and pricing: results (Oct 3 2026)
 
 Sims: `model.py` (the model and every assumption), `sim_packs.py` (structure x price x demand grid, bot defences,
-wallet limits, starter packs, 300 runs per cell -> `out_packs.txt`), `sim_cadence.py` (Fires per month -> `out_cadence.txt`).
+wallet limits, starter packs, 300 runs per cell -> `out_packs.txt`), `sim_cadence.py` (Series per month -> `out_cadence.txt`).
 
 ## Recommendation
-- **Supply:** 167 packs per Fire (~1,000 cards), fixed. When they're gone, they're gone.
+- **Supply:** 167 packs per Series (~1,000 cards), fixed. When they're gone, they're gone.
 - **Price:** four steps of ~42 packs: **$2 / $2.50 / $3 / $3.50**, the same dollar price in PAPER, PLANK, ETH or USDG.
-- **Wallet limit:** 5. Drop it to 3 once Fires sell out in under a day.
+- **Wallet limit:** 5. Drop it to 3 once Series sell out in under a day.
 - **Starters:** 50 packs at 1 PAPER on top. Send them to 50 random Paper Presses (or to random wallets in the snapshot) rather than first come, first served.
-- **Cadence:** 2 Fires a month. Move to 3 or 4 only after two Fires in a row sell out within 24h.
+- **Cadence:** 2 Series a month. Move to 3 or 4 only after two Series in a row sell out within 24h.
 
 ## Key numbers (base price $2, 5 per wallet)
 | Structure | Normal: sold out / time | Normal: revenue | Normal: people served | Busy: revenue | Busy: resale vs price | Flippers+bots (normal) |
@@ -27,7 +27,7 @@ A Paper card is worth about 1/20 of a sealed pack.
 - **Bot farm** (200 wallets): any fixed drop is gone in under a minute, all of it to bots, whatever the wallet limit.
   Requiring a PLANK snapshot for the whole sale with 2 per wallet still leaves 72% to bots.
 - **Starters, first come first served:** at a $10 PLANK threshold a $1,000 farm takes 100%. Sent to random snapshot wallets it takes 57% (37% at $50). Sent to random Presses it gets ~0%.
-- **Fires a month** (normal demand, steps 167): 1 a month sells out at 3.5x, 2 a month sells out 83% of the time at 1.7x, and 3 or more stop selling out.
+- **Series a month** (normal demand, steps 167): 1 a month sells out at 3.5x, 2 a month sells out 83% of the time at 1.7x, and 3 or more stop selling out.
 
 ## Why
 1. 167 packs is the size that sells out with normal demand. A sell-out is what gives a sealed pack a resale floor above its price. Open-ended sales and 500-pack drops resell at about the price.
@@ -36,6 +36,6 @@ A Paper card is worth about 1/20 of a sealed pack.
 
 ## Risks
 - **Bots** are the biggest one. A wallet limit doesn't stop a farm. The only real defences are a small flip margin (the price steps) and identity that costs money (Presses).
-- **Viral demand:** a fixed supply leaves a lot of money unearned. The fix is more Fires, not bigger ones.
+- **Viral demand:** a fixed supply leaves a lot of money unearned. The fix is more Series, not bigger ones.
 - **Quiet demand:** a drop that doesn't sell out looks dead. Start with 167, not 500.
 - **The model rests on guesses:** crowd sizes, how much people will pay, and a rough resale model. Thin markets swing widely. Treat the numbers as directions, not forecasts.

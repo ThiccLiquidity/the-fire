@@ -643,6 +643,98 @@ contract CardsTest is Test {
         vm.expectRevert(FirePacks.NotCards.selector);
         packs.returnPacks(_holder(0), 1, 1);
     }
+
+    // ---------- audit round 3 ----------
+
+    function _card(uint256 character, uint256 material, bool hf, bool hp, uint256 grade) internal pure returns (FireCards.Card memory c) {
+        c.character = character;
+        c.material = material;
+        c.holoFrame = hf;
+        c.holoPicture = hp;
+        c.grade = grade;
+    }
+
+    function test_audit3_imageFileNames() public view {
+        string[5] memory mats = ["paper", "wood", "fire", "coal", "diamond"];
+        string[4] memory holos = ["none", "picture", "frame", "full"]; // bit 0 = picture, bit 1 = frame
+        for (uint256 m; m < 5; m++) {
+            for (uint256 h; h < 4; h++) {
+                for (uint256 g; g <= 10; g++) {
+                    string memory want = string.concat(
+                        "c7-", mats[m], "-", holos[h], "-", g == 0 ? "u" : vm.toString(g), ".webp"
+                    );
+                    assertEq(cards.imageFile(_card(7, m, h & 2 != 0, h & 1 != 0, g)), want);
+                }
+            }
+        }
+        assertEq(cards.imageFile(_card(0, 3, true, true, 7)), "c0-coal-full-7.webp");
+        assertEq(cards.imageFile(_card(2, 2, false, false, 0)), "c2-fire-none-u.webp");
+        assertEq(cards.imageFile(_card(254, 4, false, true, 10)), "c254-diamond-picture-10.webp");
+    }
+
+    event ImagesBaseSet(uint256 indexed fire, string imagesBase);
+
+    function test_audit3_imagesBaseMovesUntilLock() public {
+        _sellAndClose(1, 2);
+        _openAll(1, 2, 9); // serials 1..12 dealt
+        vm.expectEmit(address(cards));
+        emit ImagesBaseSet(1, "ar://moved/");
+        vm.expectEmit(address(cards));
+        emit BatchMetadataUpdate(1, 12);
+        vm.prank(owner);
+        cards.setImagesBase(1, "ar://moved/");
+        assertEq(cards.imagesBase(1), "ar://moved/");
+        string memory json = string(_b64decode(_after(bytes(cards.tokenURI(1)), 29)));
+        assertTrue(_contains(json, '"image":"ar://moved/c'), json);
+
+        vm.prank(address(0xBAD));
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", address(0xBAD)));
+        cards.setImagesBase(1, "ipfs://y/");
+
+        string[3] memory bad = ['ipfs://"x/', "ipfs://x\\/", "ipfs://x\n/"];
+        for (uint256 i; i < bad.length; i++) {
+            vm.prank(owner);
+            vm.expectRevert(FireCards.BadText.selector);
+            cards.setImagesBase(1, bad[i]);
+        }
+
+        vm.prank(owner);
+        vm.expectRevert(FireCards.NotConfigured.selector);
+        cards.setImagesBase(77, "ipfs://y/");
+
+        vm.prank(owner);
+        cards.lockFire(1);
+        vm.prank(owner);
+        vm.expectRevert(FireCards.FireIsLocked.selector);
+        cards.setImagesBase(1, "ipfs://y/");
+    }
+
+    function test_audit3_nameLengthCapped() public {
+        (string[] memory names, string[] memory cats) = _one("Person");
+        names[0] = "1234567890123456789012345678901234567890123456789012345678901234"; // 64 bytes is fine
+        vm.prank(owner);
+        cards.configureFire(5, names, cats, "ipfs://x/");
+        names[0] = "12345678901234567890123456789012345678901234567890123456789012345"; // 65
+        vm.prank(owner);
+        vm.expectRevert(FireCards.BadText.selector);
+        cards.configureFire(5, names, cats, "ipfs://x/");
+        names[0] = "back\\slash";
+        vm.prank(owner);
+        vm.expectRevert(FireCards.BadText.selector);
+        cards.configureFire(5, names, cats, "ipfs://x/");
+    }
+
+    function test_audit3_packImageBaseTextChecked() public {
+        string[3] memory bad = ['ipfs://"x/', "ipfs://x\\/", "ipfs://x\n/"];
+        for (uint256 i; i < bad.length; i++) {
+            vm.prank(owner);
+            vm.expectRevert(FirePacks.BadText.selector);
+            packs.setPackImageBase(bad[i]);
+        }
+        vm.prank(owner);
+        packs.setPackImageBase("ipfs://packs/");
+        assertEq(packs.packImageBase(), "ipfs://packs/");
+    }
 }
 
 
@@ -659,11 +751,13 @@ contract DeployCardsTest is Test {
         MockERC20 plank = new MockERC20("PLANK", "PLANK");
         MockERC20 weth = new MockERC20("WETH", "WETH");
         MockPlankTwap twap = new MockPlankTwap(1e9, address(new MockPair(address(weth), address(plank))));
+        address ethUsd = address(new MockFeed(3_333e8));
+        twap.setEthUsd(ethUsd);
         DeployCards.Params memory p = DeployCards.Params({
             router: drand, owner: safe, royaltyTo: safe, royaltyBps: 500, packBase: "ipfs://packs/",
             paper: address(paper), plank: address(plank), usdg: address(usdg),
             weth: address(weth), press: address(new MockERC20("PRESS", "PRESS")),
-            ethUsd: address(new MockFeed(3_333e8)),
+            ethUsd: ethUsd,
             plankUsd: address(twap), paperUsd: address(0),
             v2Router: address(new MockRouterInfo(address(weth), address(new MockV2Factory(twap.PAIR())))),
             revenueWallet: address(0xBEEF), burnWallet: address(0xB0B)
@@ -726,5 +820,22 @@ contract DeployCardsTest is Test {
         vm.expectRevert(bytes("V2_ROUTER's factory doesn't own the PLANK_USD_FEED pool"));
         s.check(p);
         p.v2Router = goodRouter;
+
+        // the price feeds must be built on these inputs
+        twap.setEthUsd(address(0xE7));
+        vm.expectRevert(bytes("PLANK_USD_FEED uses a different ETH_USD_FEED"));
+        s.check(p);
+        twap.setEthUsd(ethUsd);
+        MockFeed paperUsd = new MockFeed(0.05e18);
+        paperUsd.setDecimals(18);
+        p.paperUsd = address(paperUsd);
+        paperUsd.setIds(address(usdg), ethUsd);
+        vm.expectRevert(bytes("PAPER_USD_FEED prices a different PAPER"));
+        s.check(p);
+        paperUsd.setIds(address(paper), address(0xE7));
+        vm.expectRevert(bytes("PAPER_USD_FEED uses a different ETH_USD_FEED"));
+        s.check(p);
+        paperUsd.setIds(address(paper), ethUsd);
+        s.check(p);
     }
 }

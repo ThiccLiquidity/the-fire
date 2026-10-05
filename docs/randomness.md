@@ -12,14 +12,18 @@ the name is historical).
 2. drand publishes the round. **Anyone** calls `router.fulfill(id, signature)` with its BLS signature: the keeper, the
    site, or a stranger. The router checks the signature on-chain against drand's pinned evmnet key and derives the
    request's word. There is exactly one valid word per request, so whoever delivers it can't change it.
-3. The router calls the adapter, the adapter calls `onRandomness(id, word)`. FireCards stores the word and deals the
-   cards in `process()`; FirePsa grades the cards.
+3. The router calls the adapter, the adapter calls `onRandomness(id, word)`. Both consumers only store the word:
+   - FireCards: anyone then calls `FireCards.process(maxOpens)`, which deals ready opens in the order they were made.
+   - FirePsa: anyone then calls `FirePsa.finish(index)`, which sets that reveal's grades.
+
+   The live site is planned to make these calls right away; the keeper can make them too.
 
 ## When something goes wrong
 - **Callback didn't land** (out of gas, a revert that has since cleared): the router still holds the word. Anyone
   calls `router.retryCallback(id, gas)` or `adapter.settle(id)` to deliver the same word.
-- **drand stalled**, no word after **1 day**: anyone calls `rerequest(index)` for a fresh request. It reverts if the
-  router already has a word, so a known result can't be thrown away.
+- **drand stalled**, no word after **1 day**: anyone calls `FireCards.rerequest(index)` or `FirePsa.rerequest(index)`
+  (on the consumer, not the router) for a fresh request. It reverts if the router already has a word, so a known
+  result can't be thrown away, and it reverts once the open or reveal is ready, finished or cancelled.
 - **No word for 7 days** (randomness gone for good): anyone calls `FireCards.cancelOpen(index)` (the packs go back,
   sealed) or `FirePsa.cancelReveal(index)` (the cards unlock, still unrevealed; the PAPER was burned).
 

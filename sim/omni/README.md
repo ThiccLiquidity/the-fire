@@ -10,5 +10,5 @@ Python models (numpy) used to size the card economy. The final numbers the contr
 | `paper/` | PAPER sinks vs. print, PDA reveal pricing | `python3 paper_model.py > out.txt` | `out.txt`, `results.md` |
 | `plank/` | PLANK in the mint, press value, liquidity | `python3 model.py > model_out.txt` | `model_out.txt`, `results.md` |
 
-Run each from its own folder. Some early recommendations in the results (price steps, for example) were superseded;
+Run each from its own folder. `sim_packs.py` takes several minutes; the others take seconds. Some early recommendations in the results (price steps, for example) were superseded;
 `docs/omni-economy.md` is the source of truth.

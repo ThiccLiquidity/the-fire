@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { computePool, dealFire, holoCounts, packRespectsFloor, type DealInput } from './deal'
+import { dealInBackground, dealInputKey } from './dealPreview'
 import { sha256Hex, Stream } from './prng'
 import { HOLO_RATE, MATERIALS, expectedHolos, holoRollChance, rollHolo } from './rules'
 
@@ -234,6 +235,8 @@ describe('dealFire', () => {
     expect(() => dealFire(input({ packs: 1.5 }))).toThrow()
     expect(() => dealFire(input({ seed: '' }))).toThrow()
     expect(() => dealFire(input({ characterIds: ['a', 'a'] }))).toThrow()
+    expect(() => dealFire(input({ characterIds: Array.from({ length: 256 }, (_, i) => `c${i}`) }))).toThrow(/255/)
+    expect(dealFire(input({ characterIds: Array.from({ length: 255 }, (_, i) => `c${i}`) })).characterIds).toHaveLength(255)
   })
 
   it('handles a zero-pack Fire without moving anything', () => {
@@ -244,3 +247,15 @@ describe('dealFire', () => {
   })
 })
 
+
+describe('deal preview (background)', () => {
+  it('deals the same result off the main thread (or on it where workers are missing) and keys inputs exactly', async () => {
+    const inp = { fire: 2, packs: 12, characterIds: ['a', 'b'], seed: 'seed-x', diamonds: 1, firstSerial: 10 }
+    const r = await dealInBackground(inp)
+    expect(r).toEqual(dealFire(inp))
+    expect(dealInputKey(inp)).toBe(dealInputKey({ ...inp }))
+    expect(dealInputKey(inp)).not.toBe(dealInputKey({ ...inp, packs: 13 }))
+    expect(dealInputKey(inp)).not.toBe(dealInputKey({ ...inp, firstSerial: 11 }))
+    await expect(dealInBackground({ ...inp, characterIds: [] })).rejects.toThrow()
+  })
+})

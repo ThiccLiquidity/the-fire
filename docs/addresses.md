@@ -5,7 +5,9 @@
 - Testnet chain ID 46630.
 
 ## Paper Presses (`PlankPress.sol`, verified): `MILL`, used by FireSale's starter packs
-- NFT: **`0x8DaA534c13C8b6164D73163F521fE3c94889dFC9`** (symbol on OpenSea: the-plank-press)
+- One NFT, several names: "Paper Press" (in these docs and on the site), `MILL` (the deploy setting), the `PlankPress`
+  contract and the-plank-press on OpenSea are all the same collection. A single press is a "mill" below.
+- NFT: **`0x8DaA534c13C8b6164D73163F521fE3c94889dFC9`** (OpenSea collection: the-plank-press)
 - PLANK per mill: **88,842,006,942.0888 PLANK** (= total supply / 10,000)
 - `burn(tokenId)`: **payable, `burnFee = 0.0003 ETH`** (forwarded to their `feeRecipient`), caller must be `ownerOf`, **allowed only after `mintingSunset` = Oct 1 2026 00:00 UTC**. Calls `pulpPool.releaseBurned(tokenId)` then `_burn` then transfers `plankPerNFT` PLANK to the caller.
 - Mint fee 0.0003 ETH. Pausable by admin; AccessControl admin `0x196254c3ad32f7735420f40DA387387D5DCBd8D5`.
@@ -15,8 +17,8 @@
 ## Pulp Pool (`PulpPool.sol`, verified): the presses' royalty pool (not used by the card contracts)
 - **`0x85715BbE2707476294B0c20B7DfbE32cCcADD0E1`**
 - Splits every whitelisted reward token evenly across all live mills (per-NFT accumulator). `receive()` auto-wraps ETH → WETH. A burned mill's unclaimed share rolls to the survivors.
-- **Only whitelisted tokens count.** Whitelist is admin-controlled (`addRewardToken`); WETH is in by default; PLANK was not. PLANK sent before whitelisting sits uncounted until an admin adds it.
-- PLANK is reported to be on the PulpPool reward list; not yet checked on chain.
+- **Only whitelisted tokens count.** Whitelist is admin-controlled (`addRewardToken`); WETH is in by default. A token sent before it is whitelisted sits uncounted until an admin adds it.
+- PLANK's PulpPool reward-list status: unconfirmed; check on the explorer before launch.
 - Rewards claimable only after `mintingSunset`.
 
 ## PLANK (`RobinWood`, 18 decimals)

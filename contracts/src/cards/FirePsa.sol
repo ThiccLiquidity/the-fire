@@ -28,6 +28,7 @@ interface IPsaRandomness {
 
 interface IPsaFeed {
     function latestRoundData() external view returns (uint80, int256 answer, uint256, uint256 updatedAt, uint80);
+    function PAPER() external view returns (address);
 }
 
 /**
@@ -62,7 +63,7 @@ contract FirePsa is Ownable2Step {
 
     IPsaCards public immutable CARDS;
     IERC20 public immutable PAPER;
-    /// @notice PAPER/USD, 18 decimals (PaperUsdTwap). Can be left empty at deploy and set once later.
+    /// @notice PAPER/USD, 18 decimals (PaperUsdTwap). Can be left empty at deploy; the owner can set or replace it.
     IPsaFeed public PAPER_USD;
 
     IPsaRandomness public randomness;
@@ -113,6 +114,7 @@ contract FirePsa is Ownable2Step {
     error BadOdds();
     error FireIsClosed();
     error PriceMoved();
+    error WrongFeed();
 
     constructor(address owner_, address cards, address paper, address paperUsd) Ownable(owner_) {
         if (cards == address(0) || paper == address(0)) revert ZeroAddress();
@@ -130,10 +132,11 @@ contract FirePsa is Ownable2Step {
         emit RandomnessSet(source);
     }
 
-    /// @notice Set the PAPER price feed, once, if it was left empty at deploy.
+    /// @notice Set or replace the PAPER price feed (a PaperUsdTwap for this PAPER). lastCost carries over, so a
+    ///         new feed that has no price yet keeps the last price-based cost.
     function setPaperFeed(address feed) external onlyOwner {
-        if (address(PAPER_USD) != address(0)) revert AlreadySet();
         if (feed == address(0)) revert ZeroAddress();
+        if (IPsaFeed(feed).PAPER() != address(PAPER)) revert WrongFeed();
         PAPER_USD = IPsaFeed(feed);
         emit PaperFeedSet(feed);
     }
@@ -239,7 +242,9 @@ contract FirePsa is Ownable2Step {
     /// @notice If a reveal's randomness never arrived (a day on, and the router has no answer), anyone can ask again.
     function rerequest(uint256 index) external {
         Reveal storage r = _reveals[index];
-        if (r.ready || block.timestamp < r.requestedAt + REREQUEST_AFTER || randomness.answered(r.requestId)) revert NotStuck();
+        if (r.ready || r.done || block.timestamp < r.requestedAt + REREQUEST_AFTER || randomness.answered(r.requestId)) {
+            revert NotStuck();
+        }
         delete _revealOf[r.requestId];
         uint256 rid = randomness.request();
         r.requestId = rid;
@@ -271,12 +276,13 @@ contract FirePsa is Ownable2Step {
         return cost;
     }
 
-    /// @dev Cost in PAPER wei at a PAPER/USD price (18 decimals, nonzero).
+    /// @dev Cost in PAPER wei at a PAPER/USD price (18 decimals, nonzero). Never 0: at least 1 wei.
     function _costAt(uint256 px) internal pure returns (uint256) {
         uint256 whole = PRICE_USD18 / px;
         if (whole != 0) return whole * 1e18;
         if (px <= CAP_USD18) return 1e18;
-        return CAP_USD18 * 1e18 / px; // $1 worth, under 1 PAPER
+        uint256 cost = CAP_USD18 * 1e18 / px; // $1 worth, under 1 PAPER
+        return cost == 0 ? 1 : cost;
     }
 
     function oddsOf(uint256 fire) public view returns (uint16[10] memory o) {

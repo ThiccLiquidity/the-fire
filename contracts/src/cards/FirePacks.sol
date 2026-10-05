@@ -36,6 +36,7 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     error NotCards();
     error ZeroAddress();
     error RoyaltyTooHigh();
+    error BadText();
 
     /// @notice Collection name and symbol (ERC-1155 has none; marketplaces read these).
     string public constant name = "Omni Card Packs";
@@ -59,7 +60,13 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
         emit CardsSet(c);
     }
 
+    /// @notice Where the pack art lives (ipfs://<CID>/ or ar://<id>/). It goes into JSON as-is: no quotes,
+    ///         backslashes or control characters.
     function setPackImageBase(string calldata base) external onlyOwner {
+        bytes calldata b = bytes(base);
+        for (uint256 i; i < b.length; i++) {
+            if (b[i] == '"' || b[i] == "\\" || uint8(b[i]) < 0x20) revert BadText();
+        }
         packImageBase = base;
         emit PackImageBaseSet(base);
     }

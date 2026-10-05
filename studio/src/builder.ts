@@ -57,7 +57,7 @@ const yieldToUi = () => new Promise<void>((r) => setTimeout(r, 0))
 
 export interface Progress { done: number; total: number }
 
-/** Renders cards in batches on a small pool of workers (OffscreenCanvas), so WEBP/PNG encoding runs in parallel and
+/** Renders cards in batches on a small pool of workers (OffscreenCanvas), so WEBP encoding runs in parallel and
  *  the UI never blocks. Falls back to the main thread (yielding between cards) if workers aren't available. */
 export class BatchRenderer {
   private workers: Worker[] = []

@@ -3,7 +3,8 @@
 Foundry project.
 
 - `src/cards/` — the card system: `FirePacks` (sealed packs, ERC-1155), `FireCards` (cards, ERC-721), `FireSale`
-  (the pack sale), `FirePsa` (PDA reveals), `CardRules`. "Fire" in the names is historical: a Fire is a Series.
+  (the pack sale), `FirePsa` (PDA reveals), `CardRules`. "Fire" in the names is historical: `Fire*` is the card
+  system, and "fire" in identifiers is a Series number.
 - `OpenDrandRouter.sol` + `OpenVRFAdapter.sol` bring in drand's number (one adapter each for FireCards and FirePsa).
 - `PlankUsdTwap.sol` (FireSale's PLANK price) and `PaperUsdTwap.sol` (FirePsa's PAPER price). No owner on any of
   these four.
@@ -20,7 +21,7 @@ solc. Dependencies (forge-std, OpenZeppelin, bls-solidity) are vendored in `lib/
 
 Tests: `test/cards/` (cards, sale, PDA), `test/invariant/` (fuzz and invariant suites), the price feeds and the drand
 router. `test/RealRouter.t.sol` runs against a real drand proof; `test/cards/SaleFork.t.sol` runs against the live
-chain when `FORK_RPC` is set and is skipped otherwise.
+chain when `FORK_RPC` is set and is skipped otherwise. `--match-test test_gas -vv` prints the sale's gas figures.
 
 ## Deploy
 

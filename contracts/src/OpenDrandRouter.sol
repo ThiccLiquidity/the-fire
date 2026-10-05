@@ -27,7 +27,7 @@ contract OpenDrandRouter is EvmnetRegistry {
     uint256 public constant GENESIS = 1727521075;
     uint256 public constant PERIOD = 3;
     /// @dev Rounds are 3 s apart. 30 s ahead (10 rounds) keeps the chosen round in the future even if the sequencer
-    ///      clock lags real time by a few seconds; otherwise whoever calls roll() could pick a round already public.
+    ///      clock lags real time by a few seconds; otherwise whoever requests could get a round that is already public.
     uint256 public constant MIN_DELAY = 30;
     uint32 public constant MAX_CALLBACK_GAS = 1_000_000;
     bytes32 public constant CHAIN_HASH = 0x04f1e9062b8a81f848fded9c12306733282b2727ecced50032187751166ec8c3;

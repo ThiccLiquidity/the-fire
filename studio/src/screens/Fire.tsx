@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { Field, Notice, NumberInput, useAction } from '../components'
-import { hasCategory } from '../categories'
+import { hasCategory, hasValidName } from '../categories'
 import { computePool, effectiveDiamonds } from '../deal'
 import { randomSeed } from '../prng'
-import { CARDS_PER_PACK, MATERIALS, MATERIAL_LABEL, MAX_DIAMONDS, expectedHolos, type Material } from '../rules'
+import { CARDS_PER_PACK, MATERIALS, MATERIAL_LABEL, MAX_CHARACTERS, MAX_DIAMONDS, MAX_PACKS, expectedHolos, type Material } from '../rules'
 import { completeness, deleteFire, isReady, getStudio, saveFire, saveGlobal, updateFire, useStudio } from '../store'
 import { fireStatus, type FireRecord } from '../types'
 
@@ -54,7 +54,11 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
     }
   }, [fire.deal, fire.packs, diamonds])
 
-  const toggle = (id: string, on: boolean) => update({ characterIds: on ? [...fire.characterIds, id] : fire.characterIds.filter((x) => x !== id) })
+  const full = fire.characterIds.length >= MAX_CHARACTERS
+  const toggle = (id: string, on: boolean) => run(() => updateFire(fire.number, (f) => {
+    if (on && f.characterIds.length >= MAX_CHARACTERS) throw new Error(`A Series has at most ${MAX_CHARACTERS} characters.`)
+    return { characterIds: on ? [...f.characterIds, id] : f.characterIds.filter((x) => x !== id) }
+  }))
   const missing = fire.characterIds.filter((id) => {
     const c = s.characters.find((x) => x.id === id)
     return !c || !isReady(c)
@@ -75,7 +79,7 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
       {locked && <Notice kind="info">The deal for this Series is locked; its setup can't change. (Undo the lock on the Deal tab if it's the latest Series and not uploaded.)</Notice>}
       <div className="cols">
         <div>
-          <h4>Characters ({fire.characterIds.length} picked)</h4>
+          <h4>Characters ({fire.characterIds.length} picked, at most {MAX_CHARACTERS})</h4>
           <ul className="pick-list" data-testid="fire-chars">
             {s.characters.map((c) => {
               const n = completeness(c)
@@ -84,9 +88,9 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
               return (
                 <li key={c.id} className={ok ? '' : 'disabled'}>
                   <label className="check">
-                    <input type="checkbox" checked={on} disabled={locked || (!ok && !on)} onChange={(e) => toggle(c.id, e.target.checked)} data-testid={`pick-${c.name}`} />
+                    <input type="checkbox" checked={on} disabled={locked || (!on && (!ok || full))} onChange={(e) => toggle(c.id, e.target.checked)} data-testid={`pick-${c.name}`} />
                     {c.name} {c.placeholder && <span className="tag">placeholder</span>}
-                    <span className={`badge ${ok ? 'badge-ok' : 'badge-warn'}`}>{n}/10{hasCategory(c) ? '' : ' · no category'}</span>
+                    <span className={`badge ${ok ? 'badge-ok' : 'badge-warn'}`}>{n}/10{hasCategory(c) ? '' : ' · no category'}{hasValidName(c) ? '' : ' · bad name'}</span>
                   </label>
                 </li>
               )
@@ -95,19 +99,21 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
           </ul>
           {!locked && (
             <div className="row">
-              <button onClick={() => update({ characterIds: s.characters.filter(isReady).map((c) => c.id) })}>Pick all complete</button>
+              <button onClick={() => update({ characterIds: s.characters.filter(isReady).slice(0, MAX_CHARACTERS).map((c) => c.id) })}>Pick all complete</button>
               <button onClick={() => update({ characterIds: [] })}>Clear</button>
             </div>
           )}
-          {missing.length > 0 && <Notice kind="error">Some picked characters are incomplete; finish their 10 images or unpick them.</Notice>}
+          {full && !locked && <p className="field-msg" data-testid="chars-full">That's the most a Series can hold ({MAX_CHARACTERS}, the contract's limit).</p>}
+          {missing.length > 0 && <Notice kind="error">Some picked characters aren't ready (10 images, a valid name and category); finish them or unpick them.</Notice>}
           <div className="row wrap">
-            <Field label="Packs" hint="6 cards per pack">
-              <NumberInput min={0} value={fire.packs} onChange={(n) => !locked && update({ packs: Math.max(0, Math.floor(n)) })} data-testid="packs" />
+            <Field label="Packs" hint={`6 cards per pack, 1 to ${MAX_PACKS.toLocaleString()}`}>
+              <NumberInput min={1} max={MAX_PACKS} value={fire.packs} onChange={(n) => !locked && update({ packs: Math.min(MAX_PACKS, Math.max(0, Math.floor(n) || 0)) })} data-testid="packs" />
             </Field>
             <Field label="Diamonds" hint="at least 1">
               <NumberInput min={1} max={MAX_DIAMONDS} value={diamonds} onChange={(n) => !locked && update({ diamonds: Math.min(MAX_DIAMONDS, Math.max(1, Math.floor(n) || 1)) })} data-testid="diamonds" />
             </Field>
           </div>
+          {fire.packs < 1 && !locked && <p className="field-msg err" data-testid="packs-problem">Packs: set at least 1 (a Series with no packs can't be dealt or uploaded).</p>}
         </div>
         <div>
           {counts ? <SeriesMakes counts={counts} packs={fire.packs} diamonds={diamonds} /> : <Notice kind="error">Invalid pack count.</Notice>}

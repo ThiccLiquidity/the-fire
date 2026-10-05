@@ -8,7 +8,7 @@ Script: `paper_model.py` (run `python3 paper_model.py`). Full tables below the s
 3. **PSA reveal: 5 PAPER, or $0.25 in ETH/USDG** (PAPER cost = min(5, $0.25 at the TWAP)). Sets a $0.05 floor, can't be arbitraged.
 4. **PAPER lane: 25% of each drop's packs payable in PAPER at min(100 PAPER, $1 of PAPER at the TWAP)**, max 5 per wallet per drop. Sets a $0.01 floor; worst-case giveaway is capped.
 
-Skip: uncapped fixed rate (drains the whole sale when PAPER is cheap), forging (breaks each Fire's exact card pool), PAPER in burn-cards-for-free-pack (keep that PAPER-free).
+Skip: uncapped fixed rate (drains the whole sale when PAPER is cheap), forging (breaks each Series' exact card pool), PAPER in burn-cards-for-free-pack (keep that PAPER-free).
 
 ## Key findings
 - Floors: $0.01 (pack lane, up to its cap) and $0.05 (PSA, up to reveal volume).
@@ -25,7 +25,7 @@ Skip: uncapped fixed rate (drains the whole sale when PAPER is cheap), forging (
 | PSA reveal | min(5, $0.25 TWAP) | $0.25 fee | $0.05 | no: reveal is per card, not resellable |
 | PAPER lane pack | min(100, $1 TWAP) | $1 pack | $0.01 | yes below $0.01 -> capped 25%/drop, 5/wallet |
 | Fixed 100 PAPER, uncapped | 100 | $1 pack | $0.01 | YES: at $0.002 a pack costs $0.20, whole sale drains |
-| Forging (burn N cards + PAPER) | - | - | - | breaks the exact per-Fire pool; skip |
+| Forging (burn N cards + PAPER) | - | - | - | breaks the exact per-Series pool; skip |
 | Burn cards -> free pack | 0 | - | 0 (no PAPER) | keep, but it's not a PAPER sink |
 
 ## 2. Arbitrage: uncapped fixed 100 PAPER/pack vs capped TWAP lane (med, 2 drops/mo)

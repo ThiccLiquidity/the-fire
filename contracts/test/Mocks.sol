@@ -62,6 +62,9 @@ contract MockFeed {
     uint8 public decimals = 8; function setDecimals(uint8 d) external { decimals = d; }
     function setBroken(bool b) external { broken = b; }
     bool public burnGas; function setBurnGas(bool b) external { burnGas = b; }
+    /// What a PaperUsdTwap reports it is built on (for the identity checks).
+    address public PAPER; address public ETH_USD;
+    function setIds(address paper, address ethUsd) external { PAPER = paper; ETH_USD = ethUsd; }
     constructor(int256 a) { answer = a; updatedAt = block.timestamp; }
     function set(int256 a) external { answer = a; updatedAt = block.timestamp; }
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
@@ -73,7 +76,8 @@ contract MockFeed {
 
 /// @dev A PLANK/USD feed shaped like PlankUsdTwap: price, its pool, and the two checkpoints of its window.
 contract MockPlankTwap {
-    int256 public answer; uint256 public updatedAt; address public PAIR;
+    int256 public answer; uint256 public updatedAt; address public PAIR; address public ETH_USD;
+    function setEthUsd(address e) external { ETH_USD = e; }
     struct Obs { uint256 cum; uint32 ts; }
     Obs public prev; Obs public last;
     constructor(int256 a, address pair) { answer = a; PAIR = pair; set(a); }

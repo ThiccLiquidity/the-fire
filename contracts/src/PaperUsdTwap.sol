@@ -9,12 +9,14 @@ interface IUniswapV2Factory {
 
 /**
  * @title PaperUsdTwap
- * @notice A Chainlink-style PAPER/USD feed (**18 decimals**) that works before PAPER has a market.
+ * @notice A Chainlink-style PAPER/USD feed (**18 decimals**) that finds its own pool. FirePsa's PAPER_USD_FEED must
+ *         be this contract, never a pool.
  *
- *         At deploy there is no PAPER pool, so the feed reports 0 and FirePsa charges its set PAPER amount. Once
- *         a PAPER/WETH or PAPER/USDG pool on the Uniswap V2 factory holds at least MIN_LIQUIDITY_USD on its dollar
- *         side, a checkpoint marks it as the candidate; if it still qualifies at every checkpoint for MIN_WINDOW,
- *         it's adopted, and the first price appears one full window (>= 20h) after that. A pool in the other
+ *         It starts with no pool and reports 0, so FirePsa charges its set PAPER amount. Once a PAPER/WETH or
+ *         PAPER/USDG pool on the Uniswap V2 factory holds at least MIN_LIQUIDITY_USD ($1,000) on its dollar side, a
+ *         checkpoint marks it as the candidate; if it still qualifies at every checkpoint for MIN_WINDOW (20h), it's
+ *         adopted, and the first price appears one full window (>= 20h) after that: about 40h after the first
+ *         checkpoint, even when a pool already exists at deploy. A pool in the other
  *         currency takes over the same way once it holds twice the current pool's dollar liquidity for MIN_WINDOW.
  *         Liquidity is read from spot reserves, so the "for MIN_WINDOW" part is what stops a flash loan from
  *         forcing a switch: the keeper checkpoints whenever due() and drops a candidate the moment it stops

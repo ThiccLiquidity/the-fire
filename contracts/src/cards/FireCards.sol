@@ -30,15 +30,16 @@ interface IFirePacks {
  *         2. A holder calls open(): their sealed pack is burned and fresh drand randomness is requested. Nothing about
  *            the pack existed before this; its cards depend on randomness that doesn't exist yet. (The leftover
  *            pool is public, so the very last pack of a Series gets exactly what's left: a cost of exact totals.)
- *         3. When the randomness arrives, anyone calls process() (the site does it right away). Packs are dealt
- *            strictly in the order they were opened, each drawing its 6 cards from what is left of the Series' pool
- *            while keeping the pack guarantees (slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6 Fire-or-better). The
- *            result of a pack depends only on the random words and the order of open() calls, so nobody can gain by
- *            choosing when to process, and the Series' totals come out exact.
+ *         3. When the randomness arrives, anyone calls process(maxOpens) (the site or the keeper, right away).
+ *            Packs are dealt strictly in the order they were opened, each drawing its 6 cards from what is left of
+ *            the Series' pool while keeping the pack guarantees (slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6
+ *            Fire-or-better). The result of a pack depends only on the random words and the order of open() calls,
+ *            so nobody can gain by choosing when to process, and the Series' totals come out exact.
  *         Cards are minted without the receiver callback, so no holder's contract can stall the queue for others.
  *
  *         The owner configures each Series before its packs sell (its characters, names and categories, where its
- *         images live, and how many Diamonds it makes: at least 1), can lock that per Series, and sets the royalty. Nobody can change a card once it is dealt.
+ *         images live, and how many Diamonds it makes: at least 1), can move a Series' image folder until it locks
+ *         it, and sets the royalty. Nobody can change a card once it is dealt.
  */
 contract FireCards is ERC721, ERC2981, Ownable2Step {
     using Strings for uint256;
@@ -52,6 +53,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     uint256 public constant MAX_DIAMONDS = 1_000;
     /// @notice Longest category text, in bytes (UTF-8).
     uint256 public constant MAX_CATEGORY_BYTES = 32;
+    /// @notice Longest card name, in bytes (UTF-8).
+    uint256 public constant MAX_NAME_BYTES = 64;
     /// @dev Last resort if randomness is gone for good: an open with no answer this long can be cancelled and its
     ///      packs go back to the holder, sealed. (A week is far past any normal delay.)
     uint256 public constant CANCEL_AFTER = 7 days;
@@ -117,6 +120,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     event SellerSet(address seller);
     event FireConfigured(uint256 indexed fire, uint256 characters, string imagesBase);
     event FireLocked(uint256 indexed fire);
+    event ImagesBaseSet(uint256 indexed fire, string imagesBase);
     event DiamondsSet(uint256 indexed fire, uint256 diamonds);
     event FireClosed(uint256 indexed fire, uint256 packs, uint256[5] pool);
     event PacksOpened(uint256 indexed openIndex, address indexed holder, uint256 indexed fire, uint256 count, uint256 requestId);
@@ -174,8 +178,10 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     }
 
     /// @notice A Series' characters (names and categories, in the studio's order) and where its card images live
-    ///         (ipfs://<CID>/ or ar://<id>/). Allowed until the Series is locked. Categories are free text, one per
-    ///         character (1 to MAX_CATEGORY_BYTES bytes), set in the studio.
+    ///         (ipfs://<CID>/ or ar://<id>/). Allowed until the Series is locked or its first pack is minted,
+    ///         whichever comes first (setImagesBase can still move the image folder until the lock). Names are 0 to
+    ///         MAX_NAME_BYTES bytes; categories are free text, one per character (1 to MAX_CATEGORY_BYTES bytes), set
+    ///         in the studio.
     function configureFire(uint256 fire, string[] calldata names, string[] calldata categories, string calldata base)
         external
         onlyOwner
@@ -187,7 +193,10 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         // of characters caps suggestion picks)
         if (PACKS.minted(fire) != 0) revert FireIsLocked();
         _checkText(base);
-        for (uint256 i; i < names.length; i++) _checkText(names[i]);
+        for (uint256 i; i < names.length; i++) {
+            if (bytes(names[i]).length > MAX_NAME_BYTES) revert BadText();
+            _checkText(names[i]);
+        }
         for (uint256 i; i < categories.length; i++) {
             uint256 n = bytes(categories[i]).length;
             if (n == 0 || n > MAX_CATEGORY_BYTES) revert BadText();
@@ -204,6 +213,18 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         f.characterCount = uint8(names.length);
         imagesBase[fire] = base;
         emit FireConfigured(fire, names.length, base);
+        if (nextSerial > 1) emit BatchMetadataUpdate(1, nextSerial - 1);
+    }
+
+    /// @notice Move a Series' image folder (say, re-pinned elsewhere). Allowed until the Series is locked, even after
+    ///         its packs are selling: only where the images live changes, never what a card is.
+    function setImagesBase(uint256 fire, string calldata base) external onlyOwner {
+        FireInfo storage f = fires[fire];
+        if (f.locked) revert FireIsLocked();
+        if (f.characterCount == 0) revert NotConfigured();
+        _checkText(base);
+        imagesBase[fire] = base;
+        emit ImagesBaseSet(fire, base);
         if (nextSerial > 1) emit BatchMetadataUpdate(1, nextSerial - 1);
     }
 
@@ -275,7 +296,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         emit GradePending(serial, pending_);
     }
 
-    /// @notice The PDA contract sets a card's grade (1-10), once. Its image switches to that wear frame.
+    /// @notice The PDA contract sets a card's grade (1-10), once. Its image switches to that grade's image.
     function setGrade(uint256 serial, uint256 grade) external {
         if (msg.sender != psa) revert NotPsa();
         if (gradePending[serial]) {
@@ -311,7 +332,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         emit PacksOpened(index, msg.sender, fire, count, id);
     }
 
-    /// @dev Randomness callback: only stores the word (cheap, can't fail); dealing happens in process().
+    /// @dev Randomness callback: only stores the word (cheap, can't fail); dealing happens in process(maxOpens).
     function onRandomness(uint256 requestId, uint256 word) external {
         if (msg.sender != address(randomness)) revert NotRandomness();
         uint256 i = _openOf[requestId];
@@ -464,11 +485,14 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }
 
-    /// @notice The card's shared image in its Series' image folder: c<character>-<material>-<holo>-<wear>.webp
-    ///         (the Card Studio's export names files the same way).
+    /// @notice The card's shared image in its Series' image folder: c<character>-<material>-<holo>-<grade>.webp, where
+    ///         material is paper|wood|fire|coal|diamond, holo is none|frame|picture|full and grade is u (unrevealed) or
+    ///         1-10 (each grade has its own image, wear frame and PDA seal included). The Card Studio's export names
+    ///         files the same way.
     function imageFile(Card memory c) public pure returns (string memory) {
         return string.concat(
-            "c", c.character.toString(), "-", _lower(c.material), "-", _holo(c.holoFrame, c.holoPicture), "-", _wear(c.grade), ".webp"
+            "c", c.character.toString(), "-", _lower(c.material), "-", _holo(c.holoFrame, c.holoPicture), "-",
+            c.grade == 0 ? "u" : c.grade.toString(), ".webp"
         );
     }
 
@@ -494,7 +518,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     }
 
     function _lower(uint256 m) private pure returns (string memory) {
-        return ["paper", "wood", "fire", "charcoal", "diamond"][m];
+        return ["paper", "wood", "fire", "coal", "diamond"][m];
     }
 
     function _holo(bool f, bool p) private pure returns (string memory) {
@@ -503,14 +527,6 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
 
     function _holoLabel(bool f, bool p) private pure returns (string memory) {
         return f && p ? "Full" : f ? "Frame" : p ? "Picture" : "None";
-    }
-
-    /// @dev PDA grade -> wear frame level, as in the studio: 10 = l1, 9-8 l2, 7-6 l3, 5-4 l4, 3-2 l5, 1 l6.
-    function _wear(uint256 g) private pure returns (string memory) {
-        if (g == 0) return "clean";
-        if (g == 10) return "l1";
-        if (g == 1) return "l6";
-        return string.concat("l", (6 - g / 2).toString());
     }
 
     /// @dev A card being graded can be burned but not transferred.

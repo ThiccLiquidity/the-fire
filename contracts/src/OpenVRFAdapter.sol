@@ -1,18 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/**
- * @title OpenVRFAdapter
- * @notice Adapter between one consumer (FireCards or FirePsa; `FIRE` is the historical name) and a drand router with OpenVRF's interface — in production our OpenDrandRouter
- *         (OpenVRF with open fulfillment; see its header). https://github.com/Robinhood-OSS/OpenVRF @ 9fb960c
- *
- *         consumer -> request() -> router.requestRandomness{value: requestFee}(CALLBACK_GAS)
- *         router.fulfill() -> rawFulfillRandomness(id, word) -> consumer.onRandomness(id, word)
- *
- *         If the router has a result but its callback didn't reach the consumer (out of gas, a revert that has
- *         since cleared), anyone can call settle(id) to deliver the stored result. The router never changes
- *         a result once fulfilled, so settle() can't be used to pick a different number.
- */
 interface IOpenVRFRouter {
     function requestRandomness(uint32 callbackGas) external payable returns (uint256);
     function requestFee() external view returns (uint256);
@@ -26,6 +14,18 @@ interface IFireRandomnessSink {
     function onRandomness(uint256 requestId, uint256 rnd) external;
 }
 
+/**
+ * @title OpenVRFAdapter
+ * @notice Adapter between one consumer (FireCards or FirePsa; `FIRE` is the historical name) and a drand router with OpenVRF's interface — in production our OpenDrandRouter
+ *         (OpenVRF with open fulfillment; see its header). https://github.com/Robinhood-OSS/OpenVRF @ 9fb960c
+ *
+ *         consumer -> request() -> router.requestRandomness{value: requestFee}(CALLBACK_GAS)
+ *         router.fulfill() -> rawFulfillRandomness(id, word) -> consumer.onRandomness(id, word)
+ *
+ *         If the router has a result but its callback didn't reach the consumer (out of gas, a revert that has
+ *         since cleared), anyone can call settle(id) to deliver the stored result. The router never changes
+ *         a result once fulfilled, so settle() can't be used to pick a different number.
+ */
 contract OpenVRFAdapter {
     IOpenVRFRouter public immutable ROUTER;
     address public immutable FIRE;

@@ -23,7 +23,7 @@
 
   // ---------- markup
   $('#app').innerHTML = `
-  <div id="loading" class="loading"><img src="ui/omni-mark.webp" alt=""><p>Lighting the forge…</p></div>
+  <div id="loading" class="loading"><img src="ui/omni-mark.webp" alt=""><p>Lighting the forge…</p><small class="demo-load">Demo · nothing here is real</small></div>
   <header class="topbar">
     <a class="brand" href="#" aria-label="Omni Forge"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">FORGE</span><em class="tag">Wood in. Packs out.</em></a>
     <button class="chip series" id="seriesChip" type="button"></button>
@@ -38,6 +38,7 @@
     <button class="chip round menu-btn" type="button" data-go="menu" aria-label="Menu">${svg('menu')}</button>
     <button class="wallet" id="walletBtn" type="button">${svg('wallet')}<span>Connect</span></button>
   </header>
+  <div class="demo-note" role="note"><b>Demo</b><span>Nothing here is real. No wallet, no payments.</span></div>
   <div class="ui" id="pills">
     <div class="buybox" id="buybox" data-x="1480" data-y="250"></div>
     <button class="pill" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
@@ -65,9 +66,11 @@
   <div class="buybar" id="buybar"></div>`;
 
   // ---------- layout: desktop / phone portrait / phone landscape
+  const TOP = 54 + 24; // the top bar plus the demo notice under it (CSS --top)
+  const DEMO_LINE = '<p class="demo-line"><b>Demo</b>No payment, nothing is charged</p>';
   let mode = 'desk';
   function layout() {
-    const W = innerWidth, H = innerHeight, bar = 54;
+    const W = innerWidth, H = innerHeight, bar = TOP;
     mode = W < 700 && H > W ? 'port' : H < 520 ? 'land' : 'desk';
     document.body.dataset.mode = mode;
     if (!window.Scene) return;
@@ -81,7 +84,7 @@
       const strip = H < 760 ? 92 : 104; document.documentElement.style.setProperty('--stripH', strip + 'px');
       Scene.setView({ x: 0, y: bar, w: W, h: H - bar - strip, mode: 'contain', follow: false });
     }
-    placePills();
+    placePills(); if (S.wallet) renderCounts();
   }
   function placePills() {
     if (!window.Scene) return;
@@ -90,7 +93,7 @@
     for (const el of document.querySelectorAll('#pills [data-x]')) {
       let [x, y] = Scene.toScreen(+el.dataset.x, +el.dataset.y);
       const half = el.offsetWidth / 2 + 8; x = Math.max(half, Math.min(innerWidth - half, x)); // never off-screen
-      el.style.left = x + 'px'; el.style.top = Math.max(54 + el.offsetHeight / 2 + 6, y) + 'px';
+      el.style.left = x + 'px'; el.style.top = Math.max(TOP + el.offsetHeight / 2 + 6, y) + 'px';
     }
   }
   addEventListener('resize', layout);
@@ -133,7 +136,9 @@
     for (const id of ['pBurn', 'sBurn']) $('#' + id).textContent = `${b} / 42`;
     for (const id of ['pOpen', 'sOpen']) $('#' + id).textContent = sealed ? `${sealed} sealed` : 'Your cards';
     const wb = $('#walletBtn span');
-    wb.textContent = S.wallet.connected ? `${S.wallet.name} · ${S.wallet.balances.PAPER} PAPER` : 'Connect';
+    const nm = mode === 'port' ? '' : S.wallet.name; // phones: just the balance (and no icon), so the button fits beside the brand
+    wb.textContent = S.wallet.connected ? `${nm ? nm + ' · ' : ''}${S.wallet.balances.PAPER} PAPER` : 'Connect';
+    $('#walletBtn').classList.toggle('on', S.wallet.connected);
   }
   function render() { renderChip(); renderBuy(); renderCounts(); syncScene(); placePills(); }
   Store.on(render);
@@ -141,7 +146,7 @@
   // ---------- wallet
   function needWallet(then) {
     if (S.wallet.connected) return then();
-    const d = Sheet.open('connect', { title: 'Connect', body: `<p class="lead">Use any regular wallet.</p><div class="wallets">
+    const d = Sheet.open('connect', { title: 'Connect', body: `<p class="lead">Use any regular wallet.</p><p class="demo-line lead"><b>Demo</b>Pick any to try the site. No wallet is used.</p><div class="wallets">
       ${['MetaMask', 'Rabby', 'OKX Wallet', 'Coinbase Wallet'].map((n) => `<button class="btn" type="button">${n}</button>`).join('')}</div>` });
     d.querySelectorAll('.wallets .btn').forEach((b) => b.onclick = () => { d.close(); Store.update((s) => { s.wallet.connected = true; }); toast('Connected', 'good'); setTimeout(then, 200); });
   }
@@ -198,6 +203,7 @@
           ${shortPaper ? `<p class="warn">You need ${paper - w.balances.PAPER} more PAPER. <button class="btn small" type="button" data-x="paper">Get PAPER</button></p>` : ''}
           ${shortCur ? `<p class="warn">Not enough ${cur}. <button class="btn small" type="button" data-x="paper">Get ${cur}</button></p>` : ''}
           <p class="fine">Packs go straight to your wallet and open when Series ${S.series.no} sells out. If the price moves more than 1% before it goes through, nothing is charged.</p>
+          ${DEMO_LINE}
           <button class="btn primary go" type="button" ${shortPaper || shortCur ? 'disabled' : ''}>${step === 'sending' ? 'Sending…' : needApprove ? `Approve ${cur} · step 1 of 2` : `Buy ${n} ${n === 1 ? 'pack' : 'packs'}`}</button>`;
         body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { n = Math.max(1, Math.min(max, n + +b.dataset.q)); draw(); });
         body.querySelectorAll('[data-c]').forEach((b) => b.onclick = () => { cur = b.dataset.c; step = 'pick'; draw(); });
@@ -219,7 +225,7 @@
   function starter() {
     needWallet(() => {
       if (!S.wallet.isPressHolder) return Sheet.open('nope', { title: 'Press packs', body: '<p class="lead">Press packs are for Paper Press holders: one per wallet, 1 PAPER each.</p>' });
-      const d = Sheet.open('starter', { title: 'Press pack', body: `<p class="lead">One pack for 1 PAPER, for Paper Press holders. ${S.series.starters - S.series.startersClaimed} left.</p><button class="btn primary go" type="button">Claim for 1 PAPER</button>` });
+      const d = Sheet.open('starter', { title: 'Press pack', body: `<p class="lead">One pack for 1 PAPER, for Paper Press holders. ${S.series.starters - S.series.startersClaimed} left.</p><div class="checkout">${DEMO_LINE}<button class="btn primary go" type="button">Claim for 1 PAPER</button></div>` });
       d.querySelector('.go').onclick = () => { d.close(); Store.update((s) => { s.wallet.starterClaimed = true; s.wallet.balances.PAPER -= 1; s.series.startersClaimed++; s.series.sold--; }); pendingDeliver++; Scene?.buy(1); };
     });
   }
@@ -229,6 +235,7 @@
       const draw = () => {
         body.innerHTML = `<p class="lead">Free packs work any time a Series is on sale. Each one costs just 1 PAPER.</p>
           <div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output>${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button><span class="muted">of ${S.wallet.credits}</span></div>
+          ${DEMO_LINE}
           <button class="btn gold go" type="button">Use ${n} free ${n === 1 ? 'pack' : 'packs'}</button>`;
         body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { n = Math.max(1, Math.min(S.wallet.credits, n + +b.dataset.q)); draw(); });
         body.querySelector('.go').onclick = () => { Sheet.close('free'); Store.update((s) => { s.wallet.credits -= n; s.wallet.balances.PAPER -= n; }); pendingDeliver += n; Scene?.buy(n); };
@@ -244,7 +251,7 @@
       body.innerHTML = `<div class="seg" role="group" aria-label="Get">${['PAPER', 'PLANK', 'USDG'].map((c) => `<button type="button" data-t="${c}" aria-pressed="${c === tok}">${c}</button>`).join('')}</div>
         <label class="amt" for="amt">How many ${tok}</label><input id="amt" inputmode="decimal" value="${amt}">
         <dl class="sum"><dt>You pay</dt><dd>${(usdOf() / ETH_USD * 1.005).toFixed(5)} ETH <small>≈ $${(usdOf() * 1.005).toFixed(2)}</small></dd></dl>
-        <button class="btn primary go" type="submit">Get ${fmt(amt)} ${tok}</button><p class="fine">Swapped at the best rate. Includes a 0.5% fee.</p>`;
+        ${DEMO_LINE}<button class="btn primary go" type="submit">Get ${fmt(amt)} ${tok}</button><p class="fine">Swapped at the best rate. Includes a 0.5% fee.</p>`;
       body.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { tok = b.dataset.t; amt = tok === 'PAPER' ? 10 : tok === 'USDG' ? 25 : 1000000; draw(); });
       $('#amt', body).oninput = (e) => { amt = Math.max(0, +e.target.value || 0); body.querySelector('.sum dd').innerHTML = `${(usdOf() / ETH_USD * 1.005).toFixed(5)} ETH <small>≈ $${(usdOf() * 1.005).toFixed(2)}</small>`; body.querySelector('.go').textContent = `Get ${fmt(amt)} ${tok}`; };
     };
@@ -267,7 +274,7 @@
   }
   let auto = null;
   function openDemo() {
-    const d = Sheet.open('demo', { title: 'Demo controls', body: `<p class="lead">For testing the mock. Not on the live site.</p><div class="menu">
+    const d = Sheet.open('demo', { title: 'Demo controls', body: `<p class="lead">Jump the demo to any stage of a sale.</p><div class="menu">
       <button class="btn" type="button" data-d="phase">Next phase</button><button class="btn" type="button" data-d="sold">Sold-out show</button>
       <button class="btn" type="button" data-d="auto">${auto ? 'Stop' : 'Start'} crowd</button><button class="btn" type="button" data-d="credit">+1 free pack</button>
       <button class="btn" type="button" data-d="holder">${S.wallet.isPressHolder || S.wallet.inSnapshot ? 'Make not a holder' : 'Make a holder'}</button><button class="btn" type="button" data-d="bot">${S.wallet.isContract ? 'Regular wallet' : 'Contract wallet'}</button>

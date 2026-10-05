@@ -1,4 +1,8 @@
-/** A character's category is free text, typed per character in the Library. There is no preset list: the
+/** Text that goes on-chain with a Series (character names and categories) follows the contract's rules
+ *  (FireCards._checkText): no double quote, backslash or control character (it goes into the token's JSON as-is), plus
+ *  a length limit in bytes of UTF-8. textProblem checks both; nameProblem and categoryProblem use it.
+ *
+ *  A character's category is free text, typed per character in the Library. There is no preset list: the
  *  suggestions are the categories already in use, so the list builds up as categories are added. It goes on the
  *  card, into the metadata, and on-chain with the Series (FireCards.configureFire), so it follows the contract's
  *  rules: 1 to 32 bytes of UTF-8, no double quote, backslash or control characters (it goes into the token's JSON
@@ -8,6 +12,33 @@ import type { Character } from './types'
 
 /** Longest category, in bytes of UTF-8 (the contract's MAX_CATEGORY_BYTES). */
 export const MAX_CATEGORY_BYTES = 32
+/** Longest character name, in bytes of UTF-8 (the contract's MAX_NAME_BYTES). */
+export const MAX_NAME_BYTES = 64
+
+/** Why `s` can't go on-chain, or null if it can: empty (`emptyMessage`), over `maxBytes` bytes of UTF-8, or holding a
+ *  double quote, backslash or control character (below 0x20), like the contract's _checkText. */
+export function textProblem(s: string, maxBytes: number, emptyMessage: string): string | null {
+  if (!s) return emptyMessage
+  const bytes = new TextEncoder().encode(s).length
+  if (bytes > maxBytes) return `Too long: ${bytes} bytes, at most ${maxBytes} (letters like é count as 2).`
+  if (/["\\]/.test(s)) return 'No double quotes or backslashes.'
+  if (/[\u0000-\u001f]/.test(s)) return 'No control characters.'
+  return null
+}
+
+/** Why a (trimmed) character name can't be used, or null if it can. */
+export function nameProblem(s: string): string | null {
+  return textProblem(s, MAX_NAME_BYTES, 'Give the character a name.')
+}
+
+/** The name as saved: trimmed. */
+export function normalizeName(s: string): string {
+  return s.trim()
+}
+
+export function hasValidName(c: Pick<Character, 'name'>): boolean {
+  return nameProblem(normalizeName(c.name)) === null
+}
 
 /** Trim and collapse runs of whitespace to one space. Capitalisation is kept: it is the label on the card. */
 export function normalizeCategory(s: string): string {
@@ -16,12 +47,7 @@ export function normalizeCategory(s: string): string {
 
 /** Why a (normalised) category can't be used, or null if it can. */
 export function categoryProblem(s: string): string | null {
-  if (!s) return 'Give the character a category.'
-  const bytes = new TextEncoder().encode(s).length
-  if (bytes > MAX_CATEGORY_BYTES) return `Too long: ${bytes} bytes, at most ${MAX_CATEGORY_BYTES} (letters like é count as 2).`
-  if (/["\\]/.test(s)) return 'No double quotes or backslashes.'
-  if (/[\u0000-\u001f]/.test(s)) return 'No control characters.'
-  return null
+  return textProblem(s, MAX_CATEGORY_BYTES, 'Give the character a category.')
 }
 
 /** Same category regardless of capitalisation. */

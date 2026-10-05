@@ -6,10 +6,12 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 .loading { position: fixed; inset: 0; z-index: 90; display: grid; place-content: center; justify-items: center; gap: 10px; background: #000; transition: opacity .6s }
 .loading img { width: 120px; animation: breathe 1.8s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,110,30,.5)) }
 .loading p { margin: 0; font: 400 15px var(--display); letter-spacing: .08em; color: var(--muted) }
+.loading .demo-load { font: 700 12px var(--body); color: var(--dim); letter-spacing: .04em }
 .loading.done { opacity: 0; pointer-events: none }
 @keyframes breathe { 50% { transform: scale(1.06); filter: drop-shadow(0 0 30px rgba(255,110,30,.8)) } }
 
-/* top bar: black, with the five-material stripe */
+/* top bar: black, with the five-material stripe. --top = top bar + the demo notice under it */
+:root { --top: 78px }
 .topbar { position: fixed; left: 0; right: 0; top: 0; height: 54px; z-index: 10; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 14px; box-sizing: border-box; background: #000 }
 .topbar::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, var(--paper) 0 20%, var(--wood) 20% 40%, var(--fire) 40% 60%, var(--charcoal) 60% 80%, var(--diamond) 80%) }
 .brand { display: flex; align-items: center; gap: 7px; text-decoration: none; min-width: 0 }
@@ -21,12 +23,19 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 .chip.round { width: 36px; padding: 0; justify-content: center }
 .chip.series b { color: var(--gold) } .chip.series i { font-style: normal; color: var(--ember) }
 .chip.demo { color: var(--muted); border-style: dashed }
+/* demo notice: a slim strip pinned under the top bar, on every layout */
+.demo-note { position: fixed; left: 0; right: 0; top: 54px; height: 24px; z-index: 10; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; box-sizing: border-box;
+  background: repeating-linear-gradient(-45deg, #1a120c 0 10px, #140d08 10px 20px); border-bottom: 1px dashed var(--line-2);
+  font: 700 12px/1 var(--body); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.demo-note b { font: 400 11px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #1b0f06; background: var(--brass); border-radius: 999px; padding: 3px 8px 2px }
+.demo-line { margin: 0; display: flex; justify-content: center; align-items: center; gap: 6px; color: var(--muted); font: 700 12.5px var(--body); text-align: center }
+.demo-line b { font: 400 10.5px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #1b0f06; background: var(--brass); border-radius: 999px; padding: 3px 7px 2px }
 .tools { display: flex; gap: 8px }
 .grow { flex: 1 }
 .menu-btn { display: none }
 .wallet { min-height: 40px; display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 999px; cursor: pointer; font: 800 14px var(--body); color: var(--ink);
   background: linear-gradient(#2c1f15, #17100b); border: 1.5px solid var(--diamond); box-shadow: 0 0 14px rgba(169,203,242,.18) }
-.wallet svg { color: var(--diamond) }
+.wallet svg { color: var(--diamond) } .wallet span { white-space: nowrap }
 
 /* pills on the scene */
 .ui { position: fixed; inset: 0; pointer-events: none; z-index: 5 }
@@ -106,13 +115,14 @@ body[data-mode=port] .brand .word { height: 20px } body[data-mode=port] .brand .
 body[data-mode=port] .tools, body[data-mode=port] .chip.series { display: none }
 body[data-mode=port] .menu-btn { display: inline-flex; width: 40px; height: 40px }
 body[data-mode=port] .wallet { min-height: 40px; padding: 0 12px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis }
+body[data-mode=port] .wallet.on svg { display: none }
 body[data-mode=port] .ui { display: none }
 body[data-mode=port] canvas#c { position: fixed; touch-action: pan-y } /* sideways drags pan the camera; up/down still scrolls the page */
-body[data-mode=port] .stations { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; position: absolute; left: 0; right: 0; top: calc(54px + var(--sceneH, 300px) + 12px); padding: 0 14px; z-index: 3 }
+body[data-mode=port] .stations { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; position: absolute; left: 0; right: 0; top: calc(var(--top) + var(--sceneH, 300px) + 12px); padding: 0 14px; z-index: 3 }
 .station { min-height: 64px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left; padding: 10px 12px; border-radius: 14px;
   background: var(--panel); border: 1.5px solid var(--c); color: var(--ink); cursor: pointer }
 .station svg { grid-row: 1 / 3; width: 26px; height: 26px; color: var(--c) } .station b { font: 800 15px var(--body) } .station small { color: var(--muted); font-size: 12px }
-body[data-mode=port] .strip { position: absolute; top: calc(54px + var(--sceneH, 300px) + 12px + 160px); bottom: auto; height: auto; flex-wrap: wrap; margin: 0 14px; padding: 14px; border-radius: 16px; background: var(--panel); left: 0; right: 0; margin-bottom: 190px }
+body[data-mode=port] .strip { position: absolute; top: calc(var(--top) + var(--sceneH, 300px) + 12px + 160px); bottom: auto; height: auto; flex-wrap: wrap; margin: 0 14px; padding: 14px; border-radius: 16px; background: var(--panel); left: 0; right: 0; margin-bottom: 190px }
 body[data-mode=port] .strip::before { display: none }
 body[data-mode=port] .packart { height: 86px }
 body[data-mode=port] .types { font-size: 11px } body[data-mode=port] .types .mat { min-width: 0; padding: 4px 7px; font-size: 10.5px }
@@ -120,12 +130,12 @@ body[data-mode=port] .strip .more { margin-left: 0; width: 100% }
 body[data-mode=port] .buybar { display: grid; gap: 6px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(#17100bf5, #0d0907); border-top: 2px solid #ffbf5e; --fs: 14px }
 body[data-mode=port] .buybar .opts { display: grid; grid-template-columns: 1fr 1fr } body[data-mode=port] .buybar .opt { white-space: normal }
 body[data-mode=port] .buybar .opt.main, body[data-mode=port] .buybar .opt:only-child { grid-column: 1 / -1; justify-content: center }
-body[data-mode=port] .toasts { top: 62px }
+body[data-mode=port] .toasts { top: calc(var(--top) + 8px) }
 
 /* phones held sideways: scene on the left, buy rail on the right */
 body[data-mode=land] .tools .chip span, body[data-mode=land] .brand .tag, body[data-mode=land] .chip.series { display: none }
 body[data-mode=land] .strip { display: none }
 body[data-mode=land] #buybox { display: none }
-body[data-mode=land] .buybar { display: grid; position: fixed; right: 0; top: 54px; bottom: 0; width: 240px; box-sizing: border-box; padding: 10px; gap: 8px; align-content: start; background: #0d0907; border-left: 2px solid #ffbf5e; z-index: 6; --fs: 13px; overflow: auto }
+body[data-mode=land] .buybar { display: grid; position: fixed; right: 0; top: var(--top); bottom: 0; width: 240px; box-sizing: border-box; padding: 10px; gap: 8px; align-content: start; background: #0d0907; border-left: 2px solid #ffbf5e; z-index: 6; --fs: 13px; overflow: auto }
 body[data-mode=land] .buybar .opts { flex-direction: column } body[data-mode=land] .buybar .opt { white-space: normal }
 body[data-mode=land] .pill small { display: none } body[data-mode=land] .pill { min-height: 40px; padding: .4em .8em }

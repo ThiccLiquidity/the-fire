@@ -5,7 +5,7 @@ PLANK fuels the forge (part of every sale buys and burns it) and every pack burn
 drand randomness, so nobody can know a pack's contents in advance, and any card can be graded once (a PDA reveal)
 for a wear frame and grade from 1 to 10.
 
-Live site: https://web-mu-mocha-95.vercel.app (the Forge, running on demo data).
+Live site: https://web-mu-mocha-95.vercel.app (the Forge in demo mode: demo data, no wallet, no payments).
 
 ## Repository layout
 
@@ -20,6 +20,10 @@ Live site: https://web-mu-mocha-95.vercel.app (the Forge, running on demo data).
 | `brand/` | Logos and the logo clean-up script. |
 | `docs/` | Reference documentation (see below). |
 
+**Naming.** The card contracts are named `Fire*` (`FirePacks`, `FireCards`, `FireSale`, `FirePsa`) for historical
+reasons: `Fire*` means the card system. In identifiers (`fire`, `configureFire`, `lockFire`, `fire.json`), "fire" is a
+Series number. Prose says "Series".
+
 ## Quick start
 
 **Contracts** (needs [Foundry](https://getfoundry.sh)):
@@ -30,7 +34,7 @@ forge build
 forge test
 ```
 
-**Card Studio** (needs Node.js 20+):
+**Card Studio** (needs Node.js 22.12+):
 
 ```sh
 cd studio
@@ -39,7 +43,7 @@ npm run dev        # http://localhost:5173
 npm test           # vitest
 ```
 
-**Site:**
+**Site** (needs Node.js 20.19+ or 22.12+):
 
 ```sh
 cd web
@@ -54,11 +58,12 @@ After editing the Forge source in `web/art/factory/forge`, regenerate the served
 **Economy sims** (needs Python 3 with numpy):
 
 ```sh
-cd sim/omni/packs
-python3 sim_packs.py
+cd sim/omni/paper
+python3 paper_model.py   # a second; sim/omni/packs/sim_packs.py takes several minutes
 ```
 
-Each folder in `sim/omni` has its model, its recorded output and a `results.md`.
+Each folder in `sim/omni` has its model and its recorded output; most also have a `results.md`. See
+`sim/omni/README.md`.
 
 ## Deploying
 

@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { DropZone, Field, Notice, useAction } from '../components'
 import { newId } from '../db'
-import { categoryKey, categoryProblem, categorySuggestions, hasCategory, normalizeCategory } from '../categories'
+import { categoryKey, categoryProblem, categorySuggestions, hasCategory, hasValidName, nameProblem, normalizeCategory, normalizeName } from '../categories'
 import { MATERIALS, MATERIAL_LABEL, type Material } from '../rules'
 import {
   completeness, deleteCharacter, isReady, effectiveKey, removeCharacterImage, saveCharacter, setCharacterImage, updateImageKey,
@@ -17,9 +17,12 @@ export function Library() {
   const [busy, error, run] = useAction()
   const current = s.characters.find((c) => c.id === selected) ?? s.characters[0]
 
+  // inline check only once something is typed (an empty box isn't an error yet)
+  const newNameProblem = newName ? nameProblem(normalizeName(newName)) : null
   const add = () => run(async () => {
-    const name = newName.trim()
-    if (!name) throw new Error('Give the character a name.')
+    const name = normalizeName(newName)
+    const problem = nameProblem(name)
+    if (problem) throw new Error(`Name: ${problem}`)
     const now = Date.now()
     const c: Character = { id: newId(), name, shortId: newShort.trim(), images: {}, createdAt: now, updatedAt: now }
     await saveCharacter(c)
@@ -39,16 +42,17 @@ export function Library() {
               <li key={c.id} className={current?.id === c.id ? 'active' : ''} onClick={() => setSelected(c.id)}>
                 <span className="char-name">{c.name}{c.shortId && <small> {c.shortId}</small>}</span>
                 {c.placeholder && <span className="tag">placeholder</span>}
-                <span className={`badge ${isReady(c) ? 'badge-ok' : 'badge-warn'}`}>{n}/10{hasCategory(c) ? '' : ' · ?'}</span>
+                <span className={`badge ${isReady(c) ? 'badge-ok' : 'badge-warn'}`}>{n}/10{hasCategory(c) && hasValidName(c) ? '' : ' · ?'}</span>
               </li>
             )
           })}
           {!s.characters.length && <li className="muted">No characters yet.</li>}
         </ul>
         <div className="add-form">
-          <Field label="Name"><input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Rabbit" data-testid="new-char-name" /></Field>
+          <Field label="Name"><input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Rabbit" aria-invalid={!!newNameProblem} data-testid="new-char-name" /></Field>
+          {newNameProblem && <p className="field-msg err" data-testid="new-name-problem">Name: {newNameProblem}</p>}
           <Field label="Short id (optional)"><input value={newShort} onChange={(e) => setNewShort(e.target.value)} placeholder="RAB" /></Field>
-          <button onClick={add} disabled={busy} data-testid="add-char">Add character</button>
+          <button onClick={add} disabled={busy || !!newNameProblem} data-testid="add-char">Add character</button>
         </div>
         {error && <Notice kind="error">{error}</Notice>}
       </aside>
@@ -74,28 +78,30 @@ function CharacterEditor({ c }: { c: Character }) {
   const existing = categorySuggestions(s.characters.filter((x) => x.id !== c.id).map((x) => x.category))
     .find((u) => categoryKey(u) === categoryKey(typed))
   const finalCategory = typed ? existing ?? typed : undefined
+  const namedProblem = nameProblem(normalizeName(name))
   const dirty = name !== c.name || shortId !== c.shortId || finalCategory !== c.category
   const n = completeness(c)
   return (
     <div>
       <div className="row wrap">
-        <Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} aria-invalid={!!namedProblem} data-testid="char-name" /></Field>
         <Field label="Short id"><input value={shortId} onChange={(e) => setShortId(e.target.value)} /></Field>
         <CategoryInput value={category} onChange={setCategory} matches={matches} placeholder={used.length ? 'Type or pick' : 'Type a category'} invalid={!!problem} />
-        <button disabled={!dirty || busy || !name.trim() || !!problem} onClick={() => run(async () => {
-          await saveCharacter({ ...c, name: name.trim(), shortId: shortId.trim(), category: finalCategory })
+        <button disabled={!dirty || busy || !!namedProblem || !!problem} onClick={() => run(async () => {
+          await saveCharacter({ ...c, name: normalizeName(name), shortId: shortId.trim(), category: finalCategory })
           setCategory(finalCategory ?? '')
         })}>Save</button>
         <span className="spacer" />
         <span className={`badge big ${n === 10 ? 'badge-ok' : 'badge-warn'}`} data-testid="completeness">{n}/10 images</span>
         <button className="danger" onClick={() => { if (confirm(`Delete ${c.name} and its images?`)) void run(() => deleteCharacter(c.id)) }}>Delete</button>
       </div>
+      {namedProblem && <p className="field-msg err" data-testid="name-problem">Name: {namedProblem}</p>}
       {problem ? <p className="field-msg err" data-testid="category-problem">Category: {problem}</p>
         : existing && existing !== typed ? <p className="field-msg">Saved as "{existing}", the spelling already in use.</p>
         : typed && !existing && !matches.length && finalCategory !== c.category ? <p className="field-msg">New category: "{typed}".</p>
         : null}
       {error && <Notice kind="error">{error}</Notice>}
-      {!isReady(c) && <Notice kind="info">A character can go into a Series once all 10 images are in (5 materials x normal + holo) and it has a category.</Notice>}
+      {!isReady(c) && <Notice kind="info">A character can go into a Series once all 10 images are in (5 materials x normal + holo) and it has a valid name and category.</Notice>}
       <div className="slot-grid">
         <div />
         {VARIANTS.map((v) => <div key={v} className="slot-head">{v === 'normal' ? 'Normal' : 'Holo'}</div>)}
