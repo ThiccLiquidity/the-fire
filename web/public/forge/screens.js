@@ -1,10 +1,9 @@
-/* Omni Forge (demo mode): the four station screens. Workbench (open packs + collection), PDA grading, the ash bin
+/* Omni Forge (demo mode): the station screens. My cards / Open packs (one sheet: the collection, or straight into opening), PDA grading, the ash bin
    (burn toward a free pack) and the suggestion box. Demo data only: everything reads and writes window.Store. */
 (() => {
   const S = () => Store.state;
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const RANK = { paper: 0, wood: 1, fire: 2, charcoal: 3, diamond: 4 };
   const HOLO = { none: 'No holo', frame: 'Holo frame', picture: 'Holo art', full: 'Full holo' };
   const HRANK = { none: 0, frame: 1, picture: 2, full: 3 };
   const GLOW = { paper: '#fff4dc', wood: '#ffc46b', fire: '#ff5a1c', charcoal: '#dcdcf0', diamond: '#9fd8ff' };
@@ -32,17 +31,17 @@
   const connectBtn = () => btn('Connect wallet', 'primary', () => { Store.update((s) => { s.wallet.connected = true; }); toast('Wallet connected', 'good'); });
   const getPaperBtn = () => btn('Get PAPER', 'gold', () => (window.UI?.openGetPaper ? window.UI.openGetPaper() : toast('Get PAPER is coming soon')));
   const byId = (id) => S().cards.find((c) => c.id === id);
-  const rarity = (c) => RANK[c.material] * 4 + HRANK[c.holo || 'none'];
-  // tiers that get the light leak (and a Share button): Legendary = any Diamond, full-holo Coal or Paper, any PDA 10;
-  // Epic = holo Coal (frame or picture), full-holo Fire or Wood. Everything else: null.
-  function tierOf(c) {
-    const m = c.material, hl = c.holo || 'none';
-    if (m === 'diamond' || c.grade === 10 || (hl === 'full' && (m === 'charcoal' || m === 'paper'))) return 'legendary';
-    if ((m === 'charcoal' && hl !== 'none') || (hl === 'full' && (m === 'fire' || m === 'wood'))) return 'epic';
-    return null;
-  }
-  const tierRank = (c) => ({ legendary: 2, epic: 1 }[tierOf(c)] || 0);
-  const pullRank = (c) => tierRank(c) * 100 + rarity(c); // rarest last when opening, "Best" in the summary
+  // true rarity, from the real odds (Store.trueOdds): material x holo x PDA grade. rarity() is N in "1 in N", bigger is rarer.
+  const rarity = (c) => Store.trueOdds(c).n;
+  // tier by odds: Rare (rarer than 1 in 50) gets the tease glow; Epic (1 in 300) the light leak + Share; Legendary (1 in 1,500) the big moment too
+  const tierOf = (c) => Store.trueOdds(c).tier;
+  const isBig = (t) => t === 'epic' || t === 'legendary';
+  const isHolo = (c) => c.material === 'diamond' || (c.holo || 'none') !== 'none';
+  const TIER_LABEL = { rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
+  const HOLO_NAME = { frame: 'Holo-frame', picture: 'Holo-art', full: 'Full-holo' };
+  const cardName = (c) => (c.material === 'diamond' ? 'Diamond' : ((c.holo || 'none') !== 'none' ? HOLO_NAME[c.holo] + ' ' : '') + Store.MAT_LABEL[c.material])
+    + (c.grade != null ? ' · PDA ' + c.grade : ''); // "Full-holo Paper", "Diamond · PDA 10"
+  const floorTxt = (c) => Store.eth(Store.floor(c));
   // light-leak colours per material: [hot core, glow]
   const LEAK = { paper: ['#fff6dc', '#ffd98a'], wood: ['#ffd9a0', '#ff9f2e'], fire: ['#ffd27a', '#ff5a12'], charcoal: ['#ffb08a', '#e0260c'], diamond: ['#ffffff', '#bfe6ff'] };
   const edNum = (c) => parseInt(c.edition, 10) || 0;
@@ -96,6 +95,10 @@
         [1, 1.5, 2.01].forEach((k, i) => tone(t, f * k, { type: i ? 'sine' : 'triangle', peak: (leg ? 0.06 : 0.04) / (i + 1), a: d, dec: 0.16, to: f * k * (leg ? 2.6 : 2) }));
         const n = leg ? 30 : 16; for (let i = 0; i < n; i++) { const u = Math.sqrt(i / n);
           hiss(t + u * d, { f: 2200 + Math.random() * 4500, q: 2.2, peak: 0.025 + u * (leg ? 0.15 : 0.1), dec: 0.01 + Math.random() * 0.02 }); } },
+      // a holo turning over: a soft rising shimmer (a quick run of glassy notes over a breath of air), well under the Epic chime
+      shimmer() { if (!ac()) return; const t = ctx.currentTime;
+        [1046.5, 1318.5, 1568, 2093, 2637].forEach((f, i) => { tone(t + i * 0.06, f, { peak: 0.045 - i * 0.005, a: 0.015, dec: 0.9 }); tone(t + i * 0.06, f * 1.5, { peak: 0.012, dec: 0.5 }); });
+        hiss(t, { type: 'highpass', f: 5200, q: 0.5, peak: 0.035, a: 0.2, dec: 0.45 }); },
       pop(leg) { if (!ac()) return; const t = ctx.currentTime; hiss(t, { type: 'highpass', f: 2400, q: 0.6, peak: leg ? 0.24 : 0.16, a: 0.006, dec: leg ? 0.5 : 0.3 });
         tone(t, leg ? 1760 : 1318.5, { peak: 0.05, dec: 0.9 }); },
     };
@@ -112,14 +115,15 @@
     : c.grade == null ? h('span', { class: 'pda none', text: 'PDA ?' }) : h('span', { class: 'pda g' + c.grade, text: 'PDA ' + c.grade });
   const matChip = (m) => h('span', { class: 'mat ' + m, text: Store.MAT_LABEL[m] });
   const holoBadge = (holo) => holo && holo !== 'none' ? h('span', { class: 'holo-b', text: HOLO[holo] }) : null;
-  const describe = (c) => `${c.character}, ${Store.MAT_LABEL[c.material]}${c.holo !== 'none' ? ', ' + HOLO[c.holo] : ''}, ${c.pending ? 'being graded' : c.grade == null ? 'not graded' : 'PDA ' + c.grade}, Series ${c.series}, ${c.edition}`;
+  const describe = (c) => `${c.character}, ${Store.MAT_LABEL[c.material]}${c.holo !== 'none' ? ', ' + HOLO[c.holo] : ''}, ${c.pending ? 'being graded' : c.grade == null ? 'not graded' : 'PDA ' + c.grade}, ${Store.trueOdds(c).label}, Series ${c.series}, ${c.edition}`;
 
   // a tile used by the collection and by every picker
   function cardTile(c, { selectable = false, selected = false, isNew = false, onTap, tag } = {}) {
     const b = h('button', { type: 'button', class: 'ctile' + (selectable ? ' pick' : ''), 'data-id': c.id, 'aria-label': describe(c), onclick: () => onTap?.(c, b) },
       h('div', { class: 'cwrap' }, cardFace(c), gradeBadge(c), isNew ? h('span', { class: 'new-b', text: 'New' }) : null,
         selectable ? h('span', { class: 'tick', 'aria-hidden': 'true' }) : null),
-      h('div', { class: 'cmeta' }, tag || null, matChip(c.material), holoBadge(c.holo), h('span', { class: 'ser', text: `Series ${c.series}` })));
+      h('div', { class: 'cmeta' }, tag || null, matChip(c.material), holoBadge(c.holo), h('span', { class: 'ser', text: `Series ${c.series}` }),
+        h('span', { class: 'flr', title: 'Floor for this exact card type (demo number)', text: floorTxt(c) })));
     if (tag) b.setAttribute('aria-label', describe(c) + '. ' + tag.textContent);
     if (selectable) b.setAttribute('aria-pressed', String(selected));
     return b;
@@ -128,7 +132,8 @@
   // ---------- share your pull: a 1080 x 1350 PNG of the card, its odds and the wordmark, then the share sheet (or a download)
   const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
   const holoLabel = (c) => { const hl = c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none'; return hl === 'none' ? '' : HOLO[hl]; };
-  const pullLine = (c) => { const n = window.Info?.pullOdds?.(c.material, c.holo || 'none'); return (n ? `1 in ${n}` : '') + (c.grade === 10 ? (n ? ' · ' : '') + 'PDA 10' : ''); };
+  const pullLine = (c) => Store.trueOdds(c).label; // includes the grade when graded
+  const kindLine = (c) => [Store.MAT_LABEL[c.material], holoLabel(c), c.grade != null ? 'PDA ' + c.grade : ''].filter(Boolean).join(' · ');
   async function shareImage(c) {
     const W = 1080, H = 1350, [core, glow] = LEAK[c.material], tier = tierOf(c);
     await Promise.all(['400 64px "Russo One"', '800 36px Nunito', '600 30px Nunito'].map((f) => document.fonts.load(f).catch(() => {})));
@@ -153,11 +158,11 @@
     g.textAlign = 'center'; g.textBaseline = 'alphabetic';
     fit(c.character, '400 {} "Russo One", sans-serif', 66, W - 120); g.fillStyle = '#f6e8cf'; g.shadowColor = '#000'; g.shadowBlur = 0; g.shadowOffsetY = 4;
     g.fillText(c.character, W / 2, 940); g.shadowOffsetY = 0;
-    const kind = [Store.MAT_LABEL[c.material], holoLabel(c)].filter(Boolean).join(' · ');
+    const kind = kindLine(c);
     fit(kind, '800 {} Nunito, sans-serif', 38, W - 160); g.fillStyle = core; g.shadowColor = glow; g.shadowBlur = 18; g.fillText(kind, W / 2, 1000); g.shadowBlur = 0;
     const odds = pullLine(c);
     if (odds) { fit(odds, '400 {} "Russo One", sans-serif', 76, W - 120); g.fillStyle = '#ffd27a'; g.shadowColor = 'rgba(255,170,60,.7)'; g.shadowBlur = 24; g.fillText(odds, W / 2, 1102); g.shadowBlur = 0; }
-    g.font = '600 30px Nunito, sans-serif'; g.fillStyle = '#b9a385'; g.fillText(`Pull odds · Series ${c.series}`, W / 2, 1152);
+    g.font = '600 30px Nunito, sans-serif'; g.fillStyle = '#b9a385'; g.fillText(`${c.grade != null ? 'Odds incl. grade' : 'Pull odds'} · Series ${c.series}`, W / 2, 1152);
     // the wordmark, small: the Omni mark + FORGE, like the top bar
     g.font = '400 40px "Russo One", sans-serif'; const fw = g.measureText('FORGE').width, wh = 46, ww = word ? wh * word.naturalWidth / word.naturalHeight : 0, gap = word ? 12 : 0;
     const x0 = (W - ww - gap - fw) / 2, by = 1262;
@@ -170,7 +175,7 @@
     try {
       const blob = await shareImage(c), slug = c.character.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const name = `omni-forge-${slug}.png`, file = new File([blob], name, { type: 'image/png' });
-      const kind = [Store.MAT_LABEL[c.material], holoLabel(c)].filter(Boolean).join(' · '), odds = pullLine(c);
+      const kind = kindLine(c), odds = pullLine(c);
       const title = `${c.character}, ${kind}`, text = `I pulled ${c.character} (${kind}${odds ? ', ' + odds : ''}) at the Omni Forge.`;
       if (navigator.canShare?.({ files: [file] })) {
         try { await navigator.share({ files: [file], title, text }); } catch (e) { if (e?.name !== 'AbortError') toast('Couldn’t share it', 'bad'); }
@@ -194,7 +199,7 @@
     return mats.map((m) => {
       const holoP = { paper: 0.05, wood: 0.1, fire: 0.5, charcoal: 0.9, diamond: 1 }[m];
       const holo = m === 'diamond' ? roll([['frame', 1 / 3], ['picture', 1 / 3], ['full', 1 / 3]])
-        : Math.random() < holoP ? roll([['frame', 0.5], ['picture', 0.35], ['full', 0.15]]) : 'none';
+        : ((q) => { const f = Math.random() < q, pi = Math.random() < q; return f && pi ? 'full' : f ? 'frame' : pi ? 'picture' : 'none'; })(1 - Math.sqrt(1 - holoP)); // frame and art each roll, like the contract
       const of = { paper: 80, wood: 48, fire: 24, charcoal: 8, diamond: 3 }[m] + Math.floor(Math.random() * 12);
       return { id: ++id, serial: ++serial, series, character: pool[Math.floor(Math.random() * pool.length)], material: m, holo,
         edition: `${1 + Math.floor(Math.random() * of)} of ${of}`, grade: null, pending: false };
@@ -219,15 +224,30 @@
   })();
 
   // =====================================================================================
-  // 1. Workbench: sealed packs, the opening table, and the collection
+  // 1. My cards (sealed packs + the collection) and Open packs (the opening table)
   // =====================================================================================
   const filt = { series: 'all', mat: 'all', holo: 'any', grade: 'all', sort: 'serial' };
-  function openTable() {
+  // sealed packs that can be opened now (the live Series opens when it sells out), oldest Series first
+  function openable() {
+    const s = S();
+    return Object.keys(s.sealed).map(Number).filter((no) => s.sealed[no] > 0 && !(no === s.series.no && s.series.phase < 4))
+      .sort((a, b) => a - b).map((no) => ({ series: no, n: s.sealed[no] }));
+  }
+  const openableCount = () => openable().reduce((a, o) => a + o.n, 0);
+  // one sheet, two jobs: view 'cards' = My cards (sealed packs + the whole collection); view 'open' = straight into tearing the next pack
+  function openTable(opts = {}) {
+    let view = opts.view === 'open' ? 'open' : 'cards';
+    if (view === 'open' && !openable().length) { toast('No packs to open', 'bad'); return; }
     const packsEl = h('section', { class: 'packs', 'aria-labelledby': 'packs-h' });
     const stage = h('section', { class: 'stage', hidden: true, 'aria-label': 'Opening' });
     const coll = h('section', { class: 'coll', 'aria-labelledby': 'coll-h' });
     const root = h('div', { class: 'st st-table' }, packsEl, stage, coll);
     const hide = new Set(); const fresh = new Set(); let busy = false;
+    const TITLE = { cards: 'My cards', open: 'Open packs' };
+    function setView(v) {
+      view = v; packsEl.hidden = v === 'open' || !stage.hidden; coll.hidden = v === 'open';
+      const t = root.closest('dialog')?.querySelector('.sheet-head h2'); if (t) t.textContent = TITLE[v];
+    }
 
     function renderPacks() {
       const s = S(); const keys = Object.keys(s.sealed).map(Number).sort((a, b) => b - a);
@@ -273,7 +293,8 @@
       const grid = list.length ? h('div', { class: 'cgrid' }, list.map((c) => cardTile(c, { isNew: fresh.has(c.id), onTap: (card) => openDetail(card.id) })))
         : h('div', { class: 'empty-state' }, h('p', { text: all.length ? 'No cards match.' : 'No cards yet. Open a pack!' }),
           all.length ? btn('Clear filters', 'small', () => { Object.assign(filt, { series: 'all', mat: 'all', holo: 'any', grade: 'all' }); renderColl(); }) : null);
-      put(coll, h('div', { class: 'coll-h' }, h('h3', { id: 'coll-h', text: 'Your cards' }), h('span', { class: 'muted', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` })), filters, grid);
+      put(coll, h('div', { class: 'coll-h' }, h('h3', { id: 'coll-h', text: 'Your cards' }), h('span', { class: 'muted', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }),
+        h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Collection floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) }))), filters, grid);
     }
     const render = () => { renderPacks(); renderColl(); };
 
@@ -286,10 +307,10 @@
       if (Array.isArray(window.__forcePull)) { window.__forcePull.forEach((o, k) => packs[0][5 - k] && Object.assign(packs[0][5 - k], o)); delete window.__forcePull; }
       let id = Math.max(999, ...S().cards.map((c) => c.id)), serial = Math.max(0, ...S().cards.map((c) => c.serial));
       packs.flat().forEach((c) => { c.id = ++id; c.serial = ++serial; }); // makePack numbers each pack from the same start
-      packs.forEach((p) => p.sort((a, b) => pullRank(a) - pullRank(b))); // rarest last: Legendary, then Epic, then by material and holo
+      packs.forEach((p) => p.sort((a, b) => rarity(a) - rarity(b))); // rarest last, by true odds (material x holo x grade)
       const cards = packs.flat(); cards.forEach((c) => hide.add(c.id));
       Store.update((s) => { s.sealed[series] -= n; s.cards.push(...cards); Store.log(`Opened ${n === 1 ? 'a' : n} Series ${series} pack${n > 1 ? 's' : ''}`); });
-      packsEl.hidden = true; stage.hidden = false;
+      packsEl.hidden = true; stage.hidden = false; if (view === 'open') coll.hidden = true;
       root.closest('.sheet-body')?.scrollTo({ top: 0 });
       await runOpening(series, packs, prior);
     }
@@ -411,7 +432,7 @@
         });
         const stk = h('div', { class: 'stk' }, [...els].reverse());
         put(area, stk);
-        const rest = [...els]; let ready = false, drag = null, dragged = false;
+        const rest = [...els]; let ready = false, drag = null, dragged = false, arm = null;
         const layout = () => rest.forEach((el, k) => { el.style.zIndex = 50 - k; el.style.transform = k ? `translate(${Math.min(k, 4) * 3}px, ${Math.min(k, 4) * 4}px)` : ''; });
         layout();
         if (from && !reduced()) {
@@ -421,32 +442,75 @@
         } else stk.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300 });
 
         async function reveal() {
-          const el = rest[0], c = el._c, i = order.length - rest.length, last = rest.length === 1, r = RANK[c.material], tier = tierOf(c), rm = reduced();
+          const el = rest[0], c = el._c, i = order.length - rest.length, last = rest.length === 1, tier = tierOf(c), big = isBig(tier), rm = reduced();
           el.inert = false; el.setAttribute('aria-label', `Card ${i + 1} of ${order.length}, face down`); el.focus({ preventScroll: true });
           put(meta, h('span', { class: 'op-n', text: `${i + 1} / ${order.length}` }));
+          const ho = isHolo(c), turn = ho ? holoArm(el) : null; // a holo shows its foil edge as soon as it's on top
           await pause(i === 0 ? 600 : 160); if (halted()) return;
-          if (last && r >= 2) { // tease the rare: the back glows in its material before it turns (a short tease leads into the leak)
+          if (ho) { // ...and waits for you: drag it (the edge brightens the further it goes) or tap to turn it
+            msg.textContent = 'Something’s shimmering…'; el.setAttribute('aria-label', `Card ${i + 1} of ${order.length}, face down and shimmering. Press to turn it over`);
+            await turn; if (halted()) return;
+            if (tier) el.classList.add('ho-yield'); // Rare and up: the holo edge hands over to the tier's own glow
+          }
+          if (tier) { // Rare and up (by true odds): the back glows in its material before it turns (a short tease leads into the leak)
             msg.textContent = 'Something’s glowing…';
             el.classList.add('tease', 't-' + c.material); Sfx.tease(c.material);
-            await pause(tier ? 520 : { fire: 850, charcoal: 1000, diamond: 1200 }[c.material]); if (halted()) return;
-            if (!tier) el.classList.remove('tease');
-          } else if (last && !tier) msg.textContent = 'Last card…';
-          const slow = tier && !rm;
-          if (tier) { await leak(el, c, tier === 'legendary', msg, pause); if (halted()) return; }
-          el.classList.toggle('slow', !!slow); el.classList.add('flipped'); Sfx.flip();
-          if (tier) { el.classList.remove('tease'); el._lk?.(); if (rm) el.querySelector('.face.front').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 350 }); }
-          const name = `${Store.MAT_LABEL[c.material]}${c.holo !== 'none' ? ' · ' + HOLO[c.holo] : ''}${c.grade === 10 ? ' · PDA 10' : ''}`;
-          if (r >= 2 || tier) { el.classList.add('rare', 'burst'); Sfx.chime(tier === 'legendary' ? 4 : tier ? 3 : r); msg.textContent = name + '!'; }
-          else msg.textContent = c.holo !== 'none' ? name + '!' : last ? name : 'Swipe or tap for the next card';
-          put(meta, h('span', { class: 'op-n', text: `${i + 1} / ${order.length}` }), matChip(c.material), holoBadge(c.holo));
+            await pause(big ? 520 : { fire: 850, charcoal: 1000, diamond: 1200 }[c.material] || 800); if (halted()) return;
+            if (!big) el.classList.remove('tease');
+          } else if (last) msg.textContent = 'Last card…';
+          const slow = big && !rm;
+          if (big) { await leak(el, c, tier === 'legendary', msg, pause); if (halted()) return; }
+          el.classList.toggle('slow', slow); el.classList.toggle('hslow', ho && !tier && !rm); el.classList.add('flipped'); Sfx.flip();
+          if (big) { el.classList.remove('tease'); el._lk?.(); }
+          if ((big || ho) && rm) el.querySelector('.face.front').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 350 });
+          if (ho) holoLand(el, !tier, slow, rm);
+          const name = cardName(c);
+          if (isHolo(c)) el.classList.add('holo-glow'); // every holo card, any material, glows on reveal
+          if (tier) { el.classList.add('rare', 'burst'); Sfx.chime(tier === 'legendary' ? 4 : big ? 3 : 2); msg.textContent = name + '!'; }
+          else msg.textContent = isHolo(c) ? name + '!' : last ? name : 'Swipe or tap for the next card';
+          const od = Store.trueOdds(c);
+          put(meta, h('span', { class: 'op-n', text: `${i + 1} / ${order.length}` }), matChip(c.material), holoBadge(c.holo),
+            tier ? h('span', { class: 'tier-b ' + tier, text: TIER_LABEL[tier] }) : null, h('span', { class: 'op-odds', text: od.label }));
           el.setAttribute('aria-label', `${describe(c)}. ${last ? (lastPack ? 'Press to see all your cards' : 'Press for the next pack') : 'Press for the next card'}`);
           if (tier === 'legendary') { await pause(slow ? 700 : 0); if (halted()) return; bigMoment(c, el, op); }
           if (c.holo !== 'none') tilt.start(el);
           ready = true;
-          if (tier) { // once the moment settles: Share
+          if (big) { // once the moment settles: Share
             await pause(tier === 'legendary' ? 2300 : slow ? 1000 : 300); if (halted() || rest[0] !== el) return;
             ctrls.querySelector('.share-b')?.remove(); ctrls.prepend(shareBtn(c, 'gold'));
           }
+        }
+        // the holo edge: a prismatic foil ring on the back and a rainbow halo; --hp (0..1) is how close it is to turning.
+        // Resolves when it should turn: dragged past the swipe threshold, or tapped / Enter (then it ramps up over 0.6 s)
+        function holoArm(el) {
+          el.querySelector('.back2').append(h('i', { class: 'ho-ring', 'aria-hidden': 'true' })); el.prepend(h('i', { class: 'ho-halo', 'aria-hidden': 'true' }));
+          el.classList.add('ho'); const set = (p) => el.style.setProperty('--hp', p.toFixed(3)); set(0);
+          return new Promise((res) => {
+            arm = { el, set, go(now) {
+              arm = null; if (now) { set(1); return res(); }
+              const p0 = parseFloat(el.style.getPropertyValue('--hp')) || 0, t0 = performance.now(); el.style.transition = 'none';
+              const step = (t) => { const u = Math.max(0, Math.min(1, (t - t0) / 600)); set(p0 + (1 - p0) * u * (2 - u)); if (u < 1 && !halted() && el.isConnected) requestAnimationFrame(step); else res(); };
+              requestAnimationFrame(step);
+            } };
+          });
+        }
+        // the holo lands: the halo fades as it turns, a prismatic sweep crosses the face; a plain holo (no tier) also
+        // gets a few sparkles round the edge and a shimmer chime. Reduced motion: none of that, the face fades in.
+        function holoLand(el, plain, slow, rm) {
+          const halo = el.querySelector('.ho-halo');
+          halo?.animate([{ opacity: getComputedStyle(halo).opacity }, { opacity: 0 }], { duration: 300, easing: 'ease-out', fill: 'forwards' }).finished.then(() => halo.remove(), () => {});
+          const at = slow ? 720 : plain ? 380 : 300;
+          if (plain) setTimeout(() => el.isConnected && Sfx.shimmer(), at);
+          if (rm) return;
+          const sw = h('i', { class: 'ho-sweep', 'aria-hidden': 'true' }); el.querySelector('.face.front').append(sw);
+          sw.animate([{ opacity: 1, backgroundPosition: '100% 0' }, { opacity: 1, backgroundPosition: '0% 0' }], { duration: plain ? 800 : 650, delay: at, easing: 'cubic-bezier(.4,.1,.4,1)', fill: 'both' })
+            .finished.then(() => sw.remove(), () => sw.remove());
+          if (!plain) return;
+          const COLS = ['#ff8ae0', '#ffe98a', '#8affd0', '#8ad8ff', '#c48aff', '#ffffff'];
+          const spk = Array.from({ length: 9 }, (_, k) => { const u = (k + Math.random() * 0.6) / 9 * 4, side = Math.floor(u), f = (u % 1) * 100, o = -3 + Math.random() * 6;
+            const [x, y] = side === 0 ? [f, o] : side === 1 ? [100 - o, f] : side === 2 ? [100 - f, 100 - o] : [o, 100 - f]; // round the edge, clockwise
+            return h('i', { class: 'ho-spk', 'aria-hidden': 'true', style: `left:${x.toFixed(1)}%;top:${y.toFixed(1)}%;--s:${(12 + Math.random() * 14).toFixed(0)}px;--c:${COLS[k % COLS.length]};--d:${(at + 40 + Math.random() * 380).toFixed(0)}ms` }); });
+          el.append(...spk); setTimeout(() => spk.forEach((x) => x.remove()), at + 1400);
         }
         async function next(sign = 1) {
           if (!ready) return; ready = false; tilt.stop();
@@ -460,7 +524,7 @@
           reveal();
         }
         stk.addEventListener('pointerdown', (e) => {
-          const el = rest[0]; if (!ready || !el?.contains(e.target)) return;
+          const el = rest[0]; if (!(ready || arm) || !el?.contains(e.target)) return;
           drag = { el, x: e.clientX, y: e.clientY, t: performance.now(), w: el.offsetWidth, moved: false }; el.setPointerCapture(e.pointerId); el.style.transition = 'none';
         });
         stk.addEventListener('pointermove', (e) => {
@@ -468,19 +532,22 @@
           const b = el.getBoundingClientRect();
           if (drag) {
             const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.hypot(dx, dy) > 6) drag.moved = true;
-            if (drag.moved && !reduced()) el.style.transform = `translate(${dx}px, ${dy * 0.3}px) rotate(${dx * 0.05}deg)`;
+            const k = arm ? 0.6 : 1; // face down, it drags a little stiffer: you're turning it, not throwing it
+            if (drag.moved && !reduced()) el.style.transform = `translate(${dx * k}px, ${dy * 0.3 * k}px) rotate(${dx * 0.05 * k}deg)`;
+            if (arm && drag.moved) arm.set(Math.min(1, Math.abs(dx) / (drag.w * 0.28)));
           }
           if (drag || e.pointerType === 'mouse') tilt.aim((e.clientX - b.left) / b.width, (e.clientY - b.top) / b.height);
         });
         const up = (e) => {
           if (!drag) return; const d = drag; drag = null;
           if (!d.moved) return; dragged = true;
-          const dx = e.clientX - d.x, v = dx / Math.max(1, performance.now() - d.t);
-          if (e.type === 'pointerup' && (Math.abs(dx) > d.w * 0.28 || Math.abs(v) > 0.6)) next(Math.sign(dx) || 1);
+          const dx = e.clientX - d.x, v = dx / Math.max(1, performance.now() - d.t), far = e.type === 'pointerup' && (Math.abs(dx) > d.w * 0.28 || Math.abs(v) > 0.6);
+          if (arm) { d.el.style.transition = 'transform .35s cubic-bezier(.3,1.4,.5,1), --hp .35s ease-out'; d.el.style.transform = ''; return far ? arm.go(true) : arm.set(0); } // a holo face down springs back, and turns if it went far enough
+          if (far) next(Math.sign(dx) || 1);
           else { d.el.style.transition = 'transform .35s cubic-bezier(.3,1.4,.5,1)'; d.el.style.transform = ''; }
         };
         stk.addEventListener('pointerup', up); stk.addEventListener('pointercancel', up);
-        stk.addEventListener('click', (e) => { if (dragged) { dragged = false; return; } if (rest[0]?.contains(e.target)) next(1); });
+        stk.addEventListener('click', (e) => { if (dragged) { dragged = false; return; } if (!rest[0]?.contains(e.target)) return; if (arm) arm.go(); else next(1); });
         setTimeout(() => !halted() && reveal(), from && !reduced() ? 420 : 200);
       });
     }
@@ -542,16 +609,18 @@
       return sv;
     }
 
-    // a Legendary card (Diamond, full-holo Coal or Paper, PDA 10): flash, a burst of sparks, then settle
+    // a Legendary card (rarer than 1 in 1,500: any Diamond, full-holo Paper, rare grades): flash, a burst of sparks, then settle.
+    // The title names the card: "Full-holo Paper!", "Diamond!", "PDA 10!" (a plain card that's only Legendary for its grade)
     const BM_SPARKS = { dia: ['#ffffff', '#d8f0ff', '#9fd8ff', '#c9b6ff', '#ffd27a', '#ff9a3c'], g10: ['#fff6d6', '#ffd27a', '#ffb347', '#ff7a2e', '#ffffff'],
-      charcoal: ['#fff2e0', '#ffb070', '#ff6a2a', '#ff3a1a', '#ffd27a'], paper: ['#ffffff', '#fff4d6', '#ffe7a8', '#ffd27a', '#f6e8cf'] };
+      charcoal: ['#fff2e0', '#ffb070', '#ff6a2a', '#ff3a1a', '#ffd27a'], paper: ['#ffffff', '#fff4d6', '#ffe7a8', '#ffd27a', '#f6e8cf'],
+      wood: ['#fff0d0', '#ffd08a', '#ffb050', '#ff9f2e', '#ffffff'], fire: ['#fff2c0', '#ffd27a', '#ff9a3c', '#ff5a12', '#ffffff'] };
     function bigMoment(c, el, op) {
-      const dia = c.material === 'diamond', g10 = c.grade === 10, fh = !dia && c.holo === 'full' && (c.material === 'charcoal' || c.material === 'paper');
-      const base = dia ? 'Diamond' : fh ? 'Full-holo ' + Store.MAT_LABEL[c.material] : null;
-      const kind = dia ? 'dia' : fh ? c.material : 'g10';
+      const dia = c.material === 'diamond', plain = !isHolo(c);
+      const kind = dia ? 'dia' : plain && c.grade === 10 ? 'g10' : c.material;
+      const title = plain && c.grade != null ? `PDA ${c.grade}!` : c.grade != null ? cardName(c) : cardName(c) + '!';
       const cv = h('canvas', { class: 'bm-cv' });
-      const ov = h('div', { class: 'bigm ' + (fh ? 'fh fh-' + kind : kind), 'aria-hidden': 'true' }, h('i', { class: 'bm-flash' }), h('i', { class: 'bm-glow' }), cv,
-        h('b', { class: 'bm-t', text: base ? base + (g10 ? ' · PDA 10' : '!') : 'PDA 10!' }));
+      const ov = h('div', { class: 'bigm ' + (dia || kind === 'g10' ? kind : 'fh fh-' + kind), 'aria-hidden': 'true' }, h('i', { class: 'bm-flash' }), h('i', { class: 'bm-glow' }), cv,
+        h('b', { class: 'bm-t', text: title }));
       (op.closest('dialog') || op).append(ov); Sfx.boom(); op.classList.add('big'); setTimeout(() => op.classList.remove('big'), 2300);
       if (!reduced()) { sparks(cv, el.getBoundingClientRect(), BM_SPARKS[kind]); const q = op.querySelector('.op-area'); q.classList.add('quake'); setTimeout(() => q.classList.remove('quake'), 450); }
       setTimeout(() => ov.classList.add('out'), 1900); setTimeout(() => ov.remove(), 2500);
@@ -610,47 +679,63 @@
         const k = dupKey(c), isNew = !seen.get(k); seen.set(k, (seen.get(k) || 0) + 1);
         const tag = isNew ? h('span', { class: 'new-t', text: 'New' }) : h('span', { class: 'dup-b', text: `Duplicate ×${dups.get(c.id)?.n || seen.get(k)}` });
         const tile = cardTile(c, { tag, onTap: (card) => openDetail(card.id) });
-        return tierOf(c) ? h('div', { class: 'sum-cell' }, tile, shareBtn(c, 'small')) : tile;
+        return isBig(tierOf(c)) ? h('div', { class: 'sum-cell' }, tile, shareBtn(c, 'small')) : tile;
       });
       cards.forEach((c) => { hide.delete(c.id); fresh.add(c.id); });
-      const best = [...cards].sort((a, b) => pullRank(b) - pullRank(a))[0];
-      const close = () => { busy = false; stage.hidden = true; stage.classList.remove('opening'); packsEl.hidden = false; put(stage); render(); };
+      const best = [...cards].sort((a, b) => rarity(b) - rarity(a))[0];
+      const close = () => { busy = false; stage.hidden = true; stage.classList.remove('opening'); packsEl.hidden = view === 'open'; put(stage); render(); };
       const go = (name) => { close(); Sheet.close('table'); Stations.open(name); };
-      const left = S().sealed[series];
+      const more = openable(), left = more.reduce((a, o) => a + o.n, 0);
+      const nextSeries = (more.find((o) => o.series === series) || more[0])?.series; // same Series first, then the oldest
+      const seeAll = () => { close(); setView('cards'); root.closest('.sheet-body')?.scrollTo({ top: 0 }); coll.querySelector('h3')?.setAttribute('tabindex', '-1'); coll.querySelector('h3')?.focus({ preventScroll: true }); };
+      const keep = view === 'open' ? () => { close(); Sheet.close('table'); } : close;
       put(stage, h('div', { class: 'op-sum' },
         h('div', { class: 'op-sum-h' }, h('h3', { text: cards.length > 6 ? `Your ${cards.length} cards` : 'Your pulls' }),
-          h('span', { class: 'muted', text: `Best: ${Store.MAT_LABEL[best.material]}${best.holo !== 'none' ? ' · ' + HOLO[best.holo] : ''}` })),
+          h('span', { class: 'muted', text: `Best: ${cardName(best)}, ${Store.trueOdds(best).label}` })),
         h('div', { class: 'op-sum-grid' + (cards.length > 6 ? ' many' : '') }, tiles),
-        h('div', { class: 'stage-ctrls' }, btn('Keep', 'primary', close), btn('Grade', '', () => go('grade')), btn('Burn', '', () => go('burn')),
-          left > 0 && connected() ? btn(`Open another (${left})`, 'gold', () => { busy = false; openPacks(series, 1); }) : null)));
+        h('div', { class: 'stage-ctrls' }, btn('Keep', 'primary', keep), btn('Grade', '', () => go('grade')), btn('Burn', '', () => go('burn')),
+          view === 'open' ? btn('See all my cards', '', seeAll) : null,
+          left > 0 && connected() ? btn(`Open another (${left})`, 'gold', () => { busy = false; openPacks(nextSeries, 1); }) : null)));
       renderColl(); Store.update(() => {}); // let the shell refresh counts
       stage.querySelector('.op-sum .btn.primary')?.focus({ preventScroll: true });
       root.closest('.sheet-body')?.scrollTo({ top: 0 });
     }
 
     listen('table', render);
-    Sheet.open('table', { title: 'Workbench', body: root, wide: true, onClose: () => unlisten('table') });
-    render();
+    Sheet.open('table', { title: TITLE[view], body: root, wide: true, onClose: () => unlisten('table') });
+    setView(view); render();
+    if (view === 'open') { // straight to the table: the oldest Series' next pack (demo: connects the demo wallet if needed)
+      if (!connected()) { Store.update((s) => { s.wallet.connected = true; }); toast('Demo wallet connected. No real wallet is used.', 'good'); }
+      openPacks(openable()[0].series, 1);
+    }
   }
 
-  // card detail: bigger card, all traits, quick actions
+  // card detail: bigger card, its true odds and demo floor, all traits, quick actions, OpenSea
   function openDetail(id) {
     const c = byId(id); if (!c) return;
+    const od = Store.trueOdds(c);
     const traits = [['Character', c.character], ['Category', Store.CHARS[c.character]?.category || '—'], ['Material', Store.MAT_LABEL[c.material]], ['Holo', HOLO[c.holo || 'none']], ['Series', 'Series ' + c.series],
       ['Edition', c.edition], ['Number', '#' + c.serial], ['PDA grade', c.pending ? 'Being graded' : c.grade == null ? 'Not graded' : String(c.grade)]];
     const goto = (name) => { Sheet.close('card'); Sheet.close('table'); Stations.open(name, { pick: [c.id] }); };
     const canGrade = c.grade == null && !c.pending;
+    const sea = (label, href, extra) => h('a', { class: 'btn sea', href, target: '_blank', rel: 'noopener', ...extra }, label, h('span', { 'aria-hidden': 'true', text: '↗' }));
     const body = h('div', { class: 'detail' },
       h('div', { class: 'big' }, h('div', { class: 'cwrap' }, cardFace(c), gradeBadge(c))),
       h('div', { class: 'traits' },
-        h('div', { class: 'cmeta' }, matChip(c.material), holoBadge(c.holo)),
+        h('div', { class: 'cmeta' }, matChip(c.material), holoBadge(c.holo), od.tier ? h('span', { class: 'tier-b ' + od.tier, text: TIER_LABEL[od.tier] }) : null),
+        h('div', { class: 'dstats' },
+          h('div', { class: 'dodds' }, h('small', { text: c.grade != null ? 'Odds, with its grade' : 'Pull odds' }), h('b', { text: od.label })),
+          h('div', { class: 'dfloor' }, h('small', { text: 'Floor (demo)' }), h('b', { text: floorTxt(c) }),
+            h('span', { text: `This exact type: ${c.character}, ${cardName(c)}` }))),
         h('dl', {}, traits.map(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
         h('div', { class: 'row' },
           btn('Grade', 'primary', () => goto('grade'), { disabled: !canGrade }),
           btn('Burn', '', () => goto('burn'), { disabled: c.pending }),
-          shareBtn(c),
-          h('a', { class: 'btn', href: 'https://opensea.io/', target: '_blank', rel: 'noopener' }, 'View on OpenSea')),
-        !canGrade ? h('p', { class: 'muted small', text: c.pending ? 'Being graded right now.' : 'Already graded.' }) : null));
+          shareBtn(c)),
+        h('div', { class: 'row' }, // collection link is a placeholder until the contract exists; then Store.openSeaItem links the card itself
+          sea('View / Buy on OpenSea', Store.openSeaItem(c), { 'aria-label': 'View or buy on OpenSea (opens a new tab)' }),
+          sea('List on OpenSea', Store.OPENSEA.contract ? Store.openSeaItem(c) : Store.OPENSEA.account, { 'aria-label': 'List on OpenSea (opens a new tab)' })),
+        h('p', { class: 'muted small', text: (c.pending ? 'Being graded right now. ' : !canGrade ? 'Already graded. ' : '') + 'Floors are demo numbers. OpenSea links go to a placeholder collection for now.' })));
     Sheet.open('card', { title: c.character, body });
   }
 
@@ -667,44 +752,80 @@
       h('figcaption', { text: 'Most cards grade 6 to 9. A PDA 10 is as rare as a PDA 1: 1 in 100.' }));
   }
   function openGrade(opts = {}) {
-    const sel = new Set((opts.pick || []).filter((id) => { const c = byId(id); return c && c.grade == null && !c.pending; }));
+    const ok = (c) => c && c.grade == null && !c.pending;
+    const sel = new Set((opts.pick || []).filter((id) => ok(byId(id))).slice(0, MAX_GRADE)); // insertion order = tray order
     let mode = 'pick';
     const root = h('div', { class: 'st st-grade' });
+    const tray = h('section', { class: 'gtray', 'aria-labelledby': 'gtray-h' }); // "Ready to grade": pinned to the top of the sheet
     const foot = h('div', { class: 'foot' });
-    const pool = () => S().cards.filter((c) => c.grade == null && !c.pending).sort((a, b) => rarity(b) - rarity(a) || b.serial - a.serial);
+    const pool = () => S().cards.filter(ok).sort((a, b) => rarity(b) - rarity(a) || b.serial - a.serial);
+    const cost = () => sel.size * GRADE_PRICE;
+    function renderTray() {
+      const ids = [...sel], n = ids.length;
+      tray.classList.toggle('has', n > 0);
+      put(tray, h('div', { class: 'gtray-h' }, h('h3', { id: 'gtray-h', text: 'Ready to grade' }),
+          h('span', { class: 'gtray-n', 'aria-live': 'polite', html: n ? `${n} card${n > 1 ? 's' : ''} · <b class="price">${cost()} PAPER</b>` : 'None yet' })),
+        n ? h('ul', { class: 'gthumbs', 'aria-label': 'Cards to grade' }, ids.map((id) => { const c = byId(id);
+          return h('li', { class: 'gthumb' }, h('div', { class: 'cwrap' }, cardFace(c)), h('span', { class: 'gt-name', text: c.character }),
+            h('button', { type: 'button', class: 'gx', 'aria-label': `Remove ${c.character}, ${cardName(c)}`, 'data-id': id, onclick: () => remove(id) }, '×')); }))
+          : h('p', { class: 'gtray-empty', text: `Tap cards below to add them here. Up to ${MAX_GRADE}.` }));
+    }
     function renderFoot() {
-      const n = sel.size, cost = n * GRADE_PRICE, have = paper();
+      const n = sel.size, have = paper();
       let act;
       if (!connected()) act = connectBtn();
       else if (!n) act = h('div', { class: 'row' }, h('span', { class: 'why', text: 'Pick a card' }), btn('Grade', 'primary', null, { disabled: true }));
-      else if (have < cost) act = h('div', { class: 'row' }, h('span', { class: 'why', text: `Need ${cost} PAPER` }), btn('Grade', 'primary', null, { disabled: true }), getPaperBtn());
-      else act = btn(`Grade ${n}`, 'primary', go);
-      put(foot, h('div', { class: 'fsum' }, h('b', { text: n ? `${n} picked · ${cost} PAPER` : 'None picked' }), h('span', { class: 'muted', text: `You have ${have} PAPER` })), act);
+      else if (have < cost()) act = h('div', { class: 'row' }, h('span', { class: 'why', text: `Need ${cost()} PAPER` }), btn('Grade', 'primary', null, { disabled: true }), getPaperBtn());
+      else act = btn(`Grade ${n}`, 'primary', confirmGrade);
+      put(foot, h('div', { class: 'fsum' }, h('b', { text: n ? `${n} picked · ${cost()} PAPER` : 'None picked' }), h('span', { class: 'muted', text: `You have ${have} PAPER` })), act);
     }
-    function toggle(c, el) {
-      if (sel.has(c.id)) sel.delete(c.id);
-      else if (sel.size >= MAX_GRADE) return toast(`Up to ${MAX_GRADE} at a time`, 'bad');
-      else sel.add(c.id);
-      el.setAttribute('aria-pressed', String(sel.has(c.id))); renderFoot();
+    function add(c) {
+      if (sel.size >= MAX_GRADE) return toast(`Up to ${MAX_GRADE} at a time`, 'bad');
+      const tiles = [...root.querySelectorAll('.gpool .ctile')], k = tiles.findIndex((t) => +t.dataset.id === c.id);
+      sel.add(c.id); render();
+      const next = root.querySelectorAll('.gpool .ctile'); (next[Math.min(k, next.length - 1)] || tray.querySelector('.gx:last-of-type'))?.focus({ preventScroll: true });
+    }
+    function remove(id) {
+      const ids = [...sel], k = ids.indexOf(id); sel.delete(id); render();
+      const xs = tray.querySelectorAll('.gx'); (xs[Math.min(k, xs.length - 1)] || root.querySelector('.gpool .ctile'))?.focus({ preventScroll: true });
     }
     function render() {
       if (mode !== 'pick') return;
-      [...sel].forEach((id) => { const c = byId(id); if (!c || c.grade != null || c.pending) sel.delete(id); });
-      const list = pool();
-      put(root, 
+      [...sel].forEach((id) => { if (!ok(byId(id))) sel.delete(id); });
+      const list = pool().filter((c) => !sel.has(c.id));
+      renderTray();
+      put(root, tray,
         h('div', { class: 'intro' },
           h('div', {}, h('p', { class: 'slead', text: 'Pick up to 10 cards. Each gets a grade from 1 to 10.' }),
             h('p', { class: 'muted', html: `<b class="price">${GRADE_PRICE} PAPER</b> per card (~$0.25 each)` }),
             h('p', { class: 'gnote', text: 'Cards can’t be traded while they’re being graded.' })),
           oddsChart()),
-        list.length ? h('div', { class: 'cgrid' }, list.map((c) => cardTile(c, { selectable: true, selected: sel.has(c.id), onTap: toggle })))
-          : h('div', { class: 'empty-state' }, h('p', { text: 'All your cards are graded. Open a pack for more!' })),
+        h('div', { class: 'gpool-h' }, h('h3', { text: sel.size ? 'Add more' : 'Your ungraded cards' }), h('span', { class: 'muted small', text: 'Rarest first' })),
+        list.length ? h('div', { class: 'cgrid gpool' }, list.map((c) => { const t = cardTile(c, { onTap: add }); t.classList.add('addable'); t.setAttribute('aria-label', describe(c) + '. Add to grade'); return t; }))
+          : h('div', { class: 'empty-state' }, h('p', { text: sel.size ? 'That’s every ungraded card you have.' : 'All your cards are graded. Open a pack for more!' })),
         foot);
       renderFoot();
     }
-    async function go() {
-      const ids = [...sel]; const cost = ids.length * GRADE_PRICE;
-      if (paper() < cost) return renderFoot();
+    // the confirm window: exactly these cards and the cost, before anything happens
+    function confirmGrade() {
+      const ids = [...sel], n = ids.length, c0 = n * GRADE_PRICE, have = paper();
+      if (!n || have < c0) return renderFoot();
+      const yes = btn(`Grade ${n} · ${c0} PAPER`, 'primary', () => { d.close(); go(ids); });
+      const body = h('div', { class: 'gconfirm' },
+        h('ul', { class: 'gc-cards', 'aria-label': 'Cards to grade' }, ids.map((id) => { const c = byId(id);
+          return h('li', {}, h('div', { class: 'cwrap' }, cardFace(c)), h('span', { class: 'gc-name', text: c.character }), h('span', { class: 'muted small', text: cardName(c) })); })),
+        h('dl', { class: 'sum' }, h('dt', { text: 'Cards' }), h('dd', { text: `${n} × ${GRADE_PRICE} PAPER` }),
+          h('dt', { text: 'Cost' }), h('dd', { class: 'price', text: `${c0} PAPER` }),
+          h('dt', { text: 'PAPER after' }), h('dd', { html: `${have - c0} <small>of ${have}</small>` })),
+        h('p', { class: 'note', text: 'The PAPER is burned. Each grade is drawn once and it’s final. Cards can’t be traded while they’re being graded.' }),
+        h('p', { class: 'demo-line', html: '<b>Demo</b> Demo PAPER only. No wallet is used.' }),
+        h('div', { class: 'row gc-act' }, btn('Back', '', () => d.close()), yes));
+      const d = Sheet.open('grade-ok', { title: n > 1 ? `Grade these ${n} cards?` : 'Grade this card?', body });
+      yes.focus();
+    }
+    async function go(ids) {
+      ids = ids.filter((id) => ok(byId(id))); const cost = ids.length * GRADE_PRICE;
+      if (!ids.length || paper() < cost) return render();
       mode = 'reveal'; sel.clear();
       Store.update((s) => { s.wallet.balances.PAPER -= cost; ids.forEach((id) => { const c = byId(id); if (c) c.pending = true; }); Store.log(`Sent ${ids.length} card${ids.length > 1 ? 's' : ''} to PDA`); });
       const msg = h('p', { class: 'stage-msg', 'aria-live': 'polite', text: 'Grading…' });
@@ -763,7 +884,7 @@
     let dups = new Map();
     const spare = (c) => (dups.get(c.id)?.spare ? 0 : 1);
     const SORTS = {
-      best: (a, b) => spare(a) - spare(b) || RANK[a.material] - RANK[b.material] || HRANK[a.holo || 'none'] - HRANK[b.holo || 'none']
+      best: (a, b) => spare(a) - spare(b) || rarity(a) - rarity(b) // spares, then the most common by true odds
         || gradeKey(a) - gradeKey(b) || edNum(b) - edNum(a) || b.serial - a.serial,
       serial: (a, b) => b.serial - a.serial,
       rarity: (a, b) => rarity(a) - rarity(b) || b.serial - a.serial,
@@ -878,8 +999,9 @@
     render(); setTimeout(() => ta.focus(), 50);
   }
 
-  const OPEN = { table: openTable, grade: openGrade, burn: openBurn, suggest: openSuggest };
+  const OPEN = { cards: openTable, open: (o) => openTable({ ...o, view: 'open' }), table: openTable, grade: openGrade, burn: openBurn, suggest: openSuggest };
   window.Stations = {
+    openable, openableCount,
     open(name, opts) { (OPEN[name] || (() => toast('Unknown station', 'bad')))(opts); },
     openCard: openDetail,
   };

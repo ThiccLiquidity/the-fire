@@ -3,19 +3,49 @@
 Vite project deployed on Vercel (Root Directory `web`). Needs Node.js 20.19+ or 22.12+ (Vite 8).
 
 - `public/forge/` is the Forge: a static page (canvas workshop scene plus station screens) served at `/forge/`.
-  `/` redirects there (`index.html` and `vercel.json`). It is a demo-only site for now: a demo banner under the top
-  bar, demo data, no wallet, no payments, no chain connection.
-- `src/lib/` holds the modules for the live version: chain and RPC config, wallet connection, the drand helper, the
-  card contract ABIs (`abi/`, exported by `cards.ts`) and the KyberSwap swap guard. `npm run build` type-checks them.
+  `/` redirects there (`index.html` and `vercel.json`). Purchases are still demo: a demo banner under the top bar,
+  demo balances and cards, no payments, and no wallet connection (Connect signs in a demo wallet).
+- `src/lib/` holds the modules for the live version: chain and RPC config, the wallet connection (`wallet.ts`), the
+  drand helper, the card contract ABIs (`abi/`, exported by `cards.ts`) and the KyberSwap swap guard. `npm run build`
+  type-checks them.
 - `vercel.json` sets the Content-Security-Policy. If `VITE_RPC_URL` is set, its host must be in `connect-src`; the
   production build fails otherwise (see `vite.config.ts`).
 
 ```sh
 npm install
-npm run dev      # http://localhost:5173
-npm run build    # tsc -b && vite build
-npm run lint     # oxlint
+npm run dev           # http://localhost:5173
+npm run build         # tsc -b && vite build
+npm run build:wallet  # the wallet bundle (not used by the site yet; see below)
+npm run lint          # oxlint
 ```
+
+## Wallet connection (ready, not wired in)
+
+The wallet layer for the live site is built on the standard stack: [wagmi core](https://wagmi.sh/core) holds the
+connection (restored on reload), [viem](https://viem.sh) reads the chain and
+[Reown AppKit](https://docs.reown.com/appkit/javascript/core/installation) draws the Connect Wallet modal. Wallets:
+installed extensions through EIP-6963, WalletConnect (QR code on desktop, deep links on phones) and Coinbase Wallet
+(regular wallet only). Robinhood Chain (mainnet, or testnet with `VITE_CHAIN=testnet`) is the only network; on
+connect the wallet is asked to add and switch to it (public RPC only).
+
+The Forge does not load it yet: the site stays a demo with no wallet connection.
+
+- `src/lib/wallet.ts`: `initWallet()`, `connect()`, `disconnect()`, `getAccount()`, `watchAccount(cb)`,
+  `switchToRobinhood()`, `getPublicClient()`, `getWalletClient()`, `readBalance(token, owner)`, `listWallets()` /
+  `connectWith(id)` (fallback without a Reown project id), the chain constants, `waitOk`, `friendly` and `hasCode`.
+- `src/forge-wallet.ts`: a small browser entry that puts `window.ForgeWallet` on the page (`open()`, `disconnect()`,
+  `switchNetwork()`, `state()`, `onChange(cb)`); wagmi and AppKit load on the first click.
+- `vite.wallet.config.ts` (`npm run build:wallet`) builds it into `art/factory/forge/vendor/`.
+
+To wire it in later:
+1. Create a Reown project (free, [dashboard.reown.com](https://dashboard.reown.com)), allow the site's domain, and set
+   `VITE_REOWN_PROJECT_ID` in Vercel → Settings → Environment Variables (public, not a secret).
+2. Build the bundle into the deploy (`vite build --config vite.wallet.config.ts --outDir dist/forge/vendor` after the
+   main build), load `vendor/wallet.js` from `forge/index.html` as a module, and point the Connect button at
+   `ForgeWallet.open()`.
+3. Add to the CSP in `vercel.json`: `connect-src https://api.web3modal.org https://pulse.walletconnect.org
+   https://rpc.walletconnect.org wss://relay.walletconnect.org` and
+   `frame-src https://verify.walletconnect.org https://verify.walletconnect.com`.
 
 ## Forge source and the served copy
 
@@ -25,8 +55,9 @@ npm run lint     # oxlint
 art/factory/sync_forge.sh
 ```
 
-It copies `art/factory/forge` and the scene art in `art/factory/build3` to `public/forge`, placing the art in
-`public/forge/a/` and rewriting `../build3/` paths to `a/`. Commit both the source and the regenerated copy.
+It copies `art/factory/forge` and the scene art in `art/factory/build3`
+to `public/forge`, placing the art in `public/forge/a/` and rewriting `../build3/` paths to `a/`. Commit both the
+source and the regenerated copy.
 
 ## Scene art pipeline (`art/factory`)
 
