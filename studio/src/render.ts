@@ -2,7 +2,7 @@
  *  (HTMLCanvasElement or OffscreenCanvas) and in a worker (OffscreenCanvas). No React, no IndexedDB. */
 
 import type { DealtCard } from './deal'
-import { CARD_H, CARD_W, CATEGORY_LABEL, GRADE_COLOR, HOLO_LABEL, MATERIAL_LABEL, wearLookOf, type Category, type Material, type WearLook } from './rules'
+import { CARD_H, CARD_W, GRADE_COLOR, HOLO_LABEL, MATERIAL_LABEL, wearLookOf, type Material, type WearLook } from './rules'
 import type { Layout, OutputFormat, PsaBox, Rect, TextBox, TextStyle } from './types'
 import type { Ctx2D } from './wear'
 
@@ -30,12 +30,12 @@ export interface CardView {
   pda10: boolean
 }
 
-export function cardView(card: Pick<DealtCard, 'material' | 'grade' | 'fire'>, characterName: string, category?: Category): CardView {
+export function cardView(card: Pick<DealtCard, 'material' | 'grade' | 'fire'>, characterName: string, category?: string): CardView {
   return {
     material: card.material,
     name: characterName,
     materialLabel: MATERIAL_LABEL[card.material],
-    categoryLabel: category ? CATEGORY_LABEL[category] : '',
+    categoryLabel: category ?? '',
     forgedLabel: `Forged · Series ${card.fire > 0 ? card.fire : 1}`,
     psaValue: card.grade == null ? '?' : String(card.grade),
     wear: wearLookOf(card.grade),

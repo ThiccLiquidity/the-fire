@@ -1,6 +1,7 @@
 /** App state, written through to IndexedDB on every change. A tiny external store consumed with useSyncExternalStore. */
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { hasCategory, migrateCharacterCategory } from './categories'
 import { DEFAULT_KEY, keyMagentaBlob, type KeyOptions } from './chroma'
 import * as db from './db'
 import { FRAMES_UPDATED_AT } from './frames'
@@ -65,9 +66,16 @@ export async function loadStudio(): Promise<void> {
     else if (k.startsWith('fire:')) d.fires.push(v as FireRecord)
     else if (k === 'global') {
       // older saves and backups also hold the rarity accumulators (no longer used: each Series stands alone); ignore them
-      const { nextSerial, nextFireNumber } = v as GlobalState
-      d.global = { nextSerial: nextSerial ?? d.global.nextSerial, nextFireNumber: nextFireNumber ?? d.global.nextFireNumber }
+      const { nextSerial, nextFireNumber, categoriesFree } = v as GlobalState
+      d.global = { nextSerial: nextSerial ?? d.global.nextSerial, nextFireNumber: nextFireNumber ?? d.global.nextFireNumber, categoriesFree }
     }
+  }
+  if (!d.global.categoriesFree) {
+    // saves and backups from before free-text categories hold fixed ids ('sports'): turn them into labels ('Sports'), once
+    d.characters = d.characters.map(migrateCharacterCategory)
+    for (const c of d.characters) await db.putRecord(`char:${c.id}`, c)
+    d.global = { ...d.global, categoriesFree: true }
+    await db.putRecord('global', d.global)
   }
   d.characters.sort((a, b) => a.createdAt - b.createdAt)
   d.fires.sort((a, b) => a.number - b.number)
@@ -191,9 +199,9 @@ export function completeness(c: Character): number {
   return n
 }
 
-/** Can go into a Series: all 10 images and a category. */
+/** Can go into a Series: all 10 images and a usable category. */
 export function isReady(c: Character): boolean {
-  return completeness(c) === 10 && !!c.category
+  return completeness(c) === 10 && hasCategory(c)
 }
 
 // ---------- layouts, fonts ----------

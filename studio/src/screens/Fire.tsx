@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { Field, Notice, NumberInput, useAction } from '../components'
+import { hasCategory } from '../categories'
 import { computePool, effectiveDiamonds } from '../deal'
 import { randomSeed } from '../prng'
 import { CARDS_PER_PACK, MATERIALS, MATERIAL_LABEL, MAX_DIAMONDS, expectedHolos, type Material } from '../rules'
@@ -85,7 +86,7 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
                   <label className="check">
                     <input type="checkbox" checked={on} disabled={locked || (!ok && !on)} onChange={(e) => toggle(c.id, e.target.checked)} data-testid={`pick-${c.name}`} />
                     {c.name} {c.placeholder && <span className="tag">placeholder</span>}
-                    <span className={`badge ${ok ? 'badge-ok' : 'badge-warn'}`}>{n}/10{c.category ? '' : ' · no category'}</span>
+                    <span className={`badge ${ok ? 'badge-ok' : 'badge-warn'}`}>{n}/10{hasCategory(c) ? '' : ' · no category'}</span>
                   </label>
                 </li>
               )

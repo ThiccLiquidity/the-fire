@@ -15,8 +15,11 @@
 
 ## The flow
 
-1. **Before a Series:** the owner (the `OWNER` multisig) calls `configureFire(fire, names, categories, imagesBase)`: the Series' characters in the
-   studio's order and the folder its card images live in (IPFS or Arweave). `setDiamonds(fire, n)` sets how many
+1. **Before a Series:** the owner (the `OWNER` multisig) calls `configureFire(fire, names, categories, imagesBase)`:
+   the Series' character names and categories in the studio's order, and the folder its card images live in (IPFS or
+   Arweave). Categories are free text, one per character, set in the studio (no preset list): 1 to 32 bytes of
+   UTF-8 (`MAX_CATEGORY_BYTES`), and, like names, no `"`, `\` or control characters, since they go into the token
+   JSON as-is. The studio's `fire.json` carries these arguments. `setDiamonds(fire, n)` sets how many
    Diamonds it makes (1 to 1000, default 1, never more than one per pack). `lockFire` freezes it; so does the first
    pack sold.
 2. **During the drop:** the seller (`FireSale`) mints packs to buyers. They're tradeable sealed.

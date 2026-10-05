@@ -50,7 +50,8 @@ contract SaleForkTest is Test {
         packs.setCards(address(cards));
         cards.setSeller(address(sale));
         string[] memory names = new string[](1);
-        uint8[] memory cats = new uint8[](1);
+        string[] memory cats = new string[](1);
+        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         names[0] = "Test";
         cards.configureFire(1, names, cats, "ipfs://x/");
         sale.configureDrop(1, FireSale.DropConfig({start: uint64(block.timestamp + 1), packs: 100, starters: 0, plankOnly: 0,

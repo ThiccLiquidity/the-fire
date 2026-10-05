@@ -68,8 +68,8 @@ contract CardsTest is Test {
 
     function _configure(uint256 fire, uint256 n) internal {
         string[] memory names = new string[](n);
-        uint8[] memory cats = new uint8[](n);
-        for (uint256 i; i < n; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = uint8(i % 7); }
+        string[] memory cats = new string[](n);
+        for (uint256 i; i < n; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = string.concat("Cat ", vm.toString(i % 7)); }
         vm.prank(owner);
         cards.configureFire(fire, names, cats, "ipfs://images/");
     }
@@ -364,7 +364,8 @@ contract CardsTest is Test {
         vm.prank(owner);
         cards.lockFire(1);
         string[] memory names = new string[](1);
-        uint8[] memory cats = new uint8[](1);
+        string[] memory cats = new string[](1);
+        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         vm.prank(owner);
         vm.expectRevert(FireCards.FireIsLocked.selector);
         cards.configureFire(1, names, cats, "x");
@@ -504,7 +505,8 @@ contract CardsTest is Test {
 
     function test_audit_textThatWouldBreakJsonIsRejected() public {
         string[] memory names = new string[](1);
-        uint8[] memory cats = new uint8[](1);
+        string[] memory cats = new string[](1);
+        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         names[0] = 'Bad "quote';
         vm.prank(owner);
         vm.expectRevert(FireCards.BadText.selector);
@@ -513,6 +515,92 @@ contract CardsTest is Test {
         vm.prank(owner);
         vm.expectRevert(FireCards.BadText.selector);
         cards.configureFire(5, names, cats, "ipfs://x\\/");
+    }
+
+    // ---------- categories: free text per character ----------
+
+    function _one(string memory cat) internal pure returns (string[] memory names, string[] memory cats) {
+        names = new string[](1);
+        cats = new string[](1);
+        names[0] = "Solo";
+        cats[0] = cat;
+    }
+
+    function test_categoryTextInTokenUri() public {
+        (string[] memory names, string[] memory cats) = _one(unicode"Rock Stars é");
+        vm.prank(owner);
+        cards.configureFire(9, names, cats, "ipfs://x/");
+        _sellAndClose(9, 1);
+        _openAll(9, 1, 3);
+        string memory uri = cards.tokenURI(1);
+        string memory json = string(_b64decode(_after(bytes(uri), 29))); // "data:application/json;base64,"
+        assertTrue(_contains(json, unicode'{"trait_type":"Category","value":"Rock Stars é"}'), json);
+        vm.parseJson(json); // still valid JSON
+    }
+
+    function test_categoryRules() public {
+        string[] memory names;
+        string[] memory cats;
+        (names, cats) = _one("");
+        vm.prank(owner);
+        vm.expectRevert(FireCards.BadText.selector);
+        cards.configureFire(5, names, cats, "ipfs://x/");
+
+        (names, cats) = _one("123456789012345678901234567890123"); // 33 bytes
+        vm.prank(owner);
+        vm.expectRevert(FireCards.BadText.selector);
+        cards.configureFire(5, names, cats, "ipfs://x/");
+
+        string[4] memory bad = ['Say "hi"', "back\\slash", "tab\tin", "new\nline"];
+        for (uint256 i; i < bad.length; i++) {
+            (names, cats) = _one(bad[i]);
+            vm.prank(owner);
+            vm.expectRevert(FireCards.BadText.selector);
+            cards.configureFire(5, names, cats, "ipfs://x/");
+        }
+
+        (names, cats) = _one("12345678901234567890123456789012"); // exactly 32 bytes is fine
+        vm.prank(owner);
+        cards.configureFire(5, names, cats, "ipfs://x/");
+    }
+
+    function test_categoryCountMustMatchNames() public {
+        string[] memory names = new string[](2);
+        string[] memory cats = new string[](1);
+        names[0] = "A"; names[1] = "B"; cats[0] = "Person";
+        vm.prank(owner);
+        vm.expectRevert(FireCards.BadLength.selector);
+        cards.configureFire(5, names, cats, "ipfs://x/");
+    }
+
+    function _after(bytes memory b, uint256 from) internal pure returns (bytes memory r) {
+        r = new bytes(b.length - from);
+        for (uint256 i; i < r.length; i++) r[i] = b[from + i];
+    }
+
+    function _contains(string memory s, string memory sub) internal pure returns (bool) {
+        bytes memory a = bytes(s); bytes memory b = bytes(sub);
+        if (b.length > a.length) return false;
+        for (uint256 i; i + b.length <= a.length; i++) {
+            bool ok = true;
+            for (uint256 j; j < b.length && ok; j++) if (a[i + j] != b[j]) ok = false;
+            if (ok) return true;
+        }
+        return false;
+    }
+
+    function _b64decode(bytes memory d) internal pure returns (bytes memory out) {
+        bytes memory t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        uint8[256] memory v;
+        for (uint256 i; i < 64; i++) v[uint8(t[i])] = uint8(i);
+        uint256 pad = d.length > 0 && d[d.length - 1] == "=" ? (d[d.length - 2] == "=" ? 2 : 1) : 0;
+        out = new bytes(d.length / 4 * 3 - pad);
+        uint256 o;
+        for (uint256 i; i < d.length; i += 4) {
+            uint256 n = (uint256(v[uint8(d[i])]) << 18) | (uint256(v[uint8(d[i + 1])]) << 12)
+                | (uint256(v[uint8(d[i + 2])]) << 6) | uint256(v[uint8(d[i + 3])]);
+            for (uint256 k; k < 3 && o < out.length; k++) out[o++] = bytes1(uint8(n >> (16 - 8 * k)));
+        }
     }
 
     function test_audit_royaltyCappedAt10Percent() public {
@@ -530,7 +618,8 @@ contract CardsTest is Test {
         vm.prank(seller);
         packs.mint(_holder(0), 1, 1);
         string[] memory names = new string[](5);
-        uint8[] memory cats = new uint8[](5);
+        string[] memory cats = new string[](5);
+        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         for (uint256 i; i < 5; i++) names[i] = "X";
         vm.prank(owner);
         vm.expectRevert(FireCards.FireIsLocked.selector);

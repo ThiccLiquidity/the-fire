@@ -23,8 +23,8 @@ for a Series.
    opens and reveals (`OpenDrandRouter.fulfill`, `adapter.settle`). Every call is permissionless. See `ops/README.md`.
 2. **Real wallet connection on the site.** Wire the Forge's buy, open, PDA, burn and suggestion screens to the
    deployed contracts through `web/src/lib`, replacing the demo store.
-3. **Series content.** Characters and their 10 images each, built and uploaded with the Card Studio; pack art per
-   Series.
+3. **Series content.** Characters, their categories (free text, set in the Card Studio) and their 10 images each,
+   built and uploaded with the Card Studio; pack art per Series.
 4. **Real-chain gas test.** Run `contracts/test/cards/SaleFork.t.sol` against Robinhood Chain (real router gas and the
    real PLANK swap).
 5. **On-chain checks.** PAPER (`0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6`) has 18 decimals; transfers to

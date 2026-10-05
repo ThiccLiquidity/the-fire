@@ -172,8 +172,8 @@ contract CardsHandler is Test {
 
     function _configureCards(uint256 fire, uint256 n) internal {
         string[] memory names = new string[](n);
-        uint8[] memory cats = new uint8[](n);
-        for (uint256 i; i < n; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = uint8(i); }
+        string[] memory cats = new string[](n);
+        for (uint256 i; i < n; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = string.concat("Cat ", vm.toString(i)); }
         vm.prank(owner, owner);
         cards.configureFire(fire, names, cats, "ipfs://x/");
     }

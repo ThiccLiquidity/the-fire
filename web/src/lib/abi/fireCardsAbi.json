@@ -30,6 +30,19 @@
   },
   {
     "type": "function",
+    "name": "MAX_CATEGORY_BYTES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_DIAMONDS",
     "inputs": [],
     "outputs": [
@@ -258,8 +271,8 @@
       },
       {
         "name": "categories",
-        "type": "uint8[]",
-        "internalType": "uint8[]"
+        "type": "string[]",
+        "internalType": "string[]"
       },
       {
         "name": "base",

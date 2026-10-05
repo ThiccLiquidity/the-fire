@@ -41,7 +41,7 @@ describe('shared images', () => {
 
   it('metadata keeps the per-card details and points at the shared image', () => {
     const c = card({ serial: 42, edition: 3, editionOf: 9, fire: 5 })
-    const m = cardMetadata(c, { name: 'Rabbit', category: 'animal' }, 'ipfs://cid/rabbit.webp')
+    const m = cardMetadata(c, { name: 'Rabbit', category: 'Animal' }, 'ipfs://cid/rabbit.webp')
     expect(metadataFileName(c)).toBe('42.json')
     expect(m.image).toBe('ipfs://cid/rabbit.webp')
     const t = Object.fromEntries(m.attributes.map((a) => [a.trait_type, a.value]))

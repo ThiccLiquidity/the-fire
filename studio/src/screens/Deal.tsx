@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Field, Notice, useAction } from '../components'
+import { hasCategory } from '../categories'
 import { deleteBlobsWithPrefix } from '../db'
 import { dealFire, effectiveDiamonds, holoCounts, type DealResult } from '../deal'
 import { randomSeed } from '../prng'
@@ -20,7 +21,7 @@ export function Deal({ fire }: { fire: FireRecord }) {
     const c = s.characters.find((x) => x.id === id)
     if (!c) problems.push('A picked character no longer exists.')
     else if (completeness(c) < 10) problems.push(`${c.name} has ${completeness(c)}/10 images.`)
-    else if (!c.category) problems.push(`${c.name} has no category (Library).`)
+    else if (!hasCategory(c)) problems.push(`${c.name} has no usable category (Library).`)
   }
   const earlierOpen = s.fires.filter((f) => f.number < fire.number && !f.deal)
   if (earlierOpen.length) problems.push(`Lock Series ${earlierOpen.map((f) => f.number).join(', #')} first (serials go in Fire order).`)

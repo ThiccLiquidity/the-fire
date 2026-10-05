@@ -72,7 +72,12 @@ export function Export({ fire }: { fire: FireRecord }) {
       }
     }
     zip.addText('fire.json', JSON.stringify({
-      fire: fire.number, packs: deal!.packs, seed: deal!.seed, method: deal!.method, characters: deal!.characterIds.map((id) => ({ id, name: names[id] })),
+      fire: fire.number, packs: deal!.packs, seed: deal!.seed, method: deal!.method, characters: deal!.characterIds.map((id) => ({ id, name: names[id], category: chars[id]?.category ?? '' })),
+      // the arguments for FireCards.configureFire, in the order the image files use (c0, c1, ...)
+      configureFire: {
+        fire: fire.number, names: deal!.characterIds.map((id) => names[id]),
+        categories: deal!.characterIds.map((id) => chars[id]?.category ?? ''), base: imagesCid ? `ipfs://${imagesCid}/` : null,
+      },
       pool: deal!.pool, firstSerial: deal!.firstSerial, lastSerial: deal!.nextSerial - 1,
       diamonds: effectiveDiamonds(deal!.diamonds ?? fire.diamonds), packContents: deal!.packContents, upload: fire.upload ?? null,
       note: imagesCid ? 'image fields point at the uploaded images directory' : 'image fields are relative paths inside this zip until the images are uploaded',

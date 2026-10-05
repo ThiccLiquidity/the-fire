@@ -3,7 +3,7 @@
 
 import type { DealtCard } from './deal'
 import { cardTitle } from './render'
-import { CATEGORY_LABEL, HOLO_LABEL, MATERIAL_LABEL, type Category } from './rules'
+import { HOLO_LABEL, MATERIAL_LABEL } from './rules'
 
 export interface Erc721Metadata {
   name: string
@@ -19,7 +19,7 @@ export function metadataFileName(card: Pick<DealtCard, 'serial'>): string {
 
 /** `image` is ipfs://<imagesCid>/<look file> once the images are uploaded; before that a relative path inside the zip
  *  (images/<look file>). */
-export function cardMetadata(card: DealtCard, character: { name: string; category?: Category }, image: string): Erc721Metadata {
+export function cardMetadata(card: DealtCard, character: { name: string; category?: string }, image: string): Erc721Metadata {
   const name = character.name
   const material = MATERIAL_LABEL[card.material]
   const holo = HOLO_LABEL[card.holo]
@@ -32,7 +32,7 @@ export function cardMetadata(card: DealtCard, character: { name: string; categor
     image,
     attributes: [
       { trait_type: 'Character', value: name },
-      ...(character.category ? [{ trait_type: 'Category', value: CATEGORY_LABEL[character.category] }] : []),
+      ...(character.category ? [{ trait_type: 'Category', value: character.category }] : []),
       { trait_type: 'Material', value: material },
       { trait_type: 'Holo', value: holo },
       { trait_type: 'Series', value: card.fire, display_type: 'number' as const },

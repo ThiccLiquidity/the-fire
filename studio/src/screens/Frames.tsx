@@ -134,9 +134,9 @@ function LayoutEditor({ m }: { m: Material }) {
   useEffect(() => {
     const ctx = canvas.current?.getContext('2d')
     if (!ctx) return
-    const raf = requestAnimationFrame(() => drawCard(ctx, { frame: frameBmp, art: artBmp }, layout, cardView(sampleCard, char?.name ?? 'Character Name', char?.category ?? 'animal')))
+    const raf = requestAnimationFrame(() => drawCard(ctx, { frame: frameBmp, art: artBmp }, layout, cardView(sampleCard, char?.name ?? 'Character Name', char?.category ?? 'Category')))
     return () => cancelAnimationFrame(raf)
-  }, [layout, frameBmp, artBmp, sampleCard, char?.name, s.fonts, fontsVersion])
+  }, [layout, frameBmp, artBmp, sampleCard, char?.name, char?.category, s.fonts, fontsVersion])
 
   const rectOf = (id: BoxId): Rect => (id === 'art' ? layout.art.box : id === 'psa' ? layout.psa.box : layout.text[id].box)
   const setRect = (id: BoxId, r: Rect) => setLayout((l) => {

@@ -72,23 +72,6 @@ export function holoTypeOf(frame: boolean, picture: boolean): HoloType {
   return frame && picture ? 'full' : frame ? 'frame' : picture ? 'picture' : 'none'
 }
 
-/** What a character is. Sorting rule: take the first one that fits, in this order. */
-export const CATEGORIES = ['person', 'animal', 'plant', 'place', 'sports', 'object', 'element', 'idea'] as const
-export type Category = (typeof CATEGORIES)[number]
-export const CATEGORY_LABEL: Record<Category, string> = {
-  person: 'Person', animal: 'Animal', plant: 'Plant', place: 'Place', sports: 'Sports', object: 'Object', element: 'Element', idea: 'Idea',
-}
-export const CATEGORY_HINT: Record<Category, string> = {
-  person: 'made-up humans and human-like characters (never a real person)',
-  animal: 'any creature, real or mythical',
-  plant: 'living things that grow',
-  place: 'somewhere you can be',
-  sports: 'sports gear and games',
-  object: 'things that are made or held',
-  element: 'forces of nature and raw materials',
-  idea: 'abstract things',
-}
-
 /** PDA wear is designed into the frames: one worn frame per level. PDA 10 and PDA 1 are unique;
  *  the rest come in pairs. Before the grade is revealed the clean frame is used. */
 export const WEAR_LEVELS = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6'] as const

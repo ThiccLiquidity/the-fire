@@ -1,5 +1,5 @@
 import type { DealResult } from './deal'
-import type { Category, Material } from './rules'
+import type { Material } from './rules'
 
 export type Variant = 'normal' | 'holo'
 export const VARIANTS: Variant[] = ['normal', 'holo']
@@ -25,8 +25,9 @@ export interface Character {
   id: string
   name: string
   shortId: string
-  /** Set once; printed on the card and a trait in the metadata. Required before the character can go into a Series. */
-  category?: Category
+  /** Free text (categories.ts); printed on the card, a trait in the metadata and stored
+   *  on-chain with the Series. Required before the character can go into a Series. */
+  category?: string
   images: Partial<Record<Material, Partial<Record<Variant, ImageSlot>>>>
   createdAt: number
   updatedAt: number
@@ -139,6 +140,8 @@ export interface GlobalState {
   /** Next global serial to hand out (never resets). */
   nextSerial: number
   nextFireNumber: number
+  /** Set once older fixed category ids (e.g. 'sports') have been turned into free-text labels ('Sports'). */
+  categoriesFree?: boolean
 }
 
 export function fireStatus(f: FireRecord): FireStatus {

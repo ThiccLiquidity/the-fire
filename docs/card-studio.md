@@ -14,8 +14,12 @@ encoded once in `studio/src/rules.ts` and `studio/src/deal.ts` and ported exactl
   "Forged · Series #", with the PDA seal on the right.
 - **In the metadata only:** the global serial (never resets) and the edition ("12 of 43"). This lets every card with
   the same look share one image.
-- **Category** per character, set once in the Library; first match wins: Person (fictional only), Animal, Plant,
-  Place, Sports, Object, Element, Idea.
+- **Category** per character: free text, typed in the Library. There is no preset list; the field suggests the
+  categories already used, so the list builds up as categories are added. Spaces are trimmed and collapsed, the
+  capitalisation typed is what prints, and the same word in other capitalisation is saved with the spelling already
+  in use. Limits (the contract's): 1 to 32 bytes of UTF-8, no `"`, `\` or control characters. It is stored on-chain
+  with the Series (`configureFire`). Older saves and backups with the old fixed ids (`sports`) load as labels
+  (`Sports`).
 
 ## Frames
 
@@ -110,8 +114,9 @@ later and its 6 cards are drawn from what is left in the Series' pool, keeping t
 4. **Deal:** a sample deal on the real rules, seeded by a string. The contract's result replaces it in the same shape.
 5. **Build & Review:** one sample of every character x material x holo type renders for review; **Approve all**, then
    **Build all**. Any later asset change requires approving again.
-6. **Export & Upload:** a zip of images, per-card ERC-721 metadata and `fire.json`, or an upload to IPFS through
-   Pinata. The Pinata key is typed in per session and never stored.
+6. **Export & Upload:** a zip of images, per-card ERC-721 metadata and `fire.json` (which includes the
+   `configureFire` arguments: names and categories in order, and the images folder once uploaded), or an upload to
+   IPFS through Pinata. The Pinata key is typed in per session and never stored.
 
 ## Storage
 

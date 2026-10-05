@@ -122,8 +122,8 @@ contract SaleTest is Test {
 
     function _configureCards(uint256 fire) internal {
         string[] memory names = new string[](3);
-        uint8[] memory cats = new uint8[](3);
-        for (uint256 i; i < 3; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = uint8(i); }
+        string[] memory cats = new string[](3);
+        for (uint256 i; i < 3; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = string.concat("Cat ", vm.toString(i)); }
         vm.prank(owner, owner);
         cards.configureFire(fire, names, cats, "ipfs://x/");
     }
@@ -824,7 +824,8 @@ contract SaleTest is Test {
         vm.expectRevert(FireSale.BadConfig.selector);
         sale.configureDrop(uint256(type(uint32).max) + 8, _cfg(start, 10, 0, 0, 5));
         string[] memory names = new string[](1);
-        uint8[] memory cats = new uint8[](1);
+        string[] memory cats = new string[](1);
+        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         names[0] = "A";
         vm.prank(owner, owner);
         vm.expectRevert(FireCards.BadLength.selector);

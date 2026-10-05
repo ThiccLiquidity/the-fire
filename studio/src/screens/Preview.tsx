@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { BatchRenderer } from '../builder'
 import { Field, Notice, ProgressBar } from '../components'
+import { hasCategory } from '../categories'
 import type { DealtCard } from '../deal'
 import { HOLO_LABEL, HOLO_TYPES, MATERIALS, MATERIAL_LABEL, WEAR_LABEL, wearLookOf, type HoloType, type Material } from '../rules'
 import { completeness, useStudio } from '../store'
@@ -91,7 +92,7 @@ export function Preview() {
         <span className="muted small">Exactly what the NFTs will look like. Click a card to see it full size.</span>
       </div>
       {n < 10 && <Notice kind="warn">{char.name} has {n}/10 images; missing ones show without art.</Notice>}
-      {!char.category && <Notice kind="warn">{char.name} has no category yet (Library).</Notice>}
+      {!hasCategory(char) && <Notice kind="warn">{char.name} has no usable category yet (Library).</Notice>}
       {progress && <ProgressBar value={progress.done / Math.max(1, progress.total)} label={`Rendering ${progress.done} / ${progress.total}`} />}
       {error && <Notice kind="error">{error}</Notice>}
       <div className="preview-grid" data-testid="preview-grid">

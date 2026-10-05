@@ -44,7 +44,8 @@ placeholder characters, and **Mock Pinata** (or `?mockPinata` in the URL) fakes 
 
 | File | Purpose |
 |---|---|
-| `src/rules.ts` | Every game rule and number (materials, pool shares, holo rates, categories, wear levels) |
+| `src/rules.ts` | Every game rule and number (materials, pool shares, holo rates, wear levels) |
+| `src/categories.ts` | Character categories: free text, no preset list; normalising, the contract's limits, suggestions, old-save migration |
 | `src/deal.ts` | The sample deal as pure functions (`computePool`, `dealFire`); same output shape as the contract |
 | `src/prng.ts` | Seeded randomness (SHA-256 counter mode) |
 | `src/render.ts`, `src/renderCore.ts` | Card rendering (Canvas 2D, 1500 x 2100); builds run in `src/build.worker.ts` |

@@ -50,6 +50,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     uint256 public constant REREQUEST_AFTER = 1 days;
     uint96 public constant MAX_ROYALTY_BPS = 1_000;
     uint256 public constant MAX_DIAMONDS = 1_000;
+    /// @notice Longest category text, in bytes (UTF-8).
+    uint256 public constant MAX_CATEGORY_BYTES = 32;
     /// @dev Last resort if randomness is gone for good: an open with no answer this long can be cancelled and its
     ///      packs go back to the holder, sealed. (A week is far past any normal delay.)
     uint256 public constant CANCEL_AFTER = 7 days;
@@ -86,7 +88,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     mapping(uint256 fire => FireInfo) public fires;
     mapping(uint256 fire => uint256[5]) public poolOf; // the Series' pool at close, for anyone to check
     mapping(uint256 fire => string[]) internal _names;
-    mapping(uint256 fire => uint8[]) internal _categories;
+    mapping(uint256 fire => string[]) internal _categories;
     mapping(uint256 fire => string) public imagesBase;
 
     /// @notice Diamonds the owner set for a Series (0 = not set, which means 1). See diamondsFor.
@@ -172,8 +174,9 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     }
 
     /// @notice A Series' characters (names and categories, in the studio's order) and where its card images live
-    ///         (ipfs://<CID>/ or ar://<id>/). Allowed until the Series is locked.
-    function configureFire(uint256 fire, string[] calldata names, uint8[] calldata categories, string calldata base)
+    ///         (ipfs://<CID>/ or ar://<id>/). Allowed until the Series is locked. Categories are free text, one per
+    ///         character (1 to MAX_CATEGORY_BYTES bytes), set in the studio.
+    function configureFire(uint256 fire, string[] calldata names, string[] calldata categories, string calldata base)
         external
         onlyOwner
     {
@@ -185,6 +188,11 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         if (PACKS.minted(fire) != 0) revert FireIsLocked();
         _checkText(base);
         for (uint256 i; i < names.length; i++) _checkText(names[i]);
+        for (uint256 i; i < categories.length; i++) {
+            uint256 n = bytes(categories[i]).length;
+            if (n == 0 || n > MAX_CATEGORY_BYTES) revert BadText();
+            _checkText(categories[i]);
+        }
         if (names.length == 0 || names.length > 255 || names.length != categories.length) revert BadLength();
         if (f.closed && names.length != f.characterCount) revert BadLength(); // dealt cards point at these indexes
         delete _names[fire];
@@ -466,10 +474,10 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
 
     function _attributes(Card memory c, string memory name, uint256 serial) private view returns (string memory) {
         string memory edition = c.editionOf == 0 ? c.edition.toString() : string.concat(c.edition.toString(), " of ", c.editionOf.toString());
-        uint8 cat = c.character < _categories[c.fire].length ? _categories[c.fire][c.character] : 255;
+        string memory cat = c.character < _categories[c.fire].length ? _categories[c.fire][c.character] : "";
         string memory head = string.concat( // in two parts: one concat of everything is too deep for the stack
             '[{"trait_type":"Character","value":"', name,
-            '"},{"trait_type":"Category","value":"', _category(cat),
+            '"},{"trait_type":"Category","value":"', cat,
             '"},{"trait_type":"Material","value":"', _materialLabel(c.material),
             '"},{"trait_type":"Holo","value":"', _holoLabel(c.holoFrame, c.holoPicture)
         );
@@ -505,18 +513,13 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         return string.concat("l", (6 - g / 2).toString());
     }
 
-    function _category(uint8 c) private pure returns (string memory) {
-        if (c > 7) return ""; // same order as the studio's CATEGORIES (studio/src/rules.ts)
-        return ["Person", "Animal", "Plant", "Place", "Sports", "Object", "Element", "Idea"][c];
-    }
-
     /// @dev A card being graded can be burned but not transferred.
     function _update(address to, uint256 tokenId, address auth) internal override returns (address from) {
         from = super._update(to, tokenId, auth);
         if (from != address(0) && to != address(0) && gradePending[tokenId]) revert GradingInProgress();
     }
 
-    /// @dev Names and the image folder go into JSON as-is: no quotes, backslashes or control characters.
+    /// @dev Names, categories and the image folder go into JSON as-is: no quotes, backslashes or control characters.
     function _checkText(string calldata t) private pure {
         bytes calldata b = bytes(t);
         for (uint256 i; i < b.length; i++) {

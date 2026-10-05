@@ -4,7 +4,7 @@
 import type { DealtCard } from './deal'
 import { cardView, renderCardBlob, type CardAssets } from './render'
 import { frameId } from './frames'
-import { CARD_H, CARD_W, wearLookOf, type Category, type Material, type WearLook } from './rules'
+import { CARD_H, CARD_W, wearLookOf, type Material, type WearLook } from './rules'
 import type { Layout, OutputFormat, Variant } from './types'
 
 export type VariantBlobs = Partial<Record<Variant, Blob>>
@@ -16,7 +16,7 @@ export interface AssetBundle {
   /** art[characterId][material][variant] */
   art: Record<string, Partial<Record<Material, VariantBlobs>>>
   names: Record<string, string>
-  categories: Record<string, Category | undefined>
+  categories: Record<string, string | undefined>
   /** Uploaded fonts (registered in the worker's FontFaceSet; the main thread already has them). */
   fonts: { family: string; data: ArrayBuffer; weight?: string }[]
 }

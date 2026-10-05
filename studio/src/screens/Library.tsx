@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { DropZone, Field, Notice, useAction } from '../components'
 import { newId } from '../db'
-import { CATEGORIES, CATEGORY_HINT, CATEGORY_LABEL, MATERIALS, MATERIAL_LABEL, type Category, type Material } from '../rules'
+import { categoryKey, categoryProblem, categorySuggestions, hasCategory, normalizeCategory } from '../categories'
+import { MATERIALS, MATERIAL_LABEL, type Material } from '../rules'
 import {
   completeness, deleteCharacter, isReady, effectiveKey, removeCharacterImage, saveCharacter, setCharacterImage, updateImageKey,
   useBlobUrl, useStudio,
@@ -38,7 +39,7 @@ export function Library() {
               <li key={c.id} className={current?.id === c.id ? 'active' : ''} onClick={() => setSelected(c.id)}>
                 <span className="char-name">{c.name}{c.shortId && <small> {c.shortId}</small>}</span>
                 {c.placeholder && <span className="tag">placeholder</span>}
-                <span className={`badge ${isReady(c) ? 'badge-ok' : 'badge-warn'}`}>{n}/10{c.category ? '' : ' · ?'}</span>
+                <span className={`badge ${isReady(c) ? 'badge-ok' : 'badge-warn'}`}>{n}/10{hasCategory(c) ? '' : ' · ?'}</span>
               </li>
             )
           })}
@@ -59,28 +60,40 @@ export function Library() {
 }
 
 function CharacterEditor({ c }: { c: Character }) {
+  const s = useStudio()
   const [name, setName] = useState(c.name)
   const [shortId, setShortId] = useState(c.shortId)
-  const [category, setCategory] = useState<Category | ''>(c.category ?? '')
+  const [category, setCategory] = useState(c.category ?? '')
   const [busy, error, run] = useAction()
-  const dirty = name !== c.name || shortId !== c.shortId || category !== (c.category ?? '')
+  // the categories in use: the list builds up as categories are added
+  const used = categorySuggestions(s.characters.map((x) => x.category))
+  const typed = normalizeCategory(category)
+  const problem = typed ? categoryProblem(typed) : null
+  const matches = categoryMatches(used, category)
+  // the same category in other capitalisation is saved with the spelling another character already uses
+  const existing = categorySuggestions(s.characters.filter((x) => x.id !== c.id).map((x) => x.category))
+    .find((u) => categoryKey(u) === categoryKey(typed))
+  const finalCategory = typed ? existing ?? typed : undefined
+  const dirty = name !== c.name || shortId !== c.shortId || finalCategory !== c.category
   const n = completeness(c)
   return (
     <div>
       <div className="row wrap">
         <Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Short id"><input value={shortId} onChange={(e) => setShortId(e.target.value)} /></Field>
-        <Field label="Category" hint={category ? CATEGORY_HINT[category] : 'first one that fits, top to bottom'}>
-          <select value={category} onChange={(e) => setCategory(e.target.value as Category | '')} data-testid="category">
-            <option value="">(pick one)</option>
-            {CATEGORIES.map((k) => <option key={k} value={k}>{CATEGORY_LABEL[k]}</option>)}
-          </select>
-        </Field>
-        <button disabled={!dirty || busy || !name.trim()} onClick={() => run(() => saveCharacter({ ...c, name: name.trim(), shortId: shortId.trim(), category: category || undefined }))}>Save</button>
+        <CategoryInput value={category} onChange={setCategory} matches={matches} placeholder={used.length ? 'Type or pick' : 'Type a category'} invalid={!!problem} />
+        <button disabled={!dirty || busy || !name.trim() || !!problem} onClick={() => run(async () => {
+          await saveCharacter({ ...c, name: name.trim(), shortId: shortId.trim(), category: finalCategory })
+          setCategory(finalCategory ?? '')
+        })}>Save</button>
         <span className="spacer" />
         <span className={`badge big ${n === 10 ? 'badge-ok' : 'badge-warn'}`} data-testid="completeness">{n}/10 images</span>
         <button className="danger" onClick={() => { if (confirm(`Delete ${c.name} and its images?`)) void run(() => deleteCharacter(c.id)) }}>Delete</button>
       </div>
+      {problem ? <p className="field-msg err" data-testid="category-problem">Category: {problem}</p>
+        : existing && existing !== typed ? <p className="field-msg">Saved as "{existing}", the spelling already in use.</p>
+        : typed && !existing && !matches.length && finalCategory !== c.category ? <p className="field-msg">New category: "{typed}".</p>
+        : null}
       {error && <Notice kind="error">{error}</Notice>}
       {!isReady(c) && <Notice kind="info">A character can go into a Series once all 10 images are in (5 materials x normal + holo) and it has a category.</Notice>}
       <div className="slot-grid">
@@ -90,6 +103,48 @@ function CharacterEditor({ c }: { c: Character }) {
           <SlotRow key={m} c={c} m={m} />
         ))}
       </div>
+    </div>
+  )
+}
+
+/** Free-text category with the categories already in use offered as you type (no preset list). */
+function categoryMatches(used: string[], value: string): string[] {
+  const key = categoryKey(value)
+  return used.filter((u) => categoryKey(u).includes(key) && u !== normalizeCategory(value))
+}
+
+function CategoryInput({ value, onChange, matches, placeholder, invalid }: {
+  value: string; onChange: (v: string) => void; matches: string[]; placeholder: string; invalid: boolean
+}) {
+  const id = useId()
+  const [open, setOpen] = useState(false)
+  const [hi, setHi] = useState(-1)
+  const pick = (v: string) => { onChange(v); setOpen(false); setHi(-1) }
+  return (
+    <div className="field cat-field">
+      <label className="field-label" htmlFor={id}>Category</label>
+      <input
+        id={id} value={value} data-testid="category" autoComplete="off" spellCheck={false}
+        placeholder={placeholder}
+        aria-invalid={invalid} aria-autocomplete="list" aria-expanded={open && matches.length > 0}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); setHi(-1) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => { setOpen(false); if (value !== normalizeCategory(value)) onChange(normalizeCategory(value)) }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown' && matches.length) { e.preventDefault(); setOpen(true); setHi((hi + 1) % matches.length) }
+          else if (e.key === 'ArrowUp' && matches.length) { e.preventDefault(); setHi(hi <= 0 ? matches.length - 1 : hi - 1) }
+          else if (e.key === 'Enter' && open && hi >= 0 && matches[hi]) { e.preventDefault(); pick(matches[hi]) }
+          else if (e.key === 'Escape') setOpen(false)
+        }}
+      />
+      {open && matches.length > 0 && (
+        <ul className="suggest" role="listbox" data-testid="category-suggestions">
+          {matches.map((m, i) => (
+            <li key={m} role="option" aria-selected={i === hi} className={i === hi ? 'hi' : ''}
+              onMouseDown={(e) => { e.preventDefault(); pick(m) }}>{m}</li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

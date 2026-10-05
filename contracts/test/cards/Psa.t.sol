@@ -45,7 +45,8 @@ contract PsaTest is Test {
         vm.stopPrank();
 
         string[] memory names = new string[](2);
-        uint8[] memory cats = new uint8[](2);
+        string[] memory cats = new string[](2);
+        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         names[0] = "Ember Fox"; names[1] = "Ash Wolf";
         vm.prank(owner);
         cards.configureFire(1, names, cats, "ipfs://x/");
@@ -279,7 +280,8 @@ contract PsaTest is Test {
 
     function test_audit_oddsLockOncePacksExist() public {
         string[] memory names = new string[](1);
-        uint8[] memory cats = new uint8[](1);
+        string[] memory cats = new string[](1);
+        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         names[0] = "A";
         vm.prank(owner);
         cards.configureFire(2, names, cats, "ipfs://y/");

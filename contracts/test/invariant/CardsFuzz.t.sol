@@ -72,7 +72,8 @@ contract CardsFuzzTest is Test {
         cards.setPsa(address(psa));
         vm.stopPrank();
         string[] memory names = new string[](3);
-        uint8[] memory cats = new uint8[](3);
+        string[] memory cats = new string[](3);
+        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         for (uint256 i; i < 3; i++) names[i] = string.concat("Char", vm.toString(i));
         vm.prank(owner, owner);
         cards.configureFire(1, names, cats, "ipfs://x/");
