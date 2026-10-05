@@ -10,12 +10,13 @@ export function ProgressBar({ value, label, tone }: { value: number; label?: Rea
   )
 }
 
-export function DropZone({ onFiles, accept, children, className, testId }: {
+export function DropZone({ onFiles, accept, children, className, testId, multiple }: {
   onFiles: (files: File[]) => void
   accept: string
   children: ReactNode
   className?: string
   testId?: string
+  multiple?: boolean
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
@@ -41,6 +42,7 @@ export function DropZone({ onFiles, accept, children, className, testId }: {
         type="file"
         accept={accept}
         hidden
+        multiple={multiple}
         data-testid={testId}
         onChange={(e) => {
           const files = [...(e.target.files ?? [])]

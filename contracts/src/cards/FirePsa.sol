@@ -11,10 +11,7 @@ interface IPsaCards is IERC721 {
     function setGradePending(uint256 serial, bool pending) external;
     function PACKS() external view returns (address);
     function gradeInfo(uint256 serial) external view returns (bool exists, uint256 fire, uint256 grade);
-    function fires(uint256 fire)
-        external
-        view
-        returns (bool closed, bool locked, uint8 characterCount, uint32, uint32, uint32, uint32, uint32, uint32, uint32);
+    function isClosed(uint256 fire) external view returns (bool);
 }
 
 interface IPsaPacks {
@@ -41,9 +38,9 @@ interface IPsaFeed {
  *         more than $0.25, 1 PAPER, up to a hard cap of $1: past $1 a PAPER, $1 worth (part of a PAPER). Until PAPER
  *         has a market (no price), a set number of PAPER the owner chooses.
  *
- *         Odds by default, out of 10,000: 10: 1%, 9: 17%, 8: 24%, 7: 25%, 6: 18%, 5: 7%, 4: 3.5%, 3: 2%, 2: 1.5%,
- *         1: 1%. Most cards land 6-9; a 10 is rare. The owner can set different odds for a Series before any of its
- *         packs exist, so every buyer knows the odds.
+ *         Odds by default: 10: 1%, 9: 17%, 8: 24%, 7: 25%, 6: 18%, 5: 7%, 4: 3.5%, 3: 2%, 2: 1.5%, 1: 1%. Most
+ *         cards land 6-9; a 10 is rare. The owner can give a Series any odds (a weight per grade, any total) before
+ *         any of its packs exist, so every buyer knows the odds.
  */
 contract FirePsa is Ownable2Step {
     using SafeERC20 for IERC20;
@@ -56,6 +53,7 @@ contract FirePsa is Ownable2Step {
     uint256 public constant PRICE_USD18 = 0.25e18; // $0.25
     uint256 public constant CAP_USD18 = 1e18; // $1, the most a reveal ever costs
     uint256 public constant PAPER_FEED_MAX_AGE = 2 days;
+    /// @dev Total of the default odds (they are out of 10,000). A Series' own odds can have any total.
     uint256 public constant ODDS_TOTAL = 10_000;
     /// @dev Last resort if randomness is gone for good: a reveal with no answer this long can be cancelled, unlocking
     ///      its cards (still unrevealed). The PAPER was burned and can't come back.
@@ -73,8 +71,8 @@ contract FirePsa is Ownable2Step {
     ///         can't make reveals cheap (or let the owner's fallback number apply again).
     uint256 public lastCost;
 
-    /// @dev Chance of each grade 1..10, out of ODDS_TOTAL, for Series the owner gave their own odds.
-    mapping(uint256 fire => uint16[10]) internal _odds;
+    /// @dev Weight of each grade 1..10 for Series the owner gave their own odds (chance = weight / total).
+    mapping(uint256 fire => uint64[10]) internal _odds;
     mapping(uint256 fire => bool) public customOdds;
 
     struct Reveal {
@@ -93,7 +91,7 @@ contract FirePsa is Ownable2Step {
 
     event RandomnessSet(address source);
     event FallbackPaperSet(uint256 paper);
-    event OddsSet(uint256 indexed fire, uint16[10] odds);
+    event OddsSet(uint256 indexed fire, uint64[10] odds);
     event RevealRequested(uint256 indexed index, address indexed by, uint256[] ids, uint256 paper, uint256 requestId);
     event RevealReady(uint256 indexed index, uint256 word);
     event Graded(uint256 indexed serial, uint256 grade);
@@ -148,14 +146,14 @@ contract FirePsa is Ownable2Step {
         emit FallbackPaperSet(paper);
     }
 
-    /// @notice Odds for a Series' cards, grade 1 first, out of 10,000. Only before any of its packs exist, so
-    ///         everyone who buys a pack knows the odds.
-    function setOdds(uint256 fire, uint16[10] calldata odds) external onlyOwner {
-        (bool closed,,,,,,,,,) = CARDS.fires(fire);
-        if (closed || IPsaPacks(CARDS.PACKS()).minted(fire) != 0) revert FireIsClosed();
+    /// @notice Odds for a Series' cards: a weight per grade, grade 1 first (chance = weight / sum of weights; any
+    ///         sum above 0, zeros allowed). Only before any of its packs exist, so everyone who buys a pack knows the
+    ///         odds.
+    function setOdds(uint256 fire, uint64[10] calldata odds) external onlyOwner {
+        if (CARDS.isClosed(fire) || IPsaPacks(CARDS.PACKS()).minted(fire) != 0) revert FireIsClosed();
         uint256 sum;
         for (uint256 i; i < 10; i++) sum += odds[i];
-        if (sum != ODDS_TOTAL) revert BadOdds();
+        if (sum == 0) revert BadOdds();
         _odds[fire] = odds;
         customOdds[fire] = true;
         emit OddsSet(fire, odds);
@@ -285,15 +283,21 @@ contract FirePsa is Ownable2Step {
         return cost == 0 ? 1 : cost;
     }
 
-    function oddsOf(uint256 fire) public view returns (uint16[10] memory o) {
-        if (customOdds[fire]) return _odds[fire];
-        o = [uint16(100), 150, 200, 350, 700, 1800, 2500, 2400, 1700, 100];
+    /// @notice A Series' grade weights, grade 1 first, and their total.
+    function oddsOf(uint256 fire) public view returns (uint64[10] memory o, uint256 total) {
+        if (customOdds[fire]) {
+            o = _odds[fire];
+            for (uint256 i; i < 10; i++) total += o[i];
+            return (o, total);
+        }
+        o = [uint64(100), 150, 200, 350, 700, 1800, 2500, 2400, 1700, 100];
+        total = ODDS_TOTAL;
     }
 
     /// @notice The grade a random number gives for a Series' odds.
     function gradeFor(uint256 fire, uint256 rnd) public view returns (uint256) {
-        uint16[10] memory o = oddsOf(fire);
-        uint256 x = rnd % ODDS_TOTAL;
+        (uint64[10] memory o, uint256 total) = oddsOf(fire);
+        uint256 x = rnd % total;
         for (uint256 g; g < 10; g++) {
             if (x < o[g]) return g + 1;
             x -= o[g];

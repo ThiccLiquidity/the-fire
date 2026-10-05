@@ -13,7 +13,8 @@ the name is historical).
    site, or a stranger. The router checks the signature on-chain against drand's pinned evmnet key and derives the
    request's word. There is exactly one valid word per request, so whoever delivers it can't change it.
 3. The router calls the adapter, the adapter calls `onRandomness(id, word)`. Both consumers only store the word:
-   - FireCards: anyone then calls `FireCards.process(maxOpens)`, which deals ready opens in the order they were made.
+   - FireCards: anyone then calls `FireCards.process(maxCards)`, which deals ready opens in the order they were made
+     (up to `maxCards` cards per call; a big pack can take several calls).
    - FirePsa: anyone then calls `FirePsa.finish(index)`, which sets that reveal's grades.
 
    The live site is planned to make these calls right away; the keeper can make them too.

@@ -283,8 +283,13 @@
     "outputs": [
       {
         "name": "o",
-        "type": "uint16[10]",
-        "internalType": "uint16[10]"
+        "type": "uint64[10]",
+        "internalType": "uint64[10]"
+      },
+      {
+        "name": "total",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -522,8 +527,8 @@
       },
       {
         "name": "odds",
-        "type": "uint16[10]",
-        "internalType": "uint16[10]"
+        "type": "uint64[10]",
+        "internalType": "uint64[10]"
       }
     ],
     "outputs": [],
@@ -625,9 +630,9 @@
       },
       {
         "name": "odds",
-        "type": "uint16[10]",
+        "type": "uint64[10]",
         "indexed": false,
-        "internalType": "uint16[10]"
+        "internalType": "uint64[10]"
       }
     ],
     "anonymous": false

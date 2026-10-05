@@ -2,9 +2,10 @@
 
 Foundry project.
 
-- `src/cards/` — the card system: `FirePacks` (sealed packs, ERC-1155), `FireCards` (cards, ERC-721), `FireSale`
-  (the pack sale), `FirePsa` (PDA reveals), `CardRules`. "Fire" in the names is historical: `Fire*` is the card
-  system, and "fire" in identifiers is a Series number.
+- `src/cards/` — the card system: `FirePacks` (sealed packs, ERC-1155), `FireCards` (cards, ERC-721, the opening
+  queue), `RecipeDealer` (deals each Series from its own recipe; `IDealer` is the interface, `StandardRecipe` the
+  original rules), `FireSale` (the pack sale), `FirePsa` (PDA reveals). "Fire" in the names is historical: `Fire*` is
+  the card system, and "fire" in identifiers is a Series number.
 - `OpenDrandRouter.sol` + `OpenVRFAdapter.sol` bring in drand's number (one adapter each for FireCards and FirePsa).
 - `PlankUsdTwap.sol` (FireSale's PLANK price) and `PaperUsdTwap.sol` (FirePsa's PAPER price). No owner on any of
   these four.
@@ -25,6 +26,6 @@ chain when `FORK_RPC` is set and is skipped otherwise. `--match-test test_gas -v
 
 ## Deploy
 
-Full runbook: `../docs/deploy.md` (DeployTwap, then DeployInfra, then DeployCards). Inputs: copy `.env.example` to
+Full runbook: `../docs/deploy.md` (DeployTwap, then DeployInfra, then DeployCards; then ConfigureSeries per Series). Inputs: copy `.env.example` to
 `.env`. Sign with a Foundry keystore (`cast wallet import deployer --interactive`) or `--ledger`.
 **Never use `--private-key`**, and never put a key in `.env` or this repo.

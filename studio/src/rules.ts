@@ -21,15 +21,14 @@ export const SHARE_UNITS = {
   charcoal: 4_900, // 4.90%
 } as const
 
-/** Most Diamonds that can be set for one Series (the contract's limit too). */
-export const MAX_DIAMONDS = 1000
 
-/** Most packs the studio deals for one Series (600,000 cards). The contract allows up to 2^32 - 1; this keeps the
- *  sample deal, the stored deal record and the metadata export a sane size. */
-export const MAX_PACKS = 100_000
+/** Most packs a Series can be set to in the studio (the contract allows up to 2^64 - 1; the pool preview is exact for
+ *  any count). */
+export const MAX_PACKS = 1_000_000_000_000
 
-/** Most characters in one Series: the contract stores the character index in 8 bits (FireCards.configureFire). */
-export const MAX_CHARACTERS = 255
+/** Most cards the studio's SAMPLE deal deals (packs x cards per pack). It keeps the sample deal, the stored deal record
+ *  and the metadata export a sane size; the pool preview has no such limit. */
+export const MAX_DEAL_CARDS = 600_000
 
 /** Chance that a card of this material is holo at all (frame and/or picture). */
 export const HOLO_RATE: Record<Material, number> = {
@@ -71,6 +70,7 @@ export const HOLO_TYPES = ['none', 'frame', 'picture', 'full'] as const
 export type HoloType = (typeof HOLO_TYPES)[number]
 export const HOLO_LABEL: Record<HoloType, string> = { none: 'None', frame: 'Frame', picture: 'Picture', full: 'Full' }
 
+/** Cards per pack in the Standard recipe. */
 export const CARDS_PER_PACK = 6
 export const CARD_W = 1500
 export const CARD_H = 2100

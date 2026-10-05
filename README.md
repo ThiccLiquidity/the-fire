@@ -21,7 +21,7 @@ Live site: https://web-mu-mocha-95.vercel.app (the Forge in demo mode: demo data
 | `docs/` | Reference documentation (see below). |
 
 **Naming.** The card contracts are named `Fire*` (`FirePacks`, `FireCards`, `FireSale`, `FirePsa`) for historical
-reasons: `Fire*` means the card system. In identifiers (`fire`, `configureFire`, `lockFire`, `fire.json`), "fire" is a
+reasons: `Fire*` means the card system. In identifiers (`fire`, `setDealer`, `lockFire`, `fire.json`), "fire" is a
 Series number. Prose says "Series".
 
 ## Quick start

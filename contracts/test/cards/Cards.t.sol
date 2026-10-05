@@ -5,10 +5,12 @@ import {Test, Vm} from "forge-std/Test.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
-import {CardRules} from "../../src/cards/CardRules.sol";
+import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {DeployCards} from "../../script/DeployCards.s.sol";
 import {MockERC20, MockUSDG, MockFeed, MockPlankTwap, MockPair, MockV2Factory, MockRouterInfo} from "../Mocks.sol";
 import {OpenDrandRouter} from "../../src/OpenDrandRouter.sol";
+import {SeriesHelper, RecipeHarness} from "./SeriesHelper.sol";
 
 /// @dev Stands in for the drand adapter: hands out ids, the test delivers words.
 contract MockRandomness {
@@ -35,25 +37,21 @@ contract Grumpy {
     function open(FireCards c, uint256 fire) external { c.open(fire, 1); }
 }
 
-contract PoolHarness {
-    function pool(uint256 packs, uint256 diamonds) external pure returns (uint256[5] memory) {
-        return CardRules.computePool(packs, diamonds);
-    }
-}
-
-contract CardsTest is Test {
+contract CardsTest is SeriesHelper {
     using stdJson for string;
 
     address owner = address(0xA11CE);
     address seller = address(0x5E11);
     FirePacks packs;
     FireCards cards;
+    RecipeDealer dealer;
     MockRandomness rng;
     bytes32 constant DEALT = keccak256("CardDealt(uint256,uint256,uint256,uint256,bool,bool,uint256)");
 
     function setUp() public {
         packs = new FirePacks(owner);
         cards = new FireCards(owner, address(packs));
+        dealer = new RecipeDealer(owner, address(cards));
         rng = new MockRandomness();
         rng.setCards(cards);
         vm.startPrank(owner);
@@ -67,11 +65,7 @@ contract CardsTest is Test {
     }
 
     function _configure(uint256 fire, uint256 n) internal {
-        string[] memory names = new string[](n);
-        string[] memory cats = new string[](n);
-        for (uint256 i; i < n; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = string.concat("Cat ", vm.toString(i % 7)); }
-        vm.prank(owner);
-        cards.configureFire(fire, names, cats, "ipfs://images/");
+        _standard(cards, dealer, owner, fire, n, 1);
     }
 
     function _holder(uint256 i) internal pure returns (address) { return address(uint160(0x1000 + i)); }
@@ -84,7 +78,7 @@ contract CardsTest is Test {
         vm.stopPrank();
     }
 
-    /// Open every pack one at a time (one open per pack), deliver words, process. Returns materials per pack.
+    /// Open every pack one at a time (one open per pack), deliver words, process. Returns types per pack.
     function _openAll(uint256 fire, uint256 n, uint256 salt) internal returns (uint256[6][] memory perPack) {
         uint256 first = rng.next();
         for (uint256 i; i < n; i++) { vm.prank(_holder(i % 17)); cards.open(fire, 1); }
@@ -99,10 +93,14 @@ contract CardsTest is Test {
             if (logs[i].topics[0] != DEALT) continue;
             uint256 openIndex = uint256(logs[i].topics[1]);
             if (base == type(uint256).max) base = openIndex;
-            (, uint256 material,,,) = abi.decode(logs[i].data, (uint256, uint256, bool, bool, uint256));
+            (, uint256 cardType,,,) = abi.decode(logs[i].data, (uint256, uint256, bool, bool, uint256));
             uint256 p = openIndex - base;
-            perPack[p][filled[p]++] = material;
+            perPack[p][filled[p]++] = cardType;
         }
+    }
+
+    function _pool(uint256 fire) internal view returns (uint256[] memory) {
+        return dealer.poolOf(fire);
     }
 
     // ---------- the rarity math matches the studio exactly ----------
@@ -114,27 +112,35 @@ contract CardsTest is Test {
         assertEq(packs.symbol(), "OMNIPACK");
     }
 
+    /// The Standard recipe's pool, through the dealer's general floor rule, equals the studio's computePool on every
+    /// row of the fixture (written by studio/scripts/pool-fixture.test.ts; format unchanged).
     function test_poolParityWithStudio() public {
-        PoolHarness h = new PoolHarness();
+        RecipeHarness h = new RecipeHarness(address(cards));
         string memory json = vm.readFile("test/cards/pool-fixture.json");
         uint256 rows;
         while (json.keyExists(string.concat(".rows[", vm.toString(rows), "]"))) rows++;
         assertGt(rows, 300, "fixture has its rows");
         bool sawCap; // a row where the Diamond setting is above the pack count
         bool sawFloor; // a row where the pack floor moved cards
+        uint256 lastD = type(uint256).max;
+        bytes memory plan;
         for (uint256 i; i < rows; i++) {
             string memory p = string.concat(".rows[", vm.toString(i), "]");
             uint256 n = json.readUint(string.concat(p, ".packs"));
             uint256 d = json.readUint(string.concat(p, ".diamonds"));
             uint256[] memory counts = json.readUintArray(string.concat(p, ".counts"));
-            uint256[5] memory c = h.pool(n, d);
+            if (d != lastD) {
+                plan = h.compile(StandardRecipe.build(d));
+                lastD = d;
+            }
+            uint256[] memory c = h.pool(plan, n);
             for (uint256 m; m < 5; m++) assertEq(c[m], counts[m], string.concat("count row ", vm.toString(i)));
             if (n > 0 && d > n) sawCap = true;
             if (c[2] != (15_000 * 6 * n + 50_000) / 100_000) sawFloor = true;
         }
         assertTrue(sawCap && sawFloor, "fixture covers the Diamond cap and the pack floor");
         // the owner's worked example
-        uint256[5] memory e = h.pool(167, 1);
+        uint256[] memory e = dealer.previewPool(StandardRecipe.build(1), 167);
         assertEq(e[0], 501); assertEq(e[1], 301); assertEq(e[2], 150); assertEq(e[3], 49); assertEq(e[4], 1);
     }
 
@@ -157,12 +163,16 @@ contract CardsTest is Test {
             assertGe(bp, 1, "slot 6 Fire-or-better");
             assertEq(wood + bp, 3, "slots 4-6 Wood or better");
         }
-        (uint256 p0, uint256 p1, uint256 p2, uint256 p3, uint256 p4) = (cards.poolOf(1, 0), cards.poolOf(1, 1), cards.poolOf(1, 2), cards.poolOf(1, 3), cards.poolOf(1, 4));
-        assertEq(totals[0], p0); assertEq(totals[1], p1); assertEq(totals[2], p2); assertEq(totals[3], p3); assertEq(totals[4], p4);
-        assertEq(p0 + p1 + p2 + p3 + p4, n * 6);
+        uint256[] memory pool = _pool(1);
+        uint256 sum;
+        for (uint256 m; m < 5; m++) { assertEq(totals[m], pool[m]); sum += pool[m]; }
+        assertEq(sum, n * 6);
         assertEq(cards.nextSerial(), n * 6 + 1);
-        (,,, uint32 total, uint32 dealt, uint32 left,,,,) = cards.fires(1);
-        assertEq(total, n); assertEq(dealt, n); assertEq(left, 0);
+        (, bool closed,, uint32 per, uint64 total, uint64 dealt) = cards.fires(1);
+        assertTrue(closed); assertEq(per, 6); assertEq(total, n); assertEq(dealt, n);
+        (uint256[] memory left, uint256 packsLeft) = dealer.remainingOf(1);
+        assertEq(packsLeft, 0);
+        for (uint256 m; m < 5; m++) assertEq(left[m], 0, "everything dealt");
     }
 
     function test_smallFiresKeepGuarantees() public {
@@ -180,6 +190,15 @@ contract CardsTest is Test {
         }
     }
 
+    /// The deal order the recipe gives (most specific group first) and every pack position's slot.
+    function test_dealOrderOfTheStandardPack() public view {
+        uint256[] memory o = dealer.dealOrder(1);
+        // depth 2: Wood (slot 1), Fire-or-better (slot 3); depth 1: Paper x3 (slot 0), Wood-or-better (slot 2)
+        uint256[6] memory want = [uint256(1), 3, 0, 0, 0, 2];
+        assertEq(o.length, 6);
+        for (uint256 i; i < 6; i++) assertEq(o[i], want[i]);
+    }
+
     // ---------- order is fixed: results depend only on words and open order ----------
 
     function test_outOfOrderWordsWaitForTheQueue() public {
@@ -187,12 +206,12 @@ contract CardsTest is Test {
         uint256 first = rng.next();
         for (uint256 i; i < 3; i++) { vm.prank(_holder(i)); cards.open(1, 1); }
         rng.deliver(first + 1, 111); // second open's word arrives first
-        assertEq(cards.process(10), 0, "nothing dealt until the head is ready");
+        assertEq(cards.process(100), 0, "nothing dealt until the head is ready");
         rng.deliver(first, 222);
-        assertEq(cards.process(10), 2, "head and the one behind it");
+        assertEq(cards.process(100), 12, "head and the one behind it");
         assertEq(cards.head(), 2);
         rng.deliver(first + 2, 333);
-        assertEq(cards.process(10), 1);
+        assertEq(cards.process(100), 6);
     }
 
     function test_sameWordsSameCardsWhateverTheProcessingPattern() public {
@@ -205,8 +224,38 @@ contract CardsTest is Test {
         uint256[] memory a = new uint256[](180);
         for (uint256 s = 1; s <= 180; s++) a[s - 1] = uint256(keccak256(abi.encode(cards.cardOf(s), cards.ownerOf(s))));
         vm.revertToState(snap);
-        for (uint256 i; i < 30; i++) { rng.deliver(first + i, uint256(keccak256(abi.encode("w", i)))); cards.process(1); }
+        // deliver and process in odd pieces: 1, 5, 7 cards at a time (packs split across calls)
+        for (uint256 i; i < 30; i++) {
+            rng.deliver(first + i, uint256(keccak256(abi.encode("w", i))));
+            cards.process(1 + (i % 3) * 3 + i % 2);
+        }
+        while (cards.process(5) > 0) {}
         for (uint256 s = 1; s <= 180; s++) assertEq(uint256(keccak256(abi.encode(cards.cardOf(s), cards.ownerOf(s)))), a[s - 1]);
+    }
+
+    /// Each pack's six cards fill its own block of six serials, in a shuffled order.
+    function test_eachPackGetsItsOwnBlockOfSerials() public {
+        _sellAndClose(1, 40);
+        uint256 first = rng.next();
+        for (uint256 i; i < 40; i++) { vm.prank(_holder(i % 17)); cards.open(1, 1); }
+        vm.recordLogs();
+        for (uint256 i; i < 40; i++) rng.deliver(first + i, i * 77 + 1);
+        cards.process(type(uint256).max);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 n;
+        uint256[6] memory firstSlotPos; // where the first-dealt card (slot Wood) landed in its block
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].topics[0] != DEALT) continue;
+            uint256 openIndex = uint256(logs[i].topics[1]);
+            uint256 serial = uint256(logs[i].topics[2]);
+            assertEq((serial - 1) / 6, openIndex, "the pack's own block");
+            if (n % 6 == 0) firstSlotPos[(serial - 1) % 6]++;
+            n++;
+        }
+        assertEq(n, 240);
+        uint256 spots;
+        for (uint256 i; i < 6; i++) if (firstSlotPos[i] > 0) spots++;
+        assertGe(spots, 4, "the slot doesn't fix the serial");
     }
 
     // ---------- holo rates ----------
@@ -215,21 +264,21 @@ contract CardsTest is Test {
         uint256 n = 600; // 3,600 cards
         _sellAndClose(1, n);
         _openAll(1, n, 99);
-        uint256[5] memory cnt; uint256[5] memory holo; uint256 diamondFull; uint256 diamondNone;
+        uint256[5] memory cnt; uint256[5] memory holo; uint256 diamondNone;
         for (uint256 s = 1; s <= n * 6; s++) {
             FireCards.Card memory c = cards.cardOf(s);
-            cnt[c.material]++;
-            if (c.holoFrame || c.holoPicture) holo[c.material]++;
-            if (c.material == 4) { if (c.holoFrame && c.holoPicture) diamondFull++; if (!c.holoFrame && !c.holoPicture) diamondNone++; }
+            cnt[c.cardType]++;
+            if (c.holoFrame || c.holoPicture) holo[c.cardType]++;
+            if (c.cardType == 4 && !c.holoFrame && !c.holoPicture) diamondNone++;
         }
-        // paper 5%, wood 10%, fire 50% within 4 standard deviations
+        // paper 5%, wood 10%, fire 50%, coal 90% within 4 standard deviations
         _within(holo[0], cnt[0], 50_000);
         _within(holo[1], cnt[1], 100_000);
         _within(holo[2], cnt[2], 500_000);
+        _within(holo[3], cnt[3], 900_000);
         assertEq(diamondNone, 0, "Diamond always holo");
         assertEq(holo[4], cnt[4]);
         assertGt(cnt[4], 0);
-        diamondFull; // split checked exactly in the CardRules test below
     }
 
     function _within(uint256 k, uint256 n, uint256 ratePpm) internal pure {
@@ -238,19 +287,26 @@ contract CardsTest is Test {
         assertLt(uint256(d * d), 16 * ratePpm * (1e6 - ratePpm) * n, "holo rate off");
     }
 
-    function test_rollHoloDiamondSplitAndRates() public pure {
+    /// Exactly the old rolls: Diamond k = r1 % 3 gives frame / picture / full a third each; other types hit exactly
+    /// below their chance.
+    function test_rollHoloDiamondSplitAndRates() public {
+        RecipeHarness h = new RecipeHarness(address(cards));
+        bytes memory plan = h.compile(StandardRecipe.build(1));
         uint256[3] memory t;
         for (uint256 i; i < 3000; i++) {
-            (bool f, bool p) = CardRules.rollHolo(4, i, 0);
+            (bool f, bool p) = h.holo(plan, 4, false, i, 0);
             assertTrue(f || p);
             t[f && p ? 2 : f ? 0 : 1]++;
+            if (i % 3 == 0) assertTrue(f && !p, "k = 0: frame");
         }
         assertEq(t[0], 1000); assertEq(t[1], 1000); assertEq(t[2], 1000);
-        // a roll hits exactly below the chance
-        uint256 pp = CardRules.holoRollChance(0);
-        (bool a,) = CardRules.rollHolo(0, pp - 1, 0);
-        (bool b,) = CardRules.rollHolo(0, pp, 0);
+        uint256 pp = StandardRecipe.PAPER_ROLL;
+        (bool a,) = h.holo(plan, 0, false, pp - 1, 0);
+        (bool b,) = h.holo(plan, 0, false, pp, 0);
         assertTrue(a); assertFalse(b);
+        (, bool c) = h.holo(plan, 0, false, 0, pp - 1);
+        (, bool d) = h.holo(plan, 0, false, 0, pp + 1e18); // taken modulo 1e18
+        assertTrue(c); assertFalse(d);
     }
 
     // ---------- secret until opened, permissions, queue safety ----------
@@ -264,6 +320,7 @@ contract CardsTest is Test {
         assertEq(packs.balanceOf(h, 1), 0, "burned on open");
         assertEq(cards.nextSerial(), 1, "no card exists yet");
         assertEq(cards.process(5), 0);
+        assertFalse(dealer.stateOf(1).started, "the pool isn't even laid out yet");
     }
 
     function test_cannotOpenBeforeCloseOrWithoutAPack() public {
@@ -279,7 +336,7 @@ contract CardsTest is Test {
         cards.open(1, 1);
         vm.prank(_holder(0));
         vm.expectRevert(FireCards.BadCount.selector);
-        cards.open(1, 11);
+        cards.open(1, 0);
     }
 
     function test_onlySellerClosesAndOnlyOnce() public {
@@ -290,6 +347,9 @@ contract CardsTest is Test {
         vm.prank(seller);
         vm.expectRevert(FireCards.FireIsClosed.selector);
         cards.closeFire(1);
+        vm.prank(seller);
+        vm.expectRevert(FireCards.NotConfigured.selector);
+        cards.closeFire(99); // no dealer
     }
 
     function test_onlyRandomnessDeliversAndRerequestRules() public {
@@ -304,9 +364,14 @@ contract CardsTest is Test {
         cards.rerequest(0); // now allowed: never answered
         uint256 newId = rng.next() - 1;
         rng.deliver(1, 42); // the old id is stale and ignored
-        assertEq(cards.process(1), 0);
+        assertEq(cards.process(100), 0);
         rng.deliver(newId, 42);
-        assertEq(cards.process(1), 1);
+        assertEq(cards.process(100), 6);
+    }
+
+    function test_onlyCardsCanDeal() public {
+        vm.expectRevert(RecipeDealer.NotCards.selector);
+        dealer.deal(1, 5, 0, 6);
     }
 
     function test_refusingContractCannotStallTheQueue() public {
@@ -323,22 +388,26 @@ contract CardsTest is Test {
         cards.open(1, 1);
         rng.deliver(first, 1);
         rng.deliver(first + 1, 2);
-        assertEq(cards.process(5), 2);
+        assertEq(cards.process(100), 12);
         assertEq(cards.balanceOf(address(g)), 6);
         assertEq(cards.balanceOf(_holder(1)), 6);
     }
 
     function test_multiPackOpen() public {
         vm.prank(seller);
-        packs.mint(_holder(0), 1, 10);
+        packs.mint(_holder(0), 1, 25);
         vm.prank(seller);
         cards.closeFire(1);
         uint256 id = rng.next();
         vm.prank(_holder(0));
-        cards.open(1, 10);
+        cards.open(1, 25); // no cap on packs per open: dealing is chunked
         rng.deliver(id, 77);
-        cards.process(1);
-        assertEq(cards.balanceOf(_holder(0)), 60);
+        assertEq(cards.process(100), 100, "stops at 100 cards, mid-open");
+        (,,,, uint64 count, uint64 packsDone, uint32 cardInPack,,,) = cards.opens(0);
+        assertEq(count, 25); assertEq(packsDone, 16); assertEq(cardInPack, 4);
+        assertEq(cards.process(1000), 50);
+        assertEq(cards.balanceOf(_holder(0)), 150);
+        assertEq(cards.head(), 1);
     }
 
     // ---------- metadata and royalty ----------
@@ -347,101 +416,114 @@ contract CardsTest is Test {
         _sellAndClose(1, 3);
         _openAll(1, 3, 5);
         FireCards.Card memory c = cards.cardOf(1);
-        string memory file = cards.imageFile(c);
-        assertTrue(bytes(file).length > 0);
+        string memory file = cards.imageFile(1);
+        string[5] memory slugs = ["paper", "wood", "fire", "coal", "diamond"];
+        assertEq(file, cards.imageName(c.character, slugs[c.cardType], c.holoFrame, c.holoPicture, 0));
         string memory uri = cards.tokenURI(1);
         assertTrue(_startsWith(uri, "data:application/json;base64,"));
+        string memory json = _json(uri);
+        vm.parseJson(json); // valid JSON
+        string[5] memory names_ = ["Paper", "Wood", "Fire", "Coal", "Diamond"];
+        assertTrue(_contains(json, string.concat('{"trait_type":"Material","value":"', names_[c.cardType], '"}')), json);
+        assertTrue(_contains(json, string.concat('"name":"', names_[c.cardType], " Char")), json);
         assertGt(c.editionOf, 0, "edition total known once every pack is dealt");
         (address r, uint256 amt) = cards.royaltyInfo(1, 10_000);
         assertEq(r, owner);
         assertEq(amt, 500);
         assertTrue(cards.supportsInterface(0x2a55205a)); // ERC-2981
         assertTrue(cards.supportsInterface(0x49064906)); // ERC-4906
-        assertTrue(_startsWith(packs.uri(1), "data:application/json;base64,"));
+        string memory pack = _json(packs.uri(1));
+        assertTrue(_contains(pack, "A sealed pack of 6 cards from Series 1"), pack);
+        vm.parseJson(pack);
     }
 
     function test_configLocks() public {
         vm.prank(owner);
         cards.lockFire(1);
-        string[] memory names = new string[](1);
-        string[] memory cats = new string[](1);
-        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
-        vm.prank(owner);
+        (string[] memory names, string[] memory cats) = _chars(1);
+        vm.startPrank(owner);
+        vm.expectRevert(RecipeDealer.FireIsLocked.selector);
+        dealer.setCharacters(1, names, cats);
+        vm.expectRevert(RecipeDealer.FireIsLocked.selector);
+        dealer.setRecipe(1, StandardRecipe.build(2));
         vm.expectRevert(FireCards.FireIsLocked.selector);
-        cards.configureFire(1, names, cats, "x");
+        cards.setDealer(1, address(dealer));
+        vm.expectRevert(FireCards.FireIsLocked.selector);
+        cards.setImagesBase(1, "x");
+        vm.stopPrank();
     }
 
     // ---------- Diamonds per Series (each Series stands alone) ----------
 
-    event DiamondsSet(uint256 indexed fire, uint256 diamonds);
-
     function test_diamondsDefaultToOne() public {
-        assertEq(cards.diamondsOf(1), 0);
-        assertEq(cards.diamondsFor(1), 1);
+        assertEq(StandardRecipe.build(0).types[4].amount, 1);
+        assertEq(dealer.recipeOf(1).types[4].amount, 1);
         _sellAndClose(1, 150);
-        assertEq(cards.poolOf(1, 4), 1);
-        assertEq(cards.poolOf(1, 1), 270);
+        assertEq(_pool(1)[4], 1);
+        assertEq(_pool(1)[1], 270);
     }
 
     function test_setDiamonds() public {
-        vm.expectEmit(address(cards));
-        emit DiamondsSet(1, 3);
         vm.prank(owner);
-        cards.setDiamonds(1, 3);
-        assertEq(cards.diamondsOf(1), 3);
-        assertEq(cards.diamondsFor(1), 3);
+        dealer.setRecipe(1, StandardRecipe.build(3));
+        assertEq(dealer.recipeOf(1).types[4].amount, 3);
         vm.prank(owner);
-        cards.setDiamonds(1, 2); // can change until the packs sell
-        assertEq(cards.diamondsFor(1), 2);
-        assertEq(cards.diamondsFor(2), 1, "other Series untouched");
+        dealer.setRecipe(1, StandardRecipe.build(2)); // can change until the packs sell
+        assertEq(dealer.recipeOf(1).types[4].amount, 2);
+        assertEq(dealer.recipeOf(2).types.length, 0, "other Series untouched");
+        // no product cap on Diamonds any more (it was 1000): only one per pack's worth, from the recipe
+        vm.prank(owner);
+        dealer.setRecipe(1, StandardRecipe.build(1_000_000));
+        assertEq(dealer.poolFor(1, 10)[4], 10);
     }
 
-    function test_setDiamondsOnlyOwnerAndBounds() public {
+    function test_setRecipeOnlyOwner() public {
+        RecipeDealer.Recipe memory r = StandardRecipe.build(2);
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", address(this)));
-        cards.setDiamonds(1, 2);
-        vm.startPrank(owner);
-        vm.expectRevert(FireCards.BadDiamonds.selector);
-        cards.setDiamonds(1, 0);
-        vm.expectRevert(FireCards.BadDiamonds.selector);
-        cards.setDiamonds(1, 1001);
-        cards.setDiamonds(1, 1000);
-        cards.setDiamonds(1, 1);
-        vm.stopPrank();
+        dealer.setRecipe(1, r);
+        (string[] memory names, string[] memory cats) = _chars(1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", address(this)));
+        dealer.setCharacters(1, names, cats);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", address(this)));
+        dealer.appendCharacters(1, names, cats);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", address(this)));
+        cards.setDealer(1, address(dealer));
     }
 
     function test_setDiamondsLocks() public {
         // locked Series
         vm.startPrank(owner);
         cards.lockFire(1);
-        vm.expectRevert(FireCards.FireIsLocked.selector);
-        cards.setDiamonds(1, 2);
+        vm.expectRevert(RecipeDealer.FireIsLocked.selector);
+        dealer.setRecipe(1, StandardRecipe.build(2));
         vm.stopPrank();
         // after the first pack sells
         _configure(2, 3);
         vm.prank(seller);
         packs.mint(_holder(0), 2, 1);
         vm.prank(owner);
-        vm.expectRevert(FireCards.FireIsLocked.selector);
-        cards.setDiamonds(2, 2);
+        vm.expectRevert(RecipeDealer.FireIsLocked.selector);
+        dealer.setRecipe(2, StandardRecipe.build(2));
         // closed (even with no packs sold)
         _configure(3, 3);
         vm.prank(seller);
         cards.closeFire(3);
         vm.prank(owner);
-        vm.expectRevert(FireCards.FireIsLocked.selector);
-        cards.setDiamonds(3, 2);
+        vm.expectRevert(RecipeDealer.FireIsLocked.selector);
+        dealer.setRecipe(3, StandardRecipe.build(2));
     }
 
     function test_diamondsSetTheClosedPool() public {
         vm.prank(owner);
-        cards.setDiamonds(1, 3);
+        dealer.setRecipe(1, StandardRecipe.build(3));
         _sellAndClose(1, 167);
         uint256[5] memory want = [uint256(501), 299, 150, 49, 3];
-        for (uint256 m; m < 5; m++) assertEq(cards.poolOf(1, m), want[m]);
-        (,,,,,,, uint32 charcoalLeft, uint32 diamondLeft, uint32 flexWood) = cards.fires(1);
-        assertEq(charcoalLeft, 49);
-        assertEq(diamondLeft, 3);
-        assertEq(flexWood, 299 - 167);
+        uint256[] memory pool = _pool(1);
+        for (uint256 m; m < 5; m++) assertEq(pool[m], want[m]);
+        (uint256[] memory left, uint256 packsLeft) = dealer.remainingOf(1);
+        assertEq(left[3], 49);
+        assertEq(left[4], 3);
+        assertEq(packsLeft, 167);
         // every Diamond is dealt
         uint256[6][] memory perPack = _openAll(1, 167, 3);
         uint256 dia;
@@ -451,10 +533,10 @@ contract CardsTest is Test {
 
     function test_diamondsCappedAtOnePerPack() public {
         vm.prank(owner);
-        cards.setDiamonds(1, 1000);
+        dealer.setRecipe(1, StandardRecipe.build(1000));
         _sellAndClose(1, 4);
-        assertEq(cards.poolOf(1, 4), 4);
-        assertEq(cards.poolOf(1, 1), 4, "Wood >= packs");
+        assertEq(_pool(1)[4], 4);
+        assertEq(_pool(1)[1], 4, "Wood >= packs");
         uint256[6][] memory perPack = _openAll(1, 4, 9);
         uint256 dia;
         for (uint256 p; p < 4; p++) {
@@ -477,7 +559,7 @@ contract CardsTest is Test {
         _configure(2, 3);
         _sellAndClose(1, 150);
         _sellAndClose(2, 150);
-        for (uint256 m; m < 5; m++) assertEq(cards.poolOf(2, m), cards.poolOf(1, m), "same packs, same pool");
+        for (uint256 m; m < 5; m++) assertEq(_pool(2)[m], _pool(1)[m], "same packs, same pool");
     }
 
     function _startsWith(string memory s, string memory p) internal pure returns (bool) {
@@ -485,6 +567,39 @@ contract CardsTest is Test {
         if (a.length < b.length) return false;
         for (uint256 i; i < b.length; i++) if (a[i] != b[i]) return false;
         return true;
+    }
+
+    // ---------- gas: Standard opening ----------
+
+    /// Prints the Standard opening's gas (before this redesign: open 1 pack ~101.9k, process 1 pack ~345.8k, a
+    /// 10-pack open ~3.26M). `forge test --match-test test_gas -vv`.
+    function test_gas_standardOpening() public {
+        _configure(5, 20);
+        vm.prank(seller);
+        packs.mint(_holder(0), 5, 160);
+        vm.prank(seller);
+        cards.closeFire(5);
+        uint256 totOpen;
+        uint256 totProc;
+        for (uint256 k; k < 100; k++) {
+            vm.prank(_holder(0));
+            uint256 g = gasleft();
+            cards.open(5, 1);
+            totOpen += g - gasleft();
+            rng.deliver(rng.next() - 1, uint256(keccak256(abi.encode(k))));
+            g = gasleft();
+            cards.process(6);
+            totProc += g - gasleft();
+        }
+        emit log_named_uint("open 1 pack, avg gas", totOpen / 100);
+        emit log_named_uint("process 1 pack (6 cards), avg gas", totProc / 100);
+        vm.prank(_holder(0));
+        cards.open(5, 10);
+        rng.deliver(rng.next() - 1, 5);
+        uint256 g2 = gasleft();
+        cards.process(60);
+        emit log_named_uint("process a 10-pack open, gas", g2 - gasleft());
+        assertLt(totProc / 100, 450_000, "a pack stays cheap");
     }
 
     // ---------- audit fixes ----------
@@ -497,24 +612,39 @@ contract CardsTest is Test {
         vm.prank(_holder(1)); cards.open(1, 1);
         rng.deliver(1, 5);
         rng.deliver(2, 6);
-        cards.process(1); // first pack: no refresh
+        cards.process(6); // first pack: no refresh
         vm.expectEmit(address(cards));
         emit BatchMetadataUpdate(1, 12); // the last pack: every card's Edition becomes "k of N"
-        cards.process(1);
+        cards.process(6);
     }
 
     function test_audit_textThatWouldBreakJsonIsRejected() public {
-        string[] memory names = new string[](1);
-        string[] memory cats = new string[](1);
-        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
+        (string[] memory names, string[] memory cats) = _one("Person");
         names[0] = 'Bad "quote';
         vm.prank(owner);
-        vm.expectRevert(FireCards.BadText.selector);
-        cards.configureFire(5, names, cats, "ipfs://x/");
-        names[0] = "Fine";
+        vm.expectRevert(RecipeDealer.BadText.selector);
+        dealer.setCharacters(5, names, cats);
         vm.prank(owner);
         vm.expectRevert(FireCards.BadText.selector);
-        cards.configureFire(5, names, cats, "ipfs://x\\/");
+        cards.setImagesBase(5, "ipfs://x\\/");
+        // card type names too
+        RecipeDealer.Recipe memory r = StandardRecipe.build(1);
+        r.types[2].name = "Fi\"re";
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(RecipeDealer.BadType.selector, 2, "name length"));
+        dealer.setRecipe(5, _withName(r, 2, ""));
+        vm.prank(owner);
+        vm.expectRevert(RecipeDealer.BadText.selector);
+        dealer.setRecipe(5, _withName(r, 2, "Fi\"re"));
+    }
+
+    function _withName(RecipeDealer.Recipe memory r, uint256 t, string memory name)
+        internal
+        pure
+        returns (RecipeDealer.Recipe memory)
+    {
+        r.types[t].name = name;
+        return r;
     }
 
     // ---------- categories: free text per character ----------
@@ -528,12 +658,15 @@ contract CardsTest is Test {
 
     function test_categoryTextInTokenUri() public {
         (string[] memory names, string[] memory cats) = _one(unicode"Rock Stars é");
-        vm.prank(owner);
-        cards.configureFire(9, names, cats, "ipfs://x/");
+        vm.startPrank(owner);
+        dealer.setRecipe(9, StandardRecipe.build(1));
+        dealer.setCharacters(9, names, cats);
+        cards.setDealer(9, address(dealer));
+        cards.setImagesBase(9, "ipfs://x/");
+        vm.stopPrank();
         _sellAndClose(9, 1);
         _openAll(9, 1, 3);
-        string memory uri = cards.tokenURI(1);
-        string memory json = string(_b64decode(_after(bytes(uri), 29))); // "data:application/json;base64,"
+        string memory json = _json(cards.tokenURI(1));
         assertTrue(_contains(json, unicode'{"trait_type":"Category","value":"Rock Stars é"}'), json);
         vm.parseJson(json); // still valid JSON
     }
@@ -543,25 +676,25 @@ contract CardsTest is Test {
         string[] memory cats;
         (names, cats) = _one("");
         vm.prank(owner);
-        vm.expectRevert(FireCards.BadText.selector);
-        cards.configureFire(5, names, cats, "ipfs://x/");
+        vm.expectRevert(RecipeDealer.BadText.selector);
+        dealer.setCharacters(5, names, cats);
 
         (names, cats) = _one("123456789012345678901234567890123"); // 33 bytes
         vm.prank(owner);
-        vm.expectRevert(FireCards.BadText.selector);
-        cards.configureFire(5, names, cats, "ipfs://x/");
+        vm.expectRevert(RecipeDealer.BadText.selector);
+        dealer.setCharacters(5, names, cats);
 
         string[4] memory bad = ['Say "hi"', "back\\slash", "tab\tin", "new\nline"];
         for (uint256 i; i < bad.length; i++) {
             (names, cats) = _one(bad[i]);
             vm.prank(owner);
-            vm.expectRevert(FireCards.BadText.selector);
-            cards.configureFire(5, names, cats, "ipfs://x/");
+            vm.expectRevert(RecipeDealer.BadText.selector);
+            dealer.setCharacters(5, names, cats);
         }
 
         (names, cats) = _one("12345678901234567890123456789012"); // exactly 32 bytes is fine
         vm.prank(owner);
-        cards.configureFire(5, names, cats, "ipfs://x/");
+        dealer.setCharacters(5, names, cats);
     }
 
     function test_categoryCountMustMatchNames() public {
@@ -569,38 +702,8 @@ contract CardsTest is Test {
         string[] memory cats = new string[](1);
         names[0] = "A"; names[1] = "B"; cats[0] = "Person";
         vm.prank(owner);
-        vm.expectRevert(FireCards.BadLength.selector);
-        cards.configureFire(5, names, cats, "ipfs://x/");
-    }
-
-    function _after(bytes memory b, uint256 from) internal pure returns (bytes memory r) {
-        r = new bytes(b.length - from);
-        for (uint256 i; i < r.length; i++) r[i] = b[from + i];
-    }
-
-    function _contains(string memory s, string memory sub) internal pure returns (bool) {
-        bytes memory a = bytes(s); bytes memory b = bytes(sub);
-        if (b.length > a.length) return false;
-        for (uint256 i; i + b.length <= a.length; i++) {
-            bool ok = true;
-            for (uint256 j; j < b.length && ok; j++) if (a[i + j] != b[j]) ok = false;
-            if (ok) return true;
-        }
-        return false;
-    }
-
-    function _b64decode(bytes memory d) internal pure returns (bytes memory out) {
-        bytes memory t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        uint8[256] memory v;
-        for (uint256 i; i < 64; i++) v[uint8(t[i])] = uint8(i);
-        uint256 pad = d.length > 0 && d[d.length - 1] == "=" ? (d[d.length - 2] == "=" ? 2 : 1) : 0;
-        out = new bytes(d.length / 4 * 3 - pad);
-        uint256 o;
-        for (uint256 i; i < d.length; i += 4) {
-            uint256 n = (uint256(v[uint8(d[i])]) << 18) | (uint256(v[uint8(d[i + 1])]) << 12)
-                | (uint256(v[uint8(d[i + 2])]) << 6) | uint256(v[uint8(d[i + 3])]);
-            for (uint256 k; k < 3 && o < out.length; k++) out[o++] = bytes1(uint8(n >> (16 - 8 * k)));
-        }
+        vm.expectRevert(RecipeDealer.BadLength.selector);
+        dealer.setCharacters(5, names, cats);
     }
 
     function test_audit_royaltyCappedAt10Percent() public {
@@ -617,13 +720,13 @@ contract CardsTest is Test {
     function test_audit2_charactersFixedOncePacksSell() public {
         vm.prank(seller);
         packs.mint(_holder(0), 1, 1);
-        string[] memory names = new string[](5);
-        string[] memory cats = new string[](5);
-        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
-        for (uint256 i; i < 5; i++) names[i] = "X";
-        vm.prank(owner);
-        vm.expectRevert(FireCards.FireIsLocked.selector);
-        cards.configureFire(1, names, cats, "ipfs://x/");
+        (string[] memory names, string[] memory cats) = _chars(5);
+        vm.startPrank(owner);
+        vm.expectRevert(RecipeDealer.FireIsLocked.selector);
+        dealer.setCharacters(1, names, cats);
+        vm.expectRevert(RecipeDealer.FireIsLocked.selector);
+        dealer.appendCharacters(1, names, cats);
+        vm.stopPrank();
     }
 
     function test_audit2_stuckOpenCanBeCancelledAfterAWeek() public {
@@ -634,25 +737,17 @@ contract CardsTest is Test {
         cards.cancelOpen(0); // randomness gone for good: the pack comes back sealed
         assertEq(packs.balanceOf(_holder(0), 1), 1);
         rng.deliver(2, 9);
-        assertEq(cards.process(10), 2, "the queue moves past the cancelled open");
+        assertEq(cards.process(100), 6, "the queue moves past the cancelled open");
         assertEq(cards.balanceOf(_holder(1)), 6);
         vm.prank(_holder(0)); cards.open(1, 1); // and the returned pack can be opened later
         rng.deliver(3, 4);
-        cards.process(10);
+        cards.process(100);
         assertEq(cards.balanceOf(_holder(0)), 6);
         vm.expectRevert(FirePacks.NotCards.selector);
         packs.returnPacks(_holder(0), 1, 1);
     }
 
     // ---------- audit round 3 ----------
-
-    function _card(uint256 character, uint256 material, bool hf, bool hp, uint256 grade) internal pure returns (FireCards.Card memory c) {
-        c.character = character;
-        c.material = material;
-        c.holoFrame = hf;
-        c.holoPicture = hp;
-        c.grade = grade;
-    }
 
     function test_audit3_imageFileNames() public view {
         string[5] memory mats = ["paper", "wood", "fire", "coal", "diamond"];
@@ -663,13 +758,14 @@ contract CardsTest is Test {
                     string memory want = string.concat(
                         "c7-", mats[m], "-", holos[h], "-", g == 0 ? "u" : vm.toString(g), ".webp"
                     );
-                    assertEq(cards.imageFile(_card(7, m, h & 2 != 0, h & 1 != 0, g)), want);
+                    assertEq(cards.imageName(7, mats[m], h & 2 != 0, h & 1 != 0, g), want);
                 }
             }
         }
-        assertEq(cards.imageFile(_card(0, 3, true, true, 7)), "c0-coal-full-7.webp");
-        assertEq(cards.imageFile(_card(2, 2, false, false, 0)), "c2-fire-none-u.webp");
-        assertEq(cards.imageFile(_card(254, 4, false, true, 10)), "c254-diamond-picture-10.webp");
+        assertEq(cards.imageName(0, "coal", true, true, 7), "c0-coal-full-7.webp");
+        assertEq(cards.imageName(2, "fire", false, false, 0), "c2-fire-none-u.webp");
+        assertEq(cards.imageName(254, "diamond", false, true, 10), "c254-diamond-picture-10.webp");
+        assertEq(cards.imageName(99_999, "gold", true, false, 3), "c99999-gold-frame-3.webp");
     }
 
     event ImagesBaseSet(uint256 indexed fire, string imagesBase);
@@ -684,7 +780,7 @@ contract CardsTest is Test {
         vm.prank(owner);
         cards.setImagesBase(1, "ar://moved/");
         assertEq(cards.imagesBase(1), "ar://moved/");
-        string memory json = string(_b64decode(_after(bytes(cards.tokenURI(1)), 29)));
+        string memory json = _json(cards.tokenURI(1));
         assertTrue(_contains(json, '"image":"ar://moved/c'), json);
 
         vm.prank(address(0xBAD));
@@ -700,7 +796,7 @@ contract CardsTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(FireCards.NotConfigured.selector);
-        cards.setImagesBase(77, "ipfs://y/");
+        cards.lockFire(77); // no dealer: nothing to lock
 
         vm.prank(owner);
         cards.lockFire(1);
@@ -713,15 +809,15 @@ contract CardsTest is Test {
         (string[] memory names, string[] memory cats) = _one("Person");
         names[0] = "1234567890123456789012345678901234567890123456789012345678901234"; // 64 bytes is fine
         vm.prank(owner);
-        cards.configureFire(5, names, cats, "ipfs://x/");
+        dealer.setCharacters(5, names, cats);
         names[0] = "12345678901234567890123456789012345678901234567890123456789012345"; // 65
         vm.prank(owner);
-        vm.expectRevert(FireCards.BadText.selector);
-        cards.configureFire(5, names, cats, "ipfs://x/");
+        vm.expectRevert(RecipeDealer.BadText.selector);
+        dealer.setCharacters(5, names, cats);
         names[0] = "back\\slash";
         vm.prank(owner);
-        vm.expectRevert(FireCards.BadText.selector);
-        cards.configureFire(5, names, cats, "ipfs://x/");
+        vm.expectRevert(RecipeDealer.BadText.selector);
+        dealer.setCharacters(5, names, cats);
     }
 
     function test_audit3_packImageBaseTextChecked() public {
@@ -735,10 +831,20 @@ contract CardsTest is Test {
         packs.setPackImageBase("ipfs://packs/");
         assertEq(packs.packImageBase(), "ipfs://packs/");
     }
+
+    function test_audit_fireNumberFitsIn64Bits() public {
+        uint256 big = uint256(type(uint64).max) + 8;
+        (string[] memory names, string[] memory cats) = _chars(1);
+        vm.startPrank(owner);
+        vm.expectRevert(RecipeDealer.BadLength.selector);
+        dealer.setRecipe(big, StandardRecipe.build(1));
+        vm.expectRevert(RecipeDealer.BadLength.selector);
+        dealer.setCharacters(big, names, cats);
+        vm.expectRevert(FireCards.BadLength.selector);
+        cards.setDealer(big, address(dealer));
+        vm.stopPrank();
+    }
 }
-
-
-
 
 contract DeployCardsTest is Test {
     function test_deployWiresEverythingAndHandsOwnershipToTheMultisig() public {
@@ -769,6 +875,9 @@ contract DeployCardsTest is Test {
         assertEq(d.packs.seller(), address(d.sale));
         assertEq(d.cards.seller(), address(d.sale));
         assertEq(d.cards.psa(), address(d.psa));
+        assertEq(address(d.dealer.CARDS()), address(d.cards));
+        assertEq(address(d.dealer.PACKS()), address(d.packs));
+        assertEq(d.dealer.pendingOwner(), safe);
         assertEq(address(d.cards.randomness()), address(d.adapter));
         assertEq(d.adapter.FIRE(), address(d.cards));
         assertEq(address(d.psa.randomness()), address(d.psaAdapter));
@@ -786,6 +895,8 @@ contract DeployCardsTest is Test {
         vm.prank(safe); d.packs.acceptOwnership();
         vm.prank(safe); d.cards.acceptOwnership();
         vm.prank(safe); d.psa.acceptOwnership();
+        vm.prank(safe); d.dealer.acceptOwnership();
+        assertEq(d.dealer.owner(), safe);
         assertEq(d.packs.owner(), safe);
         assertEq(d.cards.owner(), safe);
         assertEq(d.psa.owner(), safe);

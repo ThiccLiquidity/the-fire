@@ -5,7 +5,7 @@ import { FRAME_GEOMETRY } from './frames'
 import { defaultLayout } from './layoutDefaults'
 import type { Rect } from './types'
 
-const card = (grade: number | null) => ({ material: 'paper' as const, grade, fire: 1 })
+const card = (grade: number | null) => ({ frameSet: 'paper', typeName: 'Paper', grade, fire: 1 })
 
 describe('PDA 10 effect', () => {
   it('is on for grade 10 only', () => {

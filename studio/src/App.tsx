@@ -7,6 +7,7 @@ import { FireList, FireSetup } from './screens/Fire'
 import { Frames } from './screens/Frames'
 import { Library } from './screens/Library'
 import { Preview } from './screens/Preview'
+import { RecipeEditor } from './screens/Recipe'
 import { Review } from './screens/Review'
 import { loadBundledFonts } from './fonts'
 import { loadStudio, useStudio } from './store'
@@ -16,9 +17,10 @@ const TABS = [
   { id: 'frames', label: '2 Frames & Layout' },
   { id: 'preview', label: 'Preview' },
   { id: 'fire', label: '3 Series' },
-  { id: 'deal', label: '4 Deal' },
-  { id: 'review', label: '5 Build & Review' },
-  { id: 'export', label: '6 Export & Upload' },
+  { id: 'recipe', label: '4 Recipe' },
+  { id: 'deal', label: '5 Deal' },
+  { id: 'review', label: '6 Build & Review' },
+  { id: 'export', label: '7 Export & Upload' },
   { id: 'data', label: 'Data' },
 ] as const
 type Tab = (typeof TABS)[number]['id']
@@ -48,7 +50,7 @@ export default function App() {
   }
 
   const fire = s.fires.find((f) => f.number === fireNo) ?? s.fires[s.fires.length - 1]
-  const perFire = tab === 'fire' || tab === 'deal' || tab === 'review' || tab === 'export'
+  const perFire = tab === 'fire' || tab === 'recipe' || tab === 'deal' || tab === 'review' || tab === 'export'
 
   return (
     <div className="app">
@@ -72,6 +74,7 @@ export default function App() {
             <FireList selected={fire?.number ?? null} onSelect={setFireNo} />
             {!fire && <section className="panel grow"><p className="muted">Create a Series to start.</p></section>}
             {fire && tab === 'fire' && <FireSetup key={fire.number} fire={fire} onDeleted={() => setFireNo(null)} />}
+            {fire && tab === 'recipe' && <RecipeEditor key={fire.number} fire={fire} />}
             {fire && tab === 'deal' && <Deal key={fire.number} fire={fire} />}
             {fire && tab === 'review' && <Review key={fire.number} fire={fire} />}
             {fire && tab === 'export' && <Export key={fire.number} fire={fire} />}

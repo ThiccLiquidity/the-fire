@@ -944,6 +944,11 @@
   },
   {
     "type": "error",
+    "name": "TooMany",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ZeroAddress",
     "inputs": []
   }

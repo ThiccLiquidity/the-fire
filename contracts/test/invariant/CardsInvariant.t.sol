@@ -6,7 +6,8 @@ import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {CardsHandler} from "./CardsHandler.sol";
-import {CardRules} from "../../src/cards/CardRules.sol";
+import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 
 /// @dev Handler-based invariants over the whole card system: FireSale, FirePacks, FireCards, FirePsa.
 /// forge-config: default.invariant.runs = 64
@@ -154,24 +155,28 @@ contract CardsInvariantTest is StdInvariant, Test {
 
     function invariant_cardsPerFire() public view {
         FireCards cards = h.cards();
+        RecipeDealer dealer = h.dealer();
         for (uint256 f = 1; f <= h.FIRES(); f++) {
-            (bool closed,,, uint32 nPacks, uint32 dealt,,,,,) = cards.fires(f);
+            (, bool closed,,, uint64 nPacks, uint64 dealt) = cards.fires(f);
             uint256 dealtCards = h.ghostCards(f);
             if (!closed) { assertEq(dealtCards, 0, "cards before close"); continue; }
             assertEq(nPacks, h.packs().minted(f), "pack count frozen at close");
             assertLe(dealtCards, 6 * uint256(nPacks), "cards <= 6 x packs");
-            assertEq(dealtCards, 6 * uint256(dealt), "6 per dealt pack");
+            assertGe(dealtCards, 6 * uint256(dealt), "6 per fully dealt pack");
+            assertLt(dealtCards, 6 * uint256(dealt) + 6, "at most one pack part-dealt");
+            uint256[] memory pool = dealer.poolOf(f);
             uint256 poolTotal;
-            for (uint256 m; m < 5; m++) poolTotal += cards.poolOf(f, m);
+            for (uint256 m; m < 5; m++) poolTotal += pool[m];
             assertEq(poolTotal, 6 * uint256(nPacks), "pool == 6 x packs");
             // each Series stands alone: its pool is the rule applied to its own packs and Diamond setting
-            uint256[5] memory want = CardRules.computePool(nPacks, cards.diamondsFor(f));
-            for (uint256 m; m < 5; m++) assertEq(cards.poolOf(f, m), want[m], "pool == computePool(packs, diamonds)");
-            if (nPacks > 0) assertGe(cards.poolOf(f, 4), 1, "at least one Diamond");
-            if (dealt == nPacks) {
-                for (uint256 m; m < 5; m++) assertEq(h.ghostMat(f, m), cards.poolOf(f, m), "fully dealt: totals == pool");
-            } else {
-                for (uint256 m; m < 5; m++) assertLe(h.ghostMat(f, m), cards.poolOf(f, m), "never more than the pool");
+            uint256 d = h.diamondsOf(f);
+            uint256[] memory want = dealer.previewPool(StandardRecipe.build(d == 0 ? 1 : d), nPacks);
+            for (uint256 m; m < 5; m++) assertEq(pool[m], want[m], "pool == Standard(packs, diamonds)");
+            if (nPacks > 0) assertGe(pool[4], 1, "at least one Diamond");
+            (uint256[] memory left,) = dealer.remainingOf(f);
+            for (uint256 m; m < 5; m++) {
+                assertEq(h.ghostMat(f, m) + left[m], pool[m], "dealt + left == pool");
+                if (dealt == nPacks) assertEq(h.ghostMat(f, m), pool[m], "fully dealt: totals == pool");
             }
         }
     }

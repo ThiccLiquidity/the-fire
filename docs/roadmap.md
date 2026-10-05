@@ -4,7 +4,7 @@
 
 | Part | Where | State |
 |---|---|---|
-| Card contracts | `contracts/src/cards` (FirePacks, FireCards, FireSale, FirePsa, CardRules) | Built and tested, three internal review rounds (`docs/audit-2026-10.md`). Not deployed. |
+| Card contracts | `contracts/src/cards` (FirePacks, FireCards, RecipeDealer, FireSale, FirePsa) | Built and tested, three internal review rounds (`docs/audit-2026-10.md`); per-Series recipes added since, not yet reviewed. Not deployed. |
 | Shared on-chain pieces | `contracts/src`: OpenDrandRouter, OpenVRFAdapter, PlankUsdTwap, PaperUsdTwap | Built and tested. Not deployed. |
 | Deploy scripts | `contracts/script`: DeployTwap, DeployInfra, DeployCards | Runbook in `docs/deploy.md`. |
 | Card Studio | `studio/` | Working end to end (library, Series setup, sample deal, full 209-image-per-character WEBP build, Pinata upload). Frames are built in. |
@@ -14,7 +14,7 @@
 | Economy sims | `sim/omni` | Done; recorded output in each folder. |
 
 Naming: the card contracts are named `Fire*` for historical reasons (`Fire*` is the card system). In identifiers
-(`configureFire`, `fire.json`), "fire" is a Series number.
+(`setDealer`, `fire.json`), "fire" is a Series number.
 
 ## Open work before launch
 
@@ -23,11 +23,11 @@ Naming: the card contracts are named `Fire*` for historical reasons (`Fire*` is 
    - `PaperUsdTwap.checkpoint()` when `due()`
    - `FirePsa.pokePrice()` now and then
    - delivering drand numbers to the router (`OpenDrandRouter.fulfill`; `adapter.settle` if a callback didn't land)
-   - `FireCards.process(maxOpens)` and `FirePsa.finish(index)` if the site doesn't call them
+   - `FireCards.process(maxCards)` and `FirePsa.finish(index)` if the site doesn't call them
 2. **Real wallet connection on the site.** Wire the Forge's buy, open, PDA, burn and suggestion screens to the
    deployed contracts through `web/src/lib`, replacing the demo store and the demo banner. Planned with it: loading
    each buyer's holder-window proof automatically, the "Get PAPER" box (KyberSwap, 0.5% fee), and calling
-   `process(maxOpens)` and `finish(index)` right after randomness arrives.
+   `process(maxCards)` and `finish(index)` right after randomness arrives.
 3. **Series content.** Characters, their categories (free text, set in the Card Studio) and their 10 source images
    each, built (209 WEBP images per character) and uploaded with the Card Studio; pack art per Series. Lock each
    Series (`lockFire`) once its images are final.

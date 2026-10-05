@@ -1,5 +1,5 @@
 import type { DealResult } from './deal'
-import type { Material } from './rules'
+import type { Recipe } from './recipe'
 
 export type Variant = 'normal' | 'holo'
 export const VARIANTS: Variant[] = ['normal', 'holo']
@@ -28,7 +28,9 @@ export interface Character {
   /** Free text (categories.ts); printed on the card, a trait in the metadata and stored
    *  on-chain with the Series. Required before the character can go into a Series. */
   category?: string
-  images: Partial<Record<Material, Partial<Record<Variant, ImageSlot>>>>
+  /** Art per frame set (frames.ts: 'paper', 'wood', 'burning', 'charcoal', 'diamond' and any other set), normal and
+   *  holo. A card type uses the art of the frame set it uses. */
+  images: Partial<Record<string, Partial<Record<Variant, ImageSlot>>>>
   createdAt: number
   updatedAt: number
   /** Created by "Load sample assets". */
@@ -88,7 +90,8 @@ export interface ArtWindow {
 }
 
 export interface Layout {
-  material: Material
+  /** The frame set this layout is for (layouts are per frame set: every type using the set shares it). */
+  material: string
   /** LAYOUT_VERSION it was saved under (see layoutDefaults.ts). */
   version: number
   layering: Layering
@@ -112,15 +115,19 @@ export interface UploadState {
   /** The images folder name the images CID belongs to (it carries a fingerprint of the files). A rebuild changes it,
    *  so the saved CIDs are not reused for different images. Missing on uploads saved by older versions. */
   imagesDir?: string
+  /** An unfinished resumable (TUS) upload of a CAR, so a reload can continue it: which folder, its root CID and size,
+   *  and the upload URL Pinata gave. */
+  pending?: { dir: string; root: string; size: number; url: string }
 }
 
 /** Series builds are always WEBP (the contract names every image .webp). 'png' only appears on builds saved by older
  *  versions, which must be rebuilt. */
 export type OutputFormat = 'webp' | 'png'
 
-/** Bumped when what a build contains changes; builds saved under another version must be redone. 1 = the full grid
- *  (looks.ts seriesGrid: 209 images per character, keyed by grade). */
-export const BUILD_GRID_VERSION = 1
+/** Bumped when what a build contains changes; builds saved under another version must be redone. 1 = the full
+ *  Standard grid (209 images per character); 2 = the grid of the Series' recipe (looks.ts seriesGrid), keyed by type
+ *  slug. */
+export const BUILD_GRID_VERSION = 2
 
 export interface BuildState {
   format: OutputFormat
@@ -132,17 +139,21 @@ export interface BuildState {
   bytes?: number
   /** How long the build took, ms. */
   ms?: number
+  /** recipeGridKey + characters it was built for: a recipe or character change makes the build stale. */
+  gridKey?: string
 }
 
 export interface FireRecord {
   number: number
   characterIds: string[]
   packs: number
-  /** Diamonds this Series makes (at least 1, the default; never more than one per pack). Missing on Series saved
-   *  by older versions, which read as 1. */
+  /** The Series' recipe: card types, slots, PDA odds (recipe.ts). Series saved before recipes existed get the
+   *  Standard recipe with their Diamond setting when loaded (migrate.ts). */
+  recipe: Recipe
+  /** Legacy: Diamonds of a Standard Series from before recipes (now the Diamond type's count in the recipe). */
   diamonds?: number
   seed: string
-  /** Set once the deal is locked: the global serial counter has moved on. */
+  /** Set once the deal is locked (the recipe is locked with it): the global serial counter has moved on. */
   deal?: DealResult
   approvedAt?: number
   build?: BuildState

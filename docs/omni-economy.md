@@ -12,14 +12,14 @@ made of it. Each drop opens with PLANK lighting the forge.
 ## Every number is set per drop
 
 The owner (the `OWNER` multisig) sets these for each drop (each Series) before it launches (`configureDrop`). They lock when the drop opens
-(its start time), so nothing can change while people are buying. The Series' characters must be set in the card
-contract (`configureFire`) before its drop can be set up. The
-numbers below are the starting values.
+(its start time), so nothing can change while people are buying. The Series itself (its recipe: card types, pack
+size and slots, holo odds, characters; see `docs/cards-contracts.md`) must be set up in the card contracts before its
+drop can be set up, and locks at its first pack. The numbers below are the starting values (the Standard recipe).
 
 | Setting | Start |
 |---|---|
 | Packs in the drop | 167 **total, starters included** (about 1,000 cards). Sold out means gone: no more packs for that Series, ever. |
-| Diamonds | 1 (at least 1; set per Series in the card contract, `setDiamonds`, before its packs sell) |
+| Diamonds | 1 (at least 1 in the Standard recipe; set per Series in its recipe, before its packs sell) |
 | Pack price | $2.50 |
 | PAPER per pack | 1 |
 | PLANK burn share | 30% |
@@ -75,7 +75,7 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
     purchase still succeeds. A mint never fails because of PLANK. The burn wallet only ever buys and burns PLANK.
   - **70% goes to the revenue wallet.**
   - The contract keeps nothing.
-- **Up to 50 packs per purchase** (`MAX_PER_TX`).
+- **Up to 50 packs per purchase** by default (`maxPerTx`, set per drop).
 - **Gas (measured in tests, mock router; `test_gas`):** about 96k for a 1-pack PLANK buy and 101k for ETH. A real
   Uniswap swap adds about 60–90k more, so roughly 100k (PLANK) to 190k (ETH/USDG) per purchase, whether it is 1 pack
   or 50. That's cents or less on Robinhood Chain.
@@ -85,9 +85,9 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
   starter window and the limited phase always run in full. If the owner doesn't, anyone can, 7 days after that, so
   packs are never stranded. The Series closes with the packs that were minted.
 - **One drop at a time.** The next drop can only be set up once the current one has closed.
-- **Each Series stands alone.** Its cards come only from its own packs: Paper half, Fire 15%,
-  Coal 4.9%, Diamond as set (at least 1), Wood the rest. Nothing carries over between Series. Example: 167 packs
-  and 1 Diamond make 501 Paper, 301 Wood, 150 Fire, 49 Coal, 1 Diamond.
+- **Each Series stands alone.** Its cards come only from its own packs, by its own recipe. Standard recipe: Paper
+  half, Fire 15%, Coal 4.9%, Diamond as set (at least 1), Wood the rest. Nothing carries over between Series. Example:
+  167 packs and 1 Diamond make 501 Paper, 301 Wood, 150 Fire, 49 Coal, 1 Diamond.
 - **Every purchase names its limits:** the most PLANK/USDG (or the ETH sent), and the most PAPER. If a number moved,
   the purchase fails and costs nothing.
 - **Price feeds and the router** can be replaced by the owner only between drops (a retired Chainlink feed, a moved
@@ -113,7 +113,8 @@ drop: mint 1 pack for 1 PAPER (burned), out of that drop's supply. If no drop is
 credit waits for the next drop. **Credits work at any time during any live drop**: the holder
 window, the PLANK-only packs and the wallet limit don't apply to them. Two ways to earn one:
 
-- **Burn 42.0 cards.** Shown as "42.0" on the site.
+- **Burn 42.0 cards.** Shown as "42.0" on the site. (`cardsPerCredit`, 42 to start; the owner can change it
+  between drops, for example for Series with bigger packs.)
   - Each wallet keeps a running burn count that never resets: 3 one day + 2 the next = 5 of 42.
   - At 42 the wallet gets a credit, and extras carry over (burn 50 → 1 credit, 8 toward the next).
   - The count belongs to the wallet that burns.

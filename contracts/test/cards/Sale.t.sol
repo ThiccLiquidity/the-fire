@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test} from "forge-std/Test.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
+import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {SeriesHelper} from "./SeriesHelper.sol";
 import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockPlankTwap, MockPair} from "../Mocks.sol";
 
 /// @dev A Uniswap V2 router stand-in with a fixed PLANK price (it holds PLANK and pays it out). It can be told to fail,
@@ -41,7 +42,7 @@ contract MockV2Router {
     }
 }
 
-contract SaleTest is Test {
+contract SaleTest is SeriesHelper {
     function _na() internal pure returns (FireSale.Access memory a) {
         a.proof = new bytes32[](0);
     }
@@ -64,6 +65,7 @@ contract SaleTest is Test {
     MockRandomness rng;
     FirePacks packs;
     FireCards cards;
+    RecipeDealer dealer;
     FireSale sale;
 
     // ETH $3,333; PLANK $1e-9 (18-decimal feed: 1e9); the router trades at the same prices.
@@ -86,6 +88,7 @@ contract SaleTest is Test {
         rng = new MockRandomness();
         packs = new FirePacks(owner);
         cards = new FireCards(owner, address(packs));
+        dealer = new RecipeDealer(owner, address(cards));
         rng.setFire(address(cards));
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
@@ -121,16 +124,12 @@ contract SaleTest is Test {
     // ---------------------------------------------------------------- helpers
 
     function _configureCards(uint256 fire) internal {
-        string[] memory names = new string[](3);
-        string[] memory cats = new string[](3);
-        for (uint256 i; i < 3; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = string.concat("Cat ", vm.toString(i)); }
-        vm.prank(owner, owner);
-        cards.configureFire(fire, names, cats, "ipfs://x/");
+        _standard(cards, dealer, owner, fire, 3, 1);
     }
 
     function _cfg(uint64 s, uint32 n, uint32 starters, uint32 plankOnly, uint32 limit) internal pure returns (FireSale.DropConfig memory) {
         return FireSale.DropConfig({start: s, packs: n, starters: starters, plankOnly: plankOnly, walletLimit: limit,
-            starterWindow: 24 hours, liftAfter: 48 hours, plankBurnBps: 3_000, priceUsd: PRICE, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0)});
+            starterWindow: 24 hours, liftAfter: 48 hours, plankBurnBps: 3_000, priceUsd: PRICE, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0});
     }
 
     function _drop(uint256 fire, uint64 s, uint32 n, uint32 starters, uint32 plankOnly, uint32 limit) internal {
@@ -417,7 +416,7 @@ contract SaleTest is Test {
         _open();
         vm.prank(alice, alice);
         sale.buyWithPlank(1, 10, type(uint256).max, type(uint256).max, _na());
-        (bool closed,,,,,,,,,) = cards.fires(1);
+        (, bool closed,,,,) = cards.fires(1);
         assertTrue(closed, "the last purchase closed the Fire");
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.NotLive.selector);
@@ -449,7 +448,7 @@ contract SaleTest is Test {
         _warp(start + 48 hours);
         vm.prank(owner, owner);
         sale.endDrop(1);
-        (bool closed,,, uint32 packCount,,,,,,) = cards.fires(1);
+        (, bool closed,,, uint64 packCount,) = cards.fires(1);
         assertTrue(closed);
         assertEq(packCount, 4);
     }
@@ -472,11 +471,6 @@ contract SaleTest is Test {
         }
         cards.process(type(uint256).max);
         assertEq(cards.balanceOf(alice), nPacks * 6);
-    }
-
-    function _ids(uint256 from, uint256 n) internal pure returns (uint256[] memory ids) {
-        ids = new uint256[](n);
-        for (uint256 i; i < n; i++) ids[i] = from + i;
     }
 
     function test_burn42_earnsACredit_runningCount() public {
@@ -540,6 +534,45 @@ contract SaleTest is Test {
     }
 
     // ---------------------------------------------------------------- suggestions
+
+    /// Most packs per purchase is a per-drop setting (default 50).
+    function test_maxPerTxIsPerDrop() public {
+        _drop(1, start, 300, 0, 0, 300);
+        assertEq(sale.dropOf(1).maxPerTx, 50, "default");
+        FireSale.DropConfig memory c = _cfg(start, 300, 0, 0, 300);
+        c.maxPerTx = 120;
+        vm.prank(owner, owner);
+        sale.configureDrop(1, c);
+        assertEq(sale.dropOf(1).maxPerTx, 120);
+        _open();
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.BadAmount.selector);
+        sale.buyWithPlank(1, 121, type(uint256).max, type(uint256).max, _na());
+        vm.prank(alice, alice);
+        sale.buyWithPlank(1, 120, type(uint256).max, type(uint256).max, _na());
+        assertEq(packs.balanceOf(alice, 1), 120);
+    }
+
+    /// Cards per free pack credit can be changed between drops (never during one).
+    function test_cardsPerCreditSetBetweenDrops() public {
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.DropsActive.selector);
+        sale.setCardsPerCredit(10); // drop 1 is set up
+        _aliceGetsCards(5); // 30 cards; the drop sells out and closes
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.setCardsPerCredit(0);
+        vm.prank(alice, alice);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", alice));
+        sale.setCardsPerCredit(10);
+        vm.prank(owner, owner);
+        sale.setCardsPerCredit(10);
+        assertEq(sale.cardsPerCredit(), 10);
+        vm.prank(alice, alice);
+        sale.burnCards(_ids(1, 25));
+        assertEq(sale.credits(alice), 2);
+        assertEq(sale.burnCount(alice), 5);
+    }
 
     function test_suggestions() public {
         uint256 before = paper.balanceOf(DEAD);
@@ -819,17 +852,13 @@ contract SaleTest is Test {
         sale.pickSuggestions(1, ids); // Fire 1 has 3 characters
     }
 
-    function test_audit_fireNumberFitsIn32Bits() public {
+    function test_audit_fireNumberFitsIn64Bits() public {
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(uint256(type(uint32).max) + 8, _cfg(start, 10, 0, 0, 5));
-        string[] memory names = new string[](1);
-        string[] memory cats = new string[](1);
-        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
-        names[0] = "A";
+        sale.configureDrop(uint256(type(uint64).max) + 8, _cfg(start, 10, 0, 0, 5));
         vm.prank(owner, owner);
         vm.expectRevert(FireCards.BadLength.selector);
-        cards.configureFire(uint256(type(uint32).max) + 8, names, cats, "ipfs://x/");
+        cards.setDealer(uint256(type(uint64).max) + 8, address(dealer));
     }
 
     function test_audit_timingsChecked() public {

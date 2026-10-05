@@ -1,21 +1,32 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { DropZone, Field, Notice, useAction } from '../components'
 import { newId } from '../db'
 import { categoryKey, categoryProblem, categorySuggestions, hasCategory, hasValidName, nameProblem, normalizeCategory, normalizeName } from '../categories'
-import { MATERIALS, MATERIAL_LABEL, type Material } from '../rules'
+import { FRAME_SETS, frameSetLabel } from '../frames'
 import {
-  completeness, deleteCharacter, isReady, effectiveKey, removeCharacterImage, saveCharacter, setCharacterImage, updateImageKey,
+  completeness, deleteCharacter, getStudio, imageSlots, isReady, effectiveKey, removeCharacterImage, saveCharacter, setCharacterImage, updateImageKey,
   useBlobUrl, useStudio,
 } from '../store'
 import { VARIANTS, type Character, type ImageSlot, type Variant } from '../types'
+
+const PAGE = 200
 
 export function Library() {
   const s = useStudio()
   const [selected, setSelected] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [newShort, setNewShort] = useState('')
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
   const [busy, error, run] = useAction()
   const current = s.characters.find((c) => c.id === selected) ?? s.characters[0]
+  const total = imageSlots()
+  const list = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return q ? s.characters.filter((c) => c.name.toLowerCase().includes(q) || c.shortId.toLowerCase().includes(q) || (c.category ?? '').toLowerCase().includes(q)) : s.characters
+  }, [s.characters, query])
+  const pages = Math.max(1, Math.ceil(list.length / PAGE))
+  const shown = list.slice(page * PAGE, page * PAGE + PAGE)
 
   // inline check only once something is typed (an empty box isn't an error yet)
   const newNameProblem = newName ? nameProblem(normalizeName(newName)) : null
@@ -34,20 +45,28 @@ export function Library() {
   return (
     <div className="split">
       <aside className="panel list-panel">
-        <h3>Characters</h3>
-        <ul className="char-list" data-testid="char-list">
-          {s.characters.map((c) => {
+        <h3>Characters ({s.characters.length.toLocaleString()})</h3>
+        <input placeholder="Search" value={query} onChange={(e) => { setQuery(e.target.value); setPage(0) }} data-testid="lib-search" style={{ width: '100%' }} />
+        <ul className="char-list scroll" data-testid="char-list">
+          {shown.map((c) => {
             const n = completeness(c)
             return (
               <li key={c.id} className={current?.id === c.id ? 'active' : ''} onClick={() => setSelected(c.id)}>
                 <span className="char-name">{c.name}{c.shortId && <small> {c.shortId}</small>}</span>
                 {c.placeholder && <span className="tag">placeholder</span>}
-                <span className={`badge ${isReady(c) ? 'badge-ok' : 'badge-warn'}`}>{n}/10{hasCategory(c) && hasValidName(c) ? '' : ' · ?'}</span>
+                <span className={`badge ${isReady(c) ? 'badge-ok' : 'badge-warn'}`}>{n}/{total}{hasCategory(c) && hasValidName(c) ? '' : ' · ?'}</span>
               </li>
             )
           })}
           {!s.characters.length && <li className="muted">No characters yet.</li>}
         </ul>
+        {pages > 1 && (
+          <div className="row">
+            <button disabled={page === 0} onClick={() => setPage(page - 1)}>Prev</button>
+            <span className="muted small">{page + 1} / {pages}</span>
+            <button disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Next</button>
+          </div>
+        )}
         <div className="add-form">
           <Field label="Name"><input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Rabbit" aria-invalid={!!newNameProblem} data-testid="new-char-name" /></Field>
           {newNameProblem && <p className="field-msg err" data-testid="new-name-problem">Name: {newNameProblem}</p>}
@@ -55,11 +74,77 @@ export function Library() {
           <button onClick={add} disabled={busy || !!newNameProblem} data-testid="add-char">Add character</button>
         </div>
         {error && <Notice kind="error">{error}</Notice>}
+        <BulkTools />
       </aside>
       <section className="panel grow">
         {current ? <CharacterEditor key={current.id} c={current} /> : <p className="muted">Add a character, or load the sample assets from the Data tab.</p>}
       </section>
     </div>
+  )
+}
+
+/** For hundreds of characters: add many at once from a list, and drop many images at once named by character and
+ *  frame set. */
+function BulkTools() {
+  const [text, setText] = useState('')
+  const [report, setReport] = useState<string[]>([])
+  const [busy, error, run] = useAction()
+  const addMany = () => run(async () => {
+    const out: string[] = []
+    const existing = new Set(getStudio().characters.map((c) => c.name.toLowerCase()))
+    let added = 0
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trim()) continue
+      const [rawName, ...rest] = line.split(/[,\t]/)
+      const name = normalizeName(rawName)
+      const category = normalizeCategory(rest.join(','))
+      const np = nameProblem(name)
+      if (np) { out.push(`"${line.trim()}": ${np}`); continue }
+      if (category && categoryProblem(category)) { out.push(`"${name}": category ${categoryProblem(category)}`); continue }
+      if (existing.has(name.toLowerCase())) { out.push(`"${name}" is already in the library (skipped).`); continue }
+      const now = Date.now()
+      await saveCharacter({ id: newId(), name, shortId: '', ...(category ? { category } : {}), images: {}, createdAt: now + added, updatedAt: now })
+      existing.add(name.toLowerCase())
+      added++
+    }
+    setReport([`Added ${added} character${added === 1 ? '' : 's'}.`, ...out])
+    if (added) setText('')
+  })
+  const dropImages = (files: File[]) => run(async () => {
+    const out: string[] = []
+    const chars = getStudio().characters
+    const byName = new Map<string, string>()
+    for (const c of chars) {
+      byName.set(c.name.toLowerCase(), c.id)
+      if (c.shortId) byName.set(c.shortId.toLowerCase(), c.id)
+    }
+    let done = 0
+    for (const f of files) {
+      // <character>__<frame set>[__holo].<ext>
+      const m = /^(.+?)__([a-z0-9]+)(__holo)?\.[a-z0-9]+$/i.exec(f.name)
+      if (!m) { out.push(`${f.name}: name it <character>__<frame set>[__holo].png`); continue }
+      const id = byName.get(m[1].trim().toLowerCase())
+      const set = m[2].toLowerCase()
+      if (!id) { out.push(`${f.name}: no character "${m[1]}"`); continue }
+      if (!FRAME_SETS.includes(set)) { out.push(`${f.name}: no frame set "${set}" (${FRAME_SETS.join(', ')})`); continue }
+      if (!f.type.startsWith('image/')) { out.push(`${f.name}: not an image`); continue }
+      await setCharacterImage(id, set, m[3] ? 'holo' : 'normal', f, f.name)
+      done++
+    }
+    setReport([`Added ${done} of ${files.length} images.`, ...out])
+  })
+  return (
+    <details className="bulk" data-testid="bulk-tools">
+      <summary>Add many</summary>
+      <p className="muted small">One character per line: <code>Name, Category</code>.</p>
+      <textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder={'Ember Fox, Animals\nAsh Wolf, Animals'} data-testid="bulk-names" />
+      <button onClick={addMany} disabled={busy || !text.trim()} data-testid="bulk-add">Add these</button>
+      <p className="muted small">Images: drop many files named <code>&lt;character&gt;__&lt;frame set&gt;.png</code> or <code>..__holo.png</code>, e.g. <code>Ember Fox__paper__holo.png</code>. Frame sets: {FRAME_SETS.join(', ')}.</p>
+      <DropZone accept="image/*" multiple onFiles={dropImages} className="inline-drop" testId="bulk-images"><span>Drop images or click</span></DropZone>
+      {busy && <span className="muted small">working...</span>}
+      {error && <Notice kind="error">{error}</Notice>}
+      {report.length > 0 && <ul className="small problems">{report.slice(0, 30).map((x, i) => <li key={i}>{x}</li>)}{report.length > 30 && <li>... {report.length - 30} more</li>}</ul>}
+    </details>
   )
 }
 
@@ -92,7 +177,7 @@ function CharacterEditor({ c }: { c: Character }) {
           setCategory(finalCategory ?? '')
         })}>Save</button>
         <span className="spacer" />
-        <span className={`badge big ${n === 10 ? 'badge-ok' : 'badge-warn'}`} data-testid="completeness">{n}/10 images</span>
+        <span className={`badge big ${n === imageSlots() ? 'badge-ok' : 'badge-warn'}`} data-testid="completeness">{n}/{imageSlots()} images</span>
         <button className="danger" onClick={() => { if (confirm(`Delete ${c.name} and its images?`)) void run(() => deleteCharacter(c.id)) }}>Delete</button>
       </div>
       {namedProblem && <p className="field-msg err" data-testid="name-problem">Name: {namedProblem}</p>}
@@ -101,11 +186,11 @@ function CharacterEditor({ c }: { c: Character }) {
         : typed && !existing && !matches.length && finalCategory !== c.category ? <p className="field-msg">New category: "{typed}".</p>
         : null}
       {error && <Notice kind="error">{error}</Notice>}
-      {!isReady(c) && <Notice kind="info">A character can go into a Series once all 10 images are in (5 materials x normal + holo) and it has a valid name and category.</Notice>}
+      {!isReady(c) && <Notice kind="info">A character can go into a Series once it has a valid name and category and the images that Series' recipe uses (each card type uses one frame set's art: normal, and holo when it can have a holo picture).</Notice>}
       <div className="slot-grid">
         <div />
         {VARIANTS.map((v) => <div key={v} className="slot-head">{v === 'normal' ? 'Normal' : 'Holo'}</div>)}
-        {MATERIALS.map((m) => (
+        {FRAME_SETS.map((m) => (
           <SlotRow key={m} c={c} m={m} />
         ))}
       </div>
@@ -155,16 +240,16 @@ function CategoryInput({ value, onChange, matches, placeholder, invalid }: {
   )
 }
 
-function SlotRow({ c, m }: { c: Character; m: Material }) {
+function SlotRow({ c, m }: { c: Character; m: string }) {
   return (
     <>
-      <div className="slot-label">{MATERIAL_LABEL[m]}</div>
+      <div className="slot-label">{frameSetLabel(m)}</div>
       {VARIANTS.map((v) => <SlotCell key={v} c={c} m={m} v={v} slot={c.images[m]?.[v]} />)}
     </>
   )
 }
 
-function SlotCell({ c, m, v, slot }: { c: Character; m: Material; v: Variant; slot?: ImageSlot }) {
+function SlotCell({ c, m, v, slot }: { c: Character; m: string; v: Variant; slot?: ImageSlot }) {
   const url = useBlobUrl(slot ? effectiveKey(slot) : undefined)
   const [busy, error, run] = useAction()
   const [tol, setTol] = useState(slot?.tolerance ?? 70)

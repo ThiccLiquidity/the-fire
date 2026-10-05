@@ -2,18 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 import { BatchRenderer } from '../builder'
 import { Field, Notice, ProgressBar } from '../components'
 import { hasCategory } from '../categories'
-import type { DealtCard } from '../deal'
-import { HOLO_LABEL, HOLO_TYPES, MATERIALS, MATERIAL_LABEL, WEAR_LABEL, wearLookOf, type HoloType, type Material } from '../rules'
-import { completeness, useStudio } from '../store'
+import { FRAME_SETS, frameSetLabel } from '../frames'
+import type { CardFace } from '../render'
+import { HOLO_LABEL, HOLO_TYPES, WEAR_LABEL, holoTypeOf, wearLookOf, type HoloType } from '../rules'
+import { completeness, imageSlots, useStudio } from '../store'
 
-interface Cell { material: Material; holo: HoloType; url?: string }
+interface Cell { material: string; holo: HoloType; url?: string }
 
-const key = (m: Material, h: HoloType) => `${m}:${h}`
-/** Diamond is always holo, so a plain Diamond never exists. */
-const exists = (m: Material, h: HoloType) => !(m === 'diamond' && h === 'none')
+const key = (m: string, h: HoloType) => `${m}:${h}`
 
-/** Every card a character can be, rendered exactly as the build will make it: 5 materials x 4 holo types, at any
- *  PDA grade. Click a card to see it full size. */
+/** Every look a character can have, rendered exactly as the build makes it: each frame set x 4 holo looks, at any PDA
+ *  grade (the type name printed is the frame set's; a recipe type prints its own name). Click a card to see it full
+ *  size. */
 export function Preview() {
   const s = useStudio()
   const [charId, setCharId] = useState('')
@@ -33,18 +33,18 @@ export function Preview() {
     const my = ++gen.current
     // the Series this character is in (latest), or the next Series if it isn't in one yet
     const fire = [...s.fires].reverse().find((f) => f.characterIds.includes(char.id))?.number ?? s.global.nextFireNumber
-    const list: DealtCard[] = []
-    for (const material of MATERIALS) {
+    const list: CardFace[] = []
+    for (const frameSet of FRAME_SETS) {
       for (const holo of HOLO_TYPES) {
-        if (!exists(material, holo)) continue
         list.push({
-          serial: 0, fire, pack: 0, slot: 0, material, characterId: char.id, edition: 1, editionOf: 1, grade,
-          holoFrame: holo === 'frame' || holo === 'full', holoPicture: holo === 'picture' || holo === 'full', holo,
+          frameSet, typeName: frameSetLabel(frameSet), characterId: char.id, grade, fire,
+          holoFrame: holo === 'frame' || holo === 'full', holoPicture: holo === 'picture' || holo === 'full',
         })
       }
     }
+    const holoOf = (c: CardFace) => holoTypeOf(c.holoFrame, c.holoPicture)
     setError(null)
-    setCells(Object.fromEntries(list.map((c) => [key(c.material, c.holo), { material: c.material, holo: c.holo }])))
+    setCells(Object.fromEntries(list.map((c) => [key(c.frameSet, holoOf(c)), { material: c.frameSet, holo: holoOf(c) }])))
     void (async () => {
       const r = await BatchRenderer.create([char.id], grade != null)
       try {
@@ -57,7 +57,7 @@ export function Preview() {
             cards.forEach((c, i) => {
               const url = URL.createObjectURL(blobs[i])
               urls.current.push(url)
-              add[key(c.material, c.holo)] = { material: c.material, holo: c.holo, url }
+              add[key(c.frameSet, holoOf(c))] = { material: c.frameSet, holo: holoOf(c), url }
             })
             setCells((prev) => ({ ...prev, ...add }))
           },
@@ -73,6 +73,7 @@ export function Preview() {
 
   if (!char) return <section className="panel grow"><p className="muted">Add a character in the Library first.</p></section>
   const n = completeness(char)
+  const total = imageSlots()
 
   return (
     <section className="panel grow">
@@ -91,14 +92,14 @@ export function Preview() {
         </Field>
         <span className="muted small">Exactly what the NFTs will look like. Click a card to see it full size.</span>
       </div>
-      {n < 10 && <Notice kind="warn">{char.name} has {n}/10 images; missing ones show without art.</Notice>}
+      {n < total && <Notice kind="warn">{char.name} has {n}/{total} images; missing ones show without art.</Notice>}
       {!hasCategory(char) && <Notice kind="warn">{char.name} has no usable category yet (Library).</Notice>}
       {progress && <ProgressBar value={progress.done / Math.max(1, progress.total)} label={`Rendering ${progress.done} / ${progress.total}`} />}
       {error && <Notice kind="error">{error}</Notice>}
       <div className="preview-grid" data-testid="preview-grid">
         <div />
         {HOLO_TYPES.map((h) => <div key={h} className="preview-head">{h === 'none' ? 'No holo' : `${HOLO_LABEL[h]} holo`}</div>)}
-        {MATERIALS.map((m) => (
+        {FRAME_SETS.map((m) => (
           <PreviewRow key={m} m={m} cells={cells} onOpen={setBig} />
         ))}
       </div>
@@ -107,9 +108,9 @@ export function Preview() {
           <div className="modal-body" onClick={(e) => e.stopPropagation()}>
             <img src={big.url} alt="" />
             <div>
-              <h3>{char.name} · {MATERIAL_LABEL[big.material]}</h3>
+              <h3>{char.name} · {frameSetLabel(big.material)} frames</h3>
               <p className="muted">Holo: {big.holo === 'none' ? 'none' : HOLO_LABEL[big.holo]}<br />PDA: {grade == null ? 'unrevealed' : `${grade} (${WEAR_LABEL[wearLookOf(grade)]} frame)`}</p>
-              <p className="muted small">Every {MATERIAL_LABEL[big.material]} {char.name} with this holo{grade == null ? '' : ' and grade'} shares this image. Serial, edition and Series # are in each NFT's data.</p>
+              <p className="muted small">Every card of a type using these frames, of {char.name}, with this holo{grade == null ? '' : ' and grade'} shares this image. Serial, edition and Series # are in each NFT's data.</p>
               <button onClick={() => setBig(null)}>Close</button>
             </div>
           </div>
@@ -119,12 +120,11 @@ export function Preview() {
   )
 }
 
-function PreviewRow({ m, cells, onOpen }: { m: Material; cells: Record<string, Cell>; onOpen: (c: Cell) => void }) {
+function PreviewRow({ m, cells, onOpen }: { m: string; cells: Record<string, Cell>; onOpen: (c: Cell) => void }) {
   return (
     <>
-      <div className="preview-label">{MATERIAL_LABEL[m]}</div>
+      <div className="preview-label">{frameSetLabel(m)}</div>
       {HOLO_TYPES.map((h) => {
-        if (!exists(m, h)) return <div key={h} className="preview-cell none"><span className="muted small">Diamond is always holo</span></div>
         const c = cells[key(m, h)]
         return (
           <button key={h} className="preview-cell" onClick={() => c && onOpen(c)} disabled={!c?.url} data-testid={`preview-${m}-${h}`}>

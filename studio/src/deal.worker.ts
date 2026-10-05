@@ -1,5 +1,5 @@
-/** Deal worker: runs the sample deal (dealFire) off the main thread, so previewing a big Series (up to MAX_PACKS
- *  packs, 600,000 cards, a few seconds of hashing) never freezes the Deal tab. */
+/** Deal worker: runs the sample deal (dealFire) off the main thread, so previewing a big Series (up to
+ *  MAX_DEAL_CARDS cards, a few seconds of hashing) never freezes the Deal tab. */
 
 import { dealFire, type DealInput, type DealResult } from './deal'
 

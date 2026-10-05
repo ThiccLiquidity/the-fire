@@ -1,4 +1,3 @@
-import type { Material } from './rules'
 import { FRAME_GEOMETRY } from './frames'
 import { TEXT_FIELDS, type Layout, type PsaBox, type Rect, type TextBox, type TextStyle } from './types'
 
@@ -22,13 +21,17 @@ export const LAYOUT_VERSION = 4
  *  (light ink). `window` fills the art window behind keyed art. */
 /** `seal` = the PDA seal's light and dark colours and its text colour, matched to each frame: pencil graphite on
  *  Paper, walnut on Wood, ember on Fire, black and silver on Coal, icy crystal on Diamond. */
-const INK: Record<Material, { color: string; outline: string; outlineWidth: number; window: string; seal: [string, string, string] }> = {
+const INK: Record<string, { color: string; outline: string; outlineWidth: number; window: string; seal: [string, string, string] }> = {
   paper: { color: '#2b2622', outline: '#ffffff', outlineWidth: 0, window: '#f4f0e6', seal: ['#8a8a8a', '#2f2f31', '#f3efe6'] },
   wood: { color: '#3a2412', outline: '#ffffff', outlineWidth: 0, window: '#f1e4cc', seal: ['#9a6230', '#4a2810', '#f6e2c0'] },
   burning: { color: '#ffe9c4', outline: '#1a0904', outlineWidth: 5, window: '#24100a', seal: ['#f08a2a', '#7a1606', '#fff1d6'] },
   charcoal: { color: '#ececf0', outline: '#0e0e10', outlineWidth: 4, window: '#26262a', seal: ['#8a8b93', '#2c2c31', '#f2f3f6'] },
   diamond: { color: '#12324a', outline: '#ffffff', outlineWidth: 0, window: '#eef6fb', seal: ['#f4fbff', '#9cc0d8', '#12324a'] },
 }
+
+/** A frame set the studio has no colours for yet (a new set built by clean_frames.py): light text with a dark
+ *  outline reads on any panel; set its real colours in Frames & Layout. */
+const NEUTRAL_INK = { color: '#fff7e8', outline: '#1a1410', outlineWidth: 5, window: '#1d1d22', seal: ['#d9b25a', '#5a3d10', '#fff6e0'] as [string, string, string] }
 
 function style(over: Partial<TextStyle>): TextStyle {
   return {
@@ -41,8 +44,9 @@ function tb(box: Rect, over: Partial<TextStyle>): TextBox {
   return { box, style: style(over), visible: true }
 }
 
-export function defaultLayout(material: Material): Layout {
-  const ink = INK[material]
+/** The default layout of a frame set (layouts are per frame set; every card type using the set shares it). */
+export function defaultLayout(material: string): Layout {
+  const ink = INK[material] ?? NEUTRAL_INK
   const c = { color: ink.color, outlineColor: ink.outline, outlineWidth: ink.outlineWidth }
   const g = FRAME_GEOMETRY
   const info = g.infoText
@@ -69,7 +73,7 @@ export function defaultLayout(material: Material): Layout {
 }
 
 /** Fill in any field missing from a stored layout (forward compatibility). */
-export function normalizeLayout(material: Material, stored: Partial<Layout> | undefined): Layout {
+export function normalizeLayout(material: string, stored: Partial<Layout> | undefined): Layout {
   const d = defaultLayout(material)
   if (!stored || !stored.version || stored.version < 2 || stored.version > LAYOUT_VERSION) return d
   // v2 -> v3: the PDA badge became the seal; keep every other saved setting

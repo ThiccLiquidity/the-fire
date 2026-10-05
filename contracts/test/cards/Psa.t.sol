@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test} from "forge-std/Test.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
+import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {MockERC20, MockFeed, MockRandomness} from "../Mocks.sol";
+import {SeriesHelper} from "./SeriesHelper.sol";
 
-contract PsaTest is Test {
+contract PsaTest is SeriesHelper {
     address constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address owner = address(0xA11CE0);
     address seller = address(0x5E11);
@@ -20,6 +22,7 @@ contract PsaTest is Test {
     MockRandomness psaRng;
     FirePacks packs;
     FireCards cards;
+    RecipeDealer dealer;
     FirePsa psa;
     FirePsa psaNoFeed;
 
@@ -31,6 +34,7 @@ contract PsaTest is Test {
         psaRng = new MockRandomness();
         packs = new FirePacks(owner);
         cards = new FireCards(owner, address(packs));
+        dealer = new RecipeDealer(owner, address(cards));
         cardRng.setFire(address(cards));
         psa = new FirePsa(owner, address(cards), address(paper), address(paperFeed));
         psaRng.setFire(address(psa));
@@ -48,8 +52,12 @@ contract PsaTest is Test {
         string[] memory cats = new string[](2);
         for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         names[0] = "Ember Fox"; names[1] = "Ash Wolf";
-        vm.prank(owner);
-        cards.configureFire(1, names, cats, "ipfs://x/");
+        vm.startPrank(owner);
+        dealer.setRecipe(1, StandardRecipe.build(1));
+        dealer.setCharacters(1, names, cats);
+        cards.setDealer(1, address(dealer));
+        cards.setImagesBase(1, "ipfs://x/");
+        vm.stopPrank();
 
         // alice gets 2 packs' worth of cards (serials 1..12)
         vm.startPrank(seller);
@@ -59,17 +67,12 @@ contract PsaTest is Test {
         vm.prank(alice);
         cards.open(1, 2);
         cardRng.fulfill(cardRng.last(), 7);
-        cards.process(10);
+        cards.process(100);
         assertEq(cards.balanceOf(alice), 12);
 
         paper.mint(alice, 1_000e18);
         vm.prank(alice);
         paper.approve(address(psa), type(uint256).max);
-    }
-
-    function _ids(uint256 from, uint256 n) internal pure returns (uint256[] memory ids) {
-        ids = new uint256[](n);
-        for (uint256 i; i < n; i++) ids[i] = from + i;
     }
 
     function _reveal(uint256 from, uint256 n, uint256 word) internal returns (uint256 index) {
@@ -94,10 +97,10 @@ contract PsaTest is Test {
     }
 
     function test_imageSwitchesToTheGradesImage() public {
-        assertTrue(_contains(cards.imageFile(cards.cardOf(1)), "-u.webp"));
+        assertTrue(_contains(cards.imageFile(1), "-u.webp"));
         _reveal(1, 1, 99);
         uint256 g = cards.cardOf(1).grade;
-        assertTrue(_contains(cards.imageFile(cards.cardOf(1)), string.concat("-", vm.toString(g), ".webp")));
+        assertTrue(_contains(cards.imageFile(1), string.concat("-", vm.toString(g), ".webp")));
         cards.tokenURI(1); // still renders
     }
 
@@ -192,14 +195,15 @@ contract PsaTest is Test {
     }
 
     function test_defaultOddsTable() public view {
-        uint16[10] memory o = psa.oddsOf(1);
-        uint16[10] memory want = [uint16(100), 150, 200, 350, 700, 1800, 2500, 2400, 1700, 100];
+        (uint64[10] memory o, uint256 total) = psa.oddsOf(1);
+        uint64[10] memory want = [uint64(100), 150, 200, 350, 700, 1800, 2500, 2400, 1700, 100];
         uint256 sum;
         for (uint256 i; i < 10; i++) {
             assertEq(o[i], want[i], vm.toString(i + 1));
             sum += o[i];
         }
         assertEq(sum, psa.ODDS_TOTAL());
+        assertEq(total, sum);
         assertFalse(psa.customOdds(1));
     }
 
@@ -231,18 +235,37 @@ contract PsaTest is Test {
     }
 
     function test_customOdds_onlyBeforeTheFireCloses() public {
-        uint16[10] memory odds = [uint16(1000), 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000];
+        uint64[10] memory odds = [uint64(1000), 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000];
         vm.prank(owner);
         vm.expectRevert(FirePsa.FireIsClosed.selector);
         psa.setOdds(1, odds);
         vm.prank(owner);
         psa.setOdds(2, odds);
-        assertEq(psa.oddsOf(2)[0], 1000);
-        assertEq(psa.oddsOf(1)[0], 100, "default");
-        odds[0] = 999;
+        (uint64[10] memory o2,) = psa.oddsOf(2);
+        (uint64[10] memory o1,) = psa.oddsOf(1);
+        assertEq(o2[0], 1000);
+        assertEq(o1[0], 100, "default");
+        uint64[10] memory zero;
         vm.prank(owner);
         vm.expectRevert(FirePsa.BadOdds.selector);
-        psa.setOdds(3, odds);
+        psa.setOdds(3, zero);
+    }
+
+    /// Any distribution: weights with any total (here only 10s, and a fine-grained one out of 1e18).
+    function test_customOdds_anyDistribution() public {
+        uint64[10] memory allTens;
+        allTens[9] = 1;
+        vm.prank(owner);
+        psa.setOdds(4, allTens);
+        for (uint256 i; i < 50; i++) assertEq(psa.gradeFor(4, uint256(keccak256(abi.encode(i)))), 10);
+        uint64[10] memory fine = [uint64(1), 0, 0, 0, 0, 0, 0, 0, 0, 1e18 - 1];
+        vm.prank(owner);
+        psa.setOdds(5, fine);
+        (, uint256 total) = psa.oddsOf(5);
+        assertEq(total, 1e18);
+        assertEq(psa.gradeFor(5, 0), 1);
+        assertEq(psa.gradeFor(5, 1), 10);
+        assertEq(psa.gradeFor(5, 1e18), 1, "wraps at the total");
     }
 
 
@@ -278,15 +301,10 @@ contract PsaTest is Test {
     }
 
     function test_audit_oddsLockOncePacksExist() public {
-        string[] memory names = new string[](1);
-        string[] memory cats = new string[](1);
-        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
-        names[0] = "A";
-        vm.prank(owner);
-        cards.configureFire(2, names, cats, "ipfs://y/");
+        _standard(cards, dealer, owner, 2, 1, 1);
         vm.prank(seller);
         packs.mint(bob, 2, 1); // a sealed pack of Fire 2 exists
-        uint16[10] memory odds = [uint16(1000), 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000];
+        uint64[10] memory odds = [uint64(1000), 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000];
         vm.prank(owner);
         vm.expectRevert(FirePsa.FireIsClosed.selector);
         psa.setOdds(2, odds);
@@ -387,19 +405,5 @@ contract PsaTest is Test {
         assertEq(psa.lastCost(), 25e18);
         vm.warp(block.timestamp + 3 days); // gap with no reveals in between
         assertEq(psa.paperPerReveal(), 25e18);
-    }
-
-    // ---------- helpers ----------
-
-    function _contains(string memory hay, string memory needle) internal pure returns (bool) {
-        bytes memory h = bytes(hay);
-        bytes memory n = bytes(needle);
-        if (n.length > h.length) return false;
-        for (uint256 i; i <= h.length - n.length; i++) {
-            bool ok = true;
-            for (uint256 j; j < n.length; j++) if (h[i + j] != n[j]) { ok = false; break; }
-            if (ok) return true;
-        }
-        return false;
     }
 }

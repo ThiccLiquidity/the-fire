@@ -41,11 +41,11 @@ forge script script/DeployCards.s.sol --rpc-url $env:RPC --account deployer --se
 It checks every input first, including that `DRAND_ROUTER` returns a zero `requestFee()` like the OpenDrandRouter,
 that `PLANK_USD_FEED` sits on the PLANK/WETH pool the V2 router trades, and that `PLANK_USD_FEED` and `PAPER_USD_FEED`
 are built on this `ETH_USD_FEED` (and this PAPER, for the PAPER feed). Then it deploys FirePacks, FireCards,
-FireSale, FirePsa and one drand adapter each for FireCards and FirePsa, wires them, and hands ownership to `OWNER`.
+RecipeDealer, FireSale, FirePsa and one drand adapter each for FireCards and FirePsa, wires them, and hands ownership to `OWNER`.
 
 ## 4. Multisig accepts
-`OWNER` calls `acceptOwnership()` on FirePacks, FireCards and FirePsa (FireSale is owned by `OWNER` from
-deployment), then checks the wiring (list in `docs/cards-contracts.md`). Until then the deployer key controls those three.
+`OWNER` calls `acceptOwnership()` on FirePacks, FireCards, RecipeDealer and FirePsa (FireSale is owned by `OWNER` from
+deployment), then checks the wiring (list in `docs/cards-contracts.md`). Until then the deployer key controls those four.
 
 ## 5. Keeper
 Needed before the first drop; not built yet (`ops/README.md`, `docs/roadmap.md`). Every call is permissionless:
@@ -53,10 +53,12 @@ Needed before the first drop; not built yet (`ops/README.md`, `docs/roadmap.md`)
 - `PaperUsdTwap.checkpoint()` when `due()`
 - `FirePsa.pokePrice()` now and then
 - delivering drand numbers to the router (`OpenDrandRouter.fulfill`; `adapter.settle` if a callback didn't land)
-- `FireCards.process(maxOpens)` and `FirePsa.finish(index)` if the site doesn't call them
+- `FireCards.process(maxCards)` and `FirePsa.finish(index)` if the site doesn't call them
 
 ## 6. Each Series
-The `OWNER` multisig calls `FireCards.configureFire`, then `FireSale.configureDrop` (and `pickSuggestions`). Holder window:
+The `OWNER` multisig sets up the Series (`script/ConfigureSeries.s.sol` turns the studio's recipe JSON into the calls:
+`RecipeDealer.setRecipe` and `setCharacters`, `FireCards.setDealer` and `setImagesBase`, optionally `FirePsa.setOdds`;
+see `docs/cards-contracts.md`), then `FireSale.configureDrop` (and `pickSuggestions`). Holder window:
 `ops/snapshot` makes the `holderRoot`.
 
 ## 7. Site

@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { DropZone, Field, Notice, NumberInput, useAction } from '../components'
-import { BUILTIN_FRAMES, frameBlob, hasFrame } from '../frames'
+import { BUILTIN_FRAMES, FRAME_SETS, frameBlob, frameSetFiles, frameSetLabel, hasFrame } from '../frames'
 import { getBlob } from '../db'
-import type { DealtCard } from '../deal'
 import { defaultLayout } from '../layoutDefaults'
 import { CardTextStyle, useFontOptions } from './TextStyle'
-import { cardView, drawCard } from '../render'
-import { CARD_H, CARD_W, MATERIALS, MATERIAL_LABEL, WEAR_LABEL, WEAR_LEVELS, holoTypeOf, wearLookOf, type Material, type WearLook } from '../rules'
+import { cardView, drawCard, type CardFace } from '../render'
+import { CARD_H, CARD_W, WEAR_LABEL, WEAR_LEVELS, wearLookOf, type WearLook } from '../rules'
 import {
   addFont, deleteFont, effectiveKey, fontFamilyCss, getStudio, onBlobChanged, saveLayout, useFontsVersion, useStudio,
 } from '../store'
@@ -19,12 +18,12 @@ const BOX_IDS: BoxId[] = ['art', ...TEXT_FIELDS, 'psa']
 const LOCKED: BoxId[] = ['art']
 
 export function Frames() {
-  const [m, setM] = useState<Material>('paper')
+  const [m, setM] = useState<string>('paper')
   return (
     <div>
       <div className="subtabs">
-        {MATERIALS.map((x) => (
-          <button key={x} className={x === m ? 'active' : ''} onClick={() => setM(x)} data-testid={`mat-${x}`}>{MATERIAL_LABEL[x]}</button>
+        {FRAME_SETS.map((x) => (
+          <button key={x} className={x === m ? 'active' : ''} onClick={() => setM(x)} data-testid={`mat-${x}`}>{frameSetLabel(x)}{frameSetFiles(x).have < 12 ? ` (${frameSetFiles(x).have}/12)` : ''}</button>
         ))}
       </div>
       <FrameGallery key={`f-${m}`} m={m} />
@@ -34,10 +33,10 @@ export function Frames() {
   )
 }
 
-function FrameGallery({ m }: { m: Material }) {
+function FrameGallery({ m }: { m: string }) {
   return (
     <div className="panel">
-      <h3>{MATERIAL_LABEL[m]} frames <span className="tag">built in · locked</span></h3>
+      <h3>{frameSetLabel(m)} frames <span className="tag">built in · locked</span></h3>
       <p className="muted small">
         The collection's master frames. They ship with the studio and can't be uploaded or edited here; every frame shares the
         same art window and panels, so the layout below fits them all.
@@ -66,7 +65,7 @@ function FrameGallery({ m }: { m: Material }) {
 }
 
 /** Decoded bitmap of a built-in frame. */
-function useFrameBitmap(m: Material, v: Variant, wear: WearLook): ImageBitmap | null {
+function useFrameBitmap(m: string, v: Variant, wear: WearLook): ImageBitmap | null {
   const [bmp, setBmp] = useState<ImageBitmap | null>(null)
   useEffect(() => {
     let live = true
@@ -105,9 +104,9 @@ function useBitmap(key: string | undefined): ImageBitmap | null {
   return bmp
 }
 
-function LayoutEditor({ m }: { m: Material }) {
+function LayoutEditor({ m }: { m: string }) {
   const s = useStudio()
-  const saved = s.layouts[m]
+  const saved = s.layouts[m] ?? defaultLayout(m)
   const fontsVersion = useFontsVersion()
   const [layout, setLayout] = useState<Layout>(saved)
   const [sel, setSel] = useState<BoxId>('name')
@@ -126,9 +125,9 @@ function LayoutEditor({ m }: { m: Material }) {
   const artBmp = useBitmap(artSlot ? effectiveKey(artSlot) : undefined)
 
   const canvas = useRef<HTMLCanvasElement>(null)
-  const sampleCard: DealtCard = useMemo(() => ({
-    serial: 1234, fire: Math.max(1, s.global.nextFireNumber - 1), pack: 1, slot: 1, material: m, characterId: char?.id ?? '',
-    holoFrame: frameHolo, holoPicture: picHolo, holo: holoTypeOf(frameHolo, picHolo), edition: 12, editionOf: 43, grade,
+  const sampleCard: CardFace = useMemo(() => ({
+    fire: Math.max(1, s.global.nextFireNumber - 1), frameSet: m, typeName: frameSetLabel(m), characterId: char?.id ?? '',
+    holoFrame: frameHolo, holoPicture: picHolo, grade,
   }), [m, char?.id, frameHolo, picHolo, grade, s.global.nextFireNumber])
 
   useEffect(() => {
@@ -182,14 +181,14 @@ function LayoutEditor({ m }: { m: Material }) {
       text: Object.fromEntries(TEXT_FIELDS.map((f) => [f, { ...l.text[f], style: { ...l.text[f].style, font: css } }])) as Layout['text'],
       psa: { ...l.psa, style: { ...l.psa.style, font: css } },
     })
-    for (const other of MATERIALS) if (other !== m) await saveLayout(withFont(getStudio().layouts[other]))
+    for (const other of FRAME_SETS) if (other !== m) await saveLayout(withFont((getStudio().layouts[other] ?? defaultLayout(other))))
     setLayout(withFont)
     setSavedMsg('Font set on the other materials and saved. Save this one to keep it here too.')
   })
 
   const copyToAll = () => run(async () => {
-    if (!confirm(`Copy this ${MATERIAL_LABEL[m]} layout to all other materials (overwriting theirs)?`)) return
-    for (const other of MATERIALS) if (other !== m) await saveLayout({ ...layout, material: other })
+    if (!confirm(`Copy this ${frameSetLabel(m)} layout to all other frame sets (overwriting theirs)?`)) return
+    for (const other of FRAME_SETS) if (other !== m) await saveLayout({ ...layout, material: other })
     await saveLayout(layout)
     setSavedMsg('Copied to all materials and saved.')
   })
@@ -197,7 +196,7 @@ function LayoutEditor({ m }: { m: Material }) {
   return (
     <div className="panel">
       <div className="row wrap">
-        <h3>{MATERIAL_LABEL[m]} layout</h3>
+        <h3>{frameSetLabel(m)} layout</h3>
         <span className="spacer" />
         <Field label="Preview character">
           <select value={char?.id ?? ''} onChange={(e) => setCharId(e.target.value)}>
@@ -286,7 +285,7 @@ function LayoutEditor({ m }: { m: Material }) {
           </details>
           <div className="row wrap sticky-actions">
             <button className="primary" disabled={!dirty || busy} onClick={() => run(async () => { await saveLayout(layout); setSavedMsg('Saved.') })} data-testid="save-layout">
-              Save {MATERIAL_LABEL[m]} layout
+              Save {frameSetLabel(m)} layout
             </button>
             <button disabled={!dirty} onClick={() => setLayout(saved)}>Revert</button>
             <button onClick={() => setLayout({ ...defaultLayout(m), updatedAt: saved.updatedAt })}>Defaults</button>

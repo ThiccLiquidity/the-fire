@@ -110,7 +110,20 @@
   },
   {
     "type": "function",
-    "name": "CARDS_PER_CREDIT",
+    "name": "DEAD",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "DEFAULT_CARDS_PER_CREDIT",
     "inputs": [],
     "outputs": [
       {
@@ -123,13 +136,13 @@
   },
   {
     "type": "function",
-    "name": "DEAD",
+    "name": "DEFAULT_MAX_PER_TX",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "address",
-        "internalType": "address"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -169,19 +182,6 @@
         "name": "",
         "type": "address",
         "internalType": "contract ISaleFeed"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_PER_TX",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -565,6 +565,19 @@
   },
   {
     "type": "function",
+    "name": "cardsPerCredit",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "claimStarter",
     "inputs": [
       {
@@ -620,23 +633,23 @@
           },
           {
             "name": "packs",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "starters",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "plankOnly",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "walletLimit",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "starterWindow",
@@ -672,6 +685,11 @@
             "name": "holderRoot",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "maxPerTx",
+            "type": "uint32",
+            "internalType": "uint32"
           }
         ]
       }
@@ -734,23 +752,38 @@
           },
           {
             "name": "packs",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "starters",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "plankOnly",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "walletLimit",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "paidSold",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "startersClaimed",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "creditPacks",
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "starterWindow",
@@ -763,9 +796,24 @@
             "internalType": "uint32"
           },
           {
+            "name": "holderWindow",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "maxPerTx",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
             "name": "plankBurnBps",
             "type": "uint16",
             "internalType": "uint16"
+          },
+          {
+            "name": "closed",
+            "type": "bool",
+            "internalType": "bool"
           },
           {
             "name": "priceUsd",
@@ -778,34 +826,9 @@
             "internalType": "uint128"
           },
           {
-            "name": "holderWindow",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
             "name": "holderRoot",
             "type": "bytes32",
             "internalType": "bytes32"
-          },
-          {
-            "name": "paidSold",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "startersClaimed",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "creditPacks",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "closed",
-            "type": "bool",
-            "internalType": "bool"
           }
         ]
       }
@@ -1175,6 +1198,19 @@
   },
   {
     "type": "function",
+    "name": "setCardsPerCredit",
+    "inputs": [
+      {
+        "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setFeeds",
     "inputs": [
       {
@@ -1373,6 +1409,19 @@
   },
   {
     "type": "event",
+    "name": "CardsPerCreditSet",
+    "inputs": [
+      {
+        "name": "cards",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "CreditsUsed",
     "inputs": [
       {
@@ -1438,23 +1487,23 @@
           },
           {
             "name": "packs",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "starters",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "plankOnly",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "walletLimit",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "starterWindow",
@@ -1490,6 +1539,11 @@
             "name": "holderRoot",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "maxPerTx",
+            "type": "uint32",
+            "internalType": "uint32"
           }
         ]
       }

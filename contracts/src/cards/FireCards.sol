@@ -6,7 +6,7 @@ import {ERC2981} from "openzeppelin-contracts/contracts/token/common/ERC2981.sol
 import {Ownable2Step, Ownable} from "openzeppelin-contracts/contracts/access/Ownable2Step.sol";
 import {Base64} from "openzeppelin-contracts/contracts/utils/Base64.sol";
 import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
-import {CardRules} from "./CardRules.sol";
+import {IDealer} from "./IDealer.sol";
 
 interface IRandomnessSource {
     function request() external returns (uint256 requestId);
@@ -21,43 +21,41 @@ interface IFirePacks {
 
 /**
  * @title FireCards
- * @notice The cards. Every card is a unique ERC-721 (token id = its global serial).
+ * @notice The cards. Every card is a unique ERC-721 (token id = its global serial). This contract is the permanent
+ *         part: the cards, the opening queue, randomness, serials, editions, PDA grades and the metadata. What a
+ *         Series' cards are is up to its dealer (IDealer; the first one is RecipeDealer), set per Series by the owner
+ *         and fixed once the Series' first pack is minted.
  *
  *         How a pack is opened:
- *         1. When a Series goes out, the seller closes it: the contract freezes the pack count and works out the Series'
- *            pool from that count and the Series' Diamond setting (CardRules.computePool, ported exactly from the
- *            studio). Each Series stands alone: nothing carries over from earlier Series.
- *         2. A holder calls open(): their sealed pack is burned and fresh drand randomness is requested. Nothing about
- *            the pack existed before this; its cards depend on randomness that doesn't exist yet. (The leftover
- *            pool is public, so the very last pack of a Series gets exactly what's left: a cost of exact totals.)
- *         3. When the randomness arrives, anyone calls process(maxOpens) (the site or the keeper, right away).
- *            Packs are dealt strictly in the order they were opened, each drawing its 6 cards from what is left of
- *            the Series' pool while keeping the pack guarantees (slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6
- *            Fire-or-better). The result of a pack depends only on the random words and the order of open() calls,
- *            so nobody can gain by choosing when to process, and the Series' totals come out exact.
+ *         1. When a Series goes out, the seller closes it: the pack count freezes. Its dealer works out the pool
+ *            from that count (for RecipeDealer, from the Series' recipe). Each Series stands alone.
+ *         2. A holder calls open(): their sealed packs are burned and fresh drand randomness is requested. Nothing
+ *            about the packs existed before this; their cards depend on randomness that doesn't exist yet. (The
+ *            leftover pool is public, so the very last pack of a Series gets exactly what's left: a cost of exact
+ *            totals.)
+ *         3. When the randomness arrives, anyone calls process(maxCards) (the site or the keeper, right away).
+ *            Packs are dealt strictly in the order they were opened, up to `maxCards` cards per call, so a pack of
+ *            any size can be dealt over several calls. The result depends only on the random words and the order of
+ *            open() calls, never on who processes or how the work is split, and the Series' totals come out exact.
+ *         Each pack gets the next block of serials, in a shuffled order (a serial says nothing about its slot).
  *         Cards are minted without the receiver callback, so no holder's contract can stall the queue for others.
  *
- *         The owner configures each Series before its packs sell (its characters, names and categories, where its
- *         images live, and how many Diamonds it makes: at least 1), can move a Series' image folder until it locks
- *         it, and sets the royalty. Nobody can change a card once it is dealt.
+ *         The owner sets each Series' dealer and image folder before its packs sell, can move the image folder until
+ *         it locks the Series, and sets the royalty. Nobody can change a card once it is dealt.
  */
 contract FireCards is ERC721, ERC2981, Ownable2Step {
     using Strings for uint256;
 
-    uint256 public constant MAX_OPEN = 10;
     /// @dev An open's randomness can be asked for again only after a full day with no answer. drand publishes each
     ///      round's number ~30s before anyone delivers it, so a short wait would let an opener who dislikes the cards
     ///      they can already see re-roll while the keeper is down. Anyone (the site, the keeper) can deliver a word.
     uint256 public constant REREQUEST_AFTER = 1 days;
     uint96 public constant MAX_ROYALTY_BPS = 1_000;
-    uint256 public constant MAX_DIAMONDS = 1_000;
-    /// @notice Longest category text, in bytes (UTF-8).
-    uint256 public constant MAX_CATEGORY_BYTES = 32;
-    /// @notice Longest card name, in bytes (UTF-8).
-    uint256 public constant MAX_NAME_BYTES = 64;
     /// @dev Last resort if randomness is gone for good: an open with no answer this long can be cancelled and its
     ///      packs go back to the holder, sealed. (A week is far past any normal delay.)
     uint256 public constant CANCEL_AFTER = 7 days;
+    /// @dev Packs up to this many cards are shuffled whole in memory (cheap); bigger ones card by card (Feistel).
+    uint256 internal constant SHUFFLE_IN_MEMORY = 256;
 
     IFirePacks public immutable PACKS;
     IRandomnessSource public randomness;
@@ -66,46 +64,39 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     address public psa;
 
     struct FireInfo {
+        IDealer dealer;
         bool closed;
-        bool locked; // metadata frozen
-        uint8 characterCount;
-        uint32 packs; // frozen at close
-        uint32 dealt; // packs dealt so far
-        uint32 packsLeft; // packs not yet dealt (each still needs a Fire-or-better for slot 6)
-        uint32 fireLeft; // Fire-or-better cards left, by tier
-        uint32 charcoalLeft;
-        uint32 diamondLeft;
-        uint32 flexWoodLeft; // Wood beyond slot 4, available for slot 5
+        bool locked; // image folder frozen
+        uint32 cardsPerPack; // read from the dealer at the Series' first deal
+        uint64 packs; // frozen at close
+        uint64 dealt; // packs fully dealt
     }
 
     struct Open {
         address to;
-        uint32 fire;
-        uint16 count;
         uint64 requestedAt;
         bool ready;
+        uint64 fire;
+        uint64 count; // packs (0 once cancelled)
+        uint64 packsDone; // progress while dealing
+        uint32 cardInPack;
         uint256 requestId;
         uint256 word;
+        uint64 packBase; // first serial of the pack being dealt
     }
 
     mapping(uint256 fire => FireInfo) public fires;
-    mapping(uint256 fire => uint256[5]) public poolOf; // the Series' pool at close, for anyone to check
-    mapping(uint256 fire => string[]) internal _names;
-    mapping(uint256 fire => string[]) internal _categories;
     mapping(uint256 fire => string) public imagesBase;
-
-    /// @notice Diamonds the owner set for a Series (0 = not set, which means 1). See diamondsFor.
-    mapping(uint256 fire => uint256) public diamondsOf;
     uint256 public nextSerial = 1;
 
     Open[] public opens;
     uint256 public head; // next open to deal
     mapping(uint256 requestId => uint256) internal _openOf; // open index + 1
 
-    /// @dev Per card: fire (bits 0-31), material (32-39), holo frame (40), holo picture (41), character (48-55),
-    ///      edition (64-95), grade 0 = unrevealed (96-103).
+    /// @dev Per card: fire (bits 0-63), card type (64-95), character (96-127), edition (128-191), holo frame (192),
+    ///      holo picture (193), grade 0 = unrevealed (200-207), dealer extra (208-239).
     mapping(uint256 tokenId => uint256) internal _card;
-    mapping(bytes32 => uint32) internal _editions; // (fire, character, material) -> cards dealt so far
+    mapping(bytes32 => uint64) internal _editions; // (fire, character, type) -> cards dealt so far
     /// @notice A PDA reveal is waiting for its randomness: the card can't move until its grade is set, so nobody can
     ///         sell a card whose (already public) grade they know is bad as "Unrevealed".
     mapping(uint256 tokenId => bool) public gradePending;
@@ -118,14 +109,13 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     event GradePending(uint256 indexed tokenId, bool pending);
     event MetadataUpdate(uint256 tokenId); // ERC-4906
     event SellerSet(address seller);
-    event FireConfigured(uint256 indexed fire, uint256 characters, string imagesBase);
+    event DealerSet(uint256 indexed fire, address dealer);
     event FireLocked(uint256 indexed fire);
     event ImagesBaseSet(uint256 indexed fire, string imagesBase);
-    event DiamondsSet(uint256 indexed fire, uint256 diamonds);
-    event FireClosed(uint256 indexed fire, uint256 packs, uint256[5] pool);
+    event FireClosed(uint256 indexed fire, uint256 packs);
     event PacksOpened(uint256 indexed openIndex, address indexed holder, uint256 indexed fire, uint256 count, uint256 requestId);
     event OpenReady(uint256 indexed openIndex, uint256 word);
-    event CardDealt(uint256 indexed openIndex, uint256 indexed serial, uint256 fire, uint256 material, bool holoFrame, bool holoPicture, uint256 character);
+    event CardDealt(uint256 indexed openIndex, uint256 indexed serial, uint256 fire, uint256 cardType, bool holoFrame, bool holoPicture, uint256 character);
     event BatchMetadataUpdate(uint256 fromTokenId, uint256 toTokenId); // ERC-4906
 
     error AlreadySet();
@@ -137,7 +127,6 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     error FireIsLocked();
     error NotConfigured();
     error BadCount();
-    error NothingLeft();
     error NotStuck();
     error BadLength();
     error NotHolder();
@@ -147,7 +136,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     error BadText();
     error GradingInProgress();
     error RoyaltyTooHigh();
-    error BadDiamonds();
+    error BadDeal();
 
     constructor(address owner_, address packs_) ERC721("Omni Cards", "OMNICARD") Ownable(owner_) {
         if (packs_ == address(0)) revert ZeroAddress();
@@ -177,75 +166,32 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         emit PsaSet(p);
     }
 
-    /// @notice A Series' characters (names and categories, in the studio's order) and where its card images live
-    ///         (ipfs://<CID>/ or ar://<id>/). Allowed until the Series is locked or its first pack is minted,
-    ///         whichever comes first (setImagesBase can still move the image folder until the lock). Names are 0 to
-    ///         MAX_NAME_BYTES bytes; categories are free text, one per character (1 to MAX_CATEGORY_BYTES bytes), set
-    ///         in the studio.
-    function configureFire(uint256 fire, string[] calldata names, string[] calldata categories, string calldata base)
-        external
-        onlyOwner
-    {
-        if (fire > type(uint32).max) revert BadLength(); // cards store the Series in 32 bits
+    /// @notice Choose a Series' dealer (the contract that decides its cards), which must already have the Series set
+    ///         up. Allowed until the Series' first pack is minted, it is locked or it closes, whichever comes first.
+    function setDealer(uint256 fire, address dealer) external onlyOwner {
+        if (fire > type(uint64).max) revert BadLength(); // cards store the Series in 64 bits
         FireInfo storage f = fires[fire];
-        if (f.locked) revert FireIsLocked();
-        // once its packs are selling, a Series' characters are fixed (names can't change under buyers, and the number
-        // of characters caps suggestion picks)
-        if (PACKS.minted(fire) != 0) revert FireIsLocked();
-        _checkText(base);
-        for (uint256 i; i < names.length; i++) {
-            if (bytes(names[i]).length > MAX_NAME_BYTES) revert BadText();
-            _checkText(names[i]);
-        }
-        for (uint256 i; i < categories.length; i++) {
-            uint256 n = bytes(categories[i]).length;
-            if (n == 0 || n > MAX_CATEGORY_BYTES) revert BadText();
-            _checkText(categories[i]);
-        }
-        if (names.length == 0 || names.length > 255 || names.length != categories.length) revert BadLength();
-        if (f.closed && names.length != f.characterCount) revert BadLength(); // dealt cards point at these indexes
-        delete _names[fire];
-        delete _categories[fire];
-        for (uint256 i; i < names.length; i++) {
-            _names[fire].push(names[i]);
-            _categories[fire].push(categories[i]);
-        }
-        f.characterCount = uint8(names.length);
-        imagesBase[fire] = base;
-        emit FireConfigured(fire, names.length, base);
-        if (nextSerial > 1) emit BatchMetadataUpdate(1, nextSerial - 1);
+        if (f.locked || f.closed || PACKS.minted(fire) != 0) revert FireIsLocked();
+        if (dealer == address(0)) revert ZeroAddress();
+        if (!IDealer(dealer).ready(fire)) revert NotConfigured();
+        f.dealer = IDealer(dealer);
+        emit DealerSet(fire, dealer);
     }
 
-    /// @notice Move a Series' image folder (say, re-pinned elsewhere). Allowed until the Series is locked, even after
-    ///         its packs are selling: only where the images live changes, never what a card is.
+    /// @notice Where a Series' card images live (ipfs://<CID>/ or ar://<id>/). Allowed until the Series is locked, even
+    ///         after its packs are selling: only where the images live changes, never what a card is.
     function setImagesBase(uint256 fire, string calldata base) external onlyOwner {
-        FireInfo storage f = fires[fire];
-        if (f.locked) revert FireIsLocked();
-        if (f.characterCount == 0) revert NotConfigured();
+        if (fire > type(uint64).max) revert BadLength();
+        if (fires[fire].locked) revert FireIsLocked();
         _checkText(base);
         imagesBase[fire] = base;
         emit ImagesBaseSet(fire, base);
         if (nextSerial > 1) emit BatchMetadataUpdate(1, nextSerial - 1);
     }
 
-    /// @notice How many Diamonds a Series makes (1 to MAX_DIAMONDS; never more than one per pack). Fixed the same way
-    ///         its characters are: not once the Series is locked, its packs are selling, or it is closed.
-    function setDiamonds(uint256 fire, uint256 n) external onlyOwner {
-        if (n == 0 || n > MAX_DIAMONDS) revert BadDiamonds();
-        FireInfo storage f = fires[fire];
-        if (f.locked || f.closed || PACKS.minted(fire) != 0) revert FireIsLocked();
-        diamondsOf[fire] = n;
-        emit DiamondsSet(fire, n);
-    }
-
-    /// @notice The Diamond setting a Series uses: what the owner set, or 1.
-    function diamondsFor(uint256 fire) public view returns (uint256) {
-        uint256 d = diamondsOf[fire];
-        return d == 0 ? 1 : d;
-    }
-
+    /// @notice Freeze a Series' image folder (and with it everything else about the Series).
     function lockFire(uint256 fire) external onlyOwner {
-        if (fires[fire].characterCount == 0) revert NotConfigured();
+        if (address(fires[fire].dealer) == address(0)) revert NotConfigured();
         fires[fire].locked = true;
         emit FireLocked(fire);
     }
@@ -258,23 +204,17 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
 
     // ---------- the Series goes out ----------
 
-    /// @notice The seller closes a Series when it goes out: the pack count is frozen and the pool is worked out.
+    /// @notice The seller closes a Series when it goes out: the pack count is frozen. (Its dealer lays out the pool
+    ///         from it at the first deal; closing never depends on the dealer.)
     function closeFire(uint256 fire) external {
         if (msg.sender != seller) revert NotSeller();
         FireInfo storage f = fires[fire];
         if (f.closed) revert FireIsClosed();
-        if (f.characterCount == 0) revert NotConfigured();
+        if (address(f.dealer) == address(0)) revert NotConfigured();
         uint256 packs = PACKS.minted(fire);
-        uint256[5] memory pool = CardRules.computePool(packs, diamondsFor(fire));
         f.closed = true;
-        f.packs = uint32(packs);
-        f.packsLeft = uint32(packs);
-        f.fireLeft = uint32(pool[CardRules.FIRE]);
-        f.charcoalLeft = uint32(pool[CardRules.CHARCOAL]);
-        f.diamondLeft = uint32(pool[CardRules.DIAMOND]);
-        f.flexWoodLeft = uint32(pool[CardRules.WOOD] - packs);
-        poolOf[fire] = pool;
-        emit FireClosed(fire, packs, pool);
+        f.packs = uint64(packs);
+        emit FireClosed(fire, packs);
     }
 
     /// @notice The seller burns cards for their holder (the sale contract's burnCards, which counts them toward free
@@ -306,8 +246,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         if (grade == 0 || grade > 10) revert BadGrade();
         _requireOwned(serial);
         uint256 d = _card[serial];
-        if (uint8(d >> 96) != 0) revert AlreadyGraded();
-        _card[serial] = d | (grade << 96);
+        if (uint8(d >> 200) != 0) revert AlreadyGraded();
+        _card[serial] = d | (grade << 200);
         emit MetadataUpdate(serial);
     }
 
@@ -315,24 +255,29 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     function gradeInfo(uint256 serial) external view returns (bool exists, uint256 fire, uint256 grade) {
         if (_ownerOf(serial) == address(0)) return (false, 0, 0);
         uint256 d = _card[serial];
-        return (true, uint32(d), uint8(d >> 96));
+        return (true, uint64(d), uint8(d >> 200));
     }
 
     // ---------- opening ----------
 
     /// @notice Open `count` sealed packs from `fire` (burned now; cards are dealt once the randomness arrives).
     function open(uint256 fire, uint256 count) external returns (uint256 index) {
-        if (count == 0 || count > MAX_OPEN) revert BadCount();
+        if (count == 0 || count > type(uint64).max) revert BadCount();
         if (!fires[fire].closed) revert FireNotClosed();
         PACKS.burnForOpen(msg.sender, fire, count);
         uint256 id = randomness.request();
         index = opens.length;
-        opens.push(Open(msg.sender, uint32(fire), uint16(count), uint64(block.timestamp), false, id, 0));
+        Open storage o = opens.push();
+        o.to = msg.sender;
+        o.requestedAt = uint64(block.timestamp);
+        o.fire = uint64(fire);
+        o.count = uint64(count);
+        o.requestId = id;
         _openOf[id] = index + 1;
         emit PacksOpened(index, msg.sender, fire, count, id);
     }
 
-    /// @dev Randomness callback: only stores the word (cheap, can't fail); dealing happens in process(maxOpens).
+    /// @dev Randomness callback: only stores the word (cheap, can't fail); dealing happens in process(maxCards).
     function onRandomness(uint256 requestId, uint256 word) external {
         if (msg.sender != address(randomness)) revert NotRandomness();
         uint256 i = _openOf[requestId];
@@ -370,14 +315,50 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         emit OpenCancelled(index, o.to, o.fire, count);
     }
 
-    /// @notice Deal ready opens, oldest first, until one isn't ready or `maxOpens` are done. Anyone may call.
-    function process(uint256 maxOpens) public returns (uint256 done) {
+    /// @notice Deal ready opens, oldest first, until one isn't ready or `maxCards` cards are dealt. Anyone may call.
+    ///         A pack can be split across calls. Returns the cards dealt.
+    function process(uint256 maxCards) public returns (uint256 dealt) {
         uint256 h = head;
-        while (done < maxOpens && h < opens.length && opens[h].ready) {
-            Open memory o = opens[h];
-            for (uint256 j; j < o.count; j++) _dealPack(h, o.to, o.fire, uint256(keccak256(abi.encode(o.word, j))));
+        while (dealt < maxCards && h < opens.length) {
+            Open storage o = opens[h];
+            if (!o.ready) break;
+            uint256 count = o.count;
+            uint256 j = o.packsDone;
+            uint256 k = o.cardInPack;
+            uint256 base = k == 0 ? 0 : o.packBase;
+            if (j < count) {
+                FireInfo storage f = fires[o.fire];
+                Chunk memory c = Chunk(h, o.to, o.fire, 0, base, _perPack(o.fire, f));
+                uint256 per = c.per;
+                uint256 word = o.word;
+                while (j < count && dealt < maxCards) {
+                    if (k == 0) {
+                        c.base = nextSerial;
+                        nextSerial = c.base + per;
+                    }
+                    uint256 n = per - k < maxCards - dealt ? per - k : maxCards - dealt;
+                    c.seed = _r(word, j);
+                    _dealChunk(c, f.dealer, k, n);
+                    k += n;
+                    dealt += n;
+                    if (k == per) {
+                        k = 0;
+                        j++;
+                        uint64 done = f.dealt + 1;
+                        f.dealt = done;
+                        // the Series' last pack: every card of it now shows "k of N" as its Edition
+                        if (done == f.packs) emit BatchMetadataUpdate(1, nextSerial - 1);
+                    }
+                }
+                base = c.base;
+            }
+            if (j < count) {
+                o.packsDone = uint64(j);
+                o.cardInPack = uint32(k);
+                o.packBase = uint64(base);
+                break;
+            }
             h++;
-            done++;
         }
         head = h;
     }
@@ -387,138 +368,187 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         for (uint256 h = head; h < opens.length && opens[h].ready; h++) readyAtHead++;
     }
 
-    function _r(uint256 seed, uint256 i) private pure returns (uint256) {
-        return uint256(keccak256(abi.encode(seed, i)));
+    function _perPack(uint256 fire, FireInfo storage f) private returns (uint256 per) {
+        per = f.cardsPerPack;
+        if (per == 0) {
+            per = f.dealer.cardsPerPack(fire);
+            if (per == 0 || per > type(uint32).max) revert BadDeal();
+            f.cardsPerPack = uint32(per);
+        }
     }
 
-    /// @dev One pack: draws slot 6 from the Fire-or-better cards left, slot 5 from the flexible pile (the
-    ///      Fire-or-better cards not needed for later packs' slot 6, plus spare Wood), then character and holo per
-    ///      card, then mints the six in a shuffled order so a serial says nothing about its slot.
-    function _dealPack(uint256 openIndex, address to, uint256 fire, uint256 seed) private {
-        FireInfo storage f = fires[fire];
-        if (f.packsLeft == 0) revert NothingLeft();
-        uint256[6] memory mats = [uint256(0), 0, 0, CardRules.WOOD, 0, 0];
+    function _r(uint256 seed, uint256 i) private pure returns (uint256 v) {
+        assembly {
+            mstore(0, seed)
+            mstore(32, i)
+            v := keccak256(0, 64)
+        }
+    }
 
-        // slot 6: uniform over the Fire-or-better cards left
-        mats[5] = _drawBP(f, _r(seed, 6));
-        f.packsLeft--;
-        // slot 5: the flex pile holds (BP left - packs still needing slot 6) BP cards plus the spare Wood
-        uint256 bpLeft = uint256(f.fireLeft) + f.charcoalLeft + f.diamondLeft;
-        uint256 flexBP = bpLeft - f.packsLeft;
-        if (_r(seed, 5) % (flexBP + f.flexWoodLeft) < flexBP) {
-            mats[4] = _drawBP(f, _r(seed, 7));
+    struct Chunk {
+        uint256 openIndex;
+        address to;
+        uint256 fire;
+        uint256 seed;
+        uint256 base; // the pack's first serial
+        uint256 per; // cards per pack
+    }
+
+    /// @dev Cards `k` .. `k + n - 1` of one pack: the dealer decides them; each goes to its place in the pack's block of
+    ///      serials (a shuffle of the pack, the same however the dealing is split).
+    function _dealChunk(Chunk memory c, IDealer dealer, uint256 k, uint256 n) private {
+        uint256[] memory got = dealer.deal(c.fire, c.seed, k, n);
+        if (got.length != n) revert BadDeal();
+        uint256 key = _r(c.seed, 8);
+        if (c.per <= SHUFFLE_IN_MEMORY) {
+            uint256[] memory order = _shuffle(key, c.per);
+            for (uint256 i; i < n; i++) _mintCard(c, got[i], c.base + order[k + i]);
         } else {
-            mats[4] = CardRules.WOOD;
-            f.flexWoodLeft--;
+            for (uint256 i; i < n; i++) _mintCard(c, got[i], c.base + _place(key, k + i, c.per));
         }
-        f.dealt++;
-        // the Series' last pack: every card of it now shows "k of N" as its Edition (these 6 included)
-        if (f.dealt == f.packs) emit BatchMetadataUpdate(1, nextSerial + 5);
+    }
 
-        // mint order: shuffle the six
-        uint256[6] memory order = [uint256(0), 1, 2, 3, 4, 5];
-        uint256 s = _r(seed, 8);
-        for (uint256 i = 5; i > 0; i--) {
-            uint256 k = (s >> (i * 8)) % (i + 1);
-            (order[i], order[k]) = (order[k], order[i]);
+    /// @dev A uniform shuffle of a pack's positions (Fisher-Yates), for packs small enough to shuffle whole each call.
+    function _shuffle(uint256 key, uint256 per) private pure returns (uint256[] memory order) {
+        order = new uint256[](per);
+        for (uint256 i; i < per; i++) order[i] = i;
+        for (uint256 i = per - 1; i > 0; i--) {
+            uint256 j = _r(key, i) % (i + 1);
+            (order[i], order[j]) = (order[j], order[i]);
         }
-        for (uint256 i; i < 6; i++) _mintCard(openIndex, to, fire, mats[order[i]], _r(seed, 100 + i), f.characterCount);
     }
 
-    function _drawBP(FireInfo storage f, uint256 r) private returns (uint256 m) {
-        uint256 total = uint256(f.fireLeft) + f.charcoalLeft + f.diamondLeft;
-        uint256 x = r % total;
-        if (x < f.fireLeft) { f.fireLeft--; return CardRules.FIRE; }
-        x -= f.fireLeft;
-        if (x < f.charcoalLeft) { f.charcoalLeft--; return CardRules.CHARCOAL; }
-        f.diamondLeft--;
-        return CardRules.DIAMOND;
+    function _mintCard(Chunk memory c, uint256 a, uint256 serial) private {
+        uint256 t = uint32(a);
+        uint256 character = uint32(a >> 32);
+        uint64 edition = ++_editions[keccak256(abi.encode(c.fire, character, t))];
+        _card[serial] = c.fire | (t << 64) | (character << 96) | (uint256(edition) << 128) | (((a >> 64) & 3) << 192)
+            | (uint256(uint32(a >> 96)) << 208);
+        _mint(c.to, serial); // no receiver callback: nobody can stall the queue
+        emit CardDealt(c.openIndex, serial, c.fire, t, (a >> 64) & 1 == 1, (a >> 65) & 1 == 1, character);
     }
 
-    function _mintCard(uint256 openIndex, address to, uint256 fire, uint256 material, uint256 seed, uint256 characters) private {
-        uint256 character = _r(seed, 1) % characters;
-        (bool hf, bool hp) = CardRules.rollHolo(material, _r(seed, 2), _r(seed, 3));
-        bytes32 key = keccak256(abi.encode(fire, character, material));
-        uint32 edition = ++_editions[key];
-        uint256 serial = nextSerial++;
-        _card[serial] = fire | (material << 32) | (uint256(hf ? 1 : 0) << 40) | (uint256(hp ? 1 : 0) << 41) | (character << 48)
-            | (uint256(edition) << 64);
-        _mint(to, serial); // no receiver callback: nobody can stall the queue
-        emit CardDealt(openIndex, serial, fire, material, hf, hp, character);
+    /// @dev Where card `i` of a bigger pack of `per` goes in the pack's block: a keyed 4-round Feistel shuffle of
+    ///      [0, 2^(2h)) walked back into [0, per). Stateless, so a pack dealt in pieces lands the same way.
+    function _place(uint256 key, uint256 i, uint256 per) private pure returns (uint256 x) {
+        if (per < 2) return 0;
+        uint256 half = (_bits(per - 1) + 1) / 2;
+        uint256 mask = (1 << half) - 1;
+        x = i;
+        do {
+            uint256 l = x >> half;
+            uint256 r = x & mask;
+            for (uint256 round; round < 4; round++) {
+                (l, r) = (r, l ^ (_r(key, (round << 128) | r) & mask));
+            }
+            x = (l << half) | r;
+        } while (x >= per);
     }
 
-    // ---------- reading cards ----------
+    function _bits(uint256 v) private pure returns (uint256 n) {
+        while (v != 0) {
+            v >>= 1;
+            n++;
+        }
+    }
+
+    // ---------- reading Series and cards ----------
+
+    /// @notice A Series is set up enough to sell: it has a dealer that has it, and it isn't closed.
+    function ready(uint256 fire) external view returns (bool) {
+        FireInfo storage f = fires[fire];
+        return address(f.dealer) != address(0) && !f.closed && f.dealer.ready(fire);
+    }
+
+    function isClosed(uint256 fire) external view returns (bool) {
+        return fires[fire].closed;
+    }
+
+    /// @notice Cards per pack of a Series (0 with no dealer yet).
+    function cardsPerPack(uint256 fire) external view returns (uint256) {
+        FireInfo storage f = fires[fire];
+        if (f.cardsPerPack != 0) return f.cardsPerPack;
+        return address(f.dealer) == address(0) ? 0 : f.dealer.cardsPerPack(fire);
+    }
+
+    function characterCount(uint256 fire) external view returns (uint256) {
+        IDealer d = fires[fire].dealer;
+        return address(d) == address(0) ? 0 : d.characterCount(fire);
+    }
 
     struct Card {
         uint256 fire;
-        uint256 material;
+        uint256 cardType; // index into the Series' types (its dealer's)
         bool holoFrame;
         bool holoPicture;
         uint256 character;
         uint256 edition;
         uint256 editionOf; // 0 until every pack of the Series is dealt
         uint256 grade; // 0 = unrevealed
+        uint256 extra; // dealer-defined
     }
 
     function cardOf(uint256 serial) public view returns (Card memory c) {
         _requireOwned(serial);
         uint256 d = _card[serial];
-        c.fire = uint32(d);
-        c.material = uint8(d >> 32);
-        c.holoFrame = (d >> 40) & 1 == 1;
-        c.holoPicture = (d >> 41) & 1 == 1;
-        c.character = uint8(d >> 48);
-        c.edition = uint32(d >> 64);
-        c.grade = uint8(d >> 96);
+        c.fire = uint64(d);
+        c.cardType = uint32(d >> 64);
+        c.character = uint32(d >> 96);
+        c.edition = uint64(d >> 128);
+        c.holoFrame = (d >> 192) & 1 == 1;
+        c.holoPicture = (d >> 193) & 1 == 1;
+        c.grade = uint8(d >> 200);
+        c.extra = uint32(d >> 208);
         FireInfo storage f = fires[c.fire];
-        if (f.dealt == f.packs) c.editionOf = _editions[keccak256(abi.encode(c.fire, c.character, c.material))];
+        if (f.dealt == f.packs) c.editionOf = _editions[keccak256(abi.encode(c.fire, c.character, c.cardType))];
     }
 
     function tokenURI(uint256 serial) public view override returns (string memory) {
         Card memory c = cardOf(serial);
-        string memory name = c.character < _names[c.fire].length ? _names[c.fire][c.character] : "";
+        IDealer.CardText memory t = fires[c.fire].dealer.cardText(c.fire, c.cardType, c.character, c.extra);
         string memory json = string.concat(
-            '{"name":"', _materialLabel(c.material), " ", name, " #", serial.toString(),
-            '","image":"', imagesBase[c.fire], imageFile(c),
-            '","attributes":', _attributes(c, name, serial), "}"
+            '{"name":"', t.typeName, " ", t.characterName, " #", serial.toString(),
+            '","image":"', imagesBase[c.fire], imageName(c.character, t.typeSlug, c.holoFrame, c.holoPicture, c.grade),
+            '","attributes":', _attributes(c, t, serial), "}"
         );
         return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }
 
-    /// @notice The card's shared image in its Series' image folder: c<character>-<material>-<holo>-<grade>.webp, where
-    ///         material is paper|wood|fire|coal|diamond, holo is none|frame|picture|full and grade is u (unrevealed) or
-    ///         1-10 (each grade has its own image, wear frame and PDA seal included). The Card Studio's export names
-    ///         files the same way.
-    function imageFile(Card memory c) public pure returns (string memory) {
+    /// @notice A card's shared image in its Series' image folder (see imageName).
+    function imageFile(uint256 serial) external view returns (string memory) {
+        Card memory c = cardOf(serial);
+        IDealer.CardText memory t = fires[c.fire].dealer.cardText(c.fire, c.cardType, c.character, c.extra);
+        return imageName(c.character, t.typeSlug, c.holoFrame, c.holoPicture, c.grade);
+    }
+
+    /// @notice Image file names: c<character>-<type slug>-<holo>-<grade>.webp, where holo is none|frame|picture|full and
+    ///         grade is u (unrevealed) or 1-10 (each grade has its own image, wear frame and PDA seal included). The
+    ///         Card Studio's export names files the same way.
+    function imageName(uint256 character, string memory slug, bool holoFrame, bool holoPicture, uint256 grade)
+        public
+        pure
+        returns (string memory)
+    {
         return string.concat(
-            "c", c.character.toString(), "-", _lower(c.material), "-", _holo(c.holoFrame, c.holoPicture), "-",
-            c.grade == 0 ? "u" : c.grade.toString(), ".webp"
+            "c", character.toString(), "-", slug, "-", _holo(holoFrame, holoPicture), "-",
+            grade == 0 ? "u" : grade.toString(), ".webp"
         );
     }
 
-    function _attributes(Card memory c, string memory name, uint256 serial) private view returns (string memory) {
+    function _attributes(Card memory c, IDealer.CardText memory t, uint256 serial) private pure returns (string memory) {
         string memory edition = c.editionOf == 0 ? c.edition.toString() : string.concat(c.edition.toString(), " of ", c.editionOf.toString());
-        string memory cat = c.character < _categories[c.fire].length ? _categories[c.fire][c.character] : "";
-        string memory head = string.concat( // in two parts: one concat of everything is too deep for the stack
-            '[{"trait_type":"Character","value":"', name,
-            '"},{"trait_type":"Category","value":"', cat,
-            '"},{"trait_type":"Material","value":"', _materialLabel(c.material),
+        string memory head_ = string.concat( // in two parts: one concat of everything is too deep for the stack
+            '[{"trait_type":"Character","value":"', t.characterName,
+            '"},{"trait_type":"Category","value":"', t.category,
+            '"},{"trait_type":"Material","value":"', t.typeName,
             '"},{"trait_type":"Holo","value":"', _holoLabel(c.holoFrame, c.holoPicture)
         );
         return string.concat(
-            head,
+            head_,
             '"},{"trait_type":"Series","value":', c.fire.toString(), ',"display_type":"number"},{"trait_type":"Edition","value":"', edition,
             '"},{"trait_type":"Serial","value":', serial.toString(), ',"display_type":"number"},{"trait_type":"PDA","value":"',
-            c.grade == 0 ? "Unrevealed" : string.concat("PDA ", c.grade.toString()), '"}]'
+            c.grade == 0 ? "Unrevealed" : string.concat("PDA ", c.grade.toString()), '"}', t.extraAttributes, "]"
         );
-    }
-
-    function _materialLabel(uint256 m) private pure returns (string memory) {
-        return ["Paper", "Wood", "Fire", "Coal", "Diamond"][m];
-    }
-
-    function _lower(uint256 m) private pure returns (string memory) {
-        return ["paper", "wood", "fire", "coal", "diamond"][m];
     }
 
     function _holo(bool f, bool p) private pure returns (string memory) {
@@ -535,7 +565,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
         if (from != address(0) && to != address(0) && gradePending[tokenId]) revert GradingInProgress();
     }
 
-    /// @dev Names, categories and the image folder go into JSON as-is: no quotes, backslashes or control characters.
+    /// @dev The image folder goes into JSON as-is: no quotes, backslashes or control characters.
     function _checkText(string calldata t) private pure {
         bytes calldata b = bytes(t);
         for (uint256 i; i < b.length; i++) {

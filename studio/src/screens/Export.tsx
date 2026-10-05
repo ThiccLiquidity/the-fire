@@ -1,24 +1,30 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { renderKey } from '../builder'
 import { Field, Notice, ProgressBar, useAction } from '../components'
 import { getBlob } from '../db'
 import { ZipWriter, blobBytes, downloadBlob } from '../files'
-import { effectiveDiamonds, type DealtCard } from '../deal'
-import { gridSize, lookFileName, lookOf, seriesGrid } from '../looks'
+import type { DealtCard } from '../deal'
+import { lookFileName, lookOf, seriesGrid } from '../looks'
 import { cardMetadata, metadataFileName } from '../metadata'
-import { clearPinataJwt, hasPinataJwt, metadataDirName, mockTransport, realTransport, setPinataJwt, uploadFire, type UploadFile } from '../pinata'
-import { sha256Hex } from '../prng'
+import {
+  clearPinataJwt, filesFingerprint, hasPinataJwt, metadataDirName, mockTransport, realTransport, setPinataJwt, uploadFire, type UploadFile,
+} from '../pinata'
 import { categoryProblem, nameProblem, normalizeCategory, normalizeName } from '../categories'
-import { MAX_CHARACTERS } from '../rules'
+import { checkRecipe, recipeJson } from '../recipe'
+import { artNeeds, buildGridKey, missingArt, missingFrames } from '../series'
 import { lastAssetChange, updateFire, useStudio } from '../store'
 import { BUILD_GRID_VERSION, fireStatus, type FireRecord } from '../types'
 import { refreshDevFlags, useDevFlags } from '../devFlags'
 
+/** A zip download is split into parts of about this size, so a very large Series never needs one giant zip in memory. */
+const ZIP_PART_BYTES = 1.5 * 1024 ** 3
+
+interface Check { label: string; ok: boolean; detail?: string }
+
 export function Export({ fire }: { fire: FireRecord }) {
   const s = useStudio()
   const flags = useDevFlags()
-  const names = Object.fromEntries(s.characters.map((c) => [c.id, c.name]))
-  const chars = Object.fromEntries(s.characters.map((c) => [c.id, c]))
+  const chars = useMemo(() => Object.fromEntries(s.characters.map((c) => [c.id, c])), [s.characters])
   const charOf = (id: string) => ({ id, name: chars[id]?.name ?? id, category: chars[id]?.category })
   const [busy, error, run] = useAction()
   const [progress, setProgress] = useState<{ value: number; label: string } | null>(null)
@@ -27,80 +33,116 @@ export function Export({ fire }: { fire: FireRecord }) {
   const [keySet, setKeySet] = useState(hasPinataJwt())
 
   const deal = fire.deal
-  const changed = deal ? lastAssetChange(deal.characterIds) : 0
-  const blockers: string[] = []
-  if (!deal) blockers.push('Lock the deal first (Deal tab).')
-  else {
-    if (deal.packs < 1 || !deal.cards.length) blockers.push('This Series has no packs: undo the lock, set the packs and deal again.')
-    if (deal.characterIds.length > MAX_CHARACTERS) blockers.push(`A Series has at most ${MAX_CHARACTERS} characters.`)
-    for (const id of deal.characterIds) {
-      const c = chars[id]
-      const np = c ? nameProblem(normalizeName(c.name)) : 'missing'
-      const cp = c ? categoryProblem(normalizeCategory(c.category ?? '')) : null
-      if (np) blockers.push(`Character "${c?.name ?? id}": name ${np} (Library).`)
-      else if (cp) blockers.push(`${c.name}: category ${cp} (Library).`)
-    }
-    if (!fire.approvedAt) blockers.push('Approve the samples first (Build & Review).')
-    else if (changed > fire.approvedAt) blockers.push('Assets changed after approval: re-approve on Build & Review.')
-    if (!fire.build) blockers.push('Build all images first (Build & Review).')
-    else if (fire.build.grid !== BUILD_GRID_VERSION || fire.build.format !== 'webp') {
-      blockers.push('This build is from an older version of the studio (sample looks only, or PNG): rebuild the full WEBP grid.')
-    } else {
-      const want = gridSize(deal.characterIds.length)
-      if (fire.build.count !== want) blockers.push(`Only ${fire.build.count} of ${want} images are built: rebuild.`)
-      if (changed > fire.build.builtAt) blockers.push('Assets changed after the build: rebuild.')
-    }
-  }
-  const ready = blockers.length === 0
-  /** The shared image file this card points at (the name FireCards.imageFile builds on-chain). */
-  const fileOf = (c: DealtCard) => lookFileName(lookOf(c), deal!.characterIds.indexOf(c.characterId))
+  const r = fire.recipe
+  const ids = deal?.characterIds ?? fire.characterIds
+  const recipeProblems = useMemo(() => checkRecipe(r), [r])
+  const frames = useMemo(() => missingFrames(r), [r])
+  const gridLen = useMemo(() => seriesGrid(fire.number, ids, r).length, [fire.number, ids, r])
+  const gridKey = useMemo(() => buildGridKey(r, ids), [r, ids])
+  const changed = lastAssetChange(ids)
 
-  /** The full grid, one file per image (209 per character), read from IndexedDB one at a time. The blobs stay
-   *  IndexedDB-backed, so this list doesn't hold the image bytes in memory. */
+  const charProblems: string[] = []
+  const needs = artNeeds(r)
+  for (const id of ids) {
+    const c = chars[id]
+    if (!c) { charProblems.push(`A character (${id}) no longer exists.`); continue }
+    const np = nameProblem(normalizeName(c.name))
+    const cp = categoryProblem(normalizeCategory(c.category ?? ''))
+    const miss = missingArt(c, needs)
+    if (np) charProblems.push(`"${c.name}": name ${np}`)
+    else if (cp) charProblems.push(`${c.name}: category ${cp}`)
+    else if (miss.length) charProblems.push(`${c.name}: missing ${miss.join(', ')} art`)
+  }
+  const b = fire.build
+  const buildDetail = !b ? 'Build all images (Build & Review).'
+    : b.grid !== BUILD_GRID_VERSION || b.format !== 'webp' ? 'This build is from an older version of the studio: rebuild.'
+    : b.gridKey !== gridKey ? 'The recipe or characters changed since the build: rebuild.'
+    : b.count !== gridLen ? `Only ${b.count.toLocaleString()} of ${gridLen.toLocaleString()} images are built: rebuild.`
+    : changed > b.builtAt ? 'Art, layouts or fonts changed after the build: rebuild.' : undefined
+  const checks: Check[] = [
+    { label: 'Recipe valid (the contract\'s checks)', ok: recipeProblems.length === 0, detail: recipeProblems[0]?.message },
+    { label: 'Frames for every card type', ok: frames.length === 0, detail: frames.map((m) => `${m.type}: ${m.missing.join(', ')}`).join('; ') },
+    { label: `Characters valid (${ids.length.toLocaleString()}: name, category, art for this recipe)`, ok: ids.length > 0 && charProblems.length === 0, detail: ids.length ? charProblems.slice(0, 3).join('; ') + (charProblems.length > 3 ? ` (+${charProblems.length - 3} more)` : '') : 'Pick characters (Series tab).' },
+    { label: 'Deal locked', ok: !!deal && deal.packs > 0, detail: !deal ? 'Lock the deal (Deal tab).' : deal.packs < 1 ? 'No packs: undo the lock, set the packs, deal again.' : undefined },
+    { label: 'Samples approved', ok: !!fire.approvedAt && changed <= fire.approvedAt, detail: !fire.approvedAt ? 'Approve on Build & Review.' : 'Assets changed after approval: re-approve.' },
+    { label: `Images built for the full grid (${gridLen.toLocaleString()})`, ok: !buildDetail, detail: buildDetail },
+  ]
+  const ready = checks.every((c) => c.ok)
+  const recipeReady = checks[0].ok && checks[2].ok
+  /** The shared image file this card points at (the name FireCards.imageName builds on-chain). */
+  const indexOf = useMemo(() => new Map(ids.map((id, i) => [id, i])), [ids])
+  const fileOf = (c: DealtCard) => lookFileName(lookOf(c, r), indexOf.get(c.characterId) ?? -1)
+
+  const recipeOut = (imagesCid?: string) => recipeJson(
+    fire.number, r,
+    ids.map((id) => ({ name: normalizeName(chars[id]?.name ?? ''), category: normalizeCategory(chars[id]?.category ?? '') })),
+    imagesCid ? `ipfs://${imagesCid}/` : undefined,
+  )
+
+  const downloadRecipe = () => run(async () => {
+    if (!recipeReady) throw new Error(checks[0].ok ? checks[2].detail : checks[0].detail)
+    downloadBlob(new Blob([JSON.stringify(recipeOut(fire.upload?.imagesCid), null, 1)], { type: 'application/json' }), `recipe-fire-${fire.number}.json`)
+  })
+
+  /** The full grid, one file per image, read from IndexedDB one at a time (the blobs stay disk-backed). */
   async function imageFiles(onEach?: (i: number, total: number) => void): Promise<UploadFile[]> {
     const out: UploadFile[] = []
-    const grid = seriesGrid(fire.number, deal!.characterIds)
+    const grid = seriesGrid(fire.number, deal!.characterIds, r)
     for (const g of grid) {
-      const b = await getBlob(renderKey(fire.number, g.key))
-      if (!b) throw new Error(`An image (${g.file}) is missing from the build; rebuild.`)
-      out.push({ name: g.file, blob: b })
+      const bl = await getBlob(renderKey(fire.number, g.key))
+      if (!bl) throw new Error(`An image (${g.file}) is missing from the build; rebuild.`)
+      out.push({ name: g.file, blob: bl })
       onEach?.(out.length, grid.length)
     }
     return out
   }
 
+  const fireJson = (imagesCid?: string) => JSON.stringify({
+    fire: fire.number, packs: deal!.packs, seed: deal!.seed, method: deal!.method,
+    characters: deal!.characterIds.map((id, i) => ({ index: i, id, name: chars[id]?.name, category: chars[id]?.category ?? '' })),
+    recipe: r, pool: Object.fromEntries(r.types.map((t, i) => [t.slug, deal!.pool[i]])), cardsPerPack: deal!.cardsPerPack,
+    firstSerial: deal!.firstSerial, lastSerial: deal!.nextSerial - 1, packContents: deal!.packContents, upload: fire.upload ?? null,
+    note: 'On-chain, recipe.json (contracts/script/ConfigureSeries.s.sol) sets the Series up: setRecipe, setCharacters, setDealer, setImagesBase (ipfs://<images CID>/), setOdds. tokenURI builds each card\'s JSON itself; metadata/ here is for preview and reference only. ' +
+      (imagesCid ? 'Its image fields point at the uploaded images folder.' : 'Its image fields are relative paths inside this zip until the images are uploaded.'),
+  }, null, 1)
+
   const downloadZip = () => run(async () => {
-    const zip = new ZipWriter()
-    const total = deal!.cards.length
-    let i = 0
     const imagesCid = fire.upload?.imagesCid
-    for (const f of await imageFiles((n, t) => { if (n % 50 === 0) setProgress({ value: n / t, label: `Zipping images ${n} / ${t}` }) })) {
-      zip.addStored(`images/${f.name}`, await blobBytes(f.blob))
-    }
+    const files = await imageFiles((n, t) => { if (n % 200 === 0) setProgress({ value: n / t, label: `Reading images ${n.toLocaleString()} / ${t.toLocaleString()}` }) })
+    let part = 1
+    let zip = new ZipWriter()
+    let size = 0
+    const total = files.reduce((n, f) => n + f.blob.size, 0)
+    const parts = Math.max(1, Math.ceil(total / ZIP_PART_BYTES))
+    const name = (p: number) => (parts > 1 ? `card-studio-fire-${fire.number}-part${p}-of-${parts}.zip` : `card-studio-fire-${fire.number}.zip`)
+    // part 1 carries the metadata, fire.json and recipe.json
+    zip.addText('fire.json', fireJson(imagesCid))
+    zip.addText('recipe.json', JSON.stringify(recipeOut(imagesCid), null, 1))
+    let i = 0
     for (const c of deal!.cards) {
       const img = fileOf(c)
-      const meta = cardMetadata(c, charOf(c.characterId), imagesCid ? `ipfs://${imagesCid}/${img}` : `images/${img}`)
+      const meta = cardMetadata(c, charOf(c.characterId), r.types[c.type]?.name ?? '?', imagesCid ? `ipfs://${imagesCid}/${img}` : `images/${img}`)
       zip.addText(`metadata/${metadataFileName(c)}`, JSON.stringify(meta, null, 2))
-      if (++i % 25 === 0) {
-        setProgress({ value: i / total, label: `Zipping ${i} / ${total}` })
-        await new Promise((r) => setTimeout(r, 0))
+      if (++i % 500 === 0) {
+        setProgress({ value: i / deal!.cards.length, label: `Metadata ${i.toLocaleString()} / ${deal!.cards.length.toLocaleString()}` })
+        await new Promise((res) => setTimeout(res, 0))
       }
     }
-    zip.addText('fire.json', JSON.stringify({
-      fire: fire.number, packs: deal!.packs, seed: deal!.seed, method: deal!.method, characters: deal!.characterIds.map((id) => ({ id, name: names[id], category: chars[id]?.category ?? '' })),
-      // the arguments for FireCards.configureFire, in the order the image files use (c0, c1, ...)
-      configureFire: {
-        fire: fire.number, names: deal!.characterIds.map((id) => names[id]),
-        categories: deal!.characterIds.map((id) => chars[id]?.category ?? ''), base: imagesCid ? `ipfs://${imagesCid}/` : null,
-      },
-      pool: deal!.pool, firstSerial: deal!.firstSerial, lastSerial: deal!.nextSerial - 1,
-      diamonds: effectiveDiamonds(deal!.diamonds ?? fire.diamonds), packContents: deal!.packContents, upload: fire.upload ?? null,
-      note: 'On-chain cards use only the images folder: configureFire.base (ipfs://<images CID>/) becomes imagesBase and tokenURI builds each card\'s JSON itself. metadata/ is for preview and reference only. ' +
-        (imagesCid ? 'Its image fields point at the uploaded images directory.' : 'Its image fields are relative paths inside this zip until the images are uploaded.'),
-    }, null, 1))
+    let n = 0
+    for (const f of files) {
+      if (size > 0 && size + f.blob.size > ZIP_PART_BYTES) {
+        setProgress({ value: n / files.length, label: `Finishing ${name(part)}...` })
+        downloadBlob(await zip.finish(), name(part))
+        part++
+        zip = new ZipWriter()
+        size = 0
+      }
+      zip.addStored(`images/${f.name}`, await blobBytes(f.blob))
+      size += f.blob.size
+      if (++n % 100 === 0) setProgress({ value: n / files.length, label: `Zipping images ${n.toLocaleString()} / ${files.length.toLocaleString()}${parts > 1 ? ` (part ${part} of ${parts})` : ''}` })
+    }
     setProgress({ value: 1, label: 'Finishing zip...' })
-    const blob = await zip.finish()
-    downloadBlob(blob, `card-studio-fire-${fire.number}.zip`)
+    downloadBlob(await zip.finish(), name(part))
     setProgress(null)
   })
 
@@ -116,15 +158,12 @@ export function Export({ fire }: { fire: FireRecord }) {
   const doUpload = async () => {
     setLog([])
     const say = (t: string) => setLog((l) => [...l, `${new Date().toLocaleTimeString()} ${t}`])
-    setProgress({ value: 0, label: 'Reading built cards...' })
-    const files = await imageFiles((i, t) => { if (i % 50 === 0) setProgress({ value: 0, label: `Reading built images ${i} / ${t}` }) })
-    // The images folder name carries a fingerprint of its contents, so "find an earlier finished upload by name" can
-    // only ever match an upload of exactly these files. The metadata folder is named after the images CID.
-    const imgFp = sha256Hex(files.map((f) => `${f.name}:${f.blob.size}`).join('|')).slice(0, 10)
-    const imagesDirName = `fire-${fire.number}-images-${imgFp}`
+    setProgress({ value: 0, label: 'Reading built images...' })
+    const files = await imageFiles((i, t) => { if (i % 200 === 0) setProgress({ value: 0, label: `Reading built images ${i.toLocaleString()} / ${t.toLocaleString()}` }) })
+    // The images folder name carries a fingerprint of its contents; the metadata folder is named after the images CID.
+    const imagesDirName = `fire-${fire.number}-images-${filesFingerprint(files)}`
     let current = { ...(fire.upload ?? {}) }
     if (current.imagesDir && current.imagesDir !== imagesDirName) {
-      // rebuilt since the saved upload: its CIDs belong to other images, so neither is reused
       say(`The images changed since the saved upload (${current.imagesDir}); uploading the new build.`)
       current = {}
     }
@@ -135,19 +174,22 @@ export function Export({ fire }: { fire: FireRecord }) {
       imagesDirName,
       makeMetadata: (cid) => deal!.cards.map((c) => ({
         name: metadataFileName(c),
-        blob: new Blob([JSON.stringify(cardMetadata(c, charOf(c.characterId), `ipfs://${cid}/${fileOf(c)}`), null, 2)], { type: 'application/json' }),
+        blob: new Blob([JSON.stringify(cardMetadata(c, charOf(c.characterId), r.types[c.type]?.name ?? '?', `ipfs://${cid}/${fileOf(c)}`), null, 2)], { type: 'application/json' }),
       })),
-      existing: { imagesCid: current.imagesCid, metadataCid: current.metadataCid },
+      existing: { imagesCid: current.imagesCid, metadataCid: current.metadataCid, pending: current.pending },
       save: async (patch) => {
         const now = Date.now()
+        const { pending, ...rest } = patch
         current = {
-          ...current, ...patch, format: 'webp', imagesDir: imagesDirName, mock: flags.mockPinata,
+          ...current, ...rest, format: 'webp', imagesDir: imagesDirName, mock: flags.mockPinata,
           ...(patch.imagesCid ? { imagesAt: now } : {}), ...(patch.metadataCid ? { metadataAt: now } : {}),
         }
+        if (pending === null) delete current.pending
+        else if (pending) current.pending = pending
         await updateFire(fire.number, { upload: current })
       },
       onStatus: say,
-      onProgress: (v) => setProgress({ value: v, label: `Uploading ${(v * 100).toFixed(0)}%` }),
+      onProgress: (v) => setProgress({ value: v, label: `Uploading ${(v * 100).toFixed(1)}%` }),
     }, transport)
     say(`Images CID ${result.imagesCid}, metadata CID ${result.metadataCid}`)
   }
@@ -163,25 +205,43 @@ export function Export({ fire }: { fire: FireRecord }) {
         <h2>Export &amp; Upload · Series {fire.number}</h2>
         <span className={`badge status-${fireStatus(fire)}`}>{fireStatus(fire)}</span>
       </div>
-      {!ready && <Notice kind="warn">{blockers.map((b) => <div key={b}>{b}</div>)}</Notice>}
+      <h3>Ready?</h3>
+      <ul className="checklist" data-testid="checklist">
+        {checks.map((c) => (
+          <li key={c.label} className={c.ok ? 'ok' : 'no'}>
+            <span className="mark">{c.ok ? 'OK' : 'NO'}</span> {c.label}
+            {!c.ok && c.detail && <div className="muted small">{c.detail}</div>}
+          </li>
+        ))}
+      </ul>
 
-      <h3>Download</h3>
-      <p className="muted small">A zip with images/ (the full grid, {deal ? gridSize(deal.characterIds.length) : 0} WEBP images, e.g. c0-wood-frame-u.webp or c0-coal-full-10.webp, the names the card contract expects), metadata/&lt;serial&gt;.json (ERC-721 style, one per card of the sample deal, pointing at its shared image; preview/reference only) and fire.json (the deal record and the configureFire arguments).</p>
-      <Notice kind="info">
-        On-chain, the cards use <b>only the images folder</b>: its <code>ipfs://&lt;images CID&gt;/</code> is the <code>base</code> passed
-        to FireCards.configureFire (stored as imagesBase), and tokenURI builds each card's JSON itself from imagesBase + the image
-        file name. The per-card metadata JSON is for preview and reference; it is not what wallets and marketplaces read.
-      </Notice>
+      <h3>recipe.json (sets the Series up on-chain)</h3>
+      <p className="muted small">
+        The file <code>contracts/script/ConfigureSeries.s.sol</code> reads (<code>RECIPE_JSON=recipe.json</code>): the card types,
+        slots, characters in image order and PDA odds, plus <code>imagesBase</code> once the images are uploaded. The script checks
+        it against the dealer and prints the owner's calls (setRecipe, setCharacters in batches, setDealer, setImagesBase, setOdds).
+      </p>
+      <div className="row wrap">
+        <button className="primary" disabled={!recipeReady || busy} onClick={downloadRecipe} data-testid="download-recipe">Download recipe.json</button>
+        {!fire.upload?.imagesCid && <span className="muted small">No images uploaded yet: imagesBase is left out (the script then leaves the image folder as is).</span>}
+      </div>
+
+      <h3>Download everything</h3>
+      <p className="muted small">
+        A zip with images/ (the full grid, {gridLen.toLocaleString()} WEBP images named as the card contract expects),
+        metadata/&lt;serial&gt;.json (one per card of the sample deal, preview only), fire.json (the deal record and the recipe)
+        and recipe.json. Big Series come in parts of about 1.5 GB (part 1 also holds the metadata and JSON).
+      </p>
       <button className="primary" disabled={!ready || busy} onClick={downloadZip} data-testid="download-zip">Download zip</button>
 
       <h3>Upload to Pinata (IPFS)</h3>
       <p className="muted small">
-        The JWT is kept in this tab's memory only: never saved, never logged. Reloading forgets it. Images go up as one
-        folder (the one that matters on-chain), then the preview metadata folder pointing at ipfs://&lt;images CID&gt;/&lt;file&gt;,
-        named fire-&lt;n&gt;-metadata-&lt;last 10 characters of the images CID&gt; so a rebuild never reuses old metadata.
-        Finished steps are saved on the Series and skipped if you run it again.
+        The JWT is kept in this tab's memory only: never saved, never logged. Reloading forgets it. It needs Pinata's Files
+        write permission. Each folder is packed here into one CAR file (its CID is worked out before upload) and sent in 50 MB
+        pieces that resume after a dropped connection or a reload; Pinata keeps exactly that folder, so its CID is the
+        images base. Images first (the folder used on-chain), then the preview metadata named after the images CID.
       </p>
-      {flags.mockPinata && <Notice kind="warn">Mock Pinata is ON (Data tab): nothing leaves this machine, CIDs are fake.</Notice>}
+      {flags.mockPinata && <Notice kind="warn">Mock Pinata is ON (Data tab): nothing leaves this machine; the CIDs are the real folder CIDs, but nothing is stored.</Notice>}
       <form className="row wrap" onSubmit={(e) => { e.preventDefault(); setPinataJwt(jwtInput); setJwtInput(''); setKeySet(hasPinataJwt()) }}>
         <Field label="Pinata JWT">
           <input type="password" autoComplete="off" value={jwtInput} onChange={(e) => setJwtInput(e.target.value)} placeholder={keySet ? 'key set for this session' : 'paste JWT'} data-testid="jwt" />
@@ -191,7 +251,7 @@ export function Export({ fire }: { fire: FireRecord }) {
       </form>
       <div className="row wrap">
         <button className="primary" disabled={!ready || busy || !keySet} onClick={upload} data-testid="upload">
-          {fire.upload?.imagesCid && !fire.upload.metadataCid ? 'Resume upload' : fire.upload?.metadataCid ? 'Upload (already done)' : 'Upload to Pinata'}
+          {fire.upload?.pending || (fire.upload?.imagesCid && !fire.upload.metadataCid) ? 'Resume upload' : fire.upload?.metadataCid ? 'Upload (already done)' : 'Upload to Pinata'}
         </button>
         {fire.upload && <button disabled={busy} onClick={resetUpload}>Forget CIDs</button>}
       </div>
@@ -201,14 +261,15 @@ export function Export({ fire }: { fire: FireRecord }) {
         <table className="mini" data-testid="cids">
           <tbody>
             <tr><td>Images CID</td><td><code>{fire.upload.imagesCid ?? '-'}</code></td></tr>
-            <tr><td>configureFire base (on-chain)</td><td><code data-testid="images-base">{fire.upload.imagesCid ? `ipfs://${fire.upload.imagesCid}/` : '-'}</code></td></tr>
+            <tr><td>imagesBase (on-chain, in recipe.json)</td><td><code data-testid="images-base">{fire.upload.imagesCid ? `ipfs://${fire.upload.imagesCid}/` : '-'}</code></td></tr>
             <tr><td>Metadata CID (preview only)</td><td><code>{fire.upload.metadataCid ?? '-'}</code>{fire.upload.imagesCid ? <span className="muted small"> {metadataDirName(fire.number, fire.upload.imagesCid)}/</span> : null}</td></tr>
+            {fire.upload.pending && <tr><td>Unfinished upload</td><td className="small">{fire.upload.pending.dir} ({(fire.upload.pending.size / 1024 / 1024).toFixed(1)} MB): resumes on the next upload</td></tr>}
             {fire.upload.mock && <tr><td colSpan={2}><span className="tag">mock upload</span></td></tr>}
           </tbody>
         </table>
       )}
       {log.length > 0 && <pre className="log" data-testid="upload-log">{log.join('\n')}</pre>}
-      {flags.mockPinata && flags.mockFailNext > 0 && <p className="muted small">Mock will fail the next {flags.mockFailNext} upload(s).</p>}
+      {flags.mockPinata && flags.mockFailNext > 0 && <p className="muted small">Mock will fail the next {flags.mockFailNext} upload(s) halfway.</p>}
     </section>
   )
 }

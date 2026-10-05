@@ -6,6 +6,8 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
+import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness} from "../Mocks.sol";
 import {InvRouter} from "./InvRouter.sol";
 
@@ -26,6 +28,7 @@ contract CardsHandler is Test {
     FireSale public sale;
     FirePacks public packs;
     FireCards public cards;
+    RecipeDealer public dealer;
     FirePsa public psa;
     MockERC20 public paper;
     MockERC20 public plank;
@@ -102,6 +105,7 @@ contract CardsHandler is Test {
         psaRng = new MockRandomness();
         packs = new FirePacks(owner);
         cards = new FireCards(owner, address(packs));
+        dealer = new RecipeDealer(owner, address(cards));
         cardRng.setFire(address(cards));
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
@@ -144,14 +148,14 @@ contract CardsHandler is Test {
     /// @dev Fire 1 sells out to the actors (10 packs each) and is opened and dealt, so everyone starts with 60 cards.
     function bootstrap() external {
         FireSale.DropConfig memory c = FireSale.DropConfig({start: uint64(time + 1), packs: 40, starters: 0, plankOnly: 0,
-            walletLimit: 10, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0)});
+            walletLimit: 10, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0});
         vm.prank(owner, owner);
         sale.configureDrop(1, c);
         hasDrop[1] = true;
         dropFires.push(1);
         _setTime(time + 1);
         for (uint256 i; i < actors.length; i++) _buyPlank(actors[i], 1, 10);
-        (bool closed,,,,,,,,,) = cards.fires(1);
+        (, bool closed,,,,) = cards.fires(1);
         require(closed, "bootstrap: fire 1 not closed");
         for (uint256 i; i < actors.length; i++) _open(actors[i], 1, 10);
         while (_cardReqs.length > 0) _deliverCard(0, uint256(keccak256(abi.encode("boot", _cardReqs.length))));
@@ -174,8 +178,12 @@ contract CardsHandler is Test {
         string[] memory names = new string[](n);
         string[] memory cats = new string[](n);
         for (uint256 i; i < n; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = string.concat("Cat ", vm.toString(i)); }
-        vm.prank(owner, owner);
-        cards.configureFire(fire, names, cats, "ipfs://x/");
+        vm.startPrank(owner, owner);
+        dealer.setRecipe(fire, StandardRecipe.build(1));
+        dealer.setCharacters(fire, names, cats);
+        cards.setDealer(fire, address(dealer));
+        cards.setImagesBase(fire, "ipfs://x/");
+        vm.stopPrank();
     }
 
     function _perEth() internal view returns (uint256) { return uint256(ethPx) * 1e10 / uint256(plankPx); }
@@ -475,25 +483,33 @@ contract CardsHandler is Test {
 
     function setOdds(uint256 fireSeed, uint256 seed) external at {
         uint256 fire = 1 + fireSeed % FIRES;
-        uint16[10] memory odds;
+        uint64[10] memory odds;
         uint256 left = 10_000;
         for (uint256 g; g < 9; g++) {
             uint256 o = uint256(keccak256(abi.encode(seed, g))) % (left + 1);
-            odds[g] = uint16(o);
+            odds[g] = uint64(o);
             left -= o;
         }
-        odds[9] = uint16(left);
+        odds[9] = uint64(left);
         vm.prank(owner, owner);
         try psa.setOdds(fire, odds) { calls["setOdds.ok"]++; } catch {}
     }
 
-    /// The Series' Diamond setting (small numbers, so it often exceeds the pack count and the cap kicks in).
+    /// The Series' Diamond setting (small numbers, so it often exceeds the pack count and the cap kicks in): a new
+    ///    Standard recipe, which only works until the Series' first pack.
     function setDiamonds(uint256 fireSeed, uint256 n) external at {
         calls["setDiamonds"]++;
         uint256 fire = 2 + fireSeed % (FIRES - 1);
+        n = bound(n, 1, 20);
         vm.prank(owner, owner);
-        try cards.setDiamonds(fire, bound(n, 1, 20)) { calls["setDiamonds.ok"]++; } catch {}
+        try dealer.setRecipe(fire, StandardRecipe.build(n)) {
+            diamondsOf[fire] = n;
+            calls["setDiamonds.ok"]++;
+        } catch {}
     }
+
+    /// The Diamond setting each Series was last given (1 by default).
+    mapping(uint256 => uint256) public diamondsOf;
 
     function endDrop(uint256 fireSeed) external at {
         calls["endDrop"]++;
@@ -515,7 +531,7 @@ contract CardsHandler is Test {
             for (uint256 j; j < FIRES; j++) {
                 uint256 fire = 1 + (fireSeed % FIRES + j) % FIRES;
                 uint256 bal = packs.balanceOf(a, fire);
-                (bool closed,,,,,,,,,) = cards.fires(fire);
+                (, bool closed,,,,) = cards.fires(fire);
                 if (bal == 0 || !closed) continue;
                 _open(a, fire, bound(count, 1, bal < 10 ? bal : 10));
                 return;
@@ -544,9 +560,10 @@ contract CardsHandler is Test {
         cardRng.fulfill(id, word);
     }
 
+    /// Any number of cards per call, so packs are often split across calls.
     function process(uint256 max) external at {
         calls["process"]++;
-        _process(bound(max, 1, 4));
+        _process(bound(max, 1, 40));
     }
 
     /// The site's keeper: delivers every outstanding word (in a random order) and deals everything.
@@ -559,30 +576,34 @@ contract CardsHandler is Test {
         _process(type(uint256).max);
     }
 
+    // a pack being dealt across process calls
+    uint256[6] internal _mats;
+    uint256 public inPack;
+    uint256 internal _packOpen;
+    uint256 internal _packFire;
+
     function _process(uint256 max) internal {
         vm.recordLogs();
-        cards.process(max);
+        uint256 n = cards.process(max);
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        uint256[6] memory mats;
-        uint256 inPack;
-        uint256 packOpen;
-        uint256 packFire;
+        uint256 seen;
         for (uint256 i; i < logs.length; i++) {
             if (logs[i].emitter != address(cards) || logs[i].topics[0] != DEALT) continue;
+            seen++;
             uint256 openIndex = uint256(logs[i].topics[1]);
-            (uint256 fire, uint256 material,,,) = abi.decode(logs[i].data, (uint256, uint256, bool, bool, uint256));
-            if (inPack == 0) { packOpen = openIndex; packFire = fire; }
-            if (openIndex != packOpen || fire != packFire) _flag("a pack's cards span opens or Fires");
-            if (material > 4) _flag("material out of range");
-            mats[inPack++] = material;
-            _ghostMat[fire][material] += 1;
+            (uint256 fire, uint256 cardType,,,) = abi.decode(logs[i].data, (uint256, uint256, bool, bool, uint256));
+            if (inPack == 0) { _packOpen = openIndex; _packFire = fire; }
+            if (openIndex != _packOpen || fire != _packFire) _flag("a pack's cards span opens or Fires");
+            if (cardType > 4) _flag("card type out of range");
+            _mats[inPack++] = cardType;
+            _ghostMat[fire][cardType] += 1;
             ghostCards[fire] += 1;
             if (inPack == 6) {
-                _checkPack(mats);
+                _checkPack(_mats);
                 inPack = 0;
             }
         }
-        if (inPack != 0) _flag("process dealt a partial pack");
+        if (seen != n || n > max) _flag("process count is off");
     }
 
     function _checkPack(uint256[6] memory mats) internal {

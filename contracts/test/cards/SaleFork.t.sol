@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
+import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {PlankUsdTwap} from "../../src/PlankUsdTwap.sol";
 import {MockERC20, MockMill} from "../Mocks.sol";
 
@@ -53,9 +55,13 @@ contract SaleForkTest is Test {
         string[] memory cats = new string[](1);
         for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         names[0] = "Test";
-        cards.configureFire(1, names, cats, "ipfs://x/");
+        RecipeDealer dealer = new RecipeDealer(address(this), address(cards));
+        dealer.setRecipe(1, StandardRecipe.build(1));
+        dealer.setCharacters(1, names, cats);
+        cards.setDealer(1, address(dealer));
+        cards.setImagesBase(1, "ipfs://x/");
         sale.configureDrop(1, FireSale.DropConfig({start: uint64(block.timestamp + 1), packs: 100, starters: 0, plankOnly: 0,
-            walletLimit: 50, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0)}));
+            walletLimit: 50, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0}));
         vm.warp(block.timestamp + 1);
 
         address buyer = address(0xA1);

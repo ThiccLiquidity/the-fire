@@ -2,7 +2,8 @@
  *  (HTMLCanvasElement or OffscreenCanvas) and in a worker (OffscreenCanvas). No React, no IndexedDB. */
 
 import type { DealtCard } from './deal'
-import { CARD_H, CARD_W, GRADE_COLOR, HOLO_LABEL, MATERIAL_LABEL, wearLookOf, type Material, type WearLook } from './rules'
+import type { Recipe } from './recipe'
+import { CARD_H, CARD_W, GRADE_COLOR, HOLO_LABEL, wearLookOf, type WearLook } from './rules'
 import type { Layout, OutputFormat, PsaBox, Rect, TextBox, TextStyle } from './types'
 import type { Ctx2D } from './wear'
 
@@ -14,10 +15,32 @@ export interface CardAssets {
   art: ImgSrc | null
 }
 
+/** What one image shows: a card type (its name and frame set), a holo look, a grade, a character and the Series. */
+export interface CardFace {
+  /** The frame set (frames.ts) the type uses: its frames, its layout and the character's art for it. */
+  frameSet: string
+  /** The type's name: printed on the card ("Material") and the first word of the card's name. */
+  typeName: string
+  holoFrame: boolean
+  holoPicture: boolean
+  grade?: number | null
+  fire: number
+  characterId: string
+}
+
+/** The face of a dealt (or stand-in) card under its Series' recipe. */
+export function faceOf(card: DealtCard, r: Recipe): CardFace {
+  const t = r.types[card.type]
+  return {
+    frameSet: t?.frameSet ?? 'paper', typeName: t?.name ?? '?', holoFrame: card.holoFrame, holoPicture: card.holoPicture,
+    grade: card.grade ?? null, fire: card.fire, characterId: card.characterId,
+  }
+}
+
 /** Everything printed on a card. Only what's shared by every card of the same look (looks.ts): no serial, no
  *  edition, no Series #. Those are in the metadata. */
 export interface CardView {
-  material: Material
+  frameSet: string
   name: string
   materialLabel: string
   categoryLabel: string
@@ -30,22 +53,22 @@ export interface CardView {
   pda10: boolean
 }
 
-export function cardView(card: Pick<DealtCard, 'material' | 'grade' | 'fire'>, characterName: string, category?: string): CardView {
+export function cardView(face: Pick<CardFace, 'frameSet' | 'typeName' | 'grade' | 'fire'>, characterName: string, category?: string): CardView {
   return {
-    material: card.material,
+    frameSet: face.frameSet,
     name: characterName,
-    materialLabel: MATERIAL_LABEL[card.material],
+    materialLabel: face.typeName,
     categoryLabel: category ?? '',
-    forgedLabel: `Forged · Series ${card.fire > 0 ? card.fire : 1}`,
-    psaValue: card.grade == null ? '?' : String(card.grade),
-    wear: wearLookOf(card.grade),
-    pda10: card.grade === 10,
+    forgedLabel: `Forged · Series ${face.fire > 0 ? face.fire : 1}`,
+    psaValue: face.grade == null ? '?' : String(face.grade),
+    wear: wearLookOf(face.grade),
+    pda10: face.grade === 10,
   }
 }
 
 /** "Paper Rabbit #123" */
-export function cardTitle(card: DealtCard, characterName: string): string {
-  return `${MATERIAL_LABEL[card.material]} ${characterName} #${card.serial}`
+export function cardTitle(typeName: string, characterName: string, serial: number): string {
+  return `${typeName} ${characterName} #${serial}`
 }
 
 export function holoLabel(card: Pick<DealtCard, 'holo'>): string {

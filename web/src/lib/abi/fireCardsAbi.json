@@ -30,58 +30,6 @@
   },
   {
     "type": "function",
-    "name": "MAX_CATEGORY_BYTES",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_DIAMONDS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_NAME_BYTES",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_OPEN",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "MAX_ROYALTY_BPS",
     "inputs": [],
     "outputs": [
@@ -216,7 +164,7 @@
             "internalType": "uint256"
           },
           {
-            "name": "material",
+            "name": "cardType",
             "type": "uint256",
             "internalType": "uint256"
           },
@@ -249,8 +197,51 @@
             "name": "grade",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "extra",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "cardsPerPack",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "characterCount",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -270,72 +261,6 @@
   },
   {
     "type": "function",
-    "name": "configureFire",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "names",
-        "type": "string[]",
-        "internalType": "string[]"
-      },
-      {
-        "name": "categories",
-        "type": "string[]",
-        "internalType": "string[]"
-      },
-      {
-        "name": "base",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "diamondsFor",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "diamondsOf",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "fires",
     "inputs": [
       {
@@ -345,6 +270,11 @@
       }
     ],
     "outputs": [
+      {
+        "name": "dealer",
+        "type": "address",
+        "internalType": "contract IDealer"
+      },
       {
         "name": "closed",
         "type": "bool",
@@ -356,44 +286,19 @@
         "internalType": "bool"
       },
       {
-        "name": "characterCount",
-        "type": "uint8",
-        "internalType": "uint8"
+        "name": "cardsPerPack",
+        "type": "uint32",
+        "internalType": "uint32"
       },
       {
         "name": "packs",
-        "type": "uint32",
-        "internalType": "uint32"
+        "type": "uint64",
+        "internalType": "uint64"
       },
       {
         "name": "dealt",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "packsLeft",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "fireLeft",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "charcoalLeft",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "diamondLeft",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "flexWoodLeft",
-        "type": "uint32",
-        "internalType": "uint32"
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -483,51 +388,48 @@
     "name": "imageFile",
     "inputs": [
       {
-        "name": "c",
-        "type": "tuple",
-        "internalType": "struct FireCards.Card",
-        "components": [
-          {
-            "name": "fire",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "material",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "holoFrame",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "holoPicture",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "character",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "edition",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "editionOf",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "grade",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
+        "name": "serial",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "imageName",
+    "inputs": [
+      {
+        "name": "character",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "slug",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "holoFrame",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "holoPicture",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "grade",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -571,6 +473,25 @@
         "name": "operator",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isClosed",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -680,16 +601,6 @@
         "internalType": "address"
       },
       {
-        "name": "fire",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "count",
-        "type": "uint16",
-        "internalType": "uint16"
-      },
-      {
         "name": "requestedAt",
         "type": "uint64",
         "internalType": "uint64"
@@ -700,6 +611,26 @@
         "internalType": "bool"
       },
       {
+        "name": "fire",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "count",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "packsDone",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "cardInPack",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
         "name": "requestId",
         "type": "uint256",
         "internalType": "uint256"
@@ -708,6 +639,11 @@
         "name": "word",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "packBase",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -777,41 +713,17 @@
   },
   {
     "type": "function",
-    "name": "poolOf",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "process",
     "inputs": [
       {
-        "name": "maxOpens",
+        "name": "maxCards",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
     "outputs": [
       {
-        "name": "done",
+        "name": "dealt",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -840,6 +752,25 @@
         "name": "",
         "type": "address",
         "internalType": "contract IRandomnessSource"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "ready",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -977,6 +908,24 @@
   },
   {
     "type": "function",
+    "name": "setDealer",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "dealer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setDefaultRoyalty",
     "inputs": [
       {
@@ -988,24 +937,6 @@
         "name": "bps",
         "type": "uint96",
         "internalType": "uint96"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setDiamonds",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "n",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -1283,7 +1214,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "material",
+        "name": "cardType",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1311,7 +1242,7 @@
   },
   {
     "type": "event",
-    "name": "DiamondsSet",
+    "name": "DealerSet",
     "inputs": [
       {
         "name": "fire",
@@ -1320,10 +1251,10 @@
         "internalType": "uint256"
       },
       {
-        "name": "diamonds",
-        "type": "uint256",
+        "name": "dealer",
+        "type": "address",
         "indexed": false,
-        "internalType": "uint256"
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -1343,37 +1274,6 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
-      {
-        "name": "pool",
-        "type": "uint256[5]",
-        "indexed": false,
-        "internalType": "uint256[5]"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "FireConfigured",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "characters",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "imagesBase",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
       }
     ],
     "anonymous": false
@@ -1686,7 +1586,7 @@
   },
   {
     "type": "error",
-    "name": "BadDiamonds",
+    "name": "BadDeal",
     "inputs": []
   },
   {
@@ -1697,11 +1597,6 @@
   {
     "type": "error",
     "name": "BadLength",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "BadPacks",
     "inputs": []
   },
   {
@@ -1924,11 +1819,6 @@
   {
     "type": "error",
     "name": "NotStuck",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NothingLeft",
     "inputs": []
   },
   {

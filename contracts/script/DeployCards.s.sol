@@ -6,6 +6,7 @@ import {FirePacks} from "../src/cards/FirePacks.sol";
 import {FireCards} from "../src/cards/FireCards.sol";
 import {FireSale} from "../src/cards/FireSale.sol";
 import {FirePsa} from "../src/cards/FirePsa.sol";
+import {RecipeDealer} from "../src/cards/RecipeDealer.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
 import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
@@ -43,8 +44,8 @@ interface ICardsPair {
 
 /**
  * Deploys every Omni card contract (see ../docs/cards-contracts.md and ../docs/omni-economy.md) and wires them:
- *   FirePacks (sealed packs), FireCards (cards), FireSale (the pack sale), FirePsa (PDA reveals),
- *   and a drand adapter for each of FireCards and FirePsa.
+ *   FirePacks (sealed packs), FireCards (cards), RecipeDealer (deals each Series from its recipe), FireSale (the pack
+ *   sale), FirePsa (PDA reveals), and a drand adapter for each of FireCards and FirePsa.
  * Checks every input before sending anything.
  *
  *   forge script script/DeployCards.s.sol --rpc-url $RPC --account deployer --sender <deployer address> --slow --broadcast \
@@ -55,7 +56,8 @@ interface ICardsPair {
  * Settings (.env.example, card contracts section):
  *   DRAND_ROUTER      the OpenDrandRouter from DeployInfra.s.sol (it has no owner)
  *   OWNER             the multisig (Safe) that will own everything. Afterwards it must call acceptOwnership() on
- *                     FirePacks, FireCards and FirePsa (Ownable2Step). FireSale is owned by OWNER from deployment.
+ *                     FirePacks, FireCards, RecipeDealer and FirePsa (Ownable2Step). FireSale is owned by OWNER from
+ *                     deployment.
  *                     A plain wallet is refused unless ALLOW_EOA_OWNER=true.
  *   ROYALTY_RECEIVER, ROYALTY_BPS (500 = 5%, max 1000)
  *   PACK_IMAGE_BASE   folder of the pack art (fire<N>.webp); can be set later
@@ -66,7 +68,9 @@ interface ICardsPair {
  *   V2_ROUTER         Uniswap V2 router (buys the PLANK that each sale burns)
  *   REVENUE_WALLET    gets 70% of every sale; BURN_WALLET gets the burn share when a PLANK swap can't go through
  *
- * Left for the owner afterwards, per Series: FireCards.configureFire, then FireSale.configureDrop (and pickSuggestions).
+ * Left for the owner afterwards, per Series (script/ConfigureSeries.s.sol builds these calls from the studio's recipe
+ * JSON): RecipeDealer.setRecipe and setCharacters (appendCharacters for long lists), FireCards.setDealer and
+ * setImagesBase, optionally FirePsa.setOdds; then FireSale.configureDrop (and pickSuggestions).
  */
 contract DeployCards is Script {
     struct Params {
@@ -91,6 +95,7 @@ contract DeployCards is Script {
     struct Deployed {
         FirePacks packs;
         FireCards cards;
+        RecipeDealer dealer;
         OpenVRFAdapter adapter;
         FireSale sale;
         FirePsa psa;
@@ -124,17 +129,20 @@ contract DeployCards is Script {
 
         console.log("FirePacks  ", address(d.packs));
         console.log("FireCards  ", address(d.cards));
+        console.log("RecipeDealer", address(d.dealer));
         console.log("FireSale   ", address(d.sale));
         console.log("FirePsa    ", address(d.psa));
         console.log("Adapter (cards)", address(d.adapter));
         console.log("Adapter (PDA)  ", address(d.psaAdapter));
-        console.log("Next: the OWNER multisig calls acceptOwnership() on FirePacks, FireCards and FirePsa.");
+        console.log("Next: the OWNER multisig calls acceptOwnership() on FirePacks, FireCards, RecipeDealer and FirePsa.");
     }
 
     /// @dev Split out so tests can run the exact same steps.
     function deploy(Params memory p, address deployer) public returns (Deployed memory d) {
         d.packs = new FirePacks(deployer);
         d.cards = new FireCards(deployer, address(d.packs));
+        d.dealer = new RecipeDealer(deployer, address(d.cards));
+        require(address(d.dealer.CARDS()) == address(d.cards) && address(d.dealer.PACKS()) == address(d.packs), "dealer wiring");
         d.adapter = new OpenVRFAdapter(p.router, address(d.cards));
         require(d.adapter.FIRE() == address(d.cards), "adapter points elsewhere");
         d.sale = new FireSale(FireSale.Config({
@@ -158,6 +166,7 @@ contract DeployCards is Script {
 
         d.packs.transferOwnership(p.owner);
         d.cards.transferOwnership(p.owner);
+        d.dealer.transferOwnership(p.owner);
         d.psa.transferOwnership(p.owner);
     }
 

@@ -4,25 +4,24 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { hasCategory, hasValidName, migrateCharacterCategory } from './categories'
 import { DEFAULT_KEY, keyMagentaBlob, type KeyOptions } from './chroma'
 import * as db from './db'
-import { FRAMES_UPDATED_AT } from './frames'
+import { FRAME_SETS, FRAMES_UPDATED_AT } from './frames'
 import { normalizeLayout } from './layoutDefaults'
-import { MATERIALS, type Material } from './rules'
+import { migrateFire, needsMigration } from './migrate'
 import type { Character, FireRecord, FontAsset, GlobalState, ImageSlot, Layout, Variant } from './types'
 
 export interface StudioData {
   loaded: boolean
   characters: Character[]
-  layouts: Record<Material, Layout>
+  /** By frame set (frames.ts FRAME_SETS). */
+  layouts: Record<string, Layout>
   fonts: FontAsset[]
   fires: FireRecord[]
   global: GlobalState
 }
 
 function emptyData(): StudioData {
-  const layouts = {} as Record<Material, Layout>
-  for (const m of MATERIALS) {
-    layouts[m] = normalizeLayout(m, undefined)
-  }
+  const layouts: Record<string, Layout> = {}
+  for (const m of FRAME_SETS) layouts[m] = normalizeLayout(m, undefined)
   return {
     loaded: false, characters: [], layouts, fonts: [], fires: [],
     global: { nextSerial: 1, nextFireNumber: 1 },
@@ -60,10 +59,17 @@ export async function loadStudio(): Promise<void> {
     if (k.startsWith('char:')) d.characters.push(v as Character)
     else if (k.startsWith('frame:')) continue // legacy uploaded frames: the frames are built in now (frames.ts)
     else if (k.startsWith('layout:')) {
-      const m = k.slice(7) as Material
-      if (MATERIALS.includes(m)) d.layouts[m] = normalizeLayout(m, v as Partial<Layout>)
+      const m = k.slice(7)
+      if (FRAME_SETS.includes(m)) d.layouts[m] = normalizeLayout(m, v as Partial<Layout>)
     } else if (k.startsWith('font:')) d.fonts.push(v as FontAsset)
-    else if (k.startsWith('fire:')) d.fires.push(v as FireRecord)
+    else if (k.startsWith('fire:')) {
+      // Series from before per-Series recipes get the Standard recipe (and their locked deal its type indexes)
+      if (needsMigration(v)) {
+        const f = migrateFire(v)
+        await db.putRecord(k, f)
+        d.fires.push(f)
+      } else d.fires.push(v as FireRecord)
+    }
     else if (k === 'global') {
       // older saves and backups also hold the rarity accumulators (no longer used: each Series stands alone); ignore them
       const { nextSerial, nextFireNumber, categoriesFree } = v as GlobalState
@@ -99,7 +105,7 @@ export async function saveCharacter(c: Character): Promise<void> {
 export async function deleteCharacter(id: string): Promise<void> {
   const c = data.characters.find((x) => x.id === id)
   if (!c) return
-  for (const m of MATERIALS) for (const v of ['normal', 'holo'] as Variant[]) {
+  for (const m of Object.keys(c.images)) for (const v of ['normal', 'holo'] as Variant[]) {
     const slot = c.images[m]?.[v]
     if (slot) await deleteSlotBlobs(slot)
   }
@@ -142,7 +148,7 @@ export async function imageSize(blob: Blob): Promise<{ width: number; height: nu
   return out
 }
 
-export async function setCharacterImage(charId: string, m: Material, v: Variant, file: Blob, fileName: string, forceKey?: boolean): Promise<void> {
+export async function setCharacterImage(charId: string, m: string, v: Variant, file: Blob, fileName: string, forceKey?: boolean): Promise<void> {
   const c = data.characters.find((x) => x.id === charId)
   if (!c) throw new Error('character not found')
   const { width, height } = await imageSize(file) // throws on non-images
@@ -170,7 +176,7 @@ async function processSlot(slot: ImageSlot, original?: Blob): Promise<ImageSlot>
   return { ...slot, processedKey, updatedAt: Date.now() }
 }
 
-export async function updateImageKey(charId: string, m: Material, v: Variant, opts: Partial<KeyOptions> & { keyMagenta?: boolean }): Promise<void> {
+export async function updateImageKey(charId: string, m: string, v: Variant, opts: Partial<KeyOptions> & { keyMagenta?: boolean }): Promise<void> {
   const c = data.characters.find((x) => x.id === charId)
   const slot = c?.images[m]?.[v]
   if (!c || !slot) return
@@ -178,7 +184,7 @@ export async function updateImageKey(charId: string, m: Material, v: Variant, op
   await saveCharacter({ ...c, images: { ...c.images, [m]: { ...c.images[m], [v]: next } } })
 }
 
-export async function removeCharacterImage(charId: string, m: Material, v: Variant): Promise<void> {
+export async function removeCharacterImage(charId: string, m: string, v: Variant): Promise<void> {
   const c = data.characters.find((x) => x.id === charId)
   const slot = c?.images[m]?.[v]
   if (!c || !slot) return
@@ -193,18 +199,30 @@ export function effectiveKey(slot: ImageSlot): string {
   return slot.keyMagenta && slot.processedKey ? slot.processedKey : slot.originalKey
 }
 
+/** Images in, over every frame set (normal + holo each). */
 export function completeness(c: Character): number {
   let n = 0
-  for (const m of MATERIALS) for (const v of ['normal', 'holo'] as Variant[]) if (c.images[m]?.[v]) n++
+  for (const m of FRAME_SETS) for (const v of ['normal', 'holo'] as Variant[]) if (c.images[m]?.[v]) n++
   return n
 }
 
-/** Can go into a Series: all 10 images, a usable name and a usable category (the contract's text rules). */
+/** Images a character can have: normal + holo for every frame set. */
+export function imageSlots(): number {
+  return FRAME_SETS.length * 2
+}
+
+/** Complete for every frame set, with a usable name and category (the contract's text rules). A Series only needs
+ *  the art its recipe uses (series.ts isReadyFor). */
 export function isReady(c: Character): boolean {
-  return completeness(c) === 10 && hasValidName(c) && hasCategory(c)
+  return completeness(c) === imageSlots() && hasValidName(c) && hasCategory(c)
 }
 
 // ---------- layouts, fonts ----------
+
+/** A frame set's layout (its default if none is saved). */
+export function layoutFor(frameSet: string): Layout {
+  return data.layouts[frameSet] ?? normalizeLayout(frameSet, undefined)
+}
 
 export async function saveLayout(layout: Layout): Promise<void> {
   const next = { ...layout, updatedAt: Date.now() }
@@ -284,13 +302,12 @@ export async function saveGlobal(g: GlobalState): Promise<void> {
  *  newer than this, or something approved has since changed. */
 export function lastAssetChange(characterIds?: string[]): number {
   let t = FRAMES_UPDATED_AT
+  const want = characterIds ? new Set(characterIds) : null
   for (const c of data.characters) {
-    if (characterIds && !characterIds.includes(c.id)) continue
+    if (want && !want.has(c.id)) continue
     t = Math.max(t, c.updatedAt)
   }
-  for (const m of MATERIALS) {
-    t = Math.max(t, data.layouts[m].updatedAt)
-  }
+  for (const l of Object.values(data.layouts)) t = Math.max(t, l.updatedAt)
   for (const f of data.fonts) t = Math.max(t, f.updatedAt)
   return t
 }
