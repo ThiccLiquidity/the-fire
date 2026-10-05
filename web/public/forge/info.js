@@ -9,7 +9,7 @@
     { id: 'paper', name: 'Paper', share: 0.5, holo: 0.05 },
     { id: 'wood', name: 'Wood', share: 0.3, holo: 0.1 },
     { id: 'fire', name: 'Fire', share: 0.15, holo: 0.5 },
-    { id: 'charcoal', name: 'Charcoal', share: 0.049, holo: 0.9 },
+    { id: 'charcoal', name: 'Coal', share: 0.049, holo: 0.9 },
     { id: 'diamond', name: 'Diamond', share: null, holo: 1 },
   ];
   MATS.forEach((m) => {

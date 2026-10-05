@@ -2,7 +2,7 @@
    Every other module reads and writes through window.Store and opens screens with window.Sheet. */
 (() => {
   const MATS = ['paper', 'wood', 'fire', 'charcoal', 'diamond'];
-  const MAT_LABEL = { paper: 'Paper', wood: 'Wood', fire: 'Fire', charcoal: 'Charcoal', diamond: 'Diamond' };
+  const MAT_LABEL = { paper: 'Paper', wood: 'Wood', fire: 'Fire', charcoal: 'Coal', diamond: 'Diamond' };
   // the demo cast: real card art, rendered by the Card Studio's own card builder into cards/<id>/<material>-<holo>-<grade|u>.webp
   const CHARS = { 'Bowling Ball': { id: 'bowling', category: 'Sports' }, Jellyfish: { id: 'jellyfish', category: 'Animal' }, Cactus: { id: 'cactus', category: 'Plant' } };
   const NAMES = Object.keys(CHARS);

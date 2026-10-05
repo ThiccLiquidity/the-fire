@@ -33,8 +33,8 @@
   const getPaperBtn = () => btn('Get PAPER', 'gold', () => (window.UI?.openGetPaper ? window.UI.openGetPaper() : toast('Get PAPER is coming soon')));
   const byId = (id) => S().cards.find((c) => c.id === id);
   const rarity = (c) => RANK[c.material] * 4 + HRANK[c.holo || 'none'];
-  // tiers that get the light leak (and a Share button): Legendary = any Diamond, full-holo Charcoal or Paper, any PDA 10;
-  // Epic = holo Charcoal (frame or picture), full-holo Fire or Wood. Everything else: null.
+  // tiers that get the light leak (and a Share button): Legendary = any Diamond, full-holo Coal or Paper, any PDA 10;
+  // Epic = holo Coal (frame or picture), full-holo Fire or Wood. Everything else: null.
   function tierOf(c) {
     const m = c.material, hl = c.holo || 'none';
     if (m === 'diamond' || c.grade === 10 || (hl === 'full' && (m === 'charcoal' || m === 'paper'))) return 'legendary';
@@ -346,6 +346,7 @@
           keep.style.clipPath = prog >= 1 ? 'polygon(0 0, 0 0, 0 0)' : dir > 0 ? region(px, 240) : region(0, px);
           torn.style.transformOrigin = P([px, yAt(px)]);
           torn.style.transform = reduced() ? '' : `translateY(${-prog * 5}px) rotate(${-dir * (3 + prog * 24)}deg)`;
+          if (reduced()) torn.style.opacity = 0; // reduced motion: the torn piece doesn't lift away, it's simply gone, so the cards show inside
           const seg = pts.filter(([x]) => (dir > 0 ? x < px : x > px));
           edge.querySelector('polyline').setAttribute('points', [...seg, [px, yAt(px)]].filter(([x]) => x >= 11 && x <= 229).map((q) => q.join(',')).join(' ')); // inside the crimped sides
           hint.hidden = prog > 0;
@@ -541,7 +542,7 @@
       return sv;
     }
 
-    // a Legendary card (Diamond, full-holo Charcoal or Paper, PDA 10): flash, a burst of sparks, then settle
+    // a Legendary card (Diamond, full-holo Coal or Paper, PDA 10): flash, a burst of sparks, then settle
     const BM_SPARKS = { dia: ['#ffffff', '#d8f0ff', '#9fd8ff', '#c9b6ff', '#ffd27a', '#ff9a3c'], g10: ['#fff6d6', '#ffd27a', '#ffb347', '#ff7a2e', '#ffffff'],
       charcoal: ['#fff2e0', '#ffb070', '#ff6a2a', '#ff3a1a', '#ffd27a'], paper: ['#ffffff', '#fff4d6', '#ffe7a8', '#ffd27a', '#f6e8cf'] };
     function bigMoment(c, el, op) {
