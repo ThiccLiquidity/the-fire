@@ -2,7 +2,7 @@
 Plain-number model, prices held flat unless stated. Run: python3 model.py > model_out.txt"""
 import math
 
-# ---- facts (docs/addresses.md, docs/spec.md) ----
+# ---- facts (docs/addresses.md) ----
 ETH = 3333.0
 PLANK_P = 1.056e-9            # $ per PLANK at 1x
 SUPPLY = 888.42e12            # PLANK

@@ -267,18 +267,18 @@ contract CardsFuzzTest is Test {
             assertGe(c[4], 1, "at least one Diamond");
             assertEq(c[4], (d == 0 ? 1 : d) < n ? (d == 0 ? 1 : d) : n, "Diamond == min(setting, packs)");
         }
-        // Fire and Charcoal are their rounded shares unless the pack floor had to move cards
+        // Fire and Coal are their rounded shares unless the pack floor had to move cards
         uint256 fire = (15_000 * 6 * n + 50_000) / 100_000;
         uint256 charcoal = (4_900 * 6 * n + 50_000) / 100_000;
         uint256 raw = fire + charcoal + c[4];
         if (raw >= n && raw <= 2 * n) {
             assertEq(c[2], fire, "Fire share");
-            assertEq(c[3], charcoal, "Charcoal share");
+            assertEq(c[3], charcoal, "Coal share");
         } else if (raw > 2 * n) {
             assertEq(bp, 2 * n, "over the floor: trimmed to 2 x packs");
             assertLe(c[2], fire);
             assertLe(c[3], charcoal);
-            if (c[3] < charcoal) assertEq(c[2], 0, "Charcoal only trimmed once Fire is gone");
+            if (c[3] < charcoal) assertEq(c[2], 0, "Coal only trimmed once Fire is gone");
         } else {
             assertEq(bp, n, "under the floor: topped up to packs");
             assertEq(c[3], charcoal);
@@ -302,7 +302,7 @@ contract CardsFuzzTest is Test {
     }
 
     /// Each Series stands alone: the same inputs always give the same pool, and more Diamonds only take from Wood
-    /// (or, at tiny sizes, from Fire/Charcoal through the floor), never change Paper.
+    /// (or, at tiny sizes, from Fire/Coal through the floor), never change Paper.
     function testFuzz_computePoolMoreDiamonds(uint256 n, uint256 d) public view {
         n = bound(n, 1, 100_000);
         d = bound(d, 1, 999);

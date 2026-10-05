@@ -47,14 +47,14 @@ interface ICardsPair {
  * Sign with a Foundry keystore (cast wallet import deployer --interactive) or --ledger. Never --private-key.
  *
  * Settings (.env.example, card contracts section):
- *   DRAND_ROUTER      the OpenDrandRouter already on chain (shared with the Fire game; it has no owner)
+ *   DRAND_ROUTER      the OpenDrandRouter from DeployInfra.s.sol (it has no owner)
  *   OWNER             the multisig (Safe) that will own everything. Afterwards it must call acceptOwnership() on
  *                     FirePacks, FireCards and FirePsa (Ownable2Step). FireSale is owned by it from the start.
  *                     A plain wallet is refused unless ALLOW_EOA_OWNER=true.
  *   ROYALTY_RECEIVER, ROYALTY_BPS (500 = 5%, max 1000)
  *   PACK_IMAGE_BASE   folder of the pack art (fire<N>.webp); can be set later
- *   PAPER, PLANK, USDG, WETH, MILL (the Paper Press NFT): shared with the Fire game's settings above them in .env
- *   ETH_USD_FEED      Chainlink ETH/USD; PLANK_USD_FEED the PlankUsdTwap feed; PAPER_USD_FEED the PaperUsdTwap feed
+ *   PAPER, PLANK, USDG, WETH, MILL (the Paper Press NFT)
+ *   ETH_USD_FEED      Chainlink ETH/USD; PLANK_USD_FEED the PlankUsdTwap (DeployTwap.s.sol); PAPER_USD_FEED the PaperUsdTwap (DeployInfra.s.sol)
  *                     (empty until PAPER has a market: PDA reveals then cost a set number of PAPER)
  *   V2_ROUTER         Uniswap V2 router (buys the PLANK that each sale burns)
  *   REVENUE_WALLET    gets 70% of every sale; BURN_WALLET gets the burn share when a PLANK swap can't go through
@@ -168,8 +168,8 @@ contract DeployCards is Script {
             "REVENUE_WALLET and BURN_WALLET must be set and different");
         require(p.royaltyBps <= 1000, "ROYALTY_BPS above 10%");
 
-        // The randomness wiring is permanent: make sure DRAND_ROUTER really is the OpenDrandRouter (not, say, the
-        // Fire game's adapter printed next to it by the Fire game's deploy).
+        // The randomness wiring is permanent: make sure DRAND_ROUTER really is the OpenDrandRouter (not, say, an
+        // adapter or the PAPER feed printed next to it).
         (bool ok, bytes memory ret) = p.router.staticcall(abi.encodeCall(ICardsDrandRouter.requestFee, ()));
         require(ok && ret.length == 32 && abi.decode(ret, (uint256)) == 0, "DRAND_ROUTER is not the OpenDrandRouter");
         // The price math assumes these decimals.

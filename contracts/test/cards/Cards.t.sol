@@ -107,6 +107,13 @@ contract CardsTest is Test {
 
     // ---------- the rarity math matches the studio exactly ----------
 
+    function test_collectionNames() public view {
+        assertEq(cards.name(), "Omni Cards");
+        assertEq(cards.symbol(), "OMNICARD");
+        assertEq(packs.name(), "Omni Card Packs");
+        assertEq(packs.symbol(), "OMNIPACK");
+    }
+
     function test_poolParityWithStudio() public {
         PoolHarness h = new PoolHarness();
         string memory json = vm.readFile("test/cards/pool-fixture.json");

@@ -18,10 +18,10 @@ export const BUILTIN_FONTS: { label: string; css: string }[] = [
  *  defaults below. Bump when the default layout changes in a way old saved layouts must not keep. */
 export const LAYOUT_VERSION = 4
 
-/** Text colours per frame: Paper, Wood and Diamond have light panels (dark ink); Burning and Charcoal have dark panels
+/** Text colours per frame: Paper, Wood and Diamond have light panels (dark ink); Burning and Coal have dark panels
  *  (light ink). `window` fills the art window behind keyed art. */
 /** `seal` = the PDA seal's light and dark colours and its text colour, matched to each frame: pencil graphite on
- *  Paper, walnut on Wood, ember on Fire, black and silver on Charcoal, icy crystal on Diamond. */
+ *  Paper, walnut on Wood, ember on Fire, black and silver on Coal, icy crystal on Diamond. */
 const INK: Record<Material, { color: string; outline: string; outlineWidth: number; window: string; seal: [string, string, string] }> = {
   paper: { color: '#2b2622', outline: '#ffffff', outlineWidth: 0, window: '#f4f0e6', seal: ['#8a8a8a', '#2f2f31', '#f3efe6'] },
   wood: { color: '#3a2412', outline: '#ffffff', outlineWidth: 0, window: '#f1e4cc', seal: ['#9a6230', '#4a2810', '#f6e2c0'] },

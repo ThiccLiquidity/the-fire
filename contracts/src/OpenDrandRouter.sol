@@ -20,7 +20,7 @@ interface IRandomnessConsumer {
  *         back to get a different one: if one party sits on it, anyone else can deliver it.
  *
  *         Why not OpenVRF as deployed: its fulfill() is relayer-only. The one relayer could then withhold a word it
- *         doesn't like until the Fire re-rolls, choosing among draws.
+ *         doesn't like until the consumer re-requests, choosing among draws.
  */
 contract OpenDrandRouter is EvmnetRegistry {
     uint256 public constant GENESIS = 1727521075;

@@ -8,8 +8,8 @@ pragma solidity ^0.8.24;
  *
  *         Anyone can call `checkpoint()` at any time; the feed reports the average price between the
  *         two most recent checkpoints, which are always at least MIN_WINDOW apart (the first window opens
- *         MIN_WINDOW after deploy; until then the feed reports 0 and the Fire keeps its starting price). The keeper
- *         checkpoints whenever `due()`, so log prices follow PLANK within about an hour. A flash loan lives for one
+ *         MIN_WINDOW after deploy; until then the feed reports 0 and PLANK purchases wait). The keeper
+ *         checkpoints whenever `due()`, so prices follow PLANK within about an hour. A flash loan lives for one
  *         transaction and adds nothing to a time-weighted average; moving it means holding the pool off its price for
  *         half an hour against arbitrage. No owner, no admin.
  */
@@ -86,7 +86,7 @@ contract PlankUsdTwap {
         plankUsd18 = (avgWethPerPlankQ112 * uint256(ethUsd) * 1e10) >> 112;
     }
 
-    /// @notice Chainlink-compatible read. `updatedAt` is the window end; the Fire treats > 2 days as stale.
+    /// @notice Chainlink-compatible read. `updatedAt` is the window end; consumers apply their own staleness limit (FireSale: 2 hours).
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
         uint256 p = _price();
         return (0, int256(p), 0, last.ts, 0);

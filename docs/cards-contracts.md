@@ -75,7 +75,7 @@ wallet as owner unless told otherwise. A test runs the same steps.
 - **Before deploy day:** run the real-chain gas test from PowerShell:
   `$env:FORK_RPC = "https://rpc.mainnet.chain.robinhood.com"; forge test --match-path test/cards/SaleFork.t.sol -vv`
 
-The site has the ABIs: `web/src/data/fireCardsAbi.json`, `firePacksAbi.json`, `fireSaleAbi.json`, `firePsaAbi.json`.
+The site has the ABIs: `web/src/lib/abi/` (`fireCardsAbi.json`, `firePacksAbi.json`, `fireSaleAbi.json`, `firePsaAbi.json`), exported by `web/src/lib/cards.ts`.
 
 ## Money and the economy
 

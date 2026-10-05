@@ -1,7 +1,7 @@
 """Pack sale model for Omni ("Forged in Fire"). Shared by sim_packs.py and sim_cadence.py.
 
 Plain-language assumptions (all tunable below):
-- A Fire's sale window is 7 days (the Fire's life; spec says 3-20 nights depending on ticket volume).
+- A Series' sale window is 7 days.
 - The main crowd shows up in the first 48h (viral: most in the first ~3h). Each person visits 1 + ~1.5 return
   visits (2-12h apart) and buys on a visit with 60% chance (hesitation). Willingness to pay (WTP) is lognormal.
 - A smaller "late" crowd (40% of the main crowd) finds the drop on days 3-7. If packs are still on sale they buy
@@ -14,7 +14,7 @@ Plain-language assumptions (all tunable below):
 - Secondary floor: everyone left wanting a pack bids their WTP; flippers/bots list everything at 0.7-1.3x cost;
   15% of regular buyers' packs are listed at 0.6-1.2x their WTP. Aftermarket crowd is halved if not sold out. The book is matched; the floor is the cheapest listing left
   (or the last trade if nothing is left). Premium = floor / primary price.
-- Card values: Paper 1, Wood 2, Fire 5, Charcoal 20, Diamond 200 (relative). Rarity 50/30/15/4.9/0.1 gives an
+- Card values: Paper 1, Wood 2, Fire 5, Coal 20, Diamond 200 (relative). Rarity 50/30/15/4.9/0.1 gives an
   average card of 3.03 Paper-units, 18.2 per pack. Opened cards sell for 85% of a sealed pack in total (the
   gamble premium), so Paper-card floor = 0.85 x pack floor / 18.2.
 """

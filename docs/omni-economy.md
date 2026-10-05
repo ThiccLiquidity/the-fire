@@ -88,8 +88,8 @@ per-drop number, the holder-window snapshot root, and the picks.
   packs are never stranded. The Series closes with the packs that were minted.
 - **One drop at a time.** The next drop can only be set up once the current one has closed.
 - **Each Series stands alone (decided Oct 4).** Its cards come only from its own packs: Paper half, Fire 15%,
-  Charcoal 4.9%, Diamond as set (at least 1), Wood the rest. Nothing carries over between Series. Example: 167 packs
-  and 1 Diamond make 501 Paper, 301 Wood, 150 Fire, 49 Charcoal, 1 Diamond.
+  Coal 4.9%, Diamond as set (at least 1), Wood the rest. Nothing carries over between Series. Example: 167 packs
+  and 1 Diamond make 501 Paper, 301 Wood, 150 Fire, 49 Coal, 1 Diamond.
 - **Every purchase names its limits:** the most PLANK/USDG (or the ETH sent), and the most PAPER. If a number moved,
   the purchase fails and costs nothing.
 - **Price feeds and the router** can be replaced by the owner only between drops (a retired Chainlink feed, a moved

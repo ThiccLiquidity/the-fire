@@ -48,8 +48,8 @@ contract PlankUsdTwapTest is Test {
         uint256 p = _price();
         assertApproxEqRel(p, 1_055_800_000, 1e15, "~1.0558e-9 USD per PLANK, 18 dec");
         // $0.90 of PLANK at this price ~= 852M PLANK
-        uint256 plankPerTicket = 90_000_000 * 1e28 / p;
-        assertApproxEqRel(plankPerTicket, 852_000_000e18, 5e15);
+        uint256 plankFor90c = 90_000_000 * 1e28 / p;
+        assertApproxEqRel(plankFor90c, 852_000_000e18, 5e15);
     }
 
     function test_short_spike_barely_moves_the_average() public {

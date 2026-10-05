@@ -7,13 +7,13 @@ export const MATERIAL_LABEL: Record<Material, string> = {
   paper: 'Paper',
   wood: 'Wood',
   burning: 'Fire', // shown as Fire everywhere (renamed Oct 3); the id stays 'burning' so saved data keeps working
-  charcoal: 'Charcoal',
+  charcoal: 'Coal',
   diamond: 'Diamond',
 }
 
 /** Each Series stands alone (decided Oct 4): its pool is worked out from its own pack count, nothing carries over.
- *  Fire and Charcoal take their share of the Series' cards, in integer units of 1/SHARE_SCALE of a card:
- *  Fire 15%, Charcoal 4.9% (approved Oct 1). Paper is always half (3 per pack), Diamond is set per Series
+ *  Fire and Coal take their share of the Series' cards, in integer units of 1/SHARE_SCALE of a card:
+ *  Fire 15%, Coal 4.9% (approved Oct 1). Paper is always half (3 per pack), Diamond is set per Series
  *  (at least 1), and Wood takes the rest. See computePool in deal.ts. */
 export const SHARE_SCALE = 100_000
 export const SHARE_UNITS = {

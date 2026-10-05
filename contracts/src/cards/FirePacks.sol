@@ -36,6 +36,10 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     error ZeroAddress();
     error RoyaltyTooHigh();
 
+    /// @notice Collection name and symbol (ERC-1155 has none; marketplaces read these).
+    string public constant name = "Omni Card Packs";
+    string public constant symbol = "OMNIPACK";
+
     constructor(address owner_) ERC1155("") Ownable(owner_) {}
 
     // ---------- owner setup (each address once) ----------
@@ -92,7 +96,7 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     function uri(uint256 fire) public view override returns (string memory) {
         string memory n = fire.toString();
         bytes memory json = abi.encodePacked(
-            '{"name":"The Fire - Sealed Pack - Series ', n,
+            '{"name":"Omni Card Pack \u00b7 Series ', n,
             '","description":"A sealed pack of 6 cards from Series ', n,
             '. What is inside is decided only when it is opened.","image":"', packImageBase, 'fire', n,
             '.webp","attributes":[{"trait_type":"Series","value":', n, ',"display_type":"number"},{"trait_type":"State","value":"Sealed"}]}'

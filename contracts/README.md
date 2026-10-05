@@ -1,29 +1,26 @@
-# The Fire — contracts
+# Omni Forge — contracts
 
-Foundry project. `src/Fire.sol` is the game; `OpenDrandRouter.sol` + `OpenVRFAdapter.sol` bring in drand's number;
-`PlankUsdTwap.sol` and `PaperUsdTwap.sol` are the price feeds; `Profiles.sol` is names and pictures for wallets.
-None has an owner.
+Foundry project.
+
+- `src/cards/` — the card system: `FirePacks` (sealed packs, ERC-1155), `FireCards` (cards, ERC-721), `FireSale`
+  (the pack sale), `FirePsa` (PDA reveals), `CardRules`. "Fire" in the names is historical: a Fire is a Series.
+- `OpenDrandRouter.sol` + `OpenVRFAdapter.sol` bring in drand's number (one adapter each for FireCards and FirePsa).
+- `PlankUsdTwap.sol` (FireSale's PLANK price) and `PaperUsdTwap.sol` (FirePsa's PAPER price). No owner on any of
+  these four.
 
 ## Build and test
 
 ```shell
 forge build
-FOUNDRY_SOLC=/root/.foundry/bin/solc forge test --offline   # 103 tests
+forge test --offline --use ~/.foundry/solc/solc-0.8.28
 ```
 
-`--offline` and `FOUNDRY_SOLC` (a local solc 0.8.x) keep forge from downloading a compiler. On your own machine,
-`forge test` works as long as forge can fetch solc. Two suites run against a real drand proof and real Seaport 1.6 code.
+`--offline` and `--use` keep forge from downloading a compiler. On your own machine, `forge test` works as long as
+forge can fetch solc. `test/RealRouter.t.sol` runs against a real drand proof; `test/cards/SaleFork.t.sol` runs
+against the live chain when `FORK_RPC` is set.
 
 ## Deploy
 
-Full runbook: `../docs/deploy.md`. Inputs: copy `.env.example` to `.env`; every variable is explained at the top of
-`script/Deploy.s.sol`, which checks them all before it sends anything.
-
-Sign with a Foundry keystore (`cast wallet import deployer --interactive`) or `--ledger`:
-
-```shell
-forge script script/Deploy.s.sol --rpc-url $RPC --account deployer --sender <deployer address> --slow --broadcast \
-  --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
-```
-
+Full runbook: `../docs/deploy.md` (DeployTwap, then DeployInfra, then DeployCards). Inputs: copy `.env.example` to
+`.env`. Sign with a Foundry keystore (`cast wallet import deployer --interactive`) or `--ledger`.
 **Never use `--private-key`**, and never put a key in `.env` or this repo.

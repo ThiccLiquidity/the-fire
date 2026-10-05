@@ -185,6 +185,11 @@ const papers = [0, 1, 2].map((k) => { const im = img['s-paper' + k], [[ax, ay], 
   g.setTransform(a, b, cc, d, -(a * ax + cc * ay), -(b * ax + d * ay)); g.drawImage(im, 0, 0);
   g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-atop'; g.fillStyle = 'rgba(244,232,214,.55)'; g.fillRect(0, 0, W, H);
   return tinted(c, 'rgb(255,228,198)'); }); // the same warm cream as the press's roll
+// the belt's light as a shade: belt-light is grey (r = g = b), so multiplying by it is exactly black laid on at alpha 1 - light.
+// Made once here so the belt needs no 'multiply' per frame: if a phone drops that blend, the bare slats (near white) show.
+const BELT_SHADE = (() => { const L = img['belt-light']; if (!L) return null; const c = mk(L.width, L.height), g = c.getContext('2d'); g.drawImage(L, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height), p = d.data; for (let i = 0; i < p.length; i += 4) { p[i + 3] = 255 - p[i]; p[i] = p[i + 1] = p[i + 2] = 0; }
+  g.putImageData(d, 0, 0); return c; })();
 // the paper sheet's buffer (shaded to the roll as it wraps into the nip)
 const paperBuf = mk(200, 150);
 // steam: soft, wispy, noise-textured puffs made at load
@@ -353,11 +358,9 @@ function drawBelt(dt) { // one exact slat tiled (seamless), shifted along; the r
   const b = G.belt, P = b.period, off = beltX % P;
   ctx.save(); beltClip(); // ends at the drum's curved rim
   for (let x = b.x + off - P; x < b.x + b.w; x += P) ctx.drawImage(img.belt, x, b.y);
-  ctx.globalCompositeOperation = 'multiply'; ctx.drawImage(img['belt-light'], b.x, b.y);
-  ctx.globalCompositeOperation = 'source-over';
+  if (BELT_SHADE) ctx.drawImage(BELT_SHADE, b.x, b.y); // the room's light (plain source-over: no blend mode at draw time)
   drawPacks(dt);
-  ctx.globalCompositeOperation = 'multiply';
-  const dk = ctx.createLinearGradient(3392, 0, 3446, 0); dk.addColorStop(0, 'rgba(255,255,255,1)'); dk.addColorStop(1, 'rgba(70,60,55,1)'); // into the drum's shadow (packs too)
+  const dk = ctx.createLinearGradient(3392, 0, 3446, 0); dk.addColorStop(0, 'rgba(0,0,0,0)'); dk.addColorStop(1, 'rgba(0,0,0,.75)'); // into the drum's shadow (packs too)
   ctx.fillStyle = dk; ctx.fillRect(3392, 900, 60, b.y + b.h - 900);
   ctx.restore();
 }

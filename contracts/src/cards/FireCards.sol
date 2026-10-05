@@ -142,7 +142,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     error RoyaltyTooHigh();
     error BadDiamonds();
 
-    constructor(address owner_, address packs_) ERC721("The Fire Cards", "FIRECARD") Ownable(owner_) {
+    constructor(address owner_, address packs_) ERC721("Omni Cards", "OMNICARD") Ownable(owner_) {
         if (packs_ == address(0)) revert ZeroAddress();
         PACKS = IFirePacks(packs_);
     }
@@ -481,7 +481,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     }
 
     function _materialLabel(uint256 m) private pure returns (string memory) {
-        return ["Paper", "Wood", "Fire", "Charcoal", "Diamond"][m];
+        return ["Paper", "Wood", "Fire", "Coal", "Diamond"][m];
     }
 
     function _lower(uint256 m) private pure returns (string memory) {

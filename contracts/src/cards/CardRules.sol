@@ -5,9 +5,9 @@ pragma solidity ^0.8.28;
  * @notice The card game's fixed numbers, ported exactly from the Card Studio (studio/src/rules.ts and deal.ts). A parity
  *         test checks computePool against the studio's own output.
  *
- *         Materials: 0 Paper, 1 Wood, 2 Fire, 3 Charcoal, 4 Diamond.
+ *         Materials: 0 Paper, 1 Wood, 2 Fire, 3 Coal, 4 Diamond.
  *         Each Series stands alone (nothing carries from one Series to the next). Per Series of P packs (N = 6P
- *         cards): Paper 3P; Fire 15% and Charcoal 4.9% of N, rounded half up; Diamond as the owner set it (at least
+ *         cards): Paper 3P; Fire 15% and Coal 4.9% of N, rounded half up; Diamond as the owner set it (at least
  *         1, at most one per pack); Wood the rest; then the pack floor (see computePool).
  *         Pack (6 cards): slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6 Fire-or-better.
  *         Holo: two independent rolls (frame, picture), each at p = 1 - sqrt(1 - rate) for rates 5/10/50/90%, so the
@@ -50,9 +50,9 @@ library CardRules {
 
     /**
      * @notice A Series' pool sizes. Same steps as the studio's computePool (studio/src/deal.ts), integers only:
-     *         Paper = 3P; Fire = round_half_up(15% x N); Charcoal = round_half_up(4.9% x N); Diamond = min(diamonds, P)
+     *         Paper = 3P; Fire = round_half_up(15% x N); Coal = round_half_up(4.9% x N); Diamond = min(diamonds, P)
      *         with diamonds >= 1 (0 when P = 0); Wood = the rest. Then the pack floor: while Fire-or-better > 2P, move
-     *         a Fire (or, with none left, a Charcoal) to Wood; while it is < P, move a Wood to Fire. So Wood >= P. (Done
+     *         a Fire (or, with none left, a Coal) to Wood; while it is < P, move a Wood to Fire. So Wood >= P. (Done
      *         in one step each here; the result is the same.)
      */
     function computePool(uint256 packs, uint256 diamonds) internal pure returns (uint256[5] memory counts) {

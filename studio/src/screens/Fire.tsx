@@ -147,7 +147,7 @@ function SeriesMakes({ counts, packs, diamonds }: { counts: Record<Material, num
         </tbody>
       </table>
       <p className="muted small">
-        Card counts are exact: each Series stands alone. Paper is half, Fire 15%, Charcoal 4.9%, Diamond as set
+        Card counts are exact: each Series stands alone. Paper is half, Fire 15%, Coal 4.9%, Diamond as set
         {packs > 0 && diamonds > packs ? ` (capped at one per pack: ${counts.diamond})` : ''}, Wood the rest. Every pack still
         gets 3 Paper, a Wood and a Fire-or-better.
       </p>

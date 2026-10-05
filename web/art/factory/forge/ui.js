@@ -56,7 +56,7 @@
     <div class="what">
       <h3><b class="sw">SERIES 7</b> PACK<span>6 cards</span></h3>
       <table class="types" aria-label="Cards in a pack">
-        <tr><th scope="row">Material</th><td><span class="mat paper">Paper</span></td><td><span class="mat wood">Wood</span></td><td><span class="mat fire">Fire</span></td><td><span class="mat charcoal">Charcoal</span></td><td><span class="mat diamond">Diamond</span></td></tr>
+        <tr><th scope="row">Material</th><td><span class="mat paper">Paper</span></td><td><span class="mat wood">Wood</span></td><td><span class="mat fire">Fire</span></td><td><span class="mat charcoal">Coal</span></td><td><span class="mat diamond">Diamond</span></td></tr>
         <tr><th scope="row">Per pack</th><td>3</td><td>1–2</td><td colspan="3" class="span">1+ · rarest last</td></tr>
       </table>
     </div>

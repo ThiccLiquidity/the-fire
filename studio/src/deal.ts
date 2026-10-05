@@ -85,11 +85,11 @@ export function effectiveDiamonds(diamonds: number | undefined): number {
 /** Pool sizes for one Series of `packs` packs (N = 6 x packs cards). Each Series stands alone: no carry-over.
  *  Integer arithmetic only, the same steps as the contract's CardRules.computePool:
  *  a. Paper = 3 x packs.
- *  b. Fire = N x 15% and Charcoal = N x 4.9%, each rounded half up.
+ *  b. Fire = N x 15% and Coal = N x 4.9%, each rounded half up.
  *  c. Diamond = the Series' setting (at least 1), but never more than one per pack; 0 when there are no packs.
  *  d. Wood = the rest of the non-Paper half.
  *  e. Pack floor: Fire-or-better must be between packs and 2 x packs (so Wood >= packs). Over: move Fire (then
- *     Charcoal) to Wood one at a time. Under: move Wood to Fire. (Only matters for tiny Series or many Diamonds.) */
+ *     Coal) to Wood one at a time. Under: move Wood to Fire. (Only matters for tiny Series or many Diamonds.) */
 export function computePool(packs: number, diamonds = 1): Record<Material, number> {
   if (!Number.isInteger(packs) || packs < 0) throw new Error(`packs must be a whole number >= 0 (got ${packs})`)
   if (packs > 0xffff_ffff) throw new Error(`packs must fit in 32 bits, like the contract (got ${packs})`)
