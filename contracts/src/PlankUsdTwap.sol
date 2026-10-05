@@ -1,18 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/**
- * @title PlankUsdTwap
- * @notice A Chainlink-style PLANK/USD feed (**18 decimals** — PLANK is ~1e-9 USD, 8 decimals would round to 0) built from the Uniswap V2 PLANK/WETH pair's
- *         cumulative prices (a ~30-minute TWAP) and Chainlink ETH/USD.
- *
- *         Anyone can call `checkpoint()` at any time; the feed reports the average price between the
- *         two most recent checkpoints, which are always at least MIN_WINDOW apart (the first window opens
- *         MIN_WINDOW after deploy; until then the feed reports 0 and PLANK purchases wait). The keeper
- *         checkpoints whenever `due()`, so prices follow PLANK within about an hour. A flash loan lives for one
- *         transaction and adds nothing to a time-weighted average; moving it means holding the pool off its price for
- *         half an hour against arbitrage. No owner, no admin.
- */
 interface IUniswapV2Pair {
     function token0() external view returns (address);
     function token1() external view returns (address);
@@ -25,6 +13,18 @@ interface IEthUsdFeed {
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80);
 }
 
+/**
+ * @title PlankUsdTwap
+ * @notice A Chainlink-style PLANK/USD feed (**18 decimals** — PLANK is ~1e-9 USD, 8 decimals would round to 0) built from the Uniswap V2 PLANK/WETH pair's
+ *         cumulative prices (a ~30-minute TWAP) and Chainlink ETH/USD.
+ *
+ *         Anyone can call `checkpoint()` at any time; the feed reports the average price between the
+ *         two most recent checkpoints, which are always at least MIN_WINDOW apart (the first window opens
+ *         MIN_WINDOW after deploy; until then the feed reports 0 and PLANK purchases wait). The keeper
+ *         checkpoints whenever `due()`, so prices follow PLANK within about an hour. A flash loan lives for one
+ *         transaction and adds nothing to a time-weighted average; moving it means holding the pool off its price for
+ *         half an hour against arbitrage. No owner, no admin.
+ */
 contract PlankUsdTwap {
     IUniswapV2Pair public immutable PAIR;
     IEthUsdFeed public immutable ETH_USD;

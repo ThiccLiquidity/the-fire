@@ -25,7 +25,10 @@ export interface RenderJob {
   card: DealtCard
 }
 
-const LRU_SIZE = 16
+/** Decoded bitmaps kept per renderer (each frame is 1500 x 2100, about 12.6 MB decoded). A full-grid build renders
+ *  one look's 11 grade states in a row, which needs the art plus 6 frames (PDA 10 reuses the clean frame), so 10
+ *  covers a look and its neighbour without holding every frame of the Series. */
+const LRU_SIZE = 10
 
 export class CardRenderer {
   private cache = new Map<string, Promise<ImageBitmap | null>>()
@@ -55,7 +58,8 @@ export class CardRenderer {
 
   private frame(m: Material, v: Variant, wear: WearLook): Promise<ImageBitmap | null> {
     // a missing frame is flagged on the review screen and blocks approval; render without it meanwhile
-    const id = frameId(m, v, wear)
+    // PDA 10 (L1) is the pristine frame: decode it once, under the clean frame's id
+    const id = frameId(m, v, wear === 'L1' && this.bundle.frames[frameId(m, v, 'clean')] ? 'clean' : wear)
     const blob = this.bundle.frames[id]
     return this.bitmap(`frame:${id}`, async () => (blob ? createImageBitmap(blob) : null))
   }

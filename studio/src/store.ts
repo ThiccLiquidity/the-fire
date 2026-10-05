@@ -1,7 +1,7 @@
 /** App state, written through to IndexedDB on every change. A tiny external store consumed with useSyncExternalStore. */
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { hasCategory, migrateCharacterCategory } from './categories'
+import { hasCategory, hasValidName, migrateCharacterCategory } from './categories'
 import { DEFAULT_KEY, keyMagentaBlob, type KeyOptions } from './chroma'
 import * as db from './db'
 import { FRAMES_UPDATED_AT } from './frames'
@@ -199,9 +199,9 @@ export function completeness(c: Character): number {
   return n
 }
 
-/** Can go into a Series: all 10 images and a usable category. */
+/** Can go into a Series: all 10 images, a usable name and a usable category (the contract's text rules). */
 export function isReady(c: Character): boolean {
-  return completeness(c) === 10 && hasCategory(c)
+  return completeness(c) === 10 && hasValidName(c) && hasCategory(c)
 }
 
 // ---------- layouts, fonts ----------

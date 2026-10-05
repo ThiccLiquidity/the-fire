@@ -4,7 +4,7 @@
 |---|---|---|---|---|
 | Suggestion | 1 | none (fun) | 0 | no: nothing resellable |
 | Starter pack (50/drop, 1/wallet, PLANK allowlist) | 1 | $1 pack | $1.00 (only 50 PAPER/drop) | bots/sybils; allowlist + 1/wallet |
-| PSA reveal | min(5, $0.25 TWAP) | $0.25 fee | $0.05 | no: reveal is per card, not resellable |
+| PDA reveal | min(5, $0.25 TWAP) | $0.25 fee | $0.05 | no: reveal is per card, not resellable |
 | PAPER lane pack | min(100, $1 TWAP) | $1 pack | $0.01 | yes below $0.01 -> capped 25%/drop, 5/wallet |
 | Fixed 100 PAPER, uncapped | 100 | $1 pack | $0.01 | YES: at $0.002 a pack costs $0.20, whole sale drains |
 | Forging (burn N cards + PAPER) | - | - | - | breaks the exact per-Fire pool; skip |
@@ -67,7 +67,7 @@
 
 ## 5. If PAPER pumps (fixed costs vs TWAP-capped costs)
 
-| PAPER $ | Fixed 100/pack ($) | Capped lane (PAPER / $) | PSA fixed 5 ($) | PSA capped (PAPER) | Suggestion capped (PAPER) |
+| PAPER $ | Fixed 100/pack ($) | Capped lane (PAPER / $) | PDA fixed 5 ($) | PDA capped (PAPER) | Suggestion capped (PAPER) |
 |---|---|---|---|---|---|
 | 0.01 | $1 | 100 / $1.00 | $0.05 | 5 | 1 |
 | 0.05 | $5 | 20 / $1.00 | $0.25 | 5 | 1 |

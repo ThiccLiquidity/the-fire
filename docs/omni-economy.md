@@ -42,7 +42,8 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
   Press, or that held at least $69 of PLANK at a secret snapshot taken before the drop.
   - **Press holders:** each press lets in one wallet per drop, so a press can't be passed around.
   - **PLANK holders:** the snapshot is taken with `ops/snapshot` (README there). It prints one code, the "root",
-    which goes into the drop's settings. The site loads each buyer's proof automatically, so buyers do nothing extra.
+    which goes into the drop's settings. The live site is planned to load each buyer's proof automatically, so
+    buyers do nothing extra (the site isn't connected to the chain yet).
   - **Not sold out after 24 hours:** it opens to everyone.
 - **Regular wallets only while the wallet limit is on (48h).** MetaMask, Rabby, OKX and the like are regular wallets.
   A bot contract can't spin up throwaway wallets to sweep a drop in one transaction.
@@ -74,9 +75,10 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
     purchase still succeeds. A mint never fails because of PLANK. The burn wallet only ever buys and burns PLANK.
   - **70% goes to the revenue wallet.**
   - The contract keeps nothing.
-- **Gas (measured in tests, mock router):** about 93k for a 1-pack PLANK buy and 95k for ETH. A real Uniswap swap adds
-  about 60–90k more, so roughly 100k (PLANK) to 180k (ETH/USDG) per purchase, any number of packs. That's cents or less
-  on Robinhood Chain.
+- **Up to 50 packs per purchase** (`MAX_PER_TX`).
+- **Gas (measured in tests, mock router; `test_gas`):** about 96k for a 1-pack PLANK buy and 101k for ETH. A real
+  Uniswap swap adds about 60–90k more, so roughly 100k (PLANK) to 190k (ETH/USDG) per purchase, whether it is 1 pack
+  or 50. That's cents or less on Robinhood Chain.
 - **The swap's floor:** it must get at least 90% of the PLANK that the 30-minute average price says. If the pool is
   pumped or manipulated beyond that, the swap is skipped and the burn share goes to the burn wallet.
 - **If the drop never sells out:** the owner can end it (`endDrop`) once the wallet limit has lifted (48h), so the
@@ -133,11 +135,16 @@ Every PAPER spent anywhere is burned.
 |---|---|
 | Any pack (paid, starter or free) | 1 PAPER per pack |
 | Character suggestion | 1 PAPER. Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
-| PDA reveal | The most whole PAPER that stays at or under $0.25. Past $0.25 a PAPER, 1 PAPER, capped at $1: past $1 a PAPER, $1 worth (part of a PAPER). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1; $4 → 0.25. Uses `PaperUsdTwap` (PAPER already has a live pool, so point `PAPER_USD_FEED` at it on deploy); a set number only if the feed has no price yet. PAPER only. |
+| PDA reveal | The most whole PAPER that stays at or under $0.25. Past $0.25 a PAPER, 1 PAPER, capped at $1: past $1 a PAPER, $1 worth (part of a PAPER, never 0). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1; $4 → 0.25. Priced by `PaperUsdTwap`; a set number of PAPER until it has a price. PAPER only. |
 
-- **Get PAPER on the site:** a small box where you type how many PAPER you want, see the ETH price, and press one
-  button. It uses the existing KyberSwap swap with the 0.5% fee to the swap-fee wallet. In the buy panel it shows
-  up when someone is short ("You need 1 PAPER per pack. Get 3 PAPER for $0.15").
+- **The PAPER price feed.** PAPER already has a live pool, but `PAPER_USD_FEED` must be the deployed `PaperUsdTwap`
+  (step 2 of `docs/deploy.md`), never the pool itself. The feed adopts a PAPER/WETH or PAPER/USDG pool only once it
+  holds at least $1,000 on its dollar side (`MIN_LIQUIDITY_USD`) at every checkpoint for 20 hours, then reports its
+  first price one full 20-hour window later: about 40 hours after the first checkpoint. Until then reveals cost the
+  set number of PAPER. The owner can replace the feed later (`FirePsa.setPaperFeed`, only a feed for this PAPER).
+- **Get PAPER on the site (planned):** a small box where you type how many PAPER you want, see the ETH price, and
+  press one button. It would use the KyberSwap swap guard in `web/src/lib` with the 0.5% fee to the swap-fee wallet.
+  In the buy panel it would show up when someone is short ("You need 1 PAPER per pack. Get 3 PAPER for $0.15").
 - **Scale:** 167 packs × 2 drops a month burns about 334 PAPER a month against about 30,000 printed. This is a
   reason to hold PAPER more than a big burn.
 
@@ -179,7 +186,7 @@ original name, `FirePsa`.)
 | Revenue | 70% of every sale. Nothing else. The wallets can only be changed while no drop is set up or running. |
 | Burn | The 30% when a PLANK swap fails. Only ever buys and burns PLANK. |
 | Royalty | 5% resale royalty (ERC-2981), where marketplaces honour it. |
-| Swap fee | 0.5% of site swaps (existing `SWAP_FEE_WALLET`). |
+| Swap fee | 0.5% of site swaps, once the site's swap is live (`SWAP_FEE_WALLET` in `web/src/lib/config.ts`, not set yet). |
 
 ## Money, roughly
 

@@ -874,6 +874,11 @@
   },
   {
     "type": "error",
+    "name": "WrongFeed",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ZeroAddress",
     "inputs": []
   }

@@ -19,6 +19,12 @@ interface ICardsFeed {
 
 interface ICardsPlankTwap {
     function PAIR() external view returns (address);
+    function ETH_USD() external view returns (address);
+}
+
+interface ICardsPaperTwap {
+    function PAPER() external view returns (address);
+    function ETH_USD() external view returns (address);
 }
 
 interface ICardsV2Router {
@@ -49,13 +55,14 @@ interface ICardsPair {
  * Settings (.env.example, card contracts section):
  *   DRAND_ROUTER      the OpenDrandRouter from DeployInfra.s.sol (it has no owner)
  *   OWNER             the multisig (Safe) that will own everything. Afterwards it must call acceptOwnership() on
- *                     FirePacks, FireCards and FirePsa (Ownable2Step). FireSale is owned by it from the start.
+ *                     FirePacks, FireCards and FirePsa (Ownable2Step). FireSale is owned by OWNER from deployment.
  *                     A plain wallet is refused unless ALLOW_EOA_OWNER=true.
  *   ROYALTY_RECEIVER, ROYALTY_BPS (500 = 5%, max 1000)
  *   PACK_IMAGE_BASE   folder of the pack art (fire<N>.webp); can be set later
  *   PAPER, PLANK, USDG, WETH, MILL (the Paper Press NFT)
- *   ETH_USD_FEED      Chainlink ETH/USD; PLANK_USD_FEED the PlankUsdTwap (DeployTwap.s.sol); PAPER_USD_FEED the PaperUsdTwap (DeployInfra.s.sol)
- *                     (empty until PAPER has a market: PDA reveals then cost a set number of PAPER)
+ *   ETH_USD_FEED      Chainlink ETH/USD; PLANK_USD_FEED the PlankUsdTwap (DeployTwap.s.sol); PAPER_USD_FEED the PaperUsdTwap (DeployInfra.s.sol),
+ *                     never the PAPER pool itself. Optional: if empty, PDA reveals cost a set number of PAPER until the
+ *                     owner calls FirePsa.setPaperFeed. Both feeds must be built on this PAPER/PLANK and ETH_USD_FEED.
  *   V2_ROUTER         Uniswap V2 router (buys the PLANK that each sale burns)
  *   REVENUE_WALLET    gets 70% of every sale; BURN_WALLET gets the burn share when a PLANK swap can't go through
  *
@@ -168,8 +175,8 @@ contract DeployCards is Script {
             "REVENUE_WALLET and BURN_WALLET must be set and different");
         require(p.royaltyBps <= 1000, "ROYALTY_BPS above 10%");
 
-        // The randomness wiring is permanent: make sure DRAND_ROUTER really is the OpenDrandRouter (not, say, an
-        // adapter or the PAPER feed printed next to it).
+        // The randomness wiring is permanent: make sure DRAND_ROUTER returns a zero requestFee() like the
+        // OpenDrandRouter (not, say, an adapter or the PAPER feed printed next to it).
         (bool ok, bytes memory ret) = p.router.staticcall(abi.encodeCall(ICardsDrandRouter.requestFee, ()));
         require(ok && ret.length == 32 && abi.decode(ret, (uint256)) == 0, "DRAND_ROUTER is not the OpenDrandRouter");
         // The price math assumes these decimals.
@@ -178,6 +185,12 @@ contract DeployCards is Script {
         require(ICardsFeed(p.ethUsd).decimals() == 8, "ETH_USD_FEED must have 8 decimals (Chainlink ETH/USD)");
         require(ICardsFeed(p.plankUsd).decimals() == 18, "PLANK_USD_FEED must be the 18-decimal PlankUsdTwap");
         require(p.paperUsd == address(0) || ICardsFeed(p.paperUsd).decimals() == 18, "PAPER_USD_FEED must be the 18-decimal PaperUsdTwap");
+        // the feeds must be built on this PAPER, this PLANK pool and this ETH/USD feed
+        require(ICardsPlankTwap(p.plankUsd).ETH_USD() == p.ethUsd, "PLANK_USD_FEED uses a different ETH_USD_FEED");
+        if (p.paperUsd != address(0)) {
+            require(ICardsPaperTwap(p.paperUsd).PAPER() == p.paper, "PAPER_USD_FEED prices a different PAPER");
+            require(ICardsPaperTwap(p.paperUsd).ETH_USD() == p.ethUsd, "PAPER_USD_FEED uses a different ETH_USD_FEED");
+        }
         address pair = ICardsPlankTwap(p.plankUsd).PAIR();
         address t0 = ICardsPair(pair).token0();
         address t1 = ICardsPair(pair).token1();

@@ -93,12 +93,11 @@ contract PsaTest is Test {
         assertEq(c4.grade, 0, "untouched");
     }
 
-    function test_imageSwitchesToTheWearFrame() public {
-        assertTrue(_contains(cards.imageFile(cards.cardOf(1)), "-clean.webp"));
+    function test_imageSwitchesToTheGradesImage() public {
+        assertTrue(_contains(cards.imageFile(cards.cardOf(1)), "-u.webp"));
         _reveal(1, 1, 99);
         uint256 g = cards.cardOf(1).grade;
-        string memory wear = g == 10 ? "-l1.webp" : g == 1 ? "-l6.webp" : string.concat("-l", vm.toString(6 - g / 2), ".webp");
-        assertTrue(_contains(cards.imageFile(cards.cardOf(1)), wear));
+        assertTrue(_contains(cards.imageFile(cards.cardOf(1)), string.concat("-", vm.toString(g), ".webp")));
         cards.tokenURI(1); // still renders
     }
 
@@ -313,13 +312,64 @@ contract PsaTest is Test {
         psa.finish(i);
     }
 
-    function test_audit2_paperFeedCanBeSetOnceLater() public {
+    event PaperFeedSet(address feed);
+
+    function test_audit2_paperFeedCanBeSetLater() public {
+        paperFeed.setIds(address(paper), address(0));
         vm.prank(owner);
         psaNoFeed.setPaperFeed(address(paperFeed));
         assertEq(psaNoFeed.paperPerReveal(), 5e18); // from the feed now ($0.05)
+    }
+
+    function test_audit3_paperFeedCanBeReplaced() public {
+        paperFeed.set(0.01e18); // 25 PAPER
+        psa.pokePrice();
+        MockFeed next = new MockFeed(0);
+        next.setIds(address(paper), address(0));
+        vm.expectEmit(address(psa));
+        emit PaperFeedSet(address(next));
         vm.prank(owner);
-        vm.expectRevert(FirePsa.AlreadySet.selector);
-        psaNoFeed.setPaperFeed(address(paperFeed));
+        psa.setPaperFeed(address(next));
+        assertEq(address(psa.PAPER_USD()), address(next));
+        assertEq(psa.paperPerReveal(), 25e18, "no price yet on the new feed: lastCost carries over");
+        next.set(0.05e18);
+        assertEq(psa.paperPerReveal(), 5e18, "then the new feed's price");
+    }
+
+    function test_audit3_paperFeedMustPriceThisPaper() public {
+        MockFeed other = new MockFeed(0.05e18);
+        other.setIds(address(0xBEEF), address(0));
+        vm.prank(owner);
+        vm.expectRevert(FirePsa.WrongFeed.selector);
+        psa.setPaperFeed(address(other));
+        vm.prank(owner);
+        vm.expectRevert(FirePsa.ZeroAddress.selector);
+        psa.setPaperFeed(address(0));
+        other.setIds(address(paper), address(0));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", alice));
+        psa.setPaperFeed(address(other));
+    }
+
+    function test_audit3_costNeverZero() public {
+        paperFeed.set(1e40); // absurd price: $1 worth rounds to 0 wei
+        assertEq(psa.paperPerReveal(), 1, "at least 1 wei");
+        psa.pokePrice();
+        assertEq(psa.lastCost(), 1);
+    }
+
+    function test_audit3_noRerequestAfterCancelOrFinish() public {
+        vm.prank(alice);
+        uint256 i = psa.reveal(_ids(1, 1), type(uint256).max);
+        vm.warp(block.timestamp + 7 days);
+        psa.cancelReveal(i);
+        vm.expectRevert(FirePsa.NotStuck.selector);
+        psa.rerequest(i); // cancelled: done for good
+
+        uint256 j = _reveal(2, 1, 5);
+        vm.warp(block.timestamp + 2 days);
+        vm.expectRevert(FirePsa.NotStuck.selector);
+        psa.rerequest(j); // finished
     }
 
     function test_capGapKeepsTheFractionalCost() public {

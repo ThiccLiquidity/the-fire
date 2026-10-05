@@ -736,6 +736,11 @@
   },
   {
     "type": "error",
+    "name": "BadText",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ERC1155InsufficientBalance",
     "inputs": [
       {

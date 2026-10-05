@@ -15,8 +15,8 @@ node snapshot.mjs --min-usd 69 --out fire-7-holders.json
 npm run selftest   # offline check of the Merkle code
 ```
 
-It prints the **root**: set it as `holderRoot` in the drop's `configureDrop`. The JSON file goes to the site so
-buyers' proofs load automatically. Take the snapshot at a time nobody knows in advance, before the drop is set up.
+It prints the **root**: set it as `holderRoot` in the drop's `configureDrop`. The JSON file is for the site: the
+live site is planned to load each buyer's proof from it automatically. Take the snapshot at a time nobody knows in advance, before the drop is set up.
 
 ## Keeper (not built yet)
 
@@ -25,7 +25,10 @@ The card system needs one always-on process before the first drop. Every call it
 - `PlankUsdTwap.checkpoint()` every 30 minutes (FireSale pauses PLANK pricing when the window is over 2 hours old)
 - `PaperUsdTwap.checkpoint()` when `due()`
 - `FirePsa.pokePrice()` now and then
-- delivering drand numbers for card opens and PDA reveals (`OpenDrandRouter.fulfill`, `adapter.settle`)
+- delivering drand numbers to the router for card opens and PDA reveals (`OpenDrandRouter.fulfill`; `adapter.settle`
+  if a callback didn't land)
+- `FireCards.process(maxOpens)` and `FirePsa.finish(index)` if the site doesn't call them
 
-A keeper from an earlier version of this project (`git show 21bb12d:ops/keeper/keeper.mjs`) covers checkpoints and
-drand delivery and is a starting point.
+The repository history has a keeper from a previous version of the project (a raffle), at
+`git show 21bb12d:ops/keeper/keeper.mjs`. Its checkpoint and drand-delivery code is a reference only; the keeper
+needs to be rewritten for the card contracts.

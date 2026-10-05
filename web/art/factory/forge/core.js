@@ -29,7 +29,7 @@
     series: { no: 7, total: 167, starters: 50, startersClaimed: 23, sold: 12, plankOnly: 50, plankSold: 12, phase: 0, closed: false },
     // phase: 0 holders first + PLANK only, 1 holders first (any currency), 2 open to all (max 5), 3 no limit, 4 sold out
     wallet: {
-      connected: false, address: '0x7a3f…c91e', name: 'Travis', isPressHolder: true, inSnapshot: true, isContract: false,
+      connected: false, address: '0x7a3f…c91e', name: 'Demo wallet', isPressHolder: true, inSnapshot: true, isContract: false,
       balances: { ETH: 0.42, PLANK: 1250000000, PAPER: 24, USDG: 50 },
       credits: 1, burnCount: 12, starterClaimed: false, bought: 0, pending: [],
     },

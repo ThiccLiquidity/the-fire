@@ -17,7 +17,7 @@
 
 import { Stream } from './prng'
 import {
-  CARDS_PER_PACK, HOLO_TYPES, MATERIALS, SHARE_SCALE, SHARE_UNITS, holoTypeOf, rollHolo, type HoloType, type Material,
+  CARDS_PER_PACK, HOLO_TYPES, MATERIALS, MAX_CHARACTERS, SHARE_SCALE, SHARE_UNITS, holoTypeOf, rollHolo, type HoloType, type Material,
 } from './rules'
 
 export const DEAL_METHOD = 'sample-sha256ctr-v1'
@@ -118,6 +118,7 @@ export function dealFire(input: DealInput): DealResult {
   if (!Number.isInteger(fire) || fire < 1) throw new Error('fire must be a whole number >= 1')
   if (!Number.isInteger(firstSerial) || firstSerial < 1) throw new Error('firstSerial must be a whole number >= 1')
   if (characterIds.length < 1) throw new Error('a Series needs at least one character')
+  if (characterIds.length > MAX_CHARACTERS) throw new Error(`a Series has at most ${MAX_CHARACTERS} characters (the contract's limit)`)
   if (new Set(characterIds).size !== characterIds.length) throw new Error('duplicate character in the Series')
   if (!seed) throw new Error('seed is required')
 

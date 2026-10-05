@@ -26,7 +26,10 @@ forge script script/DeployInfra.s.sol --rpc-url $env:RPC --account deployer --se
 ```
 Uses `PAPER`, `USDG`, `WETH`, `UNIV2_FACTORY`, `ETH_USD_FEED`; checks chain 4663, contract code at each, PAPER is 18
 decimals and the ETH/USD feed is 8. Deploys `OpenDrandRouter` and `PaperUsdTwap`. Neither has an owner. Put them in
-`.env` as `DRAND_ROUTER` and `PAPER_USD_FEED`.
+`.env` as `DRAND_ROUTER` and `PAPER_USD_FEED`. `PAPER_USD_FEED` is this `PaperUsdTwap`, never the PAPER pool itself.
+It finds a PAPER/WETH or PAPER/USDG pool holding at least $1,000 on its dollar side and reports its first price about
+40 hours after the keeper's first checkpoint (20 hours as candidate, then one 20-hour window); until then PDA reveals
+cost a set number of PAPER.
 
 ## 3. Card contracts
 Fill the card section of `.env` (`OWNER` multisig, royalty, revenue and burn wallets; details at the top of
@@ -35,26 +38,32 @@ Fill the card section of `.env` (`OWNER` multisig, royalty, revenue and burn wal
 forge script script/DeployCards.s.sol --rpc-url $env:RPC --account deployer --sender <deployer address> --slow --broadcast `
   --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
 ```
-It checks every input first (including that `DRAND_ROUTER` really is the router and `PLANK_USD_FEED` sits on the
-pool the V2 router trades), then deploys FirePacks, FireCards, FireSale, FirePsa and one drand adapter each for
-FireCards and FirePsa, wires them, and hands ownership to `OWNER`.
+It checks every input first, including that `DRAND_ROUTER` returns a zero `requestFee()` like the OpenDrandRouter,
+that `PLANK_USD_FEED` sits on the PLANK/WETH pool the V2 router trades, and that `PLANK_USD_FEED` and `PAPER_USD_FEED`
+are built on this `ETH_USD_FEED` (and this PAPER, for the PAPER feed). Then it deploys FirePacks, FireCards,
+FireSale, FirePsa and one drand adapter each for FireCards and FirePsa, wires them, and hands ownership to `OWNER`.
 
 ## 4. Multisig accepts
-`OWNER` calls `acceptOwnership()` on FirePacks, FireCards and FirePsa (FireSale is its own from the start), then
-checks the wiring (list in `docs/cards-contracts.md`). Until then the deployer key controls those three.
+`OWNER` calls `acceptOwnership()` on FirePacks, FireCards and FirePsa (FireSale is owned by `OWNER` from
+deployment), then checks the wiring (list in `docs/cards-contracts.md`). Until then the deployer key controls those three.
 
 ## 5. Keeper
-Needed before the first drop: PLANK feed checkpoints every 30 minutes, PAPER feed when `due()`, drand deliveries for
-opens and reveals. Not built yet (`ops/README.md`, `docs/roadmap.md`).
+Needed before the first drop; not built yet (`ops/README.md`, `docs/roadmap.md`). Every call is permissionless:
+- `PlankUsdTwap.checkpoint()` every 30 minutes
+- `PaperUsdTwap.checkpoint()` when `due()`
+- `FirePsa.pokePrice()` now and then
+- delivering drand numbers to the router (`OpenDrandRouter.fulfill`; `adapter.settle` if a callback didn't land)
+- `FireCards.process(maxOpens)` and `FirePsa.finish(index)` if the site doesn't call them
 
 ## 6. Each Series
 The `OWNER` multisig calls `FireCards.configureFire`, then `FireSale.configureDrop` (and `pickSuggestions`). Holder window:
 `ops/snapshot` makes the `holderRoot`.
 
 ## 7. Site
-The Forge is static (`web/public/forge`). When it goes live it uses `web/src/lib` (chain, wallet, card ABIs, swap
-guard). Set `SWAP_FEE_WALLET` in `web/src/lib/config.ts` first. If the site uses its own `VITE_RPC_URL`, add that
-host to `connect-src` in `web/vercel.json` or the browser blocks every read (the build refuses it).
+The Forge is static (`web/public/forge`) and runs in demo mode (a demo banner, no wallet, no payments). The live
+version will use `web/src/lib` (chain, wallet, card ABIs, swap guard). Set `SWAP_FEE_WALLET` in
+`web/src/lib/config.ts` first. If the site uses its own `VITE_RPC_URL`, add that host to `connect-src` in
+`web/vercel.json` or the browser blocks every read (the build refuses it).
 
 ## Verify a number (anyone)
 See `docs/randomness.md`.
