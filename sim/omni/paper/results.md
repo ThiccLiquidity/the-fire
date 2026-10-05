@@ -1,0 +1,104 @@
+# PAPER as a utility token: results
+
+Script: `paper_model.py` (run `python3 paper_model.py`). Full tables below the summary.
+
+## Recommended PAPER uses
+1. **Character suggestion: 1 PAPER** (or $0.25 of PAPER if PAPER > $0.25). Fun, tiny burn.
+2. **Starter packs: 50 per drop at 1 PAPER**, 1 per wallet, PLANK-holder allowlist.
+3. **PSA reveal: 5 PAPER, or $0.25 in ETH/USDG** (PAPER cost = min(5, $0.25 at the TWAP)). Sets a $0.05 floor, can't be arbitraged.
+4. **PAPER lane: 25% of each drop's packs payable in PAPER at min(100 PAPER, $1 of PAPER at the TWAP)**, max 5 per wallet per drop. Sets a $0.01 floor; worst-case giveaway is capped.
+
+Skip: uncapped fixed rate (drains the whole sale when PAPER is cheap), forging (breaks each Fire's exact card pool), PAPER in burn-cards-for-free-pack (keep that PAPER-free).
+
+## Key findings
+- Floors: $0.01 (pack lane, up to its cap) and $0.05 (PSA, up to reveal volume).
+- Balance price (burn = print): med participation $0.014 / $0.024 / $0.050 at 1 / 2 / 4 drops a month; high $0.12-$0.25. Low participation never absorbs the print.
+- Press value (2 drops/mo, 2-3 yr payback): med adds ~$14-40, high at $0.25 adds ~$125-185 to the $94 of PLANK.
+- With the TWAP cap, a pump never makes PAPER uses cost more than the dollar price.
+
+## 1. Per-PAPER utility of each sink (the floor each one sets)
+
+| Sink | PAPER cost | $ it replaces | Floor $/PAPER | Arbitrage? |
+|---|---|---|---|---|
+| Suggestion | 1 | none (fun) | 0 | no: nothing resellable |
+| Starter pack (50/drop, 1/wallet, PLANK allowlist) | 1 | $1 pack | $1.00 (only 50 PAPER/drop) | bots/sybils; allowlist + 1/wallet |
+| PSA reveal | min(5, $0.25 TWAP) | $0.25 fee | $0.05 | no: reveal is per card, not resellable |
+| PAPER lane pack | min(100, $1 TWAP) | $1 pack | $0.01 | yes below $0.01 -> capped 25%/drop, 5/wallet |
+| Fixed 100 PAPER, uncapped | 100 | $1 pack | $0.01 | YES: at $0.002 a pack costs $0.20, whole sale drains |
+| Forging (burn N cards + PAPER) | - | - | - | breaks the exact per-Fire pool; skip |
+| Burn cards -> free pack | 0 | - | 0 (no PAPER) | keep, but it's not a PAPER sink |
+
+## 2. Arbitrage: uncapped fixed 100 PAPER/pack vs capped TWAP lane (med, 2 drops/mo)
+
+| PAPER $ | Uncapped: $ per pack via PAPER | Owner gives up / drop | Capped lane: give-up / drop |
+|---|---|---|---|
+| 0.001 | $0.10 | $945 (every pack) | $236 (25% of packs max) |
+| 0.005 | $0.50 | $525 (every pack) | $131 (25% of packs max) |
+| 0.01 | $1.00 | $0 (nobody uses it, $1 is cheaper) | $0 (25% of packs max) |
+| 0.05 | $5.00 | $0 (nobody uses it, $1 is cheaper) | $0 (25% of packs max) |
+
+## 3. 12-month sim (start 1,000 presses = 365k PAPER/yr)
+
+| Drops/mo | PAPER $ | Part. | Printed | Burned | Net supply | Burn/print | $ utility/PAPER burned | Utility $/press/day |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 0.01 | low | 360,787 | 163,080 | +197,707 | 45% | $0.017 | $0.0075 |
+| 1 | 0.01 | med | 354,768 | 550,650 | -195,882 | 155% | $0.018 | $0.0182 |
+| 1 | 0.01 | high | 344,736 | 1,789,800 | -1,445,064 | 519% | $0.023 | $0.0234 |
+| 1 | 0.05 | low | 360,787 | 37,080 | +323,707 | 10% | $0.065 | $0.0067 |
+| 1 | 0.05 | med | 354,768 | 172,650 | +182,118 | 49% | $0.053 | $0.0259 |
+| 1 | 0.05 | high | 344,736 | 781,800 | -437,064 | 227% | $0.051 | $0.0507 |
+| 1 | 0.25 | low | 360,787 | 8,376 | +352,411 | 2% | $0.304 | $0.0071 |
+| 1 | 0.25 | med | 354,768 | 36,930 | +317,838 | 10% | $0.262 | $0.0273 |
+| 1 | 0.25 | high | 344,736 | 161,640 | +183,096 | 47% | $0.253 | $0.1185 |
+| 2 | 0.01 | low | 360,787 | 229,680 | +131,107 | 64% | $0.018 | $0.0116 |
+| 2 | 0.01 | med | 354,768 | 774,600 | -419,832 | 218% | $0.019 | $0.0187 |
+| 2 | 0.01 | high | 344,736 | 2,514,000 | -2,169,264 | 729% | $0.024 | $0.0235 |
+| 2 | 0.05 | low | 360,787 | 53,280 | +307,507 | 15% | $0.071 | $0.0105 |
+| 2 | 0.05 | med | 354,768 | 245,400 | +109,368 | 69% | $0.055 | $0.0378 |
+| 2 | 0.05 | high | 344,736 | 1,102,800 | -758,064 | 320% | $0.051 | $0.0510 |
+| 2 | 0.25 | low | 360,787 | 12,576 | +348,211 | 3% | $0.322 | $0.0112 |
+| 2 | 0.25 | med | 354,768 | 53,880 | +300,888 | 15% | $0.267 | $0.0405 |
+| 2 | 0.25 | high | 344,736 | 231,120 | +113,616 | 67% | $0.254 | $0.1702 |
+| 4 | 0.01 | low | 360,787 | 330,720 | +30,067 | 92% | $0.020 | $0.0186 |
+| 4 | 0.01 | med | 354,768 | 1,113,600 | -758,832 | 314% | $0.019 | $0.0194 |
+| 4 | 0.01 | high | 344,736 | 3,607,200 | -3,262,464 | 1046% | $0.024 | $0.0238 |
+| 4 | 0.05 | low | 360,787 | 78,720 | +282,067 | 22% | $0.079 | $0.0172 |
+| 4 | 0.05 | med | 354,768 | 357,600 | -2,832 | 101% | $0.056 | $0.0564 |
+| 4 | 0.05 | high | 344,736 | 1,591,200 | -1,246,464 | 462% | $0.051 | $0.0514 |
+| 4 | 0.25 | low | 360,787 | 19,584 | +341,203 | 5% | $0.342 | $0.0186 |
+| 4 | 0.25 | med | 354,768 | 81,120 | +273,648 | 23% | $0.272 | $0.0622 |
+| 4 | 0.25 | high | 344,736 | 339,360 | +5,376 | 98% | $0.255 | $0.2513 |
+
+## 4. Press value = $94 PLANK + PAPER utility/yr x payback years (2 drops/mo)
+
+| PAPER $ | Part. | PAPER $/press/yr | Press @2y | Press @3y |
+|---|---|---|---|---|
+| 0.01 | low | $4.22 | $102 | $107 |
+| 0.01 | med | $6.82 | $108 | $114 |
+| 0.01 | high | $8.59 | $111 | $120 |
+| 0.05 | low | $3.85 | $102 | $106 |
+| 0.05 | med | $13.80 | $122 | $135 |
+| 0.05 | high | $18.63 | $131 | $150 |
+| 0.25 | low | $4.09 | $102 | $106 |
+| 0.25 | med | $14.78 | $124 | $138 |
+| 0.25 | high | $62.13 | $218 | $280 |
+
+## 5. If PAPER pumps (fixed costs vs TWAP-capped costs)
+
+| PAPER $ | Fixed 100/pack ($) | Capped lane (PAPER / $) | PSA fixed 5 ($) | PSA capped (PAPER) | Suggestion capped (PAPER) |
+|---|---|---|---|---|---|
+| 0.01 | $1 | 100 / $1.00 | $0.05 | 5 | 1 |
+| 0.05 | $5 | 20 / $1.00 | $0.25 | 5 | 1 |
+| 0.25 | $25 | 4 / $1.00 | $1.25 | 1 | 1 |
+| 1.0 | $100 | 1 / $1.00 | $5.00 | 0.25 | 0.25 |
+| 5.0 | $500 | 0.2 / $1.00 | $25.00 | 0.05 | 0.05 |
+
+## 6. Balance price: PAPER price where burn = print (the demand-backed floor)
+
+| Drops/mo | low | med | high |
+|---|---|---|---|
+| 1 | never: print > all sinks | $0.014 | $0.115 |
+| 2 | never: print > all sinks | $0.024 | $0.164 |
+| 4 | never: print > all sinks | $0.050 | $0.246 |
+
+Note: burns above print can't really happen (they'd need PAPER that doesn't exist); it means at that price PAPER is under-priced and buyers bid it up toward the balance price.

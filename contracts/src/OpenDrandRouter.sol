@@ -13,6 +13,7 @@ interface IRandomnessConsumer {
 }
 
 /**
+ * @title OpenDrandRouter
  * @notice drand-verified randomness with nobody in charge. A request commits to a drand evmnet round 30-33 seconds in
  *         the future. Once drand publishes that round, anyone may submit its BLS signature: the router verifies it
  *         on-chain and derives the request's word. There is exactly one valid word per request, so whoever submits
@@ -20,7 +21,7 @@ interface IRandomnessConsumer {
  *         back to get a different one: if one party sits on it, anyone else can deliver it.
  *
  *         Why not OpenVRF as deployed: its fulfill() is relayer-only. The one relayer could then withhold a word it
- *         doesn't like until the Fire re-rolls, choosing among draws.
+ *         doesn't like until the consumer re-requests, choosing among draws.
  */
 contract OpenDrandRouter is EvmnetRegistry {
     uint256 public constant GENESIS = 1727521075;

@@ -1,88 +1,92 @@
-# The Fire
+# Omni Forge
 
-Buy tickets with PAPER and PLANK. PAPER burns. All the PLANK goes into the fire's pot. Every night a storm rolls in — a big fire survives, a small one dies. When the fire goes out, one ticket wins the pot.
+Omni Forge is a collectible NFT card game on Robinhood Chain. Cards are sold in sealed packs, one Series at a time.
+PLANK fuels the forge (part of every sale buys and burns it) and every pack burns PAPER. Packs are opened with
+drand randomness, so nobody can know a pack's contents in advance, and any card can be graded once (a PDA reveal)
+for a wear frame and grade from 1 to 10.
 
-- `docs/spec.md` — the design, numbers, and why. Start here.
-- `docs/randomness.md` — where the nightly number comes from (drand, through our ownerless `OpenDrandRouter`) and how to verify a roll.
-- `contracts/` — Foundry project. `Fire.sol` is the game, `Profiles.sol` is names + pictures for wallets (picture bytes live in the event log, hash in storage). 103 tests (two suites run against a real drand proof and real Seaport 1.6 code). See `contracts/README.md`.
-- `web/` — the site (Vite + React). Runs on a built-in mock until the contract is deployed.
-- `sim/` — the Python simulation the numbers came from.
+Live site: https://web-mu-mocha-95.vercel.app (the Forge, running on demo data).
 
-## Working on it (PowerShell)
+## Repository layout
 
-First time:
+| Path | What it is |
+|---|---|
+| `contracts/` | Foundry project: the card contracts (`src/cards`), the drand randomness router and adapter, and the PLANK and PAPER price feeds. Deploy scripts in `script/`. |
+| `studio/` | Card Studio: a Vite + React + TypeScript app that builds the card images and metadata for each Series. |
+| `web/` | The site. The Forge is served statically from `web/public/forge`; `web/src/lib` holds the chain, wallet, swap and contract-ABI modules for the live version. |
+| `web/art/factory/` | Source for the Forge: the page code (`forge/`) and the pipeline that builds the workshop scene's art. |
+| `sim/omni/` | Python models of the card economy (pack supply and pricing, PLANK, PAPER, card burns). |
+| `ops/` | Operations tooling: the PLANK-holder snapshot for a drop's holder window. |
+| `brand/` | Logos and the logo clean-up script. |
+| `docs/` | Reference documentation (see below). |
 
-```powershell
-git clone https://github.com/ThiccLiquidity/the-fire.git
-cd the-fire\web
+## Quick start
+
+**Contracts** (needs [Foundry](https://getfoundry.sh)):
+
+```sh
+cd contracts
+forge build
+forge test
+```
+
+**Card Studio** (needs Node.js 20+):
+
+```sh
+cd studio
 npm install
 npm run dev        # http://localhost:5173
+npm test           # vitest
 ```
 
-Push an update (site auto-deploys on Vercel from `main`):
+**Site:**
 
-```powershell
-git add -A
-git commit -m "what changed"
-git push
+```sh
+cd web
+npm install
+npm run dev        # http://localhost:5173, redirects to /forge/
+npm run build
 ```
 
-## Setting up GitHub and Vercel (one time)
+After editing the Forge source in `web/art/factory/forge`, regenerate the served copy with
+`web/art/factory/sync_forge.sh` (see `web/README.md`).
 
-1. GitHub: create an empty repo `ThiccLiquidity/the-fire` (no README). Then from the project folder:
-   ```powershell
-   git remote add origin https://github.com/ThiccLiquidity/the-fire.git
-   git branch -M main
-   git push -u origin main
-   ```
-2. Vercel: **Add New Project → Import** `the-fire`. Set **Root Directory** to `web`. Framework auto-detects Vite. Deploy. Every push to `main` redeploys.
+**Economy sims** (needs Python 3 with numpy):
 
-## Contracts
-
-Foundry is only needed on the machine that deploys. Install: https://getfoundry.sh — or let Claude drive it.
-
-```powershell
-cd contracts
-forge test                                  # run the suite
+```sh
+cd sim/omni/packs
+python3 sim_packs.py
 ```
 
-Deploying is a runbook, not one command: `docs/deploy.md`.
+Each folder in `sim/omni` has its model, its recorded output and a `results.md`.
 
-Deploy env vars: copy `contracts/.env.example` to `contracts/.env` (details at the top of `script/Deploy.s.sol`). Site env vars: `web/.env.example`. Never put a private key in this repo; use `--account` (Foundry keystore) or `--ledger`.
+## Deploying
 
-## Your money
+Deployment is a three-step Foundry runbook (`DeployTwap`, then `DeployInfra`, then `DeployCards`) followed by the
+multisig accepting ownership and a keeper going live. See [`docs/deploy.md`](docs/deploy.md). Settings go in
+`contracts/.env` (copy `contracts/.env.example`). Sign with a Foundry keystore (`--account`) or `--ledger`; never put
+a private key in a file or on the command line.
 
-- **Nobody runs the contract.** No owner, no admin, no pause, no upgrade, no withdraw function. The deploy wallet has
-  no powers once it's deployed.
-- **A buy takes only what it says, only from you.** It pulls tokens from the wallet that sends it, and only the ticket
-  price for the tickets in that buy. Every buy carries the most you agreed to pay; if the price moved past it, the buy
-  fails and nothing is taken. Extra ETH comes straight back. The site asks for an exact approval for each buy, never an
-  open-ended one.
-- **Where it goes:** PAPER is burned. All your PLANK goes into the pot; 25% of every pot that pays out is burned. The $1 in ETH or USDG goes to
-  the press fund, which can only buy a press at or under the fire's bid and burn it in the same transaction.
-- **The pot only leaves by the rules:** when the fire goes out, 40% to the winner, 25% burned, 5% to the Paper Press
-  royalty pool, 30% to the next fire. If the prize can't be sent, it waits for the winner to `claim` it.
-- **If the randomness dies for 7 days,** anyone can end the game and every ticket holder of the current fire takes back
-  their share of the pot with `refund`.
-- **Out of our control:** the PLANK and USDG token contracts' own rules; the Paper Press contract's admin (it can pause the
-  press contract, and decides whether the royalty pool counts PLANK); Chainlink's ETH/USD feed (if it stops, the ETH
-  option closes, the PLANK price holds, and the press fund can only spend its USDG); drand (if it stops, rolls wait, then re-roll, then the 7-day refund).
-- Tickets are a burn, not an investment. Expect back ~22¢ per dollar on average; the rest is burned or funds the game.
+The site deploys on Vercel from `main` with Root Directory `web`.
 
-## Security model, in one paragraph
+## Documentation
 
-The pot lives inside `Fire.sol`. There is no owner, no withdraw, no pause. PLANK enters through ticket buys (and the
-PLANK released by burning a press, which is passed straight to the Paper Press royalty pool); pot PLANK only leaves
-through the rules (winner 40% / burn 25% / Paper Press royalty pool 5% / next fire 30%), an unpaid prize's `claim`, or
-the 7-day `refund`. ETH and USDG only leave through `eatMillFromSeaport`, which pays only if a Seaport listing at or
-under the bid fills and the press is burned in the same transaction. Anyone can fill the bid with any listing,
-their own included; that's the point. A press safe-sent to the Fire bounces. Randomness comes from drand through an
-ownerless router that anyone can fulfill. The deploy wallet and the keeper have no special powers.
+| Doc | Covers |
+|---|---|
+| [`docs/omni-economy.md`](docs/omni-economy.md) | Drops, prices, burns, starter packs, free pack credits, PDA reveal pricing and odds |
+| [`docs/cards-contracts.md`](docs/cards-contracts.md) | The card contracts: pieces, the open/deal flow, safety properties, deployment wiring |
+| [`docs/card-studio.md`](docs/card-studio.md) | Card rules (pool, pack slots, holo, wear) and how the studio builds a Series |
+| [`docs/randomness.md`](docs/randomness.md) | The drand router: request flow, recovery paths, how to verify a number |
+| [`docs/deploy.md`](docs/deploy.md) | Mainnet deploy runbook |
+| [`docs/addresses.md`](docs/addresses.md) | Robinhood Chain addresses and on-chain findings |
+| [`docs/audit-2026-10.md`](docs/audit-2026-10.md) | Internal security review: findings, fixes and accepted risks |
+| [`docs/roadmap.md`](docs/roadmap.md) | Project status and open work before launch |
 
-## Before mainnet
+## Key properties
 
-- Test router + adapter + keeper on Robinhood testnet (chain id 46630) against live drand.
-- Set `PLANK_PER_TICKET0` (the deploy script prints the right number from the feed) and `MILL_BID_BASE` from
-  launch-day prices. `ETH_USD_PER_TICKET` is $1; the script refuses anything else.
-- Get `PulpPool.addRewardToken(PLANK)` done.
-- Light fire #1 small.
+- **The contracts never hold funds.** Everything paid is forwarded or burned in the same transaction: 70% of a sale
+  to the revenue wallet; the 30% burn share buys PLANK and burns it (or goes to the burn wallet if the swap can't go
+  through). All PAPER spent is burned.
+- **Randomness** comes from drand through an ownerless router that anyone can fulfill.
+- **The owner is a multisig** that configures each Series and drop. What it can and can't change is listed in
+  `docs/cards-contracts.md` and `docs/audit-2026-10.md`.

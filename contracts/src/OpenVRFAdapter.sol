@@ -2,13 +2,14 @@
 pragma solidity ^0.8.24;
 
 /**
- * @notice Adapter between Fire.sol and a drand router with OpenVRF's interface — in production our OpenDrandRouter
+ * @title OpenVRFAdapter
+ * @notice Adapter between one consumer (FireCards or FirePsa; `FIRE` is the historical name) and a drand router with OpenVRF's interface — in production our OpenDrandRouter
  *         (OpenVRF with open fulfillment; see its header). https://github.com/Robinhood-OSS/OpenVRF @ 9fb960c
  *
- *         Fire.roll() -> request() -> router.requestRandomness{value: requestFee}(CALLBACK_GAS)
- *         router.fulfill() -> rawFulfillRandomness(id, word) -> Fire.onRandomness(id, word)
+ *         consumer -> request() -> router.requestRandomness{value: requestFee}(CALLBACK_GAS)
+ *         router.fulfill() -> rawFulfillRandomness(id, word) -> consumer.onRandomness(id, word)
  *
- *         If the router has a result but its callback didn't reach the Fire (out of gas, a revert that has
+ *         If the router has a result but its callback didn't reach the consumer (out of gas, a revert that has
  *         since cleared), anyone can call settle(id) to deliver the stored result. The router never changes
  *         a result once fulfilled, so settle() can't be used to pick a different number.
  */
@@ -40,7 +41,7 @@ contract OpenVRFAdapter {
         FIRE = fire;
     }
 
-    /// @dev Fire calls this. The router requires the exact fee (0 on our deployment); a paid fee comes from
+    /// @dev The consumer calls this. The router requires the exact fee (0 on our deployment); a paid fee comes from
     ///      ETH sent to this adapter ahead of time. Stray ETH here can no longer break requests.
     function request() external returns (uint256 id) {
         if (msg.sender != FIRE) revert OnlyFire();

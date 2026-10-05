@@ -1,0 +1,131 @@
+/* The shell: top bar, pills on the scene, Buy box, bottom strip, phone layouts. */
+canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block }
+svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+
+/* loading */
+.loading { position: fixed; inset: 0; z-index: 90; display: grid; place-content: center; justify-items: center; gap: 10px; background: #000; transition: opacity .6s }
+.loading img { width: 120px; animation: breathe 1.8s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,110,30,.5)) }
+.loading p { margin: 0; font: 400 15px var(--display); letter-spacing: .08em; color: var(--muted) }
+.loading.done { opacity: 0; pointer-events: none }
+@keyframes breathe { 50% { transform: scale(1.06); filter: drop-shadow(0 0 30px rgba(255,110,30,.8)) } }
+
+/* top bar: black, with the five-material stripe */
+.topbar { position: fixed; left: 0; right: 0; top: 0; height: 54px; z-index: 10; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 14px; box-sizing: border-box; background: #000 }
+.topbar::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, var(--paper) 0 20%, var(--wood) 20% 40%, var(--fire) 40% 60%, var(--charcoal) 60% 80%, var(--diamond) 80%) }
+.brand { display: flex; align-items: center; gap: 7px; text-decoration: none; min-width: 0 }
+.brand .mark { height: 32px; filter: drop-shadow(0 0 8px rgba(255,110,30,.45)) } .brand .word { height: 27px }
+.brand .forge { font: 400 23px var(--display); letter-spacing: .04em; color: #f9e2b4; -webkit-text-stroke: 1.5px #0d141c; paint-order: stroke fill; text-shadow: 0 2.5px 0 #0d141c }
+.brand .tag { font: italic 700 13px var(--body); color: var(--muted); margin-left: 6px; white-space: nowrap }
+.chip { min-height: 34px; display: inline-flex; align-items: center; gap: 6px; font: 800 13px var(--body); color: var(--ink); background: #1a120c; border: 1px solid var(--line-2); border-radius: 999px; padding: 0 12px; white-space: nowrap; cursor: pointer }
+.chip svg { color: var(--brass) } .chip:hover { border-color: var(--brass) }
+.chip.round { width: 36px; padding: 0; justify-content: center }
+.chip.series b { color: var(--gold) } .chip.series i { font-style: normal; color: var(--ember) }
+.chip.demo { color: var(--muted); border-style: dashed }
+.tools { display: flex; gap: 8px }
+.grow { flex: 1 }
+.menu-btn { display: none }
+.wallet { min-height: 40px; display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 999px; cursor: pointer; font: 800 14px var(--body); color: var(--ink);
+  background: linear-gradient(#2c1f15, #17100b); border: 1.5px solid var(--diamond); box-shadow: 0 0 14px rgba(169,203,242,.18) }
+.wallet svg { color: var(--diamond) }
+
+/* pills on the scene */
+.ui { position: fixed; inset: 0; pointer-events: none; z-index: 5 }
+.pill { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; display: inline-flex; align-items: center; gap: .5em; white-space: nowrap; min-height: 40px; box-sizing: border-box;
+  font: 800 var(--fs, 14px)/1.1 var(--body); color: #f6e2b8; background: linear-gradient(#2c1f15ee, #17100bee); border: 1.5px solid var(--c, var(--brass));
+  border-radius: 999px; padding: .5em 1em .5em .75em; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.5); transition: transform .15s }
+.pill svg { color: var(--c) } .pill small { display: block; font-weight: 700; font-size: .82em; color: #d4bd98; margin-top: .1em }
+.pill:hover { transform: translate(-50%, -50%) scale(1.05) }
+
+/* the Buy box (on the scene) and the buy bar (phones) share their insides */
+.buybox { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; display: grid; gap: .4em; padding: .45em .5em .5em; border-radius: 18px;
+  font-size: var(--fs, 14px); background: linear-gradient(#2c1f15f2, #17100bf2); border: 2px solid #ffbf5e; box-shadow: 0 0 0 4px rgba(255,120,40,.16), 0 0 34px rgba(255,100,30,.45), 0 8px 24px rgba(0,0,0,.6); animation: buyglow 2.6s ease-in-out infinite }
+@keyframes buyglow { 50% { box-shadow: 0 0 0 5px rgba(255,120,40,.26), 0 0 52px rgba(255,110,30,.68), 0 8px 24px rgba(0,0,0,.6) } }
+.buybox.calm, .buybar.calm { animation: none; border-color: var(--line-2); box-shadow: 0 8px 24px rgba(0,0,0,.6) }
+.phase { font: 800 .8em var(--body); color: #ffb357; letter-spacing: .05em; text-transform: uppercase; text-align: center; white-space: nowrap }
+.opts { display: flex; gap: .45em }
+.opt { display: inline-flex; align-items: center; gap: .5em; min-height: 44px; font: 800 calc(var(--fs, 14px) * 1.12)/1.15 var(--body); border-radius: 14px; padding: .45em 1em .5em .8em; cursor: pointer; text-align: left;
+  color: #1b0f06; background: linear-gradient(#ffb357, #e0661f); border: 1.5px solid #ffd28a; white-space: nowrap; position: relative; overflow: hidden }
+.opt small { display: block; font-weight: 700; font-size: max(11px, .66em); line-height: 1.3; color: #3a1a04 }
+.opt.alt { background: linear-gradient(#3a2a1c, #241810); color: #f6e2b8; border-color: #b98a3e } .opt.alt small { color: #d4bd98 }
+.opt.gold { background: linear-gradient(#ffe39a, #e8b54a); border-color: #fff0bf }
+.opt img.mini { height: 2.4em; transform: rotate(-8deg); filter: drop-shadow(0 2px 3px rgba(0,0,0,.5)) }
+.opt > * { position: relative; z-index: 1 }
+.opt.main::before { content: ''; position: absolute; inset: -40%; background: conic-gradient(from 0deg, transparent 0 70%, #fff3c4 80%, #ff7a1f 88%, transparent 96%); animation: ember 2.8s linear infinite; z-index: 0 }
+.opt.main::after { content: ''; position: absolute; inset: 2px; border-radius: 12px; background: linear-gradient(#ffb357, #e0661f); z-index: 0 }
+@keyframes ember { to { transform: rotate(1turn) } }
+.buybar { display: none }
+
+/* bottom strip (desktop) */
+.strip { position: fixed; left: 0; right: 0; bottom: 0; height: var(--stripH, 104px); z-index: 4; display: flex; align-items: center; gap: 16px; padding: 8px 18px; box-sizing: border-box; background: #000 }
+.strip::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: linear-gradient(90deg, var(--paper) 0 20%, var(--wood) 20% 40%, var(--fire) 40% 60%, var(--charcoal) 60% 80%, var(--diamond) 80%) }
+.packart { height: 100%; filter: drop-shadow(0 0 14px rgba(255,120,30,.5)); animation: bob 3.2s ease-in-out infinite }
+@keyframes bob { 0%, 100% { transform: rotate(-5deg) translateY(1px) } 50% { transform: rotate(-2deg) translateY(-3px) } }
+.what { display: grid; gap: 4px; min-width: 0 }
+.what h3 { margin: 0; font: 400 15px var(--display); color: var(--gold); letter-spacing: .04em; white-space: nowrap }
+.what h3 .sw { background: linear-gradient(90deg, #ffc061, #ff5a1f, #e0341c); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 400 }
+.what h3 span { font: 700 12px var(--body); color: var(--muted); letter-spacing: 0; margin-left: 8px }
+.types { border-collapse: separate; border-spacing: 6px 2px; margin-left: -6px }
+.types th { font: 700 11px var(--body); color: var(--dim); text-align: left; white-space: nowrap; padding-right: 4px }
+.types td { font: 800 12px var(--body); text-align: center; white-space: nowrap } .types td.span { color: var(--muted); font-weight: 700 }
+.types .mat { min-width: 70px }
+.strip .more { margin-left: auto }
+.stations { display: none }
+
+/* sheets made here */
+.lead { margin: 0 0 12px; color: var(--muted); line-height: 1.5 }
+.wallets, .menu { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px }
+.menu .btn { justify-content: flex-start } .menu svg { color: var(--brass) }
+.checkout { display: grid; gap: 12px }
+.qty { display: flex; align-items: center; gap: 10px } .qty output { font: 400 26px var(--display); min-width: 2ch; text-align: center }
+.btn.round { width: var(--tap); padding: 0; border-radius: 50% }
+.muted { color: var(--muted) }
+.seg { display: flex; border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden }
+.seg button { flex: 1; min-height: var(--tap); background: var(--panel-2); border: 0; border-right: 1px solid var(--line); color: var(--ink); font: 800 14px var(--body); cursor: pointer }
+.seg button:last-child { border-right: 0 } .seg button[aria-pressed=true] { background: var(--brass); color: #1b0f06 } .seg button[disabled] { opacity: .35; cursor: default }
+.sum { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; padding: 12px; background: var(--panel-2); border-radius: 12px }
+.sum dt { color: var(--muted) } .sum dd { margin: 0; text-align: right; font-weight: 800 } .sum small { color: var(--muted); font-weight: 600 }
+.note, .fine { margin: 0; color: var(--muted); font-size: 13px } .warn { margin: 0; color: #ffcf99; display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+.checkout .go { width: 100% }
+.amt { color: var(--muted); font-size: 13px } #amt, .namef input { min-height: var(--tap); border-radius: 12px; border: 1px solid var(--line-2); background: #0f0b08; color: var(--ink); font: 800 18px var(--body); padding: 0 12px }
+.namef { display: grid; gap: 10px } .namef label { color: var(--muted) }
+.wmenu { display: grid; gap: 14px }
+.who { display: flex; gap: 12px; align-items: center } .who small { display: block; color: var(--muted) } .who .btn { margin-left: auto }
+.avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font: 400 20px var(--display); background: linear-gradient(135deg, var(--ember), var(--fire)); color: #fff }
+.bal { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px } .bal div { background: var(--panel-2); border-radius: 12px; padding: 8px 10px } .bal small { display: block; color: var(--muted); font-size: 11px } .bal b { font-variant-numeric: tabular-nums }
+.rows { display: grid; gap: 6px } .rows div { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); padding: 6px 0 } .rows span { color: var(--muted) }
+.acts { display: flex; gap: 8px; flex-wrap: wrap } .acts .btn { flex: 1 }
+.feed { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px } .feed li { padding: 10px 12px; background: var(--panel-2); border-radius: 10px }
+
+/* narrower desktops */
+@media (max-width: 1240px) { .brand .tag { display: none } }
+@media (max-width: 1020px) { .tools .chip span { display: none } .tools .chip:not(.round):not(.demo) { width: 36px; padding: 0; justify-content: center } }
+
+/* phones held upright: scene on top, four big station buttons, the buy bar pinned to the bottom */
+body[data-mode=port] { overflow: auto }
+body[data-mode=port] .brand .word { height: 20px } body[data-mode=port] .brand .forge { font-size: 17px } body[data-mode=port] .brand .mark { height: 24px }
+body[data-mode=port] .tools, body[data-mode=port] .chip.series { display: none }
+body[data-mode=port] .menu-btn { display: inline-flex; width: 40px; height: 40px }
+body[data-mode=port] .wallet { min-height: 40px; padding: 0 12px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis }
+body[data-mode=port] .ui { display: none }
+body[data-mode=port] canvas#c { position: fixed; touch-action: pan-y } /* sideways drags pan the camera; up/down still scrolls the page */
+body[data-mode=port] .stations { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; position: absolute; left: 0; right: 0; top: calc(54px + var(--sceneH, 300px) + 12px); padding: 0 14px; z-index: 3 }
+.station { min-height: 64px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left; padding: 10px 12px; border-radius: 14px;
+  background: var(--panel); border: 1.5px solid var(--c); color: var(--ink); cursor: pointer }
+.station svg { grid-row: 1 / 3; width: 26px; height: 26px; color: var(--c) } .station b { font: 800 15px var(--body) } .station small { color: var(--muted); font-size: 12px }
+body[data-mode=port] .strip { position: absolute; top: calc(54px + var(--sceneH, 300px) + 12px + 160px); bottom: auto; height: auto; flex-wrap: wrap; margin: 0 14px; padding: 14px; border-radius: 16px; background: var(--panel); left: 0; right: 0; margin-bottom: 190px }
+body[data-mode=port] .strip::before { display: none }
+body[data-mode=port] .packart { height: 86px }
+body[data-mode=port] .types { font-size: 11px } body[data-mode=port] .types .mat { min-width: 0; padding: 4px 7px; font-size: 10.5px }
+body[data-mode=port] .strip .more { margin-left: 0; width: 100% }
+body[data-mode=port] .buybar { display: grid; gap: 6px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(#17100bf5, #0d0907); border-top: 2px solid #ffbf5e; --fs: 14px }
+body[data-mode=port] .buybar .opts { display: grid; grid-template-columns: 1fr 1fr } body[data-mode=port] .buybar .opt { white-space: normal }
+body[data-mode=port] .buybar .opt.main, body[data-mode=port] .buybar .opt:only-child { grid-column: 1 / -1; justify-content: center }
+body[data-mode=port] .toasts { top: 62px }
+
+/* phones held sideways: scene on the left, buy rail on the right */
+body[data-mode=land] .tools .chip span, body[data-mode=land] .brand .tag, body[data-mode=land] .chip.series { display: none }
+body[data-mode=land] .strip { display: none }
+body[data-mode=land] #buybox { display: none }
+body[data-mode=land] .buybar { display: grid; position: fixed; right: 0; top: 54px; bottom: 0; width: 240px; box-sizing: border-box; padding: 10px; gap: 8px; align-content: start; background: #0d0907; border-left: 2px solid #ffbf5e; z-index: 6; --fs: 13px; overflow: auto }
+body[data-mode=land] .buybar .opts { flex-direction: column } body[data-mode=land] .buybar .opt { white-space: normal }
+body[data-mode=land] .pill small { display: none } body[data-mode=land] .pill { min-height: 40px; padding: .4em .8em }

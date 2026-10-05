@@ -11,7 +11,7 @@ interface IUniswapV2Factory {
  * @title PaperUsdTwap
  * @notice A Chainlink-style PAPER/USD feed (**18 decimals**) that works before PAPER has a market.
  *
- *         At deploy there is no PAPER pool, so the feed reports 0 and the Fire keeps the PAPER leg at 1 PAPER. Once
+ *         At deploy there is no PAPER pool, so the feed reports 0 and FirePsa charges its set PAPER amount. Once
  *         a PAPER/WETH or PAPER/USDG pool on the Uniswap V2 factory holds at least MIN_LIQUIDITY_USD on its dollar
  *         side, a checkpoint marks it as the candidate; if it still qualifies at every checkpoint for MIN_WINDOW,
  *         it's adopted, and the first price appears one full window (>= 20h) after that. A pool in the other
@@ -23,7 +23,7 @@ interface IUniswapV2Factory {
  *         Same windowing as PlankUsdTwap: checkpoints closer than MIN_WINDOW to the last accepted one are no-ops, so
  *         the average always spans >= 20h and nobody can shorten it or pin its start. No owner, no admin.
  *
- *         Assumes PAPER has 18 decimals (as the Fire's PAPER_PER_TICKET does); check on deploy day.
+ *         Assumes PAPER has 18 decimals (as FirePsa does); check on deploy day.
  */
 contract PaperUsdTwap {
     IUniswapV2Factory public immutable FACTORY;
