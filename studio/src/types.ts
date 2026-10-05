@@ -123,7 +123,7 @@ export interface FireRecord {
   characterIds: string[]
   packs: number
   /** Diamonds this Series makes (at least 1, the default; never more than one per pack). Missing on Series saved
-   *  before Oct 4, which read as 1. */
+   *  by older versions, which read as 1. */
   diamonds?: number
   seed: string
   /** Set once the deal is locked: the global serial counter has moved on. */

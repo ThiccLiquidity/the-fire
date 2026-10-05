@@ -64,7 +64,7 @@ export async function loadStudio(): Promise<void> {
     } else if (k.startsWith('font:')) d.fonts.push(v as FontAsset)
     else if (k.startsWith('fire:')) d.fires.push(v as FireRecord)
     else if (k === 'global') {
-      // older saves and backups also hold the rarity accumulators (dropped Oct 4: each Series stands alone); ignore them
+      // older saves and backups also hold the rarity accumulators (no longer used: each Series stands alone); ignore them
       const { nextSerial, nextFireNumber } = v as GlobalState
       d.global = { nextSerial: nextSerial ?? d.global.nextSerial, nextFireNumber: nextFireNumber ?? d.global.nextFireNumber }
     }
@@ -273,7 +273,7 @@ export async function saveGlobal(g: GlobalState): Promise<void> {
 }
 
 /** Latest time any asset that goes into a card changed (art, keyed art, frames, layouts, fonts). Approval must be
- *  newer than this, or the owner approved something that has since changed. */
+ *  newer than this, or something approved has since changed. */
 export function lastAssetChange(characterIds?: string[]): number {
   let t = FRAMES_UPDATED_AT
   for (const c of data.characters) {

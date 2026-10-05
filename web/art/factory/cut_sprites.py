@@ -1,5 +1,5 @@
-"""Keys the parts out of originals/sprites.png (ChatGPT's sheet on pure #00FF00) into build2/sprite-*.webp.
-Only keying, despill and cropping: the art is ChatGPT's."""
+"""Keys the parts out of originals/sprites.png (a sprite sheet on pure #00FF00) into build2/sprite-*.webp.
+Only keying, despill and cropping; the art itself is untouched. Run from web/art/factory."""
 import numpy as np
 from PIL import Image
 from scipy import ndimage

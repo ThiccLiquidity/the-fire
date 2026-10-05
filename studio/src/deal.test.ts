@@ -35,7 +35,7 @@ describe('prng', () => {
   })
 })
 
-/** The rule written out once more, step by step, as the owner gave it (Oct 4). */
+/** The rule written out once more, step by step, as an independent reference for computePool. */
 function reference(P: number, D: number) {
   const N = 6 * P
   let fire = Math.floor((15000 * N + 50000) / 100000)

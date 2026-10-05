@@ -6,7 +6,7 @@ const names = ['plate', 'belt', 'chain-up', 'chain-lo', 'front-stand', 'roll-0',
   's-gear-small', 'belt-light', 'p-0', 'p-1', 'p-2', 'p-3', 'p-4', 'p-5', 's-rod', 's-conrod', 's-capsule', 's-padlock', 's-token', 's-log0', 's-log1', 's-log2', 's-paper0', 's-paper1', 's-paper2', 'card'];
 const img = {}; (await Promise.all(names.map(load))).forEach((im, k) => img[names[k]] = im);
 
-// ---------- small canvas helpers (all effects are made in code from the owner's own pieces)
+// ---------- small canvas helpers (all effects are made in code from the source art)
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); return c; };
 const CAN_FILTER = (() => { try { const g = mk(2, 2).getContext('2d'); g.filter = 'blur(1px)'; return g.filter === 'blur(1px)'; } catch (e) { return false; } })();
 function silhouette(im, blur, color = '#000') { // a soft, blurred silhouette of a sprite (for shadows and glows)
@@ -150,7 +150,7 @@ const VIGNETTE = (() => { // the scene's own edges melt into the black page
   }
   g.putImageData(d, 0, 0); return c;
 })();
-// rod: the owner's rod sprite, thickened, warmed to the painting's steel/brass, lit on top and shaded under
+// rod: the rod sprite, thickened, warmed to the painting's steel/brass, lit on top and shaded under
 const ROD = (() => { const r = img['s-rod']; if (!r) return null;
   const T = Math.round(r.height * 1.55), c = mk(r.width, T), g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
   g.drawImage(r, 0, 0, r.width, T);
@@ -166,7 +166,7 @@ const ROD = (() => { const r = img['s-rod']; if (!r) return null;
   c.shadow = silhouette(c, 5, 'rgba(0,0,0,1)'); return c; })();
 // logs: darkened toward the chute's own tone, with a soft shadow each
 const LOGS = [0, 1, 2].map((k) => { const im = img['s-log' + k]; const c = tinted(im, 'rgb(128,104,88)'); c.shadow = silhouette(im, 7); return c; });
-// the burned card: the approved Paper frame, its window filled with the frame's own paper tone so it reads as a solid card
+// the burned card: the Paper frame, its window filled with the frame's own paper tone so it reads as a solid card
 const CARD = (() => { const im = img.card; if (!im) return null; const S = 2, c = mk(im.width * S, im.height * S), g = c.getContext('2d');
   g.imageSmoothingQuality = 'high';
   const gr = g.createLinearGradient(0, 16 * S, 0, 90 * S); gr.addColorStop(0, 'rgb(226,219,210)'); gr.addColorStop(1, 'rgb(212,204,194)');
@@ -176,7 +176,7 @@ const CARD = (() => { const im = img.card; if (!im) return null; const S = 2, c 
   const r = hg.createRadialGradient(c.width / 2, c.height / 2, 10, c.width / 2, c.height / 2, c.height * 0.6); r.addColorStop(0, 'rgba(60,20,8,.55)'); r.addColorStop(0.6, 'rgba(255,120,30,0)'); r.addColorStop(1, 'rgba(255,200,90,.6)');
   hg.fillStyle = r; hg.fillRect(0, 0, c.width, c.height); // charring in the middle, bright burning edges
   c.hot = hot; c.glow = silhouette(c, 10, 'rgb(255,120,40)'); return c; })();
-// PAPER sheets: the owner's sheets squared up (an affine from three of their corners) and washed toward the roll's cream
+// PAPER sheets: the sheet sprites squared up (an affine from three of their corners) and washed toward the roll's cream
 const SHEET_Q = [[[1, 44], [61, 1], [66, 62]], [[1, 20], [80, 1], [33, 62]], [[2, 18], [59, 1], [60, 62]]]; // corner, next corner, other neighbour
 const papers = [0, 1, 2].map((k) => { const im = img['s-paper' + k], [[ax, ay], [bx, by], [cx2, cy2]] = SHEET_Q[k], W = 240, H = 128;
   const c = mk(W, H), g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
@@ -729,6 +729,7 @@ function camUpdate(dt) {
     cam.lz = clampTo(cam.lz, 0, Math.log(ZMAX));
   }
   camClamp();
+  // test hook: window.__camLog = [] records the camera path
   if (window.__camLog) window.__camLog.push([+now.toFixed(4), +cam.x.toFixed(2), +cam.y.toFixed(2), +Math.exp(cam.lz).toFixed(4), cam.key]);
 }
 function camClamp() {
@@ -754,7 +755,7 @@ function camHome() { cam.homeAfter = now; cam.last = null; cam.manualUntil = -1;
 // ---------- frame
 let last = performance.now();
 const FIXED = location.search.includes('fixed');
-window.__frames = 0;
+window.__frames = 0; // test hook: frame counter
 document.addEventListener('visibilitychange', () => { last = performance.now(); });
 function frame(tms) {
   if (document.hidden) { last = tms; requestAnimationFrame(frame); return; } // nothing drawn while the tab is hidden

@@ -1,4 +1,4 @@
-/* Omni Forge mock: the shell. Top bar, wallet, the Buy box and checkout, station pills, the bottom strip,
+/* Omni Forge (demo mode): the shell. Top bar, wallet, the Buy box and checkout, station pills, the bottom strip,
    the phone layouts, loading screen and the demo menu. Talks to the scene through window.Scene and to the
    station screens / Info through window.Stations and window.Info. */
 (() => {

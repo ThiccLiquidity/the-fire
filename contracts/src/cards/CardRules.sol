@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 /**
+ * @title CardRules
  * @notice The card game's fixed numbers, ported exactly from the Card Studio (studio/src/rules.ts and deal.ts). A parity
  *         test checks computePool against the studio's own output.
  *

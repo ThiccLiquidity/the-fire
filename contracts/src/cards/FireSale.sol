@@ -252,7 +252,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     /// @notice What the owner sets per drop. Every number can differ from drop to drop.
     struct DropConfig {
         uint64 start; // when it opens (unix seconds); everything locks then
-        uint32 packs; // paid packs (167)
+        uint32 packs; // paid packs (117 for a 167-pack drop with 50 starters)
         uint32 starters; // press-holder starter packs on top (50)
         uint32 plankOnly; // first paid packs that only PLANK can buy (50)
         uint32 walletLimit; // paid packs per wallet (5)
@@ -277,8 +277,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         // The Series' characters must be set in the card contract first, or the sale that sells it out couldn't close it.
         (bool closed,, uint8 characters,,,,,,,) = CARDS.fires(fire);
         if (closed || characters == 0) revert BadConfig();
-        // One drop at a time: a Series' pool (and the carried rare cards) is decided when it closes, so two drops
-        // running together would let whoever closes one first steer a carried Diamond.
+        // One drop at a time: the next drop can only be set up once the current one has closed.
         if (d.start == 0) {
             if (activeDrops != 0) revert AnotherDropActive();
             activeDrops = 1;

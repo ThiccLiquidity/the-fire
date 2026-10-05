@@ -1,4 +1,4 @@
-# Robinhood Chain addresses and findings (Sep 27 2026; trimmed to Omni Forge Oct 4)
+# Robinhood Chain addresses and findings
 
 ## Chain
 - Mainnet chain ID **4663**, gas in ETH. Public RPC `https://rpc.mainnet.chain.robinhood.com` (rate-limited; use Alchemy for the deploy and the keeper). If the site gets its own `VITE_RPC_URL`, add its host to `connect-src` in `web/vercel.json` or the browser blocks it. Explorer: https://robinhoodchain.blockscout.com
@@ -10,18 +10,20 @@
 - `burn(tokenId)`: **payable, `burnFee = 0.0003 ETH`** (forwarded to their `feeRecipient`), caller must be `ownerOf`, **allowed only after `mintingSunset` = Oct 1 2026 00:00 UTC**. Calls `pulpPool.releaseBurned(tokenId)` then `_burn` then transfers `plankPerNFT` PLANK to the caller.
 - Mint fee 0.0003 ETH. Pausable by admin; AccessControl admin `0x196254c3ad32f7735420f40DA387387D5DCBd8D5`.
 - Royalties recipient (ERC-2981): `0xb495e814EFAB946e6CdCA3B344aa3A96ead5a806`. Fee recipient: `0x4B53E3D48B49f71A0E4A2BDb518efc2c8795BDe1`.
-- **PAPER is not in this contract.** Printing/claiming lives in a separate PAPER contract: **`0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6`** (from the owner, Oct 4 2026). Not yet checked on chain from here: confirm it has 18 decimals (FireSale and FirePsa assume 18) and that `transferFrom` to `0x…dEaD` works.
+- **PAPER is not in this contract.** Printing/claiming lives in a separate PAPER contract: **`0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6`**. Not yet checked on chain: confirm it has 18 decimals (FireSale and FirePsa assume 18) and that `transferFrom` to `0x…dEaD` works.
 
 ## Pulp Pool (`PulpPool.sol`, verified): the presses' royalty pool (not used by the card contracts)
 - **`0x85715BbE2707476294B0c20B7DfbE32cCcADD0E1`**
 - Splits every whitelisted reward token evenly across all live mills (per-NFT accumulator). `receive()` auto-wraps ETH → WETH. A burned mill's unclaimed share rolls to the survivors.
 - **Only whitelisted tokens count.** Whitelist is admin-controlled (`addRewardToken`); WETH is in by default; PLANK was not. PLANK sent before whitelisting sits uncounted until an admin adds it.
-- PLANK is on the PulpPool reward list, per the owner (Sep 28); not yet checked on-chain.
+- PLANK is reported to be on the PulpPool reward list; not yet checked on chain.
 - Rewards claimable only after `mintingSunset`.
 
 ## PLANK (`RobinWood`, 18 decimals)
+Holder and pool figures are a snapshot from late September 2026.
+
 - **`0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc`**, total supply **888,420,069,420,888 PLANK** (888.42T). 490 holders.
-- Top holders: `0x6d05f45b602397eC1842395b2b465298BC36e5fB` (unverified contract, **56%** — locker/treasury? ask), Uniswap V2 pair (10%), PlankPress (9.4%, the mills' locked PLANK).
+- Top holders: `0x6d05f45b602397eC1842395b2b465298BC36e5fB` (unverified contract, **56%**; purpose unconfirmed), Uniswap V2 pair (10%), PlankPress (9.4%, the mills' locked PLANK).
 - **Main pool: Uniswap V2 pair `0x01b1BEf6fBA02c846eA5c4Ff59193988B5f86F73`** — 28.1 WETH / 88.7T PLANK ≈ **$0.00000000106 per PLANK** (1.06e-9) at $3,333 ETH → mcap ≈ $940k; a mill's PLANK ≈ $94.
 - Uniswap V3 pool `0x3CE05Efe2e7C9c136f12a1Be695f75F807B6c69E` is tiny (0.8 WETH). Ignore.
 - PLANK price source: **Uniswap V2 cumulative-price TWAP** on the V2 pair (30-minute window, anyone can checkpoint; `PlankUsdTwap`) × Chainlink ETH/USD. FireSale reads it at every PLANK purchase. (The ≥20h window is `PaperUsdTwap`'s.)

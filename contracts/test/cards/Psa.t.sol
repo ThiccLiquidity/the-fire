@@ -246,7 +246,7 @@ contract PsaTest is Test {
     }
 
 
-    // ---------- audit fixes (Oct 4) ----------
+    // ---------- audit fixes ----------
 
     function test_audit_maxPaper() public {
         vm.prank(alice);
@@ -292,7 +292,7 @@ contract PsaTest is Test {
     }
 
 
-    // ---------- audit round 2 (Oct 4) ----------
+    // ---------- audit round 2 ----------
 
     function test_audit2_stuckRevealCanBeCancelledAfterAWeek() public {
         vm.prank(alice);

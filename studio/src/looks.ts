@@ -1,4 +1,4 @@
-/** Shared images (decided Oct 3): every card with the same character, material, holo frame, holo picture and wear
+/** Shared images: every card with the same character, material, holo frame, holo picture and wear
  *  look shares one image. Only those are printed on the card; serial, edition and Series # are per card and go in the
  *  metadata. So a Series builds a few dozen images, not one per card. (Every Series has new characters and its own
  *  "Forged · Series " line, so images are never shared across Series.) */

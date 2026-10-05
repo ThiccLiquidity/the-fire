@@ -1,8 +1,8 @@
 /* info.js: the Info panel. One wide sheet that explains the site and the collection.
-   Facts: docs/omni-economy.md, docs/cards-contracts.md, docs/card-studio.md (+ owner overrides, Oct 4). */
+   Facts: docs/omni-economy.md, docs/cards-contracts.md, docs/card-studio.md */
 (() => {
   // ---- rarity numbers (computed, not typed in) ----
-  // A full Series: 167 packs x 6 = 1,002 cards. At least one Diamond per Series (the owner can set more);
+  // A full Series: 167 packs x 6 = 1,002 cards. At least one Diamond per Series (more can be set per Series);
   // the rest follow their share within the Series. Holo is random per card.
   const SERIES_CARDS = 167 * 6;
   const MATS = [
@@ -19,7 +19,7 @@
     m.frame = r * (1 - r); m.full = r * r; m.none = (1 - r) * (1 - r); // picture only = frame only
   });
   const M = Object.fromEntries(MATS.map((m) => [m.id, m]));
-  // PDA grade odds in percent (owner approved, Oct 4), and the wear frame each band gets (card-studio.md).
+  // PDA grade odds in percent (FirePsa defaults), and the wear frame each band gets (card-studio.md).
   const PDA = [10, 1, 9, 17, 8, 24, 7, 25, 6, 18, 5, 7, 4, 3.5, 3, 2, 2, 1.5, 1, 1]
     .reduce((a, v, i, arr) => (i % 2 ? a : [...a, { g: v, p: arr[i + 1] }]), []);
   const WEAR = [ // band, grades covered, frame suffix, seal ring colour

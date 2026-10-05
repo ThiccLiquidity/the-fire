@@ -1,5 +1,6 @@
 {
-  "name": "card-studio",
+  "name": "omni-card-studio",
+  "description": "Omni Card Studio: builds card images and metadata for each Series",
   "private": true,
   "version": "0.0.0",
   "type": "module",

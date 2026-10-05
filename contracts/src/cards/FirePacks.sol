@@ -8,6 +8,7 @@ import {Base64} from "openzeppelin-contracts/contracts/utils/Base64.sol";
 import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
 
 /**
+ * @title FirePacks
  * @notice Sealed packs. One stackable token type per Series (token id = Series number), so "Series 7 Sealed Pack x 3"
  *         lists and trades like any item and each Series has its own floor. Contents are not decided until a pack is
  *         opened (FireCards), so a sealed pack carries no hidden information anyone could read.

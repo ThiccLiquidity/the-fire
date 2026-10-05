@@ -1,6 +1,7 @@
 # Card contracts: packs, cards, opening
 
-`contracts/src/cards/`. Built Oct 3 2026 on the decisions in `docs/card-studio.md` (Packs and opening). Not deployed.
+`contracts/src/cards/`. The card rules match `docs/card-studio.md`; the sale and PDA economics are in
+`docs/omni-economy.md`. "Fire" in contract and function names is the historical name for a Series.
 
 ## The pieces
 
@@ -14,12 +15,12 @@
 
 ## The flow
 
-1. **Before a Series:** the owner calls `configureFire(fire, names, categories, imagesBase)`: the Series' characters in the
+1. **Before a Series:** the owner (the `OWNER` multisig) calls `configureFire(fire, names, categories, imagesBase)`: the Series' characters in the
    studio's order and the folder its card images live in (IPFS or Arweave). `setDiamonds(fire, n)` sets how many
    Diamonds it makes (1 to 1000, default 1, never more than one per pack). `lockFire` freezes it; so does the first
    pack sold.
-2. **While it burns:** the seller (`FireSale`) mints packs to buyers. They're tradeable sealed.
-3. **It goes out:** the seller calls `closeFire(fire)`. The pack count freezes and the pool is worked out from the
+2. **During the drop:** the seller (`FireSale`) mints packs to buyers. They're tradeable sealed.
+3. **When the drop ends:** the seller calls `closeFire(fire)`. The pack count freezes and the pool is worked out from the
    Series' own packs and Diamond setting. Each Series stands alone: no carry-over. The pool is public (`poolOf`).
 4. **Opening:** a holder calls `open(fire, count)` (up to 10). Their packs are burned and drand randomness is
    requested. **Nothing about the pack exists before this**: which cards it gets is decided by randomness that
@@ -30,7 +31,7 @@
    (Fire-or-better not needed for later packs plus spare Wood), then character and holo per card. The six are minted
    in shuffled order so a serial says nothing about its slot. The Series' totals come out exactly as the pool said.
 6. **Metadata:** `tokenURI` is built on-chain. The image is `<imagesBase>c<character>-<material>-<holo>-<wear>.webp`,
-   the same names the studio exports. Traits: Character, Category, Material, Holo, Fire, Edition ("k", then "k of N"
+   the same names the studio exports. Traits: Character, Category, Material, Holo, Series, Edition ("k", then "k of N"
    once every pack of the Series is dealt), Serial, PDA.
 
 ## Safety
@@ -44,7 +45,8 @@
 
 ## Tests
 
-`contracts/test/cards/Cards.t.sol` (16 tests, all passing with the other 126):
+`contracts/test/cards/` (`Cards.t.sol`, `Sale.t.sol`, `Psa.t.sol`, `SaleFork.t.sol`) and the fuzz and invariant
+suites in `contracts/test/invariant/`. The card tests cover:
 - the pool math matches the studio's own code over 344 Series sizes and Diamond settings (`pool-fixture.json`,
   written by `studio/scripts/pool-fixture.test.ts` with `WRITE_POOL_FIXTURE=1`)
 - Diamonds per Series: default 1, set, locks after the first pack, bounds, the effect on the pool
@@ -72,20 +74,16 @@ wallet as owner unless told otherwise. A test runs the same steps.
   Until it accepts, the deployer key controls those three contracts.
 - **Keeper:** checkpoints the PLANK price every 30 minutes, delivers drand numbers, and calls `FirePsa.pokePrice()`
   now and then.
-- **Before deploy day:** run the real-chain gas test from PowerShell:
-  `$env:FORK_RPC = "https://rpc.mainnet.chain.robinhood.com"; forge test --match-path test/cards/SaleFork.t.sol -vv`
+- **Before deploy day:** run the real-chain gas test:
+  `FORK_RPC=https://rpc.mainnet.chain.robinhood.com forge test --match-path test/cards/SaleFork.t.sol -vv`
 
 The site has the ABIs: `web/src/lib/abi/` (`fireCardsAbi.json`, `firePacksAbi.json`, `fireSaleAbi.json`, `firePsaAbi.json`), exported by `web/src/lib/cards.ts`.
 
 ## Money and the economy
 
-Decided Oct 3. See `docs/omni-economy.md`. The contracts never hold funds: whatever is paid is forwarded or
+See `docs/omni-economy.md`. The contracts never hold funds: whatever is paid is forwarded or
 burned in the same transaction.
 
 ## Still open
 
-- **Run the real-chain gas test** (above). It couldn't reach Robinhood Chain from the build machine.
-- **PAPER:** `0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6`. Confirm on chain that it has 18 decimals.
-- **The site:** the sale, starter, credits, burn and PDA screens (comes with the redesign).
-- **Before launch:** a second internal audit round, fuzz and invariant tests, and a testnet run. No professional audit
-  (owner's call). The first audit is in `docs/audit-2026-10.md`.
+See `docs/roadmap.md`.

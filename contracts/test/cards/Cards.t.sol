@@ -370,7 +370,7 @@ contract CardsTest is Test {
         cards.configureFire(1, names, cats, "x");
     }
 
-    // ---------- Diamonds per Series (Oct 4: each Series stands alone) ----------
+    // ---------- Diamonds per Series (each Series stands alone) ----------
 
     event DiamondsSet(uint256 indexed fire, uint256 diamonds);
 
@@ -486,7 +486,7 @@ contract CardsTest is Test {
         return true;
     }
 
-    // ---------- audit fixes (Oct 4) ----------
+    // ---------- audit fixes ----------
 
     event BatchMetadataUpdate(uint256 fromTokenId, uint256 toTokenId);
 
@@ -524,7 +524,7 @@ contract CardsTest is Test {
         vm.stopPrank();
     }
 
-    // ---------- audit round 2 (Oct 4) ----------
+    // ---------- audit round 2 ----------
 
     function test_audit2_charactersFixedOncePacksSell() public {
         vm.prank(seller);

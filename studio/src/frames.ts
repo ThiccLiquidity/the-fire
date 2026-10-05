@@ -1,4 +1,4 @@
-/** The collection's frames: the owner's master templates, built into the studio and never uploaded or edited here.
+/** The collection's frames: the master frame templates, built into the studio and never uploaded or edited here.
  *  Sources: frames-src/originals (as delivered), cleaned by frames-src/clean_frames.py into src/assets/frames.
  *  Every frame shares FRAME_GEOMETRY, so one layout fits them all. A missing frame blocks approval of any Series that
  *  deals that material + variant. */

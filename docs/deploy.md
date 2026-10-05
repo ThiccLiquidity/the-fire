@@ -2,10 +2,11 @@
 
 Everything below is signed from a **fresh deployer wallet** with ~$50 of ETH. Keys live in a Foundry keystore
 (`cast wallet import deployer --interactive`) or a Ledger, never in files or command lines. Never `--private-key`.
-Nothing deploys without the owner's OK.
+
+Commands are shown for PowerShell.
 
 ```powershell
-cd the-fire\contracts; copy .env.example .env   # then fill in the real .env, never .env.example
+cd contracts; copy .env.example .env   # then fill in the real .env, never .env.example
 $env:RPC = Read-Host "RPC URL"                  # once per PowerShell window: forge reads .env, PowerShell doesn't
 ```
 
@@ -44,10 +45,10 @@ checks the wiring (list in `docs/cards-contracts.md`). Until then the deployer k
 
 ## 5. Keeper
 Needed before the first drop: PLANK feed checkpoints every 30 minutes, PAPER feed when `due()`, drand deliveries for
-opens and reveals. Not built yet (`ops/README.md`).
+opens and reveals. Not built yet (`ops/README.md`, `docs/roadmap.md`).
 
 ## 6. Each Series
-The owner calls `FireCards.configureFire`, then `FireSale.configureDrop` (and `pickSuggestions`). Holder window:
+The `OWNER` multisig calls `FireCards.configureFire`, then `FireSale.configureDrop` (and `pickSuggestions`). Holder window:
 `ops/snapshot` makes the `holderRoot`.
 
 ## 7. Site

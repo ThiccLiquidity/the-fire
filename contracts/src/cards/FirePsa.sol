@@ -41,8 +41,8 @@ interface IPsaFeed {
  *         has a market (no price), a set number of PAPER the owner chooses.
  *
  *         Odds by default, out of 10,000: 10: 1%, 9: 17%, 8: 24%, 7: 25%, 6: 18%, 5: 7%, 4: 3.5%, 3: 2%, 2: 1.5%,
- *         1: 1%. Most cards land 6-9; a 10 is rare. The owner can set different odds for a Series before it closes,
- *         so they're fixed before any of its cards exist.
+ *         1: 1%. Most cards land 6-9; a 10 is rare. The owner can set different odds for a Series before any of its
+ *         packs exist, so every buyer knows the odds.
  */
 contract FirePsa is Ownable2Step {
     using SafeERC20 for IERC20;

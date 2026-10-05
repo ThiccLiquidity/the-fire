@@ -13,6 +13,7 @@ interface IRandomnessConsumer {
 }
 
 /**
+ * @title OpenDrandRouter
  * @notice drand-verified randomness with nobody in charge. A request commits to a drand evmnet round 30-33 seconds in
  *         the future. Once drand publishes that round, anyone may submit its BLS signature: the router verifies it
  *         on-chain and derives the request's word. There is exactly one valid word per request, so whoever submits

@@ -1,11 +1,35 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+dist-ssr/
+*.local
+
+# Foundry
 contracts/out/
 contracts/cache/
 contracts/broadcast/
+
+# Environment (keep the examples)
 .env
 .env.*
 !.env.example
+
+# Python
 __pycache__/
+*.py[cod]
+.venv/
+
+# Logs
+*.log
+
+# OS and editor files
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local tool settings
 .claude/settings.local.json

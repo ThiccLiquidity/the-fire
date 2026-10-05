@@ -628,7 +628,7 @@ contract SaleTest is Test {
 
 
 
-    // ---------------------------------------------------------------- holder window + regular wallets (Oct 4)
+    // ---------------------------------------------------------------- holder window + regular wallets
 
     function _leaf(address a) internal pure returns (bytes32) {
         return keccak256(bytes.concat(keccak256(abi.encode(a))));
@@ -669,7 +669,7 @@ contract SaleTest is Test {
         sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na()); // neither
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.HoldersOnly.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _proof(carol)); // not his proof
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _proof(carol)); // someone else's proof
         vm.prank(bob, bob);
         sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _press(bobPress)); // a press holder
         assertTrue(sale.phase(1).holdersOnly);
@@ -738,7 +738,7 @@ contract SaleTest is Test {
         vm.stopPrank();
     }
 
-    // ---------------------------------------------------------------- audit round 2 (Oct 4)
+    // ---------------------------------------------------------------- audit round 2
 
     function test_audit2_anyoneCanEndAStalledDropAfterAGracePeriod() public {
         _open();
@@ -802,7 +802,7 @@ contract SaleTest is Test {
         assertFalse(sale.phase(1).plankOnly, "ETH and USDG are open after the valve");
     }
 
-    // ---------------------------------------------------------------- audit fixes (Oct 4)
+    // ---------------------------------------------------------------- audit fixes
 
     /// Only one drop at a time: picks only happen while no drop is running.
     function test_audit_oneDropAtATime() public {

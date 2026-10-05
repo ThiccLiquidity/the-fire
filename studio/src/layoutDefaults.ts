@@ -72,7 +72,7 @@ export function defaultLayout(material: Material): Layout {
 export function normalizeLayout(material: Material, stored: Partial<Layout> | undefined): Layout {
   const d = defaultLayout(material)
   if (!stored || !stored.version || stored.version < 2 || stored.version > LAYOUT_VERSION) return d
-  // v2 -> v3: the PDA badge became the seal; keep everything else the owner set
+  // v2 -> v3: the PDA badge became the seal; keep every other saved setting
   if (stored.version === 2) stored = { ...stored, psa: d.psa }
   // v3 -> v4: a 4th line (Forged · Series #) joined the bottom panel; the bottom boxes and sizes move to make room,
   // fonts and colours stay

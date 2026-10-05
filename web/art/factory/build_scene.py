@@ -1,5 +1,5 @@
-"""Builds the factory scene's layers from ChatGPT's art in originals/ into build3/.
-Nothing here draws: it copies, cuts and colour-matches his pixels.
+"""Builds the factory scene's layers from the source art in originals/ (plus build2/ from cut_sprites.py) into build3/.
+Nothing here draws: it copies, cuts and colour-matches the source pixels. Run from web/art/factory.
   plate.webp   the clean plate, with the lit boiler gauge copied back from the master (the images are aligned)
   front-*.webp static parts in front of moving ones, cut from the master with hand polygons
   belt.webp    the belt slats without the chain (the chain-free right part repeated leftwards, relit per column)
@@ -44,7 +44,7 @@ lab, _ = ndimage.label(d < 22)
 edge = np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]])); edge = edge[edge > 0]
 out = ndimage.gaussian_filter(np.isin(lab, edge).astype(float), 1.0)
 plate = plate * (1 - out[..., None])
-# remove what's left of the chain (owner, Oct 4): patch each spot with a matching piece of his image nearby
+# remove what's left of the chain: patch each spot with a matching piece of the image nearby
 def patch(x0, y0, x1, y1, dx, dy, f=3):
     m = np.zeros((H, W)); m[y0:y1, x0:x1] = 1; m = ndimage.gaussian_filter(m, f)[..., None]
     plate[:] = plate * (1 - m) + np.roll(plate, (-dy, -dx), (0, 1)) * m
@@ -77,7 +77,7 @@ tex = np.clip(tex * gmax, 0, 255)
 ramp = np.full(tex.shape[1], 255.0)[None, :, None]  # opaque: the belt scrolls, so a soft edge would slide with it
 save(np.concatenate([tex, np.broadcast_to(ramp, tex.shape[:2] + (1,))], 2), 'belt.webp', q=90)
 
-# ---- the belt, done properly: one exact slat (66 px) averaged from his 14 chain-free slats, so it repeats with no jump,
+# ---- the belt, done properly: one exact slat (66 px) averaged from the 14 chain-free slats, so it repeats with no jump,
 #      and the room's light as a separate fixed layer (multiply) so the light stays put while the slats move
 PB = 66.276                                                  # the painted slat spacing, measured (autocorrelation)
 BS = C[BY0:BY1].copy()
@@ -173,7 +173,7 @@ G.update(fly=FLY, gears=GEARS, pulleys=PULLEYS, gland=[1368, 812])
 json.dump(G, open('build3/scene.json', 'w'), indent=1)
 print(json.dumps(G)[:400])
 
-# the card that gets burned: the approved Paper frame (a copy, scaled; the frames themselves are never edited)
+# the card that gets burned: the Paper frame (a copy, scaled; the frames themselves are never edited)
 Image.open('../../../studio/src/assets/frames/paper.webp').resize((84, 118), Image.LANCZOS).save('build3/card.webp', lossless=True)
 
 FR = '../../../studio/src/assets/frames/'

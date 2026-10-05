@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 /**
+ * @title OpenVRFAdapter
  * @notice Adapter between one consumer (FireCards or FirePsa; `FIRE` is the historical name) and a drand router with OpenVRF's interface — in production our OpenDrandRouter
  *         (OpenVRF with open fulfillment; see its header). https://github.com/Robinhood-OSS/OpenVRF @ 9fb960c
  *

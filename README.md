@@ -1,44 +1,92 @@
 # Omni Forge
 
-Collectible card packs on Robinhood Chain. PLANK feeds the forge, PAPER is what cards are printed on. Packs are sold
-per Series, opened with drand randomness, and cards can get a PDA grade.
+Omni Forge is a collectible NFT card game on Robinhood Chain. Cards are sold in sealed packs, one Series at a time.
+PLANK fuels the forge (part of every sale buys and burns it) and every pack burns PAPER. Packs are opened with
+drand randomness, so nobody can know a pack's contents in advance, and any card can be graded once (a PDA reveal)
+for a wear frame and grade from 1 to 10.
 
-- `docs/HANDOFF.md` — where the work stands. Start here.
-- `contracts/` — Foundry project: the card contracts (`src/cards`) and the shared randomness router and price feeds.
-  See `contracts/README.md`.
-- `studio/` — the Card Studio (card generator). See `studio/README.md` and `docs/card-studio.md`.
-- `web/` — the site. The Forge is static in `web/public/forge` (source: `web/art/factory`); `web/src/lib` holds the
-  chain, wallet, swap and card-ABI modules for going live.
-- `ops/snapshot` — the PLANK-holder snapshot for a drop's holder window.
-- `sim/omni` — the card economy models.
+Live site: https://web-mu-mocha-95.vercel.app (the Forge, running on demo data).
 
-## Working on it (PowerShell)
+## Repository layout
 
-```powershell
-git clone https://github.com/ThiccLiquidity/the-fire.git
-cd the-fire\web
-npm install
-npm run dev        # http://localhost:5173 (redirects to /forge/)
-```
+| Path | What it is |
+|---|---|
+| `contracts/` | Foundry project: the card contracts (`src/cards`), the drand randomness router and adapter, and the PLANK and PAPER price feeds. Deploy scripts in `script/`. |
+| `studio/` | Card Studio: a Vite + React + TypeScript app that builds the card images and metadata for each Series. |
+| `web/` | The site. The Forge is served statically from `web/public/forge`; `web/src/lib` holds the chain, wallet, swap and contract-ABI modules for the live version. |
+| `web/art/factory/` | Source for the Forge: the page code (`forge/`) and the pipeline that builds the workshop scene's art. |
+| `sim/omni/` | Python models of the card economy (pack supply and pricing, PLANK, PAPER, card burns). |
+| `ops/` | Operations tooling: the PLANK-holder snapshot for a drop's holder window. |
+| `brand/` | Logos and the logo clean-up script. |
+| `docs/` | Reference documentation (see below). |
 
-The site deploys on Vercel from `main` (Root Directory `web`). Nothing merges to `main` without the owner's OK.
+## Quick start
 
-## Contracts
+**Contracts** (needs [Foundry](https://getfoundry.sh)):
 
-Foundry is only needed on the machine that deploys. Install: https://getfoundry.sh
-
-```powershell
+```sh
 cd contracts
+forge build
 forge test
 ```
 
-Deploying is a runbook, not one command: `docs/deploy.md`. Deploy settings: copy `contracts/.env.example` to
-`contracts/.env`. Never put a private key in this repo; use `--account` (Foundry keystore) or `--ledger`.
+**Card Studio** (needs Node.js 20+):
 
-## Your money
+```sh
+cd studio
+npm install
+npm run dev        # http://localhost:5173
+npm test           # vitest
+```
 
-- **The contracts never hold funds.** Whatever is paid is forwarded or burned in the same transaction: 70% of a sale
-  to the revenue wallet, the burn share buys PLANK and burns it (or goes to the burn wallet if the swap can't go
-  through). PAPER spent is burned. Details: `docs/omni-economy.md`, `docs/omni-money-map.html`.
-- **Randomness** comes from drand through an ownerless router that anyone can fulfill (`docs/randomness.md`).
-- **The owner is a multisig** that sets up each Series. What it can and can't change: `docs/cards-contracts.md`.
+**Site:**
+
+```sh
+cd web
+npm install
+npm run dev        # http://localhost:5173, redirects to /forge/
+npm run build
+```
+
+After editing the Forge source in `web/art/factory/forge`, regenerate the served copy with
+`web/art/factory/sync_forge.sh` (see `web/README.md`).
+
+**Economy sims** (needs Python 3 with numpy):
+
+```sh
+cd sim/omni/packs
+python3 sim_packs.py
+```
+
+Each folder in `sim/omni` has its model, its recorded output and a `results.md`.
+
+## Deploying
+
+Deployment is a three-step Foundry runbook (`DeployTwap`, then `DeployInfra`, then `DeployCards`) followed by the
+multisig accepting ownership and a keeper going live. See [`docs/deploy.md`](docs/deploy.md). Settings go in
+`contracts/.env` (copy `contracts/.env.example`). Sign with a Foundry keystore (`--account`) or `--ledger`; never put
+a private key in a file or on the command line.
+
+The site deploys on Vercel from `main` with Root Directory `web`.
+
+## Documentation
+
+| Doc | Covers |
+|---|---|
+| [`docs/omni-economy.md`](docs/omni-economy.md) | Drops, prices, burns, starter packs, free pack credits, PDA reveal pricing and odds |
+| [`docs/cards-contracts.md`](docs/cards-contracts.md) | The card contracts: pieces, the open/deal flow, safety properties, deployment wiring |
+| [`docs/card-studio.md`](docs/card-studio.md) | Card rules (pool, pack slots, holo, wear) and how the studio builds a Series |
+| [`docs/randomness.md`](docs/randomness.md) | The drand router: request flow, recovery paths, how to verify a number |
+| [`docs/deploy.md`](docs/deploy.md) | Mainnet deploy runbook |
+| [`docs/addresses.md`](docs/addresses.md) | Robinhood Chain addresses and on-chain findings |
+| [`docs/audit-2026-10.md`](docs/audit-2026-10.md) | Internal security review: findings, fixes and accepted risks |
+| [`docs/roadmap.md`](docs/roadmap.md) | Project status and open work before launch |
+
+## Key properties
+
+- **The contracts never hold funds.** Everything paid is forwarded or burned in the same transaction: 70% of a sale
+  to the revenue wallet; the 30% burn share buys PLANK and burns it (or goes to the burn wallet if the swap can't go
+  through). All PAPER spent is burned.
+- **Randomness** comes from drand through an ownerless router that anyone can fulfill.
+- **The owner is a multisig** that configures each Series and drop. What it can and can't change is listed in
+  `docs/cards-contracts.md` and `docs/audit-2026-10.md`.

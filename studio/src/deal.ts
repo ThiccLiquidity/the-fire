@@ -31,7 +31,7 @@ export interface DealInput {
   characterIds: string[]
   /** Stand-in for the drand round's randomness. */
   seed: string
-  /** Diamonds the owner set for this Series (at least 1 is always made; capped at one per pack). */
+  /** Diamonds set for this Series (at least 1 is always made; capped at one per pack). */
   diamonds: number
   /** First global serial for this Series (last Series' nextSerial; 1 for the very first Series). */
   firstSerial: number

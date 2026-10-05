@@ -20,6 +20,7 @@ interface IFirePacks {
 }
 
 /**
+ * @title FireCards
  * @notice The cards. Every card is a unique ERC-721 (token id = its global serial).
  *
  *         How a pack is opened:
@@ -505,8 +506,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step {
     }
 
     function _category(uint8 c) private pure returns (string memory) {
-        if (c > 6) return "";
-        return ["Person", "Animal", "Plant", "Place", "Object", "Element", "Idea"][c];
+        if (c > 7) return ""; // same order as the studio's CATEGORIES (studio/src/rules.ts)
+        return ["Person", "Animal", "Plant", "Place", "Sports", "Object", "Element", "Idea"][c];
     }
 
     /// @dev A card being graded can be burned but not transferred.

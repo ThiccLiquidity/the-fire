@@ -1,4 +1,4 @@
-/* Omni Forge mock: the four station screens. Workbench (open packs + collection), PDA grading, the ash bin
+/* Omni Forge (demo mode): the four station screens. Workbench (open packs + collection), PDA grading, the ash bin
    (burn toward a free pack) and the suggestion box. Demo data only: everything reads and writes window.Store. */
 (() => {
   const S = () => Store.state;
@@ -200,7 +200,7 @@
         edition: `${1 + Math.floor(Math.random() * of)} of ${of}`, grade: null, pending: false };
     });
   }
-  // PDA grade odds in percent (owner approved, Oct 4). Sums to exactly 100.
+  // PDA grade odds in percent (FirePsa defaults). Sums to exactly 100.
   const GRADE_ODDS = [[10, 1], [9, 17], [8, 24], [7, 25], [6, 18], [5, 7], [4, 3.5], [3, 2], [2, 1.5], [1, 1]];
   const ODDS_SUM = GRADE_ODDS.reduce((a, [, p]) => a + p, 0);
   if (Math.abs(ODDS_SUM - 100) > 1e-9) throw new Error('PDA odds must sum to 100, got ' + ODDS_SUM);
@@ -282,7 +282,7 @@
       if (busy) return; busy = true;
       const prior = new Map(); S().cards.forEach((c) => { const k = dupKey(c); prior.set(k, (prior.get(k) || 0) + 1); });
       const packs = []; for (let i = 0; i < n; i++) packs.push(makePack(series));
-      // test hook (harmless): window.__forcePull = [{ material: 'diamond', holo: 'full' }, ...] sets the first pack's last cards, once
+      // test hook: window.__forcePull = [{ material: 'diamond', holo: 'full' }, ...] sets the first pack's last cards, once
       if (Array.isArray(window.__forcePull)) { window.__forcePull.forEach((o, k) => packs[0][5 - k] && Object.assign(packs[0][5 - k], o)); delete window.__forcePull; }
       let id = Math.max(999, ...S().cards.map((c) => c.id)), serial = Math.max(0, ...S().cards.map((c) => c.serial));
       packs.flat().forEach((c) => { c.id = ++id; c.serial = ++serial; }); // makePack numbers each pack from the same start

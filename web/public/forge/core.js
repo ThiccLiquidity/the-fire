@@ -1,4 +1,4 @@
-/* Omni Forge mock: shared state (demo data, no chain), events, toasts and the sheet (dialog) helper.
+/* Omni Forge (demo mode): shared state (demo data, no chain), events, toasts and the sheet (dialog) helper.
    Every other module reads and writes through window.Store and opens screens with window.Sheet. */
 (() => {
   const MATS = ['paper', 'wood', 'fire', 'charcoal', 'diamond'];

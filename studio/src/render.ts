@@ -104,7 +104,7 @@ function drawText(ctx: Ctx2D, raw: string, tb: TextBox): void {
   ctx.restore()
 }
 
-/** The PDA seal (decided Oct 3): a round wax seal stamped on the bottom panel, tinted per material (`fill` = light,
+/** The PDA seal: a round wax seal stamped on the bottom panel, tinted per material (`fill` = light,
  *  `border` = dark), "PDA" small at the top and the grade (or "?") big in the middle, in the card's font. */
 function drawPsa(ctx: Ctx2D, value: string, psa: PsaBox, ringColor: string | null): void {
   if (!psa.visible) return
@@ -243,7 +243,7 @@ function sparkle(ctx: Ctx2D, x: number, y: number, r: number, tilt: number): voi
   ctx.restore()
 }
 
-/** PDA 10 (decided Oct 4): a thin warm-gold glow hugging the card's outer edge, plus a few small sparkles near the
+/** PDA 10: a thin warm-gold glow hugging the card's outer edge, plus a few small sparkles near the
  *  corners. Gold on every material (it never goes white on Diamond). Masked by the frame's alpha so it stays inside
  *  the card's rounded outline; it lives in the outer border only, never over the name, art or seal. */
 function drawPda10(ctx: Ctx2D, frame: ImgSrc | null): void {

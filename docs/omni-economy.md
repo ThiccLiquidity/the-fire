@@ -1,9 +1,8 @@
 # Omni economy
 
-Decided with the owner on Oct 3 2026, one piece at a time. This replaces the earlier economy notes in
-`docs/cards-contracts.md`. Built in `contracts/src/cards/FireSale.sol` (tests: `contracts/test/cards/Sale.t.sol`) and
-`contracts/src/cards/FirePsa.sol` (the PDA reveal; tests: `contracts/test/cards/Psa.t.sol`).
-Sims are in `sim/omni/`. The visual map is `docs/omni-money-map.html` (also published as the "Omni Money Map" artifact).
+How packs are sold, what they cost, and where every token goes. Implemented in
+`contracts/src/cards/FireSale.sol` (tests: `contracts/test/cards/Sale.t.sol`) and `contracts/src/cards/FirePsa.sol`
+(the PDA reveal; tests: `contracts/test/cards/Psa.t.sol`). The models behind the numbers are in `sim/omni/`.
 
 ## The story
 
@@ -12,7 +11,7 @@ made of it. Each drop opens with PLANK lighting the forge.
 
 ## Every number is set per drop
 
-The owner sets these for each drop (each Series) before it launches (`configureDrop`). They lock when the drop opens
+The owner (the `OWNER` multisig) sets these for each drop (each Series) before it launches (`configureDrop`). They lock when the drop opens
 (its start time), so nothing can change while people are buying. The Series' characters must be set in the card
 contract (`configureFire`) before its drop can be set up. The
 numbers below are the starting values.
@@ -32,13 +31,10 @@ numbers below are the starting values.
 | Wallet limit lifts after | 48 hours |
 | PDA odds | 10: 1% · 9: 17% · 8: 24% · 7: 25% · 6: 18% · 5: 7% · 4: 3.5% · 3: 2% · 2: 1.5% · 1: 1% |
 
-## The owner's setup screen (in the Card Studio, not the public site)
+## Setting up a drop
 
-It lives in the Card Studio, which runs only on the owner's computer; the public site has no admin pages. It holds no
-keys: every action is a transaction the owner's multisig signs (and the Safe shows what it does before signing). The
-owner enters **total packs** (167) and **starter packs** (50); the screen shows the **paid packs** left (117) and
-sends that as `packs` (the contract counts paid packs; starters come on top of that). It also takes every other
-per-drop number, the holder-window snapshot root, and the picks.
+`configureDrop` counts **paid packs** only; starter packs come on top. A 167-pack drop with 50 starters is configured
+as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public site has no admin pages.
 
 ## Holders first, and no bot contracts
 
@@ -76,7 +72,7 @@ per-drop number, the holder-window snapshot root, and the picks.
     - Paid in ETH or USDG: the contract buys PLANK with 30% and burns it.
   - **If that swap fails** (e.g. PLANK's price jumped), the 30% goes to the **burn wallet** instead and the
     purchase still succeeds. A mint never fails because of PLANK. The burn wallet only ever buys and burns PLANK.
-  - **70% goes to the revenue wallet.** It's the owner's; the owner announces what they do with it.
+  - **70% goes to the revenue wallet.**
   - The contract keeps nothing.
 - **Gas (measured in tests, mock router):** about 93k for a 1-pack PLANK buy and 95k for ETH. A real Uniswap swap adds
   about 60–90k more, so roughly 100k (PLANK) to 180k (ETH/USDG) per purchase, any number of packs. That's cents or less
@@ -87,7 +83,7 @@ per-drop number, the holder-window snapshot root, and the picks.
   starter window and the limited phase always run in full. If the owner doesn't, anyone can, 7 days after that, so
   packs are never stranded. The Series closes with the packs that were minted.
 - **One drop at a time.** The next drop can only be set up once the current one has closed.
-- **Each Series stands alone (decided Oct 4).** Its cards come only from its own packs: Paper half, Fire 15%,
+- **Each Series stands alone.** Its cards come only from its own packs: Paper half, Fire 15%,
   Coal 4.9%, Diamond as set (at least 1), Wood the rest. Nothing carries over between Series. Example: 167 packs
   and 1 Diamond make 501 Paper, 301 Wood, 150 Fire, 49 Coal, 1 Diamond.
 - **Every purchase names its limits:** the most PLANK/USDG (or the ETH sent), and the most PAPER. If a number moved,
@@ -112,7 +108,7 @@ per-drop number, the holder-window snapshot root, and the picks.
 
 Each wallet has a count of free pack credits. Credits **stack** and never expire. A credit is used in any live
 drop: mint 1 pack for 1 PAPER (burned), out of that drop's supply. If no drop is live, or it's sold out, the
-credit waits for the next drop. **Credits work at any time during any live drop** (owner's call, Oct 4): the holder
+credit waits for the next drop. **Credits work at any time during any live drop**: the holder
 window, the PLANK-only packs and the wallet limit don't apply to them. Two ways to earn one:
 
 - **Burn 42.0 cards.** Shown as "42.0" on the site.
@@ -147,7 +143,8 @@ Every PAPER spent anywhere is burned.
 
 ## PDA reveal
 
-**PDA** stands for Professional Digital Authenticators, our own nod to real-world card grading (renamed from "PSA" on Oct 4: PSA is a real company's trademark).
+**PDA** stands for Professional Digital Authenticators, a nod to real-world card grading. (The contract keeps its
+original name, `FirePsa`.)
 
 - Once per card, up to 10 at a time. The PAPER is burned, then drand picks the grade. It sets the grade, and the card
   switches to that wear frame and seal ring colour.
@@ -160,8 +157,7 @@ Every PAPER spent anywhere is burned.
 - **While a card is being graded it can't be transferred** (it can still be burned), so nobody can sell a card
   whose drand number they've already seen as "Unrevealed".
 - **During a gap in the PAPER price feed,** reveals cost the last price-based amount, not the starting number.
-- **Odds** (owner's call, Oct 4: most cards land 6-9 and a 10 is rare; this replaced the earlier even curve), the
-  same for every material:
+- **Odds** (defaults in `FirePsa.oddsOf`; most cards land 6-9 and a 10 is rare), the same for every material:
 
 | Grade | Odds | Out of 10,000 | Wear frame |
 |---|---|---|---|
@@ -198,7 +194,7 @@ At $2.50 and 70% to revenue:
 Plus small royalties and swap fees. Running costs:
 - gas to deal opened packs, about 1–3¢ a pack
 - image storage and hosting, about $20–40 a month
-- an audit before launch, which is the big one
+- security review before launch
 
 PLANK burned at that pace: about $3,900–7,800 a year.
 
@@ -212,14 +208,13 @@ PLANK burned at that pace: about $3,900–7,800 a year.
   - Price steps were rejected as unfair to later buyers.
 - **Bots:** a wallet limit is a fairness rule, not bot protection. The press gate is what keeps bots off the
   starter packs.
-  - Alternatives that were rejected:
+  - Starter-pack gates that were rejected:
     - first come, first served for anyone: bots took ~100%
-    - a PLANK-holding snapshot: ~57%
-    - random presses: rejected as too limiting
+    - a PLANK-holding snapshot alone: bots took ~57%
+    - random presses: too limiting
+  - For the paid sale, the holder window (presses plus the PLANK snapshot) and the regular-wallets rule keep one
+    bot contract from sweeping a drop.
 
 ## Still open
 
-- Gas measured against the real Uniswap router: `test/cards/SaleFork.t.sol` is ready to run from PowerShell.
-- The site screens for all of this (with the redesign).
-- Marketplace support on Robinhood Chain.
-- Before launch: a trademark search, a lawyer's read on sealed packs, an audit, and a testnet run.
+See `docs/roadmap.md`.

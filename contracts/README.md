@@ -1,4 +1,4 @@
-# Omni Forge — contracts
+# Omni Forge contracts
 
 Foundry project.
 
@@ -15,9 +15,12 @@ forge build
 forge test --offline --use ~/.foundry/solc/solc-0.8.28
 ```
 
-`--offline` and `--use` keep forge from downloading a compiler. On your own machine, `forge test` works as long as
-forge can fetch solc. `test/RealRouter.t.sol` runs against a real drand proof; `test/cards/SaleFork.t.sol` runs
-against the live chain when `FORK_RPC` is set.
+`--offline` and `--use` keep forge from downloading a compiler; plain `forge test` works wherever forge can fetch
+solc. Dependencies (forge-std, OpenZeppelin, bls-solidity) are vendored in `lib/`.
+
+Tests: `test/cards/` (cards, sale, PDA), `test/invariant/` (fuzz and invariant suites), the price feeds and the drand
+router. `test/RealRouter.t.sol` runs against a real drand proof; `test/cards/SaleFork.t.sol` runs against the live
+chain when `FORK_RPC` is set and is skipped otherwise.
 
 ## Deploy
 
