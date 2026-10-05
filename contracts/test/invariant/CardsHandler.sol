@@ -148,7 +148,7 @@ contract CardsHandler is Test {
     /// @dev Fire 1 sells out to the actors (10 packs each) and is opened and dealt, so everyone starts with 60 cards.
     function bootstrap() external {
         FireSale.DropConfig memory c = FireSale.DropConfig({start: uint64(time + 1), packs: 40, starters: 0, plankOnly: 0,
-            walletLimit: 10, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0});
+            walletLimit: 10, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
         vm.prank(owner, owner);
         sale.configureDrop(1, c);
         hasDrop[1] = true;
@@ -357,9 +357,9 @@ contract CardsHandler is Test {
         uint256 pid = pressIds[pressSeed % pressIds.length];
         address a = asOwner ? press.ownerOf(pid) : _actor(actorSeed);
         uint256 fire = _fire(fireSeed);
-        uint256 per = sale.dropOf(fire).paperPerPack;
+        uint256 per = sale.dropOf(fire).starterPaper;
         vm.prank(a, a);
-        try sale.claimStarter(fire, pid, type(uint256).max) {
+        try sale.claimStarter(fire, pid, 1, FireSale.Pay.PLANK, 0, type(uint256).max) {
             if (ghostStarterBy[fire][a]) _flag("two starters for one wallet");
             if (ghostPressUsed[fire][pid]) _flag("one press used twice");
             ghostStarterBy[fire][a] = true;
@@ -415,7 +415,7 @@ contract CardsHandler is Test {
         calls["suggest"]++;
         address a = _actor(actorSeed);
         vm.prank(a, a);
-        sale.suggest("A fox made of embers");
+        sale.suggest("A fox made of embers", type(uint256).max);
         ghostPaperBurned += 1e18;
     }
 
@@ -447,6 +447,12 @@ contract CardsHandler is Test {
         c.plankBurnBps = uint16(bps % 3 == 0 ? 3_000 : bound(bps, 0, BPS));
         c.priceUsd = uint128(bound(price, 1e6, 1e10)); // 1 cent .. $100
         c.paperPerPack = uint128(bound(ppp, 1, 3e18));
+        c.plankOnlyFor = c.liftAfter;
+        c.regularWalletsFor = c.liftAfter;
+        c.starterPerPress = 1;
+        c.starterWalletLimit = 1;
+        c.starterPaper = c.paperPerPack;
+        c.creditsPerPick = 1;
         vm.prank(owner, owner);
         try sale.configureDrop(fire, c) {
             if (!hasDrop[fire]) { hasDrop[fire] = true; dropFires.push(fire); }

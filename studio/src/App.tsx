@@ -8,6 +8,7 @@ import { Frames } from './screens/Frames'
 import { Library } from './screens/Library'
 import { Preview } from './screens/Preview'
 import { RecipeEditor } from './screens/Recipe'
+import { SaleEditor } from './screens/Sale'
 import { Review } from './screens/Review'
 import { loadBundledFonts } from './fonts'
 import { loadStudio, useStudio } from './store'
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'preview', label: 'Preview' },
   { id: 'fire', label: '3 Series' },
   { id: 'recipe', label: '4 Recipe' },
+  { id: 'sale', label: 'Sale' },
   { id: 'deal', label: '5 Deal' },
   { id: 'review', label: '6 Build & Review' },
   { id: 'export', label: '7 Export & Upload' },
@@ -50,7 +52,7 @@ export default function App() {
   }
 
   const fire = s.fires.find((f) => f.number === fireNo) ?? s.fires[s.fires.length - 1]
-  const perFire = tab === 'fire' || tab === 'recipe' || tab === 'deal' || tab === 'review' || tab === 'export'
+  const perFire = tab === 'fire' || tab === 'recipe' || tab === 'sale' || tab === 'deal' || tab === 'review' || tab === 'export'
 
   return (
     <div className="app">
@@ -75,6 +77,7 @@ export default function App() {
             {!fire && <section className="panel grow"><p className="muted">Create a Series to start.</p></section>}
             {fire && tab === 'fire' && <FireSetup key={fire.number} fire={fire} onDeleted={() => setFireNo(null)} />}
             {fire && tab === 'recipe' && <RecipeEditor key={fire.number} fire={fire} />}
+            {fire && tab === 'sale' && <SaleEditor key={fire.number} fire={fire} />}
             {fire && tab === 'deal' && <Deal key={fire.number} fire={fire} />}
             {fire && tab === 'review' && <Review key={fire.number} fire={fire} />}
             {fire && tab === 'export' && <Export key={fire.number} fire={fire} />}

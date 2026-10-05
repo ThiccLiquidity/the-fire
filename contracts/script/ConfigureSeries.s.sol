@@ -6,19 +6,24 @@ import {stdJson} from "forge-std/StdJson.sol";
 import {RecipeDealer} from "../src/cards/RecipeDealer.sol";
 import {FireCards} from "../src/cards/FireCards.sol";
 import {FirePsa} from "../src/cards/FirePsa.sol";
+import {FireSale} from "../src/cards/FireSale.sol";
 
 /**
  * Sets up one Series from a recipe JSON (the Card Studio exports it; shape in ../docs/cards-contracts.md):
  *   RecipeDealer.setRecipe, setCharacters (+ appendCharacters in batches for long lists), FireCards.setDealer,
- *   FireCards.setImagesBase (if "imagesBase" is given), FirePsa.setOdds (if "pdaOdds" is given).
+ *   FireCards.setImagesBase (if "imagesBase" is given), FirePsa.setOdds (if "pdaOdds" is given), and last
+ *   FireSale.configureDrop from the "sale" block (if given and FIRE_SALE is set; every FireSale.DropConfig field by
+ *   name, in contract units). DROP_START (unix seconds) and HOLDER_ROOT override the block's start and holderRoot,
+ *   since both are usually decided last (the snapshot runs just before the drop).
  * It checks the recipe against the dealer first (RecipeDealer.check reverts with the reason), then prints each call
  * (target and calldata) for the OWNER multisig to submit. With SEND=true it sends them itself (only when the signer
  * is the owner, e.g. on a testnet).
  *
- *   RECIPE_JSON=path/to/recipe.json RECIPE_DEALER=0x... FIRE_CARDS=0x... [FIRE_PSA=0x...] [CHARACTER_BATCH=200] \
+ *   RECIPE_JSON=path/to/recipe.json RECIPE_DEALER=0x... FIRE_CARDS=0x... [FIRE_PSA=0x...] [FIRE_SALE=0x...] \
+ *   [DROP_START=<unix seconds>] [HOLDER_ROOT=0x...] [CHARACTER_BATCH=200] \
  *   forge script script/ConfigureSeries.s.sol --rpc-url $RPC [--account deployer --sender <owner> --broadcast, with SEND=true]
  *
- * Everything it sets locks once the Series' first pack is minted. Run it before FireSale.configureDrop.
+ * The recipe settings lock once the Series' first pack is minted; the drop settings when the drop opens.
  */
 contract ConfigureSeries is Script {
     using stdJson for string;
@@ -37,12 +42,16 @@ contract ConfigureSeries is Script {
         string imagesBase; // "" = leave as is
         bool hasOdds;
         uint64[10] odds;
+        bool hasSale;
+        FireSale.DropConfig drop;
     }
 
     function run() external {
         string memory json = vm.readFile(vm.envString("RECIPE_JSON"));
-        Call[] memory calls = build(
-            json, vm.envAddress("RECIPE_DEALER"), vm.envAddress("FIRE_CARDS"), vm.envOr("FIRE_PSA", address(0)),
+        address sale = vm.envOr("FIRE_SALE", address(0));
+        if (sale == address(0) && json.keyExists(".sale")) console.log("The JSON has a sale block: set FIRE_SALE to add configureDrop.");
+        Call[] memory calls = buildAll(
+            json, vm.envAddress("RECIPE_DEALER"), vm.envAddress("FIRE_CARDS"), vm.envOr("FIRE_PSA", address(0)), sale,
             vm.envOr("CHARACTER_BATCH", uint256(200))
         );
         for (uint256 i; i < calls.length; i++) {
@@ -61,8 +70,18 @@ contract ConfigureSeries is Script {
         }
     }
 
-    /// @dev The calls, in order. Checks the recipe with the dealer first.
+    /// @dev The recipe calls only (the sale block, if any, is left out).
     function build(string memory json, address dealer, address cards, address psa, uint256 batch)
+        public
+        view
+        returns (Call[] memory calls)
+    {
+        return buildAll(json, dealer, cards, psa, address(0), batch);
+    }
+
+    /// @dev The calls, in order. Checks the recipe with the dealer first. With `sale` set and a "sale" block,
+    ///      FireSale.configureDrop comes last (it needs the Series ready, so it can't be checked ahead).
+    function buildAll(string memory json, address dealer, address cards, address psa, address sale, uint256 batch)
         public
         view
         returns (Call[] memory calls)
@@ -73,22 +92,10 @@ contract ConfigureSeries is Script {
         uint256 n = s.names.length;
         require(n > 0, "the recipe has no characters");
         uint256 batches = (n + batch - 1) / batch;
-        calls = new Call[](batches + 2 + (bytes(s.imagesBase).length > 0 ? 1 : 0) + (s.hasOdds ? 1 : 0));
-        uint256 k;
-        calls[k++] = Call(dealer, abi.encodeCall(RecipeDealer.setRecipe, (s.fire, s.recipe)), "RecipeDealer.setRecipe");
-        for (uint256 b; b < batches; b++) {
-            uint256 from = b * batch;
-            uint256 len = n - from < batch ? n - from : batch;
-            string[] memory names = new string[](len);
-            string[] memory cats = new string[](len);
-            for (uint256 i; i < len; i++) {
-                names[i] = s.names[from + i];
-                cats[i] = s.categories[from + i];
-            }
-            calls[k++] = b == 0
-                ? Call(dealer, abi.encodeCall(RecipeDealer.setCharacters, (s.fire, names, cats)), "RecipeDealer.setCharacters")
-                : Call(dealer, abi.encodeCall(RecipeDealer.appendCharacters, (s.fire, names, cats)), "RecipeDealer.appendCharacters");
-        }
+        bool withSale = s.hasSale && sale != address(0);
+        calls = new Call[](batches + 2 + (bytes(s.imagesBase).length > 0 ? 1 : 0) + (s.hasOdds ? 1 : 0) + (withSale ? 1 : 0));
+        calls[0] = Call(dealer, abi.encodeCall(RecipeDealer.setRecipe, (s.fire, s.recipe)), "RecipeDealer.setRecipe");
+        uint256 k = _characterCalls(calls, s, dealer, batch);
         calls[k++] = Call(cards, abi.encodeCall(FireCards.setDealer, (s.fire, dealer)), "FireCards.setDealer");
         if (bytes(s.imagesBase).length > 0) {
             calls[k++] = Call(cards, abi.encodeCall(FireCards.setImagesBase, (s.fire, s.imagesBase)), "FireCards.setImagesBase");
@@ -96,6 +103,31 @@ contract ConfigureSeries is Script {
         if (s.hasOdds) {
             require(psa != address(0), "pdaOdds given: set FIRE_PSA");
             calls[k++] = Call(psa, abi.encodeCall(FirePsa.setOdds, (s.fire, s.odds)), "FirePsa.setOdds");
+        }
+        if (withSale) {
+            calls[k++] = Call(sale, abi.encodeCall(FireSale.configureDrop, (s.fire, s.drop)), "FireSale.configureDrop");
+        }
+    }
+
+    /// @dev setCharacters, then appendCharacters, `batch` characters each, from calls[1]. Returns the next index.
+    function _characterCalls(Call[] memory calls, Series memory s, address dealer, uint256 batch)
+        internal
+        pure
+        returns (uint256 k)
+    {
+        uint256 n = s.names.length;
+        k = 1;
+        for (uint256 from; from < n; from += batch) {
+            uint256 len = n - from < batch ? n - from : batch;
+            string[] memory names = new string[](len);
+            string[] memory cats = new string[](len);
+            for (uint256 i; i < len; i++) {
+                names[i] = s.names[from + i];
+                cats[i] = s.categories[from + i];
+            }
+            calls[k++] = from == 0
+                ? Call(dealer, abi.encodeCall(RecipeDealer.setCharacters, (s.fire, names, cats)), "RecipeDealer.setCharacters")
+                : Call(dealer, abi.encodeCall(RecipeDealer.appendCharacters, (s.fire, names, cats)), "RecipeDealer.appendCharacters");
         }
     }
 
@@ -122,6 +154,56 @@ contract ConfigureSeries is Script {
             for (uint256 g; g < 10; g++) s.odds[g] = uint64(o[g]);
             s.hasOdds = true;
         }
+        if (json.keyExists(".sale")) {
+            s.drop = parseSale(json);
+            s.hasSale = true;
+        }
+    }
+
+    /// @dev The "sale" block: every FireSale.DropConfig field by name (contract units: seconds, 8-decimal dollars,
+    ///      PAPER wei, basis points). holderRoot is optional (0 = presses only). DROP_START and HOLDER_ROOT override.
+    function parseSale(string memory json) public view returns (FireSale.DropConfig memory c) {
+        c.start = uint64(vm.envOr("DROP_START", _u(json, "start")));
+        require(c.start != 0, "sale.start is 0: set it in the studio or with DROP_START");
+        c.packs = uint64(_u(json, "packs"));
+        c.starters = uint64(_u(json, "starters"));
+        c.plankOnly = uint64(_u(json, "plankOnly"));
+        c.walletLimit = uint64(_u(json, "walletLimit"));
+        c.starterWindow = uint32(_u(json, "starterWindow"));
+        c.liftAfter = uint32(_u(json, "liftAfter"));
+        c.plankBurnBps = uint16(_u(json, "plankBurnBps"));
+        c.priceUsd = uint128(_u(json, "priceUsd"));
+        c.paperPerPack = uint128(_u(json, "paperPerPack"));
+        c.holderWindow = uint32(_u(json, "holderWindow"));
+        bytes32 root;
+        if (json.keyExists(".sale.holderRoot")) root = json.readBytes32(".sale.holderRoot");
+        c.holderRoot = vm.envOr("HOLDER_ROOT", root);
+        c.maxPerTx = uint32(_u(json, "maxPerTx"));
+        c.plankOnlyFor = uint32(_u(json, "plankOnlyFor"));
+        c.regularWalletsFor = uint32(_u(json, "regularWalletsFor"));
+        c.starterPerPress = uint32(_u(json, "starterPerPress"));
+        c.starterWalletLimit = uint32(_u(json, "starterWalletLimit"));
+        c.starterPriceUsd = uint128(_u(json, "starterPriceUsd"));
+        c.starterPaper = uint128(_u(json, "starterPaper"));
+        c.creditsPerPick = uint16(_u(json, "creditsPerPick"));
+        c.creditPacksMax = uint64(_u(json, "creditPacksMax"));
+        c.creditPacksPerWallet = uint64(_u(json, "creditPacksPerWallet"));
+    }
+
+    /// @dev A required whole number from the sale block, checked to fit its field.
+    function _u(string memory json, string memory key) internal view returns (uint256 v) {
+        string memory p = string.concat(".sale.", key);
+        require(json.keyExists(p), string.concat(p, " is missing"));
+        v = json.readUint(p);
+        bytes32 k = keccak256(bytes(key));
+        uint256 max = k == keccak256("plankBurnBps") || k == keccak256("creditsPerPick") ? type(uint16).max
+            : k == keccak256("priceUsd") || k == keccak256("paperPerPack") || k == keccak256("starterPriceUsd")
+                || k == keccak256("starterPaper") ? type(uint128).max
+            : k == keccak256("start") || k == keccak256("packs") || k == keccak256("starters") || k == keccak256("plankOnly")
+                || k == keccak256("walletLimit") || k == keccak256("creditPacksMax")
+                || k == keccak256("creditPacksPerWallet") ? type(uint64).max
+            : type(uint32).max;
+        require(v <= max, string.concat(p, " is too big for its field"));
     }
 
     function _type(string memory json, string memory p) internal view returns (RecipeDealer.CardType memory t) {

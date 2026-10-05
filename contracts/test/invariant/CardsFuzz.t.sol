@@ -86,7 +86,7 @@ contract CardsFuzzTest is SeriesHelper {
         start = uint64(block.timestamp + 1);
         vm.prank(owner, owner);
         sale.configureDrop(1, FireSale.DropConfig({start: start, packs: 1_000, starters: 0, plankOnly: 0, walletLimit: 1_000,
-            starterWindow: 0, liftAfter: 1 hours, plankBurnBps: bps, priceUsd: price, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0}));
+            starterWindow: 0, liftAfter: 1 hours, plankBurnBps: bps, priceUsd: price, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0}));
     }
 
     function _setFeeds(int256 ethPx, int256 plankPx) internal {

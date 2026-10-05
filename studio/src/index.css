@@ -238,3 +238,10 @@ table.slots td { vertical-align: middle; }
 .bulk > summary { cursor: pointer; color: var(--muted); }
 .bulk textarea { width: 100%; background: #111114; color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: inherit; padding: 6px; }
 .subtabs { flex-wrap: wrap; }
+
+/* Sale settings */
+.sale-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px 16px; margin: 6px 0 10px; }
+.sale-field { padding: 6px 8px; border: 1px solid transparent; border-radius: 8px; }
+.sale-field.has-problem { border-color: #7a2e2e; box-shadow: 0 0 0 1px #7a2e2e inset; }
+.warn-text { color: var(--warn); font-size: 12px; }
+.sale pre { white-space: pre-wrap; background: var(--panel-2); padding: 8px; border-radius: 6px; }

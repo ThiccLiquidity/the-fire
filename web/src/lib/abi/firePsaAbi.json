@@ -40,19 +40,6 @@
   },
   {
     "type": "function",
-    "name": "CAP_USD18",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "CARDS",
     "inputs": [],
     "outputs": [
@@ -79,7 +66,20 @@
   },
   {
     "type": "function",
-    "name": "MAX_REVEAL",
+    "name": "MAX_PRICE_USD18",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_REVEAL_CAP",
     "inputs": [],
     "outputs": [
       {
@@ -144,19 +144,6 @@
   },
   {
     "type": "function",
-    "name": "PRICE_USD18",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "REREQUEST_AFTER",
     "inputs": [],
     "outputs": [
@@ -187,6 +174,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "capUsd18",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -260,6 +260,19 @@
   {
     "type": "function",
     "name": "lastCost",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxReveal",
     "inputs": [],
     "outputs": [
       {
@@ -376,6 +389,19 @@
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "priceUsd18",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -518,6 +544,19 @@
   },
   {
     "type": "function",
+    "name": "setMaxReveal",
+    "inputs": [
+      {
+        "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setOdds",
     "inputs": [
       {
@@ -555,6 +594,24 @@
         "name": "source",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setRevealPrice",
+    "inputs": [
+      {
+        "name": "price",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "cap",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -611,6 +668,19 @@
     "inputs": [
       {
         "name": "paperWei",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MaxRevealSet",
+    "inputs": [
+      {
+        "name": "cards",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -728,6 +798,25 @@
         "name": "index",
         "type": "uint256",
         "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RevealPriceSet",
+    "inputs": [
+      {
+        "name": "priceUsd18",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "capUsd18",
+        "type": "uint256",
+        "indexed": false,
         "internalType": "uint256"
       }
     ],

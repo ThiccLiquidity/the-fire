@@ -58,8 +58,10 @@ Needed before the first drop; not built yet (`ops/README.md`, `docs/roadmap.md`)
 ## 6. Each Series
 The `OWNER` multisig sets up the Series (`script/ConfigureSeries.s.sol` turns the studio's recipe JSON into the calls:
 `RecipeDealer.setRecipe` and `setCharacters`, `FireCards.setDealer` and `setImagesBase`, optionally `FirePsa.setOdds`;
-see `docs/cards-contracts.md`), then `FireSale.configureDrop` (and `pickSuggestions`). Holder window:
-`ops/snapshot` makes the `holderRoot`.
+see `docs/cards-contracts.md`), then `FireSale.configureDrop` (and `pickSuggestions`). The drop's settings come from the
+studio's Sale tab, in the JSON's `sale` block: with `FIRE_SALE` set the script adds `configureDrop` as the last call.
+Holder window: `ops/snapshot` makes the `holderRoot` (pass it as `HOLDER_ROOT`; `DROP_START` sets the opening time if
+it wasn't set in the studio).
 
 ## 7. Site
 The Forge is static (`web/public/forge`) and runs in demo mode (a demo banner, no wallet, no payments). The live

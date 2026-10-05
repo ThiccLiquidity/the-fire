@@ -11,6 +11,7 @@ import {
 } from '../pinata'
 import { categoryProblem, nameProblem, normalizeCategory, normalizeName } from '../categories'
 import { checkRecipe, recipeJson } from '../recipe'
+import { saleErrors, saleJson, saleOf } from '../sale'
 import { artNeeds, buildGridKey, missingArt, missingFrames } from '../series'
 import { lastAssetChange, updateFire, useStudio } from '../store'
 import { BUILD_GRID_VERSION, fireStatus, type FireRecord } from '../types'
@@ -40,6 +41,8 @@ export function Export({ fire }: { fire: FireRecord }) {
   const gridLen = useMemo(() => seriesGrid(fire.number, ids, r).length, [fire.number, ids, r])
   const gridKey = useMemo(() => buildGridKey(r, ids), [r, ids])
   const changed = lastAssetChange(ids)
+  const sale = useMemo(() => saleOf(fire), [fire])
+  const saleProblems = useMemo(() => saleErrors(sale), [sale])
 
   const charProblems: string[] = []
   const needs = artNeeds(r)
@@ -67,8 +70,10 @@ export function Export({ fire }: { fire: FireRecord }) {
     { label: 'Samples approved', ok: !!fire.approvedAt && changed <= fire.approvedAt, detail: !fire.approvedAt ? 'Approve on Build & Review.' : 'Assets changed after approval: re-approve.' },
     { label: `Images built for the full grid (${gridLen.toLocaleString()})`, ok: !buildDetail, detail: buildDetail },
   ]
+  const saleCheck: Check = { label: 'Sale settings valid (configureDrop\'s checks)', ok: saleProblems.length === 0, detail: saleProblems[0] ? `${saleProblems[0].message} (Sale tab)` : undefined }
+  checks.push(saleCheck)
   const ready = checks.every((c) => c.ok)
-  const recipeReady = checks[0].ok && checks[2].ok
+  const recipeReady = checks[0].ok && checks[2].ok && saleCheck.ok
   /** The shared image file this card points at (the name FireCards.imageName builds on-chain). */
   const indexOf = useMemo(() => new Map(ids.map((id, i) => [id, i])), [ids])
   const fileOf = (c: DealtCard) => lookFileName(lookOf(c, r), indexOf.get(c.characterId) ?? -1)
@@ -77,10 +82,11 @@ export function Export({ fire }: { fire: FireRecord }) {
     fire.number, r,
     ids.map((id) => ({ name: normalizeName(chars[id]?.name ?? ''), category: normalizeCategory(chars[id]?.category ?? '') })),
     imagesCid ? `ipfs://${imagesCid}/` : undefined,
+    saleJson(sale),
   )
 
   const downloadRecipe = () => run(async () => {
-    if (!recipeReady) throw new Error(checks[0].ok ? checks[2].detail : checks[0].detail)
+    if (!recipeReady) throw new Error(!checks[0].ok ? checks[0].detail : !checks[2].ok ? checks[2].detail : saleCheck.detail)
     downloadBlob(new Blob([JSON.stringify(recipeOut(fire.upload?.imagesCid), null, 1)], { type: 'application/json' }), `recipe-fire-${fire.number}.json`)
   })
 
@@ -218,8 +224,10 @@ export function Export({ fire }: { fire: FireRecord }) {
       <h3>recipe.json (sets the Series up on-chain)</h3>
       <p className="muted small">
         The file <code>contracts/script/ConfigureSeries.s.sol</code> reads (<code>RECIPE_JSON=recipe.json</code>): the card types,
-        slots, characters in image order and PDA odds, plus <code>imagesBase</code> once the images are uploaded. The script checks
-        it against the dealer and prints the owner's calls (setRecipe, setCharacters in batches, setDealer, setImagesBase, setOdds).
+        slots, characters in image order and PDA odds, plus <code>imagesBase</code> once the images are uploaded, and the drop's
+        settings (the <code>sale</code> block, from the Sale tab). The script checks the recipe against the dealer and prints the
+        owner's calls (setRecipe, setCharacters in batches, setDealer, setImagesBase, setOdds, and configureDrop with
+        <code>FIRE_SALE</code> set).
       </p>
       <div className="row wrap">
         <button className="primary" disabled={!recipeReady || busy} onClick={downloadRecipe} data-testid="download-recipe">Download recipe.json</button>

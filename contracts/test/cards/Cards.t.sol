@@ -866,7 +866,7 @@ contract DeployCardsTest is Test {
             ethUsd: ethUsd,
             plankUsd: address(twap), paperUsd: address(0),
             v2Router: address(new MockRouterInfo(address(weth), address(new MockV2Factory(twap.PAIR())))),
-            revenueWallet: address(0xBEEF), burnWallet: address(0xB0B)
+            revenueWallet: address(0xBEEF), burnWallet: address(0xB0B), suggestionPaper: 2e18
         });
         DeployCards.Deployed memory d = s.deploy(p, address(s));
 
@@ -888,6 +888,7 @@ contract DeployCardsTest is Test {
         assertEq(d.sale.revenueWallet(), address(0xBEEF));
         assertEq(d.sale.burnWallet(), address(0xB0B));
         assertEq(d.sale.USDG_UNIT(), 1e6);
+        assertEq(d.sale.suggestionPaper(), 2e18);
         assertEq(d.sale.owner(), safe, "the sale is the multisig's from the start");
         assertEq(d.packs.pendingOwner(), safe);
         assertEq(d.cards.pendingOwner(), safe);

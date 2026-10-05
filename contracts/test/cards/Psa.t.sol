@@ -406,4 +406,51 @@ contract PsaTest is SeriesHelper {
         vm.warp(block.timestamp + 3 days); // gap with no reveals in between
         assertEq(psa.paperPerReveal(), 25e18);
     }
+
+    /// Cards per reveal is an owner setting, 1 to 100 (gas guard on finish).
+    function test_maxRevealSetting() public {
+        assertEq(psa.maxReveal(), 10);
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.BadAmount.selector);
+        psa.reveal(_ids(1, 11), type(uint256).max);
+        vm.prank(alice);
+        vm.expectRevert();
+        psa.setMaxReveal(12);
+        vm.startPrank(owner);
+        vm.expectRevert(FirePsa.BadAmount.selector);
+        psa.setMaxReveal(0);
+        vm.expectRevert(FirePsa.BadAmount.selector);
+        psa.setMaxReveal(101);
+        psa.setMaxReveal(12);
+        vm.stopPrank();
+        vm.prank(alice);
+        uint256 index = psa.reveal(_ids(1, 12), type(uint256).max);
+        psaRng.fulfill(psaRng.last(), 5);
+        uint256 g = gasleft();
+        psa.finish(index);
+        emit log_named_uint("finish, 12 cards", g - gasleft());
+        for (uint256 id = 1; id <= 12; id++) assertGe(cards.cardOf(id).grade, 1);
+    }
+
+    /// The dollar target and cap of a reveal are owner settings (0 < target <= cap <= $100).
+    function test_revealPriceSetting() public {
+        vm.prank(owner);
+        psa.setRevealPrice(0.5e18, 2e18);
+        assertEq(psa.paperPerReveal(), 10e18, "$0.05 -> 10 under $0.50");
+        paperFeed.set(1.5e18);
+        assertEq(psa.paperPerReveal(), 1e18, "1 PAPER up to $2");
+        paperFeed.set(4e18);
+        assertEq(psa.paperPerReveal(), 0.5e18, "past $2: $2 worth");
+        vm.startPrank(owner);
+        vm.expectRevert(FirePsa.BadAmount.selector);
+        psa.setRevealPrice(0, 1e18);
+        vm.expectRevert(FirePsa.BadAmount.selector);
+        psa.setRevealPrice(2e18, 1e18);
+        vm.expectRevert(FirePsa.BadAmount.selector);
+        psa.setRevealPrice(1e18, 101e18);
+        vm.stopPrank();
+        vm.prank(alice);
+        vm.expectRevert();
+        psa.setRevealPrice(1e18, 1e18);
+    }
 }

@@ -1,5 +1,6 @@
 import type { DealResult } from './deal'
 import type { Recipe } from './recipe'
+import type { SaleSettings } from './sale'
 
 export type Variant = 'normal' | 'holo'
 export const VARIANTS: Variant[] = ['normal', 'holo']
@@ -150,6 +151,9 @@ export interface FireRecord {
   /** The Series' recipe: card types, slots, PDA odds (recipe.ts). Series saved before recipes existed get the
    *  Standard recipe with their Diamond setting when loaded (migrate.ts). */
   recipe: Recipe
+  /** The drop settings (FireSale.configureDrop), exported in recipe.json's "sale" block. Missing = the Standard
+   *  sale (sale.ts standardSale). */
+  sale?: SaleSettings
   /** Legacy: Diamonds of a Standard Series from before recipes (now the Diamond type's count in the recipe). */
   diamonds?: number
   seed: string

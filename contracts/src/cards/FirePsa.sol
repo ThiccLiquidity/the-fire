@@ -35,7 +35,8 @@ interface IPsaFeed {
  *         card then shows that grade's wear frame and seal colour.
  *
  *         Price, from the PAPER price feed: the most whole PAPER that stays at or under $0.25. If 1 PAPER is worth
- *         more than $0.25, 1 PAPER, up to a hard cap of $1: past $1 a PAPER, $1 worth (part of a PAPER). Until PAPER
+ *         more than $0.25, 1 PAPER, up to a cap of $1: past $1 a PAPER, $1 worth (part of a PAPER). The owner can move
+ *         the $0.25 target and the $1 cap (`setRevealPrice`) and the cards per reveal (`setMaxReveal`). Until PAPER
  *         has a market (no price), a set number of PAPER the owner chooses.
  *
  *         Odds by default: 10: 1%, 9: 17%, 8: 24%, 7: 25%, 6: 18%, 5: 7%, 4: 3.5%, 3: 2%, 2: 1.5%, 1: 1%. Most
@@ -46,12 +47,15 @@ contract FirePsa is Ownable2Step {
     using SafeERC20 for IERC20;
 
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
-    uint256 public constant MAX_REVEAL = 10;
+    /// @dev Most cards one reveal can hold, at most (gas guard: `finish` grades them all in one transaction, about
+    ///      30k gas a card, so 100 stays far under a block). The owner picks the actual limit, `maxReveal`.
+    uint256 public constant MAX_REVEAL_CAP = 100;
+    /// @dev Highest dollar target or cap the owner can set for a reveal (a typo guard; every reveal names its most
+    ///      PAPER anyway).
     /// @dev Same reasoning as FireCards: drand's number is public ~30s before delivery, so a reveal can only be asked
     ///      for again after a full day with no answer (anyone can deliver; the keeper does it within seconds).
     uint256 public constant REREQUEST_AFTER = 1 days;
-    uint256 public constant PRICE_USD18 = 0.25e18; // $0.25
-    uint256 public constant CAP_USD18 = 1e18; // $1, the most a reveal ever costs
+    uint256 public constant MAX_PRICE_USD18 = 100e18;
     uint256 public constant PAPER_FEED_MAX_AGE = 2 days;
     /// @dev Total of the default odds (they are out of 10,000). A Series' own odds can have any total.
     uint256 public constant ODDS_TOTAL = 10_000;
@@ -65,6 +69,12 @@ contract FirePsa is Ownable2Step {
     IPsaFeed public PAPER_USD;
 
     IPsaRandomness public randomness;
+    /// @notice Most cards per reveal (10 to start; 1 to MAX_REVEAL_CAP).
+    uint256 public maxReveal = 10;
+    /// @notice The dollar target per card ($0.25 to start): the most whole PAPER at or under it.
+    uint256 public priceUsd18 = 0.25e18;
+    /// @notice The most a reveal ever costs per card in dollars ($1 to start).
+    uint256 public capUsd18 = 1e18;
     /// @notice Whole PAPER per reveal before PAPER has ever had a price.
     uint256 public fallbackPaper = 5;
     /// @notice The last price-based cost seen (PAPER wei per card). Used whenever the feed has a gap, so a gap
@@ -99,6 +109,8 @@ contract FirePsa is Ownable2Step {
     event RevealCancelled(uint256 indexed index);
     event PaperFeedSet(address feed);
     event LastCostSet(uint256 paperWei);
+    event MaxRevealSet(uint256 cards);
+    event RevealPriceSet(uint256 priceUsd18, uint256 capUsd18);
 
     error AlreadySet();
     error ZeroAddress();
@@ -146,6 +158,23 @@ contract FirePsa is Ownable2Step {
         emit FallbackPaperSet(paper);
     }
 
+    /// @notice Most cards per reveal, 1 to MAX_REVEAL_CAP (100).
+    function setMaxReveal(uint256 n) external onlyOwner {
+        if (n == 0 || n > MAX_REVEAL_CAP) revert BadAmount();
+        maxReveal = n;
+        emit MaxRevealSet(n);
+    }
+
+    /// @notice The reveal price: the most whole PAPER at or under `price` per card; 1 PAPER while a PAPER is worth
+    ///         `price` to `cap`; `cap` worth past that (18 decimals; 0 < price <= cap <= $100). Applies from the next
+    ///         reveal; each reveal names its most PAPER. A cost remembered for feed gaps updates at the next fresh price.
+    function setRevealPrice(uint256 price, uint256 cap) external onlyOwner {
+        if (price == 0 || price > cap || cap > MAX_PRICE_USD18) revert BadAmount();
+        priceUsd18 = price;
+        capUsd18 = cap;
+        emit RevealPriceSet(price, cap);
+    }
+
     /// @notice Odds for a Series' cards: a weight per grade, grade 1 first (chance = weight / sum of weights; any
     ///         sum above 0, zeros allowed). Only before any of its packs exist, so everyone who buys a pack knows the
     ///         odds.
@@ -161,12 +190,12 @@ contract FirePsa is Ownable2Step {
 
     // ================================================================ revealing
 
-    /// @notice Reveal up to 10 of your cards. The PAPER is burned now; grades are set when the randomness arrives
+    /// @notice Reveal up to `maxReveal` (10) of your cards. The PAPER is burned now; grades are set when the randomness arrives
     ///         (anyone can then call finish; the site does it right away). Until then the cards can't be transferred.
     ///         `maxPaper` is the most PAPER (wei, for all the cards) the holder agrees to pay.
     function reveal(uint256[] calldata ids, uint256 maxPaper) external returns (uint256 index) {
         uint256 n = ids.length;
-        if (n == 0 || n > MAX_REVEAL) revert BadAmount();
+        if (n == 0 || n > maxReveal) revert BadAmount();
         for (uint256 i; i < n; i++) {
             uint256 id = ids[i];
             if (CARDS.ownerOf(id) != msg.sender) revert NotHolder();
@@ -253,8 +282,8 @@ contract FirePsa is Ownable2Step {
 
     // ================================================================ views
 
-    /// @notice PAPER (wei) per card right now: the most whole PAPER at or under $0.25; 1 PAPER while a PAPER is worth
-    ///         $0.25 to $1; $1 worth past that. During a gap in the price feed, the last price-based cost; before
+    /// @notice PAPER (wei) per card right now: the most whole PAPER at or under `priceUsd18` ($0.25); 1 PAPER while a
+    ///         PAPER is worth that to `capUsd18` ($1); `capUsd18` worth past that. During a gap in the price feed, the last price-based cost; before
     ///         PAPER has ever had a price, the set number.
     function paperPerReveal() public view returns (uint256) {
         uint256 px = _paperUsd();
@@ -275,11 +304,12 @@ contract FirePsa is Ownable2Step {
     }
 
     /// @dev Cost in PAPER wei at a PAPER/USD price (18 decimals, nonzero). Never 0: at least 1 wei.
-    function _costAt(uint256 px) internal pure returns (uint256) {
-        uint256 whole = PRICE_USD18 / px;
+    function _costAt(uint256 px) internal view returns (uint256) {
+        uint256 whole = priceUsd18 / px;
         if (whole != 0) return whole * 1e18;
-        if (px <= CAP_USD18) return 1e18;
-        uint256 cost = CAP_USD18 * 1e18 / px; // $1 worth, under 1 PAPER
+        uint256 cap = capUsd18;
+        if (px <= cap) return 1e18;
+        uint256 cost = cap * 1e18 / px; // the cap's worth, under 1 PAPER
         return cost == 0 ? 1 : cost;
     }
 

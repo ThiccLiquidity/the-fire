@@ -67,10 +67,13 @@ interface ICardsPair {
  *                     owner calls FirePsa.setPaperFeed. Both feeds must be built on this PAPER/PLANK and ETH_USD_FEED.
  *   V2_ROUTER         Uniswap V2 router (buys the PLANK that each sale burns)
  *   REVENUE_WALLET    gets 70% of every sale; BURN_WALLET gets the burn share when a PLANK swap can't go through
+ *   SUGGESTION_PAPER  PAPER wei per character suggestion to start (default 1e18 = 1 PAPER; 0 = free). The owner can
+ *                     change it later (FireSale.setSuggestionRules). Every other sale number is set per drop.
  *
  * Left for the owner afterwards, per Series (script/ConfigureSeries.s.sol builds these calls from the studio's recipe
  * JSON): RecipeDealer.setRecipe and setCharacters (appendCharacters for long lists), FireCards.setDealer and
- * setImagesBase, optionally FirePsa.setOdds; then FireSale.configureDrop (and pickSuggestions).
+ * setImagesBase, optionally FirePsa.setOdds, then FireSale.configureDrop from the JSON's "sale" block; and
+ * pickSuggestions.
  */
 contract DeployCards is Script {
     struct Params {
@@ -90,6 +93,7 @@ contract DeployCards is Script {
         address v2Router;
         address revenueWallet;
         address burnWallet;
+        uint256 suggestionPaper; // PAPER wei per character suggestion to start (the owner can change it later)
     }
 
     struct Deployed {
@@ -119,7 +123,8 @@ contract DeployCards is Script {
             paperUsd: vm.envOr("PAPER_USD_FEED", address(0)),
             v2Router: vm.envAddress("V2_ROUTER"),
             revenueWallet: vm.envAddress("REVENUE_WALLET"),
-            burnWallet: vm.envAddress("BURN_WALLET")
+            burnWallet: vm.envAddress("BURN_WALLET"),
+            suggestionPaper: vm.envOr("SUGGESTION_PAPER", uint256(1e18))
         });
         check(p);
 
@@ -148,7 +153,7 @@ contract DeployCards is Script {
         d.sale = new FireSale(FireSale.Config({
             owner: p.owner, paper: p.paper, plank: p.plank, usdg: p.usdg, weth: p.weth, press: p.press,
             packs: address(d.packs), cards: address(d.cards), ethUsd: p.ethUsd, plankUsd: p.plankUsd,
-            router: p.v2Router, revenueWallet: p.revenueWallet, burnWallet: p.burnWallet, paperPerSuggestion: 1e18
+            router: p.v2Router, revenueWallet: p.revenueWallet, burnWallet: p.burnWallet, paperPerSuggestion: p.suggestionPaper
         }));
         d.psa = new FirePsa(deployer, address(d.cards), p.paper, p.paperUsd);
         d.psaAdapter = new OpenVRFAdapter(p.router, address(d.psa));

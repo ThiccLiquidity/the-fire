@@ -14,7 +14,10 @@ made of it. Each drop opens with PLANK lighting the forge.
 The owner (the `OWNER` multisig) sets these for each drop (each Series) before it launches (`configureDrop`). They lock when the drop opens
 (its start time), so nothing can change while people are buying. The Series itself (its recipe: card types, pack
 size and slots, holo odds, characters; see `docs/cards-contracts.md`) must be set up in the card contracts before its
-drop can be set up, and locks at its first pack. The numbers below are the starting values (the Standard recipe).
+drop can be set up, and locks at its first pack. The numbers below are the Standard sale (the studio's "Standard"
+preset; its "Giant" preset is an example of a 10,000-pack drop with 100 per wallet and 100 per purchase). The full
+list, with bounds, is in `docs/cards-contracts.md` ("Every sale and economy setting"). One number is **not** a
+setting: cards burned per free pack is 42, forever.
 
 | Setting | Start |
 |---|---|
@@ -24,11 +27,18 @@ drop can be set up, and locks at its first pack. The numbers below are the start
 | PAPER per pack | 1 |
 | PLANK burn share | 30% |
 | PLANK-only packs at the start | 50 |
-| Starter packs | 50 |
-| Starter window | 24 hours |
+| PLANK-only packs open to ETH/USDG after | 48 hours, sold or not |
+| Press (starter) packs | 50 |
+| Press packs per press / per wallet | 1 / 1 |
+| Press pack price | 1 PAPER (can be free, a PAPER amount, a dollar price, or a dollar price + PAPER) |
+| Press claim window | 24 hours |
 | Holder window | 24 hours: only wallets with a Paper Press or $69+ of PLANK (secret snapshot) can buy paid packs |
-| Wallet limit (paid packs) | 5 |
+| Wallet limit (paid packs) | 5 (0 = no limit) |
 | Wallet limit lifts after | 48 hours |
+| Regular wallets only for | 48 hours (0 = off) |
+| Most packs per purchase | 50 |
+| Credits per picked suggestion | 1 |
+| Free (credit) packs per drop, in all / per wallet | no limit / no limit (0 = no limit) |
 | PDA odds | 10: 1% · 9: 17% · 8: 24% · 7: 25% · 6: 18% · 5: 7% · 4: 3.5% · 3: 2% · 2: 1.5% · 1: 1% |
 
 ## Setting up a drop
@@ -45,8 +55,9 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
     which goes into the drop's settings. The live site is planned to load each buyer's proof automatically, so
     buyers do nothing extra (the site isn't connected to the chain yet).
   - **Not sold out after 24 hours:** it opens to everyone.
-- **Regular wallets only while the wallet limit is on (48h).** MetaMask, Rabby, OKX and the like are regular wallets.
-  A bot contract can't spin up throwaway wallets to sweep a drop in one transaction.
+- **Regular wallets only for the first 48h** (its own setting, 0 = off; it used to be tied to the wallet limit).
+  MetaMask, Rabby, OKX and the like are regular wallets. A bot contract can't spin up throwaway wallets to sweep a drop
+  in one transaction.
 - **Free pack credits** work at any time, including the holder window.
 
 ## A drop, start to finish
@@ -54,8 +65,8 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
 1. **Launch.** The holder window starts (24h: press holders and snapshot PLANK holders only). Two things open:
    - **Starter packs for press holders.**
    - **The paid sale, PLANK only, for the first 50 packs.**
-2. **After 50 PLANK packs:** ETH and USDG can buy too. Safety valve: if the PLANK-only packs haven't sold by the time
-   the wallet limit lifts (e.g. the PLANK price feed is down), ETH and USDG open anyway so a drop can't get stuck.
+2. **After 50 PLANK packs:** ETH and USDG can buy too. Safety valve: if the PLANK-only packs haven't sold by
+   `plankOnlyFor` (48h; e.g. the PLANK price feed is down), ETH and USDG open anyway so a drop can't get stuck.
 3. **24 hours:** the starter window closes. Unclaimed starters join the paid supply.
 4. **48 hours, if not sold out:** the 5-per-wallet limit lifts completely.
 5. **Sold out:** the drop is over.
@@ -63,6 +74,7 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
 ## Buying packs
 
 - **Every pack needs 1 PAPER, and it is burned.** "The minter needs paper." This includes starter and free packs.
+  (Per drop: PAPER per paid/credit pack and PAPER per press pack are settings, 0 allowed.)
 - **Packs are never paid for in PAPER.** The price is paid in PLANK, ETH or USDG only.
 - **Paid pack:** $2.50 + 1 PAPER.
   - ETH uses the Chainlink price. PLANK uses the 30-minute pool average (`PlankUsdTwap`). USDG is taken at face value.
@@ -75,15 +87,16 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
     purchase still succeeds. A mint never fails because of PLANK. The burn wallet only ever buys and burns PLANK.
   - **70% goes to the revenue wallet.**
   - The contract keeps nothing.
-- **Up to 50 packs per purchase** by default (`maxPerTx`, set per drop).
-- **Gas (measured in tests, mock router; `test_gas`):** about 96k for a 1-pack PLANK buy and 101k for ETH. A real
-  Uniswap swap adds about 60–90k more, so roughly 100k (PLANK) to 190k (ETH/USDG) per purchase, whether it is 1 pack
-  or 50. That's cents or less on Robinhood Chain.
+- **Up to 50 packs per purchase** by default (`maxPerTx`, set per drop; any number, e.g. 100 for a giant drop).
+- **Gas (measured in tests, mock router; `test_gas`, `test_giantDrop_buy100InOneTx`):** about 96k for a PLANK buy and
+  101k for ETH, the same for 1 pack or 100 (packs are one ERC-1155 mint). A real Uniswap swap adds about 60–90k more,
+  so roughly 100k (PLANK) to 190k (ETH/USDG) per purchase. That's cents or less on Robinhood Chain.
 - **The swap's floor:** it must get at least 90% of the PLANK that the 30-minute average price says. If the pool is
   pumped or manipulated beyond that, the swap is skipped and the burn share goes to the burn wallet.
-- **If the drop never sells out:** the owner can end it (`endDrop`) once the wallet limit has lifted (48h), so the
-  starter window and the limited phase always run in full. If the owner doesn't, anyone can, 7 days after that, so
-  packs are never stranded. The Series closes with the packs that were minted.
+- **If the drop never sells out:** the owner can end it (`endDrop`) once its last timed phase is over (press window,
+  holder window, PLANK-only, wallet limit, regular wallets; 48h in the Standard sale), so every phase always runs in
+  full. If the owner doesn't, anyone can, 7 days after that, so packs are never stranded. The Series closes with the
+  packs that were minted.
 - **One drop at a time.** The next drop can only be set up once the current one has closed.
 - **Each Series stands alone.** Its cards come only from its own packs, by its own recipe. Standard recipe: Paper
   half, Fire 15%, Coal 4.9%, Diamond as set (at least 1), Wood the rest. Nothing carries over between Series. Example:
@@ -100,8 +113,9 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
 
 - **Who:** press holders only (Paper Press NFT). This is the bot filter: a press costs $94+.
 - **Rules:** first come, first served. 1 per wallet. Each press counts once per drop, so passing one press
-  around doesn't get extra packs.
-- **Price:** 1 PAPER, burned. No dollar price.
+  around doesn't get extra packs. (Per drop: packs per press, e.g. 3, claimable in any split; packs per wallet.)
+- **Price:** 1 PAPER, burned. No dollar price. (Per drop: free, a PAPER amount, a dollar price paid in PLANK, ETH or
+  USDG like a paid pack with the same burn share, or a dollar price plus PAPER.)
 - **Window:** 24 hours, then leftovers join the paid supply.
 - **Trading:** starter packs are normal packs and can be traded sealed.
 - **Known gap:** someone with many presses could spread them across wallets. Each one is still a real press.
@@ -111,10 +125,15 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
 Each wallet has a count of free pack credits. Credits **stack** and never expire. A credit is used in any live
 drop: mint 1 pack for 1 PAPER (burned), out of that drop's supply. If no drop is live, or it's sold out, the
 credit waits for the next drop. **Credits work at any time during any live drop**: the holder
-window, the PLANK-only packs and the wallet limit don't apply to them. Two ways to earn one:
+window, the PLANK-only packs and the wallet limit don't apply to them. A drop can cap how many free packs it gives
+out in all (`creditPacksMax`) and per wallet (`creditPacksPerWallet`), so a big stack of credits can't take a large
+share of a small drop; credits over a cap simply wait for another drop. The Standard sale has no caps.
 
-- **Burn 42.0 cards.** Shown as "42.0" on the site. (`cardsPerCredit`, 42 to start; the owner can change it
-  between drops, for example for Series with bigger packs.)
+Two ways to earn one:
+
+- **Burn 42.0 cards.** Shown as "42.0" on the site. (`CARDS_PER_CREDIT`, a constant: it can **never** change, for
+  any Series. Burn progress carries over from Series to Series, so changing the rate would change what people already
+  burned toward.)
   - Each wallet keeps a running burn count that never resets: 3 one day + 2 the next = 5 of 42.
   - At 42 the wallet gets a credit, and extras carry over (burn 50 → 1 credit, 8 toward the next).
   - The count belongs to the wallet that burns.
@@ -122,7 +141,8 @@ window, the PLANK-only packs and the wallet limit don't apply to them. Two ways 
     everyone burns all Paper and Wood. Below about 12 it gets close to an endless loop (a pack has 6 cards).
     Commons gain a floor of about 6¢ ($2.50 ÷ 42).
 - **Your character suggestion gets picked.** The owner grants these while setting up that Series' drop (before it
-  opens), no more picks than the Series has characters, and each suggestion once. With one drop at a time, picks only
+  opens), no more picks than the Series has characters, and each suggestion once. Credits per pick are set per drop
+  (1 to start; 0 = none). With one drop at a time, picks only
   happen while no drop is running. A picked credit is an ordinary credit: any drop, any time.
 
 The site tells the two stories differently ("You burned 42.0" vs. "Your character made it"). The contract uses
@@ -135,8 +155,8 @@ Every PAPER spent anywhere is burned.
 | Use | Cost |
 |---|---|
 | Any pack (paid, starter or free) | 1 PAPER per pack |
-| Character suggestion | 1 PAPER. Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
-| PDA reveal | The most whole PAPER that stays at or under $0.25. Past $0.25 a PAPER, 1 PAPER, capped at $1: past $1 a PAPER, $1 worth (part of a PAPER, never 0). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1; $4 → 0.25. Priced by `PaperUsdTwap`; a set number of PAPER until it has a price. PAPER only. |
+| Character suggestion | 1 PAPER (owner setting, `setSuggestionRules`, any amount incl. 0; the suggester names their most). Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
+| PDA reveal | The most whole PAPER that stays at or under $0.25 (owner setting with the $1 cap, `FirePsa.setRevealPrice`). Past $0.25 a PAPER, 1 PAPER, capped at $1: past $1 a PAPER, $1 worth (part of a PAPER, never 0). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1; $4 → 0.25. Priced by `PaperUsdTwap`; a set number of PAPER until it has a price. PAPER only. |
 
 - **The PAPER price feed.** PAPER already has a live pool, but `PAPER_USD_FEED` must be the deployed `PaperUsdTwap`
   (step 2 of `docs/deploy.md`), never the pool itself. The feed adopts a PAPER/WETH or PAPER/USDG pool only once it
@@ -154,7 +174,7 @@ Every PAPER spent anywhere is burned.
 **PDA** stands for Professional Digital Authenticators, a nod to real-world card grading. (The contract keeps its
 original name, `FirePsa`.)
 
-- Once per card, up to 10 at a time. The PAPER is burned, then drand picks the grade. It sets the grade, and the card
+- Once per card, up to 10 at a time (owner setting, `setMaxReveal`, at most 100). The PAPER is burned, then drand picks the grade. It sets the grade, and the card
   switches to that wear frame and seal ring colour.
 - Before PAPER has a price, a reveal costs a set number of PAPER (5 to start, the owner can change it).
 - The owner can give a Series different odds, but only before its first pack exists, so every buyer knows the odds.

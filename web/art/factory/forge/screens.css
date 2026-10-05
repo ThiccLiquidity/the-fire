@@ -280,8 +280,6 @@ a.btn { text-decoration: none }
 .foot { position: sticky; bottom: -18px; z-index: 8; margin: 0 -16px -18px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); display: flex; flex-wrap: wrap; gap: 10px;
   align-items: center; justify-content: space-between; background: var(--panel); border-top: 1px solid var(--line-2); box-shadow: 0 -10px 20px rgba(0,0,0,.45) }
 .foot .fsum { display: grid; gap: 2px }
-.foot.confirm { background: #2a120a; border-top-color: var(--ember) }
-.foot .fwarn { color: #ffb08a }
 
 /* ---------- grading: the "Ready to grade" tray, pinned to the top of the sheet */
 .gtray { position: sticky; top: -14px; z-index: 8; margin: -14px -16px 0; padding: 12px 16px; display: grid; gap: 8px; background: var(--panel); border-bottom: 1px solid var(--line-2) }
@@ -410,4 +408,53 @@ a.btn { text-decoration: none }
   .ho-ring, .ho-halo { animation: none } .ho-sweep, .ho-spk { display: none } /* the holo edge stays, still; the face just fades in */
   .sc.holo-glow:not(.rare) { filter: drop-shadow(0 0 12px rgba(200,190,255,.8)) } .sc.t-diamond::before { box-shadow: 0 0 40px 12px rgba(150,215,255,.95) }
   .bm-flash { display: none }
+}
+
+/* ---------- the burn warning: a big ember window, exact cards first, then type BURN */
+dialog.sheet.burnwarn { width: min(680px, calc(100vw - 24px)); border: 2px solid var(--ember); box-shadow: 0 0 0 1px #4a1a0c, 0 0 60px rgba(255,90,28,.35), 0 20px 60px rgba(0,0,0,.8) }
+dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
+.burnwarn .sheet-head { background: linear-gradient(#3a1308, #24100a); border-bottom-color: var(--ember) }
+.burnwarn .sheet-head h2 { color: #ffb08a; font-size: 24px }
+.bw { display: grid; gap: 14px } .bw p { margin: 0 }
+.bw-foot { position: sticky; bottom: -18px; z-index: 5; margin: 0 -16px -18px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); display: grid; gap: 10px;
+  background: var(--panel); border-top: 1px solid #7a2a10; box-shadow: 0 -10px 20px rgba(0,0,0,.5) }
+.bw-warn { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 12px; background: #2a120a; border: 1.5px solid #c2260f }
+.bw-warn p { margin: 0; color: #ffd9c4; line-height: 1.45 }
+.bw-warn .bw-big { font: 800 18px/1.3 var(--body); color: #fff1e6; margin-bottom: 4px }
+.bw-icon { flex: none; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: #fff6ec; background: radial-gradient(circle at 50% 70%, #ffb070, #ff4a1c 50%, #b3170a) }
+.bw-icon svg { width: 24px; height: 24px }
+.bw-gain { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2) }
+.bw-ft { font: 400 18px var(--display); color: var(--ember) } .bw-ft .muted { color: var(--muted) }
+.bw .bw-h { margin: 0; font: 400 15px var(--display); letter-spacing: .04em }
+.bw-list { list-style: none; margin: 0; padding: 4px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 8px; max-height: 34dvh; overflow: auto;
+  border: 1px solid var(--line); border-radius: 12px; background: #0f0b08 }
+.bw-list li { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px 8px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line) }
+.bw-list li.flag { border-color: #c2260f; background: #241008 }
+.bw-thumb { width: 54px }
+.bw-info { display: grid; gap: 1px; min-width: 0; font-size: 13px; line-height: 1.3 }
+.bw-info b { font-size: 14px } .bw-info span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.bw-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px }
+.bw-flag { font: 800 11.5px/1 var(--body); padding: 4px 7px 4px 5px; border-radius: 999px; background: #4a1a0c; color: #ffd27a; border: 1px solid #ff7a2e; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px }
+.bw-flag::before { content: '!'; width: 13px; height: 13px; border-radius: 50%; background: #ffd27a; color: #3a1308; font: 900 10px/13px var(--body); text-align: center }
+.bw-flag.last { background: #ffd27a; color: #2a1005; border-color: #fff0bf } .bw-flag.last::before { background: #c2260f; color: #fff }
+.bw-type { display: grid; gap: 6px; padding: 10px 14px; border-radius: 12px; border: 1.5px dashed var(--ember); background: #1a0c06 }
+.bw-type label { font: 800 15px var(--body) } .bw-type label b { color: var(--ember); letter-spacing: .08em }
+.bw-type input { min-height: 50px; border-radius: 12px; border: 2px solid var(--line-2); background: #0b0705; color: #fff1e6; padding: 0 14px;
+  font: 400 22px var(--display); letter-spacing: .2em; text-transform: uppercase }
+.bw-type input:focus { outline: none; border-color: var(--ember); box-shadow: 0 0 0 3px rgba(255,122,46,.3) }
+.bw-type.ok input { border-color: var(--bad); box-shadow: 0 0 0 3px rgba(255,107,90,.35) }
+.bw-act { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap }
+.bw-act .btn.danger { font-size: 16px; min-height: 50px }
+.bw-act .btn.danger[disabled] { filter: saturate(.3) }
+@media (prefers-reduced-motion: no-preference) {
+  .burnwarn .bw-act .btn.danger:not([disabled]) { animation: bw-glow 1.6s ease-in-out infinite }
+}
+@keyframes bw-glow { 50% { box-shadow: 0 0 18px rgba(255,90,28,.7) } }
+@media (max-width: 600px) {
+  dialog.sheet.burnwarn { width: 100vw; max-width: 100vw; border-width: 2px 0 0 }
+  .burnwarn .sheet-head h2 { font-size: 21px }
+  .bw-warn { padding: 12px } .bw-warn .bw-big { font-size: 16.5px } .bw-icon { width: 34px; height: 34px } .bw-icon svg { width: 20px; height: 20px }
+  .bw-list { grid-template-columns: 1fr; max-height: none; overflow: visible }
+  .bw-type { padding: 0; border: 0; background: none } .bw-type small { display: none } .bw-type input { min-height: 46px }
+  .bw-act .btn { flex: 1 }
 }

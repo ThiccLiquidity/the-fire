@@ -10,6 +10,7 @@
  *  Numbers the contract stores above 2^53 (shares, holo chances, weights, odds) are kept as decimal strings. */
 
 import { HOLO_TYPES, type HoloType } from './rules'
+import type { SaleJson } from './sale'
 
 export type Supply = 'filler' | 'share' | 'perPack' | 'count'
 export const SUPPLY_LABEL: Record<Supply, string> = { share: 'Share of cards', perPack: 'Per pack', count: 'Exact count', filler: 'Filler (the rest)' }
@@ -624,12 +625,14 @@ export interface RecipeJson {
   slots: ({ count: number; types?: number[]; minRank?: number; maxRank?: number; mustHolo?: boolean })[]
   characters: { name: string; category: string }[]
   pdaOdds?: string[]
+  /** FireSale.configureDrop's settings (sale.ts saleJson). */
+  sale?: SaleJson
 }
 
 const num = (v: bigint): number | string => (v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : v.toString())
 
 /** The recipe.json ConfigureSeries.s.sol reads (shape in docs/cards-contracts.md). Characters in image order. */
-export function recipeJson(fire: number, r: Recipe, characters: { name: string; category: string }[], imagesBase?: string): RecipeJson {
+export function recipeJson(fire: number, r: Recipe, characters: { name: string; category: string }[], imagesBase?: string, sale?: SaleJson): RecipeJson {
   return {
     fire,
     ...(imagesBase ? { imagesBase } : {}),
@@ -650,6 +653,7 @@ export function recipeJson(fire: number, r: Recipe, characters: { name: string; 
     }),
     characters,
     pdaOdds: r.pdaOdds.map((x) => String(parseUint(x))),
+    ...(sale ? { sale } : {}),
   }
 }
 

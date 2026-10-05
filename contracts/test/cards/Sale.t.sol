@@ -6,6 +6,8 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {FirePsa} from "../../src/cards/FirePsa.sol";
+import {ConfigureSeries} from "../../script/ConfigureSeries.s.sol";
 import {SeriesHelper} from "./SeriesHelper.sol";
 import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockPlankTwap, MockPair} from "../Mocks.sol";
 
@@ -129,7 +131,7 @@ contract SaleTest is SeriesHelper {
 
     function _cfg(uint64 s, uint32 n, uint32 starters, uint32 plankOnly, uint32 limit) internal pure returns (FireSale.DropConfig memory) {
         return FireSale.DropConfig({start: s, packs: n, starters: starters, plankOnly: plankOnly, walletLimit: limit,
-            starterWindow: 24 hours, liftAfter: 48 hours, plankBurnBps: 3_000, priceUsd: PRICE, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0});
+            starterWindow: 24 hours, liftAfter: 48 hours, plankBurnBps: 3_000, priceUsd: PRICE, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 48 hours, regularWalletsFor: 48 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
     }
 
     function _drop(uint256 fire, uint64 s, uint32 n, uint32 starters, uint32 plankOnly, uint32 limit) internal {
@@ -361,29 +363,29 @@ contract SaleTest is SeriesHelper {
         _open();
         uint256 deadPaper = paper.balanceOf(DEAD);
         vm.prank(alice, alice);
-        sale.claimStarter(1, p1, type(uint256).max);
+        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
         assertEq(packs.balanceOf(alice, 1), 1);
         assertEq(paper.balanceOf(DEAD) - deadPaper, 1e18, "only the PAPER");
         assertEq(plank.balanceOf(revenue), 0);
         vm.prank(alice, alice);
         vm.expectRevert(FireSale.AlreadyClaimed.selector);
-        sale.claimStarter(1, p2, type(uint256).max); // 1 per wallet
+        sale.claimStarter(1, p2, 1, FireSale.Pay.PLANK, 0, type(uint256).max); // 1 per wallet
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.NotPressOwner.selector);
-        sale.claimStarter(1, p1, type(uint256).max); // not bob's press
+        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max); // not bob's press
         vm.prank(alice, alice);
         press.transferFrom(alice, bob, p1);
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.PressUsed.selector);
-        sale.claimStarter(1, p1, type(uint256).max); // each press once per drop
+        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max); // each press once per drop
         vm.prank(bob, bob);
-        sale.claimStarter(1, p3, type(uint256).max);
+        sale.claimStarter(1, p3, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
         _warp(start + 24 hours);
         address carol = address(0xC3);
         uint256 p4 = press.mint(carol);
         vm.prank(carol, carol);
         vm.expectRevert(FireSale.StarterWindowClosed.selector);
-        sale.claimStarter(1, p4, type(uint256).max);
+        sale.claimStarter(1, p4, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
     }
 
     function test_leftoverStartersJoinPaidSupply() public {
@@ -403,7 +405,7 @@ contract SaleTest is SeriesHelper {
         uint256 p1 = press.mint(alice);
         _open();
         vm.prank(alice, alice);
-        sale.claimStarter(1, p1, type(uint256).max);
+        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
         vm.prank(alice, alice);
         packs.safeTransferFrom(alice, bob, 1, 1, "");
         assertEq(packs.balanceOf(bob, 1), 1);
@@ -504,7 +506,7 @@ contract SaleTest is SeriesHelper {
         assertEq(sale.credits(alice), 2);
         // her suggestion gets picked for the next drop: a third credit
         vm.prank(alice, alice);
-        uint256 id = sale.suggest("A fox made of embers");
+        uint256 id = sale.suggest("A fox made of embers", type(uint256).max);
         uint64 s2 = uint64(block.timestamp + 1 hours);
         _drop(2, s2, 10, 0, 0, 5);
         uint256[] memory picked = new uint256[](1);
@@ -553,31 +555,27 @@ contract SaleTest is SeriesHelper {
         assertEq(packs.balanceOf(alice, 1), 120);
     }
 
-    /// Cards per free pack credit can be changed between drops (never during one).
-    function test_cardsPerCreditSetBetweenDrops() public {
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.DropsActive.selector);
-        sale.setCardsPerCredit(10); // drop 1 is set up
-        _aliceGetsCards(5); // 30 cards; the drop sells out and closes
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.setCardsPerCredit(0);
+    /// Cards per free pack credit is fixed forever at 42 (burn progress carries over between Series): no setter.
+    function test_cardsPerCreditIsFixedAt42() public {
+        assertEq(sale.CARDS_PER_CREDIT(), 42);
+        (bool ok,) = address(sale).call(abi.encodeWithSignature("setCardsPerCredit(uint256)", uint256(10)));
+        assertFalse(ok, "no setter");
+        _aliceGetsCards(7); // 42 cards; fire 1 closes
         vm.prank(alice, alice);
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", alice));
-        sale.setCardsPerCredit(10);
-        vm.prank(owner, owner);
-        sale.setCardsPerCredit(10);
-        assertEq(sale.cardsPerCredit(), 10);
+        sale.burnCards(_ids(1, 41));
+        assertEq(sale.credits(alice), 0);
+        // a new drop doesn't change the rate: progress carries over and the 42nd card earns the credit
+        _drop(2, uint64(block.timestamp + 1 hours), 10, 0, 0, 5);
         vm.prank(alice, alice);
-        sale.burnCards(_ids(1, 25));
-        assertEq(sale.credits(alice), 2);
-        assertEq(sale.burnCount(alice), 5);
+        sale.burnCards(_ids(42, 1));
+        assertEq(sale.credits(alice), 1);
+        assertEq(sale.burnCount(alice), 0);
     }
 
     function test_suggestions() public {
         uint256 before = paper.balanceOf(DEAD);
         vm.prank(bob, bob);
-        uint256 id = sale.suggest("Captain Kindling");
+        uint256 id = sale.suggest("Captain Kindling", type(uint256).max);
         assertEq(paper.balanceOf(DEAD) - before, 1e18);
         uint256[] memory ids = new uint256[](1);
         ids[0] = id;
@@ -588,7 +586,7 @@ contract SaleTest is SeriesHelper {
         vm.expectRevert(FireSale.AlreadyClaimed.selector);
         sale.pickSuggestions(1, ids); // once each
         vm.prank(bob, bob);
-        uint256 id2 = sale.suggest("Ash Wolf");
+        uint256 id2 = sale.suggest("Ash Wolf", type(uint256).max);
         ids[0] = id2;
         _open();
         vm.prank(owner, owner);
@@ -631,8 +629,8 @@ contract SaleTest is SeriesHelper {
     function test_suggestionListClearsAfterEachPickingSession() public {
         _drop(1, start, 4, 0, 0, 5);
         vm.startPrank(bob, bob);
-        uint256 a = sale.suggest("Ember Fox");
-        uint256 b = sale.suggest("Ash Wolf");
+        uint256 a = sale.suggest("Ember Fox", type(uint256).max);
+        uint256 b = sale.suggest("Ash Wolf", type(uint256).max);
         vm.stopPrank();
         uint256[] memory one = new uint256[](1);
         one[0] = a;
@@ -640,7 +638,7 @@ contract SaleTest is SeriesHelper {
         sale.pickSuggestions(1, one); // session for Fire 1: picks from the list a and b are in
         assertEq(sale.currentRound(), 1, "new suggestions now go into a fresh list");
         vm.prank(alice, alice);
-        uint256 c = sale.suggest("Cinder Owl"); // made after the session started: next list
+        uint256 c = sale.suggest("Cinder Owl", type(uint256).max); // made after the session started: next list
 
         _open();
         vm.prank(alice, alice);
@@ -846,7 +844,7 @@ contract SaleTest is SeriesHelper {
 
     function test_audit_picksCappedByCharacters() public {
         uint256[] memory ids = new uint256[](4);
-        for (uint256 i; i < 4; i++) { vm.prank(bob, bob); ids[i] = sale.suggest("x"); }
+        for (uint256 i; i < 4; i++) { vm.prank(bob, bob); ids[i] = sale.suggest("x", type(uint256).max); }
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.BadAmount.selector);
         sale.pickSuggestions(1, ids); // Fire 1 has 3 characters
@@ -866,16 +864,20 @@ contract SaleTest is SeriesHelper {
         c.liftAfter = 0;
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(1, c); // would silently turn off PLANK-only and the wallet limit
+        sale.configureDrop(1, c); // a wallet limit with no lift time
         c = _cfg(start, 10, 3, 0, 5);
-        c.starterWindow = 72 hours; // longer than the limited phase
+        c.starterWindow = 30 days + 1; // longer than any phase may be
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.BadConfig.selector);
         sale.configureDrop(1, c);
         c = _cfg(start, 10, 3, 0, 5);
-        c.starterWindow = 0; // starters with no window
+        c.starterWindow = 0; // press packs with no window
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(1, c);
+        c = _cfg(start, 10, 3, 0, 5);
+        c.starterWindow = 72 hours; // longer than the wallet limit: fine now, phases are independent
+        vm.prank(owner, owner);
         sale.configureDrop(1, c);
     }
 
@@ -919,5 +921,516 @@ contract SaleTest is SeriesHelper {
         twap.setWindow(PLANK_USD, 6 days); // a checkpoint after a 6-day gap: fresh-looking, but a 6-day average
         vm.expectRevert(FireSale.FeedUnavailable.selector);
         s2.quotePlank(1, 1);
+    }
+
+    // ---------------------------------------------------------------- per-drop settings
+
+    function _set(uint256 fire, FireSale.DropConfig memory c) internal {
+        vm.prank(owner, owner);
+        sale.configureDrop(fire, c);
+    }
+
+    function _claim(address who, uint256 pid, uint256 n) internal {
+        vm.prank(who, who);
+        sale.claimStarter(1, pid, n, FireSale.Pay.PLANK, 0, type(uint256).max);
+    }
+
+    /// A giant drop: 10,000 packs, 100 per wallet, 100 per purchase. One purchase of 100 costs about what 1 does.
+    function test_giantDrop_buy100InOneTx() public {
+        FireSale.DropConfig memory c = _cfg(start, 10_000, 0, 0, 100);
+        c.maxPerTx = 100;
+        _set(1, c);
+        _open();
+        vm.prank(bob, bob);
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na()); // warm the counters
+        uint256 g = gasleft();
+        vm.prank(alice, alice);
+        sale.buyWithPlank(1, 100, type(uint256).max, type(uint256).max, _na());
+        emit log_named_uint("PLANK, 100 packs", g - gasleft());
+        assertEq(packs.balanceOf(alice, 1), 100);
+        assertEq(paper.balanceOf(DEAD), 101e18, "1 PAPER a pack");
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.WalletLimit.selector);
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
+        uint256 cost = sale.quoteEth(1, 99);
+        g = gasleft();
+        vm.prank(bob, bob);
+        sale.buyWithEth{value: cost}(1, 99, type(uint256).max, _na());
+        emit log_named_uint("ETH, 99 packs (with PLANK swap)", g - gasleft());
+        assertEq(packs.balanceOf(bob, 1), 100);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.BadAmount.selector);
+        sale.buyWithPlank(1, 101, type(uint256).max, type(uint256).max, _na()); // over maxPerTx
+        _assertHoldsNothing();
+    }
+
+    /// A wallet limit in the thousands, matched by maxPerTx.
+    function test_bigWalletLimitAndMaxPerTx() public {
+        FireSale.DropConfig memory c = _cfg(start, 5_000, 0, 0, 2_500);
+        c.maxPerTx = 2_500;
+        _set(1, c);
+        paper.mint(alice, 2_000e18);
+        _open();
+        vm.prank(alice, alice);
+        sale.buyWithPlank(1, 2_500, type(uint256).max, type(uint256).max, _na());
+        assertEq(packs.balanceOf(alice, 1), 2_500);
+    }
+
+    /// No wallet limit at all: walletLimit 0 with liftAfter 0 (one without the other is refused).
+    function test_noWalletLimit() public {
+        FireSale.DropConfig memory c = _cfg(start, 100, 0, 0, 0);
+        c.liftAfter = 0;
+        _set(1, c);
+        _open();
+        vm.prank(alice, alice);
+        sale.buyWithPlank(1, 50, type(uint256).max, type(uint256).max, _na());
+        vm.prank(alice, alice);
+        sale.buyWithPlank(1, 50, type(uint256).max, type(uint256).max, _na());
+        assertTrue(sale.phase(1).closed, "sold out to one wallet");
+        c = _cfg(start, 10, 0, 0, 0); // limit 0, lift 48h
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(2, c);
+    }
+
+    /// 3 press packs per press: claimed in any split, never more per press, even after passing it on.
+    function test_pressPacksPerPress3() public {
+        FireSale.DropConfig memory c = _cfg(start, 10, 10, 0, 5);
+        c.starterPerPress = 3;
+        c.starterWalletLimit = 6;
+        _set(1, c);
+        uint256 p1 = press.mint(alice);
+        _open();
+        _claim(alice, p1, 2);
+        _claim(alice, p1, 1);
+        assertEq(packs.balanceOf(alice, 1), 3);
+        assertEq(sale.startersClaimedWith(1, p1), 3);
+        assertEq(paper.balanceOf(DEAD), 3e18, "PAPER only, 1 each");
+        vm.prank(alice, alice);
+        press.transferFrom(alice, bob, p1);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.PressUsed.selector);
+        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max); // the press is used up this drop
+        uint256 p2 = press.mint(bob);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.PressUsed.selector);
+        sale.claimStarter(1, p2, 4, FireSale.Pay.PLANK, 0, type(uint256).max); // 4 > 3 per press
+        _claim(bob, p2, 3);
+        assertEq(sale.phase(1).startersLeft, 4);
+    }
+
+    /// Press packs per wallet: a wallet with many presses still gets at most the wallet limit.
+    function test_pressPacksWalletLimit() public {
+        FireSale.DropConfig memory c = _cfg(start, 10, 6, 0, 5);
+        c.starterWalletLimit = 2;
+        _set(1, c);
+        uint256 p1 = press.mint(alice);
+        uint256 p2 = press.mint(alice);
+        uint256 p3 = press.mint(alice);
+        _open();
+        _claim(alice, p1, 1);
+        _claim(alice, p2, 1);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.AlreadyClaimed.selector);
+        sale.claimStarter(1, p3, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
+        assertEq(sale.startersClaimedBy(1, alice), 2);
+    }
+
+    /// Free press packs: no PAPER, no price; any ETH sent comes back.
+    function test_pressPacksFree() public {
+        FireSale.DropConfig memory c = _cfg(start, 10, 3, 0, 5);
+        c.starterPaper = 0;
+        _set(1, c);
+        uint256 p1 = press.mint(alice);
+        _open();
+        uint256 eth = alice.balance;
+        vm.prank(alice, alice);
+        sale.claimStarter{value: 1 ether}(1, p1, 1, FireSale.Pay.ETH, 0, 0);
+        assertEq(packs.balanceOf(alice, 1), 1);
+        assertEq(paper.balanceOf(DEAD), 0, "no PAPER");
+        assertEq(alice.balance, eth, "ETH back");
+        _assertHoldsNothing();
+    }
+
+    /// Press packs at a set PAPER amount; the claimer names the most PAPER.
+    function test_pressPacksPaperAmount() public {
+        FireSale.DropConfig memory c = _cfg(start, 10, 3, 0, 5);
+        c.starterPaper = 3e18;
+        _set(1, c);
+        uint256 p1 = press.mint(alice);
+        _open();
+        (uint256 cost, uint256 pp) = sale.quoteStarter(1, 1, FireSale.Pay.PLANK);
+        assertEq(cost, 0);
+        assertEq(pp, 3e18);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, 2e18);
+        _claim(alice, p1, 1);
+        assertEq(paper.balanceOf(DEAD), 3e18);
+    }
+
+    /// Press packs at a dollar price, paid like a paid pack (PLANK, ETH or USDG; burn share and revenue split).
+    function test_pressPacksUsdPrice() public {
+        FireSale.DropConfig memory c = _cfg(start, 10, 6, 4, 5);
+        c.starterPriceUsd = 100_000_000; // $1
+        c.starterPaper = 0;
+        c.starterWalletLimit = 3;
+        c.starterPerPress = 3;
+        _set(1, c);
+        uint256 p1 = press.mint(alice);
+        uint256 p2 = press.mint(bob);
+        _open();
+        // PLANK, during the PLANK-only phase (it doesn't apply to press packs)
+        (uint256 cost,) = sale.quoteStarter(1, 1, FireSale.Pay.PLANK);
+        assertEq(cost, 1e27);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, cost - 1, 0);
+        vm.prank(alice, alice);
+        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, cost, 0);
+        assertEq(plank.balanceOf(DEAD), cost * 3_000 / 10_000);
+        assertEq(plank.balanceOf(revenue), cost - cost * 3_000 / 10_000);
+        // ETH with change back
+        (cost,) = sale.quoteStarter(1, 2, FireSale.Pay.ETH);
+        uint256 eth = alice.balance;
+        vm.prank(alice, alice);
+        sale.claimStarter{value: cost + 1 ether}(1, p1, 2, FireSale.Pay.ETH, type(uint256).max, 0);
+        assertEq(eth - alice.balance, cost);
+        assertEq(revenue.balance, cost - cost * 3_000 / 10_000);
+        // ETH short
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.claimStarter{value: 1}(1, p2, 1, FireSale.Pay.ETH, type(uint256).max, 0);
+        // USDG
+        (cost,) = sale.quoteStarter(1, 1, FireSale.Pay.USDG);
+        assertEq(cost, 1e6);
+        vm.prank(bob, bob);
+        sale.claimStarter(1, p2, 1, FireSale.Pay.USDG, cost, 0);
+        assertEq(usdg.balanceOf(revenue), 7e5);
+        assertEq(packs.balanceOf(alice, 1), 3);
+        assertEq(packs.balanceOf(bob, 1), 1);
+        _assertHoldsNothing();
+    }
+
+    /// Press packs off (0 per press needs 0 press packs), and a press-packs-only drop (no paid packs).
+    function test_pressPacksOffAndPressOnlyDrop() public {
+        FireSale.DropConfig memory c = _cfg(start, 10, 3, 0, 5);
+        c.starterPerPress = 0;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(1, c); // press packs with 0 per press
+        c.starters = 0;
+        _set(1, c); // press packs off
+        uint256 p1 = press.mint(alice);
+        _open();
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.SoldOut.selector);
+        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
+        // a press-only drop
+        vm.prank(alice, alice);
+        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max, _na());
+        _warp(start + 48 hours);
+        vm.prank(alice, alice);
+        sale.buyWithPlank(1, 6, type(uint256).max, type(uint256).max, _na()); // fire 1 sells out
+        c = _cfg(uint64(block.timestamp + 1 hours), 0, 2, 0, 0);
+        c.liftAfter = 0;
+        c.priceUsd = 0;
+        _set(2, c);
+        _warp(block.timestamp + 1 hours);
+        vm.prank(alice, alice);
+        sale.claimStarter(2, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
+        uint256 p2 = press.mint(bob);
+        vm.prank(bob, bob);
+        sale.claimStarter(2, p2, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
+        assertTrue(sale.phase(2).closed, "all press packs claimed: sold out");
+        c = _cfg(uint64(block.timestamp + 1 hours), 5, 0, 0, 5);
+        c.priceUsd = 0;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(3, c); // paid packs at $0 are refused
+    }
+
+    /// The regular-wallets rule has its own time (0 = off), apart from the wallet limit.
+    function test_regularWalletsForIsItsOwnSetting() public {
+        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
+        c.regularWalletsFor = 1 hours;
+        _set(1, c);
+        _open();
+        assertTrue(sale.phase(1).regularWalletsOnly);
+        vm.prank(alice); // a contract call
+        vm.expectRevert(FireSale.NoContracts.selector);
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
+        _warp(start + 1 hours);
+        assertFalse(sale.phase(1).regularWalletsOnly);
+        vm.prank(alice); // the wallet limit is still on, contracts may buy
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
+        c = _cfg(uint64(block.timestamp + 1 hours), 20, 0, 0, 5);
+        c.regularWalletsFor = 0;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.AnotherDropActive.selector);
+        sale.configureDrop(2, c);
+    }
+
+    function test_regularWalletsOff() public {
+        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
+        c.regularWalletsFor = 0;
+        _set(1, c);
+        _open();
+        vm.prank(alice); // a contract call, right at the start
+        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
+        assertEq(packs.balanceOf(alice, 1), 1);
+    }
+
+    /// The PLANK-only packs open up to ETH and USDG at their own time; a PLANK-only count needs one.
+    function test_plankOnlyForIsItsOwnSetting() public {
+        FireSale.DropConfig memory c = _cfg(start, 20, 0, 10, 5);
+        c.plankOnlyFor = 2 hours;
+        _set(1, c);
+        _open();
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.PlankOnly.selector);
+        sale.buyWithUsdg(1, 1, type(uint256).max, type(uint256).max, _na());
+        _warp(start + 2 hours);
+        assertFalse(sale.phase(1).plankOnly);
+        vm.prank(alice, alice);
+        sale.buyWithUsdg(1, 1, type(uint256).max, type(uint256).max, _na());
+        c.plankOnlyFor = 0;
+        c.start = uint64(block.timestamp + 1 hours);
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.DropStarted.selector);
+        sale.configureDrop(1, c);
+        assertFalse(sale.phase(1).limitLifted);
+    }
+
+    function test_plankOnlyNeedsATime() public {
+        FireSale.DropConfig memory c = _cfg(start, 20, 0, 10, 5);
+        c.plankOnlyFor = 0;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(1, c);
+    }
+
+    /// The owner can end a stalled drop only once its longest phase is over.
+    function test_endDropWaitsForTheLongestPhase() public {
+        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
+        c.holderWindow = 72 hours; // longer than the 48h wallet limit
+        _set(1, c);
+        assertEq(sale.phase(1).phasesOver, start + 72 hours);
+        _warp(start + 48 hours);
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.TooEarly.selector);
+        sale.endDrop(1);
+        _warp(start + 72 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(1);
+    }
+
+    /// PAPER per pack can be 0 (no PAPER for paid or credit packs).
+    function test_paperPerPackZero() public {
+        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
+        c.paperPerPack = 0;
+        _set(1, c);
+        _open();
+        vm.prank(alice, alice);
+        sale.buyWithPlank(1, 2, type(uint256).max, 0, _na());
+        assertEq(paper.balanceOf(DEAD), 0);
+        assertEq(packs.balanceOf(alice, 1), 2);
+    }
+
+    /// Credits per picked suggestion is per drop: 3 each, or none.
+    function test_creditsPerPick() public {
+        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
+        c.creditsPerPick = 3;
+        _set(1, c);
+        vm.prank(bob, bob);
+        uint256 id = sale.suggest("Ember Fox", type(uint256).max);
+        vm.prank(alice, alice);
+        uint256 id2 = sale.suggest("Ash Wolf", type(uint256).max);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = id;
+        vm.prank(owner, owner);
+        sale.pickSuggestions(1, ids);
+        assertEq(sale.credits(bob), 3);
+        c.creditsPerPick = 0;
+        _set(1, c);
+        ids[0] = id2;
+        vm.prank(owner, owner);
+        sale.pickSuggestions(1, ids);
+        assertEq(sale.credits(alice), 0, "picked, no credit");
+    }
+
+    /// The suggestion cost and length are owner settings (any cost, 0 included); suggesters name their most PAPER.
+    function test_suggestionRules() public {
+        assertEq(sale.suggestionPaper(), 1e18);
+        vm.prank(alice, alice);
+        vm.expectRevert();
+        sale.setSuggestionRules(0, 280);
+        vm.prank(owner, owner);
+        sale.setSuggestionRules(0, 10);
+        vm.prank(bob, bob);
+        sale.suggest("Ember Fox", 0); // free
+        assertEq(paper.balanceOf(DEAD), 0);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.BadAmount.selector);
+        sale.suggest("Captain Kindling", 0); // 16 bytes > 10
+        vm.prank(owner, owner);
+        sale.setSuggestionRules(5e18, 280);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.suggest("Ash Wolf", 1e18); // the cost went up past the suggester's most
+        vm.prank(bob, bob);
+        sale.suggest("Ash Wolf", 5e18);
+        assertEq(paper.balanceOf(DEAD), 5e18);
+        vm.startPrank(owner, owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.setSuggestionRules(0, 0);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.setSuggestionRules(0, 1_025);
+        vm.stopPrank();
+    }
+
+    /// Every new setting locks at the drop's start like the rest.
+    function test_newSettingsLockAtStart() public {
+        _open();
+        FireSale.DropConfig memory c = _cfg(uint64(block.timestamp + 1 hours), 10, 3, 0, 5);
+        c.starterPerPress = 5;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.DropStarted.selector);
+        sale.configureDrop(1, c);
+        assertEq(sale.dropOf(1).starterPerPress, 1);
+    }
+
+
+    /// The studio's sample export (recipe.json with a "sale" block, written by studio/src/sale.test.ts) goes through
+    /// ConfigureSeries into the recipe calls and FireSale.configureDrop, and the drop comes out as the studio set it.
+    function test_studioSaleExportConfiguresTheDrop() public {
+        _warp(start + 48 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(1); // one drop at a time
+        FirePsa psa = new FirePsa(owner, address(cards), address(paper), address(0));
+        ConfigureSeries cs = new ConfigureSeries();
+        string memory json = vm.readFile("test/cards/recipe-studio-sale.json");
+        ConfigureSeries.Call[] memory calls = cs.buildAll(json, address(dealer), address(cards), address(psa), address(sale), 200);
+        assertEq(calls.length, 6, "recipe, characters, dealer, images, odds, configureDrop");
+        assertEq(calls[5].what, "FireSale.configureDrop");
+        assertEq(cs.build(json, address(dealer), address(cards), address(psa), 200).length, 5, "build leaves the sale out");
+        vm.startPrank(owner, owner);
+        for (uint256 i; i < calls.length; i++) {
+            (bool ok,) = calls[i].to.call(calls[i].data);
+            assertTrue(ok, calls[i].what);
+        }
+        vm.stopPrank();
+        FireSale.Drop memory d = sale.dropOf(7);
+        assertEq(d.start, 1_900_000_000);
+        assertEq(d.packs, 117);
+        assertEq(d.starters, 50);
+        assertEq(d.plankOnly, 50);
+        assertEq(d.walletLimit, 5);
+        assertEq(d.starterWindow, 24 hours);
+        assertEq(d.liftAfter, 48 hours);
+        assertEq(d.holderWindow, 24 hours);
+        assertEq(d.plankOnlyFor, 48 hours);
+        assertEq(d.regularWalletsFor, 48 hours);
+        assertEq(d.maxPerTx, 50);
+        assertEq(d.plankBurnBps, 3_000);
+        assertEq(d.priceUsd, 250_000_000);
+        assertEq(d.paperPerPack, 1e18);
+        assertEq(d.starterPerPress, 1);
+        assertEq(d.starterWalletLimit, 1);
+        assertEq(d.starterPriceUsd, 0);
+        assertEq(d.starterPaper, 1e18);
+        assertEq(d.creditsPerPick, 1);
+        assertEq(d.creditPacksMax, 0);
+        assertEq(d.creditPacksPerWallet, 0);
+        assertEq(d.holderRoot, bytes32(0xabababababababababababababababababababababababababababababababab));
+        // DROP_START and HOLDER_ROOT override the block's start and root
+        vm.setEnv("DROP_START", "1900000123");
+        vm.setEnv("HOLDER_ROOT", "0x0000000000000000000000000000000000000000000000000000000000000001");
+        FireSale.DropConfig memory c = cs.parseSale(json);
+        assertEq(c.start, 1_900_000_123);
+        assertEq(c.holderRoot, bytes32(uint256(1)));
+        // a missing field is named
+        vm.expectRevert(bytes(".sale.creditsPerPick is missing"));
+        cs.parseSale(vm.replace(json, '"creditsPerPick"', '"creditsPerPik"'));
+        vm.expectRevert(bytes(".sale.creditPacksMax is missing"));
+        cs.parseSale(vm.replace(json, '"creditPacksMax"', '"creditPacksMx"'));
+    }
+
+    // ---------------------------------------------------------------- caps on free (credit) packs
+
+    /// Alice and bob each get `n` credits (picked suggestions for fire 2's drop, set up with `c`); fire 2 then opens.
+    function _creditDrop(FireSale.DropConfig memory c, uint256 n) internal returns (uint64 s2) {
+        _aliceGetsCards(14); // closes fire 1
+        s2 = uint64(block.timestamp + 1 hours);
+        c.start = s2;
+        c.creditsPerPick = uint16(n);
+        _set(2, c);
+        uint256[] memory ids = new uint256[](2);
+        vm.prank(alice, alice);
+        ids[0] = sale.suggest("Ember Fox", type(uint256).max);
+        vm.prank(bob, bob);
+        ids[1] = sale.suggest("Ash Wolf", type(uint256).max);
+        vm.prank(owner, owner);
+        sale.pickSuggestions(2, ids);
+        _warp(s2);
+    }
+
+    function test_creditPacksTotalCap() public {
+        FireSale.DropConfig memory c = _cfg(0, 20, 0, 0, 5);
+        c.creditPacksMax = 5;
+        _creditDrop(c, 4);
+        assertEq(sale.phase(2).creditPacksLeft, 5);
+        vm.prank(alice, alice);
+        sale.useCredits(2, 4, type(uint256).max);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.CreditCapReached.selector);
+        sale.useCredits(2, 2, type(uint256).max);
+        vm.prank(bob, bob);
+        sale.useCredits(2, 1, type(uint256).max);
+        assertEq(sale.phase(2).creditPacksLeft, 0);
+        assertEq(sale.credits(bob), 3, "unused credits wait for another drop");
+    }
+
+    function test_creditPacksPerWalletCap() public {
+        FireSale.DropConfig memory c = _cfg(0, 20, 0, 0, 5);
+        c.creditPacksPerWallet = 2;
+        _creditDrop(c, 4);
+        vm.prank(alice, alice);
+        sale.useCredits(2, 2, type(uint256).max);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.CreditWalletLimit.selector);
+        sale.useCredits(2, 1, type(uint256).max);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.CreditWalletLimit.selector);
+        sale.useCredits(2, 3, type(uint256).max);
+        vm.prank(bob, bob);
+        sale.useCredits(2, 2, type(uint256).max);
+        assertEq(sale.creditPacksBy(2, alice), 2);
+    }
+
+    function test_creditPacksZeroMeansNoLimit() public {
+        FireSale.DropConfig memory c = _cfg(0, 20, 0, 0, 5);
+        _creditDrop(c, 10);
+        assertEq(sale.phase(2).creditPacksLeft, 20, "only the supply");
+        vm.prank(alice, alice);
+        sale.useCredits(2, 10, type(uint256).max);
+        vm.prank(bob, bob);
+        sale.useCredits(2, 10, type(uint256).max);
+        assertTrue(sale.phase(2).closed, "credits took the whole drop");
+    }
+
+    function test_creditCapsLockAtStart() public {
+        FireSale.DropConfig memory c = _cfg(start, 10, 3, 0, 5);
+        c.creditPacksMax = 2;
+        c.creditPacksPerWallet = 1;
+        _set(1, c);
+        _open();
+        c.start = uint64(block.timestamp + 1 hours);
+        c.creditPacksMax = 0;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.DropStarted.selector);
+        sale.configureDrop(1, c);
+        assertEq(sale.dropOf(1).creditPacksMax, 2);
+        assertEq(sale.dropOf(1).creditPacksPerWallet, 1);
     }
 }

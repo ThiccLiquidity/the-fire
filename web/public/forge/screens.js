@@ -879,7 +879,7 @@
   }
   const bfilt = { series: 'all', mat: 'all', holo: 'any', grade: 'all', sort: 'best' };
   function openBurn(opts = {}) {
-    const sel = new Set(opts.pick || []); let confirm = false;
+    const sel = new Set(opts.pick || []);
     const root = h('div', { class: 'st st-burn' }); const foot = h('div', { class: 'foot' });
     let dups = new Map();
     const spare = (c) => (dups.get(c.id)?.spare ? 0 : 1);
@@ -908,14 +908,11 @@
       let act;
       if (!connected()) act = connectBtn();
       else if (!n) act = h('div', { class: 'row' }, h('span', { class: 'why', text: 'Pick cards' }), btn('Burn', 'danger', null, { disabled: true }));
-      else if (confirm) act = h('div', { class: 'row' }, btn('Back', '', () => { confirm = false; renderFoot(); }), btn(`Burn ${n} for good`, 'danger', go));
-      else act = btn(`Burn ${n}`, 'danger', () => { confirm = true; renderFoot(); foot.querySelector('.danger')?.focus(); });
-      foot.classList.toggle('confirm', confirm && n > 0);
-      put(foot, h('div', { class: 'fsum' },
-        confirm && n ? h('b', { class: 'fwarn', text: 'Burned cards are gone for good.' }) : h('b', { text: n ? `${n} picked` : 'None picked' }),
+      else act = btn(`Burn ${n}`, 'danger', () => confirmBurn([...sel], go), { 'aria-haspopup': 'dialog' });
+      put(foot, h('div', { class: 'fsum' }, h('b', { text: n ? `${n} picked` : 'None picked' }),
         h('span', { class: 'muted', text: packs ? `+${packs} free pack${packs > 1 ? 's' : ''}` : `${BURN_GOAL - b} to a free pack` })), act);
     }
-    function toggle(c, el) { sel.has(c.id) ? sel.delete(c.id) : sel.add(c.id); confirm = false; el.setAttribute('aria-pressed', String(sel.has(c.id))); renderFoot(); }
+    function toggle(c, el) { sel.has(c.id) ? sel.delete(c.id) : sel.add(c.id); el.setAttribute('aria-pressed', String(sel.has(c.id))); renderFoot(); }
     function render() {
       [...sel].forEach((id) => { const c = byId(id); if (!c || c.pending) sel.delete(id); });
       dups = dupInfo();
@@ -933,8 +930,8 @@
       const tagFor = (c) => { const d = dups.get(c.id); return d?.spare ? h('span', { class: 'dup-b', text: `Duplicate ×${d.n}` }) : null; };
       const visPaper = list.filter((c) => c.material === 'paper');
       const quick = h('div', { class: 'row quick' },
-        visPaper.length ? btn('All Paper', 'small', () => { visPaper.forEach((c) => sel.add(c.id)); confirm = false; render(); }) : null,
-        sel.size ? btn('Clear', 'small', () => { sel.clear(); confirm = false; render(); }) : null,
+        visPaper.length ? btn('All Paper', 'small', () => { visPaper.forEach((c) => sel.add(c.id)); render(); }) : null,
+        sel.size ? btn('Clear', 'small', () => { sel.clear(); render(); }) : null,
         h('span', { class: 'muted small', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }));
       const spares = all.filter((c) => dups.get(c.id)?.spare).length;
       put(root, progress(),
@@ -946,8 +943,8 @@
             all.length ? btn('Clear filters', 'small', () => { Object.assign(bfilt, { series: 'all', mat: 'all', holo: 'any', grade: 'all' }); render(); }) : null), foot);
       renderFoot();
     }
-    function go() {
-      const ids = [...sel]; sel.clear(); confirm = false;
+    function go(picked) { // only ever called by the confirm window, after BURN is typed
+      const ids = picked.filter((id) => byId(id) && !byId(id).pending); sel.clear(); if (!ids.length) return render();
       Store.update((s) => { s.cards = s.cards.filter((c) => !ids.includes(c.id)); Store.log(`Burned ${ids.length} card${ids.length > 1 ? 's' : ''}`); });
       unlisten('burn'); Sheet.close('burn');
       toast(`Burning ${ids.length} card${ids.length > 1 ? 's' : ''}…`);
@@ -956,6 +953,55 @@
     listen('burn', render);
     Sheet.open('burn', { title: 'Ash bin', body: root, onClose: () => unlisten('burn') });
     render();
+  }
+
+  // The burn warning: a big window listing exactly what is about to be destroyed (most valuable first, with warnings),
+  // what it earns toward a free pack, and a box where the player types BURN before anything happens.
+  function confirmBurn(ids, onBurn) {
+    const cards = ids.map(byId).filter(Boolean); if (!cards.length) return;
+    const n = cards.length, b = S().wallet.burnCount % BURN_GOAL, after = b + n, packs = Math.floor(after / BURN_GOAL), rest = after % BURN_GOAL;
+    const burning = new Set(cards.map((c) => c.id)), owned = new Map();
+    for (const c of S().cards) owned.set(dupKey(c), (owned.get(dupKey(c)) || 0) + 1);
+    const left = new Map(owned); cards.forEach((c) => left.set(dupKey(c), left.get(dupKey(c)) - 1));
+    const flags = (c) => { const t = tierOf(c), f = [];
+      if (!left.get(dupKey(c))) f.push(owned.get(dupKey(c)) === 1 ? 'Your only copy' : `All ${owned.get(dupKey(c))} of your copies`);
+      if (t) f.push(TIER_LABEL[t]); if (isHolo(c)) f.push(holoLabel(c) || 'Holo'); if (c.grade != null) f.push('PDA ' + c.grade);
+      return f; };
+    const list = cards.map((c) => ({ c, f: flags(c) })).sort((x, y) => (y.f.length > 0) - (x.f.length > 0) || rarity(y.c) - rarity(x.c) || Store.floor(y.c) - Store.floor(x.c));
+    const flagged = list.filter((x) => x.f.length).length, worth = cards.reduce((a, c) => a + Store.floor(c), 0);
+    const plural = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
+    const word = 'BURN', ok = () => input.value.trim().toUpperCase() === word;
+    const input = h('input', { id: 'bw-type', type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', enterkeyhint: 'done', 'aria-describedby': 'bw-type-hint',
+      oninput: () => { const m = ok(); fire.disabled = !m; wrap.classList.toggle('ok', m); },
+      onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); if (ok()) burn(); } } });
+    const burn = () => { if (!ok()) return; Sheet.close('burnwarn'); onBurn(ids); };
+    const fire = btn(`Burn ${plural(n, 'card')} forever`, 'danger', burn, { disabled: true });
+    const wrap = h('div', { class: 'bw-type' }, h('label', { for: 'bw-type' }, 'Type ', h('b', { text: word }), ' to confirm'), input,
+      h('small', { id: 'bw-type-hint', class: 'muted', text: 'Not case-sensitive. The burn button unlocks when it matches.' }));
+    const meterAt = (v) => h('i', { style: `width:${v / BURN_GOAL * 100}%` });
+    const body = h('div', { class: 'bw' },
+      h('div', { id: 'bw-warn', class: 'bw-warn' },
+        h('span', { class: 'bw-icon', 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2.5 1.4-4 2.5-5 .2 1.7 1 2.8 2 3.2C11 8.6 11 5 12 2z" fill="currentColor"/></svg>' }),
+        h('div', {}, h('p', { class: 'bw-big', text: 'Burned cards are destroyed forever. This can’t be undone.' }),
+          h('p', { text: `You are about to burn ${plural(n, 'card')}` + (flagged ? `, and ${flagged === n ? (n === 1 ? 'it is' : 'all of them are') : flagged + ' of them ' + (flagged === 1 ? 'is' : 'are')} worth a second look.` : '.')
+            + ` Floor value about ${Store.eth(+worth.toPrecision(2))} (demo numbers).` }))),
+      h('div', { class: 'bw-gain' },
+        h('div', { class: 'bb-top' }, h('b', { text: 'You get' }),
+          h('span', { class: 'bw-ft' }, h('span', { class: 'muted', text: `${b}/${BURN_GOAL}` }), h('span', { 'aria-hidden': 'true', text: ' → ' }), h('span', { class: 'sr', text: ' to ' }),
+            h('b', { text: packs ? `+${plural(packs, 'free pack')}` + (rest ? `, ${rest}/${BURN_GOAL}` : '') : `${after}/${BURN_GOAL}` }))),
+        h('div', { class: 'meter', 'aria-hidden': 'true' }, meterAt(packs ? BURN_GOAL : b), packs ? null : h('i', { class: 'add', style: `left:${b / BURN_GOAL * 100}%;width:${n / BURN_GOAL * 100}%` })),
+        h('p', { class: 'muted small', text: packs ? `Every ${BURN_GOAL} cards burned is a free pack.` : `${BURN_GOAL - after} more to a free pack.` })),
+      h('h3', { class: 'bw-h', text: flagged ? `The cards (${flagged} flagged, most valuable first)` : 'The cards' }),
+      h('ul', { class: 'bw-list', tabindex: '0', 'aria-label': `The ${plural(n, 'card')} to burn` }, list.map(({ c, f }) => h('li', { class: f.length ? 'flag' : '' },
+        h('div', { class: 'bw-thumb' }, cardFace(c)),
+        h('div', { class: 'bw-info' }, h('b', { text: c.character }), h('span', { text: cardName(c) }), h('span', { class: 'muted', text: Store.trueOdds(c).label + ' · ' + floorTxt(c) }),
+          f.length ? h('div', { class: 'bw-flags' }, f.map((t) => h('span', { class: 'bw-flag' + (/copy|copies/.test(t) ? ' last' : ''), text: t }))) : null)))),
+      h('div', { class: 'bw-foot' }, wrap, h('div', { class: 'bw-act' }, btn('Cancel', '', () => Sheet.close('burnwarn')), fire),
+        h('p', { class: 'demo-line', html: '<b>Demo</b>Nothing is really burned' })));
+    const d = Sheet.open('burnwarn', { title: `Burn ${plural(n, 'card')}?`, body });
+    d.classList.add('burnwarn'); d.setAttribute('role', 'alertdialog'); d.querySelector('h2').id = 'bw-title';
+    d.setAttribute('aria-labelledby', 'bw-title'); d.setAttribute('aria-describedby', 'bw-warn');
+    d.querySelector('.sheet-body').scrollTop = 0; input.focus();
   }
 
   // =====================================================================================

@@ -43,32 +43,40 @@ interface IV2Router {
 
 /**
  * @title FireSale
- * @notice Sells the Omni packs (docs/omni-economy.md). The owner sets up each drop before it opens: pack count, price,
- *         PAPER per pack, PLANK burn share, PLANK-only packs, starter packs and window, wallet limit and when it
- *         lifts, most packs per purchase. Nothing about a drop can change once it opens. What a pack holds is the
- *         Series' recipe (FireCards and its dealer), fixed from the first pack minted.
+ * @notice Sells the Omni packs (docs/omni-economy.md). Every product rule is a per-drop setting the owner picks before
+ *         the drop opens (`DropConfig`): pack counts, prices, PAPER per pack, the PLANK burn share, the PLANK-only
+ *         packs and how long they stay PLANK-only, press packs (how many per press and per wallet, and what they cost),
+ *         the holder window, the wallet limit and when it lifts, how long only regular wallets can buy, most packs per
+ *         purchase, credits per picked suggestion and caps on free (credit) packs. Nothing about a drop can
+ *         change once it opens. What a pack holds is the Series' recipe (FireCards and its dealer), fixed from the
+ *         first pack minted.
  *
- *         - Every pack takes PAPER (the minter needs paper). It is burned.
- *         - Paid packs cost a dollar price in PLANK, ETH or USDG, never PAPER. The first packs are PLANK-only.
- *           Of each sale, the burn share buys PLANK and burns it (PLANK payments burn directly); the rest goes to the
- *           revenue wallet. If the PLANK swap can't go through, the burn share goes to the burn wallet instead, so a
- *           purchase never fails because of PLANK.
- *         - Starter packs: press holders, 1 per wallet, each press once per drop, only PAPER. Leftovers join the
- *           paid supply when the starter window ends.
- *         - Free pack credits: earned by burning cards (42 by default, `cardsPerCredit`, set between drops; a running
- *           count per wallet) or by having a character suggestion picked. They stack and are spent in any live drop for the PAPER alone.
+ *         - Paid packs cost a dollar price in PLANK, ETH or USDG, plus the drop's PAPER per pack (burned). The first
+ *           packs can be PLANK-only. Of each sale, the burn share buys PLANK and burns it (PLANK payments burn
+ *           directly); the rest goes to the revenue wallet. If the PLANK swap can't go through, the burn share goes to
+ *           the burn wallet instead, so a purchase never fails because of PLANK.
+ *         - Press packs ("starters"): press holders claim up to `starterPerPress` per press per drop and up to
+ *           `starterWalletLimit` per wallet, during the starter window. Free, a PAPER amount, a dollar price (paid like
+ *           a paid pack), or a dollar price plus PAPER. Leftovers join the paid supply when the window ends.
+ *         - Free pack credits: earned by burning cards (a running count per wallet; a credit every 42 cards,
+ *           CARDS_PER_CREDIT, fixed forever because progress carries over between Series) or by having a character
+ *           suggestion picked. They stack and are spent in
+ *           any live drop for that drop's PAPER per pack alone.
  *
- *         The contract never holds funds between transactions: everything paid is burned or forwarded in the same
- *         transaction, and there is no withdraw function.
+ *         Safety guards stay fixed: settings lock at the drop's start, every purchase names its most PLANK/USDG/ETH and
+ *         PAPER, the PLANK swap's 90% floor, price-feed freshness, one drop at a time, and a stalled drop can always be
+ *         ended. The contract never holds funds between transactions: everything paid is burned or forwarded in the
+ *         same transaction, and there is no withdraw function.
  */
 contract FireSale is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint256 public constant BPS = 10_000;
-    /// @dev Cards burned per free pack credit until the owner sets another number (between drops).
-    uint256 public constant DEFAULT_CARDS_PER_CREDIT = 42;
-    /// @dev Most packs in one purchase for a drop that doesn't set its own number.
+    /// @notice Cards burned per free pack credit. Fixed forever: burn progress carries over from Series to Series, so
+    ///         the rate is a promise, not a setting.
+    uint256 public constant CARDS_PER_CREDIT = 42;
+    /// @dev Most packs in one purchase for a drop that sets 0.
     uint256 public constant DEFAULT_MAX_PER_TX = 50;
     /// @dev The PLANK swap must get at least this share of what the 30-minute average price says, or it's skipped
     ///      (the burn share then goes to the burn wallet). Guards against a pumped or manipulated pool.
@@ -79,10 +87,14 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     ///      and the burn share of ETH/USDG sales goes to the burn wallet until the keeper checkpoints again.
     uint256 public constant PLANK_FEED_MAX_AGE = 2 hours;
     uint256 public constant PLANK_WINDOW_MAX = 2 hours;
-    uint256 public constant MAX_WINDOW = 30 days; // longest starter window / wallet-limit period
-    /// @dev A drop that hasn't sold out can be ended by the owner once its wallet limit lifts, and by anyone this long
+    /// @dev Longest of any drop phase (starter, holder, PLANK-only, wallet-limit, regular-wallets windows). A drop's
+    ///      phases always end within a month, so `endDrop` is always reachable.
+    uint256 public constant MAX_WINDOW = 30 days;
+    /// @dev A drop that hasn't sold out can be ended by the owner once its phases are over, and by anyone this long
     ///      after that, so its packs can always be opened even if the owner never acts.
     uint256 public constant END_GRACE = 7 days;
+    /// @dev Longest suggestion text the owner can allow (the text lives only in the event).
+    uint256 public constant MAX_SUGGESTION_BYTES = 1_024;
 
     IERC20 public immutable PAPER;
     IERC20 public immutable PLANK;
@@ -97,8 +109,11 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     ISaleFeed public ETH_USD;
     ISaleFeed public PLANK_USD;
     IV2Router public ROUTER;
-    /// @notice PAPER burned per character suggestion.
-    uint256 public immutable PAPER_PER_SUGGESTION;
+    /// @notice PAPER (wei) burned per character suggestion (0 = free). The owner can change it at any time; `suggest`
+    ///         names the most the suggester pays.
+    uint256 public suggestionPaper;
+    /// @notice Longest suggestion text, in bytes.
+    uint256 public suggestionMaxBytes = 280;
 
     address public revenueWallet;
     address public burnWallet;
@@ -108,30 +123,43 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     struct Drop {
         // set by the owner before the drop opens
         uint64 start;
-        uint64 packs; // paid packs (starters come on top)
-        uint64 starters;
+        uint64 packs; // paid packs (press packs come on top)
+        uint64 starters; // press packs in all
         uint64 plankOnly; // the first this-many paid packs are PLANK-only
-        uint64 walletLimit; // paid packs per wallet until liftAfter
+        uint64 walletLimit; // paid packs per wallet until liftAfter (0 = no limit)
         // running
         uint64 paidSold; // paid packs sold (all currencies)
         uint64 startersClaimed;
         uint64 creditPacks; // packs minted with credits
-        // set by the owner
-        uint32 starterWindow; // seconds
-        uint32 liftAfter; // seconds after start when the wallet limit lifts
-        uint32 holderWindow; // seconds after start when only holders can buy paid packs
+        // set by the owner; times are seconds after start
+        uint32 starterWindow; // press packs can be claimed until then
+        uint32 liftAfter; // the wallet limit lifts
+        uint32 holderWindow; // only holders can buy paid packs until then
         uint32 maxPerTx; // most packs in one purchase or credit spend
+        uint32 plankOnlyFor; // the PLANK-only packs open to ETH and USDG then, sold or not
+        uint32 regularWalletsFor; // only regular wallets (not contracts) can buy paid packs until then
+        uint32 starterPerPress; // press packs per press
+        uint32 starterWalletLimit; // press packs per wallet
+        uint16 creditsPerPick; // credits per picked suggestion
         uint16 plankBurnBps;
+        uint64 creditPacksMax; // most credit packs in this drop in all (0 = no limit)
+        uint64 creditPacksPerWallet; // most credit packs per wallet in this drop (0 = no limit)
         bool closed;
-        uint128 priceUsd; // per pack, 8 decimals ($2.50 = 250_000_000)
-        uint128 paperPerPack; // PAPER wei
+        uint128 priceUsd; // per paid pack, 8 decimals ($2.50 = 250_000_000)
+        uint128 paperPerPack; // PAPER wei per paid or credit pack
+        uint128 starterPriceUsd; // per press pack, 8 decimals (0 = no dollar price)
+        uint128 starterPaper; // PAPER wei per press pack (0 = none)
         bytes32 holderRoot; // Merkle root of the PLANK-holder snapshot (wallets that held the minimum)
     }
 
     mapping(uint256 fire => Drop) internal drops;
     mapping(uint256 fire => mapping(address => uint256)) public paidBought;
-    mapping(uint256 fire => mapping(address => bool)) public starterClaimedBy;
-    mapping(uint256 fire => mapping(uint256 pressId => bool)) public pressUsed;
+    /// @notice Credit packs a wallet minted in a drop.
+    mapping(uint256 fire => mapping(address => uint256)) public creditPacksBy;
+    /// @notice Press packs a wallet claimed in a drop.
+    mapping(uint256 fire => mapping(address => uint256)) public startersClaimedBy;
+    /// @notice Press packs claimed with a press in a drop (passing a press around never gets more).
+    mapping(uint256 fire => mapping(uint256 pressId => uint256)) public startersClaimedWith;
     /// @notice During a drop's holder window, the one wallet each press let in (a press can't be passed around).
     mapping(uint256 fire => mapping(uint256 pressId => address)) public pressBuyer;
 
@@ -142,15 +170,13 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         bytes32[] proof;
     }
 
-    /// @notice Free pack credits (from burning 42 cards, or a picked suggestion). They stack, never expire, and work
+    /// @notice Free pack credits (from burning cards, or a picked suggestion). They stack, never expire, and work
     ///         at any time in any live drop.
     mapping(address => uint256) public credits;
     mapping(uint256 fire => uint256) public picksOf;
-    /// @notice Drops configured and not yet closed. Wallets can only change while this is 0.
+    /// @notice Drops configured and not yet closed (0 or 1). Wallets and feeds can only change while this is 0.
     uint256 public activeDrops;
-    mapping(address => uint256) public burnCount; // cards burned toward the next credit (0 .. cardsPerCredit - 1)
-    /// @notice Cards burned per free pack credit. The owner can change it while no drop is set up or running.
-    uint256 public cardsPerCredit = DEFAULT_CARDS_PER_CREDIT;
+    mapping(address => uint256) public burnCount; // cards burned toward the next credit
 
     struct Suggestion { address by; uint64 at; bool granted; uint32 round; }
     Suggestion[] public suggestions;
@@ -163,16 +189,19 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
 
     event DropConfigured(uint256 indexed fire, DropConfig config);
     event PacksBought(uint256 indexed fire, address indexed buyer, uint256 count, Pay pay, uint256 paid, uint256 burnShare, bool plankBurned);
-    event StarterClaimed(uint256 indexed fire, address indexed buyer, uint256 indexed pressId);
+    event StarterClaimed(
+        uint256 indexed fire, address indexed buyer, uint256 indexed pressId, uint256 count, Pay pay, uint256 paid,
+        uint256 burnShare, bool plankBurned
+    );
     event CreditsUsed(uint256 indexed fire, address indexed buyer, uint256 count);
     event CardsBurned(address indexed holder, uint256 count, uint256 creditsEarned, uint256 burnCount);
     event Suggested(uint256 indexed id, address indexed by, uint32 indexed round, string text);
     event PickingSession(uint256 indexed fire, uint32 round);
-    event SuggestionPicked(uint256 indexed fire, uint256 indexed id, address indexed by);
+    event SuggestionPicked(uint256 indexed fire, uint256 indexed id, address indexed by, uint256 credits);
     event DropClosed(uint256 indexed fire, uint256 packs);
     event WalletsSet(address revenue, address burn);
     event FeedsSet(address ethUsd, address plankUsd, address router);
-    event CardsPerCreditSet(uint256 cards);
+    event SuggestionRulesSet(uint256 paper, uint256 maxBytes);
 
     error BadConfig();
     error DropStarted();
@@ -197,6 +226,8 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     error AnotherDropActive();
     error HoldersOnly();
     error NoContracts();
+    error CreditCapReached();
+    error CreditWalletLimit();
 
     struct Config {
         address owner;
@@ -212,7 +243,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         address router;
         address revenueWallet;
         address burnWallet;
-        uint256 paperPerSuggestion;
+        uint256 paperPerSuggestion; // the starting suggestion cost (the owner can change it)
     }
 
     constructor(Config memory c) Ownable(c.owner) {
@@ -231,7 +262,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         ETH_USD = ISaleFeed(c.ethUsd);
         PLANK_USD = ISaleFeed(c.plankUsd);
         ROUTER = IV2Router(c.router);
-        PAPER_PER_SUGGESTION = c.paperPerSuggestion;
+        suggestionPaper = c.paperPerSuggestion;
         _setWallets(c.revenueWallet, c.burnWallet);
     }
 
@@ -254,41 +285,57 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         emit FeedsSet(ethUsd, plankUsd, router);
     }
 
-    /// @notice Cards burned per free pack credit (at least 1). Only while no drop is set up or running, so a drop's
-    ///         rules don't change under its buyers. Burn counts carry over as they are.
-    function setCardsPerCredit(uint256 n) external onlyOwner {
-        if (activeDrops != 0) revert DropsActive();
-        if (n == 0) revert BadConfig();
-        cardsPerCredit = n;
-        emit CardsPerCreditSet(n);
+    /// @notice What a character suggestion costs (PAPER wei, 0 = free) and its longest text (1 to 1,024 bytes).
+    ///         Suggestions aren't tied to a drop, so this is one setting for all; each `suggest` names its most PAPER.
+    function setSuggestionRules(uint256 paper, uint256 maxBytes) external onlyOwner {
+        if (maxBytes == 0 || maxBytes > MAX_SUGGESTION_BYTES) revert BadConfig();
+        suggestionPaper = paper;
+        suggestionMaxBytes = maxBytes;
+        emit SuggestionRulesSet(paper, maxBytes);
     }
 
-    /// @notice What the owner sets per drop. Every number can differ from drop to drop.
+    /// @notice What the owner sets per drop. Every number can differ from drop to drop. Times are seconds after
+    ///         `start`; every phase is at most MAX_WINDOW (30 days).
     struct DropConfig {
         uint64 start; // when it opens (unix seconds); everything locks then
-        uint64 packs; // paid packs (117 for a 167-pack drop with 50 starters)
-        uint64 starters; // press-holder starter packs on top (50)
+        uint64 packs; // paid packs (117 for a 167-pack drop with 50 press packs); 0 = press packs only
+        uint64 starters; // press packs on top (50); 0 = none
         uint64 plankOnly; // first paid packs that only PLANK can buy (50)
-        uint64 walletLimit; // paid packs per wallet (5)
-        uint32 starterWindow; // seconds the starter claim is open (24h); leftovers then join the paid supply
-        uint32 liftAfter; // seconds after start when the wallet limit lifts (48h)
+        uint64 walletLimit; // paid packs per wallet until liftAfter (5); 0 = no limit (then liftAfter must be 0 too)
+        uint32 starterWindow; // how long press packs can be claimed (24h); leftovers then join the paid supply
+        uint32 liftAfter; // when the wallet limit lifts (48h)
         uint16 plankBurnBps; // share of each sale that burns PLANK (3000 = 30%)
-        uint128 priceUsd; // per pack, 8 decimals ($2.50 = 250_000_000)
-        uint128 paperPerPack; // PAPER wei per pack (1e18)
-        uint32 holderWindow; // seconds after start when only holders can buy paid packs (24h); 0 = open to all
+        uint128 priceUsd; // per paid pack, 8 decimals ($2.50 = 250_000_000); required if there are paid packs
+        uint128 paperPerPack; // PAPER wei per paid or credit pack (1e18); 0 = none
+        uint32 holderWindow; // only holders can buy paid packs until then (24h); 0 = open to all
         bytes32 holderRoot; // Merkle root of the secret PLANK-holder snapshot ($69+), from ops/snapshot; 0 = presses only
         uint32 maxPerTx; // most packs in one purchase or credit spend; 0 = DEFAULT_MAX_PER_TX (50)
+        uint32 plankOnlyFor; // the PLANK-only packs open to ETH and USDG then, sold or not (48h); needed if plankOnly > 0
+        uint32 regularWalletsFor; // only regular wallets can buy paid packs until then (48h); 0 = off
+        uint32 starterPerPress; // press packs per press (1); needed if starters > 0
+        uint32 starterWalletLimit; // press packs per wallet (1); needed if starters > 0
+        uint128 starterPriceUsd; // dollar price per press pack, paid like a paid pack (0 = none)
+        uint128 starterPaper; // PAPER wei per press pack (1e18; 0 = none). Both 0 = free press packs
+        uint16 creditsPerPick; // credits per picked suggestion (1); 0 = none
+        uint64 creditPacksMax; // most free (credit) packs in this drop in all; 0 = no limit
+        uint64 creditPacksPerWallet; // most free (credit) packs per wallet in this drop; 0 = no limit
     }
 
     /// @notice Set up a drop. Allowed until it opens (`start`); after that nothing about it can change.
     function configureDrop(uint256 fire, DropConfig calldata c) external onlyOwner {
         Drop storage d = drops[fire];
         if (d.start != 0 && block.timestamp >= d.start) revert DropStarted();
-        if (fire > type(uint64).max || c.start <= block.timestamp || c.packs == 0 || c.plankOnly > c.packs
-            || c.walletLimit == 0 || c.plankBurnBps > BPS || c.priceUsd == 0 || c.paperPerPack == 0) revert BadConfig();
-        // the wallet limit (and the PLANK-only safety valve) needs a real period, the starter window fits inside it
-        if (c.liftAfter == 0 || c.liftAfter > MAX_WINDOW || c.starterWindow > c.liftAfter || c.holderWindow > c.liftAfter
-            || (c.starters > 0 && c.starterWindow == 0)) revert BadConfig();
+        if (fire > type(uint64).max || c.start <= block.timestamp || uint256(c.packs) + c.starters == 0) revert BadConfig();
+        // paid packs need a price (a $0 typo would give them away; free packs are press packs or credits)
+        if ((c.packs > 0 && c.priceUsd == 0) || c.plankOnly > c.packs || c.plankBurnBps > BPS) revert BadConfig();
+        // the PLANK-only packs need a time they open up, so a drop can't get stuck on a PLANK feed outage
+        if (c.plankOnly > 0 && c.plankOnlyFor == 0) revert BadConfig();
+        // a wallet limit needs a lift time, and the other way round (both 0 = no limit)
+        if ((c.walletLimit == 0) != (c.liftAfter == 0)) revert BadConfig();
+        if (c.starters > 0 && (c.starterWindow == 0 || c.starterPerPress == 0 || c.starterWalletLimit == 0)) revert BadConfig();
+        if (_longest(c.starterWindow, c.liftAfter, c.holderWindow, c.plankOnlyFor, c.regularWalletsFor) > MAX_WINDOW) {
+            revert BadConfig();
+        }
         // The Series must be set up in the card contract first (its dealer, recipe and characters), or the sale that
         // sells it out couldn't close it.
         if (!CARDS.ready(fire)) revert BadConfig();
@@ -310,12 +357,21 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         d.holderWindow = c.holderWindow;
         d.holderRoot = c.holderRoot;
         d.maxPerTx = c.maxPerTx == 0 ? uint32(DEFAULT_MAX_PER_TX) : c.maxPerTx;
+        d.plankOnlyFor = c.plankOnlyFor;
+        d.regularWalletsFor = c.regularWalletsFor;
+        d.starterPerPress = c.starterPerPress;
+        d.starterWalletLimit = c.starterWalletLimit;
+        d.starterPriceUsd = c.starterPriceUsd;
+        d.starterPaper = c.starterPaper;
+        d.creditsPerPick = c.creditsPerPick;
+        d.creditPacksMax = c.creditPacksMax;
+        d.creditPacksPerWallet = c.creditPacksPerWallet;
         emit DropConfigured(fire, c);
     }
 
-    /// @notice Give a free pack credit to each picked suggestion's author. Only while setting up a drop (before it
-    ///         opens; with one drop at a time no drop is running then), each suggestion once, and no more picks than
-    ///         the Series has characters.
+    /// @notice Give free pack credits (the drop's `creditsPerPick` each) to each picked suggestion's author. Only while
+    ///         setting up a drop (before it opens; with one drop at a time no drop is running then), each suggestion
+    ///         once, and no more picks than the Series has characters.
     function pickSuggestions(uint256 fire, uint256[] calldata ids) external onlyOwner {
         Drop storage d = drops[fire];
         if (d.start == 0) revert BadConfig();
@@ -330,24 +386,25 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
             currentRound += 1;
             emit PickingSession(fire, sessionRound);
         }
+        uint256 each = d.creditsPerPick;
         for (uint256 i; i < ids.length; i++) {
             Suggestion storage s = suggestions[ids[i]];
             if (s.round != sessionRound) revert NotThisRound();
             if (s.granted) revert AlreadyClaimed();
             s.granted = true;
-            credits[s.by] += 1;
-            emit SuggestionPicked(fire, ids[i], s.by);
+            credits[s.by] += each;
+            emit SuggestionPicked(fire, ids[i], s.by, each);
         }
     }
 
-    /// @notice End a drop that hasn't sold out. The owner can once its wallet limit has lifted (so the starter window
-    ///         and the limited phase always run in full); anyone can END_GRACE after that, so packs never get stranded.
-    ///         No more packs are sold; the Series closes with what was minted.
+    /// @notice End a drop that hasn't sold out. The owner can once all its phases are over (starter, holder,
+    ///         PLANK-only, wallet-limit and regular-wallets windows, so each always runs in full); anyone can END_GRACE
+    ///         after that, so packs never get stranded. No more packs are sold; the Series closes with what was minted.
     function endDrop(uint256 fire) external {
         Drop storage d = drops[fire];
         if (d.start == 0 || d.closed) revert NotLive();
-        uint256 lifted = uint256(d.start) + d.liftAfter;
-        if (block.timestamp < (msg.sender == owner() ? lifted : lifted + END_GRACE)) revert TooEarly();
+        uint256 over = _phasesOver(d);
+        if (block.timestamp < (msg.sender == owner() ? over : over + END_GRACE)) revert TooEarly();
         _close(fire, d);
     }
 
@@ -358,74 +415,75 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     ///         During the holder window, `access` shows the buyer holds a press or was in the PLANK snapshot.
     function buyWithPlank(uint256 fire, uint256 n, uint256 maxPlank, uint256 maxPaper, Access calldata access) external nonReentrant {
         Drop storage d = _takePaid(fire, n, Pay.PLANK, maxPaper, access);
-        uint256 cost = _plankFor(n * d.priceUsd);
-        if (cost > maxPlank) revert PriceMoved();
-        uint256 burnShare = cost * d.plankBurnBps / BPS;
-        if (burnShare > 0) PLANK.safeTransferFrom(msg.sender, DEAD, burnShare);
-        PLANK.safeTransferFrom(msg.sender, revenueWallet, cost - burnShare);
-        _finish(fire, d, n, Pay.PLANK, cost, burnShare, true);
+        (uint256 cost, uint256 burnShare, bool burned) = _collect(d, Pay.PLANK, n * d.priceUsd, maxPlank);
+        _finish(fire, d, n, Pay.PLANK, cost, burnShare, burned);
     }
 
     /// @notice Buy `n` packs, paying the price in ETH. Send at least `quoteEth(fire, n)`; anything above comes back.
     function buyWithEth(uint256 fire, uint256 n, uint256 maxPaper, Access calldata access) external payable nonReentrant {
         Drop storage d = _takePaid(fire, n, Pay.ETH, maxPaper, access);
-        uint256 usd = n * d.priceUsd;
-        uint256 cost = _ethFor(usd);
-        if (msg.value < cost) revert PriceMoved();
-        uint256 burnShare = cost * d.plankBurnBps / BPS;
-        bool burned = burnShare > 0 && _swapEthToPlank(burnShare, usd * d.plankBurnBps / BPS);
-        if (burnShare > 0 && !burned) _sendEth(burnWallet, burnShare);
-        _sendEth(revenueWallet, cost - burnShare);
+        (uint256 cost, uint256 burnShare, bool burned) = _collect(d, Pay.ETH, n * d.priceUsd, type(uint256).max);
         _finish(fire, d, n, Pay.ETH, cost, burnShare, burned);
-        if (msg.value > cost) _sendEth(msg.sender, msg.value - cost);
+        _refund(Pay.ETH, cost);
     }
 
     /// @notice Buy `n` packs, paying the price in USDG (face value). `maxUsdg` is the most USDG the buyer agrees to pay.
     function buyWithUsdg(uint256 fire, uint256 n, uint256 maxUsdg, uint256 maxPaper, Access calldata access) external nonReentrant {
         if (address(USDG) == address(0)) revert BadConfig();
         Drop storage d = _takePaid(fire, n, Pay.USDG, maxPaper, access);
-        uint256 usd = n * d.priceUsd;
-        uint256 cost = _usdgFor(usd);
-        if (cost > maxUsdg) revert PriceMoved();
-        uint256 burnShare = cost * d.plankBurnBps / BPS;
-        USDG.safeTransferFrom(msg.sender, revenueWallet, cost - burnShare);
-        bool burned;
-        if (burnShare > 0) {
-            USDG.safeTransferFrom(msg.sender, address(this), burnShare);
-            burned = _swapUsdgToPlank(burnShare, usd * d.plankBurnBps / BPS);
-            if (!burned) USDG.safeTransfer(burnWallet, burnShare);
-        }
+        (uint256 cost, uint256 burnShare, bool burned) = _collect(d, Pay.USDG, n * d.priceUsd, maxUsdg);
         _finish(fire, d, n, Pay.USDG, cost, burnShare, burned);
     }
 
-    /// @notice A press holder's starter pack: the PAPER alone. 1 per wallet, each press once per drop, during the
-    ///         starter window.
-    function claimStarter(uint256 fire, uint256 pressId, uint256 maxPaper) external nonReentrant {
+    /// @notice Claim `n` press packs with a press you hold, during the starter window: at most the drop's
+    ///         `starterPerPress` per press and `starterWalletLimit` per wallet. They cost the drop's press-pack PAPER
+    ///         (burned) and, if it has one, its press-pack dollar price paid in `pay` (PLANK, ETH or USDG, split and
+    ///         burned like a paid pack; `maxCost` is the most PLANK/USDG, or send ETH and the rest comes back). With
+    ///         no dollar price, `pay` and `maxCost` are ignored and any ETH sent comes back.
+    function claimStarter(uint256 fire, uint256 pressId, uint256 n, Pay pay, uint256 maxCost, uint256 maxPaper)
+        external
+        payable
+        nonReentrant
+    {
         Drop storage d = _live(fire);
         if (block.timestamp >= uint256(d.start) + d.starterWindow) revert StarterWindowClosed();
-        if (d.startersClaimed >= d.starters) revert SoldOut();
+        if (n == 0) revert BadAmount();
+        if (uint256(d.startersClaimed) + n > d.starters) revert SoldOut();
         if (PRESS.ownerOf(pressId) != msg.sender) revert NotPressOwner();
-        if (starterClaimedBy[fire][msg.sender]) revert AlreadyClaimed();
-        if (pressUsed[fire][pressId]) revert PressUsed();
-        starterClaimedBy[fire][msg.sender] = true;
-        pressUsed[fire][pressId] = true;
-        d.startersClaimed += 1;
-        _burnPaper(d, 1, maxPaper);
-        PACKS.mint(msg.sender, fire, 1);
-        emit StarterClaimed(fire, msg.sender, pressId);
+        uint256 mine = startersClaimedBy[fire][msg.sender] + n;
+        if (mine > d.starterWalletLimit) revert AlreadyClaimed();
+        uint256 used = startersClaimedWith[fire][pressId] + n;
+        if (used > d.starterPerPress) revert PressUsed();
+        startersClaimedBy[fire][msg.sender] = mine;
+        startersClaimedWith[fire][pressId] = used;
+        d.startersClaimed += uint64(n);
+        _burnPaper(n * d.starterPaper, maxPaper);
+        uint256 cost;
+        uint256 burnShare;
+        bool burned;
+        if (d.starterPriceUsd != 0) (cost, burnShare, burned) = _collect(d, pay, n * d.starterPriceUsd, maxCost);
+        PACKS.mint(msg.sender, fire, n);
+        emit StarterClaimed(fire, msg.sender, pressId, n, pay, cost, burnShare, burned);
+        _refund(pay, cost);
         _closeIfSoldOut(fire, d);
     }
 
-    /// @notice Spend `n` free pack credits in a live drop, at any time (holder window, PLANK-only phase and wallet
-    ///         limit don't apply: a credit was earned). The PAPER alone. Packs come out of the paid supply.
+    /// @notice Spend `n` free pack credits in a live drop, at any time (holder window, PLANK-only phase, wallet
+    ///         limit and regular-wallets rule don't apply: a credit was earned). The drop's PAPER per pack alone.
+    ///         Packs come out of the paid supply. The drop can cap credit packs in all (`creditPacksMax`) and per
+    ///         wallet (`creditPacksPerWallet`); 0 = no cap.
     function useCredits(uint256 fire, uint256 n, uint256 maxPaper) external nonReentrant {
         Drop storage d = _live(fire);
         if (n == 0 || n > d.maxPerTx) revert BadAmount();
         if (credits[msg.sender] < n) revert NoCredits();
         if (n > _paidLeft(d)) revert SoldOut();
+        if (d.creditPacksMax != 0 && uint256(d.creditPacks) + n > d.creditPacksMax) revert CreditCapReached();
+        uint256 mine = creditPacksBy[fire][msg.sender] + n;
+        if (d.creditPacksPerWallet != 0 && mine > d.creditPacksPerWallet) revert CreditWalletLimit();
+        creditPacksBy[fire][msg.sender] = mine;
         credits[msg.sender] -= n;
         d.creditPacks += uint64(n);
-        _burnPaper(d, n, maxPaper);
+        _burnPaper(n * d.paperPerPack, maxPaper);
         PACKS.mint(msg.sender, fire, n);
         emit CreditsUsed(fire, msg.sender, n);
         _closeIfSoldOut(fire, d);
@@ -433,12 +491,12 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
 
     // ================================================================ cards and suggestions
 
-    /// @notice Burn your cards. Every `cardsPerCredit` (42) burned earns a free pack credit; extras count toward the
-    ///         next one.
+    /// @notice Burn your cards. Every CARDS_PER_CREDIT (42) burned earns a free pack credit; extras count toward the
+    ///         next one (a running count per wallet that carries over between Series).
     function burnCards(uint256[] calldata ids) external nonReentrant {
         if (ids.length == 0) revert BadAmount();
         CARDS.burnFor(msg.sender, ids);
-        uint256 per = cardsPerCredit;
+        uint256 per = CARDS_PER_CREDIT;
         uint256 total = burnCount[msg.sender] + ids.length;
         uint256 earned = total / per;
         burnCount[msg.sender] = total % per;
@@ -446,11 +504,12 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         emit CardsBurned(msg.sender, ids.length, earned, total % per);
     }
 
-    /// @notice Suggest a character for a future Series. The PAPER is burned.
-    function suggest(string calldata text) external returns (uint256 id) {
+    /// @notice Suggest a character for a future Series. The PAPER (`suggestionPaper`) is burned; `maxPaper` is the
+    ///         most the suggester agrees to pay.
+    function suggest(string calldata text, uint256 maxPaper) external returns (uint256 id) {
         uint256 len = bytes(text).length;
-        if (len == 0 || len > 280) revert BadAmount();
-        PAPER.safeTransferFrom(msg.sender, DEAD, PAPER_PER_SUGGESTION);
+        if (len == 0 || len > suggestionMaxBytes) revert BadAmount();
+        _burnPaper(suggestionPaper, maxPaper);
         id = suggestions.length;
         suggestions.push(Suggestion(msg.sender, uint64(block.timestamp), false, currentRound));
         emit Suggested(id, msg.sender, currentRound, text);
@@ -470,27 +529,38 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         bool configured;
         bool live; // open and not closed
         bool closed;
-        bool plankOnly; // only PLANK can buy right now (the first packs, until the wallet limit lifts at the latest)
+        bool plankOnly; // only PLANK can buy right now (the first packs, until plankOnlyFor at the latest)
         bool limitLifted;
         bool startersOpen;
         bool plankPriceOk; // the PLANK price is fresh: PLANK purchases work and the burn swap runs
         bool holdersOnly; // the holder window: only press holders and snapshot PLANK holders can buy
+        bool regularWalletsOnly; // contracts can't buy paid packs right now
         uint256 paidLeft;
         uint256 startersLeft;
+        uint256 phasesOver; // when the owner can end the drop if it hasn't sold out (anyone END_GRACE later)
+        uint256 creditPacksLeft; // free (credit) packs still available in this drop (cap and supply)
     }
 
     function phase(uint256 fire) external view returns (Phase memory p) {
         Drop storage d = drops[fire];
-        p.configured = d.start != 0;
+        uint256 s = d.start;
+        p.configured = s != 0;
         p.closed = d.closed;
-        p.live = p.configured && block.timestamp >= d.start && !d.closed;
-        p.limitLifted = p.configured && block.timestamp >= uint256(d.start) + d.liftAfter;
-        p.plankOnly = p.configured && d.paidSold < d.plankOnly && !p.limitLifted;
-        p.startersOpen = p.live && block.timestamp < uint256(d.start) + d.starterWindow && d.startersClaimed < d.starters;
+        p.live = p.configured && block.timestamp >= s && !d.closed;
+        p.limitLifted = p.configured && block.timestamp >= s + d.liftAfter;
+        p.plankOnly = p.configured && d.paidSold < d.plankOnly && block.timestamp < s + d.plankOnlyFor;
+        p.startersOpen = p.live && block.timestamp < s + d.starterWindow && d.startersClaimed < d.starters;
         p.plankPriceOk = _plankUsd() != 0;
-        p.holdersOnly = p.live && block.timestamp < uint256(d.start) + d.holderWindow;
+        p.holdersOnly = p.live && block.timestamp < s + d.holderWindow;
+        p.regularWalletsOnly = p.live && block.timestamp < s + d.regularWalletsFor;
         p.paidLeft = _paidLeft(d);
         p.startersLeft = p.startersOpen ? d.starters - d.startersClaimed : 0;
+        p.phasesOver = p.configured ? _phasesOver(d) : 0;
+        p.creditPacksLeft = p.paidLeft;
+        if (d.creditPacksMax != 0) {
+            uint256 cap = d.creditPacksMax > d.creditPacks ? d.creditPacksMax - d.creditPacks : 0;
+            if (cap < p.creditPacksLeft) p.creditPacksLeft = cap;
+        }
     }
 
     function dropOf(uint256 fire) external view returns (Drop memory) { return drops[fire]; }
@@ -498,6 +568,14 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     function quoteEth(uint256 fire, uint256 n) external view returns (uint256) { return _ethFor(n * drops[fire].priceUsd); }
     function quoteUsdg(uint256 fire, uint256 n) external view returns (uint256) { return _usdgFor(n * drops[fire].priceUsd); }
     function paperFor(uint256 fire, uint256 n) external view returns (uint256) { return n * drops[fire].paperPerPack; }
+    /// @notice A press pack claim's dollar price in each currency (0 if press packs have no dollar price) and PAPER.
+    function quoteStarter(uint256 fire, uint256 n, Pay pay) external view returns (uint256 cost, uint256 paper) {
+        Drop storage d = drops[fire];
+        paper = n * d.starterPaper;
+        uint256 usd8 = n * d.starterPriceUsd;
+        if (usd8 == 0) return (0, paper);
+        cost = pay == Pay.PLANK ? _plankFor(usd8) : pay == Pay.ETH ? _ethFor(usd8) : _usdgFor(usd8);
+    }
     function suggestionCount() external view returns (uint256) { return suggestions.length; }
 
     // ================================================================ internals
@@ -507,7 +585,20 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         if (d.start == 0 || block.timestamp < d.start || d.closed) revert NotLive();
     }
 
-    /// @dev Paid packs still for sale: the paid supply, plus starters nobody claimed once the window has ended.
+    function _longest(uint256 a, uint256 b, uint256 c, uint256 d, uint256 e) internal pure returns (uint256 m) {
+        m = a;
+        if (b > m) m = b;
+        if (c > m) m = c;
+        if (d > m) m = d;
+        if (e > m) m = e;
+    }
+
+    /// @dev When every timed phase of a drop is over.
+    function _phasesOver(Drop storage d) internal view returns (uint256) {
+        return uint256(d.start) + _longest(d.starterWindow, d.liftAfter, d.holderWindow, d.plankOnlyFor, d.regularWalletsFor);
+    }
+
+    /// @dev Paid packs still for sale: the paid supply, plus press packs nobody claimed once the window has ended.
     function _paidLeft(Drop storage d) internal view returns (uint256) {
         uint256 supply = d.packs;
         if (block.timestamp >= uint256(d.start) + d.starterWindow) supply += d.starters - d.startersClaimed;
@@ -515,7 +606,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         return supply > used ? supply - used : 0;
     }
 
-    /// @dev Everything not yet minted, starters included.
+    /// @dev Everything not yet minted, press packs included.
     function _left(Drop storage d) internal view returns (uint256) {
         uint256 total = uint256(d.packs) + d.starters;
         uint256 used = uint256(d.paidSold) + d.creditPacks + d.startersClaimed;
@@ -530,19 +621,18 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         d = _live(fire);
         if (n == 0 || n > d.maxPerTx) revert BadAmount();
         if (n > _paidLeft(d)) revert SoldOut();
-        // While the wallet limit is on, only regular wallets (MetaMask, Rabby, OKX...) can buy: a bot contract can't
-        // spin up throwaway wallets to sweep a drop in one transaction.
-        if (block.timestamp < uint256(d.start) + d.liftAfter && msg.sender != tx.origin) revert NoContracts();
-        if (block.timestamp < uint256(d.start) + d.holderWindow) _checkHolder(fire, d, access);
-        // PLANK lights the forge: the first plankOnly paid packs are PLANK-only. If they haven't sold by the time the
-        // wallet limit lifts (e.g. the PLANK price feed is down), ETH and USDG open anyway so a drop can't get stuck.
-        if (pay != Pay.PLANK && d.paidSold < d.plankOnly && block.timestamp < uint256(d.start) + d.liftAfter) revert PlankOnly();
-        if (block.timestamp < uint256(d.start) + d.liftAfter) {
-            if (paidBought[fire][msg.sender] + n > d.walletLimit) revert WalletLimit();
-        }
+        uint256 t = block.timestamp - d.start; // seconds since the drop opened
+        // While this is on, only regular wallets (MetaMask, Rabby, OKX...) can buy: a bot contract can't spin up
+        // throwaway wallets to sweep a drop in one transaction.
+        if (t < d.regularWalletsFor && msg.sender != tx.origin) revert NoContracts();
+        if (t < d.holderWindow) _checkHolder(fire, d, access);
+        // PLANK lights the forge: the first plankOnly paid packs are PLANK-only. If they haven't sold by plankOnlyFor
+        // (e.g. the PLANK price feed is down), ETH and USDG open anyway so a drop can't get stuck.
+        if (pay != Pay.PLANK && d.paidSold < d.plankOnly && t < d.plankOnlyFor) revert PlankOnly();
+        if (t < d.liftAfter && paidBought[fire][msg.sender] + n > d.walletLimit) revert WalletLimit();
         paidBought[fire][msg.sender] += n;
         d.paidSold += uint64(n);
-        _burnPaper(d, n, maxPaper);
+        _burnPaper(n * d.paperPerPack, maxPaper);
     }
 
     /// @dev The holder window: the buyer owns a press (each press lets in one wallet per drop) or was in the
@@ -560,16 +650,57 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         else if (prior != msg.sender) revert PressUsed();
     }
 
+    /// @dev Takes a dollar amount in `pay` and sends it on in this transaction: the burn share burns PLANK (or goes to
+    ///      the burn wallet if the swap can't go through), the rest to the revenue wallet. ETH comes from msg.value
+    ///      (the caller refunds the rest).
+    function _collect(Drop storage d, Pay pay, uint256 usd8, uint256 maxCost)
+        internal
+        returns (uint256 cost, uint256 burnShare, bool burned)
+    {
+        uint256 bps = d.plankBurnBps;
+        if (pay == Pay.PLANK) {
+            cost = _plankFor(usd8);
+            if (cost > maxCost) revert PriceMoved();
+            burnShare = cost * bps / BPS;
+            if (burnShare > 0) PLANK.safeTransferFrom(msg.sender, DEAD, burnShare);
+            PLANK.safeTransferFrom(msg.sender, revenueWallet, cost - burnShare);
+            burned = true;
+        } else if (pay == Pay.ETH) {
+            cost = _ethFor(usd8);
+            if (msg.value < cost || cost > maxCost) revert PriceMoved();
+            burnShare = cost * bps / BPS;
+            burned = burnShare > 0 && _swapEthToPlank(burnShare, usd8 * bps / BPS);
+            if (burnShare > 0 && !burned) _sendEth(burnWallet, burnShare);
+            _sendEth(revenueWallet, cost - burnShare);
+        } else {
+            if (address(USDG) == address(0)) revert BadConfig();
+            cost = _usdgFor(usd8);
+            if (cost > maxCost) revert PriceMoved();
+            burnShare = cost * bps / BPS;
+            USDG.safeTransferFrom(msg.sender, revenueWallet, cost - burnShare);
+            if (burnShare > 0) {
+                USDG.safeTransferFrom(msg.sender, address(this), burnShare);
+                burned = _swapUsdgToPlank(burnShare, usd8 * bps / BPS);
+                if (!burned) USDG.safeTransfer(burnWallet, burnShare);
+            }
+        }
+    }
+
+    /// @dev Sends back any ETH not spent (all of it unless `pay` was ETH).
+    function _refund(Pay pay, uint256 cost) internal {
+        uint256 spent = pay == Pay.ETH ? cost : 0;
+        if (msg.value > spent) _sendEth(msg.sender, msg.value - spent);
+    }
+
     function _finish(uint256 fire, Drop storage d, uint256 n, Pay pay, uint256 paid, uint256 burnShare, bool plankBurned) internal {
         PACKS.mint(msg.sender, fire, n);
         emit PacksBought(fire, msg.sender, n, pay, paid, burnShare, plankBurned);
         _closeIfSoldOut(fire, d);
     }
 
-    function _burnPaper(Drop storage d, uint256 n, uint256 maxPaper) internal {
-        uint256 paper = n * d.paperPerPack;
+    function _burnPaper(uint256 paper, uint256 maxPaper) internal {
         if (paper > maxPaper) revert PriceMoved();
-        PAPER.safeTransferFrom(msg.sender, DEAD, paper);
+        if (paper > 0) PAPER.safeTransferFrom(msg.sender, DEAD, paper);
     }
 
     function _closeIfSoldOut(uint256 fire, Drop storage d) internal {

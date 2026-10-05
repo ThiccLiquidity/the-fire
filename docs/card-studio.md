@@ -151,6 +151,12 @@ later (the router commits to a drand round 30 to 33 seconds ahead) and its cards
    the frames.
 3. **Series:** pick the characters (any number; their order is the image order c0, c1, ...) and the pack count.
 4. **Recipe:** card types, slots and PDA odds, with the contract's checks and the pool preview.
+   **Sale** (next tab): the drop's settings for `FireSale.configureDrop` in plain units (paid and press packs, price,
+   PAPER, burn share, PLANK-only packs, wallet limit, holder window and snapshot root, regular-wallets time, press
+   packs per press and per wallet and their price, packs per purchase, credits per picked suggestion, caps on free
+   packs per drop and per wallet), checked live
+   like the contract checks them. Presets: Standard (today's sale) and Giant (10,000 packs, 100 per wallet and per
+   purchase). Cards per free pack shows as fixed (42, forever). Missing settings mean the Standard sale.
 5. **Deal:** a sample deal on the recipe (the contract's dealing with the studio's own randomness, up to 600,000
    cards), seeded by a string, dealt in a background worker. Locking it locks the recipe and advances the studio's own
    serial counter (not the contract's).
@@ -159,8 +165,8 @@ later (the router commits to a drand round 30 to 33 seconds ahead) and its cards
    and time are estimated first. Missing frames block approval and the build. A later asset, recipe or character
    change means building again.
 7. **Export & Upload:** a readiness checklist (recipe valid, frames for every type, characters valid, deal locked,
-   approved, the full grid built); **recipe.json** (what `contracts/script/ConfigureSeries.s.sol` reads: types,
-   slots, characters, PDA odds, and `imagesBase` once uploaded); a zip of the images, per-card metadata (preview
+   approved, the full grid built, sale settings valid); **recipe.json** (what `contracts/script/ConfigureSeries.s.sol`
+   reads: types, slots, characters, PDA odds, `imagesBase` once uploaded, and the `sale` block); a zip of the images, per-card metadata (preview
    only), `fire.json` and `recipe.json`, in parts of about 1.5 GB for big Series; or the upload to IPFS through Pinata.
 
 **Upload.** Each folder (images, then the preview metadata) is packed in the browser into one CAR file. Its root CID

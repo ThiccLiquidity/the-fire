@@ -20,8 +20,8 @@ is minted, so buyers can trust the odds, and all of it can be read on-chain.
 | `IDealer` | What `FireCards` asks of a Series' dealer: `ready`, `cardsPerPack`, `characterCount`, `deal(fire, seed, fromCard, count)` and `cardText`. The owner picks a dealer per Series. Future dealers can add mechanics (their own state, 32 bits of per-card "extra" data, extra metadata attributes) without touching `FireCards`. |
 | `RecipeDealer` | The first dealer: deals each Series from its own recipe (below). Owned by the multisig. |
 | `StandardRecipe` | The original Omni rules as a recipe (library). |
-| `FireSale` | Sells the packs (`docs/omni-economy.md`): per-drop settings, PLANK-only first packs, PAPER per pack burned, the PLANK burn share, press-holder starters, free pack credits, suggestions. Closes the Series when a drop sells out or ends. Never holds funds. |
-| `FirePsa` | The PDA reveal: a holder burns PAPER to reveal up to 10 cards; drand picks each grade (1 to 10) on the Series' odds; the card switches to that grade's image. The only contract that can set a grade, once per card. |
+| `FireSale` | Sells the packs (`docs/omni-economy.md`): every product rule is a per-drop setting (pack counts, prices, PAPER, burn share, PLANK-only packs, press packs, holder window, wallet limit, regular-wallets rule, packs per purchase, credits per picked suggestion). Cards per free pack is fixed at 42 forever. Closes the Series when a drop sells out or ends. Never holds funds. |
+| `FirePsa` | The PDA reveal: a holder burns PAPER to reveal up to `maxReveal` cards (10; owner setting, at most 100); drand picks each grade (1 to 10) on the Series' odds; the card switches to that grade's image. The only contract that can set a grade, once per card. |
 
 ## A Series' recipe (RecipeDealer)
 
@@ -128,7 +128,16 @@ picture / full out of 1e18), `characterOf`, `charactersOf(fire, from, count)`, `
     { "count": 1, "minRank": 2, "maxRank": 4, "mustHolo": true }
   ],
   "characters": [ { "name": "Ember Fox", "category": "Animals" } ],
-  "pdaOdds": ["100", "150", "200", "350", "700", "1800", "2500", "2400", "1700", "100"]
+  "pdaOdds": ["100", "150", "200", "350", "700", "1800", "2500", "2400", "1700", "100"],
+  "sale": {
+    "start": 1900000000, "packs": 117, "starters": 50, "plankOnly": 50, "walletLimit": 5,
+    "starterWindow": 86400, "liftAfter": 172800, "plankBurnBps": 3000,
+    "priceUsd": "250000000", "paperPerPack": "1000000000000000000",
+    "holderWindow": 86400, "holderRoot": "0x...", "maxPerTx": 50,
+    "plankOnlyFor": 172800, "regularWalletsFor": 172800,
+    "starterPerPress": 1, "starterWalletLimit": 1, "starterPriceUsd": "0", "starterPaper": "1000000000000000000",
+    "creditsPerPick": 1, "creditPacksMax": 0, "creditPacksPerWallet": 0
+  }
 }
 ```
 
@@ -137,12 +146,18 @@ picture / full out of 1e18), `characterOf`, `charactersOf(fire, from, count)`, `
 rank range (`minRank`, default 0; `maxRank`, default "no top"). `imagesBase` and `pdaOdds` (a weight per grade, 1
 first) are optional.
 
+`sale` (optional; the studio's Sale tab) is `FireSale.DropConfig` field by field, in contract units: times in seconds
+after `start`, dollars with 8 decimals, PAPER in wei, the burn share in basis points. Every field is required except
+`holderRoot` (0 = presses only). `DROP_START` and `HOLDER_ROOT` override `start` and `holderRoot` when the script runs
+(the snapshot is taken just before the drop). The studio's sample export is `contracts/test/cards/recipe-studio-sale.json`
+(written by `studio/scripts/sale-sample.test.ts`; `Sale.t.sol` runs it through the script and `configureDrop`).
+
 ## The flow
 
 1. **Before a Series** (the owner, the `OWNER` multisig; `ConfigureSeries.s.sol` builds these calls from the JSON):
    `RecipeDealer.setRecipe`, `setCharacters` (+ `appendCharacters`), `FireCards.setDealer(fire, dealer)` (the dealer
    must already have the Series ready), `FireCards.setImagesBase(fire, base)`, optionally `FirePsa.setOdds`. Then
-   `FireSale.configureDrop` (it requires `FireCards.ready(fire)`).
+   `FireSale.configureDrop` (it requires `FireCards.ready(fire)`; the script adds it last from the `sale` block).
 2. **During the drop:** the seller (`FireSale`) mints packs. They're tradeable sealed. From the first pack minted,
    the dealer, recipe, characters and PDA odds are fixed.
 3. **When the drop ends:** the seller calls `closeFire(fire)`. The pack count freezes. Closing never calls the dealer.
@@ -170,8 +185,48 @@ first) are optional.
 | Characters | `setCharacters`, `appendCharacters` | same |
 | PDA odds (any weights for grades 1-10) | `FirePsa.setOdds` | first pack minted or close |
 | Image folder | `FireCards.setImagesBase` | `lockFire` only (moving the images never changes a card) |
-| Drop settings, incl. `maxPerTx` | `FireSale.configureDrop` | the drop's start |
-| Cards per free credit (global) | `FireSale.setCardsPerCredit` | changeable only while no drop is set up or running |
+| Drop settings (all of them, below) | `FireSale.configureDrop` | the drop's start |
+
+## Every sale and economy setting
+
+Per Series = set in `configureDrop` for that drop, locked at its start. Global = one owner setting for everything.
+
+| Setting | Where | Scope | Default (Standard) | Bound, and why |
+|---|---|---|---|---|
+| Paid packs | `DropConfig.packs` | per Series | 117 | < 2^64; 0 allowed if there are press packs |
+| Press packs (starters) in all | `starters` | per Series | 50 | < 2^64; 0 = off |
+| Price per paid pack | `priceUsd` (8 dec.) | per Series | $2.50 | > 0 when there are paid packs (a $0 typo would give them away) |
+| PAPER per paid / credit pack | `paperPerPack` | per Series | 1 PAPER | any, 0 = none |
+| PLANK burn share | `plankBurnBps` | per Series | 30% | 0 to 100% |
+| PLANK-only packs | `plankOnly` | per Series | 50 | <= paid packs |
+| PLANK-only opens to ETH/USDG after | `plankOnlyFor` | per Series | 48h | > 0 if `plankOnly` > 0 (a PLANK feed outage can't stall a drop); <= 30 days |
+| Wallet limit (paid) | `walletLimit` | per Series | 5 | < 2^64; 0 = none (then `liftAfter` 0 too) |
+| Wallet limit lifts after | `liftAfter` | per Series | 48h | <= 30 days; 0 only with no limit |
+| Most packs per purchase / credit spend | `maxPerTx` | per Series | 50 (0 = 50) | < 2^32. Gas is flat: 100 packs cost the same as 1 (~96k) |
+| Holder window | `holderWindow` | per Series | 24h | <= 30 days; 0 = open to all |
+| Snapshot root | `holderRoot` | per Series | from `ops/snapshot` | 0 = presses only. The $69 minimum is the snapshot's `--min-usd` (off-chain, per drop) |
+| Regular wallets only for | `regularWalletsFor` | per Series | 48h | <= 30 days; 0 = off (was tied to the wallet limit) |
+| Press packs per press | `starterPerPress` | per Series | 1 | >= 1 if press packs are on. Each press counted per drop |
+| Press packs per wallet | `starterWalletLimit` | per Series | 1 | >= 1 if press packs are on |
+| Press claim window | `starterWindow` | per Series | 24h | > 0 if press packs are on; <= 30 days |
+| Press pack dollar price | `starterPriceUsd` | per Series | $0 | any; paid in PLANK, ETH or USDG like a paid pack |
+| Press pack PAPER | `starterPaper` | per Series | 1 PAPER | any; both price fields 0 = free |
+| Credits per picked suggestion | `creditsPerPick` | per Series | 1 | < 2^16; 0 = none |
+| Free (credit) packs in the drop, at most | `creditPacksMax` | per Series | 0 (no limit) | < 2^64; `CreditCapReached` past it |
+| Free (credit) packs per wallet, at most | `creditPacksPerWallet` | per Series | 0 (no limit) | < 2^64; `CreditWalletLimit` past it |
+| Cards per free pack credit | `CARDS_PER_CREDIT` | constant | 42 | **fixed forever**: burn progress carries over between Series, so changing it would move the goalposts |
+| Suggestion cost, longest text | `setSuggestionRules` | global (suggestions aren't tied to a drop) | 1 PAPER, 280 bytes | any cost incl. 0 (each `suggest` names its most PAPER); text 1 to 1,024 bytes (event size) |
+| PDA cards per reveal | `FirePsa.setMaxReveal` | global | 10 | 1 to 100 (gas guard: `finish` grades all in one tx, ~14k gas a card) |
+| PDA price target and cap | `FirePsa.setRevealPrice` | global | $0.25, $1 | 0 < target <= cap <= $100 (typo guard; each reveal names its most PAPER) |
+| PDA fallback PAPER | `FirePsa.setFallbackPaper` | global | 5 | 1 to 1,000,000 (unchanged) |
+| PDA odds | `FirePsa.setOdds` | per Series | table | any weights (unchanged) |
+| Revenue and burn wallets, feeds, router | `setWallets`, `setFeeds` | global | - | only between drops (unchanged) |
+
+Guards that stay fixed (safety, not product): settings lock at the drop's start; one drop at a time; every purchase
+names its most PLANK/USDG/ETH and PAPER; the 90% swap floor (`SWAP_MIN_BPS`); feed freshness (`ETH_FEED_MAX_AGE`
+25h, `PLANK_FEED_MAX_AGE` and `PLANK_WINDOW_MAX` 2h, `PAPER_FEED_MAX_AGE` 2 days); phases at most 30 days
+(`MAX_WINDOW`) and `END_GRACE` 7 days, so a stalled drop can always be ended (by the owner once its last phase is over,
+by anyone a week later); re-request after a day and cancel after a week for randomness; royalty at most 10%.
 
 ## Technical ceilings (not product rules)
 
@@ -185,8 +240,8 @@ first) are optional.
 | Name 64 bytes, category 32, slug 32 | metadata size; same rules as the studio |
 | Recipe size | owner gas per transaction (stored as contract code in 24,000-byte chunks, so no hard size) |
 | Dealing | block gas: `process(maxCards)` splits any pack; a card costs ~60k gas |
-| PDA reveal: 10 cards per call | gas guard on `finish` (kept) |
-| Royalty <= 10%, drop windows <= 30 days, end grace 7 days, price-feed ages, 90% swap floor | buyer-protection guards (kept) |
+| PDA reveal: at most 100 cards per call (`maxReveal`, 10 to start) | gas guard on `finish` |
+| Royalty <= 10%, drop phases <= 30 days, end grace 7 days, price-feed ages, 90% swap floor | buyer-protection guards (kept) |
 
 ## Safety
 
@@ -241,6 +296,7 @@ otherwise. A test runs the same steps.
 `contracts/script/ConfigureSeries.s.sol` sets up a Series from a recipe JSON: it checks the recipe against the dealer,
 then prints each call (target and calldata) for the multisig, or sends them with `SEND=true` when the signer is the
 owner (testnet). Inputs: `RECIPE_JSON`, `RECIPE_DEALER`, `FIRE_CARDS`, `FIRE_PSA` (if the JSON has `pdaOdds`),
+`FIRE_SALE` (adds `configureDrop` from the `sale` block, last), `DROP_START` and `HOLDER_ROOT` (override the block),
 `CHARACTER_BATCH` (characters per call, default 200).
 
 - **Settings:** `.env.example` (card contracts section). No keys in `.env`: sign with the Foundry keystore or a Ledger.
