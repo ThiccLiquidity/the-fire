@@ -191,10 +191,42 @@ function drawPsa(ctx: Ctx2D, value: string, psa: PsaBox, ringColor: string | nul
   drawText(ctx, value, { box: { x: cx - 85 * k, y: cy - 42 * k, w: 170 * k, h: 120 * k }, style: { ...st, bold: true, size: 112 * k, minSize: 24 }, visible: true })
 }
 
+/** The card's own shape (the same rounded outline clean_frames.py gives every frame): full-card art is clipped to it. */
+const CARD_INSET = 8
+const CARD_RADIUS = 93
+
+/** Full-card art (Full Art) is the whole card, so it must be solid to the edge: trims any see-through margin round the
+ *  art (its rounded corners, a soft edge) and makes every pixel fully opaque. Otherwise the backing shows through as a
+ *  dark border and the whole card looks a shade darker. */
+export async function solidFullCardArt(src: ImageBitmap): Promise<ImageBitmap> {
+  const w = src.width
+  const h = src.height
+  const c = new OffscreenCanvas(w, h)
+  const g = c.getContext('2d')
+  if (!g) return src
+  g.drawImage(src, 0, 0)
+  const d = g.getImageData(0, 0, w, h)
+  const px = d.data
+  // the solid part: rows and columns that are mostly opaque (a few stray see-through pixels don't count)
+  const solidRow = (y: number) => { let n = 0; for (let x = 0; x < w; x++) if (px[(y * w + x) * 4 + 3] >= 128) n++; return n > w * 0.5 }
+  const solidCol = (x: number) => { let n = 0; for (let y = 0; y < h; y++) if (px[(y * w + x) * 4 + 3] >= 128) n++; return n > h * 0.5 }
+  let y0 = 0, y1 = h - 1, x0 = 0, x1 = w - 1
+  while (y0 < y1 && !solidRow(y0)) y0++
+  while (y1 > y0 && !solidRow(y1)) y1--
+  while (x0 < x1 && !solidCol(x0)) x0++
+  while (x1 > x0 && !solidCol(x1)) x1--
+  // a couple of pixels more, past the soft edge
+  x0 = Math.min(x0 + 2, x1); y0 = Math.min(y0 + 2, y1); x1 = Math.max(x1 - 2, x0); y1 = Math.max(y1 - 2, y0)
+  for (let i = 3; i < px.length; i += 4) px[i] = 255
+  g.putImageData(d, 0, 0)
+  return createImageBitmap(c, x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+}
+
 function drawArt(ctx: Ctx2D, art: ImgSrc, layout: Layout): void {
   const a = layout.art
   const { w: iw, h: ih } = dims(art)
   if (!iw || !ih) return
+  const fullCard = a.box.x === 0 && a.box.y === 0 && a.box.w === CARD_W && a.box.h === CARD_H
   const fit = a.fit === 'cover' ? Math.max(a.box.w / iw, a.box.h / ih) : Math.min(a.box.w / iw, a.box.h / ih)
   const s = fit * (a.scale > 0 ? a.scale : 1)
   const dw = iw * s
@@ -203,9 +235,11 @@ function drawArt(ctx: Ctx2D, art: ImgSrc, layout: Layout): void {
   const dy = a.box.y + (a.box.h - dh) / 2 + a.offsetY
   ctx.save()
   ctx.beginPath()
-  ctx.rect(a.box.x, a.box.y, a.box.w, a.box.h)
+  // full-card art: the card's rounded shape and no backing colour (there is nothing behind the card to fill)
+  if (fullCard) ctx.roundRect(CARD_INSET, CARD_INSET, CARD_W - 2 * CARD_INSET, CARD_H - 2 * CARD_INSET, CARD_RADIUS)
+  else ctx.rect(a.box.x, a.box.y, a.box.w, a.box.h)
   ctx.clip()
-  if (a.background) {
+  if (a.background && !fullCard) {
     ctx.fillStyle = a.background
     ctx.fillRect(a.box.x, a.box.y, a.box.w, a.box.h)
   }

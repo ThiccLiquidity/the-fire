@@ -1,8 +1,8 @@
 /** Shared by the build worker and the main-thread fallback: decodes asset blobs lazily (small LRU of bitmaps, art
  *  downscaled to what the art window needs) and renders cards to encoded Blobs via render.ts. */
 
-import { cardView, renderCardBlob, type CardAssets, type CardFace } from './render'
-import { frameId } from './frames'
+import { cardView, renderCardBlob, solidFullCardArt, type CardAssets, type CardFace } from './render'
+import { FULL_CARD_ART_SETS, frameId } from './frames'
 import { CARD_H, CARD_W, wearLookOf, type WearLook } from './rules'
 import type { Layout, OutputFormat, Variant } from './types'
 
@@ -68,7 +68,12 @@ export class CardRenderer {
     const blob = this.bundle.art[charId]?.[m]?.[v] ?? this.bundle.art[charId]?.[m]?.normal
     return this.bitmap(`art:${charId}:${m}:${v}`, async () => {
       if (!blob) return null
-      const full = await createImageBitmap(blob)
+      let full = await createImageBitmap(blob)
+      if (FULL_CARD_ART_SETS.includes(m)) {
+        const solid = await solidFullCardArt(full)
+        if (solid !== full) full.close()
+        full = solid
+      }
       // Downscale big art to what the art window needs (keeps memory sane with many characters).
       const a = (this.bundle.layouts[m] ?? Object.values(this.bundle.layouts)[0]).art
       const fit = a.fit === 'cover' ? Math.max(a.box.w / full.width, a.box.h / full.height) : Math.min(a.box.w / full.width, a.box.h / full.height)
@@ -76,8 +81,9 @@ export class CardRenderer {
       if (need >= 0.9) return full
       const w = Math.max(1, Math.round(full.width * need))
       const h = Math.max(1, Math.round(full.height * need))
+      const small = await createImageBitmap(full, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
       full.close()
-      return createImageBitmap(blob, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
+      return small
     })
   }
 
