@@ -169,11 +169,12 @@
     setTimeout(then, 200);
   }
   $('#walletBtn').onclick = () => needWallet(openWallet);
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`); // the demo name is typed by the player
   function openWallet() {
-    const w = S.wallet, sealed = Object.entries(S.sealed).filter(([, n]) => n).map(([k, n]) => `${n} from Series ${k}`).join(', ') || 'none';
+    const w = S.wallet, nm = esc(w.name), sealed = Object.entries(S.sealed).filter(([, n]) => n).map(([k, n]) => `${n} from Series ${k}`).join(', ') || 'none';
     const d = Sheet.open('wallet', { title: w.name || 'Wallet', body: `
       <div class="wmenu">
-        <div class="who"><div class="avatar">${(w.name || '?')[0]}</div><div><b>${w.name || 'No name yet'}</b><small>${w.address}</small></div><button class="btn small" type="button" data-w="name">Edit</button></div>
+        <div class="who"><div class="avatar">${esc((w.name || '?')[0])}</div><div><b>${nm || 'No name yet'}</b><small>${w.address}</small></div><button class="btn small" type="button" data-w="name">Edit</button></div>
         <div class="bal">${Object.entries(w.balances).map(([k, v]) => `<div><small>${k}</small><b>${fmt(v)}</b></div>`).join('')}</div>
         <div class="rows">
           <div><span>Free packs</span><b>${w.credits}</b></div>
@@ -191,7 +192,7 @@
     d.querySelector('[data-w=switch]').onclick = () => { d.close(); Store.update((s) => { s.wallet.connected = false; }); needWallet(openWallet); };
     d.querySelector('[data-w=name]').onclick = () => {
       const f = document.createElement('form'); f.className = 'namef';
-      f.innerHTML = `<label for="nm">Name</label><input id="nm" maxlength="24" value="${w.name}"><button class="btn primary" type="submit">Save</button>`;
+      f.innerHTML = `<label for="nm">Name</label><input id="nm" maxlength="24" value="${esc(w.name)}"><button class="btn primary" type="submit">Save</button>`;
       f.onsubmit = (e) => { e.preventDefault(); Store.update((s) => { s.wallet.name = $('#nm', f).value.trim(); }); openWallet(); };
       Sheet.open('wallet', { title: 'Your name', body: f });
     };
@@ -281,7 +282,7 @@
   // ---------- activity, menu, demo
   function openFeed() {
     const items = S.activity.length ? S.activity : [{ text: 'Waiting for the first pack of Series 7' }];
-    Sheet.open('feed', { title: 'Activity', body: `<ul class="feed">${items.map((a) => `<li>${a.text}</li>`).join('')}</ul>` });
+    Sheet.open('feed', { title: 'Activity', body: `<ul class="feed">${items.map((a) => `<li>${esc(a.text)}</li>`).join('')}</ul>` });
   }
   function openMenu() {
     const d = Sheet.open('menu', { title: 'Menu', body: `<div class="menu">

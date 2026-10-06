@@ -50,7 +50,7 @@ const routerAbi = parseAbi([
   `function swapGeneric((address callTarget, address approveTarget, bytes targetData, ${desc} desc, bytes clientData) execution) payable returns (uint256, uint256)`,
   `function swapSimpleMode(address caller, ${desc} desc, bytes executorData, bytes clientData) returns (uint256, uint256)`,
 ]);
-type Desc = { srcToken: Address; dstToken: Address; feeReceivers: readonly Address[]; dstReceiver: Address; amount: bigint; minReturnAmount: bigint };
+type Desc = { srcToken: Address; dstToken: Address; feeReceivers: readonly Address[]; feeAmounts: readonly bigint[]; dstReceiver: Address; amount: bigint; minReturnAmount: bigint };
 
 /**
  * The guard. Refuses the transaction unless: it goes to KyberSwap's router; it spends no more than `amountIn` of `from`;
@@ -72,5 +72,8 @@ export function checkSwap(tx: { to: Address; data: Hex; value: bigint }, want: {
   if (!eq(x.dstReceiver, want.account)) no("the coins would go to another wallet");
   if (x.minReturnAmount < want.minOut) no("its minimum return is below your slippage limit");
   if (x.feeReceivers.some((r) => !SWAP_FEE_WALLET || !eq(r, SWAP_FEE_WALLET))) no("it pays a fee to someone else");
+  // the fee is SWAP_FEE_BPS, written either in basis points or as an amount of the coin paid: refuse anything above both
+  const feeCap = BigInt(SWAP_FEE_BPS) > (want.amountIn * BigInt(SWAP_FEE_BPS)) / 10000n ? BigInt(SWAP_FEE_BPS) : (want.amountIn * BigInt(SWAP_FEE_BPS)) / 10000n;
+  if ((x.feeAmounts ?? []).reduce((a, b) => a + b, 0n) > feeCap) no("its fee is bigger than the site's fee");
   if (tx.value !== (want.from === "ETH" ? want.amountIn : 0n)) no("it sends the wrong amount of ETH");
 }

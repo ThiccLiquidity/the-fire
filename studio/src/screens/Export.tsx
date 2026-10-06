@@ -26,7 +26,8 @@ export function Export({ fire }: { fire: FireRecord }) {
   const s = useStudio()
   const flags = useDevFlags()
   const chars = useMemo(() => Object.fromEntries(s.characters.map((c) => [c.id, c])), [s.characters])
-  const charOf = (id: string) => ({ id, name: chars[id]?.name ?? id, category: chars[id]?.category })
+  // the same trimmed name and category recipe.json puts on-chain
+  const charOf = (id: string) => ({ id, name: chars[id] ? normalizeName(chars[id].name) : id, category: normalizeCategory(chars[id]?.category ?? '') })
   const [busy, error, run] = useAction()
   const [progress, setProgress] = useState<{ value: number; label: string } | null>(null)
   const [log, setLog] = useState<string[]>([])
@@ -86,7 +87,7 @@ export function Export({ fire }: { fire: FireRecord }) {
   )
 
   /** The upload is of the current build (only then does recipe.json name its folder as the images base). */
-  const uploadCurrent = !!fire.upload?.imagesCid && !buildDetail && fire.upload.buildAt === b?.builtAt
+  const uploadCurrent = !!fire.upload?.imagesCid && !fire.upload.mock && !buildDetail && fire.upload.buildAt === b?.builtAt
 
   const downloadRecipe = () => run(async () => {
     if (!recipeReady) throw new Error(!checks[0].ok ? checks[0].detail : !checks[2].ok ? checks[2].detail : saleCheck.detail)
@@ -179,6 +180,7 @@ export function Export({ fire }: { fire: FireRecord }) {
       say(`The images changed since the saved upload (${current.imagesDir}); uploading the new build.`)
       current = {}
     }
+    if (!!current.mock !== flags.mockPinata) current = {} // a mock upload is never reused for a real one (or the other way)
     const transport = flags.mockPinata ? mockTransport : realTransport
     const result = await uploadFire({
       fire: fire.number,
@@ -258,7 +260,7 @@ export function Export({ fire }: { fire: FireRecord }) {
       {flags.mockPinata && <Notice kind="warn">Mock Pinata is ON (Data tab): nothing leaves this machine; the CIDs are the real folder CIDs, but nothing is stored.</Notice>}
       <form className="row wrap" onSubmit={(e) => { e.preventDefault(); setPinataJwt(jwtInput); setJwtInput(''); setKeySet(hasPinataJwt()) }}>
         <Field label="Pinata JWT">
-          <input type="password" autoComplete="off" value={jwtInput} onChange={(e) => setJwtInput(e.target.value)} placeholder={keySet ? 'key set for this session' : 'paste JWT'} data-testid="jwt" />
+          <input type="password" autoComplete="new-password" data-1p-ignore="" data-lpignore="true" value={jwtInput} onChange={(e) => setJwtInput(e.target.value)} placeholder={keySet ? 'key set for this session' : 'paste JWT'} data-testid="jwt" />
         </Field>
         <button type="submit" disabled={!jwtInput.trim()}>Use key</button>
         {keySet && <button type="button" onClick={() => { clearPinataJwt(); setKeySet(false) }}>Forget key</button>}

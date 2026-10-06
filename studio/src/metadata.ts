@@ -9,7 +9,6 @@ import { HOLO_LABEL } from './rules'
 
 export interface Erc721Metadata {
   name: string
-  description: string
   image: string
   attributes: { trait_type: string; value: string | number; display_type?: 'number' }[]
 }
@@ -26,7 +25,6 @@ export function cardMetadata(card: DealtCard, character: { name: string; categor
   const material = typeName
   const holo = HOLO_LABEL[card.holo]
   const edition = `${card.edition} of ${card.editionOf}`
-  const holoText = card.holo === 'none' ? '' : card.holo === 'full' ? ' Full holo.' : ` ${holo} holo.`
   const psa = card.grade == null ? 'Ungraded' : `PDA ${card.grade}`
   const wear = card.grade == null
     ? [
@@ -37,11 +35,10 @@ export function cardMetadata(card: DealtCard, character: { name: string; categor
     : []
   return {
     name: cardTitle(typeName, name, card.serial),
-    description: `${name}, ${material}. Edition ${edition} from Series ${card.fire}. Global serial #${card.serial}.${holoText} ${card.grade == null ? 'Ungraded.' : `${psa}, slabbed.`}`,
     image,
     attributes: [
       { trait_type: 'Character', value: name },
-      ...(character.category ? [{ trait_type: 'Category', value: character.category }] : []),
+      { trait_type: 'Category', value: character.category ?? '' }, // CardsRenderer always writes it
       { trait_type: 'Material', value: material },
       { trait_type: 'Holo', value: holo },
       { trait_type: 'Series', value: card.fire, display_type: 'number' as const },

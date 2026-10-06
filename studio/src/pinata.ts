@@ -112,13 +112,16 @@ export function pinataTransport(chunkSize = TUS_CHUNK): PinataTransport {
 
   async uploadCar(jwt, up, onProgress) {
     const auth = { Authorization: `Bearer ${jwt}` }
-    let url = up.resumeUrl
+    // the key is only ever sent to Pinata's upload host: a stored or returned URL anywhere else is dropped
+    const onPinata = (u: string) => { try { return new URL(u).origin === new URL(UPLOADS).origin } catch { return false } }
+    let url = up.resumeUrl && onPinata(up.resumeUrl) ? up.resumeUrl : undefined
     let offset = 0
+    if (up.resumeUrl && !url) await up.onResumeUrl(null)
     if (url) {
       // how far did the earlier attempt get?
-      const r = await call(url, { method: 'HEAD', headers: auth })
-      const at = Number(r.headers.get('Upload-Offset'))
-      if (r.ok && Number.isFinite(at) && at >= 0 && at <= up.size) offset = at
+      const r = await call(url, { method: 'HEAD', headers: auth }).catch(() => null)
+      const at = Number(r?.headers.get('Upload-Offset'))
+      if (r?.ok && Number.isFinite(at) && at >= 0 && at <= up.size) offset = at
       else { url = undefined; await up.onResumeUrl(null) }
     }
     if (!url) {
@@ -130,6 +133,7 @@ export function pinataTransport(chunkSize = TUS_CHUNK): PinataTransport {
       const loc = r.headers.get('Location')
       if (!r.ok || !loc) throw errorFor(r.status, await r.text())
       url = new URL(loc, UPLOADS).toString()
+      if (!onPinata(url)) throw new Error(`Pinata sent an upload address on another host (${new URL(url).host}); stopped.`)
       await up.onResumeUrl(url)
     }
     onProgress(offset, up.size)
@@ -319,6 +323,12 @@ export async function uploadFire(plan: UploadPlan, transport: PinataTransport): 
     imagesCid = undefined
     metadataCid = undefined
   }
+  // a saved CID is only trusted if Pinata still has it (a mock upload, or a pin deleted since, is uploaded again)
+  if (imagesCid && !(await withRetry('Lookup', () => transport.isPinned(jwt, imagesCid!), plan.onStatus))) {
+    plan.onStatus(`Pinata doesn't have ${imagesCid}; uploading it again.`)
+    imagesCid = undefined
+    metadataCid = undefined
+  }
   if (imagesCid) plan.onStatus(`Images already uploaded (${imagesCid}), skipping.`)
   else {
     imagesCid = await uploadFolder(plan, transport, jwt, imagesDir, plan.imageFiles, (f) => plan.onProgress(0.9 * f), car)
@@ -327,6 +337,10 @@ export async function uploadFire(plan: UploadPlan, transport: PinataTransport): 
   plan.onProgress(0.9)
 
   const metaDir = metadataDirName(plan.fire, imagesCid)
+  if (metadataCid && !(await withRetry('Lookup', () => transport.isPinned(jwt, metadataCid!), plan.onStatus))) {
+    plan.onStatus(`Pinata doesn't have ${metadataCid}; uploading it again.`)
+    metadataCid = undefined
+  }
   if (metadataCid) plan.onStatus(`Metadata already uploaded (${metadataCid}), skipping.`)
   else {
     metadataCid = await uploadFolder(plan, transport, jwt, metaDir, plan.makeMetadata(imagesCid), (f) => plan.onProgress(0.9 + 0.1 * f))
