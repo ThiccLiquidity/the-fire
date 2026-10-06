@@ -82,6 +82,8 @@
 @keyframes inf-growx { from { transform: scaleX(0) } }
 .inf-mfill.paper { background: var(--paper) } .inf-mfill.wood { background: var(--wood) } .inf-mfill.fire { background: var(--fire) }
 .inf-mfill.charcoal { background: #8d8d94 } .inf-mfill.diamond { background: var(--diamond) }
+.inf-mfill.gold { background: linear-gradient(90deg, #b07d1c, #e5b23a 40%, #fff1b8 75%, #e5b23a) }
+.inf-mfill.fullart { background: linear-gradient(90deg, #ff9ae6, #ffe98a 30%, #8affd0 55%, #8ad8ff 80%, #d6a8ff) }
 .inf-mval { text-align: right; font: 800 15px/1.1 var(--body); font-variant-numeric: tabular-nums; display: grid }
 .inf-mval small { font: 600 13px var(--body); color: var(--muted) }
 .inf-legend { margin: 10px 0 0; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px }
@@ -108,6 +110,7 @@
 .inf-holo thead th span { font-weight: 600 }
 .inf-holo td.inf-none b { color: var(--muted) }
 .inf-holo td.inf-nil { color: var(--dim); font-weight: 600 }
+.inf-holo td.inf-always b { color: var(--gold) }
 .inf-holo th[scope=row] { vertical-align: middle }
 
 /* pack slots */

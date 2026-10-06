@@ -44,9 +44,9 @@
       credits: 1, burnCount: 12, starterClaimed: false, bought: 0, pending: [],
     },
     // Series teases: one character in every card type. Add one for any Series at any time: an entry here plus its six
-    // cards in ui/announce/<id>-<type>.webp (paper, wood, fire, charcoal, gold, fullart). While a Series is on sale its
-    // tease shows what's in its packs; between Series the next one's tease sits on the main page.
-    teases: { 7: { id: 'bowling', name: 'Bowling Ball' }, 8: { id: 'bowling', name: 'Bowling Ball' } },
+    // cards in ui/announce/<id>-<type>.webp (paper, wood, fire, charcoal, gold, fullart), rendered for that Series (they
+    // print "Forged · Series N"). While a Series is on sale its tease shows what's in its packs; between Series the next one's sits on the main page.
+    teases: { 7: { id: 'bowling-s7', name: 'Bowling Ball' }, 8: { id: 'bowling-s8', name: 'Bowling Ball' } },
     sealed: { 7: 0, 6: 3 }, // sealed packs owned, by Series (6 is closed: it can be opened)
     cards,
     suggestions: [{ text: 'A lighthouse keeper', at: 'Series 6', picked: true }, { text: 'Grandma’s cast-iron pan', at: 'Series 7', picked: false }],
@@ -68,7 +68,8 @@
     paidLeft() { const s = state.series; return Math.max(0, s.total - s.starters - s.sold + (s.phase >= 2 ? s.starters - s.startersClaimed : 0)); },
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },
     cardImg(c) { // the finished card images for a look (character, material, holo): one strip, raw, cased, then slabbed PDA 1-10
-      const id = (CHARS[c.character] || CHARS[NAMES[0]]).id;
+      // demo: only the Bowling Ball has Gold and Full Art art, so those always show it
+      const id = (c.material === 'gold' || c.material === 'fullart' ? CHARS[SPECIAL_CAST] : CHARS[c.character] || CHARS[NAMES[0]]).id;
       const holo = (c.material === 'gold' || c.material === 'fullart') ? 'full' : c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none';
       return `cards/${id}/${c.material}-${holo}.webp`;
     },
