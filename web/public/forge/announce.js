@@ -22,7 +22,6 @@
     el.style.setProperty('--delay', `${-i * 0.55}s`);
     el.style.zIndex = String(i + 1);
     el.innerHTML = `<img src="ui/announce/${cast.id}-${c.kind}.webp" alt="" draggable="false">${c.kind === 'gold' || c.kind === 'fullart' ? '<i class="fan-shine" aria-hidden="true"></i>' : ''}`;
-    el.insertAdjacentHTML('beforeend', `<span class="fan-tag">${c.label}</span>`);
     return el;
   }
 
@@ -44,13 +43,7 @@
     const t = Store.tease(); if (!t) return;
     const body = document.createElement('div');
     body.className = 'announce';
-    const el = (tag, cls, text) => Object.assign(document.createElement(tag), { className: cls, textContent: text });
-    body.append(
-      el('p', 'ann-kicker', t.live ? `Series ${t.no} · on sale now` : `Series ${t.no} announced`),
-      fan(t),
-      el('h3', '', t.live ? `${t.name} in Series ${t.no}` : `${t.name} leads Series ${t.no}`),
-      el('p', 'muted', `${t.live ? 'This is what a Series ' + t.no + ' pack can hold. ' : ''}Every character comes in Paper, Wood, Fire, Coal and Gold, plus one Full Art each. Tap the hand to spread it.`),
-    );
+    body.append(fan(t)); // just the cards: a visual tease, no words
     Sheet.open('announce', { title: `Series ${t.no}`, body });
   }
 

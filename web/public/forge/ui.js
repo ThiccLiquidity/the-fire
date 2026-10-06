@@ -47,14 +47,14 @@
     <button class="pill openp" type="button" data-st="open" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
     <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small>$0.05 · $1</small></span></button>
     <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small>1 PAPER</small></span></button>
-    <button class="pill peek" type="button" data-peek data-x="2880" data-y="700" style="--c: var(--gold)"><span class="peek-fan" aria-hidden="true"><img src="ui/announce/bowling-gold.webp" alt=""><img src="ui/announce/bowling-fullart.webp" alt=""></span><span id="pPeekT">Series 8<small id="pPeek">Sneak peek</small></span></button>
+    <button class="pill peek" type="button" data-peek data-x="2880" data-y="700" style="--c: var(--gold)"><span class="peek-fan" aria-hidden="true"><img src="ui/announce/bowling-gold.webp" alt=""><img src="ui/announce/bowling-fullart.webp" alt=""></span><span id="pPeekT">Series 8</span></button>
   </div>
   <section class="stations" aria-label="Stations">
     <button class="station" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
     <button class="station" type="button" data-st="cards" style="--c: var(--wood)">${svg('cards')}<b>My cards</b><small id="sCards"></small></button>
     <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small>$0.05 · $1</small></button>
     <button class="station" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small>1 PAPER</small></button>
-    <button class="station peek" type="button" data-peek><span class="peek-fan" aria-hidden="true"><img src="ui/announce/bowling-gold.webp" alt=""><img src="ui/announce/bowling-fullart.webp" alt=""></span><b id="sPeekT">Series 8 sneak peek</b><small id="sPeek">Bowling Ball in every card type</small></button>
+    <button class="station peek" type="button" data-peek><span class="peek-fan" aria-hidden="true"><img src="ui/announce/bowling-gold.webp" alt=""><img src="ui/announce/bowling-fullart.webp" alt=""></span><b id="sPeekT">Series 8</b></button>
     <button class="openbtn" type="button" data-st="open" id="openBtn">${svg('pack')}<span><b id="sOpenT">Open packs</b><small id="sOpen"></small></span></button>
   </section>
   <footer class="strip" aria-label="What's in a pack">
@@ -140,9 +140,9 @@
     const t = Store.tease();
     if (t && !t.live) for (const box of [$('#buybox'), $('#buybar')]) {
       const card = document.createElement('div'); card.className = 'tease-inline';
-      card.innerHTML = `<div class="ti-fan"></div><div class="ti-text"><small>Coming next</small><b>Series ${t.no}</b><span>${esc(t.name)} leads it</span><button class="btn small gold" type="button" data-buy="announce">Sneak peek</button></div>`;
+      card.innerHTML = `<div class="ti-fan"></div><b class="ti-text">Series ${t.no}</b>`;
+      card.onclick = () => Announce.open();
       card.querySelector('.ti-fan').append(Announce.fan(t, { mini: true }));
-      card.querySelector('.ti-fan').onclick = () => Announce.open();
       box.querySelector('.phase').after(card);
     }
     $('#buybox').classList.toggle('calm', sold()); $('#buybar').classList.toggle('calm', sold());
@@ -153,9 +153,8 @@
     const t = Store.tease();
     document.querySelectorAll('[data-peek]').forEach((b) => { b.hidden = !t; });
     if (!t) return;
-    $('#pPeekT').firstChild.textContent = `Series ${t.no}`; $('#pPeek').textContent = 'Sneak peek';
-    $('#sPeekT').textContent = t.live ? `What's in Series ${t.no}` : `Series ${t.no} sneak peek`;
-    $('#sPeek').textContent = `${t.name} in every card type`;
+    $('#pPeekT').textContent = `Series ${t.no}`; $('#sPeekT').textContent = `Series ${t.no}`;
+    document.querySelectorAll('[data-peek]').forEach((b) => b.setAttribute('aria-label', `Series ${t.no}`));
   }
   function renderCounts() {
     const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0), b = S.wallet.burnCount % 42;
