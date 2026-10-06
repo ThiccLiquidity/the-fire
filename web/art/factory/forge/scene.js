@@ -225,7 +225,7 @@ let speed = 0.15, target = 0.15;
 let beltSp = 0.32, wheelA = +(new URLSearchParams(location.search).get("wheel") || 0), beltX = 0, chainX = 0, rollS = 0, ft = 0, at = 0, flare = 0, stamp = 0, bank = 0;
 const items = [], packs = [], caps = [], tokens = [], jobs = []; // a job: one bought pack, followed from logs to capsule (for the camera)
 let jobId = 0;
-let nextPackAt = 0, now = 0, lockFall = left > 0 ? -1 : 1;
+let nextPackAt = 0, now = 0, lockFall = left > 0 ? -1 : 1, openable = false, lockShown = false; // openable: packs ready to open (no lock on the bench then)
 function buy(n) {
   n = Math.min(n, left - queue); if (n <= 0) return;
   for (let k = 0; k < n; k++) {
@@ -585,9 +585,11 @@ function drawBoardAndDials() {
     ctx.fillStyle = hub; ctx.beginPath(); ctx.arc(x, y, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
   gauge(...DIAL_ASH, (burnCount % 42) / 42, 'rgba(235,60,28,.8)'); // the ash bin: how close to a free pack
 }
-function drawPadlock(dt) { // on the open bench until the Fire closes, then it drops off
+function drawPadlock(dt) { // on the open bench until the Fire closes, then it drops off; hidden while there are packs to open
   const im = img['s-padlock']; if (!im) return;
-  if (left <= 0 && lockFall < 0) lockFall = 0;
+  if (left <= 0 && lockFall < 0) lockFall = lockShown ? 0 : 1;
+  if (openable && lockFall < 0) { lockShown = false; return; }
+  if (lockFall < 0) lockShown = true;
   if (lockFall >= 0) lockFall += dt * 0.9;
   const t = Math.max(0, lockFall), [x, y] = PADLOCK;
   if (t >= 1) return;
@@ -811,7 +813,7 @@ await Promise.all([document.fonts.ready, document.fonts.load("700 40px Kalam"), 
 requestAnimationFrame(frame);
 window.Scene = {
   buy, burn, popToken, finale: finaleFx,
-  setState(o) { if ('left' in o) { left = o.left; if (left > 0 && finale >= 0 && now - finale > 1) finale = -1; } if ('total' in o) total = o.total; if ('burnCount' in o) burnCount = o.burnCount; if ('windowFrac' in o) windowFrac = o.windowFrac; if ('series' in o) seriesNo = o.series; board.key = ''; },
+  setState(o) { if ('left' in o) { left = o.left; if (left > 0 && finale >= 0 && now - finale > 1) finale = -1; } if ('total' in o) total = o.total; if ('burnCount' in o) burnCount = o.burnCount; if ('windowFrac' in o) windowFrac = o.windowFrac; if ('series' in o) seriesNo = o.series; if ('openable' in o) openable = o.openable; board.key = ''; },
   setView(v) { Object.assign(view, v); fit(); camUpdate(0); }, // follow:true (cover mode) turns on the follow camera
   home: camHome,
   get camera() { return { x: cam.x, y: cam.y, zoom: Math.exp(cam.lz), on: cam.on, key: cam.key }; },

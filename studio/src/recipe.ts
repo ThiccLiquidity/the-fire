@@ -606,6 +606,23 @@ export function previewPool(r: Recipe, packs: number | bigint, chars: number | b
   return poolOf(compileRecipe(r), BigInt(packs), BigInt(chars)).counts
 }
 
+/** A warning when a Series has too many characters for its pack count: per-character types (Gold, Full Art) then
+ *  crowd out the cheaper rare types and the rarity order breaks (e.g. more Gold than Coal), or a cheaper rare type
+ *  disappears. The dealer caps `maxPerPack` over the whole Series, not per pack. Null when the order holds. */
+export function castWarning(r: Recipe, counts: bigint[]): string | null {
+  for (let i = 0; i < r.types.length; i++) {
+    if (r.types[i].supply !== 'perCharacter') continue
+    for (let j = 0; j < r.types.length; j++) {
+      const lower = r.types[j]
+      if (j === i || lower.supply === 'perCharacter' || lower.supply === 'filler' || lower.rank >= r.types[i].rank || lower.rank === 0) continue
+      if (counts[j] === 0n || counts[i] > counts[j]) {
+        return `Too many characters for this many packs: ${counts[i]} ${r.types[i].name} vs ${counts[j]} ${lower.name}. Use fewer characters or more packs.`
+      }
+    }
+  }
+  return null
+}
+
 /** What each type's rule alone gives (cap applied, filler the rest), before the floor: to show what the floor moved. */
 export function rulePool(r: Recipe, packs: bigint, chars = 1n): bigint[] {
   const p = compileRecipe(r)

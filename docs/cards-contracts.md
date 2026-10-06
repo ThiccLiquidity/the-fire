@@ -43,7 +43,7 @@ A list, any length (index stored in 32 bits). Each type has:
 | `slug` | Used in image file names. 1 to 32 bytes of `[a-z0-9-]`, unique in the recipe. |
 | `rank` | For rank-range slots ("Fire-or-better" = rank 2 and up). Ties allowed. |
 | `supply`, `amount` | `Share`: `amount` parts per billion of the Series' cards, rounded half up. `PerPack`: `amount` per pack. `Count`: exactly `amount`. `PerCharacter`: exactly `amount` of each character (at most 65,535). `Filler`: whatever is left (exactly one type). |
-| `maxPerPack` | 0 = no cap; else at most `maxPerPack` x packs (Standard Gold and Full Art: 1, "never more than one per pack's worth"). |
+| `maxPerPack` | 0 = no cap; else at most `maxPerPack` x packs (Standard Gold and Full Art: 1, "never more than one per pack's worth"). A Series total, not checked per pack. |
 | `holoMode`, `holo[4]` | `Independent`: frame and picture rolled separately, chances out of 1e18 in `holo[0]`, `holo[1]` (two 100% = always full holo). `Distribution`: weights for none, frame, picture, full (any total). |
 
 ### Slots

@@ -115,6 +115,6 @@ contract MockBurner {
     uint256 public flushes;
     constructor(address plank, address usdg) { PLANK = plank; USDG = usdg; }
     function quote(uint8, uint256 usd18) external pure returns (uint256) { return usd18; }
-    function flush(uint8) external returns (uint256) { flushes++; return 0; }
+    function flushLight(uint8) external returns (uint256) { flushes++; return 0; }
     receive() external payable {}
 }

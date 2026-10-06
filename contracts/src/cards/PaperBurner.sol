@@ -143,8 +143,19 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
 
     // ================================================================ anyone
 
-    /// @notice Spend everything held in `pay` on PAPER and burn it, if the guard allows. Returns the PAPER burned.
-    function flush(Pay pay) public nonReentrant returns (uint256 out) {
+    /// @notice Spend everything held in `pay` on PAPER and burn it, if the guard allows (trying smaller pieces of a
+    ///         backlog). Returns the PAPER burned. Anyone can call it.
+    function flush(Pay pay) external nonReentrant returns (uint256) {
+        return _flush(pay, MAX_HALVINGS);
+    }
+
+    /// @notice The light flush FirePsa runs with every fee: the whole amount or half, no deeper search (so a waiting
+    ///         burner costs each case or grade little gas). `flush` drains anything left.
+    function flushLight(Pay pay) external nonReentrant returns (uint256) {
+        return _flush(pay, 1);
+    }
+
+    function _flush(Pay pay, uint256 halvings) internal returns (uint256 out) {
         uint256 held = pay == Pay.ETH ? address(this).balance : IERC20(_token(pay)).balanceOf(address(this));
         if (held == 0) return 0;
         // the whole amount, else the biggest piece (half, a quarter, ...) the guard allows
@@ -158,7 +169,7 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
             uint256 quoted;
             if (minOut != 0) (a, b, inA, quoted) = _plan(pay, amount);
             if (minOut != 0 && quoted >= minOut) break;
-            if (minOut == 0 || k == MAX_HALVINGS || amount < 2) {
+            if (minOut == 0 || k == halvings || amount < 2) {
                 emit Waiting(pay, held);
                 return 0;
             }

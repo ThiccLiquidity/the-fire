@@ -57,17 +57,17 @@
   const S = () => Store.state;
   const ageSecOf = (c) => Store.ageMs(c) / 1000;
   const freshLeft = (c) => (c.grade == null && !c.cased ? Math.max(0, FREE * 1000 - Store.ageMs(c)) : 0); // ms of the free first day left
-  const hhmm = (ms) => { const m = Math.ceil(ms / 60000); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; };
+  const hhmm = (ms) => { const m = Math.max(1, Math.floor(ms / 60000)), h = Math.floor(m / 60); return h ? `${h}h ${m % 60}m` : `${m}m`; }; // "23h 59m", not a clock
   const ageTxt = (ms) => { const d = ms / 86400000; return d < 1 ? `${Math.max(1, Math.round(d * 24))} h` : d < 60 ? `${Math.round(d)} days` : d < 730 ? `${Math.round(d / 30.4)} months` : `${(d / 365).toFixed(1)} years`; };
 
-  // ---- paying: dollars, in ETH, USDG or PLANK (demo balances) ----
-  const COINS = ['ETH', 'USDG', 'PLANK'];
+  // ---- paying: dollars, in PLANK, ETH or USDG (demo balances; PLANK first and the default everywhere) ----
+  const COINS = ['PLANK', 'ETH', 'USDG'];
   const inCoin = (usd, coin) => { const P = Store.PRICES; return coin === 'ETH' ? usd / P.ETH_USD : coin === 'USDG' ? usd : usd / P.PLANK_USD; };
   const fmtCoin = (v, coin) => coin === 'ETH' ? v.toFixed(v < 0.01 ? 6 : 4) : coin === 'USDG' ? v.toFixed(2) : Math.round(v).toLocaleString('en-US');
-  const usd = (v) => '$' + v.toFixed(2);
+  const usd = (v) => '$' + (Number.isInteger(+v.toFixed(2)) ? Math.round(v) : v.toFixed(2)); // $1, $0.05, $4.10
 
   // ---- "How does this work?": one window, over whatever is open ----
-  const BURN_LINE = 'Cases and grading fees buy and burn PAPER. 100% of every fee buys PAPER from the market and burns it. None of it goes to us.';
+  const BURN_LINE = 'Every fee buys PAPER and burns it. None goes to us.';
   function howBody() {
     const P = Store.PRICES;
     const rows = [['Fresh', 0], ['1 month', 30], ['6 months', 182], ['1 year', 365], ['3 years', 3 * 365], ['10 years', 3650]].map(([l, d]) => {
@@ -91,9 +91,9 @@
         <table class="how-t"><caption>Grade odds for a raw card, never moved</caption>
           <thead><tr><th>Held raw</th><th>PDA 10</th><th>9–8</th><th>7–5</th><th>4–1</th></tr></thead><tbody>${rows}</tbody></table></section>
       <section><h3><span class="how-n">4</span>What a slab means</h3>
-        <p>Graded cards live in a slab for good. The grade is final: no regrades. A slab shows only its PDA grade.</p></section>
+        <p>Graded cards live in a slab for good. The grade is final: no regrades. Once slabbed, a card's metadata shows only its grade.</p></section>
       <section><h3><span class="how-n">5</span>Prices</h3>
-        <dl class="how-p"><dt>Case</dt><dd>${usd(P.CASE_USD)} a card</dd><dt>Grade</dt><dd>${usd(P.GRADE_USD)} a card</dd><dt>Pay with</dt><dd>ETH, USDG or PLANK</dd></dl>
+        <dl class="how-p"><dt>Case</dt><dd>${usd(P.CASE_USD)} a card</dd><dt>Grade</dt><dd>${usd(P.GRADE_USD)} a card</dd><dt>Pay with</dt><dd>PLANK, ETH or USDG</dd></dl>
         <p class="muted small">Pick cards to case and to grade, then pay once for all of them.</p></section>
       <section class="how-burn"><h3><span class="how-n">6</span>Where the money goes</h3><p>${BURN_LINE}</p></section>`;
     return el;

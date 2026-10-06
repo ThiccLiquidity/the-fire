@@ -81,7 +81,7 @@ contract PaperUsdTwap {
     /// @notice Anyone. Tracks a candidate pool and adopts it once it has qualified for MIN_WINDOW, then rolls the
     ///         window forward once the last checkpoint is at least MIN_WINDOW old.
     function checkpoint() external {
-        (address best, address bestQuote, bool better) = _contender();
+        (address best, address bestQuote, bool better, bool hold) = _contender();
         if (better) {
             if (candidate != best) {
                 candidate = best;
@@ -98,7 +98,7 @@ contract PaperUsdTwap {
                 emit PoolAdopted(best, bestQuote);
                 return;
             }
-        } else if (candidate != address(0)) {
+        } else if (candidate != address(0) && !hold) { // a hold (a feed is late) keeps the candidate's progress
             candidate = address(0);
             emit Candidate(address(0));
         }
@@ -113,19 +113,19 @@ contract PaperUsdTwap {
     /// @notice True when checkpoint() would change something: a candidate to record, drop or adopt, or a window to
     ///         roll. Lets a keeper stay quiet (and spend nothing) while PAPER has no market.
     function due() external view returns (bool) {
-        (address best,, bool better) = _contender();
+        (address best,, bool better, bool hold) = _contender();
         if (better && (candidate != best || block.timestamp - candidateSince >= MIN_WINDOW)) return true;
-        if (!better && candidate != address(0)) return true;
+        if (!better && !hold && candidate != address(0)) return true;
         return address(pair) != address(0) && block.timestamp - last.ts >= MIN_WINDOW;
     }
 
     /// @dev The best pool, and whether it should replace the current reference (none yet, or 2x its liquidity).
-    function _contender() internal view returns (address best, address bestQuote, bool better) {
-        if (_ethUsd() == 0) return (address(0), address(0), false); // can't compare fairly: hold
-        if (PLANK != address(0) && _plankUsd() == 0) return (address(0), address(0), false); // same while PLANK's price is late
+    function _contender() internal view returns (address best, address bestQuote, bool better, bool hold) {
+        if (_ethUsd() == 0) return (address(0), address(0), false, true); // can't compare fairly: hold
+        if (PLANK != address(0) && _plankUsd() == 0) return (address(0), address(0), false, true); // same while PLANK's price is late
         uint256 bestLiq;
         (best, bestQuote, bestLiq) = _bestPool();
-        if (best == address(0) || best == address(pair) || bestLiq < MIN_LIQUIDITY_USD) return (best, bestQuote, false);
+        if (best == address(0) || best == address(pair) || bestLiq < MIN_LIQUIDITY_USD) return (best, bestQuote, false, false);
         better = address(pair) == address(0) || bestLiq >= _liquidityUsd(address(pair), quote) * SWITCH_FACTOR;
     }
 

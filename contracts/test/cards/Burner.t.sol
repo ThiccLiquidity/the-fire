@@ -252,6 +252,14 @@ contract BurnerTest is Test {
         b.setRoutes(PaperBurner.Pay.ETH, r);
     }
 
+    /// The light flush (what FirePsa runs with each fee) only tries the whole amount and half.
+    function test_flushLightTriesLittle() public {
+        vm.deal(address(b), 8e18); // too big for the pools at once or in half
+        assertEq(b.flushLight(PaperBurner.Pay.ETH), 0, "waits");
+        assertEq(address(b).balance, 8e18);
+        assertGt(b.flush(PaperBurner.Pay.ETH), 0, "the full flush finds a piece that fits");
+    }
+
     /// A backlog too big for the pools at once is bought in pieces (half, a quarter, ...) instead of waiting forever.
     function test_backlogDrainsInPieces() public {
         vm.deal(address(b), 8e18); // $20k against ~$80k-a-side pools

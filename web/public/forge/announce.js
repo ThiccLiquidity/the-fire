@@ -2,7 +2,7 @@
    the bottom: Full Art in front, then Gold, Coal, Fire, Wood and Paper behind it, their tops fanned out and gently
    floating. Which Series and character: Store.tease() (the Series on sale, or between Series the next one). While a
    Series is on sale it shows what's in its packs; between Series a small hand sits on the main page (Buy box / bar).
-   The cards are ui/announce/<character>-<type>.webp, rendered by the Card Studio (raw, 720 x 1008). */
+   The cards are ui/announce/<tease id>-<type>.webp (one set per Series), rendered by the Card Studio (raw, 720 x 1008). */
 (() => {
   const S = () => Store.state;
   // back to front

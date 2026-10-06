@@ -297,6 +297,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         if (paperUsd != address(0) && _decimals(paperUsd) != 18) revert BadConfig(); // PaperUsdTwap
         ETH_USD = ISaleFeed(ethUsd);
         PLANK_USD = ISaleFeed(plankUsd);
+        if (paperUsd != address(PAPER_USD)) lastPaperCap = 0; // a new (or no) PAPER feed starts its own cap
         PAPER_USD = ISaleFeed(paperUsd);
         ROUTER = IV2Router(router);
         emit FeedsSet(ethUsd, plankUsd, paperUsd, router);
