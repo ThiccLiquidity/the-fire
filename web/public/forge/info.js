@@ -19,8 +19,9 @@
     m.frame = r * (1 - r); m.full = r * r; m.none = (1 - r) * (1 - r); // picture only = frame only
   });
   const M = Object.fromEntries(MATS.map((m) => [m.id, m]));
-  // PDA grade odds in percent (FirePsa defaults), and the wear frame each band gets (card-studio.md).
-  const PDA = [10, 1, 9, 17, 8, 24, 7, 25, 6, 18, 5, 7, 4, 3.5, 3, 2, 2, 1.5, 1, 1]
+  // fresh PDA grade odds in percent (FirePsa defaults: grades 5-10 only; 1-4 come only from long raw holds), and the
+  // wear frame each band gets (card-studio.md).
+  const PDA = [10, 1, 9, 17, 8, 25, 7, 27, 6, 20, 5, 10]
     .reduce((a, v, i, arr) => (i % 2 ? a : [...a, { g: v, p: arr[i + 1] }]), []);
   const WEAR = [ // band, grades covered, frame suffix, seal ring colour
     { g: '10', n: 1, f: '', c: '#ffd36a', name: 'Clean + gold glow' }, { g: '9–8', n: 2, f: '-l2', c: '#3fc1b0', name: 'Barely used' },
@@ -30,7 +31,7 @@
   const bandOf = (g) => WEAR[g === 10 ? 0 : g === 1 ? 5 : 5 - Math.ceil((g - 1) / 2)];
   const PDA_SUM = PDA.reduce((a, b) => a + b.p, 0);
   if (Math.abs(PDA_SUM - 100) > 1e-9) throw new Error('PDA odds must sum to 100, got ' + PDA_SUM);
-  const PDA_LINE = 'Most cards grade 6 to 9. A PDA 10 is as rare as a PDA 1: 1 in 100.';
+  const PDA_LINE = 'Fresh cards grade 5 to 10, mostly 6 to 9. A PDA 10 is 1 in 100.';
 
   const pct = (x) => { // 0.025 -> "2.5%", 0.00032 -> "0.032%"
     const v = x * 100;
@@ -47,9 +48,9 @@
   // ---- pieces ----
   function pdaChart() {
     const max = Math.max(...PDA.map((b) => b.p));
-    const cols = PDA.map((b) => `
-      <div class="inf-pcol${b.g === 10 ? ' top' : ''}" style="--h:${b.p / max};--c:${bandOf(b.g).c}" title="PDA ${b.g}: ${b.p}%">
-        <div class="inf-pplot"><span class="inf-pval">${b.p}%</span><span class="inf-pbar"></span></div>
+    const cols = [...PDA, ...[4, 3, 2, 1].map((g) => ({ g, p: 0 }))].map((b) => `
+      <div class="inf-pcol${b.g === 10 ? ' top' : ''}${b.p ? '' : ' aged'}" style="--h:${b.p / max};--c:${bandOf(b.g).c}" title="PDA ${b.g}: ${b.p ? b.p + '%' : 'only from long raw holds'}">
+        <div class="inf-pplot"><span class="inf-pval">${b.p ? b.p + '%' : 'aged'}</span><span class="inf-pbar"></span></div>
         <span class="inf-pg">${b.g}</span>
       </div>`).join('');
     const wear = WEAR.map((w) => `
@@ -58,8 +59,8 @@
         <span>${w.name}</span>
       </div>`).join('');
     return `<figure class="inf-plate">
-      <figcaption><b>PDA grade odds</b><span>Same odds for every material</span></figcaption>
-      <div class="inf-pda" role="img" aria-label="PDA odds: ${PDA.map((b) => `${b.g} is ${b.p}%`).join(', ')}">${cols}</div>
+      <figcaption><b>PDA odds, fresh card</b><span>Same odds for every material</span></figcaption>
+      <div class="inf-pda" role="img" aria-label="PDA odds on a fresh card: ${PDA.map((b) => `${b.g} is ${b.p}%`).join(', ')}. 4 to 1 only from long raw holds">${cols}</div>
       <div class="inf-pwear" role="img" aria-label="Frames by grade: ${WEAR.map((w) => `PDA ${w.g} ${w.name.toLowerCase()}`).join(', ')}">${wear}</div>
       <p class="inf-big">${PDA_LINE}</p>
     </figure>`;
@@ -183,19 +184,24 @@
           <li>Every character has a category, like Person, Animal, Place or Idea. New ones arrive as the Series go on.</li>
           <li>In the card's details: its edition (like “12 of 43”, final once every pack in the Series is dealt) and a serial number that never resets.</li>
         </ul>`, 'Rarity'),
-      sec('pda', 'PDA grading', 'Spend a little PAPER and the card gets its grade, 1 to 10.', `
+      sec('pda', 'Cases & PDA grading', 'Case a card for $0.05 to stop wear, or grade it for $1 and get a slab.', `
         <ul>
           <li>PDA stands for Professional Digital Authenticators: our nod to real card grading.</li>
-          <li>Every card starts as “PDA ?”. Reveal its grade once, whenever you like, up to 10 cards at a time.</li>
-          <li>It costs as many whole PAPER as fit under $0.25, and never more than $1. That PAPER is burned.</li>
+          <li>Every card starts raw. A raw card slowly wears with time, and each move to another wallet can knock a grade off.</li>
+          <li>New cards are fresh for 24 hours: case or grade them by then and they never take a hit.</li>
+          <li><b>Case, $0.05:</b> stops wear. It stays ungraded, so you can trade it or grade it later with the odds it has.</li>
+          <li><b>Grade, $1:</b> reveals the PDA grade and seals the card in a slab. Final, no regrades.</li>
+          <li>Pay in ETH, USDG or PLANK, up to 20 cards in one go.</li>
         </ul>
         ${pdaChart()}
         <ul>
-          <li>Most cards land between 6 and 9. A 10 and a 1 are the rarest grades, 1 in 100 each.</li>
-          <li>The grade changes the frame: a 10 stays clean with a gold glow, 9–8 barely used, 7–6 lightly played, 5–4 played, 3–2 heavily played, and a 1 is damaged. The seal gets a ring in the grade's colour.</li>
-          <li>A Series' odds are fixed before its first pack exists.</li>
-          <li>While a card is being graded it can't be transferred.</li>
-        </ul>`, 'Rarity'),
+          <li>Grades 1 to 4 only happen to cards left raw for a long time. After 10 raw years, a 1 is likely.</li>
+          <li>Condition is hidden, us included. An ungraded card shows only Cased, its uncased age and its moves. A slab shows only its grade.</li>
+          <li>The grade changes the frame: a 10 stays clean with a gold glow, 9–8 barely used, 7–6 lightly played, 5–4 played, 3–2 heavily played, and a 1 is damaged.</li>
+          <li>The wear rules are locked forever, the same for every Series.</li>
+          <li><b>${window.Wear?.BURN_LINE || ''}</b></li>
+        </ul>
+        <p><button type="button" class="inf-link" data-how>How does this work? Step by step</button></p>`, 'Rarity'),
       sec('burn', 'Burning cards', 'Every 42 cards you burn earn a free pack.', `
         <ul>
           <li>Burn any cards you don't want to keep. Every 42 burned earns a free pack.</li>
@@ -212,7 +218,7 @@
       sec('paper', 'Fuel & paper', 'The forge runs on assets it doesn’t make. It burns them.', `
         <ul>
           <li><b>PLANK is the fuel.</b> Every sale feeds the fire: 30% buys PLANK and burns it, and each Series opens on PLANK alone to get the fire stoked.</li>
-          <li><b>PAPER is what every card is printed on.</b> Each pack, grade and suggestion burns a little.</li>
+          <li><b>PAPER is what every card is printed on.</b> Each pack and suggestion burns some, and every case and grade fee buys PAPER and burns it.</li>
           <li><b>The Paper Press prints PAPER.</b> Holding one puts you first in line every Series.</li>
         </ul>
         <div class="inf-cas">
@@ -236,7 +242,7 @@
           <dt>Can I sell a pack without opening it?</dt><dd>Yes. Sealed packs trade like any NFT, one kind per Series.</dd>
           <dt>Why do I need PAPER as well as money?</dt><dd>The press needs paper. Every pack burns 1 PAPER, including Press and free packs.</dd>
           <dt>Do free packs expire?</dt><dd>No. They stack, and work in any Series while it's on sale.</dd>
-          <dt>Should I grade every card?</dt><dd>Up to you. A grade is drawn once and it's final. ${PDA_LINE}</dd>
+          <dt>Should I grade every card?</dt><dd>Up to you. A grade is drawn once and it's final. ${PDA_LINE} Not sure yet? Case it for $0.05 and decide later.</dd>
           <dt>What if opening gets stuck?</dt><dd>If no randomness arrives within a day, it can be asked for again. After 7 days, anyone can cancel and your packs come back sealed.</dd>
           <dt>Is there a fee when I resell?</dt><dd>A 5% royalty, on marketplaces that honour it.</dd>
         </dl>`),
@@ -255,7 +261,7 @@
         ${list.map((s) => `<button type="button" class="inf-jump${s.tag ? ' hot' : ''}" data-go="${s.id}">${SHORT[s.id]}</button>`).join('')}
       </nav>
       <div class="inf-glance" aria-label="Rarity at a glance">
-        <button type="button" data-go="pda"><b>1 in 100</b><span>PDA 10, as rare as a PDA 1. Most cards grade 6 to 9</span></button>
+        <button type="button" data-go="pda"><b>1 in 100</b><span>PDA 10 on a fresh card. Case or grade in 24 h and it never wears</span></button>
         <button type="button" data-go="cards"><b>1 in ${oneIn(M.paper.full)}</b><span>Paper cards is full holo, one of the rarest finds</span></button>
         <button type="button" data-go="cards"><b>1+</b><span>Diamond in every Series, always holo</span></button>
       </div>
@@ -287,11 +293,12 @@
       const share = m.count / SERIES_CARDS, h = material === 'diamond' && holo === 'none' ? 'full' : holo;
       return share * (h === 'full' ? m.full : h === 'none' ? m.none : m.frame); // picture only = frame only
     },
-    gradeP(g) { const b = PDA.find((x) => x.g === g); return b ? b.p / 100 : 1; }, // PDA odds for one grade; ungraded = 1 (no grade factor)
+    gradeP(g) { const b = PDA.find((x) => x.g === g); return b ? b.p / 100 : 1; }, // fresh PDA odds for one grade; ungraded or an aged 1-4 = 1 (no grade factor)
     PDA, oneIn,
     open(sectionId) {
       const root = build();
       root.addEventListener('click', (e) => {
+        if (e.target.closest('[data-how]')) return window.Wear?.openHow();
         const b = e.target.closest('[data-ca]'); if (!b) return;
         const done = () => { const c = b.querySelector('.cp'); c.textContent = 'Copied'; setTimeout(() => (c.textContent = 'Copy'), 1500); };
         try { navigator.clipboard.writeText(b.dataset.ca).then(done, done); } catch { done(); }

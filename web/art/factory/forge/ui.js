@@ -20,7 +20,7 @@
   };
   const svg = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
   const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(+n.toFixed(3));
-  const PRICE = 2.5, PAPER_USD = 0.05, ETH_USD = 2500, PLANK_USD = 0.0000021;
+  const { PACK_USD: PRICE, PAPER_USD, ETH_USD, PLANK_USD } = Store.PRICES;
 
   // ---------- markup
   $('#app').innerHTML = `
@@ -45,13 +45,13 @@
     <div class="buybox" id="buybox" data-x="1480" data-y="250"></div>
     <button class="pill" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
     <button class="pill openp" type="button" data-st="open" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
-    <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Grade<small>~5 PAPER</small></span></button>
+    <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small>$0.05 · $1</small></span></button>
     <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small>1 PAPER</small></span></button>
   </div>
   <section class="stations" aria-label="Stations">
     <button class="station" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
     <button class="station" type="button" data-st="cards" style="--c: var(--wood)">${svg('cards')}<b>My cards</b><small id="sCards"></small></button>
-    <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Grade</b><small>~5 PAPER</small></button>
+    <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small>$0.05 · $1</small></button>
     <button class="station" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small>1 PAPER</small></button>
     <button class="openbtn" type="button" data-st="open" id="openBtn">${svg('pack')}<span><b id="sOpenT">Open packs</b><small id="sOpen"></small></span></button>
   </section>
