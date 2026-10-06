@@ -175,3 +175,6 @@ body[data-mode=land] .pill small { display: none } body[data-mode=land] .pill { 
 .fan.mini .fan-card { --lift-scale: .3 }
 body[data-mode=port] .buybar .tease-inline { padding: 6px 10px 6px 4px } body[data-mode=port] .buybar .ti-fan { padding: 12px 10px 2px 22px }
 body[data-mode=port] .buybar .fan.mini { width: 52px }
+.tease-inline { cursor: pointer; justify-content: center } .tease-inline .ti-text b { font: 400 24px/1 var(--display); color: var(--gold) }
+.tease-inline .ti-text small { order: 2; letter-spacing: .08em; color: var(--muted); text-transform: none; font: italic 700 14px var(--body) }
+.station.peek { grid-template-columns: auto 1fr; align-items: center } .station.peek b { font: 400 18px var(--display) }

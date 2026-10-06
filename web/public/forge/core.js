@@ -61,7 +61,8 @@
     // the tease to show now: the Series on sale, or (between Series) the next one; null if none has been added
     tease() {
       const s = state.series, no = s.phase >= 4 ? s.no + 1 : s.no, t = state.teases[no];
-      return t ? { no, live: s.phase < 4, ...t } : null;
+      // the line under it: on sale, or still to come
+      return t ? { no, live: s.phase < 4, line: s.phase < 4 ? 'Hot off the press' : 'Heating up', ...t } : null;
     },
     left() { const s = state.series; return s.phase >= 4 ? 0 : Math.max(0, s.total - s.startersClaimed - s.sold); },
     paidLeft() { const s = state.series; return Math.max(0, s.total - s.starters - s.sold + (s.phase >= 2 ? s.starters - s.startersClaimed : 0)); },
