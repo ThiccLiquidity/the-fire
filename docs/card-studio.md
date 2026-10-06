@@ -76,8 +76,11 @@ Each Series stands alone: its cards come only from its own packs and nothing car
 | Paper | 3P (half the cards) |
 | Fire | 15% of N, rounded half up |
 | Coal | 4.9% of N, rounded half up |
-| Gold | per character (2 by default, so always twice Full Art; set per Series), never more than one per pack |
-| Full Art | 1 per character, never more than one per pack |
+| Gold | per character (2 by default, so always twice Full Art; set per Series), never more than one per pack's worth over the Series |
+| Full Art | 1 per character, never more than one per pack's worth over the Series |
+
+The per-pack cap is a Series total (at most packs x 1), not a rule for each pack. With too many characters for the
+packs, Gold and Full Art crowd out Fire and Coal; the Series tab warns when Gold would outnumber Coal.
 | Wood | the rest |
 
 Then the pack floor: Fire-or-better stays between P and 2P (extra Fire, then Coal, becomes Wood; a shortfall is

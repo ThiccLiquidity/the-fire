@@ -3,7 +3,7 @@ import standardSampleText from '../../contracts/test/cards/recipe-standard.json?
 import { describe, expect, it } from 'vitest'
 import { computePool } from './deal'
 import {
-  checkRecipe, classicRecipe, compileRecipe, holoLooksFor, percentToScaled, previewPool, recipeFromJson, recipeJson, scaledToPercent, slugify,
+  castWarning, checkRecipe, classicRecipe, compileRecipe, holoLooksFor, percentToScaled, previewPool, recipeFromJson, recipeJson, scaledToPercent, slugify,
   specialAllHoloRecipe, standardRecipe, type Recipe,
 } from './recipe'
 import { MATERIALS } from './rules'
@@ -185,5 +185,10 @@ describe('helpers', () => {
     expect(scaledToPercent(25320565519103609n, 10n ** 18n)).toBe('2.5320565519103609')
     expect(scaledToPercent(150_000_000n, 1_000_000_000n)).toBe('15')
     expect(percentToScaled('2.5320565519103609', 10n ** 18n)).toBe(25320565519103609n)
+  })
+  it('warns when a cast is too big for its packs (Gold would outnumber Coal)', () => {
+    const r = standardRecipe()
+    expect(castWarning(r, previewPool(r, 167n, 10n))).toBeNull()
+    expect(castWarning(r, previewPool(r, 60n, 20n))).toMatch(/Too many characters/)
   })
 })
