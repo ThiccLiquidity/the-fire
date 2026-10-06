@@ -156,3 +156,11 @@ body[data-mode=land] #buybox { display: none }
 body[data-mode=land] .buybar { display: grid; position: fixed; right: 0; top: var(--top); bottom: 0; width: 240px; box-sizing: border-box; padding: 10px; gap: 8px; align-content: start; background: #0d0907; border-left: 2px solid #ffbf5e; z-index: 6; --fs: 13px; overflow: auto }
 body[data-mode=land] .buybar .opts { flex-direction: column } body[data-mode=land] .buybar .opt { white-space: normal }
 body[data-mode=land] .pill small { display: none } body[data-mode=land] .pill { min-height: 40px; padding: .4em .8em }
+/* Series sneak peek: the next Series' tease, on the scene (desktop) and in the stations (phone) */
+.peek-fan { position: relative; display: inline-block; width: 30px; height: 34px; flex: none }
+.peek-fan img { position: absolute; bottom: 0; left: 6px; width: 20px; height: 28px; border-radius: 3px; transform-origin: 50% 95%; box-shadow: 0 2px 6px rgba(0,0,0,.6) }
+.peek-fan img:first-child { transform: rotate(-14deg) } .peek-fan img:last-child { transform: rotate(9deg) }
+.pill.peek { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,210,122,.14), 0 0 18px rgba(255,210,122,.3), 0 4px 14px rgba(0,0,0,.5) }
+.station.peek { grid-column: 1 / -1; border-color: var(--gold); background: linear-gradient(90deg, rgba(255,210,122,.16), rgba(31,23,16,.95) 60%) }
+.station.peek .peek-fan { grid-row: 1 / 3; width: 34px; height: 40px } .station.peek .peek-fan img { width: 24px; height: 34px }
+.station.peek b { color: var(--gold) }

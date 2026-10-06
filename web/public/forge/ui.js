@@ -47,12 +47,14 @@
     <button class="pill openp" type="button" data-st="open" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
     <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small>$0.05 · $1</small></span></button>
     <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small>1 PAPER</small></span></button>
+    <button class="pill peek" type="button" data-peek data-x="2880" data-y="700" style="--c: var(--gold)"><span class="peek-fan" aria-hidden="true"><img src="ui/announce/bowling-gold.webp" alt=""><img src="ui/announce/bowling-fullart.webp" alt=""></span><span>Series 8<small>Sneak peek</small></span></button>
   </div>
   <section class="stations" aria-label="Stations">
     <button class="station" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
     <button class="station" type="button" data-st="cards" style="--c: var(--wood)">${svg('cards')}<b>My cards</b><small id="sCards"></small></button>
     <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small>$0.05 · $1</small></button>
     <button class="station" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small>1 PAPER</small></button>
+    <button class="station peek" type="button" data-peek><span class="peek-fan" aria-hidden="true"><img src="ui/announce/bowling-gold.webp" alt=""><img src="ui/announce/bowling-fullart.webp" alt=""></span><b>Series 8 sneak peek</b><small>Bowling Ball in every card type</small></button>
     <button class="openbtn" type="button" data-st="open" id="openBtn">${svg('pack')}<span><b id="sOpenT">Open packs</b><small id="sOpen"></small></span></button>
   </section>
   <footer class="strip" aria-label="What's in a pack">
@@ -60,8 +62,8 @@
     <div class="what">
       <h3><b class="sw">SERIES 7</b> PACK<span>6 cards</span></h3>
       <table class="types" aria-label="Cards in a pack">
-        <tr><th scope="row">Material</th><td><span class="mat paper">Paper</span></td><td><span class="mat wood">Wood</span></td><td><span class="mat fire">Fire</span></td><td><span class="mat charcoal">Coal</span></td><td><span class="mat diamond">Diamond</span></td></tr>
-        <tr><th scope="row">Per pack</th><td>3</td><td>1–2</td><td colspan="3" class="span">At least 1 of these</td></tr>
+        <tr><th scope="row">Material</th><td><span class="mat paper">Paper</span></td><td><span class="mat wood">Wood</span></td><td><span class="mat fire">Fire</span></td><td><span class="mat charcoal">Coal</span></td><td><span class="mat gold">Gold</span></td><td><span class="mat fullart">Full Art</span></td></tr>
+        <tr><th scope="row">Per pack</th><td>3</td><td>1–2</td><td colspan="4" class="span">At least 1 of these</td></tr>
       </table>
     </div>
     <button class="btn small more" type="button" data-go="info-cards">Rarity</button>
@@ -332,6 +334,7 @@
   document.querySelectorAll('[data-go]').forEach((b) => b.onclick = () => go(b.dataset.go));
   $('#seriesChip').onclick = () => Info.open('buying');
   document.querySelectorAll('[data-st]').forEach((b) => b.onclick = () => openStation(b.dataset.st));
+  document.querySelectorAll('[data-peek]').forEach((b) => b.onclick = () => Announce.open());
 
   // ---------- the scene's events: a pack made is a pack sold; delivered packs land in the wallet
   let pendingDeliver = 0, crowd = 0;
