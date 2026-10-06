@@ -31,9 +31,10 @@ describe('Standard recipe', () => {
     expect(previewPool(classicRecipe(1), 167n)).toEqual([501n, 301n, 150n, 49n, 1n])
   })
 
-  it('the Standard recipe: 15 Gold and one Full Art per character', () => {
+  it('the Standard recipe: 2 Gold and one Full Art per character', () => {
     // 167 packs, 10 characters: Full Art and Gold come out of the Wood-or-better / Fire-or-better slots
-    expect(previewPool(standardRecipe(), 167n, 10n)).toEqual([501n, 277n, 150n, 49n, 15n, 10n])
+    expect(previewPool(standardRecipe(), 167n, 10n)).toEqual([501n, 272n, 150n, 49n, 20n, 10n])
+    expect(previewPool(standardRecipe(), 167n, 30n)).toEqual([501n, 212n, 150n, 49n, 60n, 30n]) // Gold stays 2x Full Art
     expect(previewPool(standardRecipe(), 167n, 1n)[5]).toBe(1n)
     expect(previewPool(standardRecipe(), 3n, 10n)[5]).toBe(3n) // at most one per pack's worth
   })
@@ -57,7 +58,7 @@ describe('Standard recipe', () => {
 
   it('recipe.json is exactly the shape of contracts/test/cards/recipe-standard.json', () => {
     const sample = JSON.parse(standardSampleText)
-    const j = recipeJson(7, standardRecipe(15), sample.characters, 'ipfs://bafyexampleimages/')
+    const j = recipeJson(7, standardRecipe(), sample.characters, 'ipfs://bafyexampleimages/')
     // the sample writes slot 2 as an explicit list and slot 4 with an explicit mustHolo: false; same recipe
     expect(j.types).toEqual(sample.types)
     expect(j.pdaOdds).toEqual(sample.pdaOdds)
@@ -66,7 +67,7 @@ describe('Standard recipe', () => {
     expect(j.imagesBase).toBe('ipfs://bafyexampleimages/')
     // and it reads back to the same pools
     const back = recipeFromJson(j)
-    for (const p of [1n, 7n, 167n]) expect(previewPool(back, p, 3n)).toEqual(previewPool(standardRecipe(15), p, 3n))
+    for (const p of [1n, 7n, 167n]) expect(previewPool(back, p, 3n)).toEqual(previewPool(standardRecipe(), p, 3n))
   })
 
   it('holo looks: 4 per type, Gold and Full Art 1 (always full holo) = 18 per character', () => {

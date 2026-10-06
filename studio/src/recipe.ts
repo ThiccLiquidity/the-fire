@@ -75,8 +75,10 @@ export const MAX_TYPE_NAME_BYTES = 64
 export const MAX_SLUG_BYTES = 32
 /** FirePsa's default fresh odds (out of 10,000): 10 1%, 9 17%, 8 25%, 7 27%, 6 20%, 5 10%. */
 export const DEFAULT_PDA_ODDS = ['0', '0', '0', '0', '1000', '2000', '2700', '2500', '1700', '100']
-/** Gold cards in a Standard Series by default. */
-export const DEFAULT_GOLD = 15
+/** Gold cards in the classic (five-type) recipe. */
+export const DEFAULT_GOLD = 15 // classicRecipe: a fixed count, as Diamond was
+/** The Standard recipe's Gold per character (StandardRecipe.DEFAULT_GOLD_PER_CHARACTER). */
+export const DEFAULT_GOLD_PER_CHARACTER = 2
 
 // ---------------------------------------------------------------- presets
 
@@ -92,11 +94,13 @@ const ind = (roll: string): HoloRule => ({ mode: 'independent', frame: roll, pic
 
 const fullHolo = (): HoloRule => ({ mode: 'distribution', weights: ['0', '0', '0', '1'] })
 
-/** Exactly StandardRecipe.build(gold): Paper 3 per pack, Wood the rest, Fire 15%, Coal 4.9%, Gold as set (15 by
- *  default, at most one per pack's worth, always full holo), Full Art one per character (at most one per pack's worth,
- *  always full holo); pack of 6: 3 Paper, Wood, Wood-or-better, Fire-or-better. */
-export function standardRecipe(gold = DEFAULT_GOLD): Recipe {
-  const r = classicRecipe(gold)
+/** Exactly StandardRecipe.build(goldPerCharacter): Paper 3 per pack, Wood the rest, Fire 15%, Coal 4.9%, Gold per
+ *  character (2 by default, so it stays twice as common as Full Art whatever the cast size), Full Art one per
+ *  character; both at most one per pack's worth and always full holo. Pack of 6: 3 Paper, Wood, Wood-or-better,
+ *  Fire-or-better. */
+export function standardRecipe(goldPerCharacter = DEFAULT_GOLD_PER_CHARACTER): Recipe {
+  const r = classicRecipe()
+  r.types[4] = { ...r.types[4], supply: 'perCharacter', amount: String(Math.max(1, Math.floor(goldPerCharacter))) }
   r.types.push({
     id: 'fullart', name: 'Full Art', slug: 'fullart', rank: 5, supply: 'perCharacter', amount: '1', maxPerPack: '1',
     holo: fullHolo(), frameSet: 'fullart',

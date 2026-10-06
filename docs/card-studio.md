@@ -76,12 +76,12 @@ Each Series stands alone: its cards come only from its own packs and nothing car
 | Paper | 3P (half the cards) |
 | Fire | 15% of N, rounded half up |
 | Coal | 4.9% of N, rounded half up |
-| Gold | as set for the Series (15 by default, at least 1), never more than one per pack |
+| Gold | per character (2 by default, so always twice Full Art; set per Series), never more than one per pack |
 | Full Art | 1 per character, never more than one per pack |
 | Wood | the rest |
 
 Then the pack floor: Fire-or-better stays between P and 2P (extra Fire, then Coal, becomes Wood; a shortfall is
-taken from Wood). Example: 167 packs, 15 Gold and 20 characters make 501 Paper, 267 Wood, 150 Fire, 49 Coal, 15 Gold,
+taken from Wood). Example: 167 packs, 20 characters make 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold,
 20 Full Art.
 
 **Pack (6 cards):** slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6 Fire-or-better.

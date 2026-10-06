@@ -103,8 +103,8 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
   packs that were minted.
 - **One drop at a time.** The next drop can only be set up once the current one has closed.
 - **Each Series stands alone.** Its cards come only from its own packs, by its own recipe. Standard recipe: Paper
-  half, Fire 15%, Coal 4.9%, Gold as set (15 by default), Full Art 1 per character, Wood the rest. Nothing carries over
-  between Series. Example: 167 packs, 15 Gold and 20 characters make 501 Paper, 267 Wood, 150 Fire, 49 Coal, 15 Gold,
+  half, Fire 15%, Coal 4.9%, Gold 2 per character, Full Art 1 per character, Wood the rest. Nothing carries over
+  between Series. Example: 167 packs, 20 characters make 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold,
   20 Full Art.
 - **Every purchase names its limits:** the most PLANK/USDG (or the ETH sent), and the most PAPER. If a number moved,
   the purchase fails and costs nothing.

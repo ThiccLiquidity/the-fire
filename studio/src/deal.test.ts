@@ -152,13 +152,14 @@ describe('dealFire (recipe)', () => {
     expect(r.pool).toEqual(MATERIALS.map((m) => computePool(150, 1)[m]))
   })
 
-  it('Standard: 15 Gold, always full holo, and exactly one Full Art per character', () => {
+  it('Standard: 2 Gold and exactly one Full Art per character, always full holo', () => {
     const recipe = standardRecipe()
     const r = dealFire(input({ packs: 167, seed: 'fa', recipe }))
     checkPacks(r, recipe)
     const gold = r.cards.filter((c) => c.type === 4)
     const fa = r.cards.filter((c) => c.type === 5)
-    expect(gold).toHaveLength(15)
+    expect(gold).toHaveLength(2 * CHARS.length)
+    for (const id of CHARS) expect(gold.filter((c) => c.characterId === id)).toHaveLength(2)
     expect(fa).toHaveLength(CHARS.length)
     expect(new Set(fa.map((c) => c.characterId)).size).toBe(CHARS.length)
     expect([...gold, ...fa].every((c) => c.holo === 'full')).toBe(true)

@@ -629,7 +629,7 @@ contract RecipeTest is SeriesHelper {
         string memory json = vm.readFile("test/cards/recipe-standard.json");
         ConfigureSeries.Series memory s = cs.parse(json);
         assertEq(s.fire, 7);
-        assertEq(keccak256(abi.encode(s.recipe)), keccak256(abi.encode(StandardRecipe.build(15))), "same as StandardRecipe");
+        assertEq(keccak256(abi.encode(s.recipe)), keccak256(abi.encode(StandardRecipe.build(0))), "same as StandardRecipe");
         ConfigureSeries.Call[] memory calls = cs.build(json, address(dealer), address(cards), address(psa), 2);
         assertEq(calls.length, 6, "recipe, 2 character batches, dealer, images, odds");
         vm.startPrank(owner);
@@ -658,7 +658,7 @@ contract RecipeTest is SeriesHelper {
         _sellAndClose(20, 100);
         uint256[] memory pool = dealer.poolOf(20);
         assertEq(pool.length, 6);
-        assertEq(pool[4], 15, "Gold");
+        assertEq(pool[4], 24, "Gold: 2 per character");
         assertEq(pool[5], 12, "one Full Art per character");
         Dealt[] memory d = _openAll(20, 100, 11);
         uint256[12] memory per;
@@ -676,7 +676,7 @@ contract RecipeTest is SeriesHelper {
             }
         }
         assertEq(fa, 12);
-        assertEq(gold, 15);
+        assertEq(gold, 24);
         for (uint256 c; c < 12; c++) assertEq(per[c], 1, "each character exactly once");
     }
 

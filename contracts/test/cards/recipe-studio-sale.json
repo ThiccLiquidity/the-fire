@@ -53,8 +53,8 @@
    "name": "Gold",
    "slug": "gold",
    "rank": 4,
-   "supply": "count",
-   "amount": 15,
+   "supply": "perCharacter",
+   "amount": 2,
    "maxPerPack": 1,
    "holo": {
     "mode": "distribution",

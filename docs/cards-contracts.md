@@ -96,11 +96,11 @@ needed for slot 6 of later packs" against "spare Wood"). Then holo (two drand-de
 | Wood | 1 | filler | 10% |
 | Fire | 2 | 15% (150,000,000 ppb) | 50% |
 | Coal | 3 | 4.9% (49,000,000 ppb) | 90% |
-| Gold | 4 | count (as set, default 15), at most 1 per pack's worth | always full holo |
+| Gold | 4 | per character (default 2, so always twice Full Art), at most 1 per pack's worth | always full holo |
 | Full Art | 5 | 1 per character, at most 1 per pack's worth | always full holo |
 
 Slots: 3 x Paper, 1 x Wood, 1 x rank 1 and up (Wood-or-better), 1 x rank 2 and up (Fire-or-better). Example: 167 packs,
-15 Gold and 20 characters make 501 Paper, 267 Wood, 150 Fire, 49 Coal, 15 Gold, 20 Full Art. Gold took Diamond's place
+20 characters make 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art. Gold took Diamond's place
 (`StandardRecipe.classic` is the first five types alone); Full Art needed no slot change: the "or better" ranges take
 it.
 
@@ -125,7 +125,7 @@ picture / full out of 1e18), `characterOf`, `charactersOf(fire, from, count)`, `
       "holo": { "mode": "independent", "frame": "25320565519103609", "picture": "25320565519103609" } },
     { "name": "Wood", "slug": "wood", "rank": 1, "supply": "filler",
       "holo": { "mode": "independent", "frame": "51316701949486200", "picture": "51316701949486200" } },
-    { "name": "Gold", "slug": "gold", "rank": 4, "supply": "count", "amount": 15, "maxPerPack": 1,
+    { "name": "Gold", "slug": "gold", "rank": 4, "supply": "perCharacter", "amount": 2, "maxPerPack": 1,
       "holo": { "mode": "distribution", "weights": ["0", "0", "0", "1"] } },
     { "name": "Full Art", "slug": "fullart", "rank": 5, "supply": "perCharacter", "amount": 1, "maxPerPack": 1,
       "holo": { "mode": "distribution", "weights": ["0", "0", "0", "1"] } }

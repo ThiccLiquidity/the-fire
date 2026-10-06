@@ -5,7 +5,7 @@ pragma solidity ^0.8.28;
 // suite). For every recipe.json the studio wrote into test/cards/studio-parity/<i>.json: parse it exactly as
 // ConfigureSeries.s.sol does, ask RecipeDealer.check (ok, or the revert decoded), and for a valid recipe its
 // previewPool at each "packs" value (from <i>.packs.json, with the case's characters). Case 0 is the studio's Standard
-// export: it must parse to StandardRecipe.build(15)
+// export: it must parse to StandardRecipe.build(0)
 // and ConfigureSeries.build must turn it into the owner's calls. Results go to test/cards/studio-parity/results.json.
 
 import {Test} from "forge-std/Test.sol";
@@ -51,7 +51,7 @@ contract StudioParityTest is Test {
                 }
                 row = string.concat('{"ok":true,"perPack":', vm.toString(perPack), ',"pools":', pools, "]");
                 if (i == 0) {
-                    assertEq(keccak256(abi.encode(s.recipe)), keccak256(abi.encode(StandardRecipe.build(15))), "Standard export != StandardRecipe");
+                    assertEq(keccak256(abi.encode(s.recipe)), keccak256(abi.encode(StandardRecipe.build(0))), "Standard export != StandardRecipe");
                     ConfigureSeries.Call[] memory calls = cs.build(json, address(dealer), address(cards), address(0xBEEF), 2);
                     row = string.concat(row, ',"calls":', vm.toString(calls.length));
                 }

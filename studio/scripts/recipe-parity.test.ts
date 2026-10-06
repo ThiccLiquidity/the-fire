@@ -4,7 +4,7 @@
  *  scripts/fixtures/recipe-parity.json holds the cases and the contract's answers. Refresh it with
  *  scripts/contract-parity.sh (needs forge): it writes the cases (WRITE_RECIPE_CASES=<dir>), runs
  *  scripts/forge/StudioParity.t.sol on a scratch copy of contracts/, and stores the results here. Case 0 is the
- *  Standard export (the forge side also checks it parses to StandardRecipe.build(15) and that ConfigureSeries.build
+ *  Standard export (the forge side also checks it parses to StandardRecipe.build(0) and that ConfigureSeries.build
  *  accepts it); case 1 the Special 3-card all-holo export. */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
