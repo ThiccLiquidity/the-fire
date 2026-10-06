@@ -558,17 +558,16 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
   font: 800 11px/1 var(--body); background: rgba(16,12,9,.85); border: 1px solid var(--line-2); color: var(--ink); opacity: 0; transition: opacity .3s }
 .fan.open .fan-tag, .fan:hover .fan-tag, .fan:focus-visible .fan-tag { opacity: 1 }
 .fan-card.k-fullart .fan-tag { color: var(--gold); border-color: var(--brass) }
-/* stand-ins until the real frames exist: Gold tints the Diamond card, Full Art is the art with a slim gold rim */
-.fan-gold { position: absolute; inset: 0; border-radius: 5%; background: linear-gradient(135deg, #ffe08a, #c8901e 45%, #ffeaa8 70%, #b07818);
-  mix-blend-mode: multiply; pointer-events: none }
-.fan-card .fa { overflow: hidden; box-shadow: inset 0 0 0 3px #f7d774, inset 0 0 0 5px #8a5a10, 0 0 22px rgba(255,210,120,.55) }
-.fan-card .fa img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover }
-.fan-card .fa::after { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.35) 45%, transparent 60%);
-  background-size: 250% 100%; animation: fa-shine 3.8s ease-in-out infinite; mix-blend-mode: screen }
+/* Gold and Full Art get a moving foil sweep */
+.fan-shine { position: absolute; inset: 0; border-radius: 5%; overflow: hidden; pointer-events: none; mix-blend-mode: screen;
+  background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.4) 45%, transparent 60%) 120% 0 / 250% 100% no-repeat; animation: fa-shine 3.8s ease-in-out infinite }
+.k-fullart .fan-shine { animation-delay: -1.9s }
 @keyframes fa-shine { 0% { background-position: 120% 0 } 60%, 100% { background-position: -40% 0 } }
-.fan-card .fa b { position: absolute; left: 8%; right: 8%; top: 4.5%; padding: 4px 0; border-radius: 8px; background: rgba(20,14,8,.55);
-  font: 400 clamp(14px, 4.4vw, 20px) var(--display); color: #fff7e8; text-shadow: 0 2px 0 #1a1410 }
-.fan-card .fa i { position: absolute; left: 50%; bottom: 5%; transform: translateX(-50%); padding: 3px 10px; border-radius: 999px; font: 800 12px var(--body);
-  font-style: normal; letter-spacing: .12em; text-transform: uppercase; color: #3a2606; background: linear-gradient(#fff3c4, #f0c45a) }
-@media (prefers-reduced-motion: reduce) { .fan-card, .fan-card .fa::after { animation: none } }
+.fan-card.k-fullart > img { box-shadow: 0 0 22px rgba(255,210,120,.55) }
+@media (prefers-reduced-motion: reduce) { .fan-card, .fan-shine { animation: none } }
 @media (max-width: 600px) { .fan { width: 46vw; margin-top: 60px } .fan.open .fan-card { --rot-extra: calc(var(--spread) * .5) } }
+/* Gold and Full Art (always full holo) */
+.m-gold { --a1: #ffe08a; --a2: #8a5a10 } .m-fullart { --a1: #fff4d6; --a2: #b07818 }
+.bigm.fh-gold { --bmc: rgba(255,200,60,.45) } .bigm.fh-gold .bm-t { color: #fff6d6; text-shadow: 0 0 18px #ffb81c, 0 3px 0 #2a1a05 }
+.bigm.fh-fullart { --bmc: rgba(255,230,160,.5) } .bigm.fh-fullart .bm-t { color: #fff; text-shadow: 0 0 18px #ff8ae0, 0 0 26px #8ad8ff, 0 3px 0 #1a1410 }
+.sc.m-gold.rare, .sc.m-fullart.rare { animation: rare-pulse 1.8s ease-in-out infinite alternate }

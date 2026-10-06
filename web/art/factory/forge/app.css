@@ -52,3 +52,6 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(2px) 
 .mat.charcoal::after, .mat.diamond::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,.55) 45%, transparent 60%) -150% 0 / 250% 100% no-repeat; animation: sweep 3.4s ease-in-out infinite }
 @keyframes sweep { 0%, 35% { background-position: 150% 0 } 100% { background-position: -150% 0 } }
 @media (prefers-reduced-motion: reduce) { *, *::after, *::before { animation: none !important; transition: none !important } }
+.mat.gold { background: linear-gradient(135deg, #fff1b8, #e5b23a 45%, #fff3c6 60%, #b07d1c); color: #3a2606 }
+.mat.fullart { background: linear-gradient(115deg, #ff9ae6, #ffe98a 30%, #8affd0 55%, #8ad8ff 80%, #d6a8ff); color: #1a1410 }
+.mat.gold::after, .mat.fullart::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,.55) 45%, transparent 60%) -150% 0 / 250% 100% no-repeat; animation: sweep 3.4s ease-in-out infinite }

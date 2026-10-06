@@ -2,23 +2,27 @@
    Facts: docs/omni-economy.md, docs/cards-contracts.md, docs/card-studio.md */
 (() => {
   // ---- rarity numbers (computed, not typed in) ----
-  // A full Series: 167 packs x 6 = 1,002 cards. At least one Diamond per Series (more can be set per Series);
-  // the rest follow their share within the Series. Holo is random per card.
-  const SERIES_CARDS = 167 * 6;
+  // A full Series (the Standard recipe): 167 packs x 6 = 1,002 cards, here with 10 characters. Gold is 2 per character
+  // and Full Art 1 per character (always full holo); Wood is the rest. Holo is random per card for the others.
+  // Diamond is the old top card (Series before Gold): kept only so older cards still show their odds.
+  const SERIES_CARDS = 167 * 6, CHARACTERS = 10;
   const MATS = [
-    { id: 'paper', name: 'Paper', share: 0.5, holo: 0.05 },
-    { id: 'wood', name: 'Wood', share: 0.3, holo: 0.1 },
-    { id: 'fire', name: 'Fire', share: 0.15, holo: 0.5 },
-    { id: 'charcoal', name: 'Coal', share: 0.049, holo: 0.9 },
-    { id: 'diamond', name: 'Diamond', share: null, holo: 1 },
+    { id: 'paper', name: 'Paper', count: 501, holo: 0.05 },
+    { id: 'wood', name: 'Wood', count: 272, holo: 0.1 },
+    { id: 'fire', name: 'Fire', count: 150, holo: 0.5 },
+    { id: 'charcoal', name: 'Coal', count: 49, holo: 0.9 },
+    { id: 'gold', name: 'Gold', count: 2 * CHARACTERS, holo: 1, perChar: 2 },
+    { id: 'fullart', name: 'Full Art', count: CHARACTERS, holo: 1, perChar: 1 },
   ];
-  MATS.forEach((m) => {
-    m.count = m.share == null ? 1 : Math.round(m.share * SERIES_CARDS); // 501 / 301 / 150 / 49 / 1
+  const LEGACY = [{ id: 'diamond', name: 'Diamond', count: 1, holo: 1 }];
+  [...MATS, ...LEGACY].forEach((m) => {
+    m.share = m.count / SERIES_CARDS;
     if (m.id === 'diamond') { m.frame = m.full = 1 / 3; m.none = 0; return; } // always holo, split evenly
+    if (m.perChar) { m.frame = 0; m.full = 1; m.none = 0; return; } // always full holo
     const r = 1 - Math.sqrt(1 - m.holo); // frame and picture each roll at this
     m.frame = r * (1 - r); m.full = r * r; m.none = (1 - r) * (1 - r); // picture only = frame only
   });
-  const M = Object.fromEntries(MATS.map((m) => [m.id, m]));
+  const M = Object.fromEntries([...MATS, ...LEGACY].map((m) => [m.id, m]));
   // fresh PDA grade odds in percent (FirePsa defaults: grades 5-10 only; 1-4 come only from long raw holds), and the
   // wear frame each band gets (card-studio.md).
   const PDA = [10, 1, 9, 17, 8, 25, 7, 27, 6, 20, 5, 10]
@@ -69,15 +73,15 @@
   function matChart() {
     const max = Math.max(...MATS.map((m) => m.count));
     const rows = MATS.map((m) => `
-      <div class="inf-mrow" title="${m.name}: ${m.id === 'diamond' ? 'at least 1 in every Series' : m.count + ' cards, ' + pct(m.share)}">
+      <div class="inf-mrow" title="${m.name}: ${m.perChar ? m.perChar + ' per character' : m.count + ' cards, ' + pct(m.share)}">
         ${chip(m.id)}
         <span class="inf-mtrack"><span class="inf-mfill ${m.id}" style="--w:${m.count / max}"></span></span>
-        <span class="inf-mval">${m.id === 'diamond' ? '1+' : m.count}<small>${m.id === 'diamond' ? 'always' : pct(m.share)}</small></span>
+        <span class="inf-mval">${m.count}<small>${m.perChar ? m.perChar + ' each' : pct(m.share)}</small></span>
       </div>`).join('');
     return `<figure class="inf-plate">
-      <figcaption><b>Materials</b><span>Cards in a full Series of ${SERIES_CARDS.toLocaleString('en-US')}</span></figcaption>
+      <figcaption><b>Materials</b><span>Cards in a full Series of ${SERIES_CARDS.toLocaleString('en-US')}, ${CHARACTERS} characters</span></figcaption>
       <div class="inf-mat">${rows}</div>
-      <p class="inf-legend">Every Series has at least one Diamond, sometimes more.</p>
+      <p class="inf-legend">Every character gets 2 Gold cards and 1 Full Art, so Full Art is always the rarest.</p>
     </figure>`;
   }
 
@@ -175,7 +179,7 @@
         ${matChart()}
         <ul>
           <li>Each material keeps its share in every Series: half of all cards are Paper.</li>
-          <li>Every Series has at least one Diamond, and every Diamond is holo.</li>
+          <li>Every character comes as 2 Gold cards and 1 Full Art, its art over the whole card. Both are always full holo.</li>
           <li>A card can be holo on its <b>frame</b>, its <b>picture</b>, or <b>both</b>: that's full holo.</li>
         </ul>
         ${holoTable()}
@@ -263,7 +267,7 @@
       <div class="inf-glance" aria-label="Rarity at a glance">
         <button type="button" data-go="pda"><b>1 in 100</b><span>PDA 10 on a fresh card. Case or grade in 24 h and it never wears</span></button>
         <button type="button" data-go="cards"><b>1 in ${oneIn(M.paper.full)}</b><span>Paper cards is full holo, one of the rarest finds</span></button>
-        <button type="button" data-go="cards"><b>1+</b><span>Diamond in every Series, always holo</span></button>
+        <button type="button" data-go="cards"><b>1 of 1</b><span>Full Art: one per character, the whole card is the art</span></button>
       </div>
       ${list.map((s, i) => `
         <details class="inf-sec${s.tag ? ' hot' : ''}" id="info-${s.id}"${i === 0 ? ' open' : ''}>
@@ -285,12 +289,12 @@
   }
 
   window.Info = {
-    // pull odds for one card of a material + holo, from the same numbers as the tables above ("1 in 3,120")
+    // pull odds for one card of a material + holo (Gold and Full Art: of that character, as each has its own), from the same numbers as the tables above ("1 in 3,120")
     pullOdds(material, holo = 'none') { const p = this.pullP(material, holo); return p > 0 ? oneIn(p) : null; },
     // the same, as a probability: P(material) x P(this holo for that material)
     pullP(material, holo = 'none') {
       const m = M[material]; if (!m) return 0;
-      const share = m.count / SERIES_CARDS, h = material === 'diamond' && holo === 'none' ? 'full' : holo;
+      const share = (m.perChar || m.count) / SERIES_CARDS, h = (material === 'diamond' || m.perChar) && holo === 'none' ? 'full' : holo;
       return share * (h === 'full' ? m.full : h === 'none' ? m.none : m.frame); // picture only = frame only
     },
     gradeP(g) { const b = PDA.find((x) => x.g === g); return b ? b.p / 100 : 1; }, // fresh PDA odds for one grade; ungraded or an aged 1-4 = 1 (no grade factor)

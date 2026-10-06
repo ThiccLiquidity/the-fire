@@ -27,10 +27,9 @@ const INK: Record<string, { color: string; outline: string; outlineWidth: number
   burning: { color: '#ffe9c4', outline: '#1a0904', outlineWidth: 5, window: '#24100a', seal: ['#f08a2a', '#7a1606', '#fff1d6'] },
   charcoal: { color: '#ececf0', outline: '#0e0e10', outlineWidth: 4, window: '#26262a', seal: ['#8a8b93', '#2c2c31', '#f2f3f6'] },
   diamond: { color: '#12324a', outline: '#ffffff', outlineWidth: 0, window: '#eef6fb', seal: ['#f4fbff', '#9cc0d8', '#12324a'] },
-  // first guesses until the frames arrive (adjust in Frames & Layout): dark ink on gold leaf; light ink with a dark
-  // outline over full-card art
+  // Gold: dark ink on gold leaf. Full Art: dark ink with a light outline, over the art's own light name and info boxes
   gold: { color: '#3a2606', outline: '#fff4d0', outlineWidth: 0, window: '#f5e3a8', seal: ['#f7d774', '#8a5a10', '#3a2606'] },
-  fullart: { color: '#fff7e8', outline: '#1a1410', outlineWidth: 6, window: '#1d1d22', seal: ['#f7d774', '#8a5a10', '#3a2606'] },
+  fullart: { color: '#1a1410', outline: '#fff7e8', outlineWidth: 5, window: '#1d1d22', seal: ['#f7d774', '#8a5a10', '#3a2606'] },
 }
 
 /** A frame set the studio has no colours for yet (a new set built by clean_frames.py): light text with a dark

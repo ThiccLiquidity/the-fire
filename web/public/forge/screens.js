@@ -7,7 +7,7 @@
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const HOLO = { none: 'No holo', frame: 'Holo frame', picture: 'Holo art', full: 'Full holo' };
   const HRANK = { none: 0, frame: 1, picture: 2, full: 3 };
-  const GLOW = { paper: '#fff4dc', wood: '#ffc46b', fire: '#ff5a1c', charcoal: '#dcdcf0', diamond: '#9fd8ff' };
+  const GLOW = { paper: '#fff4dc', wood: '#ffc46b', fire: '#ff5a1c', charcoal: '#dcdcf0', diamond: '#9fd8ff', gold: '#ffd25a', fullart: '#ffe9a8' };
   const MAX_BATCH = 20, BURN_GOAL = 42; // FirePsa.maxBatch: cards per case/grade payment
   const FALLBACK_NAMES = Store.NAMES;
 
@@ -37,14 +37,14 @@
   // tier by odds: Rare (rarer than 1 in 50) gets the tease glow; Epic (1 in 300) the light leak + Share; Legendary (1 in 1,500) the big moment too
   const tierOf = (c) => Store.trueOdds(c).tier;
   const isBig = (t) => t === 'epic' || t === 'legendary';
-  const isHolo = (c) => c.material === 'diamond' || (c.holo || 'none') !== 'none';
+  const isHolo = (c) => !!Store.ALWAYS_HOLO[c.material] || (c.holo || 'none') !== 'none';
   const TIER_LABEL = { rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
   const HOLO_NAME = { frame: 'Holo-frame', picture: 'Holo-art', full: 'Full-holo' };
-  const cardName = (c) => (c.material === 'diamond' ? 'Diamond' : ((c.holo || 'none') !== 'none' ? HOLO_NAME[c.holo] + ' ' : '') + Store.MAT_LABEL[c.material])
+  const cardName = (c) => (Store.ALWAYS_HOLO[c.material] ? Store.MAT_LABEL[c.material] : ((c.holo || 'none') !== 'none' ? HOLO_NAME[c.holo] + ' ' : '') + Store.MAT_LABEL[c.material])
     + (c.grade != null ? ' · PDA ' + c.grade : ''); // "Full-holo Paper", "Diamond · PDA 10"
   const floorTxt = (c) => Store.eth(Store.floor(c));
   // light-leak colours per material: [hot core, glow]
-  const LEAK = { paper: ['#fff6dc', '#ffd98a'], wood: ['#ffd9a0', '#ff9f2e'], fire: ['#ffd27a', '#ff5a12'], charcoal: ['#ffb08a', '#e0260c'], diamond: ['#ffffff', '#bfe6ff'] };
+  const LEAK = { paper: ['#fff6dc', '#ffd98a'], wood: ['#ffd9a0', '#ff9f2e'], fire: ['#ffd27a', '#ff5a12'], charcoal: ['#ffb08a', '#e0260c'], diamond: ['#ffffff', '#bfe6ff'], gold: ['#fff4c4', '#ffb81c'], fullart: ['#ffffff', '#ffd27a'] };
   const edNum = (c) => parseInt(c.edition, 10) || 0;
   const offs = {}; // one store subscription per open station
   const listen = (name, fn) => { offs[name]?.(); offs[name] = Store.on(fn); };
@@ -84,15 +84,15 @@
       slide() { if (!ac()) return; const t = ctx.currentTime; const fl = hiss(t, { type: 'lowpass', f: 450, q: 0.8, peak: 0.2, a: 0.03, dec: 0.3 });
         fl.frequency.setValueAtTime(450, t); fl.frequency.exponentialRampToValueAtTime(3000, t + 0.12); fl.frequency.exponentialRampToValueAtTime(700, t + 0.34); },
       flip() { if (!ac()) return; hiss(ctx.currentTime, { type: 'lowpass', f: 1400, q: 0.7, peak: 0.1, dec: 0.06 }); },
-      tease(m) { if (!ac()) return; const t = ctx.currentTime, d = { fire: 0.85, charcoal: 1, diamond: 1.2 }[m] || 1;
-        if (m === 'diamond') { tone(t, 900, { peak: 0.04, a: d * 0.8, dec: 0.3, to: 2400 }); tone(t, 1350, { peak: 0.025, a: d * 0.8, dec: 0.3, to: 3600 }); }
+      tease(m) { if (!ac()) return; const t = ctx.currentTime, d = { fire: 0.85, charcoal: 1, diamond: 1.2, gold: 1.2, fullart: 1.3 }[m] || 1;
+        if (Store.ALWAYS_HOLO[m]) { tone(t, 900, { peak: 0.04, a: d * 0.8, dec: 0.3, to: 2400 }); tone(t, 1350, { peak: 0.025, a: d * 0.8, dec: 0.3, to: 3600 }); }
         else { tone(t, m === 'fire' ? 70 : 52, { type: 'triangle', peak: 0.16, a: d * 0.85, dec: 0.25 }); hiss(t, { type: 'lowpass', f: 600, peak: 0.08, a: d * 0.8, dec: 0.25 }); } },
       chime(rank) { if (!ac()) return; const t = ctx.currentTime;
         const notes = rank >= 4 ? [880, 1108.7, 1318.5, 1760, 2217.5] : rank === 3 ? [659.3, 987.8, 1318.5] : [784, 1174.7];
         notes.forEach((f, i) => { tone(t + i * 0.07, f, { peak: 0.1, dec: 1.3 }); tone(t + i * 0.07, f * 2.01, { peak: 0.03, dec: 0.8 }); }); },
       boom() { if (!ac()) return; const t = ctx.currentTime; tone(t, 120, { peak: 0.35, a: 0.005, dec: 0.6, to: 38 }); hiss(t, { type: 'lowpass', f: 900, peak: 0.25, dec: 0.45 }); },
       // the light leak: a rising shimmer (three glides) under a crackle that gets denser and louder, d seconds long
-      leak(m, d, leg) { if (!ac()) return; const t = ctx.currentTime, f = { paper: 520, wood: 330, fire: 262, charcoal: 196, diamond: 660 }[m] || 400;
+      leak(m, d, leg) { if (!ac()) return; const t = ctx.currentTime, f = { paper: 520, wood: 330, fire: 262, charcoal: 196, diamond: 660, gold: 587, fullart: 784 }[m] || 400;
         [1, 1.5, 2.01].forEach((k, i) => tone(t, f * k, { type: i ? 'sine' : 'triangle', peak: (leg ? 0.06 : 0.04) / (i + 1), a: d, dec: 0.16, to: f * k * (leg ? 2.6 : 2) }));
         const n = leg ? 30 : 16; for (let i = 0; i < n; i++) { const u = Math.sqrt(i / n);
           hiss(t + u * d, { f: 2200 + Math.random() * 4500, q: 2.2, peak: 0.025 + u * (leg ? 0.15 : 0.1), dec: 0.01 + Math.random() * 0.02 }); } },
@@ -139,7 +139,7 @@
 
   // ---------- share your pull: a 1080 x 1350 PNG of the card, its odds and the wordmark, then the share sheet (or a download)
   const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
-  const holoLabel = (c) => { const hl = c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none'; return hl === 'none' ? '' : HOLO[hl]; };
+  const holoLabel = (c) => { const hl = (c.material === 'gold' || c.material === 'fullart') ? 'full' : c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none'; return hl === 'none' ? '' : HOLO[hl]; };
   const pullLine = (c) => Store.trueOdds(c).label; // includes the grade when graded
   const kindLine = (c) => [Store.MAT_LABEL[c.material], holoLabel(c), c.grade != null ? 'PDA ' + c.grade : ''].filter(Boolean).join(' · ');
   async function shareImage(c) {
@@ -201,15 +201,17 @@
   function makePack(series) {
     const names = [...new Set(S().cards.map((c) => c.character))]; const pool = names.length ? names : FALLBACK_NAMES;
     const mats = ['paper', 'paper', 'paper', 'wood',
-      roll([['wood', 0.8], ['fire', 0.15], ['charcoal', 0.04], ['diamond', 0.01]]),
-      roll([['fire', 0.85], ['charcoal', 0.12], ['diamond', 0.03]])];
+      roll([['wood', 0.8], ['fire', 0.15], ['charcoal', 0.04], ['gold', 0.01]]),
+      // DEMO: Gold and Full Art come up far more often than the real odds, so people get to see them
+      roll([['fire', 0.6], ['charcoal', 0.12], ['gold', 0.17], ['fullart', 0.11]])];
     let id = Math.max(999, ...S().cards.map((c) => c.id)), serial = Math.max(0, ...S().cards.map((c) => c.serial));
     return mats.map((m) => {
       const holoP = { paper: 0.05, wood: 0.1, fire: 0.5, charcoal: 0.9, diamond: 1 }[m];
-      const holo = m === 'diamond' ? roll([['frame', 1 / 3], ['picture', 1 / 3], ['full', 1 / 3]])
+      const holo = m === 'gold' || m === 'fullart' ? 'full' : m === 'diamond' ? roll([['frame', 1 / 3], ['picture', 1 / 3], ['full', 1 / 3]])
         : ((q) => { const f = Math.random() < q, pi = Math.random() < q; return f && pi ? 'full' : f ? 'frame' : pi ? 'picture' : 'none'; })(1 - Math.sqrt(1 - holoP)); // frame and art each roll, like the contract
-      const of = { paper: 80, wood: 48, fire: 24, charcoal: 8, diamond: 3 }[m] + Math.floor(Math.random() * 12);
-      return { id: ++id, serial: ++serial, series, character: pool[Math.floor(Math.random() * pool.length)], material: m, holo,
+      const of = m === 'fullart' ? 1 : m === 'gold' ? 2 : { paper: 80, wood: 48, fire: 24, charcoal: 8, diamond: 3 }[m] + Math.floor(Math.random() * 12);
+      const character = m === 'gold' || m === 'fullart' ? Store.SPECIAL_CAST : pool[Math.floor(Math.random() * pool.length)];
+      return { id: ++id, serial: ++serial, series, character, material: m, holo,
         edition: `${1 + Math.floor(Math.random() * of)} of ${of}`, grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
     });
   }
@@ -461,7 +463,7 @@
           if (tier) { // Rare and up (by true odds): the back glows in its material before it turns (a short tease leads into the leak)
             msg.textContent = 'Something’s glowing…';
             el.classList.add('tease', 't-' + c.material); Sfx.tease(c.material);
-            await pause(big ? 520 : { fire: 850, charcoal: 1000, diamond: 1200 }[c.material] || 800); if (halted()) return;
+            await pause(big ? 520 : { fire: 850, charcoal: 1000, diamond: 1200, gold: 1200, fullart: 1400 }[c.material] || 800); if (halted()) return;
             if (!big) el.classList.remove('tease');
           } else if (last) msg.textContent = 'Last card…';
           const slow = big && !rm;
@@ -597,7 +599,7 @@
     function seams(n, m) {
       const NS = 'http://www.w3.org/2000/svg', sv = document.createElementNS(NS, 'svg'), id = 'lkg' + Math.random().toString(36).slice(2, 8);
       sv.setAttribute('viewBox', '0 0 100 140'); sv.setAttribute('preserveAspectRatio', 'none'); sv.setAttribute('class', 'lk-seams'); sv.setAttribute('aria-hidden', 'true');
-      if (m === 'diamond') sv.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">${['#ff8ae0', '#ffe98a', '#8affd0', '#8ad8ff', '#c48aff', '#ffffff'].map((col, k) => `<stop offset="${k / 5}" stop-color="${col}"/>`).join('')}</linearGradient></defs>`;
+      if (m === 'diamond' || m === 'fullart') sv.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">${['#ff8ae0', '#ffe98a', '#8affd0', '#8ad8ff', '#c48aff', '#ffffff'].map((col, k) => `<stop offset="${k / 5}" stop-color="${col}"/>`).join('')}</linearGradient></defs>`;
       const crack = (x, y, a, len, seg) => { const pts = [[x, y]]; let left = len;
         while (left > 0) { a += (Math.random() - 0.5) * 1.3; const s = seg * (0.6 + Math.random() * 0.8);
           x = Math.max(1.5, Math.min(98.5, x + Math.cos(a) * s)); y = Math.max(1.5, Math.min(138.5, y + Math.sin(a) * s)); pts.push([x, y]); left -= s; // stays on the card
@@ -605,7 +607,7 @@
         return pts; };
       const d = (pts) => 'M' + pts.map(([x, y]) => x.toFixed(1) + ' ' + y.toFixed(1)).join('L');
       const add = (pts, k) => ['g', 'c'].forEach((cl) => { const pa = document.createElementNS(NS, 'path'); pa.setAttribute('d', d(pts)); pa.setAttribute('class', cl); pa.setAttribute('pathLength', '1');
-        if (cl === 'g' && m === 'diamond') pa.setAttribute('stroke', `url(#${id})`); pa.dataset.d = k; sv.append(pa); });
+        if (cl === 'g' && (m === 'diamond' || m === 'fullart')) pa.setAttribute('stroke', `url(#${id})`); pa.dataset.d = k; sv.append(pa); });
       for (let k = 0; k < n; k++) {
         const side = k % 4, u = 0.15 + Math.random() * 0.7; // from each edge in turn, aimed inward
         const [x, y, a] = side === 0 ? [u * 100, 0, Math.PI / 2] : side === 1 ? [100, u * 140, Math.PI] : side === 2 ? [u * 100, 140, -Math.PI / 2] : [0, u * 140, 0];
@@ -619,7 +621,8 @@
     // The title names the card: "Full-holo Paper!", "Diamond!", "PDA 10!" (a plain card that's only Legendary for its grade)
     const BM_SPARKS = { dia: ['#ffffff', '#d8f0ff', '#9fd8ff', '#c9b6ff', '#ffd27a', '#ff9a3c'], g10: ['#fff6d6', '#ffd27a', '#ffb347', '#ff7a2e', '#ffffff'],
       charcoal: ['#fff2e0', '#ffb070', '#ff6a2a', '#ff3a1a', '#ffd27a'], paper: ['#ffffff', '#fff4d6', '#ffe7a8', '#ffd27a', '#f6e8cf'],
-      wood: ['#fff0d0', '#ffd08a', '#ffb050', '#ff9f2e', '#ffffff'], fire: ['#fff2c0', '#ffd27a', '#ff9a3c', '#ff5a12', '#ffffff'] };
+      wood: ['#fff0d0', '#ffd08a', '#ffb050', '#ff9f2e', '#ffffff'], fire: ['#fff2c0', '#ffd27a', '#ff9a3c', '#ff5a12', '#ffffff'],
+      gold: ['#fff6d6', '#ffe08a', '#ffc23a', '#e09a14', '#ffffff'], fullart: ['#ffffff', '#ffe98a', '#ff8ae0', '#8affd0', '#8ad8ff', '#ffd27a'] };
     function bigMoment(c, el, op) {
       const dia = c.material === 'diamond', plain = !isHolo(c);
       const kind = dia ? 'dia' : plain && c.grade === 10 ? 'g10' : c.material;

@@ -1,8 +1,12 @@
 /* Omni Forge (demo mode): shared state (demo data, no chain), events, toasts and the sheet (dialog) helper.
    Every other module reads and writes through window.Store and opens screens with window.Sheet. */
 (() => {
-  const MATS = ['paper', 'wood', 'fire', 'charcoal', 'diamond'];
-  const MAT_LABEL = { paper: 'Paper', wood: 'Wood', fire: 'Fire', charcoal: 'Coal', diamond: 'Diamond' };
+  const MATS = ['paper', 'wood', 'fire', 'charcoal', 'diamond', 'gold', 'fullart'];
+  const MAT_LABEL = { paper: 'Paper', wood: 'Wood', fire: 'Fire', charcoal: 'Coal', diamond: 'Diamond', gold: 'Gold', fullart: 'Full Art' };
+  // always holo: Diamond (the old top card) and the Standard's Gold and Full Art (always full holo)
+  const ALWAYS_HOLO = { diamond: true, gold: true, fullart: true };
+  // demo: only the Bowling Ball has Gold and Full Art art so far, so every Gold or Full Art pulled is a Bowling Ball
+  const SPECIAL_CAST = 'Bowling Ball';
   // the demo cast: real card art, rendered by the Card Studio's own card builder into cards/<id>/<material>-<holo>-<grade|u>.webp
   const CHARS = { 'Bowling Ball': { id: 'bowling', category: 'Sports' }, Jellyfish: { id: 'jellyfish', category: 'Animal' }, Cactus: { id: 'cactus', category: 'Plant' } };
   const NAMES = Object.keys(CHARS);
@@ -46,7 +50,7 @@
   };
   const listeners = new Set();
   const Store = {
-    state, MATS, MAT_LABEL, CHARS, NAMES, DAY, PRICES,
+    state, MATS, MAT_LABEL, ALWAYS_HOLO, SPECIAL_CAST, CHARS, NAMES, DAY, PRICES,
     get(path) { return path.split('.').reduce((o, k) => o?.[k], state); },
     update(fn) { fn(state); listeners.forEach((l) => l(state)); },
     on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
@@ -55,7 +59,7 @@
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },
     cardImg(c) { // the finished card images for a look (character, material, holo): one strip, raw, cased, then slabbed PDA 1-10
       const id = (CHARS[c.character] || CHARS[NAMES[0]]).id;
-      const holo = c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none';
+      const holo = (c.material === 'gold' || c.material === 'fullart') ? 'full' : c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none';
       return `cards/${id}/${c.material}-${holo}.webp`;
     },
     // which card in the strip: 0 raw, 1 cased, 2-11 slabbed PDA 1-10
@@ -71,7 +75,8 @@
       const I = window.Info; if (!I?.pullP) return { p: 1, n: 1, label: '', tier: null };
       const p = I.pullP(c.material, c.holo || 'none') * (c.grade == null ? 1 : I.gradeP(c.grade));
       const n = p > 0 ? 1 / p : Infinity;
-      return { p, n, label: p > 0 ? '1 in ' + I.oneIn(p) : '', tier: n > 1500 ? 'legendary' : n > 300 ? 'epic' : n > 50 ? 'rare' : null };
+      // a Full Art is one of one for its character: always Legendary
+      return { p, n, label: p > 0 ? '1 in ' + I.oneIn(p) : '', tier: c.material === 'fullart' || n > 1500 ? 'legendary' : n > 300 ? 'epic' : n > 50 ? 'rare' : null };
     },
     // DEMO DATA: a made-up OpenSea floor for this exact type (character + material + holo, + grade when graded), in ETH.
     // Deterministic, and rarer means higher: 0.0001 ETH x N^0.75 for "1 in N", nudged +-12% per type so they don't look formulaic.
