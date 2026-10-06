@@ -1475,6 +1475,12 @@ contract SaleTest is SeriesHelper {
         paperUsd.setBroken(true);
         assertEq(sale.lastPaperCap(), 0.2e18, "the last cap a buy saw");
         assertEq(sale.paperFor(2, 2), 0.4e18, "no price: the last cap holds, never back to an uncapped pack");
+        _warp(s3 + 72 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(2);
+        vm.prank(owner, owner);
+        sale.setFeeds(address(ethFeed), address(plankFeed), address(0), address(router));
+        assertEq(sale.lastPaperCap(), 0, "a new PAPER feed (or none) starts without the old cap");
     }
 
     /// Setting a drop up locks its Series (recipe, characters, dealer, images, odds) before anyone can buy.

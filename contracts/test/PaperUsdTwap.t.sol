@@ -109,6 +109,23 @@ contract PaperUsdTwapTest is Test {
         assertEq(twap.candidate(), address(b));
     }
 
+    /// A late PLANK price holds the switch but doesn't throw away a candidate's progress.
+    function test_a_late_feed_keeps_the_candidate() public {
+        MockPair a = new MockPair(paper, weth);
+        a.set(100_000e18, 4e18);
+        factory.add(paper, weth, address(a));
+        _adopt();
+        MockPair b = new MockPair(paper, usdg);
+        b.set(100_000e18, 1_000_000e6); // $1M: a real contender
+        factory.add(paper, usdg, address(b));
+        twap.checkpoint();
+        assertEq(twap.candidate(), address(b));
+        vm.warp(block.timestamp + 3 hours); eth.set(eth.answer()); // the PLANK feed is now late: hold
+        assertFalse(twap.due() && twap.candidate() == address(0));
+        twap.checkpoint();
+        assertEq(twap.candidate(), address(b), "kept through the hold");
+    }
+
     function test_no_switch_while_the_eth_feed_is_stale() public {
         MockPair a = new MockPair(paper, weth);
         a.set(100_000e18, 4e18);

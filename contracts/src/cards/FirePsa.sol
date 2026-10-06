@@ -35,7 +35,7 @@ interface IPsaRandomness {
 
 interface IPsaBurner {
     function quote(uint8 pay, uint256 usd18) external view returns (uint256);
-    function flush(uint8 pay) external returns (uint256);
+    function flushLight(uint8 pay) external returns (uint256);
     function PLANK() external view returns (address);
     function USDG() external view returns (address);
 }
@@ -246,7 +246,7 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         } else {
             (pay == Pay.PLANK ? PLANK : USDG).safeTransferFrom(msg.sender, address(BURNER), cost);
         }
-        BURNER.flush(uint8(pay));
+        BURNER.flushLight(uint8(pay));
         if (msg.value > spentEth) _sendEth(msg.sender, msg.value - spentEth);
     }
 

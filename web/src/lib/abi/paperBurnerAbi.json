@@ -271,7 +271,26 @@
     ],
     "outputs": [
       {
-        "name": "out",
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "flushLight",
+    "inputs": [
+      {
+        "name": "pay",
+        "type": "uint8",
+        "internalType": "enum PaperBurner.Pay"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
