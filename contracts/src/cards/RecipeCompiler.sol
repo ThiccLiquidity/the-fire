@@ -31,6 +31,13 @@ contract RecipeCompiler {
         uint256[] memory p;
         (p, perPack) = _compile(r);
         plan = abi.encodePacked(p);
+        // dry runs: the floor holds for small, odd and huge Series (it is built to hold for every size), and no
+        // per-character type is dealt past its exact count
+        _pool(plan, 1, 1);
+        _pool(plan, 2, 1);
+        _pool(plan, 7, 1);
+        _pool(plan, 7, 1_000);
+        _pool(plan, 1_000_003, 1);
     }
 
     /// @notice The pool for `packs` packs and `chars` characters: cards per type, and per nested set.
@@ -396,6 +403,13 @@ contract RecipeCompiler {
         _takeBack(p, c, sums, packs);
         for (uint256 t; t < c.length; t++) if (c[t] < 0) revert Infeasible();
         for (uint256 x; x < nn; x++) if (sums[x] < int256(packs * _nodeAt(p, x, N_K))) revert Infeasible();
+        // a per-character type is exact: a set topped up past `amount` x characters would deal some character twice
+        for (uint256 t; t < c.length; t++) {
+            uint256 base = _at(p, H_TYPES) + t * TW;
+            if (_at(p, base + T_SUPPLY) == uint256(RecipeDealer.Supply.PerCharacter) && c[t] > int256(_at(p, base + T_AMOUNT) * chars)) {
+                revert Infeasible();
+            }
+        }
     }
 
     /// @dev Each type's rule (cap applied); the filler gets the rest (can be negative here).

@@ -387,7 +387,7 @@ export function checkRecipe(r: Recipe): Problem[] {
     }
   }
   if (!out.length) {
-    // setRecipe's dry runs (never expected to fail: the floor holds for every size)
+    // the contract's dry runs (RecipeCompiler.compile): the floor holds for every size, and no per-character type is dealt twice
     try {
       const plan = compileRecipe(r)
       for (const [p, ch] of [[1n, 1n], [2n, 1n], [7n, 1n], [7n, 1_000n], [1_000_003n, 1n]]) poolOf(plan, p, ch)
@@ -592,6 +592,8 @@ export function poolOf(p: Plan, packs: bigint, chars = 1n): { counts: bigint[]; 
   }
   for (const v of c) if (v < 0n) throw new Infeasible('a type went below 0')
   for (let x = 0; x < nn; x++) if (sums[x] < need(x)) throw new Infeasible('a slot set is short')
+  // a per-character type is exact: a set topped up past amount x characters would deal some character twice
+  for (let t = 0; t < c.length; t++) if (p.supply[t] === 'perCharacter' && c[t] > p.amount[t] * chars) throw new Infeasible('a per-character type would be dealt more than once per character')
   return { counts: c, sums }
 }
 

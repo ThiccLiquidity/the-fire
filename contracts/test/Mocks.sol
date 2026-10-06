@@ -66,6 +66,8 @@ contract MockFeed {
     address public PAPER; address public ETH_USD; address public PLANK_USD;
     function setIds(address paper, address ethUsd) external { PAPER = paper; ETH_USD = ethUsd; }
     function setPlankUsd(address p) external { PLANK_USD = p; }
+    address public PLANK; address public WETH; address public USDG; address public FACTORY;
+    function setPools(address plank, address weth, address usdg, address factory) external { PLANK = plank; WETH = weth; USDG = usdg; FACTORY = factory; }
     constructor(int256 a) { answer = a; updatedAt = block.timestamp; }
     function set(int256 a) external { answer = a; updatedAt = block.timestamp; }
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {

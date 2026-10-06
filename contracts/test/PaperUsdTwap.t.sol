@@ -102,7 +102,7 @@ contract PaperUsdTwapTest is Test {
         assertTrue(twap.due(), "keeper sees the candidate stopped qualifying");
         twap.checkpoint();
         assertEq(twap.candidate(), address(0), "dropped");
-        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer());
+        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer()); plankUsd.set(plankUsd.answer());
         b.set(1e18, 1_000_000e6); // flash again a window later
         twap.checkpoint();
         assertEq(address(twap.pair()), address(a), "still the real pool: the clock restarted");
@@ -153,11 +153,11 @@ contract PaperUsdTwapTest is Test {
         assertTrue(twap.due(), "a candidate to record");
         twap.checkpoint();
         assertFalse(twap.due(), "candidate waiting out its window");
-        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer());
+        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer()); plankUsd.set(plankUsd.answer());
         assertTrue(twap.due(), "candidate to adopt");
         twap.checkpoint();
         assertFalse(twap.due(), "just adopted");
-        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer());
+        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer()); plankUsd.set(plankUsd.answer());
         assertTrue(twap.due(), "window to roll");
     }
 

@@ -85,6 +85,19 @@
   },
   {
     "type": "function",
+    "name": "MAX_HALVINGS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_ROUTES",
     "inputs": [],
     "outputs": [
@@ -594,6 +607,11 @@
   {
     "type": "error",
     "name": "FeedUnavailable",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FeedsAlreadySet",
     "inputs": []
   },
   {

@@ -122,6 +122,7 @@ contract PaperUsdTwap {
     /// @dev The best pool, and whether it should replace the current reference (none yet, or 2x its liquidity).
     function _contender() internal view returns (address best, address bestQuote, bool better) {
         if (_ethUsd() == 0) return (address(0), address(0), false); // can't compare fairly: hold
+        if (PLANK != address(0) && _plankUsd() == 0) return (address(0), address(0), false); // same while PLANK's price is late
         uint256 bestLiq;
         (best, bestQuote, bestLiq) = _bestPool();
         if (best == address(0) || best == address(pair) || bestLiq < MIN_LIQUIDITY_USD) return (best, bestQuote, false);

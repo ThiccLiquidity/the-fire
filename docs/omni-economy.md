@@ -1,8 +1,9 @@
 # Omni economy
 
 How packs are sold, what they cost, and where every token goes. Implemented in
-`contracts/src/cards/FireSale.sol` (tests: `contracts/test/cards/Sale.t.sol`) and `contracts/src/cards/FirePsa.sol`
-(the PDA reveal; tests: `contracts/test/cards/Psa.t.sol`). The models behind the numbers are in `sim/omni/`.
+`contracts/src/cards/FireSale.sol` (tests: `contracts/test/cards/Sale.t.sol`), `contracts/src/cards/FirePsa.sol`
+(cases and grading; tests: `contracts/test/cards/Psa.t.sol`) and `contracts/src/cards/PaperBurner.sol` (fees burn
+PAPER; tests: `contracts/test/cards/Burner.t.sol`). The models behind the numbers are in `sim/omni/`.
 
 ## The story
 
@@ -14,7 +15,7 @@ made of it. Each drop opens with PLANK lighting the forge.
 The owner (the `OWNER` multisig) sets these for each drop (each Series) before it launches (`configureDrop`). They lock when the drop opens
 (its start time), so nothing can change while people are buying. The Series itself (its recipe: card types, pack
 size and slots, holo odds, characters; see `docs/cards-contracts.md`) must be set up in the card contracts before its
-drop can be set up, and locks at its first pack. The numbers below are the Standard sale (the studio's "Standard"
+drop can be set up, and locks when the drop is set up. The numbers below are the Standard sale (the studio's "Standard"
 preset; its "Giant" preset is an example of a 10,000-pack drop with 100 per wallet and 100 per purchase). The full
 list, with bounds, is in `docs/cards-contracts.md` ("Every sale and economy setting"). One number is **not** a
 setting: cards burned per free pack is 42, forever.
@@ -22,9 +23,10 @@ setting: cards burned per free pack is 42, forever.
 | Setting | Start |
 |---|---|
 | Packs in the drop | 167 **total, starters included** (about 1,000 cards). Sold out means gone: no more packs for that Series, ever. |
-| Diamonds | 1 (at least 1 in the Standard recipe; set per Series in its recipe, before its packs sell) |
+| Gold cards | 15 (at least 1 in the Standard recipe; set per Series in its recipe, before its drop is set up) |
+| Full Art cards | 1 per character |
 | Pack price | $2.50 |
-| PAPER per pack | 1 |
+| PAPER per pack | 1, but never more than $1 of PAPER |
 | PLANK burn share | 30% |
 | PLANK-only packs at the start | 50 |
 | PLANK-only packs open to ETH/USDG after | 48 hours, sold or not |
@@ -39,7 +41,7 @@ setting: cards burned per free pack is 42, forever.
 | Most packs per purchase | 50 |
 | Credits per picked suggestion | 1 |
 | Free (credit) packs per drop, in all / per wallet | no limit / no limit (0 = no limit) |
-| PDA odds | 10: 1% · 9: 17% · 8: 24% · 7: 25% · 6: 18% · 5: 7% · 4: 3.5% · 3: 2% · 2: 1.5% · 1: 1% |
+| Fresh PDA odds | 10: 1% · 9: 17% · 8: 25% · 7: 27% · 6: 20% · 5: 10% (grades 1-4 only from wear) |
 
 ## Setting up a drop
 
@@ -75,8 +77,10 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
 
 - **Every pack needs 1 PAPER, and it is burned.** "The minter needs paper." This includes starter and free packs.
   (Per drop: PAPER per paid/credit pack and PAPER per press pack are settings, 0 allowed.)
+- **Never more than $1 of PAPER per pack** (`PACK_PAPER_CAP_USD18`, fixed): past $1 a PAPER, a pack takes $1 worth,
+  at the `PaperUsdTwap` price. With no fresh PAPER price, the set amount.
 - **Packs are never paid for in PAPER.** The price is paid in PLANK, ETH or USDG only.
-- **Paid pack:** $2.50 + 1 PAPER.
+- **Paid pack:** $2.50 + 1 PAPER (at most $1 of PAPER).
   - ETH uses the Chainlink price. PLANK uses the 30-minute pool average (`PlankUsdTwap`). USDG is taken at face value.
   - Every purchase carries the buyer's maximum. If a price moved past it, the purchase fails and costs nothing.
 - **Where the money goes, in the same transaction:**
@@ -99,8 +103,9 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
   packs that were minted.
 - **One drop at a time.** The next drop can only be set up once the current one has closed.
 - **Each Series stands alone.** Its cards come only from its own packs, by its own recipe. Standard recipe: Paper
-  half, Fire 15%, Coal 4.9%, Diamond as set (at least 1), Wood the rest. Nothing carries over between Series. Example:
-  167 packs and 1 Diamond make 501 Paper, 301 Wood, 150 Fire, 49 Coal, 1 Diamond.
+  half, Fire 15%, Coal 4.9%, Gold as set (15 by default), Full Art 1 per character, Wood the rest. Nothing carries over
+  between Series. Example: 167 packs, 15 Gold and 20 characters make 501 Paper, 267 Wood, 150 Fire, 49 Coal, 15 Gold,
+  20 Full Art.
 - **Every purchase names its limits:** the most PLANK/USDG (or the ETH sent), and the most PAPER. If a number moved,
   the purchase fails and costs nothing.
 - **Price feeds and the router** can be replaced by the owner only between drops (a retired Chainlink feed, a moved
@@ -111,7 +116,8 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
 
 ## Starter packs
 
-- **Who:** press holders only (Paper Press NFT). This is the bot filter: a press costs $94+.
+- **Who:** press holders only (Paper Press NFT). This is the bot filter: a press costs $94+. About 2,080
+  presses exist.
 - **Rules:** first come, first served. 1 per wallet. Each press counts once per drop, so passing one press
   around doesn't get extra packs. (Per drop: packs per press, e.g. 3, claimable in any split; packs per wallet.)
 - **Price:** 1 PAPER, burned. No dollar price. (Per drop: free, a PAPER amount, a dollar price paid in PLANK, ETH or
@@ -154,51 +160,60 @@ Every PAPER spent anywhere is burned.
 
 | Use | Cost |
 |---|---|
-| Any pack (paid, starter or free) | 1 PAPER per pack |
-| Character suggestion | 1 PAPER (owner setting, `setSuggestionRules`, any amount incl. 0; the suggester names their most). Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
-| PDA reveal | The most whole PAPER that stays at or under $0.25 (owner setting with the $1 cap, `FirePsa.setRevealPrice`). Past $0.25 a PAPER, 1 PAPER, capped at $1: past $1 a PAPER, $1 worth (part of a PAPER, never 0). PAPER $0.05 → 5; $0.03 → 8; $0.30 → 1; $4 → 0.25. Priced by `PaperUsdTwap`; a set number of PAPER until it has a price. PAPER only. |
+| Any pack (paid, starter or free) | 1 PAPER per pack, never more than $1 of PAPER |
+| Character suggestion | 1 PAPER, never more than $1 of PAPER (owner setting, `setSuggestionRules`, any amount incl. 0; the suggester names their most). Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
+| Cases and grading | Paid in ETH, USDG or PLANK, not PAPER. 100% of it buys PAPER and burns it (`PaperBurner`). |
 
 - **The PAPER price feed.** PAPER already has a live pool, but `PAPER_USD_FEED` must be the deployed `PaperUsdTwap`
-  (step 2 of `docs/deploy.md`), never the pool itself. The feed adopts a PAPER/WETH or PAPER/USDG pool only once it
-  holds at least $1,000 on its dollar side (`MIN_LIQUIDITY_USD`) at every checkpoint for 20 hours, then reports its
-  first price one full 20-hour window later: about 40 hours after the first checkpoint. Until then reveals cost the
-  set number of PAPER. The owner can replace the feed later (`FirePsa.setPaperFeed`, only a feed for this PAPER).
+  (step 2 of `docs/deploy.md`), never the pool itself. It sets the pack PAPER cap and guards the fee burn. The feed
+  adopts a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool (PLANK valued through `PlankUsdTwap`) only once it holds at least
+  $1,000 on its other side (`MIN_LIQUIDITY_USD`) at every checkpoint for 20 hours, then reports its first price one
+  full 20-hour window later: about 40 hours after the first checkpoint. Until then packs take the set PAPER (no cap)
+  and case and grading fees wait in `PaperBurner`. If the feed later goes quiet, the last cap it gave holds. The owner
+  can replace the sale's feed between drops (`FireSale.setFeeds`); the burner's feeds are set once.
 - **Get PAPER on the site (planned):** a small box where you type how many PAPER you want, see the ETH price, and
   press one button. It would use the KyberSwap swap guard in `web/src/lib` with the 0.5% fee to the swap-fee wallet.
   In the buy panel it would show up when someone is short ("You need 1 PAPER per pack. Get 3 PAPER for $0.15").
-- **Scale:** 167 packs × 2 drops a month burns about 334 PAPER a month against about 30,000 printed. This is a
+- **Scale:** 167 packs × 2 drops a month burns about 334 PAPER a month against about 63,000 printed (about 2,080 presses). Case and grading fees add
+  about 2,500 PAPER per Series at $0.08 (final numbers audit). This is a
   reason to hold PAPER more than a big burn.
 
-## PDA reveal
+## Cases and PDA grading
 
 **PDA** stands for Professional Digital Authenticators, a nod to real-world card grading. (The contract keeps its
-original name, `FirePsa`.)
+original name, `FirePsa`.) The full rules (hidden condition, wear, fresh odds, slabs) are in `docs/grading.md`.
 
-- Once per card, up to 10 at a time (owner setting, `setMaxReveal`, at most 100). The PAPER is burned, then drand picks the grade. It sets the grade, and the card
-  switches to that wear frame and seal ring colour.
-- Before PAPER has a price, a reveal costs a set number of PAPER (5 to start, the owner can change it).
-- The owner can give a Series different odds, but only before its first pack exists, so every buyer knows the odds.
-- **If randomness is gone for good** (no answer for 7 days), anyone can cancel a reveal: the cards unlock, still
-  unrevealed. The PAPER was burned. Opens work the same way: a stuck open can be cancelled after 7 days and the packs
-  come back sealed.
-- **The holder names the most PAPER they'll pay;** if the price moved, the reveal fails and costs nothing.
-- **While a card is being graded it can't be transferred** (it can still be burned), so nobody can sell a card
-  whose drand number they've already seen as "Unrevealed".
-- **During a gap in the PAPER price feed,** reveals cost the last price-based amount, not the starting number.
-- **Odds** (defaults in `FirePsa.oddsOf`; most cards land 6-9 and a 10 is rare), the same for every material:
+- **Every card has a hidden condition.** It wears with time uncased and with every move between wallets. A **Case**
+  freezes it. **Grading** reveals the PDA grade (1-10) once and seals the card in a **Slab**: final, no regrade.
+- **Prices:** Case $0.05, grading $1 per card, paid in ETH, USDG or PLANK (never PAPER). The owner can change them
+  (`setPrices`, each at most $100). Up to 20 cards per transaction (`setMaxBatch`, at most 100), cases and grades
+  together (`protect`).
+- **100% of every fee buys PAPER and burns it** (`PaperBurner`), none of it goes to us. The burner takes the best
+  owner-set route (or half and half across two routes that share no pool) and refuses to buy below 95% of the PAPER
+  the 20-hour price feed says the fee is worth (trying half, a quarter and so on if the whole amount is too much for
+  the pools); then the fee waits in the burner for a later buy. It has no withdraw, and nobody can redirect it: its
+  router is fixed, its feeds are set once, and its routes only pass through WETH, PLANK or USDG.
+- **The holder names the most they'll pay;** if the price moved, the batch fails and costs nothing.
+- **While a card is being graded it can't be transferred** (it can still be burned), so nobody can sell a card whose
+  drand number they've already seen.
+- **If randomness is gone for good** (no answer for 7 days), anyone can cancel a grading (`cancelGrading`): the cards
+  unlock, still ungraded. The fee was burned. Opens work the same way: a stuck open can be cancelled after 7 days and
+  the packs come back sealed.
+- **Fresh odds** (a card cased or graded within 24 hours of opening), set per Series before its drop is set up; the
+  default (`FirePsa.oddsOf`) is the same for every material. Grades 1-4 come only from long raw holds:
 
-| Grade | Odds | Out of 10,000 | Wear frame |
+| Grade | Fresh odds | Out of 10,000 | Wear frame |
 |---|---|---|---|
 | 10 | 1% | 100 | Clean frame + gold glow |
 | 9 | 17% | 1,700 | Level 2 |
-| 8 | 24% | 2,400 | Level 2 |
-| 7 | 25% | 2,500 | Level 3 |
-| 6 | 18% | 1,800 | Level 3 |
-| 5 | 7% | 700 | Level 4 |
-| 4 | 3.5% | 350 | Level 4 |
-| 3 | 2% | 200 | Level 5 |
-| 2 | 1.5% | 150 | Level 5 |
-| 1 | 1% | 100 | Level 6 |
+| 8 | 25% | 2,500 | Level 2 |
+| 7 | 27% | 2,700 | Level 3 |
+| 6 | 20% | 2,000 | Level 3 |
+| 5 | 10% | 1,000 | Level 4 |
+| 4 | - (wear only) | 0 | Level 4 |
+| 3 | - (wear only) | 0 | Level 5 |
+| 2 | - (wear only) | 0 | Level 5 |
+| 1 | - (wear only) | 0 | Level 6 |
 
 ## Wallets (separate jobs)
 
@@ -206,6 +221,7 @@ original name, `FirePsa`.)
 |---|---|
 | Revenue | 70% of every sale. Nothing else. The wallets can only be changed while no drop is set up or running. |
 | Burn | The 30% when a PLANK swap fails. Only ever buys and burns PLANK. |
+| (none) | Case and grading fees: 100% to `PaperBurner`, which only buys and burns PAPER. No revenue to the team. |
 | Royalty | 5% resale royalty (ERC-2981), where marketplaces honour it. |
 | Swap fee | 0.5% of site swaps, once the site's swap is live (`SWAP_FEE_WALLET` in `web/src/lib/config.ts`, not set yet). |
 

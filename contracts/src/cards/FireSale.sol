@@ -100,6 +100,9 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     /// @notice A pack's PAPER never costs more than this many dollars (18 decimals): past $1 a PAPER, a pack takes
     ///         $1 worth (part of a PAPER) instead of its full PAPER. Fixed forever.
     uint256 public constant PACK_PAPER_CAP_USD18 = 1e18;
+    /// @notice The last pack PAPER cap the PAPER feed gave: holds while the feed has no price, so packs never take
+    ///         more than about $1 of PAPER just because a price is late.
+    uint256 public lastPaperCap;
     uint256 public constant PAPER_FEED_MAX_AGE = 2 days;
     /// @dev The owner can end a drop that hasn't sold out only this long after it opens at the earliest.
     uint256 public constant MIN_DROP_TIME = 1 days;
@@ -476,7 +479,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         startersClaimedBy[fire][msg.sender] = mine;
         startersClaimedWith[fire][pressId] = used;
         d.startersClaimed += uint64(n);
-        _burnPaper(n * _packPaper(d.starterPaper), maxPaper);
+        _burnPaper(n, d.starterPaper, maxPaper);
         uint256 cost;
         uint256 burnShare;
         bool burned;
@@ -504,7 +507,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         creditPacksBy[fire][msg.sender] = mine;
         credits[msg.sender] -= n;
         d.creditPacks += uint64(n);
-        _burnPaper(n * _packPaper(d.paperPerPack), maxPaper);
+        _burnPaper(n, d.paperPerPack, maxPaper);
         PACKS.mint(msg.sender, fire, n);
         emit CreditsUsed(fire, msg.sender, n);
         _closeIfSoldOut(fire, d);
@@ -530,7 +533,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     function suggest(string calldata text, uint256 maxPaper) external returns (uint256 id) {
         uint256 len = bytes(text).length;
         if (len == 0 || len > suggestionMaxBytes) revert BadAmount();
-        _burnPaper(suggestionPaper, maxPaper);
+        _burnPaper(1, suggestionPaper, maxPaper); // a suggestion is PAPER too: same $1 cap
         id = suggestions.length;
         suggestions.push(Suggestion(msg.sender, uint64(block.timestamp), false, currentRound));
         emit Suggested(id, msg.sender, currentRound, text);
@@ -653,7 +656,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         if (t < d.liftAfter && paidBought[fire][msg.sender] + n > d.walletLimit) revert WalletLimit();
         paidBought[fire][msg.sender] += n;
         d.paidSold += uint64(n);
-        _burnPaper(n * _packPaper(d.paperPerPack), maxPaper);
+        _burnPaper(n, d.paperPerPack, maxPaper);
     }
 
     /// @dev The holder window: the buyer owns a press (each press lets in one wallet per drop) or was in the
@@ -719,15 +722,24 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         _closeIfSoldOut(fire, d);
     }
 
-    /// @dev A pack's PAPER: `per`, but never more than PACK_PAPER_CAP_USD18 worth at the PAPER feed's price.
+    /// @dev A pack's PAPER: `per`, but never more than PACK_PAPER_CAP_USD18 worth at the PAPER feed's price. While the
+    ///      feed has no price, the last cap it gave holds (none yet: `per`). The cap is at least 1 wei.
     function _packPaper(uint256 per) internal view returns (uint256) {
-        (int256 px, uint256 at) = _feed(PAPER_USD);
-        if (px <= 0 || at > block.timestamp || block.timestamp - at > PAPER_FEED_MAX_AGE) return per;
-        uint256 cap = PACK_PAPER_CAP_USD18 * 1e18 / uint256(px);
-        return per < cap ? per : cap;
+        (uint256 cap,) = _paperCap();
+        return cap != 0 && cap < per ? cap : per;
     }
 
-    function _burnPaper(uint256 paper, uint256 maxPaper) internal {
+    function _paperCap() internal view returns (uint256 cap, bool live) {
+        (int256 px, uint256 at) = _feed(PAPER_USD);
+        if (px <= 0 || at > block.timestamp || block.timestamp - at > PAPER_FEED_MAX_AGE) return (lastPaperCap, false);
+        cap = PACK_PAPER_CAP_USD18 * 1e18 / uint256(px);
+        return (cap == 0 ? 1 : cap, true);
+    }
+
+    function _burnPaper(uint256 n, uint256 per, uint256 maxPaper) internal {
+        (uint256 cap, bool live) = _paperCap();
+        if (live && cap != lastPaperCap) lastPaperCap = cap;
+        uint256 paper = n * (cap != 0 && cap < per ? cap : per);
         if (paper > maxPaper) revert PriceMoved();
         if (paper > 0) PAPER.safeTransferFrom(msg.sender, DEAD, paper);
     }

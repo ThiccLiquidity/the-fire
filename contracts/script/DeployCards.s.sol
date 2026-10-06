@@ -30,6 +30,10 @@ interface ICardsPaperTwap {
     function PAPER() external view returns (address);
     function ETH_USD() external view returns (address);
     function PLANK_USD() external view returns (address);
+    function PLANK() external view returns (address);
+    function WETH() external view returns (address);
+    function USDG() external view returns (address);
+    function FACTORY() external view returns (address);
 }
 
 interface ICardsV2Router {
@@ -258,5 +262,10 @@ contract DeployCards is Script {
         require(ICardsV2Router(p.v2Router).WETH() == p.weth, "V2_ROUTER uses a different WETH");
         require(ICardsV2Factory(ICardsV2Router(p.v2Router).factory()).getPair(p.plank, p.weth) == pair,
             "V2_ROUTER's factory doesn't own the PLANK_USD_FEED pool");
+        // the PAPER price must come from the same tokens and the same factory, or it never finds the PAPER pools
+        require(ICardsPaperTwap(p.paperUsd).PLANK() == p.plank, "PAPER_USD_FEED looks for a different PLANK");
+        require(ICardsPaperTwap(p.paperUsd).WETH() == p.weth, "PAPER_USD_FEED uses a different WETH");
+        require(ICardsPaperTwap(p.paperUsd).USDG() == p.usdg, "PAPER_USD_FEED uses a different USDG");
+        require(ICardsPaperTwap(p.paperUsd).FACTORY() == ICardsV2Router(p.v2Router).factory(), "PAPER_USD_FEED reads a different factory");
     }
 }

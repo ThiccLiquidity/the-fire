@@ -4,11 +4,11 @@
 
 | Part | Where | State |
 |---|---|---|
-| Card contracts | `contracts/src/cards` (FirePacks, FireCards, RecipeDealer, FireSale, FirePsa) | Built and tested, three internal review rounds (`docs/audit-2026-10.md`); per-Series recipes added since, not yet reviewed. Not deployed. |
+| Card contracts | `contracts/src/cards` (FirePacks, FireCards, CardsRenderer, RecipeDealer, RecipeCompiler, FireSale, FirePsa, PaperBurner) | Built and tested, internal review rounds (`docs/audit-2026-10.md`). Grading (wear, cases, slabs, the PAPER fee burn; `docs/grading.md`) added since, not yet reviewed. Not deployed. |
 | Shared on-chain pieces | `contracts/src`: OpenDrandRouter, OpenVRFAdapter, PlankUsdTwap, PaperUsdTwap | Built and tested. Not deployed. |
 | Deploy scripts | `contracts/script`: DeployTwap, DeployInfra, DeployCards | Runbook in `docs/deploy.md`. |
-| Card Studio | `studio/` | Working end to end (library, Series setup, sample deal, full 209-image-per-character WEBP build, Pinata upload). Frames are built in. |
-| Forge site | Source `web/art/factory/forge`, served from `web/public/forge` | Demo mode (demo banner, demo data), no chain connection yet. |
+| Card Studio | `studio/` | Working end to end (library, Series setup, sample deal, full 216-image-per-character WEBP build with cases and slabs, Pinata upload). Frames are built in; the Gold and Full Art frames are still being made by the owner. |
+| Forge site | Source `web/art/factory/forge`, served from `web/public/forge` | Demo mode (demo banner, demo data), no chain connection yet. Shows wear, cases and slabs (Case & grade). |
 | Site modules for the live version | `web/src/lib`: chain/RPC config, wallet connection, drand helper, card ABIs, KyberSwap guard | Type-checked, not wired into the Forge yet. |
 | Holder snapshot | `ops/snapshot` | Ready. |
 | Economy sims | `sim/omni` | Done; recorded output in each folder. |
@@ -21,26 +21,26 @@ Naming: the card contracts are named `Fire*` for historical reasons (`Fire*` is 
 1. **Keeper bot.** Required before the first drop. Every call is permissionless (see `ops/README.md`):
    - `PlankUsdTwap.checkpoint()` every 30 minutes
    - `PaperUsdTwap.checkpoint()` when `due()`
-   - `FirePsa.pokePrice()` now and then
+   - `PaperBurner.flush(pay)` when a case or grading fee is waiting (`Waiting` events)
    - delivering drand numbers to the router (`OpenDrandRouter.fulfill`; `adapter.settle` if a callback didn't land)
-   - `FireCards.process(maxCards)` and `FirePsa.finish(index)` if the site doesn't call them
-2. **Real wallet connection on the site.** Wire the Forge's buy, open, PDA, burn and suggestion screens to the
+   - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index)` if the site doesn't call them
+2. **Real wallet connection on the site.** Wire the Forge's buy, open, case and grade, burn and suggestion screens to the
    deployed contracts through `web/src/lib`, replacing the demo store and the demo banner. Planned with it: loading
    each buyer's holder-window proof automatically, the "Get PAPER" box (KyberSwap, 0.5% fee), and calling
-   `process(maxCards)` and `finish(index)` right after randomness arrives.
-3. **Series content.** Characters, their categories (free text, set in the Card Studio) and their 10 source images
-   each, built (209 WEBP images per character) and uploaded with the Card Studio; pack art per Series. Lock each
-   Series (`lockFire`) once its images are final.
-4. **Large Series upload.** The studio uploads a Series' whole images folder to Pinata as one request (about 71 MB
-   per character). Batch the upload for large Series.
-5. **Real-chain gas test.** Run `contracts/test/cards/SaleFork.t.sol` against Robinhood Chain (real router gas and the
+   `process(fire, maxCards)` and `finish(index)` right after randomness arrives.
+3. **Series content.** Characters, their categories (free text, set in the Card Studio) and their source images,
+   built (216 WEBP images per character) and uploaded with the Card Studio; pack art per Series. The Gold and Full Art
+   frames (being made by the owner). A Series' images lock when its drop is set up (`configureDrop`), so upload the
+   final images first.
+4. **Real-chain gas test.** Run `contracts/test/cards/SaleFork.t.sol` against Robinhood Chain (real router gas and the
    real PLANK swap).
-6. **On-chain checks.** PAPER (`0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6`) has 18 decimals; transfers to
+5. **On-chain checks.** PAPER (`0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6`) has 18 decimals; transfers to
    `0x…dEaD` work for PAPER and PLANK; a USDG/WETH V2 pool exists (otherwise the USDG burn share always goes to the
    burn wallet); PLANK's PulpPool reward-list status (`docs/addresses.md`).
-7. **PAPER price feed timing.** `PaperUsdTwap` reports its first price about 40 hours after the keeper's first
-   checkpoint. Deploy it and start the keeper early enough that PDA reveals are priced by launch, or accept the set
-   PAPER amount until then.
+6. **PAPER price feed timing.** `PaperUsdTwap` reports its first price about 40 hours after the keeper's first
+   checkpoint. Deploy it and start the keeper early enough: until then packs take the set PAPER with no $1 cap, and
+   case and grading fees wait in `PaperBurner`.
+7. **Grading numbers.** Case and grading prices are not final until the last numbers audit (`docs/grading.md`).
 8. **Testnet run** of every flow end to end, and a small first drop.
 9. **Off-chain checks.** Marketplace support for Robinhood Chain, a trademark search for the name, and a legal
    read on selling sealed packs with random contents.

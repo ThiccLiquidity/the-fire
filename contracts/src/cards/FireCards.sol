@@ -431,6 +431,13 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         Open storage o = _opens[fire][h];
         if (!o.ready || o.count == 0 || block.timestamp < o.readyAt + CANCEL_AFTER) revert NotStuck();
         uint256 back = o.count - o.packsDone - (o.cardInPack != 0 ? 1 : 0);
+        if (o.cardInPack != 0) {
+            // the part-dealt pack is dropped (its other cards never exist): count it as dealt, so editions still finish
+            FireInfo storage f = fires[fire];
+            uint64 done = f.dealt + 1;
+            f.dealt = done;
+            if (done == f.packs) emit BatchMetadataUpdate(1, nextSerial - 1);
+        }
         o.count = 0;
         headOf[fire] = h + 1;
         if (back > 0) PACKS.returnPacks(o.to, fire, back);
@@ -657,7 +664,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
             if (gradePending[tokenId]) revert GradingInProgress();
             uint256 d = _card[tokenId];
             uint256 moves = (d >> B_MOVES) & 15;
-            if ((d >> B_FROZEN) & 1 == 0 && moves < MAX_MOVES) {
+            // sending a card to its own wallet isn't a move
+            if (from != to && (d >> B_FROZEN) & 1 == 0 && moves < MAX_MOVES) {
                 _card[tokenId] = d + (1 << B_MOVES);
                 emit Moved(tokenId, moves + 1);
             }

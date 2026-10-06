@@ -715,4 +715,19 @@ contract RecipeTest is SeriesHelper {
         vm.expectRevert(bytes(".types[2].rank is too big for its field"));
         cs.parse(vm.replace(json, '"rank": 2,', '"rank": 4294967296,'));
     }
+
+    /// Per-character supply is exact: a recipe whose slots would top Full Art up past one per character (here "a Full
+    /// Art in every pack") is refused, instead of dealing some character's Full Art twice.
+    function test_perCharacterNeverToppedUpPastExact() public {
+        RecipeDealer.Recipe memory r = StandardRecipe.build(0);
+        RecipeDealer.Slot[] memory sl = new RecipeDealer.Slot[](5);
+        for (uint256 i; i < 4; i++) sl[i] = r.slots[i];
+        sl[4] = _slotOne(1, StandardRecipe.FULL_ART);
+        r.slots = sl;
+        vm.expectRevert(RecipeCompiler.Infeasible.selector); // the dry run (2 packs, 1 character) catches it
+        dealer.check(r);
+        vm.prank(owner);
+        vm.expectRevert(RecipeCompiler.Infeasible.selector);
+        dealer.setRecipe(30, r);
+    }
 }

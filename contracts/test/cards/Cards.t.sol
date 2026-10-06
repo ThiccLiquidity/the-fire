@@ -984,13 +984,15 @@ contract DeployCardsTest is Test {
         paperUsd.setDecimals(18);
         paperUsd.setIds(address(paper), ethUsd);
         paperUsd.setPlankUsd(address(twap));
+        address v2Factory = address(new MockV2Factory(twap.PAIR()));
+        paperUsd.setPools(address(plank), address(weth), address(usdg), v2Factory);
         DeployCards.Params memory p = DeployCards.Params({
             router: drand, owner: safe, royaltyTo: safe, royaltyBps: 500, packBase: "ipfs://packs/",
             paper: address(paper), plank: address(plank), usdg: address(usdg),
             weth: address(weth), press: address(new MockERC20("PRESS", "PRESS")),
             ethUsd: ethUsd,
             plankUsd: address(twap), paperUsd: address(paperUsd),
-            v2Router: address(new MockRouterInfo(address(weth), address(new MockV2Factory(twap.PAIR())))),
+            v2Router: address(new MockRouterInfo(address(weth), v2Factory)),
             revenueWallet: address(0xBEEF), burnWallet: address(0xB0B), suggestionPaper: 2e18
         });
         DeployCards.Deployed memory d = s.deploy(p, address(s));
@@ -1081,6 +1083,13 @@ contract DeployCardsTest is Test {
         vm.expectRevert(bytes("PAPER_USD_FEED uses a different PLANK_USD_FEED"));
         s.check(p);
         paperUsd.setPlankUsd(address(twap));
+        paperUsd.setPools(address(weth), address(weth), address(usdg), MockRouterInfo(p.v2Router).factory());
+        vm.expectRevert(bytes("PAPER_USD_FEED looks for a different PLANK"));
+        s.check(p);
+        paperUsd.setPools(address(plank), address(weth), address(usdg), address(0xF));
+        vm.expectRevert(bytes("PAPER_USD_FEED reads a different factory"));
+        s.check(p);
+        paperUsd.setPools(address(plank), address(weth), address(usdg), MockRouterInfo(p.v2Router).factory());
         s.check(p);
     }
 }

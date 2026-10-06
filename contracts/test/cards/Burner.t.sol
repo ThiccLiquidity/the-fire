@@ -227,7 +227,43 @@ contract BurnerTest is Test {
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", address(this)));
         b.setFeeds(address(1), address(2), address(3));
         vm.prank(owner);
+        vm.expectRevert(PaperBurner.FeedsAlreadySet.selector); // set once: the owner can't swap a feed later
+        b.setFeeds(address(ethUsd), address(plankUsd), address(paperUsd));
+        PaperBurner fresh = new PaperBurner(owner, address(paper), address(plank), address(usdg), 6, address(weth), address(router));
+        vm.prank(owner);
         vm.expectRevert(PaperBurner.FeedUnavailable.selector);
-        b.setFeeds(address(paperUsd), address(plankUsd), address(ethUsd)); // ETH and PAPER feeds swapped
+        fresh.setFeeds(address(paperUsd), address(plankUsd), address(ethUsd)); // ETH and PAPER feeds swapped
+    }
+
+    /// The owner can't route fees through a pool of their own token: only WETH, PLANK or USDG may sit in between.
+    function test_routesOnlyThroughKnownTokens() public {
+        MockERC20 own = new MockERC20("X", "X");
+        address[][] memory r = new address[][](1);
+        r[0] = _p3(address(weth), address(own), address(paper));
+        vm.prank(owner);
+        vm.expectRevert(PaperBurner.BadRoute.selector);
+        b.setRoutes(PaperBurner.Pay.ETH, r);
+        r[0] = _p3(address(weth), address(weth), address(paper)); // back through its own input
+        vm.prank(owner);
+        vm.expectRevert(PaperBurner.BadRoute.selector);
+        b.setRoutes(PaperBurner.Pay.ETH, r);
+        r[0] = _p3(address(weth), address(usdg), address(paper));
+        vm.prank(owner);
+        b.setRoutes(PaperBurner.Pay.ETH, r);
+    }
+
+    /// A backlog too big for the pools at once is bought in pieces (half, a quarter, ...) instead of waiting forever.
+    function test_backlogDrainsInPieces() public {
+        vm.deal(address(b), 8e18); // $20k against ~$80k-a-side pools
+        uint256 out = b.flush(PaperBurner.Pay.ETH);
+        assertGt(out, 0, "a piece burned");
+        assertLt(address(b).balance, 8e18);
+        assertGt(address(b).balance, 0, "the rest waits");
+        uint256 left = address(b).balance;
+        // the pools' price now sits below the 20-hour average; once arbitrage restores it, the next piece goes
+        router.setPool(address(paper), address(plank), 1_000_000e18, 80_000_000_000_000e18);
+        router.setPool(address(weth), address(plank), 40e18, 100_000_000_000_000e18);
+        assertGt(b.flush(PaperBurner.Pay.ETH), 0, "the next flush burns another piece");
+        assertLt(address(b).balance, left);
     }
 }

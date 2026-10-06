@@ -36,12 +36,14 @@ interface IBurnRouter {
  *         would pay, and also every split of half on one route and half on another, and takes the best. A route that
  *         doesn't exist yet simply quotes nothing.
  *
- *         Guard: the whole buy must get at least SWAP_MIN_BPS (90%) of what the PAPER price feed (a 20-hour average)
- *         says the fee is worth. If it wouldn't (a pumped or thin pool), or a price is missing, nothing is spent: the
+ *         Guard: the buy must get at least SWAP_MIN_BPS (95%) of what the PAPER price feed (a 20-hour average) says
+ *         it is worth. If the whole amount wouldn't, it tries half, then a quarter, ... (MAX_HALVINGS times), so a
+ *         backlog drains in pieces the pools can take. If no piece passes, or a price is missing, nothing is spent: the
  *         fee waits here and the next flush tries again.
  *
- *         The owner can set the routes and the price feeds (routes only ever end in PAPER, and the guard checks every
- *         buy); the router is fixed at deploy. Quotes (`quote`) are what FirePsa charges for a dollar amount.
+ *         Locked so the fees can only ever buy PAPER: the router is fixed at deploy, the price feeds can be set once,
+ *         and a route may only pass through WETH, PLANK or USDG on its way to PAPER. The owner can still choose among
+ *         such routes (e.g. when a new pool opens). Quotes (`quote`) are what FirePsa charges for a dollar amount.
  */
 contract PaperBurner is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -50,7 +52,8 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
 
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint256 public constant BPS = 10_000;
-    uint256 public constant SWAP_MIN_BPS = 9_000;
+    uint256 public constant SWAP_MIN_BPS = 9_500;
+    uint256 public constant MAX_HALVINGS = 6; // smallest piece tried: 1/64 of what's held
     uint256 public constant MAX_ROUTES = 4;
     uint256 public constant ETH_FEED_MAX_AGE = 25 hours;
     uint256 public constant PLANK_FEED_MAX_AGE = 2 hours;
@@ -78,6 +81,7 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
     error ZeroAddress();
     error BadRoute();
     error FeedUnavailable();
+    error FeedsAlreadySet();
 
     constructor(
         address owner_,
@@ -110,7 +114,11 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
         for (uint256 i; i < routes.length; i++) {
             address[] calldata r = routes[i];
             if (r.length < 2 || r.length > 4 || r[0] != input || r[r.length - 1] != address(PAPER)) revert BadRoute();
-            for (uint256 j = 1; j < r.length - 1; j++) if (r[j] == address(0) || r[j] == address(PAPER)) revert BadRoute();
+            for (uint256 j = 1; j < r.length - 1; j++) {
+                // only the known tokens in between: a route can't send fees through a pool of someone's own token
+                address t = r[j];
+                if (t == input || (t != WETH && t != address(PLANK) && (t != address(USDG) || t == address(0)))) revert BadRoute();
+            }
         }
         address[][] storage rs = _routes[pay];
         while (rs.length != 0) rs.pop();
@@ -121,8 +129,10 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
         emit RoutesSet(pay, routes);
     }
 
-    /// @notice The price feeds: ETH/USD (8 decimals), PlankUsdTwap and PaperUsdTwap (18 decimals each).
+    /// @notice The price feeds: ETH/USD (8 decimals), PlankUsdTwap and PaperUsdTwap (18 decimals each). Set once:
+    ///         a feed the owner could swap later could also turn off the guard.
     function setFeeds(address eth, address plank, address paper) external onlyOwner {
+        if (address(paperUsd) != address(0)) revert FeedsAlreadySet();
         if (eth == address(0) || plank == address(0) || paper == address(0)) revert ZeroAddress();
         if (_decimals(eth) != 8 || _decimals(plank) != 18 || _decimals(paper) != 18) revert FeedUnavailable();
         ethUsd = IBurnFeed(eth);
@@ -135,17 +145,24 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
 
     /// @notice Spend everything held in `pay` on PAPER and burn it, if the guard allows. Returns the PAPER burned.
     function flush(Pay pay) public nonReentrant returns (uint256 out) {
-        uint256 amount = pay == Pay.ETH ? address(this).balance : IERC20(_token(pay)).balanceOf(address(this));
-        if (amount == 0) return 0;
-        uint256 minOut = _minPaper(pay, amount);
-        if (minOut == 0) {
-            emit Waiting(pay, amount);
-            return 0;
-        }
-        (uint256 a, uint256 b, uint256 inA, uint256 quoted) = _plan(pay, amount);
-        if (quoted < minOut) {
-            emit Waiting(pay, amount);
-            return 0;
+        uint256 held = pay == Pay.ETH ? address(this).balance : IERC20(_token(pay)).balanceOf(address(this));
+        if (held == 0) return 0;
+        // the whole amount, else the biggest piece (half, a quarter, ...) the guard allows
+        uint256 amount = held;
+        uint256 minOut;
+        uint256 a;
+        uint256 b;
+        uint256 inA;
+        for (uint256 k; ; k++) {
+            minOut = _minPaper(pay, amount);
+            uint256 quoted;
+            if (minOut != 0) (a, b, inA, quoted) = _plan(pay, amount);
+            if (minOut != 0 && quoted >= minOut) break;
+            if (minOut == 0 || k == MAX_HALVINGS || amount < 2) {
+                emit Waiting(pay, held);
+                return 0;
+            }
+            amount /= 2;
         }
         address[][] storage rs = _routes[pay];
         uint256 before = PAPER.balanceOf(DEAD);
@@ -154,7 +171,7 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
         if (_swap(pay, rs[a], inA, minA)) spent = inA;
         if (inA < amount && _swap(pay, rs[b], amount - inA, minOut - minA)) spent += amount - inA;
         out = PAPER.balanceOf(DEAD) - before;
-        if (spent < amount) emit Waiting(pay, amount - spent);
+        if (spent < held) emit Waiting(pay, held - spent);
         if (spent > 0) emit Burned(pay, spent, out);
     }
 

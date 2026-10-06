@@ -1473,7 +1473,8 @@ contract SaleTest is SeriesHelper {
         paperUsd.set(0.08e18);
         assertEq(sale.paperFor(2, 2), 2e18, "under $1 a PAPER: the full PAPER");
         paperUsd.setBroken(true);
-        assertEq(sale.paperFor(2, 2), 2e18, "no price: the drop's PAPER per pack");
+        assertEq(sale.lastPaperCap(), 0.2e18, "the last cap a buy saw");
+        assertEq(sale.paperFor(2, 2), 0.4e18, "no price: the last cap holds, never back to an uncapped pack");
     }
 
     /// Setting a drop up locks its Series (recipe, characters, dealer, images, odds) before anyone can buy.

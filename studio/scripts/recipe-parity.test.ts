@@ -103,7 +103,7 @@ describe.runIf(!process.env.WRITE_RECIPE_CASES && existsSync(FIXTURE))('recipe p
   it('same verdict (and the same first reason) and the same pools for every pack count', () => {
     fx.cases.forEach((c, i) => {
       const want = fx.results[i]
-      const problems = checkRecipe(recipeFromJson(c)).filter((p) => p.code !== 'Studio' && p.code !== 'BadOdds' && p.code !== 'Infeasible')
+      const problems = checkRecipe(recipeFromJson(c)).filter((p) => p.code !== 'Studio' && p.code !== 'BadOdds') // check() dry-runs the pool too
       if (!want.ok) {
         expect(problems[0]?.code, `case ${i}`).toBe(want.error)
         return

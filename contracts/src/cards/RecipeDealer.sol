@@ -175,12 +175,7 @@ contract RecipeDealer is IDealer, Ownable2Step {
     function setRecipe(uint256 fire, Recipe calldata r) external onlyOwner {
         _checkOpen(fire);
         (bytes memory planBytes, uint256 perPack) = COMPILER.compile(r);
-        // dry runs: the floor holds for small, odd and huge Series (it is built to hold for every size)
-        COMPILER.pool(planBytes, 1, 1);
-        COMPILER.pool(planBytes, 2, 1);
-        COMPILER.pool(planBytes, 7, 1);
-        COMPILER.pool(planBytes, 7, 1_000);
-        COMPILER.pool(planBytes, 1_000_003, 1);
+        // (compile also dry-runs the pool: the floor holds for small, odd and huge Series)
         _replace(_planData[fire], planBytes);
         Recipe memory m = r;
         _replace(_recipeData[fire], abi.encode(m));

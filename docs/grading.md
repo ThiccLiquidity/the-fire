@@ -18,8 +18,8 @@ and burn PAPER). Prices and pricing models are in `docs/omni-economy.md`.
 ## Fresh odds
 
 A card cased or graded within **24 hours** of opening (being dealt) grades from its Series' fresh odds, set per Series
-in the studio and fixed once the Series' first pack is minted. Fresh cards only grade **5-10**: grades 1-4 come only
-from time.
+in the studio and fixed once its drop is set up (`configureDrop` locks the Series). Fresh cards only grade **5-10**:
+grades 1-4 come only from time.
 
 Standard fresh odds:
 
@@ -32,7 +32,8 @@ Standard fresh odds:
 The wear rules are built into `FirePsa` as constants: the same for every Series, and nobody can change them.
 
 1. **Fresh grade** `g0`: rolled from the Series' fresh odds (5-10).
-2. **Moves.** Each of the first 10 wallet-to-wallet moves of an uncased, ungraded card (sales and plain transfers)
+2. **Moves.** Each of the first 10 wallet-to-wallet moves of an uncased, ungraded card (sales and plain transfers;
+   sending a card to your own wallet doesn't count)
    takes a grade off with a 20% chance. Moves alone never take a card below 5 (a draw that would is re-drawn, so the
    odds above 5 keep their shape).
 3. **Time.** Time uncased after the first free 24 hours, `t` in years, takes `D` grades off, `D` drawn from a Poisson
@@ -78,8 +79,8 @@ test checks the contract against it).
 
 Each card look has 12 finished images, all built by the studio before upload:
 `c<character>-<type>-<holo>-<state>.webp`, state `u` (ungraded), `c` (cased) or `1`-`10` (slabbed, that grade's wear
-frame and seal). The case and slab overlays are two fixed PNGs drawn on top of the finished card. A card switches
-images when it is cased or graded; nothing is drawn live.
+frame and seal). The case and slab are drawn by the studio over the finished card, the same for every card. A card
+switches images when it is cased or graded; nothing is drawn live.
 
 ## Metadata
 
@@ -92,11 +93,13 @@ images when it is cased or graded; nothing is drawn live.
 - Paid in ETH, USDG or PLANK, like packs. **100% of every fee buys PAPER and burns it**, none of it goes to us. The
   100% is fixed in the contract.
 - The purchase goes through the best route among the known PAPER pools (direct, or through PLANK), split across two
-  when that gives more, guarded by the PAPER price feed. If the guard says a pool is off, the fee goes to the burn
-  wallet instead (as with packs).
+  when that gives more, guarded by the PAPER price feed: the buy must get at least 95% of the PAPER the feed says the
+  fee is worth. If the whole amount wouldn't, it tries half, a quarter and so on; if no piece would, or a price is
+  missing, nothing is spent and the fee waits in `PaperBurner` for a later buy. `PaperBurner` has no withdraw, its
+  router is fixed, its price feeds are set once, and its routes may only pass through WETH, PLANK or USDG.
 
 ## Locks
 
-| Fixed forever | Fixed per Series at its first pack | Owner can change (announced) |
+| Fixed forever | Fixed per Series when its drop is set up | Owner can change (announced) |
 |---|---|---|
 | Wear rules (time, moves, fade-in), 24h fresh window, 100% fee burn, slabs final, cards per free pack 42, pack PAPER cap $1 | Fresh odds, recipe, characters, dealer, card images | Case and grading prices, cards per grading batch, the PAPER feed, routes |

@@ -176,6 +176,10 @@ contract PsaTest is SeriesHelper {
         (,,,, uint256 age0, uint256 m0) = cards.wearOf(1);
         assertEq(age0, 0);
         assertEq(m0, 0, "dealing isn't a move");
+        vm.prank(alice);
+        cards.transferFrom(alice, alice, 1);
+        (,,,,, uint256 mSelf) = cards.wearOf(1);
+        assertEq(mSelf, 0, "sending a card to your own wallet isn't a move");
         for (uint256 i; i < 12; i++) {
             address from = i % 2 == 0 ? alice : bob;
             address to = i % 2 == 0 ? bob : alice;
