@@ -140,7 +140,7 @@
     const t = Store.tease();
     if (t && !t.live) for (const box of [$('#buybox'), $('#buybar')]) {
       const card = document.createElement('div'); card.className = 'tease-inline';
-      card.innerHTML = `<div class="ti-fan"></div><div class="ti-text"><small>Coming next</small><b>Series ${t.no}</b><span>${esc(t.name)} leads it</span><button class="btn small gold" type="button" data-buy="announce">See the cards</button></div>`;
+      card.innerHTML = `<div class="ti-fan"></div><div class="ti-text"><small>Coming next</small><b>Series ${t.no}</b><span>${esc(t.name)} leads it</span><button class="btn small gold" type="button" data-buy="announce">Sneak peek</button></div>`;
       card.querySelector('.ti-fan').append(Announce.fan(t, { mini: true }));
       card.querySelector('.ti-fan').onclick = () => Announce.open();
       box.querySelector('.phase').after(card);
@@ -153,7 +153,7 @@
     const t = Store.tease();
     document.querySelectorAll('[data-peek]').forEach((b) => { b.hidden = !t; });
     if (!t) return;
-    $('#pPeekT').firstChild.textContent = `Series ${t.no}`; $('#pPeek').textContent = t.live ? 'See the cards' : 'Sneak peek';
+    $('#pPeekT').firstChild.textContent = `Series ${t.no}`; $('#pPeek').textContent = 'Sneak peek';
     $('#sPeekT').textContent = t.live ? `What's in Series ${t.no}` : `Series ${t.no} sneak peek`;
     $('#sPeek').textContent = `${t.name} in every card type`;
   }
