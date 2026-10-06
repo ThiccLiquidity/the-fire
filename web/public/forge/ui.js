@@ -120,7 +120,8 @@
   }
   function buyButtons() {
     const ph = PH[S.series.phase], w = S.wallet, out = [];
-    if (sold()) return { line: `Series ${S.series.no} sold out`, opts: [Stations.openableCount() ? ['open', 'Open your packs', `Series ${S.series.no + 1} soon`, 'alt'] : ['cards', 'My cards', `Series ${S.series.no + 1} soon`, 'alt']] };
+    if (sold()) return { line: `Series ${S.series.no} sold out`, opts: [Stations.openableCount() ? ['open', 'Open your packs', `Series ${S.series.no + 1} soon`, 'alt'] : ['cards', 'My cards', `Series ${S.series.no + 1} soon`, 'alt'],
+      ['announce', `See Series ${S.series.no + 1}`, 'Announced', 'gold']] };
     let sub2 = ph.plankOnly ? `PLANK only · ${S.series.plankOnly - S.series.plankSold} left` : ph.sub;
     out.push(['buy', 'Buy packs', `$2.50 + 1 PAPER<br>${sub2}`, 'main']);
     if (S.series.phase <= 1 && !w.starterClaimed && S.series.startersClaimed < S.series.starters) out.push(['starter', 'Press pack', 'Press holders<br>1 PAPER', 'alt']);
@@ -133,7 +134,7 @@
       `<button class="opt ${cls}" type="button" data-buy="${k}">${k === 'buy' ? '<img class="mini" src="a/pack.webp" alt="">' : ''}<span>${t}<small>${sub}</small></span></button>`).join('') + '</div>';
     $('#buybox').innerHTML = html; $('#buybar').innerHTML = html;
     $('#buybox').classList.toggle('calm', sold()); $('#buybar').classList.toggle('calm', sold());
-    for (const b of document.querySelectorAll('[data-buy]')) b.onclick = () => ({ buy: checkout, starter, free: useFree, open: () => openStation('open'), cards: () => openStation('cards') })[b.dataset.buy]?.();
+    for (const b of document.querySelectorAll('[data-buy]')) b.onclick = () => ({ buy: checkout, starter, free: useFree, open: () => openStation('open'), cards: () => openStation('cards'), announce: () => Announce.open() })[b.dataset.buy]?.();
   }
   function renderCounts() {
     const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0), b = S.wallet.burnCount % 42;
@@ -296,7 +297,7 @@
   function openDemo() {
     const d = Sheet.open('demo', { title: 'Demo controls', body: `<p class="lead">Jump the demo to any stage of a sale.</p><div class="menu">
       <button class="btn" type="button" data-d="phase">Next phase</button><button class="btn" type="button" data-d="sold">Sold-out show</button>
-      <button class="btn" type="button" data-d="auto">${auto ? 'Stop' : 'Start'} crowd</button><button class="btn" type="button" data-d="credit">+1 free pack</button>
+      <button class="btn" type="button" data-d="auto">${auto ? 'Stop' : 'Start'} crowd</button><button class="btn" type="button" data-d="credit">+1 free pack</button><button class="btn" type="button" data-d="announce">Announce next Series</button>
       <button class="btn" type="button" data-d="holder">${S.wallet.isPressHolder || S.wallet.inSnapshot ? 'Make not a holder' : 'Make a holder'}</button><button class="btn" type="button" data-d="bot">${S.wallet.isContract ? 'Regular wallet' : 'Contract wallet'}</button>
       <button class="btn" type="button" data-d="reset">Reset</button></div>` });
     d.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => {
@@ -305,6 +306,7 @@
       if (k === 'sold') { const n = Math.min(3, Store.left()); Store.update((s) => { s.series.sold = s.series.total - s.series.startersClaimed - n; }); Scene?.buy(n); }
       if (k === 'auto') { if (auto) { clearInterval(auto); auto = null; } else auto = setInterval(() => { if (Store.left() > 0) { crowd++; Scene?.buy(1); } }, 3200); }
       if (k === 'credit') Store.update((s) => { s.wallet.credits++; });
+      if (k === 'announce') Announce.open();
       if (k === 'holder') Store.update((s) => { const v = !(s.wallet.isPressHolder || s.wallet.inSnapshot); s.wallet.isPressHolder = v; s.wallet.inSnapshot = v; });
       if (k === 'bot') Store.update((s) => { s.wallet.isContract = !s.wallet.isContract; });
       if (k === 'reset') location.reload();

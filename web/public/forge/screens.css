@@ -537,3 +537,38 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .gslot.slabbed .stamp { animation: stamp .42s cubic-bezier(.3,1.4,.5,1) both, stamp-off .5s 1.3s ease-in forwards }
 @keyframes stamp-off { to { opacity: 0; transform: translate(-50%, -60%) rotate(-12deg) scale(1.15) } }
 @media (prefers-reduced-motion: reduce) { .gslot.slabbed .stamp { animation: none; opacity: 0 } }
+
+/* ---------- the Series announcement: a hand of cards pinched at the bottom, Full Art in front */
+.announce { display: grid; justify-items: center; gap: 10px; text-align: center; padding-bottom: 6px }
+.announce h3 { margin: 0; font: 400 22px var(--display) }
+.announce .muted { margin: 0; max-width: 420px }
+.ann-kicker { margin: 0; font: 800 13px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--gold) }
+.fan { position: relative; width: min(220px, 52vw); aspect-ratio: 5 / 7; margin: 70px 0 22px; cursor: pointer; outline: none;
+  filter: drop-shadow(0 18px 26px rgba(0,0,0,.55)) }
+.fan::after { content: ''; position: absolute; left: 10%; right: 10%; bottom: -30px; height: 26px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255,190,90,.28), transparent); pointer-events: none }
+.fan-card { position: absolute; inset: 0; transform-origin: 50% 96%; border-radius: 5%; overflow: visible;
+  transform: translateY(var(--lift)) rotate(var(--rot)); animation: fan-float 4.6s ease-in-out var(--delay) infinite;
+  transition: transform .45s cubic-bezier(.2,.8,.3,1) }
+.fan-card > img, .fan-card .fa { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 5%; user-select: none }
+.fan.open .fan-card, .fan:hover .fan-card, .fan:focus-visible .fan-card { --rot-extra: var(--spread) }
+.fan-card { rotate: var(--rot-extra, 0deg); transition: rotate .45s cubic-bezier(.2,.8,.3,1) }
+@keyframes fan-float { 0%, 100% { translate: 0 0 } 50% { translate: 0 -7px } }
+.fan-tag { position: absolute; left: 50%; top: -24px; transform: translateX(-50%); white-space: nowrap; padding: 3px 8px; border-radius: 999px;
+  font: 800 11px/1 var(--body); background: rgba(16,12,9,.85); border: 1px solid var(--line-2); color: var(--ink); opacity: 0; transition: opacity .3s }
+.fan.open .fan-tag, .fan:hover .fan-tag, .fan:focus-visible .fan-tag { opacity: 1 }
+.fan-card.k-fullart .fan-tag { color: var(--gold); border-color: var(--brass) }
+/* stand-ins until the real frames exist: Gold tints the Diamond card, Full Art is the art with a slim gold rim */
+.fan-gold { position: absolute; inset: 0; border-radius: 5%; background: linear-gradient(135deg, #ffe08a, #c8901e 45%, #ffeaa8 70%, #b07818);
+  mix-blend-mode: multiply; pointer-events: none }
+.fan-card .fa { overflow: hidden; box-shadow: inset 0 0 0 3px #f7d774, inset 0 0 0 5px #8a5a10, 0 0 22px rgba(255,210,120,.55) }
+.fan-card .fa img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover }
+.fan-card .fa::after { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.35) 45%, transparent 60%);
+  background-size: 250% 100%; animation: fa-shine 3.8s ease-in-out infinite; mix-blend-mode: screen }
+@keyframes fa-shine { 0% { background-position: 120% 0 } 60%, 100% { background-position: -40% 0 } }
+.fan-card .fa b { position: absolute; left: 8%; right: 8%; top: 4.5%; padding: 4px 0; border-radius: 8px; background: rgba(20,14,8,.55);
+  font: 400 clamp(14px, 4.4vw, 20px) var(--display); color: #fff7e8; text-shadow: 0 2px 0 #1a1410 }
+.fan-card .fa i { position: absolute; left: 50%; bottom: 5%; transform: translateX(-50%); padding: 3px 10px; border-radius: 999px; font: 800 12px var(--body);
+  font-style: normal; letter-spacing: .12em; text-transform: uppercase; color: #3a2606; background: linear-gradient(#fff3c4, #f0c45a) }
+@media (prefers-reduced-motion: reduce) { .fan-card, .fan-card .fa::after { animation: none } }
+@media (max-width: 600px) { .fan { width: 46vw; margin-top: 60px } .fan.open .fan-card { --rot-extra: calc(var(--spread) * .5) } }
