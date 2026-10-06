@@ -15,7 +15,7 @@ export const BUILTIN_FONTS: { label: string; css: string }[] = [
 
 /** Layouts saved before the built-in frames existed were made for placeholder frames; they are replaced by the
  *  defaults below. Bump when the default layout changes in a way old saved layouts must not keep. */
-export const LAYOUT_VERSION = 5
+export const LAYOUT_VERSION = 4
 
 /** Text colours per frame: Paper, Wood and Diamond have light panels (dark ink); Burning and Coal have dark panels
  *  (light ink). `window` fills the art window behind keyed art. */
@@ -47,12 +47,6 @@ function tb(box: Rect, over: Partial<TextStyle>): TextBox {
   return { box, style: style(over), visible: true }
 }
 
-/** Frame sets whose name bar isn't where the shared FRAME_GEOMETRY puts it. Gold is drawn smaller inside its canvas
- *  (y 88-2008 of 2100), so its name bar sits lower: y 144-268. */
-const NAME_BAR: Record<string, Rect> = {
-  gold: { x: 150, y: 150, w: 1200, h: 112 },
-}
-
 /** The default layout of a frame set (layouts are per frame set; every card type using the set shares it). */
 export function defaultLayout(material: string): Layout {
   const ink = INK[material] ?? NEUTRAL_INK
@@ -71,7 +65,7 @@ export function defaultLayout(material: string): Layout {
     layering: 'art-behind',
     art: { box: artBoxOf(material), fit: 'cover', scale: 1, offsetX: 0, offsetY: 0, background: ink.window },
     text: {
-      name: tb({ ...(NAME_BAR[material] ?? g.nameBar) }, { ...c, size: 104, align: 'center' }),
+      name: tb({ ...g.nameBar }, { ...c, size: 104, align: 'center' }),
       material: tb({ x: info.x, y: info.y + 4, w: textW, h: 110 }, { ...c, size: 96, uppercase: true }),
       category: tb({ x: info.x, y: info.y + 118, w: textW, h: 66 }, { ...c, size: 58, bold: false }),
       forged: tb({ x: info.x, y: info.y + 186, w: textW, h: 58 }, { ...c, size: 48, bold: false, italic: true }),
@@ -98,10 +92,6 @@ export function normalizeLayout(material: string, stored: Partial<Layout> | unde
     const font = t.name?.style.font
     t.forged = { ...d.text.forged, style: { ...d.text.forged.style, ...(font ? { font, color: t.category?.style.color ?? d.text.forged.style.color } : {}) } }
     stored = { ...stored, text: t }
-  }
-  // v4 -> v5: Gold's name box moved onto Gold's own name bar
-  if ((stored.version ?? 0) < 5 && NAME_BAR[material] && stored.text?.name) {
-    stored = { ...stored, text: { ...stored.text, name: { ...stored.text.name, box: { ...d.text.name.box } } } }
   }
   return {
     ...d,
