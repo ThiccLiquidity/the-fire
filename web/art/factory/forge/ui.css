@@ -156,3 +156,22 @@ body[data-mode=land] #buybox { display: none }
 body[data-mode=land] .buybar { display: grid; position: fixed; right: 0; top: var(--top); bottom: 0; width: 240px; box-sizing: border-box; padding: 10px; gap: 8px; align-content: start; background: #0d0907; border-left: 2px solid #ffbf5e; z-index: 6; --fs: 13px; overflow: auto }
 body[data-mode=land] .buybar .opts { flex-direction: column } body[data-mode=land] .buybar .opt { white-space: normal }
 body[data-mode=land] .pill small { display: none } body[data-mode=land] .pill { min-height: 40px; padding: .4em .8em }
+/* Series sneak peek: the next Series' tease, on the scene (desktop) and in the stations (phone) */
+.peek-fan { position: relative; display: inline-block; width: 30px; height: 34px; flex: none }
+.peek-fan img { position: absolute; bottom: 0; left: 6px; width: 20px; height: 28px; border-radius: 3px; transform-origin: 50% 95%; box-shadow: 0 2px 6px rgba(0,0,0,.6) }
+.peek-fan img:first-child { transform: rotate(-14deg) } .peek-fan img:last-child { transform: rotate(9deg) }
+.pill.peek { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,210,122,.14), 0 0 18px rgba(255,210,122,.3), 0 4px 14px rgba(0,0,0,.5) }
+.station.peek { grid-column: 1 / -1; border-color: var(--gold); background: linear-gradient(90deg, rgba(255,210,122,.16), rgba(31,23,16,.95) 60%) }
+.station.peek .peek-fan { grid-row: 1 / 3; width: 34px; height: 40px } .station.peek .peek-fan img { width: 24px; height: 34px }
+.station.peek b { color: var(--gold) }
+/* between Series: the next Series' tease on the main page, in the Buy box (desktop) and the Buy bar (phone) */
+.tease-inline { display: flex; align-items: center; gap: 14px; padding: 8px 12px 8px 6px; border-radius: 14px; border: 1.5px solid rgba(255,210,122,.55);
+  background: linear-gradient(90deg, rgba(255,210,122,.14), rgba(20,14,9,.6)) }
+.ti-fan { cursor: pointer; flex: none; padding: 14px 10px 2px }
+.ti-text { display: grid; gap: 2px; text-align: left } .ti-text small { font: 800 11px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--gold) }
+.ti-text b { font: 400 20px/1.1 var(--display); color: var(--ink) } .ti-text span { color: var(--muted); font-size: 13px } .ti-text .btn { justify-self: start; margin-top: 4px }
+.fan.mini { width: 62px; margin: 0; filter: drop-shadow(0 6px 10px rgba(0,0,0,.6)) }
+.fan.mini::after { display: none } .fan.mini .fan-tag { display: none }
+.fan.mini .fan-card { --lift-scale: .3 }
+body[data-mode=port] .buybar .tease-inline { padding: 6px 10px 6px 4px } body[data-mode=port] .buybar .ti-fan { padding: 12px 10px 2px 22px }
+body[data-mode=port] .buybar .fan.mini { width: 52px }

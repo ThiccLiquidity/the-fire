@@ -1,6 +1,7 @@
-/* Omni Forge (demo mode): the Series announcement. One character in every card type, held like a hand of cards
-   pinched at the bottom: Full Art in front, then Gold, Coal, Fire, Wood and Paper behind it, their tops fanned out and
-   gently floating. Opens from the Buy box once the next Series is announced, and from the demo controls.
+/* Omni Forge (demo mode): the Series tease. One character in every card type, held like a hand of cards pinched at
+   the bottom: Full Art in front, then Gold, Coal, Fire, Wood and Paper behind it, their tops fanned out and gently
+   floating. Which Series and character: Store.tease() (the Series on sale, or between Series the next one). While a
+   Series is on sale it shows what's in its packs; between Series a small hand sits on the main page (Buy box / bar).
    The cards are ui/announce/<character>-<type>.webp, rendered by the Card Studio (raw, 720 x 1008). */
 (() => {
   const S = () => Store.state;
@@ -9,9 +10,7 @@
     { kind: 'paper', label: 'Paper' }, { kind: 'wood', label: 'Wood' }, { kind: 'fire', label: 'Fire' },
     { kind: 'charcoal', label: 'Coal' }, { kind: 'gold', label: 'Gold' }, { kind: 'fullart', label: 'Full Art' },
   ];
-  const CAST = { id: 'bowling', name: 'Bowling Ball' }; // demo: the character shown for the next Series
-
-  function card(c, i, n) {
+  function card(c, i, n, cast) {
     const el = document.createElement('div');
     el.className = `fan-card k-${c.kind}`;
     const depth = n - 1 - i; // 0 = front
@@ -22,34 +21,37 @@
     el.style.setProperty('--spread', `${depth ? side * (4 + depth * 2.5) : 0}deg`); // extra turn on hover
     el.style.setProperty('--delay', `${-i * 0.55}s`);
     el.style.zIndex = String(i + 1);
-    el.innerHTML = `<img src="ui/announce/${CAST.id}-${c.kind}.webp" alt="" draggable="false">${c.kind === 'gold' || c.kind === 'fullart' ? '<i class="fan-shine" aria-hidden="true"></i>' : ''}`;
+    el.innerHTML = `<img src="ui/announce/${cast.id}-${c.kind}.webp" alt="" draggable="false">${c.kind === 'gold' || c.kind === 'fullart' ? '<i class="fan-shine" aria-hidden="true"></i>' : ''}`;
     el.insertAdjacentHTML('beforeend', `<span class="fan-tag">${c.label}</span>`);
     return el;
   }
 
-  function fan() {
+  /** The hand of cards. `mini`: the small one on the main page (no labels; tapping it opens the full tease). */
+  function fan(cast, { mini = false } = {}) {
     const box = document.createElement('div');
-    box.className = 'fan';
+    box.className = 'fan' + (mini ? ' mini' : '');
     box.setAttribute('role', 'img');
-    box.setAttribute('aria-label', `${CAST.name} in every card type, fanned out: Full Art in front, then Gold, Coal, Fire, Wood and Paper`);
-    HAND.forEach((c, i) => box.append(card(c, i, HAND.length)));
-    // tap or hover spreads the hand a little wider
-    box.tabIndex = 0;
-    box.onclick = () => box.classList.toggle('open');
+    box.setAttribute('aria-label', `${cast.name} in every card type, fanned out: Full Art in front, then Gold, Coal, Fire, Wood and Paper`);
+    HAND.forEach((c, i) => box.append(card(c, i, HAND.length, cast)));
+    if (!mini) { // tap or hover spreads the hand a little wider
+      box.tabIndex = 0;
+      box.onclick = () => box.classList.toggle('open');
+    }
     return box;
   }
 
   function open() {
-    const no = S().series.no + 1;
+    const t = Store.tease(); if (!t) return;
     const body = document.createElement('div');
     body.className = 'announce';
+    const el = (tag, cls, text) => Object.assign(document.createElement(tag), { className: cls, textContent: text });
     body.append(
-      Object.assign(document.createElement('p'), { className: 'ann-kicker', textContent: `Series ${no} announced` }),
-      fan(),
-      Object.assign(document.createElement('h3'), { textContent: `${CAST.name} leads Series ${no}` }),
-      Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Every character comes in Paper, Wood, Fire, Coal and Gold, plus one Full Art each. Tap the hand to spread it.' }),
+      el('p', 'ann-kicker', t.live ? `Series ${t.no} · on sale now` : `Series ${t.no} announced`),
+      fan(t),
+      el('h3', '', t.live ? `${t.name} in Series ${t.no}` : `${t.name} leads Series ${t.no}`),
+      el('p', 'muted', `${t.live ? 'This is what a Series ' + t.no + ' pack can hold. ' : ''}Every character comes in Paper, Wood, Fire, Coal and Gold, plus one Full Art each. Tap the hand to spread it.`),
     );
-    Sheet.open('announce', { title: `Series ${no}`, body });
+    Sheet.open('announce', { title: `Series ${t.no}`, body });
   }
 
   window.Announce = { open, fan };

@@ -47,12 +47,14 @@
     <button class="pill openp" type="button" data-st="open" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
     <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small>$0.05 · $1</small></span></button>
     <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small>1 PAPER</small></span></button>
+    <button class="pill peek" type="button" data-peek data-x="2880" data-y="700" style="--c: var(--gold)"><span class="peek-fan" aria-hidden="true"><img src="ui/announce/bowling-gold.webp" alt=""><img src="ui/announce/bowling-fullart.webp" alt=""></span><span id="pPeekT">Series 8<small id="pPeek">Sneak peek</small></span></button>
   </div>
   <section class="stations" aria-label="Stations">
     <button class="station" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
     <button class="station" type="button" data-st="cards" style="--c: var(--wood)">${svg('cards')}<b>My cards</b><small id="sCards"></small></button>
     <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small>$0.05 · $1</small></button>
     <button class="station" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small>1 PAPER</small></button>
+    <button class="station peek" type="button" data-peek><span class="peek-fan" aria-hidden="true"><img src="ui/announce/bowling-gold.webp" alt=""><img src="ui/announce/bowling-fullart.webp" alt=""></span><b id="sPeekT">Series 8 sneak peek</b><small id="sPeek">Bowling Ball in every card type</small></button>
     <button class="openbtn" type="button" data-st="open" id="openBtn">${svg('pack')}<span><b id="sOpenT">Open packs</b><small id="sOpen"></small></span></button>
   </section>
   <footer class="strip" aria-label="What's in a pack">
@@ -60,8 +62,8 @@
     <div class="what">
       <h3><b class="sw">SERIES 7</b> PACK<span>6 cards</span></h3>
       <table class="types" aria-label="Cards in a pack">
-        <tr><th scope="row">Material</th><td><span class="mat paper">Paper</span></td><td><span class="mat wood">Wood</span></td><td><span class="mat fire">Fire</span></td><td><span class="mat charcoal">Coal</span></td><td><span class="mat diamond">Diamond</span></td></tr>
-        <tr><th scope="row">Per pack</th><td>3</td><td>1–2</td><td colspan="3" class="span">At least 1 of these</td></tr>
+        <tr><th scope="row">Material</th><td><span class="mat paper">Paper</span></td><td><span class="mat wood">Wood</span></td><td><span class="mat fire">Fire</span></td><td><span class="mat charcoal">Coal</span></td><td><span class="mat gold">Gold</span></td><td><span class="mat fullart">Full Art</span></td></tr>
+        <tr><th scope="row">Per pack</th><td>3</td><td>1–2</td><td colspan="4" class="span">At least 1 of these</td></tr>
       </table>
     </div>
     <button class="btn small more" type="button" data-go="info-cards">Rarity</button>
@@ -102,6 +104,7 @@
   }
   addEventListener('resize', layout);
 
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`); // for text typed by people (names)
   // ---------- the Series: phases, numbers, chip
   const PH = [
     { line: 'Holders first', window: 17, sub: 'PLANK only', plankOnly: true },
@@ -121,7 +124,7 @@
   function buyButtons() {
     const ph = PH[S.series.phase], w = S.wallet, out = [];
     if (sold()) return { line: `Series ${S.series.no} sold out`, opts: [Stations.openableCount() ? ['open', 'Open your packs', `Series ${S.series.no + 1} soon`, 'alt'] : ['cards', 'My cards', `Series ${S.series.no + 1} soon`, 'alt'],
-      ['announce', `See Series ${S.series.no + 1}`, 'Announced', 'gold']] };
+    ] };
     let sub2 = ph.plankOnly ? `PLANK only · ${S.series.plankOnly - S.series.plankSold} left` : ph.sub;
     out.push(['buy', 'Buy packs', `$2.50 + 1 PAPER<br>${sub2}`, 'main']);
     if (S.series.phase <= 1 && !w.starterClaimed && S.series.startersClaimed < S.series.starters) out.push(['starter', 'Press pack', 'Press holders<br>1 PAPER', 'alt']);
@@ -133,8 +136,26 @@
     const html = `<div class="phase">${line}</div><div class="opts">` + opts.map(([k, t, sub, cls]) =>
       `<button class="opt ${cls}" type="button" data-buy="${k}">${k === 'buy' ? '<img class="mini" src="../build3/pack.webp" alt="">' : ''}<span>${t}<small>${sub}</small></span></button>`).join('') + '</div>';
     $('#buybox').innerHTML = html; $('#buybar').innerHTML = html;
+    // between Series: the next Series' tease sits right here on the main page
+    const t = Store.tease();
+    if (t && !t.live) for (const box of [$('#buybox'), $('#buybar')]) {
+      const card = document.createElement('div'); card.className = 'tease-inline';
+      card.innerHTML = `<div class="ti-fan"></div><div class="ti-text"><small>Coming next</small><b>Series ${t.no}</b><span>${esc(t.name)} leads it</span><button class="btn small gold" type="button" data-buy="announce">Sneak peek</button></div>`;
+      card.querySelector('.ti-fan').append(Announce.fan(t, { mini: true }));
+      card.querySelector('.ti-fan').onclick = () => Announce.open();
+      box.querySelector('.phase').after(card);
+    }
     $('#buybox').classList.toggle('calm', sold()); $('#buybar').classList.toggle('calm', sold());
     for (const b of document.querySelectorAll('[data-buy]')) b.onclick = () => ({ buy: checkout, starter, free: useFree, open: () => openStation('open'), cards: () => openStation('cards'), announce: () => Announce.open() })[b.dataset.buy]?.();
+  }
+  // the peek buttons: what's in the Series on sale, or between Series a sneak peek of the next one
+  function renderPeek() {
+    const t = Store.tease();
+    document.querySelectorAll('[data-peek]').forEach((b) => { b.hidden = !t; });
+    if (!t) return;
+    $('#pPeekT').firstChild.textContent = `Series ${t.no}`; $('#pPeek').textContent = 'Sneak peek';
+    $('#sPeekT').textContent = t.live ? `What's in Series ${t.no}` : `Series ${t.no} sneak peek`;
+    $('#sPeek').textContent = `${t.name} in every card type`;
   }
   function renderCounts() {
     const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0), b = S.wallet.burnCount % 42;
@@ -157,7 +178,7 @@
   }
   let bbH = 0;
   function render() {
-    renderChip(); renderBuy(); renderCounts(); syncScene(); placePills();
+    renderChip(); renderBuy(); renderPeek(); renderCounts(); syncScene(); placePills();
     const h = mode === 'port' ? $('#buybar').offsetHeight : 0; if (h !== bbH) { bbH = h; if (h) layout(); } // the Buy bar changed height: keep the stations clear of it
   }
   Store.on(render);
@@ -170,7 +191,6 @@
     setTimeout(then, 200);
   }
   $('#walletBtn').onclick = () => needWallet(openWallet);
-  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`); // the demo name is typed by the player
   function openWallet() {
     const w = S.wallet, nm = esc(w.name), sealed = Object.entries(S.sealed).filter(([, n]) => n).map(([k, n]) => `${n} from Series ${k}`).join(', ') || 'none';
     const d = Sheet.open('wallet', { title: w.name || 'Wallet', body: `
@@ -297,7 +317,7 @@
   function openDemo() {
     const d = Sheet.open('demo', { title: 'Demo controls', body: `<p class="lead">Jump the demo to any stage of a sale.</p><div class="menu">
       <button class="btn" type="button" data-d="phase">Next phase</button><button class="btn" type="button" data-d="sold">Sold-out show</button>
-      <button class="btn" type="button" data-d="auto">${auto ? 'Stop' : 'Start'} crowd</button><button class="btn" type="button" data-d="credit">+1 free pack</button><button class="btn" type="button" data-d="announce">Announce next Series</button>
+      <button class="btn" type="button" data-d="auto">${auto ? 'Stop' : 'Start'} crowd</button><button class="btn" type="button" data-d="credit">+1 free pack</button><button class="btn" type="button" data-d="announce">Series tease</button>
       <button class="btn" type="button" data-d="holder">${S.wallet.isPressHolder || S.wallet.inSnapshot ? 'Make not a holder' : 'Make a holder'}</button><button class="btn" type="button" data-d="bot">${S.wallet.isContract ? 'Regular wallet' : 'Contract wallet'}</button>
       <button class="btn" type="button" data-d="reset">Reset</button></div>` });
     d.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => {
@@ -332,6 +352,7 @@
   document.querySelectorAll('[data-go]').forEach((b) => b.onclick = () => go(b.dataset.go));
   $('#seriesChip').onclick = () => Info.open('buying');
   document.querySelectorAll('[data-st]').forEach((b) => b.onclick = () => openStation(b.dataset.st));
+  document.querySelectorAll('[data-peek]').forEach((b) => b.onclick = () => Announce.open());
 
   // ---------- the scene's events: a pack made is a pack sold; delivered packs land in the wallet
   let pendingDeliver = 0, crowd = 0;
