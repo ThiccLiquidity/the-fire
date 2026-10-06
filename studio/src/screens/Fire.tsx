@@ -15,7 +15,7 @@ export function FireList({ selected, onSelect }: { selected: number | null; onSe
   const create = () => run(async () => {
     const n = getStudio().global.nextFireNumber
     const now = Date.now()
-    const f: FireRecord = { number: n, characterIds: [], packs: 150, recipe: standardRecipe(1), seed: randomSeed(), createdAt: now, updatedAt: now }
+    const f: FireRecord = { number: n, characterIds: [], packs: 150, recipe: standardRecipe(), seed: randomSeed(), createdAt: now, updatedAt: now }
     await saveFire(f)
     await saveGlobal({ ...getStudio().global, nextFireNumber: n + 1 })
     onSelect(n)
