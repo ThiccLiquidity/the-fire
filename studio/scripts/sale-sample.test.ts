@@ -12,8 +12,8 @@ function sampleExport() {
   const chars = [
     { name: 'Ember Fox', category: 'Animals' }, { name: 'Ash Wolf', category: 'Animals' }, { name: 'Cinder Queen', category: 'Royals' },
   ]
-  const sale = saleJson({ ...standardSale(), start: 1_900_000_000, holderRoot: '0x' + 'ab'.repeat(32) })
-  return recipeJson(7, standardRecipe(1), chars, 'ipfs://bafyexampleimages/', sale)
+  const sale = saleJson({ ...standardSale(), start: 1_810_000_000, holderRoot: '0x' + 'ab'.repeat(32) })
+  return recipeJson(7, standardRecipe(), chars, 'ipfs://bafyexampleimages/', sale)
 }
 
 describe.runIf(process.env.WRITE_SALE_SAMPLE)('write the sample export', () => {

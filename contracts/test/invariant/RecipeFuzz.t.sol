@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {SeriesHelper} from "../cards/SeriesHelper.sol";
 
@@ -41,7 +42,7 @@ contract RecipeFuzzTest is SeriesHelper {
 
     function setUp() public {
         rig = new RigCards();
-        dealer = new RecipeDealer(address(this), address(rig));
+        dealer = new RecipeDealer(address(this), address(rig), address(new RecipeCompiler()));
     }
 
     function _r(uint256 seed, uint256 i) internal pure returns (uint256) {
@@ -156,7 +157,7 @@ contract RecipeFuzzTest is SeriesHelper {
     function testFuzz_poolAlwaysFillsEverySlot(uint256 seed, uint256 packs) public view {
         (RecipeDealer.Recipe memory r, bool[][] memory sets) = _recipe(seed);
         packs = packs % 5 == 0 ? bound(packs, 0, type(uint64).max) : bound(packs, 0, 50);
-        uint256[] memory pool = dealer.previewPool(r, packs);
+        uint256[] memory pool = dealer.previewPool(r, packs, 1);
         uint256 per = dealer.check(r);
         uint256 sum;
         for (uint256 t; t < pool.length; t++) sum += pool[t];
@@ -261,11 +262,11 @@ contract RecipeFuzzTest is SeriesHelper {
         uint256 P = 4;
         uint256[9] memory oldN;
         uint256[9] memory newN;
-        RecipeDealer.Recipe memory r = StandardRecipe.build(2);
+        RecipeDealer.Recipe memory r = StandardRecipe.classic(2);
         (string[] memory names, string[] memory cats) = _chars(1);
         for (uint256 f; f < series; f++) {
             // old
-            uint256[] memory pool = dealer.previewPool(r, P);
+            uint256[] memory pool = dealer.previewPool(r, P, 1);
             uint256[5] memory left = [pool[0], pool[1], pool[2], pool[3], pool[4]];
             uint256 packsLeft = P;
             for (uint256 p; p < P; p++) {

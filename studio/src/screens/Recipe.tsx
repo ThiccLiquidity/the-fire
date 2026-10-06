@@ -77,7 +77,7 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       ...r,
       types: [...r.types, {
         id: newId(), name, slug: uniqueSlug(slugify(name), r), rank: maxRank + 1, supply: 'count', amount: '1', maxPerPack: '0',
-        holo: { mode: 'independent', frame: '100000000000000000', picture: '100000000000000000' }, frameSet: 'diamond',
+        holo: { mode: 'independent', frame: '100000000000000000', picture: '100000000000000000' }, frameSet: 'gold',
       }],
     })
   }
@@ -208,7 +208,7 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
 
       <PdaOdds r={r} locked={locked} onChange={(pdaOdds) => set({ ...r, pdaOdds })} />
 
-      <PoolPreview r={r} packs={fire.packs} valid={valid} />
+      <PoolPreview r={r} packs={fire.packs} chars={fire.characterIds.length} valid={valid} />
     </section>
   )
 }
@@ -240,11 +240,11 @@ function TypeCard({ r, t, i, locked, problems, onChange, onMove, onRemove }: {
         <label className="field"><span className="field-label">Supply</span>
           <select value={t.supply} disabled={locked} data-testid={`type-${i}-supply`} onChange={(e) => {
             const supply = e.target.value as Supply
-            onChange({ supply, amount: supply === 'share' ? '50000000' : supply === 'perPack' ? '1' : supply === 'count' ? '1' : t.amount })
+            onChange({ supply, amount: supply === 'share' ? '50000000' : supply === 'perPack' || supply === 'count' || supply === 'perCharacter' ? '1' : t.amount })
           }}>
             {(['share', 'perPack', 'count', 'filler'] as Supply[]).map((x) => <option key={x} value={x}>{SUPPLY_LABEL[x]}</option>)}
           </select></label>
-        <label className="field"><span className="field-label">{t.supply === 'share' ? 'Share of the cards' : t.supply === 'perPack' ? 'Cards per pack' : t.supply === 'count' ? 'Cards in the Series' : 'Amount'}</span>
+        <label className="field"><span className="field-label">{t.supply === 'share' ? 'Share of the cards' : t.supply === 'perPack' ? 'Cards per pack' : t.supply === 'count' ? 'Cards in the Series' : t.supply === 'perCharacter' ? 'Cards of each character' : 'Amount'}</span>
           {t.supply === 'share' ? <PercentInput value={amount} scale={SHARE_SCALE} disabled={locked} onChange={(v) => onChange({ amount: v.toString() })} testId={`type-${i}-amount`} />
             : t.supply === 'filler' ? <span className="muted small pad">whatever is left</span>
             : <UintInput value={t.amount} disabled={locked} onChange={(v) => onChange({ amount: v })} testId={`type-${i}-amount`} />}</label>
@@ -313,11 +313,15 @@ function PdaOdds({ r, locked, onChange }: { r: Recipe; locked: boolean; onChange
   return (
     <>
       <h3>PDA odds</h3>
-      <p className="muted small">A weight per grade (FirePsa.setOdds): the chance of a grade is its weight over the total. Any total above 0.</p>
+      <p className="muted small">
+        Fresh odds: a weight per grade (FirePsa.setOdds) for a card cased or graded within a day of opening. The chance of a
+        grade is its weight over the total. PDA 1-4 stay 0: those come only from wear (time and moves, fixed forever in
+        FirePsa; docs/grading.md).
+      </p>
       <div className="row wrap pda-odds" data-testid="pda-odds">
         {r.pdaOdds.map((x, g) => (
           <label key={g} className="field"><span className="field-label">PDA {g + 1}</span>
-            <UintInput value={x} width={64} disabled={locked} onChange={(v) => onChange(r.pdaOdds.map((y, k) => (k === g ? v : y)))} testId={`pda-${g + 1}`} />
+            <UintInput value={x} width={64} disabled={locked || g < 4} onChange={(v) => onChange(r.pdaOdds.map((y, k) => (k === g ? v : y)))} testId={`pda-${g + 1}`} />
             <span className="hint">{total ? pct(w[g] / total) : '-'}</span>
           </label>
         ))}
@@ -328,7 +332,7 @@ function PdaOdds({ r, locked, onChange }: { r: Recipe; locked: boolean; onChange
 }
 
 /** The pool the recipe gives for a pack count: the contract's maths (recipe.ts previewPool), exact for any size. */
-function PoolPreview({ r, packs, valid }: { r: Recipe; packs: number; valid: boolean }) {
+function PoolPreview({ r, packs, chars, valid }: { r: Recipe; packs: number; chars: number; valid: boolean }) {
   const [text, setText] = useState(String(packs))
   useEffect(() => setText(String(packs)), [packs])
   const P = parseUint(text)
@@ -337,12 +341,13 @@ function PoolPreview({ r, packs, valid }: { r: Recipe; packs: number; valid: boo
     if (!valid || P == null) return null
     try {
       const plan = compileRecipe(r)
-      const { counts } = poolOf(plan, P)
-      return { counts, rules: rulePool(r, P), total: P * BigInt(plan.S), S: plan.S }
+      const ch = BigInt(Math.max(1, chars))
+      const { counts } = poolOf(plan, P, ch)
+      return { counts, rules: rulePool(r, P, ch), total: P * BigInt(plan.S), S: plan.S }
     } catch (e) {
       return { error: (e as Error).message }
     }
-  }, [r, P, valid])
+  }, [r, P, chars, valid])
   return (
     <div data-testid="pool-preview">
       <h3>Pool preview</h3>
@@ -363,12 +368,12 @@ function PoolPreview({ r, packs, valid }: { r: Recipe; packs: number; valid: boo
               return (
                 <tr key={t.id}>
                   <td>{t.name}</td>
-                  <td className="small">{t.supply === 'share' ? `${scaledToPercent(parseUint(t.amount) ?? 0n, SHARE_SCALE)}%` : t.supply === 'perPack' ? `${t.amount} per pack` : t.supply === 'count' ? `${t.amount} card${t.amount === '1' ? '' : 's'}` : 'the rest'}{(parseUint(t.maxPerPack) ?? 0n) > 0n ? `, max ${t.maxPerPack}/pack` : ''}</td>
+                  <td className="small">{t.supply === 'share' ? `${scaledToPercent(parseUint(t.amount) ?? 0n, SHARE_SCALE)}%` : t.supply === 'perPack' ? `${t.amount} per pack` : t.supply === 'count' ? `${t.amount} card${t.amount === '1' ? '' : 's'}` : t.supply === 'perCharacter' ? `${t.amount} per character` : 'the rest'}{(parseUint(t.maxPerPack) ?? 0n) > 0n ? `, max ${t.maxPerPack}/pack` : ''}</td>
                   <td data-testid={`pool-${t.slug}`}><b>{fmtBig(c)}</b></td>
                   <td>{result.total ? pct(Number((c * 1_000_000n) / result.total) / 1e6, 3) : '-'}</td>
                   <td>{P ? (Number((c * 1000n) / P) / 1000).toFixed(3) : '-'}</td>
                   <td className="small">{diff === 0n || i === r.types.findIndex((x) => x.supply === 'filler') ? '' : diff > 0n ? `raised by ${fmtBig(diff)}` : `lowered by ${fmtBig(-diff)}`}</td>
-                  <td>{holoLooksFor(r, i).length * 11}</td>
+                  <td>{holoLooksFor(r, i).length * 12}</td>
                 </tr>
               )
             })}

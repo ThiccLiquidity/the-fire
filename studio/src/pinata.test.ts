@@ -63,6 +63,19 @@ describe('uploadFire (mock transport, CAR folders)', () => {
     clearPinataJwt()
   })
 
+  it('a saved upload of other images is not reused: the build is checked by its folder CID', async () => {
+    setPinataJwt('test-jwt')
+    const t = new MockTransport(0)
+    const saved: Saved = {}
+    const stale = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
+    const r = await uploadFire(plan({ imagesCid: stale, metadataCid: 'bafkold' }, saved), t)
+    expect(r.imagesCid).toBe((await planCar(images)).root)
+    expect(r.imagesCid).not.toBe(stale)
+    expect(r.metadataCid).not.toBe('bafkold')
+    expect(t.calls.filter((c) => c.startsWith('pin:'))).toHaveLength(2)
+    clearPinataJwt()
+  })
+
   it('a dropped connection mid-upload continues from the byte it reached (same upload URL)', async () => {
     setPinataJwt('test-jwt')
     const t = new MockTransport(0)

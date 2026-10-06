@@ -6,6 +6,7 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {PlankUsdTwap} from "../../src/PlankUsdTwap.sol";
 import {MockERC20, MockMill} from "../Mocks.sol";
@@ -45,7 +46,7 @@ contract SaleForkTest is Test {
         FireCards cards = new FireCards(address(this), address(packs));
         FireSale sale = new FireSale(FireSale.Config({
             owner: address(this), paper: address(paper), plank: PLANK, usdg: address(0), weth: WETH, press: address(press),
-            packs: address(packs), cards: address(cards), ethUsd: ETH_USD, plankUsd: address(twap), router: ROUTER,
+            packs: address(packs), cards: address(cards), ethUsd: ETH_USD, plankUsd: address(twap), paperUsd: address(0), router: ROUTER,
             revenueWallet: address(0xBEEF), burnWallet: address(0xB0B), paperPerSuggestion: 1e18
         }));
         packs.setSeller(address(sale));
@@ -55,7 +56,7 @@ contract SaleForkTest is Test {
         string[] memory cats = new string[](1);
         for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         names[0] = "Test";
-        RecipeDealer dealer = new RecipeDealer(address(this), address(cards));
+        RecipeDealer dealer = new RecipeDealer(address(this), address(cards), address(new RecipeCompiler()));
         dealer.setRecipe(1, StandardRecipe.build(1));
         dealer.setCharacters(1, names, cats);
         cards.setDealer(1, address(dealer));

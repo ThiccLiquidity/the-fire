@@ -7,8 +7,9 @@ import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
-import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness} from "../Mocks.sol";
+import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockBurner} from "../Mocks.sol";
 import {InvRouter} from "./InvRouter.sol";
 
 /// @dev Drives the whole card system (sale, packs, cards, PDA) with bounded random actions by several actors, and
@@ -20,7 +21,7 @@ contract CardsHandler is Test {
 
     address constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint256 constant BPS = 10_000;
-    bytes32 constant DEALT = keccak256("CardDealt(uint256,uint256,uint256,uint256,bool,bool,uint256)");
+    bytes32 constant DEALT = keccak256("CardDealt(uint256,uint256,uint256,uint256,bool,bool,uint256)"); // fire, serial indexed
     bytes32 constant GRADED = keccak256("Graded(uint256,uint256)");
     uint256 public constant FIRES = 5; // fires 1..5 are configured in the card contract
 
@@ -37,6 +38,7 @@ contract CardsHandler is Test {
     MockFeed public ethFeed;
     MockFeed public plankFeed;
     MockFeed public paperFeed;
+    MockBurner public burner;
     InvRouter public router;
     MockRandomness public cardRng;
     MockRandomness public psaRng;
@@ -64,6 +66,7 @@ contract CardsHandler is Test {
 
     // ---------------------------------------------------------------- ghosts
     uint256 public ghostPaperBurned; // PAPER every successful action should have burned, by the rules
+    uint256 public ghostProtectEth; // ETH paid for cases and grades (all of it goes to the burner)
     uint256[3] public ghostPaid; // per currency (0 PLANK, 1 ETH, 2 USDG): what buyers paid
     uint256[3] public ghostBurnShare; // per currency: the burn share of what they paid
     mapping(uint256 => mapping(address => uint256)) public ghostPreLiftPaid;
@@ -105,15 +108,16 @@ contract CardsHandler is Test {
         psaRng = new MockRandomness();
         packs = new FirePacks(owner);
         cards = new FireCards(owner, address(packs));
-        dealer = new RecipeDealer(owner, address(cards));
+        dealer = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         cardRng.setFire(address(cards));
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), router: address(router), revenueWallet: revenue, burnWallet: burnW,
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, burnWallet: burnW,
             paperPerSuggestion: 1e18
         }));
-        psa = new FirePsa(owner, address(cards), address(paper), address(paperFeed));
+        burner = new MockBurner(address(plank), address(usdg));
+        psa = new FirePsa(owner, address(cards), address(burner));
         psaRng.setFire(address(psa));
         vm.startPrank(owner, owner);
         packs.setSeller(address(sale));
@@ -179,7 +183,7 @@ contract CardsHandler is Test {
         string[] memory cats = new string[](n);
         for (uint256 i; i < n; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = string.concat("Cat ", vm.toString(i)); }
         vm.startPrank(owner, owner);
-        dealer.setRecipe(fire, StandardRecipe.build(1));
+        dealer.setRecipe(fire, StandardRecipe.classic(1));
         dealer.setCharacters(fire, names, cats);
         cards.setDealer(fire, address(dealer));
         cards.setImagesBase(fire, "ipfs://x/");
@@ -491,7 +495,7 @@ contract CardsHandler is Test {
         uint256 fire = 1 + fireSeed % FIRES;
         uint64[10] memory odds;
         uint256 left = 10_000;
-        for (uint256 g; g < 9; g++) {
+        for (uint256 g = 4; g < 9; g++) { // grades 1-4 come only from wear
             uint256 o = uint256(keccak256(abi.encode(seed, g))) % (left + 1);
             odds[g] = uint64(o);
             left -= o;
@@ -508,7 +512,7 @@ contract CardsHandler is Test {
         uint256 fire = 2 + fireSeed % (FIRES - 1);
         n = bound(n, 1, 20);
         vm.prank(owner, owner);
-        try dealer.setRecipe(fire, StandardRecipe.build(n)) {
+        try dealer.setRecipe(fire, StandardRecipe.classic(n)) {
             diamondsOf[fire] = n;
             calls["setDiamonds.ok"]++;
         } catch {}
@@ -590,14 +594,15 @@ contract CardsHandler is Test {
 
     function _process(uint256 max) internal {
         vm.recordLogs();
-        uint256 n = cards.process(max);
+        uint256 n;
+        for (uint256 f = 1; f <= FIRES && n < max; f++) n += cards.process(f, max - n);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 seen;
         for (uint256 i; i < logs.length; i++) {
             if (logs[i].emitter != address(cards) || logs[i].topics[0] != DEALT) continue;
             seen++;
-            uint256 openIndex = uint256(logs[i].topics[1]);
-            (uint256 fire, uint256 cardType,,,) = abi.decode(logs[i].data, (uint256, uint256, bool, bool, uint256));
+            uint256 fire = uint256(logs[i].topics[1]);
+            (uint256 openIndex, uint256 cardType,,,) = abi.decode(logs[i].data, (uint256, uint256, bool, bool, uint256));
             if (inPack == 0) { _packOpen = openIndex; _packFire = fire; }
             if (openIndex != _packOpen || fire != _packFire) _flag("a pack's cards span opens or Fires");
             if (cardType > 4) _flag("card type out of range");
@@ -635,14 +640,40 @@ contract CardsHandler is Test {
         address a = _actor(actorSeed);
         uint256[] memory ids = _owned(a, bound(k, 1, 10), seed, true);
         if (ids.length == 0) return;
-        uint256 per = psa.paperPerReveal();
+        uint256 cost = psa.quote(0, ids.length, FirePsa.Pay.ETH);
         vm.prank(a, a);
-        try psa.reveal(ids, per * ids.length) {
+        try psa.protect{value: cost}(new uint256[](0), ids, FirePsa.Pay.ETH, cost) {
+            ghostProtectEth += cost;
             _psaReqs.push(psaRng.last());
-            ghostPaperBurned += per * ids.length;
             calls["reveal.ok"]++;
         } catch {
-            _flag("reveal of own ungraded cards reverted");
+            _flag("grading own ungraded cards reverted");
+        }
+    }
+
+    /// Case some of an actor's ungraded, uncased cards (their wear freezes for good).
+    function caseCards(uint256 actorSeed, uint256 k, uint256 seed) external at {
+        calls["case"]++;
+        address a = _actor(actorSeed);
+        uint256[] memory ids = _owned(a, bound(k, 1, 5), seed, true);
+        uint256 m;
+        for (uint256 i; i < ids.length; i++) {
+            (,,, bool cased,,) = cards.wearOf(ids[i]);
+            if (!cased) ids[m++] = ids[i];
+        }
+        if (m == 0) return;
+        assembly { mstore(ids, m) }
+        uint256 cost = psa.quote(m, 0, FirePsa.Pay.ETH);
+        vm.prank(a, a);
+        try psa.protect{value: cost}(ids, new uint256[](0), FirePsa.Pay.ETH, cost) {
+            ghostProtectEth += cost;
+            calls["case.ok"]++;
+            for (uint256 i; i < m; i++) {
+                (,,, bool cased,,) = cards.wearOf(ids[i]);
+                if (!cased) _flag("a cased card isn't cased");
+            }
+        } catch {
+            _flag("casing own uncased cards reverted");
         }
     }
 
@@ -658,12 +689,12 @@ contract CardsHandler is Test {
 
     function finish(uint256 seed) external at {
         calls["finish"]++;
-        uint256 n = psa.revealCount();
+        uint256 n = psa.gradingCount();
         if (n == 0) return;
         uint256 s0 = seed % n;
         for (uint256 j; j < n; j++) {
             uint256 idx = (s0 + j) % n;
-            FirePsa.Reveal memory r = psa.revealOf(idx);
+            FirePsa.Grading memory r = psa.gradingOf(idx);
             if (!r.ready || r.done) continue;
             vm.recordLogs();
             psa.finish(idx);
@@ -685,6 +716,13 @@ contract CardsHandler is Test {
     function setPaperPrice(uint256 px) external at {
         paperPx = int256(bound(px, 1e15, 1e18)); // $0.001 .. $1
         paperFeed.set(paperPx);
+    }
+
+    /// The grade can never be one the rules say is impossible: below 5 for a card that spent under a month uncased.
+    function checkGradeFloor(uint256 serial) external view returns (bool ok) {
+        (bool exists,, uint256 grade,, uint256 age,) = cards.wearOf(serial);
+        if (!exists || grade == 0) return true;
+        return grade >= 5 || age > 31 days;
     }
 
     // ================================================================ transfers

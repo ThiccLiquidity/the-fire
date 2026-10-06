@@ -1,4 +1,4 @@
-// drand evmnet: the chain OpenDrandRouter verifies. Card opens (FireCards) and PDA reveals (FirePsa) ask the router
+// drand evmnet: the chain OpenDrandRouter verifies. Card opens (FireCards) and PDA grading (FirePsa) ask the router
 // for a round a few seconds ahead; once drand publishes it, anyone may deliver it. The router checks every signature
 // on-chain, so whoever delivers can't change the number.
 

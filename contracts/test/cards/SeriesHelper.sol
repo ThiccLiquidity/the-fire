@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
+import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 
 /// @dev Setting up a Series the way the owner does: recipe and characters in the dealer, then the dealer and image
 ///      folder in the card contract.
@@ -30,11 +31,11 @@ abstract contract SeriesHelper is Test {
         vm.stopPrank();
     }
 
-    /// The Standard recipe with `diamonds` Diamonds and `nChars` characters.
-    function _standard(FireCards cards, RecipeDealer dealer, address owner_, uint256 fire, uint256 nChars, uint256 diamonds)
+    /// The original five-type Standard recipe (Gold in Diamond's place) with `gold` Gold and `nChars` characters.
+    function _standard(FireCards cards, RecipeDealer dealer, address owner_, uint256 fire, uint256 nChars, uint256 gold)
         internal
     {
-        _series(cards, dealer, owner_, fire, StandardRecipe.build(diamonds), nChars);
+        _series(cards, dealer, owner_, fire, StandardRecipe.classic(gold), nChars);
     }
 
     // ---------- recipe building ----------
@@ -133,15 +134,18 @@ abstract contract SeriesHelper is Test {
 
 /// @dev Exposes the dealer's internals for exact checks (pool on a compiled recipe, holo rolls).
 contract RecipeHarness is RecipeDealer {
-    constructor(address cards) RecipeDealer(msg.sender, cards) {}
+    constructor(address cards) RecipeDealer(msg.sender, cards, address(new RecipeCompiler())) {}
 
-    function compile(Recipe memory r) external pure returns (bytes memory) {
-        (uint256[] memory plan,) = _compile(r);
-        return abi.encodePacked(plan);
+    function compile(Recipe memory r) external view returns (bytes memory plan) {
+        (plan,) = COMPILER.compile(r);
     }
 
-    function pool(bytes memory plan, uint256 packs) external pure returns (uint256[] memory) {
-        (int256[] memory c,) = _pool(plan, packs);
+    function pool(bytes memory plan, uint256 packs) external view returns (uint256[] memory) {
+        return poolChars(plan, packs, 1);
+    }
+
+    function poolChars(bytes memory plan, uint256 packs, uint256 chars) public view returns (uint256[] memory) {
+        (int256[] memory c,) = COMPILER.pool(plan, packs, chars);
         return _toUint(c);
     }
 

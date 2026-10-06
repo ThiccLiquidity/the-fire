@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compileRecipe, previewPool, standardRecipe } from './recipe'
+import { compileRecipe, legacyDiamondRecipe, previewPool } from './recipe'
 import { migrateFire, needsMigration } from './migrate'
 import type { FireRecord } from './types'
 
@@ -22,7 +22,7 @@ describe('old saves and backups', () => {
   it('a Series without a recipe gets the Standard recipe with its Diamond setting', () => {
     expect(needsMigration(oldFire)).toBe(true)
     const f = migrateFire(oldFire)
-    expect(f.recipe).toEqual(standardRecipe(2))
+    expect(f.recipe).toEqual(legacyDiamondRecipe(2))
     expect(compileRecipe(f.recipe).S).toBe(6)
     expect(previewPool(f.recipe, 2n).map(Number)).toEqual([6, 2, 1, 1, 2])
     expect(needsMigration(f)).toBe(false)
@@ -48,6 +48,6 @@ describe('old saves and backups', () => {
 
   it('a missing Diamond setting reads as 1', () => {
     const { diamonds: _d, deal: _deal, ...noDiamonds } = oldFire
-    expect(migrateFire(noDiamonds).recipe).toEqual(standardRecipe(1))
+    expect(migrateFire(noDiamonds).recipe).toEqual(legacyDiamondRecipe(1))
   })
 })

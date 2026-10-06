@@ -48,13 +48,14 @@ contract CardsInvariantTest is StdInvariant, Test {
         sels[i++] = h.warp.selector; // weighted
         sels[i++] = h.routerMood.selector;
         // lower-weight actions ride along below
-        bytes4[] memory all = new bytes4[](i + 5);
+        bytes4[] memory all = new bytes4[](i + 6);
         for (uint256 j; j < i; j++) all[j] = sels[j];
         all[i] = h.setPrices.selector;
         all[i + 1] = h.setPaperPrice.selector;
         all[i + 2] = h.passPress.selector;
         all[i + 3] = h.setOdds.selector;
         all[i + 4] = h.setDiamonds.selector;
+        all[i + 5] = h.caseCards.selector;
         targetSelector(FuzzSelector({addr: address(h), selectors: all}));
     }
 
@@ -104,7 +105,9 @@ contract CardsInvariantTest is StdInvariant, Test {
             usdgSpent += h.USDG0() - h.usdg().balanceOf(a);
         }
         assertEq(plankSpent, h.ghostPaid(0), "PLANK spent");
-        assertEq(ethSpent, h.ghostPaid(1), "ETH spent");
+        assertEq(ethSpent, h.ghostPaid(1) + h.ghostProtectEth(), "ETH spent");
+        assertEq(address(h.burner()).balance, h.ghostProtectEth(), "every case and grading fee reaches the burner");
+        assertEq(address(h.psa()).balance, 0, "FirePsa keeps nothing");
         assertEq(usdgSpent, h.ghostPaid(2), "USDG spent");
 
         assertEq(h.plank().balanceOf(rev), h.ghostPaid(0) - h.ghostBurnShare(0), "PLANK revenue");
@@ -121,7 +124,7 @@ contract CardsInvariantTest is StdInvariant, Test {
 
         // the totals, as the spec states it
         assertEq(h.plank().balanceOf(rev) + h.plank().balanceOf(DEAD) - h.router().plankOut(), plankSpent, "PLANK total");
-        assertEq(rev.balance + bw.balance + h.router().ethSwapped(), ethSpent, "ETH total");
+        assertEq(rev.balance + bw.balance + h.router().ethSwapped() + address(h.burner()).balance, ethSpent, "ETH total");
         assertEq(h.usdg().balanceOf(rev) + h.usdg().balanceOf(bw) + h.router().usdgSwapped(), usdgSpent, "USDG total");
     }
 
@@ -170,7 +173,7 @@ contract CardsInvariantTest is StdInvariant, Test {
             assertEq(poolTotal, 6 * uint256(nPacks), "pool == 6 x packs");
             // each Series stands alone: its pool is the rule applied to its own packs and Diamond setting
             uint256 d = h.diamondsOf(f);
-            uint256[] memory want = dealer.previewPool(StandardRecipe.build(d == 0 ? 1 : d), nPacks);
+            uint256[] memory want = dealer.previewPool(StandardRecipe.classic(d == 0 ? 1 : d), nPacks, 1);
             for (uint256 m; m < 5; m++) assertEq(pool[m], want[m], "pool == Standard(packs, diamonds)");
             if (nPacks > 0) assertGe(pool[4], 1, "at least one Diamond");
             (uint256[] memory left,) = dealer.remainingOf(f);
@@ -194,6 +197,7 @@ contract CardsInvariantTest is StdInvariant, Test {
             bool p = h.psa().pending(s);
             assertEq(cards.gradePending(s), p, "card and PDA agree on pending");
             if (p) assertEq(grade, 0, "pending cards are ungraded");
+            assertTrue(h.checkGradeFloor(s), "no grade below 5 before a month uncased");
         }
     }
 

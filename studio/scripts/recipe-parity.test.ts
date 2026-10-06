@@ -4,7 +4,7 @@
  *  scripts/fixtures/recipe-parity.json holds the cases and the contract's answers. Refresh it with
  *  scripts/contract-parity.sh (needs forge): it writes the cases (WRITE_RECIPE_CASES=<dir>), runs
  *  scripts/forge/StudioParity.t.sol on a scratch copy of contracts/, and stores the results here. Case 0 is the
- *  Standard export (the forge side also checks it parses to StandardRecipe.build(1) and that ConfigureSeries.build
+ *  Standard export (the forge side also checks it parses to StandardRecipe.build(15) and that ConfigureSeries.build
  *  accepts it); case 1 the Special 3-card all-holo export. */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
@@ -25,7 +25,7 @@ function cases(): Case[] {
   const chance = (p: number) => rnd(1000) < p * 1000
   const chars = [{ name: 'Ember Fox', category: 'Animals' }, { name: 'Ash Wolf', category: 'Animals' }]
   const out: Case[] = [
-    { ...recipeJson(7, standardRecipe(1), chars, 'ipfs://bafyexampleimages/'), packs: PACKS },
+    { ...recipeJson(7, standardRecipe(), chars, 'ipfs://bafyexampleimages/'), packs: PACKS },
     { ...recipeJson(8, specialAllHoloRecipe(), chars), packs: PACKS },
   ]
   for (let k = 0; k < 400; k++) {
@@ -33,10 +33,11 @@ function cases(): Case[] {
     const filler = rnd(T)
     const types: RecipeJson['types'] = []
     for (let t = 0; t < T; t++) {
-      let supply: RecipeJson['types'][number]['supply'] = t === filler ? 'filler' : (['share', 'perPack', 'count'] as const)[rnd(3)]
+      let supply: RecipeJson['types'][number]['supply'] = t === filler ? 'filler' : (['share', 'perPack', 'count', 'perCharacter'] as const)[rnd(4)]
       if (chance(0.02)) supply = 'filler'
       if (t === filler && chance(0.02)) supply = 'count'
-      const amount = supply === 'share' ? (chance(0.02) ? 1_000_000_001 : rnd(400_000_000)) : supply === 'perPack' ? rnd(4) : rnd(60)
+      const amount = supply === 'share' ? (chance(0.02) ? 1_000_000_001 : rnd(400_000_000)) : supply === 'perPack' ? rnd(4)
+        : supply === 'perCharacter' ? (chance(0.05) ? 0 : chance(0.03) ? 65_536 : 1 + rnd(5)) : rnd(60)
       const mode = chance(0.7) ? 'independent' : 'distribution'
       const ch = () => String(chance(0.15) ? 0 : chance(0.1) ? 10n ** 18n : BigInt(rnd(1_000_000)) * 10n ** 12n)
       types.push({
@@ -66,7 +67,7 @@ function cases(): Case[] {
       }
     }
     if (chance(0.5)) slots.push({ count: 1, minRank: 0 }) // a catch-all group: every type is dealt somewhere
-    out.push({ fire: 100 + k, types, slots, characters: chars, pdaOdds: ['1', '1', '1', '1', '1', '1', '1', '1', '1', '1'], packs: PACKS })
+    out.push({ fire: 100 + k, types, slots, characters: chars, pdaOdds: ['0', '0', '0', '0', '1', '1', '1', '1', '1', '1'], packs: PACKS })
   }
   return out
 }
@@ -75,7 +76,11 @@ describe.runIf(process.env.WRITE_RECIPE_CASES)('write recipe cases', () => {
   it('writes <dir>/<i>.json', () => {
     const dir = process.env.WRITE_RECIPE_CASES!
     mkdirSync(dir, { recursive: true })
-    cases().forEach((c, i) => writeFileSync(`${dir}/${i}.json`, JSON.stringify(c)))
+    // the recipe.json exactly as exported, and its pack counts beside it (ConfigureSeries refuses unknown keys)
+    cases().forEach(({ packs, ...c }, i) => {
+      writeFileSync(`${dir}/${i}.json`, JSON.stringify(c))
+      writeFileSync(`${dir}/${i}.packs.json`, JSON.stringify({ packs }))
+    })
     writeFileSync(`${dir}/cases.json`, JSON.stringify(cases()))
   })
 })
@@ -106,7 +111,7 @@ describe.runIf(!process.env.WRITE_RECIPE_CASES && existsSync(FIXTURE))('recipe p
       expect(problems, `case ${i}`).toEqual([])
       const r = recipeFromJson(c)
       c.packs.forEach((p, k) => {
-        expect(previewPool(r, BigInt(p)).map(String), `case ${i}, ${p} packs`).toEqual(want.pools![k])
+        expect(previewPool(r, BigInt(p), BigInt(c.characters.length)).map(String), `case ${i}, ${p} packs`).toEqual(want.pools![k])
       })
     })
   })

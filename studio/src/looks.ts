@@ -4,8 +4,9 @@
  *  A Series' image folder holds the FULL grid of what its recipe can deal, not just the looks its sample deal happens
  *  to produce: grades are revealed on-chain later, and FireCards.imageFile points every card at
  *  c<character>-<type slug>-<holo>-<grade>.webp in that folder, so every combination must exist up front:
- *  characters x types x the holo looks the type can have (recipe.ts holoLooksFor) x 11 grade states (ungraded,
- *  PDA 1..10). The Standard recipe gives 19 looks (4 types x 4 holo + Diamond x 3) x 11 = 209 images per character.
+ *  characters x types x the holo looks the type can have (recipe.ts holoLooksFor) x 12 states: ungraded, cased (a clear
+ *  case over the card) and PDA 1..10 (slabbed: the card in a slab with its grade label). The Standard recipe gives 18
+ *  looks (4 types x 4 holo + Gold full + Full Art full) x 12 = 216 images per character.
  *  (Every Series has its own "Forged · Series " line, so images are never shared across Series.) */
 
 import type { DealtCard } from './deal'
@@ -20,13 +21,20 @@ export interface Look {
   slug: string
   holoFrame: boolean
   holoPicture: boolean
-  /** PDA grade 1..10, or null while ungraded. One image per grade: the seal prints the number. */
+  /** PDA grade 1..10 (slabbed), or null while ungraded. One image per grade: the seal prints the number. */
   grade: number | null
+  /** Ungraded and in a case (docs/grading.md). Ignored once graded: a slab replaces the case. */
+  cased?: boolean
   /** The Series: printed on the card ("Forged · Series 7"), so each Series has its own images. */
   fire: number
 }
 
-/** The 11 grade states, in build order: ungraded first, then PDA 1..10. */
+/** The 12 states, in build order: ungraded, cased, then PDA 1..10 (slabbed). */
+export const STATES: readonly { grade: number | null; cased: boolean }[] = [
+  { grade: null, cased: false }, { grade: null, cased: true },
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((grade) => ({ grade, cased: false })),
+]
+/** Kept for callers that only need the grades: ungraded first, then PDA 1..10. */
 export const GRADE_STATES: readonly (number | null)[] = [null, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 /** Looks per character: the sum over the recipe's types of the holo looks each can have. */
@@ -35,7 +43,7 @@ export function looksPerCharacter(r: Recipe): number {
 }
 
 export function imagesPerCharacter(r: Recipe): number {
-  return looksPerCharacter(r) * GRADE_STATES.length
+  return looksPerCharacter(r) * STATES.length
 }
 
 /** Images a Series with `characters` characters must build and upload. */
@@ -46,7 +54,8 @@ export function gridSize(characters: number, r: Recipe): number {
 export function lookOf(card: DealtCard, r: Recipe): Look {
   return {
     characterId: card.characterId, type: card.type, slug: r.types[card.type]?.slug ?? `type${card.type}`,
-    holoFrame: card.holoFrame, holoPicture: card.holoPicture, grade: card.grade ?? null, fire: card.fire,
+    holoFrame: card.holoFrame, holoPicture: card.holoPicture, grade: card.grade ?? null, cased: !!card.cased && card.grade == null,
+    fire: card.fire,
   }
 }
 
@@ -61,18 +70,24 @@ export function gradeId(grade: number | null | undefined): string {
   return String(grade)
 }
 
-/** Where a built image is stored and how looks are told apart: keyed by type slug and grade. */
-export function lookKey(l: Look): string {
-  return `${l.fire}:${l.characterId}:${l.slug}:${holoOfLook(l)}:${gradeId(l.grade)}`
+/** The state in a file name: 'u' (ungraded), 'c' (cased) or the grade 1..10 (slabbed). */
+export function stateId(grade: number | null | undefined, cased?: boolean): string {
+  if (grade == null) return cased ? 'c' : 'u'
+  return gradeId(grade)
 }
 
-/** The image's name inside its Series' image folder: "c<characterIndex>-<slug>-<holo>-<grade>.webp", e.g.
- *  "c0-wood-frame-u.webp" or "c2-coal-full-10.webp". <characterIndex> is the character's position in the Series' list
- *  (the order of setCharacters), <slug> the type's slug, <holo> none | frame | picture | full, <grade> 'u' or 1..10.
- *  Always WEBP. FireCards.imageName builds exactly this name. */
-export function lookFileName(l: Pick<Look, 'slug' | 'holoFrame' | 'holoPicture' | 'grade'>, characterIndex: number): string {
+/** Where a built image is stored and how looks are told apart: keyed by type slug and state. */
+export function lookKey(l: Look): string {
+  return `${l.fire}:${l.characterId}:${l.slug}:${holoOfLook(l)}:${stateId(l.grade, l.cased)}`
+}
+
+/** The image's name inside its Series' image folder: "c<characterIndex>-<slug>-<holo>-<state>.webp", e.g.
+ *  "c0-wood-frame-u.webp", "c0-wood-frame-c.webp" or "c2-coal-full-10.webp". <characterIndex> is the character's
+ *  position in the Series' list (the order of setCharacters), <slug> the type's slug, <holo> none | frame | picture |
+ *  full, <state> 'u', 'c' or 1..10. Always WEBP. CardsRenderer.imageName builds exactly this name. */
+export function lookFileName(l: Pick<Look, 'slug' | 'holoFrame' | 'holoPicture' | 'grade' | 'cased'>, characterIndex: number): string {
   if (!Number.isInteger(characterIndex) || characterIndex < 0) throw new Error(`Bad character index ${characterIndex}`)
-  return `c${characterIndex}-${l.slug}-${holoOfLook(l)}-${gradeId(l.grade)}.webp`
+  return `c${characterIndex}-${l.slug}-${holoOfLook(l)}-${stateId(l.grade, l.cased)}.webp`
 }
 
 export interface GridEntry {
@@ -94,10 +109,10 @@ export function seriesGrid(fire: number, characterIds: readonly string[], r: Rec
       for (const holo of holos[type]) {
         const holoFrame = holo === 'frame' || holo === 'full'
         const holoPicture = holo === 'picture' || holo === 'full'
-        for (const grade of GRADE_STATES) {
-          const look: Look = { characterId, type, slug: ty.slug, holoFrame, holoPicture, grade, fire }
+        for (const { grade, cased } of STATES) {
+          const look: Look = { characterId, type, slug: ty.slug, holoFrame, holoPicture, grade, cased, fire }
           const card: DealtCard = {
-            serial: 0, fire, pack: 0, slot: 0, group: 0, type, characterId, holoFrame, holoPicture, holo, edition: 1, editionOf: 1, grade,
+            serial: 0, fire, pack: 0, slot: 0, group: 0, type, characterId, holoFrame, holoPicture, holo, edition: 1, editionOf: 1, grade, cased,
           }
           out.push({ key: lookKey(look), look, card, characterIndex, file: lookFileName(look, characterIndex) })
         }

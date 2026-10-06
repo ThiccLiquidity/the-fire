@@ -270,10 +270,9 @@ const fmtMB = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`
 /** One folder: pack it as a CAR, reuse it if Pinata has its CID, else upload (resuming an earlier attempt). */
 async function uploadFolder(
   plan: UploadPlan, transport: PinataTransport, jwt: string, dir: string, files: UploadFile[], progress: (f: number) => void,
+  packed?: { root: string; size: number },
 ): Promise<string> {
-  plan.onStatus(`Packing ${files.length.toLocaleString()} files as ${dir}/ (hashing to get the folder CID)...`)
-  const car = await planCar(files, (d, t) => progress(0.25 * (d / Math.max(1, t))))
-  plan.onStatus(`Folder CID ${car.root} (${fmtMB(car.size)} CAR).`)
+  const car = packed ?? await pack(plan, dir, files, progress)
   if (await withRetry('Lookup', () => transport.isPinned(jwt, car.root), plan.onStatus)) {
     plan.onStatus(`Pinata already has ${car.root}; reusing it.`)
     return car.root
@@ -294,6 +293,14 @@ async function uploadFolder(
   return cid
 }
 
+/** Hash the files into their CAR: the folder CID (the root) and the CAR's size. */
+async function pack(plan: UploadPlan, dir: string, files: UploadFile[], progress: (f: number) => void): Promise<{ root: string; size: number }> {
+  plan.onStatus(`Packing ${files.length.toLocaleString()} files as ${dir}/ (hashing to get the folder CID)...`)
+  const car = await planCar(files, (d, t) => progress(0.25 * (d / Math.max(1, t))))
+  plan.onStatus(`Folder CID ${car.root} (${fmtMB(car.size)} CAR).`)
+  return car
+}
+
 export async function uploadFire(plan: UploadPlan, transport: PinataTransport): Promise<{ imagesCid: string; metadataCid: string }> {
   const jwt = sessionJwt
   if (!jwt) throw new Error('Enter the Pinata JWT first.')
@@ -302,16 +309,24 @@ export async function uploadFire(plan: UploadPlan, transport: PinataTransport): 
   plan.onStatus('Checking the Pinata key...')
   await withRetry('Key check', () => transport.testAuth(jwt), plan.onStatus)
 
+  // The images are known by their folder CID (the CAR's root, from their bytes): a saved upload is only reused when the
+  // build hashes to exactly that CID, so a changed build is never mistaken for the uploaded one.
+  const car = await pack(plan, imagesDir, plan.imageFiles, (f) => plan.onProgress(0.9 * f))
   let imagesCid = plan.existing.imagesCid
+  let metadataCid = plan.existing.metadataCid
+  if (imagesCid && imagesCid !== car.root) {
+    plan.onStatus(`The saved upload (${imagesCid}) isn't this build (${car.root}); uploading the build.`)
+    imagesCid = undefined
+    metadataCid = undefined
+  }
   if (imagesCid) plan.onStatus(`Images already uploaded (${imagesCid}), skipping.`)
   else {
-    imagesCid = await uploadFolder(plan, transport, jwt, imagesDir, plan.imageFiles, (f) => plan.onProgress(0.9 * f))
+    imagesCid = await uploadFolder(plan, transport, jwt, imagesDir, plan.imageFiles, (f) => plan.onProgress(0.9 * f), car)
     await plan.save({ imagesCid })
   }
   plan.onProgress(0.9)
 
   const metaDir = metadataDirName(plan.fire, imagesCid)
-  let metadataCid = plan.existing.metadataCid
   if (metadataCid) plan.onStatus(`Metadata already uploaded (${metadataCid}), skipping.`)
   else {
     metadataCid = await uploadFolder(plan, transport, jwt, metaDir, plan.makeMetadata(imagesCid), (f) => plan.onProgress(0.9 + 0.1 * f))

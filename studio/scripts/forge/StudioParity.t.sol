@@ -4,7 +4,8 @@ pragma solidity ^0.8.28;
 // Run by studio/scripts/contract-parity.sh in a scratch copy of contracts/ (it is not part of the contracts' own
 // suite). For every recipe.json the studio wrote into test/cards/studio-parity/<i>.json: parse it exactly as
 // ConfigureSeries.s.sol does, ask RecipeDealer.check (ok, or the revert decoded), and for a valid recipe its
-// previewPool at each "packs" value. Case 0 is the studio's Standard export: it must parse to StandardRecipe.build(1)
+// previewPool at each "packs" value (from <i>.packs.json, with the case's characters). Case 0 is the studio's Standard
+// export: it must parse to StandardRecipe.build(15)
 // and ConfigureSeries.build must turn it into the owner's calls. Results go to test/cards/studio-parity/results.json.
 
 import {Test} from "forge-std/Test.sol";
@@ -12,6 +13,7 @@ import {stdJson} from "forge-std/StdJson.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {ConfigureSeries} from "../../script/ConfigureSeries.s.sol";
 
@@ -26,7 +28,7 @@ contract StudioParityTest is Test {
     function setUp() public {
         FirePacks packs = new FirePacks(address(this));
         cards = new FireCards(address(this), address(packs));
-        dealer = new RecipeDealer(address(this), address(cards));
+        dealer = new RecipeDealer(address(this), address(cards), address(new RecipeCompiler()));
         cs = new ConfigureSeries();
     }
 
@@ -39,17 +41,17 @@ contract StudioParityTest is Test {
             ConfigureSeries.Series memory s = cs.parse(json);
             string memory row;
             try dealer.check(s.recipe) returns (uint256 perPack) {
-                uint256[] memory ps = json.readUintArray(".packs");
+                uint256[] memory ps = vm.readFile(string.concat(DIR, vm.toString(i), ".packs.json")).readUintArray(".packs");
                 string memory pools = "[";
                 for (uint256 k; k < ps.length; k++) {
-                    uint256[] memory c = dealer.previewPool(s.recipe, ps[k]);
+                    uint256[] memory c = dealer.previewPool(s.recipe, ps[k], s.names.length);
                     string memory a = "[";
                     for (uint256 t; t < c.length; t++) a = string.concat(a, t == 0 ? "" : ",", '"', vm.toString(c[t]), '"');
                     pools = string.concat(pools, k == 0 ? "" : ",", a, "]");
                 }
                 row = string.concat('{"ok":true,"perPack":', vm.toString(perPack), ',"pools":', pools, "]");
                 if (i == 0) {
-                    assertEq(keccak256(abi.encode(s.recipe)), keccak256(abi.encode(StandardRecipe.build(1))), "Standard export != StandardRecipe");
+                    assertEq(keccak256(abi.encode(s.recipe)), keccak256(abi.encode(StandardRecipe.build(15))), "Standard export != StandardRecipe");
                     ConfigureSeries.Call[] memory calls = cs.build(json, address(dealer), address(cards), address(0xBEEF), 2);
                     row = string.concat(row, ',"calls":', vm.toString(calls.length));
                 }

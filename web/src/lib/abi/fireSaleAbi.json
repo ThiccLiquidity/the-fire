@@ -58,6 +58,11 @@
             "internalType": "address"
           },
           {
+            "name": "paperUsd",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "router",
             "type": "address",
             "internalType": "address"
@@ -214,6 +219,19 @@
   },
   {
     "type": "function",
+    "name": "MIN_DROP_TIME",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "PACKS",
     "inputs": [],
     "outputs": [
@@ -227,6 +245,19 @@
   },
   {
     "type": "function",
+    "name": "PACK_PAPER_CAP_USD18",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "PAPER",
     "inputs": [],
     "outputs": [
@@ -234,6 +265,32 @@
         "name": "",
         "type": "address",
         "internalType": "contract IERC20"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PAPER_FEED_MAX_AGE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PAPER_USD",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract ISaleFeed"
       }
     ],
     "stateMutability": "view"
@@ -1352,6 +1409,11 @@
         "internalType": "address"
       },
       {
+        "name": "paperUsd",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
         "name": "router",
         "type": "address",
         "internalType": "address"
@@ -1795,6 +1857,12 @@
       },
       {
         "name": "plankUsd",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "paperUsd",
         "type": "address",
         "indexed": false,
         "internalType": "address"

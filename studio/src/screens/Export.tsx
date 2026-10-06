@@ -85,8 +85,14 @@ export function Export({ fire }: { fire: FireRecord }) {
     saleJson(sale),
   )
 
+  /** The upload is of the current build (only then does recipe.json name its folder as the images base). */
+  const uploadCurrent = !!fire.upload?.imagesCid && !buildDetail && fire.upload.buildAt === b?.builtAt
+
   const downloadRecipe = () => run(async () => {
     if (!recipeReady) throw new Error(!checks[0].ok ? checks[0].detail : !checks[2].ok ? checks[2].detail : saleCheck.detail)
+    if (fire.upload?.imagesCid && !uploadCurrent) {
+      throw new Error('The uploaded images are from an earlier build: upload this build first, so recipe.json points at the right images.')
+    }
     downloadBlob(new Blob([JSON.stringify(recipeOut(fire.upload?.imagesCid), null, 1)], { type: 'application/json' }), `recipe-fire-${fire.number}.json`)
   })
 
@@ -187,7 +193,7 @@ export function Export({ fire }: { fire: FireRecord }) {
         const now = Date.now()
         const { pending, ...rest } = patch
         current = {
-          ...current, ...rest, format: 'webp', imagesDir: imagesDirName, mock: flags.mockPinata,
+          ...current, ...rest, format: 'webp', imagesDir: imagesDirName, mock: flags.mockPinata, buildAt: b?.builtAt,
           ...(patch.imagesCid ? { imagesAt: now } : {}), ...(patch.metadataCid ? { metadataAt: now } : {}),
         }
         if (pending === null) delete current.pending

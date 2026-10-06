@@ -3,7 +3,7 @@ import { BatchRenderer, renderKey } from '../builder'
 import { Notice, ProgressBar, useAction } from '../components'
 import { blobKeys, deleteBlobsWithPrefix, getBlob, putBlobs } from '../db'
 import type { DealtCard } from '../deal'
-import { GRADE_STATES, imagesPerCharacter, lookFileName, lookKey, lookOf, seriesGrid, type Look } from '../looks'
+import { STATES, imagesPerCharacter, lookFileName, lookKey, lookOf, seriesGrid, type Look } from '../looks'
 import { cardTitle, faceOf } from '../render'
 import { checkRecipe, holoLooksFor, type Recipe } from '../recipe'
 import { HOLO_LABEL, HOLO_TYPES, WEAR_LABEL, wearLookOf, type HoloType } from '../rules'
@@ -264,11 +264,11 @@ function GridViewer({ fire, recipe, names, onOpen }: { fire: FireRecord; recipe:
   const ty = Math.min(type, recipe.types.length - 1)
   const holos = holoLooksFor(recipe, ty)
   const h = holos.includes(holo) ? holo : holos[0]
-  const g = grade === 'u' ? null : Number(grade)
+  const g = grade === 'u' || grade === 'c' ? null : Number(grade)
   const c = Math.min(Math.max(0, ch), deal.characterIds.length - 1)
   const look: Look = {
     characterId: deal.characterIds[c], type: ty, slug: recipe.types[ty].slug, holoFrame: h === 'frame' || h === 'full', holoPicture: h === 'picture' || h === 'full',
-    grade: g, fire: fire.number,
+    grade: g, cased: grade === 'c', fire: fire.number,
   }
   const file = lookFileName(look, c)
   const open = async () => {
@@ -277,7 +277,7 @@ function GridViewer({ fire, recipe, names, onOpen }: { fire: FireRecord; recipe:
     onOpen({
       url: URL.createObjectURL(blob),
       title: file,
-      detail: `${names[look.characterId]} · ${recipe.types[ty].name} · holo ${HOLO_LABEL[h]} · ${g == null ? 'ungraded' : `PDA ${g} (${WEAR_LABEL[wearLookOf(g)]} frame)`} · ${(blob.size / 1024).toFixed(0)} KB`,
+      detail: `${names[look.characterId]} · ${recipe.types[ty].name} · holo ${HOLO_LABEL[h]} · ${g == null ? (grade === 'c' ? 'cased' : 'ungraded') : `PDA ${g}, slabbed (${WEAR_LABEL[wearLookOf(g)]} frame)`} · ${(blob.size / 1024).toFixed(0)} KB`,
     })
   }
   return (
@@ -297,7 +297,10 @@ function GridViewer({ fire, recipe, names, onOpen }: { fire: FireRecord; recipe:
         {holos.map((x) => <option key={x} value={x}>{HOLO_LABEL[x]}</option>)}
       </select>
       <select value={grade} onChange={(e) => setGrade(e.target.value)} data-testid="gv-grade">
-        {GRADE_STATES.map((x) => <option key={x ?? 'u'} value={x ?? 'u'}>{x == null ? 'Ungraded' : `PDA ${x}`}</option>)}
+        {STATES.map((x) => {
+          const v = x.grade == null ? (x.cased ? 'c' : 'u') : String(x.grade)
+          return <option key={v} value={v}>{x.grade == null ? (x.cased ? 'Cased' : 'Ungraded') : `PDA ${x.grade} (slab)`}</option>
+        })}
       </select>
       <code data-testid="gv-file">{file}</code>
       <button onClick={() => void open()} data-testid="gv-open">Open</button>

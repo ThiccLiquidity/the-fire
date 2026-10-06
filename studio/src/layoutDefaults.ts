@@ -1,4 +1,4 @@
-import { FRAME_GEOMETRY } from './frames'
+import { FRAME_GEOMETRY, artBoxOf } from './frames'
 import { TEXT_FIELDS, type Layout, type PsaBox, type Rect, type TextBox, type TextStyle } from './types'
 
 /** Built-in font choices: web-safe stacks only (no Google Fonts, nothing fetched). Uploaded fonts are added on top. */
@@ -27,6 +27,10 @@ const INK: Record<string, { color: string; outline: string; outlineWidth: number
   burning: { color: '#ffe9c4', outline: '#1a0904', outlineWidth: 5, window: '#24100a', seal: ['#f08a2a', '#7a1606', '#fff1d6'] },
   charcoal: { color: '#ececf0', outline: '#0e0e10', outlineWidth: 4, window: '#26262a', seal: ['#8a8b93', '#2c2c31', '#f2f3f6'] },
   diamond: { color: '#12324a', outline: '#ffffff', outlineWidth: 0, window: '#eef6fb', seal: ['#f4fbff', '#9cc0d8', '#12324a'] },
+  // first guesses until the frames arrive (adjust in Frames & Layout): dark ink on gold leaf; light ink with a dark
+  // outline over full-card art
+  gold: { color: '#3a2606', outline: '#fff4d0', outlineWidth: 0, window: '#f5e3a8', seal: ['#f7d774', '#8a5a10', '#3a2606'] },
+  fullart: { color: '#fff7e8', outline: '#1a1410', outlineWidth: 6, window: '#1d1d22', seal: ['#f7d774', '#8a5a10', '#3a2606'] },
 }
 
 /** A frame set the studio has no colours for yet (a new set built by clean_frames.py): light text with a dark
@@ -60,7 +64,7 @@ export function defaultLayout(material: string): Layout {
     material,
     version: LAYOUT_VERSION,
     layering: 'art-behind',
-    art: { box: { ...g.art }, fit: 'cover', scale: 1, offsetX: 0, offsetY: 0, background: ink.window },
+    art: { box: artBoxOf(material), fit: 'cover', scale: 1, offsetX: 0, offsetY: 0, background: ink.window },
     text: {
       name: tb({ ...g.nameBar }, { ...c, size: 104, align: 'center' }),
       material: tb({ x: info.x, y: info.y + 4, w: textW, h: 110 }, { ...c, size: 96, uppercase: true }),
@@ -97,7 +101,7 @@ export function normalizeLayout(material: string, stored: Partial<Layout> | unde
     version: LAYOUT_VERSION,
     // the frames are fixed, so the art window and layering are too
     layering: 'art-behind',
-    art: { ...d.art, ...stored.art, box: { ...FRAME_GEOMETRY.art } },
+    art: { ...d.art, ...stored.art, box: artBoxOf(material) },
     text: Object.fromEntries(TEXT_FIELDS.map((f) => {
       const st = stored.text?.[f]
       return [f, { ...d.text[f], ...st, style: { ...d.text[f].style, ...st?.style } }]

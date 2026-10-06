@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import { DropZone, Field, Notice, useAction } from '../components'
 import { newId } from '../db'
 import { categoryKey, categoryProblem, categorySuggestions, hasCategory, hasValidName, nameProblem, normalizeCategory, normalizeName } from '../categories'
-import { FRAME_SETS, frameSetLabel } from '../frames'
+import { FRAME_SETS, frameSetLabel, variantsOf } from '../frames'
 import {
   completeness, deleteCharacter, getStudio, imageSlots, isReady, effectiveKey, removeCharacterImage, saveCharacter, setCharacterImage, updateImageKey,
   useBlobUrl, useStudio,
@@ -244,7 +244,9 @@ function SlotRow({ c, m }: { c: Character; m: string }) {
   return (
     <>
       <div className="slot-label">{frameSetLabel(m)}</div>
-      {VARIANTS.map((v) => <SlotCell key={v} c={c} m={m} v={v} slot={c.images[m]?.[v]} />)}
+      {VARIANTS.map((v) => variantsOf(m).includes(v)
+        ? <SlotCell key={v} c={c} m={m} v={v} slot={c.images[m]?.[v]} />
+        : <div key={v} className="slot-cell muted small">always holo</div>)}
     </>
   )
 }

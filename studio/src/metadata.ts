@@ -1,6 +1,7 @@
-/** ERC-721 style metadata, one JSON per card. The image is shared by every card of the same look (looks.ts); what
- *  makes each card unique (serial, edition, Series #) is here. The Material trait is the card type's name, like
- *  FireCards.tokenURI. */
+/** ERC-721 style metadata, one JSON per card, as CardsRenderer.tokenURI writes it on-chain for a freshly dealt card.
+ *  The image is shared by every card of the same look (looks.ts); what makes each card unique (serial, edition,
+ *  Series #) is here. The Material trait is the card type's name. An ungraded card also shows Cased, Uncased Age (days)
+ *  and Moves; a slabbed one only its grade (docs/grading.md). */
 
 import type { DealtCard } from './deal'
 import { cardTitle } from './render'
@@ -26,10 +27,17 @@ export function cardMetadata(card: DealtCard, character: { name: string; categor
   const holo = HOLO_LABEL[card.holo]
   const edition = `${card.edition} of ${card.editionOf}`
   const holoText = card.holo === 'none' ? '' : card.holo === 'full' ? ' Full holo.' : ` ${holo} holo.`
-  const psa = card.grade == null ? 'Unrevealed' : `PDA ${card.grade}`
+  const psa = card.grade == null ? 'Ungraded' : `PDA ${card.grade}`
+  const wear = card.grade == null
+    ? [
+      { trait_type: 'Cased', value: card.cased ? 'Yes' : 'No' },
+      { trait_type: 'Uncased Age (days)', value: 0, display_type: 'number' as const },
+      { trait_type: 'Moves', value: 0, display_type: 'number' as const },
+    ]
+    : []
   return {
     name: cardTitle(typeName, name, card.serial),
-    description: `${name}, ${material}. Edition ${edition} from Series ${card.fire}. Global serial #${card.serial}.${holoText} ${card.grade == null ? 'PDA grade unrevealed.' : `${psa}.`}`,
+    description: `${name}, ${material}. Edition ${edition} from Series ${card.fire}. Global serial #${card.serial}.${holoText} ${card.grade == null ? 'Ungraded.' : `${psa}, slabbed.`}`,
     image,
     attributes: [
       { trait_type: 'Character', value: name },
@@ -40,6 +48,7 @@ export function cardMetadata(card: DealtCard, character: { name: string; categor
       { trait_type: 'Edition', value: edition },
       { trait_type: 'Serial', value: card.serial, display_type: 'number' as const },
       { trait_type: 'PDA', value: psa },
+      ...wear,
     ],
   }
 }

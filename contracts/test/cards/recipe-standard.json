@@ -10,8 +10,10 @@
       "holo": { "mode": "independent", "frame": "292893218813452475", "picture": "292893218813452475" } },
     { "name": "Coal", "slug": "coal", "rank": 3, "supply": "share", "amount": 49000000,
       "holo": { "mode": "independent", "frame": "683772233983162066", "picture": "683772233983162066" } },
-    { "name": "Diamond", "slug": "diamond", "rank": 4, "supply": "count", "amount": 1, "maxPerPack": 1,
-      "holo": { "mode": "distribution", "weights": ["0", "1", "1", "1"] } }
+    { "name": "Gold", "slug": "gold", "rank": 4, "supply": "count", "amount": 15, "maxPerPack": 1,
+      "holo": { "mode": "distribution", "weights": ["0", "0", "0", "1"] } },
+    { "name": "Full Art", "slug": "fullart", "rank": 5, "supply": "perCharacter", "amount": 1, "maxPerPack": 1,
+      "holo": { "mode": "distribution", "weights": ["0", "0", "0", "1"] } }
   ],
   "slots": [
     { "count": 3, "types": [0] },
@@ -24,5 +26,5 @@
     { "name": "Ash Wolf", "category": "Animals" },
     { "name": "Cinder Queen", "category": "Royals" }
   ],
-  "pdaOdds": ["100", "150", "200", "350", "700", "1800", "2500", "2400", "1700", "100"]
+  "pdaOdds": ["0", "0", "0", "0", "1000", "2000", "2700", "2500", "1700", "100"]
 }

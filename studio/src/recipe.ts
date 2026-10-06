@@ -12,8 +12,13 @@
 import { HOLO_TYPES, type HoloType } from './rules'
 import type { SaleJson } from './sale'
 
-export type Supply = 'filler' | 'share' | 'perPack' | 'count'
-export const SUPPLY_LABEL: Record<Supply, string> = { share: 'Share of cards', perPack: 'Per pack', count: 'Exact count', filler: 'Filler (the rest)' }
+export type Supply = 'filler' | 'share' | 'perPack' | 'count' | 'perCharacter'
+export const SUPPLY_LABEL: Record<Supply, string> = {
+  share: 'Share of cards', perPack: 'Per pack', count: 'Exact count', perCharacter: 'Per character (each gets exactly this many)',
+  filler: 'Filler (the rest)',
+}
+/** RecipeDealer's per-character counts are 16-bit. */
+export const MAX_PER_CHARACTER = 65_535n
 
 /** Independent: frame and picture each rolled at a chance out of 1e18. Distribution: weights for none, frame,
  *  picture, full (any total above 0). */
@@ -32,7 +37,8 @@ export interface CardTypeDef {
   slugEdited?: boolean
   rank: number
   supply: Supply
-  /** share: parts per billion of the Series' cards; perPack: cards per pack; count: exact cards; filler: unused. */
+  /** share: parts per billion of the Series' cards; perPack: cards per pack; count: exact cards; perCharacter: cards of
+   *  each character; filler: unused. */
   amount: string
   /** '0' = no cap; else at most maxPerPack x packs. */
   maxPerPack: string
@@ -55,7 +61,8 @@ export interface SlotDef {
 export interface Recipe {
   types: CardTypeDef[]
   slots: SlotDef[]
-  /** FirePsa weight per grade, grade 1 first (any total above 0). */
+  /** FirePsa fresh odds: a weight per grade, grade 1 first (any total above 0). Grades 1-4 are always 0: those come
+   *  only from wear (docs/grading.md). */
   pdaOdds: string[]
 }
 
@@ -66,8 +73,10 @@ const U64 = (1n << 64n) - 1n
 const U128 = (1n << 128n) - 1n
 export const MAX_TYPE_NAME_BYTES = 64
 export const MAX_SLUG_BYTES = 32
-/** FirePsa's default odds (out of 10,000). */
-export const DEFAULT_PDA_ODDS = ['100', '150', '200', '350', '700', '1800', '2500', '2400', '1700', '100']
+/** FirePsa's default fresh odds (out of 10,000): 10 1%, 9 17%, 8 25%, 7 27%, 6 20%, 5 10%. */
+export const DEFAULT_PDA_ODDS = ['0', '0', '0', '0', '1000', '2000', '2700', '2500', '1700', '100']
+/** Gold cards in a Standard Series by default. */
+export const DEFAULT_GOLD = 15
 
 // ---------------------------------------------------------------- presets
 
@@ -81,9 +90,31 @@ export const STANDARD_ROLLS = {
 
 const ind = (roll: string): HoloRule => ({ mode: 'independent', frame: roll, picture: roll })
 
-/** Exactly StandardRecipe.build(diamonds): Paper 3 per pack, Wood the rest, Fire 15%, Coal 4.9%, Diamond as set (at
- *  most one per pack's worth, always holo); pack of 6: 3 Paper, Wood, Wood-or-better, Fire-or-better. */
-export function standardRecipe(diamonds = 1): Recipe {
+const fullHolo = (): HoloRule => ({ mode: 'distribution', weights: ['0', '0', '0', '1'] })
+
+/** Exactly StandardRecipe.build(gold): Paper 3 per pack, Wood the rest, Fire 15%, Coal 4.9%, Gold as set (15 by
+ *  default, at most one per pack's worth, always full holo), Full Art one per character (at most one per pack's worth,
+ *  always full holo); pack of 6: 3 Paper, Wood, Wood-or-better, Fire-or-better. */
+export function standardRecipe(gold = DEFAULT_GOLD): Recipe {
+  const r = classicRecipe(gold)
+  r.types.push({
+    id: 'fullart', name: 'Full Art', slug: 'fullart', rank: 5, supply: 'perCharacter', amount: '1', maxPerPack: '1',
+    holo: fullHolo(), frameSet: 'fullart',
+  })
+  return r
+}
+
+/** The recipe Series saved before Gold had: the old Standard with Diamond (frame / picture / full, a third each). Only
+ *  migrate.ts uses it, so old saves keep their cards and images. */
+export function legacyDiamondRecipe(diamonds = 1): Recipe {
+  const r = classicRecipe(diamonds)
+  r.types[4] = { ...r.types[4], id: 'diamond', name: 'Diamond', slug: 'diamond', holo: { mode: 'distribution', weights: ['0', '1', '1', '1'] }, frameSet: 'diamond' }
+  r.pdaOdds = ['100', '150', '200', '350', '700', '1800', '2500', '2400', '1700', '100']
+  return r
+}
+
+/** StandardRecipe.classic(gold): the first five types only (the original recipe, Gold in Diamond's place). */
+export function classicRecipe(gold = DEFAULT_GOLD): Recipe {
   return {
     types: [
       { id: 'paper', name: 'Paper', slug: 'paper', rank: 0, supply: 'perPack', amount: '3', maxPerPack: '0', holo: ind(STANDARD_ROLLS.paper), frameSet: 'paper' },
@@ -91,8 +122,8 @@ export function standardRecipe(diamonds = 1): Recipe {
       { id: 'fire', name: 'Fire', slug: 'fire', rank: 2, supply: 'share', amount: '150000000', maxPerPack: '0', holo: ind(STANDARD_ROLLS.fire), frameSet: 'burning' },
       { id: 'coal', name: 'Coal', slug: 'coal', rank: 3, supply: 'share', amount: '49000000', maxPerPack: '0', holo: ind(STANDARD_ROLLS.coal), frameSet: 'charcoal' },
       {
-        id: 'diamond', name: 'Diamond', slug: 'diamond', rank: 4, supply: 'count', amount: String(Math.max(1, Math.floor(diamonds))),
-        maxPerPack: '1', holo: { mode: 'distribution', weights: ['0', '1', '1', '1'] }, frameSet: 'diamond',
+        id: 'gold', name: 'Gold', slug: 'gold', rank: 4, supply: 'count', amount: String(Math.max(1, Math.floor(gold))),
+        maxPerPack: '1', holo: fullHolo(), frameSet: 'gold',
       },
     ],
     slots: [
@@ -106,7 +137,7 @@ export function standardRecipe(diamonds = 1): Recipe {
 }
 
 /** An example special Series: 3 cards per pack, every card holo. Fire fills the packs, Coal is 30% of the cards and
- *  Diamond 2% (at most one per pack's worth); slots 1-2 are Fire-or-better, slot 3 Coal-or-better. Every slot is must-holo, so no
+ *  Gold 2% (at most one per pack's worth); slots 1-2 are Fire-or-better, slot 3 Coal-or-better. Every slot is must-holo, so no
  *  card is ever plain (and no "none" images are built). */
 export function specialAllHoloRecipe(): Recipe {
   const half = '500000000000000000'
@@ -115,8 +146,8 @@ export function specialAllHoloRecipe(): Recipe {
       { id: 'fire', name: 'Fire', slug: 'fire', rank: 2, supply: 'filler', amount: '0', maxPerPack: '0', holo: ind(half), frameSet: 'burning' },
       { id: 'coal', name: 'Coal', slug: 'coal', rank: 3, supply: 'share', amount: '300000000', maxPerPack: '0', holo: ind(half), frameSet: 'charcoal' },
       {
-        id: 'diamond', name: 'Diamond', slug: 'diamond', rank: 4, supply: 'share', amount: '20000000', maxPerPack: '1',
-        holo: { mode: 'distribution', weights: ['0', '1', '1', '1'] }, frameSet: 'diamond',
+        id: 'gold', name: 'Gold', slug: 'gold', rank: 4, supply: 'share', amount: '20000000', maxPerPack: '1',
+        holo: fullHolo(), frameSet: 'gold',
       },
     ],
     slots: [
@@ -207,7 +238,8 @@ export function cardsPerPack(r: Recipe): number {
 }
 
 function badText(s: string): boolean {
-  return /["\\\u0000-\u001f]/.test(s)
+  // JS strings are always valid UTF-8 once encoded, except lone surrogates: the contract refuses those too
+  return /["\\\u0000-\u001f\u007f]/.test(s) || /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(s)
 }
 
 function canHolo(t: CardTypeDef): boolean {
@@ -272,6 +304,9 @@ export function checkRecipe(r: Recipe): Problem[] {
     if (!slugs.has(t.slug)) slugs.set(t.slug, i)
     if (t.supply === 'filler') fillers++
     else if (t.supply === 'share' && parseUint(t.amount)! > SHARE_SCALE) typeP(i, 'share above 100%', 'share is above 100%.')
+    else if (t.supply === 'perCharacter' && (parseUint(t.amount)! === 0n || parseUint(t.amount)! > MAX_PER_CHARACTER)) {
+      typeP(i, 'per character', `per character must be 1 to ${MAX_PER_CHARACTER.toLocaleString()}.`)
+    }
     if (t.holo.mode === 'independent') {
       if (parseUint(t.holo.frame)! > HOLO_ONE || parseUint(t.holo.picture)! > HOLO_ONE) typeP(i, 'holo chances', 'a holo chance is above 100%.')
     } else if (t.holo.weights.reduce((a, w) => a + parseUint(w)!, 0n) === 0n) {
@@ -355,7 +390,7 @@ export function checkRecipe(r: Recipe): Problem[] {
     // setRecipe's dry runs (never expected to fail: the floor holds for every size)
     try {
       const plan = compileRecipe(r)
-      for (const p of [1n, 2n, 7n, 1_000_003n]) poolOf(plan, p)
+      for (const [p, ch] of [[1n, 1n], [2n, 1n], [7n, 1n], [7n, 1_000n], [1_000_003n, 1n]]) poolOf(plan, p, ch)
     } catch (e) {
       out.push({ code: 'Infeasible', where: 'recipe', message: `The pool can't fill the packs (${(e as Error).message}).` })
     }
@@ -367,6 +402,7 @@ function pdaProblems(r: Recipe): Problem[] {
   const out: Problem[] = []
   const w = r.pdaOdds.map((x) => parseUint(x))
   if (r.pdaOdds.length !== 10 || w.some((x) => x == null || x > U64)) out.push({ code: 'Studio', where: 'pda', message: 'PDA odds: one whole-number weight per grade, 1 to 10.' })
+  else if (w.slice(0, 4).some((x) => x! > 0n)) out.push({ code: 'BadOdds', where: 'pda', message: 'PDA 1-4 must be 0: fresh cards grade 5-10, lower grades come only from wear.' })
   else if (w.reduce((a, x) => a! + x!, 0n) === 0n) out.push({ code: 'BadOdds', where: 'pda', message: 'PDA odds add up to 0: give at least one grade a weight.' })
   return out
 }
@@ -459,7 +495,8 @@ export function compileRecipe(r: Recipe): Plan {
   for (const pass of [0, 1]) {
     const start = trim.length
     for (let t = 0; t < T; t++) {
-      if (t === filler || (r.types[t].supply === 'count') !== (pass === 1)) continue
+      const exact = r.types[t].supply === 'count' || r.types[t].supply === 'perCharacter'
+      if (t === filler || exact !== (pass === 1)) continue
       let i = trim.length
       trim.push(t)
       while (i > start && ranks[trim[i - 1]] > ranks[t]) { trim[i] = trim[i - 1]; i-- }
@@ -478,8 +515,9 @@ export function compileRecipe(r: Recipe): Plan {
 
 export class Infeasible extends Error {}
 
-/** The pool for `packs` packs: one count per type (recipe order), and per node. Exactly RecipeDealer._pool. */
-export function poolOf(p: Plan, packs: bigint): { counts: bigint[]; sums: bigint[] } {
+/** The pool for `packs` packs and `chars` characters: one count per type (recipe order), and per node. Exactly
+ *  RecipeCompiler._pool. */
+export function poolOf(p: Plan, packs: bigint, chars = 1n): { counts: bigint[]; sums: bigint[] } {
   const n = packs * BigInt(p.S)
   const c = new Array<bigint>(p.T).fill(0n)
   let used = 0n
@@ -488,6 +526,7 @@ export function poolOf(p: Plan, packs: bigint): { counts: bigint[]; sums: bigint
     let x: bigint
     if (p.supply[t] === 'share') x = (p.amount[t] * n + SHARE_SCALE / 2n) / SHARE_SCALE
     else if (p.supply[t] === 'perPack') x = p.amount[t] * packs
+    else if (p.supply[t] === 'perCharacter') x = p.amount[t] * chars
     else x = p.amount[t]
     if (p.cap[t] !== 0n && x > p.cap[t] * packs) x = p.cap[t] * packs
     c[t] = x
@@ -556,19 +595,20 @@ export function poolOf(p: Plan, packs: bigint): { counts: bigint[]; sums: bigint
   return { counts: c, sums }
 }
 
-/** RecipeDealer.previewPool: the pool a (valid) recipe gives for `packs` packs. */
-export function previewPool(r: Recipe, packs: number | bigint): bigint[] {
-  return poolOf(compileRecipe(r), BigInt(packs)).counts
+/** RecipeDealer.previewPool: the pool a (valid) recipe gives for `packs` packs and `chars` characters. */
+export function previewPool(r: Recipe, packs: number | bigint, chars: number | bigint = 1): bigint[] {
+  return poolOf(compileRecipe(r), BigInt(packs), BigInt(chars)).counts
 }
 
 /** What each type's rule alone gives (cap applied, filler the rest), before the floor: to show what the floor moved. */
-export function rulePool(r: Recipe, packs: bigint): bigint[] {
+export function rulePool(r: Recipe, packs: bigint, chars = 1n): bigint[] {
   const p = compileRecipe(r)
   const n = packs * BigInt(p.S)
   let used = 0n
   const c = p.amount.map((amt, t) => {
     if (t === p.filler) return 0n
-    let x = p.supply[t] === 'share' ? (amt * n + SHARE_SCALE / 2n) / SHARE_SCALE : p.supply[t] === 'perPack' ? amt * packs : amt
+    let x = p.supply[t] === 'share' ? (amt * n + SHARE_SCALE / 2n) / SHARE_SCALE : p.supply[t] === 'perPack' ? amt * packs
+      : p.supply[t] === 'perCharacter' ? amt * chars : amt
     if (p.cap[t] !== 0n && x > p.cap[t] * packs) x = p.cap[t] * packs
     used += x
     return x
@@ -676,7 +716,9 @@ export function recipeFromJson(j: RecipeJson, frameSetOf: (slug: string) => stri
 }
 
 /** The Standard frame sets by slug (Fire uses the 'burning' frames, Coal the 'charcoal' ones). */
-export const STANDARD_FRAME_SET: Record<string, string> = { paper: 'paper', wood: 'wood', fire: 'burning', coal: 'charcoal', diamond: 'diamond' }
+export const STANDARD_FRAME_SET: Record<string, string> = {
+  paper: 'paper', wood: 'wood', fire: 'burning', coal: 'charcoal', gold: 'gold', fullart: 'fullart', diamond: 'diamond',
+}
 
 /** A short fingerprint of everything in the recipe that changes which images exist or what they show. */
 export function recipeGridKey(r: Recipe): string {

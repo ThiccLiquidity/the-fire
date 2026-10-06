@@ -7,7 +7,8 @@
  *     left (a type in no smaller set). So every pack keeps its slots and the totals come out exact.
  *  3. Holo: frame and picture rolled independently at the type's chances, or picked by its weights; a must-holo slot
  *     picks given holo.
- *  4. Character: uniform per card. Serials: a seeded permutation of the Series' block of serials.
+ *  4. Character: uniform per card; a per-character type (one Full Art each) picks by how many of each character are
+ *     still owed, so every character gets exactly its share. Serials: a seeded permutation of the Series' block.
  *  5. Edition: within the Series, per character + type, 1..N in serial order.
  *  On-chain the drand words decide all this when each pack is opened; this is a preview of the same rules. PDA grades
  *  are not rolled here. */
@@ -52,8 +53,10 @@ export interface DealtCard {
   edition: number
   /** N in "k of N · Series F". */
   editionOf: number
-  /** PDA grade 1-10 once revealed; absent until then. */
+  /** PDA grade 1-10 once revealed (slabbed); absent until then. */
   grade?: number | null
+  /** In a case (ungraded). */
+  cased?: boolean
 }
 
 export interface DealResult {
@@ -87,7 +90,7 @@ export function dealFire(input: DealInput): DealResult {
   if (packs * S > MAX_DEAL_CARDS) {
     throw new Error(`The sample deal deals at most ${MAX_DEAL_CARDS.toLocaleString()} cards (${packs.toLocaleString()} packs x ${S} = ${(packs * S).toLocaleString()}). The pool preview still covers any size.`)
   }
-  const { counts, sums } = poolOf(plan, BigInt(packs))
+  const { counts, sums } = poolOf(plan, BigInt(packs), BigInt(characterIds.length))
   const pool = counts.map(Number)
   const typeLeft = [...pool]
   const nodeLeft = sums.map(Number)
@@ -167,7 +170,18 @@ export function dealFire(input: DealInput): DealResult {
       holoFrame: p.holoFrame, holoPicture: p.holoPicture, holo: holoTypeOf(p.holoFrame, p.holoPicture), edition: 0, editionOf: 0,
     }
   })
-  for (const card of cards) card.characterId = characterIds[charStream.int(characterIds.length)]
+  // per-character types: each character is owed `amount` cards of the type
+  const owed = recipe.types.map((t) => (t.supply === 'perCharacter' ? characterIds.map(() => Number(parseUint(t.amount) ?? 0n)) : null))
+  for (const card of cards) {
+    const o = owed[card.type]
+    if (!o || o.every((x) => x === 0)) {
+      card.characterId = characterIds[charStream.int(characterIds.length)]
+      continue
+    }
+    const c = pick(o, charStream)
+    o[c]--
+    card.characterId = characterIds[c]
+  }
 
   // Edition: k of N within this Series, per character + type, in serial order.
   const groups = new Map<string, DealtCard[]>()

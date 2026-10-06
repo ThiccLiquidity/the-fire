@@ -31,15 +31,39 @@ for (const set of Object.values(FRAME_FILES)) {
   }
 }
 
-/** Every frame set found: the Standard five first, then the others alphabetically. */
+/** Sets the Standard recipe uses that may not be delivered yet: listed (and their art can be uploaded) before their
+ *  frames exist; a missing frame still blocks the build. */
+const EXPECTED_SETS = ['gold', 'fullart']
+
+/** Every frame set: the five originals, Gold and Full Art, then any others found, alphabetically. */
 export const FRAME_SETS: FrameSetId[] = [
   ...MATERIALS,
-  ...Object.keys(FRAME_FILES).filter((s) => !(MATERIALS as readonly string[]).includes(s)).sort(),
+  ...EXPECTED_SETS,
+  ...Object.keys(FRAME_FILES).filter((s) => !(MATERIALS as readonly string[]).includes(s) && !EXPECTED_SETS.includes(s)).sort(),
 ]
 
-/** The name shown for a frame set: Paper, Wood, Fire, Coal, Diamond, or the id capitalised. */
+/** Gold and Full Art are always full holo: their cards use only the holo frame and the holo art. */
+export const HOLO_ONLY_SETS: readonly FrameSetId[] = ['gold', 'fullart']
+
+/** The art (and frame) variants a set's cards can use. */
+export function variantsOf(s: FrameSetId): Variant[] {
+  return HOLO_ONLY_SETS.includes(s) ? ['holo'] : [...VARIANTS]
+}
+
+const EXTRA_LABEL: Record<string, string> = { gold: 'Gold', fullart: 'Full Art' }
+
+/** The name shown for a frame set: Paper, Wood, Fire, Coal, Diamond, Gold, Full Art, or the id capitalised. */
 export function frameSetLabel(s: FrameSetId): string {
-  return (MATERIAL_LABEL as Record<string, string>)[s] ?? s.charAt(0).toUpperCase() + s.slice(1)
+  return (MATERIAL_LABEL as Record<string, string>)[s] ?? EXTRA_LABEL[s] ?? s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/** Frame sets whose art fills the whole card behind a slim rim (the frame's name bar and bottom panel stay where every
+ *  other frame has them). Full Art is the first. */
+export const FULL_CARD_ART_SETS: readonly FrameSetId[] = ['fullart']
+
+/** Where a frame set's art goes: the square art window, or the whole card for a full-card-art set. */
+export function artBoxOf(s: FrameSetId): Rect {
+  return FULL_CARD_ART_SETS.includes(s) ? { x: 0, y: 0, w: 1500, h: 2100 } : { ...FRAME_GEOMETRY.art }
 }
 
 /** Kept for older code paths: the clean frames of the Standard sets. */

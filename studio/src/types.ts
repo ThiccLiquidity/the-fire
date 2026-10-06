@@ -116,6 +116,9 @@ export interface UploadState {
   /** The images folder name the images CID belongs to (it carries a fingerprint of the files). A rebuild changes it,
    *  so the saved CIDs are not reused for different images. Missing on uploads saved by older versions. */
   imagesDir?: string
+  /** The build (FireRecord.build.builtAt) the uploaded images came from: recipe.json only carries imagesBase while the
+   *  upload is of the current build. */
+  buildAt?: number
   /** An unfinished resumable (TUS) upload of a CAR, so a reload can continue it: which folder, its root CID and size,
    *  and the upload URL Pinata gave. */
   pending?: { dir: string; root: string; size: number; url: string }

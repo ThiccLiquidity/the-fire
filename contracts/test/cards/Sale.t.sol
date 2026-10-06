@@ -6,10 +6,11 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
 import {ConfigureSeries} from "../../script/ConfigureSeries.s.sol";
 import {SeriesHelper} from "./SeriesHelper.sol";
-import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockPlankTwap, MockPair} from "../Mocks.sol";
+import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockPlankTwap, MockPair, MockBurner} from "../Mocks.sol";
 
 /// @dev A Uniswap V2 router stand-in with a fixed PLANK price (it holds PLANK and pays it out). It can be told to fail,
 ///      and it enforces amountOutMin like the real one.
@@ -90,12 +91,12 @@ contract SaleTest is SeriesHelper {
         rng = new MockRandomness();
         packs = new FirePacks(owner);
         cards = new FireCards(owner, address(packs));
-        dealer = new RecipeDealer(owner, address(cards));
+        dealer = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         rng.setFire(address(cards));
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), router: address(router), revenueWallet: revenue, burnWallet: burnW,
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, burnWallet: burnW,
             paperPerSuggestion: 1e18
         }));
         vm.startPrank(owner, owner);
@@ -471,7 +472,7 @@ contract SaleTest is SeriesHelper {
             rng.fulfill(rng.last(), uint256(keccak256(abi.encode(opened))));
             opened += c;
         }
-        cards.process(type(uint256).max);
+        cards.process(1, type(uint256).max);
         assertEq(cards.balanceOf(alice), nPacks * 6);
     }
 
@@ -794,14 +795,14 @@ contract SaleTest is SeriesHelper {
     function test_audit2_feedsReplaceableOnlyBetweenDrops() public {
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.DropsActive.selector);
-        sale.setFeeds(address(ethFeed), address(plankFeed), address(router));
+        sale.setFeeds(address(ethFeed), address(plankFeed), address(0), address(router));
         _drop(1, start, 4, 0, 0, 5);
         _open();
         vm.prank(alice, alice);
         sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max, _na());
         MockFeed newEth = new MockFeed(ETH_USD);
         vm.prank(owner, owner);
-        sale.setFeeds(address(newEth), address(plankFeed), address(router));
+        sale.setFeeds(address(newEth), address(plankFeed), address(0), address(router));
         assertEq(address(sale.ETH_USD()), address(newEth));
     }
 
@@ -914,7 +915,7 @@ contract SaleTest is SeriesHelper {
         FireSale s2 = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(twap), router: address(router), revenueWallet: revenue, burnWallet: burnW,
+            plankUsd: address(twap), paperUsd: address(0), router: address(router), revenueWallet: revenue, burnWallet: burnW,
             paperPerSuggestion: 1e18
         }));
         s2.quotePlank(1, 1); // a normal 30-minute window: fine
@@ -1135,6 +1136,10 @@ contract SaleTest is SeriesHelper {
         c = _cfg(uint64(block.timestamp + 1 hours), 0, 2, 0, 0);
         c.liftAfter = 0;
         c.priceUsd = 0;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(2, c); // unclaimed press packs would sell at $0
+        c.priceUsd = 250_000_000;
         _set(2, c);
         _warp(block.timestamp + 1 hours);
         vm.prank(alice, alice);
@@ -1307,7 +1312,8 @@ contract SaleTest is SeriesHelper {
         _warp(start + 48 hours);
         vm.prank(owner, owner);
         sale.endDrop(1); // one drop at a time
-        FirePsa psa = new FirePsa(owner, address(cards), address(paper), address(0));
+        _warp(1_800_000_000); // the export's start is a few months on from here
+        FirePsa psa = new FirePsa(owner, address(cards), address(new MockBurner(address(plank), address(0))));
         ConfigureSeries cs = new ConfigureSeries();
         string memory json = vm.readFile("test/cards/recipe-studio-sale.json");
         ConfigureSeries.Call[] memory calls = cs.buildAll(json, address(dealer), address(cards), address(psa), address(sale), 200);
@@ -1321,7 +1327,7 @@ contract SaleTest is SeriesHelper {
         }
         vm.stopPrank();
         FireSale.Drop memory d = sale.dropOf(7);
-        assertEq(d.start, 1_900_000_000);
+        assertEq(d.start, 1_810_000_000);
         assertEq(d.packs, 117);
         assertEq(d.starters, 50);
         assertEq(d.plankOnly, 50);
@@ -1344,16 +1350,21 @@ contract SaleTest is SeriesHelper {
         assertEq(d.creditPacksPerWallet, 0);
         assertEq(d.holderRoot, bytes32(0xabababababababababababababababababababababababababababababababab));
         // DROP_START and HOLDER_ROOT override the block's start and root
-        vm.setEnv("DROP_START", "1900000123");
+        vm.setEnv("DROP_START", "1810000123");
         vm.setEnv("HOLDER_ROOT", "0x0000000000000000000000000000000000000000000000000000000000000001");
         FireSale.DropConfig memory c = cs.parseSale(json);
-        assertEq(c.start, 1_900_000_123);
+        assertEq(c.start, 1_810_000_123);
         assertEq(c.holderRoot, bytes32(uint256(1)));
-        // a missing field is named
-        vm.expectRevert(bytes(".sale.creditsPerPick is missing"));
+        // a misspelt field is refused by name, not read as 0
+        vm.expectRevert(bytes(".sale: unknown key creditsPerPik"));
         cs.parseSale(vm.replace(json, '"creditsPerPick"', '"creditsPerPik"'));
-        vm.expectRevert(bytes(".sale.creditPacksMax is missing"));
+        vm.expectRevert(bytes(".sale: unknown key creditPacksMx"));
         cs.parseSale(vm.replace(json, '"creditPacksMax"', '"creditPacksMx"'));
+        // a start more than a year away is refused
+        vm.setEnv("DROP_START", "1900000123");
+        vm.expectRevert(bytes("sale.start is more than a year away: a typo?"));
+        cs.parseSale(json);
+        vm.setEnv("DROP_START", "1810000000");
     }
 
     // ---------------------------------------------------------------- caps on free (credit) packs
@@ -1432,5 +1443,100 @@ contract SaleTest is SeriesHelper {
         sale.configureDrop(1, c);
         assertEq(sale.dropOf(1).creditPacksMax, 2);
         assertEq(sale.dropOf(1).creditPacksPerWallet, 1);
+    }
+
+    // ---------------------------------------------------------------- Plan A and round-4 fixes
+
+    event DropConfigured(uint256 indexed fire, FireSale.DropConfig config);
+
+    /// A pack's PAPER never costs more than $1: past $1 a PAPER it takes $1 worth (part of a PAPER).
+    function test_packPaperCappedAtOneDollar() public {
+        MockFeed paperUsd = new MockFeed(5e18); // PAPER at $5
+        paperUsd.setDecimals(18);
+        _warp(start + 72 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(1);
+        vm.prank(owner, owner);
+        sale.setFeeds(address(ethFeed), address(plankFeed), address(paperUsd), address(router));
+        uint64 s3 = uint64(block.timestamp + 1 hours);
+        FireSale.DropConfig memory c = _cfg(s3, 10, 0, 0, 0);
+        c.liftAfter = 0;
+        c.plankOnlyFor = 0;
+        _set(2, c);
+        _warp(s3);
+        paperUsd.set(5e18);
+        assertEq(sale.paperFor(2, 1), 0.2e18, "$1 of PAPER at $5");
+        uint256 before = paper.balanceOf(alice);
+        vm.prank(alice, alice);
+        sale.buyWithPlank(2, 3, type(uint256).max, 0.6e18, _na());
+        assertEq(before - paper.balanceOf(alice), 0.6e18);
+        paperUsd.set(0.08e18);
+        assertEq(sale.paperFor(2, 2), 2e18, "under $1 a PAPER: the full PAPER");
+        paperUsd.setBroken(true);
+        assertEq(sale.paperFor(2, 2), 2e18, "no price: the drop's PAPER per pack");
+    }
+
+    /// Setting a drop up locks its Series (recipe, characters, dealer, images, odds) before anyone can buy.
+    function test_configureDropLocksTheSeries() public {
+        (, , bool locked,,,) = cards.fires(1);
+        assertTrue(locked);
+        (string[] memory names, string[] memory cats) = _chars(2);
+        vm.startPrank(owner, owner);
+        vm.expectRevert(RecipeDealer.FireIsLocked.selector);
+        dealer.setCharacters(1, names, cats);
+        vm.expectRevert(FireCards.FireIsLocked.selector);
+        cards.setImagesBase(1, "ipfs://other/");
+        vm.stopPrank();
+    }
+
+    /// The event carries the per-transaction cap that applies (0 means the default).
+    function test_dropConfiguredEventShowsTheAppliedCap() public {
+        FireSale.DropConfig memory c = _cfg(uint64(block.timestamp + 30 minutes), 10, 3, 4, 5);
+        FireSale.DropConfig memory e = c;
+        e.maxPerTx = uint32(sale.DEFAULT_MAX_PER_TX());
+        vm.expectEmit(address(sale));
+        emit DropConfigured(1, e);
+        vm.prank(owner, owner);
+        sale.configureDrop(1, c);
+    }
+
+    /// Even a drop with no timed phases runs at least a day before the owner can end it.
+    function test_endDropWaitsAtLeastADay() public {
+        _warp(start + 72 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(1);
+        FireSale.DropConfig memory c = _cfg(uint64(block.timestamp + 1 hours), 10, 0, 0, 0);
+        (c.liftAfter, c.plankOnlyFor, c.regularWalletsFor, c.starterWindow) = (0, 0, 0, 0);
+        _set(2, c);
+        _warp(block.timestamp + 2 hours);
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.TooEarly.selector);
+        sale.endDrop(2);
+        _warp(block.timestamp + 1 days);
+        vm.prank(owner, owner);
+        sale.endDrop(2);
+        FireSale.Phase memory p = sale.phase(2);
+        assertTrue(p.closed);
+        assertFalse(p.plankOnly);
+        assertEq(p.paidLeft, 0, "an ended drop has nothing for sale");
+    }
+
+    /// Credit packs aren't available in a Series whose packs hold 42+ cards (burning one would pay for itself).
+    function test_noCreditsInBigPackSeries() public {
+        RecipeDealer.Recipe memory r;
+        r.types = new RecipeDealer.CardType[](1);
+        r.types[0] = _type("Common", "common", 0, RecipeDealer.Supply.Filler, 0);
+        r.slots = new RecipeDealer.Slot[](1);
+        r.slots[0] = _slotOne(42, 0);
+        _series(cards, dealer, owner, 5, r, 2);
+        _warp(start + 72 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(1);
+        uint64 s5 = uint64(block.timestamp + 1 hours);
+        _set(5, _cfg(s5, 10, 0, 0, 5));
+        _warp(s5);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.useCredits(5, 1, type(uint256).max);
     }
 }

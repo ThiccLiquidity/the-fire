@@ -6,8 +6,10 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
+import {CardsRenderer} from "../../src/cards/CardsRenderer.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
-import {MockERC20, MockRandomness} from "../Mocks.sol";
+import {MockERC20, MockRandomness, MockBurner} from "../Mocks.sol";
 import {SeriesHelper} from "./SeriesHelper.sol";
 import {ConfigureSeries} from "../../script/ConfigureSeries.s.sol";
 
@@ -19,6 +21,7 @@ contract RecipeTest is SeriesHelper {
     FireCards cards;
     RecipeDealer dealer;
     FirePsa psa;
+    CardsRenderer renderer;
     MockRandomness rng;
     bytes32 constant DEALT = keccak256("CardDealt(uint256,uint256,uint256,uint256,bool,bool,uint256)");
     uint32 constant ANY = type(uint32).max;
@@ -26,8 +29,9 @@ contract RecipeTest is SeriesHelper {
     function setUp() public {
         packs = new FirePacks(owner);
         cards = new FireCards(owner, address(packs));
-        dealer = new RecipeDealer(owner, address(cards));
-        psa = new FirePsa(owner, address(cards), address(new MockERC20("PAPER", "PAPER")), address(0));
+        dealer = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
+        psa = new FirePsa(owner, address(cards), address(new MockBurner(address(1), address(0))));
+        renderer = new CardsRenderer(address(cards));
         rng = new MockRandomness();
         rng.setFire(address(cards));
         vm.startPrank(owner);
@@ -36,6 +40,7 @@ contract RecipeTest is SeriesHelper {
         cards.setSeller(seller);
         cards.setRandomness(address(rng));
         cards.setPsa(address(psa));
+        cards.setRenderer(address(renderer));
         vm.stopPrank();
         _standard(cards, dealer, owner, 1, 3, 1);
     }
@@ -64,7 +69,7 @@ contract RecipeTest is SeriesHelper {
         for (uint256 i; i < n; i++) { vm.prank(_holder(i % 17)); cards.open(fire, 1); }
         vm.recordLogs();
         for (uint256 i; i < n; i++) rng.fulfill(first + i, uint256(keccak256(abi.encode(salt, i))));
-        cards.process(type(uint256).max);
+        cards.process(fire, type(uint256).max);
         out = _dealtFromLogs();
     }
 
@@ -77,9 +82,8 @@ contract RecipeTest is SeriesHelper {
         for (uint256 i; i < logs.length; i++) {
             if (logs[i].topics[0] != DEALT) continue;
             Dealt memory d = out[k++];
-            d.openIndex = uint256(logs[i].topics[1]);
             d.serial = uint256(logs[i].topics[2]);
-            (, d.cardType, d.frame, d.picture, d.character) = abi.decode(logs[i].data, (uint256, uint256, bool, bool, uint256));
+            (d.openIndex, d.cardType, d.frame, d.picture, d.character) = abi.decode(logs[i].data, (uint256, uint256, bool, bool, uint256));
         }
     }
 
@@ -88,7 +92,7 @@ contract RecipeTest is SeriesHelper {
     function test_standardRecipeViews() public view {
         RecipeDealer.Recipe memory r = dealer.recipeOf(1);
         assertEq(r.types.length, 5);
-        assertEq(r.types[4].slug, "diamond");
+        assertEq(r.types[4].slug, "gold");
         assertEq(r.types[2].name, "Fire");
         assertEq(r.slots.length, 4);
         assertEq(r.slots[3].minRank, 2);
@@ -99,10 +103,11 @@ contract RecipeTest is SeriesHelper {
         assertTrue(dealer.ready(1));
         assertTrue(cards.ready(1));
         assertFalse(cards.ready(2));
-        // holo odds: Diamond a third each; Paper ~95% none
+        // holo odds: Gold always full holo; Paper ~95% none
         uint256[4] memory o = dealer.holoOdds(1, 4);
         assertEq(o[0], 0);
-        assertEq(o[1], uint256(1e18) / 3);
+        assertEq(o[1], 0);
+        assertEq(o[3], 1e18);
         o = dealer.holoOdds(1, 0);
         assertApproxEqAbs(o[0], 0.95e18, 1e4);
         assertApproxEqAbs(o[1] + o[2] + o[3], 0.05e18, 1e4);
@@ -199,13 +204,13 @@ contract RecipeTest is SeriesHelper {
         dealer.setCharacters(1, new string[](0), new string[](0));
     }
 
-    /// A new card type, Gold, added above Diamond: the rank-range slots (Wood-or-better, Fire-or-better) take it with
-    /// no other change; three in the Series, always full holo.
-    function test_goldTypeAdded() public {
-        RecipeDealer.Recipe memory r = StandardRecipe.build(2);
+    /// A new card type, Platinum, added above Gold: the rank-range slots (Wood-or-better, Fire-or-better) take it
+    /// with no other change; three in the Series, always full holo.
+    function test_newTypeAdded() public {
+        RecipeDealer.Recipe memory r = StandardRecipe.classic(2);
         RecipeDealer.CardType[] memory ts = new RecipeDealer.CardType[](6);
         for (uint256 i; i < 5; i++) ts[i] = r.types[i];
-        ts[5] = _holoWeights(_type("Gold", "gold", 5, RecipeDealer.Supply.Count, 3), 0, 0, 0, 1);
+        ts[5] = _holoWeights(_type("Platinum", "platinum", 5, RecipeDealer.Supply.Count, 3), 0, 0, 0, 1);
         ts[5].maxPerPack = 1;
         r.types = ts;
         _series(cards, dealer, owner, 9, r, 5);
@@ -230,9 +235,9 @@ contract RecipeTest is SeriesHelper {
         }
         assertEq(gold, 3);
         FireCards.Card memory g = cards.cardOf(goldSerial);
-        assertEq(cards.imageFile(goldSerial), string.concat("c", vm.toString(g.character), "-gold-full-u.webp"));
+        assertEq(renderer.imageFile(goldSerial), string.concat("c", vm.toString(g.character), "-platinum-full-u.webp"));
         string memory json = _json(cards.tokenURI(goldSerial));
-        assertTrue(_contains(json, '{"trait_type":"Material","value":"Gold"}'), json);
+        assertTrue(_contains(json, '{"trait_type":"Material","value":"Platinum"}'), json);
         vm.parseJson(json);
     }
 
@@ -278,7 +283,7 @@ contract RecipeTest is SeriesHelper {
         rng.fulfill(rng.last(), 12345);
 
         uint256 snap = vm.snapshotState();
-        assertEq(cards.process(type(uint256).max), 3000);
+        assertEq(cards.process(11, type(uint256).max), 3000);
         bytes32[] memory a = new bytes32[](3000);
         for (uint256 s = 1; s <= 3000; s++) a[s - 1] = keccak256(abi.encode(cards.cardOf(s)));
         vm.revertToState(snap);
@@ -287,7 +292,7 @@ contract RecipeTest is SeriesHelper {
         uint256 maxGas;
         while (true) {
             uint256 g = gasleft();
-            uint256 n = cards.process(300);
+            uint256 n = cards.process(11, 300);
             uint256 used = g - gasleft();
             if (n == 0) break;
             calls++;
@@ -322,7 +327,7 @@ contract RecipeTest is SeriesHelper {
         r.slots = new RecipeDealer.Slot[](2);
         r.slots[0] = _slotOne(2, 0);
         r.slots[1] = _slotOne(1, 1);
-        uint256[] memory pool = dealer.previewPool(r, 10);
+        uint256[] memory pool = dealer.previewPool(r, 10, 1);
         assertEq(pool[0], 20); assertEq(pool[1], 10);
         _series(cards, dealer, owner, 12, r, 1);
         _sellAndClose(12, 10);
@@ -343,12 +348,12 @@ contract RecipeTest is SeriesHelper {
         r.slots = new RecipeDealer.Slot[](2);
         r.slots[0] = _slotOne(5, 0);
         r.slots[1] = _slotRange(1, 0, ANY);
-        uint256[] memory pool = dealer.previewPool(r, 100);
+        uint256[] memory pool = dealer.previewPool(r, 100, 1);
         assertEq(pool[0], 500); assertEq(pool[1], 100);
         // and an exact count bigger than any pack could hold
         r.types[1].supply = RecipeDealer.Supply.Count;
         r.types[1].amount = 1_000_000;
-        pool = dealer.previewPool(r, 3);
+        pool = dealer.previewPool(r, 3, 1);
         assertEq(pool[0], 15); assertEq(pool[1], 3);
         // a cap (at most one per pack's worth) applies before the floor
         r.types[1].amount = 7;
@@ -361,9 +366,9 @@ contract RecipeTest is SeriesHelper {
         s3[1] = r.slots[1];
         s3[2] = _slotRange(1, 0, ANY);
         r.slots = s3;
-        pool = dealer.previewPool(r, 4); // 12 cards: Rare min(7, 4) = 4, Common 8
+        pool = dealer.previewPool(r, 4, 1); // 12 cards: Rare min(7, 4) = 4, Common 8
         assertEq(pool[1], 4); assertEq(pool[0], 8);
-        pool = dealer.previewPool(r, 10); // Rare 7 (under the cap), Common 23
+        pool = dealer.previewPool(r, 10, 1); // Rare 7 (under the cap), Common 23
         assertEq(pool[1], 10, "guaranteed slot: topped up to one per pack");
     }
 
@@ -473,10 +478,10 @@ contract RecipeTest is SeriesHelper {
     // ---------------------------------------------------------------- everything locks at the first pack
 
     function test_everythingLocksAtTheFirstMint() public {
-        RecipeDealer other = new RecipeDealer(owner, address(cards));
+        RecipeDealer other = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         RecipeDealer.Recipe memory one = _two();
         (string[] memory names, string[] memory cats) = _chars(2);
-        uint64[10] memory odds = [uint64(1), 1, 1, 1, 1, 1, 1, 1, 1, 1];
+        uint64[10] memory odds = [uint64(0), 0, 0, 0, 1, 1, 1, 1, 1, 1];
 
         // a dealer must have the Series set up before it can be chosen
         vm.prank(owner);
@@ -607,7 +612,7 @@ contract RecipeTest is SeriesHelper {
         vm.prank(_holder(0));
         cards.open(1, 1);
         rng.fulfill(rng.last(), 3);
-        cards.process(4); // part of a pack
+        cards.process(1, 4); // part of a pack
         (left, packsLeft) = dealer.remainingOf(1);
         assertEq(packsLeft, 9, "the pack being dealt counts as started");
         assertEq(left[0] + left[1] + left[2] + left[3] + left[4], 56);
@@ -624,7 +629,7 @@ contract RecipeTest is SeriesHelper {
         string memory json = vm.readFile("test/cards/recipe-standard.json");
         ConfigureSeries.Series memory s = cs.parse(json);
         assertEq(s.fire, 7);
-        assertEq(keccak256(abi.encode(s.recipe)), keccak256(abi.encode(StandardRecipe.build(1))), "same as StandardRecipe");
+        assertEq(keccak256(abi.encode(s.recipe)), keccak256(abi.encode(StandardRecipe.build(15))), "same as StandardRecipe");
         ConfigureSeries.Call[] memory calls = cs.build(json, address(dealer), address(cards), address(psa), 2);
         assertEq(calls.length, 6, "recipe, 2 character batches, dealer, images, odds");
         vm.startPrank(owner);
@@ -643,5 +648,71 @@ contract RecipeTest is SeriesHelper {
         string memory bad = vm.replace(json, '"minRank": 2', '"types": [9]');
         vm.expectRevert(abi.encodeWithSelector(RecipeDealer.BadSlot.selector, 3, "type index"));
         cs.build(bad, address(dealer), address(cards), address(psa), 2);
+    }
+
+    // ---------------------------------------------------------------- Full Art: one of each character
+
+    /// The Standard recipe: Gold (15, full holo) and one Full Art per character, each character exactly once.
+    function test_fullArtOnePerCharacter() public {
+        _series(cards, dealer, owner, 20, StandardRecipe.build(0), 12);
+        _sellAndClose(20, 100);
+        uint256[] memory pool = dealer.poolOf(20);
+        assertEq(pool.length, 6);
+        assertEq(pool[4], 15, "Gold");
+        assertEq(pool[5], 12, "one Full Art per character");
+        Dealt[] memory d = _openAll(20, 100, 11);
+        uint256[12] memory per;
+        uint256 fa;
+        uint256 gold;
+        for (uint256 i; i < d.length; i++) {
+            if (d[i].cardType == 5) {
+                fa++;
+                per[d[i].character]++;
+                assertTrue(d[i].frame && d[i].picture, "Full Art: full holo");
+            }
+            if (d[i].cardType == 4) {
+                gold++;
+                assertTrue(d[i].frame && d[i].picture, "Gold: full holo");
+            }
+        }
+        assertEq(fa, 12);
+        assertEq(gold, 15);
+        for (uint256 c; c < 12; c++) assertEq(per[c], 1, "each character exactly once");
+    }
+
+    function test_perCharacterAmounts() public {
+        RecipeDealer.Recipe memory r;
+        r.types = new RecipeDealer.CardType[](2);
+        r.types[0] = _type("Common", "common", 0, RecipeDealer.Supply.Filler, 0);
+        r.types[1] = _holoWeights(_type("Alt", "alt", 1, RecipeDealer.Supply.PerCharacter, 3), 0, 0, 0, 1);
+        r.slots = new RecipeDealer.Slot[](1);
+        r.slots[0] = _slotRange(4, 0, ANY);
+        _series(cards, dealer, owner, 21, r, 5);
+        assertEq(dealer.poolFor(21, 30)[1], 15, "3 x 5 characters");
+        _sellAndClose(21, 30);
+        Dealt[] memory d = _openAll(21, 30, 12);
+        uint256[5] memory per;
+        for (uint256 i; i < d.length; i++) if (d[i].cardType == 1) per[d[i].character]++;
+        for (uint256 c; c < 5; c++) assertEq(per[c], 3);
+        r.types[1].amount = 0;
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(RecipeDealer.BadType.selector, 1, "per character"));
+        dealer.setRecipe(22, r);
+    }
+
+    /// The studio JSON is read strictly: unknown keys, odds on grades 1-4, and the perCharacter supply.
+    function test_configureSeriesStrictParsing() public {
+        ConfigureSeries cs = new ConfigureSeries();
+        string memory json = vm.readFile("test/cards/recipe-standard.json");
+        ConfigureSeries.Series memory s = cs.parse(json);
+        assertEq(uint256(s.recipe.types[5].supply), uint256(RecipeDealer.Supply.PerCharacter));
+        vm.expectRevert(bytes(".: unknown key pdaOdd"));
+        cs.parse(vm.replace(json, '"pdaOdds"', '"pdaOdd"'));
+        vm.expectRevert(bytes(".types[0]: unknown key amonut"));
+        cs.parse(vm.replace(json, '"perPack", "amount": 3', '"perPack", "amonut": 3'));
+        vm.expectRevert(bytes("pdaOdds: grades 1-4 must be 0 (they come only from wear)"));
+        cs.parse(vm.replace(json, '"pdaOdds": ["0"', '"pdaOdds": ["5"'));
+        vm.expectRevert(bytes(".types[2].rank is too big for its field"));
+        cs.parse(vm.replace(json, '"rank": 2,', '"rank": 4294967296,'));
     }
 }

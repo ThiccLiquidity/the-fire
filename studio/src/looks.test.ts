@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DealtCard } from './deal'
-import { GRADE_STATES, distinctLooks, gridSize, imagesPerCharacter, lookFileName, lookKey, lookOf, looksPerCharacter, seriesGrid } from './looks'
+import { STATES, distinctLooks, gridSize, imagesPerCharacter, lookFileName, lookKey, lookOf, looksPerCharacter, seriesGrid } from './looks'
 import { cardMetadata, metadataFileName } from './metadata'
 import { holoLooksFor, specialAllHoloRecipe, standardRecipe, type Recipe } from './recipe'
 import { HOLO_TYPES, wearLookOf } from './rules'
@@ -35,68 +35,72 @@ describe('shared images', () => {
     expect(distinctLooks(cards, STD).map((l) => l.card.serial)).toEqual([1, 3, 4, 5, 6])
   })
 
-  it('Standard file names are unchanged: c<index>-<paper|wood|fire|coal|diamond>-<holo>-<grade>.webp', () => {
+  it('Standard file names: c<index>-<slug>-<holo>-<u|c|grade>.webp', () => {
     const f = (c: Partial<DealtCard>, i: number) => lookFileName(lookOf(card(c), STD), i)
     expect(f({ holoFrame: true, holoPicture: true, holo: 'full', grade: 10 }, 0)).toBe('c0-wood-full-10.webp')
     expect(f({ type: 2, grade: 5 }, 2)).toBe('c2-fire-none-5.webp')
     expect(f({ type: 3, holoPicture: true, holo: 'picture' }, 254)).toBe('c254-coal-picture-u.webp')
-    expect(f({ type: 4, holoFrame: true, holo: 'frame', grade: 1 }, 1)).toBe('c1-diamond-frame-1.webp')
+    expect(f({ type: 3, holoPicture: true, holo: 'picture', cased: true }, 254)).toBe('c254-coal-picture-c.webp')
+    expect(f({ type: 4, holoFrame: true, holoPicture: true, holo: 'full', grade: 1 }, 1)).toBe('c1-gold-full-1.webp')
+    expect(f({ type: 5, holoFrame: true, holoPicture: true, holo: 'full', cased: true, grade: 9 }, 1)).toBe('c1-fullart-full-9.webp')
     expect(f({}, 1000)).toBe('c1000-wood-none-u.webp')
     expect(() => f({ grade: 11 }, 0)).toThrow()
   })
 
-  it('Standard grid: 19 looks x 11 grade states = 209 images per character, the same names as before', () => {
-    expect(looksPerCharacter(STD)).toBe(19)
-    expect(imagesPerCharacter(STD)).toBe(209)
-    expect(gridSize(2, STD)).toBe(418)
+  it('Standard grid: 18 looks x 12 states = 216 images per character', () => {
+    expect(looksPerCharacter(STD)).toBe(18)
+    expect(imagesPerCharacter(STD)).toBe(216)
+    expect(gridSize(2, STD)).toBe(432)
     const grid = seriesGrid(4, ['aaa', 'bbb'], STD)
-    expect(grid).toHaveLength(418)
-    expect(new Set(grid.map((g) => g.file)).size).toBe(418)
-    expect(new Set(grid.map((g) => g.key)).size).toBe(418)
+    expect(grid).toHaveLength(432)
+    expect(new Set(grid.map((g) => g.file)).size).toBe(432)
+    expect(new Set(grid.map((g) => g.key)).size).toBe(432)
     expect(grid[0].file).toBe('c0-paper-none-u.webp')
-    expect(grid[10].file).toBe('c0-paper-none-10.webp')
-    expect(grid[209].file).toBe('c1-paper-none-u.webp')
-    expect(grid.at(-1)!.file).toBe('c1-diamond-full-10.webp')
-    expect(grid.some((g) => g.file.includes('diamond-none'))).toBe(false)
-    const ids = ['paper', 'wood', 'fire', 'coal', 'diamond']
+    expect(grid[1].file).toBe('c0-paper-none-c.webp')
+    expect(grid[11].file).toBe('c0-paper-none-10.webp')
+    expect(grid[216].file).toBe('c1-paper-none-u.webp')
+    expect(grid.at(-1)!.file).toBe('c1-fullart-full-10.webp')
+    expect(grid.some((g) => g.file.includes('gold-none') || g.file.includes('gold-frame') || g.file.includes('fullart-picture'))).toBe(false)
+    const ids = ['paper', 'wood', 'fire', 'coal', 'gold', 'fullart']
     let n = 0
     for (const [t, slug] of ids.entries()) {
       for (const h of HOLO_TYPES) {
-        if (slug === 'diamond' && h === 'none') continue
-        for (const g of GRADE_STATES) {
-          expect(grid.some((e) => e.file === `c1-${slug}-${h}-${g == null ? 'u' : g}.webp` && e.look.type === t)).toBe(true)
+        if (t >= 4 && h !== 'full') continue
+        for (const st of STATES) {
+          const id = st.grade == null ? (st.cased ? 'c' : 'u') : st.grade
+          expect(grid.some((e) => e.file === `c1-${slug}-${h}-${id}.webp` && e.look.type === t)).toBe(true)
           n++
         }
       }
     }
-    expect(n).toBe(209)
+    expect(n).toBe(216)
     for (const g of grid.slice(0, 30)) expect(lookKey(lookOf(g.card, STD))).toBe(g.key)
   })
 
-  it('Special all-holo grid: no "none" images, 3 types x 3 holo x 11 = 99 per character', () => {
+  it('Special all-holo grid: no "none" images, (3 + 3 + 1 Gold) x 12 = 84 per character', () => {
     const r = specialAllHoloRecipe()
-    expect(imagesPerCharacter(r)).toBe(99)
+    expect(imagesPerCharacter(r)).toBe(84)
     const grid = seriesGrid(9, ['a', 'b', 'c'], r)
-    expect(grid).toHaveLength(297)
+    expect(grid).toHaveLength(252)
     expect(grid.some((g) => g.file.includes('-none-'))).toBe(false)
     expect(grid[0].file).toBe('c0-fire-frame-u.webp')
   })
 
   it('a new type gets its own slug in file names; a type that is never plain gets no none images', () => {
     const r: Recipe = standardRecipe()
-    r.types.push({ id: 'gold', name: 'Gold', slug: 'gold', rank: 5, supply: 'count', amount: '1', maxPerPack: '1', holo: { mode: 'distribution', weights: ['0', '0', '0', '1'] }, frameSet: 'diamond' })
-    expect(holoLooksFor(r, 5)).toEqual(['full'])
-    expect(imagesPerCharacter(r)).toBe(220)
+    r.types.push({ id: 'plat', name: 'Platinum', slug: 'platinum', rank: 6, supply: 'count', amount: '1', maxPerPack: '1', holo: { mode: 'distribution', weights: ['0', '0', '0', '1'] }, frameSet: 'gold' })
+    expect(holoLooksFor(r, 6)).toEqual(['full'])
+    expect(imagesPerCharacter(r)).toBe(228)
     const files = seriesGrid(1, ['x'], r).map((g) => g.file)
-    expect(files).toContain('c0-gold-full-u.webp')
-    expect(files.filter((f) => f.includes('-gold-'))).toHaveLength(11)
+    expect(files).toContain('c0-platinum-full-u.webp')
+    expect(files.filter((f) => f.includes('-platinum-'))).toHaveLength(12)
   })
 
   it('a type in plain slots with 0% holo has only "none" images', () => {
     const r = standardRecipe()
     r.types[0].holo = { mode: 'independent', frame: '0', picture: '0' }
     expect(holoLooksFor(r, 0)).toEqual(['none'])
-    expect(imagesPerCharacter(r)).toBe(176)
+    expect(imagesPerCharacter(r)).toBe(180)
   })
 
   it('metadata keeps the per-card details, the type name as Material, and points at the shared image', () => {
@@ -106,6 +110,9 @@ describe('shared images', () => {
     expect(m.name).toBe('Wood Rabbit #42')
     expect(m.image).toBe('ipfs://cid/rabbit.webp')
     const t = Object.fromEntries(m.attributes.map((a) => [a.trait_type, a.value]))
-    expect(t).toMatchObject({ Serial: 42, Edition: '3 of 9', Series: 5, Category: 'Animal', PDA: 'Unrevealed', Material: 'Wood' })
+    expect(t).toMatchObject({ Serial: 42, Edition: '3 of 9', Series: 5, Category: 'Animal', PDA: 'Ungraded', Material: 'Wood', Cased: 'No', Moves: 0 })
+    const slab = Object.fromEntries(cardMetadata({ ...c, grade: 8 }, { name: 'Rabbit' }, 'Wood', 'x').attributes.map((a) => [a.trait_type, a.value]))
+    expect(slab.PDA).toBe('PDA 8')
+    expect(slab.Cased).toBeUndefined()
   })
 })

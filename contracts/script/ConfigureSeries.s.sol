@@ -23,7 +23,9 @@ import {FireSale} from "../src/cards/FireSale.sol";
  *   [DROP_START=<unix seconds>] [HOLDER_ROOT=0x...] [CHARACTER_BATCH=200] \
  *   forge script script/ConfigureSeries.s.sol --rpc-url $RPC [--account deployer --sender <owner> --broadcast, with SEND=true]
  *
- * The recipe settings lock once the Series' first pack is minted; the drop settings when the drop opens.
+ * The recipe settings lock when the drop is set up (configureDrop locks the Series); the drop settings when it opens.
+ * The JSON is read strictly: unknown keys, numbers too big for their field, PDA odds on grades 1-4 and a drop start
+ * more than a year away are refused, so a typo can't slip through as a default.
  */
 contract ConfigureSeries is Script {
     using stdJson for string;
@@ -131,8 +133,11 @@ contract ConfigureSeries is Script {
         }
     }
 
+    uint256 internal constant MAX_START_AHEAD = 365 days;
+
     function parse(string memory json) public view returns (Series memory s) {
-        s.fire = json.readUint(".fire");
+        _onlyKeys(json, ".", "fire,imagesBase,types,slots,characters,pdaOdds,sale");
+        s.fire = _num(json, ".fire", type(uint64).max);
         if (json.keyExists(".imagesBase")) s.imagesBase = json.readString(".imagesBase");
         uint256 nt = _count(json, ".types");
         s.recipe.types = new RecipeDealer.CardType[](nt);
@@ -145,13 +150,18 @@ contract ConfigureSeries is Script {
         s.categories = new string[](nc);
         for (uint256 i; i < nc; i++) {
             string memory p = string.concat(".characters[", vm.toString(i), "]");
+            _onlyKeys(json, p, "name,category");
             s.names[i] = json.readString(string.concat(p, ".name"));
             s.categories[i] = json.readString(string.concat(p, ".category"));
         }
         if (json.keyExists(".pdaOdds")) {
             uint256[] memory o = json.readUintArray(".pdaOdds");
             require(o.length == 10, "pdaOdds: one weight per grade, 1 to 10");
-            for (uint256 g; g < 10; g++) s.odds[g] = uint64(o[g]);
+            for (uint256 g; g < 10; g++) {
+                require(o[g] <= type(uint64).max, "pdaOdds: a weight is too big");
+                require(g >= 4 || o[g] == 0, "pdaOdds: grades 1-4 must be 0 (they come only from wear)");
+                s.odds[g] = uint64(o[g]);
+            }
             s.hasOdds = true;
         }
         if (json.keyExists(".sale")) {
@@ -163,8 +173,10 @@ contract ConfigureSeries is Script {
     /// @dev The "sale" block: every FireSale.DropConfig field by name (contract units: seconds, 8-decimal dollars,
     ///      PAPER wei, basis points). holderRoot is optional (0 = presses only). DROP_START and HOLDER_ROOT override.
     function parseSale(string memory json) public view returns (FireSale.DropConfig memory c) {
+        _onlyKeys(json, ".sale", "start,packs,starters,plankOnly,walletLimit,starterWindow,liftAfter,plankBurnBps,priceUsd,paperPerPack,holderWindow,holderRoot,maxPerTx,plankOnlyFor,regularWalletsFor,starterPerPress,starterWalletLimit,starterPriceUsd,starterPaper,creditsPerPick,creditPacksMax,creditPacksPerWallet");
         c.start = uint64(vm.envOr("DROP_START", _u(json, "start")));
         require(c.start != 0, "sale.start is 0: set it in the studio or with DROP_START");
+        require(c.start < block.timestamp + MAX_START_AHEAD, "sale.start is more than a year away: a typo?");
         c.packs = uint64(_u(json, "packs"));
         c.starters = uint64(_u(json, "starters"));
         c.plankOnly = uint64(_u(json, "plankOnly"));
@@ -207,44 +219,84 @@ contract ConfigureSeries is Script {
     }
 
     function _type(string memory json, string memory p) internal view returns (RecipeDealer.CardType memory t) {
+        _onlyKeys(json, p, "name,slug,rank,supply,amount,maxPerPack,holo");
+        _onlyKeys(json, string.concat(p, ".holo"), "mode,frame,picture,weights");
         t.name = json.readString(string.concat(p, ".name"));
         t.slug = json.readString(string.concat(p, ".slug"));
-        t.rank = uint32(json.readUint(string.concat(p, ".rank")));
+        t.rank = uint32(_num(json, string.concat(p, ".rank"), type(uint32).max));
         bytes32 sup = keccak256(bytes(json.readString(string.concat(p, ".supply"))));
         if (sup == keccak256("filler")) t.supply = RecipeDealer.Supply.Filler;
         else if (sup == keccak256("share")) t.supply = RecipeDealer.Supply.Share;
         else if (sup == keccak256("perPack")) t.supply = RecipeDealer.Supply.PerPack;
         else if (sup == keccak256("count")) t.supply = RecipeDealer.Supply.Count;
-        else revert(string.concat(p, ".supply: filler, share, perPack or count"));
-        if (t.supply != RecipeDealer.Supply.Filler) t.amount = uint128(json.readUint(string.concat(p, ".amount")));
-        if (json.keyExists(string.concat(p, ".maxPerPack"))) t.maxPerPack = uint64(json.readUint(string.concat(p, ".maxPerPack")));
+        else if (sup == keccak256("perCharacter")) t.supply = RecipeDealer.Supply.PerCharacter;
+        else revert(string.concat(p, ".supply: filler, share, perPack, count or perCharacter"));
+        if (t.supply != RecipeDealer.Supply.Filler) t.amount = uint128(_num(json, string.concat(p, ".amount"), type(uint128).max));
+        if (json.keyExists(string.concat(p, ".maxPerPack"))) t.maxPerPack = uint64(_num(json, string.concat(p, ".maxPerPack"), type(uint64).max));
         bytes32 mode = keccak256(bytes(json.readString(string.concat(p, ".holo.mode"))));
         if (mode == keccak256("independent")) {
             t.holoMode = RecipeDealer.HoloMode.Independent;
-            t.holo[0] = uint64(json.readUint(string.concat(p, ".holo.frame")));
-            t.holo[1] = uint64(json.readUint(string.concat(p, ".holo.picture")));
+            t.holo[0] = uint64(_num(json, string.concat(p, ".holo.frame"), type(uint64).max));
+            t.holo[1] = uint64(_num(json, string.concat(p, ".holo.picture"), type(uint64).max));
         } else if (mode == keccak256("distribution")) {
             t.holoMode = RecipeDealer.HoloMode.Distribution;
             uint256[] memory w = json.readUintArray(string.concat(p, ".holo.weights"));
             require(w.length == 4, string.concat(p, ".holo.weights: none, frame, picture, full"));
-            for (uint256 i; i < 4; i++) t.holo[i] = uint64(w[i]);
+            for (uint256 i; i < 4; i++) {
+                require(w[i] <= type(uint64).max, string.concat(p, ".holo.weights: a weight is too big"));
+                t.holo[i] = uint64(w[i]);
+            }
         } else {
             revert(string.concat(p, ".holo.mode: independent or distribution"));
         }
     }
 
     function _slot(string memory json, string memory p) internal view returns (RecipeDealer.Slot memory s) {
-        s.count = uint32(json.readUint(string.concat(p, ".count")));
+        _onlyKeys(json, p, "count,types,minRank,maxRank,mustHolo");
+        s.count = uint32(_num(json, string.concat(p, ".count"), type(uint32).max));
         if (json.keyExists(string.concat(p, ".types"))) {
             uint256[] memory ts = json.readUintArray(string.concat(p, ".types"));
             s.types = new uint32[](ts.length);
-            for (uint256 i; i < ts.length; i++) s.types[i] = uint32(ts[i]);
+            for (uint256 i; i < ts.length; i++) {
+                require(ts[i] <= type(uint32).max, string.concat(p, ".types: an index is too big"));
+                s.types[i] = uint32(ts[i]);
+            }
         }
-        if (json.keyExists(string.concat(p, ".minRank"))) s.minRank = uint32(json.readUint(string.concat(p, ".minRank")));
+        if (json.keyExists(string.concat(p, ".minRank"))) s.minRank = uint32(_num(json, string.concat(p, ".minRank"), type(uint32).max));
         // a rank range with no top means "or better": every rank from minRank up
-        if (json.keyExists(string.concat(p, ".maxRank"))) s.maxRank = uint32(json.readUint(string.concat(p, ".maxRank")));
+        if (json.keyExists(string.concat(p, ".maxRank"))) s.maxRank = uint32(_num(json, string.concat(p, ".maxRank"), type(uint32).max));
         else if (s.types.length == 0) s.maxRank = type(uint32).max;
         if (json.keyExists(string.concat(p, ".mustHolo"))) s.mustHolo = json.readBool(string.concat(p, ".mustHolo"));
+    }
+
+    /// @dev A whole number that must fit `max`.
+    function _num(string memory json, string memory p, uint256 max) internal pure returns (uint256 v) {
+        v = json.readUint(p);
+        require(v <= max, string.concat(p, " is too big for its field"));
+    }
+
+    /// @dev Every key of the object at `p` must be in `allowed` (comma-separated).
+    function _onlyKeys(string memory json, string memory p, string memory allowed) internal view {
+        string[] memory keys = vm.parseJsonKeys(json, p);
+        bytes memory list = bytes(string.concat(",", allowed, ","));
+        for (uint256 i; i < keys.length; i++) {
+            require(_contains(list, bytes(string.concat(",", keys[i], ","))), string.concat(p, ": unknown key ", keys[i]));
+        }
+    }
+
+    function _contains(bytes memory hay, bytes memory needle) internal pure returns (bool) {
+        if (needle.length > hay.length) return false;
+        for (uint256 i; i + needle.length <= hay.length; i++) {
+            bool ok = true;
+            for (uint256 j; j < needle.length; j++) {
+                if (hay[i + j] != needle[j]) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) return true;
+        }
+        return false;
     }
 
     function _count(string memory json, string memory key) internal view returns (uint256 n) {

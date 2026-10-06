@@ -6,6 +6,7 @@ import type { Recipe } from './recipe'
 import { CARD_H, CARD_W, GRADE_COLOR, HOLO_LABEL, wearLookOf, type WearLook } from './rules'
 import type { Layout, OutputFormat, PsaBox, Rect, TextBox, TextStyle } from './types'
 import type { Ctx2D } from './wear'
+import { drawCase, drawSlab, type SlabLabel } from './protect'
 
 export type ImgSrc = ImageBitmap | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas
 
@@ -24,6 +25,8 @@ export interface CardFace {
   holoFrame: boolean
   holoPicture: boolean
   grade?: number | null
+  /** In a case (ungraded): the image is the card inside a clear case. A graded card is always in a slab. */
+  cased?: boolean
   fire: number
   characterId: string
 }
@@ -33,7 +36,7 @@ export function faceOf(card: DealtCard, r: Recipe): CardFace {
   const t = r.types[card.type]
   return {
     frameSet: t?.frameSet ?? 'paper', typeName: t?.name ?? '?', holoFrame: card.holoFrame, holoPicture: card.holoPicture,
-    grade: card.grade ?? null, fire: card.fire, characterId: card.characterId,
+    grade: card.grade ?? null, cased: !!card.cased && card.grade == null, fire: card.fire, characterId: card.characterId,
   }
 }
 
@@ -51,9 +54,17 @@ export interface CardView {
   wear: WearLook
   /** PDA 10 only: the gold edge glow and corner sparkles (drawn here, the frames stay locked). */
   pda10: boolean
+  /** How the finished card is presented: bare, in a case, or slabbed with its grade label (protect.ts). */
+  holder: 'none' | 'case' | 'slab'
+  /** The slab label's line under the name: "Series 6 · Fire · Full Holo". */
+  slabSub: string
 }
 
-export function cardView(face: Pick<CardFace, 'frameSet' | 'typeName' | 'grade' | 'fire'>, characterName: string, category?: string): CardView {
+export function cardView(
+  face: Pick<CardFace, 'frameSet' | 'typeName' | 'grade' | 'fire'> & Partial<Pick<CardFace, 'cased' | 'holoFrame' | 'holoPicture'>>,
+  characterName: string, category?: string,
+): CardView {
+  const holo = face.holoFrame && face.holoPicture ? 'Full Holo' : face.holoFrame ? 'Holo Frame' : face.holoPicture ? 'Holo Picture' : ''
   return {
     frameSet: face.frameSet,
     name: characterName,
@@ -63,6 +74,8 @@ export function cardView(face: Pick<CardFace, 'frameSet' | 'typeName' | 'grade' 
     psaValue: face.grade == null ? '?' : String(face.grade),
     wear: wearLookOf(face.grade),
     pda10: face.grade === 10,
+    holder: face.grade != null ? 'slab' : face.cased ? 'case' : 'none',
+    slabSub: [`Series ${face.fire > 0 ? face.fire : 1}`, face.typeName, holo].filter(Boolean).join(' · '),
   }
 }
 
@@ -339,6 +352,20 @@ export function mimeOf(format: OutputFormat): string {
   return format === 'webp' ? 'image/webp' : 'image/png'
 }
 
+/** Draw a card as it's presented: bare, in its case, or in its slab (protect.ts). */
+export function drawPresented(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardView): void {
+  if (view.holder === 'none') {
+    drawCard(ctx, assets, layout, view)
+    return
+  }
+  const card = new OffscreenCanvas(CARD_W, CARD_H)
+  const cctx = card.getContext('2d')
+  if (!cctx) throw new Error('2D canvas unavailable')
+  drawCard(cctx, assets, layout, view)
+  if (view.holder === 'case') drawCase(ctx, card)
+  else drawSlab(ctx, card, { characterName: view.name, sub: view.slabSub, grade: Number(view.psaValue) } satisfies SlabLabel)
+}
+
 /** Render one card to an encoded image. Uses OffscreenCanvas (main thread or worker). */
 export async function renderCardBlob(
   assets: CardAssets, layout: Layout, view: CardView, format: OutputFormat, canvas?: OffscreenCanvas,
@@ -346,6 +373,6 @@ export async function renderCardBlob(
   const c = canvas ?? new OffscreenCanvas(CARD_W, CARD_H)
   const ctx = c.getContext('2d')
   if (!ctx) throw new Error('2D canvas unavailable')
-  drawCard(ctx, assets, layout, view)
+  drawPresented(ctx, assets, layout, view)
   return c.convertToBlob({ type: mimeOf(format), quality: format === 'webp' ? WEBP_QUALITY : undefined })
 }

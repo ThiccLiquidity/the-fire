@@ -3,7 +3,7 @@
  *  Standard type indexes. Runs on load (store.ts loadStudio), so imports of old backups migrate too. */
 
 import { effectiveDiamonds, type DealResult, type DealtCard } from './deal'
-import { standardRecipe } from './recipe'
+import { legacyDiamondRecipe } from './recipe'
 import { CARDS_PER_PACK, MATERIALS, type Material } from './rules'
 import type { FireRecord } from './types'
 
@@ -21,7 +21,7 @@ export function needsMigration(f: unknown): boolean {
 export function migrateFire(raw: unknown): FireRecord {
   const old = raw as Omit<FireRecord, 'recipe' | 'deal'> & { recipe?: FireRecord['recipe']; deal?: OldDeal }
   const f = { ...old } as FireRecord & { deal?: OldDeal }
-  if (!f.recipe) f.recipe = standardRecipe(effectiveDiamonds(old.deal?.diamonds ?? old.diamonds))
+  if (!f.recipe) f.recipe = legacyDiamondRecipe(effectiveDiamonds(old.deal?.diamonds ?? old.diamonds))
   const d = old.deal
   if (d && !Array.isArray(d.pool)) {
     const pool = d.pool as Record<Material, number>

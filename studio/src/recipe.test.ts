@@ -3,7 +3,7 @@ import standardSampleText from '../../contracts/test/cards/recipe-standard.json?
 import { describe, expect, it } from 'vitest'
 import { computePool } from './deal'
 import {
-  checkRecipe, compileRecipe, holoLooksFor, percentToScaled, previewPool, recipeFromJson, recipeJson, scaledToPercent, slugify,
+  checkRecipe, classicRecipe, compileRecipe, holoLooksFor, percentToScaled, previewPool, recipeFromJson, recipeJson, scaledToPercent, slugify,
   specialAllHoloRecipe, standardRecipe, type Recipe,
 } from './recipe'
 import { MATERIALS } from './rules'
@@ -21,19 +21,43 @@ describe('Standard recipe', () => {
 
   it('pool port = computePool on every row of pool-fixture.json (the contract parity fixture)', () => {
     for (const row of fixture.rows) {
-      const got = previewPool(standardRecipe(row.diamonds), BigInt(row.packs)).map(Number)
+      const got = previewPool(classicRecipe(row.diamonds), BigInt(row.packs)).map(Number)
       expect(got, `${row.packs} packs, ${row.diamonds} diamonds`).toEqual(row.counts)
       if (row.packs < 1e6) expect(got).toEqual(MATERIALS.map((m) => computePool(row.packs, row.diamonds)[m]))
     }
   })
 
-  it('167 packs and 1 Diamond: 501 / 301 / 150 / 49 / 1', () => {
-    expect(previewPool(standardRecipe(1), 167n)).toEqual([501n, 301n, 150n, 49n, 1n])
+  it('167 packs and 1 Gold: 501 / 301 / 150 / 49 / 1', () => {
+    expect(previewPool(classicRecipe(1), 167n)).toEqual([501n, 301n, 150n, 49n, 1n])
+  })
+
+  it('the Standard recipe: 15 Gold and one Full Art per character', () => {
+    // 167 packs, 10 characters: Full Art and Gold come out of the Wood-or-better / Fire-or-better slots
+    expect(previewPool(standardRecipe(), 167n, 10n)).toEqual([501n, 277n, 150n, 49n, 15n, 10n])
+    expect(previewPool(standardRecipe(), 167n, 1n)[5]).toBe(1n)
+    expect(previewPool(standardRecipe(), 3n, 10n)[5]).toBe(3n) // at most one per pack's worth
+  })
+
+  it('a per-character type: 1 to 65,535 each', () => {
+    const r = standardRecipe()
+    r.types[5].amount = '0'
+    expect(codes(r)).toContain('BadType(5,per character)')
+    r.types[5].amount = '65536'
+    expect(codes(r)).toContain('BadType(5,per character)')
+    r.types[5].amount = '2'
+    expect(codes(r)).toEqual([])
+    expect(previewPool(r, 1000n, 7n)[5]).toBe(14n)
+  })
+
+  it('fresh PDA odds: grades 1-4 stay 0', () => {
+    const r = standardRecipe()
+    r.pdaOdds[2] = '5'
+    expect(codes(r)).toContain('BadOdds')
   })
 
   it('recipe.json is exactly the shape of contracts/test/cards/recipe-standard.json', () => {
     const sample = JSON.parse(standardSampleText)
-    const j = recipeJson(7, standardRecipe(1), sample.characters, 'ipfs://bafyexampleimages/')
+    const j = recipeJson(7, standardRecipe(15), sample.characters, 'ipfs://bafyexampleimages/')
     // the sample writes slot 2 as an explicit list and slot 4 with an explicit mustHolo: false; same recipe
     expect(j.types).toEqual(sample.types)
     expect(j.pdaOdds).toEqual(sample.pdaOdds)
@@ -42,12 +66,12 @@ describe('Standard recipe', () => {
     expect(j.imagesBase).toBe('ipfs://bafyexampleimages/')
     // and it reads back to the same pools
     const back = recipeFromJson(j)
-    for (const p of [1n, 7n, 167n]) expect(previewPool(back, p)).toEqual(previewPool(standardRecipe(1), p))
+    for (const p of [1n, 7n, 167n]) expect(previewPool(back, p, 3n)).toEqual(previewPool(standardRecipe(15), p, 3n))
   })
 
-  it('holo looks: 4 per type, Diamond 3 (always holo) = 19 per character', () => {
+  it('holo looks: 4 per type, Gold and Full Art 1 (always full holo) = 18 per character', () => {
     const r = standardRecipe()
-    expect(r.types.map((_, i) => holoLooksFor(r, i).length)).toEqual([4, 4, 4, 4, 3])
+    expect(r.types.map((_, i) => holoLooksFor(r, i).length)).toEqual([4, 4, 4, 4, 1, 1])
   })
 })
 
@@ -56,7 +80,7 @@ describe('Special 3-card all-holo recipe', () => {
     const r = specialAllHoloRecipe()
     expect(checkRecipe(r)).toEqual([])
     expect(compileRecipe(r).S).toBe(3)
-    expect(r.types.map((_, i) => holoLooksFor(r, i))).toEqual([['frame', 'picture', 'full'], ['frame', 'picture', 'full'], ['frame', 'picture', 'full']])
+    expect(r.types.map((_, i) => holoLooksFor(r, i))).toEqual([['frame', 'picture', 'full'], ['frame', 'picture', 'full'], ['full']])
   })
   it('the floor keeps one Coal-or-better per pack', () => {
     for (const p of [1n, 2n, 3n, 10n, 100n, 12345n]) {

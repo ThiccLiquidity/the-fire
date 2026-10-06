@@ -11,6 +11,11 @@
         "name": "cards",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "compiler",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -24,6 +29,19 @@
         "name": "",
         "type": "address",
         "internalType": "contract IDealerCards"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "COMPILER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IRecipeCompiler"
       }
     ],
     "stateMutability": "view"
@@ -396,7 +414,7 @@
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "pure"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -638,6 +656,11 @@
         "name": "packs",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "chars",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -647,7 +670,7 @@
         "internalType": "uint256[]"
       }
     ],
-    "stateMutability": "pure"
+    "stateMutability": "view"
   },
   {
     "type": "function",

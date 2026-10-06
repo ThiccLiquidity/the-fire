@@ -50,18 +50,35 @@
    }
   },
   {
-   "name": "Diamond",
-   "slug": "diamond",
+   "name": "Gold",
+   "slug": "gold",
    "rank": 4,
    "supply": "count",
+   "amount": 15,
+   "maxPerPack": 1,
+   "holo": {
+    "mode": "distribution",
+    "weights": [
+     "0",
+     "0",
+     "0",
+     "1"
+    ]
+   }
+  },
+  {
+   "name": "Full Art",
+   "slug": "fullart",
+   "rank": 5,
+   "supply": "perCharacter",
    "amount": 1,
    "maxPerPack": 1,
    "holo": {
     "mode": "distribution",
     "weights": [
      "0",
-     "1",
-     "1",
+     "0",
+     "0",
      "1"
     ]
    }
@@ -104,19 +121,19 @@
   }
  ],
  "pdaOdds": [
-  "100",
-  "150",
-  "200",
-  "350",
-  "700",
-  "1800",
+  "0",
+  "0",
+  "0",
+  "0",
+  "1000",
+  "2000",
+  "2700",
   "2500",
-  "2400",
   "1700",
   "100"
  ],
  "sale": {
-  "start": 1900000000,
+  "start": 1810000000,
   "packs": 117,
   "starters": 50,
   "plankOnly": 50,

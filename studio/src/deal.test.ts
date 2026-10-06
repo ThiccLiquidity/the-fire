@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { computePool, dealFire, holoCounts, type DealInput, type DealResult } from './deal'
 import { dealInBackground, dealInputKey } from './dealPreview'
 import { sha256Hex, Stream } from './prng'
-import { compileRecipe, holoOdds, slotTypeIndexes, specialAllHoloRecipe, standardRecipe, type Recipe } from './recipe'
+import { classicRecipe, compileRecipe, holoOdds, slotTypeIndexes, specialAllHoloRecipe, standardRecipe, type Recipe } from './recipe'
 import { HOLO_RATE, MATERIALS, expectedHolos, holoRollChance } from './rules'
 
 const CHARS = ['rabbit', 'bird', 'fox']
 
 function input(over: Partial<DealInput> = {}): DealInput {
-  return { fire: 1, packs: 150, characterIds: CHARS, seed: 'seed-1', recipe: standardRecipe(1), firstSerial: 1, ...over }
+  return { fire: 1, packs: 150, characterIds: CHARS, seed: 'seed-1', recipe: classicRecipe(1), firstSerial: 1, ...over }
 }
 
 /** Run `n` Series back to back, carrying serials like the app does (nothing else carries). */
@@ -150,6 +150,18 @@ describe('dealFire (recipe)', () => {
     const byType = [0, 1, 2, 3, 4].map((t) => r.cards.filter((c) => c.type === t).length)
     expect(byType).toEqual(r.pool)
     expect(r.pool).toEqual(MATERIALS.map((m) => computePool(150, 1)[m]))
+  })
+
+  it('Standard: 15 Gold, always full holo, and exactly one Full Art per character', () => {
+    const recipe = standardRecipe()
+    const r = dealFire(input({ packs: 167, seed: 'fa', recipe }))
+    checkPacks(r, recipe)
+    const gold = r.cards.filter((c) => c.type === 4)
+    const fa = r.cards.filter((c) => c.type === 5)
+    expect(gold).toHaveLength(15)
+    expect(fa).toHaveLength(CHARS.length)
+    expect(new Set(fa.map((c) => c.characterId)).size).toBe(CHARS.length)
+    expect([...gold, ...fa].every((c) => c.holo === 'full')).toBe(true)
   })
 
   it('Standard: every pack is 3 Paper, a Wood, a Wood-or-better and a Fire-or-better', () => {

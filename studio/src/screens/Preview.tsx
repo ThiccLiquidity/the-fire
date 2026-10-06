@@ -18,6 +18,7 @@ export function Preview() {
   const s = useStudio()
   const [charId, setCharId] = useState('')
   const [grade, setGrade] = useState<number | null>(null)
+  const [cased, setCased] = useState(false)
   const [cells, setCells] = useState<Record<string, Cell>>({})
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -37,7 +38,7 @@ export function Preview() {
     for (const frameSet of FRAME_SETS) {
       for (const holo of HOLO_TYPES) {
         list.push({
-          frameSet, typeName: frameSetLabel(frameSet), characterId: char.id, grade, fire,
+          frameSet, typeName: frameSetLabel(frameSet), characterId: char.id, grade, cased: cased && grade == null, fire,
           holoFrame: holo === 'frame' || holo === 'full', holoPicture: holo === 'picture' || holo === 'full',
         })
       }
@@ -69,7 +70,7 @@ export function Preview() {
         if (gen.current === my) setProgress(null)
       }
     })()
-  }, [char?.id, char?.updatedAt, grade, s.layouts, s.fonts, s.fires, s.global.nextFireNumber])
+  }, [char?.id, char?.updatedAt, grade, cased, s.layouts, s.fonts, s.fires, s.global.nextFireNumber])
 
   if (!char) return <section className="panel grow"><p className="muted">Add a character in the Library first.</p></section>
   const n = completeness(char)
@@ -85,9 +86,18 @@ export function Preview() {
           </select>
         </Field>
         <Field label="PDA">
-          <select value={grade ?? ''} onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : null)} data-testid="preview-psa">
-            <option value="">Unrevealed</option>
-            {[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((g) => <option key={g} value={g}>PDA {g}</option>)}
+          <select
+            value={grade ?? (cased ? 'c' : '')}
+            onChange={(e) => {
+              const v = e.target.value
+              setCased(v === 'c')
+              setGrade(v && v !== 'c' ? Number(v) : null)
+            }}
+            data-testid="preview-psa"
+          >
+            <option value="">Ungraded</option>
+            <option value="c">Ungraded, in a case</option>
+            {[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((g) => <option key={g} value={g}>PDA {g} (slabbed)</option>)}
           </select>
         </Field>
         <span className="muted small">Exactly what the NFTs will look like. Click a card to see it full size.</span>
@@ -109,7 +119,7 @@ export function Preview() {
             <img src={big.url} alt="" />
             <div>
               <h3>{char.name} · {frameSetLabel(big.material)} frames</h3>
-              <p className="muted">Holo: {big.holo === 'none' ? 'none' : HOLO_LABEL[big.holo]}<br />PDA: {grade == null ? 'unrevealed' : `${grade} (${WEAR_LABEL[wearLookOf(grade)]} frame)`}</p>
+              <p className="muted">Holo: {big.holo === 'none' ? 'none' : HOLO_LABEL[big.holo]}<br />PDA: {grade == null ? (cased ? 'ungraded, in a case' : 'ungraded') : `${grade}, slabbed (${WEAR_LABEL[wearLookOf(grade)]} frame)`}</p>
               <p className="muted small">Every card of a type using these frames, of {char.name}, with this holo{grade == null ? '' : ' and grade'} shares this image. Serial, edition and Series # are in each NFT's data.</p>
               <button onClick={() => setBig(null)}>Close</button>
             </div>

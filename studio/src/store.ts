@@ -4,7 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { hasCategory, hasValidName, migrateCharacterCategory } from './categories'
 import { DEFAULT_KEY, keyMagentaBlob, type KeyOptions } from './chroma'
 import * as db from './db'
-import { FRAME_SETS, FRAMES_UPDATED_AT } from './frames'
+import { FRAME_SETS, FRAMES_UPDATED_AT, variantsOf } from './frames'
 import { normalizeLayout } from './layoutDefaults'
 import { migrateFire, needsMigration } from './migrate'
 import type { Character, FireRecord, FontAsset, GlobalState, ImageSlot, Layout, Variant } from './types'
@@ -199,16 +199,16 @@ export function effectiveKey(slot: ImageSlot): string {
   return slot.keyMagenta && slot.processedKey ? slot.processedKey : slot.originalKey
 }
 
-/** Images in, over every frame set (normal + holo each). */
+/** Images in, over every frame set (normal + holo each; holo only for Gold and Full Art). */
 export function completeness(c: Character): number {
   let n = 0
-  for (const m of FRAME_SETS) for (const v of ['normal', 'holo'] as Variant[]) if (c.images[m]?.[v]) n++
+  for (const m of FRAME_SETS) for (const v of variantsOf(m)) if (c.images[m]?.[v]) n++
   return n
 }
 
 /** Images a character can have: normal + holo for every frame set. */
 export function imageSlots(): number {
-  return FRAME_SETS.length * 2
+  return FRAME_SETS.reduce((n, m) => n + variantsOf(m).length, 0)
 }
 
 /** Complete for every frame set, with a usable name and category (the contract's text rules). A Series only needs
