@@ -7,12 +7,17 @@ import {Ownable2Step, Ownable} from "openzeppelin-contracts/contracts/access/Own
 import {Base64} from "openzeppelin-contracts/contracts/utils/Base64.sol";
 import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
 
+interface IPacksCards {
+    function cardsPerPack(uint256 fire) external view returns (uint256);
+}
+
 /**
  * @title FirePacks
  * @notice Sealed packs. One stackable token type per Series (token id = Series number), so "Series 7 Sealed Pack x 3"
  *         lists and trades like any item and each Series has its own floor. Contents are not decided until a pack is
  *         opened (FireCards), so a sealed pack carries no hidden information anyone could read.
  *
+ *         How many cards a pack holds is up to the Series' recipe (FireCards and its dealer); the description says.
  *         Only the seller (the pack sale contract) mints, and only the card contract burns, when a pack is opened.
  *         The owner sets those two addresses once, the pack art location, and the royalty.
  */
@@ -37,6 +42,7 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     error ZeroAddress();
     error RoyaltyTooHigh();
     error BadText();
+    error TooMany();
 
     /// @notice Collection name and symbol (ERC-1155 has none; marketplaces read these).
     string public constant name = "Omni Card Packs";
@@ -81,6 +87,8 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
 
     function mint(address to, uint256 fire, uint256 amount) external {
         if (msg.sender != seller) revert NotSeller();
+        // a Series' pack count is kept in 64 bits from here on (a technical ceiling, not a product limit)
+        if (minted[fire] + amount > type(uint64).max) revert TooMany();
         minted[fire] += amount;
         _mint(to, fire, amount, "");
     }
@@ -103,13 +111,25 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
 
     function uri(uint256 fire) public view override returns (string memory) {
         string memory n = fire.toString();
+        uint256 per = _cardsPerPack(fire);
+        string memory size = "cards";
+        if (per == 1) size = "1 card";
+        else if (per > 1) size = string.concat(per.toString(), " cards");
         bytes memory json = abi.encodePacked(
             '{"name":"Omni Card Pack \u00b7 Series ', n,
-            '","description":"A sealed pack of 6 cards from Series ', n,
+            '","description":"A sealed pack of ', size, " from Series ", n,
             '. What is inside is decided only when it is opened.","image":"', packImageBase, 'fire', n,
             '.webp","attributes":[{"trait_type":"Series","value":', n, ',"display_type":"number"},{"trait_type":"State","value":"Sealed"}]}'
         );
         return string.concat("data:application/json;base64,", Base64.encode(json));
+    }
+
+    /// @dev The Series' cards per pack, from the card contract (its dealer decides); 0 if it can't say yet.
+    function _cardsPerPack(uint256 fire) internal view returns (uint256) {
+        if (cards == address(0)) return 0;
+        (bool ok, bytes memory ret) = cards.staticcall(abi.encodeCall(IPacksCards.cardsPerPack, (fire)));
+        if (!ok || ret.length < 32) return 0;
+        return abi.decode(ret, (uint256));
     }
 
     function supportsInterface(bytes4 id) public view override(ERC1155, ERC2981) returns (bool) {

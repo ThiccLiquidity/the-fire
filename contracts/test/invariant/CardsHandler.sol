@@ -6,7 +6,10 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
-import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness} from "../Mocks.sol";
+import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
+import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
+import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockBurner} from "../Mocks.sol";
 import {InvRouter} from "./InvRouter.sol";
 
 /// @dev Drives the whole card system (sale, packs, cards, PDA) with bounded random actions by several actors, and
@@ -18,7 +21,7 @@ contract CardsHandler is Test {
 
     address constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint256 constant BPS = 10_000;
-    bytes32 constant DEALT = keccak256("CardDealt(uint256,uint256,uint256,uint256,bool,bool,uint256)");
+    bytes32 constant DEALT = keccak256("CardDealt(uint256,uint256,uint256,uint256,bool,bool,uint256)"); // fire, serial indexed
     bytes32 constant GRADED = keccak256("Graded(uint256,uint256)");
     uint256 public constant FIRES = 5; // fires 1..5 are configured in the card contract
 
@@ -26,6 +29,7 @@ contract CardsHandler is Test {
     FireSale public sale;
     FirePacks public packs;
     FireCards public cards;
+    RecipeDealer public dealer;
     FirePsa public psa;
     MockERC20 public paper;
     MockERC20 public plank;
@@ -34,6 +38,7 @@ contract CardsHandler is Test {
     MockFeed public ethFeed;
     MockFeed public plankFeed;
     MockFeed public paperFeed;
+    MockBurner public burner;
     InvRouter public router;
     MockRandomness public cardRng;
     MockRandomness public psaRng;
@@ -61,6 +66,7 @@ contract CardsHandler is Test {
 
     // ---------------------------------------------------------------- ghosts
     uint256 public ghostPaperBurned; // PAPER every successful action should have burned, by the rules
+    uint256 public ghostProtectEth; // ETH paid for cases and grades (all of it goes to the burner)
     uint256[3] public ghostPaid; // per currency (0 PLANK, 1 ETH, 2 USDG): what buyers paid
     uint256[3] public ghostBurnShare; // per currency: the burn share of what they paid
     mapping(uint256 => mapping(address => uint256)) public ghostPreLiftPaid;
@@ -102,14 +108,16 @@ contract CardsHandler is Test {
         psaRng = new MockRandomness();
         packs = new FirePacks(owner);
         cards = new FireCards(owner, address(packs));
+        dealer = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         cardRng.setFire(address(cards));
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), router: address(router), revenueWallet: revenue, burnWallet: burnW,
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, burnWallet: burnW,
             paperPerSuggestion: 1e18
         }));
-        psa = new FirePsa(owner, address(cards), address(paper), address(paperFeed));
+        burner = new MockBurner(address(plank), address(usdg));
+        psa = new FirePsa(owner, address(cards), address(burner));
         psaRng.setFire(address(psa));
         vm.startPrank(owner, owner);
         packs.setSeller(address(sale));
@@ -144,14 +152,14 @@ contract CardsHandler is Test {
     /// @dev Fire 1 sells out to the actors (10 packs each) and is opened and dealt, so everyone starts with 60 cards.
     function bootstrap() external {
         FireSale.DropConfig memory c = FireSale.DropConfig({start: uint64(time + 1), packs: 40, starters: 0, plankOnly: 0,
-            walletLimit: 10, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0)});
+            walletLimit: 10, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
         vm.prank(owner, owner);
         sale.configureDrop(1, c);
         hasDrop[1] = true;
         dropFires.push(1);
         _setTime(time + 1);
         for (uint256 i; i < actors.length; i++) _buyPlank(actors[i], 1, 10);
-        (bool closed,,,,,,,,,) = cards.fires(1);
+        (, bool closed,,,,) = cards.fires(1);
         require(closed, "bootstrap: fire 1 not closed");
         for (uint256 i; i < actors.length; i++) _open(actors[i], 1, 10);
         while (_cardReqs.length > 0) _deliverCard(0, uint256(keccak256(abi.encode("boot", _cardReqs.length))));
@@ -174,8 +182,12 @@ contract CardsHandler is Test {
         string[] memory names = new string[](n);
         string[] memory cats = new string[](n);
         for (uint256 i; i < n; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = string.concat("Cat ", vm.toString(i)); }
-        vm.prank(owner, owner);
-        cards.configureFire(fire, names, cats, "ipfs://x/");
+        vm.startPrank(owner, owner);
+        dealer.setRecipe(fire, StandardRecipe.classic(1));
+        dealer.setCharacters(fire, names, cats);
+        cards.setDealer(fire, address(dealer));
+        cards.setImagesBase(fire, "ipfs://x/");
+        vm.stopPrank();
     }
 
     function _perEth() internal view returns (uint256) { return uint256(ethPx) * 1e10 / uint256(plankPx); }
@@ -349,9 +361,9 @@ contract CardsHandler is Test {
         uint256 pid = pressIds[pressSeed % pressIds.length];
         address a = asOwner ? press.ownerOf(pid) : _actor(actorSeed);
         uint256 fire = _fire(fireSeed);
-        uint256 per = sale.dropOf(fire).paperPerPack;
+        uint256 per = sale.dropOf(fire).starterPaper;
         vm.prank(a, a);
-        try sale.claimStarter(fire, pid, type(uint256).max) {
+        try sale.claimStarter(fire, pid, 1, FireSale.Pay.PLANK, 0, type(uint256).max) {
             if (ghostStarterBy[fire][a]) _flag("two starters for one wallet");
             if (ghostPressUsed[fire][pid]) _flag("one press used twice");
             ghostStarterBy[fire][a] = true;
@@ -407,7 +419,7 @@ contract CardsHandler is Test {
         calls["suggest"]++;
         address a = _actor(actorSeed);
         vm.prank(a, a);
-        sale.suggest("A fox made of embers");
+        sale.suggest("A fox made of embers", type(uint256).max);
         ghostPaperBurned += 1e18;
     }
 
@@ -439,6 +451,12 @@ contract CardsHandler is Test {
         c.plankBurnBps = uint16(bps % 3 == 0 ? 3_000 : bound(bps, 0, BPS));
         c.priceUsd = uint128(bound(price, 1e6, 1e10)); // 1 cent .. $100
         c.paperPerPack = uint128(bound(ppp, 1, 3e18));
+        c.plankOnlyFor = c.liftAfter;
+        c.regularWalletsFor = c.liftAfter;
+        c.starterPerPress = 1;
+        c.starterWalletLimit = 1;
+        c.starterPaper = c.paperPerPack;
+        c.creditsPerPick = 1;
         vm.prank(owner, owner);
         try sale.configureDrop(fire, c) {
             if (!hasDrop[fire]) { hasDrop[fire] = true; dropFires.push(fire); }
@@ -475,25 +493,33 @@ contract CardsHandler is Test {
 
     function setOdds(uint256 fireSeed, uint256 seed) external at {
         uint256 fire = 1 + fireSeed % FIRES;
-        uint16[10] memory odds;
+        uint64[10] memory odds;
         uint256 left = 10_000;
-        for (uint256 g; g < 9; g++) {
+        for (uint256 g = 4; g < 9; g++) { // grades 1-4 come only from wear
             uint256 o = uint256(keccak256(abi.encode(seed, g))) % (left + 1);
-            odds[g] = uint16(o);
+            odds[g] = uint64(o);
             left -= o;
         }
-        odds[9] = uint16(left);
+        odds[9] = uint64(left);
         vm.prank(owner, owner);
         try psa.setOdds(fire, odds) { calls["setOdds.ok"]++; } catch {}
     }
 
-    /// The Series' Diamond setting (small numbers, so it often exceeds the pack count and the cap kicks in).
+    /// The Series' Diamond setting (small numbers, so it often exceeds the pack count and the cap kicks in): a new
+    ///    Standard recipe, which only works until the Series' first pack.
     function setDiamonds(uint256 fireSeed, uint256 n) external at {
         calls["setDiamonds"]++;
         uint256 fire = 2 + fireSeed % (FIRES - 1);
+        n = bound(n, 1, 20);
         vm.prank(owner, owner);
-        try cards.setDiamonds(fire, bound(n, 1, 20)) { calls["setDiamonds.ok"]++; } catch {}
+        try dealer.setRecipe(fire, StandardRecipe.classic(n)) {
+            diamondsOf[fire] = n;
+            calls["setDiamonds.ok"]++;
+        } catch {}
     }
+
+    /// The Diamond setting each Series was last given (1 by default).
+    mapping(uint256 => uint256) public diamondsOf;
 
     function endDrop(uint256 fireSeed) external at {
         calls["endDrop"]++;
@@ -515,7 +541,7 @@ contract CardsHandler is Test {
             for (uint256 j; j < FIRES; j++) {
                 uint256 fire = 1 + (fireSeed % FIRES + j) % FIRES;
                 uint256 bal = packs.balanceOf(a, fire);
-                (bool closed,,,,,,,,,) = cards.fires(fire);
+                (, bool closed,,,,) = cards.fires(fire);
                 if (bal == 0 || !closed) continue;
                 _open(a, fire, bound(count, 1, bal < 10 ? bal : 10));
                 return;
@@ -544,9 +570,10 @@ contract CardsHandler is Test {
         cardRng.fulfill(id, word);
     }
 
+    /// Any number of cards per call, so packs are often split across calls.
     function process(uint256 max) external at {
         calls["process"]++;
-        _process(bound(max, 1, 4));
+        _process(bound(max, 1, 40));
     }
 
     /// The site's keeper: delivers every outstanding word (in a random order) and deals everything.
@@ -559,30 +586,35 @@ contract CardsHandler is Test {
         _process(type(uint256).max);
     }
 
+    // a pack being dealt across process calls
+    uint256[6] internal _mats;
+    uint256 public inPack;
+    uint256 internal _packOpen;
+    uint256 internal _packFire;
+
     function _process(uint256 max) internal {
         vm.recordLogs();
-        cards.process(max);
+        uint256 n;
+        for (uint256 f = 1; f <= FIRES && n < max; f++) n += cards.process(f, max - n);
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        uint256[6] memory mats;
-        uint256 inPack;
-        uint256 packOpen;
-        uint256 packFire;
+        uint256 seen;
         for (uint256 i; i < logs.length; i++) {
             if (logs[i].emitter != address(cards) || logs[i].topics[0] != DEALT) continue;
-            uint256 openIndex = uint256(logs[i].topics[1]);
-            (uint256 fire, uint256 material,,,) = abi.decode(logs[i].data, (uint256, uint256, bool, bool, uint256));
-            if (inPack == 0) { packOpen = openIndex; packFire = fire; }
-            if (openIndex != packOpen || fire != packFire) _flag("a pack's cards span opens or Fires");
-            if (material > 4) _flag("material out of range");
-            mats[inPack++] = material;
-            _ghostMat[fire][material] += 1;
+            seen++;
+            uint256 fire = uint256(logs[i].topics[1]);
+            (uint256 openIndex, uint256 cardType,,,) = abi.decode(logs[i].data, (uint256, uint256, bool, bool, uint256));
+            if (inPack == 0) { _packOpen = openIndex; _packFire = fire; }
+            if (openIndex != _packOpen || fire != _packFire) _flag("a pack's cards span opens or Fires");
+            if (cardType > 4) _flag("card type out of range");
+            _mats[inPack++] = cardType;
+            _ghostMat[fire][cardType] += 1;
             ghostCards[fire] += 1;
             if (inPack == 6) {
-                _checkPack(mats);
+                _checkPack(_mats);
                 inPack = 0;
             }
         }
-        if (inPack != 0) _flag("process dealt a partial pack");
+        if (seen != n || n > max) _flag("process count is off");
     }
 
     function _checkPack(uint256[6] memory mats) internal {
@@ -608,14 +640,40 @@ contract CardsHandler is Test {
         address a = _actor(actorSeed);
         uint256[] memory ids = _owned(a, bound(k, 1, 10), seed, true);
         if (ids.length == 0) return;
-        uint256 per = psa.paperPerReveal();
+        uint256 cost = psa.quote(0, ids.length, FirePsa.Pay.ETH);
         vm.prank(a, a);
-        try psa.reveal(ids, per * ids.length) {
+        try psa.protect{value: cost}(new uint256[](0), ids, FirePsa.Pay.ETH, cost) {
+            ghostProtectEth += cost;
             _psaReqs.push(psaRng.last());
-            ghostPaperBurned += per * ids.length;
             calls["reveal.ok"]++;
         } catch {
-            _flag("reveal of own ungraded cards reverted");
+            _flag("grading own ungraded cards reverted");
+        }
+    }
+
+    /// Case some of an actor's ungraded, uncased cards (their wear freezes for good).
+    function caseCards(uint256 actorSeed, uint256 k, uint256 seed) external at {
+        calls["case"]++;
+        address a = _actor(actorSeed);
+        uint256[] memory ids = _owned(a, bound(k, 1, 5), seed, true);
+        uint256 m;
+        for (uint256 i; i < ids.length; i++) {
+            (,,, bool cased,,) = cards.wearOf(ids[i]);
+            if (!cased) ids[m++] = ids[i];
+        }
+        if (m == 0) return;
+        assembly { mstore(ids, m) }
+        uint256 cost = psa.quote(m, 0, FirePsa.Pay.ETH);
+        vm.prank(a, a);
+        try psa.protect{value: cost}(ids, new uint256[](0), FirePsa.Pay.ETH, cost) {
+            ghostProtectEth += cost;
+            calls["case.ok"]++;
+            for (uint256 i; i < m; i++) {
+                (,,, bool cased,,) = cards.wearOf(ids[i]);
+                if (!cased) _flag("a cased card isn't cased");
+            }
+        } catch {
+            _flag("casing own uncased cards reverted");
         }
     }
 
@@ -631,12 +689,12 @@ contract CardsHandler is Test {
 
     function finish(uint256 seed) external at {
         calls["finish"]++;
-        uint256 n = psa.revealCount();
+        uint256 n = psa.gradingCount();
         if (n == 0) return;
         uint256 s0 = seed % n;
         for (uint256 j; j < n; j++) {
             uint256 idx = (s0 + j) % n;
-            FirePsa.Reveal memory r = psa.revealOf(idx);
+            FirePsa.Grading memory r = psa.gradingOf(idx);
             if (!r.ready || r.done) continue;
             vm.recordLogs();
             psa.finish(idx);
@@ -658,6 +716,13 @@ contract CardsHandler is Test {
     function setPaperPrice(uint256 px) external at {
         paperPx = int256(bound(px, 1e15, 1e18)); // $0.001 .. $1
         paperFeed.set(paperPx);
+    }
+
+    /// The grade can never be one the rules say is impossible: below 5 for a card that spent under a month uncased.
+    function checkGradeFloor(uint256 serial) external view returns (bool ok) {
+        (bool exists,, uint256 grade,, uint256 age,) = cards.wearOf(serial);
+        if (!exists || grade == 0) return true;
+        return grade >= 5 || age > 31 days;
     }
 
     // ================================================================ transfers

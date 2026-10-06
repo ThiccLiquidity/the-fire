@@ -13,12 +13,7 @@
         "internalType": "address"
       },
       {
-        "name": "paper",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "paperUsd",
+        "name": "burner",
         "type": "address",
         "internalType": "address"
       }
@@ -27,20 +22,20 @@
   },
   {
     "type": "function",
-    "name": "CANCEL_AFTER",
+    "name": "BURNER",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "address",
+        "internalType": "contract IPsaBurner"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "CAP_USD18",
+    "name": "CANCEL_AFTER",
     "inputs": [],
     "outputs": [
       {
@@ -66,20 +61,46 @@
   },
   {
     "type": "function",
-    "name": "DEAD",
+    "name": "FREE_TIME",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "address",
-        "internalType": "address"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "MAX_REVEAL",
+    "name": "MAX_BATCH_CAP",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_PRICE_USD18",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MOVE_CAP",
     "inputs": [],
     "outputs": [
       {
@@ -105,52 +126,13 @@
   },
   {
     "type": "function",
-    "name": "PAPER",
+    "name": "PLANK",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "address",
         "internalType": "contract IERC20"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "PAPER_FEED_MAX_AGE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "PAPER_USD",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IPsaFeed"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "PRICE_USD18",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -170,6 +152,32 @@
   },
   {
     "type": "function",
+    "name": "USDG",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IERC20"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "YEAR",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "acceptOwnership",
     "inputs": [],
     "outputs": [],
@@ -177,7 +185,7 @@
   },
   {
     "type": "function",
-    "name": "cancelReveal",
+    "name": "cancelGrading",
     "inputs": [
       {
         "name": "index",
@@ -187,6 +195,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "caseUsd18",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -203,19 +224,6 @@
         "name": "",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "fallbackPaper",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -243,6 +251,16 @@
         "internalType": "uint256"
       },
       {
+        "name": "age",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "moves",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
         "name": "rnd",
         "type": "uint256",
         "internalType": "uint256"
@@ -259,13 +277,129 @@
   },
   {
     "type": "function",
-    "name": "lastCost",
+    "name": "gradeUsd18",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "gradingCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "gradingOf",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct FirePsa.Grading",
+        "components": [
+          {
+            "name": "by",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "requestedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "firstRequestedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "ready",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "done",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "requestId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "word",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "ids",
+            "type": "uint256[]",
+            "internalType": "uint256[]"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxBatch",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "oddsFor",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "age",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "moves",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "uint256[10]",
+        "internalType": "uint256[10]"
       }
     ],
     "stateMutability": "view"
@@ -283,8 +417,13 @@
     "outputs": [
       {
         "name": "o",
-        "type": "uint16[10]",
-        "internalType": "uint16[10]"
+        "type": "uint64[10]",
+        "internalType": "uint64[10]"
+      },
+      {
+        "name": "total",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -316,19 +455,6 @@
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "paperPerReveal",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -367,10 +493,66 @@
   },
   {
     "type": "function",
-    "name": "pokePrice",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "name": "protect",
+    "inputs": [
+      {
+        "name": "caseIds",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "gradeIds",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "pay",
+        "type": "uint8",
+        "internalType": "enum FirePsa.Pay"
+      },
+      {
+        "name": "maxCost",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "quote",
+    "inputs": [
+      {
+        "name": "cases",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "grades",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "pay",
+        "type": "uint8",
+        "internalType": "enum FirePsa.Pay"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -407,103 +589,10 @@
   },
   {
     "type": "function",
-    "name": "reveal",
+    "name": "setMaxBatch",
     "inputs": [
       {
-        "name": "ids",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "maxPaper",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "revealCount",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "revealOf",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct FirePsa.Reveal",
-        "components": [
-          {
-            "name": "by",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "requestedAt",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "ready",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "done",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "requestId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "word",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "ids",
-            "type": "uint256[]",
-            "internalType": "uint256[]"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "setFallbackPaper",
-    "inputs": [
-      {
-        "name": "paper",
+        "name": "n",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -522,8 +611,8 @@
       },
       {
         "name": "odds",
-        "type": "uint16[10]",
-        "internalType": "uint16[10]"
+        "type": "uint64[10]",
+        "internalType": "uint64[10]"
       }
     ],
     "outputs": [],
@@ -531,12 +620,17 @@
   },
   {
     "type": "function",
-    "name": "setPaperFeed",
+    "name": "setPrices",
     "inputs": [
       {
-        "name": "feed",
-        "type": "address",
-        "internalType": "address"
+        "name": "caseUsd",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "gradeUsd",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -570,19 +664,6 @@
   },
   {
     "type": "event",
-    "name": "FallbackPaperSet",
-    "inputs": [
-      {
-        "name": "paper",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Graded",
     "inputs": [
       {
@@ -602,10 +683,42 @@
   },
   {
     "type": "event",
-    "name": "LastCostSet",
+    "name": "GradingCancelled",
     "inputs": [
       {
-        "name": "paperWei",
+        "name": "index",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GradingReady",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "word",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MaxBatchSet",
+    "inputs": [
+      {
+        "name": "cards",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -625,9 +738,9 @@
       },
       {
         "name": "odds",
-        "type": "uint16[10]",
+        "type": "uint64[10]",
         "indexed": false,
-        "internalType": "uint16[10]"
+        "internalType": "uint64[10]"
       }
     ],
     "anonymous": false
@@ -672,13 +785,62 @@
   },
   {
     "type": "event",
-    "name": "PaperFeedSet",
+    "name": "PricesSet",
     "inputs": [
       {
-        "name": "feed",
-        "type": "address",
+        "name": "caseUsd18",
+        "type": "uint256",
         "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "gradeUsd18",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Protected",
+    "inputs": [
+      {
+        "name": "by",
+        "type": "address",
+        "indexed": true,
         "internalType": "address"
+      },
+      {
+        "name": "cased",
+        "type": "uint256[]",
+        "indexed": false,
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "graded",
+        "type": "uint256[]",
+        "indexed": false,
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "pay",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum FirePsa.Pay"
+      },
+      {
+        "name": "paid",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "gradingIndex",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -704,75 +866,6 @@
         "name": "index",
         "type": "uint256",
         "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "requestId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "RevealCancelled",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "RevealReady",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "word",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "RevealRequested",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "by",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "ids",
-        "type": "uint256[]",
-        "indexed": false,
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "paper",
-        "type": "uint256",
-        "indexed": false,
         "internalType": "uint256"
       },
       {
@@ -863,6 +956,11 @@
   },
   {
     "type": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "SafeERC20FailedOperation",
     "inputs": [
       {
@@ -874,7 +972,7 @@
   },
   {
     "type": "error",
-    "name": "WrongFeed",
+    "name": "TransferFailed",
     "inputs": []
   },
   {

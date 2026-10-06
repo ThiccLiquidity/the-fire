@@ -158,3 +158,4 @@
 .inf-ca { cursor: pointer; font: inherit; color: inherit; background: transparent }
 .inf-ca code { font-family: inherit; opacity: .75; font-weight: 600 }
 .inf-ca .cp { font-size: .8em; color: var(--brass) }
+.inf-pcol.aged .inf-pval { color: var(--dim); font-style: italic }

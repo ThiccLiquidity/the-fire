@@ -12,8 +12,8 @@ interface IUniswapV2Factory {
  * @notice A Chainlink-style PAPER/USD feed (**18 decimals**) that finds its own pool. FirePsa's PAPER_USD_FEED must
  *         be this contract, never a pool.
  *
- *         It starts with no pool and reports 0, so FirePsa charges its set PAPER amount. Once a PAPER/WETH or
- *         PAPER/USDG pool on the Uniswap V2 factory holds at least MIN_LIQUIDITY_USD ($1,000) on its dollar side, a
+ *         It starts with no pool and reports 0. Once a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool on the Uniswap V2
+ *         factory holds at least MIN_LIQUIDITY_USD ($1,000) on its other side (PLANK valued by the PLANK feed), a
  *         checkpoint marks it as the candidate; if it still qualifies at every checkpoint for MIN_WINDOW (20h), it's
  *         adopted, and the first price appears one full window (>= 20h) after that: about 40h after the first
  *         checkpoint, even when a pool already exists at deploy. A pool in the other
@@ -25,7 +25,9 @@ interface IUniswapV2Factory {
  *         Same windowing as PlankUsdTwap: checkpoints closer than MIN_WINDOW to the last accepted one are no-ops, so
  *         the average always spans >= 20h and nobody can shorten it or pin its start. No owner, no admin.
  *
- *         Assumes PAPER has 18 decimals (as FirePsa does); check on deploy day.
+ *         Assumes PAPER and PLANK have 18 decimals; check on deploy day. A PLANK pool's price follows the PLANK feed
+ *         (PlankUsdTwap, a 30-minute average) at read time; while that feed is stale the PLANK pool counts for
+ *         nothing and its price reads 0.
  */
 contract PaperUsdTwap {
     IUniswapV2Factory public immutable FACTORY;
@@ -34,6 +36,9 @@ contract PaperUsdTwap {
     address public immutable USDG; // address(0) = only look for a WETH pool
     uint8 public immutable USDG_DECIMALS;
     IEthUsdFeed public immutable ETH_USD;
+    address public immutable PLANK; // address(0) = don't look for a PLANK pool
+    IEthUsdFeed public immutable PLANK_USD; // PlankUsdTwap (18 decimals)
+    uint256 public constant PLANK_FEED_MAX_AGE = 2 hours;
     uint256 public constant MIN_WINDOW = 20 hours;
     uint256 public constant ETH_FEED_MAX_AGE = 25 hours;
     uint256 public constant SWITCH_FACTOR = 2; // another pool must hold 2x the dollar liquidity to take over
@@ -53,13 +58,24 @@ contract PaperUsdTwap {
     event Candidate(address pair); // address(0) = the candidate stopped qualifying
     event Checkpoint(uint32 ts, uint256 paperUsd18);
 
-    constructor(address factory, address paper, address weth, address usdg, uint8 usdgDecimals, address ethUsd) {
+    constructor(
+        address factory,
+        address paper,
+        address weth,
+        address usdg,
+        uint8 usdgDecimals,
+        address ethUsd,
+        address plank,
+        address plankUsd
+    ) {
         FACTORY = IUniswapV2Factory(factory);
         PAPER = paper;
         WETH = weth;
         USDG = usdg;
         USDG_DECIMALS = usdgDecimals;
         ETH_USD = IEthUsdFeed(ethUsd);
+        PLANK = plank;
+        PLANK_USD = IEthUsdFeed(plankUsd);
     }
 
     /// @notice Anyone. Tracks a candidate pool and adopts it once it has qualified for MIN_WINDOW, then rolls the
@@ -106,6 +122,7 @@ contract PaperUsdTwap {
     /// @dev The best pool, and whether it should replace the current reference (none yet, or 2x its liquidity).
     function _contender() internal view returns (address best, address bestQuote, bool better) {
         if (_ethUsd() == 0) return (address(0), address(0), false); // can't compare fairly: hold
+        if (PLANK != address(0) && _plankUsd() == 0) return (address(0), address(0), false); // same while PLANK's price is late
         uint256 bestLiq;
         (best, bestQuote, bestLiq) = _bestPool();
         if (best == address(0) || best == address(pair) || bestLiq < MIN_LIQUIDITY_USD) return (best, bestQuote, false);
@@ -130,6 +147,13 @@ contract PaperUsdTwap {
                 if (best == address(0) || l > bestLiq) (best, bestQuote, bestLiq) = (u, USDG, l);
             }
         }
+        if (PLANK != address(0)) {
+            address k = FACTORY.getPair(PAPER, PLANK);
+            if (k != address(0)) {
+                uint256 l = _liquidityUsd(k, PLANK);
+                if (best == address(0) || l > bestLiq) (best, bestQuote, bestLiq) = (k, PLANK, l);
+            }
+        }
     }
 
     /// @dev Dollar value of the quote side of a pool, 8 decimals. WETH pools count 0 while the ETH feed is stale.
@@ -137,6 +161,7 @@ contract PaperUsdTwap {
         (uint112 r0, uint112 r1,) = IUniswapV2Pair(p).getReserves();
         uint256 qr = IUniswapV2Pair(p).token0() == q ? r0 : r1;
         if (q == USDG) return qr * 1e8 / (10 ** USDG_DECIMALS);
+        if (q == PLANK) return qr * _plankUsd() / 1e28;
         uint256 eth = _ethUsd();
         return qr * eth / 1e18;
     }
@@ -146,6 +171,16 @@ contract PaperUsdTwap {
         if (!ok || ret.length < 160) return 0;
         (, int256 px,, uint256 upd,) = abi.decode(ret, (uint80, int256, uint256, uint256, uint80));
         if (px <= 0 || upd > block.timestamp || block.timestamp - upd > ETH_FEED_MAX_AGE) return 0;
+        return uint256(px);
+    }
+
+    /// @dev USD per PLANK, 18 decimals; 0 if missing or stale.
+    function _plankUsd() internal view returns (uint256) {
+        if (address(PLANK_USD) == address(0)) return 0;
+        (bool ok, bytes memory ret) = address(PLANK_USD).staticcall(abi.encodeCall(IEthUsdFeed.latestRoundData, ()));
+        if (!ok || ret.length < 160) return 0;
+        (, int256 px,, uint256 upd,) = abi.decode(ret, (uint80, int256, uint256, uint256, uint80));
+        if (px <= 0 || upd > block.timestamp || block.timestamp - upd > PLANK_FEED_MAX_AGE) return 0;
         return uint256(px);
     }
 
@@ -168,6 +203,7 @@ contract PaperUsdTwap {
             // USD per PAPER, 18 dec = raw ratio * 10^18 (PAPER dec) / 10^usdgDec * 10^18
             return (avgQ112 * (10 ** (36 - uint256(USDG_DECIMALS)))) >> 112;
         }
+        if (quote == PLANK) return (avgQ112 * _plankUsd()) >> 112; // (PLANK per PAPER, Q112) * (USD per PLANK, 18 dec)
         uint256 eth = _ethUsd();
         if (eth == 0) return 0;
         // (WETH per PAPER, Q112) * (USD per ETH, 8 dec) * 1e10 / 2^112

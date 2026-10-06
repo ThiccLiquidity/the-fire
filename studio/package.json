@@ -49,7 +49,10 @@
     "@fontsource/rye": "^5.3.0",
     "@fontsource/teko": "^5.3.0",
     "@fontsource/uncial-antiqua": "^5.3.0",
+    "@ipld/car": "^5.4.7",
     "fflate": "^0.8.2",
+    "ipfs-unixfs-importer": "^17.1.1",
+    "multiformats": "^14.0.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -58,6 +61,8 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "blockstore-core": "^7.0.1",
+    "ipfs-unixfs-exporter": "^16.2.3",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
     "vitest": "^5.0.3"

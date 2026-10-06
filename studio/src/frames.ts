@@ -1,46 +1,75 @@
 /** The collection's frames: the master frame templates, built into the studio and never uploaded or edited here.
  *  Sources: frames-src/originals (as delivered), cleaned by frames-src/clean_frames.py into src/assets/frames.
- *  Every frame shares FRAME_GEOMETRY, so one layout fits them all. A missing frame blocks approval of any Series that
- *  deals that material + variant. */
+ *  Every frame shares FRAME_GEOMETRY, so one layout fits them all.
+ *
+ *  Frame sets. A set is every file src/assets/frames/<set>[-holo][-l<2-6>].webp: the normal and holo frames plus the
+ *  PDA wear levels 2-6 (level 1, PDA 10, is the clean frame). The five Standard sets are paper, wood, burning (Fire),
+ *  charcoal (Coal) and diamond. Any other set clean_frames.py has built (e.g. gold.webp, gold-holo.webp,
+ *  gold-l2.webp ...) is found here automatically. Set ids are [a-z0-9]+. Each card type of a recipe uses one frame set
+ *  (recipe.ts CardTypeDef.frameSet); a frame its cards can need that isn't there blocks the build. */
 
-import burning from './assets/frames/burning.webp'
-import burningHolo from './assets/frames/burning-holo.webp'
-import charcoal from './assets/frames/charcoal.webp'
-import charcoalHolo from './assets/frames/charcoal-holo.webp'
-import diamond from './assets/frames/diamond.webp'
-import diamondHolo from './assets/frames/diamond-holo.webp'
-import paper from './assets/frames/paper.webp'
-import paperHolo from './assets/frames/paper-holo.webp'
-import wood from './assets/frames/wood.webp'
-import woodHolo from './assets/frames/wood-holo.webp'
-import { MATERIALS, type Material, type WearLevel, type WearLook } from './rules'
+import { MATERIALS, MATERIAL_LABEL, WEAR_LEVELS, type HoloType, type WearLevel, type WearLook } from './rules'
 import { VARIANTS, type Rect, type Variant } from './types'
 
-export const BUILTIN_FRAMES: Record<Material, Partial<Record<Variant, string>>> = {
-  paper: { normal: paper, holo: paperHolo },
-  wood: { normal: wood, holo: woodHolo },
-  burning: { normal: burning, holo: burningHolo },
-  charcoal: { normal: charcoal, holo: charcoalHolo },
-  diamond: { normal: diamond, holo: diamondHolo },
+export type FrameSetId = string
+
+const files = import.meta.glob('./assets/frames/*.webp', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
+
+/** url by set, variant and wear ('clean' or L2..L6; L1 = clean). */
+const FRAME_FILES: Record<FrameSetId, Partial<Record<Variant, Partial<Record<WearLook, string>>>>> = {}
+for (const [path, url] of Object.entries(files)) {
+  const m = /\/([a-z0-9]+)(-holo)?(?:-l([2-6]))?\.webp$/.exec(path)
+  if (!m) continue
+  const v: Variant = m[2] ? 'holo' : 'normal'
+  const set = ((FRAME_FILES[m[1]] ??= {})[v] ??= {})
+  set[m[3] ? (`L${m[3]}` as WearLevel) : 'clean'] = url
+}
+for (const set of Object.values(FRAME_FILES)) {
+  for (const v of VARIANTS) {
+    const f = set[v]
+    if (f?.clean) f.L1 = f.clean // PDA 10 = pristine
+  }
 }
 
-/** PDA wear frames: src/assets/frames/<material>[-holo]-l<2-6>.webp, made by clean_frames.py from
- *  frames-src/originals/wear. Level 1 (PDA 10) is the clean frame itself. */
-const wearFiles = import.meta.glob('./assets/frames/*-l[2-6].webp', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
-export const BUILTIN_WEAR_FRAMES: Record<Material, Partial<Record<Variant, Partial<Record<WearLevel, string>>>>> = {
-  paper: {}, wood: {}, burning: {}, charcoal: {}, diamond: {},
+/** Sets the Standard recipe uses that may not be delivered yet: listed (and their art can be uploaded) before their
+ *  frames exist; a missing frame still blocks the build. */
+const EXPECTED_SETS = ['gold', 'fullart']
+
+/** Every frame set: the five originals, Gold and Full Art, then any others found, alphabetically. */
+export const FRAME_SETS: FrameSetId[] = [
+  ...MATERIALS,
+  ...EXPECTED_SETS,
+  ...Object.keys(FRAME_FILES).filter((s) => !(MATERIALS as readonly string[]).includes(s) && !EXPECTED_SETS.includes(s)).sort(),
+]
+
+/** Gold and Full Art are always full holo: their cards use only the holo frame and the holo art. */
+export const HOLO_ONLY_SETS: readonly FrameSetId[] = ['gold', 'fullart']
+
+/** The art (and frame) variants a set's cards can use. */
+export function variantsOf(s: FrameSetId): Variant[] {
+  return HOLO_ONLY_SETS.includes(s) ? ['holo'] : [...VARIANTS]
 }
-for (const [path, url] of Object.entries(wearFiles)) {
-  const m = /\/(\w+?)(-holo)?-l([2-6])\.webp$/.exec(path)
-  if (!m || !(MATERIALS as readonly string[]).includes(m[1])) continue
-  const v: Variant = m[2] ? 'holo' : 'normal'
-  const set = (BUILTIN_WEAR_FRAMES[m[1] as Material][v] ??= {})
-  set[`L${m[3]}` as WearLevel] = url
+
+const EXTRA_LABEL: Record<string, string> = { gold: 'Gold', fullart: 'Full Art' }
+
+/** The name shown for a frame set: Paper, Wood, Fire, Coal, Diamond, Gold, Full Art, or the id capitalised. */
+export function frameSetLabel(s: FrameSetId): string {
+  return (MATERIAL_LABEL as Record<string, string>)[s] ?? EXTRA_LABEL[s] ?? s.charAt(0).toUpperCase() + s.slice(1)
 }
-for (const mat of MATERIALS) for (const v of VARIANTS) {
-  const clean = BUILTIN_FRAMES[mat][v]
-  if (clean) (BUILTIN_WEAR_FRAMES[mat][v] ??= {}).L1 = clean // PDA 10 = pristine
+
+/** Frame sets whose art fills the whole card behind a slim rim (the frame's name bar and bottom panel stay where every
+ *  other frame has them). Full Art is the first. */
+export const FULL_CARD_ART_SETS: readonly FrameSetId[] = ['fullart']
+
+/** Where a frame set's art goes: the square art window, or the whole card for a full-card-art set. */
+export function artBoxOf(s: FrameSetId): Rect {
+  return FULL_CARD_ART_SETS.includes(s) ? { x: 0, y: 0, w: 1500, h: 2100 } : { ...FRAME_GEOMETRY.art }
 }
+
+/** Kept for older code paths: the clean frames of the Standard sets. */
+export const BUILTIN_FRAMES: Record<string, Partial<Record<Variant, string>>> = Object.fromEntries(
+  FRAME_SETS.map((s) => [s, { normal: FRAME_FILES[s]?.normal?.clean, holo: FRAME_FILES[s]?.holo?.clean }]),
+)
 
 /** Bump (to a time in the past, e.g. when the change is made) when a frame file is added or changed: approvals made
  *  before this go stale and must be redone. */
@@ -61,32 +90,53 @@ export const FRAME_GEOMETRY = {
 }
 
 /** The file for this frame: the clean frame, or the worn one for a revealed grade. */
-export function frameUrl(m: Material, v: Variant, wear: WearLook = 'clean'): string | undefined {
-  return wear === 'clean' ? BUILTIN_FRAMES[m][v] : BUILTIN_WEAR_FRAMES[m][v]?.[wear]
+export function frameUrl(s: FrameSetId, v: Variant, wear: WearLook = 'clean'): string | undefined {
+  return FRAME_FILES[s]?.[v]?.[wear]
 }
 
-export function hasFrame(m: Material, v: Variant, wear: WearLook = 'clean'): boolean {
-  return !!frameUrl(m, v, wear)
+export function hasFrame(s: FrameSetId, v: Variant, wear: WearLook = 'clean'): boolean {
+  return !!frameUrl(s, v, wear)
 }
 
-export function frameId(m: Material, v: Variant, wear: WearLook): string {
-  return `${m}:${v}:${wear}`
+export function frameId(s: FrameSetId, v: Variant, wear: WearLook): string {
+  return `${s}:${v}:${wear}`
 }
 
-export function missingFrames(): { material: Material; variant: Variant }[] {
-  return MATERIALS.flatMap((material) => VARIANTS.filter((v) => !hasFrame(material, v)).map((variant) => ({ material, variant })))
+/** The frame variant a holo look uses: a holo frame for frame and full holo. */
+export function frameVariantOf(h: HoloType): Variant {
+  return h === 'frame' || h === 'full' ? 'holo' : 'normal'
+}
+
+/** Frames missing from a set for the given holo looks (normal / holo, clean and every wear level), as readable
+ *  labels, e.g. "Gold holo PDA 9-8". */
+export function missingFramesFor(s: FrameSetId, holos: readonly HoloType[]): string[] {
+  const out: string[] = []
+  for (const v of VARIANTS) {
+    if (!holos.some((h) => frameVariantOf(h) === v)) continue
+    for (const w of ['clean', ...WEAR_LEVELS] as WearLook[]) {
+      if (!hasFrame(s, v, w)) out.push(`${frameSetLabel(s)} ${v}${w === 'clean' || w === 'L1' ? '' : ` wear ${w}`}`)
+    }
+  }
+  return [...new Set(out)]
+}
+
+/** How complete a frame set is: files present out of 12 (normal and holo, clean + 5 wear levels each). */
+export function frameSetFiles(s: FrameSetId): { have: number; total: number } {
+  let have = 0
+  for (const v of VARIANTS) for (const w of ['clean', 'L2', 'L3', 'L4', 'L5', 'L6'] as WearLook[]) if (hasFrame(s, v, w)) have++
+  return { have, total: 12 }
 }
 
 const cache = new Map<string, Promise<Blob>>()
 
-/** The frame file as a Blob (fetched once per session), or undefined if that frame doesn't exist yet. */
-export function frameBlob(m: Material, v: Variant, wear: WearLook = 'clean'): Promise<Blob> | undefined {
-  const url = frameUrl(m, v, wear)
+/** The frame file as a Blob (fetched once per session), or undefined if that frame doesn't exist. */
+export function frameBlob(s: FrameSetId, v: Variant, wear: WearLook = 'clean'): Promise<Blob> | undefined {
+  const url = frameUrl(s, v, wear)
   if (!url) return undefined
   let p = cache.get(url)
   if (!p) {
     p = fetch(url).then((r) => {
-      if (!r.ok) throw new Error(`Frame ${m} ${v} failed to load (${r.status})`)
+      if (!r.ok) throw new Error(`Frame ${s} ${v} failed to load (${r.status})`)
       return r.blob()
     })
     p.catch(() => cache.delete(url))

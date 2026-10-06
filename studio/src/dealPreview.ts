@@ -7,7 +7,7 @@ import type { DealWorkerIn, DealWorkerOut } from './deal.worker'
 
 /** Identifies the inputs a preview was dealt from, so a lock never stores a stale preview. */
 export function dealInputKey(input: DealInput): string {
-  return JSON.stringify([input.fire, input.packs, input.characterIds, input.seed, input.diamonds, input.firstSerial])
+  return JSON.stringify([input.fire, input.packs, input.characterIds, input.seed, input.recipe, input.firstSerial])
 }
 
 let worker: Worker | null = null

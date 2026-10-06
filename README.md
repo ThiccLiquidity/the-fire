@@ -2,8 +2,9 @@
 
 Omni Forge is a collectible NFT card game on Robinhood Chain. Cards are sold in sealed packs, one Series at a time.
 PLANK fuels the forge (part of every sale buys and burns it) and every pack burns PAPER. Packs are opened with
-drand randomness, so nobody can know a pack's contents in advance, and any card can be graded once (a PDA reveal)
-for a wear frame and grade from 1 to 10.
+drand randomness, so nobody can know a pack's contents in advance. Cards wear while left uncased; a Case freezes a
+card, and PDA grading reveals its grade (1 to 10) once and seals it in a Slab. Case and grading fees buy PAPER and
+burn it ([`docs/grading.md`](docs/grading.md)).
 
 Live site: https://web-mu-mocha-95.vercel.app (the Forge in demo mode: demo data, no wallet, no payments).
 
@@ -21,7 +22,7 @@ Live site: https://web-mu-mocha-95.vercel.app (the Forge in demo mode: demo data
 | `docs/` | Reference documentation (see below). |
 
 **Naming.** The card contracts are named `Fire*` (`FirePacks`, `FireCards`, `FireSale`, `FirePsa`) for historical
-reasons: `Fire*` means the card system. In identifiers (`fire`, `configureFire`, `lockFire`, `fire.json`), "fire" is a
+reasons: `Fire*` means the card system. In identifiers (`fire`, `setDealer`, `lockFire`, `fire.json`), "fire" is a
 Series number. Prose says "Series".
 
 ## Quick start
@@ -78,9 +79,10 @@ The site deploys on Vercel from `main` with Root Directory `web`.
 
 | Doc | Covers |
 |---|---|
-| [`docs/omni-economy.md`](docs/omni-economy.md) | Drops, prices, burns, starter packs, free pack credits, PDA reveal pricing and odds |
+| [`docs/omni-economy.md`](docs/omni-economy.md) | Drops, prices, burns, starter packs, free pack credits, case and grading prices |
+| [`docs/grading.md`](docs/grading.md) | Cases, PDA grading and slabs: hidden condition, wear rules, fresh odds, images, metadata |
 | [`docs/cards-contracts.md`](docs/cards-contracts.md) | The card contracts: pieces, the open/deal flow, safety properties, deployment wiring |
-| [`docs/card-studio.md`](docs/card-studio.md) | Card rules (pool, pack slots, holo, wear) and how the studio builds a Series |
+| [`docs/card-studio.md`](docs/card-studio.md) | Card rules (pool, pack slots, holo, wear frames) and how the studio builds a Series |
 | [`docs/randomness.md`](docs/randomness.md) | The drand router: request flow, recovery paths, how to verify a number |
 | [`docs/deploy.md`](docs/deploy.md) | Mainnet deploy runbook |
 | [`docs/addresses.md`](docs/addresses.md) | Robinhood Chain addresses and on-chain findings |
@@ -89,9 +91,11 @@ The site deploys on Vercel from `main` with Root Directory `web`.
 
 ## Key properties
 
-- **The contracts never hold funds.** Everything paid is forwarded or burned in the same transaction: 70% of a sale
-  to the revenue wallet; the 30% burn share buys PLANK and burns it (or goes to the burn wallet if the swap can't go
-  through). All PAPER spent is burned.
+- **The sale contracts never hold funds.** Everything paid for packs is forwarded or burned in the same transaction:
+  70% of a sale to the revenue wallet; the 30% burn share buys PLANK and burns it (or goes to the burn wallet if the
+  swap can't go through). All PAPER spent is burned.
+- **Case and grading fees all burn PAPER.** `PaperBurner` buys PAPER with 100% of each fee and burns it; none goes to
+  the team. If the price guard says no, the fee waits in `PaperBurner` (it has no withdraw) for a later buy.
 - **Randomness** comes from drand through an ownerless router that anyone can fulfill.
 - **The owner is a multisig** that configures each Series and drop. What it can and can't change is listed in
   `docs/cards-contracts.md` and `docs/audit-2026-10.md`.

@@ -2,20 +2,22 @@
  *  OffscreenCanvas-in-worker aren't available it falls back to the main thread, yielding between batches. */
 
 import * as db from './db'
-import type { DealtCard } from './deal'
 import { bundledFontData } from './fonts'
-import { frameBlob, frameId } from './frames'
+import { FRAME_SETS, frameBlob, frameId } from './frames'
+import type { CardFace } from './render'
 import { CardRenderer, type AssetBundle, type RenderJob, type VariantBlobs } from './renderCore'
-import { MATERIALS, WEAR_LEVELS, type WearLook } from './rules'
-import { effectiveKey, getStudio } from './store'
+import { WEAR_LEVELS, type WearLook } from './rules'
+import { effectiveKey, getStudio, layoutFor } from './store'
 import { VARIANTS, type OutputFormat } from './types'
 import type { WorkerIn, WorkerOut } from './build.worker'
 
-/** `withWear`: also load the PDA wear frames (only needed once cards have grades). */
-export async function collectBundle(characterIds: string[], withWear = false): Promise<AssetBundle> {
+/** Everything a render needs for these characters and frame sets (default: every frame set). `withWear`: also load the
+ *  PDA wear frames (only needed for graded cards). */
+export async function collectBundle(characterIds: string[], withWear = false, frameSets: readonly string[] = FRAME_SETS): Promise<AssetBundle> {
   const s = getStudio()
+  const sets = [...new Set(frameSets)]
   const frames: AssetBundle['frames'] = {}
-  for (const m of MATERIALS) {
+  for (const m of sets) {
     for (const v of VARIANTS) {
       for (const w of (withWear ? ['clean', ...WEAR_LEVELS] : ['clean']) as WearLook[]) {
         const b = frameBlob(m, v, w)
@@ -32,7 +34,7 @@ export async function collectBundle(characterIds: string[], withWear = false): P
     names[id] = c.name
     categories[id] = c.category
     art[id] = {}
-    for (const m of MATERIALS) {
+    for (const m of sets) {
       const vb: VariantBlobs = {}
       for (const v of VARIANTS) {
         const slot = c.images[m]?.[v]
@@ -47,10 +49,11 @@ export async function collectBundle(characterIds: string[], withWear = false): P
     const b = await db.getBlob(f.key)
     if (b) fonts.push({ family: f.family, data: await b.arrayBuffer() })
   }
+  const layouts = Object.fromEntries(sets.map((m) => [m, layoutFor(m)]))
   // bundled fonts the layouts use (the page has all of them; workers only get what they need)
-  const used = MATERIALS.flatMap((m) => [...Object.values(s.layouts[m].text).map((t) => t.style.font), s.layouts[m].psa.style.font])
+  const used = sets.flatMap((m) => [...Object.values(layouts[m].text).map((t) => t.style.font), layouts[m].psa.style.font])
   fonts.push(...(await bundledFontData(used)))
-  return { layouts: s.layouts, frames, art, names, categories, fonts }
+  return { layouts, frames, art, names, categories, fonts }
 }
 
 const yieldToUi = () => new Promise<void>((r) => setTimeout(r, 0))
@@ -72,8 +75,8 @@ export class BatchRenderer {
     this.bundle = bundle
   }
 
-  static async create(characterIds: string[], withWear = false): Promise<BatchRenderer> {
-    const r = new BatchRenderer(await collectBundle(characterIds, withWear))
+  static async create(characterIds: string[], withWear = false, frameSets?: readonly string[]): Promise<BatchRenderer> {
+    const r = new BatchRenderer(await collectBundle(characterIds, withWear, frameSets))
     await r.start()
     return r
   }
@@ -120,11 +123,11 @@ export class BatchRenderer {
     }
   }
 
-  private async renderBatch(lane: number, cards: DealtCard[], format: OutputFormat): Promise<Blob[]> {
+  private async renderBatch(lane: number, cards: CardFace[], format: OutputFormat): Promise<Blob[]> {
     const w = this.workers[lane]
     if (w) {
       const id = this.nextId++
-      const jobs: RenderJob[] = cards.map((card) => ({ card }))
+      const jobs: RenderJob[] = cards.map((face) => ({ face }))
       return new Promise<Blob[]>((resolve, reject) => {
         this.pending.set(id, { resolve, reject })
         w.postMessage({ type: 'render', id, jobs, format } satisfies WorkerIn)
@@ -140,10 +143,10 @@ export class BatchRenderer {
 
   /** `onBatch` gets each finished batch with the index of its first card (batches may finish out of order). */
   async renderAll(
-    cards: DealtCard[], format: OutputFormat, opts: {
+    cards: CardFace[], format: OutputFormat, opts: {
       batchSize?: number
       onProgress?: (p: Progress) => void
-      onBatch?: (cards: DealtCard[], blobs: Blob[], start: number) => Promise<void> | void
+      onBatch?: (cards: CardFace[], blobs: Blob[], start: number) => Promise<void> | void
       signal?: AbortSignal
     } = {},
   ): Promise<void> {

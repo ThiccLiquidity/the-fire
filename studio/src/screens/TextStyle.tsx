@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Field, NumberInput } from '../components'
 import { BUNDLED_FONTS, FONT_GROUPS, bundledFontCss } from '../fonts'
 import { BUILTIN_FONTS } from '../layoutDefaults'
-import { MATERIAL_LABEL, type Material } from '../rules'
+import { frameSetLabel } from '../frames'
 import { fontFamilyCss, useStudio } from '../store'
 import { TEXT_FIELDS, type Layout } from '../types'
 
@@ -50,7 +50,7 @@ export function FontPicker({ value, sample, onPick }: { value: string; sample: s
 
 /** One text style per material: the font and colours of every piece of text on that material's cards. */
 export function CardTextStyle({ m, layout, setLayout, sample, onFontToAll }: {
-  m: Material
+  m: string
   layout: Layout
   setLayout: (f: (l: Layout) => Layout) => void
   sample: string
@@ -66,8 +66,8 @@ export function CardTextStyle({ m, layout, setLayout, sample, onFontToAll }: {
   }))
   return (
     <div className="text-style" data-testid="card-text-style">
-      <h4>{MATERIAL_LABEL[m]} card text</h4>
-      <p className="muted small">Applies to the name, material and category on every {MATERIAL_LABEL[m]} card (the font also goes on the PDA badge).{mixed ? ' The fields differ right now; picking here makes them match.' : ''}</p>
+      <h4>{frameSetLabel(m)} card text</h4>
+      <p className="muted small">Applies to the name, material and category on every card using the {frameSetLabel(m)} frames (the font also goes on the PDA badge).{mixed ? ' The fields differ right now; picking here makes them match.' : ''}</p>
       <FontPicker value={st.font} sample={sample} onPick={(css) => setAll({ font: css }, true)} />
       <div className="row wrap">
         <Field label="Text colour"><input type="color" value={st.color} onChange={(e) => setAll({ color: e.target.value })} data-testid="text-color" /></Field>

@@ -1,11 +1,18 @@
 /* Omni Forge (demo mode): shared state (demo data, no chain), events, toasts and the sheet (dialog) helper.
    Every other module reads and writes through window.Store and opens screens with window.Sheet. */
 (() => {
-  const MATS = ['paper', 'wood', 'fire', 'charcoal', 'diamond'];
-  const MAT_LABEL = { paper: 'Paper', wood: 'Wood', fire: 'Fire', charcoal: 'Coal', diamond: 'Diamond' };
+  const MATS = ['paper', 'wood', 'fire', 'charcoal', 'diamond', 'gold', 'fullart'];
+  const MAT_LABEL = { paper: 'Paper', wood: 'Wood', fire: 'Fire', charcoal: 'Coal', diamond: 'Diamond', gold: 'Gold', fullart: 'Full Art' };
+  // always holo: Diamond (the old top card) and the Standard's Gold and Full Art (always full holo)
+  const ALWAYS_HOLO = { diamond: true, gold: true, fullart: true };
+  // demo: only the Bowling Ball has Gold and Full Art art so far, so every Gold or Full Art pulled is a Bowling Ball
+  const SPECIAL_CAST = 'Bowling Ball';
   // the demo cast: real card art, rendered by the Card Studio's own card builder into cards/<id>/<material>-<holo>-<grade|u>.webp
   const CHARS = { 'Bowling Ball': { id: 'bowling', category: 'Sports' }, Jellyfish: { id: 'jellyfish', category: 'Animal' }, Cactus: { id: 'cactus', category: 'Plant' } };
   const NAMES = Object.keys(CHARS);
+  const DAY = 86400000;
+  // demo prices: the pack, and the coins it can be paid in (cases and grades are priced in dollars too)
+  const PRICES = { PACK_USD: 2.5, PAPER_USD: 0.08, ETH_USD: 2500, PLANK_USD: 0.0000021, CASE_USD: 0.05, GRADE_USD: 1 };
   // demo collection: cards from Series 6 (already closed; the card images print "Forged · Series 6"), with a spread of materials, holos and grades
   let seed = 7; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const pickMat = () => { const u = R(); return u < 0.5 ? 'paper' : u < 0.8 ? 'wood' : u < 0.95 ? 'fire' : u < 0.995 ? 'charcoal' : 'diamond'; };
@@ -20,9 +27,12 @@
       id: 1000 + i, serial: 300 + i * 7, series, character: NAMES[Math.floor(R() * NAMES.length)], material,
       holo: material === 'paper' && i === 5 ? 'full' : holo, edition: `${1 + Math.floor(R() * 40)} of ${41 + Math.floor(R() * 20)}`,
       grade: g < 0.55 ? null : Math.max(1, Math.min(10, Math.round(5.5 + (R() - 0.5) * 6))), pending: false,
+      // wear (docs/grading.md): dealt this long ago, cased or not (a case freezes the clock), moves between wallets
+      dealt: Date.now() - Math.round((2 + R() * 200) * DAY), cased: false, frozenAge: 0, moves: Math.floor(R() * R() * 4),
     });
   }
   cards[5].material = 'paper'; cards[5].holo = 'full'; // a full-holo Paper, the rare one to show off
+  cards.forEach((c, i) => { if (c.grade == null && i % 3 === 1) { c.cased = true; c.frozenAge = Math.round((0.2 + R() * 30) * DAY); } }); // some already cased
 
   const state = {
     demo: true,
@@ -40,26 +50,33 @@
   };
   const listeners = new Set();
   const Store = {
-    state, MATS, MAT_LABEL, CHARS, NAMES,
+    state, MATS, MAT_LABEL, ALWAYS_HOLO, SPECIAL_CAST, CHARS, NAMES, DAY, PRICES,
     get(path) { return path.split('.').reduce((o, k) => o?.[k], state); },
     update(fn) { fn(state); listeners.forEach((l) => l(state)); },
     on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     left() { const s = state.series; return s.phase >= 4 ? 0 : Math.max(0, s.total - s.startersClaimed - s.sold); },
     paidLeft() { const s = state.series; return Math.max(0, s.total - s.starters - s.sold + (s.phase >= 2 ? s.starters - s.startersClaimed : 0)); },
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },
-    cardImg(c) { // the finished card images for a look (character, material, holo): one strip, ungraded then PDA 1-10
+    cardImg(c) { // the finished card images for a look (character, material, holo): one strip, raw, cased, then slabbed PDA 1-10
       const id = (CHARS[c.character] || CHARS[NAMES[0]]).id;
-      const holo = c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none';
+      const holo = (c.material === 'gold' || c.material === 'fullart') ? 'full' : c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none';
       return `cards/${id}/${c.material}-${holo}.webp`;
     },
-    cardPos(c) { return `${(c.grade == null ? 0 : c.grade) * 10}% 0`; }, // which card in the strip (object-position)
+    // which card in the strip: 0 raw, 1 cased, 2-11 slabbed PDA 1-10
+    stateIdx(c) { return c.grade != null ? c.grade + 1 : c.cased ? 1 : 0; },
+    STATES: 12,
+    cardPos(c) { return `${(Store.stateIdx(c) * 100 / 11).toFixed(4)}% 0`; }, // object-position of that card in the strip
+    holder(c) { return c.grade != null ? 'slab' : c.cased ? 'case' : 'raw'; },
+    // time uncased so far: frozen once cased (or slabbed); otherwise still running
+    ageMs(c) { return c.cased || c.grade != null ? c.frozenAge : Date.now() - c.dealt; },
     // true rarity of one card: P(material) x P(its holo for that material) x P(its PDA grade) when graded (ungraded: no grade factor).
     // Same maths as the Info tables (Info.pullP / Info.gradeP). Tier by odds: Rare rarer than 1 in 50, Epic 1 in 300, Legendary 1 in 1,500.
     trueOdds(c) {
       const I = window.Info; if (!I?.pullP) return { p: 1, n: 1, label: '', tier: null };
       const p = I.pullP(c.material, c.holo || 'none') * (c.grade == null ? 1 : I.gradeP(c.grade));
       const n = p > 0 ? 1 / p : Infinity;
-      return { p, n, label: p > 0 ? '1 in ' + I.oneIn(p) : '', tier: n > 1500 ? 'legendary' : n > 300 ? 'epic' : n > 50 ? 'rare' : null };
+      // a Full Art is one of one for its character: always Legendary
+      return { p, n, label: p > 0 ? '1 in ' + I.oneIn(p) : '', tier: c.material === 'fullart' || n > 1500 ? 'legendary' : n > 300 ? 'epic' : n > 50 ? 'rare' : null };
     },
     // DEMO DATA: a made-up OpenSea floor for this exact type (character + material + holo, + grade when graded), in ETH.
     // Deterministic, and rarer means higher: 0.0001 ETH x N^0.75 for "1 in N", nudged +-12% per type so they don't look formulaic.

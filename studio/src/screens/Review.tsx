@@ -3,66 +3,60 @@ import { BatchRenderer, renderKey } from '../builder'
 import { Notice, ProgressBar, useAction } from '../components'
 import { blobKeys, deleteBlobsWithPrefix, getBlob, putBlobs } from '../db'
 import type { DealtCard } from '../deal'
-import { hasFrame } from '../frames'
-import { GRADE_STATES, IMAGES_PER_CHARACTER, gridSize, holosFor, lookFileName, lookKey, lookOf, seriesGrid, type Look } from '../looks'
-import { cardTitle } from '../render'
-import { HOLO_LABEL, HOLO_TYPES, MATERIALS, MATERIAL_LABEL, WEAR_LABEL, wearLookOf, type HoloType, type Material } from '../rules'
+import { STATES, imagesPerCharacter, lookFileName, lookKey, lookOf, seriesGrid, type Look } from '../looks'
+import { cardTitle, faceOf } from '../render'
+import { checkRecipe, holoLooksFor, type Recipe } from '../recipe'
+import { HOLO_LABEL, HOLO_TYPES, WEAR_LABEL, wearLookOf, type HoloType } from '../rules'
+import { buildGridKey, buildRates, frameSetsOf, missingFrames } from '../series'
 import { lastAssetChange, updateFire, useStudio } from '../store'
 import { BUILD_GRID_VERSION, type FireRecord } from '../types'
 
 interface Sample {
   key: string
   characterId: string
-  material: Material
+  type: number
   holo: HoloType
   card: DealtCard
   dealt: number
   url?: string
 }
 
-/** One sample per character x material x holo type (19 per character: Diamond is always holo), ungraded, from the
- *  first dealt card of that kind when there is one. */
-function sampleCards(fire: FireRecord): Sample[] {
+/** Characters per page of samples (each brings one sample per type x holo look). */
+const SAMPLE_PAGE = 12
+
+/** One sample per character x type x holo look, ungraded, for the characters of one page, from the first dealt card of
+ *  that kind when there is one. */
+function sampleCards(fire: FireRecord, page: number): Sample[] {
   const deal = fire.deal!
+  const r = fire.recipe
+  const chars = deal.characterIds.slice(page * SAMPLE_PAGE, page * SAMPLE_PAGE + SAMPLE_PAGE)
+  const want = new Set(chars)
   const first = new Map<string, DealtCard>()
   const count = new Map<string, number>()
   for (const c of deal.cards) {
-    const k = `${c.characterId}:${c.material}:${c.holo}`
+    if (!want.has(c.characterId)) continue
+    const k = `${c.characterId}:${c.type}:${c.holo}`
     if (!first.has(k)) first.set(k, c)
     count.set(k, (count.get(k) ?? 0) + 1)
   }
   const out: Sample[] = []
-  for (const characterId of deal.characterIds) {
-    for (const material of MATERIALS) {
-      for (const holo of holosFor(material)) {
-        const key = `${characterId}:${material}:${holo}`
+  for (const characterId of chars) {
+    r.types.forEach((_, type) => {
+      for (const holo of holoLooksFor(r, type)) {
+        const key = `${characterId}:${type}:${holo}`
         const card: DealtCard = { ...(first.get(key) ?? {
-          serial: 0, fire: fire.number, pack: 0, slot: 0, material, characterId,
+          serial: 0, fire: fire.number, pack: 0, slot: 0, group: 0, type, characterId,
           holoFrame: holo === 'frame' || holo === 'full', holoPicture: holo === 'picture' || holo === 'full', holo, edition: 1, editionOf: 1,
         }), grade: null }
-        out.push({ key, characterId, material, holo, card, dealt: count.get(key) ?? 0 })
+        out.push({ key, characterId, type, holo, card, dealt: count.get(key) ?? 0 })
       }
-    }
+    })
   }
   return out
 }
 
-/** Frames the full grid needs (every material x holo x grade state) that aren't built in. */
-function missingGridFrames(): string[] {
-  const out = new Set<string>()
-  for (const m of MATERIALS) {
-    for (const h of holosFor(m)) {
-      const v = h === 'frame' || h === 'full' ? 'holo' : 'normal'
-      for (const g of GRADE_STATES) {
-        const w = wearLookOf(g)
-        if (!hasFrame(m, v, w)) out.add(`${MATERIAL_LABEL[m]} ${v}${g == null ? '' : ` ${WEAR_LABEL[w]}`}`)
-      }
-    }
-  }
-  return [...out]
-}
-
-const fmtMB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(bytes < 100 * 1024 * 1024 ? 1 : 0)} MB`
+const fmtMB = (bytes: number) => (bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${(bytes / 1024 / 1024).toFixed(bytes < 100 * 1024 * 1024 ? 1 : 0)} MB`)
+const fmtTime = (ms: number) => (ms < 90_000 ? `${Math.round(ms / 1000)} s` : ms < 90 * 60_000 ? `${Math.round(ms / 60_000)} min` : `${(ms / 3_600_000).toFixed(1)} h`)
 
 export function Review({ fire }: { fire: FireRecord }) {
   const s = useStudio()
@@ -71,37 +65,45 @@ export function Review({ fire }: { fire: FireRecord }) {
 }
 
 function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, string> }) {
+  const s = useStudio()
   const deal = fire.deal!
-  const [samples, setSamples] = useState<Sample[]>(() => sampleCards(fire))
+  const r = fire.recipe
+  const [page, setPage] = useState(0)
+  const [samples, setSamples] = useState<Sample[]>(() => sampleCards(fire, 0))
   const [progress, setProgress] = useState<{ done: number; total: number; what: string } | null>(null)
   const [busy, error, run] = useAction()
   const [big, setBig] = useState<{ url: string; title: string; detail: string } | null>(null)
   const abort = useRef<AbortController | null>(null)
-  const grid = useMemo(() => seriesGrid(fire.number, deal.characterIds), [fire.number, deal.characterIds])
+  const grid = useMemo(() => seriesGrid(fire.number, deal.characterIds, r), [fire.number, deal.characterIds, r])
+  const gridKey = useMemo(() => buildGridKey(r, deal.characterIds), [r, deal.characterIds])
   const assetsChanged = lastAssetChange(deal.characterIds)
   const approvalStale = !!fire.approvedAt && assetsChanged > fire.approvedAt
   const b = fire.build
   const buildOld = !!b && (b.grid !== BUILD_GRID_VERSION || b.format !== 'webp')
-  const buildStale = !!b && (assetsChanged > b.builtAt || buildOld || b.count !== grid.length)
-  const samplesReady = samples.every((x) => x.url)
-  const missing = useMemo(missingGridFrames, [])
+  const buildStale = !!b && (assetsChanged > b.builtAt || buildOld || b.count !== grid.length || b.gridKey !== gridKey)
+  const samplesReady = samples.length > 0 && samples.every((x) => x.url)
+  const missing = useMemo(() => missingFrames(r), [r])
+  const recipeProblems = useMemo(() => checkRecipe(r), [r])
+  const pages = Math.max(1, Math.ceil(deal.characterIds.length / SAMPLE_PAGE))
+  const rates = buildRates(s.fires)
+  const sets = frameSetsOf(r)
 
   // free sample object URLs on unmount
   const urls = useRef<string[]>([])
   useEffect(() => () => { for (const u of urls.current) URL.revokeObjectURL(u) }, [])
 
-  const renderSamples = () => run(async () => {
-    const list = sampleCards(fire)
+  const renderSamples = (p = page) => run(async () => {
+    const list = sampleCards(fire, p)
     setSamples(list)
-    const r = await BatchRenderer.create(deal.characterIds)
+    const rr = await BatchRenderer.create(list.map((x) => x.characterId).filter((v, i, a) => a.indexOf(v) === i), false, sets)
     try {
       const next = [...list]
-      await r.renderAll(list.map((x) => x.card), 'webp', {
+      await rr.renderAll(list.map((x) => faceOf(x.card, r)), 'webp', {
         batchSize: 2,
-        onProgress: (p) => setProgress({ ...p, what: `Rendering samples (${r.mode})` }),
+        onProgress: (pr) => setProgress({ ...pr, what: `Rendering samples (${rr.mode})` }),
         onBatch: (_cards, blobs, start) => {
-          blobs.forEach((b, j) => {
-            const url = URL.createObjectURL(b)
+          blobs.forEach((bl, j) => {
+            const url = URL.createObjectURL(bl)
             urls.current.push(url)
             next[start + j] = { ...next[start + j], url }
           })
@@ -109,7 +111,7 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
         },
       })
     } finally {
-      r.dispose()
+      rr.dispose()
       setProgress(null)
     }
   })
@@ -118,51 +120,56 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
   useEffect(() => {
     if (autoStarted.current) return // StrictMode runs effects twice in dev
     autoStarted.current = true
-    void renderSamples()
+    void renderSamples(0)
   }, [])
 
+  const blockers: string[] = []
+  if (recipeProblems.length) blockers.push(`The recipe has problems (Recipe tab): ${recipeProblems[0].message}`)
+  for (const m of missing) blockers.push(`Missing frames for ${m.type}: ${m.missing.join(', ')}. Build them with frames-src/clean_frames.py (README), or give the type another frame set on the Recipe tab.`)
+
   const approve = () => run(async () => {
+    if (blockers.length) throw new Error(blockers[0])
     if (!samplesReady) throw new Error('Render the samples first.')
-    if (missing.length) throw new Error(`Missing frames: ${missing.join(', ')}.`)
     await updateFire(fire.number, { approvedAt: Date.now() })
   })
 
-  /** The full grid: every character x material x holo x grade state (209 per character), WEBP only. Rendered on the
-   *  worker pool two at a time; each finished batch goes straight to IndexedDB and is dropped, so memory stays flat
-   *  however big the Series is. */
+  /** The full grid of the recipe: every character x type x holo look x grade state, WEBP only. Rendered on the worker
+   *  pool two at a time; each finished batch goes straight to IndexedDB and is dropped, so memory stays flat however
+   *  big the Series is. */
   const build = () => run(async () => {
+    if (blockers.length) throw new Error(blockers[0])
     const ctrl = new AbortController()
     abort.current = ctrl
     await deleteBlobsWithPrefix(`render:${fire.number}:`)
     await updateFire(fire.number, { build: undefined })
     const t0 = performance.now()
     let bytes = 0
-    const r = await BatchRenderer.create(deal.characterIds, true)
+    const rr = await BatchRenderer.create(deal.characterIds, true, sets)
     try {
-      await r.renderAll(grid.map((g) => g.card), 'webp', {
+      await rr.renderAll(grid.map((g) => faceOf(g.card, r)), 'webp', {
         batchSize: 2,
         signal: ctrl.signal,
-        onProgress: (p) => setProgress({ ...p, what: `Building ${grid.length} images (${deal.characterIds.length} x ${IMAGES_PER_CHARACTER}), WEBP (${r.mode})` }),
+        onProgress: (p) => setProgress({ ...p, what: `Building ${grid.length.toLocaleString()} images (${deal.characterIds.length} x ${imagesPerCharacter(r)}), WEBP (${rr.mode})` }),
         onBatch: (_cards, blobs, start) => {
-          for (const b of blobs) bytes += b.size
-          return putBlobs(blobs.map((b, i) => [renderKey(fire.number, grid[start + i].key), b]))
+          for (const bl of blobs) bytes += bl.size
+          return putBlobs(blobs.map((bl, i) => [renderKey(fire.number, grid[start + i].key), bl]))
         },
       })
     } finally {
-      r.dispose()
+      rr.dispose()
       setProgress(null)
       abort.current = null
     }
     const have = new Set(await blobKeys(`render:${fire.number}:`))
     const count = grid.filter((g) => have.has(renderKey(fire.number, g.key))).length
     const ms = performance.now() - t0
-    await updateFire(fire.number, { build: { format: 'webp', count, builtAt: Date.now(), grid: BUILD_GRID_VERSION, bytes, ms } })
+    await updateFire(fire.number, { build: { format: 'webp', count, builtAt: Date.now(), grid: BUILD_GRID_VERSION, bytes, ms, gridKey } })
     console.info(`Card Studio: built ${count} images (${fmtMB(bytes)}) in ${(ms / 1000).toFixed(1)}s`)
   })
 
   const openSample = (x: Sample) => x.url && setBig({
     url: x.url,
-    title: `${names[x.characterId]} · ${MATERIAL_LABEL[x.material]} · holo: ${HOLO_LABEL[x.holo]}`,
+    title: `${names[x.characterId]} · ${r.types[x.type].name} · holo: ${HOLO_LABEL[x.holo]}`,
     detail: x.dealt ? `${x.dealt} card(s) like this in Series ${fire.number}; showing it ungraded.` : 'Not dealt in this Series (sample render only).',
   })
 
@@ -174,52 +181,62 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
         {fire.approvedAt && !approvalStale ? <span className="badge badge-ok" data-testid="approved">Approved {new Date(fire.approvedAt).toLocaleString()}</span> : null}
       </div>
       {approvalStale && <Notice kind="warn">Art, frames, layouts or fonts changed after approval. Re-render the samples and approve again.</Notice>}
+      {blockers.length > 0 && <Notice kind="error"><div data-testid="build-blockers">{blockers.map((x) => <div key={x}>{x}</div>)}</div></Notice>}
 
-      {missing.length > 0 && <Notice kind="warn">The full image grid needs frames that aren't delivered yet: {missing.join(', ')}. Approval is blocked until they're added.</Notice>}
-
-      <h3>1. Samples: one per character x material x holo type, ungraded ({samples.length})</h3>
+      <h3>1. Samples: one per character x type x holo look, ungraded</h3>
       <div className="row wrap">
-        <button onClick={renderSamples} disabled={busy}>Re-render samples</button>
-        <button className="primary" onClick={approve} disabled={busy || !samplesReady || missing.length > 0 || (!!fire.approvedAt && !approvalStale)} data-testid="approve-all">Approve all</button>
-        <span className="muted small">Nothing is uploaded before approval.</span>
+        {pages > 1 && (
+          <>
+            <button disabled={busy || page === 0} onClick={() => { setPage(page - 1); void renderSamples(page - 1) }}>Previous characters</button>
+            <span className="muted small">Characters {page * SAMPLE_PAGE + 1}-{Math.min(deal.characterIds.length, (page + 1) * SAMPLE_PAGE)} of {deal.characterIds.length}</span>
+            <button disabled={busy || page >= pages - 1} onClick={() => { setPage(page + 1); void renderSamples(page + 1) }}>Next characters</button>
+          </>
+        )}
+        <button onClick={() => void renderSamples()} disabled={busy}>Re-render samples</button>
+        <button className="primary" onClick={approve} disabled={busy || !samplesReady || blockers.length > 0 || (!!fire.approvedAt && !approvalStale)} data-testid="approve-all">Approve all</button>
+        <span className="muted small">Nothing is uploaded before approval.{pages > 1 ? ' Page through the characters to check them all.' : ''}</span>
       </div>
-      {progress && <ProgressBar value={progress.done / Math.max(1, progress.total)} label={`${progress.what}: ${progress.done} / ${progress.total}`} />}
+      {progress && <ProgressBar value={progress.done / Math.max(1, progress.total)} label={`${progress.what}: ${progress.done.toLocaleString()} / ${progress.total.toLocaleString()}`} />}
       <div className="sample-grid" data-testid="sample-grid">
         {samples.map((x) => (
           <figure key={x.key} className={`sample ${x.dealt ? '' : 'not-dealt'}`} onClick={() => openSample(x)}>
             {x.url ? <img src={x.url} alt={x.key} loading="lazy" /> : <div className="sample-ph">...</div>}
             <figcaption>
-              <b>{names[x.characterId]}</b> {MATERIAL_LABEL[x.material]} · {HOLO_LABEL[x.holo]}
+              <b>{names[x.characterId]}</b> {r.types[x.type].name} · {HOLO_LABEL[x.holo]}
               <span className="muted small">{x.dealt ? ` ${x.dealt} dealt` : ' not dealt'}</span>
             </figcaption>
           </figure>
         ))}
       </div>
 
-      <h3>2. Build the images: the full grid ({grid.length} = {deal.characterIds.length} character{deal.characterIds.length === 1 ? '' : 's'} x {IMAGES_PER_CHARACTER})</h3>
+      <h3>2. Build the images: the full grid of this recipe ({grid.length.toLocaleString()} = {deal.characterIds.length.toLocaleString()} character{deal.characterIds.length === 1 ? '' : 's'} x {imagesPerCharacter(r)})</h3>
       <p className="muted small">
-        Every character x material x holo type (19: Diamond is always holo) x grade state (ungraded and PDA 1-10, each
-        with its wear frame and seal number) = {IMAGES_PER_CHARACTER} images per character, whatever the sample deal
-        dealt: grades are revealed on-chain later and every card's image must already be in the folder. WEBP only (q 0.92),
-        named c&lt;character&gt;-&lt;material&gt;-&lt;holo&gt;-&lt;grade&gt;.webp as the card contract expects.
+        Every character x card type x the holo looks that type can have x grade state (ungraded and PDA 1-10, each with its
+        wear frame and seal number): {r.types.map((t, i) => `${t.name} ${holoLooksFor(r, i).length}`).join(', ')} looks, x 11 = {imagesPerCharacter(r)} images per
+        character, whatever the sample deal dealt (grades are revealed on-chain later, so every card's image must already be in
+        the folder). WEBP only (q 0.92), named c&lt;character&gt;-&lt;type slug&gt;-&lt;holo&gt;-&lt;grade&gt;.webp as the card contract expects.
+      </p>
+      <p className="small" data-testid="build-estimate">
+        Estimate: <b>{grid.length.toLocaleString()} images</b>, about <b>{fmtMB(grid.length * rates.bytes)}</b> and <b>{fmtTime(grid.length * rates.ms)}</b>
+        <span className="muted"> ({rates.measured ? 'from earlier builds on this machine' : 'a first guess: ~450 KB and ~0.15 s per image; refined after the first build'}). Stored in this browser; keep enough disk free.</span>
       </p>
       <div className="row wrap">
-        <button className="primary" onClick={build} disabled={busy} data-testid="build-all">Build all {grid.length} images</button>
+        <button className="primary" onClick={build} disabled={busy || blockers.length > 0} data-testid="build-all">Build all {grid.length.toLocaleString()} images</button>
         {abort.current && <button onClick={() => abort.current?.abort()} data-testid="cancel-build">Cancel</button>}
         {b && (
           <span className={`badge ${buildStale ? 'badge-warn' : 'badge-ok'}`} data-testid="build-status">
-            Built {b.count} of {gridSize(deal.characterIds.length)} images, {b.format.toUpperCase()}
-            {b.bytes != null ? ` · ${fmtMB(b.bytes)}` : ''}{b.ms != null ? ` · ${(b.ms / 1000).toFixed(0)} s` : ''}
+            Built {b.count.toLocaleString()} of {grid.length.toLocaleString()} images, {b.format.toUpperCase()}
+            {b.bytes != null ? ` · ${fmtMB(b.bytes)}` : ''}{b.ms != null ? ` · ${fmtTime(b.ms)}` : ''}
             {' · '}{new Date(b.builtAt).toLocaleTimeString()}
             {buildOld ? ' · older build, rebuild' : buildStale ? ' · stale, rebuild' : ''}
           </span>
         )}
       </div>
       {error && <Notice kind="error">{error}</Notice>}
-      {b && !buildOld && b.count > 0 && <GridViewer fire={fire} names={names} onOpen={setBig} />}
+      {b && !buildOld && b.count > 0 && <GridViewer fire={fire} recipe={r} names={names} onOpen={setBig} />}
 
-      <h3>3. All cards</h3>
-      <CardList fire={fire} names={names} onOpen={setBig} />
+      <h3>3. All cards (sample deal)</h3>
+      <CardList fire={fire} recipe={r} names={names} onOpen={setBig} />
 
       {big && (
         <div className="modal" onClick={() => setBig(null)} data-testid="modal">
@@ -237,44 +254,53 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
   )
 }
 
-/** Look up any built image of the grid by character, material, holo and grade, with its file name. */
-function GridViewer({ fire, names, onOpen }: { fire: FireRecord; names: Record<string, string>; onOpen: (b: { url: string; title: string; detail: string }) => void }) {
+/** Look up any built image of the grid by character, type, holo and grade, with its file name. */
+function GridViewer({ fire, recipe, names, onOpen }: { fire: FireRecord; recipe: Recipe; names: Record<string, string>; onOpen: (b: { url: string; title: string; detail: string }) => void }) {
   const deal = fire.deal!
   const [ch, setCh] = useState(0)
-  const [mat, setMat] = useState<Material>('wood')
+  const [type, setType] = useState(0)
   const [holo, setHolo] = useState<HoloType>('none')
   const [grade, setGrade] = useState<string>('u')
-  const holos = holosFor(mat)
+  const ty = Math.min(type, recipe.types.length - 1)
+  const holos = holoLooksFor(recipe, ty)
   const h = holos.includes(holo) ? holo : holos[0]
-  const g = grade === 'u' ? null : Number(grade)
+  const g = grade === 'u' || grade === 'c' ? null : Number(grade)
+  const c = Math.min(Math.max(0, ch), deal.characterIds.length - 1)
   const look: Look = {
-    characterId: deal.characterIds[ch], material: mat, holoFrame: h === 'frame' || h === 'full', holoPicture: h === 'picture' || h === 'full',
-    grade: g, fire: fire.number,
+    characterId: deal.characterIds[c], type: ty, slug: recipe.types[ty].slug, holoFrame: h === 'frame' || h === 'full', holoPicture: h === 'picture' || h === 'full',
+    grade: g, cased: grade === 'c', fire: fire.number,
   }
-  const file = lookFileName(look, ch)
+  const file = lookFileName(look, c)
   const open = async () => {
     const blob = await getBlob(renderKey(fire.number, lookKey(look)))
     if (!blob) { alert('Not built yet: use "Build all" first.'); return }
     onOpen({
       url: URL.createObjectURL(blob),
       title: file,
-      detail: `${names[look.characterId]} · ${MATERIAL_LABEL[mat]} · holo ${HOLO_LABEL[h]} · ${g == null ? 'ungraded' : `PDA ${g} (${WEAR_LABEL[wearLookOf(g)]} frame)`} · ${(blob.size / 1024).toFixed(0)} KB`,
+      detail: `${names[look.characterId]} · ${recipe.types[ty].name} · holo ${HOLO_LABEL[h]} · ${g == null ? (grade === 'c' ? 'cased' : 'ungraded') : `PDA ${g}, slabbed (${WEAR_LABEL[wearLookOf(g)]} frame)`} · ${(blob.size / 1024).toFixed(0)} KB`,
     })
   }
   return (
     <div className="row wrap" data-testid="grid-viewer">
       <span className="muted small">Check a built image:</span>
-      <select value={ch} onChange={(e) => setCh(Number(e.target.value))} data-testid="gv-char">
-        {deal.characterIds.map((id, i) => <option key={id} value={i}>c{i} {names[id]}</option>)}
-      </select>
-      <select value={mat} onChange={(e) => setMat(e.target.value as Material)} data-testid="gv-mat">
-        {MATERIALS.map((m) => <option key={m} value={m}>{MATERIAL_LABEL[m]}</option>)}
+      {deal.characterIds.length <= 300 ? (
+        <select value={c} onChange={(e) => setCh(Number(e.target.value))} data-testid="gv-char">
+          {deal.characterIds.map((id, i) => <option key={id} value={i}>c{i} {names[id]}</option>)}
+        </select>
+      ) : (
+        <span>c<input type="number" min={0} max={deal.characterIds.length - 1} value={c} onChange={(e) => setCh(Number(e.target.value) || 0)} data-testid="gv-char" /> {names[deal.characterIds[c]]}</span>
+      )}
+      <select value={ty} onChange={(e) => setType(Number(e.target.value))} data-testid="gv-type">
+        {recipe.types.map((t, i) => <option key={t.id} value={i}>{t.name}</option>)}
       </select>
       <select value={h} onChange={(e) => setHolo(e.target.value as HoloType)} data-testid="gv-holo">
         {holos.map((x) => <option key={x} value={x}>{HOLO_LABEL[x]}</option>)}
       </select>
       <select value={grade} onChange={(e) => setGrade(e.target.value)} data-testid="gv-grade">
-        {GRADE_STATES.map((x) => <option key={x ?? 'u'} value={x ?? 'u'}>{x == null ? 'Ungraded' : `PDA ${x}`}</option>)}
+        {STATES.map((x) => {
+          const v = x.grade == null ? (x.cased ? 'c' : 'u') : String(x.grade)
+          return <option key={v} value={v}>{x.grade == null ? (x.cased ? 'Cased' : 'Ungraded') : `PDA ${x.grade} (slab)`}</option>
+        })}
       </select>
       <code data-testid="gv-file">{file}</code>
       <button onClick={() => void open()} data-testid="gv-open">Open</button>
@@ -282,32 +308,33 @@ function GridViewer({ fire, names, onOpen }: { fire: FireRecord; names: Record<s
   )
 }
 
-function CardList({ fire, names, onOpen }: { fire: FireRecord; names: Record<string, string>; onOpen: (b: { url: string; title: string; detail: string }) => void }) {
+function CardList({ fire, recipe, names, onOpen }: { fire: FireRecord; recipe: Recipe; names: Record<string, string>; onOpen: (b: { url: string; title: string; detail: string }) => void }) {
   const deal = fire.deal!
   const [ch, setCh] = useState('')
-  const [mat, setMat] = useState('')
+  const [type, setType] = useState('')
   const [holo, setHolo] = useState('')
   const [limit, setLimit] = useState(100)
   const filtered = useMemo(
-    () => deal.cards.filter((c) => (!ch || c.characterId === ch) && (!mat || c.material === mat) && (!holo || c.holo === holo)),
-    [deal.cards, ch, mat, holo],
+    () => deal.cards.filter((c) => (!ch || c.characterId === ch) && (type === '' || c.type === Number(type)) && (!holo || c.holo === holo)),
+    [deal.cards, ch, type, holo],
   )
   const counts = useMemo(() => {
-    const byMat = Object.fromEntries(MATERIALS.map((m) => [m, filtered.filter((c) => c.material === m).length]))
+    const byType = recipe.types.map((_, i) => filtered.filter((c) => c.type === i).length)
     const byHolo = Object.fromEntries(HOLO_TYPES.map((h) => [h, filtered.filter((c) => c.holo === h).length]))
-    return { byMat, byHolo }
-  }, [filtered])
+    return { byType, byHolo }
+  }, [filtered, recipe.types])
 
   const open = async (c: DealtCard) => {
-    const b = await getBlob(renderKey(fire.number, lookKey(lookOf(c))))
+    const b = await getBlob(renderKey(fire.number, lookKey(lookOf(c, recipe))))
     if (!b) {
       alert('Not built yet: use "Build all" first.')
       return
     }
+    const tn = recipe.types[c.type]?.name ?? '?'
     onOpen({
       url: URL.createObjectURL(b),
-      title: cardTitle(c, names[c.characterId]),
-      detail: `${MATERIAL_LABEL[c.material]} · holo ${HOLO_LABEL[c.holo]} · ${c.edition} of ${c.editionOf} · pack ${c.pack} slot ${c.slot}`,
+      title: cardTitle(tn, names[c.characterId], c.serial),
+      detail: `${tn} · holo ${HOLO_LABEL[c.holo]} · ${c.edition} of ${c.editionOf} · pack ${c.pack} position ${c.slot} (slot group ${c.group + 1})`,
     })
   }
 
@@ -316,33 +343,33 @@ function CardList({ fire, names, onOpen }: { fire: FireRecord; names: Record<str
       <div className="row wrap">
         <select value={ch} onChange={(e) => setCh(e.target.value)} data-testid="filter-char">
           <option value="">All characters</option>
-          {deal.characterIds.map((id) => <option key={id} value={id}>{names[id]}</option>)}
+          {deal.characterIds.slice(0, 1000).map((id) => <option key={id} value={id}>{names[id]}</option>)}
         </select>
-        <select value={mat} onChange={(e) => setMat(e.target.value)} data-testid="filter-mat">
-          <option value="">All materials</option>
-          {MATERIALS.map((m) => <option key={m} value={m}>{MATERIAL_LABEL[m]}</option>)}
+        <select value={type} onChange={(e) => setType(e.target.value)} data-testid="filter-type">
+          <option value="">All types</option>
+          {recipe.types.map((t, i) => <option key={t.id} value={i}>{t.name}</option>)}
         </select>
         <select value={holo} onChange={(e) => setHolo(e.target.value)} data-testid="filter-holo">
           <option value="">All holo types</option>
           {HOLO_TYPES.map((h) => <option key={h} value={h}>{HOLO_LABEL[h]}</option>)}
         </select>
-        <b data-testid="filter-count">{filtered.length} cards</b>
+        <b data-testid="filter-count">{filtered.length.toLocaleString()} cards</b>
         <span className="muted small">
-          {MATERIALS.map((m) => `${MATERIAL_LABEL[m]} ${counts.byMat[m]}`).join(' · ')} | {HOLO_TYPES.map((h) => `${HOLO_LABEL[h]} ${counts.byHolo[h]}`).join(' · ')}
+          {recipe.types.map((t, i) => `${t.name} ${counts.byType[i]}`).join(' · ')} | {HOLO_TYPES.map((h) => `${HOLO_LABEL[h]} ${counts.byHolo[h]}`).join(' · ')}
         </span>
       </div>
       <table className="cards-table">
-        <thead><tr><th>Serial</th><th>Name</th><th>Material</th><th>Holo</th><th>Edition</th><th>Pack/slot</th></tr></thead>
+        <thead><tr><th>Serial</th><th>Name</th><th>Type</th><th>Holo</th><th>Edition</th><th>Pack/position</th></tr></thead>
         <tbody>
           {filtered.slice(0, limit).map((c) => (
             <tr key={c.serial} onClick={() => void open(c)}>
-              <td>#{c.serial}</td><td>{names[c.characterId]}</td><td><span className={`chip mat-${c.material}`}>{MATERIAL_LABEL[c.material]}</span></td>
+              <td>#{c.serial}</td><td>{names[c.characterId]}</td><td><span className={`chip mat-${recipe.types[c.type]?.frameSet}`}>{recipe.types[c.type]?.name}</span></td>
               <td>{HOLO_LABEL[c.holo]}</td><td>{c.edition} of {c.editionOf} · Series {c.fire}</td><td>{c.pack}/{c.slot}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      {limit < filtered.length && <button onClick={() => setLimit((l) => l + 200)}>Show more ({filtered.length - limit} left)</button>}
+      {limit < filtered.length && <button onClick={() => setLimit((l) => l + 200)}>Show more ({(filtered.length - limit).toLocaleString()} left)</button>}
     </div>
   )
 }

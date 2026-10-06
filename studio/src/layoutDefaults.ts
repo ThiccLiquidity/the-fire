@@ -1,5 +1,4 @@
-import type { Material } from './rules'
-import { FRAME_GEOMETRY } from './frames'
+import { FRAME_GEOMETRY, artBoxOf } from './frames'
 import { TEXT_FIELDS, type Layout, type PsaBox, type Rect, type TextBox, type TextStyle } from './types'
 
 /** Built-in font choices: web-safe stacks only (no Google Fonts, nothing fetched). Uploaded fonts are added on top. */
@@ -22,13 +21,20 @@ export const LAYOUT_VERSION = 4
  *  (light ink). `window` fills the art window behind keyed art. */
 /** `seal` = the PDA seal's light and dark colours and its text colour, matched to each frame: pencil graphite on
  *  Paper, walnut on Wood, ember on Fire, black and silver on Coal, icy crystal on Diamond. */
-const INK: Record<Material, { color: string; outline: string; outlineWidth: number; window: string; seal: [string, string, string] }> = {
+const INK: Record<string, { color: string; outline: string; outlineWidth: number; window: string; seal: [string, string, string] }> = {
   paper: { color: '#2b2622', outline: '#ffffff', outlineWidth: 0, window: '#f4f0e6', seal: ['#8a8a8a', '#2f2f31', '#f3efe6'] },
   wood: { color: '#3a2412', outline: '#ffffff', outlineWidth: 0, window: '#f1e4cc', seal: ['#9a6230', '#4a2810', '#f6e2c0'] },
   burning: { color: '#ffe9c4', outline: '#1a0904', outlineWidth: 5, window: '#24100a', seal: ['#f08a2a', '#7a1606', '#fff1d6'] },
   charcoal: { color: '#ececf0', outline: '#0e0e10', outlineWidth: 4, window: '#26262a', seal: ['#8a8b93', '#2c2c31', '#f2f3f6'] },
   diamond: { color: '#12324a', outline: '#ffffff', outlineWidth: 0, window: '#eef6fb', seal: ['#f4fbff', '#9cc0d8', '#12324a'] },
+  // Gold: dark ink on gold leaf. Full Art: dark ink with a light outline, over the art's own light name and info boxes
+  gold: { color: '#3a2606', outline: '#fff4d0', outlineWidth: 0, window: '#f5e3a8', seal: ['#f7d774', '#8a5a10', '#3a2606'] },
+  fullart: { color: '#1a1410', outline: '#fff7e8', outlineWidth: 5, window: '#1d1d22', seal: ['#f7d774', '#8a5a10', '#3a2606'] },
 }
+
+/** A frame set the studio has no colours for yet (a new set built by clean_frames.py): light text with a dark
+ *  outline reads on any panel; set its real colours in Frames & Layout. */
+const NEUTRAL_INK = { color: '#fff7e8', outline: '#1a1410', outlineWidth: 5, window: '#1d1d22', seal: ['#d9b25a', '#5a3d10', '#fff6e0'] as [string, string, string] }
 
 function style(over: Partial<TextStyle>): TextStyle {
   return {
@@ -41,8 +47,9 @@ function tb(box: Rect, over: Partial<TextStyle>): TextBox {
   return { box, style: style(over), visible: true }
 }
 
-export function defaultLayout(material: Material): Layout {
-  const ink = INK[material]
+/** The default layout of a frame set (layouts are per frame set; every card type using the set shares it). */
+export function defaultLayout(material: string): Layout {
+  const ink = INK[material] ?? NEUTRAL_INK
   const c = { color: ink.color, outlineColor: ink.outline, outlineWidth: ink.outlineWidth }
   const g = FRAME_GEOMETRY
   const info = g.infoText
@@ -56,7 +63,7 @@ export function defaultLayout(material: Material): Layout {
     material,
     version: LAYOUT_VERSION,
     layering: 'art-behind',
-    art: { box: { ...g.art }, fit: 'cover', scale: 1, offsetX: 0, offsetY: 0, background: ink.window },
+    art: { box: artBoxOf(material), fit: 'cover', scale: 1, offsetX: 0, offsetY: 0, background: ink.window },
     text: {
       name: tb({ ...g.nameBar }, { ...c, size: 104, align: 'center' }),
       material: tb({ x: info.x, y: info.y + 4, w: textW, h: 110 }, { ...c, size: 96, uppercase: true }),
@@ -69,7 +76,7 @@ export function defaultLayout(material: Material): Layout {
 }
 
 /** Fill in any field missing from a stored layout (forward compatibility). */
-export function normalizeLayout(material: Material, stored: Partial<Layout> | undefined): Layout {
+export function normalizeLayout(material: string, stored: Partial<Layout> | undefined): Layout {
   const d = defaultLayout(material)
   if (!stored || !stored.version || stored.version < 2 || stored.version > LAYOUT_VERSION) return d
   // v2 -> v3: the PDA badge became the seal; keep every other saved setting
@@ -93,7 +100,7 @@ export function normalizeLayout(material: Material, stored: Partial<Layout> | un
     version: LAYOUT_VERSION,
     // the frames are fixed, so the art window and layering are too
     layering: 'art-behind',
-    art: { ...d.art, ...stored.art, box: { ...FRAME_GEOMETRY.art } },
+    art: { ...d.art, ...stored.art, box: artBoxOf(material) },
     text: Object.fromEntries(TEXT_FIELDS.map((f) => {
       const st = stored.text?.[f]
       return [f, { ...d.text[f], ...st, style: { ...d.text[f].style, ...st?.style } }]

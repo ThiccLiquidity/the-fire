@@ -63,8 +63,11 @@ contract MockFeed {
     function setBroken(bool b) external { broken = b; }
     bool public burnGas; function setBurnGas(bool b) external { burnGas = b; }
     /// What a PaperUsdTwap reports it is built on (for the identity checks).
-    address public PAPER; address public ETH_USD;
+    address public PAPER; address public ETH_USD; address public PLANK_USD;
     function setIds(address paper, address ethUsd) external { PAPER = paper; ETH_USD = ethUsd; }
+    function setPlankUsd(address p) external { PLANK_USD = p; }
+    address public PLANK; address public WETH; address public USDG; address public FACTORY;
+    function setPools(address plank, address weth, address usdg, address factory) external { PLANK = plank; WETH = weth; USDG = usdg; FACTORY = factory; }
     constructor(int256 a) { answer = a; updatedAt = block.timestamp; }
     function set(int256 a) external { answer = a; updatedAt = block.timestamp; }
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
@@ -104,4 +107,14 @@ contract MockV2Factory {
 contract MockRouterInfo {
     address public WETH; address public factory;
     constructor(address w, address f) { WETH = w; factory = f; }
+}
+
+/// @dev Stand-in for PaperBurner where a test only needs FirePsa wired: quotes $1 = 1e18 of anything, keeps what it gets.
+contract MockBurner {
+    address public PLANK; address public USDG;
+    uint256 public flushes;
+    constructor(address plank, address usdg) { PLANK = plank; USDG = usdg; }
+    function quote(uint8, uint256 usd18) external pure returns (uint256) { return usd18; }
+    function flush(uint8) external returns (uint256) { flushes++; return 0; }
+    receive() external payable {}
 }

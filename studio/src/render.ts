@@ -2,9 +2,11 @@
  *  (HTMLCanvasElement or OffscreenCanvas) and in a worker (OffscreenCanvas). No React, no IndexedDB. */
 
 import type { DealtCard } from './deal'
-import { CARD_H, CARD_W, GRADE_COLOR, HOLO_LABEL, MATERIAL_LABEL, wearLookOf, type Material, type WearLook } from './rules'
+import type { Recipe } from './recipe'
+import { CARD_H, CARD_W, GRADE_COLOR, HOLO_LABEL, wearLookOf, type WearLook } from './rules'
 import type { Layout, OutputFormat, PsaBox, Rect, TextBox, TextStyle } from './types'
 import type { Ctx2D } from './wear'
+import { drawCase, drawSlab, type SlabLabel } from './protect'
 
 export type ImgSrc = ImageBitmap | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas
 
@@ -14,10 +16,34 @@ export interface CardAssets {
   art: ImgSrc | null
 }
 
+/** What one image shows: a card type (its name and frame set), a holo look, a grade, a character and the Series. */
+export interface CardFace {
+  /** The frame set (frames.ts) the type uses: its frames, its layout and the character's art for it. */
+  frameSet: string
+  /** The type's name: printed on the card ("Material") and the first word of the card's name. */
+  typeName: string
+  holoFrame: boolean
+  holoPicture: boolean
+  grade?: number | null
+  /** In a case (ungraded): the image is the card inside a clear case. A graded card is always in a slab. */
+  cased?: boolean
+  fire: number
+  characterId: string
+}
+
+/** The face of a dealt (or stand-in) card under its Series' recipe. */
+export function faceOf(card: DealtCard, r: Recipe): CardFace {
+  const t = r.types[card.type]
+  return {
+    frameSet: t?.frameSet ?? 'paper', typeName: t?.name ?? '?', holoFrame: card.holoFrame, holoPicture: card.holoPicture,
+    grade: card.grade ?? null, cased: !!card.cased && card.grade == null, fire: card.fire, characterId: card.characterId,
+  }
+}
+
 /** Everything printed on a card. Only what's shared by every card of the same look (looks.ts): no serial, no
  *  edition, no Series #. Those are in the metadata. */
 export interface CardView {
-  material: Material
+  frameSet: string
   name: string
   materialLabel: string
   categoryLabel: string
@@ -28,24 +54,34 @@ export interface CardView {
   wear: WearLook
   /** PDA 10 only: the gold edge glow and corner sparkles (drawn here, the frames stay locked). */
   pda10: boolean
+  /** How the finished card is presented: bare, in a case, or slabbed with its grade label (protect.ts). */
+  holder: 'none' | 'case' | 'slab'
+  /** The slab label's line under the name: "Series 6 · Fire · Full Holo". */
+  slabSub: string
 }
 
-export function cardView(card: Pick<DealtCard, 'material' | 'grade' | 'fire'>, characterName: string, category?: string): CardView {
+export function cardView(
+  face: Pick<CardFace, 'frameSet' | 'typeName' | 'grade' | 'fire'> & Partial<Pick<CardFace, 'cased' | 'holoFrame' | 'holoPicture'>>,
+  characterName: string, category?: string,
+): CardView {
+  const holo = face.holoFrame && face.holoPicture ? 'Full Holo' : face.holoFrame ? 'Holo Frame' : face.holoPicture ? 'Holo Picture' : ''
   return {
-    material: card.material,
+    frameSet: face.frameSet,
     name: characterName,
-    materialLabel: MATERIAL_LABEL[card.material],
+    materialLabel: face.typeName,
     categoryLabel: category ?? '',
-    forgedLabel: `Forged · Series ${card.fire > 0 ? card.fire : 1}`,
-    psaValue: card.grade == null ? '?' : String(card.grade),
-    wear: wearLookOf(card.grade),
-    pda10: card.grade === 10,
+    forgedLabel: `Forged · Series ${face.fire > 0 ? face.fire : 1}`,
+    psaValue: face.grade == null ? '?' : String(face.grade),
+    wear: wearLookOf(face.grade),
+    pda10: face.grade === 10,
+    holder: face.grade != null ? 'slab' : face.cased ? 'case' : 'none',
+    slabSub: [`Series ${face.fire > 0 ? face.fire : 1}`, face.typeName, holo].filter(Boolean).join(' · '),
   }
 }
 
 /** "Paper Rabbit #123" */
-export function cardTitle(card: DealtCard, characterName: string): string {
-  return `${MATERIAL_LABEL[card.material]} ${characterName} #${card.serial}`
+export function cardTitle(typeName: string, characterName: string, serial: number): string {
+  return `${typeName} ${characterName} #${serial}`
 }
 
 export function holoLabel(card: Pick<DealtCard, 'holo'>): string {
@@ -155,10 +191,42 @@ function drawPsa(ctx: Ctx2D, value: string, psa: PsaBox, ringColor: string | nul
   drawText(ctx, value, { box: { x: cx - 85 * k, y: cy - 42 * k, w: 170 * k, h: 120 * k }, style: { ...st, bold: true, size: 112 * k, minSize: 24 }, visible: true })
 }
 
+/** The card's own shape (the same rounded outline clean_frames.py gives every frame): full-card art is clipped to it. */
+const CARD_INSET = 8
+const CARD_RADIUS = 93
+
+/** Full-card art (Full Art) is the whole card, so it must be solid to the edge: trims any see-through margin round the
+ *  art (its rounded corners, a soft edge) and makes every pixel fully opaque. Otherwise the backing shows through as a
+ *  dark border and the whole card looks a shade darker. */
+export async function solidFullCardArt(src: ImageBitmap): Promise<ImageBitmap> {
+  const w = src.width
+  const h = src.height
+  const c = new OffscreenCanvas(w, h)
+  const g = c.getContext('2d')
+  if (!g) return src
+  g.drawImage(src, 0, 0)
+  const d = g.getImageData(0, 0, w, h)
+  const px = d.data
+  // the solid part: rows and columns that are mostly opaque (a few stray see-through pixels don't count)
+  const solidRow = (y: number) => { let n = 0; for (let x = 0; x < w; x++) if (px[(y * w + x) * 4 + 3] >= 128) n++; return n > w * 0.5 }
+  const solidCol = (x: number) => { let n = 0; for (let y = 0; y < h; y++) if (px[(y * w + x) * 4 + 3] >= 128) n++; return n > h * 0.5 }
+  let y0 = 0, y1 = h - 1, x0 = 0, x1 = w - 1
+  while (y0 < y1 && !solidRow(y0)) y0++
+  while (y1 > y0 && !solidRow(y1)) y1--
+  while (x0 < x1 && !solidCol(x0)) x0++
+  while (x1 > x0 && !solidCol(x1)) x1--
+  // a couple of pixels more, past the soft edge
+  x0 = Math.min(x0 + 2, x1); y0 = Math.min(y0 + 2, y1); x1 = Math.max(x1 - 2, x0); y1 = Math.max(y1 - 2, y0)
+  for (let i = 3; i < px.length; i += 4) px[i] = 255
+  g.putImageData(d, 0, 0)
+  return createImageBitmap(c, x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+}
+
 function drawArt(ctx: Ctx2D, art: ImgSrc, layout: Layout): void {
   const a = layout.art
   const { w: iw, h: ih } = dims(art)
   if (!iw || !ih) return
+  const fullCard = a.box.x === 0 && a.box.y === 0 && a.box.w === CARD_W && a.box.h === CARD_H
   const fit = a.fit === 'cover' ? Math.max(a.box.w / iw, a.box.h / ih) : Math.min(a.box.w / iw, a.box.h / ih)
   const s = fit * (a.scale > 0 ? a.scale : 1)
   const dw = iw * s
@@ -167,9 +235,11 @@ function drawArt(ctx: Ctx2D, art: ImgSrc, layout: Layout): void {
   const dy = a.box.y + (a.box.h - dh) / 2 + a.offsetY
   ctx.save()
   ctx.beginPath()
-  ctx.rect(a.box.x, a.box.y, a.box.w, a.box.h)
+  // full-card art: the card's rounded shape and no backing colour (there is nothing behind the card to fill)
+  if (fullCard) ctx.roundRect(CARD_INSET, CARD_INSET, CARD_W - 2 * CARD_INSET, CARD_H - 2 * CARD_INSET, CARD_RADIUS)
+  else ctx.rect(a.box.x, a.box.y, a.box.w, a.box.h)
   ctx.clip()
-  if (a.background) {
+  if (a.background && !fullCard) {
     ctx.fillStyle = a.background
     ctx.fillRect(a.box.x, a.box.y, a.box.w, a.box.h)
   }
@@ -316,6 +386,20 @@ export function mimeOf(format: OutputFormat): string {
   return format === 'webp' ? 'image/webp' : 'image/png'
 }
 
+/** Draw a card as it's presented: bare, in its case, or in its slab (protect.ts). */
+export function drawPresented(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardView): void {
+  if (view.holder === 'none') {
+    drawCard(ctx, assets, layout, view)
+    return
+  }
+  const card = new OffscreenCanvas(CARD_W, CARD_H)
+  const cctx = card.getContext('2d')
+  if (!cctx) throw new Error('2D canvas unavailable')
+  drawCard(cctx, assets, layout, view)
+  if (view.holder === 'case') drawCase(ctx, card)
+  else drawSlab(ctx, card, { characterName: view.name, sub: view.slabSub, grade: Number(view.psaValue) } satisfies SlabLabel)
+}
+
 /** Render one card to an encoded image. Uses OffscreenCanvas (main thread or worker). */
 export async function renderCardBlob(
   assets: CardAssets, layout: Layout, view: CardView, format: OutputFormat, canvas?: OffscreenCanvas,
@@ -323,6 +407,6 @@ export async function renderCardBlob(
   const c = canvas ?? new OffscreenCanvas(CARD_W, CARD_H)
   const ctx = c.getContext('2d')
   if (!ctx) throw new Error('2D canvas unavailable')
-  drawCard(ctx, assets, layout, view)
+  drawPresented(ctx, assets, layout, view)
   return c.convertToBlob({ type: mimeOf(format), quality: format === 'webp' ? WEBP_QUALITY : undefined })
 }

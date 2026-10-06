@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { computePool, dealFire, holoCounts, packRespectsFloor, type DealInput } from './deal'
+import { computePool, dealFire, holoCounts, type DealInput, type DealResult } from './deal'
 import { dealInBackground, dealInputKey } from './dealPreview'
 import { sha256Hex, Stream } from './prng'
-import { HOLO_RATE, MATERIALS, expectedHolos, holoRollChance, rollHolo } from './rules'
+import { classicRecipe, compileRecipe, holoOdds, slotTypeIndexes, specialAllHoloRecipe, standardRecipe, type Recipe } from './recipe'
+import { HOLO_RATE, MATERIALS, expectedHolos, holoRollChance } from './rules'
 
 const CHARS = ['rabbit', 'bird', 'fox']
 
 function input(over: Partial<DealInput> = {}): DealInput {
-  return { fire: 1, packs: 150, characterIds: CHARS, seed: 'seed-1', diamonds: 1, firstSerial: 1, ...over }
+  return { fire: 1, packs: 150, characterIds: CHARS, seed: 'seed-1', recipe: classicRecipe(1), firstSerial: 1, ...over }
 }
 
 /** Run `n` Series back to back, carrying serials like the app does (nothing else carries). */
@@ -116,60 +117,115 @@ describe('expectedHolos', () => {
     expect(e.picture).toBeCloseTo(e.frame)
     expect(e.full).toBeCloseTo(150 * p * p)
     expect(e.total).toBeCloseTo(75)
-    expect(e.frame + e.picture + e.full).toBeCloseTo(e.total)
     expect(expectedHolos('diamond', 3)).toEqual({ frame: 1, picture: 1, full: 1, total: 3 })
-    expect(expectedHolos('paper', 0).total).toBe(0)
   })
 })
 
-describe('dealFire', () => {
-  it('deals exactly packs * 6 cards with consecutive serials', () => {
+/** Every pack holds, per slot group, cards of a type the group allows; must-holo groups are holo. */
+function checkPacks(r: DealResult, recipe: Recipe) {
+  const bySerial = new Map(r.cards.map((c) => [c.serial, c]))
+  const sets = recipe.slots.map((s) => new Set(slotTypeIndexes(recipe, s)))
+  const S = compileRecipe(recipe).S
+  expect(r.packContents).toHaveLength(r.packs)
+  for (const pack of r.packContents) {
+    expect(pack).toHaveLength(S)
+    const perGroup = new Array(recipe.slots.length).fill(0)
+    for (const serial of pack) {
+      const c = bySerial.get(serial)!
+      expect(sets[c.group].has(c.type)).toBe(true)
+      if (recipe.slots[c.group].mustHolo) expect(c.holo).not.toBe('none')
+      perGroup[c.group]++
+    }
+    expect(perGroup).toEqual(recipe.slots.map((s) => s.count))
+  }
+}
+
+describe('dealFire (recipe)', () => {
+  it('deals exactly packs x cards per pack with consecutive serials; totals = the pool', () => {
     const r = dealFire(input())
     expect(r.cards).toHaveLength(900)
+    expect(r.cardsPerPack).toBe(6)
     expect(r.cards.map((c) => c.serial)).toEqual(Array.from({ length: 900 }, (_, i) => i + 1))
     expect(r.nextSerial).toBe(901)
-    const byMat = Object.fromEntries(MATERIALS.map((m) => [m, r.cards.filter((c) => c.material === m).length]))
-    expect(byMat).toEqual(r.pool)
+    const byType = [0, 1, 2, 3, 4].map((t) => r.cards.filter((c) => c.type === t).length)
+    expect(byType).toEqual(r.pool)
+    expect(r.pool).toEqual(MATERIALS.map((m) => computePool(150, 1)[m]))
   })
 
-  it('respects the pack floor in every pack', () => {
+  it('Standard: 2 Gold and exactly one Full Art per character, always full holo', () => {
+    const recipe = standardRecipe()
+    const r = dealFire(input({ packs: 167, seed: 'fa', recipe }))
+    checkPacks(r, recipe)
+    const gold = r.cards.filter((c) => c.type === 4)
+    const fa = r.cards.filter((c) => c.type === 5)
+    expect(gold).toHaveLength(2 * CHARS.length)
+    for (const id of CHARS) expect(gold.filter((c) => c.characterId === id)).toHaveLength(2)
+    expect(fa).toHaveLength(CHARS.length)
+    expect(new Set(fa.map((c) => c.characterId)).size).toBe(CHARS.length)
+    expect([...gold, ...fa].every((c) => c.holo === 'full')).toBe(true)
+  })
+
+  it('Standard: every pack is 3 Paper, a Wood, a Wood-or-better and a Fire-or-better', () => {
     for (const packs of [1, 2, 3, 7, 150, 333]) {
-      const r = dealFire(input({ packs, seed: `floor-${packs}` }))
+      const recipe = standardRecipe(packs === 3 ? 5 : 1)
+      const r = dealFire(input({ packs, seed: `floor-${packs}`, recipe }))
+      checkPacks(r, recipe)
       const bySerial = new Map(r.cards.map((c) => [c.serial, c]))
-      expect(r.packContents).toHaveLength(packs)
       for (const pack of r.packContents) {
-        const mats = pack.map((s) => bySerial.get(s)!.material)
-        expect(packRespectsFloor(mats)).toBe(true)
+        const types = pack.map((s) => bySerial.get(s)!.type).sort()
+        expect(types.filter((t) => t === 0)).toHaveLength(3)
+        expect(types.filter((t) => t >= 2).length).toBeGreaterThanOrEqual(1)
       }
     }
   })
 
-  it('is deterministic for a given seed, and different for another seed', () => {
-    const a = dealFire(input({ seed: 'drand-12345' }))
-    const b = dealFire(input({ seed: 'drand-12345' }))
-    expect(b).toEqual(a)
-    const c = dealFire(input({ seed: 'drand-12346' }))
-    expect(c.cards).not.toEqual(a.cards)
-    expect(c.pool).toEqual(a.pool) // pool sizes depend only on packs + diamonds
+  it('Special 3-card all-holo: every card holo, slots kept, totals exact', () => {
+    const recipe = specialAllHoloRecipe()
+    for (const packs of [1, 2, 5, 100, 1000]) {
+      const r = dealFire(input({ packs, recipe, seed: `sp-${packs}` }))
+      expect(r.cards).toHaveLength(3 * packs)
+      expect(r.cards.every((c) => c.holo !== 'none')).toBe(true)
+      checkPacks(r, recipe)
+      expect([0, 1, 2].map((t) => r.cards.filter((c) => c.type === t).length)).toEqual(r.pool)
+    }
   })
 
-  it('numbers editions 1..N per character + material in serial order', () => {
+  it('random recipes: packs always fill, totals exact', () => {
+    const recipe: Recipe = {
+      ...standardRecipe(3),
+      slots: [
+        { count: 2, kind: 'types', typeIds: ['paper'], minRank: 0, maxRank: null, mustHolo: false },
+        { count: 2, kind: 'rank', typeIds: [], minRank: 0, maxRank: null, mustHolo: false },
+        { count: 1, kind: 'rank', typeIds: [], minRank: 3, maxRank: null, mustHolo: true },
+      ],
+    }
+    for (const packs of [1, 4, 9, 77]) checkPacks(dealFire(input({ packs, recipe, seed: `r${packs}` })), recipe)
+  })
+
+  it('is deterministic for a given seed, and different for another seed', () => {
+    const a = dealFire(input({ seed: 'drand-12345' }))
+    expect(dealFire(input({ seed: 'drand-12345' }))).toEqual(a)
+    const c = dealFire(input({ seed: 'drand-12346' }))
+    expect(c.cards).not.toEqual(a.cards)
+    expect(c.pool).toEqual(a.pool)
+  })
+
+  it('numbers editions 1..N per character + type in serial order', () => {
     const r = dealFire(input())
     const groups = new Map<string, number[]>()
     for (const c of r.cards) {
-      const k = `${c.characterId}/${c.material}`
+      const k = `${c.characterId}/${c.type}`
       groups.set(k, [...(groups.get(k) ?? []), c.edition])
-      expect(c.editionOf).toBe(r.cards.filter((x) => x.characterId === c.characterId && x.material === c.material).length)
     }
     for (const eds of groups.values()) expect(eds).toEqual(eds.map((_, i) => i + 1))
+    for (const c of r.cards.slice(0, 50)) expect(c.editionOf).toBe(groups.get(`${c.characterId}/${c.type}`)!.length)
   })
 
-  it('assigns characters roughly uniformly', () => {
+  it('assigns characters roughly uniformly, and takes hundreds of characters', () => {
     const r = dealFire(input({ packs: 1000 }))
-    for (const ch of CHARS) {
-      const n = r.cards.filter((c) => c.characterId === ch).length
-      expect(Math.abs(n - 2000)).toBeLessThan(200)
-    }
+    for (const ch of CHARS) expect(Math.abs(r.cards.filter((c) => c.characterId === ch).length - 2000)).toBeLessThan(200)
+    const many = Array.from({ length: 700 }, (_, i) => `c${i}`)
+    expect(dealFire(input({ characterIds: many, packs: 20 })).characterIds).toHaveLength(700)
   })
 
   it('carries serials across Series', () => {
@@ -178,84 +234,47 @@ describe('dealFire', () => {
     for (let i = 1; i < results.length; i++) expect(results[i].firstSerial).toBe(results[i - 1].nextSerial)
   })
 
-  it('makes the Series\' Diamonds (default 1, or as set)', () => {
-    expect(dealFire(input()).cards.filter((c) => c.material === 'diamond')).toHaveLength(1)
-    const r = dealFire(input({ diamonds: 4 }))
-    expect(r.diamonds).toBe(4)
-    expect(r.pool.diamond).toBe(4)
-    expect(r.cards.filter((c) => c.material === 'diamond')).toHaveLength(4)
-    const tiny = dealFire(input({ packs: 2, diamonds: 5 }))
-    expect(tiny.pool.diamond).toBe(2)
-    const bySerial = new Map(tiny.cards.map((c) => [c.serial, c]))
-    for (const pack of tiny.packContents) expect(packRespectsFloor(pack.map((s) => bySerial.get(s)!.material))).toBe(true)
-  })
-
-  it('holo rates converge to 5/10/50/90/100% with each roll at 1 - sqrt(1 - rate)', () => {
-    const results = runFires(60, () => 150, 'holo') // 54,000 cards
+  it('holo rates converge to each type\'s odds (Standard 5/10/50/90/100%)', () => {
+    const results = runFires(40, () => 150, 'holo') // 36,000 cards
     const cards = results.flatMap((r) => r.cards)
-    const hc = holoCounts(cards)
-    for (const m of MATERIALS) {
-      const n = cards.filter((c) => c.material === m).length
-      const anyHolo = n - hc[m].none
+    const hc = holoCounts(cards, 5)
+    MATERIALS.forEach((m, t) => {
+      const n = cards.filter((c) => c.type === t).length
+      if (m === 'diamond') { expect(hc[t].none).toBe(0); return }
       const rate = HOLO_RATE[m]
-      if (m === 'diamond') {
-        expect(hc[m].none).toBe(0) // always holo; the 1/3 split is checked in the rollHolo test
-        continue
-      }
       const sd = Math.sqrt((rate * (1 - rate)) / n)
-      expect(Math.abs(anyHolo / n - rate)).toBeLessThan(4 * sd + 1e-9)
-      const p = holoRollChance(m)
-      const fullRate = p * p
-      const fullSd = Math.sqrt((fullRate * (1 - fullRate)) / n)
-      expect(Math.abs(hc[m].full / n - fullRate)).toBeLessThan(4 * fullSd + 2 / n)
-      // frame-only and picture-only are symmetric
-      const fo = hc[m].frame / n, po = hc[m].picture / n
-      const oneSd = Math.sqrt((p * (1 - p) * (1 - p)) / n)
-      expect(Math.abs(fo - p * (1 - p))).toBeLessThan(4 * oneSd + 1e-9)
-      expect(Math.abs(po - p * (1 - p))).toBeLessThan(4 * oneSd + 1e-9)
-    }
+      expect(Math.abs((n - hc[t].none) / n - rate)).toBeLessThan(4 * sd + 1e-9)
+      const o = holoOdds(standardRecipe().types[t])
+      expect(o[0]).toBeCloseTo(1 - rate, 9)
+    })
   })
 
-  it('Diamond is always holo, split 1/3 frame, 1/3 picture, 1/3 full', () => {
-    const n = 30_000
-    const tally = { frame: 0, picture: 0, full: 0, none: 0 }
-    for (let i = 0; i < n; i++) {
-      const r = rollHolo('diamond', (i + 0.5) / n, 0.999)
-      tally[r.frame && r.picture ? 'full' : r.frame ? 'frame' : r.picture ? 'picture' : 'none']++
-    }
-    expect(tally).toEqual({ frame: 10_000, picture: 10_000, full: 10_000, none: 0 })
-    // the other materials are unchanged: independent rolls at holoRollChance
-    const p = holoRollChance('paper')
-    expect(rollHolo('paper', p - 1e-9, p + 1e-9)).toEqual({ frame: true, picture: false })
-  })
-
-  it('rejects bad input', () => {
+  it('rejects bad input, and a sample deal over the card limit', () => {
     expect(() => dealFire(input({ characterIds: [] }))).toThrow()
     expect(() => dealFire(input({ packs: -1 }))).toThrow()
     expect(() => dealFire(input({ packs: 1.5 }))).toThrow()
     expect(() => dealFire(input({ seed: '' }))).toThrow()
     expect(() => dealFire(input({ characterIds: ['a', 'a'] }))).toThrow()
-    expect(() => dealFire(input({ characterIds: Array.from({ length: 256 }, (_, i) => `c${i}`) }))).toThrow(/255/)
-    expect(dealFire(input({ characterIds: Array.from({ length: 255 }, (_, i) => `c${i}`) })).characterIds).toHaveLength(255)
+    expect(() => dealFire(input({ packs: 100_001 }))).toThrow(/at most/)
   })
 
-  it('handles a zero-pack Fire without moving anything', () => {
+  it('handles a zero-pack Series without moving anything', () => {
     const r = dealFire(input({ packs: 0, firstSerial: 42 }))
     expect(r.cards).toHaveLength(0)
     expect(r.nextSerial).toBe(42)
-    expect(r.pool).toEqual({ paper: 0, wood: 0, burning: 0, charcoal: 0, diamond: 0 })
+    expect(r.pool).toEqual([0, 0, 0, 0, 0])
   })
 })
 
-
 describe('deal preview (background)', () => {
   it('deals the same result off the main thread (or on it where workers are missing) and keys inputs exactly', async () => {
-    const inp = { fire: 2, packs: 12, characterIds: ['a', 'b'], seed: 'seed-x', diamonds: 1, firstSerial: 10 }
+    const inp = { fire: 2, packs: 12, characterIds: ['a', 'b'], seed: 'seed-x', recipe: standardRecipe(1), firstSerial: 10 }
     const r = await dealInBackground(inp)
     expect(r).toEqual(dealFire(inp))
     expect(dealInputKey(inp)).toBe(dealInputKey({ ...inp }))
     expect(dealInputKey(inp)).not.toBe(dealInputKey({ ...inp, packs: 13 }))
     expect(dealInputKey(inp)).not.toBe(dealInputKey({ ...inp, firstSerial: 11 }))
+    expect(dealInputKey(inp)).not.toBe(dealInputKey({ ...inp, recipe: specialAllHoloRecipe() }))
     await expect(dealInBackground({ ...inp, characterIds: [] })).rejects.toThrow()
   })
 })

@@ -1,0 +1,30 @@
+{
+  "fire": 7,
+  "imagesBase": "ipfs://bafyexampleimages/",
+  "types": [
+    { "name": "Paper", "slug": "paper", "rank": 0, "supply": "perPack", "amount": 3,
+      "holo": { "mode": "independent", "frame": "25320565519103609", "picture": "25320565519103609" } },
+    { "name": "Wood", "slug": "wood", "rank": 1, "supply": "filler",
+      "holo": { "mode": "independent", "frame": "51316701949486200", "picture": "51316701949486200" } },
+    { "name": "Fire", "slug": "fire", "rank": 2, "supply": "share", "amount": 150000000,
+      "holo": { "mode": "independent", "frame": "292893218813452475", "picture": "292893218813452475" } },
+    { "name": "Coal", "slug": "coal", "rank": 3, "supply": "share", "amount": 49000000,
+      "holo": { "mode": "independent", "frame": "683772233983162066", "picture": "683772233983162066" } },
+    { "name": "Gold", "slug": "gold", "rank": 4, "supply": "perCharacter", "amount": 2, "maxPerPack": 1,
+      "holo": { "mode": "distribution", "weights": ["0", "0", "0", "1"] } },
+    { "name": "Full Art", "slug": "fullart", "rank": 5, "supply": "perCharacter", "amount": 1, "maxPerPack": 1,
+      "holo": { "mode": "distribution", "weights": ["0", "0", "0", "1"] } }
+  ],
+  "slots": [
+    { "count": 3, "types": [0] },
+    { "count": 1, "types": [1] },
+    { "count": 1, "minRank": 1 },
+    { "count": 1, "minRank": 2, "mustHolo": false }
+  ],
+  "characters": [
+    { "name": "Ember Fox", "category": "Animals" },
+    { "name": "Ash Wolf", "category": "Animals" },
+    { "name": "Cinder Queen", "category": "Royals" }
+  ],
+  "pdaOdds": ["0", "0", "0", "0", "1000", "2000", "2700", "2500", "1700", "100"]
+}

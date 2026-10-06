@@ -1,20 +1,20 @@
 /** Shared by the build worker and the main-thread fallback: decodes asset blobs lazily (small LRU of bitmaps, art
  *  downscaled to what the art window needs) and renders cards to encoded Blobs via render.ts. */
 
-import type { DealtCard } from './deal'
-import { cardView, renderCardBlob, type CardAssets } from './render'
-import { frameId } from './frames'
-import { CARD_H, CARD_W, wearLookOf, type Material, type WearLook } from './rules'
+import { cardView, renderCardBlob, solidFullCardArt, type CardAssets, type CardFace } from './render'
+import { FULL_CARD_ART_SETS, frameId } from './frames'
+import { CARD_H, CARD_W, wearLookOf, type WearLook } from './rules'
 import type { Layout, OutputFormat, Variant } from './types'
 
 export type VariantBlobs = Partial<Record<Variant, Blob>>
 
 export interface AssetBundle {
-  layouts: Record<Material, Layout>
-  /** By frameId(material, variant, wear): every frame that exists. */
+  /** By frame set. */
+  layouts: Record<string, Layout>
+  /** By frameId(set, variant, wear): every frame the job can need that exists. */
   frames: Record<string, Blob>
-  /** art[characterId][material][variant] */
-  art: Record<string, Partial<Record<Material, VariantBlobs>>>
+  /** art[characterId][frameSet][variant] */
+  art: Record<string, Partial<Record<string, VariantBlobs>>>
   names: Record<string, string>
   categories: Record<string, string | undefined>
   /** Uploaded fonts (registered in the worker's FontFaceSet; the main thread already has them). */
@@ -22,7 +22,7 @@ export interface AssetBundle {
 }
 
 export interface RenderJob {
-  card: DealtCard
+  face: CardFace
 }
 
 /** Decoded bitmaps kept per renderer (each frame is 1500 x 2100, about 12.6 MB decoded). A full-grid build renders
@@ -56,7 +56,7 @@ export class CardRenderer {
     return p
   }
 
-  private frame(m: Material, v: Variant, wear: WearLook): Promise<ImageBitmap | null> {
+  private frame(m: string, v: Variant, wear: WearLook): Promise<ImageBitmap | null> {
     // a missing frame is flagged on the review screen and blocks approval; render without it meanwhile
     // PDA 10 (L1) is the pristine frame: decode it once, under the clean frame's id
     const id = frameId(m, v, wear === 'L1' && this.bundle.frames[frameId(m, v, 'clean')] ? 'clean' : wear)
@@ -64,35 +64,43 @@ export class CardRenderer {
     return this.bitmap(`frame:${id}`, async () => (blob ? createImageBitmap(blob) : null))
   }
 
-  private art(charId: string, m: Material, v: Variant): Promise<ImageBitmap | null> {
+  private art(charId: string, m: string, v: Variant): Promise<ImageBitmap | null> {
     const blob = this.bundle.art[charId]?.[m]?.[v] ?? this.bundle.art[charId]?.[m]?.normal
     return this.bitmap(`art:${charId}:${m}:${v}`, async () => {
       if (!blob) return null
-      const full = await createImageBitmap(blob)
+      let full = await createImageBitmap(blob)
+      if (FULL_CARD_ART_SETS.includes(m)) {
+        const solid = await solidFullCardArt(full)
+        if (solid !== full) full.close()
+        full = solid
+      }
       // Downscale big art to what the art window needs (keeps memory sane with many characters).
-      const a = this.bundle.layouts[m].art
+      const a = (this.bundle.layouts[m] ?? Object.values(this.bundle.layouts)[0]).art
       const fit = a.fit === 'cover' ? Math.max(a.box.w / full.width, a.box.h / full.height) : Math.min(a.box.w / full.width, a.box.h / full.height)
       const need = fit * Math.max(1, a.scale)
       if (need >= 0.9) return full
       const w = Math.max(1, Math.round(full.width * need))
       const h = Math.max(1, Math.round(full.height * need))
+      const small = await createImageBitmap(full, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
       full.close()
-      return createImageBitmap(blob, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
+      return small
     })
   }
 
-  async assetsFor(card: DealtCard): Promise<CardAssets> {
+  async assetsFor(face: CardFace): Promise<CardAssets> {
     const [frame, art] = await Promise.all([
-      this.frame(card.material, card.holoFrame ? 'holo' : 'normal', wearLookOf(card.grade)),
-      this.art(card.characterId, card.material, card.holoPicture ? 'holo' : 'normal'),
+      this.frame(face.frameSet, face.holoFrame ? 'holo' : 'normal', wearLookOf(face.grade)),
+      this.art(face.characterId, face.frameSet, face.holoPicture ? 'holo' : 'normal'),
     ])
     return { frame, art }
   }
 
-  async render(card: DealtCard, format: OutputFormat): Promise<Blob> {
-    const assets = await this.assetsFor(card)
-    const view = cardView(card, this.bundle.names[card.characterId] ?? card.characterId, this.bundle.categories[card.characterId])
-    return renderCardBlob(assets, this.bundle.layouts[card.material], view, format, this.canvas)
+  async render(face: CardFace, format: OutputFormat): Promise<Blob> {
+    const assets = await this.assetsFor(face)
+    const view = cardView(face, this.bundle.names[face.characterId] ?? face.characterId, this.bundle.categories[face.characterId])
+    const layout = this.bundle.layouts[face.frameSet]
+    if (!layout) throw new Error(`No layout for frame set ${face.frameSet}`)
+    return renderCardBlob(assets, layout, view, format, this.canvas)
   }
 
   dispose(): void {

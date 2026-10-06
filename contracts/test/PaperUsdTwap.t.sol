@@ -13,18 +13,24 @@ contract MockFactory {
 }
 
 contract PaperUsdTwapTest is Test {
-    address paper = address(0xAA); address weth = address(0xBB); address usdg = address(0xCC);
-    MockFactory factory; MockFeed eth; PaperUsdTwap twap;
+    address paper = address(0xAA); address weth = address(0xBB); address usdg = address(0xCC); address plank = address(0xDD);
+    MockFactory factory; MockFeed eth; MockFeed plankUsd; PaperUsdTwap twap;
 
     function setUp() public {
         vm.warp(1_800_000_000);
         factory = new MockFactory();
         eth = new MockFeed(2_500_00000000); // $2,500
-        twap = new PaperUsdTwap(address(factory), paper, weth, usdg, 6, address(eth));
+        plankUsd = new MockFeed(1e9); // $0.000000001 per PLANK, 18 decimals
+        twap = new PaperUsdTwap(address(factory), paper, weth, usdg, 6, address(eth), plank, address(plankUsd));
     }
 
     function _price() internal view returns (uint256) { (, int256 a,,,) = twap.latestRoundData(); return uint256(a); }
-    function _day() internal { vm.warp(block.timestamp + 21 hours); eth.set(eth.answer()); twap.checkpoint(); }
+    function _day() internal {
+        vm.warp(block.timestamp + 21 hours);
+        eth.set(eth.answer());
+        plankUsd.set(plankUsd.answer());
+        twap.checkpoint();
+    }
 
     function test_no_pool_reports_zero() public {
         twap.checkpoint(); _day(); _day();
@@ -96,7 +102,7 @@ contract PaperUsdTwapTest is Test {
         assertTrue(twap.due(), "keeper sees the candidate stopped qualifying");
         twap.checkpoint();
         assertEq(twap.candidate(), address(0), "dropped");
-        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer());
+        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer()); plankUsd.set(plankUsd.answer());
         b.set(1e18, 1_000_000e6); // flash again a window later
         twap.checkpoint();
         assertEq(address(twap.pair()), address(a), "still the real pool: the clock restarted");
@@ -147,11 +153,37 @@ contract PaperUsdTwapTest is Test {
         assertTrue(twap.due(), "a candidate to record");
         twap.checkpoint();
         assertFalse(twap.due(), "candidate waiting out its window");
-        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer());
+        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer()); plankUsd.set(plankUsd.answer());
         assertTrue(twap.due(), "candidate to adopt");
         twap.checkpoint();
         assertFalse(twap.due(), "just adopted");
-        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer());
+        vm.warp(block.timestamp + 21 hours); eth.set(eth.answer()); plankUsd.set(plankUsd.answer());
         assertTrue(twap.due(), "window to roll");
+    }
+
+    /// Most PAPER liquidity sits against PLANK: that pool counts, valued (and priced) through the PLANK feed.
+    function test_plank_pool_priced_through_the_plank_feed() public {
+        MockPair p = new MockPair(paper, plank);
+        // 1M PAPER / 80T PLANK at $1e-9 = $80,000 of PLANK -> 80M PLANK per PAPER -> $0.08 per PAPER
+        p.set(1_000_000e18, 80_000_000_000_000e18);
+        factory.add(paper, plank, address(p));
+        _adopt();
+        assertEq(address(twap.pair()), address(p));
+        assertEq(twap.quote(), plank);
+        _day();
+        assertApproxEqRel(_price(), 0.08e18, 1e15);
+        // while the PLANK feed is stale the price reads 0 (never a stale guess)
+        vm.warp(block.timestamp + 3 hours);
+        assertEq(_price(), 0);
+    }
+
+    function test_plank_pool_ignored_without_a_fresh_plank_price() public {
+        MockPair p = new MockPair(paper, plank);
+        p.set(1_000_000e18, 80_000_000_000_000e18);
+        factory.add(paper, plank, address(p));
+        vm.warp(block.timestamp + 3 hours); // PLANK feed stale: its pool is worth $0
+        eth.set(eth.answer());
+        twap.checkpoint();
+        assertEq(twap.candidate(), address(0));
     }
 }

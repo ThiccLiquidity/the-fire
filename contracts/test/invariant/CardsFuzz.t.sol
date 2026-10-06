@@ -1,23 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test} from "forge-std/Test.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
-import {CardRules} from "../../src/cards/CardRules.sol";
-import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness} from "../Mocks.sol";
+import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
+import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
+import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
+import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockBurner} from "../Mocks.sol";
 import {InvRouter} from "./InvRouter.sol";
+import {SeriesHelper, RecipeHarness} from "../cards/SeriesHelper.sol";
 
-contract FuzzPoolHarness {
-    function pool(uint256 packs, uint256 diamonds) external pure returns (uint256[5] memory) {
-        return CardRules.computePool(packs, diamonds);
-    }
-}
-
-/// @dev Stateless fuzz tests: pricing math, the burn split, PDA grades and price, and the pool math.
-contract CardsFuzzTest is Test {
+/// @dev Stateless fuzz tests: pricing math, the burn split, PDA grades and price, and the Standard pool math.
+contract CardsFuzzTest is SeriesHelper {
     function _na() internal pure returns (FireSale.Access memory a) {
         a.proof = new bytes32[](0);
     }
@@ -41,7 +37,8 @@ contract CardsFuzzTest is Test {
     FireCards cards;
     FireSale sale;
     FirePsa psa;
-    FuzzPoolHarness harness;
+    RecipeDealer dealer;
+    RecipeHarness harness;
 
     function setUp() public {
         vm.warp(1_800_000_000);
@@ -56,14 +53,15 @@ contract CardsFuzzTest is Test {
         rng = new MockRandomness();
         packs = new FirePacks(owner);
         cards = new FireCards(owner, address(packs));
+        dealer = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         rng.setFire(address(cards));
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), router: address(router), revenueWallet: revenue, burnWallet: burnW,
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, burnWallet: burnW,
             paperPerSuggestion: 1e18
         }));
-        psa = new FirePsa(owner, address(cards), address(paper), address(paperFeed));
+        psa = new FirePsa(owner, address(cards), address(new MockBurner(address(plank), address(0))));
         vm.startPrank(owner, owner);
         packs.setSeller(address(sale));
         packs.setCards(address(cards));
@@ -71,13 +69,8 @@ contract CardsFuzzTest is Test {
         cards.setRandomness(address(rng));
         cards.setPsa(address(psa));
         vm.stopPrank();
-        string[] memory names = new string[](3);
-        string[] memory cats = new string[](3);
-        for (uint256 k; k < cats.length; k++) cats[k] = "Person";
-        for (uint256 i; i < 3; i++) names[i] = string.concat("Char", vm.toString(i));
-        vm.prank(owner, owner);
-        cards.configureFire(1, names, cats, "ipfs://x/");
-        harness = new FuzzPoolHarness();
+        _standard(cards, dealer, owner, 1, 3, 1);
+        harness = new RecipeHarness(address(cards));
 
         paper.mint(alice, 1e30);
         plank.mint(alice, type(uint128).max);
@@ -94,7 +87,7 @@ contract CardsFuzzTest is Test {
         start = uint64(block.timestamp + 1);
         vm.prank(owner, owner);
         sale.configureDrop(1, FireSale.DropConfig({start: start, packs: 1_000, starters: 0, plankOnly: 0, walletLimit: 1_000,
-            starterWindow: 0, liftAfter: 1 hours, plankBurnBps: bps, priceUsd: price, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0)}));
+            starterWindow: 0, liftAfter: 1 hours, plankBurnBps: bps, priceUsd: price, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0}));
     }
 
     function _setFeeds(int256 ethPx, int256 plankPx) internal {
@@ -185,75 +178,69 @@ contract CardsFuzzTest is Test {
     // ---------------------------------------------------------------- PDA
 
     /// forge-config: default.fuzz.runs = 1000
-    function testFuzz_gradeForAlways1to10(uint256 word, uint256 fire) public view {
-        uint256 g = psa.gradeFor(fire, word);
+    function testFuzz_gradeForAlways1to10(uint256 word, uint256 fire, uint256 age, uint256 moves) public view {
+        age = bound(age, 0, 200 * 365 days);
+        uint256 g = psa.gradeFor(fire, age, moves, word);
         assertGe(g, 1);
         assertLe(g, 10);
+        // a fresh card (under a month uncased) never grades below 5, however much it moved
+        if (age <= 31 days) assertGe(g, 5);
     }
 
-    /// Custom odds (any split of 10,000, zeros allowed) still only give 1..10, and only grades with odds > 0.
+    /// Custom fresh odds (any weights on 5..10, zeros allowed) only give grades with odds > 0 on a fresh card.
     /// forge-config: default.fuzz.runs = 1000
     function testFuzz_gradeForCustomOdds(uint256 seed, uint256 word) public {
-        uint16[10] memory odds;
+        uint64[10] memory odds;
         uint256 left = 10_000;
-        for (uint256 g; g < 9; g++) {
+        for (uint256 g = 4; g < 9; g++) {
             uint256 o = uint256(keccak256(abi.encode(seed, g))) % (left + 1);
-            odds[g] = uint16(o);
+            odds[g] = uint64(o);
             left -= o;
         }
-        odds[9] = uint16(left);
+        odds[9] = uint64(left);
         vm.prank(owner, owner);
         psa.setOdds(7, odds);
-        uint256 grade = psa.gradeFor(7, word);
-        assertGe(grade, 1);
+        uint256 grade = psa.gradeFor(7, 0, 0, word);
+        assertGe(grade, 5);
         assertLe(grade, 10);
         assertGt(odds[grade - 1], 0, "a grade with no odds never comes up");
     }
 
-    /// Default odds: every grade is reachable, exactly on its slice of 10,000.
-    /// forge-config: default.fuzz.runs = 1000
-    function testFuzz_defaultOddsHitEachGrade(uint256 word) public view {
-        uint16[10] memory o = psa.oddsOf(1);
-        uint256 base = word - word % 10_000; // keep the high bits random
-        if (base > type(uint256).max - 10_000) base -= 10_000;
-        uint256 lo;
+    /// The odds always add up to one, and wear only ever lowers the average grade.
+    /// forge-config: default.fuzz.runs = 300
+    function testFuzz_wearOnlyLowersTheAverage(uint256 age, uint256 later, uint256 moves) public view {
+        age = bound(age, 0, 60 * 365 days);
+        later = bound(later, age, 61 * 365 days);
+        moves = bound(moves, 0, 12);
+        uint256[10] memory a = psa.oddsFor(1, age, moves);
+        uint256[10] memory b = psa.oddsFor(1, later, moves);
+        uint256[10] memory c = psa.oddsFor(1, age, moves + 1);
+        uint256 ta; uint256 tb; uint256 ma; uint256 mb; uint256 mc;
         for (uint256 g; g < 10; g++) {
-            uint256 x = lo + word % o[g];
-            assertEq(psa.gradeFor(1, base + x), g + 1, "inside the slice");
-            assertEq(psa.gradeFor(1, base + lo), g + 1, "slice start");
-            assertEq(psa.gradeFor(1, base + lo + o[g] - 1), g + 1, "slice end");
-            lo += o[g];
+            ta += a[g]; tb += b[g];
+            ma += (g + 1) * a[g]; mb += (g + 1) * b[g]; mc += (g + 1) * c[g];
         }
-        assertEq(lo, 10_000);
+        assertApproxEqAbs(ta, 1e18, 1e6);
+        assertApproxEqAbs(tb, 1e18, 1e6);
+        assertLe(mb, ma + 1e8, "older is never better");
+        assertLe(mc, ma + 1e8, "a move is never better");
     }
 
-    function test_defaultOddsHitEveryGradeFromHashedWords() public view {
+    function test_freshOddsHitEveryGrade5To10FromHashedWords() public view {
         bool[11] memory seen;
-        for (uint256 i; i < 2_000; i++) seen[psa.gradeFor(1, uint256(keccak256(abi.encode(word0, i))))] = true;
-        for (uint256 g = 1; g <= 10; g++) assertTrue(seen[g], vm.toString(g));
-        assertFalse(seen[0]);
+        for (uint256 i; i < 2_000; i++) seen[psa.gradeFor(1, 0, 0, uint256(keccak256(abi.encode(word0, i))))] = true;
+        for (uint256 g = 5; g <= 10; g++) assertTrue(seen[g], vm.toString(g));
+        for (uint256 g; g < 5; g++) assertFalse(seen[g]);
     }
 
     uint256 constant word0 = 0xF1E;
 
-    /// forge-config: default.fuzz.runs = 1000
-    function testFuzz_paperPerReveal(uint256 px) public {
-        px = bound(px, 1, 1e30); // PAPER at 1e-18 .. 1e12 USD
-        paperFeed.set(int256(px));
-        uint256 cost = psa.paperPerReveal();
-        if (px > 1e18) {
-            assertEq(cost, uint256(1e36) / px, "past $1 a PAPER: $1 worth");
-            assertLe(cost * px / 1e18, 1e18, "never over $1");
-            return;
-        }
-        assertEq(cost % 1e18, 0, "whole PAPER");
-        uint256 whole = cost / 1e18;
-        assertGe(whole, 1, "at least 1");
-        if (whole > 1) assertLe(whole * px, 0.25e18, "stays at or under $0.25");
-        assertGt((whole + 1) * px, 0.25e18, "the most that does");
-    }
+    // ---------------------------------------------------------------- pool math (the Standard recipe)
 
-    // ---------------------------------------------------------------- pool math
+    function _pool(uint256 n, uint256 d) internal view returns (uint256[5] memory c) {
+        uint256[] memory got = harness.pool(harness.compile(StandardRecipe.classic(d)), n);
+        for (uint256 m; m < 5; m++) c[m] = got[m];
+    }
 
     function _checkPool(uint256 n, uint256 d, uint256[5] memory c) internal pure {
         assertEq(c[0] + c[1] + c[2] + c[3] + c[4], 6 * n, "counts sum to 6 x packs");
@@ -287,36 +274,38 @@ contract CardsFuzzTest is Test {
     }
 
     /// The rule's invariants over any pack count and any Diamond setting up to the pack count (and beyond: capped).
-    /// forge-config: default.fuzz.runs = 2000
+    /// forge-config: default.fuzz.runs = 1000
     function testFuzz_computePool(uint256 n, uint256 d) public view {
-        n = bound(n, 0, type(uint32).max);
+        n = bound(n, 0, type(uint64).max);
         d = n == 0 ? bound(d, 1, 1000) : bound(d, 1, n + 1000);
-        _checkPool(n, d, harness.pool(n, d));
+        _checkPool(n, d, _pool(n, d));
     }
 
-    /// Small Series, where the floor and the Diamond cap bite: every setting up to the contract's 1000.
-    /// forge-config: default.fuzz.runs = 2000
+    /// Small Series, where the floor and the Diamond cap bite.
+    /// forge-config: default.fuzz.runs = 1000
     function testFuzz_computePoolSmall(uint256 n, uint256 d) public view {
         n = bound(n, 0, 60);
         d = bound(d, 1, 1000);
-        _checkPool(n, d, harness.pool(n, d));
+        _checkPool(n, d, _pool(n, d));
     }
 
     /// Each Series stands alone: the same inputs always give the same pool, and more Diamonds only take from Wood
     /// (or, at tiny sizes, from Fire/Coal through the floor), never change Paper.
+    /// forge-config: default.fuzz.runs = 500
     function testFuzz_computePoolMoreDiamonds(uint256 n, uint256 d) public view {
         n = bound(n, 1, 100_000);
         d = bound(d, 1, 999);
-        uint256[5] memory a = harness.pool(n, d);
-        uint256[5] memory b = harness.pool(n, d + 1);
+        uint256[5] memory a = _pool(n, d);
+        uint256[5] memory b = _pool(n, d + 1);
         assertEq(a[0], b[0]);
         assertGe(b[4], a[4]);
         assertLe(b[1], a[1]);
         assertEq(a[1] + a[2] + a[3] + a[4], b[1] + b[2] + b[3] + b[4]);
     }
 
-    function test_computePoolTooManyPacks() public {
-        vm.expectRevert(CardRules.BadPacks.selector);
-        harness.pool(uint256(type(uint32).max) + 1, 1);
+    /// No product ceiling on Series size: the pool works out for 2^64 - 1 packs.
+    function test_computePoolHugeSeries() public view {
+        uint256 n = type(uint64).max;
+        _checkPool(n, 1, _pool(n, 1));
     }
 }

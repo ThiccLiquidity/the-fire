@@ -1,0 +1,1286 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "owner_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "cards",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "compiler",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "CARDS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IDealerCards"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "COMPILER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IRecipeCompiler"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "HOLO_ONE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_CATEGORY_BYTES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_NAME_BYTES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_SLUG_BYTES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PACKS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IDealerPacks"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "SHARE_SCALE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "acceptOwnership",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "appendCharacters",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "names",
+        "type": "string[]",
+        "internalType": "string[]"
+      },
+      {
+        "name": "categories",
+        "type": "string[]",
+        "internalType": "string[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "cardText",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "cardType",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "character",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "c",
+        "type": "tuple",
+        "internalType": "struct IDealer.CardText",
+        "components": [
+          {
+            "name": "typeName",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "typeSlug",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "characterName",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "category",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "extraAttributes",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "cardsPerPack",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "characterCount",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "characterOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "i",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "category",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "charactersOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "from",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "names",
+        "type": "string[]",
+        "internalType": "string[]"
+      },
+      {
+        "name": "categories",
+        "type": "string[]",
+        "internalType": "string[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "check",
+    "inputs": [
+      {
+        "name": "r",
+        "type": "tuple",
+        "internalType": "struct RecipeDealer.Recipe",
+        "components": [
+          {
+            "name": "types",
+            "type": "tuple[]",
+            "internalType": "struct RecipeDealer.CardType[]",
+            "components": [
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "slug",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "rank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "supply",
+                "type": "uint8",
+                "internalType": "enum RecipeDealer.Supply"
+              },
+              {
+                "name": "amount",
+                "type": "uint128",
+                "internalType": "uint128"
+              },
+              {
+                "name": "maxPerPack",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "holoMode",
+                "type": "uint8",
+                "internalType": "enum RecipeDealer.HoloMode"
+              },
+              {
+                "name": "holo",
+                "type": "uint64[4]",
+                "internalType": "uint64[4]"
+              }
+            ]
+          },
+          {
+            "name": "slots",
+            "type": "tuple[]",
+            "internalType": "struct RecipeDealer.Slot[]",
+            "components": [
+              {
+                "name": "count",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "types",
+                "type": "uint32[]",
+                "internalType": "uint32[]"
+              },
+              {
+                "name": "minRank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxRank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "mustHolo",
+                "type": "bool",
+                "internalType": "bool"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "perPack",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "deal",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "seed",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "fromCard",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "dealOrder",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "slotOf",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "holoOdds",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "cardType",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "o",
+        "type": "uint256[4]",
+        "internalType": "uint256[4]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pendingOwner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "poolFor",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "packs",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "poolOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "previewPool",
+    "inputs": [
+      {
+        "name": "r",
+        "type": "tuple",
+        "internalType": "struct RecipeDealer.Recipe",
+        "components": [
+          {
+            "name": "types",
+            "type": "tuple[]",
+            "internalType": "struct RecipeDealer.CardType[]",
+            "components": [
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "slug",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "rank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "supply",
+                "type": "uint8",
+                "internalType": "enum RecipeDealer.Supply"
+              },
+              {
+                "name": "amount",
+                "type": "uint128",
+                "internalType": "uint128"
+              },
+              {
+                "name": "maxPerPack",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "holoMode",
+                "type": "uint8",
+                "internalType": "enum RecipeDealer.HoloMode"
+              },
+              {
+                "name": "holo",
+                "type": "uint64[4]",
+                "internalType": "uint64[4]"
+              }
+            ]
+          },
+          {
+            "name": "slots",
+            "type": "tuple[]",
+            "internalType": "struct RecipeDealer.Slot[]",
+            "components": [
+              {
+                "name": "count",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "types",
+                "type": "uint32[]",
+                "internalType": "uint32[]"
+              },
+              {
+                "name": "minRank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxRank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "mustHolo",
+                "type": "bool",
+                "internalType": "bool"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "packs",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "chars",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "ready",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "recipeOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "r",
+        "type": "tuple",
+        "internalType": "struct RecipeDealer.Recipe",
+        "components": [
+          {
+            "name": "types",
+            "type": "tuple[]",
+            "internalType": "struct RecipeDealer.CardType[]",
+            "components": [
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "slug",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "rank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "supply",
+                "type": "uint8",
+                "internalType": "enum RecipeDealer.Supply"
+              },
+              {
+                "name": "amount",
+                "type": "uint128",
+                "internalType": "uint128"
+              },
+              {
+                "name": "maxPerPack",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "holoMode",
+                "type": "uint8",
+                "internalType": "enum RecipeDealer.HoloMode"
+              },
+              {
+                "name": "holo",
+                "type": "uint64[4]",
+                "internalType": "uint64[4]"
+              }
+            ]
+          },
+          {
+            "name": "slots",
+            "type": "tuple[]",
+            "internalType": "struct RecipeDealer.Slot[]",
+            "components": [
+              {
+                "name": "count",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "types",
+                "type": "uint32[]",
+                "internalType": "uint32[]"
+              },
+              {
+                "name": "minRank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxRank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "mustHolo",
+                "type": "bool",
+                "internalType": "bool"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "remainingOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "left",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "packsLeft",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "renounceOwnership",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setCharacters",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "names",
+        "type": "string[]",
+        "internalType": "string[]"
+      },
+      {
+        "name": "categories",
+        "type": "string[]",
+        "internalType": "string[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setRecipe",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "r",
+        "type": "tuple",
+        "internalType": "struct RecipeDealer.Recipe",
+        "components": [
+          {
+            "name": "types",
+            "type": "tuple[]",
+            "internalType": "struct RecipeDealer.CardType[]",
+            "components": [
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "slug",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "rank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "supply",
+                "type": "uint8",
+                "internalType": "enum RecipeDealer.Supply"
+              },
+              {
+                "name": "amount",
+                "type": "uint128",
+                "internalType": "uint128"
+              },
+              {
+                "name": "maxPerPack",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "holoMode",
+                "type": "uint8",
+                "internalType": "enum RecipeDealer.HoloMode"
+              },
+              {
+                "name": "holo",
+                "type": "uint64[4]",
+                "internalType": "uint64[4]"
+              }
+            ]
+          },
+          {
+            "name": "slots",
+            "type": "tuple[]",
+            "internalType": "struct RecipeDealer.Slot[]",
+            "components": [
+              {
+                "name": "count",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "types",
+                "type": "uint32[]",
+                "internalType": "uint32[]"
+              },
+              {
+                "name": "minRank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxRank",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "mustHolo",
+                "type": "bool",
+                "internalType": "bool"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "stateOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct RecipeDealer.State",
+        "components": [
+          {
+            "name": "started",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "packs",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "packsLeft",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "characters",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "transferOwnership",
+    "inputs": [
+      {
+        "name": "newOwner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "CharactersAdded",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "first",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "count",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "CharactersSet",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "count",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OwnershipTransferStarted",
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OwnershipTransferred",
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PoolSet",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "packs",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "counts",
+        "type": "uint256[]",
+        "indexed": false,
+        "internalType": "uint256[]"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RecipeSet",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "cardsPerPack",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "types",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "slots",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "BadDeal",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadFiller",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadLength",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadSlot",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "why",
+        "type": "string",
+        "internalType": "string"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BadText",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadType",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "why",
+        "type": "string",
+        "internalType": "string"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "FireIsLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "Infeasible",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NeverHolo",
+    "inputs": [
+      {
+        "name": "slot",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "typeIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotCards",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotClosed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotConfigured",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotNested",
+    "inputs": [
+      {
+        "name": "slotA",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "slotB",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NothingLeft",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OwnableInvalidOwner",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "OwnableUnauthorizedAccount",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "TypeNeverDealt",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  }
+]

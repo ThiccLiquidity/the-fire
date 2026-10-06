@@ -41,7 +41,7 @@ scope.onmessage = async (e: MessageEvent<WorkerIn>) => {
   try {
     if (!renderer) throw new Error('worker not initialised')
     const blobs: Blob[] = []
-    for (const job of msg.jobs) blobs.push(await renderer.render(job.card, msg.format))
+    for (const job of msg.jobs) blobs.push(await renderer.render(job.face, msg.format))
     scope.postMessage({ type: 'rendered', id: msg.id, blobs } satisfies WorkerOut)
   } catch (err) {
     scope.postMessage({ type: 'error', id: msg.id, message: err instanceof Error ? err.message : String(err) } satisfies WorkerOut)

@@ -1,0 +1,108 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "cards",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "CARDS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract FireCards"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "imageFile",
+    "inputs": [
+      {
+        "name": "serial",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "imageName",
+    "inputs": [
+      {
+        "name": "character",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "slug",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "holoFrame",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "holoPicture",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "grade",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "cased",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "tokenURI",
+    "inputs": [
+      {
+        "name": "serial",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  }
+]
