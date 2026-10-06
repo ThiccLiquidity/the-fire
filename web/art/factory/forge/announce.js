@@ -43,7 +43,7 @@
     const t = Store.tease(); if (!t) return;
     const body = document.createElement('div');
     body.className = 'announce';
-    body.append(fan(t)); // just the cards: a visual tease, no words
+    body.append(fan(t), Object.assign(document.createElement('p'), { className: 'ann-line', textContent: t.line })); // just the cards and a few words
     Sheet.open('announce', { title: `Series ${t.no}`, body });
   }
 

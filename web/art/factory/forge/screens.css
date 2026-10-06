@@ -571,3 +571,4 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .bigm.fh-gold { --bmc: rgba(255,200,60,.45) } .bigm.fh-gold .bm-t { color: #fff6d6; text-shadow: 0 0 18px #ffb81c, 0 3px 0 #2a1a05 }
 .bigm.fh-fullart { --bmc: rgba(255,230,160,.5) } .bigm.fh-fullart .bm-t { color: #fff; text-shadow: 0 0 18px #ff8ae0, 0 0 26px #8ad8ff, 0 3px 0 #1a1410 }
 .sc.m-gold.rare, .sc.m-fullart.rare { animation: rare-pulse 1.8s ease-in-out infinite alternate }
+.ann-line { margin: 0; font: italic 800 18px var(--body); letter-spacing: .06em; color: var(--gold); text-shadow: 0 0 14px rgba(255,170,70,.5) }
