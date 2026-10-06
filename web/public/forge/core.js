@@ -43,6 +43,10 @@
       balances: { ETH: 0.42, PLANK: 1250000000, PAPER: 24, USDG: 50 },
       credits: 1, burnCount: 12, starterClaimed: false, bought: 0, pending: [],
     },
+    // Series teases: one character in every card type. Add one for any Series at any time: an entry here plus its six
+    // cards in ui/announce/<id>-<type>.webp (paper, wood, fire, charcoal, gold, fullart). While a Series is on sale its
+    // tease shows what's in its packs; between Series the next one's tease sits on the main page.
+    teases: { 7: { id: 'bowling', name: 'Bowling Ball' }, 8: { id: 'bowling', name: 'Bowling Ball' } },
     sealed: { 7: 0, 6: 3 }, // sealed packs owned, by Series (6 is closed: it can be opened)
     cards,
     suggestions: [{ text: 'A lighthouse keeper', at: 'Series 6', picked: true }, { text: 'Grandma’s cast-iron pan', at: 'Series 7', picked: false }],
@@ -54,6 +58,11 @@
     get(path) { return path.split('.').reduce((o, k) => o?.[k], state); },
     update(fn) { fn(state); listeners.forEach((l) => l(state)); },
     on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    // the tease to show now: the Series on sale, or (between Series) the next one; null if none has been added
+    tease() {
+      const s = state.series, no = s.phase >= 4 ? s.no + 1 : s.no, t = state.teases[no];
+      return t ? { no, live: s.phase < 4, ...t } : null;
+    },
     left() { const s = state.series; return s.phase >= 4 ? 0 : Math.max(0, s.total - s.startersClaimed - s.sold); },
     paidLeft() { const s = state.series; return Math.max(0, s.total - s.starters - s.sold + (s.phase >= 2 ? s.starters - s.startersClaimed : 0)); },
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },

@@ -164,3 +164,14 @@ body[data-mode=land] .pill small { display: none } body[data-mode=land] .pill { 
 .station.peek { grid-column: 1 / -1; border-color: var(--gold); background: linear-gradient(90deg, rgba(255,210,122,.16), rgba(31,23,16,.95) 60%) }
 .station.peek .peek-fan { grid-row: 1 / 3; width: 34px; height: 40px } .station.peek .peek-fan img { width: 24px; height: 34px }
 .station.peek b { color: var(--gold) }
+/* between Series: the next Series' tease on the main page, in the Buy box (desktop) and the Buy bar (phone) */
+.tease-inline { display: flex; align-items: center; gap: 14px; padding: 8px 12px 8px 6px; border-radius: 14px; border: 1.5px solid rgba(255,210,122,.55);
+  background: linear-gradient(90deg, rgba(255,210,122,.14), rgba(20,14,9,.6)) }
+.ti-fan { cursor: pointer; flex: none; padding: 14px 10px 2px }
+.ti-text { display: grid; gap: 2px; text-align: left } .ti-text small { font: 800 11px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--gold) }
+.ti-text b { font: 400 20px/1.1 var(--display); color: var(--ink) } .ti-text span { color: var(--muted); font-size: 13px } .ti-text .btn { justify-self: start; margin-top: 4px }
+.fan.mini { width: 62px; margin: 0; filter: drop-shadow(0 6px 10px rgba(0,0,0,.6)) }
+.fan.mini::after { display: none } .fan.mini .fan-tag { display: none }
+.fan.mini .fan-card { --lift-scale: .3 }
+body[data-mode=port] .buybar .tease-inline { padding: 6px 10px 6px 4px } body[data-mode=port] .buybar .ti-fan { padding: 12px 10px 2px 22px }
+body[data-mode=port] .buybar .fan.mini { width: 52px }
