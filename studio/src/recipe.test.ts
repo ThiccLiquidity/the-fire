@@ -3,8 +3,8 @@ import standardSampleText from '../../contracts/test/cards/recipe-standard.json?
 import { describe, expect, it } from 'vitest'
 import { computePool } from './deal'
 import {
-  FRESH_PDA_ODDS, castWarning, checkRecipe, classicRecipe, compileRecipe, holoLooksFor, percentToScaled, previewPool, recipeFromJson, recipeJson,
-  scaledToPercent, slugify, specialAllHoloRecipe, standardRecipe, type Recipe,
+  FRESH_PDA_ODDS, HOLO_ONE, SHARE_SCALE, STANDARD_ROLLS, castWarning, checkRecipe, classicRecipe, compileRecipe, holoLooksFor, percentToScaled, previewPool, recipeFromJson, recipeJson,
+  roundedPercent, scaledToPercent, slugify, specialAllHoloRecipe, standardRecipe, type Recipe,
 } from './recipe'
 import { MATERIALS } from './rules'
 
@@ -167,6 +167,19 @@ describe('checkRecipe mirrors RecipeDealer.check', () => {
 })
 
 describe('helpers', () => {
+  it('roundedPercent: holo rolls shown to 2 decimals, the stored value untouched', () => {
+    expect(scaledToPercent(BigInt(STANDARD_ROLLS.paper), HOLO_ONE)).toBe('2.5320565519103609')
+    expect(roundedPercent(BigInt(STANDARD_ROLLS.paper), HOLO_ONE)).toBe('2.53')
+    expect(roundedPercent(BigInt(STANDARD_ROLLS.wood), HOLO_ONE)).toBe('5.13')
+    expect(roundedPercent(BigInt(STANDARD_ROLLS.fire), HOLO_ONE)).toBe('29.29')
+    expect(roundedPercent(BigInt(STANDARD_ROLLS.coal), HOLO_ONE)).toBe('68.38')
+    expect(roundedPercent(HOLO_ONE / 2n, HOLO_ONE)).toBe('50')
+    expect(roundedPercent(HOLO_ONE, HOLO_ONE)).toBe('100')
+    expect(roundedPercent(0n, HOLO_ONE)).toBe('0')
+    expect(roundedPercent(10n ** 12n, HOLO_ONE)).toBe('0.0001') // too small to round: shown exactly
+    expect(roundedPercent(150_000_000n, SHARE_SCALE)).toBe('15')
+    expect(standardRecipe().types[0].holo).toEqual({ mode: 'independent', frame: STANDARD_ROLLS.paper, picture: STANDARD_ROLLS.paper })
+  })
   it('slugify', () => {
     expect(slugify('Gold')).toBe('gold')
     expect(slugify('  Rose Gold!! ')).toBe('rose-gold')

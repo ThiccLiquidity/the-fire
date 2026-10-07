@@ -4,7 +4,7 @@ import { newId } from '../db'
 import { FRAME_SETS, frameSetFiles, frameSetLabel, missingFramesFor } from '../frames'
 import {
   FRESH_PDA_ODDS, HOLO_ONE, SHARE_SCALE, SUPPLY_LABEL, UINT32_MAX, cardsPerPack, checkRecipe, cloneRecipe, holoLooksFor,
-  holoOdds, holoOddsGivenHolo, parseUint, percentToScaled, scaledToPercent, slotTypeIndexes, slugify,
+  holoOdds, holoOddsGivenHolo, parseUint, percentToScaled, roundedPercent, scaledToPercent, slotTypeIndexes, slugify,
   specialAllHoloRecipe, standardRecipe, type CardTypeDef, type HoloRule, type Problem, type Recipe, type SlotDef, type Supply,
 } from '../recipe'
 import { countForShare, seriesResult, shareForCount, type TypeResult } from '../rarity'
@@ -15,18 +15,20 @@ import { SeriesResult } from './SeriesResult'
 
 const pct = (x: number, digits = 2) => `${(x * 100).toFixed(digits).replace(/\.?0+$/, '')}%`
 
-/** A percentage typed as text, stored exactly as an integer at `scale` (1e9 for shares, 1e18 for holo chances). */
-function PercentInput({ value, scale, onChange, disabled, testId }: { value: bigint; scale: bigint; onChange: (v: bigint) => void; disabled?: boolean; testId?: string }) {
-  const [text, setText] = useState(() => scaledToPercent(value, scale))
+/** A percentage typed as text, stored exactly as an integer at `scale` (1e9 for shares, 1e18 for holo chances). With
+ *  `round`, a stored value is shown to at most 2 decimals (the exact value on hover); it stays exact until edited. */
+function PercentInput({ value, scale, onChange, disabled, testId, round }: { value: bigint; scale: bigint; onChange: (v: bigint) => void; disabled?: boolean; testId?: string; round?: boolean }) {
+  const show = (v: bigint) => (round ? roundedPercent(v, scale) : scaledToPercent(v, scale))
+  const [text, setText] = useState(() => show(value))
   useEffect(() => {
-    if (percentToScaled(text, scale) !== value) setText(scaledToPercent(value, scale))
+    if (percentToScaled(text, scale) !== value) setText(show(value))
     // only when the stored value changes from outside
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, scale])
   const bad = percentToScaled(text, scale) == null
   return (
     <span className="pct-input">
-      <input value={text} disabled={disabled} aria-invalid={bad} data-testid={testId} inputMode="decimal"
+      <input value={text} disabled={disabled} aria-invalid={bad} data-testid={testId} inputMode="decimal" title={`${scaledToPercent(value, scale)}%`}
         onChange={(e) => { setText(e.target.value); const v = percentToScaled(e.target.value, scale); if (v != null) onChange(v) }} />%
     </span>
   )
@@ -309,9 +311,9 @@ function TypeCard({ r, t, i, locked, problems, n, result, onChange, onMove, onRe
         {t.holo.mode === 'independent' ? (
           <>
             <label className="field"><span className="field-label">Frame roll</span>
-              <PercentInput value={parseUint(t.holo.frame) ?? 0n} scale={HOLO_ONE} disabled={locked} onChange={(v) => setHolo({ ...(t.holo as { mode: 'independent'; frame: string; picture: string }), frame: v.toString() })} testId={`type-${i}-holo-frame`} /></label>
+              <PercentInput value={parseUint(t.holo.frame) ?? 0n} scale={HOLO_ONE} disabled={locked} onChange={(v) => setHolo({ ...(t.holo as { mode: 'independent'; frame: string; picture: string }), frame: v.toString() })} testId={`type-${i}-holo-frame`} round /></label>
             <label className="field"><span className="field-label">Picture roll</span>
-              <PercentInput value={parseUint(t.holo.picture) ?? 0n} scale={HOLO_ONE} disabled={locked} onChange={(v) => setHolo({ ...(t.holo as { mode: 'independent'; frame: string; picture: string }), picture: v.toString() })} testId={`type-${i}-holo-picture`} /></label>
+              <PercentInput value={parseUint(t.holo.picture) ?? 0n} scale={HOLO_ONE} disabled={locked} onChange={(v) => setHolo({ ...(t.holo as { mode: 'independent'; frame: string; picture: string }), picture: v.toString() })} testId={`type-${i}-holo-picture`} round /></label>
           </>
         ) : (
           (['none', 'frame', 'picture', 'full'] as const).map((h, k) => (

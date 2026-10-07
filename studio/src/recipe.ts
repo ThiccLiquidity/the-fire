@@ -207,6 +207,16 @@ export function scaledToPercent(v: bigint, scale: bigint): string {
   return frac ? `${int}.${frac}` : int
 }
 
+/** For display only: the percent rounded to at most `digits` decimals (half up). A non-zero value that would round to 0
+ *  is shown exactly. The stored value is never changed by this. */
+export function roundedPercent(v: bigint, scale: bigint, digits = 2): string {
+  const places = scale.toString().length - 3
+  if (places <= digits) return scaledToPercent(v, scale)
+  const unit = 10n ** BigInt(places - digits)
+  const r = ((v + unit / 2n) / unit) * unit
+  return r === 0n && v > 0n ? scaledToPercent(v, scale) : scaledToPercent(r, scale)
+}
+
 // ---------------------------------------------------------------- checks
 
 export interface Problem {
