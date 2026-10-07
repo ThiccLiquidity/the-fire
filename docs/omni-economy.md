@@ -168,7 +168,7 @@ Every PAPER spent anywhere is burned.
 - **The PAPER price feed.** PAPER already has a live pool, but `PAPER_USD_FEED` must be the deployed `PaperUsdTwap`
   (step 2 of `docs/deploy.md`), never the pool itself. It sets the pack PAPER cap and guards the fee burn. The feed
   adopts a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool (PLANK valued through `PlankUsdTwap`) only once it holds at least
-  $1,000 on its other side (`MIN_LIQUIDITY_USD`) at every checkpoint for 20 hours, then reports its first price one
+  $10 on its other side (`MIN_LIQUIDITY_USD`; any real pool, however thin) at every checkpoint for 20 hours, then reports its first price one
   full 20-hour window later: about 40 hours after the first checkpoint. Until then packs take the set PAPER (no cap)
   and case and grading fees wait in `PaperBurner`. If the feed later goes quiet, the last cap it gave holds. The owner
   can replace the sale's feed between drops (`FireSale.setFeeds`); the burner's feeds are set once.

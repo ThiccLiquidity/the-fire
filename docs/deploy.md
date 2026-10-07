@@ -27,7 +27,7 @@ forge script script/DeployInfra.s.sol --rpc-url $env:RPC --account deployer --se
 Uses `PAPER`, `USDG`, `WETH`, `UNIV2_FACTORY`, `ETH_USD_FEED`, `PLANK`, `PLANK_USD_FEED` (step 1); checks chain 4663,
 contract code at each, PAPER and PLANK are 18 decimals, the ETH/USD feed is 8 and the PLANK feed 18. Deploys `OpenDrandRouter` and `PaperUsdTwap`. Neither has an owner. Put them in
 `.env` as `DRAND_ROUTER` and `PAPER_USD_FEED`. `PAPER_USD_FEED` is this `PaperUsdTwap`, never the PAPER pool itself.
-It finds a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool holding at least $1,000 on its other side (PLANK valued by
+It finds a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool holding at least $10 on its other side (PLANK valued by
 `PLANK_USD_FEED`) and reports its first price about 40 hours after the keeper's first checkpoint (20 hours as
 candidate, then one 20-hour window). Until then packs take the set PAPER (no $1 cap) and case and grading fees wait in
 `PaperBurner`.

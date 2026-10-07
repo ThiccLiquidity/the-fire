@@ -14,7 +14,7 @@ interface IInfraFeed {
  * Step 2 of the deploy (see ../docs/deploy.md): the shared pieces the card contracts are wired to.
  *   - OpenDrandRouter: drand randomness for card opens and PDA reveals. No owner, no fee.
  *   - PaperUsdTwap: the PAPER/USD feed (the pack PAPER cap, and PaperBurner's guard). It finds the PAPER/WETH,
- *     PAPER/USDG or PAPER/PLANK pool itself (one holding >= $1,000 on its other side) and reports 0 until it has a
+ *     PAPER/USDG or PAPER/PLANK pool itself (one holding >= $10 on its other side) and reports 0 until it has a
  *     price, about 40h after the keeper's first checkpoint (20h as candidate, then one 20h window). PAPER_USD_FEED is
  *     this contract, not the pool.
  * Neither has an owner; nothing to configure after. Step 1 is PlankUsdTwap (DeployTwap.s.sol), step 3 the cards
