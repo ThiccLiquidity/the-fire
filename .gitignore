@@ -34,10 +34,9 @@ Thumbs.db
 # Local tool settings
 .claude/settings.local.json
 
-# Ops: generated files (Safe batch files, rehearsal outputs)
-contracts/safe-tx/*
-!contracts/safe-tx/.gitkeep
+# Ops: generated files (rehearsal and test outputs)
 contracts/series/rehearsal-*.json
 deployments/rehearsal-*.json
+deployments/test-*.json
 deployments/31337.json
 ops/rehearsal/out/

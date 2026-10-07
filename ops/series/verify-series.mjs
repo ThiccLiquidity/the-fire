@@ -1,4 +1,4 @@
-// VerifySeries: the read-back between the two Safe signings of a Series (docs/deploy.md, step 6).
+// VerifySeries: the read-back between the two owner signings of a Series (docs/deploy.md, step 6).
 //
 // After batch A (recipe, characters, dealer, images) is on chain and BEFORE batch B (configureDrop, which locks
 // the Series), this reads everything back from the chain and checks it, read-only:

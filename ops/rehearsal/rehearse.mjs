@@ -1,9 +1,9 @@
-// The launch rehearsal: the whole life of a Series on a local chain, with the real deploy scripts, the real Safe batch
-// files, the real snapshot, VerifySeries, VerifyDeploy and the real keeper code.
+// The launch rehearsal: the whole life of a Series on a local chain, with the real deploy and owner scripts, the real
+// snapshot, VerifySeries, VerifyDeploy and the real keeper code.
 //
-//   deploy (DeployTwap, DeployInfra, DeployCards) -> VerifyDeploy -> the Safe accepts ownership (impersonated)
-//   -> keeper: PLANK checkpoint, PAPER candidate -> batch A from the Safe file -> snapshot -> VerifySeries (RED with a
-//   missing image, then GREEN) -> batch B -> buy (one buy with the PLANK swap failing: its burn share waits in
+//   deploy (DeployTwap, DeployInfra, DeployCards) -> VerifyDeploy -> the owner accepts ownership (AcceptOwnership,
+//   the owner wallet impersonated) -> keeper: PLANK checkpoint, PAPER candidate -> batch A sent from the owner
+//   (ConfigureSeries) -> snapshot -> VerifySeries (RED with a missing image, then GREEN) -> batch B -> buy (one buy with the PLANK swap failing: its burn share waits in
 //   PlankBurner) -> sold out, closed -> open -> keeper delivers drand (fulfillMany) and deals (process) -> case and
 //   grade (protect) -> keeper delivers and finishes the grading (finish(index, ids) from the Protected event)
 //   -> keeper flushes PlankBurner; PaperBurner waits (no PAPER price) and alerts -> 40 h later the PAPER feed is live
@@ -12,11 +12,11 @@
 // Two modes:
 //   node rehearsal/rehearse.mjs                 plain anvil with stand-ins (script/dev/DevContracts.sol), no network
 //       needed. The first open is timed to drand round 1000 and proved through the REAL OpenDrandRouter with drand's
-//       real signature (BLS verified on-chain); then the Safe switches FireCards and FirePsa to DevDrandRouter
+//       real signature (BLS verified on-chain); then the owner switches FireCards and FirePsa to DevDrandRouter
 //       adapters (any signature) so the rest runs without drand. Local servers stand in for drand, two IPFS gateways
 //       and the alert webhook.
 //   node rehearsal/rehearse.mjs --fork <RPC>    an anvil fork of Robinhood Chain (needs the RPC and drand reachable):
-//       real tokens, Uniswap pools, Chainlink and drand; the Safe is SAFE (impersonated) or a stand-in. The PAPER feed
+//       real tokens, Uniswap pools, Chainlink and drand; the owner is OWNER (impersonated) or a stand-in. The PAPER feed
 //       leg is skipped (a fork's Chainlink doesn't update across 40 hours).
 // Options: --keep (leave anvil running at the end), --port 8546.
 // Needs: forge and anvil (PATH or ~/.foundry/bin), npm install in ops/, ops/keeper and ops/snapshot.
@@ -57,7 +57,6 @@ const keeperA = mnemonicToAccount(MNEMONIC, { addressIndex: 8, nonceManager });
 const keeperB = mnemonicToAccount(MNEMONIC, { addressIndex: 9, nonceManager });
 const FIRE = 7n;
 const DEP_FILE = resolve(REPO, "deployments", `rehearsal-${FORK ? "fork" : "anvil"}.json`);
-const SAFE_DIR = resolve(CONTRACTS, "safe-tx");
 const RECIPE_PATH = resolve(CONTRACTS, "series", `rehearsal-fire-${FIRE}.json`);
 const OUT = resolve(REPO, "ops/rehearsal/out");
 const G = DRAND_GENESIS;
@@ -76,7 +75,7 @@ const webAbi = (n) => JSON.parse(readFileSync(resolve(REPO, "web/src/lib/abi", `
 const ABI = {
   sale: webAbi("fireSale"), cards: webAbi("fireCards"), psa: webAbi("firePsa"), packs: webAbi("firePacks"), dealer: webAbi("recipeDealer"),
   burner: webAbi("paperBurner"), plankBurner: webAbi("plankBurner"),
-  ownable: [{ type: "function", name: "acceptOwnership", inputs: [], outputs: [], stateMutability: "nonpayable" }],
+  ownable: [{ type: "function", name: "owner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" }],
   setRandomness: [{ type: "function", name: "setRandomness", inputs: [{ name: "s", type: "address" }], outputs: [], stateMutability: "nonpayable" }],
 };
 
@@ -101,25 +100,18 @@ async function deploy(account, file, name, args = []) {
   const r = await pub.waitForTransactionReceipt({ hash });
   return { address: getAddress(r.contractAddress), abi };
 }
-/** Send as an address nobody holds the key of (the Safe), anvil-impersonated. */
+/** Send as an address whose key isn't here (the owner's hardware wallet), anvil-impersonated. */
 async function asImpersonated(from, to, data, value = 0n) {
   await rpc("anvil_impersonateAccount", [from]);
   const hash = await pub.request({ method: "eth_sendTransaction", params: [{ from, to, data, value: toHex(value), gas: toHex(15_000_000n) }] });
   const r = await pub.waitForTransactionReceipt({ hash });
   await rpc("anvil_stopImpersonatingAccount", [from]);
-  if (r.status !== "success") fail(`Safe transaction to ${to} reverted (${hash})`);
+  if (r.status !== "success") fail(`owner transaction to ${to} reverted (${hash})`);
   return r;
 }
-/** Execute a Safe Transaction Builder file as the Safe (what signing it in the Safe app does). */
-async function executeSafeFile(safe, path) {
-  const f = JSON.parse(readFileSync(path, "utf8"));
-  check(f.version === "1.0" && String(f.chainId) === String(chain.id) && Array.isArray(f.transactions), `${path.split("/").pop()} is a Safe Transaction Builder batch for chain ${f.chainId} (${f.transactions.length} tx)`);
-  check(getAddress(f.meta.createdFromSafeAddress) === getAddress(safe), "the batch names the Safe");
-  for (const t of f.transactions) await asImpersonated(safe, getAddress(t.to), t.data, BigInt(t.value));
-}
 
-function forge(script, env, extra = []) {
-  const argv = ["script", script, "--rpc-url", RPC, "--unlocked", "--sender", deployer.address, "--broadcast", "--slow", ...(SOLC ? ["--use", SOLC] : []), ...extra];
+function forge(script, env, extra = [], sender = deployer.address) {
+  const argv = ["script", script, "--rpc-url", RPC, "--unlocked", "--sender", sender, "--broadcast", "--slow", ...(SOLC ? ["--use", SOLC] : []), ...extra];
   say(`forge ${argv.slice(0, 2).join(" ")} ...`);
   try {
     return execFileSync(bin("forge"), argv, {
@@ -140,6 +132,12 @@ function forgeRead(script, env) {
   } catch (e) {
     return `${e.stdout ?? ""}\n${e.stderr ?? ""}`;
   }
+}
+/** A forge script signed by the owner: on mainnet the hardware wallet (--ledger --hd-paths ... --sender <owner>), here
+ *  the same address impersonated (--unlocked). */
+async function forgeAsOwner(owner, script, env) {
+  await rpc("anvil_impersonateAccount", [owner]);
+  try { return forge(script, env, [], owner); } finally { await rpc("anvil_stopImpersonatingAccount", [owner]); }
 }
 const logLines = (out, re) => out.split("\n").map((l) => l.trim()).filter((l) => re.test(l)).map((l) => `    ${l}`).join("\n");
 
@@ -167,7 +165,8 @@ async function main() {
 
   // ---------------- inputs: stand-ins on plain anvil, the real addresses on a fork
   let inputs;
-  let safe = getAddress(args.safe ?? process.env.SAFE ?? "0x5afe5afe5afe5afe5afe5afe5afe5afe5afe5afe");
+  // the owner: one hardware wallet (a plain address); nobody here holds its key
+  const owner = getAddress(args.owner ?? process.env.OWNER ?? "0x1edfe11e1edfe11e1edfe11e1edfe11e1edfe11e");
   let dev = {};
   if (!FORK) {
     step("stand-ins: tokens, ETH/USD, Uniswap V2 (PLANK/WETH and PAPER/WETH pools), Paper Press, DevDrandRouter");
@@ -190,18 +189,16 @@ async function main() {
       PAPER: paper.address, PLANK: plank.address, USDG: usdg.address, WETH: weth.address, MILL: press.address, ETH_USD_FEED: eth.address,
       PLANK_WETH_V2_PAIR: plankPair, UNIV2_FACTORY: factory.address, V2_ROUTER: router.address,
     };
-    await rpc("anvil_setCode", [safe, "0x00"]); // a contract stands in for the Safe (DeployCards wants a multisig)
-    say(`stand-ins deployed; the Safe stand-in is ${safe}`);
+    say(`stand-ins deployed; the owner (hardware wallet stand-in) is ${owner}`);
   } else {
     const env = Object.fromEntries(readFileSync(resolve(CONTRACTS, ".env.example"), "utf8").split("\n").filter((l) => /^[A-Z0-9_]+=0x/.test(l)).map((l) => l.split("=")));
     inputs = { PAPER: env.PAPER, PLANK: env.PLANK, USDG: env.USDG, WETH: env.WETH, MILL: env.MILL, ETH_USD_FEED: env.ETH_USD_FEED, PLANK_WETH_V2_PAIR: env.PLANK_WETH_V2_PAIR, UNIV2_FACTORY: env.UNIV2_FACTORY, V2_ROUTER: env.V2_ROUTER };
-    if ((await pub.getCode({ address: safe })) === undefined) await rpc("anvil_setCode", [safe, "0x00"]);
   }
-  await rpc("anvil_setBalance", [safe, toHex(parseEther("10"))]);
+  await rpc("anvil_setBalance", [owner, toHex(parseEther("10"))]);
 
   // ---------------- deploy with the real scripts
   step("deploy: DeployTwap, DeployInfra, DeployCards (the real scripts; they write the deployments file)");
-  const env = { ...inputs, OWNER: safe, ROYALTY_RECEIVER: royalty.address, ROYALTY_BPS: "500", REVENUE_WALLET: revenue.address, PACK_IMAGE_BASE: "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/" };
+  const env = { ...inputs, OWNER: owner, ROYALTY_RECEIVER: royalty.address, ROYALTY_BPS: "500", REVENUE_WALLET: revenue.address, PACK_IMAGE_BASE: "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/" };
   forge("script/DeployTwap.s.sol", env);
   forge("script/DeployInfra.s.sol", env);
   forge("script/DeployCards.s.sol", env);
@@ -209,16 +206,20 @@ async function main() {
   const C = Object.fromEntries(Object.entries(dep.contracts).map(([k, v]) => [k, getAddress(v)]));
   check(Object.keys(C).length === 15, `deployments file has all 15 contracts (${DEP_FILE.replace(REPO + "/", "")})`);
 
-  step("VerifyDeploy before the Safe accepts (expect WAIT on six owners)");
+  step("VerifyDeploy before the owner accepts (expect WAIT on six owners)");
   let vd = forgeRead("script/VerifyDeploy.s.sol", {});
   console.log(logLines(vd, /^(OK|WAIT|FAIL|INFO)|FAIL, /));
   check(/0 FAIL/.test(vd) && (vd.match(/acceptOwnership/g) ?? []).length === 6, "VerifyDeploy: nothing wrong, six acceptOwnership() pending");
 
-  step("the Safe accepts ownership (impersonated)");
-  for (const n of ["FirePacks", "FireCards", "RecipeDealer", "FireCredits", "FirePsa", "PaperBurner"]) {
-    await asImpersonated(safe, C[n], encodeFunctionData({ abi: ABI.ownable, functionName: "acceptOwnership" }));
+  step("the owner accepts ownership: AcceptOwnership.s.sol signed by the owner (impersonated)");
+  const outRefused = forgeRead("script/AcceptOwnership.s.sol", {});
+  check(/sign as the owner/.test(outRefused), "AcceptOwnership refuses any signer but the owner");
+  await forgeAsOwner(owner, "script/AcceptOwnership.s.sol", {});
+  for (const n of ["FirePacks", "FireCards", "RecipeDealer", "FireCredits", "FirePsa", "PaperBurner", "FireSale"]) {
+    const o = await pub.readContract({ address: C[n], abi: ABI.ownable, functionName: "owner" });
+    if (getAddress(o) !== owner) fail(`${n} is owned by ${o}, not the owner`);
   }
-  say("accepted on FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa, PaperBurner");
+  say("the owner holds FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa, PaperBurner and FireSale");
 
   // ---------------- keeper: first checkpoints
   const drand = await drandServer(() => clockNow, { real: !!FORK });
@@ -249,7 +250,7 @@ async function main() {
   check(hook.posts.some((p) => /heartbeat/.test(p)), "the keeper posted its start-up heartbeat to the webhook");
 
   // ---------------- Series: batch A
-  step("Series 7, batch A (content) from ConfigureSeries -> Safe Transaction Builder file -> executed as the Safe");
+  step("Series 7, batch A (content): ConfigureSeries sent from the owner (impersonated)");
   const recipe = JSON.parse(readFileSync(resolve(CONTRACTS, "test/cards/recipe-standard.json"), "utf8"));
   recipe.imagesBase = "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/";
   const saleBlock = {
@@ -259,14 +260,16 @@ async function main() {
   };
   recipe.sale = saleBlock;
   writeFileSync(RECIPE_PATH, JSON.stringify(recipe, null, 1));
-  rmSync(resolve(SAFE_DIR, `series-${FIRE}-A.json`), { force: true });
-  const outA = forgeRead("script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "A", SAFE_TX_DIR: SAFE_DIR });
-  if (!existsSync(resolve(SAFE_DIR, `series-${FIRE}-A.json`))) console.log(outA.split("\n").slice(-30).join("\n"));
-  check(existsSync(resolve(SAFE_DIR, `series-${FIRE}-A.json`)), "batch A file written");
-  console.log(logLines(outA, /^(RecipeDealer|FireCards|FirePsa)\./));
-  const outBearly = forgeRead("script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "B", SAFE_TX_DIR: SAFE_DIR, DROP_START: String(clockNow + 600n) });
+  const simA = forgeRead("script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "AB", SIMULATE: "true", DROP_START: String(clockNow + 600n) });
+  check(/simulated OK: RecipeDealer.setRecipe/.test(simA) && /simulated OK: FireSale.configureDrop/.test(simA), "SIMULATE=true runs batches A then B as the owner (nothing sent)");
+  const outBearly = forgeRead("script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "B", DROP_START: String(clockNow + 600n) });
   check(/on chain: the recipe differs/.test(outBearly), "batch B is refused before batch A is on chain");
-  await executeSafeFile(safe, resolve(SAFE_DIR, `series-${FIRE}-A.json`));
+  const outNotOwner = forgeRead("script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "A" });
+  check(/sign as the owner/.test(outNotOwner), "batch A refuses any signer but the owner");
+  const outA = await forgeAsOwner(owner, "script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "A" });
+  console.log(logLines(outA, /^(RecipeDealer|FireCards|FirePsa)\./));
+  const dealt = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "fires", args: [FIRE] });
+  check(getAddress(dealt[0]) === C.RecipeDealer, "batch A is on chain (FireCards' dealer for the Series is RecipeDealer)");
 
   // ---------------- snapshot
   step("snapshot of PLANK holders ($69+) with ops/snapshot");
@@ -297,11 +300,10 @@ async function main() {
   check(v.green, `GREEN: ${v.images} images x 2 gateways, recipe, characters, fixed PDA odds, images base and the holder root`);
 
   // ---------------- batch B
-  step("batch B (lock): configureDrop from the Safe file");
+  step("batch B (lock): configureDrop sent from the owner (after reading batch A back)");
   const start = (await chainNow()) + 300n;
-  const outB = forgeRead("script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "B", SAFE_TX_DIR: SAFE_DIR, DROP_START: String(start), HOLDER_ROOT: snap.root });
-  check(existsSync(resolve(SAFE_DIR, `series-${FIRE}-B.json`)) && /FireSale.configureDrop/.test(outB), "batch B file written (after reading batch A back)");
-  await executeSafeFile(safe, resolve(SAFE_DIR, `series-${FIRE}-B.json`));
+  const outB = await forgeAsOwner(owner, "script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "B", DROP_START: String(start), HOLDER_ROOT: snap.root });
+  check(/FireSale.configureDrop/.test(outB), "batch B sent");
   const drop = await pub.readContract({ address: C.FireSale, abi: ABI.sale, functionName: "dropOf", args: [FIRE] });
   check(drop.start === start && drop.holderRoot === snap.root, "the drop is set with the snapshot's holder root");
 
@@ -353,11 +355,11 @@ async function main() {
 
   // ---------------- switch randomness (plain anvil only)
   if (!FORK) {
-    step("the Safe switches FireCards and FirePsa to DevDrandRouter adapters (only new requests use them)");
+    step("the owner switches FireCards and FirePsa to DevDrandRouter adapters (only new requests use them)");
     const ca = await deploy(deployer, "OpenVRFAdapter", "OpenVRFAdapter", [dev.devDrand.address, C.FireCards]);
     const pa = await deploy(deployer, "OpenVRFAdapter", "OpenVRFAdapter", [dev.devDrand.address, C.FirePsa]);
-    await asImpersonated(safe, C.FireCards, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [ca.address] }));
-    await asImpersonated(safe, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [pa.address] }));
+    await asImpersonated(owner, C.FireCards, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [ca.address] }));
+    await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [pa.address] }));
     say(`cards -> ${ca.address}, PDA -> ${pa.address}`);
     step("open: buyer 1 opens 1 pack, buyer 2 opens 2 packs");
     await tx(buyer1, C.FireCards, ABI.cards, "open", [FIRE, 1n]);

@@ -9,8 +9,8 @@ import {FireSale} from "../src/cards/FireSale.sol";
 import {Deployments} from "./Deployments.sol";
 
 /**
- * Sets up one Series from a recipe JSON (the Card Studio exports it; shape in ../docs/cards-contracts.md), in two Safe
- * signings with a check in between (docs/deploy.md, step 6):
+ * Sets up one Series from a recipe JSON (the Card Studio exports it; shape in ../docs/cards-contracts.md), in two
+ * signings on the owner's hardware wallet with a check in between (docs/deploy.md, step 6):
  *
  *   Batch A, the content: RecipeDealer.setRecipe, setCharacters (+ appendCharacters in batches for long lists),
  *     FireCards.setDealer, FireCards.setImagesBase (if "imagesBase" is given).
@@ -18,22 +18,21 @@ import {Deployments} from "./Deployments.sol";
  *   Then ops/series (VerifySeries) reads it all back from the chain, diffs it against the JSON and loads every image
  *     the contract can point at through two gateways. Only when it's green:
  *   Batch B, the lock: FireSale.configureDrop from the "sale" block (every FireSale.DropConfig field by name, in
- *     contract units). It locks the Series: recipe, characters and images are fixed from then. Before writing
- *     batch B the script reads the chain and refuses unless batch A is there exactly as the JSON says.
+ *     contract units). It locks the Series: recipe, characters and images are fixed from then. Before sending batch B
+ *     the script reads the chain and refuses unless batch A is there exactly as the JSON says.
  *
- * Each batch is written as a Safe Transaction Builder file (safe-tx/series-<fire>-<A|B>.json: Safe -> Apps ->
- * Transaction Builder -> drag the file in), never as calldata to paste. The calls are also printed.
+ * Each batch is sent from the owner, signed on the device (one confirmation per call). The calls are also printed.
  *
- *   BATCH=A|B|AB (default A), RECIPE_JSON=series/recipe.json (the file must be under contracts/series/)
+ *   forge script script/ConfigureSeries.s.sol --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH `
+ *     --sender $env:OWNER --slow --broadcast                          (--trezor works too; no --broadcast = dry run)
+ *   SIMULATE=true with --fork-url $env:RPC: run the batch as the owner on a fork (impersonated, no device, nothing
+ *     sent). BATCH=AB SIMULATE=true shows batch B passing after batch A.
+ *
+ *   BATCH=A|B (AB only with SIMULATE; default A), RECIPE_JSON=series/recipe.json (the file must be under contracts/series/)
  *   RECIPE_DEALER, FIRE_CARDS, FIRE_SALE: read from deployments/<chainId>.json when not set
  *   DROP_START=<unix seconds>, HOLDER_ROOT=0x...: override the sale block's start and holderRoot (both are usually
  *     decided last: the snapshot runs just before the drop)
- *   CHARACTER_BATCH=200, SAFE_TX_DIR=safe-tx
- *   SIMULATE=true: run the batch as the owner on a fork (impersonated) and report each call; nothing is sent.
- *     BATCH=AB SIMULATE=true shows batch B passing after batch A.
- *   forge script script/ConfigureSeries.s.sol --rpc-url $RPC                 (writes the files; no key needed)
- *   forge script script/ConfigureSeries.s.sol --fork-url $RPC               (with SIMULATE=true)
- *   SEND=true ... --account deployer --sender <owner> --broadcast            (testnet only: the signer is the owner)
+ *   CHARACTER_BATCH=200
  *
  * The JSON is read strictly: unknown keys (PDA odds included: they are fixed in FirePsa for every Series), numbers too
  * big for their field and a drop start more than a year away are refused, so a typo can't slip through as a default.
@@ -62,57 +61,57 @@ contract ConfigureSeries is Deployments {
         bytes32 which = keccak256(bytes(vm.envOr("BATCH", string("A"))));
         bool a = which == keccak256("A") || which == keccak256("AB");
         bool b = which == keccak256("B") || which == keccak256("AB");
-        require(a || b, "BATCH must be A, B or AB");
+        require(a || b, "BATCH must be A or B");
+        bool simulate = vm.envOr("SIMULATE", false);
+        require(!(a && b) || simulate, "BATCH=AB only with SIMULATE=true: VerifySeries must be GREEN between A and B");
         address dealer = _addr("RECIPE_DEALER", "RecipeDealer");
         address cards = _addr("FIRE_CARDS", "FireCards");
         address sale = vm.envOr("FIRE_SALE", deployed("FireSale"));
         address owner = FireCards(cards).owner();
         Series memory s = _parse(json, b);
-        bool simulate = vm.envOr("SIMULATE", false);
 
+        Call[] memory calls;
         if (a) {
-            Call[] memory callsA = build(json, dealer, cards, vm.envOr("CHARACTER_BATCH", uint256(200)));
-            _emit("A", s.fire, callsA, owner, string.concat("Series ", vm.toString(s.fire), " content (batch A): recipe, characters, dealer, images. Nothing locks yet."));
-            if (simulate) _simulate(owner, callsA);
+            calls = build(json, dealer, cards, vm.envOr("CHARACTER_BATCH", uint256(200)));
+            _print(string.concat("Series ", vm.toString(s.fire), ", batch A (content: recipe, characters, dealer, images; nothing locks yet)"), calls);
+            if (simulate) _simulate(owner, calls);
+            else _send(owner, calls);
         }
         if (b) {
             require(s.hasSale, "batch B needs the JSON's sale block");
             require(sale != address(0), "batch B: set FIRE_SALE or deploy FireSale first");
             checkOnChain(json, dealer, cards); // batch A must be on chain exactly as the JSON says
-            Call[] memory callsB = new Call[](1);
-            callsB[0] = Call(sale, abi.encodeCall(FireSale.configureDrop, (s.fire, s.drop)), "FireSale.configureDrop");
-            _emit("B", s.fire, callsB, owner, string.concat("Series ", vm.toString(s.fire), " lock (batch B): configureDrop. Sign only after VerifySeries is green."));
-            if (simulate) _simulate(owner, callsB);
-        }
-        if (vm.envOr("SEND", false)) {
-            require(!simulate, "SEND and SIMULATE together");
-            Call[] memory all = a ? build(json, dealer, cards, vm.envOr("CHARACTER_BATCH", uint256(200))) : new Call[](0);
-            vm.startBroadcast();
-            for (uint256 i; i < all.length; i++) {
-                (bool ok,) = all[i].to.call(all[i].data);
-                require(ok, all[i].what);
-            }
-            if (b) {
-                (bool ok,) = sale.call(abi.encodeCall(FireSale.configureDrop, (s.fire, s.drop)));
-                require(ok, "FireSale.configureDrop");
-            }
-            vm.stopBroadcast();
+            calls = new Call[](1);
+            calls[0] = Call(sale, abi.encodeCall(FireSale.configureDrop, (s.fire, s.drop)), "FireSale.configureDrop");
+            _print(string.concat("Series ", vm.toString(s.fire), ", batch B (the lock: configureDrop; only after VerifySeries is GREEN)"), calls);
+            if (simulate) _simulate(owner, calls);
+            else _send(owner, calls);
         }
     }
 
-    /// @dev Print a batch and write it as a Safe Transaction Builder file.
-    function _emit(string memory tag, uint256 fire, Call[] memory calls, address safe, string memory description) internal {
-        console.log(string.concat("Batch ", tag, ":"));
+    function _print(string memory title, Call[] memory calls) internal pure {
+        console.log(title);
         for (uint256 i; i < calls.length; i++) {
             console.log(calls[i].what);
             console.log("  to  ", calls[i].to);
             console.log("  data");
             console.logBytes(calls[i].data);
         }
-        string memory dir = vm.envOr("SAFE_TX_DIR", string.concat(vm.projectRoot(), "/safe-tx"));
-        string memory path = string.concat(dir, "/series-", vm.toString(fire), "-", tag, ".json");
-        vm.writeFile(path, safeJson(calls, block.chainid, safe, string.concat("Series ", vm.toString(fire), " batch ", tag), description));
-        console.log(string.concat("Safe Transaction Builder file: ", path));
+    }
+
+    /// @dev Send the calls from the owner (the hardware wallet signs each). Without --broadcast forge only simulates.
+    function _send(address owner, Call[] memory calls) internal {
+        require(
+            msg.sender == owner,
+            string.concat("sign as the owner ", vm.toString(owner), ": --ledger (or --trezor) --hd-paths <its path> --sender <it>, or SIMULATE=true on a fork")
+        );
+        vm.startBroadcast(owner);
+        for (uint256 i; i < calls.length; i++) {
+            (bool ok,) = calls[i].to.call(calls[i].data);
+            require(ok, string.concat(calls[i].what, " reverts"));
+        }
+        vm.stopBroadcast();
+        console.log(string.concat(vm.toString(calls.length), " call(s) from the owner"));
     }
 
     /// @dev Run the calls as the owner (a fork; nothing is sent) and stop at the first that fails.
@@ -127,26 +126,6 @@ contract ConfigureSeries is Deployments {
             }
             console.log(string.concat("simulated OK: ", calls[i].what));
         }
-    }
-
-    /// @notice A Safe Transaction Builder batch file (the format its "drag and drop a JSON" import reads).
-    function safeJson(Call[] memory calls, uint256 chainId, address safe, string memory name, string memory description)
-        public
-        pure
-        returns (string memory out)
-    {
-        out = string.concat(
-            '{"version":"1.0","chainId":"', vm.toString(chainId), '","createdAt":0,"meta":{"name":"', name,
-            '","description":"', description, '","txBuilderVersion":"1.16.5","createdFromSafeAddress":"', vm.toString(safe),
-            '","createdFromOwnerAddress":""},"transactions":['
-        );
-        for (uint256 i; i < calls.length; i++) {
-            out = string.concat(
-                out, i == 0 ? "" : ",", '{"to":"', vm.toString(calls[i].to), '","value":"0","data":"', vm.toString(calls[i].data),
-                '","contractMethod":null,"contractInputsValues":null}'
-            );
-        }
-        out = string.concat(out, "]}");
     }
 
     /// @notice Reverts (naming what differs) unless batch A is on chain exactly as the JSON says: the dealer's recipe

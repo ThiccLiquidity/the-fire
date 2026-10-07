@@ -28,13 +28,14 @@ interface IVFeed {
 
 /**
  * Read-only check of a deployment (docs/deploy.md, step 4): everything in deployments/<chainId>.json has code, every
- * owner is the multisig (or the multisig still has to accept), every set-once link points where it should, the
- * feeds are live, and nothing is paused or locked by mistake. Prints OK / WAIT / FAIL per line and fails if any FAIL.
+ * owner is the hardware wallet the deploy recorded as OWNER (or it still has to accept), every set-once link points
+ * where it should, the feeds are live, and nothing is paused or locked by mistake. Prints OK / WAIT / FAIL per line
+ * and fails if any FAIL.
  *
  *   forge script script/VerifyDeploy.s.sol --rpc-url $env:RPC
  *
- * OWNER defaults to the deployments file's owner. SERIES=7,8 limits the Series checked (default: ids 0..SERIES_SCAN,
- * 64). Nothing is sent and no key is needed.
+ * The expected owner is the deployments file's OWNER (an OWNER setting overrides it). SERIES=7,8 limits the Series
+ * checked (default: ids 0..SERIES_SCAN, 64). Nothing is sent and no key is needed.
  */
 contract VerifyDeploy is Deployments {
     uint256 internal fails;
@@ -78,20 +79,20 @@ contract VerifyDeploy is Deployments {
     }
 
     function _owners(address owner) internal {
-        require(owner != address(0), "set OWNER (the multisig)");
+        require(owner != address(0), "no OWNER in the deployments file (set OWNER, the hardware wallet)");
+        console.log(string.concat("INFO  expected owner (the hardware wallet): ", vm.toString(owner)));
         string[7] memory owned = ["FirePacks", "FireCards", "RecipeDealer", "FireCredits", "FirePsa", "PaperBurner", "FireSale"];
         for (uint256 i; i < owned.length; i++) {
             IOwnable2 c = IOwnable2(deployed(owned[i]));
             address o = c.owner();
             if (o == owner) {
-                _ok(c.pendingOwner() == address(0), string.concat(owned[i], " owned by the multisig, nothing pending"));
+                _ok(c.pendingOwner() == address(0), string.concat(owned[i], " owned by the hardware wallet, nothing pending"));
             } else if (c.pendingOwner() == owner) {
-                _wait(string.concat(owned[i], ": the multisig still has to acceptOwnership() (owner now ", vm.toString(o), ")"));
+                _wait(string.concat(owned[i], ": the hardware wallet still has to acceptOwnership() (script/AcceptOwnership.s.sol; owner now ", vm.toString(o), ")"));
             } else {
-                _ok(false, string.concat(owned[i], " owner is ", vm.toString(o), ", not the multisig ", vm.toString(owner)));
+                _ok(false, string.concat(owned[i], " owner is ", vm.toString(o), ", not the hardware wallet ", vm.toString(owner)));
             }
         }
-        _ok(owner.code.length > 0 || vm.envOr("ALLOW_EOA_OWNER", false), "the owner is a contract (multisig)");
     }
 
     function _wiring() internal {
