@@ -164,7 +164,7 @@ export interface FireRecord {
   number: number
   characterIds: string[]
   packs: number
-  /** The Series' recipe: card types, slots, PDA odds (recipe.ts). Series saved before recipes existed get the
+  /** The Series' recipe: card types and slots (recipe.ts; PDA odds are fixed for every Series). Series saved before recipes existed get the
    *  Standard recipe with their Diamond setting when loaded (migrate.ts). */
   recipe: Recipe
   /** The drop settings (FireSale.configureDrop), exported in recipe.json's "sale" block. Missing = the Standard

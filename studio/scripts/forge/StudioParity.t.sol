@@ -52,7 +52,7 @@ contract StudioParityTest is Test {
                 row = string.concat('{"ok":true,"perPack":', vm.toString(perPack), ',"pools":', pools, "]");
                 if (i == 0) {
                     assertEq(keccak256(abi.encode(s.recipe)), keccak256(abi.encode(StandardRecipe.build(0))), "Standard export != StandardRecipe");
-                    ConfigureSeries.Call[] memory calls = cs.build(json, address(dealer), address(cards), address(0xBEEF), 2);
+                    ConfigureSeries.Call[] memory calls = cs.build(json, address(dealer), address(cards), 2);
                     row = string.concat(row, ',"calls":', vm.toString(calls.length));
                 }
                 row = string.concat(row, "}");

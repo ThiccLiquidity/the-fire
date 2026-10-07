@@ -1,13 +1,13 @@
-/** A Series' recipe: its card types, its pack (slots) and its PDA odds. This is the studio's copy of
+/** A Series' recipe: its card types and its pack (slots). This is the studio's copy of
  *  RecipeDealer.Recipe (contracts/src/cards/RecipeDealer.sol) plus what only the studio needs (each type's frame set).
  *
  *  - checkRecipe: every check RecipeDealer.check makes, in the same order (so the first problem is the contract's
- *    revert), plus the studio's own (number formats, PDA odds).
+ *    revert), plus the studio's own (number formats).
  *  - compileRecipe / previewPool: a port of the contract's nested sets and pool maths (_compile, _pool), exact for any
  *    pack count (BigInt). scripts/recipe-parity.test.ts checks it against the contract's previewPool.
  *  - recipeJson: the recipe.json that contracts/script/ConfigureSeries.s.sol reads.
  *
- *  Numbers the contract stores above 2^53 (shares, holo chances, weights, odds) are kept as decimal strings. */
+ *  Numbers the contract stores above 2^53 (shares, holo chances, weights) are kept as decimal strings. */
 
 import { HOLO_TYPES, type HoloType } from './rules'
 import type { SaleJson } from './sale'
@@ -61,9 +61,6 @@ export interface SlotDef {
 export interface Recipe {
   types: CardTypeDef[]
   slots: SlotDef[]
-  /** FirePsa fresh odds: a weight per grade, grade 1 first (any total above 0). Grades 1-4 are always 0: those come
-   *  only from wear (docs/grading.md). */
-  pdaOdds: string[]
 }
 
 export const SHARE_SCALE = 1_000_000_000n
@@ -73,8 +70,9 @@ const U64 = (1n << 64n) - 1n
 const U128 = (1n << 128n) - 1n
 export const MAX_TYPE_NAME_BYTES = 64
 export const MAX_SLUG_BYTES = 32
-/** FirePsa's default fresh odds (out of 10,000): 10 1%, 9 17%, 8 25%, 7 27%, 6 20%, 5 10%. */
-export const DEFAULT_PDA_ODDS = ['0', '0', '0', '0', '1000', '2000', '2700', '2500', '1700', '100']
+/** FirePsa's fresh odds (out of 10,000), grade 1 first: fixed forever, the same for every Series (docs/grading.md).
+ *  10 1%, 9 17%, 8 25%, 7 27%, 6 20%, 5 10%; 1-4 come only from wear. Shown, never set or exported. */
+export const FRESH_PDA_ODDS = [0, 0, 0, 0, 1000, 2000, 2700, 2500, 1700, 100] as const
 /** Gold cards in the classic (five-type) recipe. */
 export const DEFAULT_GOLD = 15 // classicRecipe: a fixed count, as Diamond was
 /** The Standard recipe's Gold per character (StandardRecipe.DEFAULT_GOLD_PER_CHARACTER). */
@@ -113,7 +111,6 @@ export function standardRecipe(goldPerCharacter = DEFAULT_GOLD_PER_CHARACTER): R
 export function legacyDiamondRecipe(diamonds = 1): Recipe {
   const r = classicRecipe(diamonds)
   r.types[4] = { ...r.types[4], id: 'diamond', name: 'Diamond', slug: 'diamond', holo: { mode: 'distribution', weights: ['0', '1', '1', '1'] }, frameSet: 'diamond' }
-  r.pdaOdds = ['100', '150', '200', '350', '700', '1800', '2500', '2400', '1700', '100']
   return r
 }
 
@@ -136,7 +133,6 @@ export function classicRecipe(gold = DEFAULT_GOLD): Recipe {
       { count: 1, kind: 'rank', typeIds: [], minRank: 1, maxRank: null, mustHolo: false },
       { count: 1, kind: 'rank', typeIds: [], minRank: 2, maxRank: null, mustHolo: false },
     ],
-    pdaOdds: [...DEFAULT_PDA_ODDS],
   }
 }
 
@@ -158,7 +154,6 @@ export function specialAllHoloRecipe(): Recipe {
       { count: 2, kind: 'rank', typeIds: [], minRank: 2, maxRank: null, mustHolo: true },
       { count: 1, kind: 'rank', typeIds: [], minRank: 3, maxRank: null, mustHolo: true },
     ],
-    pdaOdds: [...DEFAULT_PDA_ODDS],
   }
 }
 
@@ -168,7 +163,6 @@ export function cloneRecipe(r: Recipe, newId: () => string): Recipe {
   return {
     types: r.types.map((t) => ({ ...t, id: map.get(t.id)!, holo: t.holo.mode === 'independent' ? { ...t.holo } : { mode: 'distribution', weights: [...t.holo.weights] } })),
     slots: r.slots.map((s) => ({ ...s, typeIds: s.typeIds.map((id) => map.get(id) ?? id) })),
-    pdaOdds: [...r.pdaOdds],
   }
 }
 
@@ -218,7 +212,7 @@ export function scaledToPercent(v: bigint, scale: bigint): string {
 export interface Problem {
   /** The contract's error ('BadType', 'BadSlot', 'NotNested', ...) or 'Studio' for the studio's own checks. */
   code: string
-  where: 'recipe' | 'type' | 'slot' | 'pda'
+  where: 'recipe' | 'type' | 'slot'
   index?: number
   message: string
 }
@@ -287,10 +281,10 @@ function formatProblems(r: Recipe): Problem[] {
 
 /** Every problem with a recipe. The contract's checks come in the contract's order, so the first contract problem is
  *  the one RecipeDealer.check reverts with. Studio format problems come first (the contract couldn't even take the
- *  recipe); PDA odds last. */
+ *  recipe). */
 export function checkRecipe(r: Recipe): Problem[] {
   const out = formatProblems(r)
-  if (out.length) return [...out, ...pdaProblems(r)]
+  if (out.length) return out
   const T = r.types.length
   const typeP = (i: number, why: string, message: string, code = 'BadType') => out.push({ code: code === 'BadType' ? `BadType(${i},${why})` : code, where: 'type', index: i, message: `${typeLabel(r, i)}: ${message}` })
   // _checkTypes
@@ -399,19 +393,10 @@ export function checkRecipe(r: Recipe): Problem[] {
       out.push({ code: 'Infeasible', where: 'recipe', message: `The pool can't fill the packs (${(e as Error).message}).` })
     }
   }
-  return [...out, ...pdaProblems(r)]
-}
-
-function pdaProblems(r: Recipe): Problem[] {
-  const out: Problem[] = []
-  const w = r.pdaOdds.map((x) => parseUint(x))
-  if (r.pdaOdds.length !== 10 || w.some((x) => x == null || x > U64)) out.push({ code: 'Studio', where: 'pda', message: 'PDA odds: one whole-number weight per grade, 1 to 10.' })
-  else if (w.slice(0, 4).some((x) => x! > 0n)) out.push({ code: 'BadOdds', where: 'pda', message: 'PDA 1-4 must be 0: fresh cards grade 5-10, lower grades come only from wear.' })
-  else if (w.reduce((a, x) => a! + x!, 0n) === 0n) out.push({ code: 'BadOdds', where: 'pda', message: 'PDA odds add up to 0: give at least one grade a weight.' })
   return out
 }
 
-/** Problems the contract itself would reject (RecipeDealer.check / setRecipe, FirePsa.setOdds). */
+/** Problems the contract itself would reject (RecipeDealer.check / setRecipe). */
 export function contractProblems(problems: Problem[]): Problem[] {
   return problems.filter((p) => p.code !== 'Studio')
 }
@@ -687,7 +672,6 @@ export interface RecipeJson {
   types: ({ name: string; slug: string; rank: number; supply: Supply; amount?: number | string; maxPerPack?: number | string; holo: { mode: 'independent'; frame: string; picture: string } | { mode: 'distribution'; weights: string[] } })[]
   slots: ({ count: number; types?: number[]; minRank?: number; maxRank?: number; mustHolo?: boolean })[]
   characters: { name: string; category: string }[]
-  pdaOdds?: string[]
   /** FireSale.configureDrop's settings (sale.ts saleJson). */
   sale?: SaleJson
 }
@@ -715,7 +699,6 @@ export function recipeJson(fire: number, r: Recipe, characters: { name: string; 
       return { count: s.count, minRank: s.minRank, ...(s.maxRank != null ? { maxRank: s.maxRank } : {}), ...(s.mustHolo ? { mustHolo: true } : {}) }
     }),
     characters,
-    pdaOdds: r.pdaOdds.map((x) => String(parseUint(x))),
     ...(sale ? { sale } : {}),
   }
 }
@@ -734,7 +717,6 @@ export function recipeFromJson(j: RecipeJson, frameSetOf: (slug: string) => stri
     slots: j.slots.map((s) => (s.types && s.types.length
       ? { count: s.count, kind: 'types' as const, typeIds: s.types.map((i) => ids[i]), minRank: 0, maxRank: null, mustHolo: !!s.mustHolo }
       : { count: s.count, kind: 'rank' as const, typeIds: [], minRank: s.minRank ?? 0, maxRank: s.maxRank ?? null, mustHolo: !!s.mustHolo })),
-    pdaOdds: j.pdaOdds ? j.pdaOdds.map(String) : [...DEFAULT_PDA_ODDS],
   }
 }
 

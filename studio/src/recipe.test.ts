@@ -3,8 +3,8 @@ import standardSampleText from '../../contracts/test/cards/recipe-standard.json?
 import { describe, expect, it } from 'vitest'
 import { computePool } from './deal'
 import {
-  castWarning, checkRecipe, classicRecipe, compileRecipe, holoLooksFor, percentToScaled, previewPool, recipeFromJson, recipeJson, scaledToPercent, slugify,
-  specialAllHoloRecipe, standardRecipe, type Recipe,
+  FRESH_PDA_ODDS, castWarning, checkRecipe, classicRecipe, compileRecipe, holoLooksFor, percentToScaled, previewPool, recipeFromJson, recipeJson,
+  scaledToPercent, slugify, specialAllHoloRecipe, standardRecipe, type Recipe,
 } from './recipe'
 import { MATERIALS } from './rules'
 
@@ -50,10 +50,10 @@ describe('Standard recipe', () => {
     expect(previewPool(r, 1000n, 7n)[5]).toBe(14n)
   })
 
-  it('fresh PDA odds: grades 1-4 stay 0', () => {
-    const r = standardRecipe()
-    r.pdaOdds[2] = '5'
-    expect(codes(r)).toContain('BadOdds')
+  it('recipe.json has no PDA odds: they are fixed in FirePsa for every Series', () => {
+    const j = recipeJson(7, standardRecipe(), [{ name: 'A', category: 'B' }])
+    expect('pdaOdds' in j).toBe(false)
+    expect(FRESH_PDA_ODDS).toEqual([0, 0, 0, 0, 1000, 2000, 2700, 2500, 1700, 100])
   })
 
   it('recipe.json is exactly the shape of contracts/test/cards/recipe-standard.json', () => {
@@ -61,7 +61,7 @@ describe('Standard recipe', () => {
     const j = recipeJson(7, standardRecipe(), sample.characters, 'ipfs://bafyexampleimages/')
     // the sample writes slot 2 as an explicit list and slot 4 with an explicit mustHolo: false; same recipe
     expect(j.types).toEqual(sample.types)
-    expect(j.pdaOdds).toEqual(sample.pdaOdds)
+    expect(Object.keys(j)).toEqual(Object.keys(sample)) // no pdaOdds on either side
     expect(j.slots).toEqual([{ count: 3, types: [0] }, { count: 1, types: [1] }, { count: 1, minRank: 1 }, { count: 1, minRank: 2 }])
     expect(j.fire).toBe(7)
     expect(j.imagesBase).toBe('ipfs://bafyexampleimages/')
@@ -159,13 +159,10 @@ describe('checkRecipe mirrors RecipeDealer.check', () => {
     r3.slots[3] = { ...r3.slots[3], minRank: 3, maxRank: 2 }
     expect(codes(r3)[0]).toBe('BadSlot(3,rank range)')
   })
-  it('studio checks: number formats, PDA odds', () => {
+  it('studio checks: number formats', () => {
     const r = base()
     r.types[2].amount = '1.5'
     expect(checkRecipe(r)[0].code).toBe('Studio')
-    const r2 = base()
-    r2.pdaOdds = r2.pdaOdds.map(() => '0')
-    expect(codes(r2)).toEqual(['BadOdds'])
   })
 })
 

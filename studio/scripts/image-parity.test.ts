@@ -32,7 +32,7 @@ function pick(): RecipeJson[] {
     const c = strip(fx.cases[i])
     if (!fx.results[i].ok || !interesting(c)) continue
     const r = recipeFromJson(c)
-    if (checkRecipe(r).some((p) => p.code !== 'Studio' && p.code !== 'BadOdds') || cardsPerPack(r) > 12) continue
+    if (checkRecipe(r).some((p) => p.code !== 'Studio') || cardsPerPack(r) > 12) continue
     out.push(c)
   }
   return out

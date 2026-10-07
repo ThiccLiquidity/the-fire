@@ -1,6 +1,7 @@
 /** Saves and backups from before per-Series recipes. Every Series made then was a Standard Series: it gets the
  *  Standard recipe with its Diamond setting, and a locked deal's cards (stored by material) are re-labelled with the
- *  Standard type indexes. Runs on load (store.ts loadStudio), so imports of old backups migrate too. */
+ *  Standard type indexes. Recipes saved with their own PDA odds drop them: the odds are fixed in FirePsa for every
+ *  Series now. Runs on load (store.ts loadStudio), so imports of old backups migrate too. */
 
 import { effectiveDiamonds, type DealResult, type DealtCard } from './deal'
 import { legacyDiamondRecipe } from './recipe'
@@ -15,13 +16,17 @@ type OldDeal = Omit<DealResult, 'pool' | 'cards' | 'cardsPerPack'> & { pool: num
 
 export function needsMigration(f: unknown): boolean {
   const r = f as Partial<FireRecord> & { deal?: OldDeal }
-  return !r.recipe || (!!r.deal && !Array.isArray(r.deal.pool))
+  return !r.recipe || 'pdaOdds' in r.recipe || (!!r.deal && !Array.isArray(r.deal.pool))
 }
 
 export function migrateFire(raw: unknown): FireRecord {
   const old = raw as Omit<FireRecord, 'recipe' | 'deal'> & { recipe?: FireRecord['recipe']; deal?: OldDeal }
   const f = { ...old } as FireRecord & { deal?: OldDeal }
   if (!f.recipe) f.recipe = legacyDiamondRecipe(effectiveDiamonds(old.deal?.diamonds ?? old.diamonds))
+  else if ('pdaOdds' in f.recipe) {
+    const { pdaOdds: _fixedNow, ...recipe } = f.recipe as FireRecord['recipe'] & { pdaOdds?: string[] }
+    f.recipe = recipe
+  }
   const d = old.deal
   if (d && !Array.isArray(d.pool)) {
     const pool = d.pool as Record<Material, number>

@@ -4,7 +4,7 @@
  *
  *  { version: 1, fire, gridKey, recipeHash, count, files: [{ name, size, sha256 }] }
  *  - gridKey: the studio's fingerprint of the recipe's looks and the characters (series.ts buildGridKey)
- *  - recipeHash: sha256 of JSON.stringify({ fire, types, slots, characters, pdaOdds }) of the recipe.json the studio
+ *  - recipeHash: sha256 of JSON.stringify({ fire, types, slots, characters }) of the recipe.json the studio
  *    exports (imagesBase and the sale block left out: they come later), the same hash VerifySeries computes
  *  - files: every image (not manifest.json itself), with its size and sha256 */
 
@@ -17,7 +17,7 @@ export interface ManifestFile { name: string; size: number; sha256: string }
 export interface Manifest { version: 1; fire: number; gridKey: string; recipeHash: string; count: number; files: ManifestFile[] }
 
 export function recipeHash(j: RecipeJson): string {
-  return sha256Hex(JSON.stringify({ fire: j.fire, types: j.types, slots: j.slots, characters: j.characters, pdaOdds: j.pdaOdds ?? [] }))
+  return sha256Hex(JSON.stringify({ fire: j.fire, types: j.types, slots: j.slots, characters: j.characters }))
 }
 
 async function fileSha256(blob: Blob): Promise<string> {

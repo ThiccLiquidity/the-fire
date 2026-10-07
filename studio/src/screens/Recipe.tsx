@@ -3,7 +3,7 @@ import { Notice, useAction } from '../components'
 import { newId } from '../db'
 import { FRAME_SETS, frameSetFiles, frameSetLabel, missingFramesFor } from '../frames'
 import {
-  DEFAULT_PDA_ODDS, HOLO_ONE, SHARE_SCALE, SUPPLY_LABEL, UINT32_MAX, cardsPerPack, checkRecipe, cloneRecipe, holoLooksFor,
+  FRESH_PDA_ODDS, HOLO_ONE, SHARE_SCALE, SUPPLY_LABEL, UINT32_MAX, cardsPerPack, checkRecipe, cloneRecipe, holoLooksFor,
   holoOdds, holoOddsGivenHolo, parseUint, percentToScaled, scaledToPercent, slotTypeIndexes, slugify,
   specialAllHoloRecipe, standardRecipe, type CardTypeDef, type HoloRule, type Problem, type Recipe, type SlotDef, type Supply,
 } from '../recipe'
@@ -226,7 +226,7 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       </table></div>
       {!locked && <button onClick={addSlot} data-testid="add-slot">Add a slot group</button>}
 
-      <PdaOdds r={r} locked={locked} onReset={() => set({ ...r, pdaOdds: [...DEFAULT_PDA_ODDS] })} />
+      <PdaOdds />
     </section>
   )
 }
@@ -385,13 +385,11 @@ function SharePercent({ n, count, onChange, disabled, testId }: { n: bigint | nu
   )
 }
 
-/** PDA odds are fixed (the same for every Series): shown, not set here. A Series saved with other odds keeps them in
- *  its recipe.json until they are reset. */
-function PdaOdds({ r, locked, onReset }: { r: Recipe; locked: boolean; onReset: () => void }) {
-  const w = DEFAULT_PDA_ODDS.map(Number)
+/** PDA odds are fixed in FirePsa forever, the same for every Series: shown, never set here. */
+function PdaOdds() {
+  const w: number[] = [...FRESH_PDA_ODDS]
   const total = w.reduce((a, b) => a + b, 0)
   const max = Math.max(...w)
-  const own = r.pdaOdds.length !== DEFAULT_PDA_ODDS.length || r.pdaOdds.some((x, k) => String(parseUint(x)) !== DEFAULT_PDA_ODDS[k])
   return (
     <>
       <h3>PDA odds · fixed</h3>
@@ -405,12 +403,6 @@ function PdaOdds({ r, locked, onReset }: { r: Recipe; locked: boolean; onReset: 
           </div>
         ))}
       </div>
-      {own && (
-        <Notice kind="warn">
-          <span data-testid="pda-own">This Series was saved with its own odds ({r.pdaOdds.slice(4).map((x, k) => `${k + 5}: ${x}`).join(', ')}).</span>
-          {!locked && <> <button onClick={onReset} data-testid="pda-reset">Use the fixed odds</button></>}
-        </Notice>
-      )}
     </>
   )
 }
