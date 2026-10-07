@@ -95,7 +95,7 @@ contract PsaTest is SeriesHelper {
         vm.prank(who);
         index = psa.protect{value: cost}(_none(), ids, FirePsa.Pay.ETH, cost);
         psaRng.fulfill(psaRng.last(), word);
-        psa.finish(index);
+        psa.finish(index, ids);
     }
 
     // ================================================================ the fixed wear table
@@ -231,7 +231,7 @@ contract PsaTest is SeriesHelper {
         (,,,, uint256 age,) = cards.wearOf(6);
         assertEq(age, 3 days);
         psaRng.fulfill(psaRng.last(), 1234);
-        psa.finish(index);
+        psa.finish(index, _one(6));
         (,, uint256 grade,,,) = cards.wearOf(6);
         assertGe(grade, 5);
         assertFalse(cards.gradePending(6));
@@ -264,7 +264,7 @@ contract PsaTest is SeriesHelper {
         vm.prank(bob);
         uint256 index = psa.protect{value: cost}(_none(), old, FirePsa.Pay.ETH, cost);
         psaRng.fulfill(psaRng.last(), 77);
-        psa.finish(index);
+        psa.finish(index, old);
         for (uint256 i = 13; i <= 30; i++) {
             (,, uint256 g,,,) = cards.wearOf(i);
             if (g <= 2) low++;
@@ -296,12 +296,15 @@ contract PsaTest is SeriesHelper {
         vm.warp(block.timestamp + 3 days + 1);
         json = _json(cards.tokenURI(7));
         assertTrue(_contains(json, '"trait_type":"Moves","value":1'), json);
-        assertTrue(_contains(json, '"trait_type":"Uncased Age (days)","value":3'), json);
+        assertTrue(_contains(json, '{"trait_type":"Dealt","value":1800000000,"display_type":"date"}'), json);
+        assertFalse(_contains(json, "Age when cased"), json);
         vm.deal(bob, 10 ether);
         _case(bob, _one(7));
         json = _json(cards.tokenURI(7));
         assertTrue(_contains(json, '-c.webp"'), json);
         assertTrue(_contains(json, '{"trait_type":"Cased","value":"Yes"}'), json);
+        assertTrue(_contains(json, '{"trait_type":"Age when cased (days)","value":3,"display_type":"number"}'), json);
+        assertTrue(_contains(json, '{"trait_type":"Dealt","value":1800000000,"display_type":"date"}'), json);
         _grade(bob, _one(7), 5);
         (,, uint256 g,,,) = cards.wearOf(7);
         json = _json(cards.tokenURI(7));
@@ -381,8 +384,6 @@ contract PsaTest is SeriesHelper {
         psa.setMaxBatch(0);
         vm.expectRevert(FirePsa.BadAmount.selector);
         psa.setMaxBatch(101);
-        vm.expectRevert(FirePsa.AlreadySet.selector);
-        psa.setRandomness(address(1));
         vm.stopPrank();
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", address(this)));
         psa.setPrices(1e18, 1e18);
@@ -420,20 +421,20 @@ contract PsaTest is SeriesHelper {
 
     // ================================================================ randomness
 
-    function test_cancelAfterAWeekFromTheFirstRequestAndTheClockRunsOn() public {
+    function test_cancelAfterAWeekFromTheRequestAndTheClockRunsOn() public {
         vm.warp(block.timestamp + 2 days);
         uint256 cost = psa.quote(0, 1, FirePsa.Pay.ETH);
         vm.prank(alice);
         uint256 index = psa.protect{value: cost}(_none(), _one(8), FirePsa.Pay.ETH, cost);
+        (bool ok,) = address(psa).call(abi.encodeWithSignature("rerequest(uint256)", index));
+        assertFalse(ok, "no re-request: one grading, one number");
+        vm.warp(block.timestamp + 6 days);
         vm.expectRevert(FirePsa.NotStuck.selector);
-        psa.rerequest(index);
-        vm.warp(block.timestamp + 1 days + 1);
-        psa.rerequest(index); // asking again doesn't restart the cancel clock
-        vm.warp(block.timestamp + 5 days);
-        vm.expectRevert(FirePsa.NotStuck.selector);
-        psa.cancelGrading(index); // 6 days since the first request
+        psa.cancelGrading(index, _one(8)); // 6 days since the request
         vm.warp(block.timestamp + 1 days);
-        psa.cancelGrading(index);
+        vm.expectRevert(FirePsa.BadIds.selector);
+        psa.cancelGrading(index, _one(9)); // the list must be the grading's
+        psa.cancelGrading(index, _one(8));
         assertFalse(cards.gradePending(8));
         (,, uint256 grade, bool cased, uint256 age,) = cards.wearOf(8);
         assertEq(grade, 0);
@@ -453,11 +454,85 @@ contract PsaTest is SeriesHelper {
         vm.expectRevert(FirePsa.NotRandomness.selector);
         psa.onRandomness(1, 5);
         vm.expectRevert(FirePsa.NotReady.selector);
-        psa.finish(index);
+        psa.finish(index, _one(10));
         psaRng.fulfill(psaRng.last(), 5);
-        psa.finish(index);
+        vm.expectRevert(FirePsa.BadIds.selector);
+        psa.finish(index, _one(11)); // the list must be the grading's (its hash is stored, not the list)
+        vm.expectRevert(FirePsa.BadIds.selector);
+        psa.finish(index, _none());
+        psa.finish(index, _one(10));
         vm.expectRevert(FirePsa.NotReady.selector);
-        psa.finish(index);
+        psa.finish(index, _one(10));
+        uint256 id = psaRng.last();
+        vm.expectRevert(FirePsa.NotRandomness.selector);
+        psaRng.fulfill(id, 6); // answered once
+    }
+
+    /// The owner can switch the source at any time; each grading keeps the source that took it.
+    function test_randomnessSwitchKeepsEachGradingsSource() public {
+        uint256 cost = psa.quote(0, 1, FirePsa.Pay.ETH);
+        vm.prank(alice);
+        uint256 first = psa.protect{value: cost}(_none(), _one(1), FirePsa.Pay.ETH, cost); // old source, id 1
+        MockRandomness rng2 = new MockRandomness();
+        rng2.setFire(address(psa));
+        vm.expectEmit(address(psa));
+        emit FirePsa.RandomnessSet(address(rng2));
+        vm.prank(owner);
+        psa.setRandomness(address(rng2));
+        vm.prank(alice);
+        uint256 second = psa.protect{value: cost}(_none(), _one(2), FirePsa.Pay.ETH, cost); // new source, id 1
+        assertEq(psa.gradingOf(first).source, address(psaRng));
+        assertEq(psa.gradingOf(second).source, address(rng2));
+        assertEq(psa.gradingOf(second).requestId, 1);
+        rng2.fulfill(1, 99); // the new source's id 1 is the second grading, not the first
+        assertFalse(psa.gradingOf(first).ready);
+        assertTrue(psa.gradingOf(second).ready);
+        psaRng.fulfill(1, 42); // the old source still answers its own
+        assertTrue(psa.gradingOf(first).ready);
+        psa.finish(first, _one(1));
+        psa.finish(second, _one(2));
+        (,, uint256 g1,,,) = cards.wearOf(1);
+        (,, uint256 g2,,,) = cards.wearOf(2);
+        assertGt(g1, 0);
+        assertGt(g2, 0);
+        vm.expectRevert(FirePsa.NotRandomness.selector);
+        rng2.fulfill(2, 1); // a request the source never took
+    }
+
+    /// Pausing stops case and grading payments; finishing and cancelling never pause.
+    function test_pauseBlocksPaymentsOnly() public {
+        uint256 cost = psa.quote(0, 1, FirePsa.Pay.ETH);
+        vm.prank(alice);
+        uint256 index = psa.protect{value: cost}(_none(), _one(3), FirePsa.Pay.ETH, cost);
+        vm.prank(alice);
+        uint256 stuck = psa.protect{value: cost}(_none(), _one(4), FirePsa.Pay.ETH, cost);
+        vm.prank(alice);
+        vm.expectRevert();
+        psa.setPaused(true); // only the owner
+        vm.expectEmit(address(psa));
+        emit FirePsa.PausedSet(true);
+        vm.prank(owner);
+        psa.setPaused(true);
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.IsPaused.selector);
+        psa.protect{value: cost}(_none(), _one(5), FirePsa.Pay.ETH, cost);
+        uint256 caseCost = psa.quote(1, 0, FirePsa.Pay.ETH);
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.IsPaused.selector);
+        psa.protect{value: caseCost}(_one(5), _none(), FirePsa.Pay.ETH, caseCost);
+        psaRng.fulfill(1, 7);
+        psa.finish(index, _one(3)); // finishing still works
+        vm.warp(block.timestamp + 7 days);
+        psa.cancelGrading(stuck, _one(4)); // and cancelling
+        vm.prank(alice);
+        cards.transferFrom(alice, bob, 6); // transfers never pause
+        vm.prank(owner);
+        psa.setPaused(false);
+        vm.prank(alice);
+        psa.protect{value: caseCost}(_one(5), _none(), FirePsa.Pay.ETH, caseCost);
+        vm.prank(owner);
+        vm.expectRevert(FirePsa.RenounceDisabled.selector);
+        psa.renounceOwnership();
     }
 
     function test_onlyPsaCasesOrGrades() public {

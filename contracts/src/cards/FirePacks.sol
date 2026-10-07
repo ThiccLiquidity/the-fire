@@ -28,6 +28,8 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     address public cards;
     /// @dev Pack art: <packImageBase>fire<N>.webp, one image per Series (the master graphic with the Series number).
     string public packImageBase;
+    /// @notice Collection metadata (ERC-7572), set by the owner.
+    string public contractURI;
     mapping(uint256 fire => uint256) public minted;
     mapping(uint256 fire => uint256) public burned;
 
@@ -35,6 +37,7 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     event CardsSet(address cards);
     event PackImageBaseSet(string base);
     event RoyaltySet(address receiver, uint96 bps);
+    event ContractURIUpdated(); // ERC-7572
 
     error AlreadySet();
     error NotSeller();
@@ -43,6 +46,7 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     error RoyaltyTooHigh();
     error BadText();
     error TooMany();
+    error RenounceDisabled();
 
     /// @notice Collection name and symbol (ERC-1155 has none; marketplaces read these).
     string public constant name = "Omni Card Packs";
@@ -51,6 +55,17 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
     constructor(address owner_) ERC1155("") Ownable(owner_) {}
 
     // ---------- owner setup (each address once) ----------
+
+    /// @notice Ownership can be handed over (two steps) but never renounced, so control can't be lost by mistake.
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
+    }
+
+    /// @notice Collection metadata for marketplaces (ERC-7572).
+    function setContractURI(string calldata uri_) external onlyOwner {
+        contractURI = uri_;
+        emit ContractURIUpdated();
+    }
 
     function setSeller(address s) external onlyOwner {
         if (seller != address(0)) revert AlreadySet();

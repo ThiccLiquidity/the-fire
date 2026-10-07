@@ -53,6 +53,11 @@ interface IPsaBurner {
  *         The odds: a fresh grade (5-10) from the Series' fresh odds, then wear (moves and time uncased), from rules
  *         fixed here forever (WEAR_* constants, `oddsFor`). A Series' fresh odds are set before its first pack, so
  *         every buyer knows them; the default is 10: 1%, 9: 17%, 8: 25%, 7: 27%, 6: 20%, 5: 10%.
+ *
+ *         The owner can pause case and grading payments (`setPaused`); finishing and cancelling gradings never pause.
+ *         The randomness source can be switched at any time (only new gradings use it; each grading remembers its
+ *         source, and only that source can answer it). A grading stores a hash of its cards; `finish` and
+ *         `cancelGrading` take the list (from the `Protected` event).
  */
 contract FirePsa is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -61,11 +66,8 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     uint256 public constant MAX_BATCH_CAP = 100;
     /// @dev Highest dollar price the owner can set per card (a typo guard; every purchase names its most anyway).
     uint256 public constant MAX_PRICE_USD18 = 100e18;
-    /// @dev drand's number is public ~30s before delivery, so a grading can only be asked for again after a full day
-    ///      with no answer (anyone can deliver; the keeper does it within seconds).
-    uint256 public constant REREQUEST_AFTER = 1 days;
-    /// @dev Last resort if randomness is gone for good: a grading with no answer this long after it was first asked
-    ///      for can be cancelled, unlocking its cards (still ungraded). The fee was burned and can't come back.
+    /// @dev Last resort if randomness is gone for good: a grading with no answer this long after it was asked for
+    ///      can be cancelled, unlocking its cards (still ungraded). The fee was burned and can't come back.
     uint256 public constant CANCEL_AFTER = 7 days;
     uint256 public constant ODDS_TOTAL = 10_000;
 
@@ -95,6 +97,8 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     /// @notice Price per card in dollars (18 decimals).
     uint256 public caseUsd18 = 0.05e18;
     uint256 public gradeUsd18 = 1e18;
+    /// @notice While true, cases and grading can't be paid for (`protect`). Finishing and cancelling never pause.
+    bool public paused;
 
     mapping(uint256 fire => uint64[10]) internal _odds;
     mapping(uint256 fire => bool) public customOdds;
@@ -104,16 +108,16 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     struct Grading {
         address by;
         uint64 requestedAt;
-        uint64 firstRequestedAt;
         bool ready;
         bool done;
-        uint256 requestId;
+        address source; // the randomness source that took the request (only it can answer)
+        uint96 requestId;
         uint256 word;
-        uint256[] ids;
+        bytes32 idsHash; // keccak256(abi.encode(ids)) of the cards sent (the list is in the Protected event)
     }
 
     Grading[] internal _gradings;
-    mapping(uint256 requestId => uint256) internal _gradingOf; // index + 1
+    mapping(uint256 request => uint256) internal _gradingOf; // (source << 96 | requestId) -> index + 1
     mapping(uint256 serial => bool) public pending;
 
     event RandomnessSet(address source);
@@ -123,10 +127,9 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     event Protected(address indexed by, uint256[] cased, uint256[] graded, Pay pay, uint256 paid, uint256 gradingIndex);
     event GradingReady(uint256 indexed index, uint256 word);
     event Graded(uint256 indexed serial, uint256 grade);
-    event Rerequested(uint256 indexed index, uint256 requestId);
     event GradingCancelled(uint256 indexed index);
+    event PausedSet(bool paused);
 
-    error AlreadySet();
     error ZeroAddress();
     error BadAmount();
     error NotHolder();
@@ -139,6 +142,10 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     error FireIsClosed();
     error PriceMoved();
     error TransferFailed();
+    error IsPaused();
+    error BadIds();
+    error BadRequest();
+    error RenounceDisabled();
 
     constructor(address owner_, address cards, address burner) Ownable(owner_) {
         if (cards == address(0) || burner == address(0)) revert ZeroAddress();
@@ -150,11 +157,23 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
 
     // ================================================================ owner
 
+    /// @notice Ownership can be handed over (two steps) but never renounced, so control can't be lost by mistake.
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
+    }
+
+    /// @notice The randomness source for new gradings. The owner can switch it at any time (no delay; announced
+    ///         publicly first). Gradings already waiting keep their own source.
     function setRandomness(address source) external onlyOwner {
-        if (address(randomness) != address(0)) revert AlreadySet();
         if (source == address(0)) revert ZeroAddress();
         randomness = IPsaRandomness(source);
         emit RandomnessSet(source);
+    }
+
+    /// @notice Pause or unpause case and grading payments (`protect`). No expiry.
+    function setPaused(bool p) external onlyOwner {
+        paused = p;
+        emit PausedSet(p);
     }
 
     /// @notice Most cards per batch, 1 to MAX_BATCH_CAP (100).
@@ -207,6 +226,7 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         nonReentrant
         returns (uint256 index)
     {
+        if (paused) revert IsPaused();
         uint256 nc = caseIds.length;
         uint256 ng = gradeIds.length;
         if (nc + ng == 0 || nc + ng > maxBatch) revert BadAmount();
@@ -226,10 +246,14 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         uint256 cost = _pay(pay, nc * caseUsd18 + ng * gradeUsd18, maxCost);
         index = type(uint256).max;
         if (ng > 0) {
-            uint256 rid = randomness.request();
+            IPsaRandomness src = randomness;
+            uint256 rid = src.request();
+            if (rid > type(uint96).max) revert BadRequest();
             index = _gradings.length;
-            _gradings.push(Grading(msg.sender, uint64(block.timestamp), uint64(block.timestamp), false, false, rid, 0, gradeIds));
-            _gradingOf[rid] = index + 1;
+            _gradings.push(
+                Grading(msg.sender, uint64(block.timestamp), false, false, address(src), uint96(rid), 0, keccak256(abi.encode(gradeIds)))
+            );
+            _gradingOf[_reqKey(address(src), rid)] = index + 1;
         }
         emit Protected(msg.sender, caseIds, gradeIds, pay, cost, index);
     }
@@ -250,27 +274,29 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         if (msg.value > spentEth) _sendEth(msg.sender, msg.value - spentEth);
     }
 
-    /// @dev Randomness callback: only stores the word (cheap, can't fail).
+    /// @dev Randomness callback: only stores the word (cheap, can't fail). Only the source that took a request can
+    ///      answer it.
     function onRandomness(uint256 requestId, uint256 word) external {
-        if (msg.sender != address(randomness)) revert NotRandomness();
-        uint256 i = _gradingOf[requestId];
-        if (i == 0) return;
+        uint256 rk = requestId > type(uint96).max ? 0 : _reqKey(msg.sender, requestId);
+        uint256 i = _gradingOf[rk];
+        if (i == 0) revert NotRandomness(); // not this source's request, or the grading was cancelled
         Grading storage g = _gradings[i - 1];
-        delete _gradingOf[requestId];
-        if (g.ready) return;
+        delete _gradingOf[rk];
         g.word = word;
         g.ready = true;
         emit GradingReady(i - 1, word);
     }
 
-    /// @notice Anyone: set the grades of a batch whose randomness has arrived. The result depends only on the word and
-    ///         each card's frozen wear.
-    function finish(uint256 index) external nonReentrant {
+    /// @notice Anyone: set the grades of a batch whose randomness has arrived. `ids` is the batch's list of cards sent
+    ///         for grading, in order (from its `Protected` event). The result depends only on the word and each card's
+    ///         frozen wear.
+    function finish(uint256 index, uint256[] calldata ids) external nonReentrant {
         Grading storage g = _gradings[index];
         if (!g.ready || g.done) revert NotReady();
+        if (keccak256(abi.encode(ids)) != g.idsHash) revert BadIds();
         g.done = true;
-        for (uint256 i; i < g.ids.length; i++) {
-            uint256 id = g.ids[i];
+        for (uint256 i; i < ids.length; i++) {
+            uint256 id = ids[i];
             delete pending[id];
             (bool exists, uint256 fire, uint256 grade,, uint256 age, uint256 moves) = CARDS.wearOf(id);
             if (!exists || grade != 0) continue; // burned in the meantime
@@ -280,17 +306,19 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         }
     }
 
-    /// @notice If a grading's randomness has had no answer for CANCEL_AFTER since it was first asked for, anyone can
-    ///         cancel it: its cards unlock, still ungraded, and their wear clock runs again from where it stopped.
-    function cancelGrading(uint256 index) external nonReentrant {
+    /// @notice If a grading's randomness has had no answer for CANCEL_AFTER since it was asked for, anyone can cancel
+    ///         it (`ids` as for `finish`): its cards unlock, still ungraded, and their wear clock runs again from where
+    ///         it stopped.
+    function cancelGrading(uint256 index, uint256[] calldata ids) external nonReentrant {
         Grading storage g = _gradings[index];
-        if (g.ready || g.done || block.timestamp < g.firstRequestedAt + CANCEL_AFTER || randomness.answered(g.requestId)) {
+        if (g.ready || g.done || block.timestamp < g.requestedAt + CANCEL_AFTER || _answered(g.source, g.requestId)) {
             revert NotStuck();
         }
+        if (keccak256(abi.encode(ids)) != g.idsHash) revert BadIds();
         g.done = true;
-        delete _gradingOf[g.requestId];
-        for (uint256 i; i < g.ids.length; i++) {
-            uint256 id = g.ids[i];
+        delete _gradingOf[_reqKey(g.source, g.requestId)];
+        for (uint256 i; i < ids.length; i++) {
+            uint256 id = ids[i];
             delete pending[id];
             (bool exists,,) = CARDS.gradeInfo(id);
             if (exists) CARDS.setGradePending(id, false);
@@ -298,18 +326,14 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         emit GradingCancelled(index);
     }
 
-    /// @notice If a grading's randomness never arrived (a day on, and the router has no answer), anyone can ask again.
-    function rerequest(uint256 index) external nonReentrant {
-        Grading storage g = _gradings[index];
-        if (g.ready || g.done || block.timestamp < g.requestedAt + REREQUEST_AFTER || randomness.answered(g.requestId)) {
-            revert NotStuck();
-        }
-        delete _gradingOf[g.requestId];
-        uint256 rid = randomness.request();
-        g.requestId = rid;
-        g.requestedAt = uint64(block.timestamp);
-        _gradingOf[rid] = index + 1;
-        emit Rerequested(index, rid);
+    function _reqKey(address source, uint256 id) private pure returns (uint256) {
+        return (uint256(uint160(source)) << 96) | id;
+    }
+
+    /// @dev Whether `source` holds an answer for `id`; a source that can't say counts as no answer.
+    function _answered(address source, uint256 id) private view returns (bool) {
+        (bool ok, bytes memory ret) = source.staticcall(abi.encodeCall(IPsaRandomness.answered, (id)));
+        return ok && ret.length >= 32 && abi.decode(ret, (bool));
     }
 
     // ================================================================ odds

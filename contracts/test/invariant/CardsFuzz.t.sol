@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
+import {FireCredits} from "../../src/cards/FireCredits.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
@@ -36,6 +37,7 @@ contract CardsFuzzTest is SeriesHelper {
     FirePacks packs;
     FireCards cards;
     FireSale sale;
+    FireCredits credits;
     FirePsa psa;
     RecipeDealer dealer;
     RecipeHarness harness;
@@ -55,17 +57,18 @@ contract CardsFuzzTest is SeriesHelper {
         cards = new FireCards(owner, address(packs));
         dealer = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         rng.setFire(address(cards));
+        credits = new FireCredits(owner, address(cards), 1e18);
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, burnWallet: burnW,
-            paperPerSuggestion: 1e18
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, credits: address(credits)
         }));
         psa = new FirePsa(owner, address(cards), address(new MockBurner(address(plank), address(0))));
         vm.startPrank(owner, owner);
         packs.setSeller(address(sale));
         packs.setCards(address(cards));
         cards.setSeller(address(sale));
+        credits.setSale(address(sale));
         cards.setRandomness(address(rng));
         cards.setPsa(address(psa));
         vm.stopPrank();
@@ -87,7 +90,7 @@ contract CardsFuzzTest is SeriesHelper {
         start = uint64(block.timestamp + 1);
         vm.prank(owner, owner);
         sale.configureDrop(1, FireSale.DropConfig({start: start, packs: 1_000, starters: 0, plankOnly: 0, walletLimit: 1_000,
-            starterWindow: 0, liftAfter: 1 hours, plankBurnBps: bps, priceUsd: price, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0}));
+            starterWindow: 0, liftAfter: 1 hours, plankBurnBps: bps, priceUsd: price, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0}));
     }
 
     function _setFeeds(int256 ethPx, int256 plankPx) internal {

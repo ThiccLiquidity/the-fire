@@ -10,6 +10,8 @@ import {RecipeDealer} from "../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../src/cards/RecipeCompiler.sol";
 import {CardsRenderer} from "../src/cards/CardsRenderer.sol";
 import {PaperBurner} from "../src/cards/PaperBurner.sol";
+import {PlankBurner} from "../src/cards/PlankBurner.sol";
+import {FireCredits} from "../src/cards/FireCredits.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
 import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
@@ -53,8 +55,10 @@ interface ICardsPair {
 /**
  * Deploys every Omni card contract (see ../docs/cards-contracts.md and ../docs/omni-economy.md) and wires them:
  *   FirePacks (sealed packs), FireCards (cards), CardsRenderer (card metadata), RecipeDealer + RecipeCompiler (deal each
- *   Series from its recipe), FireSale (the pack sale), FirePsa (cases and PDA grading), PaperBurner (case and grading
- *   fees buy and burn PAPER), and a drand adapter for each of FireCards and FirePsa.
+ *   Series from its recipe), FireSale (the pack sale), FireCredits (free pack credits, card burning, suggestions),
+ *   PlankBurner (holds the PLANK burn share when a sale's swap can't run, and burns it later), FirePsa (cases and PDA
+ *   grading), PaperBurner (case and grading fees buy and burn PAPER), and a drand adapter for each of FireCards and
+ *   FirePsa.
  * Checks every input before sending anything.
  *
  *   forge script script/DeployCards.s.sol --rpc-url $RPC --account deployer --sender <deployer address> --slow --broadcast \
@@ -65,8 +69,8 @@ interface ICardsPair {
  * Settings (.env.example, card contracts section):
  *   DRAND_ROUTER      the OpenDrandRouter from DeployInfra.s.sol (it has no owner)
  *   OWNER             the multisig (Safe) that will own everything. Afterwards it must call acceptOwnership() on
- *                     FirePacks, FireCards, RecipeDealer, FirePsa and PaperBurner (Ownable2Step). FireSale is owned by OWNER from
- *                     deployment.
+ *                     FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner (Ownable2Step). FireSale
+ *                     is owned by OWNER from deployment. PlankBurner has no owner.
  *                     A plain wallet is refused unless ALLOW_EOA_OWNER=true.
  *   ROYALTY_RECEIVER, ROYALTY_BPS (500 = 5%, max 1000)
  *   PACK_IMAGE_BASE   folder of the pack art (fire<N>.webp); can be set later
@@ -74,14 +78,14 @@ interface ICardsPair {
  *   ETH_USD_FEED      Chainlink ETH/USD; PLANK_USD_FEED the PlankUsdTwap (DeployTwap.s.sol); PAPER_USD_FEED the PaperUsdTwap (DeployInfra.s.sol),
  *                     never the PAPER pool itself. Both feeds must be built on this PAPER/PLANK and ETH_USD_FEED.
  *   V2_ROUTER         Uniswap V2 router (buys the PLANK that each sale burns, and the PAPER that fees burn)
- *   REVENUE_WALLET    gets 70% of every sale; BURN_WALLET gets the burn share when a PLANK swap can't go through
+ *   REVENUE_WALLET    gets 70% of every sale (the PLANK burn share goes to PlankBurner when its swap can't go through)
  *   SUGGESTION_PAPER  PAPER wei per character suggestion to start (default 1e18 = 1 PAPER; 0 = free). The owner can
- *                     change it later (FireSale.setSuggestionRules). Every other sale number is set per drop.
+ *                     change it later (FireCredits.setSuggestionRules). Every other sale number is set per drop.
  *
  * Left for the owner afterwards, per Series (script/ConfigureSeries.s.sol builds these calls from the studio's recipe
  * JSON): RecipeDealer.setRecipe and setCharacters (appendCharacters for long lists), FireCards.setDealer and
  * setImagesBase, optionally FirePsa.setOdds, then FireSale.configureDrop from the JSON's "sale" block (which locks the
- * Series); and pickSuggestions.
+ * Series); and FireCredits.pickSuggestions.
  */
 contract DeployCards is Script {
     struct Params {
@@ -100,7 +104,6 @@ contract DeployCards is Script {
         address paperUsd;
         address v2Router;
         address revenueWallet;
-        address burnWallet;
         uint256 suggestionPaper; // PAPER wei per character suggestion to start (the owner can change it later)
     }
 
@@ -115,6 +118,8 @@ contract DeployCards is Script {
         RecipeCompiler compiler;
         CardsRenderer renderer;
         PaperBurner burner;
+        FireCredits credits;
+        PlankBurner plankBurner;
     }
 
     function run() external returns (Deployed memory d) {
@@ -134,7 +139,6 @@ contract DeployCards is Script {
             paperUsd: vm.envAddress("PAPER_USD_FEED"),
             v2Router: vm.envAddress("V2_ROUTER"),
             revenueWallet: vm.envAddress("REVENUE_WALLET"),
-            burnWallet: vm.envAddress("BURN_WALLET"),
             suggestionPaper: vm.envOr("SUGGESTION_PAPER", uint256(1e18))
         });
         check(p);
@@ -147,13 +151,15 @@ contract DeployCards is Script {
         console.log("FireCards  ", address(d.cards));
         console.log("RecipeDealer", address(d.dealer));
         console.log("FireSale   ", address(d.sale));
+        console.log("FireCredits", address(d.credits));
+        console.log("PlankBurner", address(d.plankBurner));
         console.log("FirePsa    ", address(d.psa));
         console.log("PaperBurner", address(d.burner));
         console.log("CardsRenderer", address(d.renderer));
         console.log("RecipeCompiler", address(d.compiler));
         console.log("Adapter (cards)", address(d.adapter));
         console.log("Adapter (PDA)  ", address(d.psaAdapter));
-        console.log("Next: the OWNER multisig calls acceptOwnership() on FirePacks, FireCards, RecipeDealer, FirePsa and PaperBurner.");
+        console.log("Next: the OWNER multisig calls acceptOwnership() on FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner.");
     }
 
     /// @dev Split out so tests can run the exact same steps.
@@ -166,12 +172,19 @@ contract DeployCards is Script {
         d.renderer = new CardsRenderer(address(d.cards));
         d.adapter = new OpenVRFAdapter(p.router, address(d.cards));
         require(d.adapter.FIRE() == address(d.cards), "adapter points elsewhere");
+        uint8 usdgDecimals = p.usdg == address(0) ? 0 : IERC20Metadata(p.usdg).decimals();
+        d.plankBurner = new PlankBurner(p.plank, p.usdg, usdgDecimals, p.weth, p.v2Router, p.ethUsd, p.plankUsd);
+        d.credits = new FireCredits(deployer, address(d.cards), p.suggestionPaper);
         d.sale = new FireSale(FireSale.Config({
             owner: p.owner, paper: p.paper, plank: p.plank, usdg: p.usdg, weth: p.weth, press: p.press,
             packs: address(d.packs), cards: address(d.cards), ethUsd: p.ethUsd, plankUsd: p.plankUsd, paperUsd: p.paperUsd,
-            router: p.v2Router, revenueWallet: p.revenueWallet, burnWallet: p.burnWallet, paperPerSuggestion: p.suggestionPaper
+            router: p.v2Router, revenueWallet: p.revenueWallet, plankBurner: address(d.plankBurner), credits: address(d.credits)
         }));
-        uint8 usdgDecimals = p.usdg == address(0) ? 0 : IERC20Metadata(p.usdg).decimals();
+        d.credits.setSale(address(d.sale)); // set once; it checks the sale points back here and sells the same cards
+        require(address(d.credits.sale()) == address(d.sale) && d.sale.CREDITS() == address(d.credits), "credits wiring");
+        require(d.sale.plankBurner() == address(d.plankBurner) && address(d.plankBurner.ROUTER()) == address(d.sale.ROUTER())
+            && address(d.plankBurner.PLANK_USD()) == p.plankUsd && address(d.plankBurner.ETH_USD()) == p.ethUsd,
+            "PlankBurner wiring");
         d.burner = new PaperBurner(deployer, p.paper, p.plank, p.usdg, usdgDecimals, p.weth, p.v2Router);
         d.burner.setFeeds(p.ethUsd, p.plankUsd, p.paperUsd);
         _setRoutes(d.burner, p);
@@ -193,6 +206,7 @@ contract DeployCards is Script {
         d.packs.transferOwnership(p.owner);
         d.cards.transferOwnership(p.owner);
         d.dealer.transferOwnership(p.owner);
+        d.credits.transferOwnership(p.owner);
         d.psa.transferOwnership(p.owner);
         d.burner.transferOwnership(p.owner);
     }
@@ -234,8 +248,7 @@ contract DeployCards is Script {
         require(p.paperUsd.code.length > 0, "PAPER_USD_FEED has no code on this chain");
         require(p.owner != address(0) && p.royaltyTo != address(0), "OWNER / ROYALTY_RECEIVER missing");
         require(p.owner.code.length > 0 || vm.envOr("ALLOW_EOA_OWNER", false), "OWNER should be a multisig (set ALLOW_EOA_OWNER=true to override)");
-        require(p.revenueWallet != address(0) && p.burnWallet != address(0) && p.revenueWallet != p.burnWallet,
-            "REVENUE_WALLET and BURN_WALLET must be set and different");
+        require(p.revenueWallet != address(0), "REVENUE_WALLET must be set");
         require(p.royaltyBps <= 1000, "ROYALTY_BPS above 10%");
 
         // The randomness wiring is permanent: make sure DRAND_ROUTER returns a zero requestFee() like the
@@ -258,7 +271,7 @@ contract DeployCards is Script {
         address t1 = ICardsPair(pair).token1();
         require((t0 == p.plank && t1 == p.weth) || (t1 == p.plank && t0 == p.weth), "PLANK_USD_FEED is not on the PLANK/WETH pool");
         // the router must trade on the same WETH and the same PLANK pool the price comes from, or every burn swap
-        // would quietly fail over to the burn wallet
+        // would quietly fail over to PlankBurner
         require(ICardsV2Router(p.v2Router).WETH() == p.weth, "V2_ROUTER uses a different WETH");
         require(ICardsV2Factory(ICardsV2Router(p.v2Router).factory()).getPair(p.plank, p.weth) == pair,
             "V2_ROUTER's factory doesn't own the PLANK_USD_FEED pool");

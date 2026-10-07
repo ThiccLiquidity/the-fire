@@ -143,6 +143,7 @@
   "plankBurnBps": 3000,
   "priceUsd": "250000000",
   "paperPerPack": "1000000000000000000",
+  "paperCapUsd": "100000000",
   "holderWindow": 86400,
   "holderRoot": "0xabababababababababababababababababababababababababababababababab",
   "maxPerTx": 50,

@@ -9,6 +9,7 @@ import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {CardsRenderer} from "../../src/cards/CardsRenderer.sol";
 import {PaperBurner} from "../../src/cards/PaperBurner.sol";
+import {FireCredits} from "../../src/cards/FireCredits.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {DeployCards} from "../../script/DeployCards.s.sol";
 import {MockERC20, MockUSDG, MockFeed, MockPlankTwap, MockPair, MockV2Factory, MockRouterInfo} from "../Mocks.sol";
@@ -24,6 +25,7 @@ contract MockRandomness {
     function setCards(FireCards c) external { cards = c; }
 
     function request() external returns (uint256) { return next++; }
+    function answerSilently(uint256 id) external { answered[id] = true; }
 
     function deliver(uint256 id, uint256 word) external {
         answered[id] = true;
@@ -354,21 +356,61 @@ contract CardsTest is SeriesHelper {
         cards.closeFire(99); // no dealer
     }
 
-    function test_onlyRandomnessDeliversAndRerequestRules() public {
+    function test_onlyRandomnessDeliversAndThereIsNoRerequest() public {
         _sellAndClose(1, 1);
         vm.prank(_holder(0));
         cards.open(1, 1);
         vm.expectRevert(FireCards.NotRandomness.selector);
         cards.onRandomness(1, 5);
-        vm.expectRevert(FireCards.NotStuck.selector);
-        cards.rerequest(1, 0); // too early
-        vm.warp(block.timestamp + 1 days + 1);
-        cards.rerequest(1, 0); // now allowed: never answered
-        uint256 newId = rng.next() - 1;
-        rng.deliver(1, 42); // the old id is stale and ignored
-        assertEq(cards.process(1, 100), 0);
-        rng.deliver(newId, 42);
+        (bool ok,) = address(cards).call(abi.encodeWithSignature("rerequest(uint256,uint256)", 1, 0));
+        assertFalse(ok, "no re-request: one open, one number");
+        rng.deliver(1, 42);
         assertEq(cards.process(1, 100), 6);
+        vm.expectRevert(FireCards.NotRandomness.selector);
+        rng.deliver(1, 43); // answered once: a second answer is refused
+    }
+
+    /// The owner can switch the randomness source at any time. New opens use the new one; an open waiting on the old
+    /// one is answered by it (and only it), or cancelled after CANCEL_AFTER if it never answers.
+    function test_randomnessSwitchKeepsEachOpensSource() public {
+        _sellAndClose(1, 3);
+        vm.prank(_holder(0)); cards.open(1, 1); // old source, id 1
+        vm.prank(_holder(1)); cards.open(1, 1); // old source, id 2
+        MockRandomness rng2 = new MockRandomness();
+        rng2.setCards(cards);
+        vm.prank(_holder(0));
+        vm.expectRevert(); // not the owner
+        cards.setRandomness(address(rng2));
+        vm.expectEmit(address(cards));
+        emit FireCards.RandomnessSet(address(rng2));
+        vm.prank(owner);
+        cards.setRandomness(address(rng2)); // no delay
+        vm.prank(_holder(2)); cards.open(1, 1); // new source, id 1 (the same number as the old source's first)
+        FireCards.Open memory o = cards.openOf(1, 2);
+        assertEq(o.source, address(rng2));
+        assertEq(o.requestId, 1);
+        assertEq(cards.openOf(1, 0).source, address(rng));
+
+        // the new source can't answer the old source's request 1, even with the same id: it answers its own
+        rng2.deliver(1, 7);
+        assertFalse(cards.openOf(1, 0).ready, "the old open still waits for its own source");
+        assertTrue(cards.openOf(1, 2).ready);
+        vm.expectRevert(FireCards.NotRandomness.selector);
+        rng2.deliver(2, 7); // the new source never took request 2
+        // the old source still answers its pending open
+        rng.deliver(1, 5);
+        assertTrue(cards.openOf(1, 0).ready);
+        assertEq(cards.process(1, 100), 6, "the head is dealt; the next waits for the old source's second answer");
+        // the old source never answers its second open: after CANCEL_AFTER it is cancelled, the pack comes back
+        vm.expectRevert(FireCards.NotStuck.selector);
+        cards.cancelOpen(1, 1);
+        vm.warp(block.timestamp + 7 days);
+        cards.cancelOpen(1, 1);
+        assertEq(packs.balanceOf(_holder(1), 1), 1);
+        vm.expectRevert(FireCards.NotRandomness.selector);
+        rng.deliver(2, 9); // a late answer for a cancelled open is refused
+        assertEq(cards.process(1, 100), 6, "the queue moves on to the new source's open");
+        assertEq(cards.balanceOf(_holder(2)), 6);
     }
 
     function test_onlyCardsCanDeal() public {
@@ -940,15 +982,95 @@ contract CardsTest is SeriesHelper {
         vm.stopPrank();
     }
 
-    /// The cancel clock counts from the first request: asking again doesn't restart it.
-    function test_cancelClockFromTheFirstRequest() public {
-        _sellAndClose(1, 1);
+    /// The cancel clock counts from the open's request; the source having an answer blocks a cancel.
+    function test_cancelClockFromTheRequest() public {
+        _sellAndClose(1, 2);
         vm.prank(_holder(0)); cards.open(1, 1);
-        vm.warp(block.timestamp + 1 days + 1);
-        cards.rerequest(1, 0);
-        vm.warp(block.timestamp + 6 days - 1);
+        vm.prank(_holder(1)); cards.open(1, 1);
+        vm.warp(block.timestamp + 7 days - 1);
+        vm.expectRevert(FireCards.NotStuck.selector);
+        cards.cancelOpen(1, 0);
+        vm.warp(block.timestamp + 1);
         cards.cancelOpen(1, 0);
         assertEq(packs.balanceOf(_holder(0), 1), 1);
+        rng.answerSilently(2); // the source holds a word whose callback didn't land: deliver it, don't cancel
+        vm.expectRevert(FireCards.NotStuck.selector);
+        cards.cancelOpen(1, 1);
+    }
+
+    /// Ownership can never be renounced (it can still be handed over in two steps).
+    function test_renounceOwnershipReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(FireCards.RenounceDisabled.selector);
+        cards.renounceOwnership();
+        vm.prank(owner);
+        vm.expectRevert(FirePacks.RenounceDisabled.selector);
+        packs.renounceOwnership();
+        vm.prank(owner);
+        vm.expectRevert(RecipeDealer.RenounceDisabled.selector);
+        dealer.renounceOwnership();
+        assertEq(cards.owner(), owner);
+        vm.prank(owner);
+        cards.transferOwnership(address(0xB0B));
+        vm.prank(address(0xB0B));
+        cards.acceptOwnership();
+        assertEq(cards.owner(), address(0xB0B));
+    }
+
+    /// Collection metadata for marketplaces (ERC-7572), set by the owner.
+    function test_contractURI() public {
+        assertEq(cards.contractURI(), "");
+        vm.prank(_holder(0));
+        vm.expectRevert();
+        cards.setContractURI("ipfs://x");
+        vm.expectEmit(address(cards));
+        emit FireCards.ContractURIUpdated();
+        vm.prank(owner);
+        cards.setContractURI("ipfs://cards.json");
+        assertEq(cards.contractURI(), "ipfs://cards.json");
+        vm.prank(_holder(0));
+        vm.expectRevert();
+        packs.setContractURI("ipfs://x");
+        vm.expectEmit(address(packs));
+        emit FirePacks.ContractURIUpdated();
+        vm.prank(owner);
+        packs.setContractURI("ipfs://packs.json");
+        assertEq(packs.contractURI(), "ipfs://packs.json");
+    }
+
+    /// An ungraded card shows a fixed "Dealt" date (a date trait), never an age that grows; once cased it adds its
+    /// frozen "Age when cased (days)". A grading that's cancelled doesn't move the Dealt date.
+    function test_dealtDateAndAgeWhenCased() public {
+        uint256 dealtAt = block.timestamp;
+        _sellAndClose(1, 1);
+        _openAll(1, 1, 3);
+        string memory dealt = string.concat('{"trait_type":"Dealt","value":', vm.toString(dealtAt), ',"display_type":"date"}');
+        string memory json = _json(cards.tokenURI(1));
+        vm.parseJson(json);
+        assertTrue(_contains(json, dealt), json);
+        assertFalse(_contains(json, "Uncased Age"), json);
+        assertFalse(_contains(json, "Age when cased"), json);
+        vm.warp(block.timestamp + 3 days);
+        assertEq(_json(cards.tokenURI(1)), json, "the metadata doesn't change as time passes");
+        vm.prank(owner);
+        cards.setPsa(address(this));
+        cards.setGradePending(1, true); // sent for grading...
+        vm.warp(block.timestamp + 1 days);
+        cards.setGradePending(1, false); // ...and cancelled: the wear clock resumes, the Dealt date stays
+        assertEq(cards.cardOf(1).dealtAt, dealtAt);
+        assertEq(cards.cardOf(1).age, 3 days);
+        vm.warp(block.timestamp + 2 days);
+        cards.setCased(1);
+        json = _json(cards.tokenURI(1));
+        vm.parseJson(json);
+        assertTrue(_contains(json, dealt), json);
+        assertTrue(_contains(json, '{"trait_type":"Age when cased (days)","value":5,"display_type":"number"}'), json);
+        vm.warp(block.timestamp + 30 days);
+        assertEq(_json(cards.tokenURI(1)), json, "frozen once cased");
+        cards.setGrade(1, 8);
+        json = _json(cards.tokenURI(1));
+        assertFalse(_contains(json, "Dealt"), "a slabbed card shows its grade only");
+        assertTrue(_contains(json, '{"trait_type":"PDA","value":"PDA 8"}'), json);
     }
 
     /// Moves count only wallet to wallet, never for burning; a card's wear shows in cardOf.
@@ -993,7 +1115,7 @@ contract DeployCardsTest is Test {
             ethUsd: ethUsd,
             plankUsd: address(twap), paperUsd: address(paperUsd),
             v2Router: address(new MockRouterInfo(address(weth), v2Factory)),
-            revenueWallet: address(0xBEEF), burnWallet: address(0xB0B), suggestionPaper: 2e18
+            revenueWallet: address(0xBEEF), suggestionPaper: 2e18
         });
         DeployCards.Deployed memory d = s.deploy(p, address(s));
 
@@ -1013,9 +1135,20 @@ contract DeployCardsTest is Test {
         assertEq(address(d.sale.PACKS()), address(d.packs));
         assertEq(address(d.sale.CARDS()), address(d.cards));
         assertEq(d.sale.revenueWallet(), address(0xBEEF));
-        assertEq(d.sale.burnWallet(), address(0xB0B));
+        assertEq(d.sale.plankBurner(), address(d.plankBurner));
+        assertEq(address(d.plankBurner.ROUTER()), p.v2Router);
+        assertEq(address(d.plankBurner.PLANK_USD()), address(twap));
+        assertEq(address(d.plankBurner.ETH_USD()), ethUsd);
+        assertEq(address(d.plankBurner.USDG()), address(usdg));
+        assertEq(d.sale.CREDITS(), address(d.credits));
+        assertEq(address(d.credits.sale()), address(d.sale));
+        assertEq(address(d.credits.CARDS()), address(d.cards));
+        assertEq(d.credits.pendingOwner(), safe);
+        vm.expectRevert(FireCredits.AlreadySet.selector);
+        vm.prank(address(s));
+        d.credits.setSale(address(0xBEEF)); // set once
         assertEq(d.sale.USDG_UNIT(), 1e6);
-        assertEq(d.sale.suggestionPaper(), 2e18);
+        assertEq(d.credits.suggestionPaper(), 2e18);
         assertEq(d.sale.owner(), safe, "the sale is the multisig's from the start");
         assertEq(d.packs.pendingOwner(), safe);
         assertEq(d.cards.pendingOwner(), safe);
@@ -1031,6 +1164,8 @@ contract DeployCardsTest is Test {
         vm.prank(safe); d.cards.acceptOwnership();
         vm.prank(safe); d.psa.acceptOwnership();
         vm.prank(safe); d.dealer.acceptOwnership();
+        vm.prank(safe); d.credits.acceptOwnership();
+        assertEq(d.credits.owner(), safe);
         assertEq(d.dealer.owner(), safe);
         assertEq(d.packs.owner(), safe);
         assertEq(d.cards.owner(), safe);

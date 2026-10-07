@@ -5,6 +5,7 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
+import {FireCredits} from "../../src/cards/FireCredits.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
@@ -45,6 +46,24 @@ contract MockV2Router {
     }
 }
 
+/// @dev A PLANK/USD feed whose checkpoint() refreshes it (like PlankUsdTwap when due); it can be told to fail.
+contract CheckpointFeed {
+    int256 public answer;
+    uint256 public updatedAt;
+    uint256 public checkpoints;
+    bool public fail;
+    constructor(int256 a) { answer = a; updatedAt = block.timestamp; }
+    function setFail(bool f) external { fail = f; }
+    function checkpoint() external {
+        require(!fail, "checkpoint down");
+        checkpoints++;
+        updatedAt = block.timestamp;
+    }
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        return (0, answer, 0, updatedAt, 0);
+    }
+}
+
 contract SaleTest is SeriesHelper {
     function _na() internal pure returns (FireSale.Access memory a) {
         a.proof = new bytes32[](0);
@@ -70,6 +89,7 @@ contract SaleTest is SeriesHelper {
     FireCards cards;
     RecipeDealer dealer;
     FireSale sale;
+    FireCredits credits;
 
     // ETH $3,333; PLANK $1e-9 (18-decimal feed: 1e9); the router trades at the same prices.
     int256 constant ETH_USD = 3_333e8;
@@ -93,17 +113,19 @@ contract SaleTest is SeriesHelper {
         cards = new FireCards(owner, address(packs));
         dealer = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         rng.setFire(address(cards));
+        credits = new FireCredits(owner, address(cards), 1e18);
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, burnWallet: burnW,
-            paperPerSuggestion: 1e18
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW,
+            credits: address(credits)
         }));
         vm.startPrank(owner, owner);
         packs.setSeller(address(sale));
         packs.setCards(address(cards));
         cards.setSeller(address(sale));
         cards.setRandomness(address(rng));
+        credits.setSale(address(sale));
         vm.stopPrank();
         _configureCards(1);
         _configureCards(2);
@@ -132,7 +154,7 @@ contract SaleTest is SeriesHelper {
 
     function _cfg(uint64 s, uint32 n, uint32 starters, uint32 plankOnly, uint32 limit) internal pure returns (FireSale.DropConfig memory) {
         return FireSale.DropConfig({start: s, packs: n, starters: starters, plankOnly: plankOnly, walletLimit: limit,
-            starterWindow: 24 hours, liftAfter: 48 hours, plankBurnBps: 3_000, priceUsd: PRICE, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 48 hours, regularWalletsFor: 48 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
+            starterWindow: 24 hours, liftAfter: 48 hours, plankBurnBps: 3_000, priceUsd: PRICE, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 48 hours, regularWalletsFor: 48 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
     }
 
     function _drop(uint256 fire, uint64 s, uint32 n, uint32 starters, uint32 plankOnly, uint32 limit) internal {
@@ -479,14 +501,14 @@ contract SaleTest is SeriesHelper {
     function test_burn42_earnsACredit_runningCount() public {
         _aliceGetsCards(9); // 54 cards, serials 1..54
         vm.startPrank(alice, alice);
-        sale.burnCards(_ids(1, 3));
-        sale.burnCards(_ids(4, 2));
-        assertEq(sale.burnCount(alice), 5, "3 one day + 2 the next");
-        assertEq(sale.credits(alice), 0);
-        sale.burnCards(_ids(6, 45)); // 50 total
+        credits.burnCards(_ids(1, 3));
+        credits.burnCards(_ids(4, 2));
+        assertEq(credits.burnCount(alice), 5, "3 one day + 2 the next");
+        assertEq(credits.credits(alice), 0);
+        credits.burnCards(_ids(6, 45)); // 50 total
         vm.stopPrank();
-        assertEq(sale.credits(alice), 1);
-        assertEq(sale.burnCount(alice), 8, "extras carry over");
+        assertEq(credits.credits(alice), 1);
+        assertEq(credits.burnCount(alice), 8, "extras carry over");
         assertEq(cards.balanceOf(alice), 4);
     }
 
@@ -494,7 +516,7 @@ contract SaleTest is SeriesHelper {
         _aliceGetsCards(1);
         vm.prank(bob, bob);
         vm.expectRevert(FireCards.NotHolder.selector);
-        sale.burnCards(_ids(1, 1));
+        credits.burnCards(_ids(1, 1));
         vm.prank(bob, bob);
         vm.expectRevert(FireCards.NotSeller.selector);
         cards.burnFor(alice, _ids(1, 1));
@@ -503,37 +525,37 @@ contract SaleTest is SeriesHelper {
     function test_creditsStackAndMintForPaperOnly() public {
         _aliceGetsCards(14); // 84 cards
         vm.prank(alice, alice);
-        sale.burnCards(_ids(1, 84));
-        assertEq(sale.credits(alice), 2);
+        credits.burnCards(_ids(1, 84));
+        assertEq(credits.credits(alice), 2);
         // her suggestion gets picked for the next drop: a third credit
         vm.prank(alice, alice);
-        uint256 id = sale.suggest("A fox made of embers", type(uint256).max);
+        uint256 id = credits.suggest("A fox made of embers", type(uint256).max);
         uint64 s2 = uint64(block.timestamp + 1 hours);
         _drop(2, s2, 10, 0, 0, 5);
         uint256[] memory picked = new uint256[](1);
         picked[0] = id;
         vm.prank(owner, owner);
-        sale.pickSuggestions(2, picked);
-        assertEq(sale.credits(alice), 3, "2 from burning + 1 picked: one pool, any drop");
+        credits.pickSuggestions(2, picked);
+        assertEq(credits.credits(alice), 3, "2 from burning + 1 picked: one pool, any drop");
 
         vm.prank(alice, alice);
         vm.expectRevert(FireSale.NotLive.selector);
-        sale.useCredits(2, 1, type(uint256).max); // no drop live: credits wait
+        credits.useCredits(2, 1, type(uint256).max); // no drop live: credits wait
 
         _warp(s2);
         uint256 deadPaper = paper.balanceOf(DEAD);
         uint256 revBefore = plank.balanceOf(revenue);
         vm.prank(alice, alice);
-        sale.useCredits(2, 3, type(uint256).max);
+        credits.useCredits(2, 3, type(uint256).max);
         assertEq(packs.balanceOf(alice, 2), 3);
-        assertEq(sale.credits(alice), 0);
+        assertEq(credits.credits(alice), 0);
         assertEq(paper.balanceOf(DEAD) - deadPaper, 3e18, "1 PAPER each");
         assertEq(plank.balanceOf(revenue), revBefore, "nothing else paid");
         uint256 paidLeft = sale.phase(2).paidLeft;
         assertEq(paidLeft, 7, "out of the drop's supply");
         vm.prank(alice, alice);
-        vm.expectRevert(FireSale.NoCredits.selector);
-        sale.useCredits(2, 1, type(uint256).max);
+        vm.expectRevert(FireCredits.NoCredits.selector);
+        credits.useCredits(2, 1, type(uint256).max);
     }
 
     // ---------------------------------------------------------------- suggestions
@@ -558,44 +580,44 @@ contract SaleTest is SeriesHelper {
 
     /// Cards per free pack credit is fixed forever at 42 (burn progress carries over between Series): no setter.
     function test_cardsPerCreditIsFixedAt42() public {
-        assertEq(sale.CARDS_PER_CREDIT(), 42);
-        (bool ok,) = address(sale).call(abi.encodeWithSignature("setCardsPerCredit(uint256)", uint256(10)));
+        assertEq(credits.CARDS_PER_CREDIT(), 42);
+        (bool ok,) = address(credits).call(abi.encodeWithSignature("setCardsPerCredit(uint256)", uint256(10)));
         assertFalse(ok, "no setter");
         _aliceGetsCards(7); // 42 cards; fire 1 closes
         vm.prank(alice, alice);
-        sale.burnCards(_ids(1, 41));
-        assertEq(sale.credits(alice), 0);
+        credits.burnCards(_ids(1, 41));
+        assertEq(credits.credits(alice), 0);
         // a new drop doesn't change the rate: progress carries over and the 42nd card earns the credit
         _drop(2, uint64(block.timestamp + 1 hours), 10, 0, 0, 5);
         vm.prank(alice, alice);
-        sale.burnCards(_ids(42, 1));
-        assertEq(sale.credits(alice), 1);
-        assertEq(sale.burnCount(alice), 0);
+        credits.burnCards(_ids(42, 1));
+        assertEq(credits.credits(alice), 1);
+        assertEq(credits.burnCount(alice), 0);
     }
 
     function test_suggestions() public {
         uint256 before = paper.balanceOf(DEAD);
         vm.prank(bob, bob);
-        uint256 id = sale.suggest("Captain Kindling", type(uint256).max);
+        uint256 id = credits.suggest("Captain Kindling", type(uint256).max);
         assertEq(paper.balanceOf(DEAD) - before, 1e18);
         uint256[] memory ids = new uint256[](1);
         ids[0] = id;
         vm.prank(owner, owner);
-        sale.pickSuggestions(1, ids);
-        assertEq(sale.credits(bob), 1);
+        credits.pickSuggestions(1, ids);
+        assertEq(credits.credits(bob), 1);
         vm.prank(owner, owner);
-        vm.expectRevert(FireSale.AlreadyClaimed.selector);
-        sale.pickSuggestions(1, ids); // once each
+        vm.expectRevert(FireCredits.AlreadyClaimed.selector);
+        credits.pickSuggestions(1, ids); // once each
         vm.prank(bob, bob);
-        uint256 id2 = sale.suggest("Ash Wolf", type(uint256).max);
+        uint256 id2 = credits.suggest("Ash Wolf", type(uint256).max);
         ids[0] = id2;
         _open();
         vm.prank(owner, owner);
-        vm.expectRevert(FireSale.DropStarted.selector);
-        sale.pickSuggestions(1, ids); // only while setting up a drop
+        vm.expectRevert(FireCredits.DropStarted.selector);
+        credits.pickSuggestions(1, ids); // only while setting up a drop
         vm.prank(alice, alice);
         vm.expectRevert();
-        sale.pickSuggestions(1, ids); // only the owner
+        credits.pickSuggestions(1, ids); // only the owner
     }
 
     // ---------------------------------------------------------------- gas
@@ -630,16 +652,16 @@ contract SaleTest is SeriesHelper {
     function test_suggestionListClearsAfterEachPickingSession() public {
         _drop(1, start, 4, 0, 0, 5);
         vm.startPrank(bob, bob);
-        uint256 a = sale.suggest("Ember Fox", type(uint256).max);
-        uint256 b = sale.suggest("Ash Wolf", type(uint256).max);
+        uint256 a = credits.suggest("Ember Fox", type(uint256).max);
+        uint256 b = credits.suggest("Ash Wolf", type(uint256).max);
         vm.stopPrank();
         uint256[] memory one = new uint256[](1);
         one[0] = a;
         vm.prank(owner, owner);
-        sale.pickSuggestions(1, one); // session for Fire 1: picks from the list a and b are in
-        assertEq(sale.currentRound(), 1, "new suggestions now go into a fresh list");
+        credits.pickSuggestions(1, one); // session for Fire 1: picks from the list a and b are in
+        assertEq(credits.currentRound(), 1, "new suggestions now go into a fresh list");
         vm.prank(alice, alice);
-        uint256 c = sale.suggest("Cinder Owl", type(uint256).max); // made after the session started: next list
+        uint256 c = credits.suggest("Cinder Owl", type(uint256).max); // made after the session started: next list
 
         _open();
         vm.prank(alice, alice);
@@ -649,13 +671,13 @@ contract SaleTest is SeriesHelper {
         sale.configureDrop(2, _cfg(uint64(block.timestamp + 2 hours), 10, 0, 0, 5));
         one[0] = b;
         vm.prank(owner, owner);
-        vm.expectRevert(FireSale.NotThisRound.selector);
-        sale.pickSuggestions(2, one); // b wasn't picked last time: it's gone
+        vm.expectRevert(FireCredits.NotThisRound.selector);
+        credits.pickSuggestions(2, one); // b wasn't picked last time: it's gone
         one[0] = c;
         vm.prank(owner, owner);
-        sale.pickSuggestions(2, one);
-        assertEq(sale.credits(alice), 1);
-        assertEq(sale.currentRound(), 2);
+        credits.pickSuggestions(2, one);
+        assertEq(credits.credits(alice), 1);
+        assertEq(credits.currentRound(), 2);
     }
 
 
@@ -810,7 +832,7 @@ contract SaleTest is SeriesHelper {
     function test_creditsWorkAnyTimeInAnyDrop() public {
         _aliceGetsCards(14); // closes Fire 1
         vm.prank(alice, alice);
-        sale.burnCards(_ids(1, 84)); // 2 credits
+        credits.burnCards(_ids(1, 84)); // 2 credits
         uint64 s2 = uint64(block.timestamp + 1 hours);
         FireSale.DropConfig memory c = _cfg(s2, 20, 0, 4, 1);
         c.holderWindow = 24 hours;
@@ -818,9 +840,9 @@ contract SaleTest is SeriesHelper {
         sale.configureDrop(2, c);
         _warp(s2);
         vm.prank(alice, alice);
-        sale.useCredits(2, 2, type(uint256).max); // right at the start, during the holder window, past a limit of 1
+        credits.useCredits(2, 2, type(uint256).max); // right at the start, during the holder window, past a limit of 1
         assertEq(packs.balanceOf(alice, 2), 2);
-        assertEq(sale.credits(alice), 0);
+        assertEq(credits.credits(alice), 0);
     }
 
     function test_audit2_phaseShowsTheValveAndState() public {
@@ -845,10 +867,10 @@ contract SaleTest is SeriesHelper {
 
     function test_audit_picksCappedByCharacters() public {
         uint256[] memory ids = new uint256[](4);
-        for (uint256 i; i < 4; i++) { vm.prank(bob, bob); ids[i] = sale.suggest("x", type(uint256).max); }
+        for (uint256 i; i < 4; i++) { vm.prank(bob, bob); ids[i] = credits.suggest("x", type(uint256).max); }
         vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadAmount.selector);
-        sale.pickSuggestions(1, ids); // Fire 1 has 3 characters
+        vm.expectRevert(FireCredits.BadAmount.selector);
+        credits.pickSuggestions(1, ids); // Fire 1 has 3 characters
     }
 
     function test_audit_fireNumberFitsIn64Bits() public {
@@ -915,8 +937,8 @@ contract SaleTest is SeriesHelper {
         FireSale s2 = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(twap), paperUsd: address(0), router: address(router), revenueWallet: revenue, burnWallet: burnW,
-            paperPerSuggestion: 1e18
+            plankUsd: address(twap), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW,
+            credits: address(credits)
         }));
         s2.quotePlank(1, 1); // a normal 30-minute window: fine
         twap.setWindow(PLANK_USD, 6 days); // a checkpoint after a 6-day gap: fresh-looking, but a 6-day average
@@ -1248,49 +1270,49 @@ contract SaleTest is SeriesHelper {
         c.creditsPerPick = 3;
         _set(1, c);
         vm.prank(bob, bob);
-        uint256 id = sale.suggest("Ember Fox", type(uint256).max);
+        uint256 id = credits.suggest("Ember Fox", type(uint256).max);
         vm.prank(alice, alice);
-        uint256 id2 = sale.suggest("Ash Wolf", type(uint256).max);
+        uint256 id2 = credits.suggest("Ash Wolf", type(uint256).max);
         uint256[] memory ids = new uint256[](1);
         ids[0] = id;
         vm.prank(owner, owner);
-        sale.pickSuggestions(1, ids);
-        assertEq(sale.credits(bob), 3);
+        credits.pickSuggestions(1, ids);
+        assertEq(credits.credits(bob), 3);
         c.creditsPerPick = 0;
         _set(1, c);
         ids[0] = id2;
         vm.prank(owner, owner);
-        sale.pickSuggestions(1, ids);
-        assertEq(sale.credits(alice), 0, "picked, no credit");
+        credits.pickSuggestions(1, ids);
+        assertEq(credits.credits(alice), 0, "picked, no credit");
     }
 
     /// The suggestion cost and length are owner settings (any cost, 0 included); suggesters name their most PAPER.
     function test_suggestionRules() public {
-        assertEq(sale.suggestionPaper(), 1e18);
+        assertEq(credits.suggestionPaper(), 1e18);
         vm.prank(alice, alice);
         vm.expectRevert();
-        sale.setSuggestionRules(0, 280);
+        credits.setSuggestionRules(0, 280);
         vm.prank(owner, owner);
-        sale.setSuggestionRules(0, 10);
+        credits.setSuggestionRules(0, 10);
         vm.prank(bob, bob);
-        sale.suggest("Ember Fox", 0); // free
+        credits.suggest("Ember Fox", 0); // free
         assertEq(paper.balanceOf(DEAD), 0);
         vm.prank(bob, bob);
-        vm.expectRevert(FireSale.BadAmount.selector);
-        sale.suggest("Captain Kindling", 0); // 16 bytes > 10
+        vm.expectRevert(FireCredits.BadAmount.selector);
+        credits.suggest("Captain Kindling", 0); // 16 bytes > 10
         vm.prank(owner, owner);
-        sale.setSuggestionRules(5e18, 280);
+        credits.setSuggestionRules(5e18, 280);
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.PriceMoved.selector);
-        sale.suggest("Ash Wolf", 1e18); // the cost went up past the suggester's most
+        credits.suggest("Ash Wolf", 1e18); // the cost went up past the suggester's most
         vm.prank(bob, bob);
-        sale.suggest("Ash Wolf", 5e18);
+        credits.suggest("Ash Wolf", 5e18);
         assertEq(paper.balanceOf(DEAD), 5e18);
         vm.startPrank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.setSuggestionRules(0, 0);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.setSuggestionRules(0, 1_025);
+        vm.expectRevert(FireCredits.BadConfig.selector);
+        credits.setSuggestionRules(0, 0);
+        vm.expectRevert(FireCredits.BadConfig.selector);
+        credits.setSuggestionRules(0, 1_025);
         vm.stopPrank();
     }
 
@@ -1378,11 +1400,11 @@ contract SaleTest is SeriesHelper {
         _set(2, c);
         uint256[] memory ids = new uint256[](2);
         vm.prank(alice, alice);
-        ids[0] = sale.suggest("Ember Fox", type(uint256).max);
+        ids[0] = credits.suggest("Ember Fox", type(uint256).max);
         vm.prank(bob, bob);
-        ids[1] = sale.suggest("Ash Wolf", type(uint256).max);
+        ids[1] = credits.suggest("Ash Wolf", type(uint256).max);
         vm.prank(owner, owner);
-        sale.pickSuggestions(2, ids);
+        credits.pickSuggestions(2, ids);
         _warp(s2);
     }
 
@@ -1392,14 +1414,14 @@ contract SaleTest is SeriesHelper {
         _creditDrop(c, 4);
         assertEq(sale.phase(2).creditPacksLeft, 5);
         vm.prank(alice, alice);
-        sale.useCredits(2, 4, type(uint256).max);
+        credits.useCredits(2, 4, type(uint256).max);
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.CreditCapReached.selector);
-        sale.useCredits(2, 2, type(uint256).max);
+        credits.useCredits(2, 2, type(uint256).max);
         vm.prank(bob, bob);
-        sale.useCredits(2, 1, type(uint256).max);
+        credits.useCredits(2, 1, type(uint256).max);
         assertEq(sale.phase(2).creditPacksLeft, 0);
-        assertEq(sale.credits(bob), 3, "unused credits wait for another drop");
+        assertEq(credits.credits(bob), 3, "unused credits wait for another drop");
     }
 
     function test_creditPacksPerWalletCap() public {
@@ -1407,15 +1429,15 @@ contract SaleTest is SeriesHelper {
         c.creditPacksPerWallet = 2;
         _creditDrop(c, 4);
         vm.prank(alice, alice);
-        sale.useCredits(2, 2, type(uint256).max);
+        credits.useCredits(2, 2, type(uint256).max);
         vm.prank(alice, alice);
         vm.expectRevert(FireSale.CreditWalletLimit.selector);
-        sale.useCredits(2, 1, type(uint256).max);
+        credits.useCredits(2, 1, type(uint256).max);
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.CreditWalletLimit.selector);
-        sale.useCredits(2, 3, type(uint256).max);
+        credits.useCredits(2, 3, type(uint256).max);
         vm.prank(bob, bob);
-        sale.useCredits(2, 2, type(uint256).max);
+        credits.useCredits(2, 2, type(uint256).max);
         assertEq(sale.creditPacksBy(2, alice), 2);
     }
 
@@ -1424,9 +1446,9 @@ contract SaleTest is SeriesHelper {
         _creditDrop(c, 10);
         assertEq(sale.phase(2).creditPacksLeft, 20, "only the supply");
         vm.prank(alice, alice);
-        sale.useCredits(2, 10, type(uint256).max);
+        credits.useCredits(2, 10, type(uint256).max);
         vm.prank(bob, bob);
-        sale.useCredits(2, 10, type(uint256).max);
+        credits.useCredits(2, 10, type(uint256).max);
         assertTrue(sale.phase(2).closed, "credits took the whole drop");
     }
 
@@ -1449,7 +1471,7 @@ contract SaleTest is SeriesHelper {
 
     event DropConfigured(uint256 indexed fire, FireSale.DropConfig config);
 
-    /// A pack's PAPER never costs more than $1: past $1 a PAPER it takes $1 worth (part of a PAPER).
+    /// With a $1 ceiling, a pack's PAPER never costs more than $1: past $1 a PAPER it takes $1 worth (part of a PAPER).
     function test_packPaperCappedAtOneDollar() public {
         MockFeed paperUsd = new MockFeed(5e18); // PAPER at $5
         paperUsd.setDecimals(18);
@@ -1473,14 +1495,14 @@ contract SaleTest is SeriesHelper {
         paperUsd.set(0.08e18);
         assertEq(sale.paperFor(2, 2), 2e18, "under $1 a PAPER: the full PAPER");
         paperUsd.setBroken(true);
-        assertEq(sale.lastPaperCap(), 0.2e18, "the last cap a buy saw");
-        assertEq(sale.paperFor(2, 2), 0.4e18, "no price: the last cap holds, never back to an uncapped pack");
+        assertEq(sale.lastPaperUsd(), 5e18, "the last good price a buy saw");
+        assertEq(sale.paperFor(2, 2), 0.4e18, "no price: the last price holds, never back to an uncapped pack");
         _warp(s3 + 72 hours);
         vm.prank(owner, owner);
         sale.endDrop(2);
         vm.prank(owner, owner);
         sale.setFeeds(address(ethFeed), address(plankFeed), address(0), address(router));
-        assertEq(sale.lastPaperCap(), 0, "a new PAPER feed (or none) starts without the old cap");
+        assertEq(sale.lastPaperUsd(), 0, "a new PAPER feed (or none) starts without the old price");
     }
 
     /// Setting a drop up locks its Series (recipe, characters, dealer, images, odds) before anyone can buy.
@@ -1543,7 +1565,221 @@ contract SaleTest is SeriesHelper {
         _set(5, _cfg(s5, 10, 0, 0, 5));
         _warp(s5);
         vm.prank(alice, alice);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.useCredits(5, 1, type(uint256).max);
+        vm.expectRevert(FireCredits.BadConfig.selector);
+        credits.useCredits(5, 1, type(uint256).max);
+    }
+
+    // ---------------------------------------------------------------- strategic review (round 7)
+
+    /// Ends drop 1 and sets a PAPER/USD feed at `px` (18 decimals) for the next drops.
+    function _paperFeed(int256 px) internal returns (MockFeed f) {
+        f = new MockFeed(px);
+        f.setDecimals(18);
+        _warp(start + 72 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(1);
+        vm.prank(owner, owner);
+        sale.setFeeds(address(ethFeed), address(plankFeed), address(f), address(router));
+    }
+
+    /// The PAPER dollar ceiling is per drop and applies to paid, press and credit packs alike: PAPER per pack, but
+    /// never more than the drop's ceiling worth at the PAPER price.
+    function test_paperCeilingPerDrop() public {
+        MockFeed f = _paperFeed(2e18); // PAPER at $2
+        uint64 s2 = uint64(block.timestamp + 1 hours);
+        FireSale.DropConfig memory c = _cfg(s2, 10, 3, 0, 5);
+        c.paperPerPack = 1e18; // $2 worth
+        c.starterPaper = 3e18; // $6 worth
+        c.paperCapUsd = 50_000_000; // $0.50
+        c.creditsPerPick = 2;
+        _set(2, c);
+        vm.prank(bob, bob);
+        uint256 id = credits.suggest("Ember Fox", type(uint256).max);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = id;
+        vm.prank(owner, owner);
+        credits.pickSuggestions(2, ids);
+        uint256 p1 = press.mint(alice);
+        _warp(s2);
+        f.set(2e18);
+        assertEq(sale.paperFor(2, 1), 0.25e18, "$0.50 of PAPER at $2");
+        (, uint256 pp) = sale.quoteStarter(2, 1, FireSale.Pay.PLANK);
+        assertEq(pp, 0.25e18, "press packs too");
+        uint256 dead = paper.balanceOf(DEAD);
+        vm.prank(alice, alice);
+        sale.buyWithPlank(2, 2, type(uint256).max, 0.5e18, _na());
+        assertEq(paper.balanceOf(DEAD) - dead, 0.5e18, "paid packs");
+        vm.prank(alice, alice);
+        sale.claimStarter(2, p1, 1, FireSale.Pay.PLANK, 0, 0.25e18);
+        assertEq(paper.balanceOf(DEAD) - dead, 0.75e18, "press packs");
+        vm.prank(bob, bob);
+        credits.useCredits(2, 2, 0.5e18);
+        assertEq(paper.balanceOf(DEAD) - dead, 1.25e18, "credit packs");
+        f.set(0.1e18); // PAPER at $0.10: the full PAPER is under the ceiling
+        assertEq(sale.paperFor(2, 1), 1e18);
+        (, pp) = sale.quoteStarter(2, 1, FireSale.Pay.PLANK);
+        assertEq(pp, 3e18);
+        f.setBroken(true); // feed late: the last good price ($2, from the last buy) holds
+        assertEq(sale.lastPaperUsd(), 2e18);
+        assertEq(sale.paperFor(2, 1), 0.25e18);
+
+        // the next drop has no ceiling: the full PAPER whatever its price
+        f.setBroken(false);
+        _warp(s2 + 72 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(2);
+        uint64 s3 = uint64(block.timestamp + 1 hours);
+        _configureCards(3);
+        c = _cfg(s3, 10, 0, 0, 5);
+        c.paperCapUsd = 0;
+        _set(3, c);
+        _warp(s3);
+        f.set(50e18);
+        assertEq(sale.paperFor(3, 2), 2e18, "no ceiling");
+        // and one whose ceiling is above the PAPER's worth takes the full PAPER
+        assertEq(sale.dropOf(3).paperCapUsd, 0);
+    }
+
+    /// With no PAPER price ever seen, packs take the set PAPER (there is nothing to measure the ceiling with).
+    function test_paperCeilingWithoutAPrice() public {
+        assertEq(sale.lastPaperUsd(), 0);
+        assertEq(sale.paperFor(1, 3), 3e18);
+    }
+
+    /// Suggestions keep their own $1 ceiling.
+    function test_suggestionPaperCappedAtOneDollar() public {
+        MockFeed f = _paperFeed(4e18); // PAPER at $4
+        vm.prank(owner, owner);
+        credits.setSuggestionRules(3e18, 280);
+        f.set(4e18);
+        uint256 dead = paper.balanceOf(DEAD);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        credits.suggest("Ember Fox", 0.24e18);
+        vm.prank(bob, bob);
+        credits.suggest("Ember Fox", 0.25e18);
+        assertEq(paper.balanceOf(DEAD) - dead, 0.25e18, "$1 at $4, not 3 PAPER");
+    }
+
+    /// Pause stops buying, press packs, credit spending and paid suggestions. Never ending or closing a drop, burning
+    /// cards, opening or dealing.
+    function test_pauseBlocksBuyingOnly() public {
+        _aliceGetsCards(14); // drop 1 sold out and dealt: 84 cards
+        uint64 s2 = uint64(block.timestamp + 1 hours);
+        FireSale.DropConfig memory c = _cfg(s2, 10, 3, 0, 5);
+        _set(2, c);
+        uint256 p1 = press.mint(alice);
+        vm.prank(alice, alice);
+        credits.burnCards(_ids(1, 42)); // a credit
+        _warp(s2);
+
+        vm.prank(alice, alice);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", alice));
+        sale.setPaused(true);
+        vm.expectEmit(address(sale));
+        emit FireSale.PausedSet(true);
+        vm.prank(owner, owner);
+        sale.setPaused(true);
+        assertTrue(sale.phase(2).paused);
+
+        vm.startPrank(alice, alice);
+        vm.expectRevert(FireSale.IsPaused.selector);
+        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na());
+        vm.expectRevert(FireSale.IsPaused.selector);
+        sale.buyWithEth{value: 1 ether}(2, 1, type(uint256).max, _na());
+        vm.expectRevert(FireSale.IsPaused.selector);
+        sale.buyWithUsdg(2, 1, type(uint256).max, type(uint256).max, _na());
+        vm.expectRevert(FireSale.IsPaused.selector);
+        sale.claimStarter(2, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
+        vm.expectRevert(FireSale.IsPaused.selector);
+        credits.useCredits(2, 1, type(uint256).max);
+        vm.expectRevert(FireSale.IsPaused.selector);
+        credits.suggest("Ember Fox", type(uint256).max);
+        // never paused: burning cards, transfers, opening and dealing
+        credits.burnCards(_ids(43, 1));
+        cards.transferFrom(alice, bob, 44);
+        vm.stopPrank();
+        assertEq(credits.burnCount(alice), 1);
+
+        // ending a drop never pauses either
+        _warp(s2 + 72 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(2);
+        assertTrue(sale.phase(2).closed);
+        vm.prank(owner, owner);
+        sale.setPaused(false);
+        assertFalse(sale.paused());
+    }
+
+    /// While paused, a sold-out drop still closes and its packs still open.
+    function test_pauseNeverBlocksOpeningOrClosing() public {
+        _drop(1, start, 2, 0, 0, 5);
+        _open();
+        vm.prank(alice, alice);
+        sale.buyWithPlank(1, 2, type(uint256).max, type(uint256).max, _na()); // sells out, closes
+        vm.prank(owner, owner);
+        sale.setPaused(true);
+        vm.prank(alice, alice);
+        cards.open(1, 2);
+        rng.fulfill(rng.last(), 5);
+        cards.process(1, type(uint256).max);
+        assertEq(cards.balanceOf(alice), 12);
+    }
+
+    /// The credit hooks answer FireCredits only.
+    function test_creditHooksOnlyFromFireCredits() public {
+        _open();
+        vm.startPrank(alice, alice);
+        vm.expectRevert(FireSale.NotCredits.selector);
+        sale.creditPacks(alice, 1, 1, type(uint256).max);
+        vm.expectRevert(FireSale.NotCredits.selector);
+        sale.burnPaperFor(bob, 1e18, 0, type(uint256).max);
+        vm.expectRevert(FireSale.NotCredits.selector);
+        sale.burnCardsFor(bob, _ids(1, 1));
+        vm.stopPrank();
+        vm.prank(owner, owner);
+        vm.expectRevert(FireCredits.AlreadySet.selector);
+        credits.setSale(address(sale));
+    }
+
+    function test_renounceOwnershipReverts() public {
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.RenounceDisabled.selector);
+        sale.renounceOwnership();
+        vm.prank(owner, owner);
+        vm.expectRevert(FireCredits.RenounceDisabled.selector);
+        credits.renounceOwnership();
+        assertEq(sale.owner(), owner);
+        assertEq(credits.owner(), owner);
+    }
+
+    /// Every buy refreshes the PLANK price itself (PlankUsdTwap.checkpoint, a no-op when not due), so a late keeper
+    /// doesn't stop PLANK purchases; a checkpoint that fails never blocks a buy.
+    function test_buysRefreshThePlankPrice() public {
+        CheckpointFeed twap = new CheckpointFeed(PLANK_USD);
+        _warp(start + 72 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(1);
+        vm.prank(owner, owner);
+        sale.setFeeds(address(ethFeed), address(twap), address(0), address(router));
+        uint64 s2 = uint64(block.timestamp + 1 hours);
+        FireSale.DropConfig memory c = _cfg(s2, 20, 0, 0, 5);
+        c.plankOnly = 0;
+        _set(2, c);
+        vm.warp(s2 + 3 hours); // the keeper has been away for hours: the price is stale
+        ethFeed.set(ETH_USD);
+        assertFalse(sale.phase(2).plankPriceOk);
+        vm.prank(alice, alice);
+        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na()); // the buy refreshes it first
+        assertEq(twap.checkpoints(), 1);
+        assertEq(packs.balanceOf(alice, 2), 1);
+        twap.setFail(true);
+        vm.warp(block.timestamp + 3 hours);
+        ethFeed.set(ETH_USD);
+        uint256 cost = sale.quoteEth(2, 1);
+        vm.prank(alice, alice);
+        sale.buyWithEth{value: cost}(2, 1, type(uint256).max, _na()); // still sells; the burn share waits
+        assertEq(burnW.balance, cost * 3_000 / 10_000, "to PlankBurner");
+        assertEq(packs.balanceOf(alice, 2), 2);
     }
 }
