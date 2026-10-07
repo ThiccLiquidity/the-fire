@@ -84,8 +84,13 @@ switches images when it is cased or graded; nothing is drawn live.
 
 ## Metadata
 
-- **Ungraded:** Cased (Yes/No), Uncased age (days), Moves, PDA "Ungraded". The condition is never shown.
-- **Slabbed:** the PDA grade (the age and moves traits are gone).
+- **Ungraded:** Cased (Yes/No), Dealt (the date the card was dealt: a `date` trait, unix seconds, which marketplaces
+  show as a date), Moves, PDA "Ungraded". Once cased it adds **Age when cased (days)**, frozen. Every value is fixed,
+  so the metadata never changes just because time passes. The condition is never shown.
+- **Slabbed:** the PDA grade (the date, age and moves traits are gone).
+- `Dealt` is kept even if a grading is cancelled (the wear clock then resumes from where it stopped; the date doesn't
+  move). FireCards stores the deal time once, the first time a card's clock freezes (about 22k gas on that case or
+  grading request).
 
 ## Prices
 
@@ -98,8 +103,16 @@ switches images when it is cased or graded; nothing is drawn live.
   missing, nothing is spent and the fee waits in `PaperBurner` for a later buy. `PaperBurner` has no withdraw, its
   router is fixed, its price feeds are set once, and its routes may only pass through WETH, PLANK or USDG.
 
+## Grading requests
+
+- `protect` stores a hash of the cards sent for grading, not the list (less gas per card). `finish(index, ids)` and
+  `cancelGrading(index, ids)` take the list from the grading's `Protected` event (`graded`), in the same order.
+- The owner can pause case and grading payments (`setPaused`); finishing and cancelling never pause.
+- The randomness source can be switched at any time (only new gradings use it; each grading keeps its own:
+  `docs/randomness.md`). There is no re-request; a grading with no answer for 7 days can be cancelled.
+
 ## Locks
 
 | Fixed forever | Fixed per Series when its drop is set up | Owner can change (announced) |
 |---|---|---|
-| Wear rules (time, moves, fade-in), 24h fresh window, 100% fee burn, slabs final, cards per free pack 42, pack PAPER cap $1 | Fresh odds, recipe, characters, dealer, card images | Case and grading prices, cards per grading batch, the PAPER feed, routes |
+| Wear rules (time, moves, fade-in), 24h fresh window, 100% fee burn, slabs final, cards per free pack 42, suggestion PAPER ceiling $1 | Fresh odds, recipe, characters, dealer, card images, the drop's PAPER ceiling per pack | Case and grading prices, cards per grading batch, the PAPER feed, routes, the randomness source (new gradings only), pause on case and grading payments |

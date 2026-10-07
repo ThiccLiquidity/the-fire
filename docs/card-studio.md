@@ -148,15 +148,15 @@ has its own "Forged · Series #" line, so images are never shared across Series.
 - **Omni Card Packs** (`FirePacks`, ERC-1155): one stackable token type per Series, so "Series 7 Sealed Pack x 3"
   lists and trades like any item. Pack art is `<packImageBase>fire<N>.webp`.
 - **Omni Cards** (`FireCards`, ERC-721): every card unique, with character, category, material, holo, Series,
-  edition, serial and PDA as traits (Material = the type's name). Ungraded cards add Cased, Uncased Age (days) and
-  Moves, with PDA "Ungraded"; graded cards show "PDA N" only. Image file names match the studio's export and
+  edition, serial and PDA as traits (Material = the type's name). Ungraded cards add Cased, Dealt (a date) and
+  Moves, plus Age when cased (days) once cased, with PDA "Ungraded"; graded cards show "PDA N" only. Image file names match the studio's export and
   `CardsRenderer.imageName`: `c<character>-<type slug>-<holo>-<state>.webp`, `holo` one of `none`, `frame`,
   `picture`, `full`, `state` `u` (ungraded), `c` (cased) or `1` to `10` (slabbed). Standard slugs are `paper`, `wood`,
   `fire`, `coal`, `gold`, `fullart`: `c0-wood-none-u.webp`, `c0-wood-none-c.webp`, `c2-gold-full-10.webp`.
   A Series' images lock when its drop is set up.
 
-A pack's contents are decided only when it is opened: the pack is burned, drand randomness arrives about 30 seconds
-later (the router commits to a drand round 30 to 33 seconds ahead) and its cards are drawn from what is left in the Series' pool, keeping the pack guarantees. See
+A pack's contents are decided only when it is opened: the pack is burned, drand randomness arrives about 90 seconds
+later (the router commits to a drand round 90 to 93 seconds ahead) and its cards are drawn from what is left in the Series' pool, keeping the pack guarantees. See
 `docs/cards-contracts.md`.
 
 ## Studio workflow, per Series

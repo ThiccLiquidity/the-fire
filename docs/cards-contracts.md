@@ -23,9 +23,15 @@ read on-chain.
 | `RecipeDealer` | The first dealer: deals each Series from its own recipe (below). Owned by the multisig. |
 | `RecipeCompiler` | The recipe checker, compiler and pool maths, split out of `RecipeDealer` for contract size. Pure: no state, no owner. |
 | `StandardRecipe` | The original Omni rules as a recipe (library). |
-| `FireSale` | Sells the packs (`docs/omni-economy.md`): every product rule is a per-drop setting (pack counts, prices, PAPER, burn share, PLANK-only packs, press packs, holder window, wallet limit, regular-wallets rule, packs per purchase, credits per picked suggestion). Cards per free pack is fixed at 42 forever. Closes the Series when a drop sells out or ends. Never holds funds. |
+| `FireSale` | Sells the packs (`docs/omni-economy.md`): every product rule is a per-drop setting (pack counts, prices, PAPER and its dollar ceiling, burn share, PLANK-only packs, press packs, holder window, wallet limit, regular-wallets rule, packs per purchase, credits per picked suggestion). Closes the Series when a drop sells out or ends. The owner can pause buying (`setPaused`). Never holds funds. |
+| `FireCredits` | Free pack credits, card burning (42 cards = 1 credit, fixed forever) and character suggestions, split out of `FireSale` for contract size (same rules). It spends credits, burns cards and takes suggestion PAPER through `FireSale` hooks only it can call (`creditPacks`, `burnCardsFor`, `burnPaperFor`), so PAPER is approved to `FireSale` alone. Owned by the multisig (picks, suggestion rules). |
+| `PlankBurner` | Gets the sale's PLANK burn share when the swap can't run (a stale PLANK price or a failed swap). No owner, no withdraw: anyone calls `flush`, which buys PLANK (95% TWAP guard, halving for a backlog) and sends it to the dead address. |
 | `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars, paid in ETH, USDG or PLANK. drand picks each grade (1 to 10) from the Series' fresh odds and the card's frozen wear (fixed rules); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
 | `PaperBurner` | Gets 100% of every case and grading fee, buys PAPER with it on owner-set routes and burns it. No withdraw; the router is fixed at deploy. |
+
+Every owned contract refuses `renounceOwnership` (control can't be lost by mistake); ownership moves only in two
+steps (`transferOwnership`, then `acceptOwnership`). `FirePacks` and `FireCards` have an owner-set `contractURI`
+(ERC-7572, `ContractURIUpdated`) for collection pages on marketplaces.
 
 ## A Series' recipe (RecipeDealer)
 
@@ -140,7 +146,7 @@ picture / full out of 1e18), `characterOf`, `charactersOf(fire, from, count)`, `
   "sale": {
     "start": 1900000000, "packs": 117, "starters": 50, "plankOnly": 50, "walletLimit": 5,
     "starterWindow": 86400, "liftAfter": 172800, "plankBurnBps": 3000,
-    "priceUsd": "250000000", "paperPerPack": "1000000000000000000",
+    "priceUsd": "250000000", "paperPerPack": "1000000000000000000", "paperCapUsd": "100000000",
     "holderWindow": 86400, "holderRoot": "0x...", "maxPerTx": 50,
     "plankOnlyFor": 172800, "regularWalletsFor": 172800,
     "starterPerPress": 1, "starterWalletLimit": 1, "starterPriceUsd": "0", "starterPaper": "1000000000000000000",
@@ -184,8 +190,8 @@ after `start`, dollars with 8 decimals, PAPER in wei, the burn share in basis po
    `<imagesBase>` + `c<character>-<type slug>-<holo>-<state>.webp` (`imageName`; `holo` is `none`, `frame`, `picture` or
    `full`, `state` `u` (ungraded), `c` (cased) or `1` to `10` (slabbed)). Traits: Character, Category, Material (the type
    name), Holo, Series, Edition ("k", then "k of N" once every pack of the Series is dealt), Serial, plus any the dealer
-   adds. Ungraded: PDA "Ungraded", Cased, Uncased Age (days), Moves (the condition is never shown). Graded: "PDA N"
-   only. Example: `c0-coal-full-7.webp`.
+   adds. Ungraded: PDA "Ungraded", Cased, Dealt (a `date` trait), Moves, and once cased Age when cased (days), frozen
+   (the condition is never shown; nothing changes just because time passes). Graded: "PDA N" only. Example: `c0-coal-full-7.webp`.
 7. **Wear, cases and grading:** each card wears with time uncased and with moves between wallets until it is cased or
    graded; `FirePsa.protect` cases and grades. A card being graded can't be transferred. Rules in `docs/grading.md`.
 
@@ -209,7 +215,8 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | Paid packs | `DropConfig.packs` | per Series | 117 | < 2^64; 0 allowed if there are press packs |
 | Press packs (starters) in all | `starters` | per Series | 50 | < 2^64; 0 = off |
 | Price per paid pack | `priceUsd` (8 dec.) | per Series | $2.50 | > 0 when there are paid packs (a $0 typo would give them away) |
-| PAPER per paid / credit pack | `paperPerPack` | per Series | 1 PAPER | any, 0 = none; never more than $1 of PAPER at the `PAPER_USD` feed's price (`PACK_PAPER_CAP_USD18`, fixed) |
+| PAPER per paid / credit pack | `paperPerPack` | per Series | 1 PAPER | any, 0 = none |
+| PAPER ceiling per pack | `paperCapUsd` (8 dec.) | per Series | $1 | any, 0 = no ceiling. A pack's PAPER (paid, press and credit packs) is never worth more than this at the `PAPER_USD` feed's price; while the feed is late the last good price holds (`lastPaperUsd`); before its first price, the set PAPER |
 | PLANK burn share | `plankBurnBps` | per Series | 30% | 0 to 100% |
 | PLANK-only packs | `plankOnly` | per Series | 50 | <= paid packs |
 | PLANK-only opens to ETH/USDG after | `plankOnlyFor` | per Series | 48h | > 0 if `plankOnly` > 0 (a PLANK feed outage can't stall a drop); <= 30 days |
@@ -227,20 +234,25 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | Credits per picked suggestion | `creditsPerPick` | per Series | 1 | < 2^16; 0 = none |
 | Free (credit) packs in the drop, at most | `creditPacksMax` | per Series | 10% of the drop's packs (the studio sets a percent and exports the count, rounded down, at least 1) | < 2^64; 0 = no limit; `CreditCapReached` past it |
 | Free (credit) packs per wallet, at most | `creditPacksPerWallet` | per Series | 3 | < 2^64; `CreditWalletLimit` past it |
-| Cards per free pack credit | `CARDS_PER_CREDIT` | constant | 42 | **fixed forever**: burn progress carries over between Series, so changing it would move the goalposts |
-| Suggestion cost, longest text | `setSuggestionRules` | global (suggestions aren't tied to a drop) | 1 PAPER, 280 bytes | any cost incl. 0 (each `suggest` names its most PAPER), never more than $1 of PAPER (same cap as packs); text 1 to 1,024 bytes (event size) |
+| Cards per free pack credit | `FireCredits.CARDS_PER_CREDIT` | constant | 42 | **fixed forever**: burn progress carries over between Series, so changing it would move the goalposts |
+| Suggestion cost, longest text | `FireCredits.setSuggestionRules` | global (suggestions aren't tied to a drop) | 1 PAPER, 280 bytes | any cost incl. 0 (each `suggest` names its most PAPER), never more than $1 of PAPER (`SUGGESTION_PAPER_CAP_USD`, fixed); text 1 to 1,024 bytes (event size) |
 | Cards per case/grading batch | `FirePsa.setMaxBatch` | global | 20 | 1 to 100 (gas guard: `finish` grades a batch in one tx) |
 | Case and grading prices | `FirePsa.setPrices` | global | $0.05, $1 | above 0, at most $100 each (typo guard; each batch names its most) |
 | Fee burn routes | `PaperBurner.setRoutes` | global | set at deploy | each route starts at the currency and ends at PAPER, passing only through WETH, PLANK or USDG (2-4 tokens, at most 4 routes); the 95% guard checks every buy. The router is fixed and the burner's price feeds (`setFeeds`) can be set only once |
 | Fresh PDA odds | `FirePsa.setOdds` | per Series | 5-10 table (`docs/grading.md`) | grades 1-4 must be 0 |
-| Revenue and burn wallets, feeds, router | `setWallets`, `setFeeds` | global | - | only between drops (unchanged) |
+| Revenue wallet and PlankBurner, feeds, router | `setWallets`, `setFeeds` | global | - | only between drops (unchanged) |
+| Pause | `FireSale.setPaused`, `FirePsa.setPaused` | global | off | blocks every buy, press packs, credit spending, paid suggestions (`FireSale`) and case/grading payments (`FirePsa`). Never opening, dealing, transfers, ending or closing a drop, burning cards, finishing or cancelling a grading, or keeper calls. No expiry |
+| Randomness source | `FireCards.setRandomness`, `FirePsa.setRandomness` | global | the drand adapters | any time, no delay (announced first); only new requests use it, each pending request keeps its source (`docs/randomness.md`) |
+| Collection metadata | `FirePacks.setContractURI`, `FireCards.setContractURI` | global | empty | any (ERC-7572) |
 
 Guards that stay fixed (safety, not product): settings lock at the drop's start; one drop at a time; every purchase
-names its most PLANK/USDG/ETH and PAPER; the $1 PAPER cap on packs and suggestions (the last cap holds while the PAPER feed is late); the swap floors
-(`SWAP_MIN_BPS`: 90% in `FireSale`, 95% in `PaperBurner`); the wear rules and 100% fee burn (`docs/grading.md`); feed freshness (`ETH_FEED_MAX_AGE`
+names its most PLANK/USDG/ETH and PAPER; the PAPER ceilings (per drop for packs, $1 for suggestions; the last good
+price holds while the PAPER feed is late); the swap floors (`SWAP_MIN_BPS`: 90% in `FireSale`, 95% in `PaperBurner`
+and `PlankBurner`); the wear rules and 100% fee burn (`docs/grading.md`); feed freshness (`ETH_FEED_MAX_AGE`
 25h, `PLANK_FEED_MAX_AGE` and `PLANK_WINDOW_MAX` 2h, `PAPER_FEED_MAX_AGE` 2 days); phases at most 30 days
 (`MAX_WINDOW`) and `END_GRACE` 7 days, so a stalled drop can always be ended (by the owner once its last phase is over,
-by anyone a week later); re-request after a day and cancel after a week for randomness; royalty at most 10%.
+by anyone a week later); no re-request, and cancel after a week for randomness; royalty at most 10%; ownership can't
+be renounced.
 
 ## Technical ceilings (not product rules)
 
@@ -263,15 +275,17 @@ by anyone a week later); re-request after a day and cancel after a week for rand
 - Results depend only on the random words and the open order, not on who calls `process(fire, maxCards)`, when, or
   how the work is split.
 - Cards are minted without the receiver callback, so a holder's contract can't stall the queue for everyone else.
-- If an open's randomness never arrives (a day, and the router has no answer), anyone can `rerequest(fire, index)`.
-  After 7 days from the first request with no answer (randomness gone for good), anyone can `cancelOpen(fire, index)`:
-  the packs go back to the holder, sealed. If a ready open sits at the head of its queue undealt for 7 days (a dealer
+- One open, one randomness request: there is no re-request (it could act as a re-roll once a drand round is public).
+  After 7 days with no answer (randomness gone for good), anyone can `cancelOpen(fire, index)`: the packs go back to
+  the holder, sealed. Each open remembers its randomness source and only that source can answer it, so switching the
+  source never strands or re-rolls an open. If a ready open sits at the head of its queue undealt for 7 days (a dealer
   that can't deal it), anyone can `skipStuck(fire)`: its unstarted packs go back, sealed, and the queue moves on. Each
   Series' queue stands alone, so one stuck Series never blocks another.
 - The owner can't change a Series' dealer, recipe, characters, fresh odds or image folder once its drop is set up.
   Closing doesn't depend on the dealer, so a drop can always close.
 - The owner can't change a dealt card. A card being graded can't be transferred (it can be burned); grades are final.
-- `PaperBurner` has no withdraw: fees only ever leave as a PAPER buy sent to the dead address.
+- `PaperBurner` and `PlankBurner` have no withdraw: what they hold only ever leaves as a PAPER (or PLANK) buy sent to
+  the dead address.
 - Trust: the dealer is code the owner chooses per Series (before its first pack). `RecipeDealer` is the one in this
   repo, covered by the tests; a future dealer is trusted like the owner's other settings, and must deal only from its
   own state and the seed and keep its text JSON-safe.
@@ -280,7 +294,7 @@ by anyone a week later); re-request after a day and cancel after a week for rand
 
 | | Before | Now |
 |---|---|---|
-| `open` 1 pack | ~101.9k | ~99.3k |
+| `open` 1 pack | ~101.9k | ~102.8k (the open now also stores its randomness source, packed with the request id) |
 | `process` 1 pack (6 cards) | ~345.8k | ~365.4k (+5.7%) |
 | `process` a 10-pack open | ~3.26M | ~3.47M (+6.4%) |
 
@@ -288,7 +302,8 @@ The extra is the call to the dealer and reading the compiled recipe (stored as c
 
 ## Tests
 
-`contracts/test/cards/` (`Cards.t.sol`, `Recipe.t.sol`, `Sale.t.sol`, `Psa.t.sol`, `Burner.t.sol`, `SaleFork.t.sol`) and
+`contracts/test/cards/` (`Cards.t.sol`, `Recipe.t.sol`, `Sale.t.sol`, `Psa.t.sol`, `Burner.t.sol`, `PlankBurner.t.sol`,
+`SaleFork.t.sol`) and
 `contracts/test/invariant/` (fuzz and invariant suites, including `RecipeFuzz.t.sol`). They cover:
 - the Standard pool (`classic`, Gold in Diamond's place) matches the studio's own code over 344 Series sizes and
   count settings (`pool-fixture.json`,
@@ -306,14 +321,19 @@ The extra is the call to the dealer and reading the compiled recipe (stored as c
 - permissions, burns, royalties, metadata, image names, the image folder lock, the JSON configure path
 - the wear odds match `wear-model.py` (`wear-vectors.json`); cases and grades freeze wear; grades are final; the
   burner's best route, split, 95% guard, piece-by-piece backlog, set-once feeds and known-token routes
+- the strategic review: what pause blocks and never blocks, a randomness switch (old requests answered only by their
+  own source, or cancelled), the per-drop PAPER ceiling on paid, press and credit packs, PlankBurner (no withdraw,
+  flush, guard, halvings), renounce refused, the Dealt date trait, contractURI, a buy refreshing the PLANK price
 
 ## Deploying
 
 `contracts/script/DeployCards.s.sol` deploys and wires everything in one run: FirePacks, FireCards, CardsRenderer,
-RecipeDealer and RecipeCompiler, FireSale, PaperBurner (its feeds and default routes: direct to PAPER or through
-PLANK/WETH), FirePsa, two drand adapters (FireCards, FirePsa), the royalty. It needs `PAPER_USD_FEED` (the
-`PaperUsdTwap`). It hands ownership to the multisig (`OWNER`), which must then call `acceptOwnership()` on FirePacks,
-FireCards, RecipeDealer, FirePsa and PaperBurner; FireSale is owned by `OWNER` from deployment. The script checks every input first and refuses a plain wallet as owner unless told
+RecipeDealer and RecipeCompiler, PlankBurner, FireCredits, FireSale (wired to both; `FireCredits.setSale` is set once
+and checks the sale points back), PaperBurner (its feeds and default routes: direct to PAPER or through PLANK/WETH),
+FirePsa, two drand adapters (FireCards, FirePsa), the royalty. It needs `PAPER_USD_FEED` (the `PaperUsdTwap`). It
+hands ownership to the multisig (`OWNER`), which must then call `acceptOwnership()` on FirePacks, FireCards,
+RecipeDealer, FireCredits, FirePsa and PaperBurner; FireSale is owned by `OWNER` from deployment; PlankBurner has no
+owner. The script checks every input first and refuses a plain wallet as owner unless told
 otherwise. A test runs the same steps.
 
 `contracts/script/ConfigureSeries.s.sol` sets up a Series from a recipe JSON: it checks the recipe against the dealer,
@@ -324,15 +344,18 @@ owner (testnet). It rejects unknown JSON keys, fresh odds on grades 1-4 and a dr
 
 - **Settings:** `.env.example` (card contracts section). No keys in `.env`: sign with the Foundry keystore or a Ledger.
 - **Right after the deploy:** the multisig accepts ownership, then checks the wiring: the seller is FireSale on packs
-  and cards, cards point at packs, the dealer points at cards and packs, the PDA is FirePsa, the renderer is
-  CardsRenderer, FirePsa pays PaperBurner, randomness points at the two adapters, no Series is configured or locked yet,
+  and cards, cards point at packs, the dealer points at cards and packs, FireSale and FireCredits point at each other,
+  FireSale's `plankBurner` is the deployed PlankBurner (same router and PLANK/ETH feeds), the PDA is FirePsa, the
+  renderer is CardsRenderer, FirePsa pays PaperBurner, randomness points at the two adapters, no Series is configured or locked yet,
   and the royalty is what was set.
 - **Keeper** (not built yet; every call is permissionless):
   - `PlankUsdTwap.checkpoint()` every 30 minutes
   - `PaperUsdTwap.checkpoint()` when `due()`
-  - `PaperBurner.flush(pay)` when a fee is waiting (`Waiting` events)
-  - delivering drand numbers to the router (`OpenDrandRouter.fulfill`; `adapter.settle` if a callback didn't land)
-  - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index)` if the site doesn't call them
+  - `PaperBurner.flush(pay)` when a fee is waiting (`Waiting` events); `PlankBurner.flush(pay)` when it holds ETH or
+    USDG
+  - delivering drand numbers to the router (`OpenDrandRouter.fulfill` or `fulfillMany`; `adapter.settle` if a
+    callback didn't land)
+  - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` if the site doesn't call them
 - **Before deploy day:** run the real-chain gas test (PowerShell, from `contracts`):
   ```powershell
   $env:FORK_RPC = "https://rpc.mainnet.chain.robinhood.com"
@@ -340,8 +363,9 @@ owner (testnet). It rejects unknown JSON keys, fresh odds on grades 1-4 and a dr
   ```
 
 The site has the ABIs: `web/src/lib/abi/` (`fireCardsAbi.json`, `firePacksAbi.json`, `fireSaleAbi.json`,
-`firePsaAbi.json`, `recipeDealerAbi.json`, `paperBurnerAbi.json`, `cardsRendererAbi.json`), exported by
-`web/src/lib/cards.ts`.
+`fireCreditsAbi.json`, `firePsaAbi.json`, `recipeDealerAbi.json`, `paperBurnerAbi.json`, `plankBurnerAbi.json`,
+`cardsRendererAbi.json`), exported by `web/src/lib/cards.ts`. Each file is the `abi` field of
+`contracts/out/<Contract>.sol/<Contract>.json` after `forge build`, written as 2-space JSON.
 
 ## Past review fixes after the redesign
 
