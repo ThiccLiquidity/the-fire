@@ -69,7 +69,9 @@ Each folder in `sim/omni` has its model and its recorded output; most also have 
 ## Deploying
 
 Deployment is a three-step Foundry runbook (`DeployTwap`, then `DeployInfra`, then `DeployCards`) followed by the
-multisig accepting ownership and a keeper going live. See [`docs/deploy.md`](docs/deploy.md). Settings go in
+multisig accepting ownership (checked by `VerifyDeploy`) and the keeper going live (`ops/keeper`). Each Series is set
+up in two Safe signings with `ops/series` (VerifySeries) in between, and the whole launch can be rehearsed on a local
+chain (`ops/rehearsal`). See [`docs/deploy.md`](docs/deploy.md). Settings go in
 `contracts/.env` (copy `contracts/.env.example`). Sign with a Foundry keystore (`--account`) or `--ledger`; never put
 a private key in a file or on the command line.
 

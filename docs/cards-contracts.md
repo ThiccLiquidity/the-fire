@@ -336,11 +336,16 @@ RecipeDealer, FireCredits, FirePsa and PaperBurner; FireSale is owned by `OWNER`
 owner. The script checks every input first and refuses a plain wallet as owner unless told
 otherwise. A test runs the same steps.
 
-`contracts/script/ConfigureSeries.s.sol` sets up a Series from a recipe JSON: it checks the recipe against the dealer,
-then prints each call (target and calldata) for the multisig, or sends them with `SEND=true` when the signer is the
-owner (testnet). It rejects unknown JSON keys, fresh odds on grades 1-4 and a drop start more than 365 days away. Inputs: `RECIPE_JSON`, `RECIPE_DEALER`, `FIRE_CARDS`, `FIRE_PSA` (if the JSON has `pdaOdds`),
-`FIRE_SALE` (adds `configureDrop` from the `sale` block, last), `DROP_START` and `HOLDER_ROOT` (override the block),
-`CHARACTER_BATCH` (characters per call, default 200).
+Every deploy script writes what it deployed to `deployments/<chainId>.json` (repository root), the address file every
+tool reads; `contracts/script/VerifyDeploy.s.sol` checks the wiring listed below from it.
+
+`contracts/script/ConfigureSeries.s.sol` sets up a Series from a recipe JSON in two Safe batches: `BATCH=A` (content:
+recipe, characters, dealer, images base, odds) and, after `ops/series/verify-series.mjs` is green, `BATCH=B`
+(`configureDrop`, the lock; refused unless the chain holds batch A exactly). It checks the recipe against the dealer,
+prints each call and writes a Safe Transaction Builder file per batch (`contracts/safe-tx/`); `SIMULATE=true` runs a
+batch as the impersonated owner on a fork; `SEND=true` sends them when the signer is the owner (testnet). It rejects unknown JSON keys, fresh odds on grades 1-4 and a drop start more than 365 days away. Inputs: `RECIPE_JSON` (under `contracts/series/`), `BATCH`,
+`DROP_START` and `HOLDER_ROOT` (override the block), `CHARACTER_BATCH` (characters per call, default 200);
+`RECIPE_DEALER`, `FIRE_CARDS`, `FIRE_PSA`, `FIRE_SALE` from the deployments file unless set.
 
 - **Settings:** `.env.example` (card contracts section). No keys in `.env`: sign with the Foundry keystore or a Ledger.
 - **Right after the deploy:** the multisig accepts ownership, then checks the wiring: the seller is FireSale on packs
@@ -348,14 +353,13 @@ owner (testnet). It rejects unknown JSON keys, fresh odds on grades 1-4 and a dr
   FireSale's `plankBurner` is the deployed PlankBurner (same router and PLANK/ETH feeds), the PDA is FirePsa, the
   renderer is CardsRenderer, FirePsa pays PaperBurner, randomness points at the two adapters, no Series is configured or locked yet,
   and the royalty is what was set.
-- **Keeper** (not built yet; every call is permissionless):
-  - `PlankUsdTwap.checkpoint()` every 30 minutes
-  - `PaperUsdTwap.checkpoint()` when `due()`
-  - `PaperBurner.flush(pay)` when a fee is waiting (`Waiting` events); `PlankBurner.flush(pay)` when it holds ETH or
-    USDG
-  - delivering drand numbers to the router (`OpenDrandRouter.fulfill` or `fulfillMany`; `adapter.settle` if a
-    callback didn't land)
-  - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` if the site doesn't call them
+- **Keeper** (`ops/keeper`; every call is permissionless):
+  - `PlankUsdTwap.checkpoint()` every 30 minutes and `PaperUsdTwap.checkpoint()` when `due()`
+  - delivering drand numbers to the router (`OpenDrandRouter.fulfillMany`; `adapter.settle` if a callback didn't
+    land)
+  - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` (ids from the `Protected` event)
+  - `PaperBurner.flush(pay)` when a fee is waiting (`Waiting` events) and `PlankBurner.flush(pay)` when it holds ETH,
+    USDG or PLANK
 - **Before deploy day:** run the real-chain gas test (PowerShell, from `contracts`):
   ```powershell
   $env:FORK_RPC = "https://rpc.mainnet.chain.robinhood.com"

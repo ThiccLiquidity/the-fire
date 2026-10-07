@@ -185,7 +185,8 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and its cards
    approved, the full grid built, sale settings valid); **recipe.json** (what `contracts/script/ConfigureSeries.s.sol`
    reads: types, slots, characters, fresh PDA odds, `imagesBase` once uploaded, and the `sale` block; tied to the
    uploaded build); a zip of the images, per-card metadata (preview
-   only), `fire.json` and `recipe.json`, in parts of about 1.5 GB for big Series; or the upload to IPFS through Pinata.
+   only), `fire.json` and `recipe.json`, in parts of about 1.5 GB for big Series; or the upload to IPFS: Pinata, then a
+   second pin of the same images on Filebase, then the images CAR saved offline.
 
 **Upload.** Each folder (images, then the preview metadata) is packed in the browser into one CAR file. Its root CID
 (a UnixFS directory, CIDv1, sharded when large) is known before upload. The CAR goes to Pinata's v3 upload API with
@@ -195,10 +196,32 @@ single `imagesBase` the contract expects (`ipfs://<images CID>/`). The Pinata ke
 per session and never stored. The legacy one-request folder upload is not used: it can't resume, and one folder
 can't be built from several pins.
 
+**manifest.json.** The images folder also holds `manifest.json`: every image's name, size and sha256, the studio's
+grid key, and the recipe hash (sha256 of `recipe.json`'s fire, types, slots, characters and PDA odds; `imagesBase` and
+the sale block left out). VerifySeries (`ops/series`) reads it before the Series is locked.
+
+**Second pin (Filebase).** Right after Pinata, the same images CAR is pinned on Filebase through its S3-compatible API
+(`https://s3.filebase.com`, object `<images folder>.car` with the `import: car` metadata), in 64 MB parts that resume
+after a failure or a reload. Filebase reports the CID it pinned; it must equal the folder's root CID, which is also
+what Pinata holds. Then both are read back (**Check both pins**). If no Filebase key was entered, **Pin to Filebase**
+does it later. The Filebase access key, secret and bucket are typed in per session, like the Pinata JWT: memory only,
+never stored or logged. One-time setup:
+1. Filebase console: Buckets → Create bucket (network IPFS); Access Keys → a key that can write to it.
+2. Let the studio's page reach the bucket (a CORS rule exposing `ETag` and `x-amz-meta-cid`), from `studio`:
+   `node scripts/filebase-cors.mjs` (it asks for the key, the secret and the bucket; nothing is saved; `--origin` adds
+   another address than `http://localhost:5173`).
+
+**Offline copy.** Until the owner confirms it, the Export screen asks to **Save images CAR** (streamed to a file the
+owner picks) and to keep it on a drive they keep. With that file the images can be pinned again anywhere (any
+service's CAR upload, or `ipfs dag import`) and come back with the same CID, even if both pinning services drop them.
+
+**Mock IPFS** (Data tab, or `?mockPinata` in the URL) covers Pinata and Filebase: nothing leaves the machine.
+
 Only the images folder is used on-chain: `tokenURI` builds each card's JSON itself. The studio's per-card metadata is
 for preview and reference only.
 
 ## Storage
 
-Arweave (one-time, permanent) suits shared images; IPFS (Pinata, Storacha, Filebase) is the alternative. The studio
-uploads to Pinata today. Check current prices before choosing for launch.
+Arweave (one-time, permanent) suits shared images; IPFS (Pinata, Storacha, Filebase) is the alternative. Decided
+(review item 23): IPFS on two services, Pinata and Filebase, with the same CID, plus the CAR file kept offline. Check
+current prices before launch.

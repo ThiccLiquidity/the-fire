@@ -38,7 +38,7 @@ Holder and pool figures are a snapshot from late September 2026.
 - Robinhood's OpenVRF has no shared deployment, and its `fulfill()` is relayer-only: the single relayer could hold back
   a number it dislikes. So we deploy `OpenDrandRouter` (OpenVRF minus owner, fees and allowlists): anyone may submit
   the drand signature, the router verifies it on-chain (pinned evmnet key), and there's one valid number per request.
-- Round = the drand evmnet round 30–33 s after the request (rounds are 3 s apart). Public relays: api.drand.sh,
+- Round = the drand evmnet round 90–93 s after the request (rounds are 3 s apart). Public relays: api.drand.sh,
   api2.drand.sh, api3.drand.sh. Recovery paths: `docs/randomness.md`.
 - No owner anywhere: nobody can pause, re-point or re-price randomness.
 

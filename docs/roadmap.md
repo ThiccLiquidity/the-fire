@@ -18,12 +18,8 @@ Naming: the card contracts are named `Fire*` for historical reasons (`Fire*` is 
 
 ## Open work before launch
 
-1. **Keeper bot.** Required before the first drop. Every call is permissionless (see `ops/README.md`):
-   - `PlankUsdTwap.checkpoint()` every 30 minutes
-   - `PaperUsdTwap.checkpoint()` when `due()`
-   - `PaperBurner.flush(pay)` when a case or grading fee is waiting (`Waiting` events)
-   - delivering drand numbers to the router (`OpenDrandRouter.fulfill`; `adapter.settle` if a callback didn't land)
-   - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` if the site doesn't call them
+1. **Keeper bot.** Built (`ops/keeper`): Railway plus a GitHub Actions backup. Before the first drop: two funded
+   gas-only wallets, the Railway service and the repository secrets (`ops/keeper/README.md`).
 2. **Real wallet connection on the site.** Wire the Forge's buy, open, case and grade, burn and suggestion screens to the
    deployed contracts through `web/src/lib`, replacing the demo store and the demo banner. Planned with it: loading
    each buyer's holder-window proof automatically, the "Get PAPER" box (KyberSwap, 0.5% fee), and calling

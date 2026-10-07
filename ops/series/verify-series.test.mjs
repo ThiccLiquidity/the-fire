@@ -38,7 +38,8 @@ test("holo looks follow the dealer: certain holo has no 'none'; a must-holo-only
 
 test("recipe hash: the studio's manifest fingerprint ignores imagesBase and the sale block", () => {
   const a = recipeHash(standard);
-  assert.match(a, /^[0-9a-f]{64}$/);
+  // the same constant is asserted in studio/src/manifest.test.ts (the studio writes it into manifest.json)
+  assert.equal(a, "ccfa6642aff0088068acbb710b27c8251b389a51e43441d3a804ecb6d5d49f9e");
   assert.equal(recipeHash({ ...standard, imagesBase: "ipfs://other/", sale: { start: 1 } }), a);
   assert.notEqual(recipeHash({ ...standard, characters: standard.characters.slice(1) }), a);
 });
