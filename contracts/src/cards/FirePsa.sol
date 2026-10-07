@@ -11,21 +11,11 @@ interface IPsaCards is IERC721 {
     function setGrade(uint256 serial, uint256 grade) external;
     function setGradePending(uint256 serial, bool pending) external;
     function setCased(uint256 serial) external;
-    function PACKS() external view returns (address);
     function gradeInfo(uint256 serial) external view returns (bool exists, uint256 fire, uint256 grade);
     function wearOf(uint256 serial)
         external
         view
         returns (bool exists, uint256 fire, uint256 grade, bool cased, uint256 age, uint256 moves);
-    function isClosed(uint256 fire) external view returns (bool);
-    function fires(uint256 fire)
-        external
-        view
-        returns (address dealer, bool closed, bool locked, uint32 cardsPerPack, uint64 packs, uint64 dealt);
-}
-
-interface IPsaPacks {
-    function minted(uint256 fire) external view returns (uint256);
 }
 
 interface IPsaRandomness {
@@ -50,9 +40,9 @@ interface IPsaBurner {
  *         Both in one transaction (`protect`), up to `maxBatch` cards. Prices are in dollars (`caseUsd18`,
  *         `gradeUsd18`), paid in ETH, PLANK or USDG; every cent goes to PaperBurner, which buys PAPER and burns it.
  *
- *         The odds: a fresh grade (5-10) from the Series' fresh odds, then wear (moves and time uncased), from rules
- *         fixed here forever (WEAR_* constants, `oddsFor`). A Series' fresh odds are set before its first pack, so
- *         every buyer knows them; the default is 10: 1%, 9: 17%, 8: 25%, 7: 27%, 6: 20%, 5: 10%.
+ *         The odds: a fresh grade (5-10) from the fresh odds, then wear (moves and time uncased). Both are fixed
+ *         here forever, the same for every Series (FRESH_* and WEAR_* constants, `oddsFor`); nobody can change them.
+ *         Fresh: 10: 1%, 9: 17%, 8: 25%, 7: 27%, 6: 20%, 5: 10%. Only the case and grading prices can change.
  *
  *         The owner can pause case and grading payments (`setPaused`); finishing and cancelling gradings never pause.
  *         The randomness source can be switched at any time (only new gradings use it; each grading remembers its
@@ -69,7 +59,16 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     /// @dev Last resort if randomness is gone for good: a grading with no answer this long after it was asked for
     ///      can be cancelled, unlocking its cards (still ungraded). The fee was burned and can't come back.
     uint256 public constant CANCEL_AFTER = 7 days;
+
+    // ---------------------------------------------------------------- fresh odds (fixed forever, every Series)
+    /// @dev A fresh card's grade weights, out of ODDS_TOTAL. Grades 1-4 come only from wear.
     uint256 public constant ODDS_TOTAL = 10_000;
+    uint64 public constant FRESH_5 = 1000;
+    uint64 public constant FRESH_6 = 2000;
+    uint64 public constant FRESH_7 = 2700;
+    uint64 public constant FRESH_8 = 2500;
+    uint64 public constant FRESH_9 = 1700;
+    uint64 public constant FRESH_10 = 100;
 
     // ---------------------------------------------------------------- wear rules (fixed forever)
     /// @dev The first day after a card is dealt is free.
@@ -100,9 +99,6 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     /// @notice While true, cases and grading can't be paid for (`protect`). Finishing and cancelling never pause.
     bool public paused;
 
-    mapping(uint256 fire => uint64[10]) internal _odds;
-    mapping(uint256 fire => bool) public customOdds;
-
     enum Pay { PLANK, ETH, USDG }
 
     struct Grading {
@@ -121,7 +117,6 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     mapping(uint256 serial => bool) public pending;
 
     event RandomnessSet(address source);
-    event OddsSet(uint256 indexed fire, uint64[10] odds);
     event PricesSet(uint256 caseUsd18, uint256 gradeUsd18);
     event MaxBatchSet(uint256 cards);
     event Protected(address indexed by, uint256[] cased, uint256[] graded, Pay pay, uint256 paid, uint256 gradingIndex);
@@ -138,8 +133,6 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     error NotRandomness();
     error NotReady();
     error NotStuck();
-    error BadOdds();
-    error FireIsClosed();
     error PriceMoved();
     error TransferFailed();
     error IsPaused();
@@ -190,23 +183,6 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         caseUsd18 = caseUsd;
         gradeUsd18 = gradeUsd;
         emit PricesSet(caseUsd, gradeUsd);
-    }
-
-    /// @notice A Series' fresh odds: a weight per grade, grade 1 first (chance = weight / total). Grades 1-4 must be 0
-    ///         (those come only from wear). Only until the Series is locked (its drop is set up), so everyone who buys
-    ///         knows the odds.
-    function setOdds(uint256 fire, uint64[10] calldata odds) external onlyOwner {
-        (, bool closed, bool locked,,,) = CARDS.fires(fire);
-        if (closed || locked || IPsaPacks(CARDS.PACKS()).minted(fire) != 0) revert FireIsClosed();
-        uint256 sum;
-        for (uint256 i; i < 10; i++) {
-            if (i < 4 && odds[i] != 0) revert BadOdds();
-            sum += odds[i];
-        }
-        if (sum == 0) revert BadOdds();
-        _odds[fire] = odds;
-        customOdds[fire] = true;
-        emit OddsSet(fire, odds);
     }
 
     // ================================================================ cases and grading
@@ -298,9 +274,9 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         for (uint256 i; i < ids.length; i++) {
             uint256 id = ids[i];
             delete pending[id];
-            (bool exists, uint256 fire, uint256 grade,, uint256 age, uint256 moves) = CARDS.wearOf(id);
+            (bool exists,, uint256 grade,, uint256 age, uint256 moves) = CARDS.wearOf(id);
             if (!exists || grade != 0) continue; // burned in the meantime
-            uint256 got = gradeFor(fire, age, moves, uint256(keccak256(abi.encode(g.word, id))));
+            uint256 got = gradeFor(age, moves, uint256(keccak256(abi.encode(g.word, id))));
             CARDS.setGrade(id, got);
             emit Graded(id, got);
         }
@@ -338,21 +314,17 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
 
     // ================================================================ odds
 
-    /// @notice A Series' fresh weights, grade 1 first, and their total.
-    function oddsOf(uint256 fire) public view returns (uint64[10] memory o, uint256 total) {
-        if (customOdds[fire]) {
-            o = _odds[fire];
-            for (uint256 i; i < 10; i++) total += o[i];
-            return (o, total);
-        }
-        o = [uint64(0), 0, 0, 0, 1000, 2000, 2700, 2500, 1700, 100];
+    /// @notice The fresh weights, grade 1 first, and their total: fixed forever, the same for every Series.
+    function freshOdds() public pure returns (uint64[10] memory o, uint256 total) {
+        o = [uint64(0), 0, 0, 0, FRESH_5, FRESH_6, FRESH_7, FRESH_8, FRESH_9, FRESH_10];
         total = ODDS_TOTAL;
     }
 
-    /// @notice The chance of each grade (1 first, out of 1e18 less rounding) for a card of `fire` that spent `age`
-    ///         seconds uncased since it was dealt and moved `moves` times uncased. The site shows these.
-    function oddsFor(uint256 fire, uint256 age, uint256 moves) public view returns (uint256[10] memory out) {
-        (uint64[10] memory w, uint256 total) = oddsOf(fire);
+    /// @notice The chance of each grade (1 first, out of 1e18 less rounding) for a card that spent `age` seconds
+    ///         uncased since it was dealt and moved `moves` times uncased. The same for every Series. The site shows
+    ///         these.
+    function oddsFor(uint256 age, uint256 moves) public pure returns (uint256[10] memory out) {
+        (uint64[10] memory w, uint256 total) = freshOdds();
         uint256 t = age > FREE_TIME ? age - FREE_TIME : 0;
         uint256 m = moves > MOVE_CAP ? MOVE_CAP : moves;
         uint256[10] memory tp = _timePmf(t);
@@ -387,8 +359,8 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     }
 
     /// @notice The grade a random number gives a card with this wear.
-    function gradeFor(uint256 fire, uint256 age, uint256 moves, uint256 rnd) public view returns (uint256) {
-        uint256[10] memory o = oddsFor(fire, age, moves);
+    function gradeFor(uint256 age, uint256 moves, uint256 rnd) public pure returns (uint256) {
+        uint256[10] memory o = oddsFor(age, moves);
         uint256 total;
         for (uint256 g; g < 10; g++) total += o[g];
         uint256 x = rnd % total;

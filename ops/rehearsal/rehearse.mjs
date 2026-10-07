@@ -294,7 +294,7 @@ async function main() {
   step("VerifySeries after the image is re-pinned (expect GREEN)");
   missing = undefined;
   v = await verify([gwA2.url, gwB.url]);
-  check(v.green, `GREEN: ${v.images} images x 2 gateways, recipe, characters, odds, images base and the holder root`);
+  check(v.green, `GREEN: ${v.images} images x 2 gateways, recipe, characters, fixed PDA odds, images base and the holder root`);
 
   // ---------------- batch B
   step("batch B (lock): configureDrop from the Safe file");

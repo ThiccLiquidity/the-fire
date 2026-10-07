@@ -68,7 +68,6 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   TypeNeverDealt: (a) => `Card type ${String(a[0])} would never be dealt.`,
 
   // cases and grading (FirePsa, PaperBurner)
-  BadOdds: "The grade odds aren't valid.",
   BadRoute: "The PAPER burn route isn't valid.",
   FeedsAlreadySet: "The price feeds are already set.",
   NotReady: "The randomness for that isn't ready yet. Try again in a minute.",

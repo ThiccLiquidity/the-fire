@@ -181,32 +181,13 @@ contract CardsFuzzTest is SeriesHelper {
     // ---------------------------------------------------------------- PDA
 
     /// forge-config: default.fuzz.runs = 1000
-    function testFuzz_gradeForAlways1to10(uint256 word, uint256 fire, uint256 age, uint256 moves) public view {
+    function testFuzz_gradeForAlways1to10(uint256 word, uint256 age, uint256 moves) public view {
         age = bound(age, 0, 200 * 365 days);
-        uint256 g = psa.gradeFor(fire, age, moves, word);
+        uint256 g = psa.gradeFor(age, moves, word);
         assertGe(g, 1);
         assertLe(g, 10);
         // a fresh card (under a month uncased) never grades below 5, however much it moved
         if (age <= 31 days) assertGe(g, 5);
-    }
-
-    /// Custom fresh odds (any weights on 5..10, zeros allowed) only give grades with odds > 0 on a fresh card.
-    /// forge-config: default.fuzz.runs = 1000
-    function testFuzz_gradeForCustomOdds(uint256 seed, uint256 word) public {
-        uint64[10] memory odds;
-        uint256 left = 10_000;
-        for (uint256 g = 4; g < 9; g++) {
-            uint256 o = uint256(keccak256(abi.encode(seed, g))) % (left + 1);
-            odds[g] = uint64(o);
-            left -= o;
-        }
-        odds[9] = uint64(left);
-        vm.prank(owner, owner);
-        psa.setOdds(7, odds);
-        uint256 grade = psa.gradeFor(7, 0, 0, word);
-        assertGe(grade, 5);
-        assertLe(grade, 10);
-        assertGt(odds[grade - 1], 0, "a grade with no odds never comes up");
     }
 
     /// The odds always add up to one, and wear only ever lowers the average grade.
@@ -215,9 +196,9 @@ contract CardsFuzzTest is SeriesHelper {
         age = bound(age, 0, 60 * 365 days);
         later = bound(later, age, 61 * 365 days);
         moves = bound(moves, 0, 12);
-        uint256[10] memory a = psa.oddsFor(1, age, moves);
-        uint256[10] memory b = psa.oddsFor(1, later, moves);
-        uint256[10] memory c = psa.oddsFor(1, age, moves + 1);
+        uint256[10] memory a = psa.oddsFor(age, moves);
+        uint256[10] memory b = psa.oddsFor(later, moves);
+        uint256[10] memory c = psa.oddsFor(age, moves + 1);
         uint256 ta; uint256 tb; uint256 ma; uint256 mb; uint256 mc;
         for (uint256 g; g < 10; g++) {
             ta += a[g]; tb += b[g];
@@ -231,7 +212,7 @@ contract CardsFuzzTest is SeriesHelper {
 
     function test_freshOddsHitEveryGrade5To10FromHashedWords() public view {
         bool[11] memory seen;
-        for (uint256 i; i < 2_000; i++) seen[psa.gradeFor(1, 0, 0, uint256(keccak256(abi.encode(word0, i))))] = true;
+        for (uint256 i; i < 2_000; i++) seen[psa.gradeFor(0, 0, uint256(keccak256(abi.encode(word0, i))))] = true;
         for (uint256 g = 5; g <= 10; g++) assertTrue(seen[g], vm.toString(g));
         for (uint256 g; g < 5; g++) assertFalse(seen[g]);
     }

@@ -1,8 +1,9 @@
 // VerifySeries: the read-back between the two Safe signings of a Series (docs/deploy.md, step 6).
 //
-// After batch A (recipe, characters, dealer, images, odds) is on chain and BEFORE batch B (configureDrop, which locks
+// After batch A (recipe, characters, dealer, images) is on chain and BEFORE batch B (configureDrop, which locks
 // the Series), this reads everything back from the chain and checks it, read-only:
-//   - the on-chain recipe, characters, dealer, image folder and PDA odds equal the studio's recipe.json, field by field
+//   - the on-chain recipe, characters, dealer and image folder equal the studio's recipe.json, field by field; FirePsa's
+//     fixed fresh PDA odds are the published ones (docs/grading.md)
 //   - imagesBase is ipfs://<CID>/ (a real CID, ending in /)
 //   - every image the contract can ever point a card at (CardsRenderer.imageName for each character x card type x holo
 //     look its odds and slots allow x 12 states) loads through at least two IPFS gateways (HEAD, or a 1-byte GET)
@@ -87,9 +88,12 @@ export function allImageNames(recipe, characters) {
   return out;
 }
 
+/** FirePsa's fresh PDA odds, grade 1 first, out of 10,000: fixed forever, the same for every Series. */
+export const FRESH_PDA_ODDS = [0n, 0n, 0n, 0n, 1000n, 2000n, 2700n, 2500n, 1700n, 100n];
+
 /** The recipe fingerprint the studio puts in the images folder's manifest.json. */
 export function recipeHash(j) {
-  return createHash("sha256").update(JSON.stringify({ fire: j.fire, types: j.types, slots: j.slots, characters: j.characters, pdaOdds: j.pdaOdds ?? [] })).digest("hex");
+  return createHash("sha256").update(JSON.stringify({ fire: j.fire, types: j.types, slots: j.slots, characters: j.characters })).digest("hex");
 }
 
 /** HEAD (falling back to a 1-byte GET when a gateway refuses HEAD) with retries. */
@@ -177,7 +181,7 @@ export async function verifySeries(opts) {
   }
   ok(charDiffs === 0, `every character's name and category in order${charDiffs ? ` (${charDiffs} differ)` : ""}`);
 
-  // ---- dealer, images base, odds, lock state
+  // ---- dealer, images base, fixed PDA odds, lock state
   ok(getAddress(await read(cards, cardsAbi, "dealerOf", [fire])) === dealer, "FireCards' dealer for the Series is RecipeDealer");
   const base = await read(cards, cardsAbi, "imagesBase", [fire]);
   ok(json.imagesBase !== undefined, "recipe.json has imagesBase (the images are uploaded)");
@@ -185,11 +189,10 @@ export async function verifySeries(opts) {
   const m = /^ipfs:\/\/([^/]+)\/$/.exec(base);
   ok(!!m && CID_RE.test(m[1]), `imagesBase is ipfs://<CID>/ with a valid CID and a trailing /`);
   const cid = m?.[1];
-  if (json.pdaOdds) {
-    const [o] = await read(psa, psaAbi, "oddsOf", [fire]);
-    const same = o.every((x, g) => BigInt(x) === BigInt(json.pdaOdds[g]));
-    ok(same && (await read(psa, psaAbi, "customOdds", [fire])), `PDA odds ${same ? "match" : `differ: chain ${o.join(",")}`}`);
-  } else info("recipe.json has no pdaOdds: the Series uses FirePsa's defaults");
+  ok(json.pdaOdds === undefined, "recipe.json has no pdaOdds (PDA odds are fixed in FirePsa for every Series)");
+  const [o, total] = await read(psa, psaAbi, "freshOdds", []);
+  const fixed = total === 10_000n && o.every((x, g) => BigInt(x) === FRESH_PDA_ODDS[g]);
+  ok(fixed, `FirePsa's fixed fresh PDA odds ${fixed ? "are the published ones" : `differ: chain ${o.join(",")} / ${total}`}`);
   const [, closed, locked] = await read(cards, cardsAbi, "fires", [fire]);
   const minted = await read(packs, packsAbi, "minted", [fire]);
   if (locked || closed || minted > 0n) info(`the Series is already locked${closed ? " and closed" : ""} (${minted} packs minted): checking only`);

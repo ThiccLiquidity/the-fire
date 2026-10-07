@@ -1335,13 +1335,12 @@ contract SaleTest is SeriesHelper {
         vm.prank(owner, owner);
         sale.endDrop(1); // one drop at a time
         _warp(1_800_000_000); // the export's start is a few months on from here
-        FirePsa psa = new FirePsa(owner, address(cards), address(new MockBurner(address(plank), address(0))));
         ConfigureSeries cs = new ConfigureSeries();
         string memory json = vm.readFile("test/cards/recipe-studio-sale.json");
-        ConfigureSeries.Call[] memory calls = cs.buildAll(json, address(dealer), address(cards), address(psa), address(sale), 200);
-        assertEq(calls.length, 6, "recipe, characters, dealer, images, odds, configureDrop");
-        assertEq(calls[5].what, "FireSale.configureDrop");
-        assertEq(cs.build(json, address(dealer), address(cards), address(psa), 200).length, 5, "build leaves the sale out");
+        ConfigureSeries.Call[] memory calls = cs.buildAll(json, address(dealer), address(cards), address(sale), 200);
+        assertEq(calls.length, 5, "recipe, characters, dealer, images, configureDrop");
+        assertEq(calls[4].what, "FireSale.configureDrop");
+        assertEq(cs.build(json, address(dealer), address(cards), 200).length, 4, "build leaves the sale out");
         vm.startPrank(owner, owner);
         for (uint256 i; i < calls.length; i++) {
             (bool ok,) = calls[i].to.call(calls[i].data);

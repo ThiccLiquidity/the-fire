@@ -89,7 +89,7 @@ interface ICardsPair {
  *
  * Left for the owner afterwards, per Series (script/ConfigureSeries.s.sol builds these calls from the studio's recipe
  * JSON): RecipeDealer.setRecipe and setCharacters (appendCharacters for long lists), FireCards.setDealer and
- * setImagesBase, optionally FirePsa.setOdds, then FireSale.configureDrop from the JSON's "sale" block (which locks the
+ * setImagesBase, then FireSale.configureDrop from the JSON's "sale" block (which locks the
  * Series); and FireCredits.pickSuggestions.
  */
 contract DeployCards is Deployments {

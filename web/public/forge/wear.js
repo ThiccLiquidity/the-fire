@@ -4,7 +4,7 @@
    move to lose a grade (first 10 moves count, never below 5 from moves), and grades 1-4 fading in with time. */
 (() => {
   const DAY = 86400, YEAR = 365 * DAY, FREE = DAY;
-  // fresh odds, grade 1..10 (FirePsa defaults, out of 10,000): fresh cards grade 5 to 10 only
+  // fresh odds, grade 1..10 (FirePsa FRESH_*, out of 10,000; fixed forever, every Series): fresh cards grade 5 to 10 only
   const FRESH = [0, 0, 0, 0, 1000, 2000, 2700, 2500, 1700, 100];
   const MOVE_CAP = 10, DMAX = 9;
   const FADE = { 4: YEAR / 12, 3: YEAR / 2, 2: YEAR, 1: 2 * YEAR }; // grade -> opens at (fully open at twice that)

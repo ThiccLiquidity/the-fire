@@ -5,7 +5,6 @@ import {console} from "forge-std/Script.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {RecipeDealer} from "../src/cards/RecipeDealer.sol";
 import {FireCards} from "../src/cards/FireCards.sol";
-import {FirePsa} from "../src/cards/FirePsa.sol";
 import {FireSale} from "../src/cards/FireSale.sol";
 import {Deployments} from "./Deployments.sol";
 
@@ -14,19 +13,19 @@ import {Deployments} from "./Deployments.sol";
  * signings with a check in between (docs/deploy.md, step 6):
  *
  *   Batch A, the content: RecipeDealer.setRecipe, setCharacters (+ appendCharacters in batches for long lists),
- *     FireCards.setDealer, FireCards.setImagesBase (if "imagesBase" is given), FirePsa.setOdds (if "pdaOdds" is given).
+ *     FireCards.setDealer, FireCards.setImagesBase (if "imagesBase" is given).
  *     Nothing is locked yet: any of it can still be set again.
  *   Then ops/series (VerifySeries) reads it all back from the chain, diffs it against the JSON and loads every image
  *     the contract can point at through two gateways. Only when it's green:
  *   Batch B, the lock: FireSale.configureDrop from the "sale" block (every FireSale.DropConfig field by name, in
- *     contract units). It locks the Series: recipe, characters, odds and images are fixed from then. Before writing
+ *     contract units). It locks the Series: recipe, characters and images are fixed from then. Before writing
  *     batch B the script reads the chain and refuses unless batch A is there exactly as the JSON says.
  *
  * Each batch is written as a Safe Transaction Builder file (safe-tx/series-<fire>-<A|B>.json: Safe -> Apps ->
  * Transaction Builder -> drag the file in), never as calldata to paste. The calls are also printed.
  *
  *   BATCH=A|B|AB (default A), RECIPE_JSON=series/recipe.json (the file must be under contracts/series/)
- *   RECIPE_DEALER, FIRE_CARDS, FIRE_PSA, FIRE_SALE: read from deployments/<chainId>.json when not set
+ *   RECIPE_DEALER, FIRE_CARDS, FIRE_SALE: read from deployments/<chainId>.json when not set
  *   DROP_START=<unix seconds>, HOLDER_ROOT=0x...: override the sale block's start and holderRoot (both are usually
  *     decided last: the snapshot runs just before the drop)
  *   CHARACTER_BATCH=200, SAFE_TX_DIR=safe-tx
@@ -36,8 +35,8 @@ import {Deployments} from "./Deployments.sol";
  *   forge script script/ConfigureSeries.s.sol --fork-url $RPC               (with SIMULATE=true)
  *   SEND=true ... --account deployer --sender <owner> --broadcast            (testnet only: the signer is the owner)
  *
- * The JSON is read strictly: unknown keys, numbers too big for their field, PDA odds on grades 1-4 and a drop start
- * more than a year away are refused, so a typo can't slip through as a default.
+ * The JSON is read strictly: unknown keys (PDA odds included: they are fixed in FirePsa for every Series), numbers too
+ * big for their field and a drop start more than a year away are refused, so a typo can't slip through as a default.
  */
 contract ConfigureSeries is Deployments {
     using stdJson for string;
@@ -54,8 +53,6 @@ contract ConfigureSeries is Deployments {
         string[] names;
         string[] categories;
         string imagesBase; // "" = leave as is
-        bool hasOdds;
-        uint64[10] odds;
         bool hasSale;
         FireSale.DropConfig drop;
     }
@@ -68,21 +65,20 @@ contract ConfigureSeries is Deployments {
         require(a || b, "BATCH must be A, B or AB");
         address dealer = _addr("RECIPE_DEALER", "RecipeDealer");
         address cards = _addr("FIRE_CARDS", "FireCards");
-        address psa = vm.envOr("FIRE_PSA", deployed("FirePsa"));
         address sale = vm.envOr("FIRE_SALE", deployed("FireSale"));
         address owner = FireCards(cards).owner();
         Series memory s = _parse(json, b);
         bool simulate = vm.envOr("SIMULATE", false);
 
         if (a) {
-            Call[] memory callsA = build(json, dealer, cards, psa, vm.envOr("CHARACTER_BATCH", uint256(200)));
-            _emit("A", s.fire, callsA, owner, string.concat("Series ", vm.toString(s.fire), " content (batch A): recipe, characters, dealer, images, odds. Nothing locks yet."));
+            Call[] memory callsA = build(json, dealer, cards, vm.envOr("CHARACTER_BATCH", uint256(200)));
+            _emit("A", s.fire, callsA, owner, string.concat("Series ", vm.toString(s.fire), " content (batch A): recipe, characters, dealer, images. Nothing locks yet."));
             if (simulate) _simulate(owner, callsA);
         }
         if (b) {
             require(s.hasSale, "batch B needs the JSON's sale block");
             require(sale != address(0), "batch B: set FIRE_SALE or deploy FireSale first");
-            checkOnChain(json, dealer, cards, psa); // batch A must be on chain exactly as the JSON says
+            checkOnChain(json, dealer, cards); // batch A must be on chain exactly as the JSON says
             Call[] memory callsB = new Call[](1);
             callsB[0] = Call(sale, abi.encodeCall(FireSale.configureDrop, (s.fire, s.drop)), "FireSale.configureDrop");
             _emit("B", s.fire, callsB, owner, string.concat("Series ", vm.toString(s.fire), " lock (batch B): configureDrop. Sign only after VerifySeries is green."));
@@ -90,7 +86,7 @@ contract ConfigureSeries is Deployments {
         }
         if (vm.envOr("SEND", false)) {
             require(!simulate, "SEND and SIMULATE together");
-            Call[] memory all = a ? build(json, dealer, cards, psa, vm.envOr("CHARACTER_BATCH", uint256(200))) : new Call[](0);
+            Call[] memory all = a ? build(json, dealer, cards, vm.envOr("CHARACTER_BATCH", uint256(200))) : new Call[](0);
             vm.startBroadcast();
             for (uint256 i; i < all.length; i++) {
                 (bool ok,) = all[i].to.call(all[i].data);
@@ -154,8 +150,8 @@ contract ConfigureSeries is Deployments {
     }
 
     /// @notice Reverts (naming what differs) unless batch A is on chain exactly as the JSON says: the dealer's recipe
-    ///         and characters, FireCards' dealer and image folder, FirePsa's fresh odds; and the Series isn't locked yet.
-    function checkOnChain(string memory json, address dealer, address cards, address psa) public view {
+    ///         and characters, FireCards' dealer and image folder; and the Series isn't locked yet.
+    function checkOnChain(string memory json, address dealer, address cards) public view {
         Series memory s = _parse(json, false);
         RecipeDealer d = RecipeDealer(dealer);
         require(
@@ -181,27 +177,22 @@ contract ConfigureSeries is Deployments {
             );
         }
         require(bytes(FireCards(cards).imagesBase(s.fire)).length > 0, "on chain: no imagesBase yet");
-        if (s.hasOdds) {
-            require(psa != address(0), "pdaOdds given: set FIRE_PSA");
-            (uint64[10] memory o,) = FirePsa(psa).oddsOf(s.fire);
-            for (uint256 g; g < 10; g++) require(o[g] == s.odds[g], "on chain: PDA odds differ from the JSON");
-        }
         (, bool closed, bool locked,,,) = FireCards(cards).fires(s.fire);
         require(!closed && !locked, "on chain: the Series is already locked");
     }
 
     /// @dev The recipe calls only (the sale block, if any, is left out).
-    function build(string memory json, address dealer, address cards, address psa, uint256 batch)
+    function build(string memory json, address dealer, address cards, uint256 batch)
         public
         view
         returns (Call[] memory calls)
     {
-        return buildAll(json, dealer, cards, psa, address(0), batch);
+        return buildAll(json, dealer, cards, address(0), batch);
     }
 
     /// @dev The calls, in order. Checks the recipe with the dealer first. With `sale` set and a "sale" block,
     ///      FireSale.configureDrop comes last (it needs the Series ready, so it can't be checked ahead).
-    function buildAll(string memory json, address dealer, address cards, address psa, address sale, uint256 batch)
+    function buildAll(string memory json, address dealer, address cards, address sale, uint256 batch)
         public
         view
         returns (Call[] memory calls)
@@ -213,16 +204,12 @@ contract ConfigureSeries is Deployments {
         require(n > 0, "the recipe has no characters");
         uint256 batches = (n + batch - 1) / batch;
         bool withSale = s.hasSale && sale != address(0);
-        calls = new Call[](batches + 2 + (bytes(s.imagesBase).length > 0 ? 1 : 0) + (s.hasOdds ? 1 : 0) + (withSale ? 1 : 0));
+        calls = new Call[](batches + 2 + (bytes(s.imagesBase).length > 0 ? 1 : 0) + (withSale ? 1 : 0));
         calls[0] = Call(dealer, abi.encodeCall(RecipeDealer.setRecipe, (s.fire, s.recipe)), "RecipeDealer.setRecipe");
         uint256 k = _characterCalls(calls, s, dealer, batch);
         calls[k++] = Call(cards, abi.encodeCall(FireCards.setDealer, (s.fire, dealer)), "FireCards.setDealer");
         if (bytes(s.imagesBase).length > 0) {
             calls[k++] = Call(cards, abi.encodeCall(FireCards.setImagesBase, (s.fire, s.imagesBase)), "FireCards.setImagesBase");
-        }
-        if (s.hasOdds) {
-            require(psa != address(0), "pdaOdds given: set FIRE_PSA");
-            calls[k++] = Call(psa, abi.encodeCall(FirePsa.setOdds, (s.fire, s.odds)), "FirePsa.setOdds");
         }
         if (withSale) {
             calls[k++] = Call(sale, abi.encodeCall(FireSale.configureDrop, (s.fire, s.drop)), "FireSale.configureDrop");
@@ -259,7 +246,7 @@ contract ConfigureSeries is Deployments {
 
     /// @dev `withSale` false: the sale block is left unread (batch A doesn't need the drop's start yet).
     function _parse(string memory json, bool withSale) internal view returns (Series memory s) {
-        _onlyKeys(json, ".", "fire,imagesBase,types,slots,characters,pdaOdds,sale");
+        _onlyKeys(json, ".", "fire,imagesBase,types,slots,characters,sale");
         s.fire = _num(json, ".fire", type(uint64).max);
         if (json.keyExists(".imagesBase")) s.imagesBase = json.readString(".imagesBase");
         uint256 nt = _count(json, ".types");
@@ -276,16 +263,6 @@ contract ConfigureSeries is Deployments {
             _onlyKeys(json, p, "name,category");
             s.names[i] = json.readString(string.concat(p, ".name"));
             s.categories[i] = json.readString(string.concat(p, ".category"));
-        }
-        if (json.keyExists(".pdaOdds")) {
-            uint256[] memory o = json.readUintArray(".pdaOdds");
-            require(o.length == 10, "pdaOdds: one weight per grade, 1 to 10");
-            for (uint256 g; g < 10; g++) {
-                require(o[g] <= type(uint64).max, "pdaOdds: a weight is too big");
-                require(g >= 4 || o[g] == 0, "pdaOdds: grades 1-4 must be 0 (they come only from wear)");
-                s.odds[g] = uint64(o[g]);
-            }
-            s.hasOdds = true;
         }
         if (withSale && json.keyExists(".sale")) {
             s.drop = parseSale(json);

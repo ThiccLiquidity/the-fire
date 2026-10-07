@@ -24,7 +24,7 @@
     m.frame = r * (1 - r); m.full = r * r; m.none = (1 - r) * (1 - r); // picture only = frame only
   });
   const M = Object.fromEntries([...MATS, ...LEGACY].map((m) => [m.id, m]));
-  // fresh PDA grade odds in percent (FirePsa defaults: grades 5-10 only; 1-4 come only from long raw holds), and the
+  // fresh PDA grade odds in percent (FirePsa, fixed forever for every Series: grades 5-10 only; 1-4 come only from long raw holds), and the
   // wear frame each band gets (card-studio.md).
   const PDA = [10, 1, 9, 17, 8, 25, 7, 27, 6, 20, 5, 10]
     .reduce((a, v, i, arr) => (i % 2 ? a : [...a, { g: v, p: arr[i + 1] }]), []);

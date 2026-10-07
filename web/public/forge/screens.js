@@ -234,7 +234,7 @@
         edition: `${1 + Math.floor(Math.random() * of)} of ${of}`, grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
     });
   }
-  // fresh PDA odds in percent (FirePsa defaults): grades 5-10 only. Grades 1-4 come only from long raw holds (wear.js).
+  // fresh PDA odds in percent (FirePsa, fixed forever for every Series): grades 5-10 only. Grades 1-4 come only from long raw holds (wear.js).
   const GRADE_ODDS = [10, 9, 8, 7, 6, 5].map((g) => [g, Wear.FRESH[g - 1] / 100]);
   // demo data: graded cards were graded at some age (their grade drawn on the wear model at that age); one PDA 10 so the demo shows the gold edge
   (() => {

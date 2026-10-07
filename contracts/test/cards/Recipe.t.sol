@@ -481,8 +481,6 @@ contract RecipeTest is SeriesHelper {
         RecipeDealer other = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         RecipeDealer.Recipe memory one = _two();
         (string[] memory names, string[] memory cats) = _chars(2);
-        uint64[10] memory odds = [uint64(0), 0, 0, 0, 1, 1, 1, 1, 1, 1];
-
         // a dealer must have the Series set up before it can be chosen
         vm.prank(owner);
         vm.expectRevert(FireCards.NotConfigured.selector);
@@ -492,12 +490,11 @@ contract RecipeTest is SeriesHelper {
         vm.expectRevert(FireCards.NotConfigured.selector);
         cards.setDealer(1, address(other)); // no characters yet
         other.setCharacters(1, names, cats);
-        // before the first pack everything can change: the dealer, its recipe and characters, the PDA odds
+        // before the first pack everything can change: the dealer, its recipe and characters
         cards.setDealer(1, address(other));
         assertEq(cards.cardsPerPack(1), 3);
         other.setRecipe(1, StandardRecipe.build(4));
         other.appendCharacters(1, names, cats);
-        psa.setOdds(1, odds);
         cards.setDealer(1, address(dealer));
         cards.setDealer(1, address(other));
         vm.stopPrank();
@@ -514,8 +511,6 @@ contract RecipeTest is SeriesHelper {
         other.setCharacters(1, names, cats);
         vm.expectRevert(RecipeDealer.FireIsLocked.selector);
         other.appendCharacters(1, names, cats);
-        vm.expectRevert(FirePsa.FireIsClosed.selector);
-        psa.setOdds(1, odds);
         vm.stopPrank();
         assertEq(cards.characterCount(1), 4);
 
@@ -534,8 +529,6 @@ contract RecipeTest is SeriesHelper {
         cards.setDealer(2, address(dealer));
         vm.expectRevert(RecipeDealer.FireIsLocked.selector);
         dealer.setRecipe(2, one);
-        vm.expectRevert(FirePsa.FireIsClosed.selector);
-        psa.setOdds(2, odds);
         vm.stopPrank();
     }
 
@@ -630,8 +623,8 @@ contract RecipeTest is SeriesHelper {
         ConfigureSeries.Series memory s = cs.parse(json);
         assertEq(s.fire, 7);
         assertEq(keccak256(abi.encode(s.recipe)), keccak256(abi.encode(StandardRecipe.build(0))), "same as StandardRecipe");
-        ConfigureSeries.Call[] memory calls = cs.build(json, address(dealer), address(cards), address(psa), 2);
-        assertEq(calls.length, 6, "recipe, 2 character batches, dealer, images, odds");
+        ConfigureSeries.Call[] memory calls = cs.build(json, address(dealer), address(cards), 2);
+        assertEq(calls.length, 5, "recipe, 2 character batches, dealer, images");
         vm.startPrank(owner);
         for (uint256 i; i < calls.length; i++) {
             (bool ok,) = calls[i].to.call(calls[i].data);
@@ -643,11 +636,10 @@ contract RecipeTest is SeriesHelper {
         (string memory name, string memory cat) = dealer.characterOf(7, 2);
         assertEq(name, "Cinder Queen"); assertEq(cat, "Royals");
         assertEq(cards.imagesBase(7), "ipfs://bafyexampleimages/");
-        assertTrue(psa.customOdds(7));
         // a bad recipe is caught before anything is printed
         string memory bad = vm.replace(json, '"minRank": 2', '"types": [9]');
         vm.expectRevert(abi.encodeWithSelector(RecipeDealer.BadSlot.selector, 3, "type index"));
-        cs.build(bad, address(dealer), address(cards), address(psa), 2);
+        cs.build(bad, address(dealer), address(cards), 2);
     }
 
     // ---------------------------------------------------------------- Full Art: one of each character
@@ -700,18 +692,19 @@ contract RecipeTest is SeriesHelper {
         dealer.setRecipe(22, r);
     }
 
-    /// The studio JSON is read strictly: unknown keys, odds on grades 1-4, and the perCharacter supply.
+    /// The studio JSON is read strictly: unknown keys (PDA odds too: they are fixed in FirePsa) and the perCharacter
+    /// supply.
     function test_configureSeriesStrictParsing() public {
         ConfigureSeries cs = new ConfigureSeries();
         string memory json = vm.readFile("test/cards/recipe-standard.json");
         ConfigureSeries.Series memory s = cs.parse(json);
         assertEq(uint256(s.recipe.types[5].supply), uint256(RecipeDealer.Supply.PerCharacter));
-        vm.expectRevert(bytes(".: unknown key pdaOdd"));
-        cs.parse(vm.replace(json, '"pdaOdds"', '"pdaOdd"'));
+        vm.expectRevert(bytes(".: unknown key imagesBas"));
+        cs.parse(vm.replace(json, '"imagesBase"', '"imagesBas"'));
         vm.expectRevert(bytes(".types[0]: unknown key amonut"));
         cs.parse(vm.replace(json, '"perPack", "amount": 3', '"perPack", "amonut": 3'));
-        vm.expectRevert(bytes("pdaOdds: grades 1-4 must be 0 (they come only from wear)"));
-        cs.parse(vm.replace(json, '"pdaOdds": ["0"', '"pdaOdds": ["5"'));
+        vm.expectRevert(bytes(".: unknown key pdaOdds"));
+        cs.parse(vm.replace(json, '"fire": 7,', '"fire": 7, "pdaOdds": ["0", "0", "0", "0", "1", "1", "1", "1", "1", "1"],'));
         vm.expectRevert(bytes(".types[2].rank is too big for its field"));
         cs.parse(vm.replace(json, '"rank": 2,', '"rank": 4294967296,'));
     }

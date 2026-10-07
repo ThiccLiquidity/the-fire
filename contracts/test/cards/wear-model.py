@@ -27,7 +27,7 @@ SCALE = 1 << 23  # CDF resolution (fits the 24-bit cells)
 BREAK_DAYS = [0, 1, 2, 4, 7, 10, 14, 21, 30, 45, 60, 90, 120, 180, 240, 300, 365, 456, 548, 730, 913, 1095, 1460,
               1825, 2190, 2555, 2920, 3650, 4380, 5475, 7300, 10950]
 BREAKS = [d * DAY for d in BREAK_DAYS]
-STANDARD = [0, 0, 0, 0, 1000, 2000, 2700, 2500, 1700, 100]  # grade 1..10 weights (out of 10,000)
+STANDARD = [0, 0, 0, 0, 1000, 2000, 2700, 2500, 1700, 100]  # fresh grade 1..10 weights (out of 10,000), fixed forever
 
 
 def poisson_cdf(lam):
@@ -129,8 +129,6 @@ if __name__ == '__main__':
         for a in ages:
             for m in (0, 1, 3, 10, 25):
                 cases.append({'age': a, 'moves': m, 'odds': [str(x) for x in odds(a, m)]})
-        custom = [0, 0, 0, 0, 1, 0, 0, 0, 0, 3]
-        cases.append({'age': 400 * DAY, 'moves': 4, 'weights': custom, 'odds': [str(x) for x in odds(400 * DAY, 4, custom)]})
         json.dump({'cases': cases}, open(sys.argv[2] if len(sys.argv) > 2 else 'wear-vectors.json', 'w'), indent=1)
     else:
         rows = [('≤ 24 hours', 0), ('1 week', 7 * DAY), ('1 month', 30 * DAY), ('3 months', 91 * DAY),

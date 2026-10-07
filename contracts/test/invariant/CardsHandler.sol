@@ -495,20 +495,6 @@ contract CardsHandler is Test {
         } catch {}
     }
 
-    function setOdds(uint256 fireSeed, uint256 seed) external at {
-        uint256 fire = 1 + fireSeed % FIRES;
-        uint64[10] memory odds;
-        uint256 left = 10_000;
-        for (uint256 g = 4; g < 9; g++) { // grades 1-4 come only from wear
-            uint256 o = uint256(keccak256(abi.encode(seed, g))) % (left + 1);
-            odds[g] = uint64(o);
-            left -= o;
-        }
-        odds[9] = uint64(left);
-        vm.prank(owner, owner);
-        try psa.setOdds(fire, odds) { calls["setOdds.ok"]++; } catch {}
-    }
-
     /// The Series' Diamond setting (small numbers, so it often exceeds the pack count and the cap kicks in): a new
     ///    Standard recipe, which only works until the Series' first pack.
     function setDiamonds(uint256 fireSeed, uint256 n) external at {
