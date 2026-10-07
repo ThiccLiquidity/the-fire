@@ -235,9 +235,39 @@ export function saleJson(s: SaleSettings): SaleJson {
   }
 }
 
-/** Totals for the summary line. */
-export function saleSummary(s: SaleSettings): { total: number; maxUsd: number } {
+/** The drop as a picture: how its packs split, and what a sell-out brings in. Free (credit) packs come out of the
+ *  paid packs (FireSale.creditPacks takes them from what's left to sell), so they are at most the paid packs. */
+export interface DropPlan {
+  total: number
+  paid: number
+  press: number
+  /** The first paid packs only PLANK can buy. */
+  plankOnly: number
+  /** Most paid packs that can go free to credits (0 = no cap: up to every paid pack). */
+  freeMax: number
+  freeCapped: boolean
+  /** Dollars if every pack sells: paid at the price, press at their dollar price. */
+  revenueUsd: number
+  /** The same with every free pack used (the least a sell-out brings in, with the cap). */
+  revenueMinUsd: number
+  /** The PLANK burn share of those dollars. */
+  burnUsd: number
+  burnMinUsd: number
+}
+
+export function dropPlan(s: SaleSettings): DropPlan {
+  const ok = (n: number) => (Number.isFinite(n) && n > 0 ? Math.floor(n) : 0)
+  const paid = ok(s.paidPacks)
+  const press = ok(s.pressPacks)
+  const capped = creditPacksMax(s) > 0
+  const freeMax = capped ? Math.min(paid, creditPacksMax(s)) : paid
   const price = Number(parseDecimal(s.priceUsd, 8) ?? 0n) / 1e8
-  const press = pressUsdOn(s) ? Number(parseDecimal(s.pressUsd, 8) ?? 0n) / 1e8 : 0
-  return { total: s.paidPacks + s.pressPacks, maxUsd: s.paidPacks * price + s.pressPacks * press }
+  const pressUsd = pressUsdOn(s) ? Number(parseDecimal(s.pressUsd, 8) ?? 0n) / 1e8 : 0
+  const burn = Number(parseDecimal(s.plankBurnPercent, 2) ?? 0n) / 10_000
+  const revenueUsd = paid * price + press * pressUsd
+  const revenueMinUsd = (paid - freeMax) * price + press * pressUsd
+  return {
+    total: paid + press, paid, press, plankOnly: Math.min(ok(s.plankOnly), paid), freeMax, freeCapped: capped,
+    revenueUsd, revenueMinUsd, burnUsd: revenueUsd * burn, burnMinUsd: revenueMinUsd * burn,
+  }
 }

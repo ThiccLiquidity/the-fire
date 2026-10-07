@@ -214,10 +214,9 @@ table.cards-table tbody tr:hover { background: var(--panel-2); }
 .type-no { font-size: 16px; color: var(--accent); width: 18px; align-self: center; }
 .pct-input { display: inline-flex; align-items: center; gap: 3px; }
 .pct-input input { width: 170px; }
-.type-main { display: grid; grid-template-columns: 22px 130px 160px 70px 150px 190px 110px 1fr; gap: 10px; align-items: end; margin: 6px 0; }
+.type-main { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 6px 0; }
 .type-main input, .type-main select { max-width: 100%; }
 .type-actions { align-self: center; }
-@media (max-width: 1300px) { .type-main { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); } }
 .row.inline { display: inline-flex; margin: 0; gap: 6px; }
 .nowrap { white-space: nowrap; }
 .pad { padding: 6px 0; display: inline-block; }
@@ -246,3 +245,50 @@ table.slots td { vertical-align: middle; }
 .warn-text { color: var(--warn); font-size: 12px; }
 .ok-text { color: var(--ok); font-size: 12px; }
 .sale pre { white-space: pre-wrap; background: var(--panel-2); padding: 8px; border-radius: 6px; }
+
+/* the result: what a recipe makes, how rare each card is */
+.series-result { margin: 6px 0 14px; }
+.mix-bar { display: flex; height: 26px; border-radius: 6px; overflow: hidden; margin: 8px 0; border: 1px solid var(--line); }
+.mix-bar span { min-width: 3px; font-size: 11px; font-weight: 600; color: #15130f; display: flex; align-items: center; padding: 0 6px; white-space: nowrap; overflow: hidden; }
+.table-scroll { overflow-x: auto; max-width: 100%; }
+.result-table td { vertical-align: top; }
+.result-table th.center { text-align: center; }
+.result-table tr.total td { border-bottom: none; }
+.result-table td.look { min-width: 108px; }
+.result-table td.look > span { display: block; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+.odds { font-weight: 600; }
+.odds.rare, .tier.rare { color: #7fb8ff; }
+.odds.epic, .tier.epic { color: #c99bff; }
+.odds.legendary, .tier.legendary { color: #ffc94a; }
+.tier { display: inline-block; font-size: 10px; padding: 0 6px; border-radius: 8px; border: 1px solid currentColor; text-transform: uppercase; letter-spacing: .04em; margin: 1px 0; width: fit-content; }
+.legend .tier { margin-right: 4px; }
+.result-head { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.result-head input { width: 120px; }
+.twin { display: inline-flex; align-items: center; gap: 4px; }
+.twin input { width: 96px; }
+.type-result { font-size: 12px; color: var(--muted); }
+.type-result b { color: var(--text); }
+
+/* the drop picture (Sale) */
+.drop-pic { margin: 8px 0 14px; }
+.drop-bar { display: flex; height: 34px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.drop-bar span { min-width: 3px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; padding: 0 6px; }
+.drop-bar .plank { background: #b9772e; color: #1a1006; }
+.drop-bar .paid { background: var(--accent); color: #1a1006; }
+.drop-bar .press { background: #4a7fe8; color: #0b1430; }
+.free-line { position: relative; height: 20px; margin-top: 2px; }
+.free-line span { position: absolute; top: 0; height: 20px; border: 1px solid var(--ok); border-top: none; border-radius: 0 0 6px 6px; font-size: 11px; color: var(--ok); display: flex; align-items: flex-end; justify-content: center; white-space: nowrap; }
+.drop-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0 0; font-size: 12px; }
+.drop-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+.pda-fixed { display: grid; grid-template-columns: repeat(10, minmax(30px, 1fr)); gap: 4px; max-width: 560px; align-items: end; height: 110px; }
+.pda-fixed div { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; font-size: 11px; color: var(--muted); }
+.pda-fixed .bar { width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; }
+.pda-fixed .bar.wear { background: var(--line); }
+.pda-fixed b { color: var(--text); font-size: 12px; }
+@media (max-width: 600px) {
+  main { padding: 8px; }
+  .panel { padding: 10px; }
+  .pct-input input { width: 110px; }
+  .drop-bar span { font-size: 10px; padding: 0 2px; }
+}
