@@ -122,6 +122,19 @@ export interface UploadState {
   /** An unfinished resumable (TUS) upload of a CAR, so a reload can continue it: which folder, its root CID and size,
    *  and the upload URL Pinata gave. */
   pending?: { dir: string; root: string; size: number; url: string }
+  /** The images CAR's size in bytes (for saving it offline). */
+  imagesCarSize?: number
+  /** The second pin (filebase.ts): the CID Filebase reports for the same CAR, the object it's stored as, and when. */
+  filebaseCid?: string
+  filebaseObject?: string
+  filebaseAt?: number
+  /** An unfinished multipart upload to Filebase (resumes from its last part). */
+  filebasePending?: { object: string; root: string; size: number; id: string }
+  /** When both pins were read back and held the images CID. */
+  verifiedAt?: number
+  /** When the images CAR was saved from the studio, and when the owner confirmed it is stored offline. */
+  carSavedAt?: number
+  carStoredAt?: number
 }
 
 /** Series builds are always WEBP (the contract names every image .webp). 'png' only appears on builds saved by older

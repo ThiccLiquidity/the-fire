@@ -244,4 +244,5 @@ table.slots td { vertical-align: middle; }
 .sale-field { padding: 6px 8px; border: 1px solid transparent; border-radius: 8px; }
 .sale-field.has-problem { border-color: #7a2e2e; box-shadow: 0 0 0 1px #7a2e2e inset; }
 .warn-text { color: var(--warn); font-size: 12px; }
+.ok-text { color: var(--ok); font-size: 12px; }
 .sale pre { white-space: pre-wrap; background: var(--panel-2); padding: 8px; border-radius: 6px; }
