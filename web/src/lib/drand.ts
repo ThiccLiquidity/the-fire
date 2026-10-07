@@ -1,5 +1,5 @@
 // drand evmnet: the chain OpenDrandRouter verifies. Card opens (FireCards) and PDA grading (FirePsa) ask the router
-// for a round a few seconds ahead; once drand publishes it, anyone may deliver it. The router checks every signature
+// for a round about 90 seconds ahead; once drand publishes it, anyone may deliver it. The router checks every signature
 // on-chain, so whoever delivers can't change the number.
 
 import { parseAbi, type Hex } from "viem";
@@ -13,6 +13,8 @@ export const adapterAbi = parseAbi(["function answered(uint256) view returns (bo
 export const routerAbi = parseAbi([
   "function requests(uint256) view returns (address consumer, uint64 round, uint32 callbackGasLimit, bool fulfilled, bool delivered, uint256 randomWord, uint256 fee)",
   "function fulfill(uint256 id, bytes signature)",
+  "function fulfillMany(uint256[] ids, bytes[] signatures)",
+  "function roundRandomness(uint64) view returns (bytes32)",
 ]);
 
 /** When drand publishes `round` (unix seconds). */

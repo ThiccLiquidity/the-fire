@@ -8,71 +8,34 @@
         "internalType": "address"
       },
       {
-        "name": "paper",
+        "name": "cards",
         "type": "address",
         "internalType": "address"
       },
       {
-        "name": "plank",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "usdg",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "usdgDecimals",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
-        "name": "weth",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "router",
-        "type": "address",
-        "internalType": "address"
+        "name": "paperPerSuggestion",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "nonpayable"
   },
   {
-    "type": "receive",
-    "stateMutability": "payable"
-  },
-  {
     "type": "function",
-    "name": "BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "DEAD",
+    "name": "CARDS",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "address",
-        "internalType": "address"
+        "internalType": "contract ICreditsCards"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "ETH_FEED_MAX_AGE",
+    "name": "CARDS_PER_CREDIT",
     "inputs": [],
     "outputs": [
       {
@@ -85,7 +48,7 @@
   },
   {
     "type": "function",
-    "name": "MAX_HALVINGS",
+    "name": "MAX_SUGGESTION_BYTES",
     "inputs": [],
     "outputs": [
       {
@@ -98,143 +61,13 @@
   },
   {
     "type": "function",
-    "name": "MAX_ROUTES",
+    "name": "SUGGESTION_PAPER_CAP_USD",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "PAPER",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IERC20"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "PAPER_FEED_MAX_AGE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "PLANK",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IERC20"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "PLANK_FEED_MAX_AGE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "PLANK_WINDOW_MAX",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "ROUTER",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IBurnRouter"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "SWAP_MIN_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "USDG",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IERC20"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "USDG_UNIT",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "WETH",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -248,25 +81,44 @@
   },
   {
     "type": "function",
-    "name": "ethUsd",
-    "inputs": [],
-    "outputs": [
+    "name": "burnCards",
+    "inputs": [
+      {
+        "name": "ids",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "burnCount",
+    "inputs": [
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IBurnFeed"
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "flush",
+    "name": "credits",
     "inputs": [
       {
-        "name": "pay",
-        "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [
@@ -276,26 +128,20 @@
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "flushLight",
-    "inputs": [
-      {
-        "name": "pay",
-        "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
-      }
-    ],
+    "name": "currentRound",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -306,19 +152,6 @@
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "paperUsd",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IBurnFeed"
       }
     ],
     "stateMutability": "view"
@@ -338,67 +171,28 @@
   },
   {
     "type": "function",
-    "name": "planFor",
+    "name": "pickSuggestions",
     "inputs": [
       {
-        "name": "pay",
-        "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
-      },
-      {
-        "name": "amount",
+        "name": "fire",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "ids",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
-    "outputs": [
-      {
-        "name": "a",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "b",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "inA",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "quoted",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "plankUsd",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IBurnFeed"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "quote",
+    "name": "picksOf",
     "inputs": [
       {
-        "name": "pay",
-        "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
-      },
-      {
-        "name": "usd18",
+        "name": "fire",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -421,39 +215,49 @@
   },
   {
     "type": "function",
-    "name": "routesOf",
-    "inputs": [
-      {
-        "name": "pay",
-        "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
-      }
-    ],
+    "name": "sale",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "address[][]",
-        "internalType": "address[][]"
+        "type": "address",
+        "internalType": "contract FireSale"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "setFeeds",
+    "name": "sessionFire",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sessionRound",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setSale",
     "inputs": [
       {
-        "name": "eth",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "plank",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "paper",
+        "name": "s",
         "type": "address",
         "internalType": "address"
       }
@@ -463,21 +267,118 @@
   },
   {
     "type": "function",
-    "name": "setRoutes",
+    "name": "setSuggestionRules",
     "inputs": [
       {
-        "name": "pay",
-        "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
+        "name": "paper",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
-        "name": "routes",
-        "type": "address[][]",
-        "internalType": "address[][]"
+        "name": "maxBytes",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "suggest",
+    "inputs": [
+      {
+        "name": "text",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "maxPaper",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "suggestionCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "suggestionMaxBytes",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "suggestionPaper",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "suggestions",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "by",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "at",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "granted",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "round",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -493,51 +394,55 @@
     "stateMutability": "nonpayable"
   },
   {
-    "type": "event",
-    "name": "Burned",
+    "type": "function",
+    "name": "useCredits",
     "inputs": [
       {
-        "name": "pay",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PaperBurner.Pay"
-      },
-      {
-        "name": "spent",
+        "name": "fire",
         "type": "uint256",
-        "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "paperOut",
+        "name": "n",
         "type": "uint256",
-        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxPaper",
+        "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "anonymous": false
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "event",
-    "name": "FeedsSet",
+    "name": "CardsBurned",
     "inputs": [
       {
-        "name": "ethUsd",
+        "name": "holder",
         "type": "address",
-        "indexed": false,
+        "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "plankUsd",
-        "type": "address",
+        "name": "count",
+        "type": "uint256",
         "indexed": false,
-        "internalType": "address"
+        "internalType": "uint256"
       },
       {
-        "name": "paperUsd",
-        "type": "address",
+        "name": "creditsEarned",
+        "type": "uint256",
         "indexed": false,
-        "internalType": "address"
+        "internalType": "uint256"
+      },
+      {
+        "name": "burnCount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -582,35 +487,110 @@
   },
   {
     "type": "event",
-    "name": "RoutesSet",
+    "name": "PickingSession",
     "inputs": [
       {
-        "name": "pay",
-        "type": "uint8",
+        "name": "fire",
+        "type": "uint256",
         "indexed": true,
-        "internalType": "enum PaperBurner.Pay"
+        "internalType": "uint256"
       },
       {
-        "name": "routes",
-        "type": "address[][]",
+        "name": "round",
+        "type": "uint32",
         "indexed": false,
-        "internalType": "address[][]"
+        "internalType": "uint32"
       }
     ],
     "anonymous": false
   },
   {
     "type": "event",
-    "name": "Waiting",
+    "name": "SaleSet",
     "inputs": [
       {
-        "name": "pay",
-        "type": "uint8",
+        "name": "sale",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Suggested",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
         "indexed": true,
-        "internalType": "enum PaperBurner.Pay"
+        "internalType": "uint256"
       },
       {
-        "name": "amount",
+        "name": "by",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "round",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "text",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SuggestionPicked",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "by",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "credits",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SuggestionRulesSet",
+    "inputs": [
+      {
+        "name": "paper",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxBytes",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -620,17 +600,37 @@
   },
   {
     "type": "error",
-    "name": "BadRoute",
+    "name": "AlreadyClaimed",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "FeedUnavailable",
+    "name": "AlreadySet",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "FeedsAlreadySet",
+    "name": "BadAmount",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadConfig",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DropStarted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoCredits",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotThisRound",
     "inputs": []
   },
   {
@@ -664,17 +664,6 @@
     "type": "error",
     "name": "RenounceDisabled",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SafeERC20FailedOperation",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
   },
   {
     "type": "error",

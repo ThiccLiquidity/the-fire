@@ -139,19 +139,6 @@
   },
   {
     "type": "function",
-    "name": "REREQUEST_AFTER",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "USDG",
     "inputs": [],
     "outputs": [
@@ -191,6 +178,11 @@
         "name": "index",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "ids",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
     "outputs": [],
@@ -236,6 +228,11 @@
         "name": "index",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "ids",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
     "outputs": [],
@@ -328,11 +325,6 @@
             "internalType": "uint64"
           },
           {
-            "name": "firstRequestedAt",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
             "name": "ready",
             "type": "bool",
             "internalType": "bool"
@@ -343,9 +335,14 @@
             "internalType": "bool"
           },
           {
+            "name": "source",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "requestId",
-            "type": "uint256",
-            "internalType": "uint256"
+            "type": "uint96",
+            "internalType": "uint96"
           },
           {
             "name": "word",
@@ -353,9 +350,9 @@
             "internalType": "uint256"
           },
           {
-            "name": "ids",
-            "type": "uint256[]",
-            "internalType": "uint256[]"
+            "name": "idsHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           }
         ]
       }
@@ -455,6 +452,19 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "paused",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -572,20 +582,7 @@
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "rerequest",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -613,6 +610,19 @@
         "name": "odds",
         "type": "uint64[10]",
         "internalType": "uint64[10]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setPaused",
+    "inputs": [
+      {
+        "name": "p",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -785,6 +795,19 @@
   },
   {
     "type": "event",
+    "name": "PausedSet",
+    "inputs": [
+      {
+        "name": "paused",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "PricesSet",
     "inputs": [
       {
@@ -859,32 +882,8 @@
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "Rerequested",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "requestId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
     "type": "error",
     "name": "AlreadyGraded",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "AlreadySet",
     "inputs": []
   },
   {
@@ -894,12 +893,27 @@
   },
   {
     "type": "error",
+    "name": "BadIds",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "BadOdds",
     "inputs": []
   },
   {
     "type": "error",
+    "name": "BadRequest",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "FireIsClosed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "IsPaused",
     "inputs": []
   },
   {
@@ -957,6 +971,11 @@
   {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RenounceDisabled",
     "inputs": []
   },
   {
