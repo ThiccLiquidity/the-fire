@@ -40,7 +40,7 @@
     <button class="chip round menu-btn" type="button" data-go="menu" aria-label="Menu">${svg('menu')}</button>
     <button class="wallet" id="walletBtn" type="button">${svg('wallet')}<span>Connect</span></button>
   </header>
-  <div class="demo-note" role="note"><b>Demo</b><span>Nothing here is real. No wallet, no payments.</span></div>
+  <div class="demo-note" role="note"><b>Demo</b><span>Nothing here is real.<span class="dn-more"> No wallet, no payments.</span></span><button class="start-link" type="button" data-go="start">New here?</button></div>
   <div class="ui" id="pills">
     <div class="buybox" id="buybox" data-x="1480" data-y="250"></div>
     <button class="pill" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
@@ -302,7 +302,28 @@
     body.onsubmit = (e) => { e.preventDefault(); needWallet(() => { Sheet.close('paper'); Store.update((s) => { s.wallet.balances[tok] += amt; s.wallet.balances.ETH -= usdOf() / ETH_USD; }); toast(`+${fmt(amt)} ${tok}`, 'good'); }); };
     draw(); Sheet.open('paper', { title: 'Get ' + tok, body });
   }
-  window.UI = { openGetPaper, checkout };
+  // ---------- New here? a short checklist; each step ticks itself off from the demo state and has its own button
+  function openStart() {
+    const sealed = () => Object.values(S.sealed).reduce((a, b) => a + b, 0);
+    const did = (word) => S.activity.some((a) => a.text.startsWith(word));
+    const steps = [
+      ['Connect a wallet', 'MetaMask, Rabby or any wallet on Robinhood Chain.', () => S.wallet.connected, 'Connect', () => needWallet(() => openStart())],
+      ['Get PAPER', 'Every pack burns 1.', () => S.wallet.balances.PAPER >= 1, 'Get PAPER', () => openGetPaper()],
+      ['Buy a pack', '$2.50 + 1 PAPER.', () => S.wallet.bought > 0 || sealed() > 0, 'Buy', () => checkout()],
+      ['Open it', 'Packs open once the Series sells out.', () => did('Opened'), 'Open packs', () => openStation('open')],
+      ['Case or grade', 'Within 24 hours, so new cards never wear.', () => did('Paid'), 'Case & grade', () => Stations.open('grade')],
+    ];
+    const body = document.createElement('div'); body.className = 'start';
+    const draw = () => {
+      body.innerHTML = `<ol class="start-list">${steps.map(([t, sub, done, b], i) => `<li class="${done() ? 'done' : ''}">
+          <span class="start-n" aria-hidden="true">${done() ? '✓' : i + 1}</span><span class="start-t"><b>${t}</b><small>${sub}</small></span>
+          ${done() ? '<span class="sr">Done</span>' : `<button class="btn small" type="button" data-s="${i}">${b}</button>`}</li>`).join('')}</ol>
+        <p class="menu-links"><button class="inf-link" type="button" data-s="info">How it all works</button><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>`;
+      body.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { Sheet.close('start'); if (b.dataset.s === 'info') return Info.open(); steps[+b.dataset.s][4](); });
+    };
+    draw(); Sheet.open('start', { title: 'New here?', body });
+  }
+  window.UI = { openGetPaper, checkout, openStart };
 
   // ---------- activity, menu, demo
   function openFeed() {
@@ -314,7 +335,8 @@
       <button class="btn" type="button" data-m="cards">${svg('cards')}My cards</button><button class="btn" type="button" data-m="open">${svg('pack')}Open packs${Stations.openableCount() ? ` (${Stations.openableCount()})` : ''}</button>
       <button class="btn" type="button" data-m="paper">${svg('paper')}Get PAPER</button><button class="btn" type="button" data-m="info">${svg('info')}Info</button>
       <button class="btn" type="button" data-m="feed">${svg('feed')}Activity</button><button class="btn" type="button" data-m="sound">${svg('sound')}Sound: ${sound ? 'On' : 'Off'}</button>
-      <button class="btn" type="button" data-m="demo">Demo controls</button></div>` });
+      <button class="btn" type="button" data-m="start">New here?</button><button class="btn" type="button" data-m="demo">Demo controls</button></div>
+      <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>` });
     d.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => { d.close(); go(b.dataset.m); });
   }
   let auto = null;
@@ -340,7 +362,7 @@
   $('#soundBtn').onclick = () => { sound = !sound; $('#soundBtn').setAttribute('aria-pressed', sound); $('#soundBtn').innerHTML = svg(sound ? 'sound' : 'mute'); toast(sound ? 'Sound: On' : 'Sound: Off'); };
   function go(k) {
     if (k === 'paper') openGetPaper(); if (k === 'info') Info.open(); if (k === 'info-cards') Info.open('cards'); if (k === 'feed') openFeed();
-    if (k === 'menu') openMenu(); if (k === 'demo') openDemo(); if (k === 'sound') $('#soundBtn').click();
+    if (k === 'menu') openMenu(); if (k === 'demo') openDemo(); if (k === 'start') openStart(); if (k === 'sound') $('#soundBtn').click();
     if (k === 'cards' || k === 'open') openStation(k);
   }
   // My cards opens the collection; Open packs goes straight to tearing the next pack, or (none to open) says why and points at Buy
