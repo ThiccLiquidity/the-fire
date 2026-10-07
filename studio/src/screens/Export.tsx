@@ -129,7 +129,7 @@ export function Export({ fire }: { fire: FireRecord }) {
     characters: deal!.characterIds.map((id, i) => ({ index: i, id, name: chars[id]?.name, category: chars[id]?.category ?? '' })),
     recipe: r, pool: Object.fromEntries(r.types.map((t, i) => [t.slug, deal!.pool[i]])), cardsPerPack: deal!.cardsPerPack,
     firstSerial: deal!.firstSerial, lastSerial: deal!.nextSerial - 1, packContents: deal!.packContents, upload: fire.upload ?? null,
-    note: 'On-chain, recipe.json (contracts/script/ConfigureSeries.s.sol) sets the Series up: setRecipe, setCharacters, setDealer, setImagesBase (ipfs://<images CID>/), setOdds. tokenURI builds each card\'s JSON itself; metadata/ here is for preview and reference only. ' +
+    note: 'recipe.json sets the Series up on-chain; tokenURI builds each card\'s JSON itself, so metadata/ is a preview only. ' +
       (imagesCid ? 'Its image fields point at the uploaded images folder.' : 'Its image fields are relative paths inside this zip until the images are uploaded.'),
   }, null, 1)
 
@@ -343,36 +343,20 @@ export function Export({ fire }: { fire: FireRecord }) {
         ))}
       </ul>
 
-      <h3>recipe.json (sets the Series up on-chain)</h3>
-      <p className="muted small">
-        The file <code>contracts/script/ConfigureSeries.s.sol</code> reads (<code>RECIPE_JSON=recipe.json</code>): the card types,
-        slots, characters in image order and PDA odds, plus <code>imagesBase</code> once the images are uploaded, and the drop's
-        settings (the <code>sale</code> block, from the Sale tab). The script checks the recipe against the dealer and prints the
-        owner's calls (setRecipe, setCharacters in batches, setDealer, setImagesBase, setOdds, and configureDrop with
-        <code>FIRE_SALE</code> set).
-      </p>
+      <h3>recipe.json</h3>
+      <p className="muted small">Sets the Series up on-chain.</p>
       <div className="row wrap">
         <button className="primary" disabled={!recipeReady || busy} onClick={downloadRecipe} data-testid="download-recipe">Download recipe.json</button>
-        {!fire.upload?.imagesCid && <span className="muted small">No images uploaded yet: imagesBase is left out (the script then leaves the image folder as is).</span>}
+        {!fire.upload?.imagesCid && <span className="muted small">No images uploaded yet: no imagesBase.</span>}
       </div>
 
       <h3>Download everything</h3>
-      <p className="muted small">
-        A zip with images/ (the full grid, {gridLen.toLocaleString()} WEBP images named as the card contract expects),
-        metadata/&lt;serial&gt;.json (one per card of the sample deal, preview only), fire.json (the deal record and the recipe)
-        and recipe.json. Big Series come in parts of about 1.5 GB (part 1 also holds the metadata and JSON).
-      </p>
+      <p className="muted small">{gridLen.toLocaleString()} images, metadata and the JSON, in one zip (parts of ~1.5 GB if big).</p>
       <button className="primary" disabled={!ready || busy} onClick={downloadZip} data-testid="download-zip">Download zip</button>
 
-      <h3>Upload: Pinata, then a second pin on Filebase</h3>
-      <p className="muted small">
-        Each folder is packed here into one CAR file (its CID is worked out before upload) and sent in pieces that resume
-        after a dropped connection or a reload. Pinata keeps exactly that folder, so its CID is the images base; then the
-        same images CAR is pinned on Filebase, and both are read back: each must hold the same root CID. The images folder
-        also carries <code>manifest.json</code> (every file's name, size and sha256, the grid key and the recipe hash).
-        Keys are kept in this tab's memory only: never saved, never logged. Reloading forgets them.
-      </p>
-      {flags.mockPinata && <Notice kind="warn">Mock IPFS is ON (Data tab): nothing leaves this machine; the CIDs are the real folder CIDs, but nothing is stored on Pinata or Filebase.</Notice>}
+      <h3>Upload: Pinata + Filebase</h3>
+      <p className="muted small">Both pins must hold the same CID. Keys stay in this tab only; a reload forgets them.</p>
+      {flags.mockPinata && <Notice kind="warn">Mock IPFS is on (Data tab): nothing is uploaded.</Notice>}
       <form className="row wrap" onSubmit={(e) => { e.preventDefault(); setPinataJwt(jwtInput); setJwtInput(''); setKeySet(hasPinataJwt()) }}>
         <Field label="Pinata JWT (Files write)">
           <input type="password" autoComplete="new-password" data-1p-ignore="" data-lpignore="true" value={jwtInput} onChange={(e) => setJwtInput(e.target.value)} placeholder={keySet ? 'key set for this session' : 'paste JWT'} data-testid="jwt" />
@@ -429,9 +413,8 @@ export function Export({ fire }: { fire: FireRecord }) {
       {uploadOfBuild && !fire.upload?.carStoredAt && (
         <Notice kind="warn">
           <strong>Keep the images CAR offline.</strong> Save <code>{fire.upload?.imagesDir}.car</code>
-          {fire.upload?.imagesCarSize ? ` (${(fire.upload.imagesCarSize / 1024 / 1024).toFixed(1)} MB)` : ''} and put it on a drive you keep
-          (not only this computer). With it the images can be pinned again anywhere and come back with the same CID, even if
-          both pinning services drop them.
+          {fire.upload?.imagesCarSize ? ` (${(fire.upload.imagesCarSize / 1024 / 1024).toFixed(1)} MB)` : ''} to a drive you keep: it re-pins
+          the images with the same CID.
           <div className="row wrap" style={{ marginTop: 8 }}>
             <button disabled={busy} onClick={saveCar} data-testid="save-car">Save images CAR</button>
             <label className="check"><input type="checkbox" disabled={busy || !fire.upload?.carSavedAt} checked={false} onChange={(e) => confirmStored(e.target.checked)} data-testid="car-stored" /> I've stored it offline</label>
