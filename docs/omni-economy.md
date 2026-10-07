@@ -133,7 +133,8 @@ drop: mint 1 pack for 1 PAPER (burned), out of that drop's supply. If no drop is
 credit waits for the next drop. **Credits work at any time during any live drop**: the holder
 window, the PLANK-only packs and the wallet limit don't apply to them. A drop can cap how many free packs it gives
 out in all (`creditPacksMax`) and per wallet (`creditPacksPerWallet`), so a big stack of credits can't take a large
-share of a small drop; credits over a cap simply wait for another drop. The Standard sale has no caps.
+share of a small drop; credits over a cap simply wait for another drop. The Standard sale caps free packs at 10% of
+the drop's packs and 3 per wallet.
 
 Two ways to earn one:
 

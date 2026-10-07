@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from 'react'
 import { Notice, useAction } from '../components'
 import {
-  CARDS_PER_CREDIT, MAX_WINDOW_HOURS, PRESS_PRICE_LABEL, SALE_PRESETS, checkSale, saleJson, saleOf, saleSummary, 
+  CARDS_PER_CREDIT, MAX_WINDOW_HOURS, PRESS_PRICE_LABEL, SALE_PRESETS, checkSale, creditPacksMax, saleJson, saleOf, saleSummary, 
   type PressPrice, type SaleField, type SaleProblem, type SaleSettings,
 } from '../sale'
 import { updateFire } from '../store'
@@ -126,7 +126,7 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
           <span className="muted small">Burn progress carries over between Series, so this never changes.</span>
         </div>
         <F all={problems} f="creditsPerPick" label="Credits per picked suggestion" hint="0 = none."><Num value={s.creditsPerPick} onChange={(v) => set({ creditsPerPick: v })} testId="sale-picks" /></F>
-        <F all={problems} f="creditPacksMax" label="Free packs in this drop, at most" hint="Packs bought with credits, all wallets. 0 = no limit."><Num value={s.creditPacksMax} onChange={(v) => set({ creditPacksMax: v })} testId="sale-credit-max" /></F>
+        <F all={problems} f="creditPacksPercent" label="Free packs in this drop, at most (%)" hint={`Of all the drop's packs: ${creditPacksMax(s) || 'no limit'}${creditPacksMax(s) ? ' packs' : ''}. 0 = no limit.`}><Text value={s.creditPacksPercent} onChange={(v) => set({ creditPacksPercent: v })} testId="sale-credit-max" /></F>
         <F all={problems} f="creditPacksPerWallet" label="Free packs per wallet, at most" hint="0 = no limit."><Num value={s.creditPacksPerWallet} onChange={(v) => set({ creditPacksPerWallet: v })} testId="sale-credit-wallet" /></F>
       </div>
 

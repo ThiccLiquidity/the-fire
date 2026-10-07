@@ -1346,8 +1346,8 @@ contract SaleTest is SeriesHelper {
         assertEq(d.starterPriceUsd, 0);
         assertEq(d.starterPaper, 1e18);
         assertEq(d.creditsPerPick, 1);
-        assertEq(d.creditPacksMax, 0);
-        assertEq(d.creditPacksPerWallet, 0);
+        assertEq(d.creditPacksMax, 16);
+        assertEq(d.creditPacksPerWallet, 3);
         assertEq(d.holderRoot, bytes32(0xabababababababababababababababababababababababababababababababab));
         // DROP_START and HOLDER_ROOT override the block's start and root
         vm.setEnv("DROP_START", "1810000123");

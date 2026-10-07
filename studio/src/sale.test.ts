@@ -13,7 +13,7 @@ describe('sale settings', () => {
       start: 0, packs: 117, starters: 50, plankOnly: 50, walletLimit: 5, starterWindow: 86_400, liftAfter: 172_800,
       plankBurnBps: 3_000, priceUsd: '250000000', paperPerPack: '1000000000000000000', holderWindow: 86_400, maxPerTx: 50,
       plankOnlyFor: 172_800, regularWalletsFor: 172_800, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: '0',
-      starterPaper: '1000000000000000000', creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0,
+      starterPaper: '1000000000000000000', creditsPerPick: 1, creditPacksMax: 16, creditPacksPerWallet: 3,
     })
   })
 
@@ -21,7 +21,7 @@ describe('sale settings', () => {
     const g = giantSale()
     expect(errs(g)).toEqual([])
     expect(g.paidPacks + g.pressPacks).toBe(10_000)
-    expect(saleJson(g)).toMatchObject({ walletLimit: 100, maxPerTx: 100, creditPacksMax: 0, creditPacksPerWallet: 0 })
+    expect(saleJson(g)).toMatchObject({ walletLimit: 100, maxPerTx: 100, creditPacksMax: 1_000, creditPacksPerWallet: 3 })
   })
 
   it('mirrors configureDrop\'s checks', () => {
@@ -44,9 +44,13 @@ describe('sale settings', () => {
     expect(errs({ holderRoot: '0x12' })).toContain('holderRoot')
     expect(errs({ maxPerTx: 0 })).toContain('maxPerTx')
     expect(errs({ creditsPerPick: 70_000 })).toContain('creditsPerPick')
-    expect(errs({ creditPacksMax: -1 })).toContain('creditPacksMax')
+    expect(errs({ creditPacksPercent: '101' })).toContain('creditPacksPercent')
     expect(errs({ creditPacksPerWallet: 1.5 })).toContain('creditPacksPerWallet')
-    expect(errs({ creditPacksMax: 100, creditPacksPerWallet: 2 })).toEqual([])
+    expect(errs({ creditPacksPercent: '10', creditPacksPerWallet: 2 })).toEqual([])
+    const cap = (s: Partial<SaleSettings>) => saleJson({ ...standardSale(), ...s }).creditPacksMax
+    expect(cap({ creditPacksPercent: '0' })).toBe(0) // no limit
+    expect(cap({ paidPacks: 5, pressPacks: 0, plankOnly: 0, creditPacksPercent: '10' })).toBe(1) // at least 1 when on
+    expect(cap({ paidPacks: 450, pressPacks: 50, creditPacksPercent: '12.5' })).toBe(62)
     expect(errs({ pressPrice: 'usd', pressUsd: '0' })).toContain('pressUsd')
     expect(errs({ pressPrice: 'paper', pressPaper: '0' })).toContain('pressPaper')
     expect(errs({ priceUsd: '2.123456789' })).toContain('priceUsd') // more than 8 decimals

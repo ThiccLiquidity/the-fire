@@ -144,7 +144,7 @@ picture / full out of 1e18), `characterOf`, `charactersOf(fire, from, count)`, `
     "holderWindow": 86400, "holderRoot": "0x...", "maxPerTx": 50,
     "plankOnlyFor": 172800, "regularWalletsFor": 172800,
     "starterPerPress": 1, "starterWalletLimit": 1, "starterPriceUsd": "0", "starterPaper": "1000000000000000000",
-    "creditsPerPick": 1, "creditPacksMax": 0, "creditPacksPerWallet": 0
+    "creditsPerPick": 1, "creditPacksMax": 16, "creditPacksPerWallet": 3
   }
 }
 ```
@@ -225,8 +225,8 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | Press pack dollar price | `starterPriceUsd` | per Series | $0 | any; paid in PLANK, ETH or USDG like a paid pack |
 | Press pack PAPER | `starterPaper` | per Series | 1 PAPER | any; both price fields 0 = free |
 | Credits per picked suggestion | `creditsPerPick` | per Series | 1 | < 2^16; 0 = none |
-| Free (credit) packs in the drop, at most | `creditPacksMax` | per Series | 0 (no limit) | < 2^64; `CreditCapReached` past it |
-| Free (credit) packs per wallet, at most | `creditPacksPerWallet` | per Series | 0 (no limit) | < 2^64; `CreditWalletLimit` past it |
+| Free (credit) packs in the drop, at most | `creditPacksMax` | per Series | 10% of the drop's packs (the studio sets a percent and exports the count, rounded down, at least 1) | < 2^64; 0 = no limit; `CreditCapReached` past it |
+| Free (credit) packs per wallet, at most | `creditPacksPerWallet` | per Series | 3 | < 2^64; `CreditWalletLimit` past it |
 | Cards per free pack credit | `CARDS_PER_CREDIT` | constant | 42 | **fixed forever**: burn progress carries over between Series, so changing it would move the goalposts |
 | Suggestion cost, longest text | `setSuggestionRules` | global (suggestions aren't tied to a drop) | 1 PAPER, 280 bytes | any cost incl. 0 (each `suggest` names its most PAPER), never more than $1 of PAPER (same cap as packs); text 1 to 1,024 bytes (event size) |
 | Cards per case/grading batch | `FirePsa.setMaxBatch` | global | 20 | 1 to 100 (gas guard: `finish` grades a batch in one tx) |
