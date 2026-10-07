@@ -85,6 +85,13 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   ReentrancyGuardReentrantCall: "That call isn't allowed from inside another call.",
   SafeERC20FailedOperation: "A token transfer failed. Check your balance and approval, then try again.",
   ZeroAddress: "An address is missing.",
+  // added with the strategic review contracts
+  BadIds: "Those aren't the cards in that grading. Refresh and try again.",
+  BadPay: "That way to pay isn't supported here.",
+  BadRequest: "That request doesn't match. Refresh and try again.",
+  IsPaused: "Paused for a moment. Nothing was charged. Try again soon.",
+  NotCredits: INTERNAL,
+  RenounceDisabled: OWNER,
 
   // standard token errors (OpenZeppelin)
   ERC1155InsufficientBalance: "You don't have enough of those packs.",
