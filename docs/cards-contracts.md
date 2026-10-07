@@ -7,10 +7,11 @@
 (`fire`, `lockFire`, `fires`), "fire" is a Series number. This doc says "Series" in prose.
 
 **The idea.** Every rule about what a Series' cards are is a per-Series setting: card types, how many of each, holo
-odds, cards per pack, what each slot may hold, characters, fresh PDA odds, card images. The only limits left are
+odds, cards per pack, what each slot may hold, characters, card images. The only limits left are
 technical (type widths and block gas), and big work is split into batches instead of capped. Every setting locks when
 the Series' drop is set up (`configureDrop`), before anyone can buy, so buyers can trust the odds, and all of it can be
-read on-chain.
+read on-chain. PDA grading is the exception the other way: its fresh odds and wear rules are fixed forever in
+`FirePsa`, the same for every Series (`docs/grading.md`); only case and grading prices can change.
 
 ## The pieces
 
@@ -26,7 +27,7 @@ read on-chain.
 | `FireSale` | Sells the packs (`docs/omni-economy.md`): every product rule is a per-drop setting (pack counts, prices, PAPER and its dollar ceiling, burn share, PLANK-only packs, press packs, holder window, wallet limit, regular-wallets rule, packs per purchase, credits per picked suggestion). Closes the Series when a drop sells out or ends. The owner can pause buying (`setPaused`). Never holds funds. |
 | `FireCredits` | Free pack credits, card burning (42 cards = 1 credit, fixed forever) and character suggestions, split out of `FireSale` for contract size (same rules). It spends credits, burns cards and takes suggestion PAPER through `FireSale` hooks only it can call (`creditPacks`, `burnCardsFor`, `burnPaperFor`), so PAPER is approved to `FireSale` alone. Owned by the multisig (picks, suggestion rules). |
 | `PlankBurner` | Gets the sale's PLANK burn share when the swap can't run (a stale PLANK price or a failed swap). No owner, no withdraw: anyone calls `flush`, which buys PLANK (95% TWAP guard, halving for a backlog) and sends it to the dead address. |
-| `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars, paid in ETH, USDG or PLANK. drand picks each grade (1 to 10) from the Series' fresh odds and the card's frozen wear (fixed rules); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
+| `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars, paid in ETH, USDG or PLANK. drand picks each grade (1 to 10) from the fresh odds and the card's frozen wear (both fixed forever, the same for every Series); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
 | `PaperBurner` | Gets 100% of every case and grading fee, buys PAPER with it on owner-set routes and burns it. No withdraw; the router is fixed at deploy. |
 
 Every owned contract refuses `renounceOwnership` (control can't be lost by mistake); ownership moves only in two
@@ -142,7 +143,6 @@ picture / full out of 1e18), `characterOf`, `charactersOf(fire, from, count)`, `
     { "count": 1, "minRank": 2, "maxRank": 4, "mustHolo": true }
   ],
   "characters": [ { "name": "Ember Fox", "category": "Animals" } ],
-  "pdaOdds": ["0", "0", "0", "0", "1000", "2000", "2700", "2500", "1700", "100"],
   "sale": {
     "start": 1900000000, "packs": 117, "starters": 50, "plankOnly": 50, "walletLimit": 5,
     "starterWindow": 86400, "liftAfter": 172800, "plankBurnBps": 3000,
@@ -157,9 +157,9 @@ picture / full out of 1e18), `characterOf`, `charactersOf(fire, from, count)`, `
 
 `supply`: `filler` | `share` (ppb of the Series' cards) | `perPack` | `count` | `perCharacter`. `holo.mode`:
 `independent` (`frame`, `picture` out of 1e18) | `distribution` (`weights`: none, frame, picture, full). A slot has
-`types` (indexes) or a rank range (`minRank`, default 0; `maxRank`, default "no top"). `imagesBase` and `pdaOdds` (the
-fresh odds: a weight per grade, 1 first; grades 1-4 must be 0) are optional. The JSON is read strictly: unknown keys,
-numbers too big for their field and a drop start more than 365 days away are refused.
+`types` (indexes) or a rank range (`minRank`, default 0; `maxRank`, default "no top"). `imagesBase` is optional. There
+are no PDA odds in it: they are fixed in `FirePsa` for every Series. The JSON is read strictly: unknown keys (a
+`pdaOdds` key included), numbers too big for their field and a drop start more than 365 days away are refused.
 
 `sale` (optional; the studio's Sale tab) is `FireSale.DropConfig` field by field, in contract units: times in seconds
 after `start`, dollars with 8 decimals, PAPER in wei, the burn share in basis points. Every field is required except
@@ -171,10 +171,10 @@ after `start`, dollars with 8 decimals, PAPER in wei, the burn share in basis po
 
 1. **Before a Series** (the owner, the `OWNER` multisig; `ConfigureSeries.s.sol` builds these calls from the JSON):
    `RecipeDealer.setRecipe`, `setCharacters` (+ `appendCharacters`), `FireCards.setDealer(fire, dealer)` (the dealer
-   must already have the Series ready), `FireCards.setImagesBase(fire, base)`, optionally `FirePsa.setOdds`. Then
+   must already have the Series ready), `FireCards.setImagesBase(fire, base)`. Then
    `FireSale.configureDrop` (it requires `FireCards.ready(fire)`; the script adds it last from the `sale` block).
-   `configureDrop` calls `FireCards.lockForSale(fire)`: from then the dealer, recipe, characters, fresh odds and image
-   folder are fixed.
+   `configureDrop` calls `FireCards.lockForSale(fire)`: from then the dealer, recipe, characters and image folder are
+   fixed.
 2. **During the drop:** the seller (`FireSale`) mints packs. They're tradeable sealed.
 3. **When the drop ends:** the seller calls `closeFire(fire)`. The pack count freezes. Closing never calls the dealer.
    The pool (`poolOf`) is worked out from the recipe and that count; the dealer lays it out at the first deal.
@@ -202,7 +202,6 @@ after `start`, dollars with 8 decimals, PAPER in wei, the burn share in basis po
 | Dealer | `FireCards.setDealer` | drop set up (`configureDrop` -> `lockForSale`), first pack minted, `lockFire`, or close |
 | Card types, slots, cards per pack, supply, caps, holo | `RecipeDealer.setRecipe` | same |
 | Characters | `setCharacters`, `appendCharacters` | same |
-| Fresh PDA odds (weights for grades 5-10; 1-4 must be 0) | `FirePsa.setOdds` | same |
 | Image folder | `FireCards.setImagesBase` | same (the art people buy can never be swapped) |
 | Drop settings (all of them, below) | `FireSale.configureDrop` | the drop's start |
 
@@ -239,7 +238,7 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | Cards per case/grading batch | `FirePsa.setMaxBatch` | global | 20 | 1 to 100 (gas guard: `finish` grades a batch in one tx) |
 | Case and grading prices | `FirePsa.setPrices` | global | $0.05, $1 | above 0, at most $100 each (typo guard; each batch names its most) |
 | Fee burn routes | `PaperBurner.setRoutes` | global | set at deploy | each route starts at the currency and ends at PAPER, passing only through WETH, PLANK or USDG (2-4 tokens, at most 4 routes); the 95% guard checks every buy. The router is fixed and the burner's price feeds (`setFeeds`) can be set only once |
-| Fresh PDA odds | `FirePsa.setOdds` | per Series | 5-10 table (`docs/grading.md`) | grades 1-4 must be 0 |
+| Fresh PDA odds and wear rules | `FirePsa` constants (`FRESH_*`, `WEAR_*`; `freshOdds`, `oddsFor`) | constant | 5-10 table (`docs/grading.md`) | **fixed forever**, the same for every Series; no setter |
 | Revenue wallet and PlankBurner, feeds, router | `setWallets`, `setFeeds` | global | - | only between drops (unchanged) |
 | Pause | `FireSale.setPaused`, `FirePsa.setPaused` | global | off | blocks every buy, press packs, credit spending, paid suggestions (`FireSale`) and case/grading payments (`FirePsa`). Never opening, dealing, transfers, ending or closing a drop, burning cards, finishing or cancelling a grading, or keeper calls. No expiry |
 | Randomness source | `FireCards.setRandomness`, `FirePsa.setRandomness` | global | the drand adapters | any time, no delay (announced first); only new requests use it, each pending request keeps its source (`docs/randomness.md`) |
@@ -281,7 +280,8 @@ be renounced.
   source never strands or re-rolls an open. If a ready open sits at the head of its queue undealt for 7 days (a dealer
   that can't deal it), anyone can `skipStuck(fire)`: its unstarted packs go back, sealed, and the queue moves on. Each
   Series' queue stands alone, so one stuck Series never blocks another.
-- The owner can't change a Series' dealer, recipe, characters, fresh odds or image folder once its drop is set up.
+- The owner can't change a Series' dealer, recipe, characters or image folder once its drop is set up, and can never
+  change the PDA fresh odds or wear rules (constants in `FirePsa`).
   Closing doesn't depend on the dealer, so a drop can always close.
 - The owner can't change a dealt card. A card being graded can't be transferred (it can be burned); grades are final.
 - `PaperBurner` and `PlankBurner` have no withdraw: what they hold only ever leaves as a PAPER (or PLANK) buy sent to
@@ -319,7 +319,8 @@ The extra is the call to the dealer and reading the compiled recipe (stored as c
   never beyond the pool, every slot set always has enough
 - the same words give the same cards however processing is split; out-of-order randomness waits its turn
 - permissions, burns, royalties, metadata, image names, the image folder lock, the JSON configure path
-- the wear odds match `wear-model.py` (`wear-vectors.json`); cases and grades freeze wear; grades are final; the
+- the wear odds match `wear-model.py` (`wear-vectors.json`); the fresh odds are the fixed constants with no setter;
+  cases and grades freeze wear; grades are final; the
   burner's best route, split, 95% guard, piece-by-piece backlog, set-once feeds and known-token routes
 - the strategic review: what pause blocks and never blocks, a randomness switch (old requests answered only by their
   own source, or cancelled), the per-drop PAPER ceiling on paid, press and credit packs, PlankBurner (no withdraw,
@@ -340,12 +341,12 @@ Every deploy script writes what it deployed to `deployments/<chainId>.json` (rep
 tool reads; `contracts/script/VerifyDeploy.s.sol` checks the wiring listed below from it.
 
 `contracts/script/ConfigureSeries.s.sol` sets up a Series from a recipe JSON in two Safe batches: `BATCH=A` (content:
-recipe, characters, dealer, images base, odds) and, after `ops/series/verify-series.mjs` is green, `BATCH=B`
+recipe, characters, dealer, images base) and, after `ops/series/verify-series.mjs` is green, `BATCH=B`
 (`configureDrop`, the lock; refused unless the chain holds batch A exactly). It checks the recipe against the dealer,
 prints each call and writes a Safe Transaction Builder file per batch (`contracts/safe-tx/`); `SIMULATE=true` runs a
-batch as the impersonated owner on a fork; `SEND=true` sends them when the signer is the owner (testnet). It rejects unknown JSON keys, fresh odds on grades 1-4 and a drop start more than 365 days away. Inputs: `RECIPE_JSON` (under `contracts/series/`), `BATCH`,
+batch as the impersonated owner on a fork; `SEND=true` sends them when the signer is the owner (testnet). It rejects unknown JSON keys (`pdaOdds` too) and a drop start more than 365 days away. Inputs: `RECIPE_JSON` (under `contracts/series/`), `BATCH`,
 `DROP_START` and `HOLDER_ROOT` (override the block), `CHARACTER_BATCH` (characters per call, default 200);
-`RECIPE_DEALER`, `FIRE_CARDS`, `FIRE_PSA`, `FIRE_SALE` from the deployments file unless set.
+`RECIPE_DEALER`, `FIRE_CARDS`, `FIRE_SALE` from the deployments file unless set.
 
 - **Settings:** `.env.example` (card contracts section). No keys in `.env`: sign with the Foundry keystore or a Ledger.
 - **Right after the deploy:** the multisig accepts ownership, then checks the wiring: the seller is FireSale on packs

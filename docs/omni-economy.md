@@ -214,8 +214,8 @@ original name, `FirePsa`.) The full rules (hidden condition, wear, fresh odds, s
 - **If randomness is gone for good** (no answer for 7 days), anyone can cancel a grading (`cancelGrading`): the cards
   unlock, still ungraded. The fee was burned. Opens work the same way: a stuck open can be cancelled after 7 days and
   the packs come back sealed.
-- **Fresh odds** (a card cased or graded within 24 hours of opening), set per Series before its drop is set up; the
-  default (`FirePsa.oddsOf`) is the same for every material. Grades 1-4 come only from long raw holds:
+- **Fresh odds** (a card cased or graded within 24 hours of opening): constants in `FirePsa` (`freshOdds`), fixed
+  forever, the same for every Series and every material. Grades 1-4 come only from long raw holds:
 
 | Grade | Fresh odds | Out of 10,000 | Wear frame |
 |---|---|---|---|

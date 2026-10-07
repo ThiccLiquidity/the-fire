@@ -2,8 +2,9 @@
 
 The Card Studio (`studio/`) is a standalone browser app that builds every card image and its metadata for a Series.
 It is kept separate from the site so it can feed whichever front end the cards are shown in. The rules are
-set per Series as a **recipe** (`studio/src/recipe.ts`): card types, how many of each, holo odds, what each pack holds
-and the fresh PDA odds. It is the same recipe `RecipeDealer` deals on-chain (`docs/cards-contracts.md`); the studio's
+set per Series as a **recipe** (`studio/src/recipe.ts`): card types, how many of each, holo odds and what each pack
+holds. PDA grade odds and wear rules are not part of it: they are fixed forever in `FirePsa`, the same for every
+Series. It is the same recipe `RecipeDealer` deals on-chain (`docs/cards-contracts.md`); the studio's
 checks and pool maths are ports of the contract's and are tested against it. New Series start from the **Standard recipe**
 (the original rules below, `contracts/src/cards/StandardRecipe.sol`).
 
@@ -59,8 +60,10 @@ Set on the **Recipe** tab, per Series, and locked with the deal:
   frame set.
 - **Slot groups**: a number of cards that may be any type in a set (a list of types, or a rank range), optionally
   must-holo. Cards per pack is their sum. Two groups' sets must be nested or disjoint.
-- **PDA odds** are fixed (the same for every Series) and shown read-only. A Series saved with its own odds keeps them
-  in its recipe.json until **Use the fixed odds** resets them.
+- **PDA odds** are fixed forever (the same for every Series) and shown read-only; recipe.json never carries them. A
+  Series saved with its own odds drops them when it loads and uses the fixed ones.
+- **Holo rolls** show at most 2 decimals (the exact stored value on hover); the stored value stays exact (the Standard
+  rolls match `StandardRecipe` to the wei) until the field is edited.
 
 The tab lists every problem the contract would refuse (filler, slugs, text, shares, holo, nested sets, a type no slot
 takes, a never-holo type in a must-holo slot). **What it makes** (top of the tab, for the Series' packs and characters
@@ -72,7 +75,7 @@ A percent supply can be typed as a number of cards (it sets the percent that giv
 number as a percent. The Series tab shows the same result. Presets: **Standard**,
 **Special: 3 cards, all holo** (Fire the filler, Coal 30%, Gold 2% at most one per pack; 2 Fire-or-better and 1
 Coal-or-better, all must-holo), or a copy of another Series' recipe. Series saved before recipes load with the old
-Standard recipe (Diamond, and the old odds) and their Diamond setting.
+Standard recipe (Diamond) and their Diamond setting.
 
 ## The Standard recipe
 
@@ -117,7 +120,7 @@ wears with time uncased and with moves between wallets, unless it is cased. Rule
 `docs/grading.md` and `docs/omni-economy.md`. An ungraded card uses its clean frame and the seal shows "?". The grade
 picks a wear level, each a full frame per material and holo variant:
 
-| Wear level | Grades | Fresh odds (Standard) |
+| Wear level | Grades | Fresh odds |
 |---|---|---|
 | 1 | PDA 10 | 1% |
 | 2 | PDA 9-8 | 17% + 25% |
@@ -126,7 +129,7 @@ picks a wear level, each a full frame per material and holo variant:
 | 5 | PDA 3-2 | wear only |
 | 6 | PDA 1 | wear only |
 
-Fresh odds are `FirePsa.oddsOf`'s defaults; the studio shows them as fixed.
+Fresh odds are `FirePsa`'s constants (`freshOdds`), fixed forever for every Series; the studio shows them read-only.
 
 - **PDA 10** uses the clean frame plus a thin warm-gold glow along the card's outer edge and a few small sparkles
   near the corners, drawn by the renderer on every material, never over the name panel, art or seal.
@@ -191,10 +194,11 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and its cards
    change means building again.
 7. **Export & Upload:** a readiness checklist (recipe valid, frames for every type, characters valid, deal locked,
    approved, the full grid built, sale settings valid); **recipe.json** (what `contracts/script/ConfigureSeries.s.sol`
-   reads: types, slots, characters, fresh PDA odds, `imagesBase` once uploaded, and the `sale` block; tied to the
+   reads: types, slots, characters, `imagesBase` once uploaded, and the `sale` block; tied to the
    uploaded build); a zip of the images, per-card metadata (preview
    only), `fire.json` and `recipe.json`, in parts of about 1.5 GB for big Series; or the upload to IPFS: Pinata, then a
-   second pin of the same images on Filebase, then the images CAR saved offline.
+   second pin of the same images on Filebase, then the images CAR saved offline. The screen keeps its copy short: one
+   line per step, the buttons, and the two safety prompts (both pins must hold the same CID; save the CAR offline).
 
 **Upload.** Each folder (images, then the preview metadata) is packed in the browser into one CAR file. Its root CID
 (a UnixFS directory, CIDv1, sharded when large) is known before upload. The CAR goes to Pinata's v3 upload API with
@@ -205,7 +209,7 @@ per session and never stored. The legacy one-request folder upload is not used: 
 can't be built from several pins.
 
 **manifest.json.** The images folder also holds `manifest.json`: every image's name, size and sha256, the studio's
-grid key, and the recipe hash (sha256 of `recipe.json`'s fire, types, slots, characters and PDA odds; `imagesBase` and
+grid key, and the recipe hash (sha256 of `recipe.json`'s fire, types, slots and characters; `imagesBase` and
 the sale block left out). VerifySeries (`ops/series`) reads it before the Series is locked.
 
 **Second pin (Filebase).** Right after Pinata, the same images CAR is pinned on Filebase through its S3-compatible API

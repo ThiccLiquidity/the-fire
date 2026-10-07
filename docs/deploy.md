@@ -92,7 +92,7 @@ $env:RECIPE_JSON = "series/recipe-fire-7.json"; $env:BATCH = "A"
 forge script script/ConfigureSeries.s.sol --rpc-url $env:RPC
 ```
 It checks the recipe against the dealer and writes `contracts/safe-tx/series-7-A.json`: `RecipeDealer.setRecipe`
-and `setCharacters` (+ `appendCharacters` for long lists), `FireCards.setDealer` and `setImagesBase`, `FirePsa.setOdds`.
+and `setCharacters` (+ `appendCharacters` for long lists), `FireCards.setDealer` and `setImagesBase`. No PDA odds: they are fixed in `FirePsa`, the same for every Series.
 In the Safe: Apps → Transaction Builder → drag the file in → check → sign. Never paste calldata. To try it first on
 a fork as the Safe: add `$env:SIMULATE = "true"` and use `--fork-url $env:RPC` instead of `--rpc-url`.
 
@@ -101,13 +101,13 @@ a fork as the Safe: add `$env:SIMULATE = "true"` and use `--fork-url $env:RPC` i
 cd ops; npm install
 node series/verify-series.mjs --recipe ..\contracts\series\recipe-fire-7.json --snapshot fire-7-holders.json
 ```
-It reads the Series back and diffs it against `recipe.json` (recipe, characters, dealer, images base, odds), checks
-`imagesBase` is `ipfs://<CID>/`, loads every image the contract can point a card at through two or more gateways,
+It reads the Series back and diffs it against `recipe.json` (recipe, characters, dealer, images base), checks
+FirePsa's fixed PDA odds and that `imagesBase` is `ipfs://<CID>/`, loads every image the contract can point a card at through two or more gateways,
 reads the folder's `manifest.json`, and recomputes the snapshot's Merkle root. Sign batch B only when it says
 **GREEN**.
 
-**Batch B, the lock:** `configureDrop` from the JSON's `sale` block (it locks the Series: recipe, characters, fresh
-odds and images are fixed from then).
+**Batch B, the lock:** `configureDrop` from the JSON's `sale` block (it locks the Series: recipe, characters and images
+are fixed from then).
 ```powershell
 $env:BATCH = "B"; $env:DROP_START = "<unix seconds>"; $env:HOLDER_ROOT = "<the snapshot's root>"
 forge script script/ConfigureSeries.s.sol --rpc-url $env:RPC
