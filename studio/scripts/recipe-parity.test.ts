@@ -67,7 +67,7 @@ function cases(): Case[] {
       }
     }
     if (chance(0.5)) slots.push({ count: 1, minRank: 0 }) // a catch-all group: every type is dealt somewhere
-    out.push({ fire: 100 + k, types, slots, characters: chars, pdaOdds: ['0', '0', '0', '0', '1', '1', '1', '1', '1', '1'], packs: PACKS })
+    out.push({ fire: 100 + k, types, slots, characters: chars, packs: PACKS })
   }
   return out
 }
@@ -96,14 +96,14 @@ describe.runIf(!process.env.WRITE_RECIPE_CASES && existsSync(FIXTURE))('recipe p
   })
 
   it('the Standard and Special exports go through ConfigureSeries and check()', () => {
-    expect(fx.results[0]).toMatchObject({ ok: true, perPack: 6, calls: 5 }) // setRecipe, setCharacters, setDealer, setImagesBase, setOdds
+    expect(fx.results[0]).toMatchObject({ ok: true, perPack: 6, calls: 4 }) // setRecipe, setCharacters, setDealer, setImagesBase
     expect(fx.results[1]).toMatchObject({ ok: true, perPack: 3 })
   })
 
   it('same verdict (and the same first reason) and the same pools for every pack count', () => {
     fx.cases.forEach((c, i) => {
       const want = fx.results[i]
-      const problems = checkRecipe(recipeFromJson(c)).filter((p) => p.code !== 'Studio' && p.code !== 'BadOdds') // check() dry-runs the pool too
+      const problems = checkRecipe(recipeFromJson(c)).filter((p) => p.code !== 'Studio') // check() dry-runs the pool too
       if (!want.ok) {
         expect(problems[0]?.code, `case ${i}`).toBe(want.error)
         return

@@ -1,0 +1,121 @@
+# Every push to wip/* and claude/* and every pull request: contracts, studio, site, the parity checks and the ops tools
+# (keeper and VerifySeries unit tests, and the full deploy rehearsal on a local anvil chain).
+name: CI
+
+on:
+  push:
+    branches: ["wip/**", "claude/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.5.1
+      - name: forge test
+        working-directory: contracts
+        run: forge test
+
+  studio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: studio/package-lock.json
+      - working-directory: studio
+        run: npm ci --no-audit --no-fund
+      - name: vitest
+        working-directory: studio
+        run: npx vitest run
+      - name: tsc
+        working-directory: studio
+        run: npx tsc --noEmit -p . && npx tsc --noEmit -p tsconfig.app.json
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - working-directory: web
+        run: npm ci --no-audit --no-fund
+      - name: tsc
+        working-directory: web
+        run: npx tsc -b
+      - name: lint
+        working-directory: web
+        run: npm run lint
+
+  parity:
+    # studio maths and recipe parsing vs the contracts: the fixture the studio tests read must be what the contracts
+    # answer today (studio/scripts/contract-parity.sh rewrites it; any difference fails)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.5.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: studio/package-lock.json
+      - working-directory: studio
+        run: npm ci --no-audit --no-fund
+      - name: forge build (installs solc for the offline parity run)
+        working-directory: contracts
+        run: forge build
+      - name: recipe parity (studio vs RecipeDealer)
+        run: bash studio/scripts/contract-parity.sh && git diff --exit-code studio/scripts/fixtures
+      - name: image-name parity (studio grid vs CardsRenderer and every card RecipeDealer deals)
+        run: |
+          cd studio && npx vitest run scripts/image-parity.test.ts
+          cd ../contracts && forge test --match-contract ImageParityTest
+
+  ops:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.5.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: install
+        run: |
+          (cd ops && npm ci --no-audit --no-fund)
+          (cd ops/keeper && npm ci --no-audit --no-fund)
+          (cd ops/snapshot && npm install --no-audit --no-fund)
+      - name: unit tests (keeper, VerifySeries, snapshot Merkle)
+        run: |
+          (cd ops/keeper && npm test)
+          (cd ops && npm test)
+          (cd ops/snapshot && npm run selftest > /dev/null)
+      - name: build the contracts
+        working-directory: contracts
+        run: forge build
+      - name: deploy rehearsal on anvil (deploy, Safe batches, snapshot, VerifySeries, buy, open, keeper, grading, flushes)
+        working-directory: ops
+        run: node rehearsal/rehearse.mjs

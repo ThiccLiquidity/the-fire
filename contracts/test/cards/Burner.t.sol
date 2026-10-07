@@ -274,4 +274,11 @@ contract BurnerTest is Test {
         assertGt(b.flush(PaperBurner.Pay.ETH), 0, "the next flush burns another piece");
         assertLt(address(b).balance, left);
     }
+
+    function test_renounceOwnershipReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(PaperBurner.RenounceDisabled.selector);
+        b.renounceOwnership();
+        assertEq(b.owner(), owner);
+    }
 }

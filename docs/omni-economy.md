@@ -1,7 +1,9 @@
 # Omni economy
 
 How packs are sold, what they cost, and where every token goes. Implemented in
-`contracts/src/cards/FireSale.sol` (tests: `contracts/test/cards/Sale.t.sol`), `contracts/src/cards/FirePsa.sol`
+`contracts/src/cards/FireSale.sol` and `contracts/src/cards/FireCredits.sol` (free pack credits, card burning and
+suggestions; tests: `contracts/test/cards/Sale.t.sol`), `contracts/src/cards/PlankBurner.sol` (the PLANK burn
+fallback; tests: `contracts/test/cards/PlankBurner.t.sol`), `contracts/src/cards/FirePsa.sol`
 (cases and grading; tests: `contracts/test/cards/Psa.t.sol`) and `contracts/src/cards/PaperBurner.sol` (fees burn
 PAPER; tests: `contracts/test/cards/Burner.t.sol`). The models behind the numbers are in `sim/omni/`.
 
@@ -26,7 +28,8 @@ setting: cards burned per free pack is 42, forever.
 | Gold cards | 15 (at least 1 in the Standard recipe; set per Series in its recipe, before its drop is set up) |
 | Full Art cards | 1 per character |
 | Pack price | $2.50 |
-| PAPER per pack | 1, but never more than $1 of PAPER |
+| PAPER per pack | 1 |
+| PAPER ceiling per pack | $1: a pack's PAPER is never worth more than this at the PAPER price (0 = no ceiling) |
 | PLANK burn share | 30% |
 | PLANK-only packs at the start | 50 |
 | PLANK-only packs open to ETH/USDG after | 48 hours, sold or not |
@@ -77,18 +80,24 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
 
 - **Every pack needs 1 PAPER, and it is burned.** "The minter needs paper." This includes starter and free packs.
   (Per drop: PAPER per paid/credit pack and PAPER per press pack are settings, 0 allowed.)
-- **Never more than $1 of PAPER per pack** (`PACK_PAPER_CAP_USD18`, fixed): past $1 a PAPER, a pack takes $1 worth,
-  at the `PaperUsdTwap` price. With no fresh PAPER price, the set amount.
+- **Never more than the drop's PAPER ceiling per pack** (`paperCapUsd`, per drop; Standard $1; 0 = no ceiling): if
+  PAPER pumps past it, a pack takes the ceiling's worth (part of a PAPER) at the `PaperUsdTwap` price. Paid, press and
+  free packs alike. While the feed is late, the last good PAPER price holds (`lastPaperUsd`); before the feed's first
+  price, the set amount.
 - **Packs are never paid for in PAPER.** The price is paid in PLANK, ETH or USDG only.
-- **Paid pack:** $2.50 + 1 PAPER (at most $1 of PAPER).
+- **Paid pack:** $2.50 + 1 PAPER (at most $1 of PAPER in the Standard sale).
+  - Every buy first refreshes the PLANK price itself (`PlankUsdTwap.checkpoint()`, a cheap no-op when it isn't due; a
+    failure is ignored), so buyers rely less on the keeper.
   - ETH uses the Chainlink price. PLANK uses the 30-minute pool average (`PlankUsdTwap`). USDG is taken at face value.
   - Every purchase carries the buyer's maximum. If a price moved past it, the purchase fails and costs nothing.
 - **Where the money goes, in the same transaction:**
   - **30% burns PLANK.**
     - Paid in PLANK: 30% of that PLANK is burned directly.
     - Paid in ETH or USDG: the contract buys PLANK with 30% and burns it.
-  - **If that swap fails** (e.g. PLANK's price jumped), the 30% goes to the **burn wallet** instead and the
-    purchase still succeeds. A mint never fails because of PLANK. The burn wallet only ever buys and burns PLANK.
+  - **If that swap fails** (e.g. PLANK's price jumped), the 30% goes to **`PlankBurner`** instead and the
+    purchase still succeeds. A mint never fails because of PLANK. `PlankBurner` has no owner and no withdraw: anyone
+    can call `flush`, which buys PLANK (at least 95% of what the 30-minute average says, trying half, a quarter and
+    so on for a backlog) and sends it to the dead address; otherwise the share waits there.
   - **70% goes to the revenue wallet.**
   - The contract keeps nothing.
 - **Up to 50 packs per purchase** by default (`maxPerTx`, set per drop; any number, e.g. 100 for a giant drop).
@@ -96,7 +105,7 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
   101k for ETH, the same for 1 pack or 100 (packs are one ERC-1155 mint). A real Uniswap swap adds about 60–90k more,
   so roughly 100k (PLANK) to 190k (ETH/USDG) per purchase. That's cents or less on Robinhood Chain.
 - **The swap's floor:** it must get at least 90% of the PLANK that the 30-minute average price says. If the pool is
-  pumped or manipulated beyond that, the swap is skipped and the burn share goes to the burn wallet.
+  pumped or manipulated beyond that, the swap is skipped and the burn share goes to `PlankBurner`.
 - **If the drop never sells out:** the owner can end it (`endDrop`) once its last timed phase is over (press window,
   holder window, PLANK-only, wallet limit, regular wallets; 48h in the Standard sale), so every phase always runs in
   full. If the owner doesn't, anyone can, 7 days after that, so packs are never stranded. The Series closes with the
@@ -111,8 +120,12 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
 - **Price feeds and the router** can be replaced by the owner only between drops (a retired Chainlink feed, a moved
   PLANK pool or a new router).
 - **The PLANK price must be fresh:** the 30-minute average must have ended within the last 2 hours and cover at most
-  2 hours. Otherwise PLANK purchases pause and the burn share of ETH/USDG sales goes to the burn wallet, until the
-  keeper checkpoints again (it does every 30 minutes).
+  2 hours. Otherwise PLANK purchases pause and the burn share of ETH/USDG sales goes to `PlankBurner`, until the
+  price is fresh again (any buy or the keeper checkpoints it; the keeper does every 30 minutes).
+- **Pause.** The owner can pause buying, press packs, credit spending and paid suggestions (`FireSale.setPaused`),
+  and case and grading payments (`FirePsa.setPaused`). Opening packs, dealing, transfers, ending or closing a drop,
+  burning cards, finishing or cancelling a grading and every keeper call never pause. A pause doesn't expire on its
+  own: the owner lifts it.
 
 ## Starter packs
 
@@ -128,12 +141,14 @@ as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public s
 
 ## Free pack credits
 
-Each wallet has a count of free pack credits. Credits **stack** and never expire. A credit is used in any live
-drop: mint 1 pack for 1 PAPER (burned), out of that drop's supply. If no drop is live, or it's sold out, the
+Credits, card burning and suggestions live in `FireCredits` (split out of `FireSale` for contract size, same rules;
+PAPER is still approved to `FireSale`, which takes it). Each wallet has a count of free pack credits. Credits **stack** and never expire. A credit is used in any live
+drop: mint 1 pack for the drop's PAPER per pack (burned, within its PAPER ceiling), out of that drop's supply. If no drop is live, or it's sold out, the
 credit waits for the next drop. **Credits work at any time during any live drop**: the holder
 window, the PLANK-only packs and the wallet limit don't apply to them. A drop can cap how many free packs it gives
 out in all (`creditPacksMax`) and per wallet (`creditPacksPerWallet`), so a big stack of credits can't take a large
-share of a small drop; credits over a cap simply wait for another drop. The Standard sale has no caps.
+share of a small drop; credits over a cap simply wait for another drop. The Standard sale caps free packs at 10% of
+the drop's packs and 3 per wallet.
 
 Two ways to earn one:
 
@@ -160,16 +175,16 @@ Every PAPER spent anywhere is burned.
 
 | Use | Cost |
 |---|---|
-| Any pack (paid, starter or free) | 1 PAPER per pack, never more than $1 of PAPER |
-| Character suggestion | 1 PAPER, never more than $1 of PAPER (owner setting, `setSuggestionRules`, any amount incl. 0; the suggester names their most). Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
+| Any pack (paid, starter or free) | 1 PAPER per pack, never more than the drop's PAPER ceiling ($1 in the Standard sale) |
+| Character suggestion | 1 PAPER, never more than $1 of PAPER (owner setting, `FireCredits.setSuggestionRules`, any amount incl. 0; the suggester names their most). Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. |
 | Cases and grading | Paid in ETH, USDG or PLANK, not PAPER. 100% of it buys PAPER and burns it (`PaperBurner`). |
 
 - **The PAPER price feed.** PAPER already has a live pool, but `PAPER_USD_FEED` must be the deployed `PaperUsdTwap`
-  (step 2 of `docs/deploy.md`), never the pool itself. It sets the pack PAPER cap and guards the fee burn. The feed
+  (step 2 of `docs/deploy.md`), never the pool itself. It prices the PAPER ceilings and guards the fee burn. The feed
   adopts a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool (PLANK valued through `PlankUsdTwap`) only once it holds at least
-  $1,000 on its other side (`MIN_LIQUIDITY_USD`) at every checkpoint for 20 hours, then reports its first price one
-  full 20-hour window later: about 40 hours after the first checkpoint. Until then packs take the set PAPER (no cap)
-  and case and grading fees wait in `PaperBurner`. If the feed later goes quiet, the last cap it gave holds. The owner
+  $10 on its other side (`MIN_LIQUIDITY_USD`; any real pool, however thin) at every checkpoint for 20 hours, then reports its first price one
+  full 20-hour window later: about 40 hours after the first checkpoint. Until then packs take the set PAPER (no
+  ceiling) and case and grading fees wait in `PaperBurner`. If the feed later goes quiet, the last good price holds. The owner
   can replace the sale's feed between drops (`FireSale.setFeeds`); the burner's feeds are set once.
 - **Get PAPER on the site (planned):** a small box where you type how many PAPER you want, see the ETH price, and
   press one button. It would use the KyberSwap swap guard in `web/src/lib` with the 0.5% fee to the swap-fee wallet.
@@ -199,8 +214,8 @@ original name, `FirePsa`.) The full rules (hidden condition, wear, fresh odds, s
 - **If randomness is gone for good** (no answer for 7 days), anyone can cancel a grading (`cancelGrading`): the cards
   unlock, still ungraded. The fee was burned. Opens work the same way: a stuck open can be cancelled after 7 days and
   the packs come back sealed.
-- **Fresh odds** (a card cased or graded within 24 hours of opening), set per Series before its drop is set up; the
-  default (`FirePsa.oddsOf`) is the same for every material. Grades 1-4 come only from long raw holds:
+- **Fresh odds** (a card cased or graded within 24 hours of opening): constants in `FirePsa` (`freshOdds`), fixed
+  forever, the same for every Series and every material. Grades 1-4 come only from long raw holds:
 
 | Grade | Fresh odds | Out of 10,000 | Wear frame |
 |---|---|---|---|
@@ -220,7 +235,7 @@ original name, `FirePsa`.) The full rules (hidden condition, wear, fresh odds, s
 | Wallet | Gets |
 |---|---|
 | Revenue | 70% of every sale. Nothing else. The wallets can only be changed while no drop is set up or running. |
-| Burn | The 30% when a PLANK swap fails. Only ever buys and burns PLANK. |
+| `PlankBurner` (a contract, not a wallet) | The 30% when a PLANK swap fails. No owner, no withdraw: it can only buy PLANK and burn it. The sale's pointer to it can only change while no drop is set up or running. |
 | (none) | Case and grading fees: 100% to `PaperBurner`, which only buys and burns PAPER. No revenue to the team. |
 | Royalty | 5% resale royalty (ERC-2981), where marketplaces honour it. |
 | Swap fee | 0.5% of site swaps, once the site's swap is live (`SWAP_FEE_WALLET` in `web/src/lib/config.ts`, not set yet). |

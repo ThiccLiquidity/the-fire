@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
+import {FireCredits} from "../../src/cards/FireCredits.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
@@ -44,14 +45,16 @@ contract SaleForkTest is Test {
         MockMill press = new MockMill(address(paper), 0);
         FirePacks packs = new FirePacks(address(this));
         FireCards cards = new FireCards(address(this), address(packs));
+        FireCredits credits = new FireCredits(address(this), address(cards), 1e18);
         FireSale sale = new FireSale(FireSale.Config({
             owner: address(this), paper: address(paper), plank: PLANK, usdg: address(0), weth: WETH, press: address(press),
             packs: address(packs), cards: address(cards), ethUsd: ETH_USD, plankUsd: address(twap), paperUsd: address(0), router: ROUTER,
-            revenueWallet: address(0xBEEF), burnWallet: address(0xB0B), paperPerSuggestion: 1e18
+            revenueWallet: address(0xBEEF), plankBurner: address(0xB0B), credits: address(credits)
         }));
         packs.setSeller(address(sale));
         packs.setCards(address(cards));
         cards.setSeller(address(sale));
+        credits.setSale(address(sale));
         string[] memory names = new string[](1);
         string[] memory cats = new string[](1);
         for (uint256 k; k < cats.length; k++) cats[k] = "Person";
@@ -62,7 +65,7 @@ contract SaleForkTest is Test {
         cards.setDealer(1, address(dealer));
         cards.setImagesBase(1, "ipfs://x/");
         sale.configureDrop(1, FireSale.DropConfig({start: uint64(block.timestamp + 1), packs: 100, starters: 0, plankOnly: 0,
-            walletLimit: 50, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0}));
+            walletLimit: 50, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0}));
         vm.warp(block.timestamp + 1);
 
         address buyer = address(0xA1);

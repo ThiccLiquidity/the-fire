@@ -82,19 +82,6 @@
   },
   {
     "type": "function",
-    "name": "REREQUEST_AFTER",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "acceptOwnership",
     "inputs": [],
     "outputs": [],
@@ -245,6 +232,11 @@
             "internalType": "uint256"
           },
           {
+            "name": "dealtAt",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
             "name": "extra",
             "type": "uint256",
             "internalType": "uint256"
@@ -304,6 +296,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "contractURI",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -661,11 +666,6 @@
             "internalType": "uint64"
           },
           {
-            "name": "firstRequestedAt",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
             "name": "readyAt",
             "type": "uint64",
             "internalType": "uint64"
@@ -691,14 +691,19 @@
             "internalType": "uint32"
           },
           {
-            "name": "packBase",
-            "type": "uint64",
-            "internalType": "uint64"
+            "name": "source",
+            "type": "address",
+            "internalType": "address"
           },
           {
             "name": "requestId",
-            "type": "uint256",
-            "internalType": "uint256"
+            "type": "uint96",
+            "internalType": "uint96"
+          },
+          {
+            "name": "packBase",
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "word",
@@ -866,25 +871,7 @@
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "rerequest",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -1005,6 +992,19 @@
         "name": "serial",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setContractURI",
+    "inputs": [
+      {
+        "name": "uri",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "outputs": [],
@@ -1441,6 +1441,12 @@
   },
   {
     "type": "event",
+    "name": "ContractURIUpdated",
+    "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "DealerSet",
     "inputs": [
       {
@@ -1763,31 +1769,6 @@
   },
   {
     "type": "event",
-    "name": "Rerequested",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "openIndex",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "requestId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "RoyaltySet",
     "inputs": [
       {
@@ -1876,6 +1857,11 @@
   {
     "type": "error",
     "name": "BadLength",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadRequest",
     "inputs": []
   },
   {
@@ -2125,6 +2111,11 @@
   {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RenounceDisabled",
     "inputs": []
   },
   {

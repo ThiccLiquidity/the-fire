@@ -48,14 +48,13 @@ contract CardsInvariantTest is StdInvariant, Test {
         sels[i++] = h.warp.selector; // weighted
         sels[i++] = h.routerMood.selector;
         // lower-weight actions ride along below
-        bytes4[] memory all = new bytes4[](i + 6);
+        bytes4[] memory all = new bytes4[](i + 5);
         for (uint256 j; j < i; j++) all[j] = sels[j];
         all[i] = h.setPrices.selector;
         all[i + 1] = h.setPaperPrice.selector;
         all[i + 2] = h.passPress.selector;
-        all[i + 3] = h.setOdds.selector;
-        all[i + 4] = h.setDiamonds.selector;
-        all[i + 5] = h.caseCards.selector;
+        all[i + 3] = h.setDiamonds.selector;
+        all[i + 4] = h.caseCards.selector;
         targetSelector(FuzzSelector({addr: address(h), selectors: all}));
     }
 
@@ -137,8 +136,8 @@ contract CardsInvariantTest is StdInvariant, Test {
             uint256 burned = h.ghostBurned(a);
             uint256 picks;
             for (uint256 f = 1; f <= h.FIRES(); f++) picks += h.ghostPicks(f, a);
-            assertEq(sale.credits(a) + h.ghostBurnCreditsUsed(a), burned / 42 + picks, "credits == floor(burned / 42) + picks");
-            assertEq(sale.burnCount(a), burned % 42, "running count");
+            assertEq(h.credits().credits(a) + h.ghostBurnCreditsUsed(a), burned / 42 + picks, "credits == floor(burned / 42) + picks");
+            assertEq(h.credits().burnCount(a), burned % 42, "running count");
         }
     }
 

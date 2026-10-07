@@ -46,6 +46,16 @@ describe('old saves and backups', () => {
     expect(again).toEqual(f)
   })
 
+  it('a recipe saved with its own PDA odds drops them (the odds are fixed for every Series)', () => {
+    const f = migrateFire(oldFire)
+    const saved = { ...f, recipe: { ...f.recipe, pdaOdds: ['0', '0', '0', '0', '1', '1', '1', '1', '1', '1'] } }
+    expect(needsMigration(saved)).toBe(true)
+    const m = migrateFire(saved)
+    expect('pdaOdds' in m.recipe).toBe(false)
+    expect(m.recipe).toEqual(f.recipe)
+    expect(needsMigration(m)).toBe(false)
+  })
+
   it('a missing Diamond setting reads as 1', () => {
     const { diamonds: _d, deal: _deal, ...noDiamonds } = oldFire
     expect(migrateFire(noDiamonds).recipe).toEqual(legacyDiamondRecipe(1))

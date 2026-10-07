@@ -1,0 +1,6 @@
+# Docker builds from the repository root (the keeper: ops/keeper/Dockerfile) see only what they need.
+*
+!ops/keeper/package.json
+!ops/keeper/package-lock.json
+!ops/keeper/src
+!deployments

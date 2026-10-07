@@ -74,6 +74,84 @@
   },
   {
     "type": "function",
+    "name": "FRESH_10",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "FRESH_5",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "FRESH_6",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "FRESH_7",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "FRESH_8",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "FRESH_9",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_BATCH_CAP",
     "inputs": [],
     "outputs": [
@@ -139,19 +217,6 @@
   },
   {
     "type": "function",
-    "name": "REREQUEST_AFTER",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "USDG",
     "inputs": [],
     "outputs": [
@@ -191,6 +256,11 @@
         "name": "index",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "ids",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
     "outputs": [],
@@ -211,31 +281,17 @@
   },
   {
     "type": "function",
-    "name": "customOdds",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "finish",
     "inputs": [
       {
         "name": "index",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "ids",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
     "outputs": [],
@@ -243,13 +299,26 @@
   },
   {
     "type": "function",
-    "name": "gradeFor",
-    "inputs": [
+    "name": "freshOdds",
+    "inputs": [],
+    "outputs": [
       {
-        "name": "fire",
+        "name": "o",
+        "type": "uint64[10]",
+        "internalType": "uint64[10]"
+      },
+      {
+        "name": "total",
         "type": "uint256",
         "internalType": "uint256"
-      },
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "gradeFor",
+    "inputs": [
       {
         "name": "age",
         "type": "uint256",
@@ -273,7 +342,7 @@
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -328,11 +397,6 @@
             "internalType": "uint64"
           },
           {
-            "name": "firstRequestedAt",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
             "name": "ready",
             "type": "bool",
             "internalType": "bool"
@@ -343,9 +407,14 @@
             "internalType": "bool"
           },
           {
+            "name": "source",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "requestId",
-            "type": "uint256",
-            "internalType": "uint256"
+            "type": "uint96",
+            "internalType": "uint96"
           },
           {
             "name": "word",
@@ -353,9 +422,9 @@
             "internalType": "uint256"
           },
           {
-            "name": "ids",
-            "type": "uint256[]",
-            "internalType": "uint256[]"
+            "name": "idsHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           }
         ]
       }
@@ -380,11 +449,6 @@
     "name": "oddsFor",
     "inputs": [
       {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
         "name": "age",
         "type": "uint256",
         "internalType": "uint256"
@@ -402,31 +466,7 @@
         "internalType": "uint256[10]"
       }
     ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "oddsOf",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "o",
-        "type": "uint64[10]",
-        "internalType": "uint64[10]"
-      },
-      {
-        "name": "total",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -455,6 +495,19 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "paused",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -572,20 +625,7 @@
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "rerequest",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -602,17 +642,12 @@
   },
   {
     "type": "function",
-    "name": "setOdds",
+    "name": "setPaused",
     "inputs": [
       {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "odds",
-        "type": "uint64[10]",
-        "internalType": "uint64[10]"
+        "name": "p",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -728,25 +763,6 @@
   },
   {
     "type": "event",
-    "name": "OddsSet",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "odds",
-        "type": "uint64[10]",
-        "indexed": false,
-        "internalType": "uint64[10]"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "OwnershipTransferStarted",
     "inputs": [
       {
@@ -779,6 +795,19 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PausedSet",
+    "inputs": [
+      {
+        "name": "paused",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false
@@ -859,32 +888,8 @@
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "Rerequested",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "requestId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
     "type": "error",
     "name": "AlreadyGraded",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "AlreadySet",
     "inputs": []
   },
   {
@@ -894,12 +899,17 @@
   },
   {
     "type": "error",
-    "name": "BadOdds",
+    "name": "BadIds",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "FireIsClosed",
+    "name": "BadRequest",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "IsPaused",
     "inputs": []
   },
   {
@@ -957,6 +967,11 @@
   {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RenounceDisabled",
     "inputs": []
   },
   {

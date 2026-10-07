@@ -73,7 +73,7 @@ export function Data() {
           </button>
         </div>
         <div className="row wrap">
-          <label className="check"><input type="checkbox" checked={flags.mockPinata} onChange={(e) => setMockPinata(e.target.checked)} data-testid="mock-pinata" /> Mock Pinata (no network, fake CIDs; this session only)</label>
+          <label className="check"><input type="checkbox" checked={flags.mockPinata} onChange={(e) => setMockPinata(e.target.checked)} data-testid="mock-pinata" /> Mock IPFS: Pinata and Filebase (no network, nothing stored; this session only)</label>
           <NumberInput min={0} value={failN} onChange={setFailN} />
           <button disabled={!flags.mockPinata} onClick={() => setMockFailNext(failN)}>Make the mock fail the next {failN} upload attempt(s)</button>
         </div>

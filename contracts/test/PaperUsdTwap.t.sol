@@ -72,6 +72,15 @@ contract PaperUsdTwapTest is Test {
         assertEq(_price(), 0);
     }
 
+    function test_a_thin_real_pool_is_adopted() public {
+        MockPair p = new MockPair(paper, weth);
+        p.set(100_000e18, 0.01e18); // $25 of WETH, $0.00025 per PAPER
+        factory.add(paper, weth, address(p));
+        _adopt(); _day();
+        assertEq(address(twap.pair()), address(p));
+        assertApproxEqRel(_price(), 0.00025e18, 1e15);
+    }
+
     function test_small_first_pool_is_replaced_by_the_real_market() public {
         MockPair small = new MockPair(paper, weth);
         small.set(1_000_000e18, 0.8e18); // $2,000 of WETH, $0.002 per PAPER

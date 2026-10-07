@@ -82,9 +82,9 @@ E.g. `c0-wood-none-u.webp`, `c1-fire-frame-7.webp`, `c2-diamond-full-10.webp`. A
 ### recipe.json
 
 The shape `contracts/script/ConfigureSeries.s.sol` reads (`docs/cards-contracts.md`): `fire`, `imagesBase` (once the
-images are uploaded), `types`, `slots`, `characters` (in image order) and `pdaOdds`. The script checks it against the
-dealer and prints the owner's calls (setRecipe, setCharacters and appendCharacters in batches, setDealer,
-setImagesBase, setOdds).
+images are uploaded), `types`, `slots`, `characters` (in image order) and the `sale` block. No PDA odds: they are fixed
+in FirePsa, the same for every Series. The script checks it against the dealer and prints the owner's calls
+(setRecipe, setCharacters and appendCharacters in batches, setDealer, setImagesBase, then configureDrop).
 
 ### Upload
 

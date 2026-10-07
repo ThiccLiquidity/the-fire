@@ -25,6 +25,5 @@
     { "name": "Ember Fox", "category": "Animals" },
     { "name": "Ash Wolf", "category": "Animals" },
     { "name": "Cinder Queen", "category": "Royals" }
-  ],
-  "pdaOdds": ["0", "0", "0", "0", "1000", "2000", "2700", "2500", "1700", "100"]
+  ]
 }

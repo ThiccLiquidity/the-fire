@@ -1,0 +1,13 @@
+{
+  "name": "omni-keeper",
+  "private": true,
+  "description": "Omni Forge keeper: feed checkpoints, drand delivery, dealing, grading reveals, burner flushes, alerts",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/keeper.mjs",
+    "once": "ONCE=1 node src/keeper.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": { "viem": "^2.56.9" }
+}

@@ -1,0 +1,47 @@
+# The keeper's backup: one pass every 5 minutes (ops/keeper, ONCE=1). It acts only on work the main keeper (Railway)
+# has left waiting for ACT_AFTER_SEC, so normally it sends nothing; when it does step in, it says so on the webhook.
+# Off until the repository variable KEEPER_BACKUP_ENABLED is "true". Scheduled runs use the default branch's copy of
+# this file. Secrets (Settings -> Secrets and variables -> Actions): KEEPER_RPC_URL, KEEPER_BACKUP_PRIVATE_KEY (its own
+# gas-only wallet, not the Railway one), KEEPER_ALERT_WEBHOOK_URL, optional KEEPER_BACKUP_HEARTBEAT_URL.
+name: Keeper backup
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: keeper-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    if: vars.KEEPER_BACKUP_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ops/keeper/package-lock.json
+      - name: Install
+        working-directory: ops/keeper
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: One keeper pass
+        working-directory: ops/keeper
+        env:
+          ONCE: "1"
+          KEEPER_LABEL: backup
+          ACT_AFTER_SEC: ${{ vars.KEEPER_ACT_AFTER_SEC || '300' }}
+          CHAIN_ID: ${{ vars.KEEPER_CHAIN_ID || '4663' }}
+          INTERVAL_SEC: "300"
+          RPC_URL: ${{ secrets.KEEPER_RPC_URL }}
+          KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_BACKUP_PRIVATE_KEY }}
+          ALERT_WEBHOOK_URL: ${{ secrets.KEEPER_ALERT_WEBHOOK_URL }}
+          HEARTBEAT_URL: ${{ secrets.KEEPER_BACKUP_HEARTBEAT_URL }}
+        run: node src/keeper.mjs

@@ -2,8 +2,9 @@
 
 The Card Studio (`studio/`) is a standalone browser app that builds every card image and its metadata for a Series.
 It is kept separate from the site so it can feed whichever front end the cards are shown in. The rules are
-set per Series as a **recipe** (`studio/src/recipe.ts`): card types, how many of each, holo odds, what each pack holds
-and the fresh PDA odds. It is the same recipe `RecipeDealer` deals on-chain (`docs/cards-contracts.md`); the studio's
+set per Series as a **recipe** (`studio/src/recipe.ts`): card types, how many of each, holo odds and what each pack
+holds. PDA grade odds and wear rules are not part of it: they are fixed forever in `FirePsa`, the same for every
+Series. It is the same recipe `RecipeDealer` deals on-chain (`docs/cards-contracts.md`); the studio's
 checks and pool maths are ports of the contract's and are tested against it. New Series start from the **Standard recipe**
 (the original rules below, `contracts/src/cards/StandardRecipe.sol`).
 
@@ -59,13 +60,22 @@ Set on the **Recipe** tab, per Series, and locked with the deal:
   frame set.
 - **Slot groups**: a number of cards that may be any type in a set (a list of types, or a rank range), optionally
   must-holo. Cards per pack is their sum. Two groups' sets must be nested or disjoint.
-- **Fresh PDA odds**: a weight per grade 5-10 (grades 1-4 are always 0: they come only from wear).
+- **PDA odds** are fixed forever (the same for every Series) and shown read-only; recipe.json never carries them. A
+  Series saved with its own odds drops them when it loads and uses the fixed ones.
+- **Holo rolls** show at most 2 decimals (the exact stored value on hover); the stored value stays exact (the Standard
+  rolls match `StandardRecipe` to the wei) until the field is edited.
 
 The tab lists every problem the contract would refuse (filler, slugs, text, shares, holo, nested sets, a type no slot
-takes, a never-holo type in a must-holo slot) and shows the exact pool for any pack count. Presets: **Standard**,
+takes, a never-holo type in a must-holo slot). **What it makes** (top of the tab, for the Series' packs and characters
+or any others typed in) shows the result: exact cards per type, cards per character, and for every holo look how rare
+one exact card is on the site's scale (copies of that character + type + look over the Series' cards, "1 in N"; Rare
+from 1 in 100, Epic 1 in 400, Legendary 1 in 1,000; `studio/src/rarity.ts` mirrors `trueOdds` / `Info.lookP`), and
+the share of packs holding at least one (and two or more) of each type, from test deals with the contract's dealing.
+A percent supply can be typed as a number of cards (it sets the percent that gives exactly that many) and an exact
+number as a percent. The Series tab shows the same result. Presets: **Standard**,
 **Special: 3 cards, all holo** (Fire the filler, Coal 30%, Gold 2% at most one per pack; 2 Fire-or-better and 1
 Coal-or-better, all must-holo), or a copy of another Series' recipe. Series saved before recipes load with the old
-Standard recipe (Diamond, and the old odds) and their Diamond setting.
+Standard recipe (Diamond) and their Diamond setting.
 
 ## The Standard recipe
 
@@ -110,7 +120,7 @@ wears with time uncased and with moves between wallets, unless it is cased. Rule
 `docs/grading.md` and `docs/omni-economy.md`. An ungraded card uses its clean frame and the seal shows "?". The grade
 picks a wear level, each a full frame per material and holo variant:
 
-| Wear level | Grades | Fresh odds (Standard) |
+| Wear level | Grades | Fresh odds |
 |---|---|---|
 | 1 | PDA 10 | 1% |
 | 2 | PDA 9-8 | 17% + 25% |
@@ -119,7 +129,7 @@ picks a wear level, each a full frame per material and holo variant:
 | 5 | PDA 3-2 | wear only |
 | 6 | PDA 1 | wear only |
 
-Fresh odds are `FirePsa.oddsOf`'s defaults and can be changed per Series (grades 5-10) before its drop is set up.
+Fresh odds are `FirePsa`'s constants (`freshOdds`), fixed forever for every Series; the studio shows them read-only.
 
 - **PDA 10** uses the clean frame plus a thin warm-gold glow along the card's outer edge and a few small sparkles
   near the corners, drawn by the renderer on every material, never over the name panel, art or seal.
@@ -148,15 +158,15 @@ has its own "Forged · Series #" line, so images are never shared across Series.
 - **Omni Card Packs** (`FirePacks`, ERC-1155): one stackable token type per Series, so "Series 7 Sealed Pack x 3"
   lists and trades like any item. Pack art is `<packImageBase>fire<N>.webp`.
 - **Omni Cards** (`FireCards`, ERC-721): every card unique, with character, category, material, holo, Series,
-  edition, serial and PDA as traits (Material = the type's name). Ungraded cards add Cased, Uncased Age (days) and
-  Moves, with PDA "Ungraded"; graded cards show "PDA N" only. Image file names match the studio's export and
+  edition, serial and PDA as traits (Material = the type's name). Ungraded cards add Cased, Dealt (a date) and
+  Moves, plus Age when cased (days) once cased, with PDA "Ungraded"; graded cards show "PDA N" only. Image file names match the studio's export and
   `CardsRenderer.imageName`: `c<character>-<type slug>-<holo>-<state>.webp`, `holo` one of `none`, `frame`,
   `picture`, `full`, `state` `u` (ungraded), `c` (cased) or `1` to `10` (slabbed). Standard slugs are `paper`, `wood`,
   `fire`, `coal`, `gold`, `fullart`: `c0-wood-none-u.webp`, `c0-wood-none-c.webp`, `c2-gold-full-10.webp`.
   A Series' images lock when its drop is set up.
 
-A pack's contents are decided only when it is opened: the pack is burned, drand randomness arrives about 30 seconds
-later (the router commits to a drand round 30 to 33 seconds ahead) and its cards are drawn from what is left in the Series' pool, keeping the pack guarantees. See
+A pack's contents are decided only when it is opened: the pack is burned, drand randomness arrives about 90 seconds
+later (the router commits to a drand round 90 to 93 seconds ahead) and its cards are drawn from what is left in the Series' pool, keeping the pack guarantees. See
 `docs/cards-contracts.md`.
 
 ## Studio workflow, per Series
@@ -167,11 +177,12 @@ later (the router commits to a drand round 30 to 33 seconds ahead) and its cards
 2. **Frames & Layout:** text fields' font, size and colour are set once per frame set; the art window is fixed by
    the frames.
 3. **Series:** pick the characters (any number; their order is the image order c0, c1, ...) and the pack count.
-4. **Recipe:** card types, slots and fresh PDA odds, with the contract's checks and the pool preview.
+4. **Recipe:** card types and slots, with the contract's checks and the result (counts, rarity, per-pack chances).
    **Sale** (next tab): the drop's settings for `FireSale.configureDrop` in plain units (paid and press packs, price,
    PAPER, burn share, PLANK-only packs, wallet limit, holder window and snapshot root, regular-wallets time, press
    packs per press and per wallet and their price, packs per purchase, credits per picked suggestion, caps on free
-   packs per drop and per wallet), checked live
+   packs per drop and per wallet), with the drop drawn as one bar (PLANK-only, paid, press, and the free cap taken from
+   the paid packs) and its sell-out dollars and PLANK burn, checked live
    like the contract checks them. Presets: Standard (today's sale) and Giant (10,000 packs, 100 per wallet and per
    purchase). Cards per free pack shows as fixed (42, forever). Missing settings mean the Standard sale.
 5. **Deal:** a sample deal on the recipe (the contract's dealing with the studio's own randomness, up to 600,000
@@ -183,9 +194,11 @@ later (the router commits to a drand round 30 to 33 seconds ahead) and its cards
    change means building again.
 7. **Export & Upload:** a readiness checklist (recipe valid, frames for every type, characters valid, deal locked,
    approved, the full grid built, sale settings valid); **recipe.json** (what `contracts/script/ConfigureSeries.s.sol`
-   reads: types, slots, characters, fresh PDA odds, `imagesBase` once uploaded, and the `sale` block; tied to the
+   reads: types, slots, characters, `imagesBase` once uploaded, and the `sale` block; tied to the
    uploaded build); a zip of the images, per-card metadata (preview
-   only), `fire.json` and `recipe.json`, in parts of about 1.5 GB for big Series; or the upload to IPFS through Pinata.
+   only), `fire.json` and `recipe.json`, in parts of about 1.5 GB for big Series; or the upload to IPFS: Pinata, then a
+   second pin of the same images on Filebase, then the images CAR saved offline. The screen keeps its copy short: one
+   line per step, the buttons, and the two safety prompts (both pins must hold the same CID; save the CAR offline).
 
 **Upload.** Each folder (images, then the preview metadata) is packed in the browser into one CAR file. Its root CID
 (a UnixFS directory, CIDv1, sharded when large) is known before upload. The CAR goes to Pinata's v3 upload API with
@@ -195,10 +208,32 @@ single `imagesBase` the contract expects (`ipfs://<images CID>/`). The Pinata ke
 per session and never stored. The legacy one-request folder upload is not used: it can't resume, and one folder
 can't be built from several pins.
 
+**manifest.json.** The images folder also holds `manifest.json`: every image's name, size and sha256, the studio's
+grid key, and the recipe hash (sha256 of `recipe.json`'s fire, types, slots and characters; `imagesBase` and
+the sale block left out). VerifySeries (`ops/series`) reads it before the Series is locked.
+
+**Second pin (Filebase).** Right after Pinata, the same images CAR is pinned on Filebase through its S3-compatible API
+(`https://s3.filebase.com`, object `<images folder>.car` with the `import: car` metadata), in 64 MB parts that resume
+after a failure or a reload. Filebase reports the CID it pinned; it must equal the folder's root CID, which is also
+what Pinata holds. Then both are read back (**Check both pins**). If no Filebase key was entered, **Pin to Filebase**
+does it later. The Filebase access key, secret and bucket are typed in per session, like the Pinata JWT: memory only,
+never stored or logged. One-time setup:
+1. Filebase console: Buckets → Create bucket (network IPFS); Access Keys → a key that can write to it.
+2. Let the studio's page reach the bucket (a CORS rule exposing `ETag` and `x-amz-meta-cid`), from `studio`:
+   `node scripts/filebase-cors.mjs` (it asks for the key, the secret and the bucket; nothing is saved; `--origin` adds
+   another address than `http://localhost:5173`).
+
+**Offline copy.** Until the owner confirms it, the Export screen asks to **Save images CAR** (streamed to a file the
+owner picks) and to keep it on a drive they keep. With that file the images can be pinned again anywhere (any
+service's CAR upload, or `ipfs dag import`) and come back with the same CID, even if both pinning services drop them.
+
+**Mock IPFS** (Data tab, or `?mockPinata` in the URL) covers Pinata and Filebase: nothing leaves the machine.
+
 Only the images folder is used on-chain: `tokenURI` builds each card's JSON itself. The studio's per-card metadata is
 for preview and reference only.
 
 ## Storage
 
-Arweave (one-time, permanent) suits shared images; IPFS (Pinata, Storacha, Filebase) is the alternative. The studio
-uploads to Pinata today. Check current prices before choosing for launch.
+Arweave (one-time, permanent) suits shared images; IPFS (Pinata, Storacha, Filebase) is the alternative. Decided
+(review item 23): IPFS on two services, Pinata and Filebase, with the same CID, plus the CAR file kept offline. Check
+current prices before launch.

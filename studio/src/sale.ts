@@ -1,7 +1,7 @@
 /** A Series' drop settings (FireSale.configureDrop), in the owner's units: hours, dollars, PAPER, percent. The
  *  checks mirror configureDrop's, and saleJson turns them into the "sale" block of recipe.json that
  *  contracts/script/ConfigureSeries.s.sol reads (every FireSale.DropConfig field by name, in contract units). Shape
- *  in docs/cards-contracts.md. Cards per free pack is not here: it is fixed at 42 forever (FireSale.CARDS_PER_CREDIT). */
+ *  in docs/cards-contracts.md. Cards per free pack is not here: it is fixed at 42 forever (FireCredits.CARDS_PER_CREDIT). */
 
 /** How press packs are paid for. 'usdPaper' is a dollar price plus PAPER. */
 export type PressPrice = 'free' | 'paper' | 'usd' | 'usdPaper'
@@ -16,6 +16,8 @@ export interface SaleSettings {
   pressPacks: number
   priceUsd: string
   paperPerPack: string
+  /** Most a pack's PAPER may be worth, in dollars, at the PAPER price (paid, press and free packs); 0 = no ceiling. */
+  paperCapUsd: string
   plankBurnPercent: string
   plankOnly: number
   plankOnlyHours: number
@@ -34,25 +36,26 @@ export interface SaleSettings {
   pressUsd: string
   pressPaper: string
   creditsPerPick: number
-  /** Most free (credit) packs in this drop in all; 0 = no limit. */
-  creditPacksMax: number
+  /** Most free (credit) packs in this drop in all, as a percent of the drop's packs; 0 = no limit. */
+  creditPacksPercent: string
   /** Most free (credit) packs per wallet in this drop; 0 = no limit. */
   creditPacksPerWallet: number
 }
 
-/** Fixed forever in the contract (FireSale.CARDS_PER_CREDIT): burn progress carries over between Series. */
+/** Fixed forever in the contract (FireCredits.CARDS_PER_CREDIT): burn progress carries over between Series. */
 export const CARDS_PER_CREDIT = 42
 /** FireSale.MAX_WINDOW: the longest any timed phase may be. */
 export const MAX_WINDOW_HOURS = 30 * 24
 
 /** Today's Standard drop: 167 packs (117 paid + 50 press), $2.50 + 1 PAPER, 50 PLANK-only, 5 per wallet lifting after
- *  48h, 24h press window, 24h holder window, 30% PLANK burn, 50 per purchase, 1 press pack per press for 1 PAPER. */
+ *  48h, 24h press window, 24h holder window, 30% PLANK burn, 50 per purchase, 1 press pack per press for 1 PAPER,
+ *  free packs capped at 10% of the drop and 3 per wallet, a pack's PAPER never more than $1 worth. */
 export function standardSale(): SaleSettings {
   return {
-    start: 0, paidPacks: 117, pressPacks: 50, priceUsd: '2.50', paperPerPack: '1', plankBurnPercent: '30',
+    start: 0, paidPacks: 117, pressPacks: 50, priceUsd: '2.50', paperPerPack: '1', paperCapUsd: '1', plankBurnPercent: '30',
     plankOnly: 50, plankOnlyHours: 48, walletLimit: 5, liftHours: 48, maxPerTx: 50, holderHours: 24, holderRoot: '',
     regularWalletsHours: 48, pressPerPress: 1, pressPerWallet: 1, pressHours: 24, pressPrice: 'paper', pressUsd: '0',
-    pressPaper: '1', creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0,
+    pressPaper: '1', creditsPerPick: 1, creditPacksPercent: '10', creditPacksPerWallet: 3,
   }
 }
 
@@ -89,6 +92,13 @@ const U32 = 0xffff_ffffn
 const U64 = 0xffff_ffff_ffff_ffffn
 const U128 = (1n << 128n) - 1n
 
+/** The free-pack cap in packs: the percent of all the drop's packs, rounded down (at least 1 when it's on). */
+export function creditPacksMax(s: SaleSettings): number {
+  const bp = parseDecimal(s.creditPacksPercent, 2)
+  if (bp == null || bp === 0n) return 0
+  return Math.max(1, Number((BigInt(s.paidPacks + s.pressPacks) * bp) / 10_000n))
+}
+
 export type SaleField = keyof SaleSettings
 export interface SaleProblem { field: SaleField; message: string; warning?: boolean }
 
@@ -112,7 +122,6 @@ export function checkSale(s: SaleSettings, now = Date.now() / 1000): SaleProblem
   whole('pressPerPress', s.pressPerPress, U32, 'Press packs per press')
   whole('pressPerWallet', s.pressPerWallet, U32, 'Press packs per wallet')
   whole('creditsPerPick', s.creditsPerPick, U16, 'Credits per picked suggestion')
-  whole('creditPacksMax', s.creditPacksMax, U64, 'Free packs in this drop')
   whole('creditPacksPerWallet', s.creditPacksPerWallet, U64, 'Free packs per wallet')
   if (s.paidPacks + s.pressPacks === 0) bad('paidPacks', 'The drop needs at least one pack.')
   if (s.maxPerTx === 0) bad('maxPerTx', 'At least 1.')
@@ -122,6 +131,10 @@ export function checkSale(s: SaleSettings, now = Date.now() / 1000): SaleProblem
   else if (s.paidPacks > 0 && price === 0n) bad('priceUsd', 'Paid packs need a price (free packs are press packs or credits).')
   const paper = parseDecimal(s.paperPerPack, 18)
   if (paper == null || paper > U128) bad('paperPerPack', 'A PAPER amount, up to 18 decimals (0 = none).')
+  const paperCap = parseDecimal(s.paperCapUsd, 8)
+  if (paperCap == null || paperCap > U128) bad('paperCapUsd', 'A dollar amount, up to 8 decimals (0 = no ceiling).')
+  const creditPct = parseDecimal(s.creditPacksPercent, 2)
+  if (creditPct == null || creditPct > 10_000n) bad('creditPacksPercent', '0 to 100%, up to 2 decimals (0 = no limit).')
   const burn = parseDecimal(s.plankBurnPercent, 2)
   if (burn == null || burn > 10_000n) bad('plankBurnPercent', '0 to 100%, up to 2 decimals.')
 
@@ -177,6 +190,7 @@ export interface SaleJson {
   plankBurnBps: number
   priceUsd: string
   paperPerPack: string
+  paperCapUsd: string
   holderWindow: number
   holderRoot?: string
   maxPerTx: number
@@ -205,6 +219,7 @@ export function saleJson(s: SaleSettings): SaleJson {
     plankBurnBps: Number(parseDecimal(s.plankBurnPercent, 2) ?? 0n),
     priceUsd: d(s.priceUsd, 8),
     paperPerPack: d(s.paperPerPack, 18),
+    paperCapUsd: d(s.paperCapUsd, 8),
     holderWindow: seconds(s.holderHours),
     ...(s.holderRoot ? { holderRoot: s.holderRoot.toLowerCase() } : {}),
     maxPerTx: s.maxPerTx,
@@ -215,14 +230,44 @@ export function saleJson(s: SaleSettings): SaleJson {
     starterPriceUsd: on && pressUsdOn(s) ? d(s.pressUsd, 8) : '0',
     starterPaper: on && pressPaperOn(s) ? d(s.pressPaper, 18) : '0',
     creditsPerPick: s.creditsPerPick,
-    creditPacksMax: s.creditPacksMax,
+    creditPacksMax: creditPacksMax(s),
     creditPacksPerWallet: s.creditPacksPerWallet,
   }
 }
 
-/** Totals for the summary line. */
-export function saleSummary(s: SaleSettings): { total: number; maxUsd: number } {
+/** The drop as a picture: how its packs split, and what a sell-out brings in. Free (credit) packs come out of the
+ *  paid packs (FireSale.creditPacks takes them from what's left to sell), so they are at most the paid packs. */
+export interface DropPlan {
+  total: number
+  paid: number
+  press: number
+  /** The first paid packs only PLANK can buy. */
+  plankOnly: number
+  /** Most paid packs that can go free to credits (0 = no cap: up to every paid pack). */
+  freeMax: number
+  freeCapped: boolean
+  /** Dollars if every pack sells: paid at the price, press at their dollar price. */
+  revenueUsd: number
+  /** The same with every free pack used (the least a sell-out brings in, with the cap). */
+  revenueMinUsd: number
+  /** The PLANK burn share of those dollars. */
+  burnUsd: number
+  burnMinUsd: number
+}
+
+export function dropPlan(s: SaleSettings): DropPlan {
+  const ok = (n: number) => (Number.isFinite(n) && n > 0 ? Math.floor(n) : 0)
+  const paid = ok(s.paidPacks)
+  const press = ok(s.pressPacks)
+  const capped = creditPacksMax(s) > 0
+  const freeMax = capped ? Math.min(paid, creditPacksMax(s)) : paid
   const price = Number(parseDecimal(s.priceUsd, 8) ?? 0n) / 1e8
-  const press = pressUsdOn(s) ? Number(parseDecimal(s.pressUsd, 8) ?? 0n) / 1e8 : 0
-  return { total: s.paidPacks + s.pressPacks, maxUsd: s.paidPacks * price + s.pressPacks * press }
+  const pressUsd = pressUsdOn(s) ? Number(parseDecimal(s.pressUsd, 8) ?? 0n) / 1e8 : 0
+  const burn = Number(parseDecimal(s.plankBurnPercent, 2) ?? 0n) / 10_000
+  const revenueUsd = paid * price + press * pressUsd
+  const revenueMinUsd = (paid - freeMax) * price + press * pressUsd
+  return {
+    total: paid + press, paid, press, plankOnly: Math.min(ok(s.plankOnly), paid), freeMax, freeCapped: capped,
+    revenueUsd, revenueMinUsd, burnUsd: revenueUsd * burn, burnMinUsd: revenueMinUsd * burn,
+  }
 }

@@ -5,6 +5,7 @@ import {Test, Vm} from "forge-std/Test.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
+import {FireCredits} from "../../src/cards/FireCredits.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
@@ -27,6 +28,7 @@ contract CardsHandler is Test {
 
     // ---------------------------------------------------------------- system
     FireSale public sale;
+    FireCredits public credits;
     FirePacks public packs;
     FireCards public cards;
     RecipeDealer public dealer;
@@ -80,6 +82,7 @@ contract CardsHandler is Test {
     mapping(uint256 => uint256) public ghostCards;
     mapping(uint256 => uint256) public ghostGrade;
     mapping(uint256 => uint256) public ghostGradedTimes;
+    mapping(uint256 => uint256[]) internal _gradingIds; // the cards of each grading (FirePsa keeps only their hash)
 
     uint256[] internal _cardReqs; // card randomness requests not yet delivered
     uint256[] internal _psaReqs; // PDA randomness requests not yet delivered
@@ -110,11 +113,11 @@ contract CardsHandler is Test {
         cards = new FireCards(owner, address(packs));
         dealer = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         cardRng.setFire(address(cards));
+        credits = new FireCredits(owner, address(cards), 1e18);
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, burnWallet: burnW,
-            paperPerSuggestion: 1e18
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, credits: address(credits)
         }));
         burner = new MockBurner(address(plank), address(usdg));
         psa = new FirePsa(owner, address(cards), address(burner));
@@ -123,6 +126,7 @@ contract CardsHandler is Test {
         packs.setSeller(address(sale));
         packs.setCards(address(cards));
         cards.setSeller(address(sale));
+        credits.setSale(address(sale));
         cards.setRandomness(address(cardRng));
         cards.setPsa(address(psa));
         psa.setRandomness(address(psaRng));
@@ -152,7 +156,7 @@ contract CardsHandler is Test {
     /// @dev Fire 1 sells out to the actors (10 packs each) and is opened and dealt, so everyone starts with 60 cards.
     function bootstrap() external {
         FireSale.DropConfig memory c = FireSale.DropConfig({start: uint64(time + 1), packs: 40, starters: 0, plankOnly: 0,
-            walletLimit: 10, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
+            walletLimit: 10, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
         vm.prank(owner, owner);
         sale.configureDrop(1, c);
         hasDrop[1] = true;
@@ -387,12 +391,12 @@ contract CardsHandler is Test {
         uint256 fire = _fire(fireSeed);
         address a = _actor(actorSeed);
         for (uint256 i; i < actors.length; i++) {
-            if (sale.credits(_actor(actorSeed % 64 + i)) > 0) { a = _actor(actorSeed % 64 + i); break; }
+            if (credits.credits(_actor(actorSeed % 64 + i)) > 0) { a = _actor(actorSeed % 64 + i); break; }
         }
         n = bound(n, 1, 3);
         uint256 per = sale.dropOf(fire).paperPerPack;
         vm.prank(a, a);
-        try sale.useCredits(fire, n, type(uint256).max) {
+        try credits.useCredits(fire, n, type(uint256).max) {
             ghostBurnCreditsUsed[a] += n; // all credits (burn and picked) are one pool now
             ghostPaperBurned += n * per;
             calls["useCredits.ok"]++;
@@ -407,7 +411,7 @@ contract CardsHandler is Test {
         uint256[] memory ids = _owned(a, bound(k, 1, 30), seed, false);
         if (ids.length == 0) return;
         vm.prank(a, a);
-        try sale.burnCards(ids) {
+        try credits.burnCards(ids) {
             ghostBurned[a] += ids.length;
             calls["burnCards.ok"]++;
         } catch {
@@ -419,7 +423,7 @@ contract CardsHandler is Test {
         calls["suggest"]++;
         address a = _actor(actorSeed);
         vm.prank(a, a);
-        sale.suggest("A fox made of embers", type(uint256).max);
+        credits.suggest("A fox made of embers", type(uint256).max);
         ghostPaperBurned += 1e18;
     }
 
@@ -467,42 +471,28 @@ contract CardsHandler is Test {
     function pickSuggestions(uint256 fireSeed, uint256 k) external at {
         calls["pickSuggestions"]++;
         uint256 fire = _fire(fireSeed);
-        uint256 total = sale.suggestionCount();
+        uint256 total = credits.suggestionCount();
         if (total == 0) return;
-        bool fresh = sale.sessionFire() != fire || sale.currentRound() == 0;
-        uint32 round = fresh ? sale.currentRound() : sale.sessionRound();
+        bool fresh = credits.sessionFire() != fire || credits.currentRound() == 0;
+        uint32 round = fresh ? credits.currentRound() : credits.sessionRound();
         k = bound(k, 1, 3);
         uint256[] memory buf = new uint256[](k);
         uint256 got;
         for (uint256 i; i < total && got < k; i++) {
-            (,, bool granted, uint32 r) = sale.suggestions(i);
+            (,, bool granted, uint32 r) = credits.suggestions(i);
             if (!granted && r == round) buf[got++] = i;
         }
         if (got == 0) return;
         uint256[] memory ids = new uint256[](got);
         for (uint256 i; i < got; i++) ids[i] = buf[i];
         vm.prank(owner, owner);
-        try sale.pickSuggestions(fire, ids) {
+        try credits.pickSuggestions(fire, ids) {
             for (uint256 i; i < got; i++) {
-                (address by,,,) = sale.suggestions(ids[i]);
+                (address by,,,) = credits.suggestions(ids[i]);
                 ghostPicks[fire][by] += 1;
             }
             calls["pickSuggestions.ok"]++;
         } catch {}
-    }
-
-    function setOdds(uint256 fireSeed, uint256 seed) external at {
-        uint256 fire = 1 + fireSeed % FIRES;
-        uint64[10] memory odds;
-        uint256 left = 10_000;
-        for (uint256 g = 4; g < 9; g++) { // grades 1-4 come only from wear
-            uint256 o = uint256(keccak256(abi.encode(seed, g))) % (left + 1);
-            odds[g] = uint64(o);
-            left -= o;
-        }
-        odds[9] = uint64(left);
-        vm.prank(owner, owner);
-        try psa.setOdds(fire, odds) { calls["setOdds.ok"]++; } catch {}
     }
 
     /// The Series' Diamond setting (small numbers, so it often exceeds the pack count and the cap kicks in): a new
@@ -642,7 +632,8 @@ contract CardsHandler is Test {
         if (ids.length == 0) return;
         uint256 cost = psa.quote(0, ids.length, FirePsa.Pay.ETH);
         vm.prank(a, a);
-        try psa.protect{value: cost}(new uint256[](0), ids, FirePsa.Pay.ETH, cost) {
+        try psa.protect{value: cost}(new uint256[](0), ids, FirePsa.Pay.ETH, cost) returns (uint256 index) {
+            _gradingIds[index] = ids;
             ghostProtectEth += cost;
             _psaReqs.push(psaRng.last());
             calls["reveal.ok"]++;
@@ -697,7 +688,7 @@ contract CardsHandler is Test {
             FirePsa.Grading memory r = psa.gradingOf(idx);
             if (!r.ready || r.done) continue;
             vm.recordLogs();
-            psa.finish(idx);
+            psa.finish(idx, _gradingIds[idx]);
             Vm.Log[] memory logs = vm.getRecordedLogs();
             for (uint256 i; i < logs.length; i++) {
                 if (logs[i].emitter != address(psa) || logs[i].topics[0] != GRADED) continue;

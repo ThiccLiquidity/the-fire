@@ -120,18 +120,6 @@
    "category": "Royals"
   }
  ],
- "pdaOdds": [
-  "0",
-  "0",
-  "0",
-  "0",
-  "1000",
-  "2000",
-  "2700",
-  "2500",
-  "1700",
-  "100"
- ],
  "sale": {
   "start": 1810000000,
   "packs": 117,
@@ -143,6 +131,7 @@
   "plankBurnBps": 3000,
   "priceUsd": "250000000",
   "paperPerPack": "1000000000000000000",
+  "paperCapUsd": "100000000",
   "holderWindow": 86400,
   "holderRoot": "0xabababababababababababababababababababababababababababababababab",
   "maxPerTx": 50,
@@ -153,7 +142,7 @@
   "starterPriceUsd": "0",
   "starterPaper": "1000000000000000000",
   "creditsPerPick": 1,
-  "creditPacksMax": 0,
-  "creditPacksPerWallet": 0
+  "creditPacksMax": 16,
+  "creditPacksPerWallet": 3
  }
 }

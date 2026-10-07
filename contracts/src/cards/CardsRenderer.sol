@@ -15,8 +15,9 @@ import {FireCards} from "./FireCards.sol";
  *         state `u` (ungraded), `c` (cased) or `1`-`10` (slabbed at that grade). The Card Studio builds every one.
  *
  *         Traits: Character, Category, Material, Holo, Series, Edition, Serial, PDA. An ungraded card adds Cased,
- *         Uncased Age (days) and Moves, so a buyer can see what it has been through; its condition is never shown.
- *         A slabbed card shows its grade only.
+ *         Dealt (the date it was dealt, a "date" trait marketplaces show as a date), Moves and, once cased, Age when
+ *         cased (days, frozen), so a buyer can see what it has been through; its condition is never shown. A slabbed
+ *         card shows its grade only. Fixed values only: the metadata never changes just because time passes.
  */
 contract CardsRenderer {
     using Strings for uint256;
@@ -73,8 +74,11 @@ contract CardsRenderer {
             ? string.concat(',{"trait_type":"PDA","value":"PDA ', c.grade.toString(), '"}')
             : string.concat(
                 ',{"trait_type":"PDA","value":"Ungraded"},{"trait_type":"Cased","value":"', c.cased ? "Yes" : "No",
-                '"},{"trait_type":"Uncased Age (days)","value":', (c.age / 1 days).toString(),
-                ',"display_type":"number"},{"trait_type":"Moves","value":', c.moves.toString(), ',"display_type":"number"}'
+                '"},{"trait_type":"Dealt","value":', c.dealtAt.toString(),
+                ',"display_type":"date"},{"trait_type":"Moves","value":', c.moves.toString(), ',"display_type":"number"}',
+                c.cased
+                    ? string.concat(',{"trait_type":"Age when cased (days)","value":', (c.age / 1 days).toString(), ',"display_type":"number"}')
+                    : ""
             );
         return string.concat(head, mid, wear, t.extraAttributes, "]");
     }

@@ -95,14 +95,13 @@ contract PsaTest is SeriesHelper {
         vm.prank(who);
         index = psa.protect{value: cost}(_none(), ids, FirePsa.Pay.ETH, cost);
         psaRng.fulfill(psaRng.last(), word);
-        psa.finish(index);
+        psa.finish(index, ids);
     }
 
     // ================================================================ the fixed wear table
 
-    /// The contract's odds are the model's, to the wei, for every vector (ages from a day to 80 years, 0-25 moves,
-    /// the Standard odds and a custom one).
-    function test_wearOddsMatchTheModel() public {
+    /// The contract's odds are the model's, to the wei, for every vector (ages from a day to 80 years, 0-25 moves).
+    function test_wearOddsMatchTheModel() public view {
         string memory json = vm.readFile("test/cards/wear-vectors.json");
         uint256 n;
         while (json.keyExists(string.concat(".cases[", vm.toString(n), "]"))) n++;
@@ -111,45 +110,35 @@ contract PsaTest is SeriesHelper {
             string memory p = string.concat(".cases[", vm.toString(i), "]");
             uint256 age = json.readUint(string.concat(p, ".age"));
             uint256 moves = json.readUint(string.concat(p, ".moves"));
-            uint256 fire = 1;
-            if (json.keyExists(string.concat(p, ".weights"))) {
-                uint256[] memory w = json.readUintArray(string.concat(p, ".weights"));
-                uint64[10] memory o;
-                for (uint256 g; g < 10; g++) o[g] = uint64(w[g]);
-                fire = 50;
-                _standard(cards, dealer, owner, fire, 2, 1);
-                vm.prank(owner);
-                psa.setOdds(fire, o);
-            }
             string[] memory want = json.readStringArray(string.concat(p, ".odds"));
-            uint256[10] memory got = psa.oddsFor(fire, age, moves);
+            uint256[10] memory got = psa.oddsFor(age, moves);
             for (uint256 g; g < 10; g++) assertEq(got[g], vm.parseUint(want[g]), string.concat("case ", vm.toString(i)));
         }
     }
 
     function test_freshCardsOnlyGrade5To10() public view {
-        uint256[10] memory o = psa.oddsFor(1, 23 hours, 0);
+        uint256[10] memory o = psa.oddsFor(23 hours, 0);
         for (uint256 g; g < 4; g++) assertEq(o[g], 0);
         assertApproxEqAbs(o[9], 0.01e18, 1e10, "PDA 10: 1%");
         assertApproxEqAbs(o[8], 0.17e18, 1e10);
         assertApproxEqAbs(o[4], 0.10e18, 1e10, "PDA 5: 10%");
         // moves alone never go below 5
-        o = psa.oddsFor(1, 0, 1_000);
+        o = psa.oddsFor(0, 1_000);
         for (uint256 g; g < 4; g++) assertEq(o[g], 0);
-        assertEq(psa.oddsFor(1, 0, 10)[9], psa.oddsFor(1, 0, 25)[9], "moves past 10 add nothing");
+        assertEq(psa.oddsFor(0, 10)[9], psa.oddsFor(0, 25)[9], "moves past 10 add nothing");
     }
 
     function test_lowGradesFadeInWithTime() public view {
-        assertEq(psa.oddsFor(1, 1 days + 29 days, 0)[3], 0, "PDA 4 closed before a month");
-        assertGt(psa.oddsFor(1, 1 days + 40 days, 0)[3], 0, "PDA 4 opening");
-        assertEq(psa.oddsFor(1, 1 days + 364 days, 0)[1], 0, "PDA 2 closed before a year");
-        assertEq(psa.oddsFor(1, 1 days + 2 * 365 days, 0)[0], 0, "PDA 1 closed at two years");
-        assertGt(psa.oddsFor(1, 1 days + 3 * 365 days, 0)[0], 0.04e18, "PDA 1 at three years");
-        assertGt(psa.oddsFor(1, 1 days + 10 * 365 days, 0)[0], 0.6e18, "PDA 1 likely at ten years");
+        assertEq(psa.oddsFor(1 days + 29 days, 0)[3], 0, "PDA 4 closed before a month");
+        assertGt(psa.oddsFor(1 days + 40 days, 0)[3], 0, "PDA 4 opening");
+        assertEq(psa.oddsFor(1 days + 364 days, 0)[1], 0, "PDA 2 closed before a year");
+        assertEq(psa.oddsFor(1 days + 2 * 365 days, 0)[0], 0, "PDA 1 closed at two years");
+        assertGt(psa.oddsFor(1 days + 3 * 365 days, 0)[0], 0.04e18, "PDA 1 at three years");
+        assertGt(psa.oddsFor(1 days + 10 * 365 days, 0)[0], 0.6e18, "PDA 1 likely at ten years");
         // no overnight jumps: at most about half a point a day
-        uint256[10] memory prev = psa.oddsFor(1, 0, 0);
+        uint256[10] memory prev = psa.oddsFor(0, 0);
         for (uint256 d = 1; d < 5 * 365; d += 1) {
-            uint256[10] memory cur = psa.oddsFor(1, d * 1 days, 0);
+            uint256[10] memory cur = psa.oddsFor(d * 1 days, 0);
             for (uint256 g; g < 10; g++) {
                 uint256 diff = cur[g] > prev[g] ? cur[g] - prev[g] : prev[g] - cur[g];
                 assertLt(diff, 0.006e18, "a day never moves a grade by more than 0.6 points");
@@ -162,7 +151,7 @@ contract PsaTest is SeriesHelper {
         uint256[6] memory ages = [uint256(0), 3 days, 200 days, 2 * 365 days, 9 * 365 days, 100 * 365 days];
         for (uint256 a; a < 6; a++) {
             for (uint256 m; m < 12; m += 3) {
-                uint256[10] memory o = psa.oddsFor(1, ages[a], m);
+                uint256[10] memory o = psa.oddsFor(ages[a], m);
                 uint256 t;
                 for (uint256 g; g < 10; g++) t += o[g];
                 assertApproxEqAbs(t, 1e18, 1e6);
@@ -231,7 +220,7 @@ contract PsaTest is SeriesHelper {
         (,,,, uint256 age,) = cards.wearOf(6);
         assertEq(age, 3 days);
         psaRng.fulfill(psaRng.last(), 1234);
-        psa.finish(index);
+        psa.finish(index, _one(6));
         (,, uint256 grade,,,) = cards.wearOf(6);
         assertGe(grade, 5);
         assertFalse(cards.gradePending(6));
@@ -264,7 +253,7 @@ contract PsaTest is SeriesHelper {
         vm.prank(bob);
         uint256 index = psa.protect{value: cost}(_none(), old, FirePsa.Pay.ETH, cost);
         psaRng.fulfill(psaRng.last(), 77);
-        psa.finish(index);
+        psa.finish(index, old);
         for (uint256 i = 13; i <= 30; i++) {
             (,, uint256 g,,,) = cards.wearOf(i);
             if (g <= 2) low++;
@@ -273,10 +262,10 @@ contract PsaTest is SeriesHelper {
     }
 
     function test_gradeForFollowsOddsFor() public view {
-        uint256[10] memory o = psa.oddsFor(1, 400 days, 3);
+        uint256[10] memory o = psa.oddsFor(400 days, 3);
         uint256[11] memory seen;
         uint256 n = 4_000;
-        for (uint256 i; i < n; i++) seen[psa.gradeFor(1, 400 days, 3, uint256(keccak256(abi.encode(i))))]++;
+        for (uint256 i; i < n; i++) seen[psa.gradeFor(400 days, 3, uint256(keccak256(abi.encode(i))))]++;
         for (uint256 g = 1; g <= 10; g++) {
             uint256 want = o[g - 1] * n / 1e18;
             assertApproxEqAbs(seen[g], want, 60, string.concat("grade ", vm.toString(g)));
@@ -296,12 +285,15 @@ contract PsaTest is SeriesHelper {
         vm.warp(block.timestamp + 3 days + 1);
         json = _json(cards.tokenURI(7));
         assertTrue(_contains(json, '"trait_type":"Moves","value":1'), json);
-        assertTrue(_contains(json, '"trait_type":"Uncased Age (days)","value":3'), json);
+        assertTrue(_contains(json, '{"trait_type":"Dealt","value":1800000000,"display_type":"date"}'), json);
+        assertFalse(_contains(json, "Age when cased"), json);
         vm.deal(bob, 10 ether);
         _case(bob, _one(7));
         json = _json(cards.tokenURI(7));
         assertTrue(_contains(json, '-c.webp"'), json);
         assertTrue(_contains(json, '{"trait_type":"Cased","value":"Yes"}'), json);
+        assertTrue(_contains(json, '{"trait_type":"Age when cased (days)","value":3,"display_type":"number"}'), json);
+        assertTrue(_contains(json, '{"trait_type":"Dealt","value":1800000000,"display_type":"date"}'), json);
         _grade(bob, _one(7), 5);
         (,, uint256 g,,,) = cards.wearOf(7);
         json = _json(cards.tokenURI(7));
@@ -381,59 +373,51 @@ contract PsaTest is SeriesHelper {
         psa.setMaxBatch(0);
         vm.expectRevert(FirePsa.BadAmount.selector);
         psa.setMaxBatch(101);
-        vm.expectRevert(FirePsa.AlreadySet.selector);
-        psa.setRandomness(address(1));
         vm.stopPrank();
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", address(this)));
         psa.setPrices(1e18, 1e18);
     }
 
-    function test_freshOddsRules() public {
-        _standard(cards, dealer, owner, 3, 2, 1);
-        uint64[10] memory o = [uint64(0), 0, 0, 0, 0, 0, 0, 0, 1, 1];
+    /// The fresh odds are constants, the same for every Series, and nothing can change them.
+    function test_freshOddsAreFixedForever() public {
+        (uint64[10] memory o, uint256 total) = psa.freshOdds();
+        uint64[10] memory want = [uint64(0), 0, 0, 0, 1000, 2000, 2700, 2500, 1700, 100];
+        for (uint256 g; g < 10; g++) assertEq(o[g], want[g]);
+        assertEq(total, 10_000);
+        assertEq(psa.ODDS_TOTAL(), 10_000);
+        assertEq(
+            psa.FRESH_5() + psa.FRESH_6() + psa.FRESH_7() + psa.FRESH_8() + psa.FRESH_9() + psa.FRESH_10(), psa.ODDS_TOTAL()
+        );
+        // no setter: the old per-Series setOdds(uint256,uint64[10]) and customOdds(uint256) are gone
+        (bool ok,) = address(psa).call(abi.encodeWithSignature("setOdds(uint256,uint64[10])", 3, want));
+        assertFalse(ok, "no setOdds");
         vm.prank(owner);
-        psa.setOdds(3, o);
-        (uint64[10] memory got, uint256 total) = psa.oddsOf(3);
-        assertEq(got[9], 1);
-        assertEq(total, 2);
-        o[3] = 1; // grade 4: only wear gives those
-        vm.prank(owner);
-        vm.expectRevert(FirePsa.BadOdds.selector);
-        psa.setOdds(3, o);
-        o = [uint64(0), 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        vm.prank(owner);
-        vm.expectRevert(FirePsa.BadOdds.selector);
-        psa.setOdds(3, o);
-        // fixed once the Series has packs (Series 1 does)
-        o[9] = 1;
-        vm.prank(owner);
-        vm.expectRevert(FirePsa.FireIsClosed.selector);
-        psa.setOdds(1, o);
-        // and once it's locked for its drop
-        _standard(cards, dealer, owner, 4, 2, 1);
-        vm.prank(owner);
-        cards.lockFire(4);
-        vm.prank(owner);
-        vm.expectRevert(FirePsa.FireIsClosed.selector);
-        psa.setOdds(4, o);
+        (ok,) = address(psa).call(abi.encodeWithSignature("setOdds(uint256,uint64[10])", 3, want));
+        assertFalse(ok, "not even for the owner");
+        (ok,) = address(psa).staticcall(abi.encodeWithSignature("customOdds(uint256)", 3));
+        assertFalse(ok, "no customOdds");
+        (ok,) = address(psa).staticcall(abi.encodeWithSignature("oddsOf(uint256)", 3));
+        assertFalse(ok, "no per-Series odds");
+        // a fresh card of any Series gets the same odds
+        assertEq(keccak256(abi.encode(psa.oddsFor(0, 0))), keccak256(abi.encode(psa.oddsFor(23 hours, 0))));
     }
 
     // ================================================================ randomness
 
-    function test_cancelAfterAWeekFromTheFirstRequestAndTheClockRunsOn() public {
+    function test_cancelAfterAWeekFromTheRequestAndTheClockRunsOn() public {
         vm.warp(block.timestamp + 2 days);
         uint256 cost = psa.quote(0, 1, FirePsa.Pay.ETH);
         vm.prank(alice);
         uint256 index = psa.protect{value: cost}(_none(), _one(8), FirePsa.Pay.ETH, cost);
+        (bool ok,) = address(psa).call(abi.encodeWithSignature("rerequest(uint256)", index));
+        assertFalse(ok, "no re-request: one grading, one number");
+        vm.warp(block.timestamp + 6 days);
         vm.expectRevert(FirePsa.NotStuck.selector);
-        psa.rerequest(index);
-        vm.warp(block.timestamp + 1 days + 1);
-        psa.rerequest(index); // asking again doesn't restart the cancel clock
-        vm.warp(block.timestamp + 5 days);
-        vm.expectRevert(FirePsa.NotStuck.selector);
-        psa.cancelGrading(index); // 6 days since the first request
+        psa.cancelGrading(index, _one(8)); // 6 days since the request
         vm.warp(block.timestamp + 1 days);
-        psa.cancelGrading(index);
+        vm.expectRevert(FirePsa.BadIds.selector);
+        psa.cancelGrading(index, _one(9)); // the list must be the grading's
+        psa.cancelGrading(index, _one(8));
         assertFalse(cards.gradePending(8));
         (,, uint256 grade, bool cased, uint256 age,) = cards.wearOf(8);
         assertEq(grade, 0);
@@ -453,11 +437,85 @@ contract PsaTest is SeriesHelper {
         vm.expectRevert(FirePsa.NotRandomness.selector);
         psa.onRandomness(1, 5);
         vm.expectRevert(FirePsa.NotReady.selector);
-        psa.finish(index);
+        psa.finish(index, _one(10));
         psaRng.fulfill(psaRng.last(), 5);
-        psa.finish(index);
+        vm.expectRevert(FirePsa.BadIds.selector);
+        psa.finish(index, _one(11)); // the list must be the grading's (its hash is stored, not the list)
+        vm.expectRevert(FirePsa.BadIds.selector);
+        psa.finish(index, _none());
+        psa.finish(index, _one(10));
         vm.expectRevert(FirePsa.NotReady.selector);
-        psa.finish(index);
+        psa.finish(index, _one(10));
+        uint256 id = psaRng.last();
+        vm.expectRevert(FirePsa.NotRandomness.selector);
+        psaRng.fulfill(id, 6); // answered once
+    }
+
+    /// The owner can switch the source at any time; each grading keeps the source that took it.
+    function test_randomnessSwitchKeepsEachGradingsSource() public {
+        uint256 cost = psa.quote(0, 1, FirePsa.Pay.ETH);
+        vm.prank(alice);
+        uint256 first = psa.protect{value: cost}(_none(), _one(1), FirePsa.Pay.ETH, cost); // old source, id 1
+        MockRandomness rng2 = new MockRandomness();
+        rng2.setFire(address(psa));
+        vm.expectEmit(address(psa));
+        emit FirePsa.RandomnessSet(address(rng2));
+        vm.prank(owner);
+        psa.setRandomness(address(rng2));
+        vm.prank(alice);
+        uint256 second = psa.protect{value: cost}(_none(), _one(2), FirePsa.Pay.ETH, cost); // new source, id 1
+        assertEq(psa.gradingOf(first).source, address(psaRng));
+        assertEq(psa.gradingOf(second).source, address(rng2));
+        assertEq(psa.gradingOf(second).requestId, 1);
+        rng2.fulfill(1, 99); // the new source's id 1 is the second grading, not the first
+        assertFalse(psa.gradingOf(first).ready);
+        assertTrue(psa.gradingOf(second).ready);
+        psaRng.fulfill(1, 42); // the old source still answers its own
+        assertTrue(psa.gradingOf(first).ready);
+        psa.finish(first, _one(1));
+        psa.finish(second, _one(2));
+        (,, uint256 g1,,,) = cards.wearOf(1);
+        (,, uint256 g2,,,) = cards.wearOf(2);
+        assertGt(g1, 0);
+        assertGt(g2, 0);
+        vm.expectRevert(FirePsa.NotRandomness.selector);
+        rng2.fulfill(2, 1); // a request the source never took
+    }
+
+    /// Pausing stops case and grading payments; finishing and cancelling never pause.
+    function test_pauseBlocksPaymentsOnly() public {
+        uint256 cost = psa.quote(0, 1, FirePsa.Pay.ETH);
+        vm.prank(alice);
+        uint256 index = psa.protect{value: cost}(_none(), _one(3), FirePsa.Pay.ETH, cost);
+        vm.prank(alice);
+        uint256 stuck = psa.protect{value: cost}(_none(), _one(4), FirePsa.Pay.ETH, cost);
+        vm.prank(alice);
+        vm.expectRevert();
+        psa.setPaused(true); // only the owner
+        vm.expectEmit(address(psa));
+        emit FirePsa.PausedSet(true);
+        vm.prank(owner);
+        psa.setPaused(true);
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.IsPaused.selector);
+        psa.protect{value: cost}(_none(), _one(5), FirePsa.Pay.ETH, cost);
+        uint256 caseCost = psa.quote(1, 0, FirePsa.Pay.ETH);
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.IsPaused.selector);
+        psa.protect{value: caseCost}(_one(5), _none(), FirePsa.Pay.ETH, caseCost);
+        psaRng.fulfill(1, 7);
+        psa.finish(index, _one(3)); // finishing still works
+        vm.warp(block.timestamp + 7 days);
+        psa.cancelGrading(stuck, _one(4)); // and cancelling
+        vm.prank(alice);
+        cards.transferFrom(alice, bob, 6); // transfers never pause
+        vm.prank(owner);
+        psa.setPaused(false);
+        vm.prank(alice);
+        psa.protect{value: caseCost}(_one(5), _none(), FirePsa.Pay.ETH, caseCost);
+        vm.prank(owner);
+        vm.expectRevert(FirePsa.RenounceDisabled.selector);
+        psa.renounceOwnership();
     }
 
     function test_onlyPsaCasesOrGrades() public {

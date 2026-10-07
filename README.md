@@ -69,7 +69,9 @@ Each folder in `sim/omni` has its model and its recorded output; most also have 
 ## Deploying
 
 Deployment is a three-step Foundry runbook (`DeployTwap`, then `DeployInfra`, then `DeployCards`) followed by the
-multisig accepting ownership and a keeper going live. See [`docs/deploy.md`](docs/deploy.md). Settings go in
+multisig accepting ownership (checked by `VerifyDeploy`) and the keeper going live (`ops/keeper`). Each Series is set
+up in two Safe signings with `ops/series` (VerifySeries) in between, and the whole launch can be rehearsed on a local
+chain (`ops/rehearsal`). See [`docs/deploy.md`](docs/deploy.md). Settings go in
 `contracts/.env` (copy `contracts/.env.example`). Sign with a Foundry keystore (`--account`) or `--ledger`; never put
 a private key in a file or on the command line.
 
@@ -92,10 +94,11 @@ The site deploys on Vercel from `main` with Root Directory `web`.
 ## Key properties
 
 - **The sale contracts never hold funds.** Everything paid for packs is forwarded or burned in the same transaction:
-  70% of a sale to the revenue wallet; the 30% burn share buys PLANK and burns it (or goes to the burn wallet if the
-  swap can't go through). All PAPER spent is burned.
+  70% of a sale to the revenue wallet; the 30% burn share buys PLANK and burns it (or goes to `PlankBurner`, which has
+  no withdraw and burns it later, if the swap can't go through). All PAPER spent is burned.
 - **Case and grading fees all burn PAPER.** `PaperBurner` buys PAPER with 100% of each fee and burns it; none goes to
   the team. If the price guard says no, the fee waits in `PaperBurner` (it has no withdraw) for a later buy.
 - **Randomness** comes from drand through an ownerless router that anyone can fulfill.
-- **The owner is a multisig** that configures each Series and drop. What it can and can't change is listed in
-  `docs/cards-contracts.md` and `docs/audit-2026-10.md`.
+- **The owner is a multisig** that configures each Series and drop. It can pause buying and case/grading payments
+  (never opening, dealing, transfers or finishing grades) and can't renounce ownership. What it can and can't change
+  is listed in `docs/cards-contracts.md` and `docs/audit-2026-10.md`.

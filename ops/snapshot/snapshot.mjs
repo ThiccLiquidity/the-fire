@@ -8,10 +8,16 @@
 // for the site. The one value you need is the "root": paste it as holderRoot when you set up the drop.
 // Run it at a moment nobody knows in advance, before the drop is set up.
 import { createPublicClient, http, parseAbiItem, formatUnits, getAddress } from 'viem'
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { buildTree, verify } from './merkle.mjs'
 
-const PLANK = process.env.PLANK ?? '0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc'
+// Addresses: PLANK and PLANK_USD_FEED from the environment, else from deployments/<chainId>.json (the deploy writes it).
+function fromDeployments(chainId) {
+  const path = process.env.DEPLOYMENTS_FILE ?? new URL(`../../deployments/${chainId}.json`, import.meta.url)
+  if (!existsSync(path)) return {}
+  const j = JSON.parse(readFileSync(path, 'utf8'))
+  return { plank: j.inputs?.PLANK, feed: j.contracts?.PlankUsdTwap }
+}
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => {
   if (a.startsWith('--')) acc.push([a.slice(2), all[i + 1]?.startsWith('--') || all[i + 1] === undefined ? true : all[i + 1]])
   return acc
@@ -28,12 +34,14 @@ if (args.selftest) {
 
 const rpc = process.env.RPC
 if (!rpc) throw new Error('Set RPC first ($env:RPC = "...")')
-const feed = process.env.PLANK_USD_FEED
-if (!feed) throw new Error('Set PLANK_USD_FEED (the PlankUsdTwap address)')
+const client = createPublicClient({ transport: http(rpc) })
+const dep = fromDeployments(await client.getChainId())
+const PLANK = process.env.PLANK ?? dep.plank ?? '0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc'
+const feed = process.env.PLANK_USD_FEED ?? dep.feed
+if (!feed) throw new Error('Set PLANK_USD_FEED (the PlankUsdTwap address), or deploy first (deployments/<chainId>.json)')
 const minUsd = Number(args['min-usd'] ?? 69)
 const fromBlock = BigInt(args['from-block'] ?? 0)
 const out = args.out ?? 'holders.json'
-const client = createPublicClient({ transport: http(rpc) })
 
 const block = await client.getBlockNumber()
 const [, px] = await client.readContract({ address: feed, abi: [parseAbiItem('function latestRoundData() view returns (uint80,int256,uint256,uint256,uint80)')], functionName: 'latestRoundData', blockNumber: block })

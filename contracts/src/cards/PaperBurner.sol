@@ -82,6 +82,7 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
     error BadRoute();
     error FeedUnavailable();
     error FeedsAlreadySet();
+    error RenounceDisabled();
 
     constructor(
         address owner_,
@@ -104,6 +105,11 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
     receive() external payable {}
 
     // ================================================================ owner
+
+    /// @notice Ownership can be handed over (two steps) but never renounced, so control can't be lost by mistake.
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
+    }
 
     /// @notice The routes tried for one currency: each starts at it (WETH for ETH) and ends at PAPER, 2-4 tokens,
     ///         at most MAX_ROUTES.

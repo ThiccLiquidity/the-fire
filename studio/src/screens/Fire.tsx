@@ -3,11 +3,12 @@ import { Field, Notice, NumberInput, useAction } from '../components'
 import { hasCategory, hasValidName } from '../categories'
 import { frameSetLabel } from '../frames'
 import { randomSeed } from '../prng'
-import { castWarning, checkRecipe, holoOdds, holoOddsGivenHolo, previewPool, slotTypeIndexes, standardRecipe, type Recipe } from '../recipe'
+import { standardRecipe } from '../recipe'
 import { MAX_PACKS } from '../rules'
 import { artNeeds, isReadyFor, missingArt } from '../series'
 import { deleteFire, getStudio, saveFire, saveGlobal, updateFire, useStudio } from '../store'
 import { fireStatus, type Character, type FireRecord } from '../types'
+import { SeriesResult } from './SeriesResult'
 
 export function FireList({ selected, onSelect }: { selected: number | null; onSelect: (n: number) => void }) {
   const s = useStudio()
@@ -134,54 +135,13 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
           {fire.packs < 1 && !locked && <p className="field-msg err" data-testid="packs-problem">Packs: set at least 1 (a Series with no packs can't be dealt or uploaded).</p>}
         </div>
         <div>
-          <SeriesMakes recipe={fire.recipe} packs={fire.packs} chars={fire.characterIds.length} />
+          <h4>This Series will make</h4>
+          <SeriesResult recipe={fire.recipe} packs={BigInt(Math.max(0, fire.packs))} chars={fire.characterIds.length} compact />
+          <p className="muted small">Change it on the Recipe tab.</p>
         </div>
       </div>
       {error && <Notice kind="error">{error}</Notice>}
       {busy && <span className="muted small">saving...</span>}
     </section>
-  )
-}
-
-const fmtAbout = (x: number) => (x === 0 ? '0' : `≈ ${x < 10 ? x.toFixed(1) : Math.round(x).toLocaleString()}`)
-
-/** What this Series will make: exact card counts per type (the contract's pool maths) and the holos to expect. */
-function SeriesMakes({ recipe, packs, chars }: { recipe: Recipe; packs: number; chars: number }) {
-  const problems = useMemo(() => checkRecipe(recipe), [recipe])
-  // per-character types (Gold, Full Art) scale with the cast: at least 1 so an empty cast still shows the shape
-  const counts = useMemo(() => (problems.length ? null : previewPool(recipe, BigInt(Math.max(0, packs)), BigInt(Math.max(1, chars)))), [recipe, packs, chars, problems])
-  if (!counts) return <Notice kind="warn">The recipe has problems: fix them on the Recipe tab to see the pool.</Notice>
-  const S = recipe.slots.reduce((n, x) => n + x.count, 0)
-  const rows = recipe.types.map((t, i) => {
-    const n = Number(counts[i])
-    const inMust = recipe.slots.some((x) => x.mustHolo && slotTypeIndexes(recipe, x).includes(i))
-    const inPlain = recipe.slots.some((x) => !x.mustHolo && slotTypeIndexes(recipe, x).includes(i))
-    const o = inMust && !inPlain ? holoOddsGivenHolo(t) : holoOdds(t)
-    return { t, n, mixed: inMust && inPlain, h: { frame: n * o[1], picture: n * o[2], full: n * o[3] } }
-  })
-  const warn = castWarning(recipe, counts)
-  return (
-    <div data-testid="series-makes">
-      <h4>This Series will make</h4>
-      {warn && <Notice kind="warn">{warn}</Notice>}
-      <table className="mini">
-        <thead>
-          <tr><th rowSpan={2}>Type</th><th rowSpan={2}>Cards</th><th colSpan={3}>Holos (about; random per card)</th></tr>
-          <tr><th>Frame only</th><th>Picture only</th><th>Full</th></tr>
-        </thead>
-        <tbody>
-          {rows.map(({ t, n, h, mixed }) => (
-            <tr key={t.id}>
-              <td>{t.name}</td>
-              <td data-testid={`pool-${t.slug}`}><b>{n.toLocaleString()}</b></td>
-              {mixed ? <td colSpan={3} className="muted small">plain and must-holo slots: at least the plain-slot odds</td>
-                : <><td>{fmtAbout(h.frame)}</td><td>{fmtAbout(h.picture)}</td><td>{fmtAbout(h.full)}</td></>}
-            </tr>
-          ))}
-          <tr><td><b>Total</b></td><td><b>{(packs * S).toLocaleString()}</b></td><td colSpan={3} className="muted small">{S} per pack</td></tr>
-        </tbody>
-      </table>
-      <p className="muted small">Card counts are exact (the contract's pool for this pack count). Change the types, slots and odds on the Recipe tab.</p>
-    </div>
   )
 }

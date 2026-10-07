@@ -17,11 +17,12 @@ and burn PAPER). Prices and pricing models are in `docs/omni-economy.md`.
 
 ## Fresh odds
 
-A card cased or graded within **24 hours** of opening (being dealt) grades from its Series' fresh odds, set per Series
-in the studio and fixed once its drop is set up (`configureDrop` locks the Series). Fresh cards only grade **5-10**:
-grades 1-4 come only from time.
+A card cased or graded within **24 hours** of opening (being dealt) grades from the fresh odds. They are built into
+`FirePsa` as constants (`FRESH_5` ... `FRESH_10`, out of `ODDS_TOTAL` = 10,000; read them with `freshOdds()`): fixed
+forever, the same for every Series, and nobody can change them. Fresh cards only grade **5-10**: grades 1-4 come only
+from time.
 
-Standard fresh odds:
+Fresh odds (every Series):
 
 | PDA 10 | PDA 9 | PDA 8 | PDA 7 | PDA 6 | PDA 5 |
 |---|---|---|---|---|---|
@@ -31,7 +32,7 @@ Standard fresh odds:
 
 The wear rules are built into `FirePsa` as constants: the same for every Series, and nobody can change them.
 
-1. **Fresh grade** `g0`: rolled from the Series' fresh odds (5-10).
+1. **Fresh grade** `g0`: rolled from the fresh odds (5-10).
 2. **Moves.** Each of the first 10 wallet-to-wallet moves of an uncased, ungraded card (sales and plain transfers;
    sending a card to your own wallet doesn't count)
    takes a grade off with a 20% chance. Moves alone never take a card below 5 (a draw that would is re-drawn, so the
@@ -46,7 +47,7 @@ The wear rules are built into `FirePsa` as constants: the same for every Series,
 Casing freezes the clock and the move count where they are. Grading freezes them at the moment it is asked for (the
 randomness wait doesn't count).
 
-What a Standard card grades at (no moves):
+What a card grades at (no moves; the same for every Series):
 
 | Uncased for | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | Avg |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -84,8 +85,13 @@ switches images when it is cased or graded; nothing is drawn live.
 
 ## Metadata
 
-- **Ungraded:** Cased (Yes/No), Uncased age (days), Moves, PDA "Ungraded". The condition is never shown.
-- **Slabbed:** the PDA grade (the age and moves traits are gone).
+- **Ungraded:** Cased (Yes/No), Dealt (the date the card was dealt: a `date` trait, unix seconds, which marketplaces
+  show as a date), Moves, PDA "Ungraded". Once cased it adds **Age when cased (days)**, frozen. Every value is fixed,
+  so the metadata never changes just because time passes. The condition is never shown.
+- **Slabbed:** the PDA grade (the date, age and moves traits are gone).
+- `Dealt` is kept even if a grading is cancelled (the wear clock then resumes from where it stopped; the date doesn't
+  move). FireCards stores the deal time once, the first time a card's clock freezes (about 22k gas on that case or
+  grading request).
 
 ## Prices
 
@@ -98,8 +104,16 @@ switches images when it is cased or graded; nothing is drawn live.
   missing, nothing is spent and the fee waits in `PaperBurner` for a later buy. `PaperBurner` has no withdraw, its
   router is fixed, its price feeds are set once, and its routes may only pass through WETH, PLANK or USDG.
 
+## Grading requests
+
+- `protect` stores a hash of the cards sent for grading, not the list (less gas per card). `finish(index, ids)` and
+  `cancelGrading(index, ids)` take the list from the grading's `Protected` event (`graded`), in the same order.
+- The owner can pause case and grading payments (`setPaused`); finishing and cancelling never pause.
+- The randomness source can be switched at any time (only new gradings use it; each grading keeps its own:
+  `docs/randomness.md`). There is no re-request; a grading with no answer for 7 days can be cancelled.
+
 ## Locks
 
 | Fixed forever | Fixed per Series when its drop is set up | Owner can change (announced) |
 |---|---|---|
-| Wear rules (time, moves, fade-in), 24h fresh window, 100% fee burn, slabs final, cards per free pack 42, pack PAPER cap $1 | Fresh odds, recipe, characters, dealer, card images | Case and grading prices, cards per grading batch, the PAPER feed, routes |
+| Fresh PDA odds and wear rules (time, moves, fade-in), the same for every Series; 24h fresh window, 100% fee burn, slabs final, cards per free pack 42, suggestion PAPER ceiling $1 | Recipe, characters, dealer, card images, the drop's PAPER ceiling per pack | Case and grading prices, cards per grading batch, the PAPER feed, routes, the randomness source (new gradings only), pause on case and grading payments |

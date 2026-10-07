@@ -13,7 +13,7 @@ interface IUniswapV2Factory {
  *         be this contract, never a pool.
  *
  *         It starts with no pool and reports 0. Once a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool on the Uniswap V2
- *         factory holds at least MIN_LIQUIDITY_USD ($1,000) on its other side (PLANK valued by the PLANK feed), a
+ *         factory holds at least MIN_LIQUIDITY_USD ($10) on its other side (PLANK valued by the PLANK feed), a
  *         checkpoint marks it as the candidate; if it still qualifies at every checkpoint for MIN_WINDOW (20h), it's
  *         adopted, and the first price appears one full window (>= 20h) after that: about 40h after the first
  *         checkpoint, even when a pool already exists at deploy. A pool in the other
@@ -42,7 +42,7 @@ contract PaperUsdTwap {
     uint256 public constant MIN_WINDOW = 20 hours;
     uint256 public constant ETH_FEED_MAX_AGE = 25 hours;
     uint256 public constant SWITCH_FACTOR = 2; // another pool must hold 2x the dollar liquidity to take over
-    uint256 public constant MIN_LIQUIDITY_USD = 1_000e8; // a pool needs $1,000 on its dollar side to be considered
+    uint256 public constant MIN_LIQUIDITY_USD = 10e8; // a pool needs $10 on its dollar side to be considered (ignores empty and dust pools)
 
     IUniswapV2Pair public pair; // the pool the price comes from; address(0) until one exists
     address public quote; // WETH or USDG: what PAPER is priced in on that pool

@@ -305,7 +305,13 @@ async function pack(plan: UploadPlan, dir: string, files: UploadFile[], progress
   return car
 }
 
-export async function uploadFire(plan: UploadPlan, transport: PinataTransport): Promise<{ imagesCid: string; metadataCid: string }> {
+/** Whether Pinata (with the session JWT) has this CID pinned: the check after both pins. */
+export async function pinataHas(transport: PinataTransport, cid: string): Promise<boolean> {
+  if (!sessionJwt) throw new Error('Enter the Pinata JWT first.')
+  return transport.isPinned(sessionJwt, cid)
+}
+
+export async function uploadFire(plan: UploadPlan, transport: PinataTransport): Promise<{ imagesCid: string; metadataCid: string; imagesCar: { root: string; size: number } }> {
   const jwt = sessionJwt
   if (!jwt) throw new Error('Enter the Pinata JWT first.')
   const imagesDir = plan.imagesDirName ?? `fire-${plan.fire}-images`
@@ -347,6 +353,6 @@ export async function uploadFire(plan: UploadPlan, transport: PinataTransport): 
     await plan.save({ metadataCid })
   }
   plan.onProgress(1)
-  plan.onStatus('Done.')
-  return { imagesCid, metadataCid }
+  plan.onStatus('Pinata done.')
+  return { imagesCid, metadataCid, imagesCar: car }
 }

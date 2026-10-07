@@ -49,14 +49,15 @@ interface ICardsRenderer {
  *         The owner sets each Series' dealer and image folder before its first pack is minted, and the royalty. The
  *         image folder locks at the first pack (the art people buy can never be swapped). Nobody can change a card
  *         once it is dealt.
+ *
+ *         Randomness source: the owner can switch it at any time (announced publicly first; `RandomnessSet` logs every
+ *         switch). Only new opens use the new source. Each open remembers the source that took its request, only that
+ *         source can answer it, and an open waiting on an old source can still be answered by it (or cancelled after
+ *         CANCEL_AFTER). There is no re-request: one open, one request, one number.
  */
 contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
-    /// @dev An open's randomness can be asked for again only after a full day with no answer. drand publishes each
-    ///      round's number ~30s before anyone delivers it, so a short wait would let an opener who dislikes the cards
-    ///      they can already see re-roll while the keeper is down. Anyone (the site, the keeper) can deliver a word.
-    uint256 public constant REREQUEST_AFTER = 1 days;
     uint96 public constant MAX_ROYALTY_BPS = 1_000;
-    /// @dev Last resort if randomness is gone for good: an open with no answer this long after it was first asked for
+    /// @dev Last resort if randomness is gone for good: an open with no answer this long after it was asked for
     ///      can be cancelled and its packs go back to the holder, sealed. Also how long a ready open can sit at the
     ///      head of its queue without being dealt (a dealer that can't deal it) before anyone can skip it.
     uint256 public constant CANCEL_AFTER = 7 days;
@@ -90,6 +91,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     address public psa;
     /// @notice Writes each card's metadata JSON (set once).
     ICardsRenderer public renderer;
+    /// @notice Collection metadata (ERC-7572), set by the owner.
+    string public contractURI;
 
     struct FireInfo {
         IDealer dealer;
@@ -102,15 +105,15 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
 
     struct Open {
         address to;
-        uint64 requestedAt; // the latest request
-        uint64 firstRequestedAt; // the first request (the cancel clock never restarts)
+        uint64 requestedAt;
         uint64 readyAt;
         bool ready;
         uint64 count; // packs (0 once cancelled or skipped)
         uint64 packsDone; // progress while dealing
         uint32 cardInPack;
+        address source; // the randomness source that took the request (only it can answer)
+        uint96 requestId;
         uint64 packBase; // first serial of the pack being dealt
-        uint256 requestId;
         uint256 word;
     }
 
@@ -121,7 +124,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     /// @notice Each Series' opening queue, oldest first, and its head (next open to deal).
     mapping(uint256 fire => Open[]) internal _opens;
     mapping(uint256 fire => uint256) public headOf;
-    mapping(uint256 requestId => uint256) internal _openOf; // (fire << 128) | (index + 1)
+    /// @dev (source << 96 | requestId) -> (fire << 128) | (index + 1)
+    mapping(uint256 request => uint256) internal _openOf;
 
     /// @dev Per card (see the B_ layout): Series, type, character, edition, clock, holo, grade, frozen, cased,
     ///      moves, dealer extra.
@@ -129,11 +133,13 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     mapping(bytes32 => uint64) internal _editions; // (fire, character, type) -> cards dealt so far
     /// @notice A grading is waiting for its randomness: the card can't move until its grade is set.
     mapping(uint256 tokenId => bool) public gradePending;
+    /// @dev When a card was dealt, kept once its clock first freezes (cased or sent for grading); until then the
+    ///      card's clock is its deal time.
+    mapping(uint256 tokenId => uint256) internal _dealtAt;
 
     event RandomnessSet(address source);
     event PsaSet(address psa);
     event RendererSet(address renderer);
-    event Rerequested(uint256 indexed fire, uint256 indexed openIndex, uint256 requestId);
     event OpenCancelled(uint256 indexed fire, uint256 indexed openIndex, address indexed holder, uint256 count);
     event OpenSkipped(uint256 indexed fire, uint256 indexed openIndex, address indexed holder, uint256 packsBack);
     event RoyaltySet(address receiver, uint96 bps);
@@ -150,6 +156,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     event OpenReady(uint256 indexed fire, uint256 indexed openIndex, uint256 word);
     event CardDealt(uint256 indexed fire, uint256 indexed serial, uint256 openIndex, uint256 cardType, bool holoFrame, bool holoPicture, uint256 character);
     event BatchMetadataUpdate(uint256 fromTokenId, uint256 toTokenId); // ERC-4906
+    event ContractURIUpdated(); // ERC-7572
 
     error AlreadySet();
     error ZeroAddress();
@@ -171,6 +178,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     error GradingInProgress();
     error RoyaltyTooHigh();
     error BadDeal();
+    error BadRequest();
+    error RenounceDisabled();
 
     constructor(address owner_, address packs_) ERC721("Omni Cards", "OMNICARD") Ownable(owner_) {
         if (packs_ == address(0)) revert ZeroAddress();
@@ -179,11 +188,23 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
 
     // ---------- owner setup ----------
 
+    /// @notice Ownership can be handed over (two steps) but never renounced, so control can't be lost by mistake.
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
+    }
+
+    /// @notice The randomness source for new opens. The owner can switch it at any time (no delay; announced
+    ///         publicly first). Opens already waiting keep their own source.
     function setRandomness(address source) external onlyOwner {
-        if (address(randomness) != address(0)) revert AlreadySet();
         if (source == address(0)) revert ZeroAddress();
         randomness = IRandomnessSource(source);
         emit RandomnessSet(source);
+    }
+
+    /// @notice Collection metadata for marketplaces (ERC-7572).
+    function setContractURI(string calldata uri) external onlyOwner {
+        contractURI = uri;
+        emit ContractURIUpdated();
     }
 
     function setSeller(address s) external onlyOwner {
@@ -295,7 +316,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         uint256 d = _card[serial];
         if ((d >> B_GRADE) & 15 != 0) revert AlreadyGraded();
         if ((d >> B_CASED) & 1 != 0) revert AlreadyCased();
-        d = _freeze(d) | (1 << B_CASED);
+        d = _freeze(serial, d) | (1 << B_CASED);
         _card[serial] = d;
         emit Cased(serial, (d >> B_CLOCK) & M40, (d >> B_MOVES) & 15);
         emit MetadataUpdate(serial);
@@ -308,7 +329,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         uint256 d = _card[serial];
         if (pending_) {
             _requireOwned(serial);
-            _card[serial] = _freeze(d);
+            _card[serial] = _freeze(serial, d);
         } else if ((d >> B_CASED) & 1 == 0 && (d >> B_FROZEN) & 1 == 1 && (d >> B_GRADE) & 15 == 0) {
             uint256 age = (d >> B_CLOCK) & M40;
             d &= ~((M40 << B_CLOCK) | (1 << B_FROZEN));
@@ -329,13 +350,16 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         _requireOwned(serial);
         uint256 d = _card[serial];
         if ((d >> B_GRADE) & 15 != 0) revert AlreadyGraded();
-        _card[serial] = _freeze(d) | (grade << B_GRADE);
+        _card[serial] = _freeze(serial, d) | (grade << B_GRADE);
         emit MetadataUpdate(serial);
     }
 
-    function _freeze(uint256 d) private view returns (uint256) {
+    function _freeze(uint256 serial, uint256 d) private returns (uint256) {
         if ((d >> B_FROZEN) & 1 == 1) return d;
-        uint256 age = block.timestamp - ((d >> B_CLOCK) & M40);
+        uint256 clock = (d >> B_CLOCK) & M40;
+        // the first freeze keeps the deal time (a cancelled grading restarts the clock from where it stopped)
+        if (_dealtAt[serial] == 0) _dealtAt[serial] = clock;
+        uint256 age = block.timestamp - clock;
         return (d & ~(M40 << B_CLOCK)) | (age << B_CLOCK) | (1 << B_FROZEN);
     }
 
@@ -369,53 +393,43 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         if (count == 0 || count > type(uint64).max) revert BadCount();
         if (!fires[fire].closed) revert FireNotClosed();
         PACKS.burnForOpen(msg.sender, fire, count);
-        uint256 id = randomness.request();
+        IRandomnessSource src = randomness;
+        uint256 id = src.request();
+        if (id > type(uint96).max) revert BadRequest();
         Open[] storage q = _opens[fire];
         index = q.length;
         Open storage o = q.push();
         o.to = msg.sender;
         o.requestedAt = uint64(block.timestamp);
-        o.firstRequestedAt = uint64(block.timestamp);
         o.count = uint64(count);
-        o.requestId = id;
-        _openOf[id] = (fire << 128) | (index + 1);
+        o.source = address(src);
+        o.requestId = uint96(id);
+        _openOf[_reqKey(address(src), id)] = (fire << 128) | (index + 1);
         emit PacksOpened(fire, index, msg.sender, count, id);
     }
 
-    /// @dev Randomness callback: only stores the word (cheap, can't fail); dealing happens in process.
+    /// @dev Randomness callback: only stores the word (cheap, can't fail); dealing happens in process. Only the
+    ///      source that took a request can answer it.
     function onRandomness(uint256 requestId, uint256 word) external {
-        if (msg.sender != address(randomness)) revert NotRandomness();
-        uint256 key = _openOf[requestId];
-        if (key == 0) return; // stale request (replaced by rerequest)
+        uint256 rk = requestId > type(uint96).max ? 0 : _reqKey(msg.sender, requestId);
+        uint256 key = _openOf[rk];
+        if (key == 0) revert NotRandomness(); // not this source's request, or the open was cancelled
         uint256 fire = key >> 128;
         uint256 i = uint128(key) - 1;
         Open storage o = _opens[fire][i];
-        delete _openOf[requestId];
-        if (o.ready) return;
+        delete _openOf[rk];
         o.word = word;
         o.ready = true;
         o.readyAt = uint64(block.timestamp);
         emit OpenReady(fire, i, word);
     }
 
-    /// @notice If an open's randomness never arrived (a day on, and the router has no answer), anyone can ask again.
-    function rerequest(uint256 fire, uint256 index) external nonReentrant {
-        Open storage o = _opens[fire][index];
-        if (o.ready || block.timestamp < o.requestedAt + REREQUEST_AFTER || randomness.answered(o.requestId)) revert NotStuck();
-        delete _openOf[o.requestId];
-        uint256 id = randomness.request();
-        o.requestId = id;
-        o.requestedAt = uint64(block.timestamp);
-        _openOf[id] = (fire << 128) | (index + 1);
-        emit Rerequested(fire, index, id);
-    }
-
-    /// @notice If an open's randomness has had no answer for CANCEL_AFTER since it was first asked for (randomness
-    ///         gone for good), anyone can cancel it: its packs go back to the holder, sealed.
+    /// @notice If an open's randomness has had no answer for CANCEL_AFTER since it was asked for (randomness gone for
+    ///         good), anyone can cancel it: its packs go back to the holder, sealed.
     function cancelOpen(uint256 fire, uint256 index) external nonReentrant {
         Open storage o = _opens[fire][index];
-        if (o.ready || block.timestamp < o.firstRequestedAt + CANCEL_AFTER || randomness.answered(o.requestId)) revert NotStuck();
-        delete _openOf[o.requestId];
+        if (o.ready || block.timestamp < o.requestedAt + CANCEL_AFTER || _answered(o.source, o.requestId)) revert NotStuck();
+        delete _openOf[_reqKey(o.source, o.requestId)];
         uint256 count = o.count;
         o.count = 0; // dealt as nothing when the queue reaches it
         o.ready = true;
@@ -506,6 +520,16 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
 
     function openCount(uint256 fire) external view returns (uint256) {
         return _opens[fire].length;
+    }
+
+    function _reqKey(address source, uint256 id) private pure returns (uint256) {
+        return (uint256(uint160(source)) << 96) | id;
+    }
+
+    /// @dev Whether `source` holds an answer for `id`; a source that can't say counts as no answer.
+    function _answered(address source, uint256 id) private view returns (bool) {
+        (bool ok, bytes memory ret) = source.staticcall(abi.encodeCall(IRandomnessSource.answered, (id)));
+        return ok && ret.length >= 32 && abi.decode(ret, (bool));
     }
 
     function _perPack(uint256 fire, FireInfo storage f) private returns (uint256 per) {
@@ -629,6 +653,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         bool cased;
         uint256 age; // seconds uncased since dealt (frozen once cased or sent for grading)
         uint256 moves;
+        uint256 dealtAt; // when it was dealt (unix seconds)
         uint256 extra; // dealer-defined
     }
 
@@ -643,6 +668,8 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         c.holoPicture = (d >> B_HOLO_PICTURE) & 1 == 1;
         c.extra = uint32(d >> B_EXTRA);
         (,, c.grade, c.cased, c.age, c.moves) = wearOf(serial);
+        uint256 at = _dealtAt[serial];
+        c.dealtAt = at != 0 ? at : (d >> B_CLOCK) & M40;
         FireInfo storage f = fires[c.fire];
         if (f.dealt == f.packs) c.editionOf = _editions[keccak256(abi.encode(c.fire, c.character, c.cardType))];
     }

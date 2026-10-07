@@ -180,3 +180,14 @@ body[data-mode=port] .buybar .fan.mini { width: 52px }
 .tease-inline { cursor: pointer; justify-content: center } .tease-inline .ti-text b { font: 400 24px/1 var(--display); color: var(--gold) }
 .tease-inline .ti-text small { order: 2; letter-spacing: .08em; color: var(--muted); text-transform: none; font: italic 700 14px var(--body) }
 .station.peek { grid-template-columns: auto 1fr; align-items: center } .station.peek b { font: 400 18px var(--display) }
+
+/* New here? the first-timer checklist (and its link in the demo strip) */
+.start-link { margin-left: 4px; padding: 2px 4px; border: 0; background: none; color: var(--gold); font: 800 12px/1 var(--body); text-decoration: underline; text-underline-offset: 2px; cursor: pointer }
+@media (max-width: 520px) { .dn-more { display: none } }
+.start-list { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px }
+.start-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2) }
+.start-n { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font: 400 14px var(--display); color: var(--brass); border: 1.5px solid var(--line-2) }
+.start-t { flex: 1; min-width: 0; display: grid; gap: 2px } .start-t small { color: var(--muted); font-size: 13px }
+.start-list li.done { border-color: #2c5a33 } .start-list li.done .start-n { background: var(--good); border-color: var(--good); color: #0c1a0e }
+.start-list li.done .start-t b { color: var(--muted) }
+.menu-links { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0 }

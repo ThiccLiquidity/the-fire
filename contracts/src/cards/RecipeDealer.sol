@@ -139,6 +139,7 @@ contract RecipeDealer is IDealer, Ownable2Step {
     event PoolSet(uint256 indexed fire, uint256 packs, uint256[] counts);
 
     error NotCards();
+    error RenounceDisabled();
     error FireIsLocked();
     error NotConfigured();
     error NotClosed();
@@ -170,6 +171,11 @@ contract RecipeDealer is IDealer, Ownable2Step {
     }
 
     // ================================================================ owner
+
+    /// @notice Ownership can be handed over (two steps) but never renounced, so control can't be lost by mistake.
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
+    }
 
     /// @notice Set (or replace) a Series' recipe. Until the Series' first pack is minted, it is locked or closed.
     function setRecipe(uint256 fire, Recipe calldata r) external onlyOwner {

@@ -18,16 +18,12 @@ Naming: the card contracts are named `Fire*` for historical reasons (`Fire*` is 
 
 ## Open work before launch
 
-1. **Keeper bot.** Required before the first drop. Every call is permissionless (see `ops/README.md`):
-   - `PlankUsdTwap.checkpoint()` every 30 minutes
-   - `PaperUsdTwap.checkpoint()` when `due()`
-   - `PaperBurner.flush(pay)` when a case or grading fee is waiting (`Waiting` events)
-   - delivering drand numbers to the router (`OpenDrandRouter.fulfill`; `adapter.settle` if a callback didn't land)
-   - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index)` if the site doesn't call them
+1. **Keeper bot.** Built (`ops/keeper`): Railway plus a GitHub Actions backup. Before the first drop: two funded
+   gas-only wallets, the Railway service and the repository secrets (`ops/keeper/README.md`).
 2. **Real wallet connection on the site.** Wire the Forge's buy, open, case and grade, burn and suggestion screens to the
    deployed contracts through `web/src/lib`, replacing the demo store and the demo banner. Planned with it: loading
    each buyer's holder-window proof automatically, the "Get PAPER" box (KyberSwap, 0.5% fee), and calling
-   `process(fire, maxCards)` and `finish(index)` right after randomness arrives.
+   `process(fire, maxCards)` and `finish(index, ids)` right after randomness arrives.
 3. **Series content.** Characters, their categories (free text, set in the Card Studio) and their source images,
    built (216 WEBP images per character) and uploaded with the Card Studio; pack art per Series. The Gold and Full Art
    frames (being made by the owner). A Series' images lock when its drop is set up (`configureDrop`), so upload the
@@ -35,10 +31,10 @@ Naming: the card contracts are named `Fire*` for historical reasons (`Fire*` is 
 4. **Real-chain gas test.** Run `contracts/test/cards/SaleFork.t.sol` against Robinhood Chain (real router gas and the
    real PLANK swap).
 5. **On-chain checks.** PAPER (`0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6`) has 18 decimals; transfers to
-   `0x…dEaD` work for PAPER and PLANK; a USDG/WETH V2 pool exists (otherwise the USDG burn share always goes to the
-   burn wallet); PLANK's PulpPool reward-list status (`docs/addresses.md`).
+   `0x…dEaD` work for PAPER and PLANK; a USDG/WETH V2 pool exists (otherwise the USDG burn share always goes to
+   `PlankBurner`, which can't swap it either); PLANK's PulpPool reward-list status (`docs/addresses.md`).
 6. **PAPER price feed timing.** `PaperUsdTwap` reports its first price about 40 hours after the keeper's first
-   checkpoint. Deploy it and start the keeper early enough: until then packs take the set PAPER with no $1 cap, and
+   checkpoint. Deploy it and start the keeper early enough: until then packs take the set PAPER with no dollar ceiling, and
    case and grading fees wait in `PaperBurner`.
 7. **Grading numbers.** Case and grading prices are not final until the last numbers audit (`docs/grading.md`).
 8. **Testnet run** of every flow end to end, and a small first drop.
@@ -53,6 +49,6 @@ Public addresses only; private keys stay in the Foundry keystore or a Ledger.
 |---|---|
 | Deployer wallet | Deploys everything; has no powers once the multisig accepts ownership |
 | `OWNER` multisig | Owns the card contracts and configures each Series |
-| `REVENUE_WALLET`, `BURN_WALLET` | 70% of sales / fallback for the 30% burn share (must differ) |
+| `REVENUE_WALLET` | 70% of sales (the 30% burn share falls back to the deployed PlankBurner, which has no withdraw) |
 | `ROYALTY_RECEIVER`, `ROYALTY_BPS` | Resale royalties on packs and cards (max 10%) |
 | `SWAP_FEE_WALLET` in `web/src/lib/config.ts` | The site's 0.5% swap fee (no fee while unset) |
