@@ -1140,9 +1140,9 @@
     function renderAct() {
       const txt = ta.value.trim(); let a;
       if (!connected()) a = connectBtn();
-      else if (paper() < 1) a = h('div', { class: 'row' }, h('span', { class: 'why', text: 'Need 1 PAPER' }), btn('Send', 'primary', null, { disabled: true }), getPaperBtn());
+      else if (paper() < Store.PRICES.SUGGEST_PAPER) a = h('div', { class: 'row' }, h('span', { class: 'why', text: `Need ${Store.PRICES.SUGGEST_PAPER} PAPER` }), btn('Send', 'primary', null, { disabled: true }), getPaperBtn());
       else a = btn('Send', 'primary', send, { disabled: !txt });
-      put(act, h('span', { class: 'muted', html: `Costs <b class="price">1 PAPER</b> · you have ${paper()}` }), a);
+      put(act, h('span', { class: 'muted', html: `Costs <b class="price">${Store.PRICES.SUGGEST_PAPER} PAPER</b> · you have ${paper()}` }), a);
     }
     function renderList() {
       const list = S().suggestions;
@@ -1152,7 +1152,7 @@
         : h('p', { class: 'muted', text: 'Nothing yet.' }));
     }
     function send() {
-      const text = ta.value.trim(); if (!text || paper() < 1 || !connected()) return;
+      const text = ta.value.trim(); if (!text || paper() < Store.PRICES.SUGGEST_PAPER || !connected()) return;
       Store.update((s) => { s.wallet.balances.PAPER -= 1; s.suggestions.unshift({ text, at: 'Series ' + s.series.no, picked: false }); Store.log('Suggested a character'); });
       ta.value = ''; count.textContent = `0 / ${MAX}`; renderAct(); toast('Sent. Fingers crossed!', 'good');
     }

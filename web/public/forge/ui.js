@@ -46,14 +46,14 @@
     <button class="pill" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
     <button class="pill openp" type="button" data-st="open" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
     <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small>${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></span></button>
-    <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small>1 PAPER</small></span></button>
+    <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small>${Store.PRICES.SUGGEST_PAPER} PAPER</small></span></button>
     <button class="pill peek" type="button" data-peek data-x="2880" data-y="700" style="--c: var(--gold)"><span class="peek-fan" aria-hidden="true"><img alt=""><img alt=""></span><span><b id="pPeekT">Series 8</b><small id="pPeek"></small></span></button>
   </div>
   <section class="stations" aria-label="Stations">
     <button class="station" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
     <button class="station" type="button" data-st="cards" style="--c: var(--wood)">${svg('cards')}<b>My cards</b><small id="sCards"></small></button>
     <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small>${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></button>
-    <button class="station" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small>1 PAPER</small></button>
+    <button class="station" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small>${Store.PRICES.SUGGEST_PAPER} PAPER</small></button>
     <button class="station peek" type="button" data-peek><span class="peek-fan" aria-hidden="true"><img alt=""><img alt=""></span><b id="sPeekT">Series 8</b><small id="sPeek"></small></button>
     <button class="openbtn" type="button" data-st="open" id="openBtn">${svg('pack')}<span><b id="sOpenT">Open packs</b><small id="sOpen"></small></span></button>
   </section>
@@ -126,8 +126,8 @@
     if (sold()) return { line: `Series ${S.series.no} sold out`, opts: [] }; // just the tease: Open packs is already on the scene / in the stations
     let sub2 = ph.plankOnly ? `PLANK-only packs: ${S.series.plankOnly - S.series.plankSold} left` : ph.sub;
     out.push(['buy', 'Buy packs', `${Wear.usd(PRICE)} + PAPER<br>${sub2}`, 'main']);
-    if (S.series.phase <= 1 && !w.starterClaimed && S.series.startersClaimed < S.series.starters) out.push(['starter', 'Press pack', 'Press holders<br>1 PAPER', 'alt']);
-    if (w.credits > 0) out.push(['free', `Free pack (${w.credits})`, '1 PAPER<br>any time', 'gold']);
+    if (S.series.phase <= 1 && !w.starterClaimed && S.series.startersClaimed < S.series.starters) out.push(['starter', 'Press pack', `Press holders<br>${Store.PRICES.PRESS_PAPER} PAPER`, 'alt']);
+    if (w.credits > 0) out.push(['free', `Free pack (${w.credits})`, `${Store.PRICES.PACK_PAPER} PAPER<br>any time`, 'gold']);
     return { line: ph.window ? `${ph.line} · ${ph.window}h left` : ph.limit ? `${ph.line} · max 5 for ${ph.limit}h` : ph.line, opts: out };
   }
   function renderBuy() {
@@ -268,7 +268,7 @@
   function starter() {
     needWallet(() => {
       if (!S.wallet.isPressHolder) return Sheet.open('nope', { title: 'Press packs', body: '<p class="lead">Press packs are for Paper Press holders.</p>' });
-      const d = Sheet.open('starter', { title: 'Press pack', body: `<p class="lead">For Paper Press holders. ${S.series.starters - S.series.startersClaimed} left.</p><div class="checkout">${DEMO_LINE}<button class="btn primary go" type="button">Claim for 1 PAPER</button></div>` });
+      const d = Sheet.open('starter', { title: 'Press pack', body: `<p class="lead">For Paper Press holders. ${S.series.starters - S.series.startersClaimed} left.</p><div class="checkout">${DEMO_LINE}<button class="btn primary go" type="button">Claim for ${Store.PRICES.PRESS_PAPER} PAPER</button></div>` });
       d.querySelector('.go').onclick = () => { d.close(); Store.update((s) => { s.wallet.starterClaimed = true; s.wallet.balances.PAPER -= 1; s.series.startersClaimed++; s.series.sold--; }); pendingDeliver++; Scene?.buy(1); toast('Press pack on its way', 'good'); };
     });
   }

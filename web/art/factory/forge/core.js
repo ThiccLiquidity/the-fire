@@ -12,7 +12,7 @@
   const NAMES = Object.keys(CHARS);
   const DAY = 86400000;
   // demo prices: the pack, and the coins it can be paid in (cases and grades are priced in dollars too)
-  const PRICES = { PACK_USD: 2.5, PAPER_USD: 0.08, ETH_USD: 2500, PLANK_USD: 0.0000021, CASE_USD: 0.05, GRADE_USD: 1 };
+  const PRICES = { PACK_USD: 2.5, PAPER_USD: 0.08, ETH_USD: 2500, PLANK_USD: 0.0000021, CASE_USD: 0.05, GRADE_USD: 1, PACK_PAPER: 1, PRESS_PAPER: 1, SUGGEST_PAPER: 1 }; // this Series' settings (per drop)
   // demo collection: cards from Series 6 (already closed; the card images print "Forged · Series 6"), with a spread of materials, holos and grades
   let seed = 7; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const pickMat = () => { const u = R(); return u < 0.5 ? 'paper' : u < 0.8 ? 'wood' : u < 0.95 ? 'fire' : u < 0.995 ? 'charcoal' : 'diamond'; };
