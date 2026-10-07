@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Script, console} from "forge-std/Script.sol";
+import {console} from "forge-std/Script.sol";
 import {OpenDrandRouter} from "../src/OpenDrandRouter.sol";
 import {PaperUsdTwap} from "../src/PaperUsdTwap.sol";
 import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {Deployments} from "./Deployments.sol";
 
 interface IInfraFeed {
     function decimals() external view returns (uint8);
@@ -23,30 +24,45 @@ interface IInfraFeed {
  *   forge script script/DeployInfra.s.sol --rpc-url $RPC --account deployer --sender <deployer address> --slow --broadcast \
  *     --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
  *
- * Settings (.env): PAPER, USDG, WETH, UNIV2_FACTORY, ETH_USD_FEED, PLANK, PLANK_USD_FEED (step 1's PlankUsdTwap).
+ * Settings (.env): PAPER, USDG, WETH, UNIV2_FACTORY, ETH_USD_FEED, PLANK, PLANK_USD_FEED (step 1's PlankUsdTwap; read
+ * from deployments/<chainId>.json when not set). Writes both addresses there when it broadcasts.
  */
-contract DeployInfra is Script {
+contract DeployInfra is Deployments {
     function run() external returns (OpenDrandRouter router, PaperUsdTwap paperTwap) {
-        require(block.chainid == 4663, "not Robinhood Chain (4663)");
-        string[7] memory names = ["PAPER", "USDG", "WETH", "UNIV2_FACTORY", "ETH_USD_FEED", "PLANK", "PLANK_USD_FEED"];
+        require(block.chainid == vm.envOr("EXPECTED_CHAIN_ID", uint256(4663)), "not Robinhood Chain (4663; EXPECTED_CHAIN_ID for a rehearsal)");
+        address plankUsd = _addr("PLANK_USD_FEED", "PlankUsdTwap");
+        string[6] memory names = ["PAPER", "USDG", "WETH", "UNIV2_FACTORY", "ETH_USD_FEED", "PLANK"];
         for (uint256 i; i < names.length; i++) {
             require(vm.envAddress(names[i]).code.length > 0, string.concat(names[i], " has no contract code"));
         }
+        require(plankUsd.code.length > 0, "PLANK_USD_FEED has no contract code");
         require(IERC20Metadata(vm.envAddress("PAPER")).decimals() == 18, "PAPER is not 18 decimals");
         require(IInfraFeed(vm.envAddress("ETH_USD_FEED")).decimals() == 8, "ETH_USD_FEED must have 8 decimals");
         require(IERC20Metadata(vm.envAddress("PLANK")).decimals() == 18, "PLANK is not 18 decimals");
-        require(IInfraFeed(vm.envAddress("PLANK_USD_FEED")).decimals() == 18, "PLANK_USD_FEED must be the 18-decimal PlankUsdTwap");
+        require(IInfraFeed(plankUsd).decimals() == 18, "PLANK_USD_FEED must be the 18-decimal PlankUsdTwap");
 
         vm.startBroadcast();
         router = new OpenDrandRouter();
         paperTwap = new PaperUsdTwap(
             vm.envAddress("UNIV2_FACTORY"), vm.envAddress("PAPER"), vm.envAddress("WETH"), vm.envAddress("USDG"),
             IERC20Metadata(vm.envAddress("USDG")).decimals(), vm.envAddress("ETH_USD_FEED"), vm.envAddress("PLANK"),
-            vm.envAddress("PLANK_USD_FEED")
+            plankUsd
         );
         vm.stopBroadcast();
 
         console.log("OpenDrandRouter (DRAND_ROUTER):", address(router));
         console.log("PaperUsdTwap (PAPER_USD_FEED): ", address(paperTwap));
+
+        string[] memory names2 = new string[](2);
+        address[] memory addrs = new address[](2);
+        (names2[0], names2[1]) = ("OpenDrandRouter", "PaperUsdTwap");
+        (addrs[0], addrs[1]) = (address(router), address(paperTwap));
+        string[] memory inNames = new string[](5);
+        address[] memory inAddrs = new address[](5);
+        for (uint256 i; i < 5; i++) {
+            inNames[i] = names[i];
+            inAddrs[i] = vm.envAddress(names[i]);
+        }
+        _record(names2, addrs, inNames, inAddrs, address(0), address(0));
     }
 }

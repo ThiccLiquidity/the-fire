@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Script, console} from "forge-std/Script.sol";
+import {console} from "forge-std/Script.sol";
+import {Deployments} from "./Deployments.sol";
 import {FirePacks} from "../src/cards/FirePacks.sol";
 import {FireCards} from "../src/cards/FireCards.sol";
 import {FireSale} from "../src/cards/FireSale.sol";
@@ -82,12 +83,16 @@ interface ICardsPair {
  *   SUGGESTION_PAPER  PAPER wei per character suggestion to start (default 1e18 = 1 PAPER; 0 = free). The owner can
  *                     change it later (FireCredits.setSuggestionRules). Every other sale number is set per drop.
  *
+ * DRAND_ROUTER, PLANK_USD_FEED and PAPER_USD_FEED are read from deployments/<chainId>.json (written by steps 1 and 2)
+ * when not set. When it broadcasts it adds every contract it deployed (and its inputs) to that file; VerifyDeploy.s.sol
+ * then checks the result.
+ *
  * Left for the owner afterwards, per Series (script/ConfigureSeries.s.sol builds these calls from the studio's recipe
  * JSON): RecipeDealer.setRecipe and setCharacters (appendCharacters for long lists), FireCards.setDealer and
  * setImagesBase, optionally FirePsa.setOdds, then FireSale.configureDrop from the JSON's "sale" block (which locks the
  * Series); and FireCredits.pickSuggestions.
  */
-contract DeployCards is Script {
+contract DeployCards is Deployments {
     struct Params {
         address router; // drand
         address owner;
@@ -124,7 +129,7 @@ contract DeployCards is Script {
 
     function run() external returns (Deployed memory d) {
         Params memory p = Params({
-            router: vm.envAddress("DRAND_ROUTER"),
+            router: _addr("DRAND_ROUTER", "OpenDrandRouter"),
             owner: vm.envAddress("OWNER"),
             royaltyTo: vm.envAddress("ROYALTY_RECEIVER"),
             royaltyBps: uint96(vm.envUint("ROYALTY_BPS")),
@@ -135,8 +140,8 @@ contract DeployCards is Script {
             weth: vm.envAddress("WETH"),
             press: vm.envAddress("MILL"),
             ethUsd: vm.envAddress("ETH_USD_FEED"),
-            plankUsd: vm.envAddress("PLANK_USD_FEED"),
-            paperUsd: vm.envAddress("PAPER_USD_FEED"),
+            plankUsd: _addr("PLANK_USD_FEED", "PlankUsdTwap"),
+            paperUsd: _addr("PAPER_USD_FEED", "PaperUsdTwap"),
             v2Router: vm.envAddress("V2_ROUTER"),
             revenueWallet: vm.envAddress("REVENUE_WALLET"),
             suggestionPaper: vm.envOr("SUGGESTION_PAPER", uint256(1e18))
@@ -160,6 +165,41 @@ contract DeployCards is Script {
         console.log("Adapter (cards)", address(d.adapter));
         console.log("Adapter (PDA)  ", address(d.psaAdapter));
         console.log("Next: the OWNER multisig calls acceptOwnership() on FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner.");
+        _recordCards(d, p);
+    }
+
+    function _recordCards(Deployed memory d, Params memory p) internal {
+        string[] memory names = new string[](15);
+        address[] memory addrs = new address[](15);
+        (names[0], addrs[0]) = ("FirePacks", address(d.packs));
+        (names[1], addrs[1]) = ("FireCards", address(d.cards));
+        (names[2], addrs[2]) = ("CardsRenderer", address(d.renderer));
+        (names[3], addrs[3]) = ("RecipeDealer", address(d.dealer));
+        (names[4], addrs[4]) = ("RecipeCompiler", address(d.compiler));
+        (names[5], addrs[5]) = ("PlankBurner", address(d.plankBurner));
+        (names[6], addrs[6]) = ("FireCredits", address(d.credits));
+        (names[7], addrs[7]) = ("FireSale", address(d.sale));
+        (names[8], addrs[8]) = ("PaperBurner", address(d.burner));
+        (names[9], addrs[9]) = ("FirePsa", address(d.psa));
+        (names[10], addrs[10]) = ("CardsAdapter", address(d.adapter));
+        (names[11], addrs[11]) = ("PsaAdapter", address(d.psaAdapter));
+        (names[12], addrs[12]) = ("OpenDrandRouter", p.router);
+        (names[13], addrs[13]) = ("PlankUsdTwap", p.plankUsd);
+        (names[14], addrs[14]) = ("PaperUsdTwap", p.paperUsd);
+        string[] memory inNames = new string[](11);
+        address[] memory inAddrs = new address[](11);
+        (inNames[0], inAddrs[0]) = ("PAPER", p.paper);
+        (inNames[1], inAddrs[1]) = ("PLANK", p.plank);
+        (inNames[2], inAddrs[2]) = ("USDG", p.usdg);
+        (inNames[3], inAddrs[3]) = ("WETH", p.weth);
+        (inNames[4], inAddrs[4]) = ("MILL", p.press);
+        (inNames[5], inAddrs[5]) = ("ETH_USD_FEED", p.ethUsd);
+        (inNames[6], inAddrs[6]) = ("V2_ROUTER", p.v2Router);
+        (inNames[7], inAddrs[7]) = ("REVENUE_WALLET", p.revenueWallet);
+        (inNames[8], inAddrs[8]) = ("ROYALTY_RECEIVER", p.royaltyTo);
+        (inNames[9], inAddrs[9]) = ("OWNER", p.owner);
+        (inNames[10], inAddrs[10]) = ("UNIV2_FACTORY", ICardsV2Router(p.v2Router).factory());
+        _record(names, addrs, inNames, inAddrs, p.owner, msg.sender);
     }
 
     /// @dev Split out so tests can run the exact same steps.
