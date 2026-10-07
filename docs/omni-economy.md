@@ -14,7 +14,7 @@ made of it. Each drop opens with PLANK lighting the forge.
 
 ## Every number is set per drop
 
-The owner (the `OWNER` multisig) sets these for each drop (each Series) before it launches (`configureDrop`). They lock when the drop opens
+The owner (the `OWNER` hardware wallet) sets these for each drop (each Series) before it launches (`configureDrop`). They lock when the drop opens
 (its start time), so nothing can change while people are buying. The Series itself (its recipe: card types, pack
 size and slots, holo odds, characters; see `docs/cards-contracts.md`) must be set up in the card contracts before its
 drop can be set up, and locks when the drop is set up. The numbers below are the Standard sale (the studio's "Standard"
@@ -49,7 +49,7 @@ setting: cards burned per free pack is 42, forever.
 ## Setting up a drop
 
 `configureDrop` counts **paid packs** only; starter packs come on top. A 167-pack drop with 50 starters is configured
-as `packs = 117`, `starters = 50`. Setup is a multisig transaction; the public site has no admin pages.
+as `packs = 117`, `starters = 50`. Setup is signed on the owner's hardware wallet; the public site has no admin pages.
 
 ## Holders first, and no bot contracts
 

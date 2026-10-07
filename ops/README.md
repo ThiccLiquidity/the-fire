@@ -35,7 +35,7 @@ lag, low keeper ETH, and a daily heartbeat.
 
 ## VerifySeries (`series/`)
 
-The read-back between a Series' two Safe signings (`docs/deploy.md`, step 6): on-chain recipe, characters, dealer,
+The read-back between a Series' two owner signings on the hardware wallet (`docs/deploy.md`, step 6): on-chain recipe, characters, dealer,
 images base against the studio's `recipe.json`, and FirePsa's fixed PDA odds; every image the contract can name, loaded through two or
 more gateways; the folder's `manifest.json`; the holder Merkle root from the snapshot file. GREEN or RED.
 

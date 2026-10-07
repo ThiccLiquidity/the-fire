@@ -69,10 +69,10 @@ Each folder in `sim/omni` has its model and its recorded output; most also have 
 ## Deploying
 
 Deployment is a three-step Foundry runbook (`DeployTwap`, then `DeployInfra`, then `DeployCards`) followed by the
-multisig accepting ownership (checked by `VerifyDeploy`) and the keeper going live (`ops/keeper`). Each Series is set
-up in two Safe signings with `ops/series` (VerifySeries) in between, and the whole launch can be rehearsed on a local
+owner's hardware wallet accepting ownership (`AcceptOwnership`, checked by `VerifyDeploy`) and the keeper going live
+(`ops/keeper`). Each Series is set up in two signings on that device with `ops/series` (VerifySeries) in between, and the whole launch can be rehearsed on a local
 chain (`ops/rehearsal`). See [`docs/deploy.md`](docs/deploy.md). Settings go in
-`contracts/.env` (copy `contracts/.env.example`). Sign with a Foundry keystore (`--account`) or `--ledger`; never put
+`contracts/.env` (copy `contracts/.env.example`). The deployer signs with a Foundry keystore (`--account`), the owner with `--ledger` / `--trezor`; never put
 a private key in a file or on the command line.
 
 The site deploys on Vercel from `main` with Root Directory `web`.
@@ -99,6 +99,6 @@ The site deploys on Vercel from `main` with Root Directory `web`.
 - **Case and grading fees all burn PAPER.** `PaperBurner` buys PAPER with 100% of each fee and burns it; none goes to
   the team. If the price guard says no, the fee waits in `PaperBurner` (it has no withdraw) for a later buy.
 - **Randomness** comes from drand through an ownerless router that anyone can fulfill.
-- **The owner is a multisig** that configures each Series and drop. It can pause buying and case/grading payments
+- **The owner is one hardware wallet** (Ledger or Trezor; no multisig: nothing holds funds) that configures each Series and drop. It can pause buying and case/grading payments
   (never opening, dealing, transfers or finishing grades) and can't renounce ownership. What it can and can't change
   is listed in `docs/cards-contracts.md` and `docs/audit-2026-10.md`.

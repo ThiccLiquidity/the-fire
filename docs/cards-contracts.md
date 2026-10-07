@@ -21,11 +21,11 @@ read on-chain. PDA grading is the exception the other way: its fresh odds and we
 | `FireCards` | The permanent core. The cards, ERC-721 ("Omni Cards", `OMNICARD`; token id = global serial), one opening queue per Series, randomness (drand router and adapter), serials, editions, each card's wear (age uncased, moves, cased) and PDA grade. Per Series it keeps the dealer, the image folder, the frozen pack count and progress. Royalty (ERC-2981), ERC-4906 metadata updates. |
 | `CardsRenderer` | Builds each card's `tokenURI` JSON and image name (`imageName`, `imageFile`) from `FireCards` and the dealer. No owner, no settings; set once on `FireCards`. |
 | `IDealer` | What `FireCards` asks of a Series' dealer: `ready`, `cardsPerPack`, `characterCount`, `deal(fire, seed, fromCard, count)` and `cardText`. The owner picks a dealer per Series. Future dealers can add mechanics (their own state, 32 bits of per-card "extra" data, extra metadata attributes) without touching `FireCards`. |
-| `RecipeDealer` | The first dealer: deals each Series from its own recipe (below). Owned by the multisig. |
+| `RecipeDealer` | The first dealer: deals each Series from its own recipe (below). Owned by the owner (the hardware wallet). |
 | `RecipeCompiler` | The recipe checker, compiler and pool maths, split out of `RecipeDealer` for contract size. Pure: no state, no owner. |
 | `StandardRecipe` | The original Omni rules as a recipe (library). |
 | `FireSale` | Sells the packs (`docs/omni-economy.md`): every product rule is a per-drop setting (pack counts, prices, PAPER and its dollar ceiling, burn share, PLANK-only packs, press packs, holder window, wallet limit, regular-wallets rule, packs per purchase, credits per picked suggestion). Closes the Series when a drop sells out or ends. The owner can pause buying (`setPaused`). Never holds funds. |
-| `FireCredits` | Free pack credits, card burning (42 cards = 1 credit, fixed forever) and character suggestions, split out of `FireSale` for contract size (same rules). It spends credits, burns cards and takes suggestion PAPER through `FireSale` hooks only it can call (`creditPacks`, `burnCardsFor`, `burnPaperFor`), so PAPER is approved to `FireSale` alone. Owned by the multisig (picks, suggestion rules). |
+| `FireCredits` | Free pack credits, card burning (42 cards = 1 credit, fixed forever) and character suggestions, split out of `FireSale` for contract size (same rules). It spends credits, burns cards and takes suggestion PAPER through `FireSale` hooks only it can call (`creditPacks`, `burnCardsFor`, `burnPaperFor`), so PAPER is approved to `FireSale` alone. Owned by the owner (picks, suggestion rules). |
 | `PlankBurner` | Gets the sale's PLANK burn share when the swap can't run (a stale PLANK price or a failed swap). No owner, no withdraw: anyone calls `flush`, which buys PLANK (95% TWAP guard, halving for a backlog) and sends it to the dead address. |
 | `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars, paid in ETH, USDG or PLANK. drand picks each grade (1 to 10) from the fresh odds and the card's frozen wear (both fixed forever, the same for every Series); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
 | `PaperBurner` | Gets 100% of every case and grading fee, buys PAPER with it on owner-set routes and burns it. No withdraw; the router is fixed at deploy. |
@@ -169,7 +169,7 @@ after `start`, dollars with 8 decimals, PAPER in wei, the burn share in basis po
 
 ## The flow
 
-1. **Before a Series** (the owner, the `OWNER` multisig; `ConfigureSeries.s.sol` builds these calls from the JSON):
+1. **Before a Series** (the owner, the `OWNER` hardware wallet; `ConfigureSeries.s.sol` sends these calls from the JSON):
    `RecipeDealer.setRecipe`, `setCharacters` (+ `appendCharacters`), `FireCards.setDealer(fire, dealer)` (the dealer
    must already have the Series ready), `FireCards.setImagesBase(fire, base)`. Then
    `FireSale.configureDrop` (it requires `FireCards.ready(fire)`; the script adds it last from the `sale` block).
@@ -332,24 +332,26 @@ The extra is the call to the dealer and reading the compiled recipe (stored as c
 RecipeDealer and RecipeCompiler, PlankBurner, FireCredits, FireSale (wired to both; `FireCredits.setSale` is set once
 and checks the sale points back), PaperBurner (its feeds and default routes: direct to PAPER or through PLANK/WETH),
 FirePsa, two drand adapters (FireCards, FirePsa), the royalty. It needs `PAPER_USD_FEED` (the `PaperUsdTwap`). It
-hands ownership to the multisig (`OWNER`), which must then call `acceptOwnership()` on FirePacks, FireCards,
-RecipeDealer, FireCredits, FirePsa and PaperBurner; FireSale is owned by `OWNER` from deployment; PlankBurner has no
-owner. The script checks every input first and refuses a plain wallet as owner unless told
-otherwise. A test runs the same steps.
+hands ownership to `OWNER`, one hardware wallet (Ledger or Trezor; no multisig: nothing holds funds, the risk is key
+theft), which then accepts FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner in one run of
+`contracts/script/AcceptOwnership.s.sol` signed on the device; FireSale is owned by `OWNER` from deployment;
+PlankBurner has no owner. The script checks every input first and refuses an `OWNER` equal to the deployer (a
+throwaway hot wallet that only pays gas). A test runs the same steps.
 
 Every deploy script writes what it deployed to `deployments/<chainId>.json` (repository root), the address file every
 tool reads; `contracts/script/VerifyDeploy.s.sol` checks the wiring listed below from it.
 
-`contracts/script/ConfigureSeries.s.sol` sets up a Series from a recipe JSON in two Safe batches: `BATCH=A` (content:
+`contracts/script/ConfigureSeries.s.sol` sets up a Series from a recipe JSON in two batches sent from the owner's hardware wallet: `BATCH=A` (content:
 recipe, characters, dealer, images base) and, after `ops/series/verify-series.mjs` is green, `BATCH=B`
 (`configureDrop`, the lock; refused unless the chain holds batch A exactly). It checks the recipe against the dealer,
-prints each call and writes a Safe Transaction Builder file per batch (`contracts/safe-tx/`); `SIMULATE=true` runs a
-batch as the impersonated owner on a fork; `SEND=true` sends them when the signer is the owner (testnet). It rejects unknown JSON keys (`pdaOdds` too) and a drop start more than 365 days away. Inputs: `RECIPE_JSON` (under `contracts/series/`), `BATCH`,
+prints each call and sends it from the owner (`--ledger`/`--trezor`; any other signer is refused); `SIMULATE=true` runs
+a batch as the impersonated owner on a fork (`BATCH=AB` only there). It rejects unknown JSON keys (`pdaOdds` too) and a drop start more than 365 days away. Inputs: `RECIPE_JSON` (under `contracts/series/`), `BATCH`,
 `DROP_START` and `HOLDER_ROOT` (override the block), `CHARACTER_BATCH` (characters per call, default 200);
 `RECIPE_DEALER`, `FIRE_CARDS`, `FIRE_SALE` from the deployments file unless set.
 
-- **Settings:** `.env.example` (card contracts section). No keys in `.env`: sign with the Foundry keystore or a Ledger.
-- **Right after the deploy:** the multisig accepts ownership, then checks the wiring: the seller is FireSale on packs
+- **Settings:** `.env.example` (card contracts section). No keys in `.env`: the deployer signs with the Foundry keystore, the owner on its hardware wallet.
+- **Right after the deploy:** the hardware wallet accepts ownership (`AcceptOwnership.s.sol`), then
+  `VerifyDeploy.s.sol` checks the owner and the wiring: the seller is FireSale on packs
   and cards, cards point at packs, the dealer points at cards and packs, FireSale and FireCredits point at each other,
   FireSale's `plankBurner` is the deployed PlankBurner (same router and PLANK/ETH feeds), the PDA is FirePsa, the
   renderer is CardsRenderer, FirePsa pays PaperBurner, randomness points at the two adapters, no Series is configured or locked yet,
