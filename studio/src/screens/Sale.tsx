@@ -82,6 +82,7 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
         <F all={problems} f="paidPacks" label="Paid packs" hint="Bought with PLANK, ETH or USDG."><Num value={s.paidPacks} onChange={(v) => set({ paidPacks: v })} testId="sale-paid" /></F>
         <F all={problems} f="priceUsd" label="Price per pack ($)"><Text value={s.priceUsd} onChange={(v) => set({ priceUsd: v })} testId="sale-price" /></F>
         <F all={problems} f="paperPerPack" label="PAPER per pack" hint="Burned. Paid and free-credit packs. 0 = none."><Text value={s.paperPerPack} onChange={(v) => set({ paperPerPack: v })} testId="sale-paper" /></F>
+        <F all={problems} f="paperCapUsd" label="PAPER ceiling ($)" hint="A pack's PAPER is never worth more than this at the PAPER price (paid, press and free packs). 0 = no ceiling."><Text value={s.paperCapUsd} onChange={(v) => set({ paperCapUsd: v })} testId="sale-paper-cap" /></F>
         <F all={problems} f="plankBurnPercent" label="PLANK burn share (%)" hint="Of each sale; the rest goes to revenue."><Text value={s.plankBurnPercent} onChange={(v) => set({ plankBurnPercent: v })} testId="sale-burn" /></F>
         <F all={problems} f="maxPerTx" label="Most packs per purchase"><Num value={s.maxPerTx} onChange={(v) => set({ maxPerTx: v })} testId="sale-maxtx" /></F>
       </div>

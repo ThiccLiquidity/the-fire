@@ -11,7 +11,7 @@ describe('sale settings', () => {
     expect(errs({})).toEqual([])
     expect(saleJson(standardSale())).toEqual({
       start: 0, packs: 117, starters: 50, plankOnly: 50, walletLimit: 5, starterWindow: 86_400, liftAfter: 172_800,
-      plankBurnBps: 3_000, priceUsd: '250000000', paperPerPack: '1000000000000000000', holderWindow: 86_400, maxPerTx: 50,
+      plankBurnBps: 3_000, priceUsd: '250000000', paperPerPack: '1000000000000000000', paperCapUsd: '100000000', holderWindow: 86_400, maxPerTx: 50,
       plankOnlyFor: 172_800, regularWalletsFor: 172_800, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: '0',
       starterPaper: '1000000000000000000', creditsPerPick: 1, creditPacksMax: 16, creditPacksPerWallet: 3,
     })
@@ -30,6 +30,9 @@ describe('sale settings', () => {
     expect(errs({ paidPacks: 0, plankOnly: 0, priceUsd: '0' })).toEqual([]) // press packs only
     expect(errs({ plankOnly: 118 })).toContain('plankOnly')
     expect(errs({ plankBurnPercent: '100.01' })).toContain('plankBurnPercent')
+    expect(errs({ paperCapUsd: 'x' })).toContain('paperCapUsd')
+    expect(errs({ paperCapUsd: '0.000000001' })).toContain('paperCapUsd') // 8 decimals at most
+    expect(errs({ paperCapUsd: '0' })).toEqual([]) // no ceiling
     expect(errs({ plankOnlyHours: 0 })).toContain('plankOnlyHours')
     expect(errs({ plankOnly: 0, plankOnlyHours: 0 })).toEqual([])
     expect(errs({ walletLimit: 0 })).toContain('walletLimit')
