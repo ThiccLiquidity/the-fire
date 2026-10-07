@@ -13,6 +13,9 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); 
 [hidden] { display: none !important }
 button { font: inherit; color: inherit }
 :focus-visible { outline: 2px solid #fff; outline-offset: 2px }
+/* inside clipped boxes (segmented buttons, the demo strip) the ring sits inside, so it's never cut off */
+.seg button:focus-visible, .demo-note :focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline-offset: -3px }
+a:focus-visible { border-radius: 4px }
 
 /* buttons */
 .btn { min-height: var(--tap); display: inline-flex; align-items: center; justify-content: center; gap: .5em; padding: 0 1.1em; border-radius: 12px;

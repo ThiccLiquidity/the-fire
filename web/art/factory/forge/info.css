@@ -136,6 +136,8 @@
 .inf-faq dt { font: 800 15px var(--body); color: var(--gold); margin: 12px 0 2px }
 .inf-faq dt:first-child { margin-top: 0 }
 .inf-faq dd { margin: 0; color: var(--ink) }
+.inf-faq a { color: var(--gold); text-underline-offset: 2px }
+.inf > .menu-links { margin-top: 18px }
 
 @media (max-width: 600px) {
   .inf { font-size: 14.5px }

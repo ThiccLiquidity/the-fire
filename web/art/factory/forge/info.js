@@ -81,7 +81,7 @@
     return `<figure class="inf-plate">
       <figcaption><b>Materials</b><span>Cards in a full Series of ${SERIES_CARDS.toLocaleString('en-US')}, ${CHARACTERS} characters</span></figcaption>
       <div class="inf-mat">${rows}</div>
-      <p class="inf-legend">Every character gets 2 Gold cards and 1 Full Art, so Full Art is always the rarest.</p>
+      <p class="inf-legend">Every character gets 2 Gold cards and 1 Full Art, so Full Art is always the rarest material.</p>
     </figure>`;
   }
 
@@ -182,7 +182,8 @@
           <li>Each material keeps its share in every Series: half of all cards are Paper.</li>
           <li>Every character comes as 2 Gold cards and 1 Full Art, its art over the whole card. Both are always full holo.</li>
           <li>A card can be holo on its <b>frame</b>, its <b>picture</b>, or <b>both</b>: that's full holo.</li>
-          <li>Rare: rarer than 1 in 50 · Epic: 1 in 300 · Legendary: 1 in 1,500, and every Full Art.</li>
+          <li>Rarity is for the exact card: character, material and holo. Graded, it's that grade or better.</li>
+          <li>Rare: 1 in 100 or rarer · Epic: 1 in 400 · Legendary: 1 in 1,000.</li>
           <li>Diamond: the top card of earlier Series.</li>
         </ul>
         ${holoTable()}
@@ -250,7 +251,7 @@
           <dt>Why do I need PAPER as well as money?</dt><dd>The forge needs PAPER. Every pack burns 1 PAPER, including Press and free packs.</dd>
           <dt>Do free packs expire?</dt><dd>No. They stack, and work in any Series while it's on sale.</dd>
           <dt>Should I grade every card?</dt><dd>Up to you. A grade is drawn once and it's final. ${PDA_LINE} Not sure yet? Case it for $0.05 and decide later.</dd>
-          <dt>What if opening gets stuck?</dt><dd>If no randomness arrives within a day, it can be asked for again. After 7 days, anyone can cancel and your packs come back sealed.</dd>
+          <dt>What if opening gets stuck?</dt><dd>Cards usually arrive within minutes. If randomness stops for 7 days, anyone can cancel and your packs come back sealed. <a href="help.html">More help</a></dd>
           <dt>Is there a fee when I resell?</dt><dd>A 5% royalty, on marketplaces that honour it.</dd>
         </dl>`),
     ];
@@ -265,6 +266,7 @@
     root.innerHTML = `
       <p class="inf-welcome">Welcome to the forge. <b>Wood in. Packs out.</b></p>
       <nav class="inf-index" aria-label="Info sections">
+        <button type="button" class="inf-jump hot" data-start>New here?</button>
         ${list.map((s) => `<button type="button" class="inf-jump${s.tag ? ' hot' : ''}" data-go="${s.id}">${SHORT[s.id]}</button>`).join('')}
       </nav>
       <div class="inf-glance" aria-label="Rarity at a glance">
@@ -276,7 +278,8 @@
         <details class="inf-sec${s.tag ? ' hot' : ''}" id="info-${s.id}"${i === 0 ? ' open' : ''}>
           <summary><span class="inf-st">${s.title}${s.tag ? `<em>${s.tag}</em>` : ''}</span><span class="inf-ss">${s.sum}</span></summary>
           <div class="inf-body">${s.body}</div>
-        </details>`).join('')}`;
+        </details>`).join('')}
+      <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>`;
     root.addEventListener('click', (e) => {
       const b = e.target.closest('[data-go]'); if (b) go(root, b.dataset.go);
     });
@@ -292,20 +295,29 @@
   }
 
   window.Info = {
-    // pull odds for one card of a material + holo (Gold and Full Art: of that character, as each has its own), from the same numbers as the tables above ("1 in 3,120")
-    pullOdds(material, holo = 'none') { const p = this.pullP(material, holo); return p > 0 ? oneIn(p) : null; },
-    // the same, as a probability: P(material) x P(this holo for that material)
-    pullP(material, holo = 'none') {
+    // how likely a holo look is on a card of this material (Diamond, Gold and Full Art are never plain)
+    holoP(material, holo = 'none') {
       const m = M[material]; if (!m) return 0;
-      const share = (m.perChar || m.count) / SERIES_CARDS, h = (material === 'diamond' || m.perChar) && holo === 'none' ? 'full' : holo;
-      return share * (h === 'full' ? m.full : h === 'none' ? m.none : m.frame); // picture only = frame only
+      const h = (material === 'diamond' || m.perChar) && holo === 'none' ? 'full' : holo;
+      return h === 'full' ? m.full : h === 'none' ? m.none : m.frame; // picture only = frame only
     },
-    gradeP(g) { const b = PDA.find((x) => x.g === g); return b ? b.p / 100 : 1; }, // fresh PDA odds for one grade; ungraded or an aged 1-4 = 1 (no grade factor)
-    PDA, oneIn,
+    // rarity of one exact card (character + material + holo look): its copies in a full Series / the Series' cards.
+    // Per character for every material: a random-character type splits its count evenly over the cast.
+    lookP(material, holo = 'none') {
+      const m = M[material]; if (!m) return 0;
+      return (m.perChar || m.count / CHARACTERS) * this.holoP(material, holo) / SERIES_CARDS;
+    },
+    // a grade counts as "this grade or better" (fresh odds), so a PDA 5 never reads rarer than a PDA 9.
+    // Ungraded, PDA 5 and the aged 1-4 all come to 1: no grade factor.
+    gradeP(g) { return g == null ? 1 : Math.min(1, PDA.filter((x) => x.g >= g).reduce((a, x) => a + x.p, 0) / 100); },
+    // the tiers, on that same scale: "1 in N" with N = 1 / (lookP x gradeP)
+    TIERS: [['legendary', 1000], ['epic', 400], ['rare', 100]],
+    PDA, WEAR, bandOf, oneIn,
     open(sectionId) {
       const root = build();
       root.addEventListener('click', (e) => {
         if (e.target.closest('[data-how]')) return window.Wear?.openHow();
+        if (e.target.closest('[data-start]')) return window.UI?.openStart();
         const b = e.target.closest('[data-ca]'); if (!b) return;
         const done = () => { const c = b.querySelector('.cp'); c.textContent = 'Copied'; setTimeout(() => (c.textContent = 'Copy'), 1500); };
         try { navigator.clipboard.writeText(b.dataset.ca).then(done, done); } catch { done(); }

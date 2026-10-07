@@ -269,6 +269,15 @@ a.btn { text-decoration: none }
 /* the value shrinks to its box ("0.0042 ETH" never spills out) */
 .dstats small { font-size: 12px; color: var(--dim) } .dstats b { font: 400 min(22px, 16cqi)/1.1 var(--display); color: var(--gold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere }
 .dstats .dfloor b { color: var(--ink) } .dstats span { font-size: 12px; color: var(--muted); overflow-wrap: anywhere }
+/* "If graded now": the grade odds by wear band, thin on every ungraded tile, with a key in the card's detail */
+.gnow-bar { display: flex; height: 5px; border-radius: 3px; overflow: hidden; gap: 1px; background: var(--line) }
+.gnow-bar i { min-width: 2px }
+.gnow { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2) }
+.gnow small { font-size: 12px; color: var(--dim) }
+.gnow .gnow-bar { height: 10px; border-radius: 5px }
+.gnow-key { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+.gnow-key li { display: inline-flex; align-items: center; gap: 5px }
+.gnow-key i { width: 9px; height: 9px; border-radius: 2px } .gnow-key b { color: var(--ink) }
 .btn.sea { background: #12223a; border-color: #2f6fd0; color: #d6e8ff } .btn.sea:hover { background: #17305a }
 .btn.sea span { font-size: 13px; opacity: .8 }
 

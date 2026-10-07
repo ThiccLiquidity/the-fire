@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stuck transaction? · Omni Forge</title>
+<meta name="description" content="What to do when a transaction at the Omni Forge is stuck or pending.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Omni Forge">
+<meta property="og:title" content="Stuck transaction? · Omni Forge">
+<meta property="og:description" content="What to do when a transaction at the Omni Forge is stuck or pending.">
+<meta property="og:url" content="https://web-mu-mocha-95.vercel.app/forge/help.html">
+<meta property="og:image" content="https://web-mu-mocha-95.vercel.app/forge/ui/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="ui/omni-mark.webp">
+<link rel="stylesheet" href="ui/fonts.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="page.css">
+</head>
+<body class="page">
+<header class="page-top"><a href="./"><img src="ui/omni-mark.webp" alt=""><span>FORGE</span></a><a class="back" href="./">Back to the Forge</a></header>
+<main class="page-main">
+  <h1>Stuck transaction?</h1>
+  <p class="lead">Most go through in seconds. If one doesn't, work down this list.</p>
+
+  <h2>1. Check it</h2>
+  <ul>
+    <li>In your wallet's activity, open the transaction and view it on the <a href="https://robinhoodchain.blockscout.com" target="_blank" rel="noopener">explorer</a>.</li>
+    <li><b>Pending:</b> it hasn't landed yet. <b>Success:</b> it's done, reload the Forge. <b>Failed:</b> nothing changed but the network fee.</li>
+    <li>Don't send it again while one is pending. Both could go through.</li>
+  </ul>
+
+  <h2>2. Speed it up or cancel</h2>
+  <ul>
+    <li>In your wallet, open the pending transaction and pick <b>Speed up</b> or <b>Cancel</b>. Both cost a small network fee.</li>
+    <li>Newer transactions wait behind a stuck one. Clear that one first.</li>
+  </ul>
+
+  <h2>3. Wrong network</h2>
+  <ul>
+    <li>The Forge only works on Robinhood Chain. If your wallet is on another network, switch it and try again.</li>
+  </ul>
+
+  <h2>4. Approvals</h2>
+  <ul>
+    <li>Paying in PLANK or USDG takes two steps: approve, then buy. If only step 1 went through, do step 2.</li>
+    <li>The Forge only asks to approve the exact amount, never more.</li>
+  </ul>
+
+  <h2>5. Opening and grading</h2>
+  <ul>
+    <li>Opening burns the pack, then drand randomness deals your cards, usually within a few minutes. Grading works the same way.</li>
+    <li>If randomness stops for 7 days, anyone can cancel: packs come back sealed, cards come back ungraded.</li>
+  </ul>
+
+  <h2>6. Reloading is safe</h2>
+  <ul>
+    <li>The Forge remembers a pending transaction and picks it back up after a reload.</li>
+  </ul>
+
+  <div class="box"><p><b>Never share your seed phrase or private key.</b> Nobody needs it to help you. A transaction hash (it starts with 0x) is all anyone needs.</p></div>
+
+  <p class="page-foot"><a href="terms.html">Terms &amp; risks</a><a href="./">Back to the Forge</a></p>
+</main>
+</body>
+</html>

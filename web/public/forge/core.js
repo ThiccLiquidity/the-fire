@@ -51,6 +51,7 @@
     cards,
     suggestions: [{ text: 'A lighthouse keeper', at: 'Series 6', picked: true }, { text: 'Grandma’s cast-iron pan', at: 'Series 7', picked: false }],
     activity: [],
+    burned: {}, // cards this wallet burned, by edition and by look (Store.editionInfo)
   };
   const listeners = new Set();
   const Store = {
@@ -80,19 +81,20 @@
     holder(c) { return c.grade != null ? 'slab' : c.cased ? 'case' : 'raw'; },
     // time uncased so far: frozen once cased (or slabbed); otherwise still running
     ageMs(c) { return c.cased || c.grade != null ? c.frozenAge : Date.now() - c.dealt; },
-    // true rarity of one card: P(material) x P(its holo for that material) x P(its PDA grade) when graded (ungraded: no grade factor).
-    // Same maths as the Info tables (Info.pullP / Info.gradeP). Tier by odds: Rare rarer than 1 in 50, Epic 1 in 300, Legendary 1 in 1,500.
+    // true rarity of one card, on one scale: how rare that exact card (character + material + holo) is in its Series
+    // (Info.lookP), x "this grade or better" once graded (Info.gradeP). Tiers on the same scale (Info.TIERS):
+    // Rare 1 in 100 or rarer, Epic 1 in 400, Legendary 1 in 1,000.
     trueOdds(c) {
-      const I = window.Info; if (!I?.pullP) return { p: 1, n: 1, label: '', tier: null };
-      const p = I.pullP(c.material, c.holo || 'none') * (c.grade == null ? 1 : I.gradeP(c.grade));
+      const I = window.Info; if (!I?.lookP) return { p: 1, n: 1, label: '', tier: null };
+      const p = I.lookP(c.material, c.holo || 'none') * I.gradeP(c.grade);
       const n = p > 0 ? 1 / p : Infinity;
-      // a Full Art is one of one for its character: always Legendary
-      return { p, n, label: p > 0 ? '1 in ' + I.oneIn(p) : '', tier: c.material === 'fullart' || n > 1500 ? 'legendary' : n > 300 ? 'epic' : n > 50 ? 'rare' : null };
+      return { p, n, label: p > 0 ? '1 in ' + I.oneIn(p) : '', tier: (I.TIERS.find(([, at]) => n >= at) || [null])[0] };
     },
     // DEMO DATA: a made-up OpenSea floor for this exact type (character + material + holo, + grade when graded), in ETH.
-    // Deterministic, and rarer means higher: 0.0001 ETH x N^0.75 for "1 in N", nudged +-12% per type so they don't look formulaic.
+    // Deterministic, and rarer means higher: 0.0001 ETH x N^0.75 for "1 in N", nudged +-12% per look (never per grade,
+    // so a better grade of the same card always floors at least as high).
     floor(c) {
-      const k = [c.character, c.material, c.holo || 'none', c.grade ?? 'u'].join('|');
+      const k = [c.character, c.material, c.holo || 'none'].join('|');
       let hs = 2166136261; for (let i = 0; i < k.length; i++) hs = Math.imul(hs ^ k.charCodeAt(i), 16777619);
       const v = 0.0001 * Math.pow(Store.trueOdds(c).n, 0.75) * (0.88 + ((hs >>> 0) % 1000) / 1000 * 0.24);
       return +v.toPrecision(2);
@@ -102,6 +104,23 @@
     // OpenSea: the collection slug is a PLACEHOLDER until the contract is deployed. With a contract + token ids, item() links the card itself.
     OPENSEA: { collection: 'https://opensea.io/collection/omni-cards', account: 'https://opensea.io/account', chain: null, contract: null },
     openSeaItem(c) { const o = Store.OPENSEA; return o.contract && c.tokenId != null ? `https://opensea.io/item/${o.chain}/${o.contract}/${c.tokenId}` : o.collection; },
+    // DEMO DATA: the edition ("12 of 43": this character in this material), how many of those are burned, and the same
+    // for its exact look (+ holo). The live site counts these from the indexer; here they're deterministic per card,
+    // plus whatever this wallet burns (state.burned).
+    editionInfo(c) {
+      const [k, of] = String(c.edition).split(' of ').map((x) => parseInt(x, 10)), n = of || k || 1;
+      const ed = [c.series, c.character, c.material].join('|'), look = ed + '|' + (c.holo || 'none');
+      const hash = (s) => { let x = 2166136261; for (let i = 0; i < s.length; i++) x = Math.imul(x ^ s.charCodeAt(i), 16777619); return x >>> 0; };
+      const always = c.material === 'gold' || c.material === 'fullart';
+      const lookN = always ? n : Math.max(1, Math.min(n, Math.round(n * (window.Info?.holoP(c.material, c.holo || 'none') ?? 1))));
+      const burned = Math.min(n - 1, hash(ed) % Math.max(1, Math.floor(n / 6))) + (state.burned[ed] || 0);
+      const lookBurned = Math.min(lookN - 1, burned, hash(look) % Math.max(1, Math.floor(lookN / 4) + 1)) + (state.burned[look] || 0);
+      return { k: k || 1, n, burned, lookK: 1 + (hash(look + c.serial) % lookN), lookN, lookBurned };
+    },
+    noteBurned(c) { // a card this wallet burned counts toward its edition's and its look's burned numbers
+      const ed = [c.series, c.character, c.material].join('|'), look = ed + '|' + (c.holo || 'none');
+      state.burned[ed] = (state.burned[ed] || 0) + 1; state.burned[look] = (state.burned[look] || 0) + 1;
+    },
   };
 
   // toasts: short, stacked under the top bar
