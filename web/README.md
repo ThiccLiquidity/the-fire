@@ -19,6 +19,18 @@ npm run build:wallet  # the wallet bundle (not used by the site yet; see below)
 npm run lint          # oxlint
 ```
 
+## Live-site helpers (ready, not wired in)
+
+- `src/lib/data.ts` + `blockscout.ts`: the data adapter (`ForgeData`: packs and cards a wallet holds, recent
+  activity) and its Blockscout v2 implementation. Wiring it in needs the explorer host in the CSP's `connect-src`.
+- `src/lib/tx.ts`: `sendTx` runs check network → simulate → confirm in wallet → wait, with a plain reason on
+  failure; sent transactions are kept in localStorage until they land (`pendingTxs`, `resumePending` after a reload).
+- `src/lib/approve.ts`: `approveExact` approves exactly what a payment needs, never unlimited.
+- `src/lib/network.ts`: the wrong-network check (`networkOf`, `watchNetwork` for the banner, `assertRobinhood`).
+- `src/lib/errors.ts`: a plain-English message for every custom error in the ABIs (`explain(e)`). The list of
+  errors is generated: after regenerating the ABIs, run `npm run gen:errors`, then `npx tsc -b` names any error that
+  still needs a message. `node scripts/gen-abi-errors.mjs --check` fails if the generated list is out of date.
+
 ## Wallet connection (ready, not wired in)
 
 The wallet layer for the live site is built on the standard stack: [wagmi core](https://wagmi.sh/core) holds the
