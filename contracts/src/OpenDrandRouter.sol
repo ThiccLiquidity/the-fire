@@ -14,7 +14,7 @@ interface IRandomnessConsumer {
 
 /**
  * @title OpenDrandRouter
- * @notice drand-verified randomness with nobody in charge. A request commits to a drand evmnet round 30-33 seconds in
+ * @notice drand-verified randomness with nobody in charge. A request commits to a drand evmnet round 90-93 seconds in
  *         the future. Once drand publishes that round, anyone may submit its BLS signature: the router verifies it
  *         on-chain and derives the request's word. There is exactly one valid word per request, so whoever submits
  *         it — our keeper, the site's button, or a stranger — delivers the same result, and nobody can hold a result
@@ -26,9 +26,10 @@ interface IRandomnessConsumer {
 contract OpenDrandRouter is EvmnetRegistry {
     uint256 public constant GENESIS = 1727521075;
     uint256 public constant PERIOD = 3;
-    /// @dev Rounds are 3 s apart. 30 s ahead (10 rounds) keeps the chosen round in the future even if the sequencer
-    ///      clock lags real time by a few seconds; otherwise whoever requests could get a round that is already public.
-    uint256 public constant MIN_DELAY = 30;
+    /// @dev Rounds are 3 s apart. 90 s ahead (30 rounds) keeps the chosen round in the future even if the sequencer
+    ///      clock lags real time by up to a minute or so; otherwise whoever requests could get a round that is already
+    ///      public.
+    uint256 public constant MIN_DELAY = 90;
     uint32 public constant MAX_CALLBACK_GAS = 1_000_000;
     bytes32 public constant CHAIN_HASH = 0x04f1e9062b8a81f848fded9c12306733282b2727ecced50032187751166ec8c3;
 
@@ -76,7 +77,7 @@ contract OpenDrandRouter is EvmnetRegistry {
         if (msg.sender.code.length == 0 || callbackGasLimit < 25_000 || callbackGasLimit > MAX_CALLBACK_GAS) {
             revert InvalidRequest();
         }
-        // The earliest evmnet round at least MIN_DELAY seconds ahead (30-33 seconds).
+        // The earliest evmnet round at least MIN_DELAY seconds ahead (90-93 seconds).
         uint256 roundValue = (block.timestamp + MIN_DELAY - GENESIS + PERIOD - 1) / PERIOD + 1;
         if (roundValue > type(uint64).max) revert InvalidRequest();
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -94,13 +95,30 @@ contract OpenDrandRouter is EvmnetRegistry {
         emit RandomnessRequested(id, msg.sender, round);
     }
 
-    /// @notice Anyone: submit the drand signature for the request's round.
+    /// @notice Anyone: submit the drand signature for the request's round. If that round is already proven (another
+    ///         request on the same round), the stored randomness is used and the signature is not checked again.
     function fulfill(uint256 id, bytes calldata signature) external deliveryLock {
         Request storage request = requests[id];
-        if (request.consumer == address(0)) revert InvalidRequest();
         if (request.fulfilled) revert AlreadyFulfilled();
+        _fulfill(id, request, signature);
+    }
+
+    /// @notice Anyone: fulfill several requests in one transaction (`signatures[i]` for `ids[i]`; may be empty when its
+    ///         round is already proven). Requests already fulfilled are skipped, so a batch can't be blocked by someone
+    ///         delivering one of them first.
+    function fulfillMany(uint256[] calldata ids, bytes[] calldata signatures) external deliveryLock {
+        if (ids.length != signatures.length) revert InvalidRequest();
+        for (uint256 i; i < ids.length; i++) {
+            Request storage request = requests[ids[i]];
+            if (request.fulfilled) continue;
+            _fulfill(ids[i], request, signatures[i]);
+        }
+    }
+
+    function _fulfill(uint256 id, Request storage request, bytes calldata signature) private {
+        if (request.consumer == address(0)) revert InvalidRequest();
         if (block.timestamp < GENESIS + (uint256(request.round) - 1) * PERIOD) revert NotReady();
-        this.proveRound(signature, request.round);
+        if (roundRandomness[request.round] == bytes32(0)) this.proveRound(signature, request.round);
         request.randomWord = uint256(
             keccak256(
                 abi.encode(CHAIN_HASH, roundRandomness[request.round], block.chainid, address(this), id, request.consumer)

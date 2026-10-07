@@ -35,7 +35,7 @@ contract RealRouterTest is Test {
     OpenDrandRouter router; OpenVRFAdapter adapter; DrandConsumer consumer;
 
     function setUp() public {
-        vm.warp(ROUND_TIME - 30); // request 30 s (MIN_DELAY) before round 1000
+        vm.warp(ROUND_TIME - 90); // request 90 s (MIN_DELAY) before round 1000
         router = new OpenDrandRouter();
         consumer = new DrandConsumer();
         adapter = new OpenVRFAdapter(address(router), address(consumer));
@@ -132,5 +132,69 @@ contract RealRouterTest is Test {
         vm.deal(address(adapter), 1 ether);
         vm.expectRevert(OpenDrandRouter.IncorrectFee.selector);
         router.requestRandomness{value: 1}(100_000);
+    }
+
+    function test_min_delay_is_90_seconds() public {
+        assertEq(router.MIN_DELAY(), 90);
+        uint256 id = _ask();
+        (, uint64 round,,,,,) = router.requests(id);
+        uint256 publishedAt = router.GENESIS() + (uint256(round) - 1) * router.PERIOD();
+        assertGe(publishedAt, block.timestamp + 90, "the round is at least 90 s in the future");
+        assertLt(publishedAt, block.timestamp + 94);
+    }
+
+    /// A second request on an already-proven round skips the BLS check (cheaper) and gets its own word.
+    function test_proven_round_skips_the_signature_check() public {
+        uint256 id = _ask();
+        DrandConsumer c2 = new DrandConsumer();
+        OpenVRFAdapter a2 = new OpenVRFAdapter(address(router), address(c2));
+        c2.setAdapter(address(a2));
+        uint256 id2 = c2.ask();
+        (, uint64 round2,,,,,) = router.requests(id2);
+        assertEq(round2, 1000);
+        vm.warp(ROUND_TIME);
+        uint256 g = gasleft();
+        router.fulfill(id, SIG);
+        uint256 first = g - gasleft();
+        g = gasleft();
+        router.fulfill(id2, ""); // no signature needed: round 1000 is stored
+        uint256 second = g - gasleft();
+        assertLt(second * 2, first, "no pairing check the second time");
+        (,,,,, uint256 w1,) = router.requests(id);
+        (,,,,, uint256 w2,) = router.requests(id2);
+        assertTrue(w1 != w2, "each request gets its own word");
+        assertEq(c2.answers(), 1);
+        emit log_named_uint("fulfill with BLS check", first);
+        emit log_named_uint("fulfill, round already proven", second);
+    }
+
+    /// fulfillMany delivers several at once and skips ones someone else already delivered.
+    function test_fulfill_many() public {
+        uint256 id = _ask();
+        DrandConsumer c2 = new DrandConsumer();
+        OpenVRFAdapter a2 = new OpenVRFAdapter(address(router), address(c2));
+        c2.setAdapter(address(a2));
+        uint256 id2 = c2.ask();
+        vm.warp(ROUND_TIME);
+        router.fulfill(id2, SIG); // front-run one of them
+        uint256[] memory ids = new uint256[](2);
+        (ids[0], ids[1]) = (id, id2);
+        bytes[] memory sigs = new bytes[](2);
+        (sigs[0], sigs[1]) = (bytes(""), SIG);
+        router.fulfillMany(ids, sigs);
+        assertEq(consumer.answers(), 1);
+        assertEq(c2.answers(), 1, "not delivered twice");
+        vm.expectRevert(OpenDrandRouter.InvalidRequest.selector);
+        router.fulfillMany(ids, new bytes[](1)); // lengths must match
+        ids[0] = 99; // a request that doesn't exist
+        vm.expectRevert(OpenDrandRouter.InvalidRequest.selector);
+        router.fulfillMany(ids, sigs);
+    }
+
+    function test_unproven_round_still_needs_a_valid_signature() public {
+        uint256 id = _ask();
+        vm.warp(ROUND_TIME);
+        vm.expectRevert();
+        router.fulfill(id, "");
     }
 }
