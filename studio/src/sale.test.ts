@@ -1,7 +1,7 @@
 /** The Sale settings: configureDrop's checks, the presets and the exported units. (The sample recipe.json the
  *  contract tests parse is checked in scripts/sale-sample.test.ts.) */
 import { describe, expect, it } from 'vitest'
-import { checkSale, giantSale, parseDecimal, saleErrors, saleJson, standardSale, type SaleSettings } from './sale'
+import { checkSale, dropPlan, giantSale, parseDecimal, saleErrors, saleJson, standardSale, type SaleSettings } from './sale'
 
 const NOW = 1_800_000_000
 const errs = (s: Partial<SaleSettings>) => saleErrors({ ...standardSale(), start: NOW + 3600, ...s }, NOW).map((p) => p.field)
@@ -72,6 +72,17 @@ describe('sale settings', () => {
     const ps = checkSale({ ...standardSale(), start: NOW - 1 }, NOW)
     expect(ps.filter((p) => p.warning).map((p) => p.field)).toEqual(['start', 'holderRoot'])
     expect(ps.filter((p) => !p.warning)).toEqual([])
+  })
+
+  it('the drop picture: Standard splits 167 packs and a sell-out brings in $292.50', () => {
+    const d = dropPlan(standardSale())
+    expect(d).toMatchObject({ total: 167, paid: 117, press: 50, plankOnly: 50, freeMax: 16, freeCapped: true })
+    expect(d.revenueUsd).toBeCloseTo(292.5)
+    expect(d.revenueMinUsd).toBeCloseTo(101 * 2.5) // 16 free packs come out of the paid ones
+    expect(d.burnUsd).toBeCloseTo(87.75)
+    // no cap: every paid pack could go free; a cap above the paid packs stops at them
+    expect(dropPlan({ ...standardSale(), creditPacksPercent: '0' })).toMatchObject({ freeMax: 117, freeCapped: false })
+    expect(dropPlan({ ...standardSale(), paidPacks: 5, plankOnly: 0, creditPacksPercent: '50' }).freeMax).toBe(5)
   })
 
   it('reads decimals exactly', () => {

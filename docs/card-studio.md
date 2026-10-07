@@ -59,10 +59,17 @@ Set on the **Recipe** tab, per Series, and locked with the deal:
   frame set.
 - **Slot groups**: a number of cards that may be any type in a set (a list of types, or a rank range), optionally
   must-holo. Cards per pack is their sum. Two groups' sets must be nested or disjoint.
-- **Fresh PDA odds**: a weight per grade 5-10 (grades 1-4 are always 0: they come only from wear).
+- **PDA odds** are fixed (the same for every Series) and shown read-only. A Series saved with its own odds keeps them
+  in its recipe.json until **Use the fixed odds** resets them.
 
 The tab lists every problem the contract would refuse (filler, slugs, text, shares, holo, nested sets, a type no slot
-takes, a never-holo type in a must-holo slot) and shows the exact pool for any pack count. Presets: **Standard**,
+takes, a never-holo type in a must-holo slot). **What it makes** (top of the tab, for the Series' packs and characters
+or any others typed in) shows the result: exact cards per type, cards per character, and for every holo look how rare
+one exact card is on the site's scale (copies of that character + type + look over the Series' cards, "1 in N"; Rare
+from 1 in 100, Epic 1 in 400, Legendary 1 in 1,000; `studio/src/rarity.ts` mirrors `trueOdds` / `Info.lookP`), and
+the share of packs holding at least one (and two or more) of each type, from test deals with the contract's dealing.
+A percent supply can be typed as a number of cards (it sets the percent that gives exactly that many) and an exact
+number as a percent. The Series tab shows the same result. Presets: **Standard**,
 **Special: 3 cards, all holo** (Fire the filler, Coal 30%, Gold 2% at most one per pack; 2 Fire-or-better and 1
 Coal-or-better, all must-holo), or a copy of another Series' recipe. Series saved before recipes load with the old
 Standard recipe (Diamond, and the old odds) and their Diamond setting.
@@ -119,7 +126,7 @@ picks a wear level, each a full frame per material and holo variant:
 | 5 | PDA 3-2 | wear only |
 | 6 | PDA 1 | wear only |
 
-Fresh odds are `FirePsa.oddsOf`'s defaults and can be changed per Series (grades 5-10) before its drop is set up.
+Fresh odds are `FirePsa.oddsOf`'s defaults; the studio shows them as fixed.
 
 - **PDA 10** uses the clean frame plus a thin warm-gold glow along the card's outer edge and a few small sparkles
   near the corners, drawn by the renderer on every material, never over the name panel, art or seal.
@@ -167,11 +174,12 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and its cards
 2. **Frames & Layout:** text fields' font, size and colour are set once per frame set; the art window is fixed by
    the frames.
 3. **Series:** pick the characters (any number; their order is the image order c0, c1, ...) and the pack count.
-4. **Recipe:** card types, slots and fresh PDA odds, with the contract's checks and the pool preview.
+4. **Recipe:** card types and slots, with the contract's checks and the result (counts, rarity, per-pack chances).
    **Sale** (next tab): the drop's settings for `FireSale.configureDrop` in plain units (paid and press packs, price,
    PAPER, burn share, PLANK-only packs, wallet limit, holder window and snapshot root, regular-wallets time, press
    packs per press and per wallet and their price, packs per purchase, credits per picked suggestion, caps on free
-   packs per drop and per wallet), checked live
+   packs per drop and per wallet), with the drop drawn as one bar (PLANK-only, paid, press, and the free cap taken from
+   the paid packs) and its sell-out dollars and PLANK burn, checked live
    like the contract checks them. Presets: Standard (today's sale) and Giant (10,000 packs, 100 per wallet and per
    purchase). Cards per free pack shows as fixed (42, forever). Missing settings mean the Standard sale.
 5. **Deal:** a sample deal on the recipe (the contract's dealing with the studio's own randomness, up to 600,000

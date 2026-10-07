@@ -14,8 +14,8 @@ import type { SaleJson } from './sale'
 
 export type Supply = 'filler' | 'share' | 'perPack' | 'count' | 'perCharacter'
 export const SUPPLY_LABEL: Record<Supply, string> = {
-  share: 'Share of cards', perPack: 'Per pack', count: 'Exact count', perCharacter: 'Per character (each gets exactly this many)',
-  filler: 'Filler (the rest)',
+  share: 'Percent of cards', perPack: 'Per pack', count: 'Exact number', perCharacter: 'Per character',
+  filler: 'The rest',
 }
 /** RecipeDealer's per-character counts are 16-bit. */
 export const MAX_PER_CHARACTER = 65_535n
