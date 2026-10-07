@@ -748,7 +748,9 @@
     const traits = [['Character', c.character], ['Category', Store.CHARS[c.character]?.category || '—'], ['Material', Store.MAT_LABEL[c.material]], ['Holo', HOLO[c.holo || 'none']], ['Series', 'Series ' + c.series],
       ['Edition', c.edition + (ed.burned ? ` · ${ed.burned} burned` : '')], ['This look', `${ed.lookK} of ${ed.lookN}` + (ed.lookBurned ? ` · ${ed.lookBurned} burned` : '')], ['Serial', '#' + c.serial], ['PDA grade', c.pending ? 'Being graded' : c.grade == null ? 'Not graded' : String(c.grade)],
       // what an ungraded card's metadata shows (its condition stays hidden); a slab shows only its grade
-      ...(c.grade == null ? [['Cased', c.cased ? 'Yes' : 'No'], ['Uncased age (days)', String(Math.floor(Store.ageMs(c) / Store.DAY))], ['Moves', String(Math.min(c.moves, 10))]] : [])];
+      // (docs/grading.md: a fixed Dealt date, plus the age frozen when it was cased)
+      ...(c.grade == null ? [['Cased', c.cased ? 'Yes' : 'No'], ['Dealt', new Date(c.dealt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })],
+        ...(c.cased ? [['Age when cased (days)', String(Math.floor(c.frozenAge / Store.DAY))]] : []), ['Moves', String(Math.min(c.moves, 10))]] : [])];
     const goto = (name, o = {}) => { Sheet.close('card'); Sheet.close('table'); Stations.open(name, { pick: [c.id], ...o }); };
     const canGrade = c.grade == null && !c.pending, canCase = canGrade && !c.cased;
     const sea = (label, href, extra) => h('a', { class: 'btn sea', href, target: '_blank', rel: 'noopener', ...extra }, label, h('span', { 'aria-hidden': 'true', text: '↗' }));

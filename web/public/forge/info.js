@@ -2,7 +2,8 @@
    Facts: docs/omni-economy.md, docs/cards-contracts.md, docs/card-studio.md */
 (() => {
   // ---- rarity numbers (computed, not typed in) ----
-  // A full Series (the Standard recipe): 167 packs x 6 = 1,002 cards, here with 10 characters. Gold is 2 per character
+  // The demo's current Series (the Standard recipe): 167 packs x 6 = 1,002 cards, here with 10 characters. Every Series
+  // sets its own recipe, so the copy only ever shows these as "this Series", never as fixed rules. Gold is 2 per character
   // and Full Art 1 per character (always full holo); Wood is the rest. Holo is random per card for the others.
   // Diamond is the old top card (Series before Gold): kept only so older cards still show their odds.
   const SERIES_CARDS = 167 * 6, CHARACTERS = 10;
@@ -70,7 +71,7 @@
     </figure>`;
   }
 
-  function matChart() {
+  function matChart(no) {
     const max = Math.max(...MATS.map((m) => m.count));
     const rows = MATS.map((m) => `
       <div class="inf-mrow" title="${m.name}: ${m.perChar ? m.perChar + ' per character' : m.count + ' cards, ' + pct(m.share)}">
@@ -79,44 +80,43 @@
         <span class="inf-mval">${m.count}<small>${m.perChar ? m.perChar + ' each' : pct(m.share)}</small></span>
       </div>`).join('');
     return `<figure class="inf-plate">
-      <figcaption><b>Materials</b><span>Cards in a full Series of ${SERIES_CARDS.toLocaleString('en-US')}, ${CHARACTERS} characters</span></figcaption>
+      <figcaption><b>Materials</b><span>Series ${no}: ${SERIES_CARDS.toLocaleString('en-US')} cards, ${CHARACTERS} characters</span></figcaption>
       <div class="inf-mat">${rows}</div>
-      <p class="inf-legend">Every character gets 2 Gold cards and 1 Full Art, so Full Art is always the rarest material.</p>
     </figure>`;
   }
 
-  function holoTable() {
+  function holoTable(no) {
     const cell = (x, both) => x === 0 ? '<td class="inf-nil">Never</td>'
       : `<td><b><span>1 in</span> ${oneIn(x)}</b><small>${hp(x, both)}</small></td>`;
     const full = (m) => m.perChar ? '<td class="inf-always"><b>Always</b></td>' : cell(m.full, true); // Gold and Full Art: always full holo
     const rows = MATS.map((m) => `<tr><th scope="row">${chip(m.id)}</th>${cell(m.frame)}${cell(m.frame)}${full(m)}${
       m.none ? `<td class="inf-none"><b>${hp(m.none, true).replace('.0%', '%')}</b></td>` : '<td class="inf-nil">Never</td>'}</tr>`).join('');
     return `<figure class="inf-plate">
-      <figcaption><b>Holo odds</b><span>For each card, by material</span></figcaption>
-      <p class="inf-lead">The frame and the picture each get their own shot at holo. Hit both and it's full holo.</p>
+      <figcaption><b>Holo odds</b><span>Series ${no}, by material</span></figcaption>
       <div class="inf-tablewrap"><table class="inf-table inf-holo">
         <thead><tr><th scope="col">Material</th><th scope="col">Frame only</th><th scope="col">Picture only</th><th scope="col">Both <span>(full)</span></th><th scope="col">No holo</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
       <div class="inf-callout">
         <p>${chip('paper', 'Full holo Paper', 'inf-full')}</p>
-        <p>A full holo Paper is one of the rarest cards in the forge. Only 1 Paper in ${oneIn(M.paper.full)} gets one, so most Series have none.</p>
+        <p>Only 1 Paper in ${oneIn(M.paper.full)} is full holo in Series ${no}.</p>
       </div>
     </figure>`;
   }
 
-  function packRow() {
+  function packRow(no) {
     const slots = [['paper'], ['paper'], ['paper'], ['wood'], ['wood', 'Wood+'], ['fire', 'Fire+']];
-    return `<div class="inf-pack" role="img" aria-label="A pack: 3 Paper, 1 Wood, 1 Wood or better, 1 Fire or better">
+    return `<div class="inf-pack" role="img" aria-label="A Series ${no} pack: 3 Paper, 1 Wood, 1 Wood or better, 1 Fire or better">
       ${slots.map(([id, l], i) => `<span class="inf-slot"><i>${i + 1}</i>${chip(id, l)}</span>`).join('')}
     </div><p class="inf-note">“+” means that material or better.</p>`;
   }
 
+  // the phases in order; their lengths, limits and PLANK-only packs are set per Series (the buy panel shows the live ones)
   function timeline() {
     return `<ol class="inf-time">
-      <li><b>First 24 h</b><span>Holders first. The first 50 paid packs take PLANK only, to get the fire stoked.</span></li>
-      <li><b>After 24 h</b><span>Open to everyone. Unclaimed Press packs join the sale.</span></li>
-      <li><b>After 48 h</b><span>The 5-per-wallet limit lifts.</span></li>
-      <li><b>Sold out</b><span>The Series closes and packs can be opened.</span></li>
+      <li><b>Holders first</b><span>Paper Press and PLANK holders. Early packs can be PLANK only.</span></li>
+      <li><b>Open to all</b><span>Unclaimed Press packs join the sale.</span></li>
+      <li><b>Limits lift</b><span>Any per-wallet limit ends.</span></li>
+      <li><b>Sold out</b><span>The Series closes. Packs can be opened.</span></li>
     </ol>`;
   }
 
@@ -125,134 +125,120 @@
     burn: 'Burning', suggest: 'Suggest', paper: 'PLANK & PAPER', fair: 'Fairness', faq: 'FAQ' };
   const sec = (id, title, sum, body, tag) => ({ id, title, sum, body, tag });
   function sections(no) {
+    const s = window.Store?.state?.series || {}, P = window.Store?.PRICES || {}, usd = window.Wear?.usd || ((v) => '$' + v);
     return [
-      sec('about', 'What is Omni Forge', 'A forge for collectible NFT cards, released in numbered Series.', `
+      sec('about', 'What is Omni Forge', 'Collectible NFT cards on Robinhood Chain, in numbered Series.', `
         <ul>
-          <li>Omni Forge mints collectible cards on Robinhood Chain, released in numbered Series.</li>
-          <li>The story: PLANK is the wood. It feeds the fire, and the fire runs the card press. The forge needs PAPER, so every pack takes 1.</li>
-          <li>Sealed packs are their own NFTs. Trade them sealed, or open them once the Series ends and keep the cards.</li>
-          <li>Every card is its own NFT: character, material, holo, edition and grade.</li>
-          <li>Each Series has its own cast of characters, so a card always tells you where it came from.</li>
+          <li>PLANK is the wood. It feeds the fire, and the fire runs the card press. The press needs PAPER, so every pack takes some.</li>
+          <li>Sealed packs are NFTs. Trade them sealed, or open them once the Series ends.</li>
+          <li>Every card is its own NFT. Each Series has its own characters.</li>
         </ul>`),
-      sec('buy', 'Buying packs', '$2.50 plus 1 PAPER a pack, paid in PLANK, ETH or USDG.', `
+      sec('buy', 'Buying packs', 'Paid in PLANK, ETH or USDG, plus PAPER.', `
         <ul>
-          <li>For this Series: <b>167 packs</b> in total, <b>50</b> of them Press packs. When they're gone, they're gone.</li>
-          <li>A pack is <b>$2.50 + 1 PAPER</b> (never more than $1 of PAPER). You pay in PLANK, ETH or USDG. The PAPER is burned.</li>
-          <li><b>30%</b> of every sale burns PLANK. 70% goes to the team.</li>
-          <li>If the price moves over 1%, nothing is charged.</li>
-          <li>Short on PAPER? You can get it right in the buy panel.</li>
+          <li>Series ${no} has <b>${s.total ?? '—'} packs</b>, <b>${s.starters ?? '—'}</b> of them Press packs. When they're gone, they're gone.</li>
+          <li>Pay in PLANK, ETH or USDG. Each pack also takes PAPER, which is burned.</li>
+          <li>Part of every sale buys PLANK and burns it. The rest goes to the team.</li>
+          <li>You set the most you'll pay. If the price moves past it, nothing is charged.</li>
         </ul>
         <p class="inf-sub">How a Series sells</p>
         ${timeline()}
-        <ul>
-          <li><b>First 24 hours:</b> Paper Press holders and wallets with $69+ of PLANK at a secret snapshot.</li>
-          <li>Up to <b>5 paid packs per wallet</b> for the first 48 hours.</li>
-          <li>These numbers are set for each Series before it opens, and can't change once it does.</li>
-        </ul>`),
-      sec('free', 'Press & free packs', 'Paper Press holders claim a Press pack. Free packs are earned and never expire.', `
+        <p>Each Series sets its own price, windows and limits before it opens. They can't change after.</p>`),
+      sec('free', 'Press & free packs', 'Press packs for Paper Press holders. Free packs are earned and never expire.', `
         <p class="inf-sub">Press packs</p>
         <ul>
-          <li>For Paper Press holders. A Press pack costs 1 PAPER and nothing else.</li>
-          <li>One per wallet, and each press counts once per Series. First come, first served.</li>
-          <li>They're claimable for the first 24 hours. Any left over join the paid sale.</li>
-          <li>A Press pack is a normal pack: open it, or trade it sealed.</li>
+          <li>For Paper Press holders, at the start of a Series. First come, first served.</li>
+          <li>Each press counts once per Series. Unclaimed ones join the paid sale.</li>
+          <li>A Press pack is a normal pack: open it or trade it sealed.</li>
         </ul>
         <p class="inf-sub">Free packs</p>
         <ul>
-          <li>Earn one by burning 42 cards, or when your character suggestion gets picked.</li>
-          <li>Use them <b>any time</b> while a Series is on sale, in every phase. The holder window, PLANK-only packs and wallet limit don't apply to them.</li>
-          <li>Each one mints a pack for 1 PAPER (burned), from the current Series.</li>
-          <li>They stack and never expire. Nothing on sale? Yours wait for the next Series.</li>
+          <li>Earn one by burning 42 cards, or when your character suggestion is picked.</li>
+          <li>Use them any time a Series is on sale. Holder windows and wallet limits don't apply. They still take PAPER.</li>
+          <li>They stack and never expire. A Series can cap how many it takes; the rest wait for the next one.</li>
         </ul>`),
-      sec('open', 'Opening packs', 'Packs open once the Series sells out. Nobody knows what’s inside until it’s opened.', `
+      sec('open', 'Opening packs', 'Packs open once the Series sells out. Nobody knows what’s inside until then.', `
         <ul>
-          <li>You can open your packs once the Series sells out or ends. Until then, keep them or trade them sealed.</li>
-          <li>Open up to 10 at a time. The packs are burned, and fresh randomness deals your cards a few seconds later.</li>
-          <li>A pack's cards are decided at that moment, from what's left in the Series. Nobody, the owner included, can know a sealed pack's contents in advance.</li>
+          <li>Open your packs once the Series sells out or is ended.</li>
+          <li>Opening burns the packs. Randomness deals your cards a minute or two later.</li>
+          <li>A sealed pack has no cards yet. They're drawn when it's opened, from what's left in the Series. Nobody can know them in advance.</li>
         </ul>
-        <p class="inf-sub">Every pack holds 6 cards</p>
-        ${packRow()}
+        <p class="inf-sub">A Series ${no} pack</p>
+        ${packRow(no)}
         <ul>
-          <li>What's left in a Series is public, so the odds shift a little as people open. The very last pack gets exactly what remains.</li>
-          <li>Doesn't sell out? The owner can end the Series after 48 hours. If they don't, anyone can, 7 days later. It closes with the packs that were sold.</li>
+          <li>What's left is public, so odds shift a little as people open. The last pack gets exactly what remains.</li>
+          <li>Doesn't sell out? The owner can end it once its sale windows are over. If not, anyone can a week later.</li>
         </ul>`),
-      sec('cards', 'The cards', 'Six card types, three holo looks.', `
-        ${matChart()}
+      sec('cards', 'The cards', 'Materials, holo and rarity.', `
+        <p>Materials, holo odds and characters are set per Series. These are Series ${no}'s.</p>
+        ${matChart(no)}
         <ul>
-          <li>Each material keeps its share in every Series: half of all cards are Paper.</li>
-          <li>Every character comes as 2 Gold cards and 1 Full Art, its art over the whole card. Both are always full holo.</li>
-          <li>A card can be holo on its <b>frame</b>, its <b>picture</b>, or <b>both</b>: that's full holo.</li>
-          <li>Rarity is for the exact card: character, material and holo. Graded, it's that grade or better.</li>
+          <li>Gold and Full Art are always full holo. Full Art puts the art over the whole card.</li>
+          <li>Other cards can be holo on the <b>frame</b>, the <b>picture</b>, or <b>both</b>: full holo.</li>
+        </ul>
+        ${holoTable(no)}
+        <ul>
+          <li>Rarity is how rare that exact card is in its Series: character, material and holo. Graded, it counts that grade or better.</li>
           <li>Rare: 1 in 100 or rarer · Epic: 1 in 400 · Legendary: 1 in 1,000.</li>
           <li>Diamond: the top card of earlier Series.</li>
-        </ul>
-        ${holoTable()}
-        <ul>
-          <li>Printed on the card: the character's name, material, category, “Forged · Series ${no}” and the PDA seal.</li>
-          <li>Every character has a category, like Person, Animal, Place or Idea. New ones arrive as the Series go on.</li>
-          <li>In the card's details: its edition (like “12 of 43”, final once every pack in the Series is dealt) and a serial number that never resets.</li>
+          <li>Each card has an edition (like “12 of 43”, final once the whole Series is dealt) and a serial that never resets.</li>
         </ul>`, 'Rarity'),
-      sec('pda', 'Cases & grading', 'Case a card for $0.05 to stop wear, or grade it for $1 and get a slab.', `
+      sec('pda', 'Cases & grading', 'Case a card to stop wear, or grade it for a slab.', `
         <ul>
-          <li>PDA stands for Professional Digital Authenticators: our nod to real card grading.</li>
-          <li>Every card starts raw. A raw card slowly wears with time, and each move to another wallet can knock a grade off.</li>
-          <li>New cards are fresh for 24 hours: case or grade them by then and they never take a hit.</li>
-          <li><b>Case, $0.05:</b> stops wear. It stays ungraded, so you can trade it or grade it later with the odds it has.</li>
-          <li><b>Grade, $1:</b> reveals the PDA grade and seals the card in a slab. Final, no regrades.</li>
-          <li>Pay in PLANK, ETH or USDG, up to 20 cards in one go.</li>
+          <li>Every card starts raw. A raw card wears with time, and each move to another wallet can knock a grade off.</li>
+          <li>New cards are fresh for 24 hours. Case or grade them by then and they never take a hit.</li>
+          <li><b>Case, ${usd(P.CASE_USD)}:</b> stops wear. Still ungraded: trade it, or grade it later.</li>
+          <li><b>Grade, ${usd(P.GRADE_USD)}:</b> reveals the PDA grade and seals the card in a slab. Final, no regrades.</li>
         </ul>
         ${pdaChart()}
         <ul>
-          <li>Grades 1 to 4 only happen to cards left raw for a long time. After 10 raw years, a 1 is likely.</li>
-          <li>Condition is hidden, us included. An ungraded card shows only Cased, its uncased age and its moves. Once slabbed, a card's metadata shows only its grade.</li>
-          <li>The grade changes the frame: a 10 stays clean with a gold glow, 9–8 barely used, 7–6 lightly played, 5–4 played, 3–2 heavily played, and a 1 is damaged.</li>
-          <li>The wear rules are locked forever, the same for every Series.</li>
+          <li>Grades 1 to 4 only come from long raw holds. After 10 raw years, a 1 is likely.</li>
+          <li>Condition is hidden, from us too. An ungraded card shows only Cased, Dealt and Moves. A slab shows only its grade.</li>
+          <li>The grading and wear rules are fixed forever, the same for every Series.</li>
           <li><b>${window.Wear?.BURN_LINE || ''}</b></li>
         </ul>
         <p><button type="button" class="inf-link" data-how>How does this work? Step by step</button></p>`, 'Rarity'),
       sec('burn', 'Burning cards', 'Burn 42 cards, get a free pack.', `
         <ul>
-          <li>Burn any cards you don't want to keep. Every 42 burned earns a free pack.</li>
-          <li>Your count never resets: 3 today and 2 tomorrow makes 5 of 42.</li>
-          <li>Extras carry over. Burn 50 and you get a free pack, with 8 toward the next.</li>
-          <li>The count belongs to the wallet that burns. A burned card is gone for good.</li>
+          <li>Every 42 cards you burn earns a free pack. Burned cards are gone for good.</li>
+          <li>Your count never resets, and extras carry over: burn 50, get a free pack and 8 toward the next.</li>
         </ul>`),
-      sec('suggest', 'Suggesting characters', 'Pitch a character for 1 PAPER. If it’s picked, you get a free pack.', `
+      sec('suggest', 'Suggesting characters', 'Pitch a character. If it’s picked, you get a free pack.', `
         <ul>
-          <li>Anything goes. A suggestion costs 1 PAPER, burned, and the box is always open.</li>
-          <li>Before each Series, we pick from the list. A picked suggestion earns a free pack.</li>
-          <li>The list clears after every picking round. Not picked? Suggest it again.</li>
+          <li>Anything goes. A suggestion costs a little PAPER, burned.</li>
+          <li>Before each Series, we pick from the list. Picked ones earn a free pack.</li>
+          <li>The list clears after every pick. Not picked? Suggest it again.</li>
         </ul>`),
-      sec('paper', 'PLANK & PAPER', 'The forge runs on assets it doesn’t make. It burns them.', `
+      sec('paper', 'PLANK & PAPER', 'The forge burns both.', `
         <ul>
-          <li><b>PLANK is the fuel.</b> Every sale feeds the fire: 30% buys PLANK and burns it, and each Series opens on PLANK alone to get the fire stoked.</li>
-          <li><b>PAPER is what every card is printed on.</b> Each pack and suggestion burns some, and every case and grade fee buys PAPER and burns it.</li>
-          <li><b>The Paper Press prints PAPER.</b> Holding one puts you first in line every Series.</li>
+          <li><b>PLANK is the fuel.</b> Part of every sale buys PLANK and burns it.</li>
+          <li><b>PAPER is what cards are printed on.</b> Packs and suggestions burn it, and every case and grade fee buys PAPER and burns it.</li>
+          <li><b>The Paper Press prints PAPER.</b> Press holders get in early.</li>
         </ul>
         <div class="inf-cas">
           <button class="inf-link inf-ca" type="button" data-ca="0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc">PLANK <code>0x6942…2DDc</code> <span class="cp">Copy</span></button>
           <button class="inf-link inf-ca" type="button" data-ca="0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6">PAPER <code>0x0642…e3c6</code> <span class="cp">Copy</span></button>
           <a class="inf-link" href="https://opensea.io/collection/the-plank-press" target="_blank" rel="noopener">Paper Press on OpenSea <span aria-hidden="true">↗</span></a>
         </div>`),
-      sec('fair', 'Fairness', 'Randomness nobody controls, and odds fixed before anyone buys.', `
+      sec('fair', 'Fairness', 'Public randomness, and odds locked before anyone buys.', `
         <ul>
-          <li>Cards and grades come from drand, a public randomness source nobody controls, the owner included.</li>
-          <li>Results depend only on that randomness and the order packs were opened, not on who presses the button.</li>
-          <li>The sale contract keeps nothing: every payment is burned or paid out.</li>
-          <li>A Series' numbers lock when it opens, and its odds are fixed before it sells. Its characters can't change once packs are selling.</li>
-          <li>If randomness stops for 7 days, anyone can cancel: packs come back sealed, cards come back ungraded.</li>
-          <li>First 48 hours: regular wallets only (MetaMask, Rabby), no bot contracts.</li>
-          <li>The contracts go through internal audits.</li>
+          <li>Cards and grades come from drand, public randomness nobody controls. One open, one number: no re-rolls.</li>
+          <li>Results depend only on that randomness and the order packs were opened.</li>
+          <li>A Series' odds, characters and settings lock before anyone can buy.</li>
+          <li>The sale keeps nothing: every payment is burned or paid out.</li>
+          <li>The owner can pause buying and case and grade payments. Opening, dealing and transfers never pause.</li>
+          <li>The owner can switch the randomness source, announced first. Only new requests use it.</li>
+          <li>No answer from randomness for 7 days? Anyone can cancel: packs come back sealed, cards come back ungraded.</li>
+          <li>The contracts are audited internally.</li>
         </ul>`),
       sec('faq', 'FAQ', 'Short answers to the usual questions.', `
         <dl class="inf-faq">
-          <dt>When can I open my packs?</dt><dd>Once the Series sells out, or is ended. Until then they stay sealed.</dd>
-          <dt>Can I sell a pack without opening it?</dt><dd>Yes. Sealed packs trade like any NFT, one kind per Series.</dd>
-          <dt>Why do I need PAPER as well as money?</dt><dd>The forge needs PAPER. Every pack burns 1 PAPER, including Press and free packs.</dd>
-          <dt>Do free packs expire?</dt><dd>No. They stack, and work in any Series while it's on sale.</dd>
-          <dt>Should I grade every card?</dt><dd>Up to you. A grade is drawn once and it's final. ${PDA_LINE} Not sure yet? Case it for $0.05 and decide later.</dd>
+          <dt>When can I open my packs?</dt><dd>Once the Series sells out or is ended.</dd>
+          <dt>Can I sell a pack without opening it?</dt><dd>Yes. Sealed packs trade like any NFT.</dd>
+          <dt>Why do I need PAPER too?</dt><dd>The press runs on it. Every pack burns some, Press and free packs included.</dd>
+          <dt>Do free packs expire?</dt><dd>No. They stack and wait for any Series on sale.</dd>
+          <dt>Should I grade every card?</dt><dd>Up to you. Grades are final. ${PDA_LINE} Not sure? Case it now, grade it later.</dd>
           <dt>What if opening gets stuck?</dt><dd>Cards usually arrive within minutes. If randomness stops for 7 days, anyone can cancel and your packs come back sealed. <a href="help.html">More help</a></dd>
-          <dt>Is there a fee when I resell?</dt><dd>A 5% royalty, on marketplaces that honour it.</dd>
+          <dt>Is there a fee when I resell?</dt><dd>A royalty, on marketplaces that honour it.</dd>
         </dl>`),
     ];
   }
@@ -271,8 +257,8 @@
       </nav>
       <div class="inf-glance" aria-label="Rarity at a glance">
         <button type="button" data-go="pda"><b>1 in 100</b><span>PDA 10 on a fresh card. Case or grade in 24 h and it never wears</span></button>
-        <button type="button" data-go="cards"><b>1 in ${oneIn(M.paper.full)}</b><span>of Paper cards are full holo</span></button>
-        <button type="button" data-go="cards"><b>1 of 1</b><span>Full Art: one per character, the whole card is the art</span></button>
+        <button type="button" data-go="cards"><b>1 in ${oneIn(M.paper.full)}</b><span>Paper is full holo in Series ${no}</span></button>
+        <button type="button" data-go="cards"><b>1 of 1</b><span>Full Art: one per character in Series ${no}</span></button>
       </div>
       ${list.map((s, i) => `
         <details class="inf-sec${s.tag ? ' hot' : ''}" id="info-${s.id}"${i === 0 ? ' open' : ''}>

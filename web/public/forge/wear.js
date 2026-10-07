@@ -78,23 +78,23 @@
     el.innerHTML = `
       <section><h3><span class="how-n">1</span>Case or grade?</h3>
         <div class="how-two">
-          <div class="how-opt case"><b>Case · ${usd(P.CASE_USD)}</b><p>A clear case stops wear. The card stays ungraded, so you can trade it or grade it later with the odds it has today.</p></div>
-          <div class="how-opt slab"><b>Grade · ${usd(P.GRADE_USD)}</b><p>The grader reveals its PDA grade, 1 to 10, and seals it in a slab with the grade on the label.</p></div>
+          <div class="how-opt case"><b>Case · ${usd(P.CASE_USD)}</b><p>Stops wear. The card stays ungraded: trade it, or grade it later with the odds it has now.</p></div>
+          <div class="how-opt slab"><b>Grade · ${usd(P.GRADE_USD)}</b><p>Reveals its PDA grade, 1 to 10, and seals it in a slab.</p></div>
         </div></section>
       <section><h3><span class="how-n">2</span>Fresh for 24 hours</h3>
-        <p>New cards don't wear for their first day. Case or grade them inside those 24 hours and they never take a hit.</p></section>
+        <p>New cards don't wear for 24 hours. Case or grade them by then and they never take a hit.</p></section>
       <section><h3><span class="how-n">3</span>How cards wear</h3>
-        <ul><li>A raw card (no case) slowly loses condition over time.</li>
-          <li>Each move to another wallet can knock a grade off. Only the first 10 moves count, and moves alone never take it below 5.</li>
+        <ul><li>A raw card (no case) slowly wears with time.</li>
+          <li>Each move to another wallet can knock a grade off. Only the first 10 count, and moves alone never go below 5.</li>
           <li>Grades 1 to 4 only happen to cards left raw for a long time.</li>
-          <li>Condition is hidden. Nobody can see it, us included, until the card is graded.</li></ul>
+          <li>Condition is hidden, from us too, until the card is graded.</li></ul>
         <table class="how-t"><caption>Grade odds for a raw card, never moved</caption>
           <thead><tr><th>Held raw</th><th>PDA 10</th><th>9–8</th><th>7–5</th><th>4–1</th></tr></thead><tbody>${rows}</tbody></table></section>
       <section><h3><span class="how-n">4</span>What a slab means</h3>
-        <p>Graded cards live in a slab for good. The grade is final: no regrades. Once slabbed, a card's metadata shows only its grade.</p></section>
+        <p>A graded card stays in its slab for good. The grade is final: no regrades. A slab's details show only its grade.</p></section>
       <section><h3><span class="how-n">5</span>Prices</h3>
         <dl class="how-p"><dt>Case</dt><dd>${usd(P.CASE_USD)} a card</dd><dt>Grade</dt><dd>${usd(P.GRADE_USD)} a card</dd><dt>Pay with</dt><dd>PLANK, ETH or USDG</dd></dl>
-        <p class="muted small">Pick cards to case and to grade, then pay once for all of them.</p></section>
+        <p class="muted small">Pick cards to case and grade, then pay once for all of them.</p></section>
       <section class="how-burn"><h3><span class="how-n">6</span>Where the money goes</h3><p>${BURN_LINE}</p></section>`;
     return el;
   }

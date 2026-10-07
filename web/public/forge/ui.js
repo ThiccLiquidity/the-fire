@@ -45,14 +45,14 @@
     <div class="buybox" id="buybox" data-x="1480" data-y="250"></div>
     <button class="pill" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
     <button class="pill openp" type="button" data-st="open" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
-    <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small>$0.05 · $1</small></span></button>
+    <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small>${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></span></button>
     <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small>1 PAPER</small></span></button>
     <button class="pill peek" type="button" data-peek data-x="2880" data-y="700" style="--c: var(--gold)"><span class="peek-fan" aria-hidden="true"><img alt=""><img alt=""></span><span><b id="pPeekT">Series 8</b><small id="pPeek"></small></span></button>
   </div>
   <section class="stations" aria-label="Stations">
     <button class="station" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
     <button class="station" type="button" data-st="cards" style="--c: var(--wood)">${svg('cards')}<b>My cards</b><small id="sCards"></small></button>
-    <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small>$0.05 · $1</small></button>
+    <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small>${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></button>
     <button class="station" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small>1 PAPER</small></button>
     <button class="station peek" type="button" data-peek><span class="peek-fan" aria-hidden="true"><img alt=""><img alt=""></span><b id="sPeekT">Series 8</b><small id="sPeek"></small></button>
     <button class="openbtn" type="button" data-st="open" id="openBtn">${svg('pack')}<span><b id="sOpenT">Open packs</b><small id="sOpen"></small></span></button>
@@ -125,7 +125,7 @@
     const ph = PH[S.series.phase], w = S.wallet, out = [];
     if (sold()) return { line: `Series ${S.series.no} sold out`, opts: [] }; // just the tease: Open packs is already on the scene / in the stations
     let sub2 = ph.plankOnly ? `PLANK-only packs: ${S.series.plankOnly - S.series.plankSold} left` : ph.sub;
-    out.push(['buy', 'Buy packs', `$2.50 + 1 PAPER<br>${sub2}`, 'main']);
+    out.push(['buy', 'Buy packs', `${Wear.usd(PRICE)} + PAPER<br>${sub2}`, 'main']);
     if (S.series.phase <= 1 && !w.starterClaimed && S.series.startersClaimed < S.series.starters) out.push(['starter', 'Press pack', 'Press holders<br>1 PAPER', 'alt']);
     if (w.credits > 0) out.push(['free', `Free pack (${w.credits})`, '1 PAPER<br>any time', 'gold']);
     return { line: ph.window ? `${ph.line} · ${ph.window}h left` : ph.limit ? `${ph.line} · max 5 for ${ph.limit}h` : ph.line, opts: out };
@@ -225,11 +225,11 @@
   function checkout() {
     needWallet(() => {
       const ph = PH[S.series.phase], w = S.wallet;
-      if (w.isContract && S.series.phase < 3) return Sheet.open('nope', { title: 'Regular wallets only', body: '<p class="lead">For the first 48 hours, packs can only be bought from a regular wallet like MetaMask or Rabby. Smart-contract wallets can buy after that.</p>' });
-      if (S.series.phase <= 1 && !(w.isPressHolder || w.inSnapshot)) return Sheet.open('nope', { title: 'Holders first', body: `<p class="lead">The first 24 hours are for Paper Press holders and PLANK holders. Everyone else can buy in ${ph.window}h.</p>` });
+      if (w.isContract && S.series.phase < 3) return Sheet.open('nope', { title: 'Regular wallets only', body: '<p class="lead">For now, packs can only be bought from a regular wallet like MetaMask or Rabby. Smart-contract wallets can buy later.</p>' });
+      if (S.series.phase <= 1 && !(w.isPressHolder || w.inSnapshot)) return Sheet.open('nope', { title: 'Holders first', body: `<p class="lead">Paper Press and PLANK holders buy first. Everyone else can buy in ${ph.window}h.</p>` });
       const limitLeft = S.series.phase < 3 ? Math.max(0, 5 - w.bought) : 50;
       const max = Math.max(0, Math.min(50, limitLeft, Store.paidLeft(), ph.plankOnly ? S.series.plankOnly - S.series.plankSold : 50));
-      if (!max) return Sheet.open('nope', { title: 'Limit reached', body: `<p class="lead">That's 5 packs for this wallet. The limit lifts ${ph.limit ? `in ${ph.limit}h` : 'after 48 hours'}.</p>` });
+      if (!max) return Sheet.open('nope', { title: 'Limit reached', body: `<p class="lead">That's this wallet's limit for now. It lifts ${ph.limit ? `in ${ph.limit}h` : 'later'}.</p>` });
       let n = 1, cur = 'PLANK', step = 'pick';
       const body = document.createElement('div'); body.className = 'checkout';
       const draw = () => {
@@ -240,8 +240,8 @@
           <div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output aria-live="polite">${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button>
             <span class="muted">${n === 1 ? 'pack' : 'packs'} · max ${max}</span></div>
           <div class="seg" role="group" aria-label="Pay with">${['PLANK', 'ETH', 'USDG'].map((c) => `<button type="button" data-c="${c}" aria-pressed="${c === cur}" ${ph.plankOnly && c !== 'PLANK' ? 'disabled' : ''}>${c}</button>`).join('')}</div>
-          ${ph.plankOnly ? '<p class="note">The first 50 packs are PLANK only.</p>' : ''}
-          <dl class="sum"><dt>Price</dt><dd>${Wear.usd(usd)} <small>≈ ${fmt(amt)} ${cur}</small></dd><dt>PAPER</dt><dd>${paper} <small>1 per pack, burned · max $1</small></dd>
+          ${ph.plankOnly ? `<p class="note">The first ${S.series.plankOnly} packs are PLANK only.</p>` : ''}
+          <dl class="sum"><dt>Price</dt><dd>${Wear.usd(usd)} <small>≈ ${fmt(amt)} ${cur}</small></dd><dt>PAPER</dt><dd>${paper} <small>burned</small></dd>
             <dt>You have</dt><dd>${fmt(w.balances[cur])} ${cur} <small>· ${w.balances.PAPER} PAPER</small></dd></dl>
           ${shortPaper ? `<p class="warn">You need ${paper - w.balances.PAPER} more PAPER. <button class="btn small" type="button" data-x="paper">Get PAPER</button></p>` : ''}
           ${shortCur ? `<p class="warn">Not enough ${cur}.${cur === 'ETH' ? '' : ` <button class="btn small" type="button" data-x="paper">Get ${cur}</button>`}</p>` : ''}
@@ -267,8 +267,8 @@
   }
   function starter() {
     needWallet(() => {
-      if (!S.wallet.isPressHolder) return Sheet.open('nope', { title: 'Press packs', body: '<p class="lead">Press packs are for Paper Press holders: one per wallet, 1 PAPER each.</p>' });
-      const d = Sheet.open('starter', { title: 'Press pack', body: `<p class="lead">One pack for 1 PAPER, for Paper Press holders. ${S.series.starters - S.series.startersClaimed} left.</p><div class="checkout">${DEMO_LINE}<button class="btn primary go" type="button">Claim for 1 PAPER</button></div>` });
+      if (!S.wallet.isPressHolder) return Sheet.open('nope', { title: 'Press packs', body: '<p class="lead">Press packs are for Paper Press holders.</p>' });
+      const d = Sheet.open('starter', { title: 'Press pack', body: `<p class="lead">For Paper Press holders. ${S.series.starters - S.series.startersClaimed} left.</p><div class="checkout">${DEMO_LINE}<button class="btn primary go" type="button">Claim for 1 PAPER</button></div>` });
       d.querySelector('.go').onclick = () => { d.close(); Store.update((s) => { s.wallet.starterClaimed = true; s.wallet.balances.PAPER -= 1; s.series.startersClaimed++; s.series.sold--; }); pendingDeliver++; Scene?.buy(1); toast('Press pack on its way', 'good'); };
     });
   }
@@ -276,7 +276,7 @@
     needWallet(() => {
       let n = 1; const body = document.createElement('div'); body.className = 'checkout';
       const draw = () => {
-        body.innerHTML = `<p class="lead">Use any time a Series is on sale. Just 1 PAPER.</p>
+        body.innerHTML = `<p class="lead">Use any time a Series is on sale. It still takes PAPER.</p>
           ${S.wallet.credits > 1 ? `<div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output>${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button><span class="muted">of ${S.wallet.credits}</span></div>` : ''}
           ${DEMO_LINE}
           <button class="btn gold go" type="button">Use ${n} free ${n === 1 ? 'pack' : 'packs'}</button>`;
@@ -308,8 +308,8 @@
     const did = (word) => S.activity.some((a) => a.text.startsWith(word));
     const steps = [
       ['Connect a wallet', 'MetaMask, Rabby or any wallet on Robinhood Chain.', () => S.wallet.connected, 'Connect', () => needWallet(() => openStart())],
-      ['Get PAPER', 'Every pack burns 1.', () => S.wallet.balances.PAPER >= 1, 'Get PAPER', () => openGetPaper()],
-      ['Buy a pack', '$2.50 + 1 PAPER.', () => S.wallet.bought > 0 || sealed() > 0, 'Buy', () => checkout()],
+      ['Get PAPER', 'Every pack burns some.', () => S.wallet.balances.PAPER >= 1, 'Get PAPER', () => openGetPaper()],
+      ['Buy a pack', 'In PLANK, ETH or USDG, plus PAPER.', () => S.wallet.bought > 0 || sealed() > 0, 'Buy', () => checkout()],
       ['Open it', 'Packs open once the Series sells out.', () => did('Opened'), 'Open packs', () => openStation('open')],
       ['Case or grade', 'Within 24 hours, so new cards never wear.', () => did('Paid'), 'Case & grade', () => Stations.open('grade')],
     ];
