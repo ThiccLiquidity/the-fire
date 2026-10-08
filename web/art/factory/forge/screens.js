@@ -1131,43 +1131,188 @@
   // =====================================================================================
   // 4. Suggestion box
   // =====================================================================================
+  // A sheet of paper with three handwritten fields (character, then optional personality and background), packed into
+  // the ONE on-chain text (Store.packSuggestion: "Character: …\nPersonality: …\nBackground: …", only filled lines) and
+  // counted in bytes against FireCredits.suggestionMaxBytes (Store.SUGGEST_MAX_BYTES, an owner setting). Typing looks
+  // like ink: each textarea is transparent over a mirror of its text, where new letters fade in wet and settle.
+  // Send folds the paper and drops it in the box (the Suggest pill/station if it's in view, else a box in the window).
   function openSuggest() {
-    const MAX = 280;
-    const ta = h('textarea', { id: 'sg-text', maxlength: MAX, rows: 3, placeholder: 'A sleepy volcano…', 'aria-describedby': 'sg-hint sg-count' });
-    const count = h('span', { id: 'sg-count', class: 'count', text: `0 / ${MAX}` });
+    const MAXB = Store.SUGGEST_MAX_BYTES, COST = Store.PRICES.SUGGEST_PAPER, WET = 900;
+    const FIELDS = [
+      { k: 'character', label: 'Character', ph: 'A sleepy volcano', hint: 'sg-hint' },
+      { k: 'personality', label: 'Personality', opt: true, ph: 'Grumpy until noon, then very generous' },
+      { k: 'background', label: 'Background', opt: true, ph: 'Napping since the last ice age' },
+    ];
+    let busy = false;
+    const opened = new Set(); // "Your ideas" rows left expanded, kept across re-renders
+    const fields = FIELDS.map(inkField);
+    const values = () => Object.fromEntries(fields.map((f) => [f.k, f.ta.value]));
+    const count = h('span', { id: 'sg-count', class: 'sg-count' });
+    const paperEl = h('div', { class: 'sg-paper' },
+      h('div', { class: 'sg-head', 'aria-hidden': 'true' }, h('span', { text: 'Suggestion' }), h('span', { text: 'Series ' + S().series.no })),
+      fields.map((f) => f.row),
+      h('div', { class: 'sg-foot' }, count));
+    const doneEl = h('div', { class: 'sg-done', hidden: true, tabindex: '-1' },
+      h('span', { class: 'sg-done-box', 'aria-hidden': 'true', html: BOX_SVG }),
+      h('p', { class: 'sg-done-t', text: 'In the box.' }),
+      h('p', { class: 'muted', text: 'Picks are made before each Series.' }),
+      btn('Write another', '', () => { doneEl.hidden = true; formBits.forEach((el) => { el.hidden = false; }); paperEl.hidden = false; paperEl.style.visibility = ''; renderAct(); fields.forEach((f) => f.grow()); fields[0].ta.focus(); }));
     const act = h('div', { class: 'sg-act' }); const listEl = h('div', { class: 'sg-list' });
-    ta.addEventListener('input', () => { count.textContent = `${ta.value.length} / ${MAX}`; renderAct(); });
+    const notes = h('div', { class: 'sg-notes' },
+      h('p', { class: 'sg-joke', text: 'Jokes burn PAPER too. Only real ideas get picked.' }),
+      h('p', { class: 'reward', text: 'If yours gets picked, you get a free pack.' }));
+    const stage = h('div', { class: 'sg-stage' }, paperEl, doneEl);
+    const formBits = [notes, act];
+
+    function inkField(f, i) {
+      const id = 'sg-' + f.k;
+      const ta = h('textarea', { id, rows: 1, placeholder: f.ph, autocomplete: 'off', enterkeyhint: i < FIELDS.length - 1 ? 'next' : 'done',
+        'aria-describedby': [f.hint, 'sg-count'].filter(Boolean).join(' '), 'aria-required': f.opt ? null : 'true' });
+      const ink = h('div', { class: 'ink', 'aria-hidden': 'true' });
+      const row = h('div', { class: 'sg-field' },
+        h('label', { for: id }, f.label, f.opt ? h('small', { text: 'optional' }) : null),
+        h('div', { class: 'ink-field' }, ink, ta));
+      let chars = [], born = [], settle = 0; // born[i]: when letter i was written (0 = dry)
+      const grow = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+      function paint() {
+        const now = performance.now(), out = []; let run = '';
+        chars.forEach((c, j) => {
+          const age = now - born[j];
+          if (!born[j] || age >= WET) { run += c; return; }
+          if (run) { out.push(run); run = ''; }
+          out.push(h('span', { class: 'wet', style: `animation-delay:${-Math.round(age)}ms` }, c));
+        });
+        out.push(run + '​'); // keeps a trailing space's line
+        ink.replaceChildren(...out);
+      }
+      function sync() {
+        if (/[\r\n]/.test(ta.value)) { const p = ta.selectionStart; ta.value = ta.value.replace(/\r\n|[\r\n]/g, ' '); ta.setSelectionRange(p, p); }
+        const b = Array.from(ta.value), a = chars; let s = 0, e = 0;
+        while (s < a.length && s < b.length && a[s] === b[s]) s++;
+        while (e < a.length - s && e < b.length - s && a[a.length - 1 - e] === b[b.length - 1 - e]) e++;
+        const now = performance.now();
+        born = [...born.slice(0, s), ...Array(b.length - s - e).fill(now), ...born.slice(born.length - e)];
+        chars = b; paint(); grow();
+        clearTimeout(settle); settle = setTimeout(paint, WET + 60);
+      }
+      ta.addEventListener('input', () => { sync(); renderAct(); });
+      ta.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' || e.isComposing) return;
+        e.preventDefault(); const next = fields[i + 1]; if (next) next.ta.focus(); else act.querySelector('.btn.primary:not([disabled])')?.focus();
+      });
+      const clear = () => { ta.value = ''; chars = []; born = []; paint(); grow(); };
+      return { ...f, ta, row, ink, clear, sync, grow };
+    }
+
     function renderAct() {
-      const txt = ta.value.trim(); let a;
+      const v = values(), packed = Store.packSuggestion(v), bytes = Store.bytes(packed), over = bytes > MAXB;
+      count.textContent = `${bytes.toLocaleString('en-US')} / ${MAXB.toLocaleString('en-US')} bytes` + (over ? ' · too long' : '');
+      count.classList.toggle('over', over);
+      let a;
       if (!connected()) a = connectBtn();
-      else if (paper() < Store.PRICES.SUGGEST_PAPER) a = h('div', { class: 'row' }, h('span', { class: 'why', text: `Need ${Store.PRICES.SUGGEST_PAPER} PAPER` }), btn('Send', 'primary', null, { disabled: true }), getPaperBtn());
-      else a = btn('Send', 'primary', send, { disabled: !txt });
-      put(act, h('span', { class: 'muted', html: `Costs <b class="price">${Store.PRICES.SUGGEST_PAPER} PAPER</b> · you have ${paper()}` }), a);
+      else if (paper() < COST) a = h('div', { class: 'row' }, h('span', { class: 'why', text: `Need ${COST} PAPER` }), btn('Send', 'primary', null, { disabled: true }), getPaperBtn());
+      else a = btn('Send', 'primary', send, { disabled: busy || !v.character.trim() || over });
+      put(act, h('span', { class: 'muted', html: `Costs <b class="price">${COST} PAPER</b> · you have ${paper()}` }), a);
     }
     function renderList() {
       const list = S().suggestions;
-      put(listEl, h('h3', { text: 'Your ideas' }), list.length ? h('ul', {}, list.map((sg) => h('li', {},
-        h('span', { class: 'sg-t', text: sg.text }), h('span', { class: 'muted', text: sg.at }),
-        h('span', { class: 'sgp ' + (sg.picked ? 'yes' : 'wait'), text: sg.picked ? 'Picked' : sg.at === 'Series ' + S().series.no ? 'Waiting' : 'Not picked' })))) // past rounds: not picked
-        : h('p', { class: 'muted', text: 'Nothing yet.' }));
+      put(listEl, h('h3', { text: 'Your ideas' }), list.length ? h('ul', {}, list.map((sg) => {
+        const p = Store.parseSuggestion(sg.text), key = sg.at + '|' + sg.text;
+        const more = [['Personality', p.personality], ['Background', p.background]].filter(([, x]) => x);
+        const det = more.length ? h('details', { class: 'sg-more', open: opened.has(key) },
+          h('summary', { text: more.map(([k]) => k).join(' · ') }),
+          h('dl', {}, more.map(([k, x]) => [h('dt', { text: k }), h('dd', { text: x })]))) : null;
+        det?.addEventListener('toggle', () => { if (det.open) opened.add(key); else opened.delete(key); });
+        return h('li', {},
+          h('div', { class: 'sg-main' }, h('span', { class: 'sg-t', text: p.character || sg.text }), det),
+          h('span', { class: 'muted', text: sg.at }),
+          h('span', { class: 'sgp ' + (sg.picked ? 'yes' : 'wait'), text: sg.picked ? 'Picked' : sg.at === 'Series ' + S().series.no ? 'Waiting' : 'Not picked' })); // past rounds: not picked
+      })) : h('p', { class: 'muted', text: 'Nothing yet.' }));
     }
-    function send() {
-      const text = ta.value.trim(); if (!text || paper() < Store.PRICES.SUGGEST_PAPER || !connected()) return;
-      Store.update((s) => { s.wallet.balances.PAPER -= 1; s.suggestions.unshift({ text, at: 'Series ' + s.series.no, picked: false }); Store.log('Suggested a character'); });
-      ta.value = ''; count.textContent = `0 / ${MAX}`; renderAct(); toast('Sent. Fingers crossed!', 'good');
+    async function send() {
+      const v = values(), text = Store.packSuggestion(v);
+      if (busy || !v.character.trim() || Store.bytes(text) > MAXB || paper() < COST || !connected()) return;
+      busy = true;
+      Store.update((s) => { s.wallet.balances.PAPER -= COST; s.suggestions.unshift({ text, at: 'Series ' + s.series.no, picked: false }); Store.log('Suggested a character'); });
+      document.activeElement?.blur?.();
+      try { await foldAndDrop(); } catch { /* closed mid-flight */ }
+      fields.forEach((f) => f.clear());
+      formBits.forEach((el) => { el.hidden = true; });
+      paperEl.hidden = true; doneEl.hidden = false; doneEl.classList.remove('in'); void doneEl.offsetWidth; doneEl.classList.add('in');
+      busy = false; renderAct(); doneEl.focus({ preventScroll: true }); toast('Sent. Fingers crossed!', 'good');
     }
+
+    // ---------- the fold and the drop
+    async function foldAndDrop() {
+      const dlg = document.getElementById('sheet-suggest');
+      if (reduced() || !dlg?.open || !paperEl.animate) return;
+      paperEl.scrollIntoView({ block: 'nearest' });
+      const r = paperEl.getBoundingClientRect(), W = r.width, H3 = r.height / 3;
+      const face = (k) => { // one third of the paper, as it looks now
+        const clip = h('div', { class: 'fp-face' }), copy = paperEl.cloneNode(true);
+        copy.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id')); copy.classList.add('dry');
+        copy.style.cssText = `position:absolute;left:0;top:${-k * H3}px;width:${W}px;height:${r.height}px;margin:0;visibility:visible`;
+        clip.append(copy); return clip;
+      };
+      const panel = (k) => h('div', { class: 'fp fp' + k }, face(k), h('div', { class: 'fp-back' }));
+      const top = panel(0), mid = panel(1), bot = panel(2); mid.append(top, bot);
+      const pack = h('div', { class: 'sg-pack' }, mid);
+      const fly = h('div', { class: 'sg-fly', style: `left:${r.left}px;top:${r.top + H3}px;width:${W}px;height:${H3}px` }, pack);
+      dlg.append(fly); paperEl.style.visibility = 'hidden';
+      const ease = 'cubic-bezier(.55,.05,.35,1)', go = (el, kf, o) => el.animate(kf, { fill: 'forwards', easing: ease, ...o }).finished;
+      try {
+        // two folds: the bottom third up, then the top third down over it
+        await go(bot, [{ transform: 'rotateX(0deg) translateZ(0px)' }, { transform: 'rotateX(180deg) translateZ(-1px)' }], { duration: 520 });
+        await go(top, [{ transform: 'rotateX(0deg) translateZ(0px)' }, { transform: 'rotateX(-180deg) translateZ(-2px)' }], { duration: 520 });
+        const tgt = boxTarget(dlg);
+        if (tgt) { // into the Suggest pill/station in the scene
+          const t = tgt.getBoundingClientRect(), dx = t.left + t.width / 2 - (r.left + W / 2), dy = t.top + t.height / 2 - (r.top + 1.5 * H3);
+          const s = Math.min(1, 46 / W);
+          await go(pack, [{ transform: 'translate(0,0) scale(1) rotate(0deg)' }, { transform: 'translate(0,-14px) scale(.92) rotate(-4deg)', offset: .25 },
+            { transform: `translate(${dx}px,${dy}px) scale(${s}) rotate(8deg)`, opacity: 1, offset: .88 }, { transform: `translate(${dx}px,${dy}px) scale(${s * .6}) rotate(8deg)`, opacity: 0 }],
+          { duration: 900, easing: 'cubic-bezier(.45,0,.55,1)' });
+          tgt.classList.remove('sg-got'); void tgt.offsetWidth; tgt.classList.add('sg-got'); setTimeout(() => tgt.classList.remove('sg-got'), 900);
+        } else { // into a box in the window
+          const bw = Math.min(150, W * .5), s = Math.min(1, (bw * .4) / W), bh = bw * .78, cx = r.left + W / 2, by = r.top + r.height * .5;
+          const box = h('div', { class: 'sg-dropbox', style: `left:${cx - bw / 2}px;top:${by}px;width:${bw}px;height:${bh}px`, html: BOX_SVG });
+          box.style.zIndex = '19'; dlg.append(box); // behind the packet until it reaches the slot
+          box.animate([{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }], { duration: 260, fill: 'forwards' });
+          const slot = by + bh * .14, dx = 0, h0 = H3 * s; // the packet lands just above the slot, then slides in
+          const dyAbove = slot - h0 / 2 - (r.top + 1.5 * H3);
+          await go(pack, [{ transform: 'translate(0,0) scale(1)' }, { transform: `translate(${dx}px,${dyAbove}px) scale(${s})` }], { duration: 560 });
+          fly.style.zIndex = '1'; box.style.zIndex = '2'; // the box now covers it: it slides in through the slot
+          await go(pack, [{ transform: `translate(${dx}px,${dyAbove}px) scale(${s})` }, { transform: `translate(${dx}px,${dyAbove + h0 + 6}px) scale(${s})` }], { duration: 380, easing: 'cubic-bezier(.5,0,.75,0)' });
+          await box.animate([{ transform: 'none' }, { transform: 'translateY(3px) scaleY(.96)' }, { transform: 'none' }], { duration: 220 }).finished;
+          await box.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' }).finished;
+          box.remove();
+        }
+      } finally { fly.remove(); }
+    }
+    function boxTarget(dlg) { // the Suggest pill or station, if it's on screen and not under this window
+      const d = dlg.getBoundingClientRect();
+      return [...document.querySelectorAll('#pills [data-st="suggest"], .stations [data-st="suggest"]')].find((el) => {
+        const t = el.getBoundingClientRect(), cx = t.left + t.width / 2, cy = t.top + t.height / 2;
+        return t.width > 0 && getComputedStyle(el).visibility !== 'hidden' && cx > 0 && cy > 0 && cx < innerWidth && cy < innerHeight
+          && !(cx > d.left - 8 && cx < d.right + 8 && cy > d.top - 8 && cy < d.bottom + 8);
+      }) || null;
+    }
+
     const root = h('div', { class: 'st st-suggest' },
       h('p', { class: 'slead', text: 'Who should be on a card in a future Series?' }),
-      h('label', { for: 'sg-text', class: 'sr' }, 'Your idea'),
       h('p', { id: 'sg-hint', class: 'hint', text: 'Anything goes: a person, an animal, a food, a place, an object, an idea.' }),
-      h('div', { class: 'ta-wrap' }, ta, count),
-      h('p', { class: 'reward', text: 'If yours gets picked, you get a free pack.' }),
-      act, listEl);
+      stage, notes, act, listEl);
     const render = () => { renderAct(); renderList(); };
     listen('suggest', render);
-    Sheet.open('suggest', { title: 'Suggest a character', body: root, onClose: () => unlisten('suggest') });
-    render(); setTimeout(() => ta.focus(), 50);
+    Sheet.open('suggest', { title: 'Suggest a character', body: root, onClose: () => { unlisten('suggest'); document.querySelectorAll('.sg-fly, .sg-dropbox').forEach((el) => el.remove()); } });
+    render(); fields.forEach((f) => f.sync()); setTimeout(() => fields[0].ta.focus(), 50);
+    document.fonts?.ready.then(() => fields.forEach((f) => f.grow())); // the handwriting font changes the line breaks
   }
+  // the suggestion box: a little wooden box with a slot in the lid
+  const BOX_SVG = '<svg viewBox="0 0 120 94" aria-hidden="true"><path d="M8 22 L20 6 H100 L112 22 Z" fill="#8a5a2b" stroke="#3a2412" stroke-width="2.5" stroke-linejoin="round"/>'
+    + '<rect x="34" y="11" width="52" height="6" rx="3" fill="#1a0f07"/>'
+    + '<rect x="8" y="22" width="104" height="66" rx="4" fill="#b0743a" stroke="#3a2412" stroke-width="2.5"/>'
+    + '<path d="M8 44 H112 M8 66 H112" stroke="#8a5a2b" stroke-width="2"/><rect x="44" y="40" width="32" height="14" rx="3" fill="#f0ece5" stroke="#3a2412" stroke-width="2"/>'
+    + '<path d="M48 45 H72 M48 49 H66" stroke="#8a7b62" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
   const OPEN = { cards: openTable, open: (o) => openTable({ ...o, view: 'open' }), table: openTable, grade: openGrade, burn: openBurn, suggest: openSuggest };
   window.Stations = {

@@ -49,7 +49,11 @@
     teases: { 7: { id: 'bowling-s7', name: 'Bowling Ball' }, 8: { id: 'bowling-s8', name: 'Bowling Ball' } },
     sealed: { 7: 0, 6: 3 }, // sealed packs owned, by Series (6 is closed: it can be opened)
     cards,
-    suggestions: [{ text: 'A lighthouse keeper', at: 'Series 6', picked: true }, { text: 'Grandma’s cast-iron pan', at: 'Series 7', picked: false }],
+    // suggestions: { text, at, picked }. text is exactly what goes on chain (FireCredits.suggest): Store.packSuggestion's lines
+    suggestions: [
+      { text: 'Character: A lighthouse keeper\nPersonality: Quiet, stubborn, never misses a ship.', at: 'Series 6', picked: true },
+      { text: 'Character: Grandma’s cast-iron pan\nBackground: Four generations of Sunday breakfasts.', at: 'Series 7', picked: false },
+    ],
     activity: [],
     burned: {}, // cards this wallet burned, by edition and by look (Store.editionInfo)
   };
@@ -117,6 +121,26 @@
       const lookBurned = Math.min(lookN - 1, burned, hash(look) % Math.max(1, Math.floor(lookN / 4) + 1)) + (state.burned[look] || 0);
       return { k: k || 1, n, burned, lookK: 1 + (hash(look + c.serial) % lookN), lookN, lookBurned };
     },
+    // Character suggestions: one text on chain, as plain "Label: value" lines, only the filled ones, in this order.
+    // SUGGEST_MAX_BYTES mirrors FireCredits.suggestionMaxBytes (an owner setting, 1 to 1,024; set it to about 1,000).
+    SUGGEST_MAX_BYTES: 1000,
+    SUGGEST_FIELDS: [['character', 'Character'], ['personality', 'Personality'], ['background', 'Background']],
+    packSuggestion(f) {
+      return Store.SUGGEST_FIELDS.map(([k, label]) => [label, String(f[k] || '').replace(/\s+/g, ' ').trim()])
+        .filter(([, v]) => v).map(([label, v]) => label + ': ' + v).join('\n');
+    },
+    parseSuggestion(text) { // back to { character, personality, background }; text without labels is the character alone
+      const out = { character: '', personality: '', background: '' }, keys = Object.fromEntries(Store.SUGGEST_FIELDS.map(([k, l]) => [l.toLowerCase(), k]));
+      let cur = 'character', labelled = false;
+      for (const line of String(text).split('\n')) {
+        const m = line.match(/^\s*(character|personality|background)\s*:\s?(.*)$/i);
+        if (m) { cur = keys[m[1].toLowerCase()]; labelled = true; out[cur] = (out[cur] ? out[cur] + ' ' : '') + m[2].trim(); }
+        else if (line.trim()) out[cur] = (out[cur] ? out[cur] + ' ' : '') + line.trim();
+      }
+      if (!labelled) out.character = String(text).trim();
+      return out;
+    },
+    bytes(text) { return new TextEncoder().encode(text).length; },
     noteBurned(c) { // a card this wallet burned counts toward its edition's and its look's burned numbers
       const ed = [c.series, c.character, c.material].join('|'), look = ed + '|' + (c.holo || 'none');
       state.burned[ed] = (state.burned[ed] || 0) + 1; state.burned[look] = (state.burned[look] || 0) + 1;
