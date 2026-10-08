@@ -12,7 +12,7 @@ import {SeriesHelper} from "./SeriesHelper.sol";
 import {MockBurner} from "../Mocks.sol";
 
 /// @dev The series check before lock (review item 21): batch A is the content only, batch B (configureDrop) is only
-///      written once the chain holds batch A exactly as the JSON says, and both go out as Safe Transaction Builder files.
+///      sent once the chain holds batch A exactly as the JSON says; both are sent from the owner's hardware wallet.
 contract SeriesCheckTest is SeriesHelper {
     using stdJson for string;
 
@@ -76,20 +76,5 @@ contract SeriesCheckTest is SeriesHelper {
         cards.lockFire(7);
         vm.expectRevert(bytes("on chain: the Series is already locked"));
         cs.checkOnChain(json, address(dealer), address(cards));
-    }
-
-    function test_safeTransactionBuilderFile() public {
-        ConfigureSeries.Call[] memory a = cs.build(json, address(dealer), address(cards), 2);
-        string memory f = cs.safeJson(a, 4663, address(0x5AFE), "Series 7 batch A", "content");
-        assertEq(f.readString(".version"), "1.0");
-        assertEq(f.readString(".chainId"), "4663");
-        assertEq(f.readAddress(".meta.createdFromSafeAddress"), address(0x5AFE));
-        for (uint256 i; i < a.length; i++) {
-            string memory p = string.concat(".transactions[", vm.toString(i), "]");
-            assertEq(f.readAddress(string.concat(p, ".to")), a[i].to);
-            assertEq(f.readBytes(string.concat(p, ".data")), a[i].data);
-            assertEq(f.readString(string.concat(p, ".value")), "0");
-        }
-        assertFalse(vm.keyExistsJson(f, string.concat(".transactions[", vm.toString(a.length), "]")), "one entry per call");
     }
 }

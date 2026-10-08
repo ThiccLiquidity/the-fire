@@ -65,14 +65,15 @@ interface ICardsPair {
  *   forge script script/DeployCards.s.sol --rpc-url $RPC --account deployer --sender <deployer address> --slow --broadcast \
  *     --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
  *
- * Sign with a Foundry keystore (cast wallet import deployer --interactive) or --ledger. Never --private-key.
+ * The deployer is a throwaway hot wallet (Foundry keystore: cast wallet import deployer --interactive) that only pays
+ * gas. Never --private-key.
  *
  * Settings (.env.example, card contracts section):
  *   DRAND_ROUTER      the OpenDrandRouter from DeployInfra.s.sol (it has no owner)
- *   OWNER             the multisig (Safe) that will own everything. Afterwards it must call acceptOwnership() on
- *                     FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner (Ownable2Step). FireSale
- *                     is owned by OWNER from deployment. PlankBurner has no owner.
- *                     A plain wallet is refused unless ALLOW_EOA_OWNER=true.
+ *   OWNER             the hardware wallet (Ledger or Trezor) that will own everything. Afterwards it calls
+ *                     acceptOwnership() on FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner
+ *                     (Ownable2Step), all six in one run of script/AcceptOwnership.s.sol signed on the device. FireSale
+ *                     is owned by OWNER from deployment. PlankBurner has no owner. Must not be the deployer.
  *   ROYALTY_RECEIVER, ROYALTY_BPS (500 = 5%, max 1000)
  *   PACK_IMAGE_BASE   folder of the pack art (fire<N>.webp); can be set later
  *   PAPER, PLANK, USDG, WETH, MILL (the Paper Press NFT)
@@ -147,6 +148,7 @@ contract DeployCards is Deployments {
             suggestionPaper: vm.envOr("SUGGESTION_PAPER", uint256(1e18))
         });
         check(p);
+        require(p.owner != msg.sender, "OWNER is the deployer: use a throwaway deployer and the hardware wallet as OWNER");
 
         vm.startBroadcast();
         d = deploy(p, msg.sender);
@@ -164,7 +166,7 @@ contract DeployCards is Deployments {
         console.log("RecipeCompiler", address(d.compiler));
         console.log("Adapter (cards)", address(d.adapter));
         console.log("Adapter (PDA)  ", address(d.psaAdapter));
-        console.log("Next: the OWNER multisig calls acceptOwnership() on FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner.");
+        console.log("Next: the OWNER hardware wallet accepts the six contracts: script/AcceptOwnership.s.sol --ledger (or --trezor).");
         _recordCards(d, p);
     }
 
@@ -287,7 +289,6 @@ contract DeployCards is Deployments {
         require(p.usdg == address(0) || p.usdg.code.length > 0, "USDG has no code on this chain");
         require(p.paperUsd.code.length > 0, "PAPER_USD_FEED has no code on this chain");
         require(p.owner != address(0) && p.royaltyTo != address(0), "OWNER / ROYALTY_RECEIVER missing");
-        require(p.owner.code.length > 0 || vm.envOr("ALLOW_EOA_OWNER", false), "OWNER should be a multisig (set ALLOW_EOA_OWNER=true to override)");
         require(p.revenueWallet != address(0), "REVENUE_WALLET must be set");
         require(p.royaltyBps <= 1000, "ROYALTY_BPS above 10%");
 

@@ -1,7 +1,11 @@
 # Deploy runbook (Robinhood Chain mainnet, chain id 4663)
 
-Everything below is signed from a **fresh deployer wallet** with ~$50 of ETH. Keys live in a Foundry keystore
-(`cast wallet import deployer --interactive`) or a Ledger, never in files or command lines. Never `--private-key`.
+Two wallets:
+- **The deployer**: a fresh, throwaway hot wallet with ~$50 of ETH. It only pays gas for steps 1–3 and has no
+  powers once step 4 is done. Its key goes into a Foundry keystore (`cast wallet import deployer --interactive`,
+  typed in, never pasted into a file or a command line). Never `--private-key`.
+- **The owner**: one hardware wallet (Ledger or Trezor) owns every contract. No multisig: nothing in the contracts
+  holds funds, and the risk is key theft, which the device covers. It signs on the device (`--ledger` / `--trezor`).
 
 Commands are shown for PowerShell.
 
@@ -9,6 +13,25 @@ Commands are shown for PowerShell.
 cd contracts; copy .env.example .env   # then fill in the real .env, never .env.example
 $env:RPC = Read-Host "RPC URL"                  # once per PowerShell window: forge reads .env, PowerShell doesn't
 ```
+
+### The owner's Ledger account
+The owner is a fresh Ethereum account on the Ledger, not necessarily its first one. Ledger Live numbers accounts
+0, 1, 2…; account N has the path `m/44'/60'/N'/0/0`. Set it (and the address) once per PowerShell window, and check
+the device shows that address before using it anywhere:
+```powershell
+$env:OWNER_HD_PATH = "m/44'/60'/1'/0/0"        # N = the account's number in Ledger Live (here account 1)
+cast wallet address --ledger --hd-path $env:OWNER_HD_PATH
+$env:OWNER = "<the address it printed>"         # the same address goes in .env as OWNER
+```
+Keep the path in `.env` too (`OWNER_HD_PATH="m/44'/60'/1'/0/0"`, double quotes kept, or forge can't read the file);
+PowerShell still needs the two `$env:` lines in each new window. `cast wallet address` takes `--hd-path`,
+`forge script` takes `--hd-paths`. On a Trezor use `--trezor` and the path Trezor Suite shows (its accounts are
+`m/44'/60'/0'/0/N`).
+
+Before each owner command: close Ledger Live, unlock the device, open the Ethereum app, and turn on **Blind signing**
+there (Settings; contract calls need it). Switch it off again between uses if you like. The owner address needs a
+little ETH for gas (~$10). The device shows every transaction: check the contract address against
+`deployments/4663.json` before confirming.
 
 Every step writes what it deployed to **`deployments/4663.json`** (the one address file: ConfigureSeries,
 VerifyDeploy, VerifySeries, the keeper, `ops/snapshot` and the site read it), so later steps need no addresses
@@ -41,7 +64,7 @@ candidate, then one 20-hour window). Until then packs take the set PAPER (no dol
 `PaperBurner`.
 
 ## 3. Card contracts
-Fill the card section of `.env` (`OWNER` multisig, royalty, revenue wallet; details at the top of
+Fill the card section of `.env` (`OWNER` = the hardware wallet's address, royalty, revenue wallet; details at the top of
 `script/DeployCards.s.sol` and in `docs/cards-contracts.md`), then:
 ```powershell
 forge script script/DeployCards.s.sol --rpc-url $env:RPC --account deployer --sender <deployer address> --slow --broadcast `
@@ -54,16 +77,24 @@ required. Then it deploys FirePacks, FireCards, CardsRenderer, RecipeDealer and 
 owner, no withdraw: it holds the PLANK burn share when a sale's swap can't run), FireCredits, FireSale, PaperBurner
 (with its feeds and default routes), FirePsa and one drand adapter each for FireCards and FirePsa, wires them (set-once
 links, each checked: FireSale and FireCredits point at each other, FireSale's PlankBurner uses the same router and
-feeds), and hands ownership to `OWNER`.
+feeds), and hands ownership to `OWNER`. It refuses an `OWNER` equal to the deployer.
 
-## 4. Multisig accepts
-`OWNER` calls `acceptOwnership()` on FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner
-(FireSale is owned by `OWNER` from deployment; PlankBurner has no owner). Until then the deployer key controls those
-six. Then the read-only check (no key needed):
+## 4. Hardware wallet accepts
+The owner accepts FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner in one run (FireSale is
+owned by `OWNER` from deployment; PlankBurner has no owner). Until then the deployer key controls those six, so do it
+right after step 3. Six confirmations on the device:
+```powershell
+forge script script/AcceptOwnership.s.sol --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH `
+  --sender $env:OWNER --slow --broadcast
+```
+It reads the addresses and the expected owner from `deployments/4663.json`, refuses any other signer, and skips what
+the owner already holds (safe to run again). Leave out `--broadcast` for a dry run. Then the read-only check (no key
+needed):
 ```powershell
 forge script script/VerifyDeploy.s.sol --rpc-url $env:RPC
 ```
-It prints OK / WAIT / FAIL per line: code at every address, owners and pending owners, every set-once link (the list
+It prints OK / WAIT / FAIL per line: code at every address, every owner is the hardware wallet recorded as `OWNER` in
+the deployments file (or it still has to accept), every set-once link (the list
 in `docs/cards-contracts.md`), the feeds live, nothing paused or locked by mistake. It fails on any FAIL; WAIT means
 "not yet" (an acceptOwnership still to sign, the PLANK feed before its first checkpoint, the PAPER feed before its
 pool). Ownership can never be renounced. Optional:
@@ -83,18 +114,26 @@ It alerts a Discord/Slack/Telegram webhook on stale feeds, stuck opens or gradin
 keeper ETH, with a daily heartbeat. None of these calls pause. The owner's pause (`FireSale.setPaused`,
 `FirePsa.setPaused`) stops only buying, press packs, credit spending, paid suggestions and case/grading payments.
 
-## 6. Each Series: two Safe signings with a check in between
+## 6. Each Series: two signings on the device with a check in between
 Put the studio's `recipe.json` in `contracts/series/` (the scripts may only read there).
+
+**Try it first on a fork** (as the owner, impersonated; no device, nothing sent):
+```powershell
+$env:RECIPE_JSON = "series/recipe-fire-7.json"; $env:BATCH = "AB"; $env:SIMULATE = "true"
+forge script script/ConfigureSeries.s.sol --fork-url $env:RPC
+Remove-Item Env:SIMULATE
+```
 
 **Batch A, the content** (nothing locks yet):
 ```powershell
-$env:RECIPE_JSON = "series/recipe-fire-7.json"; $env:BATCH = "A"
-forge script script/ConfigureSeries.s.sol --rpc-url $env:RPC
+$env:BATCH = "A"
+forge script script/ConfigureSeries.s.sol --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH `
+  --sender $env:OWNER --slow --broadcast
 ```
-It checks the recipe against the dealer and writes `contracts/safe-tx/series-7-A.json`: `RecipeDealer.setRecipe`
-and `setCharacters` (+ `appendCharacters` for long lists), `FireCards.setDealer` and `setImagesBase`. No PDA odds: they are fixed in `FirePsa`, the same for every Series.
-In the Safe: Apps → Transaction Builder → drag the file in → check → sign. Never paste calldata. To try it first on
-a fork as the Safe: add `$env:SIMULATE = "true"` and use `--fork-url $env:RPC` instead of `--rpc-url`.
+It checks the recipe against the dealer, prints each call and sends them from the owner, one confirmation each on
+the device: `RecipeDealer.setRecipe` and `setCharacters` (+ `appendCharacters` for long lists), `FireCards.setDealer`
+and `setImagesBase`. No PDA odds: they are fixed in `FirePsa`, the same for every Series. It refuses any signer but
+the owner. Leave out `--broadcast` for a dry run.
 
 **The check** (read-only; the holder snapshot first, `ops/README.md`):
 ```powershell
@@ -110,10 +149,11 @@ reads the folder's `manifest.json`, and recomputes the snapshot's Merkle root. S
 are fixed from then).
 ```powershell
 $env:BATCH = "B"; $env:DROP_START = "<unix seconds>"; $env:HOLDER_ROOT = "<the snapshot's root>"
-forge script script/ConfigureSeries.s.sol --rpc-url $env:RPC
+forge script script/ConfigureSeries.s.sol --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH `
+  --sender $env:OWNER --slow --broadcast
 ```
-It refuses unless the chain holds batch A exactly as the JSON says, then writes `contracts/safe-tx/series-7-B.json`
-for the Safe. Then `FireCredits.pickSuggestions` as before.
+It refuses unless the chain holds batch A exactly as the JSON says, then sends `configureDrop` from the owner (one
+confirmation). Then `FireCredits.pickSuggestions` as before.
 
 ## 7. Site
 The Forge is static (`web/public/forge`) and runs in demo mode (a demo banner, no wallet, no payments). The live
@@ -124,7 +164,8 @@ addresses from `deployments/<chainId>.json` (Vercel must include files outside t
 
 ## Rehearsal
 `ops/rehearsal/rehearse.mjs` runs everything above on a local chain with the real scripts and the real keeper code:
-deploy → VerifyDeploy → the Safe accepts (impersonated) → keeper checkpoints → batch A from its Safe file → snapshot
+deploy → VerifyDeploy → the owner accepts (AcceptOwnership, owner impersonated) → keeper checkpoints → batch A from
+the owner (ConfigureSeries) → snapshot
 → VerifySeries (RED with an image missing, then GREEN) → batch B → buy (one with the PLANK swap down) → sold out,
 closed → open → the keeper delivers drand and deals → case and grade → the keeper finishes the grading → both burners
 flushed (the PAPER feed going live 40 h later) → VerifyDeploy.
@@ -135,7 +176,7 @@ node rehearsal/rehearse.mjs --fork $env:RPC       # a Robinhood Chain fork: real
 ```
 On plain anvil, stand-ins replace the tokens, pools and Chainlink (`contracts/script/dev/DevContracts.sol`, never
 deployed for real). The first open is timed to drand round 1000 and proved through the real `OpenDrandRouter` with
-drand's real signature; then the Safe switches the randomness to a stand-in router that accepts any signature, so the
+drand's real signature; then the owner switches the randomness to a stand-in router that accepts any signature, so the
 rest runs without drand. It also races two keepers on the same work and checks the backup leaves it to the main
 keeper. CI runs it on every push. The fork mode needs the RPC and drand reachable, and skips the 40-hour PAPER feed
 leg (a fork's Chainlink doesn't update).

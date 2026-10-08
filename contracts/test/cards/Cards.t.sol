@@ -12,6 +12,7 @@ import {PaperBurner} from "../../src/cards/PaperBurner.sol";
 import {FireCredits} from "../../src/cards/FireCredits.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {DeployCards} from "../../script/DeployCards.s.sol";
+import {AcceptOwnership} from "../../script/AcceptOwnership.s.sol";
 import {MockERC20, MockUSDG, MockFeed, MockPlankTwap, MockPair, MockV2Factory, MockRouterInfo} from "../Mocks.sol";
 import {OpenDrandRouter} from "../../src/OpenDrandRouter.sol";
 import {SeriesHelper, RecipeHarness} from "./SeriesHelper.sol";
@@ -1090,7 +1091,46 @@ contract CardsTest is SeriesHelper {
 }
 
 contract DeployCardsTest is Test {
-    function test_deployWiresEverythingAndHandsOwnershipToTheMultisig() public {
+    /// @dev The hardware wallet accepts the six contracts in one run: AcceptOwnership lists exactly the ones still
+    ///      pending for it, skips the ones it holds, and refuses a contract pending to someone else.
+    function test_acceptOwnershipListsTheSixForTheHardwareWallet() public {
+        address owner = address(0x1ED6E2);
+        FirePacks packs = new FirePacks(address(this));
+        FireCards cards = new FireCards(address(this), address(packs));
+        RecipeDealer dealer = new RecipeDealer(address(this), address(cards), address(new RecipeCompiler()));
+        FireCredits credits = new FireCredits(address(this), address(cards), 0);
+        // FirePsa and PaperBurner stand-ins: two more two-step-owned contracts
+        address[6] memory c = [address(packs), address(cards), address(dealer), address(credits),
+            address(new FirePacks(address(this))), address(new FirePacks(address(this)))];
+        string memory json = "{";
+        string[6] memory names = new AcceptOwnership().owned();
+        for (uint256 i; i < 6; i++) {
+            FirePacks(c[i]).transferOwnership(owner);
+            json = string.concat(json, i == 0 ? '"contracts":{"' : ',"', names[i], '":"', vm.toString(c[i]), '"');
+        }
+        string memory file = string.concat(vm.projectRoot(), "/../deployments/test-accept-ownership.json");
+        vm.writeFile(file, string.concat(json, '},"inputs":{"OWNER":"', vm.toString(owner), '"}}'));
+        vm.setEnv("DEPLOYMENTS_FILE", file);
+        AcceptOwnership a = new AcceptOwnership();
+        address[] memory list = a.toAccept(owner);
+        assertEq(list.length, 6, "all six pending");
+        for (uint256 i; i < 6; i++) assertEq(list[i], c[i]);
+        vm.prank(owner); packs.acceptOwnership();
+        vm.prank(owner); credits.acceptOwnership();
+        list = a.toAccept(owner);
+        assertEq(list.length, 4, "the ones it holds are skipped");
+        for (uint256 i; i < list.length; i++) {
+            vm.prank(owner);
+            FirePacks(list[i]).acceptOwnership();
+        }
+        assertEq(a.toAccept(owner).length, 0, "nothing left");
+        assertEq(dealer.owner(), owner);
+        vm.expectRevert(bytes("FirePacks is not waiting for this owner"));
+        a.toAccept(address(0xBAD));
+        vm.removeFile(file);
+    }
+
+    function test_deployWiresEverythingAndHandsOwnershipToTheOwner() public {
         vm.warp(1_800_000_000);
         DeployCards s = new DeployCards();
         address safe = address(0x5AFE);
@@ -1149,7 +1189,7 @@ contract DeployCardsTest is Test {
         d.credits.setSale(address(0xBEEF)); // set once
         assertEq(d.sale.USDG_UNIT(), 1e6);
         assertEq(d.credits.suggestionPaper(), 2e18);
-        assertEq(d.sale.owner(), safe, "the sale is the multisig's from the start");
+        assertEq(d.sale.owner(), safe, "the sale is the owner's from the start");
         assertEq(d.packs.pendingOwner(), safe);
         assertEq(d.cards.pendingOwner(), safe);
         assertEq(d.psa.pendingOwner(), safe);
@@ -1173,11 +1213,7 @@ contract DeployCardsTest is Test {
         (address r, uint256 amt) = d.cards.royaltyInfo(1, 10_000);
         assertEq(r, safe); assertEq(amt, 500);
         assertEq(d.packs.packImageBase(), "ipfs://packs/");
-        vm.setEnv("ALLOW_EOA_OWNER", "false");
-        vm.expectRevert(bytes("OWNER should be a multisig (set ALLOW_EOA_OWNER=true to override)"));
-        s.check(p); // 0x5AFE has no code here
-        vm.setEnv("ALLOW_EOA_OWNER", "true");
-        s.check(p);
+        s.check(p); // a plain wallet (the hardware wallet) is the owner: 0x5AFE has no code here
 
         // the checks that catch a permanent mistake (memory structs alias, so change one thing and put it back)
         p.router = address(d.adapter); // the adapter printed next to the router by the Fire deploy

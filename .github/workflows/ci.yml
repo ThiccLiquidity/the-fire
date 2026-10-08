@@ -116,6 +116,6 @@ jobs:
       - name: build the contracts
         working-directory: contracts
         run: forge build
-      - name: deploy rehearsal on anvil (deploy, Safe batches, snapshot, VerifySeries, buy, open, keeper, grading, flushes)
+      - name: deploy rehearsal on anvil (deploy, owner accepts, Series batches, snapshot, VerifySeries, buy, open, keeper, grading, flushes)
         working-directory: ops
         run: node rehearsal/rehearse.mjs
