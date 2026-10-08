@@ -1,0 +1,110 @@
+{
+ "license": "Pixabay Content License (https://pixabay.com/service/license-summary/)",
+ "sounds": [
+  {
+   "file": "forge-fire-loop.mp3",
+   "purpose": "Forge fire ambience (loop)",
+   "source": "freesound_community-aachen_burning-fireplace-crackling-fire-soundswav-14561.mp3",
+   "credit": "freesound_community (Pixabay) - \"aachen burning fireplace crackling fire\"; Pixabay Content License"
+  },
+  {
+   "file": "press-loop.mp3",
+   "purpose": "Printing-press ambience while a Series is on sale (loop)",
+   "source": "pwlpl-printing-press-506323.mp3",
+   "credit": "pwlpl (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "conveyor-loop.mp3",
+   "purpose": "Conveyor / gears ambience while on sale (loop)",
+   "source": "dragon-studio-conveyor-belt-584731.mp3",
+   "credit": "DRAGON-STUDIO (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "pen-scratch-loop.mp3",
+   "purpose": "Pen scratch while typing (loop)",
+   "source": "freesound_community-writing-with-pen-35109.mp3",
+   "credit": "freesound_community (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "fire-flare.mp3",
+   "purpose": "Fire flare when burning cards",
+   "source": "soundreality-whoosh-fire-movement-243099.mp3",
+   "credit": "SoundReality (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "pack-rip.mp3",
+   "purpose": "Pack rip (paper/foil tear)",
+   "source": "colto-paper-tearing-132571.mp3",
+   "credit": "colto (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "card-flip.mp3",
+   "purpose": "Card flip",
+   "source": "freesound_community-flipcard-91468.mp3",
+   "credit": "freesound_community (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "card-slide.mp3",
+   "purpose": "Card slide (cut from flipcard swish, slowed 15%)",
+   "source": "freesound_community-flipcard-91468.mp3",
+   "credit": "freesound_community (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "case-snap.mp3",
+   "purpose": "Case snap (slab closes)",
+   "source": "freesound_community-clip-in-106657.mp3",
+   "credit": "freesound_community (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "grade-stamp.mp3",
+   "purpose": "Grade stamp",
+   "source": "freesound_community-stamp-81635.mp3",
+   "credit": "freesound_community (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "paper-fold.mp3",
+   "purpose": "Paper fold",
+   "source": "freesound_community-creasing-paper-92362.mp3",
+   "credit": "freesound_community (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "suggestion-drop.mp3",
+   "purpose": "Suggestion dropped into the box",
+   "source": "sranikiii-metal-mailbox-letter-drop-sound-513623.mp3",
+   "credit": "sranikiii (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "pack-drop.mp3",
+   "purpose": "Pack drop after buying (thud)",
+   "source": "freesound_community-dropping-books-84622.mp3",
+   "credit": "freesound_community (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "ui-click.mp3",
+   "purpose": "Soft UI click",
+   "source": "dragon-studio-button-press-382713.mp3",
+   "credit": "DRAGON-STUDIO (Pixabay); Pixabay Content License"
+  },
+  {
+   "file": "rare-a.mp3",
+   "purpose": "Rare pull hit (variant a): crisp anvil strike + spark sizzle",
+   "source": "soundreality-whoosh-fire-movement-243099.mp3",
+   "credit": "SoundReality (Pixabay); Pixabay Content License",
+   "note": "Designed sound layered with the recording above"
+  },
+  {
+   "file": "epic-a.mp3",
+   "purpose": "Epic pull hit (variant a): big anvil strike + fire roar swelling after",
+   "source": "soundreality-whoosh-fire-movement-243099.mp3",
+   "credit": "SoundReality (Pixabay); Pixabay Content License",
+   "note": "Designed sound layered with the recording above"
+  },
+  {
+   "file": "legendary-a.mp3",
+   "purpose": "Legendary pull hit (variant a): heavy hammer impact with sub-boom, fire burst, deep bell ring-out with reverb",
+   "source": "soundreality-whoosh-fire-movement-243099.mp3",
+   "credit": "SoundReality (Pixabay); Pixabay Content License",
+   "note": "Designed sound layered with the recording above"
+  }
+ ]
+}
