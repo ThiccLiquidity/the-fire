@@ -53,51 +53,57 @@
 
   const BACK = 'ui/card-back.webp'; // the card back, for every face-down card
 
-  // ---------- pack-opening sounds, made with WebAudio (no files). Silent while the top bar's sound toggle is off;
-  // the AudioContext is only made after the player has turned sound on (a user gesture).
+  // ---------- pack-opening sounds: recordings (sound.js) for the tear, slides, flips and the Rare / Epic / Legendary hits;
+  // a few small made-in-WebAudio accents (the tease rumble, the light leak's crackle, its pop, the plain-holo shimmer)
+  // where no recording fits. All through Sound's one AudioContext, so the speaker button silences everything.
   const Sfx = (() => {
-    let ctx = null, noise = null;
-    const on = () => document.getElementById('soundBtn')?.getAttribute('aria-pressed') === 'true' && navigator.userActivation?.hasBeenActive !== false;
+    let noise = null, ctx = null, out = null;
     function ac() {
-      if (!on()) return null;
-      if (!ctx) {
-        const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
-        try { ctx = new AC(); } catch { return null; }
-        noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-      }
-      if (ctx.state === 'suspended') ctx.resume();
+      ctx = window.Sound?.ctx; if (!ctx || ctx.state !== 'running') return null; out = Sound.out;
+      if (!noise || noise.sampleRate !== ctx.sampleRate) { noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
       return ctx;
     }
+    const play = (n, o) => window.Sound?.play(n, o);
     const env = (g, t, a, peak, dec) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec); };
     function hiss(t, { type = 'bandpass', f = 2500, q = 1, peak = 0.2, a = 0.004, dec = 0.05 } = {}) {
       const s = ctx.createBufferSource(), fl = ctx.createBiquadFilter(), g = ctx.createGain();
       s.buffer = noise; fl.type = type; fl.frequency.value = f; fl.Q.value = q; env(g, t, a, peak, dec);
-      s.connect(fl).connect(g).connect(ctx.destination); s.start(t, Math.random() * 0.5); s.stop(t + a + dec + 0.05); return fl;
+      s.connect(fl).connect(g).connect(out); s.start(t, Math.random() * 0.5); s.stop(t + a + dec + 0.05); return fl;
     }
     function tone(t, f, { type = 'sine', peak = 0.12, a = 0.01, dec = 1.2, to } = {}) {
       const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type; o.frequency.setValueAtTime(f, t);
       if (to) o.frequency.exponentialRampToValueAtTime(to, t + a + dec); env(g, t, a, peak, dec);
-      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + a + dec + 0.05);
+      o.connect(g).connect(out); o.start(t); o.stop(t + a + dec + 0.05);
     }
+    // the tear follows the finger: one voice plays the recording on from where the tear is, and goes quiet when the finger stops
+    let rv = null, rvT = 0;
+    const RIP = 0.85; // pack-rip.mp3 length (s)
     return {
-      rip(n = 2) { if (!ac()) return; const t = ctx.currentTime; for (let i = 0; i < n; i++) hiss(t + i * 0.018 + Math.random() * 0.012, { f: 1800 + Math.random() * 2800, q: 0.9, peak: 0.12 + Math.random() * 0.1, dec: 0.025 + Math.random() * 0.04 }); },
-      ripFull() { if (!ac()) return; this.rip(14); hiss(ctx.currentTime, { type: 'highpass', f: 2600, q: 0.5, peak: 0.16, a: 0.02, dec: 0.28 }); },
-      slide() { if (!ac()) return; const t = ctx.currentTime; const fl = hiss(t, { type: 'lowpass', f: 450, q: 0.8, peak: 0.2, a: 0.03, dec: 0.3 });
-        fl.frequency.setValueAtTime(450, t); fl.frequency.exponentialRampToValueAtTime(3000, t + 0.12); fl.frequency.exponentialRampToValueAtTime(700, t + 0.34); },
-      flip() { if (!ac()) return; hiss(ctx.currentTime, { type: 'lowpass', f: 1400, q: 0.7, peak: 0.1, dec: 0.06 }); },
+      rip(p = 0) {
+        clearTimeout(rvT);
+        if (!rv || rv.done) rv = play('pack-rip', { offset: Math.min(0.75, p) * RIP, fadeIn: 0.015 });
+        rvT = setTimeout(() => { rv?.stop(0.06); rv = null; }, 140);
+      },
+      ripFull() { // the tear completes: let the running voice play out, or (no drag, e.g. Enter) the whole tear
+        clearTimeout(rvT);
+        if (rv && !rv.done) { rv = null; return; }
+        play('pack-rip');
+      },
+      slide() { play('card-slide', { gap: 60 }); },
+      flip() { play('card-flip', { gap: 60 }); },
       tease(m) { if (!ac()) return; const t = ctx.currentTime, d = { fire: 0.85, charcoal: 1, diamond: 1.2, gold: 1.2, fullart: 1.3 }[m] || 1;
         if (Store.ALWAYS_HOLO[m]) { tone(t, 900, { peak: 0.04, a: d * 0.8, dec: 0.3, to: 2400 }); tone(t, 1350, { peak: 0.025, a: d * 0.8, dec: 0.3, to: 3600 }); }
         else { tone(t, m === 'fire' ? 70 : 52, { type: 'triangle', peak: 0.16, a: d * 0.85, dec: 0.25 }); hiss(t, { type: 'lowpass', f: 600, peak: 0.08, a: d * 0.8, dec: 0.25 }); } },
-      chime(rank) { if (!ac()) return; const t = ctx.currentTime;
-        const notes = rank >= 4 ? [880, 1108.7, 1318.5, 1760, 2217.5] : rank === 3 ? [659.3, 987.8, 1318.5] : [784, 1174.7];
-        notes.forEach((f, i) => { tone(t + i * 0.07, f, { peak: 0.1, dec: 1.3 }); tone(t + i * 0.07, f * 2.01, { peak: 0.03, dec: 0.8 }); }); },
-      boom() { if (!ac()) return; const t = ctx.currentTime; tone(t, 120, { peak: 0.35, a: 0.005, dec: 0.6, to: 38 }); hiss(t, { type: 'lowpass', f: 900, peak: 0.25, dec: 0.45 }); },
+      // the tier hit on the flip: Rare = anvil strike, Epic = anvil + flame roar, Legendary = hammer + flame burst + deep bell
+      // (Legendary's plays with the big moment, not here). The room dips under it.
+      hit(tier) { const n = { rare: 'rare-a', epic: 'epic-a', legendary: 'legendary-a' }[tier]; if (!n) return;
+        if (play(n, { gap: 300 })) Sound.duck(tier === 'legendary' ? 4 : tier === 'epic' ? 2.4 : 1.4, tier === 'rare' ? 0.5 : 0.3); },
       // the light leak: a rising shimmer (three glides) under a crackle that gets denser and louder, d seconds long
       leak(m, d, leg) { if (!ac()) return; const t = ctx.currentTime, f = { paper: 520, wood: 330, fire: 262, charcoal: 196, diamond: 660, gold: 587, fullart: 784 }[m] || 400;
         [1, 1.5, 2.01].forEach((k, i) => tone(t, f * k, { type: i ? 'sine' : 'triangle', peak: (leg ? 0.06 : 0.04) / (i + 1), a: d, dec: 0.16, to: f * k * (leg ? 2.6 : 2) }));
         const n = leg ? 30 : 16; for (let i = 0; i < n; i++) { const u = Math.sqrt(i / n);
           hiss(t + u * d, { f: 2200 + Math.random() * 4500, q: 2.2, peak: 0.025 + u * (leg ? 0.15 : 0.1), dec: 0.01 + Math.random() * 0.02 }); } },
-      // a holo turning over: a soft rising shimmer (a quick run of glassy notes over a breath of air), well under the Epic chime
+      // a holo turning over: a soft rising shimmer (a quick run of glassy notes over a breath of air), well under the tier hits
       shimmer() { if (!ac()) return; const t = ctx.currentTime;
         [1046.5, 1318.5, 1568, 2093, 2637].forEach((f, i) => { tone(t + i * 0.06, f, { peak: 0.045 - i * 0.005, a: 0.015, dec: 0.9 }); tone(t + i * 0.06, f * 1.5, { peak: 0.012, dec: 0.5 }); });
         hiss(t, { type: 'highpass', f: 5200, q: 0.5, peak: 0.035, a: 0.2, dec: 0.45 }); },
@@ -405,7 +411,7 @@
         const advance = (p) => {
           if (done || p <= prog) return;
           grain += p - prog; prog = Math.min(1, p); draw();
-          if (grain > 0.06) { grain = 0; Sfx.rip(2); }
+          if (grain > 0.03) { grain = 0; Sfx.rip(prog); }
           if (prog >= 0.97) finish();
         };
         async function finish() {
@@ -497,7 +503,7 @@
           if (ho) holoLand(el, !tier, slow, rm);
           const name = cardName(c);
           if (isHolo(c)) el.classList.add('holo-glow'); // every holo card, any material, glows on reveal
-          if (tier) { el.classList.add('rare', 'burst'); Sfx.chime(tier === 'legendary' ? 4 : big ? 3 : 2); msg.textContent = name + '!'; }
+          if (tier) { el.classList.add('rare', 'burst'); if (tier !== 'legendary') Sfx.hit(tier); msg.textContent = name + '!'; }
           else msg.textContent = isHolo(c) ? name + '!' : last ? name : 'Swipe or tap for the next card';
           const od = Store.trueOdds(c);
           put(meta, h('span', { class: 'op-n', text: `${i + 1} / ${order.length}` }), matChip(c.material), holoChip(c),
@@ -654,7 +660,7 @@
       const cv = h('canvas', { class: 'bm-cv' });
       const ov = h('div', { class: 'bigm ' + (dia || kind === 'g10' ? kind : 'fh fh-' + kind), 'aria-hidden': 'true' }, h('i', { class: 'bm-flash' }), h('i', { class: 'bm-glow' }), cv,
         h('b', { class: 'bm-t', text: title }));
-      (op.closest('dialog') || op).append(ov); Sfx.boom(); op.classList.add('big'); setTimeout(() => op.classList.remove('big'), 2300);
+      (op.closest('dialog') || op).append(ov); Sfx.hit('legendary'); op.classList.add('big'); setTimeout(() => op.classList.remove('big'), 2300);
       if (!reduced()) { sparks(cv, el.getBoundingClientRect(), BM_SPARKS[kind]); const q = op.querySelector('.op-area'); q.classList.add('quake'); setTimeout(() => q.classList.remove('quake'), 450); }
       setTimeout(() => ov.classList.add('out'), 1900); setTimeout(() => ov.remove(), 2500);
     }
@@ -929,7 +935,7 @@
         wrap.append(shell);
         await wait(reduced() ? 60 : 520);
         const f = wrap.querySelector('.cframe'); f.style.objectPosition = Store.cardPos(c); wrap.querySelector('.cface').className = wrap.querySelector('.cface').className.replace('hd-raw', 'hd-case');
-        shell.remove(); w.classList.add('cased-done'); w.setAttribute('aria-label', `${c.character} cased`);
+        shell.remove(); w.classList.add('cased-done'); window.Sound?.play('case-snap', { gap: 60 }); w.setAttribute('aria-label', `${c.character} cased`);
       }
       caseH.textContent = 'Cased';
       const got = [];
@@ -941,7 +947,7 @@
           const c0 = byId(w._id), gr = Wear.draw(c0.frozenAge / 1000, c0.moves); got.push(gr);
           Store.update((s) => { const c = s.cards.find((x) => x.id === w._id); if (c) { c.grade = gr; c.pending = false; } });
           const c = byId(w._id); w.querySelector('.cwrap').replaceChildren(cardFace(c), h('span', { class: 'stamp g' + gr, 'aria-hidden': 'true' }, h('small', { text: 'PDA' }), h('b', { text: gr })));
-          w.classList.remove('scanning'); w.classList.add('stamped', 'slabbed'); w.setAttribute('aria-label', `${c.character}, PDA ${gr}, slabbed`);
+          w.classList.remove('scanning'); w.classList.add('stamped', 'slabbed'); setTimeout(() => window.Sound?.play('grade-stamp', { gap: 60 }), reduced() ? 0 : 150); // lands with the stamp's thud w.setAttribute('aria-label', `${c.character}, PDA ${gr}, slabbed`);
           if (reduced()) { const st = w.querySelector('.stamp'); setTimeout(() => st.remove(), 1500); } // reduced motion: the stamp shows still, then goes
           msg.textContent = `${c.character}: PDA ${gr}`;
           if (!reduced()) await wait(900);
@@ -986,7 +992,7 @@
     Store.update((s) => { s.wallet.burnCount++; if (s.wallet.burnCount % BURN_GOAL === 0) { s.wallet.credits++; free = true; Store.log('Burned 42: free pack'); } });
     if (free) { window.Scene?.popToken?.(); toast('You burned 42. Free pack!', 'good'); }
   }
-  const hookScene = () => window.Scene?.on?.('cardBurned', () => { if (burnQueue > 0) { burnQueue--; addBurn(); } });
+  const hookScene = () => window.Scene?.on?.('cardBurned', () => { if (burnQueue > 0) { burnQueue--; addBurn(); window.Sound?.play('fire-flare', { gap: 650 }); } });
   if (window.Scene) hookScene(); else window.addEventListener('scene-ready', hookScene, { once: true });
 
   // Best to burn: spare copies first (never the best copy of a character+material), then least rare.
@@ -1072,7 +1078,7 @@
       Store.update((s) => { ids.forEach((id) => Store.noteBurned(byId(id))); s.cards = s.cards.filter((c) => !ids.includes(c.id)); Store.log(`Burned ${ids.length} card${ids.length > 1 ? 's' : ''}`); });
       unlisten('burn'); Sheet.close('burn');
       toast(`Burning ${ids.length} card${ids.length > 1 ? 's' : ''}…`);
-      ids.forEach((_, i) => setTimeout(() => { if (window.Scene?.burn) { burnQueue++; window.Scene.burn(); } else addBurn(); }, i * 350));
+      ids.forEach((_, i) => setTimeout(() => { if (window.Scene?.burn) { burnQueue++; window.Scene.burn(); } else { addBurn(); window.Sound?.play('fire-flare', { gap: 650 }); } }, i * 350));
     }
     listen('burn', render);
     Sheet.open('burn', { title: 'Burn', body: root, onClose: () => unlisten('burn') });
@@ -1195,7 +1201,7 @@
         chars = b; paint(); grow();
         clearTimeout(settle); settle = setTimeout(paint, WET + 60);
       }
-      ta.addEventListener('input', () => { sync(); renderAct(); });
+      ta.addEventListener('input', () => { sync(); renderAct(); window.Sound?.typing(); }); // the pen scratches while you write
       ta.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter' || e.isComposing) return;
         e.preventDefault(); const next = fields[i + 1]; if (next) next.ta.focus(); else act.querySelector('.btn.primary:not([disabled])')?.focus();
@@ -1244,8 +1250,8 @@
 
     // ---------- the fold and the drop
     async function foldAndDrop() {
-      const dlg = document.getElementById('sheet-suggest');
-      if (reduced() || !dlg?.open || !paperEl.animate) return;
+      const dlg = document.getElementById('sheet-suggest'), snd = (n, ms = 0) => setTimeout(() => window.Sound?.play(n), ms);
+      if (reduced() || !dlg?.open || !paperEl.animate) { snd('paper-fold'); snd('suggestion-drop', 450); return; } // no animation: the sounds still say it went in
       paperEl.scrollIntoView({ block: 'nearest' });
       const r = paperEl.getBoundingClientRect(), W = r.width, H3 = r.height / 3;
       const face = (k) => { // one third of the paper, as it looks now
@@ -1262,12 +1268,14 @@
       const ease = 'cubic-bezier(.55,.05,.35,1)', go = (el, kf, o) => el.animate(kf, { fill: 'forwards', easing: ease, ...o }).finished;
       try {
         // two folds: the bottom third up, then the top third down over it
+        snd('paper-fold');
         await go(bot, [{ transform: 'rotateX(0deg) translateZ(0px)' }, { transform: 'rotateX(180deg) translateZ(-1px)' }], { duration: 520 });
         await go(top, [{ transform: 'rotateX(0deg) translateZ(0px)' }, { transform: 'rotateX(-180deg) translateZ(-2px)' }], { duration: 520 });
         const tgt = boxTarget(dlg);
         if (tgt) { // into the Suggest pill/station in the scene
           const t = tgt.getBoundingClientRect(), dx = t.left + t.width / 2 - (r.left + W / 2), dy = t.top + t.height / 2 - (r.top + 1.5 * H3);
           const s = Math.min(1, 46 / W);
+          snd('suggestion-drop', 640); // lands as it reaches the box
           await go(pack, [{ transform: 'translate(0,0) scale(1) rotate(0deg)' }, { transform: 'translate(0,-14px) scale(.92) rotate(-4deg)', offset: .25 },
             { transform: `translate(${dx}px,${dy}px) scale(${s}) rotate(8deg)`, opacity: 1, offset: .88 }, { transform: `translate(${dx}px,${dy}px) scale(${s * .6}) rotate(8deg)`, opacity: 0 }],
           { duration: 900, easing: 'cubic-bezier(.45,0,.55,1)' });
@@ -1281,6 +1289,7 @@
           const dyAbove = slot - h0 / 2 - (r.top + 1.5 * H3);
           await go(pack, [{ transform: 'translate(0,0) scale(1)' }, { transform: `translate(${dx}px,${dyAbove}px) scale(${s})` }], { duration: 560 });
           fly.style.zIndex = '1'; box.style.zIndex = '2'; // the box now covers it: it slides in through the slot
+          snd('suggestion-drop');
           await go(pack, [{ transform: `translate(${dx}px,${dyAbove}px) scale(${s})` }, { transform: `translate(${dx}px,${dyAbove + h0 + 6}px) scale(${s})` }], { duration: 380, easing: 'cubic-bezier(.5,0,.75,0)' });
           await box.animate([{ transform: 'none' }, { transform: 'translateY(3px) scaleY(.96)' }, { transform: 'none' }], { duration: 220 }).finished;
           await box.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' }).finished;
