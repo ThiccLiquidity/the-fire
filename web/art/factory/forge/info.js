@@ -169,7 +169,7 @@
           <li>Doesn't sell out? The owner can end it once its sale windows are over. If not, anyone can a week later.</li>
         </ul>`),
       sec('cards', 'The cards', 'Materials, holo and rarity.', `
-        <p>Materials, holo odds and characters are set per Series. These are Series ${no}'s.</p>
+        <p>Materials, holo odds and characters are set per Series.</p>
         ${matChart(no)}
         <ul>
           <li>Gold and Full Art are always full holo. Full Art puts the art over the whole card.</li>
@@ -228,7 +228,6 @@
           <li>The owner can pause buying and case and grade payments. Opening, dealing and transfers never pause.</li>
           <li>The owner can switch the randomness source, announced first. Only new requests use it.</li>
           <li>No answer from randomness for 7 days? Anyone can cancel: packs come back sealed, cards come back ungraded.</li>
-          <li>The contracts are audited internally.</li>
         </ul>`),
       sec('faq', 'FAQ', 'Short answers to the usual questions.', `
         <dl class="inf-faq">

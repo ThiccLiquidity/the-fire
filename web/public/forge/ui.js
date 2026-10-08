@@ -63,7 +63,7 @@
       <h3><b class="sw">SERIES 7</b> PACK<span>6 cards</span></h3>
       <table class="types" aria-label="Cards in a pack">
         <tr><th scope="row">Material</th><td><span class="mat paper">Paper</span></td><td><span class="mat wood">Wood</span></td><td><span class="mat fire">Fire</span></td><td><span class="mat charcoal">Coal</span></td><td><span class="mat gold">Gold</span></td><td><span class="mat fullart">Full Art</span></td></tr>
-        <tr><th scope="row">Per pack</th><td>3</td><td>1–2</td><td colspan="4" class="span">At least 1 of these</td></tr>
+        <tr><th scope="row">Per pack</th><td>3</td><td>1–2</td><td colspan="4" class="span">At least 1</td></tr>
       </table>
     </div>
     <button class="btn small more" type="button" data-go="info-cards">Rarity</button>
@@ -194,7 +194,7 @@
   }
   $('#walletBtn').onclick = () => needWallet(openWallet);
   function openWallet() {
-    const w = S.wallet, nm = esc(w.name), sealed = Object.entries(S.sealed).filter(([, n]) => n).map(([k, n]) => `${n} from Series ${k}`).join(', ') || 'none';
+    const w = S.wallet, nm = esc(w.name), sealed = Object.values(S.sealed).reduce((a, n) => a + n, 0);
     const d = Sheet.open('wallet', { title: w.name || 'Wallet', body: `
       <div class="wmenu">
         <div class="who"><div class="avatar">${esc((w.name || '?')[0])}</div><div><b>${nm || 'No name yet'}</b><small>${w.address}</small></div><button class="btn small" type="button" data-w="name">Edit</button></div>

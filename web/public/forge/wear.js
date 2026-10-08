@@ -67,7 +67,7 @@
   const usd = (v) => '$' + (Number.isInteger(+v.toFixed(2)) ? Math.round(v) : v.toFixed(2)); // $1, $0.05, $4.10
 
   // ---- "How does this work?": one window, over whatever is open ----
-  const BURN_LINE = 'Every fee buys PAPER and burns it. None goes to us.';
+  const BURN_LINE = 'Every fee buys PAPER and burns it.';
   function howBody() {
     const P = Store.PRICES;
     const rows = [['Fresh', 0], ['1 month', 30], ['6 months', 182], ['1 year', 365], ['3 years', 3 * 365], ['10 years', 3650]].map(([l, d]) => {
