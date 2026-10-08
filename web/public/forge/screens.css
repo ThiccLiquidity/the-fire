@@ -369,21 +369,93 @@ a.btn { text-decoration: none }
 @keyframes g10-spin { to { --g10a: 360deg } }
 @media (prefers-reduced-motion: reduce) { .cface.g10::before { animation: none } }
 
-/* ---------- suggestion box */
+/* ---------- suggestion box: a sheet of ruled paper, written in ink */
 .st-suggest .hint { font: 700 16px/1.35 var(--chalk); color: var(--gold) }
-.ta-wrap { position: relative }
-.ta-wrap textarea { box-sizing: border-box; width: 100%; min-height: 96px; resize: vertical; padding: 12px 12px 26px; border-radius: 12px; border: 1.5px solid var(--line-2);
-  background: var(--panel-2); color: var(--ink); font: 600 16px/1.4 var(--body) }
-.ta-wrap textarea:focus { border-color: var(--brass); outline: none }
-.count { position: absolute; right: 10px; bottom: 8px; font-size: 12px; color: var(--dim) }
+.st-suggest [hidden] { display: none !important }
+.sg-paper { --lh: 34px; --mx: 43px; --inkc: #1c2a6b; --rule: rgba(84,122,186,.32); --pencil: #8b7a5c;
+  position: relative; padding: 0 18px var(--lh) 58px; border-radius: 3px; color: var(--inkc);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .25 0 0 0 0 .14 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E"),
+    linear-gradient(to right, transparent var(--mx), rgba(214,92,84,.5) var(--mx) calc(var(--mx) + 1.5px), transparent calc(var(--mx) + 1.5px) calc(var(--mx) + 4px), rgba(214,92,84,.28) calc(var(--mx) + 4px) calc(var(--mx) + 5px), transparent calc(var(--mx) + 5px)),
+    repeating-linear-gradient(to bottom, transparent 0 calc(var(--lh) - 1px), var(--rule) calc(var(--lh) - 1px) var(--lh)),
+    radial-gradient(120% 90% at 28% 18%, #fcf8ee 0%, #f6efdf 48%, #ece0c6 100%);
+  box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 -1px 0 rgba(120,90,50,.18) inset, 0 2px 2px rgba(0,0,0,.35), 0 14px 30px -6px rgba(0,0,0,.65) }
+.sg-paper::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(135deg, transparent 70%, rgba(110,80,40,.10)), linear-gradient(to bottom, rgba(255,255,255,.18), transparent 30%) }
+.sg-head { display: flex; justify-content: space-between; align-items: flex-end; height: var(--lh); padding-bottom: 5px; box-sizing: border-box;
+  font: 400 12px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--pencil) }
+.sg-field label { display: flex; align-items: flex-end; gap: 8px; height: var(--lh); padding-bottom: 6px; box-sizing: border-box;
+  font: 800 11px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--pencil); transition: color .2s }
+.sg-field label small { font: 600 11px/1 var(--body); letter-spacing: .02em; text-transform: none; opacity: .8 }
+.sg-field:focus-within label { color: var(--inkc) }
+.ink-field { position: relative; margin: 0 -6px; border-radius: 2px; transition: background-color .2s }
+.ink-field:focus-within { background-color: rgba(255,214,90,.16) }
+.ink-field textarea, .ink { box-sizing: border-box; width: 100%; margin: 0; padding: 0 6px 0 6px; border: 0;
+  font: 500 27px/var(--lh) Caveat, var(--chalk); letter-spacing: .01em; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; tab-size: 4 }
+.ink { position: absolute; inset: 0; pointer-events: none; color: var(--inkc); text-shadow: 0 0 .5px rgba(28,42,107,.45); transform: translateY(-3px) }
+.ink-field textarea { position: relative; z-index: 1; display: block; min-height: var(--lh); height: var(--lh); resize: none; overflow: hidden; background: transparent;
+  color: transparent; caret-color: var(--inkc); outline: none; transform: translateY(-3px) }
+.ink-field textarea::placeholder { color: rgba(28,42,107,.26); opacity: 1 }
+.ink-field textarea::selection { background: rgba(70,110,220,.22); color: transparent }
+.ink .wet { animation: ink-wet .9s cubic-bezier(.2,.7,.3,1) both }
+@keyframes ink-wet {
+  0% { opacity: 0; color: #08113f; filter: blur(1.6px); text-shadow: 0 0 3px rgba(8,17,63,.7) }
+  30% { opacity: 1; color: #08113f; filter: blur(.35px); text-shadow: 0 0 2px rgba(8,17,63,.55) }
+  100% { opacity: 1; color: var(--inkc); filter: blur(0); text-shadow: 0 0 .5px rgba(28,42,107,.45) } }
+.sg-paper.dry .wet { animation: none }
+.sg-foot { position: absolute; right: 18px; bottom: 0; height: var(--lh); display: flex; align-items: center }
+.sg-count { font: 700 12px/1 var(--body); color: var(--pencil); font-variant-numeric: tabular-nums }
+.sg-count.over { color: #c0392b }
+.sg-notes { display: grid; gap: 4px }
+.sg-joke { font: 700 15px/1.35 var(--chalk); color: var(--muted) }
 .reward { color: var(--good); font-weight: 800 }
 .sg-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px }
+
+/* sent: the confirmation, and the fold-and-drop pieces (fixed, over the window) */
+.sg-done { display: grid; justify-items: center; gap: 6px; padding: 14px 0 6px; text-align: center; outline: none }
+.sg-done.in { animation: sg-in .45s ease both }
+.sg-done-box svg { width: 92px; height: auto; display: block; filter: drop-shadow(0 6px 10px rgba(0,0,0,.5)) }
+.sg-done-t { font: 700 26px/1.1 var(--chalk); color: var(--gold) }
+.sg-done .btn { margin-top: 8px }
+@keyframes sg-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+.sg-fly { position: fixed; z-index: 20; perspective: 1400px; pointer-events: none }
+.sg-pack { position: absolute; inset: 0; transform-style: preserve-3d; transform-origin: 50% 50% }
+.fp { position: absolute; left: 0; width: 100%; height: 100%; transform-style: preserve-3d }
+.fp1 { top: 0 } .fp0 { bottom: 100%; transform-origin: 50% 100% } .fp2 { top: 100%; transform-origin: 50% 0 }
+.fp-face, .fp-back { position: absolute; inset: 0; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden }
+.fp-face { box-shadow: 0 6px 16px -6px rgba(0,0,0,.5) }
+.fp-face .sg-paper { box-shadow: none; border-radius: 0 }
+.fp-back { transform: rotateX(180deg); box-shadow: inset 0 0 0 1px rgba(120,90,50,.18), 0 8px 18px -6px rgba(0,0,0,.55);
+  background: linear-gradient(to bottom, rgba(0,0,0,.06), transparent 18%, transparent 82%, rgba(0,0,0,.08)),
+    repeating-linear-gradient(to bottom, transparent 0 33px, rgba(84,122,186,.12) 33px 34px), radial-gradient(120% 90% at 70% 30%, #f8f2e4, #e9dcc1) }
+.sg-dropbox { position: fixed; z-index: 21; pointer-events: none }
+.sg-dropbox svg { display: block; width: 100%; height: 100%; filter: drop-shadow(0 8px 12px rgba(0,0,0,.55)) }
+.sg-got { animation: sg-got .8s cubic-bezier(.3,1.6,.5,1) }
+@keyframes sg-got { 0% { scale: 1 } 30% { scale: 1.2; box-shadow: 0 0 0 4px rgba(240,236,229,.35), 0 0 26px rgba(255,244,220,.6) } 100% { scale: 1 } }
+
 .sg-list ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px }
 .sg-list li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2) }
+.sg-main { min-width: 0; display: grid; gap: 2px }
 .sg-t { overflow-wrap: anywhere }
+.sg-more summary { width: max-content; max-width: 100%; font: 700 12px/1.6 var(--body); color: var(--muted); cursor: pointer }
+.sg-more summary:hover { color: var(--ink) }
+.sg-more dl { margin: 4px 0 2px; display: grid; gap: 1px }
+.sg-more dt { font: 800 10.5px/1.4 var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--dim) }
+.sg-more dd { margin: 0 0 6px; font-size: 14px; overflow-wrap: anywhere }
 .sg-list .muted { font-size: 13px }
 .sgp { font: 800 12px/1 var(--body); padding: 6px 10px; border-radius: 999px }
 .sgp.yes { background: var(--good); color: #0c2410 } .sgp.wait { background: transparent; color: var(--muted); border: 1px solid var(--line-2) }
+@media (max-width: 600px) {
+  .sg-paper { --lh: 32px; --mx: 32px; padding: 0 12px var(--lh) 44px }
+  .ink-field textarea, .ink { font-size: 25px }
+  .sg-foot { right: 12px }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink .wet { animation: ink-fade .3s ease both }
+  .sg-done.in { animation: ink-fade .3s ease both }
+  .sg-got { animation: none }
+}
+@keyframes ink-fade { from { opacity: 0 } to { opacity: 1 } }
 
 /* ---------- phones */
 @media (max-width: 600px) {
@@ -400,7 +472,7 @@ a.btn { text-decoration: none }
   .odds .bars { grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px }
   .odds .pct { font-size: 11px }
   .ggrid { grid-template-columns: repeat(3, minmax(0, 1fr)) }
-  .sg-list li { grid-template-columns: 1fr auto; } .sg-list li .muted { grid-row: 2 }
+  .sg-list li { grid-template-columns: 1fr auto; } .sg-list li > .muted { grid-row: 2 }
   .stage-msg { font-size: 20px }
 }
 @media (max-width: 360px) { .cgrid { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
