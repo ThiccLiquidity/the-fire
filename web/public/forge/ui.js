@@ -34,7 +34,7 @@
       <button class="chip" type="button" data-go="paper" aria-label="Get PAPER">${svg('paper')}<span>Get PAPER</span></button>
       <button class="chip" type="button" data-go="info" aria-label="Info">${svg('info')}<span>Info</span></button>
       <button class="chip round" type="button" data-go="feed" aria-label="Activity">${svg('feed')}</button>
-      <button class="chip round" type="button" id="soundBtn" aria-label="Sound" aria-pressed="false">${svg('mute')}</button>
+      <button class="chip round" type="button" id="soundBtn" aria-label="Sound" aria-pressed="${!!window.Sound?.on}">${svg(window.Sound?.on ? 'sound' : 'mute')}</button>
       <button class="chip demo" type="button" data-go="demo">Demo</button>
     </nav>
     <button class="chip round menu-btn" type="button" data-go="menu" aria-label="Menu">${svg('menu')}</button>
@@ -258,7 +258,7 @@
           setTimeout(() => {
             Sheet.close('buy');
             Store.update((s) => { s.wallet.balances.PAPER -= n; s.wallet.balances[cur] -= amt; s.wallet.bought += n; if (ph.plankOnly) s.series.plankSold += n; Store.log(`${s.wallet.name || 'You'} bought ${n} ${n === 1 ? 'pack' : 'packs'}`); });
-            pendingDeliver += n; Scene?.buy(n); toast(`Buying ${n} ${n === 1 ? 'pack' : 'packs'}…`);
+            pendingDeliver += n; Scene?.buy(n); window.Sound?.play('pack-drop'); toast(`Buying ${n} ${n === 1 ? 'pack' : 'packs'}…`);
           }, 1100);
         };
       };
@@ -269,7 +269,7 @@
     needWallet(() => {
       if (!S.wallet.isPressHolder) return Sheet.open('nope', { title: 'Press packs', body: '<p class="lead">Press packs are for Paper Press holders.</p>' });
       const d = Sheet.open('starter', { title: 'Press pack', body: `<p class="lead">For Paper Press holders. ${S.series.starters - S.series.startersClaimed} left.</p><div class="checkout">${DEMO_LINE}<button class="btn primary go" type="button">Claim for ${Store.PRICES.PRESS_PAPER} PAPER</button></div>` });
-      d.querySelector('.go').onclick = () => { d.close(); Store.update((s) => { s.wallet.starterClaimed = true; s.wallet.balances.PAPER -= 1; s.series.startersClaimed++; s.series.sold--; }); pendingDeliver++; Scene?.buy(1); toast('Press pack on its way', 'good'); };
+      d.querySelector('.go').onclick = () => { d.close(); Store.update((s) => { s.wallet.starterClaimed = true; s.wallet.balances.PAPER -= 1; s.series.startersClaimed++; s.series.sold--; }); pendingDeliver++; Scene?.buy(1); window.Sound?.play('pack-drop'); toast('Press pack on its way', 'good'); };
     });
   }
   function useFree() {
@@ -281,7 +281,7 @@
           ${DEMO_LINE}
           <button class="btn gold go" type="button">Use ${n} free ${n === 1 ? 'pack' : 'packs'}</button>`;
         body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { n = Math.max(1, Math.min(S.wallet.credits, n + +b.dataset.q)); draw(); });
-        body.querySelector('.go').onclick = () => { Sheet.close('free'); Store.update((s) => { s.wallet.credits -= n; s.wallet.balances.PAPER -= n; }); pendingDeliver += n; Scene?.buy(n); toast(n === 1 ? 'Free pack on its way' : `${n} free packs on their way`, 'good'); };
+        body.querySelector('.go').onclick = () => { Sheet.close('free'); Store.update((s) => { s.wallet.credits -= n; s.wallet.balances.PAPER -= n; }); pendingDeliver += n; Scene?.buy(n); window.Sound?.play('pack-drop'); toast(n === 1 ? 'Free pack on its way' : `${n} free packs on their way`, 'good'); };
       };
       draw(); Sheet.open('free', { title: S.wallet.credits > 1 ? 'Free packs' : 'Free pack', body });
     });
@@ -334,7 +334,7 @@
     const d = Sheet.open('menu', { title: 'Menu', body: `<div class="menu">
       <button class="btn" type="button" data-m="cards">${svg('cards')}My cards</button><button class="btn" type="button" data-m="open">${svg('pack')}Open packs${Stations.openableCount() ? ` (${Stations.openableCount()})` : ''}</button>
       <button class="btn" type="button" data-m="paper">${svg('paper')}Get PAPER</button><button class="btn" type="button" data-m="info">${svg('info')}Info</button>
-      <button class="btn" type="button" data-m="feed">${svg('feed')}Activity</button><button class="btn" type="button" data-m="sound">${svg('sound')}Sound: ${sound ? 'On' : 'Off'}</button>
+      <button class="btn" type="button" data-m="feed">${svg('feed')}Activity</button><button class="btn" type="button" data-m="sound">${svg('sound')}Sound: ${window.Sound?.on ? 'On' : 'Off'}</button>
       <button class="btn" type="button" data-m="start">New here?</button><button class="btn" type="button" data-m="demo">Demo controls</button></div>
       <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>` });
     d.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => { d.close(); go(b.dataset.m); });
@@ -358,8 +358,8 @@
       if (k === 'reset') location.reload();
     });
   }
-  let sound = false;
-  $('#soundBtn').onclick = () => { sound = !sound; $('#soundBtn').setAttribute('aria-pressed', sound); $('#soundBtn').innerHTML = svg(sound ? 'sound' : 'mute'); toast(sound ? 'Sound: On' : 'Sound: Off'); };
+  // sound is on by default (it starts on the first tap anywhere); the speaker turns it off, remembered per visitor
+  $('#soundBtn').onclick = () => { const sound = window.Sound ? Sound.set(!Sound.on) : false; $('#soundBtn').setAttribute('aria-pressed', sound); $('#soundBtn').innerHTML = svg(sound ? 'sound' : 'mute'); toast(sound ? 'Sound: On' : 'Sound: Off'); };
   function go(k) {
     if (k === 'paper') openGetPaper(); if (k === 'info') Info.open(); if (k === 'info-cards') Info.open('cards'); if (k === 'feed') openFeed();
     if (k === 'menu') openMenu(); if (k === 'demo') openDemo(); if (k === 'start') openStart(); if (k === 'sound') $('#soundBtn').click();
