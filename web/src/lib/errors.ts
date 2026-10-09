@@ -10,7 +10,7 @@ import { friendly } from "./wallet";
 type Msg = string | ((args: readonly unknown[]) => string);
 
 const OWNER = "Only the owner can do that.";
-const INTERNAL = "That call is only for the Forge's own contracts.";
+const INTERNAL = "That call is only for Cardworks' own contracts.";
 const SETUP = "This Series isn't set up right. Nothing was charged.";
 
 export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
@@ -73,7 +73,7 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   NotReady: "The randomness for that isn't ready yet. Try again in a minute.",
   Pending: "That card is already at the grader.",
 
-  // only the owner or the Forge's own contracts
+  // only the owner or Cardworks' own contracts
   AlreadySet: "That's already set.",
   NotCards: INTERNAL,
   NotPsa: INTERNAL,

@@ -8,8 +8,8 @@
 | Shared on-chain pieces | `contracts/src`: OpenDrandRouter, OpenVRFAdapter, PlankUsdTwap, PaperUsdTwap | Built and tested. Not deployed. |
 | Deploy scripts | `contracts/script`: DeployTwap, DeployInfra, DeployCards | Runbook in `docs/deploy.md`. |
 | Card Studio | `studio/` | Working end to end (library, Series setup, sample deal, full 216-image-per-character WEBP build with cases and slabs, Pinata upload). Frames are built in; the Gold and Full Art frames are still being made by the owner. |
-| Forge site | Source `web/art/factory/forge`, served from `web/public/forge` | Demo mode (demo banner, demo data), no chain connection yet. Shows wear, cases and slabs (Case & grade). |
-| Site modules for the live version | `web/src/lib`: chain/RPC config, wallet connection, drand helper, card ABIs, KyberSwap guard | Type-checked, not wired into the Forge yet. |
+| Cardworks site | Source `web/art/factory/forge`, served from `web/public/forge` | Demo mode (demo banner, demo data), no chain connection yet. Shows wear, cases and slabs (Case & grade). |
+| Site modules for the live version | `web/src/lib`: chain/RPC config, wallet connection, drand helper, card ABIs, KyberSwap guard | Type-checked, not wired into Cardworks yet. |
 | Holder snapshot | `ops/snapshot` | Ready. |
 | Economy sims | `sim/omni` | Done; recorded output in each folder. |
 
@@ -20,7 +20,7 @@ Naming: the card contracts are named `Fire*` for historical reasons (`Fire*` is 
 
 1. **Keeper bot.** Built (`ops/keeper`): Railway plus a GitHub Actions backup. Before the first drop: two funded
    gas-only wallets, the Railway service and the repository secrets (`ops/keeper/README.md`).
-2. **Real wallet connection on the site.** Wire the Forge's buy, open, case and grade, burn and suggestion screens to the
+2. **Real wallet connection on the site.** Wire Cardworks' buy, open, case and grade, burn and suggestion screens to the
    deployed contracts through `web/src/lib`, replacing the demo store and the demo banner. Planned with it: loading
    each buyer's holder-window proof automatically, the "Get PAPER" box (KyberSwap, 0.5% fee), and calling
    `process(fire, maxCards)` and `finish(index, ids)` right after randomness arrives.

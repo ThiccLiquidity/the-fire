@@ -1,4 +1,4 @@
-// Wallet and chain plumbing for the Forge: the Robinhood Chain config, the wallet connection (wagmi core + Reown
+// Wallet and chain plumbing for Cardworks: the Robinhood Chain config, the wallet connection (wagmi core + Reown
 // AppKit's modal), receipts and friendly errors.
 //
 // The connection is the standard stack: wagmi core holds the connection state (persisted in localStorage and restored
@@ -97,7 +97,7 @@ async function start(opts: WalletOptions): Promise<Kit> {
   const projectId = opts.projectId ?? REOWN_PROJECT_ID;
   const icon = new URL(opts.icon ?? "/forge/ui/omni-mark.webp", location.href).href;
   const metadata = {
-    name: "Omni Forge",
+    name: "Omni Cardworks",
     description: "Wood in. Packs out. Trading cards forged on Robinhood Chain.",
     // must match the page's origin or WalletConnect's Verify flags the site; on the live site this is SITE_URL
     url: location.origin,

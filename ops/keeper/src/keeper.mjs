@@ -1,4 +1,4 @@
-// The Omni Forge keeper. Runs forever (Railway), or one pass with ONCE=1 (the GitHub Actions backup).
+// Omni Cardworks keeper. Runs forever (Railway), or one pass with ONCE=1 (the GitHub Actions backup).
 // Settings: see ops/keeper/README.md and config.mjs. The key comes only from KEEPER_PRIVATE_KEY (a Railway variable
 // or a GitHub secret).
 import { createPublicClient, createWalletClient, defineChain, fallback, http } from "viem";

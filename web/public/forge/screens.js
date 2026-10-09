@@ -1,4 +1,4 @@
-/* Omni Forge (demo mode): the station screens. My cards / Open packs (one sheet: the collection, or straight into opening), Case & grade
+/* Omni Cardworks (demo mode): the station screens. My cards / Open packs (one sheet: the collection, or straight into opening), Case & grade
    (the same wizard that follows every opening: grade picks, case picks, review, one payment), Burn
    (burn toward a free pack) and the suggestion box. Demo data only: everything reads and writes window.Store. */
 (() => {
@@ -221,7 +221,7 @@
       const blob = await shareImage(c), slug = c.character.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const name = `omni-forge-${slug}.png`, file = new File([blob], name, { type: 'image/png' });
       const kind = kindLine(c), odds = pullLine(c);
-      const title = `${c.character}, ${kind}`, text = `I pulled ${c.character} (${kind}${odds ? ', ' + odds : ''}) at the Omni Forge.`;
+      const title = `${c.character}, ${kind}`, text = `I pulled ${c.character} (${kind}${odds ? ', ' + odds : ''}) at Omni Cardworks.`;
       if (navigator.canShare?.({ files: [file] })) {
         try { await navigator.share({ files: [file], title, text }); } catch (e) { if (e?.name !== 'AbortError') toast('Couldn’t share it', 'bad'); }
         return;

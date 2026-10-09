@@ -1,7 +1,7 @@
 {
   "name": "omni-keeper",
   "private": true,
-  "description": "Omni Forge keeper: feed checkpoints, drand delivery, dealing, grading reveals, burner flushes, alerts",
+  "description": "Omni Cardworks keeper: feed checkpoints, drand delivery, dealing, grading reveals, burner flushes, alerts",
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {

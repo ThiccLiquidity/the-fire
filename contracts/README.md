@@ -1,4 +1,4 @@
-# Omni Forge contracts
+# Omni Cardworks contracts
 
 Foundry project.
 

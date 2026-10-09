@@ -1,4 +1,4 @@
-/* Omni Forge: sound. Recorded sounds (ui/sfx, credits in ui/sfx/credits.json) played through one shared Web Audio context.
+/* Omni Cardworks: sound. Recorded sounds (ui/sfx, credits in ui/sfx/credits.json) played through one shared Web Audio context.
    On by default, but browsers only allow audio after a gesture: the first tap, click or key anywhere starts it, and only
    then are the files fetched and decoded (nothing loads with the page). The speaker button turns it all off (remembered
    per visitor). Ambience: the forge fire always; the press and the conveyor only while a Series is on sale, fading in

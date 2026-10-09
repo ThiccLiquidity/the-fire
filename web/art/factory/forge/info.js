@@ -127,7 +127,7 @@
   function sections(no) {
     const s = window.Store?.state?.series || {}, P = window.Store?.PRICES || {}, usd = window.Wear?.usd || ((v) => '$' + v);
     return [
-      sec('about', 'What is Omni Forge', 'Collectible NFT cards on Robinhood Chain, in numbered Series.', `
+      sec('about', 'What is Omni Cardworks', 'Collectible NFT cards on Robinhood Chain, in numbered Series.', `
         <ul>
           <li>PLANK is the wood. It feeds the fire, and the fire runs the card press. The press needs PAPER, so every pack takes some.</li>
           <li>Sealed packs are NFTs. Trade them sealed, or open them once the Series ends.</li>
