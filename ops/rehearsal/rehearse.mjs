@@ -1,7 +1,8 @@
 // The launch rehearsal: the whole life of a Series on a local chain, with the real deploy and owner scripts, the real
 // snapshot, VerifySeries, VerifyDeploy and the real keeper code.
 //
-//   deploy (DeployTwap, DeployInfra, DeployCards) -> VerifyDeploy -> the owner accepts ownership (AcceptOwnership,
+//   stand-ins (DevStack, the testnet kit) -> deploy (DeployTwap, DeployInfra, DeployCards; each recorded after its
+//   broadcast by ops/deploy/record.mjs) -> VerifyDeploy -> the owner accepts ownership (AcceptOwnership,
 //   the owner wallet impersonated) -> keeper: PLANK checkpoint, PAPER candidate -> batch A sent from the owner
 //   (ConfigureSeries) -> snapshot -> VerifySeries (RED with a missing image, then GREEN) -> batch B -> buy (one buy with the PLANK swap failing: its burn share waits in
 //   PlankBurner) -> sold out, closed -> open -> keeper delivers drand (fulfillMany) and deals (process) -> case and
@@ -10,7 +11,7 @@
 //   and the keeper flushes PaperBurner -> VerifyDeploy again.
 //
 // Two modes:
-//   node rehearsal/rehearse.mjs                 plain anvil with stand-ins (script/dev/DevContracts.sol), no network
+//   node rehearsal/rehearse.mjs                 plain anvil with stand-ins (script/DevStack.s.sol), no network
 //       needed. The first open is timed to drand round 1000 and proved through the REAL OpenDrandRouter with drand's
 //       real signature (BLS verified on-chain); then the owner switches FireCards and FirePsa to DevDrandRouter
 //       adapters (any signature) so the rest runs without drand. Local servers stand in for drand, two IPFS gateways
@@ -18,15 +19,19 @@
 //   node rehearsal/rehearse.mjs --fork <RPC>    an anvil fork of Robinhood Chain (needs the RPC and drand reachable):
 //       real tokens, Uniswap pools, Chainlink and drand; the owner is OWNER (impersonated) or a stand-in. The PAPER feed
 //       leg is skipped (a fork's Chainlink doesn't update across 40 hours).
-// Options: --keep (leave anvil running at the end), --port 8546.
+// Options: --keep (leave anvil running at the end), --port 8546, --chain-id 31337 (46630: the testnet's id, to run the
+//   testnet kit exactly as on the testnet).
+// The two keepers race for real: automine off, a block every second, the main keeper and the backup each in their own
+// loop; every transaction they sent must succeed and do something, and no drand request may be delivered twice.
+// Everything printed also goes to ops/rehearsal/out/rehearsal.log (CI keeps it when the rehearsal fails).
 // Needs: forge and anvil (PATH or ~/.foundry/bin), npm install in ops/, ops/keeper and ops/snapshot.
 import { spawn, execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, appendFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import {
-  createPublicClient, createWalletClient, http, parseEther, formatEther, getAddress, encodeFunctionData, zeroHash, keccak256, toHex,
+  createPublicClient, createWalletClient, http, parseEther, formatEther, getAddress, encodeFunctionData, zeroHash, toHex, decodeFunctionData,
 } from "viem";
 import { mnemonicToAccount, nonceManager } from "viem/accounts";
 import { drandServer, gatewayServer, webhookServer } from "./servers.mjs";
@@ -34,6 +39,8 @@ import { createKeeper } from "../keeper/src/core.mjs";
 import { loadConfig } from "../keeper/src/config.mjs";
 import { roundTime, DRAND_GENESIS } from "../keeper/src/drand.mjs";
 import { verifySeries, allImageNames, recipeFromJson, recipeHash } from "../series/verify-series.mjs";
+import { record } from "../deploy/record.mjs";
+import { routerAbi as keeperRouterAbi, twapAbi as keeperTwapAbi, cardsAbi as keeperCardsAbi, psaAbi as keeperPsaAbi, burnerAbi as keeperBurnerAbi, adapterAbi as keeperAdapterAbi } from "../keeper/src/abis.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(here, "../..");
@@ -59,7 +66,19 @@ const FIRE = 7n;
 const DEP_FILE = resolve(REPO, "deployments", `rehearsal-${FORK ? "fork" : "anvil"}.json`);
 const RECIPE_PATH = resolve(CONTRACTS, "series", `rehearsal-fire-${FIRE}.json`);
 const OUT = resolve(REPO, "ops/rehearsal/out");
+const LOG = resolve(OUT, "rehearsal.log");
 const G = DRAND_GENESIS;
+const CHAIN_ID = Number(args["chain-id"] ?? 31337);
+const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// everything printed also goes to the log file (to find a flake after the fact)
+mkdirSync(OUT, { recursive: true });
+writeFileSync(LOG, "");
+const consoleLog = console.log.bind(console);
+const consoleErr = console.error.bind(console);
+console.log = (...a) => { consoleLog(...a); try { appendFileSync(LOG, `${a.join(" ")}\n`); } catch { /* best effort */ } };
+console.error = (...a) => { consoleErr(...a); try { appendFileSync(LOG, `${a.join(" ")}\n`); } catch { /* best effort */ } };
 
 const t0 = Date.now();
 const say = (...a) => console.log(`[${((Date.now() - t0) / 1000).toFixed(1).padStart(6)}s]`, ...a);
@@ -110,24 +129,36 @@ async function asImpersonated(from, to, data, value = 0n) {
   return r;
 }
 
+// an RPC hiccup between forge and anvil is retried once (and logged); a real failure fails at once
+const TRANSIENT = /error sending request|connection (refused|reset|closed)|timed? ?out|EOF while parsing|nonce too low|replacement transaction|already known/i;
 function forge(script, env, extra = [], sender = deployer.address) {
-  const argv = ["script", script, "--rpc-url", RPC, "--unlocked", "--sender", sender, "--broadcast", "--slow", ...(SOLC ? ["--use", SOLC] : []), ...extra];
+  const argv = ["script", script, "--rpc-url", RPC, "--unlocked", "--sender", sender, "--broadcast", "--slow", "--offline", ...(SOLC ? ["--use", SOLC] : []), ...extra];
   say(`forge ${argv.slice(0, 2).join(" ")} ...`);
-  try {
-    return execFileSync(bin("forge"), argv, {
-      cwd: CONTRACTS, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20,
-      env: { ...process.env, DEPLOYMENTS_FILE: DEP_FILE, EXPECTED_CHAIN_ID: String(chain.id), FOUNDRY_DISABLE_NIGHTLY_WARNING: "1", ...env },
-    });
-  } catch (e) {
-    console.error(String(e.stdout ?? "").split("\n").slice(-40).join("\n"), String(e.stderr ?? "").slice(-3000));
-    throw new Error(`${script} failed`);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return execFileSync(bin("forge"), argv, {
+        cwd: CONTRACTS, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20,
+        env: { ...process.env, DEPLOYMENTS_FILE: DEP_FILE, EXPECTED_CHAIN_ID: String(chain.id), FOUNDRY_DISABLE_NIGHTLY_WARNING: "1", ...env },
+      });
+    } catch (e) {
+      const out = `${e.stdout ?? ""}\n${e.stderr ?? ""}`;
+      writeFileSync(resolve(OUT, `forge-${script.replace(/\W+/g, "_")}-${attempt}.log`), out);
+      if (attempt === 1 && TRANSIENT.test(out)) {
+        say(`${script}: transient RPC error, retrying once (log in ops/rehearsal/out/): ${(TRANSIENT.exec(out) ?? [""])[0]}`);
+        rmSync(`${DEP_FILE}.pending`, { force: true });
+        argv.push("--resume");
+        continue;
+      }
+      console.error(String(e.stdout ?? "").split("\n").slice(-40).join("\n"), String(e.stderr ?? "").slice(-3000));
+      throw new Error(`${script} failed`);
+    }
   }
 }
 function forgeRead(script, env) {
   try {
-    return execFileSync(bin("forge"), ["script", script, "--rpc-url", RPC, ...(SOLC ? ["--use", SOLC] : [])], {
+    return execFileSync(bin("forge"), ["script", script, "--rpc-url", RPC, "--offline", ...(SOLC ? ["--use", SOLC] : [])], {
       cwd: CONTRACTS, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20,
-      env: { ...process.env, DEPLOYMENTS_FILE: DEP_FILE, FOUNDRY_DISABLE_NIGHTLY_WARNING: "1", ...env },
+      env: { ...process.env, DEPLOYMENTS_FILE: DEP_FILE, EXPECTED_CHAIN_ID: String(chain.id), FOUNDRY_DISABLE_NIGHTLY_WARNING: "1", ...env },
     });
   } catch (e) {
     return `${e.stdout ?? ""}\n${e.stderr ?? ""}`;
@@ -139,23 +170,40 @@ async function forgeAsOwner(owner, script, env) {
   await rpc("anvil_impersonateAccount", [owner]);
   try { return forge(script, env, [], owner); } finally { await rpc("anvil_stopImpersonatingAccount", [owner]); }
 }
+/** After a deploy script's broadcast: the deployments file is untouched until ops/deploy/record.mjs checks the
+ *  broadcast against the chain and records it (exactly as on mainnet). */
+async function recordDeploy(what, before) {
+  const now = existsSync(DEP_FILE) ? readFileSync(DEP_FILE, "utf8") : undefined;
+  if (now !== before) fail(`${what} wrote the deployments file itself (it must only leave a .pending file)`);
+  if (!existsSync(`${DEP_FILE}.pending`)) fail(`${what} left no .pending file`);
+  const r = await record({ client: pub, file: DEP_FILE, broadcastDir: resolve(CONTRACTS, "broadcast"), log: () => {} });
+  if (!r.ok) fail(`record after ${what}: ${r.problems.join("; ")}`);
+  say(`recorded ${what}: ${r.notes.filter((n) => /deployed in/.test(n)).length} new contract(s) checked against their receipts`);
+}
+async function forgeDeploy(script, env) {
+  const before = existsSync(DEP_FILE) ? readFileSync(DEP_FILE, "utf8") : undefined;
+  const out = forge(script, env);
+  await recordDeploy(script.replace(/^script\//, ""), before);
+  return out;
+}
 const logLines = (out, re) => out.split("\n").map((l) => l.trim()).filter((l) => re.test(l)).map((l) => `    ${l}`).join("\n");
 
 // ------------------------------------------------------------------ the keeper, as deployed (config from env)
 const keeperLogs = [];
+let keeperPub; // the keepers' client: reads batched through Multicall3 as keeper.mjs does on a chain that has it
 function keeperFor(account, env, wallNow) {
   const cfg = loadConfig(env); // exactly what the deployed keeper reads from its environment
   const log = (...a) => { const l = `    [${cfg.label}] ${a.join(" ")}`; keeperLogs.push(l); console.log(l); };
-  return createKeeper({ cfg: { ...cfg, receiptTimeoutMs: 30_000 }, pub, wallet: walletOf(account), account, log, wallNow });
+  return createKeeper({ cfg: { ...cfg, receiptTimeoutMs: 30_000 }, pub: keeperPub ?? pub, wallet: walletOf(account), account, log, wallNow });
 }
 
 // ------------------------------------------------------------------ main
 async function main() {
-  mkdirSync(OUT, { recursive: true });
   rmSync(DEP_FILE, { force: true });
+  rmSync(`${DEP_FILE}.pending`, { force: true });
   const startTs = G + 2905n - 7200n; // two hours before the 3 s window whose requests use drand round 1000
   step(FORK ? `anvil fork of ${FORK.replace(/\/\/([^/]+).*/, "//$1/...")}` : `anvil (plain, genesis ${new Date(Number(startTs) * 1000).toISOString()})`);
-  anvil = spawn(bin("anvil"), ["--port", String(PORT), "--silent", ...(FORK ? ["--fork-url", FORK] : ["--timestamp", String(startTs), "--chain-id", "31337"])], { stdio: "ignore" });
+  anvil = spawn(bin("anvil"), ["--port", String(PORT), "--silent", ...(FORK ? ["--fork-url", FORK] : ["--timestamp", String(startTs), "--chain-id", String(CHAIN_ID)])], { stdio: "ignore" });
   for (let i = 0; ; i++) { try { await pub.getChainId(); break; } catch { if (i > 100) fail("anvil didn't start"); await new Promise((r) => setTimeout(r, 200)); } }
   const id = await pub.getChainId();
   chain = { id, name: "rehearsal", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [RPC] } } };
@@ -169,39 +217,50 @@ async function main() {
   const owner = getAddress(args.owner ?? process.env.OWNER ?? "0x1edfe11e1edfe11e1edfe11e1edfe11e1edfe11e");
   let dev = {};
   if (!FORK) {
-    step("stand-ins: tokens, ETH/USD, Uniswap V2 (PLANK/WETH and PAPER/WETH pools), Paper Press, DevDrandRouter");
-    const token = (n, s, d) => deploy(deployer, "DevContracts", "DevToken", [n, s, d]);
-    const [paper, plank, usdg, weth] = [await token("PAPER", "PAPER", 18), await token("PLANK", "PLANK", 18), await token("Global Dollar", "USDG", 6), await token("Wrapped Ether", "WETH", 18)];
-    const eth = await deploy(deployer, "DevContracts", "DevFeed", [3333n * 10n ** 8n]);
-    const factory = await deploy(deployer, "DevContracts", "DevFactory");
-    await tx(deployer, factory.address, factory.abi, "createPair", [plank.address, weth.address]);
-    await tx(deployer, factory.address, factory.abi, "createPair", [paper.address, weth.address]);
-    const pairAbi = artifact("DevContracts", "DevPair").abi;
-    const plankPair = await pub.readContract({ address: factory.address, abi: factory.abi, functionName: "getPair", args: [plank.address, weth.address] });
-    const paperPair = await pub.readContract({ address: factory.address, abi: factory.abi, functionName: "getPair", args: [paper.address, weth.address] });
-    // PLANK $1e-9 (28 WETH : 93.3T PLANK at $3,333 ETH); PAPER $0.01 (1 WETH : 333,300 PAPER)
-    await tx(deployer, plankPair, pairAbi, "setReserves", [weth.address, parseEther("28"), parseEther("28") * 3_333_000_000_000n]);
-    await tx(deployer, paperPair, pairAbi, "setReserves", [weth.address, parseEther("1"), parseEther("333300")]);
-    const router = await deploy(deployer, "DevContracts", "DevRouter", [weth.address, factory.address]);
-    const press = await deploy(deployer, "DevContracts", "DevPress");
-    dev = { paper, plank, usdg, weth, eth, router, devDrand: await deploy(deployer, "DevContracts", "DevDrandRouter") };
-    inputs = {
-      PAPER: paper.address, PLANK: plank.address, USDG: usdg.address, WETH: weth.address, MILL: press.address, ETH_USD_FEED: eth.address,
-      PLANK_WETH_V2_PAIR: plankPair, UNIV2_FACTORY: factory.address, V2_ROUTER: router.address,
+    step(`stand-ins: DevStack.s.sol, the testnet kit (tokens, ETH/USD, Uniswap V2 with PLANK/WETH and PAPER/WETH pools, router, Paper Press) on chain ${id}`);
+    await forgeDeploy("script/DevStack.s.sol", {});
+    const d = JSON.parse(readFileSync(DEP_FILE, "utf8")).inputs;
+    const at = (address, name) => ({ address: getAddress(address), abi: artifact("DevContracts", name).abi });
+    dev = {
+      paper: at(d.PAPER, "DevToken"), plank: at(d.PLANK, "DevToken"), usdg: at(d.USDG, "DevToken"), weth: at(d.WETH, "DevToken"),
+      eth: at(d.ETH_USD_FEED, "DevFeed"), router: at(d.V2_ROUTER, "DevRouter"), press: at(d.MILL, "DevPress"), factory: at(d.UNIV2_FACTORY, "DevFactory"),
+      plankPair: at(d.PLANK_WETH_V2_PAIR, "DevPair"),
+      devDrand: await deploy(deployer, "DevContracts", "DevDrandRouter"),
     };
-    say(`stand-ins deployed; the owner (hardware wallet stand-in) is ${owner}`);
+    inputs = Object.fromEntries(["PAPER", "PLANK", "USDG", "WETH", "MILL", "ETH_USD_FEED", "PLANK_WETH_V2_PAIR", "UNIV2_FACTORY", "V2_ROUTER"].map((k) => [k, getAddress(d[k])]));
+    // a stranger can't break the testnet: every setter is the deployer's
+    const stranger = buyer1;
+    for (const [c, fn, a] of [[dev.paper, "mint", [stranger.address, 1n]], [dev.paper, "setMinter", [stranger.address, true]], [dev.eth, "set", [1n]],
+      [dev.plankPair, "setReserves", [inputs.WETH, 1n, 1n]], [dev.router, "setFail", [true]], [dev.press, "mint", [stranger.address]], [dev.factory, "createPair", [inputs.PAPER, inputs.USDG]]]) {
+      let refused = false;
+      try { await pub.simulateContract({ account: stranger, address: c.address, abi: c.abi, functionName: fn, args: a }); } catch (e) { refused = /owner only/.test(e?.shortMessage + e?.message); }
+      if (!refused) fail(`a stranger could call ${fn} on a stand-in`);
+    }
+    say("ok: a stranger can't mint, set the price, set reserves, break the router, mint a press or add a pool");
+    const ethRound = await pub.readContract({ address: dev.eth.address, abi: dev.eth.abi, functionName: "latestRoundData" });
+    check(ethRound[3] === (await chainNow()), "the ETH/USD stand-in never goes stale (updatedAt is now)");
+    // Multicall3 where the real chains have it, so the keepers' batched reads run as on Robinhood Chain
+    const mc = await deploy(deployer, "DevContracts", "DevMulticall3");
+    await rpc("anvil_setCode", [MULTICALL3, await pub.getCode({ address: mc.address })]);
+    say(`stand-ins recorded in the deployments file; the owner (hardware wallet stand-in) is ${owner}`);
   } else {
     const env = Object.fromEntries(readFileSync(resolve(CONTRACTS, ".env.example"), "utf8").split("\n").filter((l) => /^[A-Z0-9_]+=0x/.test(l)).map((l) => l.split("=")));
     inputs = { PAPER: env.PAPER, PLANK: env.PLANK, USDG: env.USDG, WETH: env.WETH, MILL: env.MILL, ETH_USD_FEED: env.ETH_USD_FEED, PLANK_WETH_V2_PAIR: env.PLANK_WETH_V2_PAIR, UNIV2_FACTORY: env.UNIV2_FACTORY, V2_ROUTER: env.V2_ROUTER };
   }
   await rpc("anvil_setBalance", [owner, toHex(parseEther("10"))]);
+  keeperPub = createPublicClient({
+    chain: { ...chain, contracts: { multicall3: { address: MULTICALL3 } } }, transport: http(RPC), pollingInterval: 100,
+    ...(!args["no-multicall"] && (await pub.getCode({ address: MULTICALL3 })) ? { batch: { multicall: { wait: 0 } } } : {}),
+  });
 
   // ---------------- deploy with the real scripts
-  step("deploy: DeployTwap, DeployInfra, DeployCards (the real scripts; they write the deployments file)");
+  step("deploy: DeployTwap, DeployInfra, DeployCards (the real scripts), each recorded after its broadcast (ops/deploy/record.mjs)");
   const env = { ...inputs, OWNER: owner, ROYALTY_RECEIVER: royalty.address, ROYALTY_BPS: "500", REVENUE_WALLET: revenue.address, PACK_IMAGE_BASE: "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/" };
-  forge("script/DeployTwap.s.sol", env);
-  forge("script/DeployInfra.s.sol", env);
-  forge("script/DeployCards.s.sol", env);
+  forgeRead("script/DeployTwap.s.sol", env);
+  check(!existsSync(`${DEP_FILE}.pending`), "a dry run (no --broadcast) leaves nothing to record");
+  await forgeDeploy("script/DeployTwap.s.sol", env);
+  await forgeDeploy("script/DeployInfra.s.sol", env);
+  await forgeDeploy("script/DeployCards.s.sol", env);
   const dep = JSON.parse(readFileSync(DEP_FILE, "utf8"));
   const C = Object.fromEntries(Object.entries(dep.contracts).map(([k, v]) => [k, getAddress(v)]));
   check(Object.keys(C).length === 15, `deployments file has all 15 contracts (${DEP_FILE.replace(REPO + "/", "")})`);
@@ -209,7 +268,8 @@ async function main() {
   step("VerifyDeploy before the owner accepts (expect WAIT on six owners)");
   let vd = forgeRead("script/VerifyDeploy.s.sol", {});
   console.log(logLines(vd, /^(OK|WAIT|FAIL|INFO)|FAIL, /));
-  check(/0 FAIL/.test(vd) && (vd.match(/acceptOwnership/g) ?? []).length === 6, "VerifyDeploy: nothing wrong, six acceptOwnership() pending");
+  const pendingAccepts = (vd.match(/acceptOwnership/g) ?? []).length;
+  check(/0 FAIL/.test(vd) && pendingAccepts >= 6, `VerifyDeploy: nothing wrong, ${pendingAccepts} acceptOwnership() pending`);
 
   step("the owner accepts ownership: AcceptOwnership.s.sol signed by the owner (impersonated)");
   const outRefused = forgeRead("script/AcceptOwnership.s.sol", {});
@@ -240,7 +300,6 @@ async function main() {
 
   step("31 minutes later: the keeper checkpoints PLANK/USD (first price) and records the PAPER pool as candidate");
   await warp(31 * 60);
-  if (!FORK) await tx(deployer, dev.eth.address, dev.eth.abi, "set", [3333n * 10n ** 8n]); // Chainlink would have updated
   let r = await pass();
   const twapAbi = [{ type: "function", name: "latestRoundData", inputs: [], outputs: [{ type: "uint80" }, { type: "int256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint80" }], stateMutability: "view" },
     { type: "function", name: "candidate", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" }];
@@ -370,16 +429,27 @@ async function main() {
   }
 
   if (!FORK) {
-    step("the backup (one pass, ACT_AFTER_SEC=300) right after drand publishes: it leaves the work to the main keeper");
+    step("the backup (one pass, KEEPER_ROLE=backup) right after drand publishes: it leaves the work to the main keeper");
     await warp(100);
-    const backup = await keeperFor(keeperB, { ...keeperEnv, ONCE: "1", ACT_AFTER_SEC: "300", KEEPER_LABEL: "backup" }, wallNow);
-    r = await pass(backup, "backup pass");
+    const backupOnce = await keeperFor(keeperB, { ...keeperEnv, ONCE: "1", KEEPER_ROLE: "backup" }, wallNow);
+    r = await pass(backupOnce, "backup pass");
     check(r.sent.length === 0, "the backup sent nothing");
-    step("two keepers at once on the same work (keeper A and a second instance with its own key): no double delivery");
-    const second = await keeperFor(keeperB, { ...keeperEnv, KEEPER_LABEL: "keeper-2" }, wallNow);
-    clockNow = await chainNow();
-    const [ra, rb] = await Promise.all([main.tick(), second.tick()]);
-    say(`keeper A sent ${ra.sent.length} tx, keeper B sent ${rb.sent.length} tx`);
+    step("the two keepers race for real (automine off, a block a second): the main keeper was away 37 min, so the PLANK checkpoint and both drand deliveries are overdue for the backup too");
+    await warp(37 * 60);
+    const backup = await keeperFor(keeperB, { ...keeperEnv, KEEPER_ROLE: "backup", MAIN_KEEPER_ADDRESS: keeperA.address, BACKUP_YIELD_MS: "1500" }, wallNow);
+    const done = async () => {
+      const [h, n, due] = await Promise.all([
+        pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "headOf", args: [FIRE] }),
+        pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "openCount", args: [FIRE] }),
+        pub.readContract({ address: C.PlankUsdTwap, abi: keeperTwapAbi, functionName: "due" }),
+      ]);
+      return h === n && !due;
+    };
+    const raced = await race([[main, keeperA], [backup, keeperB]], done, 90_000, (t) => { clockNow = t; });
+    check(raced.finished, `the work got done during the race (${raced.txs.length} tx: ${raced.txs.map((t) => `${t.who} ${t.fn}`).join(", ")})`);
+    check(raced.reverted.length === 0, `no keeper transaction reverted${raced.reverted.length ? `: ${raced.reverted.join("; ")}` : ""}`);
+    check(raced.noops.length === 0, `every keeper transaction did something (no wasted duplicates)${raced.noops.length ? `: ${raced.noops.join("; ")}` : ""}`);
+    check(raced.doubleIds.length === 0, `no drand request delivered twice${raced.doubleIds.length ? `: ${raced.doubleIds.join(", ")}` : ""}`);
   } else {
     for (let i = 0; i < 40; i++) {
       r = await pass();
@@ -430,17 +500,26 @@ async function main() {
   check(r.alerts.some((a) => /PaperBurner holds/.test(a.text)) && hook.posts.some((p) => /PaperBurner holds/.test(p)), "the 'fees waiting' alert reached the webhook");
 
   if (!FORK) {
-    step("20 hours pass with the keeper down: the backup notices the stale PLANK price but leaves it to the main keeper");
+    step("20 hours pass with the main keeper down: a keeper that won't act still sees the stale PLANK price");
     await warp(20 * 3600);
-    await tx(deployer, dev.eth.address, dev.eth.abi, "set", [3333n * 10n ** 8n]);
-    const lazy = await keeperFor(keeperB, { ...keeperEnv, ONCE: "1", ACT_AFTER_SEC: "999999999", KEEPER_LABEL: "backup" }, wallNow);
-    r = await pass(lazy, "backup pass");
-    check(r.alerts.some((a) => /PLANK price stale/.test(a.text)), "stale PLANK feed alert");
-    step("the main keeper is back: PLANK checkpoint, PAPER pool adopted");
+    const lazy = await keeperFor(keeperB, { ...keeperEnv, ONCE: "1", ACT_AFTER_SEC: "999999999", KEEPER_LABEL: "watcher" }, wallNow);
+    r = await pass(lazy, "watcher pass");
+    check(r.alerts.some((a) => /PLANK price stale/.test(a.text) && /can't heal/.test(a.text)), "stale PLANK feed alert (over 90 min)");
+    step("the backup steps in: it checkpoints the late PLANK feed and says so on the webhook");
+    const backup2 = await keeperFor(keeperB, { ...keeperEnv, KEEPER_ROLE: "backup", MAIN_KEEPER_ADDRESS: keeperA.address, BACKUP_YIELD_MS: "500" }, wallNow);
+    r = await pass(backup2, "backup pass");
+    check(r.sent.some((x) => /^checkpoint/.test(x)), `the backup checkpointed (sent: ${r.sent.map((x) => x.split(" ")[0]).join(", ")})`);
+    check(hook.posts.some((p) => /had to step in/.test(p)), "the webhook heard that the backup stepped in");
+    step("the owner pauses FireSale and switches FirePsa's randomness back: the keeper posts both");
+    await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setPaused", args: [true] }));
+    await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [C.PsaAdapter] }));
+    step("the main keeper is back: PAPER pool adopted");
     r = await pass();
+    check(hook.posts.some((p) => /FireSale is PAUSED/.test(p)), "the pause reached the webhook");
+    check(hook.posts.some((p) => /FirePsa's randomness source was SWITCHED/.test(p)), "the randomness switch reached the webhook");
+    await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setPaused", args: [false] }));
     step("another 20 hours: the PAPER feed reports its first price; the keeper flushes PaperBurner");
     await warp(20 * 3600);
-    await tx(deployer, dev.eth.address, dev.eth.abi, "set", [3333n * 10n ** 8n]);
     r = await pass();
     const paperPx = (await pub.readContract({ address: C.PaperUsdTwap, abi: twapAbi, functionName: "latestRoundData" }))[1];
     check(paperPx > 0n, `PAPER/USD live: $${(Number(paperPx) / 1e18).toFixed(4)}`);
@@ -456,17 +535,79 @@ async function main() {
 
   step("webhook messages");
   for (const p of hook.posts) console.log(p.split("\n").map((l) => `    | ${l}`).join("\n"));
-  writeFileSync(resolve(OUT, "summary.json"), JSON.stringify({ chainId: id, contracts: C, webhook: hook.posts, keeperLog: keeperLogs }, null, 2));
+  summary = { chainId: id, contracts: C, webhook: hook.posts };
   console.log(`\nREHEARSAL PASSED in ${((Date.now() - t0) / 1000).toFixed(0)} s (log: ops/rehearsal/out/summary.json)`);
   for (const s of [drand, gwA2, gwB, hook]) await s.close().catch(() => {});
 }
 
+// ------------------------------------------------------------------ the race
+/**
+ * Runs each [keeper, account] in its own loop with automine off and a block every second, until `done()` or the
+ * timeout. Then reads every transaction the keepers' wallets sent in those blocks: it must have succeeded and done
+ * something (emitted an event), and no drand request may appear in two deliveries.
+ */
+async function race(pairs, done, timeoutMs, setClock) {
+  const fnAbi = [...keeperRouterAbi, ...keeperTwapAbi, ...keeperCardsAbi, ...keeperPsaAbi, ...keeperBurnerAbi, ...keeperAdapterAbi];
+  const from = await pub.getBlockNumber();
+  await rpc("evm_setAutomine", [false]);
+  await rpc("evm_setIntervalMining", [1]);
+  let stop = false;
+  let finished = false;
+  const loops = pairs.map(async ([k]) => {
+    while (!stop) {
+      try { await k.tick(); } catch (e) { say(`a keeper pass failed in the race: ${e?.shortMessage ?? e?.message ?? e}`); }
+      await sleep(250);
+    }
+  });
+  const clock = (async () => { while (!stop) { try { setClock(await chainNow()); } catch { /* next */ } await sleep(200); } })();
+  const t = Date.now();
+  while (Date.now() - t < timeoutMs) {
+    if (await done()) { finished = true; break; }
+    await sleep(500);
+  }
+  // let both finish their pass (and anything they sent get mined) before looking
+  await sleep(4000);
+  stop = true;
+  await Promise.all([...loops, clock]);
+  await rpc("evm_setIntervalMining", [0]);
+  await rpc("evm_setAutomine", [true]);
+  await rpc("evm_mine");
+  const to = await pub.getBlockNumber();
+  const who = new Map(pairs.map(([k, a], i) => [a.address.toLowerCase(), i === 0 ? "main" : "backup"]));
+  const txs = [];
+  const reverted = [];
+  const noops = [];
+  const ids = new Map();
+  for (let b = from + 1n; b <= to; b++) {
+    const blk = await pub.getBlock({ blockNumber: b, includeTransactions: true });
+    for (const x of blk.transactions) {
+      const w = who.get(x.from.toLowerCase());
+      if (!w) continue;
+      let fn = "transfer";
+      let a = [];
+      try { const d = decodeFunctionData({ abi: fnAbi, data: x.input }); fn = d.functionName; a = d.args ?? []; } catch { /* a nonce fill */ }
+      const rc = await pub.getTransactionReceipt({ hash: x.hash });
+      txs.push({ who: w, fn, hash: x.hash });
+      if (rc.status !== "success") reverted.push(`${w} ${fn} ${x.hash}`);
+      else if (rc.logs.length === 0) noops.push(`${w} ${fn} ${x.hash} (no event: it did nothing)`);
+      if (fn === "fulfillMany") for (const id of a[0]) ids.set(id, (ids.get(id) ?? 0) + 1);
+    }
+  }
+  say(`race: blocks ${from + 1n}-${to}, ${txs.length} keeper tx (${["main", "backup"].map((w) => `${w} ${txs.filter((x) => x.who === w).length}`).join(", ")})`);
+  return { finished, txs, reverted, noops, doubleIds: [...ids].filter(([, n]) => n > 1).map(([id]) => String(id)) };
+}
+
+let summary = {};
 try {
   await main();
 } catch (e) {
   console.error(`\nREHEARSAL FAILED: ${e?.shortMessage ?? e?.message ?? e}`);
+  console.error("the keepers' last lines:");
+  for (const l of keeperLogs.slice(-40)) console.error(l);
+  console.error(`full log: ops/rehearsal/out/rehearsal.log`);
   process.exitCode = 1;
 } finally {
+  try { writeFileSync(resolve(OUT, "summary.json"), JSON.stringify({ ...summary, passed: !process.exitCode, keeperLog: keeperLogs }, null, 2)); } catch { /* best effort */ }
   if (anvil && !args.keep) anvil.kill();
   if (args.keep) console.log(`anvil left running on ${RPC}`);
   setTimeout(() => process.exit(process.exitCode ?? 0), 200).unref();
