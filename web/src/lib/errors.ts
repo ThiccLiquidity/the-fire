@@ -1,7 +1,9 @@
-// Plain-English reasons for every custom error the card contracts can raise. The list of errors is generated from
-// the ABIs (scripts/gen-abi-errors.mjs -> abiErrors.generated.ts); this table must have a message for each one, so
+// Plain-English reasons for every custom error the site can meet: the card contracts, the randomness router and
+// adapter, and the standard ERC-20 errors. The list of errors is generated from the ABIs and extraErrors.json
+// (scripts/gen-abi-errors.mjs -> abiErrors.generated.ts); this table must have a message for each one, so
 // after `npm run gen:errors` the type check names any error that still needs words. Errors only the owner or another
-// contract can hit get a short message too, so nothing ever shows a raw name.
+// contract can hit get a short message too, so nothing ever shows a raw name. No fixed times or numbers here: windows
+// and limits are set per Series, so the page shows the live ones.
 
 import { BaseError, ContractFunctionRevertedError, decodeErrorResult, type Hex } from "viem";
 import { ERRORS_ABI, type AbiErrorName } from "./abiErrors.generated";
@@ -23,9 +25,9 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   CreditWalletLimit: "That's the most free packs one wallet can use this Series. The rest wait for the next one.",
   DropStarted: "This Series has already started, so that can't change.",
   DropsActive: "Not while a Series is on sale.",
-  FeedUnavailable: "Prices can't be read right now. Nothing was charged. Try again in a minute.",
-  HoldersOnly: "The first 24 hours are for Paper Press and PLANK holders.",
-  NoContracts: "For the first 48 hours, only regular wallets (like MetaMask or Rabby) can buy.",
+  FeedUnavailable: "Prices can't be read right now. Nothing was charged. Try again soon.",
+  HoldersOnly: "Holders buy first.",
+  NoContracts: "Regular wallets only for now.",
   NoCredits: "You don't have enough free packs.",
   NotLive: "This Series isn't on sale.",
   NotPressOwner: "That Paper Press isn't in your wallet.",
@@ -35,10 +37,10 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   PressUsed: "That Paper Press has already claimed its pack this Series.",
   PriceMoved: "The price just moved. Check the new price and try again.",
   SoldOut: "Sold out. There aren't enough packs left.",
-  StarterWindowClosed: "Press packs could only be claimed in the first 24 hours.",
+  StarterWindowClosed: "Press pack claims are closed.",
   TooEarly: "It's too early to end this Series.",
   TransferFailed: "A payment didn't go through. Nothing was charged.",
-  WalletLimit: "That's the most packs one wallet can buy for now. The limit lifts after 48 hours.",
+  WalletLimit: "That's the most packs one wallet can buy for now.",
 
   // packs, cards, opening (FirePacks, FireCards, RecipeDealer)
   AlreadyCased: "That card is already cased.",
@@ -70,7 +72,7 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   // cases and grading (FirePsa, PaperBurner)
   BadRoute: "The PAPER burn route isn't valid.",
   FeedsAlreadySet: "The price feeds are already set.",
-  NotReady: "The randomness for that isn't ready yet. Try again in a minute.",
+  NotReady: "The randomness for that isn't ready yet. Try again soon.",
   Pending: "That card is already at the grader.",
 
   // only the owner or Cardworks' own contracts
@@ -92,7 +94,25 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   NotCredits: INTERNAL,
   RenounceDisabled: OWNER,
 
+  // randomness (OpenDrandRouter, OpenVRFAdapter): mostly for whoever delivers it, never a player's payment
+  AlreadyFulfilled: "That randomness has already been delivered.",
+  FeeUnpaid: "The randomness fee isn't covered. Nothing was charged.",
+  IncorrectFee: "The randomness fee is wrong. Nothing was charged.",
+  InsufficientGas: "Not enough gas to deliver the randomness. Try again with more.",
+  InvalidCallback: "That delivery can't be retried.",
+  InvalidRequest: "That randomness request isn't valid.",
+  NotFulfilled: "The randomness for that hasn't arrived yet.",
+  OnlyFire: INTERNAL,
+  OnlyRouter: INTERNAL,
+  ReentrantDelivery: "That call isn't allowed from inside another call.",
+
   // standard token errors (OpenZeppelin)
+  ERC20InsufficientAllowance: "The token approval doesn't cover this. Approve again and retry.",
+  ERC20InsufficientBalance: "Not enough of that token in your wallet.",
+  ERC20InvalidApprover: "That approval isn't valid.",
+  ERC20InvalidReceiver: "That address can't receive tokens.",
+  ERC20InvalidSender: "Tokens can't be sent from that address.",
+  ERC20InvalidSpender: "That address can't be approved.",
   ERC1155InsufficientBalance: "You don't have enough of those packs.",
   ERC1155InvalidApprover: "That approval isn't valid.",
   ERC1155InvalidArrayLength: "The lists in that request don't match.",
@@ -126,12 +146,13 @@ export function errorMessage(name: string, args: readonly unknown[] = []): strin
   return m === undefined ? words(name) : typeof m === "function" ? m(args) : m;
 }
 
-/** The custom error inside a failed call, if there is one: decoded by viem, or from raw revert data. */
+/** The custom error inside a failed call, if there is one: decoded by viem, or from raw revert data (matched against
+ *  every error in ERRORS_ABI: the card contracts, the randomness contracts and ERC-20). */
 export function revertOf(e: unknown): { name: string; args: readonly unknown[] } | undefined {
   if (!(e instanceof BaseError)) return undefined;
   const rev = e.walk((x) => x instanceof ContractFunctionRevertedError) as ContractFunctionRevertedError | null;
   if (rev?.data?.errorName) return { name: rev.data.errorName, args: rev.data.args ?? [] };
-  // a revert from a call made without the ABI: decode the selector against every card contract error
+  // a revert from a call made without the ABI (or from a contract it called): decode the selector against every error we know
   const raw = (rev?.raw ?? (e.walk((x) => typeof (x as { data?: unknown })?.data === "string") as { data?: Hex } | null)?.data) as Hex | undefined;
   if (raw && /^0x[0-9a-f]{8}/i.test(raw)) {
     try { const d = decodeErrorResult({ abi: ERRORS_ABI, data: raw }); return { name: d.errorName, args: d.args ?? [] }; } catch { /* not one of ours */ }
