@@ -40,3 +40,14 @@ deployments/rehearsal-*.json
 deployments/test-*.json
 deployments/31337.json
 ops/rehearsal/out/
+# a deploy waiting to be recorded (ops/deploy/record.mjs)
+deployments/*.pending
+
+# Never commit: keys, keystores, IPFS CAR files (kept offline), holder snapshots
+*.car
+**/keystores/
+*.keystore
+*.pem
+*.key
+ops/**/*-holders.json
+ops/keeper/.keeper-state.json

@@ -1,12 +1,18 @@
-// Sending transactions safely from a keeper that may run as two instances (Railway and the GitHub Actions backup).
+// Sending transactions safely from a keeper that may run as two instances (the main keeper and the backup, each a
+// Railway service with its own wallet).
 //
-// - Every call is simulated first. If the contract says no (someone else already did it: another keeper, the site, a
-//   stranger), it is skipped quietly. Every keeper call is permissionless and idempotent on-chain, so a race costs at
-//   most one reverted transaction's gas.
+// - Every call is checked first, against the PENDING state (so a transaction another keeper already sent counts):
+//   `precheck` (is the work still there?), then a simulation. If the contract says no, or the call would do nothing
+//   (`accept`), it is skipped quietly. Every keeper call is permissionless and idempotent on-chain, so a race costs at
+//   most one wasted transaction's gas, never a double result.
+// - The backup (`yieldMs`) waits a moment before each send and checks again, and stands down while the main keeper's
+//   wallet (`mainKeeper`) has a transaction waiting, so the main keeper wins a tie.
 // - One transaction in flight per job. reconcile() runs at the start of every pass: a receipt means done; a transaction
 //   that was dropped or is stuck is re-sent at the SAME nonce with a higher fee (the original call if it would still
 //   succeed, else a 0-ETH transfer to ourselves to fill the nonce), so nothing is done twice and later transactions
 //   aren't stuck behind a gap.
+// - fillNonceGaps() at start-up: transactions a previous run left waiting (it crashed, or a one-pass run ended before
+//   they were mined) are replaced by 0-ETH transfers to ourselves at a higher fee, so new work isn't stuck behind them.
 // - Nonce errors (another instance used our nonce) reset the nonce manager; the job is retried next pass.
 
 export const errMsg = (e) => e?.shortMessage ?? String(e?.message ?? e).split("\n")[0]; // never the full error: it can carry the RPC URL
@@ -14,7 +20,12 @@ export const errMsg = (e) => e?.shortMessage ?? String(e?.message ?? e).split("\
 const notFound = (e) => e?.name === "TransactionNotFoundError" || e?.name === "TransactionReceiptNotFoundError";
 const nonceTrouble = (e) => /nonce|replacement transaction underpriced|already known/i.test(errMsg(e));
 
-export function createSender({ pub, wallet, account, log, maxFeeGwei, receiptTimeoutMs = 90_000, stuckMs = 10 * 60_000, dropGraceMs = 60_000 }) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export function createSender({
+  pub, wallet, account, log, maxFeeGwei, receiptTimeoutMs = 90_000, stuckMs = 10 * 60_000, dropGraceMs = 60_000,
+  yieldMs = 0, mainKeeper, blockTag = "pending",
+}) {
   const inflight = new Map();
   const MAX_FEE = maxFeeGwei ? BigInt(Math.round(maxFeeGwei * 1e9)) : undefined;
   const nonceKey = () => ({ address: account.address, chainId: wallet.chain.id });
@@ -44,21 +55,53 @@ export function createSender({ pub, wallet, account, log, maxFeeGwei, receiptTim
   const write = (c, nonce, fee, gas) =>
     wallet.writeContract({ address: c.address, abi: c.abi, functionName: c.functionName, args: c.args, value: c.value, nonce, gas, ...fee });
 
+  /** The work is still there and the call would do something: { ok, sim, reason }. */
+  async function check(call, precheck, accept) {
+    if (precheck) {
+      let still;
+      try { still = await precheck(blockTag); } catch (e) { return { ok: false, reason: `precheck: ${errMsg(e)}` }; }
+      if (!still) return { ok: false, reason: "already done" };
+    }
+    let sim;
+    try { sim = await pub.simulateContract({ account, address: call.address, abi: call.abi, functionName: call.functionName, args: call.args, value: call.value, blockTag }); }
+    catch (e) { return { ok: false, reason: errMsg(e) }; }
+    if (accept && !accept(sim.result)) return { ok: false, reason: "nothing to do", sim };
+    return { ok: true, sim };
+  }
+
+  /** The main keeper has a transaction waiting to be mined (it is alive and on it). */
+  async function mainBusy() {
+    if (!mainKeeper) return false;
+    const [p, l] = await Promise.all([
+      pub.getTransactionCount({ address: mainKeeper, blockTag: "pending" }),
+      pub.getTransactionCount({ address: mainKeeper, blockTag: "latest" }),
+    ]);
+    return p > l;
+  }
+
   /**
-   * Simulate, then send `call` ({ address, abi, functionName, args, value }) and wait for its receipt.
+   * Check, then send `call` ({ address, abi, functionName, args, value }) and wait for its receipt.
    * Returns { status: "done" | "reverted" | "skipped" | "waiting", result, hash, reason }.
-   * `accept(result)` may veto the send after simulating (e.g. a flush that would burn nothing).
+   * `precheck(blockTag)` says whether the work is still there (e.g. a checkpoint still due); `accept(result)` may veto
+   * the send after simulating (e.g. a flush that would burn nothing).
    */
-  async function send(call, { job, accept } = {}) {
+  async function send(call, { job, accept, precheck } = {}) {
     const key = job ?? `${call.address}:${call.functionName}`;
     const prev = inflight.get(key);
     if (prev) { log(`${call.functionName}: still waiting on ${prev.hashes.at(-1)} (nonce ${prev.nonce})`); return { status: "waiting" }; }
-    let sim;
-    try { sim = await pub.simulateContract({ account, address: call.address, abi: call.abi, functionName: call.functionName, args: call.args, value: call.value }); }
-    catch (e) { return { status: "skipped", reason: errMsg(e) }; }
-    if (accept && !accept(sim.result)) return { status: "skipped", reason: "nothing to do", result: sim.result };
+    let c = await check(call, precheck, accept);
+    if (!c.ok) return { status: "skipped", reason: c.reason, result: c.sim?.result };
+    if (yieldMs > 0) {
+      // the backup: give the main keeper a moment, then look again
+      await sleep(yieldMs);
+      try { if (await mainBusy()) { log(`${call.functionName}: left to the main keeper (it has a transaction waiting)`); return { status: "skipped", reason: "the main keeper has a transaction waiting" }; } }
+      catch (e) { return { status: "skipped", reason: errMsg(e) }; }
+      c = await check(call, precheck, accept);
+      if (!c.ok) { log(`${call.functionName}: left to the main keeper (${c.reason})`); return { status: "skipped", reason: c.reason, result: c.sim?.result }; }
+    }
+    const sim = c.sim;
     let gas;
-    try { gas = ((await pub.estimateContractGas({ account, address: call.address, abi: call.abi, functionName: call.functionName, args: call.args, value: call.value })) * 13n) / 10n; }
+    try { gas = ((await pub.estimateContractGas({ account, address: call.address, abi: call.abi, functionName: call.functionName, args: call.args, value: call.value, blockTag })) * 13n) / 10n; }
     catch (e) { return { status: "skipped", reason: errMsg(e) }; }
     let entry;
     try {
@@ -71,7 +114,7 @@ export function createSender({ pub, wallet, account, log, maxFeeGwei, receiptTim
         try { hash = await write(call, nonce, fee, gas); }
         catch (e) { resetNonce(); throw e; } // the nonce wasn't used: re-read it next time
         const t = Date.now();
-        const en = { ...call, gas, hashes: [hash], cancels: new Set(), nonce, fee, firstSentAt: t, sentAt: t };
+        const en = { ...call, precheck, accept, gas, hashes: [hash], cancels: new Set(), nonce, fee, firstSentAt: t, sentAt: t };
         inflight.set(key, en);
         return en;
       });
@@ -129,9 +172,15 @@ export function createSender({ pub, wallet, account, log, maxFeeGwei, receiptTim
         const fee = await fees(e.fee);
         if (!fee) { log(`${e.functionName}: ${why} tx ${last} needs a fee above MAX_FEE_GWEI to replace; still waiting`); continue; }
         let still = !e.cancelOnly;
+        // against the mined state: the pending one includes this very transaction
+        if (still && e.precheck) {
+          try { still = !!(await e.precheck("latest")); } catch { still = false; }
+        }
         if (still) {
-          try { await pub.simulateContract({ account, address: e.address, abi: e.abi, functionName: e.functionName, args: e.args, value: e.value }); }
-          catch { still = false; }
+          try {
+            const sim = await pub.simulateContract({ account, address: e.address, abi: e.abi, functionName: e.functionName, args: e.args, value: e.value, blockTag: "latest" });
+            if (e.accept && !e.accept(sim.result)) still = false;
+          } catch { still = false; }
         }
         const hash = await serial(() => (still ? write(e, e.nonce, fee, e.gas) : wallet.sendTransaction({ to: account.address, value: 0n, nonce: e.nonce, ...fee })));
         e.hashes.push(hash);
@@ -143,9 +192,44 @@ export function createSender({ pub, wallet, account, log, maxFeeGwei, receiptTim
     }
   }
 
+  /**
+   * Start-up: transactions from an earlier run still waiting (pending nonce above the mined one) are replaced by 0-ETH
+   * transfers to ourselves at twice today's fee (more if refused), and tracked like any in-flight transaction.
+   * Returns how many nonces it filled.
+   */
+  async function fillNonceGaps() {
+    const [pending, latest] = await Promise.all([
+      pub.getTransactionCount({ address: account.address, blockTag: "pending" }),
+      pub.getTransactionCount({ address: account.address, blockTag: "latest" }),
+    ]);
+    let filled = 0;
+    for (let nonce = latest; nonce < pending; nonce++) {
+      if ([...inflight.values()].some((e) => e.nonce === nonce)) continue;
+      const base = await fees();
+      let fee = { maxFeePerGas: base.maxFeePerGas * 2n, maxPriorityFeePerGas: base.maxPriorityFeePerGas * 2n + 1n };
+      let hash;
+      for (let i = 0; i < 4 && !hash; i++) {
+        if (MAX_FEE && fee.maxFeePerGas > MAX_FEE) fee = { maxFeePerGas: MAX_FEE, maxPriorityFeePerGas: fee.maxPriorityFeePerGas > MAX_FEE ? MAX_FEE : fee.maxPriorityFeePerGas };
+        try { hash = await serial(() => wallet.sendTransaction({ to: account.address, value: 0n, nonce, ...fee })); }
+        catch (e) {
+          if (!/underpriced|too low|replacement/i.test(errMsg(e)) || (MAX_FEE && fee.maxFeePerGas >= MAX_FEE)) { log(`nonce ${nonce}: couldn't replace the waiting transaction: ${errMsg(e)}`); break; }
+          fee = { maxFeePerGas: fee.maxFeePerGas * 2n, maxPriorityFeePerGas: fee.maxPriorityFeePerGas * 2n + 1n };
+        }
+      }
+      if (!hash) continue;
+      const t = Date.now();
+      inflight.set(`nonce-gap:${nonce}`, { functionName: "nonce-gap fill", cancelOnly: true, address: account.address, hashes: [hash], cancels: new Set([hash]), nonce, fee, firstSentAt: t, sentAt: t });
+      log(`nonce ${nonce}: a transaction from an earlier run was still waiting; replaced by a 0-ETH transfer ${hash}`);
+      filled++;
+    }
+    if (filled) resetNonce();
+    return filled;
+  }
+
   return {
     send,
     reconcile,
+    fillNonceGaps,
     inflight,
     /** Transactions sent since the last reconcile() (the start of this pass). */
     sent: () => sentThisPass,

@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { allImageNames, imageName, looksFor, recipeFromJson, recipeHash, STATES } from "./verify-series.mjs";
+import { allImageNames, imageName, loads, looksFor, recipeFromJson, recipeHash, retryAfterMs, STATES } from "./verify-series.mjs";
 
 const standard = JSON.parse(readFileSync(new URL("../../contracts/test/cards/recipe-standard.json", import.meta.url), "utf8"));
 
@@ -42,4 +42,29 @@ test("recipe hash: the studio's manifest fingerprint ignores imagesBase and the 
   assert.equal(a, "6acc2a38b47895668716cef8bff923f37c125f86412b6604aa238db6b6e30ce1");
   assert.equal(recipeHash({ ...standard, imagesBase: "ipfs://other/", sale: { start: 1 } }), a);
   assert.notEqual(recipeHash({ ...standard, characters: standard.characters.slice(1) }), a);
+});
+
+test("Retry-After: seconds or an HTTP date", () => {
+  assert.equal(retryAfterMs("3"), 3000);
+  assert.equal(retryAfterMs(undefined), undefined);
+  assert.equal(retryAfterMs(new Date(10_000).toUTCString(), 4_000), 6_000);
+  assert.equal(retryAfterMs("soon"), undefined);
+});
+
+test("loads: a 429 pauses the gateway for its Retry-After and doesn't use up the tries; 404 is a miss", async () => {
+  const res = (status, headers = {}) => ({ ok: status >= 200 && status < 300, status, headers: new Headers(headers) });
+  const waits = [];
+  const sleepFn = async (ms) => { waits.push(ms); };
+  let n = 0;
+  const gw = { pauseUntil: 0, throttled: 0 };
+  const ok = await loads("https://g/x", async () => (++n <= 4 ? res(429, { "retry-after": "2" }) : res(200)), gw, { tries: 2, sleepFn });
+  assert.equal(ok, true);
+  assert.equal(n, 5, "four 429s, then it loads: the 429s didn't count as failed tries");
+  assert.equal(gw.throttled, 4);
+  assert.ok(gw.pauseUntil > Date.now(), "the whole gateway is paused");
+  assert.ok(waits.some((w) => w > 1000), "waited about the Retry-After");
+  assert.equal(await loads("https://g/y", async () => res(404), { pauseUntil: 0, throttled: 0 }, { sleepFn }), false);
+  let m = 0;
+  assert.equal(await loads("https://g/z", async () => { m++; return res(429); }, { pauseUntil: 0, throttled: 0 }, { tries: 2, maxThrottle: 3, sleepFn }), false);
+  assert.equal(m, 5, "gives up after maxThrottle 429s plus its tries");
 });

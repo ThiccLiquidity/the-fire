@@ -13,7 +13,10 @@ export const twapAbi = parseAbi([
 export const paperTwapAbi = parseAbi([
   "function pair() view returns (address)",
   "function candidate() view returns (address)",
+  "function candidateSince() view returns (uint32)",
 ]);
+
+export const pausableAbi = parseAbi(["function paused() view returns (bool)"]);
 
 export const feedAbi = parseAbi(["function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)"]);
 

@@ -1,9 +1,12 @@
-# The keeper's backup: one pass every 5 minutes (ops/keeper, ONCE=1). It acts only on work the main keeper (Railway)
-# has left waiting for ACT_AFTER_SEC, so normally it sends nothing; when it does step in, it says so on the webhook.
+# OPTIONAL, best effort: a third keeper, one pass every 5 minutes (ops/keeper, ONCE=1, KEEPER_ROLE=backup). The real
+# backup is the second Railway service (ops/keeper/README.md); this is only an extra for when both Railway services are
+# down. It acts only on work left waiting ACT_AFTER_SEC (default 15 min here, after the Railway backup's 5) and says so on
+# the webhook when it steps in. GitHub may delay or skip scheduled runs, so never rely on it alone.
 # Off until the repository variable KEEPER_BACKUP_ENABLED is "true". Scheduled runs use the default branch's copy of
 # this file. Secrets (Settings -> Secrets and variables -> Actions): KEEPER_RPC_URL, KEEPER_BACKUP_PRIVATE_KEY (its own
-# gas-only wallet, not the Railway one), KEEPER_ALERT_WEBHOOK_URL, optional KEEPER_BACKUP_HEARTBEAT_URL.
-name: Keeper backup
+# gas-only wallet, not either Railway one), KEEPER_ALERT_WEBHOOK_URL, optional KEEPER_BACKUP_HEARTBEAT_URL.
+# Alert memory (so a problem is posted once, repeated hourly, and "resolved") is kept between runs in the Actions cache.
+name: Keeper extra (optional)
 
 on:
   schedule:
@@ -11,20 +14,21 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: keeper-backup
+  group: keeper-extra
   cancel-in-progress: false
 
 permissions:
   contents: read
+  actions: write # the alert-memory cache
 
 jobs:
   pass:
     if: vars.KEEPER_BACKUP_ENABLED == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -32,16 +36,30 @@ jobs:
       - name: Install
         working-directory: ops/keeper
         run: npm ci --omit=dev --no-audit --no-fund
+      - name: Restore the alert memory
+        uses: actions/cache/restore@v4
+        with:
+          path: ops/keeper/.keeper-state.json
+          key: keeper-state-${{ github.run_id }}
+          restore-keys: keeper-state-
       - name: One keeper pass
         working-directory: ops/keeper
         env:
           ONCE: "1"
-          KEEPER_LABEL: backup
-          ACT_AFTER_SEC: ${{ vars.KEEPER_ACT_AFTER_SEC || '300' }}
+          KEEPER_ROLE: backup
+          KEEPER_LABEL: extra
+          ACT_AFTER_SEC: ${{ vars.KEEPER_ACT_AFTER_SEC || '900' }}
           CHAIN_ID: ${{ vars.KEEPER_CHAIN_ID || '4663' }}
           INTERVAL_SEC: "300"
+          STATE_FILE: .keeper-state.json
           RPC_URL: ${{ secrets.KEEPER_RPC_URL }}
           KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_BACKUP_PRIVATE_KEY }}
           ALERT_WEBHOOK_URL: ${{ secrets.KEEPER_ALERT_WEBHOOK_URL }}
           HEARTBEAT_URL: ${{ secrets.KEEPER_BACKUP_HEARTBEAT_URL }}
         run: node src/keeper.mjs
+      - name: Save the alert memory
+        if: always() && hashFiles('ops/keeper/.keeper-state.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: ops/keeper/.keeper-state.json
+          key: keeper-state-${{ github.run_id }}
