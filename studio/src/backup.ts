@@ -58,6 +58,7 @@ export async function importLibrary(file: Blob, onProgress?: (read: number, tota
     if (k.startsWith('fire:')) {
       const f = { ...(v as FireRecord) }
       delete f.build
+      delete f.buildPending
       return [k, f]
     }
     return [k, v]

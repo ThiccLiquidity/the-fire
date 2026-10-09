@@ -177,6 +177,9 @@ export interface FireRecord {
   deal?: DealResult
   approvedAt?: number
   build?: BuildState
+  /** A "Build all" that hasn't finished: what it builds (grid key), when it started, and the bytes and time so far.
+   *  The next "Build all" keeps the images already stored for it, unless art, layouts or fonts changed since. */
+  buildPending?: { gridKey: string; startedAt: number; bytes: number; ms: number }
   upload?: UploadState
   createdAt: number
   updatedAt: number
