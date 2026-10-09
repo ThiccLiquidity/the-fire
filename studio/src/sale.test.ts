@@ -27,7 +27,8 @@ describe('sale settings', () => {
   it('mirrors configureDrop\'s checks', () => {
     expect(errs({ paidPacks: 0, pressPacks: 0 })).toContain('paidPacks')
     expect(errs({ priceUsd: '0' })).toContain('priceUsd')
-    expect(errs({ paidPacks: 0, plankOnly: 0, priceUsd: '0' })).toEqual([]) // press packs only
+    expect(errs({ paidPacks: 0, plankOnly: 0, priceUsd: '0' })).toEqual(['priceUsd']) // press only: unclaimed ones sell at it
+    expect(errs({ paidPacks: 0, plankOnly: 0 })).toEqual([])
     expect(errs({ plankOnly: 118 })).toContain('plankOnly')
     expect(errs({ plankBurnPercent: '100.01' })).toContain('plankBurnPercent')
     expect(errs({ paperCapUsd: 'x' })).toContain('paperCapUsd')

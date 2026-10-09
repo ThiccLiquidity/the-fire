@@ -128,7 +128,7 @@ export function checkSale(s: SaleSettings, now = Date.now() / 1000): SaleProblem
 
   const price = parseDecimal(s.priceUsd, 8)
   if (price == null || price > U128) bad('priceUsd', 'A dollar amount, up to 8 decimals.')
-  else if (s.paidPacks > 0 && price === 0n) bad('priceUsd', 'Paid packs need a price (free packs are press packs or credits).')
+  else if (price === 0n) bad('priceUsd', 'Set a price above 0.')
   const paper = parseDecimal(s.paperPerPack, 18)
   if (paper == null || paper > U128) bad('paperPerPack', 'A PAPER amount, up to 18 decimals (0 = none).')
   const paperCap = parseDecimal(s.paperCapUsd, 8)
