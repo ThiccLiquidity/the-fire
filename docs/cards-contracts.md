@@ -164,7 +164,8 @@ are no PDA odds in it: they are fixed in `FirePsa` for every Series. The JSON is
 `sale` (optional; the studio's Sale tab) is `FireSale.DropConfig` field by field, in contract units: times in seconds
 after `start`, dollars with 8 decimals, PAPER in wei, the burn share in basis points. Every field is required except
 `holderRoot` (0 = presses only). `DROP_START` and `HOLDER_ROOT` override `start` and `holderRoot` when the script runs
-(the snapshot is taken just before the drop). The studio's sample export is `contracts/test/cards/recipe-studio-sale.json`
+(the snapshot is taken just before the drop). Batch B refuses `holderWindow` > 0 with no `holderRoot` (a forgotten
+snapshot) unless `NO_HOLDERS=true`. The studio's sample export is `contracts/test/cards/recipe-studio-sale.json`
 (written by `studio/scripts/sale-sample.test.ts`; `Sale.t.sol` runs it through the script and `configureDrop`).
 
 ## The flow
@@ -174,7 +175,9 @@ after `start`, dollars with 8 decimals, PAPER in wei, the burn share in basis po
    must already have the Series ready), `FireCards.setImagesBase(fire, base)`. Then
    `FireSale.configureDrop` (it requires `FireCards.ready(fire)`; the script adds it last from the `sale` block).
    `configureDrop` calls `FireCards.lockForSale(fire)`: from then the dealer, recipe, characters and image folder are
-   fixed.
+   fixed. Every lock (`lockForSale`, `lockFire`) and `ready` check again that the Series has an image folder and that
+   its dealer's cards per pack is 1 to `MAX_CARDS_PER_PACK` (a recipe changed after `setDealer` isn't otherwise
+   rechecked), so a locked Series can always be dealt.
 2. **During the drop:** the seller (`FireSale`) mints packs. They're tradeable sealed.
 3. **When the drop ends:** the seller calls `closeFire(fire)`. The pack count freezes. Closing never calls the dealer.
    The pool (`poolOf`) is worked out from the recipe and that count; the dealer lays it out at the first deal.
@@ -289,7 +292,8 @@ be renounced.
 - Cards are minted without the receiver callback, so a holder's contract can't stall the queue for everyone else.
 - One open, one randomness request: there is no re-request (it could act as a re-roll once a drand round is public).
   After 7 days with no answer (randomness gone for good), anyone can `cancelOpen(fire, index)`: the packs go back to
-  the holder, sealed. Each open remembers its randomness source and only that source can answer it, so switching the
+  the holder, sealed (minted back without the ERC-1155 receiver hook, so a wallet that refuses them can't block the
+  cancel and freeze the queue; same for `skipStuck`). Each open remembers its randomness source and only that source can answer it, so switching the
   source never strands or re-rolls an open. If a ready open sits at the head of its queue undealt for 7 days (a dealer
   that can't deal it), anyone can `skipStuck(fire)`: its unstarted packs go back, sealed, and the queue moves on. Each
   Series' queue stands alone, so one stuck Series never blocks another.
@@ -346,10 +350,11 @@ RecipeDealer and RecipeCompiler, PlankBurner, FireCredits, FireSale (wired to bo
 and checks the sale points back), PaperBurner (its feeds and default routes: direct to PAPER or through PLANK/WETH),
 FirePsa, two drand adapters (FireCards, FirePsa), the royalty. It needs `PAPER_USD_FEED` (the `PaperUsdTwap`). It
 hands ownership to `OWNER`, one hardware wallet (Ledger or Trezor; no multisig: nothing holds funds, the risk is key
-theft), which then accepts FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner in one run of
-`contracts/script/AcceptOwnership.s.sol` signed on the device; FireSale is owned by `OWNER` from deployment;
-PlankBurner has no owner. The script checks every input first and refuses an `OWNER` equal to the deployer (a
-throwaway hot wallet that only pays gas). A test runs the same steps.
+theft), which then accepts FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa and PaperBurner in one
+run of `contracts/script/AcceptOwnership.s.sol` signed on the device (until then the deployer owns them, so a mistyped
+`OWNER` owns nothing); PlankBurner has no owner. The script runs only on chain 4663 (`EXPECTED_CHAIN_ID` for a
+rehearsal), checks every input first and refuses an `OWNER` equal to the deployer (a throwaway hot wallet that only
+pays gas). A test runs the same steps.
 
 Every deploy script writes what it deployed to `deployments/<chainId>.json` (repository root), the address file every
 tool reads; `contracts/script/VerifyDeploy.s.sol` checks the wiring listed below from it.
@@ -359,7 +364,8 @@ recipe, characters, dealer, images base) and, after `ops/series/verify-series.mj
 (`configureDrop`, the lock; refused unless the chain holds batch A exactly). It checks the recipe against the dealer,
 prints each call and sends it from the owner (`--ledger`/`--trezor`; any other signer is refused); `SIMULATE=true` runs
 a batch as the impersonated owner on a fork (`BATCH=AB` only there). It rejects unknown JSON keys (`pdaOdds` too) and a drop start more than 365 days away. Inputs: `RECIPE_JSON` (under `contracts/series/`), `BATCH`,
-`DROP_START` and `HOLDER_ROOT` (override the block), `CHARACTER_BATCH` (characters per call, default 200);
+`DROP_START` and `HOLDER_ROOT` (override the block), `NO_HOLDERS=true` (allow a holder window with no root),
+`CHARACTER_BATCH` (characters per call, default 200);
 `RECIPE_DEALER`, `FIRE_CARDS`, `FIRE_SALE` from the deployments file unless set.
 
 - **Settings:** `.env.example` (card contracts section). No keys in `.env`: the deployer signs with the Foundry keystore, the owner on its hardware wallet.

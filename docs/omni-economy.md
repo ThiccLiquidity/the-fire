@@ -86,8 +86,10 @@ as `packs = 117`, `starters = 50`. Setup is signed on the owner's hardware walle
   price, the set amount.
 - **Packs are never paid for in PAPER.** The price is paid in PLANK, ETH or USDG only.
 - **Paid pack:** $2.50 + 1 PAPER (at most $1 of PAPER in the Standard sale).
-  - Every buy first refreshes the PLANK price itself (`PlankUsdTwap.checkpoint()`, a cheap no-op when it isn't due; a
-    failure is ignored), so buyers rely less on the keeper.
+  - Every buy first checkpoints the PLANK price (`PlankUsdTwap.checkpoint()`, a cheap no-op when it isn't due; a
+    failure is ignored). That keeps the price fresh only while buys or the keeper come at least every 2 hours: after a
+    longer gap the checkpoint a buy makes spans more than 2 hours, so it can't refresh the price for itself; the keeper
+    (or anyone) has to checkpoint twice, 30 minutes apart.
   - ETH uses the Chainlink price. PLANK uses the 30-minute pool average (`PlankUsdTwap`). USDG is taken at face value.
   - Every purchase carries the buyer's maximum. If a price moved past it, the purchase fails and costs nothing.
 - **Where the money goes, in the same transaction:**
@@ -121,7 +123,8 @@ as `packs = 117`, `starters = 50`. Setup is signed on the owner's hardware walle
   PLANK pool or a new router).
 - **The PLANK price must be fresh:** the 30-minute average must have ended within the last 2 hours and cover at most
   2 hours. Otherwise PLANK purchases pause and the burn share of ETH/USDG sales goes to `PlankBurner`, until the
-  price is fresh again (any buy or the keeper checkpoints it; the keeper does every 30 minutes).
+  price is fresh again (the keeper checkpoints every 30 minutes, and buys keep it fresh between those; after a gap
+  over 2 hours it takes two checkpoints 30 minutes apart, which a buy can't do for itself).
 - **Pause.** The owner can pause buying, press packs, credit spending and paid suggestions (`FireSale.setPaused`),
   and case and grading payments (`FirePsa.setPaused`). Opening packs, dealing, transfers, ending or closing a drop,
   burning cards, finishing or cancelling a grading and every keeper call never pause. A pause doesn't expire on its
@@ -182,7 +185,10 @@ Every PAPER spent anywhere is burned.
 - **The PAPER price feed.** PAPER already has a live pool, but `PAPER_USD_FEED` must be the deployed `PaperUsdTwap`
   (step 2 of `docs/deploy.md`), never the pool itself. It prices the PAPER ceilings and guards the fee burn. The feed
   adopts a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool (PLANK valued through `PlankUsdTwap`) only once it holds at least
-  $10 on its other side (`MIN_LIQUIDITY_USD`; any real pool, however thin) at every checkpoint for 20 hours, then reports its first price one
+  $10 on its other side (`MIN_LIQUIDITY_USD`; any real pool, however thin) and at least 1,000 PAPER
+  (`MIN_PAPER_RESERVE`, so a lopsided pool like "$11 against a speck of PAPER" can't set the price) at every
+  checkpoint for 20 hours; while the adopted pool holds under 1,000 PAPER its price reads 0 and any real pool can take
+  over. Nothing reacts to price swings. It reports its first price one
   full 20-hour window later: about 40 hours after the first checkpoint. Until then packs take the set PAPER (no
   ceiling) and case and grading fees wait in `PaperBurner`. If the feed later goes quiet, the last good price holds. The owner
   can replace the sale's feed between drops (`FireSale.setFeeds`); the burner's feeds are set once.
