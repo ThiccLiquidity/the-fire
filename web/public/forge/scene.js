@@ -761,6 +761,7 @@ window.__frames = 0; // test hook: frame counter
 document.addEventListener('visibilitychange', () => { last = performance.now(); });
 function frame(tms) {
   if (document.hidden) { last = tms; requestAnimationFrame(frame); return; } // nothing drawn while the tab is hidden
+  if (window.Sheet?.covering) { last = tms; requestAnimationFrame(frame); return; } // ...or while a modal sheet covers the scene (it picks up where it was)
   if (window.__paused && !(window.__steps > 0)) { last = tms; requestAnimationFrame(frame); return; } // test hook: step frame by frame
   if (window.__steps > 0) window.__steps--;
   const dt = FIXED ? 1 / 30 : Math.min(0.05, Math.max(0, (tms - last) / 1000)); last = tms; now += dt;
