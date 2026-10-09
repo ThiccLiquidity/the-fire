@@ -185,7 +185,7 @@
     }
     $('#sCards').textContent = `${S.cards.length} ${S.cards.length === 1 ? 'card' : 'cards'} · ${sealed} ${sealed === 1 ? 'pack' : 'packs'}`;
     const wb = $('#walletBtn span');
-    const nm = mode === 'port' ? '' : S.wallet.name; // phones: the icon and the balance, so the button fits beside the brand
+    const nm = mode === 'port' || innerWidth < 1500 ? '' : S.wallet.name; // phones: the icon and the balance, so the button fits beside the brand
     wb.textContent = S.wallet.connected ? `${nm ? nm + ' · ' : ''}${S.wallet.balances.PAPER} PAPER` : 'Connect';
     $('#walletBtn').classList.toggle('on', S.wallet.connected);
   }
