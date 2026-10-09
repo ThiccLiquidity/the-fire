@@ -8,7 +8,8 @@
   const HOLO = { none: 'No holo', frame: 'Holo frame', picture: 'Holo picture', full: 'Full holo' };
   const HRANK = { none: 0, frame: 1, picture: 2, full: 3 };
   const GLOW = { paper: '#fff4dc', wood: '#ffc46b', fire: '#ff5a1c', charcoal: '#dcdcf0', diamond: '#9fd8ff', gold: '#ffd25a', fullart: '#ffe9a8' };
-  const MAX_BATCH = 20, BURN_GOAL = 42; // FirePsa.maxBatch: cards per case/grade payment
+  const BURN_GOAL = 42; // fixed forever: every 42 cards burned is a free pack
+  const maxBatch = () => Store.MAX_BATCH; // FirePsa.maxBatch(): the most cards one case & grade payment takes, cases and grades together
   const FALLBACK_NAMES = Store.NAMES;
 
   // ---------- small helpers
@@ -26,6 +27,18 @@
     return el;
   }
   const put = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((x) => x != null && x !== false));
+  // Background Store updates (other buyers, burns landing, timers) must never swap nodes under a click or the keyboard
+  // focus. patch() rebuilds a part only when what it shows changed (its key); a rebuild puts focus back on the same
+  // control, found again by its data-id / data-k / data-v / data-key.
+  const focusSel = (el) => { for (const k of ['data-id', 'data-k', 'data-v', 'data-key']) if (el?.hasAttribute?.(k)) return `[${k}="${CSS.escape(el.getAttribute(k))}"]`; return null; };
+  function patch(host, key, build) {
+    if (host._key === key) return false;
+    host._key = key;
+    const a = document.activeElement, sel = host.contains(a) ? focusSel(a) : null;
+    build();
+    if (sel && !host.contains(document.activeElement)) host.querySelector(sel)?.focus({ preventScroll: true });
+    return true;
+  }
   const btn = (label, cls, onclick, extra = {}) => h('button', { type: 'button', class: 'btn ' + (cls || ''), onclick, ...extra }, label);
   const paper = () => S().wallet.balances.PAPER;
   const connected = () => S().wallet.connected;
@@ -125,10 +138,10 @@
   })();
 
   // ---------- the card: the finished card image (name, material, category, Series and PDA seal are printed on it)
-  function cardFace(c) {
+  function cardFace(c, lazy = false) { // lazy: grids and lists (off-screen tiles load as they scroll in)
     const holo = c.holo || 'none';
     return h('div', { class: `cface m-${c.material} h-${holo} hd-${Store.holder(c)}${c.grade === 10 ? ' g10' : ''}` },
-      h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: `${c.character}, ${Store.MAT_LABEL[c.material]} card`, draggable: 'false' }),
+      h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: `${c.character}, ${Store.MAT_LABEL[c.material]} card`, draggable: 'false', loading: lazy ? 'lazy' : null, decoding: 'async' }),
       holo !== 'none' ? h('i', { class: 'shine', 'aria-hidden': 'true' }) : null);
   }
   // the badge under a card: its grade once slabbed, else Cased, else Raw (with the fresh-day timer while it runs; noFresh: none, a banner says it)
@@ -166,13 +179,17 @@
   // a tile used by the collection and by every picker (Series and floor live in the card's detail)
   function cardTile(c, { selectable = false, selected = false, onTap, tag, noFresh = false } = {}) {
     const b = h('button', { type: 'button', class: 'ctile' + (selectable ? ' pick' : ''), 'data-id': c.id, 'aria-label': describe(c), onclick: () => onTap?.(c, b) },
-      h('div', { class: 'cwrap' }, cardFace(c), gradeBadge(c, noFresh), selectable ? h('span', { class: 'tick', 'aria-hidden': 'true' }) : null),
+      h('div', { class: 'cwrap' }, cardFace(c, true), gradeBadge(c, noFresh), selectable ? h('span', { class: 'tick', 'aria-hidden': 'true' }) : null),
       canGradeNow(c) ? nowBar(c) : null,
       h('div', { class: 'cmeta' }, tag || null, matChip(c.material), holoChip(c)));
     if (tag) b.setAttribute('aria-label', describe(c) + '. ' + tag.textContent);
     if (selectable) b.setAttribute('aria-pressed', String(selected));
     return b;
   }
+
+  // everything a tile shows, as text: a part is rebuilt only when one of these changes
+  const tileSig = (c) => [c.id, describe(c), c.pending, c.cased, c.grade, Wear.freshLeft(c) ? Wear.hhmm(Wear.freshLeft(c)) : '',
+    canGradeNow(c) ? nowBands(c).map((b) => pctNow(b.p)).join(',') : ''].join('|');
 
   // ---------- share your pull: a 1080 x 1350 PNG of the card, its odds and the wordmark, then the share sheet (or a download)
   const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
@@ -208,18 +225,19 @@
     const odds = pullLine(c);
     if (odds) { fit(odds, '400 {} "Russo One", sans-serif', 76, W - 120); g.fillStyle = '#ffd27a'; g.shadowColor = 'rgba(255,170,60,.7)'; g.shadowBlur = 24; g.fillText(odds, W / 2, 1102); g.shadowBlur = 0; }
     g.font = '600 30px Nunito, sans-serif'; g.fillStyle = '#b9a385'; g.fillText(`${c.grade >= 5 ? 'Odds with grade' : 'Pull odds'} · Series ${c.series}`, W / 2, 1152);
-    // the wordmark, small: the Omni mark + FORGE, like the top bar
-    g.font = '400 40px "Russo One", sans-serif'; const fw = g.measureText('FORGE').width, wh = 46, ww = word ? wh * word.naturalWidth / word.naturalHeight : 0, gap = word ? 12 : 0;
+    // the wordmark, small: the Omni wordmark + CARDWORKS, like the top bar (no image: the words alone)
+    const tail = word ? 'CARDWORKS' : 'OMNI CARDWORKS';
+    g.font = '400 40px "Russo One", sans-serif'; const fw = g.measureText(tail).width, wh = 46, ww = word ? wh * word.naturalWidth / word.naturalHeight : 0, gap = word ? 12 : 0;
     const x0 = (W - ww - gap - fw) / 2, by = 1262;
     if (word) g.drawImage(word, x0, by - wh + 6, ww, wh);
-    g.textAlign = 'left'; g.lineJoin = 'round'; g.lineWidth = 6; g.strokeStyle = '#0d141c'; g.strokeText('FORGE', x0 + ww + gap, by); g.fillStyle = '#f9e2b4'; g.fillText('FORGE', x0 + ww + gap, by);
+    g.textAlign = 'left'; g.lineJoin = 'round'; g.lineWidth = 6; g.strokeStyle = '#0d141c'; g.strokeText(tail, x0 + ww + gap, by); g.fillStyle = '#f9e2b4'; g.fillText(tail, x0 + ww + gap, by);
     return new Promise((ok, no) => cv.toBlob((b) => (b ? ok(b) : no(new Error('toBlob'))), 'image/png'));
   }
   async function shareCard(c, from) {
     if (from) { if (from.getAttribute('aria-busy') === 'true') return; from.setAttribute('aria-busy', 'true'); }
     try {
       const blob = await shareImage(c), slug = c.character.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const name = `omni-forge-${slug}.png`, file = new File([blob], name, { type: 'image/png' });
+      const name = `omni-cardworks-${slug || 'card'}.png`, file = new File([blob], name, { type: 'image/png' });
       const kind = kindLine(c), odds = pullLine(c);
       const title = `${c.character}, ${kind}`, text = `I pulled ${c.character} (${kind}${odds ? ', ' + odds : ''}) at Omni Cardworks.`;
       if (navigator.canShare?.({ files: [file] })) {
@@ -231,7 +249,8 @@
       toast('Saved', 'good');
     } catch { toast('Couldn’t make the image', 'bad'); } finally { from?.removeAttribute('aria-busy'); }
   }
-  const shareBtn = (c, cls = '') => { const b = btn('Share', 'share-b ' + cls, () => shareCard(c, b), { 'aria-label': `Share your ${c.character}, ${[Store.MAT_LABEL[c.material], holoLabel(c)].filter(Boolean).join(' ')}` }); return b; };
+  // label: the visible text (several Share buttons side by side each name their card)
+  const shareBtn = (c, cls = '', label = 'Share') => { const b = btn(label, 'share-b ' + cls, () => shareCard(c, b), { 'aria-label': `Share your ${c.character}, ${[Store.MAT_LABEL[c.material], holoLabel(c)].filter(Boolean).join(' ')}` }); return b; };
 
   // ---------- pack contents: 3 Paper, 1 Wood, 1 Wood or better, 1 Fire or better
   function roll(table) { let u = Math.random(), acc = 0; for (const [v, p] of table) { acc += p; if (u < acc) return v; } return table[table.length - 1][0]; }
@@ -291,17 +310,21 @@
     }
 
     function renderPacks() {
-      const s = S(); const keys = Object.keys(s.sealed).map(Number).sort((a, b) => b - a);
+      const s = S();
+      patch(packsEl, JSON.stringify([s.sealed, s.series.no, s.series.phase, connected()]), () => drawPacks(s));
+    }
+    function drawPacks(s) {
+      const keys = Object.keys(s.sealed).map(Number).sort((a, b) => b - a);
       const tiles = keys.filter((no) => s.sealed[no] > 0).map((no) => { // only Series you hold sealed packs of
         const n = s.sealed[no], live = no === s.series.no && s.series.phase < 4;
         let act;
         if (live) act = h('p', { class: 'lock-note', text: `Opens when Series ${no} sells out` });
         else if (!n) act = h('p', { class: 'muted', text: 'All opened' });
         else if (!connected()) act = connectBtn();
-        else act = h('div', { class: 'row' }, btn('Open', 'primary', () => openPacks(no, 1)),
-          n > 1 ? btn(n > 10 ? 'Open 10' : `Open all (${n})`, '', () => openPacks(no, Math.min(n, 10))) : null);
+        else act = h('div', { class: 'row' }, btn('Open', 'primary', () => openPacks(no, 1), { 'data-key': 'open1-' + no }),
+          n > 1 ? btn(n > 10 ? 'Open 10' : `Open all (${n})`, '', () => openPacks(no, Math.min(n, 10)), { 'data-key': 'openN-' + no }) : null);
         return h('div', { class: 'ptile' + (live ? ' live' : '') + (!n ? ' empty' : '') },
-          h('div', { class: 'pimg' }, h('img', { src: 'a/pack.webp', alt: `Series ${no} pack`, width: 240, height: 336 }),
+          h('div', { class: 'pimg' }, h('img', { src: 'a/pack.webp', alt: `Series ${no} pack`, width: 240, height: 336, decoding: 'async' }),
             live ? h('img', { class: 'padlock', src: 'a/s-padlock.webp', alt: 'Locked' }) : null,
             n > 0 ? h('span', { class: 'pcount', text: '×' + n }) : null),
           h('div', { class: 'pinfo' }, h('h4', { text: `Series ${no}` }), h('p', { class: 'muted', text: n ? `${n} sealed` : 'None sealed' }), act));
@@ -311,7 +334,10 @@
     }
 
     function renderColl() {
-      const s = S(); const all = s.cards.filter((c) => !hide.has(c.id));
+      const all = S().cards.filter((c) => !hide.has(c.id));
+      patch(coll, JSON.stringify([filt, all.map(tileSig), Store.collectionFloor()]), () => drawColl(all));
+    }
+    function drawColl(all) {
       const seriesList = [...new Set(all.map((c) => c.series))].sort((a, b) => b - a);
       let list = all.filter((c) => (filt.series === 'all' || c.series === +filt.series) && (filt.mat === 'all' || c.material === filt.mat)
         && (filt.hold === 'all' || Store.holder(c) === filt.hold)
@@ -325,12 +351,12 @@
       };
       list = list.sort(sorts[filt.sort]);
       const sel = (key, label, opts) => h('label', { class: 'f' }, h('span', { text: label }),
-        h('select', { onchange: (e) => { filt[key] = e.target.value; renderColl(); coll.querySelector(`select[data-k=${key}]`)?.focus(); }, 'data-k': key },
+        h('select', { onchange: (e) => { filt[key] = e.target.value; renderColl(); }, 'data-k': key },
           opts.map(([v, t]) => h('option', { value: v, selected: String(filt[key]) === String(v) }, t))));
       const counts = { raw: 0, case: 0, slab: 0 }; all.forEach((c) => counts[Store.holder(c)]++);
       const holdSeg = h('div', { class: 'seg hold-seg', role: 'group', 'aria-label': 'Show' },
         [['all', 'All', all.length], ['raw', 'Raw', counts.raw], ['case', 'Cased', counts.case], ['slab', 'Slabbed', counts.slab]].map(([v, t, n]) =>
-          h('button', { type: 'button', 'aria-pressed': String(filt.hold === v), onclick: () => { filt.hold = v; renderColl(); coll.querySelector(`.hold-seg [data-v=${v}]`)?.focus(); }, 'data-v': v }, t, h('small', { text: ' ' + n }))));
+          h('button', { type: 'button', 'aria-pressed': String(filt.hold === v), onclick: () => { filt.hold = v; renderColl(); }, 'data-v': v }, t, h('small', { text: ' ' + n }))));
       const filters = h('div', { class: 'filters' },
         sel('series', 'Series', [['all', 'All'], ...seriesList.map((n) => [n, 'Series ' + n])]),
         sel('mat', 'Material', [['all', 'All'], ...Store.MATS.map((m) => [m, Store.MAT_LABEL[m]])]),
@@ -339,7 +365,7 @@
         sel('sort', 'Sort', [['serial', 'Newest'], ['rarity', 'Rarity'], ['grade', 'Grade'], ['edition', 'Edition']]));
       const grid = list.length ? h('div', { class: 'cgrid' }, list.map((c) => cardTile(c, { onTap: (card) => openDetail(card.id) })))
         : h('div', { class: 'empty-state' }, h('p', { text: all.length ? 'No cards match.' : 'No cards yet. Open a pack!' }),
-          all.length ? btn('Clear filters', 'small', () => { Object.assign(filt, { series: 'all', hold: 'all', mat: 'all', holo: 'any', grade: 'all' }); renderColl(); }) : null);
+          all.length ? btn('Clear filters', 'small', () => { Object.assign(filt, { series: 'all', hold: 'all', mat: 'all', holo: 'any', grade: 'all' }); renderColl(); }, { 'data-key': 'clear' }) : null);
       put(coll, h('div', { class: 'coll-h' }, h('h3', { id: 'coll-h', text: 'Your cards' }), h('span', { class: 'muted', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }),
         h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Collection floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) }))), holdSeg, filters, grid);
     }
@@ -742,7 +768,10 @@
       const seeAll = () => { close(); setView('cards'); root.closest('.sheet-body')?.scrollTo({ top: 0 }); coll.querySelector('h3')?.setAttribute('tabindex', '-1'); coll.querySelector('h3')?.focus({ preventScroll: true }); };
       const head = h('div', { class: 'op-sum-h' }, h('h3', { text: cards.length > 6 ? `Your ${cards.length} cards` : 'Your pulls' }),
         h('span', { class: 'muted', text: `Best: ${cardName(best)}, ${Store.trueOdds(best).label}` }),
-        big.length ? h('span', { class: 'row' }, big.slice(0, 3).map((c) => shareBtn(c, 'small'))) : null);
+        big.length ? h('span', { class: 'row' }, big.slice(0, 3).map((c, i, top) => { // each names its card ("Share Full Art"); twins get a number
+          const name = cardName(c), twin = top.filter((x) => cardName(x) === name).length > 1;
+          return shareBtn(c, 'small', `Share ${name}${twin ? ' ' + (top.slice(0, i + 1).filter((x) => cardName(x) === name).length) : ''}`);
+        })) : null);
       const host = h('div', { class: 'op-sum' }); put(stage, host);
       protectFlow(host, { cards, tags, head, done: () => {
         const more = openable(), left = more.reduce((a, o) => a + o.n, 0);
@@ -820,8 +849,11 @@
     const P = Store.PRICES;
     const canGrade = (c) => c && c.grade == null && !c.pending;
     const canCase = (c) => canGrade(c) && !c.cased;
-    const gSel = new Set((pre.grade || []).filter((id) => canGrade(byId(id))));
-    const cSel = new Set((pre.case || []).filter((id) => canCase(byId(id)) && !gSel.has(id)));
+    // one payment takes at most maxBatch cards, cases and grades together
+    const gSel = new Set((pre.grade || []).filter((id) => canGrade(byId(id))).slice(0, maxBatch()));
+    const cSel = new Set((pre.case || []).filter((id) => canCase(byId(id)) && !gSel.has(id)).slice(0, maxBatch() - gSel.size));
+    const room = () => maxBatch() - gSel.size - cSel.size;
+    const full = () => toast(`Up to ${maxBatch()} cards a payment`, 'bad');
     let step = start;
     const list = () => cards.map((c) => byId(c.id)).filter(Boolean);
     const total = () => gSel.size * P.GRADE_USD + cSel.size * P.CASE_USD;
@@ -843,7 +875,12 @@
         fresh);
     }
     function quick(sel, ok) {
-      const pick = (f) => { list().filter((c) => ok(c) && f(c)).slice(0, MAX_BATCH).forEach((c) => sel.size < MAX_BATCH && sel.add(c.id)); render(); };
+      const pick = (f) => {
+        const want = list().filter((c) => ok(c) && f(c) && !sel.has(c.id));
+        want.forEach((c) => { if (room() > 0) sel.add(c.id); });
+        if (want.some((c) => !sel.has(c.id))) full(); // the rest wait for another payment
+        render();
+      };
       return h('div', { class: 'wz-quick' },
         btn('Select all holos', 'small', () => pick(isHolo)),
         btn('Select Rare & up', 'small', () => pick((c) => !!tierOf(c))),
@@ -855,7 +892,7 @@
         const able = ok(c), w = why(c);
         const t = cardTile(c, { selectable: able, selected: sel.has(c.id), tag: tags.get(c.id)?.cloneNode(true), noFresh: true, onTap: (card, el) => { // the banner shows the fresh time
           if (!able) return;
-          if (sel.has(card.id)) sel.delete(card.id); else if (sel.size >= MAX_BATCH) return toast(`Up to ${MAX_BATCH} at a time`, 'bad'); else sel.add(card.id);
+          if (sel.has(card.id)) sel.delete(card.id); else if (room() <= 0) return full(); else sel.add(card.id);
           el.setAttribute('aria-pressed', String(sel.has(card.id))); paintFoot();
         } });
         if (!able) { t.classList.add('off'); t.setAttribute('aria-disabled', 'true'); if (w) t.querySelector('.cwrap').append(h('span', { class: 'wz-why', text: w })); }
@@ -872,7 +909,7 @@
         : btn(gSel.size + cSel.size ? 'Next: review' : 'Skip cases', 'primary', () => go('review'));
       const keepRaw = station ? null : btn('Keep all raw', '', () => finish([], [])); // one tap, straight to the end, nothing paid
       put(foot, h('div', { class: 'fsum' }, h('b', { text: n ? `${n} picked · ${Wear.usd(n * each)}` : 'None picked' }),
-        h('span', { class: 'muted', text: step === 'grade' ? `${Wear.usd(each)} a card` : `${Wear.usd(each)} a card${gSel.size ? ` · ${gSel.size} to the grader` : ''}` })),
+        h('span', { class: 'muted', text: `${Wear.usd(each)} a card${step === 'case' && gSel.size ? ` · ${gSel.size} to the grader` : ''} · max ${maxBatch()} a payment` })),
         h('div', { class: 'row' }, step === 'case' ? btn('Back', '', () => go('grade')) : null, keepRaw, next));
     }
     function go(k) { step = k; render(); host.closest('.sheet-body')?.scrollTo({ top: 0 }); }
@@ -896,7 +933,7 @@
     }
     function thumbs(ids, label) {
       return h('ul', { class: 'wz-thumbs', 'aria-label': label }, ids.map((id) => { const c = byId(id);
-        return h('li', {}, h('div', { class: 'cwrap' }, cardFace(c)), h('span', { class: 'gt-name', text: c.character })); }));
+        return h('li', {}, h('div', { class: 'cwrap' }, cardFace(c, true)), h('span', { class: 'gt-name', text: c.character })); }));
     }
     function review() {
       const g = [...gSel], cs = [...cSel], raw = list().filter((c) => canCase(c) && !gSel.has(c.id) && !cSel.has(c.id));
@@ -964,7 +1001,8 @@
           const c0 = byId(w._id), gr = Wear.draw(c0.frozenAge / 1000, c0.moves); got.push(gr);
           Store.update((s) => { const c = s.cards.find((x) => x.id === w._id); if (c) { c.grade = gr; c.pending = false; } });
           const c = byId(w._id); w.querySelector('.cwrap').replaceChildren(cardFace(c), h('span', { class: 'stamp g' + gr, 'aria-hidden': 'true' }, h('small', { text: 'PDA' }), h('b', { text: gr })));
-          w.classList.remove('scanning'); w.classList.add('stamped', 'slabbed'); setTimeout(() => window.Sound?.play('grade-stamp', { gap: 60 }), reduced() ? 0 : 150); // lands with the stamp's thud w.setAttribute('aria-label', `${c.character}, PDA ${gr}, slabbed`);
+          w.classList.remove('scanning'); w.classList.add('stamped', 'slabbed'); setTimeout(() => window.Sound?.play('grade-stamp', { gap: 60 }), reduced() ? 0 : 150); // lands with the stamp's thud
+          w.setAttribute('aria-label', `${c.character}, PDA ${gr}, slabbed`);
           if (reduced()) { const st = w.querySelector('.stamp'); setTimeout(() => st.remove(), 1500); } // reduced motion: the stamp shows still, then goes
           msg.textContent = `${c.character}: PDA ${gr}`;
           if (!reduced()) await wait(900);
@@ -1027,7 +1065,7 @@
   const bfilt = { series: 'all', mat: 'all', holo: 'any', grade: 'all', sort: 'best' };
   function openBurn(opts = {}) {
     const sel = new Set(opts.pick || []);
-    const root = h('div', { class: 'st st-burn' }); const foot = h('div', { class: 'foot' });
+    const root = h('div', { class: 'st st-burn' }); const foot = h('div', { class: 'foot' }), prog = h('div', { class: 'burnbar-host' });
     let dups = new Map();
     const spare = (c) => (dups.get(c.id)?.spare ? 0 : 1);
     const SORTS = {
@@ -1051,22 +1089,31 @@
     }
     function renderFoot() {
       const n = sel.size; const b = S().wallet.burnCount % BURN_GOAL; const packs = Math.floor((b + n) / BURN_GOAL);
-      root.querySelector('.burnbar')?.replaceWith(progress());
+      patch(prog, JSON.stringify([b, n]), () => put(prog, progress()));
+      patch(foot, JSON.stringify([b, n, connected()]), () => drawFoot(n, b, packs));
+    }
+    function drawFoot(n, b, packs) {
       let act;
       if (!connected()) act = connectBtn();
-      else if (!n) act = h('div', { class: 'row' }, h('span', { class: 'why', text: 'Pick cards' }), btn('Burn', 'danger', null, { disabled: true }));
-      else act = btn(`Burn ${n}`, 'danger', () => confirmBurn([...sel], go), { 'aria-haspopup': 'dialog' });
+      else if (!n) act = h('div', { class: 'row' }, h('span', { class: 'why', text: 'Pick cards' }), btn('Burn', 'danger', null, { disabled: true, 'data-key': 'burn' }));
+      else act = btn(`Burn ${n}`, 'danger', () => confirmBurn([...sel], go), { 'aria-haspopup': 'dialog', 'data-key': 'burn' });
       put(foot, h('div', { class: 'fsum' }, h('b', { text: n ? `${n} picked` : 'None picked' }),
         h('span', { class: 'muted', text: packs ? `+${packs} free pack${packs > 1 ? 's' : ''}` : `${BURN_GOAL - b - n} to a free pack` })), act); // counts the picks, like the confirm window
     }
     function toggle(c, el) { sel.has(c.id) ? sel.delete(c.id) : sel.add(c.id); el.setAttribute('aria-pressed', String(sel.has(c.id))); renderFoot(); }
-    function render() {
-      [...sel].forEach((id) => { const c = byId(id); if (!c || c.pending) sel.delete(id); });
+    // force: the picks changed from here (All Paper, Clear); a Store update rebuilds only when the cards or filters did
+    function render(force) {
+      const n0 = sel.size; [...sel].forEach((id) => { const c = byId(id); if (!c || c.pending) sel.delete(id); });
+      const all = pool();
+      if (force === true || sel.size !== n0) root._key = null;
+      if (!patch(root, JSON.stringify([bfilt, all.map(tileSig), connected()]), () => drawBurn(all))) renderFoot();
+    }
+    function drawBurn(all) {
       dups = dupInfo();
-      const all = pool(); const list = all.filter(matches).sort(SORTS[bfilt.sort] || SORTS.best);
+      const list = all.filter(matches).sort(SORTS[bfilt.sort] || SORTS.best);
       const seriesList = [...new Set(all.map((c) => c.series))].sort((a, b) => b - a);
       const sel_ = (key, label, opts) => h('label', { class: 'f' }, h('span', { text: label }),
-        h('select', { 'data-k': key, onchange: (e) => { bfilt[key] = e.target.value; render(); root.querySelector(`select[data-k=${key}]`)?.focus(); } },
+        h('select', { 'data-k': key, onchange: (e) => { bfilt[key] = e.target.value; render(); } },
           opts.map(([v, t]) => h('option', { value: v, selected: String(bfilt[key]) === String(v) }, t))));
       const filters = h('div', { class: 'filters' },
         sel_('series', 'Series', [['all', 'All'], ...seriesList.map((n) => [n, 'Series ' + n])]),
@@ -1077,18 +1124,18 @@
       const tagFor = (c) => { const d = dups.get(c.id); return d?.spare ? h('span', { class: 'dup-b', text: `Duplicate ×${d.n}` }) : null; };
       const visPaper = list.filter((c) => c.material === 'paper');
       const quick = h('div', { class: 'row quick' },
-        visPaper.length ? btn('All Paper', 'small', () => { visPaper.forEach((c) => sel.add(c.id)); render(); }) : null,
-        sel.size ? btn('Clear', 'small', () => { sel.clear(); render(); }) : null,
+        visPaper.length ? btn('All Paper', 'small', () => { visPaper.forEach((c) => sel.add(c.id)); render(true); }, { 'data-key': 'allpaper' }) : null,
+        sel.size ? btn('Clear', 'small', () => { sel.clear(); render(true); }, { 'data-key': 'clearsel' }) : null,
         h('span', { class: 'muted small', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }));
       const spares = all.filter((c) => dups.get(c.id)?.spare).length;
-      put(root, progress(),
+      put(root, prog,
         all.length ? filters : null,
         all.length && bfilt.sort === 'best' ? h('p', { class: 'muted small burn-hint', text: spares ? 'Spares first, then commons. Your best copy is never marked.' : 'Commons first.' }) : null,
         all.length ? quick : null,
         list.length ? h('div', { class: 'cgrid' }, list.map((c) => cardTile(c, { selectable: true, selected: sel.has(c.id), onTap: toggle, tag: tagFor(c) })))
           : h('div', { class: 'empty-state' }, h('p', { text: all.length ? 'No cards match.' : 'No cards to burn.' }),
-            all.length ? btn('Clear filters', 'small', () => { Object.assign(bfilt, { series: 'all', mat: 'all', holo: 'any', grade: 'all' }); render(); }) : null), foot);
-      renderFoot();
+            all.length ? btn('Clear filters', 'small', () => { Object.assign(bfilt, { series: 'all', mat: 'all', holo: 'any', grade: 'all' }); render(); }, { 'data-key': 'clear' }) : null), foot);
+      prog._key = foot._key = null; renderFoot();
     }
     function go(picked) { // only ever called by the confirm window
       const ids = picked.filter((id) => byId(id) && !byId(id).pending); sel.clear(); if (!ids.length) return render();
@@ -1140,14 +1187,13 @@
         h('p', { class: 'muted small', text: packs ? `Every ${BURN_GOAL} cards burned is a free pack.` : `${BURN_GOAL - after} more to a free pack.` })),
       h('h3', { class: 'bw-h', text: flagged ? `The cards (${flagged} flagged, most valuable first)` : 'The cards' }),
       h('ul', { class: 'bw-list', tabindex: '0', 'aria-label': `The ${plural(n, 'card')} to burn` }, list.map(({ c, f }) => h('li', { class: f.length ? 'flag' : '' },
-        h('div', { class: 'bw-thumb' }, cardFace(c)),
+        h('div', { class: 'bw-thumb' }, cardFace(c, true)),
         h('div', { class: 'bw-info' }, h('b', { text: c.character }), h('span', { text: cardName(c) }), h('span', { class: 'muted', text: Store.trueOdds(c).label + ' · ' + floorTxt(c) }),
           f.length ? h('div', { class: 'bw-flags' }, f.map((t) => h('span', { class: 'bw-flag' + (/copy|copies/.test(t) ? ' last' : ''), text: t }))) : null)))),
       h('div', { class: 'bw-foot' }, wrap, h('div', { class: 'bw-act' }, btn('Cancel', '', () => Sheet.close('burnwarn')), fire),
         h('p', { class: 'demo-line', text: 'Demo · nothing is charged' })));
     const d = Sheet.open('burnwarn', { title: `Burn ${plural(n, 'card')}?`, body });
-    d.classList.add('burnwarn'); d.setAttribute('role', 'alertdialog'); d.querySelector('h2').id = 'bw-title';
-    d.setAttribute('aria-labelledby', 'bw-title'); d.setAttribute('aria-describedby', 'bw-warn');
+    d.classList.add('burnwarn'); d.setAttribute('role', 'alertdialog'); d.setAttribute('aria-describedby', 'bw-warn'); // labelled by its title (Sheet)
     d.querySelector('.sheet-body').scrollTop = 0; (typed ? input : fire).focus();
   }
 
@@ -1166,7 +1212,7 @@
       { k: 'personality', label: 'Personality', opt: true, ph: 'Grumpy until noon, then very generous' },
       { k: 'background', label: 'Background', opt: true, ph: 'Napping since the last ice age' },
     ];
-    let busy = false;
+    let busy = false, approving = false;
     const opened = new Set(); // "Your ideas" rows left expanded, kept across re-renders
     const fields = FIELDS.map(inkField);
     const values = () => Object.fromEntries(fields.map((f) => [f.k, f.ta.value]));
@@ -1231,15 +1277,27 @@
       const v = values(), packed = Store.packSuggestion(v), bytes = Store.bytes(packed), over = bytes > MAXB;
       count.textContent = `${bytes.toLocaleString('en-US')} / ${MAXB.toLocaleString('en-US')} bytes` + (over ? ' · too long' : '');
       count.classList.toggle('over', over);
-      let a;
-      if (!connected()) a = connectBtn();
-      else if (paper() < COST) a = h('div', { class: 'row' }, h('span', { class: 'why', text: `Need ${COST} PAPER` }), btn('Send', 'primary', null, { disabled: true }), getPaperBtn());
-      else a = btn('Send', 'primary', send, { disabled: busy || !v.character.trim() || over });
-      put(act, h('span', { class: 'muted', html: `Costs <b class="price">${COST} PAPER</b> · you have ${paper()}` }), a);
+      // FireSale takes the PAPER, so it needs a PAPER approval first (just this suggestion's cost)
+      const state = !connected() ? 'connect' : paper() < COST ? 'short' : approving ? 'approving' : Store.needsApproval('PAPER', COST) ? 'approve' : 'send';
+      const off = busy || !v.character.trim() || over;
+      patch(act, JSON.stringify([state, off, paper(), COST]), () => {
+        let a;
+        if (state === 'connect') a = connectBtn();
+        else if (state === 'short') a = h('div', { class: 'row' }, h('span', { class: 'why', text: `Need ${COST} PAPER` }), btn('Send', 'primary', null, { disabled: true, 'data-key': 'send' }), getPaperBtn());
+        else if (state === 'approving') a = btn('Approving…', 'primary', null, { disabled: true, 'data-key': 'send' });
+        else if (state === 'approve') a = btn('Approve PAPER', 'primary', approve, { disabled: off, 'data-key': 'send' });
+        else a = btn('Send', 'primary', send, { disabled: off, 'data-key': 'send' });
+        put(act, h('span', { class: 'muted', html: `Costs <b class="price">${COST} PAPER</b> · you have ${paper()}` }), a);
+      });
+    }
+    function approve() {
+      if (approving) return; approving = true; renderAct();
+      const ok = () => { approving = false; renderAct(); act.querySelector('.btn.primary:not([disabled])')?.focus({ preventScroll: true }); };
+      if (window.UI?.approveNow) window.UI.approveNow('PAPER', COST, ok); else { Store.update(() => Store.approve('PAPER', COST)); ok(); }
     }
     function renderList() {
       const list = S().suggestions;
-      put(listEl, h('h3', { text: 'Your ideas' }), list.length ? h('ul', {}, list.map((sg) => {
+      patch(listEl, JSON.stringify([list, S().series.no]), () => put(listEl, h('h3', { text: 'Your ideas' }), list.length ? h('ul', {}, list.map((sg) => {
         const p = Store.parseSuggestion(sg.text), key = sg.at + '|' + sg.text;
         const more = [['Personality', p.personality], ['Background', p.background]].filter(([, x]) => x);
         const det = more.length ? h('details', { class: 'sg-more', open: opened.has(key) },
@@ -1250,13 +1308,13 @@
           h('div', { class: 'sg-main' }, h('span', { class: 'sg-t', text: p.character || sg.text }), det),
           h('span', { class: 'muted', text: sg.at }),
           h('span', { class: 'sgp ' + (sg.picked ? 'yes' : 'wait'), text: sg.picked ? 'Picked' : sg.at === 'Series ' + S().series.no ? 'Waiting' : 'Not picked' })); // past rounds: not picked
-      })) : h('p', { class: 'muted', text: 'Nothing yet.' }));
+      })) : h('p', { class: 'muted', text: 'Nothing yet.' })));
     }
     async function send() {
       const v = values(), text = Store.packSuggestion(v);
-      if (busy || !v.character.trim() || Store.bytes(text) > MAXB || paper() < COST || !connected()) return;
+      if (busy || !v.character.trim() || Store.bytes(text) > MAXB || paper() < COST || !connected() || Store.needsApproval('PAPER', COST)) return;
       busy = true;
-      Store.update((s) => { s.wallet.balances.PAPER -= COST; s.suggestions.unshift({ text, at: 'Series ' + s.series.no, picked: false }); Store.log('Suggested a character'); });
+      Store.update((s) => { s.wallet.balances.PAPER -= COST; Store.spend('PAPER', COST); s.suggestions.unshift({ text, at: 'Series ' + s.series.no, picked: false }); Store.log('Suggested a character'); });
       document.activeElement?.blur?.();
       try { await foldAndDrop(); } catch { /* closed mid-flight */ }
       fields.forEach((f) => f.clear());

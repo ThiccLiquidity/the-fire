@@ -21,7 +21,10 @@
     el.style.setProperty('--spread', `${depth ? side * (4 + depth * 2.5) : 0}deg`); // extra turn on hover
     el.style.setProperty('--delay', `${-i * 0.55}s`);
     el.style.zIndex = String(i + 1);
-    el.innerHTML = `<img src="ui/announce/${cast.id}-${c.kind}.webp" alt="" draggable="false">${c.kind === 'gold' || c.kind === 'fullart' ? '<i class="fan-shine" aria-hidden="true"></i>' : ''}`;
+    const img = document.createElement('img'); // the tease id goes into a URL, never into markup
+    Object.assign(img, { src: `ui/announce/${encodeURIComponent(cast.id)}-${c.kind}.webp`, alt: '', draggable: false, decoding: 'async' });
+    el.append(img);
+    if (c.kind === 'gold' || c.kind === 'fullart') { const sh = document.createElement('i'); sh.className = 'fan-shine'; sh.setAttribute('aria-hidden', 'true'); el.append(sh); }
     return el;
   }
 

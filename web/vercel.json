@@ -5,7 +5,15 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' https://rpc.mainnet.chain.robinhood.com https://*.drand.sh https://aggregator-api.kyberswap.com https://rpc.testnet.chain.robinhood.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com https://fonts.reown.com; img-src 'self' data: blob: https://api.web3modal.org https://robinhoodchain.blockscout.com https://explorer.testnet.chain.robinhood.com https://ipfs.io https://dweb.link https://*.ipfs.dweb.link https://gateway.pinata.cloud https://ipfs.filebase.io; media-src 'self' data: blob:; connect-src 'self' https://rpc.mainnet.chain.robinhood.com https://rpc.testnet.chain.robinhood.com https://robinhoodchain.blockscout.com https://explorer.testnet.chain.robinhood.com https://*.drand.sh https://aggregator-api.kyberswap.com https://api.web3modal.org https://rpc.walletconnect.org https://rpc.walletconnect.com https://pulse.walletconnect.org wss://relay.walletconnect.org wss://relay.walletconnect.com https://rpc.wallet.coinbase.com https://keys.coinbase.com https://www.walletlink.org wss://www.walletlink.org; frame-src https://verify.walletconnect.org https://verify.walletconnect.com https://secure.walletconnect.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000; includeSubDomains"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), midi=(), browsing-topics=(), accelerometer=(self), gyroscope=(self), magnetometer=(self), clipboard-write=(self), fullscreen=(self)"
         },
         {
           "key": "X-Frame-Options",

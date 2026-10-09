@@ -1,5 +1,5 @@
 // Wallet and chain plumbing for Cardworks: the Robinhood Chain config, the wallet connection (wagmi core + Reown
-// AppKit's modal), receipts and friendly errors.
+// AppKit's modal) and friendly wallet errors. Sending and waiting for transactions: tx.ts.
 //
 // The connection is the standard stack: wagmi core holds the connection state (persisted in localStorage and restored
 // on reload without a prompt), viem does the RPC, and Reown AppKit draws the modal. Wallets come from EIP-6963
@@ -10,9 +10,8 @@
 // Nothing in this module sends a transaction or asks for a signature: it connects, reads, and switches chain.
 
 import {
-  createPublicClient, defineChain, erc20Abi, formatUnits, http, BaseError, ChainMismatchError, ContractFunctionRevertedError, InsufficientFundsError,
-  UserRejectedRequestError, WaitForTransactionReceiptTimeoutError,
-  type Address, type Hex, type PublicClient, type Transport, type WalletClient,
+  createPublicClient, defineChain, erc20Abi, formatUnits, http, BaseError, ChainMismatchError, InsufficientFundsError,
+  UserRejectedRequestError, type Address, type PublicClient, type Transport, type WalletClient,
 } from "viem";
 import {
   connect as wagmiConnect, createConfig, disconnect as wagmiDisconnect, getAccount as wagmiGetAccount,
@@ -105,7 +104,7 @@ async function start(opts: WalletOptions): Promise<Kit> {
   };
   // reads go through the site's RPC; the wallet only ever sees the public one (robinhoodPublic)
   const transports: Record<number, Transport> = { [robinhood.id]: http(READ_RPC) };
-  // Coinbase Wallet as a regular wallet (no smart wallet: the first 48 hours of a sale are for regular wallets),
+  // Coinbase Wallet as a regular wallet (no smart wallet: the start of a sale is for regular wallets only),
   // without the SDK's telemetry (it injects an inline script, which the CSP blocks anyway)
   const coinbase = coinbaseWallet({ appName: metadata.name, appLogoUrl: icon, preference: { options: "eoaOnly", telemetry: false } });
 
@@ -275,7 +274,7 @@ export function formatAmount(raw: bigint, decimals = 18, digits = 2): string {
 
 export const shortAddress = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
-// ---------- receipts and errors
+// ---------- errors
 
 /** True if any error in the cause chain carries this code (EIP-1193 / JSON-RPC). */
 export function hasCode(e: unknown, code: number): boolean {
@@ -285,42 +284,13 @@ export function hasCode(e: unknown, code: number): boolean {
   return false;
 }
 
-/** A transaction that hasn't landed after 3 minutes. `later` settles when it finally does (true = success).
- *  kind "approve": only the allowance was pending, so the purchase or swap itself was never sent. */
-export class TxPending extends Error {
-  hash: Hex; later: Promise<boolean>; kind: "approve" | "tx";
-  constructor(hash: Hex, what: string, later: Promise<boolean>, kind: "approve" | "tx" = "tx") {
-    super(`Still pending: ${what}. It may still land — check it on the explorer.`);
-    this.hash = hash; this.later = later; this.kind = kind;
-  }
-}
-
-/** Wait for a receipt and insist it succeeded. Throws TxPending after 180s, and a plain error if it reverted. */
-export async function waitOk(pub: PublicClient, hash: Hex, what: string, kind: "approve" | "tx" = "tx"): Promise<void> {
-  let status: "success" | "reverted";
-  try { status = (await pub.waitForTransactionReceipt({ hash, timeout: 180_000 })).status; }
-  catch (e) {
-    if (e instanceof WaitForTransactionReceiptTimeoutError || (e as Error)?.name === "WaitForTransactionReceiptTimeoutError") {
-      const later = pub.waitForTransactionReceipt({ hash, timeout: 3_600_000 }).then((r) => r.status === "success", () => false);
-      throw new TxPending(hash, what, later, kind);
-    }
-    throw e;
-  }
-  if (status !== "success") throw new Error(`${what[0].toUpperCase()}${what.slice(1)} failed on-chain. Nothing more was sent.`);
-}
-
-export const PRICE_MOVED = "The price just moved. Check the new price and try again.";
-const NAMED: Record<string, string> = {
-  PriceMoved: PRICE_MOVED,
-};
-
 const is = (e: unknown, name: string, code?: number) => e instanceof BaseError
   ? !!e.walk((x) => (x as Error)?.name === name || (code !== undefined && (x as { code?: unknown })?.code === code))
   : (e as Error)?.name === name || (code !== undefined && hasCode(e, code));
 
-/** A short, human reason for a failed wallet action. */
+/** A short, human reason for a failed wallet action. Contract errors are errors.ts explain() (which falls back to
+ *  this); sending and waiting for a transaction has one path, tx.ts sendTx. */
 export function friendly(e: unknown): string {
-  if (e instanceof TxPending) return e.message;
   if (is(e, UserRejectedRequestError.name, UserRejectedRequestError.code) || is(e, "UserRejectedRequestError") || hasCode(e, 4001)) return "You cancelled in your wallet.";
   if (is(e, ChainMismatchError.name) || is(e, "ChainNotConfiguredError") || is(e, "SwitchChainNotSupportedError") || is(e, "ConnectorChainMismatchError")) {
     return `Your wallet is on another network. Switch it to ${robinhood.name} and try again.`;
@@ -328,11 +298,6 @@ export function friendly(e: unknown): string {
   if (is(e, InsufficientFundsError.name)) return `Not enough ETH on ${robinhood.name} to pay the network fee.`;
   if (is(e, "ConnectorNotConnectedError") || is(e, "ConnectorAccountNotFoundError") || hasCode(e, 4100)) return "Connect your wallet first.";
   if (hasCode(e, -32002)) return "Your wallet already has a request open. Check the wallet window.";
-  if (e instanceof BaseError) {
-    const rev = e.walk((x) => x instanceof ContractFunctionRevertedError) as ContractFunctionRevertedError | null;
-    const name = rev?.data?.errorName;
-    if (name && NAMED[name]) return NAMED[name];
-    return (e.shortMessage || e.message).split("\n")[0].slice(0, 160);
-  }
+  if (e instanceof BaseError) return (e.shortMessage || e.message).split("\n")[0].slice(0, 160);
   return ((e as Error)?.message ?? String(e)).split("\n")[0].slice(0, 160);
 }

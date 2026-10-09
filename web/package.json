@@ -1,6 +1,6 @@
 {
   "name": "omni-cardworks-web",
-  "description": "Omni Cardworks site: the static Forge and the chain, wallet and swap modules",
+  "description": "Omni Cardworks site: the static Cardworks page and the chain, wallet and swap modules",
   "private": true,
   "version": "0.0.0",
   "type": "module",

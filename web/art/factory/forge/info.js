@@ -2,18 +2,30 @@
    Facts: docs/omni-economy.md, docs/cards-contracts.md, docs/card-studio.md */
 (() => {
   // ---- rarity numbers (computed, not typed in) ----
-  // The demo's current Series (the Standard recipe): 167 packs x 6 = 1,002 cards, here with 10 characters. Every Series
-  // sets its own recipe, so the copy only ever shows these as "this Series", never as fixed rules. Gold is 2 per character
-  // and Full Art 1 per character (always full holo); Wood is the rest. Holo is random per card for the others.
+  // The Series on sale, from its settings in the Store (packs and cast size), by the Standard recipe (docs/card-studio.md,
+  // the same maths as the studio's computePool): P packs make 6P cards: 3P Paper, Fire 15% and Coal 4.9% (rounded half up),
+  // Gold 2 per character and Full Art 1 per character (each at most one per pack's worth; always full holo), Wood the
+  // rest; then Fire-or-better is kept between P and 2P. Every Series sets its own recipe, so the copy only ever shows
+  // these as "this Series", never as fixed rules. Holo is random per card for the others.
   // Diamond is the old top card (Series before Gold): kept only so older cards still show their odds.
-  const SERIES_CARDS = 167 * 6, CHARACTERS = 10;
+  const series = () => window.Store?.state?.series || { total: 167, cast: 10 };
+  const PACKS = Math.max(1, series().total), CHARACTERS = Math.max(1, series().cast), SERIES_CARDS = PACKS * 6;
+  const pool = (() => {
+    const P = PACKS, N = SERIES_CARDS, half = (x) => Math.floor(x + 0.5);
+    const c = { paper: 3 * P, fire: half(0.15 * N), charcoal: half(0.049 * N), gold: Math.min(2 * CHARACTERS, P), fullart: Math.min(CHARACTERS, P) };
+    let fob = c.fire + c.charcoal + c.gold + c.fullart; // Fire or better
+    if (fob > 2 * P) { let cut = fob - 2 * P; for (const k of ['fire', 'charcoal']) { const d = Math.min(cut, c[k]); c[k] -= d; cut -= d; } } // extra Fire, then Coal, becomes Wood
+    else if (fob < P) c.fire += P - fob; // a shortfall is taken from Wood
+    c.wood = N - c.paper - c.fire - c.charcoal - c.gold - c.fullart;
+    return c;
+  })();
   const MATS = [
-    { id: 'paper', name: 'Paper', count: 501, holo: 0.05 },
-    { id: 'wood', name: 'Wood', count: 272, holo: 0.1 },
-    { id: 'fire', name: 'Fire', count: 150, holo: 0.5 },
-    { id: 'charcoal', name: 'Coal', count: 49, holo: 0.9 },
-    { id: 'gold', name: 'Gold', count: 2 * CHARACTERS, holo: 1, perChar: 2 },
-    { id: 'fullart', name: 'Full Art', count: CHARACTERS, holo: 1, perChar: 1 },
+    { id: 'paper', name: 'Paper', count: pool.paper, holo: 0.05 },
+    { id: 'wood', name: 'Wood', count: pool.wood, holo: 0.1 },
+    { id: 'fire', name: 'Fire', count: pool.fire, holo: 0.5 },
+    { id: 'charcoal', name: 'Coal', count: pool.charcoal, holo: 0.9 },
+    { id: 'gold', name: 'Gold', count: pool.gold, holo: 1, perChar: pool.gold / CHARACTERS },
+    { id: 'fullart', name: 'Full Art', count: pool.fullart, holo: 1, perChar: pool.fullart / CHARACTERS },
   ];
   const LEGACY = [{ id: 'diamond', name: 'Diamond', count: 1, holo: 1 }];
   [...MATS, ...LEGACY].forEach((m) => {
@@ -48,6 +60,9 @@
     const v = x * 100;
     return (v < 1 ? +v.toPrecision(2) : both ? +v.toFixed(1) : +v.toPrecision(3)) + '%';
   };
+  // the token contracts (Robinhood Chain); the short form shown is always cut from the real address
+  const TOKENS = [['PLANK', '0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc'], ['PAPER', '0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6']];
+  const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
   const chip = (id, label, cls = '') => `<span class="mat ${id}${cls ? ' ' + cls : ''}">${label || M[id].name}</span>`;
 
   // ---- pieces ----
@@ -215,8 +230,7 @@
           <li><b>The Paper Press prints PAPER.</b> Press holders get in early.</li>
         </ul>
         <div class="inf-cas">
-          <button class="inf-link inf-ca" type="button" data-ca="0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc">PLANK <code>0x6942…2DDc</code> <span class="cp">Copy</span></button>
-          <button class="inf-link inf-ca" type="button" data-ca="0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6">PAPER <code>0x0642…e3c6</code> <span class="cp">Copy</span></button>
+          ${TOKENS.map(([t, a]) => `<button class="inf-link inf-ca" type="button" data-ca="${a}">${t} <code>${short(a)}</code> <span class="cp">Copy</span></button>`).join('')}
           <a class="inf-link" href="https://opensea.io/collection/the-plank-press" target="_blank" rel="noopener">Paper Press on OpenSea <span aria-hidden="true">↗</span></a>
         </div>`),
       sec('fair', 'Fairness', 'Public randomness, and odds locked before anyone buys.', `

@@ -1,0 +1,26 @@
+{
+  "_comment": "Custom errors the site can meet outside the card ABIs (src/lib/abi): the randomness contracts (contracts/src/OpenDrandRouter.sol, contracts/src/OpenVRFAdapter.sol) and OpenZeppelin's standard ERC-20 errors (IERC20Errors, PAPER / PLANK / USDG). Read by scripts/gen-abi-errors.mjs; keep in step with those contracts.",
+  "openDrandRouter": [
+    { "type": "error", "name": "InvalidRequest", "inputs": [] },
+    { "type": "error", "name": "NotReady", "inputs": [] },
+    { "type": "error", "name": "AlreadyFulfilled", "inputs": [] },
+    { "type": "error", "name": "InvalidCallback", "inputs": [] },
+    { "type": "error", "name": "InsufficientGas", "inputs": [] },
+    { "type": "error", "name": "ReentrantDelivery", "inputs": [] },
+    { "type": "error", "name": "IncorrectFee", "inputs": [] }
+  ],
+  "openVRFAdapter": [
+    { "type": "error", "name": "OnlyFire", "inputs": [] },
+    { "type": "error", "name": "OnlyRouter", "inputs": [] },
+    { "type": "error", "name": "NotFulfilled", "inputs": [] },
+    { "type": "error", "name": "FeeUnpaid", "inputs": [] }
+  ],
+  "erc20": [
+    { "type": "error", "name": "ERC20InsufficientBalance", "inputs": [{ "name": "sender", "type": "address" }, { "name": "balance", "type": "uint256" }, { "name": "needed", "type": "uint256" }] },
+    { "type": "error", "name": "ERC20InvalidSender", "inputs": [{ "name": "sender", "type": "address" }] },
+    { "type": "error", "name": "ERC20InvalidReceiver", "inputs": [{ "name": "receiver", "type": "address" }] },
+    { "type": "error", "name": "ERC20InsufficientAllowance", "inputs": [{ "name": "spender", "type": "address" }, { "name": "allowance", "type": "uint256" }, { "name": "needed", "type": "uint256" }] },
+    { "type": "error", "name": "ERC20InvalidApprover", "inputs": [{ "name": "approver", "type": "address" }] },
+    { "type": "error", "name": "ERC20InvalidSpender", "inputs": [{ "name": "spender", "type": "address" }] }
+  ]
+}
