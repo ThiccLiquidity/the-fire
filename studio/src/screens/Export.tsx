@@ -27,6 +27,11 @@ const ZIP_PART_BYTES = 1.5 * 1024 ** 3
 
 interface Check { label: string; ok: boolean; detail?: string }
 
+type SavePicker = (o: unknown) => Promise<{ createWritable(): Promise<{ write(b: Uint8Array): Promise<void>; close(): Promise<void> }> }>
+/** The browser's save-file picker (Chrome and Edge), which lets the CAR stream to disk. */
+const savePicker = () => (window as unknown as { showSaveFilePicker?: SavePicker }).showSaveFilePicker
+const NO_PICKER = 'Use Chrome or Edge to save the CAR.'
+
 export function Export({ fire }: { fire: FireRecord }) {
   const s = useStudio()
   const flags = useDevFlags()
@@ -101,11 +106,17 @@ export function Export({ fire }: { fire: FireRecord }) {
   /** The upload (real or mock) is of this build: the second pin and the offline CAR apply to it. */
   const uploadOfBuild = !!fire.upload?.imagesCid && !buildDetail && fire.upload.buildAt === b?.builtAt
 
+  /** What's still open before recipe.json should go on-chain: both pins read back, and the CAR stored offline. */
+  const pinsOpen = uploadCurrent && (!fire.upload?.verifiedAt || !fire.upload.carStoredAt)
+    ? [!fire.upload?.verifiedAt && 'check both pins', !fire.upload?.carStoredAt && 'store the CAR offline'].filter(Boolean).join(' and ')
+    : ''
+
   const downloadRecipe = () => run(async () => {
     if (!recipeReady) throw new Error(!checks[0].ok ? checks[0].detail : !checks[2].ok ? checks[2].detail : !saleCheck.ok ? saleCheck.detail : packsCheck.detail)
     if (fire.upload?.imagesCid && !uploadCurrent) {
       throw new Error('The uploaded images are from an earlier build: upload this build first, so recipe.json points at the right images.')
     }
+    if (pinsOpen && !confirm(`Not yet: ${pinsOpen}. Download recipe.json anyway?`)) return
     downloadBlob(new Blob([JSON.stringify(recipeOut(fire.upload?.imagesCid), null, 1)], { type: 'application/json' }), `recipe-fire-${fire.number}.json`)
   })
 
@@ -301,19 +312,15 @@ export function Export({ fire }: { fire: FireRecord }) {
       const car = cur.imagesCarSize ? { root: cur.imagesCid, size: cur.imagesCarSize } : await planCar(files)
       if (car.root !== cur.imagesCid) throw new Error(`This build packs to ${car.root}, not the uploaded ${cur.imagesCid}.`)
       const name = `${cur.imagesDir}.car`
-      const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<{ createWritable(): Promise<{ write(b: Uint8Array): Promise<void>; close(): Promise<void> }> }> }).showSaveFilePicker
+      // streamed straight to the file: never the whole CAR in memory (browsers without a save picker can't do that)
+      const picker = savePicker()
+      if (!picker) throw new Error(NO_PICKER)
       let done = 0
       const tick = () => setProgress({ value: done / Math.max(1, car.size), label: `Writing ${name}: ${(done / 1024 / 1024).toFixed(0)} / ${(car.size / 1024 / 1024).toFixed(0)} MB` })
-      if (picker) {
-        const handle = await picker({ suggestedName: name, types: [{ description: 'CAR file', accept: { 'application/vnd.ipld.car': ['.car'] } }] })
-        const w = await handle.createWritable()
-        for await (const c of carBytes(files, car.root)) { await w.write(c); done += c.length; tick() }
-        await w.close()
-      } else {
-        const parts: Uint8Array[] = []
-        for await (const c of carBytes(files, car.root)) { parts.push(c); done += c.length; tick() }
-        downloadBlob(new Blob(parts as BlobPart[], { type: 'application/vnd.ipld.car' }), name)
-      }
+      const handle = await picker({ suggestedName: name, types: [{ description: 'CAR file', accept: { 'application/vnd.ipld.car': ['.car'] } }] })
+      const w = await handle.createWritable()
+      for await (const c of carBytes(files, car.root)) { await w.write(c); done += c.length; tick() }
+      await w.close()
       await updateFire(fire.number, { upload: { ...cur, imagesCarSize: car.size, carSavedAt: Date.now() } })
     } finally {
       setProgress(null)
@@ -351,6 +358,7 @@ export function Export({ fire }: { fire: FireRecord }) {
       <div className="row wrap">
         <button className="primary" disabled={!recipeReady || busy} onClick={downloadRecipe} data-testid="download-recipe">Download recipe.json</button>
         {!fire.upload?.imagesCid && <span className="muted small">No images uploaded yet: no imagesBase.</span>}
+        {pinsOpen && <span className="warn-text small" data-testid="recipe-pins-open">Before using it: {pinsOpen}.</span>}
       </div>
 
       <h3>Download everything</h3>
@@ -419,7 +427,8 @@ export function Export({ fire }: { fire: FireRecord }) {
           {fire.upload?.imagesCarSize ? ` (${(fire.upload.imagesCarSize / 1024 / 1024).toFixed(1)} MB)` : ''} to a drive you keep: it re-pins
           the images with the same CID.
           <div className="row wrap" style={{ marginTop: 8 }}>
-            <button disabled={busy} onClick={saveCar} data-testid="save-car">Save images CAR</button>
+            <button disabled={busy || !savePicker()} onClick={saveCar} data-testid="save-car">Save images CAR</button>
+            {!savePicker() && <span className="warn-text small" data-testid="save-car-browser">{NO_PICKER}</span>}
             <label className="check"><input type="checkbox" disabled={busy || !fire.upload?.carSavedAt} checked={false} onChange={(e) => confirmStored(e.target.checked)} data-testid="car-stored" /> I've stored it offline</label>
           </div>
         </Notice>
