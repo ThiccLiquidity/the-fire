@@ -33,9 +33,17 @@ there (Settings; contract calls need it). Switch it off again between uses if yo
 little ETH for gas (~$10). The device shows every transaction: check the contract address against
 `deployments/4663.json` before confirming.
 
-Every step writes what it deployed to **`deployments/4663.json`** (the one address file: ConfigureSeries,
+Every step records what it deployed in **`deployments/4663.json`** (the one address file: ConfigureSeries,
 VerifyDeploy, VerifySeries, the keeper, `ops/snapshot` and the site read it), so later steps need no addresses
-typed in. Commit that file after each step. The scripts write it only when they really broadcast.
+typed in. forge runs a script before it broadcasts (and a broadcast can fail half way), so the scripts never write
+that file themselves: with `--broadcast` they leave `deployments/4663.json.pending`, and after each broadcast you run
+```powershell
+node ..\ops\deploy\record.mjs --rpc $env:RPC     # from contracts/ (cd ops; npm ci once first)
+```
+It checks every new address against the broadcast's receipts and the chain (code at each one), then merges it into
+the file and removes the `.pending` one; if anything didn't land it writes nothing and says what. Run VerifyDeploy
+(step 4) before committing the file. A script refuses to start while an unrecorded `.pending` file is there (delete it
+if that broadcast failed).
 
 Rehearse the whole thing first (below, "Rehearsal").
 
@@ -44,7 +52,7 @@ Rehearse the whole thing first (below, "Rehearsal").
 forge script script/DeployTwap.s.sol --rpc-url $env:RPC --account deployer --broadcast `
   --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
 ```
-Uses `PLANK_WETH_V2_PAIR`, `PLANK`, `ETH_USD_FEED`. Put the address in `.env` as `PLANK_USD_FEED`. Call `checkpoint()`
+Then `node ..\ops\deploy\record.mjs --rpc $env:RPC`. Uses `PLANK_WETH_V2_PAIR`, `PLANK`, `ETH_USD_FEED`. Call `checkpoint()`
 **30+ minutes after deploy** and then every 30 minutes (the keeper's job; anyone can; every pack purchase also calls
 it). Extra calls are ignored. The feed reports 0 until its first full window, and FireSale pauses PLANK pricing whenever
 the window is over 2 hours old.
@@ -54,8 +62,8 @@ the window is over 2 hours old.
 forge script script/DeployInfra.s.sol --rpc-url $env:RPC --account deployer --sender <deployer address> --slow --broadcast `
   --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
 ```
-Uses `PAPER`, `USDG`, `WETH`, `UNIV2_FACTORY`, `ETH_USD_FEED`, `PLANK`, `PLANK_USD_FEED` (step 1, read from the
-deployments file if not in `.env`); checks chain 4663,
+Then `node ..\ops\deploy\record.mjs --rpc $env:RPC`. Uses `PAPER`, `USDG`, `WETH`, `UNIV2_FACTORY`, `ETH_USD_FEED`,
+`PLANK`, `PLANK_USD_FEED` (step 1, read from the deployments file if not in `.env`); checks chain 4663,
 contract code at each, PAPER and PLANK are 18 decimals, the ETH/USD feed is 8 and the PLANK feed 18. Deploys `OpenDrandRouter` and `PaperUsdTwap`. Neither has an owner. Both go in the
 deployments file (step 3 reads them from there; `DRAND_ROUTER` and `PAPER_USD_FEED` in `.env` override). `PAPER_USD_FEED` is this `PaperUsdTwap`, never the PAPER pool itself.
 It finds a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool holding at least $10 on its other side (PLANK valued by
@@ -70,19 +78,20 @@ Fill the card section of `.env` (`OWNER` = the hardware wallet's address, royalt
 forge script script/DeployCards.s.sol --rpc-url $env:RPC --account deployer --sender <deployer address> --slow --broadcast `
   --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
 ```
-It checks every input first, including that `DRAND_ROUTER` returns a zero `requestFee()` like the OpenDrandRouter,
+Then `node ..\ops\deploy\record.mjs --rpc $env:RPC`. It checks every input first, including that `DRAND_ROUTER` returns a zero `requestFee()` like the OpenDrandRouter,
 that `PLANK_USD_FEED` sits on the PLANK/WETH pool the V2 router trades, and that `PLANK_USD_FEED` and `PAPER_USD_FEED`
 are built on this `ETH_USD_FEED` (and this PAPER and `PLANK_USD_FEED`, for the PAPER feed). `PAPER_USD_FEED` is
 required. Then it deploys FirePacks, FireCards, CardsRenderer, RecipeDealer and RecipeCompiler, PlankBurner (no
 owner, no withdraw: it holds the PLANK burn share when a sale's swap can't run), FireCredits, FireSale, PaperBurner
 (with its feeds and default routes), FirePsa and one drand adapter each for FireCards and FirePsa, wires them (set-once
 links, each checked: FireSale and FireCredits point at each other, FireSale's PlankBurner uses the same router and
-feeds), and hands ownership to `OWNER`. It refuses an `OWNER` equal to the deployer.
+feeds), and offers ownership of all seven owned contracts to `OWNER` (two steps: the owner accepts in step 4). It
+refuses an `OWNER` equal to the deployer.
 
 ## 4. Hardware wallet accepts
-The owner accepts FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner in one run (FireSale is
-owned by `OWNER` from deployment; PlankBurner has no owner). Until then the deployer key controls those six, so do it
-right after step 3. Six confirmations on the device:
+The owner accepts FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa and PaperBurner in one run
+(PlankBurner has no owner). Until then the deployer key controls those seven, so do it right after step 3. Seven
+confirmations on the device:
 ```powershell
 forge script script/AcceptOwnership.s.sol --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH `
   --sender $env:OWNER --slow --broadcast
@@ -101,17 +110,19 @@ pool). Ownership can never be renounced. Optional:
 `FirePacks.setContractURI` and `FireCards.setContractURI` (collection pages on marketplaces).
 
 ## 5. Keeper
-`ops/keeper` (setup: `ops/keeper/README.md`). Railway runs it always on; a GitHub Actions workflow runs one pass every
-5 minutes as a backup that only acts on work left waiting. Each runs from its own gas-only wallet, its key only in a
-Railway variable or a GitHub secret. Start it right after step 1 (the PLANK feed needs its checkpoints). Every call is
-permissionless:
+`ops/keeper` (setup: `ops/keeper/README.md`). Two always-on Railway services in different regions: the main keeper
+(`KEEPER_ROLE=main`) and a backup (`KEEPER_ROLE=backup`) that only acts on work left waiting 5 minutes. Each has its own
+gas-only wallet (its key only in a Railway variable, typed in there) and its own dead-man's switch (`HEARTBEAT_URL`,
+required). A GitHub Actions workflow can run a third, best-effort pass every 5 minutes (optional, off by default).
+Start them right after step 1 (the PLANK feed needs its checkpoints). Every call is permissionless:
 - `PlankUsdTwap.checkpoint()` every 30 minutes; `PaperUsdTwap.checkpoint()` when `due()`
 - drand numbers to the router (`OpenDrandRouter.fulfillMany`; `adapter.settle` if a callback didn't land)
 - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` (ids from the grading's `Protected` event)
 - `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when they hold something a flush can burn
 
-It alerts a Discord/Slack/Telegram webhook on stale feeds, stuck opens or gradings, waiting fees, drand lag and low
-keeper ETH, with a daily heartbeat. None of these calls pause. The owner's pause (`FireSale.setPaused`,
+It alerts a Discord/Slack/Telegram webhook on stale feeds (PLANK price over 90 min old, a PAPER candidate pool not
+adopted in time), stuck opens or gradings, waiting fees, drand lag, low keeper ETH, a pause turned on, a randomness
+switch and the backup having to step in, with a daily heartbeat; a keeper that can't start says so before it exits. None of these calls pause. The owner's pause (`FireSale.setPaused`,
 `FirePsa.setPaused`) stops only buying, press packs, credit spending, paid suggestions and case/grading payments.
 
 ## 6. Each Series: two signings on the device with a check in between
@@ -137,11 +148,12 @@ the owner. Leave out `--broadcast` for a dry run.
 
 **The check** (read-only; the holder snapshot first, `ops/README.md`):
 ```powershell
-cd ops; npm install
+cd ops; npm ci
 node series/verify-series.mjs --recipe ..\contracts\series\recipe-fire-7.json --snapshot fire-7-holders.json
 ```
 It reads the Series back and diffs it against `recipe.json` (recipe, characters, dealer, images base), checks
-FirePsa's fixed PDA odds and that `imagesBase` is `ipfs://<CID>/`, loads every image the contract can point a card at through two or more gateways,
+FirePsa's fixed PDA odds and that `imagesBase` is `ipfs://<CID>/`, loads every image the contract can point a card at through two or more gateways (one gateway missing some is a
+warning, as long as each image loads from two),
 reads the folder's `manifest.json`, and recomputes the snapshot's Merkle root. Sign batch B only when it says
 **GREEN**.
 
@@ -164,22 +176,62 @@ addresses from `deployments/<chainId>.json` (Vercel must include files outside t
 
 ## Rehearsal
 `ops/rehearsal/rehearse.mjs` runs everything above on a local chain with the real scripts and the real keeper code:
-deploy → VerifyDeploy → the owner accepts (AcceptOwnership, owner impersonated) → keeper checkpoints → batch A from
+DevStack (the testnet kit) → deploy, each step recorded with `ops/deploy/record.mjs` → VerifyDeploy → the owner accepts (AcceptOwnership, owner impersonated) → keeper checkpoints → batch A from
 the owner (ConfigureSeries) → snapshot
 → VerifySeries (RED with an image missing, then GREEN) → batch B → buy (one with the PLANK swap down) → sold out,
-closed → open → the keeper delivers drand and deals → case and grade → the keeper finishes the grading → both burners
-flushed (the PAPER feed going live 40 h later) → VerifyDeploy.
+closed → open → the keeper delivers drand and deals → the main keeper and the backup race → case and grade → the
+keeper finishes the grading → the backup steps in while the main keeper is down → a pause and a randomness switch
+reach the webhook → both burners flushed (the PAPER feed going live 40 h later) → VerifyDeploy.
 ```powershell
-cd ops; npm install; cd keeper; npm install; cd ..\snapshot; npm install; cd ..
+cd ops; npm ci; cd keeper; npm ci; cd ..\snapshot; npm ci; cd ..
 node rehearsal/rehearse.mjs                       # plain anvil, nothing needed from outside
+node rehearsal/rehearse.mjs --chain-id 46630      # the same, as the testnet's chain id (the testnet kit exactly)
 node rehearsal/rehearse.mjs --fork $env:RPC       # a Robinhood Chain fork: real tokens, pools and drand
 ```
-On plain anvil, stand-ins replace the tokens, pools and Chainlink (`contracts/script/dev/DevContracts.sol`, never
-deployed for real). The first open is timed to drand round 1000 and proved through the real `OpenDrandRouter` with
+On plain anvil, `contracts/script/DevStack.s.sol` deploys stand-ins for the tokens, pools and Chainlink
+(`contracts/script/dev/DevContracts.sol`; never on mainnet, it refuses chain 4663). The first open is timed to drand round 1000 and proved through the real `OpenDrandRouter` with
 drand's real signature; then the owner switches the randomness to a stand-in router that accepts any signature, so the
-rest runs without drand. It also races two keepers on the same work and checks the backup leaves it to the main
-keeper. CI runs it on every push. The fork mode needs the RPC and drand reachable, and skips the 40-hour PAPER feed
+rest runs without drand. It races the main keeper and the backup for real (automine off, a block a second, each in its
+own loop, the work overdue for both) and fails on any reverted transaction, any transaction that did nothing, or a
+drand request delivered twice. Everything it prints is also in `ops/rehearsal/out/rehearsal.log` (CI keeps it when the
+rehearsal fails). CI runs it on every push to `wip/*` and on pull requests into `main`. The fork mode needs the RPC and drand reachable, and skips the 40-hour PAPER feed
 leg (a fork's Chainlink doesn't update).
+
+## Testnet (Robinhood Chain testnet, chain id 46630)
+The same runbook on the testnet, with stand-ins for what mainnet already has (tokens, pools, Chainlink, the Paper
+Press). Play tokens only; nothing here touches mainnet. Wallets: a testnet deployer (its own Foundry keystore, e.g.
+`cast wallet import testnet-deployer --interactive`) and a testnet owner: a second Ledger account (`m/44'/60'/2'/0/0`,
+say) to practise the real signing, or a throwaway keystore account. Testnet ETH for both and the keepers comes from
+the Robinhood Chain testnet faucet.
+
+```powershell
+cd contracts
+$env:RPC = Read-Host "Testnet RPC URL"          # e.g. https://rpc.testnet.chain.robinhood.com/rpc, or Alchemy's
+$env:EXPECTED_CHAIN_ID = "46630"                # every deploy script refuses any other chain
+$verify = "--verify", "--verifier", "blockscout", "--verifier-url", "https://explorer.testnet.chain.robinhood.com/api/"   # testnet Blockscout
+```
+1. **Stand-ins** (refuses chain 4663): PAPER, PLANK, USDG, WETH, an ETH/USD feed that never goes stale, a Uniswap V2
+   factory with PLANK/WETH and PAPER/WETH pools, a router, a Paper Press. Only the deployer can mint, set prices or
+   reserves, or break the router, so nobody else can wreck the testnet.
+   ```powershell
+   forge script script/DevStack.s.sol --rpc-url $env:RPC --account testnet-deployer --sender <deployer address> --slow --broadcast @verify
+   node ..\ops\deploy\record.mjs --rpc $env:RPC
+   # the deploy scripts read their inputs from the environment: load them from the file just written
+   (Get-Content ..\deployments\46630.json | ConvertFrom-Json).inputs.psobject.Properties | ForEach-Object { Set-Item "env:$($_.Name)" $_.Value }
+   ```
+   Testers get PAPER by swapping test ETH on the stand-in router, or the deployer mints it
+   (`cast send <PAPER> "mint(address,uint256)" <to> <wei> --account testnet-deployer --rpc-url $env:RPC`).
+2. **Steps 1–3** exactly as above, with `--account testnet-deployer`, `@verify` in place of the mainnet
+   `--verify ...` line, and `OWNER` = the testnet owner. DeployInfra deploys the **real** `OpenDrandRouter` (real drand,
+   no stand-in). Record after each one. Before going further, confirm one live delivery: start the keeper (step 4
+   here), open one pack and check the keeper log shows `fulfillMany success` and `process success` (or the open's
+   `ready` on the explorer).
+3. **Owner accepts** (step 4 above) with the testnet owner, then VerifyDeploy.
+4. **Keepers**: the same Railway setup (`ops/keeper/README.md`) as two more services with `CHAIN_ID=46630`, the testnet
+   RPC and their own testnet wallets (~0.05 test ETH each; separate from the mainnet keeper wallets).
+5. **Site**: build with `VITE_CHAIN=testnet` (reads `deployments/46630.json`; wallet and explorer switch to the testnet).
+6. **Series**: step 6 as above, with the testnet owner.
+Commit `deployments/46630.json` after VerifyDeploy says no FAIL.
 
 ## Verify a number (anyone)
 See `docs/randomness.md`.
