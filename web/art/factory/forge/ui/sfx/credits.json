@@ -86,25 +86,34 @@
    "credit": "DRAGON-STUDIO (Pixabay); Pixabay Content License"
   },
   {
-   "file": "rare-a.mp3",
-   "purpose": "Rare pull hit (variant a): crisp anvil strike + spark sizzle",
-   "source": "soundreality-whoosh-fire-movement-243099.mp3",
-   "credit": "SoundReality (Pixabay); Pixabay Content License",
-   "note": "Designed sound layered with the recording above"
+   "file": "pull-rare.mp3",
+   "purpose": "Rare pull, plays on the flip: D-major lydian glockenspiel run ending in a double \"ting-ting\", sparkle tail",
+   "source": "original",
+   "credit": "Made for The Forge (original sound design, synthesised)"
   },
   {
-   "file": "epic-a.mp3",
-   "purpose": "Epic pull hit (variant a): big anvil strike + fire roar swelling after",
-   "source": "soundreality-whoosh-fire-movement-243099.mp3",
-   "credit": "SoundReality (Pixabay); Pixabay Content License",
-   "note": "Designed sound layered with the recording above"
+   "file": "pull-epic-build.mp3",
+   "purpose": "Epic pull build-up (2.0 s), plays under the glow / light leak and ends on the flip: glass-harmonica pad with quickening tremolo, reverse-cymbal swell, two heartbeats",
+   "source": "original",
+   "credit": "Made for The Forge (original sound design, synthesised)"
   },
   {
-   "file": "legendary-a.mp3",
-   "purpose": "Legendary pull hit (variant a): heavy hammer impact with sub-boom, fire burst, deep bell ring-out with reverb",
-   "source": "soundreality-whoosh-fire-movement-243099.mp3",
-   "credit": "SoundReality (Pixabay); Pixabay Content License",
-   "note": "Designed sound layered with the recording above"
+   "file": "pull-epic-hit.mp3",
+   "purpose": "Epic pull hit, plays on the flip: boom + crystal-bell strum + crash wash, glitter",
+   "source": "original",
+   "credit": "Made for The Forge (original sound design, synthesised)"
+  },
+  {
+   "file": "pull-legendary-build.mp3",
+   "purpose": "Legendary pull build-up (3.0 s), plays while light cracks through the card and ends on the flash: heartbeat 80->195 bpm, rumble, Shepard-tone riser + a reversed fire whoosh",
+   "source": "original + soundreality-whoosh-fire-movement-243099.mp3 (reversed)",
+   "credit": "Made for The Forge (original sound design, synthesised); reversed fire whoosh by SoundReality (Pixabay), Pixabay Content License"
+  },
+  {
+   "file": "pull-legendary-hit.mp3",
+   "purpose": "Legendary pull hit, plays on the flash: deep boom + fireworks, horn fanfare with timpani roll, sparkles",
+   "source": "original",
+   "credit": "Made for The Forge (original sound design, synthesised)"
   }
  ]
 }

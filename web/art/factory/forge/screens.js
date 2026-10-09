@@ -53,9 +53,9 @@
 
   const BACK = 'ui/card-back.webp'; // the card back, for every face-down card
 
-  // ---------- pack-opening sounds: recordings (sound.js) for the tear, slides, flips and the Rare / Epic / Legendary hits;
-  // a few small made-in-WebAudio accents (the tease rumble, the light leak's crackle, its pop, the plain-holo shimmer)
-  // where no recording fits. All through Sound's one AudioContext, so the speaker button silences everything.
+  // ---------- pack-opening sounds: recordings (sound.js) for the tear, slides, flips and the Rare / Epic / Legendary pulls
+  // (Epic and Legendary: a build-up under the glow and the light leak, then a hit); a couple of small made-in-WebAudio
+  // accents (the Rare tease rumble, the plain-holo shimmer) where no recording fits. All through Sound's one AudioContext, so the speaker button silences everything.
   const Sfx = (() => {
     let noise = null, ctx = null, out = null;
     function ac() {
@@ -76,7 +76,7 @@
       o.connect(g).connect(out); o.start(t); o.stop(t + a + dec + 0.05);
     }
     // the tear follows the finger: one voice plays the recording on from where the tear is, and goes quiet when the finger stops
-    let rv = null, rvT = 0;
+    let rv = null, rvT = 0, cur = null; // cur: the build-up for the card on top { tier, h, hit }
     const RIP = 0.85; // pack-rip.mp3 length (s)
     return {
       rip(p = 0) {
@@ -94,21 +94,33 @@
       tease(m) { if (!ac()) return; const t = ctx.currentTime, d = { fire: 0.85, charcoal: 1, diamond: 1.2, gold: 1.2, fullart: 1.3 }[m] || 1;
         if (Store.ALWAYS_HOLO[m]) { tone(t, 900, { peak: 0.04, a: d * 0.8, dec: 0.3, to: 2400 }); tone(t, 1350, { peak: 0.025, a: d * 0.8, dec: 0.3, to: 3600 }); }
         else { tone(t, m === 'fire' ? 70 : 52, { type: 'triangle', peak: 0.16, a: d * 0.85, dec: 0.25 }); hiss(t, { type: 'lowpass', f: 600, peak: 0.08, a: d * 0.8, dec: 0.25 }); } },
-      // the tier hit on the flip: Rare = anvil strike, Epic = anvil + flame roar, Legendary = hammer + flame burst + deep bell
-      // (Legendary's plays with the big moment, not here). The room dips under it.
-      hit(tier) { const n = { rare: 'rare-a', epic: 'epic-a', legendary: 'legendary-a' }[tier]; if (!n) return;
-        if (play(n, { gap: 300 })) Sound.duck(tier === 'legendary' ? 4 : tier === 'epic' ? 2.4 : 1.4, tier === 'rare' ? 0.5 : 0.3); },
-      // the light leak: a rising shimmer (three glides) under a crackle that gets denser and louder, d seconds long
-      leak(m, d, leg) { if (!ac()) return; const t = ctx.currentTime, f = { paper: 520, wood: 330, fire: 262, charcoal: 196, diamond: 660, gold: 587, fullart: 784 }[m] || 400;
-        [1, 1.5, 2.01].forEach((k, i) => tone(t, f * k, { type: i ? 'sine' : 'triangle', peak: (leg ? 0.06 : 0.04) / (i + 1), a: d, dec: 0.16, to: f * k * (leg ? 2.6 : 2) }));
-        const n = leg ? 30 : 16; for (let i = 0; i < n; i++) { const u = Math.sqrt(i / n);
-          hiss(t + u * d, { f: 2200 + Math.random() * 4500, q: 2.2, peak: 0.025 + u * (leg ? 0.15 : 0.1), dec: 0.01 + Math.random() * 0.02 }); } },
+      // Epic / Legendary build-up: starts as the card begins to glow, lined up so its last moment lands lead seconds from now
+      // (the flip for Epic, the flash for Legendary). A lead shorter than the file starts partway in; a longer one waits.
+      // One per card: a new build cuts any old one, and the card's hit (hit / cut) ends it.
+      build(tier, lead) {
+        this.cut(false);
+        const n = `pull-${tier}-build`, d = window.Sound?.dur(n), p = cur = { tier, h: null, hit: false };
+        if (!d) return;
+        const off = Math.max(0, d - lead);
+        p.h = play(n, { offset: off, delay: Math.max(0, lead - d), fadeIn: off > 0.02 ? 0.1 : 0 });
+        if (p.h) Sound.duck(lead, 0.65, Math.min(0.8, lead * 0.5)); // the room eases down a little under it
+      },
+      // the tier hit: Rare on the flip; Epic on the flip; Legendary on the big moment's flash. The room dips under it.
+      hit(tier) {
+        const p = cur?.tier === tier ? cur : null;
+        if (p) { cur = null; if (p.hit) return; p.hit = true; p.h?.stop(0.04); } // the build is at its end now (a late frame: cut it)
+        if (play(`pull-${tier}${tier === 'rare' ? '' : '-hit'}`, { gap: 300 })) Sound.duck(tier === 'legendary' ? 4.5 : tier === 'epic' ? 2.4 : 1.4, tier === 'rare' ? 0.5 : 0.3);
+      },
+      // skipped (withHit: the card's hit still lands) or closed mid-build: the build fades out quickly
+      cut(withHit) {
+        const p = cur; if (!p) return; cur = null;
+        p.h?.stop(0.12);
+        if (withHit && !p.hit) this.hit(p.tier);
+      },
       // a holo turning over: a soft rising shimmer (a quick run of glassy notes over a breath of air), well under the tier hits
       shimmer() { if (!ac()) return; const t = ctx.currentTime;
         [1046.5, 1318.5, 1568, 2093, 2637].forEach((f, i) => { tone(t + i * 0.06, f, { peak: 0.045 - i * 0.005, a: 0.015, dec: 0.9 }); tone(t + i * 0.06, f * 1.5, { peak: 0.012, dec: 0.5 }); });
         hiss(t, { type: 'highpass', f: 5200, q: 0.5, peak: 0.035, a: 0.2, dec: 0.45 }); },
-      pop(leg) { if (!ac()) return; const t = ctx.currentTime; hiss(t, { type: 'highpass', f: 2400, q: 0.6, peak: leg ? 0.24 : 0.16, a: 0.006, dec: leg ? 0.5 : 0.3 });
-        tone(t, leg ? 1760 : 1318.5, { peak: 0.05, dec: 0.9 }); },
     };
   })();
 
@@ -353,7 +365,7 @@
     async function runOpening(series, packs, prior) {
       const n = packs.length, cards = packs.flat();
       const ac = new AbortController(); let stopR; const stopP = new Promise((r) => (stopR = r));
-      root.closest('dialog')?.addEventListener('close', () => { ac.abort(); stopR(); }, { once: true, signal: ac.signal });
+      root.closest('dialog')?.addEventListener('close', () => { Sfx.cut(false); ac.abort(); stopR(); }, { once: true, signal: ac.signal });
       let skipped = false;
       const halted = () => skipped || ac.signal.aborted || !root.isConnected;
       const race = (p) => Promise.race([p, stopP]);
@@ -361,7 +373,7 @@
       const msg = h('p', { class: 'stage-msg', 'aria-live': 'polite' });
       const area = h('div', { class: 'op-area' });
       const meta = h('div', { class: 'op-meta' });
-      const ctrls = h('div', { class: 'stage-ctrls' }, btn(n > 1 ? 'Skip to all cards' : 'Skip', 'small skip-b', () => { skipped = true; stopR(); }));
+      const ctrls = h('div', { class: 'stage-ctrls' }, btn(n > 1 ? 'Skip to all cards' : 'Skip', 'small skip-b', () => { skipped = true; Sfx.cut(true); stopR(); }));
       const said = h('p', { class: 'sr', 'aria-live': 'polite', 'aria-atomic': 'true' }); // screen readers: each card as it turns over
       const op = h('div', { class: 'op' }, msg, area, meta, ctrls, said);
       put(stage, op); stage.classList.add('opening');
@@ -482,6 +494,7 @@
           el.inert = false; el.setAttribute('aria-label', `Card ${i + 1} of ${order.length}, face down`); el.focus({ preventScroll: true });
           if (last && lastPack) { const sk = ctrls.querySelector('.skip-b'); if (sk) sk.textContent = 'See all'; } // the last card: nothing left to skip
           put(meta, h('span', { class: 'op-n', text: `${i + 1} / ${order.length}` }));
+          let due = 0; // Epic / Legendary: when (performance.now) the flip / flash is due, so the build-up ends on it
           const ho = isHolo(c), turn = ho ? holoArm(el) : null; // a holo shows its foil edge as soon as it's on top
           await pause(i === 0 ? 600 : 160); if (halted()) return;
           if (ho) { // ...and waits for you: drag it (the edge brightens the further it goes) or tap to turn it
@@ -491,12 +504,14 @@
           }
           if (tier) { // Rare and up (by true odds): the back glows in its material before it turns (a short tease leads into the leak)
             msg.textContent = 'Something’s glowing…';
-            el.classList.add('tease', 't-' + c.material); Sfx.tease(c.material);
-            await pause(big ? 520 : { fire: 850, charcoal: 1000, diamond: 1200, gold: 1200, fullart: 1400 }[c.material] || 800); if (halted()) return;
+            el.classList.add('tease', 't-' + c.material);
+            if (big) { const lead = TEASE_BIG + leakMs(tier === 'legendary', rm) + (tier === 'legendary' && !rm ? LEG_HOLD : 0); due = performance.now() + lead; Sfx.build(tier, lead / 1000); }
+            else Sfx.tease(c.material);
+            await pause(big ? TEASE_BIG : { fire: 850, charcoal: 1000, diamond: 1200, gold: 1200, fullart: 1400 }[c.material] || 800); if (halted()) return;
             if (!big) el.classList.remove('tease');
           } else if (last) msg.textContent = 'Last card…';
           const slow = big && !rm;
-          if (big) { await leak(el, c, tier === 'legendary', msg, pause); if (halted()) return; }
+          if (big) { await leak(el, c, tier === 'legendary', msg, pause, due - (tier === 'legendary' && !rm ? LEG_HOLD : 0)); if (halted()) return; }
           el.classList.toggle('slow', slow); el.classList.toggle('hslow', ho && !tier && !rm); el.classList.add('flipped'); Sfx.flip();
           if (big) { el.classList.remove('tease'); el._lk?.(); }
           if ((big || ho) && rm) el.querySelector('.face.front').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 350 });
@@ -510,7 +525,7 @@
             tier ? h('span', { class: 'tier-b ' + tier, text: TIER_LABEL[tier] }) : null, tier ? h('span', { class: 'op-odds', text: od.label }) : null); // odds: Rare and up only
           said.textContent = `Card ${i + 1} of ${order.length}: ${describe(c)}${tier ? '. ' + TIER_LABEL[tier] : ''}`;
           el.setAttribute('aria-label', `${describe(c)}. ${last ? (lastPack ? 'Press to see all your cards' : 'Press for the next pack') : 'Press for the next card'}`);
-          if (tier === 'legendary') { await pause(slow ? 700 : 0); if (halted()) return; bigMoment(c, el, op); }
+          if (tier === 'legendary') { await pause(slow ? Math.max(LEG_HOLD / 2, due - performance.now()) : 0); if (halted()) return; bigMoment(c, el, op); }
           if (c.holo !== 'none') tilt.start(el);
           ready = true;
           if (big) { // once the moment settles: Share
@@ -592,19 +607,22 @@
 
     // the light leak (Epic and Legendary): the card hesitates, light cracks out of its edges and through jagged seams across
     // the back, brighter and brighter, then it bursts open. Reduced motion: a short static glow, then the card fades in.
-    async function leak(el, c, leg, msg, pause) {
-      const [core, glow] = LEAK[c.material], dur = leg ? 1100 : 600, rm = reduced(), back = el.querySelector('.back2');
+    // (its length is fixed so the build-up can be lined up to end on the flip: tease + leak [+ the Legendary's hold] before it)
+    const TEASE_BIG = 520, LEG_HOLD = 700, leakMs = (leg, rm) => rm ? (leg ? 650 : 420) : (leg ? 1100 : 600);
+    // flipAt: when (performance.now) the flip is due; a late start (a busy frame) is made up here so the sound stays on time
+    async function leak(el, c, leg, msg, pause, flipAt) {
+      const rm = reduced(), [core, glow] = LEAK[c.material], dur = leakMs(leg, rm), back = el.querySelector('.back2');
       el.style.setProperty('--lk', glow); el.style.setProperty('--lkc', core);
       const halo = h('i', { class: 'lk-halo', 'aria-hidden': 'true' }), edge = h('i', { class: 'lk-edge', 'aria-hidden': 'true' });
       el.prepend(halo); back.append(edge); el.classList.add('leak', leg ? 'lk-leg' : 'lk-epic');
       msg.textContent = leg ? 'Light’s pouring out…' : 'Something’s breaking through…';
-      Sfx.leak(c.material, dur / 1000, leg);
       const anims = [];
       el._lk = () => { // on the flip: the back turns away, the halo fades
         anims.forEach((a) => a.cancel()); el.classList.remove('leak');
         halo.animate([{ opacity: 1 }, { opacity: 0 }], { duration: rm ? 300 : 1000, easing: 'ease-out', fill: 'forwards' }).finished.then(() => halo.remove(), () => {});
       };
-      if (rm) { await pause(leg ? 650 : 420); return; }
+      const left = () => Math.max(dur / 2, (flipAt || 0) - performance.now());
+      if (rm) { await pause(left()); return; }
       const sv = seams(leg ? 6 : 4, c.material); back.append(sv);
       const flick = (n, lo, hi) => Array.from({ length: n + 1 }, (_, k) => { const u = k / n; return { opacity: u === 1 ? 1 : Math.min(1, lo + (hi - lo) * u * u + (k % 2 ? 0.12 : -0.08) * u) }; });
       const T = { duration: dur, easing: 'linear', fill: 'forwards' };
@@ -619,8 +637,7 @@
       const shake = leg ? [0, -1.2, 1.4, -1.8, 2.2, -2.4, 2.8, -2.6, 3, -1.5, 0] : [0, -0.8, 1, -1.2, 1.2, -0.6, 0];
       anims.push(el.querySelector('.sc-tilt').animate(shake.map((a, k) => ({ transform: `translate(${(k % 2 ? 1 : -1) * Math.abs(a) * 0.6}px, 0) rotate(${a * 0.5}deg) scale(${1 + (k / shake.length) * (leg ? 0.045 : 0.025)})` })),
         { duration: dur, easing: 'ease-in' }));
-      await pause(dur);
-      Sfx.pop(leg);
+      await pause(left());
       const fl = h('i', { class: 'lk-flash', 'aria-hidden': 'true' }); el.append(fl);
       fl.animate([{ opacity: 0, transform: 'scale(.5)' }, { opacity: 1, transform: 'scale(.95)', offset: 0.25 }, { opacity: 0, transform: `scale(${leg ? 1.6 : 1.3})` }],
         { duration: leg ? 700 : 520, easing: 'ease-out' }).finished.then(() => fl.remove(), () => fl.remove());

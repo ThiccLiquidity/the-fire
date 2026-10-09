@@ -8,7 +8,8 @@
   // gain per sound (the files are already loudness-matched: one-shots around -16 to -23 LUFS, loops quieter)
   const FILES = {
     'forge-fire-loop': 1, 'press-loop': 0.8, 'conveyor-loop': 0.8, 'pen-scratch-loop': 0.7,
-    'pack-rip': 0.85, 'card-slide': 0.6, 'card-flip': 0.7, 'rare-a': 1, 'epic-a': 1, 'legendary-a': 1,
+    'pack-rip': 0.85, 'card-slide': 0.6, 'card-flip': 0.7,
+    'pull-rare': 1, 'pull-epic-build': 1, 'pull-epic-hit': 1, 'pull-legendary-build': 1, 'pull-legendary-hit': 1,
     'pack-drop': 0.9, 'fire-flare': 0.8, 'case-snap': 0.9, 'grade-stamp': 0.9, 'paper-fold': 0.7, 'suggestion-drop': 0.75, 'ui-click': 0.35,
   };
   const AMB = 0.32; // the ambience bus: quiet, under everything
@@ -60,15 +61,15 @@
   ['pointerdown', 'touchend', 'click', 'keydown'].forEach((t) => addEventListener(t, unlock, { capture: true, passive: true }));
 
   // ---------- playing
-  // play(name, { gain, offset, duration, rate, gap, loop, bus }): returns a handle { src, g, stop(fade) } or null.
-  // gap: ignore a repeat of the same sound within that many ms.
+  // play(name, { gain, offset, duration, rate, gap, loop, bus, delay, fadeIn }): returns a handle { src, g, at, stop(fade) } or null.
+  // gap: ignore a repeat of the same sound within that many ms. delay: start that many seconds from now (at: its start, context time).
   function play(name, o = {}) {
     if (!enabled || !ctx || ctx.state === 'closed') return null;
     const b = bufs[name]; if (!b) return null;
     const now = performance.now();
     if (o.gap && now - (last[name] || -1e9) < o.gap) return null;
     last[name] = now;
-    const src = ctx.createBufferSource(), g = ctx.createGain(), t = ctx.currentTime;
+    const src = ctx.createBufferSource(), g = ctx.createGain(), t = ctx.currentTime + Math.max(0, o.delay || 0);
     src.buffer = b; src.loop = !!o.loop; if (o.rate) src.playbackRate.value = o.rate;
     const vol = (o.gain ?? 1) * (FILES[name] ?? 1);
     if (o.fadeIn) { g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + o.fadeIn); } else g.gain.value = vol;
@@ -78,7 +79,7 @@
       const d = o.duration; g.gain.setValueAtTime(vol, t + Math.max(0.005, d - 0.04)); g.gain.linearRampToValueAtTime(0.0001, t + d);
       src.start(t, off, d + 0.02);
     } else src.start(t, off);
-    const h = { src, g, stop(fade = 0.08) {
+    const h = { src, g, at: t, stop(fade = 0.08) {
       if (h.done) return; h.done = true; const t2 = ctx.currentTime;
       try { g.gain.cancelScheduledValues(t2); g.gain.setValueAtTime(g.gain.value, t2); g.gain.linearRampToValueAtTime(0.0001, t2 + fade); src.stop(t2 + fade + 0.02); } catch { /* already stopped */ }
     } };
@@ -102,10 +103,11 @@
   const syncSale = () => setSale(window.Store && Store.state.series.phase < 4);
   if (window.Store) { syncSale(); Store.on(syncSale); }
   // big moments: the room dips under them, then comes back
-  function duck(sec = 2, to = 0.35) {
+  // (ramp: how fast it dips; a build-up eases it down, a hit drops it at once)
+  function duck(sec = 2, to = 0.35, ramp = 0.08) {
     if (!ctx || !amb) return; const t = ctx.currentTime, g = amb.gain;
-    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(AMB * to, t + 0.08);
-    g.setValueAtTime(AMB * to, t + sec); g.linearRampToValueAtTime(AMB, t + sec + 1.2);
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(AMB * to, t + ramp);
+    g.setValueAtTime(AMB * to, t + Math.max(ramp, sec)); g.linearRampToValueAtTime(AMB, t + sec + 1.2);
   }
 
   // ---------- the pen, while someone is typing: starts on input, stops 400 ms after the last key
@@ -144,6 +146,6 @@
   window.Sound = {
     get on() { return enabled; }, set, play, typing, duck,
     get ctx() { return enabled && ctx && ctx.state !== 'closed' ? ctx : null; }, get out() { return sfx; },
-    get loaded() { return Object.keys(bufs); }, get loops() { return Object.keys(loops); },
+    get loaded() { return Object.keys(bufs); }, dur: (name) => bufs[name]?.duration, get loops() { return Object.keys(loops); },
   };
 })();
