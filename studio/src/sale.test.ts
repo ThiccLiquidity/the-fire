@@ -1,7 +1,7 @@
 /** The Sale settings: configureDrop's checks, the presets and the exported units. (The sample recipe.json the
  *  contract tests parse is checked in scripts/sale-sample.test.ts.) */
 import { describe, expect, it } from 'vitest'
-import { checkSale, dropPlan, giantSale, parseDecimal, saleErrors, saleJson, standardSale, type SaleSettings } from './sale'
+import { checkSale, dropPlan, giantSale, parseDecimal, saleErrors, saleJson, salePacks, saleWithPacks, standardSale, type SaleSettings } from './sale'
 
 const NOW = 1_800_000_000
 const errs = (s: Partial<SaleSettings>) => saleErrors({ ...standardSale(), start: NOW + 3600, ...s }, NOW).map((p) => p.field)
@@ -93,5 +93,12 @@ describe('sale settings', () => {
     expect(parseDecimal('', 2)).toBeNull()
     expect(parseDecimal('1.2.3', 2)).toBeNull()
     expect(parseDecimal('-1', 2)).toBeNull()
+  })
+
+  it('the drop is the Series: paid + press packs, at most a trillion', () => {
+    expect(salePacks(standardSale())).toBe(167)
+    expect(saleWithPacks(standardSale(), 500)).toMatchObject({ paidPacks: 450, pressPacks: 50, plankOnly: 50 })
+    expect(saleWithPacks(standardSale(), 30)).toMatchObject({ paidPacks: 0, pressPacks: 30, plankOnly: 0 })
+    expect(errs({ paidPacks: 1_000_000_000_001, pressPacks: 0 })).toContain('paidPacks')
   })
 })

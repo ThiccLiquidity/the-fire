@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Field, Notice, NumberInput, useAction } from '../components'
+import { Notice, useAction } from '../components'
 import { hasCategory, hasValidName } from '../categories'
 import { frameSetLabel } from '../frames'
 import { randomSeed } from '../prng'
 import { standardRecipe } from '../recipe'
-import { MAX_PACKS } from '../rules'
+import { saleOf, standardSale } from '../sale'
 import { artNeeds, isReadyFor, missingArt } from '../series'
 import { deleteFire, getStudio, saveFire, saveGlobal, updateFire, useStudio } from '../store'
 import { fireStatus, type Character, type FireRecord } from '../types'
@@ -16,7 +16,8 @@ export function FireList({ selected, onSelect }: { selected: number | null; onSe
   const create = () => run(async () => {
     const n = getStudio().global.nextFireNumber
     const now = Date.now()
-    const f: FireRecord = { number: n, characterIds: [], packs: 150, recipe: standardRecipe(), seed: randomSeed(), createdAt: now, updatedAt: now }
+    const sale = standardSale()
+    const f: FireRecord = { number: n, characterIds: [], packs: sale.paidPacks + sale.pressPacks, recipe: standardRecipe(), sale, seed: randomSeed(), createdAt: now, updatedAt: now }
     await saveFire(f)
     await saveGlobal({ ...getStudio().global, nextFireNumber: n + 1 })
     onSelect(n)
@@ -50,6 +51,7 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
   const [onlyReady, setOnlyReady] = useState(false)
   const [page, setPage] = useState(0)
   const locked = !!fire.deal
+  const sale = useMemo(() => saleOf(fire), [fire])
   const update = (patch: Partial<FireRecord>) => run(() => updateFire(fire.number, patch))
   const needs = useMemo(() => artNeeds(fire.recipe), [fire.recipe])
   const picked = useMemo(() => new Set(fire.characterIds), [fire.characterIds])
@@ -127,12 +129,11 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
             </div>
           )}
           {notReady.length > 0 && <Notice kind="error">{notReady.length} picked character{notReady.length === 1 ? " isn't" : "s aren't"} ready for this recipe (art, name or category); finish them or unpick them.</Notice>}
-          <div className="row wrap">
-            <Field label="Packs" hint={`1 to ${MAX_PACKS.toLocaleString()}`}>
-              <NumberInput min={1} max={MAX_PACKS} value={fire.packs} onChange={(n) => !locked && update({ packs: Math.min(MAX_PACKS, Math.max(0, Math.floor(n) || 0)) })} data-testid="packs" />
-            </Field>
-          </div>
-          {fire.packs < 1 && !locked && <p className="field-msg err" data-testid="packs-problem">Packs: set at least 1 (a Series with no packs can't be dealt or uploaded).</p>}
+          <p data-testid="packs-line">
+            <b data-testid="packs">{fire.packs.toLocaleString()}</b> packs{' '}
+            <span className="muted small">({sale.paidPacks.toLocaleString()} paid + {sale.pressPacks.toLocaleString()} press) · set on the <a href="#sale">Sale</a> tab</span>
+          </p>
+          {fire.packs < 1 && !locked && <p className="field-msg err" data-testid="packs-problem">No packs: set paid or press packs on the Sale tab.</p>}
         </div>
         <div>
           <h4>This Series will make</h4>

@@ -16,7 +16,7 @@ import { carBytes, planCar } from '../car'
 import { buildManifest } from '../manifest'
 import { categoryProblem, nameProblem, normalizeCategory, normalizeName } from '../categories'
 import { checkRecipe, recipeJson } from '../recipe'
-import { saleErrors, saleJson, saleOf } from '../sale'
+import { saleErrors, saleJson, saleOf, salePacks } from '../sale'
 import { artNeeds, buildGridKey, missingArt, missingFrames } from '../series'
 import { lastAssetChange, updateFire, useStudio } from '../store'
 import { BUILD_GRID_VERSION, fireStatus, type FireRecord, type UploadState } from '../types'
@@ -80,8 +80,11 @@ export function Export({ fire }: { fire: FireRecord }) {
   ]
   const saleCheck: Check = { label: 'Sale settings valid (configureDrop\'s checks)', ok: saleProblems.length === 0, detail: saleProblems[0] ? `${saleProblems[0].message} (Sale tab)` : undefined }
   checks.push(saleCheck)
+  const packs = deal?.packs ?? fire.packs
+  const packsCheck: Check = { label: 'Sale packs match the Series', ok: salePacks(sale) === packs, detail: `The sale has ${salePacks(sale).toLocaleString()} (paid + press), the ${deal ? 'locked deal' : 'Series'} ${packs.toLocaleString()} (Sale tab).` }
+  checks.push(packsCheck)
   const ready = checks.every((c) => c.ok)
-  const recipeReady = checks[0].ok && checks[2].ok && saleCheck.ok
+  const recipeReady = checks[0].ok && checks[2].ok && saleCheck.ok && packsCheck.ok
   /** The shared image file this card points at (the name FireCards.imageName builds on-chain). */
   const indexOf = useMemo(() => new Map(ids.map((id, i) => [id, i])), [ids])
   const fileOf = (c: DealtCard) => lookFileName(lookOf(c, r), indexOf.get(c.characterId) ?? -1)
@@ -99,7 +102,7 @@ export function Export({ fire }: { fire: FireRecord }) {
   const uploadOfBuild = !!fire.upload?.imagesCid && !buildDetail && fire.upload.buildAt === b?.builtAt
 
   const downloadRecipe = () => run(async () => {
-    if (!recipeReady) throw new Error(!checks[0].ok ? checks[0].detail : !checks[2].ok ? checks[2].detail : saleCheck.detail)
+    if (!recipeReady) throw new Error(!checks[0].ok ? checks[0].detail : !checks[2].ok ? checks[2].detail : !saleCheck.ok ? saleCheck.detail : packsCheck.detail)
     if (fire.upload?.imagesCid && !uploadCurrent) {
       throw new Error('The uploaded images are from an earlier build: upload this build first, so recipe.json points at the right images.')
     }

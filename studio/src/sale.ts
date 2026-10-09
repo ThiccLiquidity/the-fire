@@ -3,6 +3,8 @@
  *  contracts/script/ConfigureSeries.s.sol reads (every FireSale.DropConfig field by name, in contract units). Shape
  *  in docs/cards-contracts.md. Cards per free pack is not here: it is fixed at 42 forever (FireCredits.CARDS_PER_CREDIT). */
 
+import { MAX_PACKS } from './rules'
+
 /** How press packs are paid for. 'usdPaper' is a dollar price plus PAPER. */
 export type PressPrice = 'free' | 'paper' | 'usd' | 'usdPaper'
 export const PRESS_PRICE_LABEL: Record<PressPrice, string> = {
@@ -65,6 +67,31 @@ export function saleOf(f: { sale?: Partial<SaleSettings> }): SaleSettings {
   return { ...standardSale(), ...f.sale }
 }
 
+/** The drop's packs: paid + press. This is the Series' pack count (FireRecord.packs follows it while the deal is
+ *  open): the pool, the rarity and the per-pack numbers all use it. */
+export function salePacks(s: SaleSettings): number {
+  return s.paidPacks + s.pressPacks
+}
+
+/** `s` resized to `packs` in all: the press packs are kept (at most `packs`), the paid packs take the rest, and the
+ *  PLANK-only packs stay within the paid. Turns a Series' old pack count into sale settings. */
+export function saleWithPacks(s: SaleSettings, packs: number): SaleSettings {
+  const total = Math.max(0, Math.floor(packs) || 0)
+  const pressPacks = Math.min(s.pressPacks, total)
+  const paidPacks = total - pressPacks
+  return { ...s, paidPacks, pressPacks, plankOnly: Math.min(s.plankOnly, paidPacks) }
+}
+
+/** A free-pack cap saved as a number of packs (before it was a percent) as the percent of the drop's `packs` that
+ *  gives at most that many (0 stays 0: no cap). */
+export function capPercentOf(maxPacks: number, packs: number): string {
+  if (!(maxPacks > 0)) return '0'
+  if (!(packs > 0) || maxPacks >= packs) return '100'
+  // the largest percent (2 decimals) whose cap, as creditPacksMax rounds it, is still at most maxPacks
+  const bp = (BigInt(Math.floor(maxPacks) + 1) * 10_000n - 1n) / BigInt(Math.floor(packs))
+  return String(Number(bp < 1n ? 1n : bp) / 100)
+}
+
 /** An example of a giant drop: 10,000 packs, 100 per wallet and per purchase. */
 export function giantSale(): SaleSettings {
   return {
@@ -124,6 +151,7 @@ export function checkSale(s: SaleSettings, now = Date.now() / 1000): SaleProblem
   whole('creditsPerPick', s.creditsPerPick, U16, 'Credits per picked suggestion')
   whole('creditPacksPerWallet', s.creditPacksPerWallet, U64, 'Free packs per wallet')
   if (s.paidPacks + s.pressPacks === 0) bad('paidPacks', 'The drop needs at least one pack.')
+  else if (s.paidPacks + s.pressPacks > MAX_PACKS) bad('paidPacks', `At most ${MAX_PACKS.toLocaleString('en-US')} packs in all.`)
   if (s.maxPerTx === 0) bad('maxPerTx', 'At least 1.')
 
   const price = parseDecimal(s.priceUsd, 8)
