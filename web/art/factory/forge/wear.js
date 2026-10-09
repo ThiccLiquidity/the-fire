@@ -1,4 +1,4 @@
-/* Omni Forge (demo mode): cases, slabs and wear (docs/grading.md), plus the "How does this work?" window.
+/* Omni Cardworks (demo mode): cases, slabs and wear (docs/grading.md), plus the "How does this work?" window.
    Wear.odds is the same model FirePsa.oddsFor runs on chain (contracts/test/cards/wear-model.py): the fresh odds,
    time damage D ~ Poisson(1.45 x years^0.68) read from the same 32-point table and blended between points, 20% per
    move to lose a grade (first 10 moves count, never below 5 from moves), and grades 1-4 fading in with time. */

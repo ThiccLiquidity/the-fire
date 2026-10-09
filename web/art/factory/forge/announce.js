@@ -1,4 +1,4 @@
-/* Omni Forge (demo mode): the Series tease. One character in every card type, held like a hand of cards pinched at
+/* Omni Cardworks (demo mode): the Series tease. One character in every card type, held like a hand of cards pinched at
    the bottom: Full Art in front, then Gold, Coal, Fire, Wood and Paper behind it, their tops fanned out and gently
    floating. Which Series and character: Store.tease() (the Series on sale, or between Series the next one). While a
    Series is on sale it shows what's in its packs; between Series a small hand sits on the main page (Buy box / bar).

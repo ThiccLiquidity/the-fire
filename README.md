@@ -1,12 +1,12 @@
-# Omni Forge
+# Omni Cardworks
 
-Omni Forge is a collectible NFT card game on Robinhood Chain. Cards are sold in sealed packs, one Series at a time.
+Omni Cardworks is a collectible NFT card game on Robinhood Chain. Cards are sold in sealed packs, one Series at a time.
 PLANK fuels the forge (part of every sale buys and burns it) and every pack burns PAPER. Packs are opened with
 drand randomness, so nobody can know a pack's contents in advance. Cards wear while left uncased; a Case freezes a
 card, and PDA grading reveals its grade (1 to 10) once and seals it in a Slab. Case and grading fees buy PAPER and
 burn it ([`docs/grading.md`](docs/grading.md)).
 
-Live site: https://web-mu-mocha-95.vercel.app (the Forge in demo mode: demo data, no wallet, no payments).
+Live site: https://web-mu-mocha-95.vercel.app (Cardworks in demo mode: demo data, no wallet, no payments).
 
 ## Repository layout
 
@@ -14,8 +14,8 @@ Live site: https://web-mu-mocha-95.vercel.app (the Forge in demo mode: demo data
 |---|---|
 | `contracts/` | Foundry project: the card contracts (`src/cards`), the drand randomness router and adapter, and the PLANK and PAPER price feeds. Deploy scripts in `script/`. |
 | `studio/` | Card Studio: a Vite + React + TypeScript app that builds the card images and metadata for each Series. |
-| `web/` | The site. The Forge is served statically from `web/public/forge`; `web/src/lib` holds the chain, wallet, swap and contract-ABI modules for the live version. |
-| `web/art/factory/` | Source for the Forge: the page code (`forge/`) and the pipeline that builds the workshop scene's art. |
+| `web/` | The site. Cardworks is served statically from `web/public/forge`; `web/src/lib` holds the chain, wallet, swap and contract-ABI modules for the live version. |
+| `web/art/factory/` | Source for Cardworks: the page code (`forge/`) and the pipeline that builds the workshop scene's art. |
 | `sim/omni/` | Python models of the card economy (pack supply and pricing, PLANK, PAPER, card burns). |
 | `ops/` | Operations tooling: the PLANK-holder snapshot for a drop's holder window. |
 | `brand/` | Logos and the logo clean-up script. |
@@ -53,7 +53,7 @@ npm run dev        # http://localhost:5173, redirects to /forge/
 npm run build
 ```
 
-After editing the Forge source in `web/art/factory/forge`, regenerate the served copy with
+After editing Cardworks source in `web/art/factory/forge`, regenerate the served copy with
 `web/art/factory/sync_forge.sh` (see `web/README.md`).
 
 **Economy sims** (needs Python 3 with numpy):

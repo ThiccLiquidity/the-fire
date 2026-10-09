@@ -120,12 +120,12 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 
 /* phones held upright: scene on top, four big station buttons, the buy bar pinned to the bottom */
 body[data-mode=port] { overflow: auto }
-body[data-mode=port] .brand .word { height: 20px } body[data-mode=port] .brand .forge { font-size: 17px } body[data-mode=port] .brand .mark { height: 24px }
+body[data-mode=port] .brand .word { height: 17px } body[data-mode=port] .brand .forge { font-size: 13.5px; letter-spacing: .02em; -webkit-text-stroke-width: 1px; text-shadow: 0 1.5px 0 #0d141c } body[data-mode=port] .brand .mark { height: 22px } body[data-mode=port] .brand { gap: 5px }
 body[data-mode=port] .tools, body[data-mode=port] .chip.series { display: none }
 body[data-mode=port] .menu-btn { display: inline-flex; width: 40px; height: 40px }
 body[data-mode=port] .wallet { min-height: 40px; padding: 0 12px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis }
 body[data-mode=port] .wallet { gap: 6px } body[data-mode=port] .wallet svg { width: 16px; height: 16px } /* the icon stays, so "24 PAPER" reads as the wallet */
-@media (max-width: 370px) { .brand .forge { display: none } } /* the menu button would sit on FORGE */
+@media (max-width: 350px) { .brand .forge { display: none } } /* the menu button would sit on CARDWORKS */
 body[data-mode=port] .ui { display: none }
 body[data-mode=port] canvas#c { position: fixed; touch-action: pan-y } /* sideways drags pan the camera; up/down still scrolls the page */
 body[data-mode=port] .stations { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; position: absolute; left: 0; right: 0; top: calc(var(--top) + var(--sceneH, 300px) + 12px); padding: 0 14px; z-index: 3 }

@@ -1,4 +1,4 @@
-/* Omni Forge (demo mode): the shell. Top bar, wallet, the Buy box and checkout, station pills, the bottom strip,
+/* Omni Cardworks (demo mode): the shell. Top bar, wallet, the Buy box and checkout, station pills, the bottom strip,
    the phone layouts, loading screen and the demo menu. Talks to the scene through window.Scene and to the
    station screens / Info through window.Stations and window.Info. */
 (() => {
@@ -26,7 +26,7 @@
   $('#app').innerHTML = `
   <div id="loading" class="loading"><img src="ui/omni-mark.webp" alt=""><p>Lighting the forge…</p><small class="demo-load">Demo · nothing here is real</small></div>
   <header class="topbar">
-    <a class="brand" href="#" aria-label="Omni Forge"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">FORGE</span><em class="tag">Wood in. Packs out.</em></a>
+    <a class="brand" href="#" aria-label="Omni Cardworks"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">CARDWORKS</span><em class="tag">Wood in. Packs out.</em></a>
     <button class="chip series" id="seriesChip" type="button"></button>
     <div class="grow"></div>
     <nav class="tools" aria-label="Tools">

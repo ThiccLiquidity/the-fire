@@ -1,4 +1,4 @@
-/* page.css: the plain text pages (terms.html, help.html). Same tokens and look as the Forge's sheets. */
+/* page.css: the plain text pages (terms.html, help.html). Same tokens and look as Cardworks' sheets. */
 html, body.page { height: auto; overflow: auto }
 body.page { margin: 0; background: radial-gradient(120% 60% at 50% 0%, #2a1a0d, #000 70%) fixed; color: var(--ink) }
 .page-top { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: rgba(0,0,0,.4) }

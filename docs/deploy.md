@@ -156,7 +156,7 @@ It refuses unless the chain holds batch A exactly as the JSON says, then sends `
 confirmation). Then `FireCredits.pickSuggestions` as before.
 
 ## 7. Site
-The Forge is static (`web/public/forge`) and runs in demo mode (a demo banner, no wallet, no payments). The live
+Cardworks is static (`web/public/forge`) and runs in demo mode (a demo banner, no wallet, no payments). The live
 version will use `web/src/lib` (chain, wallet, card ABIs, swap guard); `web/src/lib/config.ts` reads the contract
 addresses from `deployments/<chainId>.json` (Vercel must include files outside the Root Directory, its default). Set `SWAP_FEE_WALLET` in
 `web/src/lib/config.ts` first. If the site uses its own `VITE_RPC_URL`, add that host to `connect-src` in
