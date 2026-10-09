@@ -2,7 +2,7 @@
 
 ## Chain
 - Mainnet chain ID **4663**, gas in ETH. Public RPC `https://rpc.mainnet.chain.robinhood.com` (rate-limited; use Alchemy for the deploy and the keeper). If the site gets its own `VITE_RPC_URL`, add its host to `connect-src` in `web/vercel.json` or the browser blocks it. Explorer: https://robinhoodchain.blockscout.com
-- Testnet chain ID 46630.
+- Testnet chain ID **46630**. RPC `https://rpc.testnet.chain.robinhood.com/rpc` (or Alchemy's), explorer https://explorer.testnet.chain.robinhood.com. Runbook: `docs/deploy.md` (Testnet).
 
 ## Paper Presses (`PlankPress.sol`, verified): `MILL`, used by FireSale's starter packs
 - One NFT, several names: "Paper Press" (in these docs and on the site), `MILL` (the deploy setting), the `PlankPress`
@@ -12,7 +12,7 @@
 - `burn(tokenId)`: **payable, `burnFee = 0.0003 ETH`** (forwarded to their `feeRecipient`), caller must be `ownerOf`, **allowed only after `mintingSunset` = Oct 1 2026 00:00 UTC**. Calls `pulpPool.releaseBurned(tokenId)` then `_burn` then transfers `plankPerNFT` PLANK to the caller.
 - Mint fee 0.0003 ETH. Pausable by admin; AccessControl admin `0x196254c3ad32f7735420f40DA387387D5DCBd8D5`.
 - Royalties recipient (ERC-2981): `0xb495e814EFAB946e6CdCA3B344aa3A96ead5a806`. Fee recipient: `0x4B53E3D48B49f71A0E4A2BDb518efc2c8795BDe1`.
-- **PAPER is not in this contract.** Printing/claiming lives in a separate PAPER contract: **`0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6`**. Not yet checked on chain: confirm it has 18 decimals (FireSale and FirePsa assume 18) and that `transferFrom` to `0x…dEaD` works.
+- **PAPER is not in this contract.** Printing/claiming lives in a separate PAPER contract: **`0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6`**. The contracts assume 18 decimals; `DeployInfra` and `DeployCards` refuse to deploy against a PAPER (or PLANK) that isn't 18 decimals, so that is checked on deploy day. Still to confirm on chain before launch: `transferFrom` to `0x…dEaD` works.
 
 ## Pulp Pool (`PulpPool.sol`, verified): the presses' royalty pool (not used by the card contracts)
 - **`0x85715BbE2707476294B0c20B7DfbE32cCcADD0E1`**

@@ -25,7 +25,7 @@ setting: cards burned per free pack is 42, forever.
 | Setting | Start |
 |---|---|
 | Packs in the drop | 167 **total, starters included** (about 1,000 cards). Sold out means gone: no more packs for that Series, ever. |
-| Gold cards | 15 (at least 1 in the Standard recipe; set per Series in its recipe, before its drop is set up) |
+| Gold cards | 2 per character (at least 1; set per Series in its recipe, before its drop is set up) |
 | Full Art cards | 1 per character |
 | Pack price | $2.50 |
 | PAPER per pack | 1 |
@@ -43,7 +43,7 @@ setting: cards burned per free pack is 42, forever.
 | Regular wallets only for | 48 hours (0 = off) |
 | Most packs per purchase | 50 |
 | Credits per picked suggestion | 1 |
-| Free (credit) packs per drop, in all / per wallet | no limit / no limit (0 = no limit) |
+| Free (credit) packs per drop, in all / per wallet | 10% of the drop's packs (16 of 167) / 3 per wallet (0 = no limit) |
 | Fresh PDA odds | 10: 1% · 9: 17% · 8: 25% · 7: 27% · 6: 20% · 5: 10% (grades 1-4 only from wear) |
 
 ## Setting up a drop
@@ -103,9 +103,9 @@ as `packs = 117`, `starters = 50`. Setup is signed on the owner's hardware walle
   - **70% goes to the revenue wallet.**
   - The contract keeps nothing.
 - **Up to 50 packs per purchase** by default (`maxPerTx`, set per drop; any number, e.g. 100 for a giant drop).
-- **Gas (measured in tests, mock router; `test_gas`, `test_giantDrop_buy100InOneTx`):** about 96k for a PLANK buy and
-  101k for ETH, the same for 1 pack or 100 (packs are one ERC-1155 mint). A real Uniswap swap adds about 60–90k more,
-  so roughly 100k (PLANK) to 190k (ETH/USDG) per purchase. That's cents or less on Robinhood Chain.
+- **Gas (measured in tests, mock router; `test_gas`, `test_giantDrop_buy100InOneTx`):** about 98k for a PLANK buy and
+  104k for ETH, the same for 1 pack or 100 (packs are one ERC-1155 mint). A real Uniswap swap adds about 60–90k more,
+  so roughly 100k (PLANK) to 195k (ETH/USDG) per purchase. That's cents or less on Robinhood Chain.
 - **The swap's floor:** it must get at least 90% of the PLANK that the 30-minute average price says. If the pool is
   pumped or manipulated beyond that, the swap is skipped and the burn share goes to `PlankBurner`.
 - **If the drop never sells out:** the owner can end it (`endDrop`) once its last timed phase is over (press window,
@@ -151,7 +151,8 @@ credit waits for the next drop. **Credits work at any time during any live drop*
 window, the PLANK-only packs and the wallet limit don't apply to them. A drop can cap how many free packs it gives
 out in all (`creditPacksMax`) and per wallet (`creditPacksPerWallet`), so a big stack of credits can't take a large
 share of a small drop; credits over a cap simply wait for another drop. The Standard sale caps free packs at 10% of
-the drop's packs and 3 per wallet.
+the drop's packs and 3 per wallet. Credits can't be spent on a Series whose packs hold 42 cards or more
+(`FireCredits.useCredits` refuses it): burning one such pack would earn a free pack of itself.
 
 Two ways to earn one:
 

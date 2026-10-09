@@ -47,16 +47,17 @@ The wear rules are built into `FirePsa` as constants: the same for every Series,
 Casing freezes the clock and the move count where they are. Grading freezes them at the moment it is asked for (the
 randomness wait doesn't count).
 
-What a card grades at (no moves; the same for every Series):
+What a card grades at (no moves; time uncased after the free first day; the same for every Series; percent, from
+`python3 contracts/test/cards/wear-model.py`):
 
 | Uncased for | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | Avg |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | ≤ 24 hours | 1.0 | 17 | 25 | 27 | 20 | 10 | | | | | 7.2 |
-| 1 month | 0.8 | 13 | 23 | 26 | 22 | 15 | | | | | 7.0 |
+| 1 month | 0.8 | 13 | 23 | 26 | 22 | 16 | | | | | 7.0 |
 | 6 months | 0.4 | 7.3 | 17 | 23 | 23 | 17 | 13 | | | | 6.4 |
-| 1 year | 0.2 | 4.3 | 12 | 19 | 22 | 20 | 13 | 9.8 | | | 5.8 |
-| 3 years | | 0.9 | 3.8 | 8.8 | 14 | 18 | 18 | 15 | 16 | 5.5 | 4.3 |
-| 5 years | | 0.3 | 1.4 | 4.1 | 8.1 | 13 | 16 | 16 | 14 | 27 | 3.2 |
+| 1 year | 0.2 | 4.3 | 12 | 19 | 22 | 20 | 13 | 9.9 | | | 5.8 |
+| 3 years | | 0.9 | 3.8 | 8.8 | 14 | 18 | 18 | 15 | 16 | 5.6 | 4.3 |
+| 5 years | | 0.3 | 1.4 | 4.1 | 8.1 | 12 | 16 | 16 | 14 | 27 | 3.2 |
 | 10 years | | | 0.2 | 0.6 | 1.8 | 3.8 | 6.7 | 9.8 | 12 | 65 | 1.8 |
 
 By moves (cased right after): 1 move takes PDA 10 from 1% to 0.8%; 3 moves 0.5%; 5 moves 0.3%; 10 or more 0.1%

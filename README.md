@@ -17,8 +17,8 @@ Live site: https://web-mu-mocha-95.vercel.app (Cardworks in demo mode: demo data
 | `web/` | The site. Cardworks is served statically from `web/public/forge`; `web/src/lib` holds the chain, wallet, swap and contract-ABI modules for the live version. |
 | `web/art/factory/` | Source for Cardworks: the page code (`forge/`) and the pipeline that builds the workshop scene's art. |
 | `sim/omni/` | Python models of the card economy (pack supply and pricing, PLANK, PAPER, card burns). |
-| `ops/` | Operations tooling: the PLANK-holder snapshot for a drop's holder window. |
-| `brand/` | Logos and the logo clean-up script. |
+| `ops/` | Operations tooling: the keeper (`ops/keeper`), the deploy recorder (`ops/deploy`), the Series check before lock (`ops/series`, VerifySeries), the full launch rehearsal on a local chain (`ops/rehearsal`, with the testnet kit `DevStack`) and the PLANK-holder snapshot for a drop's holder window (`ops/snapshot`). |
+| `brand/` | Logos and the script that prepares them from `brand/originals`. |
 | `docs/` | Reference documentation (see below). |
 
 **Naming.** The card contracts are named `Fire*` (`FirePacks`, `FireCards`, `FireSale`, `FirePsa`) for historical
@@ -71,7 +71,8 @@ Each folder in `sim/omni` has its model and its recorded output; most also have 
 Deployment is a three-step Foundry runbook (`DeployTwap`, then `DeployInfra`, then `DeployCards`) followed by the
 owner's hardware wallet accepting ownership (`AcceptOwnership`, checked by `VerifyDeploy`) and the keeper going live
 (`ops/keeper`). Each Series is set up in two signings on that device with `ops/series` (VerifySeries) in between, and the whole launch can be rehearsed on a local
-chain (`ops/rehearsal`). See [`docs/deploy.md`](docs/deploy.md). Settings go in
+chain (`ops/rehearsal`) and run on the Robinhood Chain testnet (`DevStack` stand-ins, chain 46630). See
+[`docs/deploy.md`](docs/deploy.md). Settings go in
 `contracts/.env` (copy `contracts/.env.example`). The deployer signs with a Foundry keystore (`--account`), the owner with `--ledger` / `--trezor`; never put
 a private key in a file or on the command line.
 
@@ -86,9 +87,10 @@ The site deploys on Vercel from `main` with Root Directory `web`.
 | [`docs/cards-contracts.md`](docs/cards-contracts.md) | The card contracts: pieces, the open/deal flow, safety properties, deployment wiring |
 | [`docs/card-studio.md`](docs/card-studio.md) | Card rules (pool, pack slots, holo, wear frames) and how the studio builds a Series |
 | [`docs/randomness.md`](docs/randomness.md) | The drand router: request flow, recovery paths, how to verify a number |
-| [`docs/deploy.md`](docs/deploy.md) | Mainnet deploy runbook |
+| [`docs/deploy.md`](docs/deploy.md) | Deploy runbook: mainnet, the local rehearsal and the testnet (46630) |
 | [`docs/addresses.md`](docs/addresses.md) | Robinhood Chain addresses and on-chain findings |
-| [`docs/audit-2026-10.md`](docs/audit-2026-10.md) | Internal security review: findings, fixes and accepted risks |
+| [`docs/audit-2026-10.md`](docs/audit-2026-10.md) | Internal security review (rounds 1–8): findings, fixes and accepted risks |
+| [`docs/review-2026-10.md`](docs/review-2026-10.md) | The owner's strategic review: each decision and its status |
 | [`docs/roadmap.md`](docs/roadmap.md) | Project status and open work before launch |
 
 ## Key properties
