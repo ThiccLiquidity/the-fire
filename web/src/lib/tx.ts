@@ -1,7 +1,14 @@
 // The transaction lifecycle for the live Forge, one step at a time: check the network -> simulate (so a call that
 // would revert never reaches the wallet, and the reason is shown in plain English) -> confirm in the wallet -> wait
 // for the receipt. A sent transaction is kept in localStorage until it lands, so a reload picks it back up
-// (resumePending). Nothing here runs in the demo.
+// (resumePending). This is the only waiting path: everything that sends goes through sendTx. Nothing here runs in
+// the demo.
+//
+// How a saved transaction ends:
+//   success   its receipt (or its speed-up's) succeeded
+//   reverted  its receipt says it failed on chain: the only "failed"
+//   replaced  cancelled or replaced in the wallet: another transaction used its nonce, and it never landed
+// Anything else (the RPC timing out or erroring) leaves it pending and saved: it may still land.
 
 import type { Abi, Address, Hex, TransactionReceipt } from "viem";
 import { explain } from "./errors";
@@ -18,8 +25,11 @@ export const STEP_LABEL: Record<TxStep, string> = {
   done: "Done",
 };
 
+export type TxOutcome = "success" | "reverted" | "replaced";
+
 export type TxCall = { address: Address; abi: Abi; functionName: string; args?: readonly unknown[]; value?: bigint };
 export type PendingTx = {
+  /** The current hash: after a speed-up, the new one. */
   hash: Hex;
   /** What it was, for people: "Buy 3 packs", "Approve 1,250 USDG". */
   label: string;
@@ -27,12 +37,16 @@ export type PendingTx = {
   kind: string;
   chainId: number;
   from: Address;
+  /** The account nonce it was sent with. Once the account's nonce is past it and there's no receipt for it, it was
+   *  replaced. Undefined only while it couldn't be read yet (it's read again on resume). */
+  nonce?: number;
   /** When it was sent (ms). */
   at: number;
 };
 export type TxOptions = {
   label: string;
   kind?: string;
+  /** "pending" comes again with the new hash after a speed-up. */
   onStep?: (step: TxStep, hash?: Hex) => void;
   /** How long to wait for the receipt before handing back a TxStillPending (default 3 minutes). */
   waitMs?: number;
@@ -40,18 +54,20 @@ export type TxOptions = {
 
 /** A failed step, with a plain-English reason. `hash` is set once it was sent. */
 export class TxError extends Error {
-  step: TxStep; hash?: Hex;
-  constructor(message: string, step: TxStep, cause?: unknown, hash?: Hex) {
-    super(message, { cause }); this.name = "TxError"; this.step = step; this.hash = hash;
+  step: TxStep; hash?: Hex; outcome?: TxOutcome;
+  constructor(message: string, step: TxStep, cause?: unknown, hash?: Hex, outcome?: TxOutcome) {
+    super(message, { cause }); this.name = "TxError"; this.step = step; this.hash = hash; this.outcome = outcome;
   }
 }
-/** Sent but not landed yet: it stays saved, and `later` settles when it lands (true = success). */
+/** Sent but not landed yet (the wait timed out, or the RPC didn't answer): it stays saved, and `later` settles with
+ *  its outcome when it lands. `tx` is always the current transaction, so after a speed-up it has the new hash. */
 export class TxStillPending extends Error {
-  tx: PendingTx; later: Promise<boolean>;
-  constructor(tx: PendingTx, later: Promise<boolean>) {
-    super(`Still waiting: ${tx.label}. It's saved, so you can reload safely.`); this.name = "TxStillPending"; this.tx = tx; this.later = later;
+  private ref: Tracked; later: Promise<TxOutcome>;
+  constructor(ref: Tracked, later: Promise<TxOutcome>) {
+    super(`Still waiting: ${ref.tx.label}. It's saved, so you can reload safely.`); this.name = "TxStillPending"; this.ref = ref; this.later = later;
   }
-  get url() { return txUrl(this.tx.hash); }
+  get tx(): PendingTx { return this.ref.tx; }
+  get url() { return txUrl(this.ref.tx.hash); }
 }
 
 // ---------- pending transactions, kept across reloads
@@ -69,34 +85,87 @@ function save(list: PendingTx[]) {
   try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* private mode: it just won't survive a reload */ }
 }
 const remember = (t: PendingTx) => save([...load().filter((x) => x.hash !== t.hash), t]);
-const forget = (hash: Hex) => save(load().filter((x) => x.hash !== hash));
+const forget = (...hashes: Hex[]) => save(load().filter((x) => !hashes.includes(x.hash)));
 
 /** Transactions sent from this browser that haven't landed yet (this chain only; optionally one wallet). */
 export function pendingTxs(from?: Address): PendingTx[] {
   return load().filter((t) => t.chainId === robinhood.id && (!from || t.from.toLowerCase() === from.toLowerCase()));
 }
 
-/** Wait for a hash, following a speed-up (same transaction, new hash) and saving the new hash. ok is false when it
- *  reverted, or was cancelled or replaced by another transaction in the wallet. */
-async function settle(t: PendingTx, timeout?: number): Promise<{ receipt: TransactionReceipt; ok: boolean }> {
-  let cur = t, other = false;
-  const r = await getPublicClient().waitForTransactionReceipt({
-    hash: t.hash, timeout,
-    onReplaced: (rep) => {
-      forget(cur.hash);
-      // a speed-up keeps going under the new hash; a cancel (or another transaction in its place) ends it here
-      if (rep.reason === "repriced") { cur = { ...cur, hash: rep.transaction.hash }; remember(cur); } else other = true;
-    },
-  });
-  forget(cur.hash); forget(t.hash);
-  return { receipt: r, ok: !other && r.status === "success" };
+// ---------- following one transaction
+
+/** One saved transaction being followed: `tx` moves to the new hash on a speed-up (saved, and onHash told). */
+type Tracked = { tx: PendingTx; hashes: Hex[]; onHash?: (hash: Hex) => void };
+const track = (tx: PendingTx, onHash?: (hash: Hex) => void): Tracked => ({ tx, hashes: [tx.hash], onHash });
+function moveTo(ref: Tracked, hash: Hex) {
+  if (hash === ref.tx.hash) return;
+  forget(ref.tx.hash);
+  ref.tx = { ...ref.tx, hash }; ref.hashes.push(hash); remember(ref.tx);
+  ref.onHash?.(hash);
+}
+function end(ref: Tracked, outcome: TxOutcome): TxOutcome { forget(...ref.hashes); return outcome; }
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Its nonce, read from the chain if it wasn't saved (and saved now). */
+async function nonceOf(ref: Tracked): Promise<number | undefined> {
+  if (ref.tx.nonce !== undefined) return ref.tx.nonce;
+  try {
+    const t = await getPublicClient().getTransaction({ hash: ref.tx.hash });
+    ref.tx = { ...ref.tx, nonce: t.nonce }; remember(ref.tx);
+  } catch { /* not seen by this RPC (yet) */ }
+  return ref.tx.nonce;
 }
 
-/** After a reload: wait on every saved transaction; onSettled reports each as it lands. Returns how many there were. */
-export function resumePending(onSettled: (tx: PendingTx, ok: boolean) => void, from?: Address): number {
+/** One look, no waiting: landed (its outcome), replaced (the account's nonce is past it with no receipt), or still
+ *  pending (undefined). RPC errors throw: the caller keeps it pending. */
+async function check(ref: Tracked): Promise<TxOutcome | undefined> {
+  const pub = getPublicClient();
+  const receipt = () => pub.getTransactionReceipt({ hash: ref.tx.hash }).catch((e) => {
+    if ((e as Error)?.name === "TransactionReceiptNotFoundError") return undefined;
+    throw e;
+  });
+  let r = await receipt();
+  if (r) return r.status === "success" ? "success" : "reverted";
+  const nonce = await nonceOf(ref);
+  if (nonce === undefined) return undefined;
+  const next = await pub.getTransactionCount({ address: ref.tx.from, blockTag: "latest" });
+  if (next <= nonce) return undefined;
+  r = await receipt(); // it may have landed between the two reads
+  return r ? (r.status === "success" ? "success" : "reverted") : "replaced";
+}
+
+/** Wait for the receipt, following a speed-up (same transaction, new hash). Throws on timeout or an RPC error: the
+ *  transaction stays saved and pending. */
+async function settle(ref: Tracked, timeout?: number): Promise<{ outcome: TxOutcome; receipt?: TransactionReceipt }> {
+  const now = await check(ref);
+  if (now) return { outcome: end(ref, now) };
+  let replaced = false;
+  const r = await getPublicClient().waitForTransactionReceipt({
+    hash: ref.tx.hash, timeout,
+    onReplaced: (rep) => {
+      // a speed-up keeps going under the new hash; a cancel (or another transaction in its place) ends it
+      if (rep.reason === "repriced") moveTo(ref, rep.transaction.hash); else replaced = true;
+    },
+  });
+  if (!replaced) moveTo(ref, r.transactionHash);
+  return { outcome: end(ref, replaced ? "replaced" : r.status === "success" ? "success" : "reverted"), receipt: r };
+}
+
+/** Keep following it until it lands (or is replaced), however long the RPC takes; errors just mean "try again". */
+async function follow(ref: Tracked): Promise<TxOutcome> {
+  for (let i = 0; ; i++) {
+    try { return (await settle(ref, 10 * 60_000)).outcome; }
+    catch { await wait(Math.min(60_000, 5_000 * 2 ** Math.min(i, 4))); }
+  }
+}
+
+/** After a reload: follow every saved transaction; onSettled reports each as it ends (`tx` has its final hash).
+ *  Returns how many there were. */
+export function resumePending(onSettled: (tx: PendingTx, outcome: TxOutcome) => void, from?: Address): number {
   const list = pendingTxs(from);
   for (const t of list) {
-    settle(t).then((r) => onSettled(t, r.ok), () => { /* dropped or unreachable: try again on the next load */ });
+    const ref = track(t);
+    follow(ref).then((outcome) => onSettled(ref.tx, outcome));
   }
   return list.length;
 }
@@ -104,7 +173,8 @@ export function resumePending(onSettled: (tx: PendingTx, ok: boolean) => void, f
 // ---------- the lifecycle
 
 /** Simulate, send and wait for one contract call. Resolves with the receipt of a successful transaction; throws a
- *  TxError with a plain reason (or TxStillPending if it hasn't landed within waitMs). */
+ *  TxError with a plain reason (reverted, replaced, or a step before sending), or TxStillPending if it hasn't landed
+ *  within waitMs or the RPC couldn't say. */
 export async function sendTx(call: TxCall, opts: TxOptions): Promise<TransactionReceipt> {
   const step = (s: TxStep, hash?: Hex) => opts.onStep?.(s, hash);
   step("check");
@@ -126,22 +196,15 @@ export async function sendTx(call: TxCall, opts: TxOptions): Promise<Transaction
     hash = await wallet.writeContract(request as Parameters<typeof wallet.writeContract>[0]);
   } catch (e) { throw new TxError(explain(e), "confirm", e); }
 
-  const tx: PendingTx = { hash, label: opts.label, kind: opts.kind ?? "tx", chainId: robinhood.id, from, at: Date.now() };
-  remember(tx);
+  const ref = track({ hash, label: opts.label, kind: opts.kind ?? "tx", chainId: robinhood.id, from, at: Date.now() }, (h) => step("pending", h));
+  remember(ref.tx);
   step("pending", hash);
-  let res: { receipt: TransactionReceipt; ok: boolean };
-  try { res = await settle(tx, opts.waitMs ?? 180_000); }
-  catch (e) {
-    if ((e as Error)?.name === "WaitForTransactionReceiptTimeoutError") {
-      throw new TxStillPending(tx, settle(tx).then((r) => r.ok, () => false));
-    }
-    forget(hash);
-    throw new TxError(explain(e), "pending", e, hash);
-  }
-  if (!res.ok) {
-    const why = res.receipt.status === "success" ? "was cancelled or replaced in your wallet" : "failed on the network. Only the network fee was spent";
-    throw new TxError(`${opts.label} ${why}.`, "pending", undefined, hash);
-  }
-  step("done", hash);
-  return res.receipt;
+  void nonceOf(ref); // saved with the transaction, so a reload can tell "replaced" from "still pending"
+  let res: Awaited<ReturnType<typeof settle>>;
+  try { res = await settle(ref, opts.waitMs ?? 180_000); }
+  catch { throw new TxStillPending(ref, follow(ref)); } // a timeout or an RPC error: it may still land
+  if (res.outcome === "replaced") throw new TxError(`${opts.label} was cancelled or replaced in your wallet.`, "pending", undefined, ref.tx.hash, "replaced");
+  if (res.outcome === "reverted") throw new TxError(`${opts.label} failed on the network. Only the network fee was spent.`, "pending", undefined, ref.tx.hash, "reverted");
+  step("done", ref.tx.hash);
+  return res.receipt ?? await pub.getTransactionReceipt({ hash: ref.tx.hash });
 }
