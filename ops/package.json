@@ -1,13 +1,14 @@
 {
   "name": "omni-ops",
   "private": true,
-  "description": "Ops tools: VerifySeries (series/) and the deploy rehearsal (rehearsal/). The keeper (keeper/) and the snapshot (snapshot/) have their own packages.",
+  "description": "Ops tools: VerifySeries (series/), recording a deploy (deploy/) and the deploy rehearsal (rehearsal/). The keeper (keeper/) and the snapshot (snapshot/) have their own packages.",
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
     "verify-series": "node series/verify-series.mjs",
     "rehearse": "node rehearsal/rehearse.mjs",
-    "test": "node --test series/*.test.mjs"
+    "record": "node deploy/record.mjs",
+    "test": "node --test series/*.test.mjs deploy/*.test.mjs"
   },
   "dependencies": { "viem": "^2.56.9" }
 }
