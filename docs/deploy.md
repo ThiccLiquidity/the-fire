@@ -67,7 +67,7 @@ Then `node ..\ops\deploy\record.mjs --rpc $env:RPC`. Uses `PAPER`, `USDG`, `WETH
 contract code at each, PAPER and PLANK are 18 decimals, the ETH/USD feed is 8 and the PLANK feed 18. Deploys `OpenDrandRouter` and `PaperUsdTwap`. Neither has an owner. Both go in the
 deployments file (step 3 reads them from there; `DRAND_ROUTER` and `PAPER_USD_FEED` in `.env` override). `PAPER_USD_FEED` is this `PaperUsdTwap`, never the PAPER pool itself.
 It finds a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool holding at least $10 on its other side (PLANK valued by
-`PLANK_USD_FEED`) and reports its first price about 40 hours after the keeper's first checkpoint (20 hours as
+`PLANK_USD_FEED`) and at least 1,000 PAPER, and reports its first price about 40 hours after the keeper's first checkpoint (20 hours as
 candidate, then one 20-hour window). Until then packs take the set PAPER (no dollar ceiling) and case and grading fees wait in
 `PaperBurner`.
 
@@ -223,14 +223,17 @@ $verify = "--verify", "--verifier", "blockscout", "--verifier-url", "https://exp
    (`cast send <PAPER> "mint(address,uint256)" <to> <wei> --account testnet-deployer --rpc-url $env:RPC`).
 2. **Steps 1–3** exactly as above, with `--account testnet-deployer`, `@verify` in place of the mainnet
    `--verify ...` line, and `OWNER` = the testnet owner. DeployInfra deploys the **real** `OpenDrandRouter` (real drand,
-   no stand-in). Record after each one. Before going further, confirm one live delivery: start the keeper (step 4
-   here), open one pack and check the keeper log shows `fulfillMany success` and `process success` (or the open's
-   `ready` on the explorer).
-3. **Owner accepts** (step 4 above) with the testnet owner, then VerifyDeploy.
+   no stand-in). Record after each one. Every script reads and writes `deployments/46630.json` (the chain's id).
+3. **Owner accepts** (step 4 above: all seven owned contracts, seven confirmations) with the testnet owner, then
+   VerifyDeploy.
 4. **Keepers**: the same Railway setup (`ops/keeper/README.md`) as two more services with `CHAIN_ID=46630`, the testnet
-   RPC and their own testnet wallets (~0.05 test ETH each; separate from the mainnet keeper wallets).
+   RPC and their own testnet wallets (~0.05 test ETH each; separate from the mainnet keeper wallets). Start them right
+   after the PLANK feed (mainnet step 1), as on mainnet.
 5. **Site**: build with `VITE_CHAIN=testnet` (reads `deployments/46630.json`; wallet and explorer switch to the testnet).
-6. **Series**: step 6 as above, with the testnet owner.
+6. **Series**: step 6 as above, with the testnet owner. Then confirm one live drand delivery: buy a few packs, sell the
+   drop out or end it (`endDrop`, once its last timed phase is over; short windows in a testnet sale) so the Series
+   closes, open one pack and check the keeper log shows `fulfillMany success` and
+   `process success` (or the open's `ready` on the explorer). Packs can only be opened once their Series has closed.
 Commit `deployments/46630.json` after VerifyDeploy says no FAIL.
 
 ## Verify a number (anyone)
