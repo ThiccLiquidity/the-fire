@@ -86,6 +86,8 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
   const recipeProblems = useMemo(() => checkRecipe(r), [r])
   const pages = Math.max(1, Math.ceil(deal.characterIds.length / SAMPLE_PAGE))
   const rates = buildRates(s.fires)
+  /** An unfinished "Build all" of this grid, with no asset change since: the next one keeps what it stored. */
+  const resumable = !!fire.buildPending && fire.buildPending.gridKey === gridKey && assetsChanged <= fire.buildPending.startedAt && !abort.current
   const sets = frameSetsOf(r)
 
   // free sample object URLs on unmount
@@ -133,38 +135,61 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
     await updateFire(fire.number, { approvedAt: Date.now() })
   })
 
-  /** The full grid of the recipe: every character x type x holo look x grade state, WEBP only. Rendered on the worker
+  /** The full grid of the recipe: every character x type x holo look x state, WEBP only. Rendered on the worker
    *  pool two at a time; each finished batch goes straight to IndexedDB and is dropped, so memory stays flat however
-   *  big the Series is. */
+   *  big the Series is. A build that stopped (cancel, crash, reload) resumes: the images already stored for the same
+   *  grid key are kept, unless art, layouts or fonts changed since it started. */
   const build = () => run(async () => {
     if (blockers.length) throw new Error(blockers[0])
+    const prefix = `render:${fire.number}:`
+    const p = fire.buildPending
+    const done = !!b && !buildStale && b.count === grid.length
+    if (done && !confirm('Every image is built. Build them all again?')) return
+    const resume = !done && !!p && p.gridKey === gridKey && assetsChanged <= p.startedAt
+    const stored = resume ? new Set(await blobKeys(prefix)) : new Set<string>()
+    const todo = grid.filter((g) => !stored.has(renderKey(fire.number, g.key)))
+    // room for the rest? (the browser's own estimate of what this site may still store)
+    const est = await navigator.storage?.estimate?.().catch(() => undefined)
+    const need = todo.length * rates.bytes
+    if (est?.quota != null && est.usage != null && need > est.quota - est.usage &&
+      !confirm(`The build needs about ${fmtMB(need)}; the browser has about ${fmtMB(Math.max(0, est.quota - est.usage))} left for the studio. Build anyway?`)) return
     const ctrl = new AbortController()
     abort.current = ctrl
-    await deleteBlobsWithPrefix(`render:${fire.number}:`)
-    await updateFire(fire.number, { build: undefined })
-    const t0 = performance.now()
-    let bytes = 0
+    if (!resume) await deleteBlobsWithPrefix(prefix)
+    const pending = resume && p ? { ...p } : { gridKey, startedAt: Date.now(), bytes: 0, ms: 0 }
+    await updateFire(fire.number, { build: undefined, buildPending: pending })
+    let t0 = performance.now()
+    let sinceSave = 0
+    const tally = async (force = false) => {
+      const now = performance.now()
+      pending.ms += now - t0
+      t0 = now
+      if (force || sinceSave >= 200) { sinceSave = 0; await updateFire(fire.number, { buildPending: { ...pending } }) }
+    }
+    const skipped = grid.length - todo.length
     const rr = await BatchRenderer.create(deal.characterIds, true, sets)
     try {
-      await rr.renderAll(grid.map((g) => faceOf(g.card, r)), 'webp', {
+      await rr.renderAll(todo.map((g) => faceOf(g.card, r)), 'webp', {
         batchSize: 2,
         signal: ctrl.signal,
-        onProgress: (p) => setProgress({ ...p, what: `Building ${grid.length.toLocaleString()} images (${deal.characterIds.length} x ${imagesPerCharacter(r)}), WEBP (${rr.mode})` }),
-        onBatch: (_cards, blobs, start) => {
-          for (const bl of blobs) bytes += bl.size
-          return putBlobs(blobs.map((bl, i) => [renderKey(fire.number, grid[start + i].key), bl]))
+        onProgress: (pr) => setProgress({ done: skipped + pr.done, total: grid.length, what: `Building ${grid.length.toLocaleString()} images (${deal.characterIds.length} x ${imagesPerCharacter(r)}), WEBP (${rr.mode})${skipped ? `, ${skipped.toLocaleString()} kept` : ''}` }),
+        onBatch: async (_cards, blobs, start) => {
+          for (const bl of blobs) pending.bytes += bl.size
+          await putBlobs(blobs.map((bl, i) => [renderKey(fire.number, todo[start + i].key), bl]))
+          sinceSave += blobs.length
+          await tally()
         },
       })
     } finally {
       rr.dispose()
       setProgress(null)
       abort.current = null
+      await tally(true)
     }
-    const have = new Set(await blobKeys(`render:${fire.number}:`))
+    const have = new Set(await blobKeys(prefix))
     const count = grid.filter((g) => have.has(renderKey(fire.number, g.key))).length
-    const ms = performance.now() - t0
-    await updateFire(fire.number, { build: { format: 'webp', count, builtAt: Date.now(), grid: BUILD_GRID_VERSION, bytes, ms, gridKey } })
-    console.info(`Card Studio: built ${count} images (${fmtMB(bytes)}) in ${(ms / 1000).toFixed(1)}s`)
+    await updateFire(fire.number, { build: { format: 'webp', count, builtAt: pending.startedAt, grid: BUILD_GRID_VERSION, bytes: pending.bytes, ms: pending.ms, gridKey }, buildPending: undefined })
+    console.info(`Card Studio: built ${count} images (${fmtMB(pending.bytes)}) in ${(pending.ms / 1000).toFixed(1)}s`)
   })
 
   const openSample = (x: Sample) => x.url && setBig({
@@ -211,17 +236,17 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
 
       <h3>2. Build the images: the full grid of this recipe ({grid.length.toLocaleString()} = {deal.characterIds.length.toLocaleString()} character{deal.characterIds.length === 1 ? '' : 's'} x {imagesPerCharacter(r)})</h3>
       <p className="muted small">
-        Every character x card type x the holo looks that type can have x grade state (ungraded and PDA 1-10, each with its
-        wear frame and seal number): {r.types.map((t, i) => `${t.name} ${holoLooksFor(r, i).length}`).join(', ')} looks, x 11 = {imagesPerCharacter(r)} images per
+        Every character x card type x the holo looks that type can have x {STATES.length} states (ungraded, cased, PDA 1-10
+        slabbed): {r.types.map((t, i) => `${t.name} ${holoLooksFor(r, i).length}`).join(', ')} looks, x {STATES.length} = {imagesPerCharacter(r)} images per
         character, whatever the sample deal dealt (grades are revealed on-chain later, so every card's image must already be in
-        the folder). WEBP only (q 0.92), named c&lt;character&gt;-&lt;type slug&gt;-&lt;holo&gt;-&lt;grade&gt;.webp as the card contract expects.
+        the folder). WEBP only (q 0.92), named c&lt;character&gt;-&lt;type slug&gt;-&lt;holo&gt;-&lt;state&gt;.webp as the card contract expects.
       </p>
       <p className="small" data-testid="build-estimate">
         Estimate: <b>{grid.length.toLocaleString()} images</b>, about <b>{fmtMB(grid.length * rates.bytes)}</b> and <b>{fmtTime(grid.length * rates.ms)}</b>
         <span className="muted"> ({rates.measured ? 'from earlier builds on this machine' : 'a first guess: ~450 KB and ~0.15 s per image; refined after the first build'}). Stored in this browser; keep enough disk free.</span>
       </p>
       <div className="row wrap">
-        <button className="primary" onClick={build} disabled={busy || blockers.length > 0} data-testid="build-all">Build all {grid.length.toLocaleString()} images</button>
+        <button className="primary" onClick={build} disabled={busy || blockers.length > 0} data-testid="build-all">{resumable ? `Resume build (${grid.length.toLocaleString()} images)` : `Build all ${grid.length.toLocaleString()} images`}</button>
         {abort.current && <button onClick={() => abort.current?.abort()} data-testid="cancel-build">Cancel</button>}
         {b && (
           <span className={`badge ${buildStale ? 'badge-warn' : 'badge-ok'}`} data-testid="build-status">

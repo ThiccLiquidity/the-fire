@@ -30,11 +30,13 @@ describe('SigV4 (AWS published examples)', () => {
 })
 
 /** A fake Filebase S3 endpoint: multipart uploads with `x-amz-meta-import: car`, ListParts, and the CID header. */
-function fakeFilebase(root: string, opts: { failPart?: number } = {}) {
+function fakeFilebase(root: string, opts: { failPart?: number; cidLate?: number } = {}) {
   const uploads = new Map<string, { key: string; parts: Map<number, Uint8Array>; car: boolean }>()
   const objects = new Map<string, { bytes: Uint8Array; cid?: string }>()
   let failPart = opts.failPart ?? 0
   let puts = 0
+  let cidLate = opts.cidLate ?? 0
+  let starts = 0
   const fetchFn = (async (input: string, init: RequestInit) => {
     const url = new URL(input)
     const h = new Headers(init.headers)
@@ -48,10 +50,11 @@ function fakeFilebase(root: string, opts: { failPart?: number } = {}) {
     if (init.method === 'HEAD' && !key) return new Response(null, { status: 200 })
     if (init.method === 'HEAD') {
       const o = objects.get(key)
+      if (o?.cid && cidLate > 0) { cidLate--; return new Response(null, { status: 200 }) }
       return o ? new Response(null, { status: 200, headers: o.cid ? { 'x-amz-meta-cid': o.cid } : {} }) : new Response(null, { status: 404 })
     }
     if (init.method === 'POST' && q.has('uploads')) {
-      const id = `up${uploads.size + 1}`
+      const id = `up${++starts}`
       uploads.set(id, { key, parts: new Map(), car: h.get('x-amz-meta-import') === 'car' })
       return new Response(`<InitiateMultipartUploadResult><UploadId>${id}</UploadId></InitiateMultipartUploadResult>`, { status: 200 })
     }
@@ -78,7 +81,7 @@ function fakeFilebase(root: string, opts: { failPart?: number } = {}) {
     }
     throw new Error(`unexpected ${init.method} ${input}`)
   }) as unknown as typeof fetch
-  return { fetchFn, objects, uploads }
+  return { fetchFn, objects, uploads, starts: () => starts }
 }
 
 describe('Filebase (S3 CAR import) against a fake endpoint', () => {
@@ -107,6 +110,33 @@ describe('Filebase (S3 CAR import) against a fake endpoint', () => {
       const before = fake.uploads.size
       expect(await pinOnFilebase(t, up, () => {}, () => {})).toBe(car.root)
       expect(fake.uploads.size).toBe(before)
+    } finally {
+      globalThis.fetch = real
+      clearFilebaseKey()
+    }
+  })
+
+  it('waits for a CID that is slow to show, without uploading again', async () => {
+    const car = await planCar(files)
+    const fake = fakeFilebase(car.root, { cidLate: 4 })
+    const real = globalThis.fetch
+    globalThis.fetch = fake.fetchFn
+    try {
+      setFilebaseKey({ accessKeyId: 'AK', secretAccessKey: 'SECRET', bucket: 'omni-images' })
+      const waits: number[] = []
+      const t = filebaseTransport(10_000, 'https://s3.example', [1, 2, 3, 4, 5], async (ms) => { waits.push(ms) })
+      const statuses: string[] = []
+      const up: FilebaseCar = { name: 'slow', root: car.root, size: car.size, bytes: (from) => carBytes(files, car.root, from), onResumeId: async () => {} }
+      expect(await pinOnFilebase(t, up, (s) => statuses.push(s), () => {})).toBe(car.root)
+      expect(waits).toEqual([1, 2, 3, 4])
+      expect(fake.starts()).toBe(1)
+      expect(statuses.some((s) => /waiting for it to report the CID/.test(s))).toBe(true)
+      // never shows: a clear error, still one upload
+      const never = fakeFilebase(car.root, { cidLate: 1_000 })
+      globalThis.fetch = never.fetchFn
+      const t2 = filebaseTransport(10_000, 'https://s3.example', [1, 2], async () => {})
+      await expect(pinOnFilebase(t2, up, () => {}, () => {})).rejects.toThrow(/reported no CID/)
+      expect(never.starts()).toBe(1)
     } finally {
       globalThis.fetch = real
       clearFilebaseKey()

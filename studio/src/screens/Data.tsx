@@ -3,7 +3,7 @@ import { exportLibrary, importLibrary } from '../backup'
 import { DropZone, Notice, NumberInput, ProgressBar, useAction } from '../components'
 import { requestPersistence } from '../db'
 import { setMockFailNext, setMockPinata, useDevFlags } from '../devFlags'
-import { downloadBlob } from '../files'
+import { canSaveToFile, downloadBlob, pickSaveFile } from '../files'
 import { loadSampleAssets } from '../sample'
 import { isReady, useStudio } from '../store'
 
@@ -16,18 +16,24 @@ export function Data() {
   const [failN, setFailN] = useState(3)
 
   const doExport = () => run(async () => {
-    setStatus('Packing library...')
-    const blob = await exportLibrary((d, t) => setProgress(d / Math.max(1, t)))
     const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')
-    downloadBlob(blob, `card-studio-backup-${stamp}.zip`)
-    setProgress(null)
-    setStatus(`Backup downloaded (${(blob.size / 1e6).toFixed(1)} MB).`)
+    const name = `card-studio-backup-${stamp}.zip`
+    // straight to a file where the browser can (Chrome, Edge): a big library never sits in memory
+    const sink = canSaveToFile() ? await pickSaveFile(name, 'Card Studio backup', { 'application/zip': ['.zip'] }) : undefined
+    setStatus('Packing library...')
+    try {
+      const blob = await exportLibrary((d, t) => setProgress(d / Math.max(1, t)), sink)
+      if (blob) downloadBlob(blob, name)
+      setStatus(blob ? `Backup downloaded (${(blob.size / 1e6).toFixed(1)} MB).` : `Backup saved (${name}).`)
+    } finally {
+      setProgress(null)
+    }
   })
 
   const doImport = (files: File[]) => run(async () => {
     if (!confirm('Import replaces EVERYTHING in this Card Studio (library, frames, layouts, fonts, Series, serial counter) with the backup. Continue?')) return
     setStatus('Importing...')
-    const r = await importLibrary(files[0])
+    const r = await importLibrary(files[0], (d, t) => setProgress(d / Math.max(1, t))).finally(() => setProgress(null))
     setStatus(`Imported ${r.records} records and ${r.files} files. Rebuild cards for any Series you still need to export.`)
   })
 

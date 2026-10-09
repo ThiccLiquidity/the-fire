@@ -1,5 +1,5 @@
 /** Text that goes on-chain with a Series (character names and categories) follows the contract's rules
- *  (FireCards._checkText): no double quote, backslash or control character (it goes into the token's JSON as-is), plus
+ *  (RecipeCompiler._checkText): no double quote, backslash or control character (below 0x20, or DEL) (it goes into the token's JSON as-is), plus
  *  a length limit in bytes of UTF-8. textProblem checks both; nameProblem and categoryProblem use it.
  *
  *  A character's category is free text, typed per character in the Library. There is no preset list: the
@@ -16,13 +16,13 @@ export const MAX_CATEGORY_BYTES = 32
 export const MAX_NAME_BYTES = 64
 
 /** Why `s` can't go on-chain, or null if it can: empty (`emptyMessage`), over `maxBytes` bytes of UTF-8, or holding a
- *  double quote, backslash or control character (below 0x20), like the contract's _checkText. */
+ *  double quote, backslash or control character (below 0x20, or DEL 0x7f), like the contract's _checkText. */
 export function textProblem(s: string, maxBytes: number, emptyMessage: string): string | null {
   if (!s) return emptyMessage
   const bytes = new TextEncoder().encode(s).length
   if (bytes > maxBytes) return `Too long: ${bytes} bytes, at most ${maxBytes} (letters like é count as 2).`
   if (/["\\]/.test(s)) return 'No double quotes or backslashes.'
-  if (/[\u0000-\u001f]/.test(s)) return 'No control characters.'
+  if (/[\u0000-\u001f\u007f]/.test(s)) return 'No control characters.'
   return null
 }
 

@@ -9,6 +9,7 @@ import {
 } from '../recipe'
 import { countForShare, seriesResult, shareForCount, type TypeResult } from '../rarity'
 import { HOLO_LABEL, HOLO_TYPES } from '../rules'
+import { CARDS_PER_CREDIT } from '../sale'
 import { updateFire, useStudio } from '../store'
 import type { FireRecord } from '../types'
 import { SeriesResult } from './SeriesResult'
@@ -101,11 +102,14 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
   useEffect(() => setCharsText(String(Math.max(1, fire.characterIds.length))), [fire.characterIds.length])
   const P = parseUint(packsText)
   const chars = Number(parseUint(charsText) ?? 1n) || 1
-  const N = P == null ? null : P * BigInt(perPack)
+  // the type cards always show the Series' own numbers (the what-if above is only for the result table)
+  const ownPacks = BigInt(Math.max(0, fire.packs))
+  const ownChars = Math.max(1, fire.characterIds.length)
+  const N = ownPacks > 0n ? ownPacks * BigInt(perPack) : null
   const res = useMemo(() => {
-    if (!valid || P == null) return null
-    try { return seriesResult(r, P, chars) } catch { return null }
-  }, [r, P, chars, valid])
+    if (!valid) return null
+    try { return seriesResult(r, ownPacks, ownChars) } catch { return null }
+  }, [r, ownPacks, ownChars, valid])
 
   return (
     <section className="panel grow recipe" data-testid="recipe-editor">
@@ -115,6 +119,7 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
         <span className="badge big">{r.types.length} type{r.types.length === 1 ? '' : 's'}</span>
         <span className={`badge big ${valid ? 'badge-ok' : 'badge-warn'}`} data-testid="recipe-status">{valid ? 'valid' : `${problems.length} problem${problems.length === 1 ? '' : 's'}`}</span>
       </div>
+      {perPack >= CARDS_PER_CREDIT && <Notice kind="warn"><span data-testid="recipe-credit-off">Packs of {CARDS_PER_CREDIT}+ cards: free-pack credits can't be spent on this Series.</span></Notice>}
       {locked && <Notice kind="info">The deal for this Series is locked, so its recipe is too. (Undo the lock on the Deal tab to change it.)</Notice>}
       <p className="muted small">The card types, how many of each, holo and the pack. Locks with the Series' first pack. Checks are the contract's.</p>
       {!locked && (
@@ -164,7 +169,7 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       </p>
       <div className="type-list">
         {r.types.map((t, i) => (
-          <TypeCard key={t.id} r={r} t={t} i={i} locked={locked} problems={typeProblems(i)} n={N} result={res?.types[i] ?? null}
+          <TypeCard key={t.id} r={r} t={t} i={i} locked={locked} problems={typeProblems(i)} n={N} packs={ownPacks} result={res?.types[i] ?? null}
             onChange={(patch) => setType(i, patch)}
             onMove={(d) => set({ ...r, types: move(r.types, i, d) })}
             onRemove={() => removeType(i)} />
@@ -233,10 +238,10 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
   )
 }
 
-function TypeCard({ r, t, i, locked, problems, n, result, onChange, onMove, onRemove }: {
+function TypeCard({ r, t, i, locked, problems, n, packs, result, onChange, onMove, onRemove }: {
   r: Recipe; t: CardTypeDef; i: number; locked: boolean; problems: Problem[]
-  /** The Series' cards in all (for percent <-> cards), and what this type makes. */
-  n: bigint | null; result: TypeResult | null
+  /** The Series' cards in all (for percent <-> cards), its packs (for the max per pack), and what this type makes. */
+  n: bigint | null; packs: bigint; result: TypeResult | null
   onChange: (p: Partial<CardTypeDef>) => void; onMove: (d: number) => void; onRemove: () => void
 }) {
   const looks = holoLooksFor(r, i)
@@ -246,6 +251,9 @@ function TypeCard({ r, t, i, locked, problems, n, result, onChange, onMove, onRe
   const setName = (name: string) => onChange(t.slugEdited ? { name } : { name, slug: uniqueSlug(slugify(name), r, t.id) })
   const setHolo = (holo: HoloRule) => onChange({ holo })
   const amount = parseUint(t.amount) ?? 0n
+  // the cap over the Series (max per pack x packs), as the contract applies it: the "= cards" fields match "Makes"
+  const capPer = parseUint(t.maxPerPack) ?? 0n
+  const capped = (c: bigint) => (capPer > 0n && c > capPer * packs ? capPer * packs : c)
   return (
     <div className={`type-card ${problems.length ? 'has-problem' : ''}`} data-testid={`type-${i}`}>
       <div className="type-main">
@@ -275,13 +283,13 @@ function TypeCard({ r, t, i, locked, problems, n, result, onChange, onMove, onRe
           {t.supply === 'share' ? (
             <span className="twin">
               <PercentInput value={amount} scale={SHARE_SCALE} disabled={locked} onChange={(v) => onChange({ amount: v.toString() })} testId={`type-${i}-amount`} />
-              <CardsInput n={n} value={n ? countForShare(amount, n) : null} disabled={locked} testId={`type-${i}-cards`}
+              <CardsInput n={n} value={n ? capped(countForShare(amount, n)) : null} disabled={locked} testId={`type-${i}-cards`}
                 onChange={(c) => { const s = n ? shareForCount(c, n) : null; if (s) onChange({ amount: s.share.toString() }) }} />
             </span>
           ) : t.supply === 'count' ? (
             <span className="twin">
               <UintInput value={t.amount} disabled={locked} onChange={(v) => onChange({ amount: v })} testId={`type-${i}-amount`} />
-              <SharePercent n={n} count={amount} disabled={locked} testId={`type-${i}-pct`}
+              <SharePercent n={n} count={capped(amount)} disabled={locked} testId={`type-${i}-pct`}
                 onChange={(share) => n && onChange({ amount: countForShare(share, n).toString() })} />
             </span>
           ) : t.supply === 'filler' ? <span className="muted small pad">whatever is left</span>

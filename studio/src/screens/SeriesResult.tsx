@@ -102,7 +102,7 @@ export function SeriesResult({ recipe, packs, chars, compact }: { recipe: Recipe
                     {perPack ? <>
                       <b>{pct(perPack.atLeastOne[i])}</b>
                       {perPack.twoOrMore[i] > 0.0005 && <div className="muted small">2+: {pct(perPack.twoOrMore[i])}</div>}
-                    </> : <span className="muted">-</span>}
+                    </> : <span className="muted" title={N > 600_000n ? 'Too big to test-deal here (over 600,000 cards).' : undefined}>-</span>}
                   </td>
                 </tr>
               )

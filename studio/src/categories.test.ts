@@ -60,7 +60,8 @@ describe('categories', () => {
     expect(nameProblem('tab\there')).toMatch(/control/)
     expect(nameProblem('line\nbreak')).toMatch(/control/)
     expect(nameProblem('\u001f')).toMatch(/control/)
-    expect(nameProblem('del\u007f ok')).toBeNull() // the contract only rejects bytes below 0x20
+    expect(nameProblem('del\u007f')).toMatch(/control/)
+    expect(categoryProblem('del\u007f')).toMatch(/control/)
     expect(normalizeName('  Rabbit ')).toBe('Rabbit')
     expect(hasValidName({ name: '  ' })).toBe(false)
     expect(hasValidName({ name: ' Fox ' })).toBe(true)

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { compileRecipe, legacyDiamondRecipe, previewPool } from './recipe'
 import { migrateFire, needsMigration } from './migrate'
+import { creditPacksMax, saleOf, standardSale } from './sale'
 import type { FireRecord } from './types'
 
 /** A Series as saved before recipes: Diamonds on the record, a locked deal stored by material. */
@@ -59,5 +60,42 @@ describe('old saves and backups', () => {
   it('a missing Diamond setting reads as 1', () => {
     const { diamonds: _d, deal: _deal, ...noDiamonds } = oldFire
     expect(migrateFire(noDiamonds).recipe).toEqual(legacyDiamondRecipe(1))
+  })
+
+  it('a free-pack cap saved as packs becomes a percent of that drop (no cap stays no cap)', () => {
+    const base = migrateFire(oldFire)
+    const { creditPacksPercent: _p, creditPacksPerWallet: _w, ...rest } = standardSale()
+    const old = (max: number, perWallet: number, paidPacks = 117, pressPacks = 50) => ({ ...base, sale: { ...rest, paidPacks, pressPacks, creditPacksMax: max, creditPacksPerWallet: perWallet } })
+    expect(needsMigration(old(16, 0))).toBe(true)
+    const m = migrateFire(old(16, 0))
+    expect(m.sale!.creditPacksPercent).toBe('10.17')
+    expect(creditPacksMax(saleOf(m))).toBe(16)
+    expect(m.sale!.creditPacksPerWallet).toBe(0) // 0 = no limit, kept
+    expect('creditPacksMax' in m.sale!).toBe(false)
+    expect(needsMigration(m)).toBe(false)
+    expect(migrateFire(old(0, 3)).sale).toMatchObject({ creditPacksPercent: '0', creditPacksPerWallet: 3 })
+    for (const [max, paid] of [[1, 9_999], [7, 3], [333, 1_000_000], [1_000, 9_000]]) {
+      // the nearest 0.01% at or under the old cap (exact up to 10,000 packs)
+      const cap = creditPacksMax(saleOf(migrateFire(old(max, 0, paid, 0))))
+      expect(cap).toBeLessThanOrEqual(Math.min(max, paid))
+      expect(cap).toBeGreaterThan(Math.min(max, paid) - Math.max(1, paid / 10_000))
+    }
+  })
+
+  it('an open Series takes its packs from the sale; one with no sale keeps its packs', () => {
+    const { deal: _deal, ...open } = migrateFire(oldFire)
+    const noSale = { ...open, packs: 1_000, sale: undefined }
+    expect(needsMigration(noSale)).toBe(true)
+    const m = migrateFire(noSale)
+    expect(m.packs).toBe(1_000)
+    expect(m.sale).toMatchObject({ paidPacks: 950, pressPacks: 50, plankOnly: 50 })
+    expect(needsMigration(m)).toBe(false)
+    const off = migrateFire({ ...open, packs: 150, sale: standardSale() })
+    expect(off.packs).toBe(167)
+    expect(migrateFire({ ...open, packs: 10, sale: undefined }).sale).toMatchObject({ paidPacks: 0, pressPacks: 10, plankOnly: 0 })
+    // a locked deal keeps its packs (the Export checklist flags a sale that disagrees)
+    const locked = migrateFire(oldFire)
+    expect(locked.packs).toBe(2)
+    expect(needsMigration(locked)).toBe(false)
   })
 })
