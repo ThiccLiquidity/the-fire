@@ -1,17 +1,36 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-// Stand-ins for a local rehearsal on plain anvil (ops/rehearsal), where Robinhood Chain's tokens, pools, Chainlink
-// and drand aren't there. NEVER deployed to a real chain: DevStack.s.sol refuses chain 4663.
+// Stand-ins for Robinhood Chain's tokens, pools, Chainlink and Paper Press where they don't exist: the local
+// rehearsal on plain anvil (ops/rehearsal) and the testnet (46630), both deployed by DevStack.s.sol. NEVER on mainnet:
+// DevStack.s.sol refuses chain 4663.
+//
+// On a public testnet anyone can call anything, so every setter (mint, set, setReserves, setFail, createPair) is the
+// deployer's only: a stranger can't break the testnet's prices or pools. DevRouter may mint (it pays out swaps).
 
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 
-/// Mintable ERC-20 with chosen decimals (PAPER, PLANK, USDG, WETH stand-ins).
-contract DevToken is ERC20 {
-    uint8 private immutable DEC;
+/// The deployer, and only the deployer, can change a stand-in.
+abstract contract DevOwned {
+    address public immutable owner;
 
-    constructor(string memory n, string memory s, uint8 d) ERC20(n, s) {
+    constructor(address o) {
+        owner = o;
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "dev: owner only");
+        _;
+    }
+}
+
+/// ERC-20 with chosen decimals (PAPER, PLANK, USDG, WETH stand-ins). The owner mints, and lets DevRouter mint.
+contract DevToken is ERC20, DevOwned {
+    uint8 private immutable DEC;
+    mapping(address => bool) public minter;
+
+    constructor(string memory n, string memory s, uint8 d) ERC20(n, s) DevOwned(msg.sender) {
         DEC = d;
     }
 
@@ -19,23 +38,27 @@ contract DevToken is ERC20 {
         return DEC;
     }
 
+    function setMinter(address m, bool on) external onlyOwner {
+        minter[m] = on;
+    }
+
     function mint(address to, uint256 amount) external {
+        require(msg.sender == owner || minter[msg.sender], "dev: owner only");
         _mint(to, amount);
     }
 }
 
-/// Chainlink-style ETH/USD feed (8 decimals). set() is what a Chainlink update would do.
-contract DevFeed {
+/// Chainlink-style ETH/USD feed (8 decimals). Never stale: `updatedAt` is always now (a testnet has no Chainlink
+/// updates and no keeper for this), so the PLANK and PAPER feeds keep pricing. set() changes the price (owner only).
+contract DevFeed is DevOwned {
     int256 public answer;
-    uint256 public updatedAt;
 
-    constructor(int256 a) {
-        set(a);
+    constructor(int256 a) DevOwned(msg.sender) {
+        answer = a;
     }
 
-    function set(int256 a) public {
+    function set(int256 a) external onlyOwner {
         answer = a;
-        updatedAt = block.timestamp;
     }
 
     function decimals() external pure returns (uint8) {
@@ -43,12 +66,12 @@ contract DevFeed {
     }
 
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
-        return (1, answer, updatedAt, updatedAt, 1);
+        return (1, answer, block.timestamp, block.timestamp, 1);
     }
 }
 
 /// Uniswap V2 pair stand-in: fixed reserves, real cumulative-price bookkeeping (what the TWAP feeds read).
-contract DevPair {
+contract DevPair is DevOwned {
     address public token0;
     address public token1;
     uint112 private reserve0;
@@ -57,7 +80,7 @@ contract DevPair {
     uint256 public price0CumulativeLast;
     uint256 public price1CumulativeLast;
 
-    constructor(address a, address b) {
+    constructor(address a, address b, address o) DevOwned(o) {
         (token0, token1) = a < b ? (a, b) : (b, a);
     }
 
@@ -66,7 +89,7 @@ contract DevPair {
     }
 
     /// Set the reserves of `tokenA`/`tokenB` (any order), accruing the cumulative prices up to now first.
-    function setReserves(address tokenA, uint112 a, uint112 b) external {
+    function setReserves(address tokenA, uint112 a, uint112 b) external onlyOwner {
         (uint112 r0, uint112 r1) = tokenA == token0 ? (a, b) : (b, a);
         _update();
         reserve0 = r0;
@@ -86,30 +109,33 @@ contract DevPair {
     }
 }
 
-contract DevFactory {
+contract DevFactory is DevOwned {
     mapping(address => mapping(address => address)) public getPair;
 
-    function createPair(address a, address b) external returns (address p) {
+    constructor() DevOwned(msg.sender) {}
+
+    function createPair(address a, address b) external onlyOwner returns (address p) {
         require(getPair[a][b] == address(0), "exists");
-        p = address(new DevPair(a, b));
+        p = address(new DevPair(a, b, owner));
         getPair[a][b] = p;
         getPair[b][a] = p;
     }
 }
 
 /// Uniswap V2 router stand-in: quotes from the pairs' reserves (0.3% fee); a swap mints the output token at that quote
-/// (the reserves don't move). `setFail` makes every swap revert (to show a burn share waiting in PlankBurner).
-contract DevRouter {
+/// (the reserves don't move), so it needs to be a minter of the tokens. `setFail` makes every swap revert (to show a
+/// burn share waiting in PlankBurner). On the testnet, swapping test ETH for PAPER here is how a tester gets PAPER.
+contract DevRouter is DevOwned {
     address public immutable WETH;
     address public immutable factory;
     bool public fail;
 
-    constructor(address weth, address f) {
+    constructor(address weth, address f) DevOwned(msg.sender) {
         WETH = weth;
         factory = f;
     }
 
-    function setFail(bool f) external {
+    function setFail(bool f) external onlyOwner {
         fail = f;
     }
 
@@ -153,12 +179,12 @@ contract DevRouter {
 }
 
 /// Paper Press stand-in (FireSale only needs an ERC-721 for press packs).
-contract DevPress is ERC721 {
+contract DevPress is ERC721, DevOwned {
     uint256 public next = 1;
 
-    constructor() ERC721("Paper Press (dev)", "MILL") {}
+    constructor() ERC721("Paper Press (dev)", "MILL") DevOwned(msg.sender) {}
 
-    function mint(address to) external returns (uint256 id) {
+    function mint(address to) external onlyOwner returns (uint256 id) {
         id = next++;
         _mint(to, id);
     }
@@ -242,5 +268,46 @@ contract DevDrandRouter {
         (bool ok,) = r.consumer.call{gas: gas}(abi.encodeCall(IDevConsumer.rawFulfillRandomness, (id, r.randomWord)));
         r.delivered = ok;
         emit CallbackAttempted(id, ok);
+    }
+}
+
+/// Multicall3's aggregate3 (what viem batches reads through), for a local chain that lacks Multicall3: the rehearsal
+/// copies this code to Multicall3's usual address so the keeper's batched reads run there as on a real chain.
+contract DevMulticall3 {
+    struct Call3 {
+        address target;
+        bool allowFailure;
+        bytes callData;
+    }
+
+    struct Result {
+        bool success;
+        bytes returnData;
+    }
+
+    function aggregate3(Call3[] calldata calls) external payable returns (Result[] memory r) {
+        r = new Result[](calls.length);
+        for (uint256 i; i < calls.length; i++) {
+            (bool ok, bytes memory data) = calls[i].target.call(calls[i].callData);
+            require(ok || calls[i].allowFailure, "Multicall3: call failed");
+            r[i] = Result(ok, data);
+        }
+    }
+
+    /// viem batches getBalance through this
+    function getEthBalance(address a) external view returns (uint256) {
+        return a.balance;
+    }
+
+    function getBlockNumber() external view returns (uint256) {
+        return block.number;
+    }
+
+    function getCurrentBlockTimestamp() external view returns (uint256) {
+        return block.timestamp;
+    }
+
+    function getChainId() external view returns (uint256) {
+        return block.chainid;
     }
 }
