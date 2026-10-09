@@ -6,7 +6,9 @@
 //     fixed fresh PDA odds are the published ones (docs/grading.md)
 //   - imagesBase is ipfs://<CID>/ (a real CID, ending in /)
 //   - every image the contract can ever point a card at (CardsRenderer.imageName for each character x card type x holo
-//     look its odds and slots allow x 12 states) loads through at least two IPFS gateways (HEAD, or a 1-byte GET)
+//     look its odds and slots allow x 12 states) loads through at least two IPFS gateways (HEAD, or a 1-byte GET);
+//     a gateway missing some is a warning as long as each image still loads from two others. Each gateway gets its
+//     own few connections at a time, and a 429 (or 503) slows that gateway down for its Retry-After
 //   - the images folder's manifest.json (written by the studio) lists them all and names this recipe
 //   - with --snapshot, the holder Merkle root recomputed from the snapshot file equals the one batch B will set
 // It prints one line per check and GREEN or RED. Only sign batch B when it's GREEN.
@@ -17,7 +19,8 @@
 //
 // Options: --gateways <url>,<url> (default ipfs.io, dweb.link, Pinata's and Filebase's public gateways; each URL is
 //   followed by <CID>/<file>), --holder-root 0x... (else HOLDER_ROOT, else the JSON's sale.holderRoot),
-//   --sample N (check only N random images: a quick look, never GREEN), --concurrency 24, --report out.json.
+//   --sample N (check only N random images: a quick look, never GREEN), --concurrency 6 (per gateway),
+//   --min-gateways 2, --report out.json.
 // Addresses come from deployments/<chainId>.json (DEPLOYMENTS_FILE to use another file).
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -96,16 +99,42 @@ export function recipeHash(j) {
   return createHash("sha256").update(JSON.stringify({ fire: j.fire, types: j.types, slots: j.slots, characters: j.characters })).digest("hex");
 }
 
-/** HEAD (falling back to a 1-byte GET when a gateway refuses HEAD) with retries. */
-async function loads(url, fetchFn, timeoutMs = 20_000, tries = 3) {
-  for (let i = 0; i < tries; i++) {
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+/** Seconds to wait from a Retry-After header (seconds or an HTTP date), else undefined. */
+export function retryAfterMs(header, now = Date.now()) {
+  if (!header) return undefined;
+  const n = Number(header);
+  if (Number.isFinite(n)) return Math.max(0, n * 1000);
+  const t = Date.parse(header);
+  return Number.isNaN(t) ? undefined : Math.max(0, t - now);
+}
+
+/**
+ * HEAD (falling back to a 1-byte GET when a gateway refuses HEAD) with retries. `gw` is shared by every request to
+ * one gateway: a 429 or 503 pauses that whole gateway for its Retry-After (else a growing backoff), and those waits
+ * don't use up the tries.
+ */
+export async function loads(url, fetchFn, gw = { pauseUntil: 0, throttled: 0 }, { timeoutMs = 20_000, tries = 3, maxThrottle = 8, sleepFn = sleep } = {}) {
+  let throttles = 0;
+  for (let i = 0; i < tries; ) {
+    const wait = gw.pauseUntil - Date.now();
+    if (wait > 0) await sleepFn(wait);
     try {
       let r = await fetchFn(url, { method: "HEAD", signal: AbortSignal.timeout(timeoutMs) });
       if (r.status === 405 || r.status === 501) r = await fetchFn(url, { headers: { Range: "bytes=0-0" }, signal: AbortSignal.timeout(timeoutMs) });
       if (r.ok || r.status === 206) return true;
       if (r.status === 404 || r.status === 410) return false;
+      if ((r.status === 429 || r.status === 503) && throttles < maxThrottle) {
+        throttles++;
+        gw.throttled++;
+        const ms = Math.min(retryAfterMs(r.headers?.get?.("retry-after")) ?? 1000 * 2 ** throttles, 60_000);
+        gw.pauseUntil = Math.max(gw.pauseUntil, Date.now() + ms);
+        continue;
+      }
     } catch { /* retry */ }
-    await new Promise((res) => setTimeout(res, 500 * 2 ** i));
+    i++;
+    if (i < tries) await sleepFn(500 * 2 ** i);
   }
   return false;
 }
@@ -128,6 +157,8 @@ export async function verifySeries(opts) {
   const problems = [];
   const ok = (cond, text) => { const l = `${cond ? "OK  " : "FAIL"}  ${text}`; lines.push(l); log(l); if (!cond) problems.push(text); return cond; };
   const info = (text) => { const l = `INFO  ${text}`; lines.push(l); log(l); };
+  const warnings = [];
+  const warn = (text) => { const l = `WARN  ${text}`; lines.push(l); log(l); warnings.push(text); };
 
   const client = opts.client ?? createPublicClient({ transport: http(opts.rpc) });
   const chainId = await client.getChainId();
@@ -218,7 +249,7 @@ export async function verifySeries(opts) {
 
   // ---- manifest.json and the gateways
   const gateways = opts.gateways ?? DEFAULT_GATEWAYS;
-  ok(gateways.length >= 2, `${gateways.length} gateways (at least 2)`);
+  ok(gateways.length >= (opts.minGateways ?? 2), `${gateways.length} gateways (at least ${opts.minGateways ?? 2})`);
   if (cid) {
     let manifest;
     for (const g of gateways) {
@@ -237,13 +268,24 @@ export async function verifySeries(opts) {
     }
     let list = names;
     if (opts.sample) list = [...names].sort(() => Math.random() - 0.5).slice(0, opts.sample);
+    const need = opts.minGateways ?? 2;
     const failed = new Map(gateways.map((g) => [g, []]));
+    const loadsFrom = new Map(list.map((name) => [name, 0]));
+    const state = new Map(gateways.map((g) => [g, { pauseUntil: 0, throttled: 0 }]));
     let done = 0;
-    await pool(list.flatMap((name) => gateways.map((g) => [g, name])), opts.concurrency ?? 24, async ([g, name]) => {
-      if (!(await loads(`${g}${cid}/${name}`, fetchFn))) failed.get(g).push(name);
+    // each gateway on its own, a few requests at a time (opts.concurrency per gateway)
+    await Promise.all(gateways.map((g) => pool(list, opts.concurrency ?? 6, async (name) => {
+      if (await loads(`${g}${cid}/${name}`, fetchFn, state.get(g), opts.loadOptions)) loadsFrom.set(name, loadsFrom.get(name) + 1);
+      else failed.get(g).push(name);
       if (++done % 2000 === 0) log(`  ... ${done.toLocaleString()} / ${(list.length * gateways.length).toLocaleString()} fetched`);
-    });
-    for (const [g, f] of failed) ok(f.length === 0, `${new URL(g).host}: ${list.length - f.length} / ${list.length} images load${f.length ? ` (first missing: ${f.slice(0, 3).join(", ")})` : ""}`);
+    })));
+    const short = list.filter((name) => loadsFrom.get(name) < need);
+    ok(short.length === 0, `every image loads from at least ${need} gateways: ${list.length - short.length} / ${list.length}${short.length ? ` (first short: ${short.slice(0, 3).map((x) => `${x} from ${loadsFrom.get(x)}`).join(", ")})` : ""}`);
+    for (const [g, f] of failed) {
+      const throttled = state.get(g).throttled ? `; slowed down ${state.get(g).throttled} time(s) by 429/503` : "";
+      if (f.length) warn(`${new URL(g).host}: ${list.length - f.length} / ${list.length} images load (first missing: ${f.slice(0, 3).join(", ")})${throttled}`);
+      else ok(true, `${new URL(g).host}: ${list.length} / ${list.length} images load${throttled}`);
+    }
     if (opts.sample) ok(false, `only ${list.length} of ${names.length} images checked (--sample): run without it before signing`);
   }
 
@@ -260,10 +302,12 @@ export async function verifySeries(opts) {
   } else if (root && BigInt(root) !== 0n) info(`holder root ${root} not checked (no --snapshot)`);
 
   const green = problems.length === 0;
-  const verdict = green ? "GREEN: batch B (configureDrop) can be signed." : `RED: ${problems.length} problem(s). Don't sign batch B.`;
+  const verdict = green
+    ? `GREEN: batch B (configureDrop) can be signed.${warnings.length ? ` (${warnings.length} warning(s): re-pin there when you can)` : ""}`
+    : `RED: ${problems.length} problem(s). Don't sign batch B.`;
   lines.push(verdict);
   log(verdict);
-  return { green, lines, problems, images: names.length, cid };
+  return { green, lines, problems, warnings, images: names.length, cid };
 }
 
 // ---------------------------------------------------------------- CLI
@@ -272,7 +316,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   process.argv.slice(2).forEach((a, i, all) => { if (a.startsWith("--")) args[a.slice(2)] = all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true; });
   const rpc = process.env.RPC ?? process.env.RPC_URL;
   if (!rpc || !args.recipe) {
-    console.error("usage: RPC=... node series/verify-series.mjs --recipe recipe.json [--snapshot holders.json] [--holder-root 0x..] [--gateways a,b] [--sample N] [--report out.json]");
+    console.error("usage: RPC=... node series/verify-series.mjs --recipe recipe.json [--snapshot holders.json] [--holder-root 0x..] [--gateways a,b] [--min-gateways 2] [--concurrency 6] [--sample N] [--report out.json]");
     process.exit(2);
   }
   try {
@@ -281,6 +325,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       holderRoot: typeof args["holder-root"] === "string" ? args["holder-root"] : undefined,
       gateways: typeof args.gateways === "string" ? args.gateways.split(",").map((s) => s.trim()) : undefined,
       sample: args.sample ? Number(args.sample) : undefined, concurrency: args.concurrency ? Number(args.concurrency) : undefined,
+      minGateways: args["min-gateways"] ? Number(args["min-gateways"]) : undefined,
     });
     if (typeof args.report === "string") writeFileSync(args.report, JSON.stringify(r, null, 2));
     process.exit(r.green ? 0 : 1);
