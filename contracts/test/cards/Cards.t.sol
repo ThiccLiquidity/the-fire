@@ -1184,20 +1184,21 @@ contract CardsTest is SeriesHelper {
 }
 
 contract DeployCardsTest is Test {
-    /// @dev The hardware wallet accepts the six contracts in one run: AcceptOwnership lists exactly the ones still
+    /// @dev The hardware wallet accepts the seven contracts in one run: AcceptOwnership lists exactly the ones still
     ///      pending for it, skips the ones it holds, and refuses a contract pending to someone else.
-    function test_acceptOwnershipListsTheSixForTheHardwareWallet() public {
+    function test_acceptOwnershipListsTheSevenForTheHardwareWallet() public {
         address owner = address(0x1ED6E2);
         FirePacks packs = new FirePacks(address(this));
         FireCards cards = new FireCards(address(this), address(packs));
         RecipeDealer dealer = new RecipeDealer(address(this), address(cards), address(new RecipeCompiler()));
         FireCredits credits = new FireCredits(address(this), address(cards), 0);
-        // FirePsa and PaperBurner stand-ins: two more two-step-owned contracts
-        address[6] memory c = [address(packs), address(cards), address(dealer), address(credits),
-            address(new FirePacks(address(this))), address(new FirePacks(address(this)))];
+        // FireSale, FirePsa and PaperBurner stand-ins: three more two-step-owned contracts
+        address[7] memory c = [address(packs), address(cards), address(dealer), address(credits),
+            address(new FirePacks(address(this))), address(new FirePacks(address(this))), address(new FirePacks(address(this)))];
         string memory json = "{";
-        string[6] memory names = new AcceptOwnership().owned();
-        for (uint256 i; i < 6; i++) {
+        string[7] memory names = new AcceptOwnership().owned();
+        assertEq(names[4], "FireSale");
+        for (uint256 i; i < 7; i++) {
             FirePacks(c[i]).transferOwnership(owner);
             json = string.concat(json, i == 0 ? '"contracts":{"' : ',"', names[i], '":"', vm.toString(c[i]), '"');
         }
@@ -1206,12 +1207,12 @@ contract DeployCardsTest is Test {
         vm.setEnv("DEPLOYMENTS_FILE", file);
         AcceptOwnership a = new AcceptOwnership();
         address[] memory list = a.toAccept(owner);
-        assertEq(list.length, 6, "all six pending");
-        for (uint256 i; i < 6; i++) assertEq(list[i], c[i]);
+        assertEq(list.length, 7, "all seven pending");
+        for (uint256 i; i < 7; i++) assertEq(list[i], c[i]);
         vm.prank(owner); packs.acceptOwnership();
         vm.prank(owner); credits.acceptOwnership();
         list = a.toAccept(owner);
-        assertEq(list.length, 4, "the ones it holds are skipped");
+        assertEq(list.length, 5, "the ones it holds are skipped");
         for (uint256 i; i < list.length; i++) {
             vm.prank(owner);
             FirePacks(list[i]).acceptOwnership();
@@ -1282,7 +1283,8 @@ contract DeployCardsTest is Test {
         d.credits.setSale(address(0xBEEF)); // set once
         assertEq(d.sale.USDG_UNIT(), 1e6);
         assertEq(d.credits.suggestionPaper(), 2e18);
-        assertEq(d.sale.owner(), safe, "the sale is the owner's from the start");
+        assertEq(d.sale.owner(), address(s), "the deployer holds the sale until the owner accepts");
+        assertEq(d.sale.pendingOwner(), safe, "so a mistyped OWNER owns nothing");
         assertEq(d.packs.pendingOwner(), safe);
         assertEq(d.cards.pendingOwner(), safe);
         assertEq(d.psa.pendingOwner(), safe);
@@ -1298,6 +1300,8 @@ contract DeployCardsTest is Test {
         vm.prank(safe); d.psa.acceptOwnership();
         vm.prank(safe); d.dealer.acceptOwnership();
         vm.prank(safe); d.credits.acceptOwnership();
+        vm.prank(safe); d.sale.acceptOwnership();
+        assertEq(d.sale.owner(), safe);
         assertEq(d.credits.owner(), safe);
         assertEq(d.dealer.owner(), safe);
         assertEq(d.packs.owner(), safe);

@@ -1333,6 +1333,20 @@ contract SaleTest is SeriesHelper {
 
 
     /// The studio's sample export (recipe.json with a "sale" block, written by studio/src/sale.test.ts) goes through
+    /// Batch B refuses a holder window with no snapshot root (only presses could buy in it: a forgotten HOLDER_ROOT)
+    /// unless NO_HOLDERS=true says it's meant.
+    function test_batchBRefusesAHolderWindowWithNoRoot() public {
+        ConfigureSeries cs = new ConfigureSeries();
+        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
+        cs.checkHolders(c, false); // no holder window: fine
+        c.holderWindow = 24 hours;
+        vm.expectRevert(bytes("holderWindow > 0 but no holderRoot: set HOLDER_ROOT (the snapshot), or NO_HOLDERS=true for presses only"));
+        cs.checkHolders(c, false);
+        cs.checkHolders(c, true); // NO_HOLDERS=true
+        c.holderRoot = bytes32(uint256(1));
+        cs.checkHolders(c, false);
+    }
+
     /// ConfigureSeries into the recipe calls and FireSale.configureDrop, and the drop comes out as the studio set it.
     function test_studioSaleExportConfiguresTheDrop() public {
         _warp(start + 48 hours);

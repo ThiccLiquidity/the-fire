@@ -206,10 +206,10 @@ async function main() {
   const C = Object.fromEntries(Object.entries(dep.contracts).map(([k, v]) => [k, getAddress(v)]));
   check(Object.keys(C).length === 15, `deployments file has all 15 contracts (${DEP_FILE.replace(REPO + "/", "")})`);
 
-  step("VerifyDeploy before the owner accepts (expect WAIT on six owners)");
+  step("VerifyDeploy before the owner accepts (expect WAIT on seven owners)");
   let vd = forgeRead("script/VerifyDeploy.s.sol", {});
   console.log(logLines(vd, /^(OK|WAIT|FAIL|INFO)|FAIL, /));
-  check(/0 FAIL/.test(vd) && (vd.match(/acceptOwnership/g) ?? []).length === 6, "VerifyDeploy: nothing wrong, six acceptOwnership() pending");
+  check(/0 FAIL/.test(vd) && (vd.match(/acceptOwnership/g) ?? []).length === 7, "VerifyDeploy: nothing wrong, seven acceptOwnership() pending");
 
   step("the owner accepts ownership: AcceptOwnership.s.sol signed by the owner (impersonated)");
   const outRefused = forgeRead("script/AcceptOwnership.s.sol", {});
