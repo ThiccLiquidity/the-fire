@@ -59,7 +59,8 @@ can pause, re-point or re-price it.
    (also api2/api3.drand.sh). Take `signature`.
 3. Compute
    `word = keccak256(abi.encode(CHAIN_HASH, sha256(signature), chainid, router, id, adapter))` with
-   `CHAIN_HASH = 0x04f1e9062b8a81f848fded9c12306733282b2727ecced50032187751166ec8c3`, `chainid = 4663`, `router` =
+   `CHAIN_HASH = 0x04f1e9062b8a81f848fded9c12306733282b2727ecced50032187751166ec8c3`, `chainid = 4663` on mainnet
+   (46630 on the testnet), `router` =
    the OpenDrandRouter address, `adapter` = the OpenVRFAdapter address (the request's consumer: the cards' or the PDA's). `sha256(signature)`
    is also stored on-chain as `router.roundRandomness(round)`.
 4. It matches the event. The router already rejected any signature drand didn't make.
