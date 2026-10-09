@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { renderKey } from '../builder'
 import { Field, Notice, ProgressBar, useAction } from '../components'
 import { getBlob } from '../db'
-import { ZipWriter, blobBytes, downloadBlob } from '../files'
+import { ZipWriter, blobBytes, canSaveToFile, downloadBlob, pickFolder, pickSaveFile } from '../files'
 import type { DealtCard } from '../deal'
 import { lookFileName, lookOf, seriesGrid } from '../looks'
 import { cardMetadata, metadataFileName } from '../metadata'
@@ -16,16 +16,20 @@ import { carBytes, planCar } from '../car'
 import { buildManifest } from '../manifest'
 import { categoryProblem, nameProblem, normalizeCategory, normalizeName } from '../categories'
 import { checkRecipe, recipeJson } from '../recipe'
-import { saleErrors, saleJson, saleOf } from '../sale'
+import { saleErrors, saleJson, saleOf, salePacks } from '../sale'
 import { artNeeds, buildGridKey, missingArt, missingFrames } from '../series'
 import { lastAssetChange, updateFire, useStudio } from '../store'
 import { BUILD_GRID_VERSION, fireStatus, type FireRecord, type UploadState } from '../types'
 import { refreshDevFlags, useDevFlags } from '../devFlags'
 
-/** A zip download is split into parts of about this size, so a very large Series never needs one giant zip in memory. */
+/** A zip download is split into parts of at most this size and this many files, so a very large Series never needs
+ *  one giant zip (unzip tools struggle past 65,535 entries). */
 const ZIP_PART_BYTES = 1.5 * 1024 ** 3
+const ZIP_PART_ENTRIES = 60_000
 
 interface Check { label: string; ok: boolean; detail?: string }
+
+const NO_PICKER = 'Use Chrome or Edge to save the CAR.'
 
 export function Export({ fire }: { fire: FireRecord }) {
   const s = useStudio()
@@ -80,8 +84,11 @@ export function Export({ fire }: { fire: FireRecord }) {
   ]
   const saleCheck: Check = { label: 'Sale settings valid (configureDrop\'s checks)', ok: saleProblems.length === 0, detail: saleProblems[0] ? `${saleProblems[0].message} (Sale tab)` : undefined }
   checks.push(saleCheck)
+  const packs = deal?.packs ?? fire.packs
+  const packsCheck: Check = { label: 'Sale packs match the Series', ok: salePacks(sale) === packs, detail: `The sale has ${salePacks(sale).toLocaleString()} (paid + press), the ${deal ? 'locked deal' : 'Series'} ${packs.toLocaleString()} (Sale tab).` }
+  checks.push(packsCheck)
   const ready = checks.every((c) => c.ok)
-  const recipeReady = checks[0].ok && checks[2].ok && saleCheck.ok
+  const recipeReady = checks[0].ok && checks[2].ok && saleCheck.ok && packsCheck.ok
   /** The shared image file this card points at (the name FireCards.imageName builds on-chain). */
   const indexOf = useMemo(() => new Map(ids.map((id, i) => [id, i])), [ids])
   const fileOf = (c: DealtCard) => lookFileName(lookOf(c, r), indexOf.get(c.characterId) ?? -1)
@@ -98,11 +105,17 @@ export function Export({ fire }: { fire: FireRecord }) {
   /** The upload (real or mock) is of this build: the second pin and the offline CAR apply to it. */
   const uploadOfBuild = !!fire.upload?.imagesCid && !buildDetail && fire.upload.buildAt === b?.builtAt
 
+  /** What's still open before recipe.json should go on-chain: both pins read back, and the CAR stored offline. */
+  const pinsOpen = uploadCurrent && (!fire.upload?.verifiedAt || !fire.upload.carStoredAt)
+    ? [!fire.upload?.verifiedAt && 'check both pins', !fire.upload?.carStoredAt && 'store the CAR offline'].filter(Boolean).join(' and ')
+    : ''
+
   const downloadRecipe = () => run(async () => {
-    if (!recipeReady) throw new Error(!checks[0].ok ? checks[0].detail : !checks[2].ok ? checks[2].detail : saleCheck.detail)
+    if (!recipeReady) throw new Error(!checks[0].ok ? checks[0].detail : !checks[2].ok ? checks[2].detail : !saleCheck.ok ? saleCheck.detail : packsCheck.detail)
     if (fire.upload?.imagesCid && !uploadCurrent) {
       throw new Error('The uploaded images are from an earlier build: upload this build first, so recipe.json points at the right images.')
     }
+    if (pinsOpen && !confirm(`Not yet: ${pinsOpen}. Download recipe.json anyway?`)) return
     downloadBlob(new Blob([JSON.stringify(recipeOut(fire.upload?.imagesCid), null, 1)], { type: 'application/json' }), `recipe-fire-${fire.number}.json`)
   })
 
@@ -134,43 +147,81 @@ export function Export({ fire }: { fire: FireRecord }) {
   }, null, 1)
 
   const downloadZip = () => run(async () => {
-    const imagesCid = fire.upload?.imagesCid
-    const files = await imageFiles(readingProgress, hashingProgress)
-    let part = 1
-    let zip = new ZipWriter()
-    let size = 0
-    const total = files.reduce((n, f) => n + f.blob.size, 0)
-    const parts = Math.max(1, Math.ceil(total / ZIP_PART_BYTES))
-    const name = (p: number) => (parts > 1 ? `card-studio-fire-${fire.number}-part${p}-of-${parts}.zip` : `card-studio-fire-${fire.number}.zip`)
-    // part 1 carries the metadata, fire.json and recipe.json
-    zip.addText('fire.json', fireJson(imagesCid))
-    zip.addText('recipe.json', JSON.stringify(recipeOut(imagesCid), null, 1))
-    let i = 0
-    for (const c of deal!.cards) {
-      const img = fileOf(c)
-      const meta = cardMetadata(c, charOf(c.characterId), r.types[c.type]?.name ?? '?', imagesCid ? `ipfs://${imagesCid}/${img}` : `images/${img}`)
-      zip.addText(`metadata/${metadataFileName(c)}`, JSON.stringify(meta, null, 2))
-      if (++i % 500 === 0) {
-        setProgress({ value: i / deal!.cards.length, label: `Metadata ${i.toLocaleString()} / ${deal!.cards.length.toLocaleString()}` })
-        await new Promise((res) => setTimeout(res, 0))
+    try {
+      const imagesCid = fire.upload?.imagesCid
+      const files = await imageFiles(readingProgress, hashingProgress)
+      const cards = deal!.cards
+      const base = `card-studio-fire-${fire.number}`
+      const total = files.reduce((n, f) => n + f.blob.size, 0)
+      const single = files.length + cards.length + 2 <= ZIP_PART_ENTRIES && total <= ZIP_PART_BYTES
+      // the images in parts of at most ZIP_PART_BYTES and ZIP_PART_ENTRIES
+      const imageParts: UploadFile[][] = [[]]
+      let size = 0
+      for (const f of files) {
+        const cur = imageParts[imageParts.length - 1]
+        if (cur.length && (size + f.blob.size > ZIP_PART_BYTES || cur.length >= ZIP_PART_ENTRIES)) { imageParts.push([]); size = 0 }
+        imageParts[imageParts.length - 1].push(f)
+        size += f.blob.size
       }
-    }
-    let n = 0
-    for (const f of files) {
-      if (size > 0 && size + f.blob.size > ZIP_PART_BYTES) {
-        setProgress({ value: n / files.length, label: `Finishing ${name(part)}...` })
-        downloadBlob(await zip.finish(), name(part))
-        part++
-        zip = new ZipWriter()
-        size = 0
+      const metaParts = Math.max(1, Math.ceil(cards.length / ZIP_PART_ENTRIES))
+      // a big export goes straight into a folder (Chrome, Edge), so no part sits in memory; else each part downloads
+      const folder = single ? null : await pickFolder()
+      const open = async (name: string) => new ZipWriter(folder ? await folder(name) : undefined)
+      const close = async (zip: ZipWriter, name: string) => {
+        setProgress({ value: 1, label: `Finishing ${name}...` })
+        const blob = await zip.finish()
+        if (blob) downloadBlob(blob, name)
       }
-      zip.addStored(`images/${f.name}`, await blobBytes(f.blob))
-      size += f.blob.size
-      if (++n % 100 === 0) setProgress({ value: n / files.length, label: `Zipping images ${n.toLocaleString()} / ${files.length.toLocaleString()}${parts > 1 ? ` (part ${part} of ${parts})` : ''}` })
+      const addJson = (zip: ZipWriter) => {
+        zip.addText('fire.json', fireJson(imagesCid))
+        zip.addText('recipe.json', JSON.stringify(recipeOut(imagesCid), null, 1))
+      }
+      const addMeta = async (zip: ZipWriter, from: number, to: number) => {
+        for (let i = from; i < to; i++) {
+          const c = cards[i]
+          const img = fileOf(c)
+          const meta = cardMetadata(c, charOf(c.characterId), r.types[c.type]?.name ?? '?', imagesCid ? `ipfs://${imagesCid}/${img}` : `images/${img}`)
+          zip.addText(`metadata/${metadataFileName(c)}`, JSON.stringify(meta, null, 2))
+          if ((i + 1) % 500 === 0) {
+            setProgress({ value: (i + 1) / cards.length, label: `Metadata ${(i + 1).toLocaleString()} / ${cards.length.toLocaleString()}` })
+            await zip.drain()
+            await new Promise((res) => setTimeout(res, 0))
+          }
+        }
+      }
+      let n = 0
+      const addImages = async (zip: ZipWriter, part: UploadFile[], label: string) => {
+        for (const f of part) {
+          zip.addStored(`images/${f.name}`, await blobBytes(f.blob))
+          await zip.drain()
+          if (++n % 100 === 0) setProgress({ value: n / files.length, label: `Zipping images ${n.toLocaleString()} / ${files.length.toLocaleString()}${label}` })
+        }
+      }
+      if (single) {
+        const zip = await open(`${base}.zip`)
+        addJson(zip)
+        await addMeta(zip, 0, cards.length)
+        await addImages(zip, files, '')
+        await close(zip, `${base}.zip`)
+        return
+      }
+      // metadata in its own parts (fire.json and recipe.json in the first), then the images
+      for (let k = 0; k < metaParts; k++) {
+        const name = `${base}-metadata-${k + 1}-of-${metaParts}.zip`
+        const zip = await open(name)
+        if (k === 0) addJson(zip)
+        await addMeta(zip, k * ZIP_PART_ENTRIES, Math.min(cards.length, (k + 1) * ZIP_PART_ENTRIES))
+        await close(zip, name)
+      }
+      for (const [k, part] of imageParts.entries()) {
+        const name = `${base}-images-${k + 1}-of-${imageParts.length}.zip`
+        const zip = await open(name)
+        await addImages(zip, part, ` (part ${k + 1} of ${imageParts.length})`)
+        await close(zip, name)
+      }
+    } finally {
+      setProgress(null)
     }
-    setProgress({ value: 1, label: 'Finishing zip...' })
-    downloadBlob(await zip.finish(), name(part))
-    setProgress(null)
   })
 
   const upload = () => run(async () => {
@@ -298,19 +349,13 @@ export function Export({ fire }: { fire: FireRecord }) {
       const car = cur.imagesCarSize ? { root: cur.imagesCid, size: cur.imagesCarSize } : await planCar(files)
       if (car.root !== cur.imagesCid) throw new Error(`This build packs to ${car.root}, not the uploaded ${cur.imagesCid}.`)
       const name = `${cur.imagesDir}.car`
-      const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<{ createWritable(): Promise<{ write(b: Uint8Array): Promise<void>; close(): Promise<void> }> }> }).showSaveFilePicker
+      // streamed straight to the file: never the whole CAR in memory (browsers without a save picker can't do that)
+      if (!canSaveToFile()) throw new Error(NO_PICKER)
       let done = 0
       const tick = () => setProgress({ value: done / Math.max(1, car.size), label: `Writing ${name}: ${(done / 1024 / 1024).toFixed(0)} / ${(car.size / 1024 / 1024).toFixed(0)} MB` })
-      if (picker) {
-        const handle = await picker({ suggestedName: name, types: [{ description: 'CAR file', accept: { 'application/vnd.ipld.car': ['.car'] } }] })
-        const w = await handle.createWritable()
-        for await (const c of carBytes(files, car.root)) { await w.write(c); done += c.length; tick() }
-        await w.close()
-      } else {
-        const parts: Uint8Array[] = []
-        for await (const c of carBytes(files, car.root)) { parts.push(c); done += c.length; tick() }
-        downloadBlob(new Blob(parts as BlobPart[], { type: 'application/vnd.ipld.car' }), name)
-      }
+      const w = await pickSaveFile(name, 'CAR file', { 'application/vnd.ipld.car': ['.car'] })
+      for await (const c of carBytes(files, car.root)) { await w.write(c); done += c.length; tick() }
+      await w.close()
       await updateFire(fire.number, { upload: { ...cur, imagesCarSize: car.size, carSavedAt: Date.now() } })
     } finally {
       setProgress(null)
@@ -348,10 +393,11 @@ export function Export({ fire }: { fire: FireRecord }) {
       <div className="row wrap">
         <button className="primary" disabled={!recipeReady || busy} onClick={downloadRecipe} data-testid="download-recipe">Download recipe.json</button>
         {!fire.upload?.imagesCid && <span className="muted small">No images uploaded yet: no imagesBase.</span>}
+        {pinsOpen && <span className="warn-text small" data-testid="recipe-pins-open">Before using it: {pinsOpen}.</span>}
       </div>
 
       <h3>Download everything</h3>
-      <p className="muted small">{gridLen.toLocaleString()} images, metadata and the JSON, in one zip (parts of ~1.5 GB if big).</p>
+      <p className="muted small">{gridLen.toLocaleString()} images, metadata and the JSON, in one zip. Big Series: parts of up to 1.5 GB or 60,000 files, metadata apart, into a folder you pick.</p>
       <button className="primary" disabled={!ready || busy} onClick={downloadZip} data-testid="download-zip">Download zip</button>
 
       <h3>Upload: Pinata + Filebase</h3>
@@ -416,7 +462,8 @@ export function Export({ fire }: { fire: FireRecord }) {
           {fire.upload?.imagesCarSize ? ` (${(fire.upload.imagesCarSize / 1024 / 1024).toFixed(1)} MB)` : ''} to a drive you keep: it re-pins
           the images with the same CID.
           <div className="row wrap" style={{ marginTop: 8 }}>
-            <button disabled={busy} onClick={saveCar} data-testid="save-car">Save images CAR</button>
+            <button disabled={busy || !canSaveToFile()} onClick={saveCar} data-testid="save-car">Save images CAR</button>
+            {!canSaveToFile() && <span className="warn-text small" data-testid="save-car-browser">{NO_PICKER}</span>}
             <label className="check"><input type="checkbox" disabled={busy || !fire.upload?.carSavedAt} checked={false} onChange={(e) => confirmStored(e.target.checked)} data-testid="car-stored" /> I've stored it offline</label>
           </div>
         </Notice>

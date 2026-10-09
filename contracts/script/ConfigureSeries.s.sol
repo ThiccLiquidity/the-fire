@@ -32,6 +32,8 @@ import {Deployments} from "./Deployments.sol";
  *   RECIPE_DEALER, FIRE_CARDS, FIRE_SALE: read from deployments/<chainId>.json when not set
  *   DROP_START=<unix seconds>, HOLDER_ROOT=0x...: override the sale block's start and holderRoot (both are usually
  *     decided last: the snapshot runs just before the drop)
+ *   NO_HOLDERS=true: batch B refuses a holder window (holderWindow > 0) with no holderRoot, since that window would
+ *     be presses only; set this when that is really what the drop wants
  *   CHARACTER_BATCH=200
  *
  * The JSON is read strictly: unknown keys (PDA odds included: they are fixed in FirePsa for every Series), numbers too
@@ -81,12 +83,22 @@ contract ConfigureSeries is Deployments {
             require(s.hasSale, "batch B needs the JSON's sale block");
             require(sale != address(0), "batch B: set FIRE_SALE or deploy FireSale first");
             checkOnChain(json, dealer, cards); // batch A must be on chain exactly as the JSON says
+            checkHolders(s.drop, vm.envOr("NO_HOLDERS", false));
             calls = new Call[](1);
             calls[0] = Call(sale, abi.encodeCall(FireSale.configureDrop, (s.fire, s.drop)), "FireSale.configureDrop");
             _print(string.concat("Series ", vm.toString(s.fire), ", batch B (the lock: configureDrop; only after VerifySeries is GREEN)"), calls);
             if (simulate) _simulate(owner, calls);
             else _send(owner, calls);
         }
+    }
+
+    /// @notice A holder window with no snapshot root lets only presses in during it: almost always a forgotten
+    ///         HOLDER_ROOT. Refused unless `noHolders` (NO_HOLDERS=true) says it's meant.
+    function checkHolders(FireSale.DropConfig memory c, bool noHolders) public pure {
+        require(
+            c.holderWindow == 0 || c.holderRoot != bytes32(0) || noHolders,
+            "holderWindow > 0 but no holderRoot: set HOLDER_ROOT (the snapshot), or NO_HOLDERS=true for presses only"
+        );
     }
 
     function _print(string memory title, Call[] memory calls) internal pure {

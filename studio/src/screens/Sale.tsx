@@ -1,10 +1,11 @@
 import { useMemo, type ReactNode } from 'react'
 import { Notice, useAction } from '../components'
 import {
-  CARDS_PER_CREDIT, MAX_WINDOW_HOURS, PRESS_PRICE_LABEL, SALE_PRESETS, checkSale, creditPacksMax, dropPlan, parseDecimal, saleJson, saleOf,
+  CARDS_PER_CREDIT, MAX_WINDOW_HOURS, PRESS_PRICE_LABEL, SALE_PRESETS, checkSale, creditPacksMax, dropPlan, parseDecimal, saleJson, saleOf, salePacks,
   type PressPrice, type SaleField, type SaleProblem, type SaleSettings,
 } from '../sale'
 import { cardsPerPack } from '../recipe'
+import { MAX_PACKS } from '../rules'
 import { updateFire } from '../store'
 import type { FireRecord } from '../types'
 
@@ -35,12 +36,18 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
   const errors = problems.filter((p) => !p.warning)
   const json = useMemo(() => saleJson(s), [s])
   const d = dropPlan(s)
-  const set = (patch: Partial<SaleSettings>) => void run(() => updateFire(fire.number, { sale: { ...s, ...patch } }))
+  const locked = !!fire.deal
+  // the Series' pack count is the drop's (paid + press); it follows the sale until the deal is locked
+  const save = (sale: SaleSettings) => run(() => updateFire(fire.number, locked ? { sale } : { sale, packs: Math.min(MAX_PACKS, Math.max(0, Math.floor(salePacks(sale)) || 0)) }))
+  const set = (patch: Partial<SaleSettings>) => void save({ ...s, ...patch })
   const preset = (name: string, next: SaleSettings) => {
     if (JSON.stringify({ ...next, start: s.start, holderRoot: s.holderRoot }) === JSON.stringify(s)) return
     if (!confirm(`Replace this Series' sale settings with ${name}? (Start and snapshot root are kept.)`)) return
-    void run(() => updateFire(fire.number, { sale: { ...next, start: s.start, holderRoot: s.holderRoot } }))
+    void save({ ...next, start: s.start, holderRoot: s.holderRoot })
   }
+  const perPack = cardsPerPack(fire.recipe)
+  const packsOff = !!fire.deal && salePacks(s) !== fire.deal.packs
+  const toFix = errors.length + (packsOff ? 1 : 0)
 
   const pressOn = s.pressPacks > 0
   const pressUsd = s.pressPrice === 'usd' || s.pressPrice === 'usdPaper'
@@ -61,15 +68,15 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
         {SALE_PRESETS.map((p) => (
           <button key={p.name} disabled={busy} onClick={() => preset(p.name, p.make())} data-testid={`sale-preset-${p.name.toLowerCase()}`}>{p.name}</button>
         ))}
-        <span className={`badge ${errors.length ? 'badge-warn' : 'badge-ok'}`} data-testid="sale-status">
-          {errors.length ? `${errors.length} to fix` : 'Valid'}
+        <span className={`badge ${toFix ? 'badge-warn' : 'badge-ok'}`} data-testid="sale-status">
+          {toFix ? `${toFix} to fix` : 'Valid'}
         </span>
       </div>
-      <DropPicture s={s} seriesPacks={fire.packs} cardsPerPack={cardsPerPack(fire.recipe)} />
+      <DropPicture s={s} lockedPacks={fire.deal ? fire.deal.packs : null} cardsPerPack={perPack} />
 
       <h3>Packs</h3>
       <div className="sale-grid">
-        <F all={problems} f="paidPacks" label="Paid packs" hint="PLANK, ETH or USDG."><Num value={s.paidPacks} onChange={(v) => set({ paidPacks: v })} testId="sale-paid" /></F>
+        <F all={problems} f="paidPacks" label="Paid packs" hint="PLANK, ETH or USDG. Paid + press = the Series' packs."><Num value={s.paidPacks} onChange={(v) => set({ paidPacks: v })} testId="sale-paid" /></F>
         <F all={problems} f="pressPacks" label="Press packs" hint="On top. Unclaimed ones join the paid. 0 = off."><Num value={s.pressPacks} onChange={(v) => set({ pressPacks: v })} testId="sale-press" /></F>
         <F all={problems} f="plankOnly" label="PLANK-only packs" hint={`The first ${n(d.plankOnly)} of the ${n(d.paid)} paid.`}><Num value={s.plankOnly} onChange={(v) => set({ plankOnly: v })} testId="sale-plankonly" /></F>
         <F all={problems} f="creditPacksPercent" label="Free packs, at most (%)" hint={cap ? `= ${n(d.freeMax)} of ${n(d.total)} packs, from the paid ones.` : '0 = no cap.'}><Text value={s.creditPacksPercent} onChange={(v) => set({ creditPacksPercent: v })} testId="sale-credit-max" /></F>
@@ -77,7 +84,7 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
 
       <h3>Price</h3>
       <div className="sale-grid">
-        <F all={problems} f="priceUsd" label="Price per pack ($)"><Text value={s.priceUsd} onChange={(v) => set({ priceUsd: v })} testId="sale-price" /></F>
+        <F all={problems} f="priceUsd" label="Price per pack ($)" hint="Unclaimed press packs sell at it too."><Text value={s.priceUsd} onChange={(v) => set({ priceUsd: v })} testId="sale-price" /></F>
         <F all={problems} f="paperPerPack" label="PAPER per pack" hint="Burned. Paid and free packs. 0 = none."><Text value={s.paperPerPack} onChange={(v) => set({ paperPerPack: v })} testId="sale-paper" /></F>
         <F all={problems} f="paperCapUsd" label="PAPER ceiling ($)" hint="Most a pack's PAPER can be worth. 0 = none."><Text value={s.paperCapUsd} onChange={(v) => set({ paperCapUsd: v })} testId="sale-paper-cap" /></F>
         <F all={problems} f="plankBurnPercent" label="PLANK burn (%)" hint={`= ${usd(price * burn)} a paid pack · ${usd(d.burnUsd)} sold out.`}><Text value={s.plankBurnPercent} onChange={(v) => set({ plankBurnPercent: v })} testId="sale-burn" /></F>
@@ -121,6 +128,7 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
         <div className="field sale-field" data-testid="sale-cards-per-credit">
           <span className="field-label">Cards burned per free pack</span>
           <b className="pad">{CARDS_PER_CREDIT} · fixed</b>
+          {perPack >= CARDS_PER_CREDIT && <span className="warn-text small" data-testid="sale-credit-off">Packs of {perPack} cards: credits can't buy this Series' packs (needs under {CARDS_PER_CREDIT}).</span>}
         </div>
         <F all={problems} f="creditsPerPick" label="Credits per picked suggestion" hint="0 = none."><Num value={s.creditsPerPick} onChange={(v) => set({ creditsPerPick: v })} testId="sale-picks" /></F>
         <F all={problems} f="creditPacksPerWallet" label="Free packs per wallet, at most" hint="0 = no limit."><Num value={s.creditPacksPerWallet} onChange={(v) => set({ creditPacksPerWallet: v })} testId="sale-credit-wallet" /></F>
@@ -143,7 +151,7 @@ const n = (x: number) => x.toLocaleString('en-US')
 
 /** The drop as one picture, live as the numbers change: every pack, paid (the PLANK-only ones first) and press, and
  *  how many of the paid ones can go free to credits. */
-function DropPicture({ s, seriesPacks, cardsPerPack }: { s: SaleSettings; seriesPacks: number; cardsPerPack: number }) {
+function DropPicture({ s, lockedPacks, cardsPerPack }: { s: SaleSettings; lockedPacks: number | null; cardsPerPack: number }) {
   const d = dropPlan(s)
   const w = (x: number) => (d.total ? `${(x / d.total) * 100}%` : '0')
   const label = (x: number, text: string) => (d.total && x / d.total > 0.12 ? text : '')
@@ -175,7 +183,7 @@ function DropPicture({ s, seriesPacks, cardsPerPack }: { s: SaleSettings; series
         <span><i style={{ background: '#4a7fe8' }} />Press <b>{n(d.press)}</b></span>
         <span><i style={{ border: '1px solid var(--ok)' }} />Free, at most <b data-testid="drop-free-max">{n(d.freeMax)}</b> {d.freeCapped ? `(${s.creditPacksPercent}%, taken from paid)` : '(no cap: any paid pack)'}</span>
       </div>
-      {d.total !== seriesPacks && <p className="warn-text">The Series is set to {n(seriesPacks)} packs (Series tab).</p>}
+      {lockedPacks != null && d.total !== lockedPacks && <p className="err-text" data-testid="sale-packs-locked">The deal is locked at {n(lockedPacks)} packs: paid + press must add up to that (or undo the lock).</p>}
     </div>
   )
 }

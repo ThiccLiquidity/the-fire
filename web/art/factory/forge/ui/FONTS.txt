@@ -1,0 +1,10 @@
+Fonts served by Cardworks (this folder, loaded by fonts.css). All are under the SIL Open Font License,
+Version 1.1 (full text in OFL.txt). The files are the families' WOFF2 web fonts, unmodified.
+
+File                    Family                    Copyright
+CabinSketch-700.woff2   Cabin Sketch (Bold)       Copyright 2011 The Cabin Project Authors (impallari@gmail.com), with Reserved Font Name "Cabin", "Cabin Sketch".
+Nunito-600.woff2        Nunito (variable weight)  Copyright 2014 The Nunito Project Authors (https://github.com/googlefonts/nunito)
+Nunito-800.woff2        Nunito (variable weight)  Copyright 2014 The Nunito Project Authors (https://github.com/googlefonts/nunito)
+RussoOne-400.woff2      Russo One                 Copyright (c) 2011-2012, Jovanny Lemonad (jovanny.ru), with Reserved Font Name "Russo"
+Kalam-700.woff2         Kalam (Bold)              Copyright (c) 2014 Indian Type Foundry (info@indiantypefoundry.com)
+Caveat-500.woff2        Caveat (Medium)           Copyright 2014 The Caveat Project Authors (https://github.com/googlefonts/caveat)

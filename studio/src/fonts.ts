@@ -1,5 +1,5 @@
-/** Fonts bundled with the studio (no network): free Google fonts under the SIL Open Font License, fine for commercial
- *  use including the card images. Installed as @fontsource packages; the latin 400 and 700 files are loaded into the
+/** Fonts bundled with the studio (no network): free Google fonts under the SIL Open Font License, except Luckiest Guy,
+ *  Permanent Marker and Roboto Slab (Apache License 2.0); all fine for commercial use including the card images. Installed as @fontsource packages; the latin 400 and 700 files are loaded into the
  *  page and into the build workers. A font with no 700 file uses its 400 file for bold too (no fake bold). */
 
 import f0w400 from '@fontsource/cinzel/files/cinzel-latin-400-normal.woff2?url'

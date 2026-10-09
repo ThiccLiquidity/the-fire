@@ -1,12 +1,14 @@
 // ForgeData over the Blockscout v2 REST API (the Robinhood Chain explorer): NFTs held by a wallet, and recent pack
-// and card transfers. Read-only, no key. The live build must allow the explorer host in the CSP's connect-src
-// (vercel.json) before this is wired in.
+// and card transfers. Read-only, no key. The explorer hosts are in the CSP's connect-src (vercel.json).
 //
 // Endpoints:
 //   GET /api/v2/addresses/{owner}/nft?type=ERC-721,ERC-1155            NFTs held (filtered to our two contracts)
 //   GET /api/v2/tokens/{contract}/transfers                            a collection's transfers
 //   GET /api/v2/addresses/{owner}/token-transfers?type=...&token=...   one wallet's transfers of a collection
 // Paging: each response carries next_page_params; they go back as query parameters for the next page.
+// Each request gives up after TIMEOUT_MS; a 429 (rate limited) or 503 waits (Retry-After, else a growing backoff) and
+// is tried again a few times. An ERC-1155 batch transfer (several pack Series in one) comes back as one item with a
+// list of totals (or token_ids + amounts): each token id becomes its own Activity.
 
 import { getAddress, zeroAddress, type Address, type Hex } from "viem";
 import type { Activity, ActivityKind, ForgeContracts, ForgeData, OwnedCard, OwnedPack, Page } from "./data";
@@ -15,9 +17,12 @@ import { EXPLORER } from "./wallet";
 type Json = Record<string, unknown>;
 type BsToken = { address?: string; address_hash?: string; type?: string };
 type BsNft = { id?: string; value?: string; image_url?: string | null; metadata?: Json | null; token?: BsToken; token_type?: string };
+type BsTotal = { token_id?: string | null; value?: string | null };
 type BsTransfer = {
   from?: { hash?: string }; to?: { hash?: string }; token?: BsToken; type?: string; method?: string | null; timestamp?: string;
-  transaction_hash?: string; tx_hash?: string; total?: { token_id?: string | null; value?: string | null } | null;
+  transaction_hash?: string; tx_hash?: string; total?: BsTotal | BsTotal[] | null;
+  /** ERC-1155 batch transfers, in Blockscout versions that list them this way. */
+  token_ids?: (string | null)[] | null; amounts?: (string | null)[] | null;
 };
 type BsPage<T> = { items?: T[]; next_page_params?: Json | null };
 
@@ -27,8 +32,24 @@ const encodeNext = (p?: Json | null) => (p ? btoa(JSON.stringify(p)) : undefined
 const decodeNext = (s?: string): Json => { try { return s ? JSON.parse(atob(s)) : {}; } catch { return {}; } };
 
 export class BlockscoutError extends Error {
+  /** The HTTP status; 0 when it timed out or the network failed. */
   status: number;
-  constructor(status: number, path: string) { super(`The explorer didn't answer (${status}) for ${path}.`); this.name = "BlockscoutError"; this.status = status; }
+  constructor(status: number, path: string) {
+    super(status ? `The explorer didn't answer (${status}) for ${path}.` : `The explorer didn't answer in time for ${path}.`);
+    this.name = "BlockscoutError"; this.status = status;
+  }
+}
+
+/** How long one request may take. */
+export const TIMEOUT_MS = 15_000;
+/** How many more tries a rate-limited (429) or unavailable (503) request gets. */
+const RETRIES = 3;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** How long to wait before trying again: Retry-After (seconds or a date), else 1 s, 2 s, 4 s; at most 30 s. */
+function backoff(r: Response, attempt: number): number {
+  const ra = r.headers.get("retry-after")?.trim();
+  const ms = ra ? (/^\d+$/.test(ra) ? Number(ra) * 1000 : Date.parse(ra) - Date.now()) : NaN;
+  return Math.min(30_000, Math.max(250, Number.isFinite(ms) ? ms : 1000 * 2 ** attempt));
 }
 
 export class BlockscoutData implements ForgeData {
@@ -51,9 +72,14 @@ export class BlockscoutData implements ForgeData {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
     const url = `${this.base}/api/v2${path}${q.size ? "?" + q : ""}`;
-    const r = await this.fetcher(url, { headers: { accept: "application/json" } });
-    if (!r.ok) throw new BlockscoutError(r.status, path);
-    return r.json() as Promise<T>;
+    for (let attempt = 0; ; attempt++) {
+      let r: Response;
+      try { r = await this.fetcher(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(TIMEOUT_MS) }); }
+      catch { throw new BlockscoutError(0, path); } // timed out, or the network failed
+      if (r.ok) return r.json() as Promise<T>;
+      if ((r.status === 429 || r.status === 503) && attempt < RETRIES) { await sleep(backoff(r, attempt)); continue; }
+      throw new BlockscoutError(r.status, path);
+    }
   }
 
   /** Every NFT `owner` holds from one of our contracts (all pages). */
@@ -114,20 +140,25 @@ export class BlockscoutData implements ForgeData {
       const np = pk.next_page_params ?? null, nc = cd.next_page_params ?? null;
       more = np || nc ? { p: np, c: nc } : null;
     }
-    const acts = items.map((t) => this.toActivity(t)).filter((a): a is Activity => !!a).sort((a, b) => b.at - a.at);
+    const acts = items.flatMap((t) => this.toActivities(t)).sort((a, b) => b.at - a.at);
     return { items: acts, next: encodeNext(more) };
   }
 
-  private toActivity(t: BsTransfer): Activity | undefined {
+  /** One transfer as Activity items: one per token id (an ERC-1155 batch moves several at once). */
+  private toActivities(t: BsTransfer): Activity[] {
     const hash = (t.transaction_hash ?? t.tx_hash) as Hex | undefined;
-    if (!hash) return undefined;
+    if (!hash) return [];
     const from = getAddress(t.from?.hash ?? zeroAddress), to = getAddress(t.to?.hash ?? zeroAddress);
     const kind: ActivityKind = t.type === "token_minting" || from === zeroAddress ? "mint"
       : t.type === "token_burning" || to === zeroAddress ? "burn" : "transfer";
     const packs = tokenAddr(t.token) === this.packs;
-    return {
-      kind, token: packs ? "packs" : "cards", tokenId: big(t.total?.token_id), amount: packs ? big(t.total?.value ?? 1) : 1n,
+    const totals: BsTotal[] = Array.isArray(t.total) ? t.total
+      : t.total ? [t.total]
+      : Array.isArray(t.token_ids) ? t.token_ids.map((id, i) => ({ token_id: id, value: t.amounts?.[i] ?? "1" }))
+      : [{}];
+    return totals.map((x) => ({
+      kind, token: packs ? "packs" : "cards", tokenId: big(x.token_id), amount: packs ? big(x.value ?? 1) : 1n,
       from, to, tx: hash, at: t.timestamp ? Date.parse(t.timestamp) : 0, method: t.method ?? undefined,
-    };
+    }));
   }
 }

@@ -78,7 +78,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     /// @dev Most packs in one purchase for a drop that sets 0.
     uint256 public constant DEFAULT_MAX_PER_TX = 50;
     /// @dev The PLANK swap must get at least this share of what the 30-minute average price says, or it's skipped
-    ///      (the burn share then goes to the burn wallet). Guards against a pumped or manipulated pool.
+    ///      (the burn share then goes to PlankBurner, which burns it later). Guards against a pumped or manipulated pool.
     uint256 public constant SWAP_MIN_BPS = 9_000;
     uint256 public constant ETH_FEED_MAX_AGE = 25 hours; // Chainlink ETH/USD: deviation updates + 24h heartbeat
     /// @dev The PLANK price must be recent: its window must have ended within PLANK_FEED_MAX_AGE and be no longer than

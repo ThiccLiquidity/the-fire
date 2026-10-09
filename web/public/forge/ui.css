@@ -14,7 +14,7 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 :root { --top: 78px }
 .topbar { position: fixed; left: 0; right: 0; top: 0; height: 54px; z-index: 10; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 14px; box-sizing: border-box; background: #000 }
 .topbar::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, var(--paper) 0 20%, var(--wood) 20% 40%, var(--fire) 40% 60%, var(--charcoal) 60% 80%, var(--diamond) 80%) }
-.brand { display: flex; align-items: center; gap: 7px; text-decoration: none; min-width: 0 }
+.brand { display: flex; align-items: center; gap: 7px; text-decoration: none; min-width: 0; flex-shrink: 0 }
 .brand .mark { height: 32px; filter: drop-shadow(0 0 8px rgba(255,110,30,.45)) } .brand .word { height: 27px }
 .brand .forge { font: 400 23px var(--display); letter-spacing: .04em; color: #f9e2b4; -webkit-text-stroke: 1.5px #0d141c; paint-order: stroke fill; text-shadow: 0 2.5px 0 #0d141c }
 .brand .tag { font: italic 700 13px var(--body); color: var(--muted); margin-left: 6px; white-space: nowrap }
@@ -115,8 +115,9 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 
 /* narrower desktops */
 @media (max-width: 1420px) { .brand .tag { display: none } } /* room for My cards beside the series chip */
-@media (max-width: 1200px) { .tools .chip:not(.mycards) span { display: none } .tools .chip:not(.round):not(.demo):not(.mycards) { width: 36px; padding: 0; justify-content: center } }
-@media (max-width: 1120px) { .tools .chip span { display: none } .tools .chip:not(.round):not(.demo) { width: 36px; padding: 0; justify-content: center } }
+@media (max-width: 1480px) { .tools .chip:not(.mycards) span { display: none } .tools .chip:not(.round):not(.demo):not(.mycards) { width: 36px; padding: 0; justify-content: center } }
+@media (max-width: 1260px) { .tools .chip span { display: none } .tools .chip:not(.round):not(.demo) { width: 36px; padding: 0; justify-content: center } }
+@media (max-width: 1080px) { .chip.series { display: none } } /* the brand, tools and wallet fill the bar */
 
 /* phones held upright: scene on top, four big station buttons, the buy bar pinned to the bottom */
 body[data-mode=port] { overflow: auto }
@@ -157,6 +158,9 @@ body[data-mode=land] .strip { display: none }
 body[data-mode=land] #buybox { display: none }
 body[data-mode=land] .buybar { display: grid; position: fixed; right: 0; top: var(--top); bottom: 0; width: 240px; box-sizing: border-box; padding: 10px; gap: 8px; align-content: start; background: #0d0907; border-left: 2px solid #ffbf5e; z-index: 6; --fs: 13px; overflow: auto }
 body[data-mode=land] .buybar .opts { flex-direction: column } body[data-mode=land] .buybar .opt { white-space: normal }
+/* one column that never grows past the bar: long headers and labels wrap instead of running off the edge */
+body[data-mode=land] .buybar { grid-template-columns: minmax(0, 1fr) } body[data-mode=land] .buybar .phase { white-space: normal; text-wrap: balance }
+body[data-mode=land] .buybar .opt { min-width: 0; overflow-wrap: anywhere }
 body[data-mode=land] .pill small { display: none } body[data-mode=land] .pill { min-height: 40px; padding: .4em .8em }
 /* Series sneak peek: the next Series' tease, on the scene (desktop) and in the stations (phone) */
 .peek-fan { position: relative; display: inline-block; width: 30px; height: 34px; flex: none }

@@ -36,12 +36,16 @@
 
   const state = {
     demo: true,
-    series: { no: 7, total: 167, starters: 50, startersClaimed: 23, sold: 12, plankOnly: 50, plankSold: 12, phase: 0, closed: false },
-    // phase: 0 holders first + PLANK only, 1 holders first (any currency), 2 open to all (max 5), 3 no limit, 4 sold out
+    // this Series' settings (per drop; the live site reads them from the contracts): packs, Press packs, PLANK-only packs,
+    // the per-wallet limit while it applies, and the cast size (characters) its recipe was built with
+    series: { no: 7, total: 167, starters: 50, startersClaimed: 23, sold: 12, plankOnly: 50, plankSold: 12, walletLimit: 5, cast: 10, phase: 0, closed: false },
+    // phase: 0 holders first + PLANK only, 1 holders first (any currency), 2 open to all (walletLimit each), 3 no limit, 4 sold out
     wallet: {
       connected: false, address: '0x7a3f…c91e', name: 'Demo wallet', isPressHolder: true, inSnapshot: true, isContract: false,
       balances: { ETH: 0.42, PLANK: 1250000000, PAPER: 24, USDG: 50 },
       credits: 1, burnCount: 12, starterClaimed: false, bought: 0, pending: [],
+      // ERC-20 allowances this wallet has given FireSale (packs, Press packs, free packs and suggestions all take PAPER)
+      allowance: { PAPER: 0, PLANK: 0, USDG: 0 },
     },
     // Series teases: one character in every card type. Add one for any Series at any time: an entry here plus its six
     // cards in ui/announce/<id>-<type>.webp (paper, wood, fire, charcoal, gold, fullart), rendered for that Series (they
@@ -60,6 +64,12 @@
   const listeners = new Set();
   const Store = {
     state, MATS, MAT_LABEL, ALWAYS_HOLO, SPECIAL_CAST, CHARS, NAMES, DAY, PRICES,
+    // MAX_BATCH mirrors FirePsa.maxBatch() (an owner setting): the most cards one case & grade payment can take, cases and grades together
+    MAX_BATCH: 20,
+    // approvals (demo): the most a call may take must be approved to FireSale first; spending uses it up
+    needsApproval(token, amount) { return token !== 'ETH' && amount > 0 && (state.wallet.allowance[token] || 0) < amount - 1e-9; },
+    approve(token, amount) { state.wallet.allowance[token] = amount; },
+    spend(token, amount) { if (token !== 'ETH') state.wallet.allowance[token] = Math.max(0, (state.wallet.allowance[token] || 0) - amount); },
     get(path) { return path.split('.').reduce((o, k) => o?.[k], state); },
     update(fn) { fn(state); listeners.forEach((l) => l(state)); },
     on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
@@ -126,10 +136,13 @@
     SUGGEST_MAX_BYTES: 1000,
     SUGGEST_FIELDS: [['character', 'Character'], ['personality', 'Personality'], ['background', 'Background']],
     packSuggestion(f) {
-      return Store.SUGGEST_FIELDS.map(([k, label]) => [label, String(f[k] || '').replace(/\s+/g, ' ').trim()])
+      return Store.SUGGEST_FIELDS.map(([k, label]) => [label, Store.plain(f[k]).replace(/\s+/g, ' ').trim()])
         .filter(([, v]) => v).map(([label, v]) => label + ': ' + v).join('\n');
     },
+    // text people typed, without bidi controls (they can make text read in a different order than it's stored)
+    plain(t) { return String(t ?? '').replace(/[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, ''); },
     parseSuggestion(text) { // back to { character, personality, background }; text without labels is the character alone
+      text = Store.plain(text);
       const out = { character: '', personality: '', background: '' }, keys = Object.fromEntries(Store.SUGGEST_FIELDS.map(([k, l]) => [l.toLowerCase(), k]));
       let cur = 'character', labelled = false;
       for (const line of String(text).split('\n')) {
@@ -162,7 +175,8 @@
       let d = document.getElementById('sheet-' + id);
       if (!d) {
         d = document.createElement('dialog'); d.id = 'sheet-' + id; d.className = 'sheet' + (wide ? ' wide' : '');
-        d.innerHTML = `<div class="sheet-head"><h2></h2><button class="x" type="button" aria-label="Close">×</button></div><div class="sheet-body"></div>`;
+        d.innerHTML = `<div class="sheet-head"><h2 id="sheet-${id}-t"></h2><button class="x" type="button" aria-label="Close">×</button></div><div class="sheet-body"></div>`;
+        d.setAttribute('aria-labelledby', `sheet-${id}-t`);
         d.querySelector('.x').onclick = () => d.close();
         d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
         d.addEventListener('close', () => { d._opener?.focus?.(); d._onClose?.(); });
@@ -175,6 +189,8 @@
       return d;
     },
     close(id) { document.getElementById('sheet-' + id)?.close(); },
+    // true while a modal sheet covers the scene (the scene stops drawing under it)
+    get covering() { return !!document.querySelector('dialog.sheet[open]'); },
   };
 
   window.Store = Store; window.Sheet = Sheet; window.toast = toast;

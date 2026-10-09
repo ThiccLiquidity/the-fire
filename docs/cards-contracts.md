@@ -164,7 +164,8 @@ are no PDA odds in it: they are fixed in `FirePsa` for every Series. The JSON is
 `sale` (optional; the studio's Sale tab) is `FireSale.DropConfig` field by field, in contract units: times in seconds
 after `start`, dollars with 8 decimals, PAPER in wei, the burn share in basis points. Every field is required except
 `holderRoot` (0 = presses only). `DROP_START` and `HOLDER_ROOT` override `start` and `holderRoot` when the script runs
-(the snapshot is taken just before the drop). The studio's sample export is `contracts/test/cards/recipe-studio-sale.json`
+(the snapshot is taken just before the drop). Batch B refuses `holderWindow` > 0 with no `holderRoot` (a forgotten
+snapshot) unless `NO_HOLDERS=true`. The studio's sample export is `contracts/test/cards/recipe-studio-sale.json`
 (written by `studio/scripts/sale-sample.test.ts`; `Sale.t.sol` runs it through the script and `configureDrop`).
 
 ## The flow
@@ -174,7 +175,9 @@ after `start`, dollars with 8 decimals, PAPER in wei, the burn share in basis po
    must already have the Series ready), `FireCards.setImagesBase(fire, base)`. Then
    `FireSale.configureDrop` (it requires `FireCards.ready(fire)`; the script adds it last from the `sale` block).
    `configureDrop` calls `FireCards.lockForSale(fire)`: from then the dealer, recipe, characters and image folder are
-   fixed.
+   fixed. Every lock (`lockForSale`, `lockFire`) and `ready` check again that the Series has an image folder and that
+   its dealer's cards per pack is 1 to `MAX_CARDS_PER_PACK` (a recipe changed after `setDealer` isn't otherwise
+   rechecked), so a locked Series can always be dealt.
 2. **During the drop:** the seller (`FireSale`) mints packs. They're tradeable sealed.
 3. **When the drop ends:** the seller calls `closeFire(fire)`. The pack count freezes. Closing never calls the dealer.
    The pool (`poolOf`) is worked out from the recipe and that count; the dealer lays it out at the first deal.
@@ -213,7 +216,7 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 |---|---|---|---|---|
 | Paid packs | `DropConfig.packs` | per Series | 117 | < 2^64; 0 allowed if there are press packs |
 | Press packs (starters) in all | `starters` | per Series | 50 | < 2^64; 0 = off |
-| Price per paid pack | `priceUsd` (8 dec.) | per Series | $2.50 | > 0 when there are paid packs (a $0 typo would give them away) |
+| Price per paid pack | `priceUsd` (8 dec.) | per Series | $2.50 | always > 0 (unclaimed press packs sell at it; a $0 typo would give them away) |
 | PAPER per paid / credit pack | `paperPerPack` | per Series | 1 PAPER | any, 0 = none |
 | PAPER ceiling per pack | `paperCapUsd` (8 dec.) | per Series | $1 | any, 0 = no ceiling. A pack's PAPER (paid, press and credit packs) is never worth more than this at the `PAPER_USD` feed's price; while the feed is late the last good price holds (`lastPaperUsd`); before its first price, the set PAPER |
 | PLANK burn share | `plankBurnBps` | per Series | 30% | 0 to 100% |
@@ -221,7 +224,7 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | PLANK-only opens to ETH/USDG after | `plankOnlyFor` | per Series | 48h | > 0 if `plankOnly` > 0 (a PLANK feed outage can't stall a drop); <= 30 days |
 | Wallet limit (paid) | `walletLimit` | per Series | 5 | < 2^64; 0 = none (then `liftAfter` 0 too) |
 | Wallet limit lifts after | `liftAfter` | per Series | 48h | <= 30 days; 0 only with no limit |
-| Most packs per purchase / credit spend | `maxPerTx` | per Series | 50 (0 = 50) | < 2^32. Gas is flat: 100 packs cost the same as 1 (~96k) |
+| Most packs per purchase / credit spend | `maxPerTx` | per Series | 50 (0 = 50) | < 2^32. Gas is flat: 100 packs cost the same as 1 (~98k) |
 | Holder window | `holderWindow` | per Series | 24h | <= 30 days; 0 = open to all |
 | Snapshot root | `holderRoot` | per Series | from `ops/snapshot` | 0 = presses only. The $69 minimum is the snapshot's `--min-usd` (off-chain, per drop) |
 | Regular wallets only for | `regularWalletsFor` | per Series | 48h | <= 30 days; 0 = off (was tied to the wallet limit) |
@@ -232,8 +235,8 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | Press pack PAPER | `starterPaper` | per Series | 1 PAPER | any; both price fields 0 = free |
 | Credits per picked suggestion | `creditsPerPick` | per Series | 1 | < 2^16; 0 = none |
 | Free (credit) packs in the drop, at most | `creditPacksMax` | per Series | 10% of the drop's packs (the studio sets a percent and exports the count, rounded down, at least 1) | < 2^64; 0 = no limit; `CreditCapReached` past it |
-| Free (credit) packs per wallet, at most | `creditPacksPerWallet` | per Series | 3 | < 2^64; `CreditWalletLimit` past it |
-| Cards per free pack credit | `FireCredits.CARDS_PER_CREDIT` | constant | 42 | **fixed forever**: burn progress carries over between Series, so changing it would move the goalposts |
+| Free (credit) packs per wallet, at most | `creditPacksPerWallet` | per Series | 3 | < 2^64; 0 = no limit; `CreditWalletLimit` past it |
+| Cards per free pack credit | `FireCredits.CARDS_PER_CREDIT` | constant | 42 | **fixed forever**: burn progress carries over between Series, so changing it would move the goalposts. Credits can't be spent on a Series whose packs hold 42 cards or more (`FireCredits.useCredits` reverts `BadConfig`): a burned pack would earn a free pack of itself |
 | Suggestion cost, longest text | `FireCredits.setSuggestionRules` | global (suggestions aren't tied to a drop) | 1 PAPER, 280 bytes | any cost incl. 0 (each `suggest` names its most PAPER), never more than $1 of PAPER (`SUGGESTION_PAPER_CAP_USD`, fixed); text 1 to 1,024 bytes (event size). **Set the longest text to about 1,000 bytes** (`setSuggestionRules(paper, 1000)`): the site packs a character, its personality and its background into one text (format below) |
 | Cards per case/grading batch | `FirePsa.setMaxBatch` | global | 20 | 1 to 100 (gas guard: `finish` grades a batch in one tx) |
 | Case and grading prices | `FirePsa.setPrices` | global | $0.05, $1 | above 0, at most $100 each (typo guard; each batch names its most) |
@@ -289,7 +292,8 @@ be renounced.
 - Cards are minted without the receiver callback, so a holder's contract can't stall the queue for everyone else.
 - One open, one randomness request: there is no re-request (it could act as a re-roll once a drand round is public).
   After 7 days with no answer (randomness gone for good), anyone can `cancelOpen(fire, index)`: the packs go back to
-  the holder, sealed. Each open remembers its randomness source and only that source can answer it, so switching the
+  the holder, sealed (minted back without the ERC-1155 receiver hook, so a wallet that refuses them can't block the
+  cancel and freeze the queue; same for `skipStuck`). Each open remembers its randomness source and only that source can answer it, so switching the
   source never strands or re-rolls an open. If a ready open sits at the head of its queue undealt for 7 days (a dealer
   that can't deal it), anyone can `skipStuck(fire)`: its unstarted packs go back, sealed, and the queue moves on. Each
   Series' queue stands alone, so one stuck Series never blocks another.
@@ -303,20 +307,20 @@ be renounced.
   repo, covered by the tests; a future dealer is trusted like the owner's other settings, and must deal only from its
   own state and the seed and keep its text JSON-safe.
 
-## Gas (Standard recipe, `forge test --match-test test_gas -vv`)
+## Gas (Standard recipe, `forge test --match-test gas -vv`, measured 2026-10)
 
 | | Before | Now |
 |---|---|---|
 | `open` 1 pack | ~101.9k | ~102.8k (the open now also stores its randomness source, packed with the request id) |
-| `process` 1 pack (6 cards) | ~345.8k | ~365.4k (+5.7%) |
-| `process` a 10-pack open | ~3.26M | ~3.47M (+6.4%) |
+| `process` 1 pack (6 cards) | ~345.8k | ~370.9k (+7.3%) |
+| `process` a 10-pack open | ~3.26M | ~3.49M (+7.1%) |
 
 The extra is the call to the dealer and reading the compiled recipe (stored as contract code, read in one copy).
 
 ## Tests
 
 `contracts/test/cards/` (`Cards.t.sol`, `Recipe.t.sol`, `Sale.t.sol`, `Psa.t.sol`, `Burner.t.sol`, `PlankBurner.t.sol`,
-`SaleFork.t.sol`) and
+`SaleFork.t.sol`, `ImageParity.t.sol`, `SeriesCheck.t.sol`) and
 `contracts/test/invariant/` (fuzz and invariant suites, including `RecipeFuzz.t.sol`). They cover:
 - the Standard pool (`classic`, Gold in Diamond's place) matches the studio's own code over 344 Series sizes and
   count settings (`pool-fixture.json`,
@@ -332,6 +336,8 @@ The extra is the call to the dealer and reading the compiled recipe (stored as c
   never beyond the pool, every slot set always has enough
 - the same words give the same cards however processing is split; out-of-order randomness waits its turn
 - permissions, burns, royalties, metadata, image names, the image folder lock, the JSON configure path
+- image names match the studio's files for every look a recipe can deal (`ImageParity.t.sol`, `image-parity/`), and
+  batch B is refused unless the chain holds batch A exactly (`SeriesCheck.t.sol`)
 - the wear odds match `wear-model.py` (`wear-vectors.json`); the fresh odds are the fixed constants with no setter;
   cases and grades freeze wear; grades are final; the
   burner's best route, split, 95% guard, piece-by-piece backlog, set-once feeds and known-token routes
@@ -346,10 +352,11 @@ RecipeDealer and RecipeCompiler, PlankBurner, FireCredits, FireSale (wired to bo
 and checks the sale points back), PaperBurner (its feeds and default routes: direct to PAPER or through PLANK/WETH),
 FirePsa, two drand adapters (FireCards, FirePsa), the royalty. It needs `PAPER_USD_FEED` (the `PaperUsdTwap`). It
 hands ownership to `OWNER`, one hardware wallet (Ledger or Trezor; no multisig: nothing holds funds, the risk is key
-theft), which then accepts FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner in one run of
-`contracts/script/AcceptOwnership.s.sol` signed on the device; FireSale is owned by `OWNER` from deployment;
-PlankBurner has no owner. The script checks every input first and refuses an `OWNER` equal to the deployer (a
-throwaway hot wallet that only pays gas). A test runs the same steps.
+theft), which then accepts FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa and PaperBurner in one
+run of `contracts/script/AcceptOwnership.s.sol` signed on the device (until then the deployer owns them, so a mistyped
+`OWNER` owns nothing); PlankBurner has no owner. The script runs only on chain 4663 (`EXPECTED_CHAIN_ID` for the testnet,
+46630, or a rehearsal), checks every input first and refuses an `OWNER` equal to the deployer (a throwaway hot wallet that only
+pays gas). A test runs the same steps.
 
 Every deploy script writes what it deployed to `deployments/<chainId>.json` (repository root), the address file every
 tool reads; `contracts/script/VerifyDeploy.s.sol` checks the wiring listed below from it.
@@ -359,7 +366,8 @@ recipe, characters, dealer, images base) and, after `ops/series/verify-series.mj
 (`configureDrop`, the lock; refused unless the chain holds batch A exactly). It checks the recipe against the dealer,
 prints each call and sends it from the owner (`--ledger`/`--trezor`; any other signer is refused); `SIMULATE=true` runs
 a batch as the impersonated owner on a fork (`BATCH=AB` only there). It rejects unknown JSON keys (`pdaOdds` too) and a drop start more than 365 days away. Inputs: `RECIPE_JSON` (under `contracts/series/`), `BATCH`,
-`DROP_START` and `HOLDER_ROOT` (override the block), `CHARACTER_BATCH` (characters per call, default 200);
+`DROP_START` and `HOLDER_ROOT` (override the block), `NO_HOLDERS=true` (allow a holder window with no root),
+`CHARACTER_BATCH` (characters per call, default 200);
 `RECIPE_DEALER`, `FIRE_CARDS`, `FIRE_SALE` from the deployments file unless set.
 
 - **Settings:** `.env.example` (card contracts section). No keys in `.env`: the deployer signs with the Foundry keystore, the owner on its hardware wallet.

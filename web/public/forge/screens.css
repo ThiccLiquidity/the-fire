@@ -97,6 +97,15 @@ a.btn { text-decoration: none }
 .op-n { font: 400 14px var(--display); color: var(--muted); letter-spacing: .04em }
 .op .stage-ctrls { margin-top: 6px }
 .op-area.quake { animation: quake .45s linear }
+/* phones on their side: the card sits beside its words and buttons, sized to the height the sheet leaves it (the sheet's
+   margin and header, the body's and the stage's padding) */
+@media (max-height: 520px) and (orientation: landscape) {
+  .op { --cw: min(300px, calc((100dvh - 196px) / 1.4)); grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 1fr auto auto 1fr; column-gap: 18px; align-items: center }
+  .op-area { grid-column: 1; grid-row: 1 / -1; width: auto; min-width: calc(var(--cw) + 28px); min-height: calc(var(--cw) * 1.4 + 18px) }
+  .op .stage-msg { grid-column: 2; grid-row: 1; align-self: end }
+  .op-meta { grid-column: 2; grid-row: 2 }
+  .op .stage-ctrls { grid-column: 2; grid-row: 3; align-self: start }
+}
 @keyframes quake { 0%, 100% { transform: none } 20% { transform: translate(-4px, 2px) } 40% { transform: translate(4px, -3px) } 60% { transform: translate(-3px, -1px) } 80% { transform: translate(2px, 2px) } }
 
 /* the pack: art below the tear line, the foil strip above it (torn piece + the part still attached), the cards inside */

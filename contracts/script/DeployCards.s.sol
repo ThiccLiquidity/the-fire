@@ -71,9 +71,11 @@ interface ICardsPair {
  * Settings (.env.example, card contracts section):
  *   DRAND_ROUTER      the OpenDrandRouter from DeployInfra.s.sol (it has no owner)
  *   OWNER             the hardware wallet (Ledger or Trezor) that will own everything. Afterwards it calls
- *                     acceptOwnership() on FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa and PaperBurner
- *                     (Ownable2Step), all six in one run of script/AcceptOwnership.s.sol signed on the device. FireSale
- *                     is owned by OWNER from deployment. PlankBurner has no owner. Must not be the deployer.
+ *                     acceptOwnership() on FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa and
+ *                     PaperBurner (Ownable2Step), all seven in one run of script/AcceptOwnership.s.sol signed on the
+ *                     device, so a mistyped OWNER owns nothing (the deployer still does). PlankBurner has no owner.
+ *                     Must not be the deployer.
+ *   EXPECTED_CHAIN_ID the chain it must run on (default 4663, Robinhood Chain; set it for a rehearsal)
  *   ROYALTY_RECEIVER, ROYALTY_BPS (500 = 5%, max 1000)
  *   PACK_IMAGE_BASE   folder of the pack art (fire<N>.webp); can be set later
  *   PAPER, PLANK, USDG, WETH, MILL (the Paper Press NFT)
@@ -147,6 +149,7 @@ contract DeployCards is Deployments {
             revenueWallet: vm.envAddress("REVENUE_WALLET"),
             suggestionPaper: vm.envOr("SUGGESTION_PAPER", uint256(1e18))
         });
+        require(block.chainid == vm.envOr("EXPECTED_CHAIN_ID", uint256(4663)), "not Robinhood Chain (4663; EXPECTED_CHAIN_ID for a rehearsal)");
         check(p);
         require(p.owner != msg.sender, "OWNER is the deployer: use a throwaway deployer and the hardware wallet as OWNER");
 
@@ -166,7 +169,7 @@ contract DeployCards is Deployments {
         console.log("RecipeCompiler", address(d.compiler));
         console.log("Adapter (cards)", address(d.adapter));
         console.log("Adapter (PDA)  ", address(d.psaAdapter));
-        console.log("Next: the OWNER hardware wallet accepts the six contracts: script/AcceptOwnership.s.sol --ledger (or --trezor).");
+        console.log("Next: the OWNER hardware wallet accepts the seven contracts: script/AcceptOwnership.s.sol --ledger (or --trezor).");
         _recordCards(d, p);
     }
 
@@ -218,7 +221,7 @@ contract DeployCards is Deployments {
         d.plankBurner = new PlankBurner(p.plank, p.usdg, usdgDecimals, p.weth, p.v2Router, p.ethUsd, p.plankUsd);
         d.credits = new FireCredits(deployer, address(d.cards), p.suggestionPaper);
         d.sale = new FireSale(FireSale.Config({
-            owner: p.owner, paper: p.paper, plank: p.plank, usdg: p.usdg, weth: p.weth, press: p.press,
+            owner: deployer, paper: p.paper, plank: p.plank, usdg: p.usdg, weth: p.weth, press: p.press,
             packs: address(d.packs), cards: address(d.cards), ethUsd: p.ethUsd, plankUsd: p.plankUsd, paperUsd: p.paperUsd,
             router: p.v2Router, revenueWallet: p.revenueWallet, plankBurner: address(d.plankBurner), credits: address(d.credits)
         }));
@@ -249,6 +252,7 @@ contract DeployCards is Deployments {
         d.cards.transferOwnership(p.owner);
         d.dealer.transferOwnership(p.owner);
         d.credits.transferOwnership(p.owner);
+        d.sale.transferOwnership(p.owner);
         d.psa.transferOwnership(p.owner);
         d.burner.transferOwnership(p.owner);
     }

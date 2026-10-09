@@ -26,7 +26,8 @@ export interface RenderJob {
 }
 
 /** Decoded bitmaps kept per renderer (each frame is 1500 x 2100, about 12.6 MB decoded). A full-grid build renders
- *  one look's 11 grade states in a row, which needs the art plus 6 frames (PDA 10 reuses the clean frame), so 10
+ *  one look's 12 states in a row (ungraded, cased, PDA 1-10), which needs the art plus 6 frames (ungraded, cased and
+ *  PDA 10 use the clean frame), so 10
  *  covers a look and its neighbour without holding every frame of the Series. */
 const LRU_SIZE = 10
 

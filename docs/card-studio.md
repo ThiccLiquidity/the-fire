@@ -18,12 +18,12 @@ checks and pool maths are ports of the contract's and are tested against it. New
   "Forged · Series #", with the PDA seal on the right.
 - **In the metadata only:** the global serial (never resets) and the edition ("12 of 43"). This lets every card with
   the same look and grade share one image.
-- **Name** per character: at most 64 bytes of UTF-8 (the contract's `MAX_NAME_BYTES`), no `"`, `\` or control
-  characters. A Series takes any number of characters (the contract stores them in batches).
+- **Name** per character: at most 64 bytes of UTF-8 (the contract's `MAX_NAME_BYTES`), no `"`, `\`, control
+  characters or DEL (`RecipeCompiler._checkText`). A Series takes any number of characters (the contract stores them in batches).
 - **Category** per character: free text, typed in the Library. There is no preset list; the field suggests the
   categories already used, so the list builds up as categories are added. Spaces are trimmed and collapsed, the
   capitalisation typed is what prints, and the same word in other capitalisation is saved with the spelling already
-  in use. Limits (the contract's): 1 to 32 bytes of UTF-8, no `"`, `\` or control characters. It is stored on-chain
+  in use. Limits (the contract's): 1 to 32 bytes of UTF-8, no `"`, `\`, control characters or DEL. It is stored on-chain
   with the Series (`RecipeDealer.setCharacters`). Older saves and backups with the old fixed ids (`sports`) load as labels
   (`Sports`).
 
@@ -72,7 +72,9 @@ one exact card is on the site's scale (copies of that character + type + look ov
 from 1 in 100, Epic 1 in 400, Legendary 1 in 1,000; `studio/src/rarity.ts` mirrors `trueOdds` / `Info.lookP`), and
 the share of packs holding at least one (and two or more) of each type, from test deals with the contract's dealing.
 A percent supply can be typed as a number of cards (it sets the percent that gives exactly that many) and an exact
-number as a percent. The Series tab shows the same result. Presets: **Standard**,
+number as a percent; these fields always use the Series' own packs and the type's max per pack, so they match its
+"Makes" line. "Packs with one" shows "-" for a Series too big to test-deal here (over 600,000 cards). Packs of 42 or
+more cards get a warning: free-pack credits (42 cards burned each) can't be spent on that Series. The Series tab shows the same result. Presets: **Standard**,
 **Special: 3 cards, all holo** (Fire the filler, Coal 30%, Gold 2% at most one per pack; 2 Fire-or-better and 1
 Coal-or-better, all must-holo), or a copy of another Series' recipe. Series saved before recipes load with the old
 Standard recipe (Diamond) and their Diamond setting.
@@ -176,34 +178,44 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and its cards
    character can join a Series once it has the art that Series' recipe uses.
 2. **Frames & Layout:** text fields' font, size and colour are set once per frame set; the art window is fixed by
    the frames.
-3. **Series:** pick the characters (any number; their order is the image order c0, c1, ...) and the pack count.
+3. **Series:** pick the characters (any number; their order is the image order c0, c1, ...). The pack count is the
+   drop's, paid + press, set on the Sale tab (one number: the pool, rarity and per-pack numbers use it).
 4. **Recipe:** card types and slots, with the contract's checks and the result (counts, rarity, per-pack chances).
    **Sale** (next tab): the drop's settings for `FireSale.configureDrop` in plain units (paid and press packs, price,
    PAPER, burn share, PLANK-only packs, wallet limit, holder window and snapshot root, regular-wallets time, press
    packs per press and per wallet and their price, packs per purchase, credits per picked suggestion, caps on free
    packs per drop and per wallet), with the drop drawn as one bar (PLANK-only, paid, press, and the free cap taken from
    the paid packs) and its sell-out dollars and PLANK burn, checked live
-   like the contract checks them. Presets: Standard (today's sale) and Giant (10,000 packs, 100 per wallet and per
-   purchase). Cards per free pack shows as fixed (42, forever). Missing settings mean the Standard sale.
+   like the contract checks them. The pack price is always above 0, even with no paid packs (unclaimed press packs
+   sell at it). Presets: Standard (today's sale) and Giant (10,000 packs, 100 per wallet and per purchase). Cards per
+   free pack shows as fixed (42, forever). Series saved without sale settings get the Standard sale resized to their
+   packs; a free-pack cap saved as a number of packs becomes the percent of that drop that gives at most that many.
 5. **Deal:** a sample deal on the recipe (the contract's dealing with the studio's own randomness, up to 600,000
    cards), seeded by a string, dealt in a background worker. Locking it locks the recipe and advances the studio's own
    serial counter (not the contract's).
 6. **Build & Review:** one sample per character x type x holo look renders for review (12 characters a page).
    **Approve all**, then **Build all images** builds the recipe's full grid in background workers; the count, size
-   and time are estimated first. Missing frames block approval and the build. A later asset, recipe or character
-   change means building again.
+   and time are estimated first, and checked against the browser's free storage (`navigator.storage.estimate()`). A
+   stopped build resumes: the images already stored for the same grid key are kept, unless art, layouts or fonts
+   changed since it started. Missing frames block approval and the build. A later asset, recipe or character change
+   means building again.
 7. **Export & Upload:** a readiness checklist (recipe valid, frames for every type, characters valid, deal locked,
-   approved, the full grid built, sale settings valid); **recipe.json** (what `contracts/script/ConfigureSeries.s.sol`
-   reads: types, slots, characters, `imagesBase` once uploaded, and the `sale` block; tied to the
-   uploaded build); a zip of the images, per-card metadata (preview
-   only), `fire.json` and `recipe.json`, in parts of about 1.5 GB for big Series; or the upload to IPFS: Pinata, then a
-   second pin of the same images on Filebase, then the images CAR saved offline. The screen keeps its copy short: one
+   approved, the full grid built, sale settings valid, the sale's packs equal to the Series' or the locked deal's);
+   **recipe.json** (what `contracts/script/ConfigureSeries.s.sol` reads: types, slots, characters, `imagesBase` once
+   uploaded, and the `sale` block; tied to the uploaded build; it warns until both pins are checked and the CAR is
+   confirmed stored); a zip of the images, per-card metadata (preview only), `fire.json` and `recipe.json` (big Series
+   in parts of at most 1.5 GB or 60,000 files, the metadata in its own parts, written straight into a folder the owner
+   picks); or the upload to IPFS: Pinata, then a second pin of the same images on Filebase, then the images CAR saved
+   offline. The screen keeps its copy short: one
    line per step, the buttons, and the two safety prompts (both pins must hold the same CID; save the CAR offline).
 
 **Upload.** Each folder (images, then the preview metadata) is packed in the browser into one CAR file. Its root CID
 (a UnixFS directory, CIDv1, sharded when large) is known before upload. The CAR goes to Pinata's v3 upload API with
-`car: true` over its resumable (tus) protocol in 50 MB pieces: a dropped connection or a reload resumes where Pinata
-got to, and a folder Pinata already has (checked by its folder CID) is reused. Pinata keeps exactly that folder, so its CID is the
+`car: true` over its resumable (tus) protocol (`Tus-Resumable: 1.0.0`) in 50 MB pieces: a dropped connection or a
+reload resumes where Pinata got to, and a folder Pinata already has (checked by its folder CID) is reused. When every
+byte is in but no `upload-cid` came back, the studio asks for the upload's status (and the folder's CID) again, with
+backoff, instead of sending the CAR again. The page must be able to read `Location`, `Upload-Offset` and `upload-cid`
+from Pinata's answers (exposed to the browser). Pinata keeps exactly that folder, so its CID is the
 single `imagesBase` the contract expects (`ipfs://<images CID>/`). The Pinata key (Files write permission) is typed in
 per session and never stored. The legacy one-request folder upload is not used: it can't resume, and one folder
 can't be built from several pins.
@@ -214,8 +226,9 @@ the sale block left out). VerifySeries (`ops/series`) reads it before the Series
 
 **Second pin (Filebase).** Right after Pinata, the same images CAR is pinned on Filebase through its S3-compatible API
 (`https://s3.filebase.com`, object `<images folder>.car` with the `import: car` metadata), in 64 MB parts that resume
-after a failure or a reload. Filebase reports the CID it pinned; it must equal the folder's root CID, which is also
-what Pinata holds. Then both are read back (**Check both pins**). If no Filebase key was entered, **Pin to Filebase**
+after a failure or a reload. Filebase reports the CID it pinned (it can take a few minutes after the upload: the studio looks it up with backoff
+for about 6 minutes, never uploading again for it); it must equal the folder's root CID, which is also what Pinata
+holds. Then both are read back (**Check both pins**). If no Filebase key was entered, **Pin to Filebase**
 does it later. The Filebase access key, secret and bucket are typed in per session, like the Pinata JWT: memory only,
 never stored or logged. One-time setup:
 1. Filebase console: Buckets → Create bucket (network IPFS); Access Keys → a key that can write to it.
@@ -224,7 +237,7 @@ never stored or logged. One-time setup:
    another address than `http://localhost:5173`).
 
 **Offline copy.** Until the owner confirms it, the Export screen asks to **Save images CAR** (streamed to a file the
-owner picks) and to keep it on a drive they keep. With that file the images can be pinned again anywhere (any
+owner picks; Chrome or Edge, since the CAR is never collected in memory) and to keep it on a drive they keep. With that file the images can be pinned again anywhere (any
 service's CAR upload, or `ipfs dag import`) and come back with the same CID, even if both pinning services drop them.
 
 **Mock IPFS** (Data tab, or `?mockPinata` in the URL) covers Pinata and Filebase: nothing leaves the machine.

@@ -146,6 +146,7 @@ describe('the real transport (tus flow, against a fake Pinata)', () => {
     globalThis.fetch = (async (url: string, init: RequestInit) => {
       const h = new Headers(init.headers)
       expect(h.get('Authorization')).toBe('Bearer jwt')
+      expect(h.get('Tus-Resumable')).toBe('1.0.0')
       if (init.method === 'POST') {
         expect(url).toBe('https://uploads.pinata.cloud/v3/files')
         expect(h.get('Upload-Length')).toBe(String(car.size))
@@ -179,6 +180,45 @@ describe('the real transport (tus flow, against a fake Pinata)', () => {
       for await (const c of carBytes(files, car.root)) { const n = new Uint8Array(all.length + c.length); n.set(all); n.set(c, all.length); all = n }
       expect(all.every((b, i) => b === received[i])).toBe(true)
       expect(atob(meta[0].split(',').find((x) => x.startsWith('car '))!.slice(4))).toBe('true')
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  it('no upload-cid on the last PATCH: asks for the status again, never re-sends the CAR', async () => {
+    const { pinataTransport } = await import('./pinata')
+    const { carBytes } = await import('./car')
+    const files = [{ name: 'a.webp', blob: new Blob(['x'.repeat(30_000)]) }]
+    const car = await planCar(files)
+    let received = 0
+    let patches = 0
+    let heads = 0
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      if (url.startsWith('https://api.pinata.cloud/v3/files/public')) return Response.json({ data: { files: [] } })
+      if (init.method === 'POST') return new Response(null, { status: 201, headers: { Location: 'https://uploads.pinata.cloud/v3/files/abc' } })
+      if (init.method === 'PATCH') {
+        patches++
+        received += (init.body as Blob).size
+        return new Response(null, { status: 204, headers: { 'Upload-Offset': String(received) } })
+      }
+      if (init.method === 'HEAD') {
+        // the CID shows on the third status check
+        return new Response(null, { status: 200, headers: { 'Upload-Offset': String(received), ...(++heads >= 3 ? { 'upload-cid': car.root } : {}) } })
+      }
+      throw new Error(`unexpected ${init.method} ${url}`)
+    }) as typeof fetch
+    try {
+      const waits: number[] = []
+      const t = pinataTransport(10_000, [1, 2, 3, 4], async (ms) => { waits.push(ms) })
+      const up = { name: 'n', root: car.root, size: car.size, files: 1, bytes: (from: number) => carBytes(files, car.root, from), onResumeUrl: async () => {} }
+      expect(await t.uploadCar('jwt', up, () => {})).toBe(car.root)
+      expect(waits).toEqual([1, 2])
+      const sent = patches
+      // a reload with the whole CAR already in: no bytes, only the status
+      expect(await t.uploadCar('jwt', { ...up, resumeUrl: 'https://uploads.pinata.cloud/v3/files/abc' }, () => {})).toBe(car.root)
+      expect(patches).toBe(sent)
+      expect(received).toBe(car.size)
     } finally {
       globalThis.fetch = realFetch
     }

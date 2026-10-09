@@ -43,6 +43,17 @@ contract Grumpy {
     function open(FireCards c, uint256 fire) external { c.open(fire, 1); }
 }
 
+/// @dev An opener whose wallet can later refuse ERC-1155 (an upgradeable wallet, or an EIP-7702 delegated EOA).
+contract Toggle {
+    bool public refuse;
+    function setRefuse(bool r) external { refuse = r; }
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata) external view returns (bytes4) {
+        require(!refuse, "no thanks");
+        return this.onERC1155Received.selector;
+    }
+    function open(FireCards c, uint256 fire) external { c.open(fire, 1); }
+}
+
 contract CardsTest is SeriesHelper {
     using stdJson for string;
 
@@ -1088,23 +1099,106 @@ contract CardsTest is SeriesHelper {
         assertFalse(c.cased);
         assertEq(c.grade, 0);
     }
+
+    // ---------- pre-testnet audit (round 8) regressions ----------
+
+    event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value);
+
+    /// M-1: a holder that refuses the returned packs used to make cancelOpen revert, so its open sat at the head of the
+    /// queue forever and every later open of the Series (answered, packs already burned) could never be dealt. Packs
+    /// now come back without the receiver hook: the cancel goes through and the queue moves on.
+    function test_audit8_refusedReturnDoesNotBrickTheQueue() public {
+        _sellAndClose(1, 3);
+        Toggle t = new Toggle();
+        vm.prank(_holder(0));
+        packs.safeTransferFrom(_holder(0), address(t), 1, 1, "");
+        t.open(cards, 1); // old source; it dies
+        MockRandomness rng2 = new MockRandomness();
+        rng2.setCards(cards);
+        vm.prank(owner);
+        cards.setRandomness(address(rng2)); // the owner switches away from the dead source
+        vm.prank(_holder(1));
+        cards.open(1, 1); // new source
+        rng2.deliver(1, 42); // answered
+        t.setRefuse(true);
+        vm.warp(block.timestamp + 8 days);
+        vm.expectEmit(true, true, true, true, address(packs));
+        emit TransferSingle(address(cards), address(0), address(t), 1, 1);
+        cards.cancelOpen(1, 0);
+        assertEq(packs.balanceOf(address(t), 1), 1, "the refused pack is back anyway, sealed");
+        assertEq(packs.burned(1), 1, "only the victim's pack stays burned");
+        assertGt(cards.process(1, 100), 0, "the queue moves");
+        assertEq(cards.balanceOf(_holder(1)), cards.cardsPerPack(1), "the next opener gets their cards");
+        assertEq(packs.balanceOf(_holder(1), 1), 0);
+    }
+
+    /// L-2: a recipe changed after setDealer could push cards per pack past MAX_CARDS_PER_PACK and still lock, after
+    /// which every open of the Series reverted in process. Every lock (and ready) now checks the pack size again.
+    function test_audit8_recipeChangedAfterSetDealerCantLock() public {
+        RecipeDealer.Recipe memory r;
+        r.types = new RecipeDealer.CardType[](1);
+        r.types[0] = _type("Paper", "paper", 0, RecipeDealer.Supply.Filler, 0);
+        r.slots = new RecipeDealer.Slot[](1);
+        r.slots[0] = _slotOne(1001, 0);
+        _configure(6, 3);
+        vm.prank(owner);
+        dealer.setRecipe(6, r); // after setDealer(6): still accepted by the dealer
+        assertEq(cards.cardsPerPack(6), 1001);
+        assertFalse(cards.ready(6), "not ready: configureDrop refuses it");
+        vm.prank(seller);
+        vm.expectRevert(FireCards.NotConfigured.selector);
+        cards.lockForSale(6);
+        vm.prank(owner);
+        vm.expectRevert(FireCards.NotConfigured.selector);
+        cards.lockFire(6);
+        r.slots[0] = _slotOne(1000, 0); // at the limit: fine
+        vm.prank(owner);
+        dealer.setRecipe(6, r);
+        assertTrue(cards.ready(6));
+        vm.prank(seller);
+        cards.lockForSale(6);
+        (,, bool locked,,,) = cards.fires(6);
+        assertTrue(locked);
+    }
+
+    /// Info: a Series can't lock without an image folder (its art could never be set after the lock).
+    function test_audit8_lockNeedsImages() public {
+        (string[] memory names, string[] memory cats) = _chars(2);
+        vm.startPrank(owner);
+        dealer.setRecipe(6, StandardRecipe.classic(1));
+        dealer.setCharacters(6, names, cats);
+        cards.setDealer(6, address(dealer));
+        vm.expectRevert(FireCards.NotConfigured.selector);
+        cards.lockFire(6);
+        vm.stopPrank();
+        vm.prank(seller);
+        vm.expectRevert(FireCards.NotConfigured.selector);
+        cards.lockForSale(6);
+        vm.startPrank(owner);
+        cards.setImagesBase(6, "ipfs://x/");
+        cards.lockFire(6);
+        vm.stopPrank();
+        vm.prank(seller);
+        cards.lockForSale(6); // already locked: nothing to check
+    }
 }
 
 contract DeployCardsTest is Test {
-    /// @dev The hardware wallet accepts the six contracts in one run: AcceptOwnership lists exactly the ones still
+    /// @dev The hardware wallet accepts the seven contracts in one run: AcceptOwnership lists exactly the ones still
     ///      pending for it, skips the ones it holds, and refuses a contract pending to someone else.
-    function test_acceptOwnershipListsTheSixForTheHardwareWallet() public {
+    function test_acceptOwnershipListsTheSevenForTheHardwareWallet() public {
         address owner = address(0x1ED6E2);
         FirePacks packs = new FirePacks(address(this));
         FireCards cards = new FireCards(address(this), address(packs));
         RecipeDealer dealer = new RecipeDealer(address(this), address(cards), address(new RecipeCompiler()));
         FireCredits credits = new FireCredits(address(this), address(cards), 0);
-        // FirePsa and PaperBurner stand-ins: two more two-step-owned contracts
-        address[6] memory c = [address(packs), address(cards), address(dealer), address(credits),
-            address(new FirePacks(address(this))), address(new FirePacks(address(this)))];
+        // FireSale, FirePsa and PaperBurner stand-ins: three more two-step-owned contracts
+        address[7] memory c = [address(packs), address(cards), address(dealer), address(credits),
+            address(new FirePacks(address(this))), address(new FirePacks(address(this))), address(new FirePacks(address(this)))];
         string memory json = "{";
-        string[6] memory names = new AcceptOwnership().owned();
-        for (uint256 i; i < 6; i++) {
+        string[7] memory names = new AcceptOwnership().owned();
+        assertEq(names[4], "FireSale");
+        for (uint256 i; i < 7; i++) {
             FirePacks(c[i]).transferOwnership(owner);
             json = string.concat(json, i == 0 ? '"contracts":{"' : ',"', names[i], '":"', vm.toString(c[i]), '"');
         }
@@ -1113,12 +1207,12 @@ contract DeployCardsTest is Test {
         vm.setEnv("DEPLOYMENTS_FILE", file);
         AcceptOwnership a = new AcceptOwnership();
         address[] memory list = a.toAccept(owner);
-        assertEq(list.length, 6, "all six pending");
-        for (uint256 i; i < 6; i++) assertEq(list[i], c[i]);
+        assertEq(list.length, 7, "all seven pending");
+        for (uint256 i; i < 7; i++) assertEq(list[i], c[i]);
         vm.prank(owner); packs.acceptOwnership();
         vm.prank(owner); credits.acceptOwnership();
         list = a.toAccept(owner);
-        assertEq(list.length, 4, "the ones it holds are skipped");
+        assertEq(list.length, 5, "the ones it holds are skipped");
         for (uint256 i; i < list.length; i++) {
             vm.prank(owner);
             FirePacks(list[i]).acceptOwnership();
@@ -1189,7 +1283,8 @@ contract DeployCardsTest is Test {
         d.credits.setSale(address(0xBEEF)); // set once
         assertEq(d.sale.USDG_UNIT(), 1e6);
         assertEq(d.credits.suggestionPaper(), 2e18);
-        assertEq(d.sale.owner(), safe, "the sale is the owner's from the start");
+        assertEq(d.sale.owner(), address(s), "the deployer holds the sale until the owner accepts");
+        assertEq(d.sale.pendingOwner(), safe, "so a mistyped OWNER owns nothing");
         assertEq(d.packs.pendingOwner(), safe);
         assertEq(d.cards.pendingOwner(), safe);
         assertEq(d.psa.pendingOwner(), safe);
@@ -1205,6 +1300,8 @@ contract DeployCardsTest is Test {
         vm.prank(safe); d.psa.acceptOwnership();
         vm.prank(safe); d.dealer.acceptOwnership();
         vm.prank(safe); d.credits.acceptOwnership();
+        vm.prank(safe); d.sale.acceptOwnership();
+        assertEq(d.sale.owner(), safe);
         assertEq(d.credits.owner(), safe);
         assertEq(d.dealer.owner(), safe);
         assertEq(d.packs.owner(), safe);

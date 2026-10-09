@@ -104,15 +104,15 @@ contract PaperUsdTwapTest is Test {
         _adopt();
         MockPair b = new MockPair(paper, usdg);
         factory.add(paper, usdg, address(b));
-        b.set(1e18, 1_000_000e6); // flash: $1M appears...
+        b.set(100_000e18, 1_000_000e6); // flash: $1M appears...
         twap.checkpoint();
         assertEq(twap.candidate(), address(b));
-        b.set(1e18, 10e6); // ...and leaves in the same transaction
+        b.set(100_000e18, 10e6); // ...and leaves in the same transaction
         assertTrue(twap.due(), "keeper sees the candidate stopped qualifying");
         twap.checkpoint();
         assertEq(twap.candidate(), address(0), "dropped");
         vm.warp(block.timestamp + 21 hours); eth.set(eth.answer()); plankUsd.set(plankUsd.answer());
-        b.set(1e18, 1_000_000e6); // flash again a window later
+        b.set(100_000e18, 1_000_000e6); // flash again a window later
         twap.checkpoint();
         assertEq(address(twap.pair()), address(a), "still the real pool: the clock restarted");
         assertEq(twap.candidate(), address(b));
@@ -211,5 +211,75 @@ contract PaperUsdTwapTest is Test {
         eth.set(eth.answer());
         twap.checkpoint();
         assertEq(twap.candidate(), address(0));
+    }
+
+    // ---------------------------------------------------------------- lopsided pools (pre-testnet audit M-2)
+
+    /// $11 of USDG against 1 wei of PAPER clears the $10 floor but has no PAPER to trade: never a candidate.
+    function test_lopsided_pool_is_never_the_reference() public {
+        MockPair p = new MockPair(usdg, paper);
+        p.set(11e6, 1);
+        factory.add(paper, usdg, address(p));
+        assertFalse(twap.due(), "nothing to record");
+        _adopt(); _day();
+        assertEq(twap.candidate(), address(0));
+        assertEq(address(twap.pair()), address(0));
+        assertEq(_price(), 0);
+        p.set(1_000_000e6, 999e18); // deep dollars, but still under 1,000 PAPER
+        _adopt(); _day();
+        assertEq(address(twap.pair()), address(0), "under MIN_PAPER_RESERVE");
+        p.set(11e6, 1_000e18); // $11 against 1,000 PAPER: a real (thin) pool
+        _adopt();
+        assertEq(address(twap.pair()), address(p), "qualifies at the minimum");
+        _day();
+        assertApproxEqRel(_price(), 0.011e18, 1e15);
+    }
+
+    /// A lopsided pool with the most dollars doesn't hide the real pool next to it.
+    function test_lopsided_pool_does_not_mask_the_real_one() public {
+        MockPair junk = new MockPair(paper, usdg);
+        junk.set(1, 1_000_000e6);
+        factory.add(paper, usdg, address(junk));
+        MockPair real = new MockPair(paper, weth);
+        real.set(100_000e18, 0.01e18); // $25 of WETH
+        factory.add(paper, weth, address(real));
+        _adopt(); _day();
+        assertEq(address(twap.pair()), address(real));
+        assertApproxEqRel(_price(), 0.00025e18, 1e15);
+    }
+
+    /// A candidate that goes lopsided is dropped like one that loses its dollars.
+    function test_candidate_dropped_when_it_goes_lopsided() public {
+        MockPair p = new MockPair(paper, weth);
+        p.set(100_000e18, 4e18);
+        factory.add(paper, weth, address(p));
+        twap.checkpoint();
+        assertEq(twap.candidate(), address(p));
+        p.set(10e18, 4e18); // the PAPER side drains
+        assertTrue(twap.due());
+        twap.checkpoint();
+        assertEq(twap.candidate(), address(0));
+    }
+
+    /// An adopted pool whose PAPER side drops under the minimum reads 0 (no price from a pool nobody can trade), and any
+    /// real pool can take over; once it holds enough PAPER again its average reads normally.
+    function test_adopted_pool_going_lopsided_reads_zero_and_is_replaced() public {
+        MockPair a = new MockPair(paper, weth);
+        a.set(100_000e18, 4e18); // $0.10 per PAPER
+        factory.add(paper, weth, address(a));
+        _adopt(); _day();
+        assertApproxEqRel(_price(), 0.1e18, 1e15);
+        a.set(999e18, 0.04e18); // the LP pulls out: under 1,000 PAPER
+        assertEq(_price(), 0, "no price while lopsided");
+        a.set(100_000e18, 4e18);
+        assertApproxEqRel(_price(), 0.1e18, 1e15, "back once it holds PAPER again");
+        a.set(999e18, 0.04e18);
+        MockPair b = new MockPair(paper, usdg);
+        b.set(10_000e18, 20e6); // $20, any real pool: the lopsided one counts $0
+        factory.add(paper, usdg, address(b));
+        _adopt();
+        assertEq(address(twap.pair()), address(b), "replaced");
+        _day();
+        assertApproxEqRel(_price(), 0.002e18, 1e15);
     }
 }

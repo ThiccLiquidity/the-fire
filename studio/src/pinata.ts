@@ -8,7 +8,10 @@
  *  Upload-Length and Upload-Metadata (filename, filetype, network=public, car=true) returns an upload URL; the CAR is
  *  sent in 50 MiB PATCH requests (Upload-Offset); the last answers 204 with the CID in `upload-cid`. The upload URL is
  *  saved on the Series, so after a failure or a reload the upload asks Pinata how far it got (HEAD, Upload-Offset)
- *  and continues from there; the CAR is rebuilt byte for byte to that point.
+ *  and continues from there; the CAR is rebuilt byte for byte to that point. Every tus request carries
+ *  `Tus-Resumable: 1.0.0`. If the last PATCH is answered without `upload-cid` (or a reload finds the upload complete),
+ *  nothing is sent again: the upload's status (HEAD) and the folder's CID on Pinata are asked again, with backoff.
+ *  The browser must be able to read Location, Upload-Offset and upload-cid from Pinata's answers (CORS exposed).
  *  Why not the legacy pinFileToIPFS folder upload: it takes a whole folder in one multipart request (no resume, no
  *  incremental folder), which doesn't hold up at many GB; and a folder can't be built from several separate pins.
  *
@@ -29,6 +32,11 @@ const API = 'https://api.pinata.cloud'
 const UPLOADS = 'https://uploads.pinata.cloud/v3/files'
 /** The chunk size Pinata's SDK uses for its tus uploads. */
 export const TUS_CHUNK = 50 * 1024 * 1024 + 1
+/** The tus protocol version, sent on every tus request. */
+const TUS = { 'Tus-Resumable': '1.0.0' }
+/** Waits (ms) between status checks when the whole CAR is sent but Pinata hasn't named the CID: about 3 minutes. */
+export const CID_WAITS = [2, 4, 8, 15, 30, 30, 30, 30, 30].map((s) => s * 1000)
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 let sessionJwt = ''
 export function setPinataJwt(jwt: string): void { sessionJwt = jwt.trim() }
@@ -95,8 +103,9 @@ async function call(url: string, init: RequestInit): Promise<Response> {
   }
 }
 
-/** The real Pinata transport (`chunk`: bytes per PATCH; tests use small ones). */
-export function pinataTransport(chunkSize = TUS_CHUNK): PinataTransport {
+/** The real Pinata transport (`chunk`: bytes per PATCH; tests use small ones; `cidWaits` and `wait`: the status checks
+ *  after the last byte). */
+export function pinataTransport(chunkSize = TUS_CHUNK, cidWaits = CID_WAITS, wait = sleep): PinataTransport {
   return {
   async testAuth(jwt) {
     const r = await call(`${API}/data/testAuthentication`, { headers: { Authorization: `Bearer ${jwt}` } })
@@ -111,18 +120,34 @@ export function pinataTransport(chunkSize = TUS_CHUNK): PinataTransport {
   },
 
   async uploadCar(jwt, up, onProgress) {
-    const auth = { Authorization: `Bearer ${jwt}` }
+    const auth = { Authorization: `Bearer ${jwt}`, ...TUS }
     // the key is only ever sent to Pinata's upload host: a stored or returned URL anywhere else is dropped
     const onPinata = (u: string) => { try { return new URL(u).origin === new URL(UPLOADS).origin } catch { return false } }
     let url = up.resumeUrl && onPinata(up.resumeUrl) ? up.resumeUrl : undefined
     let offset = 0
     if (up.resumeUrl && !url) await up.onResumeUrl(null)
+    /** Every byte is in: ask for the CID (the upload's status, then the folder on Pinata) instead of sending again. */
+    const finished = async (): Promise<string> => {
+      for (let i = 0; ; i++) {
+        const r = await call(url!, { method: 'HEAD', headers: auth }).catch(() => null)
+        const c = r?.headers.get('upload-cid')
+        if (c) return c
+        if (await this.isPinned(jwt, up.root).catch(() => false)) return up.root
+        if (i >= cidWaits.length) break
+        await wait(cidWaits[i])
+      }
+      throw new PinataError('Pinata has the whole CAR but names no CID yet. Try again later: it looks the folder up first.', 0, false)
+    }
     if (url) {
       // how far did the earlier attempt get?
       const r = await call(url, { method: 'HEAD', headers: auth }).catch(() => null)
       const at = Number(r?.headers.get('Upload-Offset'))
       if (r?.ok && Number.isFinite(at) && at >= 0 && at <= up.size) offset = at
       else { url = undefined; await up.onResumeUrl(null) }
+      if (url && offset === up.size) {
+        onProgress(offset, up.size)
+        return r?.headers.get('upload-cid') || finished()
+      }
     }
     if (!url) {
       const metadata = [
@@ -168,8 +193,7 @@ export function pinataTransport(chunkSize = TUS_CHUNK): PinataTransport {
     }
     if (fill > 0) await send(buf.subarray(0, fill))
     if (offset !== up.size) throw new PinataError(`Upload stopped at ${offset} of ${up.size} bytes.`, 0, true)
-    if (!cid) throw new PinataError('Pinata finished the upload without a CID.', 0, true)
-    return cid
+    return cid ?? finished()
   },
   }
 }

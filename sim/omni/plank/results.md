@@ -1,5 +1,8 @@
 # Omni card packs: PLANK, presses, liquidity (Oct 3 2026)
 
+*Historical: an early study. The design that was built is in `docs/omni-economy.md` (30% of each sale burns PLANK,
+with `PlankBurner` as the fallback; the contracts are owned by one hardware wallet).*
+
 Model: `model.py` (run `python3 model.py`). Prices held flat: PLANK $1.056e-9 (888.42T supply, ~$940k cap), ETH $3,333,
 V2 pool 28.1 WETH / 88.7T PLANK, 1,000 presses printing 1 PAPER/day, ~$94 of PLANK per press, 0.3% swap fee.
 Base case: 250 packs x $2 x 2 drops/month = **$12,000/yr**. "Year buy impact" adds up a whole year of buys into the
@@ -27,9 +30,9 @@ pool with nobody selling, so it's the most it could be.
 - **Contract holds funds (A):** the existing press fund *is* ETH/USDG sitting in `Fire.sol` until a listing comes in
   at or under its bid. The sale contract can forward the money in the same transaction, but the money then waits in
   Fire. Floors of $300-800 sit far above the ~$94 inside a press, so it could wait a long time. The other way: forward
-  to the multisig and buy and burn by hand, which relies on the multisig.
+  to the owner's wallet and buy and burn by hand, which relies on the owner.
 - **B:** doing the LP add inside every sale is fiddly. It leaves leftover dust and can be front-run on a thin pool.
-  Simpler: forward B% to the multisig, which adds the LP and burns the LP tokens once a month. Burned LP can never
+  Simpler: forward B% to the owner's wallet, which adds the LP and burns the LP tokens once a month. Burned LP can never
   come back.
 - **PLANK swap:** needs a minimum-out based on the 30-minute TWAP. If PLANK spikes, sales revert until the TWAP
   catches up.

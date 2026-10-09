@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Script} from "forge-std/Script.sol";
+import {Script, console} from "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 
@@ -16,10 +16,16 @@ import {stdJson} from "forge-std/StdJson.sol";
  *     "contracts": { "PlankUsdTwap": "0x...", "FireCards": "0x...", ... }   what it deployed
  *   }
  *
- * Written by DeployTwap, DeployInfra and DeployCards (each adds its part; nothing else is touched), read by
- * ConfigureSeries, VerifyDeploy, VerifySeries (ops/series), the keeper (ops/keeper), ops/snapshot and the site
- * (web/src/lib/config.ts). A script writes only when it really broadcasts (or with WRITE_DEPLOYMENTS=true), so a dry
- * run never leaves addresses of contracts that don't exist. DEPLOYMENTS_FILE points it at another file (rehearsals).
+ * Read by ConfigureSeries, VerifyDeploy, VerifySeries (ops/series), the keeper (ops/keeper), ops/snapshot and the
+ * site (web/src/lib/config.ts). DEPLOYMENTS_FILE points every tool at another file (rehearsals).
+ *
+ * How it gets written: forge runs a script's code BEFORE it broadcasts anything (and a broadcast can still fail or
+ * stop half way), so a script never writes the file itself. DeployTwap, DeployInfra, DeployCards and DevStack write
+ * what they mean to record to `<file>.pending` (only with --broadcast); after the broadcast,
+ *   node ops/deploy/record.mjs --rpc <RPC>
+ * checks every new address against the broadcast receipts (contracts/broadcast/<script>/<chainId>/run-latest.json)
+ * and the chain (code at each one), then merges it into the file and removes the .pending one. Run VerifyDeploy
+ * before committing the file.
  */
 abstract contract Deployments is Script {
     using stdJson for string;
@@ -70,12 +76,17 @@ abstract contract Deployments is Script {
         require(a != address(0), string.concat("set ", envName, " or deploy ", fileName, " first (deployments file: ", deploymentsFile(), ")"));
     }
 
-    function _writing() internal view returns (bool) {
-        return vm.isContext(VmSafe.ForgeContext.ScriptBroadcast) || vm.isContext(VmSafe.ForgeContext.ScriptResume)
-            || vm.envOr("WRITE_DEPLOYMENTS", false);
+    /// Where a script leaves what it means to record, for ops/deploy/record.mjs to check and merge after the broadcast.
+    function pendingFile() public view returns (string memory) {
+        return string.concat(deploymentsFile(), ".pending");
     }
 
-    /// Merge `names`/`addrs` (contracts) and `inNames`/`inAddrs` (inputs) into the file and write it, when broadcasting.
+    function _writing() internal view returns (bool) {
+        return vm.isContext(VmSafe.ForgeContext.ScriptBroadcast) || vm.isContext(VmSafe.ForgeContext.ScriptResume);
+    }
+
+    /// Merge `names`/`addrs` (contracts) and `inNames`/`inAddrs` (inputs) with the file and write the result to
+    /// pendingFile(), when broadcasting (never the file itself: see the top of this file).
     function _record(
         string[] memory names,
         address[] memory addrs,
@@ -85,6 +96,11 @@ abstract contract Deployments is Script {
         address deployer
     ) internal {
         if (!_writing()) return;
+        // an earlier broadcast not yet recorded (or one that failed): sort it out first, or it would be overwritten
+        require(
+            vm.isContext(VmSafe.ForgeContext.ScriptResume) || !vm.exists(pendingFile()),
+            string.concat(pendingFile(), " is waiting: run node ops/deploy/record.mjs first (delete it if that broadcast failed)")
+        );
         string memory old = _deploymentsJson();
         string memory c = "contracts";
         string memory cj = "{}";
@@ -111,7 +127,8 @@ abstract contract Deployments is Script {
         if (o != address(0)) vm.serializeAddress(r, "owner", o);
         vm.serializeString(r, "inputs", ij);
         string memory out = vm.serializeString(r, "contracts", cj);
-        vm.writeJson(out, deploymentsFile());
+        vm.writeJson(out, pendingFile());
+        console.log(string.concat("after the broadcast: node ops/deploy/record.mjs --rpc <RPC>  (records ", pendingFile(), ")"));
     }
 
     // small helpers for building the lists

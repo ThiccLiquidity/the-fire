@@ -1,6 +1,6 @@
 {
   "name": "omni-cardworks-web",
-  "description": "Omni Cardworks site: the static Forge and the chain, wallet and swap modules",
+  "description": "Omni Cardworks site: the static Cardworks page and the chain, wallet and swap modules",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -25,5 +25,10 @@
     "oxlint": "^1.81.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
+  },
+  "overrides": {
+    "ws@^8": "^8.21.0",
+    "uuid": "^11.1.1",
+    "source-map-js": "^1.2.2"
   }
 }

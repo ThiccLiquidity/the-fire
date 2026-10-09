@@ -69,13 +69,18 @@ export interface FilebaseTransport {
   /** The CID Filebase pinned for this object, or undefined if there's no such object. */
   cidOf(key: FilebaseKey, object: string): Promise<string | undefined>
   /** Uploads the CAR (resuming if it can); returns the CID Filebase pinned. */
-  uploadCar(key: FilebaseKey, car: FilebaseCar, onProgress: (loaded: number, total: number) => void): Promise<string>
+  uploadCar(key: FilebaseKey, car: FilebaseCar, onProgress: (loaded: number, total: number) => void, onStatus?: (t: string) => void): Promise<string>
 }
 
 const objectKey = (name: string) => `${name}.car`
 
-/** The real Filebase transport (`partSize`: bytes per part; tests use small ones; `base`: the S3 endpoint). */
-export function filebaseTransport(partSize = FILEBASE_PART, base = FILEBASE_S3): FilebaseTransport {
+/** Waits (ms) between CID lookups once the upload is complete: about 6 minutes in all. */
+export const CID_WAITS = [2, 4, 8, 15, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30].map((s) => s * 1000)
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+/** The real Filebase transport (`partSize`: bytes per part; tests use small ones; `base`: the S3 endpoint; `cidWaits`
+ *  and `wait`: the CID lookups after the upload). */
+export function filebaseTransport(partSize = FILEBASE_PART, base = FILEBASE_S3, cidWaits = CID_WAITS, wait = sleep): FilebaseTransport {
   async function call(key: FilebaseKey, method: string, path: string, opts: { query?: Record<string, string>; headers?: Record<string, string>; body?: Uint8Array; what: string }) {
     const url = new URL(`${base}/${encodeURIComponent(key.bucket)}${path}`)
     for (const [k, v] of Object.entries(opts.query ?? {})) url.searchParams.set(k, v)
@@ -106,7 +111,7 @@ export function filebaseTransport(partSize = FILEBASE_PART, base = FILEBASE_S3):
       return r.headers.get('x-amz-meta-cid') ?? undefined
     },
 
-    async uploadCar(key, car, onProgress) {
+    async uploadCar(key, car, onProgress, onStatus) {
       const path = `/${encodeURIComponent(objectKey(car.name))}`
       const parts: { n: number; etag: string; size: number }[] = []
       let id = car.resumeId
@@ -175,9 +180,21 @@ export function filebaseTransport(partSize = FILEBASE_PART, base = FILEBASE_S3):
       const doneXml = await done.text()
       if (!done.ok || /<Error>/.test(doneXml)) throw errorFor(done.ok ? 500 : done.status, doneXml, 'Finishing the upload.')
       await car.onResumeId(null)
-      const cid = await this.cidOf(key, car.name)
-      if (!cid) throw new FilebaseError('Filebase stored the file but reports no CID (was it imported as a CAR?).', 0, true)
-      return cid
+      // the import can take a while to report its CID: look it up with backoff (never upload again for this)
+      let waited = 0
+      for (let i = 0; ; i++) {
+        try {
+          const cid = await this.cidOf(key, car.name)
+          if (cid) return cid
+        } catch (e) {
+          if (!(e instanceof FilebaseError && e.retryable)) throw e
+        }
+        if (i >= cidWaits.length) break
+        if (i === 0) onStatus?.('Stored on Filebase; waiting for it to report the CID...')
+        await wait(cidWaits[i])
+        waited += cidWaits[i]
+      }
+      throw new FilebaseError(`Filebase stored ${objectKey(car.name)} but reported no CID after ${Math.round(waited / 60_000)} minutes (was it imported as a CAR?). Try "Pin to Filebase" later: it looks the CID up first.`, 0, false)
     },
   }
 }
@@ -237,7 +254,7 @@ export async function pinOnFilebase(
   const cid = await retry(`Filebase upload of ${car.name}`, () => transport.uploadCar(key, {
     ...car, resumeId,
     onResumeId: async (id) => { resumeId = id ?? undefined; await car.onResumeId(id) },
-  }, onProgress))
+  }, onProgress, onStatus))
   if (cid !== car.root) throw new FilebaseError(`Filebase pinned ${cid}, but the folder's CID is ${car.root}. Not saved; check the bucket.`, 0, false)
   return cid
 }

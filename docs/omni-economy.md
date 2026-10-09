@@ -25,7 +25,7 @@ setting: cards burned per free pack is 42, forever.
 | Setting | Start |
 |---|---|
 | Packs in the drop | 167 **total, starters included** (about 1,000 cards). Sold out means gone: no more packs for that Series, ever. |
-| Gold cards | 15 (at least 1 in the Standard recipe; set per Series in its recipe, before its drop is set up) |
+| Gold cards | 2 per character (at least 1; set per Series in its recipe, before its drop is set up) |
 | Full Art cards | 1 per character |
 | Pack price | $2.50 |
 | PAPER per pack | 1 |
@@ -43,7 +43,7 @@ setting: cards burned per free pack is 42, forever.
 | Regular wallets only for | 48 hours (0 = off) |
 | Most packs per purchase | 50 |
 | Credits per picked suggestion | 1 |
-| Free (credit) packs per drop, in all / per wallet | no limit / no limit (0 = no limit) |
+| Free (credit) packs per drop, in all / per wallet | 10% of the drop's packs (16 of 167) / 3 per wallet (0 = no limit) |
 | Fresh PDA odds | 10: 1% · 9: 17% · 8: 25% · 7: 27% · 6: 20% · 5: 10% (grades 1-4 only from wear) |
 
 ## Setting up a drop
@@ -86,8 +86,10 @@ as `packs = 117`, `starters = 50`. Setup is signed on the owner's hardware walle
   price, the set amount.
 - **Packs are never paid for in PAPER.** The price is paid in PLANK, ETH or USDG only.
 - **Paid pack:** $2.50 + 1 PAPER (at most $1 of PAPER in the Standard sale).
-  - Every buy first refreshes the PLANK price itself (`PlankUsdTwap.checkpoint()`, a cheap no-op when it isn't due; a
-    failure is ignored), so buyers rely less on the keeper.
+  - Every buy first checkpoints the PLANK price (`PlankUsdTwap.checkpoint()`, a cheap no-op when it isn't due; a
+    failure is ignored). That keeps the price fresh only while buys or the keeper come at least every 2 hours: after a
+    longer gap the checkpoint a buy makes spans more than 2 hours, so it can't refresh the price for itself; the keeper
+    (or anyone) has to checkpoint twice, 30 minutes apart.
   - ETH uses the Chainlink price. PLANK uses the 30-minute pool average (`PlankUsdTwap`). USDG is taken at face value.
   - Every purchase carries the buyer's maximum. If a price moved past it, the purchase fails and costs nothing.
 - **Where the money goes, in the same transaction:**
@@ -101,9 +103,9 @@ as `packs = 117`, `starters = 50`. Setup is signed on the owner's hardware walle
   - **70% goes to the revenue wallet.**
   - The contract keeps nothing.
 - **Up to 50 packs per purchase** by default (`maxPerTx`, set per drop; any number, e.g. 100 for a giant drop).
-- **Gas (measured in tests, mock router; `test_gas`, `test_giantDrop_buy100InOneTx`):** about 96k for a PLANK buy and
-  101k for ETH, the same for 1 pack or 100 (packs are one ERC-1155 mint). A real Uniswap swap adds about 60–90k more,
-  so roughly 100k (PLANK) to 190k (ETH/USDG) per purchase. That's cents or less on Robinhood Chain.
+- **Gas (measured in tests, mock router; `test_gas`, `test_giantDrop_buy100InOneTx`):** about 98k for a PLANK buy and
+  104k for ETH, the same for 1 pack or 100 (packs are one ERC-1155 mint). A real Uniswap swap adds about 60–90k more,
+  so roughly 100k (PLANK) to 195k (ETH/USDG) per purchase. That's cents or less on Robinhood Chain.
 - **The swap's floor:** it must get at least 90% of the PLANK that the 30-minute average price says. If the pool is
   pumped or manipulated beyond that, the swap is skipped and the burn share goes to `PlankBurner`.
 - **If the drop never sells out:** the owner can end it (`endDrop`) once its last timed phase is over (press window,
@@ -121,7 +123,8 @@ as `packs = 117`, `starters = 50`. Setup is signed on the owner's hardware walle
   PLANK pool or a new router).
 - **The PLANK price must be fresh:** the 30-minute average must have ended within the last 2 hours and cover at most
   2 hours. Otherwise PLANK purchases pause and the burn share of ETH/USDG sales goes to `PlankBurner`, until the
-  price is fresh again (any buy or the keeper checkpoints it; the keeper does every 30 minutes).
+  price is fresh again (the keeper checkpoints every 30 minutes, and buys keep it fresh between those; after a gap
+  over 2 hours it takes two checkpoints 30 minutes apart, which a buy can't do for itself).
 - **Pause.** The owner can pause buying, press packs, credit spending and paid suggestions (`FireSale.setPaused`),
   and case and grading payments (`FirePsa.setPaused`). Opening packs, dealing, transfers, ending or closing a drop,
   burning cards, finishing or cancelling a grading and every keeper call never pause. A pause doesn't expire on its
@@ -148,7 +151,8 @@ credit waits for the next drop. **Credits work at any time during any live drop*
 window, the PLANK-only packs and the wallet limit don't apply to them. A drop can cap how many free packs it gives
 out in all (`creditPacksMax`) and per wallet (`creditPacksPerWallet`), so a big stack of credits can't take a large
 share of a small drop; credits over a cap simply wait for another drop. The Standard sale caps free packs at 10% of
-the drop's packs and 3 per wallet.
+the drop's packs and 3 per wallet. Credits can't be spent on a Series whose packs hold 42 cards or more
+(`FireCredits.useCredits` refuses it): burning one such pack would earn a free pack of itself.
 
 Two ways to earn one:
 
@@ -182,7 +186,10 @@ Every PAPER spent anywhere is burned.
 - **The PAPER price feed.** PAPER already has a live pool, but `PAPER_USD_FEED` must be the deployed `PaperUsdTwap`
   (step 2 of `docs/deploy.md`), never the pool itself. It prices the PAPER ceilings and guards the fee burn. The feed
   adopts a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool (PLANK valued through `PlankUsdTwap`) only once it holds at least
-  $10 on its other side (`MIN_LIQUIDITY_USD`; any real pool, however thin) at every checkpoint for 20 hours, then reports its first price one
+  $10 on its other side (`MIN_LIQUIDITY_USD`; any real pool, however thin) and at least 1,000 PAPER
+  (`MIN_PAPER_RESERVE`, so a lopsided pool like "$11 against a speck of PAPER" can't set the price) at every
+  checkpoint for 20 hours; while the adopted pool holds under 1,000 PAPER its price reads 0 and any real pool can take
+  over. Nothing reacts to price swings. It reports its first price one
   full 20-hour window later: about 40 hours after the first checkpoint. Until then packs take the set PAPER (no
   ceiling) and case and grading fees wait in `PaperBurner`. If the feed later goes quiet, the last good price holds. The owner
   can replace the sale's feed between drops (`FireSale.setFeeds`); the burner's feeds are set once.

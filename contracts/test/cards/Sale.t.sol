@@ -12,6 +12,10 @@ import {FirePsa} from "../../src/cards/FirePsa.sol";
 import {ConfigureSeries} from "../../script/ConfigureSeries.s.sol";
 import {SeriesHelper} from "./SeriesHelper.sol";
 import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockPlankTwap, MockPair, MockBurner} from "../Mocks.sol";
+import {PlankUsdTwap} from "../../src/PlankUsdTwap.sol";
+import {PaperUsdTwap} from "../../src/PaperUsdTwap.sol";
+import {MockPair as CumPair} from "../PlankUsdTwap.t.sol";
+import {MockFactory} from "../PaperUsdTwap.t.sol";
 
 /// @dev A Uniswap V2 router stand-in with a fixed PLANK price (it holds PLANK and pays it out). It can be told to fail,
 ///      and it enforces amountOutMin like the real one.
@@ -1329,6 +1333,20 @@ contract SaleTest is SeriesHelper {
 
 
     /// The studio's sample export (recipe.json with a "sale" block, written by studio/src/sale.test.ts) goes through
+    /// Batch B refuses a holder window with no snapshot root (only presses could buy in it: a forgotten HOLDER_ROOT)
+    /// unless NO_HOLDERS=true says it's meant.
+    function test_batchBRefusesAHolderWindowWithNoRoot() public {
+        ConfigureSeries cs = new ConfigureSeries();
+        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
+        cs.checkHolders(c, false); // no holder window: fine
+        c.holderWindow = 24 hours;
+        vm.expectRevert(bytes("holderWindow > 0 but no holderRoot: set HOLDER_ROOT (the snapshot), or NO_HOLDERS=true for presses only"));
+        cs.checkHolders(c, false);
+        cs.checkHolders(c, true); // NO_HOLDERS=true
+        c.holderRoot = bytes32(uint256(1));
+        cs.checkHolders(c, false);
+    }
+
     /// ConfigureSeries into the recipe calls and FireSale.configureDrop, and the drop comes out as the studio set it.
     function test_studioSaleExportConfiguresTheDrop() public {
         _warp(start + 48 hours);
@@ -1752,9 +1770,60 @@ contract SaleTest is SeriesHelper {
         assertEq(credits.owner(), owner);
     }
 
-    /// Every buy refreshes the PLANK price itself (PlankUsdTwap.checkpoint, a no-op when not due), so a late keeper
-    /// doesn't stop PLANK purchases; a checkpoint that fails never blocks a buy.
+    /// Every buy also checkpoints the PLANK price (the real PlankUsdTwap; a no-op when not due). That keeps it fresh
+    /// while buys or the keeper come at least every 2 hours, but it can't heal a longer gap: the checkpoint it makes
+    /// then spans more than PLANK_WINDOW_MAX, so the PLANK buy still reverts (taking its checkpoint with it), and
+    /// during the PLANK-only phase the drop can't sell until someone checkpoints twice, 30 minutes apart (the keeper's
+    /// job; pre-testnet audit L-1).
     function test_buysRefreshThePlankPrice() public {
+        CumPair pair = new CumPair(address(plank), address(0xE7));
+        pair.set(88_700_000_000_000e18, 28.1e18);
+        PlankUsdTwap twap = new PlankUsdTwap(address(pair), address(plank), address(ethFeed));
+        _warp(start + 72 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(1);
+        vm.warp(block.timestamp + 1 hours); ethFeed.set(ETH_USD);
+        twap.checkpoint();
+        vm.warp(block.timestamp + 30 minutes); ethFeed.set(ETH_USD);
+        twap.checkpoint(); // the keeper: a 30-minute window
+        vm.prank(owner, owner);
+        sale.setFeeds(address(ethFeed), address(twap), address(0), address(router));
+        uint64 s2 = uint64(block.timestamp + 1 hours);
+        FireSale.DropConfig memory c = _cfg(s2, 20, 0, 5, 5); // 5 PLANK-only packs
+        _set(2, c);
+        vm.warp(s2 + 50 minutes); ethFeed.set(ETH_USD); // 1h50 since the keeper's last checkpoint
+        assertTrue(sale.phase(2).plankPriceOk);
+        vm.prank(alice, alice);
+        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na());
+        (, uint32 lastTs) = twap.last();
+        assertEq(lastTs, block.timestamp, "the buy checkpointed");
+        vm.warp(block.timestamp + 1 hours + 50 minutes); ethFeed.set(ETH_USD); // keeper still away: 3h40 in all
+        assertTrue(sale.phase(2).plankPriceOk, "kept fresh by the last buy");
+        vm.prank(alice, alice);
+        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na());
+        assertEq(packs.balanceOf(alice, 2), 2);
+
+        vm.warp(block.timestamp + 3 hours); ethFeed.set(ETH_USD); // nobody for 3 hours
+        assertFalse(sale.phase(2).plankPriceOk);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.FeedUnavailable.selector);
+        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na());
+        uint256 cost = sale.quoteEth(2, 1);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.PlankOnly.selector);
+        sale.buyWithEth{value: cost}(2, 1, type(uint256).max, _na());
+        twap.checkpoint(); // one checkpoint makes a window longer than 2h: still not a usable price
+        assertFalse(sale.phase(2).plankPriceOk, "needs a second checkpoint 30 minutes later");
+        vm.warp(block.timestamp + 30 minutes); ethFeed.set(ETH_USD);
+        twap.checkpoint();
+        assertTrue(sale.phase(2).plankPriceOk);
+        vm.prank(alice, alice);
+        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na());
+        assertEq(packs.balanceOf(alice, 2), 3);
+    }
+
+    /// A PLANK checkpoint that fails inside a buy never blocks it: the ETH buy still sells, the burn share waits.
+    function test_aFailingPlankCheckpointNeverBlocksABuy() public {
         CheckpointFeed twap = new CheckpointFeed(PLANK_USD);
         _warp(start + 72 hours);
         vm.prank(owner, owner);
@@ -1765,20 +1834,54 @@ contract SaleTest is SeriesHelper {
         FireSale.DropConfig memory c = _cfg(s2, 20, 0, 0, 5);
         c.plankOnly = 0;
         _set(2, c);
-        vm.warp(s2 + 3 hours); // the keeper has been away for hours: the price is stale
+        vm.warp(s2 + 1 hours);
         ethFeed.set(ETH_USD);
-        assertFalse(sale.phase(2).plankPriceOk);
-        vm.prank(alice, alice);
-        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na()); // the buy refreshes it first
-        assertEq(twap.checkpoints(), 1);
-        assertEq(packs.balanceOf(alice, 2), 1);
         twap.setFail(true);
-        vm.warp(block.timestamp + 3 hours);
-        ethFeed.set(ETH_USD);
         uint256 cost = sale.quoteEth(2, 1);
         vm.prank(alice, alice);
         sale.buyWithEth{value: cost}(2, 1, type(uint256).max, _na()); // still sells; the burn share waits
+        assertEq(twap.checkpoints(), 0);
         assertEq(burnW.balance, cost * 3_000 / 10_000, "to PlankBurner");
-        assertEq(packs.balanceOf(alice, 2), 2);
+        assertEq(packs.balanceOf(alice, 2), 1);
+    }
+
+    /// Pre-testnet audit M-2: "$11 of USDG against 1 wei of PAPER" was the deepest pool, became the PAPER price, and
+    /// the drop's PAPER per pack (with a dollar ceiling) fell to 1 wei. A pool needs 1,000 PAPER now: it never
+    /// qualifies, the feed has no price, and a pack takes its full PAPER amount.
+    function test_audit8_lopsidedPaperPoolCantZeroPackPaper() public {
+        _warp(start + 72 hours);
+        MockFactory f = new MockFactory();
+        MockFeed eth2 = new MockFeed(2_500_00000000);
+        PaperUsdTwap ptwap = new PaperUsdTwap(address(f), address(paper), address(0xE7), address(usdg), 6, address(eth2), address(0), address(0));
+        CumPair p = new CumPair(address(usdg), address(paper));
+        p.set(11e6, 1); // $11 of USDG against 1 wei of PAPER
+        f.add(address(paper), address(usdg), address(p));
+        ptwap.checkpoint();
+        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
+        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
+        assertEq(address(ptwap.pair()), address(0), "never adopted");
+        (, int256 px,,,) = ptwap.latestRoundData();
+        assertEq(px, 0, "no price");
+        _warp(block.timestamp);
+        vm.prank(owner, owner);
+        sale.endDrop(1);
+        vm.prank(owner, owner);
+        sale.setFeeds(address(ethFeed), address(plankFeed), address(ptwap), address(router));
+        uint64 s2 = uint64(block.timestamp + 1 hours);
+        _set(2, _cfg(s2, 20, 0, 0, 5));
+        _warp(s2);
+        eth2.set(2_500_00000000);
+        assertEq(sale.paperFor(2, 5), 5e18, "5 packs burn 5 PAPER");
+
+        // a real (thin) pool: $11 against 1,000 PAPER = $0.011 per PAPER, under the $1 ceiling
+        p.set(11e6, 1_000e18);
+        ptwap.checkpoint();
+        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
+        assertEq(address(ptwap.pair()), address(p), "adopted");
+        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
+        (, px,,,) = ptwap.latestRoundData();
+        assertApproxEqRel(uint256(px), 0.011e18, 1e15);
+        _warp(block.timestamp);
+        assertEq(sale.paperFor(2, 5), 5e18, "still the drop's PAPER per pack");
     }
 }

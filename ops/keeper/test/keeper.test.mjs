@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { DRAND_CHAIN, DRAND_GENESIS, drandClient, roundAt, roundTime } from "../src/drand.mjs";
 import { createNotifier } from "../src/alerts.mjs";
 import { loadConfig, loadKey } from "../src/config.mjs";
+import { createSender } from "../src/tx.mjs";
 
 const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 
@@ -81,18 +82,61 @@ test("alerts: new, repeated hourly, resolved; heartbeat once a day; dead-man's s
   assert.doesNotMatch(posts.at(-1).content, /just a note/, "quiet notes are logged only");
 });
 
-test("alerts in one-pass mode (the backup): only in the first minutes of each hour, except 'backup acted'", async () => {
+test("alerts in one-pass mode without a state file: in the first 15 minutes of each hour (a late GitHub run still lands), events always", async () => {
   const hour = 3_600_000;
   let t = 10 * hour + 30 * 60_000; // half past
-  const { n, posts } = notifier({ once: true, label: "backup" }, () => t);
+  const { n, posts } = notifier({ once: true, label: "backup", intervalSec: 300 }, () => t);
   await n.report([{ key: "feed:plank", text: "PLANK price stale" }]);
   assert.equal(posts.length, 0);
-  await n.report([{ key: "backup-acted", text: "the backup keeper had to step in" }]);
+  await n.report([], undefined, [{ key: "backup-acted", text: "the backup keeper had to step in" }]);
   assert.equal(posts.length, 1);
-  t = 11 * hour + 60_000;
+  t = 11 * hour + 12 * 60_000; // a scheduled run 12 minutes late
   await n.report([{ key: "feed:plank", text: "PLANK price stale" }]);
   assert.equal(posts.length, 2);
   assert.match(posts[1].content, /\[backup\]/);
+});
+
+test("alerts in one-pass mode with STATE_FILE: the memory survives between runs (new, still, resolved, once a day)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "keeper-state-"));
+  const stateFile = join(dir, "state.json");
+  let t = 1_000_000_000_000;
+  const run = () => notifier({ once: true, label: "backup", stateFile }, () => t);
+  const a = { key: "feed:plank", text: "PLANK price stale" };
+  let r = run();
+  await r.n.report([a], { address: "0xk", balance: 1n });
+  assert.equal(r.posts.length, 2, "the alert and the daily heartbeat");
+  t += 5 * 60_000;
+  r = run();
+  await r.n.report([a]);
+  assert.equal(r.posts.length, 0, "a new process remembers it already posted");
+  t += 60 * 60_000;
+  r = run();
+  await r.n.report([a]);
+  assert.match(r.posts[0].content, /still: PLANK price stale/);
+  t += 5 * 60_000;
+  r = run();
+  await r.n.report([]);
+  assert.match(r.posts[0].content, /resolved/);
+});
+
+test("alerts: a pause is posted once (no hourly repeat) and doesn't fail the dead-man's switch; events are rate-limited per key", async () => {
+  let t = 1_000_000_000_000;
+  const { n, posts, pings } = notifier({ heartbeatHours: 1e9 }, () => t);
+  const p = { key: "pause:sale", repeat: false, text: "FireSale is PAUSED" };
+  await n.report([p]);
+  assert.equal(posts.length, 1);
+  assert.equal(pings.at(-1), "https://hc/x", "a pause is the owner's choice, not a keeper failure");
+  t += 3 * 3_600_000;
+  await n.report([p]);
+  assert.equal(posts.length, 1, "no 'still' line for a pause");
+  await n.report([]);
+  assert.match(posts.at(-1).content, /resolved: FireSale is PAUSED/);
+  const ev = { key: "backup-acted", text: "the backup keeper had to step in" };
+  await n.report([], undefined, [ev]);
+  await n.report([], undefined, [ev]);
+  assert.equal(posts.filter((x) => /step in/.test(x.content)).length, 1, "the same event at most once an hour");
+  await n.report([], undefined, [{ key: "source:FireCards:0xb", text: "FireCards' randomness source was SWITCHED" }]);
+  assert.match(posts.at(-1).content, /SWITCHED/);
 });
 
 test("config: addresses from the deployments file, env overrides, readable errors", () => {
@@ -112,6 +156,59 @@ test("config: addresses from the deployments file, env overrides, readable error
   assert.equal(loadConfig({ RPC_URL: "https://rpc", DEPLOYMENTS_FILE: file, FALLBACK_RPC_URL: "none" }).rpcUrls.length, 1);
   assert.throws(() => loadConfig({ DEPLOYMENTS_FILE: file }), /RPC_URL/);
   assert.throws(() => loadConfig({ RPC_URL: "x", DEPLOYMENTS_FILE: join(dir, "none.json") }), /deploy first/);
+});
+
+test("config: KEEPER_ROLE=backup waits 5 min and yields; production needs HEARTBEAT_URL and ALERT_WEBHOOK_URL", () => {
+  const dir = mkdtempSync(join(tmpdir(), "keeper-"));
+  const file = join(dir, "46630.json");
+  const a = (n) => `0x${String(n).repeat(40)}`;
+  writeFileSync(file, JSON.stringify({
+    chainId: 46630, contracts: { PlankUsdTwap: a(1), PaperUsdTwap: a(2), FireCards: a(3), FirePsa: a(4), PaperBurner: a(5), PlankBurner: a(6), FireSale: a(7), CardsAdapter: a(8) },
+  }));
+  const base = { RPC_URL: "https://rpc", DEPLOYMENTS_FILE: file, CHAIN_ID: "46630" };
+  const main = loadConfig(base);
+  assert.equal(main.role, "main");
+  assert.equal(main.actAfterSec, 0n);
+  assert.equal(main.yieldMs, 0);
+  assert.equal(main.label, "keeper");
+  assert.deepEqual(main.rpcUrls, ["https://rpc", "https://rpc.testnet.chain.robinhood.com/rpc"], "the public testnet RPC as fallback");
+  assert.equal(main.optional.sale, a(7));
+  assert.equal(main.optional.cardsAdapter, a(8));
+  const b = loadConfig({ ...base, KEEPER_ROLE: "backup", MAIN_KEEPER_ADDRESS: a(9) });
+  assert.equal(b.role, "backup");
+  assert.equal(b.actAfterSec, 300n);
+  assert.equal(b.label, "backup");
+  assert.ok(b.yieldMs > 0);
+  assert.equal(b.mainKeeper, a(9));
+  assert.equal(loadConfig({ ...base, KEEPER_ROLE: "backup", ACT_AFTER_SEC: "600" }).actAfterSec, 600n);
+  assert.throws(() => loadConfig({ ...base, KEEPER_ROLE: "spare" }), /KEEPER_ROLE/);
+  assert.throws(() => loadConfig({ ...base, NODE_ENV: "production", ALERT_WEBHOOK_URL: "https://hook" }), /HEARTBEAT_URL/);
+  assert.throws(() => loadConfig({ ...base, NODE_ENV: "production", HEARTBEAT_URL: "https://hc" }), /ALERT_WEBHOOK_URL/);
+  assert.equal(loadConfig({ ...base, NODE_ENV: "production", HEARTBEAT_URL: "https://hc", ALERT_WEBHOOK_URL: "https://hook" }).production, true);
+});
+
+test("sender: start-up replaces transactions an earlier run left waiting (0-ETH to itself, higher fee, bumped if refused)", async () => {
+  const me = "0x00000000000000000000000000000000000000aa";
+  const sentTx = [];
+  let refusals = 1;
+  const pub = {
+    getTransactionCount: async ({ blockTag }) => (blockTag === "pending" ? 7 : 5),
+    estimateFeesPerGas: async () => ({ maxFeePerGas: 100n, maxPriorityFeePerGas: 1n }),
+  };
+  const wallet = {
+    chain: { id: 1 },
+    sendTransaction: async (tx) => {
+      if (refusals-- > 0) throw new Error("replacement transaction underpriced");
+      sentTx.push(tx);
+      return `0xhash${tx.nonce}`;
+    },
+  };
+  const s = createSender({ pub, wallet, account: { address: me }, log: () => {} });
+  assert.equal(await s.fillNonceGaps(), 2);
+  assert.deepEqual(sentTx.map((t) => [t.to, t.value, t.nonce]), [[me, 0n, 5], [me, 0n, 6]]);
+  assert.equal(sentTx[0].maxFeePerGas, 400n, "twice today's fee, doubled again after the refusal");
+  assert.equal(sentTx[1].maxFeePerGas, 200n);
+  assert.equal(s.inflight.size, 2, "tracked like any transaction in flight");
 });
 
 test("key: only from KEEPER_PRIVATE_KEY, checked, never echoed", () => {
