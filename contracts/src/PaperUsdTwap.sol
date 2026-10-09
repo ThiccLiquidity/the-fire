@@ -13,14 +13,23 @@ interface IUniswapV2Factory {
  *         be this contract, never a pool.
  *
  *         It starts with no pool and reports 0. Once a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool on the Uniswap V2
- *         factory holds at least MIN_LIQUIDITY_USD ($10) on its other side (PLANK valued by the PLANK feed), a
- *         checkpoint marks it as the candidate; if it still qualifies at every checkpoint for MIN_WINDOW (20h), it's
+ *         factory holds at least MIN_LIQUIDITY_USD ($10) on its other side (PLANK valued by the PLANK feed) and at
+ *         least MIN_PAPER_RESERVE (1,000 PAPER) on its PAPER side, a checkpoint marks it as the candidate; if it still qualifies at every checkpoint for MIN_WINDOW (20h), it's
  *         adopted, and the first price appears one full window (>= 20h) after that: about 40h after the first
  *         checkpoint, even when a pool already exists at deploy. A pool in the other
  *         currency takes over the same way once it holds twice the current pool's dollar liquidity for MIN_WINDOW.
  *         Liquidity is read from spot reserves, so the "for MIN_WINDOW" part is what stops a flash loan from
  *         forcing a switch: the keeper checkpoints whenever due() and drops a candidate the moment it stops
  *         qualifying. While the ETH/USD feed is stale, no pool is adopted or switched.
+ *
+ *         Lopsided pools are ignored. A pool's price is its quote side over its PAPER side, so "$11 against 1 wei of
+ *         PAPER" would read as an absurd PAPER price that nobody can trade against (there is no PAPER to buy). A pool
+ *         with under MIN_PAPER_RESERVE PAPER counts as $0 of liquidity: it can't become the candidate, a candidate that
+ *         drops under it is dropped, and an adopted pool that drops under it can be replaced by any pool that
+ *         qualifies. While the adopted pool holds under MIN_PAPER_RESERVE, the price reads 0 (FireSale keeps its last
+ *         good PAPER price, PaperBurner waits). With 1,000 PAPER in the pool, showing a PAPER price of $P takes about
+ *         $P x 1,000 on the quote side, which anyone can arbitrage away; the dollar floor alone set no such cost. This
+ *         is a size rule only: nothing here reacts to how far or how fast the price moves.
  *
  *         Same windowing as PlankUsdTwap: checkpoints closer than MIN_WINDOW to the last accepted one are no-ops, so
  *         the average always spans >= 20h and nobody can shorten it or pin its start. No owner, no admin.
@@ -43,6 +52,8 @@ contract PaperUsdTwap {
     uint256 public constant ETH_FEED_MAX_AGE = 25 hours;
     uint256 public constant SWITCH_FACTOR = 2; // another pool must hold 2x the dollar liquidity to take over
     uint256 public constant MIN_LIQUIDITY_USD = 10e8; // a pool needs $10 on its dollar side to be considered (ignores empty and dust pools)
+    /// @dev ...and 1,000 PAPER on its PAPER side (ignores lopsided pools: see above). Checked on spot reserves.
+    uint256 public constant MIN_PAPER_RESERVE = 1_000e18;
 
     IUniswapV2Pair public pair; // the pool the price comes from; address(0) until one exists
     address public quote; // WETH or USDG: what PAPER is priced in on that pool
@@ -156,10 +167,13 @@ contract PaperUsdTwap {
         }
     }
 
-    /// @dev Dollar value of the quote side of a pool, 8 decimals. WETH pools count 0 while the ETH feed is stale.
+    /// @dev Dollar value of the quote side of a pool, 8 decimals. WETH pools count 0 while the ETH feed is stale, and
+    ///      any pool counts 0 while it holds under MIN_PAPER_RESERVE PAPER.
     function _liquidityUsd(address p, address q) internal view returns (uint256) {
         (uint112 r0, uint112 r1,) = IUniswapV2Pair(p).getReserves();
-        uint256 qr = IUniswapV2Pair(p).token0() == q ? r0 : r1;
+        bool q0 = IUniswapV2Pair(p).token0() == q;
+        if ((q0 ? r1 : r0) < MIN_PAPER_RESERVE) return 0;
+        uint256 qr = q0 ? r0 : r1;
         if (q == USDG) return qr * 1e8 / (10 ** USDG_DECIMALS);
         if (q == PLANK) return qr * _plankUsd() / 1e28;
         uint256 eth = _ethUsd();
@@ -197,6 +211,8 @@ contract PaperUsdTwap {
 
     function _price() internal view returns (uint256 paperUsd18) {
         if (last.ts == prev.ts) return 0;
+        (uint112 r0, uint112 r1,) = pair.getReserves();
+        if ((paperIsToken0 ? r0 : r1) < MIN_PAPER_RESERVE) return 0; // the pool went lopsided: no price until it isn't
         uint256 avgQ112; // quote raw units per PAPER raw unit
         unchecked { avgQ112 = (last.cum - prev.cum) / (last.ts - prev.ts); }
         if (quote == USDG) {
