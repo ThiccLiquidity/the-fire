@@ -115,11 +115,18 @@ contract FirePacks is ERC1155, ERC2981, Ownable2Step {
         _burn(from, fire, amount);
     }
 
-    /// @notice A cancelled open (randomness gone for good) gives its packs back, sealed. Only the card contract.
+    /// @notice A cancelled or skipped open gives its packs back, sealed. Only the card contract. The packs are minted
+    ///         back without the ERC-1155 receiver hook: a holder whose wallet now refuses them (or reverts on purpose)
+    ///         must not be able to block cancelOpen/skipStuck and freeze the Series' opening queue. The packs were
+    ///         theirs before the open, so no acceptance check is owed; the usual TransferSingle event is emitted.
     function returnPacks(address to, uint256 fire, uint256 amount) external {
         if (msg.sender != cards) revert NotCards();
         burned[fire] -= amount;
-        _mint(to, fire, amount, "");
+        uint256[] memory ids = new uint256[](1);
+        uint256[] memory amounts = new uint256[](1);
+        ids[0] = fire;
+        amounts[0] = amount;
+        _update(address(0), to, ids, amounts);
     }
 
     // ---------- metadata ----------

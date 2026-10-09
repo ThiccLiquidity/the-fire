@@ -253,9 +253,10 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         emit ImagesBaseSet(fire, base);
     }
 
-    /// @notice Freeze a Series early (dealer and image folder), before its first pack.
+    /// @notice Freeze a Series early (dealer and image folder), before its first pack. Needs a dealer, an image folder
+    ///         and a pack size the dealer can deal (rechecked here: the recipe may have changed since setDealer).
     function lockFire(uint256 fire) external onlyOwner {
-        if (address(fires[fire].dealer) == address(0)) revert NotConfigured();
+        if (!_lockable(fire)) revert NotConfigured();
         fires[fire].locked = true;
         emit FireLocked(fire);
     }
@@ -279,6 +280,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     function lockForSale(uint256 fire) external {
         if (msg.sender != seller) revert NotSeller();
         if (!fires[fire].locked) {
+            if (!_lockable(fire)) revert NotConfigured(); // same checks as lockFire
             fires[fire].locked = true;
             emit FireLocked(fire);
         }
@@ -619,10 +621,20 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
 
     // ---------- reading Series and cards ----------
 
-    /// @notice A Series is set up enough to sell: a dealer that has it, an image folder, and it isn't closed.
+    /// @notice A Series is set up enough to sell: a dealer that has it (with a pack size it can deal), an image
+    ///         folder, and it isn't closed.
     function ready(uint256 fire) external view returns (bool) {
         FireInfo storage f = fires[fire];
-        return address(f.dealer) != address(0) && !f.closed && bytes(imagesBase[fire]).length != 0 && f.dealer.ready(fire);
+        return !f.closed && _lockable(fire) && f.dealer.ready(fire);
+    }
+
+    /// @dev A dealer, an image folder, and 1..MAX_CARDS_PER_PACK cards per pack. setDealer checks the pack size, but a
+    ///      recipe changed after it isn't, so every lock checks again: a locked Series can always be dealt.
+    function _lockable(uint256 fire) private view returns (bool) {
+        IDealer d = fires[fire].dealer;
+        if (address(d) == address(0) || bytes(imagesBase[fire]).length == 0) return false;
+        uint256 per = d.cardsPerPack(fire);
+        return per != 0 && per <= MAX_CARDS_PER_PACK;
     }
 
     function isClosed(uint256 fire) external view returns (bool) {
