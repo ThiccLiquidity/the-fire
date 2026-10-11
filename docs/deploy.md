@@ -128,6 +128,35 @@ switch and the backup having to step in, with a daily heartbeat; a keeper that c
 ## 6. Each Series: two signings on the device with a check in between
 Put the studio's `recipe.json` in `contracts/series/` (the scripts may only read there).
 
+### Launch a Series (one command)
+`ops/series/launch.mjs` runs everything in this step in order, one line per check, and stops at the first problem.
+Once per machine: `cd ops; npm ci; cd snapshot; npm ci; cd ..\..`. Then, from the repo:
+```powershell
+cd C:\Users\DubT1\the-fire
+$env:RPC = Read-Host "RPC URL"
+$env:OWNER_HD_PATH = "m/44'/60'/1'/0/0"        # or keep it in contracts\.env
+node ops\series\launch.mjs --recipe contracts\series\recipe-fire-7.json --start "2026-11-01 18:00"
+```
+`--start` is your local time (it prints local and UTC). Testnet: add `--chain 46630` (default 4663, mainnet).
+`.\ops\series\launch.ps1 <same options>` does the same and asks for the RPC URL hidden if `$env:RPC` isn't set.
+1. **Preflight**: the RPC is the right chain, the owner in `deployments/<chain>.json` holds the contracts and is the
+   Ledger account at `OWNER_HD_PATH`, the Series isn't locked, no other drop is open, the keeper is alive (recent PLANK
+   checkpoint; PAPER feed live), the pack art `fire<N>.webp` is up, the start is at least 15 minutes away.
+2. **Snapshot** (only if the sale has a holder window): saved as `fire-<N>-holders.json` next to the recipe; its
+   root goes to batch B. `--no-holders` for a presses-only holder window.
+3. **Fork rehearsal**: batches A and B as the owner on a copy of the chain; nothing is sent.
+4. **Batch A** on the Ledger (it says how many confirmations).
+5. **VerifySeries** until GREEN (retries while new pins reach the gateways); RED stops it.
+6. **Confirm**: a summary, then type `LOCK`. Anything else stops it.
+7. **Batch B** on the Ledger (one confirmation), then reads the drop back from FireSale.
+
+After a STOP, fix the problem and run the same command again: finished steps are skipped, and batch A and B are
+judged by the chain, so neither is sent twice. State and log: `ops\series\out\series-<N>.state.json` and
+`series-<N>.log` (never committed; no keys in them). On testnet a throwaway owner key can sign instead of the Ledger:
+`--key-env OWNER_KEY` after `$k = Read-Host "Owner key" -AsSecureString; $env:OWNER_KEY = [System.Net.NetworkCredential]::new("", $k).Password`
+(refused on mainnet). The steps below are what it
+runs, for doing it by hand.
+
 **Try it first on a fork** (as the owner, impersonated; no device, nothing sent):
 ```powershell
 $env:RECIPE_JSON = "series/recipe-fire-7.json"; $env:BATCH = "AB"; $env:SIMULATE = "true"

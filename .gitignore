@@ -40,6 +40,8 @@ deployments/rehearsal-*.json
 deployments/test-*.json
 deployments/31337.json
 ops/rehearsal/out/
+# the Series launcher's state and logs (ops/series/launch.mjs)
+ops/series/out/
 # a deploy waiting to be recorded (ops/deploy/record.mjs)
 deployments/*.pending
 
@@ -50,4 +52,5 @@ deployments/*.pending
 *.pem
 *.key
 ops/**/*-holders.json
+contracts/series/*-holders.json
 ops/keeper/.keeper-state.json

@@ -62,6 +62,12 @@ cd ops && npm ci
 RPC=... node series/verify-series.mjs --recipe ../contracts/series/recipe-fire-7.json --snapshot fire-7-holders.json
 ```
 
+## Launch a Series (`series/launch.mjs`)
+
+One command for a whole Series (snapshot, fork rehearsal, batch A on the Ledger, VerifySeries GREEN, type `LOCK`,
+batch B, read-back), resumable after any STOP: `docs/deploy.md`, "Launch a Series". `node series/launch-e2e.mjs`
+tests it end to end on anvil (CI runs it).
+
 ## Rehearsal (`rehearsal/`)
 
 The whole launch on a local anvil chain (or a Robinhood Chain fork with `--fork <RPC>`): `docs/deploy.md`,
