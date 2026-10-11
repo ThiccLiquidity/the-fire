@@ -68,9 +68,10 @@ Presets: Standard (exactly `StandardRecipe.sol`), Special: 3 cards, all holo, or
 The checks mirror `RecipeDealer.check` in the same order; the pool preview is a port of its pool and floor maths.
 Series and backups from before recipes load with the Standard recipe and their Diamond setting.
 
-A new card type needs a frame set: reuse one or build a new set with `frames-src/clean_frames.py` (put `<set>.png`, `<set>-holo.png` in `frames-src/originals` and the worn versions in
-`frames-src/originals/wear/l2..l6`, run `python3 frames-src/clean_frames.py`, bump `FRAMES_UPDATED_AT` in
-`src/frames.ts`). The studio finds the new set by its files. Its text layout starts from a neutral default
+A new card type needs a frame set: reuse one or build a new set with `frames-src/clean_frames.py` (put `<set>.png`,
+`<set>-holo.png` in `frames-src/originals`, run `python3 frames-src/clean_frames.py`, bump `FRAMES_UPDATED_AT` in
+`src/frames.ts`). PDA wear needs nothing per set: the same wear layers (`frames-src/wear_overlays.py`) go over every
+card. Full Art has no frame. The studio finds the new set by its files. Its text layout starts from a neutral default
 (Frames & Layout).
 
 ### The image grid and file names

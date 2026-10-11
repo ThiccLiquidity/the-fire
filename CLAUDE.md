@@ -15,5 +15,7 @@
 - Decisions live in `docs/card-studio.md`.
 - **The frames are locked.** The 10 approved frames (5 materials x normal/holo) are built in under
   `studio/src/assets/frames`, made from `studio/frames-src/originals` by `studio/frames-src/clean_frames.py`.
-  Never edit or regenerate them by hand. New frames (e.g. PDA wear levels) go through the same script.
+  Never edit or regenerate them by hand. New frames go through the same script (just the clean normal + holo).
+- PDA wear is one set of wear layers over every card type (`studio/frames-src/wear_overlays.py`); no per-frame wear
+  files. Full Art has no frame: the photo is the whole card.
 - The only thing the owner drops in per card is the character image.

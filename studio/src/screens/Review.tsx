@@ -302,7 +302,7 @@ function GridViewer({ fire, recipe, names, onOpen }: { fire: FireRecord; recipe:
     onOpen({
       url: URL.createObjectURL(blob),
       title: file,
-      detail: `${names[look.characterId]} · ${recipe.types[ty].name} · holo ${HOLO_LABEL[h]} · ${g == null ? (grade === 'c' ? 'cased' : 'ungraded') : `PDA ${g}, slabbed (${WEAR_LABEL[wearLookOf(g)]} frame)`} · ${(blob.size / 1024).toFixed(0)} KB`,
+      detail: `${names[look.characterId]} · ${recipe.types[ty].name} · holo ${HOLO_LABEL[h]} · ${g == null ? (grade === 'c' ? 'cased' : 'ungraded') : `PDA ${g}, slabbed (${WEAR_LABEL[wearLookOf(g)]} wear)`} · ${(blob.size / 1024).toFixed(0)} KB`,
     })
   }
   return (

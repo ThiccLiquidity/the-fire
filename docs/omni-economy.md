@@ -224,9 +224,9 @@ original name, `FirePsa`.) The full rules (hidden condition, wear, fresh odds, s
 - **Fresh odds** (a card cased or graded within 24 hours of opening): constants in `FirePsa` (`freshOdds`), fixed
   forever, the same for every Series and every material. Grades 1-4 come only from long raw holds:
 
-| Grade | Fresh odds | Out of 10,000 | Wear frame |
+| Grade | Fresh odds | Out of 10,000 | Wear |
 |---|---|---|---|
-| 10 | 1% | 100 | Clean frame + gold glow |
+| 10 | 1% | 100 | Pristine + gold glow |
 | 9 | 17% | 1,700 | Level 2 |
 | 8 | 25% | 2,500 | Level 2 |
 | 7 | 27% | 2,700 | Level 3 |

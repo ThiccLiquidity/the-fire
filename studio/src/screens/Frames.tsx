@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { DropZone, Field, Notice, NumberInput, useAction } from '../components'
-import { BUILTIN_FRAMES, FRAME_SETS, SHOWN_FRAME_SETS, frameBlob, frameSetFiles, frameSetLabel, hasFrame } from '../frames'
+import { BUILTIN_FRAMES, FRAME_SETS, FRAMELESS_SETS, SHOWN_FRAME_SETS, frameBlob, frameSetFiles, frameSetLabel, variantsOf, wearBlob } from '../frames'
 import { getBlob } from '../db'
 import { defaultLayout } from '../layoutDefaults'
 import { CardTextStyle, useFontOptions } from './TextStyle'
 import { cardView, drawCard, type CardFace } from '../render'
-import { CARD_H, CARD_W, WEAR_LABEL, WEAR_LEVELS, wearLookOf, type WearLook } from '../rules'
+import { CARD_H, CARD_W, wearLookOf, type WearLook } from '../rules'
 import {
   addFont, deleteFont, effectiveKey, fontFamilyCss, getStudio, onBlobChanged, saveLayout, useFontsVersion, useStudio,
 } from '../store'
-import { TEXT_FIELDS, TEXT_FIELD_LABEL, VARIANTS, type Layout, type PsaBox, type Rect, type TextBox, type TextField, type Variant } from '../types'
+import { TEXT_FIELDS, TEXT_FIELD_LABEL, type Layout, type PsaBox, type Rect, type TextBox, type TextField, type Variant } from '../types'
 
 type BoxId = 'art' | TextField | 'psa'
 const BOX_LABEL: Record<BoxId, string> = { art: 'Art window', ...TEXT_FIELD_LABEL, psa: 'PDA seal' }
@@ -23,7 +23,7 @@ export function Frames() {
     <div>
       <div className="subtabs">
         {SHOWN_FRAME_SETS.map((x) => (
-          <button key={x} className={x === m ? 'active' : ''} onClick={() => setM(x)} data-testid={`mat-${x}`}>{frameSetLabel(x)}{frameSetFiles(x).have < 12 ? ` (${frameSetFiles(x).have}/12)` : ''}</button>
+          <button key={x} className={x === m ? 'active' : ''} onClick={() => setM(x)} data-testid={`mat-${x}`}>{frameSetLabel(x)}{frameSetFiles(x).have < frameSetFiles(x).total ? ` (${frameSetFiles(x).have}/${frameSetFiles(x).total})` : ''}</button>
         ))}
       </div>
       <FrameGallery key={`f-${m}`} m={m} />
@@ -41,38 +41,41 @@ function FrameGallery({ m }: { m: string }) {
         The collection's master frames. They ship with the studio and can't be uploaded or edited here; every frame shares the
         same art window and panels, so the layout below fits them all.
       </p>
-      <div className="row wrap">
-        {VARIANTS.map((v) => {
-          const url = BUILTIN_FRAMES[m][v]
-          return (
-            <div key={v} className="frame-slot" data-testid={`frame-${m}-${v}`}>
-              <div className="slot-head">{v === 'normal' ? 'Normal frame' : 'Holo frame'}</div>
-              <div className="frame-drop">
-                {url ? <img src={url} className="checker" alt={`${m} ${v} frame`} /> : <span className="muted">Not delivered yet</span>}
+      {FRAMELESS_SETS.includes(m) ? (
+        <p className="muted small" data-testid={`frameless-${m}`}>No frame: the character's photo is the whole card, cut to the same rounded shape.</p>
+      ) : (
+        <div className="row wrap">
+          {variantsOf(m).map((v) => {
+            const url = BUILTIN_FRAMES[m][v]
+            return (
+              <div key={v} className="frame-slot" data-testid={`frame-${m}-${v}`}>
+                <div className="slot-head">{v === 'normal' ? 'Normal frame' : 'Holo frame'}</div>
+                <div className="frame-drop">
+                  {url ? <img src={url} className="checker" alt={`${m} ${v} frame`} /> : <span className="muted">Not delivered yet</span>}
+                </div>
+                {!url && <Notice kind="warn">Missing. Series that deal this card can't be approved until it's added.</Notice>}
               </div>
-              {!url && <Notice kind="warn">Missing. Series that deal this card can't be approved until it's added.</Notice>}
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
       <p className="muted small" data-testid={`wear-${m}`}>
-        PDA wear frames: {VARIANTS.flatMap((v) => WEAR_LEVELS.filter((w) => hasFrame(m, v, w))).length} of {VARIANTS.length * WEAR_LEVELS.length} in
-        ({WEAR_LEVELS.map((w) => WEAR_LABEL[w]).join(', ')}; normal + holo; PDA 10 is the clean frame). Use "PDA preview"
+        PDA wear: the same wear layers go over every card type (PDA 9 down to 1; PDA 10 is pristine). Use "PDA preview"
         below to see any grade.
       </p>
     </div>
   )
 }
 
-/** Decoded bitmap of a built-in frame. */
-function useFrameBitmap(m: string, v: Variant, wear: WearLook): ImageBitmap | null {
+/** Decoded bitmap of a built-in frame, or of the wear layer for a wear level (m = null). */
+function useFrameBitmap(m: string | null, v: Variant, wear: WearLook): ImageBitmap | null {
   const [bmp, setBmp] = useState<ImageBitmap | null>(null)
   useEffect(() => {
     let live = true
     let made: ImageBitmap | null = null
     setBmp(null)
     // a missing holo frame previews with the normal one, like the renderer
-    const p = frameBlob(m, v, wear)
+    const p = m == null ? wearBlob(wear === 'L1' ? 'clean' : wear) : frameBlob(m, v)
     void p?.then(async (b) => {
       if (!live) return
       made = await createImageBitmap(b)
@@ -121,7 +124,8 @@ function LayoutEditor({ m }: { m: string }) {
 
   const char = s.characters.find((c) => c.id === charId) ?? s.characters[0]
   const artSlot = char?.images[m]?.[picHolo ? 'holo' : 'normal'] ?? char?.images[m]?.normal
-  const frameBmp = useFrameBitmap(m, frameHolo ? 'holo' : 'normal', wearLookOf(grade))
+  const frameBmp = useFrameBitmap(m, frameHolo ? 'holo' : 'normal', 'clean')
+  const wearBmp = useFrameBitmap(null, 'normal', wearLookOf(grade))
   const artBmp = useBitmap(artSlot ? effectiveKey(artSlot) : undefined)
 
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -133,9 +137,9 @@ function LayoutEditor({ m }: { m: string }) {
   useEffect(() => {
     const ctx = canvas.current?.getContext('2d')
     if (!ctx) return
-    const raf = requestAnimationFrame(() => drawCard(ctx, { frame: frameBmp, art: artBmp }, layout, cardView(sampleCard, char?.name ?? 'Character Name', char?.category ?? 'Category')))
+    const raf = requestAnimationFrame(() => drawCard(ctx, { frame: frameBmp, art: artBmp, wear: wearBmp }, layout, cardView(sampleCard, char?.name ?? 'Character Name', char?.category ?? 'Category')))
     return () => cancelAnimationFrame(raf)
-  }, [layout, frameBmp, artBmp, sampleCard, char?.name, char?.category, s.fonts, fontsVersion])
+  }, [layout, frameBmp, artBmp, wearBmp, sampleCard, char?.name, char?.category, s.fonts, fontsVersion])
 
   const rectOf = (id: BoxId): Rect => (id === 'art' ? layout.art.box : id === 'psa' ? layout.psa.box : layout.text[id].box)
   const setRect = (id: BoxId, r: Rect) => setLayout((l) => {

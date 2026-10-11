@@ -298,7 +298,7 @@ function TypeCard({ r, t, i, locked, problems, n, packs, result, onChange, onMov
           <UintInput value={t.maxPerPack} width={70} disabled={locked} onChange={(v) => onChange({ maxPerPack: v })} testId={`type-${i}-cap`} /></label>
         <label className="field"><span className="field-label">Frames</span>
           <select value={t.frameSet} disabled={locked} onChange={(e) => onChange({ frameSet: e.target.value })} data-testid={`type-${i}-frames`}>
-            {(SHOWN_FRAME_SETS.includes(t.frameSet) ? SHOWN_FRAME_SETS : [...SHOWN_FRAME_SETS, t.frameSet]).map((f) => <option key={f} value={f}>{frameSetLabel(f)} ({frameSetFiles(f).have}/12)</option>)}
+            {(SHOWN_FRAME_SETS.includes(t.frameSet) ? SHOWN_FRAME_SETS : [...SHOWN_FRAME_SETS, t.frameSet]).map((f) => <option key={f} value={f}>{frameSetLabel(f)}{frameSetFiles(f).total ? ` (${frameSetFiles(f).have}/${frameSetFiles(f).total})` : ' (no frame)'}</option>)}
           </select></label>
 
       </div>
@@ -350,7 +350,7 @@ function TypeCard({ r, t, i, locked, problems, n, packs, result, onChange, onMov
       )}
       {missing.length > 0 && (
         <p className="field-msg err" data-testid={`type-${i}-missing-frames`}>
-          Missing frames for {t.name || 'this type'} ({files.have}/12 files in the {frameSetLabel(t.frameSet)} set): {missing.join(', ')}. The build is blocked until they are built by
+          Missing frames for {t.name || 'this type'} ({files.have}/{files.total} in the {frameSetLabel(t.frameSet)} set): {missing.join(', ')}. The build is blocked until they are built by
           frames-src/clean_frames.py, or pick another frame set.
         </p>
       )}

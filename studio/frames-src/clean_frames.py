@@ -6,9 +6,8 @@
   3. the art window cut perfectly square: x 128-1371, y 296-1539 (FRAME_GEOMETRY in src/frames.ts)
   4. the ragged rim colours along both cut edges replaced by the frame's own colour from just inside
 
-PDA wear frames (frames-src/originals/wear/l2..l6/<material>[-holo].png) get only steps 1 and 3: their edges are the
-wear itself, so the outline and rim steps (which would wipe it) are skipped. check_wear.py checks nothing else changed. They
-come out as src/assets/frames/<material>[-holo]-l<level>.webp. Level 1 (PDA 10) is the clean frame itself.
+A new frame set needs only its two clean frames (<set>.png, <set>-holo.png). PDA wear is not drawn into frames: the
+same wear layers go over every card (frames-src/wear_overlays.py). Full Art has no frame.
 
 Run from studio/:  python3 frames-src/clean_frames.py      (needs pillow, numpy, scipy)
 """
@@ -41,17 +40,8 @@ def outline():
     return np.array(m.resize((W, H), Image.LANCZOS))
 
 
-def clean(a, outer, worn=False):
-    if worn:
-        # wear frames: the edges ARE the art (chips, whitening, burns, tears), so keep ChatGPT's alpha and colours
-        # as they are; only the art window is cut. (The rounded outline and the outer-rim recolour below are for
-        # clean frames only: on wear frames they wiped the edge wear off.)
-        al = a[..., 3].copy()
-        al[WY0:WY1 + 1, WX0:WX1 + 1] = 0
-        a[..., 3] = al
-        return a
-    else:
-        al = np.minimum(np.where(a[..., 3] > 0, 255, 0).astype(np.uint8), outer)
+def clean(a, outer):
+    al = np.minimum(np.where(a[..., 3] > 0, 255, 0).astype(np.uint8), outer)
     al[WY0:WY1 + 1, WX0:WX1 + 1] = 0
     # window rim: copy colour from a few px further out into the 4 px band around the window
     b = 4
@@ -79,9 +69,3 @@ if __name__ == '__main__':
             continue
         save(clean(upscale(os.path.join(SRC, f)), outer), os.path.splitext(f)[0])
         print('ok', f)
-    wear = os.path.join(SRC, 'wear')
-    for level in sorted(os.listdir(wear)) if os.path.isdir(wear) else []:
-        for f in sorted(os.listdir(os.path.join(wear, level))):
-            if f.endswith(('.webp', '.png')):
-                save(clean(upscale(os.path.join(wear, level, f)), outer, worn=True), f'{os.path.splitext(f)[0]}-{level}')
-                print('ok', level, f)

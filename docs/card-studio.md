@@ -31,20 +31,25 @@ checks and pool maths are ports of the contract's and are tested against it. New
 
 - The frames are built into the studio and are not edited by hand: `studio/src/assets/frames`, produced from
   `studio/frames-src/originals` by `studio/frames-src/clean_frames.py`. The only per-card input is the character image.
-- A **frame set** is a normal frame, a holo frame and 5 worn versions of each for the PDA grades (12 files:
-  `<set>.webp`, `<set>-holo.webp`, `<set>[-holo]-l2.webp` to `-l6.webp`). The built sets are `paper`, `wood`,
-  `burning` (Fire), `charcoal` (Coal) and `diamond`: 60 files. The Standard recipe also uses `gold` and `fullart`, which
-  the owner is still making: they are listed (and their art can be uploaded) before their frames exist, and a missing
-  frame blocks the build.
+- A **frame set** is just its clean frames: `<set>.webp` and `<set>-holo.webp`. The built sets are `paper`, `wood`,
+  `burning` (Fire), `charcoal` (Coal), `gold` (holo only) and `diamond` (retired: hidden in the studio, kept so older
+  Series still build).
+- **Full Art has no frame.** The character's photo is the whole card (its own border drawn in), cut to the same
+  rounded card shape; the name, type and PDA seal print on it like every card.
+- **PDA wear is the same on every card type.** One set of wear layers, `studio/src/assets/wear/wear-l2.webp` to
+  `-l6.webp` (PDA 9-8, 7-6, 5-4, 3-2, 1; PDA 10 is pristine), goes over the finished card, framed or Full Art: worn
+  card-stock edges and corners, ink chips, scratches, scuffs, rubbed-off ink, creases, cracks, dents and stains, building
+  to a wrecked PDA 1 (water damage, grime, a pen scribble). The card's shape never changes. Made by
+  `studio/frames-src/wear_overlays.py` (fixed seeds, so it rebuilds the same files). No frame set ever needs worn
+  versions.
 - **Gold and Full Art** are always full holo: their cards use only the holo frame and the holo art (Gold has its own
-  gold holo art). Full Art's art fills the whole card behind a slim rim; the name bar and bottom panel stay in place.
+  gold holo art).
 - Holo comes from the frame art itself (a holo frame) and from a holo version of the character art (a holo picture),
   not from a code effect.
 - Each card type of a recipe uses one frame set: its frames, its text layout (set per frame set in Frames & Layout)
   and the characters' art for that set. A new type can reuse a set or get its own.
-- **Adding a frame set** (e.g. `gold`): put `gold.png` and `gold-holo.png` in `frames-src/originals` and the worn
-  versions in `frames-src/originals/wear/l2` to `l6` (`gold.png`, `gold-holo.png` in each), then run
-  `python3 frames-src/clean_frames.py` from `studio/`. The studio finds the set by its files (set ids are lowercase
+- **Adding a frame set**: put `<set>.png` and `<set>-holo.png` in `frames-src/originals` and run
+  `python3 frames-src/clean_frames.py` from `studio/`. Nothing else: the wear layers cover it. The studio finds the set by its files (set ids are lowercase
   letters and digits) and lists it in Frames & Layout, the Library (art slots) and each card type's Frames choice.
   Bump `FRAMES_UPDATED_AT` in `studio/src/frames.ts`. A type whose frames are missing blocks approval and the build.
 
@@ -147,7 +152,7 @@ Fresh odds are `FirePsa`'s constants (`freshOdds`), fixed forever for every Seri
 ## Shared images
 
 One image per character x card type x holo look x state within a Series. Each grade has its own image (the slab and
-seal print the number), even where two grades share a wear frame. The image folder holds the full grid the recipe can
+seal print the number), even where two grades share a wear layer. The image folder holds the full grid the recipe can
 produce: every character x type x the holo looks that type can have (from its holo rule and slots: a type dealt only
 in must-holo slots has no `none` image, a 0% holo type only `none`) x 12 states (ungraded, cased, PDA 1 to 10
 slabbed), WEBP only. Standard: 4 types x 4 holo looks + Gold + Full Art = 18 looks x 12 = **216 images** per

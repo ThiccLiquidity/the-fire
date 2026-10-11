@@ -7,6 +7,7 @@ import { CARD_H, CARD_W, GRADE_COLOR, HOLO_LABEL, wearLookOf, type WearLook } fr
 import type { Layout, OutputFormat, PsaBox, Rect, TextBox, TextStyle } from './types'
 import type { Ctx2D } from './wear'
 import { drawCase, drawSlab, type SlabLabel } from './protect'
+import { FRAMELESS_SETS } from './frames'
 
 export type ImgSrc = ImageBitmap | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas
 
@@ -14,6 +15,8 @@ export type ImgSrc = ImageBitmap | HTMLImageElement | HTMLCanvasElement | Offscr
 export interface CardAssets {
   frame: ImgSrc | null
   art: ImgSrc | null
+  /** The PDA wear layer for the card's grade (frames.ts wearUrl), drawn over everything; none when ungraded or PDA 10. */
+  wear?: ImgSrc | null
 }
 
 /** What one image shows: a card type (its name and frame set), a holo look, a grade, a character and the Series. */
@@ -356,8 +359,9 @@ function drawPda10(ctx: Ctx2D, frame: ImgSrc | null): void {
 export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardView): void {
   ctx.save()
   ctx.clearRect(0, 0, CARD_W, CARD_H)
-  if (!assets.frame) {
-    // Frame missing (e.g. a wear level not delivered yet): a neutral background so the layout is still visible.
+  const frameless = FRAMELESS_SETS.includes(view.frameSet)
+  if (!assets.frame && !frameless) {
+    // Frame missing (not delivered yet): a neutral background so the layout is still visible.
     ctx.fillStyle = '#2b2b30'
     ctx.fillRect(0, 0, CARD_W, CARD_H)
   }
@@ -368,6 +372,14 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
     if (assets.frame) drawFrame(ctx, assets.frame)
     if (assets.art) drawArt(ctx, assets.art, layout)
   }
+  if (frameless) {
+    // no frame: the art is the whole card, cut to the same rounded card shape as every frame
+    ctx.globalCompositeOperation = 'destination-in'
+    outlinePath(ctx, 0)
+    ctx.fillStyle = '#000'
+    ctx.fill()
+    ctx.globalCompositeOperation = 'source-over'
+  }
   if (view.pda10 && typeof OffscreenCanvas !== 'undefined') drawPda10(ctx, assets.frame)
   // heavy wear (PDA 3-1) puts scorch and stains under the text: give un-outlined text its outline so it stays readable
   const worn = view.wear === 'L5' || view.wear === 'L6'
@@ -377,6 +389,8 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
   drawText(ctx, view.categoryLabel, tb(layout.text.category))
   drawText(ctx, view.forgedLabel, tb(layout.text.forged))
   drawPsa(ctx, view.psaValue, layout.psa, view.wear === 'clean' ? null : GRADE_COLOR[view.wear])
+  // PDA wear, the same layer on every card type: over the art, the frame and the print alike
+  if (assets.wear) ctx.drawImage(assets.wear, 0, 0, CARD_W, CARD_H)
   ctx.restore()
 }
 

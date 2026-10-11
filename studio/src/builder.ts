@@ -3,26 +3,31 @@
 
 import * as db from './db'
 import { bundledFontData } from './fonts'
-import { FRAME_SETS, frameBlob, frameId } from './frames'
+import { FRAME_SETS, frameBlob, frameId, wearBlob } from './frames'
 import type { CardFace } from './render'
 import { CardRenderer, type AssetBundle, type RenderJob, type VariantBlobs } from './renderCore'
-import { WEAR_LEVELS, type WearLook } from './rules'
+import { WEAR_LEVELS } from './rules'
 import { effectiveKey, getStudio, layoutFor } from './store'
 import { VARIANTS, type OutputFormat } from './types'
 import type { WorkerIn, WorkerOut } from './build.worker'
 
 /** Everything a render needs for these characters and frame sets (default: every frame set). `withWear`: also load the
- *  PDA wear frames (only needed for graded cards). */
+ *  PDA wear layers (only needed for graded cards). */
 export async function collectBundle(characterIds: string[], withWear = false, frameSets: readonly string[] = FRAME_SETS): Promise<AssetBundle> {
   const s = getStudio()
   const sets = [...new Set(frameSets)]
   const frames: AssetBundle['frames'] = {}
   for (const m of sets) {
     for (const v of VARIANTS) {
-      for (const w of (withWear ? ['clean', ...WEAR_LEVELS] : ['clean']) as WearLook[]) {
-        const b = frameBlob(m, v, w)
-        if (b) frames[frameId(m, v, w)] = await b
-      }
+      const b = frameBlob(m, v)
+      if (b) frames[frameId(m, v)] = await b
+    }
+  }
+  const wear: AssetBundle['wear'] = {}
+  if (withWear) {
+    for (const w of WEAR_LEVELS) {
+      const b = wearBlob(w)
+      if (b) wear[w] = await b
     }
   }
   const art: AssetBundle['art'] = {}
@@ -53,7 +58,7 @@ export async function collectBundle(characterIds: string[], withWear = false, fr
   // bundled fonts the layouts use (the page has all of them; workers only get what they need)
   const used = sets.flatMap((m) => [...Object.values(layouts[m].text).map((t) => t.style.font), layouts[m].psa.style.font])
   fonts.push(...(await bundledFontData(used)))
-  return { layouts, frames, art, names, categories, fonts }
+  return { layouts, frames, wear, art, names, categories, fonts }
 }
 
 const yieldToUi = () => new Promise<void>((r) => setTimeout(r, 0))

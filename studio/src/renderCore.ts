@@ -3,7 +3,7 @@
 
 import { cardView, renderCardBlob, solidFullCardArt, type CardAssets, type CardFace } from './render'
 import { FULL_CARD_ART_SETS, frameId } from './frames'
-import { CARD_H, CARD_W, wearLookOf, type WearLook } from './rules'
+import { CARD_H, CARD_W, wearLookOf, type WearLevel, type WearLook } from './rules'
 import type { Layout, OutputFormat, Variant } from './types'
 
 export type VariantBlobs = Partial<Record<Variant, Blob>>
@@ -11,8 +11,10 @@ export type VariantBlobs = Partial<Record<Variant, Blob>>
 export interface AssetBundle {
   /** By frame set. */
   layouts: Record<string, Layout>
-  /** By frameId(set, variant, wear): every frame the job can need that exists. */
+  /** By frameId(set, variant): every frame the job can need that exists. */
   frames: Record<string, Blob>
+  /** The PDA wear layers by wear level (L2..L6), when the job renders graded cards. */
+  wear: Partial<Record<WearLevel, Blob>>
   /** art[characterId][frameSet][variant] */
   art: Record<string, Partial<Record<string, VariantBlobs>>>
   names: Record<string, string>
@@ -25,10 +27,9 @@ export interface RenderJob {
   face: CardFace
 }
 
-/** Decoded bitmaps kept per renderer (each frame is 1500 x 2100, about 12.6 MB decoded). A full-grid build renders
- *  one look's 12 states in a row (ungraded, cased, PDA 1-10), which needs the art plus 6 frames (ungraded, cased and
- *  PDA 10 use the clean frame), so 10
- *  covers a look and its neighbour without holding every frame of the Series. */
+/** Decoded bitmaps kept per renderer (each frame or wear layer is 1500 x 2100, about 12.6 MB decoded). A full-grid
+ *  build renders one look's 12 states in a row (ungraded, cased, PDA 1-10), which needs the art, the frame and the 5
+ *  wear layers, so 10 covers a look and its neighbour. */
 const LRU_SIZE = 10
 
 export class CardRenderer {
@@ -57,12 +58,17 @@ export class CardRenderer {
     return p
   }
 
-  private frame(m: string, v: Variant, wear: WearLook): Promise<ImageBitmap | null> {
+  private frame(m: string, v: Variant): Promise<ImageBitmap | null> {
     // a missing frame is flagged on the review screen and blocks approval; render without it meanwhile
-    // PDA 10 (L1) is the pristine frame: decode it once, under the clean frame's id
-    const id = frameId(m, v, wear === 'L1' && this.bundle.frames[frameId(m, v, 'clean')] ? 'clean' : wear)
+    const id = frameId(m, v)
     const blob = this.bundle.frames[id]
     return this.bitmap(`frame:${id}`, async () => (blob ? createImageBitmap(blob) : null))
+  }
+
+  private wear(w: WearLook): Promise<ImageBitmap | null> {
+    const blob = w === 'clean' || w === 'L1' ? undefined : this.bundle.wear[w]
+    if (!blob) return Promise.resolve(null)
+    return this.bitmap(`wear:${w}`, () => createImageBitmap(blob))
   }
 
   private art(charId: string, m: string, v: Variant): Promise<ImageBitmap | null> {
@@ -89,11 +95,12 @@ export class CardRenderer {
   }
 
   async assetsFor(face: CardFace): Promise<CardAssets> {
-    const [frame, art] = await Promise.all([
-      this.frame(face.frameSet, face.holoFrame ? 'holo' : 'normal', wearLookOf(face.grade)),
+    const [frame, art, wear] = await Promise.all([
+      this.frame(face.frameSet, face.holoFrame ? 'holo' : 'normal'),
       this.art(face.characterId, face.frameSet, face.holoPicture ? 'holo' : 'normal'),
+      this.wear(wearLookOf(face.grade)),
     ])
-    return { frame, art }
+    return { frame, art, wear }
   }
 
   async render(face: CardFace, format: OutputFormat): Promise<Blob> {
