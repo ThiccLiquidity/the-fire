@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BatchRenderer } from '../builder'
 import { Field, Notice, ProgressBar } from '../components'
 import { hasCategory } from '../categories'
-import { FRAME_SETS, frameSetLabel } from '../frames'
+import { SHOWN_FRAME_SETS, frameSetLabel, holoLooksOf } from '../frames'
 import type { CardFace } from '../render'
 import { HOLO_LABEL, HOLO_TYPES, WEAR_LABEL, holoTypeOf, wearLookOf, type HoloType } from '../rules'
 import { completeness, imageSlots, useStudio } from '../store'
@@ -11,7 +11,8 @@ interface Cell { material: string; holo: HoloType; url?: string }
 
 const key = (m: string, h: HoloType) => `${m}:${h}`
 
-/** Every look a character can have, rendered exactly as the build makes it: each frame set x 4 holo looks, at any PDA
+/** Every look a character can have, rendered exactly as the build makes it: each frame set x its holo looks (Gold and
+ *  Full Art: full holo only), at any PDA
  *  grade (the type name printed is the frame set's; a recipe type prints its own name). Click a card to see it full
  *  size. */
 export function Preview() {
@@ -35,8 +36,8 @@ export function Preview() {
     // the Series this character is in (latest), or the next Series if it isn't in one yet
     const fire = [...s.fires].reverse().find((f) => f.characterIds.includes(char.id))?.number ?? s.global.nextFireNumber
     const list: CardFace[] = []
-    for (const frameSet of FRAME_SETS) {
-      for (const holo of HOLO_TYPES) {
+    for (const frameSet of SHOWN_FRAME_SETS) {
+      for (const holo of holoLooksOf(frameSet)) {
         list.push({
           frameSet, typeName: frameSetLabel(frameSet), characterId: char.id, grade, cased: cased && grade == null, fire,
           holoFrame: holo === 'frame' || holo === 'full', holoPicture: holo === 'picture' || holo === 'full',
@@ -109,7 +110,7 @@ export function Preview() {
       <div className="preview-grid" data-testid="preview-grid">
         <div />
         {HOLO_TYPES.map((h) => <div key={h} className="preview-head">{h === 'none' ? 'No holo' : `${HOLO_LABEL[h]} holo`}</div>)}
-        {FRAME_SETS.map((m) => (
+        {SHOWN_FRAME_SETS.map((m) => (
           <PreviewRow key={m} m={m} cells={cells} onOpen={setBig} />
         ))}
       </div>
@@ -135,6 +136,7 @@ function PreviewRow({ m, cells, onOpen }: { m: string; cells: Record<string, Cel
     <>
       <div className="preview-label">{frameSetLabel(m)}</div>
       {HOLO_TYPES.map((h) => {
+        if (!holoLooksOf(m).includes(h)) return <div key={h} className="preview-cell muted small" data-testid={`preview-${m}-${h}`}>always full holo</div>
         const c = cells[key(m, h)]
         return (
           <button key={h} className="preview-cell" onClick={() => c && onOpen(c)} disabled={!c?.url} data-testid={`preview-${m}-${h}`}>

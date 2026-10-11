@@ -42,8 +42,19 @@ export const FRAME_SETS: FrameSetId[] = [
   ...Object.keys(FRAME_FILES).filter((s) => !(MATERIALS as readonly string[]).includes(s) && !EXPECTED_SETS.includes(s)).sort(),
 ]
 
+/** Frame sets no new Series uses (Gold replaced Diamond). Kept so older Series still build; hidden everywhere else. */
+export const RETIRED_SETS: readonly FrameSetId[] = ['diamond']
+
+/** The frame sets shown in the studio (Library, Frames & Layout, Preview, the recipe's frame picker). */
+export const SHOWN_FRAME_SETS: FrameSetId[] = FRAME_SETS.filter((s) => !RETIRED_SETS.includes(s))
+
 /** Gold and Full Art are always full holo: their cards use only the holo frame and the holo art. */
 export const HOLO_ONLY_SETS: readonly FrameSetId[] = ['gold', 'fullart']
+
+/** The holo looks a set's cards can have: Gold and Full Art only full holo. */
+export function holoLooksOf(s: FrameSetId): HoloType[] {
+  return HOLO_ONLY_SETS.includes(s) ? ['full'] : ['none', 'frame', 'picture', 'full']
+}
 
 /** The art (and frame) variants a set's cards can use. */
 export function variantsOf(s: FrameSetId): Variant[] {

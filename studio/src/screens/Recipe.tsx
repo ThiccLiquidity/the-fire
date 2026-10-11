@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Notice, useAction } from '../components'
 import { newId } from '../db'
-import { FRAME_SETS, frameSetFiles, frameSetLabel, missingFramesFor } from '../frames'
+import { SHOWN_FRAME_SETS, frameSetFiles, frameSetLabel, missingFramesFor } from '../frames'
 import {
   FRESH_PDA_ODDS, HOLO_ONE, SHARE_SCALE, SUPPLY_LABEL, UINT32_MAX, cardsPerPack, checkRecipe, cloneRecipe, holoLooksFor,
   holoOdds, holoOddsGivenHolo, parseUint, percentToScaled, roundedPercent, scaledToPercent, slotTypeIndexes, slugify,
@@ -298,7 +298,7 @@ function TypeCard({ r, t, i, locked, problems, n, packs, result, onChange, onMov
           <UintInput value={t.maxPerPack} width={70} disabled={locked} onChange={(v) => onChange({ maxPerPack: v })} testId={`type-${i}-cap`} /></label>
         <label className="field"><span className="field-label">Frames</span>
           <select value={t.frameSet} disabled={locked} onChange={(e) => onChange({ frameSet: e.target.value })} data-testid={`type-${i}-frames`}>
-            {FRAME_SETS.map((f) => <option key={f} value={f}>{frameSetLabel(f)} ({frameSetFiles(f).have}/12)</option>)}
+            {(SHOWN_FRAME_SETS.includes(t.frameSet) ? SHOWN_FRAME_SETS : [...SHOWN_FRAME_SETS, t.frameSet]).map((f) => <option key={f} value={f}>{frameSetLabel(f)} ({frameSetFiles(f).have}/12)</option>)}
           </select></label>
 
       </div>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { DropZone, Field, Notice, NumberInput, useAction } from '../components'
-import { BUILTIN_FRAMES, FRAME_SETS, frameBlob, frameSetFiles, frameSetLabel, hasFrame } from '../frames'
+import { BUILTIN_FRAMES, FRAME_SETS, SHOWN_FRAME_SETS, frameBlob, frameSetFiles, frameSetLabel, hasFrame } from '../frames'
 import { getBlob } from '../db'
 import { defaultLayout } from '../layoutDefaults'
 import { CardTextStyle, useFontOptions } from './TextStyle'
@@ -22,7 +22,7 @@ export function Frames() {
   return (
     <div>
       <div className="subtabs">
-        {FRAME_SETS.map((x) => (
+        {SHOWN_FRAME_SETS.map((x) => (
           <button key={x} className={x === m ? 'active' : ''} onClick={() => setM(x)} data-testid={`mat-${x}`}>{frameSetLabel(x)}{frameSetFiles(x).have < 12 ? ` (${frameSetFiles(x).have}/12)` : ''}</button>
         ))}
       </div>

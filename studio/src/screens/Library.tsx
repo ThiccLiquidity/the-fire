@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import { DropZone, Field, Notice, useAction } from '../components'
 import { newId } from '../db'
 import { categoryKey, categoryProblem, categorySuggestions, hasCategory, hasValidName, nameProblem, normalizeCategory, normalizeName } from '../categories'
-import { FRAME_SETS, frameSetLabel, variantsOf } from '../frames'
+import { FRAME_SETS, SHOWN_FRAME_SETS, frameSetLabel, variantsOf } from '../frames'
 import {
   completeness, deleteCharacter, getStudio, imageSlots, isReady, effectiveKey, removeCharacterImage, saveCharacter, setCharacterImage, updateImageKey,
   useBlobUrl, useStudio,
@@ -126,7 +126,7 @@ function BulkTools() {
       const id = byName.get(m[1].trim().toLowerCase())
       const set = m[2].toLowerCase()
       if (!id) { out.push(`${f.name}: no character "${m[1]}"`); continue }
-      if (!FRAME_SETS.includes(set)) { out.push(`${f.name}: no frame set "${set}" (${FRAME_SETS.join(', ')})`); continue }
+      if (!FRAME_SETS.includes(set)) { out.push(`${f.name}: no frame set "${set}" (${SHOWN_FRAME_SETS.join(', ')})`); continue }
       if (!f.type.startsWith('image/')) { out.push(`${f.name}: not an image`); continue }
       await setCharacterImage(id, set, m[3] ? 'holo' : 'normal', f, f.name)
       done++
@@ -139,7 +139,7 @@ function BulkTools() {
       <p className="muted small">One character per line: <code>Name, Category</code>.</p>
       <textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder={'Ember Fox, Animals\nAsh Wolf, Animals'} data-testid="bulk-names" />
       <button onClick={addMany} disabled={busy || !text.trim()} data-testid="bulk-add">Add these</button>
-      <p className="muted small">Images: drop many files named <code>&lt;character&gt;__&lt;frame set&gt;.png</code> or <code>..__holo.png</code>, e.g. <code>Ember Fox__paper__holo.png</code>. Frame sets: {FRAME_SETS.join(', ')}.</p>
+      <p className="muted small">Images: drop many files named <code>&lt;character&gt;__&lt;frame set&gt;.png</code> or <code>..__holo.png</code>, e.g. <code>Ember Fox__paper__holo.png</code>. Frame sets: {SHOWN_FRAME_SETS.join(', ')}.</p>
       <DropZone accept="image/*" multiple onFiles={dropImages} className="inline-drop" testId="bulk-images"><span>Drop images or click</span></DropZone>
       {busy && <span className="muted small">working...</span>}
       {error && <Notice kind="error">{error}</Notice>}
@@ -190,7 +190,7 @@ function CharacterEditor({ c }: { c: Character }) {
       <div className="slot-grid">
         <div />
         {VARIANTS.map((v) => <div key={v} className="slot-head">{v === 'normal' ? 'Normal' : 'Holo'}</div>)}
-        {FRAME_SETS.map((m) => (
+        {SHOWN_FRAME_SETS.map((m) => (
           <SlotRow key={m} c={c} m={m} />
         ))}
       </div>
