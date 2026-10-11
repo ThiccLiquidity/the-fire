@@ -1,0 +1,28 @@
+import { describe, expect, it } from 'vitest'
+import { defaultLayout, lockPositions, normalizeLayout } from './layoutDefaults'
+
+describe('text positions are fixed on every frame set', () => {
+  it('a saved layout with moved boxes and other alignments comes back in the standard spots', () => {
+    const d = defaultLayout('burning')
+    const moved = {
+      ...d,
+      text: {
+        ...d.text,
+        name: { ...d.text.name, box: { x: 10, y: 900, w: 300, h: 50 }, style: { ...d.text.name.style, align: 'left' as const, size: 140, font: 'Anton' } },
+        category: { ...d.text.category, box: { x: 600, y: 100, w: 200, h: 40 }, style: { ...d.text.category.style, align: 'right' as const } },
+      },
+      psa: { ...d.psa, box: { x: 0, y: 0, w: 50, h: 50 } },
+      art: { ...d.art, scale: 1.4, offsetX: 90 },
+    }
+    for (const l of [lockPositions(moved), normalizeLayout('burning', moved)]) {
+      expect(l.text.name.box).toEqual(d.text.name.box)
+      expect(l.text.name.style.align).toBe('center')
+      expect(l.text.name.style.size).toBe(140) // the look stays the owner's
+      expect(l.text.name.style.font).toBe('Anton')
+      expect(l.text.category.box).toEqual(d.text.category.box)
+      expect(l.text.category.style.align).toBe('left')
+      expect(l.psa.box).toEqual(d.psa.box)
+      expect(l.art).toMatchObject({ scale: 1, offsetX: 0, offsetY: 0, fit: 'cover' })
+    }
+  })
+})

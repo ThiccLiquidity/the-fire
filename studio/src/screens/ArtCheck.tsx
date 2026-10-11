@@ -1,0 +1,151 @@
+/** The art safety net in the Library, for every frame set: the template to give the image generator, a size check on
+ *  each uploaded image, and a live preview of the card (in its frame, or the whole card for Full Art, with the print
+ *  zones outlined) where the art can be zoomed and moved for this character. */
+
+import { useEffect, useRef, useState } from 'react'
+import { Notice, useAction } from '../components'
+import { FULL_CARD_ART_SETS, artBoxOf, frameBlob, frameSetLabel } from '../frames'
+import { drawZones, fitReport, fullArtTemplateBlob, windowTemplateBlob } from '../artGuide'
+import { cardView, drawCard, solidFullCardArt, withPlacement } from '../render'
+import { CARD_H, CARD_W } from '../rules'
+import { effectiveKey, getStudio, layoutFor, updateImagePlacement, useStudio } from '../store'
+import { getBlob } from '../db'
+import type { Character, ImageSlot, Placement, Variant } from '../types'
+
+const VIEW_W = 300
+const NONE: Placement = { zoom: 1, x: 0, y: 0 }
+const isNone = (p: Placement) => p.zoom === 1 && p.x === 0 && p.y === 0
+
+export function TemplateButton({ m }: { m: string }) {
+  const [busy, error, run] = useAction()
+  const box = artBoxOf(m)
+  const download = () => run(async () => {
+    const blob = FULL_CARD_ART_SETS.includes(m) ? await fullArtTemplateBlob(layoutFor(m)) : await windowTemplateBlob(box)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${m}-template-${box.w}x${box.h}.png`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  })
+  return (
+    <>
+      <button className="link" onClick={download} disabled={busy} data-testid={`template-${m}`}>Template</button>
+      {error && <Notice kind="error">{error}</Notice>}
+    </>
+  )
+}
+
+/** The size check's verdict for an image in a frame set, in a few words (for the slot badge). */
+export function artVerdict(m: string, slot: ImageSlot): { ok: boolean; text: string } {
+  const box = artBoxOf(m)
+  const r = fitReport(slot.width, slot.height, box)
+  if (!r.shapeOk) return { ok: false, text: `${r.cut!.pct}% cut off` }
+  if (r.upscalePct > 5) return { ok: false, text: 'small, may look soft' }
+  return { ok: true, text: 'size OK' }
+}
+
+export function ArtCheck({ c, m, v, slot }: { c: Character; m: string; v: Variant; slot: ImageSlot }) {
+  useStudio()
+  const fullCard = FULL_CARD_ART_SETS.includes(m)
+  const box = artBoxOf(m)
+  const report = fitReport(slot.width, slot.height, box)
+  const saved = slot.placement ?? NONE
+  const [p, setP] = useState<Placement>(saved)
+  const [zones, setZones] = useState(true)
+  const [art, setArt] = useState<ImageBitmap | null>(null)
+  const [frame, setFrame] = useState<ImageBitmap | null>(null)
+  const [busy, error, run] = useAction()
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const key = effectiveKey(slot)
+  const dirty = p.zoom !== saved.zoom || p.x !== saved.x || p.y !== saved.y
+  const shape = fullCard ? '5:7, 1500 x 2100' : `square, ${box.w} x ${box.h}`
+  // the art always covers its window: a move can't go past its edge
+  const clamp = (n: Placement): Placement => {
+    if (!art) return n
+    const s = Math.max(box.w / art.width, box.h / art.height) * n.zoom
+    const mx = Math.max(0, (art.width * s - box.w) / 2), my = Math.max(0, (art.height * s - box.h) / 2)
+    return { zoom: n.zoom, x: Math.round(Math.max(-mx, Math.min(mx, n.x))), y: Math.round(Math.max(-my, Math.min(my, n.y))) }
+  }
+
+  useEffect(() => { setP(slot.placement ?? NONE) }, [slot.placement])
+
+  useEffect(() => {
+    let live = true
+    let made: ImageBitmap | null = null
+    void getBlob(key).then(async (b) => {
+      if (!b || !live) return
+      const full = await createImageBitmap(b)
+      made = fullCard ? await solidFullCardArt(full) : full
+      if (made !== full) full.close()
+      if (live) setArt(made)
+      else made.close()
+    })
+    return () => { live = false; made?.close() }
+  }, [key, fullCard])
+
+  useEffect(() => {
+    let live = true
+    let made: ImageBitmap | null = null
+    setFrame(null)
+    void frameBlob(m, v)?.then(async (b) => {
+      made = await createImageBitmap(b)
+      if (live) setFrame(made)
+      else made.close()
+    })
+    return () => { live = false; made?.close() }
+  }, [m, v])
+
+  useEffect(() => {
+    const ctx = canvas.current?.getContext('2d')
+    if (!ctx) return
+    const raf = requestAnimationFrame(() => {
+      const fire = Math.max(1, getStudio().global.nextFireNumber - 1)
+      const view = cardView({ frameSet: m, typeName: frameSetLabel(m), grade: null, fire, holoFrame: v === 'holo', holoPicture: v === 'holo' }, c.name, c.category)
+      ctx.save()
+      ctx.clearRect(0, 0, CARD_W, CARD_H)
+      drawCard(ctx, { frame, art }, withPlacement(layoutFor(m), p), view)
+      if (zones && fullCard) drawZones(ctx, layoutFor(m), false)
+      ctx.restore()
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [art, frame, p, zones, c.name, c.category, m, v, fullCard])
+
+  const slider = (label: string, k: keyof Placement, min: number, max: number, step: number, show: (n: number) => string) => (
+    <label className="placement-slider">
+      {label} <input type="range" min={min} max={max} step={step} value={p[k]} data-testid={`placement-${k}`}
+        onChange={(e) => setP(clamp({ ...p, [k]: Number(e.target.value) }))} /> {show(p[k])}
+    </label>
+  )
+
+  return (
+    <div className="art-check" data-testid={`art-check-${m}-${v}`}>
+      {report.shapeOk
+        ? <Notice kind="ok">Right shape ({shape}). Nothing is cut off.</Notice>
+        : <Notice kind="warn">
+            Not the right shape: {slot.width} x {slot.height} (this art is {shape}). About {report.cut!.pct}% gets cut off the{' '}
+            {report.cut!.sides}. Check the preview and frame it below, or regenerate it with the template.
+          </Notice>}
+      {report.upscalePct > 5 && (
+        <Notice kind="warn">Small: stretched {report.upscalePct}% to fill, so it may look soft. {box.w} x {box.h} or bigger is best.</Notice>
+      )}
+      <div className="row wrap" style={{ alignItems: 'flex-start', gap: 12 }}>
+        <canvas ref={canvas} width={CARD_W} height={CARD_H} style={{ width: VIEW_W, height: (VIEW_W * CARD_H) / CARD_W }} className="checker" data-testid="placement-preview" />
+        <div style={{ display: 'grid', gap: 6, minWidth: 220 }}>
+          {fullCard && <span className="muted small">Red: where the text prints. Yellow: how far the worst edge wear reaches. Keep faces and key detail clear of both.</span>}
+          {!fullCard && <span className="muted small">Exactly how this art sits in the {frameSetLabel(m)} frame.</span>}
+          {slider('Zoom', 'zoom', 1, 2, 0.01, (n) => `${Math.round(n * 100)}%`)}
+          {slider('Left / right', 'x', -400, 400, 2, (n) => `${n > 0 ? '+' : ''}${n}`)}
+          {slider('Up / down', 'y', -400, 400, 2, (n) => `${n > 0 ? '+' : ''}${n}`)}
+          {fullCard && <label className="check"><input type="checkbox" checked={zones} onChange={(e) => setZones(e.target.checked)} /> Show text areas</label>}
+          <div className="row" style={{ gap: 8 }}>
+            <button disabled={!dirty || busy} data-testid="placement-save"
+              onClick={() => void run(() => updateImagePlacement(c.id, m, v, isNone(p) ? undefined : p))}>Save placement</button>
+            <button className="link" disabled={busy || isNone(p)} onClick={() => setP(NONE)}>Reset</button>
+          </div>
+          {error && <Notice kind="error">{error}</Notice>}
+        </div>
+      </div>
+    </div>
+  )
+}

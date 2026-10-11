@@ -127,18 +127,35 @@ export function fitTextSize(ctx: Ctx2D, text: string, s: TextStyle, box: Rect): 
   return size
 }
 
-function drawText(ctx: Ctx2D, raw: string, tb: TextBox): void {
+/** Draws one line of text in its box, positioned by the letters actually drawn (not the font's em box), so it sits
+ *  the same whatever the font or size: vertically the capital height is centred in the box (every line of a field
+ *  shares one baseline, descenders hang below); a centred line is centred on its ink left to right. `ink` centres a
+ *  single mark (the seal's grade or "?") on its own shape both ways. */
+function drawText(ctx: Ctx2D, raw: string, tb: TextBox, ink = false): void {
   if (!tb.visible || !raw) return
   const s = tb.style
   const text = s.uppercase ? raw.toUpperCase() : raw
   const size = fitTextSize(ctx, text, s, tb.box)
   ctx.save()
   ctx.font = fontString(s, size)
-  ctx.textBaseline = 'middle'
-  ctx.textAlign = s.align
+  ctx.textBaseline = 'alphabetic'
+  ctx.textAlign = 'left'
+  const m = ctx.measureText(text)
+  const left = m.actualBoundingBoxLeft || 0
+  const right = m.actualBoundingBoxRight || m.width
   const pad = s.outlineWidth
-  const x = s.align === 'left' ? tb.box.x + pad : s.align === 'right' ? tb.box.x + tb.box.w - pad : tb.box.x + tb.box.w / 2
-  const y = tb.box.y + tb.box.h / 2
+  const cx = tb.box.x + tb.box.w / 2
+  const cy = tb.box.y + tb.box.h / 2
+  const x = s.align === 'left' ? tb.box.x + pad + left
+    : s.align === 'right' ? tb.box.x + tb.box.w - pad - right
+    : cx - (right - left) / 2
+  let y: number
+  if (ink) {
+    y = cy + ((m.actualBoundingBoxAscent || size * 0.7) - (m.actualBoundingBoxDescent || 0)) / 2
+  } else {
+    const cap = ctx.measureText('H').actualBoundingBoxAscent || size * 0.7
+    y = cy + cap / 2
+  }
   if (s.outlineWidth > 0) {
     ctx.lineJoin = 'round'
     ctx.miterLimit = 2
@@ -199,7 +216,7 @@ function drawPsa(ctx: Ctx2D, value: string, psa: PsaBox, ringColor: string | nul
   ctx.restore()
   const st = { ...psa.style, outlineWidth: 0, uppercase: false, align: 'center' as const }
   drawText(ctx, 'PDA', { box: { x: cx - 80 * k, y: cy - 74 * k, w: 160 * k, h: 44 * k }, style: { ...st, bold: true, size: 34 * k, minSize: 12, color: st.color }, visible: true })
-  drawText(ctx, value, { box: { x: cx - 85 * k, y: cy - 42 * k, w: 170 * k, h: 120 * k }, style: { ...st, bold: true, size: 112 * k, minSize: 24 }, visible: true })
+  drawText(ctx, value, { box: { x: cx - 85 * k, y: cy - 42 * k, w: 170 * k, h: 120 * k }, style: { ...st, bold: true, size: 112 * k, minSize: 24 }, visible: true }, true)
 }
 
 /** The card's own shape (the same rounded outline clean_frames.py gives every frame): full-card art is clipped to it. */

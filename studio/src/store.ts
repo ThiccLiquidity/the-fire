@@ -5,7 +5,7 @@ import { hasCategory, hasValidName, migrateCharacterCategory } from './categorie
 import { DEFAULT_KEY, keyMagentaBlob, type KeyOptions } from './chroma'
 import * as db from './db'
 import { FRAME_SETS, FRAMES_UPDATED_AT, SHOWN_FRAME_SETS, variantsOf } from './frames'
-import { normalizeLayout } from './layoutDefaults'
+import { lockPositions, normalizeLayout } from './layoutDefaults'
 import { migrateFire, needsMigration } from './migrate'
 import type { Character, FireRecord, FontAsset, GlobalState, ImageSlot, Layout, Placement, Variant } from './types'
 
@@ -235,7 +235,7 @@ export function layoutFor(frameSet: string): Layout {
 }
 
 export async function saveLayout(layout: Layout): Promise<void> {
-  const next = { ...layout, updatedAt: Date.now() }
+  const next = { ...lockPositions(layout), updatedAt: Date.now() }
   await db.putRecord(`layout:${layout.material}`, next)
   set({ layouts: { ...data.layouts, [layout.material]: next } })
 }

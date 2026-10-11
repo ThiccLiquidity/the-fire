@@ -93,18 +93,34 @@ export function normalizeLayout(material: string, stored: Partial<Layout> | unde
     t.forged = { ...d.text.forged, style: { ...d.text.forged.style, ...(font ? { font, color: t.category?.style.color ?? d.text.forged.style.color } : {}) } }
     stored = { ...stored, text: t }
   }
-  return {
+  return lockPositions({
     ...d,
     ...stored,
     material,
     version: LAYOUT_VERSION,
-    // the frames are fixed, so the art window and layering are too
     layering: 'art-behind',
-    art: { ...d.art, ...stored.art, box: artBoxOf(material) },
+    art: { ...d.art, ...stored.art },
     text: Object.fromEntries(TEXT_FIELDS.map((f) => {
       const st = stored.text?.[f]
       return [f, { ...d.text[f], ...st, style: { ...d.text[f].style, ...st?.style } }]
     })) as Layout['text'],
     psa: { ...d.psa, ...stored.psa, style: { ...d.psa.style, ...stored.psa?.style } },
+  })
+}
+
+/** Where everything prints is fixed, the same on every frame set: the name centred in the top bar (both ways, any
+ *  font or size), the type, category and Series lines left in the bottom panel, the seal in its spot, and the art
+ *  filling its window (a character's own framing is per image, Library). Only the look (font, size, colour, outline,
+ *  bold, italic, capitals, shown or hidden) is set per frame set. */
+export function lockPositions(l: Layout): Layout {
+  const d = defaultLayout(l.material)
+  const fix = (f: keyof Layout['text'], align: TextBox['style']['align']) =>
+    ({ ...l.text[f], box: { ...d.text[f].box }, style: { ...l.text[f].style, align } })
+  return {
+    ...l,
+    layering: 'art-behind',
+    art: { ...l.art, box: artBoxOf(l.material), fit: 'cover', scale: 1, offsetX: 0, offsetY: 0 },
+    text: { name: fix('name', 'center'), material: fix('material', 'left'), category: fix('category', 'left'), forged: fix('forged', 'left') },
+    psa: { ...l.psa, box: { ...d.psa.box }, style: { ...l.psa.style, align: 'center' } },
   }
 }

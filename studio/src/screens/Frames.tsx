@@ -14,8 +14,8 @@ import { TEXT_FIELDS, TEXT_FIELD_LABEL, type Layout, type PsaBox, type Rect, typ
 type BoxId = 'art' | TextField | 'psa'
 const BOX_LABEL: Record<BoxId, string> = { art: 'Art window', ...TEXT_FIELD_LABEL, psa: 'PDA seal' }
 const BOX_IDS: BoxId[] = ['art', ...TEXT_FIELDS, 'psa']
-/** The art window is fixed by the frames: shown, never moved. */
-const LOCKED: BoxId[] = ['art']
+/** Every position is fixed (layoutDefaults.ts lockPositions): the boxes are shown, never moved. */
+const LOCKED: BoxId[] = BOX_IDS
 
 export function Frames() {
   const [m, setM] = useState<string>('paper')
@@ -242,41 +242,20 @@ function LayoutEditor({ m }: { m: string }) {
         <div className="editor-props">
           <CardTextStyle m={m} layout={layout} setLayout={setLayout} sample={char?.name ?? 'Rabbit'} onFontToAll={fontToAll} />
           <details className="advanced" data-testid="advanced">
-          <summary>Advanced: move boxes, sizes and per-field settings</summary>
+          <summary>Advanced: per-field font, size and colour</summary>
+          <p className="muted small">Positions are fixed on every frame: the name is centred in the top bar, the bottom lines and the seal sit in
+            their spots, whatever the font or size. The art fills its window; frame a character's art in the Library.</p>
           <div className="box-pick">
-            {BOX_IDS.map((id) => <button key={id} className={id === sel ? 'active' : ''} onClick={() => setSel(id)}>{BOX_LABEL[id]}</button>)}
+            {BOX_IDS.filter((id) => id !== 'art').map((id) => <button key={id} className={id === sel ? 'active' : ''} onClick={() => setSel(id)}>{BOX_LABEL[id]}</button>)}
           </div>
-          {LOCKED.includes(sel)
-            ? <p className="muted small">Art window: fixed by the frames ({layout.art.box.w} x {layout.art.box.h} at {layout.art.box.x}, {layout.art.box.y}).</p>
-            : <RectFields r={rectOf(sel)} onChange={(r) => setRect(sel, r)} />}
           {sel === 'art' && (
-            <>
-              <div className="row wrap">
-                <Field label="Fit">
-                  <select value={layout.art.fit} onChange={(e) => setLayout({ ...layout, art: { ...layout.art, fit: e.target.value as 'cover' | 'contain' } })}>
-                    <option value="cover">Cover (fill window, crop)</option>
-                    <option value="contain">Contain (whole image)</option>
-                  </select>
-                </Field>
-                <Field label="Scale"><NumberInput step={0.01} min={0.1} max={5} value={layout.art.scale} onChange={(n) => setLayout({ ...layout, art: { ...layout.art, scale: n } })} /></Field>
-                <Field label="Offset X"><NumberInput value={layout.art.offsetX} onChange={(n) => setLayout({ ...layout, art: { ...layout.art, offsetX: n } })} /></Field>
-                <Field label="Offset Y"><NumberInput value={layout.art.offsetY} onChange={(n) => setLayout({ ...layout, art: { ...layout.art, offsetY: n } })} /></Field>
-              </div>
-              <div className="row wrap">
-                <label className="check">
-                  <input type="checkbox" checked={!!layout.art.background} onChange={(e) => setLayout({ ...layout, art: { ...layout.art, background: e.target.checked ? '#f3efe6' : '' } })} />
-                  Fill the window behind the art
-                </label>
-                {layout.art.background && <input type="color" value={layout.art.background} onChange={(e) => setLayout({ ...layout, art: { ...layout.art, background: e.target.value } })} />}
-              </div>
-              <div className="row wrap nudge">
-                {([['←', -10, 0], ['→', 10, 0], ['↑', 0, -10], ['↓', 0, 10]] as const).map(([t, dx, dy]) => (
-                  <button key={t} onClick={() => setLayout({ ...layout, art: { ...layout.art, offsetX: layout.art.offsetX + dx, offsetY: layout.art.offsetY + dy } })}>{t}</button>
-                ))}
-                <button onClick={() => setLayout({ ...layout, art: { ...layout.art, scale: +(layout.art.scale * 1.05).toFixed(3) } })}>zoom +</button>
-                <button onClick={() => setLayout({ ...layout, art: { ...layout.art, scale: +(layout.art.scale / 1.05).toFixed(3) } })}>zoom -</button>
-              </div>
-            </>
+            <div className="row wrap">
+              <label className="check">
+                <input type="checkbox" checked={!!layout.art.background} onChange={(e) => setLayout({ ...layout, art: { ...layout.art, background: e.target.checked ? '#f3efe6' : '' } })} />
+                Fill the window behind the art
+              </label>
+              {layout.art.background && <input type="color" value={layout.art.background} onChange={(e) => setLayout({ ...layout, art: { ...layout.art, background: e.target.value } })} />}
+            </div>
           )}
           {sel !== 'art' && (
             <TextFields
@@ -308,17 +287,6 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v))
 }
 
-function RectFields({ r, onChange }: { r: Rect; onChange: (r: Rect) => void }) {
-  return (
-    <div className="row wrap">
-      <Field label="X"><NumberInput value={r.x} onChange={(x) => onChange({ ...r, x })} /></Field>
-      <Field label="Y"><NumberInput value={r.y} onChange={(y) => onChange({ ...r, y })} /></Field>
-      <Field label="W"><NumberInput min={1} value={r.w} onChange={(w) => onChange({ ...r, w: Math.max(1, w) })} /></Field>
-      <Field label="H"><NumberInput min={1} value={r.h} onChange={(h) => onChange({ ...r, h: Math.max(1, h) })} /></Field>
-    </div>
-  )
-}
-
 function TextFields({ tb, onChange, fontOptions, psa }: {
   tb: TextBox | PsaBox
   onChange: (tb: TextBox | PsaBox) => void
@@ -348,11 +316,6 @@ function TextFields({ tb, onChange, fontOptions, psa }: {
         <Field label="Colour"><input type="color" value={st.color} onChange={(e) => set({ color: e.target.value })} /></Field>
         <Field label="Outline"><input type="color" value={st.outlineColor} onChange={(e) => set({ outlineColor: e.target.value })} /></Field>
         <Field label="Outline width"><NumberInput min={0} value={st.outlineWidth} onChange={(n) => set({ outlineWidth: Math.max(0, n) })} /></Field>
-        <Field label="Align">
-          <select value={st.align} onChange={(e) => set({ align: e.target.value as TextBox['style']['align'] })}>
-            <option value="left">Left</option><option value="center">Center</option><option value="right">Right</option>
-          </select>
-        </Field>
       </div>
       {psa && 'fill' in tb && (
         <div className="row wrap">

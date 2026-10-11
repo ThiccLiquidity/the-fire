@@ -36,11 +36,17 @@ checks and pool maths are ports of the contract's and are tested against it. New
   Series still build).
 - **Full Art has no frame.** The character's photo is the whole card (its own border drawn in), cut to the same
   rounded card shape; the name, type and PDA seal print on it like every card.
-- **Full Art safety net** (Library, Full Art row): **Download template** gives a 1500 x 2100 guide (the card shape, the
-  zones where the name and the type, category, Series and seal print, the wear margin) to hand the image generator.
-  Each uploaded photo is checked: a warning when it isn't 5:7 (how much is cut off which sides) or is small enough to
-  look soft. The live preview outlines the print zones; **Zoom** and **Move** frame the photo per character (it always
-  still covers the card), saved with the character and used by every build.
+- **Art safety net** (Library, every frame set): **Template** gives the image generator the exact target: a 1244 x
+  1244 square for a frame's art window; for Full Art a 1500 x 2100 guide with the card shape, the zones where the name
+  and the type, category, Series and seal print, and the wear margin. Every uploaded image is checked: a warning when
+  it isn't the right shape (how much is cut off which sides) or is small enough to look soft. **Preview and frame it**
+  shows the card as built (Full Art with the print zones outlined); **Zoom** and **Move** frame that image for the
+  character (it always still covers its window), saved with the character and used by every build.
+- **Text positions are fixed** on every frame set: the name is centred in the top bar both ways, whatever the font or
+  size; the type, category and Series lines sit left in the bottom panel; the seal in its spot. Text is placed by the
+  letters actually drawn (capital height centred, a centred line centred on its ink; the seal's grade or "?" centred
+  on its own shape), so changing font never shifts it. Frames & Layout sets only the look: font, size, colour,
+  outline, bold, italic, capitals, shown or hidden.
 - **PDA wear is the same on every card type.** One set of wear layers, `studio/src/assets/wear/wear-l2.webp` to
   `-l6.webp` (PDA 9-8, 7-6, 5-4, 3-2, 1; PDA 10 is pristine), goes over the finished card, framed or Full Art: worn
   card-stock edges and corners, ink chips, scratches, scuffs, rubbed-off ink, creases, cracks, dents and stains, building

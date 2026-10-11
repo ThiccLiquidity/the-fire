@@ -1,5 +1,6 @@
-/** Full Art helpers: the template to hand an image generator (card size, card shape, where the text prints), the size
- *  check run on every uploaded photo, and the outlines drawn over the placement preview. */
+/** Art helpers: the templates to hand an image generator (Full Art: card size, card shape, where the text prints; a
+ *  frame's art window: the square), the size check run on every uploaded image, and the outlines drawn over the
+ *  placement preview. */
 
 import { CARD_H, CARD_W } from './rules'
 import type { Layout, Rect } from './types'
@@ -18,18 +19,19 @@ export interface FitReport {
   upscalePct: number
 }
 
-/** What happens to a w x h photo on a 1500 x 2100 card (it's scaled to cover the card, centred). */
-export function fitReport(w: number, h: number): FitReport {
-  const target = CARD_W / CARD_H
+/** What happens to a w x h image in a box (default the whole 1500 x 2100 card; a frame's art window is 1244 x 1244):
+ *  it's scaled to cover the box, centred. */
+export function fitReport(w: number, h: number, box: { w: number; h: number } = { w: CARD_W, h: CARD_H }): FitReport {
+  const target = box.w / box.h
   const r = w / h
-  const scale = Math.max(CARD_W / w, CARD_H / h)
+  const scale = Math.max(box.w / w, box.h / h)
   const upscalePct = Math.max(0, Math.round((scale - 1) * 100))
   if (Math.abs(r / target - 1) <= 0.01) return { shapeOk: true, cut: null, upscalePct }
   if (r > target) {
-    const px = Math.round(w * scale - CARD_W)
+    const px = Math.round(w * scale - box.w)
     return { shapeOk: false, cut: { sides: 'left and right', px, pct: Math.round((px / (w * scale)) * 100) }, upscalePct }
   }
-  const px = Math.round(h * scale - CARD_H)
+  const px = Math.round(h * scale - box.h)
   return { shapeOk: false, cut: { sides: 'top and bottom', px, pct: Math.round((px / (h * scale)) * 100) }, upscalePct }
 }
 
@@ -110,6 +112,35 @@ export async function fullArtTemplateBlob(layout: Layout): Promise<Blob> {
   for (const [t, size] of lines) {
     g.font = `${size >= 70 ? 800 : 600} ${size}px system-ui, sans-serif`
     g.fillText(t, CARD_W / 2, y)
+    y += size * 1.9
+  }
+  return c.convertToBlob({ type: 'image/png' })
+}
+
+/** The template for art that goes in a frame's window (a square, 1244 x 1244 PNG). */
+export async function windowTemplateBlob(box: { w: number; h: number }): Promise<Blob> {
+  const c = new OffscreenCanvas(box.w, box.h)
+  const g = c.getContext('2d')
+  if (!g) throw new Error('2D canvas unavailable')
+  g.fillStyle = '#d9d9de'
+  g.fillRect(0, 0, box.w, box.h)
+  g.lineWidth = 6
+  g.setLineDash([24, 16])
+  g.strokeStyle = 'rgba(255, 210, 60, 0.95)'
+  g.strokeRect(40, 40, box.w - 80, box.h - 80)
+  g.fillStyle = '#2a2a30'
+  g.textAlign = 'center'
+  g.textBaseline = 'middle'
+  const lines: [string, number][] = [
+    ['CARD ART', 72],
+    [`${box.w} x ${box.h} px  ·  square 1:1`, 44],
+    ['Fills the frame\'s art window, edge to edge', 38],
+    ['Keep the character inside the yellow line', 38],
+  ]
+  let y = box.h / 2 - 160
+  for (const [t, size] of lines) {
+    g.font = `${size >= 70 ? 800 : 600} ${size}px system-ui, sans-serif`
+    g.fillText(t, box.w / 2, y)
     y += size * 1.9
   }
   return c.convertToBlob({ type: 'image/png' })
