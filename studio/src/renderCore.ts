@@ -1,10 +1,10 @@
 /** Shared by the build worker and the main-thread fallback: decodes asset blobs lazily (small LRU of bitmaps, art
  *  downscaled to what the art window needs) and renders cards to encoded Blobs via render.ts. */
 
-import { cardView, renderCardBlob, solidFullCardArt, type CardAssets, type CardFace } from './render'
+import { cardView, renderCardBlob, solidFullCardArt, withPlacement, type CardAssets, type CardFace } from './render'
 import { FULL_CARD_ART_SETS, frameId } from './frames'
 import { CARD_H, CARD_W, wearLookOf, type WearLevel, type WearLook } from './rules'
-import type { Layout, OutputFormat, Variant } from './types'
+import type { Layout, OutputFormat, Placement, Variant } from './types'
 
 export type VariantBlobs = Partial<Record<Variant, Blob>>
 
@@ -17,6 +17,8 @@ export interface AssetBundle {
   wear: Partial<Record<WearLevel, Blob>>
   /** art[characterId][frameSet][variant] */
   art: Record<string, Partial<Record<string, VariantBlobs>>>
+  /** placement[characterId][frameSet][variant]: a character's framing of its full-card art, where set. */
+  placement?: Record<string, Partial<Record<string, Partial<Record<Variant, Placement>>>>>
   names: Record<string, string>
   categories: Record<string, string | undefined>
   /** Uploaded fonts (registered in the worker's FontFaceSet; the main thread already has them). */
@@ -71,9 +73,15 @@ export class CardRenderer {
     return this.bitmap(`wear:${w}`, () => createImageBitmap(blob))
   }
 
+  private placementOf(charId: string, m: string, v: Variant): Placement | undefined {
+    const p = this.bundle.placement?.[charId]?.[m]
+    return this.bundle.art[charId]?.[m]?.[v] ? p?.[v] : p?.normal
+  }
+
   private art(charId: string, m: string, v: Variant): Promise<ImageBitmap | null> {
     const blob = this.bundle.art[charId]?.[m]?.[v] ?? this.bundle.art[charId]?.[m]?.normal
-    return this.bitmap(`art:${charId}:${m}:${v}`, async () => {
+    const zoom = Math.max(1, this.placementOf(charId, m, v)?.zoom ?? 1)
+    return this.bitmap(`art:${charId}:${m}:${v}:${zoom}`, async () => {
       if (!blob) return null
       let full = await createImageBitmap(blob)
       if (FULL_CARD_ART_SETS.includes(m)) {
@@ -84,7 +92,7 @@ export class CardRenderer {
       // Downscale big art to what the art window needs (keeps memory sane with many characters).
       const a = (this.bundle.layouts[m] ?? Object.values(this.bundle.layouts)[0]).art
       const fit = a.fit === 'cover' ? Math.max(a.box.w / full.width, a.box.h / full.height) : Math.min(a.box.w / full.width, a.box.h / full.height)
-      const need = fit * Math.max(1, a.scale)
+      const need = fit * Math.max(1, a.scale) * zoom
       if (need >= 0.9) return full
       const w = Math.max(1, Math.round(full.width * need))
       const h = Math.max(1, Math.round(full.height * need))
@@ -106,8 +114,9 @@ export class CardRenderer {
   async render(face: CardFace, format: OutputFormat): Promise<Blob> {
     const assets = await this.assetsFor(face)
     const view = cardView(face, this.bundle.names[face.characterId] ?? face.characterId, this.bundle.categories[face.characterId])
-    const layout = this.bundle.layouts[face.frameSet]
-    if (!layout) throw new Error(`No layout for frame set ${face.frameSet}`)
+    const base = this.bundle.layouts[face.frameSet]
+    if (!base) throw new Error(`No layout for frame set ${face.frameSet}`)
+    const layout = withPlacement(base, this.placementOf(face.characterId, face.frameSet, face.holoPicture ? 'holo' : 'normal'))
     return renderCardBlob(assets, layout, view, format, this.canvas)
   }
 

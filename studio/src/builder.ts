@@ -31,6 +31,7 @@ export async function collectBundle(characterIds: string[], withWear = false, fr
     }
   }
   const art: AssetBundle['art'] = {}
+  const placement: NonNullable<AssetBundle['placement']> = {}
   const names: Record<string, string> = {}
   const categories: AssetBundle['categories'] = {}
   for (const id of characterIds) {
@@ -45,6 +46,7 @@ export async function collectBundle(characterIds: string[], withWear = false, fr
         const slot = c.images[m]?.[v]
         const b = slot ? await db.getBlob(effectiveKey(slot)) : undefined
         if (b) vb[v] = b
+        if (slot?.placement) ((placement[id] ??= {})[m] ??= {})[v] = slot.placement
       }
       art[id][m] = vb
     }
@@ -58,7 +60,7 @@ export async function collectBundle(characterIds: string[], withWear = false, fr
   // bundled fonts the layouts use (the page has all of them; workers only get what they need)
   const used = sets.flatMap((m) => [...Object.values(layouts[m].text).map((t) => t.style.font), layouts[m].psa.style.font])
   fonts.push(...(await bundledFontData(used)))
-  return { layouts, frames, wear, art, names, categories, fonts }
+  return { layouts, frames, wear, art, placement, names, categories, fonts }
 }
 
 const yieldToUi = () => new Promise<void>((r) => setTimeout(r, 0))

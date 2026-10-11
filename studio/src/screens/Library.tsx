@@ -2,7 +2,8 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import { DropZone, Field, Notice, useAction } from '../components'
 import { newId } from '../db'
 import { categoryKey, categoryProblem, categorySuggestions, hasCategory, hasValidName, nameProblem, normalizeCategory, normalizeName } from '../categories'
-import { FRAME_SETS, SHOWN_FRAME_SETS, frameSetLabel, variantsOf } from '../frames'
+import { FRAME_SETS, FULL_CARD_ART_SETS, SHOWN_FRAME_SETS, frameSetLabel, variantsOf } from '../frames'
+import { FullArtCheck, TemplateButton } from './FullArtCheck'
 import {
   completeness, deleteCharacter, getStudio, imageSlots, isReady, effectiveKey, removeCharacterImage, saveCharacter, setCharacterImage, updateImageKey,
   useBlobUrl, useStudio,
@@ -241,12 +242,17 @@ function CategoryInput({ value, onChange, matches, placeholder, invalid }: {
 }
 
 function SlotRow({ c, m }: { c: Character; m: string }) {
+  const fullCard = FULL_CARD_ART_SETS.includes(m)
   return (
     <>
-      <div className="slot-label">{frameSetLabel(m)}</div>
+      <div className="slot-label">{frameSetLabel(m)}{fullCard && <><br /><span className="small muted">no frame: 1500 x 2100</span><br /><TemplateButton m={m} /></>}</div>
       {VARIANTS.map((v) => variantsOf(m).includes(v)
         ? <SlotCell key={v} c={c} m={m} v={v} slot={c.images[m]?.[v]} />
         : <div key={v} className="slot-cell muted small">always holo</div>)}
+      {fullCard && variantsOf(m).map((v) => {
+        const slot = c.images[m]?.[v]
+        return slot ? <div key={`chk-${v}`} style={{ gridColumn: '1 / -1' }}><FullArtCheck c={c} m={m} v={v} slot={slot} /></div> : null
+      })}
     </>
   )
 }

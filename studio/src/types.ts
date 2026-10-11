@@ -20,6 +20,14 @@ export interface ImageSlot {
   height: number
   fileName: string
   updatedAt: number
+  /** Per-character framing of full-card art (Full Art): zoom (1 = fills the card) and a move in card pixels. */
+  placement?: Placement
+}
+
+export interface Placement {
+  zoom: number
+  x: number
+  y: number
 }
 
 export interface Character {

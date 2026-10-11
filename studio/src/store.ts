@@ -7,7 +7,7 @@ import * as db from './db'
 import { FRAME_SETS, FRAMES_UPDATED_AT, SHOWN_FRAME_SETS, variantsOf } from './frames'
 import { normalizeLayout } from './layoutDefaults'
 import { migrateFire, needsMigration } from './migrate'
-import type { Character, FireRecord, FontAsset, GlobalState, ImageSlot, Layout, Variant } from './types'
+import type { Character, FireRecord, FontAsset, GlobalState, ImageSlot, Layout, Placement, Variant } from './types'
 
 export interface StudioData {
   loaded: boolean
@@ -181,6 +181,16 @@ export async function updateImageKey(charId: string, m: string, v: Variant, opts
   const slot = c?.images[m]?.[v]
   if (!c || !slot) return
   const next = await processSlot({ ...slot, ...opts })
+  await saveCharacter({ ...c, images: { ...c.images, [m]: { ...c.images[m], [v]: next } } })
+}
+
+/** Full-card art: how this character's photo sits on the card (zoom and move). Undefined resets it. */
+export async function updateImagePlacement(charId: string, m: string, v: Variant, placement: Placement | undefined): Promise<void> {
+  const c = data.characters.find((x) => x.id === charId)
+  const slot = c?.images[m]?.[v]
+  if (!c || !slot) return
+  const next: ImageSlot = { ...slot, placement, updatedAt: Date.now() }
+  if (!placement) delete next.placement
   await saveCharacter({ ...c, images: { ...c.images, [m]: { ...c.images[m], [v]: next } } })
 }
 

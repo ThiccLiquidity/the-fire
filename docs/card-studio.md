@@ -36,6 +36,11 @@ checks and pool maths are ports of the contract's and are tested against it. New
   Series still build).
 - **Full Art has no frame.** The character's photo is the whole card (its own border drawn in), cut to the same
   rounded card shape; the name, type and PDA seal print on it like every card.
+- **Full Art safety net** (Library, Full Art row): **Download template** gives a 1500 x 2100 guide (the card shape, the
+  zones where the name and the type, category, Series and seal print, the wear margin) to hand the image generator.
+  Each uploaded photo is checked: a warning when it isn't 5:7 (how much is cut off which sides) or is small enough to
+  look soft. The live preview outlines the print zones; **Zoom** and **Move** frame the photo per character (it always
+  still covers the card), saved with the character and used by every build.
 - **PDA wear is the same on every card type.** One set of wear layers, `studio/src/assets/wear/wear-l2.webp` to
   `-l6.webp` (PDA 9-8, 7-6, 5-4, 3-2, 1; PDA 10 is pristine), goes over the finished card, framed or Full Art: worn
   card-stock edges and corners, ink chips, scratches, scuffs, rubbed-off ink, creases, cracks, dents and stains, building

@@ -4,7 +4,7 @@
 import type { DealtCard } from './deal'
 import type { Recipe } from './recipe'
 import { CARD_H, CARD_W, GRADE_COLOR, HOLO_LABEL, wearLookOf, type WearLook } from './rules'
-import type { Layout, OutputFormat, PsaBox, Rect, TextBox, TextStyle } from './types'
+import type { Layout, OutputFormat, Placement, PsaBox, Rect, TextBox, TextStyle } from './types'
 import type { Ctx2D } from './wear'
 import { drawCase, drawSlab, type SlabLabel } from './protect'
 import { FRAMELESS_SETS } from './frames'
@@ -80,6 +80,14 @@ export function cardView(
     holder: face.grade != null ? 'slab' : face.cased ? 'case' : 'none',
     slabSub: [`Series ${face.fire > 0 ? face.fire : 1}`, face.typeName, holo].filter(Boolean).join(' · '),
   }
+}
+
+/** The layout with one character's framing of its full-card art applied (zoom on top of the layout's scale, the
+ *  move added to its offset). */
+export function withPlacement(layout: Layout, p: Placement | undefined): Layout {
+  if (!p) return layout
+  const a = layout.art
+  return { ...layout, art: { ...a, scale: (a.scale > 0 ? a.scale : 1) * Math.max(1, p.zoom), offsetX: a.offsetX + p.x, offsetY: a.offsetY + p.y } }
 }
 
 /** "Paper Rabbit #123" */
