@@ -149,8 +149,10 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       )}
 
       <h3>What it makes</h3>
+      <p className="muted small" data-testid="packs-where">Try other pack or character counts here to see the result. The Series' real pack count is set on the
+        <b> Sale</b> tab (paid + press packs): it's {fire.packs.toLocaleString()} now.</p>
       <div className="result-head" data-testid="pool-preview">
-        <label className="field"><span className="field-label">Packs</span>
+        <label className="field"><span className="field-label">Packs (try it, not saved)</span>
           <input value={packsText} onChange={(e) => setPacksText(e.target.value.trim())} aria-invalid={P == null} data-testid="pool-packs" /></label>
         <label className="field"><span className="field-label">Characters</span>
           <input value={charsText} onChange={(e) => setCharsText(e.target.value.trim())} aria-invalid={parseUint(charsText) == null} data-testid="pool-chars" /></label>
