@@ -123,16 +123,18 @@ function LayoutEditor({ m }: { m: string }) {
   const dirty = JSON.stringify({ ...layout, updatedAt: 0 }) !== JSON.stringify({ ...saved, updatedAt: 0 })
 
   const char = s.characters.find((c) => c.id === charId) ?? s.characters[0]
-  const artSlot = char?.images[m]?.[picHolo ? 'holo' : 'normal'] ?? char?.images[m]?.normal
-  const frameBmp = useFrameBitmap(m, frameHolo ? 'holo' : 'normal', 'clean')
+  // Gold and Full Art are always holo: preview them that way whatever the checkboxes say
+  const holoOnly = !variantsOf(m).includes('normal')
+  const artSlot = char?.images[m]?.[picHolo || holoOnly ? 'holo' : 'normal'] ?? char?.images[m]?.normal ?? char?.images[m]?.holo
+  const frameBmp = useFrameBitmap(m, frameHolo || holoOnly ? 'holo' : 'normal', 'clean')
   const wearBmp = useFrameBitmap(null, 'normal', wearLookOf(grade))
   const artBmp = useBitmap(artSlot ? effectiveKey(artSlot) : undefined)
 
   const canvas = useRef<HTMLCanvasElement>(null)
   const sampleCard: CardFace = useMemo(() => ({
     fire: Math.max(1, s.global.nextFireNumber - 1), frameSet: m, typeName: frameSetLabel(m), characterId: char?.id ?? '',
-    holoFrame: frameHolo, holoPicture: picHolo, grade,
-  }), [m, char?.id, frameHolo, picHolo, grade, s.global.nextFireNumber])
+    holoFrame: frameHolo || holoOnly, holoPicture: picHolo || holoOnly, grade,
+  }), [m, char?.id, frameHolo, picHolo, holoOnly, grade, s.global.nextFireNumber])
 
   useEffect(() => {
     const ctx = canvas.current?.getContext('2d')
@@ -208,8 +210,8 @@ function LayoutEditor({ m }: { m: string }) {
             {!s.characters.length && <option value="">(none)</option>}
           </select>
         </Field>
-        <label className="check"><input type="checkbox" checked={frameHolo} onChange={(e) => setFrameHolo(e.target.checked)} /> holo frame</label>
-        <label className="check"><input type="checkbox" checked={picHolo} onChange={(e) => setPicHolo(e.target.checked)} /> holo picture</label>
+        <label className="check"><input type="checkbox" checked={frameHolo || holoOnly} disabled={holoOnly} onChange={(e) => setFrameHolo(e.target.checked)} /> holo frame</label>
+        <label className="check"><input type="checkbox" checked={picHolo || holoOnly} disabled={holoOnly} onChange={(e) => setPicHolo(e.target.checked)} /> holo picture</label>
         <Field label="PDA preview">
           <select value={grade ?? ''} onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : null)} data-testid="psa-preview">
             <option value="">Unrevealed</option>
