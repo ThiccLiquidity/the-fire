@@ -20,7 +20,7 @@ export interface ImageSlot {
   height: number
   fileName: string
   updatedAt: number
-  /** Per-character framing of full-card art (Full Art): zoom (1 = fills the card) and a move in card pixels. */
+  /** Per-character framing of the art in its window: zoom (1 = just fills it) and a move in card pixels. */
   placement?: Placement
 }
 

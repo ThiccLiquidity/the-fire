@@ -87,7 +87,7 @@ export function cardView(
 export function withPlacement(layout: Layout, p: Placement | undefined): Layout {
   if (!p) return layout
   const a = layout.art
-  return { ...layout, art: { ...a, scale: (a.scale > 0 ? a.scale : 1) * Math.max(1, p.zoom), offsetX: a.offsetX + p.x, offsetY: a.offsetY + p.y } }
+  return { ...layout, art: { ...a, scale: (a.scale > 0 ? a.scale : 1) * Math.max(0.5, p.zoom), offsetX: a.offsetX + p.x, offsetY: a.offsetY + p.y } }
 }
 
 /** "Paper Rabbit #123" */

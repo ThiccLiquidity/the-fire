@@ -80,7 +80,7 @@ export class CardRenderer {
 
   private art(charId: string, m: string, v: Variant): Promise<ImageBitmap | null> {
     const blob = this.bundle.art[charId]?.[m]?.[v] ?? this.bundle.art[charId]?.[m]?.normal
-    const zoom = Math.max(1, this.placementOf(charId, m, v)?.zoom ?? 1)
+    const zoom = Math.max(0.5, this.placementOf(charId, m, v)?.zoom ?? 1)
     return this.bitmap(`art:${charId}:${m}:${v}:${zoom}`, async () => {
       if (!blob) return null
       let full = await createImageBitmap(blob)

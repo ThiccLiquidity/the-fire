@@ -4,8 +4,12 @@ import { newId } from '../db'
 import { categoryKey, categoryProblem, categorySuggestions, hasCategory, hasValidName, nameProblem, normalizeCategory, normalizeName } from '../categories'
 import { FRAME_SETS, FULL_CARD_ART_SETS, SHOWN_FRAME_SETS, artBoxOf, frameSetLabel, variantsOf } from '../frames'
 import { ArtCheck, TemplateButton, artVerdict } from './ArtCheck'
+import { matchHoloToNormal } from '../artMatch'
+
+const isZero = (p: { zoom: number; x: number; y: number }) => p.zoom === 1 && p.x === 0 && p.y === 0
 import {
   completeness, deleteCharacter, getStudio, imageSlots, isReady, effectiveKey, removeCharacterImage, saveCharacter, setCharacterImage, updateImageKey,
+  updateImagePlacement,
   useBlobUrl, useStudio,
 } from '../store'
 import { VARIANTS, type Character, type ImageSlot, type Variant } from '../types'
@@ -274,6 +278,7 @@ function SlotRow({ c, m }: { c: Character; m: string }) {
 function SlotCell({ c, m, v, slot }: { c: Character; m: string; v: Variant; slot?: ImageSlot }) {
   const url = useBlobUrl(slot ? effectiveKey(slot) : undefined)
   const [busy, error, run] = useAction()
+  const [autoMsg, setAutoMsg] = useState('')
   const [tol, setTol] = useState(slot?.tolerance ?? 70)
   const [feather, setFeather] = useState(slot?.feather ?? 90)
   const [despill, setDespill] = useState(slot?.despill ?? 0.85)
@@ -297,6 +302,13 @@ function SlotCell({ c, m, v, slot }: { c: Character; m: string; v: Variant; slot
     const f = files[0]
     if (!f.type.startsWith('image/')) throw new Error(`${f.name} isn't an image.`)
     await setCharacterImage(c.id, m, v, f, f.name)
+    // a holo picture lines itself up with the normal one (the image generator often returns it at another size or
+    // shifted); either upload order works
+    if (variantsOf(m).includes('normal') && c.images[m]?.[v === 'holo' ? 'normal' : 'holo']) {
+      const r = await matchHoloToNormal(c.id, m)
+      if (r.kind === 'matched') await updateImagePlacement(c.id, m, 'holo', isZero(r.placement) ? undefined : r.placement)
+      setAutoMsg(r.kind === 'matched' ? 'Holo lined up with the normal picture.' : r.kind === 'different' ? "Holo doesn't match the normal picture's drawing; frame it by hand." : '')
+    }
   })
 
   return (
@@ -324,6 +336,7 @@ function SlotCell({ c, m, v, slot }: { c: Character; m: string; v: Variant; slot
         </div>
       )}
       {error && <Notice kind="error">{error}</Notice>}
+      {autoMsg && <p className="muted small" data-testid={`auto-${m}-${v}`}>{autoMsg}</p>}
     </div>
   )
 }

@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Notice, useAction } from '../components'
 import { FULL_CARD_ART_SETS, artBoxOf, frameBlob, frameSetLabel, variantsOf } from '../frames'
-import { matchImages, placementToMatch, toGray } from '../align'
+import { matchHoloToNormal } from '../artMatch'
 import { drawZones, fitReport, fullArtTemplateBlob, windowTemplateBlob } from '../artGuide'
 import { cardView, drawCard, solidFullCardArt, withPlacement } from '../render'
 import { CARD_H, CARD_W } from '../rules'
@@ -13,24 +13,9 @@ import { effectiveKey, getStudio, layoutFor, updateImagePlacement, useStudio } f
 import { getBlob } from '../db'
 import type { Character, ImageSlot, Placement, Variant } from '../types'
 
-const VIEW_W = 300
+const VIEW_W = 420
 const NONE: Placement = { zoom: 1, x: 0, y: 0 }
 const isNone = (p: Placement) => p.zoom === 1 && p.x === 0 && p.y === 0
-
-/** An image's grey pixels at most 512 px on the long side, and how much it was shrunk. */
-async function grayOf(key: string): Promise<{ g: ReturnType<typeof toGray>; k: number; w: number; h: number }> {
-  const blob = await getBlob(key)
-  if (!blob) throw new Error('Image missing')
-  const bmp = await createImageBitmap(blob)
-  const k = Math.min(1, 512 / Math.max(bmp.width, bmp.height))
-  const w = Math.max(2, Math.round(bmp.width * k)), h = Math.max(2, Math.round(bmp.height * k))
-  const c = new OffscreenCanvas(w, h)
-  const ctx = c.getContext('2d')!
-  ctx.drawImage(bmp, 0, 0, w, h)
-  const out = { g: toGray(ctx.getImageData(0, 0, w, h).data, w, h), k, w: bmp.width, h: bmp.height }
-  bmp.close()
-  return out
-}
 
 export function TemplateButton({ m }: { m: string }) {
   const [busy, error, run] = useAction()
@@ -79,17 +64,14 @@ export function ArtCheck({ c, m, v, slot }: { c: Character; m: string; v: Varian
     if (!normalSlot) return
     setMatchMsg(null)
     await new Promise((r) => setTimeout(r, 30)) // let "Matching..." paint before the search runs
-    const [n, h] = await Promise.all([grayOf(effectiveKey(normalSlot)), grayOf(key)])
-    const r = matchImages(n.g, h.g)
-    // back to full-size pixels: normal = s * holo + t on the small copies
-    const full = { s: (r.s * h.k) / n.k, tx: r.tx / n.k, ty: r.ty / n.k, confidence: r.confidence }
-    if (full.confidence < 0.25) {
-      setMatchMsg({ kind: 'warn', text: "Couldn't line it up: the holo doesn't look like the same drawing. Frame it by hand." })
+    const r = await matchHoloToNormal(c.id, m)
+    if (r.kind === 'different') {
+      setMatchMsg({ kind: 'warn', text: "Couldn't line it up: the holo doesn't look like the same drawing. Drag it into place." })
       return
     }
-    const res = placementToMatch(full, { w: n.w, h: n.h, placement: normalSlot.placement }, { w: h.w, h: h.h }, box)
-    setP(res.placement)
-    setMatchMsg(res.ok
+    if (r.kind !== 'matched') return
+    setP(r.placement)
+    setMatchMsg(r.exact
       ? { kind: 'ok', text: 'Lined up with the normal art. Check the preview, then Save placement.' }
       : { kind: 'warn', text: 'Lined up as close as it goes: the holo is drawn smaller, so it can only zoom so far without leaving a gap. Check the preview, then Save placement.' })
   })
@@ -97,14 +79,43 @@ export function ArtCheck({ c, m, v, slot }: { c: Character; m: string; v: Varian
   const dirty = p.zoom !== saved.zoom || p.x !== saved.x || p.y !== saved.y
   const shape = fullCard ? '5:7, 1500 x 2100' : `square, ${box.w} x ${box.h}`
   // the art always covers its window: a move can't go past its edge
-  const clamp = (n: Placement): Placement => {
-    if (!art) return n
-    const s = Math.max(box.w / art.width, box.h / art.height) * n.zoom
-    const mx = Math.max(0, (art.width * s - box.w) / 2), my = Math.max(0, (art.height * s - box.h) / 2)
-    return { zoom: n.zoom, x: Math.round(Math.max(-mx, Math.min(mx, n.x))), y: Math.round(Math.max(-my, Math.min(my, n.y))) }
-  }
+  // free to move and zoom (bright green shows any gap); just kept on the card
+  const clamp = (n: Placement): Placement => ({
+    zoom: n.zoom, x: Math.round(Math.max(-box.w, Math.min(box.w, n.x))), y: Math.round(Math.max(-box.h, Math.min(box.h, n.y))),
+  })
+  // does the art cover its whole window at this placement?
+  const covers = (() => {
+    if (!art) return true
+    const s = Math.max(box.w / art.width, box.h / art.height) * p.zoom
+    const mx = (art.width * s - box.w) / 2, my = (art.height * s - box.h) / 2
+    return mx >= -0.5 && my >= -0.5 && Math.abs(p.x) <= mx + 0.5 && Math.abs(p.y) <= my + 0.5
+  })()
 
   useEffect(() => { setP(slot.placement ?? NONE) }, [slot.placement])
+
+  // drag the art on the preview to move it; the scroll wheel zooms (card px = screen px x CARD_W / VIEW_W)
+  const drag = useRef<{ sx: number; sy: number; start: Placement } | null>(null)
+  const onDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    drag.current = { sx: e.clientX, sy: e.clientY, start: p }
+  }
+  const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const d = drag.current
+    if (!d) return
+    const k = CARD_W / VIEW_W
+    setP(clamp({ ...d.start, x: d.start.x + (e.clientX - d.sx) * k, y: d.start.y + (e.clientY - d.sy) * k }))
+  }
+  const onUp = () => { drag.current = null }
+  useEffect(() => {
+    const el = canvas.current
+    if (!el) return
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault()
+      setP((q) => clamp({ ...q, zoom: Math.min(2, Math.max(0.5, +(q.zoom * (e.deltaY < 0 ? 1.03 : 1 / 1.03)).toFixed(3))) }))
+    }
+    el.addEventListener('wheel', wheel, { passive: false })
+    return () => el.removeEventListener('wheel', wheel)
+  })
 
   useEffect(() => {
     let live = true
@@ -140,7 +151,13 @@ export function ArtCheck({ c, m, v, slot }: { c: Character; m: string; v: Varian
       const view = cardView({ frameSet: m, typeName: frameSetLabel(m), grade: null, fire, holoFrame: v === 'holo', holoPicture: v === 'holo' }, c.name, c.category)
       ctx.save()
       ctx.clearRect(0, 0, CARD_W, CARD_H)
-      drawCard(ctx, { frame, art }, withPlacement(layoutFor(m), p), view)
+      const l = withPlacement(layoutFor(m), p)
+      drawCard(ctx, { frame, art }, { ...l, art: { ...l.art, background: '' } }, view)
+      // bright green behind everything, so any gap round the art (or a see-through spot in the frame) stands out
+      ctx.globalCompositeOperation = 'destination-over'
+      ctx.fillStyle = '#00ff3c'
+      ctx.fillRect(0, 0, CARD_W, CARD_H)
+      ctx.globalCompositeOperation = 'source-over'
       if (zones && fullCard) drawZones(ctx, layoutFor(m), false)
       ctx.restore()
     })
@@ -166,17 +183,20 @@ export function ArtCheck({ c, m, v, slot }: { c: Character; m: string; v: Varian
         <Notice kind="warn">Small: stretched {report.upscalePct}% to fill, so it may look soft. {box.w} x {box.h} or bigger is best.</Notice>
       )}
       <div className="row wrap" style={{ alignItems: 'flex-start', gap: 12 }}>
-        <canvas ref={canvas} width={CARD_W} height={CARD_H} style={{ width: VIEW_W, height: (VIEW_W * CARD_H) / CARD_W }} className="checker" data-testid="placement-preview" />
+        <canvas ref={canvas} width={CARD_W} height={CARD_H} className="checker" data-testid="placement-preview"
+          style={{ width: VIEW_W, height: (VIEW_W * CARD_H) / CARD_W, cursor: 'grab', touchAction: 'none' }}
+          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} />
         <div style={{ display: 'grid', gap: 6, minWidth: 220 }}>
           {fullCard && <span className="muted small">Red: where the text prints. Yellow: how far the worst edge wear reaches. Keep faces and key detail clear of both.</span>}
-          {!fullCard && <span className="muted small">Exactly how this art sits in the {frameSetLabel(m)} frame.</span>}
-          {slider('Zoom', 'zoom', 1, 2, 0.01, (n) => `${Math.round(n * 100)}%`)}
+          <span className="muted small">Drag the picture to move it, scroll to zoom. {fullCard ? '' : `Exactly how it sits in the ${frameSetLabel(m)} frame.`}</span>
+          {slider('Zoom', 'zoom', 0.5, 2, 0.01, (n) => `${Math.round(n * 100)}%`)}
           {slider('Left / right', 'x', -400, 400, 2, (n) => `${n > 0 ? '+' : ''}${n}`)}
           {slider('Up / down', 'y', -400, 400, 2, (n) => `${n > 0 ? '+' : ''}${n}`)}
           {fullCard && <label className="check"><input type="checkbox" checked={zones} onChange={(e) => setZones(e.target.checked)} /> Show text areas</label>}
           {normalSlot && (
             <button onClick={() => void matchNormal()} disabled={busy} data-testid="match-normal">{busy ? 'Matching...' : 'Match normal'}</button>
           )}
+          {!covers && <Notice kind="warn">Gap: the picture doesn't fill the window (the green). Zoom in or move it.</Notice>}
           {matchMsg && <Notice kind={matchMsg.kind}>{matchMsg.text}</Notice>}
           <div className="row" style={{ gap: 8 }}>
             <button disabled={!dirty || busy} data-testid="placement-save"
