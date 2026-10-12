@@ -42,6 +42,9 @@ checks and pool maths are ports of the contract's and are tested against it. New
   it isn't the right shape (how much is cut off which sides) or is small enough to look soft. **Preview and frame it**
   shows the card as built (Full Art with the print zones outlined); **Zoom** and **Move** frame that image for the
   character (it always still covers its window), saved with the character and used by every build.
+  **Match normal** (on a holo image) lines the holo picture up with the normal one automatically: the image
+  generator often returns the holo version at another size or shifted, so the character would change size between a
+  card's looks.
 - **Text positions are fixed** on every frame set: the name is centred in the top bar both ways, whatever the font or
   size; the type, category and Series lines sit left in the bottom panel; the seal in its spot. Text is placed by the
   letters actually drawn (capital height centred, a centred line centred on its ink; the seal's grade or "?" centred

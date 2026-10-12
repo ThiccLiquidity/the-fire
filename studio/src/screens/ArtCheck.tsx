@@ -4,7 +4,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Notice, useAction } from '../components'
-import { FULL_CARD_ART_SETS, artBoxOf, frameBlob, frameSetLabel } from '../frames'
+import { FULL_CARD_ART_SETS, artBoxOf, frameBlob, frameSetLabel, variantsOf } from '../frames'
+import { matchImages, placementToMatch, toGray } from '../align'
 import { drawZones, fitReport, fullArtTemplateBlob, windowTemplateBlob } from '../artGuide'
 import { cardView, drawCard, solidFullCardArt, withPlacement } from '../render'
 import { CARD_H, CARD_W } from '../rules'
@@ -15,6 +16,21 @@ import type { Character, ImageSlot, Placement, Variant } from '../types'
 const VIEW_W = 300
 const NONE: Placement = { zoom: 1, x: 0, y: 0 }
 const isNone = (p: Placement) => p.zoom === 1 && p.x === 0 && p.y === 0
+
+/** An image's grey pixels at most 512 px on the long side, and how much it was shrunk. */
+async function grayOf(key: string): Promise<{ g: ReturnType<typeof toGray>; k: number; w: number; h: number }> {
+  const blob = await getBlob(key)
+  if (!blob) throw new Error('Image missing')
+  const bmp = await createImageBitmap(blob)
+  const k = Math.min(1, 512 / Math.max(bmp.width, bmp.height))
+  const w = Math.max(2, Math.round(bmp.width * k)), h = Math.max(2, Math.round(bmp.height * k))
+  const c = new OffscreenCanvas(w, h)
+  const ctx = c.getContext('2d')!
+  ctx.drawImage(bmp, 0, 0, w, h)
+  const out = { g: toGray(ctx.getImageData(0, 0, w, h).data, w, h), k, w: bmp.width, h: bmp.height }
+  bmp.close()
+  return out
+}
 
 export function TemplateButton({ m }: { m: string }) {
   const [busy, error, run] = useAction()
@@ -56,7 +72,27 @@ export function ArtCheck({ c, m, v, slot }: { c: Character; m: string; v: Varian
   const [art, setArt] = useState<ImageBitmap | null>(null)
   const [frame, setFrame] = useState<ImageBitmap | null>(null)
   const [busy, error, run] = useAction()
+  const [matchMsg, setMatchMsg] = useState<{ kind: 'ok' | 'warn'; text: string } | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
+  const normalSlot = v === 'holo' && variantsOf(m).includes('normal') ? c.images[m]?.normal : undefined
+  const matchNormal = () => run(async () => {
+    if (!normalSlot) return
+    setMatchMsg(null)
+    await new Promise((r) => setTimeout(r, 30)) // let "Matching..." paint before the search runs
+    const [n, h] = await Promise.all([grayOf(effectiveKey(normalSlot)), grayOf(key)])
+    const r = matchImages(n.g, h.g)
+    // back to full-size pixels: normal = s * holo + t on the small copies
+    const full = { s: (r.s * h.k) / n.k, tx: r.tx / n.k, ty: r.ty / n.k, confidence: r.confidence }
+    if (full.confidence < 0.25) {
+      setMatchMsg({ kind: 'warn', text: "Couldn't line it up: the holo doesn't look like the same drawing. Frame it by hand." })
+      return
+    }
+    const res = placementToMatch(full, { w: n.w, h: n.h, placement: normalSlot.placement }, { w: h.w, h: h.h }, box)
+    setP(res.placement)
+    setMatchMsg(res.ok
+      ? { kind: 'ok', text: 'Lined up with the normal art. Check the preview, then Save placement.' }
+      : { kind: 'warn', text: 'Lined up as close as it goes: the holo is drawn smaller, so it can only zoom so far without leaving a gap. Check the preview, then Save placement.' })
+  })
   const key = effectiveKey(slot)
   const dirty = p.zoom !== saved.zoom || p.x !== saved.x || p.y !== saved.y
   const shape = fullCard ? '5:7, 1500 x 2100' : `square, ${box.w} x ${box.h}`
@@ -138,6 +174,10 @@ export function ArtCheck({ c, m, v, slot }: { c: Character; m: string; v: Varian
           {slider('Left / right', 'x', -400, 400, 2, (n) => `${n > 0 ? '+' : ''}${n}`)}
           {slider('Up / down', 'y', -400, 400, 2, (n) => `${n > 0 ? '+' : ''}${n}`)}
           {fullCard && <label className="check"><input type="checkbox" checked={zones} onChange={(e) => setZones(e.target.checked)} /> Show text areas</label>}
+          {normalSlot && (
+            <button onClick={() => void matchNormal()} disabled={busy} data-testid="match-normal">{busy ? 'Matching...' : 'Match normal'}</button>
+          )}
+          {matchMsg && <Notice kind={matchMsg.kind}>{matchMsg.text}</Notice>}
           <div className="row" style={{ gap: 8 }}>
             <button disabled={!dirty || busy} data-testid="placement-save"
               onClick={() => void run(() => updateImagePlacement(c.id, m, v, isNone(p) ? undefined : p))}>Save placement</button>
