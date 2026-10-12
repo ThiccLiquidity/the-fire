@@ -89,7 +89,7 @@ export const BUILTIN_FRAMES: Record<string, Partial<Record<Variant, string>>> = 
 
 /** Bump (to a time in the past, e.g. when the change is made) when a frame file is added or changed: approvals made
  *  before this go stale and must be redone. */
-export const FRAMES_UPDATED_AT = Date.UTC(2026, 9, 12, 20, 0)
+export const FRAMES_UPDATED_AT = Date.UTC(2026, 9, 12, 21, 0)
 
 /** From the templates' layout.json (750 x 1050), doubled to 1500 x 2100. Identical on every frame. */
 export const FRAME_GEOMETRY = {
