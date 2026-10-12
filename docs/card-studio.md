@@ -47,6 +47,8 @@ checks and pool maths are ports of the contract's and are tested against it. New
   letters actually drawn (capital height centred, a centred line centred on its ink; the seal's grade or "?" centred
   on its own shape), so changing font never shifts it. Frames & Layout sets only the look: font, size, colour,
   outline, bold, italic, capitals, shown or hidden.
+  The look is set for every line at once or line by line (name, type, category, Series line, seal number), and
+  **Clean view** hides the editing boxes to see the card as it prints.
 - **PDA wear is the same on every card type.** One set of wear layers, `studio/src/assets/wear/wear-l2.webp` to
   `-l6.webp` (PDA 9-8, 7-6, 5-4, 3-2, 1; PDA 10 is pristine), goes over the finished card, framed or Full Art: worn
   card-stock edges and corners, ink chips, scratches, scuffs, rubbed-off ink, creases, cracks, dents and stains, building

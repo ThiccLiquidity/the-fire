@@ -48,7 +48,14 @@ export function FontPicker({ value, sample, onPick }: { value: string; sample: s
   )
 }
 
-/** One text style per material: the font and colours of every piece of text on that material's cards. */
+type Target = 'all' | (typeof TEXT_FIELDS)[number] | 'psa'
+const TARGETS: { id: Target; label: string }[] = [
+  { id: 'all', label: 'All lines' }, { id: 'name', label: 'Name' }, { id: 'material', label: 'Type' },
+  { id: 'category', label: 'Category' }, { id: 'forged', label: 'Series line' }, { id: 'psa', label: 'PDA seal' },
+]
+
+/** The text style of one frame set: every line at once ("All lines"), or one line at a time (name, type, category,
+ *  Series line, the seal's number): font, colour, outline and size. Positions are fixed (lockPositions). */
 export function CardTextStyle({ m, layout, setLayout, sample, onFontToAll }: {
   m: string
   layout: Layout
@@ -56,24 +63,41 @@ export function CardTextStyle({ m, layout, setLayout, sample, onFontToAll }: {
   sample: string
   onFontToAll: (css: string) => void
 }) {
-  const st = layout.text.name.style
-  const mixed = TEXT_FIELDS.some((f) => layout.text[f].style.font !== st.font)
-    || TEXT_FIELDS.some((f) => layout.text[f].style.color !== st.color)
-  const setAll = (patch: Partial<typeof st>, psaFont = false) => setLayout((l) => ({
-    ...l,
-    text: Object.fromEntries(TEXT_FIELDS.map((f) => [f, { ...l.text[f], style: { ...l.text[f].style, ...patch } }])) as Layout['text'],
-    psa: psaFont && patch.font ? { ...l.psa, style: { ...l.psa.style, font: patch.font } } : l.psa,
-  }))
+  const [target, setTarget] = useState<Target>('all')
+  const st = target === 'all' ? layout.text.name.style : target === 'psa' ? layout.psa.style : layout.text[target].style
+  const mixed = TEXT_FIELDS.some((f) => layout.text[f].style.font !== layout.text.name.style.font)
+    || TEXT_FIELDS.some((f) => layout.text[f].style.color !== layout.text.name.style.color)
+  const set = (patch: Partial<typeof st>) => setLayout((l) => {
+    if (target === 'psa') return { ...l, psa: { ...l.psa, style: { ...l.psa.style, ...patch } } }
+    const fields = target === 'all' ? TEXT_FIELDS : [target]
+    return {
+      ...l,
+      text: { ...l.text, ...Object.fromEntries(fields.map((f) => [f, { ...l.text[f], style: { ...l.text[f].style, ...patch } }])) } as Layout['text'],
+      // "All lines" also puts the font on the seal
+      psa: target === 'all' && patch.font ? { ...l.psa, style: { ...l.psa.style, font: patch.font } } : l.psa,
+    }
+  })
+  const sampleFor: Record<Target, string> = {
+    all: sample, name: sample, material: frameSetLabel(m).toUpperCase(), category: 'Category', forged: 'Forged · Series 1', psa: '7',
+  }
   return (
     <div className="text-style" data-testid="card-text-style">
       <h4>{frameSetLabel(m)} card text</h4>
-      <p className="muted small">Applies to the name, material and category on every card using the {frameSetLabel(m)} frames (the font also goes on the PDA badge).{mixed ? ' The fields differ right now; picking here makes them match.' : ''}</p>
-      <FontPicker value={st.font} sample={sample} onPick={(css) => setAll({ font: css }, true)} />
+      <div className="font-groups" data-testid="text-target">
+        {TARGETS.map((t) => <button key={t.id} className={t.id === target ? 'active' : ''} onClick={() => setTarget(t.id)} data-testid={`target-${t.id}`}>{t.label}</button>)}
+      </div>
+      <p className="muted small">
+        {target === 'all'
+          ? `Every line on ${frameSetLabel(m)} cards at once (the font also goes on the PDA seal).${mixed ? ' The lines differ right now; picking here makes them match.' : ''}`
+          : `Only the ${TARGETS.find((t) => t.id === target)!.label.toLowerCase()} on ${frameSetLabel(m)} cards.`}
+      </p>
+      <FontPicker value={st.font} sample={sampleFor[target]} onPick={(css) => set({ font: css })} />
       <div className="row wrap">
-        <Field label="Text colour"><input type="color" value={st.color} onChange={(e) => setAll({ color: e.target.value })} data-testid="text-color" /></Field>
-        <Field label="Outline colour"><input type="color" value={st.outlineColor} onChange={(e) => setAll({ outlineColor: e.target.value })} /></Field>
-        <Field label="Outline width"><NumberInput min={0} value={st.outlineWidth} onChange={(n) => setAll({ outlineWidth: Math.max(0, n) })} /></Field>
-        <button onClick={() => onFontToAll(st.font)} data-testid="font-to-all">Use this font on all materials</button>
+        <Field label="Text colour"><input type="color" value={st.color} onChange={(e) => set({ color: e.target.value })} data-testid="text-color" /></Field>
+        {target !== 'psa' && <Field label="Outline colour"><input type="color" value={st.outlineColor} onChange={(e) => set({ outlineColor: e.target.value })} /></Field>}
+        {target !== 'psa' && <Field label="Outline width"><NumberInput min={0} value={st.outlineWidth} onChange={(n) => set({ outlineWidth: Math.max(0, n) })} /></Field>}
+        {target !== 'all' && target !== 'psa' && <Field label="Size" hint="shrinks to fit"><NumberInput min={8} value={st.size} onChange={(n) => set({ size: Math.max(8, n) })} /></Field>}
+        {target === 'all' && <button onClick={() => onFontToAll(st.font)} data-testid="font-to-all">Use this font on all materials</button>}
       </div>
     </div>
   )

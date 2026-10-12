@@ -218,7 +218,11 @@ function LayoutEditor({ m }: { m: string }) {
             {[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((g) => <option key={g} value={g}>PDA {g}</option>)}
           </select>
         </Field>
-        <label className="check"><input type="checkbox" checked={showBoxes} onChange={(e) => setShowBoxes(e.target.checked)} /> show boxes</label>
+      </div>
+      <div className="row" style={{ marginBottom: 8 }}>
+        <button className={showBoxes ? '' : 'active'} onClick={() => setShowBoxes(!showBoxes)} data-testid="clean-view">
+          {showBoxes ? 'Clean view (hide boxes)' : 'Show boxes'}
+        </button>
       </div>
       <div className="editor">
         <div className="editor-stage">
