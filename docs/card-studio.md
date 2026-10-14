@@ -247,6 +247,10 @@ can't be built from several pins.
 grid key, and the recipe hash (sha256 of `recipe.json`'s fire, types, slots and characters; `imagesBase` and
 the sale block left out). VerifySeries (`ops/series`) reads it before the Series is locked.
 
+**Filebase only.** Pinata's free plan refuses CAR uploads, so **Upload to Filebase only** sends the images CAR
+straight to Filebase (same root CID, read back) with no Pinata pin; the offline CAR is the backup. A paid Pinata key
+restores the two-pin upload below.
+
 **Second pin (Filebase).** Right after Pinata, the same images CAR is pinned on Filebase through its S3-compatible API
 (`https://s3.filebase.com`, object `<images folder>.car` with the `import: car` metadata), in 64 MB parts that resume
 after a failure or a reload. Filebase reports the CID it pinned (it can take a few minutes after the upload: the studio looks it up with backoff

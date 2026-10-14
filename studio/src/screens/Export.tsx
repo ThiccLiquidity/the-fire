@@ -107,7 +107,7 @@ export function Export({ fire }: { fire: FireRecord }) {
 
   /** What's still open before recipe.json should go on-chain: both pins read back, and the CAR stored offline. */
   const pinsOpen = uploadCurrent && (!fire.upload?.verifiedAt || !fire.upload.carStoredAt)
-    ? [!fire.upload?.verifiedAt && 'check both pins', !fire.upload?.carStoredAt && 'store the CAR offline'].filter(Boolean).join(' and ')
+    ? [!fire.upload?.verifiedAt && (fire.upload?.filebaseOnly ? 'check the pin' : 'check both pins'), !fire.upload?.carStoredAt && 'store the CAR offline'].filter(Boolean).join(' and ')
     : ''
 
   const downloadRecipe = () => run(async () => {
@@ -303,16 +303,42 @@ export function Export({ fire }: { fire: FireRecord }) {
 
   /** Read both pins back: each must hold the images CID. */
   const checkPins = async (cur: UploadState, say: (t: string) => void): Promise<UploadState> => {
-    if (!cur.imagesCid || !cur.filebaseObject) throw new Error('Pin on both first.')
-    const onPinata = await pinataHas(flags.mockPinata ? mockTransport : realTransport, cur.imagesCid)
+    if (!cur.imagesCid || !cur.filebaseObject) throw new Error(cur.filebaseOnly ? 'Upload to Filebase first.' : 'Pin on both first.')
+    const onPinata = cur.filebaseOnly || await pinataHas(flags.mockPinata ? mockTransport : realTransport, cur.imagesCid)
     const onFilebase = await filebaseCid(flags.mockPinata ? mockFilebase : realFilebase, cur.filebaseObject)
     if (!onPinata) throw new Error(`Pinata doesn't list ${cur.imagesCid}.`)
     if (onFilebase !== cur.imagesCid) throw new Error(`Filebase's ${cur.filebaseObject}.car is ${onFilebase ?? 'missing'}, not ${cur.imagesCid}.`)
     const next = { ...cur, verifiedAt: Date.now() }
     await updateFire(fire.number, { upload: next })
-    say(`Both pins checked: Pinata and Filebase hold ${cur.imagesCid}.`)
+    say(cur.filebaseOnly ? `Checked: Filebase holds ${cur.imagesCid}.` : `Both pins checked: Pinata and Filebase hold ${cur.imagesCid}.`)
     return next
   }
+
+  /** Filebase only: the images CAR straight to Filebase (the folder's CID is the CAR's root, as with Pinata), then read
+   *  back. No metadata preview upload (it's preview only). */
+  const uploadFilebaseOnly = () => run(async () => {
+    try {
+      setLog([])
+      const say = (t: string) => setLog((l) => [...l, `${new Date().toLocaleTimeString()} ${t}`])
+      setProgress({ value: 0, label: 'Reading built images...' })
+      const files = await imageFiles(readingProgress, hashingProgress)
+      const imagesDirName = `fire-${fire.number}-images-${filesFingerprint(files)}`
+      setProgress({ value: 0, label: 'Packing the CAR (hashing)...' })
+      const car = await planCar(files)
+      say(`Folder CID ${car.root} (${(car.size / 1024 / 1024).toFixed(1)} MB CAR).`)
+      let cur: UploadState = fire.upload?.imagesDir === imagesDirName && fire.upload.filebaseOnly ? { ...fire.upload } : {}
+      cur = { ...cur, filebaseOnly: true, format: 'webp', imagesDir: imagesDirName, mock: flags.mockPinata, buildAt: b?.builtAt, imagesCarSize: car.size }
+      await updateFire(fire.number, { upload: cur })
+      cur = await secondPin(files, imagesDirName, car, cur, say)
+      if (cur.filebaseCid !== car.root) throw new Error(`Filebase pinned ${cur.filebaseCid}, not the folder's ${car.root}.`)
+      cur = { ...cur, imagesCid: car.root, imagesAt: Date.now() }
+      await updateFire(fire.number, { upload: cur })
+      await checkPins(cur, say)
+    } finally {
+      refreshDevFlags()
+      setProgress(null)
+    }
+  })
 
   const pinFilebase = () => run(async () => {
     try {
@@ -400,8 +426,9 @@ export function Export({ fire }: { fire: FireRecord }) {
       <p className="muted small">{gridLen.toLocaleString()} images, metadata and the JSON, in one zip. Big Series: parts of up to 1.5 GB or 60,000 files, metadata apart, into a folder you pick.</p>
       <button className="primary" disabled={!ready || busy} onClick={downloadZip} data-testid="download-zip">Download zip</button>
 
-      <h3>Upload: Pinata + Filebase</h3>
-      <p className="muted small">Both pins must hold the same CID. Keys stay in this tab only; a reload forgets them.</p>
+      <h3>Upload: Filebase (+ Pinata)</h3>
+      <p className="muted small">Filebase alone works (Pinata's free plan refuses CAR uploads). With a paid Pinata key too, both pins must hold
+        the same CID. Keys stay in this tab only; a reload forgets them.</p>
       {flags.mockPinata && <Notice kind="warn">Mock IPFS is on (Data tab): nothing is uploaded.</Notice>}
       <form className="row wrap" onSubmit={(e) => { e.preventDefault(); setPinataJwt(jwtInput); setJwtInput(''); setKeySet(hasPinataJwt()) }}>
         <Field label="Pinata JWT (Files write)">
@@ -427,8 +454,11 @@ export function Export({ fire }: { fire: FireRecord }) {
         <button className="primary" disabled={!ready || busy || !keySet} onClick={upload} data-testid="upload">
           {fire.upload?.pending || (fire.upload?.imagesCid && !fire.upload.metadataCid) ? 'Resume upload' : fire.upload?.metadataCid ? 'Upload (already done)' : fbSet ? 'Upload to Pinata + Filebase' : 'Upload to Pinata'}
         </button>
-        {uploadOfBuild && !fire.upload?.filebaseCid && <button disabled={busy || !fbSet} onClick={pinFilebase} data-testid="pin-filebase">{fire.upload?.filebasePending ? 'Resume Filebase pin' : 'Pin to Filebase'}</button>}
-        {uploadOfBuild && fire.upload?.filebaseCid && <button disabled={busy || !fbSet || !keySet} onClick={checkBoth} data-testid="check-pins">Check both pins</button>}
+        <button className={keySet ? '' : 'primary'} disabled={!ready || busy || !fbSet} onClick={uploadFilebaseOnly} data-testid="upload-filebase-only">
+          {fire.upload?.filebaseOnly && fire.upload.filebasePending ? 'Resume Filebase upload' : 'Upload to Filebase only'}
+        </button>
+        {uploadOfBuild && !fire.upload?.filebaseOnly && !fire.upload?.filebaseCid && <button disabled={busy || !fbSet} onClick={pinFilebase} data-testid="pin-filebase">{fire.upload?.filebasePending ? 'Resume Filebase pin' : 'Pin to Filebase'}</button>}
+        {uploadOfBuild && fire.upload?.filebaseCid && <button disabled={busy || !fbSet || (!keySet && !fire.upload.filebaseOnly)} onClick={checkBoth} data-testid="check-pins">{fire.upload.filebaseOnly ? 'Check the pin' : 'Check both pins'}</button>}
         {fire.upload && <button disabled={busy} onClick={resetUpload}>Forget CIDs</button>}
       </div>
       {progress && <ProgressBar value={progress.value} label={progress.label} />}
@@ -438,7 +468,7 @@ export function Export({ fire }: { fire: FireRecord }) {
           <tbody>
             <tr><td>Images CID</td><td><code>{fire.upload.imagesCid ?? '-'}</code></td></tr>
             <tr><td>imagesBase (on-chain, in recipe.json)</td><td><code data-testid="images-base">{fire.upload.imagesCid ? `ipfs://${fire.upload.imagesCid}/` : '-'}</code></td></tr>
-            <tr><td>Pinata</td><td>{fire.upload.imagesCid ? <span className="ok-text">pinned</span> : '-'}</td></tr>
+            <tr><td>Pinata</td><td>{fire.upload.filebaseOnly ? <span className="muted">skipped (Filebase only)</span> : fire.upload.imagesCid ? <span className="ok-text">pinned</span> : '-'}</td></tr>
             <tr>
               <td>Filebase (second pin)</td>
               <td data-testid="filebase-cid">
@@ -448,7 +478,7 @@ export function Export({ fire }: { fire: FireRecord }) {
                   : <span className="warn-text">not yet</span>}
               </td>
             </tr>
-            <tr><td>Both read back</td><td>{fire.upload.verifiedAt ? <span className="ok-text">{new Date(fire.upload.verifiedAt).toLocaleString()}</span> : <span className="muted">not yet</span>}</td></tr>
+            <tr><td>{fire.upload.filebaseOnly ? 'Read back' : 'Both read back'}</td><td>{fire.upload.verifiedAt ? <span className="ok-text">{new Date(fire.upload.verifiedAt).toLocaleString()}</span> : <span className="muted">not yet</span>}</td></tr>
             <tr><td>Offline CAR</td><td>{fire.upload.carStoredAt ? <span className="ok-text">stored offline (confirmed {new Date(fire.upload.carStoredAt).toLocaleDateString()})</span> : fire.upload.carSavedAt ? <span className="warn-text">saved {new Date(fire.upload.carSavedAt).toLocaleString()}, not confirmed stored</span> : <span className="warn-text">not saved yet</span>}</td></tr>
             <tr><td>Metadata CID (preview only)</td><td><code>{fire.upload.metadataCid ?? '-'}</code>{fire.upload.imagesCid ? <span className="muted small"> {metadataDirName(fire.number, fire.upload.imagesCid)}/</span> : null}</td></tr>
             {fire.upload.pending && <tr><td>Unfinished upload</td><td className="small">{fire.upload.pending.dir} ({(fire.upload.pending.size / 1024 / 1024).toFixed(1)} MB): resumes on the next upload</td></tr>}

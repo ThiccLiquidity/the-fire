@@ -138,7 +138,9 @@ export interface UploadState {
   filebaseAt?: number
   /** An unfinished multipart upload to Filebase (resumes from its last part). */
   filebasePending?: { object: string; root: string; size: number; id: string }
-  /** When both pins were read back and held the images CID. */
+  /** Uploaded to Filebase only (no Pinata pin: Pinata's free plan refuses CAR uploads). */
+  filebaseOnly?: boolean
+  /** When the pins were read back and held the images CID. */
   verifiedAt?: number
   /** When the images CAR was saved from the studio, and when the owner confirmed it is stored offline. */
   carSavedAt?: number
