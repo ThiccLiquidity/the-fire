@@ -82,12 +82,13 @@ export class PinataError extends Error {
 function errorFor(status: number, body: string): PinataError {
   let detail = ''
   try {
-    const j = JSON.parse(body) as { error?: { reason?: string; details?: string } | string; message?: string }
-    detail = typeof j.error === 'string' ? j.error : j.error?.details ?? j.error?.reason ?? j.message ?? ''
+    const j = JSON.parse(body) as { error?: { reason?: string; details?: string; message?: string } | string; message?: string }
+    detail = typeof j.error === 'string' ? j.error : j.error?.details ?? j.error?.message ?? j.error?.reason ?? j.message ?? ''
   } catch {
     detail = body.slice(0, 200)
   }
-  if (status === 401 || status === 403) return new PinataError(`Pinata rejected the JWT (${status}). The key needs Files write access (v3). ${detail}`, status, false)
+  if (/plan limit/i.test(detail)) return new PinataError(`Pinata refused: the account is over its plan's limits (${detail}). Delete old files on Pinata, use another account, or upgrade.`, status, false)
+  if (status === 401 || status === 403) return new PinataError(`Pinata rejected the JWT (${status}). Check it's the full JWT (starts eyJ, two dots) with Files write access. ${detail}`, status, false)
   if (status === 429) return new PinataError(`Pinata rate limit (429). ${detail}`, status, true)
   if (status >= 500 || status === 0 || status === 409) return new PinataError(`Pinata/network error (${status || 'no response'}). ${detail}`, status, true)
   return new PinataError(`Pinata error ${status}. ${detail}`, status, false)
