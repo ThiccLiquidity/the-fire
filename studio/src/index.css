@@ -168,7 +168,7 @@ table.cards-table tbody tr:hover { background: var(--panel-2); }
 .sample img, .sample-ph { width: 100%; aspect-ratio: 1500/2100; display: block; border-radius: 6px; }
 .sample-ph { background: #111; }
 .sample figcaption { font-size: 11px; margin-top: 4px; }
-.sample.not-dealt { opacity: .7; }
+.sample.not-dealt figcaption .muted { font-style: italic; }
 .modal { position: fixed; inset: 0; background: #000d; display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
 .modal-body { display: flex; gap: 20px; background: var(--panel); border-radius: 10px; padding: 16px; max-height: 100%; }
 .modal-body img { max-height: calc(100vh - 80px); max-width: 60vw; border-radius: 8px; }
