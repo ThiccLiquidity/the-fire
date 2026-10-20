@@ -1206,19 +1206,28 @@
   // like ink: each textarea is transparent over a mirror of its text, where new letters fade in wet and settle.
   // Send folds the paper and drops it in the box (the Suggest pill/station if it's in view, else a box in the window).
   function openSuggest() {
-    const MAXB = Store.SUGGEST_MAX_BYTES, COST = Store.PRICES.SUGGEST_PAPER, WET = 900;
-    const FIELDS = [
+    const MAXB = Store.SUGGEST_MAX_BYTES, ONE = Store.PRICES.SUGGEST_PAPER, WET = 900;
+    const W = Store.SUGGEST_WAVE, LOOK = W.wave === 'look';
+    // the theme-and-style wave: either or both, each its own suggestion at ONE PAPER, sent together
+    const FIELDS = LOOK ? [
+      { k: 'theme', label: 'Theme', opt: true, ph: 'A haunted diner', hint: 'sg-hint' },
+      { k: 'style', label: 'Art style', opt: true, ph: 'Old woodcut print' },
+    ] : [
       { k: 'character', label: 'Character', ph: 'A sleepy volcano', hint: 'sg-hint' },
       { k: 'personality', label: 'Personality', opt: true, ph: 'Grumpy until noon, then very generous' },
       { k: 'background', label: 'Background', opt: true, ph: 'Napping since the last ice age' },
     ];
+    // what this paper sends: the on-chain texts (one per suggestion), what's required, and the cost
+    const texts = () => LOOK ? Store.packLook(values()) : [Store.packSuggestion(values())].filter((t) => values().character.trim());
+    const cost = () => ONE * Math.max(1, texts().length);
     let busy = false, approving = false;
     const opened = new Set(); // "Your ideas" rows left expanded, kept across re-renders
     const fields = FIELDS.map(inkField);
     const values = () => Object.fromEntries(fields.map((f) => [f.k, f.ta.value]));
     const count = h('span', { id: 'sg-count', class: 'sg-count' });
     const paperEl = h('div', { class: 'sg-paper' },
-      h('div', { class: 'sg-head', 'aria-hidden': 'true' }, h('span', { text: 'Suggestion' }), h('span', { text: 'Series ' + S().series.no })),
+      h('div', { class: 'sg-head', 'aria-hidden': 'true' }, h('span', { text: LOOK ? 'Theme & art style' : 'Suggestion' }), h('span', { text: 'Series ' + (S().series.no + 1) })),
+      LOOK ? null : h('p', { class: 'sg-wave', text: `${W.theme} · ${W.style}` }),
       fields.map((f) => f.row),
       h('div', { class: 'sg-foot' }, count));
     const doneEl = h('div', { class: 'sg-done', hidden: true, tabindex: '-1' },
@@ -1274,12 +1283,12 @@
     }
 
     function renderAct() {
-      const v = values(), packed = Store.packSuggestion(v), bytes = Store.bytes(packed), over = bytes > MAXB;
+      const t = texts(), COST = cost(), bytes = Math.max(0, ...t.map(Store.bytes)), over = bytes > MAXB;
       count.textContent = `${bytes.toLocaleString('en-US')} / ${MAXB.toLocaleString('en-US')} bytes` + (over ? ' · too long' : '');
       count.classList.toggle('over', over);
       // FireSale takes the PAPER, so it needs a PAPER approval first (just this suggestion's cost)
       const state = !connected() ? 'connect' : paper() < COST ? 'short' : approving ? 'approving' : Store.needsApproval('PAPER', COST) ? 'approve' : 'send';
-      const off = busy || !v.character.trim() || over;
+      const off = busy || !t.length || over;
       patch(act, JSON.stringify([state, off, paper(), COST]), () => {
         let a;
         if (state === 'connect') a = connectBtn();
@@ -1291,7 +1300,7 @@
       });
     }
     function approve() {
-      if (approving) return; approving = true; renderAct();
+      if (approving) return; approving = true; renderAct(); const COST = cost();
       const ok = () => { approving = false; renderAct(); act.querySelector('.btn.primary:not([disabled])')?.focus({ preventScroll: true }); };
       if (window.UI?.approveNow) window.UI.approveNow('PAPER', COST, ok); else { Store.update(() => Store.approve('PAPER', COST)); ok(); }
     }
@@ -1299,22 +1308,27 @@
       const list = S().suggestions;
       patch(listEl, JSON.stringify([list, S().series.no]), () => put(listEl, h('h3', { text: 'Your ideas' }), list.length ? h('ul', {}, list.map((sg) => {
         const p = Store.parseSuggestion(sg.text), key = sg.at + '|' + sg.text;
-        const more = [['Personality', p.personality], ['Background', p.background]].filter(([, x]) => x);
+        const more = p.kind === 'character' ? [['Personality', p.personality], ['Background', p.background]].filter(([, x]) => x) : [];
         const det = more.length ? h('details', { class: 'sg-more', open: opened.has(key) },
           h('summary', { text: more.map(([k]) => k).join(' · ') }),
           h('dl', {}, more.map(([k, x]) => [h('dt', { text: k }), h('dd', { text: x })]))) : null;
         det?.addEventListener('toggle', () => { if (det.open) opened.add(key); else opened.delete(key); });
         return h('li', {},
-          h('div', { class: 'sg-main' }, h('span', { class: 'sg-t', text: p.character || sg.text }), det),
+          h('div', { class: 'sg-main' }, h('span', { class: 'sg-t', text: p.kind === 'character' ? p.character || sg.text : (p.kind === 'theme' ? 'Theme: ' : 'Art style: ') + p.value }), det),
           h('span', { class: 'muted', text: sg.at }),
           h('span', { class: 'sgp ' + (sg.picked ? 'yes' : 'wait'), text: sg.picked ? 'Picked' : sg.at === 'Series ' + S().series.no ? 'Waiting' : 'Not picked' })); // past rounds: not picked
       })) : h('p', { class: 'muted', text: 'Nothing yet.' })));
     }
     async function send() {
-      const v = values(), text = Store.packSuggestion(v);
-      if (busy || !v.character.trim() || Store.bytes(text) > MAXB || paper() < COST || !connected() || Store.needsApproval('PAPER', COST)) return;
+      const t = texts(), COST = cost();
+      if (busy || !t.length || t.some((x) => Store.bytes(x) > MAXB) || paper() < COST || !connected() || Store.needsApproval('PAPER', COST)) return;
       busy = true;
-      Store.update((s) => { s.wallet.balances.PAPER -= COST; Store.spend('PAPER', COST); s.suggestions.unshift({ text, at: 'Series ' + s.series.no, picked: false }); Store.log('Suggested a character'); });
+      // one transaction either way: suggest(text) for one, suggestMany(texts) for a theme and an art style together
+      Store.update((s) => {
+        s.wallet.balances.PAPER -= COST; Store.spend('PAPER', COST);
+        t.slice().reverse().forEach((text) => s.suggestions.unshift({ text, at: 'Series ' + s.series.no, picked: false }));
+        Store.log(LOOK ? (t.length > 1 ? 'Suggested a theme and an art style' : 'Suggested ' + (t[0].startsWith('Theme') ? 'a theme' : 'an art style')) : 'Suggested a character');
+      });
       document.activeElement?.blur?.();
       try { await foldAndDrop(); } catch { /* closed mid-flight */ }
       fields.forEach((f) => f.clear());
@@ -1382,12 +1396,14 @@
     }
 
     const root = h('div', { class: 'st st-suggest' },
-      h('p', { class: 'slead', text: 'Who should be on a card in a future Series?' }),
-      h('p', { id: 'sg-hint', class: 'hint', text: 'Anything goes: a person, an animal, a food, a place, an object, an idea.' }),
+      h('p', { class: 'slead', text: LOOK ? 'What should the next Series look like?' : 'Who should be on a card in the next Series?' }),
+      h('p', { id: 'sg-hint', class: 'hint', text: LOOK
+        ? 'Fill in one or both. A theme ties the Series together; an art style is how it\'s drawn. 1 PAPER each.'
+        : 'Any noun: a person, an animal, a food, a place, an object, an idea. Give it a personality and a backstory if you like.' }),
       stage, notes, act, listEl);
     const render = () => { renderAct(); renderList(); };
     listen('suggest', render);
-    Sheet.open('suggest', { title: 'Suggest a character', body: root, onClose: () => { unlisten('suggest'); document.querySelectorAll('.sg-fly, .sg-dropbox').forEach((el) => el.remove()); } });
+    Sheet.open('suggest', { title: LOOK ? 'Suggest a theme and art style' : 'Suggest a character', body: root, onClose: () => { unlisten('suggest'); document.querySelectorAll('.sg-fly, .sg-dropbox').forEach((el) => el.remove()); } });
     render(); fields.forEach((f) => f.sync()); setTimeout(() => fields[0].ta.focus(), 50);
     document.fonts?.ready.then(() => fields.forEach((f) => f.grow())); // the handwriting font changes the line breaks
   }

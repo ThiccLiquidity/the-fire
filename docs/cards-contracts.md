@@ -260,6 +260,14 @@ Each line is `Label: value` (labels `Character`, `Personality`, `Background`; li
 Text with no `Character:` line is read as the character alone. The site counts UTF-8 bytes against
 `suggestionMaxBytes`, so that setting should be about 1,000 (the 280 default fits a character only).
 
+**Two waves per Series.** First its look: a theme and an art style, one line each, `Theme: A haunted diner` and
+`Art style: Old woodcut print`, each its own suggestion. The site sends either alone with `suggest`, or both in one
+transaction with `suggestMany(texts, maxPaper)` (1 to `MAX_SUGGESTIONS_PER_TX` = 3 texts, `suggestionPaper` each, at most
+$1 each). Once the theme and style are picked and announced, the character wave asks for characters in that theme and
+style. Everything is picked by the owner from a random shortlist (`ops/suggestions/draw.mjs`: one per wallet per kind,
+the same idea merged, 10 drawn with a printed seed). Picks per Series: its characters plus `EXTRA_PICKS` (2: the theme
+and the art style), all in one picking session while the drop is set up.
+
 Guards that stay fixed (safety, not product): settings lock at the drop's start; one drop at a time; every purchase
 names its most PLANK/USDG/ETH and PAPER; the PAPER ceilings (per drop for packs, $1 for suggestions; the last good
 price holds while the PAPER feed is late); the swap floors (`SWAP_MIN_BPS`: 90% in `FireSale`, 95% in `PaperBurner`

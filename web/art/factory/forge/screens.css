@@ -393,6 +393,9 @@ a.btn { text-decoration: none }
   background: linear-gradient(135deg, transparent 70%, rgba(110,80,40,.10)), linear-gradient(to bottom, rgba(255,255,255,.18), transparent 30%) }
 .sg-head { display: flex; justify-content: space-between; align-items: flex-end; height: var(--lh); padding-bottom: 5px; box-sizing: border-box;
   font: 400 12px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--pencil) }
+/* the character wave: the Series' picked theme and art style, stamped at the top of the paper */
+.sg-wave { margin: 0; height: var(--lh); display: flex; align-items: flex-end; padding-bottom: 6px; box-sizing: border-box;
+  font: 800 13px/1 var(--body); letter-spacing: .04em; color: #8a3b1c }
 .sg-field label { display: flex; align-items: flex-end; gap: 8px; height: var(--lh); padding-bottom: 6px; box-sizing: border-box;
   font: 800 11px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--pencil); transition: color .2s }
 .sg-field label small { font: 600 11px/1 var(--body); letter-spacing: .02em; text-transform: none; opacity: .8 }

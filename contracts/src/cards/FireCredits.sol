@@ -32,6 +32,10 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
     uint256 public constant CARDS_PER_CREDIT = 42;
     /// @dev Longest suggestion text the owner can allow (the text lives only in the event).
     uint256 public constant MAX_SUGGESTION_BYTES = 1_024;
+    /// @notice Most suggestions in one `suggestMany` (a theme and an art style together, say).
+    uint256 public constant MAX_SUGGESTIONS_PER_TX = 3;
+    /// @notice Picks a Series can have beyond its characters: its theme and its art style, suggested and picked too.
+    uint256 public constant EXTRA_PICKS = 2;
     /// @notice A suggestion's PAPER never costs more than this many dollars (8 decimals) at the PAPER feed's price.
     uint256 public constant SUGGESTION_PAPER_CAP_USD = 1e8;
 
@@ -110,12 +114,12 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
 
     /// @notice Give free pack credits (the drop's `creditsPerPick` each) to each picked suggestion's author. Only while
     ///         setting up a drop (before it opens; with one drop at a time no drop is running then), each suggestion
-    ///         once, and no more picks than the Series has characters.
+    ///         once, and no more picks than the Series has characters plus EXTRA_PICKS (its theme and art style).
     function pickSuggestions(uint256 fire, uint256[] calldata ids) external onlyOwner {
         FireSale.Drop memory d = sale.dropOf(fire);
         if (d.start == 0) revert BadConfig();
         if (block.timestamp >= d.start) revert DropStarted();
-        if (picksOf[fire] + ids.length > CARDS.characterCount(fire)) revert BadAmount();
+        if (picksOf[fire] + ids.length > CARDS.characterCount(fire) + EXTRA_PICKS) revert BadAmount();
         picksOf[fire] += ids.length;
         // The first pick for a new Series starts a session: it picks from the current list, and new suggestions from
         // now on go into a fresh list for the next session. Unpicked ones from older lists can't be picked again.
@@ -162,12 +166,33 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
         emit CardsBurned(msg.sender, ids.length, earned, total % per);
     }
 
-    /// @notice Suggest a character for a future Series. The PAPER (`suggestionPaper`, at most $1 worth) is burned;
-    ///         `maxPaper` is the most the suggester agrees to pay (approve FireSale for it).
+    /// @notice Suggest something for a future Series (a character, a theme or an art style; the site labels which in
+    ///         the text). The PAPER (`suggestionPaper`, at most $1 worth) is burned; `maxPaper` is the most the
+    ///         suggester agrees to pay (approve FireSale for it).
     function suggest(string calldata text, uint256 maxPaper) external nonReentrant returns (uint256 id) {
+        _checkText(text);
+        sale.burnPaperFor(msg.sender, suggestionPaper, SUGGESTION_PAPER_CAP_USD, maxPaper);
+        id = _add(text);
+    }
+
+    /// @notice Several suggestions in one transaction (a theme and an art style together): each its own suggestion,
+    ///         picked on its own, each costing `suggestionPaper` (at most $1 worth each). `maxPaper` covers them all.
+    ///         Returns the first id; the rest follow in order.
+    function suggestMany(string[] calldata texts, uint256 maxPaper) external nonReentrant returns (uint256 firstId) {
+        uint256 n = texts.length;
+        if (n == 0 || n > MAX_SUGGESTIONS_PER_TX) revert BadAmount();
+        for (uint256 i; i < n; i++) _checkText(texts[i]);
+        sale.burnPaperFor(msg.sender, suggestionPaper * n, SUGGESTION_PAPER_CAP_USD * n, maxPaper);
+        firstId = suggestions.length;
+        for (uint256 i; i < n; i++) _add(texts[i]);
+    }
+
+    function _checkText(string calldata text) internal view {
         uint256 len = bytes(text).length;
         if (len == 0 || len > suggestionMaxBytes) revert BadAmount();
-        sale.burnPaperFor(msg.sender, suggestionPaper, SUGGESTION_PAPER_CAP_USD, maxPaper);
+    }
+
+    function _add(string calldata text) internal returns (uint256 id) {
         id = suggestions.length;
         suggestions.push(Suggestion(msg.sender, uint64(block.timestamp), false, currentRound));
         emit Suggested(id, msg.sender, currentRound, text);

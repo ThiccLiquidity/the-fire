@@ -135,15 +135,32 @@
     // SUGGEST_MAX_BYTES mirrors FireCredits.suggestionMaxBytes (an owner setting, 1 to 1,024; set it to about 1,000).
     SUGGEST_MAX_BYTES: 1000,
     SUGGEST_FIELDS: [['character', 'Character'], ['personality', 'Personality'], ['background', 'Background']],
+    // Suggestions come in two waves per Series: first its theme and art style (one form; each is its own suggestion,
+    // sent together in one transaction, FireCredits.suggestMany), then, once those are picked and announced, its
+    // characters for that theme and style. The owner sets the wave and the picked theme and style here (demo:
+    // ?wave=look|characters&theme=...&style=... in the URL).
+    SUGGEST_WAVE: (() => {
+      const q = new URLSearchParams(location.search);
+      const wave = q.get('wave') === 'characters' ? 'characters' : q.get('wave') === 'look' ? 'look' : 'look';
+      return { wave, theme: q.get('theme') || 'Haunted diner', style: q.get('style') || 'Old woodcut print' };
+    })(),
+    LOOK_FIELDS: [['theme', 'Theme'], ['style', 'Art style']],
+    // a theme and an art style, each its own on-chain text ("Theme: ..." / "Art style: ...")
+    packLook(f) {
+      return Store.LOOK_FIELDS.map(([k, label]) => [label, Store.plain(f[k]).replace(/\s+/g, ' ').trim()])
+        .filter(([, v]) => v).map(([label, v]) => label + ': ' + v);
+    },
     packSuggestion(f) {
       return Store.SUGGEST_FIELDS.map(([k, label]) => [label, Store.plain(f[k]).replace(/\s+/g, ' ').trim()])
         .filter(([, v]) => v).map(([label, v]) => label + ': ' + v).join('\n');
     },
     // text people typed, without bidi controls (they can make text read in a different order than it's stored)
     plain(t) { return String(t ?? '').replace(/[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, ''); },
-    parseSuggestion(text) { // back to { character, personality, background }; text without labels is the character alone
+    parseSuggestion(text) { // back to { kind, character, personality, background } or { kind: 'theme'|'style', value }
       text = Store.plain(text);
-      const out = { character: '', personality: '', background: '' }, keys = Object.fromEntries(Store.SUGGEST_FIELDS.map(([k, l]) => [l.toLowerCase(), k]));
+      const look = String(text).match(/^\s*(theme|art style)\s*:\s?([\s\S]*)$/i);
+      if (look) return { kind: look[1].toLowerCase() === 'theme' ? 'theme' : 'style', value: look[2].trim(), character: '', personality: '', background: '' };
+      const out = { kind: 'character', character: '', personality: '', background: '' }, keys = Object.fromEntries(Store.SUGGEST_FIELDS.map(([k, l]) => [l.toLowerCase(), k]));
       let cur = 'character', labelled = false;
       for (const line of String(text).split('\n')) {
         const m = line.match(/^\s*(character|personality|background)\s*:\s?(.*)$/i);

@@ -48,6 +48,32 @@
   },
   {
     "type": "function",
+    "name": "EXTRA_PICKS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_SUGGESTIONS_PER_TX",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_SUGGESTION_BYTES",
     "inputs": [],
     "outputs": [
@@ -301,6 +327,30 @@
     "outputs": [
       {
         "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "suggestMany",
+    "inputs": [
+      {
+        "name": "texts",
+        "type": "string[]",
+        "internalType": "string[]"
+      },
+      {
+        "name": "maxPaper",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "firstId",
         "type": "uint256",
         "internalType": "uint256"
       }

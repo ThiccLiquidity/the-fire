@@ -870,11 +870,52 @@ contract SaleTest is SeriesHelper {
     }
 
     function test_audit_picksCappedByCharacters() public {
-        uint256[] memory ids = new uint256[](4);
-        for (uint256 i; i < 4; i++) { vm.prank(bob, bob); ids[i] = credits.suggest("x", type(uint256).max); }
+        uint256[] memory ids = new uint256[](6);
+        for (uint256 i; i < 6; i++) { vm.prank(bob, bob); ids[i] = credits.suggest("x", type(uint256).max); }
         vm.prank(owner, owner);
         vm.expectRevert(FireCredits.BadAmount.selector);
-        credits.pickSuggestions(1, ids); // Fire 1 has 3 characters
+        credits.pickSuggestions(1, ids); // Fire 1 has 3 characters: at most 3 + 2 (theme, art style) picks
+        uint256[] memory five = new uint256[](5);
+        for (uint256 i; i < 5; i++) five[i] = ids[i];
+        vm.prank(owner, owner);
+        credits.pickSuggestions(1, five); // every character, the theme and the art style
+        assertEq(credits.credits(bob), 5 * 1);
+    }
+
+    /// A theme and an art style in one transaction: two suggestions, each picked on its own, 1 PAPER each.
+    function test_suggestMany() public {
+        string[] memory two = new string[](2);
+        two[0] = "Theme: Haunted diner";
+        two[1] = "Style: Woodcut print";
+        uint256 before = paper.balanceOf(DEAD);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        credits.suggestMany(two, 1e18); // two cost 2 PAPER
+        vm.prank(bob, bob);
+        uint256 first = credits.suggestMany(two, 2e18);
+        assertEq(paper.balanceOf(DEAD) - before, 2e18, "one PAPER each");
+        assertEq(credits.suggestionCount(), first + 2);
+        (address by,,,) = credits.suggestions(first + 1);
+        assertEq(by, bob);
+        // picked separately: only the art style wins
+        uint256[] memory one = new uint256[](1);
+        one[0] = first + 1;
+        vm.prank(owner, owner);
+        credits.pickSuggestions(1, one);
+        assertEq(credits.credits(bob), 1);
+        // limits: 1 to 3 per transaction, each within the length rule
+        string[] memory none = new string[](0);
+        string[] memory four = new string[](4);
+        for (uint256 i; i < 4; i++) four[i] = "x";
+        vm.startPrank(bob, bob);
+        vm.expectRevert(FireCredits.BadAmount.selector);
+        credits.suggestMany(none, type(uint256).max);
+        vm.expectRevert(FireCredits.BadAmount.selector);
+        credits.suggestMany(four, type(uint256).max);
+        two[1] = "";
+        vm.expectRevert(FireCredits.BadAmount.selector);
+        credits.suggestMany(two, type(uint256).max);
+        vm.stopPrank();
     }
 
     function test_audit_fireNumberFitsIn64Bits() public {
