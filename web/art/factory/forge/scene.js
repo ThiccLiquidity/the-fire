@@ -768,7 +768,7 @@ function frame(tms) {
   const closing = (left <= 0 || finale >= 0) && !packs.length && queue <= 0;
   target = closing ? 0 : queue > 0 || packs.length ? 1 : 0.15;
   speed += (target - speed) * Math.min(1, dt * (closing ? 0.45 : 1.4)); // winds down slowly when the Fire closes
-  bank = Math.max(0, Math.min(1, bank + dt * (left <= 0 || finale >= 0 ? (finale >= 0 && now - finale < 0.5 ? 0 : 1 / 3) : -1 / 2))); // the fire banks to embers over ~3 s
+  bank = Math.max(0, Math.min(0.5, bank + dt * (left <= 0 || finale >= 0 ? (finale >= 0 && now - finale < 0.5 ? 0 : 1 / 3) : -1 / 2))); // between Series the fire burns lower over ~1.5 s, but stays alive (casing and grading carry on)
   const MS = RM ? 0.6 : 1;
   wheelA += dt * speed * 2.6 * MS; beltSp += (Math.max(speed, 0.32) - beltSp) * Math.min(1, dt * 2); beltX += dt * beltSp * 190 * MS; chainX += dt * speed * 190 * MS; rollS += dt * speed * 150 * MS;
   ft += dt * (0.9 + speed * 0.6) * (1 - 0.4 * bank); at += dt * 0.8;

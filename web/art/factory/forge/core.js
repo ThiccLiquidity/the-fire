@@ -142,7 +142,9 @@
     SUGGEST_WAVE: (() => {
       const q = new URLSearchParams(location.search);
       const wave = q.get('wave') === 'characters' ? 'characters' : q.get('wave') === 'look' ? 'look' : 'look';
-      return { wave, theme: q.get('theme') || 'Haunted diner', style: q.get('style') || 'Old woodcut print' };
+      return { wave, theme: q.get('theme') || 'Haunted diner', style: q.get('style') || 'Old woodcut print',
+        closes: Date.now() + (3 * 24 + 4) * 3600 * 1000, // when this wave stops taking suggestions (the owner sets it)
+        count: +(q.get('ideas') || 142) }; // ideas in the box so far (the real site reads FireCredits.suggestionCount for the round)
     })(),
     LOOK_FIELDS: [['theme', 'Theme'], ['style', 'Art style']],
     // a theme and an art style, each its own on-chain text ("Theme: ..." / "Art style: ...")

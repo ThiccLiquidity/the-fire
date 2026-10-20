@@ -40,12 +40,15 @@
     <button class="chip round menu-btn" type="button" data-go="menu" aria-label="Menu">${svg('menu')}</button>
     <button class="wallet" id="walletBtn" type="button">${svg('wallet')}<span>Connect</span></button>
   </header>
+  <div class="qbanner" id="qbanner" hidden></div>
   <div class="demo-note" role="note"><b>Demo</b><span>Nothing here is real.<span class="dn-more"> No wallet, no payments.</span></span><button class="start-link" type="button" data-go="start">New here?</button></div>
   <div class="ui" id="pills">
     <div class="buybox" id="buybox" data-x="1480" data-y="250"></div>
     <button class="pill" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
     <button class="pill openp" type="button" data-st="open" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
     <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small>${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></span></button>
+    <div class="spot" id="spot" data-x="3590" data-y="1500" aria-hidden="true"></div>
+    <aside class="sdock" id="sdock" data-x="3040" data-y="930" aria-label="Suggestion box"></aside>
     <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small>${Store.PRICES.SUGGEST_PAPER} PAPER</small></span></button>
     <button class="pill peek" type="button" data-peek data-x="2880" data-y="700" style="--c: var(--gold)"><span class="peek-fan" aria-hidden="true"><img alt=""><img alt=""></span><span><b id="pPeekT">Series 8</b><small id="pPeek"></small></span></button>
   </div>
@@ -156,7 +159,7 @@
       card.querySelector('.ti-fan').append(Announce.fan(tease, { mini: true }));
       box.querySelector('.phase').after(card);
     }
-    $('#buybox').classList.toggle('calm', sold()); $('#buybar').classList.toggle('calm', sold());
+    $('#buybox').classList.toggle('calm', sold()); $('#buybar').classList.toggle('calm', sold()); dockKey = ''; // the bar was rebuilt: the dock goes back in
     for (const b of document.querySelectorAll('[data-buy]')) b.onclick = () => ({ buy: checkout, starter, free: useFree, open: () => openStation('open'), cards: () => openStation('cards'), announce: () => Announce.open() })[b.dataset.buy]?.();
     if (back) $(back)?.focus({ preventScroll: true });
   }
@@ -189,9 +192,59 @@
     wb.textContent = S.wallet.connected ? `${nm ? nm + ' · ' : ''}${S.wallet.balances.PAPER} PAPER` : 'Connect';
     $('#walletBtn').classList.toggle('on', S.wallet.connected);
   }
+  // ---------- between Series: the quiet shift. Nothing on sale, so the press and the belt rest (the fire, casing and
+  // grading carry on) and the suggestion box takes the spotlight: a warm light on the mailbox, a panel docked beside it
+  // (on phones, in the bottom bar) and a slim banner up top.
+  const SEEN = 'omni.quietSeen';
+  const seen = () => { try { return !!localStorage.getItem(SEEN); } catch { return true; } };
+  const left = (t) => { const m = Math.max(0, Math.round((t - Date.now()) / 60000)), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60);
+    return d ? `${d}d ${h}h` : h ? `${h}h ${m % 60}m` : `${m}m`; };
+  function dockHtml() {
+    const W = Store.SUGGEST_WAVE, next = S.series.no + 1, look = W.wave === 'look', w = S.wallet;
+    const mine = S.suggestions.filter((x) => x.at === 'Series ' + S.series.no).length;
+    const need = Store.PRICES.SUGGEST_PAPER, short = w.connected && w.balances.PAPER < need;
+    const cta = !w.connected ? '<button class="opt main" type="button" data-q="connect"><span>Connect wallet</span></button>'
+      : short ? '<button class="opt main" type="button" data-q="paper"><span>Buy PAPER</span></button>'
+      : `<button class="opt main" type="button" data-q="suggest"><span>${look ? 'Suggest a theme &amp; style' : 'Suggest a character'}</span></button>`;
+    return `${seen() ? '' : '<span class="sd-start">Start here</span>'}
+      <p class="sd-k">Series ${next} is being decided</p>
+      <h3 class="sd-t">${look ? 'Suggest a theme and an art style' : 'Suggest a character'}</h3>
+      ${look ? '' : `<p class="sd-pick">${esc(W.theme)} · ${esc(W.style)}</p>`}
+      <p class="sd-how">${need} PAPER each. Get picked, win a free pack.</p>
+      <p class="sd-meta"><span>Closes in <b>${left(W.closes)}</b></span><span><b>${W.count.toLocaleString('en-US')}</b> ideas in the box</span></p>
+      ${w.connected ? `<p class="sd-bal">You have <b>${fmt(w.balances.PAPER)} PAPER</b>${short ? ' · not enough' : ''}</p>` : ''}
+      <div class="opts">${cta}</div>
+      ${mine && w.connected ? `<p class="sd-mine">You've sent ${mine} · results when Series ${next} is announced</p>` : ''}`;
+  }
+  let dockKey = '';
+  function renderQuiet() {
+    const q = sold();
+    document.body.classList.toggle('quiet', q);
+    const W = Store.SUGGEST_WAVE, ban = $('#qbanner'); ban.hidden = !q;
+    if (!q) { dockKey = ''; return; }
+    const html = dockHtml(), key = html;
+    const banner = `<span>Series ${S.series.no + 1} is being decided</span><button class="qb-go" type="button" data-q="suggest">${W.wave === 'look' ? 'Suggest a theme &amp; style' : 'Suggest a character'}</button>`;
+    if (ban._html !== banner) { ban._html = banner; ban.innerHTML = banner; }
+    if (key !== dockKey) {
+      dockKey = key;
+      $('#sdock').innerHTML = html;
+      let bar = $('#buybar .sdock-bar'); // phones: the same panel, in the bottom bar
+      if (!bar) { bar = document.createElement('div'); bar.className = 'sdock-bar'; $('#buybar').append(bar); }
+      bar.innerHTML = html;
+    }
+    for (const b of document.querySelectorAll('[data-q]')) b.onclick = () => {
+      try { localStorage.setItem(SEEN, '1'); } catch { /* private window */ }
+      dockKey = ''; const k = b.dataset.q;
+      if (k === 'suggest') openStation('suggest');
+      if (k === 'paper') openGetPaper();
+      if (k === 'connect') needWallet(() => render());
+    };
+  }
+  setInterval(() => { if (sold()) { dockKey = ''; renderQuiet(); } }, 60000); // the countdown
+
   let bbH = 0;
   function render() {
-    renderChip(); renderBuy(); renderPeek(); renderCounts(); syncScene(); placePills();
+    renderChip(); renderBuy(); renderPeek(); renderCounts(); renderQuiet(); syncScene(); placePills();
     const h = mode === 'port' ? $('#buybar').offsetHeight : 0; if (h !== bbH) { bbH = h; if (h) layout(); } // the Buy bar changed height: keep the stations clear of it
   }
   Store.on(render);
@@ -414,6 +467,7 @@
   function openDemo() {
     const d = Sheet.open('demo', { title: 'Demo controls', body: `<p class="lead">Jump the demo to any stage of a sale.</p><div class="menu">
       <button class="btn" type="button" data-d="phase">Next phase</button><button class="btn" type="button" data-d="sold">Sold-out show</button>
+      <button class="btn" type="button" data-d="between">Between Series</button>
       <button class="btn" type="button" data-d="auto">${auto ? 'Stop' : 'Start'} crowd</button><button class="btn" type="button" data-d="credit">+1 free pack</button><button class="btn" type="button" data-d="announce">Series tease</button>
       <button class="btn" type="button" data-d="holder">Holder: ${S.wallet.isPressHolder || S.wallet.inSnapshot ? 'On' : 'Off'}</button><button class="btn" type="button" data-d="bot">${S.wallet.isContract ? 'Regular wallet' : 'Contract wallet'}</button>
       <button class="btn" type="button" data-d="reset">Reset</button></div>` });
@@ -422,6 +476,7 @@
       if (k === 'phase') Store.update((s) => { s.series.phase = (s.series.phase + 1) % 4; });
       if (k === 'sold') { const n = Math.min(3, Store.left()); Store.update((s) => { s.series.sold = s.series.total - s.series.startersClaimed - n; }); Scene?.buy(n); }
       if (k === 'auto') { if (auto) { clearInterval(auto); auto = null; } else auto = setInterval(() => { if (Store.left() > 0) { crowd++; Scene?.buy(1); } }, 3200); }
+      if (k === 'between') Store.update((s) => { s.series.sold = s.series.total - s.series.startersClaimed; s.series.phase = 4; });
       if (k === 'credit') Store.update((s) => { s.wallet.credits++; });
       if (k === 'announce') Announce.open();
       if (k === 'holder') Store.update((s) => { const v = !(s.wallet.isPressHolder || s.wallet.inSnapshot); s.wallet.isPressHolder = v; s.wallet.inSnapshot = v; });
@@ -462,6 +517,7 @@
     layout(); render();
     requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 300));
   }
+  if (new URLSearchParams(location.search).has('between')) Store.update((s) => { s.series.sold = s.series.total - s.series.startersClaimed; s.series.phase = 4; });
   if (window.Scene) hookScene(); else addEventListener('scene-ready', hookScene, { once: true });
   layout(); render();
 })();

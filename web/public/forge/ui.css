@@ -195,3 +195,39 @@ body[data-mode=port] .buybar .fan.mini { width: 52px }
 .start-list li.done { border-color: #2c5a33 } .start-list li.done .start-n { background: var(--good); border-color: var(--good); color: #0c1a0e }
 .start-list li.done .start-t b { color: var(--muted) }
 .menu-links { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0 }
+
+/* ---------- between Series: the quiet shift. The room a little darker, the mailbox in a warm spotlight, the
+   suggestion panel docked beside it, a slim banner up top. */
+body.quiet canvas#c { filter: brightness(.78) saturate(.92); transition: filter 1.2s }
+canvas#c { transition: filter 1.2s }
+.spot, .sdock { display: none }
+body.quiet .spot { display: block; position: absolute; width: 340px; height: 540px; transform: translate(-50%, -50%); pointer-events: none;
+  background: radial-gradient(closest-side, rgba(255,225,170,.75), rgba(255,195,115,.38) 45%, rgba(255,170,80,0) 75%);
+  mix-blend-mode: screen; animation: spotpulse 3.6s ease-in-out infinite }
+@keyframes spotpulse { 0%, 100% { opacity: .78 } 50% { opacity: 1 } }
+body.quiet .pill[data-st="suggest"] { border-color: #ffd27a; box-shadow: 0 0 0 4px rgba(255,210,122,.22), 0 0 26px rgba(255,200,110,.55), 0 4px 14px rgba(0,0,0,.5); animation: openglow 2.6s ease-in-out infinite }
+body.quiet .sdock { display: grid; position: absolute; transform: translate(-50%, -50%); pointer-events: auto; width: 300px; box-sizing: border-box; gap: 6px;
+  padding: 16px 16px 14px; border-radius: 18px; background: linear-gradient(#21160ef2, #120b07f2); border: 2px solid #ffbf5e;
+  box-shadow: 0 0 0 4px rgba(255,191,94,.12), 0 0 34px rgba(255,180,90,.28), 0 14px 34px rgba(0,0,0,.65); color: var(--text, #f3e6d6) }
+body.quiet .buybox { display: none } /* the dock says what to do; the sold-out box would only compete */
+.sdock p, .sdock-bar p { margin: 0 }
+.sd-start { position: absolute; top: -12px; left: 16px; font: 400 11px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; color: #1b0f06; background: #ffd27a; padding: 5px 9px 4px; border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,.5) }
+.sd-k { font: 400 11px/1.2 var(--display); letter-spacing: .12em; text-transform: uppercase; color: #ffbf5e }
+.sd-t { margin: 0; font: 400 21px/1.15 var(--display); color: #fff3df; text-wrap: balance }
+.sd-pick { font-weight: 800; color: #ffd27a; font-size: 14px }
+.sd-how { font-size: 14px; color: #e9d8c0 }
+.sd-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: #c9b597 } .sd-meta b { color: #fff3df }
+.sd-bal { font-size: 13.5px; color: #e9d8c0 } .sd-bal b { color: #fff3df }
+.sd-mine { font-size: 12.5px; color: #9fd7a8 }
+.sdock .opts, .sdock-bar .opts { display: grid; margin-top: 4px } .sdock .opt, .sdock-bar .opt { justify-content: center; white-space: normal }
+.sdock-bar { display: none }
+body.quiet .sdock-bar { display: grid; gap: 5px }
+body[data-mode=desk].quiet .sdock-bar { display: none }
+body[data-mode=port].quiet .sdock-bar .sd-t { font-size: 18px }
+.qbanner { position: fixed; left: 0; right: 0; top: 78px; z-index: 9; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 6px 12px;
+  background: linear-gradient(90deg, #2a170a, #4a2a0f, #2a170a); border-bottom: 1px solid #ffbf5e66; color: #ffe2b0; font-weight: 800; font-size: 14px }
+.qbanner[hidden] { display: none }
+.qb-go { font: 800 13px/1 var(--body); color: #1b0f06; background: linear-gradient(#ffd27a, #f0a640); border: 0; border-radius: 999px; padding: 7px 14px; cursor: pointer }
+.qb-go:hover { filter: brightness(1.08) } .qb-go:focus-visible { outline: 2px solid #fff; outline-offset: 2px }
+body[data-mode=port] .qbanner { font-size: 13px; gap: 8px; flex-wrap: wrap; text-align: center }
+@media (prefers-reduced-motion: reduce) { body.quiet .spot, body.quiet .pill[data-st="suggest"] { animation: none } }
