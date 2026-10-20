@@ -198,13 +198,18 @@ body[data-mode=port] .buybar .fan.mini { width: 52px }
 
 /* ---------- between Series: the quiet shift. The room a little darker, the mailbox in a warm spotlight, the
    suggestion panel docked beside it, a slim banner up top. */
-body.quiet canvas#c { filter: brightness(.78) saturate(.92); transition: filter 1.2s }
+body.quiet canvas#c { filter: brightness(.72) saturate(.9); transition: filter 1.2s }
 canvas#c { transition: filter 1.2s }
 .spot, .sdock { display: none }
-body.quiet .spot { display: block; position: absolute; width: 340px; height: 540px; transform: translate(-50%, -50%); pointer-events: none;
-  background: radial-gradient(closest-side, rgba(255,225,170,.75), rgba(255,195,115,.38) 45%, rgba(255,170,80,0) 75%);
-  mix-blend-mode: screen; animation: spotpulse 3.6s ease-in-out infinite }
-@keyframes spotpulse { 0%, 100% { opacity: .78 } 50% { opacity: 1 } }
+/* the spotlight: a beam from the roof onto the mailbox, and the pool of light it makes on the floor (sizes in scene px x --sk) */
+body.quiet .spot { display: block; position: absolute; width: 0; height: 0; pointer-events: none; filter: blur(calc(14px * var(--sk, .33))); animation: spotpulse 4.2s ease-in-out infinite }
+body.quiet .spot::before { content: ''; position: absolute; bottom: calc(-60px * var(--sk, .33)); left: calc(-260px * var(--sk, .33));
+  width: calc(520px * var(--sk, .33)); height: calc(1720px * var(--sk, .33)); clip-path: polygon(43% 0, 57% 0, 86% 100%, 14% 100%); /* straight down, narrow enough to stay inside the room */
+  background: linear-gradient(rgba(255,242,210,.6), rgba(255,228,175,.22) 22%, rgba(255,224,165,.3) 75%, rgba(255,216,152,.45)); mix-blend-mode: screen }
+body.quiet .spot::after { content: ''; position: absolute; left: calc(-230px * var(--sk, .33)); top: calc(-70px * var(--sk, .33));
+  width: calc(460px * var(--sk, .33)); height: calc(140px * var(--sk, .33)); border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255,234,185,.7), rgba(255,214,150,.35) 55%, rgba(255,200,130,0)); mix-blend-mode: screen }
+@keyframes spotpulse { 0%, 100% { opacity: .85 } 50% { opacity: 1 } }
 body.quiet .pill[data-st="suggest"] { border-color: #ffd27a; box-shadow: 0 0 0 4px rgba(255,210,122,.22), 0 0 26px rgba(255,200,110,.55), 0 4px 14px rgba(0,0,0,.5); animation: openglow 2.6s ease-in-out infinite }
 body.quiet .sdock { display: grid; position: absolute; transform: translate(-50%, -50%); pointer-events: auto; width: 300px; box-sizing: border-box; gap: 6px;
   padding: 16px 16px 14px; border-radius: 18px; background: linear-gradient(#21160ef2, #120b07f2); border: 2px solid #ffbf5e;

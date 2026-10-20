@@ -47,7 +47,7 @@
     <button class="pill" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
     <button class="pill openp" type="button" data-st="open" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
     <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small>${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></span></button>
-    <div class="spot" id="spot" data-x="3590" data-y="1500" aria-hidden="true"></div>
+    <div class="spot" id="spot" data-x="3590" data-y="1750" aria-hidden="true"></div>
     <aside class="sdock" id="sdock" data-x="3040" data-y="930" aria-label="Suggestion box"></aside>
     <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small>${Store.PRICES.SUGGEST_PAPER} PAPER</small></span></button>
     <button class="pill peek" type="button" data-peek data-x="2880" data-y="700" style="--c: var(--gold)"><span class="peek-fan" aria-hidden="true"><img alt=""><img alt=""></span><span><b id="pPeekT">Series 8</b><small id="pPeek"></small></span></button>
@@ -98,9 +98,10 @@
   function placePills() {
     if (!window.Scene) return;
     const k = Scene.scale, fs = Math.max(12, Math.min(14, 30 * k));
-    document.documentElement.style.setProperty('--fs', fs + 'px');
+    document.documentElement.style.setProperty('--fs', fs + 'px'); document.documentElement.style.setProperty('--sk', k);
     for (const el of document.querySelectorAll('#pills [data-x]')) {
       let [x, y] = Scene.toScreen(+el.dataset.x, +el.dataset.y);
+      if (el.id === 'spot') { el.style.left = x + 'px'; el.style.top = y + 'px'; continue; } // the light sits on the floor, wherever that is
       const half = el.offsetWidth / 2 + 8; x = Math.max(half, Math.min(innerWidth - half, x)); // never off-screen
       el.style.left = x + 'px'; el.style.top = Math.max(TOP + el.offsetHeight / 2 + 6, y) + 'px';
     }
