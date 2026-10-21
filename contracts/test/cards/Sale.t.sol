@@ -918,6 +918,101 @@ contract SaleTest is SeriesHelper {
         vm.stopPrank();
     }
 
+    /// The two waves of a Series, as run: the theme and art style wave, then the characters wave, all in one round
+    /// (rounds only move when a picking session starts); the owner picks everything for the Series at its drop setup.
+    function test_twoWaves_pickedInOneSession() public {
+        string[] memory look = new string[](2);
+        look[0] = "Theme: Haunted diner";
+        look[1] = "Art style: Woodcut";
+        vm.prank(alice, alice);
+        uint256 t = credits.suggestMany(look, 2e18);
+        uint256[] memory ids = new uint256[](5);
+        ids[0] = t;
+        ids[1] = t + 1;
+        for (uint256 i; i < 3; i++) { vm.prank(bob, bob); ids[2 + i] = credits.suggest("Character: x", 1e18); }
+        (,,, uint32 r0) = credits.suggestions(t);
+        (,,, uint32 r4) = credits.suggestions(ids[4]);
+        assertEq(r0, r4, "both waves in one round");
+        vm.prank(owner, owner);
+        credits.pickSuggestions(1, ids);
+        assertEq(credits.credits(alice), 2);
+        assertEq(credits.credits(bob), 3);
+        // the next Series' suggestions go into a new round
+        vm.prank(bob, bob);
+        uint256 next = credits.suggest("Theme: Space diner", 1e18);
+        (,,, uint32 rn) = credits.suggestions(next);
+        assertEq(rn, r0 + 1);
+    }
+
+    /// Picks for one Series can come in several calls, from the round its session took; a suggestion sent after the
+    /// session started belongs to the next Series and can't be picked for this one.
+    function test_twoWaves_laterCallsSameRound() public {
+        uint256[] memory a = new uint256[](3);
+        for (uint256 i; i < 3; i++) { vm.prank(bob, bob); a[i] = credits.suggest("x", 1e18); }
+        uint256[] memory first = new uint256[](2);
+        first[0] = a[0];
+        first[1] = a[1];
+        vm.prank(owner, owner);
+        credits.pickSuggestions(1, first);
+        uint256[] memory second = new uint256[](1);
+        second[0] = a[2];
+        vm.prank(owner, owner);
+        credits.pickSuggestions(1, second); // same round: fine
+        vm.prank(alice, alice);
+        uint256 late = credits.suggest("Character: late", 1e18);
+        second[0] = late;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireCredits.NotThisRound.selector);
+        credits.pickSuggestions(1, second);
+        assertEq(credits.picksOf(1), 3);
+    }
+
+    function test_suggestMany_edges() public {
+        string[] memory three = new string[](3);
+        three[0] = "a";
+        three[1] = "b";
+        bytes memory longest = new bytes(280);
+        for (uint256 i; i < 280; i++) longest[i] = "z";
+        three[2] = string(longest);
+        // the most PAPER is a total: exactly 3 passes, a wei less refuses
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        credits.suggestMany(three, 3e18 - 1);
+        vm.prank(bob, bob);
+        uint256 first = credits.suggestMany(three, 3e18);
+        // ids follow in order, each with its sender and the current round
+        (address by,,, uint32 r) = credits.suggestions(first + 2);
+        assertEq(by, bob);
+        assertEq(r, credits.currentRound());
+        // one byte too long, in the last place, refuses the whole call and takes nothing
+        three[2] = string(abi.encodePacked(longest, "z"));
+        uint256 count = credits.suggestionCount();
+        uint256 bal = paper.balanceOf(bob);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireCredits.BadAmount.selector);
+        credits.suggestMany(three, type(uint256).max);
+        assertEq(credits.suggestionCount(), count);
+        assertEq(paper.balanceOf(bob), bal);
+        // paused: refused
+        three[2] = "c";
+        vm.prank(owner, owner);
+        sale.setPaused(true);
+        vm.prank(bob, bob);
+        vm.expectRevert();
+        credits.suggestMany(three, type(uint256).max);
+    }
+
+    function test_pick_sameIdTwiceRefused() public {
+        vm.prank(bob, bob);
+        uint256 id = credits.suggest("x", 1e18);
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = id;
+        ids[1] = id;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireCredits.AlreadyClaimed.selector);
+        credits.pickSuggestions(1, ids);
+    }
+
     function test_audit_fireNumberFitsIn64Bits() public {
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.BadConfig.selector);
