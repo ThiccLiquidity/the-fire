@@ -1,8 +1,12 @@
 // The Forge's wallet bundle (vite.wallet.config.ts → art/factory/forge/vendor/wallet.js). The Forge is plain static JS,
 // so this exposes the wallet as window.ForgeWallet and fires "forgewallet:ready" on window once it's there.
 //
-// Read-only: it connects, shows the address and the PAPER balance, and switches chain. It never sends a transaction
-// or asks for a signature, and it never opens anything until the user clicks.
+// ForgeWallet is read-only: it connects, shows the address and the PAPER balance, and switches chain. It never sends a
+// transaction or asks for a signature, and it never opens anything until the user clicks.
+//
+// window.ForgeChain is the live site: the card contracts' reads and writes (src/lib/chain). Only a page opened with
+// ?live=testnet or ?live=mainnet (or a build with VITE_LIVE) can load it; otherwise ForgeChain.live is null and the
+// page stays in demo mode with nothing chain-related loaded. Every write goes through the wallet, which asks the user.
 //
 // This entry is tiny. The wallet stack (wagmi, and AppKit when there's a project id) loads on the first click, or
 // right away for someone who was connected last visit, so their connection comes back by itself.
@@ -111,6 +115,33 @@ export type ForgeWalletApi = typeof ForgeWallet;
 declare global { interface Window { ForgeWallet?: ForgeWalletApi } }
 
 window.ForgeWallet = ForgeWallet;
+
+// ---------- live mode
+
+type ChainLib = typeof import("./lib/chain");
+const liveWanted: "testnet" | "mainnet" | null = (() => {
+  const v = new URLSearchParams(location.search).get("live") ?? ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_LIVE ?? "");
+  return v === "testnet" || v === "mainnet" ? v : null;
+})();
+let chainLoading: Promise<ChainLib> | undefined;
+const ForgeChain = {
+  /** The network the page asked for (?live=testnet / mainnet), or null: demo mode. */
+  live: liveWanted,
+  /** The chain layer (reads and writes), loaded on first use; rejects in demo mode or when that network has no card
+   *  contracts yet (mainnet before the deploy). Writes need a connected wallet (ForgeWallet). */
+  lib(): Promise<ChainLib> {
+    if (!liveWanted) return Promise.reject(new Error("The site is in demo mode."));
+    return (chainLoading ??= import("./lib/chain").then((c) => {
+      if (!c.isDeployed(c.NET) || c.NET.name !== liveWanted) throw new Error(`The cards aren't deployed on ${c.NET.label} yet.`);
+      return c;
+    }).catch((e) => { chainLoading = undefined; throw e; }));
+  },
+  /** The connected wallet's address, or null. */
+  me: (): string | null => state().address,
+};
+export type ForgeChainApi = typeof ForgeChain;
+declare global { interface Window { ForgeChain?: ForgeChainApi } }
+window.ForgeChain = ForgeChain;
 addEventListener("focus", () => refreshPaper());
 if (hadSession()) {
   acct = { status: "reconnecting", onRobinhood: false };

@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:wallet": "vite build --config vite.wallet.config.ts",
+    "test:chain": "node scripts/chain-test/run.mjs",
     "lint": "oxlint",
     "gen:errors": "node scripts/gen-abi-errors.mjs",
     "preview": "vite preview"

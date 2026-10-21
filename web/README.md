@@ -66,6 +66,44 @@ To wire it in later:
 The CSP in `vercel.json` already allows Reown/WalletConnect (`api.web3modal.org`, `rpc.walletconnect.org`,
 `pulse.walletconnect.org`, the relay, the Verify and secure frames, `fonts.reown.com`) and Coinbase Wallet.
 
+## Live chain layer (`src/lib/chain`, ready, not wired in)
+
+Reads and writes on the card contracts, for when the Forge goes live. Nothing chain-related loads unless the page
+asks for it:
+
+- `?live=testnet`: Robinhood testnet (46630), `deployments/46630.json`.
+- `?live=mainnet`: Robinhood mainnet (4663), only once `deployments/4663.json` has contracts; before that the page
+  stays a demo.
+- No `live` param (and `VITE_LIVE` unset): the demo. The site in demo mode refuses to load the layer.
+
+`src/lib/net.ts` picks the network; `window.ForgeChain` (`forge-wallet.ts`) hands the layer to the page:
+`ForgeChain.live` is the network asked for, `await ForgeChain.lib()` loads it, `ForgeChain.me()` is the wallet.
+
+Reads (`reads.ts`): the Series (`seriesNumbers`, `series`, `currentSeries`: settings, sale phase, upcoming / live /
+closed, dealing), `quotePacks` (every coin), `quotePress`, `walletInDrop`, `balances`, `packsOf`, `pressesOf`,
+`card` / `cardSerialsOf` / `cardsOf` (Blockscout where there's an explorer, else an event scan), `credits`,
+`suggestionRules` / `suggestions` / `picks`, `opensOf` / `queue` / `requestInfo` (each open: waiting, deliverable,
+ready, dealt, cancelled), `psaPrices` / `quoteProtect` / `gradingsOf` / `gradingIds`, `proofFromSnapshot`.
+
+Writes (`writes.ts`) each simulate first, approve only what's short, send, wait, and fail in plain words (`onStep`
+reports each step): `buyPacks` (PLANK, ETH, USDG; holder-window `access`), `claimPressPacks`, `spendCredits` (FireCredits.useCredits),
+`openPacks`, `deliverAndDeal` (randomness, then `process`), `protect` (case + grade, one batch), `deliverAndFinish`,
+`burnCards`, `suggest` (`suggestMany` when the deploy has it, else one by one), `closeDrop`.
+
+### Test on a local chain
+
+```
+npm run test:chain
+```
+
+Needs Foundry (`anvil`, `forge`) and the contracts built (`cd contracts && forge build`). It starts anvil, deploys
+the testnet stand-ins (DevStack) and the real deploy scripts, the owner accepts ownership, randomness goes to the dev
+drand router (any signature), Series 7 is set up with `ConfigureSeries` (6 paid packs + 1 press pack), then the test
+(`scripts/chain-test/chain.test.ts`) drives the layer: suggestions (theme + style in one transaction) and the owner's
+picks, buying with ETH, PLANK and USDG, a press pack, a free pack, opening, randomness and dealing, reading the
+42 cards, casing and grading, burning, and the plain-English errors. Anvil's public test accounts only.
+`node scripts/chain-test/setup.mjs` sets up the chain alone and leaves it running (port 8547).
+
 ## Cardworks source and the served copy
 
 `public/forge` is generated. Edit the source in `art/factory/forge`, then run:
