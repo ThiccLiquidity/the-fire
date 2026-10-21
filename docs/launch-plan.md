@@ -13,7 +13,7 @@ site address or mainnet without your OK. Work lands on `wip/pending-approval` an
 | Card Studio: library, recipe, deal, build, drawn holo, Filebase upload | The practice Series built and uploaded with the new holo |
 | Demo site: buy, open, case & grade, burn, suggest, live holo | |
 | Live mode: `?live=testnet` runs the site on the contracts (connect, buy, press and free packs, open, case & grade, burn, suggest); walked end to end on a local chain (`npm run test:forge`) | Walking it on the real testnet (step 2) |
-| Suggestion waves (contract + site form + local draw) | The public results page (being built) |
+| Suggestion waves, the public results page and its one-time reveal; `ops/suggestions/publish.mjs` publishes results | Running it for real (the first suggestion week) |
 | Security checklist (`docs/security-checklist.md`) | You working through it |
 
 ## 1. Testnet redeploy (about 30 minutes, needs your Ledger)
