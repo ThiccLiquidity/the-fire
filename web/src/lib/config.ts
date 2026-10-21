@@ -1,7 +1,6 @@
 // Site-wide settings for the live Forge.
 
-import mainnet from "../../../deployments/4663.json";
-import testnet from "../../../deployments/46630.json";
+import { NET } from "./net";
 
 /** Swap fee: 0.5% of what the buyer pays, sent by KyberSwap straight to SWAP_FEE_WALLET in the same transaction. */
 export const SWAP_FEE_BPS = 50;
@@ -15,15 +14,16 @@ export interface Deployment {
   chainId: number;
   startBlock?: number;
   owner?: string;
-  inputs: Partial<Record<"PAPER" | "PLANK" | "USDG" | "WETH" | "MILL" | "ETH_USD_FEED" | "PLANK_WETH_V2_PAIR" | "UNIV2_FACTORY" | "V2_ROUTER", string>>;
+  deployer?: string;
+  inputs: Partial<Record<"PAPER" | "PLANK" | "USDG" | "WETH" | "MILL" | "ETH_USD_FEED" | "PLANK_WETH_V2_PAIR" | "UNIV2_FACTORY" | "V2_ROUTER" | "OWNER" | "REVENUE_WALLET" | "ROYALTY_RECEIVER", string>>;
   contracts: Partial<Record<ContractName, string>>;
 }
 export type ContractName =
   | "PlankUsdTwap" | "OpenDrandRouter" | "PaperUsdTwap" | "FirePacks" | "FireCards" | "CardsRenderer" | "RecipeDealer"
   | "RecipeCompiler" | "PlankBurner" | "FireCredits" | "FireSale" | "PaperBurner" | "FirePsa" | "CardsAdapter" | "PsaAdapter";
 
-/** This build's deployment (VITE_CHAIN=testnet: Robinhood Chain testnet). */
-export const DEPLOYMENT: Deployment = (import.meta.env.VITE_CHAIN === "testnet" ? testnet : mainnet) as Deployment;
+/** The chosen network's deployment (net.ts: ?live=testnet, ?live=mainnet, or a test's local chain). */
+export const DEPLOYMENT: Deployment = NET.deployment;
 
 /** A deployed contract's address, or undefined before the deploy (the site stays in demo mode then). */
 export function contractAddress(name: ContractName): `0x${string}` | undefined {

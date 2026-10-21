@@ -54,3 +54,7 @@ deployments/*.pending
 ops/**/*-holders.json
 contracts/series/*-holders.json
 ops/keeper/.keeper-state.json
+
+# the live chain layer's local test (web/scripts/chain-test)
+web/scripts/chain-test/out/
+web/dist-chaintest/

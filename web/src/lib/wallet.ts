@@ -10,8 +10,8 @@
 // Nothing in this module sends a transaction or asks for a signature: it connects, reads, and switches chain.
 
 import {
-  createPublicClient, defineChain, erc20Abi, formatUnits, http, BaseError, ChainMismatchError, InsufficientFundsError,
-  UserRejectedRequestError, type Address, type PublicClient, type Transport, type WalletClient,
+  createPublicClient, createWalletClient, defineChain, erc20Abi, formatUnits, http, BaseError, ChainMismatchError, InsufficientFundsError,
+  UserRejectedRequestError, type Account, type Address, type PublicClient, type Transport, type WalletClient,
 } from "viem";
 import {
   connect as wagmiConnect, createConfig, disconnect as wagmiDisconnect, getAccount as wagmiGetAccount,
@@ -21,39 +21,40 @@ import { coinbaseWallet } from "@wagmi/connectors";
 // AppKit is loaded only when there's a project id (dynamic import in start())
 import type { AppKit } from "@reown/appkit";
 import type { AppKitNetwork } from "@reown/appkit/networks";
+import { NET } from "./net";
 
 // ---------- chain
 
-/** VITE_CHAIN=testnet: Robinhood Chain testnet (46630), play tokens only. */
-export const TESTNET = import.meta.env.VITE_CHAIN === "testnet";
-export const PUBLIC_RPC = TESTNET ? "https://rpc.testnet.chain.robinhood.com/rpc" : "https://rpc.mainnet.chain.robinhood.com";
-export const EXPLORER = TESTNET ? "https://explorer.testnet.chain.robinhood.com" : "https://robinhoodchain.blockscout.com";
-export const txUrl = (hash: string) => `${EXPLORER}/tx/${hash}`;
+/** The network (net.ts): ?live=testnet is Robinhood Chain testnet (46630), play tokens only. */
+export const TESTNET = NET.testnet;
+export const PUBLIC_RPC = NET.publicRpc;
+export const EXPLORER = NET.explorer;
+export const txUrl = (hash: string) => (EXPLORER ? `${EXPLORER}/tx/${hash}` : "");
 /** What the site reads through (may be a private RPC from VITE_RPC_URL). Never handed to a wallet. */
-export const READ_RPC = import.meta.env.VITE_RPC_URL || PUBLIC_RPC;
+export const READ_RPC = NET.readRpc;
 
 /** What the site reads through (may be a private RPC from VITE_RPC_URL). */
 export const robinhood = defineChain({
-  id: TESTNET ? 46630 : 4663,
-  name: TESTNET ? "Robinhood Chain Testnet" : "Robinhood Chain",
+  id: NET.chainId,
+  name: NET.label,
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: [READ_RPC] } },
-  blockExplorers: { default: { name: "Blockscout", url: EXPLORER } },
+  ...(EXPLORER ? { blockExplorers: { default: { name: "Blockscout", url: EXPLORER } } } : {}),
   testnet: TESTNET,
 });
 /** What we ever hand to a user's wallet (wallet_addEthereumChain): only the public RPC, never a private URL. */
 export const robinhoodPublic = defineChain({ ...robinhood, rpcUrls: { default: { http: [PUBLIC_RPC] } } });
 
-/** The site's tokens (18 decimals). */
-export const PAPER: Address = "0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6";
-export const PLANK: Address = "0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc";
+/** The site's tokens (18 decimals): this network's (the testnet has its own play tokens). */
+export const PAPER: Address = (NET.deployment.inputs.PAPER ?? "0x06420168Ed7e368dd8dcB30C79CdD0D8F4ccb3e6") as Address;
+export const PLANK: Address = (NET.deployment.inputs.PLANK ?? "0x69420eaf0eBF43E08F621B014f25cEfDfA7e2DDc") as Address;
 
 // ---------- connection
 
 /** Public (not a secret): identifies the site to Reown/WalletConnect. Without it there is no WalletConnect and no
  *  AppKit modal: initWallet() falls back to plain wagmi with the installed (EIP-6963) wallets and Coinbase Wallet,
  *  and the page draws its own short wallet list from listWallets(). */
-export const REOWN_PROJECT_ID = import.meta.env.VITE_REOWN_PROJECT_ID?.trim() || "";
+export const REOWN_PROJECT_ID = ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_REOWN_PROJECT_ID ?? "").trim();
 /** The live site (what wallets show as the requesting site there). */
 export const SITE_URL = "https://web-mu-mocha-95.vercel.app";
 
@@ -218,8 +219,19 @@ function toAccount(a: ReturnType<typeof wagmiGetAccount>): WalletAccount {
   return { status: "connected", address: a.address, chainId: a.chainId, onRobinhood: a.chainId === robinhood.id, walletName: a.connector.name };
 }
 
+// ---------- tests on a local chain: a signer in place of a browser wallet
+
+let localSigner: Account | undefined;
+/** A local test chain only (net.ts NET.name "local", set by a test): sign with this account instead of a wallet.
+ *  Refused on any real network. */
+export function setLocalSigner(account: Account | undefined): void {
+  if (NET.name !== "local") throw new Error("A local signer is only for a local test chain.");
+  localSigner = account;
+}
+
 /** The connection now ("disconnected" until initWallet() has finished). */
 export function getAccount(): WalletAccount {
+  if (localSigner) return { status: "connected", address: localSigner.address, chainId: robinhood.id, onRobinhood: true, walletName: "Local test account" };
   return kit ? toAccount(wagmiGetAccount(kit.config)) : { status: "disconnected", onRobinhood: false };
 }
 
@@ -257,6 +269,7 @@ export function getPublicClient(): PublicClient {
 
 /** The connected wallet, on Robinhood Chain (for the live contract calls later). Throws if not connected. */
 export async function getWalletClient(): Promise<WalletClient> {
+  if (localSigner) return createWalletClient({ account: localSigner, chain: robinhood, transport: http(READ_RPC) });
   return (await wagmiGetWalletClient((await ready()).config, { chainId: robinhood.id })) as WalletClient;
 }
 
