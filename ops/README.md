@@ -72,3 +72,26 @@ tests it end to end on anvil (CI runs it).
 
 The whole launch on a local anvil chain (or a Robinhood Chain fork with `--fork <RPC>`): `docs/deploy.md`,
 "Rehearsal". `npm test` here runs VerifySeries' and record's unit tests; the keeper's are in `keeper/`.
+
+## Suggestions (`suggestions/`)
+
+Each Series' theme, art style and characters come from the public, in two waves (`docs/cards-contracts.md`, "Two waves
+per Series"). The owner's steps for one Series:
+
+1. **Look wave closes.** `node suggestions/draw.mjs --rpc <url> --kind look --series <n>`: the 10 drawn per kind, with
+   the seed (saved to `draw-round-<r>-look.json`). Choose the theme and the art style from those 10.
+2. **Announce them** (nothing on chain yet): `node suggestions/publish.mjs --draw draw-round-<r>-look.json --series <n>
+   --picks <theme id>,<style id> --next "The characters wave is open"`, then `web/art/factory/sync_forge.sh` and deploy.
+   The site shows the results and opens the characters wave for that theme and style.
+3. **Characters wave closes.** `node suggestions/draw.mjs --rpc <url> --kind character --series <n>`, choose the
+   characters, publish them the same way (`--draw draw-round-<r>-character.json --picks <ids>`).
+4. **At the drop setup, pick once on chain:** `FireCredits.pickSuggestions(<n>, [theme, style, character ids])` from
+   the owner wallet (a configured drop that hasn't started). This gives the free packs. Then
+   `node suggestions/publish.mjs --draw draw-round-<r>-character.json --series <n> --rpc <url>` fills in the pick
+   transaction on the site.
+5. **Only now open the next Series' look wave.** Suggestions sent before step 4 land in the round that pick takes and
+   can never be picked; `draw.mjs --series` warns about it.
+
+The draw is seeded: anyone can run `draw.mjs` with the published seed and round and get the same 10. Exactly one theme
+and one art style can win a pack (`EXTRA_PICKS` = 2), and for an idea several wallets sent, the first to suggest it
+wins. Tests: `npm test` (includes `suggestions/*.test.mjs`).

@@ -167,7 +167,7 @@
         </ul>
         <p class="inf-sub">Free packs</p>
         <ul>
-          <li>Earn one by burning 42 cards, or when your character suggestion is picked.</li>
+          <li>Earn one by burning 42 cards, or when your suggestion is picked.</li>
           <li>Use them any time a Series is on sale. Holder windows and wallet limits don't apply. They still take PAPER.</li>
           <li>They stack and never expire. A Series can cap how many it takes; the rest wait for the next one.</li>
         </ul>`),
@@ -217,11 +217,12 @@
           <li>Every 42 cards you burn earns a free pack. Burned cards are gone for good.</li>
           <li>Your count never resets, and extras carry over: burn 50, get a free pack and 8 toward the next.</li>
         </ul>`),
-      sec('suggest', 'Suggesting characters', 'Pitch a character. If it’s picked, you get a free pack.', `
+      sec('suggest', 'Suggesting', 'Pitch a theme, an art style or a character. If it’s picked, you get a free pack.', `
         <ul>
-          <li>Anything goes. A suggestion costs a little PAPER, burned.</li>
-          <li>Before each Series, we pick from the list. Picked ones earn a free pack.</li>
-          <li>The list clears after every pick. Not picked? Suggest it again.</li>
+          <li>Each Series has two waves: first its theme and art style, then its characters. 1 PAPER each, burned.</li>
+          <li>When a wave closes, 10 ideas per kind are drawn at random (one per wallet), and the picks are made from those 10. The results go up for everyone to see, with the seed to check the draw.</li>
+          <li>One theme, one art style and every picked character win a free pack. If several people sent the same idea, the first to suggest it wins.</li>
+          <li>The packs land in winners’ wallets when the Series is set up for sale. Not picked? Suggest it again next time.</li>
         </ul>`),
       sec('paper', 'PLANK & PAPER', 'The forge burns both.', `
         <ul>

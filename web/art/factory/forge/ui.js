@@ -204,6 +204,7 @@
     const W = Store.SUGGEST_WAVE, next = S.series.no + 1, look = W.wave === 'look', w = S.wallet;
     const mine = S.suggestions.filter((x) => x.at === 'Series ' + S.series.no).length;
     const need = Store.PRICES.SUGGEST_PAPER, short = w.connected && w.balances.PAPER < need;
+    const last = Store.SUGGEST_RESULTS[Store.SUGGEST_RESULTS.length - 1], won = w.connected && last && Store.resultFor(last, w.full) === 'won';
     const cta = !w.connected ? '<button class="opt main" type="button" data-q="connect"><span>Connect wallet</span></button>'
       : short ? '<button class="opt main" type="button" data-q="paper"><span>Buy PAPER</span></button>'
       : `<button class="opt main" type="button" data-q="suggest"><span>${look ? 'Suggest a theme &amp; style' : 'Suggest a character'}</span></button>`;
@@ -215,7 +216,8 @@
       <p class="sd-meta"><span>Closes in <b>${left(W.closes)}</b></span><span><b>${W.count.toLocaleString('en-US')}</b> ideas in the box</span></p>
       ${w.connected ? `<p class="sd-bal">You have <b>${fmt(w.balances.PAPER)} PAPER</b>${short ? ' · not enough' : ''}</p>` : ''}
       <div class="opts">${cta}</div>
-      ${mine && w.connected ? `<p class="sd-mine">You've sent ${mine} · results when Series ${next} is announced</p>` : ''}`;
+      ${mine && w.connected ? `<p class="sd-mine">You've sent ${mine} · results when Series ${next} is announced</p>` : ''}
+      ${won ? '<p class="sd-won">You won a free pack!</p>' : ''}${Store.SUGGEST_RESULTS.length ? '<button class="sd-res" type="button" data-q="results">See the last results</button>' : ''}`;
   }
   let dockKey = '';
   function renderQuiet() {
@@ -239,6 +241,7 @@
       if (k === 'suggest') openStation('suggest');
       if (k === 'paper') openGetPaper();
       if (k === 'connect') needWallet(() => render());
+      if (k === 'results') openStation('results');
     };
   }
   setInterval(() => { if (sold()) { dockKey = ''; renderQuiet(); } }, 60000); // the countdown
@@ -469,6 +472,7 @@
     const d = Sheet.open('demo', { title: 'Demo controls', body: `<p class="lead">Jump the demo to any stage of a sale.</p><div class="menu">
       <button class="btn" type="button" data-d="phase">Next phase</button><button class="btn" type="button" data-d="sold">Sold-out show</button>
       <button class="btn" type="button" data-d="between">Between Series</button>
+      <button class="btn" type="button" data-d="res-won">Results: you won</button><button class="btn" type="button" data-d="res-lost">Results: not picked</button><button class="btn" type="button" data-d="res-none">No results yet</button>
       <button class="btn" type="button" data-d="auto">${auto ? 'Stop' : 'Start'} crowd</button><button class="btn" type="button" data-d="credit">+1 free pack</button><button class="btn" type="button" data-d="announce">Series tease</button>
       <button class="btn" type="button" data-d="holder">Holder: ${S.wallet.isPressHolder || S.wallet.inSnapshot ? 'On' : 'Off'}</button><button class="btn" type="button" data-d="bot">${S.wallet.isContract ? 'Regular wallet' : 'Contract wallet'}</button>
       <button class="btn" type="button" data-d="reset">Reset</button></div>` });
@@ -483,6 +487,10 @@
       if (k === 'holder') Store.update((s) => { const v = !(s.wallet.isPressHolder || s.wallet.inSnapshot); s.wallet.isPressHolder = v; s.wallet.inSnapshot = v; });
       if (k === 'bot') Store.update((s) => { s.wallet.isContract = !s.wallet.isContract; });
       if (k === 'reset') location.reload();
+      if (k.startsWith('res-')) { // reload into that state (the results reveal shows again)
+        try { localStorage.removeItem('omni.resultsSeen'); } catch { /* private window */ }
+        const q = new URLSearchParams(location.search); q.set('results', k.slice(4)); if (sold()) q.set('between', ''); location.search = q.toString();
+      }
     });
   }
   // sound is on by default (it starts on the first tap anywhere); the speaker turns it off, remembered per visitor

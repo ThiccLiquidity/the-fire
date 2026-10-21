@@ -668,3 +668,67 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .bigm.fh-fullart { --bmc: rgba(255,230,160,.5) } .bigm.fh-fullart .bm-t { color: #fff; text-shadow: 0 0 18px #ff8ae0, 0 0 26px #8ad8ff, 0 3px 0 #1a1410 }
 .sc.m-gold.rare, .sc.m-fullart.rare { animation: rare-pulse 1.8s ease-in-out infinite alternate }
 .ann-line { margin: 0; font: italic 800 18px var(--body); letter-spacing: .06em; color: var(--gold); text-shadow: 0 0 14px rgba(255,170,70,.5) }
+
+/* ---------- suggestion results: the winners, the 10 drawn per kind, how to check the draw; the one-time reveal */
+.st-results { display: grid; gap: 14px }
+.rs-you { border: 1px solid var(--line-2); border-radius: 14px; background: var(--panel-2); padding: 12px 14px; display: grid; gap: 6px }
+.rs-you p { margin: 0 }
+.rs-you-k { font: 400 18px/1.2 var(--display); letter-spacing: .03em; color: var(--brass) }
+.rs-you.won { border-color: var(--gold); background: linear-gradient(135deg, #2b1f0d, #1f1710 60%); box-shadow: 0 0 0 3px rgba(255,210,122,.14), 0 0 26px rgba(255,190,90,.18) }
+.rs-you.won .rs-you-k { color: var(--gold) }
+.rs-you.near .rs-you-k { color: var(--ink) }
+.rs-you .btn { justify-self: start }
+.rs-wave { display: grid; gap: 10px; padding-top: 4px }
+.rs-wave + .rs-wave { border-top: 1px solid var(--line); padding-top: 14px }
+.rs-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap }
+.rs-head h3 { margin: 0; font: 400 17px var(--display); letter-spacing: .03em; color: var(--ink) }
+.rs-head .muted { font-size: 13px }
+.rs-wins { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px }
+.rs-win { display: grid; gap: 4px; padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--brass); text-align: left;
+  background: radial-gradient(120% 140% at 0% 0%, rgba(255,210,122,.16), transparent 60%), var(--panel-2) }
+.rs-win.mine { border-color: var(--gold); box-shadow: 0 0 22px rgba(255,200,110,.25) }
+.rs-win-k { font: 800 11px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--brass) }
+.rs-win-t { font: 400 21px/1.15 var(--display); color: #fff3df; text-wrap: balance; overflow-wrap: anywhere }
+.rs-win-by { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
+.rs-win-by b { color: var(--ink); font-variant-numeric: tabular-nums }
+.rs-me { font: 800 11px/1 var(--body); color: #1b0f06; background: var(--gold); padding: 4px 7px; border-radius: 999px }
+.rs-next { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; background: rgba(111,207,122,.08); border: 1px solid rgba(111,207,122,.35) }
+.rs-next p { margin: 0; color: #cfe9d2 }
+.rs-list, .rs-fair { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2) }
+.rs-list summary, .rs-fair summary { cursor: pointer; padding: 10px 12px; font-weight: 800; color: var(--ink) }
+.rs-list summary small { color: var(--muted); font-weight: 600 }
+.rs-list summary:focus-visible, .rs-fair summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 10px }
+.rs-list ol { margin: 0; padding: 0 12px 10px 36px; display: grid; gap: 4px }
+.rs-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 9px }
+.rs-list li::marker { color: var(--dim); font-variant-numeric: tabular-nums }
+.rs-list li.picked { background: rgba(255,210,122,.1) }
+.rs-list li.picked .rs-t { color: var(--gold); font-weight: 800 }
+.rs-list li.mine:not(.picked) { background: rgba(255,255,255,.04) }
+.rs-t { overflow-wrap: anywhere }
+.rs-by { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap }
+.rs-by small { color: var(--dim) }
+.rs-fair p { margin: 0 12px 8px; font-size: 14px; color: var(--muted) }
+.rs-fair .muted b { color: var(--ink); overflow-wrap: anywhere }
+.rs-fair a { color: var(--gold) }
+.rs-cmd { display: block; margin: 0 12px 8px; padding: 8px 10px; border-radius: 8px; background: #0d0906; border: 1px solid var(--line); font: 600 12.5px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #f6e8cf; overflow-x: auto; white-space: pre }
+.rs-fair .btn { margin: 0 12px 12px }
+.btn.rs-link { padding: 6px 12px; font-size: 14px }
+.st-results > .btn { justify-self: start }
+/* the reveal: the kicker, the big line, then the winners turn over one at a time */
+.rs-reveal { display: grid; gap: 12px; text-align: center }
+.rs-kick { margin: 0; font: 800 12px/1 var(--body); letter-spacing: .16em; text-transform: uppercase; color: var(--brass) }
+.rs-reveal .rs-big { margin: 0; font: 400 28px/1.15 var(--display); color: var(--gold); text-wrap: balance }
+.rs-reveal .rs-wins { text-align: left }
+.rs-reveal .rs-win { animation: rs-turn .7s cubic-bezier(.2,.8,.25,1) both; animation-delay: calc(.5s + var(--i) * .45s) }
+.rs-reveal .rs-big { animation: rs-up .6s ease-out both .1s }
+.rs-you-host:empty { display: none }
+.rs-reveal .rs-you { text-align: left; animation: rs-up .5s ease-out both; animation-delay: 1.5s }
+.rs-act { justify-content: center; gap: 10px }
+@keyframes rs-turn { from { opacity: 0; transform: perspective(600px) rotateX(70deg) translateY(10px) } to { opacity: 1; transform: none } }
+@keyframes rs-up { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+@media (prefers-reduced-motion: reduce) { .rs-reveal .rs-win, .rs-reveal .rs-big, .rs-reveal .rs-you { animation: none } }
+@media (max-width: 600px) {
+  .rs-list ol { padding-left: 30px }
+  .rs-list li { grid-template-columns: minmax(0, 1fr) auto; } .rs-list li .rs-by { grid-row: 2; white-space: normal }
+  .rs-reveal .rs-big { font-size: 23px }
+}

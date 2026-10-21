@@ -1242,7 +1242,8 @@
     const act = h('div', { class: 'sg-act' }); const listEl = h('div', { class: 'sg-list' });
     const notes = h('div', { class: 'sg-notes' },
       h('p', { class: 'sg-joke', text: 'Jokes burn PAPER too. Only real ideas get picked.' }),
-      h('p', { class: 'reward', text: 'If yours gets picked, you get a free pack.' }));
+      h('p', { class: 'reward', text: 'If yours gets picked, you get a free pack.' }),
+      Store.SUGGEST_RESULTS.length ? h('p', {}, btn('See the last results', 'rs-link', () => { Sheet.close('suggest'); openResults(); })) : null);
     const stage = h('div', { class: 'sg-stage' }, paperEl, doneEl);
     const formBits = [notes, act];
 
@@ -1308,6 +1309,8 @@
       const ok = () => { approving = false; renderAct(); act.querySelector('.btn.primary:not([disabled])')?.focus({ preventScroll: true }); };
       if (window.UI?.approveNow) window.UI.approveNow('PAPER', COST, ok); else { Store.update(() => Store.approve('PAPER', COST)); ok(); }
     }
+    // this round's wave already has published results: its ideas that weren't picked are done
+    const decided = (kind) => Store.SUGGEST_RESULTS.some((w) => w.series === S().series.no + 1 && (w.wave === 'characters') === (kind === 'character'));
     function renderList() {
       const list = S().suggestions;
       patch(listEl, JSON.stringify([list, S().series.no]), () => put(listEl, h('h3', { text: 'Your ideas' }), list.length ? h('ul', {}, list.map((sg) => {
@@ -1320,7 +1323,7 @@
         return h('li', {},
           h('div', { class: 'sg-main' }, h('span', { class: 'sg-t', text: p.kind === 'character' ? p.character || sg.text : (p.kind === 'theme' ? 'Theme: ' : 'Art style: ') + p.value }), det),
           h('span', { class: 'muted', text: sg.at }),
-          h('span', { class: 'sgp ' + (sg.picked ? 'yes' : 'wait'), text: sg.picked ? 'Picked' : sg.at === 'Series ' + S().series.no ? 'Waiting' : 'Not picked' })); // past rounds: not picked
+          h('span', { class: 'sgp ' + (sg.picked ? 'yes' : 'wait'), text: sg.picked ? 'Picked' : sg.at === 'Series ' + S().series.no && !decided(p.kind) ? 'Waiting' : 'Not picked' })); // past rounds and decided waves: not picked
       })) : h('p', { class: 'muted', text: 'Nothing yet.' })));
     }
     async function send() {
@@ -1411,6 +1414,115 @@
     render(); fields.forEach((f) => f.sync()); setTimeout(() => fields[0].ta.focus(), 50);
     document.fonts?.ready.then(() => fields.forEach((f) => f.grow())); // the handwriting font changes the line breaks
   }
+
+  // =====================================================================================
+  // 5. Suggestion results
+  // =====================================================================================
+  // Every wave the owner published (Store.SUGGEST_RESULTS, from ops/suggestions/publish.mjs): the winners, the 10 drawn
+  // at random per kind, how anyone can check the draw, and what's next. A winner's wallet sees "You won a free pack"
+  // (FireCredits.pickSuggestions already put it in their wallet). New results get a one-time reveal (resultsReveal).
+  const shortAddr = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
+  const me = () => (connected() ? S().wallet.full || '' : '');
+  const isMe = (a) => !!me() && String(a).toLowerCase() === me().toLowerCase();
+  const mineIn = (x) => isMe(x.by) || (x.alsoBy || []).some(isMe);
+  const waveTitle = (w) => `Series ${w.series} · ${w.wave === 'look' ? 'Theme & art style' : 'Characters'}`;
+  const waveKey = (w) => `${w.series}-${w.wave}`;
+  const day = (t) => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const KIND_WORD = { theme: 'theme', style: 'art style', character: 'character' };
+  const KIND_LABEL = { theme: 'Theme', style: 'Art style', character: 'Character' };
+  const drawCmd = (w) => `node suggestions/draw.mjs --round ${w.round} --seed ${w.seed} --kind ${w.wave === 'look' ? 'look' : 'character'}`;
+  function youBanner(w, compact = false) {
+    if (!connected()) return h('div', { class: 'rs-you' }, h('p', { text: 'Sent an idea? Connect your wallet to see how it did.' }), compact ? null : connectBtn());
+    const r = Store.resultFor(w, me());
+    if (r === 'won') {
+      // the picks are made on chain once per Series, at its drop setup: until then the pack is on its way
+      const win = w.winners.find((x) => isMe(x.by)) || w.winners[0], open = S().series.phase < 4, n = S().wallet.credits, landed = !!win.tx;
+      return h('div', { class: 'rs-you won' },
+        h('p', { class: 'rs-you-k', text: 'You won a free pack!' }),
+        h('p', { text: `Your ${KIND_WORD[win.kind] || 'idea'}, "${win.title}", was picked for Series ${w.series}. ` + (landed
+          ? `The free pack is already in your wallet${n ? ` (${n} free pack${n === 1 ? '' : 's'})` : ''}.`
+          : `The free pack lands in your wallet when Series ${w.series} is set up for sale.`) }),
+        compact || !landed ? null : open
+          ? btn('Use my free pack', 'primary', () => { Sheet.close('results'); Sheet.close('reveal'); const b = document.querySelector('#buybox [data-buy], #buybar [data-buy]'); b?.focus({ preventScroll: true }); b?.classList.add('nudge'); })
+          : h('p', { class: 'muted', text: `Use it on any pack when Series ${S().series.no + 1} opens.` }));
+    }
+    if (r === 'shortlisted') {
+      const mine = w.kinds.flatMap((k) => k.shortlist).find(mineIn);
+      return h('div', { class: 'rs-you near' }, h('p', { class: 'rs-you-k', text: 'Yours made the shortlist' }),
+        h('p', { text: `"${mine?.title}" was one of the 10 drawn, but it wasn't picked this time. Thanks for sending it.` }));
+    }
+    const sent = S().suggestions.some((x) => x.at === 'Series ' + S().series.no && (Store.parseSuggestion(x.text).kind === 'character') === (w.wave === 'characters'));
+    return sent ? h('div', { class: 'rs-you' }, h('p', { text: "Yours wasn't drawn this time. Every idea had the same chance. Send another in the next wave." })) : null;
+  }
+  function winnerCard(x, i) {
+    return h('div', { class: 'rs-win' + (isMe(x.by) ? ' mine' : ''), style: `--i:${i}` },
+      h('span', { class: 'rs-win-k', text: KIND_LABEL[x.kind] || x.kind }),
+      h('span', { class: 'rs-win-t', text: x.title }),
+      h('span', { class: 'rs-win-by' }, 'Suggested by ', h('b', { text: shortAddr(x.by) }), isMe(x.by) ? h('span', { class: 'rs-me', text: 'You' }) : null));
+  }
+  function waveSection(w, wi) {
+    const nextBtn = wi === 0 && w.wave === 'look' && Store.SUGGEST_WAVE.wave === 'characters'
+      ? btn('Suggest a character', 'primary', () => { Sheet.close('results'); openSuggest(); }) : null;
+    return h('section', { class: 'rs-wave' },
+      h('div', { class: 'rs-head' }, h('h3', { text: waveTitle(w) }), h('span', { class: 'muted', text: `Picked ${day(w.publishedAt)}` })),
+      h('div', { class: 'rs-wins' }, w.winners.map(winnerCard)),
+      w.next || nextBtn ? h('div', { class: 'rs-next' }, w.next ? h('p', { text: w.next }) : null, nextBtn) : null,
+      w.kinds.map((k) => h('details', { class: 'rs-list', open: wi === 0 && w.kinds.length < 3 ? true : null },
+        h('summary', {}, `The 10 ${k.kind === 'character' ? 'characters' : k.label.toLowerCase() + 's'} drawn`, k.pool ? h('small', { text: ` from ${Number(k.pool).toLocaleString('en-US')} ideas` }) : null),
+        h('ol', {}, k.shortlist.map((x) => h('li', { class: (x.picked ? 'picked' : '') + (mineIn(x) ? ' mine' : '') },
+          h('span', { class: 'rs-t', text: x.title }),
+          h('span', { class: 'rs-by', title: x.alsoBy?.length ? 'Sent first by this wallet: the first to suggest it wins the pack' : null }, shortAddr(x.by), x.alsoBy?.length ? h('small', { text: ` +${x.alsoBy.length} had it too` }) : null),
+          x.picked ? h('span', { class: 'sgp yes', text: 'Picked' }) : mineIn(x) ? h('span', { class: 'sgp wait', text: 'Yours' }) : h('span')))))),
+      h('details', { class: 'rs-fair' }, h('summary', { text: 'How the 10 were drawn' }),
+        h('p', { text: 'Every idea in the box went into a random draw: one per wallet for each kind, and the same idea from several wallets counted once. The picks were made from the 10 drawn. When several people sent the same idea, the first to suggest it wins the pack.' }),
+        h('p', { text: 'The draw is seeded, so anyone can run it again and get the same 10:' }),
+        h('code', { class: 'rs-cmd', text: drawCmd(w) }),
+        h('p', { class: 'muted' }, 'Seed ', h('b', { text: w.seed }), w.suggestions ? ` · ${Number(w.suggestions).toLocaleString('en-US')} ideas sent · ` : ' · ',
+          h('a', { href: 'https://github.com/ThiccLiquidity/the-fire/blob/main/ops/suggestions/draw.mjs', target: '_blank', rel: 'noopener', text: 'the draw script' })),
+        btn('Copy the command', '', (e) => { e.currentTarget.blur(); navigator.clipboard?.writeText(drawCmd(w)).then(() => toast('Copied'), () => toast("Couldn't copy: select the line instead", 'bad')); })));
+  }
+  function openResults() {
+    const root = h('div', { class: 'st st-results' });
+    const render = () => {
+      const waves = Store.SUGGEST_RESULTS.slice().reverse();
+      patch(root, JSON.stringify([waves.map(waveKey), connected(), S().wallet.credits, S().series.phase, Store.SUGGEST_WAVE.wave]), () => {
+        if (!waves.length) return put(root, h('p', { class: 'slead', text: 'No results yet.' }),
+          h('p', { class: 'muted', text: `The ideas for Series ${S().series.no + 1} are still coming in. The results go up here once the picks are made.` }),
+          btn('Suggest an idea', 'primary', () => { Sheet.close('results'); openSuggest(); }));
+        put(root, youBanner(waves[0]), waves.map(waveSection));
+      });
+    };
+    listen('results', render);
+    Sheet.open('results', { title: 'Suggestion results', body: root, wide: true, onClose: () => unlisten('results') });
+    render(); markSeen();
+  }
+  // the reveal: new results, once per visitor (localStorage), when nothing else is open
+  const SEEN_RESULTS = 'omni.resultsSeen';
+  const latest = () => Store.SUGGEST_RESULTS[Store.SUGGEST_RESULTS.length - 1];
+  const seenKey = () => { try { return localStorage.getItem(SEEN_RESULTS) || ''; } catch { return null; } };
+  function markSeen() { const w = latest(); if (w) try { localStorage.setItem(SEEN_RESULTS, waveKey(w)); } catch { /* private window */ } }
+  let revealed = false, revealTimer = 0;
+  function resultsReveal() {
+    revealTimer = 0;
+    const w = latest(); if (!w || revealed) return;
+    const k = seenKey(); if (k === null || k === waveKey(w)) return; // storage blocked: don't show it on every visit
+    if (Sheet.covering || !document.getElementById('loading')?.classList.contains('done')) { revealTimer = setTimeout(resultsReveal, 1500); return; }
+    revealed = true; markSeen();
+    const you = h('div', { class: 'rs-you-host' });
+    const body = h('div', { class: 'st rs-reveal' + (reduced() ? ' still' : '') },
+      h('p', { class: 'rs-kick', text: 'The results are in' }),
+      h('h3', { class: 'rs-big', text: w.wave === 'look' ? `Series ${w.series} will be…` : `On the cards in Series ${w.series}…` }),
+      h('div', { class: 'rs-wins' }, w.winners.slice(0, 6).map(winnerCard)),
+      you,
+      h('div', { class: 'row rs-act' }, btn('See all results', 'primary', () => { Sheet.close('reveal'); openResults(); }), btn('Close', '', () => Sheet.close('reveal'))));
+    // the personal line follows the wallet (connect while it's open and it updates)
+    const renderYou = () => patch(you, JSON.stringify([connected(), S().wallet.credits]), () => put(you, youBanner(w, true)));
+    listen('reveal', renderYou); renderYou();
+    Sheet.open('reveal', { title: 'Suggestion results', body, onClose: () => unlisten('reveal') });
+  }
+  const queueReveal = () => { if (!revealed && !revealTimer && latest()) revealTimer = setTimeout(resultsReveal, 1200); };
+  Store.on(queueReveal); setTimeout(queueReveal, 1000);
+
   // the suggestion box: a little wooden box with a slot in the lid
   const BOX_SVG = '<svg viewBox="0 0 120 94" aria-hidden="true"><path d="M8 22 L20 6 H100 L112 22 Z" fill="#8a5a2b" stroke="#3a2412" stroke-width="2.5" stroke-linejoin="round"/>'
     + '<rect x="34" y="11" width="52" height="6" rx="3" fill="#1a0f07"/>'
@@ -1418,7 +1530,7 @@
     + '<path d="M8 44 H112 M8 66 H112" stroke="#8a5a2b" stroke-width="2"/><rect x="44" y="40" width="32" height="14" rx="3" fill="#f0ece5" stroke="#3a2412" stroke-width="2"/>'
     + '<path d="M48 45 H72 M48 49 H66" stroke="#8a7b62" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
-  const OPEN = { cards: openTable, open: (o) => openTable({ ...o, view: 'open' }), table: openTable, grade: openGrade, burn: openBurn, suggest: openSuggest };
+  const OPEN = { cards: openTable, open: (o) => openTable({ ...o, view: 'open' }), table: openTable, grade: openGrade, burn: openBurn, suggest: openSuggest, results: openResults };
   window.Stations = {
     openable, openableCount,
     open(name, opts) { (OPEN[name] || (() => toast('Unknown station', 'bad')))(opts); },
