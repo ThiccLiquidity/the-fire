@@ -40,7 +40,7 @@ a.btn { text-decoration: none }
 /* the live holo (holo.js): a canvas over the card image, drawn at the mouse or finger's tilt; fades in once its parts load */
 .cface .cholo { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; opacity: 0; transition: opacity .3s }
 .cface.live.ready .cholo { opacity: 1 }
-.cface.live { touch-action: pan-y }
+.cface.live { touch-action: pan-y; transition: transform .15s ease-out }
 @keyframes holo-pan { to { background-position: 300% 300% } }
 
 /* ---------- tiles (collection + pickers) */

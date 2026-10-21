@@ -100,36 +100,51 @@
   const imgCache = new Map();
   const loadImg = (src) => { if (!imgCache.has(src)) imgCache.set(src, new Promise((ok, no) => { const i = new Image(); i.decoding = 'async'; i.onload = () => ok(i); i.onerror = no; i.src = src; })); return imgCache.get(src); };
   const live = new Set();
+  // sway: the card drifts on its own when nobody is touching it (the big card, the pack reveal); otherwise it holds the
+  // saved image's angle and moves only while the mouse or a finger is on it (grids and lists)
+  const moving = (L, t) => L.active && t - L.last < 2500;
   function draw(el, t) {
     const L = el._holo; if (!L || !L.plain) return;
     const box = el.getBoundingClientRect(); if (!box.width) return;
     const dpr = Math.min(2, devicePixelRatio || 1), W = Math.min(900, Math.round(box.width * dpr)), H = Math.round(W * 1008 / 720);
     if (L.canvas.width !== W || L.canvas.height !== H) { L.canvas.width = W; L.canvas.height = H; }
     let tl = STILL;
-    if (!still.matches) {
-      if (L.active && t - L.last < 2500) tl = L.tilt;
-      else { const a = t / 2400 + L.phase; tl = { tx: Math.sin(a) * 0.64, ty: Math.cos(a * 0.8) * 0.48, o: 0.55 }; }
-    }
+    if (moving(L, t)) tl = L.tilt;
+    else if (L.sway && !still.matches) { const a = t / 2400 + L.phase; tl = { tx: Math.sin(a) * 0.64, ty: Math.cos(a * 0.8) * 0.48, o: 0.55 }; }
+    // the card itself tips toward the light a little while it's being moved
+    el.style.transform = moving(L, t) && !still.matches ? `perspective(800px) rotateY(${(tl.tx * 10).toFixed(2)}deg) rotateX(${(-tl.ty * 10).toFixed(2)}deg)` : '';
     render(L.canvas.getContext('2d'), L.plain, L.print, L.material, L.look, tl);
+    L.drawnStill = tl === STILL;
   }
   let raf = 0;
-  function loop(t) { raf = 0; for (const el of live) { if (!el.isConnected) { live.delete(el); continue; } if (el._holo.visible) draw(el, t); } if (live.size && !still.matches) raf = requestAnimationFrame(loop); }
+  function loop(t) {
+    raf = 0; let again = false;
+    for (const el of live) {
+      if (!el.isConnected) { live.delete(el); continue; }
+      const L = el._holo; if (!L.visible) continue;
+      const busy = moving(L, t) || (L.sway && !still.matches);
+      if (busy || !L.drawnStill) draw(el, t);
+      if (busy) again = true;
+    }
+    if (again) raf = requestAnimationFrame(loop);
+  }
   const kick = () => { if (!raf && live.size) raf = requestAnimationFrame(loop); };
   const io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => { for (const e of es) if (e.target._holo) e.target._holo.visible = e.isIntersecting; kick(); }) : null;
-  /** Make a card face live: a raw holo card (or Gold / Full Art) with its parts on hand. Does nothing otherwise. */
-  function attach(face, c) {
+  /** Make a card face live: a raw holo card (or Gold / Full Art) with its parts on hand; sway: drift when untouched.
+   *  Does nothing for any other card. */
+  function attach(face, c, sway = false) {
     if (!PARTS) return;
     const parts = PARTS(c); if (!parts) return;
     const canvas = document.createElement('canvas'); canvas.className = 'cholo'; canvas.setAttribute('aria-hidden', 'true');
     face.append(canvas); face.classList.add('live');
-    const L = face._holo = { canvas, material: c.material, look: parts.look, plain: null, print: null, tilt: STILL, active: false, last: -1e9, visible: true, phase: Math.random() * 6 };
+    const L = face._holo = { canvas, material: c.material, look: parts.look, sway, plain: null, print: null, tilt: STILL, active: false, last: -1e9, visible: true, drawnStill: false, phase: Math.random() * 6 };
     Promise.all([loadImg(parts.plain), loadImg(parts.print)]).then(([p, q]) => { L.plain = p; L.print = q; face.classList.add('ready'); live.add(face); if (io) io.observe(face); draw(face, performance.now()); kick(); })
       .catch(() => { canvas.remove(); face.classList.remove('live'); });
     const point = (e) => { const b = face.getBoundingClientRect(); L.active = true; L.last = performance.now();
       L.tilt = { tx: Math.max(-1, Math.min(1, (e.clientX - b.left) / b.width * 2 - 1)), ty: Math.max(-1, Math.min(1, (e.clientY - b.top) / b.height * 2 - 1)), o: 1 };
-      if (still.matches) draw(face, L.last); };
+      kick(); };
     face.addEventListener('pointermove', point); face.addEventListener('pointerdown', point);
-    face.addEventListener('pointerleave', () => { L.active = false; });
+    face.addEventListener('pointerleave', () => { L.active = false; L.last = -1e9; kick(); });
   }
   window.Holo = { render, attach, STILL };
 })();

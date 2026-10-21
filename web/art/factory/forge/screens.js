@@ -138,13 +138,14 @@
   })();
 
   // ---------- the card: the finished card image (name, material, category, Series and PDA seal are printed on it)
-  // live: the big card and the pack reveal, where a raw holo card's holo moves with the mouse or finger (holo.js)
-  function cardFace(c, lazy = false, live = false) { // lazy: grids and lists (off-screen tiles load as they scroll in)
-    const holo = c.holo || 'none', moving = live && !!Store.cardParts(c) && !!window.Holo;
+  // a raw holo card's holo moves with the mouse or finger wherever it's shown (holo.js); sway: it also drifts on its own
+  // (the big card and the pack reveal)
+  function cardFace(c, lazy = false, sway = false) { // lazy: grids and lists (off-screen tiles load as they scroll in)
+    const holo = c.holo || 'none', moving = !!Store.cardParts(c) && !!window.Holo;
     const el = h('div', { class: `cface m-${c.material} h-${holo} hd-${Store.holder(c)}${c.grade === 10 ? ' g10' : ''}` },
       h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: `${c.character}, ${Store.MAT_LABEL[c.material]} card`, draggable: 'false', loading: lazy ? 'lazy' : null, decoding: 'async' }),
       holo !== 'none' && !moving ? h('i', { class: 'shine', 'aria-hidden': 'true' }) : null);
-    if (moving) Holo.attach(el, c);
+    if (moving) Holo.attach(el, c, sway);
     return el;
   }
   // the badge under a card: its grade once slabbed, else Cased, else Raw (with the fresh-day timer while it runs; noFresh: none, a banner says it)

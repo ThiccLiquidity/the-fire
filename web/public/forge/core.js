@@ -15,10 +15,10 @@
   const PRICES = { PACK_USD: 2.5, PAPER_USD: 0.08, ETH_USD: 2500, PLANK_USD: 0.0000021, CASE_USD: 0.05, GRADE_USD: 1, PACK_PAPER: 1, PRESS_PAPER: 1, SUGGEST_PAPER: 1 }; // this Series' settings (per drop)
   // demo collection: cards from Series 6 (already closed; the card images print "Forged · Series 6"), with a spread of materials, holos and grades
   let seed = 7; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const pickMat = () => { const u = R(); return u < 0.5 ? 'paper' : u < 0.8 ? 'wood' : u < 0.95 ? 'fire' : u < 0.995 ? 'charcoal' : 'diamond'; };
+  const pickMat = () => { const u = R(); return u < 0.5 ? 'paper' : u < 0.8 ? 'wood' : u < 0.95 ? 'fire' : 'charcoal'; };
   const cards = [];
   for (let i = 0; i < 46; i++) {
-    const material = i === 3 ? 'diamond' : i === 9 ? 'charcoal' : pickMat();
+    const material = i === 9 ? 'charcoal' : pickMat();
     const holoRate = { paper: 0.05, wood: 0.1, fire: 0.5, charcoal: 0.9, diamond: 1 }[material];
     const holo = i === 5 ? 'full' : R() < holoRate ? ['frame', 'picture', 'full'][Math.floor(R() * 3)] : 'none';
     const series = 6;
@@ -32,7 +32,10 @@
     });
   }
   cards[5].material = 'paper'; cards[5].holo = 'full'; // a full-holo Paper, the rare one to show off
-  cards.forEach((c, i) => { if (c.grade == null && i % 3 === 1) { c.cased = true; c.frozenAge = Math.round((0.2 + R() * 30) * DAY); } }); // some already cased
+  // raw holo cards to show off the holo (tilt them on the site): one of every look, plus a Gold and a Full Art
+  [['gold', 'full', 'Bowling Ball'], ['fullart', 'full', 'Bowling Ball'], ['fire', 'full'], ['charcoal', 'frame'], ['wood', 'picture'], ['paper', 'full']]
+    .forEach(([material, holo, who], k) => Object.assign(cards[k], { material, holo, grade: null, cased: false, frozenAge: 0, dealt: Date.now() - (k + 1) * 3600e3, serial: 700 - k, ...(who ? { character: who } : {}) }));
+  cards.forEach((c, i) => { if (i >= 6 && c.grade == null && i % 3 === 1) { c.cased = true; c.frozenAge = Math.round((0.2 + R() * 30) * DAY); } }); // some already cased
 
   const state = {
     demo: true,
