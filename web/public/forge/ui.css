@@ -239,3 +239,20 @@ body[data-mode=port] .qbanner { font-size: 13px; gap: 8px; flex-wrap: wrap; text
 .sd-won { font-size: 13.5px; font-weight: 800; color: var(--gold) }
 .sd-res { justify-self: start; background: none; border: 0; padding: 2px 0; color: #ffd27a; font: 800 13px var(--body); text-decoration: underline; text-underline-offset: 3px; cursor: pointer }
 .sd-res:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 4px }
+
+/* live mode (live.js, ?live=testnet): no demo notice, menu or demo lines; a small Testnet badge; no demo floors */
+:root.live { --top: 54px }
+.live .demo-note, .live .chip.demo, .live .demo-line, .live .demo-load, .live .dfloor, .live .cfloor { display: none !important }
+.net-badge { font: 400 11px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #1b0f06; background: #7fd6ff; border-radius: 999px; padding: 4px 8px 3px; margin-left: 4px; flex-shrink: 0 }
+.op-wait { display: grid; justify-items: center; gap: 14px; padding: 24px 0 }
+.op-wait img { width: 160px; height: auto; animation: op-bob 1.6s ease-in-out infinite }
+@keyframes op-bob { 50% { transform: translateY(-8px) rotate(-2deg) } }
+@media (prefers-reduced-motion: reduce) { .op-wait img { animation: none } }
+.tx-steps { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px }
+.tx-steps li { display: grid; gap: 2px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05) }
+.tx-steps li small { color: var(--muted) }
+.tx-steps li.confirm small, .tx-steps li.pending small { color: var(--gold) }
+.tx-steps li.done small { color: #8fe08f }
+.tx-steps a { color: inherit }
+.wlist { display: grid; gap: 8px }
+.wlist .btn { display: flex; align-items: center; gap: 10px; justify-content: flex-start }

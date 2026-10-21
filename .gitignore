@@ -58,3 +58,8 @@ ops/keeper/.keeper-state.json
 # the live chain layer's local test (web/scripts/chain-test)
 web/scripts/chain-test/out/
 web/dist-chaintest/
+
+# the Forge wallet bundle: built by npm run build:wallet (local) and by npm run build into dist (the deploy)
+web/art/factory/forge/vendor/
+web/public/forge/vendor/
+web/scripts/forge-e2e/shots/

@@ -137,6 +137,21 @@ export async function packsOf(owner: Address): Promise<{ fire: number; count: nu
   return nums.map((fire, i) => ({ fire, count: Number(counts[i]) })).filter((x) => x.count > 0);
 }
 
+/** How many Paper Presses a wallet holds (0 when the Press isn't set up on this network). */
+export async function pressCount(owner: Address): Promise<number> {
+  const press = input("MILL");
+  if (!press) return 0;
+  return Number(await pub().readContract({ address: press, abi: erc20Abi, functionName: "balanceOf", args: [owner] }));
+}
+
+/** Whether `owner` holds Paper Press `id` (for a Press that can't list its owners' tokens: the holder types its number). */
+export async function ownsPress(owner: Address, id: number): Promise<boolean> {
+  const press = input("MILL");
+  if (!press) return false;
+  const abi = [{ type: "function", name: "ownerOf", inputs: [{ type: "uint256" }], outputs: [{ type: "address" }], stateMutability: "view" }] as const;
+  try { return getAddress(await pub().readContract({ address: press, abi, functionName: "ownerOf", args: [BigInt(id)] })) === getAddress(owner); } catch { return false; }
+}
+
 /** Paper Presses held (they let a wallet in during the holder window, and claim press packs). Empty if the Press
  *  can't list its owners' tokens. */
 export async function pressesOf(owner: Address): Promise<number[]> {

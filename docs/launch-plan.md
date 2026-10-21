@@ -11,7 +11,8 @@ site address or mainnet without your OK. Work lands on `wip/pending-approval` an
 | Testnet deploy (chain 46630), VerifyDeploy 0 FAIL, owner on the Ledger | The testnet card contracts predate `suggestMany` (theme + style in one transaction): redeploy them (step 1) |
 | Railway keeper on the testnet | A full end-to-end testnet run with a real Series |
 | Card Studio: library, recipe, deal, build, drawn holo, Filebase upload | The practice Series built and uploaded with the new holo |
-| Demo site: buy, open, case & grade, burn, suggest, live holo | The site talking to the chain (being built: the chain layer and a `?live=testnet` preview mode) |
+| Demo site: buy, open, case & grade, burn, suggest, live holo | |
+| Live mode: `?live=testnet` runs the site on the contracts (connect, buy, press and free packs, open, case & grade, burn, suggest); walked end to end on a local chain (`npm run test:forge`) | Walking it on the real testnet (step 2) |
 | Suggestion waves (contract + site form + local draw) | The public results page (being built) |
 | Security checklist (`docs/security-checklist.md`) | You working through it |
 
@@ -35,7 +36,10 @@ Use the practice Series with real art (five pictures per character, the studio d
 
 1. Studio: build the Series' images, upload to Filebase, recipe → `node ops/series/launch.mjs --chain 46630` (it
    stops at the first problem and tells you what to fix).
-2. Site: open the preview with `?live=testnet` (the live mode being built now). Connect a test wallet.
+2. Site: open the preview with `?live=testnet`. Connect a test wallet. (Without `?live` the site is the demo, as
+   always. `?live=mainnet` shows the demo until `deployments/4663.json` has the card contracts.)
+   If the drop has a holder window, publish its snapshot (`ops/snapshot`) as `web/art/factory/forge/holders/series-<n>.json`
+   so snapshot holders get in early; Paper Press holders get in without it.
 3. Walk every flow and tick it:
    - [ ] Buy a pack with PAPER, with ETH, with PLANK, with USDG
    - [ ] The holder window (a wallet in the snapshot buys early; one not in it can't)

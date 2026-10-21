@@ -6,9 +6,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && vite build --config vite.wallet.config.ts --outDir dist/forge/vendor",
     "build:wallet": "vite build --config vite.wallet.config.ts",
     "test:chain": "node scripts/chain-test/run.mjs",
+    "test:forge": "npm run build:wallet && node scripts/forge-e2e/run.mjs",
     "lint": "oxlint",
     "gen:errors": "node scripts/gen-abi-errors.mjs",
     "preview": "vite preview"

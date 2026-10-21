@@ -20,13 +20,14 @@
   };
   const svg = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
   const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(+n.toFixed(3));
-  const { PACK_USD: PRICE, PAPER_USD, ETH_USD, PLANK_USD } = Store.PRICES;
+  const LIVE = window.Live?.on; // live mode (live.js): the chain's data, and Live sends the transactions
+  const P = Store.PRICES; // read each time: live mode fills them in from the contracts
 
   // ---------- markup
   $('#app').innerHTML = `
   <div id="loading" class="loading"><img src="ui/omni-mark.webp" alt=""><p>Lighting the forge…</p><small class="demo-load">Demo · nothing here is real</small></div>
   <header class="topbar">
-    <a class="brand" href="#" aria-label="Omni Cardworks"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">CARDWORKS</span><em class="tag">Wood in. Packs out.</em></a>
+    <a class="brand" href="#" aria-label="Omni Cardworks"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">CARDWORKS</span><em class="tag">Wood in. Packs out.</em></a>${LIVE && Live.testnet ? '<span class="net-badge">Testnet</span>' : ''}
     <button class="chip series" id="seriesChip" type="button"></button>
     <div class="grow"></div>
     <nav class="tools" aria-label="Tools">
@@ -46,17 +47,17 @@
     <div class="buybox" id="buybox" data-x="1480" data-y="250"></div>
     <button class="pill" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
     <button class="pill openp" type="button" data-st="open" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
-    <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small>${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></span></button>
+    <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small data-price="psa">${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></span></button>
     <div class="spot" id="spot" data-x="3590" data-y="1750" aria-hidden="true"></div>
     <aside class="sdock" id="sdock" data-x="3040" data-y="930" aria-label="Suggestion box"></aside>
-    <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small>${Store.PRICES.SUGGEST_PAPER} PAPER</small></span></button>
+    <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></span></button>
     <button class="pill peek" type="button" data-peek data-x="2880" data-y="700" style="--c: var(--gold)"><span class="peek-fan" aria-hidden="true"><img alt=""><img alt=""></span><span><b id="pPeekT">Series 8</b><small id="pPeek"></small></span></button>
   </div>
   <section class="stations" aria-label="Stations">
     <button class="station" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
     <button class="station" type="button" data-st="cards" style="--c: var(--wood)">${svg('cards')}<b>My cards</b><small id="sCards"></small></button>
-    <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small>${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></button>
-    <button class="station" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small>${Store.PRICES.SUGGEST_PAPER} PAPER</small></button>
+    <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small data-price="psa">${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></button>
+    <button class="station" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></button>
     <button class="station peek" type="button" data-peek><span class="peek-fan" aria-hidden="true"><img alt=""><img alt=""></span><b id="sPeekT">Series 8</b><small id="sPeek"></small></button>
     <button class="openbtn" type="button" data-st="open" id="openBtn">${svg('pack')}<span><b id="sOpenT">Open packs</b><small id="sOpen"></small></span></button>
   </section>
@@ -74,7 +75,7 @@
   <div class="buybar" id="buybar"></div>`;
 
   // ---------- layout: desktop / phone portrait / phone landscape
-  const TOP = 54 + 24; // the top bar plus the demo notice under it (CSS --top)
+  const TOP = 54 + (LIVE ? 0 : 24); // the top bar plus the demo notice under it (CSS --top; live mode has no notice)
   const DEMO_LINE = '<p class="demo-line">Demo · nothing is charged</p>'; // the one demo line, at payment and burn buttons only
   let mode = 'desk';
   function layout() {
@@ -117,21 +118,25 @@
     { line: 'Open to all', sub: 'PLANK, ETH or USDG' },
   ];
   const sold = () => S.series.phase >= 4;
+  // the phase now; live, its hours come from the drop's times
+  const phase = () => { const ph = PH[S.series.phase], hr = S.series.hours; return ph && hr ? { ...ph, window: ph.window && hr.window, limit: ph.limit && hr.limit } : ph; };
+  const note = () => (LIVE ? S.series.note : null); // live: Loading…, Opens in 3h, Paused, No Series yet
   function syncScene() {
-    const ph = PH[S.series.phase];
+    const ph = phase();
     window.Scene?.setState({ left: Store.left(), total: S.series.total, burnCount: S.wallet.burnCount, series: S.series.no, windowFrac: ph?.window ? ph.window / 24 : 0, openable: Stations.openableCount() > 0 });
   }
   function renderChip() {
-    const ph = PH[S.series.phase], c = $('#seriesChip');
-    const html = sold() ? `Series ${S.series.no} · <b>Sold out</b>` : `Series ${S.series.no} · <b>${Store.left()}</b> left · ${ph.line}${ph.window ? ` <i>${ph.window}h</i>` : ''}`;
+    const ph = phase(), c = $('#seriesChip');
+    const html = note() ? `${S.series.no ? `Series ${S.series.no} · ` : ''}<b>${esc(note())}</b>` : sold() ? `Series ${S.series.no} · <b>Sold out</b>` : `Series ${S.series.no} · <b>${Store.left()}</b> left · ${ph.line}${ph.window ? ` <i>${ph.window}h</i>` : ''}`;
     if (c._html !== html) { c._html = html; c.innerHTML = html; } // only on a real change: a node swapped under a click eats it
   }
   function buyButtons() {
-    const ph = PH[S.series.phase], w = S.wallet, out = [];
+    const ph = phase(), w = S.wallet, out = [];
+    if (note()) return { line: note(), opts: [] };
     if (sold()) return { line: `Series ${S.series.no} sold out`, opts: [] }; // just the tease: Open packs is already on the scene / in the stations
     let sub2 = ph.plankOnly ? `PLANK-only packs: ${S.series.plankOnly - S.series.plankSold} left` : typeof ph.sub === 'function' ? ph.sub() : ph.sub;
-    out.push(['buy', 'Buy packs', `${Wear.usd(PRICE)} + PAPER<br>${sub2}`, 'main']);
-    if (S.series.phase <= 1 && !w.starterClaimed && S.series.startersClaimed < S.series.starters) out.push(['starter', 'Press pack', `Press holders<br>${Store.PRICES.PRESS_PAPER} PAPER`, 'alt']);
+    out.push(['buy', 'Buy packs', `${Wear.usd(P.PACK_USD)} + PAPER<br>${sub2}`, 'main']);
+    if ((LIVE ? S.series.pressOpen && w.isPressHolder : S.series.phase <= 1) && !w.starterClaimed && S.series.startersClaimed < S.series.starters) out.push(['starter', 'Press pack', `Press holders<br>${Store.PRICES.PRESS_PAPER} PAPER`, 'alt']);
     if (w.credits > 0) out.push(['free', `Free pack (${w.credits})`, `${Store.PRICES.PACK_PAPER} PAPER<br>any time`, 'gold']);
     return { line: ph.window ? `${ph.line} · ${ph.window}h left` : ph.limit ? `${ph.line} · max ${S.series.walletLimit} for ${ph.limit}h` : ph.line, opts: out };
   }
@@ -179,7 +184,7 @@
     for (const id of ['pBurn', 'sBurn']) $('#' + id).textContent = `${b} / 42`;
     // Open packs: what can be opened now (the live Series' packs stay sealed until it sells out)
     const ready = Stations.openable(), n = ready.reduce((a, o) => a + o.n, 0), locked = sealed - n;
-    const title = n ? `Open packs (${n})` : 'No packs', sub = n ? `Series ${ready[0].series}${ready.length > 1 ? ' first' : ''}` : locked ? 'Open at sell-out' : 'Buy one first';
+    const title = n ? `Open packs (${n})` : 'No packs', sub = n ? `Series ${ready[0].series}${ready.length > 1 ? ' first' : ''}` : locked ? (LIVE ? 'Open at close' : 'Open at sell-out') : 'Buy one first';
     const why = n ? `Open packs: ${n} sealed ${n === 1 ? 'pack' : 'packs'} ready to open` : locked
       ? `No packs to open yet. Your ${locked} Series ${S.series.no} ${locked === 1 ? 'pack opens' : 'packs open'} when the Series sells out`
       : 'No packs to open. Buy packs to get some';
@@ -190,7 +195,12 @@
     $('#sCards').textContent = `${S.cards.length} ${S.cards.length === 1 ? 'card' : 'cards'} · ${sealed} ${sealed === 1 ? 'pack' : 'packs'}`;
     const wb = $('#walletBtn span');
     const nm = mode === 'port' || innerWidth < 1500 ? '' : S.wallet.name; // phones: the icon and the balance, so the button fits beside the brand
-    wb.textContent = S.wallet.connected ? `${nm ? nm + ' · ' : ''}${S.wallet.balances.PAPER} PAPER` : 'Connect';
+    wb.textContent = S.wallet.connected ? `${nm ? nm + ' · ' : ''}${fmt(S.wallet.balances.PAPER)} PAPER` : 'Connect';
+    if (LIVE) { // prices from the contracts
+      document.querySelectorAll('[data-price=psa]').forEach((el) => { el.textContent = `${Wear.usd(P.CASE_USD)} · ${Wear.usd(P.GRADE_USD)}`; });
+      document.querySelectorAll('[data-price=suggest]').forEach((el) => { el.textContent = `${P.SUGGEST_PAPER} PAPER`; });
+      if (S.series.no) { $('.strip .sw').textContent = `SERIES ${S.series.no}`; $('.strip .packart').alt = `Series ${S.series.no} pack`; }
+    }
     $('#walletBtn').classList.toggle('on', S.wallet.connected);
   }
   // ---------- between Series: the quiet shift. Nothing on sale, so the press and the belt rest (the fire, casing and
@@ -213,7 +223,7 @@
       <h3 class="sd-t">${look ? 'Suggest a theme and an art style' : 'Suggest a character'}</h3>
       ${look ? '' : `<p class="sd-pick">${esc(W.theme)} · ${esc(W.style)}</p>`}
       <p class="sd-how">${need} PAPER each. Get picked, win a free pack.</p>
-      <p class="sd-meta"><span>Closes in <b>${left(W.closes)}</b></span><span><b>${W.count.toLocaleString('en-US')}</b> ideas in the box</span></p>
+      <p class="sd-meta">${W.closes ? `<span>Closes in <b>${left(W.closes)}</b></span>` : ''}<span><b>${W.count.toLocaleString('en-US')}</b> ideas in the box</span></p>
       ${w.connected ? `<p class="sd-bal">You have <b>${fmt(w.balances.PAPER)} PAPER</b>${short ? ' · not enough' : ''}</p>` : ''}
       <div class="opts">${cta}</div>
       ${mine && w.connected ? `<p class="sd-mine">You've sent ${mine} · results when Series ${next} is announced</p>` : ''}
@@ -254,7 +264,8 @@
   Store.on(render);
 
   // ---------- wallet
-  function needWallet(then) { // demo: one click connects a demo wallet; the real site opens the standard wallet window
+  function needWallet(then) { // demo: one click connects a demo wallet; live: the wallet window (Live)
+    if (LIVE) return Live.needWallet(then);
     if (S.wallet.connected) return then();
     Store.update((s) => { s.wallet.connected = true; });
     toast('Demo wallet connected', 'good');
@@ -262,6 +273,7 @@
   }
   $('#walletBtn').onclick = () => needWallet(openWallet);
   function openWallet() {
+    if (LIVE) return Live.openWallet();
     const w = S.wallet, nm = esc(w.name), sealed = Object.values(S.sealed).reduce((a, n) => a + n, 0);
     const d = Sheet.open('wallet', { title: w.name || 'Wallet', body: `
       <div class="wmenu">
@@ -312,6 +324,7 @@
 
   // ---------- checkout (paid packs)
   function checkout() {
+    if (LIVE) return Live.checkout();
     needWallet(() => {
       const ph = PH[S.series.phase], w = S.wallet, lim = S.series.walletLimit;
       if (w.isContract && S.series.phase < 3) return Sheet.open('nope', { title: 'Regular wallets only', body: '<p class="lead">Packs can only be bought from a regular wallet like MetaMask or Rabby for now. Smart-contract wallets can buy later.</p>' });
@@ -322,7 +335,7 @@
       let n = 1, cur = 'PLANK', busy = false;
       const body = document.createElement('div'); body.className = 'checkout';
       const draw = () => {
-        const usd = n * PRICE, amt = cur === 'ETH' ? usd / ETH_USD : cur === 'USDG' ? usd : usd / PLANK_USD, paper = n * Store.PRICES.PACK_PAPER;
+        const usd = n * P.PACK_USD, amt = cur === 'ETH' ? usd / P.ETH_USD : cur === 'USDG' ? usd : usd / P.PLANK_USD, paper = n * Store.PRICES.PACK_PAPER;
         const maxCost = amt * 1.01; // the most it may take: the price can move 1% before nothing is charged
         const shortPaper = w.balances.PAPER < paper, shortCur = w.balances[cur] < amt;
         const need = shortPaper || shortCur ? null : [['PAPER', paper], [cur, maxCost]].find(([k, v]) => Store.needsApproval(k, v));
@@ -357,6 +370,7 @@
     });
   }
   function starter() {
+    if (LIVE) return Live.press();
     needWallet(() => {
       if (!S.wallet.isPressHolder) return Sheet.open('nope', { title: 'Press packs', body: '<p class="lead">Press packs are for Paper Press holders.</p>' });
       const cost = Store.PRICES.PRESS_PAPER; let busy = false;
@@ -379,6 +393,7 @@
     });
   }
   function useFree() {
+    if (LIVE) return Live.free();
     needWallet(() => {
       let n = 1, busy = false; const per = Store.PRICES.PACK_PAPER;
       const body = document.createElement('div'); body.className = 'checkout';
@@ -404,10 +419,11 @@
     });
   }
   function openGetPaper(token = 'PAPER') {
+    if (LIVE) return Live.getPaper();
     let tok = token, amt = tok === 'PAPER' ? 10 : tok === 'USDG' ? 25 : 1000000;
     const body = document.createElement('form'); body.className = 'checkout';
-    const usdOf = () => tok === 'PAPER' ? amt * PAPER_USD : tok === 'USDG' ? amt : amt * PLANK_USD;
-    const ethOf = () => usdOf() / ETH_USD * 1.005; // what it costs in ETH, the 0.5% fee included
+    const usdOf = () => tok === 'PAPER' ? amt * P.PAPER_USD : tok === 'USDG' ? amt : amt * P.PLANK_USD;
+    const ethOf = () => usdOf() / P.ETH_USD * 1.005; // what it costs in ETH, the 0.5% fee included
     // nothing to swap for 0 (or less); connected, the ETH has to be there
     const why = () => !(amt > 0 && ethOf() > 0) ? 'Enter an amount' : S.wallet.connected && ethOf() > S.wallet.balances.ETH ? 'Not enough ETH' : '';
     const paint = () => {
@@ -463,7 +479,7 @@
       <button class="btn" type="button" data-m="cards">${svg('cards')}My cards</button><button class="btn" type="button" data-m="open">${svg('pack')}Open packs${Stations.openableCount() ? ` (${Stations.openableCount()})` : ''}</button>
       <button class="btn" type="button" data-m="paper">${svg('paper')}Get PAPER</button><button class="btn" type="button" data-m="info">${svg('info')}Info</button>
       <button class="btn" type="button" data-m="feed">${svg('feed')}Activity</button><button class="btn" type="button" data-m="sound">${svg('sound')}Sound: ${window.Sound?.on ? 'On' : 'Off'}</button>
-      <button class="btn" type="button" data-m="start">New here?</button><button class="btn" type="button" data-m="demo">Demo controls</button></div>
+      <button class="btn" type="button" data-m="start">New here?</button>${LIVE ? '' : '<button class="btn" type="button" data-m="demo">Demo controls</button>'}</div>
       <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>` });
     d.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => { d.close(); go(b.dataset.m); });
   }
@@ -497,14 +513,14 @@
   $('#soundBtn').onclick = () => { const sound = window.Sound ? Sound.set(!Sound.on) : false; $('#soundBtn').setAttribute('aria-pressed', sound); $('#soundBtn').innerHTML = svg(sound ? 'sound' : 'mute'); toast(sound ? 'Sound: On' : 'Sound: Off'); };
   function go(k) {
     if (k === 'paper') openGetPaper(); if (k === 'info') Info.open(); if (k === 'info-cards') Info.open('cards'); if (k === 'feed') openFeed();
-    if (k === 'menu') openMenu(); if (k === 'demo') openDemo(); if (k === 'start') openStart(); if (k === 'sound') $('#soundBtn').click();
+    if (k === 'menu') openMenu(); if (k === 'demo' && !LIVE) openDemo(); if (k === 'start') openStart(); if (k === 'sound') $('#soundBtn').click();
     if (k === 'cards' || k === 'open') openStation(k);
   }
   // My cards opens the collection; Open packs goes straight to tearing the next pack, or (none to open) says why and points at Buy
   function openStation(k) {
     if (k !== 'open' || Stations.openableCount()) return Stations.open(k);
     const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0);
-    if (sealed) return toast(`Your Series ${S.series.no} packs open when it sells out`);
+    if (sealed) return toast(LIVE ? `Packs open once Series ${S.series.no} closes` : `Your Series ${S.series.no} packs open when it sells out`);
     if (sold()) return toast(`No packs to open. Series ${S.series.no + 1} is coming soon`);
     toast('No packs to open yet. Buy one first!');
     const b = $(mode === 'desk' ? '#buybox [data-buy]' : '#buybar [data-buy]'); if (!b) return;
@@ -518,6 +534,7 @@
   // ---------- the scene's events: a pack made is a pack sold; delivered packs land in the wallet
   let pendingDeliver = 0, crowd = 0;
   function hookScene() {
+    if (LIVE) { layout(); render(); requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 300)); return; } // live: the chain says what sold and what landed
     Scene.on('packMade', () => {
       Store.update((s) => { if (crowd > 0) { crowd--; s.series.sold++; Store.log('Someone bought a pack'); } else s.series.sold++; });
       if (Store.left() <= 0 && !sold()) { Store.update((s) => { s.series.phase = 4; }); Scene.finale(); setTimeout(() => toast(`Series ${S.series.no} sold out!`, 'good'), 600); }
@@ -526,7 +543,7 @@
     layout(); render();
     requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 300));
   }
-  if (new URLSearchParams(location.search).has('between')) Store.update((s) => { s.series.sold = s.series.total - s.series.startersClaimed; s.series.phase = 4; });
+  if (!LIVE && new URLSearchParams(location.search).has('between')) Store.update((s) => { s.series.sold = s.series.total - s.series.startersClaimed; s.series.phase = 4; });
   if (window.Scene) hookScene(); else addEventListener('scene-ready', hookScene, { once: true });
   layout(); render();
 })();
