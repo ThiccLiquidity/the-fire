@@ -351,7 +351,7 @@ function sparkle(ctx: Ctx2D, x: number, y: number, r: number, tilt: number): voi
 /** PDA 10: a thin warm-gold glow hugging the card's outer edge, plus a few small sparkles near the
  *  corners. Gold on every material (it never goes white on Diamond). Masked by the frame's alpha so it stays inside
  *  the card's rounded outline; it lives in the outer border only, never over the name, art or seal. */
-function drawPda10(ctx: Ctx2D, frame: ImgSrc | null): void {
+export function drawPda10(ctx: Ctx2D, frame: ImgSrc | null): void {
   const c = new OffscreenCanvas(CARD_W, CARD_H)
   const g = c.getContext('2d')
   if (!g) return

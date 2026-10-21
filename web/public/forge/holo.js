@@ -1,7 +1,8 @@
 /* Omni Cardworks (demo mode): the live holo. The Card Studio draws holo into every saved card image at one angle
-   (studio/src/holoFx.ts); on the site a raw holo card moves: the same rainbow foil, sparkles and glare, redrawn at the
+   (studio/src/holoFx.ts); on the site a holo card moves: the same rainbow foil, sparkles and glare, redrawn at the
    tilt of the mouse or finger, between the card's plain picture + frame (cards/<id>/<material>-plain.webp) and its
-   print (name, text, seal: <material>-print.webp), so the holo never covers the text. Gold: gold leaf and gold holo
+   print (name, text, seal, wear: <material>-print.webp, one per state), so the holo never covers the text. A cased or
+   slabbed card moves inside its holder, under the plastic (cards/case-front.webp, slab-front.webp). Gold: gold leaf and gold holo
    on the picture, a band of light across the frame. Full Art: holo all over. Same numbers as holoFx.ts. */
 (() => {
   const BASE = 750; // the effects were tuned on a 750 px wide card; sizes scale from that
@@ -69,8 +70,9 @@
     const q = scratch.getContext('2d'); q.save(); q.globalCompositeOperation = 'copy'; q.drawImage(g.canvas, 0, 0); q.restore();
     fx(q); q.save(); q.globalCompositeOperation = 'destination-in'; q.globalAlpha = 1; keep(q); q.restore();
     g.drawImage(scratch, 0, 0); }
-  /** Draw one raw card at a tilt: plain (picture + frame), holo, print. look: none | frame | picture | full. */
-  function render(g, plain, print, material, look, tl) {
+  /** Draw one raw card at a tilt: plain (picture + frame), holo, print (tile `state` of the print strip: raw, cased,
+   *  PDA 1-10, with that grade's wear). look: none | frame | picture | full. */
+  function render(g, plain, print, material, look, tl, state = 0) {
     const W = g.canvas.width, H = g.canvas.height, S = W / BASE, art = { x: ART.x * S, y: ART.y * S, w: ART.w * S, h: ART.h * S }, whole = { x: 0, y: 0, w: W, h: H };
     const gold = material === 'gold', full = material === 'fullart', pic = gold || full || look === 'picture' || look === 'full', frm = full || look === 'frame' || look === 'full';
     g.clearRect(0, 0, W, H); g.drawImage(plain, 0, 0, W, H);
@@ -91,7 +93,31 @@
       if (pic) within(g, (q) => { foil(q, art, tl, SPECKS, false, S); glare(q, art, tl, false, W, H); }, keepArt);
       if (frm) within(g, (q) => { foil(q, whole, tl, FRAME_SPECKS, false, S, { per: 0.45, sp: 1.35 }); glare(q, whole, tl, false, W, H); }, keepFrame);
     }
-    g.drawImage(print, 0, 0, W, H);
+    const tw = print.width / 12;
+    g.drawImage(print, state * tw, 0, tw, print.height, 0, 0, W, H);
+  }
+
+  // cases and slabs (studio/src/protect.ts): where the card sits in the 1500 x 2100 holder, and the part of the plastic
+  // drawn again over a moving card (the rest, and the slab's label, come from the saved image under it)
+  const HW = 1500, HH = 2100;
+  const place = (s, top) => { const w = Math.round(HW * s), h = Math.round(HH * s), x0 = Math.round(HW / 2 - w / 2); return { x: x0, y: top, w, h }; };
+  const HOLDER = {
+    case: { card: place(0.958, Math.round((HH - HH * 0.958) / 2)), pad: 10, r: 50 },
+    slab: { card: place(0.868, 244), pad: 14, r: 40 },
+  };
+  let cardCanvas = null;
+  /** A cased or slabbed card at a tilt: the saved image (holder, label), the moving card in its place, the plastic over it. */
+  function renderHeld(g, P, material, look, tl) {
+    const W = g.canvas.width, H = g.canvas.height, k = W / HW, hd = HOLDER[P.holder], cb = hd.card;
+    const tw = P.still.width / 12;
+    g.clearRect(0, 0, W, H); g.drawImage(P.still, P.state * tw, 0, tw, P.still.height, 0, 0, W, H);
+    const cw = Math.round(cb.w * k), ch = Math.round(cb.h * k);
+    if (!cardCanvas) cardCanvas = mk(cw, ch);
+    if (cardCanvas.width !== cw || cardCanvas.height !== ch) { cardCanvas.width = cw; cardCanvas.height = ch; }
+    render(cardCanvas.getContext('2d'), P.plain, P.print, material, look, tl, P.state);
+    g.drawImage(cardCanvas, cb.x * k, cb.y * k, cw, ch);
+    g.save(); g.beginPath(); g.roundRect((cb.x - hd.pad) * k, (cb.y - hd.pad) * k, (cb.w + 2 * hd.pad) * k, (cb.h + 2 * hd.pad) * k, hd.r * k); g.clip();
+    g.drawImage(P.front, 0, 0, W, H); g.restore();
   }
 
   // ---------- live cards on the page
@@ -113,7 +139,8 @@
     else if (L.sway && !still.matches) { const a = t / 2400 + L.phase; tl = { tx: Math.sin(a) * 0.64, ty: Math.cos(a * 0.8) * 0.48, o: 0.55 }; }
     // the card itself tips toward the light a little while it's being moved
     el.style.transform = moving(L, t) && !still.matches ? `perspective(800px) rotateY(${(tl.tx * 10).toFixed(2)}deg) rotateX(${(-tl.ty * 10).toFixed(2)}deg)` : '';
-    render(L.canvas.getContext('2d'), L.plain, L.print, L.material, L.look, tl);
+    if (L.holder === 'raw') render(L.canvas.getContext('2d'), L.plain, L.print, L.material, L.look, tl, L.state);
+    else renderHeld(L.canvas.getContext('2d'), L, L.material, L.look, tl);
     L.drawnStill = tl === STILL;
   }
   let raf = 0;
@@ -137,8 +164,11 @@
     const parts = PARTS(c); if (!parts) return;
     const canvas = document.createElement('canvas'); canvas.className = 'cholo'; canvas.setAttribute('aria-hidden', 'true');
     face.append(canvas); face.classList.add('live');
-    const L = face._holo = { canvas, material: c.material, look: parts.look, sway, plain: null, print: null, tilt: STILL, active: false, last: -1e9, visible: true, drawnStill: false, phase: Math.random() * 6 };
-    Promise.all([loadImg(parts.plain), loadImg(parts.print)]).then(([p, q]) => { L.plain = p; L.print = q; face.classList.add('ready'); live.add(face); if (io) io.observe(face); draw(face, performance.now()); kick(); })
+    const L = face._holo = { canvas, material: c.material, look: parts.look, holder: parts.holder, state: parts.state, sway, plain: null, print: null, still: null, front: null,
+      tilt: STILL, active: false, last: -1e9, visible: true, drawnStill: false, phase: Math.random() * 6 };
+    const held = parts.holder !== 'raw';
+    Promise.all([loadImg(parts.plain), loadImg(parts.print), held ? loadImg(parts.still) : null, held ? loadImg(parts.front) : null])
+      .then(([p, q, st, fr]) => { L.plain = p; L.print = q; L.still = st; L.front = fr; face.classList.add('ready'); live.add(face); if (io) io.observe(face); draw(face, performance.now()); kick(); })
       .catch(() => { canvas.remove(); face.classList.remove('live'); });
     const point = (e) => { const b = face.getBoundingClientRect(); L.active = true; L.last = performance.now();
       L.tilt = { tx: Math.max(-1, Math.min(1, (e.clientX - b.left) / b.width * 2 - 1)), ty: Math.max(-1, Math.min(1, (e.clientY - b.top) / b.height * 2 - 1)), o: 1 };
