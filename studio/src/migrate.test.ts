@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { compileRecipe, legacyDiamondRecipe, previewPool } from './recipe'
-import { migrateFire, needsMigration } from './migrate'
+import { migrateCharacterArt, migrateFire, needsMigration } from './migrate'
 import { creditPacksMax, saleOf, standardSale } from './sale'
-import type { FireRecord } from './types'
+import type { Character, FireRecord, ImageSlot } from './types'
 
 /** A Series as saved before recipes: Diamonds on the record, a locked deal stored by material. */
 const oldFire = {
@@ -97,5 +97,22 @@ describe('old saves and backups', () => {
     const locked = migrateFire(oldFire)
     expect(locked.packs).toBe(2)
     expect(needsMigration(locked)).toBe(false)
+  })
+})
+
+describe('one picture per set (holo is drawn)', () => {
+  const slot = (k: string) => ({ originalKey: k, keyMagenta: false, tolerance: 0, feather: 0, despill: 0, width: 1, height: 1, fileName: k, updatedAt: 1 }) as ImageSlot
+  const char = (images: Character['images']) => ({ id: 'c', name: 'C', images, createdAt: 1 }) as unknown as Character
+
+  it("Full Art's holo picture becomes its picture", () => {
+    const c = migrateCharacterArt(char({ fullart: { holo: slot('fa') }, wood: { normal: slot('w'), holo: slot('wh') } }))
+    expect(c?.images.fullart).toEqual({ normal: slot('fa') })
+    expect(c?.images.wood).toEqual({ normal: slot('w'), holo: slot('wh') })
+  })
+
+  it('leaves a character alone when there is nothing to move', () => {
+    expect(migrateCharacterArt(char({ fullart: { normal: slot('fa') } }))).toBeNull()
+    expect(migrateCharacterArt(char({ fullart: { normal: slot('a'), holo: slot('b') } }))).toBeNull()
+    expect(migrateCharacterArt(char({ paper: { normal: slot('p') } }))).toBeNull()
   })
 })

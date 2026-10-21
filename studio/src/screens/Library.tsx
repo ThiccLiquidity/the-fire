@@ -2,17 +2,16 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import { DropZone, Field, Notice, useAction } from '../components'
 import { newId } from '../db'
 import { categoryKey, categoryProblem, categorySuggestions, hasCategory, hasValidName, nameProblem, normalizeCategory, normalizeName } from '../categories'
-import { FRAME_SETS, FULL_CARD_ART_SETS, SHOWN_FRAME_SETS, artBoxOf, frameSetLabel, variantsOf } from '../frames'
+import { FRAME_SETS, FULL_CARD_ART_SETS, SHOWN_FRAME_SETS, artBoxOf, artSetOf, frameSetLabel, ownsArt } from '../frames'
 import { ArtCheck, TemplateButton, artVerdict } from './ArtCheck'
-import { matchHoloToNormal } from '../artMatch'
-
-const isZero = (p: { zoom: number; x: number; y: number }) => p.zoom === 1 && p.x === 0 && p.y === 0
 import {
   completeness, deleteCharacter, getStudio, imageSlots, isReady, effectiveKey, removeCharacterImage, saveCharacter, setCharacterImage, updateImageKey,
-  updateImagePlacement,
   useBlobUrl, useStudio,
 } from '../store'
-import { VARIANTS, type Character, type ImageSlot, type Variant } from '../types'
+import type { Character, ImageSlot, Variant } from '../types'
+
+/** The sets a picture is uploaded for (Gold shows the Wood picture). */
+const ART_SETS = SHOWN_FRAME_SETS.filter(ownsArt)
 
 const PAGE = 200
 
@@ -125,15 +124,17 @@ function BulkTools() {
     }
     let done = 0
     for (const f of files) {
-      // <character>__<frame set>[__holo].<ext>
+      // <character>__<frame set>.<ext> (a __holo file from before holo was drawn is skipped)
       const m = /^(.+?)__([a-z0-9]+)(__holo)?\.[a-z0-9]+$/i.exec(f.name)
-      if (!m) { out.push(`${f.name}: name it <character>__<frame set>[__holo].png`); continue }
+      if (!m) { out.push(`${f.name}: name it <character>__<frame set>.png`); continue }
       const id = byName.get(m[1].trim().toLowerCase())
       const set = m[2].toLowerCase()
       if (!id) { out.push(`${f.name}: no character "${m[1]}"`); continue }
-      if (!FRAME_SETS.includes(set)) { out.push(`${f.name}: no frame set "${set}" (${SHOWN_FRAME_SETS.join(', ')})`); continue }
+      if (m[3]) { out.push(`${f.name}: holo pictures aren't needed any more (the studio draws the holo); skipped`); continue }
+      if (!FRAME_SETS.includes(set)) { out.push(`${f.name}: no frame set "${set}" (${ART_SETS.join(', ')})`); continue }
+      if (!ownsArt(set)) { out.push(`${f.name}: ${frameSetLabel(set)} uses the ${frameSetLabel(artSetOf(set))} picture; skipped`); continue }
       if (!f.type.startsWith('image/')) { out.push(`${f.name}: not an image`); continue }
-      await setCharacterImage(id, set, m[3] ? 'holo' : 'normal', f, f.name)
+      await setCharacterImage(id, set, 'normal', f, f.name)
       done++
     }
     setReport([`Added ${done} of ${files.length} images.`, ...out])
@@ -144,7 +145,7 @@ function BulkTools() {
       <p className="muted small">One character per line: <code>Name, Category</code>.</p>
       <textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder={'Ember Fox, Animals\nAsh Wolf, Animals'} data-testid="bulk-names" />
       <button onClick={addMany} disabled={busy || !text.trim()} data-testid="bulk-add">Add these</button>
-      <p className="muted small">Images: drop many files named <code>&lt;character&gt;__&lt;frame set&gt;.png</code> or <code>..__holo.png</code>, e.g. <code>Ember Fox__paper__holo.png</code>. Frame sets: {SHOWN_FRAME_SETS.join(', ')}.</p>
+      <p className="muted small">Images: drop many files named <code>&lt;character&gt;__&lt;frame set&gt;.png</code>, e.g. <code>Ember Fox__paper.png</code>. Frame sets: {ART_SETS.join(', ')}.</p>
       <DropZone accept="image/*" multiple onFiles={dropImages} className="inline-drop" testId="bulk-images"><span>Drop images or click</span></DropZone>
       {busy && <span className="muted small">working...</span>}
       {error && <Notice kind="error">{error}</Notice>}
@@ -191,10 +192,11 @@ function CharacterEditor({ c }: { c: Character }) {
         : typed && !existing && !matches.length && finalCategory !== c.category ? <p className="field-msg">New category: "{typed}".</p>
         : null}
       {error && <Notice kind="error">{error}</Notice>}
-      {!isReady(c) && <Notice kind="info">A character can go into a Series once it has a valid name and category and the images that Series' recipe uses (each card type uses one frame set's art: normal, and holo when it can have a holo picture).</Notice>}
-      <div className="slot-grid">
+      {!isReady(c) && <Notice kind="info">A character can go into a Series once it has a valid name and category and the pictures that Series' recipe uses (one per material; Gold uses the Wood picture).</Notice>}
+      <p className="muted small">One picture per material. The studio draws every holo (frame, picture or both), the Gold leaf and the Full Art holo over it.</p>
+      <div className="slot-grid one">
         <div />
-        {VARIANTS.map((v) => <div key={v} className="slot-head">{v === 'normal' ? 'Normal' : 'Holo'}</div>)}
+        <div className="slot-head">Picture</div>
         {SHOWN_FRAME_SETS.map((m) => (
           <SlotRow key={m} c={c} m={m} />
         ))}
@@ -248,28 +250,35 @@ function CategoryInput({ value, onChange, matches, placeholder, invalid }: {
 function SlotRow({ c, m }: { c: Character; m: string }) {
   const fullCard = FULL_CARD_ART_SETS.includes(m)
   const box = artBoxOf(m)
-  const [open, setOpen] = useState<Variant | null>(null)
+  const [open, setOpen] = useState(false)
+  const v: Variant = 'normal'
+  if (!ownsArt(m)) {
+    // Gold: no picture of its own, the Wood one with gold leaf and gold holo drawn over it
+    return (
+      <>
+        <div className="slot-label">{frameSetLabel(m)}</div>
+        <div className="slot-cell muted small" data-testid={`slot-${m}-borrowed`}>
+          Uses the {frameSetLabel(artSetOf(m))} picture, with gold leaf and gold holo added by the studio.
+        </div>
+      </>
+    )
+  }
+  const slot = c.images[m]?.[v]
+  const verdict = slot ? artVerdict(m, slot) : null
   return (
     <>
       <div className="slot-label">{frameSetLabel(m)}<br />
         <span className="small muted">{fullCard ? 'no frame: ' : ''}{box.w} x {box.h}</span><br /><TemplateButton m={m} /></div>
-      {VARIANTS.map((v) => {
-        if (!variantsOf(m).includes(v)) return <div key={v} className="slot-cell muted small">always holo</div>
-        const slot = c.images[m]?.[v]
-        const verdict = slot ? artVerdict(m, slot) : null
-        return (
-          <div key={v}>
-            <SlotCell c={c} m={m} v={v} slot={slot} />
-            {verdict && (
-              <button className={`link small ${verdict.ok ? '' : 'warn'}`} data-testid={`check-${m}-${v}`} onClick={() => setOpen(open === v ? null : v)}>
-                {verdict.ok ? 'OK' : `! ${verdict.text}`} · {open === v ? 'close' : 'preview and frame it'}
-              </button>
-            )}
-          </div>
-        )
-      })}
-      {open && c.images[m]?.[open] && (
-        <div style={{ gridColumn: '1 / -1' }}><ArtCheck c={c} m={m} v={open} slot={c.images[m]![open]!} /></div>
+      <div>
+        <SlotCell c={c} m={m} v={v} slot={slot} />
+        {verdict && (
+          <button className={`link small ${verdict.ok ? '' : 'warn'}`} data-testid={`check-${m}-${v}`} onClick={() => setOpen(!open)}>
+            {verdict.ok ? 'OK' : `! ${verdict.text}`} · {open ? 'close' : 'preview and frame it'}
+          </button>
+        )}
+      </div>
+      {open && slot && (
+        <div style={{ gridColumn: '1 / -1' }}><ArtCheck c={c} m={m} v={v} slot={slot} /></div>
       )}
     </>
   )
@@ -278,7 +287,6 @@ function SlotRow({ c, m }: { c: Character; m: string }) {
 function SlotCell({ c, m, v, slot }: { c: Character; m: string; v: Variant; slot?: ImageSlot }) {
   const url = useBlobUrl(slot ? effectiveKey(slot) : undefined)
   const [busy, error, run] = useAction()
-  const [autoMsg, setAutoMsg] = useState('')
   const [tol, setTol] = useState(slot?.tolerance ?? 70)
   const [feather, setFeather] = useState(slot?.feather ?? 90)
   const [despill, setDespill] = useState(slot?.despill ?? 0.85)
@@ -302,13 +310,6 @@ function SlotCell({ c, m, v, slot }: { c: Character; m: string; v: Variant; slot
     const f = files[0]
     if (!f.type.startsWith('image/')) throw new Error(`${f.name} isn't an image.`)
     await setCharacterImage(c.id, m, v, f, f.name)
-    // a holo picture lines itself up with the normal one (the image generator often returns it at another size or
-    // shifted); either upload order works
-    if (variantsOf(m).includes('normal') && c.images[m]?.[v === 'holo' ? 'normal' : 'holo']) {
-      const r = await matchHoloToNormal(c.id, m)
-      if (r.kind === 'matched') await updateImagePlacement(c.id, m, 'holo', isZero(r.placement) ? undefined : r.placement)
-      setAutoMsg(r.kind === 'matched' ? 'Holo lined up with the normal picture.' : r.kind === 'different' ? "Holo doesn't match the normal picture's drawing; frame it by hand." : '')
-    }
   })
 
   return (
@@ -336,7 +337,6 @@ function SlotCell({ c, m, v, slot }: { c: Character; m: string; v: Variant; slot
         </div>
       )}
       {error && <Notice kind="error">{error}</Notice>}
-      {autoMsg && <p className="muted small" data-testid={`auto-${m}-${v}`}>{autoMsg}</p>}
     </div>
   )
 }

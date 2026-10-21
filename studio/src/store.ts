@@ -6,7 +6,7 @@ import { DEFAULT_KEY, keyMagentaBlob, type KeyOptions } from './chroma'
 import * as db from './db'
 import { FRAME_SETS, FRAMES_UPDATED_AT, SHOWN_FRAME_SETS, variantsOf } from './frames'
 import { lockPositions, normalizeLayout } from './layoutDefaults'
-import { migrateFire, needsMigration } from './migrate'
+import { migrateCharacterArt, migrateFire, needsMigration } from './migrate'
 import type { Character, FireRecord, FontAsset, GlobalState, ImageSlot, Layout, Placement, Variant } from './types'
 
 export interface StudioData {
@@ -56,7 +56,12 @@ export async function loadStudio(): Promise<void> {
   const recs = await db.getAllRecords()
   const d = emptyData()
   for (const [k, v] of recs) {
-    if (k.startsWith('char:')) d.characters.push(v as Character)
+    if (k.startsWith('char:')) {
+      // Full Art's holo picture becomes its one picture (holo is drawn now)
+      const moved = migrateCharacterArt(v as Character)
+      if (moved) await db.putRecord(k, moved)
+      d.characters.push(moved ?? (v as Character))
+    }
     else if (k.startsWith('frame:')) continue // legacy uploaded frames: the frames are built in now (frames.ts)
     else if (k.startsWith('layout:')) {
       const m = k.slice(7)
@@ -209,14 +214,14 @@ export function effectiveKey(slot: ImageSlot): string {
   return slot.keyMagenta && slot.processedKey ? slot.processedKey : slot.originalKey
 }
 
-/** Images in, over every frame set (normal + holo each; holo only for Gold and Full Art). */
+/** Pictures in, over every frame set that takes one (one each; Gold borrows Wood's). */
 export function completeness(c: Character): number {
   let n = 0
   for (const m of SHOWN_FRAME_SETS) for (const v of variantsOf(m)) if (c.images[m]?.[v]) n++
   return n
 }
 
-/** Images a character can have: normal + holo for every shown frame set (holo only for Gold and Full Art). */
+/** Pictures a character can have: one for every shown frame set that takes one (Paper, Wood, Fire, Coal, Full Art). */
 export function imageSlots(): number {
   return SHOWN_FRAME_SETS.reduce((n, m) => n + variantsOf(m).length, 0)
 }

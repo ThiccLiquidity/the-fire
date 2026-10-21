@@ -37,8 +37,9 @@ export interface Character {
   /** Free text (categories.ts); printed on the card, a trait in the metadata and stored
    *  on-chain with the Series. Required before the character can go into a Series. */
   category?: string
-  /** Art per frame set (frames.ts: 'paper', 'wood', 'burning', 'charcoal', 'diamond' and any other set), normal and
-   *  holo. A card type uses the art of the frame set it uses. */
+  /** Art per frame set (frames.ts: 'paper', 'wood', 'burning', 'charcoal', 'fullart' and any other set): one normal
+   *  picture each (Gold shows the Wood one, frames.ts artSetOf). Holo is drawn over it (holoFx.ts); holo pictures
+   *  saved before that are kept but unused. */
   images: Partial<Record<string, Partial<Record<Variant, ImageSlot>>>>
   createdAt: number
   updatedAt: number

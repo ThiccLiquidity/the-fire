@@ -31,9 +31,11 @@ checks and pool maths are ports of the contract's and are tested against it. New
 
 - The frames are built into the studio and are not edited by hand: `studio/src/assets/frames`, produced from
   `studio/frames-src/originals` by `studio/frames-src/clean_frames.py`. The only per-card input is the character image.
-- A **frame set** is just its clean frames: `<set>.webp` and `<set>-holo.webp`. The built sets are `paper`, `wood`,
-  `burning` (Fire), `charcoal` (Coal), `gold` (holo only) and `diamond` (retired: hidden in the studio, kept so older
-  Series still build).
+- A **frame set** is one clean frame, `<set>.webp`. The built sets are `paper`, `wood`, `burning` (Fire), `charcoal`
+  (Coal), `gold` (its one frame is `gold-holo.webp`) and `diamond` (retired: hidden in the studio, kept so older Series
+  still build). The other `<set>-holo.webp` files are retired: holo is drawn over the clean frame (below).
+- **Pictures: five per character** (Library): Paper, Wood, Fire, Coal and Full Art, one each. **Gold uses the Wood
+  picture.** No holo pictures: the studio draws every holo.
 - **Full Art has no frame.** The character's photo is the whole card (its own border drawn in), cut to the same
   rounded card shape; the name, type and PDA seal print on it like every card.
 - **Art safety net** (Library, every frame set): **Template** gives the image generator the exact target: a 1244 x
@@ -43,10 +45,7 @@ checks and pool maths are ports of the contract's and are tested against it. New
   shows the card as built (Full Art with the print zones outlined); **Zoom** and **Move** frame that image for the
   character (it always still covers its window), saved with the character and used by every build.
   In the preview, drag the picture to move it and scroll to zoom; bright green behind it shows any gap (with a
-  warning). A holo picture lines itself up with the normal one as soon as both are uploaded.
-  **Match normal** (on a holo image) lines the holo picture up with the normal one automatically: the image
-  generator often returns the holo version at another size or shifted, so the character would change size between a
-  card's looks.
+  warning).
 - **Text positions are fixed** on every frame set: the name is centred in the top bar both ways, whatever the font or
   size; the type, category and Series lines sit left in the bottom panel; the seal in its spot. Text is placed by the
   letters actually drawn (capital height centred, a centred line centred on its ink; the seal's grade or "?" centred
@@ -60,13 +59,21 @@ checks and pool maths are ports of the contract's and are tested against it. New
   to a wrecked PDA 1 (water damage, grime, a pen scribble). The card's shape never changes. Made by
   `studio/frames-src/wear_overlays.py` (fixed seeds, so it rebuilds the same files). No frame set ever needs worn
   versions.
-- **Gold and Full Art** are always full holo: their cards use only the holo frame and the holo art (Gold has its own
-  gold holo art).
-- Holo comes from the frame art itself (a holo frame) and from a holo version of the character art (a holo picture),
-  not from a code effect.
+- **Holo is drawn by the studio** (`studio/src/holoFx.ts`, approved in the Holo Playground, Oct 2026), over the normal
+  frame and picture: diagonal rainbow bands in the foil, fine foil lines, rainbow glitter, sparkles and small
+  starbursts that each catch the light at their own angle (coloured like the foil where they sit), and a glare.
+  - **Holo frame**: the holo on the frame, everywhere outside the picture (bands closer together and bigger sparkles,
+    since the frame is thin). **Holo picture**: on the picture. **Full holo**: both.
+  - **Gold** (always): gold leaf flakes and the same holo in gold on the picture; the frame gets only a band of gold
+    light across it.
+  - **Full Art** (always): the rainbow holo over the whole card.
+  - Order on the card: picture, picture holo, frame, frame holo, PDA 10 glow, text and seal, wear. The text and seal
+    are never under the holo; wear scuffs land over the foil.
+  - A saved image is drawn with the light from the upper left. Everything is seeded, so a look always renders the same
+    pixels. The site draws the same holo live (moving with the mouse or finger) on raw cards.
 - Each card type of a recipe uses one frame set: its frames, its text layout (set per frame set in Frames & Layout)
   and the characters' art for that set. A new type can reuse a set or get its own.
-- **Adding a frame set**: put `<set>.png` and `<set>-holo.png` in `frames-src/originals` and run
+- **Adding a frame set**: put `<set>.png` in `frames-src/originals` and run
   `python3 frames-src/clean_frames.py` from `studio/`. Nothing else: the wear layers cover it. The studio finds the set by its files (set ids are lowercase
   letters and digits) and lists it in Frames & Layout, the Library (art slots) and each card type's Frames choice.
   Bump `FRAMES_UPDATED_AT` in `studio/src/frames.ts`. A type whose frames are missing blocks approval and the build.
@@ -197,8 +204,8 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and its cards
 ## Studio workflow, per Series
 
 1. **Library:** characters are saved and reused across Series. Search and pages keep hundreds manageable; **Add
-   many** takes `Name, Category` lines and a drop of many images named `<character>__<frame set>[__holo].png`. A
-   character can join a Series once it has the art that Series' recipe uses.
+   many** takes `Name, Category` lines and a drop of many images named `<character>__<frame set>.png` (one per
+   material; Gold uses Wood's). A character can join a Series once it has the pictures that Series' recipe uses.
 2. **Frames & Layout:** text fields' font, size and colour are set once per frame set; the art window is fixed by
    the frames.
 3. **Series:** pick the characters (any number; their order is the image order c0, c1, ...). The pack count is the

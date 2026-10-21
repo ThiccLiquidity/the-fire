@@ -88,6 +88,15 @@
       const holo = (c.material === 'gold' || c.material === 'fullart') ? 'full' : c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none';
       return `cards/${id}/${c.material}-${holo}.webp`;
     },
+    // a raw holo card's parts for the live holo (holo.js): its picture + frame, and its print (text and seal), or null
+    // (no holo, cased or slabbed, or a retired Diamond, whose card images were made the old way)
+    cardParts(c) {
+      if (c.grade != null || c.cased || c.material === 'diamond') return null;
+      const always = c.material === 'gold' || c.material === 'fullart', look = always ? 'full' : c.holo || 'none';
+      if (look === 'none') return null;
+      const id = (always ? CHARS[SPECIAL_CAST] : CHARS[c.character] || CHARS[NAMES[0]]).id;
+      return { look, plain: `cards/${id}/${c.material}-plain.webp`, print: `cards/${id}/${c.material}-print.webp` };
+    },
     // which card in the strip: 0 raw, 1 cased, 2-11 slabbed PDA 1-10
     stateIdx(c) { return c.grade != null ? c.grade + 1 : c.cased ? 1 : 0; },
     STATES: 12,

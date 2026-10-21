@@ -3,12 +3,12 @@
 
 import * as db from './db'
 import { bundledFontData } from './fonts'
-import { FRAME_SETS, frameBlob, frameId, wearBlob } from './frames'
+import { FRAME_SETS, artSetOf, frameBlob, frameId, wearBlob } from './frames'
 import type { CardFace } from './render'
 import { CardRenderer, type AssetBundle, type RenderJob, type VariantBlobs } from './renderCore'
 import { WEAR_LEVELS } from './rules'
 import { effectiveKey, getStudio, layoutFor } from './store'
-import { VARIANTS, type OutputFormat } from './types'
+import type { OutputFormat } from './types'
 import type { WorkerIn, WorkerOut } from './build.worker'
 
 /** Everything a render needs for these characters and frame sets (default: every frame set). `withWear`: also load the
@@ -18,10 +18,9 @@ export async function collectBundle(characterIds: string[], withWear = false, fr
   const sets = [...new Set(frameSets)]
   const frames: AssetBundle['frames'] = {}
   for (const m of sets) {
-    for (const v of VARIANTS) {
-      const b = frameBlob(m, v)
-      if (b) frames[frameId(m, v)] = await b
-    }
+    // one clean frame per set: holo is drawn over it (holoFx.ts)
+    const b = frameBlob(m, 'normal')
+    if (b) frames[frameId(m, 'normal')] = await b
   }
   const wear: AssetBundle['wear'] = {}
   if (withWear) {
@@ -40,14 +39,13 @@ export async function collectBundle(characterIds: string[], withWear = false, fr
     names[id] = c.name
     categories[id] = c.category
     art[id] = {}
-    for (const m of sets) {
+    // one picture per set (Gold shows the Wood one): holo is drawn over it, so holo pictures aren't used
+    for (const m of new Set(sets.map(artSetOf))) {
       const vb: VariantBlobs = {}
-      for (const v of VARIANTS) {
-        const slot = c.images[m]?.[v]
-        const b = slot ? await db.getBlob(effectiveKey(slot)) : undefined
-        if (b) vb[v] = b
-        if (slot?.placement) ((placement[id] ??= {})[m] ??= {})[v] = slot.placement
-      }
+      const slot = c.images[m]?.normal
+      const b = slot ? await db.getBlob(effectiveKey(slot)) : undefined
+      if (b) vb.normal = b
+      if (slot?.placement) ((placement[id] ??= {})[m] ??= {}).normal = slot.placement
       art[id][m] = vb
     }
   }

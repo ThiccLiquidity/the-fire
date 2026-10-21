@@ -2,22 +2,16 @@
  *  types use, which frames are missing, and which characters are ready for it. */
 
 import { hasCategory, hasValidName } from './categories'
-import { frameSetLabel, missingFramesFor } from './frames'
+import { artSetOf, frameSetLabel, missingFramesFor } from './frames'
 import { sha256Hex } from './prng'
 import { holoLooksFor, recipeGridKey, type Recipe } from './recipe'
 import type { Character, Variant } from './types'
 
-/** Art variants each frame set needs: normal art for plain and frame-holo looks, holo art for picture and full
- *  holo looks. */
+/** The pictures a recipe needs, by the set they're uploaded under: one normal picture per set its types use (Gold's
+ *  is the Wood one). Every holo look is drawn over that picture (holoFx.ts), so no holo pictures. */
 export function artNeeds(r: Recipe): Map<string, Set<Variant>> {
   const out = new Map<string, Set<Variant>>()
-  r.types.forEach((t, i) => {
-    const looks = holoLooksFor(r, i)
-    const set = out.get(t.frameSet) ?? new Set<Variant>()
-    if (looks.some((h) => h === 'none' || h === 'frame')) set.add('normal')
-    if (looks.some((h) => h === 'picture' || h === 'full')) set.add('holo')
-    out.set(t.frameSet, set)
-  })
+  for (const t of r.types) out.set(artSetOf(t.frameSet), new Set<Variant>(['normal']))
   return out
 }
 
@@ -26,10 +20,10 @@ export function frameSetsOf(r: Recipe): string[] {
   return [...new Set(r.types.map((t) => t.frameSet))]
 }
 
-/** Art this character is missing for the recipe, e.g. ["Fire holo", "Gold normal"]. */
+/** Pictures this character is missing for the recipe, e.g. ["Fire", "Wood"]. */
 export function missingArt(c: Character, needs: Map<string, Set<Variant>>): string[] {
   const out: string[] = []
-  for (const [set, vs] of needs) for (const v of vs) if (!c.images[set]?.[v]) out.push(`${frameSetLabel(set)} ${v}`)
+  for (const [set, vs] of needs) for (const v of vs) if (!c.images[set]?.[v]) out.push(frameSetLabel(set))
   return out
 }
 

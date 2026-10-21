@@ -138,11 +138,14 @@
   })();
 
   // ---------- the card: the finished card image (name, material, category, Series and PDA seal are printed on it)
-  function cardFace(c, lazy = false) { // lazy: grids and lists (off-screen tiles load as they scroll in)
-    const holo = c.holo || 'none';
-    return h('div', { class: `cface m-${c.material} h-${holo} hd-${Store.holder(c)}${c.grade === 10 ? ' g10' : ''}` },
+  // live: the big card and the pack reveal, where a raw holo card's holo moves with the mouse or finger (holo.js)
+  function cardFace(c, lazy = false, live = false) { // lazy: grids and lists (off-screen tiles load as they scroll in)
+    const holo = c.holo || 'none', moving = live && !!Store.cardParts(c) && !!window.Holo;
+    const el = h('div', { class: `cface m-${c.material} h-${holo} hd-${Store.holder(c)}${c.grade === 10 ? ' g10' : ''}` },
       h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: `${c.character}, ${Store.MAT_LABEL[c.material]} card`, draggable: 'false', loading: lazy ? 'lazy' : null, decoding: 'async' }),
-      holo !== 'none' ? h('i', { class: 'shine', 'aria-hidden': 'true' }) : null);
+      holo !== 'none' && !moving ? h('i', { class: 'shine', 'aria-hidden': 'true' }) : null);
+    if (moving) Holo.attach(el, c);
+    return el;
   }
   // the badge under a card: its grade once slabbed, else Cased, else Raw (with the fresh-day timer while it runs; noFresh: none, a banner says it)
   const gradeBadge = (c, noFresh = false) => {
@@ -499,7 +502,7 @@
       return new Promise((resolve) => {
         const els = order.map((c) => {
           const back = h('div', { class: 'face back2' }, h('img', { src: BACK, alt: '', draggable: 'false' }), h('i', { class: 'tease-fx', 'aria-hidden': 'true' }));
-          const front = h('div', { class: 'face front' }, cardFace(c), c.holo !== 'none' ? h('i', { class: 'sheen', 'aria-hidden': 'true' }) : null);
+          const front = h('div', { class: 'face front' }, cardFace(c, false, true), c.holo !== 'none' && !Store.cardParts(c) ? h('i', { class: 'sheen', 'aria-hidden': 'true' }) : null);
           const el = h('button', { type: 'button', class: `sc m-${c.material}`, style: `--glow:${GLOW[c.material]}`, inert: true },
             h('div', { class: 'sc-tilt' }, h('div', { class: 'inner' }, back, front)));
           el._c = c; return el;
@@ -807,7 +810,7 @@
     const canGrade = c.grade == null && !c.pending, canCase = canGrade && !c.cased;
     const sea = (label, href, extra) => h('a', { class: 'btn sea', href, target: '_blank', rel: 'noopener', ...extra }, label, h('span', { 'aria-hidden': 'true', text: '↗' }));
     const body = h('div', { class: 'detail' },
-      h('div', { class: 'big' }, h('div', { class: 'cwrap' }, cardFace(c), gradeBadge(c))),
+      h('div', { class: 'big' }, h('div', { class: 'cwrap' }, cardFace(c, false, true), gradeBadge(c))),
       h('div', { class: 'traits' },
         h('div', { class: 'cmeta' }, matChip(c.material), holoChip(c), od.tier ? h('span', { class: 'tier-b ' + od.tier, text: TIER_LABEL[od.tier] }) : null),
         h('div', { class: 'dstats' },

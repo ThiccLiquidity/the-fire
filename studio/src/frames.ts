@@ -2,11 +2,14 @@
  *  Sources: frames-src/originals (as delivered), cleaned by frames-src/clean_frames.py into src/assets/frames.
  *  Every frame shares FRAME_GEOMETRY, so one layout fits them all.
  *
- *  Frame sets. A set is its two clean frames, src/assets/frames/<set>.webp and <set>-holo.webp (Gold: the holo one
- *  only). The Standard sets are paper, wood, burning (Fire), charcoal (Coal) and diamond (retired). Any other set
+ *  Frame sets. A set is one clean frame, src/assets/frames/<set>.webp. Holo is drawn over it (holoFx.ts), so the
+ *  <set>-holo.webp files are retired and not used, except Gold's, which is the only Gold frame (gold-holo.webp). The
+ *  Standard sets are paper, wood, burning (Fire), charcoal (Coal) and diamond (retired). Any other set
  *  clean_frames.py has built is found here automatically. Set ids are [a-z0-9]+. Full Art has no frame: the character's
  *  photo is the whole card. Each card type of a recipe uses one frame set (recipe.ts CardTypeDef.frameSet); a frame its
  *  cards can need that isn't there blocks the build.
+ *
+ *  Art. One picture per character per set, except Gold, which uses the character's Wood picture (artSetOf).
  *
  *  PDA wear is not in the frames: one set of wear layers (src/assets/wear/wear-l2..l6.webp, made by
  *  frames-src/wear_overlays.py) goes over every finished card, framed or Full Art, so every card type wears the same. */
@@ -19,12 +22,13 @@ export type FrameSetId = string
 const files = import.meta.glob('./assets/frames/*.webp', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
 const wearFiles = import.meta.glob('./assets/wear/wear-l*.webp', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
 
-/** url by set and variant. */
+/** url by set: the clean frame, or the holo one where a set has nothing else (Gold). Holo frames are retired. */
 const FRAME_FILES: Record<FrameSetId, Partial<Record<Variant, string>>> = {}
 for (const [path, url] of Object.entries(files)) {
   const m = /\/([a-z0-9]+)(-holo)?\.webp$/.exec(path)
   if (!m) continue
-  ;(FRAME_FILES[m[1]] ??= {})[m[2] ? 'holo' : 'normal'] = url
+  const f = (FRAME_FILES[m[1]] ??= {})
+  if (!m[2] || !f.normal) f.normal = url
 }
 
 /** The wear layer's url by wear level (L2..L6; PDA 10, L1, is pristine and has none). */
@@ -53,17 +57,30 @@ export const RETIRED_SETS: readonly FrameSetId[] = ['diamond']
 /** The frame sets shown in the studio (Library, Frames & Layout, Preview, the recipe's frame picker). */
 export const SHOWN_FRAME_SETS: FrameSetId[] = FRAME_SETS.filter((s) => !RETIRED_SETS.includes(s))
 
-/** Gold and Full Art are always full holo: their cards use only the holo frame and the holo art. */
+/** Gold and Full Art are always full holo (Gold: gold leaf and gold holo on the picture, a shine on the frame). */
 export const HOLO_ONLY_SETS: readonly FrameSetId[] = ['gold', 'fullart']
+
+/** Sets that use another set's picture instead of their own: Gold uses the Wood picture. */
+const ART_FROM: Record<string, FrameSetId> = { gold: 'wood' }
+
+/** The set whose picture a set's cards show (itself, or Wood for Gold). */
+export function artSetOf(s: FrameSetId): FrameSetId {
+  return ART_FROM[s] ?? s
+}
+
+/** Sets the owner uploads a picture for (all shown sets except those that borrow one, e.g. Gold). */
+export function ownsArt(s: FrameSetId): boolean {
+  return !ART_FROM[s]
+}
 
 /** The holo looks a set's cards can have: Gold and Full Art only full holo. */
 export function holoLooksOf(s: FrameSetId): HoloType[] {
   return HOLO_ONLY_SETS.includes(s) ? ['full'] : ['none', 'frame', 'picture', 'full']
 }
 
-/** The art (and frame) variants a set's cards can use. */
+/** The pictures a set takes: one normal picture (holo is drawn, holoFx.ts); none for a set that borrows its picture. */
 export function variantsOf(s: FrameSetId): Variant[] {
-  return HOLO_ONLY_SETS.includes(s) ? ['holo'] : [...VARIANTS]
+  return ownsArt(s) ? ['normal'] : []
 }
 
 const EXTRA_LABEL: Record<string, string> = { gold: 'Gold', fullart: 'Full Art' }
@@ -84,12 +101,12 @@ export function artBoxOf(s: FrameSetId): Rect {
 
 /** Kept for older code paths: the clean frames of the Standard sets. */
 export const BUILTIN_FRAMES: Record<string, Partial<Record<Variant, string>>> = Object.fromEntries(
-  FRAME_SETS.map((s) => [s, { normal: FRAME_FILES[s]?.normal, holo: FRAME_FILES[s]?.holo }]),
+  FRAME_SETS.map((s) => [s, { normal: FRAME_FILES[s]?.normal }]),
 )
 
 /** Bump (to a time in the past, e.g. when the change is made) when a frame file is added or changed: approvals made
  *  before this go stale and must be redone. */
-export const FRAMES_UPDATED_AT = Date.UTC(2026, 9, 12, 21, 0)
+export const FRAMES_UPDATED_AT = Date.UTC(2026, 9, 21, 0, 0) // holo drawn over the clean frames
 
 /** From the templates' layout.json (750 x 1050), doubled to 1500 x 2100. Identical on every frame. */
 export const FRAME_GEOMETRY = {
@@ -118,9 +135,9 @@ export function frameId(s: FrameSetId, v: Variant): string {
   return `${s}:${v}`
 }
 
-/** The frame variant a holo look uses: a holo frame for frame and full holo. */
-export function frameVariantOf(h: HoloType): Variant {
-  return h === 'frame' || h === 'full' ? 'holo' : 'normal'
+/** The frame a holo look uses: always the clean one (holo is drawn over it). */
+export function frameVariantOf(_h: HoloType): Variant {
+  return 'normal'
 }
 
 /** Frames missing from a set for the given holo looks, as readable labels, e.g. "Gold holo". A frameless set
@@ -134,12 +151,10 @@ export function missingFramesFor(s: FrameSetId, holos: readonly HoloType[]): str
   return out
 }
 
-/** How complete a frame set is: its clean frames present out of those it uses (normal and holo; Gold holo only;
- *  Full Art none). */
+/** How complete a frame set is: its one frame present or not (Full Art: none needed). */
 export function frameSetFiles(s: FrameSetId): { have: number; total: number } {
   if (FRAMELESS_SETS.includes(s)) return { have: 0, total: 0 }
-  const vs = variantsOf(s)
-  return { have: vs.filter((v) => hasFrame(s, v)).length, total: vs.length }
+  return { have: hasFrame(s, 'normal') ? 1 : 0, total: 1 }
 }
 
 /** The wear layer for a wear level, or undefined for PDA 10 / ungraded (no wear). */

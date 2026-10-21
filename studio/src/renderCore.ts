@@ -2,7 +2,7 @@
  *  downscaled to what the art window needs) and renders cards to encoded Blobs via render.ts. */
 
 import { cardView, renderCardBlob, solidFullCardArt, withPlacement, type CardAssets, type CardFace } from './render'
-import { FULL_CARD_ART_SETS, frameId } from './frames'
+import { FULL_CARD_ART_SETS, artSetOf, frameId } from './frames'
 import { CARD_H, CARD_W, wearLookOf, type WearLevel, type WearLook } from './rules'
 import type { Layout, OutputFormat, Placement, Variant } from './types'
 
@@ -102,10 +102,11 @@ export class CardRenderer {
     })
   }
 
+  /** The clean frame and the one picture (Gold borrows Wood's); the holo is drawn over them (render.ts drawCard). */
   async assetsFor(face: CardFace): Promise<CardAssets> {
     const [frame, art, wear] = await Promise.all([
-      this.frame(face.frameSet, face.holoFrame ? 'holo' : 'normal'),
-      this.art(face.characterId, face.frameSet, face.holoPicture ? 'holo' : 'normal'),
+      this.frame(face.frameSet, 'normal'),
+      this.art(face.characterId, artSetOf(face.frameSet), 'normal'),
       this.wear(wearLookOf(face.grade)),
     ])
     return { frame, art, wear }
@@ -116,7 +117,7 @@ export class CardRenderer {
     const view = cardView(face, this.bundle.names[face.characterId] ?? face.characterId, this.bundle.categories[face.characterId])
     const base = this.bundle.layouts[face.frameSet]
     if (!base) throw new Error(`No layout for frame set ${face.frameSet}`)
-    const layout = withPlacement(base, this.placementOf(face.characterId, face.frameSet, face.holoPicture ? 'holo' : 'normal'))
+    const layout = withPlacement(base, this.placementOf(face.characterId, artSetOf(face.frameSet), 'normal'))
     return renderCardBlob(assets, layout, view, format, this.canvas)
   }
 

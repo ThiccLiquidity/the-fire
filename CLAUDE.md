@@ -13,9 +13,13 @@
 # Card Studio (`studio/`)
 
 - Decisions live in `docs/card-studio.md`.
-- **The frames are locked.** The 10 approved frames (5 materials x normal/holo) are built in under
+- **The frames are locked.** The approved frames (Paper, Wood, Fire, Coal, plus Gold's one frame) are built in under
   `studio/src/assets/frames`, made from `studio/frames-src/originals` by `studio/frames-src/clean_frames.py`.
-  Never edit or regenerate them by hand. New frames go through the same script (just the clean normal + holo).
+  Never edit or regenerate them by hand. New frames go through the same script (just the clean frame).
+- **Holo is drawn, not delivered** (`studio/src/holoFx.ts`, owner-approved Oct 2026): the rainbow holo over the frame,
+  the picture or both; Gold gets gold leaf + gold holo on the picture and only a gold shine on the frame; Full Art is
+  holo all over. The old holo frames (`*-holo.webp`, except Gold's) are retired. No holo pictures.
 - PDA wear is one set of wear layers over every card type (`studio/frames-src/wear_overlays.py`); no per-frame wear
   files. Full Art has no frame: the photo is the whole card.
-- The only thing the owner drops in per card is the character image.
+- The only thing the owner drops in per card is the character image: one per material (Paper, Wood, Fire, Coal) plus
+  Full Art. Gold uses the Wood picture.

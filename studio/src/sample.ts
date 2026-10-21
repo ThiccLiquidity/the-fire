@@ -5,7 +5,7 @@
 import * as db from './db'
 import { MATERIALS, MATERIAL_LABEL, type Material } from './rules'
 import { saveCharacter, setCharacterImage } from './store'
-import type { Character, Variant } from './types'
+import type { Character } from './types'
 
 type Ctx = OffscreenCanvasRenderingContext2D
 
@@ -107,11 +107,10 @@ export async function loadSampleAssets(onStatus: (s: string) => void): Promise<v
     const now = Date.now()
     const c: Character = { id: db.newId(), name: s.name, shortId: s.shortId, category: s.category, images: {}, createdAt: now, updatedAt: now, placeholder: true }
     await saveCharacter(c)
+    // one picture per material: the studio draws the holo over it
     for (const m of MATERIALS) {
-      for (const v of ['normal', 'holo'] as Variant[]) {
-        onStatus(`Character: ${s.name} ${m} ${v}`)
-        await setCharacterImage(c.id, m, v, await makePlaceholderArt(s.name, s.shape, m, v === 'holo'), `placeholder-${s.shortId}-${m}-${v}.png`, true)
-      }
+      onStatus(`Character: ${s.name} ${m}`)
+      await setCharacterImage(c.id, m, 'normal', await makePlaceholderArt(s.name, s.shape, m, false), `placeholder-${s.shortId}-${m}-normal.png`, true)
     }
   }
   onStatus('Sample assets loaded.')

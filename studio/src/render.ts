@@ -8,10 +8,11 @@ import type { Layout, OutputFormat, Placement, PsaBox, Rect, TextBox, TextStyle 
 import type { Ctx2D } from './wear'
 import { drawCase, drawSlab, type SlabLabel } from './protect'
 import { FRAMELESS_SETS } from './frames'
+import { cardHolo, frameHolo, goldFrameShine, goldPicture, pictureHolo } from './holoFx'
 
 export type ImgSrc = ImageBitmap | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas
 
-/** The two images one card needs: the frame variant and the art variant already chosen by holo state. */
+/** The images one card needs: its frame and its art (holo is drawn over them, holoFx.ts). */
 export interface CardAssets {
   frame: ImgSrc | null
   art: ImgSrc | null
@@ -61,6 +62,10 @@ export interface CardView {
   holder: 'none' | 'case' | 'slab'
   /** The slab label's line under the name: "Series 6 · Fire · Full Holo". */
   slabSub: string
+  /** Holo drawn on the frame / the picture (holoFx.ts). Gold always has its gold picture and frame shine; Full Art is
+   *  holo all over. */
+  holoFrame: boolean
+  holoPicture: boolean
 }
 
 export function cardView(
@@ -79,6 +84,8 @@ export function cardView(
     pda10: face.grade === 10,
     holder: face.grade != null ? 'slab' : face.cased ? 'case' : 'none',
     slabSub: [`Series ${face.fire > 0 ? face.fire : 1}`, face.typeName, holo].filter(Boolean).join(' · '),
+    holoFrame: !!face.holoFrame,
+    holoPicture: !!face.holoPicture,
   }
 }
 
@@ -390,12 +397,23 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
     ctx.fillStyle = '#2b2b30'
     ctx.fillRect(0, 0, CARD_W, CARD_H)
   }
+  // holo is drawn, not delivered as images (holoFx.ts): on the picture right after the art (under the frame's edge),
+  // on the frame right after the frame, and always before the text, the seal and the wear
+  const fx = typeof OffscreenCanvas !== 'undefined'
+  const gold = view.frameSet === 'gold'
+  const pictureFx = () => {
+    if (!fx || frameless || !assets.art) return
+    if (gold) goldPicture(ctx, layout.art.box)
+    else if (view.holoPicture) pictureHolo(ctx, layout.art.box)
+  }
   if (layout.layering === 'art-behind') {
     if (assets.art) drawArt(ctx, assets.art, layout)
+    pictureFx()
     if (assets.frame) drawFrame(ctx, assets.frame)
   } else {
     if (assets.frame) drawFrame(ctx, assets.frame)
     if (assets.art) drawArt(ctx, assets.art, layout)
+    pictureFx()
   }
   if (frameless) {
     // no frame: the art is the whole card, cut to the same rounded card shape as every frame
@@ -404,6 +422,10 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
     ctx.fillStyle = '#000'
     ctx.fill()
     ctx.globalCompositeOperation = 'source-over'
+    if (fx && (view.holoFrame || view.holoPicture)) cardHolo(ctx, (q) => outlinePath(q, 0))
+  } else if (fx && assets.frame) {
+    if (gold) goldFrameShine(ctx, assets.frame, layout.art.box)
+    else if (view.holoFrame) frameHolo(ctx, assets.frame, layout.art.box)
   }
   if (view.pda10 && typeof OffscreenCanvas !== 'undefined') drawPda10(ctx, assets.frame)
   // heavy wear (PDA 3-1) puts scorch and stains under the text: give un-outlined text its outline so it stays readable

@@ -117,6 +117,7 @@ input[aria-invalid='true']:focus { outline: 2px solid var(--err); outline-offset
   background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0;
 }
 .slot-grid { display: grid; grid-template-columns: 90px 1fr 1fr; gap: 10px; margin-top: 12px; align-items: start; }
+.slot-grid.one { grid-template-columns: 90px minmax(0, 420px); }
 .slot-head { font-weight: 600; color: var(--muted); }
 .slot-label { font-weight: 600; padding-top: 8px; }
 .slot { display: grid; grid-template-columns: 150px 1fr; gap: 8px; background: var(--panel-2); border-radius: 8px; padding: 6px; }

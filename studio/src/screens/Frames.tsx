@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { DropZone, Field, Notice, NumberInput, useAction } from '../components'
-import { BUILTIN_FRAMES, FRAME_SETS, FRAMELESS_SETS, SHOWN_FRAME_SETS, frameBlob, frameSetFiles, frameSetLabel, variantsOf, wearBlob } from '../frames'
+import { BUILTIN_FRAMES, FRAME_SETS, FRAMELESS_SETS, HOLO_ONLY_SETS, SHOWN_FRAME_SETS, artSetOf, frameBlob, frameSetFiles, frameSetLabel, wearBlob } from '../frames'
 import { getBlob } from '../db'
 import { defaultLayout } from '../layoutDefaults'
 import { CardTextStyle, useFontOptions } from './TextStyle'
@@ -39,17 +39,18 @@ function FrameGallery({ m }: { m: string }) {
       <h3>{frameSetLabel(m)} frames <span className="tag">built in · locked</span></h3>
       <p className="muted small">
         The collection's master frames. They ship with the studio and can't be uploaded or edited here; every frame shares the
-        same art window and panels, so the layout below fits them all.
+        same art window and panels, so the layout below fits them all. Holo is drawn over the frame and the picture by the
+        studio (no holo frames).
       </p>
       {FRAMELESS_SETS.includes(m) ? (
         <p className="muted small" data-testid={`frameless-${m}`}>No frame: the character's photo is the whole card, cut to the same rounded shape.</p>
       ) : (
         <div className="row wrap">
-          {variantsOf(m).map((v) => {
+          {(['normal'] as const).map((v) => {
             const url = BUILTIN_FRAMES[m][v]
             return (
               <div key={v} className="frame-slot" data-testid={`frame-${m}-${v}`}>
-                <div className="slot-head">{v === 'normal' ? 'Normal frame' : 'Holo frame'}</div>
+                <div className="slot-head">Frame</div>
                 <div className="frame-drop">
                   {url ? <img src={url} className="checker" alt={`${m} ${v} frame`} /> : <span className="muted">Not delivered yet</span>}
                 </div>
@@ -123,10 +124,11 @@ function LayoutEditor({ m }: { m: string }) {
   const dirty = JSON.stringify({ ...layout, updatedAt: 0 }) !== JSON.stringify({ ...saved, updatedAt: 0 })
 
   const char = s.characters.find((c) => c.id === charId) ?? s.characters[0]
-  // Gold and Full Art are always holo: preview them that way whatever the checkboxes say
-  const holoOnly = !variantsOf(m).includes('normal')
-  const artSlot = char?.images[m]?.[picHolo || holoOnly ? 'holo' : 'normal'] ?? char?.images[m]?.normal ?? char?.images[m]?.holo
-  const frameBmp = useFrameBitmap(m, frameHolo || holoOnly ? 'holo' : 'normal', 'clean')
+  // Gold and Full Art are always holo: preview them that way whatever the checkboxes say. One picture per set (Gold's is
+  // the Wood one) and the clean frame; the holo is drawn over them
+  const holoOnly = HOLO_ONLY_SETS.includes(m)
+  const artSlot = char?.images[artSetOf(m)]?.normal
+  const frameBmp = useFrameBitmap(m, 'normal', 'clean')
   const wearBmp = useFrameBitmap(null, 'normal', wearLookOf(grade))
   const artBmp = useBitmap(artSlot ? effectiveKey(artSlot) : undefined)
 

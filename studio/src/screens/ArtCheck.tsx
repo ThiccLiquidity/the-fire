@@ -4,8 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Notice, useAction } from '../components'
-import { FULL_CARD_ART_SETS, artBoxOf, frameBlob, frameSetLabel, variantsOf } from '../frames'
-import { matchHoloToNormal } from '../artMatch'
+import { FULL_CARD_ART_SETS, artBoxOf, frameBlob, frameSetLabel } from '../frames'
 import { drawZones, fitReport, fullArtTemplateBlob, windowTemplateBlob } from '../artGuide'
 import { cardView, drawCard, solidFullCardArt, withPlacement } from '../render'
 import { CARD_H, CARD_W } from '../rules'
@@ -57,24 +56,7 @@ export function ArtCheck({ c, m, v, slot }: { c: Character; m: string; v: Varian
   const [art, setArt] = useState<ImageBitmap | null>(null)
   const [frame, setFrame] = useState<ImageBitmap | null>(null)
   const [busy, error, run] = useAction()
-  const [matchMsg, setMatchMsg] = useState<{ kind: 'ok' | 'warn'; text: string } | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
-  const normalSlot = v === 'holo' && variantsOf(m).includes('normal') ? c.images[m]?.normal : undefined
-  const matchNormal = () => run(async () => {
-    if (!normalSlot) return
-    setMatchMsg(null)
-    await new Promise((r) => setTimeout(r, 30)) // let "Matching..." paint before the search runs
-    const r = await matchHoloToNormal(c.id, m)
-    if (r.kind === 'different') {
-      setMatchMsg({ kind: 'warn', text: "Couldn't line it up: the holo doesn't look like the same drawing. Drag it into place." })
-      return
-    }
-    if (r.kind !== 'matched') return
-    setP(r.placement)
-    setMatchMsg(r.exact
-      ? { kind: 'ok', text: 'Lined up with the normal art. Check the preview, then Save placement.' }
-      : { kind: 'warn', text: 'Lined up as close as it goes: the holo is drawn smaller, so it can only zoom so far without leaving a gap. Check the preview, then Save placement.' })
-  })
   const key = effectiveKey(slot)
   const dirty = p.zoom !== saved.zoom || p.x !== saved.x || p.y !== saved.y
   const shape = fullCard ? '5:7, 1500 x 2100' : `square, ${box.w} x ${box.h}`
@@ -193,11 +175,7 @@ export function ArtCheck({ c, m, v, slot }: { c: Character; m: string; v: Varian
           {slider('Left / right', 'x', -400, 400, 2, (n) => `${n > 0 ? '+' : ''}${n}`)}
           {slider('Up / down', 'y', -400, 400, 2, (n) => `${n > 0 ? '+' : ''}${n}`)}
           {fullCard && <label className="check"><input type="checkbox" checked={zones} onChange={(e) => setZones(e.target.checked)} /> Show text areas</label>}
-          {normalSlot && (
-            <button onClick={() => void matchNormal()} disabled={busy} data-testid="match-normal">{busy ? 'Matching...' : 'Match normal'}</button>
-          )}
           {!covers && <Notice kind="warn">Gap: the picture doesn't fill the window (the green). Zoom in or move it.</Notice>}
-          {matchMsg && <Notice kind={matchMsg.kind}>{matchMsg.text}</Notice>}
           <div className="row" style={{ gap: 8 }}>
             <button disabled={!dirty || busy} data-testid="placement-save"
               onClick={() => void run(() => updateImagePlacement(c.id, m, v, isNone(p) ? undefined : p))}>Save placement</button>

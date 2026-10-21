@@ -9,7 +9,7 @@ import { effectiveDiamonds, type DealResult, type DealtCard } from './deal'
 import { legacyDiamondRecipe } from './recipe'
 import { CARDS_PER_PACK, MATERIALS, type Material } from './rules'
 import { capPercentOf, salePacks, saleOf, saleWithPacks, standardSale, type SaleSettings } from './sale'
-import type { FireRecord } from './types'
+import type { Character, FireRecord } from './types'
 
 type OldSale = Partial<SaleSettings> & { creditPacksMax?: number }
 
@@ -64,4 +64,14 @@ export function migrateFire(raw: unknown): FireRecord {
     else f.packs = salePacks(saleOf(f))
   }
   return f as FireRecord
+}
+
+/** Holo is drawn now (holoFx.ts), so each set takes one normal picture. Full Art used to take only a holo picture:
+ *  that picture becomes its normal one. Other holo pictures stay stored but unused. Returns the changed character, or
+ *  null when nothing moves. */
+export function migrateCharacterArt(c: Character): Character | null {
+  const fa = c.images.fullart
+  if (!fa?.holo || fa.normal) return null
+  const { holo, ...rest } = fa
+  return { ...c, images: { ...c.images, fullart: { ...rest, normal: holo } } }
 }
