@@ -236,3 +236,6 @@ body[data-mode=port].quiet .sdock-bar .sd-t { font-size: 18px }
 .qb-go:hover { filter: brightness(1.08) } .qb-go:focus-visible { outline: 2px solid #fff; outline-offset: 2px }
 body[data-mode=port] .qbanner { font-size: 13px; gap: 8px; flex-wrap: wrap; text-align: center }
 @media (prefers-reduced-motion: reduce) { body.quiet .spot, body.quiet .pill[data-st="suggest"] { animation: none } }
+.sd-won { font-size: 13.5px; font-weight: 800; color: var(--gold) }
+.sd-res { justify-self: start; background: none; border: 0; padding: 2px 0; color: #ffd27a; font: 800 13px var(--body); text-decoration: underline; text-underline-offset: 3px; cursor: pointer }
+.sd-res:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 4px }

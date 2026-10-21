@@ -11,10 +11,12 @@
   const CHARS = { 'Bowling Ball': { id: 'bowling', category: 'Sports' }, Jellyfish: { id: 'jellyfish', category: 'Animal' }, Cactus: { id: 'cactus', category: 'Plant' } };
   const NAMES = Object.keys(CHARS);
   const DAY = 86400000;
+  const DEMO_ADDR = '0x7a3f2b9c41d0e5a6b8f9c0d1e2f3a4b5c6d7c91e'; // the demo wallet (its short form is shown)
   // demo prices: the pack, and the coins it can be paid in (cases and grades are priced in dollars too)
   const PRICES = { PACK_USD: 2.5, PAPER_USD: 0.08, ETH_USD: 2500, PLANK_USD: 0.0000021, CASE_USD: 0.05, GRADE_USD: 1, PACK_PAPER: 1, PRESS_PAPER: 1, SUGGEST_PAPER: 1 }; // this Series' settings (per drop)
   // demo collection: cards from Series 6 (already closed; the card images print "Forged · Series 6"), with a spread of materials, holos and grades
   let seed = 7; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const mkR = (k) => () => (k = (k * 16807) % 2147483647) / 2147483647;
   const pickMat = () => { const u = R(); return u < 0.5 ? 'paper' : u < 0.8 ? 'wood' : u < 0.95 ? 'fire' : 'charcoal'; };
   const cards = [];
   for (let i = 0; i < 46; i++) {
@@ -44,7 +46,7 @@
     series: { no: 7, total: 167, starters: 50, startersClaimed: 23, sold: 12, plankOnly: 50, plankSold: 12, walletLimit: 5, cast: 10, phase: 0, closed: false },
     // phase: 0 holders first + PLANK only, 1 holders first (any currency), 2 open to all (walletLimit each), 3 no limit, 4 sold out
     wallet: {
-      connected: false, address: '0x7a3f…c91e', name: 'Demo wallet', isPressHolder: true, inSnapshot: true, isContract: false,
+      connected: false, address: '0x7a3f…c91e', full: DEMO_ADDR, name: 'Demo wallet', isPressHolder: true, inSnapshot: true, isContract: false,
       balances: { ETH: 0.42, PLANK: 1250000000, PAPER: 24, USDG: 50 },
       credits: 1, burnCount: 12, starterClaimed: false, bought: 0, pending: [],
       // ERC-20 allowances this wallet has given FireSale (packs, Press packs, free packs and suggestions all take PAPER)
@@ -150,7 +152,8 @@
     SUGGEST_MAX_BYTES: 1000,
     SUGGEST_FIELDS: [['character', 'Character'], ['personality', 'Personality'], ['background', 'Background']],
     // Suggestions come in two waves per Series: first its theme and art style (one form; each is its own suggestion,
-    // sent together in one transaction, FireCredits.suggestMany), then, once those are picked and announced, its
+    // sent together in one transaction, FireCredits.suggestMany), then, once those are announced (off chain: the picks are
+    // made on chain once per Series, at its drop setup, theme, style and characters together), its
     // characters for that theme and style. The owner sets the wave and the picked theme and style here (demo:
     // ?wave=look|characters&theme=...&style=... in the URL).
     SUGGEST_WAVE: (() => {
@@ -160,6 +163,42 @@
         closes: Date.now() + (3 * 24 + 4) * 3600 * 1000, // when this wave stops taking suggestions (the owner sets it)
         count: +(q.get('ideas') || 142) }; // ideas in the box so far (the real site reads FireCredits.suggestionCount for the round)
     })(),
+    // Suggestion results: each finished wave the owner published (ops/suggestions/publish.mjs writes
+    // suggestions/results.json): the 10 drawn at random per kind, the picks, the seed anyone can re-run the draw with,
+    // and what happens next. Oldest first. Demo: ?results=won | lost | none, or Demo controls.
+    SUGGEST_RESULTS: [],
+    results(mode) { // demo: one finished theme & art style wave for the next Series, with the demo wallet won / shortlisted / absent
+      if (mode === 'none') return [];
+      const next = state.series.no + 1, me = DEMO_ADDR, R = mkR(31);
+      const addr = () => '0x' + Array.from({ length: 40 }, () => '0123456789abcdef'[Math.floor(R() * 16)]).join('');
+      const THEMES = ['Haunted diner', 'Space pirates', 'Underwater kingdom', 'Desert carnival', 'Robot garden', 'Midnight library', 'Volcano spa', 'Toy factory after dark', 'Arctic post office', 'Jungle subway'];
+      const STYLES = ['Old woodcut print', 'Neon pixel art', 'Watercolor storybook', 'Claymation', 'Stained glass', '1950s comic', 'Ink and wash', 'Paper cutout', 'Chrome airbrush', 'Chalk on blackboard'];
+      let id = 100;
+      const list = (kind, label, titles, pick) => ({ kind, label, pool: kind === 'theme' ? 61 : 54, shortlist: titles.map((t, i) => {
+        const by = mode === 'won' && kind === 'theme' && i === pick ? me : mode === 'lost' && kind === 'style' && i === 6 ? me : addr();
+        return { id: id++, by, title: t, text: `${label}: ${t}`, alsoBy: i === pick ? [addr(), addr()] : i % 4 === 1 ? [addr()] : [], picked: i === pick };
+      }) });
+      const kinds = [list('theme', 'Theme', THEMES, 0), list('style', 'Art style', STYLES, 0)];
+      const winners = kinds.map((k) => { const s = k.shortlist.find((x) => x.picked); return { kind: k.kind, id: s.id, by: s.by, title: s.title, text: s.text, tx: null }; }); // announced; picked on chain at the drop setup
+      return [{ series: next, wave: 'look', round: 3, chainId: 4663, seed: '9f3c51e07a2b84d6c1e0f5a39b7d2e48', drawnAt: new Date(Date.now() - 2 * DAY).toISOString(),
+        publishedAt: new Date(Date.now() - 3 * 3600e3).toISOString(), suggestions: 142, next: 'The characters wave is open: suggest who goes on the cards.', kinds, winners }];
+    },
+    /** Use a set of published waves: the newest finished theme & art style wave sets the character wave's theme and style. */
+    setResults(waves) {
+      Store.SUGGEST_RESULTS = Array.isArray(waves) ? waves : [];
+      const q = new URLSearchParams(location.search), W = Store.SUGGEST_WAVE;
+      const look = Store.SUGGEST_RESULTS.filter((w) => w.wave === 'look' && w.series === state.series.no + 1).pop();
+      if (look && !q.has('wave')) {
+        const win = (k) => look.winners.find((x) => x.kind === k)?.title;
+        if (!Store.SUGGEST_RESULTS.some((w) => w.wave === 'characters' && w.series === look.series)) { W.wave = 'characters'; W.theme = win('theme') || W.theme; W.style = win('style') || W.style; }
+      }
+    },
+    /** This wallet's place in a wave: 'won', 'shortlisted' (drawn, not picked) or null. */
+    resultFor(w, addr) {
+      const a = String(addr || '').toLowerCase(); if (!a) return null;
+      if (w.winners.some((x) => x.by.toLowerCase() === a)) return 'won';
+      return w.kinds.some((k) => k.shortlist.some((s) => s.by.toLowerCase() === a || (s.alsoBy || []).some((b) => b.toLowerCase() === a))) ? 'shortlisted' : null;
+    },
     LOOK_FIELDS: [['theme', 'Theme'], ['style', 'Art style']],
     // a theme and an art style, each its own on-chain text ("Theme: ..." / "Art style: ...")
     packLook(f) {
@@ -226,5 +265,15 @@
     get covering() { return !!document.querySelector('dialog.sheet[open]'); },
   };
 
+  // results: ?results=won|lost|none previews the demo states; otherwise the published file (empty until the owner
+  // publishes a wave)
+  {
+    const mode = new URLSearchParams(location.search).get('results');
+    if (mode) {
+      Store.setResults(Store.results(mode === '1' ? 'lost' : mode));
+      if (mode === 'won') { state.suggestions.unshift({ text: 'Theme: Haunted diner', at: 'Series ' + state.series.no, picked: true }); }
+      if (mode === 'lost') state.suggestions.unshift({ text: 'Art style: Ink and wash', at: 'Series ' + state.series.no, picked: false });
+    } else fetch('suggestions/results.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).then((f) => { if (f?.waves?.length) Store.update(() => Store.setResults(f.waves)); }).catch(() => {});
+  }
   window.Store = Store; window.Sheet = Sheet; window.toast = toast;
 })();

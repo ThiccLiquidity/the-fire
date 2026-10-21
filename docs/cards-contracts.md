@@ -263,10 +263,25 @@ Text with no `Character:` line is read as the character alone. The site counts U
 **Two waves per Series.** First its look: a theme and an art style, one line each, `Theme: A haunted diner` and
 `Art style: Old woodcut print`, each its own suggestion. The site sends either alone with `suggest`, or both in one
 transaction with `suggestMany(texts, maxPaper)` (1 to `MAX_SUGGESTIONS_PER_TX` = 3 texts, `suggestionPaper` each, at most
-$1 each). Once the theme and style are picked and announced, the character wave asks for characters in that theme and
-style. Everything is picked by the owner from a random shortlist (`ops/suggestions/draw.mjs`: one per wallet per kind,
-the same idea merged, 10 drawn with a printed seed). Picks per Series: its characters plus `EXTRA_PICKS` (2: the theme
-and the art style), all in one picking session while the drop is set up.
+$1 each). Once the theme and style are announced, the character wave asks for characters in that theme and style.
+Everything is chosen by the owner from a random shortlist (`ops/suggestions/draw.mjs`: one per wallet per kind, the
+same idea merged, 10 drawn with a printed seed).
+
+- **Announced off chain, picked on chain once.** The theme and the art style are announced straight after the look wave
+  (`ops/suggestions/publish.mjs --picks`, shown on the site's Suggestion results). On chain, a Series is picked ONCE, at
+  its drop setup (`pickSuggestions` needs a configured drop that hasn't started): the theme, the style and the
+  characters together, in one picking session. That's when the free packs are given. Both waves sit in the same round,
+  because a round only moves on when a picking session starts.
+- **Open the next look wave only after the picks.** Anything suggested before a Series' picking session lands in the
+  round that session takes, and can never be picked: open the next Series' look wave after the current Series' picks
+  are done. `draw.mjs --series <n>` warns when the round being drawn can no longer be picked for that Series.
+- **One pack per idea.** Picks per Series: its characters plus `EXTRA_PICKS` (2), so exactly one theme and one art
+  style can earn the free pack. When several wallets sent the same idea (merged by the draw, listed as "had it too"),
+  only the first to suggest it can be credited: the first suggester wins the pack.
+- **Results.** `ops/suggestions/publish.mjs` writes each wave's results (the 10 drawn per kind, the picks, the seed,
+  what's next) into `web/art/factory/forge/suggestions/results.json`; the site shows them, with a one-time reveal and
+  "You won a free pack" for a winner's wallet. After the on-chain pick, publishing with `--rpc` fills in the pick
+  transaction.
 
 Guards that stay fixed (safety, not product): settings lock at the drop's start; one drop at a time; every purchase
 names its most PLANK/USDG/ETH and PAPER; the PAPER ceilings (per drop for packs, $1 for suggestions; the last good
