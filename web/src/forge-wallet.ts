@@ -11,6 +11,7 @@
 // This entry is tiny. The wallet stack (wagmi, and AppKit when there's a project id) loads on the first click, or
 // right away for someone who was connected last visit, so their connection comes back by itself.
 
+type Hex = `0x${string}`;
 type WalletLib = typeof import("./lib/wallet");
 type WalletAccount = import("./lib/wallet").WalletAccount;
 export type WalletChoice = import("./lib/wallet").WalletChoice;
@@ -94,14 +95,37 @@ function hadSession(): boolean {
   try { return !!JSON.parse(localStorage.getItem("wagmi.store") || "null")?.state?.current; } catch { return false; }
 }
 
+// A local test chain only (web/scripts/forge-e2e): the test sets globalThis.__FORGE_NET__ (name "local") and
+// __FORGE_TEST__ = { key } before the page loads, and "Connect" signs with that anvil dev account instead of a wallet
+// (drand is stood in for too: the dev router takes any signature). Inert on any real network: wallet.ts refuses a
+// local signer unless the chain is "local", and nothing on the site sets either global.
+const testKey = (): Hex | null => {
+  const t = (globalThis as { __FORGE_TEST__?: { key?: string } }).__FORGE_TEST__;
+  return globalThis.__FORGE_NET__?.name === "local" && /^0x[0-9a-f]{64}$/i.test(t?.key ?? "") ? (t!.key as Hex) : null;
+};
+async function connectTestSigner(key: Hex) {
+  const [w, c, { privateKeyToAccount }, { keccak256, toHex }] = await Promise.all([load(), ForgeChain.lib(), import("viem/accounts"), import("viem")]);
+  w.setLocalSigner(privateKeyToAccount(key));
+  c.setSignatureSource(async (round) => (keccak256(toHex(`r${round}a`)) + keccak256(toHex(`r${round}b`)).slice(2)) as Hex);
+  onAccount(w.getAccount());
+}
+
 const ForgeWallet = {
   /** Open the wallet modal: wallet list if disconnected, account view (copy, disconnect) if connected.
    *  Resolves "modal" when AppKit showed it, or "list" when the page should show wallets() itself (no project id). */
-  async open(): Promise<"modal" | "list"> { return (await (await load()).connect()) ? "modal" : "list"; },
+  async open(): Promise<"modal" | "list"> {
+    const k = testKey();
+    if (k) { await connectTestSigner(k); return "modal"; }
+    return (await (await load()).connect()) ? "modal" : "list";
+  },
   /** Fallback mode: the installed wallets (EIP-6963, real names and icons) and Coinbase Wallet. */
   async wallets(): Promise<WalletChoice[]> { return (await load()).listWallets(); },
   async connectWith(id: string): Promise<void> { await (await load()).connectWith(id); },
-  async disconnect(): Promise<void> { await (await load()).disconnect(); },
+  async disconnect(): Promise<void> {
+    const w = await load();
+    if (testKey()) { w.setLocalSigner(undefined); onAccount(w.getAccount()); return; }
+    await w.disconnect();
+  },
   async switchNetwork(): Promise<void> { await (await load()).switchToRobinhood(); },
   /** A short, human reason for a failed wallet action. */
   friendly: (e: unknown): string => lib ? lib.friendly(e) : String((e as Error)?.message ?? e),
@@ -132,7 +156,7 @@ const ForgeChain = {
   lib(): Promise<ChainLib> {
     if (!liveWanted) return Promise.reject(new Error("The site is in demo mode."));
     return (chainLoading ??= import("./lib/chain").then((c) => {
-      if (!c.isDeployed(c.NET) || c.NET.name !== liveWanted) throw new Error(`The cards aren't deployed on ${c.NET.label} yet.`);
+      if (!c.isDeployed(c.NET) || (c.NET.name !== liveWanted && c.NET.name !== "local")) throw new Error(`The cards aren't deployed on ${c.NET.label} yet.`);
       return c;
     }).catch((e) => { chainLoading = undefined; throw e; }));
   },

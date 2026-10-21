@@ -25,8 +25,8 @@ export function launchChecks(mode: string): Plugin {
 
 // The live site is the static Forge in public/forge (copied as-is into dist). index.html only points / at it;
 // Vercel also redirects / to /forge/ (vercel.json). src/lib holds the chain, wallet, swap and card-ABI modules;
-// `tsc -b` type-checks them. The wallet bundle for the Forge (src/forge-wallet.ts, vite.wallet.config.ts) is ready
-// but not wired into the site yet; `npm run build:wallet` builds it.
+// `tsc -b` type-checks them. The Forge's wallet bundle (src/forge-wallet.ts, vite.wallet.config.ts) is built by
+// `npm run build` into dist/forge/vendor and loaded only in live mode (?live=testnet; forge/live.js).
 // https://vite.dev/config/
 // src/lib/config.ts reads ../deployments/<chainId>.json (the address file every tool shares): the dev server may serve it.
 export default defineConfig(({ mode }) => ({

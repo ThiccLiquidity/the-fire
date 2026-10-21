@@ -3,6 +3,7 @@
    (burn toward a free pack) and the suggestion box. Demo data only: everything reads and writes window.Store. */
 (() => {
   const S = () => Store.state;
+  const LIVE = window.Live?.on; // live mode (live.js): the chain's data, and Live sends the transactions
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const HOLO = { none: 'No holo', frame: 'Holo frame', picture: 'Holo picture', full: 'Full holo' };
@@ -42,7 +43,10 @@
   const btn = (label, cls, onclick, extra = {}) => h('button', { type: 'button', class: 'btn ' + (cls || ''), onclick, ...extra }, label);
   const paper = () => S().wallet.balances.PAPER;
   const connected = () => S().wallet.connected;
-  const connectBtn = () => btn('Connect wallet', 'primary', () => { Store.update((s) => { s.wallet.connected = true; }); toast('Demo wallet connected', 'good'); });
+  const connectBtn = () => btn('Connect wallet', 'primary', () => {
+    if (LIVE) return Live.needWallet();
+    Store.update((s) => { s.wallet.connected = true; }); toast('Demo wallet connected', 'good');
+  });
   const getPaperBtn = () => btn('Get PAPER', 'gold', () => (window.UI?.openGetPaper ? window.UI.openGetPaper() : toast('Get PAPER is coming soon')));
   const byId = (id) => S().cards.find((c) => c.id === id);
   // true rarity (Store.trueOdds): how rare that exact card (character, material, holo) is in its Series, x "that grade or better"
@@ -322,7 +326,7 @@
       const tiles = keys.filter((no) => s.sealed[no] > 0).map((no) => { // only Series you hold sealed packs of
         const n = s.sealed[no], live = no === s.series.no && s.series.phase < 4;
         let act;
-        if (live) act = h('p', { class: 'lock-note', text: `Opens when Series ${no} sells out` });
+        if (live) act = h('p', { class: 'lock-note', text: LIVE ? `Opens once Series ${no} closes` : `Opens when Series ${no} sells out` });
         else if (!n) act = h('p', { class: 'muted', text: 'All opened' });
         else if (!connected()) act = connectBtn();
         else act = h('div', { class: 'row' }, btn('Open', 'primary', () => openPacks(no, 1), { 'data-key': 'open1-' + no }),
@@ -379,6 +383,7 @@
     async function openPacks(series, n) {
       if (busy) return; busy = true;
       const prior = new Map(); S().cards.forEach((c) => { const k = dupKey(c); prior.set(k, (prior.get(k) || 0) + 1); });
+      if (LIVE) return openLive(series, n, prior);
       const packs = []; for (let i = 0; i < n; i++) packs.push(makePack(series));
       // test hook: window.__forcePull = [{ material: 'diamond', holo: 'full' }, ...] sets the first pack's last cards, once
       if (Array.isArray(window.__forcePull)) { window.__forcePull.forEach((o, k) => packs[0][5 - k] && Object.assign(packs[0][5 - k], o)); delete window.__forcePull; }
@@ -388,6 +393,21 @@
       const cards = packs.flat(); cards.forEach((c) => hide.add(c.id));
       Store.update((s) => { s.sealed[series] -= n; s.cards.push(...cards); Store.log(`Opened ${n === 1 ? 'a' : n} Series ${series} pack${n > 1 ? 's' : ''}`); });
       packsEl.hidden = true; stage.hidden = false; if (view === 'open') coll.hidden = true;
+      root.closest('.sheet-body')?.scrollTo({ top: 0 });
+      await runOpening(series, packs, prior);
+    }
+
+    // live: open on chain, wait for the draw and the deal (the stage says where it is), then the same reveal
+    async function openLive(series, n, prior) {
+      const msg = h('p', { class: 'stage-msg', 'aria-live': 'polite', text: 'Opening…' });
+      packsEl.hidden = true; stage.hidden = false; if (view === 'open') coll.hidden = true;
+      put(stage, h('div', { class: 'op-wait' }, h('img', { src: 'a/pack.webp', alt: '', width: 240, height: 336 }), msg));
+      const got = await Live.openPacks(series, n, (t) => { msg.textContent = t; }, () => root.isConnected);
+      if (!got?.length) { busy = false; stage.hidden = true; put(stage); packsEl.hidden = view === 'open'; coll.hidden = false; render(); return; }
+      const per = S().series.cardsPerPack || 6, packs = [];
+      for (let i = 0; i < got.length; i += per) packs.push(got.slice(i, i + per).sort((a, b) => rarity(a) - rarity(b))); // rarest last
+      got.forEach((c) => hide.add(c.id));
+      Store.update(() => Store.log(`Opened ${n === 1 ? 'a' : n} Series ${series} pack${n > 1 ? 's' : ''}`));
       root.closest('.sheet-body')?.scrollTo({ top: 0 });
       await runOpening(series, packs, prior);
     }
@@ -791,6 +811,7 @@
     Sheet.open('table', { title: TITLE[view], body: root, wide: true, onClose: () => unlisten('table') });
     setView(view); render();
     if (view === 'open') { // straight to the table: the oldest Series' next pack (demo: connects the demo wallet if needed)
+      if (LIVE) return Live.needWallet(() => openable().length && openPacks(openable()[0].series, 1));
       if (!connected()) { Store.update((s) => { s.wallet.connected = true; }); toast('Demo wallet connected', 'good'); }
       openPacks(openable()[0].series, 1);
     }
@@ -827,7 +848,7 @@
         h('div', { class: 'row' }, // collection link is a placeholder until the contract exists; then Store.openSeaItem links the card itself
           sea('OpenSea', Store.openSeaItem(c), { 'aria-label': 'OpenSea: view, buy or list (opens a new tab)' })),
         Wear.howPill(),
-        h('p', { class: 'muted small', text: 'Demo floors. OpenSea links are placeholders.' })));
+        LIVE ? null : h('p', { class: 'muted small', text: 'Demo floors. OpenSea links are placeholders.' })));
     Sheet.open('card', { title: c.character, body });
   }
 
@@ -967,9 +988,15 @@
       g = g.filter((id) => canGrade(byId(id))); cs = cs.filter((id) => canCase(byId(id)) && !g.includes(id));
       if (S().wallet.balances[k] < amt) return review();
       step = 'work';
+      let gIndex = -1;
+      if (LIVE) { // the chain: one transaction, then the cases show and the grades come after the draw
+        const r = await Live.protect(cs, g, k);
+        if (!r) { step = 'review'; return review(); }
+        gIndex = r.gradingIndex;
+      }
       const now = Date.now();
       Store.update((s) => {
-        s.wallet.balances[k] -= amt;
+        if (!LIVE) s.wallet.balances[k] -= amt;
         cs.forEach((id) => { const c = byId(id); c.frozenAge = now - c.dealt; c.cased = true; }); // the case freezes its age
         g.forEach((id) => { const c = byId(id); c.frozenAge = Store.ageMs(c); c.pending = true; });
         Store.log(`Paid ${Wear.usd(total())}: ${[cs.length ? `${cs.length} cased` : '', g.length ? `${g.length} sent to the grader` : ''].filter(Boolean).join(', ')}`);
@@ -1000,9 +1027,11 @@
       if (gradeTiles.length) {
         msg.textContent = 'At the grader…';
         gradeTiles.forEach((w) => w.classList.add('scanning'));
+        const liveGrades = LIVE ? await Live.finishGrading(gIndex, g, (t) => { msg.textContent = t; }, () => host.isConnected) : null;
+        if (LIVE && !liveGrades) { msg.textContent = 'Grades land in My cards once revealed.'; return finish(cs, [], msg, ctrls); }
         await wait(reduced() ? 300 : 1600);
         for (const w of gradeTiles) {
-          const c0 = byId(w._id), gr = Wear.draw(c0.frozenAge / 1000, c0.moves); got.push(gr);
+          const c0 = byId(w._id), gr = LIVE ? liveGrades.get(w._id) : Wear.draw(c0.frozenAge / 1000, c0.moves); got.push(gr);
           Store.update((s) => { const c = s.cards.find((x) => x.id === w._id); if (c) { c.grade = gr; c.pending = false; } });
           const c = byId(w._id); w.querySelector('.cwrap').replaceChildren(cardFace(c), h('span', { class: 'stamp g' + gr, 'aria-hidden': 'true' }, h('small', { text: 'PDA' }), h('b', { text: gr })));
           w.classList.remove('scanning'); w.classList.add('stamped', 'slabbed'); setTimeout(() => window.Sound?.play('grade-stamp', { gap: 60 }), reduced() ? 0 : 150); // lands with the stamp's thud
@@ -1047,6 +1076,7 @@
   // =====================================================================================
   let burnQueue = 0; // cards thrown into the scene that have not landed yet
   function addBurn() {
+    if (LIVE) return; // live: the chain counts (Live re-reads it after the burn)
     let free = false;
     Store.update((s) => { s.wallet.burnCount++; if (s.wallet.burnCount % BURN_GOAL === 0) { s.wallet.credits++; free = true; Store.log('Burned 42: free pack'); } });
     if (free) { window.Scene?.popToken?.(); toast('You burned 42. Free pack!', 'good'); }
@@ -1141,8 +1171,9 @@
             all.length ? btn('Clear filters', 'small', () => { Object.assign(bfilt, { series: 'all', mat: 'all', holo: 'any', grade: 'all' }); render(); }, { 'data-key': 'clear' }) : null), foot);
       prog._key = foot._key = null; renderFoot();
     }
-    function go(picked) { // only ever called by the confirm window
+    async function go(picked) { // only ever called by the confirm window
       const ids = picked.filter((id) => byId(id) && !byId(id).pending); sel.clear(); if (!ids.length) return render();
+      if (LIVE && !(await Live.burn(ids))) return render();
       Store.update((s) => { ids.forEach((id) => Store.noteBurned(byId(id))); s.cards = s.cards.filter((c) => !ids.includes(c.id)); Store.log(`Burned ${ids.length} card${ids.length > 1 ? 's' : ''}`); });
       unlisten('burn'); Sheet.close('burn');
       toast(`Burning ${ids.length} card${ids.length > 1 ? 's' : ''}…`);
@@ -1182,7 +1213,7 @@
         h('span', { class: 'bw-icon', 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2.5 1.4-4 2.5-5 .2 1.7 1 2.8 2 3.2C11 8.6 11 5 12 2z" fill="currentColor"/></svg>' }),
         h('div', {}, h('p', { class: 'bw-big', text: 'Burned cards are destroyed forever. This can’t be undone.' }),
           h('p', { text: `You are about to burn ${plural(n, 'card')}` + (flagged ? `, and ${flagged === n ? (n === 1 ? 'it is' : 'all of them are') : flagged + ' of them ' + (flagged === 1 ? 'is' : 'are')} worth a second look.` : '.')
-            + ` Floor value about ${Store.eth(+worth.toPrecision(2))} (demo numbers).` }))),
+            + (LIVE ? '' : ` Floor value about ${Store.eth(+worth.toPrecision(2))} (demo numbers).`) }))),
       h('div', { class: 'bw-gain' },
         h('div', { class: 'bb-top' }, h('b', { text: 'You get' }),
           h('span', { class: 'bw-ft' }, h('span', { class: 'muted', text: `${b}/${BURN_GOAL}` }), h('span', { 'aria-hidden': 'true', text: ' → ' }), h('span', { class: 'sr', text: ' to ' }),
@@ -1330,8 +1361,9 @@
       const t = texts(), COST = cost();
       if (busy || !t.length || t.some((x) => Store.bytes(x) > MAXB) || paper() < COST || !connected() || Store.needsApproval('PAPER', COST)) return;
       busy = true;
+      if (LIVE && !(await Live.suggest(t))) { busy = false; return renderAct(); }
       // one transaction either way: suggest(text) for one, suggestMany(texts) for a theme and an art style together
-      Store.update((s) => {
+      if (!LIVE) Store.update((s) => {
         s.wallet.balances.PAPER -= COST; Store.spend('PAPER', COST);
         t.slice().reverse().forEach((text) => s.suggestions.unshift({ text, at: 'Series ' + s.series.no, picked: false }));
         Store.log(LOOK ? (t.length > 1 ? 'Suggested a theme and an art style' : 'Suggested ' + (t[0].startsWith('Theme') ? 'a theme' : 'an art style')) : 'Suggested a character');
