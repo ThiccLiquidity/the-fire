@@ -91,16 +91,16 @@
       const holo = (c.material === 'gold' || c.material === 'fullart') ? 'full' : c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none';
       return `cards/${id}/${c.material}-${holo}.webp`;
     },
-    // a holo card's parts for the live holo (holo.js): its picture + frame, its print strip (text, seal, wear per
-    // state), and for a cased or slabbed card its saved image and the holder's plastic; null for no holo or a retired
-    // Diamond (its card images were made the old way)
+    // a card's parts for drawing it live (holo.js), sharp at any size and with moving holo: its picture + frame, its
+    // print strip (text, seal, wear per state), and the slab label's lines; null for a retired Diamond (its card images
+    // were made the old way)
     cardParts(c) {
       if (c.material === 'diamond') return null;
       const always = c.material === 'gold' || c.material === 'fullart', look = always ? 'full' : c.holo || 'none';
-      if (look === 'none') return null;
-      const id = (always ? CHARS[SPECIAL_CAST] : CHARS[c.character] || CHARS[NAMES[0]]).id, holder = Store.holder(c);
-      return { look, holder, state: Store.stateIdx(c), plain: `cards/${id}/${c.material}-plain.webp`, print: `cards/${id}/${c.material}-print.webp`,
-        still: Store.cardImg(c), front: holder === 'slab' ? 'cards/slab-front.webp' : 'cards/case-front.webp' };
+      const id = (always ? CHARS[SPECIAL_CAST] : CHARS[c.character] || CHARS[NAMES[0]]).id;
+      const holoWord = { frame: 'Holo Frame', picture: 'Holo Picture', full: 'Full Holo' }[look];
+      return { look, holder: Store.holder(c), state: Store.stateIdx(c), plain: `cards/${id}/${c.material}-plain.webp`, print: `cards/${id}/${c.material}-print.webp`,
+        label: { name: always ? SPECIAL_CAST : c.character, sub: [`Series ${c.series}`, MAT_LABEL[c.material], holoWord].filter(Boolean).join(' · '), grade: c.grade } };
     },
     // which card in the strip: 0 raw, 1 cased, 2-11 slabbed PDA 1-10
     stateIdx(c) { return c.grade != null ? c.grade + 1 : c.cased ? 1 : 0; },

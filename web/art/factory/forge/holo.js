@@ -97,27 +97,74 @@
     g.drawImage(print, state * tw, 0, tw, print.height, 0, 0, W, H);
   }
 
-  // cases and slabs (studio/src/protect.ts): where the card sits in the 1500 x 2100 holder, and the part of the plastic
-  // drawn again over a moving card (the rest, and the slab's label, come from the saved image under it)
+  // cases and slabs: the studio's own drawing (studio/src/protect.ts), redone here at the screen's resolution, with the
+  // moving card in place of the saved one. All in the holder's 1500 x 2100 units.
   const HW = 1500, HH = 2100;
-  const place = (s, top) => { const w = Math.round(HW * s), h = Math.round(HH * s), x0 = Math.round(HW / 2 - w / 2); return { x: x0, y: top, w, h }; };
-  const HOLDER = {
-    case: { card: place(0.958, Math.round((HH - HH * 0.958) / 2)), pad: 10, r: 50 },
-    slab: { card: place(0.868, 244), pad: 14, r: 40 },
-  };
+  const place = (s, top) => { const w = Math.round(HW * s), h = Math.round(HH * s), x0 = Math.round(HW / 2 - w / 2); return { x0, y0: top, x1: x0 + w, y1: top + h }; };
+  const CASE = { body: { x0: 6, y0: 6, x1: HW - 7, y1: HH - 7 }, r: 58, cb: place(0.958, Math.round((HH - HH * 0.958) / 2)) };
+  const SLAB = { body: { x0: 6, y0: 6, x1: HW - 7, y1: HH - 7 }, r: 50, label: { x0: 34, y0: 30, x1: HW - 34, y1: 206 }, cb: place(0.868, 244) };
+  const GRADE_WORD = { 10: 'GEM MINT', 9: 'MINT', 8: 'NM-MT', 7: 'NEAR MINT', 6: 'EX-MT', 5: 'EXCELLENT', 4: 'VG-EX', 3: 'VERY GOOD', 2: 'GOOD', 1: 'POOR' };
+  const GRADE_COLOR = { L1: '#2ecc71', L2: '#1abc9c', L3: '#3aa0ff', L4: '#3b5bdb', L5: '#f08c00', L6: '#e03131' };
+  const wearOf = (g) => g === 10 ? 'L1' : g === 1 ? 'L6' : ['L5', 'L5', 'L4', 'L4', 'L3', 'L3', 'L2', 'L2'][g - 2];
+  const LABEL_FONT = '"Russo One", "Arial Black", sans-serif';
+  const rr = (g, b, r) => { g.beginPath(); g.roundRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0, r); };
+  function fill(g, b, r, color, blur, k) { g.save(); if (blur) g.filter = `blur(${blur * k}px)`; rr(g, b, r); g.fillStyle = color; g.fill(); g.restore(); }
+  function rim(g, b, r, width, color, blur, k) { g.save(); if (blur) g.filter = `blur(${blur * k}px)`; const h = width / 2;
+    rr(g, { x0: b.x0 + h, y0: b.y0 + h, x1: b.x1 - h, y1: b.y1 - h }, Math.max(0, r - h)); g.lineWidth = width; g.strokeStyle = color; g.stroke(); g.restore(); }
+  function plasticGlare(g, body, r, strength) { g.save(); rr(g, body, r); g.clip();
+    const K = 0.55 * HW + HH, d = K / (0.55 * 0.55 + 1), gr = g.createLinearGradient(0, 0, 0.55 * d, d);
+    const band = (t) => 38 * Math.exp(-(((t - 0.22) / 0.035) ** 2)) + 30 * Math.exp(-(((t - 0.3) / 0.012) ** 2)) + 18 * Math.exp(-(((t - 0.71) / 0.05) ** 2));
+    for (let i = 0; i <= 200; i++) { const t = i / 200; gr.addColorStop(t, `rgba(255,255,255,${Math.min(1, band(t) * strength / 255).toFixed(4)})`); }
+    g.fillStyle = gr; g.fillRect(0, 0, HW, HH);
+    const top = g.createLinearGradient(0, 0, 0, HH * 0.35); top.addColorStop(0, `rgba(255,255,255,${(10 * strength / 255).toFixed(4)})`); top.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = top; g.fillRect(0, 0, HW, HH * 0.35); g.restore(); }
+  function text(g, s, x, y, size, color, align = 'left') { g.font = `400 ${size}px ${LABEL_FONT}`; g.textBaseline = 'top'; g.textAlign = align; g.fillStyle = color; g.fillText(s, x, y); return g.measureText(s).width; }
+  function fitText(g, s, x, y, size, maxW, color) { let px = size; g.font = `400 ${px}px ${LABEL_FONT}`;
+    while (px > 12 && g.measureText(s).width > maxW) { px -= 1; g.font = `400 ${px}px ${LABEL_FONT}`; } text(g, s, x, y + (size - px) / 2, px, color); }
+  function label(g, b, L, k) {
+    fill(g, { x0: b.x0 + 4, y0: b.y0 + 8, x1: b.x1 + 4, y1: b.y1 + 10 }, 22, 'rgba(0,0,0,0.35)', 10, k);
+    fill(g, b, 18, 'rgb(246,238,220)'); rim(g, b, 18, 6, 'rgb(176,132,52)'); rim(g, { x0: b.x0 + 12, y0: b.y0 + 12, x1: b.x1 - 12, y1: b.y1 - 12 }, 10, 2, 'rgba(176,132,52,0.63)');
+    const color = GRADE_COLOR[wearOf(L.grade)], room = b.x1 - b.x0 - 40 - 300;
+    g.save();
+    text(g, 'OMNI CARDS', b.x0 + 40, b.y0 + 26, 30, 'rgb(150,108,38)');
+    fitText(g, L.name, b.x0 + 40, b.y0 + 60, 52, room, 'rgb(40,30,22)');
+    fitText(g, L.sub, b.x0 + 42, b.y0 + 124, 26, room, 'rgb(120,100,76)');
+    const gw = text(g, String(L.grade), b.x1 - 44, b.y0 + 22, 108, color, 'right');
+    text(g, 'PDA', b.x1 - 44 - gw - 16, b.y0 + 50, 36, 'rgb(40,30,22)', 'right');
+    text(g, GRADE_WORD[L.grade] || '', b.x1 - 44, b.y0 + 130, 26, color, 'right');
+    g.restore();
+  }
   let cardCanvas = null;
-  /** A cased or slabbed card at a tilt: the saved image (holder, label), the moving card in its place, the plastic over it. */
+  /** A cased or slabbed card at a tilt: the holder, the moving card in its place, the label, the plastic over it. */
   function renderHeld(g, P, material, look, tl) {
-    const W = g.canvas.width, H = g.canvas.height, k = W / HW, hd = HOLDER[P.holder], cb = hd.card;
-    const tw = P.still.width / 12;
-    g.clearRect(0, 0, W, H); g.drawImage(P.still, P.state * tw, 0, tw, P.still.height, 0, 0, W, H);
-    const cw = Math.round(cb.w * k), ch = Math.round(cb.h * k);
+    const W = g.canvas.width, H = g.canvas.height, k = W / HW, slab = P.holder === 'slab', D = slab ? SLAB : CASE, cb = D.cb, body = D.body, R = D.r;
+    const cw = Math.round((cb.x1 - cb.x0) * k), ch = Math.round((cb.y1 - cb.y0) * k);
     if (!cardCanvas) cardCanvas = mk(cw, ch);
     if (cardCanvas.width !== cw || cardCanvas.height !== ch) { cardCanvas.width = cw; cardCanvas.height = ch; }
     render(cardCanvas.getContext('2d'), P.plain, P.print, material, look, tl, P.state);
-    g.drawImage(cardCanvas, cb.x * k, cb.y * k, cw, ch);
-    g.save(); g.beginPath(); g.roundRect((cb.x - hd.pad) * k, (cb.y - hd.pad) * k, (cb.w + 2 * hd.pad) * k, (cb.h + 2 * hd.pad) * k, hd.r * k); g.clip();
-    g.drawImage(P.front, 0, 0, W, H); g.restore();
+    g.clearRect(0, 0, W, H); g.save(); g.scale(k, k); g.imageSmoothingQuality = 'high';
+    if (slab) {
+      const win = { x0: cb.x0 - 14, y0: cb.y0 - 14, x1: cb.x1 + 14, y1: cb.y1 + 14 };
+      fill(g, body, R, 'rgba(200,214,228,0.62)'); fill(g, win, 40, 'rgba(235,242,248,0.55)');
+      fill(g, { x0: cb.x0 + 6, y0: cb.y0 + 14, x1: cb.x1 + 6, y1: cb.y1 + 18 }, 40, 'rgba(0,0,0,0.55)', 16, k);
+      g.drawImage(cardCanvas, cb.x0, cb.y0, cb.x1 - cb.x0, cb.y1 - cb.y0);
+      label(g, SLAB.label, P.label, k);
+      rim(g, win, 40, 4, 'rgba(70,90,110,0.67)'); rim(g, { x0: win.x0 + 5, y0: win.y0 + 5, x1: win.x1 - 5, y1: win.y1 - 5 }, 36, 3, 'rgba(255,255,255,0.67)');
+      for (let i = 0; i < 5; i++) { const y = 214 + i * 2; g.beginPath(); g.moveTo(110, y + 1); g.lineTo(HW - 110, y + 1); g.lineWidth = 2; g.strokeStyle = `rgba(255,255,255,${i % 2 ? 0.24 : 0.1})`; g.stroke(); }
+      plasticGlare(g, body, R, 1.25);
+      rim(g, body, R, 9, 'rgba(255,255,255,0.59)', 1.5, k); rim(g, { x0: body.x0 + 14, y0: body.y0 + 14, x1: body.x1 - 14, y1: body.y1 - 14 }, R - 12, 3, 'rgba(255,255,255,0.35)');
+      rim(g, body, R, 2, 'rgba(50,70,90,0.78)');
+    } else {
+      fill(g, body, R, 'rgba(214,228,240,0.30)');
+      fill(g, { x0: cb.x0 + 4, y0: cb.y0 + 10, x1: cb.x1 + 4, y1: cb.y1 + 14 }, 44, 'rgba(0,0,0,0.47)', 14, k);
+      g.drawImage(cardCanvas, cb.x0, cb.y0, cb.x1 - cb.x0, cb.y1 - cb.y0);
+      rim(g, { x0: cb.x0 - 6, y0: cb.y0 - 6, x1: cb.x1 + 6, y1: cb.y1 + 6 }, 48, 3, 'rgba(255,255,255,0.47)');
+      rim(g, { x0: cb.x0 - 9, y0: cb.y0 - 9, x1: cb.x1 + 9, y1: cb.y1 + 9 }, 50, 2, 'rgba(40,60,80,0.35)');
+      plasticGlare(g, body, R, 1);
+      rim(g, body, R, 7, 'rgba(255,255,255,0.78)', 1.2, k); rim(g, { x0: body.x0 + 10, y0: body.y0 + 10, x1: body.x1 - 10, y1: body.y1 - 10 }, R - 10, 3, 'rgba(255,255,255,0.27)');
+      rim(g, body, R, 2, 'rgba(60,80,100,0.63)');
+    }
+    g.restore();
   }
 
   // ---------- live cards on the page
@@ -132,7 +179,7 @@
   function draw(el, t) {
     const L = el._holo; if (!L || !L.plain) return;
     const box = el.getBoundingClientRect(); if (!box.width) return;
-    const dpr = Math.min(2, devicePixelRatio || 1), W = Math.min(900, Math.round(box.width * dpr)), H = Math.round(W * 1008 / 720);
+    const dpr = Math.min(2, devicePixelRatio || 1), W = Math.min(1100, Math.round(box.width * dpr)), H = Math.round(W * 1008 / 720);
     if (L.canvas.width !== W || L.canvas.height !== H) { L.canvas.width = W; L.canvas.height = H; }
     let tl = STILL;
     if (moving(L, t)) tl = L.tilt;
@@ -157,18 +204,19 @@
   }
   const kick = () => { if (!raf && live.size) raf = requestAnimationFrame(loop); };
   const io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => { for (const e of es) if (e.target._holo) e.target._holo.visible = e.isIntersecting; kick(); }) : null;
-  /** Make a card face live: a raw holo card (or Gold / Full Art) with its parts on hand; sway: drift when untouched.
-   *  Does nothing for any other card. */
+  /** Draw a card face live from its parts (any card but a retired Diamond): raw, cased or slabbed; sway: a holo card
+   *  drifts when untouched. */
   function attach(face, c, sway = false) {
     if (!PARTS) return;
     const parts = PARTS(c); if (!parts) return;
     const canvas = document.createElement('canvas'); canvas.className = 'cholo'; canvas.setAttribute('aria-hidden', 'true');
     face.append(canvas); face.classList.add('live');
-    const L = face._holo = { canvas, material: c.material, look: parts.look, holder: parts.holder, state: parts.state, sway, plain: null, print: null, still: null, front: null,
-      tilt: STILL, active: false, last: -1e9, visible: true, drawnStill: false, phase: Math.random() * 6 };
-    const held = parts.holder !== 'raw';
-    Promise.all([loadImg(parts.plain), loadImg(parts.print), held ? loadImg(parts.still) : null, held ? loadImg(parts.front) : null])
-      .then(([p, q, st, fr]) => { L.plain = p; L.print = q; L.still = st; L.front = fr; face.classList.add('ready'); live.add(face); if (io) io.observe(face); draw(face, performance.now()); kick(); })
+    // a card with no holo still draws here (sharp at any size, and it tips when moved), but never drifts on its own
+    const L = face._holo = { canvas, material: c.material, look: parts.look, holder: parts.holder, state: parts.state, label: parts.label, sway: sway && parts.look !== 'none',
+      plain: null, print: null, tilt: STILL, active: false, last: -1e9, visible: true, drawnStill: false, phase: Math.random() * 6 };
+    const fonts = parts.holder === 'slab' && document.fonts ? document.fonts.load(`400 52px ${LABEL_FONT}`).catch(() => null) : null;
+    Promise.all([loadImg(parts.plain), loadImg(parts.print), fonts])
+      .then(([p, q]) => { L.plain = p; L.print = q; face.classList.add('ready'); live.add(face); if (io) io.observe(face); draw(face, performance.now()); kick(); })
       .catch(() => { canvas.remove(); face.classList.remove('live'); });
     const point = (e) => { const b = face.getBoundingClientRect(); L.active = true; L.last = performance.now();
       L.tilt = { tx: Math.max(-1, Math.min(1, (e.clientX - b.left) / b.width * 2 - 1)), ty: Math.max(-1, Math.min(1, (e.clientY - b.top) / b.height * 2 - 1)), o: 1 };

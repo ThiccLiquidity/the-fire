@@ -78,7 +78,7 @@ function glare(ctx: Ctx2D, body: Box, r: number, strength: number): void {
 }
 
 /** Where the card goes at scale `s`, centred, top at `top`. */
-export function place(s: number, top: number): Box {
+function place(s: number, top: number): Box {
   const w = Math.round(W * s)
   const h = Math.round(H * s)
   const x0 = Math.round(W / 2 - w / 2)
@@ -100,21 +100,13 @@ export function drawCase(ctx: Ctx2D, card: ImgSrc): void {
   fill(ctx, { x0: cb.x0 + 4, y0: cb.y0 + 10, x1: cb.x1 + 4, y1: cb.y1 + 14 }, 44, 'rgba(0,0,0,0.47)', 14)
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(card, cb.x0, cb.y0, cb.x1 - cb.x0, cb.y1 - cb.y0)
-  drawCaseFront(ctx)
-  ctx.restore()
-}
-
-/** The case's plastic over the card: rims and glare (what drawCase draws after the card). The site redraws a moving
- *  holo card under it. */
-export function drawCaseFront(ctx: Ctx2D): void {
-  const { body, radius: R, scale: s } = CASE
-  const cb = place(s, Math.round((H - H * s) / 2))
   rim(ctx, { x0: cb.x0 - 6, y0: cb.y0 - 6, x1: cb.x1 + 6, y1: cb.y1 + 6 }, 48, 3, 'rgba(255,255,255,0.47)')
   rim(ctx, { x0: cb.x0 - 9, y0: cb.y0 - 9, x1: cb.x1 + 9, y1: cb.y1 + 9 }, 50, 2, 'rgba(40,60,80,0.35)')
   glare(ctx, body, R, 1)
   rim(ctx, body, R, 7, 'rgba(255,255,255,0.78)', 1.2)
   rim(ctx, { x0: body.x0 + 10, y0: body.y0 + 10, x1: body.x1 - 10, y1: body.y1 - 10 }, R - 10, 3, 'rgba(255,255,255,0.27)')
   rim(ctx, body, R, 2, 'rgba(60,80,100,0.63)')
+  ctx.restore()
 }
 
 function text(ctx: Ctx2D, s: string, x: number, y: number, size: number, color: string, align: 'left' | 'right' = 'left'): number {
@@ -168,16 +160,6 @@ export function drawSlab(ctx: Ctx2D, card: ImgSrc, label: SlabLabel): void {
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(card, cb.x0, cb.y0, cb.x1 - cb.x0, cb.y1 - cb.y0)
   drawLabel(ctx, lab, label)
-  drawSlabFront(ctx)
-  ctx.restore()
-}
-
-/** The slab's plastic over the card and label: the well's rims, the ridges, glare and rims (what drawSlab draws after
- *  the label). The site redraws a moving holo card under it. */
-export function drawSlabFront(ctx: Ctx2D): void {
-  const { body, radius: R, scale: s, top } = SLAB
-  const cb = place(s, top)
-  const win = { x0: cb.x0 - 14, y0: cb.y0 - 14, x1: cb.x1 + 14, y1: cb.y1 + 14 }
   rim(ctx, win, 40, 4, 'rgba(70,90,110,0.67)')
   rim(ctx, { x0: win.x0 + 5, y0: win.y0 + 5, x1: win.x1 - 5, y1: win.y1 - 5 }, 36, 3, 'rgba(255,255,255,0.67)')
   for (let i = 0; i < 5; i++) {
@@ -193,4 +175,5 @@ export function drawSlabFront(ctx: Ctx2D): void {
   rim(ctx, body, R, 9, 'rgba(255,255,255,0.59)', 1.5)
   rim(ctx, { x0: body.x0 + 14, y0: body.y0 + 14, x1: body.x1 - 14, y1: body.y1 - 14 }, R - 12, 3, 'rgba(255,255,255,0.35)')
   rim(ctx, body, R, 2, 'rgba(50,70,90,0.78)')
+  ctx.restore()
 }
