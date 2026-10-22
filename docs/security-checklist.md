@@ -18,8 +18,8 @@ can change the site is taken. Tick each box; anything you can't tick, ask.
       on a different account.
 - [ ] **Deployer** (throwaway hot wallet): after the deploy, move what's left of its ETH out. It has no powers once
       the owner accepts ownership; don't reuse it for anything.
-- [ ] **Keeper wallets** (Railway): hold gas money only. Keep about $10-20 of ETH each and top up when the low-balance
-      alert fires. Never send them tokens. Their keys live only in Railway's variables.
+- [ ] **Keeper wallets** (Railway): hold gas money only. Keep about 0.005-0.01 ETH each and top up when the
+      low-balance alert fires (under 0.002 ETH). Never send them tokens. Their keys live only in Railway's variables.
 - [ ] No seed phrase or private key has ever been pasted into a chat, email, Discord, Telegram, a website or a
       screenshot. If one has: move the funds to a new wallet now, then replace that wallet everywhere.
 

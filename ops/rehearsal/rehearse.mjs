@@ -290,6 +290,7 @@ async function main() {
     RPC_URL: RPC, FALLBACK_RPC_URL: "none", CHAIN_ID: String(id), DEPLOYMENTS_FILE: DEP_FILE, ALERT_WEBHOOK_URL: hook.url,
     DRAND_URLS: FORK ? "https://api.drand.sh,https://api2.drand.sh,https://api3.drand.sh" : drand.url, SERIES_SCAN: "8", WAITING_ALERT_MIN: "0",
     CLOCK_SKEW_SEC: FORK ? "120" : "0", ETH_STALE_HOURS: "24", LOW_BALANCE_ETH: "0.01",
+    MIN_FLUSH_USD: "0.25", // the rehearsal's burners hold well under the $1 default (PlankBurner: a $0.50 burn share)
   };
   const main = await keeperFor(keeperA, { ...keeperEnv, KEEPER_LABEL: "keeper" }, wallNow);
   const pass = async (k = main, label = "keeper pass") => {

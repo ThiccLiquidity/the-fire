@@ -120,11 +120,13 @@ Start them right after step 1 (the PLANK feed needs its checkpoints). Every call
 - `PlankUsdTwap.checkpoint()` every 30 minutes; `PaperUsdTwap.checkpoint()` when `due()`
 - drand numbers to the router (`OpenDrandRouter.fulfillMany`; `adapter.settle` if a callback didn't land)
 - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` (ids from the grading's `Protected` event)
-- `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when they hold something a flush can burn
+- `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when they hold something a flush can burn worth the gas
+  ($1 by default, at most every 15 min; smaller balances after 6 h, so dust can't drain the keeper)
+- `FireSale.endDrop(fire)` for a drop that didn't sell out, once anyone may (7 days after the owner may)
 
 It alerts a Discord/Slack/Telegram webhook on stale feeds (PLANK price over 90 min old, a PAPER candidate pool not
-adopted in time), stuck opens or gradings, waiting fees, drand lag, low keeper ETH, a pause turned on, a randomness
-switch and the backup having to step in, with a daily heartbeat; a keeper that can't start says so before it exits. None of these calls pause. The owner's pause (`FireSale.setPaused`,
+adopted in time), stuck opens or gradings, waiting fees, an unsold drop the owner can end, drand lag, low keeper ETH
+(under 0.002), a pause turned on, a randomness switch and the backup having to step in, with a daily heartbeat; a keeper that can't start says so before it exits. None of these calls pause. The owner's pause (`FireSale.setPaused`,
 `FirePsa.setPaused`) stops only buying, press packs, credit spending, paid suggestions and case/grading payments.
 
 ## 6. Each Series: two signings on the device with a check in between

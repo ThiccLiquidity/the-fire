@@ -1,6 +1,15 @@
 /* Omni Cardworks (demo mode): shared state (demo data, no chain), events, toasts and the sheet (dialog) helper.
    Every other module reads and writes through window.Store and opens screens with window.Sheet. */
 (() => {
+  // live or demo, decided once (live.js, net.ts and forge-wallet.ts follow the same rule): ?live=testnet|mainnet, else
+  // ?live=off (the demo), else what the build wrote into <meta name="forge-live"> (VITE_LIVE; empty = the demo)
+  const LIVE_NET = (() => {
+    const q = new URLSearchParams(location.search).get('live'), ok = (v) => (v === 'testnet' || v === 'mainnet' ? v : null);
+    if (q === 'off') return null;
+    return ok(q) ?? ok(document.querySelector('meta[name="forge-live"]')?.content ?? '');
+  })();
+  // the URL's demo toys (?wave, ?theme, ?style, ?ideas, ?results): read in the demo only
+  const demoQ = LIVE_NET ? new URLSearchParams() : new URLSearchParams(location.search);
   const MATS = ['paper', 'wood', 'fire', 'charcoal', 'diamond', 'gold', 'fullart'];
   const MAT_LABEL = { paper: 'Paper', wood: 'Wood', fire: 'Fire', charcoal: 'Coal', diamond: 'Diamond', gold: 'Gold', fullart: 'Full Art' };
   // always holo: Diamond (the old top card) and the Standard's Gold and Full Art (always full holo)
@@ -69,6 +78,7 @@
   const listeners = new Set();
   const Store = {
     state, MATS, MAT_LABEL, ALWAYS_HOLO, SPECIAL_CAST, CHARS, NAMES, DAY, PRICES,
+    LIVE_NET, // 'testnet' / 'mainnet' when the page runs live (live.js), else null
     // MAX_BATCH mirrors FirePsa.maxBatch() (an owner setting): the most cards one case & grade payment can take, cases and grades together
     MAX_BATCH: 20,
     // approvals (demo): the most a call may take must be approved to FireSale first; spending uses it up
@@ -157,7 +167,7 @@
     // characters for that theme and style. The owner sets the wave and the picked theme and style here (demo:
     // ?wave=look|characters&theme=...&style=... in the URL).
     SUGGEST_WAVE: (() => {
-      const q = new URLSearchParams(location.search);
+      const q = demoQ;
       const wave = q.get('wave') === 'characters' ? 'characters' : q.get('wave') === 'look' ? 'look' : 'look';
       return { wave, theme: q.get('theme') || 'Haunted diner', style: q.get('style') || 'Old woodcut print',
         closes: Date.now() + (3 * 24 + 4) * 3600 * 1000, // when this wave stops taking suggestions (the owner sets it)
@@ -186,7 +196,7 @@
     /** Use a set of published waves: the newest finished theme & art style wave sets the character wave's theme and style. */
     setResults(waves) {
       Store.SUGGEST_RESULTS = Array.isArray(waves) ? waves : [];
-      const q = new URLSearchParams(location.search), W = Store.SUGGEST_WAVE;
+      const q = demoQ, W = Store.SUGGEST_WAVE;
       const look = Store.SUGGEST_RESULTS.filter((w) => w.wave === 'look' && w.series === state.series.no + 1).pop();
       if (look && !q.has('wave')) {
         const win = (k) => look.winners.find((x) => x.kind === k)?.title;
@@ -268,7 +278,7 @@
   // results: ?results=won|lost|none previews the demo states; otherwise the published file (empty until the owner
   // publishes a wave)
   {
-    const mode = new URLSearchParams(location.search).get('results');
+    const mode = demoQ.get('results'); // live: never; the published file only
     if (mode) {
       Store.setResults(Store.results(mode === '1' ? 'lost' : mode));
       if (mode === 'won') { state.suggestions.unshift({ text: 'Theme: Haunted diner', at: 'Series ' + state.series.no, picked: true }); }

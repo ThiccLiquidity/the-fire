@@ -1,7 +1,7 @@
 // What the live site reads from the card contracts. Every function returns plain objects: numbers, strings, booleans
 // and Amounts (raw as a decimal string plus text), so the plain-JS Forge can use them as they are.
 
-import { erc20Abi, getAddress, hexToString, isAddress, type Address, type Hex } from "viem";
+import { concat, encodeAbiParameters, erc20Abi, getAddress, hexToString, isAddress, keccak256, type Address, type Hex } from "viem";
 import { NET } from "../net";
 import { BlockscoutData } from "../blockscout";
 import { DRAND_GENESIS, DRAND_PERIOD } from "../drand";
@@ -34,6 +34,8 @@ export type SeriesInfo = {
   start: number; packs: number; pressPacks: number; plankOnlyPacks: number; walletLimit: number; maxPerTx: number;
   holderWindowEnds: number; plankOnlyEnds: number; limitLiftsAt: number; pressWindowEnds: number; regularWalletsEnds: number;
   priceUsd: string; paperPerPack: Amount; paperCapUsd: string; holderRoot: string; creditsPerPick: number;
+  /** Press packs one Paper Press may claim in this drop. */
+  pressPacksPerPress: number;
   /** Running numbers. */
   sold: number; pressClaimed: number; creditPacks: number;
   /** The drop now (FireSale.phase). */
@@ -69,6 +71,7 @@ export async function series(fire: number): Promise<SeriesInfo> {
     maxPerTx: d.maxPerTx || 50, holderWindowEnds: s + d.holderWindow, plankOnlyEnds: s + d.plankOnlyFor, limitLiftsAt: s + d.liftAfter,
     pressWindowEnds: s + d.starterWindow, regularWalletsEnds: s + d.regularWalletsFor,
     priceUsd: usd8(d.priceUsd), paperPerPack: amount(d.paperPerPack), paperCapUsd: usd8(d.paperCapUsd), holderRoot: d.holderRoot, creditsPerPick: d.creditsPerPick,
+    pressPacksPerPress: Number(d.starterPerPress),
     sold: Number(d.paidSold), pressClaimed: Number(d.startersClaimed), creditPacks: Number(d.creditPacks),
     phase: {
       configured: p.configured, live: p.live, closed: p.closed, plankOnly: p.plankOnly, limitLifted: p.limitLifted, pressOpen: p.startersOpen,
@@ -80,9 +83,10 @@ export async function series(fire: number): Promise<SeriesInfo> {
   };
 }
 
-/** The Series the site is about now: the live drop, else the next one coming, else the latest. Null before any drop. */
-export async function currentSeries(): Promise<SeriesInfo | null> {
-  const nums = await seriesNumbers();
+/** The Series the site is about now: the live drop, else the next one coming, else the latest. Null before any drop.
+ *  `nums`: seriesNumbers() when the caller already has it (one scan per sync). */
+export async function currentSeries(nums?: number[]): Promise<SeriesInfo | null> {
+  nums ??= await seriesNumbers();
   if (!nums.length) return null;
   const all = await Promise.all(nums.map(series));
   return all.find((x) => x.state === "live") ?? all.filter((x) => x.state === "upcoming").sort((a, b) => a.start - b.start)[0] ?? all[all.length - 1];
@@ -137,9 +141,9 @@ export async function balances(owner: Address): Promise<Record<"ETH" | "PAPER" |
   return { ETH: eth, PAPER: paper, PLANK: plank, USDG: usdg };
 }
 
-/** Sealed packs held, per Series that has any. */
-export async function packsOf(owner: Address): Promise<{ fire: number; count: number }[]> {
-  const nums = await seriesNumbers();
+/** Sealed packs held, per Series that has any. `nums`: seriesNumbers() when the caller already has it. */
+export async function packsOf(owner: Address, nums?: number[]): Promise<{ fire: number; count: number }[]> {
+  nums ??= await seriesNumbers();
   const counts = await Promise.all(nums.map((n) => read<bigint>("FirePacks", packsAbi, "balanceOf", [owner, BigInt(n)])));
   return nums.map((fire, i) => ({ fire, count: Number(counts[i]) })).filter((x) => x.count > 0);
 }
@@ -294,15 +298,20 @@ export async function suggestions(opts: { by?: Address; round?: number } = {}): 
 
 export type Pick = { fire: number; id: number; by: string; credits: number; text: string };
 
-/** The picks, per Series (results page): which suggestions won, by whom, and the credits each got. */
+const pickTexts = new Map<number, string>(); // a suggestion's text never changes: read once per tab
+
+/** The picks, per Series (results page): which suggestions won, by whom, and the credits each got. Only the picked
+ *  suggestions' texts are read (by id), not the whole box. */
 export async function picks(fire?: number): Promise<Pick[]> {
   const logs = await scanLogs(addr("FireCredits"), eventOf(creditsAbi, "SuggestionPicked"), fire !== undefined ? { fire: BigInt(fire) } : undefined);
   const list = logs.map((l) => argsOf<{ fire: bigint; id: bigint; by: Address; credits: bigint }>(l));
   if (!list.length) return [];
-  const texts = new Map<number, string>();
-  const sugg = await scanLogs(addr("FireCredits"), eventOf(creditsAbi, "Suggested"));
-  for (const l of sugg) { const a = argsOf<{ id: bigint; text: string }>(l); texts.set(Number(a.id), decodeText(a.text)); }
-  return list.map((x) => ({ fire: Number(x.fire), id: Number(x.id), by: x.by, credits: Number(x.credits), text: texts.get(Number(x.id)) ?? "" }));
+  const missing = [...new Set(list.map((x) => x.id))].filter((id) => !pickTexts.has(Number(id)));
+  if (missing.length) {
+    const sugg = await scanLogs(addr("FireCredits"), eventOf(creditsAbi, "Suggested"), { id: missing });
+    for (const l of sugg) { const a = argsOf<{ id: bigint; text: string }>(l); pickTexts.set(Number(a.id), decodeText(a.text)); }
+  }
+  return list.map((x) => ({ fire: Number(x.fire), id: Number(x.id), by: x.by, credits: Number(x.credits), text: pickTexts.get(Number(x.id)) ?? "" }));
 }
 
 // ---------------------------------------------------------------- opening
@@ -356,6 +365,26 @@ export async function opensOf(owner: Address): Promise<OpenStatus[]> {
   return out.sort((x, y) => y.requestedAt - x.requestedAt || y.index - x.index);
 }
 
+/** One open, by its index (what openPacks returned): where it is, with no log scan, so it can be polled cheaply while
+ *  the buyer waits. `now` is the chain's clock. */
+export async function openStatus(fire: number, index: number): Promise<OpenStatus & { now: number }> {
+  const f = BigInt(fire);
+  const [o, head, now] = await Promise.all([
+    read<OpenRaw>("FireCards", cardsAbi, "openOf", [f, BigInt(index)]),
+    read<bigint>("FireCards", cardsAbi, "headOf", [f]),
+    chainNow(),
+  ]);
+  let status: OpenStatus["status"]; let round: number | null = null; let roundAt: number | null = null;
+  if (o.count === 0n && o.ready) status = "cancelled";
+  else if (BigInt(index) < head) status = "dealt";
+  else {
+    const r = await requestInfo(o.source, o.requestId).catch(() => null);
+    round = r?.round ?? null; roundAt = r?.roundAt ?? null;
+    status = o.ready ? "ready" : r && (r.fulfilled || now >= r.roundAt) ? "deliverable" : "waiting";
+  }
+  return { fire, index, packs: Number(o.count), status, round, roundAt, requestedAt: Number(o.requestedAt), now };
+}
+
 /** A Series' opening queue: opens waiting, and how many at its head are ready to deal. */
 export async function queue(fire: number) {
   const [queued, ready] = await read<readonly [bigint, bigint]>("FireCards", cardsAbi, "pending", [BigInt(fire)]);
@@ -402,8 +431,27 @@ export async function gradingsOf(owner: Address): Promise<GradingStatus[]> {
   return out.sort((x, y) => y.index - x.index);
 }
 
-/** The card list a grading was sent with (from its Protected event), in order: what finish() needs. */
-export async function gradingIds(index: number): Promise<bigint[]> {
+/** One grading, by its index: where it is, with no log scan (for polling while the buyer waits). `now`: the chain's clock. */
+export async function gradingStatus(index: number): Promise<{ index: number; status: GradingStatus["status"]; round: number | null; roundAt: number | null; now: number }> {
+  const [g, now] = await Promise.all([read<GradingRaw>("FirePsa", psaAbi, "gradingOf", [BigInt(index)]), chainNow()]);
+  let status: GradingStatus["status"]; let round: number | null = null; let roundAt: number | null = null;
+  if (g.done) status = "done";
+  else {
+    const r = await requestInfo(g.source, g.requestId).catch(() => null);
+    round = r?.round ?? null; roundAt = r?.roundAt ?? null;
+    status = g.ready ? "ready" : r && (r.fulfilled || now >= r.roundAt) ? "deliverable" : "waiting";
+  }
+  return { index, status, round, roundAt, now };
+}
+
+/** The card list a grading was sent with, in order: what finish() needs. `known`: the list the page sent, used as is
+ *  when it matches the grading's idsHash (no log scan); else it's read from the grading's Protected event. */
+export async function gradingIds(index: number, known?: readonly number[]): Promise<bigint[]> {
+  if (known?.length) {
+    const ids = known.map(BigInt);
+    const g = await read<GradingRaw>("FirePsa", psaAbi, "gradingOf", [BigInt(index)]);
+    if (keccak256(encodeAbiParameters([{ type: "uint256[]" }], [ids])) === g.idsHash) return ids;
+  }
   const logs = await scanLogs(addr("FirePsa"), eventOf(psaAbi, "Protected"));
   for (const l of logs) {
     const a = argsOf<{ graded: readonly bigint[]; gradingIndex: bigint }>(l);
@@ -413,6 +461,28 @@ export async function gradingIds(index: number): Promise<bigint[]> {
 }
 
 // ---------------------------------------------------------------- the holder window
+
+/** Is `proof` a valid holder-window proof for `owner` under `root`? The same check as FireSale._checkHolder (the leaf is
+ *  keccak256(keccak256(abi.encode(owner))), pairs hashed sorted, OpenZeppelin MerkleProof). */
+export function verifyHolderProof(proof: readonly Hex[], root: string, owner: Address): boolean {
+  if (!/^0x[0-9a-f]{64}$/i.test(root) || BigInt(root) === 0n || !isAddress(owner)) return false;
+  let h = keccak256(keccak256(encodeAbiParameters([{ type: "address" }], [getAddress(owner)])));
+  for (const p of proof) h = BigInt(h) < BigInt(p) ? keccak256(concat([h, p])) : keccak256(concat([p, h]));
+  return h.toLowerCase() === root.toLowerCase();
+}
+
+/** What each Paper Press can still do in a drop: `buyer` is the wallet it let in during the holder window (zero
+ *  address: none yet; each Press lets in one wallet per drop), `claimed` the press packs claimed with it. */
+export async function pressUse(fire: number, ids: number[]): Promise<{ id: number; buyer: string; claimed: number }[]> {
+  const f = BigInt(fire);
+  return Promise.all(ids.map(async (id) => {
+    const [buyer, claimed] = await Promise.all([
+      read<Address>("FireSale", saleAbi, "pressBuyer", [f, BigInt(id)]),
+      read<bigint>("FireSale", saleAbi, "startersClaimedWith", [f, BigInt(id)]),
+    ]);
+    return { id, buyer, claimed: Number(claimed) };
+  }));
+}
 
 /** The holder window's proof for a wallet, from the snapshot file ops/snapshot wrote (published with the drop). */
 export function proofFromSnapshot(snapshot: unknown, owner: Address): Hex[] | null {

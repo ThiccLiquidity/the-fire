@@ -143,8 +143,11 @@ window.ForgeWallet = ForgeWallet;
 // ---------- live mode
 
 type ChainLib = typeof import("./lib/chain");
+// the same rule as net.ts and live.js: ?live=testnet|mainnet, ?live=off (the demo), else the build's flag (the page's
+// <meta name="forge-live">, which the build writes from VITE_LIVE), else VITE_LIVE
 const liveWanted: "testnet" | "mainnet" | null = (() => {
-  const v = new URLSearchParams(location.search).get("live") ?? ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_LIVE ?? "");
+  const v = new URLSearchParams(location.search).get("live") || document.querySelector<HTMLMetaElement>('meta[name="forge-live"]')?.content
+    || ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_LIVE ?? "");
   return v === "testnet" || v === "mainnet" ? v : null;
 })();
 let chainLoading: Promise<ChainLib> | undefined;
@@ -152,11 +155,14 @@ const ForgeChain = {
   /** The network the page asked for (?live=testnet / mainnet), or null: demo mode. */
   live: liveWanted,
   /** The chain layer (reads and writes), loaded on first use; rejects in demo mode or when that network has no card
-   *  contracts yet (mainnet before the deploy). Writes need a connected wallet (ForgeWallet). */
+   *  contracts yet (mainnet before the deploy: an error named "NotDeployedError"; anything else, e.g. a chunk that
+   *  didn't load, can be retried). Writes need a connected wallet (ForgeWallet). */
   lib(): Promise<ChainLib> {
     if (!liveWanted) return Promise.reject(new Error("The site is in demo mode."));
     return (chainLoading ??= import("./lib/chain").then((c) => {
-      if (!c.isDeployed(c.NET) || (c.NET.name !== liveWanted && c.NET.name !== "local")) throw new Error(`The cards aren't deployed on ${c.NET.label} yet.`);
+      if (!c.isDeployed(c.NET) || (c.NET.name !== liveWanted && c.NET.name !== "local")) {
+        const e = new Error(`The cards aren't deployed on ${c.NET.label} yet.`); e.name = "NotDeployedError"; throw e;
+      }
       return c;
     }).catch((e) => { chainLoading = undefined; throw e; }));
   },

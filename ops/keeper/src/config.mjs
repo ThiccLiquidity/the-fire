@@ -102,7 +102,18 @@ export function loadConfig(env = process.env) {
     processMaxCards: BigInt(num(e("PROCESS_MAX_CARDS"), 120)),
     processCallsPerPass: num(e("PROCESS_CALLS_PER_PASS"), 10),
     fulfillBatch: num(e("FULFILL_BATCH"), 15),
+    // gradings read per pass: the newest GRADING_LOOKBACK, plus as many older ones from the oldest not finished
+    // (a sweep that wraps around, so a backlog older than the window is still finished, a chunk per pass)
     gradingLookback: num(e("GRADING_LOOKBACK"), 300),
+    // burner flushes are a sweep (sales and gradings pay the burners as they go), and anyone can send dust to a burner:
+    // flush a balance worth MIN_FLUSH_USD at most once per FLUSH_EVERY_MIN per burner and currency (at once when it's
+    // worth FLUSH_NOW_X times that), and anything over FLUSH_DUST_USD (or with no price to value it) once it has
+    // waited FLUSH_MAX_WAIT_HOURS, so nothing waits forever and dust can't drain the keeper's gas
+    minFlushUsd: num(e("MIN_FLUSH_USD"), 1),
+    flushEveryMin: num(e("FLUSH_EVERY_MIN"), 15),
+    flushNowX: num(e("FLUSH_NOW_X"), 25),
+    flushMaxWaitHours: num(e("FLUSH_MAX_WAIT_HOURS"), 6),
+    flushDustUsd: num(e("FLUSH_DUST_USD"), 0.05),
     maxFeeGwei: e("MAX_FEE_GWEI") ? Number(e("MAX_FEE_GWEI")) : undefined,
     // alerts
     webhookUrl: e("ALERT_WEBHOOK_URL"),
@@ -117,7 +128,8 @@ export function loadConfig(env = process.env) {
     waitingAlertMin: num(e("WAITING_ALERT_MIN"), 60),
     drandLagRounds: BigInt(num(e("DRAND_LAG_ROUNDS"), 20)),
     clockSkewSec: num(e("CLOCK_SKEW_SEC"), 120),
-    lowBalanceEth: num(e("LOW_BALANCE_ETH"), 0.01),
+    // keep about 0.005-0.01 ETH per keeper wallet: this fires only when it is really running low
+    lowBalanceEth: num(e("LOW_BALANCE_ETH"), 0.002),
   };
   const missing = Object.entries(cfg.contracts).filter(([, v]) => !v).map(([k]) => k);
   if (missing.length) {

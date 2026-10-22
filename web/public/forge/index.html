@@ -15,6 +15,8 @@
 <meta property="og:image:alt" content="Omni Cardworks workshop">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#000000">
+<!-- live mode from the build (VITE_LIVE: testnet / mainnet), written by npm run build; empty = the demo. ?live= overrides it -->
+<meta name="forge-live" content="">
 <link rel="icon" href="ui/omni-mark.webp">
 <link rel="stylesheet" href="ui/fonts.css">
 <link rel="stylesheet" href="app.css">
@@ -25,6 +27,7 @@
 <canvas id="c" role="img" aria-label="Omni Cardworks workshop: PLANK feeds the furnace, the machine prints card packs from PAPER"></canvas>
 <div id="app"></div>
 
+<script src="keep-live.js"></script>
 <script src="core.js"></script>
 <script src="live.js"></script>
 <script src="sound.js"></script>

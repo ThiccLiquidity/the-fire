@@ -6,16 +6,20 @@
 //                   router.fulfillMany(ids, signatures) (the router verifies each signature; it skips ones already
 //                   delivered, so racing another keeper or the site is harmless)
 //   3. dealing:     FireCards.process(fire, maxCards) while a Series' queue head is ready
-//   4. grading:     FirePsa.finish(index, ids) for ready gradings, ids from the grading's Protected event
-//   5. burners:     PaperBurner.flush(pay) and PlankBurner.flush(pay) when they hold something and a flush would move it
-//   6. health:      alerts (stale feeds, stuck opens/gradings, waiting fees, drand lag, low keeper ETH, a pause, a
-//                   randomness switch) and a heartbeat
+//   4. grading:     FirePsa.finish(index, ids) for ready gradings, ids from the grading's Protected event (the newest
+//                   GRADING_LOOKBACK each pass, plus a sweep of older ones from the oldest not finished)
+//   5. burners:     PaperBurner.flush(pay) and PlankBurner.flush(pay) when they hold enough to be worth the gas (or
+//                   have waited long enough) and a flush would move it
+//   6. drops:       an unsold drop whose phases are over: alert (the owner can end it); once anyone can,
+//                   FireSale.endDrop(fire)
+//   7. health:      alerts (stale feeds, stuck opens/gradings, waiting fees, drand lag, low keeper ETH, a pause, a
+//                   randomness switch, an unsold drop) and a heartbeat
 // Before sending, each call is checked again against the pending state (still due, not yet delivered, something to
 // deal or burn) so a keeper never sends a transaction that would do nothing. The backup (KEEPER_ROLE=backup) acts only
 // on work left waiting ACT_AFTER_SEC, and yields to the main keeper on a tie (tx.mjs).
 import { encodeAbiParameters, keccak256, formatEther, formatUnits, zeroAddress } from "viem";
 import {
-  adapterAbi, burnerAbi, cardsAbi, erc20Abi, feedAbi, paperTwapAbi, pausableAbi, protectedEvent, psaAbi, routerAbi, twapAbi,
+  adapterAbi, burnerAbi, cardsAbi, erc20Abi, feedAbi, paperTwapAbi, pausableAbi, protectedEvent, psaAbi, routerAbi, saleAbi, twapAbi,
 } from "./abis.mjs";
 import { drandClient, roundAt, roundTime } from "./drand.mjs";
 import { createSender, errMsg } from "./tx.mjs";
@@ -23,6 +27,30 @@ import { createNotifier } from "./alerts.mjs";
 
 const PAY = [["PLANK", 0], ["ETH", 1], ["USDG", 2]];
 const idsHash = (ids) => keccak256(encodeAbiParameters([{ type: "uint256[]" }], [ids]));
+
+/** Whether to flush a burner balance now. `usd`: what it's worth (undefined: no price to value it); `waitedMs`: since
+ *  it was first seen; `sinceFlushMs`: since this keeper last sent a flush for it (undefined: never). */
+export function flushPlan({ usd, waitedMs, sinceFlushMs }, cfg) {
+  const min = cfg.minFlushUsd ?? 1;
+  if (usd !== undefined && usd >= min * (cfg.flushNowX ?? 25)) return { go: true, why: "large" };
+  if (sinceFlushMs !== undefined && sinceFlushMs < (cfg.flushEveryMin ?? 15) * 60_000) return { go: false, why: "flushed recently" };
+  if (usd !== undefined && usd >= min) return { go: true, why: "worth it" };
+  if (waitedMs >= (cfg.flushMaxWaitHours ?? 6) * 3_600_000 && (usd === undefined || usd >= (cfg.flushDustUsd ?? 0.05))) return { go: true, why: "waited" };
+  return { go: false, why: usd === undefined ? "no price yet" : "below the minimum" };
+}
+
+/** When the owner may end a drop that hasn't sold out (its phases over, and MIN_DROP_TIME after start at the
+ *  earliest), and when anyone may (END_GRACE later). As FireSale.endDrop. */
+export function dropEndTimes(d, minDropTime, endGrace) {
+  const start = BigInt(d.start);
+  let longest = 0n;
+  for (const w of [d.starterWindow, d.liftAfter, d.holderWindow, d.plankOnlyFor, d.regularWalletsFor]) if (BigInt(w) > longest) longest = BigInt(w);
+  let owner = start + longest;
+  if (owner < start + BigInt(minDropTime)) owner = start + BigInt(minDropTime);
+  return { owner, anyone: owner + BigInt(endGrace) };
+}
+
+const utc = (ts) => `${new Date(Number(ts) * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 
 export function createKeeper({ cfg, pub, wallet, account, log = console.log, fetchFn = globalThis.fetch, wallNow }) {
   const C = cfg.contracts;
@@ -47,11 +75,16 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   // memory (lost on restart; a ONCE pass rebuilds what it needs)
   let series = cfg.series ? [...cfg.series] : [];
   let lastSeriesScan = 0;
-  let gradingCursor;
+  let gradingFloor = 0n; // every grading below it is done (finished or cancelled)
+  let gradingSweep = 0n; // where the next chunk of older gradings starts
+  let gradingChunk = []; // this pass's chunk of gradings older than the window (rescans read the same one)
+  const gradingsBehind = new Map(); // index -> not done and older than the window (seen in a sweep)
   const sourceRouter = new Map(); // source -> router address | null (not a drand adapter)
   const idsOf = new Map(); // grading index -> ids (from its Protected event)
   const blockTs = new Map(); // block number -> timestamp
   const waitingSince = new Map(); // "burner:pay" -> first seen holding something (ms)
+  const lastFlush = new Map(); // "burner:pay" -> when this keeper last sent a flush for it (ms)
+  const cantBurn = new Set(); // "burner:pay" whose last flush left something it couldn't burn
   const sources = new Map(); // "FireCards" | "FirePsa" -> randomness source last seen
 
   // ------------------------------------------------------------------ series and queues
@@ -92,22 +125,48 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     return out;
   }
 
-  async function gradingsWaiting() {
+  /** Gradings not done: the newest GRADING_LOOKBACK, the oldest not done, plus (`sweep`, once per pass) the next
+   *  GRADING_LOOKBACK older ones from the oldest not done, wrapping around, so a backlog older than the window is still covered a chunk per
+   *  pass. One-pass runs (ONCE) read the window only: the long-running keepers do the sweep. */
+  async function gradingsWaiting(sweep = false) {
     const count = await read(C.psa, psaAbi, "gradingCount");
-    const floor = count > BigInt(cfg.gradingLookback) ? count - BigInt(cfg.gradingLookback) : 0n;
-    let i = cfg.once || gradingCursor === undefined || gradingCursor < floor ? floor : gradingCursor;
-    const out = [];
-    let advancing = true;
-    const idx = [];
-    for (; i < count; i++) idx.push(i);
-    const gs = await Promise.all(idx.map((k) => read(C.psa, psaAbi, "gradingOf", [k])));
-    for (const [j, g] of gs.entries()) {
-      if (g.done) { if (advancing) gradingCursor = idx[j] + 1n; continue; }
-      advancing = false;
-      out.push({ kind: "grading", index: idx[j], source: g.source, requestId: g.requestId, requestedAt: g.requestedAt, ready: g.ready, idsHash: g.idsHash });
+    const L = BigInt(cfg.gradingLookback);
+    const front = count > L ? count - L : 0n;
+    if (cfg.once) gradingFloor = front;
+    if (sweep) {
+      gradingChunk = [];
+      if (gradingFloor < front) {
+        const s = gradingSweep >= gradingFloor && gradingSweep < front ? gradingSweep : gradingFloor;
+        const end = s + L < front ? s + L : front;
+        for (let i = s; i < end; i++) gradingChunk.push(i);
+        gradingSweep = end;
+      }
     }
-    if (advancing) gradingCursor = count;
+    // the oldest not done is read every pass too, so the floor moves on as soon as it's finished
+    const idx = gradingFloor < front && !gradingChunk.includes(gradingFloor) ? [gradingFloor] : [];
+    idx.push(...gradingChunk.filter((i) => i >= gradingFloor));
+    for (let i = front > gradingFloor ? front : gradingFloor; i < count; i++) idx.push(i);
+    const gs = await Promise.all(idx.map((k) => read(C.psa, psaAbi, "gradingOf", [k])));
+    const done = new Map();
+    const out = [];
+    for (const [j, g] of gs.entries()) {
+      const i = idx[j];
+      done.set(i, g.done);
+      if (i < front) { if (g.done) gradingsBehind.delete(i); else gradingsBehind.set(i, g.requestedAt); }
+      if (g.done) continue;
+      out.push({ kind: "grading", index: i, behind: i < front, source: g.source, requestId: g.requestId, requestedAt: g.requestedAt, ready: g.ready, idsHash: g.idsHash });
+    }
+    // the floor only moves past gradings read as done
+    while (done.get(gradingFloor) === true) gradingFloor++;
+    for (const i of gradingsBehind.keys()) if (i < gradingFloor || i >= front) gradingsBehind.delete(i);
     return out;
+  }
+
+  /** The alert for unfinished gradings older than the window (the sweep reaches each once per lap). */
+  function behindAlert() {
+    if (!gradingsBehind.size) return undefined;
+    const oldest = [...gradingsBehind.keys()].reduce((a, b) => (b < a ? b : a));
+    return { key: "gradings:behind", text: `${gradingsBehind.size} unfinished grading(s) are older than the newest ${cfg.gradingLookback} (oldest: grading ${oldest}): the keeper sweeps them ${cfg.gradingLookback} per pass; check why they aren't finished` };
   }
 
   // ------------------------------------------------------------------ randomness
@@ -248,7 +307,16 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   }
 
   // ------------------------------------------------------------------ burners
+  /** Dollar prices for valuing burner balances (undefined: no price): ETH from Chainlink (8 decimals), PLANK from
+   *  PlankUsdTwap (18 decimals), USDG at face value. */
+  async function burnPrices() {
+    const px = async (feed) => { try { const p = (await read(feed, feedAbi, "latestRoundData"))[1]; return p > 0n ? p : undefined; } catch { return undefined; } };
+    const [eth, plank] = await Promise.all([cfg.ethUsdFeed ? px(cfg.ethUsdFeed) : undefined, px(C.plankTwap)]);
+    return { eth, plank };
+  }
+
   async function burners(waiting) {
+    const prices = await burnPrices();
     for (const [name, address] of [["PaperBurner", C.paperBurner], ["PlankBurner", C.plankBurner]]) {
       const [plank, usdg] = await Promise.all([once(address, burnerAbi, "PLANK"), once(address, burnerAbi, "USDG")]);
       // only flushers the owner names may flush PaperBurner (PlankBurner is open to anyone)
@@ -259,23 +327,71 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
         const balance = () => (pay === "ETH" ? pub.getBalance({ address }) : read(token, erc20Abi, "balanceOf", [address]));
         const held = await balance();
         const key = `${name}:${pay}`;
-        if (held === 0n) { waitingSince.delete(key); continue; }
+        if (held === 0n) { waitingSince.delete(key); cantBurn.delete(key); continue; }
         if (!waitingSince.has(key)) waitingSince.set(key, Date.now());
+        const since = waitingSince.get(key);
         // the backup flushes only a balance that has waited its grace period (the main keeper flushes at once)
-        if (backup && Date.now() - waitingSince.get(key) < Number(cfg.actAfterSec) * 1000) continue;
+        if (backup && Date.now() - since < Number(cfg.actAfterSec) * 1000) continue;
+        // worth the gas? (anyone can send dust to a burner; a flush costs the keeper 50-250k gas)
+        let usd;
+        if (pay === "ETH" && prices.eth) usd = Number(formatUnits(held * prices.eth, 26));
+        else if (pay === "PLANK" && prices.plank) usd = Number(formatUnits(held * prices.plank, 36));
+        else if (pay === "USDG") usd = Number(formatUnits(held, await once(usdg, erc20Abi, "decimals").catch(() => 6)));
+        const plan = flushPlan({ usd, waitedMs: Date.now() - since, sinceFlushMs: lastFlush.has(key) ? Date.now() - lastFlush.get(key) : undefined }, cfg);
+        if (!plan.go) {
+          // still the same waiting fees as the last flush left: keep the alert open
+          if (cantBurn.has(key)) waiting.push({ key, name, pay, amount: held, since, flushed: false });
+          continue;
+        }
         if (!allowed) {
-          waiting.push({ key, name, pay, amount: held, since: waitingSince.get(key), flushed: false, notFlusher: true });
+          waiting.push({ key, name, pay, amount: held, since, flushed: false, notFlusher: true });
           continue;
         }
         const r = await sender.send(
           { address, abi: burnerAbi, functionName: "flush", args: [code] },
           { job: `flush:${address}:${code}`, accept: (out) => out > 0n },
         );
+        if (r.status !== "skipped") lastFlush.set(key, Date.now()); // a transaction went out: the next one waits FLUSH_EVERY_MIN
         const left = await balance();
-        if (left === 0n) { waitingSince.delete(key); continue; }
-        waiting.push({ key, name, pay, amount: left, since: waitingSince.get(key), flushed: r.status === "done" });
+        if (left === 0n) { waitingSince.delete(key); cantBurn.delete(key); continue; }
+        cantBurn.add(key);
+        waiting.push({ key, name, pay, amount: left, since, flushed: r.status === "done" });
       }
     }
+  }
+
+  // ------------------------------------------------------------------ drops
+  /** A drop that hasn't sold out: an alert once the owner may end it; once anyone may, the keeper ends it itself
+   *  (the backup only ACT_AFTER_SEC after that). Returns { alerts, events }. */
+  async function drops(now) {
+    const sale = cfg.optional?.sale;
+    const alerts = [];
+    const events = [];
+    if (!sale || !series.length) return { alerts, events };
+    const [minTime, grace] = await Promise.all([once(sale, saleAbi, "MIN_DROP_TIME"), once(sale, saleAbi, "END_GRACE")]);
+    const ds = await Promise.all(series.map((f) => read(sale, saleAbi, "dropOf", [f])));
+    for (const [k, fire] of series.entries()) {
+      const d = ds[k];
+      if (d.start === 0n || d.closed) continue;
+      const at = dropEndTimes(d, minTime, grace);
+      if (now < at.owner) continue;
+      let why;
+      if (now >= at.anyone + cfg.actAfterSec) {
+        const open = async (tag) => { const x = await read(sale, saleAbi, "dropOf", [fire], tag); return x.start !== 0n && !x.closed; };
+        const r = await sender.send({ address: sale, abi: saleAbi, functionName: "endDrop", args: [fire] }, { job: `endDrop:${fire}`, precheck: open });
+        if (r.status === "done") {
+          events.push({ key: `endDrop:${fire}`, text: `Series ${fire} hadn't sold out and its end grace is over: this keeper ended the drop (FireSale.endDrop(${fire})); its packs can be opened` });
+          continue;
+        }
+        if (r.status === "waiting") continue;
+        if (r.reason === "already done") continue;
+        why = r.reason ?? r.status;
+      }
+      alerts.push({ key: `drop:${fire}`, text: now < at.anyone
+        ? `Series ${fire} hasn't sold out; the owner can end it now with FireSale.endDrop(${fire}), or anyone can after ${utc(at.anyone)} (packs can't be opened and no next drop can be set up until then)`
+        : `Series ${fire} hasn't sold out and anyone can end it since ${utc(at.anyone)}: ${why ? `this keeper's FireSale.endDrop(${fire}) didn't go through (${why})` : "the main keeper ends it (FireSale.endDrop)"}` });
+    }
+    return { alerts, events };
   }
 
   // ------------------------------------------------------------------ feeds
@@ -331,7 +447,8 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     }
     // opens and gradings
     const stuck = cfg.stuckMin * 60;
-    for (const it of [...opens, ...gradings]) {
+    // gradings older than the window are covered by one alert (the sweep reaches each only once per lap)
+    for (const it of [...opens, ...gradings.filter((g) => !g.behind)]) {
       const name = it.kind === "open" ? `open ${it.fire}/${it.index}` : `grading ${it.index}`;
       if (!it.ready && it.roundAt !== undefined && ago(it.roundAt) > stuck) {
         alerts.push({ key: `stuck:${it.kind}:${it.fire ?? ""}:${it.index}`, text: `${name}: drand round ${it.round} was published ${min(ago(it.roundAt))} ago and still isn't delivered` });
@@ -346,6 +463,8 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
         alerts.push({ key: `finish:${it.index}`, text: `${name}: randomness arrived but grades aren't set (FirePsa.finish) ${min(ago(it.requestedAt))} after the request` });
       }
     }
+    const behind = behindAlert();
+    if (behind) alerts.push(behind);
     for (const n of notes) {
       const name = n.it.kind === "open" ? `open ${n.it.fire}/${n.it.index}` : `grading ${n.it.index}`;
       alerts.push({ key: `note:${n.it.kind}:${n.it.fire ?? ""}:${n.it.index}`, text: `${name}: ${n.why}`, quiet: true });
@@ -397,13 +516,14 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     const waiting = [];
     await job("feeds", () => feeds(now));
     let opens = (await job("scan opens", opensWaiting)) ?? [];
-    let gradings = (await job("scan gradings", gradingsWaiting)) ?? [];
+    let gradings = (await job("scan gradings", () => gradingsWaiting(true))) ?? [];
     await job("randomness", () => deliver([...opens, ...gradings], now, notes));
     const dealt = (await job("deal", () => dealReady(now))) ?? 0;
     // re-read the gradings: some just became ready
-    if (gradings.some((g) => !g.ready)) gradings = (await job("rescan gradings", gradingsWaiting)) ?? gradings;
+    if (gradings.some((g) => !g.ready)) gradings = (await job("rescan gradings", () => gradingsWaiting())) ?? gradings;
     const finished = (await job("finish", () => finishReady(gradings, now, block.number, notes))) ?? 0;
     await job("burners", () => burners(waiting));
+    const drop = (await job("drops", () => drops(now))) ?? { alerts: [], events: [] };
     // what's still waiting after this pass's work, for the alerts
     const after = (await job("rescan opens", opensWaiting)) ?? opens;
     for (const o of after) {
@@ -411,13 +531,14 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
       if (before?.roundAt !== undefined) Object.assign(o, { round: before.round, roundAt: before.roundAt });
     }
     opens = after;
-    const gradingsAfter = (await job("rescan gradings", gradingsWaiting)) ?? gradings;
+    const gradingsAfter = (await job("rescan gradings", () => gradingsWaiting())) ?? gradings;
     for (const g of gradingsAfter) {
       const before = gradings.find((x) => x.index === g.index);
       if (before?.roundAt !== undefined) Object.assign(g, { round: before.round, roundAt: before.roundAt });
     }
     const h = (await job("health", () => health({ now, opens, gradings: gradingsAfter, notes, waiting, failed }))) ?? { alerts: [{ key: "health", text: "health check failed" }] };
-    const events = (await job("randomness sources", () => watchSources())) ?? [];
+    h.alerts.push(...drop.alerts);
+    const events = [...drop.events, ...((await job("randomness sources", () => watchSources())) ?? [])];
     const sent = sender.sent();
     if (backup && sent.length) {
       events.push({ key: "backup-acted", text: `the backup keeper had to step in (${sent.length} tx: ${sent.map((s) => s.split(" ")[0]).join(", ")}); is the main keeper down?` });
@@ -454,7 +575,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     return { filled, sources: Object.fromEntries(sources) };
   }
 
-  return { tick, startup, sender, notifier, drand };
+  return { tick, startup, sender, notifier, drand, jobs: { gradingsWaiting, burners, drops, behindAlert } };
 }
 
 const wallSec = (wall) => Number(wall());

@@ -2,7 +2,9 @@
 //
 //   ?live=testnet   Robinhood Chain testnet (46630, deployments/46630.json), play tokens: the testnet run
 //   ?live=mainnet   Robinhood Chain (4663, deployments/4663.json), only once that file has contracts
+//   ?live=off       demo mode, whatever the build says
 //   no ?live        VITE_LIVE (unset until launch day), else the site stays in demo mode: nothing here is loaded
+//                   (the build writes VITE_LIVE into forge/index.html's <meta name="forge-live"> for live.js)
 //
 // Tests set globalThis.__FORGE_NET__ before importing (a local anvil chain with its own deployments file).
 // VITE_CHAIN=testnet (older builds) still means testnet when VITE_LIVE isn't set.
@@ -58,7 +60,9 @@ export const isDeployed = (n: Net) => !!n.deployment.contracts?.FireSale && !!n.
 /** The network the page asked for, or null for demo mode. Mainnet without contracts is demo mode too. */
 export function chosenNet(): Net | null {
   if (globalThis.__FORGE_NET__) return globalThis.__FORGE_NET__;
-  const want = liveParam() ?? (env.VITE_LIVE === "mainnet" || env.VITE_LIVE === "testnet" ? env.VITE_LIVE : null);
+  if (typeof location !== "undefined" && new URLSearchParams(location.search).get("live") === "off") return null;
+  const flag = (typeof document !== "undefined" ? document.querySelector<HTMLMetaElement>('meta[name="forge-live"]')?.content : "") || env.VITE_LIVE;
+  const want = liveParam() ?? (flag === "mainnet" || flag === "testnet" ? flag : null);
   if (want === "testnet") return TESTNET_NET;
   if (want === "mainnet") return isDeployed(MAINNET) ? MAINNET : null;
   return null;

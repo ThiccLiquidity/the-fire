@@ -1,5 +1,6 @@
 // The card contracts on the chosen network (net.ts), their ABIs, and the shared plumbing the reads and writes use:
-// amounts for people, log scans from the deploy block, and the bytecode check for features an older deploy lacks.
+// amounts for people, log scans from the deploy block (incremental, cached per tab), and the bytecode check for
+// features an older deploy lacks.
 
 import { erc20Abi, formatUnits, getAddress, toFunctionSelector, type Abi, type AbiEvent, type Address, type Log } from "viem";
 import { burnerAbi, cardsAbi, creditsAbi, dealerAbi, packsAbi, psaAbi, rendererAbi, saleAbi } from "../cards";
@@ -63,24 +64,57 @@ export function eventOf(abi: Abi, name: string): AbiEvent {
 /** The first block worth scanning: the deploy's (deployments file), else 0. */
 export const startBlock = (): bigint => BigInt(NET.deployment.startBlock ?? 0);
 
-/** Logs of one event from one contract since the deploy, newest block last. Scans in chunks and shrinks a chunk when
- *  the RPC refuses a range as too big. `args` filters on indexed arguments. */
-export async function scanLogs(address: Address, event: AbiEvent, args?: Record<string, unknown>, from = startBlock()): Promise<Log[]> {
-  const client = pub();
-  const latest = await client.getBlockNumber({ cacheTime: 0 }); // not the 4-second cache: a scan right after a send must see it
-  const out: Log[] = [];
-  let span = 50_000n;
-  for (let b = from; b <= latest;) {
-    const to = b + span - 1n > latest ? latest : b + span - 1n;
+/** The latest block, fresh (not viem's 4-second cache: a scan right after a send must see it). Calls made while one is
+ *  out share it. */
+let latestOut: Promise<bigint> | null = null;
+function latestBlock(): Promise<bigint> {
+  return (latestOut ??= pub().getBlockNumber({ cacheTime: 0 }).finally(() => { latestOut = null; }));
+}
+
+let span = 50_000n; // blocks per getLogs; shrinks (and stays shrunk) when the RPC refuses a range as too big
+async function getRange(address: Address, event: AbiEvent, args: Record<string, unknown> | undefined, from: bigint, to: bigint): Promise<Log[]> {
+  const client = pub(), out: Log[] = [];
+  for (let b = from; b <= to;) {
+    const end = b + span - 1n > to ? to : b + span - 1n;
     try {
-      out.push(...(await client.getLogs({ address, event, args, fromBlock: b, toBlock: to } as Parameters<typeof client.getLogs>[0])));
-      b = to + 1n;
+      out.push(...(await client.getLogs({ address, event, args, fromBlock: b, toBlock: end } as Parameters<typeof client.getLogs>[0])));
+      b = end + 1n;
     } catch (e) {
       if (span <= 500n) throw e;
       span /= 4n; // "range too large" or a slow node: smaller pieces
     }
   }
   return out;
+}
+
+/** Scans already done, per contract + event + filter: the logs up to `to`, kept for the tab's life. Blocks newer than
+ *  TAIL below the head are read again every time (never cached), so a reorg near the head can't leave a stale log. */
+type Scan = { to: bigint; logs: Log[]; queue: Promise<unknown> };
+const scans = new Map<string, Scan>();
+const TAIL = 64n;
+const keyOf = (address: Address, event: AbiEvent, args: Record<string, unknown> | undefined, from: bigint) =>
+  JSON.stringify([address, event.name, event.inputs.map((i) => i.type), from.toString(), args ?? null], (_, v) => (typeof v === "bigint" ? v.toString() : typeof v === "string" ? v.toLowerCase() : v));
+
+/** Logs of one event from one contract since the deploy (or `from`), newest block last. `args` filters on indexed
+ *  arguments. Incremental: a scan already done in this tab is only extended from the last block it covered, so a sync
+ *  every few seconds costs one getLogs over the new blocks, not the whole history again. */
+export async function scanLogs(address: Address, event: AbiEvent, args?: Record<string, unknown>, from = startBlock()): Promise<Log[]> {
+  const key = keyOf(address, event, args, from);
+  let s = scans.get(key);
+  if (!s) scans.set(key, (s = { to: from - 1n, logs: [], queue: Promise.resolve() }));
+  const scan = s;
+  const run = scan.queue.then(async () => { // one at a time per scan, so two syncs can't both append the same blocks
+    const latest = await latestBlock();
+    const settled = latest - TAIL;
+    if (settled > scan.to) {
+      const got = await getRange(address, event, args, scan.to + 1n, settled);
+      scan.logs.push(...got); scan.to = settled;
+    }
+    const tail = scan.to < latest ? await getRange(address, event, args, scan.to + 1n, latest) : [];
+    return [...scan.logs, ...tail];
+  });
+  scan.queue = run.catch(() => {});
+  return run;
 }
 
 /** Decoded event arguments (viem puts them on the log when an event was given). */

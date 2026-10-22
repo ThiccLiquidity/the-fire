@@ -3,7 +3,7 @@
 // pack from a picked suggestion, the drop selling out, opening, delivering randomness and dealing, reading the cards,
 // casing and grading (delivered and finished), burning, and every read the site uses. Run by run.mjs.
 
-import { encodeFunctionData, keccak256, toHex, type Address, type Hex } from "viem";
+import { concat, encodeAbiParameters, encodeFunctionData, erc20Abi, getAddress, keccak256, toHex, type Address, type Hex } from "viem";
 import { privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
 import type { Net } from "../../src/lib/net";
 import { creditsAbi } from "../../src/lib/cards";
@@ -14,6 +14,7 @@ type Ctx = {
   warp: (sec: number) => Promise<void>; now: () => Promise<bigint>;
   tx: (account: unknown, address: Address, abi: unknown[], fn: string, args?: unknown[]) => Promise<{ logs: { topics: Hex[]; data: Hex; address: Address }[] }>;
   asOwner: (to: Address, data: Hex) => Promise<unknown>;
+  rpc: (method: string, params?: unknown[]) => Promise<unknown>;
 };
 
 const MNEMONIC = "test test test test test test test test test test test junk";
@@ -30,8 +31,19 @@ export async function runTest(ctx: Ctx): Promise<number> {
     name: "local", chainId: 31337, label: "Local test chain", readRpc: ctx.RPC, publicRpc: ctx.RPC, explorer: "",
     deployment: ctx.deployment, drandUrls: [], testnet: true,
   };
+  // a browser's localStorage (tx.ts keeps sent transactions there until they land)
+  const mem = new Map<string, string>();
+  (globalThis as { localStorage?: unknown }).localStorage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, String(v)), removeItem: (k: string) => void mem.delete(k) };
+  // every RPC request the layer makes (to check the log scans are incremental)
+  const rpcLog: { method: string; params: unknown[] }[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    try { const b = JSON.parse(String(init?.body ?? "")); for (const x of Array.isArray(b) ? b : [b]) rpcLog.push({ method: x.method, params: x.params ?? [] }); } catch { /* not JSON-RPC */ }
+    return realFetch(input, init);
+  }) as typeof fetch;
   const W = await import("../../src/lib/wallet");
   const L = await import("../../src/lib/chain");
+  const T = await import("../../src/lib/tx");
   // drand stand-in: the dev router takes any 64-byte signature
   L.setSignatureSource(async (round) => (keccak256(toHex(`r${round}a`)) + keccak256(toHex(`r${round}b`)).slice(2)) as Hex);
 
@@ -76,6 +88,14 @@ export async function runTest(ctx: Ctx): Promise<number> {
   check(mine.length === 3 && mine[2].text === "Theme: Haunted diner" && mine.every((x) => x.round === 0 && !x.picked), "the wallet's 3 suggestions read back (texts, round 0, not picked)");
   const roundList = await L.suggestions({ round: 0 });
   check(roundList.length === 3, "the round's box lists all 3");
+  // the scans are incremental: once a scan has covered the history, the next one reads only the newest blocks
+  await ctx.rpc("anvil_mine", [toHex(300)]);
+  await L.suggestions({ by: me });
+  const head = await (await import("../../src/lib/wallet")).getPublicClient().getBlockNumber({ cacheTime: 0 });
+  rpcLog.length = 0;
+  check((await L.suggestions({ by: me })).length === 3, "the same 3 suggestions from the cached scan");
+  const gl = rpcLog.filter((x) => x.method === "eth_getLogs").map((x) => BigInt((x.params[0] as { fromBlock: Hex }).fromBlock));
+  check(gl.length === 1 && gl[0] >= head - 64n, `a sync's scan reads only the newest blocks (1 getLogs from block ${gl[0]}, head ${head}), not the history again`);
   // the owner picks the theme and the art style (before the drop opens): each gets the drop's 1 free pack credit
   const pickIds = mine.filter((x) => x.text.startsWith("Theme") || x.text.startsWith("Art")).map((x) => BigInt(x.id));
   await ctx.asOwner(ctx.C.FireCredits, encodeFunctionData({ abi: creditsAbi, functionName: "pickSuggestions", args: [7n, pickIds] }));
@@ -105,9 +125,15 @@ export async function runTest(ctx: Ctx): Promise<number> {
   await L.buyPacks({ fire, n: 2, pay: "PLANK" }, o);
   await L.buyPacks({ fire, n: 1, pay: "USDG" }, o);
   check((await L.walletInDrop(fire, me)).paidBought === 5, "5 paid packs bought (2 ETH alone, 2 PLANK, 1 USDG), each step approved and confirmed");
+  // the cap is the price the buyer was shown + 3%: a buy shown a price far below the market's is refused, nothing charged
+  let capMsg = "";
+  try { await L.buyPacks({ fire, n: 1, pay: "ETH", quote: { cost: "1000" } }, o); } catch (e) { capMsg = (e as Error).message; }
+  check(capMsg.length > 0 && (await L.walletInDrop(fire, me)).paidBought === 5, `a buy capped at a stale shown price is refused before the wallet ("${capMsg}")`);
   const pq = await L.quotePress(fire, 1, "ETH");
   check(pq.cost.raw === "0" && pq.paper.text === "1", "press pack: no dollar price, 1 PAPER");
-  await L.claimPressPacks({ fire, pressId, n: 1, pay: "ETH" }, o);
+  check(JSON.stringify(await L.pressUse(fire, [pressId])) === JSON.stringify([{ id: pressId, buyer: "0x0000000000000000000000000000000000000000", claimed: 0 }]), "the Press: let no wallet in, no press pack claimed yet");
+  await L.claimPressPacks({ fire, pressId, n: 1, pay: "ETH", quote: { cost: pq.cost.raw, paper: pq.paper.raw } }, o);
+  check((await L.pressUse(fire, [pressId]))[0].claimed === 1 && s.pressPacksPerPress === 1, "press pack claimed at the shown price: the Press has used its 1 press pack this drop");
   await L.spendCredits({ fire, n: 1 }, o);
   s = (await L.currentSeries())!;
   check(s.state === "closed" && s.cards.closed && s.cards.packs === 7, "sold out: 5 paid + 1 credit + 1 press pack; the drop and the Series closed (7 packs)");
@@ -118,13 +144,17 @@ export async function runTest(ctx: Ctx): Promise<number> {
   check(op.index === 0, "opened 7 packs (open #0)");
   let opens = await L.opensOf(me);
   check(opens.length === 1 && opens[0].status === "waiting" && opens[0].round !== null, `waiting for drand round ${opens[0].round}`);
-  check((await L.deliverAndDeal({ fire }, o)).delivered === 0, "before the round is out: nothing delivered");
+  const st0 = await L.openStatus(fire, op.index);
+  check(st0.status === "waiting" && st0.round === opens[0].round && st0.now < st0.roundAt!, "openStatus (by index, no log scan) agrees: waiting, with the round and the chain's clock");
+  check((await L.deliverAndDeal({ fire, index: op.index }, o)).delivered === 0, "before the round is out: nothing delivered");
   await ctx.warp(100);
   opens = await L.opensOf(me);
-  check(opens[0].status === "deliverable", "the round is out: deliverable");
-  const dd = await L.deliverAndDeal({ fire, maxCards: 30 }, o);
-  check(dd.delivered === 1 && dd.dealt, "delivered (the router took the signature) and dealt in steps of 30 cards");
-  check((await L.opensOf(me))[0].status === "dealt", "the open reads as dealt");
+  check(opens[0].status === "deliverable" && (await L.openStatus(fire, op.index)).status === "deliverable", "the round is out: deliverable");
+  const sent0 = steps.length;
+  const dd = await L.deliverAndDeal({ fire, index: op.index }, o);
+  check(dd.delivered === 1 && dd.dealt && dd.reached && !dd.keeper, "delivered (the router took the signature) and dealt the buyer's open");
+  check(steps.length - sent0 === 2 && steps.slice(sent0).join(" / ") === "Deliver the draw / Deal the cards", `in exactly 2 transactions: ${steps.slice(sent0).join(" / ")}`);
+  check((await L.opensOf(me))[0].status === "dealt" && (await L.openStatus(fire, op.index)).status === "dealt", "the open reads as dealt");
 
   console.log("\n== cards");
   const cards = await L.cardsOf(me);
@@ -139,12 +169,13 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const pq2 = await L.quoteProtect(1, 2, "ETH");
   check(BigInt(pq2.raw) > 0n, `1 case + 2 grades = ${pq2.text} ETH`);
   const [ca, g1, g2] = [cards[1].serial, cards[2].serial, cards[3].serial];
-  const pt = await L.protect({ caseIds: [ca], gradeIds: [g1, g2], pay: "ETH" }, o);
-  check(pt.gradingIndex === 0, "cased and sent for grading in one transaction (grading #0)");
+  const pt = await L.protect({ caseIds: [ca], gradeIds: [g1, g2], pay: "ETH", quote: pq2.raw }, o);
+  check(pt.gradingIndex === 0, "cased and sent for grading in one transaction (grading #0), capped at the price shown");
   check((await L.card(ca)).cased && (await L.card(g1)).gradePending, "the case shows; the graded cards are pending (they can't move)");
-  check((await L.gradingsOf(me))[0].status === "waiting", "grading waits for its round");
+  check((await L.gradingsOf(me))[0].status === "waiting" && (await L.gradingStatus(0)).status === "waiting", "grading waits for its round");
+  check((await L.gradingIds(0, [g1, g2])).join() === [g1, g2].join() && (await L.gradingIds(0)).join() === [g1, g2].join(), "the grading's card list: the page's own (checked against idsHash) or from its event");
   await ctx.warp(100);
-  check(await L.deliverAndFinish({ index: 0 }, o), "delivered and finished: grades set");
+  check(await L.deliverAndFinish({ index: 0, ids: [g1, g2] }, o), "delivered and finished: grades set");
   const [x1, x2] = [await L.card(g1), await L.card(g2)];
   check(x1.grade !== null && x2.grade !== null && !x1.gradePending && x1.image.endsWith(`-${x1.grade}.webp`), `grades: PDA ${x1.grade} and PDA ${x2.grade}; the image is the slab's`);
   check((await L.gradingsOf(me))[0].status === "done", "grading reads as done");
@@ -157,6 +188,29 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const cr = await L.credits(me);
   check(cr.burnedTowardNext === 3 && cr.cardsPerCredit === 42 && cr.credits === 1, "3 burned toward the next free pack (of 42); 1 credit left");
   check((await L.cardsOf(me)).length === 39, "39 cards left");
+
+  console.log("\n== the holder window's proof");
+  const hl = (a: Address) => keccak256(keccak256(encodeAbiParameters([{ type: "address" }], [getAddress(a)])));
+  const [la, lb] = [hl(me), hl(other.address)];
+  const root = BigInt(la) < BigInt(lb) ? keccak256(concat([la, lb])) : keccak256(concat([lb, la]));
+  check(L.verifyHolderProof([lb], root, me) && !L.verifyHolderProof([lb], root, deployer.address) && !L.verifyHolderProof([lb], `0x${"0".repeat(64)}`, me), "a snapshot proof checks out against the drop's root, and only for its own wallet");
+
+  console.log("\n== a transaction the network hasn't confirmed yet: saved, followed, resumed");
+  await new Promise((ok) => setTimeout(ok, 300)); // any nonce reads still out from the sends above
+  check(L.pendingTxs(me).length === 0, `every transaction that landed is forgotten (none left pending: ${L.pendingTxs(me).map((t) => t.label).join(", ") || "none"})`);
+  const sale = ctx.C.FireSale, paperTok = ctx.D.paper.address;
+  await ctx.rpc("evm_setAutomine", [false]);
+  let late: unknown = null;
+  try { await T.sendTx({ address: paperTok, abi: erc20Abi, functionName: "approve", args: [sale, 1n] }, { label: "Approve a little PAPER", kind: "approve", waitMs: 400 }); } catch (e) { late = e; }
+  check(late instanceof L.TxStillPending && L.pendingTxs(me).length === 1 && L.pendingTxs(me)[0].kind === "approve", "not confirmed in time: TxStillPending (not a failure), and it's saved as pending");
+  await ctx.rpc("evm_mine");
+  check((await (late as InstanceType<typeof L.TxStillPending>).later) === "success" && L.pendingTxs(me).length === 0, "once mined, its `later` says success and it's no longer pending");
+  try { await T.sendTx({ address: paperTok, abi: erc20Abi, functionName: "approve", args: [sale, 2n] }, { label: "Approve some more", kind: "approve", waitMs: 400 }); } catch { /* still pending */ }
+  const resumed: string[] = [];
+  const done = new Promise<void>((ok) => { L.resumePending((t, outcome) => { resumed.push(`${t.label}: ${outcome}`); ok(); }, me, (t) => t.label === "Approve some more"); });
+  await ctx.rpc("evm_mine"); await ctx.rpc("evm_setAutomine", [true]);
+  await done;
+  check(resumed.join() === "Approve some more: success" && L.pendingTxs(me).length === 0, `a reload resumes it: ${resumed.join()}`);
 
   console.log("\n== errors come back in plain words");
   W.setLocalSigner(privateKeyToAccount(toHex(other.getHdKey().privateKey!)));

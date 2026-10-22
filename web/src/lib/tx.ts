@@ -94,8 +94,9 @@ export function pendingTxs(from?: Address): PendingTx[] {
 
 // ---------- following one transaction
 
-/** One saved transaction being followed: `tx` moves to the new hash on a speed-up (saved, and onHash told). */
-type Tracked = { tx: PendingTx; hashes: Hex[]; onHash?: (hash: Hex) => void };
+/** One saved transaction being followed: `tx` moves to the new hash on a speed-up (saved, and onHash told). `ended`:
+ *  it landed (or was replaced) and was forgotten; nothing may save it again. */
+type Tracked = { tx: PendingTx; hashes: Hex[]; onHash?: (hash: Hex) => void; ended?: boolean };
 const track = (tx: PendingTx, onHash?: (hash: Hex) => void): Tracked => ({ tx, hashes: [tx.hash], onHash });
 function moveTo(ref: Tracked, hash: Hex) {
   if (hash === ref.tx.hash) return;
@@ -103,7 +104,7 @@ function moveTo(ref: Tracked, hash: Hex) {
   ref.tx = { ...ref.tx, hash }; ref.hashes.push(hash); remember(ref.tx);
   ref.onHash?.(hash);
 }
-function end(ref: Tracked, outcome: TxOutcome): TxOutcome { forget(...ref.hashes); return outcome; }
+function end(ref: Tracked, outcome: TxOutcome): TxOutcome { ref.ended = true; forget(...ref.hashes); return outcome; }
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Its nonce, read from the chain if it wasn't saved (and saved now). */
@@ -111,7 +112,8 @@ async function nonceOf(ref: Tracked): Promise<number | undefined> {
   if (ref.tx.nonce !== undefined) return ref.tx.nonce;
   try {
     const t = await getPublicClient().getTransaction({ hash: ref.tx.hash });
-    ref.tx = { ...ref.tx, nonce: t.nonce }; remember(ref.tx);
+    ref.tx = { ...ref.tx, nonce: t.nonce };
+    if (!ref.ended) remember(ref.tx); // it may have landed (and been forgotten) while this read was out
   } catch { /* not seen by this RPC (yet) */ }
   return ref.tx.nonce;
 }
@@ -159,10 +161,11 @@ async function follow(ref: Tracked): Promise<TxOutcome> {
   }
 }
 
-/** After a reload: follow every saved transaction; onSettled reports each as it ends (`tx` has its final hash).
- *  Returns how many there were. */
-export function resumePending(onSettled: (tx: PendingTx, outcome: TxOutcome) => void, from?: Address): number {
-  const list = pendingTxs(from);
+/** After a reload: follow every saved transaction (of `from`; only those `only` picks, e.g. the ones the page isn't
+ *  following yet); onSettled reports each as it ends (`tx` has its final hash, `at` stays the same). Returns how many
+ *  there were. */
+export function resumePending(onSettled: (tx: PendingTx, outcome: TxOutcome) => void, from?: Address, only?: (tx: PendingTx) => boolean): number {
+  const list = pendingTxs(from).filter((t) => !only || only(t));
   for (const t of list) {
     const ref = track(t);
     follow(ref).then((outcome) => onSettled(ref.tx, outcome));

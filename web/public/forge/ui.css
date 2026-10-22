@@ -257,7 +257,12 @@ body[data-mode=port] .qbanner { font-size: 13px; gap: 8px; flex-wrap: wrap; text
 .tx-steps { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px }
 .tx-steps li { display: grid; gap: 2px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05) }
 .tx-steps li small { color: var(--muted) }
-.tx-steps li.confirm small, .tx-steps li.pending small { color: var(--gold) }
+.tx-steps li.confirm small, .tx-steps li.pending small, .tx-steps li.late small { color: var(--gold) }
+/* live: "may be out of date" while the chain can't be read, and sent transactions still on their way */
+.live-bar { position: fixed; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: min(420px, calc(100vw - 24px)); z-index: 45; display: grid; gap: 6px; pointer-events: none }
+.live-bar[hidden] { display: none }
+.live-bar p { margin: 0; pointer-events: auto; background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 8px 12px; font: 700 13px/1.35 var(--body); color: var(--muted); box-shadow: 0 6px 18px rgba(0,0,0,.5) }
+.live-bar p.stale { color: var(--gold) } .live-bar p b { color: var(--ink) } .live-bar .btn.small { margin-left: 6px }
 .tx-steps li.done small { color: #8fe08f }
 .tx-steps a { color: inherit }
 .wlist { display: grid; gap: 8px }

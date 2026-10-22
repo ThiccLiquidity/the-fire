@@ -91,6 +91,7 @@ if (cfg.once) {
   } catch (e) {
     log(`pass failed: ${errMsg(e)}`);
     await keeper.notifier.post(`${labelOf(cfg)} pass failed: ${errMsg(e)}`);
+    await pingHeartbeat(cfg.heartbeatUrl, true, `pass failed: ${errMsg(e)}`);
     process.exitCode = 1;
   }
 } else {
@@ -101,7 +102,7 @@ if (cfg.once) {
     const t = Date.now();
     try { await keeper.tick(); } catch (e) {
       log(`pass failed: ${errMsg(e)}`);
-      await keeper.notifier.report([{ key: "pass", text: `pass failed: ${errMsg(e)}` }]);
+      await keeper.notifier.report([{ key: "pass", text: `pass failed: ${errMsg(e)}` }], undefined, [], { passFailed: true });
     }
     const wait = Math.max(1000, cfg.intervalSec * 1000 - (Date.now() - t));
     await new Promise((r) => { wake = r; setTimeout(r, wait); });

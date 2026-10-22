@@ -16,6 +16,16 @@ export const paperTwapAbi = parseAbi([
   "function candidateSince() view returns (uint32)",
 ]);
 
+/** FireSale: the drop state, and endDrop for a drop that didn't sell out (the owner once its phases are over and
+ *  MIN_DROP_TIME after start; anyone END_GRACE after that). */
+export const saleAbi = parseAbi([
+  "struct Drop { uint64 start; uint64 packs; uint64 starters; uint64 plankOnly; uint64 walletLimit; uint64 paidSold; uint64 startersClaimed; uint64 creditPacks; uint32 starterWindow; uint32 liftAfter; uint32 holderWindow; uint32 maxPerTx; uint32 plankOnlyFor; uint32 regularWalletsFor; uint32 starterPerPress; uint32 starterWalletLimit; uint16 creditsPerPick; uint16 plankBurnBps; uint16 paperBurnBps; uint64 creditPacksMax; uint64 creditPacksPerWallet; bool closed; uint128 priceUsd; uint128 paperPerPack; uint128 starterPriceUsd; uint128 starterPaper; bytes32 holderRoot; uint128 paperCapUsd; }",
+  "function dropOf(uint256 fire) view returns (Drop)",
+  "function endDrop(uint256 fire)",
+  "function MIN_DROP_TIME() view returns (uint256)",
+  "function END_GRACE() view returns (uint256)",
+]);
+
 export const pausableAbi = parseAbi(["function paused() view returns (bool)"]);
 
 export const feedAbi = parseAbi(["function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)"]);
@@ -66,4 +76,4 @@ export const burnerAbi = parseAbi([
   "function USDG() view returns (address)",
 ]);
 
-export const erc20Abi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
+export const erc20Abi = parseAbi(["function balanceOf(address) view returns (uint256)", "function decimals() view returns (uint8)"]);

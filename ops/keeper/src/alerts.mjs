@@ -3,9 +3,10 @@
 // ALERT_WEBHOOK_URL: a Discord webhook, a Slack incoming webhook, or a Telegram bot URL
 //   (https://api.telegram.org/bot<token>/sendMessage?chat_id=<id>). The body carries the message as both `content`
 //   (Discord) and `text` (Slack, Telegram), so one URL of any of them works.
-// HEARTBEAT_URL: a dead-man's switch (e.g. a healthchecks.io check; required in production). Pinged after every
-//   healthy pass, and <url>/fail with the reasons otherwise; if the keeper dies, the service notices the silence and
-//   alerts. Each keeper service (main, backup) has its own check.
+// HEARTBEAT_URL: a dead-man's switch (e.g. a healthchecks.io check; required in production). Its one job is "this
+//   keeper is alive": pinged after every pass that completed, whatever the alerts (problems go to the webhook only, so
+//   a long-lasting alert never hides a keeper that died); <url>/fail when a whole pass failed or it can't start. If the
+//   keeper dies, the service notices the silence and alerts. Each keeper service (main, backup) has its own check.
 //
 // An alert ({ key, text }) is posted when it first appears, repeated every ALERT_REPEAT_MIN while it lasts (unless
 // `repeat: false`, e.g. a pause the owner chose), and a "resolved" line when it clears. `quiet` ones are only logged.
@@ -71,8 +72,9 @@ export function createNotifier({ cfg, log, fetchFn = globalThis.fetch, clock = D
 
   const post = (text) => (cfg.webhookUrl ? postWebhook(cfg.webhookUrl, text, { fetchFn, log }) : Promise.resolve(false));
 
-  /** Called once per pass with this pass's alerts ({ key, text, quiet?, repeat? }) and events ({ key, text }). */
-  async function report(alerts, status, events = []) {
+  /** Called once per pass with this pass's alerts ({ key, text, quiet?, repeat? }) and events ({ key, text }).
+   *  `passFailed`: the pass itself threw (the dead-man's switch is pinged as failing). */
+  async function report(alerts, status, events = [], { passFailed = false } = {}) {
     const now = clock();
     const repeatMs = cfg.alertRepeatMin * 60_000;
     const loud = alerts.filter((a) => !a.quiet);
@@ -115,9 +117,8 @@ export function createNotifier({ cfg, log, fetchFn = globalThis.fetch, clock = D
       await post(`${label} heartbeat: running (${cfg.role ?? "main"}); ${loud.length ? `${loud.length} open problem(s)` : "no problems"}; keeper ${s.address} has ${s.balance !== undefined ? (Number(s.balance) / 1e18).toFixed(5) : "?"} ETH; Series watched: ${(s.series ?? []).join(", ") || "none yet"}`);
     }
     save();
-    // the dead-man's switch fails on problems, not on notices the owner chose (a pause)
-    const failing = loud.filter((a) => a.repeat !== false);
-    await pingHeartbeat(cfg.heartbeatUrl, failing.length > 0, failing.map((a) => a.text).join("; ") || "ok", { fetchFn });
+    // the dead-man's switch says "alive" after every pass that completed (problems are the webhook's job)
+    await pingHeartbeat(cfg.heartbeatUrl, passFailed, passFailed ? loud.map((a) => a.text).join("; ") : `ok${loud.length ? ` (${loud.length} open alert(s))` : ""}`, { fetchFn });
   }
 
   return { report, post, open };

@@ -960,9 +960,24 @@
       return h('ul', { class: 'wz-thumbs', 'aria-label': label }, ids.map((id) => { const c = byId(id);
         return h('li', {}, h('div', { class: 'cwrap' }, cardFace(c, true)), h('span', { class: 'gt-name', text: c.character })); }));
     }
+    // live: the price is FirePsa.quote for these cards in this coin (re-read every 15 s while the review is open), and
+    // the payment is capped at it + 3%; the wallet must hold that (Live.walletNeeds). liveQ: the Amount, null while
+    // loading, false when unavailable.
+    let liveQ = null, liveKey = '';
+    function fetchQ(key) {
+      const [nc, ng, k] = key.split('|');
+      Live.quoteProtect(+nc, +ng, k).then((q) => {
+        if (key !== liveKey || step !== 'review' || !host.isConnected) return;
+        const v = q || false; if (JSON.stringify(v) !== JSON.stringify(liveQ)) { liveQ = v; review(); }
+      });
+    }
+    const qTick = LIVE ? setInterval(() => { if (!host.isConnected) return clearInterval(qTick); if (step === 'review' && liveKey && !document.hidden) fetchQ(liveKey); }, 15000) : 0;
     function review() {
       const g = [...gSel], cs = [...cSel], raw = list().filter((c) => canCase(c) && !gSel.has(c.id) && !cSel.has(c.id));
-      const usd = total(), amt = Wear.inCoin(usd, coin), bal = S().wallet.balances[coin], short = amt > bal;
+      const usd = total(), key = `${cs.length}|${g.length}|${coin}`;
+      if (LIVE && usd && key !== liveKey) { liveKey = key; liveQ = null; fetchQ(key); }
+      const quoting = LIVE && usd && !liveQ, amt = LIVE && liveQ ? parseFloat(String(liveQ.text).replace(/,/g, '')) || 0 : Wear.inCoin(usd, coin);
+      const bal = S().wallet.balances[coin], short = !quoting && (LIVE ? Live.walletNeeds(amt, coin) : amt) > bal;
       const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Pay with' }, Wear.COINS.map((k) =>
         h('button', { type: 'button', 'aria-pressed': String(k === coin), onclick: () => { coin = k; review(); } }, k)));
       const rawFresh = raw.some((c) => Wear.freshLeft(c) > 0);
@@ -973,24 +988,26 @@
         raw.length ? h('p', { class: 'wz-raw' }, h('b', { text: `${raw.length} staying raw.` }), ' ',
           rawFresh ? 'They start wearing when their fresh day ends. You can case or grade them any time.' : 'They keep wearing until cased or graded. You can do that any time.') : null,
         usd ? h('div', { class: 'wz-pay' },
-          h('dl', { class: 'sum' }, h('dt', { text: 'Total' }), h('dd', { class: 'price' }, Wear.usd(usd), h('small', { text: ` ≈ ${Wear.fmtCoin(amt, coin)} ${coin}` })),
+          h('dl', { class: 'sum' }, h('dt', { text: 'Total' }), h('dd', { class: 'price' }, Wear.usd(usd), h('small', { text: quoting ? (liveQ === false ? ' · price unavailable right now' : ' · getting the price…') : ` ≈ ${LIVE ? liveQ.text : Wear.fmtCoin(amt, coin)} ${coin}` })),
             h('dt', { text: 'You have' }), h('dd', { text: `${Wear.fmtCoin(bal, coin)} ${coin}` })),
           h('div', { class: 'wz-coin' }, h('span', { class: 'muted small', text: 'Pay with' }), seg),
           h('p', { class: 'wz-burn', text: Wear.BURN_LINE }),
+          LIVE && coin !== 'USDG' ? h('p', { class: 'fine', text: `If the price moves over 3%, nothing is charged.${coin === 'ETH' ? ' Your wallet may show up to 3% more; anything unused comes back.' : ''}` }) : null,
           h('p', { class: 'demo-line', text: 'Demo · nothing is charged' })) : null,
         h('div', { class: 'foot' }, h('div', { class: 'fsum' }, h('b', { text: usd ? `${g.length + cs.length} ${g.length + cs.length === 1 ? 'card' : 'cards'} · ${Wear.usd(usd)}` : 'Keep them all raw?' }),
           h('span', { class: 'muted', text: usd ? 'One payment for all of them' : 'You can case or grade any time from My cards' })),
           h('div', { class: 'row' }, btn('Back', '', () => go('case')),
-            usd ? btn(short ? `Not enough ${coin}` : `Pay ${Wear.usd(usd)}`, 'primary', () => pay(g, cs, coin, amt), { disabled: short }) : btn('Done', 'primary', () => finish([], []))))));
+            usd ? btn(quoting ? 'Getting the price…' : short ? `Not enough ${coin}` : `Pay ${Wear.usd(usd)}`, 'primary', () => pay(g, cs, coin, amt, liveQ), { disabled: short || quoting }) : btn('Done', 'primary', () => finish([], []))))));
       host.querySelector('.foot .btn.primary')?.focus({ preventScroll: true });
     }
-    async function pay(g, cs, k, amt) {
+    async function pay(g, cs, k, amt, quote) {
       g = g.filter((id) => canGrade(byId(id))); cs = cs.filter((id) => canCase(byId(id)) && !g.includes(id));
-      if (S().wallet.balances[k] < amt) return review();
+      if (S().wallet.balances[k] < (LIVE ? Live.walletNeeds(amt, k) : amt)) return review();
+      if (LIVE && (`${cs.length}|${g.length}|${k}` !== liveKey || !quote)) return review(); // the picks changed: price them again
       step = 'work';
       let gIndex = -1;
-      if (LIVE) { // the chain: one transaction, then the cases show and the grades come after the draw
-        const r = await Live.protect(cs, g, k);
+      if (LIVE) { // the chain: one transaction (capped at the price shown + 3%), then the cases show and the grades come after the draw
+        const r = await Live.protect(cs, g, k, quote);
         if (!r) { step = 'review'; return review(); }
         gIndex = r.gradingIndex;
       }

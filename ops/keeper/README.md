@@ -15,12 +15,23 @@ Each pass (every 20 s for the main keeper, 30 s for the backup):
    Each open and grading is answered by the source that took it, so a randomness switch is followed automatically.
 3. **Dealing:** `FireCards.process(fire, maxCards)` while a Series' queue head is ready.
 4. **Grading:** `FirePsa.finish(index, ids)` for ready gradings; `ids` come from the grading's `Protected` event
-   (checked against the hash FirePsa stored).
-5. **Burners:** `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when they hold something and a flush would
-   actually burn it. PaperBurner only lets flushers the owner names flush it (an open flush could be sandwiched): set
-   both keeper wallets with `KEEPERS` at deploy, or `PaperBurner.setFlusher(<keeper>, true)` from the owner. A keeper
-   that isn't one alerts instead of flushing.
-6. **Health:** alerts and a heartbeat (below).
+   (checked against the hash FirePsa stored). Each pass reads the newest `GRADING_LOOKBACK` (300) gradings, the oldest
+   one not done, and the next 300 older ones from there (a sweep that wraps around), so a backlog older than the window
+   (an outage in a busy week, or someone paying for hundreds of gradings) is still finished, 300 a pass. Nothing below
+   the oldest not done is read again.
+5. **Burners:** `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when what they hold is worth the gas and a flush
+   would actually burn it. Sales and gradings pay the burners as they go, so the keeper's flush is only a sweep, and
+   anyone can send a burner a few wei: a balance is flushed when it is worth `MIN_FLUSH_USD` ($1; ETH at Chainlink's
+   price, PLANK at PlankUsdTwap's, USDG at face value), at most once per `FLUSH_EVERY_MIN` (15) per burner and currency
+   unless it is worth `FLUSH_NOW_X` (25) times that. Less than that (or one with no price to value it) is flushed once
+   it has waited `FLUSH_MAX_WAIT_HOURS` (6) if it is worth over `FLUSH_DUST_USD` ($0.05), so nothing waits forever and
+   dust can't drain the keeper. PaperBurner only lets flushers the owner names flush it (an open flush could be
+   sandwiched): set both keeper wallets with `KEEPERS` at deploy, or `PaperBurner.setFlusher(<keeper>, true)` from the
+   owner. A keeper that isn't one alerts instead of flushing.
+6. **Drops:** a drop that hasn't sold out once its phases are over (and a day after it opened at the earliest): an
+   alert that the owner can end it now with `FireSale.endDrop(N)` (until then its packs can't be opened and no next
+   drop can be set up). Once anyone may (`END_GRACE`, 7 days later), the keeper calls `FireSale.endDrop(N)` itself.
+7. **Health:** alerts and a heartbeat (below).
 
 **No wasted transactions.** Right before sending, each call is checked again against the pending state (the
 checkpoint still due, the drand requests not yet delivered, something to deal, the grading not finished) and simulated;
@@ -29,7 +40,7 @@ a call that would do nothing isn't sent. Reads made together go out as one Multi
 
 **Two keepers, no double work.** The backup (`KEEPER_ROLE=backup`) acts only on work left waiting `ACT_AFTER_SEC`
 (5 min): a feed window or a candidate adoption 5 min late, a drand round published 5 min ago and not delivered, an open
-ready 5 min and not dealt, a burner balance waiting 5 min. Even then it waits `BACKUP_YIELD_MS` before each
+ready 5 min and not dealt, a burner balance waiting 5 min, an unsold drop 5 min past the time anyone may end it. Even then it waits `BACKUP_YIELD_MS` before each
 transaction, looks again, and stands down while the main keeper's wallet (`MAIN_KEEPER_ADDRESS`) has a transaction
 waiting, so the main keeper wins a tie. When the backup does act it says so on the webhook. The rehearsal races the two
 for real and fails on any reverted, empty or duplicate transaction.
@@ -50,16 +61,23 @@ while it lasts, and "resolved" when it clears:
   updated for 24 h (prices stop at 25 h).
 - **Stuck opens and gradings:** drand published the round 10 min ago and it still isn't delivered; an open ready but
   not dealt, or a grading ready but not finished, for 10 min.
-- **Waiting fees:** a burner holds ETH, PLANK or USDG it can't burn yet (no PAPER price yet, or the price guard).
+- **Stuck opens and gradings** older than the 300 the keeper reads each pass: one alert with how many and the oldest.
+- **Waiting fees:** a burner holds ETH, PLANK or USDG worth flushing that it can't burn yet (no PAPER price yet, or
+  the price guard). Dust below the flush minimum waits quietly.
+- **An unsold drop:** "Series N hasn't sold out; the owner can end it now with FireSale.endDrop(N), or anyone can after
+  <date>"; after that date, only if the keeper's own `endDrop` didn't go through. Posted when the keeper ends it.
 - **drand lag:** no relay answers, or drand is 20+ rounds (60 s) behind the clock; the chain's clock off real time by
   2+ min.
 - **The owner's switches:** FireSale or FirePsa paused (posted once, and when it ends); FireCards' or FirePsa's
   randomness source switched (posted when it happens).
-- **Low keeper ETH:** under 0.01 ETH.
+- **Low keeper ETH:** under 0.002 ETH (`LOW_BALANCE_ETH`). Keep about 0.005-0.01 ETH in each keeper wallet.
 - **The keeper itself:** a job failing, a transaction in flight 15+ min, the backup having to step in, and a keeper that
   can't start (bad settings, wrong chain, no RPC answering): it posts why before it exits, and fails its heartbeat check.
 - **Heartbeat:** a message when it starts and every 24 h. `HEARTBEAT_URL` (a healthchecks.io check, one per service;
-  required in production) is pinged every pass, so if a keeper dies the silence itself raises an alarm.
+  required in production) answers one question, "is this keeper alive": it is pinged after every pass that completed,
+  whatever the alerts (problems go to the webhook only, so an alert that lasts days never hides a keeper that died),
+  and `<url>/fail` when a whole pass fails or the keeper can't start. If a keeper dies the silence itself raises an
+  alarm.
 
 ## Settings
 
@@ -83,7 +101,9 @@ while it lasts, and "resolved" when it clears:
 | `SERIES` | all found | e.g. `7,8`; otherwise every Series with a dealer is found by probing |
 | `MAX_FEE_GWEI` | none | fee cap |
 | `PROCESS_MAX_CARDS` | 120 | cards per `process` call |
-| `LOW_BALANCE_ETH`, `STUCK_MIN`, `PLANK_STALE_MIN`, `PAPER_STALE_HOURS`, `PAPER_CANDIDATE_LATE_HOURS`, `ETH_STALE_HOURS`, `DRAND_LAG_ROUNDS`, `ALERT_REPEAT_MIN`, `HEARTBEAT_HOURS` | 0.01, 10, 90, 22, 3, 24, 20, 60, 24 | alert thresholds |
+| `GRADING_LOOKBACK` | 300 | gradings read per pass: the newest this many, plus this many older ones (the sweep) |
+| `MIN_FLUSH_USD`, `FLUSH_EVERY_MIN`, `FLUSH_NOW_X`, `FLUSH_MAX_WAIT_HOURS`, `FLUSH_DUST_USD` | 1, 15, 25, 6, 0.05 | burner flushes: the minimum in dollars, once per this many minutes, at once when worth this many times the minimum, and anything over the dust floor once it has waited this many hours |
+| `LOW_BALANCE_ETH`, `STUCK_MIN`, `PLANK_STALE_MIN`, `PAPER_STALE_HOURS`, `PAPER_CANDIDATE_LATE_HOURS`, `ETH_STALE_HOURS`, `DRAND_LAG_ROUNDS`, `ALERT_REPEAT_MIN`, `HEARTBEAT_HOURS` | 0.002, 10, 90, 22, 3, 24, 20, 60, 24 | alert thresholds |
 
 "Production" is `NODE_ENV=production`, which the Docker image sets: there a keeper without `HEARTBEAT_URL` or
 `ALERT_WEBHOOK_URL` refuses to start (and says so). Any contract address can be overridden (`FIRE_CARDS`, `FIRE_PSA`,
@@ -99,7 +119,8 @@ Keys are typed into Railway's own variable fields, never into a chat or a file.
 cast wallet new      # prints an address and a private key; do this twice
 ```
 Copy each private key straight into its Railway service (step 3), then `Clear-Host`. Write down both **addresses**
-(not keys). Send each about 0.02 ETH on Robinhood Chain. These wallets only ever pay gas: keep little in them.
+(not keys). Send each about 0.01 ETH on Robinhood Chain and keep 0.005-0.01 ETH in each (the low-balance alert fires
+under 0.002 ETH). These wallets only ever pay gas: keep little in them.
 
 **2. Two heartbeat checks** (healthchecks.io, free): New check → name it "keeper main", period 5 min, grace 5 min;
 again for "keeper backup". Connect your Discord/Telegram in its Integrations so a silent keeper alerts you. Copy each
@@ -157,7 +178,10 @@ Remove-Item Env:KEEPER_PRIVATE_KEY, Env:ONCE
 ## Tests
 
 - `npm test`: drand client, alerts (dedupe, hourly repeat, resolved, pause notices, events, one-pass state file and
-  window), config (roles, production requirements) and key handling, start-up nonce-gap replacement.
+  window), the heartbeat (alive whatever the alerts, failing only on a failed pass), config (roles, production
+  requirements, thresholds) and key handling, start-up nonce-gap replacement, and against a stand-in chain: burner
+  flush minimums (dust, the rate limit, large balances, the long wait, the PaperBurner flusher check, the backup's
+  grace), unsold drops (the owner's alert, the keeper's `endDrop`, the backup's grace) and the grading sweep.
 - The whole keeper runs end to end in the rehearsal (`ops/rehearsal`, see `docs/deploy.md`): on a local anvil chain it
   checkpoints, delivers a real drand signature through the real router, deals, finishes a grading from its
   `Protected` event, flushes both burners, races the main keeper against the backup with automine off, lets the

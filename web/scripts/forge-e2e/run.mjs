@@ -29,13 +29,16 @@ if (!existsSync(join(FACTORY, "forge/vendor/wallet.js"))) throw new Error("No wa
 
 // ---------- a static server for web/art/factory (the page at /forge/, its scene art at /build3/)
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".webp": "image/webp", ".json": "application/json", ".woff2": "font/woff2", ".jpg": "image/jpeg", ".png": "image/png", ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".svg": "image/svg+xml" };
+// ?build-live=testnet: the page as a live build writes it (<meta name="forge-live" content="testnet">, vite.wallet.config.ts)
 const server = createServer((req, res) => {
-  let p = decodeURIComponent(new URL(req.url, "http://x").pathname);
+  const u = new URL(req.url, "http://x");
+  let p = decodeURIComponent(u.pathname);
   if (p.endsWith("/")) p += "index.html";
   const f = normalize(join(FACTORY, p));
   if (!f.startsWith(FACTORY) || !existsSync(f) || !statSync(f).isFile()) { res.writeHead(404); return res.end(); }
   res.writeHead(200, { "content-type": TYPES[extname(f)] ?? "application/octet-stream" });
-  res.end(readFileSync(f));
+  const flag = u.searchParams.get("build-live");
+  res.end(flag && f.endsWith("index.html") ? readFileSync(f, "utf8").replace('<meta name="forge-live" content="">', `<meta name="forge-live" content="${flag}">`) : readFileSync(f));
 });
 await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
 const SITE = `http://127.0.0.1:${server.address().port}/forge/`;
@@ -115,7 +118,10 @@ try {
     for (let i = 1; i < n; i++) await page.click('#sheet-buy [data-q="1"]');
     await page.click(`#sheet-buy [data-c="${coin}"]`);
     await page.waitForFunction(() => /≈/.test(document.querySelector("#sheet-buy .sum dd")?.textContent || ""), null, { timeout: 30_000 });
-    if (n === 2 && coin === "ETH") await shot("05-checkout");
+    if (n === 2 && coin === "ETH") {
+      await shot("05-checkout");
+      check(/up to 3% more; anything unused comes back/.test(await page.locator("#sheet-buy .fine").textContent()), "ETH checkout: the wallet may show up to 3% more, unused comes back");
+    }
     await page.click("#sheet-buy .go:not([disabled])");
     await page.locator("#sheet-tx[open]").waitFor();
     if (coin === "PLANK") await shot("06-tx-steps");
@@ -149,7 +155,7 @@ try {
   await page.click('#sheet-table [data-key="openN-7"]');
   await page.waitForFunction(() => /draw/.test(document.querySelector("#sheet-table .op-wait .stage-msg")?.textContent || ""), null, { timeout: 60_000 });
   await shot("08-waiting-for-draw");
-  await ctx.warp(100);
+  await ctx.warp(150); // past the draw and the keeper's head start (no keeper here: the page offers to deal, once)
   await page.locator("#sheet-table .op").waitFor({ timeout: 120_000 });
   await page.waitForTimeout(2500);
   await shot("09-reveal");
@@ -166,11 +172,14 @@ try {
   await page.locator("#sheet-table .wz-grid .ctile:not(.off)").nth(0).click();
   await page.click('#sheet-table .wz .foot .btn.primary'); // Next: review
   await page.click('#sheet-table .wz-coin [aria-pressed]:text("ETH")');
+  await page.waitForFunction(() => /≈ .* ETH/.test(document.querySelector("#sheet-table .wz-pay .price")?.textContent || ""), null, { timeout: 30_000 });
+  const quoted = await page.evaluate(async () => (await window.Live.quoteProtect(1, 2, "ETH")).text);
+  check((await page.locator("#sheet-table .wz-pay .price").textContent()).includes(`≈ ${quoted} ETH`), `the review shows FirePsa's quote (${quoted} ETH), not an estimate`);
   await shot("11-review");
   await page.click('#sheet-table .wz .foot .btn.primary'); // Pay
   await txDone();
   await page.waitForFunction(() => /grader/i.test(document.querySelector("#sheet-table .wz-work .stage-msg")?.textContent || ""), null, { timeout: 60_000 });
-  await ctx.warp(100);
+  await ctx.warp(150);
   await page.waitForFunction(() => /graded/.test(document.querySelector("#sheet-table .wz-work .stage-msg")?.textContent || ""), null, { timeout: 120_000 });
   await shot("12-graded");
   await sync();
@@ -201,8 +210,46 @@ try {
   await page.waitForTimeout(600);
   await shot("15-results");
   await page.keyboard.press("Escape");
+  console.log("\n== the network down: the page says the data may be out of date, then recovers");
+  await page.route(ctx.RPC + "/**", (r) => r.abort());
+  await page.route(ctx.RPC, (r) => r.abort());
+  await page.evaluate(() => window.Live.sync());
+  await page.locator(".live-bar .stale").waitFor({ timeout: 30_000 });
+  check(/out of date/.test(await page.locator(".live-bar").textContent()), "sync failed: \"may be out of date\" shows");
+  await shot("15b-stale");
+  await page.unroute(ctx.RPC + "/**"); await page.unroute(ctx.RPC);
+  await sync();
+  check(await page.locator(".live-bar").isHidden(), "the next sync works: the notice is gone");
+  check(await page.evaluate(() => Store.state.wallet.pending.length === 0), "nothing left waiting for the network");
   check(errors.length === 0, `no page errors in live mode${errors.length ? ": " + errors.join(" | ") : ""}`);
   await page.close();
+
+  console.log("\n== the live switch and links");
+  {
+    const p = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await p.addInitScript(([n, k]) => { globalThis.__FORGE_NET__ = n; globalThis.__FORGE_TEST__ = { key: k }; }, [net, key]);
+    await p.goto(`${SITE}help.html?live=testnet`);
+    const back = await p.locator("header a.back").getAttribute("href");
+    check(/live=testnet/.test(back) && /live=testnet/.test(await p.locator('.page-foot a[href^="terms"]').getAttribute("href")), `Help keeps ?live on its links (${back})`);
+    // the build's VITE_LIVE, written into <meta name="forge-live">: live with no ?live=
+    await p.goto(`${SITE}?build-live=testnet`);
+    await p.waitForFunction(() => /Series 7/.test(document.querySelector("#seriesChip")?.textContent || ""), null, { timeout: 60_000 });
+    check(await p.evaluate(() => window.Live.on && window.Live.net === "testnet" && !Store.state.demo), "a live build (meta forge-live) runs live without ?live=");
+    await p.goto(`${SITE}?build-live=testnet&live=off`);
+    await p.locator("#loading.done").waitFor({ state: "attached", timeout: 30_000 });
+    check(await p.evaluate(() => window.Live.on === false && Store.state.demo), "?live=off is the demo, whatever the build says");
+    // the live code fails to load: an error with Retry, not a silent switch to the demo
+    await p.route(/vendor\/wallet\//, (r) => r.abort());
+    await p.goto(`${SITE}?live=testnet&wave=characters&results=won`);
+    await p.locator("#sheet-chainerr[open]").waitFor({ timeout: 30_000 });
+    check(new URL(p.url()).searchParams.get("live") === "testnet" && (await p.locator("#sheet-chainerr .go").textContent()) === "Retry", "the chain code didn't load: \"Retry\", still live");
+    check(await p.evaluate(() => Store.SUGGEST_WAVE.wave === "look" && Store.SUGGEST_RESULTS.length === 0 && Store.state.suggestions.length === 0), "live ignores the demo's ?wave and ?results");
+    await p.unroute(/vendor\/wallet\//);
+    await p.click("#sheet-chainerr .go");
+    await p.waitForFunction(() => /Series 7/.test(document.querySelector("#seriesChip")?.textContent || ""), null, { timeout: 60_000 });
+    check(await p.evaluate(() => window.Live.on && !!window.Live.chain), "Retry loads it");
+    await p.close();
+  }
 
   // ---------- the plain page: the demo, untouched
   console.log("\n== no ?live: the demo");

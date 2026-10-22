@@ -44,11 +44,13 @@ it makes is permissionless:
 - drand numbers to the router for card opens and PDA grading (`OpenDrandRouter.fulfillMany`; `adapter.settle` if a
   callback didn't land), each request answered through the source that took it
 - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` (ids from the grading's `Protected` event)
-- `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when they hold a backlog a flush can burn
+- `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when they hold a backlog a flush can burn, worth the gas
+- `FireSale.endDrop(fire)` for a drop that didn't sell out, once anyone may
 
-Alerts (Discord, Slack or Telegram webhook): stale feeds, opens or gradings ready but not done, waiting fees, drand
-lag, low keeper ETH, a pause, a randomness switch, the backup stepping in, a keeper that can't start, and a daily
-heartbeat; each service's dead-man's switch (`HEARTBEAT_URL`) catches one that dies.
+Alerts (Discord, Slack or Telegram webhook): stale feeds, opens or gradings ready but not done, waiting fees, an
+unsold drop the owner can end, drand lag, low keeper ETH, a pause, a randomness switch, the backup stepping in, a keeper that can't start, and a daily
+heartbeat; each service's dead-man's switch (`HEARTBEAT_URL`, pinged after every completed pass whatever the alerts)
+catches one that dies.
 
 ## VerifySeries (`series/`)
 
