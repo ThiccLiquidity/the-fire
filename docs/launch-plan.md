@@ -26,7 +26,10 @@ the PAPER feed) is.
 1. `git pull` in `C:\Users\DubT1\the-fire`.
 2. In PowerShell, from `contracts`, set up the testnet session exactly as in `docs/deploy.md` → Testnet (the `$env:RPC`,
    `$env:EXPECTED_CHAIN_ID = "46630"` and `$verify` lines, and load the inputs from `deployments\46630.json`).
-3. Runbook step 2 (DeployInfra), then `node ..\ops\deploy\record.mjs --rpc $env:RPC`. Then set
+3. The testnet kit's router needs the exact-output swaps (Get PAPER, buying with ETH alone):
+   `forge script script/DevRouter.s.sol --rpc-url $env:RPC --account testnet-deployer --sender <deployer address> --slow --broadcast`,
+   then `node ..\ops\deploy\record.mjs --rpc $env:RPC` and set `$env:V2_ROUTER` to the address it printed.
+   Runbook step 2 (DeployInfra), then `node ..\ops\deploy\record.mjs --rpc $env:RPC`. Then set
    `$env:KEEPERS = "<main keeper address>,<backup keeper address>"` (public addresses, from Railway) and run runbook
    step 3 (DeployCards) with `--account testnet-deployer`, then `node ..\ops\deploy\record.mjs --rpc $env:RPC`.
    It writes the new card contract addresses into `deployments/46630.json`.

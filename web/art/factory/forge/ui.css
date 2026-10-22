@@ -103,6 +103,12 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 .sum dt { color: var(--muted) } .sum dd { margin: 0; text-align: right; font-weight: 800 } .sum small { color: var(--muted); font-weight: 600 }
 .note, .fine { margin: 0; color: var(--muted); font-size: 13px } .warn { margin: 0; color: #ffcf99; display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
 .checkout .go { width: 100% }
+.checkout .paycheck { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: rgba(255, 190, 90, .08); border: 1px solid rgba(255, 190, 90, .25); cursor: pointer }
+.checkout .paycheck input { margin-top: 3px; width: 18px; height: 18px; accent-color: #f0a23a; flex: none }
+.checkout .paycheck span { display: grid; gap: 2px }
+.checkout .paycheck small { opacity: .75 }
+.checkout .getpaper { display: flex; gap: 10px; align-items: center; flex-wrap: wrap }
+.checkout .getpaper .warn { margin: 0 }
 .amt { color: var(--muted); font-size: 13px } #amt, .namef input { min-height: var(--tap); border-radius: 12px; border: 1px solid var(--line-2); background: #0f0b08; color: var(--ink); font: 800 18px var(--body); padding: 0 12px }
 .namef { display: grid; gap: 10px } .namef label { color: var(--muted) }
 .wmenu { display: grid; gap: 14px }

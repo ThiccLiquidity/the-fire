@@ -332,27 +332,34 @@
       const limitLeft = S.series.phase < 3 ? Math.max(0, lim - w.bought) : 50;
       const max = Math.max(0, Math.min(50, limitLeft, Store.paidLeft(), ph.plankOnly ? S.series.plankOnly - S.series.plankSold : 50));
       if (!max) return Sheet.open('nope', { title: 'Limit reached', body: `<p class="lead">That's this wallet's limit for now. It lifts ${ph.limit ? `in ${ph.limit}h` : 'later'}.</p>` });
-      let n = 1, cur = 'PLANK', busy = false;
+      let n = 1, cur = 'PLANK', busy = false, ethAll = null; // ethAll null: on when the wallet is short of PAPER
       const body = document.createElement('div'); body.className = 'checkout';
       const draw = () => {
-        const usd = n * P.PACK_USD, amt = cur === 'ETH' ? usd / P.ETH_USD : cur === 'USDG' ? usd : usd / P.PLANK_USD, paper = n * Store.PRICES.PACK_PAPER;
+        const usd = n * P.PACK_USD, paper = n * Store.PRICES.PACK_PAPER;
+        const shortPaperRaw = w.balances.PAPER < paper, allOn = cur === 'ETH' && paper > 0 && (ethAll ?? shortPaperRaw);
+        const paperEth = allOn ? paper * P.PAPER_USD / P.ETH_USD * 1.003 : 0; // bought on the market (pool fee)
+        const amt = (cur === 'ETH' ? usd / P.ETH_USD : cur === 'USDG' ? usd : usd / P.PLANK_USD) + paperEth;
         const maxCost = amt * 1.01; // the most it may take: the price can move 1% before nothing is charged
-        const shortPaper = w.balances.PAPER < paper, shortCur = w.balances[cur] < amt;
-        const need = shortPaper || shortCur ? null : [['PAPER', paper], [cur, maxCost]].find(([k, v]) => Store.needsApproval(k, v));
+        const shortPaper = shortPaperRaw && !allOn, shortCur = w.balances[cur] < amt;
+        const need = shortPaper || shortCur ? null : [...(allOn ? [] : [['PAPER', paper]]), ...(cur === 'ETH' ? [] : [[cur, maxCost]])].find(([k, v]) => Store.needsApproval(k, v));
+        const confirms = allOn ? 1 : cur === 'ETH' ? 2 : 3;
         body.innerHTML = `
           <div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output aria-live="polite">${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button>
             <span class="muted">${n === 1 ? 'pack' : 'packs'} · max ${max}</span></div>
           <div class="seg" role="group" aria-label="Pay with">${['PLANK', 'ETH', 'USDG'].map((c) => `<button type="button" data-c="${c}" aria-pressed="${c === cur}" ${ph.plankOnly && c !== 'PLANK' ? 'disabled' : ''}>${c}</button>`).join('')}</div>
           ${ph.plankOnly ? `<p class="note">The first ${S.series.plankOnly} packs are PLANK only.</p>` : ''}
-          <dl class="sum"><dt>Price</dt><dd>${Wear.usd(usd)} <small>≈ ${fmt(amt)} ${cur}</small></dd><dt>PAPER</dt><dd>${paper} <small>burned</small></dd>
+          <dl class="sum"><dt>Price</dt><dd>${Wear.usd(usd)} <small>≈ ${fmt(amt - paperEth)} ${cur}</small></dd><dt>PAPER</dt><dd>${paper} <small>≈ ${Wear.usd(paper * P.PAPER_USD)} · burned</small></dd>
+            ${allOn ? `<dt>Total</dt><dd>≈ ${fmt(amt)} ETH <small>price + PAPER</small></dd>` : ''}
             <dt>You have</dt><dd>${fmt(w.balances[cur])} ${cur} <small>· ${w.balances.PAPER} PAPER</small></dd></dl>
+          ${cur === 'ETH' && paper > 0 ? `<label class="paycheck"><input type="checkbox" data-all ${allOn ? 'checked' : ''}><span><b>Pay the PAPER in ETH too</b><small>The sale buys the ${paper} PAPER on the market and burns it. One step, no approval.</small></span></label>` : ''}
           ${shortPaper ? shortLine('PAPER', paper - w.balances.PAPER) : ''}
           ${shortCur ? (cur === 'ETH' ? '<p class="warn">Not enough ETH.</p>' : shortLine(cur, amt - w.balances[cur], 'cur')) : ''}
-          <p class="fine">Packs open when Series ${S.series.no} sells out. If the price moves over 1%, nothing is charged.</p>
+          <p class="fine">${confirms === 1 ? 'One wallet confirmation.' : `Up to ${confirms} wallet confirmations: approvals first (only what this buy takes), then the buy.`} Packs open when Series ${S.series.no} sells out. If the price moves over 1%, nothing is charged.</p>
           ${DEMO_LINE}
           <button class="btn primary go" type="button" ${shortPaper || shortCur ? 'disabled' : ''}>${busy ? 'Sending…' : need ? `Approve ${need[0]}` : `Buy ${n} ${n === 1 ? 'pack' : 'packs'}`}</button>`;
         body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { n = Math.max(1, Math.min(max, n + +b.dataset.q)); redraw(body, draw); });
         body.querySelectorAll('[data-c]').forEach((b) => b.onclick = () => { cur = b.dataset.c; redraw(body, draw); });
+        body.querySelector('[data-all]')?.addEventListener('change', (e) => { ethAll = e.target.checked; redraw(body, draw); });
         body.querySelector('[data-x=paper]')?.addEventListener('click', () => openGetPaper('PAPER'));
         body.querySelector('[data-x=cur]')?.addEventListener('click', () => openGetPaper(cur));
         body.querySelector('.go').onclick = () => {
@@ -361,7 +368,7 @@
           if (need) return approveNow(need[0], need[1], () => { busy = false; redraw(body, draw); });
           setTimeout(() => {
             Sheet.close('buy');
-            Store.update((s) => { s.wallet.balances.PAPER -= paper; Store.spend('PAPER', paper); s.wallet.balances[cur] -= amt; Store.spend(cur, amt); s.wallet.bought += n; if (ph.plankOnly) s.series.plankSold += n; Store.log(`${s.wallet.name || 'You'} bought ${n} ${n === 1 ? 'pack' : 'packs'}`); });
+            Store.update((s) => { if (!allOn) { s.wallet.balances.PAPER -= paper; Store.spend('PAPER', paper); } s.wallet.balances[cur] -= amt; Store.spend(cur, amt); s.wallet.bought += n; if (ph.plankOnly) s.series.plankSold += n; Store.log(`${s.wallet.name || 'You'} bought ${n} ${n === 1 ? 'pack' : 'packs'}`); });
             pendingDeliver += n; Scene?.buy(n); window.Sound?.play('pack-drop'); toast(`Buying ${n} ${n === 1 ? 'pack' : 'packs'}…`);
           }, 1100);
         };
@@ -423,11 +430,11 @@
     let tok = token, amt = tok === 'PAPER' ? 10 : tok === 'USDG' ? 25 : 1000000;
     const body = document.createElement('form'); body.className = 'checkout';
     const usdOf = () => tok === 'PAPER' ? amt * P.PAPER_USD : tok === 'USDG' ? amt : amt * P.PLANK_USD;
-    const ethOf = () => usdOf() / P.ETH_USD * 1.005; // what it costs in ETH, the 0.5% fee included
+    const ethOf = () => usdOf() / P.ETH_USD * 1.003; // what it costs in ETH (the pools' trading fee included)
     // nothing to swap for 0 (or less); connected, the ETH has to be there
     const why = () => !(amt > 0 && ethOf() > 0) ? 'Enter an amount' : S.wallet.connected && ethOf() > S.wallet.balances.ETH ? 'Not enough ETH' : '';
     const paint = () => {
-      body.querySelector('.sum dd').innerHTML = `${ethOf().toFixed(5)} ETH <small>≈ ${Wear.usd(usdOf() * 1.005)}</small>`;
+      body.querySelector('.sum dd').innerHTML = `${ethOf().toFixed(5)} ETH <small>≈ ${Wear.usd(usdOf() * 1.003)}</small>`;
       const go = body.querySelector('.go'), w = why(); go.disabled = !!w; go.textContent = w || `Get ${fmt(amt)} ${tok}`;
     };
     const draw = () => {
@@ -435,7 +442,7 @@
       body.innerHTML = `<div class="seg" role="group" aria-label="Get">${['PAPER', 'PLANK', 'USDG'].map((c) => `<button type="button" data-t="${c}" aria-pressed="${c === tok}">${c}</button>`).join('')}</div>
         <label class="amt" for="amt">How many ${tok}</label><input id="amt" inputmode="decimal" value="${amt}">
         <dl class="sum"><dt>You pay</dt><dd></dd></dl>
-        ${DEMO_LINE}<button class="btn primary go" type="submit"></button><p class="fine">Swapped at the best rate. Includes a 0.5% fee.</p>`;
+        ${DEMO_LINE}<button class="btn primary go" type="submit"></button><p class="fine">The best price across every Robinhood Chain pool (KyberSwap). One wallet confirmation.</p>`;
       body.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { tok = b.dataset.t; amt = tok === 'PAPER' ? 10 : tok === 'USDG' ? 25 : 1000000; redraw(body, draw); });
       $('#amt', body).oninput = (e) => { const v = parseFloat(e.target.value); amt = Number.isFinite(v) ? v : 0; paint(); };
       paint();

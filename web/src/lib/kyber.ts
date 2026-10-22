@@ -45,7 +45,7 @@ export async function kyberBuild(route: KyberRoute, account: Address, slipBps: n
 }
 
 const desc = "(address srcToken, address dstToken, address[] srcReceivers, uint256[] srcAmounts, address[] feeReceivers, uint256[] feeAmounts, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags, bytes permit)";
-const routerAbi = parseAbi([
+export const kyberRouterAbi = parseAbi([
   `function swap((address callTarget, address approveTarget, bytes targetData, ${desc} desc, bytes clientData) execution) payable returns (uint256, uint256)`,
   `function swapGeneric((address callTarget, address approveTarget, bytes targetData, ${desc} desc, bytes clientData) execution) payable returns (uint256, uint256)`,
   `function swapSimpleMode(address caller, ${desc} desc, bytes executorData, bytes clientData) returns (uint256, uint256)`,
@@ -63,7 +63,7 @@ export function checkSwap(tx: { to: Address; data: Hex; value: bigint }, want: {
   if (!eq(tx.to, KYBER_ROUTER)) no("it wasn't addressed to KyberSwap's router");
   let d: Desc | undefined;
   try {
-    const f = decodeFunctionData({ abi: routerAbi, data: tx.data });
+    const f = decodeFunctionData({ abi: kyberRouterAbi, data: tx.data });
     d = (f.functionName === "swapSimpleMode" ? f.args[1] : (f.args[0] as { desc: Desc }).desc) as Desc;
   } catch { no("we couldn't read it"); }
   const x = d!;

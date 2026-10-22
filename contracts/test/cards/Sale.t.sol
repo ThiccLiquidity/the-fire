@@ -29,8 +29,27 @@ contract MockV2Router {
     function setFail(bool f) external { fail = f; }
     function setRates(uint256 perEth, uint256 perUsdg) external { plankPerEthWei = perEth; plankPerUsdgUnit = perUsdg; }
 
-    function swapExactETHForTokens(uint256 minOut, address[] calldata, address to, uint256) external payable returns (uint256[] memory a) {
+    // PAPER bought with ETH (buyWithEthAll): PAPER wei per ETH wei, straight and through PLANK (0 = no pool)
+    MockERC20 public paper;
+    uint256 public paperDirect;
+    uint256 public paperViaPlank;
+    function setPaper(MockERC20 p, uint256 direct, uint256 viaPlank) external { (paper, paperDirect, paperViaPlank) = (p, direct, viaPlank); }
+    function _paperRate(address[] calldata path) internal view returns (uint256) { return path.length == 2 ? paperDirect : paperViaPlank; }
+    function getAmountsIn(uint256 out, address[] calldata path) external view returns (uint256[] memory a) {
+        uint256 r = _paperRate(path);
+        require(address(paper) != address(0) && path[path.length - 1] == address(paper) && r != 0, "no pool");
+        a = new uint256[](path.length);
+        a[0] = (out + r - 1) / r;
+    }
+
+    function swapExactETHForTokens(uint256 minOut, address[] calldata path, address to, uint256) external payable returns (uint256[] memory a) {
         require(!fail, "router down");
+        if (address(paper) != address(0) && path[path.length - 1] == address(paper)) {
+            uint256 got = msg.value * _paperRate(path);
+            require(got >= minOut, "INSUFFICIENT_OUTPUT_AMOUNT");
+            paper.mint(to, got);
+            return new uint256[](path.length);
+        }
         uint256 out = msg.value * plankPerEthWei;
         require(out >= minOut, "INSUFFICIENT_OUTPUT_AMOUNT");
         plank.mint(to, out);
@@ -430,6 +449,61 @@ contract SaleTest is SeriesHelper {
         vm.expectRevert(FireSale.ZeroAddress.selector);
         sale.setWallets(address(0x1111), address(0x2222), address(0));
         vm.stopPrank();
+    }
+
+    // ---------------------------------------------------------------- buyWithEthAll: ETH pays for the PAPER too
+
+    function test_ethAll_buysThePaperOnTheCheaperRoute() public {
+        address carol = address(0xCA201); // holds ETH only, no PAPER
+        router.setPaper(paper, 30_000, 31_250); // through PLANK is cheaper
+        _open();
+        _plankOnlyDone(bob);
+        uint256 cost = sale.quoteEth(1, 2);
+        uint256 paperNeed = sale.paperFor(1, 2);
+        uint256 paperEth = sale.quotePaperInEth(paperNeed);
+        assertEq(paperEth, (paperNeed + 31_250 - 1) / 31_250, "the PLANK route");
+        uint256 deadBefore = paper.balanceOf(DEAD);
+        uint256 paperBefore = paper.balanceOf(carol);
+        vm.deal(carol, 1 ether);
+        vm.prank(carol, carol);
+        sale.buyWithEthAll{value: cost + paperEth + 0.01 ether}(1, 2, _na());
+        assertEq(packs.balanceOf(carol, 1), 2);
+        assertGe(paper.balanceOf(DEAD) - deadBefore, paperNeed, "the PAPER bought and burned");
+        assertEq(paper.balanceOf(carol), paperBefore, "none of the buyer's own PAPER");
+        assertEq(carol.balance, 1 ether - cost - paperEth, "the rest refunded");
+        assertEq(revenue.balance, cost - cost * 3_000 / 10_000, "revenue as usual");
+        _assertHoldsNothing();
+    }
+
+    function test_ethAll_directRouteWhenCheaper() public {
+        address carol = address(0xCA201); // holds ETH only, no PAPER
+        router.setPaper(paper, 31_250, 0); // no PLANK route
+        _open();
+        _plankOnlyDone(bob);
+        uint256 need = sale.paperFor(1, 1);
+        assertEq(sale.quotePaperInEth(need), (need + 31_250 - 1) / 31_250);
+        uint256 total = sale.quoteEth(1, 1) + sale.quotePaperInEth(need);
+        vm.deal(carol, total);
+        vm.prank(carol, carol);
+        sale.buyWithEthAll{value: total}(1, 1, _na());
+        assertEq(carol.balance, 0, "exactly enough");
+        _assertHoldsNothing();
+    }
+
+    function test_ethAll_notEnoughEthOrNoPoolReverts() public {
+        address carol = address(0xCA201); // holds ETH only, no PAPER
+        _open();
+        _plankOnlyDone(bob);
+        vm.deal(carol, 1 ether);
+        vm.prank(carol, carol);
+        vm.expectRevert(FireSale.FeedUnavailable.selector); // no pool to buy PAPER from
+        sale.buyWithEthAll{value: 0.1 ether}(1, 1, _na());
+        router.setPaper(paper, 31_250, 0);
+        uint256 cost = sale.quoteEth(1, 1);
+        vm.prank(carol, carol);
+        vm.expectRevert(); // the price is covered but not the PAPER
+        sale.buyWithEthAll{value: cost}(1, 1, _na());
+        assertEq(packs.balanceOf(carol, 1), 0);
     }
 
     function test_ethFeedStale_reverts() public {

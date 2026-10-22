@@ -88,7 +88,11 @@ export async function currentSeries(): Promise<SeriesInfo | null> {
   return all.find((x) => x.state === "live") ?? all.filter((x) => x.state === "upcoming").sort((a, b) => a.start - b.start)[0] ?? all[all.length - 1];
 }
 
-export type Quote = { pay: PayCoin; cost: Amount | null; paper: Amount; available: boolean; reason?: string };
+export type Quote = {
+  pay: PayCoin; cost: Amount | null; paper: Amount; available: boolean; reason?: string;
+  /** ETH only: what the packs' PAPER costs in ETH when FireSale buys it (buyWithEthAll); null with no PAPER pool. */
+  paperEth?: Amount | null;
+};
 
 /** What `n` packs cost now in each coin, plus the PAPER they burn. A coin whose price is unavailable says so. */
 export async function quotePacks(fire: number, n: number): Promise<Quote[]> {
@@ -101,7 +105,10 @@ export async function quotePacks(fire: number, n: number): Promise<Quote[]> {
     try { return { pay, cost: amount(await read<bigint>("FireSale", saleAbi, fn, [f, k]), dec), paper, available: true }; }
     catch { return { pay, cost: null, paper, available: false, reason: pay === "PLANK" ? "The PLANK price isn't available right now." : `${pay} price unavailable.` }; }
   };
-  return Promise.all([one("PLANK", "quotePlank", 18), one("ETH", "quoteEth", 18), ...(usdg ? [one("USDG", "quoteUsdg", usdgDec)] : [])]);
+  const qs = await Promise.all([one("PLANK", "quotePlank", 18), one("ETH", "quoteEth", 18), ...(usdg ? [one("USDG", "quoteUsdg", usdgDec)] : [])]);
+  const eth = qs.find((q) => q.pay === "ETH")!;
+  eth.paperEth = paperRaw === 0n ? amount(0n) : await read<bigint>("FireSale", saleAbi, "quotePaperInEth", [paperRaw]).then((e) => amount(e, 18, 8), () => null);
+  return qs;
 }
 
 /** Press-pack (Paper Press) claim cost: the dollar price in `pay` (none when press packs have no price) and PAPER. */

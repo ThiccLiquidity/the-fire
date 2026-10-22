@@ -91,6 +91,8 @@
     Object.assign(Store.PRICES, { PACK_USD: +s.priceUsd, PACK_PAPER: num(s.paperPerPack) });
     L.quotePacks(s.fire, 1).then((qs) => { // what a dollar is in each coin now (the estimates the screens show)
       for (const x of qs) if (x.available && num(x.cost) > 0 && x.pay !== 'USDG') Store.PRICES[x.pay + '_USD'] = +s.priceUsd / num(x.cost);
+      const e = qs.find((x) => x.pay === 'ETH'); // what PAPER costs now: its market price in ETH, in dollars
+      if (num(e?.paperEth) > 0 && num(e?.paper) > 0) Store.PRICES.PAPER_USD = num(e.paperEth) * Store.PRICES.ETH_USD / num(e.paper);
     }).catch(() => {});
   }
   async function readRules() {
@@ -247,6 +249,7 @@
     }
   }
   const need = async () => { await ready; await chainUp; if (!L) throw new Error('Not connected to the chain'); };
+  const need_ = need; // (getPaper takes an amount called need)
   const requireWallet = () => new Promise((ok) => needWallet(() => ok(true)));
 
   // ---------- buying
@@ -281,29 +284,39 @@
     const limitLeft = info.walletLimit && !info.phase.limitLifted ? Math.max(0, info.walletLimit - (inDrop?.paidBought || 0)) : Infinity;
     const max = Math.max(0, Math.min(info.maxPerTx || 50, info.phase.paidLeft, limitLeft));
     if (!max) return Sheet.open('nope', { title: 'Limit reached', body: `<p class="lead">That's this wallet's limit for now. It lifts in ${hours(info.limitLiftsAt)}h.</p>` });
-    let n = 1, cur = 'PLANK', quotes = null, seq = 0;
+    let n = 1, cur = 'PLANK', quotes = null, seq = 0, ethAll = null; // ethAll null: on when the wallet is short of PAPER
     const body = document.createElement('div'); body.className = 'checkout';
     const requote = () => { const k = ++seq; quotes = null; draw(); L.quotePacks(info.fire, n).then((qs) => { if (k === seq) { quotes = qs; draw(); } }).catch(() => {}); };
     const draw = () => {
-      const w = S.wallet, qt = quotes?.find((x) => x.pay === cur), amt = num(qt?.cost), paper = num(quotes?.[0]?.paper) || n * Store.PRICES.PACK_PAPER;
-      const shortPaper = w.balances.PAPER < paper, shortCur = qt && w.balances[cur] < amt, off = !quotes || !qt?.available || shortPaper || shortCur;
+      const w = S.wallet, qt = quotes?.find((x) => x.pay === cur), paper = num(quotes?.[0]?.paper) || n * Store.PRICES.PACK_PAPER;
+      const shortPaper = w.balances.PAPER < paper, canAll = cur === 'ETH' && qt?.paperEth != null && paper > 0;
+      const allOn = canAll && (ethAll ?? shortPaper); // ETH pays for the PAPER too: FireSale buys it on the market and burns it
+      const amt = num(qt?.cost) + (allOn ? num(qt.paperEth) : 0), shortCur = qt && w.balances[cur] < amt;
+      const needPaper = shortPaper && !allOn, missing = Math.ceil((paper - w.balances.PAPER) * 1e4) / 1e4;
+      const off = !quotes || !qt?.available || needPaper || shortCur;
+      const paperUsd = paper * (Store.PRICES.PAPER_USD || 0), confirms = allOn ? 1 : cur === 'ETH' ? 2 : 3;
       body.innerHTML = `
         <div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output aria-live="polite">${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button>
           <span class="muted">${n === 1 ? 'pack' : 'packs'} · max ${max}</span></div>
         <div class="seg" role="group" aria-label="Pay with">${quotesCoins().map((c) => `<button type="button" data-c="${c}" aria-pressed="${c === cur}" ${info.phase.plankOnly && c !== 'PLANK' ? 'disabled' : ''}>${c}</button>`).join('')}</div>
         ${info.phase.plankOnly ? `<p class="note">The first ${info.plankOnlyPacks} packs are PLANK only.</p>` : ''}
         <dl class="sum"><dt>Price</dt><dd>${Wear.usd(n * +info.priceUsd)} <small>${!quotes ? '· getting the price…' : qt?.available ? `≈ ${esc(qt.cost.text)} ${cur}` : esc(qt?.reason || 'Not available')}</small></dd>
-          <dt>PAPER</dt><dd>${(+paper.toFixed(4)).toLocaleString('en-US')} <small>burned</small></dd>
+          <dt>PAPER</dt><dd>${(+paper.toFixed(4)).toLocaleString('en-US')} <small>${paperUsd > 0 ? `≈ ${Wear.usd(paperUsd)} · ` : ''}burned</small></dd>
+          ${allOn ? `<dt>Total</dt><dd>≈ ${(+amt.toPrecision(4)).toLocaleString('en-US')} ETH <small>price + PAPER</small></dd>` : ''}
           <dt>You have</dt><dd>${(+w.balances[cur].toFixed(4)).toLocaleString('en-US')} ${cur} <small>· ${(+w.balances.PAPER.toFixed(2)).toLocaleString('en-US')} PAPER</small></dd></dl>
-        ${shortPaper ? '<p class="warn">Not enough PAPER.</p>' : ''}${shortCur ? `<p class="warn">Not enough ${cur}.</p>` : ''}
-        <p class="fine">Packs open once Series ${info.fire} closes. If the price moves over 3%, nothing is charged.</p>
+        ${canAll ? `<label class="paycheck"><input type="checkbox" data-all ${allOn ? 'checked' : ''}><span><b>Pay the PAPER in ETH too</b><small>The sale buys the ${(+paper.toFixed(4)).toLocaleString('en-US')} PAPER on the market and burns it. One step, no approval.</small></span></label>` : ''}
+        ${needPaper ? `<div class="getpaper"><p class="warn">You need ${missing.toLocaleString('en-US')} more PAPER.</p>${cur === 'ETH' ? '' : `<button class="btn" type="button" data-getpaper>Get ${missing.toLocaleString('en-US')} PAPER</button>`}</div>` : ''}${shortCur ? `<p class="warn">Not enough ${cur}.</p>` : ''}
+        <p class="fine">${confirms === 1 ? 'One wallet confirmation.' : `Up to ${confirms} wallet confirmations: approvals first (only what this buy takes), then the buy.`} Packs open once Series ${info.fire} closes. If the price moves over 3%, nothing is charged.</p>
         <button class="btn primary go" type="button" ${off ? 'disabled' : ''}>Buy ${plural(n, 'pack')}</button>`;
+      body.querySelector('[data-all]')?.addEventListener('change', (e) => { ethAll = e.target.checked; draw(); });
+      body.querySelector('[data-getpaper]')?.addEventListener('click', () => { Sheet.close('buy'); getPaper(missing, () => checkout()); });
       body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { n = Math.max(1, Math.min(max, n + +b.dataset.q)); requote(); });
       body.querySelectorAll('[data-c]').forEach((b) => b.onclick = () => { cur = b.dataset.c; draw(); });
       body.querySelector('.go').onclick = async () => {
         const k = n, coin = cur;
         Sheet.close('buy');
-        const r = await run(`Buy ${plural(k, 'pack')}`, (o) => L.buyPacks({ fire: info.fire, n: k, pay: coin, access: acc }, o), `${plural(k, 'pack')} bought`);
+        const all = coin === 'ETH' && (ethAll ?? S.wallet.balances.PAPER < (num(quotes?.[0]?.paper) || k * Store.PRICES.PACK_PAPER)) && quotes?.find((x) => x.pay === 'ETH')?.paperEth != null;
+        const r = await run(`Buy ${plural(k, 'pack')}`, (o) => L.buyPacks({ fire: info.fire, n: k, pay: coin, access: acc, paperInEth: all }, o), `${plural(k, 'pack')} bought`);
         if (r) { window.Scene?.buy?.(k); window.Sound?.play('pack-drop'); Store.log(`Bought ${plural(k, 'pack')}`); }
       };
     };
@@ -335,8 +348,9 @@
       body.innerHTML = `<p class="lead">Use any time a Series is on sale. It still takes PAPER.</p>
         ${w.credits > 1 ? `<div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output>${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button><span class="muted">of ${w.credits}</span></div>` : ''}
         <dl class="sum"><dt>PAPER</dt><dd>${paper} <small>burned</small></dd><dt>You have</dt><dd>${(+w.balances.PAPER.toFixed(2)).toLocaleString('en-US')} PAPER</dd></dl>
-        ${short ? '<p class="warn">Not enough PAPER.</p>' : ''}
+        ${short ? `<div class="getpaper"><p class="warn">You need ${Math.ceil((paper - w.balances.PAPER) * 1e4) / 1e4} more PAPER.</p><button class="btn" type="button" data-getpaper>Get it</button></div>` : ''}
         <button class="btn gold go" type="button" ${short ? 'disabled' : ''}>Use ${n} free ${n === 1 ? 'pack' : 'packs'}</button>`;
+      body.querySelector('[data-getpaper]')?.addEventListener('click', () => { Sheet.close('free'); getPaper(Math.ceil((paper - S.wallet.balances.PAPER) * 1e4) / 1e4, () => free()); });
       body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { n += +b.dataset.q; draw(); });
       body.querySelector('.go').onclick = async () => {
         const k = n; Sheet.close('free');
@@ -345,11 +359,42 @@
     };
     draw(); Sheet.open('free', { title: S.wallet.credits > 1 ? 'Free packs' : 'Free pack', body });
   }
-  // TODO: the swap (kyber.ts) for mainnet. The testnet's PAPER, PLANK and USDG are play tokens.
-  function getPaper() {
-    Sheet.open('paper', { title: 'Get PAPER', body: net === 'testnet'
-      ? '<p class="lead">Testnet PAPER, PLANK and USDG are play tokens. Ask the team for some, with your wallet address.</p>'
-      : '<p class="lead">Swapping in the site is coming soon. Get PAPER on a Robinhood Chain exchange.</p>' });
+  // ---------- Get PAPER: the cheapest route (KyberSwap on mainnet, else the PAPER pools), for exactly the PAPER asked for.
+  //            `need`: open on that amount (what a checkout was short); `then`: where to go once it's in the wallet.
+  async function getPaper(need, then) {
+    await need_(); await requireWallet();
+    const coins = ['ETH', 'PLANK', ...(L.NET.deployment?.inputs?.USDG ? ['USDG'] : [])];
+    let tok = 'ETH', amt = need > 0 ? need : 10, q = null, err = '', seq = 0, t;
+    const body = document.createElement('form'); body.className = 'checkout';
+    const raw = (x) => BigInt(Math.round(x * 1e6)) * 10n ** 12n;
+    const requote = () => {
+      const k = ++seq; q = null; err = ''; paint(); clearTimeout(t);
+      if (!(amt > 0)) return;
+      t = setTimeout(() => L.quotePaperBuy(tok, raw(amt), 100).then((r) => { if (k === seq) { q = r; paint(); } },
+        (e) => { if (k === seq) { err = net === 'testnet' ? 'No testnet PAPER pool for this coin. Testnet tokens are play tokens: ask the team for some.' : friendly(e); paint(); } }), 300);
+    };
+    const paint = () => {
+      const have = S.wallet.balances[tok], cost = num(q?.cost), short = q && cost > have;
+      body.querySelector('.sum').innerHTML = `<dt>You pay</dt><dd>${q ? `≈ ${esc(q.cost.text)} ${tok}` : amt > 0 && !err ? 'getting the best price…' : '—'}</dd>
+        <dt>Route</dt><dd>${q ? (q.via === 'kyber' ? 'KyberSwap: the best price across every pool' : 'Straight from the PAPER pools') : '—'}</dd>
+        <dt>You have</dt><dd>${(+have.toFixed(4)).toLocaleString('en-US')} ${tok}</dd>`;
+      body.querySelector('.err').textContent = err || (short ? `Not enough ${tok}.` : '');
+      body.querySelector('.fine').textContent = tok === 'ETH' ? 'One wallet confirmation. Any ETH not needed comes back.' : `Two wallet confirmations: approve exactly this ${tok}, then the swap.`;
+      const go = body.querySelector('.go'); go.disabled = !q || !!short; go.textContent = `Get ${amt.toLocaleString('en-US')} PAPER`;
+    };
+    body.innerHTML = `<div class="seg" role="group" aria-label="Pay with">${coins.map((c) => `<button type="button" data-t="${c}" aria-pressed="${c === tok}">${c}</button>`).join('')}</div>
+      <label class="amt" for="paperamt">How much PAPER</label><input id="paperamt" inputmode="decimal" value="${amt}">
+      <dl class="sum"></dl><p class="warn err" aria-live="polite"></p><p class="fine"></p>
+      <button class="btn primary go" type="submit" disabled></button>`;
+    body.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { tok = b.dataset.t; body.querySelectorAll('[data-t]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); requote(); });
+    body.querySelector('#paperamt').oninput = (e) => { const v = parseFloat(e.target.value); amt = Number.isFinite(v) && v > 0 ? v : 0; requote(); };
+    body.onsubmit = async (e) => {
+      e.preventDefault(); if (!q) return;
+      const buy = q, n = amt; Sheet.close('paper');
+      if (await run(`Get ${n.toLocaleString('en-US')} PAPER`, (o) => L.buyPaper(buy, o), `+${n.toLocaleString('en-US')} PAPER`)) { Store.log(`Got ${n} PAPER`); if (then) setTimeout(then, 400); }
+    };
+    Sheet.open('paper', { title: 'Get PAPER', body, onClose: () => { seq++; clearTimeout(t); } });
+    requote();
   }
 
   // ---------- opening: open, wait for the draw (about 90 seconds), deliver it, deal, then reveal what was dealt

@@ -154,6 +154,45 @@ contract DevRouter is DevOwned {
         }
     }
 
+    function getAmountsIn(uint256 amountOut, address[] memory path) public view returns (uint256[] memory amounts) {
+        require(path.length >= 2, "path");
+        amounts = new uint256[](path.length);
+        amounts[path.length - 1] = amountOut;
+        for (uint256 i = path.length - 1; i > 0; i--) {
+            address p = DevFactory(factory).getPair(path[i - 1], path[i]);
+            require(p != address(0), "no pair");
+            (uint112 r0, uint112 r1,) = DevPair(p).getReserves();
+            (uint256 rIn, uint256 rOut) = path[i - 1] == DevPair(p).token0() ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+            require(rIn > 0 && rOut > amounts[i], "no liquidity");
+            amounts[i - 1] = rIn * amounts[i] * 1000 / ((rOut - amounts[i]) * 997) + 1;
+        }
+    }
+
+    /// Exactly `amountOut` of the last token for ETH; unused ETH comes back (what the site's Get PAPER sends).
+    function swapETHForExactTokens(uint256 amountOut, address[] calldata path, address to, uint256)
+        external
+        payable
+        returns (uint256[] memory amounts)
+    {
+        require(!fail, "router down");
+        require(path[0] == WETH, "path");
+        amounts = getAmountsIn(amountOut, path);
+        require(amounts[0] <= msg.value, "EXCESSIVE_INPUT_AMOUNT");
+        DevToken(path[path.length - 1]).mint(to, amountOut);
+        if (msg.value > amounts[0]) payable(msg.sender).transfer(msg.value - amounts[0]);
+    }
+
+    function swapTokensForExactTokens(uint256 amountOut, uint256 maxIn, address[] calldata path, address to, uint256)
+        external
+        returns (uint256[] memory amounts)
+    {
+        require(!fail, "router down");
+        amounts = getAmountsIn(amountOut, path);
+        require(amounts[0] <= maxIn, "EXCESSIVE_INPUT_AMOUNT");
+        require(ERC20(path[0]).transferFrom(msg.sender, address(this), amounts[0]), "transferFrom");
+        DevToken(path[path.length - 1]).mint(to, amountOut);
+    }
+
     function swapExactETHForTokens(uint256 minOut, address[] calldata path, address to, uint256)
         external
         payable

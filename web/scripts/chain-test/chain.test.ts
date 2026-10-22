@@ -85,16 +85,26 @@ export async function runTest(ctx: Ctx): Promise<number> {
   check((await L.credits(me)).credits === 2, "2 free pack credits");
   check((await L.suggestionRules()).round === 1, "the box moved on to round 1 for the next Series");
 
+  console.log("\n== Get PAPER: exactly 5 PAPER for ETH, by the cheapest pool route");
+  const pb = await L.quotePaperBuy("ETH", 5n * 10n ** 18n);
+  check(pb.via === "pools" && pb.confirmations === 1 && BigInt(pb.maxIn) > 0n, `quote: ${pb.cost.text} ETH (${pb.via}), ${pb.confirmations} confirmation`);
+  const p0 = BigInt((await L.balances(me)).PAPER!.raw);
+  await L.buyPaper(pb, o);
+  check(BigInt((await L.balances(me)).PAPER!.raw) - p0 === 5n * 10n ** 18n, "+5 PAPER exactly, into the buyer's own wallet");
+
   console.log("\n== the drop opens: buy with ETH, PLANK and USDG; a press pack; a free pack");
   await ctx.warp(Number(ctx.start - (await ctx.now())) + 1);
   s = (await L.currentSeries())!;
   check(s.state === "live" && s.phase.paidLeft === 6 && s.phase.pressOpen, "live: 6 paid packs left, press packs open");
   const q = await L.quotePacks(fire, 2);
   check(q.length === 3 && q.every((x) => x.available) && q[0].paper.text === "2", `quotes for 2 packs: ${q.map((x) => `${x.cost?.text} ${x.pay}`).join(", ")} + ${q[0].paper.text} PAPER`);
-  await L.buyPacks({ fire, n: 2, pay: "ETH" }, o);
+  check(q[1].pay === "ETH" && q[1].paperEth != null && BigInt(q[1].paperEth.raw) > 0n, `ETH alone: the 2 PAPER cost ${q[1].paperEth?.text} ETH on the market`);
+  const paperHeld = BigInt((await L.balances(me)).PAPER!.raw);
+  await L.buyPacks({ fire, n: 2, pay: "ETH", paperInEth: true }, o);
+  check(BigInt((await L.balances(me)).PAPER!.raw) === paperHeld, "2 packs with ETH alone (buyWithEthAll): the sale bought and burned their PAPER, none of the wallet's own");
   await L.buyPacks({ fire, n: 2, pay: "PLANK" }, o);
   await L.buyPacks({ fire, n: 1, pay: "USDG" }, o);
-  check((await L.walletInDrop(fire, me)).paidBought === 5, "5 paid packs bought (2 ETH, 2 PLANK, 1 USDG), each step approved and confirmed");
+  check((await L.walletInDrop(fire, me)).paidBought === 5, "5 paid packs bought (2 ETH alone, 2 PLANK, 1 USDG), each step approved and confirmed");
   const pq = await L.quotePress(fire, 1, "ETH");
   check(pq.cost.raw === "0" && pq.paper.text === "1", "press pack: no dollar price, 1 PAPER");
   await L.claimPressPacks({ fire, pressId, n: 1, pay: "ETH" }, o);

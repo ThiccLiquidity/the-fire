@@ -512,6 +512,41 @@
   },
   {
     "type": "function",
+    "name": "buyWithEthAll",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "access",
+        "type": "tuple",
+        "internalType": "struct FireSale.Access",
+        "components": [
+          {
+            "name": "pressId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "proof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
     "name": "buyWithPlank",
     "inputs": [
       {
@@ -1276,6 +1311,25 @@
     "outputs": [
       {
         "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "quotePaperInEth",
+    "inputs": [
+      {
+        "name": "paper",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "eth",
         "type": "uint256",
         "internalType": "uint256"
       }

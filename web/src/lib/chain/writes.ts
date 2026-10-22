@@ -47,8 +47,17 @@ const accessArg = (a?: Access) => ({ pressId: BigInt(a?.pressId ?? 0), proof: a?
 /** Buy `n` packs of Series `fire`, paying in PLANK, ETH or USDG; burns the drop's PAPER per pack too. During the holder
  *  window pass `access` (a Paper Press id, or the snapshot proof: reads.proofFromSnapshot). PAPER is approved at the
  *  most it can be (the drop's PAPER per pack, x n); PLANK and ETH at the quote plus `slippageBps`. */
-export async function buyPacks(p: { fire: number; n: number; pay: PayCoin; access?: Access; slippageBps?: number }, o: WriteOpts = {}): Promise<TransactionReceipt> {
+export async function buyPacks(p: { fire: number; n: number; pay: PayCoin; access?: Access; slippageBps?: number; paperInEth?: boolean }, o: WriteOpts = {}): Promise<TransactionReceipt> {
   const f = BigInt(p.fire), n = BigInt(p.n), sale = addr("FireSale"), slip = p.slippageBps ?? 300;
+  if (p.pay === "ETH" && p.paperInEth) {
+    // ETH alone: FireSale buys the packs' PAPER on the market and burns it. One confirmation, no approval.
+    const paper = await read<bigint>("FireSale", saleAbi, "paperFor", [f, n]);
+    const [price, paperEth] = await Promise.all([
+      read<bigint>("FireSale", saleAbi, "quoteEth", [f, n]),
+      paper === 0n ? 0n : read<bigint>("FireSale", saleAbi, "quotePaperInEth", [paper]),
+    ]);
+    return send(sale, saleAbi, "buyWithEthAll", [f, n, accessArg(p.access)], `Buy ${plural(p.n, "pack")}`, "buy", o, withSlip(price + paperEth, slip)); // extra ETH comes back
+  }
   const d = await read<{ paperPerPack: bigint }>("FireSale", saleAbi, "dropOf", [f]);
   const maxPaper = d.paperPerPack * n;
   if (maxPaper > 0n) await approve(input("PAPER")!, sale, maxPaper, `Approve ${plural(p.n, "pack")}' PAPER`, o);

@@ -41,6 +41,7 @@ interface IV2Router {
     function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline)
         external
         returns (uint256[] memory amounts);
+    function getAmountsIn(uint256 amountOut, address[] calldata path) external view returns (uint256[] memory amounts);
 }
 
 /**
@@ -404,23 +405,38 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     ///         `maxPaper` is the most PAPER (wei) the buyer agrees to burn for these packs.
     ///         During the holder window, `access` shows the buyer holds a press or was in the PLANK snapshot.
     function buyWithPlank(uint256 fire, uint256 n, uint256 maxPlank, uint256 maxPaper, Access calldata access) external nonReentrant {
-        Drop storage d = _takePaid(fire, n, Pay.PLANK, maxPaper, access);
+        Drop storage d = _takePaid(fire, n, Pay.PLANK, maxPaper, access, false);
         (uint256 cost, uint256 burnShare, bool burned) = _collect(d, Pay.PLANK, n * d.priceUsd, maxPlank);
         _finish(fire, d, n, Pay.PLANK, cost, burnShare, burned);
     }
 
     /// @notice Buy `n` packs, paying the price in ETH. Send at least `quoteEth(fire, n)`; anything above comes back.
     function buyWithEth(uint256 fire, uint256 n, uint256 maxPaper, Access calldata access) external payable nonReentrant {
-        Drop storage d = _takePaid(fire, n, Pay.ETH, maxPaper, access);
+        Drop storage d = _takePaid(fire, n, Pay.ETH, maxPaper, access, false);
         (uint256 cost, uint256 burnShare, bool burned) = _collect(d, Pay.ETH, n * d.priceUsd, type(uint256).max);
         _finish(fire, d, n, Pay.ETH, cost, burnShare, burned);
         _refund(Pay.ETH, cost);
     }
 
+    /// @notice Buy `n` packs with ETH alone: the price, and the packs' PAPER too, which this buys on the market (the
+    ///         cheaper of ETH -> PAPER and ETH -> PLANK -> PAPER) and burns. Send at least `quoteEth(fire, n)` plus
+    ///         `quotePaperInEth(paperFor(fire, n))`; anything above comes back. One transaction, no approval.
+    function buyWithEthAll(uint256 fire, uint256 n, Access calldata access) external payable nonReentrant {
+        Drop storage d = _takePaid(fire, n, Pay.ETH, type(uint256).max, access, true);
+        (uint256 cost, uint256 burnShare, bool burned) = _collect(d, Pay.ETH, n * d.priceUsd, type(uint256).max);
+        _finish(fire, d, n, Pay.ETH, cost, burnShare, burned);
+        _sendEth(msg.sender, address(this).balance); // what's left of msg.value (this never holds ETH otherwise)
+    }
+
+    /// @notice ETH that buys `paper` PAPER wei on the cheaper route (what buyWithEthAll spends on it). Reverts with no route.
+    function quotePaperInEth(uint256 paper) external view returns (uint256 eth) {
+        (eth,) = _paperRoute(paper);
+    }
+
     /// @notice Buy `n` packs, paying the price in USDG (face value). `maxUsdg` is the most USDG the buyer agrees to pay.
     function buyWithUsdg(uint256 fire, uint256 n, uint256 maxUsdg, uint256 maxPaper, Access calldata access) external nonReentrant {
         if (address(USDG) == address(0)) revert BadConfig();
-        Drop storage d = _takePaid(fire, n, Pay.USDG, maxPaper, access);
+        Drop storage d = _takePaid(fire, n, Pay.USDG, maxPaper, access, false);
         (uint256 cost, uint256 burnShare, bool burned) = _collect(d, Pay.USDG, n * d.priceUsd, maxUsdg);
         _finish(fire, d, n, Pay.USDG, cost, burnShare, burned);
     }
@@ -605,7 +621,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     }
 
     /// @dev Checks shared by every paid purchase, then takes the PAPER and counts the packs.
-    function _takePaid(uint256 fire, uint256 n, Pay pay, uint256 maxPaper, Access calldata access)
+    function _takePaid(uint256 fire, uint256 n, Pay pay, uint256 maxPaper, Access calldata access, bool buyPaper)
         internal
         returns (Drop storage d)
     {
@@ -624,7 +640,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         if (t < d.liftAfter && paidBought[fire][msg.sender] + n > d.walletLimit) revert WalletLimit();
         paidBought[fire][msg.sender] += n;
         d.paidSold += uint64(n);
-        _burnPaper(msg.sender, n, d.paperPerPack, d.paperCapUsd, maxPaper);
+        _burnPaper(buyPaper ? address(this) : msg.sender, n, d.paperPerPack, d.paperCapUsd, maxPaper);
     }
 
     /// @dev The holder window: the buyer owns a press (each press lets in one wallet per drop) or was in the
@@ -723,7 +739,30 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         if (px != lastPaperUsd && px != 0) lastPaperUsd = px; // a fresh price: remember it for when the feed is late
         uint256 paper = n * _perPaper(per, capUsd8, px);
         if (paper > maxPaper) revert PriceMoved();
-        PAPER.safeTransferFrom(from, DEAD, paper);
+        if (from != address(this)) return PAPER.safeTransferFrom(from, DEAD, paper);
+        // buyWithEthAll: buy the PAPER with the buyer's ETH and burn it (a real market buy)
+        (uint256 eth, address[] memory path) = _paperRoute(paper);
+        ROUTER.swapExactETHForTokens{value: eth}(paper, path, DEAD, block.timestamp);
+    }
+
+    /// @dev The cheaper way to buy `paper` PAPER wei with ETH: straight, or through PLANK (where PAPER mostly trades).
+    function _paperRoute(uint256 paper) internal view returns (uint256 eth, address[] memory path) {
+        address[] memory a = new address[](2);
+        (a[0], a[1]) = (WETH, address(PAPER));
+        address[] memory b = new address[](3);
+        (b[0], b[1], b[2]) = (WETH, address(PLANK), address(PAPER));
+        uint256 ea = _ethIn(paper, a);
+        uint256 eb = _ethIn(paper, b);
+        (eth, path) = eb < ea ? (eb, b) : (ea, a);
+        if (eth == type(uint256).max) revert FeedUnavailable(); // no pool to buy PAPER from
+    }
+
+    function _ethIn(uint256 out, address[] memory path) internal view returns (uint256) {
+        try ROUTER.getAmountsIn(out, path) returns (uint256[] memory amounts) {
+            return amounts[0];
+        } catch {
+            return type(uint256).max;
+        }
     }
 
     function _closeIfSoldOut(uint256 fire, Drop storage d) internal {
