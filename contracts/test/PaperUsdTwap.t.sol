@@ -92,7 +92,9 @@ contract PaperUsdTwapTest is Test {
         factory.add(paper, usdg, address(real));
         _adopt();
         assertEq(address(twap.pair()), address(real), "switched to the pool with the liquidity");
-        assertEq(_price(), 0, "window restarts on the new pool");
+        assertApproxEqRel(_price(), 0.002e18, 1e15, "the old pool's last price holds until the new pool has a window");
+        (,,, uint256 at,) = twap.latestRoundData();
+        assertEq(at, twap.heldTs(), "dated when that window ended");
         _day();
         assertApproxEqRel(_price(), 0.2e18, 1e15);
     }
@@ -281,5 +283,108 @@ contract PaperUsdTwapTest is Test {
         assertEq(address(twap.pair()), address(b), "replaced");
         _day();
         assertApproxEqRel(_price(), 0.002e18, 1e15);
+    }
+
+    // ---------------------------------------------------------------- per-pool clocks (wallet audit, Oct 2026)
+
+    function _feeds() internal { eth.set(eth.answer()); plankUsd.set(plankUsd.answer()); }
+
+    /// The keeper: checkpoint whenever due, polled every `step` seconds for `span` seconds.
+    function _keeper(uint256 span, uint256 step) internal {
+        uint256 end = block.timestamp + span;
+        while (block.timestamp < end) {
+            vm.warp(block.timestamp + step); _feeds();
+            if (twap.due()) twap.checkpoint();
+        }
+    }
+
+    /// A pool that qualifies for an instant (a flash loan) every few hours can't reset the real pool's clock.
+    function test_flash_pool_cannot_stall_the_first_adoption() public {
+        MockPair a = new MockPair(paper, weth);
+        a.set(100_000e18, 4e18); // $10,000: the real market
+        factory.add(paper, weth, address(a));
+        MockPair b = new MockPair(paper, usdg);
+        b.set(10_000e18, 1e6); // $1: too small to count
+        factory.add(paper, usdg, address(b));
+        twap.checkpoint();
+        for (uint256 i; i < 4; i++) {
+            _keeper(5 hours, 600);
+            b.set(200_000e18, 20_000e6); // flash: $20,000 for one checkpoint...
+            twap.checkpoint();
+            b.set(10_000e18, 1e6); // ...gone again
+        }
+        _keeper(2 hours, 600);
+        assertEq(address(twap.pair()), address(a), "the real pool, on time");
+    }
+
+    /// Two pools of about the same size whose order flips with trading still get one adopted.
+    function test_two_similar_pools_still_adopt() public {
+        MockPair a = new MockPair(paper, weth);
+        a.set(100_000e18, 4e18); // $10,000
+        factory.add(paper, weth, address(a));
+        MockPair b = new MockPair(paper, usdg);
+        b.set(100_000e18, 9_900e6); // $9,900
+        factory.add(paper, usdg, address(b));
+        twap.checkpoint();
+        for (uint256 i; i < 4; i++) {
+            _keeper(5 hours, 600);
+            if (i % 2 == 0) b.set(99_000e18, 10_100e6); else b.set(100_000e18, 9_900e6);
+        }
+        _keeper(1 hours, 600);
+        assertTrue(address(twap.pair()) != address(0), "adopted");
+        _keeper(21 hours, 600);
+        assertGt(_price(), 0, "priced");
+    }
+
+    /// When several runs finish, the pool with the most liquidity all along wins: a flash at the deciding checkpoint
+    /// can't crown a thin pool.
+    function test_most_liquidity_all_along_wins_not_a_flash() public {
+        MockPair a = new MockPair(paper, weth);
+        a.set(100_000e18, 4e18); // $10,000
+        factory.add(paper, weth, address(a));
+        MockPair b = new MockPair(paper, usdg);
+        b.set(10_000e18, 20e6); // $20, thin but real
+        factory.add(paper, usdg, address(b));
+        twap.checkpoint();
+        _keeper(20 hours - 600, 600);
+        vm.warp(block.timestamp + 600); _feeds();
+        b.set(10_000e18, 1_000_000e6); // flash $1M at the deciding checkpoint
+        twap.checkpoint();
+        assertEq(address(twap.pair()), address(a));
+    }
+
+    /// A pool whose liquidity drops 10% from its recorded least makes due() true, so the record follows it down.
+    function test_run_least_liquidity_follows_the_pool_down() public {
+        MockPair a = new MockPair(paper, weth);
+        a.set(100_000e18, 4e18); // $10,000
+        factory.add(paper, weth, address(a));
+        twap.checkpoint();
+        assertFalse(twap.due());
+        a.set(100_000e18, 3.8e18); // -5%: not worth a checkpoint
+        assertFalse(twap.due());
+        a.set(100_000e18, 3e18); // -25%
+        assertTrue(twap.due());
+        twap.checkpoint();
+        (, uint32 since, uint256 least) = twap.runOf(0);
+        assertGt(since, 0);
+        assertEq(least, 7_500e8, "$7,500");
+    }
+
+    /// Moving the same capital between pools every 20 hours no longer turns the price off: each switch keeps
+    /// serving the last full window's price (consumers still drop it once it's 2 days old).
+    function test_switch_keeps_the_last_price() public {
+        MockPair a = new MockPair(paper, weth);
+        a.set(100_000e18, 4e18); // $10,000, $0.10 per PAPER
+        factory.add(paper, weth, address(a));
+        twap.checkpoint(); _keeper(21 hours, 600); _keeper(21 hours, 600);
+        assertApproxEqRel(_price(), 0.1e18, 1e15);
+        MockPair u = new MockPair(paper, usdg);
+        factory.add(paper, usdg, address(u));
+        u.set(250_000e18, 25_000e6); // someone parks $25,000: 2.5x the real pool
+        _keeper(21 hours, 600);
+        assertEq(address(twap.pair()), address(u), "a real takeover");
+        u.set(1_000e18, 100e6); // and pulls it straight out
+        _keeper(1 hours, 600);
+        assertApproxEqRel(_price(), 0.1e18, 1e15, "the last full window's price still reads");
     }
 }

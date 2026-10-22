@@ -18,17 +18,21 @@ site address or mainnet without your OK. Work lands on `wip/pending-approval` an
 
 ## 1. Testnet redeploy (about 30 minutes, needs your Ledger)
 
-The testnet `FireCredits` has no `suggestMany`, so the card contracts go again. The PLANK and PAPER price feeds and
-the drand router stay (steps 1-2 of the runbook are not repeated).
+The testnet `FireCredits` has no `suggestMany`, the sale now has its PAPER share, the PAPER price feed has the
+per-pool clocks and PaperBurner the flusher list (Oct 22 wallet audit), so the PAPER feed and the card contracts go
+again. The PLANK price feed stays (runbook step 1 is not repeated); runbook step 2 (DeployInfra: the drand router and
+the PAPER feed) is.
 
 1. `git pull` in `C:\Users\DubT1\the-fire`.
 2. In PowerShell, from `contracts`, set up the testnet session exactly as in `docs/deploy.md` → Testnet (the `$env:RPC`,
    `$env:EXPECTED_CHAIN_ID = "46630"` and `$verify` lines, and load the inputs from `deployments\46630.json`).
-3. Runbook step 3 (DeployCards) with `--account testnet-deployer`, then `node ..\ops\deploy\record.mjs --rpc $env:RPC`.
+3. Runbook step 2 (DeployInfra), then `node ..\ops\deploy\record.mjs --rpc $env:RPC`. Then set
+   `$env:KEEPERS = "<main keeper address>,<backup keeper address>"` (public addresses, from Railway) and run runbook
+   step 3 (DeployCards) with `--account testnet-deployer`, then `node ..\ops\deploy\record.mjs --rpc $env:RPC`.
    It writes the new card contract addresses into `deployments/46630.json`.
 4. Runbook step 4 (AcceptOwnership) on the Ledger: seven confirmations. Then VerifyDeploy: 0 FAIL.
 5. Push (`deployments/46630.json`). Railway's testnet keepers read that file: redeploy them in Railway so they pick
-   up the new addresses (or they'll keep watching the old contracts).
+   up the new addresses (or they'll keep watching the old contracts). The PAPER price comes back about 40 hours later.
 
 ## 2. Official testnet run (an afternoon, needs your Ledger)
 

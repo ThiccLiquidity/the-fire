@@ -108,6 +108,7 @@ contract BurnerTest is Test {
         r[0] = _p(address(plank), address(paper));
         r[1] = _p3(address(plank), address(weth), address(paper));
         b.setRoutes(PaperBurner.Pay.PLANK, r);
+        b.setFlusher(address(this), true); // this test plays FirePsa / the keeper
         vm.stopPrank();
         // pools priced consistently with the feeds: PAPER $0.08, ETH $2,500, PLANK $1e-9
         router.setPool(address(paper), address(plank), 1_000_000e18, 80_000_000_000_000e18); // $80k a side
@@ -193,8 +194,50 @@ contract BurnerTest is Test {
         assertEq(address(b).balance, fee, "waiting, not spent");
         assertEq(paper.balanceOf(DEAD), 0);
         router.setPool(address(paper), address(plank), 1_000_000e18, 80_000_000_000_000e18);
-        assertGt(b.flush(PaperBurner.Pay.ETH), 0, "anyone can flush later");
+        assertGt(b.flush(PaperBurner.Pay.ETH), 0, "a flusher can flush later");
         assertEq(address(b).balance, 0);
+    }
+
+    /// Only flushers (FirePsa, the keepers) can flush: an open flush could be sandwiched in one transaction.
+    function test_onlyFlushersFlush() public {
+        vm.deal(address(b), 1e15);
+        address stranger = address(0xBAD);
+        vm.startPrank(stranger);
+        vm.expectRevert(PaperBurner.NotFlusher.selector);
+        b.flush(PaperBurner.Pay.ETH);
+        vm.expectRevert(PaperBurner.NotFlusher.selector);
+        b.flushLight(PaperBurner.Pay.ETH);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger));
+        b.setFlusher(stranger, true);
+        vm.stopPrank();
+        vm.prank(owner);
+        b.setFlusher(stranger, true);
+        vm.prank(stranger);
+        assertGt(b.flush(PaperBurner.Pay.ETH), 0);
+        vm.prank(owner);
+        b.setFlusher(stranger, false);
+        vm.prank(stranger);
+        vm.expectRevert(PaperBurner.NotFlusher.selector);
+        b.flush(PaperBurner.Pay.ETH);
+    }
+
+    /// A PAPER price from an over-long window (a checkpoint after a keeper gap) can't set the guard: the fee waits.
+    function test_longPaperWindowWaits() public {
+        MockPlankTwap paperTwap = new MockPlankTwap(0.08e18, address(new MockPair(address(weth), address(paper))));
+        PaperBurner b2 = new PaperBurner(owner, address(paper), address(plank), address(usdg), 6, address(weth), address(router));
+        vm.startPrank(owner);
+        b2.setFeeds(address(ethUsd), address(plankUsd), address(paperTwap));
+        address[][] memory r = new address[][](1);
+        r[0] = _p(address(weth), address(paper));
+        b2.setRoutes(PaperBurner.Pay.ETH, r);
+        b2.setFlusher(address(this), true);
+        vm.stopPrank();
+        vm.deal(address(b2), 1e15);
+        paperTwap.setWindow(0.08e18, 31 hours);
+        assertEq(b2.flush(PaperBurner.Pay.ETH), 0, "31h window: waits");
+        assertEq(address(b2).balance, 1e15);
+        paperTwap.setWindow(0.08e18, 20 hours);
+        assertGt(b2.flush(PaperBurner.Pay.ETH), 0, "a normal window burns");
     }
 
     function test_waitsWithoutAPriceOrWhenTheRouterFails() public {

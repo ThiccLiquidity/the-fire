@@ -251,6 +251,8 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   async function burners(waiting) {
     for (const [name, address] of [["PaperBurner", C.paperBurner], ["PlankBurner", C.plankBurner]]) {
       const [plank, usdg] = await Promise.all([once(address, burnerAbi, "PLANK"), once(address, burnerAbi, "USDG")]);
+      // only flushers the owner names may flush PaperBurner (PlankBurner is open to anyone)
+      const allowed = name !== "PaperBurner" || (await read(address, burnerAbi, "flusher", [account.address]));
       for (const [pay, code] of PAY) {
         const token = pay === "PLANK" ? plank : pay === "USDG" ? usdg : undefined;
         if (pay === "USDG" && usdg === zeroAddress) continue;
@@ -261,6 +263,10 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
         if (!waitingSince.has(key)) waitingSince.set(key, Date.now());
         // the backup flushes only a balance that has waited its grace period (the main keeper flushes at once)
         if (backup && Date.now() - waitingSince.get(key) < Number(cfg.actAfterSec) * 1000) continue;
+        if (!allowed) {
+          waiting.push({ key, name, pay, amount: held, since: waitingSince.get(key), flushed: false, notFlusher: true });
+          continue;
+        }
         const r = await sender.send(
           { address, abi: burnerAbi, functionName: "flush", args: [code] },
           { job: `flush:${address}:${code}`, accept: (out) => out > 0n },
@@ -349,7 +355,9 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
       const age = (Date.now() - w.since) / 60_000;
       if (cfg.once || age >= cfg.waitingAlertMin) {
         const amt = w.pay === "ETH" ? `${formatEther(w.amount)} ETH` : w.pay === "USDG" ? `${formatUnits(w.amount, 6)} USDG` : `${formatEther(w.amount)} PLANK`;
-        alerts.push({ key: `waiting:${w.key}`, text: `${w.name} holds ${amt} it can't burn yet (Waiting: price guard or a missing price feed)` });
+        alerts.push({ key: `waiting:${w.key}`, text: w.notFlusher
+          ? `${w.name} holds ${amt} and this keeper (${account.address}) isn't allowed to flush it: the owner calls PaperBurner.setFlusher(${account.address}, true)`
+          : `${w.name} holds ${amt} it can't burn yet (Waiting: price guard or a missing price feed)` });
       }
     }
     // drand and clocks

@@ -83,6 +83,8 @@ interface ICardsPair {
  *                     never the PAPER pool itself. Both feeds must be built on this PAPER/PLANK and ETH_USD_FEED.
  *   V2_ROUTER         Uniswap V2 router (buys the PLANK that each sale burns, and the PAPER that fees burn)
  *   REVENUE_WALLET    gets the rest of every sale after the drop's PLANK and PAPER burn shares (70% in the Standard drop)
+ *   KEEPERS           the keeper wallets (main and backup, comma-separated), allowed to flush PaperBurner. Optional:
+ *                     the owner can add them later (PaperBurner.setFlusher). FirePsa is always allowed.
  *   SUGGESTION_PAPER  PAPER wei per character suggestion to start (default 1e18 = 1 PAPER; 0 = free). The owner can
  *                     change it later (FireCredits.setSuggestionRules). Every other sale number is set per drop.
  *
@@ -153,9 +155,13 @@ contract DeployCards is Deployments {
         check(p);
         require(p.owner != msg.sender, "OWNER is the deployer: use a throwaway deployer and the hardware wallet as OWNER");
 
+        address[] memory keepers = vm.envOr("KEEPERS", ",", new address[](0));
         vm.startBroadcast();
         d = deploy(p, msg.sender);
+        // the deployer still owns PaperBurner until the owner accepts: let the keepers flush it
+        for (uint256 i; i < keepers.length; i++) d.burner.setFlusher(keepers[i], true);
         vm.stopBroadcast();
+        if (keepers.length == 0) console.log("KEEPERS not set: the owner adds them with PaperBurner.setFlusher");
 
         console.log("FirePacks  ", address(d.packs));
         console.log("FireCards  ", address(d.cards));
@@ -236,6 +242,7 @@ contract DeployCards is Deployments {
             "PlankBurner wiring");
         require(d.sale.paperBurner() == address(d.burner), "PaperBurner wiring");
         d.psa = new FirePsa(deployer, address(d.cards), address(d.burner));
+        d.burner.setFlusher(address(d.psa), true); // FirePsa flushes each fee as it's paid
         d.psaAdapter = new OpenVRFAdapter(p.router, address(d.psa));
         require(d.psaAdapter.FIRE() == address(d.psa), "PDA adapter points elsewhere");
 

@@ -255,7 +255,7 @@ async function main() {
 
   // ---------------- deploy with the real scripts
   step("deploy: DeployTwap, DeployInfra, DeployCards (the real scripts), each recorded after its broadcast (ops/deploy/record.mjs)");
-  const env = { ...inputs, OWNER: owner, ROYALTY_RECEIVER: royalty.address, ROYALTY_BPS: "500", REVENUE_WALLET: revenue.address, PACK_IMAGE_BASE: "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/" };
+  const env = { ...inputs, OWNER: owner, ROYALTY_RECEIVER: royalty.address, ROYALTY_BPS: "500", REVENUE_WALLET: revenue.address, KEEPERS: `${keeperA.address},${keeperB.address}`, PACK_IMAGE_BASE: "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/" };
   forgeRead("script/DeployTwap.s.sol", env);
   check(!existsSync(`${DEP_FILE}.pending`), "a dry run (no --broadcast) leaves nothing to record");
   await forgeDeploy("script/DeployTwap.s.sol", env);

@@ -169,6 +169,10 @@ contract VerifyDeploy is Deployments {
             _eq(address(plankBurner.ETH_USD()), ethUsd, "PlankBurner.ETH_USD is ETH_USD_FEED");
         }
         _ok(burner.routesOf(PaperBurner.Pay.ETH).length > 0 && burner.routesOf(PaperBurner.Pay.PLANK).length > 0, "PaperBurner has ETH and PLANK routes");
+        _ok(burner.flusher(address(psa)), "FirePsa may flush PaperBurner");
+        address[] memory keepers = vm.envOr("KEEPERS", ",", new address[](0));
+        if (keepers.length == 0) _wait("KEEPERS not set here: check the keepers may flush PaperBurner (PaperBurner.flusher)");
+        for (uint256 i; i < keepers.length; i++) _ok(burner.flusher(keepers[i]), "a keeper in KEEPERS may flush PaperBurner");
         address royaltyTo = deployedInput("ROYALTY_RECEIVER");
         if (royaltyTo != address(0)) {
             (address r1,) = FireCards(deployed("FireCards")).royaltyInfo(1, 10_000);

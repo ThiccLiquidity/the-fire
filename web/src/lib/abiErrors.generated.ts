@@ -72,6 +72,7 @@ export const ABI_ERRORS = {
   NotClosed: { inputs: [], contracts: ["recipeDealer"] },
   NotConfigured: { inputs: [], contracts: ["fireCards", "recipeDealer"] },
   NotCredits: { inputs: [], contracts: ["fireSale"] },
+  NotFlusher: { inputs: [], contracts: ["paperBurner"] },
   NotFulfilled: { inputs: [], contracts: ["openVRFAdapter"] },
   NotHolder: { inputs: [], contracts: ["fireCards", "firePsa"] },
   NotLive: { inputs: [], contracts: ["fireSale"] },

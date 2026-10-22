@@ -29,8 +29,11 @@ interface IBurnRouter {
 /**
  * @title PaperBurner
  * @notice Turns fees into a PAPER burn (docs/grading.md). Whatever it holds (ETH, PLANK or USDG) it spends buying PAPER,
- *         straight to the dead address. Anyone can call `flush`; FirePsa sends every case and grading fee here and
- *         flushes in the same transaction. There is no withdraw: the only way out is buying PAPER and burning it.
+ *         straight to the dead address. FirePsa sends every case and grading fee here and flushes in the same
+ *         transaction; FireSale sends each sale's PAPER share here and the keepers flush it. Only flushers the owner
+ *         names (FirePsa and the keepers) can flush: an open flush could be sandwiched in one transaction (buy PAPER,
+ *         flush, sell) whenever PAPER's market price sits below its 20-hour average. There is no withdraw: the only
+ *         way out is buying PAPER and burning it.
  *
  *         Best route: for the amount, it asks each known route (e.g. ETH -> PAPER, ETH -> PLANK -> PAPER) what it
  *         would pay, and also every split of half on one route and half on another, and takes the best. A route that
@@ -59,6 +62,9 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
     uint256 public constant PLANK_FEED_MAX_AGE = 2 hours;
     uint256 public constant PLANK_WINDOW_MAX = 2 hours;
     uint256 public constant PAPER_FEED_MAX_AGE = 2 days;
+    /// @dev The PAPER price's window must be no longer than this (normally ~20h): a long window after a keeper gap
+    ///      would hide a recent move from the guard.
+    uint256 public constant PAPER_WINDOW_MAX = 30 hours;
 
     IERC20 public immutable PAPER;
     IERC20 public immutable PLANK;
@@ -72,17 +78,21 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
     IBurnFeed public paperUsd; // 18 decimals (PaperUsdTwap)
 
     mapping(Pay => address[][]) internal _routes;
+    /// @notice Who may flush (FirePsa and the keepers), set by the owner.
+    mapping(address => bool) public flusher;
 
     event RoutesSet(Pay indexed pay, address[][] routes);
     event FeedsSet(address ethUsd, address plankUsd, address paperUsd);
     event Burned(Pay indexed pay, uint256 spent, uint256 paperOut);
     event Waiting(Pay indexed pay, uint256 amount);
+    event FlusherSet(address indexed who, bool allowed);
 
     error ZeroAddress();
     error BadRoute();
     error FeedUnavailable();
     error FeedsAlreadySet();
     error RenounceDisabled();
+    error NotFlusher();
 
     constructor(
         address owner_,
@@ -109,6 +119,13 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
     /// @notice Ownership can be handed over (two steps) but never renounced, so control can't be lost by mistake.
     function renounceOwnership() public pure override {
         revert RenounceDisabled();
+    }
+
+    /// @notice Allow or stop an address flushing (FirePsa, the keepers). Stopping every flusher only makes fees wait.
+    function setFlusher(address who, bool allowed) external onlyOwner {
+        if (who == address(0)) revert ZeroAddress();
+        flusher[who] = allowed;
+        emit FlusherSet(who, allowed);
     }
 
     /// @notice The routes tried for one currency: each starts at it (WETH for ETH) and ends at PAPER, 2-4 tokens,
@@ -147,17 +164,19 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
         emit FeedsSet(eth, plank, paper);
     }
 
-    // ================================================================ anyone
+    // ================================================================ flushers
 
     /// @notice Spend everything held in `pay` on PAPER and burn it, if the guard allows (trying smaller pieces of a
-    ///         backlog). Returns the PAPER burned. Anyone can call it.
+    ///         backlog). Returns the PAPER burned. Flushers only.
     function flush(Pay pay) external nonReentrant returns (uint256) {
+        if (!flusher[msg.sender]) revert NotFlusher();
         return _flush(pay, MAX_HALVINGS);
     }
 
     /// @notice The light flush FirePsa runs with every fee: the whole amount or half, no deeper search (so a waiting
-    ///         burner costs each case or grade little gas). `flush` drains anything left.
+    ///         burner costs each case or grade little gas). `flush` drains anything left. Flushers only.
     function flushLight(Pay pay) external nonReentrant returns (uint256) {
+        if (!flusher[msg.sender]) revert NotFlusher();
         return _flush(pay, 1);
     }
 
@@ -290,7 +309,7 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
     ///      0 = a price is missing (wait).
     function _minPaper(Pay pay, uint256 amount) internal view returns (uint256) {
         uint256 paper = _feed18(paperUsd, PAPER_FEED_MAX_AGE);
-        if (paper == 0) return 0;
+        if (paper == 0 || _longWindow(address(paperUsd), PAPER_WINDOW_MAX)) return 0;
         uint256 usd18;
         if (pay == Pay.USDG) {
             usd18 = amount * 1e18 / USDG_UNIT;
@@ -309,15 +328,18 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
             return e * 1e10; // 8 decimals -> 18
         }
         uint256 p = _feed18(plankUsd, PLANK_FEED_MAX_AGE);
-        if (p == 0) return 0;
-        (bool ok1, bytes memory r1) = address(plankUsd).staticcall(abi.encodeCall(IBurnTwap.prev, ()));
-        (bool ok2, bytes memory r2) = address(plankUsd).staticcall(abi.encodeCall(IBurnTwap.last, ()));
-        if (ok1 && ok2 && r1.length >= 64 && r2.length >= 64) {
-            (, uint32 t0) = abi.decode(r1, (uint256, uint32));
-            (, uint32 t1) = abi.decode(r2, (uint256, uint32));
-            if (t1 < t0 || t1 - t0 > PLANK_WINDOW_MAX) return 0;
-        }
+        if (p == 0 || _longWindow(address(plankUsd), PLANK_WINDOW_MAX)) return 0;
         return p;
+    }
+
+    /// @dev True if a TWAP feed's current window (prev -> last) is longer than `max` (or reads backwards).
+    function _longWindow(address twap, uint256 max) internal view returns (bool) {
+        (bool ok1, bytes memory r1) = twap.staticcall(abi.encodeCall(IBurnTwap.prev, ()));
+        (bool ok2, bytes memory r2) = twap.staticcall(abi.encodeCall(IBurnTwap.last, ()));
+        if (!ok1 || !ok2 || r1.length < 64 || r2.length < 64) return false;
+        (, uint32 t0) = abi.decode(r1, (uint256, uint32));
+        (, uint32 t1) = abi.decode(r2, (uint256, uint32));
+        return t1 < t0 || t1 - t0 > max;
     }
 
     /// @dev A feed's answer if fresh, else 0 (never reverts).

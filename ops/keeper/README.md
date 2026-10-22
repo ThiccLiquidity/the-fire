@@ -2,7 +2,8 @@
 
 Two always-on processes that make the permissionless calls the card system needs: the **main** keeper and a
 **backup**, each a Railway service in its own region with its own gas-only wallet. They have no special powers: anyone
-can make every one of these calls, the keepers are just reliably awake.
+can make these calls (except flushing PaperBurner, which the owner allows for the keeper wallets), the keepers are just
+reliably awake.
 
 Each pass (every 20 s for the main keeper, 30 s for the backup):
 
@@ -16,7 +17,9 @@ Each pass (every 20 s for the main keeper, 30 s for the backup):
 4. **Grading:** `FirePsa.finish(index, ids)` for ready gradings; `ids` come from the grading's `Protected` event
    (checked against the hash FirePsa stored).
 5. **Burners:** `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when they hold something and a flush would
-   actually burn it.
+   actually burn it. PaperBurner only lets flushers the owner names flush it (an open flush could be sandwiched): set
+   both keeper wallets with `KEEPERS` at deploy, or `PaperBurner.setFlusher(<keeper>, true)` from the owner. A keeper
+   that isn't one alerts instead of flushing.
 6. **Health:** alerts and a heartbeat (below).
 
 **No wasted transactions.** Right before sending, each call is checked again against the pending state (the

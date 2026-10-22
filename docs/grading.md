@@ -107,7 +107,9 @@ switches images when it is cased or graded; nothing is drawn live.
   when that gives more, guarded by the PAPER price feed: the buy must get at least 95% of the PAPER the feed says the
   fee is worth. If the whole amount wouldn't, it tries half, a quarter and so on; if no piece would, or a price is
   missing, nothing is spent and the fee waits in `PaperBurner` for a later buy. `PaperBurner` has no withdraw, its
-  router is fixed, its price feeds are set once, and its routes may only pass through WETH, PLANK or USDG.
+  router is fixed, its price feeds are set once, and its routes may only pass through WETH, PLANK or USDG. Only
+  FirePsa and the keepers (flushers the owner names) can flush it, so nobody can sandwich a flush, and a PAPER price
+  from a window over 30 hours (a checkpoint after a keeper gap) makes it wait.
 
 ## Grading requests
 

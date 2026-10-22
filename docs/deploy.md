@@ -68,7 +68,9 @@ contract code at each, PAPER and PLANK are 18 decimals, the ETH/USD feed is 8 an
 deployments file (step 3 reads them from there; `DRAND_ROUTER` and `PAPER_USD_FEED` in `.env` override). `PAPER_USD_FEED` is this `PaperUsdTwap`, never the PAPER pool itself.
 It finds a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool holding at least $10 on its other side (PLANK valued by
 `PLANK_USD_FEED`) and at least 1,000 PAPER, and reports its first price about 40 hours after the keeper's first checkpoint (20 hours as
-candidate, then one 20-hour window). Until then packs take the set PAPER (no dollar ceiling) and case and grading fees wait in
+candidate, then one 20-hour window). Each pool keeps its own 20-hour clock, so a pool that appears for a moment (a flash
+loan) can't restart the real pool's; when several finish, the one that held the most liquidity all along wins. After a
+switch to a new pool, the last full window's price keeps serving until the new pool has its own. Until then packs take the set PAPER (no dollar ceiling) and case and grading fees wait in
 `PaperBurner`.
 
 ## 3. Card contracts
@@ -85,7 +87,7 @@ required. Then it deploys FirePacks, FireCards, CardsRenderer, RecipeDealer and 
 owner, no withdraw: it holds the PLANK burn share when a sale's swap can't run), FireCredits, FireSale, PaperBurner
 (with its feeds and default routes), FirePsa and one drand adapter each for FireCards and FirePsa, wires them (set-once
 links, each checked: FireSale and FireCredits point at each other, FireSale's PlankBurner uses the same router and
-feeds), and offers ownership of all seven owned contracts to `OWNER` (two steps: the owner accepts in step 4). It
+feeds; FireSale's PaperBurner is the one deployed; FirePsa and the `KEEPERS` wallets may flush PaperBurner), and offers ownership of all seven owned contracts to `OWNER` (two steps: the owner accepts in step 4). It
 refuses an `OWNER` equal to the deployer.
 
 ## 4. Hardware wallet accepts

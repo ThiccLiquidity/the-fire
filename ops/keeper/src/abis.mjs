@@ -61,6 +61,7 @@ export const routerAbi = parseAbi([
 /** PaperBurner and PlankBurner: flush(pay) returns what it burned (0 = nothing moved; a Waiting event says why). */
 export const burnerAbi = parseAbi([
   "function flush(uint8 pay) returns (uint256)",
+  "function flusher(address) view returns (bool)",
   "function PLANK() view returns (address)",
   "function USDG() view returns (address)",
 ]);
