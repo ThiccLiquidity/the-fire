@@ -78,6 +78,13 @@
   const unlisten = (name) => { offs[name]?.(); delete offs[name]; };
 
   const BACK = 'ui/card-back.webp'; // the card back, for every face-down card
+  // a pack's cards, fetched and decoded while the pack is torn (its art covers the wait): each card's image, and a live
+  // card's picture and print. Never rejects. The decoded images stay referenced until the reveal is over.
+  const decoded = (src) => new Promise((ok) => { const i = new Image(); i.decoding = 'async'; i.onload = () => (i.decode ? i.decode().catch(() => {}) : Promise.resolve()).then(() => ok(i)); i.onerror = () => ok(null); i.src = src; });
+  const preloadCards = (cards) => Promise.all(cards.map((c) => Promise.all([decoded(Store.cardImg(c)), window.Holo?.preload?.(c)])));
+  // a card face is shown: its image decoded and, live, its holo drawn once (or 8 s, whatever comes first)
+  const faceShown = (face) => !face ? Promise.resolve() : Promise.race([wait(8000),
+    Promise.all([face.querySelector('img.cframe')?.decode?.().catch(() => {}), face._ready])]);
 
   // ---------- pack-opening sounds: recordings (sound.js) for the tear, slides, flips and the Rare / Epic / Legendary pulls
   // (Epic and Legendary: a build-up under the glow and the light leak, then a hit); a couple of small made-in-WebAudio
@@ -158,17 +165,20 @@
     const el = h('div', { class: `cface m-${c.material} h-${holo} hd-${Store.holder(c)}${c.grade === 10 ? ' g10' : ''}` },
       h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: `${c.character}, ${Store.MAT_LABEL[c.material]} card`, draggable: 'false', loading: lazy ? 'lazy' : null, decoding: 'async' }),
       holo !== 'none' && !moving ? h('i', { class: 'shine', 'aria-hidden': 'true' }) : null);
-    if (moving) Holo.attach(el, c, sway);
+    // a tile in a grid or list is its saved image (one state, ~30 KB); the live holo (holo.js: its picture and print,
+    // ~200 KB more) joins only when a mouse comes over it. A big card (detail, reveal, viewer) is live from the start.
+    if (moving && !lazy) Holo.attach(el, c, sway);
+    else if (moving) el.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse' && !el._holo) Holo.attach(el, c, sway); });
     return el;
   }
   // the badge under a card: its grade once slabbed, else Cased (with a lock), else Raw, or Fresh while its first day runs
   // (time doesn't wear it; a card that already moved says so: moves still count). noFresh: a short "Fresh" chip, a banner has the time.
   const LOCK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 7V5.2a3.5 3.5 0 0 1 7 0V7" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="2.5" y="7" width="11" height="8" rx="1.8" fill="currentColor"/></svg>';
-  const freshTip = (c, f) => `Fresh for ${Wear.hhmm(f)}: time doesn't wear it yet. ${c.moves ? `It has moved ${c.moves === 1 ? 'once' : c.moves + ' times'}; moves still count.` : 'Moves still count.'}`;
+  const freshTip = (c, f) => `Fresh for ${Wear.hhmm(f)}.${c.moves ? ` Moved ${c.moves === 1 ? 'once' : c.moves + ' times'}.` : ''}`;
   const gradeBadge = (c, noFresh = false) => {
     if (c.pending) return h('span', { class: 'pda wait', text: 'Grading' });
     if (c.grade != null) return h('span', { class: 'pda g' + c.grade, text: 'PDA ' + c.grade });
-    if (c.cased) return h('span', { class: 'pda cased', title: 'Cased: its wear is frozen' }, h('i', { class: 'lock', html: LOCK }), 'Cased');
+    if (c.cased) return h('span', { class: 'pda cased', title: 'Cased: no wear' }, h('i', { class: 'lock', html: LOCK }), 'Cased');
     const f = Wear.freshLeft(c);
     if (!f) return h('span', { class: 'pda none', text: 'Raw' });
     const moved = c.moves > 0, cls = 'pda fresh' + (moved ? ' moved' : '');
@@ -225,7 +235,7 @@
     const W = 1080, H = 1350, [core, glow] = LEAK[c.material], tier = tierOf(c);
     await Promise.all(['400 64px "Russo One"', '800 36px Nunito', '600 30px Nunito'].map((f) => document.fonts.load(f).catch(() => {})));
     await document.fonts.ready;
-    const [strip, word] = await Promise.all([loadImg(Store.cardImg(c)), loadImg('ui/omni-wordmark.webp').catch(() => null)]);
+    const [strip, word] = await Promise.all([loadImg(Store.cardStrip?.(c) || Store.cardImg(c)), loadImg('ui/omni-wordmark.webp').catch(() => null)]); // the strip: the full-size card
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
     // the forge: warm planks, an ember glow behind the card, dark edges
     let gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#3b2614'); gr.addColorStop(0.55, '#22150b'); gr.addColorStop(1, '#0d0805');
@@ -236,10 +246,11 @@
     gr = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.8); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.6)');
     g.fillStyle = gr; g.fillRect(0, 0, W, H);
     // the card: its slice of the strip (raw, cased, then slabbed PDA 1-10)
-    const sw = strip.naturalWidth / Store.STATES, sh = strip.naturalHeight, ch = 760, cw = Math.round(ch * sw / sh), cx = (W - cw) / 2, cy = 92;
+    const n = strip.naturalWidth / strip.naturalHeight > 2 ? Store.STATES : 1, si = n > 1 ? Store.stateIdx(c) : 0; // a strip of 12 states, or one image (live)
+    const sw = strip.naturalWidth / n, sh = strip.naturalHeight, ch = 760, cw = Math.round(ch * sw / sh), cx = (W - cw) / 2, cy = 92;
     g.save(); g.shadowColor = tier ? glow : 'rgba(0,0,0,.8)'; g.shadowBlur = tier ? 70 : 40; g.shadowOffsetY = tier ? 0 : 14;
-    g.drawImage(strip, Store.stateIdx(c) * sw, 0, sw, sh, cx, cy, cw, ch); g.restore();
-    g.drawImage(strip, Store.stateIdx(c) * sw, 0, sw, sh, cx, cy, cw, ch); // once more, crisp over its own glow
+    g.drawImage(strip, si * sw, 0, sw, sh, cx, cy, cw, ch); g.restore();
+    g.drawImage(strip, si * sw, 0, sw, sh, cx, cy, cw, ch); // once more, crisp over its own glow
     // text
     const fit = (txt, font, px, max) => { let s = px; do g.font = font.replace('{}', s + 'px'); while (g.measureText(txt).width > max && (s -= 2) > 20); };
     g.textAlign = 'center'; g.textBaseline = 'alphabetic';
@@ -368,10 +379,12 @@
     const coll = h('section', { class: 'coll', 'aria-labelledby': 'coll-h' });
     const root = h('div', { class: 'st st-table' }, packsEl, stage, coll);
     const hide = new Set(); let busy = false;
-    const TITLE = { cards: 'My cards', open: 'Open packs' };
+    const practice = !!opts.practice; let practiceRun = false; // a practice pack (fun layer: practice.js): never saved
+    if (practice) root.classList.add('practice');
+    const TITLE = { cards: 'My cards', open: 'Open packs', practice: 'Practice pack' };
     function setView(v) {
       view = v; packsEl.hidden = v === 'open' || !stage.hidden; coll.hidden = v === 'open';
-      const d = root.closest('dialog'), t = d?.querySelector('.sheet-head h2'); if (t) t.textContent = TITLE[v];
+      const d = root.closest('dialog'), t = d?.querySelector('.sheet-head h2'); if (t) t.textContent = TITLE[practice ? 'practice' : v];
       d?.classList.toggle('fit', v === 'open'); // opening only: the sheet sizes to the stage (desktop)
     }
 
@@ -384,7 +397,7 @@
       const tiles = keys.filter((no) => s.sealed[no] > 0).map((no) => { // only Series you hold sealed packs of
         const n = s.sealed[no], live = no === s.series.no && s.series.phase < 4;
         let act;
-        if (live) act = h('p', { class: 'lock-note', text: LIVE ? `Opens once Series ${no} closes` : `Opens when Series ${no} sells out` });
+        if (live) act = h('p', { class: 'lock-note', text: 'Opens when sales end' });
         else if (!n) act = h('p', { class: 'muted', text: 'All opened' });
         else if (!connected()) act = connectBtn();
         else act = h('div', { class: 'row' }, btn('Open', 'primary', () => openPacks(no, 1), { 'data-key': 'open1-' + no }),
@@ -400,42 +413,62 @@
     }
 
     function renderColl() {
+      if (view === 'open' || !stage.hidden) return; // opening: the collection isn't built behind the reveal (it's drawn when shown)
       const all = S().cards.filter((c) => !hide.has(c.id));
       patch(coll, JSON.stringify([filt, all.map(tileSig), Store.collectionFloor()]), () => drawColl(all));
     }
-    function drawColl(all) {
+    const FILT0 = { series: 'all', hold: 'all', mat: 'all', holo: 'any', grade: 'all' };
+    const matching = (all) => all.filter((c) => (filt.series === 'all' || c.series === +filt.series) && (filt.mat === 'all' || c.material === filt.mat)
+      && (filt.hold === 'all' || Store.holder(c) === filt.hold)
+      && (filt.holo === 'any' || (c.holo || 'none') === filt.holo)
+      && (filt.grade === 'all' || (filt.grade === 'none' ? c.grade == null : c.grade != null && filt.grade.split('-').map(Number).includes(c.grade))));
+    const filtersOn = () => Object.keys(FILT0).filter((k) => filt[k] !== FILT0[k]).length;
+    // the filters and sort: one "Filter" button on the collection, the choices in their own sheet (cards come first)
+    function filterControls(all, after) {
       const seriesList = [...new Set(all.map((c) => c.series))].sort((a, b) => b - a);
-      let list = all.filter((c) => (filt.series === 'all' || c.series === +filt.series) && (filt.mat === 'all' || c.material === filt.mat)
-        && (filt.hold === 'all' || Store.holder(c) === filt.hold)
-        && (filt.holo === 'any' || (c.holo || 'none') === filt.holo)
-        && (filt.grade === 'all' || (filt.grade === 'none' ? c.grade == null : c.grade != null && filt.grade.split('-').map(Number).includes(c.grade))));
-      const sorts = {
-        serial: (a, b) => b.serial - a.serial,
-        rarity: (a, b) => rarity(b) - rarity(a) || b.serial - a.serial,
-        grade: (a, b) => (b.grade ?? -1) - (a.grade ?? -1) || rarity(b) - rarity(a),
-        edition: (a, b) => edNum(a) - edNum(b) || rarity(b) - rarity(a),
-      };
-      list = list.sort(sorts[filt.sort]);
       const sel = (key, label, opts) => h('label', { class: 'f' }, h('span', { text: label }),
-        h('select', { onchange: (e) => { filt[key] = e.target.value; renderColl(); }, 'data-k': key },
+        h('select', { onchange: (e) => { filt[key] = e.target.value; renderColl(); after(); }, 'data-k': key },
           opts.map(([v, t]) => h('option', { value: v, selected: String(filt[key]) === String(v) }, t))));
       const counts = { raw: 0, case: 0, slab: 0 }; all.forEach((c) => counts[Store.holder(c)]++);
       const holdSeg = h('div', { class: 'seg hold-seg', role: 'group', 'aria-label': 'Show' },
         [['all', 'All', all.length], ['raw', 'Raw', counts.raw], ['case', 'Cased', counts.case], ['slab', 'Slabbed', counts.slab]].map(([v, t, n]) =>
-          h('button', { type: 'button', 'aria-pressed': String(filt.hold === v), onclick: () => { filt.hold = v; renderColl(); }, 'data-v': v }, t, h('small', { text: ' ' + n }))));
+          h('button', { type: 'button', 'aria-pressed': String(filt.hold === v), onclick: () => { filt.hold = v; renderColl(); after(); }, 'data-v': v }, t, h('small', { text: ' ' + n }))));
       const filters = h('div', { class: 'filters' },
         sel('series', 'Series', [['all', 'All'], ...seriesList.map((n) => [n, 'Series ' + n])]),
         sel('mat', 'Material', [['all', 'All'], ...Store.MATS.map((m) => [m, Store.MAT_LABEL[m]])]),
         sel('holo', 'Holo', [['any', 'Any'], ['none', 'None'], ['frame', 'Frame'], ['picture', 'Picture'], ['full', 'Full']]),
         sel('grade', 'Grade', [['all', 'All'], ['none', 'Not graded'], ['10', 'PDA 10'], ['9-8', 'PDA 9–8'], ['7-6', 'PDA 7–6'], ['5-4', 'PDA 5–4'], ['3-2', 'PDA 3–2'], ['1', 'PDA 1']]),
         sel('sort', 'Sort', [['serial', 'Newest'], ['rarity', 'Rarity'], ['grade', 'Grade'], ['edition', 'Edition']]));
+      return [holdSeg, filters];
+    }
+    function openFilter() {
+      const body = h('div', { class: 'st st-filter' });
+      const draw = () => {
+        const all = S().cards.filter((c) => !hide.has(c.id)), n = matching(all).length;
+        patch(body, JSON.stringify([filt, all.length, n]), () => put(body, filterControls(all, draw),
+          h('div', { class: 'row filter-act' }, filtersOn() ? btn('Clear', '', () => { Object.assign(filt, FILT0); renderColl(); draw(); }, { 'data-key': 'fclear' }) : null,
+            btn(n ? `Show ${n} ${n === 1 ? 'card' : 'cards'}` : 'No cards match', 'primary', () => Sheet.close('filter'), { 'data-key': 'fshow' }))));
+      };
+      draw(); Sheet.open('filter', { title: 'Filter & sort', body });
+    }
+    function drawColl(all) {
+      const sorts = {
+        serial: (a, b) => b.serial - a.serial,
+        rarity: (a, b) => rarity(b) - rarity(a) || b.serial - a.serial,
+        grade: (a, b) => (b.grade ?? -1) - (a.grade ?? -1) || rarity(b) - rarity(a),
+        edition: (a, b) => edNum(a) - edNum(b) || rarity(b) - rarity(a),
+      };
+      const list = matching(all).sort(sorts[filt.sort]), on = filtersOn(), dups = dupInfo();
       const ids = list.map((c) => c.id); // the viewer swipes through the list as shown
-      const grid = list.length ? h('div', { class: 'cgrid' }, list.map((c) => cardTile(c, { onTap: (card) => openDetail(card.id, ids) })))
+      // copies (same character and material) show a small "×N" here; the reveal never tags them
+      const grid = list.length ? h('div', { class: 'cgrid' }, list.map((c) => cardTile(c, { onTap: (card) => openDetail(card.id, ids),
+          tag: dups.get(c.id)?.n > 1 ? h('span', { class: 'dupn', text: '×' + dups.get(c.id).n, 'aria-label': `${dups.get(c.id).n} copies` }) : null })))
         : h('div', { class: 'empty-state' }, h('p', { text: all.length ? 'No cards match.' : 'No cards yet. Open a pack!' }),
-          all.length ? btn('Clear filters', 'small', () => { Object.assign(filt, { series: 'all', hold: 'all', mat: 'all', holo: 'any', grade: 'all' }); renderColl(); }, { 'data-key': 'clear' }) : null);
+          all.length ? btn('Clear filters', 'small', () => { Object.assign(filt, FILT0); renderColl(); }, { 'data-key': 'clear' }) : null);
       put(coll, h('div', { class: 'coll-h' }, h('h3', { id: 'coll-h', text: 'Your cards' }), h('span', { class: 'muted', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }),
-        h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Collection floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) })),
-        btn('Pop report', 'small pop-b', () => openPop(), { 'data-key': 'pop' })), freshNudge(all), holdSeg, filters, grid);
+        btn(on ? `Filter · ${on}` : 'Filter', 'small filter-b' + (on ? ' on' : ''), openFilter, { 'data-key': 'filter', 'aria-haspopup': 'dialog', 'aria-label': on ? `Filter and sort (${on} on)` : 'Filter and sort' }),
+        h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) })),
+        btn('Pop report', 'small pop-b', () => openPop(), { 'data-key': 'pop' }), btn('Binder', 'small', () => window.Fun?.go('binder', { series: filt.series === 'all' ? null : +filt.series }), { 'data-key': 'binder' })), freshNudge(all), grid);
     }
     const render = () => { renderPacks(); renderColl(); };
     // the fresh window: "5 cards still fresh · 3h 12m left · Case all fresh for $0.25" (the wizard, with them picked)
@@ -444,8 +477,7 @@
       if (!fresh.length) return null;
       const pick = fresh.slice(0, maxBatch()), usd = pick.reduce((a, c) => a + Store.caseUsd(c), 0), n = fresh.length;
       return h('div', { class: 'fresh-nudge' },
-        h('p', {}, h('span', {}, h('b', { text: `${n} ${n === 1 ? 'card' : 'cards'} still fresh` }), ` · ${Wear.hhmm(Wear.freshLeft(fresh[0]))} left`),
-          h('small', { text: Wear.FRESH_LINE + ' Cased now, time never touches them.' })),
+        h('p', {}, h('span', {}, h('b', { text: `${n} fresh ${n === 1 ? 'card' : 'cards'}` }), ` · ${Wear.hhmm(Wear.freshLeft(fresh[0]))} left`)), // one line: the detail and How say why
         btn(pick.length < n ? `Case ${pick.length} fresh for ${Wear.usd(usd)}` : `Case all fresh for ${Wear.usd(usd)}`, 'primary small', () => {
           Sheet.close('table'); Stations.open('grade', { as: 'case', pick: pick.map((c) => c.id) });
         }, { 'data-key': 'case-fresh' }));
@@ -453,7 +485,7 @@
 
     // ---------- opening: rip the pack, one card at a time (rarest last), then a summary of everything pulled
     async function openPacks(series, n) {
-      if (busy) return; busy = true;
+      if (busy) return; busy = true; practiceRun = false;
       const prior = new Map(); S().cards.forEach((c) => { const k = dupKey(c); prior.set(k, (prior.get(k) || 0) + 1); });
       if (LIVE) return openLive(series, n, prior);
       const packs = []; for (let i = 0; i < n; i++) packs.push(makePack(series));
@@ -484,6 +516,15 @@
       await runOpening(series, packs, prior);
     }
 
+    // practice: one pack of sample cards, the same reveal, nothing saved (practice.js makes the cards and the summary)
+    async function openPractice() {
+      if (busy || !window.Fun?.practicePack) return; busy = true; practiceRun = true;
+      const pack = Fun.practicePack().sort((a, b) => rarity(a) - rarity(b));
+      packsEl.hidden = true; coll.hidden = true; stage.hidden = false;
+      root.closest('.sheet-body')?.scrollTo({ top: 0 });
+      await runOpening(pack[0].series, [pack], new Map());
+    }
+
     async function runOpening(series, packs, prior) {
       const n = packs.length, cards = packs.flat();
       const ac = new AbortController(); let stopR; const stopP = new Promise((r) => (stopR = r));
@@ -495,21 +536,25 @@
       const msg = h('p', { class: 'stage-msg', 'aria-live': 'polite' });
       const area = h('div', { class: 'op-area' });
       const meta = h('div', { class: 'op-meta' });
-      const ctrls = h('div', { class: 'stage-ctrls' }, btn(n > 1 ? 'Skip to all cards' : 'Skip', 'small skip-b', () => { skipped = true; Sfx.cut(true); stopR(); }));
+      const ctrls = h('div', { class: 'stage-ctrls' }, btn(n > 1 ? 'See all' : 'Skip', 'small skip-b', () => { skipped = true; Sfx.cut(true); stopR(); }));
       const said = h('p', { class: 'sr', 'aria-live': 'polite', 'aria-atomic': 'true' }); // screen readers: each card as it turns over
       const op = h('div', { class: 'op' }, msg, area, meta, ctrls, said);
       put(stage, op); stage.classList.add('opening');
       const tilt = holoTilt(halted, ac.signal);
+      const warm = []; const warmUp = (p) => { if (p < n) warm[p] ??= preloadCards(packs[p]); }; // this pack's cards load while it's torn
 
       for (let p = 0; p < n && !halted(); p++) {
         put(meta); const label = n > 1 ? `Pack ${p + 1} of ${n}` : `Series ${series} pack`;
+        warmUp(p);
         const from = await race(ripPack({ area, msg, label, tag: n > 1 ? `${p + 1} / ${n}` : null, halted, pause }));
+        warmUp(p + 1);
         if (halted()) break;
         await race(runStack({ order: packs[p], from, area, msg, meta, op, ctrls, said, halted, pause, tilt, lastPack: p === n - 1 }));
       }
       tilt.stop(); ac.abort();
       if (!root.isConnected || !root.closest('dialog')?.open) return;
       stage.classList.remove('opening');
+      if (practiceRun) return window.Fun?.practiceSummary?.(stage, cards, { again: () => { busy = false; openPractice(); }, done: () => Sheet.close('table') });
       summary(series, cards, prior);
     }
 
@@ -528,7 +573,7 @@
         const hint = h('span', { class: 'pk-hint', 'aria-hidden': 'true' });
         const pk = h('button', { type: 'button', class: 'pk2', 'aria-label': `${label}. Drag across the top to tear it open, or press Enter` },
           inside, body, edge, keep, torn, hint, tag ? h('span', { class: 'pk-n', text: tag }) : null);
-        put(area, pk); pk.focus({ preventScroll: true });
+        put(area, pk); pk.focus({ preventScroll: true }); window.Fun?.emit('pack-shown', { el: pk, practice: practiceRun });
         msg.textContent = tag ? `${label}: tear across the top` : 'Drag across the top to tear it open';
         let prog = 0, dir = 1, done = false, drag = null, moved = false, grain = 0;
         const draw = () => {
@@ -549,7 +594,7 @@
           if (prog >= 0.97) finish();
         };
         async function finish() {
-          if (done) return; done = true; prog = 1; draw(); Sfx.ripFull();
+          if (done) return; done = true; prog = 1; draw(); Sfx.ripFull(); window.Fun?.emit('tear', { practice: practiceRun });
           pk.classList.add('open'); pk.setAttribute('aria-label', `${label}, torn open`);
           msg.textContent = 'Here they come';
           if (reduced()) torn.style.opacity = 0;
@@ -595,7 +640,7 @@
       return new Promise((resolve) => {
         const els = order.map((c) => {
           const back = h('div', { class: 'face back2' }, h('img', { src: BACK, alt: '', draggable: 'false' }), h('i', { class: 'tease-fx', 'aria-hidden': 'true' }));
-          const front = h('div', { class: 'face front' }, cardFace(c, false, true), c.holo !== 'none' && !Store.cardParts(c) ? h('i', { class: 'sheen', 'aria-hidden': 'true' }) : null);
+          const front = h('div', { class: 'face front' }, cardFace(c, true, true), c.holo !== 'none' && !Store.cardParts(c) ? h('i', { class: 'sheen', 'aria-hidden': 'true' }) : null); // its live holo joins when it's on top (reveal)
           const el = h('button', { type: 'button', class: `sc m-${c.material}`, style: `--glow:${GLOW[c.material]}`, inert: true },
             h('div', { class: 'sc-tilt' }, h('div', { class: 'inner' }, back, front)));
           el._c = c; return el;
@@ -619,6 +664,7 @@
           let due = 0; // Epic / Legendary: when (performance.now) the flip / flash is due, so the build-up ends on it
           const ho = isHolo(c), turn = ho ? holoArm(el) : null; // a holo shows its foil edge as soon as it's on top
           await pause(i === 0 ? 600 : 160); if (halted()) return;
+          window.Fun?.emit('card-ready', { el, i, practice: practiceRun });
           if (ho) { // ...and waits for you: drag it (the edge brightens the further it goes) or tap to turn it
             msg.textContent = 'Something’s shimmering…'; el.setAttribute('aria-label', `Card ${i + 1} of ${order.length}, face down and shimmering. Press to turn it over`);
             await turn; if (halted()) return;
@@ -634,6 +680,9 @@
           } else if (last) msg.textContent = 'Last card…';
           const slow = big && !rm;
           if (big) { await leak(el, c, tier === 'legendary', msg, pause, due - (tier === 'legendary' && !rm ? LEG_HOLD : 0)); if (halted()) return; }
+          const fc = el.querySelector('.face.front .cface');
+          if (fc && !fc._holo && Store.cardParts(c) && window.Holo) Holo.attach(fc, c, true); // one live card at a time (its parts were loaded during the tear)
+          await faceShown(fc); if (halted()) return; // never turn over a card that isn't drawn yet
           el.classList.toggle('slow', slow); el.classList.toggle('hslow', ho && !tier && !rm); el.classList.add('flipped'); Sfx.flip();
           if (big) { el.classList.remove('tease'); el._lk?.(); }
           if ((big || ho) && rm) el.querySelector('.face.front').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 350 });
@@ -646,6 +695,7 @@
           put(meta, h('span', { class: 'op-n', text: `${i + 1} / ${order.length}` }), matChip(c.material), holoChip(c),
             tier ? h('span', { class: 'tier-b ' + tier, text: TIER_LABEL[tier] }) : null, tier ? h('span', { class: 'op-odds', text: od.label }) : null); // odds: Rare and up only
           said.textContent = `Card ${i + 1} of ${order.length}: ${describe(c)}${tier ? '. ' + TIER_LABEL[tier] : ''}`;
+          window.Fun?.emit('flip', { card: c, tier, holo: isHolo(c), el, i, last: last && lastPack, practice: practiceRun });
           el.setAttribute('aria-label', `${describe(c)}. ${last ? (lastPack ? 'Press to see all your cards' : 'Press for the next pack') : 'Press for the next card'}`);
           if (tier === 'legendary') { await pause(slow ? Math.max(LEG_HOLD / 2, due - performance.now()) : 0); if (halted()) return; bigMoment(c, el, op); }
           if (c.holo !== 'none') tilt.start(el);
@@ -809,38 +859,59 @@
       return { start, stop, aim };
     }
 
-    // after the pulls: the Case & grade wizard over every card just pulled (tagged New or Duplicate), then Keep / Burn / more
+    // after the pulls: a celebration first. The best card big, every pull small (tagged New only: copies are counted in
+    // My cards), then the main button: Open next (packs left) or Done; Share and My cards beside it. Case & grade is one
+    // small line that opens the wizard (the Case & grade station's) over these cards.
     function summary(series, cards, prior) {
-      const seen = new Map(prior), dups = dupInfo(), tags = new Map();
-      cards.forEach((c) => {
-        const k = dupKey(c), isNew = !seen.get(k); seen.set(k, (seen.get(k) || 0) + 1);
-        tags.set(c.id, isNew ? h('span', { class: 'new-t', text: 'New' }) : h('span', { class: 'dup-b', text: `Duplicate ×${dups.get(c.id)?.n || seen.get(k)}` }));
-      });
+      const seen = new Map(prior), tags = new Map();
+      cards.forEach((c) => { const k = dupKey(c); if (!seen.get(k)) tags.set(c.id, h('span', { class: 'new-t', text: 'New' })); seen.set(k, (seen.get(k) || 0) + 1); });
       cards.forEach((c) => hide.delete(c.id));
-      const best = [...cards].sort((a, b) => rarity(b) - rarity(a))[0];
-      const big = cards.filter((c) => isBig(tierOf(c)));
+      const rank = (a, b) => rarity(b) - rarity(a) || HRANK[b.holo || 'none'] - HRANK[a.holo || 'none'] || b.serial - a.serial; // one ranking for Best and Share
+      const best = [...cards].sort(rank)[0];
       const close = () => { busy = false; stage.hidden = true; stage.classList.remove('opening'); packsEl.hidden = view === 'open'; put(stage); render(); };
-      const seeAll = () => { close(); setView('cards'); root.closest('.sheet-body')?.scrollTo({ top: 0 }); coll.querySelector('h3')?.setAttribute('tabindex', '-1'); coll.querySelector('h3')?.focus({ preventScroll: true }); };
-      const head = h('div', { class: 'op-sum-h' }, h('h3', { text: cards.length > 6 ? `Your ${cards.length} cards` : 'Your pulls' }),
-        h('span', { class: 'muted', text: `Best: ${cardName(best)}, ${Store.trueOdds(best).label}` }),
-        big.length ? h('span', { class: 'row' }, big.slice(0, 3).map((c, i, top) => { // each names its card ("Share Full Art"); twins get a number
-          const name = cardName(c), twin = top.filter((x) => cardName(x) === name).length > 1;
-          return shareBtn(c, 'small', `Share ${name}${twin ? ' ' + (top.slice(0, i + 1).filter((x) => cardName(x) === name).length) : ''}`);
-        })) : null);
+      const seeAll = () => { close(); setView('cards'); renderColl(); root.closest('.sheet-body')?.scrollTo({ top: 0 }); coll.querySelector('h3')?.setAttribute('tabindex', '-1'); coll.querySelector('h3')?.focus({ preventScroll: true }); };
+      const more = openable(), left = more.reduce((a, o) => a + o.n, 0);
+      const nextSeries = (more.find((o) => o.series === series) || more[0])?.series; // same Series first, then the oldest
+      const canNext = left > 0 && connected();
+      const next = () => { busy = false; openPacks(nextSeries, 1); };
+      const finish = () => { close(); Sheet.close('table'); };
       const host = h('div', { class: 'op-sum' }); put(stage, host);
-      protectFlow(host, { cards, tags, head, done: () => {
-        const more = openable(), left = more.reduce((a, o) => a + o.n, 0);
-        const nextSeries = (more.find((o) => o.series === series) || more[0])?.series; // same Series first, then the oldest
-        return [btn('Done', 'primary', () => { close(); Sheet.close('table'); }),
-          left > 0 && connected() ? btn(`Open next (${left})`, 'gold', () => { busy = false; openPacks(nextSeries, 1); }) : null, btn('My cards', '', seeAll)];
-      } });
-      renderColl(); Store.update(() => {}); // let the shell refresh counts
+      const ps = window.Fun?.packShare?.(cards, series); // the whole pack as one image
+      const celebrate = () => {
+        const od = Store.trueOdds(best), tier = tierOf(best), ids = cards.map((c) => c.id);
+        const caseable = cards.filter((c) => c.grade == null && !c.pending && !c.cased), caseUsd = caseable.reduce((a, c) => a + Store.caseUsd(c), 0);
+        put(host, h('div', { class: 'cel' + (tier ? ' t-' + tier : '') },
+          h('h3', { class: 'cel-k', text: cards.length > 6 ? `Your ${cards.length} cards` : 'Your pulls' }),
+          h('div', { class: 'cel-best', style: `--glow:${GLOW[best.material]}` },
+            h('button', { type: 'button', class: 'cel-big', 'aria-label': `Best: ${describe(best)}. See it`, onclick: () => openDetail(best.id, ids) }, cardFace(best, false, true)),
+            h('div', { class: 'cel-name' }, h('small', { text: 'Best pull' }), h('b', { text: best.character }), h('span', { text: cardName(best) }),
+              h('span', { class: 'row' }, tier ? h('span', { class: 'tier-b ' + tier, text: TIER_LABEL[tier] }) : null, od.label ? h('span', { class: 'op-odds', text: od.label }) : null))),
+          h('ul', { class: 'cel-pulls', 'aria-label': 'Everything you pulled' }, cards.map((c) => h('li', {},
+            h('button', { type: 'button', class: 'cel-c' + (c === best ? ' best' : ''), 'aria-label': describe(c) + (tags.has(c.id) ? '. New' : ''), onclick: () => openDetail(c.id, ids) },
+              cardFace(c, true), tags.get(c.id)?.cloneNode(true) || null)))),
+          h('div', { class: 'cel-acts' },
+            canNext ? btn(`Open next (${left})`, 'gold big', next, { 'data-key': 'next' }) : btn('Done', 'primary big', finish, { 'data-key': 'done' }),
+            h('div', { class: 'row' }, shareBtn(best, '', 'Share best'), ps || null, btn('My cards', '', seeAll, { 'data-key': 'mycards' }), canNext ? btn('Done', '', finish, { 'data-key': 'done2' }) : null)),
+          caseable.length ? h('p', { class: 'cel-protect' }, btn('Case & grade them', 'linkish', wizard, { 'data-key': 'protect' }),
+            h('span', { class: 'muted', text: ` · case all ${caseable.length} for ${Wear.usd(caseUsd)}, grade from ${Wear.usd(Math.min(...caseable.map(Store.gradeUsd)))}` })) : null));
+        host.querySelector('.cel-acts .btn.big')?.focus({ preventScroll: true });
+      };
+      function wizard() {
+        const head = h('div', { class: 'op-sum-h' }, btn('‹ Your pulls', 'small', () => { celebrate(); root.closest('.sheet-body')?.scrollTo({ top: 0 }); }, { 'data-key': 'pulls' }));
+        protectFlow(host, { cards, tags, head, done: () => [btn('Done', 'primary', finish),
+          canNext ? btn(`Open next (${left})`, 'gold', next) : null, btn('My cards', '', seeAll)] });
+        root.closest('.sheet-body')?.scrollTo({ top: 0 });
+      }
+      celebrate();
+      window.Fun?.emit('opened', { host, cards, series, packs: Math.max(1, Math.round(cards.length / (S().series.cardsPerPack || 6))) });
+      Store.update(() => {}); // let the shell refresh counts
       root.closest('.sheet-body')?.scrollTo({ top: 0 });
     }
 
     listen('table', render);
     Sheet.open('table', { title: TITLE[view], body: root, wide: true, onClose: () => unlisten('table') });
     setView(view); render();
+    if (practice) { setView('open'); return openPractice(); }
     if (view === 'open') { // straight to the table: the oldest Series' next pack (demo: connects the demo wallet if needed)
       if (LIVE) return Live.needWallet(() => openable().length && openPacks(openable()[0].series, 1));
       if (!connected()) { Store.update((s) => { s.wallet.connected = true; }); toast('Demo wallet connected', 'good'); }
@@ -856,18 +927,18 @@
     const ed = Store.editionInfo(c); // edition + this exact look, with burned counts (demo numbers)
     const frozenAt = (ms) => { const d = Math.floor(ms / Store.DAY); return d < 1 ? 'under a day' : `${d.toLocaleString('en-US')} ${d === 1 ? 'day' : 'days'}`; };
     const traits = [['Character', c.character], ['Category', Store.CHARS[c.character]?.category || c.category || '—'], ['Material', Store.MAT_LABEL[c.material]], ['Holo', HOLO[c.holo || 'none']], ['Series', 'Series ' + c.series],
-      ['Edition', c.edition + (ed.burned ? ` · ${ed.burned} burned` : '')], ['This look', `${ed.lookK} of ${ed.lookN}` + (ed.lookBurned ? ` · ${ed.lookBurned} burned` : '')], ['Serial', '#' + c.serial],
-      ['PDA grade', c.pending ? 'Being graded' : c.grade == null ? 'Not graded' : `${c.grade} · ${Wear.WORD[c.grade]}`],
+      ['Edition', c.edition + (ed.burned ? ` · ${ed.burned} burned` : '')], ['Same look', `${ed.lookK} of ${ed.lookN}` + (ed.lookBurned ? ` · ${ed.lookBurned} burned` : '')], ['Serial', '#' + c.serial],
+      ['Grade', c.pending ? 'Grading…' : c.grade == null ? 'None' : `PDA ${c.grade} · ${Wear.WORD[c.grade]}`],
       // what an ungraded card's metadata shows (its condition stays hidden); a slab shows only its grade
       // (docs/grading.md: a fixed Dealt date, plus the age frozen when it was cased)
-      ...(c.grade == null ? [['Cased', c.cased ? `Cased ✓ (wear frozen at ${frozenAt(c.frozenAge)})` : 'No'], ['Dealt', new Date(c.dealtAt ?? c.dealt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })],
+      ...(c.grade == null ? [['Cased', c.cased ? `Cased · ${frozenAt(c.frozenAge)} old` : 'No'], ['Dealt', new Date(c.dealtAt ?? c.dealt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })],
         ['Moves', String(Math.min(c.moves, 10))]] : [])];
     // a slab's line in the pop report: "1 of 3 Gold PDA 10s" (read once the report is in)
     const popDd = c.grade != null ? h('dd', { class: 'pop-line', text: '…' }) : null;
     if (popDd) Store.popReport().then((pop) => {
       const n = pop?.[c.series]?.[c.material]?.[c.grade] || 1, what = `${Store.MAT_LABEL[c.material]} PDA ${c.grade}`;
       popDd.replaceChildren(btn(n === 1 ? `The only ${what} in Series ${c.series}` : `1 of ${n} ${what}s in Series ${c.series}`, 'linkish', () => openPop({ series: c.series, mat: c.material, grade: c.grade }), { 'data-key': 'popline' }));
-    }, () => { popDd.textContent = 'Couldn’t load the pop report'; });
+    }, () => { popDd.textContent = 'Couldn’t load the pop report. Try again.'; });
     const goto = (name, o = {}) => { Sheet.close('card'); Sheet.close('table'); Stations.open(name, { pick: [c.id], ...o }); };
     const canGrade = c.grade == null && !c.pending, canCase = canGrade && !c.cased;
     const sea = (label, href, extra) => h('a', { class: 'btn sea', href, target: '_blank', rel: 'noopener', ...extra }, label, h('span', { 'aria-hidden': 'true', text: '↗' }));
@@ -881,15 +952,17 @@
         h('div', { class: 'dstats' },
           h('div', { class: 'dodds' }, h('small', { text: c.grade != null ? 'Odds with grade' : 'Pull odds' }), h('b', { text: od.label })),
           h('div', { class: 'dfloor' }, h('small', { text: 'Floor (demo)' }), h('b', { text: floorTxt(c) }))),
-        canGradeNow(c) ? (c.cased ? nowBar(c, true, 'If graded now (frozen by its case)') : oddsClock(c, () => goto('grade', { as: 'case' }), canCase)) : null,
-        h('dl', {}, traits.map(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })]), popDd ? [h('dt', { text: 'Pop' }), popDd] : null),
-        h('div', { class: 'row' },
+        // the actions first, right under the card (they stick to the bottom of the sheet on a short screen); the traits fold away
+        h('div', { class: 'row dacts' },
           c.grade == null ? btn(`Grade · ${Wear.usd(Store.PRICES.GRADE_USD)}`, 'primary', () => goto('grade', { as: 'grade' }), { disabled: !canGrade }) : null, // slabbed: final, nothing to do
           c.grade == null ? btn(`Case · ${Wear.usd(Store.PRICES.CASE_USD)}`, '', () => goto('grade', { as: 'case' }), { disabled: !canCase }) : null,
           btn('Burn', '', () => goto('burn'), { disabled: c.pending }),
           shareBtn(c)),
+        canGradeNow(c) ? (c.cased ? nowBar(c, true, 'If graded now (cased)') : oddsClock(c, () => goto('grade', { as: 'case' }), canCase)) : null,
+        h('details', { class: 'dmore' }, h('summary', { text: 'Details' }),
+          h('dl', {}, traits.map(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })]), popDd ? [h('dt', { text: 'Pop' }), popDd] : null)),
         h('div', { class: 'row' }, // collection link is a placeholder until the contract exists; then Store.openSeaItem links the card itself
-          sea('OpenSea', Store.openSeaItem(c), { 'aria-label': 'OpenSea: view, buy or list (opens a new tab)' })),
+          sea('OpenSea', Store.openSeaItem(c), { 'aria-label': 'OpenSea: view, buy or list (opens a new tab)' }), btn('Binder', '', () => window.Fun?.go('binder', { series: c.series, at: c.id }))),
         Wear.howPill(),
         LIVE ? null : h('p', { class: 'muted small', text: 'Demo floors. OpenSea links are placeholders.' })));
     const d = document.getElementById('sheet-card'), opener = d?.open ? d._opener : null;
@@ -911,7 +984,7 @@
   // the odds clock (a raw card's detail): its grade odds if graded now, in 30 days and in 6 months (Wear.odds on its
   // age, moves as they are), by band, and "Case now to freeze these odds"
   function oddsClock(c, onCase, canCase) {
-    const age = Wear.ageSecOf(c), DAYS = [['If graded now', 0], ['In 30 days', 30], ['In 6 months', 182]];
+    const age = Wear.ageSecOf(c), DAYS = [['Now', 0], ['30 days', 30], ['6 months', 182]];
     const cols = DAYS.map(([l, d]) => ({ l, b: Wear.bandOdds(Wear.odds(age + d * 86400, c.moves)) }));
     const rows = Wear.BANDS.map((band, i) => ({ band, i })).filter(({ i }) => cols.some((x) => x.b[i].p >= 0.001));
     const says = cols.map((x) => saysOf(x.b.filter((b) => b.p >= 0.001), x.l)).join('. ');
@@ -920,8 +993,8 @@
         h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'PDA' }), cols.map((x, k) => h('th', { scope: 'col', class: k ? '' : 'now' }, x.l, bandBar(x.b.filter((b) => b.p >= 0.001)))))),
         h('tbody', {}, rows.map(({ band, i }) => h('tr', {}, h('th', { scope: 'row' }, h('i', { style: `background:${band.c}` }), band.g),
           cols.map((x, k) => h('td', { class: k ? '' : 'now', text: Wear.pct(x.b[i].p) })))))),
-      h('p', { class: 'gclock-note muted small', text: Wear.freshLeft(c) ? Wear.FRESH_LINE + ' After that a raw card slowly wears.' : 'A raw card slowly wears with time; moves can cost a grade too.' }),
-      canCase ? btn(`Case now to freeze these odds · ${Wear.usd(Store.caseUsd(c))}`, 'gclock-case', onCase) : null);
+      h('p', { class: 'gclock-note muted small', text: 'Raw cards wear over time. Moves can cost a grade.' }),
+      canCase ? btn(`Lock these odds · ${Wear.usd(Store.caseUsd(c))}`, 'gclock-case', onCase) : null);
   }
 
   // the pop report: how many slabs of each grade exist, per Series, by material (Store.popReport: live from FirePsa's
@@ -931,9 +1004,9 @@
     Sheet.open('pop', { title: 'Pop report', body: root, wide: true });
     Store.popReport().then((pop) => {
       const series = Object.keys(pop || {}).map(Number).sort((a, b) => b - a);
-      if (!series.length) return put(root, h('p', { class: 'slead', text: 'No slabs yet.' }), h('p', { class: 'muted', text: 'Every card graded shows up here, by Series, material and grade.' }));
+      if (!series.length) return put(root, h('p', { class: 'slead', text: 'No slabs yet.' }), h('p', { class: 'muted', text: 'Graded cards show up here.' }));
       const G = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1], MATS = Store.MATS;
-      put(root, h('p', { class: 'muted', text: 'How many slabs of each grade exist, by material. Burned slabs are gone, so they don’t count.' }),
+      put(root, h('p', { class: 'muted', text: 'Every slab, by grade. Burned ones don’t count.' }),
         series.map((no) => {
           const per = pop[no], mats = MATS.filter((m) => per[m]), sum = (m) => G.reduce((a, g) => a + (per[m][g] || 0), 0);
           return h('section', { class: 'pop-s' }, h('h3', {}, `Series ${no} `, h('small', { class: 'muted', text: `${mats.reduce((a, m) => a + sum(m), 0).toLocaleString('en-US')} slabs` })),
@@ -945,7 +1018,7 @@
         }),
         LIVE ? null : h('p', { class: 'demo-line', text: 'Demo numbers' }));
       root.querySelector('td.at')?.scrollIntoView({ block: 'nearest', inline: 'center' });
-    }, () => put(root, h('p', { class: 'warn', text: 'Couldn’t read the pop report. Try again in a moment.' })));
+    }, () => put(root, h('p', { class: 'warn', text: 'Couldn’t load the pop report. Try again.' })));
   }
 
   // =====================================================================================
@@ -957,11 +1030,11 @@
   function oddsChart() {
     const bands = Wear.bandOdds(Wear.FRESH), max = Math.max(...bands.map((b) => b.p));
     return h('figure', { class: 'odds' },
-      h('figcaption', { class: 'odds-t', text: 'Fresh card (first 24 h)' }),
+      h('figcaption', { class: 'odds-t', text: 'Fresh card odds' }),
       h('div', { class: 'bars', role: 'img', 'aria-label': 'Grade odds for a fresh card, its first 24 hours: ' + bands.map((b) => `PDA ${b.g} ${b.p ? Wear.pct(b.p) : 'never'}`).join(', ') },
         bands.map((b) => h('div', { class: 'bar' + (b.g === '10' ? ' top' : '') + (b.p ? '' : ' nil'), style: `--c:${b.c}` },
           h('span', { class: 'pct', text: b.p ? Wear.pct(b.p) : '—' }), h('i', { style: `height:${b.p ? Math.max(3, b.p / max * 56) : 0}px` }), h('span', { class: 'lbl', text: b.g })))),
-      h('p', { class: 'odds-cap', text: 'Never below 7 while fresh. A PDA 10 is 1 in 100.' }));
+      h('p', { class: 'odds-cap', text: Wear.FRESH_ODDS }));
   }
   let coin = 'ETH'; // last coin picked to pay with (ETH first)
   const STEPS = [['grade', 'Grade'], ['case', 'Case'], ['review', 'Review']];
@@ -986,13 +1059,13 @@
     const gradeVaries = () => new Set(list().filter(canGrade).map(Store.gradeUsd)).size > 1;
     const howMany = (ids, f) => { const v = new Set(ids.map((id) => f(byId(id)))); return v.size === 1 ? `${ids.length} × ${Wear.usd([...v][0])}` : `${ids.length} cards · ${Wear.usd(usdOf(ids, f))}`; };
     const tick = setInterval(() => { if (!host.isConnected) return clearInterval(tick); host.querySelectorAll('[data-fresh]').forEach(paintFresh); }, 30000);
-    // "3 cards fresh for 22h 59m · time won't wear them yet (moves still count)"; on a phone it folds into the step row
+    // "3 fresh cards · 22h 59m left. Case now to stop wear."; on a phone it folds into the step row
     function paintFresh(el) {
       const ms = list().map(Wear.freshLeft).filter((x) => x > 0).sort((a, b) => a - b);
       el.hidden = !ms.length; if (!ms.length) return;
-      const n = ms.length, lo = ms[0], hi = ms[n - 1], t = hi - lo > 3600e3 ? `${Wear.hhmm(lo)} to ${Wear.hhmm(hi)}` : Wear.hhmm(lo);
-      put(el, h('span', { class: 'wz-fresh-long' }, h('b', { text: `${n} ${n === 1 ? 'card' : 'cards'} fresh` }), ' for ', h('b', { class: 't', text: t }),
-        ` · time won’t wear ${n === 1 ? 'it' : 'them'} yet (moves still count). Case or grade now to keep it that way.`),
+      const n = ms.length, lo = ms[0];
+      put(el, h('span', { class: 'wz-fresh-long' }, h('b', { text: `${n} fresh ${n === 1 ? 'card' : 'cards'}` }), ' · ', h('b', { class: 't', text: Wear.hhmm(lo) }),
+        ' left. Case now to stop wear.'),
       h('span', { class: 'wz-fresh-short', 'aria-hidden': 'true' }, h('b', { text: `${n} fresh` }), ' · ', h('b', { class: 't', text: Wear.hhmm(lo) })));
     }
     function top() {
@@ -1014,10 +1087,10 @@
         render();
       };
       return h('div', { class: 'wz-quick' },
-        btn('Select all holos', 'small', () => pick(isHolo)),
-        btn('Select Rare & up', 'small', () => pick((c) => !!tierOf(c))),
-        step === 'case' ? btn('Case all the rest', 'small', () => pick(() => true)) : null,
-        step === 'case' && list().some((c) => ok(c) && Wear.freshLeft(c) > 0) ? btn('Case all fresh', 'small', () => pick((c) => Wear.freshLeft(c) > 0)) : null,
+        btn('All holos', 'small', () => pick(isHolo)),
+        btn('Rare & up', 'small', () => pick((c) => !!tierOf(c))),
+        step === 'case' ? btn('All the rest', 'small', () => pick(() => true)) : null,
+        step === 'case' && list().some((c) => ok(c) && Wear.freshLeft(c) > 0) ? btn('All fresh', 'small', () => pick((c) => Wear.freshLeft(c) > 0)) : null,
         sel.size ? btn('Clear', 'small ghost', () => { sel.clear(); render(); }) : null);
     }
     function grid(sel, ok, why) {
@@ -1037,10 +1110,10 @@
     function paintPicks() {
       if (!picksEl) return;
       const ids = [...gSel];
-      if (!ids.length) return put(picksEl, h('p', { class: 'muted small', text: 'Pick cards to see their odds together. Each card’s own odds are the bar under it.' }));
+      if (!ids.length) return put(picksEl, h('p', { class: 'muted small', text: 'Pick cards to see their odds.' }));
       const os = ids.map((id) => oddsNow(byId(id))), share = (o, i) => o[i] / (o.reduce((a, b) => a + b, 0) || 1);
       const any10 = 1 - os.reduce((a, o) => a * (1 - share(o, 9)), 1);
-      put(picksEl, bandBar(bandsOf(Wear.mixOdds(os)), { full: true, caption: ids.length === 1 ? 'Your pick, if graded now' : `Your ${ids.length} picks, if graded now (a card on average)` }),
+      put(picksEl, bandBar(bandsOf(Wear.mixOdds(os)), { full: true, caption: ids.length === 1 ? 'Your pick, if graded now' : 'Your picks, if graded now (average)' }),
         h('p', { class: 'small', text: ids.length === 1 ? `PDA 10: ${Wear.pct(any10)}` : `At least one PDA 10: ${Wear.pct(any10)}` }));
     }
     let foot;
@@ -1054,7 +1127,7 @@
         : btn(gSel.size + cSel.size ? 'Next: review' : 'Skip cases', 'primary', () => go('review'));
       const keepRaw = station ? null : btn('Keep all raw', '', () => finish([], [])); // one tap, straight to the end, nothing paid
       put(foot, h('div', { class: 'fsum' }, h('b', { text: n ? `${n} picked · ${Wear.usd(usd)}` : 'None picked' }),
-        h('span', { class: 'muted', text: `${step === 'grade' && gradeVaries() ? `from ${Wear.usd(Math.min(...list().filter(canGrade).map(Store.gradeUsd)))}` : Wear.usd(each)} a card${step === 'case' && gSel.size ? ` · ${gSel.size} to the grader` : ''} · max ${maxBatch()} a payment` })),
+        h('span', { class: 'muted', text: `${step === 'grade' && gradeVaries() ? `from ${Wear.usd(Math.min(...list().filter(canGrade).map(Store.gradeUsd)))}` : Wear.usd(each)} each · max ${maxBatch()}` })),
         h('div', { class: 'row' }, step === 'case' ? btn('Back', '', () => go('grade')) : null, keepRaw, next));
     }
     function go(k) { step = k; render(); host.closest('.sheet-body')?.scrollTo({ top: 0 }); }
@@ -1065,15 +1138,15 @@
         picksEl = h('div', { class: 'wz-picks', 'aria-live': 'polite' });
         put(host, h('div', { class: 'wz' }, top(),
           h('div', { class: 'wz-ask' }, h('h3', { text: 'Grade any now?' }),
-            h('p', { class: 'muted', text: `${gradeVaries() ? 'Priced by card type (under each card).' : Wear.usd(P.GRADE_USD) + ' each.'} The grade is revealed now and the card is sealed in a slab.` }), oddsChart()),
+            h('p', { class: 'muted', text: `${gradeVaries() ? 'Priced by card type (under each card).' : Wear.usd(P.GRADE_USD) + ' each.'} See the grade, get a slab.` }), oddsChart()),
           picksEl, quick(gSel, canGrade), grid(gSel, canGrade, (c) => (c.grade != null ? 'Slabbed' : null)), foot));
       } else if (step === 'case') {
         [...cSel].forEach((id) => { if (gSel.has(id)) cSel.delete(id); });
         const ok = (c) => canCase(c) && !gSel.has(c.id);
         put(host, h('div', { class: 'wz' }, top(),
           h('div', { class: 'wz-ask' }, h('h3', { text: 'Case any?' }),
-            h('p', { class: 'muted', text: `${Wear.usd(P.CASE_USD)} each. A case stops wear, so you can grade it any time later with the odds it has now.` })),
-          quick(cSel, ok), grid(cSel, ok, (c) => (gSel.has(c.id) ? 'To the grader' : c.grade != null ? 'Slabbed' : c.cased ? 'Already cased' : null)), foot));
+            h('p', { class: 'muted', text: `${Wear.usd(P.CASE_USD)} each. Stops wear. Grade any time.` })),
+          quick(cSel, ok), grid(cSel, ok, (c) => (gSel.has(c.id) ? 'Grade' : c.grade != null ? 'Slabbed' : c.cased ? 'Already cased' : null)), foot));
       } else return review();
       paintFoot();
     }
@@ -1108,30 +1181,29 @@
       const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Pay with' }, coins.map((k) =>
         h('button', { type: 'button', 'aria-pressed': String(k === coin), 'data-coin': k, disabled: k === 'PAPER' && !!paperOff, title: k === 'PAPER' && paperOff ? paperOff : null, onclick: () => { coin = k; review(); } }, k)));
       const disc = Store.PSA_PAPER_DISCOUNT_BPS > 0 && coins.includes('PAPER') ? `−${+(Store.PSA_PAPER_DISCOUNT_BPS / 100).toFixed(2)}% when paying in PAPER` : '';
-      const amtTxt = quoting ? (liveQ === false ? 'price unavailable right now' : 'getting the price…') : `≈ ${LIVE ? liveQ.text : Wear.fmtCoin(amt, coin)} ${coin}`;
+      const amtTxt = quoting ? (liveQ === false ? 'price unavailable right now' : 'getting price…') : `≈ ${LIVE ? liveQ.text : Wear.fmtCoin(amt, coin)} ${coin}`;
       const rawFresh = raw.filter((c) => Wear.freshLeft(c) > 0), rawOld = raw.filter((c) => !Wear.freshLeft(c));
-      const soonest = rawFresh.length ? Math.min(...rawFresh.map(Wear.freshLeft)) : 0, them = (n) => (n === 1 ? 'it' : 'them');
+      const soonest = rawFresh.length ? Math.min(...rawFresh.map(Wear.freshLeft)) : 0;
       const toCoin = () => { const sg = host.querySelector('.wz-coin .seg'); sg?.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); sg?.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true }); };
       put(host, h('div', { class: 'wz' }, top(),
-        h('div', { class: 'wz-ask' }, h('h3', { text: usd ? 'Check and pay once' : 'Nothing picked' })),
-        g.length ? h('section', { class: 'wz-sec' }, h('h4', {}, 'To the grader ', h('small', { text: howMany(g, Store.gradeUsd) })), thumbs(g, 'Cards to grade, with their odds if graded now', true)) : null,
-        cs.length ? h('section', { class: 'wz-sec' }, h('h4', {}, 'Into cases ', h('small', { text: howMany(cs, Store.caseUsd) })), thumbs(cs, 'Cards to case')) : null,
-        raw.length ? h('div', { class: 'wz-raw' }, h('p', {}, h('b', { text: `${raw.length} staying raw.` }), ' You can case or grade them any time from My cards.'),
+        h('div', { class: 'wz-ask' }, h('h3', { text: usd ? 'Review' : 'Nothing picked' })),
+        g.length ? h('section', { class: 'wz-sec' }, h('h4', {}, 'Grade ', h('small', { text: howMany(g, Store.gradeUsd) })), thumbs(g, 'Cards to grade, with their odds if graded now', true)) : null,
+        cs.length ? h('section', { class: 'wz-sec' }, h('h4', {}, 'Case ', h('small', { text: howMany(cs, Store.caseUsd) })), thumbs(cs, 'Cards to case')) : null,
+        raw.length ? h('div', { class: 'wz-raw' }, h('p', {}, h('b', { text: `${raw.length} stay raw.` })),
           h('ul', {},
-            rawFresh.length ? h('li', { class: 'fresh' }, h('b', { text: `${rawFresh.length} fresh` }), `: time starts wearing ${them(rawFresh.length)} in ${Wear.hhmm(soonest)}. Moves still count.`) : null,
-            rawOld.length ? h('li', {}, h('b', { text: `${rawOld.length} already wearing` }), `: ${rawOld.length === 1 ? 'it keeps' : 'they keep'} wearing until cased or graded.`) : null)) : null,
+            rawFresh.length ? h('li', { class: 'fresh' }, h('b', { text: `${rawFresh.length} fresh` }), `: wear starts in ${Wear.hhmm(soonest)}.`) : null,
+            rawOld.length ? h('li', {}, h('b', { text: `${rawOld.length} already wearing` }), '.') : null)) : null,
         usd ? h('div', { class: 'wz-pay' },
           g.length ? h('p', { class: 'wz-final' }, h('b', { text: 'Before you pay: ' }), Wear.FINAL_LINE) : null,
           h('dl', { class: 'sum' }, h('dt', { text: 'Total' }), h('dd', { class: 'price' }, Wear.usd(usd), h('small', { text: quoting ? ' · ' + amtTxt : ' ' + amtTxt })),
             h('dt', { text: 'You have' }), h('dd', { text: `${Wear.fmtCoin(bal, coin)} ${coin}` })),
           h('div', { class: 'wz-coin' }, h('span', { class: 'muted small', text: 'Pay with' }), seg,
             paperOff ? h('span', { class: 'small warn', text: paperOff }) : disc ? h('span', { class: 'small disc', text: disc }) : null),
-          h('p', { class: 'wz-burn', text: coin === 'PAPER' ? 'Paid in PAPER: it’s burned directly.' : Wear.BURN_LINE }),
-          LIVE && coin !== 'USDG' ? h('p', { class: 'fine', text: `If the price moves over 3%, nothing is charged.${coin === 'ETH' ? ' Your wallet may show up to 3% more; anything unused comes back.' : ''}` }) : null,
-          h('p', { class: 'demo-line', text: 'Demo · nothing is charged' })) : null,
-        h('div', { class: 'foot' }, h('div', { class: 'fsum' }, h('b', { text: usd ? `${g.length + cs.length} ${g.length + cs.length === 1 ? 'card' : 'cards'} · ${Wear.usd(usd)}` : 'Keep them all raw?' }),
-          usd ? h('span', { class: 'muted fpay' }, h('span', { class: 'fpay-amt', text: amtTxt }), ' · ', h('button', { type: 'button', class: 'linkish', 'aria-label': `Change the coin (paying in ${coin})`, onclick: toCoin }, 'change'))
-            : h('span', { class: 'muted', text: 'You can case or grade any time from My cards' })),
+          LIVE && coin !== 'USDG' ? h('p', { class: 'fine', text: 'Price moves over 3%? Nothing is charged.' }) : null,
+          h('p', { class: 'demo-line', text: 'Demo: nothing is charged' })) : null,
+        h('div', { class: 'foot' }, h('div', { class: 'fsum' }, h('b', { text: usd ? `${g.length + cs.length} ${g.length + cs.length === 1 ? 'card' : 'cards'} · ${Wear.usd(usd)}` : 'Keep all raw?' }),
+          usd ? h('span', { class: 'muted fpay' }, h('span', { class: 'fpay-amt', text: amtTxt }), ' · ', h('button', { type: 'button', class: 'linkish', 'aria-label': `Change the coin (paying in ${coin})`, onclick: toCoin }, 'Change coin'))
+            : h('span', { class: 'muted', text: 'Case or grade any time.' })),
           h('div', { class: 'row' }, btn('Back', '', () => go('case')),
             usd ? btn(quoting ? 'Getting the price…' : short ? `Not enough ${coin}` : `Pay ${Wear.usd(usd)}`, 'primary', () => pay(g, cs, coin, amt, liveQ), { disabled: short || quoting }) : btn('Done', 'primary', () => finish([], []))))));
       host.querySelector('.foot .btn.primary')?.focus({ preventScroll: true });
@@ -1147,20 +1219,20 @@
         if (!r) { step = 'review'; return review(); }
         gIndex = r.gradingIndex;
       }
-      const paid = total();
+      const paid = total(), freshN = cs.filter((id) => Wear.freshLeft(byId(id)) > 0).length;
       Store.update((s) => {
         if (!LIVE) s.wallet.balances[k] -= amt;
         cs.forEach((id) => { const c = byId(id); c.frozenAge = Store.ageMs(c); c.cased = true; }); // the case freezes its age
         g.forEach((id) => { const c = byId(id); c.frozenAge = Store.ageMs(c); c.pending = true; });
-        Store.log(`Paid ${Wear.usd(paid)}: ${[cs.length ? `${cs.length} cased` : '', g.length ? `${g.length} sent to the grader` : ''].filter(Boolean).join(', ')}`);
+        Store.log(`Paid ${Wear.usd(paid)}: ${[cs.length ? `${cs.length} cased` : '', g.length ? `${g.length} sent to grade` : ''].filter(Boolean).join(', ')}`);
       });
       gSel.clear(); cSel.clear();
-      toast('Paid', 'good');
+      toast('Paid', 'good'); window.Fun?.emit('paid', { cased: cs.length, graded: g.length, fresh: freshN });
       const msg = h('p', { class: 'stage-msg', 'aria-live': 'polite' });
       const ctrls = h('div', { class: 'stage-ctrls' });
       const slot = (id) => { const c = byId(id); const w = h('div', { class: 'gslot' }, h('div', { class: 'cwrap' }, cardFace(c)), h('div', { class: 'cmeta' }, matChip(c.material), holoChip(c))); w._id = id; return w; };
       const caseTiles = cs.map(slot), gradeTiles = g.map(slot);
-      const caseH = h('h4', { text: 'Casing' }), gradeH = h('h4', { text: 'At the grader' }); // "Cased" / "Graded" once done
+      const caseH = h('h4', { text: 'Casing…' }), gradeH = h('h4', { text: 'Grading…' }); // "Cased" / "Graded" once done
       const share = h('div', { class: 'g10-share', hidden: true });
       put(host, h('div', { class: 'wz wz-work' }, h('div', { class: 'wz-bar' }, h('span'), Wear.howPill()), msg, share,
         caseTiles.length ? h('section', { class: 'wz-sec' }, caseH, h('div', { class: 'ggrid' }, caseTiles)) : null,
@@ -1173,16 +1245,16 @@
         const shell = h('img', { class: 'case-in', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: '' });
         wrap.append(shell);
         await wait(reduced() ? 60 : 520);
-        const f = wrap.querySelector('.cframe'); f.style.objectPosition = Store.cardPos(c); wrap.querySelector('.cface').className = wrap.querySelector('.cface').className.replace('hd-raw', 'hd-case');
-        shell.remove(); w.classList.add('cased-done'); window.Sound?.play('case-snap', { gap: 60 }); w.setAttribute('aria-label', `${c.character} cased`);
+        const f = wrap.querySelector('.cframe'); f.src = Store.cardImg(c); f.style.objectPosition = Store.cardPos(c); wrap.querySelector('.cface').className = wrap.querySelector('.cface').className.replace('hd-raw', 'hd-case');
+        shell.remove(); w.classList.add('cased-done'); window.Sound?.play('case-snap', { gap: 60 }); window.Fun?.emit('case'); w.setAttribute('aria-label', `${c.character} cased`);
       }
       caseH.textContent = 'Cased';
       const got = [];
       if (gradeTiles.length) {
-        msg.textContent = 'At the grader…';
+        msg.textContent = 'Grading…';
         gradeTiles.forEach((w) => w.classList.add('scanning'));
         const liveGrades = LIVE ? await Live.finishGrading(gIndex, g, (t, a) => sayTo(msg, t, a), () => host.isConnected) : null;
-        if (LIVE && !liveGrades) { msg.textContent = 'Grades land in My cards once revealed.'; return finish(cs, [], msg, ctrls); }
+        if (LIVE && !liveGrades) { msg.textContent = 'Grades land in My cards soon.'; return finish(cs, [], msg, ctrls); }
         await wait(reduced() ? 300 : 1200);
         // the suspense: every grade is known now; they're revealed lowest first, the best last, each after a short scan
         const order = gradeTiles.map((w, k) => { const c0 = byId(w._id); return { w, k, gr: LIVE ? liveGrades.get(w._id) : Wear.draw(c0.frozenAge / 1000, c0.moves) }; })
@@ -1195,6 +1267,7 @@
           msg.textContent = last && many ? 'And the best for last…' : `Grading ${c0.character}…`;
           await wait(reduced() ? 250 : last && many ? 1500 : 700);
           w.classList.remove('scan-now');
+          await window.Fun?.slabPress?.(w); // the slab press comes down, then the grade shows
           got.push(gr);
           Store.update((s) => { const c = s.cards.find((x) => x.id === w._id); if (c) { c.grade = gr; c.pending = false; } });
           const c = byId(w._id) || { ...c0, grade: gr, pending: false };
@@ -1202,13 +1275,13 @@
           // the grade stays in view after the stamp lifts: a PDA pill and the slab's word
           w.querySelector('.cmeta').before(h('div', { class: 'gres' }, h('span', { class: 'pda-pill g' + gr, style: `--sc:${Wear.bandOf(gr).c}`, text: 'PDA ' + gr }), h('b', { class: 'gword', text: Wear.WORD[gr] })));
           w.classList.add('stamped', 'slabbed'); setTimeout(() => window.Sound?.play('grade-stamp', { gap: 60 }), reduced() ? 0 : 150); // lands with the stamp's thud
-          w.setAttribute('aria-label', `${c.character}, PDA ${gr}, ${Wear.WORD[gr]}, slabbed`);
+          w.setAttribute('aria-label', `${c.character}, PDA ${gr}, ${Wear.WORD[gr]}, slabbed`); window.Fun?.emit('graded', { card: c, grade: gr });
           if (reduced()) { const st = w.querySelector('.stamp'); setTimeout(() => st.remove(), 1500); } // reduced motion: the stamp shows still, then goes
           msg.textContent = `${c.character}: PDA ${gr} · ${Wear.WORD[gr]}`;
           if (gr === 10) { // its own moment (the opening's big reveal, in gold), then a share prompt
             await wait(reduced() ? 0 : 380);
             bigMoment(c, w, host, { kind: 'g10', title: 'PDA 10! GEM MINT' });
-            put(share, h('p', {}, h('b', { text: 'A PDA 10.' }), ` About 1 in 100 fresh cards grades a 10. Show it off?`), shareBtn(c, 'gold', 'Share your PDA 10'));
+            put(share, h('p', {}, h('b', { text: 'PDA 10!' }), ' That’s 1 in 100. Show it off?'), shareBtn(c, 'gold', 'Share your PDA 10'));
             share.hidden = false;
             await wait(reduced() ? 600 : 2400);
           } else if (!reduced()) await wait(900);
@@ -1221,7 +1294,7 @@
     function finish(cs, got, msg, ctrls) {
       step = 'work';
       if (!msg) { // nothing paid: straight to the end buttons
-        msg = h('p', { class: 'stage-msg', text: 'All kept raw. Case or grade any time from My cards.' }); ctrls = h('div', { class: 'stage-ctrls' });
+        msg = h('p', { class: 'stage-msg', text: 'All kept raw.' }); ctrls = h('div', { class: 'stage-ctrls' });
         put(host, h('div', { class: 'wz wz-work' }, h('div', { class: 'wz-bar' }, h('span'), Wear.howPill()), msg, ctrls));
       } else {
         const top = got.length ? Math.max(...got) : 0;
@@ -1292,7 +1365,7 @@
       const b = S().wallet.burnCount % BURN_GOAL;
       return h('div', { class: 'burnbar' },
         h('div', { class: 'bb-top' }, h('b', { text: 'Free pack' }), h('span', { class: 'bb-n', text: `${b} / ${BURN_GOAL}` })),
-        h('div', { class: 'meter', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': BURN_GOAL, 'aria-valuenow': b, 'aria-label': 'Burned toward a free pack' },
+        h('div', { class: 'meter', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': BURN_GOAL, 'aria-valuenow': b, 'aria-label': 'Burn progress' },
           h('i', { style: `width:${b / BURN_GOAL * 100}%` }), sel.size ? h('i', { class: 'add', style: `left:${b / BURN_GOAL * 100}%;width:${Math.min(BURN_GOAL - b, sel.size) / BURN_GOAL * 100}%` }) : null),
         h('p', { class: 'muted', text: `Burn ${BURN_GOAL} cards, get a free pack.` }));
     }
@@ -1339,7 +1412,7 @@
       const spares = all.filter((c) => dups.get(c.id)?.spare).length;
       put(root, prog,
         all.length ? filters : null,
-        all.length && bfilt.sort === 'best' ? h('p', { class: 'muted small burn-hint', text: spares ? 'Spares first, then commons. Your best copy is never marked.' : 'Commons first.' }) : null,
+        all.length && bfilt.sort === 'best' ? h('p', { class: 'muted small burn-hint', text: spares ? 'Spares first. Your best copy is never picked.' : 'Commons first.' }) : null,
         all.length ? quick : null,
         list.length ? h('div', { class: 'cgrid' }, list.map((c) => cardTile(c, { selectable: true, selected: sel.has(c.id), onTap: toggle, tag: tagFor(c) })))
           : h('div', { class: 'empty-state' }, h('p', { text: all.length ? 'No cards match.' : 'No cards to burn.' }),
@@ -1350,6 +1423,7 @@
       const ids = picked.filter((id) => byId(id) && !byId(id).pending); sel.clear(); if (!ids.length) return render();
       if (LIVE && !(await Live.burn(ids))) return render();
       Store.update((s) => { ids.forEach((id) => Store.noteBurned(byId(id))); s.cards = s.cards.filter((c) => !ids.includes(c.id)); Store.log(`Burned ${ids.length} card${ids.length > 1 ? 's' : ''}`); });
+      window.Fun?.emit('burned', { n: ids.length });
       unlisten('burn'); Sheet.close('burn');
       toast(`Burning ${ids.length} card${ids.length > 1 ? 's' : ''}…`);
       ids.forEach((_, i) => setTimeout(() => { if (window.Scene?.burn) { burnQueue++; window.Scene.burn(); } else { addBurn(); window.Sound?.play('fire-flare', { gap: 650 }); } }, i * 350));
@@ -1375,33 +1449,32 @@
     const flagged = list.filter((x) => x.f.length).length, worth = cards.reduce((a, c) => a + Store.floor(c), 0);
     const plural = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
     const word = 'BURN', typed = flagged > 0, ok = () => !typed || input.value.trim().toUpperCase() === word; // nothing flagged: a plain confirm
-    const input = h('input', { id: 'bw-type', type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', enterkeyhint: 'done', 'aria-describedby': 'bw-type-hint',
+    const input = h('input', { id: 'bw-type', type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', enterkeyhint: 'done',
       oninput: () => { const m = ok(); fire.disabled = !m; wrap.classList.toggle('ok', m); },
       onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); if (ok()) burn(); } } });
     const burn = () => { if (!ok()) return; Sheet.close('burnwarn'); onBurn(ids); };
     const fire = btn(`Burn ${plural(n, 'card')} forever`, 'danger', burn, { disabled: typed });
-    const wrap = !typed ? null : h('div', { class: 'bw-type' }, h('label', { for: 'bw-type' }, 'Type ', h('b', { text: word }), ' to confirm'), input,
-      h('small', { id: 'bw-type-hint', class: 'muted', text: 'Not case-sensitive. The burn button unlocks when it matches.' }));
+    const wrap = !typed ? null : h('div', { class: 'bw-type' }, h('label', { for: 'bw-type' }, 'Type ', h('b', { text: word }), ' to confirm'), input);
     const meterAt = (v) => h('i', { style: `width:${v / BURN_GOAL * 100}%` });
     const body = h('div', { class: 'bw' },
       h('div', { id: 'bw-warn', class: 'bw-warn' },
         h('span', { class: 'bw-icon', 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2.5 1.4-4 2.5-5 .2 1.7 1 2.8 2 3.2C11 8.6 11 5 12 2z" fill="currentColor"/></svg>' }),
-        h('div', {}, h('p', { class: 'bw-big', text: 'Burned cards are destroyed forever. This can’t be undone.' }),
-          h('p', { text: `You are about to burn ${plural(n, 'card')}` + (flagged ? `, and ${flagged === n ? (n === 1 ? 'it is' : 'all of them are') : flagged + ' of them ' + (flagged === 1 ? 'is' : 'are')} worth a second look.` : '.')
-            + (LIVE ? '' : ` Floor value about ${Store.eth(+worth.toPrecision(2))} (demo numbers).`) }))),
+        h('div', {}, h('p', { class: 'bw-big', text: 'Burned cards are gone forever.' }),
+          h('p', { text: (flagged ? `${flagged === n ? (n === 1 ? 'This one is' : 'All of these are') : flagged + ' of these ' + (flagged === 1 ? 'is' : 'are')} worth a second look. ` : '')
+            + (LIVE ? '' : `Floor about ${Store.eth(+worth.toPrecision(2))} (demo).`) }))),
       h('div', { class: 'bw-gain' },
         h('div', { class: 'bb-top' }, h('b', { text: 'You get' }),
           h('span', { class: 'bw-ft' }, h('span', { class: 'muted', text: `${b}/${BURN_GOAL}` }), h('span', { 'aria-hidden': 'true', text: ' → ' }), h('span', { class: 'sr', text: ' to ' }),
             h('b', { text: packs ? `+${plural(packs, 'free pack')}` + (rest ? `, ${rest}/${BURN_GOAL}` : '') : `${after}/${BURN_GOAL}` }))),
         h('div', { class: 'meter', 'aria-hidden': 'true' }, meterAt(packs ? BURN_GOAL : b), packs ? null : h('i', { class: 'add', style: `left:${b / BURN_GOAL * 100}%;width:${n / BURN_GOAL * 100}%` })),
         h('p', { class: 'muted small', text: packs ? `Every ${BURN_GOAL} cards burned is a free pack.` : `${BURN_GOAL - after} more to a free pack.` })),
-      h('h3', { class: 'bw-h', text: flagged ? `The cards (${flagged} flagged, most valuable first)` : 'The cards' }),
+      h('h3', { class: 'bw-h', text: flagged ? `Cards · ${flagged} flagged` : 'Cards' }),
       h('ul', { class: 'bw-list', tabindex: '0', 'aria-label': `The ${plural(n, 'card')} to burn` }, list.map(({ c, f }) => h('li', { class: f.length ? 'flag' : '' },
         h('div', { class: 'bw-thumb' }, cardFace(c, true)),
         h('div', { class: 'bw-info' }, h('b', { text: c.character }), h('span', { text: cardName(c) }), h('span', { class: 'muted', text: Store.trueOdds(c).label + ' · ' + floorTxt(c) }),
           f.length ? h('div', { class: 'bw-flags' }, f.map((t) => h('span', { class: 'bw-flag' + (/copy|copies/.test(t) ? ' last' : ''), text: t }))) : null)))),
       h('div', { class: 'bw-foot' }, wrap, h('div', { class: 'bw-act' }, btn('Cancel', '', () => Sheet.close('burnwarn')), fire),
-        h('p', { class: 'demo-line', text: 'Demo · nothing is charged' })));
+        h('p', { class: 'demo-line', text: 'Demo: nothing is charged' })));
     const d = Sheet.open('burnwarn', { title: `Burn ${plural(n, 'card')}?`, body });
     d.classList.add('burnwarn'); d.setAttribute('role', 'alertdialog'); d.setAttribute('aria-describedby', 'bw-warn'); // labelled by its title (Sheet)
     d.querySelector('.sheet-body').scrollTop = 0; (typed ? input : fire).focus();
@@ -1436,7 +1509,7 @@
     const values = () => Object.fromEntries(fields.map((f) => [f.k, f.ta.value]));
     const count = h('span', { id: 'sg-count', class: 'sg-count' });
     const paperEl = h('div', { class: 'sg-paper' },
-      h('div', { class: 'sg-head', 'aria-hidden': 'true' }, h('span', { text: LOOK ? 'Theme & art style' : 'Suggestion' }), h('span', { text: 'Series ' + (S().series.no + 1) })),
+      h('div', { class: 'sg-head', 'aria-hidden': 'true' }, h('span', { text: LOOK ? 'Theme & art style' : 'Character' }), h('span', { text: 'Series ' + (S().series.no + 1) })),
       LOOK ? null : h('p', { class: 'sg-wave', text: `${W.theme} · ${W.style}` }),
       fields.map((f) => f.row),
       h('div', { class: 'sg-foot' }, count));
@@ -1447,9 +1520,9 @@
       btn('Write another', '', () => { doneEl.hidden = true; formBits.forEach((el) => { el.hidden = false; }); paperEl.hidden = false; paperEl.style.visibility = ''; renderAct(); fields.forEach((f) => f.grow()); fields[0].ta.focus(); }));
     const act = h('div', { class: 'sg-act' }); const listEl = h('div', { class: 'sg-list' });
     const notes = h('div', { class: 'sg-notes' },
-      h('p', { class: 'sg-joke', text: 'Jokes burn PAPER too. Only real ideas get picked.' }),
-      h('p', { class: 'reward', text: 'If yours gets picked, you get a free pack.' }),
-      Store.SUGGEST_RESULTS.length ? h('p', {}, btn('See the last results', 'rs-link', () => { Sheet.close('suggest'); openResults(); })) : null);
+      h('p', { class: 'sg-joke', text: 'Jokes cost PAPER too. Only real ideas get picked.' }),
+      h('p', { class: 'reward', text: 'Get picked, get a free pack.' }),
+      Store.SUGGEST_RESULTS.length ? h('p', {}, btn('Last results', 'rs-link', () => { Sheet.close('suggest'); openResults(); })) : null);
     const stage = h('div', { class: 'sg-stage' }, paperEl, doneEl);
     const formBits = [notes, act];
 
@@ -1495,7 +1568,7 @@
 
     function renderAct() {
       const t = texts(), COST = cost(), bytes = Math.max(0, ...t.map(Store.bytes)), over = bytes > MAXB;
-      count.textContent = `${bytes.toLocaleString('en-US')} / ${MAXB.toLocaleString('en-US')} bytes` + (over ? ' · too long' : '');
+      count.textContent = `${bytes.toLocaleString('en-US')} / ${MAXB.toLocaleString('en-US')}` + (over ? ' · too long' : '');
       count.classList.toggle('over', over);
       // FireSale takes the PAPER, so it needs a PAPER approval first (just this suggestion's cost)
       const state = !connected() ? 'connect' : paper() < COST ? 'short' : approving ? 'approving' : Store.needsApproval('PAPER', COST) ? 'approve' : 'send';
@@ -1543,6 +1616,7 @@
         t.slice().reverse().forEach((text) => s.suggestions.unshift({ text, at: 'Series ' + s.series.no, picked: false }));
         Store.log(LOOK ? (t.length > 1 ? 'Suggested a theme and an art style' : 'Suggested ' + (t[0].startsWith('Theme') ? 'a theme' : 'an art style')) : 'Suggested a character');
       });
+      window.Fun?.emit('suggested', { n: t.length });
       document.activeElement?.blur?.();
       try { await foldAndDrop(); } catch { /* closed mid-flight */ }
       fields.forEach((f) => f.clear());
@@ -1612,8 +1686,8 @@
     const root = h('div', { class: 'st st-suggest' },
       h('p', { class: 'slead', text: LOOK ? 'What should the next Series look like?' : 'Who should be on a card in the next Series?' }),
       h('p', { id: 'sg-hint', class: 'hint', text: LOOK
-        ? 'Fill in one or both. A theme ties the Series together; an art style is how it\'s drawn. 1 PAPER each.'
-        : 'Any noun: a person, an animal, a food, a place, an object, an idea. Give it a personality and a backstory if you like.' }),
+        ? `One or both. ${Store.PRICES.SUGGEST_PAPER} PAPER each.`
+        : 'Anyone or anything. Add a personality if you like.' }),
       stage, notes, act, listEl);
     const render = () => { renderAct(); renderList(); };
     listen('suggest', render);
@@ -1635,31 +1709,30 @@
   const waveTitle = (w) => `Series ${w.series} · ${w.wave === 'look' ? 'Theme & art style' : 'Characters'}`;
   const waveKey = (w) => `${w.series}-${w.wave}`;
   const day = (t) => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const KIND_WORD = { theme: 'theme', style: 'art style', character: 'character' };
   const KIND_LABEL = { theme: 'Theme', style: 'Art style', character: 'Character' };
   const drawCmd = (w) => `node suggestions/draw.mjs --round ${w.round} --seed ${w.seed} --kind ${w.wave === 'look' ? 'look' : 'character'}`;
   function youBanner(w, compact = false) {
-    if (!connected()) return h('div', { class: 'rs-you' }, h('p', { text: 'Sent an idea? Connect your wallet to see how it did.' }), compact ? null : connectBtn());
+    if (!connected()) return h('div', { class: 'rs-you' }, h('p', { text: 'Connect to see how your idea did.' }), compact ? null : connectBtn());
     const r = Store.resultFor(w, me());
     if (r === 'won') {
       // the picks are made on chain once per Series, at its drop setup: until then the pack is on its way
-      const win = w.winners.find((x) => isMe(x.by)) || w.winners[0], open = S().series.phase < 4, n = S().wallet.credits, landed = !!win.tx;
+      const win = w.winners.find((x) => isMe(x.by)) || w.winners[0], open = S().series.phase < 4, landed = !!win.tx;
       return h('div', { class: 'rs-you won' },
         h('p', { class: 'rs-you-k', text: 'You won a free pack!' }),
-        h('p', { text: `Your ${KIND_WORD[win.kind] || 'idea'}, "${win.title}", was picked for Series ${w.series}. ` + (landed
-          ? `The free pack is already in your wallet${n ? ` (${n} free pack${n === 1 ? '' : 's'})` : ''}.`
-          : `The free pack lands in your wallet when Series ${w.series} is set up for sale.`) }),
+        h('p', { text: `"${win.title}" was picked! ` + (landed
+          ? 'Your free pack is in your wallet.'
+          : `Your free pack lands before Series ${w.series} goes on sale.`) }),
         compact || !landed ? null : open
           ? btn('Use my free pack', 'primary', () => { Sheet.close('results'); Sheet.close('reveal'); const b = document.querySelector('#buybox [data-buy], #buybar [data-buy]'); b?.focus({ preventScroll: true }); b?.classList.add('nudge'); })
           : h('p', { class: 'muted', text: `Use it on any pack when Series ${S().series.no + 1} opens.` }));
     }
     if (r === 'shortlisted') {
       const mine = w.kinds.flatMap((k) => k.shortlist).find(mineIn);
-      return h('div', { class: 'rs-you near' }, h('p', { class: 'rs-you-k', text: 'Yours made the shortlist' }),
-        h('p', { text: `"${mine?.title}" was one of the 10 drawn, but it wasn't picked this time. Thanks for sending it.` }));
+      return h('div', { class: 'rs-you near' }, h('p', { class: 'rs-you-k', text: 'Shortlisted!' }),
+        h('p', { text: mine?.title ? `"${mine.title}": not picked this time. Thanks!` : 'Not picked this time. Thanks!' }));
     }
     const sent = S().suggestions.some((x) => x.at === 'Series ' + S().series.no && (Store.parseSuggestion(x.text).kind === 'character') === (w.wave === 'characters'));
-    return sent ? h('div', { class: 'rs-you' }, h('p', { text: "Yours wasn't drawn this time. Every idea had the same chance. Send another in the next wave." })) : null;
+    return sent ? h('div', { class: 'rs-you' }, h('p', { text: 'Not drawn this time. Try again next round.' })) : null;
   }
   function winnerCard(x, i) {
     return h('div', { class: 'rs-win' + (isMe(x.by) ? ' mine' : ''), style: `--i:${i}` },
@@ -1678,15 +1751,16 @@
         h('summary', {}, `The 10 ${k.kind === 'character' ? 'characters' : k.label.toLowerCase() + 's'} drawn`, k.pool ? h('small', { text: ` from ${Number(k.pool).toLocaleString('en-US')} ideas` }) : null),
         h('ol', {}, k.shortlist.map((x) => h('li', { class: (x.picked ? 'picked' : '') + (mineIn(x) ? ' mine' : '') },
           h('span', { class: 'rs-t', text: x.title }),
-          h('span', { class: 'rs-by', title: x.alsoBy?.length ? 'Sent first by this wallet: the first to suggest it wins the pack' : null }, shortAddr(x.by), x.alsoBy?.length ? h('small', { text: ` +${x.alsoBy.length} had it too` }) : null),
+          h('span', { class: 'rs-by', title: x.alsoBy?.length ? 'Sent first' : null }, shortAddr(x.by), x.alsoBy?.length ? h('small', { text: ` +${x.alsoBy.length} had it too` }) : null),
           x.picked ? h('span', { class: 'sgp yes', text: 'Picked' }) : mineIn(x) ? h('span', { class: 'sgp wait', text: 'Yours' }) : h('span')))))),
       h('details', { class: 'rs-fair' }, h('summary', { text: 'How the 10 were drawn' }),
-        h('p', { text: 'Every idea in the box went into a random draw: one per wallet for each kind, and the same idea from several wallets counted once. The picks were made from the 10 drawn. When several people sent the same idea, the first to suggest it wins the pack.' }),
-        h('p', { text: 'The draw is seeded, so anyone can run it again and get the same 10:' }),
+        h('p', { text: 'A fair random draw: one entry per wallet. Same idea twice? The first one wins.' }),
+        h('details', { class: 'rs-check' }, h('summary', { text: 'Check the draw' }),
+        h('p', { class: 'muted', text: 'Run this to get the same 10:' }),
         h('code', { class: 'rs-cmd', text: drawCmd(w) }),
         h('p', { class: 'muted' }, 'Seed ', h('b', { text: w.seed }), w.suggestions ? ` · ${Number(w.suggestions).toLocaleString('en-US')} ideas sent · ` : ' · ',
           h('a', { href: 'https://github.com/ThiccLiquidity/the-fire/blob/main/ops/suggestions/draw.mjs', target: '_blank', rel: 'noopener', text: 'the draw script' })),
-        btn('Copy the command', '', (e) => { e.currentTarget.blur(); navigator.clipboard?.writeText(drawCmd(w)).then(() => toast('Copied'), () => toast("Couldn't copy: select the line instead", 'bad')); })));
+        btn('Copy command', '', (e) => { e.currentTarget.blur(); navigator.clipboard?.writeText(drawCmd(w)).then(() => toast('Copied'), () => toast("Couldn't copy. Select the line instead.", 'bad')); }))));
   }
   function openResults() {
     const root = h('div', { class: 'st st-results' });
@@ -1694,13 +1768,13 @@
       const waves = Store.SUGGEST_RESULTS.slice().reverse();
       patch(root, JSON.stringify([waves.map(waveKey), connected(), S().wallet.credits, S().series.phase, Store.SUGGEST_WAVE.wave]), () => {
         if (!waves.length) return put(root, h('p', { class: 'slead', text: 'No results yet.' }),
-          h('p', { class: 'muted', text: `The ideas for Series ${S().series.no + 1} are still coming in. The results go up here once the picks are made.` }),
+          h('p', { class: 'muted', text: `Ideas for Series ${S().series.no + 1} are still coming in.` }),
           btn('Suggest an idea', 'primary', () => { Sheet.close('results'); openSuggest(); }));
         put(root, youBanner(waves[0]), waves.map(waveSection));
       });
     };
     listen('results', render);
-    Sheet.open('results', { title: 'Suggestion results', body: root, wide: true, onClose: () => unlisten('results') });
+    Sheet.open('results', { title: 'Idea results', body: root, wide: true, onClose: () => unlisten('results') });
     render(); markSeen();
   }
   // the reveal: new results, once per visitor (localStorage), when nothing else is open
@@ -1708,12 +1782,14 @@
   const latest = () => Store.SUGGEST_RESULTS[Store.SUGGEST_RESULTS.length - 1];
   const seenKey = () => { try { return localStorage.getItem(SEEN_RESULTS) || ''; } catch { return null; } };
   function markSeen() { const w = latest(); if (w) try { localStorage.setItem(SEEN_RESULTS, waveKey(w)); } catch { /* private window */ } }
-  let revealed = false, revealTimer = 0;
+  let revealed = false, revealTimer = 0, guessed = false;
   function resultsReveal() {
     revealTimer = 0;
     const w = latest(); if (!w || revealed) return;
     const k = seenKey(); if (k === null || k === waveKey(w)) return; // storage blocked: don't show it on every visit
     if (Sheet.covering || !document.getElementById('loading')?.classList.contains('done')) { revealTimer = setTimeout(resultsReveal, 1500); return; }
+    if (window.Fun && !Fun.loaded) { Fun.load(); revealTimer = setTimeout(resultsReveal, 500); return; } // the fun layer first (guess the pick)
+    if (window.Fun?.guess && !guessed) { guessed = true; return window.Fun.guess(w, () => { revealTimer = setTimeout(resultsReveal, 400); }); } // guess the pick first (guess.js)
     revealed = true; markSeen();
     const you = h('div', { class: 'rs-you-host' });
     const body = h('div', { class: 'st rs-reveal' + (reduced() ? ' still' : '') },
@@ -1725,7 +1801,7 @@
     // the personal line follows the wallet (connect while it's open and it updates)
     const renderYou = () => patch(you, JSON.stringify([connected(), S().wallet.credits]), () => put(you, youBanner(w, true)));
     listen('reveal', renderYou); renderYou();
-    Sheet.open('reveal', { title: 'Suggestion results', body, onClose: () => unlisten('reveal') });
+    Sheet.open('reveal', { title: 'Idea results', body, onClose: () => unlisten('reveal') });
   }
   const queueReveal = () => { if (!revealed && !revealTimer && latest()) revealTimer = setTimeout(resultsReveal, 1200); };
   Store.on(queueReveal); setTimeout(queueReveal, 1000);
@@ -1742,5 +1818,6 @@
     openable, openableCount,
     open(name, opts) { (OPEN[name] || (() => toast('Unknown station', 'bad')))(opts); },
     openCard: openDetail,
+    practice: () => openTable({ practice: true }), // a practice pack: no wallet, nothing saved
   };
 })();

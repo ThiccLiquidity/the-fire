@@ -1,0 +1,35 @@
+/* Profiles (profile.js): avatars, the wallet chip's avatar, the editor (crop circle, card picker). */
+.pf-av { --s: 32px; font-style: normal; width: var(--s); height: var(--s); flex: none; border-radius: 50%; overflow: hidden; display: inline-grid; place-items: center;
+  font: 400 calc(var(--s) * .44)/1 var(--display); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18) }
+.pf-av canvas { width: 100%; height: 100%; display: block }
+.pf-av.pf-gold { box-shadow: 0 0 0 2px #e9b45a, 0 0 8px rgba(255,210,110,.55) }
+.wallet.has-pf { padding-left: 6px } .wallet.has-pf > svg { display: none }
+body[data-mode=port] .wallet.has-pf { padding-left: 4px } body[data-mode=port] .wallet .pf-av { width: 20px; height: 20px }
+.who .pf-av { box-shadow: inset 0 0 0 1px rgba(255,255,255,.2), 0 0 0 2px rgba(233,180,90,.35) }
+
+/* the editor */
+.pf-ed { display: grid; gap: 12px; justify-items: center }
+.pf-ed > .acts, .pf-name { width: 100% }
+.pf-crop { position: relative; width: min(240px, 64vw); aspect-ratio: 1; border-radius: 50%; overflow: hidden; touch-action: none; cursor: grab; user-select: none;
+  -webkit-user-select: none; background: #0f0b08; contain: strict; isolation: isolate }
+.pf-crop.drag { cursor: grabbing }
+.pf-crop:focus-visible { outline: 3px solid var(--brass); outline-offset: 3px }
+.pf-stage { position: absolute; inset: 0 }
+.pf-art { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; pointer-events: none }
+.pf-ring { position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); pointer-events: none }
+.pf-crop.pf-gold .pf-ring { box-shadow: inset 0 0 0 3px #e9b45a }
+.pf-crop.empty { cursor: default }
+.pf-crop.loading::after { content: ''; position: absolute; inset: 42%; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); border-top-color: var(--brass); animation: pf-spin .8s linear infinite }
+@keyframes pf-spin { to { transform: rotate(360deg) } }
+.pf-zoom { width: min(240px, 64vw); accent-color: var(--brass) }
+.pf-ed.no-card .pf-zoom, .pf-ed.no-card [data-p=none] { display: none }
+.pf-cardbtns { display: flex; gap: 8px; justify-content: center }
+.pf-name { display: grid; gap: 6px } .pf-name > span { color: var(--muted); font: 700 13px var(--body) }
+.pf-name input { min-height: var(--tap, 44px); border-radius: 12px; border: 1px solid var(--line-2); background: #0f0b08; color: var(--ink); font: 800 18px var(--body); padding: 0 12px; width: 100%; box-sizing: border-box }
+.pf-hint { min-height: 1.2em; color: #ffcf99; font: 700 12.5px var(--body) }
+.pf-pick { width: 100%; display: grid; gap: 12px }
+.pf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; grid-auto-rows: max-content; align-content: start; max-height: min(64vh, 520px); overflow: auto; overscroll-behavior: contain; padding: 2px }
+.pf-tile { display: block; padding: 0; border: 2px solid transparent; border-radius: 9px; background: none; cursor: pointer }
+.pf-tile img { width: 100%; aspect-ratio: 5 / 7; height: auto; display: block; object-fit: cover; border-radius: 7px; pointer-events: none }
+.pf-tile[aria-pressed=true] { border-color: var(--brass) }
+.pf-tile:focus-visible { outline: 3px solid var(--brass); outline-offset: 1px }

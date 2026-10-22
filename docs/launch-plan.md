@@ -32,8 +32,12 @@ the PAPER feed) is.
    Runbook step 2 (DeployInfra), then `node ..\ops\deploy\record.mjs --rpc $env:RPC`. Then set
    `$env:KEEPERS = "<main keeper address>,<backup keeper address>"` (public addresses, from Railway) and run runbook
    step 3 (DeployCards) with `--account testnet-deployer`, then `node ..\ops\deploy\record.mjs --rpc $env:RPC`.
-   It writes the new card contract addresses into `deployments/46630.json`.
+   It writes the new card contract addresses into `deployments/46630.json` (FireProfiles included: names and profile
+   pictures, no owner).
 4. Runbook step 4 (AcceptOwnership) on the Ledger: seven confirmations. Then VerifyDeploy: 0 FAIL.
+   Only adding profiles, not redeploying? Instead of 3-4: `forge script script/DeployProfiles.s.sol --rpc-url $env:RPC
+   --account testnet-deployer --sender <deployer address> --broadcast @verify`, record, VerifyDeploy (no Ledger: it has
+   no owner).
 5. Push (`deployments/46630.json`). Railway's testnet keepers read that file: redeploy them in Railway so they pick
    up the new addresses (or they'll keep watching the old contracts). The PAPER price comes back about 40 hours later.
 

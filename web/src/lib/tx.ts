@@ -18,10 +18,10 @@ import { getAccount, getPublicClient, getWalletClient, robinhood, txUrl } from "
 export type TxStep = "check" | "simulate" | "confirm" | "pending" | "done";
 /** For a stepper: what the user sees at each step. */
 export const STEP_LABEL: Record<TxStep, string> = {
-  check: "Checking your wallet",
-  simulate: "Checking it will go through",
+  check: "Checking…",
+  simulate: "Checking…",
   confirm: "Confirm in your wallet",
-  pending: "Waiting for the network",
+  pending: "Pending",
   done: "Done",
 };
 
@@ -66,7 +66,7 @@ export class TxError extends Error {
 export class TxStillPending extends Error {
   private ref: Tracked; later: Promise<TxOutcome>;
   constructor(ref: Tracked, later: Promise<TxOutcome>) {
-    super(`Still waiting: ${ref.tx.label}. It's saved, so you can reload safely.`); this.name = "TxStillPending"; this.ref = ref; this.later = later;
+    super(`${ref.tx.label} is pending. Safe to reload.`); this.name = "TxStillPending"; this.ref = ref; this.later = later;
   }
   get tx(): PendingTx { return this.ref.tx; }
   get url() { return txUrl(this.ref.tx.hash); }
@@ -208,8 +208,8 @@ export async function sendTx(call: TxCall, opts: TxOptions): Promise<Transaction
   let res: Awaited<ReturnType<typeof settle>>;
   try { res = await settle(ref, opts.waitMs ?? 180_000); }
   catch { throw new TxStillPending(ref, follow(ref)); } // a timeout or an RPC error: it may still land
-  if (res.outcome === "replaced") throw new TxError(`${opts.label} was cancelled or replaced in your wallet.`, "pending", undefined, ref.tx.hash, "replaced");
-  if (res.outcome === "reverted") throw new TxError(`${opts.label} failed on the network. Only the network fee was spent.`, "pending", undefined, ref.tx.hash, "reverted");
+  if (res.outcome === "replaced") throw new TxError(`${opts.label} was cancelled in your wallet.`, "pending", undefined, ref.tx.hash, "replaced");
+  if (res.outcome === "reverted") throw new TxError(`${opts.label} failed. Only the network fee was spent.`, "pending", undefined, ref.tx.hash, "reverted");
   step("done", ref.tx.hash);
   return res.receipt ?? await pub.getTransactionReceipt({ hash: ref.tx.hash });
 }

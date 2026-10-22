@@ -48,9 +48,9 @@ export type PackPrice = { usd: string; tax: string };
 /** One group of a drop, in plain fields (docs/drop-groups.md). Times are unix seconds (0 = not known yet). */
 export type GroupInfo = {
   index: number;
-  /** A name for people: "Paper Press holders", "Holders list", "Everyone", "After sell-out". */
+  /** A name for people: "Paper Press holders", "Holders list", "Everyone", "Extra packs". */
   name: string;
-  /** Who can buy: "Anyone", "Paper Press holders only", "NFT holders only", "Wallets on the holders list only". */
+  /** Who can buy: "Everyone", "Paper Press holders only", "NFT holders only", "Wallets on the holders list only". */
   who: string;
   gate: "open" | "nft" | "snapshot";
   /** NFT gate: the collection, whether it's the Paper Press, and packs per NFT id. */
@@ -123,8 +123,8 @@ async function nextPrices(fire: bigint, g: number, k: number): Promise<(PackPric
 /** A group's name and who it's for, from its gate (nothing on chain names it). */
 function nameOf(c: GroupRaw, isPress: boolean): { name: string; who: string } {
   if (c.gate === 1) return isPress ? { name: "Paper Press holders", who: "Paper Press holders only" } : { name: "NFT holders", who: "NFT holders only" };
-  if (c.gate === 2) return { name: "Holders list", who: "Wallets on the holders list only" };
-  return { name: c.unlimited ? "After sell-out" : c.taxBps ? "Everyone (rising price)" : "Everyone", who: "Anyone" };
+  if (c.gate === 2) return { name: "Holders list", who: "Holders list only" };
+  return { name: c.unlimited ? "Extra packs" : c.taxBps ? "Everyone (rising price)" : "Everyone", who: "Everyone" };
 }
 
 /** A drop's groups now (FireGroups.groupsOf), with each taxed group's next prices. `maxPerTx`: the drop's. */

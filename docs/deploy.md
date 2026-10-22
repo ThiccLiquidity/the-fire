@@ -85,10 +85,22 @@ that `PLANK_USD_FEED` sits on the PLANK/WETH pool the V2 router trades, and that
 are built on this `ETH_USD_FEED` (and this PAPER and `PLANK_USD_FEED`, for the PAPER feed). `PAPER_USD_FEED` is
 required. Then it deploys FirePacks, FireCards, CardsRenderer, RecipeDealer and RecipeCompiler, PlankBurner (no
 owner, no withdraw: it holds the PLANK burn share when a sale's swap can't run), FireCredits, FireSale, PaperBurner
-(with its feeds and default routes), FirePsa and one drand adapter each for FireCards and FirePsa, wires them (set-once
+(with its feeds and default routes), FirePsa, one drand adapter each for FireCards and FirePsa, and FireProfiles
+(names and profile pictures; no owner, nothing to wire), wires them (set-once
 links, each checked: FireSale and FireCredits point at each other, FireSale's PlankBurner uses the same router and
 feeds; FireSale's PaperBurner is the one deployed; FirePsa and the `KEEPERS` wallets may flush PaperBurner), and offers ownership of all seven owned contracts to `OWNER` (two steps: the owner accepts in step 4). It
 refuses an `OWNER` equal to the deployer.
+
+**FireProfiles on a deploy made before it existed** (no redeploy of anything else; no owner, so no Ledger step):
+```powershell
+forge script script/DeployProfiles.s.sol --rpc-url $env:RPC --account deployer --sender <deployer address> --broadcast `
+  --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
+node ..\ops\deploy\record.mjs --rpc $env:RPC
+forge script script/VerifyDeploy.s.sol --rpc-url $env:RPC   # "FireProfiles.CARDS is FireCards"
+```
+It reads FireCards from the deployments file and refuses to replace a FireProfiles already there (`REPLACE_PROFILES=true`
+deploys a new one: every profile starts empty). Until `FireProfiles` is in the file the site simply hides profiles;
+VerifyDeploy shows a WAIT for it, not a FAIL. Then push the file and rebuild the site.
 
 ## 4. Hardware wallet accepts
 The owner accepts FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa and PaperBurner in one run
@@ -234,7 +246,8 @@ Cardworks is static (`web/public/forge`) and runs in demo mode (a demo banner, n
 version will use `web/src/lib` (chain, wallet, card ABIs, swap guard); `web/src/lib/config.ts` reads the contract
 addresses from `deployments/<chainId>.json` (Vercel must include files outside the Root Directory, its default). Set `SWAP_FEE_WALLET` in
 `web/src/lib/config.ts` first. If the site uses its own `VITE_RPC_URL`, add that host to `connect-src` in
-`web/vercel.json` or the browser blocks every read (the build refuses it).
+`web/vercel.json` or the browser blocks every read (the build refuses it). Profiles (names and pictures, `web/art/factory/forge/profile.js`) show once
+`FireProfiles` is in that network's deployments file; before that the site hides them.
 
 ## Rehearsal
 `ops/rehearsal/rehearse.mjs` runs everything above on a local chain with the real scripts and the real keeper code:
@@ -291,7 +304,8 @@ $verify = "--verify", "--verifier", "blockscout", "--verifier-url", "https://exp
    `--verify ...` line, and `OWNER` = the testnet owner. DeployInfra deploys the **real** `OpenDrandRouter` (real drand,
    no stand-in). Record after each one. Every script reads and writes `deployments/46630.json` (the chain's id).
 3. **Owner accepts** (step 4 above: all seven owned contracts, seven confirmations) with the testnet owner, then
-   VerifyDeploy.
+   VerifyDeploy. To add profiles to a testnet deploy without redeploying the rest: `DeployProfiles.s.sol` (step 3 above) with
+   `--account testnet-deployer` and `@verify`.
 4. **Keepers**: the same Railway setup (`ops/keeper/README.md`) as two more services with `CHAIN_ID=46630`, the testnet
    RPC and their own testnet wallets (~0.05 test ETH each; separate from the mainnet keeper wallets). Start them right
    after the PLANK feed (mainnet step 1), as on mainnet.

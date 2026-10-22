@@ -31,6 +31,7 @@ change.
 | `PlankBurner` | Gets the sale's PLANK burn share when the swap can't run (a stale PLANK price or a failed swap). No owner, no withdraw: anyone calls `flush`, which buys PLANK (95% TWAP guard, halving for a backlog) and sends it to the dead address. |
 | `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars (cases flat, grading per card rank: `quoteFor(caseIds, gradeIds, pay)`), paid in ETH, USDG, PLANK or PAPER (`Pay` PLANK 0, ETH 1, USDG 2, PAPER 3; PAPER at the 20-hour PAPER price less an owner-set 0-20% discount, burned straight to the dead address). drand picks each grade (1 to 10) from the fresh odds and the card's frozen wear (both fixed forever, the same for every Series); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
 | `PaperBurner` | Gets FireSale's PAPER share of every sale (20% in the Standard drop) and 100% of every case and grading fee paid in ETH, PLANK or USDG, buys PAPER with it on owner-set routes and burns it. Only flushers the owner names (FirePsa and the keepers, `setFlusher`) can flush it. FirePsa burns only the fee it just took (`flushLight(pay, fee)`), so wrapping a case in a buy and a sell can't make it spend the backlog; the keepers' `flush` (its own transaction; Robinhood Chain's sequencer is first-come with no public mempool) drains the rest. A PAPER price from a window over 30 hours makes it wait. No withdraw; the router is fixed at deploy. |
+| `FireProfiles` | Each wallet's public profile: a name and a profile picture cut from one of its own cards. No owner, no fees, no admin, no upgrade; it only reads `FireCards` (fixed at deploy). Details below. |
 
 Every owned contract refuses `renounceOwnership` (control can't be lost by mistake); ownership moves only in two
 steps (`transferOwnership`, then `acceptOwnership`). `FirePacks` and `FireCards` have an owner-set `contractURI`
@@ -399,6 +400,34 @@ be renounced.
   repo, covered by the tests; a future dealer is trusted like the owner's other settings, and must deal only from its
   own state and the seed and keep its text JSON-safe.
 
+## Profiles (FireProfiles)
+
+A wallet's name and profile picture, written by the wallet itself in one transaction. No owner, no fees, no admin, no
+upgrade, no word filter (the owner's call).
+
+- `setProfile(string name, uint256 pfpCard, uint64 crop)` sets or changes all three. `clear()` removes the profile.
+- **Name:** 1 to 20 bytes of printable ASCII (`0x21`-`0x7E`) plus single spaces between words (none leading,
+  trailing or doubled), else `BadName`. Unique ignoring case (A-Z = a-z), so a name can't be copied with other
+  capitals (`NameTaken`); changing your name or `clear` frees the old one for anyone. `ownerOfName(name)` (any case)
+  and `validName(name)` for the site.
+- **Picture:** `pfpCard` is a FireCards token id the caller holds when setting it (0 = none), else `NotYourCard`. The
+  card can be sold later: the profile keeps the id, and `pfpValid(user)` / `profilesOf` say whether the wallet still
+  holds it. The site shows the picture only while it does, otherwise the wallet's fallback.
+- **Crop:** `uint64`, packed: x (bits 0-15) and y (16-31) of the circle's centre, 0..65535 = 0..1 across the card's
+  art; zoom (32-47), 0..65535 = 1x..4x; 16 reserved bits. Stored as given. The art is the frame's square window
+  (`FRAME_GEOMETRY.art`, 128, 296, 1244 x 1244 of 1500 x 2100, the same on every framed material); Full Art is the
+  whole card.
+- **Reads:** `profileOf(user)` returns `(name, pfpCard, crop, updated)`; `profilesOf(address[])` many at once, each
+  with `pfpOk` (the ownerOf check), so the site reads a page of wallets in one call.
+- **Events:** `ProfileSet(user indexed, name, pfpCard, crop)`, `ProfileCleared(user indexed)`.
+- **Gas:** about 103k for a first `setProfile` with a picture (three new storage slots: the packed picture + crop +
+  time, the name, the name's owner), about 40k to change the crop or picture under the same name.
+- **Storage:** the picture id is kept in 128 bits next to the crop and the time (one slot); the name's key is its
+  lower-cased bytes in one word (names are at most 20 nonzero bytes, so no hash is needed).
+
+The site (`web/art/factory/forge/profile.js`, chain layer `web/src/lib/chain/profiles.ts`) hides profiles on a network
+whose deployments file has no `FireProfiles` (mainnet and testnet until it is deployed).
+
 ## Gas (Standard recipe, `forge test --match-test gas -vv`, measured 2026-10)
 
 | | Before | Now |
@@ -412,7 +441,7 @@ The extra is the call to the dealer and reading the compiled recipe (stored as c
 ## Tests
 
 `contracts/test/cards/` (`Cards.t.sol`, `Recipe.t.sol`, `Sale.t.sol`, `Groups.t.sol`, `Psa.t.sol`, `Burner.t.sol`,
-`PlankBurner.t.sol`, `SaleFork.t.sol`, `ImageParity.t.sol`, `SeriesCheck.t.sol`) and
+`PlankBurner.t.sol`, `SaleFork.t.sol`, `ImageParity.t.sol`, `SeriesCheck.t.sol`, `Profiles.t.sol`) and
 `contracts/test/invariant/` (fuzz and invariant suites, including `RecipeFuzz.t.sol` and `GroupsFuzz.t.sol`). They cover:
 - the Standard pool (`classic`, Gold in Diamond's place) matches the studio's own code over 344 Series sizes and
   count settings (`pool-fixture.json`,
@@ -443,17 +472,21 @@ The extra is the call to the dealer and reading the compiled recipe (stored as c
 - the strategic review: what pause blocks and never blocks, a randomness switch (old requests answered only by their
   own source, or cancelled), the per-drop PAPER ceiling on every group's packs and credit packs, PlankBurner (no withdraw,
   flush, guard, halvings), renounce refused, the Dealt date trait, contractURI, a buy refreshing the PLANK price
+- profiles (`Profiles.t.sol`): the name rules, names unique ignoring case, a rename or clear freeing the name, the
+  picture must be the caller's card (and goes invalid when sold), the batch read, events, gas, and fuzzes of raw and
+  printable names against a plain re-implementation of the rules
 
 ## Deploying
 
 `contracts/script/DeployCards.s.sol` deploys and wires everything in one run: FirePacks, FireCards, CardsRenderer,
 RecipeDealer and RecipeCompiler, PlankBurner, FireCredits, FireGroups, FireSale (wired to both; `FireCredits.setSale`
 and `FireGroups.setSale` are set once and check the sale points back; only the deployer can wire FireGroups), PaperBurner (its feeds and default routes: direct to PAPER or through PLANK/WETH),
-FirePsa, two drand adapters (FireCards, FirePsa), the royalty. It needs `PAPER_USD_FEED` (the `PaperUsdTwap`). It
+FirePsa, two drand adapters (FireCards, FirePsa), FireProfiles, the royalty. It needs `PAPER_USD_FEED` (the `PaperUsdTwap`). It
 hands ownership to `OWNER`, one hardware wallet (Ledger or Trezor; no multisig: nothing holds funds, the risk is key
 theft), which then accepts FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa and PaperBurner in one
 run of `contracts/script/AcceptOwnership.s.sol` signed on the device (until then the deployer owns them, so a mistyped
-`OWNER` owns nothing); PlankBurner and FireGroups have no owner. The script runs only on chain 4663 (`EXPECTED_CHAIN_ID` for the testnet,
+`OWNER` owns nothing); PlankBurner, FireGroups and FireProfiles have no owner. A deploy made before FireProfiles
+existed adds it on its own with `contracts/script/DeployProfiles.s.sol` (reads FireCards from the deployments file). The script runs only on chain 4663 (`EXPECTED_CHAIN_ID` for the testnet,
 46630, or a rehearsal), checks every input first and refuses an `OWNER` equal to the deployer (a throwaway hot wallet that only
 pays gas). A test runs the same steps.
 
@@ -476,7 +509,7 @@ a batch as the impersonated owner on a fork (`BATCH=AB` only there). It rejects 
   FireSale and FireGroups point at each other,
   FireSale's `paperBurner` is the deployed PaperBurner, its `plankBurner` is the deployed PlankBurner (same router and PLANK/ETH feeds), the PDA is FirePsa, the
   renderer is CardsRenderer, FirePsa pays PaperBurner, randomness points at the two adapters, no Series is configured or locked yet,
-  and the royalty is what was set.
+  the royalty is what was set, and FireProfiles reads FireCards (a WAIT, not a FAIL, while it isn't deployed).
 - **Keeper** (`ops/keeper`; every call is permissionless):
   - `PlankUsdTwap.checkpoint()` every 30 minutes and `PaperUsdTwap.checkpoint()` when `due()`
   - delivering drand numbers to the router (`OpenDrandRouter.fulfillMany`; `adapter.settle` if a callback didn't
@@ -494,7 +527,7 @@ a batch as the impersonated owner on a fork (`BATCH=AB` only there). It rejects 
 
 The site has the ABIs: `web/src/lib/abi/` (`fireCardsAbi.json`, `firePacksAbi.json`, `fireSaleAbi.json`,
 `fireCreditsAbi.json`, `fireGroupsAbi.json` (to add with the site's groups update), `firePsaAbi.json`, `recipeDealerAbi.json`, `paperBurnerAbi.json`, `plankBurnerAbi.json`,
-`cardsRendererAbi.json`), exported by `web/src/lib/cards.ts`. Each file is the `abi` field of
+`cardsRendererAbi.json`, `fireProfilesAbi.json`), exported by `web/src/lib/cards.ts`. Each file is the `abi` field of
 `contracts/out/<Contract>.sol/<Contract>.json` after `forge build`, written as 2-space JSON.
 
 ## Past review fixes after the redesign

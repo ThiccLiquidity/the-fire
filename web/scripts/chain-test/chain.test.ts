@@ -3,12 +3,13 @@
 // USDG and ETH alone (PAPER burned each time), a free pack from the credit group, the Press group's pack with a Paper
 // Press, the after-sell-out group's rising price (and a buy refused when someone else's moved it), the idle end and
 // the close by anyone, opening, delivering randomness and dealing, reading the cards, casing and grading (delivered and
-// finished), burning, and every read the site uses. Run by run.mjs.
+// finished), burning, profiles (FireProfiles: set, rename, a name unique in any case, the picture falling back once its
+// card is sold, clear), and every read the site uses. Run by run.mjs.
 
 import { concat, encodeFunctionData, erc20Abi, keccak256, toHex, type Address, type Hex } from "viem";
 import { privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
 import type { Net } from "../../src/lib/net";
-import { creditsAbi } from "../../src/lib/cards";
+import { cardsAbi, creditsAbi } from "../../src/lib/cards";
 
 type Ctx = {
   RPC: string; deployment: Net["deployment"]; C: Record<string, Address>; start: bigint;
@@ -81,8 +82,8 @@ export async function runTest(ctx: Ctx): Promise<number> {
     `group 1: ${gp.name}, ${gp.capacity} pack, ${gp.paper.text} PAPER, no dollar price, 1 per Press, leftovers to Everyone`);
   check(ge.gate === "open" && ge.name === "Everyone" && ge.priceUsd === "2.50" && ge.coins.join() === "PLANK,ETH,USDG" && ge.capacity === 6 && ge.left === 6 && ge.state === "upcoming",
     `group 2: ${ge.name}, ${ge.capacity} packs, $${ge.priceUsd} + ${ge.paper.text} PAPER in ${ge.coins.join(", ")}`);
-  check(gx.unlimited && gx.name === "After sell-out" && gx.capacity === null && gx.left === null && gx.coins.join() === "ETH" && gx.perTx === 1 && gx.taxBps === 400 && gx.idle === 300 && gx.afterGroup === 1 && gx.opensAt === 0,
-    "group 3: After sell-out, no limit, ETH only, 1 per purchase, 4% rising, ends 5 minutes after its last sale, opens when Everyone ends");
+  check(gx.unlimited && gx.name === "Extra packs" && gx.capacity === null && gx.left === null && gx.coins.join() === "ETH" && gx.perTx === 1 && gx.taxBps === 400 && gx.idle === 300 && gx.afterGroup === 1 && gx.opensAt === 0,
+    "group 3: Extra packs, no limit, ETH only, 1 per purchase, 4% rising, ends 5 minutes after its last sale, opens when Everyone ends");
   check(gx.next?.usd === "2.60" && gx.next.tax === "0.10" && gx.after.map((x) => x.usd).join() === "2.70,2.81,2.92", `its next packs: $${gx.next?.usd} ($2.50 + $${gx.next?.tax} tax), then ${gx.after.map((x) => "$" + x.usd).join(", ")}`);
   check(s.creditGroup === 1 && s.status.left === null && !s.closing, "free packs come from Everyone; with an unlimited group ahead, no end to what can sell");
   check(s.cards.cardsPerPack === 6 && s.cards.characters === 3, `${s.cards.cardsPerPack} cards a pack, ${s.cards.characters} characters`);
@@ -127,7 +128,7 @@ export async function runTest(ctx: Ctx): Promise<number> {
   await ctx.warp(Number(ctx.start - (await ctx.now())) + 1);
   s = (await L.currentSeries())!;
   check(s.state === "live" && s.groups[0].state === "open" && s.groups[1].state === "open" && s.groups[2].state === "upcoming" && s.groups[0].endsAt === Number(ctx.start) + 3600,
-    "live: the Press and Everyone groups are open (the Press for an hour); After sell-out waits");
+    "live: the Press and Everyone groups are open (the Press for an hour); Extra packs waits");
   const q = await L.quoteGroup(fire, 1, 2);
   check(q.quotes.length === 3 && q.quotes.every((x) => x.available) && q.paper.text === "2" && q.usd === "5.00" && q.tax === "0.00", `quotes for 2 Everyone packs ($${q.usd}): ${q.quotes.map((x) => `${x.cost?.text} ${x.pay}`).join(", ")} + ${q.paper.text} PAPER`);
   check(q.ethAlone && q.paperEth != null && BigInt(q.paperEth.raw) > 0n, `ETH alone: the 2 PAPER cost ${q.paperEth?.text} ETH on the market`);
@@ -151,7 +152,7 @@ export async function runTest(ctx: Ctx): Promise<number> {
   s = (await L.currentSeries())!;
   check(s.groups[1].state === "open" && s.groups[1].left === 0 && s.groups[1].waiting && s.groups[1].moreFrom === 0 && s.groups[1].moreAt === Number(ctx.start) + 3600,
     "Everyone sold out (5 bought + 1 free) but stays open: more may come from the Press group when it ends");
-  check(s.groups[2].state === "upcoming" && s.state === "live", "After sell-out still waits; the Series is still on sale");
+  check(s.groups[2].state === "upcoming" && s.state === "live", "Extra packs still waits; the Series is still on sale");
 
   console.log("\n== the Press group: a pack with a Paper Press");
   check(JSON.stringify(await L.nftUse(fire, 0, [pressId])) === JSON.stringify([{ id: pressId, used: 0 }]), "the Press hasn't been used in this group yet");
@@ -163,14 +164,14 @@ export async function runTest(ctx: Ctx): Promise<number> {
   check((await L.nftUse(fire, 0, [pressId]))[0].used === 1, "Press pack taken with the Press: it has used its 1 pack this drop");
   s = (await L.currentSeries())!;
   check(s.groups[0].state === "ended" && s.groups[1].state === "ended" && s.groups[2].state === "open" && s.status.left === null && s.state === "live",
-    "the Press and Everyone have ended; After sell-out is open; the Series stays open (no limit)");
+    "the Press and Everyone have ended; Extra packs is open; the Series stays open (no limit)");
 
-  console.log("\n== After sell-out: 2 extra packs, the price rising 4% each");
+  console.log("\n== Extra packs: 2 extra packs, the price rising 4% each");
   const t1 = await L.quoteGroup(fire, 2, 1);
   check(t1.quotes.map((x) => x.pay).join() === "ETH" && t1.usd === "2.60" && t1.tax === "0.10", `extra pack #1: $${t1.usd} ($2.50 + $${t1.tax} tax), ETH only`);
   let txMsg = "";
   try { await L.buyPacks({ fire, group: 2, n: 2, pay: "ETH" }, o); } catch (e) { txMsg = (e as Error).message; }
-  check(/one purchase/.test(txMsg), `2 at once is refused (1 per purchase): "${txMsg}"`);
+  check(/Too many for one buy/.test(txMsg), `2 at once is refused (1 per purchase): "${txMsg}"`);
   await L.buyPacks({ fire, group: 2, n: 1, pay: "ETH", quote: { cost: t1.quotes[0].cost!.raw } }, o);
   // a second buyer shown the same price: the next pack costs 4% more, over the 3% cap: refused, nothing charged
   let race: { code?: string; message?: string } = {};
@@ -185,7 +186,7 @@ export async function runTest(ctx: Ctx): Promise<number> {
   console.log("\n== it idles out; then anyone closes the Series");
   await ctx.warp(s.groups[2].endsAt - Number(await ctx.now()) + 1);
   s = (await L.currentSeries())!;
-  check(s.groups[2].state === "ended" && s.status.left === 0 && s.closing && s.state === "live" && !s.cards.closed, "5 quiet minutes: After sell-out ended, nothing left, \"Closing…\" (not closed yet)");
+  check(s.groups[2].state === "ended" && s.status.left === 0 && s.closing && s.state === "live" && !s.cards.closed, "5 quiet minutes: Extra packs ended, nothing left, \"Closing…\" (not closed yet)");
   W.setLocalSigner(privateKeyToAccount(toHex(other.getHdKey().privateKey!)));
   await L.closeDrop({ fire }, o);
   W.setLocalSigner(buyer);
@@ -207,7 +208,7 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const sent0 = steps.length;
   const dd = await L.deliverAndDeal({ fire, index: op.index }, o);
   check(dd.delivered === 1 && dd.dealt && dd.reached && !dd.keeper, "delivered (the router took the signature) and dealt the buyer's open");
-  check(steps.length - sent0 === 2 && steps.slice(sent0).join(" / ") === "Deliver the draw / Deal the cards", `in exactly 2 transactions: ${steps.slice(sent0).join(" / ")}`);
+  check(steps.length - sent0 === 2 && steps.slice(sent0).join(" / ") === "Draw your cards / Deal your cards", `in exactly 2 transactions: ${steps.slice(sent0).join(" / ")}`);
   check((await L.opensOf(me))[0].status === "dealt" && (await L.openStatus(fire, op.index)).status === "dealt", "the open reads as dealt");
 
   console.log("\n== cards");
@@ -246,6 +247,18 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const pop = await L.gradedPop();
   check(pop.length === 2 && pop.every((x) => x.fire === fire && x.material) && pop.map((x) => x.grade).sort().join() === [x1.grade, x2.grade].sort().join(),
     `pop report from the Graded events: ${pop.map((x) => `${x.material} PDA ${x.grade}`).join(", ")}`);
+  console.log("\n== the fun layer's reads (forge feed.js, share.js, binder.js): pulls, the board, the recap, the cast");
+  const dealtAll = await L.dealtCards(fire, 500);
+  check(dealtAll.length === 54 && dealtAll.every((d) => d.holder?.toLowerCase() === me.toLowerCase() && d.material && d.character && d.at),
+    "dealtCards: all 54, newest first, each with the wallet that opened it (PacksOpened), its kind and time");
+  const kinds = new Map(cards.map((c) => [c.serial, c]));
+  check(dealtAll.every((d) => { const c = kinds.get(d.serial); return !!c && c.material === d.material && c.character === d.character && c.holo === d.holo; }), "each dealt card's kind (from CardDealt + cardText) matches its metadata");
+  const board = await L.fuelBoard(fire), myRow = board.find((r) => r.wallet.toLowerCase() === me.toLowerCase());
+  check(!!myRow && myRow.cased === 1 && myRow.graded === 2 && myRow.packs + myRow.free >= 1, `fuelBoard: ${board.map((r) => `${r.wallet.slice(0, 8)} ${r.packs}+${r.free} packs, ${r.cased} cased, ${r.graded} graded`).join(" / ")}`);
+  const rc = await L.seriesRecap(fire);
+  check(rc.packs === 9 && !!rc.closedAt && rc.closedAt > rc.start && rc.buyers >= 1, `seriesRecap: ${rc.packs} packs (bought + free), ${rc.buyers} buying wallets, closed ${rc.closedAt! - rc.start} s after the start`);
+  const cast = await L.seriesCharacters(fire);
+  check(cast.length > 0 && cards.every((c) => cast.includes(c.character)), `seriesCharacters: ${cast.join(", ")}`);
   // the same with PLANK (an ERC-20: approved first)
   const pt2 = await L.protect({ caseIds: [cards[4].serial], pay: "PLANK" }, o);
   check(pt2.gradingIndex === -1 && (await L.card(cards[4].serial)).cased, "a case paid in PLANK (approved, no grading)");
@@ -302,6 +315,40 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const spent = paperBefore2 - BigInt((await L.balances(me)).PAPER!.raw);
   check(BigInt(q5.raw) > 0n && pt3.gradingIndex === -1 && (await L.card(card9)).cased && spent === BigInt(q5.raw) && BigInt((await L.balances(DEAD)).PAPER!.raw) - deadBefore === spent,
     `a case paid in PAPER (approved to FirePsa, burned directly): ${q5.text} PAPER, exactly the quote`);
+
+  console.log("\n== profiles (FireProfiles): a name and a card as the picture");
+  const otherAcct = privateKeyToAccount(toHex(other.getHdKey().privateKey!));
+  const pfp = cards[11].serial;
+  check(L.profilesOn() && (await L.profile(me)) === null, "FireProfiles is deployed; no profile yet");
+  check(L.validName("Fire Kid") && !L.validName(" Fire") && !L.validName("a  b") && !L.validName("x".repeat(21)) && !L.validName("café"), "name rules (1-20 printable ASCII, single inner spaces)");
+  const crop = { x: 0.3, y: 0.62, zoom: 2.5 };
+  const u = L.unpackCrop(L.packCrop(crop));
+  check(Math.abs(u.x - 0.3) < 1e-4 && Math.abs(u.y - 0.62) < 1e-4 && Math.abs(u.zoom - 2.5) < 1e-3, "the crop packs into 64 bits and back");
+  const setR = await L.setProfile({ name: "Fire Kid", pfpCard: pfp, crop }, o);
+  let pf = await L.profile(me, true);
+  check(pf?.name === "Fire Kid" && pf.pfpCard === pfp && Math.abs(pf.crop.zoom - 2.5) < 1e-3 && !!pf.image && pf.updated > 0, `set in one transaction (${setR.gasUsed} gas): "${pf?.name}", card #${pf?.pfpCard}, image ${pf?.image?.split("/").pop()}`);
+  check((await L.nameOwner("FIRE KID")) === me && (await L.nameOwner("fire kid")) === me, "the name is found in any case");
+  W.setLocalSigner(otherAcct);
+  let pmsg = "";
+  try { await L.setProfile({ name: "fIRE kID" }, o); } catch (e) { pmsg = (e as Error).message; }
+  check(pmsg === "That name is taken.", `the same name in another case is refused: "${pmsg}"`);
+  try { await L.setProfile({ name: "Other", pfpCard: pfp }, o); pmsg = ""; } catch (e) { pmsg = (e as Error).message; }
+  check(pmsg === "That card isn't in your wallet.", `a picture from someone else's card is refused (NotYourCard): "${pmsg}"`);
+  W.setLocalSigner(buyer);
+  await L.setProfile({ name: "Ember", pfpCard: pfp, crop }, o);
+  check((await L.nameOwner("fire kid")) === null && (await L.profile(me, true))?.name === "Ember", "renamed to Ember: the old name is free");
+  W.setLocalSigner(otherAcct);
+  await L.setProfile({ name: "FIRE KID" }, o);
+  W.setLocalSigner(buyer);
+  check((await L.nameOwner("Fire Kid")) === other.address, "another wallet took the freed name");
+  L.forgetProfile();
+  const both = await L.profiles([me, other.address]);
+  check(both[me.toLowerCase()]?.name === "Ember" && both[other.address.toLowerCase()]?.name === "FIRE KID" && both[other.address.toLowerCase()]?.pfpCard === null, "two profiles in one read");
+  await ctx.tx(buyer, ctx.C.FireCards, cardsAbi as unknown[], "transferFrom", [me, other.address, BigInt(pfp)]);
+  pf = await L.profile(me, true);
+  check(pf?.name === "Ember" && pf.pfpCard === null && pf.storedPfp === pfp && pf.image === null, "the picture card sold: the name stays, the picture falls back");
+  await L.clearProfile(o);
+  check((await L.profile(me, true)) === null && (await L.nameOwner("ember")) === null, "cleared: no profile, the name is free");
 
   console.log("\n== errors come back in plain words");
   W.setLocalSigner(privateKeyToAccount(toHex(other.getHdKey().privateKey!)));

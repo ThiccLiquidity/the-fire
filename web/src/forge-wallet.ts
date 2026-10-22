@@ -128,7 +128,7 @@ const ForgeWallet = {
   },
   async switchNetwork(): Promise<void> { await (await load()).switchToRobinhood(); },
   /** A short, human reason for a failed wallet action. */
-  friendly: (e: unknown): string => lib ? lib.friendly(e) : String((e as Error)?.message ?? e),
+  friendly: (e: unknown): string => { if (lib) return lib.friendly(e); console.warn(e); return "Something went wrong. Try again."; },
   refresh: () => refreshPaper(),
   state,
   /** Called now and on every change. Returns an unsubscribe function. */

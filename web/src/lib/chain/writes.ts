@@ -138,13 +138,13 @@ export function setSignatureSource(fn: (round: number) => Promise<Hex | undefine
 export async function deliver(source: Address, requestId: bigint, what: string, o: WriteOpts = {}): Promise<boolean> {
   const r = await requestInfo(source, requestId);
   if (r.fulfilled) {
-    if (!r.delivered) { await send(source, settleAbi, "settle", [requestId], `Deliver ${what}'s randomness`, "randomness", o); return true; }
+    if (!r.delivered) { await send(source, settleAbi, "settle", [requestId], `Draw ${what}`, "randomness", o); return true; }
     return false;
   }
   if ((await chainNow()) < r.roundAt) return false;
   const sig = await signatureSource(r.round);
   if (!sig) return false;
-  await send(r.router, routerAbi, "fulfill", [requestId, sig], `Deliver ${what}'s randomness`, "randomness", o);
+  await send(r.router, routerAbi, "fulfill", [requestId, sig], `Draw ${what}`, "randomness", o);
   return true;
 }
 
@@ -185,7 +185,7 @@ export async function deliverAndDeal(p: { fire: number; index: number }, o: Writ
       sigs.set(round, sig);
     }
     await send(todo[0].router, routerAbi, "fulfillMany", [todo.map((t) => t.id), todo.map((t) => sigs.get(t.round)!)],
-      todo.length === 1 ? "Deliver the draw" : `Deliver the draw (${todo.length} openings)`, "randomness", o);
+      todo.length === 1 ? "Draw your cards" : `Draw your cards (${todo.length} opens)`, "randomness", o);
     delivered = todo.length;
   }
   // 2. one deal, sized to reach this open (the cards left in every open from the head through it)
@@ -194,7 +194,7 @@ export async function deliverAndDeal(p: { fire: number; index: number }, o: Writ
   const fi = await read<readonly [Address, boolean, boolean, number, bigint, bigint]>("FireCards", cardsAbi, "fires", [f]);
   const per = BigInt(fi[3] || Number(await read<bigint>("RecipeDealer", dealerAbi, "cardsPerPack", [f]).catch(() => 6n)) || 6);
   const need = after.reduce((a, x) => a + (x.count > x.packsDone ? (x.count - x.packsDone) * per - BigInt(x.cardInPack) : 0n), 0n);
-  if (need > 0n) await send(cards, cardsAbi, "process", [f, need > BigInt(MAX_DEAL) ? BigInt(MAX_DEAL) : need], "Deal the cards", "deal", o);
+  if (need > 0n) await send(cards, cardsAbi, "process", [f, need > BigInt(MAX_DEAL) ? BigInt(MAX_DEAL) : need], "Deal your cards", "deal", o);
   const reached = me_ < (await read<bigint>("FireCards", cardsAbi, "headOf", [f]));
   return { delivered, dealt: need > 0n, reached, keeper: keeper || !reached };
 }
@@ -231,7 +231,7 @@ export async function deliverAndFinish(p: { index: number; ids?: number[] }, o: 
   let g = await read<GradingRaw>("FirePsa", psaAbi, "gradingOf", [i]);
   if (g.done) return true;
   if (!g.ready) {
-    await deliver(g.source, g.requestId, "the grading", o);
+    await deliver(g.source, g.requestId, "the grades", o);
     g = await read<GradingRaw>("FirePsa", psaAbi, "gradingOf", [i]);
     if (!g.ready) return false;
   }
@@ -253,15 +253,15 @@ export function burnCards(p: { ids: number[] }, o: WriteOpts = {}): Promise<Tran
  *  without it (the first testnet deploy) each is sent on its own, and `oneByOne` says so. */
 export async function suggest(p: { texts: string[] }, o: WriteOpts = {}): Promise<{ receipts: TransactionReceipt[]; oneByOne: boolean }> {
   const texts = p.texts.map((t) => t.trim()).filter(Boolean);
-  if (!texts.length) throw new Error("Write a suggestion first.");
+  if (!texts.length) throw new Error("Write an idea first.");
   const each = await read<bigint>("FireCredits", creditsAbi, "suggestionPaper");
   const credits = addr("FireCredits");
   const many = texts.length > 1 && (await hasFunction("FireCredits", "suggestMany(string[],uint256)"));
   if (each > 0n) await approve(input("PAPER")!, addr("FireSale"), each * BigInt(texts.length), "Approve PAPER", o);
   if (many || texts.length === 1) {
     const r = many
-      ? await send(credits, creditsAbi, "suggestMany", [texts, each * BigInt(texts.length)], `Send ${plural(texts.length, "suggestion")}`, "suggest", o)
-      : await send(credits, creditsAbi, "suggest", [texts[0], each], "Send your suggestion", "suggest", o);
+      ? await send(credits, creditsAbi, "suggestMany", [texts, each * BigInt(texts.length)], `Send ${plural(texts.length, "idea")}`, "suggest", o)
+      : await send(credits, creditsAbi, "suggest", [texts[0], each], "Send your idea", "suggest", o);
     return { receipts: [r], oneByOne: false };
   }
   const receipts: TransactionReceipt[] = [];
@@ -273,7 +273,7 @@ export async function suggest(p: { texts: string[] }, o: WriteOpts = {}): Promis
 
 /** Anyone: close a drop once nothing can still sell (normally the last purchase does it, else the keeper; the site
  *  never asks a buyer to). */
-export const closeDrop = (p: { fire: number }, o: WriteOpts = {}) => send(addr("FireSale"), saleAbi, "close", [BigInt(p.fire)], "Close the sold-out drop", "close", o);
+export const closeDrop = (p: { fire: number }, o: WriteOpts = {}) => send(addr("FireSale"), saleAbi, "close", [BigInt(p.fire)], "End the sale", "close", o);
 
 /** The PAPER this wallet has approved to FireSale (packs, credits, suggestions) and FirePsa's coins: for a page that
  *  shows "approved" state. */

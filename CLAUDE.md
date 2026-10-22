@@ -7,6 +7,10 @@
 - **Secrets:** never ask for or accept API keys or private keys in chat. Keys are typed into PowerShell
   (`Read-Host -AsSecureString`), the Foundry keystore, or the studio's per-session key field. Never commit secrets.
 - **Visuals:** show anything visual before it's committed.
+- **Money talk:** screens where people buy, open, case or grade never explain where funds go (burns, splits,
+  buy-backs). Prices yes; fund flows only behind Info/Help.
+- **Live vs demo:** the demo starts visitors with free packs to try everything. On the live site, packs only open after
+  the Series sells out, and "Open packs" only shows when the wallet has packs that can open.
 - **Style:** short, direct answers. Ask one question at a time. The owner works in PowerShell
   (clone at `C:\Users\DubT1\the-fire`).
 

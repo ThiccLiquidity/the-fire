@@ -68,15 +68,16 @@
   const pct = (p) => (p >= 0.995 ? '100%' : p * 100 >= 0.5 ? Math.round(p * 100) + '%' : p > 0.0005 ? '<1%' : '—');
   // what a grade is called on its slab, and the line where people pay for grades
   const WORD = { 10: 'GEM MINT', 9: 'MINT', 8: 'NM-MT', 7: 'NEAR MINT', 6: 'EX-MT', 5: 'EXCELLENT', 4: 'VG-EX', 3: 'VERY GOOD', 2: 'GOOD', 1: 'POOR' };
-  const FINAL_LINE = 'Grades are random (drand) and final: no regrades, no refunds. Nothing you pay raises the odds.';
-  const TROPHY_LINE = 'A PDA 1 is a patience trophy: it only comes from years left raw.';
+  const FINAL_LINE = 'Grades are random and final. No regrades, no refunds. Nothing you pay raises the odds.';
+  const TROPHY_LINE = 'A 1 is a patience trophy.';
+  const FRESH_ODDS = 'Fresh cards grade 7+. A PDA 10 is 1 in 100.';
 
   // ---- the card's own wear ----
   const S = () => Store.state;
   const ageSecOf = (c) => Store.ageMs(c) / 1000;
   // ms of the fresh first day left (time doesn't wear it; moves still count)
   const freshLeft = (c) => (c.grade == null && !c.cased && !c.pending ? Math.max(0, FREE * 1000 - Store.ageMs(c)) : 0);
-  const FRESH_LINE = "Time doesn't wear new cards for 24 hours. Moves still count.";
+  const FRESH_LINE = "New cards don't wear for 24h. Moves still count.";
   const hhmm = (ms) => { const m = Math.max(1, Math.floor(ms / 60000)), h = Math.floor(m / 60); return h ? `${h}h ${m % 60}m` : `${m}m`; }; // "23h 59m", not a clock
   const ageTxt = (ms) => { const d = ms / 86400000; return d < 1 ? `${Math.max(1, Math.round(d * 24))} h` : d < 60 ? `${Math.round(d)} days` : d < 730 ? `${Math.round(d / 30.4)} months` : `${(d / 365).toFixed(1)} years`; };
 
@@ -91,8 +92,8 @@
   const fmtCoin = (v, coin) => coin === 'ETH' ? v.toFixed(v < 0.01 ? 6 : 4) : coin === 'USDG' || coin === 'PAPER' ? v.toFixed(2) : Math.round(v).toLocaleString('en-US');
   const usd = (v) => '$' + (Number.isInteger(+v.toFixed(2)) ? Math.round(v) : v.toFixed(2)); // $1, $0.05, $4.10
 
-  // ---- "How does this work?": one window, over whatever is open ----
-  const BURN_LINE = 'Every fee buys PAPER and burns it.';
+  // ---- "How it works": one window, over whatever is open (no fund flows here: Info › Grading says where fees go) ----
+  const BURN_LINE = 'Every case and grade fee buys PAPER and burns it.';
   function howBody() {
     const P = Store.PRICES;
     const rows = [['Fresh', 0], ['1 month', 30], ['6 months', 182], ['1 year', 365], ['3 years', 3 * 365], ['10 years', 3650]].map(([l, d]) => {
@@ -103,34 +104,33 @@
     el.innerHTML = `
       <section><h3><span class="how-n">1</span>Case or grade?</h3>
         <div class="how-two">
-          <div class="how-opt case"><b>Case · ${usd(P.CASE_USD)}</b><p>Stops wear. The card stays ungraded: trade it, or grade it later with the odds it has now.</p></div>
-          <div class="how-opt slab"><b>Grade · ${usd(P.GRADE_USD)}</b><p>Reveals its PDA grade, 1 to 10, and seals it in a slab.</p></div>
+          <div class="how-opt case"><b>Case · ${usd(P.CASE_USD)}</b><p>Stops wear. Grade it later at today's odds.</p></div>
+          <div class="how-opt slab"><b>Grade · ${usd(P.GRADE_USD)}</b><p>See the grade (1 to 10), get a slab.</p></div>
         </div></section>
       <section><h3><span class="how-n">2</span>Fresh for 24 hours</h3>
-        <p>Time doesn't wear new cards for 24 hours, but moves to another wallet still count. Case or grade them by then and time never touches them.</p></section>
+        <p>No wear for 24h (moves still count). Case or grade by then.</p></section>
       <section><h3><span class="how-n">3</span>How cards wear</h3>
-        <ul><li>A raw card (no case) slowly wears with time.</li>
-          <li>Each move to another wallet can knock a grade off. Only the first 10 count, and moves alone never go below 5.</li>
-          <li>Grades 1 to 4 only happen to cards left raw for a long time. ${TROPHY_LINE}</li>
+        <ul><li>Raw cards wear over time.</li>
+          <li>Each move can cost a grade (first 10 only; never below 5).</li>
+          <li>A PDA 1–4 takes years of raw wear. ${TROPHY_LINE}</li>
           <li>Condition is hidden, from us too, until the card is graded.</li></ul>
         <div class="how-tw"><table class="how-t"><caption>Grade odds for a raw card, never moved</caption>
           <thead><tr><th>Held raw</th>${BANDS.map((b) => `<th><span class="how-sw" style="background:${b.c}"></span>${b.g === '10' ? 'PDA 10' : b.g}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></section>
       <section><h3><span class="how-n">4</span>What a slab means</h3>
-        <p>A graded card stays in its slab for good. ${FINAL_LINE} A slab's details show only its grade.</p></section>
+        <p>Slabs are forever. ${FINAL_LINE}</p></section>
       <section><h3><span class="how-n">5</span>Prices</h3>
         <dl class="how-p"><dt>Case</dt><dd>${usd(P.CASE_USD)} a card</dd><dt>Grade</dt><dd>${usd(P.GRADE_USD)} a card</dd><dt>Pay with</dt><dd>${coins().join(', ').replace(/, ([^,]*)$/, ' or $1')}</dd></dl>
-        <p class="muted small">Pick cards to case and grade, then pay once for all of them.</p></section>
-      <section class="how-burn"><h3><span class="how-n">6</span>Where the money goes</h3><p>${BURN_LINE}</p></section>`;
+        <p class="muted small">Pay once for all your picks.</p></section>`;
     return el;
   }
-  function openHow() { Sheet.open('how', { title: 'How cases and grading work', body: howBody() }); }
+  function openHow() { Sheet.open('how', { title: 'Cases & grading', body: howBody() }); }
   // the pill: big, labelled, and part of every step it sits in
   function howPill() {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'how-pill';
-    b.innerHTML = '<span class="how-q" aria-hidden="true">?</span><span class="how-txt">How does this work?</span>'; // phone, in the step row: the "?" alone (the words stay for screen readers)
+    b.innerHTML = '<span class="how-q" aria-hidden="true">?</span><span class="how-txt">How it works</span>'; // phone, in the step row: the "?" alone (the words stay for screen readers)
     b.onclick = openHow; return b;
   }
 
   window.Wear = { DAY, YEAR, FRESH, odds, draw, avg, ageSecOf, freshLeft, hhmm, ageTxt, COINS, coins, inCoin, fmtCoin, usd, openHow, howPill, BURN_LINE,
-    BANDS, bandOf, bandOdds, mixOdds, pct, WORD, FINAL_LINE, TROPHY_LINE, FRESH_LINE };
+    BANDS, bandOf, bandOdds, mixOdds, pct, WORD, FINAL_LINE, TROPHY_LINE, FRESH_LINE, FRESH_ODDS };
 })();

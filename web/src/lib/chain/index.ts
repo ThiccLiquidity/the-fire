@@ -3,6 +3,8 @@
 
 export * from "./reads";
 export * from "./writes";
+export * from "./fun";
+export * from "./profiles";
 export { NotDeployedError, amount, type Amount } from "./contracts";
 export { NET, isDeployed } from "../net";
 export * from "./swap";

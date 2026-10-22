@@ -81,7 +81,7 @@ export async function quotePaperBuy(from: PayCoin, paperOut: bigint, slippageBps
       }
     } catch { /* KyberSwap down: the pools */ }
   }
-  if (!pools) throw new Error(`PAPER can't be bought with ${from} right now: no pool has it.`);
+  if (!pools) throw new Error(`Can't swap ${from} for PAPER right now. Try ETH.`);
   return { from, paperOut, maxIn: withSlip(pools[0], slippageBps), cost: amount(pools[0], dec, 8), via: "pools", confirmations };
 }
 
@@ -92,7 +92,7 @@ export async function buyPaper(q: PaperBuy, o: WriteOpts = {}): Promise<Transact
   if (q.via === "kyber") {
     const tIn = tokenOf(q.from), paper = input("PAPER")!;
     const r = await kyberRoute(tIn, paper, q.maxIn);
-    if (!r || r.amountOut < q.paperOut) throw new Error("The price moved. Try again.");
+    if (!r || r.amountOut < q.paperOut) throw new Error("Price changed. Try again.");
     const tx = await kyberBuild(r, owner, 100);
     checkSwap(tx, { from: tIn, to: paper, amountIn: q.maxIn, minOut: q.paperOut, account: owner }); // refuses anything else
     if (tIn !== "ETH") await approveMax({ token: tIn, spender: KYBER_ROUTER, owner, max: q.maxIn, label: `Approve ${q.from}`, onStep: (s, h) => step(s, `Approve ${q.from}`, h) });

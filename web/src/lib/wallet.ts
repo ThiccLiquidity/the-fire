@@ -311,6 +311,13 @@ export function friendly(e: unknown): string {
   if (is(e, InsufficientFundsError.name)) return `Not enough ETH on ${robinhood.name} to pay the network fee.`;
   if (is(e, "ConnectorNotConnectedError") || is(e, "ConnectorAccountNotFoundError") || hasCode(e, 4100)) return "Connect your wallet first.";
   if (hasCode(e, -32002)) return "Your wallet already has a request open. Check the wallet window.";
-  if (e instanceof BaseError) return (e.shortMessage || e.message).split("\n")[0].slice(0, 160);
-  return ((e as Error)?.message ?? String(e)).split("\n")[0].slice(0, 160);
+  // the site's own errors (a plain Error or TxError we threw, already in plain words) keep their message
+  if (ours(e)) return (e as Error).message;
+  // anything else: never the raw message on screen (it's in the console for whoever's debugging)
+  console.warn("Wallet action failed:", e instanceof BaseError ? e.shortMessage || e.message : (e as Error)?.message ?? e);
+  return "Something went wrong. Try again.";
 }
+/** An error the site threw itself, with words written for people: not viem's, not a wallet's (those carry a code). */
+const OWN = new Set(["Error", "TxError", "TxStillPending", "WrongNetworkError", "NotDeployedError"]);
+const ours = (e: unknown) => e instanceof Error && !(e instanceof BaseError) && OWN.has(e.name) && (e as { code?: unknown }).code === undefined
+  && !!e.message && !/^(execution reverted|internal json-rpc|request failed|fetch failed|failed to fetch)/i.test(e.message);

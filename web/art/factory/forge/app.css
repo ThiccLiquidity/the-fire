@@ -25,16 +25,27 @@ a:focus-visible { border-radius: 4px }
 .btn.gold { background: linear-gradient(#ffe39a, #e8b54a); color: #2a1a05; border-color: #fff0bf }
 .btn[disabled] { opacity: .45; cursor: default }
 .btn.small { min-height: 34px; padding: 0 .8em; font-size: 13px }
+/* pressed: every button answers the finger at once (transform and opacity only); no double-tap zoom delay */
+button, .btn, a.btn, summary { touch-action: manipulation }
+.btn, .chip, .wallet, .opt, .station, .openbtn, .ctile, .seg button, .qb-go, .sheet-head .x, .sheet-head .back, .start-link, .inf-link { transition: transform .08s ease-out, opacity .08s }
+.btn:active:not([disabled]), .chip:active, .wallet:active, .opt:active:not(.off), .station:active, .openbtn:active, .ctile:active:not(.off), .qb-go:active,
+  .sheet-head .x:active, .sheet-head .back:active, .inf-link:active { transform: scale(.96); opacity: .86 }
+.seg button:active:not([disabled]) { opacity: .7 }
 
 /* sheets (dialogs) */
 dialog.sheet { border: 1px solid var(--line-2); border-radius: 18px; padding: 0; background: var(--panel); color: var(--ink); width: min(560px, calc(100vw - 24px));
   max-height: calc(100dvh - 40px); box-shadow: 0 20px 60px rgba(0,0,0,.7); display: flex; flex-direction: column }
 dialog.sheet:not([open]) { display: none }
 dialog.sheet.wide { width: min(1100px, calc(100vw - 24px)); height: calc(100dvh - 40px) }
-dialog.sheet::backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(2px) }
+dialog.sheet::backdrop { background: rgba(0,0,0,.66) } /* a plain dim: a blur over the full-screen canvas halved the reveal's frame rate */
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--line) }
 .sheet-head h2 { margin: 0; font: 400 20px var(--display); letter-spacing: .04em; color: var(--brass) }
-.sheet-head .x { width: var(--tap); height: var(--tap); border-radius: 50%; border: 1px solid var(--line-2); background: var(--panel-2); font-size: 22px; cursor: pointer }
+.sheet-head .x { width: var(--tap); height: var(--tap); border-radius: 50%; border: 1px solid var(--line-2); background: var(--panel-2); font-size: 22px; cursor: pointer; flex: none }
+/* a sheet over another: "‹ My cards" back to the one under it, the title after it */
+.sheet-head .back { flex: none; min-height: var(--tap); max-width: 42%; display: inline-flex; align-items: center; gap: 4px; padding: 0 12px 0 8px; border-radius: 999px; border: 1px solid var(--line-2);
+  background: var(--panel-2); color: var(--gold); font: 800 14px var(--body); cursor: pointer; white-space: nowrap; overflow: hidden }
+.sheet-head .back span { overflow: hidden; text-overflow: ellipsis }
+.stacked .sheet-head h2 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px }
 .sheet-body { padding: 14px 16px 18px; overflow: auto; min-height: 0; flex: 1 }
 @media (max-width: 600px) { dialog.sheet, dialog.sheet.wide { width: 100vw; max-width: 100vw; height: auto; max-height: 92dvh; margin: auto 0 0; border-radius: 18px 18px 0 0 } dialog.sheet.wide { height: 92dvh } }
 
@@ -52,9 +63,13 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(2px) 
 .mat.fire { background: radial-gradient(120% 140% at 50% 120%, #ffb070 0%, #ff4a1c 35%, #d0160c 65%, #7a0604 100%); color: #fff6ec; text-shadow: 0 1px 2px #4a0500 }
 .mat.charcoal { background-image: url(../build3/mat-charcoal.webp); color: #e8e8ee; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.35), 0 2px 6px rgba(0,0,0,.5) }
 .mat.diamond { background-image: url(../build3/mat-diamond.webp); color: #1d3554 }
-.mat.charcoal::after, .mat.diamond::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,.55) 45%, transparent 60%) -150% 0 / 250% 100% no-repeat; animation: sweep 3.4s ease-in-out infinite }
+.mat.charcoal::after, .mat.diamond::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,.55) 45%, transparent 60%); transform: translateX(100%); animation: glint 3.4s ease-in-out infinite }
 @keyframes sweep { 0%, 35% { background-position: 150% 0 } 100% { background-position: -150% 0 } }
+@keyframes glint { 0%, 35% { transform: translateX(100%) } 100% { transform: translateX(-100%) } } /* a moving glint: transform only, no repaint */
 @media (prefers-reduced-motion: reduce) { *, *::after, *::before { animation: none !important; transition: none !important } }
 .mat.gold { background: linear-gradient(135deg, #fff1b8, #e5b23a 45%, #fff3c6 60%, #b07d1c); color: #3a2606 }
 .mat.fullart { background: linear-gradient(115deg, #ff9ae6, #ffe98a 30%, #8affd0 55%, #8ad8ff 80%, #d6a8ff); color: #1a1410 }
-.mat.gold::after, .mat.fullart::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,.55) 45%, transparent 60%) -150% 0 / 250% 100% no-repeat; animation: sweep 3.4s ease-in-out infinite }
+.mat.gold::after, .mat.fullart::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,.55) 45%, transparent 60%); transform: translateX(100%); animation: glint 3.4s ease-in-out infinite }
+/* a title shown on touch (core.js): the hover tooltip, tapped */
+.tip { position: fixed; z-index: 60; max-width: min(320px, calc(100vw - 16px)); padding: 8px 12px; border-radius: 10px; background: #000; border: 1px solid var(--line-2); color: var(--ink);
+  font: 700 13px/1.35 var(--body); box-shadow: 0 8px 20px rgba(0,0,0,.6); pointer-events: none }

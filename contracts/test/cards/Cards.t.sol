@@ -1279,6 +1279,7 @@ contract DeployCardsTest is Test {
         assertEq(d.sale.CREDITS(), address(d.credits));
         assertEq(address(d.sale.GROUPS()), address(d.groups));
         assertEq(d.groups.sale(), address(d.sale), "FireGroups' only writer is FireSale");
+        assertEq(address(d.profiles.CARDS()), address(d.cards), "FireProfiles reads FireCards");
         vm.expectRevert(FireGroups.AlreadySet.selector);
         vm.prank(address(s));
         d.groups.setSale(address(0xBEEF)); // set once

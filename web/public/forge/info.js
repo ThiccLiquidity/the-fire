@@ -47,7 +47,7 @@
   const bandOf = (g) => WEAR[Wear.BANDS.indexOf(Wear.bandOf(g))];
   const PDA_SUM = PDA.reduce((a, b) => a + b.p, 0);
   if (Math.abs(PDA_SUM - 100) > 1e-9) throw new Error('PDA odds must sum to 100, got ' + PDA_SUM);
-  const PDA_LINE = 'Fresh cards never grade below 7. A PDA 10 is 1 in 100.';
+  const PDA_LINE = Wear.FRESH_ODDS; // one string everywhere (wear.js)
 
   const pct = (x) => { // 0.025 -> "2.5%", 0.00032 -> "0.032%"
     const v = x * 100;
@@ -80,7 +80,7 @@
         <span>${w.name}</span>
       </div>`).join('');
     return `<figure class="inf-plate">
-      <figcaption><b>PDA odds, fresh card</b><span>Same odds for every material</span></figcaption>
+      <figcaption><b>Grade odds · fresh card</b><span>Same for every material</span></figcaption>
       <div class="inf-pda" role="img" aria-label="PDA odds on a fresh card: ${PDA.map((b) => `${b.g} is ${b.p}%`).join(', ')}. 6 to 1 only from wear">${cols}</div>
       <div class="inf-pwear" role="img" aria-label="How a slab looks by grade: ${WEAR.map((w) => `PDA ${w.g} ${w.name.toLowerCase()}`).join(', ')}">${wear}</div>
       <p class="inf-big">${PDA_LINE}</p>
@@ -110,7 +110,7 @@
     return `<figure class="inf-plate">
       <figcaption><b>Holo odds</b><span>Series ${no}, by material</span></figcaption>
       <div class="inf-tablewrap"><table class="inf-table inf-holo">
-        <thead><tr><th scope="col">Material</th><th scope="col">Frame only</th><th scope="col">Picture only</th><th scope="col">Both <span>(full)</span></th><th scope="col">No holo</th></tr></thead>
+        <thead><tr><th scope="col">Material</th><th scope="col">Frame only</th><th scope="col">Picture only</th><th scope="col">Full</th><th scope="col">No holo</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
       <div class="inf-callout">
         <p>${chip('paper', 'Full holo Paper', 'inf-full')}</p>
@@ -129,10 +129,9 @@
   // how a Series sells: its groups, set per Series (the Buy box shows the live ones)
   function timeline() {
     return `<ol class="inf-time">
-      <li><b>Groups</b><span>Each Series splits its packs into groups: Paper Press holders, holders on a snapshot, everyone. Each has its own price, coins and limits.</span></li>
-      <li><b>Side by side or in turn</b><span>Some open with the Series, some after another group ends. Unsold packs can move on to a later group.</span></li>
-      <li><b>After sell-out</b><span>A Series can sell extra packs once it sells out: the price rises with each one and the extra goes to burning PAPER. Sales stop once nobody buys for a while.</span></li>
-      <li><b>Closed</b><span>When nothing more can sell, the Series closes. Packs can be opened.</span></li>
+      <li><b>Groups</b><span>Press holders first, then PLANK holders, then everyone.</span></li>
+      <li><b>Extra packs</b><span>Sold out? Extra packs follow, a bit pricier each time.</span></li>
+      <li><b>Sales end</b><span>When sales end, packs open.</span></li>
     </ol>`;
   }
 
@@ -143,92 +142,92 @@
   function sections(no) {
     const s = window.Store?.state?.series || {}, P = window.Store?.PRICES || {}, usd = window.Wear?.usd || ((v) => '$' + v);
     return [
-      sec('about', 'What is Omni Cardworks', 'Collectible NFT cards on Robinhood Chain, in numbered Series.', `
+      sec('about', 'What is Omni Cardworks?', 'Collectible cards on Robinhood Chain.', `
         <ul>
-          <li>PLANK is the wood. It feeds the fire, and the fire runs the card press. The press needs PAPER, so every pack takes some.</li>
-          <li>Sealed packs are NFTs. Trade them sealed, or open them once the Series ends.</li>
-          <li>Every card is its own NFT. Each Series has its own characters.</li>
+          <li>PLANK fuels the fire. PAPER feeds the press: every pack burns some.</li>
+          <li>Packs and cards are NFTs. Keep them, trade them, or rip them.</li>
         </ul>`),
       sec('buy', 'Buying packs', 'Paid in PLANK, ETH or USDG, plus PAPER.', `
         <ul>
-          <li>Series ${no} has <b>${s.total ?? '—'} packs</b> in ${(s.groups || []).length || 'its'} groups${(s.groups || []).some((g) => g.unlimited) ? ', plus extra packs after it sells out' : ''}. When they're gone, they're gone.</li>
-          <li>Pay in PLANK, ETH or USDG. Each pack also takes PAPER, which is burned.</li>
-          <li>20% of every sale buys PAPER and burns it, and 10% buys PLANK and burns it. The rest goes to the team.</li>
-          <li>You set the most you'll pay. If the price moves past it, nothing is charged.</li>
+          <li><b>${s.total ?? '—'} packs</b> in Series ${no}.${(s.groups || []).some((g) => g.unlimited) ? ' Extra packs may follow, at a rising price.' : ''}</li>
+          <li>Price moves over 3%? Nothing is charged. Your wallet may show up to 3% more; anything unused comes back.</li>
+        </ul>
+        <p class="inf-sub">Where the money goes</p>
+        <ul>
+          <li>Every sale burns: 20% buys PAPER, 10% buys PLANK. The rest goes to the team.</li>
+          <li>The PAPER each pack takes is burned. Paying it with ETH? We buy the PAPER on the market and burn it.</li>
+          <li>Extra packs cost a bit more each time. That extra buys PAPER and burns it.</li>
         </ul>
         <p class="inf-sub">How a Series sells</p>
         ${timeline()}
-        <p>Each Series sets its groups, prices, times and limits before it opens. They can't change after.</p>`),
+        <p>Prices and limits lock before a Series opens.</p>`),
       sec('free', 'Press & free packs', 'Press packs for Paper Press holders. Free packs are earned and never expire.', `
         <p class="inf-sub">Press packs</p>
         <ul>
-          <li>A Series can have a group for Paper Press holders. First come, first served, while it's open.</li>
-          <li>Each Press counts once per Series, whoever holds it. Unclaimed packs can move on to a later group.</li>
+          <li>Paper Press holders get their own group. First come, first served.</li>
+          <li>One pack per Press, per Series.</li>
           <li>A Press pack is a normal pack: open it or trade it sealed.</li>
         </ul>
         <p class="inf-sub">Free packs</p>
         <ul>
-          <li>Earn one by burning 42 cards, or when your suggestion is picked.</li>
-          <li>Use them while a Series' free-pack group is on sale. Holder lists and wallet limits don't apply. They still take PAPER.</li>
-          <li>They stack and never expire. A Series can cap how many it takes; the rest wait for the next one.</li>
+          <li>Earn one by burning 42 cards, or when your idea is picked.</li>
+          <li>Use them while a Series is on sale. They still cost PAPER.</li>
+          <li>They stack and never expire.</li>
         </ul>`),
-      sec('open', 'Opening packs', 'Packs open once the Series sells out. Nobody knows what’s inside until then.', `
+      sec('open', 'Opening packs', 'Packs open when sales end.', `
         <ul>
-          <li>Open your packs once the Series sells out or is ended.</li>
-          <li>Opening burns the packs. Randomness deals your cards about 90 seconds later.</li>
-          <li>A sealed pack has no cards yet. They're drawn when it's opened, from what's left in the Series. Nobody can know them in advance.</li>
+          <li>Opening burns the pack. Cards land in about 90 seconds.</li>
+          <li>Cards are drawn when you open, from what's left. Nobody can peek.</li>
         </ul>
         <p class="inf-sub">A Series ${no} pack</p>
         ${packRow(no)}
         <ul>
-          <li>What's left is public, so odds shift a little as people open. The last pack gets exactly what remains.</li>
-          <li>Doesn't sell out? The owner can end it once its sale windows are over. If not, anyone can a week later.</li>
+          <li>Didn't sell out? Sales still end, and packs open.</li>
         </ul>`),
       sec('cards', 'The cards', 'Materials, holo and rarity.', `
-        <p>Materials, holo odds and characters are set per Series.</p>
         ${matChart(no)}
         <ul>
-          <li>Gold and Full Art are always full holo. Full Art puts the art over the whole card.</li>
+          <li>Gold and Full Art are always full holo.</li>
           <li>Other cards can be holo on the <b>frame</b>, the <b>picture</b>, or <b>both</b>: full holo.</li>
         </ul>
         ${holoTable(no)}
         <ul>
-          <li>Rarity is how rare that exact card is in its Series: character, material and holo. Graded, it counts that grade or better.</li>
+          <li>Rarity = how rare that exact card is. Graded cards count their grade too.</li>
           <li>Rare: 1 in 100 or rarer · Epic: 1 in 400 · Legendary: 1 in 1,000.</li>
           <li>Diamond: the top card of earlier Series.</li>
-          <li>Each card has an edition (like “12 of 43”, final once the whole Series is dealt) and a serial that never resets.</li>
+          <li>Each card has an edition (12 of 43) and a serial #.</li>
         </ul>`, 'Rarity'),
       sec('pda', 'Cases & grading', 'Case a card to stop wear, or grade it for a slab.', `
         <ul>
-          <li>Every card starts raw. A raw card wears with time, and each move to another wallet can knock a grade off.</li>
-          <li>New cards are fresh for 24 hours: time doesn't wear them, but moves still count. Case or grade them by then and time never touches them.</li>
-          <li><b>Case, ${usd(P.CASE_USD)}:</b> stops wear. Still ungraded: trade it, or grade it later.</li>
-          <li><b>Grade, ${usd(P.GRADE_USD)}:</b> reveals the PDA grade and seals the card in a slab. ${window.Wear?.FINAL_LINE || ''}</li>
+          <li>Raw cards wear over time. Each move can cost a grade.</li>
+          <li>New cards stay fresh for 24h. Case or grade by then to stop wear.</li>
+          <li><b>Case · ${usd(P.CASE_USD)}:</b> stops wear. Grade it later if you like.</li>
+          <li><b>Grade · ${usd(P.GRADE_USD)}:</b> see the grade, get a slab. ${window.Wear?.FINAL_LINE || ''}</li>
         </ul>
         ${pdaChart()}
         <ul>
-          <li>Grades 1 to 4 only come from long raw holds. After 10 raw years, a 1 is likely. ${window.Wear?.TROPHY_LINE || ''}</li>
-          <li>Condition is hidden, from us too. An ungraded card shows only Cased, Dealt and Moves. A slab shows only its grade.</li>
-          <li>The grading and wear rules are fixed forever, the same for every Series.</li>
-          <li><b>${window.Wear?.BURN_LINE || ''}</b></li>
+          <li>A PDA 1–4 takes years of raw wear. ${window.Wear?.TROPHY_LINE || ''}</li>
+          <li>Condition is hidden, even from us, until you grade.</li>
+          <li>Grading rules never change.</li>
+          <li><b>${window.Wear?.BURN_LINE || ''}</b> Paid in PAPER? It's burned directly.</li>
         </ul>
-        <p class="inf-links"><button type="button" class="inf-link" data-how>How does this work? Step by step</button><button type="button" class="inf-link" data-pop>Pop report: how many of each grade exist</button></p>`),
+        <p class="inf-links"><button type="button" class="inf-link" data-how>How it works</button><button type="button" class="inf-link" data-pop>Pop report</button></p>`),
       sec('burn', 'Burning cards', 'Burn 42 cards, get a free pack.', `
         <ul>
           <li>Every 42 cards you burn earns a free pack. Burned cards are gone for good.</li>
-          <li>Your count never resets, and extras carry over: burn 50, get a free pack and 8 toward the next.</li>
+          <li>Extras carry over: burn 50, get 1 pack + 8 toward the next.</li>
         </ul>`),
-      sec('suggest', 'Suggesting', 'Pitch a theme, an art style or a character. If it’s picked, you get a free pack.', `
+      sec('suggest', 'Suggesting', 'Pitch an idea. Get picked, get a free pack.', `
         <ul>
-          <li>Each Series has two waves: first its theme and art style, then its characters. 1 PAPER each, burned.</li>
-          <li>When a wave closes, 10 ideas per kind are drawn at random (one per wallet), and the picks are made from those 10. The results go up for everyone to see, with the seed to check the draw.</li>
-          <li>One theme, one art style and every picked character win a free pack. If several people sent the same idea, the first to suggest it wins.</li>
-          <li>The packs land in winners’ wallets when the Series is set up for sale. Not picked? Suggest it again next time.</li>
+          <li>Two rounds per Series: theme &amp; style, then characters. 1 PAPER per idea, burned.</li>
+          <li>10 ideas are drawn at random. The picks come from those 10.</li>
+          <li>Every pick wins a free pack. Same idea twice? First one wins.</li>
+          <li>Prizes land before the Series goes on sale.</li>
         </ul>`),
       sec('paper', 'PLANK & PAPER', 'The forge burns both.', `
         <ul>
           <li><b>PLANK is the fuel.</b> Part of every sale buys PLANK and burns it.</li>
-          <li><b>PAPER is what cards are printed on.</b> Packs and suggestions burn it, and every case and grade fee buys PAPER and burns it.</li>
+          <li><b>PAPER is what cards are printed on.</b> Packs, ideas and every fee burn it.</li>
           <li><b>The Paper Press prints PAPER.</b> Press holders get in early.</li>
         </ul>
         <div class="inf-cas">
@@ -237,23 +236,23 @@
         </div>`),
       sec('fair', 'Fairness', 'Public randomness, and odds locked before anyone buys.', `
         <ul>
-          <li>Cards and grades come from drand, public randomness nobody controls. One open, one number: no re-rolls.</li>
-          <li>Results depend only on that randomness and the order packs were opened.</li>
+          <li>Cards and grades use drand: public randomness nobody controls. No re-rolls.</li>
+          <li>Odds shift a little as packs open. The last pack gets exactly what's left.</li>
           <li>A Series' odds, characters and settings lock before anyone can buy.</li>
           <li>The sale keeps nothing: every payment is burned or paid out.</li>
-          <li>The owner can pause buying and case and grade payments. Opening, dealing and transfers never pause.</li>
-          <li>The owner can switch the randomness source, announced first. Only new requests use it.</li>
-          <li>No answer from randomness for 7 days? Anyone can cancel: packs come back sealed, cards come back ungraded.</li>
+          <li>We can pause buying, casing and grading. Opening and transfers never pause.</li>
+          <li>We can change the randomness source, with notice.</li>
+          <li>Draw stuck 7 days? Anyone can cancel: packs return sealed.</li>
         </ul>`),
       sec('faq', 'FAQ', 'Short answers to the usual questions.', `
         <dl class="inf-faq">
-          <dt>When can I open my packs?</dt><dd>Once the Series sells out or is ended.</dd>
+          <dt>When can I open my packs?</dt><dd>When sales end.</dd>
           <dt>Can I sell a pack without opening it?</dt><dd>Yes. Sealed packs trade like any NFT.</dd>
-          <dt>Why do I need PAPER too?</dt><dd>The press runs on it. Every pack burns some, Press and free packs included.</dd>
+          <dt>Why do I need PAPER too?</dt><dd>Every pack burns some, free ones too.</dd>
           <dt>Do free packs expire?</dt><dd>No. They stack and wait for any Series on sale.</dd>
-          <dt>Should I grade every card?</dt><dd>Up to you. Grades are final. ${PDA_LINE} Not sure? Case it now, grade it later.</dd>
-          <dt>What if opening gets stuck?</dt><dd>Cards usually arrive in about 90 seconds. If randomness stops for 7 days, anyone can cancel and your packs come back sealed. <a href="help.html">More help</a></dd>
-          <dt>Is there a fee when I resell?</dt><dd>A royalty, on marketplaces that honour it.</dd>
+          <dt>Should I grade every card?</dt><dd>Up to you. Not sure? Case it now, grade later.</dd>
+          <dt>What if opening gets stuck?</dt><dd>Usually about 90 seconds. Stuck? See <a href="help.html">Help</a>.</dd>
+          <dt>Is there a fee when I resell?</dt><dd>A royalty, on marketplaces that honor it.</dd>
         </dl>`),
     ];
   }
@@ -265,13 +264,13 @@
     const list = sections(no);
     const root = document.createElement('div'); root.className = 'inf';
     root.innerHTML = `
-      <p class="inf-welcome">Welcome to the forge. <b>Wood in. Packs out.</b></p>
+      <p class="inf-welcome">Welcome to Cardworks. <b>Wood in. Packs out.</b></p>
       <nav class="inf-index" aria-label="Info sections">
         <button type="button" class="inf-jump hot" data-start>New here?</button>
         ${list.map((s) => `<button type="button" class="inf-jump${s.tag ? ' hot' : ''}" data-go="${s.id}">${SHORT[s.id]}</button>`).join('')}
       </nav>
       <div class="inf-glance" aria-label="Rarity at a glance">
-        <button type="button" data-go="pda"><b>1 in 100</b><span>PDA 10 on a fresh card. Time doesn't wear it for 24 h (moves still count)</span></button>
+        <button type="button" data-go="pda"><b>1 in 100</b><span>PDA 10 on a fresh card</span></button>
         <button type="button" data-go="cards"><b>1 in ${oneIn(M.paper.full)}</b><span>Paper is full holo in Series ${no}</span></button>
         <button type="button" data-go="cards"><b>1 of 1</b><span>Full Art: one per character in Series ${no}</span></button>
       </div>
@@ -280,7 +279,7 @@
           <summary><span class="inf-st">${s.title}${s.tag ? `<em>${s.tag}</em>` : ''}</span><span class="inf-ss">${s.sum}</span></summary>
           <div class="inf-body">${s.body}</div>
         </details>`).join('')}
-      <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>`;
+      <p class="menu-links"><button class="inf-link" type="button" data-fun="tour">Workshop tour</button><button class="inf-link" type="button" data-fun="practice">Practice pack</button><button class="inf-link" type="button" data-fun="feed">Top stokers</button><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>`;
     root.addEventListener('click', (e) => {
       const b = e.target.closest('[data-go]'); if (b) go(root, b.dataset.go);
     });
@@ -320,6 +319,7 @@
         if (e.target.closest('[data-how]')) return window.Wear?.openHow();
         if (e.target.closest('[data-pop]')) return window.Stations?.open('pop');
         if (e.target.closest('[data-start]')) return window.UI?.openStart();
+        const f = e.target.closest('[data-fun]'); if (f) { Sheet.close('info'); return window.Fun?.go(f.dataset.fun, f.dataset.fun === 'feed' ? { tab: 'board' } : undefined); } // the fun layer (fun.js)
         const b = e.target.closest('[data-ca]'); if (!b) return;
         const done = () => { const c = b.querySelector('.cp'); c.textContent = 'Copied'; setTimeout(() => (c.textContent = 'Copy'), 1500); };
         try { navigator.clipboard.writeText(b.dataset.ca).then(done, done); } catch { done(); }

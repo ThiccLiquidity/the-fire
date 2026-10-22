@@ -134,8 +134,9 @@ a.btn { text-decoration: none }
 .pk-edge svg { width: 100%; height: 100%; overflow: visible }
 .pk-edge polyline { fill: none; stroke: #fffaf0; stroke-width: 2.4; stroke-linejoin: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 3px rgba(255,179,87,.95)) }
 .pk-hint { inset: auto 7% auto 7% !important; top: 13.7% !important; height: 0; border-top: 2px dashed rgba(255,250,235,.9) }
-.pk-hint::after { content: ''; position: absolute; top: -9px; left: 0; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 0 12px 4px var(--gold); animation: hint-swipe 1.8s ease-in-out infinite }
-@keyframes hint-swipe { 0% { left: 0; opacity: 0 } 15% { opacity: 1 } 75% { left: calc(100% - 16px); opacity: 1 } 100% { left: calc(100% - 16px); opacity: 0 } }
+/* the dot that shows where to drag: a layer as wide as the line, moved by transform (no layout every frame) */
+.pk-hint::after { content: ''; position: absolute; top: -18px; left: 0; right: 0; height: 36px; background: radial-gradient(circle 18px at 8px 50%, #fff 0 7px, rgba(255,210,122,.85) 9px, rgba(255,210,122,0) 18px); animation: hint-swipe 1.8s ease-in-out infinite }
+@keyframes hint-swipe { 0% { transform: translateX(0); opacity: 0 } 15% { opacity: 1 } 75% { transform: translateX(calc(100% - 16px)); opacity: 1 } 100% { transform: translateX(calc(100% - 16px)); opacity: 0 } }
 .pk-n { inset: auto -10px 7% auto !important; z-index: 3; font: 400 16px/1 var(--display); padding: 6px 9px; border-radius: 999px; background: var(--brass); color: #2a1a05 }
 
 /* the stack: one button per card, only the top one is live */
@@ -151,7 +152,7 @@ a.btn { text-decoration: none }
 .sc .face.front .cface { width: 100% }
 .tease-fx { position: absolute; inset: 0; border-radius: inherit; opacity: 0; pointer-events: none; transition: opacity .3s }
 .sc.rare { filter: drop-shadow(0 0 12px var(--glow)) drop-shadow(0 0 3px var(--glow)) }
-.sc.m-diamond.rare { animation: rare-pulse 1.8s ease-in-out infinite alternate }
+.sc.m-diamond.rare { animation: rare-pulse 1.8s ease-in-out 4 alternate } /* a few pulses, then it rests (a filter animation repaints every frame) */
 .sc.burst::after { content: ''; position: absolute; left: 50%; top: 45%; width: 170%; aspect-ratio: 1; z-index: 5; pointer-events: none; border-radius: 50%; opacity: 0;
   background: radial-gradient(circle, #fff 0%, var(--glow) 25%, transparent 62%); transform: translate(-50%, -50%) scale(.2); animation: burst .7s ease-out .3s }
 @keyframes rare-pulse { from { filter: drop-shadow(0 0 8px var(--glow)) } to { filter: drop-shadow(0 0 24px var(--glow)) drop-shadow(0 0 6px #fff) } }
@@ -192,7 +193,7 @@ a.btn { text-decoration: none }
     linear-gradient(115deg, transparent 22%, rgba(255,140,220,.35) 32%, rgba(255,235,150,.35) 40%, rgba(150,255,210,.35) 48%, rgba(150,210,255,.35) 56%, rgba(200,160,255,.35) 64%, transparent 74%) calc(var(--mx) * 100%) calc(var(--my) * 100%) / 260% 260% no-repeat }
 .sc .h-frame ~ .sheen { opacity: .4 }
 /* every holo card glows on reveal, any material: a slow rainbow glow (Rare and up keep their material glow instead) */
-.sc.holo-glow:not(.rare) { animation: holo-glow 3s ease-in-out infinite alternate }
+.sc.holo-glow:not(.rare) { animation: holo-glow 3s ease-in-out 2 alternate }
 @keyframes holo-glow { 0% { filter: drop-shadow(0 0 10px rgba(255,140,220,.75)) } 33% { filter: drop-shadow(0 0 12px rgba(255,235,150,.75)) }
   66% { filter: drop-shadow(0 0 12px rgba(150,255,210,.75)) } 100% { filter: drop-shadow(0 0 12px rgba(150,210,255,.8)) } }
 .sc.holo-glow.rare .face.front { box-shadow: 0 0 0 1.5px rgba(255,255,255,.35) }
@@ -273,7 +274,7 @@ a.btn { text-decoration: none }
 .coll-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px }
 .coll-h h3 { margin: 0 }
 .cfloor { margin-left: auto; display: inline-flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums }
-.cfloor small { font-size: 12px; color: var(--dim) } .cfloor b { color: var(--gold); font-size: 15px }
+.cfloor small { font-size: 12px; color: var(--muted) } .cfloor b { color: var(--gold); font-size: 15px }
 .filters { display: grid; grid-template-columns: repeat(5, minmax(0, 170px)); gap: 8px; margin-bottom: 14px }
 .filters .f { display: grid; gap: 3px; font-size: 12px; color: var(--muted); min-width: 0 }
 .filters select { min-height: var(--tap); width: 100%; padding: 0 10px; border-radius: 10px; border: 1.5px solid var(--line-2); background: var(--panel-2); color: var(--ink); font: 700 14px var(--body) }
@@ -704,11 +705,12 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .fan-card.k-fullart .fan-tag { color: var(--gold); border-color: var(--brass) }
 /* Gold and Full Art get a moving foil sweep */
 .fan-shine { position: absolute; inset: 0; border-radius: 5%; overflow: hidden; pointer-events: none; mix-blend-mode: screen;
-  background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.4) 45%, transparent 60%) 120% 0 / 250% 100% no-repeat; animation: fa-shine 3.8s ease-in-out infinite }
-.k-fullart .fan-shine { animation-delay: -1.9s }
-@keyframes fa-shine { 0% { background-position: 120% 0 } 60%, 100% { background-position: -40% 0 } }
+  background: none } /* the sweep is a layer moved by transform (::before) */
+.fan-shine::before { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.4) 45%, transparent 60%); transform: translateX(100%); animation: fa-shine 3.8s ease-in-out infinite }
+.k-fullart .fan-shine::before { animation-delay: -1.9s }
+@keyframes fa-shine { 0% { transform: translateX(100%) } 60%, 100% { transform: translateX(-100%) } }
 .fan-card.k-fullart > img { box-shadow: 0 0 22px rgba(255,210,120,.55) }
-@media (prefers-reduced-motion: reduce) { .fan-card, .fan-shine { animation: none } }
+@media (prefers-reduced-motion: reduce) { .fan-card, .fan-shine, .fan-shine::before { animation: none } }
 @media (max-width: 600px) { .fan { width: 46vw; margin-top: 60px } .fan.open .fan-card { --rot-extra: calc(var(--spread) * .5) } }
 /* Gold and Full Art (always full holo) */
 .m-gold { --a1: #ffe08a; --a2: #8a5a10 } .m-fullart { --a1: #fff4d6; --a2: #b07818 }
@@ -813,3 +815,76 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .pop-line .linkish { text-align: left }
 .wz-coin .disc { color: #9ff0b0; font-weight: 800 } .wz-coin .warn { margin: 0 }
 .wz-thumbs .gt-price { font: 800 12px/1 var(--body); color: var(--ink) }
+
+
+/* ---------- feel & smoothness (the UX audit, Oct 2026) */
+/* .shine (a card without the live holo): its sweep moves by transform */
+.shine { background: none; overflow: hidden }
+.shine::before { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 38%, rgba(255,255,255,.22) 47%, rgba(170,230,255,.16) 52%, transparent 62%); transform: translateX(100%); animation: glint 3s ease-in-out infinite }
+@media (prefers-reduced-motion: reduce) { .shine::before { animation: none; transform: none } }
+/* tiles off screen aren't laid out or painted (a long collection opens and scrolls smoothly) */
+.cgrid > .ctile { content-visibility: auto; contain-intrinsic-size: auto 136px auto 230px }
+.dupn { font: 800 12px/1 var(--body); padding: 4px 7px; border-radius: 999px; background: rgba(255,255,255,.08); color: var(--muted); border: 1px solid var(--line-2) }
+
+/* My cards: cards first. One Filter button (its own sheet), the floor and the rest in one row */
+.filter-b.on { border-color: var(--brass); color: var(--gold) }
+.coll-h .cfloor { margin-left: auto }
+.st-filter .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 }
+.st-filter .filters .f:last-child { grid-column: 1 / -1 }
+.st-filter .hold-seg { max-width: none; margin: 0 }
+.filter-act { justify-content: flex-end; position: sticky; bottom: -18px; padding: 10px 0 6px; background: var(--panel) }
+.fresh-nudge { padding: 6px 8px 6px 12px; margin-bottom: 10px }
+@media (max-width: 600px) {
+  .coll-h { gap: 6px 10px } .coll-h .cfloor { order: 3; margin-left: 0 } .coll-h .pop-b { order: 4 }
+  .ptiles { gap: 8px } .ptile { grid-template-columns: 44px 1fr; gap: 10px; padding: 6px 10px } .pimg img:first-child { width: 44px }
+  .ptile .pinfo { grid-template-columns: auto 1fr; align-items: center; justify-items: start; gap: 2px 10px } .ptile .pinfo h4 { grid-column: 1 } .ptile .pinfo > p.muted { grid-column: 2 } .ptile .pinfo > :last-child { grid-column: 1 / -1 }
+  .st-table > .packs h3 { display: none }
+}
+
+/* card detail: the actions sit right under the card and stick to the sheet's bottom; the traits fold under Details */
+.detail .dacts { position: sticky; bottom: -18px; z-index: 5; padding: 8px 0; background: var(--panel); box-shadow: 0 -10px 14px -10px rgba(0,0,0,.6) }
+.dmore { border: 1px solid var(--line); border-radius: 12px; padding: 0 12px }
+.dmore > summary { min-height: var(--tap); display: flex; align-items: center; cursor: pointer; font-weight: 800; color: var(--gold) }
+.dmore[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 10px }
+.dmore dl { padding-bottom: 12px }
+
+/* ---------- after the reveal: the celebration (the best card big, every pull, Open next) */
+.cel { display: grid; justify-items: center; gap: 14px; width: 100%; max-width: 860px; margin: 0 auto; text-align: center }
+.cel-k { margin: 0 !important; font: 400 22px var(--display) !important; color: var(--gold) !important }
+.cel-best { display: grid; justify-items: center; gap: 10px }
+.cel-big { position: relative; padding: 0; border: 0; background: none; cursor: pointer; width: min(240px, 58vw); border-radius: 5% }
+.cel-big::before { content: ''; position: absolute; inset: -12%; z-index: -1; border-radius: 50%; background: radial-gradient(closest-side, var(--glow, #ffd27a), transparent); opacity: .45; animation: cel-glow 2.4s ease-in-out 3 alternate }
+@keyframes cel-glow { to { opacity: .8 } }
+.cel-big .cface { width: 100% }
+.cel-name { display: grid; justify-items: center; gap: 3px } .cel-name small { font: 800 12px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted) }
+.cel-name b { font: 400 22px var(--display); color: var(--ink) } .cel-name > span { color: var(--muted) } .cel-name .row { justify-content: center }
+.cel-pulls { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; width: 100% }
+.cel-pulls:has(li:nth-child(7)) { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)) }
+.cel-c { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 6% }
+.cel-c.best { outline: 2px solid var(--gold); outline-offset: 3px }
+.cel-c .new-t { position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); z-index: 5 }
+.cel-acts { display: grid; justify-items: center; gap: 10px; width: 100% }
+.btn.big { min-height: 56px; min-width: min(320px, 100%); font-size: 18px; border-radius: 14px }
+.cel-acts .row { justify-content: center }
+.cel-protect { margin: 2px 0 0; font-size: 13px } .cel-protect .linkish { min-height: 44px }
+@media (max-width: 600px) { .cel-pulls { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px } .cel-big { width: min(220px, 56vw) } }
+@media (prefers-reduced-motion: reduce) { .cel-big::before { animation: none } }
+.ann-acts { justify-content: center }
+/* phones: the celebration's main button is on the first screen (a smaller best card, the pulls in one row) */
+@media (max-width: 600px) {
+  .cel { gap: 10px } .cel-big { width: min(150px, 40vw) } .cel-k { font-size: 19px !important } .cel-name b { font-size: 19px }
+  .cel-pulls, .cel-pulls:has(li:nth-child(7)) { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 5px }
+  .cel-c .new-t { font-size: 12px; padding: 3px 5px; bottom: -10px }
+  .detail .dacts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100% }
+  .detail .dacts .btn { padding: 0 .6em }
+}
+@media (max-height: 700px) and (max-width: 600px) { .cel-big { width: min(120px, 34vw) } }
+/* wider screens: the best card on the left, the pulls and the buttons beside it (all on the first screen) */
+@media (min-width: 701px) {
+  .cel { grid-template-columns: 220px minmax(0, 1fr); column-gap: 28px; row-gap: 14px; align-items: center; text-align: left }
+  .cel-k { grid-column: 1 / -1; justify-self: center }
+  .cel-best { grid-column: 1; grid-row: 2 / span 3; align-self: start }
+  .cel-big { width: 200px }
+  .cel-pulls, .cel-acts, .cel-protect { grid-column: 2 }
+  .cel-acts { justify-items: start } .cel-acts .row { justify-content: flex-start } .cel-protect { justify-self: start }
+}

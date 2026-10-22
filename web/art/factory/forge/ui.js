@@ -25,7 +25,7 @@
 
   // ---------- markup
   $('#app').innerHTML = `
-  <div id="loading" class="loading"><img src="ui/omni-mark.webp" alt=""><p>Lighting the forge…</p><small class="demo-load">Demo · nothing here is real</small></div>
+  <div id="loading" class="loading"><img src="ui/omni-mark.webp" alt=""><p>Lighting the forge…</p><small class="demo-load">Demo: nothing here is real</small></div>
   <header class="topbar">
     <a class="brand" href="#" aria-label="Omni Cardworks"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">CARDWORKS</span><em class="tag">Wood in. Packs out.</em></a>${LIVE && Live.testnet ? '<span class="net-badge">Testnet</span>' : ''}
     <button class="chip series" id="seriesChip" type="button"></button>
@@ -42,24 +42,26 @@
     <button class="wallet" id="walletBtn" type="button">${svg('wallet')}<span>Connect</span></button>
   </header>
   <div class="qbanner" id="qbanner" hidden></div>
-  <div class="demo-note" role="note"><b>Demo</b><span>Nothing here is real.<span class="dn-more"> No wallet, no payments.</span></span><button class="start-link" type="button" data-go="start">New here?</button></div>
+  <div class="demo-note" role="note"><b>Demo</b><span>Nothing here is real.</span><button class="start-link" type="button" data-go="start">New here?</button></div>
   <div class="ui" id="pills">
     <div class="buybox" id="buybox" data-x="1480" data-y="250"></div>
-    <button class="pill" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
-    <button class="pill openp" type="button" data-st="open" data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
-    <button class="pill" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small data-price="psa">${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></span></button>
+    <p class="pitch desk-pitch" data-x="1385" data-y="1225">Rip packs, pull holo cards, grade the best.</p>
+    <button class="pill tool" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
+    <button class="pill openp hero" type="button" data-hero data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
+    <button class="pill tool" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small data-price="psa">from ${Wear.usd(Store.PRICES.CASE_USD)}</small></span></button>
     <div class="spot" id="spot" data-x="3590" data-y="1750" aria-hidden="true"></div>
     <aside class="sdock" id="sdock" data-x="3040" data-y="930" aria-label="Suggestion box"></aside>
-    <button class="pill" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></span></button>
+    <button class="pill tool" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></span></button>
     <button class="pill peek" type="button" data-peek data-x="2880" data-y="700" style="--c: var(--gold)"><span class="peek-fan" aria-hidden="true"><img alt=""><img alt=""></span><span><b id="pPeekT">Series 8</b><small id="pPeek"></small></span></button>
   </div>
   <section class="stations" aria-label="Stations">
-    <button class="station" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
+    <p class="pitch">Rip packs, pull holo cards, grade the best.</p>
+    <button class="openbtn hero" type="button" data-hero id="openBtn">${svg('pack')}<span><b id="sOpenT">Open packs</b><small id="sOpen"></small></span></button>
     <button class="station" type="button" data-st="cards" style="--c: var(--wood)">${svg('cards')}<b>My cards</b><small id="sCards"></small></button>
-    <button class="station" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small data-price="psa">${Wear.usd(Store.PRICES.CASE_USD)} · ${Wear.usd(Store.PRICES.GRADE_USD)}</small></button>
-    <button class="station" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></button>
     <button class="station peek" type="button" data-peek><span class="peek-fan" aria-hidden="true"><img alt=""><img alt=""></span><b id="sPeekT">Series 8</b><small id="sPeek"></small></button>
-    <button class="openbtn" type="button" data-st="open" id="openBtn">${svg('pack')}<span><b id="sOpenT">Open packs</b><small id="sOpen"></small></span></button>
+    <button class="station tool" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
+    <button class="station tool" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small data-price="psa">from ${Wear.usd(Store.PRICES.CASE_USD)}</small></button>
+    <button class="station tool" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></button>
   </section>
   <footer class="strip" aria-label="What's in a pack">
     <img class="packart" src="ui/omni-pack.webp" alt="Series 7 pack">
@@ -70,38 +72,52 @@
         <tr><th scope="row">Per pack</th><td>3</td><td>1–2</td><td colspan="4" class="span">At least 1</td></tr>
       </table>
     </div>
-    <button class="btn small more" type="button" data-go="info-cards">Rarity</button>
+    <button class="btn small more" type="button" data-go="info-cards">Odds</button>
   </footer>
   <div class="buybar" id="buybar"></div>`;
 
   // ---------- layout: desktop / phone portrait / phone landscape
   const TOP = 54 + (LIVE ? 0 : 24); // the top bar plus the demo notice under it (CSS --top; live mode has no notice)
-  const DEMO_LINE = '<p class="demo-line">Demo · nothing is charged</p>'; // the one demo line, at payment and burn buttons only
-  let mode = 'desk';
+  const DEMO_LINE = '<p class="demo-line">Demo: nothing is charged</p>'; // the one demo line, at payment and burn buttons only
+  let mode = 'desk', view = null;
+  // The UI shows before the scene has loaded (slow networks): until it's ready, a small still of the workshop
+  // (build3/plate-640.webp) sits in the scene's box as the canvas's background, and the pills are placed with the
+  // same maths the scene uses (no camera yet). The scene's first frame paints over it.
+  const SW = 3840, SH = 2160;
+  const lite = () => { const v = view, s = v.mode === 'cover' ? Math.max(v.w / SW, v.h / SH) : Math.min(v.w / SW, v.h / SH);
+    return { s, ox: v.x + (v.w - SW * s) * (v.mode === 'cover' ? v.focus : 0.5), oy: v.y + (v.h - SH * s) / 2 }; };
+  const toScreen = (x, y) => { if (window.Scene) return Scene.toScreen(x, y); const l = lite(); return [l.ox + x * l.s, l.oy + y * l.s]; };
+  function poster() {
+    const c = document.getElementById('c'); if (!c || !view) return;
+    if (c.dataset.drawn) { c.style.backgroundImage = ''; return; }
+    const l = lite();
+    Object.assign(c.style, { backgroundImage: 'url(../build3/plate-640.webp)', backgroundRepeat: 'no-repeat', backgroundSize: `${SW * l.s}px ${SH * l.s}px`, backgroundPosition: `${l.ox}px ${l.oy}px` });
+  }
   function layout() {
     const W = innerWidth, H = innerHeight, bar = TOP;
     mode = W < 700 && H > W ? 'port' : H < 520 ? 'land' : 'desk';
-    document.body.dataset.mode = mode;
-    if (!window.Scene) return;
+    document.body.dataset.mode = mode; document.documentElement.dataset.mode = mode;
     if (mode === 'port') {
-      const bb = document.querySelector('.buybar')?.offsetHeight || 190, st = document.querySelector('.stations')?.offsetHeight || 150;
-      const sh = Math.round(Math.max(160, Math.min(H * 0.42, W * 0.9, H - bar - st - bb - 24))); // stations must stay clear of the Buy bar on short phones
-      Scene.setView({ x: 0, y: bar, w: W, h: sh, mode: 'cover', focus: 0.42, follow: true }); // the camera follows the action
+      const bb = document.querySelector('.buybar')?.offsetHeight || 80, st = document.querySelector('.stations')?.offsetHeight || 220;
+      const sh = Math.round(Math.max(150, Math.min(H * 0.42, W * 0.9, H - bar - st - bb - 24))); // the stations stay clear of the Buy bar on short phones
+      view = { x: 0, y: bar, w: W, h: sh, mode: 'cover', focus: 0.42, follow: true }; // the camera follows the action
       document.documentElement.style.setProperty('--sceneH', sh + 'px');
+      document.documentElement.style.setProperty('--bbH', bb + 'px');
     } else if (mode === 'land') {
-      Scene.setView({ x: 0, y: bar, w: W - 240, h: H - bar, mode: 'contain', follow: false });
+      view = { x: 0, y: bar, w: W - 240, h: H - bar, mode: 'contain', follow: false };
     } else {
       const strip = H < 760 ? 92 : 104; document.documentElement.style.setProperty('--stripH', strip + 'px');
-      Scene.setView({ x: 0, y: bar, w: W, h: H - bar - strip, mode: 'contain', follow: false });
+      view = { x: 0, y: bar, w: W, h: H - bar - strip, mode: 'contain', follow: false };
     }
-    placePills(); if (S.wallet) renderCounts();
+    if (window.Scene) Scene.setView(view);
+    poster(); placePills(); if (S.wallet) renderCounts();
   }
   function placePills() {
-    if (!window.Scene) return;
-    const k = Scene.scale, fs = Math.max(12, Math.min(14, 30 * k));
+    if (!view) return;
+    const k = window.Scene ? Scene.scale : lite().s, fs = Math.max(12, Math.min(14, 30 * k));
     document.documentElement.style.setProperty('--fs', fs + 'px'); document.documentElement.style.setProperty('--sk', k);
     for (const el of document.querySelectorAll('#pills [data-x]')) {
-      let [x, y] = Scene.toScreen(+el.dataset.x, +el.dataset.y);
+      let [x, y] = toScreen(+el.dataset.x, +el.dataset.y);
       if (el.id === 'spot') { el.style.left = x + 'px'; el.style.top = y + 'px'; continue; } // the light sits on the floor, wherever that is
       const half = el.offsetWidth / 2 + 8; x = Math.max(half, Math.min(innerWidth - half, x)); // never off-screen
       el.style.left = x + 'px'; el.style.top = Math.max(TOP + el.offsetHeight / 2 + 6, y) + 'px';
@@ -137,17 +153,17 @@
   };
   const coinsTxt = (g) => (!g.coins.length ? '' : g.coins.length === 3 ? 'PLANK, ETH or USDG' : g.coins.length === 1 ? `${g.coins[0]} only` : g.coins.join(' or '));
   const pct = (bps) => `${+(bps / 100).toFixed(2)}%`;
-  const leftTxt = (g) => (g.left == null ? `no limit, price rises ${pct(g.taxBps)} per pack` : `${g.left.toLocaleString('en-US')} left`);
+  const leftTxt = (g) => (g.left == null ? `+${pct(g.taxBps)} per pack` : `${g.left.toLocaleString('en-US')} left`);
   const groupName = (i) => groups()[i]?.name || `group ${i + 1}`;
-  /** Why a sold-out group may still get packs: "more may come from Paper Press holders in 4h 59m". */
-  const moreTxt = (g) => `more may come from ${esc(groupName(g.moreFrom))}${g.moreAt ? ` in ${cd(g.moreAt)}` : ''}`;
+  /** Why a sold-out group may still get packs: "more may come in 4h 59m". */
+  const moreTxt = (g) => `more may come${g.moreAt ? ` in ${cd(g.moreAt)}` : ' soon'}`;
   /** The group(s) opening next, for people (the earliest first). */
   function nextUp() {
     const up = groups().filter((g) => g.state === 'upcoming').sort((a, b) => (a.opensAt || 9e12) - (b.opensAt || 9e12));
     const g = up[0];
     if (!g) return null;
-    const when = g.opensAt > nowS() ? `opens in ${cd(g.opensAt)}` : g.opensAt ? 'opens any moment' : g.afterGroup != null ? `opens when ${esc(groupName(g.afterGroup))} ${groups()[g.afterGroup]?.unlimited ? 'ends' : 'sells out'}` : 'opens soon';
-    return { g, html: `Next: <b>${esc(g.name)}</b> ${when}` };
+    const when = g.opensAt > nowS() ? `in ${cd(g.opensAt)}` : g.afterGroup != null && !g.opensAt ? `after ${esc(groupName(g.afterGroup))}` : 'soon';
+    return { g, html: `Next: <b>${esc(g.name)}</b> · ${when}` };
   }
   function syncScene() {
     const x = Store.extraOpen(), timed = open().find((g) => g.endsAt > 0 && g.opensAt > 0 && !g.unlimited);
@@ -167,7 +183,7 @@
     const w = S.wallet, out = [];
     if (note()) return { line: note(), opts: [], next: null };
     if (sold()) return { line: `Series ${S.series.no} sold out`, opts: [], next: null }; // just the tease: Open packs is already on the scene / in the stations
-    if (S.series.closing) return { line: 'Sales are over · closing…', opts: [], next: null, sub: 'Packs can be opened in a moment.' };
+    if (S.series.closing) return { line: 'Sales over', opts: [], next: null, sub: 'Packs open in a moment.' };
     let main = false;
     const rows = open().map((g) => {
       const a = g.waiting || g.left === 0 ? null : Store.groupAccess(g);
@@ -176,7 +192,7 @@
     for (const { g, a, usable } of rows) {
       if (g.unlimited) {
         const p = g.next;
-        out.push([`g${g.index}`, `Extra pack #${g.sold + 1}`, p ? `${money(p.usd)} + ${paperTxt(g.paper)}<br>price rises ${pct(g.taxBps)} per pack${g.endsAt ? ` · ends in ${cd(g.endsAt)}` : ''}` : 'Past its price limit',
+        out.push([`g${g.index}`, 'Extra pack', p ? `${money(p.usd)} + ${paperTxt(g.paper)}<br>+${pct(g.taxBps)} each${g.endsAt ? ` · ends in ${cd(g.endsAt)}` : ''}` : 'Price cap reached',
           usable && p ? (main ? 'extra' : (main = true, 'extra main')) : 'off']);
         continue;
       }
@@ -186,7 +202,7 @@
     const cg = groups()[S.series.creditGroup];
     if (w.credits > 0 && cg?.state === 'open' && S.series.creditPacksLeft !== 0) out.push(['free', `Free pack (${w.credits})`, `${paperTxt(cg.paper)}<br>any time`, 'gold']);
     const x = Store.extraOpen();
-    return { line: x ? 'After sell-out' : open().length ? 'On sale now' : `Series ${S.series.no}`, opts: out, next: nextUp() };
+    return { line: x ? 'Extra packs' : open().length ? 'On sale now' : `Series ${S.series.no}`, opts: out, next: nextUp() };
   }
   // Background Store updates (other buyers, burns landing) must never re-create these buttons under a click or a
   // keyboard focus: the boxes are rebuilt only when what they show changes, else just the bar's header text is patched;
@@ -207,7 +223,10 @@
     const extras = (next ? `<p class="gnext">${next.html}</p>` : '') + (sub ? `<p class="gnext">${sub}</p>` : '');
     $('#buybox').innerHTML = `<div class="phase"></div>${optsHtml(opts)}${extras}`; $('#buybox .phase').textContent = line;
     // sold out, the stations' Open packs is enough
-    $('#buybar').innerHTML = `<div class="phase"></div>${optsHtml(sold() ? [] : opts)}${sold() ? '' : extras}`; $('#buybar .phase').textContent = head;
+    // phones: the bar is one row (the main way to buy) with "More" for the rest, so it never covers the page (short
+    // phones, browser toolbars); open, it lists everything over the page
+    $('#buybar').innerHTML = `<div class="phase"></div>${optsHtml(sold() ? [] : opts)}${sold() ? '' : extras}<button class="bb-more" type="button" aria-expanded="false" aria-controls="buybar" aria-label="All ways to buy"><span>More</span></button>`; $('#buybar .phase').textContent = head;
+    $('#buybar').classList.remove('open'); $('#buybar .bb-more').onclick = () => barOpen(!$('#buybar').classList.contains('open'));
     $('#buybox').classList.toggle('many', opts.length > 2);
     // between Series: the next Series' tease sits right here on the main page
     if (tease) for (const box of [$('#buybox'), $('#buybar')]) {
@@ -231,46 +250,73 @@
     const g = groups()[i];
     if (!g) return;
     if (g.state !== 'open') return Sheet.open('nope', { title: g.name, body: `<p class="lead">${g.state === 'ended' ? 'This group has ended.' : 'This group isn\'t open yet.'}</p>` });
-    if (g.waiting || g.left === 0) return Sheet.open('nope', { title: g.name, body: `<p class="lead">Sold out${g.waiting ? `. ${moreTxt(g)[0].toUpperCase()}${moreTxt(g).slice(1)}: unclaimed packs from that group come here when it ends` : ''}.</p>` });
+    if (g.waiting || g.left === 0) return Sheet.open('nope', { title: g.name, body: `<p class="lead">Sold out.${g.waiting ? ` Unclaimed packs from ${esc(groupName(g.moreFrom))} land here ${g.moreAt ? `in ${cd(g.moreAt)}` : 'when it ends'}.` : ''}</p>` });
     const a = Store.groupAccess(g);
     if (!a.ok && LIVE && !S.wallet.connected) return Live.needWallet(() => openGroup(i)); // the wallet decides what it can use
     if (!a.ok && !a.ask) return Sheet.open('nope', { title: g.name, body: `<p class="lead">${esc(a.why || g.who)}.</p>` });
     return checkout(i);
   }
   // the peek buttons: what's in the Series on sale (sold out, the next one's tease sits in the Buy box / bar instead)
+  // background updates rewrite nothing that didn't change (no DOM churn every tick)
+  const setText = (el, t) => { if (el && el.textContent !== t) el.textContent = t; };
+  const setAttr = (el, k, v) => { if (el && el.getAttribute(k) !== v) el.setAttribute(k, v); };
   function renderPeek() {
     const t = Store.tease(), show = !!t?.live;
-    document.querySelectorAll('[data-peek]').forEach((b) => { b.hidden = !show; });
+    document.querySelectorAll('[data-peek]').forEach((b) => { if (b.hidden !== !show) b.hidden = !show; });
     if (!show) return;
-    document.querySelectorAll('.peek-fan img').forEach((im, i) => { const src = `ui/announce/${t.id}-${i % 2 ? 'fullart' : 'gold'}.webp`; if (im.getAttribute('src') !== src) im.src = src; }); // this Series' own cards
-    $('#pPeekT').textContent = $('#sPeekT').textContent = `Series ${t.no}`;
-    $('#pPeek').textContent = $('#sPeek').textContent = t.line;
-    document.querySelectorAll('[data-peek]').forEach((b) => b.setAttribute('aria-label', `Series ${t.no}`));
+    document.querySelectorAll('.peek-fan img').forEach((im, i) => { const src = `ui/announce/${t.id}-${i % 2 ? 'fullart' : 'gold'}-sm.webp`; if (im.getAttribute('src') !== src) im.src = src; }); // this Series' own cards, small
+    for (const id of ['#pPeekT', '#sPeekT']) setText($(id), `Series ${t.no}`);
+    for (const id of ['#pPeek', '#sPeek']) setText($(id), t.line);
+    document.querySelectorAll('[data-peek]').forEach((b) => setAttr(b, 'aria-label', `Series ${t.no}: what's in its packs`));
   }
+  // ---------- the hero: the one main thing to do now. Packs ready to open: Open them (the demo's gift packs: "Open your 3
+  // free packs"); else a sale on: Buy a pack; else See your cards (with what's next). Open shows only when a pack can
+  // open (packs open once their Series sells out or closes). Burn, Case & grade and Suggest stay quiet until a first
+  // pack is opened.
+  const GIFT = LIVE ? [] : Object.keys(S.sealed).map(Number).filter((no) => no !== S.series.no && S.sealed[no] > 0); // the demo's starting packs
+  const OPENED = 'omni.opened';
+  const opened = () => { if (S.activity.some((a) => /^Opened/.test(a.text))) { try { localStorage.setItem(OPENED, '1'); } catch { /* private window */ } return true; }
+    try { return !!localStorage.getItem(OPENED); } catch { return false; } };
+  const plainTxt = (html) => { const d = document.createElement('div'); d.innerHTML = html; return d.textContent; };
+  function heroOf() {
+    const ready = Stations.openable(), n = ready.reduce((a, o) => a + o.n, 0);
+    if (n) {
+      const gift = ready.every((o) => GIFT.includes(o.series));
+      return { kind: 'open', title: gift ? `Open your ${n} free ${n === 1 ? 'pack' : 'packs'}` : `Open packs (${n})`, sub: gift ? 'Tear one open' : `Series ${ready[0].series}${ready.length > 1 ? ' first' : ''}`,
+        label: `${gift ? `Open your ${n} free` : `Open ${n}`} ${n === 1 ? 'pack' : 'packs'}`, go: () => openStation('open') };
+    }
+    if (!note() && !sold() && !S.series.closing && open().length) {
+      const g = open().find((x) => !x.waiting && x.left !== 0 && Store.groupAccess(x).ok) || open().find((x) => !x.waiting && x.left !== 0);
+      if (g) return { kind: 'buy', title: 'Buy a pack', sub: plainTxt(priceTxt(g)), label: `Buy a pack: ${plainTxt(priceTxt(g))}`, go: () => openGroup(g.index) };
+    }
+    const nx = !note() && !sold() ? nextUp() : null;
+    const sub = note() || (sold() ? `Series ${S.series.no + 1} is coming` : nx ? plainTxt(nx.html) : `${S.cards.length} ${S.cards.length === 1 ? 'card' : 'cards'}`);
+    return { kind: 'cards', title: 'See your cards', sub, label: `See your cards. ${sub}`, go: () => openStation('cards') };
+  }
+  let hero = null;
+  const fmtChip = (n) => (n >= 1000 ? fmt(n) : String(+(+n).toFixed(n < 10 ? 2 : 1))); // "22.9", not "22.919": the chip stays short
   function renderCounts() {
     const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0), b = S.wallet.burnCount % 42;
-    for (const id of ['pBurn', 'sBurn']) $('#' + id).textContent = `${b} / 42`;
-    // Open packs: what can be opened now (the live Series' packs stay sealed until it sells out)
-    const ready = Stations.openable(), n = ready.reduce((a, o) => a + o.n, 0), locked = sealed - n;
-    const title = n ? `Open packs (${n})` : 'No packs', sub = n ? `Series ${ready[0].series}${ready.length > 1 ? ' first' : ''}` : locked ? (LIVE ? 'Open at close' : 'Open at sell-out') : 'Buy one first';
-    const why = n ? `Open packs: ${n} sealed ${n === 1 ? 'pack' : 'packs'} ready to open` : locked
-      ? `No packs to open yet. Your ${locked} Series ${S.series.no} ${locked === 1 ? 'pack opens' : 'packs open'} when the Series sells out`
-      : 'No packs to open. Buy packs to get some';
-    for (const [t, s, b] of [['pOpenT', 'pOpen', '.pill.openp'], ['sOpenT', 'sOpen', '#openBtn']]) {
-      $('#' + t).textContent = title; $('#' + s).textContent = sub;
-      const el = $(b); el.classList.toggle('none', !n); el.setAttribute('aria-label', why); el.setAttribute('aria-disabled', String(!n));
+    for (const id of ['pBurn', 'sBurn']) setText($('#' + id), `${b} / 42`);
+    hero = heroOf();
+    for (const [t, s, sel] of [['pOpenT', 'pOpen', '.pill.openp'], ['sOpenT', 'sOpen', '#openBtn']]) {
+      setText($('#' + t), hero.title); setText($('#' + s), hero.sub); setAttr($(sel), 'aria-label', hero.label);
     }
-    $('#sCards').textContent = `${S.cards.length} ${S.cards.length === 1 ? 'card' : 'cards'} · ${sealed} ${sealed === 1 ? 'pack' : 'packs'}`;
+    for (const k of ['open', 'buy', 'cards']) document.body.classList.toggle('hero-' + k, hero.kind === k);
+    document.body.classList.toggle('fresh', !opened());
+    setText($('#sCards'), `${S.cards.length} ${S.cards.length === 1 ? 'card' : 'cards'} · ${sealed} ${sealed === 1 ? 'pack' : 'packs'}`);
     const wb = $('#walletBtn span');
     const nm = mode === 'port' || innerWidth < 1500 ? '' : S.wallet.name; // phones: the icon and the balance, so the button fits beside the brand
-    wb.textContent = S.wallet.connected ? `${nm ? nm + ' · ' : ''}${fmt(S.wallet.balances.PAPER)} PAPER` : 'Connect';
+    setText(wb, S.wallet.connected ? `${nm ? nm + ' · ' : ''}${fmtChip(S.wallet.balances.PAPER)} PAPER` : 'Connect');
+    setAttr($('#walletBtn'), 'aria-label', S.wallet.connected ? `Wallet: ${fmt(S.wallet.balances.PAPER)} PAPER` : 'Connect a wallet');
     if (LIVE) { // prices from the contracts
-      document.querySelectorAll('[data-price=psa]').forEach((el) => { el.textContent = `${Wear.usd(P.CASE_USD)} · ${Wear.usd(P.GRADE_USD)}`; });
-      document.querySelectorAll('[data-price=suggest]').forEach((el) => { el.textContent = `${P.SUGGEST_PAPER} PAPER`; });
-      if (S.series.no) { $('.strip .sw').textContent = `SERIES ${S.series.no}`; $('.strip .packart').alt = `Series ${S.series.no} pack`; }
+      document.querySelectorAll('[data-price=psa]').forEach((el) => setText(el, `from ${Wear.usd(P.CASE_USD)}`));
+      document.querySelectorAll('[data-price=suggest]').forEach((el) => setText(el, `${P.SUGGEST_PAPER} PAPER`));
+      if (S.series.no) { setText($('.strip .sw'), `SERIES ${S.series.no}`); setAttr($('.strip .packart'), 'alt', `Series ${S.series.no} pack`); }
     }
     $('#walletBtn').classList.toggle('on', S.wallet.connected);
   }
+  document.querySelectorAll('[data-hero]').forEach((b) => b.addEventListener('click', () => hero?.go()));
   // ---------- between Series: the quiet shift. Nothing on sale, so the press and the belt rest (the fire, casing and
   // grading carry on) and the suggestion box takes the spotlight: a warm light on the mailbox, a panel docked beside it
   // (on phones, in the bottom bar) and a slim banner up top.
@@ -284,18 +330,18 @@
     const need = Store.PRICES.SUGGEST_PAPER, short = w.connected && w.balances.PAPER < need;
     const last = Store.SUGGEST_RESULTS[Store.SUGGEST_RESULTS.length - 1], won = w.connected && last && Store.resultFor(last, w.full) === 'won';
     const cta = !w.connected ? '<button class="opt main" type="button" data-q="connect"><span>Connect wallet</span></button>'
-      : short ? '<button class="opt main" type="button" data-q="paper"><span>Buy PAPER</span></button>'
-      : `<button class="opt main" type="button" data-q="suggest"><span>${look ? 'Suggest a theme &amp; style' : 'Suggest a character'}</span></button>`;
+      : short ? '<button class="opt main" type="button" data-q="paper"><span>Get PAPER</span></button>'
+      : `<button class="opt main" type="button" data-q="suggest"><span>${look ? 'Suggest a theme' : 'Suggest a character'}</span></button>`;
     return `${seen() ? '' : '<span class="sd-start">Start here</span>'}
-      <p class="sd-k">Series ${next} is being decided</p>
+      <p class="sd-k">Help shape Series ${next}</p>
       <h3 class="sd-t">${look ? 'Suggest a theme and an art style' : 'Suggest a character'}</h3>
       ${look ? '' : `<p class="sd-pick">${esc(W.theme)} · ${esc(W.style)}</p>`}
       <p class="sd-how">${need} PAPER each. Get picked, win a free pack.</p>
       <p class="sd-meta">${W.closes ? `<span>Closes in <b>${left(W.closes)}</b></span>` : ''}<span><b>${W.count.toLocaleString('en-US')}</b> ideas in the box</span></p>
-      ${w.connected ? `<p class="sd-bal">You have <b>${fmt(w.balances.PAPER)} PAPER</b>${short ? ' · not enough' : ''}</p>` : ''}
+      ${w.connected ? `<p class="sd-bal">You have <b>${fmt(w.balances.PAPER)} PAPER</b>${short ? ` · need ${need}` : ''}</p>` : ''}
       <div class="opts">${cta}</div>
-      ${mine && w.connected ? `<p class="sd-mine">You've sent ${mine} · results when Series ${next} is announced</p>` : ''}
-      ${won ? '<p class="sd-won">You won a free pack!</p>' : ''}${Store.SUGGEST_RESULTS.length ? '<button class="sd-res" type="button" data-q="results">See the last results</button>' : ''}`;
+      ${mine && w.connected ? `<p class="sd-mine">${mine} sent · results soon</p>` : ''}
+      ${won ? '<p class="sd-won">You won a free pack!</p>' : ''}${Store.SUGGEST_RESULTS.length ? '<button class="sd-res" type="button" data-q="results">Last results</button>' : ''}`;
   }
   let dockKey = '';
   function renderQuiet() {
@@ -304,7 +350,7 @@
     const W = Store.SUGGEST_WAVE, ban = $('#qbanner'); ban.hidden = !q;
     if (!q) { dockKey = ''; return; }
     const html = dockHtml(), key = html;
-    const banner = `<span>Series ${S.series.no + 1} is being decided</span><button class="qb-go" type="button" data-q="suggest">${W.wave === 'look' ? 'Suggest a theme &amp; style' : 'Suggest a character'}</button>`;
+    const banner = `<span>Help shape Series ${S.series.no + 1}</span><button class="qb-go" type="button" data-q="suggest">${W.wave === 'look' ? 'Suggest a theme' : 'Suggest a character'}</button>`;
     if (ban._html !== banner) { ban._html = banner; ban.innerHTML = banner; }
     if (key !== dockKey) {
       dockKey = key;
@@ -325,9 +371,17 @@
   setInterval(() => { if (sold()) { dockKey = ''; renderQuiet(); } }, 60000); // the countdown
 
   let bbH = 0;
+  function barOpen(on) {
+    const bar = $('#buybar'), m = $('#buybar .bb-more'); bar.classList.toggle('open', on);
+    if (m) { m.setAttribute('aria-expanded', String(on)); m.querySelector('span').textContent = on ? 'Less' : 'More'; }
+  }
+  // the open bar closes on a tap outside it, Escape, or once an option is picked
+  document.addEventListener('pointerdown', (e) => { if ($('#buybar')?.classList.contains('open') && !e.target.closest('#buybar')) barOpen(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('#buybar')?.classList.contains('open')) barOpen(false); });
+  $('#buybar').addEventListener('click', (e) => { if (e.target.closest('[data-buy], [data-q], .tease-inline')) barOpen(false); });
   function render() {
     renderChip(); renderBuy(); renderPeek(); renderCounts(); renderQuiet(); syncScene(); placePills();
-    const h = mode === 'port' ? $('#buybar').offsetHeight : 0; if (h !== bbH) { bbH = h; if (h) layout(); } // the Buy bar changed height: keep the stations clear of it
+    const h = mode === 'port' && !$('#buybar').classList.contains('open') ? $('#buybar').offsetHeight : bbH; if (h !== bbH) { bbH = h; if (h) layout(); } // the Buy bar changed height: keep the stations clear of it
   }
   Store.on(render);
 
@@ -349,7 +403,7 @@
         <div class="bal">${Object.entries(w.balances).map(([k, v]) => `<div><small>${k}</small><b>${fmt(v)}</b></div>`).join('')}</div>
         <div class="rows">
           <div><span>Free packs</span><b>${w.credits}</b></div>
-          <div><span>Burned toward a free pack</span><b>${w.burnCount % 42} / 42</b></div>
+          <div><span>Burn progress</span><b>${w.burnCount % 42} / 42</b></div>
           <div><span>Sealed packs</span><b>${sealed}</b></div>
           <div><span>Cards</span><b>${S.cards.length}</b></div>
           ${w.pending.length ? `<div><span>Pending</span><b>${w.pending.length}</b></div>` : ''}
@@ -358,6 +412,7 @@
         <div class="acts"><button class="btn small" type="button" data-w="switch">Switch wallet</button><button class="btn small" type="button" data-w="out">Disconnect</button></div>
       </div>` });
     d.querySelector('[data-w=cards]').onclick = () => { d.close(); openStation('cards'); };
+    window.Fun?.decorateWallet?.(d); // badges, showcase, binder (badges.js)
     d.querySelector('[data-w=paper]').onclick = () => { d.close(); openGetPaper(); };
     d.querySelector('[data-w=out]').onclick = () => { d.close(); Store.update((s) => { s.wallet.connected = false; }); };
     d.querySelector('[data-w=switch]').onclick = () => { d.close(); Store.update((s) => { s.wallet.connected = false; }); needWallet(openWallet); };
@@ -367,6 +422,7 @@
       f.onsubmit = (e) => { e.preventDefault(); Store.update((s) => { s.wallet.name = $('#nm', f).value.trim(); }); openWallet(); };
       Sheet.open('wallet', { title: 'Your name', body: f });
     };
+    window.Profiles?.decorate(d); // profile.js: the avatar, the profile's name, Edit opens the profile editor
   }
 
   // ---------- approvals (demo). FireSale takes PAPER for every pack (paid, Press or free) and every suggestion, and PLANK
@@ -417,7 +473,7 @@
         s.wallet.boughtIn[g.index] = (s.wallet.boughtIn[g.index] || 0) + n;
         Store.log(`${s.wallet.name || 'You'} bought ${n} ${n === 1 ? 'pack' : 'packs'}`);
       });
-      pendingDeliver += n; Scene?.buy(n); window.Sound?.play('pack-drop'); toast(`Buying ${n} ${n === 1 ? 'pack' : 'packs'}…`);
+      sendPacks(n); window.Sound?.play('pack-drop'); afterBuy(n); window.Fun?.emit('bought', { n });
       return true;
     },
   };
@@ -456,24 +512,21 @@
         const missing = Math.ceil((paper - w.balances.PAPER) * 1e4) / 1e4;
         const need = LIVE || needPaper || shortCur ? null : [...(allOn ? [] : [['PAPER', paper]]), ...(priced && cur !== 'ETH' ? [[cur, amt]] : [])].find(([k, v]) => Store.needsApproval(k, v));
         const off = busy || !q || (priced && !qc?.available) || needPaper || shortCur;
-        const usd = q ? q.usd : Store.groupCost(g, n).usd, tax = q ? q.tax : Store.groupCost(g, n).tax;
+        const usd = q ? q.usd : Store.groupCost(g, n).usd;
         const confirms = allOn ? 1 : !priced || cur === 'ETH' ? 2 : 3;
-        const k0 = g.sold + 1, label = extra ? (n === 1 ? `extra pack #${k0}` : `extra packs #${k0}–${k0 + n - 1}`) : pack(n);
         const costTxt = `${priced && qc?.available ? `≈ ${coinAmt(qc.cost)} ${cur}` : ''}${allOn ? `${priced ? ' + ' : '≈ '}${coinAmt(q.paperEth)} ETH for the PAPER` : ''}`;
         if (view === 'confirm') {
           const nextP = n === 1 && g.after?.[0] ? g.after[0].usd : Store.packPrice({ ...g, sold: g.sold + n }, 1).usd; // the pack after these
           body.innerHTML = `<div class="xconfirm" role="alert">
-              <h3>Before you buy</h3>
+              <h3>${n === 1 ? 'Extra pack' : `${n} extra packs`}: ${money(usd)} + ${paperTxt(paper)}</h3>
               <ul>
-                <li>You pay <b>${money(usd)}</b> for ${label}: ${money(usd - tax)} for the pack${n > 1 ? 's' : ''} + <b>${money(tax)} tax</b>${costTxt ? ` (${esc(costTxt)})` : ''}, and ${allOn ? 'the PAPER is bought with your ETH and burned' : `${paperTxt(paper)} from your wallet is burned`}.</li>
-                <li>The whole ${money(tax)} tax buys PAPER on the market and burns it. None of it comes back.</li>
-                <li>This is an extra pack after the sell-out. Each sale raises the price ${pct(g.taxBps)}: the next one costs ${money(nextP)}.</li>
-                <li>Sales end ${idleTxt(g.idle)} after the last one${g.endsAt ? ` (in ${cd(g.endsAt)} if nobody else buys)` : ''}. Then the Series closes and packs can be opened.</li>
-                <li>If someone buys first, the price goes up and nothing is charged: you'll see the new price.</li>
+                ${costTxt ? `<li>${esc(costTxt)}</li>` : ''}
+                <li>Next one costs ${money(nextP)}.</li>
+                <li>Sales end ${idleTxt(g.idle)} after the last buy.</li>
               </ul>
-              <label class="paycheck"><input type="checkbox" data-ok ${understood ? 'checked' : ''}><span><b>I understand what I'm buying and what it costs</b><small>An extra pack at a rising price, its tax burned.</small></span></label>
+              <label class="paycheck"><input type="checkbox" data-ok ${understood ? 'checked' : ''}><span><b>Got it</b></span></label>
             </div>${LIVE ? '' : DEMO_LINE}
-            <button class="btn primary go" type="button" ${understood && !busy ? '' : 'disabled'}>${busy ? 'Checking the price…' : `Yes, buy it for ${money(usd)}`}</button>
+            <button class="btn primary go" type="button" ${understood && !busy ? '' : 'disabled'}>${busy ? 'Checking the price…' : `Buy for ${money(usd)}`}</button>
             <button class="btn" type="button" data-x="back">Back</button>`;
           body.querySelector('[data-ok]').onchange = (e) => { understood = e.target.checked; redraw(body, draw); };
           body.querySelector('[data-x=back]').onclick = () => { view = 'form'; understood = false; redraw(body, draw); };
@@ -481,25 +534,25 @@
           return;
         }
         const head = extra
-          ? `<div class="xpanel"><p class="xhead">Extra pack #${k0}: <b>${money(usd / n)}</b> <small>(${money(g.priceUsd)} + ${money(tax / n)} tax)</small></p>
-              <p>The whole tax buys PAPER and burns it. Each sale raises the price ${pct(g.taxBps)}. Sales end ${idleTxt(g.idle)} after the last one; then packs can be opened.</p>
-              ${g.endsAt ? `<p class="xend">Sales end in ${cd(g.endsAt)} if nobody buys.</p>` : ''}
+          ? `<div class="xpanel"><p class="xhead">Extra pack: <b>${money(usd / n)}</b></p>
+              <p>+${pct(g.taxBps)} each sale. Sales end ${idleTxt(g.idle)} after the last buy.</p>
+              ${g.endsAt ? `<p class="xend">Ends in ${cd(g.endsAt)} if nobody buys.</p>` : ''}
               ${g.after?.length ? `<p class="xnext">Then ${g.after.map((x) => money(x.usd)).join(', ')}…</p>` : ''}</div>`
           : `<p class="lead">${esc(g.who)} · ${esc(leftTxt(g))}${g.endsAt ? ` · ends in ${cd(g.endsAt)}` : ''}</p>`;
         body.innerHTML = `${head}${notice ? `<p class="xmoved" role="alert">${esc(notice)}</p>` : ''}
           ${max > 1 ? `<div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output aria-live="polite">${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button>
             <span class="muted">${n === 1 ? 'pack' : 'packs'} · max ${max}</span></div>` : ''}
           ${priced && g.coins.length > 1 ? `<div class="seg" role="group" aria-label="Pay with">${g.coins.map((c) => `<button type="button" data-c="${c}" aria-pressed="${c === cur}">${c}</button>`).join('')}</div>` : ''}
-          <dl class="sum">${priced ? `<dt>Price</dt><dd>${money(usd)}${tax > 0.004 ? ` <small>incl. ${money(tax)} tax</small>` : ''} <small>${!q ? '· getting the price…' : qc?.available ? `≈ ${coinAmt(qc.cost)} ${cur}` : esc(qc?.reason || 'Not available')}</small></dd>` : ''}
-            <dt>PAPER</dt><dd>${(+paper.toFixed(4)).toLocaleString('en-US')} <small>${P.PAPER_USD > 0 ? `≈ ${money(paper * P.PAPER_USD)} · ` : ''}burned</small></dd>
-            ${allOn ? `<dt>Total</dt><dd>≈ ${coinAmt(amt)} ETH <small>${priced ? 'price + PAPER' : 'the PAPER, bought for you'}</small></dd>` : ''}
+          <dl class="sum">${priced ? `<dt>Price</dt><dd>${money(usd)} <small>${!q ? '· getting price…' : qc?.available ? `≈ ${coinAmt(qc.cost)} ${cur}` : esc(qc?.reason || 'Not available')}</small></dd>` : ''}
+            <dt>PAPER</dt><dd>${(+paper.toFixed(4)).toLocaleString('en-US')} ${P.PAPER_USD > 0 ? `<small>≈ ${money(paper * P.PAPER_USD)}</small>` : ''}</dd>
+            ${allOn ? `<dt>Total</dt><dd>≈ ${coinAmt(amt)} ETH <small>${priced ? '(price + PAPER)' : '(PAPER)'}</small></dd>` : ''}
             <dt>You have</dt><dd>${payIn ? `${coinAmt(w.balances[payIn])} ${payIn} <small>· ` : '<small>'}${(+w.balances.PAPER.toFixed(2)).toLocaleString('en-US')} PAPER</small></dd></dl>
-          ${canAll ? `<label class="paycheck"><input type="checkbox" data-all ${allOn ? 'checked' : ''}><span><b>Pay the PAPER in ETH too</b><small>The sale buys the ${(+paper.toFixed(4)).toLocaleString('en-US')} PAPER on the market and burns it. One step, no approval.</small></span></label>` : ''}
-          ${needPaper ? `<div class="getpaper"><p class="warn">You need ${missing.toLocaleString('en-US')} more PAPER.</p><button class="btn small" type="button" data-x="paper">Get ${missing.toLocaleString('en-US')} PAPER</button></div>` : ''}
-          ${shortCur ? `<p class="warn">Not enough ${payIn}${LIVE && payIn !== 'USDG' ? `: keep the price + 3%${payIn === 'ETH' ? ' and a little for gas' : ''}` : ''}.${!LIVE && payIn !== 'ETH' ? ` <button class="btn small" type="button" data-x="cur">Get ${payIn}</button>` : ''}</p>` : ''}
-          <p class="fine">${confirms === 1 ? 'One wallet confirmation.' : `Up to ${confirms} wallet confirmations: approvals first (only what this buy takes), then the buy.`} Packs open once Series ${S.series.no} closes. ${LIVE ? `If the price moves over 3%, nothing is charged.${payIn === 'ETH' ? ' Your wallet may show up to 3% more; anything unused comes back.' : ''}` : 'If the price moves over 3%, nothing is charged.'}</p>
+          ${canAll ? `<label class="paycheck"><input type="checkbox" data-all ${allOn ? 'checked' : ''}><span><b>Pay PAPER with ETH</b><small>One step. We buy the PAPER for you.</small></span></label>` : ''}
+          ${needPaper ? `<div class="getpaper"><p class="warn">Need ${missing.toLocaleString('en-US')} more PAPER.</p><button class="btn small" type="button" data-x="paper">Get PAPER</button></div>` : ''}
+          ${shortCur ? `<p class="warn">Not enough ${payIn}.${LIVE && payIn !== 'USDG' ? ` Keep 3% extra${payIn === 'ETH' ? ' plus a little for fees' : ''}.` : ''}${!LIVE && payIn !== 'ETH' ? ` <button class="btn small" type="button" data-x="cur">Get ${payIn}</button>` : ''}</p>` : ''}
+          <p class="fine">${confirms === 1 ? '1 tap in your wallet.' : `Up to ${confirms} taps in your wallet.`} Price moves over 3%? Nothing is charged.</p>
           ${LIVE ? '' : DEMO_LINE}
-          <button class="btn primary go" type="button" ${off ? 'disabled' : ''}>${busy ? 'Sending…' : need ? `Approve ${need[0]}` : extra ? `Buy ${label}` : priced ? `Buy ${pack(n)}` : `Claim ${pack(n)}`}</button>`;
+          <button class="btn primary go" type="button" ${off ? 'disabled' : ''}>${busy ? 'Sending…' : need ? `Approve ${need[0]}` : extra ? `Buy for ${money(usd)}` : priced ? `Buy ${pack(n)}` : `Claim ${pack(n)}`}</button>`;
         body.querySelector('[data-all]')?.addEventListener('change', (e) => { ethAll = e.target.checked; redraw(body, draw); });
         body.querySelector('[data-x=paper]')?.addEventListener('click', () => { Sheet.close('buy'); if (LIVE) Live.getPaper(missing, () => checkout(i)); else openGetPaper('PAPER'); });
         body.querySelector('[data-x=cur]')?.addEventListener('click', () => openGetPaper(cur));
@@ -516,7 +569,7 @@
       // price again first: if someone bought meanwhile, the buyer sees the new price instead of a refusal.
       const moved = (fresh) => {
         if (LIVE) Live.sync(); // the group's count and next prices move on too
-        notice = extra ? `Someone just bought it — the next one is ${money(fresh.usd / n)}.` : `The price moved. Nothing was charged. The new price is ${money(fresh.usd)}.`;
+        notice = extra ? `Someone beat you to it. Next one: ${money(fresh.usd / n)}.` : `Price changed to ${money(fresh.usd)}. Nothing charged.`;
         view = 'form'; understood = false; q = fresh;
       };
       async function go() {
@@ -537,11 +590,11 @@
           const fresh = await api.quote(groups()[i], n).catch(() => null);
           if (fresh) moved(fresh); else notice = 'Someone just bought it. Check the new price.';
           view = 'form'; understood = false;
-          redraw(body, draw); Sheet.open('buy', { title: extra ? 'Extra pack' : g.name, body, onClose: stop }); start();
+          redraw(body, draw); Sheet.open('buy', { title: extra ? 'Extra packs' : g.name, body, onClose: stop }); start();
         }
       }
       redraw(body, draw);
-      Sheet.open('buy', { title: extra ? 'Extra pack' : g0.name, body, onClose: stop }); start();
+      Sheet.open('buy', { title: extra ? 'Extra packs' : g0.name, body, onClose: stop }); start();
       requote();
     });
   }
@@ -553,9 +606,9 @@
       const draw = () => {
         const w = S.wallet; n = Math.max(1, Math.min(w.credits, n));
         const paper = n * per, short = w.balances.PAPER < paper, need = !short && Store.needsApproval('PAPER', paper);
-        body.innerHTML = `<p class="lead">Free packs come from the ${esc(cg?.name || 'sale')} group while it's open. They still take PAPER.</p>
+        body.innerHTML = `<p class="lead">Free packs still cost ${per} PAPER each.</p>
           ${w.credits > 1 ? `<div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output>${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button><span class="muted">of ${w.credits}</span></div>` : ''}
-          <dl class="sum"><dt>PAPER</dt><dd>${paper} <small>burned</small></dd><dt>You have</dt><dd>${w.balances.PAPER} PAPER</dd></dl>
+          <dl class="sum"><dt>PAPER</dt><dd>${paper}</dd><dt>You have</dt><dd>${w.balances.PAPER} PAPER</dd></dl>
           ${short ? shortLine('PAPER', paper - w.balances.PAPER) : ''}${DEMO_LINE}
           <button class="btn gold go" type="button" ${short ? 'disabled' : ''}>${busy ? 'Sending…' : need ? 'Approve PAPER' : `Use ${n} free ${n === 1 ? 'pack' : 'packs'}`}</button>`;
         body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { n = Math.max(1, Math.min(S.wallet.credits, n + +b.dataset.q)); redraw(body, draw); });
@@ -565,7 +618,7 @@
           if (need) { busy = true; redraw(body, draw); return approveNow('PAPER', paper, () => { busy = false; redraw(body, draw); }); }
           Sheet.close('free');
           Store.update((s) => { s.wallet.credits -= n; s.wallet.balances.PAPER -= paper; Store.spend('PAPER', paper); const x = s.series.groups[s.series.creditGroup]; if (x) { x.sold += n; if (x.left != null) x.left -= n; } });
-          pendingDeliver += n; Scene?.buy(n); window.Sound?.play('pack-drop'); toast(n === 1 ? 'Free pack on its way' : `${n} free packs on their way`, 'good');
+          sendPacks(n); window.Sound?.play('pack-drop'); afterBuy(n, true); window.Fun?.emit('bought', { n });
         };
       };
       draw(); Sheet.open('free', { title: S.wallet.credits > 1 ? 'Free packs' : 'Free pack', body, onClose: watch(body, draw, walletKey) });
@@ -586,45 +639,77 @@
     const draw = () => {
       const hd = document.querySelector('#sheet-paper .sheet-head h2'); if (hd) hd.textContent = 'Get ' + tok; // the title follows the token
       body.innerHTML = `<div class="seg" role="group" aria-label="Get">${['PAPER', 'PLANK', 'USDG'].map((c) => `<button type="button" data-t="${c}" aria-pressed="${c === tok}">${c}</button>`).join('')}</div>
-        <label class="amt" for="amt">How many ${tok}</label><input id="amt" inputmode="decimal" value="${amt}">
+        <label class="amt" for="amt">How much ${tok}</label><input id="amt" inputmode="decimal" value="${amt}">
         <dl class="sum"><dt>You pay</dt><dd></dd></dl>
-        ${DEMO_LINE}<button class="btn primary go" type="submit"></button><p class="fine">The best price across every Robinhood Chain pool (KyberSwap). One wallet confirmation.</p>`;
+        ${DEMO_LINE}<button class="btn primary go" type="submit"></button><p class="fine">Best price across all pools. 1 tap.</p>`;
       body.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { tok = b.dataset.t; amt = tok === 'PAPER' ? 10 : tok === 'USDG' ? 25 : 1000000; redraw(body, draw); });
       $('#amt', body).oninput = (e) => { const v = parseFloat(e.target.value); amt = Number.isFinite(v) ? v : 0; paint(); };
       paint();
     };
     body.onsubmit = (e) => {
       e.preventDefault(); if (why()) return;
-      needWallet(() => { if (why()) return paint(); const eth = ethOf(), got = amt, t = tok; Sheet.close('paper'); Store.update((s) => { s.wallet.balances[t] += got; s.wallet.balances.ETH -= eth; }); toast(`+${fmt(got)} ${t}`, 'good'); });
+      needWallet(() => { if (why()) return paint(); const eth = ethOf(), got = amt, t = tok; Sheet.close('paper'); Store.update((s) => { s.wallet.balances[t] += got; s.wallet.balances.ETH -= eth; }); toast(`+${fmt(got)} ${t}`, 'good'); did.add('paper'); });
     };
     draw(); Sheet.open('paper', { title: 'Get ' + tok, body });
   }
-  // ---------- New here? a short checklist; each step ticks itself off from the demo state and has its own button
+  // ---------- New here? a short checklist. A step ticks only for what this visitor did in this visit (the demo wallet
+  // starts with PAPER and packs: that's not them having done it); packs ready to open come first, with the main button.
+  const did = new Set(); // 'paper', 'buy' this visit (connect, open and grade are read from the state)
   function openStart() {
-    const sealed = () => Object.values(S.sealed).reduce((a, b) => a + b, 0);
-    const did = (word) => S.activity.some((a) => a.text.startsWith(word));
-    const steps = [
-      ['Connect a wallet', 'MetaMask, Rabby or any wallet on Robinhood Chain.', () => S.wallet.connected, 'Connect', () => needWallet(() => openStart())],
-      ['Get PAPER', 'Every pack burns some.', () => S.wallet.balances.PAPER >= 1, 'Get PAPER', () => openGetPaper()],
-      ['Buy a pack', 'In PLANK, ETH or USDG, plus PAPER.', () => Object.values(S.wallet.boughtIn || {}).some((n) => n > 0) || sealed() > 0, 'Buy', () => openGroup()],
-      ['Open it', 'Packs open once the Series sells out.', () => did('Opened'), 'Open packs', () => openStation('open')],
-      ['Case or grade', 'Within 24 hours, so new cards never wear.', () => did('Paid'), 'Case & grade', () => Stations.open('grade')],
+    const ready = () => Stations.openableCount();
+    const opened = () => S.activity.some((a) => a.text.startsWith('Opened'));
+    const open = ['Open your packs', () => (ready() ? `${ready()} ready to open now.` : 'Packs open when sales end.'), opened, 'Open packs', () => openStation('open')];
+    const rest = [
+      ['Connect a wallet', 'Any wallet on Robinhood Chain.', () => S.wallet.connected, 'Connect', () => needWallet(() => openStart())],
+      ['Get PAPER', 'Every pack takes some.', () => did.has('paper'), 'Get PAPER', () => openGetPaper()],
+      ['Buy a pack', 'PLANK, ETH or USDG, plus PAPER. Opens when sales end.', () => did.has('buy'), 'Buy', () => openGroup()],
+      ['Case or grade', 'Within 24h to stop wear.', () => S.activity.some((a) => a.text.startsWith('Paid')), 'Case & grade', () => Stations.open('grade')],
     ];
+    const steps = ready() && !opened() ? [open, ...rest] : [...rest.slice(0, 3), open, rest[3]];
     const body = document.createElement('div'); body.className = 'start';
     const draw = () => {
+      const first = steps.findIndex(([, , done]) => !done()); // the next thing to do gets the main button
       body.innerHTML = `<ol class="start-list">${steps.map(([t, sub, done, b], i) => `<li class="${done() ? 'done' : ''}">
-          <span class="start-n" aria-hidden="true">${done() ? '✓' : i + 1}</span><span class="start-t"><b>${t}</b><small>${sub}</small></span>
-          ${done() ? '<span class="sr">Done</span>' : `<button class="btn small" type="button" data-s="${i}">${b}</button>`}</li>`).join('')}</ol>
-        <p class="menu-links"><button class="inf-link" type="button" data-s="info">How it all works</button><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>`;
-      body.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { Sheet.close('start'); if (b.dataset.s === 'info') return Info.open(); steps[+b.dataset.s][4](); });
+          <span class="start-n" aria-hidden="true">${done() ? '✓' : i + 1}</span><span class="start-t"><b>${t}</b><small>${typeof sub === 'function' ? sub() : sub}</small></span>
+          ${done() ? '<span class="sr">Done</span>' : `<button class="btn small${i === first ? ' primary' : ''}" type="button" data-s="${i}">${b}</button>`}</li>`).join('')}</ol>
+        <p class="menu-links"><button class="inf-link" type="button" data-s="fun:practice">Rip a practice pack</button><button class="inf-link" type="button" data-s="fun:tour">Workshop tour</button><button class="inf-link" type="button" data-s="info">Info</button><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>`;
+      body.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { Sheet.close('start'); if (b.dataset.s === 'info') return Info.open(); if (b.dataset.s.startsWith('fun:')) return window.Fun?.go(b.dataset.s.slice(4)); steps[+b.dataset.s][4](); });
     };
     draw(); Sheet.open('start', { title: 'New here?', body });
   }
-  window.UI = { openGetPaper, checkout, openStart, approveNow };
+  // ---------- after a buy: packs can't open until the sale ends, so the end of a buy says so, with what's left in the
+  // sale, a way to My packs, and any packs that can open now. Not a sheet: it never blocks the next buy. The demo can
+  // skip to the sell-out so a visitor can open what they bought.
+  function afterBuy(n, free = false) {
+    did.add('buy');
+    document.querySelector('.receipt')?.remove();
+    const ready = Stations.openableCount(), x = Store.extraOpen(), left = Store.left();
+    const el = document.createElement('div'); el.className = 'receipt'; el.setAttribute('role', 'status');
+    el.innerHTML = `<button class="x" type="button" aria-label="Close">×</button>
+      <p class="rc-t"><b>${n === 1 ? (free ? 'Free pack added' : 'Pack added') : `${n} ${free ? 'free ' : ''}packs added`}</b> · ${n === 1 ? 'opens' : 'they open'} when sales end</p>
+      <p class="rc-s">${x ? 'Extra packs on sale now' : sold() ? `Series ${S.series.no} is sold out` : `${left.toLocaleString('en-US')} ${left === 1 ? 'pack' : 'packs'} left`}</p>
+      ${ready ? `<p class="rc-r">You have ${ready} ${ready === 1 ? 'pack' : 'packs'} ready to open</p>` : ''}
+      <div class="rc-a">${ready ? '<button class="btn small gold" type="button" data-r="open">Open one</button>' : ''}<button class="btn small" type="button" data-r="cards">My packs</button>${LIVE ? '' : '<button class="btn small ghost" type="button" data-r="skip">End sales <i>(demo)</i></button>'}</div>`;
+    let t = 0; const close = () => { clearTimeout(t); el.classList.remove('on'); setTimeout(() => el.remove(), 250); };
+    const later = () => { clearTimeout(t); t = setTimeout(close, 9000); };
+    el.querySelector('.x').onclick = close;
+    el.querySelectorAll('[data-r]').forEach((b) => b.onclick = () => { close(); ({ open: () => openStation('open'), cards: () => openStation('cards'), skip: skipToSellOut })[b.dataset.r](); });
+    el.addEventListener('pointerenter', () => clearTimeout(t)); el.addEventListener('pointerleave', later); el.addEventListener('focusin', () => clearTimeout(t));
+    document.body.append(el); requestAnimationFrame(() => el.classList.add('on')); later();
+  }
+  // DEMO: the sale sells out now (packs on their way land at once), so the packs just bought can be opened
+  function skipToSellOut() {
+    if (LIVE) return;
+    const n = pendingDeliver; pendingDeliver = 0;
+    Store.update((s) => { if (n) s.sealed[s.series.no] = (s.sealed[s.series.no] || 0) + n; Store.demoStage('closed'); });
+    window.Scene?.finale?.(); setTimeout(() => toast('Sales ended (demo). Open your packs!', 'good'), 600);
+  }
+  window.UI = { openGetPaper, checkout, openStart, approveNow, afterBuy, openGroup };
 
   // ---------- activity, menu, demo
   function openFeed() {
-    const items = S.activity.length ? S.activity : [{ text: 'Waiting for the first pack of Series 7' }];
+    if (window.Fun) return Fun.go('feed'); // the fun layer's feed: pulls, top stokers, activity (feed.js)
+    const items = S.activity.length ? S.activity : [{ text: 'No activity yet' }];
     Sheet.open('feed', { title: 'Activity', body: `<ul class="feed">${items.map((a) => `<li>${esc(a.text)}</li>`).join('')}</ul>` });
   }
   function openMenu() {
@@ -632,7 +717,10 @@
       <button class="btn" type="button" data-m="cards">${svg('cards')}My cards</button><button class="btn" type="button" data-m="open">${svg('pack')}Open packs${Stations.openableCount() ? ` (${Stations.openableCount()})` : ''}</button>
       <button class="btn" type="button" data-m="paper">${svg('paper')}Get PAPER</button><button class="btn" type="button" data-m="info">${svg('info')}Info</button>
       <button class="btn" type="button" data-m="feed">${svg('feed')}Activity</button><button class="btn" type="button" data-m="sound">${svg('sound')}Sound: ${window.Sound?.on ? 'On' : 'Off'}</button>
-      <button class="btn" type="button" data-m="start">New here?</button>${LIVE ? '' : '<button class="btn" type="button" data-m="demo">Demo controls</button>'}</div>
+      <button class="btn" type="button" data-m="start">New here?</button>${LIVE ? '' : '<button class="btn" type="button" data-m="demo">Demo controls</button>'}
+      <button class="btn" type="button" data-m="fun:practice">Practice pack</button><button class="btn" type="button" data-m="fun:binder">Binder</button>
+      <button class="btn" type="button" data-m="fun:showcase">Showcase</button><button class="btn" type="button" data-m="fun:badges">Badges</button>
+      <button class="btn" type="button" data-m="fun:tour">Workshop tour</button>${window.Fun?.haptics?.supported ? `<button class="btn" type="button" data-m="haptics">Vibration: ${Fun.haptics.on ? 'On' : 'Off'}</button>` : ''}</div>
       <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>` });
     d.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => { d.close(); go(b.dataset.m); });
   }
@@ -640,7 +728,7 @@
   function openDemo() {
     const d = Sheet.open('demo', { title: 'Demo controls', body: `<p class="lead">Jump the demo to any stage of a sale.</p><div class="menu">
       <button class="btn" type="button" data-d="phase">Next stage</button><button class="btn" type="button" data-d="sold">Sold-out show</button>
-      <button class="btn" type="button" data-d="after">After sell-out</button><button class="btn" type="button" data-d="waiting">More may come</button>
+      <button class="btn" type="button" data-d="after">Extra packs</button><button class="btn" type="button" data-d="waiting">More may come</button>
       <button class="btn" type="button" data-d="between">Between Series</button>
       <button class="btn" type="button" data-d="res-won">Results: you won</button><button class="btn" type="button" data-d="res-lost">Results: not picked</button><button class="btn" type="button" data-d="res-none">No results yet</button>
       <button class="btn" type="button" data-d="auto">${auto ? 'Stop' : 'Start'} crowd</button><button class="btn" type="button" data-d="credit">+1 free pack</button><button class="btn" type="button" data-d="announce">Series tease</button>
@@ -653,9 +741,9 @@
       if (k === 'after' || k === 'waiting') Store.update(() => Store.demoStage(k));
       if (k === 'sold') { // Everyone down to its last 3 packs, and the crowd takes them: the after-sell-out group opens
         Store.update((s) => { Store.demoStage('open'); const g = s.series.groups[2]; g.sold = g.capacity - 3; g.left = 3; });
-        crowd += 3; Scene?.buy(3);
+        crowd += 3; window.Scene?.buy(3);
       }
-      if (k === 'auto') { if (auto) { clearInterval(auto); auto = null; } else auto = setInterval(() => { if (Store.left() > 0 || Store.extraOpen()) { crowd++; Scene?.buy(1); } }, 3200); }
+      if (k === 'auto') { if (auto) { clearInterval(auto); auto = null; } else auto = setInterval(() => { if (Store.left() > 0 || Store.extraOpen()) { crowd++; window.Scene?.buy(1); } }, 3200); }
       if (k === 'between') Store.update(() => Store.demoStage('closed'));
       if (k === 'credit') Store.update((s) => { s.wallet.credits++; });
       if (k === 'announce') Announce.open();
@@ -671,6 +759,8 @@
   // sound is on by default (it starts on the first tap anywhere); the speaker turns it off, remembered per visitor
   $('#soundBtn').onclick = () => { const sound = window.Sound ? Sound.set(!Sound.on) : false; $('#soundBtn').setAttribute('aria-pressed', sound); $('#soundBtn').innerHTML = svg(sound ? 'sound' : 'mute'); toast(sound ? 'Sound: On' : 'Sound: Off'); };
   function go(k) {
+    if (k.startsWith('fun:')) return window.Fun?.go(k.slice(4)); // the fun layer's screens (fun.js)
+    if (k === 'haptics' && window.Fun?.haptics) return toast(`Vibration: ${Fun.haptics.set(!Fun.haptics.on) ? 'On' : 'Off'}`);
     if (k === 'paper') openGetPaper(); if (k === 'info') Info.open(); if (k === 'info-cards') Info.open('cards'); if (k === 'feed') openFeed();
     if (k === 'menu') openMenu(); if (k === 'demo' && !LIVE) openDemo(); if (k === 'start') openStart(); if (k === 'sound') $('#soundBtn').click();
     if (k === 'cards' || k === 'open') openStation(k);
@@ -679,21 +769,27 @@
   function openStation(k) {
     if (k !== 'open' || Stations.openableCount()) return Stations.open(k);
     const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0);
-    if (sealed) return toast(LIVE ? `Packs open once Series ${S.series.no} closes` : `Your Series ${S.series.no} packs open when it sells out`);
+    if (sealed) return toast(`Your Series ${S.series.no} packs open when sales end.`);
     if (sold()) return toast(`No packs to open. Series ${S.series.no + 1} is coming soon`);
     toast('No packs to open yet. Buy one first!');
     const b = $(mode === 'desk' ? '#buybox [data-buy]' : '#buybar [data-buy]'); if (!b) return;
     b.focus({ preventScroll: true }); b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge');
   }
   document.querySelectorAll('[data-go]').forEach((b) => b.onclick = () => go(b.dataset.go));
+  document.querySelectorAll('.tools .chip[aria-label], .menu-btn').forEach((b) => { b.title = b.getAttribute('aria-label'); }); // icon-only buttons say what they are on hover
   $('#seriesChip').onclick = () => Info.open('buy');
   document.querySelectorAll('[data-st]').forEach((b) => b.onclick = () => openStation(b.dataset.st));
   document.querySelectorAll('[data-peek]').forEach((b) => b.onclick = () => Announce.open());
 
   // ---------- the scene's events: a pack made is a pack sold; delivered packs land in the wallet
   let pendingDeliver = 0, crowd = 0;
+  // bought packs ride the machine to the wallet (the scene says when each lands); before the scene has loaded they land at once
+  function sendPacks(n) {
+    if (window.Scene) { pendingDeliver += n; Scene.buy(n); return; }
+    Store.update((s) => { s.sealed[s.series.no] = (s.sealed[s.series.no] || 0) + n; });
+  }
   function hookScene() {
-    if (LIVE) { layout(); render(); requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 300)); return; } // live: the chain says what sold and what landed
+    if (LIVE) { layout(); render(); return; } // live: the chain says what sold and what landed
     Scene.on('packMade', () => { // the buyer's own packs were counted when bought; this is the crowd
       if (crowd > 0) { crowd--; Store.update((s) => { const g = s.series.groups.find((x) => x.state === 'open' && x.gate === 'open' && (x.left == null || x.left > 0)); if (!g) return; g.sold++; if (g.left != null) g.left--; if (g.unlimited) g.endsAt = Math.floor(Date.now() / 1000) + g.idle; Store.log('Someone bought a pack'); }); }
       demoAdvance();
@@ -701,7 +797,6 @@
     setInterval(demoAdvance, 1000);
     Scene.on('delivered', () => { if (pendingDeliver > 0) { pendingDeliver--; Store.update((s) => { s.sealed[s.series.no] = (s.sealed[s.series.no] || 0) + 1; }); toast('+1 pack', 'good'); } });
     layout(); render();
-    requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 300));
   }
   // DEMO: the sale moves on by itself: Everyone selling out opens the after-sell-out group; that ending (nobody bought
   // for its idle time) closes the Series
@@ -710,12 +805,15 @@
     const [, , all, x] = groups(), now = Date.now() / 1000;
     if (all?.state === 'open' && all.left === 0 && !all.waiting && x?.state === 'upcoming') {
       Store.update(() => { all.state = 'ended'; all.endsAt = Math.floor(now); Object.assign(x, { state: 'open', opensAt: Math.floor(now), endsAt: Math.floor(now) + x.idle }); S.series.stage = 'after'; });
-      toast(`Everyone sold out! Extra packs on sale: the price rises ${pct(x.taxBps)} a pack`, 'good');
+      toast('Sold out! Extra packs on sale now.', 'good');
     } else if (x?.state === 'open' && x.endsAt && now >= x.endsAt) {
-      Store.update(() => Store.demoStage('closed')); Scene.finale(); setTimeout(() => toast(`Series ${S.series.no} closed. Packs can be opened now.`, 'good'), 600);
+      Store.update(() => Store.demoStage('closed')); Scene.finale(); setTimeout(() => toast(`Series ${S.series.no} is closed. Open your packs!`, 'good'), 600);
     } else if (x?.state === 'open' || all?.state === 'open') renderChip();
   }
   if (!LIVE && new URLSearchParams(location.search).has('between')) Store.update(() => Store.demoStage('closed'));
   if (window.Scene) hookScene(); else addEventListener('scene-ready', hookScene, { once: true });
   layout(); render();
+  // the UI is ready: show it now, over a still of the workshop; the live scene fades in when it has loaded (slow networks
+  // used to wait ~20 s on "Lighting the forge…")
+  requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 120));
 })();

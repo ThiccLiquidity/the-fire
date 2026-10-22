@@ -8,7 +8,7 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 .loading p { margin: 0; font: 400 15px var(--display); letter-spacing: .08em; color: var(--muted) }
 .loading .demo-load { font: 700 12px var(--body); color: var(--dim); letter-spacing: .04em }
 .loading.done { opacity: 0; pointer-events: none }
-@keyframes breathe { 50% { transform: scale(1.06); filter: drop-shadow(0 0 30px rgba(255,110,30,.8)) } }
+@keyframes breathe { 50% { transform: scale(1.06) } } /* transform only: no filter repaint every frame */
 
 /* top bar: black, with the five-material stripe. --top = top bar + the demo notice under it */
 :root { --top: 78px }
@@ -47,7 +47,7 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 .pill b { font: inherit }
 /* Open packs: the wood pill glows softly while there are packs to open; greyed (still focusable) when there are none */
 .pill.openp:not(.none) { box-shadow: 0 0 0 3px rgba(220,163,86,.14), 0 0 18px rgba(220,163,86,.32), 0 4px 14px rgba(0,0,0,.5); animation: openglow 3.4s ease-in-out infinite }
-@keyframes openglow { 50% { box-shadow: 0 0 0 4px rgba(220,163,86,.22), 0 0 28px rgba(220,163,86,.5), 0 4px 14px rgba(0,0,0,.5) } }
+@keyframes openglow { 50% { opacity: 1 } } /* the glows pulse a layer's opacity (::after, below), not a box-shadow: no repaint every frame */
 .pill.none { border-color: var(--line-2); color: var(--muted) } .pill.none svg { color: var(--dim) }
 /* "buy one first": a quick pulse on the Buy button */
 .opt.nudge { animation: nudge .5s ease-in-out 3 }
@@ -56,7 +56,7 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 /* the Buy box (on the scene) and the buy bar (phones) share their insides */
 .buybox { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; display: grid; gap: .4em; padding: .45em .5em .5em; border-radius: 18px;
   font-size: var(--fs, 14px); background: linear-gradient(#2c1f15f2, #17100bf2); border: 2px solid #ffbf5e; box-shadow: 0 0 0 4px rgba(255,120,40,.16), 0 0 34px rgba(255,100,30,.45), 0 8px 24px rgba(0,0,0,.6); animation: buyglow 2.6s ease-in-out infinite }
-@keyframes buyglow { 50% { box-shadow: 0 0 0 5px rgba(255,120,40,.26), 0 0 52px rgba(255,110,30,.68), 0 8px 24px rgba(0,0,0,.6) } }
+@keyframes buyglow { 50% { opacity: 1 } }
 .buybox.calm, .buybar.calm { animation: none; border-color: var(--line-2); box-shadow: 0 8px 24px rgba(0,0,0,.6) }
 .phase { font: 800 .8em var(--body); color: #ffb357; letter-spacing: .05em; text-transform: uppercase; text-align: center; white-space: nowrap }
 .opts { display: flex; gap: .45em }
@@ -286,3 +286,126 @@ body[data-mode=port] .qbanner { font-size: 13px; gap: 8px; flex-wrap: wrap; text
 .tx-steps a { color: inherit }
 .wlist { display: grid; gap: 8px }
 .wlist .btn { display: flex; align-items: center; gap: 10px; justify-content: flex-start }
+
+
+/* ---------- feel & smoothness (docs: the UX audit, Oct 2026) */
+/* the glows: a layer with the bright shadow fades in and out (opacity is composited, a box-shadow repaints) */
+.pill.openp:not(.none), .buybox, body[data-mode=port] .openbtn, body.quiet .pill[data-st="suggest"] { animation: none }
+.pill.openp:not(.none)::after, .buybox::after, .openbtn.hero::after, body.quiet .pill[data-st="suggest"]::after { content: ''; position: absolute; inset: -2px; border-radius: inherit; pointer-events: none; opacity: 0;
+  box-shadow: 0 0 0 4px rgba(220,163,86,.22), 0 0 28px rgba(220,163,86,.5); animation: openglow 3.4s ease-in-out infinite }
+.buybox::after { box-shadow: 0 0 0 5px rgba(255,120,40,.26), 0 0 52px rgba(255,110,30,.68); animation-name: buyglow; animation-duration: 2.6s }
+.buybox.calm::after, .buybox.second::after, .pill.openp.none::after { display: none }
+body.quiet .pill[data-st="suggest"]::after { box-shadow: 0 0 0 5px rgba(255,210,122,.3), 0 0 34px rgba(255,200,110,.7); animation-duration: 2.6s }
+/* under a sheet, nothing on the page keeps animating */
+body.covered .ui *, body.covered .ui *::after, body.covered .ui *::before, body.covered .stations *, body.covered .stations *::after, body.covered .buybar *, body.covered .buybar *::before, body.covered .buybar *::after { animation-play-state: paused !important }
+/* the flames: their own WebGL canvas over the scene (scene.js) */
+.flamebox { position: fixed; overflow: hidden; pointer-events: none; z-index: 0 }
+.flamebox[hidden] { display: none }
+.flamecv, .vigcv { position: absolute; left: 0; top: 0; transform-origin: 0 0 }
+body.quiet .flamebox { filter: brightness(.72) saturate(.9) }
+
+/* pressed: instant feedback (transform and opacity only) */
+.pill:active { transform: translate(-50%, -50%) scale(.96) } .pill { transition: transform .1s ease-out }
+.opt { transition: transform .08s ease-out }
+
+/* tap targets: 44 px at least; small-looking controls get a bigger invisible hit area */
+.chip, .start-link, .net-badge { position: relative }
+.chip::before { content: ''; position: absolute; inset: -5px -3px }
+.chip.round { width: 40px } .tools .chip:not(.round):not(.demo):not(.mycards) { min-width: 40px }
+.menu-btn, body[data-mode=port] .menu-btn { width: 44px; height: 44px }
+.wallet, body[data-mode=port] .wallet { min-height: 44px }
+.pill { min-height: 44px } body[data-mode=land] .pill { min-height: 44px }
+.demo-note { overflow: visible } .demo-note > span { overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+.start-link::before { content: ''; position: absolute; inset: -14px -10px }
+/* the wallet chip: the balance shortens with "…", never cuts a word ("23 PAPE") */
+.wallet { min-width: 0 } .wallet span { min-width: 0; overflow: hidden; text-overflow: ellipsis }
+@media (max-width: 380px) { body[data-mode=port] .wallet { padding: 0 10px } }
+
+/* text: 12 px at least (13 on phones) */
+.pill small { font-size: max(12px, .82em) }
+.phase { font-size: max(12px, .8em) }
+.gnext { font-size: max(12px, .78em) }
+.opt small { font-size: max(12px, .66em) }
+.types th { font-size: 12px } .demo-note b, .net-badge, .sd-k, .ti-text small, .bal small, .sd-start { font-size: 12px }
+.demo-line b { font-size: 11.5px }
+body[data-mode=port] .buybar .gnext, body[data-mode=port] .buybar .opt small, body[data-mode=port] .station small { font-size: 13px }
+
+/* ---------- the hero: one main thing to do (ui.js heroOf) and a one-line pitch */
+.pitch { margin: 0; font: italic 700 14px/1.3 var(--body); color: var(--muted); text-align: center }
+.desk-pitch { position: absolute; transform: translate(-50%, -50%); padding: 5px 14px; border-radius: 999px; background: rgba(13,9,7,.8); border: 1px solid var(--line); white-space: nowrap; pointer-events: none } /* just over the hero, on the bench */
+body[data-mode=port] .desk-pitch, body[data-mode=land] .desk-pitch, body.quiet .desk-pitch { display: none }
+/* desktop: the hero pill (Open packs or See your cards) is big and gold; when the hero is Buy, the Buy box is it */
+.pill.hero { --c: var(--gold); font-size: calc(var(--fs, 14px) * 1.25); padding: .6em 1.3em .6em 1em; color: #fff3d6; border-width: 2px;
+  background: linear-gradient(#4a3216f2, #24180cf2) }
+.pill.hero b { font: 400 1.05em/1.1 var(--display); letter-spacing: .03em; color: var(--gold) }
+.pill.hero svg { width: 1.5em; height: 1.5em }
+body.hero-buy .pill.hero { display: none }
+body:not(.hero-buy) .buybox { animation: none; border-color: var(--line-2); box-shadow: 0 8px 24px rgba(0,0,0,.6) }
+body:not(.hero-buy) .buybox::after { display: none }
+body:not(.hero-buy) .buybox .opt.main::before { animation-play-state: paused; opacity: 0 }
+body.hero-cards .pill.hero::after { display: none }
+/* until a first pack is opened, Burn, Case & grade and Suggest step back */
+body.fresh .pill.tool { opacity: .8; border-style: dashed } body.fresh .pill.tool small { display: none }
+
+/* ---------- phones held upright: the hero first, then My cards and the Series, then the tools; one-row Buy bar */
+body[data-mode=port] .stations { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; padding-bottom: calc(var(--bbH, 80px) + 16px + env(safe-area-inset-bottom, 0px)) }
+body[data-mode=port] .stations .pitch { grid-column: 1 / -1; margin-top: -2px }
+body[data-mode=port] .openbtn { grid-column: 1 / -1; position: relative; min-height: 62px }
+body[data-mode=port] .openbtn.hero { color: #2a1a05; background: linear-gradient(#ffe39a, #e8b54a); border: 2px solid #fff0bf;
+  box-shadow: 0 0 0 3px rgba(255,210,122,.18), 0 0 22px rgba(255,190,90,.35) }
+body[data-mode=port] .openbtn.hero b { color: #2a1a05; font-size: 20px } body[data-mode=port] .openbtn.hero small { color: #4a3008; font-size: 13px } body[data-mode=port] .openbtn.hero svg { color: #4a3008 }
+body[data-mode=port].hero-buy .openbtn.hero { display: none } /* the Buy bar is the hero */
+body[data-mode=port].hero-cards .openbtn.hero { color: var(--ink); background: var(--panel); border: 1.5px solid var(--wood); box-shadow: none }
+body[data-mode=port].hero-cards .openbtn.hero b { color: var(--gold) } body[data-mode=port].hero-cards .openbtn.hero small { color: var(--muted) } body[data-mode=port].hero-cards .openbtn.hero svg { color: var(--wood) }
+body[data-mode=port].hero-cards .openbtn.hero::after { display: none }
+body[data-mode=port] .station { grid-column: span 3; min-height: 56px }
+body[data-mode=port] .station.peek { grid-column: span 3 }
+body[data-mode=port] .station.tool { grid-column: span 2; min-height: 48px; grid-template-columns: 1fr; justify-items: center; text-align: center; padding: 6px 4px; row-gap: 2px }
+body[data-mode=port] .station.tool svg { grid-row: auto; width: 20px; height: 20px } body[data-mode=port] .station.tool b { font-size: 13px; line-height: 1.15 }
+body[data-mode=port] .station.tool small { display: none }
+body[data-mode=port].fresh .station.tool { border-style: dashed; border-color: var(--line-2); opacity: .85 } body[data-mode=port].fresh .station.tool svg { color: var(--muted) }
+/* the page scrolls if it still doesn't fit (a tiny screen, big text): never anything stuck under the Buy bar */
+html[data-mode=port] { overflow-y: auto } html[data-mode=port] body { overflow: visible }
+
+/* the Buy bar: one row (the main way to buy, and More); open, it shows everything over the page */
+body[data-mode=port] .buybar { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 8px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px)) }
+body[data-mode=port] .buybar > * { grid-column: 1 / -1 }
+body[data-mode=port] .buybar > .opts { grid-column: 1 }
+body[data-mode=port] .buybar .bb-more { grid-column: 2; grid-row: 1 / span 9; align-self: center }
+.bb-more { display: none }
+body[data-mode=port] .bb-more { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 64px; min-height: 48px; padding: 0 10px; border-radius: 12px;
+  border: 1.5px solid var(--line-2); background: var(--panel-2); color: var(--ink); font: 800 13px var(--body); cursor: pointer }
+body[data-mode=port] .bb-more::after { content: ''; width: 7px; height: 7px; border: solid currentColor; border-width: 2px 0 0 2px; transform: translateY(2px) rotate(45deg); margin-left: 2px }
+body[data-mode=port] .buybar.open .bb-more::after { transform: translateY(-2px) rotate(225deg) }
+body[data-mode=port] .buybar:not(.open) > .phase, body[data-mode=port] .buybar:not(.open) > .gnext, body[data-mode=port] .buybar:not(.open) .opts .opt:not(:first-child),
+  body[data-mode=port] .buybar:not(.open) .tease-inline small, body[data-mode=port] .buybar:not(.open) .sdock-bar > :not(.opts):not(.sd-t) { display: none }
+body[data-mode=port] .buybar:not(.open) .opts { grid-template-columns: minmax(0, 1fr) }
+body[data-mode=port] .buybar:not(.open) .opt { min-height: 48px; padding: .3em .8em }
+body[data-mode=port] .buybar:not(.open) .opt small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 1.35em }
+body[data-mode=port] .buybar:not(.open) .opt img.mini { height: 2em }
+body[data-mode=port] .buybar:not(.open) .tease-inline { padding: 2px 8px } body[data-mode=port] .buybar:not(.open) .ti-fan { display: none }
+body[data-mode=port] .buybar:not(.open) .sdock-bar .sd-t { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+body[data-mode=port] .buybar.open { max-height: min(75dvh, 560px); overflow: auto; box-shadow: 0 -18px 40px rgba(0,0,0,.7) }
+body[data-mode=port]:not(.hero-buy) .buybar { border-top-color: var(--line-2) }
+body[data-mode=port]:not(.hero-buy) .buybar .opt.main::before { animation-play-state: paused; opacity: 0 }
+
+/* after a buy: the receipt (not a sheet: it never blocks the next buy) */
+.receipt { position: fixed; z-index: 45; right: 16px; bottom: calc(var(--stripH, 104px) + 16px); width: min(360px, calc(100vw - 32px)); box-sizing: border-box; display: grid; gap: 6px;
+  padding: 12px 14px; border-radius: 14px; background: var(--panel); border: 1.5px solid var(--brass); box-shadow: 0 12px 34px rgba(0,0,0,.7);
+  opacity: 0; transform: translateY(8px); transition: opacity .25s, transform .25s }
+.receipt.on { opacity: 1; transform: none }
+.receipt p { margin: 0; padding-right: 40px } .receipt .rc-t b { color: var(--gold) } .receipt .rc-s { color: var(--muted); font-size: 13px } .receipt .rc-r { color: var(--good); font-weight: 800; font-size: 14px }
+.receipt .rc-a { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px } .receipt .rc-a .btn { min-height: 44px } .receipt .rc-a i { font-style: normal; color: var(--muted) }
+.receipt .x { position: absolute; top: 6px; right: 6px; width: 44px; height: 44px; border-radius: 50%; border: 0; background: none; color: var(--muted); font-size: 22px; cursor: pointer }
+.btn.ghost { background: none; border-style: dashed }
+body[data-mode=port] .receipt { left: 12px; right: 12px; width: auto; bottom: calc(var(--bbH, 80px) + 10px) }
+body[data-mode=land] .receipt { right: 252px; bottom: 12px }
+/* phones: the top bar fits the brand, the menu and the whole wallet button ("Connect", "24 PAPER") */
+body[data-mode=port] .topbar { gap: 6px; padding: 0 8px 0 10px }
+body[data-mode=port] .wallet { flex-shrink: 0; max-width: 42vw; padding: 0 10px }
+@media (max-width: 374px) { body[data-mode=port] .brand .word { display: none } }
+body[data-mode=port] .buybar.open > * { grid-column: 1 / -1 }
+body[data-mode=port] .buybar.open .bb-more { grid-row: 1; justify-self: end; min-height: 44px }
+
+/* desktop: the card's detail is wide enough for its odds table and its actions in one row */
+@media (min-width: 760px) { #sheet-card { width: min(760px, calc(100vw - 24px)) } }

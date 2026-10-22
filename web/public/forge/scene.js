@@ -2,9 +2,19 @@
 const SW = 3840, SH = 2160, A = 'a/';
 const G = await (await fetch(A + 'scene.json')).json();
 const load = (n) => new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = A + n + '.webp'; });
-const names = ['plate', 'belt', 'chain-up', 'chain-lo', 'front-stand', 'roll-0', 'roll-1', 'pack', 's-flywheel', 's-gear-big-a', 's-gear-big-b',
+// the plate (the painted room, 3840 x 2160) comes in the size this screen draws it at (size_images.py): a phone needs
+// about 1280 px, not the 33 MB-decoded master, and no main-thread downscale. A bigger one loads later if the view grows.
+const PLATES = [1280, 1920, 2560, 3840], plateFile = (w) => (w >= 3840 ? 'plate' : 'plate-' + w);
+const plateFor = (px) => PLATES.find((w) => w >= px * 0.98) || 3840;
+const DPR = () => Math.min(innerWidth < 900 ? 1.25 : 2, devicePixelRatio || 1); // phones draw at 1.25x at most: the canvas is soft art anyway
+let plateW = plateFor(innerWidth < 700 && innerHeight > innerWidth
+  ? SW * Math.max(innerWidth / SW, Math.min(innerHeight * 0.42, innerWidth * 0.9) / SH) * DPR() * 1.6 // a phone held upright: the follow camera zooms 1.6x
+  : SW * Math.min(innerWidth / SW, Math.max(200, innerHeight - 180) / SH) * DPR());
+const names = [plateFile(plateW), 'belt', 'chain-up', 'chain-lo', 'front-stand', 'roll-0', 'roll-1', 'pack', 's-flywheel', 's-gear-big-a', 's-gear-big-b',
   's-gear-small', 'belt-light', 'p-0', 'p-1', 'p-2', 'p-3', 'p-4', 'p-5', 's-rod', 's-conrod', 's-capsule', 's-padlock', 's-token', 's-log0', 's-log1', 's-log2', 's-paper0', 's-paper1', 's-paper2', 'card'];
 const img = {}; (await Promise.all(names.map(load))).forEach((im, k) => img[names[k]] = im);
+img.plate = img[plateFile(plateW)];
+if (!img.plate) { plateW = 3840; img.plate = await load('plate'); } // the sized copies are missing: the master
 
 // ---------- small canvas helpers (all effects are made in code from the source art)
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); return c; };
@@ -43,8 +53,11 @@ const cam = { x: 0, y: 0, lz: 0, vx: 0, vy: 0, vz: 0, gx: 0, gy: 0, gz: 0, fvx: 
 const vb = { bx: 0, by: 0, bw: 1, bh: 1 }; // the view box, device px
 let curS = 1, curOX = 0, curOY = 0; // this frame's scene -> device transform (camera included)
 function fit() {
-  dpr = Math.min(innerWidth < 900 ? 1.5 : 2, devicePixelRatio || 1);
-  cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr);
+  dpr = DPR();
+  // a phone held upright: the scene is the top of the page, so the canvas ends where the scene does (fewer pixels to fill)
+  const cssH = view.follow ? Math.min(innerHeight, Math.ceil(view.y + view.h)) : innerHeight;
+  cv.style.height = view.follow ? cssH + 'px' : '';
+  cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(cssH * dpr);
   const bx = view.x * dpr, by = view.y * dpr, bw = view.w * dpr, bh = view.h * dpr;
   scale = view.mode === 'cover' ? Math.max(bw / SW, bh / SH) : Math.min(bw / SW, bh / SH);
   ox = bx + (bw - SW * scale) * (view.mode === 'cover' ? view.focus : 0.5); oy = by + (bh - SH * scale) / 2;
@@ -53,6 +66,9 @@ function fit() {
   if (!cam.on) { Object.assign(cam, { x: cam.homeX, y: cam.homeY, lz: 0, vx: 0, vy: 0, vz: 0, gx: cam.homeX, gy: cam.homeY, gz: 0, fvx: 0, fvy: 0 }); }
   curS = scale; curOX = ox; curOY = oy;
   plateCache = null; plateHi = null; packSpr = null; rollBuf = [];
+  // the view grew past the plate's size (a bigger window, the zoomed camera): load the next one up, swap it in when it's here
+  const want = plateFor(SW * scale * (view.follow ? ZMAX : 1));
+  if (want > plateW && !fit.loading) { fit.loading = true; load(plateFile(want)).then((im) => { fit.loading = false; if (im && want > plateW) { plateW = want; img.plate = im; plateCache = plateHi = null; } }); }
 }
 addEventListener('resize', fit); fit();
 
@@ -61,9 +77,12 @@ const RMQ = matchMedia('(prefers-reduced-motion: reduce)');
 let RM = RMQ.matches; RMQ.addEventListener?.('change', (e) => { RM = e.matches; });
 const PN = () => (RM ? 0.4 : 1); // particle count factor
 
-// ---------- the flame: the site's WebGL fire, one shared context, half resolution
+// ---------- the flame: the site's WebGL fire, on its own canvas laid over the scene (nothing is copied back into the
+// 2D canvas: that copy stalled the GPU every frame). The canvas covers the furnace and the ash bin in scene px and is
+// moved with the camera by a CSS transform; the shader clips each flame to its opening, melts the furnace's into the
+// coals and darkens both with the room's vignette, as the 2D drawing did.
 const FRAG = `#version 300 es
-precision highp float; in vec2 vUv; out vec4 o; uniform float uT, uS, uF;
+precision highp float; in vec2 vUv; out vec4 o; uniform float uT, uS, uF, uFlip, uMode, uA; uniform vec4 uR; uniform vec2 uP[6]; uniform sampler2D uTex;
 vec3 mod289(vec3 x){return x-floor(x*(1./289.))*289.;} vec2 mod289(vec2 x){return x-floor(x*(1./289.))*289.;}
 vec3 permute(vec3 x){return mod289(((x*34.)+1.)*x);}
 float snoise(vec2 v){ const vec4 C=vec4(.211324865405187,.366025403784439,-.577350269189626,.024390243902439);
@@ -75,9 +94,11 @@ float snoise(vec2 v){ const vec4 C=vec4(.211324865405187,.366025403784439,-.5773
  m*=1.79284291400159-.85373472095314*(a0*a0+h*h);
  vec3 g; g.x=a0.x*x0.x+h.x*x0.y; g.yz=a0.yz*x12.xz+h.yz*x12.yw; return 130.*dot(m,g); }
 float fbm(vec2 p){ float a=.5,s=0.; for(int i=0;i<5;i++){ s+=a*snoise(p); p=p*2.03+vec2(1.7,9.2); a*=.5; } return s; }
-void main(){
+float sm(float a,float b,float x){ float t=clamp((x-a)/(b-a),0.,1.); return t*t*(3.-2.*t); }
+// the flame itself, premultiplied (uv: 0..1 across its box, the tip at the top)
+vec4 flame(vec2 uv){
   float s=uS, s3=s*s*s, t=uT;
-  vec2 p=vec2(vUv.x-0.5, vUv.y-0.04)*vec2(1.0,1.15);
+  vec2 p=vec2(uv.x-0.5, uv.y-0.04)*vec2(1.0,1.15);
   float H=0.2+0.28*s+0.75*s3, W=0.14+0.17*s+0.05*s3;
   vec2 q=vec2(p.x/W, p.y/H);
   vec2 wq=vec2(p.x*6.5, p.y*4.2);
@@ -91,12 +112,34 @@ void main(){
   vec3 c=mix(vec3(.5,.08,.02), vec3(1.,.42,.08), smoothstep(.08,.38,I));
   c=mix(c, vec3(1.,.78,.32), smoothstep(.34,.62,I)); c=mix(c, vec3(1.,.97,.86), smoothstep(.62,.92,I));
   float a=smoothstep(0.05,0.45,I)*smoothstep(-0.07,-0.015,p.y);
-  o=vec4(c*a,a);
+  return vec4(c*a,a);
+}
+// uMode: 0 a furnace tongue (the flame texture, copied and clipped to the opening), 1 the ash bin's flame,
+// 2 the furnace's mask, 3 the furnace's flame into its texture (drawn once a frame, copied three times)
+void main(){
+  if (uMode>2.5) { o=flame(vUv); return; }
+  vec2 sp=vec2(uR.x+gl_FragCoord.x/uR.z, uR.y+(uR.w-gl_FragCoord.y)/uR.z); // this pixel in scene px
+  if (uMode>1.5) { // the furnace's mask, laid over its tongues: melts into the coals at the base, and the room's light
+    float k=clamp((1030.-sp.y)/100.,0.,1.); float m=(k<.35? k/.35*.55 : .55+(k-.35)/.65*.45)*uA;
+    o=vec4(vec3(m), m); return; }
+  if (uMode<0.5) { // the firebox opening: its rectangle and the arch over it
+    vec2 e=(sp-vec2(627.,801.))/vec2(225.,84.);
+    if (!((sp.x>=402.&&sp.x<=852.&&sp.y>=800.&&sp.y<=1046.)||(dot(e,e)<=1.&&sp.y<=801.))) discard;
+    o=texture(uTex, vec2(uFlip<0.? 1.-vUv.x : vUv.x, vUv.y)); return;
+  }
+  for (int i=0;i<6;i++){ vec2 a=uP[i], b=uP[(i+1)%6]; if ((b.x-a.x)*(sp.y-a.y)-(b.y-a.y)*(sp.x-a.x)<0.) discard; } // inside the ash bin
+  o=flame(vUv);
 }`;
-const FL_FIRE = [0, 0, 210, 180], FL_ASH = [212, 0, 150, 130]; // regions of the shared canvas (half of the old 420x360 / 300x260)
+const FLAME_R = { x: 40, y: 770, w: 860, h: 540 }, FK = 0.375; // scene px; flame px per scene px (soft, about half the screen's resolution)
+const ASH_POLY = [[70, 820], [530, 820], [497, 1092], [425, 1277], [95, 1238], [70, 1100]]; // the ash bin's opening (clockwise on screen)
+const flameBox = document.createElement('div'), flameCv = document.createElement('canvas');
+flameBox.className = 'flamebox'; flameBox.setAttribute('aria-hidden', 'true'); flameBox.hidden = true;
+flameCv.className = 'flamecv'; flameCv.width = Math.round(FLAME_R.w * FK); flameCv.height = Math.round(FLAME_R.h * FK);
+Object.assign(flameCv.style, { width: FLAME_R.w + 'px', height: FLAME_R.h + 'px' });
+flameBox.append(flameCv); document.getElementById('c').after(flameBox);
 const flameGL = (() => {
-  const c = mk(362, 180);
-  const gl = c.getContext('webgl2', { premultipliedAlpha: true, alpha: true, preserveDrawingBuffer: true });
+  const c = flameCv;
+  const gl = c.getContext('webgl2', { premultipliedAlpha: true, alpha: true, antialias: false });
   if (!gl) return null;
   const sh = (t, s) => { const x = gl.createShader(t); gl.shaderSource(x, s); gl.compileShader(x); return x; };
   const pr = gl.createProgram();
@@ -107,13 +150,38 @@ in vec2 a; out vec2 vUv; void main(){ vUv=a*0.5+0.5; gl_Position=vec4(a,0.,1.); 
   gl.useProgram(pr);
   const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
   const loc = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  const uT = gl.getUniformLocation(pr, 'uT'), uS = gl.getUniformLocation(pr, 'uS'), uF = gl.getUniformLocation(pr, 'uF');
-  gl.enable(gl.SCISSOR_TEST);
-  return { c, draw([x, y, w, h], t, s, f) { const gy = c.height - y - h; // GL's origin is bottom-left
-    gl.viewport(x, gy, w, h); gl.scissor(x, gy, w, h); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.uniform1f(uT, t); gl.uniform1f(uS, s); gl.uniform1f(uF, f); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); } };
+  const U = Object.fromEntries(['uT', 'uS', 'uF', 'uFlip', 'uMode', 'uA', 'uR', 'uP', 'uTex'].map((k) => [k, gl.getUniformLocation(pr, k)]));
+  gl.uniform4f(U.uR, FLAME_R.x, FLAME_R.y, FK, c.height); gl.uniform2fv(U.uP, ASH_POLY.flat());
+  // the furnace's flame: drawn once a frame into a texture (the size the old shared canvas gave it), then copied into its three tongues
+  const TW = 210, TH = 176, tex = gl.createTexture(), fbo = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, TW, TH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0); gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.uniform1i(U.uTex, 0); gl.activeTexture(gl.TEXTURE0);
+  gl.enable(gl.SCISSOR_TEST); gl.enable(gl.BLEND);
+  // a rect in scene px -> the viewport (GL's origin is bottom-left), clamped to the canvas
+  const port = (x, y, w, h) => { const px = Math.round((x - FLAME_R.x) * FK), py = Math.round(c.height - (y - FLAME_R.y + h) * FK), pw = Math.round(w * FK), ph = Math.round(h * FK);
+    gl.viewport(px, py, pw, ph); const sx = Math.max(0, px), sy = Math.max(0, py); gl.scissor(sx, sy, Math.max(0, Math.min(c.width, px + pw) - sx), Math.max(0, Math.min(c.height, py + ph) - sy)); };
+  return {
+    begin() { gl.disable(gl.SCISSOR_TEST); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.enable(gl.SCISSOR_TEST); },
+    // the furnace's flame into its texture
+    fire(t, s, f) { gl.bindTexture(gl.TEXTURE_2D, null); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0, 0, TW, TH); gl.disable(gl.SCISSOR_TEST); gl.disable(gl.BLEND); // (the texture unbound while drawn into)
+      gl.uniform1f(U.uMode, 3); gl.uniform1f(U.uT, t); gl.uniform1f(U.uS, s); gl.uniform1f(U.uF, f); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.enable(gl.SCISSOR_TEST); gl.enable(gl.BLEND); gl.bindTexture(gl.TEXTURE_2D, tex); },
+    // a tongue of it in the furnace (mode 0), or the ash bin's own flame (mode 1), drawn over what's there
+    flame(rect, mode, t, s, f, flip = 1) { port(...rect); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.uniform1f(U.uMode, mode); gl.uniform1f(U.uT, t); gl.uniform1f(U.uS, s); gl.uniform1f(U.uF, f); gl.uniform1f(U.uFlip, flip); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); },
+    // the furnace's mask over its tongues (multiplies what's drawn there)
+    mask(rect, alpha) { port(...rect); gl.blendFuncSeparate(gl.ZERO, gl.SRC_COLOR, gl.ZERO, gl.SRC_ALPHA); gl.uniform1f(U.uMode, 2); gl.uniform1f(U.uA, alpha); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); },
+  };
 })();
-const FB_X = 380, FB_Y = 560, fireBuf = mk(500, 500); // the furnace's flames, scene px
+let flameCss = '';
+function placeFlames() { // the flame canvas follows the scene's transform (camera included), clipped to the view box
+  const k = curS / dpr, box = `left:${vb.bx / dpr}px;top:${vb.by / dpr}px;width:${vb.bw / dpr}px;height:${vb.bh / dpr}px`;
+  const tf = `translate(${(curOX - vb.bx) / dpr + FLAME_R.x * k}px,${(curOY - vb.by) / dpr + FLAME_R.y * k}px) scale(${k})`;
+  if (box + tf !== flameCss) { flameCss = box + tf; flameBox.style.cssText = box; flameCv.style.transform = tf;
+    VIGNETTE.style.transform = `translate(${(curOX - vb.bx) / dpr}px,${(curOY - vb.by) / dpr}px) scale(${k})`; }
+}
 
 // ---------- places (scene pixels, measured on the master)
 const FIREBOX = { x0: 402, x1: 852, cx: 627, archY: 800, archRy: 84, base: 1046, flameX: 630, flameY: 1004 };
@@ -150,6 +218,8 @@ const VIGNETTE = (() => { // the scene's own edges melt into the black page
   }
   g.putImageData(d, 0, 0); return c;
 })();
+// the vignette is a layer over the scene and its flames (composited by the browser, not drawn into every frame)
+VIGNETTE.className = 'vigcv'; Object.assign(VIGNETTE.style, { width: SW + 'px', height: SH + 'px' }); flameBox.append(VIGNETTE);
 // rod: the rod sprite, thickened, warmed to the painting's steel/brass, lit on top and shaded under
 const ROD = (() => { const r = img['s-rod']; if (!r) return null;
   const T = Math.round(r.height * 1.55), c = mk(r.width, T), g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
@@ -193,7 +263,7 @@ const BELT_SHADE = (() => { const L = img['belt-light']; if (!L) return null; co
 // the paper sheet's buffer (shaded to the roll as it wraps into the nip)
 const paperBuf = mk(200, 150);
 // steam: soft, wispy, noise-textured puffs made at load
-const PUFFS = (() => {
+function makePuffs() {
   const S = 128, out = { warm: [], cool: [] };
   const hash = (x, y, s) => { let h = (x * 374761393 + y * 668265263 + s * 2246822519) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
   const vn = (x, y, s) => { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
@@ -215,7 +285,9 @@ const PUFFS = (() => {
     out.cool.push(c1); out.warm.push(c2);
   }
   return out;
-})();
+}
+// made on first use (or once the page is idle), off the start-up path
+let PUFFS_ = null; const PUFFS = () => PUFFS_ || (PUFFS_ = makePuffs());
 
 // ---------- state
 let left = 167, total = 167, queue = 0, ready = [], burnCount = 12, windowFrac = 17 / 24, seriesNo = 7, extra = null; // extra: the after-sell-out price on the board (its packs have no count)
@@ -284,11 +356,16 @@ function drawCards(dt) {
 // ---------- helpers
 function spin(im, cx, cy, a) { ctx.save(); ctx.translate(cx, cy); ctx.rotate(a); ctx.drawImage(im, -im.width / 2, -im.height / 2); ctx.restore(); }
 const board = { key: '', c: mk(332, 358) }; // twice the board's size, for crisp chalk
-function chalkGrain(g, W, H, seed, n) { // the grain: chalk skips over the board's texture
-  g.globalCompositeOperation = 'destination-out';
-  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (let i = 0; i < n; i++) { g.fillStyle = `rgba(0,0,0,${0.25 + rnd() * 0.6})`; g.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 2.2, 1 + rnd() * 1.4); }
-  g.globalCompositeOperation = 'source-over';
+const grains = new Map();
+function chalkGrain(g, W, H, seed, n) { // the grain: chalk skips over the board's texture (one mask per board size, made once)
+  const key = `${W}x${H}:${seed}:${n}`; let m = grains.get(key);
+  if (!m) {
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, d = new ImageData(W, H), p = d.data;
+    for (let i = 0; i < n; i++) { const a = 0.25 + rnd() * 0.6, x = rnd() * W, y = rnd() * H, w = 1 + rnd() * 2.2, h = 1 + rnd() * 1.4;
+      for (let yy = Math.floor(y); yy < Math.min(H, Math.ceil(y + h)); yy++) for (let xx = Math.floor(x); xx < Math.min(W, Math.ceil(x + w)); xx++) { const k = (yy * W + xx) * 4 + 3; p[k] += (255 - p[k]) * a; } }
+    m = mk(W, H); m.getContext('2d').putImageData(d, 0, 0); grains.set(key, m);
+  }
+  g.globalCompositeOperation = 'destination-out'; g.drawImage(m, 0, 0); g.globalCompositeOperation = 'source-over';
 }
 function drawBoard(lines) { // chalk: off-white strokes, grainy where the chalk skipped, a faint dusty smudge
   const c = board.c, g = c.getContext('2d'), W = c.width, H = c.height;
@@ -299,7 +376,7 @@ function drawBoard(lines) { // chalk: off-white strokes, grainy where the chalk 
   write(7, 0.18); write(0, 0.95);
   chalkGrain(g, W, H, 11, 9000);
 }
-const SOLD = (() => { // the SOLD OUT stamp, in red chalk, at twice the board's size
+function makeSold() { // the SOLD OUT stamp, in red chalk, at twice the board's size (made when first needed: its font has loaded by then)
   const W = 332, H = 358, c = mk(W, H), g = c.getContext('2d');
   g.translate(W / 2, H / 2 + 8); g.rotate(-0.24);
   const col = (a) => `rgba(236,128,104,${a})`;
@@ -310,7 +387,8 @@ const SOLD = (() => { // the SOLD OUT stamp, in red chalk, at twice the board's 
   g.fillText('SOLD OUT', 0, 3);
   g.setTransform(1, 0, 0, 1, 0, 0); chalkGrain(g, W, H, 29, 7000);
   return c;
-})();
+}
+let SOLD_ = null; const SOLD = () => SOLD_ || (SOLD_ = makeSold());
 function chalk(text, x, y, size, w, alpha = 0.88) {
   ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   let s = size; ctx.font = `700 ${s}px "Cabin Sketch", cursive`;
@@ -401,28 +479,18 @@ function drawEngine() {
 }
 function drawFires(fl) {
   if (flameGL) {
-    const fx = Math.min(1, flare / 1.6), lo = 1 - 0.55 * bank;
-    flameGL.draw(FL_FIRE, ft, (0.64 + 0.08 * fx + speed * 0.04) * (1 - 0.3 * bank), (0.62 + 0.22 * fx) * (1 - 0.25 * bank));
-    const w = 560, h = 470, f = FIREBOX, [sx, sy, sw, sh] = FL_FIRE;
-    ctx.save(); ctx.beginPath(); ctx.rect(f.x0, f.archY, f.x1 - f.x0, f.base - f.archY); ctx.ellipse(f.cx, f.archY + 1, (f.x1 - f.x0) / 2, f.archRy, 0, Math.PI, 0); ctx.clip();
-    // three tongues across the opening (the side ones mirrored, so they don't move in step)
-    // drawn off-screen first so the base can melt into the coals (no hard bottom edge)
-    const fb = fireBuf.getContext('2d'); fb.globalCompositeOperation = 'source-over'; fb.clearRect(0, 0, fireBuf.width, fireBuf.height);
-    for (const [dx, sc, flip] of [[-135, 0.8, -1], [135, 0.78, -1], [0, 1, 1]]) {
-      fb.save(); fb.translate(f.flameX + dx - FB_X, 1030 - FB_Y); fb.scale(flip * sc, sc); fb.drawImage(flameGL.c, sx, sy, sw, sh, -w / 2, -h, w, h); fb.restore(); }
-    fb.globalCompositeOperation = 'destination-in';
-    const mg = fb.createLinearGradient(0, 1030 - FB_Y, 0, 930 - FB_Y); mg.addColorStop(0, 'rgba(0,0,0,0)'); mg.addColorStop(0.35, 'rgba(0,0,0,.55)'); mg.addColorStop(1, 'rgba(0,0,0,1)');
-    fb.fillStyle = mg; fb.fillRect(0, 0, fireBuf.width, fireBuf.height);
-    ctx.globalAlpha = 0.92 * (0.55 + 0.45 * lo); ctx.drawImage(fireBuf, FB_X, FB_Y); ctx.globalAlpha = 1;
-    if (fx > 0) { ctx.globalCompositeOperation = 'lighter'; glow(G_FLARE_IN, f.cx, 960, 300, 0.32 * fx); } // the opening brightens
-    ctx.restore();
+    const fx = Math.min(1, flare / 1.6), lo = 1 - 0.55 * bank, f = FIREBOX;
+    flameGL.begin();
+    // three tongues across the opening (the side ones mirrored, so they don't move in step), then the mask over them
+    const sz = (0.64 + 0.08 * fx + speed * 0.04) * (1 - 0.3 * bank), br = (0.62 + 0.22 * fx) * (1 - 0.25 * bank);
+    flameGL.fire(ft, sz, br);
+    for (const [dx, sc, flip] of [[-135, 0.8, -1], [135, 0.78, -1], [0, 1, 1]]) flameGL.flame([f.flameX + dx - 280 * sc, 1030 - 470 * sc, 560 * sc, 470 * sc], 0, ft, sz, br, flip);
+    flameGL.mask([f.x0, f.archY - f.archRy - 4, f.x1 - f.x0, f.base - f.archY + f.archRy + 4], 0.92 * (0.55 + 0.45 * lo));
+    if (fx > 0) { ctx.save(); ctx.beginPath(); ctx.rect(f.x0, f.archY, f.x1 - f.x0, f.base - f.archY); ctx.ellipse(f.cx, f.archY + 1, (f.x1 - f.x0) / 2, f.archRy, 0, Math.PI, 0); ctx.clip();
+      ctx.globalCompositeOperation = 'lighter'; glow(G_FLARE_IN, f.cx, 960, 300, 0.32 * fx); ctx.restore(); } // the opening brightens
     if (fx > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; glow(G_FLARE_ROOM, f.cx, 950, 760, 0.12 * fx); ctx.restore(); } // and lights the room
-  }
-  if (flameGL) {
-    const ax = Math.min(1, ashFlare), [sx, sy, sw, sh] = FL_ASH;
-    flameGL.draw(FL_ASH, at, 0.42 + 0.1 * ax, 0.75 + 0.25 * ax);
-    ctx.save(); ctx.beginPath(); ctx.moveTo(70, 820); ctx.lineTo(530, 820); ctx.lineTo(ASHBIN[1][0], ASHBIN[1][1]); ctx.lineTo(...ASHBIN[2]); ctx.lineTo(...ASHBIN[3]); ctx.lineTo(...ASHBIN[0]); ctx.closePath(); ctx.clip();
-    const aw = 340 + 40 * ax, ah = 300 + 40 * ax; ctx.drawImage(flameGL.c, sx, sy, sw, sh, 290 - aw / 2, 1268 - ah, aw, ah); ctx.restore();
+    const ax = Math.min(1, ashFlare), aw = 340 + 40 * ax, ah = 300 + 40 * ax;
+    flameGL.flame([290 - aw / 2, 1268 - ah, aw, ah], 1, at, 0.42 + 0.1 * ax, 0.75 + 0.25 * ax);
   }
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   glow(G_ROOM, 630, 960, 820, 0.07 * fl);
@@ -567,7 +635,7 @@ function drawBoardAndDials() {
       const k = Math.min(1, st / 0.2), s = 1 + 0.7 * (1 - k) * (1 - k) - (st > 0.2 && st < 0.36 ? 0.035 * Math.sin((st - 0.2) / 0.16 * Math.PI) : 0);
       if (k >= 1 && !soldDust && finale >= 0) { soldDust = true; chalkDust(cx, b.y + b.h / 2 + 4); }
       ctx.save(); ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip();
-      ctx.globalAlpha = Math.min(1, st / 0.08) * 0.92; ctx.translate(cx, b.y + b.h / 2); ctx.scale(s, s); ctx.drawImage(SOLD, -b.w / 2, -b.h / 2, b.w, b.h);
+      ctx.globalAlpha = Math.min(1, st / 0.08) * 0.92; ctx.translate(cx, b.y + b.h / 2); ctx.scale(s, s); ctx.drawImage(SOLD(), -b.w / 2, -b.h / 2, b.w, b.h);
       ctx.restore();
     }
   }
@@ -613,7 +681,7 @@ let shake = 0, finale = -1, emberAcc = 0, lastStroke = 0, sighs = 0;
 const rnd = (a, b) => a + Math.random() * (b - a);
 const VENTS = { cyl: [1169, 712, -0.2, -1], stub: [1532, 577, 1, -0.35], cross: [1214, 330, -0.15, -1], press: [2130, 230, -0.6, -1], drum: [3560, 830, 0.1, -1] };
 function steam(v, n, power = 1) {
-  const [x, y, dx, dy] = VENTS[v], set = x < 1700 ? PUFFS.warm : PUFFS.cool; // warmer near the furnace
+  const [x, y, dx, dy] = VENTS[v], set = x < 1700 ? PUFFS().warm : PUFFS().cool; // warmer near the furnace
   const m = Math.max(1, Math.round(n * 3 * PN()));
   for (let k = 0; k < m; k++) { const sp = rnd(70, 130) * power, vx = (dx + rnd(-0.25, 0.25)) * sp, vy = (dy + rnd(-0.2, 0.2)) * sp;
     puffs.push({ x: x + rnd(-4, 4), y: y + rnd(-4, 4), vx, vy, life: -k / m * Math.min(0.9, 0.12 * n), // a burst comes out as a plume, not a stack
@@ -622,7 +690,7 @@ function steam(v, n, power = 1) {
 function chalkDust(x, y) { // a little puff of chalk off the board as the stamp lands
   const n = Math.round(16 * PN());
   for (let k = 0; k < n; k++) { const a = rnd(0, Math.PI * 2), sp = rnd(30, 110);
-    dust.push({ x: x + Math.cos(a) * rnd(50, 80), y: y + Math.sin(a) * rnd(25, 45), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.6 - 10, r: rnd(6, 12), grow: rnd(20, 45), life: 0, max: rnd(0.7, 1.3), im: PUFFS.cool[k % 4], rot: rnd(0, 6), a: rnd(0.25, 0.42) }); }
+    dust.push({ x: x + Math.cos(a) * rnd(50, 80), y: y + Math.sin(a) * rnd(25, 45), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.6 - 10, r: rnd(6, 12), grow: rnd(20, 45), life: 0, max: rnd(0.7, 1.3), im: PUFFS().cool[k % 4], rot: rnd(0, 6), a: rnd(0.25, 0.42) }); }
 }
 function sparkBurst(x, y, n, power = 1) {
   for (let k = 0; k < n; k++) { const a = rnd(-Math.PI, 0), v = rnd(180, 520) * power;
@@ -688,6 +756,7 @@ function jobGoal(j) {
 function camSubject() {
   if (finale >= 0) cam.homeAfter = Math.max(cam.homeAfter, finale); // after the sold-out show, nothing older pulls the camera back
   if (finale >= 0 && now - finale < 7) return { x: 1700, y: SH / 2, z: 1, vx: 0, vy: 0, key: 'fin', t0: finale }; // sold out: the whole room
+  if (funLook && now < funLook.until) return { x: funLook.x, y: funLook.y, z: funLook.z || 1.4, vx: 0, vy: 0, key: 'look' + funLook.t0, t0: funLook.t0 }; // the fun layer asked to look (fx.js, tour.js)
   const c = [];
   const tk = tokens[tokens.length - 1];
   if (tk && tk.t0 > cam.homeAfter) { const t = Math.min(1, (now - tk.t0) / 1.6), x = 330 + 160 * t, y = 1150 - 260 * Math.sin(Math.PI * Math.min(1, t * 1.1)) + 40 * t;
@@ -759,10 +828,16 @@ let last = performance.now();
 const FIXED = location.search.includes('fixed');
 window.__frames = 0; // test hook: frame counter
 document.addEventListener('visibilitychange', () => { last = performance.now(); });
+let lastDraw = 0;
+const idle = () => !queue && !packs.length && !caps.length && !items.length && !cardsIn.length && !tokens.length && !sparks.length && !dust.length
+  && Math.abs(target - speed) < 0.02 && (finale < 0 || now - finale > 8) && (!cam.on || (Math.hypot(cam.vx, cam.vy) < 2 && Math.abs(cam.vz) < 0.01));
 function frame(tms) {
   if (document.hidden) { last = tms; requestAnimationFrame(frame); return; } // nothing drawn while the tab is hidden
   if (window.Sheet?.covering) { last = tms; requestAnimationFrame(frame); return; } // ...or while a modal sheet covers the scene (it picks up where it was)
   if (window.__paused && !(window.__steps > 0)) { last = tms; requestAnimationFrame(frame); return; } // test hook: step frame by frame
+  // nothing happening (no packs, logs, capsules, burns or sparks, the camera at rest): about 30 frames a second is plenty
+  if (!window.__steps && !FIXED && idle() && tms - lastDraw < 30) { requestAnimationFrame(frame); return; }
+  lastDraw = tms;
   if (window.__steps > 0) window.__steps--;
   const dt = FIXED ? 1 / 30 : Math.min(0.05, Math.max(0, (tms - last) / 1000)); last = tms; now += dt;
   const closing = (left <= 0 || finale >= 0) && !packs.length && queue <= 0;
@@ -803,18 +878,26 @@ function frame(tms) {
   drawPadlock(dt);
   drawCards(dt);
   drawTokens();
-  ctx.drawImage(VIGNETTE, 0, 0, SW, SH);
   ctx.restore();
   if (camOn) ctx.restore();
 
+  placeFlames(); // the flame and vignette layers follow the camera
+  if (!cv.dataset.drawn) { cv.dataset.drawn = '1'; (window.requestIdleCallback || setTimeout)(() => PUFFS(), { timeout: 4000 }); cv.style.backgroundImage = ''; flameBox.hidden = false; } // the first frame: the live scene replaces the still
   window.__frames++;
   requestAnimationFrame(frame);
 }
 await Promise.all([document.fonts.ready, document.fonts.load("700 40px Kalam"), document.fonts.load("40px \"Russo One\""), document.fonts.load("700 40px \"Cabin Sketch\"")]).catch(() => {});
+// the fun layer (fx.js, tour.js) nudges the scene with window 'scene-fx' events: { flare, sparks, x, y, power, shake, look: { x, y, z, s } }
+let funLook = null;
+addEventListener('scene-fx', (e) => { const d = e.detail || {};
+  if (d.flare) flare = Math.min(2.4, flare + d.flare);
+  if (d.sparks) sparkBurst(d.x ?? FIREBOX.cx, d.y ?? 980, Math.round(d.sparks * PN()), d.power || 1);
+  if (d.shake && !RM) shake = Math.max(shake, d.shake);
+  if (d.look) funLook = d.look.s === 0 ? null : { ...d.look, t0: now, until: now + (d.look.s || 3) }; });
 requestAnimationFrame(frame);
 window.Scene = {
   buy, burn, popToken, finale: finaleFx,
-  setState(o) { if ('left' in o) { left = o.left; if (left > 0 && finale >= 0 && now - finale > 1) finale = -1; } if ('total' in o) total = o.total; if ('burnCount' in o) burnCount = o.burnCount; if ('windowFrac' in o) windowFrac = o.windowFrac; if ('series' in o) seriesNo = o.series; if ('openable' in o) openable = o.openable; if ('extra' in o) extra = o.extra || null; board.key = ''; },
+  setState(o) { if ('left' in o) { left = o.left; if (left > 0 && finale >= 0 && now - finale > 1) finale = -1; } if ('total' in o) total = o.total; if ('burnCount' in o) burnCount = o.burnCount; if ('windowFrac' in o) windowFrac = o.windowFrac; if ('series' in o) seriesNo = o.series; if ('openable' in o) openable = o.openable; if ('extra' in o) extra = o.extra || null; }, // the board redraws itself when what it shows changes (its key)
   setView(v) { Object.assign(view, v); fit(); camUpdate(0); }, // follow:true (cover mode) turns on the follow camera
   home: camHome,
   get camera() { return { x: cam.x, y: cam.y, zoom: Math.exp(cam.lz), on: cam.on, key: cam.key }; },

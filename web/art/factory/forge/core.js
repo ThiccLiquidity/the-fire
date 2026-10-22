@@ -114,11 +114,11 @@
       const w = state.wallet, bought = w.boughtIn[g.index] || 0;
       if (g.gate === 'nft' && !w.isPressHolder) return { ok: false, why: g.who };
       if (g.gate === 'snapshot' && !w.inSnapshot) return { ok: false, why: g.who };
-      if (g.gate === 'nft' && bought >= g.perNft) return { ok: false, why: 'Your Press has used its pack this Series' };
+      if (g.gate === 'nft' && bought >= g.perNft) return { ok: false, why: 'Your Press already got its pack' };
       if (w.isContract && g.gate !== 'nft' && g.index < 3) return { ok: false, why: 'Regular wallets only for now' };
       const lim = [g.perTx || 50, g.left ?? Infinity, g.perWallet ? g.perWallet - bought : Infinity, g.gate === 'nft' ? g.perNft - bought : Infinity];
       const max = Math.max(0, Math.min(...lim));
-      return max ? { ok: true, max } : { ok: false, why: g.left === 0 ? 'Sold out' : `That's the most one wallet can take here (${g.perWallet})` };
+      return max ? { ok: true, max } : { ok: false, why: g.left === 0 ? 'Sold out' : `Limit: ${g.perWallet} per wallet` };
     },
     // DEMO: the Standard preset's groups (docs/drop-groups.md) at a stage of the sale: 'holders' (Press and PLANK
     // holders first), 'open' (Everyone), 'waiting' (Everyone sold out, more may come from the Press group), 'after'
@@ -131,9 +131,9 @@
         return Object.defineProperties(g, { next: { enumerable: true, get: () => Store.packPrice(g, 1) }, after: { enumerable: true, get: () => (g.taxBps ? [2, 3, 4].map((k) => Store.packPrice(g, k)) : []) } });
       };
       const press = mk({ index: 0, name: 'Paper Press holders', who: 'Paper Press holders only', gate: 'nft', isPress: true, priceUsd: 0, paper: Store.PRICES.PRESS_PAPER, coins: [], perNft: 1, capacity: 50 });
-      const plank = mk({ index: 1, name: 'PLANK holders', who: 'PLANK holders on the snapshot only', gate: 'snapshot', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK'], perWallet: 5, capacity: 40 });
-      const all = mk({ index: 2, name: 'Everyone', who: 'Anyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK', 'ETH', 'USDG'], perWallet: 5, capacity: 77, afterGroup: 1 });
-      const extra = mk({ index: 3, name: 'After sell-out', who: 'Anyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['ETH'], perTx: 1, unlimited: true, taxBps: 400, idle: 900, capacity: null, left: null, afterGroup: 2 });
+      const plank = mk({ index: 1, name: 'PLANK holders', who: 'PLANK holders only', gate: 'snapshot', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK'], perWallet: 5, capacity: 40 });
+      const all = mk({ index: 2, name: 'Everyone', who: 'Everyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK', 'ETH', 'USDG'], perWallet: 5, capacity: 77, afterGroup: 1 });
+      const extra = mk({ index: 3, name: 'Extra packs', who: 'Everyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['ETH'], perTx: 1, unlimited: true, taxBps: 400, idle: 900, capacity: null, left: null, afterGroup: 2 });
       const set = (g, o) => Object.assign(g, o, { left: g.unlimited ? (o.state === 'ended' ? 0 : null) : (o.capacity ?? g.capacity) - (o.sold ?? 0) });
       if (stage === 'open') {
         set(press, { state: 'ended', opensAt: now - 30 * H, endsAt: now - 24 * H, sold: 41 }); set(plank, { state: 'ended', opensAt: now - 30 * H, endsAt: now - 6 * H, sold: 40 });
@@ -154,12 +154,14 @@
     },
 
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },
-    cardImg(c) { // the finished card images for a look (character, material, holo): one strip, raw, cased, then slabbed PDA 1-10
+    cardStrip(c) { // the finished card images for a look (character, material, holo): one strip, raw, cased, then slabbed PDA 1-10
       // demo: only the Bowling Ball has Gold and Full Art art, so those always show it
       const id = (c.material === 'gold' || c.material === 'fullart' ? CHARS[SPECIAL_CAST] : CHARS[c.character] || CHARS[NAMES[0]]).id;
       const holo = (c.material === 'gold' || c.material === 'fullart') ? 'full' : c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none';
       return `cards/${id}/${c.material}-${holo}.webp`;
     },
+    // the card as it is now: one state cut from its strip (360 x 504, size_images.py), so a tile loads ~30 KB, not the strip
+    cardImg(c) { return Store.cardStrip(c).replace(/\/([^/]+)\.webp$/, `/s/$1-${Store.stateIdx(c)}.webp`); },
     // a card's parts for drawing it live (holo.js), sharp at any size and with moving holo: its picture + frame, its
     // print strip (text, seal, wear per state), and the slab label's lines; null for a retired Diamond (its card images
     // were made the old way)
@@ -167,14 +169,15 @@
       if (c.material === 'diamond') return null;
       const always = c.material === 'gold' || c.material === 'fullart', look = always ? 'full' : c.holo || 'none';
       const id = (always ? CHARS[SPECIAL_CAST] : CHARS[c.character] || CHARS[NAMES[0]]).id;
-      const holoWord = { frame: 'Holo Frame', picture: 'Holo Picture', full: 'Full Holo' }[look];
-      return { look, holder: Store.holder(c), state: Store.stateIdx(c), plain: `cards/${id}/${c.material}-plain.webp`, print: `cards/${id}/${c.material}-print.webp`,
+      const holoWord = { frame: 'Holo frame', picture: 'Holo picture', full: 'Full holo' }[look];
+      // print: just this state's layer (720 x 1008, size_images.py), not the 8640 px strip of all 12
+      return { look, holder: Store.holder(c), state: Store.stateIdx(c), plain: `cards/${id}/${c.material}-plain.webp`, print: `cards/${id}/p/${c.material}-print-${Store.stateIdx(c)}.webp`,
         label: { name: always ? SPECIAL_CAST : c.character, sub: [`Series ${c.series}`, MAT_LABEL[c.material], holoWord].filter(Boolean).join(' · '), grade: c.grade } };
     },
     // which card in the strip: 0 raw, 1 cased, 2-11 slabbed PDA 1-10
     stateIdx(c) { return c.grade != null ? c.grade + 1 : c.cased ? 1 : 0; },
     STATES: 12,
-    cardPos(c) { return `${(Store.stateIdx(c) * 100 / 11).toFixed(4)}% 0`; }, // object-position of that card in the strip
+    cardPos() { return '50% 50%'; }, // cardImg is one state now (it was that state's object-position in the strip)
     holder(c) { return c.grade != null ? 'slab' : c.cased ? 'case' : 'raw'; },
     // wear time so far: frozen once cased, sent for grading or slabbed; otherwise still running (live: `dealt` is when the
     // wear clock started, read back from the chain's age, so a cancelled grading's frozen gap isn't counted)
@@ -274,7 +277,7 @@
       const kinds = [list('theme', 'Theme', THEMES, 0), list('style', 'Art style', STYLES, 0)];
       const winners = kinds.map((k) => { const s = k.shortlist.find((x) => x.picked); return { kind: k.kind, id: s.id, by: s.by, title: s.title, text: s.text, tx: null }; }); // announced; picked on chain at the drop setup
       return [{ series: next, wave: 'look', round: 3, chainId: 4663, seed: '9f3c51e07a2b84d6c1e0f5a39b7d2e48', drawnAt: new Date(Date.now() - 2 * DAY).toISOString(),
-        publishedAt: new Date(Date.now() - 3 * 3600e3).toISOString(), suggestions: 142, next: 'The characters wave is open: suggest who goes on the cards.', kinds, winners }];
+        publishedAt: new Date(Date.now() - 3 * 3600e3).toISOString(), suggestions: 142, next: 'Character round is open. Who should be on the cards?', kinds, winners }];
     },
     /** Use a set of published waves: the newest finished theme & art style wave sets the character wave's theme and style. */
     setResults(waves) {
@@ -334,28 +337,69 @@
     setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 400); }, 2600);
   }
 
-  // sheets: native <dialog>, focus returns to the opener, Escape and the backdrop close it
+  // titles on touch screens (no hover): a tap on something with a title (not a control: those do their own thing) shows
+  // the title in a small tip beside it
+  let tipEl = null;
+  document.addEventListener('click', (e) => {
+    tipEl?.remove(); tipEl = null;
+    if (!matchMedia('(hover: none)').matches) return;
+    const el = e.target.closest?.('[title]'); if (!el || el.closest('button, a, select, input, label, summary') || !el.title) return;
+    const r = el.getBoundingClientRect(), t = document.createElement('div'); t.className = 'tip'; t.setAttribute('role', 'status'); t.textContent = el.title;
+    (el.closest('dialog') || document.body).append(t);
+    const w = t.offsetWidth, h = t.offsetHeight;
+    t.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+    t.style.top = (r.top - h - 8 > 8 ? r.top - h - 8 : r.bottom + 8) + 'px';
+    tipEl = t; setTimeout(() => { if (tipEl === t) { t.remove(); tipEl = null; } }, 3200);
+  });
+
+  // sheets: native <dialog>, focus returns to the opener, Escape and the backdrop close it. A sheet opened over another
+  // gets "‹ Back" (to the one under it) beside its ×.
+  // Phone Back closes the top sheet, never the page: while any sheet is open there's one history entry of ours on top
+  // (state.sheet); Back pops it, the top sheet closes, and if sheets are still open the entry goes back. A sheet closed
+  // from the page takes the entry away again once nothing is open (the full-screen viewer, zoom.js, stacks its own on it).
+  const openSheets = () => [...document.querySelectorAll('dialog.sheet[open]')];
+  const guarded = () => !!history.state?.sheet;
+  let expectPop = 0;
+  const guard = () => { if (!guarded()) try { history.pushState({ ...(history.state || {}), sheet: 1 }, ''); } catch { /* sandboxed: no history */ } };
+  addEventListener('popstate', () => {
+    if (expectPop) { expectPop--; if (openSheets().length) guard(); return; } // our own step back (one at a time)
+    if (window.Zoom?.isOpen || guarded()) return; // the viewer's Back, or still on our entry: the sheets stay
+    const top = openSheets().pop(); if (!top) return;
+    top.close();
+    if (openSheets().length) guard();
+  });
+  const covered = () => document.body?.classList.toggle('covered', openSheets().length > 0); // CSS pauses what's under a sheet
   const Sheet = {
     open(id, { title, body, wide = false, onClose } = {}) {
       let d = document.getElementById('sheet-' + id);
       if (!d) {
         d = document.createElement('dialog'); d.id = 'sheet-' + id; d.className = 'sheet' + (wide ? ' wide' : '');
-        d.innerHTML = `<div class="sheet-head"><h2 id="sheet-${id}-t"></h2><button class="x" type="button" aria-label="Close">×</button></div><div class="sheet-body"></div>`;
+        d.innerHTML = `<div class="sheet-head"><button class="back" type="button" hidden>‹ <span>Back</span></button><h2 id="sheet-${id}-t"></h2><button class="x" type="button" aria-label="Close">×</button></div><div class="sheet-body"></div>`;
         d.setAttribute('aria-labelledby', `sheet-${id}-t`);
         d.querySelector('.x').onclick = () => d.close();
+        d.querySelector('.back').onclick = () => d.close();
         d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
-        d.addEventListener('close', () => { d._opener?.focus?.(); d._onClose?.(); });
+        d.addEventListener('close', () => {
+          covered(); d._opener?.focus?.(); d._onClose?.();
+          // nothing open any more (and nothing opened in the same turn): take our history entry away
+          setTimeout(() => { if (!expectPop && !openSheets().length && guarded() && !window.Zoom?.isOpen) { expectPop++; history.back(); } }, 0); // never two steps back (two sheets closed at once)
+        });
         document.body.append(d);
       }
       d._opener = document.activeElement; d._onClose = onClose;
       d.querySelector('h2').textContent = title || '';
       const b = d.querySelector('.sheet-body'); if (typeof body === 'string') b.innerHTML = body; else if (body) { b.replaceChildren(body); }
-      if (!d.open) d.showModal();
+      if (!d.open) {
+        const under = openSheets().pop(), back = d.querySelector('.back');
+        back.hidden = !under; d.classList.toggle('stacked', !!under);
+        if (under) { const t = under.querySelector('.sheet-head h2')?.textContent || 'Back'; back.querySelector('span').textContent = t; back.setAttribute('aria-label', `Back to ${t}`); }
+        d.showModal(); guard(); covered();
+      }
       return d;
     },
     close(id) { document.getElementById('sheet-' + id)?.close(); },
     // true while a modal sheet covers the scene (the scene stops drawing under it)
-    get covering() { return !!document.querySelector('dialog.sheet[open]'); },
+    get covering() { return openSheets().length > 0; },
   };
 
   // results: ?results=won|lost|none previews the demo states; otherwise the published file (empty until the owner

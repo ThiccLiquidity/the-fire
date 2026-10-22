@@ -4,6 +4,11 @@
 (() => {
   const v = new URLSearchParams(location.search).get('live');
   if (!v) return;
+  // live (testnet or mainnet): the demo-only notes (Terms: "Right now Cardworks is a demo") don't apply
+  if (v === 'testnet' || v === 'mainnet') {
+    const hide = () => document.querySelectorAll('[data-demo-only]').forEach((el) => { el.hidden = true; });
+    if (document.readyState === 'loading') addEventListener('DOMContentLoaded', hide); else hide();
+  }
   const own = /^(\.\/|index\.html|help\.html|terms\.html)([?#].*)?$/;
   const fix = (a) => {
     const h = a.getAttribute('href');

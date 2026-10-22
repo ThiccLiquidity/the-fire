@@ -93,8 +93,9 @@
       if (pic) within(g, (q) => { foil(q, art, tl, SPECKS, false, S); glare(q, art, tl, false, W, H); }, keepArt);
       if (frm) within(g, (q) => { foil(q, whole, tl, FRAME_SPECKS, false, S, { per: 0.45, sp: 1.35 }); glare(q, whole, tl, false, W, H); }, keepFrame);
     }
-    const tw = print.width / 12;
-    g.drawImage(print, state * tw, 0, tw, print.height, 0, 0, W, H);
+    // the print: one state's layer (cards/<id>/p/), or a strip of all 12 (each 720 x 1008)
+    const n = Math.max(1, Math.round(print.width / (print.height * 720 / 1008))), tw = print.width / n;
+    g.drawImage(print, (n > 1 ? state : 0) * tw, 0, tw, print.height, 0, 0, W, H);
   }
 
   // cases and slabs: the studio's own drawing (studio/src/protect.ts), redone here at the screen's resolution, with the
@@ -226,7 +227,8 @@
     const L = face._holo = { canvas, material: c.material, look: parts.look, holder: parts.holder, state: parts.state, label: parts.label, sway: sway && parts.look !== 'none',
       plain: null, print: null, tilt: STILL, active: false, last: -1e9, visible: true, drawnStill: false, phase: Math.random() * 6 };
     const fonts = parts.holder === 'slab' && document.fonts ? document.fonts.load(`400 52px ${LABEL_FONT}`).catch(() => null) : null;
-    Promise.all([loadImg(parts.plain), loadImg(parts.print), fonts])
+    // face._ready: resolves once the live card has drawn (or fell back to its image), so a reveal never turns over a half-drawn card
+    face._ready = Promise.all([loadImg(parts.plain), loadImg(parts.print), fonts])
       .then(([p, q]) => { L.plain = p; L.print = q; face.classList.add('ready'); live.add(face); if (io) io.observe(face); draw(face, performance.now()); kick(); })
       .catch(() => { canvas.remove(); face.classList.remove('live'); });
     const point = (e) => { if (L.external) return; const b = face.getBoundingClientRect(); L.active = true; L.last = performance.now();
@@ -254,5 +256,7 @@
     if (on) { L.held = tiltNow(L, t); L.heldAt = t; } else { L.held = null; L.phase -= (t - L.heldAt) / 2400; } // the drift picks up where it stopped
     if (on) face.style.transform = '';
     L.drawnStill = !!on; kick(); } // held: what's drawn stays (no redraw)
-  window.Holo = { render, attach, size, aim, hold, defer, STILL };
+  /** Fetch and decode a card's live parts ahead of time (the pack's cards, during the tear). */
+  function preload(c) { const p = PARTS?.(c); return p ? Promise.all([loadImg(p.plain), loadImg(p.print)]).catch(() => null) : Promise.resolve(null); }
+  window.Holo = { render, attach, size, aim, hold, defer, preload, STILL };
 })();

@@ -37,10 +37,10 @@ export async function kyberBuild(route: KyberRoute, account: Address, slipBps: n
     headers: { "content-type": "application/json", "x-client-id": CLIENT },
     body: JSON.stringify({ routeSummary: route.summary, sender: account, recipient: account, slippageTolerance: slipBps, deadline: Math.floor(Date.now() / 1000) + 600, source: CLIENT }),
   });
-  if (!r.ok) throw new Error("The swap service didn't answer. Try again in a moment.");
+  if (!r.ok) throw new Error("Swap unavailable. Try again soon.");
   const d = (await r.json())?.data;
   const data = (d?.data ?? d?.calldata) as Hex | undefined;
-  if (!data || !d?.routerAddress) throw new Error("The swap service sent back an incomplete swap. Nothing was sent to your wallet.");
+  if (!data || !d?.routerAddress) throw new Error("Swap failed. Nothing was sent.");
   return { to: getAddress(d.routerAddress), data, value: BigInt(d.transactionValue ?? d.value ?? 0) };
 }
 
@@ -58,7 +58,7 @@ type Desc = { srcToken: Address; dstToken: Address; feeReceivers: readonly Addre
  * the site's fee wallet; and ETH sent matches (all of it for an ETH swap, none otherwise). A swap we can't read is refused.
  */
 export function checkSwap(tx: { to: Address; data: Hex; value: bigint }, want: { from: Address | "ETH"; to: Address | "ETH"; amountIn: bigint; minOut: bigint; account: Address }) {
-  const no = (why: string) => { throw new Error(`Swap blocked for your safety: ${why}. Nothing was sent to your wallet.`); };
+  const no = (why: string) => { console.warn("Swap blocked:", why); throw new Error("Swap blocked for your safety. Nothing was sent."); };
   const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
   if (!eq(tx.to, KYBER_ROUTER)) no("it wasn't addressed to KyberSwap's router");
   let d: Desc | undefined;

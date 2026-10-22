@@ -54,7 +54,7 @@
         if (document.querySelector('meta[name="forge-live"]')?.content) u.searchParams.set('live', 'off'); // the build says live: say demo
         location.replace(u.href); return;
       }
-      fail(e?.message || String(e));
+      console.warn('Live mode:', e?.message || e); fail('Not open yet');
     });
   });
   /** The live code didn't load: an error with a Retry (a reload), never a silent switch to the demo. */
@@ -62,7 +62,7 @@
     console.warn('Live mode failed to load', e);
     S.series.note = 'Not connected'; Store.update(() => {});
     const body = document.createElement('div');
-    body.innerHTML = '<p class="lead">Couldn\'t load the live site. Check your connection and try again.</p><button class="btn primary go" type="button">Retry</button>';
+    body.innerHTML = '<p class="lead">Couldn\'t load. Check your connection.</p><button class="btn primary go" type="button">Retry</button>';
     body.querySelector('.go').onclick = () => location.reload();
     Sheet.open('chainerr', { title: 'Not connected', body });
   }
@@ -72,7 +72,7 @@
   const num = (a) => (a ? parseFloat(String(a.text).replace(/,/g, '')) || 0 : 0);
   const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
   const me = () => FW?.state().address || null;
-  const friendly = (e) => (e?.name === 'TxError' ? e.message : FW ? FW.friendly(e) : String(e?.message || e)).split('\n')[0];
+  const friendly = (e) => (e?.name === 'TxError' ? e.message : FW ? FW.friendly(e) : 'Something went wrong. Try again.').split('\n')[0];
   const MAT = { paper: 'paper', wood: 'wood', fire: 'fire', coal: 'charcoal', charcoal: 'charcoal', diamond: 'diamond', gold: 'gold', 'full art': 'fullart', fullart: 'fullart' };
   // wear: the chain's own age (FireCards.wearOf, seconds), never a guess from the deal time. Cased, pending or slabbed, it's
   // frozen (frozenAge). Raw, the clock runs from now minus that age (`dealt` is when its wear clock started, so a cancelled
@@ -102,7 +102,7 @@
   };
   async function readSeries(fires) {
     const s = await L.currentSeries(fires);
-    if (!s) { Object.assign(S.series, { no: 0, total: 0, phase: 4, groups: [], note: 'No Series yet' }); info = null; return; }
+    if (!s) { Object.assign(S.series, { no: 0, total: 0, phase: 4, groups: [], note: 'No Series on sale' }); info = null; return; }
     const was = S.series.phase, ph = s.state === 'closed' ? 4 : 3, changed = info?.fire !== s.fire;
     info = s;
     Store.clockSkew = s.now - Date.now() / 1000; // countdowns run on the chain's clock
@@ -112,7 +112,7 @@
       groups: s.groups.map(toGroup), creditGroup: s.creditGroup, creditPacksLeft: s.status.creditPacksLeft, left: s.status.left,
       note: s.state === 'upcoming' ? `Opens in ${hours(s.start)}h` : s.status.paused ? 'Paused' : null,
     });
-    if (was < 4 && ph === 4 && S.series.loaded) { window.Scene?.finale?.(); setTimeout(() => toast(`Series ${s.fire} closed. Packs can be opened now.`, 'good'), 600); }
+    if (was < 4 && ph === 4 && S.series.loaded) { window.Scene?.finale?.(); setTimeout(() => toast(`Series ${s.fire} is closed. Open your packs!`, 'good'), 600); }
     S.series.loaded = true;
     const priced = s.groups.find((g) => +g.priceUsd > 0 && g.state !== 'ended') || s.groups.find((g) => +g.priceUsd > 0);
     const cg = s.groups[s.creditGroup] || priced || s.groups[0];
@@ -203,21 +203,21 @@
     if (g.gate === 'nft') {
       const x = gate[g.index];
       if (!x?.count) return { ok: false, why: g.who };
-      if (!x.ids.length) return { ok: false, ask: true, why: `Say which ${nft} to use` };
+      if (!x.ids.length) return { ok: false, ask: true, why: `Pick your ${nft}` };
       const free = x.uses.filter((u) => u.used < g.perNft);
       cap = free.reduce((s, u) => s + g.perNft - u.used, 0);
-      if (!cap) return { ok: false, why: `Your ${nft} has used ${g.perNft === 1 ? 'its pack' : `its ${g.perNft} packs`} in this group this Series` };
+      if (!cap) return { ok: false, why: `Your ${g.isPress ? 'Press' : nft} already got ${g.perNft === 1 ? 'its pack' : 'its packs'}` };
       access = { nftIds: free.map((u) => u.id) };
     } else if (g.gate === 'snapshot') {
-      if (snap.state === 'loading' || snap.state === 'error') return { ok: false, retry: true, why: snap.state === 'loading' ? 'Checking the holders list…' : 'Couldn\'t load the holders list. Try again in a moment' };
+      if (snap.state === 'loading' || snap.state === 'error') return { ok: false, retry: true, why: snap.state === 'loading' ? 'Checking the list…' : 'Couldn\'t check the list. Try again' };
       const e = Live.snapshot ? L.snapshotEntry(Live.snapshot, g.root, me()) : null;
       if (!e) return { ok: false, why: g.who };
       cap = e.allowance - bought;
-      if (cap <= 0) return { ok: false, why: `That's your allowance in this group (${e.allowance})` };
+      if (cap <= 0) return { ok: false, why: `You've hit your limit here (${e.allowance})` };
       access = { allowance: e.allowance, proof: e.proof };
     }
     const max = Math.min(g.perTx || 50, g.left ?? Infinity, g.perWallet ? g.perWallet - bought : Infinity, cap);
-    if (max <= 0) return { ok: false, why: g.left === 0 ? 'Sold out' : `That's the most one wallet can take in this group (${g.perWallet})` };
+    if (max <= 0) return { ok: false, why: g.left === 0 ? 'Sold out' : `Limit: ${g.perWallet} per wallet` };
     return { ok: true, max, access };
   };
   /** Re-read the chain (cards too with { cards: true }). Calls made while one runs wait for it, then run once more.
@@ -252,8 +252,8 @@
   S.wallet.pending = pend;
   const txLink = (hash) => (L?.NET.explorer ? ` · <a href="${esc(L.NET.explorer)}/tx/${esc(hash)}" target="_blank" rel="noopener">View</a>` : '');
   function paintBar() {
-    bar.innerHTML = (stale ? '<p class="stale">Couldn\'t reach the network. What you see may be out of date. <button class="btn small" type="button" data-bar="retry">Retry</button></p>' : '')
-      + pend.map((t) => `<p class="pend"><b>${esc(t.label)}</b> sent, waiting for the network${txLink(t.hash)}</p>`).join('');
+    bar.innerHTML = (stale ? '<p class="stale">Offline? This may be out of date. <button class="btn small" type="button" data-bar="retry">Retry</button></p>' : '')
+      + pend.map((t) => `<p class="pend"><b>${esc(t.label)}</b> · pending${txLink(t.hash)}</p>`).join('');
     bar.hidden = !stale && !pend.length;
     bar.querySelector('[data-bar=retry]')?.addEventListener('click', () => { nextAt = 0; sync({ cards: true }); });
   }
@@ -279,7 +279,7 @@
   // they land, then a toast and a fresh read. `following`: the ones this tab already follows (never twice).
   const following = new Set();
   const unpend = (t) => { const i = pend.findIndex((x) => x.at === t.at && x.from === t.from); if (i >= 0) pend.splice(i, 1); paintBar(); Store.update(() => {}); };
-  const landed = (t, outcome) => (outcome === 'success' ? `${t.label}: done` : outcome === 'replaced' ? `${t.label} was cancelled or replaced in your wallet.` : `${t.label} failed on the network. Only the network fee was spent.`);
+  const landed = (t, outcome) => (outcome === 'success' ? `${t.label}: done` : outcome === 'replaced' ? `${t.label} was cancelled in your wallet.` : `${t.label} failed. Only the network fee was spent.`);
   function resume(a) {
     if (!L || !a) return;
     const list = L.pendingTxs(a).filter((t) => !following.has(t.hash)), these = new Set(list.map((t) => t.hash));
@@ -290,11 +290,11 @@
   }
   /** A buy, free pack or suggestion of this wallet still on its way (sent from this browser in the last 30 minutes):
    *  starting another of the same kind could pay twice, so it waits. True (and says so) when blocked. */
-  const WAIT_FOR = { buy: 'Your last purchase', credits: 'Your last free pack', suggest: 'Your last suggestion' };
+  const WAIT_FOR = { buy: 'Your last purchase', credits: 'Your last free pack', suggest: 'Your last idea' };
   function stillSending(kind) {
     const a = me(), t = a && L ? L.pendingTxs(a).find((x) => x.kind === kind && Date.now() - x.at < 30 * 60_000) : null;
     if (!t) return false;
-    toast(`${WAIT_FOR[kind]} is still on its way. Wait for it to land first.`, 'bad');
+    toast(`${WAIT_FOR[kind]} is still pending. Wait for it to finish.`, 'bad');
     return true;
   }
   function waitConnected(ms = 180_000) {
@@ -347,23 +347,25 @@
         <div class="bal">${Object.entries(w.balances).map(([k, v]) => `<div><small>${k}</small><b>${fmt(v)}</b></div>`).join('')}</div>
         <div class="rows">
           <div><span>Free packs</span><b>${w.credits}</b></div>
-          <div><span>Burned toward a free pack</span><b>${w.burnCount % 42} / 42</b></div>
+          <div><span>Burn progress</span><b>${w.burnCount % 42} / 42</b></div>
           <div><span>Sealed packs</span><b>${sealed}</b></div>
           <div><span>Cards</span><b>${S.cards.length}</b></div>
-          ${pend.length ? `<div><span>Waiting for the network</span><b>${pend.length}</b></div>` : ''}
+          ${pend.length ? `<div><span>Pending</span><b>${pend.length}</b></div>` : ''}
         </div>
         <div class="acts"><button class="btn primary" type="button" data-w="cards">My cards</button><button class="btn" type="button" data-w="paper">Get PAPER</button></div>
-        <div class="acts">${FW?.state().modal ? '<button class="btn small" type="button" data-w="acct">Wallet</button>' : ''}<button class="btn small" type="button" data-w="out">Disconnect</button></div>
+        <div class="acts">${FW?.state().modal ? '<button class="btn small" type="button" data-w="acct">Manage wallet</button>' : ''}<button class="btn small" type="button" data-w="out">Disconnect</button></div>
       </div>` });
     d.querySelector('[data-w=cards]').onclick = () => { d.close(); Stations.open('cards'); };
     d.querySelector('[data-w=paper]').onclick = () => { d.close(); getPaper(); };
     d.querySelector('[data-w=acct]')?.addEventListener('click', () => { d.close(); FW.open(); });
     d.querySelector('[data-w=out]').onclick = () => { d.close(); FW.disconnect().catch((e) => toast(friendly(e), 'bad')); };
+    window.Profiles?.decorate(d); // profile.js: the avatar, the profile's name and Edit
+    window.Fun?.decorateWallet?.(d); // badges, showcase, binder (badges.js)
   }
 
   // ---------- sending: a step list while the wallet confirms, a toast when it lands, a plain reason when it fails
   // late: sent, but the network hasn't confirmed it within the wait (tx.ts TxStillPending): it's saved and followed
-  const STEP = { check: 'Checking…', simulate: 'Checking…', confirm: 'Confirm in your wallet', pending: 'Sending…', late: 'Sent, waiting for the network', done: 'Done' };
+  const STEP = { check: 'Checking…', simulate: 'Checking…', confirm: 'Confirm in your wallet', pending: 'Sending…', late: 'Pending', done: 'Done' };
   // onFail(e): a known refusal the caller shows its own way (true: handled, the step list just closes)
   async function run(title, fn, ok, onFail) {
     const el = document.createElement('div'); el.className = 'txs';
@@ -372,7 +374,7 @@
     const draw = () => {
       el.innerHTML = `<ol class="tx-steps">${steps.map((s) => `<li class="${s.state}"><b>${esc(s.label)}</b><small>${STEP[s.state] || ''}${s.hash ? txLink(s.hash) : ''}</small></li>`).join('') || '<li class="check"><b>Getting ready…</b></li>'}</ol>`
         + (err ? `<p class="warn">${esc(err)}</p><button class="btn primary" type="button" data-x="close">Close</button>`
-          : late ? '<p class="muted small">It\'s saved: you can close this or reload, and it finishes by itself. Don\'t send it again.</p><button class="btn" type="button" data-x="close">Close</button>'
+          : late ? '<p class="muted small">Still pending. Safe to close. Don\'t send it again.</p><button class="btn" type="button" data-x="close">Close</button>'
           : '<p class="muted small">Keep this page open.</p>');
       el.querySelector('[data-x=close]')?.addEventListener('click', close);
     };
@@ -413,7 +415,7 @@
       return { late: true };
     }
   }
-  const need = async () => { await ready; await chainUp; if (!L) throw new Error('Not connected to the chain'); };
+  const need = async () => { await ready; await chainUp; if (!L) throw new Error('Not connected'); };
   const need_ = need; // (getPaper takes an amount called need)
   const requireWallet = () => new Promise((ok) => needWallet(() => ok(true)));
 
@@ -431,13 +433,13 @@
     const what = g.isPress ? 'Paper Press' : 'NFT';
     return new Promise((done) => {
       const f = document.createElement('form'); f.className = 'namef';
-      f.innerHTML = `<label for="pressno">Your ${what} number</label><input id="pressno" inputmode="numeric" autocomplete="off"><button class="btn primary" type="submit">Use it</button><p class="muted small"></p>`;
+      f.innerHTML = `<label for="pressno">Your ${g.isPress ? 'Press' : what} #</label><input id="pressno" inputmode="numeric" autocomplete="off"><button class="btn primary" type="submit">Use</button><p class="muted small"></p>`;
       let ok = false;
       f.onsubmit = async (e) => {
         e.preventDefault(); const id = parseInt(f.querySelector('input').value, 10), a = me(), say = (t) => { f.querySelector('p').textContent = t; };
         if (!(id >= 0) || !a || !(await L.ownsNft(g.nft, a, id))) return say(`That ${what} isn't in this wallet.`);
         const [u] = await L.nftUse(info.fire, g.index, [id]).catch(() => [{ id, used: 0 }]);
-        if (u.used >= g.perNft) return say(`That ${what} has used its ${g.perNft === 1 ? 'pack' : 'packs'} in this group this Series.`);
+        if (u.used >= g.perNft) return say(`That ${g.isPress ? 'Press' : what} already got ${g.perNft === 1 ? 'its pack' : 'its packs'}.`);
         store(typedKey(g.nft, a), id); gate[g.index] = { ...(gate[g.index] || { count: 1 }), ids: [id], uses: [u] }; ok = true; Sheet.close('press'); done(id);
       };
       Sheet.open('press', { title: what, body: f, onClose: () => { if (!ok) done(null); } });
@@ -454,7 +456,7 @@
       await requireWallet();
       if (stillSending('buy')) return null;
       if (info.state !== 'live') { Sheet.open('nope', { title: `Series ${info.fire}`, body: `<p class="lead">${info.state === 'upcoming' ? `Opens in ${hours(info.start)}h.` : 'Sold out.'}</p>` }); return null; }
-      if (info.status.paused) { Sheet.open('nope', { title: 'Paused', body: '<p class="lead">The sale is paused for now.</p>' }); return null; }
+      if (info.status.paused) { Sheet.open('nope', { title: 'Paused', body: '<p class="lead">Sales are paused.</p>' }); return null; }
       let a = Store.groupAccess(g);
       if (a.ask) { if ((await askNft(g)) == null) return null; a = Store.groupAccess(g); }
       if (a.retry) { // the holders list didn't load: not "you're not on it"
@@ -479,30 +481,30 @@
       const r = await run(`Buy ${plural(n, 'pack')}`, (o) => L.buyPacks({ fire: info.fire, group: g.index, n, pay: coin, access: a.access, paperInEth: all, quote }, o),
         `${plural(n, 'pack')} bought`, (e) => (e?.code === 'PriceMoved' ? (moved = true) : false));
       if (moved) return 'moved';
-      if (r) { window.Scene?.buy?.(n); window.Sound?.play('pack-drop'); Store.log(`Bought ${plural(n, 'pack')}`); }
+      if (r) { window.Scene?.buy?.(n); window.Sound?.play('pack-drop'); Store.log(`Bought ${plural(n, 'pack')}`); window.UI?.afterBuy?.(n); window.Fun?.emit('bought', { n }); }
       return !!r;
     },
   };
   async function free() {
     await need(); await requireWallet();
     const cg = S.series.groups[S.series.creditGroup];
-    if (!info || info.state !== 'live' || cg?.state !== 'open') return toast('Free packs work while their group is on sale', 'bad');
-    if (S.series.creditPacksLeft === 0) return toast('Free packs for this Series are all used up. Yours wait for the next one.', 'bad');
+    if (!info || info.state !== 'live' || cg?.state !== 'open') return toast('No free-pack sale right now.', 'bad');
+    if (S.series.creditPacksLeft === 0) return toast("This Series' free packs are gone. Yours carry over.", 'bad');
     if (stillSending('credits')) return;
     let n = 1; const body = document.createElement('div'); body.className = 'checkout';
     const draw = () => {
       const w = S.wallet; n = Math.max(1, Math.min(w.credits, S.series.creditPacksLeft ?? w.credits, n)); const paper = n * cg.paper, short = w.balances.PAPER < paper;
-      body.innerHTML = `<p class="lead">Free packs come from the ${esc(cg.name)} group while it's open. They still take PAPER.</p>
+      body.innerHTML = `<p class="lead">Free packs still cost ${cg.paper} PAPER each.</p>
         ${w.credits > 1 ? `<div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output>${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button><span class="muted">of ${w.credits}</span></div>` : ''}
-        <dl class="sum"><dt>PAPER</dt><dd>${paper} <small>burned</small></dd><dt>You have</dt><dd>${(+w.balances.PAPER.toFixed(2)).toLocaleString('en-US')} PAPER</dd></dl>
-        ${short ? `<div class="getpaper"><p class="warn">You need ${Math.ceil((paper - w.balances.PAPER) * 1e4) / 1e4} more PAPER.</p><button class="btn" type="button" data-getpaper>Get it</button></div>` : ''}
+        <dl class="sum"><dt>PAPER</dt><dd>${paper}</dd><dt>You have</dt><dd>${(+w.balances.PAPER.toFixed(2)).toLocaleString('en-US')} PAPER</dd></dl>
+        ${short ? `<div class="getpaper"><p class="warn">Need ${Math.ceil((paper - w.balances.PAPER) * 1e4) / 1e4} more PAPER.</p><button class="btn" type="button" data-getpaper>Get PAPER</button></div>` : ''}
         <button class="btn gold go" type="button" ${short ? 'disabled' : ''}>Use ${n} free ${n === 1 ? 'pack' : 'packs'}</button>`;
       body.querySelector('[data-getpaper]')?.addEventListener('click', () => { Sheet.close('free'); getPaper(Math.ceil((paper - S.wallet.balances.PAPER) * 1e4) / 1e4, () => free()); });
       body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { n += +b.dataset.q; draw(); });
       body.querySelector('.go').onclick = async () => {
         const k = n; if (stillSending('credits')) return;
         Sheet.close('free');
-        if (await run(`Use ${plural(k, 'free pack')}`, (o) => L.spendCredits({ fire: info.fire, n: k }, o), k === 1 ? 'Free pack on its way' : `${k} free packs on their way`)) { window.Scene?.buy?.(k); window.Sound?.play('pack-drop'); }
+        if (await run(`Use ${plural(k, 'free pack')}`, (o) => L.spendCredits({ fire: info.fire, n: k }, o), k === 1 ? 'Free pack on its way' : `${k} free packs on their way`)) { window.Scene?.buy?.(k); window.Sound?.play('pack-drop'); window.UI?.afterBuy?.(k, true); window.Fun?.emit('bought', { n: k }); }
       };
     };
     draw(); Sheet.open('free', { title: S.wallet.credits > 1 ? 'Free packs' : 'Free pack', body });
@@ -519,15 +521,14 @@
       const k = ++seq; q = null; err = ''; paint(); clearTimeout(t);
       if (!(amt > 0)) return;
       t = setTimeout(() => L.quotePaperBuy(tok, raw(amt), 100).then((r) => { if (k === seq) { q = r; paint(); } },
-        (e) => { if (k === seq) { err = net === 'testnet' ? 'No testnet PAPER pool for this coin. Testnet tokens are play tokens: ask the team for some.' : friendly(e); paint(); } }), 300);
+        (e) => { if (k === seq) { err = net === 'testnet' ? 'No test pool for this coin. Ask the team for test PAPER.' : friendly(e); paint(); } }), 300);
     };
     const paint = () => {
       const have = S.wallet.balances[tok], cost = num(q?.cost), short = q && cost > have;
-      body.querySelector('.sum').innerHTML = `<dt>You pay</dt><dd>${q ? `≈ ${esc(q.cost.text)} ${tok}` : amt > 0 && !err ? 'getting the best price…' : '—'}</dd>
-        <dt>Route</dt><dd>${q ? (q.via === 'kyber' ? 'KyberSwap: the best price across every pool' : 'Straight from the PAPER pools') : '—'}</dd>
+      body.querySelector('.sum').innerHTML = `<dt>You pay</dt><dd>${q ? `≈ ${esc(q.cost.text)} ${tok}` : amt > 0 && !err ? 'getting price…' : '—'}</dd>
         <dt>You have</dt><dd>${(+have.toFixed(4)).toLocaleString('en-US')} ${tok}</dd>`;
       body.querySelector('.err').textContent = err || (short ? `Not enough ${tok}.` : '');
-      body.querySelector('.fine').textContent = tok === 'ETH' ? 'One wallet confirmation. Any ETH not needed comes back.' : `Two wallet confirmations: approve exactly this ${tok}, then the swap.`;
+      body.querySelector('.fine').textContent = tok === 'ETH' ? '1 tap in your wallet.' : '2 taps: approve, then swap.';
       const go = body.querySelector('.go'); go.disabled = !q || !!short; go.textContent = `Get ${amt.toLocaleString('en-US')} PAPER`;
     };
     body.innerHTML = `<div class="seg" role="group" aria-label="Pay with">${coins.map((c) => `<button type="button" data-t="${c}" aria-pressed="${c === tok}">${c}</button>`).join('')}</div>
@@ -551,16 +552,16 @@
   // themselves (one delivery for the opens up to theirs, one deal: writes.ts deliverAndDeal), used at most once.
   const LATE = 45, OFFER = 120, POLL = 4000;
   const SAFE = "Taking a little longer than usual. Your cards are safe.";
-  const DIY = "This finishes it yourself instead of waiting for us. It can't change what you get.";
+  const DIY = 'Skip the wait. Same cards.';
   const sleep = (ms) => new Promise((k) => setTimeout(k, ms));
   async function openPacks(fire, n, say, alive) {
     await need();
     const before = new Set(S.cards.map((c) => c.id));
-    if (info?.fire === fire && !info.cards.closed) { toast(`Packs open once Series ${fire} closes`, 'bad'); return null; }
+    if (info?.fire === fire && !info.cards.closed) { toast(`Your Series ${fire} packs open when sales end.`, 'bad'); return null; }
     const r = await run(`Open ${plural(n, 'pack')}`, (o) => L.openPacks({ fire, n }, o));
     if (!r) return null;
-    if (r.late || !(r.index >= 0)) { toast('Opened. Your cards land in My cards once dealt.'); return null; }
-    say('Waiting for the draw. About 90 seconds…');
+    if (r.late || !(r.index >= 0)) { toast('Opened! Your cards land in My cards soon.'); return null; }
+    say('Drawing your cards… about 90 seconds');
     for (let asked = false, tried = false; alive();) {
       const op = await L.openStatus(fire, r.index).catch(() => null); // one open by its index: no log scan
       if (op?.status === 'cancelled') { toast('The draw never came. Your packs are back.', 'bad'); sync(); return null; }
@@ -569,15 +570,15 @@
         tried = true;
         const d = await run('Deal your cards', (o) => L.deliverAndDeal({ fire, index: r.index }, o));
         if (d?.reached) continue;
-        say(`${SAFE} They land in My cards as soon as they're dealt.`);
+        say(SAFE);
       } else if (op?.roundAt && op.now >= op.roundAt && !tried) {
         const late = op.now - op.roundAt;
         say(late < LATE ? 'Dealing your cards…' : SAFE,
-          late >= OFFER ? { label: 'Deal them now (small network fee)', note: DIY, fn: () => { asked = true; } } : undefined);
+          late >= OFFER ? { label: 'Deal now (small fee)', note: DIY, fn: () => { asked = true; } } : undefined);
       }
       await sleep(asked && !tried ? 50 : POLL);
     }
-    if (!alive()) { toast('Your cards land in My cards once dealt'); return null; }
+    if (!alive()) { toast('Your cards land in My cards soon.'); return null; }
     say('Here they come…');
     const all = (await L.cardsOf(me())).map(toCard);
     const usd = await L.gradeUsdOf(all.filter((c) => c.grade == null).map((c) => c.id)).catch(() => ({}));
@@ -597,7 +598,7 @@
       if (coin === 'PAPER' && Store.PSA_PAPER_OFF) { Store.PSA_PAPER_OFF = null; Store.update(() => {}); }
       return q;
     } catch (e) {
-      if (/FeedUnavailable/.test(String(e?.message || e)) && coin === 'PAPER') { Store.PSA_PAPER_OFF = 'PAPER price not available right now: pay with ETH, PLANK or USDG'; Store.update(() => {}); }
+      if (/FeedUnavailable/.test(String(e?.message || e)) && coin === 'PAPER') { Store.PSA_PAPER_OFF = 'PAPER unavailable right now. Pick another coin.'; Store.update(() => {}); }
       return null;
     }
   }
@@ -611,7 +612,7 @@
    *  reveal the grades. Resolves id -> grade, or null if the window closed. */
   async function finishGrading(index, ids, say, alive) {
     if (!(index >= 0)) return null;
-    say('At the grader. About 90 seconds…');
+    say('Grading… about 90 seconds');
     for (let asked = false, tried = false; alive();) {
       const g = await L.gradingStatus(index).catch(() => null); // one grading by its index: no log scan
       if (g?.status === 'done') break;
@@ -619,12 +620,12 @@
         tried = true;
         if (await run('Reveal the grades', (o) => L.deliverAndFinish({ index, ids }, o))) continue;
         // it didn't go through: they can try again, or leave it (the grades land in My cards once revealed)
-        say("That didn't go through. Your cards are safe; the grades land in My cards once revealed.",
+        say("Didn't go through. Your cards are safe.",
           { label: 'Try again', note: DIY, fn: () => { asked = true; tried = false; }, alt: { label: 'My cards', fn: () => window.Stations?.open('cards') } });
       } else if (g?.roundAt && g.now >= g.roundAt && !tried) {
         const late = g.now - g.roundAt;
         say(late < LATE ? 'Revealing the grades…' : SAFE,
-          late >= OFFER ? { label: 'Reveal them now (small network fee)', note: DIY, fn: () => { asked = true; } } : undefined);
+          late >= OFFER ? { label: 'Reveal now (small fee)', note: DIY, fn: () => { asked = true; } } : undefined);
       }
       await sleep(asked && !tried ? 50 : POLL);
     }
@@ -648,10 +649,10 @@
 
   // ---------- burning, suggestions
   const burn = async (ids) => { await need(); return run(`Burn ${plural(ids.length, 'card')}`, (o) => L.burnCards({ ids }, o), `Burned ${plural(ids.length, 'card')}`); };
-  const suggest = async (texts) => { await need(); if (stillSending('suggest')) return null; return run(texts.length > 1 ? `Send ${texts.length} suggestions` : 'Send your suggestion', (o) => L.suggest({ texts }, o)); };
+  const suggest = async (texts) => { await need(); if (stillSending('suggest')) return null; return run(texts.length > 1 ? `Send ${texts.length} ideas` : 'Send your idea', (o) => L.suggest({ texts }, o)); };
 
   window.Live = {
-    on: true, net, testnet: net === 'testnet', sync, needWallet, openWallet, groupApi, free, getPaper, openPacks, quoteProtect, protect, finishGrading, popReport, burn, suggest,
+    on: true, net, testnet: net === 'testnet', sync, needWallet, openWallet, run, groupApi, free, getPaper, openPacks, quoteProtect, protect, finishGrading, popReport, burn, suggest,
     walletNeeds: capOf, // what the wallet must hold to pay `amt` in a coin: the cap (+3%, not USDG) and gas for ETH
     rules: null, snapshot: null, get chain() { return L; },
   };

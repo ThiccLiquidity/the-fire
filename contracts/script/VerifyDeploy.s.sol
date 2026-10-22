@@ -10,6 +10,7 @@ import {FireSale} from "../src/cards/FireSale.sol";
 import {FirePsa} from "../src/cards/FirePsa.sol";
 import {FireCredits} from "../src/cards/FireCredits.sol";
 import {FireGroups} from "../src/cards/FireGroups.sol";
+import {FireProfiles} from "../src/cards/FireProfiles.sol";
 import {RecipeDealer} from "../src/cards/RecipeDealer.sol";
 import {CardsRenderer} from "../src/cards/CardsRenderer.sol";
 import {PaperBurner} from "../src/cards/PaperBurner.sol";
@@ -60,10 +61,11 @@ contract VerifyDeploy is Deployments {
     }
 
     function run() external {
-        string[16] memory names = _contractNames();
+        string[17] memory names = _contractNames();
         console.log(string.concat("deployments file: ", deploymentsFile()));
         for (uint256 i; i < names.length; i++) {
             address a = deployed(names[i]);
+            if (a == address(0) && keccak256(bytes(names[i])) == keccak256("FireProfiles")) continue; // optional: _profiles()
             _ok(a != address(0) && a.code.length > 0, string.concat(names[i], " has code at ", vm.toString(a)));
         }
         if (fails > 0) {
@@ -75,6 +77,7 @@ contract VerifyDeploy is Deployments {
         _wiring();
         _feeds();
         _locks();
+        _profiles();
         console.log(string.concat("\n", vm.toString(fails), " FAIL, ", vm.toString(waits), " WAIT"));
         if (fails > 0) revert("VerifyDeploy: FAIL");
     }
@@ -183,6 +186,17 @@ contract VerifyDeploy is Deployments {
             _eq(r1, royaltyTo, "FireCards royalty goes to ROYALTY_RECEIVER");
             _eq(r2, royaltyTo, "FirePacks royalty goes to ROYALTY_RECEIVER");
         }
+    }
+
+    /// FireProfiles (names and profile pictures): optional, a deploy made before it existed adds it with
+    /// script/DeployProfiles.s.sol. Until then the site hides profiles.
+    function _profiles() internal {
+        address a = deployed("FireProfiles");
+        if (a == address(0)) {
+            _wait("FireProfiles not deployed: the site hides profiles until script/DeployProfiles.s.sol runs");
+            return;
+        }
+        _eq(address(FireProfiles(a).CARDS()), deployed("FireCards"), "FireProfiles.CARDS is FireCards");
     }
 
     function _feeds() internal {

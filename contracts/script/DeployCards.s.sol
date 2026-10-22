@@ -14,6 +14,7 @@ import {PaperBurner} from "../src/cards/PaperBurner.sol";
 import {PlankBurner} from "../src/cards/PlankBurner.sol";
 import {FireCredits} from "../src/cards/FireCredits.sol";
 import {FireGroups} from "../src/cards/FireGroups.sol";
+import {FireProfiles} from "../src/cards/FireProfiles.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
 import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
@@ -61,7 +62,8 @@ interface ICardsPair {
  *   only FireSale writes to it, no owner), FireCredits (free pack credits, card burning, suggestions),
  *   PlankBurner (holds the PLANK burn share when a sale's swap can't run, and burns it later), FirePsa (cases and PDA
  *   grading), PaperBurner (case and grading fees buy and burn PAPER), and a drand adapter for each of FireCards and
- *   FirePsa.
+ *   FirePsa. Also FireProfiles (names and profile pictures; no owner). On a deploy made before it existed, add it
+ *   on its own with script/DeployProfiles.s.sol.
  * Checks every input before sending anything.
  *
  *   forge script script/DeployCards.s.sol --rpc-url $RPC --account deployer --sender <deployer address> --slow --broadcast \
@@ -135,6 +137,7 @@ contract DeployCards is Deployments {
         FireCredits credits;
         PlankBurner plankBurner;
         FireGroups groups;
+        FireProfiles profiles;
     }
 
     function run() external returns (Deployed memory d) {
@@ -174,6 +177,7 @@ contract DeployCards is Deployments {
         console.log("FireSale   ", address(d.sale));
         console.log("FireCredits", address(d.credits));
         console.log("FireGroups ", address(d.groups));
+        console.log("FireProfiles", address(d.profiles));
         console.log("PlankBurner", address(d.plankBurner));
         console.log("FirePsa    ", address(d.psa));
         console.log("PaperBurner", address(d.burner));
@@ -186,8 +190,8 @@ contract DeployCards is Deployments {
     }
 
     function _recordCards(Deployed memory d, Params memory p) internal {
-        string[] memory names = new string[](16);
-        address[] memory addrs = new address[](16);
+        string[] memory names = new string[](17);
+        address[] memory addrs = new address[](17);
         (names[0], addrs[0]) = ("FirePacks", address(d.packs));
         (names[1], addrs[1]) = ("FireCards", address(d.cards));
         (names[2], addrs[2]) = ("CardsRenderer", address(d.renderer));
@@ -204,6 +208,7 @@ contract DeployCards is Deployments {
         (names[13], addrs[13]) = ("PlankUsdTwap", p.plankUsd);
         (names[14], addrs[14]) = ("PaperUsdTwap", p.paperUsd);
         (names[15], addrs[15]) = ("FireGroups", address(d.groups));
+        (names[16], addrs[16]) = ("FireProfiles", address(d.profiles));
         string[] memory inNames = new string[](11);
         address[] memory inAddrs = new address[](11);
         (inNames[0], inAddrs[0]) = ("PAPER", p.paper);
@@ -255,6 +260,7 @@ contract DeployCards is Deployments {
         d.burner.setFlusher(address(d.psa), true); // FirePsa flushes each fee as it's paid
         d.psaAdapter = new OpenVRFAdapter(p.router, address(d.psa));
         require(d.psaAdapter.FIRE() == address(d.psa), "PDA adapter points elsewhere");
+        d.profiles = new FireProfiles(address(d.cards)); // names and profile pictures; no owner
 
         d.packs.setCards(address(d.cards));
         d.packs.setSeller(address(d.sale));
