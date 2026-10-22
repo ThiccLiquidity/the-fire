@@ -116,12 +116,13 @@ contract PsaTest is SeriesHelper {
         }
     }
 
-    function test_freshCardsOnlyGrade5To10() public view {
+    function test_freshCardsOnlyGrade7To10() public view {
         uint256[10] memory o = psa.oddsFor(23 hours, 0);
-        for (uint256 g; g < 4; g++) assertEq(o[g], 0);
+        for (uint256 g; g < 6; g++) assertEq(o[g], 0);
         assertApproxEqAbs(o[9], 0.01e18, 1e10, "PDA 10: 1%");
-        assertApproxEqAbs(o[8], 0.17e18, 1e10);
-        assertApproxEqAbs(o[4], 0.10e18, 1e10, "PDA 5: 10%");
+        assertApproxEqAbs(o[8], 0.30e18, 1e10, "PDA 9: 30%");
+        assertApproxEqAbs(o[7], 0.40e18, 1e10, "PDA 8: 40%");
+        assertApproxEqAbs(o[6], 0.29e18, 1e10, "PDA 7: 29%");
         // moves alone never go below 5
         o = psa.oddsFor(0, 1_000);
         for (uint256 g; g < 4; g++) assertEq(o[g], 0);
@@ -133,15 +134,15 @@ contract PsaTest is SeriesHelper {
         assertGt(psa.oddsFor(1 days + 40 days, 0)[3], 0, "PDA 4 opening");
         assertEq(psa.oddsFor(1 days + 364 days, 0)[1], 0, "PDA 2 closed before a year");
         assertEq(psa.oddsFor(1 days + 2 * 365 days, 0)[0], 0, "PDA 1 closed at two years");
-        assertGt(psa.oddsFor(1 days + 3 * 365 days, 0)[0], 0.04e18, "PDA 1 at three years");
-        assertGt(psa.oddsFor(1 days + 10 * 365 days, 0)[0], 0.6e18, "PDA 1 likely at ten years");
-        // no overnight jumps: at most about half a point a day
+        assertGt(psa.oddsFor(1 days + 3 * 365 days, 0)[0], 0.02e18, "PDA 1 at three years");
+        assertGt(psa.oddsFor(1 days + 10 * 365 days, 0)[0], 0.5e18, "PDA 1 likely at ten years");
+        // no overnight jumps: under a point a day (the most, 0.75, is the first day after the free day)
         uint256[10] memory prev = psa.oddsFor(0, 0);
         for (uint256 d = 1; d < 5 * 365; d += 1) {
             uint256[10] memory cur = psa.oddsFor(d * 1 days, 0);
             for (uint256 g; g < 10; g++) {
                 uint256 diff = cur[g] > prev[g] ? cur[g] - prev[g] : prev[g] - cur[g];
-                assertLt(diff, 0.006e18, "a day never moves a grade by more than 0.6 points");
+                assertLt(diff, 0.008e18, "a day never moves a grade by more than 0.8 points");
             }
             prev = cur;
         }
@@ -228,12 +229,12 @@ contract PsaTest is SeriesHelper {
         cards.transferFrom(alice, bob, 6); // a slab moves freely
     }
 
-    function test_freshGradesAreAlways5To10AndOldOnesLow() public {
+    function test_freshGradesAreAlways7To10AndOldOnesLow() public {
         uint256[] memory ids = _ids(1, 12);
         _grade(alice, ids, 4242);
         for (uint256 i = 1; i <= 12; i++) {
             (,, uint256 g,,,) = cards.wearOf(i);
-            assertGe(g, 5);
+            assertGe(g, 7);
             assertLe(g, 10);
         }
         // a second Series, left uncased for 20 years
@@ -381,7 +382,7 @@ contract PsaTest is SeriesHelper {
     /// The fresh odds are constants, the same for every Series, and nothing can change them.
     function test_freshOddsAreFixedForever() public {
         (uint64[10] memory o, uint256 total) = psa.freshOdds();
-        uint64[10] memory want = [uint64(0), 0, 0, 0, 1000, 2000, 2700, 2500, 1700, 100];
+        uint64[10] memory want = [uint64(0), 0, 0, 0, 0, 0, 2900, 4000, 3000, 100];
         for (uint256 g; g < 10; g++) assertEq(o[g], want[g]);
         assertEq(total, 10_000);
         assertEq(psa.ODDS_TOTAL(), 10_000);

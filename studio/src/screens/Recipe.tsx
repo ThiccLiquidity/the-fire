@@ -405,7 +405,7 @@ function PdaOdds() {
   return (
     <>
       <h3>PDA odds · fixed</h3>
-      <p className="muted small">A fresh card's grade. The same for every Series. PDA 1-4 come only from wear.</p>
+      <p className="muted small">A fresh card's grade. The same for every Series. PDA 1-6 come only from wear.</p>
       <div className="pda-fixed" data-testid="pda-odds">
         {[...w.keys()].reverse().map((g) => (
           <div key={g} data-testid={`pda-${g + 1}`}>

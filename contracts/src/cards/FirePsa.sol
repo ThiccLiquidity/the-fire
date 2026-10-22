@@ -40,9 +40,9 @@ interface IPsaBurner {
  *         Both in one transaction (`protect`), up to `maxBatch` cards. Prices are in dollars (`caseUsd18`,
  *         `gradeUsd18`), paid in ETH, PLANK or USDG; every cent goes to PaperBurner, which buys PAPER and burns it.
  *
- *         The odds: a fresh grade (5-10) from the fresh odds, then wear (moves and time uncased). Both are fixed
+ *         The odds: a fresh grade (7-10) from the fresh odds, then wear (moves and time uncased). Both are fixed
  *         here forever, the same for every Series (FRESH_* and WEAR_* constants, `oddsFor`); nobody can change them.
- *         Fresh: 10: 1%, 9: 17%, 8: 25%, 7: 27%, 6: 20%, 5: 10%. Only the case and grading prices can change.
+ *         Fresh: 10: 1%, 9: 30%, 8: 40%, 7: 29% (never below 7). Only the case and grading prices can change.
  *
  *         The owner can pause case and grading payments (`setPaused`); finishing and cancelling gradings never pause.
  *         The randomness source can be switched at any time (only new gradings use it; each grading remembers its
@@ -61,13 +61,13 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     uint256 public constant CANCEL_AFTER = 7 days;
 
     // ---------------------------------------------------------------- fresh odds (fixed forever, every Series)
-    /// @dev A fresh card's grade weights, out of ODDS_TOTAL. Grades 1-4 come only from wear.
+    /// @dev A fresh card's grade weights, out of ODDS_TOTAL. Grades 1-6 come only from wear.
     uint256 public constant ODDS_TOTAL = 10_000;
-    uint64 public constant FRESH_5 = 1000;
-    uint64 public constant FRESH_6 = 2000;
-    uint64 public constant FRESH_7 = 2700;
-    uint64 public constant FRESH_8 = 2500;
-    uint64 public constant FRESH_9 = 1700;
+    uint64 public constant FRESH_5 = 0;
+    uint64 public constant FRESH_6 = 0;
+    uint64 public constant FRESH_7 = 2900;
+    uint64 public constant FRESH_8 = 4000;
+    uint64 public constant FRESH_9 = 3000;
     uint64 public constant FRESH_10 = 100;
 
     // ---------------------------------------------------------------- wear rules (fixed forever)

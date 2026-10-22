@@ -92,7 +92,7 @@ export function allImageNames(recipe, characters) {
 }
 
 /** FirePsa's fresh PDA odds, grade 1 first, out of 10,000: fixed forever, the same for every Series. */
-export const FRESH_PDA_ODDS = [0n, 0n, 0n, 0n, 1000n, 2000n, 2700n, 2500n, 1700n, 100n];
+export const FRESH_PDA_ODDS = [0n, 0n, 0n, 0n, 0n, 0n, 2900n, 4000n, 3000n, 100n];
 
 /** The recipe fingerprint the studio puts in the images folder's manifest.json. */
 export function recipeHash(j) {

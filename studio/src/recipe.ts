@@ -71,8 +71,8 @@ const U128 = (1n << 128n) - 1n
 export const MAX_TYPE_NAME_BYTES = 64
 export const MAX_SLUG_BYTES = 32
 /** FirePsa's fresh odds (out of 10,000), grade 1 first: fixed forever, the same for every Series (docs/grading.md).
- *  10 1%, 9 17%, 8 25%, 7 27%, 6 20%, 5 10%; 1-4 come only from wear. Shown, never set or exported. */
-export const FRESH_PDA_ODDS = [0, 0, 0, 0, 1000, 2000, 2700, 2500, 1700, 100] as const
+ *  10 1%, 9 30%, 8 40%, 7 29%; 1-6 come only from wear. Shown, never set or exported. */
+export const FRESH_PDA_ODDS = [0, 0, 0, 0, 0, 0, 2900, 4000, 3000, 100] as const
 /** Gold cards in the classic (five-type) recipe. */
 export const DEFAULT_GOLD = 15 // classicRecipe: a fixed count, as Diamond was
 /** The Standard recipe's Gold per character (StandardRecipe.DEFAULT_GOLD_PER_CHARACTER). */

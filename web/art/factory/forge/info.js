@@ -36,9 +36,9 @@
     m.frame = r * (1 - r); m.full = r * r; m.none = (1 - r) * (1 - r); // picture only = frame only
   });
   const M = Object.fromEntries([...MATS, ...LEGACY].map((m) => [m.id, m]));
-  // fresh PDA grade odds in percent (FirePsa, fixed forever for every Series: grades 5-10 only; 1-4 come only from long raw holds), and the
+  // fresh PDA grade odds in percent (FirePsa, fixed forever for every Series: grades 7-10 only; 1-6 come only from wear), and the
   // wear frame each band gets (card-studio.md).
-  const PDA = [10, 1, 9, 17, 8, 25, 7, 27, 6, 20, 5, 10]
+  const PDA = [10, 1, 9, 30, 8, 40, 7, 29]
     .reduce((a, v, i, arr) => (i % 2 ? a : [...a, { g: v, p: arr[i + 1] }]), []);
   const WEAR = [ // band, grades covered, frame suffix, seal ring colour
     { g: '10', n: 1, f: '', c: '#ffd36a', name: 'Clean + gold glow' }, { g: '9–8', n: 2, f: '-l2', c: '#3fc1b0', name: 'Barely used' },
@@ -48,7 +48,7 @@
   const bandOf = (g) => WEAR[g === 10 ? 0 : g === 1 ? 5 : 5 - Math.ceil((g - 1) / 2)];
   const PDA_SUM = PDA.reduce((a, b) => a + b.p, 0);
   if (Math.abs(PDA_SUM - 100) > 1e-9) throw new Error('PDA odds must sum to 100, got ' + PDA_SUM);
-  const PDA_LINE = 'Fresh cards grade 5 to 10, mostly 6 to 9. A PDA 10 is 1 in 100.';
+  const PDA_LINE = 'Fresh cards never grade below 7. A PDA 10 is 1 in 100.';
 
   const pct = (x) => { // 0.025 -> "2.5%", 0.00032 -> "0.032%"
     const v = x * 100;

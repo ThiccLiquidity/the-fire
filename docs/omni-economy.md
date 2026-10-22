@@ -44,7 +44,7 @@ setting: cards burned per free pack is 42, forever.
 | Most packs per purchase | 50 |
 | Credits per picked suggestion | 1 |
 | Free (credit) packs per drop, in all / per wallet | 10% of the drop's packs (16 of 167) / 3 per wallet (0 = no limit) |
-| Fresh PDA odds | 10: 1% · 9: 17% · 8: 25% · 7: 27% · 6: 20% · 5: 10% (grades 1-4 only from wear) |
+| Fresh PDA odds | 10: 1% · 9: 30% · 8: 40% · 7: 29% (grades 1-6 only from wear) |
 
 ## Setting up a drop
 
@@ -222,16 +222,16 @@ original name, `FirePsa`.) The full rules (hidden condition, wear, fresh odds, s
   unlock, still ungraded. The fee was burned. Opens work the same way: a stuck open can be cancelled after 7 days and
   the packs come back sealed.
 - **Fresh odds** (a card cased or graded within 24 hours of opening): constants in `FirePsa` (`freshOdds`), fixed
-  forever, the same for every Series and every material. Grades 1-4 come only from long raw holds:
+  forever, the same for every Series and every material. Grades 1-6 come only from wear:
 
 | Grade | Fresh odds | Out of 10,000 | Wear |
 |---|---|---|---|
 | 10 | 1% | 100 | Pristine + gold glow |
-| 9 | 17% | 1,700 | Level 2 |
-| 8 | 25% | 2,500 | Level 2 |
-| 7 | 27% | 2,700 | Level 3 |
-| 6 | 20% | 2,000 | Level 3 |
-| 5 | 10% | 1,000 | Level 4 |
+| 9 | 30% | 3,000 | Level 2 |
+| 8 | 40% | 4,000 | Level 2 |
+| 7 | 29% | 2,900 | Level 3 |
+| 6 | - (wear only) | 0 | Level 3 |
+| 5 | - (wear only) | 0 | Level 4 |
 | 4 | - (wear only) | 0 | Level 4 |
 | 3 | - (wear only) | 0 | Level 5 |
 | 2 | - (wear only) | 0 | Level 5 |

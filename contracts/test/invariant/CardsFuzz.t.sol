@@ -210,11 +210,11 @@ contract CardsFuzzTest is SeriesHelper {
         assertLe(mc, ma + 1e8, "a move is never better");
     }
 
-    function test_freshOddsHitEveryGrade5To10FromHashedWords() public view {
+    function test_freshOddsHitEveryGrade7To10FromHashedWords() public view {
         bool[11] memory seen;
         for (uint256 i; i < 2_000; i++) seen[psa.gradeFor(0, 0, uint256(keccak256(abi.encode(word0, i))))] = true;
-        for (uint256 g = 5; g <= 10; g++) assertTrue(seen[g], vm.toString(g));
-        for (uint256 g; g < 5; g++) assertFalse(seen[g]);
+        for (uint256 g = 7; g <= 10; g++) assertTrue(seen[g], vm.toString(g));
+        for (uint256 g; g < 7; g++) assertFalse(seen[g]);
     }
 
     uint256 constant word0 = 0xF1E;

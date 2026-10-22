@@ -1,11 +1,11 @@
 /* Omni Cardworks (demo mode): cases, slabs and wear (docs/grading.md), plus the "How does this work?" window.
    Wear.odds is the same model FirePsa.oddsFor runs on chain (contracts/test/cards/wear-model.py): the fresh odds,
    time damage D ~ Poisson(1.45 x years^0.68) read from the same 32-point table and blended between points, 20% per
-   move to lose a grade (first 10 moves count, never below 5 from moves), and grades 1-4 fading in with time. */
+   move to lose a grade (first 10 moves count, never below 5 from moves), and grades 1-4 fading in with time. Fresh cards grade 7-10. */
 (() => {
   const DAY = 86400, YEAR = 365 * DAY, FREE = DAY;
-  // fresh odds, grade 1..10 (FirePsa FRESH_*, out of 10,000; fixed forever, every Series): fresh cards grade 5 to 10 only
-  const FRESH = [0, 0, 0, 0, 1000, 2000, 2700, 2500, 1700, 100];
+  // fresh odds, grade 1..10 (FirePsa FRESH_*, out of 10,000; fixed forever, every Series): fresh cards grade 7 to 10 only
+  const FRESH = [0, 0, 0, 0, 0, 0, 2900, 4000, 3000, 100];
   const MOVE_CAP = 10, DMAX = 9;
   const FADE = { 4: YEAR / 12, 3: YEAR / 2, 2: YEAR, 1: 2 * YEAR }; // grade -> opens at (fully open at twice that)
   const BREAK_DAYS = [0, 1, 2, 4, 7, 10, 14, 21, 30, 45, 60, 90, 120, 180, 240, 300, 365, 456, 548, 730, 913, 1095, 1460,

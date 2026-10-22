@@ -19,20 +19,24 @@ and burn PAPER). Prices and pricing models are in `docs/omni-economy.md`.
 
 A card cased or graded within **24 hours** of opening (being dealt) grades from the fresh odds. They are built into
 `FirePsa` as constants (`FRESH_5` ... `FRESH_10`, out of `ODDS_TOTAL` = 10,000; read them with `freshOdds()`): fixed
-forever, the same for every Series, and nobody can change them. Fresh cards only grade **5-10**: grades 1-4 come only
-from time.
+forever, the same for every Series, and nobody can change them. Fresh cards only grade **7-10**: grades 1-6 come
+only from wear (time and moves).
 
 Fresh odds (every Series):
 
-| PDA 10 | PDA 9 | PDA 8 | PDA 7 | PDA 6 | PDA 5 |
-|---|---|---|---|---|---|
-| 1% | 17% | 25% | 27% | 20% | 10% |
+| PDA 10 | PDA 9 | PDA 8 | PDA 7 |
+|---|---|---|---|
+| 1% | 30% | 40% | 29% |
+
+Why: real factory flaws leave a pack-fresh card at 7-9 (below that takes handling damage), and our wear images show
+white edges from PDA 5, so a fresh card never looks worn. A PDA 10 stays a 1-in-100 chase card. The floor only
+covers a card protected in its first 24 hours; after that time and moves wear it as below.
 
 ## Wear (fixed forever)
 
 The wear rules are built into `FirePsa` as constants: the same for every Series, and nobody can change them.
 
-1. **Fresh grade** `g0`: rolled from the fresh odds (5-10).
+1. **Fresh grade** `g0`: rolled from the fresh odds (7-10).
 2. **Moves.** Each of the first 10 wallet-to-wallet moves of an uncased, ungraded card (sales and plain transfers;
    sending a card to your own wallet doesn't count)
    takes a grade off with a 20% chance. Moves alone never take a card below 5 (a draw that would is re-drawn, so the
@@ -42,7 +46,7 @@ The wear rules are built into `FirePsa` as constants: the same for every Series,
 4. **Low grades fade in.** Grades below 5 open slowly: PDA 4 from 1 month (fully open at 2 months), PDA 3 from 6 months
    (fully at 1 year), PDA 2 from 1 year (fully at 2 years), PDA 1 from 2 years (fully at 4 years). A card that would
    land on a grade that isn't fully open lands one higher with the missing share, and so on up. No overnight jumps:
-   the odds change by at most about half a percent on any day.
+   the odds change by less than one percent on any day (the most, 0.75, is the first day after the free day).
 
 Casing freezes the clock and the move count where they are. Grading freezes them at the moment it is asked for (the
 randomness wait doesn't count).
@@ -52,16 +56,16 @@ What a card grades at (no moves; time uncased after the free first day; the same
 
 | Uncased for | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | Avg |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| ≤ 24 hours | 1.0 | 17 | 25 | 27 | 20 | 10 | | | | | 7.2 |
-| 1 month | 0.8 | 13 | 23 | 26 | 22 | 16 | | | | | 7.0 |
-| 6 months | 0.4 | 7.3 | 17 | 23 | 23 | 17 | 13 | | | | 6.4 |
-| 1 year | 0.2 | 4.3 | 12 | 19 | 22 | 20 | 13 | 9.9 | | | 5.8 |
-| 3 years | | 0.9 | 3.8 | 8.8 | 14 | 18 | 18 | 15 | 16 | 5.6 | 4.3 |
-| 5 years | | 0.3 | 1.4 | 4.1 | 8.1 | 12 | 16 | 16 | 14 | 27 | 3.2 |
-| 10 years | | | 0.2 | 0.6 | 1.8 | 3.8 | 6.7 | 9.8 | 12 | 65 | 1.8 |
+| ≤ 24 hours | 1.0 | 30 | 40 | 29 | | | | | | | 8.0 |
+| 1 month | 0.8 | 23 | 37 | 31 | 7.0 | 1.0 | | | | | 7.8 |
+| 6 months | 0.4 | 13 | 27 | 31 | 19 | 7.1 | 2.5 | | | | 7.1 |
+| 1 year | 0.2 | 7.4 | 20 | 28 | 23 | 13 | 5.6 | 2.5 | | | 6.6 |
+| 3 years | | 1.5 | 6.4 | 14 | 20 | 21 | 17 | 11 | 8.1 | 2.2 | 5.0 |
+| 5 years | | 0.5 | 2.4 | 6.5 | 12 | 17 | 18 | 16 | 12 | 16 | 3.9 |
+| 10 years | | | 0.3 | 1.1 | 2.8 | 5.8 | 9.4 | 13 | 14 | 54 | 2.1 |
 
 By moves (cased right after): 1 move takes PDA 10 from 1% to 0.8%; 3 moves 0.5%; 5 moves 0.3%; 10 or more 0.1%
-(average 6.0).
+(average 6.4). Moves can take a fresh 7 down to 6 or 5: after 1 move 5.8% of cards are below 7, after 5 moves 31%.
 
 **PDA 1 is a patience trophy:** only a card held uncased for years can get one. **PDA 10 needs a fresh card.**
 

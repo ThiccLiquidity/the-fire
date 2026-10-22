@@ -155,9 +155,9 @@ picks a wear level, each a full frame per material and holo variant:
 | Wear level | Grades | Fresh odds |
 |---|---|---|
 | 1 | PDA 10 | 1% |
-| 2 | PDA 9-8 | 17% + 25% |
-| 3 | PDA 7-6 | 27% + 20% |
-| 4 | PDA 5-4 | 10% + wear only |
+| 2 | PDA 9-8 | 30% + 40% |
+| 3 | PDA 7-6 | 29% + wear only |
+| 4 | PDA 5-4 | wear only |
 | 5 | PDA 3-2 | wear only |
 | 6 | PDA 1 | wear only |
 

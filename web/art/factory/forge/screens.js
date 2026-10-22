@@ -279,8 +279,8 @@
         edition: `${1 + Math.floor(Math.random() * of)} of ${of}`, grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
     });
   }
-  // fresh PDA odds in percent (FirePsa, fixed forever for every Series): grades 5-10 only. Grades 1-4 come only from long raw holds (wear.js).
-  const GRADE_ODDS = [10, 9, 8, 7, 6, 5].map((g) => [g, Wear.FRESH[g - 1] / 100]);
+  // fresh PDA odds in percent (FirePsa, fixed forever for every Series): grades 7-10 only. Grades 1-6 come only from wear (wear.js).
+  const GRADE_ODDS = [10, 9, 8, 7].map((g) => [g, Wear.FRESH[g - 1] / 100]);
   // demo data: graded cards were graded at some age (their grade drawn on the wear model at that age); one PDA 10 so the demo shows the gold edge
   (() => {
     let seed = 1607; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -861,9 +861,9 @@
     const max = Math.max(...GRADE_ODDS.map(([, p]) => p));
     return h('figure', { class: 'odds' },
       h('div', { class: 'bars', role: 'img', 'aria-label': 'Fresh grade odds: ' + GRADE_ODDS.map(([g, p]) => `PDA ${g} is ${pctTxt(p)}`).join(', ') },
-        GRADE_ODDS.map(([g, p]) => h('div', { class: 'bar' + (g === 10 ? ' top' : g >= 6 && g <= 9 ? ' mid' : '') },
+        GRADE_ODDS.map(([g, p]) => h('div', { class: 'bar' + (g === 10 ? ' top' : g >= 7 && g <= 9 ? ' mid' : '') },
           h('span', { class: 'pct', text: pctTxt(p) }), h('i', { style: `height:${Math.max(3, p / max * 64)}px` }), h('span', { class: 'lbl', text: g })))),
-      h('figcaption', { text: 'Fresh cards grade 5 to 10. A PDA 10 is 1 in 100.' }));
+      h('figcaption', { text: 'Fresh cards never grade below 7. A PDA 10 is 1 in 100.' }));
   }
   let coin = 'PLANK'; // last coin picked to pay with (PLANK first, like checkout)
   const STEPS = [['grade', 'Grade'], ['case', 'Case'], ['review', 'Review']];
