@@ -6,9 +6,11 @@
 // dev key: "Connect" signs with it, and drand is stood in for). Nothing on the site sets these, so the hook can't be
 // active in production. Then checks that the plain page is still the demo, with no console errors, desktop and phone.
 //
-// Walks: connect, suggest a theme and an art style (the owner picks them: 2 free packs), the drop opens, buy with ETH,
-// PLANK and USDG (PAPER burned each time), a press pack, a free pack, the drop closes, open, deliver the draw, deal,
-// reveal, case + grade (the draw, the grades), burn, the results. Screenshots go to $SHOTS (default ./shots).
+// Walks: connect, suggest a theme and an art style (the owner picks them: 2 free packs), the drop opens and the buy box
+// lists its groups, buy from Everyone with ETH, PLANK and USDG (PAPER burned each time), a free pack (Everyone sold
+// out: "more may come"), the Press group's pack, the after-sell-out group (its panel, the confirm step, a race with
+// another buyer: "Someone just bought it"), the idle end ("Closing…") and the keeper's close, open, deliver the draw,
+// deal, reveal, case + grade (the draw, the grades), burn, the results. Screenshots go to $SHOTS (default ./shots).
 // Anvil's public test accounts only.
 import { createServer } from "node:http";
 import { readFileSync, existsSync, mkdirSync, statSync } from "node:fs";
@@ -89,6 +91,8 @@ try {
   await page.locator("#sheet-wallet[open]").waitFor();
   await shot("02-wallet");
   await page.keyboard.press("Escape");
+  await page.waitForTimeout(500); // the connect's own wallet sheet can open again just after: close whatever is open
+  await page.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
 
   console.log("\n== suggest a theme and an art style (one transaction)");
   await page.evaluate(() => Stations.open("suggest"));
@@ -106,21 +110,28 @@ try {
   const pickAbi = [{ type: "function", name: "pickSuggestions", inputs: [{ type: "uint256" }, { type: "uint256[]" }], outputs: [], stateMutability: "nonpayable" }];
   await ctx.asOwner(ctx.C.FireCredits, encodeFunctionData({ abi: pickAbi, functionName: "pickSuggestions", args: [7n, ids.map(BigInt)] }));
 
-  console.log("\n== the drop opens: buy with ETH, PLANK and USDG");
+  console.log("\n== the drop opens: the buy box lists the groups");
   await ctx.warp(Number(ctx.start - (await ctx.now())) + 1);
   await sync();
   check(await page.evaluate(() => Store.state.wallet.credits === 2), "2 free packs from the picks");
-  check(/left/.test(await page.locator("#seriesChip").textContent()), `on sale: ${await page.locator("#seriesChip").textContent()}`);
+  check(/7 left/.test(await page.locator("#seriesChip").textContent()), `on sale: ${await page.locator("#seriesChip").textContent()}`);
+  const box = async () => (await page.locator("#buybox").innerText()).replace(/\s+/g, " ");
+  let bx = await box();
+  check(/Everyone/.test(bx) && /\$2\.50 \+ 1 PAPER/.test(bx) && /6 left/.test(bx), `Everyone: $2.50 + 1 PAPER, 6 left (${bx})`);
+  check(/Paper Press holders/.test(bx) && /1 PAPER/.test(bx) && /ends in/.test(bx), "Paper Press holders: 1 PAPER, with its end countdown");
+  check(/Next: After sell-out opens when Everyone sells out/.test(bx), "what opens next: After sell-out, once Everyone sells out");
   await shot("04-on-sale");
   const buy = async (n, coin) => {
-    await page.click('#buybox [data-buy="buy"]');
+    await page.click('#buybox [data-buy="g1"]');
     await page.locator("#sheet-buy[open] .go:not([disabled])").waitFor({ timeout: 30_000 });
     for (let i = 1; i < n; i++) await page.click('#sheet-buy [data-q="1"]');
     await page.click(`#sheet-buy [data-c="${coin}"]`);
     await page.waitForFunction(() => /≈/.test(document.querySelector("#sheet-buy .sum dd")?.textContent || ""), null, { timeout: 30_000 });
+    await page.locator("#sheet-buy .go:not([disabled])").waitFor({ timeout: 30_000 });
     if (n === 2 && coin === "ETH") {
       await shot("05-checkout");
       check(/up to 3% more; anything unused comes back/.test(await page.locator("#sheet-buy .fine").textContent()), "ETH checkout: the wallet may show up to 3% more, unused comes back");
+      check((await page.locator("#sheet-buy [data-c]").count()) === 3 && (await page.locator("#sheet-buy [data-all]").count()) === 1, "Everyone takes PLANK, ETH and USDG; ETH offers to pay the PAPER too");
     }
     await page.click("#sheet-buy .go:not([disabled])");
     await page.locator("#sheet-tx[open]").waitFor();
@@ -132,22 +143,76 @@ try {
   await buy(2, "PLANK");
   await buy(1, "USDG");
   await sync();
-  check(await page.evaluate(() => Store.state.sealed[7] === 5 && Store.state.wallet.bought === 5), "5 sealed packs (2 ETH, 2 PLANK, 1 USDG)");
+  check(await page.evaluate(() => Store.state.sealed[7] === 5 && Store.state.wallet.boughtIn[1] === 5), "5 sealed packs from Everyone (2 ETH, 2 PLANK, 1 USDG)");
 
-  console.log("\n== a press pack and a free pack: the drop closes");
-  await page.click('#buybox [data-buy="starter"]');
-  await page.locator("#sheet-press[open]").waitFor(); // the dev Press can't list tokens: the holder types its number
-  await page.fill("#pressno", "1");
-  await shot("07a-press-number");
-  await page.click("#sheet-press button[type=submit]");
-  await page.locator("#sheet-starter .go").waitFor();
-  await page.click("#sheet-starter .go");
-  await txDone(); await toastSeen(/Press pack claimed/);
+  console.log("\n== a free pack: Everyone sells out, but more may come from the Press group");
   await page.click('#buybox [data-buy="free"]');
   await page.click("#sheet-free .go");
   await txDone(); await toastSeen(/Free pack/);
   await sync();
-  check(await page.evaluate(() => Store.state.sealed[7] === 7 && Store.state.series.phase === 4), "7 sealed packs; Series 7 closed");
+  bx = await box();
+  check(/Everyone/.test(bx) && /Sold out · more may come from Paper Press holders in/.test(bx) && (await page.locator('#buybox [data-buy="g1"].off').count()) === 1, `Everyone greyed: "Sold out · more may come from Paper Press holders in …"`);
+  await shot("06b-more-may-come");
+
+  console.log("\n== the Press group: a pack with a Paper Press");
+  await page.click('#buybox [data-buy="g0"]');
+  await page.locator("#sheet-press[open]").waitFor(); // the dev Press can't list tokens: the holder types its number
+  await page.fill("#pressno", "1");
+  await shot("07a-press-number");
+  await page.click("#sheet-press button[type=submit]");
+  await page.locator("#sheet-buy[open] .go:not([disabled])").waitFor({ timeout: 30_000 });
+  check(/Claim 1 pack/.test(await page.locator("#sheet-buy .go").textContent()) && (await page.locator("#sheet-buy [data-c]").count()) === 0, "the Press group: no coins (1 PAPER only): Claim 1 pack");
+  await page.click("#sheet-buy .go");
+  await txDone(); await toastSeen(/bought/);
+  await sync();
+  check(await page.evaluate(() => Store.state.sealed[7] === 7 && Store.state.series.phase === 3 && Store.state.series.groups[2].state === "open"), "7 sealed packs; the Press and Everyone ended; After sell-out is open");
+
+  console.log("\n== after sell-out: the rising price, a clear warning, a race");
+  bx = await box();
+  check(/After sell-out/i.test(bx) && /Extra pack #1/.test(bx) && /\$2\.60 \+ 1 PAPER/.test(bx) && /price rises 4% per pack/.test(bx) && /ends in/.test(bx), `the buy box: ${bx}`);
+  check(/Extra packs/.test(await page.locator("#seriesChip").textContent()), `the chip: ${await page.locator("#seriesChip").textContent()}`);
+  await shot("07b-after-sellout-buybox");
+  await page.click('#buybox [data-buy="g2"]');
+  await page.locator("#sheet-buy[open] .go:not([disabled])").waitFor({ timeout: 30_000 });
+  const panel = (await page.locator("#sheet-buy .xpanel").innerText()).replace(/\s+/g, " ");
+  check(/Extra pack #1: \$2\.60 \(\$2\.50 \+ \$0\.10 tax\)/.test(panel) && /The whole tax buys PAPER and burns it\. Each sale raises the price 4%\. Sales end 5 minutes after the last one; then packs can be opened\./.test(panel), `its panel: ${panel}`);
+  check(/Sales end in \d+m \d+s if nobody buys/.test(panel), "a live countdown to the idle end");
+  await shot("07c-after-sellout-panel");
+  await page.click("#sheet-buy .go");
+  await page.locator("#sheet-buy .xconfirm").waitFor();
+  check(await page.locator("#sheet-buy .go[disabled]").count() === 1, "the confirm step: nothing reaches the wallet until \"I understand\" is ticked");
+  check(/\$0\.10 tax/.test(await page.locator("#sheet-buy .xconfirm").textContent()) && /None of it comes back/.test(await page.locator("#sheet-buy .xconfirm").textContent()), "it says what it costs and that the tax is burned");
+  await page.click("#sheet-buy [data-ok]");
+  await shot("07d-after-sellout-confirm");
+  await page.click("#sheet-buy .go:not([disabled])");
+  await txDone(); await toastSeen(/bought/);
+  await sync();
+  check(await page.evaluate(() => Store.state.sealed[7] === 8 && Store.state.series.groups[2].sold === 1), "extra pack #1 bought");
+  // the race: the sheet shows pack #2 at $2.70; someone else buys it first
+  await page.click('#buybox [data-buy="g2"]');
+  await page.locator("#sheet-buy[open] .go:not([disabled])").waitFor({ timeout: 30_000 });
+  check(/Extra pack #2: \$2\.70/.test(await page.locator("#sheet-buy .xpanel").innerText()), "the next one: extra pack #2 at $2.70");
+  const saleAbi = JSON.parse(readFileSync(resolve(here, "../../src/lib/abi/fireSaleAbi.json"), "utf8"));
+  await ctx.tx(acct(5), ctx.C.FireSale, saleAbi, "buyWithEthAll", [7n, 2n, 1n, { nftIds: [], allowance: 0n, proof: [] }], 10n ** 18n);
+  await page.click("#sheet-buy .go");
+  await page.click("#sheet-buy [data-ok]");
+  await page.click("#sheet-buy .go:not([disabled])");
+  await page.locator("#sheet-buy .xmoved").waitFor({ timeout: 30_000 });
+  const movedTxt = await page.locator("#sheet-buy .xmoved").textContent();
+  check(/Someone just bought it — the next one is \$2\.81/.test(movedTxt) && !(await page.locator("#sheet-tx[open]").count()), `a race: "${movedTxt}", no error and nothing sent`);
+  await page.waitForFunction(() => /Extra pack #3: \$2\.81/.test(document.querySelector("#sheet-buy .xpanel")?.textContent || ""), null, { timeout: 30_000 });
+  check(/Sales end in [0-5]m \d+s if nobody buys/.test(await page.locator("#sheet-buy .xpanel").innerText()), "the panel moves on to extra pack #3, and the idle countdown (on the chain's clock) is under 5 minutes");
+  await shot("07e-someone-bought-it");
+  await page.keyboard.press("Escape");
+
+  console.log("\n== nobody buys for 5 minutes: the group ends, the keeper closes the Series");
+  await ctx.warp(301);
+  await sync();
+  check(/Closing…/.test(await page.locator("#seriesChip").textContent()) && /closing/i.test(await box()) && (await page.locator("#buybox [data-buy]").count()) === 0, "\"Closing…\": no buttons, nothing asked of the wallet");
+  await shot("07f-closing");
+  await ctx.tx(acct(6), ctx.C.FireSale, saleAbi, "close", [7n]);
+  await sync();
+  check(await page.evaluate(() => Store.state.sealed[7] === 8 && Store.state.series.phase === 4), "8 sealed packs; Series 7 closed (closed by the keeper)");
   await shot("07-closed");
 
   console.log("\n== open: wait for the draw, deliver it, deal, reveal");
@@ -169,7 +234,7 @@ try {
   await page.click("#sheet-table .skip-b");
   await page.locator("#sheet-table .op-sum .wz").waitFor({ timeout: 30_000 });
   const dealt = await page.evaluate(() => Store.state.cards.length);
-  check(dealt === 42, `42 cards dealt and revealed (${dealt})`);
+  check(dealt === 48, `48 cards dealt and revealed (${dealt})`);
   await shot("10-after-open");
 
   console.log("\n== case one card, grade two (one payment), then the draw sets the grades");
@@ -208,7 +273,7 @@ try {
   await page.click("#sheet-burnwarn .bw-act .btn.danger");
   await txDone(); await toastSeen(/Burned 3/);
   await sync();
-  check(await page.evaluate(() => Store.state.cards.length === 39 && Store.state.wallet.burnCount === 3), "3 burned: 39 cards left, 3 / 42 toward a free pack");
+  check(await page.evaluate(() => Store.state.cards.length === 45 && Store.state.wallet.burnCount === 3), "3 burned: 45 cards left, 3 / 42 toward a free pack");
 
   console.log("\n== My cards, the results");
   await page.evaluate(() => Stations.open("cards"));

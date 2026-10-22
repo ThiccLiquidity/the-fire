@@ -1,8 +1,9 @@
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Notice, useAction } from '../components'
 import {
-  CARDS_PER_CREDIT, MAX_WINDOW_HOURS, PRESS_PRICE_LABEL, SALE_PRESETS, checkSale, creditPacksMax, dropPlan, parseDecimal, saleJson, saleOf, salePacks,
-  type PressPrice, type SaleField, type SaleProblem, type SaleSettings,
+  CARDS_PER_CREDIT, COIN, COINS, GROUP_TEMPLATES, MAX_GROUPS, MAX_WINDOW_HOURS, SALE_PRESETS, checkSale, creditPacksMax, dropPlan, fmtHours,
+  groupName, groupPacks, groupSummary, groupTimes, saleJson, saleOf, salePacks, taxedPrice, taxedPrices,
+  type Gate, type GroupField, type PacksAs, type SaleField, type SaleGroup, type SaleProblem, type SaleSettings,
 } from '../sale'
 import { cardsPerPack } from '../recipe'
 import { MAX_PACKS } from '../rules'
@@ -18,6 +19,9 @@ const toLocal = (t: number) => {
 }
 const fromLocal = (v: string) => (v ? Math.floor(new Date(v).getTime() / 1000) : 0)
 
+/** One colour per group (its place in the list), the same in the split bar, the timeline and its card. */
+export const GROUP_COLORS = ['#4a7fe8', '#b9772e', '#f08a24', '#c99bff', '#4cc38a', '#e5b33b']
+
 function Num({ value, onChange, testId, step = 1, width = 90 }: { value: number; onChange: (v: number) => void; testId: string; step?: number; width?: number }) {
   return (
     <input type="number" min={0} step={step} value={Number.isFinite(value) ? value : ''} style={{ width }} data-testid={testId}
@@ -29,33 +33,44 @@ function Text({ value, onChange, testId, width = 90, placeholder }: { value: str
   return <input value={value} style={{ width }} placeholder={placeholder} data-testid={testId} inputMode="decimal" onChange={(e) => onChange(e.target.value.trim())} />
 }
 
+/** Group indexes after moving or removing one: `map[old]` is the new index, -1 when it's gone. */
+function remap(s: SaleSettings, groups: SaleGroup[], map: number[]): SaleSettings {
+  const to = (i: number) => (i < 0 ? -1 : map[i] ?? -1)
+  return { ...s, groups: groups.map((g) => ({ ...g, afterGroup: to(g.afterGroup), rollTo: to(g.rollTo) })), creditGroup: to(s.creditGroup) }
+}
+
 export function SaleEditor({ fire }: { fire: FireRecord }) {
   const [busy, error, run] = useAction()
   const s = useMemo(() => saleOf(fire), [fire])
   const problems = useMemo(() => checkSale(s), [s])
   const errors = problems.filter((p) => !p.warning)
   const json = useMemo(() => saleJson(s), [s])
-  const d = dropPlan(s)
+  const packs = useMemo(() => groupPacks(s), [s])
   const locked = !!fire.deal
-  // the Series' pack count is the drop's (paid + press); it follows the sale until the deal is locked
+  // the Series' pack count is the drop's base total; it follows the sale until the deal is locked
   const save = (sale: SaleSettings) => run(() => updateFire(fire.number, locked ? { sale } : { sale, packs: Math.min(MAX_PACKS, Math.max(0, Math.floor(salePacks(sale)) || 0)) }))
   const set = (patch: Partial<SaleSettings>) => void save({ ...s, ...patch })
+  const setGroup = (i: number, patch: Partial<SaleGroup>) => set({ groups: s.groups.map((g, k) => (k === i ? { ...g, ...patch } : g)) })
   const preset = (name: string, next: SaleSettings) => {
-    if (JSON.stringify({ ...next, start: s.start, holderRoot: s.holderRoot }) === JSON.stringify(s)) return
-    if (!confirm(`Replace this Series' sale settings with ${name}? (Start and snapshot root are kept.)`)) return
-    void save({ ...next, start: s.start, holderRoot: s.holderRoot })
+    if (JSON.stringify({ ...next, start: s.start }) === JSON.stringify(s)) return
+    if (!confirm(`Replace this Series' sale settings with ${name}? (The start is kept.)`)) return
+    void save({ ...next, start: s.start })
+  }
+  const add = (make: (others: SaleGroup[]) => SaleGroup) => set({ groups: [...s.groups, make(s.groups)] })
+  const remove = (i: number) => {
+    if (!confirm(`Remove ${groupName(s, i)}?`)) return
+    void save(remap(s, s.groups.filter((_, k) => k !== i), s.groups.map((_, k) => (k < i ? k : k === i ? -1 : k - 1))))
+  }
+  const move = (i: number, j: number) => {
+    const groups = [...s.groups]
+    ;[groups[i], groups[j]] = [groups[j], groups[i]]
+    void save(remap(s, groups, s.groups.map((_, k) => (k === i ? j : k === j ? i : k))))
   }
   const perPack = cardsPerPack(fire.recipe)
   const packsOff = !!fire.deal && salePacks(s) !== fire.deal.packs
   const toFix = errors.length + (packsOff ? 1 : 0)
-
-  const pressOn = s.pressPacks > 0
-  const pressUsd = s.pressPrice === 'usd' || s.pressPrice === 'usdPaper'
-  const pressPaper = s.pressPrice === 'paper' || s.pressPrice === 'usdPaper'
-  const price = Number(parseDecimal(s.priceUsd, 8) ?? 0n) / 1e8
-  const burn = Number(parseDecimal(s.plankBurnPercent, 2) ?? 0n) / 10_000
-  const paperBurn = Number(parseDecimal(s.paperBurnPercent, 2) ?? 0n) / 10_000
   const cap = creditPacksMax(s)
+  const d = dropPlan(s)
 
   return (
     <section className="panel grow sale" data-testid="sale-editor">
@@ -75,41 +90,27 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
       </div>
       <DropPicture s={s} lockedPacks={fire.deal ? fire.deal.packs : null} cardsPerPack={perPack} />
 
-      <h3>Packs</h3>
+      <h3>Packs and who gets them</h3>
       <div className="sale-grid">
-        <F all={problems} f="paidPacks" label="Paid packs" hint="PLANK, ETH or USDG. Paid + press = the Series' packs."><Num value={s.paidPacks} onChange={(v) => set({ paidPacks: v })} testId="sale-paid" /></F>
-        <F all={problems} f="pressPacks" label="Press packs" hint="On top. Unclaimed ones join the paid. 0 = off."><Num value={s.pressPacks} onChange={(v) => set({ pressPacks: v })} testId="sale-press" /></F>
-        <F all={problems} f="plankOnly" label="PLANK-only packs" hint={`The first ${n(d.plankOnly)} of the ${n(d.paid)} paid.`}><Num value={s.plankOnly} onChange={(v) => set({ plankOnly: v })} testId="sale-plankonly" /></F>
-        <F all={problems} f="creditPacksPercent" label="Free packs, at most (%)" hint={cap ? `= ${n(d.freeMax)} of ${n(d.total)} packs, from the paid ones.` : '0 = no cap.'}><Text value={s.creditPacksPercent} onChange={(v) => set({ creditPacksPercent: v })} testId="sale-credit-max" /></F>
+        <F all={problems} f="packs" label="Total packs" hint="The base Series. The groups split it; an unlimited group sells on top.">
+          <Num value={s.packs} onChange={(v) => set({ packs: v })} testId="sale-packs" width={110} />
+        </F>
+      </div>
+      <div className="groups" data-testid="sale-groups">
+        {s.groups.map((_, i) => (
+          <GroupCard key={i} s={s} i={i} packs={packs[i]} problems={problems} busy={busy}
+            set={(patch) => setGroup(i, patch)} remove={() => remove(i)} move={(j) => move(i, j)} />
+        ))}
+      </div>
+      <div className="row wrap add-groups">
+        <span className="muted small">{s.groups.length < MAX_GROUPS ? 'Add a group:' : `${MAX_GROUPS} groups: the most a drop takes.`}</span>
+        {GROUP_TEMPLATES.map((t) => (
+          <button key={t.name} className="small-btn" disabled={busy || s.groups.length >= MAX_GROUPS} onClick={() => add(t.make)}
+            data-testid={`sale-add-${t.name.split(' ')[0].toLowerCase()}`}>+ {t.name}</button>
+        ))}
       </div>
 
-      <h3>Price</h3>
-      <div className="sale-grid">
-        <F all={problems} f="priceUsd" label="Price per pack ($)" hint="Unclaimed press packs sell at it too."><Text value={s.priceUsd} onChange={(v) => set({ priceUsd: v })} testId="sale-price" /></F>
-        <F all={problems} f="paperPerPack" label="PAPER per pack" hint="Burned. Paid and free packs. 0 = none."><Text value={s.paperPerPack} onChange={(v) => set({ paperPerPack: v })} testId="sale-paper" /></F>
-        <F all={problems} f="paperCapUsd" label="PAPER ceiling ($)" hint="Most a pack's PAPER can be worth. 0 = none."><Text value={s.paperCapUsd} onChange={(v) => set({ paperCapUsd: v })} testId="sale-paper-cap" /></F>
-        <F all={problems} f="plankBurnPercent" label="PLANK burn (%)" hint={`= ${usd(price * burn)} a paid pack · ${usd(d.burnUsd)} sold out.`}><Text value={s.plankBurnPercent} onChange={(v) => set({ plankBurnPercent: v })} testId="sale-burn" /></F>
-        <F all={problems} f="paperBurnPercent" label="PAPER buy & burn (%)" hint={`= ${usd(price * paperBurn)} a paid pack · ${usd(d.paperUsd)} sold out.`}><Text value={s.paperBurnPercent} onChange={(v) => set({ paperBurnPercent: v })} testId="sale-paper-burn" /></F>
-        <F all={problems} f="maxPerTx" label="Most packs per purchase"><Num value={s.maxPerTx} onChange={(v) => set({ maxPerTx: v })} testId="sale-maxtx" /></F>
-      </div>
-
-      {pressOn && <>
-        <h3>Press packs</h3>
-        <div className="sale-grid">
-          <F all={problems} f="pressPerPress" label="Per press" hint="Each press counts once per drop."><Num value={s.pressPerPress} onChange={(v) => set({ pressPerPress: v })} testId="sale-per-press" /></F>
-          <F all={problems} f="pressPerWallet" label="Per wallet"><Num value={s.pressPerWallet} onChange={(v) => set({ pressPerWallet: v })} testId="sale-press-wallet" /></F>
-          <F all={problems} f="pressHours" label="Claim window (hours)"><Num value={s.pressHours} step={0.5} onChange={(v) => set({ pressHours: v })} testId="sale-press-hours" /></F>
-          <F all={problems} f="pressPrice" label="They cost">
-            <select value={s.pressPrice} onChange={(e) => set({ pressPrice: e.target.value as PressPrice })} data-testid="sale-press-price">
-              {(Object.keys(PRESS_PRICE_LABEL) as PressPrice[]).map((k) => <option key={k} value={k}>{PRESS_PRICE_LABEL[k]}</option>)}
-            </select>
-          </F>
-          {pressUsd && <F all={problems} f="pressUsd" label="Press pack price ($)" hint="Burn share included."><Text value={s.pressUsd} onChange={(v) => set({ pressUsd: v })} testId="sale-press-usd" /></F>}
-          {pressPaper && <F all={problems} f="pressPaper" label="PAPER per press pack" hint="Burned."><Text value={s.pressPaper} onChange={(v) => set({ pressPaper: v })} testId="sale-press-paper" /></F>}
-        </div>
-      </>}
-
-      <h3>When and who</h3>
+      <h3>Drop-wide</h3>
       <div className="sale-grid">
         <F all={problems} f="start" label="Opens (your time)" hint="Blank: set later (DROP_START).">
           <span className="row inline">
@@ -117,12 +118,11 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
             {s.start !== 0 && <button className="link" onClick={() => set({ start: 0 })}>clear</button>}
           </span>
         </F>
-        <F all={problems} f="holderHours" label="Holders only (hours)" hint="Presses and the PLANK snapshot. 0 = off."><Num value={s.holderHours} step={0.5} onChange={(v) => set({ holderHours: v })} testId="sale-holder" /></F>
-        <F all={problems} f="holderRoot" label="Snapshot root" hint="From ops/snapshot. Blank: presses only."><Text value={s.holderRoot} width={240} placeholder="0x..." onChange={(v) => set({ holderRoot: v })} testId="sale-root" /></F>
-        <F all={problems} f="plankOnlyHours" label="PLANK-only ends after (hours)" hint="Then ETH and USDG can buy them too."><Num value={s.plankOnlyHours} step={0.5} onChange={(v) => set({ plankOnlyHours: v })} testId="sale-plankonly-hours" /></F>
-        <F all={problems} f="walletLimit" label="Paid packs per wallet" hint="0 = no limit (lift 0 too)."><Num value={s.walletLimit} onChange={(v) => set({ walletLimit: v })} testId="sale-limit" /></F>
-        <F all={problems} f="liftHours" label="Wallet limit lifts after (hours)"><Num value={s.liftHours} step={0.5} onChange={(v) => set({ liftHours: v })} testId="sale-lift" /></F>
-        <F all={problems} f="regularWalletsHours" label="No bot contracts for (hours)" hint="0 = off."><Num value={s.regularWalletsHours} step={0.5} onChange={(v) => set({ regularWalletsHours: v })} testId="sale-regular" /></F>
+        <F all={problems} f="plankBurnPercent" label="PLANK burn (%)" hint={`Of every dollar price · ${usd(d.burnUsd)} sold out.`}><Text value={s.plankBurnPercent} onChange={(v) => set({ plankBurnPercent: v })} testId="sale-burn" /></F>
+        <F all={problems} f="paperBurnPercent" label="PAPER buy & burn (%)" hint={`Plus every rising-price tax · ${usd(d.paperUsd)} sold out.`}><Text value={s.paperBurnPercent} onChange={(v) => set({ paperBurnPercent: v })} testId="sale-paper-burn" /></F>
+        <F all={problems} f="paperCapUsd" label="PAPER ceiling ($)" hint="Most a pack's PAPER can be worth. 0 = none."><Text value={s.paperCapUsd} onChange={(v) => set({ paperCapUsd: v })} testId="sale-paper-cap" /></F>
+        <F all={problems} f="maxPerTx" label="Packs per purchase, at most" hint="Every group; a group can set fewer."><Num value={s.maxPerTx} onChange={(v) => set({ maxPerTx: v })} testId="sale-maxtx" /></F>
+        <F all={problems} f="regularWalletsHours" label="Bots kept out for (hours)" hint="Contracts can't buy. 0 = off."><Num value={s.regularWalletsHours} step={0.5} onChange={(v) => set({ regularWalletsHours: v })} testId="sale-regular" /></F>
       </div>
 
       <h3>Free pack credits</h3>
@@ -133,68 +133,237 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
           {perPack >= CARDS_PER_CREDIT && <span className="warn-text small" data-testid="sale-credit-off">Packs of {perPack} cards: credits can't buy this Series' packs (needs under {CARDS_PER_CREDIT}).</span>}
         </div>
         <F all={problems} f="creditsPerPick" label="Credits per picked suggestion" hint="0 = none."><Num value={s.creditsPerPick} onChange={(v) => set({ creditsPerPick: v })} testId="sale-picks" /></F>
+        <F all={problems} f="creditPacksPercent" label="Free packs, at most (% of total)" hint={cap ? `= ${n(cap)} of ${n(s.packs)} packs.` : '0 = no cap.'}><Text value={s.creditPacksPercent} onChange={(v) => set({ creditPacksPercent: v })} testId="sale-credit-max" /></F>
         <F all={problems} f="creditPacksPerWallet" label="Free packs per wallet, at most" hint="0 = no limit."><Num value={s.creditPacksPerWallet} onChange={(v) => set({ creditPacksPerWallet: v })} testId="sale-credit-wallet" /></F>
+        <F all={problems} f="creditGroup" label="Free packs come from" hint="That group's packs, while it's open. A free pack pays only its PAPER.">
+          <select value={s.creditGroup} onChange={(e) => set({ creditGroup: Number(e.target.value) })} data-testid="sale-credit-group">
+            <option value={-1}>None (no free packs)</option>
+            {s.groups.map((_, i) => <option key={i} value={i}>{groupName(s, i)}</option>)}
+          </select>
+        </F>
       </div>
 
       <p className="muted small">
-        Each phase: at most {MAX_WINDOW_HOURS} hours. Not sold out: the owner can end it after the last phase, anyone 7 days later.
+        Delays, time limits and idle times: at most {MAX_WINDOW_HOURS} hours (30 days) each. Not sold out: the owner can end the drop once its schedule is over, anyone 7 days later.
       </p>
       <details>
         <summary className="small">The "sale" block in recipe.json</summary>
         <pre className="small" data-testid="sale-json">{JSON.stringify(json, null, 1)}</pre>
       </details>
-      {errors.length > 0 && <SaleProblems problems={errors} />}
+      {errors.length > 0 && <SaleProblems s={s} problems={errors} />}
     </section>
   )
 }
 
 const usd = (x: number) => `$${x.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const n = (x: number) => x.toLocaleString('en-US')
+const MORE: GroupField[] = ['delayHours', 'perTx', 'idleMinutes']
 
-/** The drop as one picture, live as the numbers change: every pack, paid (the PLANK-only ones first) and press, and
- *  how many of the paid ones can go free to credits. */
-function DropPicture({ s, lockedPacks, cardsPerPack }: { s: SaleSettings; lockedPacks: number | null; cardsPerPack: number }) {
-  const d = dropPlan(s)
-  const w = (x: number) => (d.total ? `${(x / d.total) * 100}%` : '0')
-  const label = (x: number, text: string) => (d.total && x / d.total > 0.12 ? text : '')
-  const open = d.paid - d.plankOnly
+/** One group as a compact card: name and packs; who; price and coins; per wallet; opens, ends, leftovers; rising
+ *  price and unlimited; the rest (delay, per purchase, idle) behind "more". Its summary line closes it. */
+function GroupCard({ s, i, packs, problems, busy, set, remove, move }: {
+  s: SaleSettings; i: number; packs: number; problems: SaleProblem[]; busy: boolean
+  set: (patch: Partial<SaleGroup>) => void; remove: () => void; move: (j: number) => void
+}) {
+  const g = s.groups[i]
+  const mine = problems.filter((p) => p.group === i)
+  const [more, setMore] = useState(false)
+  const moreOpen = more || mine.some((p) => !p.warning && MORE.includes(p.field as GroupField))
+  const priced = g.priceUsd.trim() !== '' && Number(g.priceUsd) > 0
+  const mode = (to: PacksAs) => {
+    if (to === g.packsAs) return
+    if (to === 'percent') set({ packsAs: to, percent: s.packs > 0 ? String(Math.round((Math.max(0, packs) / s.packs) * 10_000) / 100) : '0' })
+    else if (to === 'count') set({ packsAs: to, packs: Math.max(0, packs) })
+    else set({ packsAs: to })
+  }
+  const prices = taxedPrices(s, i)
+  const tid = (x: string) => `sale-g${i}-${x}`
+  const moreNote = [g.delayHours > 0 && `${fmtHours(g.delayHours)} delay`, g.perTx > 0 && `${g.perTx} per purchase`, g.idleMinutes > 0 && `idle ${fmtHours(g.idleMinutes / 60)}`].filter(Boolean).join(', ')
   return (
-    <div className="drop-pic" data-testid="sale-summary">
-      <div className="stats-row">
-        <div className="stat"><b data-testid="drop-total">{n(d.total)}</b><span>packs · {n(d.total * cardsPerPack)} cards</span></div>
-        <div className="stat"><b>{usd(d.revenueUsd)}</b><span>sold out{d.freeMax > 0 ? ` · ${usd(d.revenueMinUsd)} if every free pack is used` : ''}</span></div>
-        <div className="stat"><b>{usd(d.paperUsd)}</b><span>of PAPER bought &amp; burned</span></div>
-        <div className="stat"><b>{usd(d.burnUsd)}</b><span>of PLANK burned</span></div>
-        <div className="stat"><b>{usd(d.keepUsd)}</b><span>to the revenue wallet</span></div>
-      </div>
-      {d.total > 0 && <>
-        <div className="drop-bar" role="img" aria-label={`${d.plankOnly} PLANK-only, ${open} paid, ${d.press} press`}>
-          {d.plankOnly > 0 && <span className="plank" style={{ width: w(d.plankOnly) }} title={`${n(d.plankOnly)} PLANK-only`}>{label(d.plankOnly, `${n(d.plankOnly)} PLANK-only`)}</span>}
-          {open > 0 && <span className="paid" style={{ width: w(open) }} title={`${n(open)} paid`}>{label(open, `${n(open)} paid`)}</span>}
-          {d.press > 0 && <span className="press" style={{ width: w(d.press) }} title={`${n(d.press)} press`}>{label(d.press, `${n(d.press)} press`)}</span>}
-        </div>
-        {d.freeMax > 0 && (
-          <div className="free-line">
-            <span style={{ left: `calc(${w(d.paid - d.freeMax)})`, width: w(d.freeMax) }} data-testid="drop-free">
-              {d.freeMax / d.total > 0.06 ? `free ≤ ${n(d.freeMax)}` : ''}
+    <div className={`group-card ${mine.some((p) => !p.warning) ? 'has-problem' : ''}`} style={{ borderLeftColor: GROUP_COLORS[i % GROUP_COLORS.length] }} data-testid={`sale-group-${i}`}>
+      <div className="group-head">
+        <span className="group-num" style={{ background: GROUP_COLORS[i % GROUP_COLORS.length] }}>{i + 1}</span>
+        <input className="group-name" value={g.name} placeholder={`Group ${i + 1}`} onChange={(e) => set({ name: e.target.value })} data-testid={tid('name')} />
+        <span className="group-packs">
+          {g.unlimited ? <span className="muted small">no pack count (sells on top)</span> : <>
+            {g.packsAs === 'count' && <Num value={g.packs} onChange={(v) => set({ packs: v })} testId={tid('packs')} width={84} />}
+            {g.packsAs === 'percent' && <Text value={g.percent} onChange={(v) => set({ percent: v })} testId={tid('percent')} width={64} />}
+            {g.packsAs === 'rest' && <b data-testid={tid('rest')}>{n(packs)}</b>}
+            <span className="seg" role="group" aria-label="packs as">
+              {(['count', 'percent', 'rest'] as PacksAs[]).map((m) => (
+                <button key={m} className={g.packsAs === m ? 'on' : ''} onClick={() => mode(m)} data-testid={tid(`as-${m}`)}>{m === 'count' ? 'packs' : m === 'percent' ? '%' : 'the rest'}</button>
+              ))}
             </span>
-          </div>
-        )}
-      </>}
-      <div className="drop-legend">
-        <span><i style={{ background: '#b9772e' }} />PLANK-only <b>{n(d.plankOnly)}</b> (the first paid)</span>
-        <span><i style={{ background: 'var(--accent)' }} />Paid <b>{n(d.paid)}</b> in all</span>
-        <span><i style={{ background: '#4a7fe8' }} />Press <b>{n(d.press)}</b></span>
-        <span><i style={{ border: '1px solid var(--ok)' }} />Free, at most <b data-testid="drop-free-max">{n(d.freeMax)}</b> {d.freeCapped ? `(${s.creditPacksPercent}%, taken from paid)` : '(no cap: any paid pack)'}</span>
+            {g.packsAs !== 'rest' && <span className="muted small">{g.packsAs === 'percent' ? `= ${n(packs)} packs` : s.packs > 0 ? `${Math.round((packs / s.packs) * 1000) / 10}%` : ''}</span>}
+          </>}
+        </span>
+        <span className="group-tools">
+          <button className="icon" title="Move up" disabled={busy || i === 0} onClick={() => move(i - 1)}>↑</button>
+          <button className="icon" title="Move down" disabled={busy || i === s.groups.length - 1} onClick={() => move(i + 1)}>↓</button>
+          <button className="icon danger" title="Remove" disabled={busy} onClick={remove} data-testid={tid('remove')}>×</button>
+        </span>
       </div>
-      {lockedPacks != null && d.total !== lockedPacks && <p className="err-text" data-testid="sale-packs-locked">The deal is locked at {n(lockedPacks)} packs: paid + press must add up to that (or undo the lock).</p>}
+      {mine.filter((p) => p.field === 'packs' || p.field === 'percent').map((p, k) => <span key={k} className="err-text small">{p.message}</span>)}
+
+      <div className="group-grid">
+        <GF all={mine} gi={i} f="gate" also={['nft', 'perNft', 'root']} label="Who" wide={g.gate !== 'open'} hint={g.gate === 'snapshot' && g.root ? 'From the snapshot script.' : g.gate === 'nft' ? 'Each NFT counts once per drop, whoever holds it.' : undefined}>
+          <span className="row inline wrap">
+            <select value={g.gate} onChange={(e) => set({ gate: e.target.value as Gate, ...(e.target.value === 'nft' && !g.perNft ? { perNft: 1, nft: g.nft || 'press' } : {}) })} data-testid={tid('gate')}>
+              <option value="open">Anyone</option>
+              <option value="nft">NFT holders</option>
+              <option value="snapshot">Snapshot list</option>
+            </select>
+            {g.gate === 'nft' && <>
+              <select value={g.nft === 'press' ? 'press' : 'other'} onChange={(e) => set({ nft: e.target.value === 'press' ? 'press' : '' })} data-testid={tid('nft-kind')}>
+                <option value="press">Paper Press</option>
+                <option value="other">Other contract</option>
+              </select>
+              {g.nft !== 'press' && <Text value={g.nft} onChange={(v) => set({ nft: v })} testId={tid('nft')} width={200} placeholder="0x… (ERC-721)" />}
+              <span className="small muted">packs per NFT</span><Num value={g.perNft} onChange={(v) => set({ perNft: v })} testId={tid('per-nft')} width={60} />
+            </>}
+            {g.gate === 'snapshot' && <Text value={g.root} onChange={(v) => set({ root: v })} testId={tid('root')} width={230} placeholder="root: 0x… (blank until launch)" />}
+          </span>
+        </GF>
+        <GF all={mine} gi={i} f="priceUsd" label="Price ($)" hint="0 = none."><Text value={g.priceUsd} onChange={(v) => set({ priceUsd: v })} testId={tid('price')} width={80} /></GF>
+        <GF all={mine} gi={i} f="paper" label="PAPER" hint="Burned. 0 = none."><Text value={g.paper} onChange={(v) => set({ paper: v })} testId={tid('paper')} width={70} /></GF>
+        <GF all={mine} gi={i} f="coins" label="Pays in">
+          <span className={`row inline coins ${priced ? '' : 'off'}`}>
+            {COINS.map((c) => (
+              <label key={c} className="small"><input type="checkbox" disabled={!priced} checked={!!(g.coins & COIN[c])} onChange={(e) => set({ coins: e.target.checked ? g.coins | COIN[c] : g.coins & ~COIN[c] })} data-testid={tid(`coin-${c}`)} />{c}</label>
+            ))}
+          </span>
+        </GF>
+        <GF all={mine} gi={i} f="perWallet" label="Per wallet" hint="0 = no limit."><Num value={g.perWallet} onChange={(v) => set({ perWallet: v })} testId={tid('per-wallet')} width={70} /></GF>
+        <GF all={mine} gi={i} f="afterGroup" label="Opens">
+          <select value={g.afterGroup} onChange={(e) => set({ afterGroup: Number(e.target.value) })} data-testid={tid('after')}>
+            <option value={-1}>with the drop</option>
+            {s.groups.map((_, k) => (k < i || k === g.afterGroup) && k !== i ? <option key={k} value={k}>after {groupName(s, k)}</option> : null)}
+          </select>
+        </GF>
+        <GF all={mine} gi={i} f="hours" label="Max time (hours)" hint={g.unlimited ? '0 = no limit.' : '0 = until sold.'}><Num value={g.hours} step={0.5} onChange={(v) => set({ hours: v })} testId={tid('hours')} width={70} /></GF>
+        {!g.unlimited && (
+          <GF all={mine} gi={i} f="rollTo" label="Leftovers to">
+            <select value={g.rollTo} onChange={(e) => set({ rollTo: Number(e.target.value) })} data-testid={tid('roll')}>
+              <option value={-1}>nowhere (never made)</option>
+              {s.groups.map((_, k) => (k > i || k === g.rollTo) && k !== i ? <option key={k} value={k}>{groupName(s, k)}</option> : null)}
+            </select>
+          </GF>
+        )}
+        <GF all={mine} gi={i} f="taxPercent" label="Rising price (% a pack)" hint="0 = off. The rise burns PAPER."><Text value={g.taxPercent} onChange={(v) => set({ taxPercent: v })} testId={tid('tax')} width={60} /></GF>
+        <GF all={mine} gi={i} f="unlimited" label="Unlimited" hint="Needs a rising price + idle end.">
+          <label className="small"><input type="checkbox" checked={g.unlimited} onChange={(e) => set({ unlimited: e.target.checked, ...(e.target.checked ? { rollTo: -1 } : {}) })} data-testid={tid('unlimited')} /> sells until nobody buys</label>
+        </GF>
+        {g.unlimited && !moreOpen && (
+          <GF all={mine} gi={i} f="idleMinutes" label="Ends after no sale for (min)" hint="0 = off."><Num value={g.idleMinutes} onChange={(v) => set({ idleMinutes: v })} testId={tid('idle')} width={70} /></GF>
+        )}
+      </div>
+      <button className="link small more" onClick={() => setMore(!moreOpen)} data-testid={tid('more')}>
+        {moreOpen ? '− less' : `+ more${moreNote ? ` (${moreNote})` : ''}`}
+      </button>
+      {moreOpen && (
+        <div className="group-grid" data-testid={tid('more-fields')}>
+          <GF all={mine} gi={i} f="delayHours" label={g.afterGroup >= 0 ? `Delay after ${groupName(s, g.afterGroup)} (h)` : 'Delay after the drop opens (h)'} hint="0 = right away."><Num value={g.delayHours} step={0.5} onChange={(v) => set({ delayHours: v })} testId={tid('delay')} width={70} /></GF>
+          <GF all={mine} gi={i} f="perTx" label="Per purchase" hint={`0 = the drop's ${s.maxPerTx}.`}><Num value={g.perTx} onChange={(v) => set({ perTx: v })} testId={tid('per-tx')} width={70} /></GF>
+          <GF all={mine} gi={i} f="idleMinutes" label="Ends after no sale for (min)" hint="0 = off."><Num value={g.idleMinutes} onChange={(v) => set({ idleMinutes: v })} testId={tid('idle')} width={70} /></GF>
+        </div>
+      )}
+      <p className="group-summary" data-testid={tid('summary')}>{groupSummary(s, i)}</p>
+      {prices.length > 0 && (
+        <p className="muted small group-prices" data-testid={tid('prices')}>
+          {prices.map((p) => `pack ${p.k}: ${usd(p.usd)}`).join(' · ')}{!g.unlimited && packs > 50 ? ` · pack ${n(packs)} (last): ${usd(taxedPrice(Number(g.priceUsd), Math.round(Number(g.taxPercent) * 100), packs))}` : ''}
+        </p>
+      )}
     </div>
   )
 }
 
-/** One setting: label, input, a plain hint and its problems. */
+/** The drop as one picture, live as the numbers change: the dollars, the base packs split by group, and the groups
+ *  on a timeline ("up to" times: a group can end sooner, when it sells out or idles). */
+function DropPicture({ s, lockedPacks, cardsPerPack }: { s: SaleSettings; lockedPacks: number | null; cardsPerPack: number }) {
+  const d = dropPlan(s)
+  const color = (i: number) => GROUP_COLORS[i % GROUP_COLORS.length]
+  const w = (x: number) => (d.total ? `${(x / d.total) * 100}%` : '0')
+  const cg = s.groups[s.creditGroup]
+  return (
+    <div className="drop-pic" data-testid="sale-summary">
+      <div className="stats-row">
+        <div className="stat"><b data-testid="drop-total">{n(s.packs)}</b><span>base packs · {n(s.packs * cardsPerPack)} cards</span></div>
+        <div className="stat"><b data-testid="drop-revenue">{usd(d.revenueUsd)}</b><span>sold out{d.freeMax > 0 ? ` · ${usd(d.revenueMinUsd)} if every free pack is used` : ''}</span></div>
+        <div className="stat"><b>{usd(d.paperUsd)}</b><span>of PAPER bought &amp; burned</span></div>
+        <div className="stat"><b>{usd(d.burnUsd)}</b><span>of PLANK burned</span></div>
+        <div className="stat"><b>{usd(d.keepUsd)}</b><span>to the revenue wallet</span></div>
+      </div>
+      {d.total > 0 && (
+        <div className="drop-bar" role="img" aria-label={s.groups.map((_, i) => `${groupName(s, i)} ${d.packs[i]}`).join(', ')}>
+          {s.groups.map((g, i) => !g.unlimited && d.packs[i] > 0 && (
+            <span key={i} style={{ width: w(d.packs[i]), background: color(i) }} title={`${groupName(s, i)}: ${n(d.packs[i])}`}>
+              {d.packs[i] / d.total > 0.12 ? `${n(d.packs[i])} ${groupName(s, i)}` : ''}
+            </span>
+          ))}
+        </div>
+      )}
+      <Timeline s={s} />
+      <div className="drop-legend">
+        <span>Free packs, at most <b data-testid="drop-free-max">{n(d.freeMax)}</b>{cg ? ` from ${groupName(s, s.creditGroup)}` : ' (no group: none)'}{d.freeCapped ? ` (${s.creditPacksPercent}%)` : ''}</span>
+        <span>Sell-out: every group sells its own packs; an unlimited group's sales come on top.</span>
+      </div>
+      {lockedPacks != null && s.packs !== lockedPacks && <p className="err-text" data-testid="sale-packs-locked">The deal is locked at {n(lockedPacks)} packs: the total must be that (or undo the lock).</p>}
+    </div>
+  )
+}
+
+/** The groups side by side or one after another. Bars run to their latest end; a group that runs until sold fades
+ *  out (its end isn't known), an unlimited one runs off the edge. */
+function Timeline({ s }: { s: SaleSettings }) {
+  const times = groupTimes(s)
+  if (!s.groups.length) return null
+  const known = [0, ...times.flatMap((t) => [t.opens, t.ends]).filter((x): x is number => x != null)]
+  const horizon = Math.max(1, ...known)
+  const guess = Math.max(horizon * 0.35, 2)
+  const bars: { start: number; end: number; open: boolean; unknownStart: boolean }[] = []
+  s.groups.forEach((g, i) => {
+    const t = times[i]
+    const after = g.afterGroup >= 0 && g.afterGroup < i ? bars[g.afterGroup] : null
+    const start = t.opens ?? (after ? after.end + Math.max(0, g.delayHours || 0) : 0)
+    const end = t.ends ?? start + guess
+    bars.push({ start, end, open: t.ends == null, unknownStart: t.opens == null })
+  })
+  const span = Math.max(...bars.map((b) => b.end)) * 1.08
+  const pc = (h: number) => `${Math.min(100, (h / span) * 100)}%`
+  const ticks = [...new Set(known)].sort((a, b) => a - b).filter((h, k, all) => k === 0 || (h - all[k - 1]) / span > 0.05)
+  return (
+    <div className="timeline" data-testid="sale-timeline">
+      {s.groups.map((g, i) => {
+        const b = bars[i]
+        const t = times[i]
+        const label = g.unlimited ? 'no count' : `${n(groupPacks(s)[i])}`
+        const when = t.ends != null ? `up to ${fmtHours(t.ends - (t.opens ?? 0))}` : g.unlimited ? 'until nobody buys' : 'until sold'
+        return (
+          <div className="tl-row" key={i}>
+            <span className="tl-name" title={groupName(s, i)}>{groupName(s, i)}</span>
+            <span className="tl-track">
+              <span className={`tl-bar ${b.open ? (g.unlimited ? 'endless' : 'fade') : ''}`} data-testid={`sale-tl-${i}`}
+                style={{ left: pc(b.start), width: g.unlimited && b.open ? `calc(100% - ${pc(b.start)})` : `calc(${pc(b.end)} - ${pc(b.start)})`, background: GROUP_COLORS[i % GROUP_COLORS.length] }}
+                title={`${groupName(s, i)}: ${t.opens != null ? `opens by ${fmtHours(t.opens)}` : `opens when ${groupName(s, g.afterGroup)} sells out`}, ${when}`}>
+                {label} · {when}{b.unknownStart ? ' · after sell-out' : ''}
+              </span>
+            </span>
+          </div>
+        )
+      })}
+      <div className="tl-row tl-axis">
+        <span className="tl-name muted small">from the start</span>
+        <span className="tl-track">
+          {ticks.map((h) => <span key={h} className="tl-tick" style={{ left: pc(h) }}>{h === 0 ? '0' : fmtHours(h)}</span>)}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/** One drop-wide setting: label, input, a plain hint and its problems. */
 function F({ all, f, label, hint, children }: { all: SaleProblem[]; f: SaleField; label: string; hint?: ReactNode; children: ReactNode }) {
-  const ps = all.filter((p) => p.field === f)
+  const ps = all.filter((p) => p.field === f && p.group === undefined)
   return (
     <label className={`field sale-field ${ps.some((p) => !p.warning) ? 'has-problem' : ''}`} data-testid={`sale-field-${f}`}>
       <span className="field-label">{label}</span>
@@ -205,11 +374,24 @@ function F({ all, f, label, hint, children }: { all: SaleProblem[]; f: SaleField
   )
 }
 
-function SaleProblems({ problems }: { problems: SaleProblem[] }) {
+/** One group setting (its problems are the group's own, already filtered). */
+function GF({ all, gi, f, also = [], label, hint, children, wide }: { all: SaleProblem[]; gi: number; f: GroupField; also?: GroupField[]; label: string; hint?: ReactNode; children: ReactNode; wide?: boolean }) {
+  const ps = all.filter((p) => p.field === f || also.includes(p.field as GroupField))
+  return (
+    <div className={`field sale-field ${wide ? 'wide' : ''} ${ps.some((p) => !p.warning) ? 'has-problem' : ''}`} data-testid={`sale-g${gi}-field-${f}`}>
+      <span className="field-label">{label}</span>
+      {children}
+      {hint && <span className="muted small">{hint}</span>}
+      {ps.map((p, k) => <span key={k} className={p.warning ? 'warn-text small' : 'err-text small'}>{p.message}</span>)}
+    </div>
+  )
+}
+
+function SaleProblems({ s, problems }: { s: SaleSettings; problems: SaleProblem[] }) {
   return (
     <Notice kind="error">
       configureDrop would refuse this:
-      <ul className="problems">{problems.map((p, i) => <li key={i}>{p.message}</li>)}</ul>
+      <ul className="problems">{problems.map((p, i) => <li key={i}>{p.group !== undefined ? `${groupName(s, p.group)}: ` : ''}{p.message}</li>)}</ul>
     </Notice>
   )
 }

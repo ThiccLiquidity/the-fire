@@ -4,8 +4,13 @@
 //   stand-ins (DevStack, the testnet kit) -> deploy (DeployTwap, DeployInfra, DeployCards; each recorded after its
 //   broadcast by ops/deploy/record.mjs) -> VerifyDeploy -> the owner accepts ownership (AcceptOwnership,
 //   the owner wallet impersonated) -> keeper: PLANK checkpoint, PAPER candidate -> batch A sent from the owner
-//   (ConfigureSeries) -> snapshot -> VerifySeries (RED with a missing image, then GREEN) -> batch B -> buy (one buy with the PLANK swap failing: its burn share waits in
-//   PlankBurner) -> sold out, closed -> open -> keeper delivers drand (fulfillMany) and deals (process) -> case and
+//   (ConfigureSeries) -> snapshots (PLANK with allowance tiers for the snapshot group; the Paper Press, an ERC-721) ->
+//   VerifySeries (RED with a missing image, then GREEN) -> batch B: a drop of four groups (the Standard preset scaled
+//   small: Press holders, PLANK snapshot holders, everyone, an unlimited "after sell-out" group with a rising price and
+//   a 5-minute idle) -> buy through the groups (a snapshot proof from the real script; one buy with the PLANK swap
+//   failing: its burn share waits in PlankBurner) -> the finite groups sell out, the taxed group sells two packs at a
+//   rising price and idles out -> the keeper closes the Series (FireSale.close) -> open -> keeper delivers drand
+//   (fulfillMany) and deals (process) -> case and
 //   grade (protect) -> keeper delivers and finishes the grading (finish(index, ids) from the Protected event)
 //   -> keeper flushes PlankBurner; PaperBurner waits (no PAPER price) and alerts -> 40 h later the PAPER feed is live
 //   and the keeper flushes PaperBurner -> VerifyDeploy again.
@@ -41,6 +46,7 @@ import { roundTime, DRAND_GENESIS } from "../keeper/src/drand.mjs";
 import { verifySeries, allImageNames, recipeFromJson, recipeHash } from "../series/verify-series.mjs";
 import { verifySnapshot } from "../snapshot/snapshot.mjs";
 import { buildTree } from "../snapshot/merkle.mjs";
+import { PAY } from "../series/sale-abi.mjs";
 import { record } from "../deploy/record.mjs";
 import { routerAbi as keeperRouterAbi, twapAbi as keeperTwapAbi, cardsAbi as keeperCardsAbi, psaAbi as keeperPsaAbi, burnerAbi as keeperBurnerAbi, adapterAbi as keeperAdapterAbi } from "../keeper/src/abis.mjs";
 
@@ -95,8 +101,13 @@ const artifact = (file, name) => {
   return { abi: j.abi, bytecode: j.bytecode.object };
 };
 const webAbi = (n) => JSON.parse(readFileSync(resolve(REPO, "web/src/lib/abi", `${n}Abi.json`), "utf8"));
+const saleArtifact = artifact("FireSale", "FireSale").abi;
+const groupsArtifact = artifact("FireGroups", "FireGroups").abi;
 const ABI = {
-  sale: webAbi("fireSale"), cards: webAbi("fireCards"), psa: webAbi("firePsa"), packs: webAbi("firePacks"), dealer: webAbi("recipeDealer"),
+  // FireSale and FireGroups from the compiled contracts (the drop groups; web/src/lib/abi may lag behind). FireSale's
+  // carries FireGroups' errors too: they come back through FireSale's calls.
+  sale: [...saleArtifact, ...groupsArtifact.filter((x) => x.type === "error" && !saleArtifact.some((y) => y.type === "error" && y.name === x.name))],
+  groups: groupsArtifact, cards: webAbi("fireCards"), psa: webAbi("firePsa"), packs: webAbi("firePacks"), dealer: webAbi("recipeDealer"),
   burner: webAbi("paperBurner"), plankBurner: webAbi("plankBurner"),
   ownable: [{ type: "function", name: "owner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" }],
   setRandomness: [{ type: "function", name: "setRandomness", inputs: [{ name: "s", type: "address" }], outputs: [], stateMutability: "nonpayable" }],
@@ -112,7 +123,11 @@ const warp = async (sec) => { await rpc("evm_increaseTime", [toHex(BigInt(sec))]
 let chain;
 const walletOf = (account) => createWalletClient({ account, chain, transport: http(RPC) });
 async function tx(account, address, abi, functionName, args = [], value) {
-  const hash = await walletOf(account).writeContract({ address, abi, functionName, args, value, chain });
+  let hash;
+  try { hash = await walletOf(account).writeContract({ address, abi, functionName, args, value, chain }); } catch (e) {
+    const why = e?.cause?.data?.errorName ?? e?.walk?.((x) => x?.data?.errorName)?.data?.errorName ?? e?.cause?.reason;
+    throw new Error(`${functionName} reverted${why ? `: ${why}` : ""} (${e?.shortMessage ?? e?.message})`);
+  }
   const r = await pub.waitForTransactionReceipt({ hash });
   if (r.status !== "success") fail(`${functionName} reverted (${hash})`);
   return r;
@@ -267,7 +282,7 @@ async function main() {
   await forgeDeploy("script/DeployCards.s.sol", env);
   const dep = JSON.parse(readFileSync(DEP_FILE, "utf8"));
   const C = Object.fromEntries(Object.entries(dep.contracts).map(([k, v]) => [k, getAddress(v)]));
-  check(Object.keys(C).length === 15, `deployments file has all 15 contracts (${DEP_FILE.replace(REPO + "/", "")})`);
+  check(Object.keys(C).length === 16, `deployments file has all 16 contracts (${DEP_FILE.replace(REPO + "/", "")})`);
 
   step("VerifyDeploy before the owner accepts (expect WAIT on seven owners)");
   let vd = forgeRead("script/VerifyDeploy.s.sol", {});
@@ -303,10 +318,14 @@ async function main() {
     return k.tick();
   };
 
+  let pressId = 0n;
   if (!FORK) {
     // the snapshot's holders hold PLANK all through its window (the smallest holding over its blocks counts)
     for (const [a, n] of [[buyer1, 100n], [buyer2, 500n], [holder3, 30n], [holder7702, 200n]]) await tx(deployer, dev.plank.address, dev.plank.abi, "mint", [a.address, n * 10n ** 9n * 10n ** 18n]);
     await rpc("anvil_setCode", [holder7702.address, `0xef0100${MULTICALL3.slice(2).toLowerCase()}`]);
+    // buyer 1 holds a Paper Press (the press group's NFT; and the ERC-721 snapshot's one holder)
+    await tx(deployer, dev.press.address, dev.press.abi, "mint", [buyer1.address]);
+    pressId = (await pub.readContract({ address: dev.press.address, abi: dev.press.abi, functionName: "next" })) - 1n;
   }
   step("31 minutes later: the keeper checkpoints PLANK/USD (first price) and records the PAPER pool as candidate");
   await warp(31 * 60);
@@ -322,16 +341,26 @@ async function main() {
   step("Series 7, batch A (content): ConfigureSeries sent from the owner (impersonated)");
   const recipe = JSON.parse(readFileSync(resolve(CONTRACTS, "test/cards/recipe-standard.json"), "utf8"));
   recipe.imagesBase = "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/";
+  // the Standard preset's shape, scaled small: 1 press pack, 2 for PLANK holders (by snapshot allowance), 1 for
+  // everyone (opens when the PLANK group ends), then an unlimited group at a rising 4% a pack that ends 5 minutes
+  // after its last sale. Leftovers of the first two roll into Everyone.
+  const E18 = "1000000000000000000";
   const saleBlock = {
-    start: 0, packs: 4, starters: 0, plankOnly: 0, walletLimit: 0, starterWindow: 0, liftAfter: 0, plankBurnBps: 1000, paperBurnBps: 2000, priceUsd: 250000000,
-    paperPerPack: "1000000000000000000", paperCapUsd: 100000000, holderWindow: 0, holderRoot: zeroHash, maxPerTx: 0, plankOnlyFor: 0, regularWalletsFor: 0,
-    starterPerPress: 0, starterWalletLimit: 0, starterPriceUsd: 0, starterPaper: 0, creditsPerPick: 0, creditPacksMax: 0, creditPacksPerWallet: 0,
+    start: 0, packs: 4, plankBurnBps: 1000, paperBurnBps: 2000, paperCapUsd: "100000000", maxPerTx: 0, regularWalletsFor: 0,
+    creditsPerPick: 0, creditPacksMax: 0, creditPacksPerWallet: 0, creditGroup: 255,
+    groups: [
+      { name: "Paper Press holders", packs: 1, gate: "nft", nft: "press", perNft: 1, priceUsd: "0", paper: E18, coins: 0, perWallet: 0, afterGroup: 255, startDelay: 0, duration: 3600, rollTo: 2 },
+      { name: "PLANK holders", packs: 2, gate: "snapshot", priceUsd: "250000000", paper: E18, coins: 3, perWallet: 5, afterGroup: 255, startDelay: 0, duration: 3600, rollTo: 2 },
+      { name: "Everyone", packs: 1, gate: "open", priceUsd: "250000000", paper: E18, coins: 7, perWallet: 5, afterGroup: 1, startDelay: 0, duration: 0, rollTo: 255 },
+      { name: "After sell-out", packs: 0, unlimited: true, gate: "open", taxBps: 400, idle: 300, perTx: 1, priceUsd: "250000000", paper: E18, coins: 2, perWallet: 0, afterGroup: 2, startDelay: 0, duration: 0, rollTo: 255 },
+    ],
   };
   recipe.sale = saleBlock;
   writeFileSync(RECIPE_PATH, JSON.stringify(recipe, null, 1));
-  const simA = forgeRead("script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "AB", SIMULATE: "true", DROP_START: String(clockNow + 600n) });
+  const ROOT_STANDIN = `0x${"ab".repeat(32)}`; // the snapshot comes after batch A; any root for the dry runs
+  const simA = forgeRead("script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "AB", SIMULATE: "true", DROP_START: String(clockNow + 600n), GROUP_ROOT_1: ROOT_STANDIN });
   check(/simulated OK: RecipeDealer.setRecipe/.test(simA) && /simulated OK: FireSale.configureDrop/.test(simA), "SIMULATE=true runs batches A then B as the owner (nothing sent)");
-  const outBearly = forgeRead("script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "B", DROP_START: String(clockNow + 600n) });
+  const outBearly = forgeRead("script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "B", DROP_START: String(clockNow + 600n), GROUP_ROOT_1: ROOT_STANDIN });
   check(/on chain: the recipe differs/.test(outBearly), "batch B is refused before batch A is on chain");
   const outNotOwner = forgeRead("script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "A" });
   check(/sign as the owner/.test(outNotOwner), "batch A refuses any signer but the owner");
@@ -340,29 +369,38 @@ async function main() {
   const dealt = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "fires", args: [FIRE] });
   check(getAddress(dealt[0]) === C.RecipeDealer, "batch A is on chain (FireCards' dealer for the Series is RecipeDealer)");
 
-  // ---------------- snapshot
-  step("snapshot of PLANK holders ($69+) with ops/snapshot: the smallest holding over 5 blocks in the last 28 minutes");
+  // ---------------- snapshots
+  step("snapshots with ops/snapshot: PLANK holders ($69+, $300+ = 2 packs) over 5 blocks in the last 28 minutes; Paper Press holders (an ERC-721)");
   if (!FORK) await tx(deployer, dev.plank.address, dev.plank.abi, "mint", [borrower.address, 1000n * 10n ** 9n * 10n ** 18n]); // a whale for the last block only
-  const snapPath = resolve(OUT, `fire-${FIRE}-holders.json`);
-  execFileSync(process.execPath, [resolve(REPO, "ops/snapshot/snapshot.mjs"), "--min-usd", "69", "--blocks", "5", "--days", "0.02", "--out", snapPath], {
+  const snapPath = resolve(OUT, `fire-${FIRE}-group-1.json`);
+  const snapshot = (more, out) => execFileSync(process.execPath, [resolve(REPO, "ops/snapshot/snapshot.mjs"), ...more, "--blocks", "5", "--days", "0.02", "--out", out], {
     cwd: resolve(REPO, "ops/snapshot"), stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, RPC, PLANK: inputs.PLANK, PLANK_USD_FEED: C.PlankUsdTwap, DEPLOYMENTS_FILE: DEP_FILE },
   });
+  snapshot(["--token", "plank", "--min-usd", "69", "--tiers", "69:1,300:2"], snapPath);
   const snap = JSON.parse(readFileSync(snapPath, "utf8"));
-  const inSnap = (a) => snap.holders.some((h) => h.wallet === a.address);
-  check(FORK || (snap.count === 3 && inSnap(holder7702) && !inSnap(borrower) && !inSnap(holder3)),
-    `snapshot: ${snap.count} wallets qualify (the EIP-7702 wallet in; the last-block whale and the $30 holder out) over blocks ${snap.blocks.join(", ")}, root ${snap.root}`);
+  const allowanceOf = (a) => snap.wallets[a.address]?.allowance;
+  check(FORK || (snap.count === 3 && allowanceOf(holder7702) === 1 && allowanceOf(buyer1) === 1 && allowanceOf(buyer2) === 2 && !allowanceOf(borrower) && !allowanceOf(holder3)),
+    `snapshot: ${snap.count} wallets qualify (the EIP-7702 wallet in; the last-block whale and the $30 holder out; $500 of PLANK: 2 packs) over blocks ${snap.blocks.join(", ")}, root ${snap.root}`);
   const tampered = structuredClone(snap);
-  tampered.holders.push({ wallet: holder3.address, plank: "30000000000000000000000000000" });
-  Object.assign(tampered, buildTree(tampered.holders.map((h) => h.wallet)), { count: tampered.holders.length });
+  tampered.holders.push({ wallet: holder3.address, balance: "30000000000000000000000000000", allowance: 1 });
+  const tt = buildTree(tampered.holders);
+  Object.assign(tampered, { root: tt.root, count: tampered.holders.length, wallets: Object.fromEntries(tampered.holders.map((h) => [h.wallet, { allowance: h.allowance, proof: tt.proofs[h.wallet] }])) });
   const vt = await verifySnapshot({ client: pub, snap: tampered });
   check(!vt.ok && vt.problems.some((p) => p.includes(holder3.address)), `snapshot verify: a wallet added by hand is RED (${vt.problems[0]})`);
+  if (!FORK) {
+    const pressSnapPath = resolve(OUT, `fire-${FIRE}-press-holders.json`);
+    snapshot(["--token", "press", "--min", "1"], pressSnapPath);
+    const ps = JSON.parse(readFileSync(pressSnapPath, "utf8"));
+    check(ps.kind === "erc721" && ps.count === 1 && ps.wallets[buyer1.address]?.allowance === 1 && (await verifySnapshot({ client: pub, snap: ps })).ok,
+      "ERC-721 snapshot of the Paper Press: detected, its one holder in, GREEN when rebuilt");
+  }
 
   // ---------------- VerifySeries
   const names = allImageNames(recipeFromJson(recipe), recipe.characters.length);
   const manifest = () => ({ fire: Number(FIRE), recipeHash: recipeHash(recipe), files: names.map((name) => ({ name })) });
   const gwA2 = await gatewayServer({ manifest });
   const verify = (gateways) => verifySeries({
-    client: pub, recipe, deploymentsFile: DEP_FILE, gateways, snapshotPath: snapPath, holderRoot: snap.root, concurrency: 32,
+    client: pub, recipe, deploymentsFile: DEP_FILE, gateways, snapshots: { 1: snapPath }, roots: { 1: snap.root }, concurrency: 32,
     log: (l) => { if (!/^OK/.test(l) || /images load|imageName|manifest|snapshot|sale:|FireSale\./.test(l)) console.log(`    ${l}`); },
   });
   step("VerifySeries with one image missing on one gateway (expect RED)");
@@ -371,39 +409,88 @@ async function main() {
   step("VerifySeries after the image is re-pinned (expect GREEN)");
   missing = undefined;
   v = await verify([gwA2.url, gwB.url]);
-  check(v.green, `GREEN: ${v.images} images x 2 gateways, recipe, characters, fixed PDA odds, images base and the holder root`);
+  check(v.green, `GREEN: ${v.images} images x 2 gateways, recipe, characters, fixed PDA odds, images base, the snapshot group's root (rebuilt from the chain) and the press group's NFT`);
 
   // ---------------- batch B
   step("batch B (lock): configureDrop sent from the owner (after reading batch A back)");
   const start = (await chainNow()) + 300n;
-  const outB = await forgeAsOwner(owner, "script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "B", DROP_START: String(start), HOLDER_ROOT: snap.root });
+  const outB = await forgeAsOwner(owner, "script/ConfigureSeries.s.sol", { RECIPE_JSON: RECIPE_PATH, BATCH: "B", DROP_START: String(start), GROUP_ROOT_1: snap.root });
   check(/FireSale.configureDrop/.test(outB), "batch B sent");
   const drop = await pub.readContract({ address: C.FireSale, abi: ABI.sale, functionName: "dropOf", args: [FIRE] });
-  check(drop.start === start && drop.holderRoot === snap.root, "the drop is set with the snapshot's holder root");
+  const groupsOf = () => pub.readContract({ address: C.FireGroups, abi: ABI.groups, functionName: "groupsOf", args: [FIRE] });
+  let gv = await groupsOf();
+  check(drop.start === start && drop.packs === 4n && gv.length === 4 && gv[1].config.root === snap.root && getAddress(gv[0].config.nft) === inputs.MILL && gv[3].config.unlimited,
+    "the drop is set: 4 groups, the snapshot's root on the PLANK group, the Paper Press (MILL) on the press group, an unlimited last group");
 
-  // ---------------- buy
-  step("the drop opens: two buyers take all 4 packs with ETH (the first while the PLANK swap is down)");
+  // ---------------- buy through the groups
+  step("the drop opens: buy through the groups (the snapshot group with the script's proof; the first paid buy while the PLANK swap is down)");
   await mine(start);
-  const access = { pressId: 0n, proof: [] };
-  const buy = async (b, n) => {
-    const [eth, paper] = await Promise.all([
-      pub.readContract({ address: C.FireSale, abi: ABI.sale, functionName: "quoteEth", args: [FIRE, n] }),
-      pub.readContract({ address: C.FireSale, abi: ABI.sale, functionName: "paperFor", args: [FIRE, n] }),
-    ]);
-    if (!FORK) {
-      await tx(deployer, dev.paper.address, dev.paper.abi, "mint", [b.address, paper]);
-      await tx(b, dev.paper.address, dev.paper.abi, "approve", [C.FireSale, paper]);
+  const MAX = 2n ** 256n - 1n;
+  const status = () => pub.readContract({ address: C.FireSale, abi: ABI.sale, functionName: "status", args: [FIRE] });
+  const access = (o = {}) => ({ nftIds: [], allowance: 0n, proof: [], ...o });
+  const snapAccess = (a, allowance = allowanceOf(a)) => access({ allowance: BigInt(allowance), proof: snap.wallets[a.address].proof });
+  const quote = async (group, n) => pub.readContract({ address: C.FireSale, abi: ABI.sale, functionName: "quote", args: [FIRE, group, n, PAY.ETH] });
+  /** Buy `n` packs in `group` with ETH; the buyer's PAPER minted and approved (on a fork: buyWithEthAll buys it). */
+  const buy = async (b, group, n, acc = access()) => {
+    const [cost, paper] = await quote(group, n);
+    if (FORK) {
+      const extra = await pub.readContract({ address: C.FireSale, abi: ABI.sale, functionName: "quotePaperInEth", args: [paper] });
+      return tx(b, C.FireSale, ABI.sale, "buyWithEthAll", [FIRE, group, n, acc], ((cost + extra) * 105n) / 100n);
     }
-    return tx(b, C.FireSale, ABI.sale, "buyWithEth", [FIRE, n, paper, access], (eth * 101n) / 100n);
+    await tx(deployer, dev.paper.address, dev.paper.abi, "mint", [b.address, paper]);
+    await tx(b, dev.paper.address, dev.paper.abi, "approve", [C.FireSale, paper]);
+    const most = (cost * 101n) / 100n; // maxCost: the most ETH agreed to (the price may tick up a little); the rest comes back
+    return tx(b, C.FireSale, ABI.sale, "buy", [FIRE, group, n, PAY.ETH, most, paper, acc], most);
   };
+  const refused = async (b, fn, a, value, re) => {
+    try { await pub.simulateContract({ account: b, address: C.FireSale, abi: ABI.sale, functionName: fn, args: a, value }); return false; } catch (e) {
+      const why = `${e?.shortMessage} ${e?.message}`;
+      if (!re.test(why)) say(`refused, but not as expected: ${e?.shortMessage ?? why.slice(0, 300)}`);
+      return re.test(why);
+    }
+  };
+  const [c1] = await quote(1n, 1n);
+  check(await refused(buyer2, "buy", [FIRE, 1n, 2n, PAY.ETH, 0n, MAX, snapAccess(buyer2, 3)], c1 * 3n, /NotAllowed/), "the snapshot group refuses a proof with a raised allowance (NotAllowed)");
+  check(await refused(buyer1, "buy", [FIRE, 1n, 2n, PAY.ETH, 0n, MAX, snapAccess(buyer1)], c1 * 3n, /WalletLimit/), "the snapshot group holds a wallet to its allowance (1 pack: WalletLimit for 2)");
+  check(await refused(revenue, "buy", [FIRE, 2n, 1n, PAY.ETH, 0n, MAX, access()], c1 * 2n, /GroupNotOpen/), "Everyone isn't open yet (it opens when the PLANK group ends)");
   if (!FORK) await tx(deployer, dev.router.address, dev.router.abi, "setFail", [true]);
-  await buy(buyer1, 2n);
+  await buy(buyer2, 1n, 2n, snapAccess(buyer2));
   if (!FORK) await tx(deployer, dev.router.address, dev.router.abi, "setFail", [false]);
   const pbEth = await pub.getBalance({ address: C.PlankBurner });
   check(FORK || pbEth > 0n, `PlankBurner holds ${formatEther(pbEth)} ETH (the burn share it couldn't swap)`);
-  await buy(buyer2, 2n);
-  const fires = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "fires", args: [FIRE] });
-  check(fires[1] === true && fires[4] === 4n, "sold out: the Series closed with 4 packs");
+  say("buyer 2 took the PLANK group's 2 packs with its snapshot allowance (2) and proof");
+  if (!FORK) {
+    await buy(buyer1, 0n, 1n, access({ nftIds: [pressId] }));
+    check(await refused(buyer1, "buy", [FIRE, 0n, 1n, PAY.ETH, 0n, MAX, access({ nftIds: [pressId] })], 0n, /GroupNotOpen|SoldOut|NftUsed/), "buyer 1 claimed the press pack with its Paper Press (PAPER only); the press group is done");
+  } else {
+    await warp(3601); // no press here: the press group's time runs out and its pack rolls into Everyone
+  }
+  gv = await groupsOf();
+  check(gv[0].state === 2 && gv[1].state === 2 && gv[2].state === 1, "the press and PLANK groups ended (sold out); Everyone is open");
+  await buy(buyer1, 2n, FORK ? 2n : 1n);
+  let st = await status();
+  gv = await groupsOf();
+  check(gv[2].state === 2 && gv[3].state === 1 && st.left === MAX && !st.closed, "Everyone sold out: the 4-pack base Series is sold, the unlimited group opened, and the Series stays open (status.left: no limit)");
+
+  step("the after sell-out group: one pack a purchase, the price rising 4% a pack; then 5 minutes without a sale");
+  const [q1] = await quote(3n, 1n);
+  check(await refused(buyer2, "buy", [FIRE, 3n, 2n, PAY.ETH, 0n, MAX, access()], q1 * 3n, /PerTxLimit/), "two packs in one purchase refused (perTx 1)");
+  await buy(buyer2, 3n, 1n);
+  const [q2] = await quote(3n, 1n);
+  check(q2 > q1, `the next pack costs more: ${formatEther(q1)} -> ${formatEther(q2)} ETH`);
+  await buy(buyer1, 3n, 1n);
+  let fires = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "fires", args: [FIRE] });
+  check(fires[1] === false, "6 packs minted and the Series still open while the taxed group sells");
+  await warp(301);
+  st = await status();
+  check(st.left === 0n && !st.closed, "the taxed group idled out (5 minutes, no sale): nothing can still sell, but nothing closed it yet (status.left 0)");
+
+  step("the keeper sees status.left 0 and closes the Series (FireSale.close)");
+  r = await pass();
+  check(r.sent.some((x) => /^close /.test(x)), `the keeper sent close (sent: ${r.sent.map((x) => x.split(" ")[0]).join(", ")})`);
+  fires = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "fires", args: [FIRE] });
+  check(fires[1] === true && fires[4] === 6n, "the Series closed with 6 packs (the 4-pack base + 2 after sell-out)");
+  check(hook.posts.some((p) => /this keeper closed it/.test(p)), "the webhook heard the keeper closed it");
 
   // ---------------- open #1: drand round 1000 through the real router
   step(FORK ? "open: buyer 1 opens 2 packs (real drand)" : "open: buyer 1 opens 1 pack, timed so its request uses drand round 1000 (the real OpenDrandRouter)");
@@ -435,12 +522,13 @@ async function main() {
     await asImpersonated(owner, C.FireCards, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [ca.address] }));
     await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [pa.address] }));
     say(`cards -> ${ca.address}, PDA -> ${pa.address}`);
-    step("open: buyer 1 opens 1 pack, buyer 2 opens 2 packs");
-    await tx(buyer1, C.FireCards, ABI.cards, "open", [FIRE, 1n]);
-    await tx(buyer2, C.FireCards, ABI.cards, "open", [FIRE, 2n]);
+    step("open: buyer 1 opens 2 packs, buyer 2 opens 3 packs");
+    await tx(buyer1, C.FireCards, ABI.cards, "open", [FIRE, 2n]);
+    await tx(buyer2, C.FireCards, ABI.cards, "open", [FIRE, 3n]);
   } else {
-    step("open: buyer 2 opens 2 packs");
-    await tx(buyer2, C.FireCards, ABI.cards, "open", [FIRE, 2n]);
+    step("open: buyer 1 opens 1 pack, buyer 2 opens 3 packs");
+    await tx(buyer1, C.FireCards, ABI.cards, "open", [FIRE, 1n]);
+    await tx(buyer2, C.FireCards, ABI.cards, "open", [FIRE, 3n]);
   }
 
   if (!FORK) {
@@ -477,7 +565,7 @@ async function main() {
   const openCount = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "openCount", args: [FIRE] });
   check(head === openCount, `every open delivered and dealt (${openCount} opens)`);
   const next = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "nextSerial" });
-  check(next - 1n === 24n, `${next - 1n} cards dealt (4 packs x 6)`);
+  check(next - 1n === 36n, `${next - 1n} cards dealt (6 packs x 6)`);
 
   // ---------------- case and grade
   step("buyer 2 cases one card and sends two for grading (pays ETH; the fee goes to PaperBurner)");

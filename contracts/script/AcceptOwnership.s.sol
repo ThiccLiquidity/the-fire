@@ -13,7 +13,7 @@ interface IOwnable2Step {
 /**
  * The owner (one hardware wallet) takes over the seven contracts DeployCards handed it (docs/deploy.md, step 4):
  * acceptOwnership() on FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa and PaperBurner.
- * PlankBurner has no owner. Addresses and the expected owner come from
+ * PlankBurner and FireGroups have no owner. Addresses and the expected owner come from
  * deployments/<chainId>.json. Contracts the owner already holds are skipped, so it can be run again.
  *
  *   forge script script/AcceptOwnership.s.sol --rpc-url $env:RPC --ledger --sender <owner address> --slow --broadcast

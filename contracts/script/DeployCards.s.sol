@@ -13,6 +13,7 @@ import {CardsRenderer} from "../src/cards/CardsRenderer.sol";
 import {PaperBurner} from "../src/cards/PaperBurner.sol";
 import {PlankBurner} from "../src/cards/PlankBurner.sol";
 import {FireCredits} from "../src/cards/FireCredits.sol";
+import {FireGroups} from "../src/cards/FireGroups.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
 import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
@@ -56,7 +57,8 @@ interface ICardsPair {
 /**
  * Deploys every Omni card contract (see ../docs/cards-contracts.md and ../docs/omni-economy.md) and wires them:
  *   FirePacks (sealed packs), FireCards (cards), CardsRenderer (card metadata), RecipeDealer + RecipeCompiler (deal each
- *   Series from its recipe), FireSale (the pack sale), FireCredits (free pack credits, card burning, suggestions),
+ *   Series from its recipe), FireSale (the pack sale), FireGroups (each drop's groups: who can buy, how many, when;
+ *   only FireSale writes to it, no owner), FireCredits (free pack credits, card burning, suggestions),
  *   PlankBurner (holds the PLANK burn share when a sale's swap can't run, and burns it later), FirePsa (cases and PDA
  *   grading), PaperBurner (case and grading fees buy and burn PAPER), and a drand adapter for each of FireCards and
  *   FirePsa.
@@ -73,12 +75,14 @@ interface ICardsPair {
  *   OWNER             the hardware wallet (Ledger or Trezor) that will own everything. Afterwards it calls
  *                     acceptOwnership() on FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa and
  *                     PaperBurner (Ownable2Step), all seven in one run of script/AcceptOwnership.s.sol signed on the
- *                     device, so a mistyped OWNER owns nothing (the deployer still does). PlankBurner has no owner.
+ *                     device, so a mistyped OWNER owns nothing (the deployer still does). PlankBurner and FireGroups
+ *                     have no owner.
  *                     Must not be the deployer.
  *   EXPECTED_CHAIN_ID the chain it must run on (default 4663, Robinhood Chain; set it for a rehearsal)
  *   ROYALTY_RECEIVER, ROYALTY_BPS (500 = 5%, max 1000)
  *   PACK_IMAGE_BASE   folder of the pack art (fire<N>.webp); can be set later
- *   PAPER, PLANK, USDG, WETH, MILL (the Paper Press NFT)
+ *   PAPER, PLANK, USDG, WETH, MILL (the Paper Press NFT: recorded for the studio's Press-holder groups and ops/snapshot;
+ *                     a drop's NFT groups name their collection themselves)
  *   ETH_USD_FEED      Chainlink ETH/USD; PLANK_USD_FEED the PlankUsdTwap (DeployTwap.s.sol); PAPER_USD_FEED the PaperUsdTwap (DeployInfra.s.sol),
  *                     never the PAPER pool itself. Both feeds must be built on this PAPER/PLANK and ETH_USD_FEED.
  *   V2_ROUTER         Uniswap V2 router (buys the PLANK that each sale burns, and the PAPER that fees burn)
@@ -130,6 +134,7 @@ contract DeployCards is Deployments {
         PaperBurner burner;
         FireCredits credits;
         PlankBurner plankBurner;
+        FireGroups groups;
     }
 
     function run() external returns (Deployed memory d) {
@@ -168,6 +173,7 @@ contract DeployCards is Deployments {
         console.log("RecipeDealer", address(d.dealer));
         console.log("FireSale   ", address(d.sale));
         console.log("FireCredits", address(d.credits));
+        console.log("FireGroups ", address(d.groups));
         console.log("PlankBurner", address(d.plankBurner));
         console.log("FirePsa    ", address(d.psa));
         console.log("PaperBurner", address(d.burner));
@@ -180,8 +186,8 @@ contract DeployCards is Deployments {
     }
 
     function _recordCards(Deployed memory d, Params memory p) internal {
-        string[] memory names = new string[](15);
-        address[] memory addrs = new address[](15);
+        string[] memory names = new string[](16);
+        address[] memory addrs = new address[](16);
         (names[0], addrs[0]) = ("FirePacks", address(d.packs));
         (names[1], addrs[1]) = ("FireCards", address(d.cards));
         (names[2], addrs[2]) = ("CardsRenderer", address(d.renderer));
@@ -197,6 +203,7 @@ contract DeployCards is Deployments {
         (names[12], addrs[12]) = ("OpenDrandRouter", p.router);
         (names[13], addrs[13]) = ("PlankUsdTwap", p.plankUsd);
         (names[14], addrs[14]) = ("PaperUsdTwap", p.paperUsd);
+        (names[15], addrs[15]) = ("FireGroups", address(d.groups));
         string[] memory inNames = new string[](11);
         address[] memory inAddrs = new address[](11);
         (inNames[0], inAddrs[0]) = ("PAPER", p.paper);
@@ -229,14 +236,17 @@ contract DeployCards is Deployments {
         d.burner = new PaperBurner(deployer, p.paper, p.plank, p.usdg, usdgDecimals, p.weth, p.v2Router);
         d.burner.setFeeds(p.ethUsd, p.plankUsd, p.paperUsd);
         _setRoutes(d.burner, p);
+        d.groups = new FireGroups();
         d.sale = new FireSale(FireSale.Config({
-            owner: deployer, paper: p.paper, plank: p.plank, usdg: p.usdg, weth: p.weth, press: p.press,
+            owner: deployer, paper: p.paper, plank: p.plank, usdg: p.usdg, weth: p.weth,
             packs: address(d.packs), cards: address(d.cards), ethUsd: p.ethUsd, plankUsd: p.plankUsd, paperUsd: p.paperUsd,
             router: p.v2Router, revenueWallet: p.revenueWallet, plankBurner: address(d.plankBurner),
-            paperBurner: address(d.burner), credits: address(d.credits)
+            paperBurner: address(d.burner), credits: address(d.credits), groups: address(d.groups)
         }));
         d.credits.setSale(address(d.sale)); // set once; it checks the sale points back here and sells the same cards
         require(address(d.credits.sale()) == address(d.sale) && d.sale.CREDITS() == address(d.credits), "credits wiring");
+        d.groups.setSale(address(d.sale)); // set once, by the deployer; it checks the sale points back here
+        require(d.groups.sale() == address(d.sale) && address(d.sale.GROUPS()) == address(d.groups), "groups wiring");
         require(d.sale.plankBurner() == address(d.plankBurner) && address(d.plankBurner.ROUTER()) == address(d.sale.ROUTER())
             && address(d.plankBurner.PLANK_USD()) == p.plankUsd && address(d.plankBurner.ETH_USD()) == p.ethUsd,
             "PlankBurner wiring");

@@ -6,6 +6,7 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {FireCredits} from "../../src/cards/FireCredits.sol";
+import {FireGroups} from "../../src/cards/FireGroups.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
@@ -16,9 +17,6 @@ import {InvRouter} from "./InvRouter.sol";
 /// @dev Drives the whole card system (sale, packs, cards, PDA) with bounded random actions by several actors, and
 ///      keeps ghost accounting the invariant test checks against the contracts.
 contract CardsHandler is Test {
-    function _na() internal pure returns (FireSale.Access memory a) {
-        a.proof = new bytes32[](0);
-    }
 
     address constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint256 constant BPS = 10_000;
@@ -28,6 +26,7 @@ contract CardsHandler is Test {
 
     // ---------------------------------------------------------------- system
     FireSale public sale;
+    FireGroups public groups;
     FireCredits public credits;
     FirePacks public packs;
     FireCards public cards;
@@ -72,13 +71,11 @@ contract CardsHandler is Test {
     uint256 public ghostProtectEth; // ETH paid for cases and grades (all of it goes to the burner)
     uint256[3] public ghostPaid; // per currency (0 PLANK, 1 ETH, 2 USDG): what buyers paid
     uint256[3] public ghostBurnShare; // per currency: the burn share of what they paid
-    mapping(uint256 => mapping(address => uint256)) public ghostPreLiftPaid;
+    mapping(uint256 => mapping(uint256 => mapping(address => uint256))) public ghostBoughtIn; // fire, group, wallet
     mapping(address => uint256) public ghostBurned;
     mapping(address => uint256) public ghostBurnCreditsUsed;
     mapping(uint256 => mapping(address => uint256)) public ghostPicks;
     mapping(uint256 => mapping(address => uint256)) public ghostPicksUsed;
-    mapping(uint256 => mapping(address => bool)) public ghostStarterBy;
-    mapping(uint256 => mapping(uint256 => bool)) public ghostPressUsed;
     mapping(uint256 => uint256[5]) internal _ghostMat;
     mapping(uint256 => uint256) public ghostCards;
     mapping(uint256 => uint256) public ghostGrade;
@@ -115,11 +112,14 @@ contract CardsHandler is Test {
         dealer = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         cardRng.setFire(address(cards));
         credits = new FireCredits(owner, address(cards), 1e18);
+        groups = new FireGroups();
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
-            press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW, credits: address(credits)
+            packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW, credits: address(credits),
+            groups: address(groups)
         }));
+        groups.setSale(address(sale));
         burner = new MockBurner(address(plank), address(usdg));
         psa = new FirePsa(owner, address(cards), address(burner));
         psaRng.setFire(address(psa));
@@ -156,14 +156,22 @@ contract CardsHandler is Test {
 
     /// @dev Fire 1 sells out to the actors (10 packs each) and is opened and dealt, so everyone starts with 60 cards.
     function bootstrap() external {
-        FireSale.DropConfig memory c = FireSale.DropConfig({start: uint64(time + 1), packs: 40, starters: 0, plankOnly: 0,
-            walletLimit: 10, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, paperBurnBps: 0, priceUsd: 250_000_000, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
+        FireSale.DropConfig memory c;
+        c.start = uint64(time + 1);
+        c.packs = 40;
+        c.plankBurnBps = 3_000;
+        c.paperCapUsd = 1e8;
+        c.regularWalletsFor = 1 hours;
+        c.creditsPerPick = 1;
+        c.groups = new FireGroups.Group[](1);
+        c.groups[0] = _openGroup(40, 250_000_000, 1e18);
+        c.groups[0].perWallet = 10;
         vm.prank(owner, owner);
         sale.configureDrop(1, c);
         hasDrop[1] = true;
         dropFires.push(1);
         _setTime(time + 1);
-        for (uint256 i; i < actors.length; i++) _buyPlank(actors[i], 1, 10);
+        for (uint256 i; i < actors.length; i++) _buy(actors[i], 1, 0, 10, FireSale.Pay.PLANK, 0);
         (, bool closed,,,,) = cards.fires(1);
         require(closed, "bootstrap: fire 1 not closed");
         for (uint256 i; i < actors.length; i++) _open(actors[i], 1, 10);
@@ -172,7 +180,7 @@ contract CardsHandler is Test {
         require(cards.balanceOf(actors[0]) == 60, "bootstrap: cards");
         calls["bootstrapPacks"] = calls["packsChecked"];
         calls["packsChecked"] = 0;
-        calls["buyWithPlank.ok"] = 0;
+        calls["buy.ok"] = 0;
         calls["open.ok"] = 0;
     }
 
@@ -225,7 +233,7 @@ contract CardsHandler is Test {
         if (seed % 4 != 0) {
             for (uint256 j; j < n; j++) {
                 uint256 f = dropFires[(seed / 4 + j) % n];
-                bool live = sale.phase(f).live;
+                bool live = sale.status(f).live;
                 if (live) return f;
             }
         }
@@ -241,15 +249,17 @@ contract CardsHandler is Test {
         }
     }
 
-    /// Two times in three, the most packs this buyer can take right now (so drops sell out); else a random 1..12.
-    function _n(address a, uint256 fire, uint256 n) internal view returns (uint256) {
+    /// Two times in three, the most packs this buyer can take from the group right now (so drops sell out); else a
+    /// random 1..12.
+    function _n(address a, uint256 fire, uint256 g, uint256 n) internal view returns (uint256) {
         if (n % 3 == 0) return bound(n, 1, 12);
-        uint256 left = sale.phase(fire).paidLeft;
-        FireSale.Drop memory d = sale.dropOf(fire);
+        if (g >= groups.groupCount(fire)) return 1;
+        uint256 left = groups.openLeft(fire, g);
         uint256 m = left < 12 ? left : 12;
-        if (_preLift(fire)) {
-            uint256 bought = sale.paidBought(fire, a);
-            uint256 room = d.walletLimit > bought ? d.walletLimit - bought : 0;
+        uint256 per = groups.groupOf(fire, g).perWallet;
+        if (per != 0) {
+            uint256 bought = groups.boughtIn(fire, g, a);
+            uint256 room = per > bought ? per - bought : 0;
             if (room < m) m = room;
         }
         return m == 0 ? 1 : m;
@@ -259,15 +269,23 @@ contract CardsHandler is Test {
         if (bytes(violation).length == 0) violation = why;
     }
 
-    function _preLift(uint256 fire) internal view returns (bool) {
-        FireSale.Drop memory d = sale.dropOf(fire);
-        return time < uint256(d.start) + d.liftAfter;
+    /// An open group: anyone, `price` and `ppp` PAPER a pack, any coin, opens with the drop, until sold.
+    function _openGroup(uint64 n, uint128 price, uint128 ppp) internal pure returns (FireGroups.Group memory g) {
+        g.packs = n;
+        g.coins = 7;
+        g.afterGroup = 255;
+        g.rollTo = 255;
+        g.priceUsd = price;
+        g.paper = ppp;
     }
 
-    function _countPreLift(uint256 fire, address a, uint256 n, bool preLift) internal {
-        if (!preLift) return;
-        ghostPreLiftPaid[fire][a] += n;
-        if (ghostPreLiftPaid[fire][a] > sale.dropOf(fire).walletLimit) _flag("wallet limit exceeded before liftAfter");
+    /// The press ids `a` holds now (the NFT gate's access).
+    function _pressAccess(address a) internal view returns (FireGroups.Access memory acc) {
+        uint256[] memory buf = new uint256[](pressIds.length);
+        uint256 k;
+        for (uint256 i; i < pressIds.length; i++) if (press.ownerOf(pressIds[i]) == a) buf[k++] = pressIds[i];
+        acc.nftIds = new uint256[](k);
+        for (uint256 i; i < k; i++) acc.nftIds[i] = buf[i];
     }
 
     /// Up to `k` serials owned by `a`, from a random start. `forReveal`: only ungraded, not pending.
@@ -290,92 +308,90 @@ contract CardsHandler is Test {
 
     // ================================================================ buying
 
-    function buyWithPlank(uint256 actorSeed, uint256 fireSeed, uint256 n) external at {
+    function buyWithPlank(uint256 actorSeed, uint256 fireSeed, uint256 groupSeed, uint256 n) external at {
         calls["buyWithPlank"]++;
-        address a = _actor(actorSeed);
-        uint256 fire = _fire(fireSeed);
-        _waitFor(fire, n);
-        _buyPlank(a, fire, _n(a, fire, n));
+        _buyFrom(actorSeed, fireSeed, groupSeed, n, FireSale.Pay.PLANK, 0);
     }
 
-    function _buyPlank(address a, uint256 fire, uint256 n) internal {
-        uint256 cost;
-        try sale.quotePlank(fire, n) returns (uint256 c) { cost = c; } catch { return; }
-        FireSale.Drop memory d = sale.dropOf(fire);
-        bool preLift = _preLift(fire);
-        uint256 bal = plank.balanceOf(a);
-        vm.prank(a, a);
-        try sale.buyWithPlank(fire, n, cost, type(uint256).max, _na()) {
-            uint256 paid = bal - plank.balanceOf(a);
-            if (paid != cost) _flag("PLANK paid != quote");
-            ghostPaid[0] += paid;
-            ghostBurnShare[0] += paid * d.plankBurnBps / BPS;
-            ghostPaperBurned += n * d.paperPerPack;
-            _countPreLift(fire, a, n, preLift);
-            calls["buyWithPlank.ok"]++;
-        } catch {}
-    }
-
-    function buyWithEth(uint256 actorSeed, uint256 fireSeed, uint256 n, uint256 extra) external at {
+    function buyWithEth(uint256 actorSeed, uint256 fireSeed, uint256 groupSeed, uint256 n, uint256 extra) external at {
         calls["buyWithEth"]++;
-        address a = _actor(actorSeed);
-        uint256 fire = _fire(fireSeed);
-        _waitFor(fire, n);
-        n = _n(a, fire, n);
-        uint256 cost;
-        try sale.quoteEth(fire, n) returns (uint256 c) { cost = c; } catch { return; }
-        FireSale.Drop memory d = sale.dropOf(fire);
-        bool preLift = _preLift(fire);
-        uint256 bal = a.balance;
-        vm.prank(a, a);
-        try sale.buyWithEth{value: cost + bound(extra, 0, 1 ether)}(fire, n, type(uint256).max, _na()) {
-            uint256 paid = bal - a.balance;
-            if (paid != cost) _flag("ETH paid != quote (refund)");
-            ghostPaid[1] += paid;
-            ghostBurnShare[1] += paid * d.plankBurnBps / BPS;
-            ghostPaperBurned += n * d.paperPerPack;
-            _countPreLift(fire, a, n, preLift);
-            calls["buyWithEth.ok"]++;
-        } catch {}
+        _buyFrom(actorSeed, fireSeed, groupSeed, n, FireSale.Pay.ETH, bound(extra, 0, 1 ether));
     }
 
-    function buyWithUsdg(uint256 actorSeed, uint256 fireSeed, uint256 n) external at {
+    function buyWithUsdg(uint256 actorSeed, uint256 fireSeed, uint256 groupSeed, uint256 n) external at {
         calls["buyWithUsdg"]++;
-        address a = _actor(actorSeed);
-        uint256 fire = _fire(fireSeed);
-        _waitFor(fire, n);
-        n = _n(a, fire, n);
-        uint256 cost = sale.quoteUsdg(fire, n);
-        FireSale.Drop memory d = sale.dropOf(fire);
-        bool preLift = _preLift(fire);
-        uint256 bal = usdg.balanceOf(a);
-        vm.prank(a, a);
-        try sale.buyWithUsdg(fire, n, cost, type(uint256).max, _na()) {
-            uint256 paid = bal - usdg.balanceOf(a);
-            if (paid != cost) _flag("USDG paid != quote");
-            ghostPaid[2] += paid;
-            ghostBurnShare[2] += paid * d.plankBurnBps / BPS;
-            ghostPaperBurned += n * d.paperPerPack;
-            _countPreLift(fire, a, n, preLift);
-            calls["buyWithUsdg.ok"]++;
-        } catch {}
+        _buyFrom(actorSeed, fireSeed, groupSeed, n, FireSale.Pay.USDG, 0);
     }
 
-    function claimStarter(uint256 pressSeed, uint256 fireSeed, bool asOwner, uint256 actorSeed) external at {
-        calls["claimStarter"]++;
+    /// A press holder (or anyone) claims from the drop's first NFT-gated group with the presses it holds.
+    function claimPress(uint256 pressSeed, uint256 fireSeed, bool asOwner, uint256 actorSeed) external at {
+        calls["claimPress"]++;
         uint256 pid = pressIds[pressSeed % pressIds.length];
         address a = asOwner ? press.ownerOf(pid) : _actor(actorSeed);
         uint256 fire = _fire(fireSeed);
-        uint256 per = sale.dropOf(fire).starterPaper;
+        uint256 count = groups.groupCount(fire);
+        for (uint256 g; g < count; g++) {
+            if (groups.groupOf(fire, g).gate != FireGroups.Gate.NFT) continue;
+            _buy(a, fire, g, 1, FireSale.Pay.PLANK, 0);
+            return;
+        }
+    }
+
+    function _buyFrom(uint256 actorSeed, uint256 fireSeed, uint256 groupSeed, uint256 n, FireSale.Pay pay, uint256 extra) internal {
+        address a = _actor(actorSeed);
+        uint256 fire = _fire(fireSeed);
+        _waitFor(fire, n);
+        uint256 count = groups.groupCount(fire);
+        uint256 g = count == 0 ? 0 : groupSeed % count;
+        _buy(a, fire, g, _n(a, fire, g, n), pay, extra);
+    }
+
+    struct Buy {
+        address a;
+        uint256 fire;
+        uint256 g;
+        uint256 n;
+        FireSale.Pay pay;
+        uint256 cost;
+        uint256 openLeft;
+        uint256 bal;
+    }
+
+    /// One purchase, checked against the rules from outside: the quote is what's charged, the group was open with
+    /// that many left, its wallet limit and NFT allowances hold.
+    function _buy(address a, uint256 fire, uint256 g, uint256 n, FireSale.Pay pay, uint256 extra) internal {
+        if (g >= groups.groupCount(fire)) return;
+        Buy memory b = Buy(a, fire, g, n, pay, 0, groups.openLeft(fire, g), _balance(a, pay));
+        try sale.quote(fire, g, n, pay) returns (uint256 c, uint256) { b.cost = c; } catch { return; }
+        FireGroups.Access memory acc = _pressAccess(a);
         vm.prank(a, a);
-        try sale.claimStarter(fire, pid, 1, FireSale.Pay.PLANK, 0, type(uint256).max) {
-            if (ghostStarterBy[fire][a]) _flag("two starters for one wallet");
-            if (ghostPressUsed[fire][pid]) _flag("one press used twice");
-            ghostStarterBy[fire][a] = true;
-            ghostPressUsed[fire][pid] = true;
-            ghostPaperBurned += per;
-            calls["claimStarter.ok"]++;
+        try sale.buy{value: pay == FireSale.Pay.ETH ? b.cost + extra : extra}(fire, g, n, pay, b.cost, type(uint256).max, acc) {
+            _bought(b, acc);
         } catch {}
+    }
+
+    function _bought(Buy memory b, FireGroups.Access memory acc) internal {
+        FireGroups.Group memory G = groups.groupOf(b.fire, b.g);
+        uint256 paid = b.bal - _balance(b.a, b.pay);
+        if (paid != b.cost) _flag("paid != quote (or the refund is off)");
+        if (b.n > b.openLeft) _flag("bought more than the group had open");
+        if (G.priceUsd != 0 && G.coins & (1 << uint8(b.pay)) == 0) _flag("paid in a coin the group doesn't take");
+        ghostBoughtIn[b.fire][b.g][b.a] += b.n;
+        if (G.perWallet != 0 && ghostBoughtIn[b.fire][b.g][b.a] > G.perWallet) _flag("group wallet limit exceeded");
+        if (G.gate == FireGroups.Gate.NFT) {
+            if (acc.nftIds.length == 0) _flag("NFT group sold to a wallet with no NFT");
+            for (uint256 i; i < acc.nftIds.length; i++) {
+                if (groups.usedWith(b.fire, b.g, acc.nftIds[i]) > G.perNft) _flag("an NFT used past its allowance");
+            }
+        }
+        ghostPaid[uint8(b.pay)] += paid;
+        ghostBurnShare[uint8(b.pay)] += paid * sale.dropOf(b.fire).plankBurnBps / BPS;
+        ghostPaperBurned += b.n * G.paper;
+        calls["buy.ok"]++;
+    }
+
+    function _balance(address a, FireSale.Pay pay) internal view returns (uint256) {
+        return pay == FireSale.Pay.PLANK ? plank.balanceOf(a) : pay == FireSale.Pay.ETH ? a.balance : usdg.balanceOf(a);
     }
 
     function passPress(uint256 pressSeed, uint256 toSeed) external at {
@@ -395,7 +411,8 @@ contract CardsHandler is Test {
             if (credits.credits(_actor(actorSeed % 64 + i)) > 0) { a = _actor(actorSeed % 64 + i); break; }
         }
         n = bound(n, 1, 3);
-        uint256 per = sale.dropOf(fire).paperPerPack;
+        uint8 cg = sale.dropOf(fire).creditGroup;
+        uint256 per = cg < groups.groupCount(fire) ? groups.groupOf(fire, cg).paper : 0;
         vm.prank(a, a);
         try credits.useCredits(fire, n, type(uint256).max) {
             ghostBurnCreditsUsed[a] += n; // all credits (burn and picked) are one pool now
@@ -430,14 +447,14 @@ contract CardsHandler is Test {
 
     // ================================================================ owner
 
+    /// A drop of 1 to 3 groups: maybe a press group first (PAPER only, timed, leftovers on or nowhere), an open group
+    /// with random coins, wallet limit and timing, and an until-sold group after it.
     function configureDrop(
         uint256 fireSeed,
         uint256 startIn,
         uint256 nPacks,
-        uint256 starters,
-        uint256 plankOnly,
+        uint256 shape,
         uint256 limit,
-        uint256 lift,
         uint256 window,
         uint256 bps,
         uint256 price,
@@ -445,23 +462,38 @@ contract CardsHandler is Test {
     ) external at {
         calls["configureDrop"]++;
         uint256 fire = 2 + fireSeed % (FIRES - 1);
+        uint256 count = 1 + shape % 3;
         FireSale.DropConfig memory c;
         c.start = uint64(time + bound(startIn, 1, 2 hours));
-        c.packs = uint32(bound(nPacks, 1, 16));
-        c.starters = uint32(bound(starters, 0, 4));
-        c.plankOnly = plankOnly % 2 == 0 ? 0 : uint32(bound(plankOnly, 0, c.packs));
-        c.walletLimit = uint32(bound(limit, 1, 6));
-        c.liftAfter = uint32(lift % 4 == 0 ? 48 hours : bound(lift, 1 hours, 8 hours));
-        c.starterWindow = uint32(bound(window, c.starters > 0 ? 1 : 0, c.liftAfter));
         c.plankBurnBps = uint16(bps % 3 == 0 ? 3_000 : bound(bps, 0, BPS));
-        c.priceUsd = uint128(bound(price, 1e6, 1e10)); // 1 cent .. $100
-        c.paperPerPack = uint128(bound(ppp, 1, 3e18));
-        c.plankOnlyFor = c.liftAfter;
-        c.regularWalletsFor = c.liftAfter;
-        c.starterPerPress = 1;
-        c.starterWalletLimit = 1;
-        c.starterPaper = c.paperPerPack;
+        c.regularWalletsFor = uint32(window % 4 == 0 ? 0 : bound(window, 1 hours, 48 hours));
         c.creditsPerPick = 1;
+        c.creditGroup = uint8(shape / 3 % 4 == 3 ? 255 : (shape / 3 % 4) % count);
+        c.groups = new FireGroups.Group[](count);
+        uint64 total;
+        for (uint256 i; i < count; i++) {
+            uint256 seed = uint256(keccak256(abi.encode(shape, nPacks, i)));
+            FireGroups.Group memory g = _openGroup(uint64(bound(seed, i == 0 ? 1 : 0, 8)), uint128(bound(price, 1e6, 1e10)), uint128(bound(ppp, 1, 3e18)));
+            if (i == 0 && count > 1 && seed % 2 == 0) {
+                g.gate = FireGroups.Gate.NFT; // press holders: PAPER only
+                g.nft = address(press);
+                g.perNft = uint32(1 + seed % 2);
+                g.priceUsd = 0;
+                g.coins = 0;
+            } else {
+                g.coins = uint8(1 + (seed >> 8) % 7);
+                g.perWallet = uint32(bound(limit, 0, 6));
+            }
+            if (i + 1 < count) {
+                g.duration = uint32(bound(seed >> 16, 1 hours, 8 hours));
+                g.rollTo = (seed >> 24) % 3 == 0 ? 255 : uint8(i + 1 + (seed >> 32) % (count - i - 1));
+            }
+            if (i > 0 && (seed >> 40) % 2 == 0) g.afterGroup = uint8(i - 1);
+            if ((seed >> 48) % 4 == 0) g.startDelay = uint32(bound(seed >> 56, 0, 2 hours));
+            total += g.packs;
+            c.groups[i] = g;
+        }
+        c.packs = total;
         vm.prank(owner, owner);
         try sale.configureDrop(fire, c) {
             if (!hasDrop[fire]) { hasDrop[fire] = true; dropFires.push(fire); }

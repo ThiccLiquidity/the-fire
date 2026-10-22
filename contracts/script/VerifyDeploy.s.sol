@@ -9,6 +9,7 @@ import {IDealer} from "../src/cards/IDealer.sol";
 import {FireSale} from "../src/cards/FireSale.sol";
 import {FirePsa} from "../src/cards/FirePsa.sol";
 import {FireCredits} from "../src/cards/FireCredits.sol";
+import {FireGroups} from "../src/cards/FireGroups.sol";
 import {RecipeDealer} from "../src/cards/RecipeDealer.sol";
 import {CardsRenderer} from "../src/cards/CardsRenderer.sol";
 import {PaperBurner} from "../src/cards/PaperBurner.sol";
@@ -59,7 +60,7 @@ contract VerifyDeploy is Deployments {
     }
 
     function run() external {
-        string[15] memory names = _contractNames();
+        string[16] memory names = _contractNames();
         console.log(string.concat("deployments file: ", deploymentsFile()));
         for (uint256 i; i < names.length; i++) {
             address a = deployed(names[i]);
@@ -136,6 +137,8 @@ contract VerifyDeploy is Deployments {
         _eq(sale.CREDITS(), address(credits), "FireSale.CREDITS is FireCredits");
         _eq(address(credits.sale()), address(sale), "FireCredits.sale is FireSale");
         _eq(address(credits.CARDS()), address(cards), "FireCredits.CARDS is FireCards");
+        _eq(address(sale.GROUPS()), deployed("FireGroups"), "FireSale.GROUPS is FireGroups");
+        _eq(FireGroups(deployed("FireGroups")).sale(), address(sale), "FireGroups.sale is FireSale (its only writer)");
         _eq(sale.plankBurner(), deployed("PlankBurner"), "FireSale.plankBurner is PlankBurner");
         _eq(sale.paperBurner(), deployed("PaperBurner"), "FireSale.paperBurner is PaperBurner");
         address rev = deployedInput("REVENUE_WALLET");

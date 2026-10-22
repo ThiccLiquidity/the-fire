@@ -28,9 +28,18 @@ Each pass (every 20 s for the main keeper, 30 s for the backup):
    dust can't drain the keeper. PaperBurner only lets flushers the owner names flush it (an open flush could be
    sandwiched): set both keeper wallets with `KEEPERS` at deploy, or `PaperBurner.setFlusher(<keeper>, true)` from the
    owner. A keeper that isn't one alerts instead of flushing.
-6. **Drops:** a drop that hasn't sold out once its phases are over (and a day after it opened at the earliest): an
-   alert that the owner can end it now with `FireSale.endDrop(N)` (until then its packs can't be opened and no next
-   drop can be set up). Once anyone may (`END_GRACE`, 7 days later), the keeper calls `FireSale.endDrop(N)` itself.
+6. **Drops** (read from `FireSale.status(N)`; the groups from `FireGroups.groupsOf(N)`, `docs/drop-groups.md`):
+   - **Close:** when nothing can still sell (`status.left` 0) and nothing closed the Series. A purchase that takes the
+     last pack closes it in the same transaction, but when the last sellable packs vanish because a group's time ran
+     out (leftovers rolling nowhere) or the unlimited "after sell-out" group idled out, no transaction happens then:
+     the keeper calls `FireSale.close(N)` (anyone may; simulated first), the main keeper at once, the backup
+     `ACT_AFTER_SEC` after the last group ended. Until then its packs can't be opened. Posted when the keeper closes
+     it; an alert if its `close` didn't go through.
+   - **Unsold:** a drop that hasn't sold out once its schedule is over (`status.endableAt`: every timed group has run
+     its full time, every until-sold group has opened, the unlimited group has idled out, and a day after the start
+     at the earliest): an alert that the owner can end it now with `FireSale.endDrop(N)` (until then its packs can't be
+     opened and no next drop can be set up). Once anyone may (`END_GRACE`, 7 days later), the keeper calls
+     `FireSale.endDrop(N)` itself.
 7. **Health:** alerts and a heartbeat (below).
 
 **No wasted transactions.** Right before sending, each call is checked again against the pending state (the
@@ -40,7 +49,8 @@ a call that would do nothing isn't sent. Reads made together go out as one Multi
 
 **Two keepers, no double work.** The backup (`KEEPER_ROLE=backup`) acts only on work left waiting `ACT_AFTER_SEC`
 (5 min): a feed window or a candidate adoption 5 min late, a drand round published 5 min ago and not delivered, an open
-ready 5 min and not dealt, a burner balance waiting 5 min, an unsold drop 5 min past the time anyone may end it. Even then it waits `BACKUP_YIELD_MS` before each
+ready 5 min and not dealt, a burner balance waiting 5 min, a Series nothing can sell in 5 min after its last group ended, an unsold drop 5 min
+past the time anyone may end it. Even then it waits `BACKUP_YIELD_MS` before each
 transaction, looks again, and stands down while the main keeper's wallet (`MAIN_KEEPER_ADDRESS`) has a transaction
 waiting, so the main keeper wins a tie. When the backup does act it says so on the webhook. The rehearsal races the two
 for real and fails on any reverted, empty or duplicate transaction.
@@ -66,6 +76,8 @@ while it lasts, and "resolved" when it clears:
   the price guard). Dust below the flush minimum waits quietly.
 - **An unsold drop:** "Series N hasn't sold out; the owner can end it now with FireSale.endDrop(N), or anyone can after
   <date>"; after that date, only if the keeper's own `endDrop` didn't go through. Posted when the keeper ends it.
+- **A close that didn't go through:** "Series N: nothing can still sell, but this keeper's FireSale.close(N) didn't go
+  through (<reason>)". Posted when the keeper closes a Series.
 - **drand lag:** no relay answers, or drand is 20+ rounds (60 s) behind the clock; the chain's clock off real time by
   2+ min.
 - **The owner's switches:** FireSale or FirePsa paused (posted once, and when it ends); FireCards' or FirePsa's
@@ -183,9 +195,11 @@ Remove-Item Env:KEEPER_PRIVATE_KEY, Env:ONCE
   window), the heartbeat (alive whatever the alerts, failing only on a failed pass), config (roles, production
   requirements, thresholds) and key handling, start-up nonce-gap replacement, and against a stand-in chain: burner
   flush minimums (dust, the rate limit, large balances, the long wait, the PaperBurner flusher check, the backup's
-  grace), unsold drops (the owner's alert, the keeper's `endDrop`, the backup's grace), the grading sweep and FireSale's
-  `WalletsSet` / `FeedsSet` events.
+  grace), closing a Series nothing can still sell (`status.left` 0: the main keeper at once, the backup after its
+  grace, a failed simulation alerting, an unlimited group still open left alone), unsold drops (`status.endableAt`:
+  the owner's alert, the keeper's `endDrop`, the backup's grace), the grading sweep, FireSale's `WalletsSet` /
+  `FeedsSet` events, and the FireSale / FireGroups ABI slices against `contracts/out`.
 - The whole keeper runs end to end in the rehearsal (`ops/rehearsal`, see `docs/deploy.md`): on a local anvil chain it
   checkpoints, delivers a real drand signature through the real router, deals, finishes a grading from its
-  `Protected` event, flushes both burners, races the main keeper against the backup with automine off, lets the
+  `Protected` event, closes a Series whose unlimited group idled out, flushes both burners, races the main keeper against the backup with automine off, lets the
   backup step in while the main keeper is down, and posts to a local webhook.

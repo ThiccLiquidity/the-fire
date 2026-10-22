@@ -10,30 +10,36 @@
 //     a gateway missing some is a warning as long as each image still loads from two others. Each gateway gets its
 //     own few connections at a time, and a 429 (or 503) slows that gateway down for its Retry-After
 //   - the images folder's manifest.json (written by the studio) lists them all and names this recipe
-//   - with --snapshot, the holder Merkle root recomputed from the snapshot file equals the one batch B will set, and
-//     the snapshot rebuilt from the chain at its saved blocks (ops/snapshot verify) gives the same wallets, amounts and
-//     root: a wallet added or changed by hand is RED (needs an RPC that serves those blocks: an archive node)
-//   - the sale block against the sale policy (sale-policy.mjs: price $1-$10, burns 10-100% with PAPER at least 10%,
-//     PAPER per pack at least 0.1, a PAPER cap of $0.10 or more, wallet limit 50 at most, a holder window with a root),
-//     each RED unless --allow <rule>; and FireSale's revenue wallet and burners are the deployments file's
+//   - every snapshot group (--snapshots 1=fire-7-g1.json,...): the root batch B sets (--roots, GROUP_ROOT_<i>, else
+//     the JSON's root) is the snapshot file's, the file's tree and every proof it serves verify, and the snapshot
+//     rebuilt from the chain at its saved blocks (ops/snapshot verify) gives the same wallets, balances, allowances and
+//     root: a wallet added or changed by hand is RED (needs an RPC that serves those blocks: an archive node). A
+//     snapshot group with no root is RED.
+//   - every NFT group's collection is a contract ("press": the deployments file's MILL)
+//   - the sale block against the sale policy (sale-policy.mjs: drop-wide burns 10-100% with PAPER at least 10%, a
+//     PAPER cap of $0.10 or more; per group a price of $1-$10 (0 for holders' groups), PAPER per pack at least 0.1,
+//     at most 50 per wallet, a rising tax up to 10%, an unlimited group idling out within 1 h), each RED unless
+//     --allow <rule> (some only warn); FireSale's revenue wallet and burners are the deployments file's, and FireGroups
+//     is wired to FireSale; once the drop is configured, the drop on chain too
 // It prints one line per check and GREEN or RED. Only sign batch B when it's GREEN.
 //
 //   cd ops; npm install
 //   $env:RPC = Read-Host "RPC URL"
-//   node series/verify-series.mjs --recipe ..\contracts\series\recipe-fire-7.json [--snapshot fire-7-holders.json]
+//   node series/verify-series.mjs --recipe ..\contracts\series\recipe-fire-7.json [--snapshots 1=fire-7-group-1.json]
 //
 // Options: --gateways <url>,<url> (default ipfs.io, dweb.link, Pinata's and Filebase's public gateways; each URL is
-//   followed by <CID>/<file>), --holder-root 0x... (else HOLDER_ROOT, else the JSON's sale.holderRoot),
+//   followed by <CID>/<file>), --roots 1=0x...,... (a snapshot group's root as batch B sets it; else GROUP_ROOT_<i>,
+//   else the JSON's root), --snapshots 1=<file>,... (each snapshot group's file from ops/snapshot),
 //   --sample N (check only N random images: a quick look, never GREEN), --concurrency 6 (per gateway),
-//   --min-gateways 2, --report out.json, --allow <rule>,<rule> (sale policy exceptions), --no-holders (a presses-only
-//   holder window on purpose).
+//   --min-gateways 2, --report out.json, --allow <rule>,<rule> (sale policy exceptions).
 // Addresses come from deployments/<chainId>.json (DEPLOYMENTS_FILE to use another file).
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createPublicClient, http, getAddress } from "viem";
-import { salePolicy, saleWallets, parseAllow } from "./sale-policy.mjs";
+import { salePolicy, saleWallets, parseAllow, normSale, saleFromChain, nftCodeOf } from "./sale-policy.mjs";
+import { saleAbi, groupsAbi } from "./sale-abi.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(here, "../..");
@@ -43,7 +49,6 @@ const cardsAbi = abi("fireCards");
 const psaAbi = abi("firePsa");
 const rendererAbi = abi("cardsRenderer");
 const packsAbi = abi("firePacks");
-const saleAbi = abi("fireSale");
 
 export const DEFAULT_GATEWAYS = ["https://ipfs.io/ipfs/", "https://dweb.link/ipfs/", "https://gateway.pinata.cloud/ipfs/", "https://ipfs.filebase.io/ipfs/"];
 export const STATES = ["u", "c", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
@@ -155,8 +160,8 @@ async function pool(items, n, fn) {
 
 /**
  * Runs every check. Returns { green, lines, problems }. `log` gets each line as it's decided.
- * opts: { rpc | client, recipePath | recipe, deployments, gateways, snapshotPath, holderRoot, noHolders, allow, sample,
- *   concurrency, fetchFn, log, snapshotChain (false: skip rebuilding the snapshot from the chain) }
+ * opts: { rpc | client, recipePath | recipe, deployments, gateways, snapshots ({ [group]: file }), roots ({ [group]: root }),
+ *   allow, sample, concurrency, fetchFn, log, snapshotChain (false: skip rebuilding the snapshots from the chain) }
  */
 export async function verifySeries(opts) {
   const log = opts.log ?? console.log;
@@ -298,43 +303,51 @@ export async function verifySeries(opts) {
     if (opts.sample) ok(false, `only ${list.length} of ${names.length} images checked (--sample): run without it before signing`);
   }
 
-  // ---- holder root
-  const root = (opts.holderRoot ?? process.env.HOLDER_ROOT ?? json.sale?.holderRoot)?.toLowerCase();
-  if (opts.snapshotPath) {
-    const snap = JSON.parse(readFileSync(opts.snapshotPath, "utf8"));
-    const { buildTree } = await import(pathToFileURL(resolve(REPO, "ops/snapshot/merkle.mjs")).href);
-    const again = buildTree(snap.holders.map((h) => h.wallet)).root.toLowerCase();
-    ok(again === String(snap.root).toLowerCase(), `snapshot root recomputed from ${snap.holders.length} wallets: ${again}`);
-    ok(!!root && again === root, `the holder root batch B sets (${root ?? "none"}) is the snapshot's`);
-    const drop = await read(sale, saleAbi, "dropOf", [fire]);
-    if (drop.start !== 0n) ok(drop.holderRoot.toLowerCase() === again, "the configured drop's holderRoot is the snapshot's");
-    // rebuilt from the chain at the snapshot's own blocks: catches a wallet or amount edited into the file
+  // ---- the groups: snapshot roots and files, NFT collections
+  const inp = depFile.inputs ?? {};
+  const mill = process.env.MILL ?? inp.MILL;
+  const roots = { ...(opts.roots ?? {}) };
+  (json.sale?.groups ?? []).forEach((g, i) => { if (roots[i] === undefined && process.env[`GROUP_ROOT_${i}`]) roots[i] = process.env[`GROUP_ROOT_${i}`]; });
+  const saleWant = json.sale ? normSale(json.sale, { mill, roots }) : undefined;
+  const dropNow = await read(sale, saleAbi, "dropOf", [fire]);
+  const groupsAddr = getAddress(await read(sale, saleAbi, "GROUPS"));
+  const onChain = dropNow.start !== 0n ? saleFromChain(dropNow, await read(groupsAddr, groupsAbi, "groupsOf", [fire])) : undefined;
+  for (const [i, g] of (saleWant?.groups ?? []).entries()) {
+    if (g.gate !== "snapshot") continue;
+    const label = `group ${i + 1}${g.name ? ` (${g.name})` : ""}`;
+    const root = /^0x0{64}$/.test(g.root) ? undefined : g.root;
+    const file = opts.snapshots?.[i] ?? opts.snapshots?.[String(i)];
+    if (!file) { if (root) info(`${label}: snapshot root ${root} not checked (no snapshot file)`); continue; }
+    const snap = JSON.parse(readFileSync(file, "utf8"));
+    const { ownTree, verifySnapshot, discoverFor } = await import(pathToFileURL(resolve(REPO, "ops/snapshot/snapshot.mjs")).href);
+    const own = ownTree(snap);
+    ok(own.length === 0 && snap.version >= 3, `${label}: the snapshot file's root is the tree of its ${snap.holders?.length ?? 0} wallets and every proof it serves verifies${own.length ? ` (${own.join("; ")})` : snap.version >= 3 ? "" : " (an old file without allowances: take it again)"}`);
+    ok(!!root && root === String(snap.root).toLowerCase(), `${label}: the root batch B sets (${root ?? "none"}) is the snapshot's (${snap.root})`);
+    if (onChain) ok(onChain.groups[i]?.root === String(snap.root).toLowerCase(), `${label}: the configured drop's root is the snapshot's`);
+    // rebuilt from the chain at the snapshot's own blocks: catches a wallet, balance or allowance edited into the file
     if (opts.snapshotChain !== false) {
-      const { verifySnapshot } = await import(pathToFileURL(resolve(REPO, "ops/snapshot/snapshot.mjs")).href);
-      const inp = depFile.inputs ?? {};
-      if (inp.PLANK) ok(!!snap.plank && getAddress(snap.plank) === getAddress(inp.PLANK), `the snapshot is of PLANK ${inp.PLANK}`);
       try {
-        const v = await verifySnapshot({ client, snap, discover: { pair: inp.PLANK_WETH_V2_PAIR, factory: inp.UNIV2_FACTORY, quotes: [inp.WETH, inp.USDG, inp.PAPER] } });
-        for (const p of v.problems.slice(0, 5)) ok(false, `snapshot: ${p}`);
-        ok(v.ok, `the snapshot rebuilt from the chain at its ${snap.blocks?.length ?? 0} saved blocks matches the file${v.ok ? ` (${v.count} wallets, root ${v.root})` : ` (${v.problems.length} difference(s))`}`);
+        const v = await verifySnapshot({ client, snap, discover: snap.token ? discoverFor(snap.token, inp) : undefined });
+        for (const p of v.problems.slice(0, 5)) ok(false, `${label} snapshot: ${p}`);
+        ok(v.ok, `${label}: the snapshot of ${snap.symbol || snap.token} rebuilt from the chain at its ${snap.blocks?.length ?? 0} saved blocks matches the file${v.ok ? ` (${v.count} wallets, root ${v.root})` : ` (${v.problems.length} difference(s))`}`);
       } catch (e) {
-        ok(false, `the snapshot couldn't be rebuilt from the chain: ${e?.shortMessage ?? e?.message ?? e}`);
+        ok(false, `${label}: the snapshot couldn't be rebuilt from the chain: ${e?.shortMessage ?? e?.message ?? e}`);
       }
     }
-  } else if (root && BigInt(root) !== 0n) info(`holder root ${root} not checked (no --snapshot)`);
+  }
+  const nftCode = saleWant ? await nftCodeOf(saleWant, (address) => client.getCode({ address })) : {};
 
   // ---- sale settings: the policy, and where the money goes
   const allow = opts.allow instanceof Set ? opts.allow : parseAllow(opts.allow);
   if (!json.sale) ok(false, "recipe.json has a sale block");
   else {
-    for (const p of salePolicy(json.sale, { allow, holderRoot: root, noHolders: opts.noHolders })) {
+    for (const p of salePolicy(saleWant, { allow, nftCode, mill })) {
       if (p.level === "warn") warn(`sale: ${p.text}`);
       else ok(p.level !== "red", `sale: ${p.text}`);
     }
   }
-  const dropNow = await read(sale, saleAbi, "dropOf", [fire]);
-  if (dropNow.start !== 0n) {
-    for (const p of salePolicy(dropNow, { allow, noHolders: opts.noHolders })) if (p.level === "red") ok(false, `the configured drop on chain: ${p.text}`);
+  if (onChain) {
+    for (const p of salePolicy(onChain, { allow, nftCode: await nftCodeOf(onChain, (address) => client.getCode({ address })) })) if (p.level === "red") ok(false, `the configured drop on chain: ${p.text}`);
   }
   for (const w of await saleWallets(read, sale, depFile)) ok(w.ok, w.text);
 
@@ -347,23 +360,34 @@ export async function verifySeries(opts) {
   return { green, lines, problems, warnings, images: names.length, cid };
 }
 
+/** "1=a.json,2=b.json" -> { 1: "a.json", 2: "b.json" } (group indexes, 0 = the first). */
+export function byGroup(v) {
+  if (typeof v !== "string") return {};
+  const out = {};
+  for (const part of v.split(",").map((x) => x.trim()).filter(Boolean)) {
+    const m = /^(\d+)=(.+)$/.exec(part);
+    if (!m) throw new Error(`"${part}": use <group index>=<value> (0 is the first group)`);
+    out[m[1]] = m[2];
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- CLI
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const args = {};
   process.argv.slice(2).forEach((a, i, all) => { if (a.startsWith("--")) args[a.slice(2)] = all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true; });
   const rpc = process.env.RPC ?? process.env.RPC_URL;
   if (!rpc || !args.recipe) {
-    console.error("usage: RPC=... node series/verify-series.mjs --recipe recipe.json [--snapshot holders.json] [--holder-root 0x..] [--gateways a,b] [--min-gateways 2] [--concurrency 6] [--sample N] [--report out.json] [--allow rule,rule] [--no-holders]");
+    console.error("usage: RPC=... node series/verify-series.mjs --recipe recipe.json [--snapshots 1=group1.json,...] [--roots 1=0x..,...] [--gateways a,b] [--min-gateways 2] [--concurrency 6] [--sample N] [--report out.json] [--allow rule,rule]");
     process.exit(2);
   }
   try {
     const r = await verifySeries({
-      rpc, recipePath: args.recipe, snapshotPath: args.snapshot === true ? undefined : args.snapshot,
-      holderRoot: typeof args["holder-root"] === "string" ? args["holder-root"] : undefined,
+      rpc, recipePath: args.recipe, snapshots: byGroup(args.snapshots), roots: byGroup(args.roots),
       gateways: typeof args.gateways === "string" ? args.gateways.split(",").map((s) => s.trim()) : undefined,
       sample: args.sample ? Number(args.sample) : undefined, concurrency: args.concurrency ? Number(args.concurrency) : undefined,
       minGateways: args["min-gateways"] ? Number(args["min-gateways"]) : undefined,
-      allow: typeof args.allow === "string" ? args.allow : undefined, noHolders: !!args["no-holders"],
+      allow: typeof args.allow === "string" ? args.allow : undefined,
     });
     if (typeof args.report === "string") writeFileSync(args.report, JSON.stringify(r, null, 2));
     process.exit(r.green ? 0 : 1);

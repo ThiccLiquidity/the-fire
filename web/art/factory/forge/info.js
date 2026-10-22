@@ -125,13 +125,13 @@
     </div><p class="inf-note">“+” means that material or better.</p>`;
   }
 
-  // the phases in order; their lengths, limits and PLANK-only packs are set per Series (the buy panel shows the live ones)
+  // how a Series sells: its groups, set per Series (the Buy box shows the live ones)
   function timeline() {
     return `<ol class="inf-time">
-      <li><b>Holders first</b><span>Paper Press and PLANK holders. Early packs can be PLANK only.</span></li>
-      <li><b>Open to all</b><span>Unclaimed Press packs join the sale.</span></li>
-      <li><b>Limits lift</b><span>Any per-wallet limit ends.</span></li>
-      <li><b>Sold out</b><span>The Series closes. Packs can be opened.</span></li>
+      <li><b>Groups</b><span>Each Series splits its packs into groups: Paper Press holders, holders on a snapshot, everyone. Each has its own price, coins and limits.</span></li>
+      <li><b>Side by side or in turn</b><span>Some open with the Series, some after another group ends. Unsold packs can move on to a later group.</span></li>
+      <li><b>After sell-out</b><span>A Series can sell extra packs once it sells out: the price rises with each one and the extra goes to burning PAPER. Sales stop once nobody buys for a while.</span></li>
+      <li><b>Closed</b><span>When nothing more can sell, the Series closes. Packs can be opened.</span></li>
     </ol>`;
   }
 
@@ -150,25 +150,25 @@
         </ul>`),
       sec('buy', 'Buying packs', 'Paid in PLANK, ETH or USDG, plus PAPER.', `
         <ul>
-          <li>Series ${no} has <b>${s.total ?? '—'} packs</b>, <b>${s.starters ?? '—'}</b> of them Press packs. When they're gone, they're gone.</li>
+          <li>Series ${no} has <b>${s.total ?? '—'} packs</b> in ${(s.groups || []).length || 'its'} groups${(s.groups || []).some((g) => g.unlimited) ? ', plus extra packs after it sells out' : ''}. When they're gone, they're gone.</li>
           <li>Pay in PLANK, ETH or USDG. Each pack also takes PAPER, which is burned.</li>
           <li>20% of every sale buys PAPER and burns it, and 10% buys PLANK and burns it. The rest goes to the team.</li>
           <li>You set the most you'll pay. If the price moves past it, nothing is charged.</li>
         </ul>
         <p class="inf-sub">How a Series sells</p>
         ${timeline()}
-        <p>Each Series sets its own price, windows and limits before it opens. They can't change after.</p>`),
+        <p>Each Series sets its groups, prices, times and limits before it opens. They can't change after.</p>`),
       sec('free', 'Press & free packs', 'Press packs for Paper Press holders. Free packs are earned and never expire.', `
         <p class="inf-sub">Press packs</p>
         <ul>
-          <li>For Paper Press holders, at the start of a Series. First come, first served.</li>
-          <li>Each press counts once per Series. Unclaimed ones join the paid sale.</li>
+          <li>A Series can have a group for Paper Press holders. First come, first served, while it's open.</li>
+          <li>Each Press counts once per Series, whoever holds it. Unclaimed packs can move on to a later group.</li>
           <li>A Press pack is a normal pack: open it or trade it sealed.</li>
         </ul>
         <p class="inf-sub">Free packs</p>
         <ul>
           <li>Earn one by burning 42 cards, or when your suggestion is picked.</li>
-          <li>Use them any time a Series is on sale. Holder windows and wallet limits don't apply. They still take PAPER.</li>
+          <li>Use them while a Series' free-pack group is on sale. Holder lists and wallet limits don't apply. They still take PAPER.</li>
           <li>They stack and never expire. A Series can cap how many it takes; the rest wait for the next one.</li>
         </ul>`),
       sec('open', 'Opening packs', 'Packs open once the Series sells out. Nobody knows what’s inside until then.', `

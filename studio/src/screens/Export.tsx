@@ -85,7 +85,7 @@ export function Export({ fire }: { fire: FireRecord }) {
   const saleCheck: Check = { label: 'Sale settings valid (configureDrop\'s checks)', ok: saleProblems.length === 0, detail: saleProblems[0] ? `${saleProblems[0].message} (Sale tab)` : undefined }
   checks.push(saleCheck)
   const packs = deal?.packs ?? fire.packs
-  const packsCheck: Check = { label: 'Sale packs match the Series', ok: salePacks(sale) === packs, detail: `The sale has ${salePacks(sale).toLocaleString()} (paid + press), the ${deal ? 'locked deal' : 'Series'} ${packs.toLocaleString()} (Sale tab).` }
+  const packsCheck: Check = { label: 'Sale packs match the Series', ok: salePacks(sale) === packs, detail: `The sale has ${salePacks(sale).toLocaleString()} (the groups' total), the ${deal ? 'locked deal' : 'Series'} ${packs.toLocaleString()} (Sale tab).` }
   checks.push(packsCheck)
   const ready = checks.every((c) => c.ok)
   const recipeReady = checks[0].ok && checks[2].ok && saleCheck.ok && packsCheck.ok

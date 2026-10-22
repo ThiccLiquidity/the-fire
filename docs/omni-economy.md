@@ -24,69 +24,77 @@ setting: cards burned per free pack is 42, forever.
 
 | Setting | Start |
 |---|---|
-| Packs in the drop | 167 **total, starters included** (about 1,000 cards). Sold out means gone: no more packs for that Series, ever. |
+| Packs in the drop | 167 **total, every group included** (about 1,000 cards). Sold out means gone: no more packs for that Series, ever. |
+| Groups | 4 (below): Press holders 50, PLANK holders 40, Everyone 77 (+ leftovers), After sell-out (no pack count: the Series is 167 packs plus whatever sells after the sell-out) |
 | Gold cards | 2 per character (at least 1; set per Series in its recipe, before its drop is set up) |
 | Full Art cards | 1 per character |
-| Pack price | $2.50 |
-| PAPER per pack | 1 |
+| Pack price | $2.50 (the PLANK and Everyone groups; press packs have no dollar price) |
+| PAPER per pack | 1 (every group) |
 | PAPER ceiling per pack | $1: a pack's PAPER is never worth more than this at the PAPER price (0 = no ceiling) |
 | PLANK burn share | 10% |
 | PAPER buy & burn share | 20% (to `PaperBurner`, which buys PAPER on the market and burns it) |
-| PLANK-only packs at the start | 50 |
-| PLANK-only packs open to ETH/USDG after | 48 hours, sold or not |
-| Press (starter) packs | 50 |
-| Press packs per press / per wallet | 1 / 1 |
-| Press pack price | 1 PAPER (can be free, a PAPER amount, a dollar price, or a dollar price + PAPER) |
-| Press claim window | 24 hours |
-| Holder window | 24 hours: only wallets with a Paper Press or $69+ of PLANK (secret snapshot) can buy paid packs |
-| Wallet limit (paid packs) | 5 (0 = no limit) |
-| Wallet limit lifts after | 48 hours |
+| Group 1: Paper Press holders | 50 packs, 1 PAPER each, 1 per press, opens with the drop, up to 6 hours, leftovers to Everyone |
+| Group 2: PLANK holders | 40 packs, snapshot ($69+ of PLANK held for 7 days), $2.50 + 1 PAPER, PLANK only, 5 per wallet, opens with the drop, up to 24 hours, leftovers to Everyone |
+| Group 3: Everyone | 77 packs + leftovers, $2.50 + 1 PAPER, any coin, 5 per wallet, opens when group 2 ends, until sold |
+| Group 4: After sell-out | no pack count, $2.50 rising 4% a pack (the k-th costs $2.50 × 1.04^k; everything above $2.50 buys and burns PAPER) + 1 PAPER, ETH only, 1 pack per purchase, no wallet limit, opens the moment Everyone sells out, ends 15 minutes after its last sale (no time limit otherwise) |
 | Regular wallets only for | 48 hours (0 = off) |
 | Most packs per purchase | 50 |
 | Credits per picked suggestion | 1 |
-| Free (credit) packs per drop, in all / per wallet | 10% of the drop's packs (16 of 167) / 3 per wallet (0 = no limit) |
+| Free (credit) packs per drop, in all / per wallet | 10% of the drop's packs (16 of 167) / 3 per wallet (0 = no limit), from group 3 |
 | Fresh PDA odds | 10: 1% · 9: 30% · 8: 40% · 7: 29% (grades 1-6 only from wear) |
 
 ## Setting up a drop
 
-`configureDrop` counts **paid packs** only; starter packs come on top. A 167-pack drop with 50 starters is configured
-as `packs = 117`, `starters = 50`. Setup is signed on the owner's hardware wallet; the public site has no admin pages.
+`configureDrop` takes the **total** packs and the groups that split them (1 to 6; `docs/drop-groups.md`, the JSON
+shape in `docs/cards-contracts.md`). Each group says who can buy (anyone, holders of an NFT, or wallets in a
+snapshot), how many, at what price and PAPER, in which coins, how many per wallet, when it opens (with the drop, or
+when another group ends, plus a delay), how long it stays open, and where its unsold packs go (another group, or
+nowhere). Setup is signed on the owner's hardware wallet; the public site has no admin pages.
 
-## Holders first, and no bot contracts
+## Groups, holders first, and no bot contracts
 
-- **The holder window (first 24 hours):** paid packs can only be bought by wallets that own at least one Paper
-  Press, or that held at least $69 of PLANK at a secret snapshot taken before the drop.
-  - **Press holders:** each press lets in one wallet per drop, so a press can't be passed around.
-  - **PLANK holders:** the snapshot is taken with `ops/snapshot` (README there). It prints one code, the "root",
-    which goes into the drop's settings. The live site is planned to load each buyer's proof automatically, so
-    buyers do nothing extra (the site isn't connected to the chain yet).
-  - **Not sold out after 24 hours:** it opens to everyone.
-- **Regular wallets only for the first 48h** (its own setting, 0 = off; it used to be tied to the wallet limit).
-  MetaMask, Rabby, OKX and the like are regular wallets. A bot contract can't spin up throwaway wallets to sweep a drop
-  in one transaction.
-- **Free pack credits** work at any time, including the holder window.
+- **Holders first, by group.** The Standard drop opens with two holder groups side by side:
+  - **Paper Press holders** (an NFT group): each press claims 1 pack per drop, for 1 PAPER. Each press is checked live
+    and spent once its allowance is used, whoever holds it later, so passing a press around never claims again.
+  - **PLANK holders** (a snapshot group): wallets that held $69+ of PLANK for 7 days, from `ops/snapshot` (README
+    there). It prints one code, the "root", which goes into the group. Each wallet's entry carries its allowance (so
+    tiers like "1M PLANK = 2 packs, 10M = 5" are possible); the group's wallet limit (5) still caps it. The live site
+    loads each buyer's proof, so buyers do nothing extra.
+  - **Everyone** opens when the PLANK group ends: when its 40 packs are gone, or after 24 hours.
+- **A group ends** the moment its packs are gone (and no leftovers can still arrive), or when its time runs out. Its
+  unsold packs then go where it says: the press and PLANK groups' leftovers go to Everyone, so every pack still sells.
+- **Regular wallets only for the first 48h** (its own setting, 0 = off). MetaMask, Rabby, OKX and the like are regular
+  wallets. A bot contract can't spin up throwaway wallets to sweep a drop in one transaction.
+- **Free pack credits** spend packs from the credit group (Everyone in the Standard drop) while it is open.
 
-## A drop, start to finish
+## A drop, start to finish (Standard)
 
-1. **Launch.** The holder window starts (24h: press holders and snapshot PLANK holders only). Two things open:
-   - **Starter packs for press holders.**
-   - **The paid sale, PLANK only, for the first 50 packs.**
-2. **After 50 PLANK packs:** ETH and USDG can buy too. Safety valve: if the PLANK-only packs haven't sold by
-   `plankOnlyFor` (48h; e.g. the PLANK price feed is down), ETH and USDG open anyway so a drop can't get stuck.
-3. **24 hours:** the starter window closes. Unclaimed starters join the paid supply.
-4. **48 hours, if not sold out:** the 5-per-wallet limit lifts completely.
-5. **Sold out:** the drop is over.
+1. **Launch.** The press group and the PLANK group open together. Press holders claim their packs (PAPER only);
+   snapshot PLANK holders buy theirs, in PLANK.
+2. **The PLANK group ends** (sold out, or 24 hours): Everyone opens straight away, any coin, 5 per wallet.
+3. **6 hours** (or sooner if every press pack is claimed): the press group ends; unclaimed press packs join Everyone.
+4. **Everyone sells out:** "After sell-out" opens at once: extra packs, one per purchase, whose price rises 4% with
+   every pack sold (the 50th costs about $17.8, the 100th about $126); the whole rise buys and burns PAPER. There is
+   no count and no time limit: the rising price caps demand, and the group ends 15 minutes after its last sale. (A
+   safety bound on the maths refuses any pack past 1e9 times $2.50, about pack 528: not a sales cap.)
+5. **The Series closes the moment its last pack that can still be made is minted**, however early. If Everyone sells
+   out while the press group still has packs, the Series stays open: press holders can still claim until their 6
+   hours are up, and whatever they leave then rolls into Everyone, which sells it. Leftovers that roll nowhere are
+   never made (the Series is smaller); then anyone (the keeper) calls `close`.
 
 ## Buying packs
 
-- **Every pack needs 1 PAPER, and it is burned.** "The minter needs paper." This includes starter and free packs.
-  (Per drop: PAPER per paid/credit pack and PAPER per press pack are settings, 0 allowed.)
+- **Every pack needs 1 PAPER, and it is burned.** "The minter needs paper." This includes press and free packs.
+  (Per group: PAPER per pack is a setting, 0 allowed; credit packs take their group's.)
 - **Never more than the drop's PAPER ceiling per pack** (`paperCapUsd`, per drop; Standard $1; 0 = no ceiling): if
-  PAPER pumps past it, a pack takes the ceiling's worth (part of a PAPER) at the `PaperUsdTwap` price. Paid, press and
-  free packs alike. While the feed is late, the last good PAPER price holds (`lastPaperUsd`); before the feed's first
+  PAPER pumps past it, a pack takes the ceiling's worth (part of a PAPER) at the `PaperUsdTwap` price. Every group's
+  packs and free packs alike. While the feed is late, the last good PAPER price holds (`lastPaperUsd`); before the feed's first
   price, the set amount.
-- **Packs are never paid for in PAPER.** The price is paid in PLANK, ETH or USDG only.
-- **Paid pack:** $2.50 + 1 PAPER (at most $1 of PAPER in the Standard sale).
+- **Packs are never paid for in PAPER.** The price is paid in PLANK, ETH or USDG only, in the coins the group takes.
+- **A purchase names its group** (`buy(fire, group, n, pay, maxCost, maxPaper, access)`; `access` shows the buyer's
+  NFTs or snapshot proof for a holder group).
+- **Paid pack:** $2.50 + 1 PAPER (at most $1 of PAPER in the Standard sale). A group can also be PAPER only (the
+  press group) or free.
   - Every buy first checkpoints the PLANK price (`PlankUsdTwap.checkpoint()`, a cheap no-op when it isn't due; a
     failure is ignored). That keeps the price fresh only while buys or the keeper come at least every 2 hours: after a
     longer gap the checkpoint a buy makes spans more than 2 hours, so it can't refresh the price for itself; the keeper
@@ -117,14 +125,16 @@ as `packs = 117`, `starters = 50`. Setup is signed on the owner's hardware walle
   Robinhood Chain pool; the transaction is checked before the wallet sees it), otherwise, or if KyberSwap doesn't
   answer, straight from the PAPER pools. ETH is one confirmation; PLANK or USDG need an exact approval first.
 - **Up to 50 packs per purchase** by default (`maxPerTx`, set per drop; any number, e.g. 100 for a giant drop).
-- **Gas (measured in tests, mock router; `test_gas`, `test_giantDrop_buy100InOneTx`):** about 98k for a PLANK buy and
-  104k for ETH, the same for 1 pack or 100 (packs are one ERC-1155 mint). A real Uniswap swap adds about 60–90k more,
+- **Gas (measured in tests, mock router; `test_gas`, `test_gas_standardGroups`, `test_giantDrop_buy100InOneTx`):**
+  about 46k to 106k for a PLANK buy and 79k to 125k for ETH, nearly the same for 1 pack or 100 (packs are one ERC-1155
+  mint; a wallet's first buy in a group pays for its new counters). A first press claim (NFT check, new per-press
+  and per-wallet counters) is about 215k. A real Uniswap swap adds about 60–90k more,
   so roughly 100k (PLANK) to 195k (ETH/USDG) per purchase. That's cents or less on Robinhood Chain.
 - **The swap's floor:** it must get at least 90% of the PLANK that the 30-minute average price says. If the pool is
   pumped or manipulated beyond that, the swap is skipped and the burn share goes to `PlankBurner`.
-- **If the drop never sells out:** the owner can end it (`endDrop`) once its last timed phase is over (press window,
-  holder window, PLANK-only, wallet limit, regular wallets; 48h in the Standard sale), so every phase always runs in
-  full. If the owner doesn't, anyone can, 7 days after that, so packs are never stranded. The Series closes with the
+- **If the drop never sells out:** the owner can end it (`endDrop`) once its schedule is over: every timed group has
+  run its full time and every until-sold group has opened (24h in the Standard sale), and at least a day after the
+  start. If the owner doesn't, anyone can, 7 days after that, so packs are never stranded. The Series closes with the
   packs that were minted.
 - **One drop at a time.** The next drop can only be set up once the current one has closed.
 - **Each Series stands alone.** Its cards come only from its own packs, by its own recipe. Standard recipe: Paper
@@ -139,30 +149,32 @@ as `packs = 117`, `starters = 50`. Setup is signed on the owner's hardware walle
   2 hours. Otherwise PLANK purchases pause and the burn share of ETH/USDG sales goes to `PlankBurner`, until the
   price is fresh again (the keeper checkpoints every 30 minutes, and buys keep it fresh between those; after a gap
   over 2 hours it takes two checkpoints 30 minutes apart, which a buy can't do for itself).
-- **Pause.** The owner can pause buying, press packs, credit spending and paid suggestions (`FireSale.setPaused`),
+- **Pause.** The owner can pause buying (every group), credit spending and paid suggestions (`FireSale.setPaused`),
   and case and grading payments (`FirePsa.setPaused`). Opening packs, dealing, transfers, ending or closing a drop,
   burning cards, finishing or cancelling a grading and every keeper call never pause. A pause doesn't expire on its
   own: the owner lifts it.
 
-## Starter packs
+## Press holders' packs
 
-- **Who:** press holders only (Paper Press NFT). This is the bot filter: a press costs $94+. About 2,080
+- **Who:** press holders only (Paper Press NFT; an NFT group). This is the bot filter: a press costs $94+. About 2,080
   presses exist.
-- **Rules:** first come, first served. 1 per wallet. Each press counts once per drop, so passing one press
-  around doesn't get extra packs. (Per drop: packs per press, e.g. 3, claimable in any split; packs per wallet.)
-- **Price:** 1 PAPER, burned. No dollar price. (Per drop: free, a PAPER amount, a dollar price paid in PLANK, ETH or
-  USDG like a paid pack with the same burn share, or a dollar price plus PAPER.)
-- **Window:** 24 hours, then leftovers join the paid supply.
-- **Trading:** starter packs are normal packs and can be traded sealed.
+- **Rules:** first come, first served. Each press claims 1 pack per drop (per group: packs per press, e.g. 3,
+  claimable in any split; a wallet limit on top if wanted), checked live; a press is spent once its packs are
+  claimed, whoever holds it later.
+- **Price:** 1 PAPER, burned. No dollar price. (Per group: free, a PAPER amount, a dollar price paid in the coins it
+  takes with the same burn shares, or a dollar price plus PAPER.)
+- **Window:** 6 hours (or until claimed), then leftovers roll into Everyone.
+- **Trading:** press packs are normal packs and can be traded sealed.
 - **Known gap:** someone with many presses could spread them across wallets. Each one is still a real press.
 
 ## Free pack credits
 
 Credits, card burning and suggestions live in `FireCredits` (split out of `FireSale` for contract size, same rules;
 PAPER is still approved to `FireSale`, which takes it). Each wallet has a count of free pack credits. Credits **stack** and never expire. A credit is used in any live
-drop: mint 1 pack for the drop's PAPER per pack (burned, within its PAPER ceiling), out of that drop's supply. If no drop is live, or it's sold out, the
-credit waits for the next drop. **Credits work at any time during any live drop**: the holder
-window, the PLANK-only packs and the wallet limit don't apply to them. A drop can cap how many free packs it gives
+drop: mint 1 pack from the drop's credit group while it is open, for that group's PAPER per pack (burned, within the
+PAPER ceiling), out of that group's packs. If no drop is live, its credit group isn't open (yet), or it's sold out, the
+credit waits. The credit group's gate, price, coins and wallet limit, and the regular-wallets rule, don't apply to
+credits. A drop can cap how many free packs it gives
 out in all (`creditPacksMax`) and per wallet (`creditPacksPerWallet`), so a big stack of credits can't take a large
 share of a small drop; credits over a cap simply wait for another drop. The Standard sale caps free packs at 10% of
 the drop's packs and 3 per wallet. Credits can't be spent on a Series whose packs hold 42 cards or more
@@ -193,7 +205,7 @@ Every PAPER spent anywhere is burned.
 
 | Use | Cost |
 |---|---|
-| Any pack (paid, starter or free) | 1 PAPER per pack, never more than the drop's PAPER ceiling ($1 in the Standard sale) |
+| Any pack (paid, press or free) | 1 PAPER per pack, never more than the drop's PAPER ceiling ($1 in the Standard sale) |
 | Character suggestion | 1 PAPER, never more than $1 of PAPER (owner setting, `FireCredits.setSuggestionRules`, any amount incl. 0; the suggester names their most). Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. A suggestion is a character plus an optional personality and background, packed into one text (`Character: …` / `Personality: …` / `Background: …` lines, `docs/cards-contracts.md`); set the longest text to about 1,000 bytes. |
 | Cases and grading | Paid in ETH, USDG or PLANK, not PAPER. 100% of it buys PAPER and burns it (`PaperBurner`). |
 
@@ -287,12 +299,12 @@ At that pace, PAPER bought and burned from sales: about $2,600–5,200 a year; P
   - At $1, flippers took the gap (packs resold at up to 14×). At $5, nothing sold out.
   - Price steps were rejected as unfair to later buyers.
 - **Bots:** a wallet limit is a fairness rule, not bot protection. The press gate is what keeps bots off the
-  starter packs.
+  press packs.
   - Starter-pack gates that were rejected:
     - first come, first served for anyone: bots took ~100%
     - a PLANK-holding snapshot alone: bots took ~57%
     - random presses: too limiting
-  - For the paid sale, the holder window (presses plus the PLANK snapshot) and the regular-wallets rule keep one
+  - For the paid sale, the holder groups (presses and the PLANK snapshot) first and the regular-wallets rule keep one
     bot contract from sweeping a drop.
 
 ## Still open

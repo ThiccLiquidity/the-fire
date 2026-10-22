@@ -16,14 +16,24 @@ export const paperTwapAbi = parseAbi([
   "function candidateSince() view returns (uint32)",
 ]);
 
-/** FireSale: the drop state, and endDrop for a drop that didn't sell out (the owner once its phases are over and
- *  MIN_DROP_TIME after start; anyone END_GRACE after that). */
+/** FireSale: a drop's state (status: what can still sell, when it can be ended), close for a Series nothing can still
+ *  sell in (anyone; normally the last purchase does it, but not when a group's time runs out or an unlimited group
+ *  idles out), endDrop for a drop that didn't sell out (the owner at status.endableAt; anyone END_GRACE later), and
+ *  the PacksBought event (which group). FireGroups.groupsOf: each group's state, for when the last one ended. */
 export const saleAbi = parseAbi([
-  "struct Drop { uint64 start; uint64 packs; uint64 starters; uint64 plankOnly; uint64 walletLimit; uint64 paidSold; uint64 startersClaimed; uint64 creditPacks; uint32 starterWindow; uint32 liftAfter; uint32 holderWindow; uint32 maxPerTx; uint32 plankOnlyFor; uint32 regularWalletsFor; uint32 starterPerPress; uint32 starterWalletLimit; uint16 creditsPerPick; uint16 plankBurnBps; uint16 paperBurnBps; uint64 creditPacksMax; uint64 creditPacksPerWallet; bool closed; uint128 priceUsd; uint128 paperPerPack; uint128 starterPriceUsd; uint128 starterPaper; bytes32 holderRoot; uint128 paperCapUsd; }",
-  "function dropOf(uint256 fire) view returns (Drop)",
+  "struct Status { bool configured; bool live; bool closed; bool paused; bool plankPriceOk; bool regularWalletsOnly; uint256 left; uint256 endableAt; uint256 creditPacksLeft; }",
+  "function status(uint256 fire) view returns (Status)",
+  "function close(uint256 fire)",
   "function endDrop(uint256 fire)",
-  "function MIN_DROP_TIME() view returns (uint256)",
   "function END_GRACE() view returns (uint256)",
+  "function GROUPS() view returns (address)",
+  "event PacksBought(uint256 indexed fire, uint256 indexed group, address indexed buyer, uint256 count, uint8 pay, uint256 paid, uint256 burnShare, bool plankBurned)",
+]);
+
+export const groupsAbi = parseAbi([
+  "struct Group { uint64 packs; uint8 gate; uint8 coins; uint8 afterGroup; uint8 rollTo; uint32 startDelay; uint32 duration; uint32 perWallet; uint32 perNft; uint16 taxBps; uint128 priceUsd; uint128 paper; address nft; uint32 idle; uint32 perTx; bool unlimited; bytes32 root; }",
+  "struct GroupView { Group config; uint8 state; uint256 capacity; uint256 sold; uint256 left; uint256 opensAt; uint256 endsAt; }",
+  "function groupsOf(uint256 fire) view returns (GroupView[])",
 ]);
 
 /** FireSale's owner settings: the wallets (revenue, PlankBurner, PaperBurner) and the price feeds and router. */

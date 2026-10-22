@@ -6,9 +6,21 @@
 //   node ops\series\launch.mjs --recipe contracts\series\recipe-fire-7.json --start "2026-11-01 18:00" [--chain 46630]
 //
 // Steps: 0 preflight (chain, deployments, Series not locked, the Ledger is the owner, keeper alive, pack art, start
-// time), 1 holder snapshot (only with a holder window), 2 fork rehearsal (batches A and B as the owner on a fork,
-// nothing sent), 3 batch A (Ledger), 4 VerifySeries until GREEN, 5 confirm (type LOCK), 6 batch B (Ledger) and a
-// read-back of the drop, 7 done.
+// time, the sale policy), 1 holder snapshots (one per snapshot group), 2 fork rehearsal (batches A and B as the owner
+// on a fork, nothing sent), 3 batch A (Ledger), 4 VerifySeries until GREEN, 5 confirm (type LOCK), 6 batch B (Ledger),
+// a read-back of the drop and its groups, and the holders file for the site, 7 done.
+//
+// Snapshot groups: their snapshots are described in a small side file next to the recipe, fire-<N>-snapshots.json
+// (--snapshots <file> for another), keyed by the group's index in sale.groups (0 is the first group, as GROUP_ROOT_<i>):
+//   { "1": { "token": "plank", "minUsd": 69, "days": 7 },
+//     "4": { "token": "0x...", "min": "1000000", "tiers": "1000000:1,10000000:2", "allowance": 1, "blocks": 5 } }
+//   token: an address, "plank" or "press" (the deployments file's PLANK / MILL); min (whole tokens or NFTs) or minUsd
+//   (PLANK only, dollars; then the tiers are dollars too); tiers "<min>:<packs>,..."; allowance (default 1); days
+//   (default 7, or --snapshot-days); blocks (default 5, or --snapshot-blocks); or "file": a snapshot taken by hand
+//   with ops/snapshot (VerifySeries rebuilds it from the chain all the same). The recipe JSON's own keys are strict
+//   (ConfigureSeries), so these live here. Each snapshot's root goes to batch B as GROUP_ROOT_<i>, and after the lock
+//   every group's wallets, allowances and proofs go to the site: web/art/factory/forge/holders/series-<N>.json
+//   (--holders-out <file> for another place; format in ops/README.md).
 //
 // Run it again after any STOP: finished steps are skipped. Batch A and batch B are judged by the chain, not only by
 // the state file (ops/series/out/series-<N>.state.json), so neither is ever sent twice. Everything it prints, and
@@ -19,13 +31,13 @@
 //   --start "<time>"     when the sale opens, local time "YYYY-MM-DD HH:MM" (or unix seconds); else the state file's,
 //                        else the recipe's sale.start
 //   --chain <id>         4663 (default, mainnet) or 46630 (testnet)
-//   --no-holders         the holder window lets only presses in (no snapshot); NO_HOLDERS=true for batch B
-//   --new-snapshot       take a new snapshot even if one was taken for this Series already
-//   --min-usd 69         the snapshot's minimum PLANK holding
-//   --snapshot-blocks 5 --snapshot-days 7   the snapshot takes each wallet's smallest holding over that many blocks
-//                        in that many days (ops/snapshot)
+//   --snapshots <file>   the snapshot groups' side file (default fire-<N>-snapshots.json next to the recipe)
+//   --new-snapshot       take new snapshots even if they were taken for this Series already
+//   --snapshot-blocks 5 --snapshot-days 7   defaults for the side file: each wallet's smallest holding over that many
+//                        blocks in that many days (ops/snapshot)
+//   --holders-out <file> where the site's holders file goes (default web/art/factory/forge/holders/series-<N>.json)
 //   --allow <rule>,...   sale settings outside the policy that are meant (ops/series/sale-policy.mjs: price,
-//                        burn-total, paper-burn, paper-per-pack, no-paper, paper-cap, wallet-limit, holder-window);
+//                        burn-total, paper-burn, paper-per-pack, no-paper, paper-cap, wallet-limit, tax, idle);
 //                        anything else outside it stops the launch before batch A and again before LOCK
 //   --gateways a,b       IPFS gateways for VerifySeries and the pack art check (default VerifySeries' list)
 //   --verify-tries 4 --verify-wait 90   VerifySeries retries (seconds between) while images don't load yet
@@ -41,10 +53,11 @@ import { dirname, resolve, relative, basename, isAbsolute, sep } from "node:path
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir, tmpdir } from "node:os";
 import { createInterface } from "node:readline/promises";
-import { createPublicClient, http, getAddress, keccak256, zeroHash, formatEther } from "viem";
+import { createPublicClient, http, getAddress, keccak256, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { verifySeries, recipeFromJson, DEFAULT_GATEWAYS } from "./verify-series.mjs";
-import { salePolicy, saleWallets, parseAllow, describeSale } from "./sale-policy.mjs";
+import { salePolicy, saleWallets, parseAllow, describeSale, normSale, nftCodeOf, dropDiffs } from "./sale-policy.mjs";
+import { saleAbi, groupsAbi } from "./sale-abi.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(here, "../..");
@@ -58,7 +71,7 @@ const KEEPER_STALE_SEC = 90 * 60; // the keeper alerts at 90 min; FireSale stops
 
 const abi = (name) => JSON.parse(readFileSync(resolve(REPO, "web/src/lib/abi", `${name}Abi.json`), "utf8"));
 const ABI = {
-  dealer: abi("recipeDealer"), cards: abi("fireCards"), sale: abi("fireSale"), packs: abi("firePacks"),
+  dealer: abi("recipeDealer"), cards: abi("fireCards"), sale: saleAbi, groups: groupsAbi, packs: abi("firePacks"),
   twap: [{ type: "function", name: "latestRoundData", inputs: [], outputs: [{ type: "uint80" }, { type: "int256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint80" }], stateMutability: "view" }],
   ownable: [{ type: "function", name: "owner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" }],
 };
@@ -92,9 +105,64 @@ export const batchACalls = (json) => 1 + Math.ceil(json.characters.length / CHAR
 /** Dollars with 8 decimals -> "$2.50". */
 export const usd8 = (v) => `$${(Number(BigInt(v)) / 1e8).toFixed(2)}`;
 
-/** What must stay the same for a finished step to count: the recipe, the start and the holder root. */
-export function planHash(recipeText, start, root, noHolders) {
-  return createHash("sha256").update(JSON.stringify([recipeText, String(start), root, !!noHolders])).digest("hex").slice(0, 16);
+/** What must stay the same for a finished step to count: the recipe, the start and the snapshot groups' roots. */
+export function planHash(recipeText, start, roots = {}) {
+  const r = Object.keys(roots).sort((a, b) => Number(a) - Number(b)).map((k) => [k, String(roots[k]).toLowerCase()]);
+  return createHash("sha256").update(JSON.stringify([recipeText, String(start), r])).digest("hex").slice(0, 16);
+}
+
+const SIDE_KEYS = ["token", "min", "minUsd", "tiers", "allowance", "days", "blocks", "file"];
+
+/** The snapshot groups' side file (fire-<N>-snapshots.json): { "<group index>": spec }. Checked against the recipe's
+ *  groups: every snapshot group has a spec, and nothing else does. Returns { [i]: spec }; throws a readable error. */
+export function snapshotSpecs(side, groups) {
+  const out = {};
+  for (const [k, v] of Object.entries(side ?? {})) {
+    if (!/^\d+$/.test(k)) throw new Error(`"${k}": the keys are group indexes ("0" is the first group)`);
+    const g = groups[Number(k)];
+    if (!g) throw new Error(`"${k}": the recipe has no group of index ${k} (${groups.length} groups; "0" is the first)`);
+    if (g.gate !== "snapshot") throw new Error(`"${k}": group ${Number(k) + 1}${g.name ? ` (${g.name})` : ""} isn't a snapshot group (gate ${g.gate})`);
+    const bad = Object.keys(v ?? {}).filter((x) => !SIDE_KEYS.includes(x));
+    if (bad.length) throw new Error(`"${k}": unknown key(s) ${bad.join(", ")} (keys: ${SIDE_KEYS.join(", ")})`);
+    if (!v.file) {
+      if (!v.token) throw new Error(`"${k}": no token (an address, "plank" or "press")`);
+      if (v.min !== undefined && v.minUsd !== undefined) throw new Error(`"${k}": min or minUsd, not both`);
+      if (v.min === undefined && v.minUsd === undefined && v.tiers === undefined) throw new Error(`"${k}": give min (tokens or NFTs), minUsd (PLANK, dollars) or tiers`);
+    }
+    out[k] = v;
+  }
+  groups.forEach((g, i) => {
+    if (g.gate === "snapshot" && !out[i]) throw new Error(`group ${i + 1}${g.name ? ` (${g.name})` : ""} is a snapshot group: say whose wallets it takes under its index, e.g. "${i}": { "token": "plank", "minUsd": 69, "days": 7 }`);
+  });
+  return out;
+}
+
+/** ops/snapshot's arguments for one spec. */
+export function snapshotArgs(spec, { out, days, blocks }) {
+  const a = ["--token", String(spec.token), "--out", out];
+  if (spec.minUsd !== undefined) a.push("--min-usd", String(spec.minUsd));
+  if (spec.min !== undefined) a.push("--min", String(spec.min));
+  if (spec.tiers !== undefined) a.push("--tiers", Array.isArray(spec.tiers) ? spec.tiers.map((t) => `${t.min}:${t.allowance}`).join(",") : String(spec.tiers));
+  if (spec.allowance !== undefined) a.push("--allowance", String(spec.allowance));
+  const d = spec.days ?? days;
+  const b = spec.blocks ?? blocks;
+  if (d !== undefined) a.push("--days", String(d));
+  if (b !== undefined) a.push("--blocks", String(b));
+  return a;
+}
+
+/** The site's holders file: { series, chainId, updated, groups: { "<i>": { name, root, token, kind, symbol, count,
+ *  block, wallets: { "<lowercase address>": { allowance, proof } } } } }. `snaps`: { [i]: snapshot file content }. */
+export function holdersFile({ fire, chainId, groups, snaps, now = new Date() }) {
+  const out = { series: Number(fire), chainId: Number(chainId), updated: now.toISOString(), groups: {} };
+  for (const [i, s] of Object.entries(snaps).sort((a, b) => Number(a[0]) - Number(b[0]))) {
+    const wallets = {};
+    for (const [w, x] of Object.entries(s.wallets ?? {})) wallets[w.toLowerCase()] = { allowance: Number(x.allowance), proof: x.proof };
+    out.groups[String(i)] = {
+      name: groups[Number(i)]?.name ?? "", root: s.root, token: s.token, kind: s.kind, symbol: s.symbol ?? "", count: Object.keys(wallets).length, block: s.block, wallets,
+    };
+  }
+  return out;
 }
 
 /** The differences between batch A on chain and the recipe (empty: batch A is on chain exactly). */
@@ -121,22 +189,7 @@ export async function batchADiffs(read, json, C) {
   return diffs;
 }
 
-/** Every FireSale.DropConfig number (the recipe's sale block). */
-export const DROP_FIELDS = ["start", "packs", "starters", "plankOnly", "walletLimit", "starterWindow", "liftAfter", "plankBurnBps", "paperBurnBps",
-  "priceUsd", "paperPerPack", "paperCapUsd", "holderWindow", "maxPerTx", "plankOnlyFor", "regularWalletsFor", "starterPerPress",
-  "starterWalletLimit", "starterPriceUsd", "starterPaper", "creditsPerPick", "creditPacksMax", "creditPacksPerWallet"];
-
-/** The drop on chain against what batch B was meant to set (every field given in `want`). Returns the differences. */
-export function dropDiffs(drop, want) {
-  const d = [];
-  for (const k of DROP_FIELDS) {
-    if (want[k] === undefined || drop[k] === undefined) continue;
-    const meant = k === "maxPerTx" && BigInt(want[k]) === 0n ? 50n : BigInt(want[k]); // FireSale stores 0 as its default, 50
-    if (BigInt(drop[k]) !== meant) d.push(`${k} ${drop[k]} (meant ${meant})`);
-  }
-  if (want.holderRoot !== undefined && drop.holderRoot.toLowerCase() !== want.holderRoot.toLowerCase()) d.push(`holderRoot ${drop.holderRoot} (meant ${want.holderRoot})`);
-  return d;
-}
+export { dropDiffs, DROP_FIELDS, GROUP_FIELDS } from "./sale-policy.mjs";
 
 /** A standard (V3, scrypt) encrypted keystore for `privateKey`, so forge can sign without the key on its command line. */
 export function keystoreV3(privateKey, password, { n = 8192 } = {}) {
@@ -188,7 +241,7 @@ const bin = (n) => {
 export async function launch(argv, { env = process.env, stdout = console.log, ask } = {}) {
   const args = parseArgs(argv);
   if (!args.recipe || args.help) {
-    stdout('usage: node ops\\series\\launch.mjs --recipe <recipe.json> [--start "YYYY-MM-DD HH:MM"] [--chain 4663|46630] [--no-holders] [--key-env VAR (testnet)]');
+    stdout('usage: node ops\\series\\launch.mjs --recipe <recipe.json> [--start "YYYY-MM-DD HH:MM"] [--chain 4663|46630] [--snapshots <file>] [--key-env VAR (testnet)]');
     return 2;
   }
   const chainWanted = Number(args.chain ?? MAINNET);
@@ -375,12 +428,15 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
     }
 
     // sale settings: the policy and the wallets, before anything is sent (and again before LOCK)
-    const holderWindow = Number(json.sale.holderWindow ?? 0);
-    const noHolders = !!args["no-holders"];
+    const mill = env.MILL ?? dep.inputs?.MILL;
+    const groups = json.sale.groups ?? [];
+    const snapGroups = groups.map((g, i) => i).filter((i) => groups[i].gate === "snapshot");
+    const gname = (i) => `group ${i + 1}${groups[i]?.name ? ` (${groups[i].name})` : ""}`;
+    const nftCode = await nftCodeOf(normSale(json.sale, { mill }), (address) => client.getCode({ address }));
     let allow;
     try { allow = parseAllow(args.allow); } catch (e) { stop(e.message); }
-    const saleGate = async (root_) => {
-      const pol = salePolicy(json.sale, { allow, holderRoot: root_, noHolders });
+    const saleGate = async (roots_) => {
+      const pol = salePolicy(json.sale, { allow, roots: roots_, nftCode, mill });
       const wallets = await saleWallets(read, C.FireSale, dep);
       for (const p of pol) if (p.level === "warn") warn(`Sale: ${p.text}.`);
       for (const p of pol) if (p.level === "allowed") warn(`Sale: ${p.text}.`);
@@ -389,53 +445,67 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
       return wallets;
     };
     if (!launched) {
-      // the snapshot (step 1) gives the root; a presses-only window needs --no-holders
-      const w = await saleGate(holderWindow > 0 && !noHolders ? "0x01" : undefined);
-      ok(`Sale settings inside the policy; revenue wallet and burners are the deployments file's (${w.length} checked).`);
+      // the snapshots (step 1) give the snapshot groups' roots
+      const w = await saleGate(Object.fromEntries(snapGroups.map((i) => [i, `0x${"0".repeat(63)}1`])));
+      ok(`Sale settings inside the policy (${groups.length} groups); revenue wallet, burners and FireGroups are the deployments file's (${w.length} checked).`);
     }
 
-    // ---------------------------------------------------------------- 1. holder snapshot
-    head(1, "Holder snapshot");
-    let root = zeroHash;
-    let snapPath;
+    // ---------------------------------------------------------------- 1. holder snapshots
+    head(1, "Holder snapshots");
+    const roots = {}; // group index -> root (GROUP_ROOT_<i>)
+    const snapPaths = {}; // group index -> snapshot file
     if (launched) {
       ok("Skipped: the drop is already set.");
-    } else if (holderWindow === 0) {
-      ok("No holder window in this sale: no snapshot needed.");
-      state.steps.snapshot = { none: true };
-    } else if (noHolders) {
-      warn("--no-holders: during the holder window only presses can buy.");
-      state.steps.snapshot = { none: true, noHolders: true };
+    } else if (snapGroups.length === 0) {
+      ok("No snapshot groups in this sale: no snapshot needed.");
+      state.steps.snapshots = {};
     } else {
-      snapPath = resolve(dirname(recipePath), `fire-${N}-holders.json`);
-      const prev = state.steps.snapshot;
-      if (prev?.root && prev.file && existsSync(resolve(REPO, prev.file)) && !args["new-snapshot"]) {
-        snapPath = resolve(REPO, prev.file);
-        root = prev.root;
-        ok(`Using the snapshot taken ${prev.at}: ${prev.count} wallets, root ${root}.`);
-      } else {
-        note("Taking the PLANK-holder snapshot (a few minutes on mainnet)...");
-        const minUsd = String(args["min-usd"] ?? 69);
-        const extra = [];
-        for (const k of ["blocks", "days"]) if (typeof args[`snapshot-${k}`] === "string") extra.push(`--${k}`, args[`snapshot-${k}`]);
-        const r = await run(process.execPath, [resolve(REPO, "ops/snapshot/snapshot.mjs"), "--min-usd", minUsd, "--out", snapPath, ...extra], {
-          cwd: resolve(REPO, "ops/snapshot"), env: { ...env, RPC: rpc, DEPLOYMENTS_FILE: depFile },
-        }, (t) => toLog(t.split(rpc).join("<RPC>")));
-        if (r.code !== 0) stop(`The snapshot failed: ${lastError(r.out)}`);
+      const sidePath = typeof args.snapshots === "string" ? resolve(args.snapshots) : [dirname(recipeArg), dirname(recipePath)].map((d) => resolve(d, `fire-${N}-snapshots.json`)).find(existsSync);
+      if (!sidePath || !existsSync(sidePath)) stop(`${snapGroups.map(gname).join(", ")}: snapshot group(s). Say whose wallets each takes in fire-${N}-snapshots.json next to the recipe (or --snapshots <file>), keyed by the group's index (0 is the first), e.g. { "${snapGroups[0]}": { "token": "plank", "minUsd": 69, "days": 7 } }.`);
+      let specs;
+      try { specs = snapshotSpecs(JSON.parse(readFileSync(sidePath, "utf8")), groups); } catch (e) { stop(`${show(sidePath)}: ${e.message}`); }
+      ok(`Snapshot groups from ${show(sidePath)}: ${snapGroups.map(gname).join(", ")}.`);
+      const done = state.steps.snapshots ?? {};
+      for (const i of snapGroups) {
+        const spec = specs[i];
+        const label = gname(i);
+        const prev = done[i];
+        const same = prev && prev.spec === JSON.stringify(spec);
+        let snapPath = spec.file ? resolve(dirname(sidePath), spec.file) : resolve(dirname(recipePath), `fire-${N}-group-${i}.json`);
+        if (same && prev.root && prev.file && existsSync(resolve(REPO, prev.file)) && !args["new-snapshot"]) {
+          snapPath = resolve(REPO, prev.file);
+          ok(`${label}: using the snapshot taken ${prev.at}: ${prev.count} wallets, root ${prev.root}.`);
+        } else if (spec.file) {
+          if (!existsSync(snapPath)) stop(`${label}: no snapshot file ${show(snapPath)}.`);
+          ok(`${label}: the snapshot file ${show(snapPath)} (taken by hand; VerifySeries rebuilds it from the chain).`);
+        } else {
+          note(`${label}: taking the snapshot (a few minutes on mainnet)...`);
+          const argv = snapshotArgs(spec, { out: snapPath, days: typeof args["snapshot-days"] === "string" ? args["snapshot-days"] : undefined, blocks: typeof args["snapshot-blocks"] === "string" ? args["snapshot-blocks"] : undefined });
+          const r = await run(process.execPath, [resolve(REPO, "ops/snapshot/snapshot.mjs"), ...argv], {
+            cwd: resolve(REPO, "ops/snapshot"), env: { ...env, RPC: rpc, DEPLOYMENTS_FILE: depFile },
+          }, (t) => toLog(t.split(rpc).join("<RPC>")));
+          if (r.code !== 0) stop(`${label}: the snapshot failed: ${lastError(r.out)}`);
+        }
         const snap = JSON.parse(readFileSync(snapPath, "utf8"));
-        root = snap.root;
-        state.steps.snapshot = { file: relative(REPO, snapPath).split(sep).join("/"), root, count: snap.count, block: snap.block, blocks: snap.blocks, at: new Date().toISOString() };
-        save();
-        ok(`${snap.count} wallets hold $${minUsd}+ of PLANK. Root ${root}. Saved ${show(snapPath)}.`);
+        if (!(snap.version >= 3) || !snap.root) stop(`${label}: ${show(snapPath)} isn't a snapshot with allowances (ops/snapshot, version 3).`);
+        if (!(same && prev?.root === snap.root)) {
+          const packs = (snap.holders ?? []).reduce((t, h) => t + Number(h.allowance), 0);
+          ok(`${label}: ${snap.count} wallets hold ${snap.unit === "usd" ? `$${snap.min}` : `${snap.min}`}+ of ${snap.symbol || snap.token} (${packs} packs of allowance). Root ${snap.root}. Saved ${show(snapPath)}.`);
+        }
+        roots[i] = snap.root;
+        snapPaths[i] = snapPath;
+        done[i] = { file: relative(REPO, snapPath).split(sep).join("/"), root: snap.root, count: snap.count, token: snap.token, block: snap.block, blocks: snap.blocks, spec: JSON.stringify(spec), at: same ? prev.at : new Date().toISOString() };
       }
+      state.steps.snapshots = done;
+      save();
     }
-    const bEnv = { DROP_START: String(start), HOLDER_ROOT: root, ...(noHolders ? { NO_HOLDERS: "true" } : {}) };
-    const plan = planHash(recipeText, start, root, noHolders);
+    const bEnv = { DROP_START: String(start), ...Object.fromEntries(Object.entries(roots).map(([i, r]) => [`GROUP_ROOT_${i}`, r])) };
+    const plan = planHash(recipeText, start, roots);
     if (state.plan && state.plan !== plan && !launched) {
       for (const k of ["rehearsal", "verify"]) delete state.steps[k];
-      note("The recipe, start or holder root changed since the last run: rehearsing and verifying again.");
+      note("The recipe, start or a snapshot root changed since the last run: rehearsing and verifying again.");
     }
-    if (!launched) { state.plan = plan; state.start = String(start); state.holderRoot = root; save(); }
+    if (!launched) { state.plan = plan; state.start = String(start); state.roots = roots; save(); }
 
     // forge, from contracts/ (the RPC URL is shown as <RPC> in the log: it can hold an API key)
     const forgeExtra = (env.LAUNCH_FORGE_ARGS ?? "").split(" ").filter(Boolean); // tests only (--offline --use <solc>)
@@ -489,15 +559,15 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
         let v;
         try {
           v = await verifySeries({
-            client, recipe: json, deploymentsFile: depFile, gateways, snapshotPath: snapPath, holderRoot: root === zeroHash ? undefined : root,
-            allow, noHolders, log: (l) => toLog(`verify: ${l}`),
+            client, recipe: json, deploymentsFile: depFile, gateways, snapshots: snapPaths, roots,
+            allow, log: (l) => toLog(`verify: ${l}`),
           });
         } catch (e) {
           v = { green: false, problems: [`VerifySeries couldn't run: ${e?.shortMessage ?? e?.message ?? e}`], warnings: [], retry: true };
         }
         if (v.green) {
           for (const w of v.warnings) warn(w);
-          ok(`GREEN: ${v.images} images load from ${gateways.length >= 2 ? "two or more" : "the"} gateways; recipe, characters, images folder${snapPath ? ", holder root" : ""} match.`);
+          ok(`GREEN: ${v.images} images load from ${gateways.length >= 2 ? "two or more" : "the"} gateways; recipe, characters, images folder${snapGroups.length ? ", snapshot roots" : ""} match.`);
           state.steps.verify = { plan, at: new Date().toISOString(), images: v.images };
           save();
           break;
@@ -516,9 +586,9 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
     if (!launched) {
       head(5, "Confirm");
       // the policy and the wallets again, read fresh (the owner could have changed a wallet since)
-      const wallets = await saleGate(root === zeroHash ? undefined : root);
+      const wallets = await saleGate(roots);
       note(`Series ${N}, every sale setting:`);
-      for (const l of describeSale(sale, { start: showTime(start), holderRoot: root === zeroHash ? undefined : root, noHolders })) note(`  ${l}`);
+      for (const l of describeSale(sale, { start: showTime(start), roots, mill })) note(`  ${l}`);
       for (const w of wallets) note(`  ${w.text}`);
       const now1 = await chainNow();
       const wall1 = BigInt(Math.floor(Date.now() / 1000));
@@ -545,21 +615,39 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
       }
       drop = await read(C.FireSale, ABI.sale, "dropOf", [fire]);
     }
-    const want = { ...Object.fromEntries(DROP_FIELDS.map((k) => [k, sale[k]])), start: state.start ?? start, holderRoot: state.holderRoot };
     const locked = (await read(C.FireCards, ABI.cards, "fires", [fire]))[2];
-    const dd = dropDiffs(drop, want);
     if (!locked || drop.start === 0n) stop("The drop isn't on chain. Run again.");
+    const groupsAddr = getAddress(await read(C.FireSale, ABI.sale, "GROUPS"));
+    const views = await read(groupsAddr, ABI.groups, "groupsOf", [fire]);
+    // the roots meant: this run's (or the state file's); with neither (state file gone) the chain's own are taken
+    const rootsMeant = Object.keys(roots).length ? roots : state.roots ?? Object.fromEntries(views.map((v, i) => [i, v.config.root]).filter(([i]) => groups[i]?.gate === "snapshot"));
+    const want = normSale(sale, { mill, roots: rootsMeant, start: state.start ?? start });
+    const dd = dropDiffs(drop, views, want);
     if (dd.length) stop(`The drop on chain differs: ${dd.join("; ")}. Check it before the sale opens.`);
-    ok(`FireSale's drop for Series ${N}: opens ${showTime(drop.start)}, ${drop.packs} + ${drop.starters} packs, ${usd8(drop.priceUsd)}. Series locked.`);
+    ok(`FireSale's drop for Series ${N}: opens ${showTime(drop.start)}, ${drop.packs} packs in ${views.length} groups (${views.map((v, i) => `${gname(i)}: ${v.config.unlimited ? "no limit" : v.config.packs}`).join(", ")}), every field as meant. Series locked.`);
     state.steps.batchB = { at: state.steps.batchB?.at ?? new Date().toISOString() };
     state.done = true;
     save();
 
+    // the site's holders file: every snapshot group's wallets, allowances and proofs
+    const holdersOut = typeof args["holders-out"] === "string" ? resolve(args["holders-out"]) : resolve(REPO, "web/art/factory/forge/holders", `series-${N}.json`);
+    const taken = state.steps.snapshots ?? {};
+    let published;
+    if (snapGroups.length && snapGroups.every((i) => taken[i]?.file && existsSync(resolve(REPO, taken[i].file)))) {
+      const snaps = Object.fromEntries(snapGroups.map((i) => [i, JSON.parse(readFileSync(resolve(REPO, taken[i].file), "utf8"))]));
+      const off = snapGroups.filter((i) => String(snaps[i].root).toLowerCase() !== String(views[i]?.config.root).toLowerCase());
+      if (off.length) stop(`The snapshot file of ${off.map(gname).join(", ")} isn't the drop's root on chain: not publishing it. Check the state file's snapshots.`);
+      mkdirSync(dirname(holdersOut), { recursive: true });
+      writeFileSync(holdersOut, `${JSON.stringify(holdersFile({ fire: N, chainId, groups, snaps }), null, 1)}\n`);
+      published = holdersOut;
+      ok(`Holders file for the site: ${show(holdersOut)} (${snapGroups.map((i) => `${gname(i)}: ${snaps[i].count} wallets`).join(", ")}).`);
+    } else if (snapGroups.length) warn(`No snapshot files in the state file: the site's holders file (${show(holdersOut)}) wasn't written. Write it from the snapshots by hand (ops/README.md).`);
+
     // ---------------------------------------------------------------- 7. done
     head(7, "Done");
     note(`The sale opens by itself at ${showTime(drop.start)}.`);
-    note("The keeper does the rest: price checkpoints, drand, dealing opened packs, gradings, burns.");
-    note("Next: FireCredits.pickSuggestions as usual, and give the site the holder snapshot file.");
+    note("The keeper does the rest: price checkpoints, drand, dealing opened packs, gradings, burns, and closing the Series once nothing can still sell.");
+    note(`Next: FireCredits.pickSuggestions as usual${published ? `, and publish the site with ${show(published)} (buyers' snapshot proofs)` : ""}.`);
     note(`Log: ${show(logFile)}`);
     return 0;
   } catch (e) {

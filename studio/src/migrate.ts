@@ -1,17 +1,16 @@
 /** Saves and backups from before per-Series recipes. Every Series made then was a Standard Series: it gets the
  *  Standard recipe with its Diamond setting, and a locked deal's cards (stored by material) are re-labelled with the
  *  Standard type indexes. Recipes saved with their own PDA odds drop them: the odds are fixed in FirePsa for every
- *  Series now. Sale settings saved with the free-pack cap as a number of packs (creditPacksMax) get it as a percent of
- *  the drop. A Series whose deal isn't locked takes its pack count from its sale (paid + press); one saved without
+ *  Series now. Sale settings saved before drop groups (paid + press packs, one price) become groups (sale.ts
+ *  saleFromOld; a free-pack cap saved as a number of packs becomes a percent of the drop). A Series whose deal isn't
+ *  locked takes its pack count from its sale (the groups' total); one saved without
  *  sale settings gets the Standard sale resized to its packs. Runs on load (store.ts loadStudio), so imports of old backups migrate too. */
 
 import { effectiveDiamonds, type DealResult, type DealtCard } from './deal'
 import { legacyDiamondRecipe } from './recipe'
 import { CARDS_PER_PACK, MATERIALS, type Material } from './rules'
-import { capPercentOf, salePacks, saleOf, saleWithPacks, standardSale, type SaleSettings } from './sale'
+import { isOldSale, saleFromOld, salePacks, saleOf, saleWithPacks, standardSale, type OldSaleSettings } from './sale'
 import type { Character, FireRecord } from './types'
-
-type OldSale = Partial<SaleSettings> & { creditPacksMax?: number }
 
 /** Old pack slots 1..6 (3 Paper, Wood, Wood-or-better, Fire-or-better) to the Standard recipe's slot groups. */
 const OLD_SLOT_GROUP = [0, 0, 0, 1, 2, 3]
@@ -25,17 +24,8 @@ export function needsMigration(f: unknown): boolean {
 }
 
 function saleNeedsMigration(r: Partial<FireRecord>): boolean {
-  if (r.sale && 'creditPacksMax' in r.sale) return true
+  if (r.sale && isOldSale(r.sale)) return true
   return !r.deal && (!r.sale || salePacks(saleOf(r)) !== r.packs)
-}
-
-/** The sale settings as saved now: a pack-count free cap becomes a percent of that drop's packs (no cap stays no
- *  cap; the per-wallet cap is kept as saved, 0 included). */
-function migrateSale(sale: OldSale): Partial<SaleSettings> {
-  if (!('creditPacksMax' in sale)) return sale
-  const { creditPacksMax, ...rest } = sale
-  const packs = (rest.paidPacks ?? 0) + (rest.pressPacks ?? 0)
-  return { ...rest, creditPacksPercent: rest.creditPacksPercent ?? capPercentOf(creditPacksMax ?? 0, packs), creditPacksPerWallet: rest.creditPacksPerWallet ?? 0 }
 }
 
 export function migrateFire(raw: unknown): FireRecord {
@@ -57,7 +47,7 @@ export function migrateFire(raw: unknown): FireRecord {
     delete (deal as { diamonds?: number }).diamonds
     f.deal = deal
   }
-  if (f.sale) f.sale = migrateSale(f.sale as OldSale) as SaleSettings
+  if (f.sale && isOldSale(f.sale)) f.sale = saleFromOld(f.sale as OldSaleSettings)
   if (!f.deal) {
     // the pack count lives in the sale now: a Series without sale settings keeps its packs (the Standard sale, resized)
     if (!f.sale) f.sale = saleWithPacks(standardSale(), f.packs)

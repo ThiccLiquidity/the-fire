@@ -275,11 +275,44 @@ table.slots td { vertical-align: middle; }
 .drop-pic { margin: 8px 0 14px; }
 .drop-bar { display: flex; height: 34px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
 .drop-bar span { min-width: 3px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; padding: 0 6px; }
-.drop-bar .plank { background: #b9772e; color: #1a1006; }
-.drop-bar .paid { background: var(--accent); color: #1a1006; }
-.drop-bar .press { background: #4a7fe8; color: #0b1430; }
-.free-line { position: relative; height: 20px; margin-top: 2px; }
-.free-line span { position: absolute; top: 0; height: 20px; border: 1px solid var(--ok); border-top: none; border-radius: 0 0 6px 6px; font-size: 11px; color: var(--ok); display: flex; align-items: flex-end; justify-content: center; white-space: nowrap; }
+.drop-bar span { color: #15130f; }
+
+/* the drop's groups on a timeline (Sale) */
+.timeline { margin: 10px 0 4px; display: flex; flex-direction: column; gap: 4px; }
+.tl-row { display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center; }
+.tl-name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-track { position: relative; height: 22px; background: var(--panel-2); border-radius: 5px; }
+.tl-axis .tl-track { background: none; height: 16px; border-top: 1px solid var(--line); border-radius: 0; }
+.tl-bar { position: absolute; top: 0; bottom: 0; min-width: 4px; border-radius: 5px; font-size: 11px; font-weight: 600; color: #15130f; display: flex; align-items: center; padding: 0 8px; white-space: nowrap; overflow: hidden; }
+.tl-bar.fade { -webkit-mask-image: linear-gradient(to right, #000 55%, transparent); mask-image: linear-gradient(to right, #000 55%, transparent); border-radius: 5px 0 0 5px; }
+.tl-bar.endless { background-image: repeating-linear-gradient(135deg, rgba(0,0,0,.18) 0 6px, transparent 6px 12px) !important; border-radius: 5px 0 0 5px; }
+.tl-tick { position: absolute; top: 2px; font-size: 11px; color: var(--muted); transform: translateX(-50%); white-space: nowrap; }
+.tl-tick:first-child { transform: none; }
+
+/* one group (Sale) */
+.groups { display: flex; flex-direction: column; gap: 10px; }
+.group-card { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: 8px 10px; background: var(--panel); }
+.group-card.has-problem { border-color: #7a2e2e; }
+.group-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.group-num { width: 22px; height: 22px; border-radius: 50%; color: #15130f; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.group-name { font-weight: 600; width: 200px; }
+.group-packs { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.group-tools { margin-left: auto; display: inline-flex; gap: 4px; }
+button.icon { padding: 2px 8px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: none; border-radius: 0; padding: 3px 8px; font-size: 12px; background: transparent; color: var(--muted); }
+.seg button.on { background: var(--panel-2); color: var(--text); }
+.group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 10px; margin: 6px 0 0; }
+.group-grid .sale-field { padding: 4px 6px; }
+.sale-field.wide { grid-column: span 3; }
+.coins { gap: 8px; }
+.coins.off { opacity: .5; }
+.coins label { display: inline-flex; align-items: center; gap: 3px; }
+button.more { margin: 2px 0 0; font-size: 12px; }
+.group-summary { margin: 6px 0 0; font-size: 12px; color: var(--text); background: var(--panel-2); border-radius: 6px; padding: 5px 8px; }
+.group-prices { margin: 4px 0 0; }
+.add-groups { margin: 10px 0 4px; }
+button.small-btn { padding: 4px 10px; font-size: 12px; }
 .drop-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0 0; font-size: 12px; }
 .drop-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
 .pda-fixed { display: grid; grid-template-columns: repeat(10, minmax(30px, 1fr)); gap: 4px; max-width: 560px; align-items: end; height: 110px; }
@@ -292,4 +325,7 @@ table.slots td { vertical-align: middle; }
   .panel { padding: 10px; }
   .pct-input input { width: 110px; }
   .drop-bar span { font-size: 10px; padding: 0 2px; }
+  .tl-row { grid-template-columns: 90px 1fr; }
+  .sale-field.wide { grid-column: auto; }
+  .group-name { width: 100%; }
 }

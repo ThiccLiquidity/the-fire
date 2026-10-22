@@ -7,47 +7,99 @@ import { BlockscoutData } from "../blockscout";
 import { DRAND_GENESIS, DRAND_PERIOD } from "../drand";
 import {
   addr, amount, argsOf, cardsAbi, chainNow, creditsAbi, dealerAbi, decimalsOf, eventOf, hasFunction, input, packsAbi, psaAbi,
-  pub, read, rendererAbi, saleAbi, scanLogs, type Amount,
+  pub, read, readGroups, rendererAbi, saleAbi, scanLogs, type Amount,
 } from "./contracts";
 
 export const PAY = ["PLANK", "ETH", "USDG"] as const;
 export type PayCoin = (typeof PAY)[number];
 export const payIndex = (p: PayCoin): number => PAY.indexOf(p);
 
-// ---------------------------------------------------------------- Series and their drops
+// ---------------------------------------------------------------- Series, their drops and the drops' groups
 
 type DropRaw = {
-  start: bigint; packs: bigint; starters: bigint; plankOnly: bigint; walletLimit: bigint; paidSold: bigint; startersClaimed: bigint;
-  creditPacks: bigint; starterWindow: number; liftAfter: number; holderWindow: number; maxPerTx: number; plankOnlyFor: number;
-  regularWalletsFor: number; starterPerPress: number; starterWalletLimit: number; creditsPerPick: number; plankBurnBps: number; paperBurnBps: number;
-  creditPacksMax: bigint; creditPacksPerWallet: bigint; closed: boolean; priceUsd: bigint; paperPerPack: bigint; starterPriceUsd: bigint;
-  starterPaper: bigint; holderRoot: Hex; paperCapUsd: bigint;
+  start: bigint; packs: bigint; sold: bigint; creditPacks: bigint; maxPerTx: number; regularWalletsFor: number; creditsPerPick: number;
+  plankBurnBps: number; paperBurnBps: number; creditGroup: number; closed: boolean; creditPacksMax: bigint; creditPacksPerWallet: bigint; paperCapUsd: bigint;
 };
-type PhaseRaw = {
-  configured: boolean; live: boolean; closed: boolean; plankOnly: boolean; limitLifted: boolean; startersOpen: boolean; plankPriceOk: boolean;
-  holdersOnly: boolean; regularWalletsOnly: boolean; paused: boolean; paidLeft: bigint; startersLeft: bigint; phasesOver: bigint; creditPacksLeft: bigint;
+type StatusRaw = {
+  configured: boolean; live: boolean; closed: boolean; paused: boolean; plankPriceOk: boolean; regularWalletsOnly: boolean;
+  left: bigint; endableAt: bigint; creditPacksLeft: bigint;
+};
+type GroupRaw = {
+  packs: bigint; gate: number; coins: number; afterGroup: number; rollTo: number; startDelay: number; duration: number; perWallet: number;
+  perNft: number; taxBps: number; priceUsd: bigint; paper: bigint; nft: Address; idle: number; perTx: number; unlimited: boolean; root: Hex;
+};
+type GroupViewRaw = { config: GroupRaw; state: number; capacity: bigint; sold: bigint; left: bigint; opensAt: bigint; endsAt: bigint };
+
+/** FireGroups.NONE: no group (opens with the drop, rolls nowhere, no credit packs). */
+const NONE = 255;
+/** Counts that read type(uint256).max mean "no limit" (an unlimited group): null here. */
+const count = (v: bigint): number | null => (v >= 1n << 64n ? null : Number(v));
+const usd8 = (v: bigint) => (Number(v) / 1e8).toFixed(2);
+const ZERO_ADDR = /^0x0{40}$/i;
+const COIN_BITS: [PayCoin, number][] = [["PLANK", 1], ["ETH", 2], ["USDG", 4]];
+
+/** One pack's price in a group: dollars ("2.60") and the rising-tax part of it ("0.10"). */
+export type PackPrice = { usd: string; tax: string };
+
+/** One group of a drop, in plain fields (docs/drop-groups.md). Times are unix seconds (0 = not known yet). */
+export type GroupInfo = {
+  index: number;
+  /** A name for people: "Paper Press holders", "Holders list", "Everyone", "After sell-out". */
+  name: string;
+  /** Who can buy: "Anyone", "Paper Press holders only", "NFT holders only", "Wallets on the holders list only". */
+  who: string;
+  gate: "open" | "nft" | "snapshot";
+  /** NFT gate: the collection, whether it's the Paper Press, and packs per NFT id. */
+  nft: string | null; isPress: boolean; perNft: number;
+  /** Snapshot gate: the Merkle root of (wallet, allowance). */
+  root: string | null;
+  /** The base dollar price per pack ("2.50"; "0.00" = none), and PAPER per pack (before the drop's dollar ceiling). */
+  priceUsd: string; paper: Amount;
+  /** No dollar price and no PAPER: a free claim. */
+  free: boolean;
+  /** Coins the dollar price can be paid in (empty when it has none). */
+  coins: PayCoin[];
+  /** Most packs per wallet in this group (0 = no limit), most per purchase (the group's, under the drop's). */
+  perWallet: number; perTx: number;
+  state: "upcoming" | "open" | "ended";
+  /** When it opened / opens (0: when the group before it, which runs until sold, sells out), and when it ends if
+   *  nothing more sells (0: until its packs are gone). */
+  opensAt: number; endsAt: number;
+  /** Its packs + leftovers rolled in; packs taken; packs it can still sell. null = no limit (an unlimited group). */
+  capacity: number | null; sold: number; left: number | null;
+  unlimited: boolean;
+  /** Rising tax per pack (400 = 4%), and the idle end (seconds without a sale; 0 = off). */
+  taxBps: number; idle: number; duration: number;
+  afterGroup: number | null; rollTo: number | null;
+  /** The next pack's price now (the rising tax included), and the few after it (taxed groups; [] otherwise). null:
+   *  past the price safety bound (PriceTooHigh: it can't sell more). */
+  next: PackPrice | null; after: PackPrice[];
+  /** Open with 0 left but a group that rolls its leftovers into it hasn't ended: more may come (at `moreAt`, the
+   *  latest end of those groups; 0 = when they sell out). */
+  waiting: boolean; moreFrom: number | null; moreAt: number;
 };
 
 export type SeriesInfo = {
   fire: number;
-  /** The drop's settings (times are unix seconds; windows are seconds after start). */
-  start: number; packs: number; pressPacks: number; plankOnlyPacks: number; walletLimit: number; maxPerTx: number;
-  holderWindowEnds: number; plankOnlyEnds: number; limitLiftsAt: number; pressWindowEnds: number; regularWalletsEnds: number;
-  priceUsd: string; paperPerPack: Amount; paperCapUsd: string; holderRoot: string; creditsPerPick: number;
-  /** Press packs one Paper Press may claim in this drop. */
-  pressPacksPerPress: number;
-  /** Running numbers. */
-  sold: number; pressClaimed: number; creditPacks: number;
-  /** The drop now (FireSale.phase). */
-  phase: { configured: boolean; live: boolean; closed: boolean; plankOnly: boolean; limitLifted: boolean; pressOpen: boolean; plankPriceOk: boolean;
-    holdersOnly: boolean; regularWalletsOnly: boolean; paused: boolean; paidLeft: number; pressLeft: number; phasesOver: number; creditPacksLeft: number };
+  /** The drop's drop-wide settings. `packs`: the base total (the finite groups); an unlimited group adds on top. */
+  start: number; packs: number; maxPerTx: number; regularWalletsEnds: number; paperCapUsd: string; creditsPerPick: number;
+  /** The group credit packs come from (null = no credit packs), and the caps on them (0 = no cap). */
+  creditGroup: number | null; creditPacksMax: number; creditPacksPerWallet: number;
+  /** Packs taken (bought and free, all groups) and credit packs minted. */
+  sold: number; creditPacks: number;
+  /** The drop now (FireSale.status). `left` null: an unlimited group is open or yet to open (no end in sight). */
+  status: { configured: boolean; live: boolean; closed: boolean; paused: boolean; plankPriceOk: boolean; regularWalletsOnly: boolean;
+    left: number | null; endableAt: number; creditPacksLeft: number | null };
+  /** Live with nothing left to sell, not closed yet: the keeper (or anyone) calls close. */
+  closing: boolean;
   /** Before it opens / open / sold out or ended. */
   state: "upcoming" | "live" | "closed";
+  groups: GroupInfo[];
   /** The Series' cards (FireCards): dealing state. */
   cards: { closed: boolean; packs: number; packsDealt: number; cardsPerPack: number; characters: number };
+  /** The chain's clock when this was read (the latest block's time): countdowns run on it, not the device's. */
+  now: number;
 };
-
-const usd8 = (v: bigint) => (Number(v) / 1e8).toFixed(2);
 
 /** The Series that have a drop, oldest first (FireSale DropConfigured since the deploy). */
 export async function seriesNumbers(): Promise<number[]> {
@@ -55,31 +107,88 @@ export async function seriesNumbers(): Promise<number[]> {
   return [...new Set(logs.map((l) => Number(argsOf<{ fire: bigint }>(l).fire)))].sort((a, b) => a - b);
 }
 
-/** One Series: its drop's settings and phase, and its cards' dealing state. */
+/** Per-pack prices of the next `k` packs of a taxed group (priceOf(n) - priceOf(n - 1)), from the first. */
+async function nextPrices(fire: bigint, g: number, k: number): Promise<(PackPrice | null)[]> {
+  const totals = await Promise.all(Array.from({ length: k }, (_, i) => readGroups<readonly [bigint, bigint]>("priceOf", [fire, BigInt(g), BigInt(i + 1)]).catch(() => null)));
+  return totals.map((t, i) => {
+    const p = i ? totals[i - 1] : ([0n, 0n] as const);
+    return t && p ? { usd: usd8(t[0] - p[0]), tax: usd8(t[1] - p[1]) } : null;
+  });
+}
+
+/** A group's name and who it's for, from its gate (nothing on chain names it). */
+function nameOf(c: GroupRaw, isPress: boolean): { name: string; who: string } {
+  if (c.gate === 1) return isPress ? { name: "Paper Press holders", who: "Paper Press holders only" } : { name: "NFT holders", who: "NFT holders only" };
+  if (c.gate === 2) return { name: "Holders list", who: "Wallets on the holders list only" };
+  return { name: c.unlimited ? "After sell-out" : c.taxBps ? "Everyone (rising price)" : "Everyone", who: "Anyone" };
+}
+
+/** A drop's groups now (FireGroups.groupsOf), with each taxed group's next prices. `maxPerTx`: the drop's. */
+export async function groups(fire: number, maxPerTx = 50): Promise<GroupInfo[]> {
+  const f = BigInt(fire);
+  const raw = await readGroups<readonly GroupViewRaw[]>("groupsOf", [f]);
+  const press = input("MILL");
+  const out = await Promise.all(raw.map(async (v, i): Promise<GroupInfo> => {
+    const c = v.config, isPress = c.gate === 1 && !!press && getAddress(c.nft) === press;
+    const taxed = c.taxBps > 0 && v.state !== 2;
+    const prices = taxed ? await nextPrices(f, i, 4) : [];
+    const base: PackPrice = { usd: usd8(c.priceUsd), tax: "0.00" };
+    return {
+      index: i, ...nameOf(c, isPress), gate: c.gate === 1 ? "nft" : c.gate === 2 ? "snapshot" : "open",
+      nft: c.gate === 1 && !ZERO_ADDR.test(c.nft) ? getAddress(c.nft) : null, isPress, perNft: Number(c.perNft),
+      root: c.gate === 2 ? c.root : null,
+      priceUsd: usd8(c.priceUsd), paper: amount(c.paper), free: c.priceUsd === 0n && c.paper === 0n,
+      coins: c.priceUsd === 0n ? [] : COIN_BITS.filter(([, b]) => c.coins & b).map(([k]) => k).filter((k) => k !== "USDG" || !!input("USDG")),
+      perWallet: Number(c.perWallet), perTx: Math.min(Number(c.perTx) || maxPerTx, maxPerTx),
+      state: v.state === 2 ? "ended" : v.state === 1 ? "open" : "upcoming",
+      opensAt: Number(v.opensAt), endsAt: Number(v.endsAt),
+      capacity: count(v.capacity), sold: Number(v.sold), left: count(v.left), unlimited: c.unlimited,
+      taxBps: Number(c.taxBps), idle: Number(c.idle), duration: Number(c.duration),
+      afterGroup: c.afterGroup === NONE ? null : Number(c.afterGroup), rollTo: c.rollTo === NONE ? null : Number(c.rollTo),
+      next: taxed ? prices[0] : base, after: taxed ? (prices.slice(1).filter(Boolean) as PackPrice[]) : [],
+      waiting: false, moreFrom: null, moreAt: 0,
+    };
+  }));
+  // a sold-out group still open waits on leftovers from groups that roll into it (directly or through an ended one)
+  for (const g of out) {
+    if (g.state !== "open" || g.left !== 0) continue;
+    const feeders = (i: number): GroupInfo[] => out.filter((x) => x.rollTo === i).flatMap((x) => (x.state === "ended" ? feeders(x.index) : [x]));
+    const live = feeders(g.index).filter((x) => x.state !== "ended");
+    if (!live.length) continue;
+    const last = live.reduce((a, b) => (a.endsAt === 0 ? a : b.endsAt === 0 || b.endsAt > a.endsAt ? b : a));
+    Object.assign(g, { waiting: true, moreFrom: last.index, moreAt: last.endsAt });
+  }
+  return out;
+}
+
+/** One Series: its drop's settings, status and groups, and its cards' dealing state. */
 export async function series(fire: number): Promise<SeriesInfo> {
   const f = BigInt(fire);
-  const [d, p, fi, chars, per] = await Promise.all([
+  const [d, p, fi, chars, per, now] = await Promise.all([
     read<DropRaw>("FireSale", saleAbi, "dropOf", [f]),
-    read<PhaseRaw>("FireSale", saleAbi, "phase", [f]),
+    read<StatusRaw>("FireSale", saleAbi, "status", [f]),
     read<readonly [Address, boolean, boolean, number, bigint, bigint]>("FireCards", cardsAbi, "fires", [f]),
     read<bigint>("FireCards", cardsAbi, "characterCount", [f]).catch(() => 0n),
     read<bigint>("RecipeDealer", dealerAbi, "cardsPerPack", [f]).catch(() => 0n),
+    chainNow(),
   ]);
-  const s = Number(d.start);
+  const s = Number(d.start), maxPerTx = d.maxPerTx || 50;
+  const gs = p.configured ? await groups(fire, maxPerTx) : [];
+  const closed = p.closed || d.closed, left = closed ? 0 : count(p.left);
   return {
-    fire, start: s, packs: Number(d.packs), pressPacks: Number(d.starters), plankOnlyPacks: Number(d.plankOnly), walletLimit: Number(d.walletLimit),
-    maxPerTx: d.maxPerTx || 50, holderWindowEnds: s + d.holderWindow, plankOnlyEnds: s + d.plankOnlyFor, limitLiftsAt: s + d.liftAfter,
-    pressWindowEnds: s + d.starterWindow, regularWalletsEnds: s + d.regularWalletsFor,
-    priceUsd: usd8(d.priceUsd), paperPerPack: amount(d.paperPerPack), paperCapUsd: usd8(d.paperCapUsd), holderRoot: d.holderRoot, creditsPerPick: d.creditsPerPick,
-    pressPacksPerPress: Number(d.starterPerPress),
-    sold: Number(d.paidSold), pressClaimed: Number(d.startersClaimed), creditPacks: Number(d.creditPacks),
-    phase: {
-      configured: p.configured, live: p.live, closed: p.closed, plankOnly: p.plankOnly, limitLifted: p.limitLifted, pressOpen: p.startersOpen,
-      plankPriceOk: p.plankPriceOk, holdersOnly: p.holdersOnly, regularWalletsOnly: p.regularWalletsOnly, paused: p.paused,
-      paidLeft: Number(p.paidLeft), pressLeft: Number(p.startersLeft), phasesOver: Number(p.phasesOver), creditPacksLeft: Number(p.creditPacksLeft),
+    fire, start: s, packs: Number(d.packs), maxPerTx, regularWalletsEnds: s + d.regularWalletsFor, paperCapUsd: usd8(d.paperCapUsd),
+    creditsPerPick: d.creditsPerPick, creditGroup: d.creditGroup === NONE ? null : d.creditGroup,
+    creditPacksMax: Number(d.creditPacksMax), creditPacksPerWallet: Number(d.creditPacksPerWallet),
+    sold: Number(d.sold), creditPacks: Number(d.creditPacks),
+    status: {
+      configured: p.configured, live: p.live, closed, paused: p.paused, plankPriceOk: p.plankPriceOk, regularWalletsOnly: p.regularWalletsOnly,
+      left, endableAt: Number(p.endableAt), creditPacksLeft: count(p.creditPacksLeft),
     },
-    state: p.closed || d.closed ? "closed" : p.live ? "live" : "upcoming",
+    closing: p.live && !closed && left === 0,
+    state: closed ? "closed" : p.live ? "live" : "upcoming",
+    groups: gs,
     cards: { closed: fi[1], packs: Number(fi[4]), packsDealt: Number(fi[5]), cardsPerPack: Number(fi[3]) || Number(per), characters: Number(chars) },
+    now,
   };
 }
 
@@ -88,8 +197,20 @@ export async function series(fire: number): Promise<SeriesInfo> {
 export async function currentSeries(nums?: number[]): Promise<SeriesInfo | null> {
   nums ??= await seriesNumbers();
   if (!nums.length) return null;
-  const all = await Promise.all(nums.map(series));
-  return all.find((x) => x.state === "live") ?? all.filter((x) => x.state === "upcoming").sort((a, b) => a.start - b.start)[0] ?? all[all.length - 1];
+  // the drop now is the newest one that isn't closed (one drop at a time); else the latest
+  const last = await series(nums[nums.length - 1]);
+  if (last.state !== "closed" || nums.length === 1) return last;
+  const all = await Promise.all(nums.slice(0, -1).map(series));
+  return all.find((x) => x.state === "live") ?? all.filter((x) => x.state === "upcoming").sort((a, b) => a.start - b.start)[0] ?? last;
+}
+
+/** The drop-wide status alone (FireSale.status), cheap to poll. */
+export async function status(fire: number): Promise<SeriesInfo["status"]> {
+  const p = await read<StatusRaw>("FireSale", saleAbi, "status", [BigInt(fire)]);
+  return {
+    configured: p.configured, live: p.live, closed: p.closed, paused: p.paused, plankPriceOk: p.plankPriceOk, regularWalletsOnly: p.regularWalletsOnly,
+    left: p.closed ? 0 : count(p.left), endableAt: Number(p.endableAt), creditPacksLeft: count(p.creditPacksLeft),
+  };
 }
 
 export type Quote = {
@@ -98,38 +219,43 @@ export type Quote = {
   paperEth?: Amount | null;
 };
 
-/** What `n` packs cost now in each coin, plus the PAPER they burn. A coin whose price is unavailable says so. */
-export async function quotePacks(fire: number, n: number): Promise<Quote[]> {
-  const f = BigInt(fire), k = BigInt(n);
-  const paperRaw = await read<bigint>("FireSale", saleAbi, "paperFor", [f, k]);
+/** What `n` packs of one group cost now: dollars (the rising tax included, and its part), the PAPER they burn, and
+ *  the price in each coin the group takes (FireSale.quote). `paperEth`: the PAPER bought with ETH instead
+ *  (buyWithEthAll), offered when the group takes ETH or has no dollar price; null without a PAPER pool. */
+export type GroupQuote = { group: number; n: number; usd: string; tax: string; paper: Amount; paperEth: Amount | null; ethAlone: boolean; quotes: Quote[] };
+
+export async function quoteGroup(fire: number, group: number, n: number): Promise<GroupQuote> {
+  const f = BigInt(fire), g = BigInt(group), k = BigInt(n);
+  const [cfg, price, paperRaw] = await Promise.all([
+    readGroups<GroupRaw>("groupOf", [f, g]),
+    readGroups<readonly [bigint, bigint]>("priceOf", [f, g, k]),
+    read<bigint>("FireSale", saleAbi, "paperFor", [f, g, k]),
+  ]);
   const paper = amount(paperRaw);
   const usdg = input("USDG");
   const usdgDec = usdg ? await decimalsOf(usdg) : 18;
-  const one = async (pay: PayCoin, fn: string, dec: number): Promise<Quote> => {
-    try { return { pay, cost: amount(await read<bigint>("FireSale", saleAbi, fn, [f, k]), dec), paper, available: true }; }
-    catch { return { pay, cost: null, paper, available: false, reason: pay === "PLANK" ? "The PLANK price isn't available right now." : `${pay} price unavailable.` }; }
-  };
-  const qs = await Promise.all([one("PLANK", "quotePlank", 18), one("ETH", "quoteEth", 18), ...(usdg ? [one("USDG", "quoteUsdg", usdgDec)] : [])]);
-  const eth = qs.find((q) => q.pay === "ETH")!;
-  eth.paperEth = paperRaw === 0n ? amount(0n) : await read<bigint>("FireSale", saleAbi, "quotePaperInEth", [paperRaw]).then((e) => amount(e, 18, 8), () => null);
-  return qs;
+  const coins = cfg.priceUsd === 0n ? [] : COIN_BITS.filter(([c, b]) => cfg.coins & b && (c !== "USDG" || !!usdg));
+  const quotes = await Promise.all(coins.map(async ([pay]): Promise<Quote> => {
+    try {
+      const [cost] = await read<readonly [bigint, bigint]>("FireSale", saleAbi, "quote", [f, g, k, payIndex(pay)]);
+      return { pay, cost: amount(cost, pay === "USDG" ? usdgDec : 18), paper, available: true };
+    } catch { return { pay, cost: null, paper, available: false, reason: pay === "PLANK" ? "The PLANK price isn't available right now." : `${pay} price unavailable.` }; }
+  }));
+  const ethAlone = cfg.priceUsd === 0n || (cfg.coins & 2) !== 0;
+  const paperEth = !ethAlone ? null : paperRaw === 0n ? amount(0n) : await read<bigint>("FireSale", saleAbi, "quotePaperInEth", [paperRaw]).then((e) => amount(e, 18, 8), () => null);
+  const eth = quotes.find((x) => x.pay === "ETH");
+  if (eth) eth.paperEth = paperEth;
+  return { group, n, usd: usd8(price[0]), tax: usd8(price[1]), paper, paperEth, ethAlone, quotes };
 }
 
-/** Press-pack (Paper Press) claim cost: the dollar price in `pay` (none when press packs have no price) and PAPER. */
-export async function quotePress(fire: number, n: number, pay: PayCoin): Promise<{ cost: Amount; paper: Amount }> {
-  const [cost, paper] = await read<readonly [bigint, bigint]>("FireSale", saleAbi, "quoteStarter", [BigInt(fire), BigInt(n), payIndex(pay)]);
-  return { cost: amount(cost, pay === "USDG" && input("USDG") ? await decimalsOf(input("USDG")!) : 18), paper: amount(paper) };
-}
-
-/** A wallet's standing in a drop: paid packs bought (for the wallet limit), credit and press packs used. */
-export async function walletInDrop(fire: number, owner: Address) {
+/** A wallet's standing in a drop: packs it took in each group (for the wallet limits) and credit packs used. */
+export async function myGroupStanding(fire: number, owner: Address): Promise<{ bought: number[]; creditPacksUsed: number }> {
   const f = BigInt(fire);
-  const [paid, credit, press] = await Promise.all([
-    read<bigint>("FireSale", saleAbi, "paidBought", [f, owner]),
+  const [b, credit] = await Promise.all([
+    readGroups<readonly bigint[]>("boughtBy", [f, owner]),
     read<bigint>("FireSale", saleAbi, "creditPacksBy", [f, owner]),
-    read<bigint>("FireSale", saleAbi, "startersClaimedBy", [f, owner]),
   ]);
-  return { paidBought: Number(paid), creditPacksUsed: Number(credit), pressPacksClaimed: Number(press) };
+  return { bought: b.map(Number), creditPacksUsed: Number(credit) };
 }
 
 // ---------------------------------------------------------------- wallet
@@ -148,35 +274,41 @@ export async function packsOf(owner: Address, nums?: number[]): Promise<{ fire: 
   return nums.map((fire, i) => ({ fire, count: Number(counts[i]) })).filter((x) => x.count > 0);
 }
 
+const nftAbi = [
+  { type: "function", name: "balanceOf", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "ownerOf", inputs: [{ type: "uint256" }], outputs: [{ type: "address" }], stateMutability: "view" },
+  { type: "function", name: "tokenOfOwnerByIndex", inputs: [{ type: "address" }, { type: "uint256" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
+] as const;
+
+/** How many NFTs of collection `nft` a wallet holds (0 if it can't be read). */
+export async function nftCount(nft: Address, owner: Address): Promise<number> {
+  try { return Number(await pub().readContract({ address: nft, abi: nftAbi, functionName: "balanceOf", args: [owner] })); } catch { return 0; }
+}
+
+/** Whether `owner` holds NFT `id` of `nft` (for a collection that can't list its owners' tokens: the holder types it). */
+export async function ownsNft(nft: Address, owner: Address, id: number): Promise<boolean> {
+  try { return getAddress(await pub().readContract({ address: nft, abi: nftAbi, functionName: "ownerOf", args: [BigInt(id)] })) === getAddress(owner); } catch { return false; }
+}
+
+/** The NFT ids of `nft` a wallet holds (up to 50). Empty if the collection can't list its owners' tokens. */
+export async function nftsOf(nft: Address, owner: Address): Promise<number[]> {
+  try {
+    const n = Number(await pub().readContract({ address: nft, abi: nftAbi, functionName: "balanceOf", args: [owner] }));
+    const ids = await Promise.all(Array.from({ length: Math.min(n, 50) }, (_, i) => pub().readContract({ address: nft, abi: nftAbi, functionName: "tokenOfOwnerByIndex", args: [owner, BigInt(i)] })));
+    return ids.map(Number);
+  } catch { return []; }
+}
+
 /** How many Paper Presses a wallet holds (0 when the Press isn't set up on this network). */
 export async function pressCount(owner: Address): Promise<number> {
   const press = input("MILL");
-  if (!press) return 0;
-  return Number(await pub().readContract({ address: press, abi: erc20Abi, functionName: "balanceOf", args: [owner] }));
+  return press ? nftCount(press, owner) : 0;
 }
 
-/** Whether `owner` holds Paper Press `id` (for a Press that can't list its owners' tokens: the holder types its number). */
-export async function ownsPress(owner: Address, id: number): Promise<boolean> {
-  const press = input("MILL");
-  if (!press) return false;
-  const abi = [{ type: "function", name: "ownerOf", inputs: [{ type: "uint256" }], outputs: [{ type: "address" }], stateMutability: "view" }] as const;
-  try { return getAddress(await pub().readContract({ address: press, abi, functionName: "ownerOf", args: [BigInt(id)] })) === getAddress(owner); } catch { return false; }
-}
-
-/** Paper Presses held (they let a wallet in during the holder window, and claim press packs). Empty if the Press
- *  can't list its owners' tokens. */
-export async function pressesOf(owner: Address): Promise<number[]> {
-  const press = input("MILL");
-  if (!press) return [];
-  const abi = [
-    { type: "function", name: "balanceOf", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
-    { type: "function", name: "tokenOfOwnerByIndex", inputs: [{ type: "address" }, { type: "uint256" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
-  ] as const;
-  try {
-    const n = Number(await pub().readContract({ address: press, abi, functionName: "balanceOf", args: [owner] }));
-    const ids = await Promise.all(Array.from({ length: Math.min(n, 50) }, (_, i) => pub().readContract({ address: press, abi, functionName: "tokenOfOwnerByIndex", args: [owner, BigInt(i)] })));
-    return ids.map(Number);
-  } catch { return []; }
+/** Packs already taken with each NFT id in an NFT-gated group this drop (FireGroups.usedWith), whoever held it. */
+export async function nftUse(fire: number, group: number, ids: number[]): Promise<{ id: number; used: number }[]> {
+  const f = BigInt(fire), g = BigInt(group);
+  return Promise.all(ids.map(async (id) => ({ id, used: Number(await readGroups<bigint>("usedWith", [f, g, BigInt(id)])) })));
 }
 
 // ---------------------------------------------------------------- cards
@@ -460,36 +592,60 @@ export async function gradingIds(index: number, known?: readonly number[]): Prom
   throw new Error(`No grading #${index}`);
 }
 
-// ---------------------------------------------------------------- the holder window
+// ---------------------------------------------------------------- snapshot groups
 
-/** Is `proof` a valid holder-window proof for `owner` under `root`? The same check as FireSale._checkHolder (the leaf is
- *  keccak256(keccak256(abi.encode(owner))), pairs hashed sorted, OpenZeppelin MerkleProof). */
-export function verifyHolderProof(proof: readonly Hex[], root: string, owner: Address): boolean {
+/** The leaf a snapshot group checks: keccak256(keccak256(abi.encode(wallet, allowance))) (OpenZeppelin
+ *  StandardMerkleTree of ["address", "uint256"], as FireGroups._admit). */
+export function snapshotLeaf(owner: Address, allowance: bigint | number): Hex {
+  return keccak256(keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [getAddress(owner), BigInt(allowance)])));
+}
+
+/** Is `proof` a valid snapshot proof of (`owner`, `allowance`) under `root`? Pairs hashed sorted (OpenZeppelin
+ *  MerkleProof), the same check as FireGroups. */
+export function verifySnapshotProof(proof: readonly Hex[], root: string, owner: Address, allowance: bigint | number): boolean {
   if (!/^0x[0-9a-f]{64}$/i.test(root) || BigInt(root) === 0n || !isAddress(owner)) return false;
-  let h = keccak256(keccak256(encodeAbiParameters([{ type: "address" }], [getAddress(owner)])));
+  let h = snapshotLeaf(owner, allowance);
   for (const p of proof) h = BigInt(h) < BigInt(p) ? keccak256(concat([h, p])) : keccak256(concat([p, h]));
   return h.toLowerCase() === root.toLowerCase();
 }
 
-/** What each Paper Press can still do in a drop: `buyer` is the wallet it let in during the holder window (zero
- *  address: none yet; each Press lets in one wallet per drop), `claimed` the press packs claimed with it. */
-export async function pressUse(fire: number, ids: number[]): Promise<{ id: number; buyer: string; claimed: number }[]> {
-  const f = BigInt(fire);
-  return Promise.all(ids.map(async (id) => {
-    const [buyer, claimed] = await Promise.all([
-      read<Address>("FireSale", saleAbi, "pressBuyer", [f, BigInt(id)]),
-      read<bigint>("FireSale", saleAbi, "startersClaimedWith", [f, BigInt(id)]),
-    ]);
-    return { id, buyer, claimed: Number(claimed) };
-  }));
+type SnapEntry = { allowance?: number | string; proof?: Hex[] };
+type SnapFile = {
+  root?: string; name?: string; label?: string;
+  wallets?: Record<string, SnapEntry> | (SnapEntry & { address?: string; wallet?: string })[];
+  proofs?: Record<string, Hex[]>; allowances?: Record<string, number | string>; holders?: { wallet?: string; address?: string; allowance?: number | string }[];
+  groups?: SnapFile[] | Record<string, SnapFile>; snapshots?: SnapFile[];
+};
+
+/** The part of a snapshot file (ops/snapshot, published as holders/series-<n>.json) for one root: the file itself, or
+ *  one of its `groups` / `snapshots` (a drop with several snapshot groups). Null if none has that root. */
+export function snapshotFor(file: unknown, root: string): (SnapFile & { name?: string }) | null {
+  const f = file as SnapFile | null;
+  if (!f || typeof f !== "object") return null;
+  const same = (x?: string) => !!x && x.toLowerCase() === root.toLowerCase();
+  if (same(f.root)) return f;
+  const parts = [...(Array.isArray(f.groups) ? f.groups : Object.values(f.groups ?? {})), ...(f.snapshots ?? [])];
+  return parts.find((p) => same(p?.root)) ?? null;
 }
 
-/** The holder window's proof for a wallet, from the snapshot file ops/snapshot wrote (published with the drop). */
-export function proofFromSnapshot(snapshot: unknown, owner: Address): Hex[] | null {
-  const s = snapshot as { proofs?: Record<string, Hex[]>; wallets?: { address: string; proof: Hex[] }[] };
-  if (!isAddress(owner)) return null;
+/** A wallet's place in a snapshot group: its allowance and proof, checked against the group's `root` (null: not on
+ *  it, or the file's entry doesn't check out). Reads the file ops/snapshot writes: `wallets` as { address: {
+ *  allowance, proof } } or a list of { address, allowance, proof }, or the older `proofs` map with `allowances` /
+ *  `holders[].allowance` beside it. */
+export function snapshotEntry(file: unknown, root: string, owner: Address): { allowance: number; proof: Hex[] } | null {
+  const s = snapshotFor(file, root);
+  if (!s || !isAddress(owner)) return null;
   const key = getAddress(owner);
-  if (s.proofs) for (const [k, v] of Object.entries(s.proofs)) if (isAddress(k) && getAddress(k) === key) return v;
-  for (const w of s.wallets ?? []) if (isAddress(w.address) && getAddress(w.address) === key) return w.proof;
-  return null;
+  const is = (k?: string) => !!k && isAddress(k) && getAddress(k) === key;
+  let e: SnapEntry | undefined;
+  if (Array.isArray(s.wallets)) e = s.wallets.find((w) => is(w.address ?? w.wallet));
+  else if (s.wallets) e = Object.entries(s.wallets).find(([k]) => is(k))?.[1];
+  if (!e && s.proofs) {
+    const proof = Object.entries(s.proofs).find(([k]) => is(k))?.[1];
+    const allowance = Object.entries(s.allowances ?? {}).find(([k]) => is(k))?.[1] ?? s.holders?.find((h) => is(h.wallet ?? h.address))?.allowance;
+    if (proof) e = { proof, allowance };
+  }
+  if (!e?.proof || e.allowance == null) return null;
+  const allowance = Number(e.allowance);
+  return verifySnapshotProof(e.proof, root, owner, BigInt(e.allowance)) ? { allowance, proof: e.proof } : null;
 }

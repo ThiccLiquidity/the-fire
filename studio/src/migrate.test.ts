@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { compileRecipe, legacyDiamondRecipe, previewPool } from './recipe'
 import { migrateCharacterArt, migrateFire, needsMigration } from './migrate'
-import { creditPacksMax, saleOf, standardSale } from './sale'
+import { creditPacksMax, groupPacks, saleOf, standardSale } from './sale'
 import type { Character, FireRecord, ImageSlot } from './types'
 
 /** A Series as saved before recipes: Diamonds on the record, a locked deal stored by material. */
@@ -62,9 +62,17 @@ describe('old saves and backups', () => {
     expect(migrateFire(noDiamonds).recipe).toEqual(legacyDiamondRecipe(1))
   })
 
+  /** The Standard sale as saved before drop groups. */
+  const oldStandard = {
+    start: 0, paidPacks: 117, pressPacks: 50, priceUsd: '2.50', paperPerPack: '1', paperCapUsd: '1', plankBurnPercent: '10',
+    paperBurnPercent: '20', plankOnly: 50, plankOnlyHours: 48, walletLimit: 5, liftHours: 48, maxPerTx: 50, holderHours: 24, holderRoot: '',
+    regularWalletsHours: 48, pressPerPress: 1, pressPerWallet: 1, pressHours: 24, pressPrice: 'paper', pressUsd: '0',
+    pressPaper: '1', creditsPerPick: 1, creditPacksPercent: '10', creditPacksPerWallet: 3,
+  }
+
   it('a free-pack cap saved as packs becomes a percent of that drop (no cap stays no cap)', () => {
     const base = migrateFire(oldFire)
-    const { creditPacksPercent: _p, creditPacksPerWallet: _w, ...rest } = standardSale()
+    const { creditPacksPercent: _p, creditPacksPerWallet: _w, ...rest } = oldStandard
     const old = (max: number, perWallet: number, paidPacks = 117, pressPacks = 50) => ({ ...base, sale: { ...rest, paidPacks, pressPacks, creditPacksMax: max, creditPacksPerWallet: perWallet } })
     expect(needsMigration(old(16, 0))).toBe(true)
     const m = migrateFire(old(16, 0))
@@ -82,17 +90,31 @@ describe('old saves and backups', () => {
     }
   })
 
+  it('a sale saved before drop groups becomes a Press group and an Everyone group', () => {
+    const { deal: _deal, ...open } = migrateFire(oldFire)
+    const f = { ...open, packs: 167, sale: oldStandard }
+    expect(needsMigration(f)).toBe(true)
+    const m = migrateFire(f)
+    expect(m.packs).toBe(167)
+    expect(m.sale!.packs).toBe(167)
+    expect(m.sale!.groups.map((g) => [g.name, g.packs, g.gate, g.rollTo])).toEqual([['Paper Press holders', 50, 'nft', 1], ['Everyone', 117, 'open', -1]])
+    expect(m.sale!.creditGroup).toBe(1)
+    expect('paidPacks' in m.sale!).toBe(false)
+    expect(needsMigration(m)).toBe(false)
+  })
+
   it('an open Series takes its packs from the sale; one with no sale keeps its packs', () => {
     const { deal: _deal, ...open } = migrateFire(oldFire)
     const noSale = { ...open, packs: 1_000, sale: undefined }
     expect(needsMigration(noSale)).toBe(true)
     const m = migrateFire(noSale)
     expect(m.packs).toBe(1_000)
-    expect(m.sale).toMatchObject({ paidPacks: 950, pressPacks: 50, plankOnly: 50 })
+    expect(m.sale!.packs).toBe(1_000)
+    expect(groupPacks(m.sale!)).toEqual([50, 40, 910, 0]) // Everyone takes the rest
     expect(needsMigration(m)).toBe(false)
     const off = migrateFire({ ...open, packs: 150, sale: standardSale() })
     expect(off.packs).toBe(167)
-    expect(migrateFire({ ...open, packs: 10, sale: undefined }).sale).toMatchObject({ paidPacks: 0, pressPacks: 10, plankOnly: 0 })
+    expect(groupPacks(migrateFire({ ...open, packs: 10, sale: undefined }).sale!)).toEqual([10, 0, 0, 0])
     // a locked deal keeps its packs (the Export checklist flags a sale that disagrees)
     const locked = migrateFire(oldFire)
     expect(locked.packs).toBe(2)

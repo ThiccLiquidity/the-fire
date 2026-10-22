@@ -45,16 +45,20 @@ Use the practice Series with real art (five pictures per character, the studio d
    stops at the first problem and tells you what to fix).
 2. Site: open the preview with `?live=testnet`. Connect a test wallet. (Without `?live` the site is the demo, as
    always. `?live=mainnet` shows the demo until `deployments/4663.json` has the card contracts.)
-   If the drop has a holder window, publish its snapshot (`ops/snapshot`) as `web/art/factory/forge/holders/series-<n>.json`
-   so snapshot holders get in early; Paper Press holders get in without it. The snapshot counts each wallet's smallest
-   PLANK (Uniswap V2 LP share included) over 5 blocks in the past week; `node ops/snapshot/snapshot.mjs --verify
-   <file>` rebuilds it from the chain (needs an archive RPC; VerifySeries runs it too).
+   If the drop has a snapshot group (e.g. the Standard preset's PLANK holders), say whose wallets it takes in
+   `fire-<n>-snapshots.json` next to the recipe (token, minimum, allowance tiers: `ops/README.md`); the launcher takes
+   the snapshot and, after the lock, writes `web/art/factory/forge/holders/series-<n>.json` (each wallet's allowance and
+   proof) for the site: publish it with the drop. Paper Press holders need no file (checked live). The snapshot counts
+   each wallet's smallest holding (Uniswap V2 LP share included) over 5 blocks in the past week; `node
+   ops/snapshot/snapshot.mjs --verify <file>` rebuilds it from the chain (needs an archive RPC; VerifySeries runs it too).
 3. Walk every flow and tick it:
    - [ ] Buy packs with PLANK, with ETH (with your own PAPER, and with "Pay the PAPER in ETH too"), with USDG; each burns the PAPER per pack
    - [ ] Get PAPER on the site (ETH, PLANK, USDG)
-   - [ ] The holder window (a wallet in the snapshot buys early; one not in it can't)
-   - [ ] The wallet limit refuses one too many
-   - [ ] Sell out or end the drop; the Series closes
+   - [ ] The groups: a Press holder claims in the Press group; a wallet in the snapshot buys up to its allowance in the
+         PLANK group, one not in it can't; Everyone opens when the PLANK group ends
+   - [ ] A group's wallet limit (and the after sell-out group's one pack a purchase) refuses one too many
+   - [ ] The after sell-out group's price rises each pack; 15 minutes without a sale ends it and the keeper closes the
+         Series (`FireSale.close`); or sell out or end the drop; the Series closes
    - [ ] Open a pack; drand arrives (~90 s); the cards appear; the keeper log shows `fulfillMany` and `process`
    - [ ] Case a card; grade a card; the slab shows the grade
    - [ ] Burn 42 cards for a free pack credit, then use it

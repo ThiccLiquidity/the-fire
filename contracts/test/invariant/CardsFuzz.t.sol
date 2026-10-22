@@ -5,6 +5,7 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {FireCredits} from "../../src/cards/FireCredits.sol";
+import {FireGroups} from "../../src/cards/FireGroups.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
@@ -15,9 +16,7 @@ import {SeriesHelper, RecipeHarness} from "../cards/SeriesHelper.sol";
 
 /// @dev Stateless fuzz tests: pricing math, the burn split, PDA grades and price, and the Standard pool math.
 contract CardsFuzzTest is SeriesHelper {
-    function _na() internal pure returns (FireSale.Access memory a) {
-        a.proof = new bytes32[](0);
-    }
+    function _na() internal pure returns (FireGroups.Access memory a) {}
 
     address constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address owner = address(0xA11CE0);
@@ -59,11 +58,14 @@ contract CardsFuzzTest is SeriesHelper {
         dealer = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         rng.setFire(address(cards));
         credits = new FireCredits(owner, address(cards), 1e18);
+        FireGroups groups = new FireGroups();
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
-            press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW, credits: address(credits)
+            packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW, credits: address(credits),
+            groups: address(groups)
         }));
+        groups.setSale(address(sale));
         psa = new FirePsa(owner, address(cards), address(new MockBurner(address(plank), address(0))));
         vm.startPrank(owner, owner);
         packs.setSeller(address(sale));
@@ -90,8 +92,21 @@ contract CardsFuzzTest is SeriesHelper {
     function _drop(uint128 price, uint16 bps) internal returns (uint64 start) {
         start = uint64(block.timestamp + 1);
         vm.prank(owner, owner);
-        sale.configureDrop(1, FireSale.DropConfig({start: start, packs: 1_000, starters: 0, plankOnly: 0, walletLimit: 1_000,
-            starterWindow: 0, liftAfter: 1 hours, plankBurnBps: bps, paperBurnBps: 0, priceUsd: price, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0}));
+        FireSale.DropConfig memory c;
+        c.start = start;
+        c.packs = 1_000;
+        c.plankBurnBps = bps;
+        c.paperCapUsd = 1e8;
+        c.regularWalletsFor = 1 hours;
+        c.creditsPerPick = 1;
+        c.groups = new FireGroups.Group[](1);
+        c.groups[0] = FireGroups.Group({packs: 1_000, gate: FireGroups.Gate.OPEN, coins: 7, afterGroup: 255, rollTo: 255,
+            startDelay: 0, duration: 0, perWallet: 1_000, perNft: 0, taxBps: 0, priceUsd: price, paper: 1e18, nft: address(0), idle: 0, perTx: 0, unlimited: false, root: 0});
+        sale.configureDrop(1, c);
+    }
+
+    function _q(uint256 n, FireSale.Pay pay) internal view returns (uint256 cost) {
+        (cost,) = sale.quote(1, 0, n, pay);
     }
 
     function _setFeeds(int256 ethPx, int256 plankPx) internal {
@@ -111,18 +126,18 @@ contract CardsFuzzTest is SeriesHelper {
         _setFeeds(int256(ethPx), int256(plankPx));
         uint256 usd8 = n * price;
 
-        uint256 e = sale.quoteEth(1, n);
+        uint256 e = _q(n, FireSale.Pay.ETH);
         assertGe(e * ethPx, usd8 * 1e18, "ETH quote covers the price");
         assertLt((e - 1) * ethPx, usd8 * 1e18, "ETH quote is the least that does (rounded up, not more)");
 
-        uint256 p = sale.quotePlank(1, n);
+        uint256 p = _q(n, FireSale.Pay.PLANK);
         assertGe(p * plankPx, usd8 * 1e28, "PLANK quote covers the price");
         if (p > 0) assertLt((p - 1) * plankPx, usd8 * 1e28, "PLANK quote is the least that does");
 
-        uint256 u = sale.quoteUsdg(1, n);
+        uint256 u = _q(n, FireSale.Pay.USDG);
         assertGe(u * 1e8, usd8 * 1e6, "USDG quote covers the price");
         assertLt((u - 1) * 1e8, usd8 * 1e6, "USDG quote is the least that does");
-        assertEq(sale.quoteUsdg(1, n), (usd8 + 99) / 100, "USDG: 6 decimals, rounded up");
+        assertEq(_q(n, FireSale.Pay.USDG), (usd8 + 99) / 100, "USDG: 6 decimals, rounded up");
     }
 
     // ---------------------------------------------------------------- the burn split
@@ -142,18 +157,18 @@ contract CardsFuzzTest is SeriesHelper {
         pay = pay % 3;
         uint256 cost;
         if (pay == 0) {
-            cost = sale.quotePlank(1, n);
+            cost = _q(n, FireSale.Pay.PLANK);
             uint256 bal = plank.balanceOf(alice);
             vm.prank(alice, alice);
-            sale.buyWithPlank(1, n, cost, type(uint256).max, _na());
+            sale.buy(1, 0, n, FireSale.Pay.PLANK, cost, type(uint256).max, _na());
             assertEq(bal - plank.balanceOf(alice), cost, "paid");
             assertEq(plank.balanceOf(DEAD), cost * bps / 10_000, "burn share burned");
             assertEq(plank.balanceOf(revenue) + plank.balanceOf(DEAD), cost, "revenue + burn == cost");
         } else if (pay == 1) {
-            cost = sale.quoteEth(1, n);
+            cost = _q(n, FireSale.Pay.ETH);
             uint256 bal = alice.balance;
             vm.prank(alice, alice);
-            sale.buyWithEth{value: cost + 12345}(1, n, type(uint256).max, _na());
+            sale.buy{value: cost + 12345}(1, 0, n, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
             assertEq(bal - alice.balance, cost, "paid (excess refunded)");
             uint256 share = cost * bps / 10_000;
             assertEq(burnW.balance + address(router).balance, share, "burn share: swapped or to the burn wallet");
@@ -165,10 +180,10 @@ contract CardsFuzzTest is SeriesHelper {
             if (pumped && n * price * bps / 10_000 >= 1_000) assertFalse(swapped, "no swap when the pool is pumped");
             if (swapped) assertEq(plank.balanceOf(DEAD), share * router.plankPerEthWei(), "swap output burned");
         } else {
-            cost = sale.quoteUsdg(1, n);
+            cost = _q(n, FireSale.Pay.USDG);
             uint256 bal = usdg.balanceOf(alice);
             vm.prank(alice, alice);
-            sale.buyWithUsdg(1, n, cost, type(uint256).max, _na());
+            sale.buy(1, 0, n, FireSale.Pay.USDG, cost, type(uint256).max, _na());
             assertEq(bal - usdg.balanceOf(alice), cost, "paid");
             uint256 share = cost * bps / 10_000;
             assertEq(usdg.balanceOf(burnW) + usdg.balanceOf(address(router)), share, "burn share");

@@ -11,7 +11,7 @@
 // Anything else (the RPC timing out or erroring) leaves it pending and saved: it may still land.
 
 import type { Abi, Address, Hex, TransactionReceipt } from "viem";
-import { explain } from "./errors";
+import { explain, revertOf } from "./errors";
 import { assertRobinhood } from "./network";
 import { getAccount, getPublicClient, getWalletClient, robinhood, txUrl } from "./wallet";
 
@@ -52,11 +52,13 @@ export type TxOptions = {
   waitMs?: number;
 };
 
-/** A failed step, with a plain-English reason. `hash` is set once it was sent. */
+/** A failed step, with a plain-English reason. `hash` is set once it was sent. `code`: the contract error's name when
+ *  the call was refused by one (e.g. "PriceMoved"), so the page can handle a known case its own way. */
 export class TxError extends Error {
-  step: TxStep; hash?: Hex; outcome?: TxOutcome;
+  step: TxStep; hash?: Hex; outcome?: TxOutcome; code?: string;
   constructor(message: string, step: TxStep, cause?: unknown, hash?: Hex, outcome?: TxOutcome) {
     super(message, { cause }); this.name = "TxError"; this.step = step; this.hash = hash; this.outcome = outcome;
+    this.code = cause === undefined ? undefined : revertOf(cause)?.name;
   }
 }
 /** Sent but not landed yet (the wait timed out, or the RPC didn't answer): it stays saved, and `later` settles with

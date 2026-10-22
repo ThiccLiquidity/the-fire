@@ -4,7 +4,7 @@ import { hasCategory, hasValidName } from '../categories'
 import { frameSetLabel } from '../frames'
 import { randomSeed } from '../prng'
 import { standardRecipe } from '../recipe'
-import { saleOf, standardSale } from '../sale'
+import { saleOf, salePacks, standardSale } from '../sale'
 import { artNeeds, isReadyFor, missingArt } from '../series'
 import { deleteFire, getStudio, saveFire, saveGlobal, updateFire, useStudio } from '../store'
 import { fireStatus, type Character, type FireRecord } from '../types'
@@ -17,7 +17,7 @@ export function FireList({ selected, onSelect }: { selected: number | null; onSe
     const n = getStudio().global.nextFireNumber
     const now = Date.now()
     const sale = standardSale()
-    const f: FireRecord = { number: n, characterIds: [], packs: sale.paidPacks + sale.pressPacks, recipe: standardRecipe(), sale, seed: randomSeed(), createdAt: now, updatedAt: now }
+    const f: FireRecord = { number: n, characterIds: [], packs: salePacks(sale), recipe: standardRecipe(), sale, seed: randomSeed(), createdAt: now, updatedAt: now }
     await saveFire(f)
     await saveGlobal({ ...getStudio().global, nextFireNumber: n + 1 })
     onSelect(n)
@@ -131,9 +131,9 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
           {notReady.length > 0 && <Notice kind="error">{notReady.length} picked character{notReady.length === 1 ? " isn't" : "s aren't"} ready for this recipe (art, name or category); finish them or unpick them.</Notice>}
           <p data-testid="packs-line">
             <b data-testid="packs">{fire.packs.toLocaleString()}</b> packs{' '}
-            <span className="muted small">({sale.paidPacks.toLocaleString()} paid + {sale.pressPacks.toLocaleString()} press) · set on the <a href="#sale">Sale</a> tab</span>
+            <span className="muted small">(split into {sale.groups.length} group{sale.groups.length === 1 ? '' : 's'}) · set on the <a href="#sale">Sale</a> tab</span>
           </p>
-          {fire.packs < 1 && !locked && <p className="field-msg err" data-testid="packs-problem">No packs: set paid or press packs on the Sale tab.</p>}
+          {fire.packs < 1 && !locked && <p className="field-msg err" data-testid="packs-problem">No packs: set the total packs on the Sale tab.</p>}
         </div>
         <div>
           <h4>This Series will make</h4>

@@ -50,14 +50,14 @@
 
   const state = {
     demo: true,
-    // this Series' settings (per drop; the live site reads them from the contracts): packs, Press packs, PLANK-only packs,
-    // the per-wallet limit while it applies, and the cast size (characters) its recipe was built with
-    series: { no: 7, total: 167, starters: 50, startersClaimed: 23, sold: 12, plankOnly: 50, plankSold: 12, walletLimit: 5, cast: 10, phase: 0, closed: false },
-    // phase: 0 holders first + PLANK only, 1 holders first (any currency), 2 open to all (walletLimit each), 3 no limit, 4 sold out
+    // this Series' settings (per drop; the live site reads them from the contracts): the base total of packs, the cast
+    // size (characters) its recipe was built with, and its groups (docs/drop-groups.md: who can buy, how many, at what
+    // price, when; Store.demoStage fills them in). phase: 3 on sale (or about to be), 4 sold out / closed.
+    series: { no: 7, total: 167, cast: 10, phase: 3, closed: false, groups: [], creditGroup: 2, creditPacksLeft: 16, left: null, closing: false },
     wallet: {
       connected: false, address: '0x7a3f…c91e', full: DEMO_ADDR, name: 'Demo wallet', isPressHolder: true, inSnapshot: true, isContract: false,
       balances: { ETH: 0.42, PLANK: 1250000000, PAPER: 24, USDG: 50 },
-      credits: 1, burnCount: 12, starterClaimed: false, bought: 0, pending: [],
+      credits: 1, burnCount: 12, boughtIn: {}, pending: [],
       // ERC-20 allowances this wallet has given FireSale (packs, Press packs, free packs and suggestions all take PAPER)
       allowance: { PAPER: 0, PLANK: 0, USDG: 0 },
     },
@@ -94,8 +94,65 @@
       // the line under it: on sale, or still to come
       return t ? { no, live: s.phase < 4, line: s.phase < 4 ? 'Hot off the press' : 'Heating up', ...t } : null;
     },
-    left() { const s = state.series; return s.phase >= 4 ? 0 : Math.max(0, s.total - s.startersClaimed - s.sold); },
-    paidLeft() { const s = state.series; return Math.max(0, s.total - s.starters - s.sold + (s.phase >= 2 ? s.starters - s.startersClaimed : 0)); },
+    // packs that can still sell in the groups with a count (an unlimited "after sell-out" group adds on top)
+    left() {
+      const s = state.series; if (s.phase >= 4) return 0;
+      return s.groups.filter((g) => g.state !== 'ended' && !g.unlimited).reduce((a, g) => a + (g.left || 0), 0);
+    },
+    // the after-sell-out group (no pack count, a rising price) while it's open
+    extraOpen() { return state.series.phase < 4 ? state.series.groups.find((g) => g.unlimited && g.state === 'open') || null : null; },
+    // the k-th next pack's price in a group (k = 1 for the next): base x (1 + tax)^(sold + k) for a rising tax
+    packPrice(g, k = 1) {
+      const r = 1 + (g.taxBps || 0) / 10000, usd = g.priceUsd * r ** (g.taxBps ? g.sold + k : 0);
+      return { usd, tax: usd - g.priceUsd };
+    },
+    // what `n` more packs of a group cost in dollars, the rising tax included, and that tax
+    groupCost(g, n) { let usd = 0, tax = 0; for (let k = 1; k <= n; k++) { const p = Store.packPrice(g, k); usd += p.usd; tax += p.tax; } return { usd, tax }; },
+    // can this wallet buy in group g now, and how many? { ok, why, max }. The demo's rules; the live site has its own
+    // (live.js: the NFTs it holds, the holders list, the packs it took)
+    groupAccess(g) {
+      const w = state.wallet, bought = w.boughtIn[g.index] || 0;
+      if (g.gate === 'nft' && !w.isPressHolder) return { ok: false, why: g.who };
+      if (g.gate === 'snapshot' && !w.inSnapshot) return { ok: false, why: g.who };
+      if (g.gate === 'nft' && bought >= g.perNft) return { ok: false, why: 'Your Press has used its pack this Series' };
+      if (w.isContract && g.gate !== 'nft' && g.index < 3) return { ok: false, why: 'Regular wallets only for now' };
+      const lim = [g.perTx || 50, g.left ?? Infinity, g.perWallet ? g.perWallet - bought : Infinity, g.gate === 'nft' ? g.perNft - bought : Infinity];
+      const max = Math.max(0, Math.min(...lim));
+      return max ? { ok: true, max } : { ok: false, why: g.left === 0 ? 'Sold out' : `That's the most one wallet can take here (${g.perWallet})` };
+    },
+    // DEMO: the Standard preset's groups (docs/drop-groups.md) at a stage of the sale: 'holders' (Press and PLANK
+    // holders first), 'open' (Everyone), 'waiting' (Everyone sold out, more may come from the Press group), 'after'
+    // (after sell-out: the rising price), 'closed'. ?stage=... in the URL, or Demo controls.
+    demoStage(stage) {
+      const now = Math.floor(Date.now() / 1000), H = 3600, s = state.series;
+      const mk = (o) => {
+        const g = { perWallet: 0, perNft: 0, perTx: 50, unlimited: false, taxBps: 0, idle: 0, sold: 0, waiting: false, moreFrom: null, moreAt: 0, afterGroup: null, ...o };
+        // the next pack's price and the few after it (live: read from the contract), from the sold count
+        return Object.defineProperties(g, { next: { enumerable: true, get: () => Store.packPrice(g, 1) }, after: { enumerable: true, get: () => (g.taxBps ? [2, 3, 4].map((k) => Store.packPrice(g, k)) : []) } });
+      };
+      const press = mk({ index: 0, name: 'Paper Press holders', who: 'Paper Press holders only', gate: 'nft', isPress: true, priceUsd: 0, paper: Store.PRICES.PRESS_PAPER, coins: [], perNft: 1, capacity: 50 });
+      const plank = mk({ index: 1, name: 'PLANK holders', who: 'PLANK holders on the snapshot only', gate: 'snapshot', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK'], perWallet: 5, capacity: 40 });
+      const all = mk({ index: 2, name: 'Everyone', who: 'Anyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK', 'ETH', 'USDG'], perWallet: 5, capacity: 77, afterGroup: 1 });
+      const extra = mk({ index: 3, name: 'After sell-out', who: 'Anyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['ETH'], perTx: 1, unlimited: true, taxBps: 400, idle: 900, capacity: null, left: null, afterGroup: 2 });
+      const set = (g, o) => Object.assign(g, o, { left: g.unlimited ? (o.state === 'ended' ? 0 : null) : (o.capacity ?? g.capacity) - (o.sold ?? 0) });
+      if (stage === 'open') {
+        set(press, { state: 'ended', opensAt: now - 30 * H, endsAt: now - 24 * H, sold: 41 }); set(plank, { state: 'ended', opensAt: now - 30 * H, endsAt: now - 6 * H, sold: 40 });
+        set(all, { state: 'open', opensAt: now - 6 * H, endsAt: 0, capacity: 86, sold: 30 }); set(extra, { state: 'upcoming', opensAt: 0, endsAt: 0 });
+      } else if (stage === 'waiting') {
+        set(press, { state: 'open', opensAt: now - H, endsAt: now + 5 * H, sold: 10 }); set(plank, { state: 'ended', opensAt: now - H, endsAt: now - 1800, sold: 40 });
+        set(all, { state: 'open', opensAt: now - 1800, endsAt: 0, sold: 77 }); Object.assign(all, { waiting: true, moreFrom: 0, moreAt: now + 5 * H });
+        set(extra, { state: 'upcoming', opensAt: 0, endsAt: 0 });
+      } else if (stage === 'after') {
+        set(press, { state: 'ended', opensAt: now - 30 * H, endsAt: now - 24 * H, sold: 41 }); set(plank, { state: 'ended', opensAt: now - 30 * H, endsAt: now - 6 * H, sold: 40 });
+        set(all, { state: 'ended', opensAt: now - 6 * H, endsAt: now - 1200, capacity: 86, sold: 86 }); set(extra, { state: 'open', opensAt: now - 1200, endsAt: now + 12 * 60, sold: 3 });
+      } else {
+        set(press, { state: 'open', opensAt: now - H, endsAt: now + 5 * H, sold: 23 }); set(plank, { state: 'open', opensAt: now - H, endsAt: now + 23 * H, sold: 12 });
+        set(all, { state: 'upcoming', opensAt: now + 23 * H, endsAt: 0 }); set(extra, { state: 'upcoming', opensAt: 0, endsAt: 0 });
+      }
+      Object.assign(s, { groups: [press, plank, all, extra], stage: stage || 'holders', phase: stage === 'closed' ? 4 : 3, closed: stage === 'closed', closing: false });
+      if (stage === 'closed') s.groups.forEach((g) => { g.state = 'ended'; g.left = 0; });
+    },
+
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },
     cardImg(c) { // the finished card images for a look (character, material, holo): one strip, raw, cased, then slabbed PDA 1-10
       // demo: only the Bowling Ball has Gold and Full Art art, so those always show it
@@ -285,5 +342,6 @@
       if (mode === 'lost') state.suggestions.unshift({ text: 'Art style: Ink and wash', at: 'Series ' + state.series.no, picked: false });
     } else fetch('suggestions/results.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).then((f) => { if (f?.waves?.length) Store.update(() => Store.setResults(f.waves)); }).catch(() => {});
   }
+  Store.demoStage(['open', 'waiting', 'after', 'closed'].includes(demoQ.get('stage')) ? demoQ.get('stage') : 'holders'); // the demo's sale (live.js replaces it)
   window.Store = Store; window.Sheet = Sheet; window.toast = toast;
 })();

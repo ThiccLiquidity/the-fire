@@ -10,8 +10,10 @@
 //                   GRADING_LOOKBACK each pass, plus a sweep of older ones from the oldest not finished)
 //   5. burners:     PaperBurner.flush(pay) and PlankBurner.flush(pay) when they hold enough to be worth the gas (or
 //                   have waited long enough) and a flush would move it
-//   6. drops:       an unsold drop whose phases are over: alert (the owner can end it); once anyone can,
-//                   FireSale.endDrop(fire)
+//   6. drops:       a Series nothing can still sell in (FireSale.status(fire).left 0: its groups' time ran out or
+//                   its unlimited group idled out, with no purchase to close it) -> FireSale.close(fire) (the backup
+//                   ACT_AFTER_SEC after the last group ended); a drop that hasn't sold out once its schedule is over
+//                   (status.endableAt): alert (the owner can end it); once anyone can, FireSale.endDrop(fire)
 //   7. health:      alerts (stale feeds, stuck opens/gradings, waiting fees, drand lag, low keeper ETH, a pause, a
 //                   randomness switch, an unsold drop, FireSale's wallets or feeds changed by the owner) and a heartbeat
 // Before sending, each call is checked again against the pending state (still due, not yet delivered, something to
@@ -19,7 +21,7 @@
 // on work left waiting ACT_AFTER_SEC, and yields to the main keeper on a tie (tx.mjs).
 import { encodeAbiParameters, keccak256, formatEther, formatUnits, zeroAddress } from "viem";
 import {
-  adapterAbi, burnerAbi, cardsAbi, erc20Abi, feedAbi, paperTwapAbi, pausableAbi, protectedEvent, psaAbi, routerAbi, saleAbi, saleSettingsEvents, twapAbi,
+  adapterAbi, burnerAbi, cardsAbi, erc20Abi, feedAbi, groupsAbi, paperTwapAbi, pausableAbi, protectedEvent, psaAbi, routerAbi, saleAbi, saleSettingsEvents, twapAbi,
 } from "./abis.mjs";
 import { drandClient, roundAt, roundTime } from "./drand.mjs";
 import { createSender, errMsg } from "./tx.mjs";
@@ -39,15 +41,19 @@ export function flushPlan({ usd, waitedMs, sinceFlushMs }, cfg) {
   return { go: false, why: usd === undefined ? "no price yet" : "below the minimum" };
 }
 
-/** When the owner may end a drop that hasn't sold out (its phases over, and MIN_DROP_TIME after start at the
- *  earliest), and when anyone may (END_GRACE later). As FireSale.endDrop. */
-export function dropEndTimes(d, minDropTime, endGrace) {
-  const start = BigInt(d.start);
-  let longest = 0n;
-  for (const w of [d.starterWindow, d.liftAfter, d.holderWindow, d.plankOnlyFor, d.regularWalletsFor]) if (BigInt(w) > longest) longest = BigInt(w);
-  let owner = start + longest;
-  if (owner < start + BigInt(minDropTime)) owner = start + BigInt(minDropTime);
+/** When the owner may end a drop that hasn't sold out (FireSale.status(fire).endableAt: its schedule over, and
+ *  MIN_DROP_TIME after the start at the earliest), and when anyone may (END_GRACE later). As FireSale.endDrop. */
+export function dropEndTimes(status, endGrace) {
+  const owner = BigInt(status.endableAt);
   return { owner, anyone: owner + BigInt(endGrace) };
+}
+
+/** When the last of a drop's groups ended (FireGroups.groupsOf): once status.left is 0, the moment nothing could
+ *  sell any more. */
+export function lastGroupEnd(views) {
+  let t = 0n;
+  for (const v of views) if (BigInt(v.endsAt) > t) t = BigInt(v.endsAt);
+  return t;
 }
 
 const utc = (ts) => `${new Date(Number(ts) * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
@@ -362,23 +368,39 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   }
 
   // ------------------------------------------------------------------ drops
-  /** A drop that hasn't sold out: an alert once the owner may end it; once anyone may, the keeper ends it itself
-   *  (the backup only ACT_AFTER_SEC after that). Returns { alerts, events }. */
+  /** Per configured, open drop (FireSale.status): nothing left that can still sell -> close it (anyone may; the
+   *  backup only ACT_AFTER_SEC after the last group ended). Else, once its schedule is over and it hasn't sold out:
+   *  an alert once the owner may end it; once anyone may, the keeper ends it itself (the backup ACT_AFTER_SEC after
+   *  that). Returns { alerts, events }. */
   async function drops(now) {
     const sale = cfg.optional?.sale;
     const alerts = [];
     const events = [];
     if (!sale || !series.length) return { alerts, events };
-    const [minTime, grace] = await Promise.all([once(sale, saleAbi, "MIN_DROP_TIME"), once(sale, saleAbi, "END_GRACE")]);
-    const ds = await Promise.all(series.map((f) => read(sale, saleAbi, "dropOf", [f])));
+    const grace = await once(sale, saleAbi, "END_GRACE");
+    const sts = await Promise.all(series.map((f) => read(sale, saleAbi, "status", [f])));
     for (const [k, fire] of series.entries()) {
-      const d = ds[k];
-      if (d.start === 0n || d.closed) continue;
-      const at = dropEndTimes(d, minTime, grace);
+      const st = sts[k];
+      if (!st.configured || st.closed || !st.live) continue;
+      if (st.left === 0n) {
+        if (backup) {
+          const views = await read(await once(sale, saleAbi, "GROUPS"), groupsAbi, "groupsOf", [fire]);
+          if (now < lastGroupEnd(views) + cfg.actAfterSec) continue; // the main keeper's, for now
+        }
+        const still = async (tag) => { const x = await read(sale, saleAbi, "status", [fire], tag); return x.configured && !x.closed && x.left === 0n; };
+        const r = await sender.send({ address: sale, abi: saleAbi, functionName: "close", args: [fire] }, { job: `close:${fire}`, precheck: still });
+        if (r.status === "done") {
+          events.push({ key: `close:${fire}`, text: `Series ${fire}: nothing can still sell (its last group ended): this keeper closed it (FireSale.close(${fire})); its packs can be opened` });
+        } else if (r.status !== "waiting" && r.reason !== "already done") {
+          alerts.push({ key: `close:${fire}`, text: `Series ${fire}: nothing can still sell, but this keeper's FireSale.close(${fire}) didn't go through (${r.reason ?? r.status}): its packs can't be opened until it's closed` });
+        }
+        continue;
+      }
+      const at = dropEndTimes(st, grace);
       if (now < at.owner) continue;
       let why;
       if (now >= at.anyone + cfg.actAfterSec) {
-        const open = async (tag) => { const x = await read(sale, saleAbi, "dropOf", [fire], tag); return x.start !== 0n && !x.closed; };
+        const open = async (tag) => { const x = await read(sale, saleAbi, "status", [fire], tag); return x.configured && !x.closed; };
         const r = await sender.send({ address: sale, abi: saleAbi, functionName: "endDrop", args: [fire] }, { job: `endDrop:${fire}`, precheck: open });
         if (r.status === "done") {
           events.push({ key: `endDrop:${fire}`, text: `Series ${fire} hadn't sold out and its end grace is over: this keeper ended the drop (FireSale.endDrop(${fire})); its packs can be opened` });
@@ -493,7 +515,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
       cfg.optional?.sale ? read(cfg.optional.sale, pausableAbi, "paused").catch(() => false) : false,
       read(C.psa, pausableAbi, "paused").catch(() => false),
     ]);
-    if (salePaused) alerts.push({ key: "pause:sale", repeat: false, text: "FireSale is PAUSED by the owner: buying, press packs and credit spending are stopped" });
+    if (salePaused) alerts.push({ key: "pause:sale", repeat: false, text: "FireSale is PAUSED by the owner: buying (every group) and credit spending are stopped" });
     if (psaPaused) alerts.push({ key: "pause:psa", repeat: false, text: "FirePsa is PAUSED by the owner: case and grading payments are stopped" });
     // the keeper itself
     const bal = await pub.getBalance({ address: account.address });

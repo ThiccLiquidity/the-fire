@@ -3,12 +3,12 @@
 // features an older deploy lacks.
 
 import { erc20Abi, formatUnits, getAddress, toFunctionSelector, type Abi, type AbiEvent, type Address, type Log } from "viem";
-import { burnerAbi, cardsAbi, creditsAbi, dealerAbi, packsAbi, psaAbi, rendererAbi, saleAbi } from "../cards";
+import { burnerAbi, cardsAbi, creditsAbi, dealerAbi, groupsAbi, packsAbi, psaAbi, rendererAbi, saleAbi } from "../cards";
 import { NET } from "../net";
 import type { ContractName } from "../config";
 import { getPublicClient } from "../wallet";
 
-export { burnerAbi, cardsAbi, creditsAbi, dealerAbi, packsAbi, psaAbi, rendererAbi, saleAbi };
+export { burnerAbi, cardsAbi, creditsAbi, dealerAbi, groupsAbi, packsAbi, psaAbi, rendererAbi, saleAbi };
 
 /** Thrown by everything here when the network has no card contracts (mainnet before the deploy). */
 export class NotDeployedError extends Error {
@@ -20,6 +20,20 @@ export function addr(name: ContractName): Address {
   const a = NET.deployment.contracts?.[name];
   if (!a) throw new NotDeployedError(name);
   return getAddress(a);
+}
+
+let groupsAt: Promise<Address> | null = null;
+/** FireGroups: from the deployments file, else the one FireSale names (FireSale.GROUPS, fixed at its deploy). */
+export function groupsAddr(): Promise<Address> {
+  const a = NET.deployment.contracts?.FireGroups;
+  if (a) return Promise.resolve(getAddress(a));
+  return (groupsAt ??= pub().readContract({ address: addr("FireSale"), abi: saleAbi, functionName: "GROUPS" })
+    .then((x) => getAddress(x as Address)).catch((e) => { groupsAt = null; throw e; }));
+}
+
+/** One call on FireGroups (see groupsAddr). */
+export async function readGroups<T>(functionName: string, args: readonly unknown[] = []): Promise<T> {
+  return (await pub().readContract({ address: await groupsAddr(), abi: groupsAbi, functionName, args })) as T;
 }
 
 /** A token or other input the contracts were deployed with (PAPER, PLANK, USDG, WETH, MILL = the Paper Press). */

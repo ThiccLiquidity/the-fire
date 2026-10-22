@@ -10,6 +10,7 @@ import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {CardsRenderer} from "../../src/cards/CardsRenderer.sol";
 import {PaperBurner} from "../../src/cards/PaperBurner.sol";
 import {FireCredits} from "../../src/cards/FireCredits.sol";
+import {FireGroups} from "../../src/cards/FireGroups.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {DeployCards} from "../../script/DeployCards.s.sol";
 import {AcceptOwnership} from "../../script/AcceptOwnership.s.sol";
@@ -1276,6 +1277,11 @@ contract DeployCardsTest is Test {
         assertEq(address(d.plankBurner.ETH_USD()), ethUsd);
         assertEq(address(d.plankBurner.USDG()), address(usdg));
         assertEq(d.sale.CREDITS(), address(d.credits));
+        assertEq(address(d.sale.GROUPS()), address(d.groups));
+        assertEq(d.groups.sale(), address(d.sale), "FireGroups' only writer is FireSale");
+        vm.expectRevert(FireGroups.AlreadySet.selector);
+        vm.prank(address(s));
+        d.groups.setSale(address(0xBEEF)); // set once
         assertEq(address(d.credits.sale()), address(d.sale));
         assertEq(address(d.credits.CARDS()), address(d.cards));
         assertEq(d.credits.pendingOwner(), safe);

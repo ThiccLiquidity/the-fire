@@ -6,6 +6,7 @@ import {stdJson} from "forge-std/StdJson.sol";
 import {RecipeDealer} from "../src/cards/RecipeDealer.sol";
 import {FireCards} from "../src/cards/FireCards.sol";
 import {FireSale} from "../src/cards/FireSale.sol";
+import {FireGroups} from "../src/cards/FireGroups.sol";
 import {Deployments} from "./Deployments.sol";
 
 /**
@@ -17,9 +18,10 @@ import {Deployments} from "./Deployments.sol";
  *     Nothing is locked yet: any of it can still be set again.
  *   Then ops/series (VerifySeries) reads it all back from the chain, diffs it against the JSON and loads every image
  *     the contract can point at through two gateways. Only when it's green:
- *   Batch B, the lock: FireSale.configureDrop from the "sale" block (every FireSale.DropConfig field by name, in
- *     contract units). It locks the Series: recipe, characters and images are fixed from then. Before sending batch B
- *     the script reads the chain and refuses unless batch A is there exactly as the JSON says.
+ *   Batch B, the lock: FireSale.configureDrop from the "sale" block (the drop-wide FireSale.DropConfig fields and a
+ *     "groups" list of FireGroups.Group, by name, in contract units; docs/cards-contracts.md). It locks the Series:
+ *     recipe, characters and images are fixed from then. Before sending batch B the script reads the chain and
+ *     refuses unless batch A is there exactly as the JSON says.
  *
  * Each batch is sent from the owner, signed on the device (one confirmation per call). The calls are also printed.
  *
@@ -30,10 +32,10 @@ import {Deployments} from "./Deployments.sol";
  *
  *   BATCH=A|B (AB only with SIMULATE; default A), RECIPE_JSON=series/recipe.json (the file must be under contracts/series/)
  *   RECIPE_DEALER, FIRE_CARDS, FIRE_SALE: read from deployments/<chainId>.json when not set
- *   DROP_START=<unix seconds>, HOLDER_ROOT=0x...: override the sale block's start and holderRoot (both are usually
- *     decided last: the snapshot runs just before the drop)
- *   NO_HOLDERS=true: batch B refuses a holder window (holderWindow > 0) with no holderRoot, since that window would
- *     be presses only; set this when that is really what the drop wants
+ *   DROP_START=<unix seconds>: overrides the sale block's start; GROUP_ROOT_<i>=0x...: the snapshot root of group i
+ *     (a "snapshot" group; both are usually decided last: the snapshot runs just before the drop). A snapshot group
+ *     with no root in the JSON and no GROUP_ROOT_<i> is refused.
+ *   MILL: the Paper Press for a group whose "nft" is "press" (read from deployments/<chainId>.json when not set)
  *   CHARACTER_BATCH=200
  *
  * The JSON is read strictly: unknown keys (PDA odds included: they are fixed in FirePsa for every Series), numbers too
@@ -83,22 +85,12 @@ contract ConfigureSeries is Deployments {
             require(s.hasSale, "batch B needs the JSON's sale block");
             require(sale != address(0), "batch B: set FIRE_SALE or deploy FireSale first");
             checkOnChain(json, dealer, cards); // batch A must be on chain exactly as the JSON says
-            checkHolders(s.drop, vm.envOr("NO_HOLDERS", false));
             calls = new Call[](1);
             calls[0] = Call(sale, abi.encodeCall(FireSale.configureDrop, (s.fire, s.drop)), "FireSale.configureDrop");
             _print(string.concat("Series ", vm.toString(s.fire), ", batch B (the lock: configureDrop; only after VerifySeries is GREEN)"), calls);
             if (simulate) _simulate(owner, calls);
             else _send(owner, calls);
         }
-    }
-
-    /// @notice A holder window with no snapshot root lets only presses in during it: almost always a forgotten
-    ///         HOLDER_ROOT. Refused unless `noHolders` (NO_HOLDERS=true) says it's meant.
-    function checkHolders(FireSale.DropConfig memory c, bool noHolders) public pure {
-        require(
-            c.holderWindow == 0 || c.holderRoot != bytes32(0) || noHolders,
-            "holderWindow > 0 but no holderRoot: set HOLDER_ROOT (the snapshot), or NO_HOLDERS=true for presses only"
-        );
     }
 
     function _print(string memory title, Call[] memory calls) internal pure {
@@ -261,55 +253,119 @@ contract ConfigureSeries is Deployments {
         }
     }
 
-    /// @dev The "sale" block: every FireSale.DropConfig field by name (contract units: seconds, 8-decimal dollars,
-    ///      PAPER wei, basis points). holderRoot is optional (0 = presses only). DROP_START and HOLDER_ROOT override.
+    /// @dev The "sale" block: the drop-wide FireSale.DropConfig fields and its "groups" (FireGroups.Group each), by
+    ///      name, in contract units (seconds, 8-decimal dollars, PAPER wei, basis points). DROP_START overrides the
+    ///      start and GROUP_ROOT_<i> a snapshot group's root. Shape: docs/cards-contracts.md.
     function parseSale(string memory json) public view returns (FireSale.DropConfig memory c) {
-        _onlyKeys(json, ".sale", "start,packs,starters,plankOnly,walletLimit,starterWindow,liftAfter,plankBurnBps,paperBurnBps,priceUsd,paperPerPack,paperCapUsd,holderWindow,holderRoot,maxPerTx,plankOnlyFor,regularWalletsFor,starterPerPress,starterWalletLimit,starterPriceUsd,starterPaper,creditsPerPick,creditPacksMax,creditPacksPerWallet");
-        c.start = uint64(vm.envOr("DROP_START", _u(json, "start")));
+        _onlyKeys(json, ".sale", "start,packs,plankBurnBps,paperBurnBps,paperCapUsd,maxPerTx,regularWalletsFor,creditsPerPick,creditPacksMax,creditPacksPerWallet,creditGroup,groups");
+        c.start = uint64(vm.envOr("DROP_START", _u(json, ".sale", "start", type(uint64).max)));
         require(c.start != 0, "sale.start is 0: set it in the studio or with DROP_START");
         require(c.start < block.timestamp + MAX_START_AHEAD, "sale.start is more than a year away: a typo?");
-        c.packs = uint64(_u(json, "packs"));
-        c.starters = uint64(_u(json, "starters"));
-        c.plankOnly = uint64(_u(json, "plankOnly"));
-        c.walletLimit = uint64(_u(json, "walletLimit"));
-        c.starterWindow = uint32(_u(json, "starterWindow"));
-        c.liftAfter = uint32(_u(json, "liftAfter"));
-        c.plankBurnBps = uint16(_u(json, "plankBurnBps"));
-        c.paperBurnBps = uint16(_u(json, "paperBurnBps"));
-        c.priceUsd = uint128(_u(json, "priceUsd"));
-        c.paperPerPack = uint128(_u(json, "paperPerPack"));
-        c.paperCapUsd = uint128(_u(json, "paperCapUsd"));
-        c.holderWindow = uint32(_u(json, "holderWindow"));
-        bytes32 root;
-        if (json.keyExists(".sale.holderRoot")) root = json.readBytes32(".sale.holderRoot");
-        c.holderRoot = vm.envOr("HOLDER_ROOT", root);
-        c.maxPerTx = uint32(_u(json, "maxPerTx"));
-        c.plankOnlyFor = uint32(_u(json, "plankOnlyFor"));
-        c.regularWalletsFor = uint32(_u(json, "regularWalletsFor"));
-        c.starterPerPress = uint32(_u(json, "starterPerPress"));
-        c.starterWalletLimit = uint32(_u(json, "starterWalletLimit"));
-        c.starterPriceUsd = uint128(_u(json, "starterPriceUsd"));
-        c.starterPaper = uint128(_u(json, "starterPaper"));
-        c.creditsPerPick = uint16(_u(json, "creditsPerPick"));
-        c.creditPacksMax = uint64(_u(json, "creditPacksMax"));
-        c.creditPacksPerWallet = uint64(_u(json, "creditPacksPerWallet"));
+        c.packs = uint64(_u(json, ".sale", "packs", type(uint64).max));
+        c.plankBurnBps = uint16(_u(json, ".sale", "plankBurnBps", 10_000));
+        c.paperBurnBps = uint16(_u(json, ".sale", "paperBurnBps", 10_000));
+        require(uint256(c.plankBurnBps) + c.paperBurnBps <= 10_000, "sale: plankBurnBps + paperBurnBps is over 10000 (100%)");
+        c.paperCapUsd = uint128(_u(json, ".sale", "paperCapUsd", type(uint128).max));
+        c.maxPerTx = uint32(_u(json, ".sale", "maxPerTx", type(uint32).max));
+        c.regularWalletsFor = uint32(_u(json, ".sale", "regularWalletsFor", 30 days));
+        c.creditsPerPick = uint16(_u(json, ".sale", "creditsPerPick", type(uint16).max));
+        c.creditPacksMax = uint64(_u(json, ".sale", "creditPacksMax", type(uint64).max));
+        c.creditPacksPerWallet = uint64(_u(json, ".sale", "creditPacksPerWallet", type(uint64).max));
+        c.creditGroup = uint8(_u(json, ".sale", "creditGroup", 255));
+        uint256 n = _count(json, ".sale.groups");
+        require(n >= 1 && n <= 6, "sale.groups: 1 to 6 groups");
+        require(c.creditGroup == 255 || c.creditGroup < n, "sale.creditGroup: the index of a group (0 is the first), or 255 for no credit packs");
+        c.groups = new FireGroups.Group[](n);
+        uint256 sum;
+        for (uint256 i; i < n; i++) {
+            c.groups[i] = parseGroup(json, i, n);
+            sum += c.groups[i].packs;
+        }
+        for (uint256 i; i < n; i++) {
+            uint8 to = c.groups[i].rollTo;
+            require(
+                to == 255 || c.groups[to].taxBps == 0,
+                string.concat(".sale.groups[", vm.toString(i), "].rollTo: a group with a rising tax (taxBps) takes no leftovers")
+            );
+        }
+        require(
+            sum == c.packs,
+            string.concat(
+                "sale.groups: the groups' packs add up to ", vm.toString(sum), ", not sale.packs (", vm.toString(c.packs),
+                "; unlimited groups count 0)"
+            )
+        );
     }
 
-    /// @dev A required whole number from the sale block, checked to fit its field.
-    function _u(string memory json, string memory key) internal view returns (uint256 v) {
-        string memory p = string.concat(".sale.", key);
-        require(json.keyExists(p), string.concat(p, " is missing"));
-        v = json.readUint(p);
-        bytes32 k = keccak256(bytes(key));
-        uint256 max = k == keccak256("plankBurnBps") || k == keccak256("paperBurnBps") || k == keccak256("creditsPerPick") ? type(uint16).max
-            : k == keccak256("priceUsd") || k == keccak256("paperPerPack") || k == keccak256("paperCapUsd")
-                || k == keccak256("starterPriceUsd")
-                || k == keccak256("starterPaper") ? type(uint128).max
-            : k == keccak256("start") || k == keccak256("packs") || k == keccak256("starters") || k == keccak256("plankOnly")
-                || k == keccak256("walletLimit") || k == keccak256("creditPacksMax")
-                || k == keccak256("creditPacksPerWallet") ? type(uint64).max
-            : type(uint32).max;
-        require(v <= max, string.concat(p, " is too big for its field"));
+    /// @dev Group `i` of `n` in the sale block, checked like FireGroups checks it, with the reason by name.
+    function parseGroup(string memory json, uint256 i, uint256 n) public view returns (FireGroups.Group memory g) {
+        string memory p = string.concat(".sale.groups[", vm.toString(i), "]");
+        _onlyKeys(json, p, "name,packs,gate,nft,perNft,root,priceUsd,paper,coins,perWallet,afterGroup,startDelay,duration,rollTo,taxBps,idle,perTx,unlimited");
+        g.packs = uint64(_u(json, p, "packs", type(uint64).max));
+        g.priceUsd = uint128(_u(json, p, "priceUsd", type(uint128).max));
+        g.paper = uint128(_u(json, p, "paper", type(uint128).max));
+        g.coins = uint8(_u(json, p, "coins", 7));
+        require(g.priceUsd == 0 || g.coins != 0, string.concat(p, ".coins: a dollar price needs a coin (PLANK 1 + ETH 2 + USDG 4)"));
+        g.perWallet = uint32(_u(json, p, "perWallet", type(uint32).max));
+        g.afterGroup = uint8(_u(json, p, "afterGroup", 255));
+        require(g.afterGroup == 255 || g.afterGroup < i, string.concat(p, ".afterGroup: an earlier group's index, or 255 to open with the drop"));
+        g.startDelay = uint32(_u(json, p, "startDelay", 30 days));
+        g.duration = uint32(_u(json, p, "duration", 30 days));
+        g.rollTo = uint8(_u(json, p, "rollTo", 255));
+        // optional, 0 = off: end after this long with no sale; most packs per purchase (0 = the drop's maxPerTx)
+        if (json.keyExists(string.concat(p, ".idle"))) g.idle = uint32(_u(json, p, "idle", 30 days));
+        if (json.keyExists(string.concat(p, ".perTx"))) g.perTx = uint32(_u(json, p, "perTx", type(uint32).max));
+        if (json.keyExists(string.concat(p, ".taxBps"))) g.taxBps = uint16(_u(json, p, "taxBps", 5_000)); // optional, 0 = off
+        require(g.taxBps == 0 || g.priceUsd != 0, string.concat(p, ".taxBps: a rising tax needs a dollar price"));
+        if (json.keyExists(string.concat(p, ".unlimited"))) g.unlimited = json.readBool(string.concat(p, ".unlimited"));
+        if (g.unlimited) {
+            require(g.packs == 0, string.concat(p, ".packs: 0 for an unlimited group (it has no pack count; it adds on top of sale.packs)"));
+            require(
+                g.taxBps != 0 && g.idle != 0,
+                string.concat(p, ".unlimited: needs taxBps (the rising price caps demand) and idle (so it always ends)")
+            );
+            require(g.rollTo == 255, string.concat(p, ".rollTo: 255 for an unlimited group"));
+        }
+        require(g.rollTo == 255 || (g.rollTo > i && g.rollTo < n), string.concat(p, ".rollTo: a later group's index, or 255 for nowhere"));
+        bytes32 gate = keccak256(bytes(json.readString(string.concat(p, ".gate"))));
+        bool isNft = gate == keccak256("nft");
+        bool isSnap = gate == keccak256("snapshot");
+        require(isNft || isSnap || gate == keccak256("open"), string.concat(p, ".gate: open, nft or snapshot"));
+        require(isNft || (!json.keyExists(string.concat(p, ".nft")) && !json.keyExists(string.concat(p, ".perNft"))), string.concat(p, ": nft and perNft are for gate nft only"));
+        require(isSnap || !json.keyExists(string.concat(p, ".root")), string.concat(p, ": root is for gate snapshot only"));
+        if (isNft) {
+            g.gate = FireGroups.Gate.NFT;
+            g.nft = _nft(json, p);
+            g.perNft = uint32(_u(json, p, "perNft", type(uint32).max));
+            require(g.perNft > 0, string.concat(p, ".perNft: at least 1 pack per NFT"));
+        } else if (isSnap) {
+            g.gate = FireGroups.Gate.SNAPSHOT;
+            if (json.keyExists(string.concat(p, ".root"))) g.root = json.readBytes32(string.concat(p, ".root"));
+            bytes32 e = vm.envOr(string.concat("GROUP_ROOT_", vm.toString(i)), bytes32(0)); // 0 = not set
+            if (e != 0) g.root = e;
+            require(g.root != 0, string.concat(p, ".root is missing: set GROUP_ROOT_", vm.toString(i), " (the snapshot from ops/snapshot)"));
+        } else {
+            require(g.priceUsd != 0 || g.paper != 0, string.concat(p, ": free packs open to everyone are refused (give it a price, PAPER or a gate)"));
+        }
+    }
+
+    /// @dev A group's NFT: an address, or "press" for the Paper Press (MILL, from the environment or deployments file).
+    function _nft(string memory json, string memory p) internal view returns (address a) {
+        string memory v = json.readString(string.concat(p, ".nft"));
+        if (keccak256(bytes(v)) == keccak256("press")) {
+            a = vm.envOr("MILL", deployedInput("MILL"));
+            require(a != address(0), string.concat(p, ".nft is \"press\": set MILL or record it in the deployments file"));
+        } else {
+            a = vm.parseAddress(v);
+        }
+    }
+
+    /// @dev A required whole number `key` of the object at `p`, at most `max`.
+    function _u(string memory json, string memory p, string memory key, uint256 max) internal view returns (uint256 v) {
+        string memory k = string.concat(p, ".", key);
+        require(json.keyExists(k), string.concat(k, " is missing"));
+        v = json.readUint(k);
+        require(v <= max, string.concat(k, " is too big for its field (most ", vm.toString(max), ")"));
     }
 
     function _type(string memory json, string memory p) internal view returns (RecipeDealer.CardType memory t) {

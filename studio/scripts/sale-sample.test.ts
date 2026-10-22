@@ -12,7 +12,10 @@ function sampleExport() {
   const chars = [
     { name: 'Ember Fox', category: 'Animals' }, { name: 'Ash Wolf', category: 'Animals' }, { name: 'Cinder Queen', category: 'Royals' },
   ]
-  const sale = saleJson({ ...standardSale(), start: 1_810_000_000, holderRoot: '0x' + 'ab'.repeat(32) })
+  const std = standardSale()
+  // the PLANK holders group's snapshot root (ops/snapshot fills it in before launch)
+  const groups = std.groups.map((g, i) => (i === 1 ? { ...g, root: '0x' + 'ab'.repeat(32) } : g))
+  const sale = saleJson({ ...std, start: 1_810_000_000, groups })
   return recipeJson(7, standardRecipe(), chars, 'ipfs://bafyexampleimages/', sale)
 }
 

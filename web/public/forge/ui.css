@@ -70,6 +70,24 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 .opt.main::before { content: ''; position: absolute; inset: -40%; background: conic-gradient(from 0deg, transparent 0 70%, #fff3c4 80%, #ff7a1f 88%, transparent 96%); animation: ember 2.8s linear infinite; z-index: 0 }
 .opt.main::after { content: ''; position: absolute; inset: 2px; border-radius: 12px; background: linear-gradient(#ffb357, #e0661f); z-index: 0 }
 @keyframes ember { to { transform: rotate(1turn) } }
+/* the drop's groups: one option each. Greyed: an open group this wallet can't use (it says why; a tap explains).
+   Extra: the after-sell-out group (a rising price), in fire colours. The line under them: what opens next. */
+.opt.off { background: linear-gradient(#2a211a, #1c1510); color: #b9a68a; border-color: #4a3a2a; border-style: dashed }
+.opt.off small { color: #9c8a72 }
+.opt.extra { background: linear-gradient(#ff8a5c, #c2361a); border-color: #ffc2a0; color: #1b0603 } .opt.extra small { color: #3a0a04 }
+.opt.extra.main::after { background: linear-gradient(#ff8a5c, #c2361a) }
+.buybox.many .opts { flex-wrap: wrap; justify-content: center; max-width: 34em }
+.gnext { margin: 0; font: 700 .78em/1.35 var(--body); color: #d4bd98; text-align: center }
+.gnext b { color: #f6e2b8 }
+.cd { font-variant-numeric: tabular-nums; white-space: nowrap }
+/* the after-sell-out checkout: what it is, then a clear confirm step before the wallet */
+.xpanel { display: grid; gap: 6px; padding: 12px 14px; border-radius: 12px; background: rgba(255, 110, 60, .1); border: 1px solid rgba(255, 130, 80, .45) }
+.xpanel p { margin: 0 } .xpanel .xhead { font-size: 18px } .xpanel .xhead b { color: #ffb08a } .xpanel small { color: var(--muted); font-weight: 600 }
+.xpanel .xend { font-weight: 800; color: #ffcf99 } .xpanel .xnext { color: var(--muted); font-size: 13px }
+.xmoved { margin: 0; padding: 10px 12px; border-radius: 12px; background: rgba(255, 200, 80, .12); border: 1px solid rgba(255, 200, 80, .45); font-weight: 800; color: #ffe2a8 }
+.xconfirm { display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: rgba(255, 90, 50, .1); border: 2px solid #ff7a4a }
+.xconfirm h3 { margin: 0; font-size: 20px; color: #ffb08a } .xconfirm ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; line-height: 1.4 }
+.xcheck .btn + .btn { width: 100% }
 .buybar { display: none }
 
 /* bottom strip (desktop) */
@@ -156,6 +174,7 @@ body[data-mode=port] .strip .more { margin-left: 0; width: 100% }
 body[data-mode=port] .buybar { display: grid; gap: 6px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(#17100bf5, #0d0907); border-top: 2px solid #ffbf5e; --fs: 14px }
 body[data-mode=port] .buybar .opts { display: grid; grid-template-columns: 1fr 1fr } body[data-mode=port] .buybar .opt { white-space: normal }
 body[data-mode=port] .buybar .opt.main, body[data-mode=port] .buybar .opt:only-child { grid-column: 1 / -1; justify-content: center }
+body[data-mode=port] .buybar .gnext { font-size: 12px }
 body[data-mode=port] .toasts { top: calc(var(--top) + 8px) }
 
 /* phones held sideways: scene on the left, buy rail on the right */

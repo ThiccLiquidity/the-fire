@@ -16,7 +16,7 @@ import { sendTx, type TxStep } from "../tx";
 import { getAccount } from "../wallet";
 import { NET } from "../net";
 import {
-  addr, argsOf, cardsAbi, chainNow, creditsAbi, dealerAbi, eventOf, hasFunction, input, psaAbi, pub, read, saleAbi,
+  addr, argsOf, cardsAbi, chainNow, creditsAbi, dealerAbi, eventOf, hasFunction, input, psaAbi, pub, read, readGroups, saleAbi,
 } from "./contracts";
 import { gradingIds, payIndex, requestInfo, type PayCoin } from "./reads";
 
@@ -47,67 +47,58 @@ const coinAddr = (pay: PayCoin): Address => {
 
 // ---------------------------------------------------------------- packs
 
-export type Access = { pressId?: number; proof?: Hex[] };
-const accessArg = (a?: Access) => ({ pressId: BigInt(a?.pressId ?? 0), proof: a?.proof ?? [] });
+/** How a buyer shows it may buy in a gated group (FireGroups.Access): NFT ids it holds (NFT gate, used in order), or
+ *  its snapshot allowance and proof (snapshot gate: reads.snapshotEntry). Ignored by an open group. */
+export type Access = { nftIds?: number[]; allowance?: number; proof?: Hex[] };
+const accessArg = (a?: Access) => ({ nftIds: (a?.nftIds ?? []).map(BigInt), allowance: BigInt(a?.allowance ?? 0), proof: a?.proof ?? [] });
 
-/** Buy `n` packs of Series `fire`, paying in PLANK, ETH or USDG; burns the drop's PAPER per pack too. During the holder
- *  window pass `access` (a Paper Press id, or the snapshot proof: reads.proofFromSnapshot). PAPER is approved at the
- *  most it can be (the drop's PAPER per pack, x n); PLANK and ETH at the quote plus `slippageBps`. `quote`: what the
- *  buyer was shown (quotePacks' cost.raw, and for paperInEth its paperEth.raw): the cap is built from that, not from
- *  a new quote at the click. */
-export async function buyPacks(p: { fire: number; n: number; pay: PayCoin; access?: Access; slippageBps?: number; paperInEth?: boolean; quote?: { cost?: string | null; paperEth?: string | null } }, o: WriteOpts = {}): Promise<TransactionReceipt> {
-  const f = BigInt(p.fire), n = BigInt(p.n), sale = addr("FireSale"), slip = p.slippageBps ?? 300, q = p.quote ?? {};
-  if (p.pay === "ETH" && p.paperInEth) {
+/** Buy `n` packs from group `group` of Series `fire`, paying its dollar price in `pay` (a coin the group takes; ignored
+ *  when the group has no dollar price), and its PAPER per pack (burned). `access`: for a gated group (NFT ids, or the
+ *  snapshot allowance and proof). PAPER is approved at the most it can be (the group's PAPER per pack x n); PLANK at
+ *  the quote plus `slippageBps`, USDG at the quote (a dollar). `paperInEth`: ETH alone (buyWithEthAll: FireSale buys
+ *  the PAPER on the market and burns it; one confirmation, no approval). `quote`: what the buyer was shown
+ *  (reads.quoteGroup: the coin's cost.raw, and paperEth.raw for ETH alone): the cap is built from that + 3%, not from a
+ *  new quote at the click, so a price that moved more (a taxed group's next pack after someone else bought) is
+ *  refused with PriceMoved and nothing is charged. */
+export async function buyPacks(p: { fire: number; group: number; n: number; pay?: PayCoin | null; access?: Access; slippageBps?: number; paperInEth?: boolean; quote?: { cost?: string | null; paperEth?: string | null } }, o: WriteOpts = {}): Promise<TransactionReceipt> {
+  const f = BigInt(p.fire), g = BigInt(p.group), n = BigInt(p.n), sale = addr("FireSale"), slip = p.slippageBps ?? 300, q = p.quote ?? {};
+  const label = `Buy ${plural(p.n, "pack")}`, acc = accessArg(p.access);
+  const cfg = await readGroups<{ priceUsd: bigint; paper: bigint }>("groupOf", [f, g]);
+  const priced = cfg.priceUsd > 0n;
+  const pay: PayCoin = priced ? (p.pay ?? "ETH") : "ETH";
+  const fresh = () => read<readonly [bigint, bigint]>("FireSale", saleAbi, "quote", [f, g, n, payIndex(pay)]).then((x) => x[0]);
+  if (p.paperInEth) {
     // ETH alone: FireSale buys the packs' PAPER on the market and burns it. One confirmation, no approval.
     const [price, paperEth] = await Promise.all([
-      shown(q.cost, () => read<bigint>("FireSale", saleAbi, "quoteEth", [f, n])),
+      priced ? shown(q.cost, fresh) : Promise.resolve(0n),
       shown(q.paperEth, async () => {
-        const paper = await read<bigint>("FireSale", saleAbi, "paperFor", [f, n]);
+        const paper = await read<bigint>("FireSale", saleAbi, "paperFor", [f, g, n]);
         return paper === 0n ? 0n : read<bigint>("FireSale", saleAbi, "quotePaperInEth", [paper]);
       }),
     ]);
-    return send(sale, saleAbi, "buyWithEthAll", [f, n, accessArg(p.access)], `Buy ${plural(p.n, "pack")}`, "buy", o, withSlip(price + paperEth, slip)); // extra ETH comes back
+    return send(sale, saleAbi, "buyWithEthAll", [f, g, n, acc], label, "buy", o, withSlip(price + paperEth, slip)); // extra ETH comes back
   }
-  const d = await read<{ paperPerPack: bigint }>("FireSale", saleAbi, "dropOf", [f]);
-  const maxPaper = d.paperPerPack * n;
+  const maxPaper = cfg.paper * n; // the group's PAPER per pack: the drop's dollar ceiling only ever takes less
   if (maxPaper > 0n) await approve(input("PAPER")!, sale, maxPaper, "Approve PAPER", o);
-  const label = `Buy ${plural(p.n, "pack")}`;
-  if (p.pay === "ETH") {
-    const cost = await shown(q.cost, () => read<bigint>("FireSale", saleAbi, "quoteEth", [f, n]));
-    return send(sale, saleAbi, "buyWithEth", [f, n, maxPaper, accessArg(p.access)], label, "buy", o, withSlip(cost, slip)); // any extra ETH comes back
+  if (!priced) return send(sale, saleAbi, "buy", [f, g, n, payIndex(pay), 0n, maxPaper, acc], label, "buy", o);
+  if (pay === "ETH") {
+    const max = withSlip(await shown(q.cost, fresh), slip);
+    return send(sale, saleAbi, "buy", [f, g, n, payIndex(pay), max, maxPaper, acc], label, "buy", o, max); // any extra ETH comes back
   }
-  if (p.pay === "PLANK") {
-    const max = withSlip(await shown(q.cost, () => read<bigint>("FireSale", saleAbi, "quotePlank", [f, n])), slip);
-    await approve(coinAddr("PLANK"), sale, max, "Approve PLANK", o);
-    return send(sale, saleAbi, "buyWithPlank", [f, n, max, maxPaper, accessArg(p.access)], label, "buy", o);
-  }
-  const max = await shown(q.cost, () => read<bigint>("FireSale", saleAbi, "quoteUsdg", [f, n])); // USDG is a dollar: the price doesn't move
-  await approve(coinAddr("USDG"), sale, max, "Approve USDG", o);
-  return send(sale, saleAbi, "buyWithUsdg", [f, n, max, maxPaper, accessArg(p.access)], label, "buy", o);
+  const cost = await shown(q.cost, fresh);
+  const max = pay === "USDG" ? cost : withSlip(cost, slip); // USDG is a dollar: only a rising tax moves it
+  await approve(coinAddr(pay), sale, max, `Approve ${pay}`, o);
+  return send(sale, saleAbi, "buy", [f, g, n, payIndex(pay), max, maxPaper, acc], label, "buy", o);
 }
 
-/** Claim `n` press packs with a Paper Press you hold, during the press window. `quote`: what the holder was shown
- *  (quotePress' cost.raw and paper.raw); the caps are built from it. */
-export async function claimPressPacks(p: { fire: number; pressId: number; n: number; pay: PayCoin; slippageBps?: number; quote?: { cost?: string | null; paper?: string | null } }, o: WriteOpts = {}): Promise<TransactionReceipt> {
-  const f = BigInt(p.fire), n = BigInt(p.n), sale = addr("FireSale"), slip = p.slippageBps ?? 300;
-  const [cost, paper] = p.quote?.cost != null && p.quote?.paper != null ? [BigInt(p.quote.cost), BigInt(p.quote.paper)]
-    : await read<readonly [bigint, bigint]>("FireSale", saleAbi, "quoteStarter", [f, n, payIndex(p.pay)]);
-  const d = await read<{ starterPaper: bigint }>("FireSale", saleAbi, "dropOf", [f]);
-  const maxPaper = d.starterPaper * n > paper ? d.starterPaper * n : paper;
-  if (maxPaper > 0n) await approve(input("PAPER")!, sale, maxPaper, "Approve PAPER", o);
-  let maxCost = 0n, value = 0n;
-  if (cost > 0n) {
-    if (p.pay === "ETH") value = maxCost = withSlip(cost, slip);
-    else { maxCost = p.pay === "USDG" ? cost : withSlip(cost, slip); await approve(coinAddr(p.pay), sale, maxCost, `Approve ${p.pay}`, o); }
-  }
-  return send(sale, saleAbi, "claimStarter", [f, BigInt(p.pressId), n, payIndex(p.pay), maxCost, maxPaper], `Claim ${plural(p.n, "press pack")}`, "press", o, value);
-}
-
-/** Spend `n` free pack credits in Series `fire` (the drop's PAPER per pack is still burned). */
+/** Spend `n` free pack credits in Series `fire`: packs from the drop's credit group while it's open, for that group's
+ *  PAPER per pack (burned). */
 export async function spendCredits(p: { fire: number; n: number }, o: WriteOpts = {}): Promise<TransactionReceipt> {
   const f = BigInt(p.fire), n = BigInt(p.n);
-  const d = await read<{ paperPerPack: bigint }>("FireSale", saleAbi, "dropOf", [f]);
-  const maxPaper = d.paperPerPack * n;
+  const d = await read<{ creditGroup: number }>("FireSale", saleAbi, "dropOf", [f]);
+  if (d.creditGroup === 255) throw new Error("This Series has no free packs.");
+  const cfg = await readGroups<{ paper: bigint }>("groupOf", [f, BigInt(d.creditGroup)]);
+  const maxPaper = cfg.paper * n;
   if (maxPaper > 0n) await approve(input("PAPER")!, addr("FireSale"), maxPaper, "Approve PAPER", o);
   return send(addr("FireCredits"), creditsAbi, "useCredits", [f, n, maxPaper], `Use ${plural(p.n, "free pack")}`, "credits", o);
 }
@@ -277,7 +268,8 @@ export async function suggest(p: { texts: string[] }, o: WriteOpts = {}): Promis
 
 // ---------------------------------------------------------------- odds and ends
 
-/** Anyone: close a sold-out drop (normally the last purchase does it). */
+/** Anyone: close a drop once nothing can still sell (normally the last purchase does it, else the keeper; the site
+ *  never asks a buyer to). */
 export const closeDrop = (p: { fire: number }, o: WriteOpts = {}) => send(addr("FireSale"), saleAbi, "close", [BigInt(p.fire)], "Close the sold-out drop", "close", o);
 
 /** The PAPER this wallet has approved to FireSale (packs, credits, suggestions) and FirePsa's coins: for a page that

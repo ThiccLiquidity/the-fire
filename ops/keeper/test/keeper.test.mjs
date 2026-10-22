@@ -8,7 +8,9 @@ import { DRAND_CHAIN, DRAND_GENESIS, drandClient, roundAt, roundTime } from "../
 import { createNotifier } from "../src/alerts.mjs";
 import { loadConfig, loadKey } from "../src/config.mjs";
 import { createSender } from "../src/tx.mjs";
-import { createKeeper, dropEndTimes, flushPlan } from "../src/core.mjs";
+import { createKeeper, dropEndTimes, lastGroupEnd, flushPlan } from "../src/core.mjs";
+import { saleAbi, groupsAbi } from "../src/abis.mjs";
+import { existsSync, readFileSync } from "node:fs";
 
 const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 
@@ -262,10 +264,26 @@ test("flushPlan: a minimum in dollars, once per FLUSH_EVERY_MIN, at once when la
   assert.equal(flushPlan({ usd: undefined, waitedMs: 7 * hour, sinceFlushMs: 10 * min }, cfg).go, false);
 });
 
-test("dropEndTimes: the owner after the longest phase (1 day at least), anyone END_GRACE later", () => {
-  const d = { start: 1000n, starterWindow: 3600, liftAfter: 0, holderWindow: 7200, plankOnlyFor: 0, regularWalletsFor: 0 };
-  assert.deepEqual(dropEndTimes(d, 86400n, 604800n), { owner: 1000n + 86400n, anyone: 1000n + 86400n + 604800n });
-  assert.deepEqual(dropEndTimes({ ...d, regularWalletsFor: 3 * 86400 }, 86400n, 604800n), { owner: 1000n + 3n * 86400n, anyone: 1000n + 10n * 86400n });
+test("dropEndTimes: the owner at status.endableAt, anyone END_GRACE later; lastGroupEnd: the latest group end", () => {
+  assert.deepEqual(dropEndTimes({ endableAt: 5000n }, 604800n), { owner: 5000n, anyone: 5000n + 604800n });
+  assert.equal(lastGroupEnd([{ endsAt: 10n }, { endsAt: 0n }, { endsAt: 30n }, { endsAt: 20n }]), 30n);
+  assert.equal(lastGroupEnd([]), 0n);
+});
+
+test("the keeper's FireSale / FireGroups ABI slices match the compiled contracts (contracts/out)", (t) => {
+  const out = (n) => new URL(`../../../contracts/out/${n}.sol/${n}.json`, import.meta.url);
+  if (!existsSync(out("FireSale"))) return t.skip("contracts not built (forge build)");
+  const canon = (ps = []) => ps.map((p) => (p.type.startsWith("tuple") ? `(${canon(p.components)})${p.type.slice(5)}` : p.type)).join(",");
+  for (const [name, slice] of [["FireSale", saleAbi], ["FireGroups", groupsAbi]]) {
+    const full = JSON.parse(readFileSync(out(name), "utf8")).abi;
+    for (const item of slice.filter((x) => x.type === "function" || x.type === "event")) {
+      const got = full.find((x) => x.type === item.type && x.name === item.name);
+      assert.ok(got, `${name}.${item.name} isn't in the contract`);
+      assert.equal(canon(item.inputs), canon(got.inputs), `${name}.${item.name} inputs`);
+      assert.equal(canon(item.outputs), canon(got.outputs), `${name}.${item.name} outputs`);
+      if (item.type === "event") assert.deepEqual(item.inputs.map((i) => !!i.indexed), got.inputs.map((i) => !!i.indexed), `${name}.${item.name} indexed`);
+    }
+  }
 });
 
 // ------------------------------------------------------------------ the keeper's jobs against a fake chain
@@ -373,34 +391,39 @@ test("burners: the backup flushes only a balance that has waited ACT_AFTER_SEC",
   assert.equal(chain.writes.length, 1);
 });
 
-function dropChain(drop, closeOnEnd = true) {
-  const d = { ...drop };
-  return fakeChain({
+/** A drop as FireSale.status shows it (left, endableAt) and its groups' ends; endDrop and close close it. */
+function dropChain(st, { closeOnEnd = true, ends = [0n], closeFails = false } = {}) {
+  const d = { configured: true, live: true, closed: false, left: 5n, endableAt: 0n, ...st };
+  const GROUPS = A(0x6a);
+  return Object.assign(fakeChain({
     reads: {
-      MIN_DROP_TIME: () => 86400n, END_GRACE: () => 604800n, dropOf: () => d, "sim:endDrop": () => undefined,
+      END_GRACE: () => 604800n, GROUPS: () => GROUPS, status: () => ({ ...d }), groupsOf: () => ends.map((endsAt) => ({ endsAt })),
+      "sim:endDrop": () => undefined,
+      "sim:close": () => { if (closeFails) throw new Error("NotSoldOut()"); },
     },
-    onWrite: (c) => { if (c.functionName === "endDrop" && closeOnEnd) d.closed = true; },
-  });
+    onWrite: (c) => { if ((c.functionName === "endDrop" && closeOnEnd) || c.functionName === "close") { d.closed = true; d.live = false; d.left = 0n; } },
+  }), { d });
 }
-const DROP = { start: 1_000_000n, closed: false, starterWindow: 0, liftAfter: 0, holderWindow: 3600, plankOnlyFor: 0, regularWalletsFor: 0 };
+const START = 1_000_000n;
+const DAY = 86400n;
+const OPEN = { left: 5n, endableAt: START + DAY };
 
-test("drops: an unsold drop alerts once the owner may end it, and the keeper ends it once anyone may", async () => {
-  const day = 86400n;
-  let chain = dropChain(DROP);
+test("drops: an unsold drop alerts once the owner may end it (status.endableAt), and the keeper ends it once anyone may", async () => {
+  let chain = dropChain(OPEN);
   let k = keeperOn(chain);
-  assert.deepEqual(await k.jobs.drops(DROP.start + day - 1n), { alerts: [], events: [] }, "too early: nothing");
-  const r = await k.jobs.drops(DROP.start + day);
+  assert.deepEqual(await k.jobs.drops(START + DAY - 1n), { alerts: [], events: [] }, "too early: nothing");
+  const r = await k.jobs.drops(START + DAY);
   assert.equal(r.alerts.length, 1);
   assert.match(r.alerts[0].text, /Series 7 hasn't sold out; the owner can end it now with FireSale.endDrop\(7\), or anyone can after 1970-01-20 /);
   assert.equal(chain.writes.length, 0, "the keeper can't end it yet");
-  const late = DROP.start + 8n * day;
+  const late = START + 8n * DAY;
   const r2 = await k.jobs.drops(late);
   assert.deepEqual(chain.writes.map((w) => [w.functionName, w.args]), [["endDrop", [7n]]], "anyone may: the main keeper ends it");
   assert.equal(r2.alerts.length, 0);
   assert.match(r2.events[0].text, /ended the drop/);
   assert.equal((await k.jobs.drops(late)).alerts.length, 0, "closed: nothing more");
 
-  chain = dropChain(DROP);
+  chain = dropChain(OPEN);
   k = keeperOn(chain, { actAfterSec: 300n });
   const b = await k.jobs.drops(late + 299n);
   assert.equal(chain.writes.length, 0, "the backup waits its grace");
@@ -408,8 +431,39 @@ test("drops: an unsold drop alerts once the owner may end it, and the keeper end
   await k.jobs.drops(late + 300n);
   assert.equal(chain.writes.length, 1, "then steps in");
 
-  assert.deepEqual(await keeperOn(dropChain({ ...DROP, closed: true })).jobs.drops(late), { alerts: [], events: [] }, "sold out (closed): nothing");
-  assert.deepEqual(await keeperOn(dropChain(DROP), { optional: {} }).jobs.drops(late), { alerts: [], events: [] }, "no FireSale known: nothing");
+  const later = dropChain({ ...OPEN, endableAt: START + 3n * DAY }); // an unlimited group still selling moves it
+  assert.deepEqual(await keeperOn(later).jobs.drops(START + 2n * DAY), { alerts: [], events: [] }, "endableAt is the contract's: later while a group still runs");
+  assert.deepEqual(await keeperOn(dropChain({ ...OPEN, closed: true, live: false })).jobs.drops(late), { alerts: [], events: [] }, "closed: nothing");
+  assert.deepEqual(await keeperOn(dropChain({ ...OPEN, live: false })).jobs.drops(late), { alerts: [], events: [] }, "not open yet: nothing");
+  assert.deepEqual(await keeperOn(dropChain({ configured: false, live: false })).jobs.drops(late), { alerts: [], events: [] }, "no drop: nothing");
+  assert.deepEqual(await keeperOn(dropChain(OPEN), { optional: {} }).jobs.drops(late), { alerts: [], events: [] }, "no FireSale known: nothing");
+});
+
+test("close: nothing can still sell (status.left 0, e.g. the taxed group idled out): the main keeper closes at once, the backup after ACT_AFTER_SEC", async () => {
+  const ended = START + 3600n; // the last group ended then
+  let chain = dropChain({ left: 0n, endableAt: START + DAY }, { ends: [START + 600n, ended] });
+  let k = keeperOn(chain);
+  const r = await k.jobs.drops(ended + 1n);
+  assert.deepEqual(chain.writes.map((w) => [w.functionName, w.args]), [["close", [7n]]], "closed at once, long before endableAt");
+  assert.match(r.events[0].text, /nothing can still sell .*this keeper closed it \(FireSale.close\(7\)\)/);
+  assert.equal(r.alerts.length, 0);
+  assert.deepEqual(await k.jobs.drops(ended + 2n), { alerts: [], events: [] }, "closed: nothing more");
+
+  chain = dropChain({ left: 0n }, { ends: [ended] });
+  k = keeperOn(chain, { actAfterSec: 300n });
+  assert.deepEqual(await k.jobs.drops(ended + 299n), { alerts: [], events: [] }, "the backup leaves it to the main keeper");
+  assert.equal(chain.writes.length, 0);
+  await k.jobs.drops(ended + 300n);
+  assert.deepEqual(chain.writes.map((w) => w.functionName), ["close"], "then steps in");
+
+  chain = dropChain({ left: 0n }, { ends: [ended], closeFails: true });
+  const f = await keeperOn(chain).jobs.drops(ended + 1n);
+  assert.equal(chain.writes.length, 0, "the simulation fails: nothing sent");
+  assert.match(f.alerts[0].text, /FireSale.close\(7\) didn't go through \(NotSoldOut\(\)\)/);
+
+  chain = dropChain({ left: 2n ** 256n - 1n, endableAt: START + DAY }, { ends: [ended] });
+  assert.deepEqual(await keeperOn(chain).jobs.drops(START + 2n * 3600n), { alerts: [], events: [] }, "an unlimited group still open: no close");
+  assert.equal(chain.writes.length, 0);
 });
 
 test("gradings: the window plus a sweep from the oldest unfinished, so nothing older than the window is dropped", async () => {

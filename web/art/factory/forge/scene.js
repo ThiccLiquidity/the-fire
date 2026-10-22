@@ -218,7 +218,7 @@ const PUFFS = (() => {
 })();
 
 // ---------- state
-let left = 167, total = 167, queue = 0, ready = [], burnCount = 12, windowFrac = 17 / 24, seriesNo = 7;
+let left = 167, total = 167, queue = 0, ready = [], burnCount = 12, windowFrac = 17 / 24, seriesNo = 7, extra = null; // extra: the after-sell-out price on the board (its packs have no count)
 const listeners = {};
 const emit = (ev, d) => (listeners[ev] || []).forEach((fn) => fn(d));
 let speed = 0.15, target = 0.15;
@@ -558,8 +558,8 @@ function gauge(x, y, r, frac, arc) { // a brass gauge: ticks, a coloured arc, a 
 let soldDust = false;
 function drawBoardAndDials() {
   const b = BOARD, cx = b.x + b.w / 2, sold = left <= 0 || finale >= 0;
-  const key = (sold ? 'S' + left : 'L' + left) + seriesNo;
-  if (board.key !== key) { board.key = key; drawBoard(sold ? [['SERIES ' + seriesNo, 24, 32], [String(Math.max(0, left)), 70, 92, 0.55], ['packs left', 24, 150, 0.55]] : [['SERIES ' + seriesNo, 24, 32], [String(left), 70, 92], ['packs left', 24, 150]]); }
+  const key = (sold ? 'S' + left : 'L' + left) + seriesNo + (extra || '');
+  if (board.key !== key) { board.key = key; drawBoard(extra && !sold ? [['SERIES ' + seriesNo, 24, 32], [extra, 52, 92], ['extra packs', 24, 150]] : sold ? [['SERIES ' + seriesNo, 24, 32], [String(Math.max(0, left)), 70, 92, 0.55], ['packs left', 24, 150, 0.55]] : [['SERIES ' + seriesNo, 24, 32], [String(left), 70, 92], ['packs left', 24, 150]]); }
   ctx.drawImage(board.c, b.x, b.y, b.w, b.h);
   if (sold) { // the SOLD OUT stamp lands on the chalkboard (already there if the page opens sold out)
     const st = finale >= 0 ? now - finale - 0.45 : 9;
@@ -571,7 +571,7 @@ function drawBoardAndDials() {
       ctx.restore();
     }
   }
-  // hood dial: the holder window, an amber arc that empties over 24h (demo: 17h left)
+  // hood dial: the time left in the open group that ends first, an amber arc that empties as it runs
   { const [x, y, r] = DIAL_HOOD, frac = left > 0 ? windowFrac : 0;
     const a0 = Math.PI * 0.75, span = Math.PI * 1.5, an = a0 + span * frac + Math.sin(now * 9) * 0.006; // a gauge: 7 o'clock to 5 o'clock
     ctx.save(); ctx.lineCap = 'round';
@@ -814,7 +814,7 @@ await Promise.all([document.fonts.ready, document.fonts.load("700 40px Kalam"), 
 requestAnimationFrame(frame);
 window.Scene = {
   buy, burn, popToken, finale: finaleFx,
-  setState(o) { if ('left' in o) { left = o.left; if (left > 0 && finale >= 0 && now - finale > 1) finale = -1; } if ('total' in o) total = o.total; if ('burnCount' in o) burnCount = o.burnCount; if ('windowFrac' in o) windowFrac = o.windowFrac; if ('series' in o) seriesNo = o.series; if ('openable' in o) openable = o.openable; board.key = ''; },
+  setState(o) { if ('left' in o) { left = o.left; if (left > 0 && finale >= 0 && now - finale > 1) finale = -1; } if ('total' in o) total = o.total; if ('burnCount' in o) burnCount = o.burnCount; if ('windowFrac' in o) windowFrac = o.windowFrac; if ('series' in o) seriesNo = o.series; if ('openable' in o) openable = o.openable; if ('extra' in o) extra = o.extra || null; board.key = ''; },
   setView(v) { Object.assign(view, v); fit(); camUpdate(0); }, // follow:true (cover mode) turns on the follow camera
   home: camHome,
   get camera() { return { x: cam.x, y: cam.y, zoom: Math.exp(cam.lz), on: cam.on, key: cam.key }; },

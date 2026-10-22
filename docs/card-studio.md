@@ -209,17 +209,30 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and its cards
 2. **Frames & Layout:** text fields' font, size and colour are set once per frame set; the art window is fixed by
    the frames.
 3. **Series:** pick the characters (any number; their order is the image order c0, c1, ...). The pack count is the
-   drop's, paid + press, set on the Sale tab (one number: the pool, rarity and per-pack numbers use it).
+   drop's total (base) packs, set on the Sale tab (one number: the pool, rarity and per-pack numbers use it).
 4. **Recipe:** card types and slots, with the contract's checks and the result (counts, rarity, per-pack chances).
-   **Sale** (next tab): the drop's settings for `FireSale.configureDrop` in plain units (paid and press packs, price,
-   PAPER, burn share, PLANK-only packs, wallet limit, holder window and snapshot root, regular-wallets time, press
-   packs per press and per wallet and their price, packs per purchase, credits per picked suggestion, caps on free
-   packs per drop and per wallet), with the drop drawn as one bar (PLANK-only, paid, press, and the free cap taken from
-   the paid packs) and its sell-out dollars and PLANK burn, checked live
-   like the contract checks them. The pack price is always above 0, even with no paid packs (unclaimed press packs
-   sell at it). Presets: Standard (today's sale) and Giant (10,000 packs, 100 per wallet and per purchase). Cards per
-   free pack shows as fixed (42, forever). Series saved without sale settings get the Standard sale resized to their
-   packs; a free-pack cap saved as a number of packs becomes the percent of that drop that gives at most that many.
+   **Sale** (next tab): the drop as **groups** (`docs/drop-groups.md`) for `FireSale.configureDrop`, in plain units.
+   Work backwards from the total: set the total (base) packs, then split it into 1 to 6 groups, each a compact card
+   added from a template (Paper Press holders, Coin holders (snapshot), NFT holders, Everyone, After sell-out (rising
+   price)) and moved up/down or removed: name; packs as a count, a % of the total or "the rest" (one group); who
+   (anyone, NFT holders: the Paper Press or a contract address + packs per NFT, or a snapshot list whose root the
+   snapshot script fills in before launch); price in $ and PAPER; coins (PLANK/ETH/USDG); per wallet; opens with the
+   drop or after an earlier group; max time (0 = until sold); leftovers to a later group or nowhere; rising price %
+   and unlimited (needs a rising price and an idle end); behind "more": delay, per purchase, ends after N minutes
+   with no sale. Each card ends with a one-line summary, and a taxed group shows packs 1, 10, 25 and 50 at the
+   contract's `base × (1 + bps/10000)^k`. Above them: base packs, sell-out dollars (and with every free pack used),
+   PAPER bought & burned (its share plus every tax), PLANK burned and the revenue wallet's part; a split bar by group
+   and a timeline ("up to" times; until-sold groups fade, an unlimited group runs off the edge). Drop-wide: start,
+   PLANK burn %, PAPER buy & burn %, PAPER ceiling $, packs per purchase, bots kept out (hours), credits per picked
+   suggestion, free packs at most (% of the total) and per wallet, and the group they come from. Every rule
+   ConfigureSeries checks is checked live, next to its field (the groups add up to the total, opens-after earlier /
+   leftovers later, nothing rolls into an unlimited or taxed group, unlimited needs a rising price and idle and rolls
+   nowhere, gate data, a price needs a coin, no free group open to everyone, times at most 30 days, a rise at most 50%
+   and within the 1e9 price bound). Presets: Standard (the drop in `docs/drop-groups.md`) and Giant (10,000 packs,
+   100 per wallet and per purchase, 3 per Press). Cards per free pack shows as fixed (42, forever). Old saves (paid +
+   press packs) become a Paper Press group (its packs, per press, per wallet, window and price) rolling leftovers into
+   an Everyone group (the paid packs at the old price and wallet limit), free packs from Everyone; a Series saved
+   without sale settings gets the Standard drop resized to its packs.
 5. **Deal:** a sample deal on the recipe (the contract's dealing with the studio's own randomness, up to 600,000
    cards), seeded by a string, dealt in a background worker. Locking it locks the recipe and advances the studio's own
    serial counter (not the contract's).

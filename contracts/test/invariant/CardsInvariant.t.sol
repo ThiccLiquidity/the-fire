@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
+import {FireGroups} from "../../src/cards/FireGroups.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {CardsHandler} from "./CardsHandler.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
@@ -27,7 +28,7 @@ contract CardsInvariantTest is StdInvariant, Test {
         sels[i++] = h.buyWithPlank.selector; // weighted
         sels[i++] = h.buyWithEth.selector;
         sels[i++] = h.buyWithUsdg.selector;
-        sels[i++] = h.claimStarter.selector;
+        sels[i++] = h.claimPress.selector;
         sels[i++] = h.useCredits.selector;
         sels[i++] = h.burnCards.selector;
         sels[i++] = h.suggest.selector;
@@ -60,9 +61,10 @@ contract CardsInvariantTest is StdInvariant, Test {
 
     // ---------------------------------------------------------------- violations seen inside actions
 
-    /// Covers: wallet limit before liftAfter (tracked per buy), pack guarantees (≥3 Paper, ≥1 Wood, slot 6
-    /// Fire-or-better, from CardDealt logs), grades only 1..10 and never twice (from Graded logs), pending cards can't
-    /// move, quotes equal what was charged, one starter per wallet and per press.
+    /// Covers: group rules seen from outside on every buy (the group was open with that many left, its coins, its
+    /// wallet limit, NFT allowances), pack guarantees (≥3 Paper, ≥1 Wood, slot 6 Fire-or-better, from CardDealt
+    /// logs), grades only 1..10 and never twice (from Graded logs), pending cards can't move, quotes equal what was
+    /// charged.
     function invariant_noViolationSeenInActions() public view {
         assertEq(h.violation(), "", h.violation());
     }
@@ -145,13 +147,30 @@ contract CardsInvariantTest is StdInvariant, Test {
 
     function invariant_packsPerFire() public view {
         FireSale sale = h.sale();
+        FireGroups groups = h.groups();
         for (uint256 f = 1; f <= h.FIRES(); f++) {
             FireSale.Drop memory d = sale.dropOf(f);
             uint256 minted = h.packs().minted(f);
-            assertLe(minted, uint256(d.packs) + d.starters, "packs minted <= packs + starters");
-            assertEq(minted, uint256(d.paidSold) + d.creditPacks + d.startersClaimed, "minted == sold + credits + starters");
-            assertLe(d.startersClaimed, d.starters, "starters");
+            assertLe(minted, d.packs, "packs minted <= the drop's packs");
+            assertEq(minted, uint256(d.sold) + d.creditPacks, "minted == sold + credits");
             assertLe(h.packs().burned(f), minted, "opened <= minted");
+            FireGroups.GroupView[] memory v = groups.groupsOf(f);
+            uint256 sold;
+            uint256 own;
+            uint256 left;
+            for (uint256 g; g < v.length; g++) {
+                sold += v[g].sold;
+                own += v[g].config.packs;
+                assertLe(v[g].sold, v[g].capacity, "a group never sells past its capacity");
+                if (v[g].state != FireGroups.State.ENDED) left += v[g].capacity - v[g].sold;
+            }
+            if (v.length == 0) continue;
+            assertEq(sold, minted, "groups' sold == minted");
+            assertEq(own, d.packs, "groups' packs == the drop's packs");
+            assertLe(minted + left, d.packs, "made + can still sell <= the drop's packs");
+            if (!d.closed && block.timestamp >= d.start) assertEq(groups.remaining(f), left, "remaining == open groups' left");
+            (, bool closed,,,,) = h.cards().fires(f);
+            assertEq(closed, d.closed, "the Series closes with the drop");
         }
     }
 
@@ -205,3 +224,4 @@ contract CardsInvariantTest is StdInvariant, Test {
         assertEq(h.cardReqsLeft(), 0);
     }
 }
+

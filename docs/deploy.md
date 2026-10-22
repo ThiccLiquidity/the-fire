@@ -122,16 +122,21 @@ Start them right after step 1 (the PLANK feed needs its checkpoints). Every call
 - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` (ids from the grading's `Protected` event)
 - `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when they hold something a flush can burn worth the gas
   ($1 by default, at most every 15 min; smaller balances after 6 h, so dust can't drain the keeper)
-- `FireSale.endDrop(fire)` for a drop that didn't sell out, once anyone may (7 days after the owner may)
+- `FireSale.close(fire)` once nothing can still sell in a Series (`status(fire).left` 0: a group's time ran out with
+  its leftovers rolling nowhere, or the unlimited "after sell-out" group idled out); no purchase closes it then
+- `FireSale.endDrop(fire)` for a drop that didn't sell out, once anyone may (7 days after `status(fire).endableAt`)
 
 It alerts a Discord/Slack/Telegram webhook on stale feeds (PLANK price over 90 min old, a PAPER candidate pool not
-adopted in time), stuck opens or gradings, waiting fees, an unsold drop the owner can end, drand lag, low keeper ETH
+adopted in time), stuck opens or gradings, waiting fees, an unsold drop the owner can end, a close that didn't go through, drand lag, low keeper ETH
 (under 0.002), a pause turned on, a randomness switch, FireSale's wallets or price feeds changed (`WalletsSet` /
 `FeedsSet`, once per event with the new addresses: if it wasn't you, pause the sale) and the backup having to step in, with a daily heartbeat; a keeper that can't start says so before it exits. None of these calls pause. The owner's pause (`FireSale.setPaused`,
-`FirePsa.setPaused`) stops only buying, press packs, credit spending, paid suggestions and case/grading payments.
+`FirePsa.setPaused`) stops only buying (every group), credit spending, paid suggestions and case/grading payments.
 
 ## 6. Each Series: two signings on the device with a check in between
-Put the studio's `recipe.json` in `contracts/series/` (the scripts may only read there).
+Put the studio's `recipe.json` in `contracts/series/` (the scripts may only read there). If its sale has snapshot groups
+(`docs/drop-groups.md`), put `fire-<N>-snapshots.json` next to it: for each snapshot group, by its index in
+`sale.groups` (`"0"` is the first), whose wallets it takes, e.g. `{ "1": { "token": "plank", "minUsd": 69, "days": 7 } }`
+(token, minimum, allowance tiers, days, blocks: `ops/README.md`, "The snapshots side file").
 
 ### Launch a Series (one command)
 `ops/series/launch.mjs` runs everything in this step in order, one line per check, and stops at the first problem.
@@ -147,24 +152,31 @@ node ops\series\launch.mjs --recipe contracts\series\recipe-fire-7.json --start 
 1. **Preflight**: the RPC is the right chain, the owner in `deployments/<chain>.json` holds the contracts and is the
    Ledger account at `OWNER_HD_PATH`, the Series isn't locked, no other drop is open, the keeper is alive (recent PLANK
    checkpoint; PAPER feed live), the pack art `fire<N>.webp` is up, the start is at least 15 minutes away, the sale
-   settings are inside the policy (below) and FireSale's revenue wallet and burners are the deployments file's.
-2. **Snapshot** (only if the sale has a holder window): each wallet's smallest PLANK holding (LP share included) over
-   5 blocks in the past 7 days (`--snapshot-blocks`, `--snapshot-days`), saved as `fire-<N>-holders.json` next to the
-   recipe with its seed and blocks; its root goes to batch B. `--no-holders` for a presses-only holder window. The RPC
-   must serve past blocks (an archive node).
+   settings (the drop-wide fields and each group) are inside the policy (below), every NFT group's collection is a
+   contract, and FireSale's revenue wallet, burners and FireGroups are the deployments file's.
+2. **Snapshots** (one per snapshot group, from the side file): each wallet's smallest holding of the group's token
+   (LP share included for a coin) over 5 blocks in the past 7 days (`--snapshot-blocks`, `--snapshot-days` as
+   defaults), with its allowance (tiers), saved as `fire-<N>-group-<i>.json` next to the recipe with its seed and
+   blocks; each root goes to batch B as `GROUP_ROOT_<i>`. The RPC must serve past blocks (an archive node).
 3. **Fork rehearsal**: batches A and B as the owner on a copy of the chain; nothing is sent.
 4. **Batch A** on the Ledger (it says how many confirmations).
 5. **VerifySeries** until GREEN (retries while new pins reach the gateways); RED stops it.
-6. **Confirm**: the policy and the wallets checked again (read fresh), every sale setting in plain units (dollars, %,
-   PAPER, hours) and the three wallets, then type `LOCK`. Anything else stops it.
-7. **Batch B** on the Ledger (one confirmation), then reads every drop field back from FireSale.
+6. **Confirm**: the policy and the wallets checked again (read fresh), the drop-wide settings and each group in plain
+   words (who, packs or "no limit", price in dollars + PAPER, coins, per wallet and per purchase, opens with the drop
+   or after which group, max time, idle, where leftovers go, the rising %), and the wallets, then type `LOCK`.
+   Anything else stops it.
+7. **Batch B** on the Ledger (one confirmation), then reads every drop-wide and group field back from FireSale and
+   FireGroups, and writes the site's holders file `web/art/factory/forge/holders/series-<N>.json` (every snapshot
+   group's wallets, allowances and proofs; format in `ops/README.md`). Commit it and deploy the site with the drop.
 
-**Sale policy** (`ops/series/sale-policy.mjs`; the table is in `ops/README.md`): price $1-$10 a pack; PLANK + PAPER
-burn 10-100% of each sale, with PAPER at least 10% (Standard: 10% + 20%); at least 0.1 PAPER a pack; a PAPER cap of
-$0.10 or more (0 = no cap: a warning); a wallet limit of 50 at most; a holder window with a holder root (or
-`--no-holders`). Outside a bound the launch STOPs, before batch A and again before LOCK, unless that rule is allowed by
+**Sale policy** (`ops/series/sale-policy.mjs`; the table is in `ops/README.md`): drop-wide, PLANK + PAPER burn 10-100%
+of each sale, with PAPER at least 10% (Standard: 10% + 20%), and a PAPER cap of $0.10 or more (0 = no cap: a
+warning); per group, a price of $1-$10 a pack (0 only for an NFT or snapshot group: free or PAPER only), at least 0.1
+PAPER a pack, at most 50 per wallet (no limit warns for a finite open group), a rising tax up to 10% a pack (a warning
+above; the owner's default is 4%), an unlimited group idling out within 1 h (a warning above), and a root on every
+snapshot group. Outside a bound the launch STOPs, before batch A and again before LOCK, unless that rule is allowed by
 name: `--allow price,wallet-limit` (VerifySeries takes the same `--allow`). The wallets have no `--allow`: a FireSale
-revenue wallet or burner that isn't the deployments file's is always RED.
+revenue wallet or burner that isn't the deployments file's, or a FireGroups not wired to FireSale, is always RED.
 
 After a STOP, fix the problem and run the same command again: finished steps are skipped, and batch A and B are
 judged by the chain, so neither is sent twice. State and log: `ops\series\out\series-<N>.state.json` and
@@ -191,28 +203,31 @@ the device: `RecipeDealer.setRecipe` and `setCharacters` (+ `appendCharacters` f
 and `setImagesBase`. No PDA odds: they are fixed in `FirePsa`, the same for every Series. It refuses any signer but
 the owner. Leave out `--broadcast` for a dry run.
 
-**The check** (read-only; the holder snapshot first, `ops/README.md`):
+**The check** (read-only; the snapshot groups' snapshots first, `ops/README.md`):
 ```powershell
 cd ops; npm ci
-node series/verify-series.mjs --recipe ..\contracts\series\recipe-fire-7.json --snapshot fire-7-holders.json
+node series/verify-series.mjs --recipe ..\contracts\series\recipe-fire-7.json --snapshots 1=..\contracts\series\fire-7-group-1.json --roots 1=<its root>
 ```
 It reads the Series back and diffs it against `recipe.json` (recipe, characters, dealer, images base), checks
 FirePsa's fixed PDA odds and that `imagesBase` is `ipfs://<CID>/`, loads every image the contract can point a card at through two or more gateways (one gateway missing some is a
 warning, as long as each image loads from two),
-reads the folder's `manifest.json`, recomputes the snapshot's Merkle root and rebuilds the snapshot from the chain at
-its saved blocks (a wallet or amount edited into the file is RED; `node ops/snapshot/snapshot.mjs --verify <file>`
-does the same on its own), checks the sale block against the sale policy (`--allow <rule>` for a meant exception) and
-FireSale's revenue wallet and burners against the deployments file. Sign batch B only when it says **GREEN**.
+reads the folder's `manifest.json`, checks each snapshot group's root against its file (the file's own tree and every
+proof it serves) and rebuilds the snapshot from the chain at its saved blocks (a wallet, amount or allowance edited
+into the file is RED; `node ops/snapshot/snapshot.mjs --verify <file>` does the same on its own), checks every NFT
+group's collection has code, the sale block against the sale policy (`--allow <rule>` for a meant exception),
+FireSale's revenue wallet and burners against the deployments file and FireGroups wired to FireSale. Sign batch B only
+when it says **GREEN**.
 
 **Batch B, the lock:** `configureDrop` from the JSON's `sale` block (it locks the Series: recipe, characters and images
 are fixed from then).
 ```powershell
-$env:BATCH = "B"; $env:DROP_START = "<unix seconds>"; $env:HOLDER_ROOT = "<the snapshot's root>"
+$env:BATCH = "B"; $env:DROP_START = "<unix seconds>"; $env:GROUP_ROOT_1 = "<group 1's snapshot root>"   # one per snapshot group
 forge script script/ConfigureSeries.s.sol --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH `
   --sender $env:OWNER --slow --broadcast
 ```
 It refuses unless the chain holds batch A exactly as the JSON says, then sends `configureDrop` from the owner (one
-confirmation). Then `FireCredits.pickSuggestions` as before.
+confirmation). Then write the site's holders file from the snapshots (`ops/README.md`; the launcher does it) and
+`FireCredits.pickSuggestions` as before.
 
 ## 7. Site
 Cardworks is static (`web/public/forge`) and runs in demo mode (a demo banner, no wallet, no payments). The live
@@ -224,10 +239,13 @@ addresses from `deployments/<chainId>.json` (Vercel must include files outside t
 ## Rehearsal
 `ops/rehearsal/rehearse.mjs` runs everything above on a local chain with the real scripts and the real keeper code:
 DevStack (the testnet kit) → deploy, each step recorded with `ops/deploy/record.mjs` → VerifyDeploy → the owner accepts (AcceptOwnership, owner impersonated) → keeper checkpoints → batch A from
-the owner (ConfigureSeries) → snapshot (the smallest holding over 5 blocks: an EIP-7702 wallet in, a last-block whale
-out; a wallet added to the file by hand is RED) → VerifySeries (RED with an image missing, then GREEN, the snapshot
-rebuilt from the chain, the sale policy and wallets) → batch B → buy (one with the PLANK swap down) → sold out,
-closed → open → the keeper delivers drand and deals → the main keeper and the backup race → case and grade → the
+the owner (ConfigureSeries) → snapshots (PLANK, the smallest holding over 5 blocks with allowance tiers: an EIP-7702
+wallet in, a last-block whale out, $500 = 2 packs; a wallet added to the file by hand is RED; the Paper Press as an
+ERC-721) → VerifySeries (RED with an image missing, then GREEN, the snapshot rebuilt from the chain, the sale policy
+and wallets) → batch B: four groups, the Standard preset scaled small (Press holders, PLANK snapshot holders,
+everyone, an unlimited taxed group idling out after 5 minutes) → buy through the groups (a proof from the snapshot
+script; a raised allowance refused; one buy with the PLANK swap down) → the taxed group's price rises, then it idles
+out → the keeper closes the Series (`FireSale.close`) → open → the keeper delivers drand and deals → the main keeper and the backup race → case and grade → the
 keeper finishes the grading → the backup steps in while the main keeper is down → a pause, a randomness switch and
 FireSale's `WalletsSet` reach the webhook → both burners flushed (the PAPER feed going live 40 h later) → VerifyDeploy.
 ```powershell
@@ -279,8 +297,8 @@ $verify = "--verify", "--verifier", "blockscout", "--verifier-url", "https://exp
    after the PLANK feed (mainnet step 1), as on mainnet.
 5. **Site**: build with `VITE_CHAIN=testnet` (reads `deployments/46630.json`; wallet and explorer switch to the testnet).
 6. **Series**: step 6 as above, with the testnet owner. Then confirm one live drand delivery: buy a few packs, sell the
-   drop out or end it (`endDrop`, once its last timed phase is over; short windows in a testnet sale) so the Series
-   closes, open one pack and check the keeper log shows `fulfillMany success` and
+   drop out, let its groups' time run out (short durations and a short `idle` in a testnet sale: the keeper closes the
+   Series with `FireSale.close`) or end it (`endDrop`, once its schedule is over) so the Series closes, open one pack and check the keeper log shows `fulfillMany success` and
    `process success` (or the open's `ready` on the explorer). Packs can only be opened once their Series has closed.
 Commit `deployments/46630.json` after VerifyDeploy says no FAIL.
 

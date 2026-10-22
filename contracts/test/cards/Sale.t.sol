@@ -6,6 +6,7 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FireSale} from "../../src/cards/FireSale.sol";
 import {FireCredits} from "../../src/cards/FireCredits.sol";
+import {FireGroups} from "../../src/cards/FireGroups.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
@@ -87,19 +88,18 @@ contract CheckpointFeed {
     }
 }
 
-contract SaleTest is SeriesHelper {
-    function _na() internal pure returns (FireSale.Access memory a) {
-        a.proof = new bytes32[](0);
-    }
-
-
+/// @dev The sale's test bench: every contract wired as DeployCards wires it, two buyers with every coin, a press NFT,
+///      and drop 1 set up (one open group of 13 packs, $2.50 + 1 PAPER, any coin, 30% PLANK burn) opening in an hour.
+abstract contract SaleBase is SeriesHelper {
     address constant DEAD = 0x000000000000000000000000000000000000dEaD;
+    uint8 constant NONE = 255;
     address owner = address(0xA11CE0);
     address revenue = address(0xBEEF);
     address burnW = address(0xB0B);
     address paperW = address(0xBA9E5);
     address alice = address(0xA1);
     address bob = address(0xB2);
+    address carol = address(0xC3);
 
     MockERC20 paper;
     MockERC20 plank;
@@ -114,6 +114,7 @@ contract SaleTest is SeriesHelper {
     RecipeDealer dealer;
     FireSale sale;
     FireCredits credits;
+    FireGroups groups;
 
     // ETH $3,333; PLANK $1e-9 (18-decimal feed: 1e9); the router trades at the same prices.
     int256 constant ETH_USD = 3_333e8;
@@ -123,7 +124,7 @@ contract SaleTest is SeriesHelper {
     uint128 constant PRICE = 250_000_000; // $2.50
     uint64 start;
 
-    function setUp() public {
+    function setUp() public virtual {
         vm.warp(1_800_000_000);
         paper = new MockERC20("PAPER", "PAPER");
         plank = new MockERC20("PLANK", "PLANK");
@@ -138,12 +139,9 @@ contract SaleTest is SeriesHelper {
         dealer = new RecipeDealer(owner, address(cards), address(new RecipeCompiler()));
         rng.setFire(address(cards));
         credits = new FireCredits(owner, address(cards), 1e18);
-        sale = new FireSale(FireSale.Config({
-            owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
-            press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW,
-            credits: address(credits)
-        }));
+        groups = new FireGroups();
+        sale = new FireSale(_saleConfig(address(plankFeed)));
+        groups.setSale(address(sale));
         vm.startPrank(owner, owner);
         packs.setSeller(address(sale));
         packs.setCards(address(cards));
@@ -154,10 +152,10 @@ contract SaleTest is SeriesHelper {
         _configureCards(1);
         _configureCards(2);
         start = uint64(block.timestamp + 1 hours);
-        _drop(1, start, 10, 3, 4, 5);
+        _drop(1, start, 13);
 
-        for (uint256 i; i < 2; i++) {
-            address u = i == 0 ? alice : bob;
+        for (uint256 i; i < 3; i++) {
+            address u = i == 0 ? alice : i == 1 ? bob : carol;
             paper.mint(u, 1_000e18);
             plank.mint(u, 1e33);
             usdg.mint(u, 1_000e6);
@@ -170,20 +168,74 @@ contract SaleTest is SeriesHelper {
         }
     }
 
-    // ---------------------------------------------------------------- helpers
+    function _saleConfig(address plankUsd) internal view returns (FireSale.Config memory) {
+        return FireSale.Config({
+            owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
+            packs: address(packs), cards: address(cards), ethUsd: address(ethFeed), plankUsd: plankUsd, paperUsd: address(0),
+            router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW,
+            credits: address(credits), groups: address(groups)
+        });
+    }
+
+    // ---------------------------------------------------------------- config helpers
 
     function _configureCards(uint256 fire) internal {
         _standard(cards, dealer, owner, fire, 3, 1);
     }
 
-    function _cfg(uint64 s, uint32 n, uint32 starters, uint32 plankOnly, uint32 limit) internal pure returns (FireSale.DropConfig memory) {
-        return FireSale.DropConfig({start: s, packs: n, starters: starters, plankOnly: plankOnly, walletLimit: limit,
-            starterWindow: 24 hours, liftAfter: 48 hours, plankBurnBps: 3_000, paperBurnBps: 0, priceUsd: PRICE, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 48 hours, regularWalletsFor: 48 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
+    /// An open group: anyone, $2.50 + 1 PAPER a pack in any coin, no wallet limit, opens with the drop, until sold.
+    function _g(uint64 n) internal pure returns (FireGroups.Group memory g) {
+        g.packs = n;
+        g.coins = 7;
+        g.afterGroup = NONE;
+        g.rollTo = NONE;
+        g.priceUsd = PRICE;
+        g.paper = 1e18;
     }
 
-    function _drop(uint256 fire, uint64 s, uint32 n, uint32 starters, uint32 plankOnly, uint32 limit) internal {
+    /// A drop of one open group (`_g(n)`): 30% PLANK burn, $1 PAPER ceiling, regular wallets only for 48h, credits
+    /// from the group.
+    function _cfg(uint64 s, uint64 n) internal pure returns (FireSale.DropConfig memory c) {
+        c.start = s;
+        c.packs = n;
+        c.plankBurnBps = 3_000;
+        c.paperCapUsd = 1e8;
+        c.regularWalletsFor = 48 hours;
+        c.creditsPerPick = 1;
+        c.groups = new FireGroups.Group[](1);
+        c.groups[0] = _g(n);
+    }
+
+    /// `c` with these groups (and their packs as the total).
+    function _with(FireSale.DropConfig memory c, FireGroups.Group[] memory gs) internal pure returns (FireSale.DropConfig memory) {
+        c.groups = gs;
+        uint256 total;
+        for (uint256 i; i < gs.length; i++) total += gs[i].packs;
+        c.packs = uint64(total);
+        return c;
+    }
+
+    function _two(FireGroups.Group memory a, FireGroups.Group memory b) internal pure returns (FireGroups.Group[] memory gs) {
+        gs = new FireGroups.Group[](2);
+        (gs[0], gs[1]) = (a, b);
+    }
+
+    function _three(FireGroups.Group memory a, FireGroups.Group memory b, FireGroups.Group memory c)
+        internal
+        pure
+        returns (FireGroups.Group[] memory gs)
+    {
+        gs = new FireGroups.Group[](3);
+        (gs[0], gs[1], gs[2]) = (a, b, c);
+    }
+
+    function _set(uint256 fire, FireSale.DropConfig memory c) internal {
         vm.prank(owner, owner);
-        sale.configureDrop(fire, _cfg(s, n, starters, plankOnly, limit));
+        sale.configureDrop(fire, c);
+    }
+
+    function _drop(uint256 fire, uint64 s, uint64 n) internal {
+        _set(fire, _cfg(s, n));
     }
 
     /// Move time and keep the price feeds fresh (they'd go stale over a 48h warp).
@@ -195,9 +247,29 @@ contract SaleTest is SeriesHelper {
 
     function _open() internal { _warp(start); }
 
-    function _plankOnlyDone(address who) internal {
+    // ---------------------------------------------------------------- buying helpers
+
+    function _na() internal pure returns (FireGroups.Access memory a) {}
+
+    function _cost(uint256 fire, uint256 g, uint256 n, FireSale.Pay pay) internal view returns (uint256 cost) {
+        (cost,) = sale.quote(fire, g, n, pay);
+    }
+
+    /// `who` buys `n` packs of group `g` in PLANK (any amount), from a regular wallet.
+    function _plank(address who, uint256 fire, uint256 g, uint256 n) internal {
         vm.prank(who, who);
-        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max, _na());
+        sale.buy(fire, g, n, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+    }
+
+    function _eth(address who, uint256 fire, uint256 g, uint256 n) internal {
+        uint256 cost = _cost(fire, g, n, FireSale.Pay.ETH);
+        vm.prank(who, who);
+        sale.buy{value: cost}(fire, g, n, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
+    }
+
+    function _usdg(address who, uint256 fire, uint256 g, uint256 n) internal {
+        vm.prank(who, who);
+        sale.buy(fire, g, n, FireSale.Pay.USDG, type(uint256).max, type(uint256).max, _na());
     }
 
     function _assertHoldsNothing() internal view {
@@ -208,63 +280,154 @@ contract SaleTest is SeriesHelper {
         assertEq(usdg.allowance(address(sale), address(router)), 0, "allowance");
     }
 
+    function _closed(uint256 fire) internal view returns (bool closed) {
+        (, closed,,,,) = cards.fires(fire);
+    }
+
+    function _view(uint256 fire, uint256 g) internal view returns (FireGroups.GroupView memory) {
+        return groups.groupsOf(fire)[g];
+    }
+
+    // ---------------------------------------------------------------- snapshot trees
+
+    function _leaf(address a, uint256 allowance) internal pure returns (bytes32) {
+        return keccak256(bytes.concat(keccak256(abi.encode(a, allowance))));
+    }
+
+    function _pair(bytes32 x, bytes32 y) internal pure returns (bytes32) {
+        return x < y ? keccak256(abi.encode(x, y)) : keccak256(abi.encode(y, x));
+    }
+
+    function _proof(uint256 allowance, bytes32 sibling) internal pure returns (FireGroups.Access memory a) {
+        a.allowance = allowance;
+        a.proof = new bytes32[](1);
+        a.proof[0] = sibling;
+    }
+
+    function _nfts(uint256 id) internal pure returns (FireGroups.Access memory a) {
+        a.nftIds = new uint256[](1);
+        a.nftIds[0] = id;
+    }
+
+    function _nfts(uint256 id1, uint256 id2) internal pure returns (FireGroups.Access memory a) {
+        a.nftIds = new uint256[](2);
+        (a.nftIds[0], a.nftIds[1]) = (id1, id2);
+    }
+
+    /// A Paper Press group: `n` packs, 1 PAPER each, `per` per press.
+    function _pressGroup(uint64 n, uint32 per) internal view returns (FireGroups.Group memory g) {
+        g = _g(n);
+        g.gate = FireGroups.Gate.NFT;
+        g.nft = address(press);
+        g.perNft = per;
+        g.priceUsd = 0;
+        g.coins = 0;
+    }
+
+    function _snapGroup(uint64 n, bytes32 root) internal pure returns (FireGroups.Group memory g) {
+        g = _g(n);
+        g.gate = FireGroups.Gate.SNAPSHOT;
+        g.root = root;
+    }
+
+    // ---------------------------------------------------------------- cards and credits helpers
+
+    /// Alice ends up with `n` packs' worth of cards (6 each) from fire 1.
+    function _aliceGetsCards(uint256 nPacks) internal {
+        _drop(1, start, uint64(nPacks));
+        _open();
+        _plank(alice, 1, 0, nPacks); // sells out, closes the Fire
+        uint256 opened;
+        while (opened < nPacks) {
+            uint256 c = nPacks - opened > 10 ? 10 : nPacks - opened;
+            vm.prank(alice, alice);
+            cards.open(1, c);
+            rng.fulfill(rng.last(), uint256(keccak256(abi.encode(opened))));
+            opened += c;
+        }
+        cards.process(1, type(uint256).max);
+        assertEq(cards.balanceOf(alice), nPacks * 6);
+    }
+
+    /// Ends drop 1 (its schedule is over a day after the start).
+    function _endDrop1() internal {
+        _warp(start + 72 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(1);
+    }
+}
+
+contract SaleTest is SaleBase {
     // ---------------------------------------------------------------- setup and locking
 
     function test_notLiveBeforeStart() public {
         vm.prank(alice, alice);
         vm.expectRevert(FireSale.NotLive.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
     }
 
     function test_configLocksWhenTheDropOpens() public {
-        _drop(1, start, 20, 3, 4, 5); // changing before it opens is fine
+        _drop(1, start, 20); // changing before it opens is fine
         assertEq(sale.dropOf(1).packs, 20);
+        assertEq(_view(1, 0).capacity, 20);
         _open();
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.DropStarted.selector);
-        sale.configureDrop(1, _cfg(uint64(block.timestamp + 1), 99, 0, 0, 5));
+        sale.configureDrop(1, _cfg(uint64(block.timestamp + 1), 99));
     }
 
     function test_onlyOwnerConfigures() public {
         vm.prank(alice, alice);
         vm.expectRevert();
-        sale.configureDrop(3, _cfg(start, 10, 0, 0, 5));
+        sale.configureDrop(3, _cfg(start, 10));
     }
 
     function test_badConfigRejected() public {
         vm.startPrank(owner, owner);
         vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(1, _cfg(uint64(block.timestamp), 10, 0, 0, 5)); // start in the past
+        sale.configureDrop(1, _cfg(uint64(block.timestamp), 10)); // start in the past
         vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(1, _cfg(start, 10, 0, 11, 5)); // more PLANK-only packs than packs
+        sale.configureDrop(3, _cfg(start, 10)); // Fire 3's characters aren't set in the card contract
+        FireSale.DropConfig memory c = _cfg(start, 10);
+        c.regularWalletsFor = 30 days + 1;
         vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(3, _cfg(start, 10, 0, 0, 5)); // Fire 3's characters aren't set in the card contract
+        sale.configureDrop(1, c); // longer than any window may be
         vm.stopPrank();
     }
 
-    // ---------------------------------------------------------------- PLANK lights the forge
-
-    function test_firstPacksArePlankOnly() public {
-        _open();
+    /// Only FireSale writes to FireGroups, and only the deployer wires it, once.
+    function test_groupsOnlyFromTheSale() public {
+        FireGroups.Group[] memory gs = new FireGroups.Group[](1);
+        gs[0] = _g(5);
+        vm.prank(owner, owner);
+        vm.expectRevert(FireGroups.NotSale.selector);
+        groups.configure(1, start, 5, gs, 0);
         vm.prank(alice, alice);
-        vm.expectRevert(FireSale.PlankOnly.selector);
-        sale.buyWithEth{value: 1 ether}(1, 1, type(uint256).max, _na());
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.PlankOnly.selector);
-        sale.buyWithUsdg(1, 1, type(uint256).max, type(uint256).max, _na());
-        _plankOnlyDone(alice);
-        vm.prank(bob, bob);
-        sale.buyWithEth{value: 1 ether}(1, 1, type(uint256).max, _na()); // open to ETH now
-        assertEq(packs.balanceOf(bob, 1), 1);
+        vm.expectRevert(FireGroups.NotSale.selector);
+        groups.take(1, 0, alice, 1, 1, _na());
+        vm.expectRevert(FireGroups.NotSale.selector);
+        groups.takeCredit(1, 0, 1);
+        vm.expectRevert(FireGroups.AlreadySet.selector);
+        groups.setSale(address(sale));
+        vm.prank(alice);
+        vm.expectRevert(FireGroups.NotSale.selector);
+        groups.setSale(address(sale));
+        FireGroups g2 = new FireGroups();
+        vm.expectRevert(FireGroups.BadConfig.selector);
+        g2.setSale(address(sale)); // the sale doesn't point at it
+        assertEq(address(sale.GROUPS()), address(groups));
+        assertEq(groups.sale(), address(sale));
     }
+
+    // ---------------------------------------------------------------- PLANK
 
     function test_plankBuy_splitsAndBurns() public {
         _open();
-        uint256 cost = sale.quotePlank(1, 2);
+        uint256 cost = _cost(1, 0, 2, FireSale.Pay.PLANK);
         assertEq(cost, 5e27, "2 packs = $5 = 5e9 PLANK");
         uint256 before = plank.balanceOf(alice);
         vm.prank(alice, alice);
-        sale.buyWithPlank(1, 2, cost, type(uint256).max, _na());
+        sale.buy(1, 0, 2, FireSale.Pay.PLANK, cost, type(uint256).max, _na());
         assertEq(before - plank.balanceOf(alice), cost);
         assertEq(plank.balanceOf(DEAD), cost * 3_000 / 10_000, "30% burned");
         assertEq(plank.balanceOf(revenue), cost - cost * 3_000 / 10_000, "70% revenue");
@@ -275,10 +438,10 @@ contract SaleTest is SeriesHelper {
 
     function test_plankPriceMoved() public {
         _open();
-        uint256 cost = sale.quotePlank(1, 1);
+        uint256 cost = _cost(1, 0, 1, FireSale.Pay.PLANK);
         vm.prank(alice, alice);
         vm.expectRevert(FireSale.PriceMoved.selector);
-        sale.buyWithPlank(1, 1, cost - 1, type(uint256).max, _na());
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, cost - 1, type(uint256).max, _na());
     }
 
     function test_paperIsRequired() public {
@@ -287,35 +450,52 @@ contract SaleTest is SeriesHelper {
         paper.approve(address(sale), 0);
         vm.prank(alice, alice);
         vm.expectRevert();
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+    }
+
+    /// ETH sent with a PLANK payment comes back.
+    function test_plankBuy_refundsStrayEth() public {
+        _open();
+        uint256 eth = alice.balance;
+        vm.prank(alice, alice);
+        sale.buy{value: 1 ether}(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+        assertEq(alice.balance, eth);
+        _assertHoldsNothing();
     }
 
     // ---------------------------------------------------------------- ETH and USDG
 
     function test_ethBuy_burnsPlankAndRefunds() public {
         _open();
-        _plankOnlyDone(bob);
-        uint256 cost = sale.quoteEth(1, 2);
+        uint256 cost = _cost(1, 0, 2, FireSale.Pay.ETH);
         assertEq(cost, (500_000_000 * uint256(1e18) + uint256(ETH_USD) - 1) / uint256(ETH_USD));
         uint256 burnShare = cost * 3_000 / 10_000;
-        uint256 deadBefore = plank.balanceOf(DEAD);
         uint256 balBefore = alice.balance;
         vm.prank(alice, alice);
-        sale.buyWithEth{value: cost + 0.01 ether}(1, 2, type(uint256).max, _na());
+        sale.buy{value: cost + 0.01 ether}(1, 0, 2, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
         assertEq(balBefore - alice.balance, cost, "excess refunded");
         assertEq(revenue.balance, cost - burnShare, "70% revenue");
-        assertEq(plank.balanceOf(DEAD) - deadBefore, burnShare * PER_ETH, "30% bought PLANK, burned");
+        assertEq(plank.balanceOf(DEAD), burnShare * PER_ETH, "30% bought PLANK, burned");
         assertEq(burnW.balance, 0);
         _assertHoldsNothing();
     }
 
+    function test_ethShortOrOverMaxReverts() public {
+        _open();
+        uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.buy{value: cost - 1}(1, 0, 1, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.buy{value: cost}(1, 0, 1, FireSale.Pay.ETH, cost - 1, type(uint256).max, _na());
+    }
+
     function test_ethSwapFails_burnShareToBurnWallet() public {
         _open();
-        _plankOnlyDone(bob);
         router.setFail(true);
-        uint256 cost = sale.quoteEth(1, 1);
-        vm.prank(alice, alice);
-        sale.buyWithEth{value: cost}(1, 1, type(uint256).max, _na());
+        uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
+        _eth(alice, 1, 0, 1);
         assertEq(burnW.balance, cost * 3_000 / 10_000, "burn wallet");
         assertEq(revenue.balance, cost - cost * 3_000 / 10_000);
         assertEq(packs.balanceOf(alice, 1), 1, "the purchase still went through");
@@ -324,59 +504,64 @@ contract SaleTest is SeriesHelper {
 
     function test_pumpedPool_skipsSwap() public {
         _open();
-        _plankOnlyDone(bob);
         router.setRates(PER_ETH * 85 / 100, PER_USDG * 85 / 100); // pool 15% worse than the 30-minute average
-        uint256 cost = sale.quoteEth(1, 1);
-        vm.prank(alice, alice);
-        sale.buyWithEth{value: cost}(1, 1, type(uint256).max, _na());
+        uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
+        _eth(alice, 1, 0, 1);
         assertEq(burnW.balance, cost * 3_000 / 10_000, "falls back instead of overpaying");
         _assertHoldsNothing();
     }
 
     function test_usdgBuy() public {
         _open();
-        _plankOnlyDone(bob);
-        uint256 cost = sale.quoteUsdg(1, 2);
+        uint256 cost = _cost(1, 0, 2, FireSale.Pay.USDG);
         assertEq(cost, 5e6, "$5.00");
-        uint256 deadBefore = plank.balanceOf(DEAD);
         vm.prank(alice, alice);
-        sale.buyWithUsdg(1, 2, cost, type(uint256).max, _na());
+        sale.buy(1, 0, 2, FireSale.Pay.USDG, cost, type(uint256).max, _na());
         assertEq(usdg.balanceOf(revenue), 3_500_000, "70%");
         assertEq(usdg.balanceOf(address(router)), 1_500_000, "30% swapped");
-        assertEq(plank.balanceOf(DEAD) - deadBefore, 1_500_000 * PER_USDG);
+        assertEq(plank.balanceOf(DEAD), 1_500_000 * PER_USDG);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.buy(1, 0, 1, FireSale.Pay.USDG, 2_499_999, type(uint256).max, _na());
         _assertHoldsNothing();
     }
 
     function test_usdgSwapFails_burnShareToBurnWallet() public {
         _open();
-        _plankOnlyDone(bob);
         router.setFail(true);
-        vm.prank(alice, alice);
-        sale.buyWithUsdg(1, 1, type(uint256).max, type(uint256).max, _na());
+        _usdg(alice, 1, 0, 1);
         assertEq(usdg.balanceOf(burnW), 750_000);
         assertEq(usdg.balanceOf(revenue), 1_750_000);
         _assertHoldsNothing();
+    }
+
+    function test_noUsdgConfigured() public {
+        FireSale s2 = new FireSale(FireSale.Config({
+            owner: owner, paper: address(paper), plank: address(plank), usdg: address(0), weth: address(0xE7),
+            packs: address(packs), cards: address(cards), ethUsd: address(ethFeed), plankUsd: address(plankFeed),
+            paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW,
+            credits: address(credits), groups: address(groups)
+        }));
+        assertEq(address(s2.USDG()), address(0));
+        assertEq(s2.USDG_UNIT(), 0);
     }
 
     // ---------------------------------------------------------------- the PAPER burn share (20/10/70)
 
     /// Drop 1 again (before it opens) with 10% PLANK burn and 20% to PaperBurner.
     function _split() internal {
-        FireSale.DropConfig memory c = _cfg(start, 10, 3, 4, 5);
+        FireSale.DropConfig memory c = _cfg(start, 13);
         c.plankBurnBps = 1_000;
         c.paperBurnBps = 2_000;
-        vm.prank(owner, owner);
-        sale.configureDrop(1, c);
+        _set(1, c);
     }
 
     function test_split_plank() public {
         _split();
         _open();
-        uint256 cost = sale.quotePlank(1, 2);
-        uint256 deadBefore = plank.balanceOf(DEAD);
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 2, type(uint256).max, type(uint256).max, _na());
-        assertEq(plank.balanceOf(DEAD) - deadBefore, cost * 1_000 / 10_000, "10% PLANK burned");
+        uint256 cost = _cost(1, 0, 2, FireSale.Pay.PLANK);
+        _plank(alice, 1, 0, 2);
+        assertEq(plank.balanceOf(DEAD), cost * 1_000 / 10_000, "10% PLANK burned");
         assertEq(plank.balanceOf(paperW), cost * 2_000 / 10_000, "20% to PaperBurner");
         assertEq(plank.balanceOf(revenue), cost - cost * 1_000 / 10_000 - cost * 2_000 / 10_000, "70% revenue");
         _assertHoldsNothing();
@@ -385,28 +570,23 @@ contract SaleTest is SeriesHelper {
     function test_split_eth() public {
         _split();
         _open();
-        _plankOnlyDone(bob);
-        uint256 revBefore = revenue.balance;
-        uint256 cost = sale.quoteEth(1, 2);
-        uint256 deadBefore = plank.balanceOf(DEAD);
+        uint256 cost = _cost(1, 0, 2, FireSale.Pay.ETH);
         vm.prank(alice, alice);
-        sale.buyWithEth{value: cost + 0.01 ether}(1, 2, type(uint256).max, _na());
+        sale.buy{value: cost + 0.01 ether}(1, 0, 2, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
         uint256 plankShare = cost * 1_000 / 10_000;
         uint256 paperShare = cost * 2_000 / 10_000;
-        assertEq(plank.balanceOf(DEAD) - deadBefore, plankShare * PER_ETH, "10% bought PLANK, burned");
+        assertEq(plank.balanceOf(DEAD), plankShare * PER_ETH, "10% bought PLANK, burned");
         assertEq(paperW.balance, paperShare, "20% to PaperBurner");
-        assertEq(revenue.balance - revBefore, cost - plankShare - paperShare, "70% revenue");
+        assertEq(revenue.balance, cost - plankShare - paperShare, "70% revenue");
         _assertHoldsNothing();
     }
 
     function test_split_ethSwapFails() public {
         _split();
         _open();
-        _plankOnlyDone(bob);
         router.setFail(true);
-        uint256 cost = sale.quoteEth(1, 1);
-        vm.prank(alice, alice);
-        sale.buyWithEth{value: cost}(1, 1, type(uint256).max, _na());
+        uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
+        _eth(alice, 1, 0, 1);
         assertEq(burnW.balance, cost * 1_000 / 10_000, "PLANK share waits in PlankBurner");
         assertEq(paperW.balance, cost * 2_000 / 10_000, "PAPER share still to PaperBurner");
         _assertHoldsNothing();
@@ -415,33 +595,28 @@ contract SaleTest is SeriesHelper {
     function test_split_usdg() public {
         _split();
         _open();
-        _plankOnlyDone(bob);
-        uint256 revBefore = usdg.balanceOf(revenue);
-        vm.prank(alice, alice);
-        sale.buyWithUsdg(1, 2, type(uint256).max, type(uint256).max, _na()); // $5.00
+        _usdg(alice, 1, 0, 2); // $5.00
         assertEq(usdg.balanceOf(address(router)), 500_000, "10% swapped for PLANK");
         assertEq(usdg.balanceOf(paperW), 1_000_000, "20% to PaperBurner");
-        assertEq(usdg.balanceOf(revenue) - revBefore, 3_500_000, "70% revenue");
+        assertEq(usdg.balanceOf(revenue), 3_500_000, "70% revenue");
         _assertHoldsNothing();
     }
 
     function test_split_overHundredPercentRefused() public {
-        FireSale.DropConfig memory c = _cfg(start, 10, 3, 4, 5);
+        FireSale.DropConfig memory c = _cfg(start, 10);
         c.plankBurnBps = 5_000;
         c.paperBurnBps = 5_001;
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.BadConfig.selector);
         sale.configureDrop(1, c);
         c.paperBurnBps = 5_000; // exactly 100%: allowed (nothing to revenue)
-        vm.prank(owner, owner);
-        sale.configureDrop(1, c);
+        _set(1, c);
     }
 
     function test_split_walletsMustDiffer() public {
-        _drop(1, start, 4, 0, 0, 5);
+        _drop(1, start, 4);
         _open();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max, _na()); // sells out, closes
+        _plank(alice, 1, 0, 4); // sells out, closes
         assertEq(sale.activeDrops(), 0);
         vm.startPrank(owner, owner);
         vm.expectRevert(FireSale.ZeroAddress.selector);
@@ -454,221 +629,369 @@ contract SaleTest is SeriesHelper {
     // ---------------------------------------------------------------- buyWithEthAll: ETH pays for the PAPER too
 
     function test_ethAll_buysThePaperOnTheCheaperRoute() public {
-        address carol = address(0xCA201); // holds ETH only, no PAPER
+        address dave = address(0xDA7E); // holds ETH only, no PAPER
         router.setPaper(paper, 30_000, 31_250); // through PLANK is cheaper
         _open();
-        _plankOnlyDone(bob);
-        uint256 cost = sale.quoteEth(1, 2);
-        uint256 paperNeed = sale.paperFor(1, 2);
+        uint256 cost = _cost(1, 0, 2, FireSale.Pay.ETH);
+        uint256 paperNeed = sale.paperFor(1, 0, 2);
         uint256 paperEth = sale.quotePaperInEth(paperNeed);
         assertEq(paperEth, (paperNeed + 31_250 - 1) / 31_250, "the PLANK route");
-        uint256 deadBefore = paper.balanceOf(DEAD);
-        uint256 paperBefore = paper.balanceOf(carol);
-        vm.deal(carol, 1 ether);
-        vm.prank(carol, carol);
-        sale.buyWithEthAll{value: cost + paperEth + 0.01 ether}(1, 2, _na());
-        assertEq(packs.balanceOf(carol, 1), 2);
-        assertGe(paper.balanceOf(DEAD) - deadBefore, paperNeed, "the PAPER bought and burned");
-        assertEq(paper.balanceOf(carol), paperBefore, "none of the buyer's own PAPER");
-        assertEq(carol.balance, 1 ether - cost - paperEth, "the rest refunded");
+        vm.deal(dave, 1 ether);
+        vm.prank(dave, dave);
+        sale.buyWithEthAll{value: cost + paperEth + 0.01 ether}(1, 0, 2, _na());
+        assertEq(packs.balanceOf(dave, 1), 2);
+        assertGe(paper.balanceOf(DEAD), paperNeed, "the PAPER bought and burned");
+        assertEq(paper.balanceOf(dave), 0, "none of the buyer's own PAPER");
+        assertEq(dave.balance, 1 ether - cost - paperEth, "the rest refunded");
         assertEq(revenue.balance, cost - cost * 3_000 / 10_000, "revenue as usual");
         _assertHoldsNothing();
     }
 
     function test_ethAll_directRouteWhenCheaper() public {
-        address carol = address(0xCA201); // holds ETH only, no PAPER
+        address dave = address(0xDA7E);
         router.setPaper(paper, 31_250, 0); // no PLANK route
         _open();
-        _plankOnlyDone(bob);
-        uint256 need = sale.paperFor(1, 1);
+        uint256 need = sale.paperFor(1, 0, 1);
         assertEq(sale.quotePaperInEth(need), (need + 31_250 - 1) / 31_250);
-        uint256 total = sale.quoteEth(1, 1) + sale.quotePaperInEth(need);
-        vm.deal(carol, total);
-        vm.prank(carol, carol);
-        sale.buyWithEthAll{value: total}(1, 1, _na());
-        assertEq(carol.balance, 0, "exactly enough");
+        uint256 total = _cost(1, 0, 1, FireSale.Pay.ETH) + sale.quotePaperInEth(need);
+        vm.deal(dave, total);
+        vm.prank(dave, dave);
+        sale.buyWithEthAll{value: total}(1, 0, 1, _na());
+        assertEq(dave.balance, 0, "exactly enough");
         _assertHoldsNothing();
     }
 
     function test_ethAll_notEnoughEthOrNoPoolReverts() public {
-        address carol = address(0xCA201); // holds ETH only, no PAPER
+        address dave = address(0xDA7E);
         _open();
-        _plankOnlyDone(bob);
-        vm.deal(carol, 1 ether);
-        vm.prank(carol, carol);
+        vm.deal(dave, 1 ether);
+        vm.prank(dave, dave);
         vm.expectRevert(FireSale.FeedUnavailable.selector); // no pool to buy PAPER from
-        sale.buyWithEthAll{value: 0.1 ether}(1, 1, _na());
+        sale.buyWithEthAll{value: 0.1 ether}(1, 0, 1, _na());
         router.setPaper(paper, 31_250, 0);
-        uint256 cost = sale.quoteEth(1, 1);
-        vm.prank(carol, carol);
+        uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
+        vm.prank(dave, dave);
         vm.expectRevert(); // the price is covered but not the PAPER
-        sale.buyWithEthAll{value: cost}(1, 1, _na());
-        assertEq(packs.balanceOf(carol, 1), 0);
+        sale.buyWithEthAll{value: cost}(1, 0, 1, _na());
+        assertEq(packs.balanceOf(dave, 1), 0);
     }
+
+    /// ETH alone in a group that doesn't take ETH: refused. In a PAPER-only group: it just buys the PAPER.
+    function test_ethAll_followsTheGroupsCoins() public {
+        FireGroups.Group memory plankOnly = _g(5);
+        plankOnly.coins = FireGroups(groups).PLANK();
+        FireGroups.Group memory paperOnly = _g(5);
+        paperOnly.priceUsd = 0;
+        paperOnly.coins = 0;
+        paperOnly.gate = FireGroups.Gate.NFT;
+        paperOnly.nft = address(press);
+        paperOnly.perNft = 5;
+        _set(1, _with(_cfg(start, 0), _two(plankOnly, paperOnly)));
+        router.setPaper(paper, 31_250, 0);
+        uint256 pid = press.mint(carol);
+        _open();
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.CoinNotAccepted.selector);
+        sale.buyWithEthAll{value: 1 ether}(1, 0, 1, _na());
+        uint256 need = sale.quotePaperInEth(sale.paperFor(1, 1, 2));
+        uint256 bal = carol.balance;
+        vm.prank(carol, carol);
+        sale.buyWithEthAll{value: need + 1 ether}(1, 1, 2, _nfts(pid));
+        assertEq(bal - carol.balance, need, "only the PAPER, bought with ETH");
+        assertEq(packs.balanceOf(carol, 1), 2);
+        assertEq(revenue.balance, 0);
+        _assertHoldsNothing();
+    }
+
+    // ---------------------------------------------------------------- price feeds
 
     function test_ethFeedStale_reverts() public {
         _open();
-        _plankOnlyDone(bob);
         vm.warp(block.timestamp + 26 hours);
         plankFeed.set(PLANK_USD);
         vm.prank(alice, alice);
         vm.expectRevert(FireSale.FeedUnavailable.selector);
-        sale.buyWithEth{value: 1 ether}(1, 1, type(uint256).max, _na());
+        sale.buy{value: 1 ether}(1, 0, 1, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
+        _plank(alice, 1, 0, 1); // PLANK still sells
     }
 
+    /// A PLANK-only group can't sell while the PLANK price is down, but it can't stall the drop: when its time runs
+    /// out its packs roll to the next group, which takes ETH (the burn share then waits in PlankBurner).
     function test_plankFeedDown_drop_doesNotGetStuck() public {
+        FireGroups.Group memory a = _g(4);
+        a.coins = 1; // PLANK only
+        a.duration = 48 hours;
+        a.rollTo = 1;
+        FireGroups.Group memory b = _g(6);
+        b.afterGroup = 0;
+        _set(1, _with(_cfg(start, 0), _two(a, b)));
         _open();
         plankFeed.setBroken(true);
         vm.prank(alice, alice);
         vm.expectRevert(FireSale.FeedUnavailable.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
         vm.prank(alice, alice);
-        vm.expectRevert(FireSale.PlankOnly.selector);
-        sale.buyWithEth{value: 1 ether}(1, 1, type(uint256).max, _na());
+        vm.expectRevert(FireGroups.CoinNotAccepted.selector);
+        sale.buy{value: 1 ether}(1, 0, 1, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.GroupNotOpen.selector);
+        sale.buy{value: 1 ether}(1, 1, 1, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
         vm.warp(start + 48 hours);
         ethFeed.set(ETH_USD);
-        uint256 cost = sale.quoteEth(1, 1);
-        vm.prank(alice, alice);
-        sale.buyWithEth{value: cost}(1, 1, type(uint256).max, _na()); // ETH opens when the limit lifts; no price → burn share to burn wallet
-        assertEq(burnW.balance, cost * 3_000 / 10_000);
+        assertEq(_view(1, 1).capacity, 10, "the 4 PLANK-only packs rolled in");
+        uint256 cost = _cost(1, 1, 1, FireSale.Pay.ETH);
+        _eth(alice, 1, 1, 1);
+        assertEq(burnW.balance, cost * 3_000 / 10_000, "no PLANK price: the burn share waits in PlankBurner");
     }
 
-    // ---------------------------------------------------------------- limits
-
-    function test_walletLimit_thenLifts() public {
-        _drop(1, start, 20, 0, 0, 5);
+    function test_audit_stalePlankPricePausesPlankAndSkipsTheSwap() public {
         _open();
-        vm.startPrank(alice, alice);
-        sale.buyWithPlank(1, 5, type(uint256).max, type(uint256).max, _na());
-        vm.expectRevert(FireSale.WalletLimit.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
-        vm.stopPrank();
-        _warp(start + 48 hours);
+        vm.warp(block.timestamp + 3 hours); // keeper down: the average is 3 hours old
+        ethFeed.set(ETH_USD);
         vm.prank(alice, alice);
-        sale.buyWithPlank(1, 6, type(uint256).max, type(uint256).max, _na());
-        assertEq(packs.balanceOf(alice, 1), 11);
+        vm.expectRevert(FireSale.FeedUnavailable.selector);
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+        uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
+        _eth(alice, 1, 0, 1);
+        assertEq(burnW.balance, cost * 3_000 / 10_000, "no swap on an old price");
     }
 
-    // ---------------------------------------------------------------- starters
-
-    function test_starters() public {
-        uint256 p1 = press.mint(alice);
-        uint256 p2 = press.mint(alice);
-        uint256 p3 = press.mint(bob);
-        _open();
-        uint256 deadPaper = paper.balanceOf(DEAD);
-        vm.prank(alice, alice);
-        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
-        assertEq(packs.balanceOf(alice, 1), 1);
-        assertEq(paper.balanceOf(DEAD) - deadPaper, 1e18, "only the PAPER");
-        assertEq(plank.balanceOf(revenue), 0);
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.AlreadyClaimed.selector);
-        sale.claimStarter(1, p2, 1, FireSale.Pay.PLANK, 0, type(uint256).max); // 1 per wallet
-        vm.prank(bob, bob);
-        vm.expectRevert(FireSale.NotPressOwner.selector);
-        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max); // not bob's press
-        vm.prank(alice, alice);
-        press.transferFrom(alice, bob, p1);
-        vm.prank(bob, bob);
-        vm.expectRevert(FireSale.PressUsed.selector);
-        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max); // each press once per drop
-        vm.prank(bob, bob);
-        sale.claimStarter(1, p3, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
-        _warp(start + 24 hours);
-        address carol = address(0xC3);
-        uint256 p4 = press.mint(carol);
-        vm.prank(carol, carol);
-        vm.expectRevert(FireSale.StarterWindowClosed.selector);
-        sale.claimStarter(1, p4, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
+    function test_audit_longWindowAfterAKeeperGapRejected() public {
+        MockPlankTwap twap = new MockPlankTwap(PLANK_USD, address(new MockPair(address(0xE7), address(plank))));
+        FireSale s2 = new FireSale(_saleConfig(address(twap)));
+        (uint256 c,) = s2.quote(1, 0, 1, FireSale.Pay.PLANK); // a normal 30-minute window: fine
+        assertGt(c, 0);
+        twap.setWindow(PLANK_USD, 6 days); // a checkpoint after a 6-day gap: fresh-looking, but a 6-day average
+        vm.expectRevert(FireSale.FeedUnavailable.selector);
+        s2.quote(1, 0, 1, FireSale.Pay.PLANK);
     }
 
-    function test_leftoverStartersJoinPaidSupply() public {
-        _open();
-        uint256 paidLeft = sale.phase(1).paidLeft;
-        uint256 startersLeft = sale.phase(1).startersLeft;
-        assertEq(paidLeft, 10);
-        assertEq(startersLeft, 3);
-        _warp(start + 24 hours);
-        paidLeft = sale.phase(1).paidLeft;
-        startersLeft = sale.phase(1).startersLeft;
-        assertEq(paidLeft, 13, "3 unclaimed starters added");
-        assertEq(startersLeft, 0);
-    }
-
-    function test_startersAreTradeable() public {
-        uint256 p1 = press.mint(alice);
-        _open();
-        vm.prank(alice, alice);
-        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
-        vm.prank(alice, alice);
-        packs.safeTransferFrom(alice, bob, 1, 1, "");
-        assertEq(packs.balanceOf(bob, 1), 1);
-    }
-
-    // ---------------------------------------------------------------- selling out
+    // ---------------------------------------------------------------- selling out and ending
 
     function test_soldOut_closesTheFire() public {
-        _drop(1, start, 10, 0, 0, 10);
+        _drop(1, start, 10);
         _open();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 10, type(uint256).max, type(uint256).max, _na());
-        (, bool closed,,,,) = cards.fires(1);
-        assertTrue(closed, "the last purchase closed the Fire");
+        _plank(alice, 1, 0, 10);
+        assertTrue(_closed(1), "the last purchase closed the Fire");
+        assertTrue(sale.status(1).closed);
+        assertEq(sale.activeDrops(), 0);
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.NotLive.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
     }
 
     function test_cantOversell() public {
-        _drop(1, start, 3, 0, 0, 10);
+        _drop(1, start, 3);
         _open();
         vm.prank(alice, alice);
-        vm.expectRevert(FireSale.SoldOut.selector);
-        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max, _na());
+        vm.expectRevert(FireGroups.SoldOut.selector);
+        sale.buy(1, 0, 4, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
     }
 
-    function test_close_needsSoldOutAndAConfiguredDrop() public {
+    function test_close_needsNothingLeftAndAConfiguredDrop() public {
         vm.expectRevert(FireSale.NotSoldOut.selector);
         sale.close(7); // never configured
+        vm.expectRevert(FireSale.NotSoldOut.selector);
+        sale.close(1); // not open yet
         _open();
         vm.expectRevert(FireSale.NotSoldOut.selector);
         sale.close(1);
     }
 
-    function test_ownerCanEndADrop_onlyAfterTheLimitLifts() public {
+    function test_ownerCanEndADrop_onlyAfterADay() public {
         _open();
-        _plankOnlyDone(alice);
+        _plank(alice, 1, 0, 4);
+        assertEq(sale.status(1).endableAt, start + 1 days, "an until-sold group: MIN_DROP_TIME");
+        _warp(start + 1 days - 1);
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.TooEarly.selector);
-        sale.endDrop(1); // the starter window and the limited phase always run in full
-        _warp(start + 48 hours);
+        sale.endDrop(1);
+        _warp(start + 1 days);
         vm.prank(owner, owner);
         sale.endDrop(1);
         (, bool closed,,, uint64 packCount,) = cards.fires(1);
         assertTrue(closed);
         assertEq(packCount, 4);
+        vm.expectRevert(FireSale.NotLive.selector);
+        sale.endDrop(1);
+    }
+
+    function test_audit2_anyoneCanEndAStalledDropAfterAGracePeriod() public {
+        _open();
+        _plank(alice, 1, 0, 4);
+        _warp(start + 48 hours);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.TooEarly.selector);
+        sale.endDrop(1); // the owner's turn first
+        _warp(start + 1 days + 7 days);
+        vm.prank(bob, bob);
+        sale.endDrop(1); // the owner never acted: anyone can, so the packs can be opened
+        assertTrue(sale.status(1).closed);
+    }
+
+    /// The owner can end a stalled drop only once its schedule is over: every timed group has run its full time.
+    function test_endDropWaitsForTheLongestGroup() public {
+        FireGroups.Group memory a = _g(10);
+        a.duration = 72 hours;
+        a.rollTo = 1;
+        FireGroups.Group memory b = _g(10);
+        b.startDelay = 2 hours;
+        b.duration = 3 hours;
+        b.afterGroup = 0;
+        _set(1, _with(_cfg(start, 0), _two(a, b)));
+        assertEq(groups.scheduleEnd(1), start + 77 hours, "72h, then 2h later 3h more");
+        assertEq(sale.status(1).endableAt, start + 77 hours);
+        _warp(start + 76 hours);
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.TooEarly.selector);
+        sale.endDrop(1);
+        _warp(start + 77 hours);
+        vm.prank(owner, owner);
+        sale.endDrop(1);
+    }
+
+    function test_audit2_buyerNamesTheMostPaper() public {
+        _open();
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.buy(1, 0, 2, FireSale.Pay.PLANK, type(uint256).max, 1e18, _na()); // 2 packs need 2 PAPER
+    }
+
+    function test_audit2_feedsReplaceableOnlyBetweenDrops() public {
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.DropsActive.selector);
+        sale.setFeeds(address(ethFeed), address(plankFeed), address(0), address(router));
+        _drop(1, start, 4);
+        _open();
+        _plank(alice, 1, 0, 4);
+        MockFeed newEth = new MockFeed(ETH_USD);
+        vm.prank(owner, owner);
+        sale.setFeeds(address(newEth), address(plankFeed), address(0), address(router));
+        assertEq(address(sale.ETH_USD()), address(newEth));
+    }
+
+    function test_audit_walletsLockedWhileADropIsSetUp() public {
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.DropsActive.selector);
+        sale.setWallets(address(0x1111), address(0x2222), address(0x3333));
+        _drop(1, start, 4);
+        _open();
+        _plank(alice, 1, 0, 4); // sells out, closes
+        assertEq(sale.activeDrops(), 0);
+        vm.prank(owner, owner);
+        sale.setWallets(address(0x1111), address(0x2222), address(0x3333));
+        assertEq(sale.revenueWallet(), address(0x1111));
+    }
+
+    /// Only one drop at a time: picks only happen while no drop is running.
+    function test_audit_oneDropAtATime() public {
+        vm.prank(owner);
+        vm.expectRevert(FireSale.AnotherDropActive.selector);
+        sale.configureDrop(2, _cfg(uint64(block.timestamp + 365 days), 10));
+        _endDrop1();
+        _drop(2, uint64(block.timestamp + 1 hours), 10); // the next one, once the first has closed
+        assertEq(sale.activeDrops(), 1);
+    }
+
+    function test_audit_fireNumberFitsIn64Bits() public {
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(uint256(type(uint64).max) + 8, _cfg(start, 10));
+        vm.prank(owner, owner);
+        vm.expectRevert(FireCards.BadLength.selector);
+        cards.setDealer(uint256(type(uint64).max) + 8, address(dealer));
+    }
+
+    // ---------------------------------------------------------------- limits
+
+    /// Most packs per purchase is a per-drop setting (default 50).
+    function test_maxPerTxIsPerDrop() public {
+        _drop(1, start, 300);
+        assertEq(sale.dropOf(1).maxPerTx, 50, "default");
+        FireSale.DropConfig memory c = _cfg(start, 300);
+        c.maxPerTx = 120;
+        _set(1, c);
+        assertEq(sale.dropOf(1).maxPerTx, 120);
+        _open();
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.BadAmount.selector);
+        sale.buy(1, 0, 121, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.BadAmount.selector);
+        sale.buy(1, 0, 0, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+        _plank(alice, 1, 0, 120);
+        assertEq(packs.balanceOf(alice, 1), 120);
+    }
+
+    /// A giant drop: 10,000 packs, 100 per wallet, 100 per purchase. One purchase of 100 costs about what 1 does.
+    function test_giantDrop_buy100InOneTx() public {
+        FireSale.DropConfig memory c = _cfg(start, 10_000);
+        c.maxPerTx = 100;
+        c.groups[0].perWallet = 100;
+        _set(1, c);
+        _open();
+        _plank(bob, 1, 0, 1); // warm the counters
+        uint256 g = gasleft();
+        _plank(alice, 1, 0, 100);
+        emit log_named_uint("PLANK, 100 packs", g - gasleft());
+        assertEq(packs.balanceOf(alice, 1), 100);
+        assertEq(paper.balanceOf(DEAD), 101e18, "1 PAPER a pack");
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.WalletLimit.selector);
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+        g = gasleft();
+        _eth(bob, 1, 0, 99);
+        emit log_named_uint("ETH, 99 packs (with PLANK swap)", g - gasleft());
+        assertEq(packs.balanceOf(bob, 1), 100);
+        _assertHoldsNothing();
+    }
+
+    /// A wallet limit in the thousands, matched by maxPerTx.
+    function test_bigWalletLimitAndMaxPerTx() public {
+        FireSale.DropConfig memory c = _cfg(start, 5_000);
+        c.maxPerTx = 2_500;
+        c.groups[0].perWallet = 2_500;
+        _set(1, c);
+        paper.mint(alice, 2_000e18);
+        _open();
+        _plank(alice, 1, 0, 2_500);
+        assertEq(packs.balanceOf(alice, 1), 2_500);
+    }
+
+    /// No wallet limit: one wallet can take the whole group.
+    function test_noWalletLimit() public {
+        _drop(1, start, 100);
+        _open();
+        _plank(alice, 1, 0, 50);
+        _plank(alice, 1, 0, 50);
+        assertTrue(sale.status(1).closed, "sold out to one wallet");
+    }
+
+    function test_noBotContractsWhileTheRuleIsOn() public {
+        _open();
+        assertTrue(sale.status(1).regularWalletsOnly);
+        vm.prank(alice); // called from a contract: msg.sender isn't the wallet that signed
+        vm.expectRevert(FireSale.NoContracts.selector);
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+        _plank(alice, 1, 0, 1); // a regular wallet
+        _warp(start + 48 hours);
+        assertFalse(sale.status(1).regularWalletsOnly);
+        vm.prank(alice); // after it lifts, anyone
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+    }
+
+    function test_regularWalletsOff() public {
+        FireSale.DropConfig memory c = _cfg(start, 20);
+        c.regularWalletsFor = 0;
+        _set(1, c);
+        _open();
+        assertFalse(sale.status(1).regularWalletsOnly);
+        vm.prank(alice); // a contract call, right at the start
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+        assertEq(packs.balanceOf(alice, 1), 1);
     }
 
     // ---------------------------------------------------------------- burning cards and credits
-
-    /// Alice ends up with `n` packs' worth of cards (6 each) from fire 1.
-    function _aliceGetsCards(uint256 nPacks) internal {
-        _drop(1, start, uint32(nPacks), 0, 0, uint32(nPacks));
-        _open();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, nPacks, type(uint256).max, type(uint256).max, _na()); // sells out, closes the Fire
-        uint256 opened;
-        while (opened < nPacks) {
-            uint256 c = nPacks - opened > 10 ? 10 : nPacks - opened;
-            vm.prank(alice, alice);
-            cards.open(1, c);
-            rng.fulfill(rng.last(), uint256(keccak256(abi.encode(opened))));
-            opened += c;
-        }
-        cards.process(1, type(uint256).max);
-        assertEq(cards.balanceOf(alice), nPacks * 6);
-    }
 
     function test_burn42_earnsACredit_runningCount() public {
         _aliceGetsCards(9); // 54 cards, serials 1..54
@@ -703,7 +1026,7 @@ contract SaleTest is SeriesHelper {
         vm.prank(alice, alice);
         uint256 id = credits.suggest("A fox made of embers", type(uint256).max);
         uint64 s2 = uint64(block.timestamp + 1 hours);
-        _drop(2, s2, 10, 0, 0, 5);
+        _drop(2, s2, 10);
         uint256[] memory picked = new uint256[](1);
         picked[0] = id;
         vm.prank(owner, owner);
@@ -723,31 +1046,12 @@ contract SaleTest is SeriesHelper {
         assertEq(credits.credits(alice), 0);
         assertEq(paper.balanceOf(DEAD) - deadPaper, 3e18, "1 PAPER each");
         assertEq(plank.balanceOf(revenue), revBefore, "nothing else paid");
-        uint256 paidLeft = sale.phase(2).paidLeft;
-        assertEq(paidLeft, 7, "out of the drop's supply");
+        assertEq(sale.status(2).left, 7, "out of the credit group");
+        assertEq(_view(2, 0).sold, 3);
+        assertEq(sale.dropOf(2).creditPacks, 3);
         vm.prank(alice, alice);
         vm.expectRevert(FireCredits.NoCredits.selector);
         credits.useCredits(2, 1, type(uint256).max);
-    }
-
-    // ---------------------------------------------------------------- suggestions
-
-    /// Most packs per purchase is a per-drop setting (default 50).
-    function test_maxPerTxIsPerDrop() public {
-        _drop(1, start, 300, 0, 0, 300);
-        assertEq(sale.dropOf(1).maxPerTx, 50, "default");
-        FireSale.DropConfig memory c = _cfg(start, 300, 0, 0, 300);
-        c.maxPerTx = 120;
-        vm.prank(owner, owner);
-        sale.configureDrop(1, c);
-        assertEq(sale.dropOf(1).maxPerTx, 120);
-        _open();
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.BadAmount.selector);
-        sale.buyWithPlank(1, 121, type(uint256).max, type(uint256).max, _na());
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 120, type(uint256).max, type(uint256).max, _na());
-        assertEq(packs.balanceOf(alice, 1), 120);
     }
 
     /// Cards per free pack credit is fixed forever at 42 (burn progress carries over between Series): no setter.
@@ -759,13 +1063,144 @@ contract SaleTest is SeriesHelper {
         vm.prank(alice, alice);
         credits.burnCards(_ids(1, 41));
         assertEq(credits.credits(alice), 0);
-        // a new drop doesn't change the rate: progress carries over and the 42nd card earns the credit
-        _drop(2, uint64(block.timestamp + 1 hours), 10, 0, 0, 5);
+        _drop(2, uint64(block.timestamp + 1 hours), 10);
         vm.prank(alice, alice);
         credits.burnCards(_ids(42, 1));
         assertEq(credits.credits(alice), 1);
         assertEq(credits.burnCount(alice), 0);
     }
+
+    /// Alice and bob each get `n` credits (picked suggestions for fire 2's drop, set up with `c`); fire 2 then opens.
+    function _creditDrop(FireSale.DropConfig memory c, uint256 n) internal returns (uint64 s2) {
+        _aliceGetsCards(14); // closes fire 1
+        s2 = uint64(block.timestamp + 1 hours);
+        c.start = s2;
+        c.creditsPerPick = uint16(n);
+        _set(2, c);
+        uint256[] memory ids = new uint256[](2);
+        vm.prank(alice, alice);
+        ids[0] = credits.suggest("Ember Fox", type(uint256).max);
+        vm.prank(bob, bob);
+        ids[1] = credits.suggest("Ash Wolf", type(uint256).max);
+        vm.prank(owner, owner);
+        credits.pickSuggestions(2, ids);
+        _warp(s2);
+    }
+
+    function test_creditPacksTotalCap() public {
+        FireSale.DropConfig memory c = _cfg(0, 20);
+        c.creditPacksMax = 5;
+        _creditDrop(c, 4);
+        assertEq(sale.status(2).creditPacksLeft, 5);
+        vm.prank(alice, alice);
+        credits.useCredits(2, 4, type(uint256).max);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.CreditCapReached.selector);
+        credits.useCredits(2, 2, type(uint256).max);
+        vm.prank(bob, bob);
+        credits.useCredits(2, 1, type(uint256).max);
+        assertEq(sale.status(2).creditPacksLeft, 0);
+        assertEq(credits.credits(bob), 3, "unused credits wait for another drop");
+    }
+
+    function test_creditPacksPerWalletCap() public {
+        FireSale.DropConfig memory c = _cfg(0, 20);
+        c.creditPacksPerWallet = 2;
+        _creditDrop(c, 4);
+        vm.prank(alice, alice);
+        credits.useCredits(2, 2, type(uint256).max);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.CreditWalletLimit.selector);
+        credits.useCredits(2, 1, type(uint256).max);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireSale.CreditWalletLimit.selector);
+        credits.useCredits(2, 3, type(uint256).max);
+        vm.prank(bob, bob);
+        credits.useCredits(2, 2, type(uint256).max);
+        assertEq(sale.creditPacksBy(2, alice), 2);
+    }
+
+    function test_creditPacksZeroMeansNoLimit() public {
+        _creditDrop(_cfg(0, 20), 10);
+        assertEq(sale.status(2).creditPacksLeft, 20, "only the supply");
+        vm.prank(alice, alice);
+        credits.useCredits(2, 10, type(uint256).max);
+        vm.prank(bob, bob);
+        credits.useCredits(2, 10, type(uint256).max);
+        assertTrue(sale.status(2).closed, "credits took the whole drop");
+    }
+
+    function test_creditCapsLockAtStart() public {
+        FireSale.DropConfig memory c = _cfg(start, 10);
+        c.creditPacksMax = 2;
+        c.creditPacksPerWallet = 1;
+        _set(1, c);
+        _open();
+        c.start = uint64(block.timestamp + 1 hours);
+        c.creditPacksMax = 0;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.DropStarted.selector);
+        sale.configureDrop(1, c);
+        assertEq(sale.dropOf(1).creditPacksMax, 2);
+        assertEq(sale.dropOf(1).creditPacksPerWallet, 1);
+    }
+
+    /// Credits come from the credit group while it is open, whatever its gate, price, coins and wallet limit, and
+    /// whatever the regular-wallets rule. Before it opens (and after it ends) they wait.
+    function test_creditsFromTheCreditGroupOnly() public {
+        FireGroups.Group memory press1 = _pressGroup(5, 1);
+        press1.duration = 6 hours;
+        press1.rollTo = 1;
+        FireGroups.Group memory late = _g(10);
+        late.coins = 1;
+        late.perWallet = 1;
+        late.gate = FireGroups.Gate.SNAPSHOT;
+        late.root = bytes32(uint256(1)); // nobody can prove into it
+        late.afterGroup = 0;
+        FireSale.DropConfig memory c = _with(_cfg(0, 0), _two(press1, late));
+        c.creditGroup = 1;
+        _creditDrop(c, 3);
+        assertEq(sale.status(2).creditPacksLeft, 0, "the credit group isn't open yet");
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.GroupNotOpen.selector);
+        credits.useCredits(2, 1, type(uint256).max);
+        _warp(block.timestamp + 6 hours); // the press group ends; its 5 roll into the credit group
+        assertEq(sale.status(2).creditPacksLeft, 15);
+        vm.prank(alice, alice);
+        credits.useCredits(2, 3, type(uint256).max); // past a wallet limit of 1, no proof, no PLANK
+        assertEq(packs.balanceOf(alice, 2), 3);
+        assertEq(groups.boughtIn(2, 1, alice), 0, "credit packs don't count toward the group's wallet limit");
+    }
+
+    /// A drop with no credit group (255) takes no credits.
+    function test_noCreditGroup() public {
+        FireSale.DropConfig memory c = _cfg(0, 20);
+        c.creditGroup = NONE;
+        _creditDrop(c, 2);
+        assertEq(sale.status(2).creditPacksLeft, 0);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.GroupNotOpen.selector);
+        credits.useCredits(2, 1, type(uint256).max);
+    }
+
+    /// Credit packs aren't available in a Series whose packs hold 42+ cards (burning one would pay for itself).
+    function test_noCreditsInBigPackSeries() public {
+        RecipeDealer.Recipe memory r;
+        r.types = new RecipeDealer.CardType[](1);
+        r.types[0] = _type("Common", "common", 0, RecipeDealer.Supply.Filler, 0);
+        r.slots = new RecipeDealer.Slot[](1);
+        r.slots[0] = _slotOne(42, 0);
+        _series(cards, dealer, owner, 5, r, 2);
+        _endDrop1();
+        uint64 s5 = uint64(block.timestamp + 1 hours);
+        _set(5, _cfg(s5, 10));
+        _warp(s5);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireCredits.BadConfig.selector);
+        credits.useCredits(5, 1, type(uint256).max);
+    }
+
+    // ---------------------------------------------------------------- suggestions
 
     function test_suggestions() public {
         uint256 before = paper.balanceOf(DEAD);
@@ -792,37 +1227,9 @@ contract SaleTest is SeriesHelper {
         credits.pickSuggestions(1, ids); // only the owner
     }
 
-    // ---------------------------------------------------------------- gas
-
-    function test_gas() public {
-        _drop(1, start, 100, 0, 0, 50);
-        _open();
-        vm.prank(bob, bob);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na()); // warm the counters
-        uint256 g = gasleft();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
-        emit log_named_uint("PLANK, 1 pack", g - gasleft());
-        g = gasleft();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 5, type(uint256).max, type(uint256).max, _na());
-        emit log_named_uint("PLANK, 5 packs", g - gasleft());
-        uint256 cost = sale.quoteEth(1, 1);
-        g = gasleft();
-        vm.prank(bob, bob);
-        sale.buyWithEth{value: cost}(1, 1, type(uint256).max, _na());
-        emit log_named_uint("ETH, 1 pack (with PLANK swap)", g - gasleft());
-        cost = sale.quoteEth(1, 5);
-        g = gasleft();
-        vm.prank(bob, bob);
-        sale.buyWithEth{value: cost}(1, 5, type(uint256).max, _na());
-        emit log_named_uint("ETH, 5 packs (with PLANK swap)", g - gasleft());
-    }
-
-
     /// The suggestion list clears after every picking session: unpicked suggestions don't carry over.
     function test_suggestionListClearsAfterEachPickingSession() public {
-        _drop(1, start, 4, 0, 0, 5);
+        _drop(1, start, 4);
         vm.startPrank(bob, bob);
         uint256 a = credits.suggest("Ember Fox", type(uint256).max);
         uint256 b = credits.suggest("Ash Wolf", type(uint256).max);
@@ -836,11 +1243,8 @@ contract SaleTest is SeriesHelper {
         uint256 c = credits.suggest("Cinder Owl", type(uint256).max); // made after the session started: next list
 
         _open();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max, _na()); // drop 1 sells out
-        // next session, for Fire 2
-        vm.prank(owner, owner);
-        sale.configureDrop(2, _cfg(uint64(block.timestamp + 2 hours), 10, 0, 0, 5));
+        _plank(alice, 1, 0, 4); // drop 1 sells out
+        _drop(2, uint64(block.timestamp + 2 hours), 10); // next session, for Fire 2
         one[0] = b;
         vm.prank(owner, owner);
         vm.expectRevert(FireCredits.NotThisRound.selector);
@@ -850,191 +1254,6 @@ contract SaleTest is SeriesHelper {
         credits.pickSuggestions(2, one);
         assertEq(credits.credits(alice), 1);
         assertEq(credits.currentRound(), 2);
-    }
-
-
-
-    // ---------------------------------------------------------------- holder window + regular wallets
-
-    function _leaf(address a) internal pure returns (bytes32) {
-        return keccak256(bytes.concat(keccak256(abi.encode(a))));
-    }
-
-    function _pair(bytes32 x, bytes32 y) internal pure returns (bytes32) {
-        return x < y ? keccak256(abi.encode(x, y)) : keccak256(abi.encode(y, x));
-    }
-
-    /// A drop whose first 24h is for press holders and the PLANK snapshot (alice and carol are in it).
-    function _holderDrop() internal returns (address carol) {
-        carol = address(0xC3);
-        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
-        c.holderWindow = 24 hours;
-        c.holderRoot = _pair(_leaf(alice), _leaf(carol));
-        vm.prank(owner);
-        sale.configureDrop(1, c);
-    }
-
-    function _proof(address other) internal pure returns (FireSale.Access memory a) {
-        a.proof = new bytes32[](1);
-        a.proof[0] = _leaf(other);
-    }
-
-    function _press(uint256 id) internal pure returns (FireSale.Access memory a) {
-        a.pressId = id;
-        a.proof = new bytes32[](0);
-    }
-
-    function test_holderWindow_snapshotAndPressHoldersOnly() public {
-        address carol = _holderDrop();
-        uint256 bobPress = press.mint(bob);
-        _open();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 2, type(uint256).max, type(uint256).max, _proof(carol)); // in the PLANK snapshot
-        vm.prank(bob, bob);
-        vm.expectRevert(FireSale.HoldersOnly.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na()); // neither
-        vm.prank(bob, bob);
-        vm.expectRevert(FireSale.HoldersOnly.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _proof(carol)); // someone else's proof
-        vm.prank(bob, bob);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _press(bobPress)); // a press holder
-        assertTrue(sale.phase(1).holdersOnly);
-    }
-
-    function test_holderWindow_onePressLetsInOneWallet() public {
-        _holderDrop();
-        uint256 p1 = press.mint(bob);
-        _open();
-        vm.prank(bob, bob);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _press(p1));
-        vm.prank(bob, bob);
-        press.transferFrom(bob, address(0xD4), p1);
-        vm.prank(address(0xD4), address(0xD4));
-        vm.expectRevert(FireSale.PressUsed.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _press(p1)); // passing the press around
-    }
-
-    function test_holderWindow_opensToEveryoneAfter24h() public {
-        _holderDrop();
-        _open();
-        _warp(start + 24 hours);
-        assertFalse(sale.phase(1).holdersOnly);
-        vm.prank(bob, bob);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
-        assertEq(packs.balanceOf(bob, 1), 1);
-    }
-
-    function test_noBotContractsWhileTheLimitIsOn() public {
-        _drop(1, start, 20, 0, 0, 5);
-        _open();
-        vm.prank(alice); // called from a contract: msg.sender isn't the wallet that signed
-        vm.expectRevert(FireSale.NoContracts.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
-        vm.prank(alice, alice); // a regular wallet
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
-        _warp(start + 48 hours);
-        vm.prank(alice); // after the limit lifts, anyone
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
-    }
-
-
-    /// The snapshot script's tree (ops/snapshot, `node snapshot.mjs --selftest`) is the one FireSale accepts.
-    function test_snapshotScriptRootMatches() public {
-        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
-        c.holderWindow = 24 hours;
-        c.holderRoot = 0xe2b6b2b847fb36972d28459f0c10cab62aad455b685174c663177bfd1d64d5b4;
-        vm.prank(owner);
-        sale.configureDrop(1, c);
-        _open();
-        address w = address(0xA1); // alice
-        FireSale.Access memory a;
-        a.proof = new bytes32[](2);
-        a.proof[0] = 0xbea9d456be3e983fd032b953e38319dfe71bae5aa4d1bbd9a4400bf1a6fe6519;
-        a.proof[1] = 0xe88e4e6f8c904d033c47645fa7a3297960e6a90e65d21020310421bbcee804d8;
-        vm.prank(w, w);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, a);
-        address d4 = address(0xD4);
-        plank.mint(d4, 1e33); paper.mint(d4, 10e18);
-        vm.startPrank(d4, d4);
-        plank.approve(address(sale), type(uint256).max); paper.approve(address(sale), type(uint256).max);
-        FireSale.Access memory b;
-        b.proof = new bytes32[](1);
-        b.proof[0] = 0x6b26bb8031a3037f2f1f3f6b7494dc83cda7c11f95b041e391b45c1db0d893d2;
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, b);
-        vm.stopPrank();
-    }
-
-    // ---------------------------------------------------------------- audit round 2
-
-    function test_audit2_anyoneCanEndAStalledDropAfterAGracePeriod() public {
-        _open();
-        _plankOnlyDone(alice);
-        _warp(start + 48 hours);
-        vm.prank(bob, bob);
-        vm.expectRevert(FireSale.TooEarly.selector);
-        sale.endDrop(1); // the owner's turn first
-        _warp(start + 48 hours + 7 days);
-        vm.prank(bob, bob);
-        sale.endDrop(1); // the owner never acted: anyone can, so the packs can be opened
-        assertTrue(sale.phase(1).closed);
-    }
-
-    function test_audit2_buyerNamesTheMostPaper() public {
-        _open();
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.PriceMoved.selector);
-        sale.buyWithPlank(1, 2, type(uint256).max, 1e18, _na()); // 2 packs need 2 PAPER
-    }
-
-    function test_audit2_feedsReplaceableOnlyBetweenDrops() public {
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.DropsActive.selector);
-        sale.setFeeds(address(ethFeed), address(plankFeed), address(0), address(router));
-        _drop(1, start, 4, 0, 0, 5);
-        _open();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max, _na());
-        MockFeed newEth = new MockFeed(ETH_USD);
-        vm.prank(owner, owner);
-        sale.setFeeds(address(newEth), address(plankFeed), address(0), address(router));
-        assertEq(address(sale.ETH_USD()), address(newEth));
-    }
-
-    /// Credits work at any time in any live drop: holder window, PLANK-only phase and wallet limit don't apply.
-    function test_creditsWorkAnyTimeInAnyDrop() public {
-        _aliceGetsCards(14); // closes Fire 1
-        vm.prank(alice, alice);
-        credits.burnCards(_ids(1, 84)); // 2 credits
-        uint64 s2 = uint64(block.timestamp + 1 hours);
-        FireSale.DropConfig memory c = _cfg(s2, 20, 0, 4, 1);
-        c.holderWindow = 24 hours;
-        vm.prank(owner);
-        sale.configureDrop(2, c);
-        _warp(s2);
-        vm.prank(alice, alice);
-        credits.useCredits(2, 2, type(uint256).max); // right at the start, during the holder window, past a limit of 1
-        assertEq(packs.balanceOf(alice, 2), 2);
-        assertEq(credits.credits(alice), 0);
-    }
-
-    function test_audit2_phaseShowsTheValveAndState() public {
-        assertTrue(sale.phase(1).configured);
-        assertFalse(sale.phase(7).configured);
-        assertFalse(sale.phase(7).limitLifted);
-        _open();
-        assertTrue(sale.phase(1).plankOnly);
-        assertTrue(sale.phase(1).plankPriceOk);
-        _warp(start + 48 hours);
-        assertFalse(sale.phase(1).plankOnly, "ETH and USDG are open after the valve");
-    }
-
-    // ---------------------------------------------------------------- audit fixes
-
-    /// Only one drop at a time: picks only happen while no drop is running.
-    function test_audit_oneDropAtATime() public {
-        vm.prank(owner);
-        vm.expectRevert(FireSale.AnotherDropActive.selector);
-        sale.configureDrop(2, _cfg(uint64(block.timestamp + 365 days), 10, 0, 0, 5));
     }
 
     function test_audit_picksCappedByCharacters() public {
@@ -1065,13 +1284,11 @@ contract SaleTest is SeriesHelper {
         assertEq(credits.suggestionCount(), first + 2);
         (address by,,,) = credits.suggestions(first + 1);
         assertEq(by, bob);
-        // picked separately: only the art style wins
         uint256[] memory one = new uint256[](1);
         one[0] = first + 1;
         vm.prank(owner, owner);
         credits.pickSuggestions(1, one);
         assertEq(credits.credits(bob), 1);
-        // limits: 1 to 3 per transaction, each within the length rule
         string[] memory none = new string[](0);
         string[] memory four = new string[](4);
         for (uint256 i; i < 4; i++) four[i] = "x";
@@ -1086,8 +1303,7 @@ contract SaleTest is SeriesHelper {
         vm.stopPrank();
     }
 
-    /// The two waves of a Series, as run: the theme and art style wave, then the characters wave, all in one round
-    /// (rounds only move when a picking session starts); the owner picks everything for the Series at its drop setup.
+    /// The two waves of a Series, as run: the theme and art style wave, then the characters wave, all in one round.
     function test_twoWaves_pickedInOneSession() public {
         string[] memory look = new string[](2);
         look[0] = "Theme: Haunted diner";
@@ -1105,15 +1321,12 @@ contract SaleTest is SeriesHelper {
         credits.pickSuggestions(1, ids);
         assertEq(credits.credits(alice), 2);
         assertEq(credits.credits(bob), 3);
-        // the next Series' suggestions go into a new round
         vm.prank(bob, bob);
         uint256 next = credits.suggest("Theme: Space diner", 1e18);
         (,,, uint32 rn) = credits.suggestions(next);
         assertEq(rn, r0 + 1);
     }
 
-    /// Picks for one Series can come in several calls, from the round its session took; a suggestion sent after the
-    /// session started belongs to the next Series and can't be picked for this one.
     function test_twoWaves_laterCallsSameRound() public {
         uint256[] memory a = new uint256[](3);
         for (uint256 i; i < 3; i++) { vm.prank(bob, bob); a[i] = credits.suggest("x", 1e18); }
@@ -1142,17 +1355,14 @@ contract SaleTest is SeriesHelper {
         bytes memory longest = new bytes(280);
         for (uint256 i; i < 280; i++) longest[i] = "z";
         three[2] = string(longest);
-        // the most PAPER is a total: exactly 3 passes, a wei less refuses
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.PriceMoved.selector);
         credits.suggestMany(three, 3e18 - 1);
         vm.prank(bob, bob);
         uint256 first = credits.suggestMany(three, 3e18);
-        // ids follow in order, each with its sender and the current round
         (address by,,, uint32 r) = credits.suggestions(first + 2);
         assertEq(by, bob);
         assertEq(r, credits.currentRound());
-        // one byte too long, in the last place, refuses the whole call and takes nothing
         three[2] = string(abi.encodePacked(longest, "z"));
         uint256 count = credits.suggestionCount();
         uint256 bal = paper.balanceOf(bob);
@@ -1161,7 +1371,6 @@ contract SaleTest is SeriesHelper {
         credits.suggestMany(three, type(uint256).max);
         assertEq(credits.suggestionCount(), count);
         assertEq(paper.balanceOf(bob), bal);
-        // paused: refused
         three[2] = "c";
         vm.prank(owner, owner);
         sale.setPaused(true);
@@ -1181,400 +1390,9 @@ contract SaleTest is SeriesHelper {
         credits.pickSuggestions(1, ids);
     }
 
-    function test_audit_fireNumberFitsIn64Bits() public {
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(uint256(type(uint64).max) + 8, _cfg(start, 10, 0, 0, 5));
-        vm.prank(owner, owner);
-        vm.expectRevert(FireCards.BadLength.selector);
-        cards.setDealer(uint256(type(uint64).max) + 8, address(dealer));
-    }
-
-    function test_audit_timingsChecked() public {
-        FireSale.DropConfig memory c = _cfg(start, 10, 3, 0, 5);
-        c.liftAfter = 0;
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(1, c); // a wallet limit with no lift time
-        c = _cfg(start, 10, 3, 0, 5);
-        c.starterWindow = 30 days + 1; // longer than any phase may be
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(1, c);
-        c = _cfg(start, 10, 3, 0, 5);
-        c.starterWindow = 0; // press packs with no window
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(1, c);
-        c = _cfg(start, 10, 3, 0, 5);
-        c.starterWindow = 72 hours; // longer than the wallet limit: fine now, phases are independent
-        vm.prank(owner, owner);
-        sale.configureDrop(1, c);
-    }
-
-    function test_audit_walletsLockedWhileADropIsSetUp() public {
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.DropsActive.selector);
-        sale.setWallets(address(0x1111), address(0x2222), address(0x3333));
-        _drop(1, start, 4, 0, 0, 5);
-        _open();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max, _na()); // sells out, closes
-        assertEq(sale.activeDrops(), 0);
-        vm.prank(owner, owner);
-        sale.setWallets(address(0x1111), address(0x2222), address(0x3333));
-        assertEq(sale.revenueWallet(), address(0x1111));
-    }
-
-    function test_audit_stalePlankPricePausesPlankAndSkipsTheSwap() public {
-        _open();
-        _plankOnlyDone(bob);
-        vm.warp(block.timestamp + 3 hours); // keeper down: the average is 3 hours old
-        ethFeed.set(ETH_USD);
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.FeedUnavailable.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
-        uint256 cost = sale.quoteEth(1, 1);
-        vm.prank(alice, alice);
-        sale.buyWithEth{value: cost}(1, 1, type(uint256).max, _na());
-        assertEq(burnW.balance, cost * 3_000 / 10_000, "no swap on an old price");
-    }
-
-    function test_audit_longWindowAfterAKeeperGapRejected() public {
-        MockPlankTwap twap = new MockPlankTwap(PLANK_USD, address(new MockPair(address(0xE7), address(plank))));
-        FireSale s2 = new FireSale(FireSale.Config({
-            owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
-            press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(twap), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW,
-            credits: address(credits)
-        }));
-        s2.quotePlank(1, 1); // a normal 30-minute window: fine
-        twap.setWindow(PLANK_USD, 6 days); // a checkpoint after a 6-day gap: fresh-looking, but a 6-day average
-        vm.expectRevert(FireSale.FeedUnavailable.selector);
-        s2.quotePlank(1, 1);
-    }
-
-    // ---------------------------------------------------------------- per-drop settings
-
-    function _set(uint256 fire, FireSale.DropConfig memory c) internal {
-        vm.prank(owner, owner);
-        sale.configureDrop(fire, c);
-    }
-
-    function _claim(address who, uint256 pid, uint256 n) internal {
-        vm.prank(who, who);
-        sale.claimStarter(1, pid, n, FireSale.Pay.PLANK, 0, type(uint256).max);
-    }
-
-    /// A giant drop: 10,000 packs, 100 per wallet, 100 per purchase. One purchase of 100 costs about what 1 does.
-    function test_giantDrop_buy100InOneTx() public {
-        FireSale.DropConfig memory c = _cfg(start, 10_000, 0, 0, 100);
-        c.maxPerTx = 100;
-        _set(1, c);
-        _open();
-        vm.prank(bob, bob);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na()); // warm the counters
-        uint256 g = gasleft();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 100, type(uint256).max, type(uint256).max, _na());
-        emit log_named_uint("PLANK, 100 packs", g - gasleft());
-        assertEq(packs.balanceOf(alice, 1), 100);
-        assertEq(paper.balanceOf(DEAD), 101e18, "1 PAPER a pack");
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.WalletLimit.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
-        uint256 cost = sale.quoteEth(1, 99);
-        g = gasleft();
-        vm.prank(bob, bob);
-        sale.buyWithEth{value: cost}(1, 99, type(uint256).max, _na());
-        emit log_named_uint("ETH, 99 packs (with PLANK swap)", g - gasleft());
-        assertEq(packs.balanceOf(bob, 1), 100);
-        vm.prank(bob, bob);
-        vm.expectRevert(FireSale.BadAmount.selector);
-        sale.buyWithPlank(1, 101, type(uint256).max, type(uint256).max, _na()); // over maxPerTx
-        _assertHoldsNothing();
-    }
-
-    /// A wallet limit in the thousands, matched by maxPerTx.
-    function test_bigWalletLimitAndMaxPerTx() public {
-        FireSale.DropConfig memory c = _cfg(start, 5_000, 0, 0, 2_500);
-        c.maxPerTx = 2_500;
-        _set(1, c);
-        paper.mint(alice, 2_000e18);
-        _open();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 2_500, type(uint256).max, type(uint256).max, _na());
-        assertEq(packs.balanceOf(alice, 1), 2_500);
-    }
-
-    /// No wallet limit at all: walletLimit 0 with liftAfter 0 (one without the other is refused).
-    function test_noWalletLimit() public {
-        FireSale.DropConfig memory c = _cfg(start, 100, 0, 0, 0);
-        c.liftAfter = 0;
-        _set(1, c);
-        _open();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 50, type(uint256).max, type(uint256).max, _na());
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 50, type(uint256).max, type(uint256).max, _na());
-        assertTrue(sale.phase(1).closed, "sold out to one wallet");
-        c = _cfg(start, 10, 0, 0, 0); // limit 0, lift 48h
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(2, c);
-    }
-
-    /// 3 press packs per press: claimed in any split, never more per press, even after passing it on.
-    function test_pressPacksPerPress3() public {
-        FireSale.DropConfig memory c = _cfg(start, 10, 10, 0, 5);
-        c.starterPerPress = 3;
-        c.starterWalletLimit = 6;
-        _set(1, c);
-        uint256 p1 = press.mint(alice);
-        _open();
-        _claim(alice, p1, 2);
-        _claim(alice, p1, 1);
-        assertEq(packs.balanceOf(alice, 1), 3);
-        assertEq(sale.startersClaimedWith(1, p1), 3);
-        assertEq(paper.balanceOf(DEAD), 3e18, "PAPER only, 1 each");
-        vm.prank(alice, alice);
-        press.transferFrom(alice, bob, p1);
-        vm.prank(bob, bob);
-        vm.expectRevert(FireSale.PressUsed.selector);
-        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max); // the press is used up this drop
-        uint256 p2 = press.mint(bob);
-        vm.prank(bob, bob);
-        vm.expectRevert(FireSale.PressUsed.selector);
-        sale.claimStarter(1, p2, 4, FireSale.Pay.PLANK, 0, type(uint256).max); // 4 > 3 per press
-        _claim(bob, p2, 3);
-        assertEq(sale.phase(1).startersLeft, 4);
-    }
-
-    /// Press packs per wallet: a wallet with many presses still gets at most the wallet limit.
-    function test_pressPacksWalletLimit() public {
-        FireSale.DropConfig memory c = _cfg(start, 10, 6, 0, 5);
-        c.starterWalletLimit = 2;
-        _set(1, c);
-        uint256 p1 = press.mint(alice);
-        uint256 p2 = press.mint(alice);
-        uint256 p3 = press.mint(alice);
-        _open();
-        _claim(alice, p1, 1);
-        _claim(alice, p2, 1);
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.AlreadyClaimed.selector);
-        sale.claimStarter(1, p3, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
-        assertEq(sale.startersClaimedBy(1, alice), 2);
-    }
-
-    /// Free press packs: no PAPER, no price; any ETH sent comes back.
-    function test_pressPacksFree() public {
-        FireSale.DropConfig memory c = _cfg(start, 10, 3, 0, 5);
-        c.starterPaper = 0;
-        _set(1, c);
-        uint256 p1 = press.mint(alice);
-        _open();
-        uint256 eth = alice.balance;
-        vm.prank(alice, alice);
-        sale.claimStarter{value: 1 ether}(1, p1, 1, FireSale.Pay.ETH, 0, 0);
-        assertEq(packs.balanceOf(alice, 1), 1);
-        assertEq(paper.balanceOf(DEAD), 0, "no PAPER");
-        assertEq(alice.balance, eth, "ETH back");
-        _assertHoldsNothing();
-    }
-
-    /// Press packs at a set PAPER amount; the claimer names the most PAPER.
-    function test_pressPacksPaperAmount() public {
-        FireSale.DropConfig memory c = _cfg(start, 10, 3, 0, 5);
-        c.starterPaper = 3e18;
-        _set(1, c);
-        uint256 p1 = press.mint(alice);
-        _open();
-        (uint256 cost, uint256 pp) = sale.quoteStarter(1, 1, FireSale.Pay.PLANK);
-        assertEq(cost, 0);
-        assertEq(pp, 3e18);
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.PriceMoved.selector);
-        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, 2e18);
-        _claim(alice, p1, 1);
-        assertEq(paper.balanceOf(DEAD), 3e18);
-    }
-
-    /// Press packs at a dollar price, paid like a paid pack (PLANK, ETH or USDG; burn share and revenue split).
-    function test_pressPacksUsdPrice() public {
-        FireSale.DropConfig memory c = _cfg(start, 10, 6, 4, 5);
-        c.starterPriceUsd = 100_000_000; // $1
-        c.starterPaper = 0;
-        c.starterWalletLimit = 3;
-        c.starterPerPress = 3;
-        _set(1, c);
-        uint256 p1 = press.mint(alice);
-        uint256 p2 = press.mint(bob);
-        _open();
-        // PLANK, during the PLANK-only phase (it doesn't apply to press packs)
-        (uint256 cost,) = sale.quoteStarter(1, 1, FireSale.Pay.PLANK);
-        assertEq(cost, 1e27);
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.PriceMoved.selector);
-        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, cost - 1, 0);
-        vm.prank(alice, alice);
-        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, cost, 0);
-        assertEq(plank.balanceOf(DEAD), cost * 3_000 / 10_000);
-        assertEq(plank.balanceOf(revenue), cost - cost * 3_000 / 10_000);
-        // ETH with change back
-        (cost,) = sale.quoteStarter(1, 2, FireSale.Pay.ETH);
-        uint256 eth = alice.balance;
-        vm.prank(alice, alice);
-        sale.claimStarter{value: cost + 1 ether}(1, p1, 2, FireSale.Pay.ETH, type(uint256).max, 0);
-        assertEq(eth - alice.balance, cost);
-        assertEq(revenue.balance, cost - cost * 3_000 / 10_000);
-        // ETH short
-        vm.prank(bob, bob);
-        vm.expectRevert(FireSale.PriceMoved.selector);
-        sale.claimStarter{value: 1}(1, p2, 1, FireSale.Pay.ETH, type(uint256).max, 0);
-        // USDG
-        (cost,) = sale.quoteStarter(1, 1, FireSale.Pay.USDG);
-        assertEq(cost, 1e6);
-        vm.prank(bob, bob);
-        sale.claimStarter(1, p2, 1, FireSale.Pay.USDG, cost, 0);
-        assertEq(usdg.balanceOf(revenue), 7e5);
-        assertEq(packs.balanceOf(alice, 1), 3);
-        assertEq(packs.balanceOf(bob, 1), 1);
-        _assertHoldsNothing();
-    }
-
-    /// Press packs off (0 per press needs 0 press packs), and a press-packs-only drop (no paid packs).
-    function test_pressPacksOffAndPressOnlyDrop() public {
-        FireSale.DropConfig memory c = _cfg(start, 10, 3, 0, 5);
-        c.starterPerPress = 0;
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(1, c); // press packs with 0 per press
-        c.starters = 0;
-        _set(1, c); // press packs off
-        uint256 p1 = press.mint(alice);
-        _open();
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.SoldOut.selector);
-        sale.claimStarter(1, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
-        // a press-only drop
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max, _na());
-        _warp(start + 48 hours);
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 6, type(uint256).max, type(uint256).max, _na()); // fire 1 sells out
-        c = _cfg(uint64(block.timestamp + 1 hours), 0, 2, 0, 0);
-        c.liftAfter = 0;
-        c.priceUsd = 0;
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(2, c); // unclaimed press packs would sell at $0
-        c.priceUsd = 250_000_000;
-        _set(2, c);
-        _warp(block.timestamp + 1 hours);
-        vm.prank(alice, alice);
-        sale.claimStarter(2, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
-        uint256 p2 = press.mint(bob);
-        vm.prank(bob, bob);
-        sale.claimStarter(2, p2, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
-        assertTrue(sale.phase(2).closed, "all press packs claimed: sold out");
-        c = _cfg(uint64(block.timestamp + 1 hours), 5, 0, 0, 5);
-        c.priceUsd = 0;
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(3, c); // paid packs at $0 are refused
-    }
-
-    /// The regular-wallets rule has its own time (0 = off), apart from the wallet limit.
-    function test_regularWalletsForIsItsOwnSetting() public {
-        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
-        c.regularWalletsFor = 1 hours;
-        _set(1, c);
-        _open();
-        assertTrue(sale.phase(1).regularWalletsOnly);
-        vm.prank(alice); // a contract call
-        vm.expectRevert(FireSale.NoContracts.selector);
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
-        _warp(start + 1 hours);
-        assertFalse(sale.phase(1).regularWalletsOnly);
-        vm.prank(alice); // the wallet limit is still on, contracts may buy
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
-        c = _cfg(uint64(block.timestamp + 1 hours), 20, 0, 0, 5);
-        c.regularWalletsFor = 0;
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.AnotherDropActive.selector);
-        sale.configureDrop(2, c);
-    }
-
-    function test_regularWalletsOff() public {
-        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
-        c.regularWalletsFor = 0;
-        _set(1, c);
-        _open();
-        vm.prank(alice); // a contract call, right at the start
-        sale.buyWithPlank(1, 1, type(uint256).max, type(uint256).max, _na());
-        assertEq(packs.balanceOf(alice, 1), 1);
-    }
-
-    /// The PLANK-only packs open up to ETH and USDG at their own time; a PLANK-only count needs one.
-    function test_plankOnlyForIsItsOwnSetting() public {
-        FireSale.DropConfig memory c = _cfg(start, 20, 0, 10, 5);
-        c.plankOnlyFor = 2 hours;
-        _set(1, c);
-        _open();
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.PlankOnly.selector);
-        sale.buyWithUsdg(1, 1, type(uint256).max, type(uint256).max, _na());
-        _warp(start + 2 hours);
-        assertFalse(sale.phase(1).plankOnly);
-        vm.prank(alice, alice);
-        sale.buyWithUsdg(1, 1, type(uint256).max, type(uint256).max, _na());
-        c.plankOnlyFor = 0;
-        c.start = uint64(block.timestamp + 1 hours);
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.DropStarted.selector);
-        sale.configureDrop(1, c);
-        assertFalse(sale.phase(1).limitLifted);
-    }
-
-    function test_plankOnlyNeedsATime() public {
-        FireSale.DropConfig memory c = _cfg(start, 20, 0, 10, 5);
-        c.plankOnlyFor = 0;
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
-        sale.configureDrop(1, c);
-    }
-
-    /// The owner can end a stalled drop only once its longest phase is over.
-    function test_endDropWaitsForTheLongestPhase() public {
-        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
-        c.holderWindow = 72 hours; // longer than the 48h wallet limit
-        _set(1, c);
-        assertEq(sale.phase(1).phasesOver, start + 72 hours);
-        _warp(start + 48 hours);
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.TooEarly.selector);
-        sale.endDrop(1);
-        _warp(start + 72 hours);
-        vm.prank(owner, owner);
-        sale.endDrop(1);
-    }
-
-    /// PAPER per pack can be 0 (no PAPER for paid or credit packs).
-    function test_paperPerPackZero() public {
-        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
-        c.paperPerPack = 0;
-        _set(1, c);
-        _open();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 2, type(uint256).max, 0, _na());
-        assertEq(paper.balanceOf(DEAD), 0);
-        assertEq(packs.balanceOf(alice, 1), 2);
-    }
-
     /// Credits per picked suggestion is per drop: 3 each, or none.
     function test_creditsPerPick() public {
-        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
+        FireSale.DropConfig memory c = _cfg(start, 20);
         c.creditsPerPick = 3;
         _set(1, c);
         vm.prank(bob, bob);
@@ -1612,7 +1430,7 @@ contract SaleTest is SeriesHelper {
         credits.setSuggestionRules(5e18, 280);
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.PriceMoved.selector);
-        credits.suggest("Ash Wolf", 1e18); // the cost went up past the suggester's most
+        credits.suggest("Ash Wolf", 1e18);
         vm.prank(bob, bob);
         credits.suggest("Ash Wolf", 5e18);
         assertEq(paper.balanceOf(DEAD), 5e18);
@@ -1624,201 +1442,85 @@ contract SaleTest is SeriesHelper {
         vm.stopPrank();
     }
 
-    /// Every new setting locks at the drop's start like the rest.
-    function test_newSettingsLockAtStart() public {
+    // ---------------------------------------------------------------- gas
+
+    function test_gas() public {
+        _drop(1, start, 100);
         _open();
-        FireSale.DropConfig memory c = _cfg(uint64(block.timestamp + 1 hours), 10, 3, 0, 5);
-        c.starterPerPress = 5;
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.DropStarted.selector);
-        sale.configureDrop(1, c);
-        assertEq(sale.dropOf(1).starterPerPress, 1);
+        _plank(bob, 1, 0, 1); // warm the counters
+        uint256 g = gasleft();
+        _plank(alice, 1, 0, 1);
+        emit log_named_uint("PLANK, 1 pack", g - gasleft());
+        g = gasleft();
+        _plank(alice, 1, 0, 5);
+        emit log_named_uint("PLANK, 5 packs", g - gasleft());
+        g = gasleft();
+        _eth(bob, 1, 0, 1);
+        emit log_named_uint("ETH, 1 pack (with PLANK swap)", g - gasleft());
+        g = gasleft();
+        _eth(bob, 1, 0, 5);
+        emit log_named_uint("ETH, 5 packs (with PLANK swap)", g - gasleft());
     }
 
-
-    /// The studio's sample export (recipe.json with a "sale" block, written by studio/src/sale.test.ts) goes through
-    /// Batch B refuses a holder window with no snapshot root (only presses could buy in it: a forgotten HOLDER_ROOT)
-    /// unless NO_HOLDERS=true says it's meant.
-    function test_batchBRefusesAHolderWindowWithNoRoot() public {
-        ConfigureSeries cs = new ConfigureSeries();
-        FireSale.DropConfig memory c = _cfg(start, 20, 0, 0, 5);
-        cs.checkHolders(c, false); // no holder window: fine
-        c.holderWindow = 24 hours;
-        vm.expectRevert(bytes("holderWindow > 0 but no holderRoot: set HOLDER_ROOT (the snapshot), or NO_HOLDERS=true for presses only"));
-        cs.checkHolders(c, false);
-        cs.checkHolders(c, true); // NO_HOLDERS=true
-        c.holderRoot = bytes32(uint256(1));
-        cs.checkHolders(c, false);
-    }
-
-    /// ConfigureSeries into the recipe calls and FireSale.configureDrop, and the drop comes out as the studio set it.
-    function test_studioSaleExportConfiguresTheDrop() public {
-        _warp(start + 48 hours);
-        vm.prank(owner, owner);
-        sale.endDrop(1); // one drop at a time
-        _warp(1_800_000_000); // the export's start is a few months on from here
-        ConfigureSeries cs = new ConfigureSeries();
-        string memory json = vm.readFile("test/cards/recipe-studio-sale.json");
-        ConfigureSeries.Call[] memory calls = cs.buildAll(json, address(dealer), address(cards), address(sale), 200);
-        assertEq(calls.length, 5, "recipe, characters, dealer, images, configureDrop");
-        assertEq(calls[4].what, "FireSale.configureDrop");
-        assertEq(cs.build(json, address(dealer), address(cards), 200).length, 4, "build leaves the sale out");
-        vm.startPrank(owner, owner);
-        for (uint256 i; i < calls.length; i++) {
-            (bool ok,) = calls[i].to.call(calls[i].data);
-            assertTrue(ok, calls[i].what);
-        }
-        vm.stopPrank();
-        FireSale.Drop memory d = sale.dropOf(7);
-        assertEq(d.start, 1_810_000_000);
-        assertEq(d.packs, 117);
-        assertEq(d.starters, 50);
-        assertEq(d.plankOnly, 50);
-        assertEq(d.walletLimit, 5);
-        assertEq(d.starterWindow, 24 hours);
-        assertEq(d.liftAfter, 48 hours);
-        assertEq(d.holderWindow, 24 hours);
-        assertEq(d.plankOnlyFor, 48 hours);
-        assertEq(d.regularWalletsFor, 48 hours);
-        assertEq(d.maxPerTx, 50);
-        assertEq(d.plankBurnBps, 1_000);
-        assertEq(d.paperBurnBps, 2_000);
-        assertEq(d.priceUsd, 250_000_000);
-        assertEq(d.paperPerPack, 1e18);
-        assertEq(d.starterPerPress, 1);
-        assertEq(d.starterWalletLimit, 1);
-        assertEq(d.starterPriceUsd, 0);
-        assertEq(d.starterPaper, 1e18);
-        assertEq(d.creditsPerPick, 1);
-        assertEq(d.creditPacksMax, 16);
-        assertEq(d.creditPacksPerWallet, 3);
-        assertEq(d.holderRoot, bytes32(0xabababababababababababababababababababababababababababababababab));
-        // DROP_START and HOLDER_ROOT override the block's start and root
-        vm.setEnv("DROP_START", "1810000123");
-        vm.setEnv("HOLDER_ROOT", "0x0000000000000000000000000000000000000000000000000000000000000001");
-        FireSale.DropConfig memory c = cs.parseSale(json);
-        assertEq(c.start, 1_810_000_123);
-        assertEq(c.holderRoot, bytes32(uint256(1)));
-        // a misspelt field is refused by name, not read as 0
-        vm.expectRevert(bytes(".sale: unknown key creditsPerPik"));
-        cs.parseSale(vm.replace(json, '"creditsPerPick"', '"creditsPerPik"'));
-        vm.expectRevert(bytes(".sale: unknown key creditPacksMx"));
-        cs.parseSale(vm.replace(json, '"creditPacksMax"', '"creditPacksMx"'));
-        // a start more than a year away is refused
-        vm.setEnv("DROP_START", "1900000123");
-        vm.expectRevert(bytes("sale.start is more than a year away: a typo?"));
-        cs.parseSale(json);
-        vm.setEnv("DROP_START", "1810000000");
-    }
-
-    // ---------------------------------------------------------------- caps on free (credit) packs
-
-    /// Alice and bob each get `n` credits (picked suggestions for fire 2's drop, set up with `c`); fire 2 then opens.
-    function _creditDrop(FireSale.DropConfig memory c, uint256 n) internal returns (uint64 s2) {
-        _aliceGetsCards(14); // closes fire 1
-        s2 = uint64(block.timestamp + 1 hours);
-        c.start = s2;
-        c.creditsPerPick = uint16(n);
-        _set(2, c);
-        uint256[] memory ids = new uint256[](2);
-        vm.prank(alice, alice);
-        ids[0] = credits.suggest("Ember Fox", type(uint256).max);
-        vm.prank(bob, bob);
-        ids[1] = credits.suggest("Ash Wolf", type(uint256).max);
-        vm.prank(owner, owner);
-        credits.pickSuggestions(2, ids);
-        _warp(s2);
-    }
-
-    function test_creditPacksTotalCap() public {
-        FireSale.DropConfig memory c = _cfg(0, 20, 0, 0, 5);
-        c.creditPacksMax = 5;
-        _creditDrop(c, 4);
-        assertEq(sale.phase(2).creditPacksLeft, 5);
-        vm.prank(alice, alice);
-        credits.useCredits(2, 4, type(uint256).max);
-        vm.prank(bob, bob);
-        vm.expectRevert(FireSale.CreditCapReached.selector);
-        credits.useCredits(2, 2, type(uint256).max);
-        vm.prank(bob, bob);
-        credits.useCredits(2, 1, type(uint256).max);
-        assertEq(sale.phase(2).creditPacksLeft, 0);
-        assertEq(credits.credits(bob), 3, "unused credits wait for another drop");
-    }
-
-    function test_creditPacksPerWalletCap() public {
-        FireSale.DropConfig memory c = _cfg(0, 20, 0, 0, 5);
-        c.creditPacksPerWallet = 2;
-        _creditDrop(c, 4);
-        vm.prank(alice, alice);
-        credits.useCredits(2, 2, type(uint256).max);
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.CreditWalletLimit.selector);
-        credits.useCredits(2, 1, type(uint256).max);
-        vm.prank(bob, bob);
-        vm.expectRevert(FireSale.CreditWalletLimit.selector);
-        credits.useCredits(2, 3, type(uint256).max);
-        vm.prank(bob, bob);
-        credits.useCredits(2, 2, type(uint256).max);
-        assertEq(sale.creditPacksBy(2, alice), 2);
-    }
-
-    function test_creditPacksZeroMeansNoLimit() public {
-        FireSale.DropConfig memory c = _cfg(0, 20, 0, 0, 5);
-        _creditDrop(c, 10);
-        assertEq(sale.phase(2).creditPacksLeft, 20, "only the supply");
-        vm.prank(alice, alice);
-        credits.useCredits(2, 10, type(uint256).max);
-        vm.prank(bob, bob);
-        credits.useCredits(2, 10, type(uint256).max);
-        assertTrue(sale.phase(2).closed, "credits took the whole drop");
-    }
-
-    function test_creditCapsLockAtStart() public {
-        FireSale.DropConfig memory c = _cfg(start, 10, 3, 0, 5);
-        c.creditPacksMax = 2;
-        c.creditPacksPerWallet = 1;
-        _set(1, c);
+    /// The Standard drop's worst case: three groups (press, PLANK snapshot, everyone) to work out on every buy.
+    function test_gas_standardGroups() public {
+        bytes32 root = _pair(_leaf(alice, 5), _leaf(bob, 5));
+        FireGroups.Group memory p = _pressGroup(50, 1);
+        p.duration = 6 hours;
+        p.rollTo = 2;
+        FireGroups.Group memory s = _snapGroup(40, root);
+        s.coins = 1;
+        s.perWallet = 5;
+        s.duration = 24 hours;
+        s.rollTo = 2;
+        FireGroups.Group memory e = _g(77);
+        e.perWallet = 5;
+        e.afterGroup = 1;
+        _set(1, _with(_cfg(start, 0), _three(p, s, e)));
+        uint256 pid = press.mint(carol);
         _open();
-        c.start = uint64(block.timestamp + 1 hours);
-        c.creditPacksMax = 0;
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.DropStarted.selector);
-        sale.configureDrop(1, c);
-        assertEq(sale.dropOf(1).creditPacksMax, 2);
-        assertEq(sale.dropOf(1).creditPacksPerWallet, 1);
+        uint256 g = gasleft();
+        vm.prank(carol, carol);
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, 0, type(uint256).max, _nfts(pid));
+        emit log_named_uint("press group, 1 pack (NFT gate, PAPER only)", g - gasleft());
+        g = gasleft();
+        vm.prank(alice, alice);
+        sale.buy(1, 1, 5, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _proof(5, _leaf(bob, 5)));
+        emit log_named_uint("snapshot group, 5 packs in PLANK", g - gasleft());
+        g = gasleft();
+        vm.prank(bob, bob);
+        sale.buy(1, 1, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _proof(5, _leaf(alice, 5)));
+        emit log_named_uint("snapshot group, 1 pack in PLANK", g - gasleft());
     }
 
-    // ---------------------------------------------------------------- Plan A and round-4 fixes
+    // ---------------------------------------------------------------- PAPER and its dollar ceiling
 
-    event DropConfigured(uint256 indexed fire, FireSale.DropConfig config);
+    /// Ends drop 1 and sets a PAPER/USD feed at `px` (18 decimals) for the next drops.
+    function _paperFeed(int256 px) internal returns (MockFeed f) {
+        f = new MockFeed(px);
+        f.setDecimals(18);
+        _endDrop1();
+        vm.prank(owner, owner);
+        sale.setFeeds(address(ethFeed), address(plankFeed), address(f), address(router));
+    }
 
     /// With a $1 ceiling, a pack's PAPER never costs more than $1: past $1 a PAPER it takes $1 worth (part of a PAPER).
     function test_packPaperCappedAtOneDollar() public {
-        MockFeed paperUsd = new MockFeed(5e18); // PAPER at $5
-        paperUsd.setDecimals(18);
-        _warp(start + 72 hours);
-        vm.prank(owner, owner);
-        sale.endDrop(1);
-        vm.prank(owner, owner);
-        sale.setFeeds(address(ethFeed), address(plankFeed), address(paperUsd), address(router));
+        MockFeed paperUsd = _paperFeed(5e18); // PAPER at $5
         uint64 s3 = uint64(block.timestamp + 1 hours);
-        FireSale.DropConfig memory c = _cfg(s3, 10, 0, 0, 0);
-        c.liftAfter = 0;
-        c.plankOnlyFor = 0;
-        _set(2, c);
+        _set(2, _cfg(s3, 10));
         _warp(s3);
         paperUsd.set(5e18);
-        assertEq(sale.paperFor(2, 1), 0.2e18, "$1 of PAPER at $5");
+        assertEq(sale.paperFor(2, 0, 1), 0.2e18, "$1 of PAPER at $5");
         uint256 before = paper.balanceOf(alice);
         vm.prank(alice, alice);
-        sale.buyWithPlank(2, 3, type(uint256).max, 0.6e18, _na());
+        sale.buy(2, 0, 3, FireSale.Pay.PLANK, type(uint256).max, 0.6e18, _na());
         assertEq(before - paper.balanceOf(alice), 0.6e18);
         paperUsd.set(0.08e18);
-        assertEq(sale.paperFor(2, 2), 2e18, "under $1 a PAPER: the full PAPER");
+        assertEq(sale.paperFor(2, 0, 2), 2e18, "under $1 a PAPER: the full PAPER");
         paperUsd.setBroken(true);
         assertEq(sale.lastPaperUsd(), 5e18, "the last good price a buy saw");
-        assertEq(sale.paperFor(2, 2), 0.4e18, "no price: the last price holds, never back to an uncapped pack");
+        assertEq(sale.paperFor(2, 0, 2), 0.4e18, "no price: the last price holds, never back to an uncapped pack");
         _warp(s3 + 72 hours);
         vm.prank(owner, owner);
         sale.endDrop(2);
@@ -1827,93 +1529,17 @@ contract SaleTest is SeriesHelper {
         assertEq(sale.lastPaperUsd(), 0, "a new PAPER feed (or none) starts without the old price");
     }
 
-    /// Setting a drop up locks its Series (recipe, characters, dealer, images, odds) before anyone can buy.
-    function test_configureDropLocksTheSeries() public {
-        (, , bool locked,,,) = cards.fires(1);
-        assertTrue(locked);
-        (string[] memory names, string[] memory cats) = _chars(2);
-        vm.startPrank(owner, owner);
-        vm.expectRevert(RecipeDealer.FireIsLocked.selector);
-        dealer.setCharacters(1, names, cats);
-        vm.expectRevert(FireCards.FireIsLocked.selector);
-        cards.setImagesBase(1, "ipfs://other/");
-        vm.stopPrank();
-    }
-
-    /// The event carries the per-transaction cap that applies (0 means the default).
-    function test_dropConfiguredEventShowsTheAppliedCap() public {
-        FireSale.DropConfig memory c = _cfg(uint64(block.timestamp + 30 minutes), 10, 3, 4, 5);
-        FireSale.DropConfig memory e = c;
-        e.maxPerTx = uint32(sale.DEFAULT_MAX_PER_TX());
-        vm.expectEmit(address(sale));
-        emit DropConfigured(1, e);
-        vm.prank(owner, owner);
-        sale.configureDrop(1, c);
-    }
-
-    /// Even a drop with no timed phases runs at least a day before the owner can end it.
-    function test_endDropWaitsAtLeastADay() public {
-        _warp(start + 72 hours);
-        vm.prank(owner, owner);
-        sale.endDrop(1);
-        FireSale.DropConfig memory c = _cfg(uint64(block.timestamp + 1 hours), 10, 0, 0, 0);
-        (c.liftAfter, c.plankOnlyFor, c.regularWalletsFor, c.starterWindow) = (0, 0, 0, 0);
-        _set(2, c);
-        _warp(block.timestamp + 2 hours);
-        vm.prank(owner, owner);
-        vm.expectRevert(FireSale.TooEarly.selector);
-        sale.endDrop(2);
-        _warp(block.timestamp + 1 days);
-        vm.prank(owner, owner);
-        sale.endDrop(2);
-        FireSale.Phase memory p = sale.phase(2);
-        assertTrue(p.closed);
-        assertFalse(p.plankOnly);
-        assertEq(p.paidLeft, 0, "an ended drop has nothing for sale");
-    }
-
-    /// Credit packs aren't available in a Series whose packs hold 42+ cards (burning one would pay for itself).
-    function test_noCreditsInBigPackSeries() public {
-        RecipeDealer.Recipe memory r;
-        r.types = new RecipeDealer.CardType[](1);
-        r.types[0] = _type("Common", "common", 0, RecipeDealer.Supply.Filler, 0);
-        r.slots = new RecipeDealer.Slot[](1);
-        r.slots[0] = _slotOne(42, 0);
-        _series(cards, dealer, owner, 5, r, 2);
-        _warp(start + 72 hours);
-        vm.prank(owner, owner);
-        sale.endDrop(1);
-        uint64 s5 = uint64(block.timestamp + 1 hours);
-        _set(5, _cfg(s5, 10, 0, 0, 5));
-        _warp(s5);
-        vm.prank(alice, alice);
-        vm.expectRevert(FireCredits.BadConfig.selector);
-        credits.useCredits(5, 1, type(uint256).max);
-    }
-
-    // ---------------------------------------------------------------- strategic review (round 7)
-
-    /// Ends drop 1 and sets a PAPER/USD feed at `px` (18 decimals) for the next drops.
-    function _paperFeed(int256 px) internal returns (MockFeed f) {
-        f = new MockFeed(px);
-        f.setDecimals(18);
-        _warp(start + 72 hours);
-        vm.prank(owner, owner);
-        sale.endDrop(1);
-        vm.prank(owner, owner);
-        sale.setFeeds(address(ethFeed), address(plankFeed), address(f), address(router));
-    }
-
-    /// The PAPER dollar ceiling is per drop and applies to paid, press and credit packs alike: PAPER per pack, but
-    /// never more than the drop's ceiling worth at the PAPER price.
+    /// The PAPER dollar ceiling is per drop and applies to every group and to credit packs alike.
     function test_paperCeilingPerDrop() public {
         MockFeed f = _paperFeed(2e18); // PAPER at $2
         uint64 s2 = uint64(block.timestamp + 1 hours);
-        FireSale.DropConfig memory c = _cfg(s2, 10, 3, 0, 5);
-        c.paperPerPack = 1e18; // $2 worth
-        c.starterPaper = 3e18; // $6 worth
+        FireGroups.Group memory pg = _pressGroup(3, 1);
+        pg.paper = 3e18; // $6 worth
+        FireGroups.Group memory open_ = _g(10); // 1 PAPER, $2 worth
+        FireSale.DropConfig memory c = _with(_cfg(s2, 0), _two(pg, open_));
         c.paperCapUsd = 50_000_000; // $0.50
         c.creditsPerPick = 2;
+        c.creditGroup = 1;
         _set(2, c);
         vm.prank(bob, bob);
         uint256 id = credits.suggest("Ember Fox", type(uint256).max);
@@ -1924,26 +1550,26 @@ contract SaleTest is SeriesHelper {
         uint256 p1 = press.mint(alice);
         _warp(s2);
         f.set(2e18);
-        assertEq(sale.paperFor(2, 1), 0.25e18, "$0.50 of PAPER at $2");
-        (, uint256 pp) = sale.quoteStarter(2, 1, FireSale.Pay.PLANK);
+        assertEq(sale.paperFor(2, 1, 1), 0.25e18, "$0.50 of PAPER at $2");
+        (, uint256 pp) = sale.quote(2, 0, 1, FireSale.Pay.PLANK);
         assertEq(pp, 0.25e18, "press packs too");
         uint256 dead = paper.balanceOf(DEAD);
         vm.prank(alice, alice);
-        sale.buyWithPlank(2, 2, type(uint256).max, 0.5e18, _na());
+        sale.buy(2, 1, 2, FireSale.Pay.PLANK, type(uint256).max, 0.5e18, _na());
         assertEq(paper.balanceOf(DEAD) - dead, 0.5e18, "paid packs");
         vm.prank(alice, alice);
-        sale.claimStarter(2, p1, 1, FireSale.Pay.PLANK, 0, 0.25e18);
+        sale.buy(2, 0, 1, FireSale.Pay.PLANK, 0, 0.25e18, _nfts(p1));
         assertEq(paper.balanceOf(DEAD) - dead, 0.75e18, "press packs");
         vm.prank(bob, bob);
         credits.useCredits(2, 2, 0.5e18);
         assertEq(paper.balanceOf(DEAD) - dead, 1.25e18, "credit packs");
         f.set(0.1e18); // PAPER at $0.10: the full PAPER is under the ceiling
-        assertEq(sale.paperFor(2, 1), 1e18);
-        (, pp) = sale.quoteStarter(2, 1, FireSale.Pay.PLANK);
+        assertEq(sale.paperFor(2, 1, 1), 1e18);
+        (, pp) = sale.quote(2, 0, 1, FireSale.Pay.PLANK);
         assertEq(pp, 3e18);
         f.setBroken(true); // feed late: the last good price ($2, from the last buy) holds
         assertEq(sale.lastPaperUsd(), 2e18);
-        assertEq(sale.paperFor(2, 1), 0.25e18);
+        assertEq(sale.paperFor(2, 1, 1), 0.25e18);
 
         // the next drop has no ceiling: the full PAPER whatever its price
         f.setBroken(false);
@@ -1952,20 +1578,31 @@ contract SaleTest is SeriesHelper {
         sale.endDrop(2);
         uint64 s3 = uint64(block.timestamp + 1 hours);
         _configureCards(3);
-        c = _cfg(s3, 10, 0, 0, 5);
+        c = _cfg(s3, 10);
         c.paperCapUsd = 0;
         _set(3, c);
         _warp(s3);
         f.set(50e18);
-        assertEq(sale.paperFor(3, 2), 2e18, "no ceiling");
-        // and one whose ceiling is above the PAPER's worth takes the full PAPER
+        assertEq(sale.paperFor(3, 0, 2), 2e18, "no ceiling");
         assertEq(sale.dropOf(3).paperCapUsd, 0);
     }
 
     /// With no PAPER price ever seen, packs take the set PAPER (there is nothing to measure the ceiling with).
-    function test_paperCeilingWithoutAPrice() public {
+    function test_paperCeilingWithoutAPrice() public view {
         assertEq(sale.lastPaperUsd(), 0);
-        assertEq(sale.paperFor(1, 3), 3e18);
+        assertEq(sale.paperFor(1, 0, 3), 3e18);
+    }
+
+    /// PAPER per pack can be 0 (a dollar price only).
+    function test_paperPerPackZero() public {
+        FireSale.DropConfig memory c = _cfg(start, 20);
+        c.groups[0].paper = 0;
+        _set(1, c);
+        _open();
+        vm.prank(alice, alice);
+        sale.buy(1, 0, 2, FireSale.Pay.PLANK, type(uint256).max, 0, _na());
+        assertEq(paper.balanceOf(DEAD), 0);
+        assertEq(packs.balanceOf(alice, 1), 2);
     }
 
     /// Suggestions keep their own $1 ceiling.
@@ -1983,14 +1620,86 @@ contract SaleTest is SeriesHelper {
         assertEq(paper.balanceOf(DEAD) - dead, 0.25e18, "$1 at $4, not 3 PAPER");
     }
 
-    /// Pause stops buying, press packs, credit spending and paid suggestions. Never ending or closing a drop, burning
-    /// cards, opening or dealing.
+    function test_audit8_lopsidedPaperPoolCantZeroPackPaper() public {
+        _warp(start + 72 hours);
+        MockFactory f = new MockFactory();
+        MockFeed eth2 = new MockFeed(2_500_00000000);
+        PaperUsdTwap ptwap = new PaperUsdTwap(address(f), address(paper), address(0xE7), address(usdg), 6, address(eth2), address(0), address(0));
+        CumPair p = new CumPair(address(usdg), address(paper));
+        p.set(11e6, 1); // $11 of USDG against 1 wei of PAPER
+        f.add(address(paper), address(usdg), address(p));
+        ptwap.checkpoint();
+        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
+        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
+        assertEq(address(ptwap.pair()), address(0), "never adopted");
+        (, int256 px,,,) = ptwap.latestRoundData();
+        assertEq(px, 0, "no price");
+        _warp(block.timestamp);
+        vm.prank(owner, owner);
+        sale.endDrop(1);
+        vm.prank(owner, owner);
+        sale.setFeeds(address(ethFeed), address(plankFeed), address(ptwap), address(router));
+        uint64 s2 = uint64(block.timestamp + 1 hours);
+        _set(2, _cfg(s2, 20));
+        _warp(s2);
+        eth2.set(2_500_00000000);
+        assertEq(sale.paperFor(2, 0, 5), 5e18, "5 packs burn 5 PAPER");
+        p.set(11e6, 1_000e18);
+        ptwap.checkpoint();
+        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
+        assertEq(address(ptwap.pair()), address(p), "adopted");
+        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
+        (, px,,,) = ptwap.latestRoundData();
+        assertApproxEqRel(uint256(px), 0.011e18, 1e15);
+        _warp(block.timestamp);
+        assertEq(sale.paperFor(2, 0, 5), 5e18, "still the group's PAPER per pack");
+    }
+
+    // ---------------------------------------------------------------- the Series lock and the config event
+
+    function test_configureDropLocksTheSeries() public {
+        (, , bool locked,,,) = cards.fires(1);
+        assertTrue(locked);
+        (string[] memory names, string[] memory cats) = _chars(2);
+        vm.startPrank(owner, owner);
+        vm.expectRevert(RecipeDealer.FireIsLocked.selector);
+        dealer.setCharacters(1, names, cats);
+        vm.expectRevert(FireCards.FireIsLocked.selector);
+        cards.setImagesBase(1, "ipfs://other/");
+        vm.stopPrank();
+    }
+
+    event DropConfigured(uint256 indexed fire, FireSale.DropConfig config);
+
+    /// The event carries the whole config, with the per-transaction cap that applies (0 means the default).
+    function test_dropConfiguredEventShowsTheAppliedCap() public {
+        FireSale.DropConfig memory c = _cfg(uint64(block.timestamp + 30 minutes), 10);
+        FireSale.DropConfig memory e = _cfg(uint64(block.timestamp + 30 minutes), 10);
+        e.maxPerTx = uint32(sale.DEFAULT_MAX_PER_TX());
+        vm.expectEmit(address(sale));
+        emit DropConfigured(1, e);
+        _set(1, c);
+    }
+
+    /// Every setting locks at the drop's start like the rest.
+    function test_newSettingsLockAtStart() public {
+        _open();
+        FireSale.DropConfig memory c = _cfg(uint64(block.timestamp + 1 hours), 13);
+        c.groups[0].perWallet = 5;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.DropStarted.selector);
+        sale.configureDrop(1, c);
+        assertEq(groups.groupOf(1, 0).perWallet, 0);
+    }
+
+    // ---------------------------------------------------------------- pause
+
+    /// Pause stops buying, credit spending and paid suggestions. Never ending or closing a drop, burning cards,
+    /// opening or dealing.
     function test_pauseBlocksBuyingOnly() public {
         _aliceGetsCards(14); // drop 1 sold out and dealt: 84 cards
         uint64 s2 = uint64(block.timestamp + 1 hours);
-        FireSale.DropConfig memory c = _cfg(s2, 10, 3, 0, 5);
-        _set(2, c);
-        uint256 p1 = press.mint(alice);
+        _set(2, _cfg(s2, 10));
         vm.prank(alice, alice);
         credits.burnCards(_ids(1, 42)); // a credit
         _warp(s2);
@@ -2002,32 +1711,30 @@ contract SaleTest is SeriesHelper {
         emit FireSale.PausedSet(true);
         vm.prank(owner, owner);
         sale.setPaused(true);
-        assertTrue(sale.phase(2).paused);
+        assertTrue(sale.status(2).paused);
 
         vm.startPrank(alice, alice);
         vm.expectRevert(FireSale.IsPaused.selector);
-        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na());
+        sale.buy(2, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
         vm.expectRevert(FireSale.IsPaused.selector);
-        sale.buyWithEth{value: 1 ether}(2, 1, type(uint256).max, _na());
+        sale.buy{value: 1 ether}(2, 0, 1, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
         vm.expectRevert(FireSale.IsPaused.selector);
-        sale.buyWithUsdg(2, 1, type(uint256).max, type(uint256).max, _na());
+        sale.buy(2, 0, 1, FireSale.Pay.USDG, type(uint256).max, type(uint256).max, _na());
         vm.expectRevert(FireSale.IsPaused.selector);
-        sale.claimStarter(2, p1, 1, FireSale.Pay.PLANK, 0, type(uint256).max);
+        sale.buyWithEthAll{value: 1 ether}(2, 0, 1, _na());
         vm.expectRevert(FireSale.IsPaused.selector);
         credits.useCredits(2, 1, type(uint256).max);
         vm.expectRevert(FireSale.IsPaused.selector);
         credits.suggest("Ember Fox", type(uint256).max);
-        // never paused: burning cards, transfers, opening and dealing
-        credits.burnCards(_ids(43, 1));
+        credits.burnCards(_ids(43, 1)); // never paused: burning cards, transfers
         cards.transferFrom(alice, bob, 44);
         vm.stopPrank();
         assertEq(credits.burnCount(alice), 1);
 
-        // ending a drop never pauses either
         _warp(s2 + 72 hours);
         vm.prank(owner, owner);
-        sale.endDrop(2);
-        assertTrue(sale.phase(2).closed);
+        sale.endDrop(2); // ending a drop never pauses either
+        assertTrue(sale.status(2).closed);
         vm.prank(owner, owner);
         sale.setPaused(false);
         assertFalse(sale.paused());
@@ -2035,10 +1742,9 @@ contract SaleTest is SeriesHelper {
 
     /// While paused, a sold-out drop still closes and its packs still open.
     function test_pauseNeverBlocksOpeningOrClosing() public {
-        _drop(1, start, 2, 0, 0, 5);
+        _drop(1, start, 2);
         _open();
-        vm.prank(alice, alice);
-        sale.buyWithPlank(1, 2, type(uint256).max, type(uint256).max, _na()); // sells out, closes
+        _plank(alice, 1, 0, 2); // sells out, closes
         vm.prank(owner, owner);
         sale.setPaused(true);
         vm.prank(alice, alice);
@@ -2075,18 +1781,18 @@ contract SaleTest is SeriesHelper {
         assertEq(credits.owner(), owner);
     }
 
+    // ---------------------------------------------------------------- the PLANK price refresh
+
     /// Every buy also checkpoints the PLANK price (the real PlankUsdTwap; a no-op when not due). That keeps it fresh
     /// while buys or the keeper come at least every 2 hours, but it can't heal a longer gap: the checkpoint it makes
     /// then spans more than PLANK_WINDOW_MAX, so the PLANK buy still reverts (taking its checkpoint with it), and
-    /// during the PLANK-only phase the drop can't sell until someone checkpoints twice, 30 minutes apart (the keeper's
-    /// job; pre-testnet audit L-1).
+    /// a PLANK-only group can't sell until someone checkpoints twice, 30 minutes apart (the keeper's job; pre-testnet
+    /// audit L-1).
     function test_buysRefreshThePlankPrice() public {
         CumPair pair = new CumPair(address(plank), address(0xE7));
         pair.set(88_700_000_000_000e18, 28.1e18);
         PlankUsdTwap twap = new PlankUsdTwap(address(pair), address(plank), address(ethFeed));
-        _warp(start + 72 hours);
-        vm.prank(owner, owner);
-        sale.endDrop(1);
+        _endDrop1();
         vm.warp(block.timestamp + 1 hours); ethFeed.set(ETH_USD);
         twap.checkpoint();
         vm.warp(block.timestamp + 30 minutes); ethFeed.set(ETH_USD);
@@ -2094,99 +1800,191 @@ contract SaleTest is SeriesHelper {
         vm.prank(owner, owner);
         sale.setFeeds(address(ethFeed), address(twap), address(0), address(router));
         uint64 s2 = uint64(block.timestamp + 1 hours);
-        FireSale.DropConfig memory c = _cfg(s2, 20, 0, 5, 5); // 5 PLANK-only packs
+        FireSale.DropConfig memory c = _cfg(s2, 20);
+        c.groups[0].coins = 1; // PLANK only
         _set(2, c);
         vm.warp(s2 + 50 minutes); ethFeed.set(ETH_USD); // 1h50 since the keeper's last checkpoint
-        assertTrue(sale.phase(2).plankPriceOk);
-        vm.prank(alice, alice);
-        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na());
+        assertTrue(sale.status(2).plankPriceOk);
+        _plank(alice, 2, 0, 1);
         (, uint32 lastTs) = twap.last();
         assertEq(lastTs, block.timestamp, "the buy checkpointed");
         vm.warp(block.timestamp + 1 hours + 50 minutes); ethFeed.set(ETH_USD); // keeper still away: 3h40 in all
-        assertTrue(sale.phase(2).plankPriceOk, "kept fresh by the last buy");
-        vm.prank(alice, alice);
-        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na());
+        assertTrue(sale.status(2).plankPriceOk, "kept fresh by the last buy");
+        _plank(alice, 2, 0, 1);
         assertEq(packs.balanceOf(alice, 2), 2);
 
         vm.warp(block.timestamp + 3 hours); ethFeed.set(ETH_USD); // nobody for 3 hours
-        assertFalse(sale.phase(2).plankPriceOk);
+        assertFalse(sale.status(2).plankPriceOk);
         vm.prank(alice, alice);
         vm.expectRevert(FireSale.FeedUnavailable.selector);
-        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na());
-        uint256 cost = sale.quoteEth(2, 1);
-        vm.prank(alice, alice);
-        vm.expectRevert(FireSale.PlankOnly.selector);
-        sale.buyWithEth{value: cost}(2, 1, type(uint256).max, _na());
+        sale.buy(2, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
         twap.checkpoint(); // one checkpoint makes a window longer than 2h: still not a usable price
-        assertFalse(sale.phase(2).plankPriceOk, "needs a second checkpoint 30 minutes later");
+        assertFalse(sale.status(2).plankPriceOk, "needs a second checkpoint 30 minutes later");
         vm.warp(block.timestamp + 30 minutes); ethFeed.set(ETH_USD);
         twap.checkpoint();
-        assertTrue(sale.phase(2).plankPriceOk);
-        vm.prank(alice, alice);
-        sale.buyWithPlank(2, 1, type(uint256).max, type(uint256).max, _na());
+        assertTrue(sale.status(2).plankPriceOk);
+        _plank(alice, 2, 0, 1);
         assertEq(packs.balanceOf(alice, 2), 3);
     }
 
     /// A PLANK checkpoint that fails inside a buy never blocks it: the ETH buy still sells, the burn share waits.
     function test_aFailingPlankCheckpointNeverBlocksABuy() public {
         CheckpointFeed twap = new CheckpointFeed(PLANK_USD);
-        _warp(start + 72 hours);
-        vm.prank(owner, owner);
-        sale.endDrop(1);
+        _endDrop1();
         vm.prank(owner, owner);
         sale.setFeeds(address(ethFeed), address(twap), address(0), address(router));
         uint64 s2 = uint64(block.timestamp + 1 hours);
-        FireSale.DropConfig memory c = _cfg(s2, 20, 0, 0, 5);
-        c.plankOnly = 0;
-        _set(2, c);
+        _set(2, _cfg(s2, 20));
         vm.warp(s2 + 1 hours);
         ethFeed.set(ETH_USD);
         twap.setFail(true);
-        uint256 cost = sale.quoteEth(2, 1);
-        vm.prank(alice, alice);
-        sale.buyWithEth{value: cost}(2, 1, type(uint256).max, _na()); // still sells; the burn share waits
+        uint256 cost = _cost(2, 0, 1, FireSale.Pay.ETH);
+        _eth(alice, 2, 0, 1); // still sells; the burn share waits
         assertEq(twap.checkpoints(), 0);
         assertEq(burnW.balance, cost * 3_000 / 10_000, "to PlankBurner");
         assertEq(packs.balanceOf(alice, 2), 1);
     }
 
-    /// Pre-testnet audit M-2: "$11 of USDG against 1 wei of PAPER" was the deepest pool, became the PAPER price, and
-    /// the drop's PAPER per pack (with a dollar ceiling) fell to 1 wei. A pool needs 1,000 PAPER now: it never
-    /// qualifies, the feed has no price, and a pack takes its full PAPER amount.
-    function test_audit8_lopsidedPaperPoolCantZeroPackPaper() public {
-        _warp(start + 72 hours);
-        MockFactory f = new MockFactory();
-        MockFeed eth2 = new MockFeed(2_500_00000000);
-        PaperUsdTwap ptwap = new PaperUsdTwap(address(f), address(paper), address(0xE7), address(usdg), 6, address(eth2), address(0), address(0));
-        CumPair p = new CumPair(address(usdg), address(paper));
-        p.set(11e6, 1); // $11 of USDG against 1 wei of PAPER
-        f.add(address(paper), address(usdg), address(p));
-        ptwap.checkpoint();
-        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
-        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
-        assertEq(address(ptwap.pair()), address(0), "never adopted");
-        (, int256 px,,,) = ptwap.latestRoundData();
-        assertEq(px, 0, "no price");
-        _warp(block.timestamp);
-        vm.prank(owner, owner);
-        sale.endDrop(1);
-        vm.prank(owner, owner);
-        sale.setFeeds(address(ethFeed), address(plankFeed), address(ptwap), address(router));
-        uint64 s2 = uint64(block.timestamp + 1 hours);
-        _set(2, _cfg(s2, 20, 0, 0, 5));
-        _warp(s2);
-        eth2.set(2_500_00000000);
-        assertEq(sale.paperFor(2, 5), 5e18, "5 packs burn 5 PAPER");
+    // ---------------------------------------------------------------- the studio's JSON
 
-        // a real (thin) pool: $11 against 1,000 PAPER = $0.011 per PAPER, under the $1 ceiling
-        p.set(11e6, 1_000e18);
-        ptwap.checkpoint();
-        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
-        assertEq(address(ptwap.pair()), address(p), "adopted");
-        vm.warp(block.timestamp + 21 hours); eth2.set(2_500_00000000); ptwap.checkpoint();
-        (, px,,,) = ptwap.latestRoundData();
-        assertApproxEqRel(uint256(px), 0.011e18, 1e15);
-        _warp(block.timestamp);
-        assertEq(sale.paperFor(2, 5), 5e18, "still the drop's PAPER per pack");
+    /// The studio's sample export (recipe.json with a "sale" block, written by studio/scripts/sale-sample.test.ts)
+    /// goes through ConfigureSeries into the recipe calls and FireSale.configureDrop, and the drop comes out as the
+    /// studio set it: the Standard preset (167 packs in three groups, and an unlimited "After sell-out" group with a
+    /// rising tax on top, which ends 15 minutes after its last sale).
+    function test_studioSaleExportConfiguresTheDrop() public {
+        _endDrop1(); // one drop at a time
+        _warp(1_800_000_000); // the export's start is a few months on from here
+        vm.setEnv("MILL", vm.toString(address(press))); // "nft": "press"
+        ConfigureSeries cs = new ConfigureSeries();
+        string memory json = vm.readFile("test/cards/recipe-studio-sale.json");
+        ConfigureSeries.Call[] memory calls = cs.buildAll(json, address(dealer), address(cards), address(sale), 200);
+        assertEq(calls.length, 5, "recipe, characters, dealer, images, configureDrop");
+        assertEq(calls[4].what, "FireSale.configureDrop");
+        assertEq(cs.build(json, address(dealer), address(cards), 200).length, 4, "build leaves the sale out");
+        vm.startPrank(owner, owner);
+        for (uint256 i; i < calls.length; i++) {
+            (bool ok,) = calls[i].to.call(calls[i].data);
+            assertTrue(ok, calls[i].what);
+        }
+        vm.stopPrank();
+        FireSale.Drop memory d = sale.dropOf(7);
+        assertEq(d.start, 1_810_000_000);
+        assertEq(d.packs, 167, "the base Series; the unlimited group adds on top");
+        assertEq(d.regularWalletsFor, 48 hours);
+        assertEq(d.maxPerTx, 50);
+        assertEq(d.plankBurnBps, 1_000);
+        assertEq(d.paperBurnBps, 2_000);
+        assertEq(d.paperCapUsd, 100_000_000);
+        assertEq(d.creditsPerPick, 1);
+        assertEq(d.creditPacksMax, 16);
+        assertEq(d.creditPacksPerWallet, 3);
+        assertEq(d.creditGroup, 2);
+        FireGroups.GroupView[] memory v = groups.groupsOf(7);
+        assertEq(v.length, 4);
+        // 1. Paper Press holders: 50, 1 PAPER, 1 per press, opens with the drop, up to 6h, leftovers to group 3
+        assertEq(v[0].config.packs, 50);
+        assertEq(uint8(v[0].config.gate), uint8(FireGroups.Gate.NFT));
+        assertEq(v[0].config.nft, address(press));
+        assertEq(v[0].config.perNft, 1);
+        assertEq(v[0].config.priceUsd, 0);
+        assertEq(v[0].config.paper, 1e18);
+        assertEq(v[0].config.afterGroup, NONE);
+        assertEq(v[0].config.duration, 6 hours);
+        assertEq(v[0].config.rollTo, 2);
+        // 2. PLANK holders: 40, $2.50 + 1 PAPER, PLANK only, 5 per wallet, up to 24h, leftovers to group 3
+        assertEq(v[1].config.packs, 40);
+        assertEq(uint8(v[1].config.gate), uint8(FireGroups.Gate.SNAPSHOT));
+        assertEq(v[1].config.root, bytes32(0xabababababababababababababababababababababababababababababababab));
+        assertEq(v[1].config.priceUsd, 250_000_000);
+        assertEq(v[1].config.coins, 1);
+        assertEq(v[1].config.perWallet, 5);
+        assertEq(v[1].config.duration, 24 hours);
+        assertEq(v[1].config.rollTo, 2);
+        // 3. Everyone: 77 (+ leftovers), $2.50 + 1 PAPER, any coin, 5 per wallet, after group 2, until sold
+        assertEq(v[2].config.packs, 77);
+        assertEq(uint8(v[2].config.gate), uint8(FireGroups.Gate.OPEN));
+        assertEq(v[2].config.coins, 7);
+        assertEq(v[2].config.perWallet, 5);
+        assertEq(v[2].config.afterGroup, 1);
+        assertEq(v[2].config.duration, 0);
+        assertEq(v[2].config.rollTo, NONE);
+        assertEq(v[2].opensAt, 1_810_000_000 + 24 hours, "at the latest");
+        // 4. After sell-out: unlimited, $2.50 rising 4% a pack + 1 PAPER, ETH only, 1 per purchase, when group 3 sells
+        //    out, until 15 minutes pass with no sale
+        assertTrue(v[3].config.unlimited);
+        assertEq(v[3].config.packs, 0);
+        assertEq(v[3].capacity, type(uint256).max);
+        assertEq(uint8(v[3].config.gate), uint8(FireGroups.Gate.OPEN));
+        assertEq(v[3].config.taxBps, 400);
+        assertEq(v[3].config.coins, 2);
+        assertEq(v[3].config.perWallet, 0);
+        assertEq(v[3].config.afterGroup, 2);
+        assertEq(v[3].config.duration, 0);
+        assertEq(v[3].config.idle, 15 minutes, "ends 15 minutes after its last sale");
+        assertEq(v[3].config.perTx, 1, "one pack per purchase");
+        assertEq(v[2].config.idle, 0);
+        assertEq(v[2].config.perTx, 0);
+        assertEq(v[3].config.rollTo, NONE);
+        assertEq(v[3].opensAt, 0, "when Everyone sells out");
+        assertEq(groups.scheduleEnd(7), 1_810_000_000 + 24 hours, "until the unlimited group opens");
+
+        // DROP_START and GROUP_ROOT_<i> override the block's start and a snapshot group's root
+        vm.setEnv("DROP_START", "1810000123");
+        vm.setEnv("GROUP_ROOT_1", "0x0000000000000000000000000000000000000000000000000000000000000001");
+        FireSale.DropConfig memory c = cs.parseSale(json);
+        assertEq(c.start, 1_810_000_123);
+        assertEq(c.groups[1].root, bytes32(uint256(1)));
+        vm.setEnv("GROUP_ROOT_1", "0x0000000000000000000000000000000000000000000000000000000000000000");
+        // a misspelt field is refused by name, not read as 0
+        vm.expectRevert(bytes(".sale: unknown key creditPacksMx"));
+        cs.parseSale(vm.replace(json, '"creditPacksMax"', '"creditPacksMx"'));
+        vm.expectRevert(bytes(".sale.groups[0]: unknown key perNfts"));
+        cs.parseSale(vm.replace(json, '"perNft"', '"perNfts"'));
+        // a start more than a year away is refused
+        vm.setEnv("DROP_START", "1900000123");
+        vm.expectRevert(bytes("sale.start is more than a year away: a typo?"));
+        cs.parseSale(json);
+        vm.setEnv("DROP_START", "1810000000");
+    }
+
+    /// The JSON is checked group by group, with the reason by name, before anything is sent.
+    function test_studioSaleExportRefusesBadGroups() public {
+        vm.setEnv("MILL", vm.toString(address(press)));
+        vm.setEnv("DROP_START", "1810000000");
+        ConfigureSeries cs = new ConfigureSeries();
+        string memory json = vm.readFile("test/cards/recipe-studio-sale.json");
+        cs.parseSale(json);
+        vm.expectRevert(bytes("sale.groups: the groups' packs add up to 168, not sale.packs (167; unlimited groups count 0)"));
+        cs.parseSale(vm.replace(json, '"packs": 77', '"packs": 78'));
+        vm.expectRevert(bytes(".sale.groups[2].afterGroup: an earlier group's index, or 255 to open with the drop"));
+        cs.parseSale(vm.replace(json, '"afterGroup": 1', '"afterGroup": 2'));
+        vm.expectRevert(bytes(".sale.groups[0].rollTo: a later group's index, or 255 for nowhere"));
+        cs.parseSale(vm.replace(json, '"rollTo": 2\n   },\n   {\n    "name": "PLANK', '"rollTo": 0\n   },\n   {\n    "name": "PLANK'));
+        vm.expectRevert(bytes(".sale.groups[1].gate: open, nft or snapshot"));
+        cs.parseSale(vm.replace(json, '"gate": "snapshot"', '"gate": "holders"'));
+        vm.expectRevert(bytes(".sale.groups[1].root is missing: set GROUP_ROOT_1 (the snapshot from ops/snapshot)"));
+        cs.parseSale(vm.replace(json, '"0xabababababababababababababababababababababababababababababababab"', '"0x0000000000000000000000000000000000000000000000000000000000000000"'));
+        vm.expectRevert(bytes(".sale.groups[2].coins: a dollar price needs a coin (PLANK 1 + ETH 2 + USDG 4)"));
+        cs.parseSale(vm.replace(json, '"coins": 7', '"coins": 0'));
+        vm.expectRevert(bytes(".sale.groups[2].coins is too big for its field (most 7)"));
+        cs.parseSale(vm.replace(json, '"coins": 7', '"coins": 8'));
+        vm.expectRevert(bytes(".sale.groups[0].duration is too big for its field (most 2592000)"));
+        cs.parseSale(vm.replace(json, '"duration": 21600', '"duration": 2592001'));
+        vm.expectRevert(bytes("sale.creditGroup: the index of a group (0 is the first), or 255 for no credit packs"));
+        cs.parseSale(vm.replace(json, '"creditGroup": 2', '"creditGroup": 4'));
+        vm.expectRevert(bytes(".sale.groups[2].rollTo: a group with a rising tax (taxBps) takes no leftovers"));
+        cs.parseSale(vm.replace(json, '"rollTo": 255\n   },\n   {\n    "name": "After', '"rollTo": 3\n   },\n   {\n    "name": "After'));
+        vm.expectRevert(bytes(".sale.groups[3].unlimited: needs taxBps (the rising price caps demand) and idle (so it always ends)"));
+        cs.parseSale(vm.replace(json, '"idle": 900', '"idle": 0'));
+        vm.expectRevert(bytes(".sale.groups[3].unlimited: needs taxBps (the rising price caps demand) and idle (so it always ends)"));
+        cs.parseSale(vm.replace(json, '"taxBps": 400', '"taxBps": 0'));
+        vm.expectRevert(bytes(".sale.groups[3].packs: 0 for an unlimited group (it has no pack count; it adds on top of sale.packs)"));
+        cs.parseSale(vm.replace(vm.replace(json, '"packs": 0', '"packs": 5'), '"packs": 167', '"packs": 172'));
+        vm.expectRevert(bytes(".sale.groups[3].idle is too big for its field (most 2592000)"));
+        cs.parseSale(vm.replace(json, '"idle": 900', '"idle": 2592001'));
+        vm.expectRevert(bytes(".sale.groups[3].taxBps is too big for its field (most 5000)"));
+        cs.parseSale(vm.replace(json, '"taxBps": 400', '"taxBps": 5001'));
+        vm.expectRevert(bytes(".sale.groups[2]: nft and perNft are for gate nft only"));
+        cs.parseSale(vm.replace(json, '"gate": "open",', '"gate": "open", "perNft": 1,'));
     }
 }

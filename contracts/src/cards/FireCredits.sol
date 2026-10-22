@@ -20,8 +20,8 @@ interface ICreditsCards {
  *         - Suggest a character for a future Series, for `suggestionPaper` PAPER (burned; never more than $1 worth at
  *           the PAPER feed's price).
  *         - The owner picks suggestions while setting up a drop: each picked author gets the drop's `creditsPerPick`.
- *         - Spend credits in any live drop, at any time, for the drop's PAPER per pack alone (FireSale.creditPacks
- *           checks the drop's caps and mints).
+ *         - Spend credits in any live drop while its credit group is open, for that group's PAPER per pack alone
+ *           (FireSale.creditPacks checks the drop's caps, takes the packs from the credit group and mints).
  *
  *         PAPER is taken by FireSale (the one PAPER approval a buyer gives), through hooks only this contract can call.
  *         Paid suggestions and credit spending stop while FireSale is paused.
@@ -50,7 +50,7 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
     uint256 public suggestionMaxBytes = 280;
 
     /// @notice Free pack credits (from burning cards, or a picked suggestion). They stack, never expire, and work
-    ///         at any time in any live drop.
+    ///         in any live drop while its credit group is open.
     mapping(address => uint256) public credits;
     mapping(address => uint256) public burnCount; // cards burned toward the next credit
     mapping(uint256 fire => uint256) public picksOf;
@@ -142,9 +142,10 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
 
     // ================================================================ anyone
 
-    /// @notice Spend `n` free pack credits in a live drop, at any time (holder window, PLANK-only phase, wallet
-    ///         limit and regular-wallets rule don't apply: a credit was earned). The drop's PAPER per pack alone
-    ///         (approve FireSale for it). The drop can cap credit packs in all and per wallet.
+    /// @notice Spend `n` free pack credits in a live drop, while its credit group is open (the group's gate, price,
+    ///         coins and wallet limit, and the regular-wallets rule, don't apply: a credit was earned). The credit
+    ///         group's PAPER per pack alone (approve FireSale for it). The drop can cap credit packs in all and per
+    ///         wallet.
     function useCredits(uint256 fire, uint256 n, uint256 maxPaper) external nonReentrant {
         // a pack of CARDS_PER_CREDIT or more cards could be burned for a free pack of itself: no credits there
         if (CARDS.cardsPerPack(fire) >= CARDS_PER_CREDIT) revert BadConfig();

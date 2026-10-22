@@ -1,0 +1,910 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "DEPLOYER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "ETH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_GROUPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_TAX_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_TAX_GROWTH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_WINDOW",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "NONE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PLANK",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "USDG",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "boughtBy",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "wallet",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "b",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "boughtIn",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "group",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "configure",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "start",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "total",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "gs",
+        "type": "tuple[]",
+        "internalType": "struct FireGroups.Group[]",
+        "components": [
+          {
+            "name": "packs",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "gate",
+            "type": "uint8",
+            "internalType": "enum FireGroups.Gate"
+          },
+          {
+            "name": "coins",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "afterGroup",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "rollTo",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "startDelay",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "duration",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "perWallet",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "perNft",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "taxBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "priceUsd",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "paper",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "nft",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "idle",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "perTx",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "unlimited",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "root",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      },
+      {
+        "name": "creditGroup",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "groupCount",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "groupOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "g",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct FireGroups.Group",
+        "components": [
+          {
+            "name": "packs",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "gate",
+            "type": "uint8",
+            "internalType": "enum FireGroups.Gate"
+          },
+          {
+            "name": "coins",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "afterGroup",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "rollTo",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "startDelay",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "duration",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "perWallet",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "perNft",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "taxBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "priceUsd",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "paper",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "nft",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "idle",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "perTx",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "unlimited",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "root",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "groupsOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "v",
+        "type": "tuple[]",
+        "internalType": "struct FireGroups.GroupView[]",
+        "components": [
+          {
+            "name": "config",
+            "type": "tuple",
+            "internalType": "struct FireGroups.Group",
+            "components": [
+              {
+                "name": "packs",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "gate",
+                "type": "uint8",
+                "internalType": "enum FireGroups.Gate"
+              },
+              {
+                "name": "coins",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "afterGroup",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "rollTo",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "startDelay",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "duration",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "perWallet",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "perNft",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "taxBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "priceUsd",
+                "type": "uint128",
+                "internalType": "uint128"
+              },
+              {
+                "name": "paper",
+                "type": "uint128",
+                "internalType": "uint128"
+              },
+              {
+                "name": "nft",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "idle",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "perTx",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "unlimited",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "root",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              }
+            ]
+          },
+          {
+            "name": "state",
+            "type": "uint8",
+            "internalType": "enum FireGroups.State"
+          },
+          {
+            "name": "capacity",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "sold",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "left",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "opensAt",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "endsAt",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "openLeft",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "g",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "priceOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "g",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "usd8",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "tax8",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "remaining",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sale",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "scheduleEnd",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "over",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setSale",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "take",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "g",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "buyer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "coin",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "a",
+        "type": "tuple",
+        "internalType": "struct FireGroups.Access",
+        "components": [
+          {
+            "name": "nftIds",
+            "type": "uint256[]",
+            "internalType": "uint256[]"
+          },
+          {
+            "name": "allowance",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "proof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "usd8",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "tax8",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "paper",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "left",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "takeCredit",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "g",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "n",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "paper",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "left",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "usedWith",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "group",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "SaleSet",
+    "inputs": [
+      {
+        "name": "sale",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadySet",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadConfig",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadGroup",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CoinNotAccepted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "GroupNotOpen",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NftUsed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotAllowed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotSale",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PerTxLimit",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PriceTooHigh",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SoldOut",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "WalletLimit",
+    "inputs": []
+  }
+]
