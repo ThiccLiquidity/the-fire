@@ -129,11 +129,13 @@ body[data-mode=port] .ft-card { bottom: auto; top: calc(var(--top) + var(--scene
 .gg-needle { transform-box: view-box; transform-origin: 50px 54px; transition: transform .8s cubic-bezier(.3,1.4,.5,1) }
 .gg-needle line { stroke: #ff5a1c; stroke-width: 2.5 }
 .gg circle { fill: #e9b45a }
-.gg-name { font: 800 12px/1.15 var(--body); color: #f6e2b8; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100% }
-.gg-sub { font: 700 12px/1.2 var(--body); color: #d4bd98; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100% }
+.gg-name, .gg-sub { justify-self: stretch; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden } /* sale.js picks a wording that fits: never cut off */
+.gg-name { font: 800 12px/1.15 var(--body); color: #f6e2b8 }
+.gg-sub { font: 600 12px/1.2 var(--body); color: #d4bd98; font-variant-numeric: tabular-nums }
 .gg.off { opacity: .55; border-style: dashed } .gg.off .gg-fill { stroke: #6b4a2a }
 .gg.low .gg-fill { stroke: #ff5a1c }
-.fun-sale.port .gg { width: auto; flex: 1 1 0; min-width: 0; padding: 3px 2px 4px } .fun-sale.port .gg-dial svg { width: 44px; height: 26px } .fun-sale.port .gg-name { font-size: 12px } .fun-sale.port .gg-sub { font-size: 12px }
+.fun-sale.port .gg-row { gap: 4px }
+.fun-sale.port .gg { width: auto; flex: 1 1 0; min-width: 0; padding: 3px 0 4px; border-radius: 10px } .fun-sale.port .gg-dial svg { width: 44px; height: 26px }
 .lc { pointer-events: auto; display: grid; grid-template-columns: auto auto; grid-template-areas: 'k k' 'clock n'; gap: 2px 14px; align-items: center; padding: 8px 14px 10px; border-radius: 16px; cursor: pointer;
   color: var(--ink); background: linear-gradient(#3a140b, #1a0805); border: 2px solid #ff7a2e; box-shadow: 0 0 22px rgba(255,90,30,.45), 0 8px 20px rgba(0,0,0,.6) }
 .fun-sale.port .lc { margin: 0 auto }

@@ -354,14 +354,37 @@ try {
     check((await page.locator("#sheet-show .sv-shelf .sc-slot").count()) === 6, "a showcase reads the wallet's cards: its best 6");
     await page.keyboard.press("Escape");
     const n0 = await page.evaluate(() => Store.state.cards.length);
+    // the Series' image folder (ipfs://bafyexampleimages/) has no files here: stand in the demo cast's plain cards for
+    // its file names, so the screenshot shows pictures (the check is on the file names asked for)
+    const asked = [];
+    await page.unroute(/ipfs\.io/);
+    await page.route(/ipfs\.io/, (r) => {
+      const m = /\/ipfs\/bafyexampleimages\/c(\d+)-([a-z0-9-]+)-(none|frame|picture|full)-u\.webp$/.exec(r.request().url());
+      if (!m) return r.abort();
+      asked.push(r.request().url());
+      const mat = m[2] === "coal" ? "charcoal" : m[2], who = mat === "gold" || mat === "fullart" ? "bowling" : ["jellyfish", "cactus", "bowling"][+m[1] % 3];
+      return r.fulfill({ status: 200, contentType: "image/webp", body: readFileSync(join(FACTORY, `forge/cards/${who}/${mat}-plain.webp`)) });
+    });
     await page.evaluate(() => Fun.go("practice"));
     await page.locator("#sheet-table .pk2").waitFor();
     await page.click("#sheet-table .pk2"); await page.waitForTimeout(1500);
     await page.click("#sheet-table .skip-b");
     await page.locator("#sheet-table .prac-sum").waitFor({ timeout: 20_000 });
     check((await page.locator("#sheet-table .prac-c").count()) === 6 && (await page.evaluate(() => Store.state.cards.length)) === n0 && !(await page.locator("#sheet-tx[open]").count()),
-      "live: a practice pack opens 6 sample cards, asks nothing of the wallet and saves nothing");
+      "live: a practice pack opens 6 cards, asks nothing of the wallet and saves nothing");
+    await page.waitForTimeout(800);
+    const pr = await page.evaluate(() => [...document.querySelectorAll("#sheet-table .prac-c .cframe")].map((i) => ({ src: i.src, alt: i.alt, ok: i.complete && i.naturalWidth > 0 })));
+    const names = ["Ember Fox", "Ash Wolf", "Cinder Queen"];
+    check(pr.length === 6 && pr.every((x) => /^https:\/\/ipfs\.io\/ipfs\/bafyexampleimages\/c[0-2]-(paper|wood|fire|coal|gold|fullart)-(none|frame|picture|full)-u\.webp$/.test(x.src) && x.ok && names.some((n) => x.alt.startsWith(n + ","))) && asked.length >= 6,
+      `live practice uses Series 7's own card art and cast, not the demo's (${pr.map((x) => x.src.split("/").pop()).join(", ")})`);
+    check(await page.locator("#sheet-table .st-table.practice").count() === 1 && /PRACTICE/.test(await page.evaluate(() => getComputedStyle(document.querySelector("#sheet-table .prac-c .cface"), "::after").content)),
+      "still stamped PRACTICE");
+    await shot("13e-live-practice");
+    const fb = await page.evaluate(async () => { const no = Store.state.series.no; Store.state.series.no = 0; try { return (await Fun.practicePack()).map((c) => [c.character, !!c.image, Store.cardImg(c)]); } finally { Store.state.series.no = no; } });
+    check(fb.length === 6 && fb.every(([, img, src]) => !img && /^cards\/(bowling|cactus|jellyfish)\//.test(src)), `no Series to read: the demo cast stands in (${fb.map((x) => x[0]).join(", ")})`);
     await page.keyboard.press("Escape");
+    await page.unroute(/ipfs\.io/);
+    await page.route(/ipfs\.io/, (r) => r.abort());
   }
 
   console.log("\n== My cards, the results");

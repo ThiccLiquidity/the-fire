@@ -13,8 +13,17 @@
   const money = (v) => '$' + (+v).toFixed(2);
   const mmss = (s) => { s = Math.max(0, Math.round(s)); const hh = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
     return hh ? `${hh}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}`; };
-  const left = (t) => { const s = Math.max(0, Math.round(t - Fun.now())), d = Math.floor(s / 86400), hh = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
-    return d ? `${d}d ${hh}h` : hh ? `${hh}h ${m}m` : `${m}m ${String(s % 60).padStart(2, '0')}s`; };
+
+  /** A time span for the gauges, short: k 0 the finer wording ("4h 5m", "22h", "12m 05s"), k 1 the coarser ("4h", "12m"). */
+  const span = (sec, k) => { const s = Math.max(0, Math.round(sec)), d = Math.floor(s / 86400), H = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return d >= 2 ? (k ? `${d}d` : `${d}d ${H % 24}h`) : H >= 10 || (H && k) ? `${H}h` : H ? `${H}h ${m}m` : m ? (k ? `${m}m` : `${m}m ${String(s % 60).padStart(2, '0')}s`) : `${s}s`; };
+  /** Puts the first of `texts` that fits the element's width (the last one if none does). */
+  function fit(el, texts) {
+    const k = texts.join('|') + '@' + el.clientWidth;
+    if (el._fit === k) return;
+    for (const x of texts) { if (el.textContent !== x) el.textContent = x; if (el.scrollWidth <= el.clientWidth + 0.5) break; }
+    el._fit = texts.join('|') + '@' + el.clientWidth;
+  }
 
   // ---------- the flip board: one tile per character; a changed one flips down
   function flap(el, text) {
@@ -65,12 +74,16 @@
         el.querySelector('.gg-needle').style.transform = `rotate(${(-90 + frac * 180).toFixed(1)}deg)`;
         el.querySelector('.gg-fill').style.strokeDashoffset = String(100 - frac * 100);
         el.classList.toggle('off', g.state !== 'open'); el.classList.toggle('low', g.state === 'open' && frac > 0 && frac < 0.15);
-        const name = g.unlimited ? 'Extra packs' : String(g.name).replace('Paper Press holders', 'Press holders'), sub = g.state === 'ended' ? (g.left === 0 ? 'Sold out' : 'Ended')
-          : g.state === 'upcoming' ? (g.opensAt > Fun.now() ? 'Opens in ' + left(g.opensAt) : 'Up next')
-          : g.unlimited ? (g.endsAt ? left(g.endsAt) + ' left' : 'Open') : `${g.left ?? 0} left${g.endsAt ? ' · ' + left(g.endsAt) : ''}`;
-        const n = el.querySelector('.gg-name'), sb = el.querySelector('.gg-sub');
-        if (n.textContent !== name) n.textContent = name; if (sb.textContent !== sub) sb.textContent = sub;
-        el.setAttribute('aria-label', `${name}: ${sub}`);
+        // two short lines: the group, then its state; each the longest wording that fits the gauge (never cut off)
+        const full = g.unlimited ? 'Extra packs' : String(g.name), short = g.unlimited ? 'Extra' : full.replace(/^Paper Press holders$/i, 'Press').replace(/\s+holders?$/i, '');
+        const names = [short, short.split(/\s+/)[0]];
+        const t = (at, k) => span(at - Fun.now(), k);
+        const subs = g.state === 'ended' ? [g.left === 0 ? 'Sold out' : 'Ended']
+          : g.state === 'upcoming' ? (g.opensAt > Fun.now() ? ['Opens in ' + t(g.opensAt, 0), 'Opens in ' + t(g.opensAt, 1), 'Opens ' + t(g.opensAt, 1)] : ['Up next'])
+          : g.unlimited ? (g.endsAt ? [t(g.endsAt, 0) + ' left', t(g.endsAt, 1) + ' left', 'Open'] : ['Open'])
+          : g.endsAt ? [`${g.left ?? 0} left · ${t(g.endsAt, 0)}`, `${g.left ?? 0} left · ${t(g.endsAt, 1)}`, `${g.left ?? 0} left`] : [`${g.left ?? 0} left`];
+        fit(el.querySelector('.gg-name'), names); fit(el.querySelector('.gg-sub'), subs);
+        el.setAttribute('aria-label', `${full}: ${subs[0]}`);
       });
     }
   }

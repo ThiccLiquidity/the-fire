@@ -17,13 +17,16 @@ function liveFlag(mode: string): Plugin {
     configResolved(c) { outDir = resolve(c.root, c.build.outDir) },
     closeBundle() {
       if (outDir === SOURCE_OUT) return
-      const page = resolve(dirname(outDir), 'index.html')
-      if (!existsSync(page)) return
       const v = loadEnv(mode, process.cwd(), 'VITE_').VITE_LIVE ?? ''
       const live = v === 'testnet' || v === 'mainnet' ? v : ''
-      const html = readFileSync(page, 'utf8')
-      if (!/<meta name="forge-live" content="[^"]*">/.test(html)) throw new Error(`${page} has no <meta name="forge-live">: live.js couldn't see VITE_LIVE`)
-      writeFileSync(page, html.replace(/<meta name="forge-live" content="[^"]*">/, `<meta name="forge-live" content="${live}">`))
+      // the page, plus Help and Terms (their demo-only notes hide on a live build)
+      for (const name of ['index.html', 'help.html', 'terms.html']) {
+        const page = resolve(dirname(outDir), name)
+        if (!existsSync(page)) continue
+        const html = readFileSync(page, 'utf8')
+        if (!/<meta name="forge-live" content="[^"]*">/.test(html)) throw new Error(`${page} has no <meta name="forge-live">: live.js couldn't see VITE_LIVE`)
+        writeFileSync(page, html.replace(/<meta name="forge-live" content="[^"]*">/, `<meta name="forge-live" content="${live}">`))
+      }
     },
   }
 }

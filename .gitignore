@@ -63,3 +63,6 @@ web/dist-chaintest/
 web/art/factory/forge/vendor/
 web/public/forge/vendor/
 web/scripts/forge-e2e/shots/
+
+# Served copy of the Forge: made by web/art/factory/sync_forge.sh (runs before every build)
+web/public/forge/

@@ -1,7 +1,9 @@
 /* Omni Cardworks (fun layer): the practice pack. Anyone can rip one, no wallet, demo or live: six sample cards with
    the full reveal (the same tear, flips, glows and sounds), stamped PRACTICE over the card (drawn in code), and never
-   saved anywhere: they're not in My cards, the binder, badges or the counts. The cards use the site's own sample art
-   (the demo cast's finished card images in cards/<id>/), so it works offline and in live mode too. */
+   saved anywhere: they're not in My cards, the binder, badges or the counts.
+   Demo: the demo cast's finished card images (cards/<id>/). Live: the current Series' own cards: its recipe's types,
+   slots and holo odds, its characters and its image folder (Live.chain.practiceSet / practiceDeal: the same file
+   names CardsRenderer gives real cards). If those reads fail or nothing is deployed yet, the demo cast stands in. */
 (() => {
   const { h } = Fun;
   const CH = Store.CHARS, CAST = Object.keys(CH), SPECIAL = Store.SPECIAL_CAST;
@@ -9,16 +11,34 @@
   const special = (c) => c.material === 'gold' || c.material === 'fullart';
   const look = (c) => (special(c) ? 'full' : c.holo || 'none');
   const artOf = (c) => (special(c) ? CH[SPECIAL] : CH[c.character] || CH[CAST[0]]).id;
-  // live mode points the card images at the chain's metadata: practice cards keep the sample art
+  // live mode points the card images at the chain's metadata: a live practice card has its Series' own image; one
+  // from the demo cast (the fallback) keeps the sample art
   if (window.Live?.on) {
     const img = Store.cardImg, pos = Store.cardPos;
-    Store.cardImg = (c) => (c?.practice ? `cards/${artOf(c)}/${c.material}-${look(c)}.webp` : img(c));
-    Store.cardPos = (c) => (c?.practice ? '0% 0' : pos(c));
+    Store.cardImg = (c) => (c?.practice && !c.image ? `cards/${artOf(c)}/${c.material}-${look(c)}.webp` : img(c));
+    Store.cardPos = (c) => (c?.practice && !c.image ? '0% 0' : pos(c));
   }
   const roll = (t) => { let u = Math.random(), a = 0; for (const [v, p] of t) { a += p; if (u < a) return v; } return t[t.length - 1][0]; };
   let n = 0;
-  /** Six practice cards: 3 Paper, 1 Wood, 1 Wood or better, 1 Fire or better (Gold and Full Art turn up often here). */
-  Fun.practicePack = () => {
+  const RANKED = ['paper', 'wood', 'fire', 'charcoal', 'gold', 'fullart'];
+  /** Live: a pack of the current Series' own cards, or null (no Series yet, or the reads failed or took too long). */
+  async function livePack() {
+    const L = window.Live, no = Store.state.series.no;
+    if (!L?.on || !L.chain || !no) return null;
+    const set = await Promise.race([L.chain.practiceSet(no), new Promise((ok) => setTimeout(() => ok(null), 6000))]).catch(() => null);
+    if (!set) return null;
+    return L.chain.practiceDeal(set).map((x) => ({
+      id: -(++n), serial: 0, series: set.fire, practice: true, character: x.character,
+      material: L.toMaterial(x.typeName) || L.toMaterial(x.slug) || RANKED[Math.min(x.rank, RANKED.length - 1)], holo: x.holo, image: L.gateway(x.image),
+      edition: 'Practice', grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 }));
+  }
+  // live: read the Series' set ahead (cached by the chain layer), so the first rip doesn't wait on it
+  let pre = 0;
+  if (window.Live?.on) Store.on(() => { const no = Store.state.series.no; if (no && no !== pre && window.Live.chain) { pre = no; window.Live.chain.practiceSet(no).catch(() => {}); } });
+  /** Six practice cards. Live: the current Series' (a promise); else the demo cast: 3 Paper, 1 Wood, 1 Wood or better,
+   *  1 Fire or better (Gold and Full Art turn up often here). */
+  Fun.practicePack = () => (window.Live?.on ? livePack().catch(() => null).then((p) => p || demoPack()) : demoPack());
+  const demoPack = () => {
     const mats = ['paper', 'paper', 'paper', 'wood', roll([['wood', 0.7], ['fire', 0.2], ['charcoal', 0.06], ['gold', 0.04]]), roll([['fire', 0.55], ['charcoal', 0.15], ['gold', 0.18], ['fullart', 0.12]])];
     return mats.map((m) => {
       const q = 1 - Math.sqrt(1 - ({ paper: 0.05, wood: 0.1, fire: 0.5, charcoal: 0.9 }[m] || 1)), f = Math.random() < q, p = Math.random() < q;

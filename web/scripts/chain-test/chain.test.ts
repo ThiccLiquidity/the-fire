@@ -88,6 +88,18 @@ export async function runTest(ctx: Ctx): Promise<number> {
   check(s.creditGroup === 1 && s.status.left === null && !s.closing, "free packs come from Everyone; with an unlimited group ahead, no end to what can sell");
   check(s.cards.cardsPerPack === 6 && s.cards.characters === 3, `${s.cards.cardsPerPack} cards a pack, ${s.cards.characters} characters`);
 
+  console.log("\n== the practice pack: the Series' own cards at its recipe's odds (read-only)");
+  const ps = await L.practiceSet(fire);
+  check(ps && ps.imagesBase === "ipfs://bafyexampleimages/" && ps.characters.join() === "Ember Fox,Ash Wolf,Cinder Queen" && ps.types.map((t) => t.slug).join() === "paper,wood,fire,coal,gold,fullart",
+    `practice set: Series 7's image folder, characters and card types (${ps?.types.map((t) => `${t.slug} ${t.perPack.toFixed(2)}/pack`).join(", ")})`);
+  check(Math.abs(ps.types.reduce((a, t) => a + t.perPack, 0) - 6) < 1e-9 && ps.types[0].perPack === 3, "its pool: 6 cards a pack, 3 of them Paper");
+  const many = Array.from({ length: 400 }, () => L.practiceDeal(ps));
+  const rankOk = many.every((p) => p.length === 6 && p.filter((c) => c.slug === "paper").length === 3 && p.some((c) => c.slug === "wood") && p.some((c) => c.rank >= 2) && p.filter((c) => c.rank >= 1).length === 3);
+  const imgOk = many.flat().every((c) => c.image === `ipfs://bafyexampleimages/c${c.characterIndex}-${c.slug}-${c.holo}-u.webp` && ps.characters[c.characterIndex] === c.character);
+  const special = many.flat().filter((c) => c.rank >= 4);
+  check(rankOk && imgOk && special.every((c) => c.holo === "full"),
+    `400 practice packs: 3 Paper, 1 Wood, 1 Wood or better, 1 Fire or better; each card's image is the Series' own (c<character>-<slug>-<holo>-u.webp); Gold and Full Art always full holo (${special.length} of them)`);
+
   console.log("\n== suggestions: theme + art style in one transaction, then the owner picks");
   const rules = await L.suggestionRules();
   check(rules.many && rules.perTx === 3 && rules.paperEach.text === "1", `suggestMany is there (up to ${rules.perTx} per transaction), ${rules.paperEach.text} PAPER each`);

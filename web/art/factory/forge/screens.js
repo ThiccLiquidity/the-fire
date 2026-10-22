@@ -519,7 +519,7 @@
     // practice: one pack of sample cards, the same reveal, nothing saved (practice.js makes the cards and the summary)
     async function openPractice() {
       if (busy || !window.Fun?.practicePack) return; busy = true; practiceRun = true;
-      const pack = Fun.practicePack().sort((a, b) => rarity(a) - rarity(b));
+      const pack = (await Fun.practicePack()).sort((a, b) => rarity(a) - rarity(b)); // live: the current Series' cards (a short read)
       packsEl.hidden = true; coll.hidden = true; stage.hidden = false;
       root.closest('.sheet-body')?.scrollTo({ top: 0 });
       await runOpening(pack[0].series, [pack], new Map());

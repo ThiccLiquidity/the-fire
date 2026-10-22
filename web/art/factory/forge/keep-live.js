@@ -3,12 +3,15 @@
    terms.html (a file, not inline: the CSP allows scripts from the site only). */
 (() => {
   const v = new URLSearchParams(location.search).get('live');
-  if (!v) return;
-  // live (testnet or mainnet): the demo-only notes (Terms: "Right now Cardworks is a demo") don't apply
-  if (v === 'testnet' || v === 'mainnet') {
+  // live (?live=testnet|mainnet, or a live build's <meta name="forge-live"> without ?live=off): the demo-only notes
+  // (Terms: "Right now Cardworks is a demo") don't apply
+  const built = document.querySelector('meta[name="forge-live"]')?.content || '';
+  const net = v === 'off' ? '' : v || built;
+  if (net === 'testnet' || net === 'mainnet') {
     const hide = () => document.querySelectorAll('[data-demo-only]').forEach((el) => { el.hidden = true; });
     if (document.readyState === 'loading') addEventListener('DOMContentLoaded', hide); else hide();
   }
+  if (!v) return;
   const own = /^(\.\/|index\.html|help\.html|terms\.html)([?#].*)?$/;
   const fix = (a) => {
     const h = a.getAttribute('href');
