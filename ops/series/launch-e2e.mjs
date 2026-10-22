@@ -71,7 +71,7 @@ async function forgeDeploy(script, env) {
 /** Runs launch.mjs as the owner would; `input` is typed at the LOCK question. Returns { code, out }. */
 function launch(extra, { input } = {}) {
   const argv = [resolve(here, "launch.mjs"), "--recipe", RECIPE_PATH, "--chain", "31337", "--key-env", "OWNER_TEST_KEY",
-    "--gateways", gateways.join(","), "--verify-tries", "2", "--verify-wait", "1", "--out-dir", OUT, ...extra];
+    "--gateways", gateways.join(","), "--verify-tries", "2", "--verify-wait", "1", "--out-dir", OUT, "--snapshot-days", "0.02", ...extra];
   return new Promise((res) => {
     const p = spawn(process.execPath, argv, {
       cwd: REPO, stdio: ["pipe", "pipe", "pipe"],
@@ -112,15 +112,15 @@ async function main() {
   forge("script/AcceptOwnership.s.sol", {}, owner.address); // anvil's accounts are unlocked: the owner signs
   const C = Object.fromEntries(Object.entries(JSON.parse(readFileSync(DEP_FILE, "utf8")).contracts).map(([k, v]) => [k, getAddress(v)]));
 
-  say("keeper stand-in: 31 minutes on, the PLANK feed checkpointed; two PLANK holders for the snapshot");
-  await rpc("evm_increaseTime", [toHex(31n * 60n)]);
-  await rpc("evm_mine");
+  say("two PLANK holders for the snapshot (holding all through its window); keeper stand-in: 31 minutes on, the PLANK feed checkpointed");
   const twapAbi = [{ type: "function", name: "checkpoint", inputs: [], outputs: [], stateMutability: "nonpayable" }];
   const mintAbi = [{ type: "function", name: "mint", inputs: [{ type: "address" }, { type: "uint256" }], outputs: [], stateMutability: "nonpayable" }];
-  await pub.waitForTransactionReceipt({ hash: await wallet(deployer).writeContract({ address: C.PlankUsdTwap, abi: twapAbi, functionName: "checkpoint" }) });
   for (const [a, n] of [[acct(3), 100n], [acct(4), 500n]]) {
     await pub.waitForTransactionReceipt({ hash: await wallet(deployer).writeContract({ address: inputs.PLANK, abi: mintAbi, functionName: "mint", args: [a.address, n * 10n ** 27n] }) });
   }
+  await rpc("evm_increaseTime", [toHex(31n * 60n)]);
+  await rpc("evm_mine");
+  await pub.waitForTransactionReceipt({ hash: await wallet(deployer).writeContract({ address: C.PlankUsdTwap, abi: twapAbi, functionName: "checkpoint" }) });
   await rpc("anvil_setBalance", [owner.address, toHex(parseEther("10"))]);
 
   // the studio-format recipe, with real-looking images, and two local gateways

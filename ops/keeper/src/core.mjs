@@ -13,13 +13,13 @@
 //   6. drops:       an unsold drop whose phases are over: alert (the owner can end it); once anyone can,
 //                   FireSale.endDrop(fire)
 //   7. health:      alerts (stale feeds, stuck opens/gradings, waiting fees, drand lag, low keeper ETH, a pause, a
-//                   randomness switch, an unsold drop) and a heartbeat
+//                   randomness switch, an unsold drop, FireSale's wallets or feeds changed by the owner) and a heartbeat
 // Before sending, each call is checked again against the pending state (still due, not yet delivered, something to
 // deal or burn) so a keeper never sends a transaction that would do nothing. The backup (KEEPER_ROLE=backup) acts only
 // on work left waiting ACT_AFTER_SEC, and yields to the main keeper on a tie (tx.mjs).
 import { encodeAbiParameters, keccak256, formatEther, formatUnits, zeroAddress } from "viem";
 import {
-  adapterAbi, burnerAbi, cardsAbi, erc20Abi, feedAbi, paperTwapAbi, pausableAbi, protectedEvent, psaAbi, routerAbi, saleAbi, twapAbi,
+  adapterAbi, burnerAbi, cardsAbi, erc20Abi, feedAbi, paperTwapAbi, pausableAbi, protectedEvent, psaAbi, routerAbi, saleAbi, saleSettingsEvents, twapAbi,
 } from "./abis.mjs";
 import { drandClient, roundAt, roundTime } from "./drand.mjs";
 import { createSender, errMsg } from "./tx.mjs";
@@ -86,6 +86,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   const lastFlush = new Map(); // "burner:pay" -> when this keeper last sent a flush for it (ms)
   const cantBurn = new Set(); // "burner:pay" whose last flush left something it couldn't burn
   const sources = new Map(); // "FireCards" | "FirePsa" -> randomness source last seen
+  let saleLogFrom; // the next block to read FireSale's WalletsSet / FeedsSet from (set at the first pass)
 
   // ------------------------------------------------------------------ series and queues
   async function scanSeries() {
@@ -538,13 +539,36 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     }
     const h = (await job("health", () => health({ now, opens, gradings: gradingsAfter, notes, waiting, failed }))) ?? { alerts: [{ key: "health", text: "health check failed" }] };
     h.alerts.push(...drop.alerts);
-    const events = [...drop.events, ...((await job("randomness sources", () => watchSources())) ?? [])];
+    const events = [...drop.events, ...((await job("randomness sources", () => watchSources())) ?? []), ...((await job("sale settings", () => saleSettings(block.number))) ?? [])];
     const sent = sender.sent();
     if (backup && sent.length) {
       events.push({ key: "backup-acted", text: `the backup keeper had to step in (${sent.length} tx: ${sent.map((s) => s.split(" ")[0]).join(", ")}); is the main keeper down?` });
     }
     await notifier.report(h.alerts, { balance: h.balance, series, opens: opens.length, gradings: gradingsAfter.length, sent: sent.length, address: account.address, now: wallSec(wall) }, events);
     return { now, sent, dealt, finished, alerts: h.alerts, opens, gradings: gradingsAfter, waiting, series };
+  }
+
+  // ------------------------------------------------------------------ FireSale's wallets and feeds
+  /** Events for each WalletsSet / FeedsSet FireSale emitted since the last pass (once per event; the first pass only
+   *  starts watching from the next block, so a restart doesn't replay the deploy's own). A failed read is retried
+   *  from the same block next pass. One-pass runs (ONCE) don't watch: the always-on keepers do. */
+  async function saleSettings(latest) {
+    const sale = cfg.optional?.sale;
+    if (!sale || cfg.once) return [];
+    if (saleLogFrom === undefined) { saleLogFrom = BigInt(latest) + 1n; return []; }
+    if (BigInt(latest) < saleLogFrom) return [];
+    const to = BigInt(latest) - saleLogFrom > 5000n ? saleLogFrom + 5000n : BigInt(latest);
+    const logs = await pub.getLogs({ address: sale, events: saleSettingsEvents, fromBlock: saleLogFrom, toBlock: to });
+    saleLogFrom = to + 1n;
+    const not = (got, want, name) => (want && got.toLowerCase() !== want.toLowerCase() ? ` (NOT the deployed ${name} ${want})` : "");
+    return logs.map((l) => {
+      const a = l.args;
+      const where = `block ${l.blockNumber}, tx ${l.transactionHash}`;
+      const text = l.eventName === "WalletsSet"
+        ? `FireSale's wallets were CHANGED by the owner (WalletsSet): revenue ${a.revenue}, PlankBurner ${a.plankBurner}${not(a.plankBurner, C.plankBurner, "PlankBurner")}, PaperBurner ${a.paperBurner}${not(a.paperBurner, C.paperBurner, "PaperBurner")} (${where}). If that wasn't you, pause the sale.`
+        : `FireSale's price feeds were CHANGED by the owner (FeedsSet): ETH/USD ${a.ethUsd}, PLANK/USD ${a.plankUsd}${not(a.plankUsd, C.plankTwap, "PlankUsdTwap")}, PAPER/USD ${a.paperUsd}${not(a.paperUsd, C.paperTwap, "PaperUsdTwap")}, router ${a.router} (${where}). If that wasn't you, pause the sale.`;
+      return { key: `sale:${l.eventName}:${l.transactionHash}:${l.logIndex}`, text };
+    });
   }
 
   // ------------------------------------------------------------------ randomness sources
@@ -575,7 +599,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     return { filled, sources: Object.fromEntries(sources) };
   }
 
-  return { tick, startup, sender, notifier, drand, jobs: { gradingsWaiting, burners, drops, behindAlert } };
+  return { tick, startup, sender, notifier, drand, jobs: { gradingsWaiting, burners, drops, behindAlert, saleSettings } };
 }
 
 const wallSec = (wall) => Number(wall());

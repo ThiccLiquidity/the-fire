@@ -46,17 +46,21 @@ Use the practice Series with real art (five pictures per character, the studio d
 2. Site: open the preview with `?live=testnet`. Connect a test wallet. (Without `?live` the site is the demo, as
    always. `?live=mainnet` shows the demo until `deployments/4663.json` has the card contracts.)
    If the drop has a holder window, publish its snapshot (`ops/snapshot`) as `web/art/factory/forge/holders/series-<n>.json`
-   so snapshot holders get in early; Paper Press holders get in without it.
+   so snapshot holders get in early; Paper Press holders get in without it. The snapshot counts each wallet's smallest
+   PLANK (Uniswap V2 LP share included) over 5 blocks in the past week; `node ops/snapshot/snapshot.mjs --verify
+   <file>` rebuilds it from the chain (needs an archive RPC; VerifySeries runs it too).
 3. Walk every flow and tick it:
-   - [ ] Buy a pack with PAPER, with ETH, with PLANK, with USDG
+   - [ ] Buy packs with PLANK, with ETH (with your own PAPER, and with "Pay the PAPER in ETH too"), with USDG; each burns the PAPER per pack
+   - [ ] Get PAPER on the site (ETH, PLANK, USDG)
    - [ ] The holder window (a wallet in the snapshot buys early; one not in it can't)
    - [ ] The wallet limit refuses one too many
    - [ ] Sell out or end the drop; the Series closes
    - [ ] Open a pack; drand arrives (~90 s); the cards appear; the keeper log shows `fulfillMany` and `process`
    - [ ] Case a card; grade a card; the slab shows the grade
-   - [ ] Burn cards for PAPER
+   - [ ] Burn 42 cards for a free pack credit, then use it
    - [ ] Suggest a theme and an art style in one transaction; suggest a character
-   - [ ] Run the draw (`ops/suggestions/draw.mjs`), pick winners, publish results; a winner claims the free pack
+   - [ ] Announce the wave's closing block and drand round (`draw.mjs --plan`), run the draw with them
+     (`--to-block`, `--drand-round`), `draw.mjs --verify` it, pick winners, publish results; a winner claims the free pack
    - [ ] Pause and unpause the sale from the Ledger
    - [ ] Stop the main keeper; the backup steps in
    - [ ] Cards and packs show on the testnet explorer with the right images and traits
@@ -82,9 +86,15 @@ Then your OK to merge to `main`: the live site switches from demo to the real co
 1. **Announce Omni Cards**: what they are, how packs, holo, grading and burning work, and that the first Series'
    theme, art style and characters come from the community. Real site link only.
 2. **Theme & art style week**: the suggestion box opens (1 PAPER each; theme and style in one transaction).
-   After the week: run the draw (10 per kind at random, seed published), you pick, results go up, winners get their
-   free pack.
-3. **Characters wave** for the picked theme and style, same way.
+   **When it opens, announce how the draw will be made** (`node ops/suggestions/draw.mjs --rpc <url> --plan --close
+   "<closing time>"` prints both): "the wave closes at block N; the draw's seed is drand quicknet round R" (a round
+   about an hour after the close). Entries mined after block N don't count, and nobody, you included, can know
+   round R's number before it comes out, so nobody can steer the shortlist.
+   After the week, once block N is final and round R is out: run the draw with `--to-block N --drand-round R` (10 per
+   kind; the file keeps the block, the round and drand's signature), you pick, results go up, winners get their free
+   pack. Anyone can re-run it with `draw.mjs --verify <file>`.
+3. **Characters wave** for the picked theme and style, same way (a new closing block and round, announced when it
+   opens).
 4. **Series 1**: build the art, upload, set up the drop, announce the date.
 
 ## Still open before the first drop

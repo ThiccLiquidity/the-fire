@@ -70,7 +70,7 @@ export async function buyPacks(p: { fire: number; n: number; pay: PayCoin; acces
   }
   const d = await read<{ paperPerPack: bigint }>("FireSale", saleAbi, "dropOf", [f]);
   const maxPaper = d.paperPerPack * n;
-  if (maxPaper > 0n) await approve(input("PAPER")!, sale, maxPaper, `Approve ${plural(p.n, "pack")}' PAPER`, o);
+  if (maxPaper > 0n) await approve(input("PAPER")!, sale, maxPaper, "Approve PAPER", o);
   const label = `Buy ${plural(p.n, "pack")}`;
   if (p.pay === "ETH") {
     const cost = await shown(q.cost, () => read<bigint>("FireSale", saleAbi, "quoteEth", [f, n]));

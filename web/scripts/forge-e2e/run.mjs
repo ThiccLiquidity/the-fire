@@ -155,7 +155,14 @@ try {
   await page.click('#sheet-table [data-key="openN-7"]');
   await page.waitForFunction(() => /draw/.test(document.querySelector("#sheet-table .op-wait .stage-msg")?.textContent || ""), null, { timeout: 60_000 });
   await shot("08-waiting-for-draw");
-  await ctx.warp(150); // past the draw and the keeper's head start (no keeper here: the page offers to deal, once)
+  await ctx.warp(150); // the draw is out (~90 s) and the keeper is about a minute late (there is none here)
+  await page.waitForFunction(() => /longer than usual/.test(document.querySelector("#sheet-table .op-wait .stage-msg")?.textContent || ""), null, { timeout: 60_000 });
+  check(!(await page.locator("#sheet-tx").isVisible().catch(() => false)) && !(await page.locator('#sheet-table [data-key="diy"]').count()), "keeper late: a calm line, no wallet request and no button yet");
+  await ctx.warp(90); // over two minutes late: the page offers, the buyer chooses
+  await page.locator('#sheet-table [data-key="diy"]').waitFor({ timeout: 60_000 });
+  check(/can't change what you get/.test(await page.locator("#sheet-table .stage-act small").textContent()), "the offer says in one line what it does");
+  await shot("08b-keeper-late");
+  await page.click('#sheet-table [data-key="diy"]');
   await page.locator("#sheet-table .op").waitFor({ timeout: 120_000 });
   await page.waitForTimeout(2500);
   await shot("09-reveal");
@@ -179,7 +186,9 @@ try {
   await page.click('#sheet-table .wz .foot .btn.primary'); // Pay
   await txDone();
   await page.waitForFunction(() => /grader/i.test(document.querySelector("#sheet-table .wz-work .stage-msg")?.textContent || ""), null, { timeout: 60_000 });
-  await ctx.warp(150);
+  await ctx.warp(240); // the keeper is late: the buyer chooses to reveal the grades themselves
+  await page.locator('#sheet-table [data-key="diy"]').waitFor({ timeout: 60_000 });
+  await page.click('#sheet-table [data-key="diy"]');
   await page.waitForFunction(() => /graded/.test(document.querySelector("#sheet-table .wz-work .stage-msg")?.textContent || ""), null, { timeout: 120_000 });
   await shot("12-graded");
   await sync();

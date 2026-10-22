@@ -553,10 +553,12 @@
   }
 
   // ---------- opening: open, wait for the draw (about 90 seconds), then the keeper delivers it and deals; reveal
-  // The keeper does the delivering and dealing. Only if it's late (KEEPER_WAIT after the draw is out) does the page
-  // offer to do it, once: one delivery for the opens up to the buyer's, one deal (writes.ts deliverAndDeal). Declined
-  // or not enough, the page just keeps waiting for the keeper; it never asks again on its own.
-  const KEEPER_WAIT = 45, POLL = 4000;
+  // The keeper does the delivering and dealing. Nothing reaches the wallet unless the buyer asks: if the keeper is
+  // late (LATE after the draw is out) the page says so calmly, and from OFFER on it shows a button to finish it
+  // themselves (one delivery for the opens up to theirs, one deal: writes.ts deliverAndDeal), used at most once.
+  const LATE = 45, OFFER = 120, POLL = 4000;
+  const SAFE = "Taking a little longer than usual. Your cards are safe.";
+  const DIY = "This finishes it yourself instead of waiting for us. It can't change what you get.";
   const sleep = (ms) => new Promise((k) => setTimeout(k, ms));
   async function openPacks(fire, n, say, alive) {
     await need();
@@ -566,20 +568,21 @@
     if (!r) return null;
     if (r.late || !(r.index >= 0)) { toast('Opened. Your cards land in My cards once dealt.'); return null; }
     say('Waiting for the draw. About 90 seconds…');
-    for (let tried = false; alive();) {
+    for (let asked = false, tried = false; alive();) {
       const op = await L.openStatus(fire, r.index).catch(() => null); // one open by its index: no log scan
       if (op?.status === 'cancelled') { toast('The draw never came. Your packs are back.', 'bad'); sync(); return null; }
       if (op?.status === 'dealt') break;
-      if (op?.roundAt && op.now >= op.roundAt) {
-        if (!tried) say('Dealing your cards…');
-        if (!tried && op.now >= op.roundAt + KEEPER_WAIT) { // the keeper is late: offer to do it, once
-          tried = true;
-          const d = await run('Deal your cards', (o) => L.deliverAndDeal({ fire, index: r.index }, o));
-          if (d?.reached) continue;
-          say('Still dealing. The keeper finishes it shortly; your cards land in My cards.');
-        }
+      if (asked && !tried) { // the buyer tapped "Deal them now"
+        tried = true;
+        const d = await run('Deal your cards', (o) => L.deliverAndDeal({ fire, index: r.index }, o));
+        if (d?.reached) continue;
+        say(`${SAFE} They land in My cards as soon as they're dealt.`);
+      } else if (op?.roundAt && op.now >= op.roundAt && !tried) {
+        const late = op.now - op.roundAt;
+        say(late < LATE ? 'Dealing your cards…' : SAFE,
+          late >= OFFER ? { label: 'Deal them now (small network fee)', note: DIY, fn: () => { asked = true; } } : undefined);
       }
-      await sleep(POLL);
+      await sleep(asked && !tried ? 50 : POLL);
     }
     if (!alive()) { toast('Your cards land in My cards once dealt'); return null; }
     say('Here they come…');
@@ -602,18 +605,19 @@
   async function finishGrading(index, ids, say, alive) {
     if (!(index >= 0)) return null;
     say('At the grader. About 90 seconds…');
-    for (let tried = false; alive();) {
+    for (let asked = false, tried = false; alive();) {
       const g = await L.gradingStatus(index).catch(() => null); // one grading by its index: no log scan
       if (g?.status === 'done') break;
-      if (g?.roundAt && g.now >= g.roundAt) {
-        if (!tried) say('Revealing the grades…');
-        if (!tried && g.now >= g.roundAt + KEEPER_WAIT) {
-          tried = true;
-          if (await run('Reveal the grades', (o) => L.deliverAndFinish({ index, ids }, o))) continue;
-          say('Still at the grader. The keeper finishes it shortly; the grades land in My cards.');
-        }
+      if (asked && !tried) { // the buyer tapped "Reveal them now"
+        tried = true;
+        if (await run('Reveal the grades', (o) => L.deliverAndFinish({ index, ids }, o))) continue;
+        say("Taking a little longer than usual. Your cards are safe; the grades land in My cards once revealed.");
+      } else if (g?.roundAt && g.now >= g.roundAt && !tried) {
+        const late = g.now - g.roundAt;
+        say(late < LATE ? 'Revealing the grades…' : SAFE,
+          late >= OFFER ? { label: 'Reveal them now (small network fee)', note: DIY, fn: () => { asked = true; } } : undefined);
       }
-      await sleep(POLL);
+      await sleep(asked && !tried ? 50 : POLL);
     }
     if (!alive()) return null;
     const cs = await Promise.all(ids.map((id) => L.card(id)));

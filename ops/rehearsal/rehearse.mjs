@@ -39,6 +39,8 @@ import { createKeeper } from "../keeper/src/core.mjs";
 import { loadConfig } from "../keeper/src/config.mjs";
 import { roundTime, DRAND_GENESIS } from "../keeper/src/drand.mjs";
 import { verifySeries, allImageNames, recipeFromJson, recipeHash } from "../series/verify-series.mjs";
+import { verifySnapshot } from "../snapshot/snapshot.mjs";
+import { buildTree } from "../snapshot/merkle.mjs";
 import { record } from "../deploy/record.mjs";
 import { routerAbi as keeperRouterAbi, twapAbi as keeperTwapAbi, cardsAbi as keeperCardsAbi, psaAbi as keeperPsaAbi, burnerAbi as keeperBurnerAbi, adapterAbi as keeperAdapterAbi } from "../keeper/src/abis.mjs";
 
@@ -60,6 +62,8 @@ const royalty = acct(2);
 const buyer1 = acct(3);
 const buyer2 = acct(4);
 const holder3 = acct(5);
+const holder7702 = acct(6); // an EIP-7702 delegated wallet (code 0xef0100 + an address): counts as a wallet
+const borrower = acct(7); // holds PLANK only at the snapshot's last block: doesn't count
 const keeperA = mnemonicToAccount(MNEMONIC, { addressIndex: 8, nonceManager });
 const keeperB = mnemonicToAccount(MNEMONIC, { addressIndex: 9, nonceManager });
 const FIRE = 7n;
@@ -299,6 +303,11 @@ async function main() {
     return k.tick();
   };
 
+  if (!FORK) {
+    // the snapshot's holders hold PLANK all through its window (the smallest holding over its blocks counts)
+    for (const [a, n] of [[buyer1, 100n], [buyer2, 500n], [holder3, 30n], [holder7702, 200n]]) await tx(deployer, dev.plank.address, dev.plank.abi, "mint", [a.address, n * 10n ** 9n * 10n ** 18n]);
+    await rpc("anvil_setCode", [holder7702.address, `0xef0100${MULTICALL3.slice(2).toLowerCase()}`]);
+  }
   step("31 minutes later: the keeper checkpoints PLANK/USD (first price) and records the PAPER pool as candidate");
   await warp(31 * 60);
   let r = await pass();
@@ -332,16 +341,21 @@ async function main() {
   check(getAddress(dealt[0]) === C.RecipeDealer, "batch A is on chain (FireCards' dealer for the Series is RecipeDealer)");
 
   // ---------------- snapshot
-  step("snapshot of PLANK holders ($69+) with ops/snapshot");
-  if (!FORK) {
-    for (const [a, n] of [[buyer1, 100n], [buyer2, 500n], [holder3, 30n]]) await tx(deployer, dev.plank.address, dev.plank.abi, "mint", [a.address, n * 10n ** 9n * 10n ** 18n]);
-  }
+  step("snapshot of PLANK holders ($69+) with ops/snapshot: the smallest holding over 5 blocks in the last 28 minutes");
+  if (!FORK) await tx(deployer, dev.plank.address, dev.plank.abi, "mint", [borrower.address, 1000n * 10n ** 9n * 10n ** 18n]); // a whale for the last block only
   const snapPath = resolve(OUT, `fire-${FIRE}-holders.json`);
-  execFileSync(process.execPath, [resolve(REPO, "ops/snapshot/snapshot.mjs"), "--min-usd", "69", "--out", snapPath], {
-    cwd: resolve(REPO, "ops/snapshot"), stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, RPC, PLANK: inputs.PLANK, PLANK_USD_FEED: C.PlankUsdTwap },
+  execFileSync(process.execPath, [resolve(REPO, "ops/snapshot/snapshot.mjs"), "--min-usd", "69", "--blocks", "5", "--days", "0.02", "--out", snapPath], {
+    cwd: resolve(REPO, "ops/snapshot"), stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, RPC, PLANK: inputs.PLANK, PLANK_USD_FEED: C.PlankUsdTwap, DEPLOYMENTS_FILE: DEP_FILE },
   });
   const snap = JSON.parse(readFileSync(snapPath, "utf8"));
-  check(FORK || snap.count === 2, `snapshot: ${snap.count} wallets qualify, root ${snap.root}`);
+  const inSnap = (a) => snap.holders.some((h) => h.wallet === a.address);
+  check(FORK || (snap.count === 3 && inSnap(holder7702) && !inSnap(borrower) && !inSnap(holder3)),
+    `snapshot: ${snap.count} wallets qualify (the EIP-7702 wallet in; the last-block whale and the $30 holder out) over blocks ${snap.blocks.join(", ")}, root ${snap.root}`);
+  const tampered = structuredClone(snap);
+  tampered.holders.push({ wallet: holder3.address, plank: "30000000000000000000000000000" });
+  Object.assign(tampered, buildTree(tampered.holders.map((h) => h.wallet)), { count: tampered.holders.length });
+  const vt = await verifySnapshot({ client: pub, snap: tampered });
+  check(!vt.ok && vt.problems.some((p) => p.includes(holder3.address)), `snapshot verify: a wallet added by hand is RED (${vt.problems[0]})`);
 
   // ---------------- VerifySeries
   const names = allImageNames(recipeFromJson(recipe), recipe.characters.length);
@@ -349,7 +363,7 @@ async function main() {
   const gwA2 = await gatewayServer({ manifest });
   const verify = (gateways) => verifySeries({
     client: pub, recipe, deploymentsFile: DEP_FILE, gateways, snapshotPath: snapPath, holderRoot: snap.root, concurrency: 32,
-    log: (l) => { if (!/^OK/.test(l) || /images load|imageName|manifest/.test(l)) console.log(`    ${l}`); },
+    log: (l) => { if (!/^OK/.test(l) || /images load|imageName|manifest|snapshot|sale:|FireSale\./.test(l)) console.log(`    ${l}`); },
   });
   step("VerifySeries with one image missing on one gateway (expect RED)");
   let v = await verify([gwA2.url, gwB.url]);
@@ -511,13 +525,15 @@ async function main() {
     r = await pass(backup2, "backup pass");
     check(r.sent.some((x) => /^checkpoint/.test(x)), `the backup checkpointed (sent: ${r.sent.map((x) => x.split(" ")[0]).join(", ")})`);
     check(hook.posts.some((p) => /had to step in/.test(p)), "the webhook heard that the backup stepped in");
-    step("the owner pauses FireSale and switches FirePsa's randomness back: the keeper posts both");
+    step("the owner pauses FireSale, switches FirePsa's randomness back and sets FireSale's wallets: the keeper posts all three");
     await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setPaused", args: [true] }));
+    await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setWallets", args: [revenue.address, C.PlankBurner, C.PaperBurner] }));
     await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [C.PsaAdapter] }));
     step("the main keeper is back: PAPER pool adopted");
     r = await pass();
     check(hook.posts.some((p) => /FireSale is PAUSED/.test(p)), "the pause reached the webhook");
     check(hook.posts.some((p) => /FirePsa's randomness source was SWITCHED/.test(p)), "the randomness switch reached the webhook");
+    check(hook.posts.filter((p) => new RegExp(`FireSale's wallets were CHANGED by the owner \\(WalletsSet\\): revenue ${revenue.address}`).test(p)).length === 1, "FireSale's WalletsSet reached the webhook, once");
     await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setPaused", args: [false] }));
     step("another 20 hours: the PAPER feed reports its first price; the keeper flushes PaperBurner");
     await warp(20 * 3600);

@@ -10,7 +10,7 @@
     "record": "node deploy/record.mjs",
     "launch": "node series/launch.mjs",
     "test:launch": "node series/launch-e2e.mjs",
-    "test": "node --test series/*.test.mjs deploy/*.test.mjs suggestions/*.test.mjs"
+    "test": "node --test series/*.test.mjs deploy/*.test.mjs suggestions/*.test.mjs snapshot/*.test.mjs"
   },
-  "dependencies": { "viem": "^2.56.9" }
+  "dependencies": { "@noble/curves": "~1.9.1", "viem": "^2.56.9" }
 }

@@ -448,3 +448,31 @@ test("gradings: one-pass runs read the window only; no backlog alert", async () 
   assert.deepEqual(await k.jobs.gradingsWaiting(true), []);
   assert.equal(k.jobs.behindAlert(), undefined);
 });
+
+test("sale settings: each WalletsSet / FeedsSet from FireSale is one event with the new addresses; the first pass only starts watching", async () => {
+  const logs = [];
+  const asked = [];
+  const chain = fakeChain({ reads: {} });
+  chain.pub.getLogs = async ({ address, fromBlock, toBlock }) => { asked.push([address, fromBlock, toBlock]); return logs.filter((l) => l.blockNumber >= fromBlock && l.blockNumber <= toBlock); };
+  const k = keeperOn(chain);
+  logs.push({ eventName: "WalletsSet", blockNumber: 90n, transactionHash: "0xold", logIndex: 0, args: { revenue: A(0xe1), plankBurner: CON.plankBurner, paperBurner: CON.paperBurner } });
+  assert.deepEqual(await k.jobs.saleSettings(100n), [], "the first pass starts at the next block (the deploy's own WalletsSet isn't replayed)");
+  assert.equal(asked.length, 0);
+  logs.push({ eventName: "WalletsSet", blockNumber: 101n, transactionHash: "0xa", logIndex: 3, args: { revenue: A(0xe2), plankBurner: A(0xe3), paperBurner: CON.paperBurner } });
+  logs.push({ eventName: "FeedsSet", blockNumber: 102n, transactionHash: "0xb", logIndex: 0, args: { ethUsd: ETH_FEED, plankUsd: CON.plankTwap, paperUsd: A(0xe4), router: A(0xe5) } });
+  const ev = await k.jobs.saleSettings(102n);
+  assert.deepEqual(asked.at(-1), [SALE, 101n, 102n]);
+  assert.equal(ev.length, 2);
+  assert.equal(ev[0].key, "sale:WalletsSet:0xa:3");
+  assert.match(ev[0].text, new RegExp(`wallets were CHANGED.*revenue ${A(0xe2)}, PlankBurner ${A(0xe3)} \\(NOT the deployed PlankBurner ${CON.plankBurner}\\), PaperBurner ${CON.paperBurner} \\(`));
+  assert.match(ev[1].text, new RegExp(`price feeds were CHANGED.*PAPER/USD ${A(0xe4)} \\(NOT the deployed PaperUsdTwap.*router ${A(0xe5)}`));
+  assert.deepEqual(await k.jobs.saleSettings(102n), [], "each event once");
+  assert.deepEqual(await k.jobs.saleSettings(103n), []);
+  assert.deepEqual(asked.at(-1), [SALE, 103n, 103n]);
+  chain.pub.getLogs = async () => { throw new Error("rpc down"); };
+  await assert.rejects(k.jobs.saleSettings(104n));
+  chain.pub.getLogs = async ({ fromBlock }) => { asked.push(["retry", fromBlock]); return []; };
+  await k.jobs.saleSettings(105n);
+  assert.deepEqual(asked.at(-1), ["retry", 104n], "a failed read is retried from the same block");
+  assert.deepEqual(await keeperOn(chain, { optional: {} }).jobs.saleSettings(100n), [], "no FireSale known: nothing");
+});

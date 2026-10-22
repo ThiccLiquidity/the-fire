@@ -69,7 +69,9 @@ while it lasts, and "resolved" when it clears:
 - **drand lag:** no relay answers, or drand is 20+ rounds (60 s) behind the clock; the chain's clock off real time by
   2+ min.
 - **The owner's switches:** FireSale or FirePsa paused (posted once, and when it ends); FireCards' or FirePsa's
-  randomness source switched (posted when it happens).
+  randomness source switched (posted when it happens); FireSale's wallets or price feeds changed (`WalletsSet`,
+  `FeedsSet`: posted once per event with the new addresses, and whether a burner or feed isn't the deployed one).
+  The always-on keepers watch these from their start; a one-pass run (`ONCE`) doesn't.
 - **Low keeper ETH:** under 0.002 ETH (`LOW_BALANCE_ETH`). Keep about 0.005-0.01 ETH in each keeper wallet.
 - **The keeper itself:** a job failing, a transaction in flight 15+ min, the backup having to step in, and a keeper that
   can't start (bad settings, wrong chain, no RPC answering): it posts why before it exits, and fails its heartbeat check.
@@ -181,7 +183,8 @@ Remove-Item Env:KEEPER_PRIVATE_KEY, Env:ONCE
   window), the heartbeat (alive whatever the alerts, failing only on a failed pass), config (roles, production
   requirements, thresholds) and key handling, start-up nonce-gap replacement, and against a stand-in chain: burner
   flush minimums (dust, the rate limit, large balances, the long wait, the PaperBurner flusher check, the backup's
-  grace), unsold drops (the owner's alert, the keeper's `endDrop`, the backup's grace) and the grading sweep.
+  grace), unsold drops (the owner's alert, the keeper's `endDrop`, the backup's grace), the grading sweep and FireSale's
+  `WalletsSet` / `FeedsSet` events.
 - The whole keeper runs end to end in the rehearsal (`ops/rehearsal`, see `docs/deploy.md`): on a local anvil chain it
   checkpoints, delivers a real drand signature through the real router, deals, finishes a grading from its
   `Protected` event, flushes both burners, races the main keeper against the backup with automine off, lets the

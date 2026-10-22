@@ -10,7 +10,12 @@
 //     a gateway missing some is a warning as long as each image still loads from two others. Each gateway gets its
 //     own few connections at a time, and a 429 (or 503) slows that gateway down for its Retry-After
 //   - the images folder's manifest.json (written by the studio) lists them all and names this recipe
-//   - with --snapshot, the holder Merkle root recomputed from the snapshot file equals the one batch B will set
+//   - with --snapshot, the holder Merkle root recomputed from the snapshot file equals the one batch B will set, and
+//     the snapshot rebuilt from the chain at its saved blocks (ops/snapshot verify) gives the same wallets, amounts and
+//     root: a wallet added or changed by hand is RED (needs an RPC that serves those blocks: an archive node)
+//   - the sale block against the sale policy (sale-policy.mjs: price $1-$10, burns 10-100% with PAPER at least 10%,
+//     PAPER per pack at least 0.1, a PAPER cap of $0.10 or more, wallet limit 50 at most, a holder window with a root),
+//     each RED unless --allow <rule>; and FireSale's revenue wallet and burners are the deployments file's
 // It prints one line per check and GREEN or RED. Only sign batch B when it's GREEN.
 //
 //   cd ops; npm install
@@ -20,13 +25,15 @@
 // Options: --gateways <url>,<url> (default ipfs.io, dweb.link, Pinata's and Filebase's public gateways; each URL is
 //   followed by <CID>/<file>), --holder-root 0x... (else HOLDER_ROOT, else the JSON's sale.holderRoot),
 //   --sample N (check only N random images: a quick look, never GREEN), --concurrency 6 (per gateway),
-//   --min-gateways 2, --report out.json.
+//   --min-gateways 2, --report out.json, --allow <rule>,<rule> (sale policy exceptions), --no-holders (a presses-only
+//   holder window on purpose).
 // Addresses come from deployments/<chainId>.json (DEPLOYMENTS_FILE to use another file).
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createPublicClient, http, getAddress } from "viem";
+import { salePolicy, saleWallets, parseAllow } from "./sale-policy.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(here, "../..");
@@ -148,7 +155,8 @@ async function pool(items, n, fn) {
 
 /**
  * Runs every check. Returns { green, lines, problems }. `log` gets each line as it's decided.
- * opts: { rpc | client, recipePath | recipe, deployments, gateways, snapshotPath, holderRoot, sample, concurrency, fetchFn, log }
+ * opts: { rpc | client, recipePath | recipe, deployments, gateways, snapshotPath, holderRoot, noHolders, allow, sample,
+ *   concurrency, fetchFn, log, snapshotChain (false: skip rebuilding the snapshot from the chain) }
  */
 export async function verifySeries(opts) {
   const log = opts.log ?? console.log;
@@ -164,7 +172,8 @@ export async function verifySeries(opts) {
   const chainId = await client.getChainId();
   const depPath = opts.deploymentsFile ?? process.env.DEPLOYMENTS_FILE ?? resolve(REPO, "deployments", `${chainId}.json`);
   if (!existsSync(depPath)) throw new Error(`no deployments file ${depPath}`);
-  const dep = JSON.parse(readFileSync(depPath, "utf8")).contracts ?? {};
+  const depFile = JSON.parse(readFileSync(depPath, "utf8"));
+  const dep = depFile.contracts ?? {};
   const A = (n) => { if (!dep[n]) throw new Error(`${n} missing from ${depPath}`); return getAddress(dep[n]); };
   const [dealer, cards, psa, renderer, packs, sale] = ["RecipeDealer", "FireCards", "FirePsa", "CardsRenderer", "FirePacks", "FireSale"].map(A);
   const read = (address, abi_, functionName, args = []) => client.readContract({ address, abi: abi_, functionName, args });
@@ -299,7 +308,35 @@ export async function verifySeries(opts) {
     ok(!!root && again === root, `the holder root batch B sets (${root ?? "none"}) is the snapshot's`);
     const drop = await read(sale, saleAbi, "dropOf", [fire]);
     if (drop.start !== 0n) ok(drop.holderRoot.toLowerCase() === again, "the configured drop's holderRoot is the snapshot's");
+    // rebuilt from the chain at the snapshot's own blocks: catches a wallet or amount edited into the file
+    if (opts.snapshotChain !== false) {
+      const { verifySnapshot } = await import(pathToFileURL(resolve(REPO, "ops/snapshot/snapshot.mjs")).href);
+      const inp = depFile.inputs ?? {};
+      if (inp.PLANK) ok(!!snap.plank && getAddress(snap.plank) === getAddress(inp.PLANK), `the snapshot is of PLANK ${inp.PLANK}`);
+      try {
+        const v = await verifySnapshot({ client, snap, discover: { pair: inp.PLANK_WETH_V2_PAIR, factory: inp.UNIV2_FACTORY, quotes: [inp.WETH, inp.USDG, inp.PAPER] } });
+        for (const p of v.problems.slice(0, 5)) ok(false, `snapshot: ${p}`);
+        ok(v.ok, `the snapshot rebuilt from the chain at its ${snap.blocks?.length ?? 0} saved blocks matches the file${v.ok ? ` (${v.count} wallets, root ${v.root})` : ` (${v.problems.length} difference(s))`}`);
+      } catch (e) {
+        ok(false, `the snapshot couldn't be rebuilt from the chain: ${e?.shortMessage ?? e?.message ?? e}`);
+      }
+    }
   } else if (root && BigInt(root) !== 0n) info(`holder root ${root} not checked (no --snapshot)`);
+
+  // ---- sale settings: the policy, and where the money goes
+  const allow = opts.allow instanceof Set ? opts.allow : parseAllow(opts.allow);
+  if (!json.sale) ok(false, "recipe.json has a sale block");
+  else {
+    for (const p of salePolicy(json.sale, { allow, holderRoot: root, noHolders: opts.noHolders })) {
+      if (p.level === "warn") warn(`sale: ${p.text}`);
+      else ok(p.level !== "red", `sale: ${p.text}`);
+    }
+  }
+  const dropNow = await read(sale, saleAbi, "dropOf", [fire]);
+  if (dropNow.start !== 0n) {
+    for (const p of salePolicy(dropNow, { allow, noHolders: opts.noHolders })) if (p.level === "red") ok(false, `the configured drop on chain: ${p.text}`);
+  }
+  for (const w of await saleWallets(read, sale, depFile)) ok(w.ok, w.text);
 
   const green = problems.length === 0;
   const verdict = green
@@ -316,7 +353,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   process.argv.slice(2).forEach((a, i, all) => { if (a.startsWith("--")) args[a.slice(2)] = all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true; });
   const rpc = process.env.RPC ?? process.env.RPC_URL;
   if (!rpc || !args.recipe) {
-    console.error("usage: RPC=... node series/verify-series.mjs --recipe recipe.json [--snapshot holders.json] [--holder-root 0x..] [--gateways a,b] [--min-gateways 2] [--concurrency 6] [--sample N] [--report out.json]");
+    console.error("usage: RPC=... node series/verify-series.mjs --recipe recipe.json [--snapshot holders.json] [--holder-root 0x..] [--gateways a,b] [--min-gateways 2] [--concurrency 6] [--sample N] [--report out.json] [--allow rule,rule] [--no-holders]");
     process.exit(2);
   }
   try {
@@ -326,6 +363,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       gateways: typeof args.gateways === "string" ? args.gateways.split(",").map((s) => s.trim()) : undefined,
       sample: args.sample ? Number(args.sample) : undefined, concurrency: args.concurrency ? Number(args.concurrency) : undefined,
       minGateways: args["min-gateways"] ? Number(args["min-gateways"]) : undefined,
+      allow: typeof args.allow === "string" ? args.allow : undefined, noHolders: !!args["no-holders"],
     });
     if (typeof args.report === "string") writeFileSync(args.report, JSON.stringify(r, null, 2));
     process.exit(r.green ? 0 : 1);

@@ -13,10 +13,14 @@
 // (FireCredits.pickSuggestions(series, [theme, style and character ids]): the free packs are given then). The theme and
 // the art style are announced before that, straight after the look wave, with --picks (the ids you chose from the
 // shortlist). After the on-chain pick, publish again with --rpc: it reads the picks from FireCredits' SuggestionPicked
-// events and fills in the pick transaction for every wave of that Series already in the file. Every pick must be in
-// the shortlist. Publishing the same Series and wave again replaces that entry. Then sync and deploy the site
-// (web/art/factory/sync_forge.sh).
+// events and fills in the pick transaction for every wave of that Series already in the file. A pick announced with
+// --picks must be in the shortlist. An on-chain pick of this wave's kinds that isn't on the shortlist is printed as a
+// loud WARNING and still published, marked offList (the site shows what the chain did). Publishing the same Series
+// and wave again replaces that entry. The draw's closing block, drand round and signature go into the results file, so
+// anyone can re-run it (draw.mjs --verify). A test draw (draw.mjs --seed) is refused unless --allow-test-draw. Then
+// sync and deploy the site (web/art/factory/sync_forge.sh).
 import { createPublicClient, http, parseAbiItem, getAddress } from 'viem'
+import { kindOf } from './draw.mjs'
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -25,8 +29,9 @@ export const KIND_LABEL = { theme: 'Theme', style: 'Art style', character: 'Char
 const WAVE_OF = { look: 'look', theme: 'look', style: 'look', character: 'characters' }
 
 /** One wave's results from a draw file (draw.mjs) and the picks: [{ id, by?, tx? }]. Throws if a pick isn't in the
- *  shortlist. `series`: the Series the wave decides. */
-export function buildResults(draw, picks, { series, next = '', publishedAt = new Date().toISOString() } = {}) {
+ *  shortlist. `offList`: on-chain picks of this wave's kinds that aren't on the shortlist ([{ id, kind, by, title, text,
+ *  tx }]): published as winners marked offList. `series`: the Series the wave decides. */
+export function buildResults(draw, picks, { series, next = '', publishedAt = new Date().toISOString(), offList = [] } = {}) {
   if (!Number.isInteger(series) || series < 1) throw new Error('--series: the Series this wave decides (a whole number)')
   const kinds = Object.keys(draw.shortlists ?? {})
   if (!kinds.length) throw new Error('The draw file has no shortlists')
@@ -37,6 +42,9 @@ export function buildResults(draw, picks, { series, next = '', publishedAt = new
   const out = {
     series, wave: WAVE_OF[draw.kind ?? kinds[0]] ?? 'look', round: draw.round, chainId: draw.chainId, credits: draw.credits,
     seed: draw.seed, drawnAt: draw.at, publishedAt, next, suggestions: draw.suggestions ?? null,
+    fromBlock: draw.fromBlock ?? null, toBlock: draw.toBlock ?? null, toBlockHash: draw.toBlockHash ?? null,
+    drand: draw.drand ? { chain: draw.drand.chain, round: draw.drand.round, randomness: draw.drand.randomness, signature: draw.drand.signature } : null,
+    ...(draw.test ? { test: true } : {}),
     kinds: kinds.map((kind) => ({
       kind, label: KIND_LABEL[kind] ?? kind, pool: draw.pools?.[kind] ?? null,
       shortlist: draw.shortlists[kind].map((s) => ({
@@ -48,6 +56,24 @@ export function buildResults(draw, picks, { series, next = '', publishedAt = new
   for (const k of out.kinds) for (const s of k.shortlist) if (s.picked) {
     const p = byId.get(s.id)
     out.winners.push({ kind: k.kind, id: s.id, by: s.by, title: s.title, text: s.text, tx: p.tx ?? null })
+  }
+  for (const o of offList) {
+    out.winners.push({ kind: o.kind, id: Number(o.id), by: o.by, title: o.title ?? null, text: o.text ?? null, tx: o.tx ?? null, offList: true })
+  }
+  if (offList.length) out.offList = offList.map((o) => Number(o.id))
+  return out
+}
+
+/** On-chain picks not on the shortlist that are of this draw's kinds (`text`: id -> its Suggested text; a pick whose
+ *  text wasn't found counts as this wave's, to be safe). Picks of the other wave's kinds are that wave's. */
+export function offListPicks(draw, rest, text) {
+  const kinds = new Set(Object.keys(draw.shortlists ?? {}))
+  const out = []
+  for (const x of rest) {
+    const t = text.get(Number(x.id))
+    const k = t === undefined ? null : kindOf(t)
+    if (k && !kinds.has(k.kind)) continue
+    out.push({ id: Number(x.id), kind: k?.kind ?? [...kinds][0], by: x.by, title: k?.title ?? null, text: t ?? null, tx: x.tx })
   }
   return out
 }
@@ -74,8 +100,10 @@ async function main() {
   }, []))
   if (!args.draw) throw new Error('Give --draw <the file draw.mjs saved>')
   const draw = JSON.parse(readFileSync(args.draw, 'utf8'))
+  if (draw.test && !args['allow-test-draw']) throw new Error(`${args.draw} is a TEST draw (draw.mjs --seed), not a real one. Draw again with --to-block (and the announced drand round), or --allow-test-draw for a test site.`)
+  if (!draw.test && !draw.drand) console.warn('WARNING: this draw has no drand round and closing block (made before they were required): nobody can check it was fair.')
   const series = Number(args.series)
-  let picks, onChain = null
+  let picks, onChain = null, offList = []
   if (args.picks && args.picks !== 'true') picks = args.picks.split(',').map((x) => ({ id: Number(x.trim().replace(/^#/, '')) }))
   else {
     const rpc = args.rpc ?? process.env.RPC
@@ -85,11 +113,24 @@ async function main() {
     const logs = await client.getLogs({ address: draw.credits, event: ev, args: { fire: BigInt(series) }, fromBlock: BigInt(args['from-block'] ?? 0), toBlock: 'latest' })
     onChain = logs.map((l) => ({ id: Number(l.args.id), by: getAddress(l.args.by), tx: l.transactionHash }))
     if (!onChain.length) throw new Error(`No picks on chain for Series ${series} yet (FireCredits.pickSuggestions, at its drop setup). Use --picks to announce them first.`)
-    // one on-chain pick covers both waves: this wave's are the ones in its shortlists
+    // one on-chain pick covers both waves: this wave's are the ones in its shortlists, and any other pick of this
+    // wave's kinds (read from its Suggested event) was picked from outside the shortlist
     const listed = new Set(Object.values(draw.shortlists ?? {}).flat().map((x) => Number(x.id)))
     picks = onChain.filter((x) => listed.has(x.id))
+    const rest = onChain.filter((x) => !listed.has(x.id))
+    if (rest.length) {
+      const sug = parseAbiItem('event Suggested(uint256 indexed id, address indexed by, uint32 indexed round, string text)')
+      const logs = await client.getLogs({ address: draw.credits, event: sug, args: { id: rest.map((x) => BigInt(x.id)) }, fromBlock: BigInt(args['from-block'] ?? 0), toBlock: 'latest' })
+      const text = new Map(logs.map((l) => [Number(l.args.id), l.args.text]))
+      offList = offListPicks(draw, rest, text)
+      if (offList.length) {
+        console.warn(`\n*** WARNING: ${offList.length} on-chain pick(s) of this wave are NOT on the drawn shortlist:`)
+        for (const o of offList) console.warn(`***   #${o.id} (${KIND_LABEL[o.kind] ?? o.kind}) by ${o.by}: ${o.title ?? '(text not found)'}  tx ${o.tx}`)
+        console.warn('*** They are published anyway, marked offList: the site shows what was picked on chain.\n')
+      }
+    }
   }
-  const entry = buildResults(draw, picks, { series, next: args.next && args.next !== 'true' ? args.next : '' })
+  const entry = buildResults(draw, picks, { series, next: args.next && args.next !== 'true' ? args.next : '', offList })
   const out = args.out ?? new URL('../../web/art/factory/forge/suggestions/results.json', import.meta.url).pathname
   const file = existsSync(out) ? JSON.parse(readFileSync(out, 'utf8')) : null
   const merged = mergeResults(file, entry)

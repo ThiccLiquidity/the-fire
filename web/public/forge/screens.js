@@ -41,6 +41,14 @@
     return true;
   }
   const btn = (label, cls, onclick, extra = {}) => h('button', { type: 'button', class: 'btn ' + (cls || ''), onclick, ...extra }, label);
+  /** A live wait's status line, with an optional action the buyer can choose (never pressed for them): a button and
+   *  one plain line saying what it does. The same text and action again doesn't redraw (a poll repeats it). */
+  const sayTo = (el, text, a) => {
+    const key = text + '|' + (a?.label || '');
+    if (el.dataset.key === key) return;
+    el.dataset.key = key; el.textContent = text;
+    if (a) el.append(h('span', { class: 'stage-act' }, btn(a.label, 'small', () => { el.querySelector('.stage-act')?.remove(); a.fn(); }, { 'data-key': 'diy' }), h('small', { text: a.note })));
+  };
   const paper = () => S().wallet.balances.PAPER;
   const connected = () => S().wallet.connected;
   const connectBtn = () => btn('Connect wallet', 'primary', () => {
@@ -402,7 +410,7 @@
       const msg = h('p', { class: 'stage-msg', 'aria-live': 'polite', text: 'Opening…' });
       packsEl.hidden = true; stage.hidden = false; if (view === 'open') coll.hidden = true;
       put(stage, h('div', { class: 'op-wait' }, h('img', { src: 'a/pack.webp', alt: '', width: 240, height: 336 }), msg));
-      const got = await Live.openPacks(series, n, (t) => { msg.textContent = t; }, () => root.isConnected);
+      const got = await Live.openPacks(series, n, (t, a) => sayTo(msg, t, a), () => root.isConnected);
       if (!got?.length) { busy = false; stage.hidden = true; put(stage); packsEl.hidden = view === 'open'; coll.hidden = false; render(); return; }
       const per = S().series.cardsPerPack || 6, packs = [];
       for (let i = 0; i < got.length; i += per) packs.push(got.slice(i, i + per).sort((a, b) => rarity(a) - rarity(b))); // rarest last
@@ -1044,7 +1052,7 @@
       if (gradeTiles.length) {
         msg.textContent = 'At the grader…';
         gradeTiles.forEach((w) => w.classList.add('scanning'));
-        const liveGrades = LIVE ? await Live.finishGrading(gIndex, g, (t) => { msg.textContent = t; }, () => host.isConnected) : null;
+        const liveGrades = LIVE ? await Live.finishGrading(gIndex, g, (t, a) => sayTo(msg, t, a), () => host.isConnected) : null;
         if (LIVE && !liveGrades) { msg.textContent = 'Grades land in My cards once revealed.'; return finish(cs, [], msg, ctrls); }
         await wait(reduced() ? 300 : 1600);
         for (const w of gradeTiles) {

@@ -22,6 +22,11 @@
 //   --no-holders         the holder window lets only presses in (no snapshot); NO_HOLDERS=true for batch B
 //   --new-snapshot       take a new snapshot even if one was taken for this Series already
 //   --min-usd 69         the snapshot's minimum PLANK holding
+//   --snapshot-blocks 5 --snapshot-days 7   the snapshot takes each wallet's smallest holding over that many blocks
+//                        in that many days (ops/snapshot)
+//   --allow <rule>,...   sale settings outside the policy that are meant (ops/series/sale-policy.mjs: price,
+//                        burn-total, paper-burn, paper-per-pack, no-paper, paper-cap, wallet-limit, holder-window);
+//                        anything else outside it stops the launch before batch A and again before LOCK
 //   --gateways a,b       IPFS gateways for VerifySeries and the pack art check (default VerifySeries' list)
 //   --verify-tries 4 --verify-wait 90   VerifySeries retries (seconds between) while images don't load yet
 //   --key-env <VAR>      testnet/anvil only: sign with the private key in env var VAR instead of the Ledger (never
@@ -39,6 +44,7 @@ import { createInterface } from "node:readline/promises";
 import { createPublicClient, http, getAddress, keccak256, zeroHash, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { verifySeries, recipeFromJson, DEFAULT_GATEWAYS } from "./verify-series.mjs";
+import { salePolicy, saleWallets, parseAllow, describeSale } from "./sale-policy.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(here, "../..");
@@ -115,11 +121,18 @@ export async function batchADiffs(read, json, C) {
   return diffs;
 }
 
-/** The drop on chain against what batch B was meant to set. Returns the differences. */
+/** Every FireSale.DropConfig number (the recipe's sale block). */
+export const DROP_FIELDS = ["start", "packs", "starters", "plankOnly", "walletLimit", "starterWindow", "liftAfter", "plankBurnBps", "paperBurnBps",
+  "priceUsd", "paperPerPack", "paperCapUsd", "holderWindow", "maxPerTx", "plankOnlyFor", "regularWalletsFor", "starterPerPress",
+  "starterWalletLimit", "starterPriceUsd", "starterPaper", "creditsPerPick", "creditPacksMax", "creditPacksPerWallet"];
+
+/** The drop on chain against what batch B was meant to set (every field given in `want`). Returns the differences. */
 export function dropDiffs(drop, want) {
   const d = [];
-  for (const k of ["start", "packs", "starters", "priceUsd", "paperPerPack", "holderWindow"]) {
-    if (want[k] !== undefined && BigInt(drop[k]) !== BigInt(want[k])) d.push(`${k} ${drop[k]} (meant ${want[k]})`);
+  for (const k of DROP_FIELDS) {
+    if (want[k] === undefined || drop[k] === undefined) continue;
+    const meant = k === "maxPerTx" && BigInt(want[k]) === 0n ? 50n : BigInt(want[k]); // FireSale stores 0 as its default, 50
+    if (BigInt(drop[k]) !== meant) d.push(`${k} ${drop[k]} (meant ${meant})`);
   }
   if (want.holderRoot !== undefined && drop.holderRoot.toLowerCase() !== want.holderRoot.toLowerCase()) d.push(`holderRoot ${drop.holderRoot} (meant ${want.holderRoot})`);
   return d;
@@ -361,10 +374,28 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
       ok(`Sale opens ${showTime(start)} (unix ${start}).`);
     }
 
-    // ---------------------------------------------------------------- 1. holder snapshot
-    head(1, "Holder snapshot");
+    // sale settings: the policy and the wallets, before anything is sent (and again before LOCK)
     const holderWindow = Number(json.sale.holderWindow ?? 0);
     const noHolders = !!args["no-holders"];
+    let allow;
+    try { allow = parseAllow(args.allow); } catch (e) { stop(e.message); }
+    const saleGate = async (root_) => {
+      const pol = salePolicy(json.sale, { allow, holderRoot: root_, noHolders });
+      const wallets = await saleWallets(read, C.FireSale, dep);
+      for (const p of pol) if (p.level === "warn") warn(`Sale: ${p.text}.`);
+      for (const p of pol) if (p.level === "allowed") warn(`Sale: ${p.text}.`);
+      const red = [...pol.filter((p) => p.level === "red").map((p) => p.text), ...wallets.filter((w) => !w.ok).map((w) => w.text)];
+      if (red.length) stop(`The sale settings are outside the policy or the wallets are wrong: ${red.join("; ")}. Fix the recipe's sale block (or the wallets) and run again.`);
+      return wallets;
+    };
+    if (!launched) {
+      // the snapshot (step 1) gives the root; a presses-only window needs --no-holders
+      const w = await saleGate(holderWindow > 0 && !noHolders ? "0x01" : undefined);
+      ok(`Sale settings inside the policy; revenue wallet and burners are the deployments file's (${w.length} checked).`);
+    }
+
+    // ---------------------------------------------------------------- 1. holder snapshot
+    head(1, "Holder snapshot");
     let root = zeroHash;
     let snapPath;
     if (launched) {
@@ -385,13 +416,15 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
       } else {
         note("Taking the PLANK-holder snapshot (a few minutes on mainnet)...");
         const minUsd = String(args["min-usd"] ?? 69);
-        const r = await run(process.execPath, [resolve(REPO, "ops/snapshot/snapshot.mjs"), "--min-usd", minUsd, "--out", snapPath], {
+        const extra = [];
+        for (const k of ["blocks", "days"]) if (typeof args[`snapshot-${k}`] === "string") extra.push(`--${k}`, args[`snapshot-${k}`]);
+        const r = await run(process.execPath, [resolve(REPO, "ops/snapshot/snapshot.mjs"), "--min-usd", minUsd, "--out", snapPath, ...extra], {
           cwd: resolve(REPO, "ops/snapshot"), env: { ...env, RPC: rpc, DEPLOYMENTS_FILE: depFile },
         }, (t) => toLog(t.split(rpc).join("<RPC>")));
         if (r.code !== 0) stop(`The snapshot failed: ${lastError(r.out)}`);
         const snap = JSON.parse(readFileSync(snapPath, "utf8"));
         root = snap.root;
-        state.steps.snapshot = { file: relative(REPO, snapPath).split(sep).join("/"), root, count: snap.count, block: snap.block, at: new Date().toISOString() };
+        state.steps.snapshot = { file: relative(REPO, snapPath).split(sep).join("/"), root, count: snap.count, block: snap.block, blocks: snap.blocks, at: new Date().toISOString() };
         save();
         ok(`${snap.count} wallets hold $${minUsd}+ of PLANK. Root ${root}. Saved ${show(snapPath)}.`);
       }
@@ -457,7 +490,7 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
         try {
           v = await verifySeries({
             client, recipe: json, deploymentsFile: depFile, gateways, snapshotPath: snapPath, holderRoot: root === zeroHash ? undefined : root,
-            log: (l) => toLog(`verify: ${l}`),
+            allow, noHolders, log: (l) => toLog(`verify: ${l}`),
           });
         } catch (e) {
           v = { green: false, problems: [`VerifySeries couldn't run: ${e?.shortMessage ?? e?.message ?? e}`], warnings: [], retry: true };
@@ -482,9 +515,11 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
     const sale = json.sale;
     if (!launched) {
       head(5, "Confirm");
-      note(`Series ${N}: ${sale.packs} paid packs + ${sale.starters} press packs, ${usd8(sale.priceUsd)} a pack${BigInt(sale.paperPerPack) > 0n ? ` + ${Number(BigInt(sale.paperPerPack)) / 1e18} PAPER` : ""}.`);
-      note(`Opens ${showTime(start)}.`);
-      note(holderWindow === 0 ? "No holder window." : noHolders ? `Holder window ${holderWindow / 3600} h: presses only (no snapshot).` : `Holder window ${holderWindow / 3600} h, holder root ${root}.`);
+      // the policy and the wallets again, read fresh (the owner could have changed a wallet since)
+      const wallets = await saleGate(root === zeroHash ? undefined : root);
+      note(`Series ${N}, every sale setting:`);
+      for (const l of describeSale(sale, { start: showTime(start), holderRoot: root === zeroHash ? undefined : root, noHolders })) note(`  ${l}`);
+      for (const w of wallets) note(`  ${w.text}`);
       const now1 = await chainNow();
       const wall1 = BigInt(Math.floor(Date.now() / 1000));
       if (start <= (now1 > wall1 ? now1 : wall1) + 120n) stop("The start is less than 2 minutes away now. Run again with a later --start.");
@@ -510,10 +545,7 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
       }
       drop = await read(C.FireSale, ABI.sale, "dropOf", [fire]);
     }
-    const want = {
-      start: state.start ?? start, packs: sale.packs, starters: sale.starters, priceUsd: sale.priceUsd, paperPerPack: sale.paperPerPack,
-      holderWindow: sale.holderWindow, holderRoot: state.holderRoot,
-    };
+    const want = { ...Object.fromEntries(DROP_FIELDS.map((k) => [k, sale[k]])), start: state.start ?? start, holderRoot: state.holderRoot };
     const locked = (await read(C.FireCards, ABI.cards, "fires", [fire]))[2];
     const dd = dropDiffs(drop, want);
     if (!locked || drop.start === 0n) stop("The drop isn't on chain. Run again.");

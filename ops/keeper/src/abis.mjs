@@ -26,6 +26,12 @@ export const saleAbi = parseAbi([
   "function END_GRACE() view returns (uint256)",
 ]);
 
+/** FireSale's owner settings: the wallets (revenue, PlankBurner, PaperBurner) and the price feeds and router. */
+export const saleSettingsEvents = parseAbi([
+  "event WalletsSet(address revenue, address plankBurner, address paperBurner)",
+  "event FeedsSet(address ethUsd, address plankUsd, address paperUsd, address router)",
+]);
+
 export const pausableAbi = parseAbi(["function paused() view returns (bool)"]);
 
 export const feedAbi = parseAbi(["function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)"]);

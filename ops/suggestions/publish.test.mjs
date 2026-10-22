@@ -50,3 +50,23 @@ test('the one on-chain pick fills in the transaction for every wave of that Seri
   const other = buildResults(draw, [{ id: 4 }, { id: 5 }], { series: 8 })
   assert.deepEqual(fillPickTx(mergeResults(null, other), 9, [{ id: 4, tx: '0xbb' }]).waves[0].winners.map((w) => w.tx), [null, null]) // another Series
 })
+
+test('an on-chain pick off the shortlist is published, marked offList; another wave\'s picks are left to it', async () => {
+  const { offListPicks } = await import('./publish.mjs')
+  const text = new Map([[30, 'Theme: Off the list'], [31, 'Character: Ember Fox'], [32, 'Art style: Pixel']])
+  const rest = [{ id: 30, by: A, tx: '0xt' }, { id: 31, by: B, tx: '0xt' }, { id: 32, by: B, tx: '0xt' }, { id: 33, by: A, tx: '0xt' }]
+  const off = offListPicks(draw, rest, text)
+  assert.deepEqual(off.map((o) => [o.id, o.kind, o.title]), [[30, 'theme', 'Off the list'], [32, 'style', 'Pixel'], [33, 'theme', null]], 'the character is the characters wave\'s; #33 (no text found) counts here')
+  const r = buildResults(draw, [{ id: 4, tx: '0xt' }], { series: 8, offList: off })
+  assert.deepEqual(r.winners.map((w) => [w.id, !!w.offList]), [[4, false], [30, true], [32, true], [33, true]])
+  assert.deepEqual(r.offList, [30, 32, 33])
+  assert.equal(buildResults(draw, [{ id: 4 }], { series: 8 }).offList, undefined)
+})
+
+test('the closing block and the drand round go into the results; a test draw is flagged', () => {
+  const real = { ...draw, fromBlock: '0', toBlock: '500', toBlockHash: '0xh', drand: { chain: 'c', round: 9, randomness: 'r', signature: 's', relay: 'x' } }
+  const r = buildResults(real, [{ id: 4 }], { series: 8 })
+  assert.deepEqual([r.fromBlock, r.toBlock, r.toBlockHash, r.drand], ['0', '500', '0xh', { chain: 'c', round: 9, randomness: 'r', signature: 's' }])
+  assert.equal(r.test, undefined)
+  assert.equal(buildResults({ ...draw, test: true }, [{ id: 4 }], { series: 8 }).test, true)
+})

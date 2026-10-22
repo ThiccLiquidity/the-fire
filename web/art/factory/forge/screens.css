@@ -732,3 +732,7 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
   .rs-list li { grid-template-columns: minmax(0, 1fr) auto; } .rs-list li .rs-by { grid-row: 2; white-space: normal }
   .rs-reveal .rs-big { font-size: 23px }
 }
+
+/* a live wait's optional action ("Deal them now"): a small button and one plain line under the status */
+.stage-msg .stage-act { display: grid; justify-items: center; gap: 6px; margin-top: 10px }
+.stage-msg .stage-act small { opacity: .7; max-width: 34ch; text-align: center; line-height: 1.35 }
