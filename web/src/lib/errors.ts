@@ -72,6 +72,7 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   // cases and grading (FirePsa, PaperBurner)
   BadRoute: "The PAPER burn route isn't valid.",
   FeedsAlreadySet: "The price feeds are already set.",
+  NotFlusher: "Only the keepers and FirePsa can burn the fees waiting in PaperBurner.",
   NotReady: "The randomness for that isn't ready yet. Try again soon.",
   Pending: "That card is already at the grader.",
 
