@@ -13,7 +13,7 @@
 //   (fulfillMany) and deals (process) -> case and
 //   grade (protect) -> keeper delivers and finishes the grading (finish(index, ids) from the Protected event)
 //   -> keeper flushes PlankBurner; PaperBurner waits (no PAPER price) and alerts -> 40 h later the PAPER feed is live
-//   and the keeper flushes PaperBurner -> VerifyDeploy again.
+//   and the keeper flushes PaperBurner -> a case and a grade paid in PAPER (to the dead address) -> VerifyDeploy again.
 //
 // Two modes:
 //   node rehearsal/rehearse.mjs                 plain anvil with stand-ins (script/DevStack.s.sol), no network
@@ -282,7 +282,7 @@ async function main() {
   await forgeDeploy("script/DeployCards.s.sol", env);
   const dep = JSON.parse(readFileSync(DEP_FILE, "utf8"));
   const C = Object.fromEntries(Object.entries(dep.contracts).map(([k, v]) => [k, getAddress(v)]));
-  check(Object.keys(C).length === 16, `deployments file has all 16 contracts (${DEP_FILE.replace(REPO + "/", "")})`);
+  check(Object.keys(C).length === 17 && C.FireProfiles, `deployments file has all 17 contracts, FireProfiles included (${DEP_FILE.replace(REPO + "/", "")})`);
 
   step("VerifyDeploy before the owner accepts (expect WAIT on seven owners)");
   let vd = forgeRead("script/VerifyDeploy.s.sol", {});
@@ -631,6 +631,38 @@ async function main() {
     check((await pub.getBalance({ address: C.PaperBurner })) === 0n, "PaperBurner flushed: the fee bought PAPER and burned it");
     r = await pass();
     check(hook.posts.some((p) => /resolved: PaperBurner holds/.test(p)), "the webhook got the 'resolved' line");
+
+    step("buyer 2 cases one card and grades one paying in PAPER (straight to the dead address; PaperBurner untouched)");
+    const free = [];
+    for (let s = 1n; s < next; s++) {
+      const o = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "ownerOf", args: [s] }).catch(() => undefined);
+      if (!o || getAddress(o) !== buyer2.address) continue;
+      const c = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "cardOf", args: [s] });
+      if (!c.cased && c.grade === 0n) free.push(s);
+    }
+    check(free.length >= 2, `buyer 2 has ${free.length} cards neither cased nor graded`);
+    const payPaper = 3; // FirePsa.Pay.PAPER
+    const costP = await pub.readContract({ address: C.FirePsa, abi: ABI.psa, functionName: "quoteFor", args: [[free[0]], [free[1]], payPaper] });
+    const DEAD = "0x000000000000000000000000000000000000dEaD";
+    const bal = (a) => pub.readContract({ address: dev.paper.address, abi: dev.paper.abi, functionName: "balanceOf", args: [a] });
+    await tx(deployer, dev.paper.address, dev.paper.abi, "mint", [buyer2.address, costP]);
+    await tx(buyer2, dev.paper.address, dev.paper.abi, "approve", [C.FirePsa, costP]);
+    const dead0 = await bal(DEAD);
+    const burnerEth0 = await pub.getBalance({ address: C.PaperBurner });
+    // FirePsa is back on the real drand router (the stand-in relay only has round 1000's real signature): this grading
+    // takes its randomness through the stand-in router, then FirePsa goes back
+    const pa2 = await deploy(deployer, "OpenVRFAdapter", "OpenVRFAdapter", [dev.devDrand.address, C.FirePsa]);
+    await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [pa2.address] }));
+    await tx(buyer2, C.FirePsa, ABI.psa, "protect", [[free[0]], [free[1]], payPaper, costP]);
+    check((await bal(DEAD)) - dead0 === costP, `${formatEther(costP)} PAPER went to the dead address`);
+    check((await pub.getBalance({ address: C.PaperBurner })) === burnerEth0, "PaperBurner untouched by a PAPER payment");
+    const gp = (await pub.readContract({ address: C.FirePsa, abi: ABI.psa, functionName: "gradingCount" })) - 1n;
+    await warp(100);
+    r = await pass();
+    check((await pub.readContract({ address: C.FirePsa, abi: ABI.psa, functionName: "gradingOf", args: [gp] })).done, "the PAPER-paid grading finished");
+    const cp = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "cardOf", args: [free[1]] });
+    check(cp.grade > 0n, `card ${free[1]} graded PDA ${cp.grade}`);
+    await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [C.PsaAdapter] }));
   }
 
   step("VerifyDeploy at the end");

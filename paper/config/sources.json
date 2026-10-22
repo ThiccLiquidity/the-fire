@@ -1,0 +1,41 @@
+{
+  "_note": "Everything gather.mjs reads. Add or remove at will. X handles mirror docs/morning-wood-sources.md.",
+  "rss": [
+    { "id": "coindesk", "name": "CoinDesk", "desk": "crypto", "url": "https://www.coindesk.com/arc/outboundfeeds/rss/" },
+    { "id": "decrypt", "name": "Decrypt", "desk": "crypto", "url": "https://decrypt.co/feed" },
+    { "id": "theblock", "name": "The Block", "desk": "crypto", "url": "https://www.theblock.co/rss.xml" },
+    { "id": "ap-top", "name": "AP (via Google News)", "desk": "world", "url": "https://news.google.com/rss/search?q=when:1d+source:Associated_Press&hl=en-US&gl=US&ceid=US:en" },
+    { "id": "reuters-world", "name": "Reuters (via Google News)", "desk": "world", "url": "https://news.google.com/rss/search?q=when:1d+source:Reuters+world&hl=en-US&gl=US&ceid=US:en" },
+    { "id": "bbc-world", "name": "BBC World", "desk": "world", "url": "https://feeds.bbci.co.uk/news/world/rss.xml" },
+    { "id": "npr-politics", "name": "NPR Politics", "desk": "politics", "url": "https://feeds.npr.org/1014/rss.xml" },
+    { "id": "guardian-culture", "name": "The Guardian Culture", "desk": "culture", "url": "https://www.theguardian.com/culture/rss" },
+    { "id": "gn-trending", "name": "Google News Entertainment", "desk": "culture", "url": "https://news.google.com/rss/headlines/section/topic/ENTERTAINMENT?hl=en-US&gl=US&ceid=US:en" }
+  ],
+  "rssPerFeed": 12,
+  "x": {
+    "perAccount": 20,
+    "accounts": [
+      { "handle": "OrangeGooey", "note": "Biggest Tang Gang account, hosts a lot of Spaces. One of the two devs who launched PLANK." },
+      { "handle": "Degen_Waffle", "note": "The other PLANK dev. Good member, plays guitar and sings." },
+      { "handle": "toospooky", "note": "Some say he started the Tang Gang. Slow to come to PLANK, but built the technology behind the Paper Press." },
+      { "handle": "Bullish0xCrypto", "note": "Tang Gang main dev. Retired millionaire." },
+      { "handle": "Grizzle341", "note": "" },
+      { "handle": "GeneralDeeez", "note": "" },
+      { "handle": "ZabethOnChain", "note": "" },
+      { "handle": "chubzxmeta", "note": "" },
+      { "handle": "FLEXicanPapa", "note": "" },
+      { "handle": "bflo14", "note": "Meme master." },
+      { "handle": "chiographer", "note": "" },
+      { "handle": "ThiccLiquidity", "note": "The owner." }
+    ],
+    "searches": ["$PLANK", "Tang Gang", "Robinhood Chain"],
+    "perSearch": 20
+  },
+  "weather": [
+    { "city": "New York", "lat": 40.71, "lon": -74.01 },
+    { "city": "London", "lat": 51.51, "lon": -0.13 },
+    { "city": "Tokyo", "lat": 35.68, "lon": 139.69 },
+    { "city": "Menlo Park", "lat": 37.45, "lon": -122.18 }
+  ],
+  "majors": ["bitcoin", "ethereum", "solana"]
+}

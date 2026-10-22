@@ -35,6 +35,16 @@
       "source": "/",
       "destination": "/forge/",
       "permanent": false
+    },
+    {
+      "source": "/cards",
+      "destination": "/forge/",
+      "permanent": false
+    },
+    {
+      "source": "/cards/:path*",
+      "destination": "/forge/:path*",
+      "permanent": false
     }
   ]
 }

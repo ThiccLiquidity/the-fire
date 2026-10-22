@@ -1,0 +1,71 @@
+/* The reader: the paper on a dark desk, full screen. The page turn is one leaf (transform + opacity only). */
+dialog.reader { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; color: #f3ead6;
+  background: #241b14 radial-gradient(ellipse at 50% 40%, #3a2c20, #1a130d 75%); overscroll-behavior: contain }
+dialog.reader[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto }
+dialog.reader::backdrop { background: #1a130d }
+.rbar, .rfoot { display: flex; align-items: center; gap: 8px; padding: 6px 10px; min-height: 52px }
+.rbar { padding-top: max(6px, env(safe-area-inset-top)) }
+.rfoot { padding-bottom: max(6px, env(safe-area-inset-bottom)); justify-content: center }
+.rtitle { flex: 1; min-width: 0; text-align: center; display: flex; flex-direction: column; line-height: 1.1 }
+.rtitle b { font: 400 20px var(--black); white-space: nowrap }
+.rtitle span { font: 700 11.5px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: #cdbb98; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.rbtn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; min-width: 40px; justify-content: center; padding: 0 12px; border-radius: 999px; cursor: pointer;
+  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.18); color: inherit; font: 700 13.5px var(--sans) }
+.rbtn:hover { background: rgba(255,255,255,.14) }
+.rbtn[disabled] { opacity: .35; cursor: default }
+@media (max-width: 480px) { .rbar .rbtn span { display: none } .rbar .rbtn { padding: 0 } }
+.plabel { margin: 0 6px; min-width: 0; flex: 0 1 auto; text-align: center; font: 700 13px var(--sans); color: #e3d4b4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+
+.stage { position: relative; overflow: hidden; touch-action: pan-y; outline: none; contain: strict }
+.stage.zoomed { touch-action: none; cursor: grab }
+.stage.dragging, .stage.dragging .pg { cursor: grabbing; -webkit-user-select: none; user-select: none }
+.zoom { position: absolute; inset: 0; display: grid; place-items: center; transform-origin: 0 0 }
+.stage.zoomed .zoom { will-change: transform }
+.book { position: relative; width: var(--pw); height: var(--ph); perspective: calc(var(--pw) * 4) }
+.book.spread { width: calc(var(--pw) * 2); transition: transform .45s cubic-bezier(.25,.6,.3,1) }
+/* a page alone in a spread (the front page; a last page on the left) sits in the middle */
+.book.spread.alone-r { transform: translateX(calc(var(--pw) * -.5)) }
+.book.spread.alone-l { transform: translateX(calc(var(--pw) * .5)) }
+@media (prefers-reduced-motion: reduce) { .book.spread { transition: none } }
+.slot { position: absolute; top: 0; left: 0; width: var(--pw); height: var(--ph) }
+.slot.right { left: var(--pw) }
+.slot:not(.empty) { box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.4) }
+/* the fold of a spread: a soft shadow along the spine */
+.book.spread .slot:not(.empty)::after { content: ''; position: absolute; top: 0; bottom: 0; width: 7%; pointer-events: none; z-index: 1 }
+.book.spread .slot.left::after { right: 0; background: linear-gradient(to left, rgba(0,0,0,.22), transparent) }
+.book.spread .slot.right::after { left: 0; background: linear-gradient(to right, rgba(0,0,0,.22), transparent) }
+
+.leaf { position: absolute; top: 0; width: var(--pw); height: var(--ph); transform-style: preserve-3d; will-change: transform; z-index: 3 }
+.leaf.at-right, .leaf.at-single { left: var(--pw); transform-origin: 0 50% }
+.leaf.at-single { left: 0 }
+.leaf.at-left { left: 0; transform-origin: 100% 50% }
+.face { position: absolute; inset: 0; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.35) }
+.face.back { transform: rotateY(180deg) }
+.face.blank { background: #ece2cb linear-gradient(90deg, rgba(0,0,0,.06), transparent 20%, transparent 80%, rgba(0,0,0,.08)) }
+.face > .pg { overflow: hidden }
+.shade { position: absolute; inset: 0; pointer-events: none; opacity: 0; z-index: 2; background: linear-gradient(90deg, rgba(0,0,0,.65), rgba(0,0,0,.15) 60%, rgba(0,0,0,.05)) }
+.leaf.at-left .shade, .face.back .shade { background: linear-gradient(270deg, rgba(0,0,0,.65), rgba(0,0,0,.15) 60%, rgba(0,0,0,.05)) }
+
+/* click the edges to turn (mouse); on touch, taps near an edge do the same without blocking scroll */
+.edge { position: absolute; top: 0; bottom: 0; width: 8%; min-width: 44px; z-index: 4; display: none; align-items: center; justify-content: center; background: transparent; border: 0; color: #f3ead6; cursor: pointer; opacity: 0; transition: opacity .2s }
+.edge.prev { left: 0 } .edge.next { right: 0 }
+.edge svg { width: 34px; height: 34px; padding: 6px; border-radius: 50%; background: rgba(0,0,0,.45) }
+.edge:hover, .edge:focus-visible { opacity: 1 }
+.edge[disabled] { display: none !important }
+@media (hover: hover) and (pointer: fine) { .edge { display: flex } }
+.edge:focus-visible { display: flex }
+
+/* contents */
+dialog.toc { border: 2px solid #1b1712; border-radius: 10px; padding: 16px; width: min(440px, calc(100vw - 24px)); max-height: 80dvh; background: #fffaf0; color: #1b1712; box-shadow: 8px 8px 0 #000 }
+dialog.toc::backdrop { background: rgba(0,0,0,.5) }
+dialog.toc h2 { margin: 0 0 10px; font: 700 22px var(--serif) }
+dialog.toc ol { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 4px }
+dialog.toc li button { width: 100%; display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 0 10px; text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid transparent; background: none; cursor: pointer }
+dialog.toc li button:hover { background: #f1e6cc }
+dialog.toc li button[aria-current] { border-color: #1b1712; background: #f1e6cc }
+dialog.toc li span { font: 400 18px var(--loud); text-transform: uppercase; letter-spacing: .02em }
+dialog.toc li small { grid-column: 1; color: #5c5145; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+dialog.toc li b { grid-row: 1 / span 2; grid-column: 2; align-self: center; font: 400 20px var(--loud); color: #c8102e }
+dialog.toc .btn { width: 100% }
+
+dialog.reader .toasts { position: absolute; bottom: calc(70px + env(safe-area-inset-bottom)) }

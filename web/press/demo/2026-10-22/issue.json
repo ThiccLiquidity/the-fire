@@ -1,0 +1,311 @@
+{
+  "date": "2026-10-22",
+  "number": 1,
+  "title": "The Morning Wood",
+  "motto": "Hard News, Every Morning",
+  "edition": "Vol. I · No. 1 · Demo Edition",
+  "price": {
+    "paper": 1,
+    "usd": 0.05
+  },
+  "status": "preview",
+  "sample": true,
+  "weatherEar": "Cloudy with a chance of airdrop. Overnight lows near the 200-day average.",
+  "pages": [
+    {
+      "section": "front",
+      "layout": "broadsheet",
+      "stories": [
+        {
+          "headline": "Printing Press Runs All Night, Prints Nothing But Confidence",
+          "deck": "Workers report the machine \"just kept going\"; economists call it the most bullish thing they have ever seen a roller do",
+          "byline": "Ernest Hemingwood, Markets",
+          "body": "The press ran all night. It ran hard and it ran true, and in the morning there was paper on the floor and the paper was good.\n\nThe foreman stood by the rollers. \"She does not stop,\" he said. He did not say it twice. A man who says a thing twice does not believe it the first time.\n\nAnalysts gathered at the window at dawn. One of them had a chart. The chart went up and then it went sideways, and the analyst looked at it the way a man looks at the sea. **\"Consolidation,\"** he said, and the others nodded, because it is a good word and it costs nothing.\n\nBy six the ink was dry. By seven the first copies were gone. By eight a man in a hat asked whether any of this was real, and was told, gently, to read the stamp.",
+          "image": {
+            "src": "img/front.webp",
+            "alt": "The big printing press in the workshop, its rollers full of fresh paper",
+            "kind": "ai",
+            "credit": "Morning Wood Photo Desk (AI)"
+          },
+          "size": "lead"
+        },
+        {
+          "headline": "Local Furnace Declares Itself \"Carbon Neutral\" After Burning Only Things That Were Already On Fire",
+          "deck": "Environmental groups unsure how to feel",
+          "byline": "Mark Twine, World News & Weather",
+          "body": "The furnace, reached for comment between logs, said it had \"never once started anything.\" Witnesses confirm the logs were, in every case, *already planning it*.",
+          "image": {
+            "src": "img/furnace.webp",
+            "alt": "The workshop furnace, glowing",
+            "kind": "ai",
+            "credit": "Morning Wood Photo Desk (AI)"
+          }
+        },
+        {
+          "headline": "Man Who Said \"It's Different This Time\" Confirms It Was, In Fact, The Same",
+          "byline": "Kurt Vonneplank, Editorials",
+          "body": "And so it goes. He said it in 2017 and in 2021 and on Tuesday. On Wednesday he bought the top again, because he is a man of tradition."
+        }
+      ]
+    },
+    {
+      "section": "plank",
+      "layout": "tabloid",
+      "stories": [
+        {
+          "headline": "PLANK HOLDER CHECKS PRICE 400 TIMES, PRICE DOES NOT NOTICE",
+          "deck": "\"I thought if I looked at it enough it would look back,\" says devastated man",
+          "byline": "Hunter S. Timber",
+          "body": "We were somewhere around the fourth refresh when the candles began to take hold. The chart was breathing. I remember saying something like *I feel a bit lightheaded, maybe you should drive.*\n\nHe did not drive. He refreshed. 401. 402. The number stayed exactly where it was, which is the cruelest thing a number can do to a man.",
+          "image": {
+            "src": "img/meme-plank.webp",
+            "alt": "Two-panel meme: a worried jellyfish rejects selling PLANK at the bottom, a cactus approves selling at a different bottom",
+            "kind": "meme",
+            "credit": "Meme desk",
+            "captions": [
+              "Selling PLANK at the bottom",
+              "Selling PLANK at a different bottom"
+            ],
+            "template": "Drake Hotline Bling"
+          }
+        },
+        {
+          "headline": "BREAKING: SOMEONE SOLD 3 PLANK",
+          "deck": "Community enters five stages of grief in under a minute",
+          "byline": "Staff",
+          "body": "Denial, anger, bargaining, a 40-reply thread and a new profile picture. Acceptance is scheduled for Thursday.",
+          "kicker": "Breaking"
+        }
+      ]
+    },
+    {
+      "section": "tanggang",
+      "layout": "tabloid",
+      "stories": [
+        {
+          "headline": "TANG GANG MEMBER \"JUST HAS ONE ORANGE,\" HAS ELEVEN",
+          "deck": "Friends stage gentle citrus intervention",
+          "byline": "Dorothy Parquet",
+          "body": "She arrived at the party with one orange, which is charming, and left with eleven, which is a lifestyle. *\"I can stop whenever I like,\"* she said, peeling. \"I simply don't like.\"\n\nOne does admire the commitment. One also admires a forest fire, from a distance.",
+          "image": {
+            "src": "img/meme-tang.webp",
+            "alt": "Orange-tinted cactus meme: Nobody. Tang Gang at 3am: one more orange",
+            "kind": "meme",
+            "credit": "Meme desk",
+            "captions": [
+              "Nobody:",
+              "Tang Gang at 3am: \"one more orange\""
+            ],
+            "template": "Top and bottom text"
+          }
+        }
+      ]
+    },
+    {
+      "section": "crypto",
+      "layout": "tabloid",
+      "stories": [
+        {
+          "headline": "NEW COIN PROMISES TO \"FIX MONEY,\" LAUNCHES WITH 90% SUPPLY IN ONE WALLET",
+          "deck": "Founder: \"That wallet is very trustworthy, it's mine\"",
+          "byline": "Hunter S. Timber",
+          "body": "The whitepaper was one page long and the page was mostly a picture of a rocket. The roadmap said *Q1: Moon.* There was no Q2. Nobody asked about Q2. That is how you know it is a bull market.",
+          "image": {
+            "src": "img/meme-crypto.webp",
+            "alt": "Bowling ball meme: me reading the whitepaper, page 1 of 1",
+            "kind": "meme",
+            "credit": "Meme desk",
+            "captions": [
+              "Me reading the whitepaper",
+              "Page 1 of 1"
+            ],
+            "template": "Top and bottom text"
+          }
+        },
+        {
+          "headline": "GAS FEES DROP SO LOW MAN SENDS HIMSELF 0.0001 ETH JUST TO FEEL SOMETHING",
+          "byline": "Staff",
+          "body": "\"It went through instantly,\" he said, staring into the middle distance. \"I don't know what I expected.\""
+        }
+      ]
+    },
+    {
+      "section": "trending",
+      "layout": "tabloid",
+      "stories": [
+        {
+          "headline": "NATION'S GROUP CHATS REACH 100% \"LOL\" BY VOLUME",
+          "deck": "Experts warn actual words could go extinct by spring",
+          "byline": "Mark Twine",
+          "body": "A census of the nation's phones found that the average message now contains no information at all, which experts called \"a return to form for human conversation.\"",
+          "image": {
+            "src": "img/meme-trend.webp",
+            "alt": "Jellyfish meme: scientists found a new species, it just scrolls",
+            "kind": "meme",
+            "credit": "Meme desk",
+            "captions": [
+              "Scientists: we found a new species",
+              "It just scrolls"
+            ],
+            "template": "Top and bottom text"
+          },
+          "pullQuote": "\"lol\" — the nation"
+        },
+        {
+          "headline": "INFLUENCER APOLOGIZES FOR APOLOGY",
+          "deck": "Third apology expected to apologize for the first two",
+          "byline": "Dorothy Parquet",
+          "body": "It was, as these things go, a beautiful apology: soft lighting, a grey hoodie, and not one word that meant anything."
+        }
+      ]
+    },
+    {
+      "section": "markets",
+      "layout": "tabloid",
+      "stories": [
+        {
+          "headline": "MARKETS: THE NUMBERS DID THINGS",
+          "deck": "Real numbers, filled in by code. The jokes are ours.",
+          "byline": "Ernest Hemingwood",
+          "body": "The market opened. It went down and then it went up and a man said he had known all along. He had not known. Nobody knows. That is the market."
+        }
+      ],
+      "blocks": [
+        "markets"
+      ]
+    },
+    {
+      "section": "back",
+      "layout": "tabloid",
+      "stories": [
+        {
+          "headline": "OBITUARY: ONE (1) STOP-LOSS",
+          "deck": "Beloved order, triggered too soon",
+          "byline": "Edgar Allan Pine",
+          "body": "Once upon a midnight dreary, as the candles dipped so weary, rang a fill upon my ledger — *only this, and nothing more.* It sold the dip. The dip then rose. Quoth the chart: \"Nevermore.\"",
+          "image": {
+            "src": "img/staff-bowling.webp",
+            "alt": "The Bowling Ball, a card character, screaming",
+            "kind": "staff",
+            "credit": "Cardworks staff photo"
+          },
+          "kicker": "Obituary"
+        }
+      ],
+      "blocks": [
+        "letters",
+        "classifieds",
+        "horoscopes"
+      ]
+    }
+  ],
+  "markets": {
+    "asOf": "2026-10-22T05:00:00Z",
+    "source": "sample",
+    "sample": true,
+    "tokens": {
+      "PAPER": {
+        "symbol": "PAPER",
+        "priceUsd": 0.0812,
+        "change24hPct": 4.2,
+        "volume24hUsd": 18250,
+        "liquidityUsd": 96400,
+        "burned24h": 1210,
+        "holders": 1834
+      },
+      "PLANK": {
+        "symbol": "PLANK",
+        "priceUsd": 2.1e-06,
+        "change24hPct": -2.7,
+        "volume24hUsd": 41030,
+        "liquidityUsd": 212000,
+        "burned24h": 6200000,
+        "holders": 5120
+      }
+    },
+    "mills": {
+      "name": "Paper Mills",
+      "live": 412,
+      "holders": 388,
+      "floorEth": 0.0049,
+      "backingUsd": 12.4
+    }
+  },
+  "letters": [
+    {
+      "name": "woodchuck.eth",
+      "text": "Dear Editor, I bought the top. Again. Is this a subscription?",
+      "sample": true,
+      "reply": "It is now."
+    },
+    {
+      "name": "PaperHands",
+      "text": "Your markets page gave me feelings. Please stop.",
+      "sample": true
+    }
+  ],
+  "classifieds": [
+    {
+      "heading": "FOR SALE",
+      "text": "one (1) diamond hand, slightly used, cracked.",
+      "name": "0x7a3f…c91e",
+      "sample": true
+    },
+    {
+      "heading": "WANTED",
+      "text": "someone to explain the chart to my wife. Pay in PLANK.",
+      "name": "Burnt Toast",
+      "sample": true
+    }
+  ],
+  "horoscopes": [
+    {
+      "sign": "Aries",
+      "text": "A bold move pays off. Not yours."
+    },
+    {
+      "sign": "Taurus",
+      "text": "Hold. You were going to anyway."
+    },
+    {
+      "sign": "Gemini",
+      "text": "Both of you are wrong about PLANK."
+    },
+    {
+      "sign": "Cancer",
+      "text": "Retreat into your shell wallet."
+    },
+    {
+      "sign": "Leo",
+      "text": "Your profile picture is doing great work."
+    },
+    {
+      "sign": "Virgo",
+      "text": "You will read the terms. You will be alone."
+    },
+    {
+      "sign": "Libra",
+      "text": "Balance your portfolio. Then unbalance it, as is tradition."
+    },
+    {
+      "sign": "Scorpio",
+      "text": "Someone owes you an orange."
+    },
+    {
+      "sign": "Sagittarius",
+      "text": "Aim high. Miss. Post about it."
+    },
+    {
+      "sign": "Capricorn",
+      "text": "Climb the chart. Do not look down."
+    },
+    {
+      "sign": "Aquarius",
+      "text": "Your idea is ahead of its time. So is your stop-loss."
+    },
+    {
+      "sign": "Pisces",
+      "text": "Swim with the whales. Mind the teeth."
+    }
+  ]
+}

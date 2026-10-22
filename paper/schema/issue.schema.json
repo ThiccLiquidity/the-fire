@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://the-morning-wood/schema/issue.schema.json",
+  "title": "The Morning Wood issue",
+  "description": "One day's paper (one ERC-1155 token id on MorningWood). Written by the nightly pipeline (paper/RUN.md), rendered by the site (/press). Satire: every page carries a SATIRE stamp. Numbers on the markets page come from `markets` only (filled by code: paper/inject.mjs), never typed by a writer.",
+  "type": "object",
+  "required": ["date", "number", "title", "motto", "pages", "markets", "letters", "classifieds", "horoscopes"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "The morning it's sold (America/New_York)." },
+    "number": { "type": "integer", "minimum": 1, "description": "Issue number = MorningWood token id. Day 1 = 2026-10-22." },
+    "title": { "const": "The Morning Wood" },
+    "motto": { "const": "Hard News, Every Morning" },
+    "edition": { "type": "string", "description": "Flavour line under the masthead, e.g. \"Late Night Final\" or \"Vol. I, No. 1\"." },
+    "price": {
+      "type": "object",
+      "description": "What's printed in the masthead ear. Fund flows are never printed on the paper (CLAUDE.md).",
+      "properties": { "paper": { "type": "number" }, "usd": { "type": "number" } },
+      "additionalProperties": false
+    },
+    "status": { "enum": ["draft", "preview", "approved", "published"], "default": "draft" },
+    "sample": { "type": "boolean", "default": false, "description": "True for rehearsal/sample issues (sample market numbers, placeholder images). Never published." },
+    "weatherEar": { "type": "string", "description": "One line for the masthead weather ear (Mark Twine)." },
+    "pages": {
+      "type": "array",
+      "minItems": 7,
+      "description": "In reading order. Every issue has every section: front, plank, tanggang, crypto, trending, markets, back (one page each; a section may span more pages).",
+      "items": { "$ref": "#/$defs/page" }
+    },
+    "markets": { "$ref": "#/$defs/markets" },
+    "letters": { "type": "array", "items": { "$ref": "#/$defs/letter" }, "description": "Printed letters from holders of yesterday's issue (MorningWood.Letter events), under their profile name." },
+    "classifieds": { "type": "array", "items": { "$ref": "#/$defs/classified" } },
+    "horoscopes": { "type": "array", "items": { "$ref": "#/$defs/horoscope" }, "description": "Kurt Vonneplank's twelve signs." },
+    "weather": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["city", "highF", "lowF", "sky"],
+        "properties": { "city": { "type": "string" }, "highF": { "type": "number" }, "lowF": { "type": "number" }, "sky": { "type": "string" }, "rainPct": { "type": ["number", "null"] }, "quip": { "type": "string" } },
+        "additionalProperties": true
+      }
+    },
+    "staff": {
+      "type": "array",
+      "description": "The masthead box: who wrote today.",
+      "items": { "type": "object", "required": ["name", "beat"], "properties": { "name": { "type": "string" }, "beat": { "type": "string" }, "photo": { "type": "string" } }, "additionalProperties": false }
+    },
+    "nft": {
+      "type": "object",
+      "description": "Filled by layout/publish: the front page image (the NFT image) and the pinned metadata.",
+      "properties": { "image": { "type": "string" }, "metadataUri": { "type": "string" }, "opensAt": { "type": "string" } },
+      "additionalProperties": false
+    },
+    "runningJokes": { "type": "array", "items": { "type": "string" }, "description": "New running jokes born today (saved to paper/memory)." }
+  },
+  "$defs": {
+    "section": { "enum": ["front", "plank", "tanggang", "crypto", "trending", "markets", "back"] },
+    "page": {
+      "type": "object",
+      "required": ["section", "layout", "stories"],
+      "additionalProperties": false,
+      "properties": {
+        "section": { "$ref": "#/$defs/section" },
+        "title": { "type": "string", "description": "Section flag, e.g. \"PLANK\", \"Tang Gang\", \"The Back Page\"." },
+        "layout": { "enum": ["broadsheet", "tabloid"], "description": "front = broadsheet (old type, one huge photo; doubles as the NFT image). Inside pages = tabloid (loud colour, big headlines, memes)." },
+        "accent": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Tabloid accent colour (optional)." },
+        "stories": { "type": "array", "items": { "$ref": "#/$defs/story" } },
+        "blocks": {
+          "type": "array",
+          "description": "Which top-level lists this page shows, in order (the back page: letters, classifieds, horoscopes, weather; markets page: markets).",
+          "items": { "enum": ["markets", "letters", "classifieds", "horoscopes", "weather", "staff"] }
+        }
+      }
+    },
+    "story": {
+      "type": "object",
+      "required": ["headline", "byline", "body"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "kicker": { "type": "string", "description": "Small label over the headline (\"EXCLUSIVE\", \"OBITUARY\", \"EDITORIAL\")." },
+        "headline": { "type": "string" },
+        "deck": { "type": "string", "description": "Sub-headline." },
+        "byline": { "type": "string", "description": "A staff name (paper/staff) or \"Staff\" / \"The Editors\"." },
+        "size": { "enum": ["lead", "major", "minor", "brief"], "default": "minor", "description": "lead = the page's top story (front lead gets the huge photo)." },
+        "body": { "type": "string", "description": "Markdown. Markets numbers only as {{tokens}} before inject; after inject, the numbers." },
+        "image": { "$ref": "#/$defs/image" },
+        "pullQuote": { "type": "string" },
+        "roast": { "type": "boolean", "description": "A full roast of someone on the source list." },
+        "sources": { "type": "array", "items": { "type": "string" }, "description": "The real news it's riffing on (links), for the editor; not printed." }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": ["src", "alt", "kind", "credit"],
+      "additionalProperties": false,
+      "properties": {
+        "src": { "type": "string", "description": "Relative to the issue folder, or ipfs:// / https://. Empty while placeholder." },
+        "alt": { "type": "string" },
+        "kind": { "enum": ["ai", "meme", "staff"], "description": "ai = AI press photo (front and big stories); meme = Imgflip template with captions inside; staff = card characters / workshop art." },
+        "credit": { "type": "string", "description": "Printed under the picture, e.g. \"Morning Wood Staff Photographer (AI)\"." },
+        "caption": { "type": "string", "description": "Printed under the picture (optional)." },
+        "prompt": { "type": "string", "description": "kind ai: the house-style prompt the image step sends." },
+        "template": { "type": "string", "description": "kind meme: the Imgflip template name or id." },
+        "captions": { "type": "array", "items": { "type": "string" }, "description": "kind meme: the text boxes, in template order." },
+        "placeholder": { "type": "boolean", "description": "True until the image step has made it (the site draws a stand-in: the prompt or the meme captions)." }
+      }
+    },
+    "token": {
+      "type": "object",
+      "properties": {
+        "symbol": { "type": "string" },
+        "address": { "type": "string" },
+        "priceUsd": { "type": ["number", "null"] },
+        "change24hPct": { "type": ["number", "null"] },
+        "volume24hUsd": { "type": ["number", "null"] },
+        "trades24h": { "type": ["number", "null"] },
+        "liquidityUsd": { "type": ["number", "null"] },
+        "marketCapUsd": { "type": ["number", "null"] },
+        "burnedTotal": { "type": ["number", "null"] },
+        "burned24h": { "type": ["number", "null"] },
+        "holders": { "type": ["number", "null"] },
+        "pools": { "type": "array", "items": { "type": "string" } },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "markets": {
+      "type": "object",
+      "required": ["asOf", "source", "sample", "tokens", "mills"],
+      "description": "Copied verbatim from the news pack by code (inject.mjs). sample = true: not real numbers (the site must say SAMPLE).",
+      "properties": {
+        "asOf": { "type": "string" },
+        "source": { "type": "string", "description": "chain | mock | unavailable | sample" },
+        "sample": { "type": "boolean" },
+        "block": { "type": "number" },
+        "ethUsd": { "type": ["number", "null"] },
+        "tokens": { "type": "object", "required": ["PAPER", "PLANK"], "properties": { "PAPER": { "$ref": "#/$defs/token" }, "PLANK": { "$ref": "#/$defs/token" } }, "additionalProperties": false },
+        "mills": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" }, "address": { "type": "string" }, "live": { "type": ["number", "null"] }, "holders": { "type": ["number", "null"] },
+            "plankPerMill": { "type": ["number", "null"] }, "backingUsd": { "type": ["number", "null"] }, "floorEth": { "type": ["number", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "majors": { "type": "object", "additionalProperties": { "type": "object", "properties": { "priceUsd": { "type": ["number", "null"] }, "change24hPct": { "type": ["number", "null"] } } } },
+        "site": { "type": "object", "description": "Our own numbers: copies sold, packs sold, PAPER burned by PaperBurner (24h).", "additionalProperties": { "type": ["number", "null"] } },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "letter": {
+      "type": "object",
+      "required": ["name", "text"],
+      "additionalProperties": false,
+      "properties": { "name": { "type": "string", "description": "Profile name (FireProfiles) or short address." }, "from": { "type": "string" }, "text": { "type": "string", "maxLength": 200 }, "reply": { "type": "string", "description": "The editor's one-line reply (optional)." }, "tx": { "type": "string" }, "sample": { "type": "boolean" } }
+    },
+    "classified": {
+      "type": "object",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": { "heading": { "type": "string", "description": "FOR SALE, WANTED, PERSONALS, LOST & FOUND, SERVICES..." }, "text": { "type": "string" }, "name": { "type": "string" }, "from": { "type": "string" }, "house": { "type": "boolean", "description": "Written by the staff (not a reader's)." }, "sample": { "type": "boolean" } }
+    },
+    "horoscope": {
+      "type": "object",
+      "required": ["sign", "text"],
+      "additionalProperties": false,
+      "properties": { "sign": { "enum": ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"] }, "text": { "type": "string" } }
+    }
+  }
+}

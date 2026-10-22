@@ -1,0 +1,623 @@
+{
+  "$schema": "../../schema/issue.schema.json",
+  "date": "2026-10-22",
+  "number": 1,
+  "title": "The Morning Wood",
+  "motto": "Hard News, Every Morning",
+  "edition": "Vol. I, No. 1 · Sample Edition",
+  "price": {
+    "paper": 1,
+    "usd": 0.05
+  },
+  "status": "preview",
+  "sample": true,
+  "weatherEar": "Weather: New York {{weather.New York.highF}}, {{weather.New York.sky}}; chance of being told it's healthy.",
+  "pages": [
+    {
+      "section": "front",
+      "title": "Front Page",
+      "layout": "broadsheet",
+      "stories": [
+        {
+          "id": "front-lead",
+          "size": "lead",
+          "kicker": "MARKETS IN TURMOIL",
+          "headline": "Nation's Crypto Traders Spend Night Staring At Ceiling As Bitcoin Slips Below $81,000",
+          "deck": "\"I'm fine,\" reports man lying on kitchen floor with phone balanced on chest",
+          "byline": "Hunter S. Timber",
+          "body": "NEW YORK — An estimated 400 million dollars in long positions were liquidated Wednesday as bitcoin slid below $81,000 and ether fell more than five percent, leaving millions of Americans awake at 3 a.m., lying perfectly still and staring at the ceiling in what experts are calling \"the most coordinated national activity since the moon landing.\"\n\n\"I'm fine,\" said Tucson-area trader Brent Holcomb, 34, speaking from the floor of his kitchen, where he had lain down \"for a second\" at around 11 p.m. and had not since moved. \"It's a healthy correction. I'm healthy. I'm correcting.\" At press time, Holcomb's phone, balanced face-down on his sternum, had vibrated 41 times, each one a notification from an app he described as \"the casino, but it's educational.\"\n\nAnalysts blamed the slide on hot inflation data, an AI stock sell-off, oil above $111 a barrel and roughly $611 million leaving crypto funds in a single week, which one strategist summarised as \"everything, basically, all at once, the way it always is, forever.\"\n\nI was there, in the thick of it, in a motel off Exit 41 with eleven tabs open and a 25x long I had named Brenda. Brenda is gone now. They don't tell you how quiet it gets after the margin call — just the ice machine, the hum of the vending light, and a man in the next room whispering \"buy the dip\" to nobody, like a prayer, or a threat.\n\nAt press time, the nation's ceilings were reported to be holding firm, the only support level in America to do so.",
+          "image": {
+            "src": "",
+            "alt": "A man in a bathrobe lies on a kitchen floor at night, lit only by a phone face-down on his chest",
+            "kind": "ai",
+            "credit": "Morning Wood Staff Photographer (AI)",
+            "caption": "A Tucson man assumes the national position at 3:12 a.m. Wednesday.",
+            "prompt": "A man in a faded bathrobe lying flat on a cheap linoleum kitchen floor at 3 a.m., arms at his sides, staring at the ceiling; a smartphone face-down on his chest glows; an untouched bowl of cereal on the counter; a single fridge light; shot from above like a crime-scene photo, deadpan",
+            "placeholder": true
+          },
+          "sources": [
+            "https://cryptoticker.io/en/crypto-market-selloff-ether-leads/",
+            "https://zerocap.com/insights/weekly-crypto-market-wrap/weekly-crypto-market-wrap-20-october-2026"
+          ]
+        },
+        {
+          "id": "front-plank",
+          "size": "major",
+          "kicker": "PLANK",
+          "headline": "PLANK Holders Report Feeling 'Totally At Peace,' A Classic Early Sign Of Shock",
+          "deck": "Doctors urge community to keep holders warm, talking, and away from the chart",
+          "byline": "Kurt Vonneplank",
+          "body": "PLANK holders across Robinhood Chain said Wednesday that they felt \"great, honestly,\" \"never better,\" and \"weirdly calm, like a lake,\" statements that medical professionals immediately identified as the textbook early stage of shock.\n\n\"When a holder tells you they're at peace, you do not leave them alone,\" said one paramedic. \"You wrap them in a blanket. You ask them simple questions. What's your name? What year is it? What did you pay for your PLANK? If they answer the third one, they're not in shock. They're in denial, which is worse, and incurable.\"\n\nSo it goes. Full coverage of the fish, the boy and the old houses on the PLANK and Markets pages.",
+          "image": {
+            "src": "img/staff-jellyfish.webp",
+            "alt": "The Jellyfish, a Cardworks character, drifting calmly through a coral reef",
+            "kind": "staff",
+            "credit": "Cardworks Archive",
+            "caption": "A PLANK holder, at peace, Wednesday."
+          }
+        },
+        {
+          "id": "front-oil",
+          "size": "minor",
+          "kicker": "WORLD",
+          "headline": "Oil Hits $111 A Barrel, Forcing Nation To Seriously Consider Walking Before Deciding Against It",
+          "byline": "Mark Twine",
+          "body": "HANNIBAL, MO. (by telegraph) — Brent crude climbed back above $111 a barrel this week, and Americans responded with the old courage: they looked at the bicycle in the garage for a long moment, said \"huh,\" and drove to the store to think about it.\n\n*A man will walk a mile for a principle, but only if the principle has parking. — M.T.*",
+          "sources": [
+            "https://finance.yahoo.com/personal-finance/investing/article/bitcoin-and-ethereum-prices-today-tuesday-october-20-2026-crypto-prices-slide-and-oil-costs-soar-as-mid-east-attacks-persist-114152288.html"
+          ]
+        },
+        {
+          "id": "front-debut",
+          "size": "minor",
+          "kicker": "ANNOUNCEMENT",
+          "headline": "Morning Wood Debuts On Worst Possible Day, Calls Timing 'Journalistically Perfect'",
+          "byline": "The Editors",
+          "body": "The Morning Wood published its first issue Wednesday, launching on the exact morning crypto fell four percent, which the editors described as \"a gift.\" \"No one has ever needed a laugh and a newspaper more than a man lying on his kitchen floor,\" said the paper's editor-in-chief. \"Except possibly the kitchen floor.\" The paper costs one PAPER and a nickel, comes out every morning, and is available for 24 hours, after which it is gone forever, like your long."
+        },
+        {
+          "id": "front-park",
+          "size": "brief",
+          "kicker": "NATION",
+          "headline": "Chiricahua Named 64th National Park; Rocks Say They Honestly Assumed They Already Were One",
+          "byline": "Mark Twine",
+          "body": "The rocks, which have been standing there for twenty-seven million years, said they were \"glad, sure,\" but \"would have appreciated a heads-up before the gift shop.\"",
+          "sources": [
+            "https://www.yahoo.com/news/videos/ap-top-stories-october-21-220753428.html"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "plank",
+      "title": "PLANK",
+      "layout": "tabloid",
+      "accent": "#e8442e",
+      "stories": [
+        {
+          "id": "plank-lead",
+          "size": "lead",
+          "kicker": "THE VIEW FROM THE MILL",
+          "headline": "PLANK falls again, and the Tralfamadorians would like everyone to calm down",
+          "deck": "Beings who see the whole chart at once describe it as \"a nice chart, mostly\"",
+          "byline": "Kurt Vonneplank",
+          "body": "Listen: PLANK went down again yesterday. It moved {{PLANK.change24hPct}} in a day, which is the kind of number that makes a grown man say \"it's fine\" in a voice that is not fine. A PLANK now costs {{PLANK.priceUsd}}. That is less than a penny. It is less than a penny's opinion of itself.\n\nI asked the Tralfamadorians about it. The Tralfamadorians can see the whole PLANK chart at once, from the launch to the heat death of the universe, the way we can see a stretch of the Rocky Mountains. They told me it was a nice chart, mostly. They said the red parts only look terrible if you happen to be standing in them.\n\n\"Where should I stand?\" I asked them.\n\n\"Somewhere with snacks,\" they said.\n\nHere is what I know. There are {{PLANK.holders}} people holding PLANK, and every one of them, at some point last night, opened the chart, closed it, opened it again, and texted somebody \"you up?\" for reasons that had nothing to do with romance. That is a community. That is more than most churches can say.\n\nMeanwhile {{PLANK.burned24h}} PLANK went to the dead address in a single day. So it goes. The ones that are left are a little more precious, the way people get more precious when you notice there aren't so many of them. Hi ho.",
+          "image": {
+            "src": "img/staff-bowling-ball.webp",
+            "alt": "The Bowling Ball, a Cardworks character, mid-scream as it rolls toward the pins",
+            "kind": "staff",
+            "credit": "Cardworks Archive",
+            "caption": "A PLANK holder opens the chart, 3:12 a.m."
+          }
+        },
+        {
+          "id": "plank-gonzo",
+          "size": "major",
+          "headline": "I went into the PLANK pool at 3 a.m. and came out a changed liquidity provider",
+          "deck": "A dispatch from the deep end",
+          "byline": "Hunter S. Timber",
+          "body": "ROBINHOOD CHAIN, THE WETH/PLANK PAIR — 3:04 A.M. The pool was dark and warm and full of strangers. Somewhere on the far side a whale was rebalancing, and every time it moved, the whole surface shook like a waterbed in an earthquake motel, and a little man with a sniper bot would dart out from under the diving board and take eleven cents and vanish.\n\nI had come to provide liquidity. Nobody provides liquidity at 3 a.m. for the yield. You do it for the same reason a man walks into the sea in a novel: to find out what he's made of. I was made, it turns out, of impermanent loss.\n\n**Fear:** that the pool is just me and the whale. **Loathing:** for the whale, who has never once said hello.",
+          "roast": false
+        },
+        {
+          "id": "plank-obit",
+          "size": "minor",
+          "kicker": "OBITUARY",
+          "headline": "Free Gas On Robinhood Chain, aged ninety days",
+          "byline": "Edgar Allan Pine",
+          "body": "Born on the first of July, of a launch party and a press release; died in the last days of September, of a calendar. Free Gas was the most beloved resident of Robinhood Chain — generous, open-handed, beautiful, and, like all beautiful things, temporary, as the fine print had always, always said.\n\nIn those golden days a man could swap a memecoin for another memecoin forty times before breakfast and pay nothing but his dignity. Eighty percent of all the chain's trading, they say, was memecoins then. *Then.* Ah, distinctly I remember: it was in the bleak September.\n\nSurvived by Gas, its stern and expensive brother, who has moved into the house and changed the locks. In lieu of flowers, the family asks that you stop sending transactions \"just to see.\"\n\nAnd Liquidity, my raven, perched upon the gas tracker, croaked the only word it knows. — E.A.P., from the Furnace Room",
+          "sources": [
+            "https://www.bit.com/square/robinhood-chain-vs-solana-base-memecoin"
+          ]
+        },
+        {
+          "id": "plank-meme",
+          "size": "brief",
+          "headline": "Area holder faces difficult choice",
+          "byline": "Staff",
+          "body": "Sources confirm he chose the third button, \"post the chart with no comment,\" which is not a button.",
+          "image": {
+            "src": "",
+            "alt": "Sweating man unable to choose between selling PLANK and announcing he still holds it",
+            "kind": "meme",
+            "credit": "Imgflip / The Morning Wood",
+            "template": "Two Buttons",
+            "captions": [
+              "Sell PLANK",
+              "Tell everyone you're still holding PLANK",
+              "Me, at 3 a.m."
+            ],
+            "placeholder": true
+          }
+        }
+      ]
+    },
+    {
+      "section": "tanggang",
+      "title": "Tang Gang",
+      "layout": "tabloid",
+      "accent": "#ff8a00",
+      "stories": [
+        {
+          "id": "tg-circle",
+          "size": "lead",
+          "kicker": "THE VICIOUS CIRCLE",
+          "roast": true,
+          "headline": "Our hostess holds a four-hour Space, achieves nothing, beautifully",
+          "deck": "Society notes from the salon, where the roadmap is a circle and so is everything else",
+          "byline": "Dorothy Parquet",
+          "body": "The salon convened at nine o'clock, as it does every Tuesday, and every Wednesday, and on any evening the chart has done something that requires explaining, which is every evening. Our hostess, @OrangeGooey — the largest account in the Tang Gang, co-father of PLANK, and the only man alive who can hold four hundred people in a room for four hours without once saying anything they could be held to — opened proceedings with \"gm\" at 9:04 p.m. That tells you most of what you need to know about time in this community.\n\nForty minutes were devoted to the roadmap. I have seen the roadmap. The roadmap is a circle. It is a very good circle; one could set a watch by it, if one's watch also went nowhere.\n\n@Degen_Waffle, PLANK's other father, was invited to the stage and arrived, as he always arrives, with his guitar. He performed an original composition, \"Red Candle Blues (Long Wick Version)\", in a key I can only describe as post-liquidation minor. It was genuinely lovely. Three listeners wept. Two were holders; the third has simply been in the Space since 2023 and no longer knows how to leave.\n\n@toospooky — who some say founded the Tang Gang, and who built the very machinery the Paper Press runs on — took the floor to remind everyone he was \"early to everything except PLANK.\" He came to PLANK the way a cat comes to a door: long after everyone else had walked through it, loudly insisting the door was his idea. He then explained the Paper Press to the two men who launched PLANK, who nodded the way men nod at their own weddings.\n\n@Bullish0xCrypto, the Gang's chief developer and a retired millionaire, joined \"from the water\" and fixed a bug live while four hundred of us listened to the wind across his microphone. Asked when he would stop working, he said he already had. Asked what he'd retired from, he went quiet. That, darling, is a love story.\n\nAnd then there is the owner of this newspaper, @ThiccLiquidity, who unmuted at 11:58 p.m. to announce \"something big,\" his fourth something big this month, then muted himself, presumably to go and find out what it was. The staff of The Morning Wood have been asked to say nothing unkind about the owner. We have read our contracts very carefully. There is no such clause.\n\n**Seen and Heard**\n\n- @bflo14 posting a meme so precise that three people sold and one bought out of pure respect.\n- @GeneralDeeez saluting from the back row. Rank unconfirmed. Salute impeccable.\n- @ZabethOnChain, @chiographer and @FLEXicanPapa saying more in three emojis than the stage said in four hours. @Grizzle341 and @chubzxmeta, lurking with intent.\n\n*They told me PLANK would set me free;*\n*they told me hold and pray.*\n*I'm free from all my savings now —*\n*so that part worked, I'd say.*",
+          "image": {
+            "src": "",
+            "alt": "An empty folding chair on a small stage under a single spotlight, a microphone left on, a guitar leaning against it",
+            "kind": "ai",
+            "credit": "Morning Wood Staff Photographer (AI)",
+            "caption": "The salon, 1:04 a.m., hour four.",
+            "prompt": "A tiny community-hall stage at midnight, one folding chair under a single spotlight, a microphone on a stand still switched on, an acoustic guitar leaning on the chair, rows of empty chairs, paper streamers half fallen down, a hand-lettered banner reading nothing, melancholy and funny",
+            "placeholder": true
+          },
+          "sources": [
+            "docs/morning-wood-sources.md (account notes; X not connected yet, so these are bits built on the notes)"
+          ]
+        },
+        {
+          "id": "tg-yacht",
+          "size": "minor",
+          "kicker": "DEVELOPING",
+          "headline": "Retired Tang Gang developer ships hotfix from yacht, warns users to 'expect some chop'",
+          "byline": "Dorothy Parquet",
+          "body": "@Bullish0xCrypto pushed an emergency fix early Wednesday from what witnesses described as \"a boat, or a very wet office.\" Release notes read, in full: \"fixed it. seas are rough. if you see a commit that says 'aaaaa' that was a wave.\" One cannot buy that kind of dedication. Apparently, one can only retire into it.",
+          "image": {
+            "src": "img/staff-jellyfish-coal.webp",
+            "alt": "The Jellyfish, a Cardworks character, in charcoal, drifting through dark water",
+            "kind": "staff",
+            "credit": "Cardworks Archive",
+            "caption": "Our correspondent on the water, Wednesday."
+          }
+        },
+        {
+          "id": "tg-meme",
+          "size": "brief",
+          "headline": "The owner, a portrait",
+          "byline": "Staff",
+          "roast": true,
+          "body": "Published without the owner's approval, which we are told is the house style.",
+          "image": {
+            "src": "",
+            "alt": "Man mistakes a butterfly labelled 'a fourth something big tweet' for a launch",
+            "kind": "meme",
+            "credit": "Imgflip / The Morning Wood",
+            "template": "Is This A Pigeon",
+            "captions": [
+              "@ThiccLiquidity",
+              "a fourth \"something big\" tweet",
+              "Is this a launch?"
+            ],
+            "placeholder": true
+          }
+        }
+      ]
+    },
+    {
+      "section": "crypto",
+      "title": "Crypto",
+      "layout": "tabloid",
+      "accent": "#7b2ff7",
+      "stories": [
+        {
+          "id": "crypto-lead",
+          "size": "lead",
+          "kicker": "FEAR AND LOATHING",
+          "headline": "Fear and loathing at $81,000",
+          "deck": "The Suits are selling, the Cathedral is buying, and the man in 14C says it's healthy",
+          "byline": "Hunter S. Timber",
+          "body": "MOTEL 6, EXIT 41 — 3:12 A.M. We were somewhere around $81,000 on the edge of the weekly low when the liquidations began to take hold. I remember saying something like \"I feel a bit margin-called; maybe you should drive,\" and suddenly the sky was full of what looked like four hundred million dollars in long positions, all swooping and screeching and diving around the chart.\n\nThe Suits were selling again. You could smell it on the tape: six hundred and eleven million out the door in one week, most of it ether, most of it from the big black fund with the four-letter ticker that sounds like a sneeze. These are the people who told your grandmother crypto was safe now. They wear loafers without socks. They do not lose sleep. They lose *your* sleep, on your behalf, for a management fee.\n\nEther had it worst — down nine percent on the week, trading like a man who has just been told the party is at a different house. Somewhere a treasury company now holds nearly five percent of all of it and is presumably also lying on a kitchen floor.\n\nAnd the Cathedral? The Cathedral bought 267 more bitcoin. Of course it did. The Cathedral has only one prayer and it is \"more\".\n\n**Fear:** oil at $111, inflation running hot, and a Federal Reserve that looks at the economy the way a man looks at a smoke detector at 4 a.m. **Loathing:** for the man in seat 14C who said \"it's just a healthy correction\" while his phone buzzed itself off the tray table and into the aisle, where it lay face-down, like the rest of us.",
+          "image": {
+            "src": "",
+            "alt": "A crowded motel parking lot at night, dozens of people standing in bathrobes looking up at a giant red neon arrow pointing down",
+            "kind": "ai",
+            "credit": "Morning Wood Staff Photographer (AI)",
+            "caption": "Guests at a Motel 6 off Exit 41 observe the weekly low, Wednesday.",
+            "prompt": "A roadside motel parking lot at 3 a.m., dozens of anonymous people in bathrobes and slippers standing in silence looking up at an enormous red neon arrow sign pointing downward, a flickering VACANCY sign, an ice machine, wet asphalt reflecting red light, cinematic, deadpan",
+            "placeholder": true
+          },
+          "sources": [
+            "https://cryptoticker.io/en/crypto-market-selloff-ether-leads/",
+            "https://zerocap.com/insights/weekly-crypto-market-wrap/weekly-crypto-market-wrap-20-october-2026",
+            "https://calebandbrown.com/blog/weekly-rollup-october-20-2026/"
+          ]
+        },
+        {
+          "id": "crypto-msci",
+          "size": "minor",
+          "kicker": "INDEXES",
+          "headline": "MSCI moves to kick bitcoin treasury firms out of indexes; Strategy buys 267 more bitcoin out of spite",
+          "byline": "Hunter S. Timber",
+          "body": "NEW YORK — Index giant MSCI finalised rules this week that could exclude digital-asset treasury companies such as Strategy from its benchmarks, prompting Strategy to respond in the only language it has ever spoken. \"You can remove us from the index,\" a company spokesperson did not say, \"but you cannot remove the index from us, because we will buy it, in bitcoin, with money we borrowed against bitcoin.\"",
+          "sources": [
+            "https://calebandbrown.com/blog/weekly-rollup-october-20-2026/"
+          ]
+        },
+        {
+          "id": "crypto-jpm",
+          "size": "minor",
+          "kicker": "BANKING",
+          "headline": "JPMorgan brings its deposit token to Ethereum after years of warning everyone about exactly this",
+          "byline": "Hunter S. Timber",
+          "body": "The nation's largest bank said it would put JPM Coin on Ethereum for institutional clients, completing a decade-long journey from \"this is a fraud\" to \"this is a product\" that industry observers called \"the most traditional thing a bank has ever done.\" Meanwhile, the EU named USDC the first \"significant\" e-money token under MiCA, a title that comes with a certificate, a lanyard and roughly nine hundred pages of homework.",
+          "sources": [
+            "https://calebandbrown.com/blog/weekly-rollup-october-20-2026/"
+          ]
+        },
+        {
+          "id": "crypto-obit",
+          "size": "minor",
+          "kicker": "OBITUARY",
+          "headline": "A Long Position, aged nine hours",
+          "byline": "Edgar Allan Pine",
+          "body": "Once upon a midnight dreary, while I traded, weak and weary, over many a quaint and curious candle of forgotten lore — suddenly there came a margin call, as of someone gently tapping, tapping at my exchange door. \"'Tis the funding rate,\" I muttered, \"only this and nothing more.\" It was not only this.\n\nBorn at the open, of a man who had read one thread. Died at 3:12 a.m., of leverage, surrounded by four hundred million dollars of others who had read the same thread. Survived by a screenshot of the entry, which he will keep, and a wife, who will not keep him. In lieu of flowers, the family asks that you never, ever show her the screenshot.\n\nQuoth the raven, Liquidity: \"Nevermore.\" — E.A.P., from the Furnace Room"
+        },
+        {
+          "id": "crypto-meme",
+          "size": "brief",
+          "headline": "Ether holders issue joint statement",
+          "byline": "Staff",
+          "body": "The statement was read aloud from inside the room.",
+          "image": {
+            "src": "",
+            "alt": "A cartoon dog sitting calmly in a burning room, labelled '20x long ETH'",
+            "kind": "meme",
+            "credit": "Imgflip / The Morning Wood",
+            "template": "This Is Fine",
+            "captions": [
+              "Me, 20x long ETH",
+              "The weekly candle"
+            ],
+            "placeholder": true
+          }
+        }
+      ]
+    },
+    {
+      "section": "trending",
+      "title": "Trending & World",
+      "layout": "tabloid",
+      "accent": "#00a6a6",
+      "stories": [
+        {
+          "id": "tr-pacs",
+          "size": "lead",
+          "kicker": "POLITICS",
+          "headline": "Super PACs pass $400 million spent telling Americans who not to vote for",
+          "deck": "\"Most money ever spent on a recommendation nobody asked for,\" says man on porch",
+          "byline": "Mark Twine",
+          "body": "HANNIBAL, MO. (by telegraph) — Political action committees backed by the richest man in the world have now spent more than four hundred million dollars on advertising this election, while the President's own super PAC has spent a further thirty-four million attacking a Texas Democrat, bringing the total sum spent informing Americans that someone is bad to a figure larger than the economy of several countries that have never once been told who is bad.\n\nIn my day a man bought votes honestly, with whiskey, one at a time, and looked the voter in the eye while he did it. Today a voter in Maine can watch the same advertisement nine times in one evening and still not know which candidate it was against, only that the music was very worried.\n\nPollsters report the ads are working: 94 percent of Americans now say they are \"against\" something, and a growing number are against everything, which is the most united this country has been since the war.\n\n*There is no distinctly native American criminal class, save the consultants. — M.T.*",
+          "image": {
+            "src": "",
+            "alt": "A tired family on a sofa watching a television that shows only a giant red X, with a pile of political mailers up to their knees",
+            "kind": "ai",
+            "credit": "Morning Wood Staff Photographer (AI)",
+            "caption": "A family in Maine is informed, for the ninth time Tuesday evening, that someone is bad.",
+            "prompt": "An ordinary American living room in the evening, a tired family on a beige sofa buried knee-deep in glossy political mailers, the television showing only a giant red X on a black background, a dog chewing a campaign flyer, a 1970s wire photo look, deadpan",
+            "placeholder": true
+          },
+          "sources": [
+            "https://www.washingtonpost.com/politics/"
+          ]
+        },
+        {
+          "id": "tr-autograph",
+          "size": "minor",
+          "kicker": "CULTURE",
+          "headline": "Man who argued with pop star over autograph now the most famous person in his family",
+          "byline": "Mark Twine",
+          "body": "NEW YORK — A man filmed in a heated exchange with a pop star after asking for an autograph has, within a day, become the best-known member of his family, surpassing an uncle who once appeared in the background of a weather report. \"We always said he'd make something of himself,\" said his mother, \"and we were right, and it was this.\" The man reportedly still does not have the autograph, but now signs them himself.\n\n*Get your facts first, and then you can distort them on the general store's video channel. — M.T.*",
+          "sources": [
+            "https://www.soapcentral.com/entertainment/just-trying-set-boundaries-internet-reacts-clip-harry-styles-getting-argument-man-asking-autograph-goes-viral"
+          ]
+        },
+        {
+          "id": "tr-ai",
+          "size": "minor",
+          "kicker": "TECHNOLOGY",
+          "headline": "AI finds flaw in 70% of the world's websites; remaining 30% 'just as bad, it got bored'",
+          "byline": "Mark Twine",
+          "body": "A software flaw discovered by an artificial intelligence could affect seventy percent of the websites on Earth, researchers said, adding that the machine stopped looking at that point \"out of what we can only describe as despair.\" The other thirty percent are said to be run by a man named Gary who has not updated anything since 2014 and is therefore, by accident, untouchable.",
+          "sources": [
+            "https://www.yahoo.com/news/videos/ap-top-stories-october-21-220753428.html"
+          ]
+        },
+        {
+          "id": "tr-wedding",
+          "size": "brief",
+          "kicker": "TRENDING",
+          "headline": "Couples choose song titled 'Patient Zero' for wedding videos, see nothing wrong with this",
+          "byline": "Mark Twine",
+          "body": "Fifty-three thousand couples and counting. Marriage, like a pandemic, starts with one person and gets into everything.",
+          "sources": [
+            "https://socialbee.com/blog/latest-instagram-trends/"
+          ]
+        },
+        {
+          "id": "tr-meme",
+          "size": "brief",
+          "headline": "The American voter, Wednesday",
+          "byline": "Staff",
+          "body": "",
+          "image": {
+            "src": "",
+            "alt": "Drake rejecting 'voting' and approving 'watching $400 million of ads about voting'",
+            "kind": "meme",
+            "credit": "Imgflip / The Morning Wood",
+            "template": "Drake Hotline Bling",
+            "captions": [
+              "Voting",
+              "Watching $400 million of ads about voting"
+            ],
+            "placeholder": true
+          }
+        }
+      ]
+    },
+    {
+      "section": "markets",
+      "title": "Markets",
+      "layout": "tabloid",
+      "accent": "#1f9d55",
+      "blocks": [
+        "markets"
+      ],
+      "stories": [
+        {
+          "id": "mk-report",
+          "size": "lead",
+          "kicker": "THE MARKET REPORT",
+          "headline": "The fish was down by morning",
+          "deck": "A report from the river",
+          "byline": "Ernest Hemingwood",
+          "body": "The fish had moved {{PLANK.change24hPct}} by morning. It was a good fish and it had been down before. The men at the pool watched it the way men watch a fire that has decided to go out, and nobody said anything, and somebody bought a little, and then somebody sold more than that, and the sun came up over the liquidity like it did not know.\n\nThere was {{PLANK.liquidityUsd}} in the pool. It was not deep water. It was the kind of water a boy can stand up in, if he is tall and not afraid. {{PLANK.volume24hUsd}} changed hands. Nobody came to the river who did not have to.\n\nThe boy did what the boy always does. He followed the fish. PAPER traded at {{PAPER.priceUsd}}, {{PAPER.change24hPct}} on the day, on {{PAPER.volume24hUsd}} of volume, which is not much volume, and is not nothing. {{PAPER.holders}} people hold the boy. They do not talk about it in town.\n\nIn the old houses the mills sat quiet. There are {{mills.live}} of them still standing. Each one holds {{mills.backingUsd}} of the fish in its belly. Nobody was selling the old houses. You do not sell the house you were born in. You just stop calling.\n\nIn the North the Old Man was at {{majors.bitcoin.priceUsd}}, {{majors.bitcoin.change24hPct}}, and his brother ether at {{majors.ethereum.priceUsd}}, {{majors.ethereum.change24hPct}}. They are old and they are big and they drag the whole sea behind them when they go down. It is not their fault. It is only their size.\n\n**The Catch:** {{PAPER.burned24h}} PAPER, gone to the dead address before breakfast. It did not struggle. They never struggle at the end. It was clean and it was true and it will not be coming back, and that is the only promise this market has ever kept.",
+          "image": {
+            "src": "img/staff-cactus.webp",
+            "alt": "The Cactus, a Cardworks character, standing in a burning desert",
+            "kind": "staff",
+            "credit": "Cardworks Archive",
+            "caption": "The market, Wednesday."
+          }
+        }
+      ]
+    },
+    {
+      "section": "back",
+      "title": "The Back Page",
+      "layout": "tabloid",
+      "accent": "#f2c200",
+      "blocks": [
+        "letters",
+        "classifieds",
+        "horoscopes",
+        "weather",
+        "staff"
+      ],
+      "stories": [
+        {
+          "id": "back-editorial",
+          "size": "major",
+          "kicker": "EDITORIAL",
+          "headline": "On the first morning",
+          "byline": "Kurt Vonneplank",
+          "body": "Listen: we made a newspaper. Nobody asked us to. That is how all the best things get made — children, music, and bad decisions at 3 a.m. — and most of the worst ones too.\n\nIt comes out every morning. It costs one PAPER and a nickel. You can read it for one day, and then it is gone, the way every day is gone, the way your long position is gone. So it goes. If you are holding this copy, you were here, on the first morning, which is more than the Tralfamadorians can say, because they were everywhere at once and therefore nowhere in particular.\n\nHere is the only advice this paper will ever give you: be kind to the people in your Space. They are lonely and they are holding the same bag you are. God damn it, you've got to be kind. Hi ho.",
+          "image": {
+            "src": "img/workshop.webp",
+            "alt": "The Cardworks workshop at night: a furnace, a paper-roll press, two empty writing desks",
+            "kind": "staff",
+            "credit": "Cardworks Archive",
+            "caption": "The Morning Wood newsroom, shortly before deadline."
+          }
+        },
+        {
+          "id": "back-cartoon",
+          "size": "brief",
+          "kicker": "CARTOON",
+          "headline": "The business plan",
+          "byline": "Staff",
+          "body": "",
+          "image": {
+            "src": "",
+            "alt": "Gru presenting a four-step plan; the last panel he realises it says 'Call it The Morning Wood'",
+            "kind": "meme",
+            "credit": "Imgflip / The Morning Wood",
+            "template": "Gru's Plan",
+            "captions": [
+              "Start a newspaper in 2026",
+              "Put it on the blockchain",
+              "Call it The Morning Wood",
+              "Call it The Morning Wood"
+            ],
+            "placeholder": true
+          }
+        }
+      ]
+    }
+  ],
+  "markets": {},
+  "letters": [
+    {
+      "name": "Mrs. Hemingwood (staff mother)",
+      "text": "Dear Editor, I have bought one copy and I will be telling everyone at church it is about lumber.",
+      "reply": "It is about lumber. — Ed.",
+      "sample": true
+    },
+    {
+      "name": "Mrs. Timber (staff mother)",
+      "text": "Dear Editor, my son Hunter has not come home in four days. If he reads this: the car is not stolen if you bring it back.",
+      "reply": "He has the car. He says it's \"in a position.\" — Ed.",
+      "sample": true
+    },
+    {
+      "name": "Concerned Grandmother, Duluth",
+      "text": "Is there a version of this newspaper without the name?",
+      "reply": "No. — Ed.",
+      "sample": true
+    }
+  ],
+  "classifieds": [
+    {
+      "heading": "FOR SALE",
+      "text": "One (1) bag of PLANK, heavier than when purchased. Emotional damage included at no extra cost. Serious buyers only; unserious buyers preferred.",
+      "house": true
+    },
+    {
+      "heading": "WANTED",
+      "text": "Exit liquidity. Must be patient, trusting and own a phone. Will train.",
+      "house": true
+    },
+    {
+      "heading": "LOST",
+      "text": "Seed phrase, last seen on a Post-it in a jacket I donated to Goodwill. Reward: half of what's on it, which is nothing unless you find it.",
+      "house": true
+    },
+    {
+      "heading": "SERVICES",
+      "text": "Will host your Twitter Space. Will not end it. Ask about our four-hour minimum.",
+      "house": true
+    },
+    {
+      "heading": "MISSED CONNECTIONS",
+      "text": "You: $81,000 support, steady, reliable. Me: a man who believed in you. You left Wednesday without a word. I'm still at the kitchen floor if you want to talk.",
+      "house": true
+    },
+    {
+      "heading": "PERSONALS",
+      "text": "Retired developer, owns boat, seeks a bug that only appears at 3 a.m. Must love water. No timewasters (the bugs are the timewasters).",
+      "house": true
+    }
+  ],
+  "horoscopes": [
+    {
+      "sign": "Aries",
+      "text": "You will be tempted to open the chart. The chart will be tempted to open you. Only one of you will close."
+    },
+    {
+      "sign": "Taurus",
+      "text": "The stars say hold. The stars are made of gas, and gas is not free anymore. Think about it."
+    },
+    {
+      "sign": "Gemini",
+      "text": "Both of you were right. Both of you were also leveraged. So it goes."
+    },
+    {
+      "sign": "Cancer",
+      "text": "A man named Kilgore Trout will try to sell you a newsletter. He has nine subscribers. Be the tenth. It will mean everything to him."
+    },
+    {
+      "sign": "Leo",
+      "text": "You will host a Space today. Nobody will be able to leave. This is not a metaphor; check the button."
+    },
+    {
+      "sign": "Virgo",
+      "text": "Your spreadsheet balances perfectly. Your life does not. Add a column for that."
+    },
+    {
+      "sign": "Libra",
+      "text": "Sell your couch. Buy a different couch. Lie on the floor between them and feel the market."
+    },
+    {
+      "sign": "Scorpio",
+      "text": "Someone in the Tang Gang will play guitar at you. Let it happen. It is the closest thing to church most of you have."
+    },
+    {
+      "sign": "Sagittarius",
+      "text": "Travel is favoured, especially away from your phone, especially by boat, especially if the boat has no Wi-Fi."
+    },
+    {
+      "sign": "Capricorn",
+      "text": "Hard work pays off, eventually, to someone. The Tralfamadorians know who. They're not telling."
+    },
+    {
+      "sign": "Aquarius",
+      "text": "Something big is coming. You have heard this four times this month. On the fifth, it will be a newspaper."
+    },
+    {
+      "sign": "Pisces",
+      "text": "You are the fish. You have always been the fish. Swim, little fish. Hi ho."
+    }
+  ],
+  "weather": [
+    {
+      "city": "New York",
+      "quip": "High of {{weather.New York.highF}}, {{weather.New York.sky}}; the wind on Wall Street will come in short, sharp, sell-side gusts."
+    },
+    {
+      "city": "London",
+      "quip": "Expect {{weather.London.sky}}. The fog has been there so long it now has a seat in the House of Lords."
+    },
+    {
+      "city": "Tokyo",
+      "quip": "A high of {{weather.Tokyo.highF}}; the only market in the world that is having a calm day, out of politeness."
+    },
+    {
+      "city": "Menlo Park",
+      "quip": "Low of {{weather.Menlo Park.lowF}}; visibility poor, which is how the people there prefer it."
+    }
+  ],
+  "staff": [
+    {
+      "name": "Ernest Hemingwood",
+      "beat": "Markets",
+      "photo": "img/staff-cactus.webp"
+    },
+    {
+      "name": "Hunter S. Timber",
+      "beat": "Crypto",
+      "photo": "img/staff-bowling-ball.webp"
+    },
+    {
+      "name": "Edgar Allan Pine",
+      "beat": "Obituaries",
+      "photo": "img/staff-jellyfish-coal.webp"
+    },
+    {
+      "name": "Dorothy Parquet",
+      "beat": "Tang Gang",
+      "photo": "img/staff-jellyfish.webp"
+    },
+    {
+      "name": "Mark Twine",
+      "beat": "Trending, World & Weather",
+      "photo": "img/staff-bowling-gold.webp"
+    },
+    {
+      "name": "Kurt Vonneplank",
+      "beat": "Horoscopes & Editorials",
+      "photo": "img/workshop.webp"
+    }
+  ],
+  "runningJokes": [
+    "The national position: lying on the kitchen floor staring at the ceiling (Timber, front page No. 1).",
+    "Brenda, Hunter S. Timber's dead 25x long. Every later long he opens gets a name.",
+    "@ThiccLiquidity's \"something big\" count (four as of No. 1). Parquet keeps the tally.",
+    "Liquidity the raven only ever says \"Nevermore\".",
+    "The Tralfamadorians think PLANK is \"a nice chart, mostly\".",
+    "Mark Twine's porch; Dorothy Parquet says he steals her trending items."
+  ]
+}

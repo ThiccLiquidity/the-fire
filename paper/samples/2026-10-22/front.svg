@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">
+<defs><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2"/><feColorMatrix values="0 0 0 0 0.2  0 0 0 0 0.15  0 0 0 0 0.1  0 0 0 0.06 0"/></filter></defs>
+<rect width="1200" height="1600" fill="#f3ead6"/>
+<rect width="1200" height="1600" filter="url(#grain)"/>
+<text x="600" y="150" text-anchor="middle" font-family="'UnifrakturMaguntia','Old English Text MT','Times New Roman',serif" font-size="128" fill="#16120c">The Morning Wood</text>
+<line x1="60" y1="180" x2="1140" y2="180" stroke="#16120c" stroke-width="4"/>
+<text x="60" y="214" font-family="Georgia,serif" font-size="24" fill="#16120c">No. 1</text>
+<text x="600" y="214" text-anchor="middle" font-family="Georgia,serif" font-style="italic" font-size="28" fill="#16120c">“Hard News, Every Morning”</text>
+<text x="1140" y="214" text-anchor="end" font-family="Georgia,serif" font-size="24" fill="#16120c">Thursday, October 22, 2026</text>
+<line x1="60" y1="232" x2="1140" y2="232" stroke="#16120c" stroke-width="1.5"/>
+<g transform="translate(1010 270) rotate(-12)"><rect x="-95" y="-34" width="190" height="62" fill="none" stroke="#c0281e" stroke-width="5" rx="6"/><text x="0" y="12" text-anchor="middle" font-family="Impact,'Arial Black',sans-serif" font-size="40" fill="#c0281e" letter-spacing="4">SATIRE</text></g>
+<text x="60" y="320" font-family="'Playfair Display',Georgia,serif" font-weight="900" font-size="68" fill="#16120c">NATION'S CRYPTO TRADERS</text>
+<text x="60" y="394" font-family="'Playfair Display',Georgia,serif" font-weight="900" font-size="68" fill="#16120c">SPEND NIGHT STARING AT</text>
+<text x="60" y="468" font-family="'Playfair Display',Georgia,serif" font-weight="900" font-size="68" fill="#16120c">CEILING AS BITCOIN SLIPS</text>
+<text x="60" y="542" font-family="'Playfair Display',Georgia,serif" font-weight="900" font-size="68" fill="#16120c">BELOW $81,000</text>
+<rect x="60" y="626" width="1080" height="720" fill="#d8ccb2"/><text x="600" y="996" text-anchor="middle" font-family="Georgia,serif" font-size="30" fill="#5a4c36">[ photo: A man in a bathrobe lies on a kitchen floor at night, lit on ]</text>
+<text x="60" y="1376" font-family="Georgia,serif" font-style="italic" font-size="20" fill="#3a3024">A Tucson man assumes the national position at 3:12 a.m. Wednesday. — Morning Wood Staff Photographer (AI)</text>
+<line x1="60" y1="1401" x2="1140" y2="1401" stroke="#16120c" stroke-width="1.5"/>
+<text x="60" y="1446" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">PLANK Holders Report</text>
+<text x="60" y="1480" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">Feeling 'Totally At</text>
+<text x="60" y="1514" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">Peace,' A Classic Early</text>
+<text x="60" y="1548" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">Sign Of Shock</text>
+<text x="430" y="1446" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">Oil Hits $111 A Barrel,</text>
+<text x="430" y="1480" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">Forcing Nation To</text>
+<text x="430" y="1514" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">Seriously Consider</text>
+<text x="430" y="1548" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">Walking Before Deciding</text>
+<text x="800" y="1446" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">Morning Wood Debuts On</text>
+<text x="800" y="1480" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">Worst Possible Day,</text>
+<text x="800" y="1514" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">Calls Timing</text>
+<text x="800" y="1548" font-family="Georgia,serif" font-weight="700" font-size="28" fill="#16120c">'Journalistically</text>
+</svg>

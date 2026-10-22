@@ -16,7 +16,7 @@
 //
 // Options: --rpc <url> (else RPC or RPC_URL), --file <deployments file> (else DEPLOYMENTS_FILE, else
 // deployments/<chainId>.json), --broadcast-dir <dir> (else contracts/broadcast), --dry-run (check only).
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createPublicClient, getAddress, http } from "viem";
@@ -27,19 +27,30 @@ const REPO = resolve(here, "../..");
 /** Inputs that must be contracts (the others are wallets). */
 export const CONTRACT_INPUTS = ["PAPER", "PLANK", "USDG", "WETH", "MILL", "ETH_USD_FEED", "PLANK_WETH_V2_PAIR", "UNIV2_FACTORY", "V2_ROUTER"];
 
-/** address (lowercase) -> { hash, script } for every contract the broadcasts on this chain created. */
+/** address (lowercase) -> { hash, script, all } for every contract the broadcasts on this chain created: { hash, script }
+ *  from the newest broadcast file, and in `all` every broadcast that names it, newest first (a stale broadcast file from
+ *  an earlier local chain can name the same address; record() takes the one whose transaction is on this chain). */
 export function broadcastIndex(dir, chainId) {
   const out = new Map();
   if (!existsSync(dir)) return out;
+  const files = [];
   for (const script of readdirSync(dir)) {
     const f = resolve(dir, script, String(chainId), "run-latest.json");
-    if (!existsSync(f)) continue;
+    if (existsSync(f)) files.push({ f, script, t: statSync(f).mtimeMs });
+  }
+  files.sort((x, y) => y.t - x.t);
+  for (const { f, script } of files) {
     let j;
     try { j = JSON.parse(readFileSync(f, "utf8")); } catch { continue; }
+    const add = (addr, hash) => {
+      const k = addr.toLowerCase();
+      if (!out.has(k)) out.set(k, { hash, script, all: [] });
+      out.get(k).all.push({ hash, script });
+    };
     for (const t of j.transactions ?? []) {
       if (!t.hash) continue;
-      if (t.contractAddress) out.set(t.contractAddress.toLowerCase(), { hash: t.hash, script });
-      for (const a of t.additionalContracts ?? []) if (a.address) out.set(a.address.toLowerCase(), { hash: t.hash, script });
+      if (t.contractAddress) add(t.contractAddress, t.hash);
+      for (const a of t.additionalContracts ?? []) if (a.address) add(a.address, t.hash);
     }
   }
   return out;
@@ -85,14 +96,15 @@ export async function record({ client, file, broadcastDir = resolve(REPO, "contr
     if (!code || code === "0x") { problems.push(`${name} ${addr}: no contract code on chain (the broadcast didn't land, or not yet)`); continue; }
     const b = index.get(addr.toLowerCase());
     if (b) {
-      try {
-        const r = await client.getTransactionReceipt({ hash: b.hash });
-        if (r.status !== "success") { problems.push(`${name} ${addr}: its transaction ${b.hash} (${b.script}) reverted`); continue; }
-        blocks.push(r.blockNumber);
-        notes.push(`${name} ${addr}: deployed in ${b.hash} (block ${r.blockNumber}, ${b.script})`);
-      } catch {
-        problems.push(`${name} ${addr}: has code, but its transaction ${b.hash} (${b.script}) isn't on this chain (a stale broadcast file?)`);
+      let found;
+      for (const c of b.all ?? [b]) {
+        try { found = { c, r: await client.getTransactionReceipt({ hash: c.hash }) }; break; } catch { /* not on this chain: try the next */ }
       }
+      if (!found) { problems.push(`${name} ${addr}: has code, but its transaction ${b.hash} (${b.script}) isn't on this chain (a stale broadcast file?)`); continue; }
+      const { c, r } = found;
+      if (r.status !== "success") { problems.push(`${name} ${addr}: its transaction ${c.hash} (${c.script}) reverted`); continue; }
+      blocks.push(r.blockNumber);
+      notes.push(`${name} ${addr}: deployed in ${c.hash} (block ${r.blockNumber}, ${c.script})`);
     } else {
       notes.push(`${name} ${addr}: has code; not created by a broadcast here (an existing contract given as an input)`);
     }

@@ -260,7 +260,7 @@ everyone, an unlimited taxed group idling out after 5 minutes) → buy through t
 script; a raised allowance refused; one buy with the PLANK swap down) → the taxed group's price rises, then it idles
 out → the keeper closes the Series (`FireSale.close`) → open → the keeper delivers drand and deals → the main keeper and the backup race → case and grade → the
 keeper finishes the grading → the backup steps in while the main keeper is down → a pause, a randomness switch and
-FireSale's `WalletsSet` reach the webhook → both burners flushed (the PAPER feed going live 40 h later) → VerifyDeploy.
+FireSale's `WalletsSet` reach the webhook → both burners flushed (the PAPER feed going live 40 h later) → a case and a grade paid in PAPER → VerifyDeploy.
 ```powershell
 cd ops; npm ci; cd keeper; npm ci; cd ..\snapshot; npm ci; cd ..
 node rehearsal/rehearse.mjs                       # plain anvil, nothing needed from outside
@@ -309,7 +309,7 @@ $verify = "--verify", "--verifier", "blockscout", "--verifier-url", "https://exp
 4. **Keepers**: the same Railway setup (`ops/keeper/README.md`) as two more services with `CHAIN_ID=46630`, the testnet
    RPC and their own testnet wallets (~0.05 test ETH each; separate from the mainnet keeper wallets). Start them right
    after the PLANK feed (mainnet step 1), as on mainnet.
-5. **Site**: build with `VITE_CHAIN=testnet` (reads `deployments/46630.json`; wallet and explorer switch to the testnet).
+5. **Site**: open a preview with `?live=testnet`, or set `VITE_LIVE=testnet` on Vercel's **Preview** environment only (reads `deployments/46630.json`; wallet and explorer switch to the testnet). `VITE_CHAIN=testnet` alone only picks the network: the site stays the demo.
 6. **Series**: step 6 as above, with the testnet owner. Then confirm one live drand delivery: buy a few packs, sell the
    drop out, let its groups' time run out (short durations and a short `idle` in a testnet sale: the keeper closes the
    Series with `FireSale.close`) or end it (`endDrop`, once its schedule is over) so the Series closes, open one pack and check the keeper log shows `fulfillMany success` and

@@ -1,0 +1,7 @@
+/* Self-hosted fonts (CSP font-src 'self'; works offline). Licences: fonts/FONTS.txt. */
+@font-face { font-family: 'UnifrakturMaguntia'; font-weight: 400; font-display: swap; src: url(./fonts/UnifrakturMaguntia-400.woff2) format('woff2') }
+@font-face { font-family: 'Old Standard TT'; font-weight: 400; font-display: swap; src: url(./fonts/OldStandardTT-400.woff2) format('woff2') }
+@font-face { font-family: 'Old Standard TT'; font-weight: 400; font-style: italic; font-display: swap; src: url(./fonts/OldStandardTT-400i.woff2) format('woff2') }
+@font-face { font-family: 'Old Standard TT'; font-weight: 700; font-display: swap; src: url(./fonts/OldStandardTT-700.woff2) format('woff2') }
+@font-face { font-family: 'Anton'; font-weight: 400; font-display: swap; src: url(./fonts/Anton-400.woff2) format('woff2') }
+@font-face { font-family: 'Russo One'; font-weight: 400; font-display: swap; src: url(./fonts/RussoOne-400.woff2) format('woff2') }

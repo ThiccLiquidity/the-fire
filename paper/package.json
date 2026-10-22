@@ -1,0 +1,17 @@
+{
+  "name": "morning-wood-paper",
+  "private": true,
+  "type": "module",
+  "description": "The Morning Wood: the nightly pipeline (gather -> writers -> copy desk -> images -> layout -> preview -> publish). No dependencies.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "gather": "node gather.mjs",
+    "gather:mock": "node gather.mjs --mock",
+    "inject": "node inject.mjs",
+    "images": "node images.mjs",
+    "check": "node check.mjs",
+    "layout": "node layout.mjs",
+    "publish": "node publish.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

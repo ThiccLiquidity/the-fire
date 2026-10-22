@@ -1,0 +1,555 @@
+{
+  "meta": {
+    "kind": "morning-wood/newspack",
+    "version": 1,
+    "date": "2026-10-22",
+    "number": 1,
+    "gatheredAt": "2026-10-22T19:06:57.773Z",
+    "mock": false,
+    "notes": [
+      "sample build: news from web search (Oct 20-22 2026), X mock (not connected), markets SAMPLE except majors, weather mock"
+    ],
+    "x": {
+      "mock": true,
+      "billed": 0,
+      "estCostUsd": 0
+    },
+    "sample": true
+  },
+  "news": {
+    "crypto": [
+      {
+        "desk": "crypto",
+        "source": "cryptoticker.io",
+        "title": "Crypto market falls 4.2%: why Ether suffers more",
+        "link": "https://cryptoticker.io/en/crypto-market-selloff-ether-leads/",
+        "summary": "Ether down ~5.4% to ~$2,377, Bitcoin down ~4% to ~$81,176; total market ~$2.83T; ~$400M liquidations, mostly longs.",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      },
+      {
+        "desk": "crypto",
+        "source": "Zerocap",
+        "title": "Weekly Crypto Market Wrap: 20 October 2026",
+        "link": "https://zerocap.com/insights/weekly-crypto-market-wrap/weekly-crypto-market-wrap-20-october-2026",
+        "summary": "~US$611M net outflows from US crypto ETFs, ETH funds (ETHA) the larger share; BTC weekly low near $80,100.",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      },
+      {
+        "desk": "crypto",
+        "source": "Caleb & Brown",
+        "title": "Crypto slides on hot inflation data and AI stock sell-off; MSCI finalises rules that could exclude Strategy; EU names USDC first significant e-money token",
+        "link": "https://calebandbrown.com/blog/weekly-rollup-october-20-2026/",
+        "summary": "Strategy bought 267 BTC; Bitmine ETH treasury ~4.9% of supply; JPMorgan bringing JPM Coin to Ethereum; BlackRock files capped-upside BTC ETF.",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      },
+      {
+        "desk": "crypto",
+        "source": "Yahoo Finance",
+        "title": "Bitcoin and ethereum prices today, Oct 20, 2026: crypto slides and oil soars as Mid-East attacks persist",
+        "link": "https://finance.yahoo.com/personal-finance/investing/article/bitcoin-and-ethereum-prices-today-tuesday-october-20-2026-crypto-prices-slide-and-oil-costs-soar-as-mid-east-attacks-persist-114152288.html",
+        "summary": "Brent back above $111.",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      },
+      {
+        "desk": "crypto",
+        "source": "BIT Academy",
+        "title": "Robinhood Chain vs Solana/Base memecoins",
+        "link": "https://www.bit.com/square/robinhood-chain-vs-solana-base-memecoin",
+        "summary": "Memecoins >80% of the chain's DEX volume; 90-day free-gas program from July 1 ended late September.",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      }
+    ],
+    "world": [
+      {
+        "desk": "world",
+        "source": "Washington Post (world)",
+        "title": "Russia frees U.S. citizen; envoy praises Putin",
+        "link": "https://www.washingtonpost.com/world/",
+        "summary": "Kremlin goodwill gesture.",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      },
+      {
+        "desk": "world",
+        "source": "Washington Post (world)",
+        "title": "Macron calls foreign leaders blaming migration for France's riots 'stupid'",
+        "link": "https://www.washingtonpost.com/world/",
+        "summary": "Including President Trump.",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      },
+      {
+        "desk": "world",
+        "source": "AP (via Yahoo)",
+        "title": "AP Top Stories October 21: Chiricahua named 64th national park; Super Typhoon Champi",
+        "link": "https://www.yahoo.com/news/videos/ap-top-stories-october-21-220753428.html",
+        "summary": "Also: AI found a software flaw that could affect 70% of websites.",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      }
+    ],
+    "politics": [
+      {
+        "desk": "politics",
+        "source": "Washington Post (politics)",
+        "title": "Musk-backed PACs pass $400 million in ads; MAGA Inc. spends ~$34 million attacking Democrats",
+        "link": "https://www.washingtonpost.com/politics/",
+        "summary": "Midterm spending climbs.",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      },
+      {
+        "desk": "politics",
+        "source": "Washington Post (politics)",
+        "title": "Democrats sue Trump, DOJ over effort to remove voters from state rolls",
+        "link": "https://www.washingtonpost.com/politics/",
+        "summary": "",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      }
+    ],
+    "culture": [
+      {
+        "desk": "culture",
+        "source": "Sportskeeda/Soap Central",
+        "title": "Clip of Harry Styles arguing with autograph seeker goes viral",
+        "link": "https://www.soapcentral.com/entertainment/just-trying-set-boundaries-internet-reacts-clip-harry-styles-getting-argument-man-asking-autograph-goes-viral",
+        "summary": "TMZ, Oct 21.",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      },
+      {
+        "desk": "culture",
+        "source": "SocialBee",
+        "title": "Instagram trends Oct 21: 'Zoom in' hidden-message format; Taylor Swift 'Patient Zero' used for wedding edits",
+        "link": "https://socialbee.com/blog/latest-instagram-trends/",
+        "summary": "",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      },
+      {
+        "desk": "culture",
+        "source": "wincalendar",
+        "title": "Trending on X Oct 21: Star Wars Battlefront 3 in the works",
+        "link": "https://www.wincalendar.com/Calendar/Date/October-21-2026",
+        "summary": "",
+        "published": "2026-10-21T00:00:00Z",
+        "feed": "websearch"
+      }
+    ]
+  },
+  "x": {
+    "posts": [
+      {
+        "id": "mock-OrangeGooey-0",
+        "handle": "OrangeGooey",
+        "name": "OrangeGooey",
+        "text": "Spaces at 9pm ET. PLANK roadmap, vibes, and whoever keeps unmuting with a leaf blower running.",
+        "at": "2026-10-22T19:06:57.773Z",
+        "likes": 40,
+        "reposts": 6,
+        "replies": 9,
+        "views": 1200,
+        "url": "",
+        "note": "Biggest Tang Gang account, hosts a lot of Spaces. One of the two devs who launched PLANK.",
+        "mock": true
+      },
+      {
+        "id": "mock-OrangeGooey-1",
+        "handle": "OrangeGooey",
+        "name": "OrangeGooey",
+        "text": "We didn't launch PLANK to get rich. We launched it to get rich together. Slight difference.",
+        "at": "2026-10-22T18:53:57.773Z",
+        "likes": 41,
+        "reposts": 6,
+        "replies": 10,
+        "views": 1200,
+        "url": "",
+        "note": "Biggest Tang Gang account, hosts a lot of Spaces. One of the two devs who launched PLANK.",
+        "mock": true
+      },
+      {
+        "id": "mock-Degen_Waffle-0",
+        "handle": "Degen_Waffle",
+        "name": "Degen_Waffle",
+        "text": "New song about the PLANK chart. It's in a minor key. Can't imagine why.",
+        "at": "2026-10-22T18:19:57.773Z",
+        "likes": 38,
+        "reposts": 5,
+        "replies": 9,
+        "views": 1231,
+        "url": "",
+        "note": "The other PLANK dev. Good member, plays guitar and sings.",
+        "mock": true
+      },
+      {
+        "id": "mock-Degen_Waffle-1",
+        "handle": "Degen_Waffle",
+        "name": "Degen_Waffle",
+        "text": "Guitar is tuned, wallet is not.",
+        "at": "2026-10-22T18:06:57.773Z",
+        "likes": 39,
+        "reposts": 5,
+        "replies": 10,
+        "views": 1231,
+        "url": "",
+        "note": "The other PLANK dev. Good member, plays guitar and sings.",
+        "mock": true
+      },
+      {
+        "id": "mock-toospooky-0",
+        "handle": "toospooky",
+        "name": "toospooky",
+        "text": "The Paper Press tech is fine. The humans are the bug.",
+        "at": "2026-10-22T17:32:57.773Z",
+        "likes": 36,
+        "reposts": 4,
+        "replies": 9,
+        "views": 1262,
+        "url": "",
+        "note": "Some say he started the Tang Gang. Slow to come to PLANK, but built the technology behind the Paper Press.",
+        "mock": true
+      },
+      {
+        "id": "mock-toospooky-1",
+        "handle": "toospooky",
+        "name": "toospooky",
+        "text": "I was early to Tang Gang and late to PLANK. Balance.",
+        "at": "2026-10-22T17:19:57.773Z",
+        "likes": 37,
+        "reposts": 4,
+        "replies": 10,
+        "views": 1262,
+        "url": "",
+        "note": "Some say he started the Tang Gang. Slow to come to PLANK, but built the technology behind the Paper Press.",
+        "mock": true
+      },
+      {
+        "id": "mock-Bullish0xCrypto-0",
+        "handle": "Bullish0xCrypto",
+        "name": "Bullish0xCrypto",
+        "text": "Retirement update: still retired, still shipping.",
+        "at": "2026-10-22T16:45:57.773Z",
+        "likes": 34,
+        "reposts": 3,
+        "replies": 9,
+        "views": 1293,
+        "url": "",
+        "note": "Tang Gang main dev. Retired millionaire.",
+        "mock": true
+      },
+      {
+        "id": "mock-Bullish0xCrypto-1",
+        "handle": "Bullish0xCrypto",
+        "name": "Bullish0xCrypto",
+        "text": "Fixed the bug at 3am from the boat. You're welcome.",
+        "at": "2026-10-22T16:32:57.773Z",
+        "likes": 35,
+        "reposts": 3,
+        "replies": 10,
+        "views": 1293,
+        "url": "",
+        "note": "Tang Gang main dev. Retired millionaire.",
+        "mock": true
+      },
+      {
+        "id": "mock-Grizzle341-0",
+        "handle": "Grizzle341",
+        "name": "Grizzle341",
+        "text": "gm. Grizzle341 has thoughts about PLANK and will share them in Spaces.",
+        "at": "2026-10-22T15:58:57.773Z",
+        "likes": 32,
+        "reposts": 6,
+        "replies": 9,
+        "views": 1324,
+        "url": "",
+        "note": "",
+        "mock": true
+      },
+      {
+        "id": "mock-GeneralDeeez-0",
+        "handle": "GeneralDeeez",
+        "name": "GeneralDeeez",
+        "text": "gm. GeneralDeeez has thoughts about PLANK and will share them in Spaces.",
+        "at": "2026-10-22T15:11:57.773Z",
+        "likes": 30,
+        "reposts": 5,
+        "replies": 9,
+        "views": 1355,
+        "url": "",
+        "note": "",
+        "mock": true
+      },
+      {
+        "id": "mock-ZabethOnChain-0",
+        "handle": "ZabethOnChain",
+        "name": "ZabethOnChain",
+        "text": "gm. ZabethOnChain has thoughts about PLANK and will share them in Spaces.",
+        "at": "2026-10-22T14:24:57.773Z",
+        "likes": 28,
+        "reposts": 4,
+        "replies": 9,
+        "views": 1386,
+        "url": "",
+        "note": "",
+        "mock": true
+      },
+      {
+        "id": "mock-chubzxmeta-0",
+        "handle": "chubzxmeta",
+        "name": "chubzxmeta",
+        "text": "gm. chubzxmeta has thoughts about PLANK and will share them in Spaces.",
+        "at": "2026-10-22T13:37:57.773Z",
+        "likes": 26,
+        "reposts": 3,
+        "replies": 9,
+        "views": 1417,
+        "url": "",
+        "note": "",
+        "mock": true
+      },
+      {
+        "id": "mock-FLEXicanPapa-0",
+        "handle": "FLEXicanPapa",
+        "name": "FLEXicanPapa",
+        "text": "gm. FLEXicanPapa has thoughts about PLANK and will share them in Spaces.",
+        "at": "2026-10-22T12:50:57.773Z",
+        "likes": 24,
+        "reposts": 6,
+        "replies": 9,
+        "views": 1448,
+        "url": "",
+        "note": "",
+        "mock": true
+      },
+      {
+        "id": "mock-bflo14-0",
+        "handle": "bflo14",
+        "name": "bflo14",
+        "text": "[image] meme: two buttons, 'sell PLANK' and 'tell everyone you're holding PLANK'",
+        "at": "2026-10-22T12:03:57.773Z",
+        "likes": 22,
+        "reposts": 5,
+        "replies": 9,
+        "views": 1479,
+        "url": "",
+        "note": "Meme master.",
+        "mock": true
+      },
+      {
+        "id": "mock-bflo14-1",
+        "handle": "bflo14",
+        "name": "bflo14",
+        "text": "Ratio'd my own dad today. Content is content.",
+        "at": "2026-10-22T11:50:57.773Z",
+        "likes": 23,
+        "reposts": 5,
+        "replies": 10,
+        "views": 1479,
+        "url": "",
+        "note": "Meme master.",
+        "mock": true
+      },
+      {
+        "id": "mock-chiographer-0",
+        "handle": "chiographer",
+        "name": "chiographer",
+        "text": "gm. chiographer has thoughts about PLANK and will share them in Spaces.",
+        "at": "2026-10-22T11:16:57.773Z",
+        "likes": 20,
+        "reposts": 4,
+        "replies": 9,
+        "views": 1510,
+        "url": "",
+        "note": "",
+        "mock": true
+      },
+      {
+        "id": "mock-ThiccLiquidity-0",
+        "handle": "ThiccLiquidity",
+        "name": "ThiccLiquidity",
+        "text": "Cards are in the oven. Don't open the oven.",
+        "at": "2026-10-22T10:29:57.773Z",
+        "likes": 18,
+        "reposts": 3,
+        "replies": 9,
+        "views": 1541,
+        "url": "",
+        "note": "The owner.",
+        "mock": true
+      },
+      {
+        "id": "mock-ThiccLiquidity-1",
+        "handle": "ThiccLiquidity",
+        "name": "ThiccLiquidity",
+        "text": "Burn number go up. That's the tweet.",
+        "at": "2026-10-22T10:16:57.773Z",
+        "likes": 19,
+        "reposts": 3,
+        "replies": 10,
+        "views": 1541,
+        "url": "",
+        "note": "The owner.",
+        "mock": true
+      }
+    ],
+    "searches": {},
+    "accounts": [
+      {
+        "handle": "OrangeGooey",
+        "note": "Biggest Tang Gang account, hosts a lot of Spaces. One of the two devs who launched PLANK."
+      },
+      {
+        "handle": "Degen_Waffle",
+        "note": "The other PLANK dev. Good member, plays guitar and sings."
+      },
+      {
+        "handle": "toospooky",
+        "note": "Some say he started the Tang Gang. Slow to come to PLANK, but built the technology behind the Paper Press."
+      },
+      {
+        "handle": "Bullish0xCrypto",
+        "note": "Tang Gang main dev. Retired millionaire."
+      },
+      {
+        "handle": "Grizzle341",
+        "note": ""
+      },
+      {
+        "handle": "GeneralDeeez",
+        "note": ""
+      },
+      {
+        "handle": "ZabethOnChain",
+        "note": ""
+      },
+      {
+        "handle": "chubzxmeta",
+        "note": ""
+      },
+      {
+        "handle": "FLEXicanPapa",
+        "note": ""
+      },
+      {
+        "handle": "bflo14",
+        "note": "Meme master."
+      },
+      {
+        "handle": "chiographer",
+        "note": ""
+      },
+      {
+        "handle": "ThiccLiquidity",
+        "note": "The owner."
+      }
+    ]
+  },
+  "markets": {
+    "asOf": "2026-10-22T06:00:00Z",
+    "source": "sample",
+    "sample": true,
+    "block": 0,
+    "ethUsd": 2377,
+    "tokens": {
+      "PAPER": {
+        "symbol": "PAPER",
+        "address": "SAMPLE",
+        "priceUsd": 0.000412,
+        "change24hPct": -7.3,
+        "volume24hUsd": 3120,
+        "trades24h": 214,
+        "liquidityUsd": 41200,
+        "marketCapUsd": 412000,
+        "burnedTotal": 1840221.5,
+        "burned24h": 3311.2,
+        "holders": 1312,
+        "pools": []
+      },
+      "PLANK": {
+        "symbol": "PLANK",
+        "address": "SAMPLE",
+        "priceUsd": 9.4e-10,
+        "change24hPct": -11.6,
+        "volume24hUsd": 18450,
+        "trades24h": 902,
+        "liquidityUsd": 133000,
+        "marketCapUsd": 835000,
+        "burnedTotal": 4120000000000,
+        "burned24h": 61000000000,
+        "holders": 611,
+        "pools": []
+      }
+    },
+    "mills": {
+      "name": "Paper Mills",
+      "address": "SAMPLE",
+      "live": 9310,
+      "holders": 1204,
+      "plankPerMill": 88842006942.0888,
+      "backingUsd": 83.51,
+      "floorEth": null
+    },
+    "majors": {
+      "bitcoin": {
+        "priceUsd": 81176,
+        "change24hPct": -4.0
+      },
+      "ethereum": {
+        "priceUsd": 2377,
+        "change24hPct": -5.4
+      }
+    },
+    "note": "SAMPLE numbers for PAPER, PLANK and Paper Mills (the chain could not be reached from the build machine). Majors: real, from cryptoticker.io, Oct 22 2026."
+  },
+  "site": {
+    "letters": [],
+    "copiesSold24h": null,
+    "packsSold24h": null,
+    "paperBurnedByBurner24h": null,
+    "note": "issue No. 1: no earlier issue, so no reader letters"
+  },
+  "weather": [
+    {
+      "city": "New York",
+      "highF": 61,
+      "lowF": 48,
+      "sky": "partly cloudy",
+      "rainPct": 20,
+      "mock": true
+    },
+    {
+      "city": "London",
+      "highF": 64,
+      "lowF": 49,
+      "sky": "rain",
+      "rainPct": 80,
+      "mock": true
+    },
+    {
+      "city": "Tokyo",
+      "highF": 67,
+      "lowF": 50,
+      "sky": "clear",
+      "rainPct": 0,
+      "mock": true
+    },
+    {
+      "city": "Menlo Park",
+      "highF": 70,
+      "lowF": 51,
+      "sky": "fog",
+      "rainPct": 10,
+      "mock": true
+    }
+  ],
+  "memory": {
+    "runningJokes": "# Running jokes\n\nThe writers read this every night (it is in the news pack as memory.runningJokes). Call back to these; retire one when\nit stops landing (move it under \"Retired\" with a one-line obituary by Edgar Allan Pine). remember.mjs appends new ones.\n\n## Live\n\n## Retired\n",
+    "recentIssues": []
+  }
+}

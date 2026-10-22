@@ -66,6 +66,17 @@ test("record: a landed broadcast is merged and the .pending file removed", async
   assert.equal(existsSync(`${file}.pending`), false);
 });
 
+test("record: a stale broadcast file from an earlier local chain naming the same address doesn't hide the real one", async () => {
+  const { file, bdir } = setup({
+    main: { chainId: 46630, inputs: {}, contracts: {} },
+    pending: { chainId: 46630, inputs: {}, contracts: { OpenDrandRouter: a(1) } },
+    runs: { "DeployInfra.s.sol": [{ hash: H(1), contractAddress: a(1) }], "DeployTestnet.s.sol": [{ hash: H(2), contractAddress: a(1) }] },
+  });
+  const r = await record({ client: fakeClient({ code: [a(1)], receipts: { [H(1)]: "success" } }), file, broadcastDir: bdir, log: () => {} });
+  assert.equal(r.ok, true, r.problems.join("; "));
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).contracts.OpenDrandRouter, a(1));
+});
+
 test("record: refuses a broadcast that didn't land, a reverted one, a stale file, the wrong chain", async () => {
   const pending = { chainId: 46630, inputs: {}, contracts: { PlankUsdTwap: a(1) } };
   const runs = { "DeployTwap.s.sol": [{ hash: H(1), contractAddress: a(1) }] };

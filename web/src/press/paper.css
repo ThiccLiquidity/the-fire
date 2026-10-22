@@ -1,0 +1,145 @@
+/* The Morning Wood's pages. Sized by the reader (--pw, --ph, --fs on .book; --fit per page). Type and layout follow the
+   page's own width (container queries), so the same page works as a phone page or half a desktop spread. */
+.pg { position: relative; width: var(--pw); height: var(--ph); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  font-size: calc(var(--fs, 14px) * var(--fit, 1)); line-height: 1.38; color: #1b1712; container-type: inline-size; contain: layout paint style;
+  -webkit-user-select: text; user-select: text; scrollbar-width: thin }
+.pg-in { min-height: 100%; display: flex; flex-direction: column; padding: 4.5cqw 5cqw 2.5cqw }
+.pg .hed { margin: 0; text-wrap: balance }
+.pg p { margin: 0 0 .55em }
+.pg .body p { hyphens: auto; -webkit-hyphens: auto }
+.pg blockquote { margin: .4em 0 .6em; padding-left: .8em; border-left: 3px solid currentColor; font-style: italic }
+.pg ul { margin: .3em 0 .6em; padding-left: 1.1em }
+.ph { margin: .5em 0 .7em }
+.ph-box { position: relative; aspect-ratio: 3 / 2; overflow: hidden; background: #d8ccb2 }
+.ph-box img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; -webkit-user-drag: none }
+.ph figcaption { font: 600 .72em/1.3 var(--sans); color: #6b6052; margin-top: .3em }
+.ph-kind { font-weight: 800; text-transform: uppercase; letter-spacing: .06em }
+
+/* footer and the SATIRE mark: every page */
+.pfoot { margin-top: auto; padding-top: .6em; display: flex; align-items: center; gap: .6em; border-top: 1px solid currentColor; font: 700 .68em var(--sans); letter-spacing: .04em; opacity: .9 }
+.pfoot > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pno { font: 400 1.25em var(--loud) }
+.satire-mark { font: 400 1em var(--loud); letter-spacing: .12em; color: #c8102e; border: 1.5px solid #c8102e; padding: .05em .4em; background: #fff; }
+
+/* ---------- the front page: a classic broadsheet */
+.broadsheet { background: #f4ecd8; background-image: radial-gradient(ellipse at 30% 20%, rgba(255,255,255,.55), transparent 55%), radial-gradient(ellipse at 80% 90%, rgba(120,90,40,.10), transparent 50%);
+  font-family: var(--serif) }
+.mast { text-align: center; position: relative }
+.ears { display: flex; justify-content: space-between; gap: 1em }
+.ear { margin: 0 !important; width: 9.5em; border: 1px solid #1b1712; padding: .3em .4em; font: italic .7em/1.25 var(--serif); text-align: center }
+.ear b { font-style: normal }
+.title { margin: .02em 0 0; font: 400 calc(var(--pw) * .108)/1 var(--black); white-space: nowrap; letter-spacing: -.01em }
+.motto { margin: .1em 0 .3em !important; font: italic 400 1.05em var(--serif) }
+.dateline { display: flex; justify-content: space-between; gap: .5em; border-top: 1.5px solid #1b1712; border-bottom: 4px double #1b1712; padding: .25em 0; font: 700 .7em var(--serif); letter-spacing: .08em; text-transform: uppercase }
+.satire-stamp { position: absolute; top: 3.2cqw; right: 3.2cqw; transform: rotate(-11deg); font: 400 1.6em/1 var(--loud); z-index: 1; letter-spacing: .14em; text-transform: uppercase;
+  color: #c8102e; border: .2em double #c8102e; border-radius: .2em; padding: .18em .5em .12em; opacity: .88; mix-blend-mode: multiply; pointer-events: none }
+.lead { padding: .7em 0 .5em; border-bottom: 1.5px solid #1b1712 }
+.lead .hed { font: 700 2.25em/1.02 var(--serif); letter-spacing: -.01em; text-align: center }
+.lead .deck { font: italic 400 1.12em/1.3 var(--serif); text-align: center; margin: .4em 0 .5em }
+.lead-ph .ph-box { aspect-ratio: 16 / 9 }
+.lead-ph .satire-stamp { top: 5%; right: 4%; background: rgba(244,236,216,.82); mix-blend-mode: normal; font-size: 1.9em }
+.lead-ph img { filter: contrast(1.05) }
+.broadsheet .byline { font: 700 .74em var(--serif); letter-spacing: .1em; text-transform: uppercase; margin: .3em 0 .5em; text-align: center }
+.broadsheet .body { text-align: justify }
+.cols { column-gap: 1.2em; column-rule: 1px solid #b9a888 }
+.lead .body > p:first-child::first-letter { float: left; font: 700 3.3em/.8 var(--serif); padding: .06em .08em 0 0 }
+.seconds { display: grid; grid-template-columns: 1fr; padding-top: .5em }
+.second { padding: .5em 0; border-top: 1px solid #b9a888 }
+.second:first-child { border-top: 0 }
+.second .hed { font: 700 1.28em/1.08 var(--serif) }
+.second .deck { font: italic 1em var(--serif); margin: .2em 0 }
+.second .byline { text-align: left }
+.second .ph-box { aspect-ratio: 16 / 9 }
+@container (min-width: 430px) {
+  .cols { column-count: 2 }
+  .seconds { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.2em }
+  .second { border-top: 0; padding: .4em 0 .4em; }
+  .second:nth-child(2n) { border-left: 1px solid #b9a888; padding-left: 1.2em }
+}
+@container (min-width: 640px) { .cols { column-count: 3 } .lead .hed { font-size: 2.7em } .seconds { grid-template-columns: repeat(3, minmax(0, 1fr)) } .second:nth-child(n+2) { border-left: 1px solid #b9a888; padding-left: 1.2em } }
+
+/* ---------- inside pages: tabloid */
+.tabloid { background: #fffdf7; font-family: var(--sans); --sec: #222; --sec-ink: #fff }
+.tabloid .pg-in { padding-top: 0 }
+.flag { margin: 0 -5cqw .7em; padding: .35em 5cqw .3em; background: var(--sec); color: var(--sec-ink); display: flex; align-items: baseline; justify-content: space-between; gap: .6em;
+  border-bottom: .3em solid #111; box-shadow: 0 .25em 0 var(--sec) }
+.flag-name { font: 400 2.5em/1 var(--loud); text-transform: uppercase; letter-spacing: .01em; text-shadow: .05em .05em 0 rgba(0,0,0,.25) }
+.flag-meta { font: 700 .66em var(--sans); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; opacity: .9 }
+.tabloid .story { margin-bottom: .8em }
+.tabloid .top .hed { font: 400 2.45em/.98 var(--loud); text-transform: uppercase; letter-spacing: .005em }
+.tabloid .top .deck { display: inline; font: 800 1.02em/1.5 var(--sans); background: var(--sec); color: var(--sec-ink); box-decoration-break: clone; -webkit-box-decoration-break: clone; padding: .05em .3em }
+.tabloid .deck + .byline, .tabloid .top .deck { margin-top: .4em }
+.tabloid .byline { display: block; font: 800 .72em var(--sans); text-transform: uppercase; letter-spacing: .08em; margin: .55em 0 .3em; color: #555 }
+.tabloid .more { border-top: .3em solid var(--sec); padding-top: .4em }
+.tabloid .more .hed { font: 400 1.55em/1 var(--loud); text-transform: uppercase }
+.tabloid .more .deck { font: 800 .95em var(--sans); margin: .25em 0 }
+.tabloid .ph { width: 86%; margin: .6em auto .7em }
+.tabloid .ph-meme .ph-box, .tabloid .ph-staff .ph-box { aspect-ratio: 1 }
+.tabloid .ph-meme { transform: rotate(-1.2deg) }
+.tabloid .ph-meme .ph-box { border: .25em solid #111; box-shadow: .4em .4em 0 var(--sec) }
+.tabloid .ph-meme .ph-box::after { content: 'MEME'; position: absolute; top: .4em; right: .4em; font: 400 .8em var(--loud); letter-spacing: .1em; background: #ffd400; color: #111; padding: .1em .45em; border: 2px solid #111; transform: rotate(6deg) }
+.tabloid .ph-staff .ph-box { border: .25em solid #fff; outline: 1px solid #bbb; box-shadow: 0 .3em .8em rgba(0,0,0,.2) }
+@container (min-width: 430px) {
+  .tabloid .top .ph { float: right; width: 46%; margin: .2em 0 .6em 1em }
+  .tabloid .top .hed { font-size: 2.7em }
+}
+
+/* markets */
+.tickers { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5em, 1fr)); gap: .7em; margin: .2em 0 .5em }
+.ticker { border: .2em solid #111; background: #fff; padding: .45em .6em .5em; box-shadow: .3em .3em 0 #111 }
+.tk-top { display: flex; justify-content: space-between; align-items: baseline }
+.tk-sym { font: 400 1.25em var(--loud); letter-spacing: .03em }
+.tk-ch { font: 800 .85em var(--sans); padding: .1em .35em; border-radius: .2em; color: #fff; background: #777 }
+.ticker.up .tk-ch { background: #0b8f3c } .ticker.down .tk-ch { background: #d0202a }
+.tk-price { font: 400 1.9em/1.1 var(--loud); font-variant-numeric: tabular-nums }
+.spark { width: 100%; height: 2.2em; display: block; margin: .15em 0 .25em }
+.spark polyline { fill: none; stroke: #111; stroke-width: 2.2; vector-effect: non-scaling-stroke; stroke-linejoin: round }
+.ticker.up .spark polyline { stroke: #0b8f3c } .ticker.down .spark polyline { stroke: #d0202a }
+.tk-stats { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: .15em .6em; font-size: .74em }
+.tk-stats dt { color: #666; font-weight: 700 } .tk-stats dd { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums }
+.asof { font: italic .72em var(--sans); color: #666 }
+
+/* the back page: letters, classifieds, horoscopes, and the letters box */
+.back-grid { display: grid; gap: .7em; grid-template-columns: 1fr }
+@container (min-width: 430px) { .back-grid { grid-template-columns: 1fr 1fr } .back-grid .horo { grid-column: 1 / -1 } }
+.box { border: .18em solid #111; background: #fff; padding: .45em .65em .5em }
+.box h3 { margin: 0 0 .3em; font: 400 1.25em var(--loud); text-transform: uppercase; letter-spacing: .02em }
+.box h3 small { font: 700 .55em var(--sans); text-transform: none; letter-spacing: 0; color: #666 }
+.box ul { list-style: none; padding: 0; margin: 0; display: grid; gap: .35em; font-size: .9em }
+.box .by { color: #666; font-weight: 700; white-space: nowrap }
+.classifieds { background: repeating-linear-gradient(0deg, #fff 0 1.35em, #f3f3f3 1.35em calc(1.35em + 1px)) }
+.classifieds li { font-family: 'Courier New', monospace; font-size: .95em }
+.horo dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(10em, 1fr)); gap: .3em .8em; font-size: .88em }
+.horo dt { font: 400 1.05em var(--loud); text-transform: uppercase } .horo dd { margin: 0 }
+.letterbox { margin-top: .8em; border: .2em dashed #111; background: #fff7cc; padding: .6em .7em .7em; font-size: .95em }
+.letterbox h3 { margin: 0 0 .2em; font: 400 1.35em var(--loud); text-transform: uppercase }
+.letterbox p { margin: 0 0 .4em }
+.lb-kind { border: 0; padding: 0; margin: 0 0 .4em; display: flex; gap: 1em }
+.lb-kind label { display: inline-flex; gap: .3em; align-items: center; font-weight: 800; min-height: 2em; cursor: pointer }
+.letterbox input[name="text"] { width: 100%; font: 600 16px var(--sans); padding: .55em .6em; border: 2px solid #111; border-radius: .3em; background: #fff; margin-bottom: .45em }
+.lb-send { font: 400 1.15em var(--loud); letter-spacing: .05em; text-transform: uppercase; background: #111; color: #ffd400; border: 0; border-radius: .3em; padding: .45em .9em; cursor: pointer; min-height: 44px }
+.lb-sent { list-style: none; padding: 0; margin: .5em 0 0; font-size: .88em; display: grid; gap: .2em }
+.letterbox.locked { background: #eee }
+
+/* the preview's "buy to read on" page */
+.paywall { flex: 1; display: grid; place-content: center; text-align: center; gap: .8em; padding: 1em 0 }
+.paywall .hed { font: 400 2.2em/1 var(--loud); text-transform: uppercase }
+.paywall p { font-weight: 700; color: #444 }
+.paywall .btn { justify-self: center; font-size: 1.4em }
+
+/* a page whose stories run past its bottom: a soft fade says "scroll for more" */
+.pg.scrolls::after { content: ''; position: sticky; bottom: 0; display: block; height: 2.2em; margin-top: -2.2em; pointer-events: none;
+  background: linear-gradient(rgba(244,236,216,0), rgba(244,236,216,.95)) }
+.tabloid.scrolls::after { background: linear-gradient(rgba(255,253,247,0), rgba(255,253,247,.95)) }
+
+/* the schema's extras: kickers, pull quotes, placeholder pictures, sample numbers */
+.pg .kicker { margin: 0 0 .2em; font: 800 .7em var(--sans); letter-spacing: .12em; text-transform: uppercase; color: #c8102e }
+.broadsheet .lead .kicker { text-align: center }
+.tabloid .kicker { display: inline-block; background: #111; color: #ffd400; padding: .1em .45em }
+.pg blockquote.pull { margin: .6em 0; padding: .3em 0 .3em .7em; border-left: .25em solid #c8102e; font: italic 700 1.15em/1.25 var(--serif) }
+.tabloid blockquote.pull { font: 400 1.3em/1.1 var(--loud); text-transform: uppercase; border-color: var(--sec) }
+.ph-standin { position: absolute; inset: 0; display: grid; place-items: center; padding: 8%; text-align: center; background: repeating-linear-gradient(-45deg, #e6dcc6 0 12px, #ddd1b7 12px 24px) }
+.ph-standin span { font: 400 1.2em/1.1 var(--loud); text-transform: uppercase; color: #3a3128 }
+.sample-note { font: 400 .95em var(--loud); letter-spacing: .08em; background: #ffd400; color: #111; border: .15em solid #111; padding: .2em .5em; margin: 0 0 .6em !important; text-align: center }
+.cl-h { font-family: var(--loud); font-weight: 400; letter-spacing: .04em }
+.box .reply { display: block; font-style: italic; color: #555; font-size: .92em }

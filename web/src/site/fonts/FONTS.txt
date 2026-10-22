@@ -1,0 +1,11 @@
+Fonts served by the doors and The Morning Wood (this folder, loaded by src/site/fonts.css). All are under the SIL Open
+Font License, Version 1.1 (full text in OFL.txt). The files are the families' WOFF2 web fonts (latin subset from
+Google Fonts), unmodified.
+
+File                          Family                 Copyright
+Anton-400.woff2               Anton                  Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/AntonFont)
+OldStandardTT-400.woff2       Old Standard TT        Copyright 2006-2011 Alexey Kryukov
+OldStandardTT-400i.woff2      Old Standard TT Italic Copyright 2006-2011 Alexey Kryukov
+OldStandardTT-700.woff2       Old Standard TT Bold   Copyright 2006-2011 Alexey Kryukov
+UnifrakturMaguntia-400.woff2  UnifrakturMaguntia     Copyright 2010 j. 'mach' wust
+RussoOne-400.woff2            Russo One              Copyright (c) 2011-2012, Jovanny Lemonad (jovanny.ru), with Reserved Font Name "Russo"

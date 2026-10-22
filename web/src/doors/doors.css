@@ -1,0 +1,72 @@
+/* The doors: a workshop wall with two doors. Drawn in CSS (no big images), mobile first; the swing is transform only. */
+:root { --ink: #f3e3c2; --dim: #b9a582; --brass: #c9973a; --brass-2: #f2cf7a; color-scheme: dark }
+* { box-sizing: border-box }
+body { margin: 0; min-height: 100dvh; color: var(--ink); font: 16px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  background:
+    linear-gradient(180deg, rgba(10,6,3,.55), rgba(10,6,3,0) 30%, rgba(10,6,3,.6) 100%),
+    repeating-linear-gradient(0deg, transparent 0 38px, rgba(0,0,0,.35) 38px 41px),
+    repeating-linear-gradient(90deg, transparent 0 86px, rgba(0,0,0,.28) 86px 89px),
+    linear-gradient(135deg, #4a2c1f, #3a2218 50%, #2d1a12);
+  background-color: #2d1a12 }
+:focus-visible { outline: 3px solid var(--brass-2); outline-offset: 4px }
+.wall { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; padding: max(16px, env(safe-area-inset-top)) 16px max(14px, env(safe-area-inset-bottom)) }
+.top { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 8px 0 18px; text-align: center }
+.top .mark { width: 44px; height: 44px; filter: drop-shadow(0 0 10px rgba(255,120,30,.5)) }
+.top h1 { margin: 0; font: 400 clamp(28px, 7vw, 46px)/1 'Russo One', system-ui, sans-serif; letter-spacing: .03em; color: #f9e2b4; text-shadow: 0 3px 0 #120a05 }
+.demo { margin: 4px 0 0; font: 700 12px system-ui, sans-serif; color: var(--dim) }
+.demo b { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; background: var(--brass); color: #1b0f06; border-radius: 999px; padding: 3px 7px 2px; margin-right: 4px }
+
+.doors { width: 100%; max-width: 760px; display: grid; grid-template-columns: 1fr 1fr; gap: clamp(14px, 4vw, 48px); flex: 1; align-content: start }
+.door { display: flex; flex-direction: column; align-items: center; gap: 10px; text-decoration: none; color: inherit; -webkit-tap-highlight-color: transparent }
+.frame { position: relative; width: 100%; aspect-ratio: 5 / 9; max-height: 62dvh; padding: 7% 7% 0; border-radius: 48% 48% 0 0 / 22% 22% 0 0;
+  background: linear-gradient(90deg, #1d120b, #3b2617 12%, #2b1b11 88%, #140c07); box-shadow: inset 0 0 0 3px #120a05, 0 12px 30px rgba(0,0,0,.5); perspective: 900px }
+.room, .leaf { position: absolute; left: 7%; right: 7%; top: 7%; bottom: 0; border-radius: 45% 45% 0 0 / 19% 19% 0 0; overflow: hidden }
+/* what's behind each door: the furnace's glow, the press room's lamp */
+.room { background: #000 }
+.cards .room { background: radial-gradient(ellipse at 50% 100%, #ff9a3c, #c6461a 35%, #3a1206 70%, #120402) }
+.paper .room { background: radial-gradient(ellipse at 50% 30%, #fff4cf, #e8c879 30%, #6e5427 70%, #1c1408) }
+.fire { position: absolute; inset: auto 0 0; height: 40%; background: radial-gradient(ellipse at 50% 100%, rgba(255,220,120,.9), transparent 70%); animation: flicker 1.6s ease-in-out infinite alternate }
+.lamp { position: absolute; inset: 0; background: radial-gradient(circle at 50% 28%, rgba(255,255,230,.9), transparent 35%); animation: flicker 3s ease-in-out infinite alternate }
+@keyframes flicker { 0% { opacity: .7 } 40% { opacity: 1 } 70% { opacity: .8 } 100% { opacity: .95 } }
+/* the door itself: swings on its left hinge */
+.leaf { transform-origin: 0 50%; transition: transform .45s cubic-bezier(.3,.7,.2,1); will-change: transform; display: flex; flex-direction: column; align-items: center; padding: 14% 8% 0; gap: 7% }
+.cards .leaf { background:
+  repeating-linear-gradient(90deg, rgba(0,0,0,.28) 0 2px, transparent 2px 25%),
+  linear-gradient(180deg, rgba(255,255,255,.06), transparent 30%, rgba(0,0,0,.25)),
+  linear-gradient(90deg, #8a5a33, #a7703f 30%, #93603a 60%, #7a4e2c) }
+.paper .leaf { background:
+  linear-gradient(180deg, rgba(255,255,255,.07), transparent 30%, rgba(0,0,0,.28)),
+  linear-gradient(90deg, #23493a, #2e5a48 40%, #24493a) }
+.leaf::before { content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 0 4px rgba(0,0,0,.35), inset 0 0 0 9px rgba(255,255,255,.05); border-radius: inherit; pointer-events: none }
+.plate { position: relative; z-index: 1; font: 400 clamp(13px, 3.6vw, 22px)/1.05 'Russo One', system-ui, sans-serif; text-align: center; letter-spacing: .06em; color: #2a1806;
+  background: linear-gradient(180deg, var(--brass-2), var(--brass) 55%, #8b6420); padding: .45em .8em; border-radius: 6px; box-shadow: 0 2px 0 #4a3310, inset 0 1px 0 rgba(255,255,255,.6) }
+.pack { width: 70%; max-width: 170px; filter: drop-shadow(0 6px 10px rgba(0,0,0,.5)); transform: rotate(-6deg) }
+.knob { position: absolute; right: 9%; top: 56%; width: clamp(10px, 2.6vw, 16px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffe9a8, var(--brass) 50%, #6f4d15); box-shadow: 0 2px 3px rgba(0,0,0,.6) }
+/* the paper pinned to the press door */
+.news { position: relative; width: 82%; background: #f4ecd8; color: #1b1712; padding: 6% 6% 8%; transform: rotate(3deg); box-shadow: 0 6px 12px rgba(0,0,0,.45); display: flex; flex-direction: column; align-items: center; text-align: center }
+.news::before { content: ''; position: absolute; top: -5px; left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: #c8102e; box-shadow: 0 2px 2px rgba(0,0,0,.5) }
+.n-mast { font: 400 clamp(9.5px, 2.75vw, 21px)/1 'UnifrakturMaguntia', serif; white-space: nowrap; border-bottom: 1px solid #1b1712; padding-bottom: 3px; width: 100% }
+.n-motto { font: italic 400 clamp(6.5px, 1.6vw, 10px) 'Old Standard TT', serif; border-bottom: 3px double #1b1712; width: 100%; padding: 2px 0 }
+.n-hed { margin-top: 6%; font: 400 clamp(11px, 3.3vw, 22px)/.95 'Anton', Impact, sans-serif; letter-spacing: .02em }
+.n-lines { width: 100%; height: clamp(18px, 6vw, 40px); margin-top: 6%; background: repeating-linear-gradient(180deg, #8a8070 0 2px, transparent 2px 6px) }
+.n-stamp { position: absolute; right: 5%; bottom: 7%; font: 400 clamp(8px, 2vw, 12px) 'Anton', Impact, sans-serif; letter-spacing: .12em; color: #c8102e; border: 2px solid #c8102e; padding: 1px 4px; transform: rotate(-12deg) }
+/* light spilling under the door */
+.light { position: absolute; left: 4%; right: 4%; bottom: -10px; height: 20px; border-radius: 50%; filter: blur(8px); opacity: .55; pointer-events: none; transition: opacity .4s }
+.cards .light { background: #ff8a2a } .paper .light { background: #ffe9a8 }
+
+.label { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px }
+.label b { font: 400 clamp(17px, 4.6vw, 26px)/1.05 'Russo One', system-ui, sans-serif; color: #f9e2b4; text-shadow: 0 2px 0 #120a05 }
+.paper .label b { font: 700 clamp(18px, 4.8vw, 28px)/1.05 'Old Standard TT', serif }
+.label small { color: var(--dim); font-weight: 700; font-size: clamp(12px, 3.2vw, 15px) }
+
+/* hover peeks the door open; picking it swings it wide */
+@media (hover: hover) { .door:hover .leaf { transform: rotateY(-14deg) } .door:hover .light { opacity: .9 } }
+.door:focus-visible .leaf { transform: rotateY(-14deg) }
+.door.open .leaf { transform: rotateY(-78deg) }
+.door.open .light { opacity: 1 }
+body.leaving .door:not(.open) { opacity: .55; transition: opacity .3s }
+.floor { margin: 18px 0 0; font: 700 12px system-ui, sans-serif; color: var(--dim); letter-spacing: .06em }
+
+@media (min-width: 720px) { .top { margin: 20px 0 28px } .frame { max-height: 64dvh } }
+@media (orientation: landscape) and (max-height: 520px) { .frame { max-height: 70dvh; aspect-ratio: auto; height: 70dvh } .doors { max-width: 520px } }
+@media (prefers-reduced-motion: reduce) { .leaf, .light { transition: none } .fire, .lamp { animation: none } }

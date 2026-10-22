@@ -1,0 +1,30 @@
+{
+  "name": "The Morning Wood — No. 1, Thursday, October 22, 2026",
+  "description": "Nation's Crypto Traders Spend Night Staring At Ceiling As Bitcoin Slips Below $81,000. Satire. \"Hard News, Every Morning\" Sold for 24 hours only; read it at /press.",
+  "image": "front.svg",
+  "external_url": "/press/1",
+  "animation_url": "preview.html",
+  "attributes": [
+    {
+      "trait_type": "Date",
+      "value": "2026-10-22"
+    },
+    {
+      "trait_type": "Issue",
+      "display_type": "number",
+      "value": 1
+    },
+    {
+      "trait_type": "Weekday",
+      "value": "Thursday"
+    },
+    {
+      "trait_type": "Lead",
+      "value": "Nation's Crypto Traders Spend Night Staring At Ceiling As Bitcoin Slips Below $81,000"
+    }
+  ],
+  "properties": {
+    "issue": "issue.json",
+    "satire": true
+  }
+}
