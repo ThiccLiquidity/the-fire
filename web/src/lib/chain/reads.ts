@@ -19,7 +19,7 @@ export const payIndex = (p: PayCoin): number => PAY.indexOf(p);
 type DropRaw = {
   start: bigint; packs: bigint; starters: bigint; plankOnly: bigint; walletLimit: bigint; paidSold: bigint; startersClaimed: bigint;
   creditPacks: bigint; starterWindow: number; liftAfter: number; holderWindow: number; maxPerTx: number; plankOnlyFor: number;
-  regularWalletsFor: number; starterPerPress: number; starterWalletLimit: number; creditsPerPick: number; plankBurnBps: number;
+  regularWalletsFor: number; starterPerPress: number; starterWalletLimit: number; creditsPerPick: number; plankBurnBps: number; paperBurnBps: number;
   creditPacksMax: bigint; creditPacksPerWallet: bigint; closed: boolean; priceUsd: bigint; paperPerPack: bigint; starterPriceUsd: bigint;
   starterPaper: bigint; holderRoot: Hex; paperCapUsd: bigint;
 };

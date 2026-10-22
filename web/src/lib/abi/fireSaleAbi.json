@@ -78,6 +78,11 @@
             "internalType": "address"
           },
           {
+            "name": "paperBurner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "credits",
             "type": "address",
             "internalType": "address"
@@ -701,6 +706,11 @@
             "internalType": "uint16"
           },
           {
+            "name": "paperBurnBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
             "name": "priceUsd",
             "type": "uint128",
             "internalType": "uint128"
@@ -940,6 +950,11 @@
             "internalType": "uint16"
           },
           {
+            "name": "paperBurnBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
             "name": "creditPacksMax",
             "type": "uint64",
             "internalType": "uint64"
@@ -1048,6 +1063,19 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "paperBurner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -1407,7 +1435,12 @@
         "internalType": "address"
       },
       {
-        "name": "burner",
+        "name": "plankBurner_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "paperBurner_",
         "type": "address",
         "internalType": "address"
       }
@@ -1573,6 +1606,11 @@
           },
           {
             "name": "plankBurnBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "paperBurnBps",
             "type": "uint16",
             "internalType": "uint16"
           },
@@ -1854,6 +1892,12 @@
       },
       {
         "name": "plankBurner",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "paperBurner",
         "type": "address",
         "indexed": false,
         "internalType": "address"

@@ -24,11 +24,11 @@ read on-chain. PDA grading is the exception the other way: its fresh odds and we
 | `RecipeDealer` | The first dealer: deals each Series from its own recipe (below). Owned by the owner (the hardware wallet). |
 | `RecipeCompiler` | The recipe checker, compiler and pool maths, split out of `RecipeDealer` for contract size. Pure: no state, no owner. |
 | `StandardRecipe` | The original Omni rules as a recipe (library). |
-| `FireSale` | Sells the packs (`docs/omni-economy.md`): every product rule is a per-drop setting (pack counts, prices, PAPER and its dollar ceiling, burn share, PLANK-only packs, press packs, holder window, wallet limit, regular-wallets rule, packs per purchase, credits per picked suggestion). Closes the Series when a drop sells out or ends. The owner can pause buying (`setPaused`). Never holds funds. |
+| `FireSale` | Sells the packs (`docs/omni-economy.md`): every product rule is a per-drop setting (pack counts, prices, PAPER and its dollar ceiling, PLANK and PAPER burn shares, PLANK-only packs, press packs, holder window, wallet limit, regular-wallets rule, packs per purchase, credits per picked suggestion). Closes the Series when a drop sells out or ends. The owner can pause buying (`setPaused`). Never holds funds. |
 | `FireCredits` | Free pack credits, card burning (42 cards = 1 credit, fixed forever) and character suggestions, split out of `FireSale` for contract size (same rules). It spends credits, burns cards and takes suggestion PAPER through `FireSale` hooks only it can call (`creditPacks`, `burnCardsFor`, `burnPaperFor`), so PAPER is approved to `FireSale` alone. Owned by the owner (picks, suggestion rules). |
 | `PlankBurner` | Gets the sale's PLANK burn share when the swap can't run (a stale PLANK price or a failed swap). No owner, no withdraw: anyone calls `flush`, which buys PLANK (95% TWAP guard, halving for a backlog) and sends it to the dead address. |
 | `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars, paid in ETH, USDG or PLANK. drand picks each grade (1 to 10) from the fresh odds and the card's frozen wear (both fixed forever, the same for every Series); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
-| `PaperBurner` | Gets 100% of every case and grading fee, buys PAPER with it on owner-set routes and burns it. No withdraw; the router is fixed at deploy. |
+| `PaperBurner` | Gets FireSale's PAPER share of every sale (20% in the Standard drop) and 100% of every case and grading fee, buys PAPER with it on owner-set routes and burns it. No withdraw; the router is fixed at deploy. |
 
 Every owned contract refuses `renounceOwnership` (control can't be lost by mistake); ownership moves only in two
 steps (`transferOwnership`, then `acceptOwnership`). `FirePacks` and `FireCards` have an owner-set `contractURI`
@@ -145,7 +145,7 @@ picture / full out of 1e18), `characterOf`, `charactersOf(fire, from, count)`, `
   "characters": [ { "name": "Ember Fox", "category": "Animals" } ],
   "sale": {
     "start": 1900000000, "packs": 117, "starters": 50, "plankOnly": 50, "walletLimit": 5,
-    "starterWindow": 86400, "liftAfter": 172800, "plankBurnBps": 3000,
+    "starterWindow": 86400, "liftAfter": 172800, "plankBurnBps": 1000, "paperBurnBps": 2000,
     "priceUsd": "250000000", "paperPerPack": "1000000000000000000", "paperCapUsd": "100000000",
     "holderWindow": 86400, "holderRoot": "0x...", "maxPerTx": 50,
     "plankOnlyFor": 172800, "regularWalletsFor": 172800,
@@ -219,7 +219,8 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | Price per paid pack | `priceUsd` (8 dec.) | per Series | $2.50 | always > 0 (unclaimed press packs sell at it; a $0 typo would give them away) |
 | PAPER per paid / credit pack | `paperPerPack` | per Series | 1 PAPER | any, 0 = none |
 | PAPER ceiling per pack | `paperCapUsd` (8 dec.) | per Series | $1 | any, 0 = no ceiling. A pack's PAPER (paid, press and credit packs) is never worth more than this at the `PAPER_USD` feed's price; while the feed is late the last good price holds (`lastPaperUsd`); before its first price, the set PAPER |
-| PLANK burn share | `plankBurnBps` | per Series | 30% | 0 to 100% |
+| PLANK burn share | `plankBurnBps` | per Series | 10% | 0 to 100%, with the PAPER share |
+| PAPER buy & burn share (to `PaperBurner`) | `paperBurnBps` | per Series | 20% | 0 to 100%, with the PLANK share |
 | PLANK-only packs | `plankOnly` | per Series | 50 | <= paid packs |
 | PLANK-only opens to ETH/USDG after | `plankOnlyFor` | per Series | 48h | > 0 if `plankOnly` > 0 (a PLANK feed outage can't stall a drop); <= 30 days |
 | Wallet limit (paid) | `walletLimit` | per Series | 5 | < 2^64; 0 = none (then `liftAfter` 0 too) |
@@ -397,7 +398,7 @@ a batch as the impersonated owner on a fork (`BATCH=AB` only there). It rejects 
 - **Right after the deploy:** the hardware wallet accepts ownership (`AcceptOwnership.s.sol`), then
   `VerifyDeploy.s.sol` checks the owner and the wiring: the seller is FireSale on packs
   and cards, cards point at packs, the dealer points at cards and packs, FireSale and FireCredits point at each other,
-  FireSale's `plankBurner` is the deployed PlankBurner (same router and PLANK/ETH feeds), the PDA is FirePsa, the
+  FireSale's `paperBurner` is the deployed PaperBurner, its `plankBurner` is the deployed PlankBurner (same router and PLANK/ETH feeds), the PDA is FirePsa, the
   renderer is CardsRenderer, FirePsa pays PaperBurner, randomness points at the two adapters, no Series is configured or locked yet,
   and the royalty is what was set.
 - **Keeper** (`ops/keeper`; every call is permissionless):

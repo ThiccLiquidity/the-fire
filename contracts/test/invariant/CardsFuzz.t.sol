@@ -23,6 +23,7 @@ contract CardsFuzzTest is SeriesHelper {
     address owner = address(0xA11CE0);
     address revenue = address(0xBEEF);
     address burnW = address(0xB0B);
+    address paperW = address(0xBA9E5);
     address alice = address(0xA1);
 
     MockERC20 paper;
@@ -61,7 +62,7 @@ contract CardsFuzzTest is SeriesHelper {
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, credits: address(credits)
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW, credits: address(credits)
         }));
         psa = new FirePsa(owner, address(cards), address(new MockBurner(address(plank), address(0))));
         vm.startPrank(owner, owner);
@@ -90,7 +91,7 @@ contract CardsFuzzTest is SeriesHelper {
         start = uint64(block.timestamp + 1);
         vm.prank(owner, owner);
         sale.configureDrop(1, FireSale.DropConfig({start: start, packs: 1_000, starters: 0, plankOnly: 0, walletLimit: 1_000,
-            starterWindow: 0, liftAfter: 1 hours, plankBurnBps: bps, priceUsd: price, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0}));
+            starterWindow: 0, liftAfter: 1 hours, plankBurnBps: bps, paperBurnBps: 0, priceUsd: price, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0}));
     }
 
     function _setFeeds(int256 ethPx, int256 plankPx) internal {

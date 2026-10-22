@@ -21,6 +21,8 @@ export interface SaleSettings {
   /** Most a pack's PAPER may be worth, in dollars, at the PAPER price (paid, press and free packs); 0 = no ceiling. */
   paperCapUsd: string
   plankBurnPercent: string
+  /** Share of each sale sent to PaperBurner, which buys PAPER on the market and burns it. */
+  paperBurnPercent: string
   plankOnly: number
   plankOnlyHours: number
   /** Paid packs per wallet; 0 = no limit (then liftHours is 0 too). */
@@ -50,11 +52,12 @@ export const CARDS_PER_CREDIT = 42
 export const MAX_WINDOW_HOURS = 30 * 24
 
 /** Today's Standard drop: 167 packs (117 paid + 50 press), $2.50 + 1 PAPER, 50 PLANK-only, 5 per wallet lifting after
- *  48h, 24h press window, 24h holder window, 30% PLANK burn, 50 per purchase, 1 press pack per press for 1 PAPER,
+ *  48h, 24h press window, 24h holder window, 10% PLANK burn and 20% PAPER buy & burn (70% revenue), 50 per purchase, 1 press pack per press for 1 PAPER,
  *  free packs capped at 10% of the drop and 3 per wallet, a pack's PAPER never more than $1 worth. */
 export function standardSale(): SaleSettings {
   return {
-    start: 0, paidPacks: 117, pressPacks: 50, priceUsd: '2.50', paperPerPack: '1', paperCapUsd: '1', plankBurnPercent: '30',
+    start: 0, paidPacks: 117, pressPacks: 50, priceUsd: '2.50', paperPerPack: '1', paperCapUsd: '1', plankBurnPercent: '10',
+    paperBurnPercent: '20',
     plankOnly: 50, plankOnlyHours: 48, walletLimit: 5, liftHours: 48, maxPerTx: 50, holderHours: 24, holderRoot: '',
     regularWalletsHours: 48, pressPerPress: 1, pressPerWallet: 1, pressHours: 24, pressPrice: 'paper', pressUsd: '0',
     pressPaper: '1', creditsPerPick: 1, creditPacksPercent: '10', creditPacksPerWallet: 3,
@@ -62,9 +65,16 @@ export function standardSale(): SaleSettings {
 }
 
 /** A Series' sale settings: the saved ones over the Standard sale (settings saved before a field existed get its
- *  default). */
+ *  default). Saved before the PAPER share existed: the old Standard 30% PLANK burn becomes the new Standard split
+ *  (10% PLANK, 20% PAPER); any other burn keeps its number with no PAPER share. */
 export function saleOf(f: { sale?: Partial<SaleSettings> }): SaleSettings {
-  return { ...standardSale(), ...f.sale }
+  const s = { ...standardSale(), ...f.sale }
+  if (f.sale && f.sale.paperBurnPercent === undefined && f.sale.plankBurnPercent !== undefined) {
+    const oldStandard = f.sale.plankBurnPercent.trim() === '30'
+    s.plankBurnPercent = oldStandard ? '10' : f.sale.plankBurnPercent
+    s.paperBurnPercent = oldStandard ? '20' : '0'
+  }
+  return s
 }
 
 /** The drop's packs: paid + press. This is the Series' pack count (FireRecord.packs follows it while the deal is
@@ -165,6 +175,9 @@ export function checkSale(s: SaleSettings, now = Date.now() / 1000): SaleProblem
   if (creditPct == null || creditPct > 10_000n) bad('creditPacksPercent', '0 to 100%, up to 2 decimals (0 = no limit).')
   const burn = parseDecimal(s.plankBurnPercent, 2)
   if (burn == null || burn > 10_000n) bad('plankBurnPercent', '0 to 100%, up to 2 decimals.')
+  const paperBurn = parseDecimal(s.paperBurnPercent, 2)
+  if (paperBurn == null || paperBurn > 10_000n) bad('paperBurnPercent', '0 to 100%, up to 2 decimals.')
+  else if (burn != null && burn + paperBurn > 10_000n) bad('paperBurnPercent', 'The PLANK and PAPER shares add up to more than 100%.')
 
   if (s.plankOnly > s.paidPacks) bad('plankOnly', 'More PLANK-only packs than paid packs.')
   if (s.plankOnly > 0 && seconds(s.plankOnlyHours) === 0) bad('plankOnlyHours', 'PLANK-only packs need a time they open to ETH and USDG.')
@@ -216,6 +229,7 @@ export interface SaleJson {
   starterWindow: number
   liftAfter: number
   plankBurnBps: number
+  paperBurnBps: number
   priceUsd: string
   paperPerPack: string
   paperCapUsd: string
@@ -245,6 +259,7 @@ export function saleJson(s: SaleSettings): SaleJson {
     starterWindow: on ? seconds(s.pressHours) : 0,
     liftAfter: seconds(s.liftHours),
     plankBurnBps: Number(parseDecimal(s.plankBurnPercent, 2) ?? 0n),
+    paperBurnBps: Number(parseDecimal(s.paperBurnPercent, 2) ?? 0n),
     priceUsd: d(s.priceUsd, 8),
     paperPerPack: d(s.paperPerPack, 18),
     paperCapUsd: d(s.paperCapUsd, 8),
@@ -281,6 +296,10 @@ export interface DropPlan {
   /** The PLANK burn share of those dollars. */
   burnUsd: number
   burnMinUsd: number
+  /** The PAPER buy & burn share of those dollars. */
+  paperUsd: number
+  /** What's left for the revenue wallet. */
+  keepUsd: number
 }
 
 export function dropPlan(s: SaleSettings): DropPlan {
@@ -292,10 +311,12 @@ export function dropPlan(s: SaleSettings): DropPlan {
   const price = Number(parseDecimal(s.priceUsd, 8) ?? 0n) / 1e8
   const pressUsd = pressUsdOn(s) ? Number(parseDecimal(s.pressUsd, 8) ?? 0n) / 1e8 : 0
   const burn = Number(parseDecimal(s.plankBurnPercent, 2) ?? 0n) / 10_000
+  const paperBurn = Number(parseDecimal(s.paperBurnPercent, 2) ?? 0n) / 10_000
   const revenueUsd = paid * price + press * pressUsd
   const revenueMinUsd = (paid - freeMax) * price + press * pressUsd
   return {
     total: paid + press, paid, press, plankOnly: Math.min(ok(s.plankOnly), paid), freeMax, freeCapped: capped,
     revenueUsd, revenueMinUsd, burnUsd: revenueUsd * burn, burnMinUsd: revenueMinUsd * burn,
+    paperUsd: revenueUsd * paperBurn, keepUsd: revenueUsd * (1 - burn - paperBurn),
   }
 }

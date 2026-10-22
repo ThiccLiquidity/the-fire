@@ -135,7 +135,7 @@ export async function setupChain({ port = 8547, log = console.log } = {}) {
   recipe.fire = Number(FIRE);
   // 6 paid packs and 1 press pack: the test sells them all, so the drop closes and the packs can be opened
   recipe.sale = {
-    start: 0, packs: 6, starters: 1, plankOnly: 0, walletLimit: 0, starterWindow: 3600, liftAfter: 0, plankBurnBps: 3000, priceUsd: 250000000,
+    start: 0, packs: 6, starters: 1, plankOnly: 0, walletLimit: 0, starterWindow: 3600, liftAfter: 0, plankBurnBps: 1000, paperBurnBps: 2000, priceUsd: 250000000,
     paperPerPack: "1000000000000000000", paperCapUsd: 100000000, holderWindow: 0, holderRoot: zeroHash, maxPerTx: 0, plankOnlyFor: 0, regularWalletsFor: 0,
     starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: "1000000000000000000", creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0,
   };

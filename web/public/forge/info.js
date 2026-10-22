@@ -152,7 +152,7 @@
         <ul>
           <li>Series ${no} has <b>${s.total ?? '—'} packs</b>, <b>${s.starters ?? '—'}</b> of them Press packs. When they're gone, they're gone.</li>
           <li>Pay in PLANK, ETH or USDG. Each pack also takes PAPER, which is burned.</li>
-          <li>Part of every sale buys PLANK and burns it. The rest goes to the team.</li>
+          <li>20% of every sale buys PAPER and burns it, and 10% buys PLANK and burns it. The rest goes to the team.</li>
           <li>You set the most you'll pay. If the price moves past it, nothing is charged.</li>
         </ul>
         <p class="inf-sub">How a Series sells</p>

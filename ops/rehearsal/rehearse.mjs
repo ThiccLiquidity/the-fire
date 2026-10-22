@@ -313,7 +313,7 @@ async function main() {
   const recipe = JSON.parse(readFileSync(resolve(CONTRACTS, "test/cards/recipe-standard.json"), "utf8"));
   recipe.imagesBase = "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/";
   const saleBlock = {
-    start: 0, packs: 4, starters: 0, plankOnly: 0, walletLimit: 0, starterWindow: 0, liftAfter: 0, plankBurnBps: 3000, priceUsd: 250000000,
+    start: 0, packs: 4, starters: 0, plankOnly: 0, walletLimit: 0, starterWindow: 0, liftAfter: 0, plankBurnBps: 1000, paperBurnBps: 2000, priceUsd: 250000000,
     paperPerPack: "1000000000000000000", paperCapUsd: 100000000, holderWindow: 0, holderRoot: zeroHash, maxPerTx: 0, plankOnlyFor: 0, regularWalletsFor: 0,
     starterPerPress: 0, starterWalletLimit: 0, starterPriceUsd: 0, starterPaper: 0, creditsPerPick: 0, creditPacksMax: 0, creditPacksPerWallet: 0,
   };

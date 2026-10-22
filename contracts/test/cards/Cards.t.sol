@@ -1270,6 +1270,7 @@ contract DeployCardsTest is Test {
         assertEq(address(d.sale.CARDS()), address(d.cards));
         assertEq(d.sale.revenueWallet(), address(0xBEEF));
         assertEq(d.sale.plankBurner(), address(d.plankBurner));
+        assertEq(d.sale.paperBurner(), address(d.burner));
         assertEq(address(d.plankBurner.ROUTER()), p.v2Router);
         assertEq(address(d.plankBurner.PLANK_USD()), address(twap));
         assertEq(address(d.plankBurner.ETH_USD()), ethUsd);

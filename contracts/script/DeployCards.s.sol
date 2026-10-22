@@ -82,7 +82,7 @@ interface ICardsPair {
  *   ETH_USD_FEED      Chainlink ETH/USD; PLANK_USD_FEED the PlankUsdTwap (DeployTwap.s.sol); PAPER_USD_FEED the PaperUsdTwap (DeployInfra.s.sol),
  *                     never the PAPER pool itself. Both feeds must be built on this PAPER/PLANK and ETH_USD_FEED.
  *   V2_ROUTER         Uniswap V2 router (buys the PLANK that each sale burns, and the PAPER that fees burn)
- *   REVENUE_WALLET    gets 70% of every sale (the PLANK burn share goes to PlankBurner when its swap can't go through)
+ *   REVENUE_WALLET    gets the rest of every sale after the drop's PLANK and PAPER burn shares (70% in the Standard drop)
  *   SUGGESTION_PAPER  PAPER wei per character suggestion to start (default 1e18 = 1 PAPER; 0 = free). The owner can
  *                     change it later (FireCredits.setSuggestionRules). Every other sale number is set per drop.
  *
@@ -220,19 +220,21 @@ contract DeployCards is Deployments {
         uint8 usdgDecimals = p.usdg == address(0) ? 0 : IERC20Metadata(p.usdg).decimals();
         d.plankBurner = new PlankBurner(p.plank, p.usdg, usdgDecimals, p.weth, p.v2Router, p.ethUsd, p.plankUsd);
         d.credits = new FireCredits(deployer, address(d.cards), p.suggestionPaper);
+        d.burner = new PaperBurner(deployer, p.paper, p.plank, p.usdg, usdgDecimals, p.weth, p.v2Router);
+        d.burner.setFeeds(p.ethUsd, p.plankUsd, p.paperUsd);
+        _setRoutes(d.burner, p);
         d.sale = new FireSale(FireSale.Config({
             owner: deployer, paper: p.paper, plank: p.plank, usdg: p.usdg, weth: p.weth, press: p.press,
             packs: address(d.packs), cards: address(d.cards), ethUsd: p.ethUsd, plankUsd: p.plankUsd, paperUsd: p.paperUsd,
-            router: p.v2Router, revenueWallet: p.revenueWallet, plankBurner: address(d.plankBurner), credits: address(d.credits)
+            router: p.v2Router, revenueWallet: p.revenueWallet, plankBurner: address(d.plankBurner),
+            paperBurner: address(d.burner), credits: address(d.credits)
         }));
         d.credits.setSale(address(d.sale)); // set once; it checks the sale points back here and sells the same cards
         require(address(d.credits.sale()) == address(d.sale) && d.sale.CREDITS() == address(d.credits), "credits wiring");
         require(d.sale.plankBurner() == address(d.plankBurner) && address(d.plankBurner.ROUTER()) == address(d.sale.ROUTER())
             && address(d.plankBurner.PLANK_USD()) == p.plankUsd && address(d.plankBurner.ETH_USD()) == p.ethUsd,
             "PlankBurner wiring");
-        d.burner = new PaperBurner(deployer, p.paper, p.plank, p.usdg, usdgDecimals, p.weth, p.v2Router);
-        d.burner.setFeeds(p.ethUsd, p.plankUsd, p.paperUsd);
-        _setRoutes(d.burner, p);
+        require(d.sale.paperBurner() == address(d.burner), "PaperBurner wiring");
         d.psa = new FirePsa(deployer, address(d.cards), address(d.burner));
         d.psaAdapter = new OpenVRFAdapter(p.router, address(d.psa));
         require(d.psaAdapter.FIRE() == address(d.psa), "PDA adapter points elsewhere");

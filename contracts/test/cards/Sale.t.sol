@@ -78,6 +78,7 @@ contract SaleTest is SeriesHelper {
     address owner = address(0xA11CE0);
     address revenue = address(0xBEEF);
     address burnW = address(0xB0B);
+    address paperW = address(0xBA9E5);
     address alice = address(0xA1);
     address bob = address(0xB2);
 
@@ -121,7 +122,7 @@ contract SaleTest is SeriesHelper {
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW,
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW,
             credits: address(credits)
         }));
         vm.startPrank(owner, owner);
@@ -158,7 +159,7 @@ contract SaleTest is SeriesHelper {
 
     function _cfg(uint64 s, uint32 n, uint32 starters, uint32 plankOnly, uint32 limit) internal pure returns (FireSale.DropConfig memory) {
         return FireSale.DropConfig({start: s, packs: n, starters: starters, plankOnly: plankOnly, walletLimit: limit,
-            starterWindow: 24 hours, liftAfter: 48 hours, plankBurnBps: 3_000, priceUsd: PRICE, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 48 hours, regularWalletsFor: 48 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
+            starterWindow: 24 hours, liftAfter: 48 hours, plankBurnBps: 3_000, paperBurnBps: 0, priceUsd: PRICE, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 48 hours, regularWalletsFor: 48 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
     }
 
     function _drop(uint256 fire, uint64 s, uint32 n, uint32 starters, uint32 plankOnly, uint32 limit) internal {
@@ -336,6 +337,99 @@ contract SaleTest is SeriesHelper {
         assertEq(usdg.balanceOf(burnW), 750_000);
         assertEq(usdg.balanceOf(revenue), 1_750_000);
         _assertHoldsNothing();
+    }
+
+    // ---------------------------------------------------------------- the PAPER burn share (20/10/70)
+
+    /// Drop 1 again (before it opens) with 10% PLANK burn and 20% to PaperBurner.
+    function _split() internal {
+        FireSale.DropConfig memory c = _cfg(start, 10, 3, 4, 5);
+        c.plankBurnBps = 1_000;
+        c.paperBurnBps = 2_000;
+        vm.prank(owner, owner);
+        sale.configureDrop(1, c);
+    }
+
+    function test_split_plank() public {
+        _split();
+        _open();
+        uint256 cost = sale.quotePlank(1, 2);
+        uint256 deadBefore = plank.balanceOf(DEAD);
+        vm.prank(alice, alice);
+        sale.buyWithPlank(1, 2, type(uint256).max, type(uint256).max, _na());
+        assertEq(plank.balanceOf(DEAD) - deadBefore, cost * 1_000 / 10_000, "10% PLANK burned");
+        assertEq(plank.balanceOf(paperW), cost * 2_000 / 10_000, "20% to PaperBurner");
+        assertEq(plank.balanceOf(revenue), cost - cost * 1_000 / 10_000 - cost * 2_000 / 10_000, "70% revenue");
+        _assertHoldsNothing();
+    }
+
+    function test_split_eth() public {
+        _split();
+        _open();
+        _plankOnlyDone(bob);
+        uint256 revBefore = revenue.balance;
+        uint256 cost = sale.quoteEth(1, 2);
+        uint256 deadBefore = plank.balanceOf(DEAD);
+        vm.prank(alice, alice);
+        sale.buyWithEth{value: cost + 0.01 ether}(1, 2, type(uint256).max, _na());
+        uint256 plankShare = cost * 1_000 / 10_000;
+        uint256 paperShare = cost * 2_000 / 10_000;
+        assertEq(plank.balanceOf(DEAD) - deadBefore, plankShare * PER_ETH, "10% bought PLANK, burned");
+        assertEq(paperW.balance, paperShare, "20% to PaperBurner");
+        assertEq(revenue.balance - revBefore, cost - plankShare - paperShare, "70% revenue");
+        _assertHoldsNothing();
+    }
+
+    function test_split_ethSwapFails() public {
+        _split();
+        _open();
+        _plankOnlyDone(bob);
+        router.setFail(true);
+        uint256 cost = sale.quoteEth(1, 1);
+        vm.prank(alice, alice);
+        sale.buyWithEth{value: cost}(1, 1, type(uint256).max, _na());
+        assertEq(burnW.balance, cost * 1_000 / 10_000, "PLANK share waits in PlankBurner");
+        assertEq(paperW.balance, cost * 2_000 / 10_000, "PAPER share still to PaperBurner");
+        _assertHoldsNothing();
+    }
+
+    function test_split_usdg() public {
+        _split();
+        _open();
+        _plankOnlyDone(bob);
+        uint256 revBefore = usdg.balanceOf(revenue);
+        vm.prank(alice, alice);
+        sale.buyWithUsdg(1, 2, type(uint256).max, type(uint256).max, _na()); // $5.00
+        assertEq(usdg.balanceOf(address(router)), 500_000, "10% swapped for PLANK");
+        assertEq(usdg.balanceOf(paperW), 1_000_000, "20% to PaperBurner");
+        assertEq(usdg.balanceOf(revenue) - revBefore, 3_500_000, "70% revenue");
+        _assertHoldsNothing();
+    }
+
+    function test_split_overHundredPercentRefused() public {
+        FireSale.DropConfig memory c = _cfg(start, 10, 3, 4, 5);
+        c.plankBurnBps = 5_000;
+        c.paperBurnBps = 5_001;
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.configureDrop(1, c);
+        c.paperBurnBps = 5_000; // exactly 100%: allowed (nothing to revenue)
+        vm.prank(owner, owner);
+        sale.configureDrop(1, c);
+    }
+
+    function test_split_walletsMustDiffer() public {
+        _drop(1, start, 4, 0, 0, 5);
+        _open();
+        vm.prank(alice, alice);
+        sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max, _na()); // sells out, closes
+        assertEq(sale.activeDrops(), 0);
+        vm.startPrank(owner, owner);
+        vm.expectRevert(FireSale.ZeroAddress.selector);
+        sale.setWallets(address(0x1111), address(0x2222), address(0x2222));
+        vm.expectRevert(FireSale.ZeroAddress.selector);
+        sale.setWallets(address(0x1111), address(0x2222), address(0));
+        vm.stopPrank();
     }
 
     function test_ethFeedStale_reverts() public {
@@ -1047,14 +1141,14 @@ contract SaleTest is SeriesHelper {
     function test_audit_walletsLockedWhileADropIsSetUp() public {
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.DropsActive.selector);
-        sale.setWallets(address(0x1111), address(0x2222));
+        sale.setWallets(address(0x1111), address(0x2222), address(0x3333));
         _drop(1, start, 4, 0, 0, 5);
         _open();
         vm.prank(alice, alice);
         sale.buyWithPlank(1, 4, type(uint256).max, type(uint256).max, _na()); // sells out, closes
         assertEq(sale.activeDrops(), 0);
         vm.prank(owner, owner);
-        sale.setWallets(address(0x1111), address(0x2222));
+        sale.setWallets(address(0x1111), address(0x2222), address(0x3333));
         assertEq(sale.revenueWallet(), address(0x1111));
     }
 
@@ -1077,7 +1171,7 @@ contract SaleTest is SeriesHelper {
         FireSale s2 = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(twap), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW,
+            plankUsd: address(twap), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW,
             credits: address(credits)
         }));
         s2.quotePlank(1, 1); // a normal 30-minute window: fine
@@ -1513,7 +1607,8 @@ contract SaleTest is SeriesHelper {
         assertEq(d.plankOnlyFor, 48 hours);
         assertEq(d.regularWalletsFor, 48 hours);
         assertEq(d.maxPerTx, 50);
-        assertEq(d.plankBurnBps, 3_000);
+        assertEq(d.plankBurnBps, 1_000);
+        assertEq(d.paperBurnBps, 2_000);
         assertEq(d.priceUsd, 250_000_000);
         assertEq(d.paperPerPack, 1e18);
         assertEq(d.starterPerPress, 1);

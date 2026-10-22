@@ -137,6 +137,7 @@ contract VerifyDeploy is Deployments {
         _eq(address(credits.sale()), address(sale), "FireCredits.sale is FireSale");
         _eq(address(credits.CARDS()), address(cards), "FireCredits.CARDS is FireCards");
         _eq(sale.plankBurner(), deployed("PlankBurner"), "FireSale.plankBurner is PlankBurner");
+        _eq(sale.paperBurner(), deployed("PaperBurner"), "FireSale.paperBurner is PaperBurner");
         address rev = deployedInput("REVENUE_WALLET");
         if (rev != address(0)) _eq(sale.revenueWallet(), rev, "FireSale.revenueWallet is REVENUE_WALLET");
         _eq(address(sale.PLANK_USD()), deployed("PlankUsdTwap"), "FireSale.PLANK_USD is PlankUsdTwap");

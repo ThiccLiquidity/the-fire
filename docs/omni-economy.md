@@ -30,7 +30,8 @@ setting: cards burned per free pack is 42, forever.
 | Pack price | $2.50 |
 | PAPER per pack | 1 |
 | PAPER ceiling per pack | $1: a pack's PAPER is never worth more than this at the PAPER price (0 = no ceiling) |
-| PLANK burn share | 30% |
+| PLANK burn share | 10% |
+| PAPER buy & burn share | 20% (to `PaperBurner`, which buys PAPER on the market and burns it) |
 | PLANK-only packs at the start | 50 |
 | PLANK-only packs open to ETH/USDG after | 48 hours, sold or not |
 | Press (starter) packs | 50 |
@@ -93,14 +94,19 @@ as `packs = 117`, `starters = 50`. Setup is signed on the owner's hardware walle
   - ETH uses the Chainlink price. PLANK uses the 30-minute pool average (`PlankUsdTwap`). USDG is taken at face value.
   - Every purchase carries the buyer's maximum. If a price moved past it, the purchase fails and costs nothing.
 - **Where the money goes, in the same transaction:**
-  - **30% burns PLANK.**
-    - Paid in PLANK: 30% of that PLANK is burned directly.
-    - Paid in ETH or USDG: the contract buys PLANK with 30% and burns it.
-  - **If that swap fails** (e.g. PLANK's price jumped), the 30% goes to **`PlankBurner`** instead and the
+  - **20% buys PAPER and burns it.** It goes to **`PaperBurner`** in the coin it was paid in (ETH, PLANK or USDG);
+    the keeper flushes it, buying PAPER on the market (95% guard against the 20-hour PAPER price) and sending it to
+    the dead address. This is the sale's market buy pressure on PAPER (goal 1). While the PAPER price feed has no
+    price yet, or the guard says no, it waits in `PaperBurner` (no withdraw) for a later buy.
+  - **10% burns PLANK.**
+    - Paid in PLANK: 10% of that PLANK is burned directly.
+    - Paid in ETH or USDG: the contract buys PLANK with 10% and burns it.
+  - **If that swap fails** (e.g. PLANK's price jumped), the 10% goes to **`PlankBurner`** instead and the
     purchase still succeeds. A mint never fails because of PLANK. `PlankBurner` has no owner and no withdraw: anyone
     can call `flush`, which buys PLANK (at least 95% of what the 30-minute average says, trying half, a quarter and
     so on for a backlog) and sends it to the dead address; otherwise the share waits there.
   - **70% goes to the revenue wallet.**
+  - Both shares are set per drop (`plankBurnBps`, `paperBurnBps`; together at most 100%).
   - The contract keeps nothing.
 - **Up to 50 packs per purchase** by default (`maxPerTx`, set per drop; any number, e.g. 100 for a giant drop).
 - **Gas (measured in tests, mock router; `test_gas`, `test_giantDrop_buy100InOneTx`):** about 98k for a PLANK buy and
@@ -242,8 +248,8 @@ original name, `FirePsa`.) The full rules (hidden condition, wear, fresh odds, s
 | Wallet | Gets |
 |---|---|
 | Revenue | 70% of every sale. Nothing else. The wallets can only be changed while no drop is set up or running. |
-| `PlankBurner` (a contract, not a wallet) | The 30% when a PLANK swap fails. No owner, no withdraw: it can only buy PLANK and burn it. The sale's pointer to it can only change while no drop is set up or running. |
-| (none) | Case and grading fees: 100% to `PaperBurner`, which only buys and burns PAPER. No revenue to the team. |
+| `PaperBurner` (a contract, not a wallet) | The 20% PAPER share of every sale, and every case and grading fee. No withdraw: it can only buy PAPER and burn it. The sale's pointer to it can only change while no drop is set up or running. |
+| `PlankBurner` (a contract, not a wallet) | The 10% when a PLANK swap fails. No owner, no withdraw: it can only buy PLANK and burn it. The sale's pointer to it can only change while no drop is set up or running. |
 | Royalty | 5% resale royalty (ERC-2981), where marketplaces honour it. |
 | Swap fee | 0.5% of site swaps, once the site's swap is live (`SWAP_FEE_WALLET` in `web/src/lib/config.ts`, not set yet). |
 
@@ -262,7 +268,7 @@ Plus small royalties and swap fees. Running costs:
 - image storage and hosting, about $20–40 a month
 - security review before launch
 
-PLANK burned at that pace: about $3,900–7,800 a year.
+At that pace, PAPER bought and burned from sales: about $2,600–5,200 a year; PLANK burned: about $1,300–2,600 a year.
 
 ## Why these numbers (from the sims)
 

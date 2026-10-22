@@ -52,6 +52,6 @@ Public addresses only; private keys stay in the Foundry keystore or a Ledger.
 |---|---|
 | Deployer wallet | Throwaway hot wallet; deploys everything; has no powers once the owner accepts ownership |
 | `OWNER` hardware wallet | One Ledger or Trezor; owns the card contracts and configures each Series |
-| `REVENUE_WALLET` | 70% of sales (the 30% burn share falls back to the deployed PlankBurner, which has no withdraw) |
+| `REVENUE_WALLET` | 70% of sales (20% goes to PaperBurner; the 10% PLANK burn share falls back to the deployed PlankBurner, which has no withdraw) |
 | `ROYALTY_RECEIVER`, `ROYALTY_BPS` | Resale royalties on packs and cards (max 10%) |
 | `SWAP_FEE_WALLET` in `web/src/lib/config.ts` | The site's 0.5% swap fee (no fee while unset) |

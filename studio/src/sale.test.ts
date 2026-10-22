@@ -1,7 +1,7 @@
 /** The Sale settings: configureDrop's checks, the presets and the exported units. (The sample recipe.json the
  *  contract tests parse is checked in scripts/sale-sample.test.ts.) */
 import { describe, expect, it } from 'vitest'
-import { checkSale, dropPlan, giantSale, parseDecimal, saleErrors, saleJson, salePacks, saleWithPacks, standardSale, type SaleSettings } from './sale'
+import { checkSale, dropPlan, giantSale, parseDecimal, saleErrors, saleJson, saleOf, salePacks, saleWithPacks, standardSale, type SaleSettings } from './sale'
 
 const NOW = 1_800_000_000
 const errs = (s: Partial<SaleSettings>) => saleErrors({ ...standardSale(), start: NOW + 3600, ...s }, NOW).map((p) => p.field)
@@ -11,7 +11,7 @@ describe('sale settings', () => {
     expect(errs({})).toEqual([])
     expect(saleJson(standardSale())).toEqual({
       start: 0, packs: 117, starters: 50, plankOnly: 50, walletLimit: 5, starterWindow: 86_400, liftAfter: 172_800,
-      plankBurnBps: 3_000, priceUsd: '250000000', paperPerPack: '1000000000000000000', paperCapUsd: '100000000', holderWindow: 86_400, maxPerTx: 50,
+      plankBurnBps: 1_000, paperBurnBps: 2_000, priceUsd: '250000000', paperPerPack: '1000000000000000000', paperCapUsd: '100000000', holderWindow: 86_400, maxPerTx: 50,
       plankOnlyFor: 172_800, regularWalletsFor: 172_800, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: '0',
       starterPaper: '1000000000000000000', creditsPerPick: 1, creditPacksMax: 16, creditPacksPerWallet: 3,
     })
@@ -80,10 +80,24 @@ describe('sale settings', () => {
     expect(d).toMatchObject({ total: 167, paid: 117, press: 50, plankOnly: 50, freeMax: 16, freeCapped: true })
     expect(d.revenueUsd).toBeCloseTo(292.5)
     expect(d.revenueMinUsd).toBeCloseTo(101 * 2.5) // 16 free packs come out of the paid ones
-    expect(d.burnUsd).toBeCloseTo(87.75)
+    expect(d.burnUsd).toBeCloseTo(29.25) // 10% PLANK
+    expect(d.paperUsd).toBeCloseTo(58.5) // 20% PAPER
+    expect(d.keepUsd).toBeCloseTo(204.75) // 70% revenue
     // no cap: every paid pack could go free; a cap above the paid packs stops at them
     expect(dropPlan({ ...standardSale(), creditPacksPercent: '0' })).toMatchObject({ freeMax: 117, freeCapped: false })
     expect(dropPlan({ ...standardSale(), paidPacks: 5, plankOnly: 0, creditPacksPercent: '50' }).freeMax).toBe(5)
+  })
+
+  it('a sale saved before the PAPER share: the old Standard 30% becomes 10% PLANK + 20% PAPER, others get no PAPER share', () => {
+    expect(saleOf({ sale: { plankBurnPercent: '30' } })).toMatchObject({ plankBurnPercent: '10', paperBurnPercent: '20' })
+    expect(saleOf({ sale: { plankBurnPercent: '25' } })).toMatchObject({ plankBurnPercent: '25', paperBurnPercent: '0' })
+    expect(saleOf({ sale: { plankBurnPercent: '30', paperBurnPercent: '5' } })).toMatchObject({ plankBurnPercent: '30', paperBurnPercent: '5' })
+    expect(saleOf({})).toMatchObject({ plankBurnPercent: '10', paperBurnPercent: '20' })
+  })
+
+  it("the PLANK and PAPER shares can't add up to more than 100%", () => {
+    expect(errs({ plankBurnPercent: '60', paperBurnPercent: '40.01' })).toContain('paperBurnPercent')
+    expect(errs({ plankBurnPercent: '60', paperBurnPercent: '40' })).not.toContain('paperBurnPercent')
   })
 
   it('reads decimals exactly', () => {

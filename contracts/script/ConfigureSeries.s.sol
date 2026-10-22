@@ -264,7 +264,7 @@ contract ConfigureSeries is Deployments {
     /// @dev The "sale" block: every FireSale.DropConfig field by name (contract units: seconds, 8-decimal dollars,
     ///      PAPER wei, basis points). holderRoot is optional (0 = presses only). DROP_START and HOLDER_ROOT override.
     function parseSale(string memory json) public view returns (FireSale.DropConfig memory c) {
-        _onlyKeys(json, ".sale", "start,packs,starters,plankOnly,walletLimit,starterWindow,liftAfter,plankBurnBps,priceUsd,paperPerPack,paperCapUsd,holderWindow,holderRoot,maxPerTx,plankOnlyFor,regularWalletsFor,starterPerPress,starterWalletLimit,starterPriceUsd,starterPaper,creditsPerPick,creditPacksMax,creditPacksPerWallet");
+        _onlyKeys(json, ".sale", "start,packs,starters,plankOnly,walletLimit,starterWindow,liftAfter,plankBurnBps,paperBurnBps,priceUsd,paperPerPack,paperCapUsd,holderWindow,holderRoot,maxPerTx,plankOnlyFor,regularWalletsFor,starterPerPress,starterWalletLimit,starterPriceUsd,starterPaper,creditsPerPick,creditPacksMax,creditPacksPerWallet");
         c.start = uint64(vm.envOr("DROP_START", _u(json, "start")));
         require(c.start != 0, "sale.start is 0: set it in the studio or with DROP_START");
         require(c.start < block.timestamp + MAX_START_AHEAD, "sale.start is more than a year away: a typo?");
@@ -275,6 +275,7 @@ contract ConfigureSeries is Deployments {
         c.starterWindow = uint32(_u(json, "starterWindow"));
         c.liftAfter = uint32(_u(json, "liftAfter"));
         c.plankBurnBps = uint16(_u(json, "plankBurnBps"));
+        c.paperBurnBps = uint16(_u(json, "paperBurnBps"));
         c.priceUsd = uint128(_u(json, "priceUsd"));
         c.paperPerPack = uint128(_u(json, "paperPerPack"));
         c.paperCapUsd = uint128(_u(json, "paperCapUsd"));
@@ -300,7 +301,7 @@ contract ConfigureSeries is Deployments {
         require(json.keyExists(p), string.concat(p, " is missing"));
         v = json.readUint(p);
         bytes32 k = keccak256(bytes(key));
-        uint256 max = k == keccak256("plankBurnBps") || k == keccak256("creditsPerPick") ? type(uint16).max
+        uint256 max = k == keccak256("plankBurnBps") || k == keccak256("paperBurnBps") || k == keccak256("creditsPerPick") ? type(uint16).max
             : k == keccak256("priceUsd") || k == keccak256("paperPerPack") || k == keccak256("paperCapUsd")
                 || k == keccak256("starterPriceUsd")
                 || k == keccak256("starterPaper") ? type(uint128).max

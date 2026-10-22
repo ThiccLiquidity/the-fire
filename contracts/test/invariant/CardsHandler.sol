@@ -47,6 +47,7 @@ contract CardsHandler is Test {
     address public owner;
     address public revenue;
     address public burnW;
+    address public paperW = address(0xBA9E5);
 
     address[] public actors;
     uint256[] public pressIds;
@@ -117,7 +118,7 @@ contract CardsHandler is Test {
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             press: address(press), packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, credits: address(credits)
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW, credits: address(credits)
         }));
         burner = new MockBurner(address(plank), address(usdg));
         psa = new FirePsa(owner, address(cards), address(burner));
@@ -156,7 +157,7 @@ contract CardsHandler is Test {
     /// @dev Fire 1 sells out to the actors (10 packs each) and is opened and dealt, so everyone starts with 60 cards.
     function bootstrap() external {
         FireSale.DropConfig memory c = FireSale.DropConfig({start: uint64(time + 1), packs: 40, starters: 0, plankOnly: 0,
-            walletLimit: 10, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, priceUsd: 250_000_000, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
+            walletLimit: 10, starterWindow: 0, liftAfter: 1 hours, plankBurnBps: 3_000, paperBurnBps: 0, priceUsd: 250_000_000, paperPerPack: 1e18, paperCapUsd: 1e8, holderWindow: 0, holderRoot: bytes32(0), maxPerTx: 0, plankOnlyFor: 1 hours, regularWalletsFor: 1 hours, starterPerPress: 1, starterWalletLimit: 1, starterPriceUsd: 0, starterPaper: 1e18, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0});
         vm.prank(owner, owner);
         sale.configureDrop(1, c);
         hasDrop[1] = true;

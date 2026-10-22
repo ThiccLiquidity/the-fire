@@ -54,6 +54,7 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
   const pressPaper = s.pressPrice === 'paper' || s.pressPrice === 'usdPaper'
   const price = Number(parseDecimal(s.priceUsd, 8) ?? 0n) / 1e8
   const burn = Number(parseDecimal(s.plankBurnPercent, 2) ?? 0n) / 10_000
+  const paperBurn = Number(parseDecimal(s.paperBurnPercent, 2) ?? 0n) / 10_000
   const cap = creditPacksMax(s)
 
   return (
@@ -88,6 +89,7 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
         <F all={problems} f="paperPerPack" label="PAPER per pack" hint="Burned. Paid and free packs. 0 = none."><Text value={s.paperPerPack} onChange={(v) => set({ paperPerPack: v })} testId="sale-paper" /></F>
         <F all={problems} f="paperCapUsd" label="PAPER ceiling ($)" hint="Most a pack's PAPER can be worth. 0 = none."><Text value={s.paperCapUsd} onChange={(v) => set({ paperCapUsd: v })} testId="sale-paper-cap" /></F>
         <F all={problems} f="plankBurnPercent" label="PLANK burn (%)" hint={`= ${usd(price * burn)} a paid pack · ${usd(d.burnUsd)} sold out.`}><Text value={s.plankBurnPercent} onChange={(v) => set({ plankBurnPercent: v })} testId="sale-burn" /></F>
+        <F all={problems} f="paperBurnPercent" label="PAPER buy & burn (%)" hint={`= ${usd(price * paperBurn)} a paid pack · ${usd(d.paperUsd)} sold out.`}><Text value={s.paperBurnPercent} onChange={(v) => set({ paperBurnPercent: v })} testId="sale-paper-burn" /></F>
         <F all={problems} f="maxPerTx" label="Most packs per purchase"><Num value={s.maxPerTx} onChange={(v) => set({ maxPerTx: v })} testId="sale-maxtx" /></F>
       </div>
 
@@ -161,7 +163,9 @@ function DropPicture({ s, lockedPacks, cardsPerPack }: { s: SaleSettings; locked
       <div className="stats-row">
         <div className="stat"><b data-testid="drop-total">{n(d.total)}</b><span>packs · {n(d.total * cardsPerPack)} cards</span></div>
         <div className="stat"><b>{usd(d.revenueUsd)}</b><span>sold out{d.freeMax > 0 ? ` · ${usd(d.revenueMinUsd)} if every free pack is used` : ''}</span></div>
-        <div className="stat"><b>{usd(d.burnUsd)}</b><span>of PLANK burned at sell-out</span></div>
+        <div className="stat"><b>{usd(d.paperUsd)}</b><span>of PAPER bought &amp; burned</span></div>
+        <div className="stat"><b>{usd(d.burnUsd)}</b><span>of PLANK burned</span></div>
+        <div className="stat"><b>{usd(d.keepUsd)}</b><span>to the revenue wallet</span></div>
       </div>
       {d.total > 0 && <>
         <div className="drop-bar" role="img" aria-label={`${d.plankOnly} PLANK-only, ${open} paid, ${d.press} press`}>
