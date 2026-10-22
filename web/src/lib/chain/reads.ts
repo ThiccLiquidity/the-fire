@@ -13,6 +13,10 @@ import {
 export const PAY = ["PLANK", "ETH", "USDG"] as const;
 export type PayCoin = (typeof PAY)[number];
 export const payIndex = (p: PayCoin): number => PAY.indexOf(p);
+/** Cases and grading (FirePsa.Pay) also take PAPER: PLANK 0, ETH 1, USDG 2, PAPER 3. PAPER is burned directly. */
+export const PSA_PAY = [...PAY, "PAPER"] as const;
+export type PsaCoin = (typeof PSA_PAY)[number];
+export const psaPayIndex = (p: PsaCoin): number => PSA_PAY.indexOf(p);
 
 // ---------------------------------------------------------------- Series, their drops and the drops' groups
 
@@ -317,6 +321,9 @@ export type Card = {
   serial: number; fire: number; name: string; image: string; character: string; category: string; material: string;
   holo: "none" | "frame" | "picture" | "full"; holoFrame: boolean; holoPicture: boolean; edition: string;
   grade: number | null; cased: boolean; moves: number; dealtAt: number; gradePending: boolean;
+  /** Seconds of wear time: uncased since dealt, frozen once cased or sent for grading (FireCards.wearOf; a cancelled
+   *  grading's frozen gap doesn't count). Read at the chain's latest block. */
+  age: number;
   traits: Record<string, string | number>;
 };
 type CardRaw = { fire: bigint; cardType: bigint; holoFrame: boolean; holoPicture: boolean; character: bigint; edition: bigint; editionOf: bigint;
@@ -349,7 +356,8 @@ export async function card(serial: number): Promise<Card> {
     serial, fire: Number(c.fire), name: meta.name ?? `#${serial}`, image: meta.image ?? "",
     character: String(traits.Character ?? ""), category: String(traits.Category ?? ""), material: String(traits.Material ?? ""),
     holo, holoFrame: c.holoFrame, holoPicture: c.holoPicture, edition: String(traits.Edition ?? c.edition),
-    grade: c.grade ? Number(c.grade) : null, cased: c.cased, moves: Number(c.moves), dealtAt: Number(c.dealtAt), gradePending: pending, traits,
+    grade: c.grade ? Number(c.grade) : null, cased: c.cased, moves: Number(c.moves), dealtAt: Number(c.dealtAt), gradePending: pending,
+    age: Number(c.age), traits,
   };
 }
 
@@ -525,18 +533,26 @@ export async function queue(fire: number) {
 
 // ---------------------------------------------------------------- cases and grading
 
-/** Case and grading prices (dollars, and now in each coin for one of each) and the batch limit. */
+/** Case and grading prices (dollars), the batch limit, and the discount when paying in PAPER (basis points, 0-2000). */
 export async function psaPrices() {
-  const [caseUsd, gradeUsd, maxBatch, paused] = await Promise.all([
+  const [caseUsd, gradeUsd, maxBatch, paused, discount] = await Promise.all([
     read<bigint>("FirePsa", psaAbi, "caseUsd18"), read<bigint>("FirePsa", psaAbi, "gradeUsd18"),
     read<bigint>("FirePsa", psaAbi, "maxBatch"), read<boolean>("FirePsa", psaAbi, "paused"),
+    read<bigint>("FirePsa", psaAbi, "paperDiscountBps").catch(() => 0n),
   ]);
-  return { caseUsd: (Number(caseUsd) / 1e18).toFixed(2), gradeUsd: (Number(gradeUsd) / 1e18).toFixed(2), maxBatch: Number(maxBatch), paused };
+  return { caseUsd: (Number(caseUsd) / 1e18).toFixed(2), gradeUsd: (Number(gradeUsd) / 1e18).toFixed(2), maxBatch: Number(maxBatch), paused, paperDiscountBps: Number(discount) };
 }
 
-/** What casing `cases` cards and grading `grades` costs now in `pay`. */
-export async function quoteProtect(cases: number, grades: number, pay: PayCoin): Promise<Amount> {
-  const raw = await read<bigint>("FirePsa", psaAbi, "quote", [BigInt(cases), BigInt(grades), payIndex(pay)]);
+/** What grading each card costs, in dollars (FirePsa.gradeUsdOf: by its card type; the default otherwise). */
+export async function gradeUsdOf(serials: readonly number[]): Promise<Record<number, number>> {
+  const v = await Promise.all(serials.map((id) => read<bigint>("FirePsa", psaAbi, "gradeUsdOf", [BigInt(id)])));
+  return Object.fromEntries(serials.map((id, i) => [id, Number(v[i]) / 1e18]));
+}
+
+/** Exactly what casing `caseIds` and grading `gradeIds` costs now in `pay` (FirePsa.quoteFor: what protect charges).
+ *  Paying in PAPER, it reverts FeedUnavailable while the PAPER price can't be read (the page then turns PAPER off). */
+export async function quoteProtect(caseIds: readonly number[], gradeIds: readonly number[], pay: PsaCoin): Promise<Amount> {
+  const raw = await read<bigint>("FirePsa", psaAbi, "quoteFor", [caseIds.map(BigInt), gradeIds.map(BigInt), psaPayIndex(pay)]);
   return amount(raw, pay === "USDG" && input("USDG") ? await decimalsOf(input("USDG")!) : 18);
 }
 
@@ -590,6 +606,28 @@ export async function gradingIds(index: number, known?: readonly number[]): Prom
     if (a.gradingIndex === BigInt(index)) return [...a.graded];
   }
   throw new Error(`No grading #${index}`);
+}
+
+/** One slab in the pop report: its Series, material (the metadata's Material trait) and grade. */
+export type PopSlab = { serial: number; fire: number; material: string; grade: number };
+const slabKinds = new Map<number, Promise<{ fire: number; material: string } | null>>(); // a slab's kind never changes
+/** The pop report's raw list: every slab that still exists, from FirePsa's `Graded` events (an incremental cached scan),
+ *  each slab's Series and material read once and kept for the tab's life. A burned slab is left out (it no longer exists). */
+export async function gradedPop(): Promise<PopSlab[]> {
+  const logs = await scanLogs(addr("FirePsa"), eventOf(psaAbi, "Graded"));
+  const graded = new Map<number, number>();
+  for (const l of logs) { const a = argsOf<{ serial: bigint; grade: bigint }>(l); graded.set(Number(a.serial), Number(a.grade)); }
+  const out = await Promise.all([...graded].map(async ([serial, grade]) => {
+    let k = slabKinds.get(serial);
+    if (!k) {
+      k = card(serial).then((c) => ({ fire: c.fire, material: c.material }), () => null);
+      slabKinds.set(serial, k);
+    }
+    const kind = await k;
+    if (!kind) slabKinds.delete(serial); // burned (or a blip): asked again next time
+    return kind ? { serial, grade, ...kind } : null;
+  }));
+  return out.filter((x): x is PopSlab => !!x);
 }
 
 // ---------------------------------------------------------------- snapshot groups

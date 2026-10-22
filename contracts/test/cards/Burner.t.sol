@@ -206,7 +206,7 @@ contract BurnerTest is Test {
         vm.expectRevert(PaperBurner.NotFlusher.selector);
         b.flush(PaperBurner.Pay.ETH);
         vm.expectRevert(PaperBurner.NotFlusher.selector);
-        b.flushLight(PaperBurner.Pay.ETH);
+        b.flushLight(PaperBurner.Pay.ETH, 1e15);
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger));
         b.setFlusher(stranger, true);
         vm.stopPrank();
@@ -298,9 +298,28 @@ contract BurnerTest is Test {
     /// The light flush (what FirePsa runs with each fee) only tries the whole amount and half.
     function test_flushLightTriesLittle() public {
         vm.deal(address(b), 8e18); // too big for the pools at once or in half
-        assertEq(b.flushLight(PaperBurner.Pay.ETH), 0, "waits");
+        assertEq(b.flushLight(PaperBurner.Pay.ETH, type(uint256).max), 0, "waits");
         assertEq(address(b).balance, 8e18);
         assertGt(b.flush(PaperBurner.Pay.ETH), 0, "the full flush finds a piece that fits");
+    }
+
+    /// The light flush spends at most `maxAmount` (FirePsa's own fee): the backlog stays for the keepers' `flush`.
+    function test_flushLightSpendsOnlyItsCap() public {
+        vm.deal(address(b), 2e18); // a backlog (e.g. sale PAPER shares)
+        uint256 out = b.flushLight(PaperBurner.Pay.ETH, 1e15);
+        assertGt(out, 0, "the fee burned");
+        assertEq(address(b).balance, 2e18 - 1e15, "only the fee was spent");
+        assertEq(b.flushLight(PaperBurner.Pay.ETH, 0), 0, "a zero cap spends nothing");
+        assertEq(address(b).balance, 2e18 - 1e15);
+        b.flush(PaperBurner.Pay.ETH);
+        assertLt(address(b).balance, 2e18 - 1e15, "the keeper's flush takes the backlog");
+    }
+
+    /// paperPrice: the PAPER feed's price while fresh, else 0.
+    function test_paperPrice() public {
+        assertEq(b.paperPrice(), uint256(paperUsd.answer()), "fresh");
+        vm.warp(block.timestamp + 2 days + 1);
+        assertEq(b.paperPrice(), 0, "stale");
     }
 
     /// A backlog too big for the pools at once is bought in pieces (half, a quarter, ...) instead of waiting forever.

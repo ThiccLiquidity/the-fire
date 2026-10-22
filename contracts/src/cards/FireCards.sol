@@ -686,6 +686,19 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         if (f.dealt == f.packs) c.editionOf = _editions[keccak256(abi.encode(c.fire, c.character, c.cardType))];
     }
 
+    /// @notice A card's rank, as its Series' dealer ranks its type (`IDealer.rankOf`; Standard recipe: Paper 0, Wood 1,
+    ///         Fire 2, Coal 3, Gold 4, Full Art 5). If the dealer can't say, its type index. FirePsa prices grading by it.
+    function rankOf(uint256 serial) external view returns (uint256) {
+        _requireOwned(serial);
+        uint256 d = _card[serial];
+        uint256 t = uint32(d >> B_TYPE);
+        try fires[uint64(d)].dealer.rankOf(uint64(d), t) returns (uint256 r) {
+            return r;
+        } catch {
+            return t;
+        }
+    }
+
     function dealerOf(uint256 fire) external view returns (IDealer) {
         return fires[fire].dealer;
     }
@@ -707,6 +720,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
             if (from != to && (d >> B_FROZEN) & 1 == 0 && moves < MAX_MOVES) {
                 _card[tokenId] = d + (1 << B_MOVES);
                 emit Moved(tokenId, moves + 1);
+                emit MetadataUpdate(tokenId); // its Moves trait changed
             }
         }
     }

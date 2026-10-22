@@ -55,7 +55,13 @@ a.btn { text-decoration: none }
   background: linear-gradient(#ffe39a, #d8a23f); color: #2a1a05; border: 1.5px solid #fff0bf; box-shadow: 0 2px 6px rgba(0,0,0,.6) }
 .pda.none { background: rgba(21,16,12,.88); color: var(--muted); border: 1.5px dashed var(--line-2) }
 .pda.wait { background: #2b2140; color: #d9c8ff; border-color: #7a64b8 }
-.pda.g10, .pda.g1 { background: linear-gradient(#fff6d6, #ffcf5a); box-shadow: 0 0 10px rgba(255,210,122,.8) }
+/* every grade in its band's colour (Wear.BANDS: 10 gold, 9-8 teal, 7-6 sky, 5-4 blue, 3-2 orange, 1 red), PDA 10 glowing */
+.pda.g9, .pda.g8, .pda-pill.g9, .pda-pill.g8 { background: linear-gradient(#8fe8da, #3fc1b0); color: #08201c; border-color: #d6fff7 }
+.pda.g7, .pda.g6, .pda-pill.g7, .pda-pill.g6 { background: linear-gradient(#a9dcfb, #5ab8f0); color: #08182a; border-color: #e3f4ff }
+.pda.g5, .pda.g4, .pda-pill.g5, .pda-pill.g4 { background: linear-gradient(#93b6ff, #4a7fe8); color: #060f24; border-color: #dbe6ff }
+.pda.g3, .pda.g2, .pda-pill.g3, .pda-pill.g2 { background: linear-gradient(#ffc092, #ff8a3a); color: #2a1004; border-color: #ffe6d2 }
+.pda.g1, .pda-pill.g1 { background: linear-gradient(#ffa49a, #ff5a4a); color: #2a0604; border-color: #ffd27a } /* a patience trophy: a gold rim */
+.pda.g10, .pda-pill.g10 { background: linear-gradient(#fff6d6, #ffcf5a); color: #2a1a05; box-shadow: 0 0 10px rgba(255,210,122,.8) }
 .cmeta { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; min-width: 0 }
 .cmeta .mat { font-size: 12px; padding: 3px 9px }
 .holo-b { font: 800 12px/1 var(--body); padding: 4px 8px; border-radius: 999px; color: #1a1030;
@@ -333,7 +339,10 @@ a.btn { text-decoration: none }
 .intro > div:first-child { display: grid; gap: 6px }
 .gnote { font-size: 13px; color: var(--muted); border-left: 3px solid var(--line-2); padding-left: 8px }
 .odds { margin: 0; padding: 10px 12px 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2) }
-.odds .bars { display: grid; grid-template-columns: repeat(10, 28px); gap: 3px; align-items: end; justify-content: center }
+.odds .bars { display: grid; grid-template-columns: repeat(6, 40px); gap: 4px; align-items: end; justify-content: center }
+.odds .odds-t { margin: 0 0 6px; text-align: center; font: 400 14px var(--display); letter-spacing: .03em; color: var(--ink) }
+.odds .odds-cap { margin: 6px 0 0; width: 0; min-width: 100%; text-align: center; font: 700 14px/1.3 var(--chalk); color: var(--gold) }
+.odds .bar i { background: var(--c) !important } .odds .bar.nil .pct { color: var(--dim) }
 .odds .bar { display: grid; justify-items: center; gap: 3px; min-width: 0 }
 .odds .bar i { width: 100%; border-radius: 4px 4px 0 0; background: linear-gradient(#8a6a3e, #5e4426) }
 .odds .bar.mid i { background: linear-gradient(var(--brass), #9a6a2a) }
@@ -341,18 +350,19 @@ a.btn { text-decoration: none }
 .odds .bar.low i { background: linear-gradient(#ff8a5a, #a8321a) }
 .odds .pct, .odds .lbl { font-size: 12px; color: var(--muted); white-space: nowrap; letter-spacing: -.02em } .odds .lbl { color: var(--ink); font-weight: 800 }
 .odds .bar.top .pct, .odds .bar.top .lbl { color: var(--gold) }
-.odds figcaption { margin-top: 6px; width: 0; min-width: 100%; text-align: center; font: 700 14px/1.3 var(--chalk); color: var(--gold) }
 .odds .bar .pct { font-size: 11.5px }
 .grading { display: grid; gap: 8px }
 .ggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 150px)); gap: 16px 12px; justify-content: center }
 .gslot { display: grid; gap: 6px }
-.gslot:not(.stamped) .cwrap { animation: scan 1.1s ease-in-out infinite }
+.gslot.scan-now .cwrap { animation: scan .55s ease-in-out infinite; filter: brightness(1.15) }
 .stamp { position: absolute; z-index: 5; left: 50%; top: 42%; width: 56%; aspect-ratio: 1; border-radius: 50%; display: grid; place-content: center; text-align: center; line-height: 1;
   background: radial-gradient(circle, rgba(140,14,10,.92) 55%, rgba(110,8,6,.95)); color: #ffe7c2; border: 3px double #ffd27a; box-shadow: 0 0 0 3px rgba(140,14,10,.85), 0 6px 14px rgba(0,0,0,.6);
   transform: translate(-50%, -50%) rotate(-12deg); animation: stamp .42s cubic-bezier(.3,1.4,.5,1) both }
 .stamp small { font: 400 12px var(--display); letter-spacing: .1em }
 .stamp b { font: 400 clamp(26px, 9vw, 40px) var(--display) }
-.stamp.g10, .stamp.g1 { background: radial-gradient(circle, #ffe08a 50%, #c48a1c); color: #3a1f04; border-color: #fff }
+/* the stamp in its band's colour (--sc, set per grade); PDA 10 gold */
+.stamp[style*="--sc"] { background: radial-gradient(circle, var(--sc) 52%, color-mix(in srgb, var(--sc) 62%, #000)); color: #0d1016; border-color: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--sc) 55%, #000), 0 6px 14px rgba(0,0,0,.6) }
+.stamp.g10 { background: radial-gradient(circle, #ffe08a 50%, #c48a1c); color: #3a1f04; border-color: #fff }
 .gslot.stamped { animation: thud .3s .18s }
 @keyframes stamp { from { transform: translate(-50%, -50%) rotate(-40deg) scale(2.6); opacity: 0 } to { transform: translate(-50%, -50%) rotate(-12deg) scale(1); opacity: 1 } }
 @keyframes thud { 0%, 100% { transform: none } 40% { transform: translateY(3px) scale(.98) } }
@@ -554,8 +564,14 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 }
 
 /* ---------- cases, slabs and the Case & grade wizard (docs/grading.md) */
-.pda.cased { background: rgba(214,232,248,.92); color: #16324a; border: 1.5px solid #fff }
+.pda.cased { display: inline-flex; align-items: center; gap: 4px; background: linear-gradient(#f2f9ff, #bcd9f2); color: #10283e; border: 1.5px solid #fff; box-shadow: 0 0 0 1.5px #5f9fd6, 0 2px 6px rgba(0,0,0,.6) }
+.pda .lock { display: inline-grid; width: 11px; height: 11px } .pda .lock svg { width: 100%; height: 100% }
 .pda.fresh { background: #12301c; color: #9ff0b0; border: 1.5px solid #3fa35a }
+.pda.fresh.moved { border-color: #e0b04a; color: #ffe2a0 } /* fresh, but it moved: moves still count */
+/* a cased card reads as cased even small: a cool plastic edge and a glare across the case */
+.cface.hd-case { border-radius: 4%; box-shadow: 0 0 0 2px rgba(220,238,255,.9), 0 0 0 3.5px rgba(95,159,214,.75), 0 3px 10px rgba(0,0,0,.55) }
+.cface.hd-case::after { content: ''; position: absolute; inset: 0; z-index: 3; border-radius: 4%; pointer-events: none;
+  background: linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.34) 41%, rgba(255,255,255,.08) 47%, rgba(255,255,255,0) 52%, rgba(255,255,255,0) 70%, rgba(255,255,255,.16) 76%, rgba(255,255,255,0) 80%) }
 /* the holo shine sits on the card inside the case / slab, not on the plastic */
 .hd-case .shine { inset: 2.1% 2.1%; border-radius: 3.5% }
 .hd-slab .shine { inset: 11.6% 6.6% 1.6% 6.6%; border-radius: 3.5% }
@@ -572,13 +588,15 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .wz-top { display: grid; gap: 10px }
 .wz-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap }
 .wz-steps { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap }
-.wz-steps li { display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font: 800 14px var(--body) }
+.wz-steps li { display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font: 800 14px var(--body) }
 .wz-steps .wz-n { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--line-2); font: 400 13px var(--display) }
 .wz-steps li.now { color: var(--ink); border-color: var(--brass); background: rgba(233,180,90,.12) }
 .wz-steps li.now .wz-n { background: var(--brass); color: #1b0f06; border-color: #fff0bf }
 .wz-steps li.done { color: var(--muted) } .wz-steps li.done .wz-n { background: #2c4a30; border-color: var(--good); color: var(--good) }
-.wz-fresh { margin: 0; padding: 8px 12px; border-radius: 10px; background: rgba(63,163,90,.14); border: 1px solid #3fa35a; color: #c9f5d2; font: 700 14px var(--body) }
-.wz-fresh b { font: 400 16px var(--display); color: #9ff0b0 }
+.wz-fresh { order: 3; flex-basis: 100%; margin: 0; padding: 8px 12px; border-radius: 10px; background: rgba(63,163,90,.14); border: 1px solid #3fa35a; color: #c9f5d2; font: 700 14px var(--body) }
+.wz-fresh[hidden] { display: none }
+.wz-fresh b { color: #9ff0b0 } .wz-fresh b.t { font: 400 16px var(--display) }
+.wz-fresh-short { display: none }
 .wz-ask { display: grid; grid-template-columns: 1fr auto; align-content: center; align-items: start; gap: 4px 16px }
 .wz-ask:has(.odds) { grid-template-rows: auto 1fr }
 .wz-ask h3 { margin: 0; font-size: 22px } .wz-ask p { margin: 0; grid-column: 1 } .wz-ask .odds { grid-row: 1 / span 2; grid-column: 2; margin: 0 }
@@ -589,8 +607,16 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
   background: rgba(16,12,9,.9); border: 1px solid var(--line-2); color: var(--ink); font: 800 12px var(--body) }
 .wz-sec h4 { margin: 0 0 8px; font: 400 16px var(--display) } .wz-sec h4 small { font: 700 13px var(--body); color: var(--muted) }
 .wz-thumbs { display: flex; flex-wrap: wrap; gap: 10px; list-style: none; margin: 0; padding: 0 }
-.wz-thumbs li { width: 76px; display: grid; gap: 4px; text-align: center; font-size: 12px }
-.wz-raw { margin: 0; color: var(--muted) } .wz-raw b { color: var(--ink) }
+.wz-thumbs li { width: 76px; display: grid; gap: 4px; text-align: center; font-size: 12px; align-content: start }
+.wz-thumbs .gt-odds { font: 700 11.5px/1.2 var(--body); color: var(--muted); white-space: nowrap } .wz-thumbs .gt-odds b { color: var(--gold) }
+.wz-raw { color: var(--muted) } .wz-raw p { margin: 0 } .wz-raw b { color: var(--ink) }
+.wz-raw ul { margin: 4px 0 0; padding-left: 1.2em; display: grid; gap: 2px } .wz-raw li.fresh b { color: #9ff0b0 }
+.wz-final { margin: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid #8fc3ea; background: rgba(143,195,234,.1); color: var(--ink) }
+.wz-final b { color: #cfe8fb }
+.wz-picks { padding: 0 } .wz-picks > p { margin: 0 } .wz-picks .gnow + p { margin: 6px 2px 0 }
+.fpay { display: inline-flex; flex-wrap: wrap; gap: 0 4px; align-items: baseline }
+.linkish { padding: 0; border: 0; background: none; color: #9fd0ff; font: inherit; font-weight: 800; text-decoration: underline; cursor: pointer; min-height: 0 }
+.linkish:hover { color: #cfe8fb }
 .wz-pay { display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line) }
 .wz-pay .sum { margin: 0 }
 .wz-coin { display: grid; gap: 4px; max-width: 360px }
@@ -603,11 +629,31 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .gslot.cased-done .cwrap { animation: thud .3s }
 .gslot.slabbed .cwrap { animation: slab-drop .45s cubic-bezier(.2,.8,.3,1) }
 @keyframes slab-drop { 0% { transform: translateY(-14px) scale(1.06); opacity: .3 } 100% { transform: none; opacity: 1 } }
-@media (prefers-reduced-motion: reduce) { .gslot .case-in, .gslot.slabbed .cwrap, .gslot.cased-done .cwrap, .gslot.scanning .cwrap { animation: none } }
+@media (prefers-reduced-motion: reduce) { .gslot .case-in, .gslot.slabbed .cwrap, .gslot.cased-done .cwrap, .gslot.scanning .cwrap, .gslot.scan-now .cwrap, .gslot.stamped { animation: none } }
+/* the result stays in view: a PDA pill and the slab's word under each card; the best is lit */
+.gres { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 6px; margin-top: 4px }
+.pda-pill { font: 400 13px/1 var(--display); letter-spacing: .03em; padding: 5px 9px; border-radius: 999px; border: 1.5px solid #fff0bf; white-space: nowrap }
+.gword { font: 800 12px/1.1 var(--body); letter-spacing: .08em; color: var(--ink); text-align: center }
+.gslot.best .cwrap { border-radius: 6px; box-shadow: 0 0 0 2px var(--gold), 0 0 18px rgba(255,210,122,.55) }
+.best-t { font: 800 11px/1 var(--body); letter-spacing: .1em; text-transform: uppercase; color: #1b0f06; background: var(--gold); padding: 3px 7px; border-radius: 999px }
+.g10-share { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--gold); background: rgba(255,210,122,.1) }
+.g10-share p { margin: 0 } .g10-share b { color: var(--gold) }
+.g10-share[hidden] { display: none }
 @media (max-width: 600px) {
   .wz-ask { grid-template-columns: 1fr } .wz-ask .odds { grid-row: auto; grid-column: 1 }
   .wz-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) }
   .how-pill { font-size: 14px }
+  /* the step row takes the fresh time and the "?" with it, so the cards start higher */
+  .wz-bar { flex-wrap: nowrap; gap: 6px }
+  .wz-steps { flex-wrap: nowrap; gap: 4px } .wz-steps li { padding: 4px 8px 4px 4px; font-size: 13px } .wz-steps .wz-n { width: 22px; height: 22px }
+  .wz-fresh { order: 0; flex: 0 1 auto; flex-basis: auto; padding: 5px 8px; font-size: 12.5px; white-space: nowrap; border-radius: 999px }
+  .wz-fresh b.t { font-size: 13px }
+  .wz-fresh-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
+  .wz-fresh-short { display: inline }
+  .wz-bar .how-pill { padding: 0; width: var(--tap); justify-content: center; flex: none }
+  .wz-bar .how-pill .how-txt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
+  .wz-steps li:not(.now) { font-size: 0; gap: 0; padding: 4px } .wz-steps li:not(.now) .wz-n { font-size: 13px }
+  .odds .bars { grid-template-columns: repeat(6, minmax(0, 1fr)) }
 }
 
 /* the "How does this work?" window */
@@ -620,7 +666,9 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .how-opt { padding: 12px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--panel-2) }
 .how-opt b { font: 400 16px var(--display) } .how-opt p { margin-top: 4px; color: var(--muted) }
 .how-opt.case { border-color: #8fc3ea } .how-opt.slab { border-color: var(--brass) }
-.how-t { border-collapse: collapse; width: 100%; font-size: 14px }
+.how-tw { overflow-x: auto }
+.how-t { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums }
+.how-sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px }
 .how-t caption { text-align: left; color: var(--muted); padding-bottom: 6px }
 .how-t th, .how-t td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right } .how-t th:first-child { text-align: left }
 .how-t thead th { color: var(--muted); font-weight: 800 }
@@ -736,3 +784,32 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 /* a live wait's optional action ("Deal them now"): a small button and one plain line under the status */
 .stage-msg .stage-act { display: grid; justify-items: center; gap: 6px; margin-top: 10px }
 .stage-msg .stage-act small { opacity: .7; max-width: 34ch; text-align: center; line-height: 1.35 }
+
+/* ---------- My cards: the fresh-window nudge and the pop report */
+.fresh-nudge { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 0 0 12px; padding: 10px 12px; border-radius: 12px;
+  background: rgba(63,163,90,.14); border: 1px solid #3fa35a; color: #c9f5d2 }
+.fresh-nudge p { margin: 0; display: grid; gap: 2px } .fresh-nudge p b { color: #9ff0b0 } .fresh-nudge small { color: #a9d8b4; font-weight: 600 }
+.pop-b { min-height: 36px }
+.st-pop { display: grid; gap: 14px }
+.pop-s h3 { margin: 0 0 8px } .pop-s h3 small { font: 700 13px var(--body) }
+.pop-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2) }
+.pop-t { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 14px }
+.pop-t th, .pop-t td { padding: 7px 6px; text-align: center; border-bottom: 1px solid var(--line) } .pop-t tbody tr:last-child > * { border-bottom: 0 }
+.pop-t thead th { font: 400 13px var(--display); color: var(--ink) } .pop-t th.pg { border-bottom: 3px solid var(--c) }
+.pop-t th[scope=row] { text-align: left; position: sticky; left: 0; background: var(--panel-2) } .pop-t td.z { color: var(--dim) }
+.pop-t td.all { font-weight: 800; color: var(--gold) } .pop-t tr.at > * { background: rgba(233,180,90,.08) }
+.pop-t td.at { outline: 2px solid var(--gold); outline-offset: -3px; color: var(--gold); font-weight: 800 }
+/* the odds clock (a raw card's detail): now, in 30 days, in 6 months */
+.gclock { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2) }
+.gclock-t { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums }
+.gclock-t th, .gclock-t td { padding: 4px 6px; text-align: right; border-bottom: 1px solid var(--line) } .gclock-t tbody tr:last-child > * { border-bottom: 0 }
+.gclock-t thead th { vertical-align: bottom; color: var(--muted); font: 800 12px/1.2 var(--body); width: 27% } .gclock-t thead th:first-child { width: auto }
+.detail > * { min-width: 0 }
+.gclock-t thead .gnow-bar { margin-top: 4px }
+.gclock-t th[scope=row] { text-align: left; color: var(--ink); white-space: nowrap } .gclock-t th[scope=row] i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px }
+.gclock-t .now { color: var(--ink); font-weight: 800 } .gclock-t thead th.now { color: var(--gold) }
+.gclock-note { margin: 0 }
+.gclock-case { justify-self: start; border-color: #8fc3ea; background: linear-gradient(#2a4a66, #1a3348); color: #eaf5ff }
+.pop-line .linkish { text-align: left }
+.wz-coin .disc { color: #9ff0b0; font-weight: 800 } .wz-coin .warn { margin: 0 }
+.wz-thumbs .gt-price { font: 800 12px/1 var(--body); color: var(--ink) }

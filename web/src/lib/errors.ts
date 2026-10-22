@@ -25,7 +25,7 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   CreditWalletLimit: "That's the most free packs one wallet can use this Series. The rest wait for the next one.",
   DropStarted: "This Series has already started, so that can't change.",
   DropsActive: "Not while a Series is on sale.",
-  FeedUnavailable: "Prices can't be read right now. Nothing was charged. Try again soon.",
+  FeedUnavailable: "A price can't be read right now, so nothing was charged. Paying in PAPER? Pay with ETH, PLANK or USDG instead, or try again soon.",
   NoContracts: "Regular wallets only for now.",
   NoCredits: "You don't have enough free packs.",
   NotLive: "This Series isn't on sale.",

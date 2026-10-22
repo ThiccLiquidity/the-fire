@@ -29,11 +29,14 @@ interface IBurnRouter {
 /**
  * @title PaperBurner
  * @notice Turns fees into a PAPER burn (docs/grading.md). Whatever it holds (ETH, PLANK or USDG) it spends buying PAPER,
- *         straight to the dead address. FirePsa sends every case and grading fee here and flushes in the same
- *         transaction; FireSale sends each sale's PAPER share here and the keepers flush it. Only flushers the owner
- *         names (FirePsa and the keepers) can flush: an open flush could be sandwiched in one transaction (buy PAPER,
- *         flush, sell) whenever PAPER's market price sits below its 20-hour average. There is no withdraw: the only
- *         way out is buying PAPER and burning it.
+ *         straight to the dead address. FirePsa sends every case and grading fee here and, in the same transaction,
+ *         burns that fee and nothing more (`flushLight` with the fee as its cap); FireSale sends each sale's PAPER
+ *         share here and the keepers flush it (`flush`). Only flushers the owner names (FirePsa and the keepers) can
+ *         flush: an open flush could be sandwiched in one transaction (buy PAPER, flush, sell) whenever PAPER's market
+ *         price sits below its 20-hour average. A keeper's flush is its own transaction, and Robinhood Chain's
+ *         sequencer is first-come with no public mempool, so nobody can wrap it; FirePsa's flush runs inside the
+ *         buyer's transaction but spends only the fee that buyer just paid, so wrapping it can't win more than they
+ *         paid in. There is no withdraw: the only way out is buying PAPER and burning it.
  *
  *         Best route: for the amount, it asks each known route (e.g. ETH -> PAPER, ETH -> PLANK -> PAPER) what it
  *         would pay, and also every split of half on one route and half on another, and takes the best. A route that
@@ -170,21 +173,22 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
     ///         backlog). Returns the PAPER burned. Flushers only.
     function flush(Pay pay) external nonReentrant returns (uint256) {
         if (!flusher[msg.sender]) revert NotFlusher();
-        return _flush(pay, MAX_HALVINGS);
+        return _flush(pay, MAX_HALVINGS, type(uint256).max);
     }
 
-    /// @notice The light flush FirePsa runs with every fee: the whole amount or half, no deeper search (so a waiting
-    ///         burner costs each case or grade little gas). `flush` drains anything left. Flushers only.
-    function flushLight(Pay pay) external nonReentrant returns (uint256) {
+    /// @notice The light flush FirePsa runs with every fee: at most `maxAmount` of what is held (the fee it just
+    ///         sent, never the backlog), whole or half, no deeper search (so a waiting burner costs each case or grade
+    ///         little gas). `flush` drains anything left. Flushers only.
+    function flushLight(Pay pay, uint256 maxAmount) external nonReentrant returns (uint256) {
         if (!flusher[msg.sender]) revert NotFlusher();
-        return _flush(pay, 1);
+        return _flush(pay, 1, maxAmount);
     }
 
-    function _flush(Pay pay, uint256 halvings) internal returns (uint256 out) {
+    function _flush(Pay pay, uint256 halvings, uint256 maxAmount) internal returns (uint256 out) {
         uint256 held = pay == Pay.ETH ? address(this).balance : IERC20(_token(pay)).balanceOf(address(this));
-        if (held == 0) return 0;
-        // the whole amount, else the biggest piece (half, a quarter, ...) the guard allows
-        uint256 amount = held;
+        if (held == 0 || maxAmount == 0) return 0;
+        // the whole amount (at most maxAmount), else the biggest piece (half, a quarter, ...) the guard allows
+        uint256 amount = held < maxAmount ? held : maxAmount;
         uint256 minOut;
         uint256 a;
         uint256 b;
@@ -222,6 +226,14 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
         uint256 px = _priceOf(pay); // USD per whole token, 18 decimals
         if (px == 0) revert FeedUnavailable();
         return (usd18 * 1e18 + px - 1) / px;
+    }
+
+    /// @notice PAPER's price in dollars (18 decimals) from the PAPER feed (the 20-hour average), or 0 while it has no
+    ///         fresh price (older than PAPER_FEED_MAX_AGE, or a window longer than PAPER_WINDOW_MAX). FirePsa prices
+    ///         PAPER payments with it.
+    function paperPrice() external view returns (uint256) {
+        uint256 paper = _feed18(paperUsd, PAPER_FEED_MAX_AGE);
+        return paper == 0 || _longWindow(address(paperUsd), PAPER_WINDOW_MAX) ? 0 : paper;
     }
 
     function routesOf(Pay pay) external view returns (address[][] memory) {

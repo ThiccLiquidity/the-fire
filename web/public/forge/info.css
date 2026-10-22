@@ -66,8 +66,10 @@
 .inf-pcol.top .inf-pg, .inf-pcol.top .inf-pval { color: var(--gold) }
 .inf-pwear { align-items: start; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line) }
 .inf-wear { display: grid; justify-items: center; gap: 4px; min-width: 0; text-align: center }
-.inf-wear img { width: 52px; height: 73px; display: block; border-radius: 3px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.6)) }
-.inf-wear.gold img { filter: drop-shadow(0 0 6px rgba(255,205,100,.9)) drop-shadow(0 0 2px rgba(255,235,170,.9)) }
+/* the legend's card: one clean card, with the band's wear layer over it */
+.inf-wthumb { position: relative; display: block; width: 52px; aspect-ratio: 5 / 7; border-radius: 3px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.6)) }
+.inf-wthumb img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 3px }
+.inf-wear.gold .inf-wthumb { filter: drop-shadow(0 0 6px rgba(255,205,100,.9)) drop-shadow(0 0 2px rgba(255,235,170,.9)) }
 .inf-wear span { font-size: 12px; line-height: 1.2; color: var(--muted) }
 .inf-wear.gold span { color: var(--gold) }
 .inf-big { margin: 12px 0 0; text-align: center; font: 400 17px/1.3 var(--display); color: var(--gold); letter-spacing: .02em }
@@ -148,7 +150,7 @@
   .inf-pda, .inf-pwear { gap: 2px }
   .inf-pval { font-size: 11px; letter-spacing: -.03em }
   .inf-pg { font-size: 13px }
-  .inf-wear img { width: 30px; height: 42px }
+  .inf-wthumb { width: 30px }
   .inf-wear span { font-size: 10.5px; letter-spacing: -.01em }
   .inf-mrow { grid-template-columns: 84px 1fr 56px; gap: 8px }
   .inf-table th, .inf-table td { padding: 7px 4px }
@@ -163,4 +165,5 @@
 .inf-ca { cursor: pointer; font: inherit; color: inherit; background: transparent }
 .inf-ca code { font-family: inherit; opacity: .75; font-weight: 600 }
 .inf-ca .cp { font-size: .8em; color: var(--brass) }
-.inf-pcol.aged .inf-pval { color: var(--dim); font-style: italic }
+.inf-pcol.aged .inf-pval { color: var(--muted); font-style: italic; font-weight: 700; text-align: center; line-height: 1.1 }
+.inf-links { display: flex; flex-wrap: wrap; gap: 8px }

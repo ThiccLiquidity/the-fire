@@ -243,9 +243,17 @@ try {
   await page.click('#sheet-table .wz .foot .btn.primary'); // Next: cases
   await page.locator("#sheet-table .wz-grid .ctile:not(.off)").nth(0).click();
   await page.click('#sheet-table .wz .foot .btn.primary'); // Next: review
+  check(await page.locator('#sheet-table .wz-coin [aria-pressed="true"]').textContent() === "ETH", "the review pays in ETH by default");
+  check(/random \(drand\) and final: no regrades, no refunds\. Nothing you pay raises the odds/.test(await page.locator("#sheet-table .wz-final").textContent()), "where grades are paid for: random and final, no regrades, no refunds");
+  check(await page.locator("#sheet-table .wz-thumbs .gt-odds").count() === 2, "each card to the grader shows its own odds (PDA 10 %)");
+  // PAPER: no PAPER price on this chain yet (the PaperUsdTwap needs its first window): the option turns off with a reason
+  await page.click('#sheet-table .wz-coin [data-coin="PAPER"]');
+  await page.waitForFunction(() => document.querySelector('#sheet-table .wz-coin [data-coin="PAPER"]')?.disabled, null, { timeout: 30_000 });
+  check(/PAPER price not available right now/.test(await page.locator("#sheet-table .wz-coin .warn").textContent()) && await page.locator('#sheet-table .wz-coin [aria-pressed="true"]').textContent() === "ETH",
+    "PAPER while its price can't be read (FeedUnavailable): turned off with a short reason, back to ETH");
   await page.click('#sheet-table .wz-coin [aria-pressed]:text("ETH")');
   await page.waitForFunction(() => /≈ .* ETH/.test(document.querySelector("#sheet-table .wz-pay .price")?.textContent || ""), null, { timeout: 30_000 });
-  const quoted = await page.evaluate(async () => (await window.Live.quoteProtect(1, 2, "ETH")).text);
+  const quoted = await page.evaluate(async () => { const ids = Store.state.cards.filter((c) => c.grade == null && !c.cased).map((c) => c.id); return (await window.Live.quoteProtect(ids.slice(0, 1), ids.slice(1, 3), "ETH")).text; });
   check((await page.locator("#sheet-table .wz-pay .price").textContent()).includes(`≈ ${quoted} ETH`), `the review shows FirePsa's quote (${quoted} ETH), not an estimate`);
   await shot("11-review");
   await page.click('#sheet-table .wz .foot .btn.primary'); // Pay
@@ -256,10 +264,20 @@ try {
   await page.click('#sheet-table [data-key="diy"]');
   await page.waitForFunction(() => /graded/.test(document.querySelector("#sheet-table .wz-work .stage-msg")?.textContent || ""), null, { timeout: 120_000 });
   await shot("12-graded");
+  const res = await page.locator("#sheet-table .gres").allTextContents();
+  check(res.length === 2 && res.every((t) => /PDA \d+(GEM MINT|MINT|NM-MT|NEAR MINT|EX-MT|EXCELLENT|VG-EX|VERY GOOD|GOOD|POOR)/.test(t)), `the grades stay in view: ${res.join(" / ")}`);
   await sync();
   const graded = await page.evaluate(() => Store.state.cards.filter((c) => c.grade != null).map((c) => c.grade));
   const cased = await page.evaluate(() => Store.state.cards.filter((c) => c.cased && c.grade == null).length);
   check(graded.length === 2 && cased === 1, `2 graded (PDA ${graded.join(", ")}), 1 cased`);
+  const ages = await page.evaluate(async () => { const c = Store.state.cards.find((x) => x.cased && x.grade == null); const r = await window.Live.chain.card(c.id); return { site: c.frozenAge, chain: r.age }; });
+  check(ages.chain > 0 && ages.site === ages.chain * 1000, `a cased card's frozen age is the chain's (${ages.chain} s), not 0`);
+  await page.evaluate(() => Stations.open("pop"));
+  await page.locator("#sheet-pop .pop-t").waitFor({ timeout: 30_000 });
+  const popAll = await page.locator("#sheet-pop td.all").allTextContents();
+  check(popAll.reduce((a, t) => a + +t, 0) === 2, `the pop report counts the 2 slabs from the Graded events (${popAll.join(", ")})`);
+  await shot("12b-pop-report");
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
 
   console.log("\n== burn");
@@ -339,8 +357,38 @@ try {
     const demo = await p.evaluate(() => ({ live: window.Live?.on, demo: Store.state.demo, cards: Store.state.cards.length, note: !!document.querySelector(".demo-note") && getComputedStyle(document.querySelector(".demo-note")).display !== "none" }));
     check(demo.live === false && demo.demo && demo.cards === 46 && demo.note, `${name}: the demo (46 demo cards, the demo notice)`);
     check(vendor.length === 0, `${name}: no wallet or chain code loaded`);
-    check(errs.length === 0, `${name}: no console errors${errs.length ? ": " + errs.join(" | ") : ""}`);
     const f = join(SHOTS, `16-demo-${name}.png`); await p.screenshot({ path: f }); console.log(`  shot ${f}`);
+
+    // the full-screen card viewer (zoom.js): from a card's detail, closed by X, Esc and Back, the detail still open under it
+    await p.evaluate(() => Stations.open("cards"));
+    const slabId = await p.evaluate(() => Store.state.cards.find((c) => c.grade != null && c.material !== "diamond").id);
+    await p.locator(`#sheet-table .cgrid .ctile[data-id="${slabId}"]`).click();
+    await p.locator("#sheet-card[open] .big .cface").waitFor();
+    const zv = "dialog.zv";
+    const settled = () => p.waitForFunction(() => { const c = document.querySelector("dialog.zv .zv-card"); return c && !c.classList.contains("moving"); }, null, { timeout: 10_000 });
+    const gone = () => p.locator(zv).waitFor({ state: "detached", timeout: 10_000 });
+    const stillDetail = () => p.evaluate(() => !!document.querySelector("#sheet-card[open]") && !!document.querySelector("#sheet-table[open]"));
+    if (w < 500) await p.locator("#sheet-card .big .cwrap").tap({ position: { x: 40, y: 90 } }); else await p.click("#sheet-card .big .zv-open");
+    await p.locator(`${zv}[open]`).waitFor(); await settled();
+    const v1 = await p.evaluate(() => { const d = document.querySelector("dialog.zv"), r = d.querySelector(".zv-card").getBoundingClientRect();
+      return { modal: d.matches(":modal"), label: d.getAttribute("aria-label"), focus: d.contains(document.activeElement), w: r.width, h: r.height, slab: !!d.querySelector(".cface.hd-slab"), hist: !!history.state?.zv }; });
+    check(v1.modal && v1.focus && /^.+, .*PDA \d+$/.test(v1.label) && v1.slab && v1.hist, `${name}: ${w < 500 ? "tapping the card" : "the expand button"} opens the viewer (modal, "${v1.label}", focus inside, the slab in its slab)`);
+    check(w < 500 ? v1.w >= w * 0.9 : v1.h >= h * 0.9, `${name}: the card fills the screen (${Math.round(v1.w)} x ${Math.round(v1.h)} of ${w} x ${h})`);
+    // zoom in: a double tap (phone) or double click, then back out
+    if (w < 500) { await p.touchscreen.tap(w / 2, h / 2); await p.touchscreen.tap(w / 2, h / 2); } else await p.mouse.dblclick(w / 2, h / 2);
+    await p.waitForFunction(() => /scale\((2\.[3-9]|2\.5)/.test(document.querySelector("dialog.zv .zv-card").style.transform), null, { timeout: 10_000 });
+    await settled();
+    check(true, `${name}: double ${w < 500 ? "tap" : "click"} zooms in`);
+    await p.click(`${zv} .zv-x`); await gone();
+    check(await stillDetail() && await p.evaluate(() => document.activeElement?.classList.contains("zv-open") && !history.state?.zv), `${name}: X closes it, back on the card's detail (focus on the expand button)`);
+    await p.click("#sheet-card .big .zv-open"); await p.locator(`${zv}[open]`).waitFor(); await settled();
+    await p.keyboard.press("Escape"); await gone();
+    check(await stillDetail(), `${name}: Esc closes only the viewer`);
+    await p.click("#sheet-card .big .zv-open"); await p.locator(`${zv}[open]`).waitFor(); await settled();
+    const url = p.url(); await p.evaluate(() => history.back()); await gone();
+    check(await stillDetail() && p.url() === url, `${name}: Back closes the viewer and stays on the page`);
+    await p.keyboard.press("Escape"); await p.keyboard.press("Escape");
+    check(errs.length === 0, `${name}: no console errors${errs.length ? ": " + errs.join(" | ") : ""}`);
     await p.close();
   }
   console.log(`\nPASS: ${checks} checks`);

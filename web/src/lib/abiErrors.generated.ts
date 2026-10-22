@@ -54,7 +54,7 @@ export const ABI_ERRORS = {
   ERC721InvalidSender: { inputs: [{ name: "sender", type: "address" }], contracts: ["fireCards"] },
   ERC721NonexistentToken: { inputs: [{ name: "tokenId", type: "uint256" }], contracts: ["fireCards"] },
   FeeUnpaid: { inputs: [], contracts: ["openVRFAdapter"] },
-  FeedUnavailable: { inputs: [], contracts: ["fireSale", "paperBurner"] },
+  FeedUnavailable: { inputs: [], contracts: ["firePsa", "fireSale", "paperBurner"] },
   FeedsAlreadySet: { inputs: [], contracts: ["paperBurner"] },
   FireIsClosed: { inputs: [], contracts: ["fireCards"] },
   FireIsLocked: { inputs: [], contracts: ["fireCards", "recipeDealer"] },

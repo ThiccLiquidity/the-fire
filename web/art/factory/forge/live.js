@@ -74,11 +74,18 @@
   const me = () => FW?.state().address || null;
   const friendly = (e) => (e?.name === 'TxError' ? e.message : FW ? FW.friendly(e) : String(e?.message || e)).split('\n')[0];
   const MAT = { paper: 'paper', wood: 'wood', fire: 'fire', coal: 'charcoal', charcoal: 'charcoal', diamond: 'diamond', gold: 'gold', 'full art': 'fullart', fullart: 'fullart' };
-  const toCard = (c) => ({
-    id: c.serial, serial: c.serial, series: c.fire, character: c.character || c.name, category: c.category,
-    material: MAT[String(c.material).toLowerCase()] || 'paper', holo: c.holo || 'none', edition: String(c.edition), grade: c.grade, pending: !!c.gradePending,
-    cased: !!c.cased, moves: c.moves, dealt: Math.min(Date.now(), c.dealtAt * 1000), frozenAge: 0, image: gateway(c.image), tokenId: c.serial,
-  });
+  // wear: the chain's own age (FireCards.wearOf, seconds), never a guess from the deal time. Cased, pending or slabbed, it's
+  // frozen (frozenAge). Raw, the clock runs from now minus that age (`dealt` is when its wear clock started, so a cancelled
+  // grading's frozen gap isn't counted); `dealtAt` is the real deal date the card's details show.
+  const toCard = (c) => {
+    const ageMs = Math.max(0, (c.age || 0) * 1000), frozen = !!c.cased || !!c.gradePending || c.grade != null;
+    return {
+      id: c.serial, serial: c.serial, series: c.fire, character: c.character || c.name, category: c.category,
+      material: MAT[String(c.material).toLowerCase()] || 'paper', holo: c.holo || 'none', edition: String(c.edition), grade: c.grade, pending: !!c.gradePending,
+      cased: !!c.cased, moves: c.moves, dealt: Date.now() - ageMs, dealtAt: Math.min(Date.now(), c.dealtAt * 1000), frozenAge: frozen ? ageMs : 0,
+      image: gateway(c.image), tokenId: c.serial,
+    };
+  };
   const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, String(v)); } catch { /* private window */ } return null; };
   const hours = (t) => Math.max(1, Math.ceil((t - Date.now() / 1000) / 3600));
 
@@ -117,7 +124,7 @@
   }
   async function readRules() {
     const [p, r] = await Promise.all([L.psaPrices().catch(() => null), L.suggestionRules().catch(() => null)]);
-    if (p) { Object.assign(Store.PRICES, { CASE_USD: +p.caseUsd, GRADE_USD: +p.gradeUsd }); Store.MAX_BATCH = p.maxBatch; }
+    if (p) { Object.assign(Store.PRICES, { CASE_USD: +p.caseUsd, GRADE_USD: +p.gradeUsd }); Store.MAX_BATCH = p.maxBatch; Store.PSA_PAPER_DISCOUNT_BPS = p.paperDiscountBps || 0; }
     if (r) { Store.PRICES.SUGGEST_PAPER = num(r.paperEach); Store.SUGGEST_MAX_BYTES = r.maxBytes; Store.SUGGEST_WAVE.count = r.total; Live.rules = r; }
   }
   // snapshot groups: the holders list published with the drop (ops/snapshot), at holders/series-<n>.json next to the
@@ -178,7 +185,14 @@
     const round = Live.rules?.round;
     S.suggestions = mine.map((x) => ({ text: x.text, at: x.round === round ? 'Series ' + S.series.no : 'Earlier', picked: x.picked }));
     S.wallet.inSnapshot = snapGroups(info).some((g) => !!(Live.snapshot && L.snapshotEntry(Live.snapshot, g.root, a)));
-    if (withCards || Date.now() - cardsAt > 60_000) { cardsAt = Date.now(); const cs = await L.cardsOf(a); if (me() === a) S.cards = cs.map(toCard); }
+    if (withCards || Date.now() - cardsAt > 60_000) {
+      cardsAt = Date.now(); const cs = (await L.cardsOf(a)).map(toCard);
+      // grading is priced by card type (FirePsa.gradeUsdOf): each ungraded card's own price
+      const open = cs.filter((c) => c.grade == null && !c.pending).map((c) => c.id);
+      const usd = open.length ? await L.gradeUsdOf(open).catch(() => ({})) : {};
+      cs.forEach((c) => { if (usd[c.id] > 0) c.gradeUsd = usd[c.id]; });
+      if (me() === a) S.cards = cs;
+    }
   }
   /** Can this wallet buy in group g now, and how many? { ok, max, access } or { ok: false, why } (ask: the collection
    *  can't list its owners' tokens, so the holder says which NFT; retry: the holders list didn't load yet). */
@@ -566,13 +580,27 @@
     if (!alive()) { toast('Your cards land in My cards once dealt'); return null; }
     say('Here they come…');
     const all = (await L.cardsOf(me())).map(toCard);
+    const usd = await L.gradeUsdOf(all.filter((c) => c.grade == null).map((c) => c.id)).catch(() => ({}));
+    all.forEach((c) => { if (usd[c.id] > 0) c.gradeUsd = usd[c.id]; });
     S.cards = all; cardsAt = Date.now();
     return all.filter((c) => !before.has(c.id) && c.series === fire).sort((a, b) => a.serial - b.serial);
   }
 
   // ---------- case & grade: priced by FirePsa.quote, capped at the price shown + 3%
-  /** What casing `cases` and grading `grades` cards costs now in `coin` (an Amount: raw + text), or null. */
-  async function quoteProtect(cases, grades, coin) { await need(); return L.quoteProtect(cases, grades, coin).catch(() => null); }
+  /** Exactly what casing the cards `caseIds` and grading `gradeIds` costs now in `coin` (FirePsa.quoteFor: what
+   *  protect charges): an Amount (raw + text), or null. Paying in PAPER while its price can't be read (FeedUnavailable):
+   *  null, and Store.PSA_PAPER_OFF says why (the review turns PAPER off); a working PAPER quote clears it. */
+  async function quoteProtect(caseIds, gradeIds, coin) {
+    await need();
+    try {
+      const q = await L.quoteProtect(caseIds, gradeIds, coin);
+      if (coin === 'PAPER' && Store.PSA_PAPER_OFF) { Store.PSA_PAPER_OFF = null; Store.update(() => {}); }
+      return q;
+    } catch (e) {
+      if (/FeedUnavailable/.test(String(e?.message || e)) && coin === 'PAPER') { Store.PSA_PAPER_OFF = 'PAPER price not available right now: pay with ETH, PLANK or USDG'; Store.update(() => {}); }
+      return null;
+    }
+  }
   async function protect(caseIds, gradeIds, coin, quote) {
     await need();
     const what = [caseIds.length ? `case ${plural(caseIds.length, 'card')}` : '', gradeIds.length ? `grade ${plural(gradeIds.length, 'card')}` : ''].filter(Boolean).join(', ');
@@ -590,7 +618,9 @@
       if (asked && !tried) { // the buyer tapped "Reveal them now"
         tried = true;
         if (await run('Reveal the grades', (o) => L.deliverAndFinish({ index, ids }, o))) continue;
-        say("Taking a little longer than usual. Your cards are safe; the grades land in My cards once revealed.");
+        // it didn't go through: they can try again, or leave it (the grades land in My cards once revealed)
+        say("That didn't go through. Your cards are safe; the grades land in My cards once revealed.",
+          { label: 'Try again', note: DIY, fn: () => { asked = true; tried = false; }, alt: { label: 'My cards', fn: () => window.Stations?.open('cards') } });
       } else if (g?.roundAt && g.now >= g.roundAt && !tried) {
         const late = g.now - g.roundAt;
         say(late < LATE ? 'Revealing the grades…' : SAFE,
@@ -604,12 +634,24 @@
     return new Map(cs.map((c) => [c.serial, c.grade]));
   }
 
+  // ---------- the pop report: every slab that still exists, by Series, material and grade (FirePsa Graded events)
+  /** { [series]: { [material]: { [grade]: count } } } */
+  async function popReport() {
+    await need();
+    const out = {};
+    for (const x of await L.gradedPop()) {
+      const m = MAT[String(x.material).toLowerCase()] || 'paper', s = ((out[x.fire] ??= {})[m] ??= {});
+      s[x.grade] = (s[x.grade] || 0) + 1;
+    }
+    return out;
+  }
+
   // ---------- burning, suggestions
   const burn = async (ids) => { await need(); return run(`Burn ${plural(ids.length, 'card')}`, (o) => L.burnCards({ ids }, o), `Burned ${plural(ids.length, 'card')}`); };
   const suggest = async (texts) => { await need(); if (stillSending('suggest')) return null; return run(texts.length > 1 ? `Send ${texts.length} suggestions` : 'Send your suggestion', (o) => L.suggest({ texts }, o)); };
 
   window.Live = {
-    on: true, net, testnet: net === 'testnet', sync, needWallet, openWallet, groupApi, free, getPaper, openPacks, quoteProtect, protect, finishGrading, burn, suggest,
+    on: true, net, testnet: net === 'testnet', sync, needWallet, openWallet, groupApi, free, getPaper, openPacks, quoteProtect, protect, finishGrading, popReport, burn, suggest,
     walletNeeds: capOf, // what the wallet must hold to pay `amt` in a coin: the cap (+3%, not USDG) and gas for ETH
     rules: null, snapshot: null, get chain() { return L; },
   };

@@ -47,7 +47,8 @@
     const key = text + '|' + (a?.label || '');
     if (el.dataset.key === key) return;
     el.dataset.key = key; el.textContent = text;
-    if (a) el.append(h('span', { class: 'stage-act' }, btn(a.label, 'small', () => { el.querySelector('.stage-act')?.remove(); a.fn(); }, { 'data-key': 'diy' }), h('small', { text: a.note })));
+    if (a) el.append(h('span', { class: 'stage-act' }, btn(a.label, 'small', () => { el.querySelector('.stage-act')?.remove(); a.fn(); }, { 'data-key': 'diy' }),
+      a.alt ? btn(a.alt.label, 'small', () => a.alt.fn(), { 'data-key': 'diy-alt' }) : null, h('small', { text: a.note })));
   };
   const paper = () => S().wallet.balances.PAPER;
   const connected = () => S().wallet.connected;
@@ -160,14 +161,19 @@
     if (moving) Holo.attach(el, c, sway);
     return el;
   }
-  // the badge under a card: its grade once slabbed, else Cased, else Raw (with the fresh-day timer while it runs; noFresh: none, a banner says it)
+  // the badge under a card: its grade once slabbed, else Cased (with a lock), else Raw, or Fresh while its first day runs
+  // (time doesn't wear it; a card that already moved says so: moves still count). noFresh: a short "Fresh" chip, a banner has the time.
+  const LOCK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 7V5.2a3.5 3.5 0 0 1 7 0V7" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="2.5" y="7" width="11" height="8" rx="1.8" fill="currentColor"/></svg>';
+  const freshTip = (c, f) => `Fresh for ${Wear.hhmm(f)}: time doesn't wear it yet. ${c.moves ? `It has moved ${c.moves === 1 ? 'once' : c.moves + ' times'}; moves still count.` : 'Moves still count.'}`;
   const gradeBadge = (c, noFresh = false) => {
     if (c.pending) return h('span', { class: 'pda wait', text: 'Grading' });
     if (c.grade != null) return h('span', { class: 'pda g' + c.grade, text: 'PDA ' + c.grade });
-    if (c.cased) return h('span', { class: 'pda cased', text: 'Cased' });
+    if (c.cased) return h('span', { class: 'pda cased', title: 'Cased: its wear is frozen' }, h('i', { class: 'lock', html: LOCK }), 'Cased');
     const f = Wear.freshLeft(c);
-    if (f && noFresh) return null;
-    return f ? h('span', { class: 'pda fresh', title: 'Fresh: no wear yet', text: 'Fresh ' + Wear.hhmm(f) }) : h('span', { class: 'pda none', text: 'Raw' });
+    if (!f) return h('span', { class: 'pda none', text: 'Raw' });
+    const moved = c.moves > 0, cls = 'pda fresh' + (moved ? ' moved' : '');
+    if (noFresh) return h('span', { class: cls, title: freshTip(c, f), text: moved ? 'Fresh · moved' : 'Fresh' });
+    return h('span', { class: cls, title: freshTip(c, f), text: moved ? `Fresh ${Math.max(1, Math.floor(f / 3600e3))}h · moved` : 'Fresh ' + Wear.hhmm(f) });
   };
   const HOLDER = { raw: 'Raw', case: 'Cased', slab: 'Slabbed' };
   const matChip = (m) => h('span', { class: 'mat ' + m, text: Store.MAT_LABEL[m] });
@@ -179,26 +185,29 @@
   // by wear band (PDA 10, 9-8, 7-6, 5-4, 3-2, 1). The thin bar sits on every ungraded tile; the card's detail adds the key.
   const canGradeNow = (c) => c.grade == null && !c.pending;
   const pctNow = (p) => (p >= 0.995 ? '100%' : p >= 0.005 ? Math.round(p * 100) + '%' : '<1%');
-  function nowBands(c) {
-    const o = Wear.odds(Wear.ageSecOf(c), c.moves), tot = o.reduce((a, b) => a + b, 0) || 1;
-    return Info.WEAR.map((w) => ({ ...w, p: o.reduce((a, p, i) => a + (Info.bandOf(i + 1) === w ? p : 0), 0) / tot })).filter((b) => b.p >= 0.001);
-  }
-  function nowBar(c, full = false) {
-    const bands = nowBands(c), says = 'If graded now: ' + bands.map((b) => `PDA ${b.g} ${pctNow(b.p)}`).join(', ');
+  const oddsNow = (c) => Wear.odds(Wear.ageSecOf(c), c.moves);
+  // the six bands with their share, the ones that can happen (one set of bands everywhere: Wear.BANDS)
+  const bandsOf = (o) => Wear.bandOdds(o).filter((b) => b.p >= 0.001);
+  const nowBands = (c) => bandsOf(oddsNow(c));
+  const saysOf = (bands, lead = 'If graded now') => `${lead}: ` + bands.map((b) => `PDA ${b.g} ${pctNow(b.p)}`).join(', ');
+  // the bar (thin on tiles), or with its key: caption, the bar, "10 1% · 9–8 70% ..."
+  function bandBar(bands, { full = false, caption = 'If graded now', says = saysOf(bands, caption) } = {}) {
     const bar = h('span', { class: 'gnow-bar', ...(full ? { role: 'img', 'aria-label': says } : { 'aria-hidden': 'true', title: says }) },
       bands.map((b) => h('i', { style: `flex:${b.p} 1 0;background:${b.c}` })));
     if (!full) return bar;
-    return h('div', { class: 'gnow' }, h('small', { text: 'If graded now' }), bar,
+    return h('div', { class: 'gnow' }, h('small', { text: caption }), bar,
       h('ul', { class: 'gnow-key', 'aria-hidden': 'true' }, bands.map((b) => h('li', {}, h('i', { style: `background:${b.c}` }), b.g + ' ', h('b', { text: pctNow(b.p) })))));
   }
+  const nowBar = (c, full = false, caption) => bandBar(nowBands(c), { full, caption });
 
   // a tile used by the collection and by every picker (Series and floor live in the card's detail)
   function cardTile(c, { selectable = false, selected = false, onTap, tag, noFresh = false } = {}) {
-    const b = h('button', { type: 'button', class: 'ctile' + (selectable ? ' pick' : ''), 'data-id': c.id, 'aria-label': describe(c), onclick: () => onTap?.(c, b) },
+    const label = describe(c) + (canGradeNow(c) ? '. ' + saysOf(nowBands(c)) : ''); // the odds bar, for screen readers too
+    const b = h('button', { type: 'button', class: 'ctile' + (selectable ? ' pick' : ''), 'data-id': c.id, 'aria-label': label, onclick: () => onTap?.(c, b) },
       h('div', { class: 'cwrap' }, cardFace(c, true), gradeBadge(c, noFresh), selectable ? h('span', { class: 'tick', 'aria-hidden': 'true' }) : null),
       canGradeNow(c) ? nowBar(c) : null,
       h('div', { class: 'cmeta' }, tag || null, matChip(c.material), holoChip(c)));
-    if (tag) b.setAttribute('aria-label', describe(c) + '. ' + tag.textContent);
+    if (tag) b.setAttribute('aria-label', label + '. ' + tag.textContent);
     if (selectable) b.setAttribute('aria-pressed', String(selected));
     return b;
   }
@@ -287,8 +296,6 @@
         edition: `${1 + Math.floor(Math.random() * of)} of ${of}`, grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
     });
   }
-  // fresh PDA odds in percent (FirePsa, fixed forever for every Series): grades 7-10 only. Grades 1-6 come only from wear (wear.js).
-  const GRADE_ODDS = [10, 9, 8, 7].map((g) => [g, Wear.FRESH[g - 1] / 100]);
   // demo data: graded cards were graded at some age (their grade drawn on the wear model at that age); one PDA 10 so the demo shows the gold edge
   (() => {
     let seed = 1607; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -297,6 +304,49 @@
     const show10 = graded.find((c) => c.material === 'wood') || graded[0];
     if (show10) { show10.grade = 10; show10.frozenAge = 3600e3; }
   })();
+
+  // a Legendary card (1 in 1,000 or rarer: a Full Art, full-holo Paper or Wood, plain Coal, any Diamond, PDA 10s): flash, a burst of sparks, then settle.
+  // The title names the card: "Full holo Paper!", "Diamond!", "PDA 10!" (a plain card that's only Legendary for its grade)
+  const BM_SPARKS = { dia: ['#ffffff', '#d8f0ff', '#9fd8ff', '#c9b6ff', '#ffd27a', '#ff9a3c'], g10: ['#fff6d6', '#ffd27a', '#ffb347', '#ff7a2e', '#ffffff'],
+    charcoal: ['#fff2e0', '#ffb070', '#ff6a2a', '#ff3a1a', '#ffd27a'], paper: ['#ffffff', '#fff4d6', '#ffe7a8', '#ffd27a', '#f6e8cf'],
+    wood: ['#fff0d0', '#ffd08a', '#ffb050', '#ff9f2e', '#ffffff'], fire: ['#fff2c0', '#ffd27a', '#ff9a3c', '#ff5a12', '#ffffff'],
+    gold: ['#fff6d6', '#ffe08a', '#ffc23a', '#e09a14', '#ffffff'], fullart: ['#ffffff', '#ffe98a', '#ff8ae0', '#8affd0', '#8ad8ff', '#ffd27a'] };
+  // (module level: the grade reveal's PDA 10 gets the same moment)
+  // o: { kind, title } to set them (the grade reveal: the PDA 10's gold and "PDA 10! GEM MINT")
+  function bigMoment(c, el, op, o = {}) {
+    const dia = c.material === 'diamond', plain = !isHolo(c);
+    const kind = o.kind || (dia ? 'dia' : plain && c.grade === 10 ? 'g10' : c.material);
+    const title = o.title || (plain && c.grade != null ? `PDA ${c.grade}!` : c.grade != null ? cardName(c) : cardName(c) + '!');
+    const cv = h('canvas', { class: 'bm-cv' });
+    const ov = h('div', { class: 'bigm ' + (dia || kind === 'g10' ? kind : 'fh fh-' + kind), 'aria-hidden': 'true' }, h('i', { class: 'bm-flash' }), h('i', { class: 'bm-glow' }), cv,
+      h('b', { class: 'bm-t', text: title }));
+    (op.closest('dialog') || op).append(ov); Sfx.hit('legendary'); op.classList.add('big'); setTimeout(() => op.classList.remove('big'), 2300);
+    if (!reduced()) { sparks(cv, el.getBoundingClientRect(), BM_SPARKS[kind]); const q = op.querySelector('.op-area'); q?.classList.add('quake'); setTimeout(() => q?.classList.remove('quake'), 450); }
+    setTimeout(() => ov.classList.add('out'), 1900); setTimeout(() => ov.remove(), 2500);
+  }
+  function sparks(cv, r, cols) {
+    const dpr = Math.min(1.5, devicePixelRatio || 1), W = innerWidth, H = innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext('2d'); g.scale(dpr, dpr);
+    const ox = r.left + r.width / 2, oy = r.top + r.height / 2, sp = Math.max(W, H) / 900; // time-based: px per second, seconds of life
+    const ps = Array.from({ length: 180 }, (_, i) => { const a = Math.random() * Math.PI * 2, v = (260 + Math.random() * 900) * sp;
+      return { x: ox + Math.cos(a) * r.width * 0.3, y: oy + Math.sin(a) * r.height * 0.3, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 180 * sp, life: 0.7 + Math.random() * 1.1,
+        c: cols[i % cols.length], w: 1.5 + Math.random() * 2.5, dot: i % 3 === 0 }; });
+    let t0 = 0, prev = 0;
+    const tick = (now) => {
+      if (!cv.isConnected) return; if (!t0) t0 = prev = now;
+      const dt = Math.min(0.05, (now - prev) / 1000), age = (now - t0) / 1000; prev = now;
+      g.clearRect(0, 0, W, H); g.globalCompositeOperation = 'lighter'; g.lineCap = 'round'; let live = 0;
+      for (const p of ps) {
+        if (age > p.life) continue; live++;
+        const k = Math.pow(0.18, dt); p.vx *= k; p.vy = p.vy * k + 520 * sp * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+        g.globalAlpha = Math.max(0, 1 - age / p.life); g.strokeStyle = g.fillStyle = p.c; g.lineWidth = p.w;
+        if (p.dot) { g.beginPath(); g.arc(p.x, p.y, p.w * 1.3, 0, 7); g.fill(); }
+        else { g.beginPath(); g.moveTo(p.x - p.vx * 0.035, p.y - p.vy * 0.035); g.lineTo(p.x, p.y); g.stroke(); }
+      }
+      if (live) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
 
   // =====================================================================================
   // 1. My cards (sealed packs + the collection) and Open packs (the opening table)
@@ -379,13 +429,27 @@
         sel('holo', 'Holo', [['any', 'Any'], ['none', 'None'], ['frame', 'Frame'], ['picture', 'Picture'], ['full', 'Full']]),
         sel('grade', 'Grade', [['all', 'All'], ['none', 'Not graded'], ['10', 'PDA 10'], ['9-8', 'PDA 9–8'], ['7-6', 'PDA 7–6'], ['5-4', 'PDA 5–4'], ['3-2', 'PDA 3–2'], ['1', 'PDA 1']]),
         sel('sort', 'Sort', [['serial', 'Newest'], ['rarity', 'Rarity'], ['grade', 'Grade'], ['edition', 'Edition']]));
-      const grid = list.length ? h('div', { class: 'cgrid' }, list.map((c) => cardTile(c, { onTap: (card) => openDetail(card.id) })))
+      const ids = list.map((c) => c.id); // the viewer swipes through the list as shown
+      const grid = list.length ? h('div', { class: 'cgrid' }, list.map((c) => cardTile(c, { onTap: (card) => openDetail(card.id, ids) })))
         : h('div', { class: 'empty-state' }, h('p', { text: all.length ? 'No cards match.' : 'No cards yet. Open a pack!' }),
           all.length ? btn('Clear filters', 'small', () => { Object.assign(filt, { series: 'all', hold: 'all', mat: 'all', holo: 'any', grade: 'all' }); renderColl(); }, { 'data-key': 'clear' }) : null);
       put(coll, h('div', { class: 'coll-h' }, h('h3', { id: 'coll-h', text: 'Your cards' }), h('span', { class: 'muted', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }),
-        h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Collection floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) }))), holdSeg, filters, grid);
+        h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Collection floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) })),
+        btn('Pop report', 'small pop-b', () => openPop(), { 'data-key': 'pop' })), freshNudge(all), holdSeg, filters, grid);
     }
     const render = () => { renderPacks(); renderColl(); };
+    // the fresh window: "5 cards still fresh · 3h 12m left · Case all fresh for $0.25" (the wizard, with them picked)
+    function freshNudge(all) {
+      const fresh = all.filter((c) => Wear.freshLeft(c) > 0).sort((a, b) => Wear.freshLeft(a) - Wear.freshLeft(b));
+      if (!fresh.length) return null;
+      const pick = fresh.slice(0, maxBatch()), usd = pick.reduce((a, c) => a + Store.caseUsd(c), 0), n = fresh.length;
+      return h('div', { class: 'fresh-nudge' },
+        h('p', {}, h('span', {}, h('b', { text: `${n} ${n === 1 ? 'card' : 'cards'} still fresh` }), ` · ${Wear.hhmm(Wear.freshLeft(fresh[0]))} left`),
+          h('small', { text: Wear.FRESH_LINE + ' Cased now, time never touches them.' })),
+        btn(pick.length < n ? `Case ${pick.length} fresh for ${Wear.usd(usd)}` : `Case all fresh for ${Wear.usd(usd)}`, 'primary small', () => {
+          Sheet.close('table'); Stations.open('grade', { as: 'case', pick: pick.map((c) => c.id) });
+        }, { 'data-key': 'case-fresh' }));
+    }
 
     // ---------- opening: rip the pack, one card at a time (rarest last), then a summary of everything pulled
     async function openPacks(series, n) {
@@ -722,47 +786,6 @@
       return sv;
     }
 
-    // a Legendary card (1 in 1,000 or rarer: a Full Art, full-holo Paper or Wood, plain Coal, any Diamond, PDA 10s): flash, a burst of sparks, then settle.
-    // The title names the card: "Full holo Paper!", "Diamond!", "PDA 10!" (a plain card that's only Legendary for its grade)
-    const BM_SPARKS = { dia: ['#ffffff', '#d8f0ff', '#9fd8ff', '#c9b6ff', '#ffd27a', '#ff9a3c'], g10: ['#fff6d6', '#ffd27a', '#ffb347', '#ff7a2e', '#ffffff'],
-      charcoal: ['#fff2e0', '#ffb070', '#ff6a2a', '#ff3a1a', '#ffd27a'], paper: ['#ffffff', '#fff4d6', '#ffe7a8', '#ffd27a', '#f6e8cf'],
-      wood: ['#fff0d0', '#ffd08a', '#ffb050', '#ff9f2e', '#ffffff'], fire: ['#fff2c0', '#ffd27a', '#ff9a3c', '#ff5a12', '#ffffff'],
-      gold: ['#fff6d6', '#ffe08a', '#ffc23a', '#e09a14', '#ffffff'], fullart: ['#ffffff', '#ffe98a', '#ff8ae0', '#8affd0', '#8ad8ff', '#ffd27a'] };
-    function bigMoment(c, el, op) {
-      const dia = c.material === 'diamond', plain = !isHolo(c);
-      const kind = dia ? 'dia' : plain && c.grade === 10 ? 'g10' : c.material;
-      const title = plain && c.grade != null ? `PDA ${c.grade}!` : c.grade != null ? cardName(c) : cardName(c) + '!';
-      const cv = h('canvas', { class: 'bm-cv' });
-      const ov = h('div', { class: 'bigm ' + (dia || kind === 'g10' ? kind : 'fh fh-' + kind), 'aria-hidden': 'true' }, h('i', { class: 'bm-flash' }), h('i', { class: 'bm-glow' }), cv,
-        h('b', { class: 'bm-t', text: title }));
-      (op.closest('dialog') || op).append(ov); Sfx.hit('legendary'); op.classList.add('big'); setTimeout(() => op.classList.remove('big'), 2300);
-      if (!reduced()) { sparks(cv, el.getBoundingClientRect(), BM_SPARKS[kind]); const q = op.querySelector('.op-area'); q.classList.add('quake'); setTimeout(() => q.classList.remove('quake'), 450); }
-      setTimeout(() => ov.classList.add('out'), 1900); setTimeout(() => ov.remove(), 2500);
-    }
-    function sparks(cv, r, cols) {
-      const dpr = Math.min(1.5, devicePixelRatio || 1), W = innerWidth, H = innerHeight;
-      cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext('2d'); g.scale(dpr, dpr);
-      const ox = r.left + r.width / 2, oy = r.top + r.height / 2, sp = Math.max(W, H) / 900; // time-based: px per second, seconds of life
-      const ps = Array.from({ length: 180 }, (_, i) => { const a = Math.random() * Math.PI * 2, v = (260 + Math.random() * 900) * sp;
-        return { x: ox + Math.cos(a) * r.width * 0.3, y: oy + Math.sin(a) * r.height * 0.3, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 180 * sp, life: 0.7 + Math.random() * 1.1,
-          c: cols[i % cols.length], w: 1.5 + Math.random() * 2.5, dot: i % 3 === 0 }; });
-      let t0 = 0, prev = 0;
-      const tick = (now) => {
-        if (!cv.isConnected) return; if (!t0) t0 = prev = now;
-        const dt = Math.min(0.05, (now - prev) / 1000), age = (now - t0) / 1000; prev = now;
-        g.clearRect(0, 0, W, H); g.globalCompositeOperation = 'lighter'; g.lineCap = 'round'; let live = 0;
-        for (const p of ps) {
-          if (age > p.life) continue; live++;
-          const k = Math.pow(0.18, dt); p.vx *= k; p.vy = p.vy * k + 520 * sp * dt; p.x += p.vx * dt; p.y += p.vy * dt;
-          g.globalAlpha = Math.max(0, 1 - age / p.life); g.strokeStyle = g.fillStyle = p.c; g.lineWidth = p.w;
-          if (p.dot) { g.beginPath(); g.arc(p.x, p.y, p.w * 1.3, 0, 7); g.fill(); }
-          else { g.beginPath(); g.moveTo(p.x - p.vx * 0.035, p.y - p.vy * 0.035); g.lineTo(p.x, p.y); g.stroke(); }
-        }
-        if (live) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    }
-
     // holo: pointer or device tilt moves a rainbow sheen across the card and tips it a little
     function holoTilt(halted, signal) {
       let s = null;
@@ -825,29 +848,41 @@
     }
   }
 
-  // card detail: bigger card, its true odds and demo floor, all traits, quick actions, OpenSea
-  function openDetail(id) {
+  // card detail: bigger card, its true odds and demo floor, all traits, quick actions, OpenSea.
+  // ids: the list it was opened from (the full-screen viewer swipes through it)
+  function openDetail(id, ids) {
     const c = byId(id); if (!c) return;
     const od = Store.trueOdds(c);
     const ed = Store.editionInfo(c); // edition + this exact look, with burned counts (demo numbers)
-    const traits = [['Character', c.character], ['Category', Store.CHARS[c.character]?.category || '—'], ['Material', Store.MAT_LABEL[c.material]], ['Holo', HOLO[c.holo || 'none']], ['Series', 'Series ' + c.series],
-      ['Edition', c.edition + (ed.burned ? ` · ${ed.burned} burned` : '')], ['This look', `${ed.lookK} of ${ed.lookN}` + (ed.lookBurned ? ` · ${ed.lookBurned} burned` : '')], ['Serial', '#' + c.serial], ['PDA grade', c.pending ? 'Being graded' : c.grade == null ? 'Not graded' : String(c.grade)],
+    const frozenAt = (ms) => { const d = Math.floor(ms / Store.DAY); return d < 1 ? 'under a day' : `${d.toLocaleString('en-US')} ${d === 1 ? 'day' : 'days'}`; };
+    const traits = [['Character', c.character], ['Category', Store.CHARS[c.character]?.category || c.category || '—'], ['Material', Store.MAT_LABEL[c.material]], ['Holo', HOLO[c.holo || 'none']], ['Series', 'Series ' + c.series],
+      ['Edition', c.edition + (ed.burned ? ` · ${ed.burned} burned` : '')], ['This look', `${ed.lookK} of ${ed.lookN}` + (ed.lookBurned ? ` · ${ed.lookBurned} burned` : '')], ['Serial', '#' + c.serial],
+      ['PDA grade', c.pending ? 'Being graded' : c.grade == null ? 'Not graded' : `${c.grade} · ${Wear.WORD[c.grade]}`],
       // what an ungraded card's metadata shows (its condition stays hidden); a slab shows only its grade
       // (docs/grading.md: a fixed Dealt date, plus the age frozen when it was cased)
-      ...(c.grade == null ? [['Cased', c.cased ? 'Yes' : 'No'], ['Dealt', new Date(c.dealt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })],
-        ...(c.cased ? [['Age when cased (days)', String(Math.floor(c.frozenAge / Store.DAY))]] : []), ['Moves', String(Math.min(c.moves, 10))]] : [])];
+      ...(c.grade == null ? [['Cased', c.cased ? `Cased ✓ (wear frozen at ${frozenAt(c.frozenAge)})` : 'No'], ['Dealt', new Date(c.dealtAt ?? c.dealt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })],
+        ['Moves', String(Math.min(c.moves, 10))]] : [])];
+    // a slab's line in the pop report: "1 of 3 Gold PDA 10s" (read once the report is in)
+    const popDd = c.grade != null ? h('dd', { class: 'pop-line', text: '…' }) : null;
+    if (popDd) Store.popReport().then((pop) => {
+      const n = pop?.[c.series]?.[c.material]?.[c.grade] || 1, what = `${Store.MAT_LABEL[c.material]} PDA ${c.grade}`;
+      popDd.replaceChildren(btn(n === 1 ? `The only ${what} in Series ${c.series}` : `1 of ${n} ${what}s in Series ${c.series}`, 'linkish', () => openPop({ series: c.series, mat: c.material, grade: c.grade }), { 'data-key': 'popline' }));
+    }, () => { popDd.textContent = 'Couldn’t load the pop report'; });
     const goto = (name, o = {}) => { Sheet.close('card'); Sheet.close('table'); Stations.open(name, { pick: [c.id], ...o }); };
     const canGrade = c.grade == null && !c.pending, canCase = canGrade && !c.cased;
     const sea = (label, href, extra) => h('a', { class: 'btn sea', href, target: '_blank', rel: 'noopener', ...extra }, label, h('span', { 'aria-hidden': 'true', text: '↗' }));
+    const face = cardFace(c, false, true);
+    const zoom = () => viewCard(c, ids);
     const body = h('div', { class: 'detail' },
-      h('div', { class: 'big' }, h('div', { class: 'cwrap' }, cardFace(c, false, true), gradeBadge(c))),
+      h('div', { class: 'big' }, h('div', { class: 'cwrap', onclick: (e) => { if (!e.target.closest('button')) zoom(); } }, face, gradeBadge(c),
+        window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null)),
       h('div', { class: 'traits' },
         h('div', { class: 'cmeta' }, matChip(c.material), holoChip(c), od.tier ? h('span', { class: 'tier-b ' + od.tier, text: TIER_LABEL[od.tier] }) : null),
         h('div', { class: 'dstats' },
           h('div', { class: 'dodds' }, h('small', { text: c.grade != null ? 'Odds with grade' : 'Pull odds' }), h('b', { text: od.label })),
           h('div', { class: 'dfloor' }, h('small', { text: 'Floor (demo)' }), h('b', { text: floorTxt(c) }))),
-        canGradeNow(c) ? nowBar(c, true) : null,
-        h('dl', {}, traits.map(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
+        canGradeNow(c) ? (c.cased ? nowBar(c, true, 'If graded now (frozen by its case)') : oddsClock(c, () => goto('grade', { as: 'case' }), canCase)) : null,
+        h('dl', {}, traits.map(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })]), popDd ? [h('dt', { text: 'Pop' }), popDd] : null),
         h('div', { class: 'row' },
           c.grade == null ? btn(`Grade · ${Wear.usd(Store.PRICES.GRADE_USD)}`, 'primary', () => goto('grade', { as: 'grade' }), { disabled: !canGrade }) : null, // slabbed: final, nothing to do
           c.grade == null ? btn(`Case · ${Wear.usd(Store.PRICES.CASE_USD)}`, '', () => goto('grade', { as: 'case' }), { disabled: !canCase }) : null,
@@ -857,23 +892,78 @@
           sea('OpenSea', Store.openSeaItem(c), { 'aria-label': 'OpenSea: view, buy or list (opens a new tab)' })),
         Wear.howPill(),
         LIVE ? null : h('p', { class: 'muted small', text: 'Demo floors. OpenSea links are placeholders.' })));
+    const d = document.getElementById('sheet-card'), opener = d?.open ? d._opener : null;
     Sheet.open('card', { title: c.character, body });
+    if (opener) d._opener = opener; // swapped from the viewer: focus still goes back to the tile it came from
+  }
+
+  // the full-screen viewer (zoom.js) over the card detail: swipes through the list the detail came from, and the detail
+  // follows along, so closing lands on the card last shown
+  function viewCard(c, ids) {
+    if (!window.Zoom) return;
+    const cards = (ids && ids.includes(c.id) ? ids : [c.id]).map(byId).filter(Boolean);
+    const bigFace = () => document.querySelector('#sheet-card[open] .detail .big .cface');
+    Zoom.open({ cards, index: cards.indexOf(cards.find((x) => x.id === c.id)), from: bigFace,
+      face: (x) => cardFace(x, false, true), name: (x) => `${x.character}, ${cardName(x)}`,
+      onNav: (x) => { openDetail(x.id, ids); const f = bigFace(); if (f) window.Holo?.hold(f, true); } }); // the detail behind waits, still
+  }
+
+  // the odds clock (a raw card's detail): its grade odds if graded now, in 30 days and in 6 months (Wear.odds on its
+  // age, moves as they are), by band, and "Case now to freeze these odds"
+  function oddsClock(c, onCase, canCase) {
+    const age = Wear.ageSecOf(c), DAYS = [['If graded now', 0], ['In 30 days', 30], ['In 6 months', 182]];
+    const cols = DAYS.map(([l, d]) => ({ l, b: Wear.bandOdds(Wear.odds(age + d * 86400, c.moves)) }));
+    const rows = Wear.BANDS.map((band, i) => ({ band, i })).filter(({ i }) => cols.some((x) => x.b[i].p >= 0.001));
+    const says = cols.map((x) => saysOf(x.b.filter((b) => b.p >= 0.001), x.l)).join('. ');
+    return h('div', { class: 'gclock' },
+      h('table', { class: 'gclock-t', 'aria-label': 'Grade odds over time. ' + says },
+        h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'PDA' }), cols.map((x, k) => h('th', { scope: 'col', class: k ? '' : 'now' }, x.l, bandBar(x.b.filter((b) => b.p >= 0.001)))))),
+        h('tbody', {}, rows.map(({ band, i }) => h('tr', {}, h('th', { scope: 'row' }, h('i', { style: `background:${band.c}` }), band.g),
+          cols.map((x, k) => h('td', { class: k ? '' : 'now', text: Wear.pct(x.b[i].p) })))))),
+      h('p', { class: 'gclock-note muted small', text: Wear.freshLeft(c) ? Wear.FRESH_LINE + ' After that a raw card slowly wears.' : 'A raw card slowly wears with time; moves can cost a grade too.' }),
+      canCase ? btn(`Case now to freeze these odds · ${Wear.usd(Store.caseUsd(c))}`, 'gclock-case', onCase) : null);
+  }
+
+  // the pop report: how many slabs of each grade exist, per Series, by material (Store.popReport: live from FirePsa's
+  // Graded events, the demo from demo data). at: { series, mat, grade } highlights that line (from a slab's detail).
+  function openPop(at = {}) {
+    const root = h('div', { class: 'st st-pop' }, h('p', { class: 'muted', text: 'Reading the slabs…' }));
+    Sheet.open('pop', { title: 'Pop report', body: root, wide: true });
+    Store.popReport().then((pop) => {
+      const series = Object.keys(pop || {}).map(Number).sort((a, b) => b - a);
+      if (!series.length) return put(root, h('p', { class: 'slead', text: 'No slabs yet.' }), h('p', { class: 'muted', text: 'Every card graded shows up here, by Series, material and grade.' }));
+      const G = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1], MATS = Store.MATS;
+      put(root, h('p', { class: 'muted', text: 'How many slabs of each grade exist, by material. Burned slabs are gone, so they don’t count.' }),
+        series.map((no) => {
+          const per = pop[no], mats = MATS.filter((m) => per[m]), sum = (m) => G.reduce((a, g) => a + (per[m][g] || 0), 0);
+          return h('section', { class: 'pop-s' }, h('h3', {}, `Series ${no} `, h('small', { class: 'muted', text: `${mats.reduce((a, m) => a + sum(m), 0).toLocaleString('en-US')} slabs` })),
+            h('div', { class: 'pop-wrap', tabindex: '0', role: 'region', 'aria-label': `Series ${no} pop report` }, h('table', { class: 'pop-t' },
+              h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Material' }), G.map((g) => h('th', { scope: 'col', class: 'pg', style: `--c:${Wear.bandOf(g).c}`, title: Wear.WORD[g], text: String(g) })), h('th', { scope: 'col', text: 'All' }))),
+              h('tbody', {}, mats.map((m) => h('tr', { class: at.series === no && at.mat === m ? 'at' : '' }, h('th', { scope: 'row' }, matChip(m)),
+                G.map((g) => { const n = per[m][g] || 0; return h('td', { class: (n ? '' : 'z') + (at.series === no && at.mat === m && at.grade === g ? ' at' : ''), text: n ? n.toLocaleString('en-US') : '·' }); }),
+                h('td', { class: 'all', text: sum(m).toLocaleString('en-US') })))))));
+        }),
+        LIVE ? null : h('p', { class: 'demo-line', text: 'Demo numbers' }));
+      root.querySelector('td.at')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    }, () => put(root, h('p', { class: 'warn', text: 'Couldn’t read the pop report. Try again in a moment.' })));
   }
 
   // =====================================================================================
   // 2. Case & grade: the wizard (after every opening, and the Case & grade station)
   //    1 Grade picks -> 2 Case picks (cards going to the grader greyed out) -> 3 Review, one payment -> cases slide on -> the grader
   // =====================================================================================
-  const pctTxt = (p) => String(p).replace(/\.0$/, '') + '%';
+  // the fresh odds by band (FirePsa, fixed forever for every Series: 10 to 7 only), titled for what they are: a card in
+  // its first 24 hours. Older cards have their own odds (the bar under each card, and "Your picks" below).
   function oddsChart() {
-    const max = Math.max(...GRADE_ODDS.map(([, p]) => p));
+    const bands = Wear.bandOdds(Wear.FRESH), max = Math.max(...bands.map((b) => b.p));
     return h('figure', { class: 'odds' },
-      h('div', { class: 'bars', role: 'img', 'aria-label': 'Fresh grade odds: ' + GRADE_ODDS.map(([g, p]) => `PDA ${g} is ${pctTxt(p)}`).join(', ') },
-        GRADE_ODDS.map(([g, p]) => h('div', { class: 'bar' + (g === 10 ? ' top' : g >= 7 && g <= 9 ? ' mid' : '') },
-          h('span', { class: 'pct', text: pctTxt(p) }), h('i', { style: `height:${Math.max(3, p / max * 64)}px` }), h('span', { class: 'lbl', text: g })))),
-      h('figcaption', { text: 'Fresh cards never grade below 7. A PDA 10 is 1 in 100.' }));
+      h('figcaption', { class: 'odds-t', text: 'Fresh card (first 24 h)' }),
+      h('div', { class: 'bars', role: 'img', 'aria-label': 'Grade odds for a fresh card, its first 24 hours: ' + bands.map((b) => `PDA ${b.g} ${b.p ? Wear.pct(b.p) : 'never'}`).join(', ') },
+        bands.map((b) => h('div', { class: 'bar' + (b.g === '10' ? ' top' : '') + (b.p ? '' : ' nil'), style: `--c:${b.c}` },
+          h('span', { class: 'pct', text: b.p ? Wear.pct(b.p) : '—' }), h('i', { style: `height:${b.p ? Math.max(3, b.p / max * 56) : 0}px` }), h('span', { class: 'lbl', text: b.g })))),
+      h('p', { class: 'odds-cap', text: 'Never below 7 while fresh. A PDA 10 is 1 in 100.' }));
   }
-  let coin = 'PLANK'; // last coin picked to pay with (PLANK first, like checkout)
+  let coin = 'ETH'; // last coin picked to pay with (ETH first)
   const STEPS = [['grade', 'Grade'], ['case', 'Case'], ['review', 'Review']];
   /** The wizard, drawn into `host`. cards: the cards on offer. pre: { grade: [ids], case: [ids] }, start: first step.
    *  tags: id -> a tag element (New / Duplicate), head: an element above the steps, done(el): buttons for the last screen.
@@ -889,23 +979,32 @@
     const full = () => toast(`Up to ${maxBatch()} cards a payment`, 'bad');
     let step = start;
     const list = () => cards.map((c) => byId(c.id)).filter(Boolean);
-    const total = () => gSel.size * P.GRADE_USD + cSel.size * P.CASE_USD;
+    // dollars: each card at its own price (grading by card type: Store.gradeUsd)
+    const usdOf = (ids, f) => [...ids].reduce((a, id) => a + f(byId(id)), 0);
+    const total = () => usdOf(gSel, Store.gradeUsd) + usdOf(cSel, Store.caseUsd);
+    // per-card grade prices are shown only when they differ (today every card type is the same)
+    const gradeVaries = () => new Set(list().filter(canGrade).map(Store.gradeUsd)).size > 1;
+    const howMany = (ids, f) => { const v = new Set(ids.map((id) => f(byId(id)))); return v.size === 1 ? `${ids.length} × ${Wear.usd([...v][0])}` : `${ids.length} cards · ${Wear.usd(usdOf(ids, f))}`; };
     const tick = setInterval(() => { if (!host.isConnected) return clearInterval(tick); host.querySelectorAll('[data-fresh]').forEach(paintFresh); }, 30000);
+    // "3 cards fresh for 22h 59m · time won't wear them yet (moves still count)"; on a phone it folds into the step row
     function paintFresh(el) {
-      const ms = Math.max(0, ...list().map(Wear.freshLeft));
-      el.hidden = !ms; el.querySelector('b').textContent = Wear.hhmm(ms);
+      const ms = list().map(Wear.freshLeft).filter((x) => x > 0).sort((a, b) => a - b);
+      el.hidden = !ms.length; if (!ms.length) return;
+      const n = ms.length, lo = ms[0], hi = ms[n - 1], t = hi - lo > 3600e3 ? `${Wear.hhmm(lo)} to ${Wear.hhmm(hi)}` : Wear.hhmm(lo);
+      put(el, h('span', { class: 'wz-fresh-long' }, h('b', { text: `${n} ${n === 1 ? 'card' : 'cards'} fresh` }), ' for ', h('b', { class: 't', text: t }),
+        ` · time won’t wear ${n === 1 ? 'it' : 'them'} yet (moves still count). Case or grade now to keep it that way.`),
+      h('span', { class: 'wz-fresh-short', 'aria-hidden': 'true' }, h('b', { text: `${n} fresh` }), ' · ', h('b', { class: 't', text: Wear.hhmm(lo) })));
     }
     function top() {
       const at = STEPS.findIndex(([k]) => k === step);
-      const fresh = h('p', { class: 'wz-fresh', 'data-fresh': '' }, h('span', { text: 'Fresh for ' }), h('b'), h('span', { text: ' · case or grade now and they never wear' }));
+      const fresh = h('p', { class: 'wz-fresh', 'data-fresh': '' });
       paintFresh(fresh);
       return h('div', { class: 'wz-top' },
         head,
         h('div', { class: 'wz-bar' },
           h('ol', { class: 'wz-steps', 'aria-label': 'Steps' }, STEPS.map(([k, t], i) => h('li', { class: i < at ? 'done' : i === at ? 'now' : '', 'aria-current': i === at ? 'step' : null },
             h('span', { class: 'wz-n', text: String(i + 1) }), t))),
-          Wear.howPill()),
-        fresh);
+          fresh, Wear.howPill()));
     }
     function quick(sel, ok) {
       const pick = (f) => {
@@ -918,6 +1017,7 @@
         btn('Select all holos', 'small', () => pick(isHolo)),
         btn('Select Rare & up', 'small', () => pick((c) => !!tierOf(c))),
         step === 'case' ? btn('Case all the rest', 'small', () => pick(() => true)) : null,
+        step === 'case' && list().some((c) => ok(c) && Wear.freshLeft(c) > 0) ? btn('Case all fresh', 'small', () => pick((c) => Wear.freshLeft(c) > 0)) : null,
         sel.size ? btn('Clear', 'small ghost', () => { sel.clear(); render(); }) : null);
     }
     function grid(sel, ok, why) {
@@ -932,86 +1032,114 @@
         return t;
       }));
     }
+    // the grade picks' own odds, together: what one of them grades on average if graded now, and the chance of a PDA 10
+    let picksEl = null;
+    function paintPicks() {
+      if (!picksEl) return;
+      const ids = [...gSel];
+      if (!ids.length) return put(picksEl, h('p', { class: 'muted small', text: 'Pick cards to see their odds together. Each card’s own odds are the bar under it.' }));
+      const os = ids.map((id) => oddsNow(byId(id))), share = (o, i) => o[i] / (o.reduce((a, b) => a + b, 0) || 1);
+      const any10 = 1 - os.reduce((a, o) => a * (1 - share(o, 9)), 1);
+      put(picksEl, bandBar(bandsOf(Wear.mixOdds(os)), { full: true, caption: ids.length === 1 ? 'Your pick, if graded now' : `Your ${ids.length} picks, if graded now (a card on average)` }),
+        h('p', { class: 'small', text: ids.length === 1 ? `PDA 10: ${Wear.pct(any10)}` : `At least one PDA 10: ${Wear.pct(any10)}` }));
+    }
     let foot;
     function paintFoot() {
       if (!foot) return;
-      const n = step === 'grade' ? gSel.size : cSel.size, each = step === 'grade' ? P.GRADE_USD : P.CASE_USD;
+      paintPicks();
+      const sel = step === 'grade' ? gSel : cSel, n = sel.size, each = step === 'grade' ? P.GRADE_USD : P.CASE_USD, usd = usdOf(sel, step === 'grade' ? Store.gradeUsd : Store.caseUsd);
       const next = step === 'grade' ? (gSel.size ? btn('Next: cases', 'primary', () => go('case'))
           : station ? [btn('Skip to cases', '', () => go('case')), btn('Next', 'primary', null, { disabled: true })] // came to grade: the primary waits for a pick
           : btn('Skip grading', 'primary', () => go('case')))
         : btn(gSel.size + cSel.size ? 'Next: review' : 'Skip cases', 'primary', () => go('review'));
       const keepRaw = station ? null : btn('Keep all raw', '', () => finish([], [])); // one tap, straight to the end, nothing paid
-      put(foot, h('div', { class: 'fsum' }, h('b', { text: n ? `${n} picked · ${Wear.usd(n * each)}` : 'None picked' }),
-        h('span', { class: 'muted', text: `${Wear.usd(each)} a card${step === 'case' && gSel.size ? ` · ${gSel.size} to the grader` : ''} · max ${maxBatch()} a payment` })),
+      put(foot, h('div', { class: 'fsum' }, h('b', { text: n ? `${n} picked · ${Wear.usd(usd)}` : 'None picked' }),
+        h('span', { class: 'muted', text: `${step === 'grade' && gradeVaries() ? `from ${Wear.usd(Math.min(...list().filter(canGrade).map(Store.gradeUsd)))}` : Wear.usd(each)} a card${step === 'case' && gSel.size ? ` · ${gSel.size} to the grader` : ''} · max ${maxBatch()} a payment` })),
         h('div', { class: 'row' }, step === 'case' ? btn('Back', '', () => go('grade')) : null, keepRaw, next));
     }
     function go(k) { step = k; render(); host.closest('.sheet-body')?.scrollTo({ top: 0 }); }
     function render() {
       if (step === 'work') return;
-      foot = h('div', { class: 'foot' });
+      foot = h('div', { class: 'foot' }); picksEl = null;
       if (step === 'grade') {
+        picksEl = h('div', { class: 'wz-picks', 'aria-live': 'polite' });
         put(host, h('div', { class: 'wz' }, top(),
           h('div', { class: 'wz-ask' }, h('h3', { text: 'Grade any now?' }),
-            h('p', { class: 'muted', text: `${Wear.usd(P.GRADE_USD)} each. The grade is revealed now and the card is sealed in a slab.` }), oddsChart()),
-          quick(gSel, canGrade), grid(gSel, canGrade, (c) => (c.grade != null ? 'Slabbed' : null)), foot));
+            h('p', { class: 'muted', text: `${gradeVaries() ? 'Priced by card type (under each card).' : Wear.usd(P.GRADE_USD) + ' each.'} The grade is revealed now and the card is sealed in a slab.` }), oddsChart()),
+          picksEl, quick(gSel, canGrade), grid(gSel, canGrade, (c) => (c.grade != null ? 'Slabbed' : null)), foot));
       } else if (step === 'case') {
         [...cSel].forEach((id) => { if (gSel.has(id)) cSel.delete(id); });
         const ok = (c) => canCase(c) && !gSel.has(c.id);
         put(host, h('div', { class: 'wz' }, top(),
           h('div', { class: 'wz-ask' }, h('h3', { text: 'Case any?' }),
-            h('p', { class: 'muted', text: `${Wear.usd(P.CASE_USD)} each. A case stops wear, so you can grade it any time later.` })),
+            h('p', { class: 'muted', text: `${Wear.usd(P.CASE_USD)} each. A case stops wear, so you can grade it any time later with the odds it has now.` })),
           quick(cSel, ok), grid(cSel, ok, (c) => (gSel.has(c.id) ? 'To the grader' : c.grade != null ? 'Slabbed' : c.cased ? 'Already cased' : null)), foot));
       } else return review();
       paintFoot();
     }
-    function thumbs(ids, label) {
+    // withOdds: each card going to the grader shows its own "now" odds (a mini bar and its PDA 10 chance)
+    function thumbs(ids, label, withOdds = false) {
       return h('ul', { class: 'wz-thumbs', 'aria-label': label }, ids.map((id) => { const c = byId(id);
-        return h('li', {}, h('div', { class: 'cwrap' }, cardFace(c, true)), h('span', { class: 'gt-name', text: c.character })); }));
+        const b = withOdds ? nowBands(c) : null, p10 = withOdds ? Wear.bandOdds(oddsNow(c))[0].p : 0;
+        return h('li', { title: withOdds ? saysOf(b) : null }, h('div', { class: 'cwrap' }, cardFace(c, true)), h('span', { class: 'gt-name', text: c.character }),
+          withOdds && gradeVaries() ? h('span', { class: 'gt-price', text: Wear.usd(Store.gradeUsd(c)) }) : null,
+          withOdds ? [bandBar(b), h('span', { class: 'gt-odds' }, h('span', { class: 'sr', text: 'Chance of ' }), 'PDA 10 · ', h('b', { text: Wear.pct(p10) }))] : null); }));
     }
     // live: the price is FirePsa.quote for these cards in this coin (re-read every 15 s while the review is open), and
     // the payment is capped at it + 3%; the wallet must hold that (Live.walletNeeds). liveQ: the Amount, null while
     // loading, false when unavailable.
-    let liveQ = null, liveKey = '';
-    function fetchQ(key) {
-      const [nc, ng, k] = key.split('|');
-      Live.quoteProtect(+nc, +ng, k).then((q) => {
+    let liveQ = null, liveKey = '', liveArgs = null;
+    function fetchQ(key, cs, g, k) {
+      liveArgs = [key, cs, g, k];
+      Live.quoteProtect(cs, g, k).then((q) => {
         if (key !== liveKey || step !== 'review' || !host.isConnected) return;
         const v = q || false; if (JSON.stringify(v) !== JSON.stringify(liveQ)) { liveQ = v; review(); }
       });
     }
-    const qTick = LIVE ? setInterval(() => { if (!host.isConnected) return clearInterval(qTick); if (step === 'review' && liveKey && !document.hidden) fetchQ(liveKey); }, 15000) : 0;
+    const qTick = LIVE ? setInterval(() => { if (!host.isConnected) return clearInterval(qTick); if (step === 'review' && liveArgs && !document.hidden) fetchQ(...liveArgs); }, 15000) : 0;
     function review() {
       const g = [...gSel], cs = [...cSel], raw = list().filter((c) => canCase(c) && !gSel.has(c.id) && !cSel.has(c.id));
-      const usd = total(), key = `${cs.length}|${g.length}|${coin}`;
-      if (LIVE && usd && key !== liveKey) { liveKey = key; liveQ = null; fetchQ(key); }
+      const coins = Wear.coins(), paperOff = Store.PSA_PAPER_OFF; // PAPER off: its price can't be read right now
+      if (!coins.includes(coin) || (coin === 'PAPER' && paperOff)) coin = 'ETH';
+      const usd = total(), key = `${cs.join(',')}|${g.join(',')}|${coin}`;
+      if (LIVE && usd && key !== liveKey) { liveKey = key; liveQ = null; fetchQ(key, cs, g, coin); }
       const quoting = LIVE && usd && !liveQ, amt = LIVE && liveQ ? parseFloat(String(liveQ.text).replace(/,/g, '')) || 0 : Wear.inCoin(usd, coin);
-      const bal = S().wallet.balances[coin], short = !quoting && (LIVE ? Live.walletNeeds(amt, coin) : amt) > bal;
-      const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Pay with' }, Wear.COINS.map((k) =>
-        h('button', { type: 'button', 'aria-pressed': String(k === coin), onclick: () => { coin = k; review(); } }, k)));
-      const rawFresh = raw.some((c) => Wear.freshLeft(c) > 0);
+      const bal = S().wallet.balances[coin] || 0, short = !quoting && (LIVE ? Live.walletNeeds(amt, coin) : amt) > bal;
+      const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Pay with' }, coins.map((k) =>
+        h('button', { type: 'button', 'aria-pressed': String(k === coin), 'data-coin': k, disabled: k === 'PAPER' && !!paperOff, title: k === 'PAPER' && paperOff ? paperOff : null, onclick: () => { coin = k; review(); } }, k)));
+      const disc = Store.PSA_PAPER_DISCOUNT_BPS > 0 && coins.includes('PAPER') ? `−${+(Store.PSA_PAPER_DISCOUNT_BPS / 100).toFixed(2)}% when paying in PAPER` : '';
+      const amtTxt = quoting ? (liveQ === false ? 'price unavailable right now' : 'getting the price…') : `≈ ${LIVE ? liveQ.text : Wear.fmtCoin(amt, coin)} ${coin}`;
+      const rawFresh = raw.filter((c) => Wear.freshLeft(c) > 0), rawOld = raw.filter((c) => !Wear.freshLeft(c));
+      const soonest = rawFresh.length ? Math.min(...rawFresh.map(Wear.freshLeft)) : 0, them = (n) => (n === 1 ? 'it' : 'them');
+      const toCoin = () => { const sg = host.querySelector('.wz-coin .seg'); sg?.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); sg?.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true }); };
       put(host, h('div', { class: 'wz' }, top(),
         h('div', { class: 'wz-ask' }, h('h3', { text: usd ? 'Check and pay once' : 'Nothing picked' })),
-        g.length ? h('section', { class: 'wz-sec' }, h('h4', {}, 'To the grader ', h('small', { text: `${g.length} × ${Wear.usd(P.GRADE_USD)}` })), thumbs(g, 'Cards to grade')) : null,
-        cs.length ? h('section', { class: 'wz-sec' }, h('h4', {}, 'Into cases ', h('small', { text: `${cs.length} × ${Wear.usd(P.CASE_USD)}` })), thumbs(cs, 'Cards to case')) : null,
-        raw.length ? h('p', { class: 'wz-raw' }, h('b', { text: `${raw.length} staying raw.` }), ' ',
-          rawFresh ? 'They start wearing when their fresh day ends. You can case or grade them any time.' : 'They keep wearing until cased or graded. You can do that any time.') : null,
+        g.length ? h('section', { class: 'wz-sec' }, h('h4', {}, 'To the grader ', h('small', { text: howMany(g, Store.gradeUsd) })), thumbs(g, 'Cards to grade, with their odds if graded now', true)) : null,
+        cs.length ? h('section', { class: 'wz-sec' }, h('h4', {}, 'Into cases ', h('small', { text: howMany(cs, Store.caseUsd) })), thumbs(cs, 'Cards to case')) : null,
+        raw.length ? h('div', { class: 'wz-raw' }, h('p', {}, h('b', { text: `${raw.length} staying raw.` }), ' You can case or grade them any time from My cards.'),
+          h('ul', {},
+            rawFresh.length ? h('li', { class: 'fresh' }, h('b', { text: `${rawFresh.length} fresh` }), `: time starts wearing ${them(rawFresh.length)} in ${Wear.hhmm(soonest)}. Moves still count.`) : null,
+            rawOld.length ? h('li', {}, h('b', { text: `${rawOld.length} already wearing` }), `: ${rawOld.length === 1 ? 'it keeps' : 'they keep'} wearing until cased or graded.`) : null)) : null,
         usd ? h('div', { class: 'wz-pay' },
-          h('dl', { class: 'sum' }, h('dt', { text: 'Total' }), h('dd', { class: 'price' }, Wear.usd(usd), h('small', { text: quoting ? (liveQ === false ? ' · price unavailable right now' : ' · getting the price…') : ` ≈ ${LIVE ? liveQ.text : Wear.fmtCoin(amt, coin)} ${coin}` })),
+          g.length ? h('p', { class: 'wz-final' }, h('b', { text: 'Before you pay: ' }), Wear.FINAL_LINE) : null,
+          h('dl', { class: 'sum' }, h('dt', { text: 'Total' }), h('dd', { class: 'price' }, Wear.usd(usd), h('small', { text: quoting ? ' · ' + amtTxt : ' ' + amtTxt })),
             h('dt', { text: 'You have' }), h('dd', { text: `${Wear.fmtCoin(bal, coin)} ${coin}` })),
-          h('div', { class: 'wz-coin' }, h('span', { class: 'muted small', text: 'Pay with' }), seg),
-          h('p', { class: 'wz-burn', text: Wear.BURN_LINE }),
+          h('div', { class: 'wz-coin' }, h('span', { class: 'muted small', text: 'Pay with' }), seg,
+            paperOff ? h('span', { class: 'small warn', text: paperOff }) : disc ? h('span', { class: 'small disc', text: disc }) : null),
+          h('p', { class: 'wz-burn', text: coin === 'PAPER' ? 'Paid in PAPER: it’s burned directly.' : Wear.BURN_LINE }),
           LIVE && coin !== 'USDG' ? h('p', { class: 'fine', text: `If the price moves over 3%, nothing is charged.${coin === 'ETH' ? ' Your wallet may show up to 3% more; anything unused comes back.' : ''}` }) : null,
           h('p', { class: 'demo-line', text: 'Demo · nothing is charged' })) : null,
         h('div', { class: 'foot' }, h('div', { class: 'fsum' }, h('b', { text: usd ? `${g.length + cs.length} ${g.length + cs.length === 1 ? 'card' : 'cards'} · ${Wear.usd(usd)}` : 'Keep them all raw?' }),
-          h('span', { class: 'muted', text: usd ? 'One payment for all of them' : 'You can case or grade any time from My cards' })),
+          usd ? h('span', { class: 'muted fpay' }, h('span', { class: 'fpay-amt', text: amtTxt }), ' · ', h('button', { type: 'button', class: 'linkish', 'aria-label': `Change the coin (paying in ${coin})`, onclick: toCoin }, 'change'))
+            : h('span', { class: 'muted', text: 'You can case or grade any time from My cards' })),
           h('div', { class: 'row' }, btn('Back', '', () => go('case')),
             usd ? btn(quoting ? 'Getting the price…' : short ? `Not enough ${coin}` : `Pay ${Wear.usd(usd)}`, 'primary', () => pay(g, cs, coin, amt, liveQ), { disabled: short || quoting }) : btn('Done', 'primary', () => finish([], []))))));
       host.querySelector('.foot .btn.primary')?.focus({ preventScroll: true });
     }
     async function pay(g, cs, k, amt, quote) {
       g = g.filter((id) => canGrade(byId(id))); cs = cs.filter((id) => canCase(byId(id)) && !g.includes(id));
-      if (S().wallet.balances[k] < (LIVE ? Live.walletNeeds(amt, k) : amt)) return review();
-      if (LIVE && (`${cs.length}|${g.length}|${k}` !== liveKey || !quote)) return review(); // the picks changed: price them again
+      if ((S().wallet.balances[k] || 0) < (LIVE ? Live.walletNeeds(amt, k) : amt)) return review();
+      if (LIVE && (`${cs.join(',')}|${g.join(',')}|${k}` !== liveKey || !quote)) return review(); // the picks changed: price them again
       step = 'work';
       let gIndex = -1;
       if (LIVE) { // the chain: one transaction (capped at the price shown + 3%), then the cases show and the grades come after the draw
@@ -1019,12 +1147,12 @@
         if (!r) { step = 'review'; return review(); }
         gIndex = r.gradingIndex;
       }
-      const now = Date.now();
+      const paid = total();
       Store.update((s) => {
         if (!LIVE) s.wallet.balances[k] -= amt;
-        cs.forEach((id) => { const c = byId(id); c.frozenAge = now - c.dealt; c.cased = true; }); // the case freezes its age
+        cs.forEach((id) => { const c = byId(id); c.frozenAge = Store.ageMs(c); c.cased = true; }); // the case freezes its age
         g.forEach((id) => { const c = byId(id); c.frozenAge = Store.ageMs(c); c.pending = true; });
-        Store.log(`Paid ${Wear.usd(total())}: ${[cs.length ? `${cs.length} cased` : '', g.length ? `${g.length} sent to the grader` : ''].filter(Boolean).join(', ')}`);
+        Store.log(`Paid ${Wear.usd(paid)}: ${[cs.length ? `${cs.length} cased` : '', g.length ? `${g.length} sent to the grader` : ''].filter(Boolean).join(', ')}`);
       });
       gSel.clear(); cSel.clear();
       toast('Paid', 'good');
@@ -1033,7 +1161,8 @@
       const slot = (id) => { const c = byId(id); const w = h('div', { class: 'gslot' }, h('div', { class: 'cwrap' }, cardFace(c)), h('div', { class: 'cmeta' }, matChip(c.material), holoChip(c))); w._id = id; return w; };
       const caseTiles = cs.map(slot), gradeTiles = g.map(slot);
       const caseH = h('h4', { text: 'Casing' }), gradeH = h('h4', { text: 'At the grader' }); // "Cased" / "Graded" once done
-      put(host, h('div', { class: 'wz wz-work' }, h('div', { class: 'wz-bar' }, h('span'), Wear.howPill()), msg,
+      const share = h('div', { class: 'g10-share', hidden: true });
+      put(host, h('div', { class: 'wz wz-work' }, h('div', { class: 'wz-bar' }, h('span'), Wear.howPill()), msg, share,
         caseTiles.length ? h('section', { class: 'wz-sec' }, caseH, h('div', { class: 'ggrid' }, caseTiles)) : null,
         gradeTiles.length ? h('section', { class: 'wz-sec' }, gradeH, h('div', { class: 'ggrid' }, gradeTiles)) : null, ctrls));
       host.closest('.sheet-body')?.scrollTo({ top: 0 });
@@ -1054,17 +1183,37 @@
         gradeTiles.forEach((w) => w.classList.add('scanning'));
         const liveGrades = LIVE ? await Live.finishGrading(gIndex, g, (t, a) => sayTo(msg, t, a), () => host.isConnected) : null;
         if (LIVE && !liveGrades) { msg.textContent = 'Grades land in My cards once revealed.'; return finish(cs, [], msg, ctrls); }
-        await wait(reduced() ? 300 : 1600);
-        for (const w of gradeTiles) {
-          const c0 = byId(w._id), gr = LIVE ? liveGrades.get(w._id) : Wear.draw(c0.frozenAge / 1000, c0.moves); got.push(gr);
+        await wait(reduced() ? 300 : 1200);
+        // the suspense: every grade is known now; they're revealed lowest first, the best last, each after a short scan
+        const order = gradeTiles.map((w, k) => { const c0 = byId(w._id); return { w, k, gr: LIVE ? liveGrades.get(w._id) : Wear.draw(c0.frozenAge / 1000, c0.moves) }; })
+          .sort((a, b) => a.gr - b.gr || a.k - b.k);
+        const best = Math.max(...order.map((x) => x.gr)), many = order.length > 1;
+        gradeTiles.forEach((w) => w.classList.remove('scanning'));
+        for (const [i, { w, gr }] of order.entries()) {
+          const last = i === order.length - 1, c0 = byId(w._id);
+          w.classList.add('scan-now');
+          msg.textContent = last && many ? 'And the best for last…' : `Grading ${c0.character}…`;
+          await wait(reduced() ? 250 : last && many ? 1500 : 700);
+          w.classList.remove('scan-now');
+          got.push(gr);
           Store.update((s) => { const c = s.cards.find((x) => x.id === w._id); if (c) { c.grade = gr; c.pending = false; } });
-          const c = byId(w._id); w.querySelector('.cwrap').replaceChildren(cardFace(c), h('span', { class: 'stamp g' + gr, 'aria-hidden': 'true' }, h('small', { text: 'PDA' }), h('b', { text: gr })));
-          w.classList.remove('scanning'); w.classList.add('stamped', 'slabbed'); setTimeout(() => window.Sound?.play('grade-stamp', { gap: 60 }), reduced() ? 0 : 150); // lands with the stamp's thud
-          w.setAttribute('aria-label', `${c.character}, PDA ${gr}, slabbed`);
+          const c = byId(w._id) || { ...c0, grade: gr, pending: false };
+          w.querySelector('.cwrap').replaceChildren(cardFace(c), h('span', { class: 'stamp g' + gr, style: `--sc:${Wear.bandOf(gr).c}`, 'aria-hidden': 'true' }, h('small', { text: 'PDA' }), h('b', { text: gr })));
+          // the grade stays in view after the stamp lifts: a PDA pill and the slab's word
+          w.querySelector('.cmeta').before(h('div', { class: 'gres' }, h('span', { class: 'pda-pill g' + gr, style: `--sc:${Wear.bandOf(gr).c}`, text: 'PDA ' + gr }), h('b', { class: 'gword', text: Wear.WORD[gr] })));
+          w.classList.add('stamped', 'slabbed'); setTimeout(() => window.Sound?.play('grade-stamp', { gap: 60 }), reduced() ? 0 : 150); // lands with the stamp's thud
+          w.setAttribute('aria-label', `${c.character}, PDA ${gr}, ${Wear.WORD[gr]}, slabbed`);
           if (reduced()) { const st = w.querySelector('.stamp'); setTimeout(() => st.remove(), 1500); } // reduced motion: the stamp shows still, then goes
-          msg.textContent = `${c.character}: PDA ${gr}`;
-          if (!reduced()) await wait(900);
+          msg.textContent = `${c.character}: PDA ${gr} · ${Wear.WORD[gr]}`;
+          if (gr === 10) { // its own moment (the opening's big reveal, in gold), then a share prompt
+            await wait(reduced() ? 0 : 380);
+            bigMoment(c, w, host, { kind: 'g10', title: 'PDA 10! GEM MINT' });
+            put(share, h('p', {}, h('b', { text: 'A PDA 10.' }), ` About 1 in 100 fresh cards grades a 10. Show it off?`), shareBtn(c, 'gold', 'Share your PDA 10'));
+            share.hidden = false;
+            await wait(reduced() ? 600 : 2400);
+          } else if (!reduced()) await wait(900);
         }
+        if (many) gradeTiles.forEach((w) => { const top = order.find((x) => x.w === w).gr === best; w.classList.toggle('best', top); if (top) w.querySelector('.gres')?.append(h('span', { class: 'best-t', text: 'Best' })); });
         gradeH.textContent = 'Graded';
       }
       finish(cs, got, msg, ctrls);
@@ -1075,8 +1224,9 @@
         msg = h('p', { class: 'stage-msg', text: 'All kept raw. Case or grade any time from My cards.' }); ctrls = h('div', { class: 'stage-ctrls' });
         put(host, h('div', { class: 'wz wz-work' }, h('div', { class: 'wz-bar' }, h('span'), Wear.howPill()), msg, ctrls));
       } else {
-        const parts = [cs.length ? `${cs.length} cased` : '', got.length ? `${got.length} graded` : '', got.length ? `${got.length > 1 ? 'best ' : ''}PDA ${Math.max(...got)}` : ''];
-        msg.textContent = parts.filter(Boolean).join(' · '); // "4 cased · 2 graded · best PDA 8"
+        const top = got.length ? Math.max(...got) : 0;
+        const parts = [cs.length ? `${cs.length} cased` : '', got.length ? `${got.length} graded` : '', got.length ? `${got.length > 1 ? 'best ' : ''}PDA ${top} ${Wear.WORD[top]}` : ''];
+        msg.textContent = parts.filter(Boolean).join(' · '); // "4 cased · 2 graded · best PDA 8 NM-MT"
         if (got.length) toast(got.length === 1 ? `Graded: PDA ${got[0]}` : `${got.length} cards graded`, 'good');
       }
       put(ctrls, done());
@@ -1587,7 +1737,7 @@
     + '<path d="M8 44 H112 M8 66 H112" stroke="#8a5a2b" stroke-width="2"/><rect x="44" y="40" width="32" height="14" rx="3" fill="#f0ece5" stroke="#3a2412" stroke-width="2"/>'
     + '<path d="M48 45 H72 M48 49 H66" stroke="#8a7b62" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
-  const OPEN = { cards: openTable, open: (o) => openTable({ ...o, view: 'open' }), table: openTable, grade: openGrade, burn: openBurn, suggest: openSuggest, results: openResults };
+  const OPEN = { cards: openTable, open: (o) => openTable({ ...o, view: 'open' }), table: openTable, grade: openGrade, burn: openBurn, suggest: openSuggest, results: openResults, pop: openPop };
   window.Stations = {
     openable, openableCount,
     open(name, opts) { (OPEN[name] || (() => toast('Unknown station', 'bad')))(opts); },

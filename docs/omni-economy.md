@@ -207,7 +207,7 @@ Every PAPER spent anywhere is burned.
 |---|---|
 | Any pack (paid, press or free) | 1 PAPER per pack, never more than the drop's PAPER ceiling ($1 in the Standard sale) |
 | Character suggestion | 1 PAPER, never more than $1 of PAPER (owner setting, `FireCredits.setSuggestionRules`, any amount incl. 0; the suggester names their most). Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. A suggestion is a character plus an optional personality and background, packed into one text (`Character: …` / `Personality: …` / `Background: …` lines, `docs/cards-contracts.md`); set the longest text to about 1,000 bytes. |
-| Cases and grading | Paid in ETH, USDG or PLANK, not PAPER. 100% of it buys PAPER and burns it (`PaperBurner`). |
+| Cases and grading | Paid in PAPER (at the 20-hour PAPER price, less an owner-set discount of 0-20%, 0 at launch; burned straight to the dead address), or in ETH, USDG or PLANK (100% of it buys PAPER and burns it, `PaperBurner`). |
 
 - **The PAPER price feed.** PAPER already has a live pool, but `PAPER_USD_FEED` must be the deployed `PaperUsdTwap`
   (step 2 of `docs/deploy.md`), never the pool itself. It prices the PAPER ceilings and guards the fee burn. The feed
@@ -222,25 +222,33 @@ Every PAPER spent anywhere is burned.
 - **Get PAPER on the site (planned):** a small box where you type how many PAPER you want, see the ETH price, and
   press one button. It would use the KyberSwap swap guard in `web/src/lib` with the 0.5% fee to the swap-fee wallet.
   In the buy panel it would show up when someone is short ("You need 1 PAPER per pack. Get 3 PAPER for $0.15").
-- **Scale:** 167 packs × 2 drops a month burns about 334 PAPER a month against about 63,000 printed (about 2,080 presses). Case and grading fees add
-  about 2,500 PAPER per Series at $0.08 (final numbers audit). This is a
-  reason to hold PAPER more than a big burn.
+- **Scale:** 167 packs × 2 drops a month burns about 334 PAPER a month as pack PAPER. The 20% sale share adds about
+  5× that: 117 paid packs a drop × $0.50 = about $58, about 730 PAPER at $0.08, so about 1,800 PAPER a month in all
+  (more with the after-sell-out rise), against about 63,000 printed (about 2,080 presses). Case and grading fees add
+  about 2,500 PAPER per Series at $0.08 (final numbers audit). This is a reason to hold PAPER more than a big burn.
 
 ## Cases and PDA grading
 
 **PDA** stands for Professional Digital Authenticators, a nod to real-world card grading. (The contract keeps its
-original name, `FirePsa`.) The full rules (hidden condition, wear, fresh odds, slabs) are in `docs/grading.md`.
+original name, `FirePsa`.) The full rules (condition, wear, fresh odds, slabs) are in `docs/grading.md`.
 
-- **Every card has a hidden condition.** It wears with time uncased and with every move between wallets. A **Case**
-  freezes it. **Grading** reveals the PDA grade (1-10) once and seals the card in a **Slab**: final, no regrade.
-- **Prices:** Case $0.05, grading $1 per card, paid in ETH, USDG or PLANK (never PAPER). The owner can change them
-  (`setPrices`, each at most $100). Up to 20 cards per transaction (`setMaxBatch`, at most 100), cases and grades
-  together (`protect`).
-- **100% of every fee buys PAPER and burns it** (`PaperBurner`), none of it goes to us. The burner takes the best
-  owner-set route (or half and half across two routes that share no pool) and refuses to buy below 95% of the PAPER
-  the 20-hour price feed says the fee is worth (trying half, a quarter and so on if the whole amount is too much for
-  the pools); then the fee waits in the burner for a later buy. It has no withdraw, and nobody can redirect it: its
-  router is fixed, its feeds are set once, and its routes only pass through WETH, PLANK or USDG.
+- **A card's condition is decided by public randomness when it is graded** (drand, asked for after payment), from
+  its wear: it wears with time uncased and with every move between wallets. A **Case** freezes the wear. **Grading**
+  sets the PDA grade (1-10) once and seals the card in a **Slab**: final, no regrade.
+- **Prices:** Case $0.05 per card (flat); grading $1 per card by default, and the owner can give each card rank its
+  own grading price (`setGradePrice`; Standard ranks: Paper 0, Wood 1, Fire 2, Coal 3, Gold 4, Full Art 5; all $1 at
+  launch). The owner can change them (`setPrices`, each at most $100 a card). Up to 20 cards per transaction
+  (`setMaxBatch`, at most 100), cases and grades together (`protect`); `quoteFor(caseIds, gradeIds, pay)` prices the
+  actual cards.
+- **Paid in ETH, USDG, PLANK or PAPER.** PAPER: at the 20-hour PAPER price less `paperDiscountBps` (0-20%, 0 at
+  launch), burned straight to the dead address; refused while the PAPER feed has no fresh price.
+- **100% of every fee is burned as PAPER,** none of it goes to us. ETH, USDG and PLANK go to `PaperBurner`, which
+  buys PAPER with that fee (and only that fee) in the same transaction: it takes the best owner-set route (or half and
+  half across two routes that share no pool) and refuses to buy below 95% of the PAPER the 20-hour price feed says the
+  fee is worth (trying half if the whole fee is too much for the pools); then the fee waits in the burner for the
+  keepers' flush. It has no withdraw, and nobody can redirect it: its router is fixed, its feeds are set once, and its
+  routes only pass through WETH, PLANK or USDG. A case or grading never spends the burner's backlog (the sale's 20%
+  share waiting for the keeper), so nobody can sandwich it through `protect`.
 - **The holder names the most they'll pay;** if the price moved, the batch fails and costs nothing.
 - **While a card is being graded it can't be transferred** (it can still be burned), so nobody can sell a card whose
   drand number they've already seen.
@@ -268,14 +276,15 @@ original name, `FirePsa`.) The full rules (hidden condition, wear, fresh odds, s
 | Wallet | Gets |
 |---|---|
 | Revenue | 70% of every sale. Nothing else. The wallets can only be changed while no drop is set up or running. |
-| `PaperBurner` (a contract, not a wallet) | The 20% PAPER share of every sale, and every case and grading fee. No withdraw: it can only buy PAPER and burn it. The sale's pointer to it can only change while no drop is set up or running. |
+| `PaperBurner` (a contract, not a wallet) | The 20% PAPER share of every sale, and every case and grading fee paid in ETH, PLANK or USDG. No withdraw: it can only buy PAPER and burn it. The sale's pointer to it can only change while no drop is set up or running. |
 | `PlankBurner` (a contract, not a wallet) | The 10% when a PLANK swap fails. No owner, no withdraw: it can only buy PLANK and burn it. The sale's pointer to it can only change while no drop is set up or running. |
 | Royalty | 5% resale royalty (ERC-2981), where marketplaces honour it. |
 | Swap fee | 0.5% of site swaps, once the site's swap is live (`SWAP_FEE_WALLET` in `web/src/lib/config.ts`, not set yet). |
 
 ## Money, roughly
 
-At $2.50 and 70% to revenue:
+At $2.50 and 70% to revenue, counting every pack as paid (press packs and free credit packs pay no dollar price: in
+the Standard drop 117 of 167 packs are paid, so scale these by about 0.7):
 
 | Packs per week | Per month to revenue |
 |---|---|

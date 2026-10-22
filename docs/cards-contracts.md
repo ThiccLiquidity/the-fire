@@ -11,7 +11,8 @@ odds, cards per pack, what each slot may hold, characters, card images. The only
 technical (type widths and block gas), and big work is split into batches instead of capped. Every setting locks when
 the Series' drop is set up (`configureDrop`), before anyone can buy, so buyers can trust the odds, and all of it can be
 read on-chain. PDA grading is the exception the other way: its fresh odds and wear rules are fixed forever in
-`FirePsa`, the same for every Series (`docs/grading.md`); only case and grading prices can change.
+`FirePsa`, the same for every Series (`docs/grading.md`); only case and grading prices (and the PAPER discount) can
+change.
 
 ## The pieces
 
@@ -28,8 +29,8 @@ read on-chain. PDA grading is the exception the other way: its fresh odds and we
 | `FireGroups` | Each drop's groups (split out of `FireSale` for contract size): config, timing (opens with the drop or after another group; ends sold out, at its duration, or after `idle` with no sale), unlimited groups, the rising tax, per-purchase limits, capacity with rolled-in leftovers, gates (open, NFT with packs per NFT id, Merkle snapshot with a per-wallet allowance), wallet limits, and the views the site reads (`groupsOf`, `boughtBy`, `remaining`, `openLeft`, `scheduleEnd`). Only `FireSale` writes to it (set once at deploy); no owner. |
 | `FireCredits` | Free pack credits, card burning (42 cards = 1 credit, fixed forever) and character suggestions, split out of `FireSale` for contract size (same rules). It spends credits, burns cards and takes suggestion PAPER through `FireSale` hooks only it can call (`creditPacks`, `burnCardsFor`, `burnPaperFor`), so PAPER is approved to `FireSale` alone. Owned by the owner (picks, suggestion rules). |
 | `PlankBurner` | Gets the sale's PLANK burn share when the swap can't run (a stale PLANK price or a failed swap). No owner, no withdraw: anyone calls `flush`, which buys PLANK (95% TWAP guard, halving for a backlog) and sends it to the dead address. |
-| `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars, paid in ETH, USDG or PLANK. drand picks each grade (1 to 10) from the fresh odds and the card's frozen wear (both fixed forever, the same for every Series); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
-| `PaperBurner` | Gets FireSale's PAPER share of every sale (20% in the Standard drop) and 100% of every case and grading fee, buys PAPER with it on owner-set routes and burns it. Only flushers the owner names (FirePsa and the keepers, `setFlusher`) can flush it, so nobody can sandwich a flush; a PAPER price from a window over 30 hours makes it wait. No withdraw; the router is fixed at deploy. |
+| `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars (cases flat, grading per card rank: `quoteFor(caseIds, gradeIds, pay)`), paid in ETH, USDG, PLANK or PAPER (`Pay` PLANK 0, ETH 1, USDG 2, PAPER 3; PAPER at the 20-hour PAPER price less an owner-set 0-20% discount, burned straight to the dead address). drand picks each grade (1 to 10) from the fresh odds and the card's frozen wear (both fixed forever, the same for every Series); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
+| `PaperBurner` | Gets FireSale's PAPER share of every sale (20% in the Standard drop) and 100% of every case and grading fee paid in ETH, PLANK or USDG, buys PAPER with it on owner-set routes and burns it. Only flushers the owner names (FirePsa and the keepers, `setFlusher`) can flush it. FirePsa burns only the fee it just took (`flushLight(pay, fee)`), so wrapping a case in a buy and a sell can't make it spend the backlog; the keepers' `flush` (its own transaction; Robinhood Chain's sequencer is first-come with no public mempool) drains the rest. A PAPER price from a window over 30 hours makes it wait. No withdraw; the router is fixed at deploy. |
 
 Every owned contract refuses `renounceOwnership` (control can't be lost by mistake); ownership moves only in two
 steps (`transferOwnership`, then `acceptOwnership`). `FirePacks` and `FireCards` have an owner-set `contractURI`
@@ -254,7 +255,8 @@ studio's sample export is `contracts/test/cards/recipe-studio-sale.json` (the St
    adds. Ungraded: PDA "Ungraded", Cased, Dealt (a `date` trait), Moves, and once cased Age when cased (days), frozen
    (the condition is never shown; nothing changes just because time passes). Graded: "PDA N" only. Example: `c0-coal-full-7.webp`.
 7. **Wear, cases and grading:** each card wears with time uncased and with moves between wallets until it is cased or
-   graded; `FirePsa.protect` cases and grades. A card being graded can't be transferred. Rules in `docs/grading.md`.
+   graded; `FirePsa.protect` cases and grades. A card being graded can't be transferred. A move that counts emits
+   `Moved` and an ERC-4906 `MetadataUpdate` (its Moves trait changed). Rules in `docs/grading.md`.
 
 ## What is set per Series, and when it locks
 
@@ -300,10 +302,12 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | Suggestion cost, longest text | `FireCredits.setSuggestionRules` | global (suggestions aren't tied to a drop) | 1 PAPER, 280 bytes | any cost incl. 0 (each `suggest` names its most PAPER), never more than $1 of PAPER (`SUGGESTION_PAPER_CAP_USD`, fixed); text 1 to 1,024 bytes (event size). **Set the longest text to about 1,000 bytes** (`setSuggestionRules(paper, 1000)`): the site packs a character, its personality and its background into one text (format below) |
 | Cards per case/grading batch | `FirePsa.setMaxBatch` | global | 20 | 1 to 100 (gas guard: `finish` grades a batch in one tx) |
 | Case and grading prices | `FirePsa.setPrices` | global | $0.05, $1 | above 0, at most $100 each (typo guard; each batch names its most) |
+| Grading price per card rank | `FirePsa.setGradePrice(rank, usd18)` | global | 0 for every rank (= the default grading price) | at most $100; 0 = the default. Rank = `FireCards.rankOf(serial)`, the type's rank in its recipe (Standard: Paper 0, Wood 1, Fire 2, Coal 3, Gold 4, Full Art 5) |
+| PAPER payment discount | `FirePsa.setPaperDiscount(bps)` | global | 0 | 0 to 2,000 (20%) |
 | Fee burn routes | `PaperBurner.setRoutes` | global | set at deploy | each route starts at the currency and ends at PAPER, passing only through WETH, PLANK or USDG (2-4 tokens, at most 4 routes); the 95% guard checks every buy. The router is fixed and the burner's price feeds (`setFeeds`) can be set only once |
 | Fresh PDA odds and wear rules | `FirePsa` constants (`FRESH_*`, `WEAR_*`; `freshOdds`, `oddsFor`) | constant | 7-10 table (`docs/grading.md`) | **fixed forever**, the same for every Series; no setter |
 | Revenue wallet and PlankBurner, feeds, router | `setWallets`, `setFeeds` | global | - | only between drops (unchanged) |
-| Pause | `FireSale.setPaused`, `FirePsa.setPaused` | global | off | blocks every buy (every group), credit spending, paid suggestions (`FireSale`) and case/grading payments (`FirePsa`). Never opening, dealing, transfers, ending or closing a drop, burning cards, finishing or cancelling a grading, or keeper calls. No expiry |
+| Pause | `FireSale.setPaused`, `FirePsa.setPaused` | global | off | blocks every buy (every group), credit spending, paid suggestions (`FireSale`) and case/grading payments (`FirePsa`). Never opening, dealing, transfers, ending or closing a drop, burning cards, finishing or cancelling a grading, or keeper calls. No expiry. `PaperBurner.setFlusher(FirePsa, false)` also stops case and grading payments in ETH, PLANK and USDG (PAPER payments still work) |
 | Randomness source | `FireCards.setRandomness`, `FirePsa.setRandomness` | global | the drand adapters | any time, no delay (announced first); only new requests use it, each pending request keeps its source (`docs/randomness.md`) |
 | Collection metadata | `FirePacks.setContractURI`, `FireCards.setContractURI` | global | empty | any (ERC-7572) |
 

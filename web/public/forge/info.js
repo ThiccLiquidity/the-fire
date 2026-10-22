@@ -40,12 +40,11 @@
   // wear frame each band gets (card-studio.md).
   const PDA = [10, 1, 9, 30, 8, 40, 7, 29]
     .reduce((a, v, i, arr) => (i % 2 ? a : [...a, { g: v, p: arr[i + 1] }]), []);
-  const WEAR = [ // band, grades covered, frame suffix, seal ring colour
-    { g: '10', n: 1, f: '', c: '#ffd36a', name: 'Clean + gold glow' }, { g: '9–8', n: 2, f: '-l2', c: '#3fc1b0', name: 'Barely used' },
-    { g: '7–6', n: 2, f: '-l3', c: '#5ab8f0', name: 'Lightly played' }, { g: '5–4', n: 2, f: '-l4', c: '#4a7fe8', name: 'Played' },
-    { g: '3–2', n: 2, f: '-l5', c: '#ff8a3a', name: 'Heavily played' }, { g: '1', n: 1, f: '-l6', c: '#ff5a4a', name: 'Damaged' },
-  ];
-  const bandOf = (g) => WEAR[g === 10 ? 0 : g === 1 ? 5 : 5 - Math.ceil((g - 1) / 2)];
+  // the six grade bands (Wear.BANDS: one set everywhere, with their colours), each with how its slab looks: the one set
+  // of wear layers (studio/frames-src/wear_overlays.py, the same over every card type), shown over one clean card
+  const NAMES = ['Clean + gold glow', 'Barely used', 'Lightly played', 'Played', 'Heavily played', 'Damaged'];
+  const WEAR = Wear.BANDS.map((b, i) => ({ ...b, n: b.hi - b.lo + 1, layer: i ? `ui/wear/wear-l${i + 1}.webp` : null, name: NAMES[i] }));
+  const bandOf = (g) => WEAR[Wear.BANDS.indexOf(Wear.bandOf(g))];
   const PDA_SUM = PDA.reduce((a, b) => a + b.p, 0);
   if (Math.abs(PDA_SUM - 100) > 1e-9) throw new Error('PDA odds must sum to 100, got ' + PDA_SUM);
   const PDA_LINE = 'Fresh cards never grade below 7. A PDA 10 is 1 in 100.';
@@ -68,20 +67,22 @@
   // ---- pieces ----
   function pdaChart() {
     const max = Math.max(...PDA.map((b) => b.p));
-    const cols = [...PDA, ...[4, 3, 2, 1].map((g) => ({ g, p: 0 }))].map((b) => `
-      <div class="inf-pcol${b.g === 10 ? ' top' : ''}${b.p ? '' : ' aged'}" style="--h:${b.p / max};--c:${bandOf(b.g).c}" title="PDA ${b.g}: ${b.p ? b.p + '%' : 'only from long raw holds'}">
+    // every grade, 10 to 1: the fresh odds for 10 to 7, "wear only" for 6 to 1 (they only come from time and moves)
+    const cols = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((g) => ({ g, p: PDA.find((x) => x.g === g)?.p || 0 })).map((b) => `
+      <div class="inf-pcol${b.g === 10 ? ' top' : ''}${b.p ? '' : ' aged'}" style="--h:${b.p / max};--c:${bandOf(b.g).c}" title="PDA ${b.g}: ${b.p ? b.p + '%' : 'only from wear'}">
         <div class="inf-pplot"><span class="inf-pval">${b.p ? b.p + '%' : 'wear only'}</span><span class="inf-pbar"></span></div>
         <span class="inf-pg">${b.g}</span>
       </div>`).join('');
+    // the legend: one clean card, and the same card under each band's wear layer, each under the grades it covers
     const wear = WEAR.map((w) => `
-      <div class="inf-wear${w.f ? '' : ' gold'}" style="grid-column: span ${w.n}" title="PDA ${w.g}: ${w.name}">
-        <img src="ui/frames/wood${w.f}.webp" alt="" loading="lazy" width="40" height="56">
+      <div class="inf-wear${w.layer ? '' : ' gold'}" style="grid-column: span ${w.n}" title="PDA ${w.g}: ${w.name}">
+        <span class="inf-wthumb"><img src="ui/wear/card.webp" alt="" loading="lazy" width="52" height="73">${w.layer ? `<img src="${w.layer}" alt="" loading="lazy" width="52" height="73">` : ''}</span>
         <span>${w.name}</span>
       </div>`).join('');
     return `<figure class="inf-plate">
       <figcaption><b>PDA odds, fresh card</b><span>Same odds for every material</span></figcaption>
-      <div class="inf-pda" role="img" aria-label="PDA odds on a fresh card: ${PDA.map((b) => `${b.g} is ${b.p}%`).join(', ')}. 4 to 1 only from long raw holds">${cols}</div>
-      <div class="inf-pwear" role="img" aria-label="Frames by grade: ${WEAR.map((w) => `PDA ${w.g} ${w.name.toLowerCase()}`).join(', ')}">${wear}</div>
+      <div class="inf-pda" role="img" aria-label="PDA odds on a fresh card: ${PDA.map((b) => `${b.g} is ${b.p}%`).join(', ')}. 6 to 1 only from wear">${cols}</div>
+      <div class="inf-pwear" role="img" aria-label="How a slab looks by grade: ${WEAR.map((w) => `PDA ${w.g} ${w.name.toLowerCase()}`).join(', ')}">${wear}</div>
       <p class="inf-big">${PDA_LINE}</p>
     </figure>`;
   }
@@ -174,7 +175,7 @@
       sec('open', 'Opening packs', 'Packs open once the Series sells out. Nobody knows what’s inside until then.', `
         <ul>
           <li>Open your packs once the Series sells out or is ended.</li>
-          <li>Opening burns the packs. Randomness deals your cards a minute or two later.</li>
+          <li>Opening burns the packs. Randomness deals your cards about 90 seconds later.</li>
           <li>A sealed pack has no cards yet. They're drawn when it's opened, from what's left in the Series. Nobody can know them in advance.</li>
         </ul>
         <p class="inf-sub">A Series ${no} pack</p>
@@ -200,18 +201,18 @@
       sec('pda', 'Cases & grading', 'Case a card to stop wear, or grade it for a slab.', `
         <ul>
           <li>Every card starts raw. A raw card wears with time, and each move to another wallet can knock a grade off.</li>
-          <li>New cards are fresh for 24 hours. Case or grade them by then and they never take a hit.</li>
+          <li>New cards are fresh for 24 hours: time doesn't wear them, but moves still count. Case or grade them by then and time never touches them.</li>
           <li><b>Case, ${usd(P.CASE_USD)}:</b> stops wear. Still ungraded: trade it, or grade it later.</li>
-          <li><b>Grade, ${usd(P.GRADE_USD)}:</b> reveals the PDA grade and seals the card in a slab. Final, no regrades.</li>
+          <li><b>Grade, ${usd(P.GRADE_USD)}:</b> reveals the PDA grade and seals the card in a slab. ${window.Wear?.FINAL_LINE || ''}</li>
         </ul>
         ${pdaChart()}
         <ul>
-          <li>Grades 1 to 4 only come from long raw holds. After 10 raw years, a 1 is likely.</li>
+          <li>Grades 1 to 4 only come from long raw holds. After 10 raw years, a 1 is likely. ${window.Wear?.TROPHY_LINE || ''}</li>
           <li>Condition is hidden, from us too. An ungraded card shows only Cased, Dealt and Moves. A slab shows only its grade.</li>
           <li>The grading and wear rules are fixed forever, the same for every Series.</li>
           <li><b>${window.Wear?.BURN_LINE || ''}</b></li>
         </ul>
-        <p><button type="button" class="inf-link" data-how>How does this work? Step by step</button></p>`, 'Rarity'),
+        <p class="inf-links"><button type="button" class="inf-link" data-how>How does this work? Step by step</button><button type="button" class="inf-link" data-pop>Pop report: how many of each grade exist</button></p>`),
       sec('burn', 'Burning cards', 'Burn 42 cards, get a free pack.', `
         <ul>
           <li>Every 42 cards you burn earns a free pack. Burned cards are gone for good.</li>
@@ -251,7 +252,7 @@
           <dt>Why do I need PAPER too?</dt><dd>The press runs on it. Every pack burns some, Press and free packs included.</dd>
           <dt>Do free packs expire?</dt><dd>No. They stack and wait for any Series on sale.</dd>
           <dt>Should I grade every card?</dt><dd>Up to you. Grades are final. ${PDA_LINE} Not sure? Case it now, grade it later.</dd>
-          <dt>What if opening gets stuck?</dt><dd>Cards usually arrive within minutes. If randomness stops for 7 days, anyone can cancel and your packs come back sealed. <a href="help.html">More help</a></dd>
+          <dt>What if opening gets stuck?</dt><dd>Cards usually arrive in about 90 seconds. If randomness stops for 7 days, anyone can cancel and your packs come back sealed. <a href="help.html">More help</a></dd>
           <dt>Is there a fee when I resell?</dt><dd>A royalty, on marketplaces that honour it.</dd>
         </dl>`),
     ];
@@ -270,7 +271,7 @@
         ${list.map((s) => `<button type="button" class="inf-jump${s.tag ? ' hot' : ''}" data-go="${s.id}">${SHORT[s.id]}</button>`).join('')}
       </nav>
       <div class="inf-glance" aria-label="Rarity at a glance">
-        <button type="button" data-go="pda"><b>1 in 100</b><span>PDA 10 on a fresh card. Case or grade in 24 h and it never wears</span></button>
+        <button type="button" data-go="pda"><b>1 in 100</b><span>PDA 10 on a fresh card. Time doesn't wear it for 24 h (moves still count)</span></button>
         <button type="button" data-go="cards"><b>1 in ${oneIn(M.paper.full)}</b><span>Paper is full holo in Series ${no}</span></button>
         <button type="button" data-go="cards"><b>1 of 1</b><span>Full Art: one per character in Series ${no}</span></button>
       </div>
@@ -317,6 +318,7 @@
       const root = build();
       root.addEventListener('click', (e) => {
         if (e.target.closest('[data-how]')) return window.Wear?.openHow();
+        if (e.target.closest('[data-pop]')) return window.Stations?.open('pop');
         if (e.target.closest('[data-start]')) return window.UI?.openStart();
         const b = e.target.closest('[data-ca]'); if (!b) return;
         const done = () => { const c = b.querySelector('.cp'); c.textContent = 'Copied'; setTimeout(() => (c.textContent = 'Copy'), 1500); };

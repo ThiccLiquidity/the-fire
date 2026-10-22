@@ -320,6 +320,14 @@ contract RecipeDealer is IDealer, Ownable2Step {
         }
     }
 
+    /// @notice A card type's rank in `fire`'s recipe (Standard: Paper 0, Wood 1, Fire 2, Coal 3, Gold 4, Full Art 5),
+    ///         read from the compiled recipe. Reverts for a type the recipe doesn't have.
+    function rankOf(uint256 fire, uint256 cardType) external view returns (uint256) {
+        if (cardType >= _config[fire].typeCount) revert NotConfigured();
+        bytes memory p = _plan(fire);
+        return _at(p, _at(p, H_TYPES) + cardType * TW + 1); // word 1 of a type record: its rank
+    }
+
     // ================================================================ views
 
     /// @notice A Series' recipe, as set.

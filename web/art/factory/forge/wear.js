@@ -53,17 +53,42 @@
   }
   const avg = (o) => o.reduce((a, p, i) => a + p * (i + 1), 0) / o.reduce((a, b) => a + b, 0);
 
+  // ---- one set of grade bands everywhere (charts, keys, filters, pills and stamps): 10 / 9-8 / 7-6 / 5-4 / 3-2 / 1,
+  // each with its colour (PDA 10 gold; the stamp and pill colour of every grade is its band's)
+  const BANDS = [
+    { g: '10', lo: 10, hi: 10, c: '#ffd36a' }, { g: '9–8', lo: 8, hi: 9, c: '#3fc1b0' }, { g: '7–6', lo: 6, hi: 7, c: '#5ab8f0' },
+    { g: '5–4', lo: 4, hi: 5, c: '#4a7fe8' }, { g: '3–2', lo: 2, hi: 3, c: '#ff8a3a' }, { g: '1', lo: 1, hi: 1, c: '#ff5a4a' },
+  ];
+  const bandOf = (g) => BANDS.find((b) => g >= b.lo && g <= b.hi) || BANDS[BANDS.length - 1];
+  /** grade odds (1..10) -> the six bands, each with its share p (0..1) */
+  const bandOdds = (o) => { const tot = o.reduce((a, b) => a + b, 0) || 1; return BANDS.map((b) => ({ ...b, p: o.reduce((a, p, i) => a + (i + 1 >= b.lo && i + 1 <= b.hi ? p : 0), 0) / tot })); };
+  /** several cards' odds together: the average chance of each grade (what one of them, picked at random, grades) */
+  const mixOdds = (list) => { const out = new Array(10).fill(0); list.forEach((o) => { const t = o.reduce((a, b) => a + b, 0) || 1; o.forEach((p, i) => { out[i] += p / t / list.length; }); }); return out; };
+  // "1%", "<1%", "—"
+  const pct = (p) => (p >= 0.995 ? '100%' : p * 100 >= 0.5 ? Math.round(p * 100) + '%' : p > 0.0005 ? '<1%' : '—');
+  // what a grade is called on its slab, and the line where people pay for grades
+  const WORD = { 10: 'GEM MINT', 9: 'MINT', 8: 'NM-MT', 7: 'NEAR MINT', 6: 'EX-MT', 5: 'EXCELLENT', 4: 'VG-EX', 3: 'VERY GOOD', 2: 'GOOD', 1: 'POOR' };
+  const FINAL_LINE = 'Grades are random (drand) and final: no regrades, no refunds. Nothing you pay raises the odds.';
+  const TROPHY_LINE = 'A PDA 1 is a patience trophy: it only comes from years left raw.';
+
   // ---- the card's own wear ----
   const S = () => Store.state;
   const ageSecOf = (c) => Store.ageMs(c) / 1000;
-  const freshLeft = (c) => (c.grade == null && !c.cased ? Math.max(0, FREE * 1000 - Store.ageMs(c)) : 0); // ms of the free first day left
+  // ms of the fresh first day left (time doesn't wear it; moves still count)
+  const freshLeft = (c) => (c.grade == null && !c.cased && !c.pending ? Math.max(0, FREE * 1000 - Store.ageMs(c)) : 0);
+  const FRESH_LINE = "Time doesn't wear new cards for 24 hours. Moves still count.";
   const hhmm = (ms) => { const m = Math.max(1, Math.floor(ms / 60000)), h = Math.floor(m / 60); return h ? `${h}h ${m % 60}m` : `${m}m`; }; // "23h 59m", not a clock
   const ageTxt = (ms) => { const d = ms / 86400000; return d < 1 ? `${Math.max(1, Math.round(d * 24))} h` : d < 60 ? `${Math.round(d)} days` : d < 730 ? `${Math.round(d / 30.4)} months` : `${(d / 365).toFixed(1)} years`; };
 
-  // ---- paying: dollars, in PLANK, ETH or USDG (demo balances; PLANK first and the default everywhere) ----
-  const COINS = ['PLANK', 'ETH', 'USDG'];
-  const inCoin = (usd, coin) => { const P = Store.PRICES; return coin === 'ETH' ? usd / P.ETH_USD : coin === 'USDG' ? usd : usd / P.PLANK_USD; };
-  const fmtCoin = (v, coin) => coin === 'ETH' ? v.toFixed(v < 0.01 ? 6 : 4) : coin === 'USDG' ? v.toFixed(2) : Math.round(v).toLocaleString('en-US');
+  // ---- paying for cases and grades: dollars, in ETH (the default), PLANK, USDG or PAPER (FirePsa burns PAPER directly) ----
+  const COINS = ['ETH', 'PLANK', 'USDG'];
+  const coins = () => (Store.PSA_PAPER ? [...COINS, 'PAPER'] : COINS);
+  const inCoin = (usd, coin) => {
+    const P = Store.PRICES;
+    if (coin === 'PAPER') return usd / P.PAPER_USD * (1 - (Store.PSA_PAPER_DISCOUNT_BPS || 0) / 10000); // at the PAPER price, less the owner's discount
+    return coin === 'ETH' ? usd / P.ETH_USD : coin === 'USDG' ? usd : usd / P.PLANK_USD;
+  };
+  const fmtCoin = (v, coin) => coin === 'ETH' ? v.toFixed(v < 0.01 ? 6 : 4) : coin === 'USDG' || coin === 'PAPER' ? v.toFixed(2) : Math.round(v).toLocaleString('en-US');
   const usd = (v) => '$' + (Number.isInteger(+v.toFixed(2)) ? Math.round(v) : v.toFixed(2)); // $1, $0.05, $4.10
 
   // ---- "How does this work?": one window, over whatever is open ----
@@ -71,8 +96,8 @@
   function howBody() {
     const P = Store.PRICES;
     const rows = [['Fresh', 0], ['1 month', 30], ['6 months', 182], ['1 year', 365], ['3 years', 3 * 365], ['10 years', 3650]].map(([l, d]) => {
-      const o = odds((d + 1) * DAY, 0), top = (p) => (p * 100 >= 0.5 ? Math.round(p * 100) + '%' : p > 0.0005 ? '<1%' : '—');
-      return `<tr><th>${l}</th><td>${top(o[9])}</td><td>${top(o[8] + o[7])}</td><td>${top(o[6] + o[5] + o[4])}</td><td>${top(o[3] + o[2] + o[1] + o[0])}</td></tr>`;
+      const b = bandOdds(odds((d + 1) * DAY, 0));
+      return `<tr><th>${l}</th>${b.map((x) => `<td>${pct(x.p)}</td>`).join('')}</tr>`;
     }).join('');
     const el = document.createElement('div'); el.className = 'how';
     el.innerHTML = `
@@ -82,18 +107,18 @@
           <div class="how-opt slab"><b>Grade · ${usd(P.GRADE_USD)}</b><p>Reveals its PDA grade, 1 to 10, and seals it in a slab.</p></div>
         </div></section>
       <section><h3><span class="how-n">2</span>Fresh for 24 hours</h3>
-        <p>New cards don't wear for 24 hours. Case or grade them by then and they never take a hit.</p></section>
+        <p>Time doesn't wear new cards for 24 hours, but moves to another wallet still count. Case or grade them by then and time never touches them.</p></section>
       <section><h3><span class="how-n">3</span>How cards wear</h3>
         <ul><li>A raw card (no case) slowly wears with time.</li>
           <li>Each move to another wallet can knock a grade off. Only the first 10 count, and moves alone never go below 5.</li>
-          <li>Grades 1 to 4 only happen to cards left raw for a long time.</li>
+          <li>Grades 1 to 4 only happen to cards left raw for a long time. ${TROPHY_LINE}</li>
           <li>Condition is hidden, from us too, until the card is graded.</li></ul>
-        <table class="how-t"><caption>Grade odds for a raw card, never moved</caption>
-          <thead><tr><th>Held raw</th><th>PDA 10</th><th>9–8</th><th>7–5</th><th>4–1</th></tr></thead><tbody>${rows}</tbody></table></section>
+        <div class="how-tw"><table class="how-t"><caption>Grade odds for a raw card, never moved</caption>
+          <thead><tr><th>Held raw</th>${BANDS.map((b) => `<th><span class="how-sw" style="background:${b.c}"></span>${b.g === '10' ? 'PDA 10' : b.g}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></section>
       <section><h3><span class="how-n">4</span>What a slab means</h3>
-        <p>A graded card stays in its slab for good. The grade is final: no regrades. A slab's details show only its grade.</p></section>
+        <p>A graded card stays in its slab for good. ${FINAL_LINE} A slab's details show only its grade.</p></section>
       <section><h3><span class="how-n">5</span>Prices</h3>
-        <dl class="how-p"><dt>Case</dt><dd>${usd(P.CASE_USD)} a card</dd><dt>Grade</dt><dd>${usd(P.GRADE_USD)} a card</dd><dt>Pay with</dt><dd>PLANK, ETH or USDG</dd></dl>
+        <dl class="how-p"><dt>Case</dt><dd>${usd(P.CASE_USD)} a card</dd><dt>Grade</dt><dd>${usd(P.GRADE_USD)} a card</dd><dt>Pay with</dt><dd>${coins().join(', ').replace(/, ([^,]*)$/, ' or $1')}</dd></dl>
         <p class="muted small">Pick cards to case and grade, then pay once for all of them.</p></section>
       <section class="how-burn"><h3><span class="how-n">6</span>Where the money goes</h3><p>${BURN_LINE}</p></section>`;
     return el;
@@ -102,9 +127,10 @@
   // the pill: big, labelled, and part of every step it sits in
   function howPill() {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'how-pill';
-    b.innerHTML = '<span class="how-q" aria-hidden="true">?</span>How does this work?';
+    b.innerHTML = '<span class="how-q" aria-hidden="true">?</span><span class="how-txt">How does this work?</span>'; // phone, in the step row: the "?" alone (the words stay for screen readers)
     b.onclick = openHow; return b;
   }
 
-  window.Wear = { DAY, YEAR, FRESH, odds, draw, avg, ageSecOf, freshLeft, hhmm, ageTxt, COINS, inCoin, fmtCoin, usd, openHow, howPill, BURN_LINE };
+  window.Wear = { DAY, YEAR, FRESH, odds, draw, avg, ageSecOf, freshLeft, hhmm, ageTxt, COINS, coins, inCoin, fmtCoin, usd, openHow, howPill, BURN_LINE,
+    BANDS, bandOf, bandOdds, mixOdds, pct, WORD, FINAL_LINE, TROPHY_LINE, FRESH_LINE };
 })();

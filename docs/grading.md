@@ -6,8 +6,8 @@ and burn PAPER). Prices and pricing models are in `docs/omni-economy.md`.
 
 ## The idea
 
-- **Every card has a hidden condition.** Nobody can see it: not the site, not the metadata, not the owner. It is
-  rolled when the card is graded, from that grading's drand randomness.
+- **A card's condition is decided by public randomness when it is graded.** Nobody can know it before: not the site,
+  not the metadata, not the owner. It is rolled from that grading's drand randomness, asked for after payment.
 - **Grading reveals it.** The card gets its PDA grade (1-10) and is sealed in a **Slab** automatically. Slabs are
   final: no regrade.
 - **Wear.** A card that sits uncased and ungraded wears with time and with every move between wallets.
@@ -100,16 +100,42 @@ switches images when it is cased or graded; nothing is drawn live.
 
 ## Prices
 
-- **Case $0.05, grading $1** per card (grading not final until the last numbers audit). Set by the owner in dollars.
-- Paid in ETH, USDG or PLANK, like packs. **100% of every fee buys PAPER and burns it**, none of it goes to us. The
-  100% is fixed in the contract.
+- **Case $0.05 per card**, flat. **Grading $1 per card** by default (`gradeUsd18`; not final until the last numbers
+  audit). Set by the owner in dollars (`setPrices`), at most $100 a card.
+- **Grading price by card rank.** The owner can give any rank its own grading price (`setGradePrice(rank, usd18)`,
+  at most $100; 0 = back to the default). Read with `gradeUsdByRank(rank)`, or a card's price with
+  `gradeUsdOf(serial)`. The rank is the card type's rank in its Series' recipe (`FireCards.rankOf(serial)`, from the
+  dealer), so the table means the same thing in every Series that keeps the Standard ranks:
+
+  | Rank | 0 | 1 | 2 | 3 | 4 | 5 |
+  |---|---|---|---|---|---|---|
+  | Standard type | Paper | Wood | Fire | Coal | Gold | Full Art |
+  | Grading at launch | $1 | $1 | $1 | $1 | $1 | $1 |
+
+  At launch no rank has its own price (all $1, and no rank is looked up). A recipe with other types should reuse these
+  rank numbers for comparable rarity, since prices follow the number.
+- **What a batch costs:** `quoteFor(caseIds, gradeIds, pay)`, exactly what `protect` charges (cases flat, each graded
+  card at its rank's price). The older `quote(cases, grades, pay)` prices every grade at the default and is exact only
+  while no rank has its own price. Every purchase names the most it pays (`maxCost`, or the ETH sent).
+- **Paid in ETH, USDG, PLANK or PAPER.** `Pay`: PLANK 0, ETH 1, USDG 2, PAPER 3. **100% of every fee is burned as
+  PAPER**, none of it goes to us. The 100% is fixed in the contract.
+- **Paying in PAPER:** the dollar price at the PAPER feed's 20-hour price (`PaperBurner.paperPrice()`), less
+  `paperDiscountBps` (owner setting, 0 to 20%, 0 at launch), rounded up. The PAPER goes straight from the buyer to
+  the dead address: never through the burner, never to anyone. Refused (`FeedUnavailable`) while the PAPER feed has no
+  fresh price (older than 2 days, or a window over 30 hours), the same rule the burner's guard uses.
+- **ETH, USDG or PLANK** go to `PaperBurner`, which buys PAPER and burns it in the same transaction: **only that fee**
+  (`flushLight(pay, fee)`, the whole fee or half). Anything else the burner holds (FireSale's 20% sale share, rising-
+  price extras, a fee that had to wait) is the keepers' to flush (`flush`). So nobody can wrap a case or a grading in a
+  buy and a sell to make the burner spend its backlog at a pushed-up price: wrapping one only moves the fee you paid
+  yourself (a test checks no front-run size profits). The keepers' flush is its own transaction, and Robinhood Chain's
+  sequencer is first-come with no public mempool, so it can't be sandwiched either.
 - The purchase goes through the best route among the known PAPER pools (direct, or through PLANK), split across two
   when that gives more, guarded by the PAPER price feed: the buy must get at least 95% of the PAPER the feed says the
-  fee is worth. If the whole amount wouldn't, it tries half, a quarter and so on; if no piece would, or a price is
-  missing, nothing is spent and the fee waits in `PaperBurner` for a later buy. `PaperBurner` has no withdraw, its
-  router is fixed, its price feeds are set once, and its routes may only pass through WETH, PLANK or USDG. Only
-  FirePsa and the keepers (flushers the owner names) can flush it, so nobody can sandwich a flush, and a PAPER price
-  from a window over 30 hours (a checkpoint after a keeper gap) makes it wait.
+  fee is worth. If the whole amount wouldn't, it tries half (the keepers' flush: a quarter and so on); if no piece
+  would, or a price is missing, nothing is spent and the fee waits in `PaperBurner` for a later buy. `PaperBurner` has
+  no withdraw, its router is fixed, its price feeds are set once, and its routes may only pass through WETH, PLANK or
+  USDG. Only FirePsa and the keepers (flushers the owner names) can flush it, and a PAPER price from a window over 30
+  hours (a checkpoint after a keeper gap) makes it wait.
 
 ## Grading requests
 
@@ -118,9 +144,14 @@ switches images when it is cased or graded; nothing is drawn live.
 - The owner can pause case and grading payments (`setPaused`); finishing and cancelling never pause.
 - The randomness source can be switched at any time (only new gradings use it; each grading keeps its own:
   `docs/randomness.md`). There is no re-request; a grading with no answer for 7 days can be cancelled.
+- **Gas** (measured with `contracts/test/cards/PsaBurn.t.sol`, each call its own transaction): `finish` for 100
+  fresh cards ~7.1M gas, for 100 worn cards (3+ years uncased, 10 moves) ~17M; `protect` sending 100 cards for
+  grading ~8.4M (~8.9M once a rank has its own price). `maxBatch` is 20 at launch (cap 100). Arbitrum Orbit chains
+  like Robinhood Chain cap one transaction at 32M gas by default (confirm on the chain before raising `maxBatch`), so a
+  full batch of the most worn cards still fits.
 
 ## Locks
 
 | Fixed forever | Fixed per Series when its drop is set up | Owner can change (announced) |
 |---|---|---|
-| Fresh PDA odds and wear rules (time, moves, fade-in), the same for every Series; 24h fresh window, 100% fee burn, slabs final, cards per free pack 42, suggestion PAPER ceiling $1 | Recipe, characters, dealer, card images, the drop's PAPER ceiling per pack | Case and grading prices, cards per grading batch, the PAPER feed, routes, the randomness source (new gradings only), pause on case and grading payments |
+| Fresh PDA odds and wear rules (time, moves, fade-in), the same for every Series; 24h fresh window, 100% fee burn, slabs final, cards per free pack 42, suggestion PAPER ceiling $1 | Recipe, characters, dealer, card images, the drop's PAPER ceiling per pack | Case and grading prices (and per-rank grading prices), the PAPER payment discount (0-20%), cards per grading batch, the PAPER feed, routes, the randomness source (new gradings only), pause on case and grading payments (`setPaused`; also, in effect, `PaperBurner.setFlusher(FirePsa, false)`: ETH, PLANK and USDG cases and grading then revert, PAPER payments still work) |

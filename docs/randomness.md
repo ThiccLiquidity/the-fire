@@ -34,6 +34,10 @@ the name is historical).
 - **No word for 7 days** after the request (randomness gone for good): anyone calls `FireCards.cancelOpen(fire, index)`
   (the packs go back, sealed) or `FirePsa.cancelGrading(index, ids)` (the cards unlock, still ungraded; the fee is
   not refunded: it went to the PAPER burn). Both refuse while the request's source holds a word: deliver it instead.
+  A cancelled grading can be sent again with fresh randomness, so this is a re-roll only for a grading nobody delivers
+  for 7 days, and every drand round is public, so anyone (the holder included) can deliver the word at any time. In
+  practice the keeper delivers each word within minutes and alerts on any opening or grading still waiting past its
+  window (`ops/keeper`), long before 7 days.
 - **An open that is ready but can't be dealt** for 7 days (a dealer that can't deal it): anyone calls
   `FireCards.skipStuck(fire)`; its unstarted packs go back, sealed, and that Series' queue moves on.
 

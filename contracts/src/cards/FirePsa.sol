@@ -11,6 +11,7 @@ interface IPsaCards is IERC721 {
     function setGrade(uint256 serial, uint256 grade) external;
     function setGradePending(uint256 serial, bool pending) external;
     function setCased(uint256 serial) external;
+    function rankOf(uint256 serial) external view returns (uint256);
     function gradeInfo(uint256 serial) external view returns (bool exists, uint256 fire, uint256 grade);
     function wearOf(uint256 serial)
         external
@@ -25,7 +26,9 @@ interface IPsaRandomness {
 
 interface IPsaBurner {
     function quote(uint8 pay, uint256 usd18) external view returns (uint256);
-    function flushLight(uint8 pay) external returns (uint256);
+    function flushLight(uint8 pay, uint256 maxAmount) external returns (uint256);
+    function paperPrice() external view returns (uint256);
+    function PAPER() external view returns (address);
     function PLANK() external view returns (address);
     function USDG() external view returns (address);
 }
@@ -37,12 +40,15 @@ interface IPsaBurner {
  *         - **Case** a card: its wear freezes for good (no more wear from time or moves). Any time before grading.
  *         - **Grade** a card: its condition is rolled from drand randomness asked for after payment, so nobody can
  *           know it in advance, and it is slabbed at that grade (1-10), once, for good.
- *         Both in one transaction (`protect`), up to `maxBatch` cards. Prices are in dollars (`caseUsd18`,
- *         `gradeUsd18`), paid in ETH, PLANK or USDG; every cent goes to PaperBurner, which buys PAPER and burns it.
+ *         Both in one transaction (`protect`), up to `maxBatch` cards. Prices are in dollars: `caseUsd18` per case,
+ *         and per grade the price for the card's rank (`gradeUsdByRank`, set by the owner; 0 = the default
+ *         `gradeUsd18`). Paid in ETH, PLANK or USDG, every cent goes to PaperBurner, which buys PAPER and burns that
+ *         fee in the same transaction (only that fee: the burner's backlog is the keepers' to flush). Paid in PAPER
+ *         (at the PAPER feed's 20-hour price, less `paperDiscountBps`), it goes straight to the dead address.
  *
  *         The odds: a fresh grade (7-10) from the fresh odds, then wear (moves and time uncased). Both are fixed
  *         here forever, the same for every Series (FRESH_* and WEAR_* constants, `oddsFor`); nobody can change them.
- *         Fresh: 10: 1%, 9: 30%, 8: 40%, 7: 29% (never below 7). Only the case and grading prices can change.
+ *         Fresh: 10: 1%, 9: 30%, 8: 40%, 7: 29% (never below 7). Only the prices and the PAPER discount can change.
  *
  *         The owner can pause case and grading payments (`setPaused`); finishing and cancelling gradings never pause.
  *         The randomness source can be switched at any time (only new gradings use it; each grading remembers its
@@ -56,6 +62,10 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     uint256 public constant MAX_BATCH_CAP = 100;
     /// @dev Highest dollar price the owner can set per card (a typo guard; every purchase names its most anyway).
     uint256 public constant MAX_PRICE_USD18 = 100e18;
+    /// @dev Highest discount for paying in PAPER (20%).
+    uint256 public constant MAX_PAPER_DISCOUNT_BPS = 2_000;
+    uint256 internal constant BPS = 10_000;
+    address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     /// @dev Last resort if randomness is gone for good: a grading with no answer this long after it was asked for
     ///      can be cancelled, unlocking its cards (still ungraded). The fee was burned and can't come back.
     uint256 public constant CANCEL_AFTER = 7 days;
@@ -89,6 +99,7 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     IPsaBurner public immutable BURNER;
     IERC20 public immutable PLANK;
     IERC20 public immutable USDG;
+    IERC20 public immutable PAPER;
 
     IPsaRandomness public randomness;
     /// @notice Most cards per batch (cases and grades together; 1 to MAX_BATCH_CAP).
@@ -96,10 +107,18 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     /// @notice Price per card in dollars (18 decimals).
     uint256 public caseUsd18 = 0.05e18;
     uint256 public gradeUsd18 = 1e18;
+    /// @notice Grading price per card rank (FireCards.rankOf; Standard recipe: Paper 0, Wood 1, Fire 2, Coal 3, Gold 4,
+    ///         Full Art 5), in dollars (18 decimals); 0 = the default `gradeUsd18`.
+    mapping(uint256 rank => uint256) public gradeUsdByRank;
+    /// @notice How many ranks have their own price (0: every card costs `gradeUsd18`, and no rank is looked up).
+    uint256 public rankPriceCount;
+    /// @notice Discount for paying in PAPER, in basis points (0 to MAX_PAPER_DISCOUNT_BPS).
+    uint256 public paperDiscountBps;
     /// @notice While true, cases and grading can't be paid for (`protect`). Finishing and cancelling never pause.
     bool public paused;
 
-    enum Pay { PLANK, ETH, USDG }
+    /// @dev Never reorder: the numbers are the ABI (PLANK 0, ETH 1, USDG 2, PAPER 3).
+    enum Pay { PLANK, ETH, USDG, PAPER }
 
     struct Grading {
         address by;
@@ -118,6 +137,8 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
 
     event RandomnessSet(address source);
     event PricesSet(uint256 caseUsd18, uint256 gradeUsd18);
+    event GradePriceSet(uint256 indexed rank, uint256 usd18);
+    event PaperDiscountSet(uint256 bps);
     event MaxBatchSet(uint256 cards);
     event Protected(address indexed by, uint256[] cased, uint256[] graded, Pay pay, uint256 paid, uint256 gradingIndex);
     event GradingReady(uint256 indexed index, uint256 word);
@@ -139,6 +160,7 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     error BadIds();
     error BadRequest();
     error RenounceDisabled();
+    error FeedUnavailable();
 
     constructor(address owner_, address cards, address burner) Ownable(owner_) {
         if (cards == address(0) || burner == address(0)) revert ZeroAddress();
@@ -146,6 +168,7 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         BURNER = IPsaBurner(burner);
         PLANK = IERC20(IPsaBurner(burner).PLANK());
         USDG = IERC20(IPsaBurner(burner).USDG());
+        PAPER = IERC20(IPsaBurner(burner).PAPER());
     }
 
     // ================================================================ owner
@@ -185,16 +208,63 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         emit PricesSet(caseUsd, gradeUsd);
     }
 
+    /// @notice The grading price for cards of one rank, in dollars (18 decimals, at most $100); 0 = back to the
+    ///         default `gradeUsd18`. From the next batch; every batch names the most it pays.
+    function setGradePrice(uint256 rank, uint256 usd) external onlyOwner {
+        if (usd > MAX_PRICE_USD18) revert BadAmount();
+        uint256 was = gradeUsdByRank[rank];
+        if (was == 0 && usd != 0) rankPriceCount++;
+        else if (was != 0 && usd == 0) rankPriceCount--;
+        gradeUsdByRank[rank] = usd;
+        emit GradePriceSet(rank, usd);
+    }
+
+    /// @notice Discount for paying in PAPER, in basis points (0 to 2,000 = 20%).
+    function setPaperDiscount(uint256 bps) external onlyOwner {
+        if (bps > MAX_PAPER_DISCOUNT_BPS) revert BadAmount();
+        paperDiscountBps = bps;
+        emit PaperDiscountSet(bps);
+    }
+
     // ================================================================ cases and grading
 
-    /// @notice What a batch costs in `pay` right now (rounded up).
-    function quote(uint256 cases, uint256 grades, Pay pay) public view returns (uint256) {
-        return BURNER.quote(uint8(pay), cases * caseUsd18 + grades * gradeUsd18);
+    /// @notice What `cases` cases and `grades` grades at the default grading price cost in `pay` right now (rounded
+    ///         up). Exact while no rank has its own price; `quoteFor` prices the actual cards.
+    function quote(uint256 cases, uint256 grades, Pay pay) external view returns (uint256) {
+        return _cost(pay, cases * caseUsd18 + grades * gradeUsd18);
+    }
+
+    /// @notice What casing `caseIds` and grading `gradeIds` costs in `pay` right now (rounded up): what `protect`
+    ///         charges for them.
+    function quoteFor(uint256[] calldata caseIds, uint256[] calldata gradeIds, Pay pay) external view returns (uint256) {
+        return _cost(pay, _usdFor(caseIds.length, gradeIds));
+    }
+
+    /// @notice The grading price of one card in dollars (18 decimals): its rank's price, else `gradeUsd18`.
+    function gradeUsdOf(uint256 serial) public view returns (uint256) {
+        if (rankPriceCount == 0) return gradeUsd18;
+        uint256 p = gradeUsdByRank[CARDS.rankOf(serial)];
+        return p == 0 ? gradeUsd18 : p;
+    }
+
+    function _usdFor(uint256 cases, uint256[] calldata gradeIds) internal view returns (uint256 usd18) {
+        usd18 = cases * caseUsd18;
+        for (uint256 i; i < gradeIds.length; i++) usd18 += gradeUsdOf(gradeIds[i]);
+    }
+
+    /// @dev A dollar amount in `pay`, rounded up. PAPER: at the PAPER feed's price less the discount (reverts while
+    ///      the feed has no fresh price); the rest: PaperBurner's quote.
+    function _cost(Pay pay, uint256 usd18) internal view returns (uint256) {
+        if (pay != Pay.PAPER) return BURNER.quote(uint8(pay), usd18);
+        uint256 px = BURNER.paperPrice();
+        if (px == 0 || address(PAPER) == address(0)) revert FeedUnavailable();
+        uint256 d = BPS * px;
+        return (usd18 * (BPS - paperDiscountBps) * 1e18 + d - 1) / d;
     }
 
     /// @notice Case `caseIds` and send `gradeIds` for grading, in one transaction: up to `maxBatch` cards, all yours,
-    ///         none graded or being graded. Pay in `pay`: `maxCost` is the most PLANK/USDG, or send ETH (the rest comes
-    ///         back). Grades are set when the randomness arrives (anyone can then call `finish`; the site does it right
+    ///         none graded or being graded. Pay in `pay`: `maxCost` is the most PLANK/USDG/PAPER (approve this contract),
+    ///         or send ETH (the rest comes back). The price is `quoteFor(caseIds, gradeIds, pay)`. Grades are set when the randomness arrives (anyone can then call `finish`; the site does it right
     ///         away); until then those cards can't move. Returns the grading's index (type(uint256).max: no grading).
     function protect(uint256[] calldata caseIds, uint256[] calldata gradeIds, Pay pay, uint256 maxCost)
         external
@@ -219,7 +289,7 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
             pending[id] = true;
             CARDS.setGradePending(id, true); // freezes its wear where it is
         }
-        uint256 cost = _pay(pay, nc * caseUsd18 + ng * gradeUsd18, maxCost);
+        uint256 cost = _pay(pay, _usdFor(nc, gradeIds), maxCost);
         index = type(uint256).max;
         if (ng > 0) {
             IPsaRandomness src = randomness;
@@ -232,22 +302,26 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
             _gradingOf[_reqKey(address(src), rid)] = index + 1;
         }
         emit Protected(msg.sender, caseIds, gradeIds, pay, cost, index);
+        uint256 spentEth = pay == Pay.ETH ? cost : 0;
+        if (msg.value > spentEth) _sendEth(msg.sender, msg.value - spentEth); // last: the unspent ETH back
     }
 
-    /// @dev Takes the dollar amount in `pay`, sends all of it to PaperBurner and burns it; refunds unspent ETH.
+    /// @dev Takes the dollar amount in `pay`. PAPER goes straight to the dead address; anything else to PaperBurner,
+    ///      which burns this fee (at most this fee: never the backlog waiting for the keepers).
     function _pay(Pay pay, uint256 usd18, uint256 maxCost) internal returns (uint256 cost) {
-        cost = BURNER.quote(uint8(pay), usd18);
+        cost = _cost(pay, usd18);
         if (cost > maxCost) revert PriceMoved();
-        uint256 spentEth;
+        if (pay == Pay.PAPER) {
+            PAPER.safeTransferFrom(msg.sender, DEAD, cost);
+            return cost;
+        }
         if (pay == Pay.ETH) {
             if (msg.value < cost) revert PriceMoved();
-            spentEth = cost;
             _sendEth(address(BURNER), cost);
         } else {
             (pay == Pay.PLANK ? PLANK : USDG).safeTransferFrom(msg.sender, address(BURNER), cost);
         }
-        BURNER.flushLight(uint8(pay));
-        if (msg.value > spentEth) _sendEth(msg.sender, msg.value - spentEth);
+        BURNER.flushLight(uint8(pay), cost);
     }
 
     /// @dev Randomness callback: only stores the word (cheap, can't fail). Only the source that took a request can

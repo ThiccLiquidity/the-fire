@@ -1,0 +1,36 @@
+/* zoom.css: the full-screen card viewer (zoom.js). Only transform and opacity move. */
+dialog.zv { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0;
+  background: transparent; color: var(--ink); overflow: hidden; overscroll-behavior: contain; --ui: 1 }
+dialog.zv::backdrop { background: transparent }
+dialog.zv:focus { outline: none }
+.zv-bd { position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 40%, #1c140d 0%, #070504 60%, #000 100%); opacity: 0; will-change: opacity }
+.zv-stage { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; cursor: zoom-in }
+.zv-card { position: absolute; transform-origin: 50% 50%; border-radius: 4% / 2.9%; box-shadow: 0 18px 50px rgba(0,0,0,.75) } /* a box shadow: drawn once, not every frame */
+.zv-card.moving { will-change: transform }
+.zv-card .cface { width: 100% }
+.zv-card .cface .cholo { transition: none } /* the live card swaps in over the saved image in one frame */
+.cface.live.ready.defer .cframe { visibility: visible } .cface.defer .cholo { opacity: 0 !important }
+.zv-card .cface.live { touch-action: none }
+.zv-x, .zv-nav { position: absolute; z-index: 2; display: grid; place-items: center; width: var(--tap); height: var(--tap); padding: 0; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.28); background: rgba(10,8,6,.55); color: #fff; cursor: pointer; opacity: var(--ui); transition: opacity .2s }
+.zv-x svg, .zv-nav svg { width: 22px; height: 22px }
+.zv-x { top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)) }
+.zv-x:hover, .zv-nav:hover:not([disabled]) { background: rgba(40,30,20,.8); border-color: var(--brass) }
+.zv-nav { top: 50%; margin-top: calc(var(--tap) / -2) }
+.zv-nav.prev { left: max(14px, env(safe-area-inset-left)) } .zv-nav.next { right: max(14px, env(safe-area-inset-right)) }
+.zv-nav[disabled] { opacity: calc(var(--ui) * .25); cursor: default }
+@media (hover: none), (max-width: 700px) { .zv-nav { display: none } } /* phones swipe (arrow keys still work) */
+.zv-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: 0 }
+.zv-hint { position: absolute; z-index: 2; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); margin: 0; padding: 6px 14px; border-radius: 999px; transform: translateX(-50%);
+  background: rgba(10,8,6,.7); color: #fff; font: 700 13px var(--body); pointer-events: none; opacity: 0; animation: zv-hint 2.8s ease .4s both }
+@keyframes zv-hint { 0% { opacity: 0 } 15%, 70% { opacity: .9 } 100% { opacity: 0 } }
+@media (prefers-reduced-motion: reduce) { .zv-hint { animation: zv-hint-still 2.8s steps(1) .4s both } }
+@keyframes zv-hint-still { 0% { opacity: .9 } 100% { opacity: 0 } }
+
+/* the way in: the big card shows a zoom cursor and a small expand button in its corner */
+.big .cwrap { cursor: zoom-in }
+.zv-open { position: absolute; z-index: 5; top: 6px; right: 6px; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.4); background: rgba(10,8,6,.6); color: #fff; cursor: zoom-in; opacity: .85; transition: opacity .2s, transform .2s }
+.zv-open::before { content: ''; position: absolute; inset: -5px } /* a 44px target */
+.zv-open svg { width: 18px; height: 18px }
+.zv-open:hover, .zv-open:focus-visible { opacity: 1; transform: scale(1.08) }

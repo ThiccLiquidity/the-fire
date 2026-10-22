@@ -176,8 +176,34 @@
     STATES: 12,
     cardPos(c) { return `${(Store.stateIdx(c) * 100 / 11).toFixed(4)}% 0`; }, // object-position of that card in the strip
     holder(c) { return c.grade != null ? 'slab' : c.cased ? 'case' : 'raw'; },
-    // time uncased so far: frozen once cased (or slabbed); otherwise still running
-    ageMs(c) { return c.cased || c.grade != null ? c.frozenAge : Date.now() - c.dealt; },
+    // wear time so far: frozen once cased, sent for grading or slabbed; otherwise still running (live: `dealt` is when the
+    // wear clock started, read back from the chain's age, so a cancelled grading's frozen gap isn't counted)
+    ageMs(c) { return c.cased || c.pending || c.grade != null ? c.frozenAge : Date.now() - c.dealt; },
+    // what casing or grading this card costs, in dollars: grading is priced by card type (FirePsa.gradeUsdOf; live.js
+    // puts it on each card as c.gradeUsd), else the default price
+    caseUsd(_c) { return PRICES.CASE_USD; }, // one case price for every card
+    gradeUsd(c) { return c?.gradeUsd ?? PRICES.GRADE_USD; },
+    // cases and grades can be paid in PAPER: burned directly, at the PAPER feed's price less the owner's discount
+    // (FirePsa.paperDiscountBps, 0-2000; DEMO: a made-up 10%). PSA_PAPER_OFF: why it can't be used right now (live: the
+    // PAPER price can't be read, FeedUnavailable), else null.
+    PSA_PAPER: true, PSA_PAPER_DISCOUNT_BPS: LIVE_NET ? 0 : 1000, PSA_PAPER_OFF: null,
+    // the words on a slab, by grade
+    GRADE_WORD: { 10: 'GEM MINT', 9: 'MINT', 8: 'NM-MT', 7: 'NEAR MINT', 6: 'EX-MT', 5: 'EXCELLENT', 4: 'VG-EX', 3: 'VERY GOOD', 2: 'GOOD', 1: 'POOR' },
+    /** The pop report: how many slabs of each grade exist, by Series and material: { [series]: { [material]: { [grade]: n } } }.
+     *  Live: FirePsa's Graded events (Live.popReport). Demo: a made-up population for each Series in the demo, plus this wallet's slabs. */
+    async popReport() {
+      if (window.Live?.on) return window.Live.popReport();
+      const out = {}, add = (s, m, g) => { const x = ((out[s] ??= {})[m] ??= {}); x[g] = (x[g] || 0) + 1; };
+      const W = window.Wear, series = [...new Set(state.cards.map((c) => c.series))];
+      for (const s of series) { // DEMO DATA: about a third of each material graded, at ages drawn from a fixed seed
+        const r = mkR(9000 + s);
+        for (const [m, n] of [['paper', 120], ['wood', 70], ['fire', 26], ['charcoal', 9], ['gold', 3], ['fullart', 2]]) {
+          for (let i = 0; i < n; i++) { const days = r() < 0.55 ? r() * 0.9 : r() < 0.7 ? 1 + r() * 120 : 120 + r() * 1400; add(s, m, W ? W.draw(days * 86400, Math.floor(r() * r() * 3), r) : 8); }
+        }
+      }
+      state.cards.forEach((c) => { if (c.grade != null) add(c.series, c.material, c.grade); });
+      return out;
+    },
     // true rarity of one card, on one scale: how rare that exact card (character + material + holo) is in its Series
     // (Info.lookP), x "this grade or better" once graded (Info.gradeP). Tiers on the same scale (Info.TIERS):
     // Rare 1 in 100 or rarer, Epic 1 in 400, Legendary 1 in 1,000.

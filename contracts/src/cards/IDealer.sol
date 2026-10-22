@@ -39,6 +39,10 @@ interface IDealer {
     ///         stored with the card and handed back to `cardText`).
     function deal(uint256 fire, uint256 seed, uint256 fromCard, uint256 count) external returns (uint256[] memory cards);
 
+    /// @notice The rank of card type `cardType` in `fire` (higher = rarer; FirePsa prices grading by it, so a dealer
+    ///         should keep one meaning per rank number across its Series).
+    function rankOf(uint256 fire, uint256 cardType) external view returns (uint256);
+
     /// @notice The text FireCards puts in a card's metadata.
     function cardText(uint256 fire, uint256 cardType, uint256 character, uint256 extra)
         external

@@ -171,24 +171,35 @@
   const PARTS = window.Store && Store.cardParts ? Store.cardParts : null;
   const still = matchMedia('(prefers-reduced-motion: reduce)');
   const imgCache = new Map();
-  const loadImg = (src) => { if (!imgCache.has(src)) imgCache.set(src, new Promise((ok, no) => { const i = new Image(); i.decoding = 'async'; i.onload = () => ok(i); i.onerror = no; i.src = src; })); return imgCache.get(src); };
+  // decoded before first use (img.decode()), so the first draw never stalls on decoding
+  const loadImg = (src) => { if (!imgCache.has(src)) imgCache.set(src, new Promise((ok, no) => { const i = new Image(); i.decoding = 'async'; i.onload = () => (i.decode ? i.decode().catch(() => {}) : Promise.resolve()).then(() => ok(i)); i.onerror = no; i.src = src; })); return imgCache.get(src); };
   const live = new Set();
   // sway: the card drifts on its own when nobody is touching it (the big card, the pack reveal); otherwise it holds the
   // saved image's angle and moves only while the mouse or a finger is on it (grids and lists)
   const moving = (L, t) => L.active && t - L.last < 2500;
+  const tiltNow = (L, t) => moving(L, t) ? L.tilt : L.sway && !still.matches ? { tx: Math.sin(t / 2400 + L.phase) * 0.64, ty: Math.cos((t / 2400 + L.phase) * 0.8) * 0.48, o: 0.55 } : STILL;
+  // a sized face (the viewer) draws its moving frames at a lower resolution while a frame takes too long here, so
+  // the light keeps up on a slow phone; a still or held frame is always drawn full size
+  const QUALITY = [1, 0.75, 0.55];
   function draw(el, t) {
-    const L = el._holo; if (!L || !L.plain) return;
-    const box = el.getBoundingClientRect(); if (!box.width) return;
-    const dpr = Math.min(2, devicePixelRatio || 1), W = Math.min(1100, Math.round(box.width * dpr)), H = Math.round(W * 1008 / 720);
+    const L = el._holo; if (!L || !L.plain || L.defer) return;
+    // a sized face (the full-screen viewer: Holo.size) knows its width, so the frame reads no layout; zoomed in, it draws sharper
+    const bw = L.cssW || el.getBoundingClientRect().width; if (!bw) return;
+    const tl = L.held || tiltNow(L, t); // held (zoomed in): the light stays where it was
+    const lively = !!L.cssW && tl !== STILL && tl !== L.held, q = lively ? QUALITY[L.qi || 0] : 1;
+    const dpr = Math.min(2, devicePixelRatio || 1), W = Math.min(L.cssW ? 1440 : 1100, Math.round(bw * dpr * (L.scale || 1) * q)), H = Math.round(W * 1008 / 720);
     if (L.canvas.width !== W || L.canvas.height !== H) { L.canvas.width = W; L.canvas.height = H; }
-    let tl = STILL;
-    if (moving(L, t)) tl = L.tilt;
-    else if (L.sway && !still.matches) { const a = t / 2400 + L.phase; tl = { tx: Math.sin(a) * 0.64, ty: Math.cos(a * 0.8) * 0.48, o: 0.55 }; }
     // the card itself tips toward the light a little while it's being moved
-    el.style.transform = moving(L, t) && !still.matches ? `perspective(800px) rotateY(${(tl.tx * 10).toFixed(2)}deg) rotateX(${(-tl.ty * 10).toFixed(2)}deg)` : '';
+    el.style.transform = !L.held && moving(L, t) && !still.matches ? `perspective(800px) rotateY(${(tl.tx * 10).toFixed(2)}deg) rotateX(${(-tl.ty * 10).toFixed(2)}deg)` : '';
+    const t0 = performance.now();
     if (L.holder === 'raw') render(L.canvas.getContext('2d'), L.plain, L.print, L.material, L.look, tl, L.state);
     else renderHeld(L.canvas.getContext('2d'), L, L.material, L.look, tl);
-    L.drawnStill = tl === STILL;
+    if (lively) { // over ~22 ms a few frames running: a step down; well under budget: a step back up
+      const ms = performance.now() - t0; L.slow = ms > 22 ? (L.slow || 0) + 1 : ms < 9 ? Math.min(0, (L.slow || 0) - 1) : 0;
+      if (L.slow >= 3 && (L.qi || 0) < QUALITY.length - 1) { L.qi = (L.qi || 0) + 1; L.slow = 0; }
+      else if (L.slow <= -30 && L.qi) { L.qi--; L.slow = 0; }
+    }
+    L.drawnStill = tl === STILL || tl === L.held;
   }
   let raf = 0;
   function loop(t) {
@@ -196,7 +207,7 @@
     for (const el of live) {
       if (!el.isConnected) { live.delete(el); continue; }
       const L = el._holo; if (!L.visible) continue;
-      const busy = moving(L, t) || (L.sway && !still.matches);
+      const busy = !L.held && (moving(L, t) || (L.sway && !still.matches));
       if (busy || !L.drawnStill) draw(el, t);
       if (busy) again = true;
     }
@@ -218,11 +229,30 @@
     Promise.all([loadImg(parts.plain), loadImg(parts.print), fonts])
       .then(([p, q]) => { L.plain = p; L.print = q; face.classList.add('ready'); live.add(face); if (io) io.observe(face); draw(face, performance.now()); kick(); })
       .catch(() => { canvas.remove(); face.classList.remove('live'); });
-    const point = (e) => { const b = face.getBoundingClientRect(); L.active = true; L.last = performance.now();
+    const point = (e) => { if (L.external) return; const b = face.getBoundingClientRect(); L.active = true; L.last = performance.now();
       L.tilt = { tx: Math.max(-1, Math.min(1, (e.clientX - b.left) / b.width * 2 - 1)), ty: Math.max(-1, Math.min(1, (e.clientY - b.top) / b.height * 2 - 1)), o: 1 };
       kick(); };
     face.addEventListener('pointermove', point); face.addEventListener('pointerdown', point);
-    face.addEventListener('pointerleave', () => { L.active = false; L.last = -1e9; kick(); });
+    face.addEventListener('pointerleave', () => { if (L.external) return; L.active = false; L.last = -1e9; kick(); });
   }
-  window.Holo = { render, attach, STILL };
+  // the full-screen viewer (zoom.js) drives a face itself: its size (no layout reads in a frame), the light's aim, and
+  // holding it still while zoomed in (one sharp redraw instead of one every frame)
+  const sw = (face) => face?._holo;
+  /** Sized face: cssW its width in CSS px, scale the zoom it's shown at (the canvas draws at that resolution). */
+  function size(face, cssW, scale = 1) { const L = sw(face); if (!L) return; L.cssW = cssW; L.scale = scale; L.external = true; L.drawnStill = false; if (L.plain) draw(face, performance.now()); kick(); }
+  /** Defer (true): don't draw yet, the card's saved image shows instead (the viewer's way in and slides); false: draw
+   *  now and swap the live card in, in the same frame. */
+  function defer(face, on) { const L = sw(face); if (!L || !!L.defer === !!on) return; L.defer = !!on; face.classList.toggle('defer', !!on);
+    if (!on) { L.drawnStill = false; if (L.plain) draw(face, performance.now()); kick(); } }
+  /** Aim the light: tx, ty in -1..1 (finger, mouse or device tilt); null lets go (it drifts again). */
+  function aim(face, tx, ty) { const L = sw(face); if (!L || L.held) return;
+    if (tx == null) { L.active = false; L.last = -1e9; } else { L.active = true; L.last = performance.now(); L.tilt = { tx: Math.max(-1, Math.min(1, tx)), ty: Math.max(-1, Math.min(1, ty)), o: 1 }; }
+    kick(); }
+  /** Hold the light where it is (true) or let it move again (false). */
+  function hold(face, on) { const L = sw(face); if (!L || !!L.held === !!on) return;
+    const t = performance.now();
+    if (on) { L.held = tiltNow(L, t); L.heldAt = t; } else { L.held = null; L.phase -= (t - L.heldAt) / 2400; } // the drift picks up where it stopped
+    if (on) face.style.transform = '';
+    L.drawnStill = !!on; kick(); } // held: what's drawn stays (no redraw)
+  window.Holo = { render, attach, size, aim, hold, defer, STILL };
 })();

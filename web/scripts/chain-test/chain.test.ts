@@ -216,16 +216,25 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const c0 = cards[0];
   check(c0.name.includes(c0.character) && c0.image.startsWith("ipfs://") && c0.image.endsWith("-u.webp") && c0.grade === null && !c0.cased, `a card: "${c0.name}", ${c0.material}, holo ${c0.holo}, image ${c0.image.split("/").pop()}`);
   check(["Character", "Category", "Material", "Holo", "Series", "Edition", "PDA"].every((k) => k in c0.traits), "its traits are the metadata's");
+  await ctx.warp(3600); // an hour raw
+  const nowA = Number(await ctx.now()), c0b = await L.card(c0.serial);
+  check(c0b.age >= 3600 && Math.abs(nowA - c0b.dealtAt - c0b.age) <= 2, `a raw card's age is the chain's (wearOf): ${c0b.age} s since it was dealt, and running`);
 
   console.log("\n== case one card, grade two");
   const pr = await L.psaPrices();
-  check(pr.caseUsd === "0.05" && pr.gradeUsd === "1.00" && pr.maxBatch === 20, `prices: case $${pr.caseUsd}, grade $${pr.gradeUsd}, up to ${pr.maxBatch} cards`);
-  const pq2 = await L.quoteProtect(1, 2, "ETH");
-  check(BigInt(pq2.raw) > 0n, `1 case + 2 grades = ${pq2.text} ETH`);
+  check(pr.caseUsd === "0.05" && pr.gradeUsd === "1.00" && pr.maxBatch === 20 && pr.paperDiscountBps === 0, `prices: case $${pr.caseUsd}, grade $${pr.gradeUsd}, up to ${pr.maxBatch} cards, no PAPER discount`);
   const [ca, g1, g2] = [cards[1].serial, cards[2].serial, cards[3].serial];
+  const per = await L.gradeUsdOf([g1, g2]);
+  check(per[g1] === 1 && per[g2] === 1, `grading each card: $${per[g1]} and $${per[g2]} (gradeUsdOf, by card type)`);
+  const pq2 = await L.quoteProtect([ca], [g1, g2], "ETH");
+  check(BigInt(pq2.raw) > 0n, `1 case + 2 grades = ${pq2.text} ETH (quoteFor: exactly what protect charges)`);
+  let pqPaper: Awaited<ReturnType<typeof L.quoteProtect>> | null = null, paperWhy = "";
+  try { pqPaper = await L.quoteProtect([ca], [], "PAPER"); } catch (e) { paperWhy = (e as Error).message.split("\n").slice(0, 8).join(" | "); }
+  check(pqPaper ? BigInt(pqPaper.raw) > 0n : /FeedUnavailable|price/i.test(paperWhy), pqPaper ? `a case in PAPER: ${pqPaper.text} PAPER` : `PAPER quote refused while its price can't be read: ${paperWhy}`);
   const pt = await L.protect({ caseIds: [ca], gradeIds: [g1, g2], pay: "ETH", quote: pq2.raw }, o);
   check(pt.gradingIndex === 0, "cased and sent for grading in one transaction (grading #0), capped at the price shown");
   check((await L.card(ca)).cased && (await L.card(g1)).gradePending, "the case shows; the graded cards are pending (they can't move)");
+  const caseAge = (await L.card(ca)).age;
   check((await L.gradingsOf(me))[0].status === "waiting" && (await L.gradingStatus(0)).status === "waiting", "grading waits for its round");
   check((await L.gradingIds(0, [g1, g2])).join() === [g1, g2].join() && (await L.gradingIds(0)).join() === [g1, g2].join(), "the grading's card list: the page's own (checked against idsHash) or from its event");
   await ctx.warp(100);
@@ -233,6 +242,10 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const [x1, x2] = [await L.card(g1), await L.card(g2)];
   check(x1.grade !== null && x2.grade !== null && !x1.gradePending && x1.image.endsWith(`-${x1.grade}.webp`), `grades: PDA ${x1.grade} and PDA ${x2.grade}; the image is the slab's`);
   check((await L.gradingsOf(me))[0].status === "done", "grading reads as done");
+  check((await L.card(ca)).age === caseAge && caseAge > 0, `a cased card's age stays frozen at ${caseAge} s (not 0, not running)`);
+  const pop = await L.gradedPop();
+  check(pop.length === 2 && pop.every((x) => x.fire === fire && x.material) && pop.map((x) => x.grade).sort().join() === [x1.grade, x2.grade].sort().join(),
+    `pop report from the Graded events: ${pop.map((x) => `${x.material} PDA ${x.grade}`).join(", ")}`);
   // the same with PLANK (an ERC-20: approved first)
   const pt2 = await L.protect({ caseIds: [cards[4].serial], pay: "PLANK" }, o);
   check(pt2.gradingIndex === -1 && (await L.card(cards[4].serial)).cased, "a case paid in PLANK (approved, no grading)");
@@ -278,6 +291,17 @@ export async function runTest(ctx: Ctx): Promise<number> {
   await ctx.rpc("evm_mine"); await ctx.rpc("evm_setAutomine", [true]);
   await done;
   check(resumed.join() === "Approve some more: success" && L.pendingTxs(me).length === 0, `a reload resumes it: ${resumed.join()}`);
+
+  console.log("\n== a case paid in PAPER, once the PAPER price is up (PaperUsdTwap: a pool qualifies for 20 h, then a window)");
+  const cp = [{ type: "function", name: "checkpoint", inputs: [], outputs: [], stateMutability: "nonpayable" }];
+  for (let k = 0; k < 3; k++) { await ctx.warp(20 * 3600 + 60); await ctx.tx(deployer, ctx.C.PlankUsdTwap, cp, "checkpoint"); await ctx.tx(deployer, ctx.C.PaperUsdTwap, cp, "checkpoint"); }
+  const card9 = cards[9].serial, q5 = await L.quoteProtect([card9], [], "PAPER");
+  const paperBefore2 = BigInt((await L.balances(me)).PAPER!.raw), DEAD = "0x000000000000000000000000000000000000dEaD" as Address;
+  const deadBefore = BigInt((await L.balances(DEAD)).PAPER!.raw);
+  const pt3 = await L.protect({ caseIds: [card9], pay: "PAPER", quote: q5.raw }, o);
+  const spent = paperBefore2 - BigInt((await L.balances(me)).PAPER!.raw);
+  check(BigInt(q5.raw) > 0n && pt3.gradingIndex === -1 && (await L.card(card9)).cased && spent === BigInt(q5.raw) && BigInt((await L.balances(DEAD)).PAPER!.raw) - deadBefore === spent,
+    `a case paid in PAPER (approved to FirePsa, burned directly): ${q5.text} PAPER, exactly the quote`);
 
   console.log("\n== errors come back in plain words");
   W.setLocalSigner(privateKeyToAccount(toHex(other.getHdKey().privateKey!)));
