@@ -286,7 +286,7 @@
     document.querySelectorAll('[data-peek]').forEach((b) => setAttr(b, 'aria-label', `Series ${t.no}: what's in its packs`));
   }
   // ---------- the hero: the one main thing to do now. Packs ready to open: Open them (the demo's gift packs: "Open your 3
-  // free packs"); else a sale on: Buy a pack; else See your cards (with what's next). Open shows only when a pack can
+  // packs"); else a sale on: Buy a pack; else See your cards (with what's next). Open shows only when a pack can
   // open (packs open once their Series sells out or closes). Burn, Case & grade and Suggest stay quiet until a first
   // pack is opened.
   const GIFT = LIVE ? [] : Object.keys(S.sealed).map(Number).filter((no) => no !== S.series.no && S.sealed[no] > 0); // the demo's starting packs
@@ -298,8 +298,8 @@
     const ready = Stations.openable(), n = ready.reduce((a, o) => a + o.n, 0);
     if (n) {
       const gift = ready.every((o) => GIFT.includes(o.series));
-      return { kind: 'open', title: gift ? `Open your ${n} free ${n === 1 ? 'pack' : 'packs'}` : `Open packs (${n})`, sub: gift ? 'Tear one open' : `Series ${ready[0].series}${ready.length > 1 ? ' first' : ''}`,
-        label: `${gift ? `Open your ${n} free` : `Open ${n}`} ${n === 1 ? 'pack' : 'packs'}`, go: () => openStation('open') };
+      return { kind: 'open', title: gift ? `Open your ${n === 1 ? 'pack' : `${n} packs`}` : `Open packs (${n})`, sub: gift ? 'Tear one open' : `Series ${ready[0].series}${ready.length > 1 ? ' first' : ''}`,
+        label: `${gift ? 'Open your' : 'Open'} ${n === 1 ? 'pack' : `${n} packs`}`, go: () => openStation('open') };
     }
     if (!note() && !sold() && !S.series.closing && open().length) {
       const g = open().find((x) => !x.waiting && x.left !== 0 && Store.groupAccess(x).ok) || open().find((x) => !x.waiting && x.left !== 0);
