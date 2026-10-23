@@ -328,6 +328,20 @@
     },
   };
 
+  // rotation: a phone turned on its side can fire 'resize' before its new size has settled (iOS), or report the turn only
+  // as orientationchange / a visual-viewport resize. Watch the size for a moment after any of those and announce the
+  // settled one as a 'resize' (once per real change), so every layout listener (ui, scene, viewer, sheets) re-measures.
+  {
+    let last = innerWidth + 'x' + innerHeight, timers = [];
+    const check = () => { const now = innerWidth + 'x' + innerHeight; if (now !== last) { last = now; dispatchEvent(new Event('resize')); } };
+    addEventListener('resize', () => { last = innerWidth + 'x' + innerHeight; });
+    const settle = () => { timers.forEach(clearTimeout); requestAnimationFrame(check); timers = [60, 250, 500, 900].map((ms) => setTimeout(check, ms)); };
+    addEventListener('orientationchange', settle);
+    try { screen.orientation?.addEventListener('change', settle); } catch { /* old browsers */ }
+    window.visualViewport?.addEventListener('resize', settle);
+    try { matchMedia('(orientation: portrait)').addEventListener('change', settle); } catch { /* old Safari: resize still runs */ }
+  }
+
   // toasts: short, stacked under the top bar
   const toastHost = document.createElement('div'); toastHost.className = 'toasts'; toastHost.setAttribute('role', 'status'); toastHost.setAttribute('aria-live', 'polite');
   document.addEventListener('DOMContentLoaded', () => document.body.append(toastHost));

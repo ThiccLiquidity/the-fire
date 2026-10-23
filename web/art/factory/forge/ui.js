@@ -97,13 +97,8 @@
     const W = innerWidth, H = innerHeight, bar = TOP;
     mode = W < 700 && H > W ? 'port' : H < 520 ? 'land' : 'desk';
     document.body.dataset.mode = mode; document.documentElement.dataset.mode = mode;
-    if (mode === 'port') {
-      const bb = document.querySelector('.buybar')?.offsetHeight || 80, st = document.querySelector('.stations')?.offsetHeight || 220;
-      const sh = Math.round(Math.max(150, Math.min(H * 0.42, W * 0.9, H - bar - st - bb - 24))); // the stations stay clear of the Buy bar on short phones
-      view = { x: 0, y: bar, w: W, h: sh, mode: 'cover', focus: 0.42, follow: true }; // the camera follows the action
-      document.documentElement.style.setProperty('--sceneH', sh + 'px');
-      document.documentElement.style.setProperty('--bbH', bb + 'px');
-    } else if (mode === 'land') {
+    if (mode === 'port') portView();
+    else if (mode === 'land') {
       view = { x: 0, y: bar, w: W - 240, h: H - bar, mode: 'contain', follow: false };
     } else {
       const strip = H < 760 ? 92 : 104; document.documentElement.style.setProperty('--stripH', strip + 'px');
@@ -111,7 +106,28 @@
     }
     if (window.Scene) Scene.setView(view);
     poster(); placePills(); if (S.wallet) renderCounts();
+    // upright: the scene's height is what the stations leave it, and they were measured before renderCounts rewrote
+    // them for this mode (a phone turned upright from its side): measure again once they're final
+    if (mode === 'port') refitPort();
   }
+  // a phone held upright: the scene gets what the stations and the Buy bar leave (the stations stay clear of the bar)
+  function portView() {
+    const W = innerWidth, H = innerHeight, bar = TOP;
+    const bb = document.querySelector('.buybar:not(.open)')?.offsetHeight || parseFloat(document.documentElement.style.getPropertyValue('--bbH')) || 80;
+    const st = document.querySelector('.stations')?.offsetHeight || 220;
+    const sh = Math.round(Math.max(150, Math.min(H * 0.42, W * 0.9, H - bar - st - bb - 24)));
+    view = { x: 0, y: bar, w: W, h: sh, mode: 'cover', focus: 0.42, follow: true }; // the camera follows the action
+    document.documentElement.style.setProperty('--sceneH', sh + 'px');
+    document.documentElement.style.setProperty('--bbH', bb + 'px');
+  }
+  function refitPort() {
+    if (mode !== 'port') return;
+    const h0 = view.h; portView();
+    if (view.h !== h0) { if (window.Scene) Scene.setView(view); poster(); placePills(); }
+  }
+  // the stations change height on their own (the hero's words, fonts arriving): keep the upright scene fitted to them
+  if ('ResizeObserver' in window) { let q = 0; const ro = new ResizeObserver(() => { if (mode === 'port' && !q) q = requestAnimationFrame(() => { q = 0; refitPort(); }); });
+    const watchSt = () => { const el = document.querySelector('.stations'); if (el) ro.observe(el); }; watchSt(); }
   function placePills() {
     if (!view) return;
     const k = window.Scene ? Scene.scale : lite().s, fs = Math.max(12, Math.min(14, 30 * k));

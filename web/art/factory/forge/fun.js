@@ -1,13 +1,13 @@
 /* Omni Cardworks: the fun layer's loader and event bus (window.Fun). The fun modules (fx, gyro, terms, tour, practice,
-   binder, badges, showcase, share, feed, sale, guess and fun.css) load after the first paint, when the browser is
+   binder, badges, showcase, share, feed, sale and fun.css) load after the first paint, when the browser is
    idle, so they never slow the page down. The rest of the site only talks to them through tiny hooks:
      Fun.emit(name, detail)  something happened (tear, flip, opened, case, graded, bought, paid, burned, suggested);
                              events sent before the modules are in are kept (a few) and delivered once they load
      Fun.go(name, opts)      open one of the fun screens (binder, showcase, feed, tour, practice, badges...)
-     Fun.<hook>?.(...)       a synchronous hook a module adds once loaded (packShare, slabPress, guess...)
+     Fun.<hook>?.(...)       a synchronous hook a module adds once loaded (packShare, slabPress...)
    Small shared helpers live here too (Fun.h, Fun.mem, Fun.who...). */
 (() => {
-  const MODS = ['fx', 'gyro', 'terms', 'tour', 'practice', 'binder', 'badges', 'showcase', 'share', 'feed', 'sale', 'guess'];
+  const MODS = ['fx', 'gyro', 'terms', 'tour', 'practice', 'binder', 'badges', 'showcase', 'share', 'feed', 'sale'];
   const handlers = {}, queue = [];
   let loaded = false, loading = null;
   const Fun = window.Fun = {

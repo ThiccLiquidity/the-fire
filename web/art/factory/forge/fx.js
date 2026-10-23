@@ -1,7 +1,7 @@
 /* Omni Cardworks (fun layer): feel. Haptics on the tear, a rare pull, a case snapping shut and a grade landing (Android;
    iPhones ignore vibrate), with an on/off setting next to Sound. The workshop reacts: a rare or better pull, or a PDA
    10, makes the furnace flare in that card's colour once the sheet closes, and after a buy, case or grade the
-   furnace eats a few sheets of PAPER (animation only). And the slab press: the slab comes down over a graded card
+   furnace takes a few PLANK logs (animation only: PLANK is for the fire, PAPER is for the press). And the slab press: the slab comes down over a graded card
    and its grade prints on the label. Effects are drawn on one overlay canvas over the scene (transform-free: only while something plays),
    the scene itself is nudged through its 'scene-fx' event (scene.js). Reduced motion: short glows, no sparks. */
 (() => {
@@ -57,7 +57,7 @@
   const FURNACE = [627, 930], MOUTH = [627, 965];
   let cv = null, g = null, raf = 0;
   const fx = []; // running effects: { kind, t0, dur, ... }
-  const paperImg = new Image(); paperImg.src = '../build3/s-paper0.webp';
+  const logImgs = [0, 1, 2].map((k) => { const im = new Image(); im.src = `../build3/s-log${k}.webp`; return im; }); // PLANK: wood for the fire
   function canvas() {
     if (cv) return cv;
     cv = h('canvas', { class: 'fun-fx', 'aria-hidden': 'true' }); document.body.append(cv); g = cv.getContext('2d');
@@ -76,7 +76,7 @@
       const e = fx[i]; e.t0 ??= t; const u = (t - e.t0) / e.dur;
       if (u >= 1) { fx.splice(i, 1); continue; }
       if (u < 0) continue;
-      if (e.kind === 'glow') drawGlow(e, u); else if (e.kind === 'paper') drawPaper(e, u, t);
+      if (e.kind === 'glow') drawGlow(e, u); else if (e.kind === 'log') drawLog(e, u);
     }
     if (fx.length) raf = requestAnimationFrame(tick); else g.clearRect(0, 0, W, H);
   }
@@ -93,16 +93,19 @@
     }
     g.restore();
   }
-  function drawPaper(e, u, t) { // a sheet flutters down into the furnace mouth, curls, darkens and goes
-    if (!paperImg.complete || !paperImg.naturalWidth) return;
+  function drawLog(e, u) { // a PLANK log is tossed in an arc into the furnace mouth, catches, glows and goes
+    const im = logImgs[e.img % 3]; if (!im.complete || !im.naturalWidth) return;
     const [mx, my] = pt(...MOUTH), k = span(100) / 100, e2 = u * u;
-    const x = mx + (e.dx * (1 - e2) + Math.sin(u * 7 + e.ph) * 14 * (1 - u)) * k, y = my - (420 - 420 * e2) * k;
-    const w = 150 * k * (1 - 0.5 * u), hh = w * paperImg.naturalHeight / paperImg.naturalWidth;
-    g.save(); g.translate(x, y); g.rotate(e.rot + u * e.spin); g.scale(Math.cos(u * 9 + e.ph) * 0.8 + 0.2, 1);
+    const x = mx + e.dx * (1 - u) * k, y = my - (Math.sin(Math.PI * Math.min(1, 0.35 + u * 0.65)) * 260 + 80 * (1 - e2)) * k;
+    const w = 160 * k * (1 - 0.35 * u), hh = w * im.naturalHeight / im.naturalWidth;
+    g.save(); g.translate(x, y); g.rotate(e.rot + u * e.spin);
     g.globalAlpha = Math.min(1, u * 5) * (1 - Math.max(0, (u - 0.8) / 0.2));
-    g.filter = `brightness(${1 - u * 0.55}) sepia(${u})`;
-    g.drawImage(paperImg, -w / 2, -hh / 2, w, hh); g.restore();
-    if (!e.lit && u > 0.86) { e.lit = true; scene({ flare: 0.35, sparks: 6, x: FURNACE[0] + e.dx * 0.4, y: 985, power: 0.5 }); }
+    g.filter = `brightness(${1 - u * 0.35}) sepia(${u * 0.6})`;
+    g.drawImage(im, -w / 2, -hh / 2, w, hh);
+    if (u > 0.55) { g.globalCompositeOperation = 'lighter'; g.globalAlpha *= (u - 0.55) / 0.45 * 0.7; g.filter = 'none'; g.fillStyle = '#ff7a24'; // it catches
+      g.beginPath(); g.ellipse(0, 0, w * 0.55, hh * 0.55, 0, 0, 7); g.fill(); }
+    g.restore();
+    if (!e.lit && u > 0.86) { e.lit = true; scene({ flare: 0.45, sparks: 8, x: FURNACE[0] + e.dx * 0.4, y: 985, power: 0.6 }); }
   }
   const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${Math.max(0, a).toFixed(3)})`; };
   const scene = (d) => dispatchEvent(new CustomEvent('scene-fx', { detail: d }));
@@ -127,10 +130,10 @@
     }, document.body.dataset.mode === 'port' ? 650 : 0);
   }
   Fun.flare = flareFor;
-  /** The furnace eats n sheets of PAPER. */
+  /** The furnace takes n PLANK logs (never PAPER: PAPER goes to the press). */
   function eat(n = 3) {
     look(2.6);
-    for (let i = 0; i < n; i++) fx.push({ kind: 'paper', t0: performance.now() + 250 + i * 260, dur: 1300, dx: -70 + Math.random() * 140, ph: Math.random() * 6, rot: (Math.random() - 0.5) * 0.6, spin: (Math.random() - 0.5) * 2 });
+    for (let i = 0; i < n; i++) fx.push({ kind: 'log', img: i, t0: performance.now() + 250 + i * 300, dur: 1100, dx: -90 + Math.random() * 180, rot: (Math.random() - 0.5) * 0.6, spin: (Math.random() - 0.5) * 1.6 });
     kick();
   }
   Fun.eat = eat;
@@ -142,7 +145,7 @@
     if (best?.r) later(() => flareFor(best.kind, best.r >= 2));
   });
   Fun.on('graded', ({ grade }) => { if (grade === 10) later(() => flareFor('g10', true)); });
-  // the burn you can watch: a buy, a case or a grade feeds the furnace a little PAPER
+  // the burn you can watch: a buy, a case or a grade feeds the furnace a little PLANK
   Fun.on('bought', ({ n = 1 }) => later(() => eat(Math.min(4, 1 + n))));
   Fun.on('paid', () => later(() => eat(3)));
   // someone else's big pull (the feed): a small flare, at most one every 20 s

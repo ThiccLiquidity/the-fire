@@ -599,6 +599,90 @@ try {
     await p.close();
     check(errs.length === 0, `the fun layer: no page errors${errs.length ? ": " + errs.join(" | ") : ""}`);
   }
+  // ---------- owner fixes (demo, phone): graded results best first, rotation, one free pack per 42 burned, PLANK in the fire,
+  // and the suggestion reveal (no "guess the pick" before it)
+  console.log("\n== owner fixes (demo, phone)");
+  {
+    const ctx2 = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
+    await ctx2.addInitScript(() => { try { localStorage.setItem("omni.tour", "1"); localStorage.setItem("omni.coached", "1"); } catch { /* */ } });
+    const p = await ctx2.newPage();
+    const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
+    const reqs = []; p.on("request", (r) => reqs.push(r.url()));
+    await p.goto(SITE);
+    await p.locator("#loading.done").waitFor({ state: "attached", timeout: 30_000 });
+    await p.waitForFunction(() => window.Fun?.loaded, null, { timeout: 30_000 });
+    await p.waitForTimeout(800);
+
+    // rotation: started on its side, turned upright, the page lays out as a fresh upright load does
+    const turn = async (w, h) => { await p.setViewportSize({ width: w, height: h }); await p.evaluate(() => dispatchEvent(new Event("orientationchange"))); await p.waitForTimeout(900); };
+    const fit = () => p.evaluate(() => { const W = document.documentElement.clientWidth, c = document.getElementById("c"), r = c.getBoundingClientRect(), dpr = c.width / r.width;
+      const st = document.querySelector(".stations").getBoundingClientRect(), bb = document.querySelector("#buybar").getBoundingClientRect(), top = [...document.querySelectorAll("dialog[open]")].pop();
+      const d = top?.getBoundingClientRect(), body = top?.querySelector(".sheet-body");
+      return { mode: document.body.dataset.mode, W, iw: innerWidth, sw: document.scrollingElement.scrollWidth, cw: Math.round(r.width), canvasOk: Math.abs(c.height / dpr - r.height) <= 2,
+        port: document.body.dataset.mode !== "port" || st.bottom <= bb.top + 1, sheetIn: !d || (d.left >= -1 && d.right <= innerWidth + 1 && d.top >= -1 && d.bottom <= innerHeight + 1),
+        sheetX: !body || body.scrollWidth <= body.clientWidth + 2 }; });
+    const ok = (f, mode) => f.mode === mode && f.sw <= f.iw && f.cw === f.iw && f.canvasOk && f.port && f.sheetIn && f.sheetX;
+    let f = await fit(); check(ok(f, "land"), `rotation: phone on its side lays out (${JSON.stringify(f)})`);
+    await turn(390, 844); f = await fit(); check(ok(f, "port"), `rotation: turned upright, the scene and stations re-fit, nothing under the Buy bar (${JSON.stringify(f)})`);
+    for (const [name, openIt] of [["My cards", () => Stations.open("cards")], ["Burn", () => { Store.update((s) => { s.wallet.connected = true; }); Stations.open("burn"); }], ["Open packs", () => Stations.open("open")]]) {
+      await p.evaluate(openIt); await p.waitForTimeout(600);
+      await turn(844, 390); const a = await fit(); await turn(390, 844); const b = await fit();
+      check(ok(a, "land") && ok(b, "port"), `rotation: ${name} re-lays out both ways (${JSON.stringify([a, b].map((x) => [x.mode, x.sheetIn, x.sheetX, x.canvasOk]))})`);
+      await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close())); await p.waitForTimeout(300);
+    }
+    await p.screenshot({ path: join(SHOTS, "17-rotated-phone.png") });
+
+    // the furnace takes PLANK, never PAPER (fx.js draws onto its overlay canvas: record what it draws)
+    const drawn = await p.evaluate(async () => {
+      const seen = new Set(), orig = CanvasRenderingContext2D.prototype.drawImage;
+      CanvasRenderingContext2D.prototype.drawImage = function (im, ...a) { if (this.canvas.classList?.contains("fun-fx") && im?.src) seen.add(im.src.split("/").pop()); return orig.call(this, im, ...a); };
+      Fun.eat(3); await new Promise((r) => setTimeout(r, 1800));
+      CanvasRenderingContext2D.prototype.drawImage = orig; return [...seen];
+    });
+    check(drawn.length > 0 && drawn.every((n) => /^s-log\d\.webp$/.test(n)), `the furnace eats PLANK logs, no PAPER (${drawn.join(", ")})`);
+
+    // one free pack per 42 burned: one token, one pack flying, +1 in the wallet, one toast
+    await p.evaluate(() => { window.__fp = { toasts: [], fly: 0, tokens: 0 };
+      new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.classList?.contains("toast")) __fp.toasts.push(n.textContent); if (n.classList?.contains("fp-fly")) __fp.fly++; }))).observe(document.body, { childList: true, subtree: true });
+      const pt = Scene.popToken; Scene.popToken = (...a) => { __fp.tokens++; return pt(...a); };
+      Store.update((s) => { s.wallet.burnCount = 40; s.wallet.connected = true; }); __fp.credits0 = Store.state.wallet.credits; });
+    await p.evaluate(() => Stations.open("burn")); await p.locator("#sheet-burn .ctile").first().waitFor();
+    for (let i = 0; i < 4; i++) await p.locator("#sheet-burn .ctile").nth(i).click();
+    await p.click('#sheet-burn [data-key="burn"]'); await p.locator("#sheet-burnwarn").waitFor();
+    if (await p.locator("#bw-type").count()) await p.fill("#bw-type", "BURN");
+    await p.click("#sheet-burnwarn .bw-act .btn.danger");
+    await p.waitForFunction(() => Store.state.wallet.burnCount === 44, null, { timeout: 30_000 }); await p.waitForTimeout(2500);
+    const fp = await p.evaluate(() => ({ ...__fp, credits: Store.state.wallet.credits, free: __fp.toasts.filter((t) => /free pack/i.test(t)) }));
+    check(fp.credits === fp.credits0 + 1 && fp.tokens === 1 && fp.fly === 1 && fp.free.length === 1 && /\+1 free pack/.test(fp.free[0]),
+      `burning past 42 adds exactly one free pack: +1 credit, one token, one pack flying, one toast (${JSON.stringify(fp)})`);
+
+    // Case & grade: once every grade is shown, the slabs sit best first (grade, then card type), worst last
+    await p.evaluate(() => Store.update((s) => { s.wallet.balances.USDG = 999; s.wallet.balances.PAPER = 999; }));
+    const ids = await p.evaluate(() => Store.state.cards.filter((c) => c.grade == null && !c.pending).slice(0, 5).map((c) => c.id));
+    await p.evaluate((ids) => Stations.open("grade", { as: "grade", pick: ids }), ids);
+    await p.click("#sheet-grade .foot .btn.primary"); await p.waitForTimeout(200);
+    await p.click("#sheet-grade .foot .btn.primary"); await p.waitForTimeout(300);
+    await p.locator("#sheet-grade .btn.primary", { hasText: /Pay/ }).click();
+    await p.waitForFunction(() => document.querySelectorAll("#sheet-grade .gslot.slabbed").length === 5 && document.querySelector("#sheet-grade .stage-ctrls .btn"), null, { timeout: 90_000 });
+    await p.waitForTimeout(500);
+    const got = await p.evaluate(() => [...document.querySelectorAll("#sheet-grade .wz-work .ggrid .gslot")].map((w) => { const c = Store.state.cards.find((x) => x.id === w._id); return { g: c.grade, m: c.material }; }));
+    const MR = { fullart: 6, gold: 5, diamond: 4, charcoal: 3, fire: 2, wood: 1, paper: 0 };
+    check(got.length === 5 && got.every((x, i) => i === 0 || got[i - 1].g > x.g || (got[i - 1].g === x.g && MR[got[i - 1].m] >= MR[x.m])),
+      `graded results best to worst (${got.map((x) => `PDA ${x.g} ${x.m}`).join(", ")})`);
+    await p.screenshot({ path: join(SHOTS, "18-graded-best-first.png") });
+    await ctx2.close();
+
+    // the suggestion results reveal shows straight away (no "guess the pick" first; guess.js is gone)
+    const p2 = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const reqs2 = []; p2.on("request", (r) => reqs2.push(r.url()));
+    await p2.addInitScript(() => { try { localStorage.setItem("omni.tour", "1"); } catch { /* */ } });
+    await p2.goto(`${SITE}?results=won`);
+    await p2.locator("#sheet-reveal[open] .rs-wins").waitFor({ timeout: 30_000 });
+    check(!(await p2.locator("#sheet-guess").count()) && !reqs.concat(reqs2).some((u) => /guess\.js/.test(u)) && await p2.evaluate(() => !window.Fun?.guess),
+      "suggestion results: the reveal opens directly, no Guess the pick (guess.js not loaded)");
+    await p2.close();
+    check(errs.length === 0, `owner fixes: no page errors${errs.length ? ": " + errs.join(" | ") : ""}`);
+  }
   console.log(`\nPASS: ${checks} checks`);
 } catch (e) {
   console.error(`\nFAIL: ${e?.stack ?? e}`);

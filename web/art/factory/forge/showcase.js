@@ -79,10 +79,8 @@
     const prog = h('div', { class: 'sv-prog' });
     if (Fun.binderStats) Promise.all(series.map((no) => Fun.binderStats(no, cards))).then((st) => Fun.put(prog, ...st.map((f, i) =>
       h('div', { class: 'bd-bar' }, h('span', { class: 'bd-l' }, h('b', { text: `Series ${series[i]}` }), ' common set'), h('span', { class: 'bd-meter', 'aria-hidden': 'true' }, h('i', { style: `transform:scaleX(${f.common.toFixed(4)})` })), h('b', { class: 'bd-p', text: Math.round(f.common * 100) + '%' })))));
-    const streak = mine ? (mem('omni.guess') || {}).streak || 0 : 0;
     Fun.put(root, 
-      h('div', { class: 'sv-head' }, Fun.avatar(addr, 48), h('div', {}, name, h('small', { class: 'muted', text: `${Fun.label(addr) === Fun.short(addr) ? '' : Fun.short(addr) + ' · '}${cards.length} cards` })),
-        streak >= 2 ? h('span', { class: 'sv-streak', title: 'Guess-the-pick streak', text: `🔥 ${streak}` }) : null),
+      h('div', { class: 'sv-head' }, Fun.avatar(addr, 48), h('div', {}, name, h('small', { class: 'muted', text: `${Fun.label(addr) === Fun.short(addr) ? '' : Fun.short(addr) + ' · '}${cards.length} cards` }))),
       shown.length ? h('div', { class: 'sc-shelf sv-shelf' }, shown.map((c, i) => h('button', { type: 'button', class: 'sc-slot', 'aria-label': `${c.character}, ${kind(c)}. View it big`, onclick: () => view(shown, i) }, face(c), h('small', { text: kind(c) }))))
         : h('p', { class: 'muted', text: 'No cards here yet.' }),
       series.length ? h('h3', { text: 'Series progress' }) : h('span'), prog,

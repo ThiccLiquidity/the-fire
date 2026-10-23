@@ -215,6 +215,8 @@
     if (again) raf = requestAnimationFrame(loop);
   }
   const kick = () => { if (!raf && live.size) raf = requestAnimationFrame(loop); };
+  // a turn of the phone (or any resize) changes every card's size: still cards draw again at their new size
+  addEventListener('resize', () => { for (const el of live) if (el._holo) el._holo.drawnStill = false; kick(); });
   const io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => { for (const e of es) if (e.target._holo) e.target._holo.visible = e.isIntersecting; kick(); }) : null;
   /** Draw a card face live from its parts (any card but a retired Diamond): raw, cased or slabbed; sway: a holo card
    *  drifts when untouched. */

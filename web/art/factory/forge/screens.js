@@ -1073,6 +1073,25 @@
     const fade = () => face.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: 'ease-out' }).finished.catch(() => {}).then(show);
     return { ready, show, fade };
   }
+  // graded results, best first: the higher grade, then the rarer card type (Full Art, Gold, Diamond, Coal, Fire, Wood,
+  // Paper), then the holo, then the rarer card
+  const MAT_RANK = { fullart: 6, gold: 5, diamond: 4, charcoal: 3, fire: 2, wood: 1, paper: 0 };
+  const bestFirst = (a, b) => (b.grade ?? -1) - (a.grade ?? -1) || (MAT_RANK[b.material] ?? 0) - (MAT_RANK[a.material] ?? 0)
+    || HRANK[b.holo || 'none'] - HRANK[a.holo || 'none'] || rarity(b) - rarity(a);
+  /** Re-order revealed slab tiles (in their grid) best first, animating each from where it was (FLIP). list: [{ w, c }] */
+  function rankSlabs(list) {
+    const grid = list[0]?.w.parentElement; if (!grid) return Promise.resolve();
+    const sorted = [...list].sort((x, y) => bestFirst(x.c, y.c));
+    if (sorted.every((x, i) => grid.children[i] === x.w)) return Promise.resolve();
+    const before = new Map(list.map(({ w }) => [w, w.getBoundingClientRect()]));
+    sorted.forEach(({ w }) => grid.append(w));
+    if (reduced() || !grid.animate) return Promise.resolve();
+    return Promise.all(sorted.map(({ w }) => {
+      const a = before.get(w), b = w.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top;
+      if (!dx && !dy) return null;
+      return w.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 300, easing: 'cubic-bezier(.2,.7,.2,1)' }).finished.catch(() => {});
+    }));
+  }
   function protectFlow(host, { cards, pre = {}, start = 'grade', tags = new Map(), head = null, intro = null, done = () => [], station = false }) {
     const P = Store.PRICES;
     const canGrade = (c) => c && c.grade == null && !c.pending;
@@ -1326,6 +1345,8 @@
         }
         if (many) gradeTiles.forEach((w) => { const top = order.find((x) => x.w === w).gr === best; w.classList.toggle('best', top); if (top) w.querySelector('.gres')?.append(h('span', { class: 'best-t', text: 'Best' })); });
         gradeH.textContent = 'Graded';
+        // all revealed: the slabs settle best first, worst last (FLIP: transform only, ~300 ms; reduced motion: at once)
+        if (many) await rankSlabs(order.map(({ w, gr }) => ({ w, c: { ...byId(w._id), grade: gr } })));
       }
       finish(cs, got, msg, ctrls);
     }
@@ -1360,12 +1381,39 @@
   // =====================================================================================
   // 3. Burn: burn cards, every 42 is a free pack
   // =====================================================================================
-  let burnQueue = 0; // cards thrown into the scene that have not landed yet
+  let burnQueue = 0, liveEarned = 0; // cards thrown into the scene that have not landed yet; live: free packs the burn earned
   function addBurn() {
-    if (LIVE) return; // live: the chain counts (Live re-reads it after the burn)
+    if (LIVE) { if (burnQueue === 0 && liveEarned) { const k = liveEarned; liveEarned = 0; freePackMoment(k); } return; } // live: the chain counted (Live re-read it)
     let free = false;
     Store.update((s) => { s.wallet.burnCount++; if (s.wallet.burnCount % BURN_GOAL === 0) { s.wallet.credits++; free = true; Store.log('Burned 42: free pack'); } });
-    if (free) { window.Scene?.popToken?.(); toast('You burned 42. Free pack!', 'good'); }
+    if (free) freePackMoment(1);
+  }
+  // A free pack earned by burning: exactly one moment per pack. One token out of the ash bin, one pack flying to where
+  // free packs are kept (the buy box's Free pack row, else the wallet), a "+1" there, and one toast.
+  function freePackMoment(k = 1) {
+    if (k < 1) return;
+    window.Scene?.popToken?.();
+    toast(k === 1 ? '+1 free pack · in your wallet' : `+${k} free packs · in your wallet`, 'good');
+    const vis = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.top < innerHeight ? el : null; };
+    const to = vis(document.querySelector('#buybox [data-buy="free"]')) || vis(document.querySelector('#buybar [data-buy="free"]')) || vis(document.getElementById('walletBtn'));
+    if (!to) return;
+    const pip = () => { const q = to.getBoundingClientRect(); // fixed over the target's corner (the wallet chip clips its overflow)
+      const plus = h('span', { class: 'fp-plus', 'aria-hidden': 'true', text: '+' + k, style: `left:${Math.min(innerWidth - 34, q.right - 18)}px;top:${Math.max(4, q.top - 10)}px` });
+      document.body.append(plus); to.classList.add('fp-got'); setTimeout(() => { plus.remove(); to.classList.remove('fp-got'); }, 1800); };
+    if (reduced() || !document.body.animate) return pip();
+    const from = window.Scene?.toScreen ? window.Scene.toScreen(330, 1150) : [innerWidth / 2, innerHeight / 2];
+    const r = to.getBoundingClientRect(), tx = r.left + r.width / 2, ty = r.top + r.height / 2;
+    const [fx0, fy0] = [Math.min(innerWidth - 30, Math.max(30, from[0])), Math.min(innerHeight - 40, Math.max(40, from[1]))];
+    const pk = h('img', { class: 'fp-fly', src: 'ui/omni-pack.webp', alt: '', 'aria-hidden': 'true' });
+    document.body.append(pk);
+    const dx = tx - fx0, dy = ty - fy0;
+    const a = pk.animate([
+      { transform: `translate(${fx0}px, ${fy0}px) translate(-50%, -50%) scale(.4)`, opacity: 0 },
+      { transform: `translate(${fx0}px, ${fy0 - 60}px) translate(-50%, -50%) scale(1.15)`, opacity: 1, offset: 0.3 },
+      { transform: `translate(${fx0 + dx * 0.55}px, ${fy0 + dy * 0.55 - 40}px) translate(-50%, -50%) scale(.9) rotate(-8deg)`, opacity: 1, offset: 0.7 },
+      { transform: `translate(${tx}px, ${ty}px) translate(-50%, -50%) scale(.35)`, opacity: 0.2 }],
+    { duration: 1300, delay: 450, easing: 'cubic-bezier(.3,.6,.4,1)', fill: 'both' });
+    a.onfinish = () => { pk.remove(); pip(); };
   }
   const hookScene = () => window.Scene?.on?.('cardBurned', () => { if (burnQueue > 0) { burnQueue--; addBurn(); window.Sound?.play('fire-flare', { gap: 650 }); } });
   if (window.Scene) hookScene(); else window.addEventListener('scene-ready', hookScene, { once: true });
@@ -1459,12 +1507,15 @@
     }
     async function go(picked) { // only ever called by the confirm window
       const ids = picked.filter((id) => byId(id) && !byId(id).pending); sel.clear(); if (!ids.length) return render();
+      const b0 = S().wallet.burnCount % BURN_GOAL; // live: what this burn earns, shown once as its last card lands
       if (LIVE && !(await Live.burn(ids))) return render();
+      if (LIVE) liveEarned += Math.floor((b0 + ids.length) / BURN_GOAL);
       Store.update((s) => { ids.forEach((id) => Store.noteBurned(byId(id))); s.cards = s.cards.filter((c) => !ids.includes(c.id)); Store.log(`Burned ${ids.length} card${ids.length > 1 ? 's' : ''}`); });
       window.Fun?.emit('burned', { n: ids.length });
       unlisten('burn'); Sheet.close('burn');
       toast(`Burning ${ids.length} card${ids.length > 1 ? 's' : ''}…`);
-      ids.forEach((_, i) => setTimeout(() => { if (window.Scene?.burn) { burnQueue++; window.Scene.burn(); } else { addBurn(); window.Sound?.play('fire-flare', { gap: 650 }); } }, i * 350));
+      if (window.Scene?.burn) burnQueue += ids.length; // counted up front: the moment waits for the last card in the queue
+      ids.forEach((_, i) => setTimeout(() => { if (window.Scene?.burn) window.Scene.burn(); else { addBurn(); window.Sound?.play('fire-flare', { gap: 650 }); } }, i * 350));
     }
     listen('burn', render);
     Sheet.open('burn', { title: 'Burn', body: root, onClose: () => unlisten('burn') });
@@ -1820,14 +1871,12 @@
   const latest = () => Store.SUGGEST_RESULTS[Store.SUGGEST_RESULTS.length - 1];
   const seenKey = () => { try { return localStorage.getItem(SEEN_RESULTS) || ''; } catch { return null; } };
   function markSeen() { const w = latest(); if (w) try { localStorage.setItem(SEEN_RESULTS, waveKey(w)); } catch { /* private window */ } }
-  let revealed = false, revealTimer = 0, guessed = false;
+  let revealed = false, revealTimer = 0;
   function resultsReveal() {
     revealTimer = 0;
     const w = latest(); if (!w || revealed) return;
     const k = seenKey(); if (k === null || k === waveKey(w)) return; // storage blocked: don't show it on every visit
     if (Sheet.covering || !document.getElementById('loading')?.classList.contains('done')) { revealTimer = setTimeout(resultsReveal, 1500); return; }
-    if (window.Fun && !Fun.loaded) { Fun.load(); revealTimer = setTimeout(resultsReveal, 500); return; } // the fun layer first (guess the pick)
-    if (window.Fun?.guess && !guessed) { guessed = true; return window.Fun.guess(w, () => { revealTimer = setTimeout(resultsReveal, 400); }); } // guess the pick first (guess.js)
     revealed = true; markSeen();
     const you = h('div', { class: 'rs-you-host' });
     const body = h('div', { class: 'st rs-reveal' + (reduced() ? ' still' : '') },

@@ -33,7 +33,7 @@ button, .btn, a.btn, summary { touch-action: manipulation }
 .seg button:active:not([disabled]) { opacity: .7 }
 
 /* sheets (dialogs) */
-dialog.sheet { border: 1px solid var(--line-2); border-radius: 18px; padding: 0; background: var(--panel); color: var(--ink); width: min(560px, calc(100vw - 24px));
+dialog.sheet { box-sizing: border-box; border: 1px solid var(--line-2); border-radius: 18px; padding: 0; background: var(--panel); color: var(--ink); width: min(560px, calc(100vw - 24px));
   max-height: calc(100dvh - 40px); box-shadow: 0 20px 60px rgba(0,0,0,.7); display: flex; flex-direction: column }
 dialog.sheet:not([open]) { display: none }
 dialog.sheet.wide { width: min(1100px, calc(100vw - 24px)); height: calc(100dvh - 40px) }
@@ -47,6 +47,11 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.66) } /* a plain dim: a blur ov
 .sheet-head .back span { overflow: hidden; text-overflow: ellipsis }
 .stacked .sheet-head h2 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px }
 .sheet-body { padding: 14px 16px 18px; overflow: auto; min-height: 0; flex: 1 }
+/* phones on their side: little height, so the sheets take nearly all of it and their header is slimmer */
+@media (max-height: 520px) and (orientation: landscape) {
+  dialog.sheet { max-height: calc(100dvh - 12px) } dialog.sheet.wide { height: calc(100dvh - 12px) }
+  .sheet-head { padding: 4px 14px 4px } .sheet-head h2 { font-size: 18px } .sheet-body { padding-top: 10px; padding-bottom: 12px }
+}
 @media (max-width: 600px) { dialog.sheet, dialog.sheet.wide { width: 100vw; max-width: 100vw; height: auto; max-height: 92dvh; margin: auto 0 0; border-radius: 18px 18px 0 0 } dialog.sheet.wide { height: 92dvh } }
 
 /* toasts */

@@ -111,7 +111,6 @@ body[data-mode=port] .ft-card { bottom: auto; top: calc(var(--top) + var(--scene
 .sc-pick .sc-c.on { border-color: var(--gold); box-shadow: 0 0 12px rgba(255,210,122,.4) }
 .sv-head { display: flex; align-items: center; gap: 12px }
 .sv-head > div { display: grid } .sv-name { font: 400 20px var(--display); color: var(--ink) }
-.sv-streak { margin-left: auto; font: 800 15px var(--body); color: var(--gold) }
 .sv-prog { display: grid; gap: 6px }
 @media (max-width: 600px) { .sc-shelf { grid-template-columns: repeat(3, minmax(0, 1fr)) } }
 
@@ -177,14 +176,6 @@ body[data-mode=port] .ft-card { bottom: auto; top: calc(var(--top) + var(--scene
 .fd-board { width: 100%; border-collapse: collapse; font-size: 14px }
 .fd-board th, .fd-board td { padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--line) } .fd-board th:nth-child(2), .fd-board td:nth-child(2) { text-align: left }
 .fd-board th { color: var(--muted); font-size: 12px } .fd-board tr.you td { color: var(--gold) }
-
-/* guess the pick (guess.js) */
-.guess { display: grid; gap: 10px }
-.gp-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px }
-.gp-opt { width: 100%; min-height: 42px; text-align: left; padding: 8px 12px; border-radius: 10px; border: 1.5px solid var(--line-2); background: var(--panel-2); cursor: pointer; font: 700 14.5px var(--body) }
-.gp-opt:hover:not([disabled]) { border-color: var(--brass) }
-.gp-opt.win { border-color: var(--good); color: var(--good) } .gp-opt.wrong { border-color: var(--bad); color: var(--bad) } .gp-opt[disabled] { cursor: default }
-.gp-msg { margin: 0; font: 800 16px var(--body); color: var(--gold); min-height: 1.4em }
 
 @media (prefers-reduced-motion: reduce) { .ft-ring, .gg-needle, .gg-fill, .fs-slab { transition: none } }
 .fd-tabs button, .fd-series button, .bd-tabs button { white-space: nowrap }
