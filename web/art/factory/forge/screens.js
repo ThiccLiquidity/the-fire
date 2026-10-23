@@ -379,6 +379,8 @@
     const coll = h('section', { class: 'coll', 'aria-labelledby': 'coll-h' });
     const root = h('div', { class: 'st st-table' }, packsEl, stage, coll);
     const hide = new Set(); let busy = false;
+    // this visit's pulls, every pack opened one after another (not practice): after the last one, Case & grade them
+    const pulled = [], pulledTags = new Map(); let prompted = false;
     const practice = !!opts.practice; let practiceRun = false; // a practice pack (fun layer: practice.js): never saved
     if (practice) root.classList.add('practice');
     const TITLE = { cards: 'My cards', open: 'Open packs', practice: 'Practice pack' };
@@ -861,11 +863,14 @@
 
     // after the pulls: a celebration first. The best card big, every pull small (tagged New only: copies are counted in
     // My cards), then the main button: Open next (packs left) or Done; Share and My cards beside it. Case & grade is one
-    // small line that opens the wizard (the Case & grade station's) over these cards.
+    // small line that opens the wizard (the Case & grade station's) over these cards. After the last pack (none left, or
+    // Done) it goes straight to Case & grade with everything pulled this visit, a short how-it-works on top.
     function summary(series, cards, prior) {
       const seen = new Map(prior), tags = new Map();
       cards.forEach((c) => { const k = dupKey(c); if (!seen.get(k)) tags.set(c.id, h('span', { class: 'new-t', text: 'New' })); seen.set(k, (seen.get(k) || 0) + 1); });
       cards.forEach((c) => hide.delete(c.id));
+      pulled.push(...cards); tags.forEach((t, id) => pulledTags.set(id, t));
+      const fresh = () => pulled.map((c) => byId(c.id)).filter((c) => c && c.grade == null && !c.pending && !c.cased);
       const rank = (a, b) => rarity(b) - rarity(a) || HRANK[b.holo || 'none'] - HRANK[a.holo || 'none'] || b.serial - a.serial; // one ranking for Best and Share
       const best = [...cards].sort(rank)[0];
       const close = () => { busy = false; stage.hidden = true; stage.classList.remove('opening'); packsEl.hidden = view === 'open'; put(stage); render(); };
@@ -874,7 +879,8 @@
       const nextSeries = (more.find((o) => o.series === series) || more[0])?.series; // same Series first, then the oldest
       const canNext = left > 0 && connected();
       const next = () => { busy = false; openPacks(nextSeries, 1); };
-      const finish = () => { close(); Sheet.close('table'); };
+      const closeAll = () => { close(); Sheet.close('table'); };
+      const finish = () => (!prompted && fresh().length ? wizard(true) : closeAll()); // the last pack done: Case & grade first
       const host = h('div', { class: 'op-sum' }); put(stage, host);
       const ps = window.Fun?.packShare?.(cards, series); // the whole pack as one image
       const celebrate = () => {
@@ -896,13 +902,22 @@
             h('span', { class: 'muted', text: ` · case all ${caseable.length} for ${Wear.usd(caseUsd)}, grade from ${Wear.usd(Math.min(...caseable.map(Store.gradeUsd)))}` })) : null));
         host.querySelector('.cel-acts .btn.big')?.focus({ preventScroll: true });
       };
-      function wizard() {
-        const head = h('div', { class: 'op-sum-h' }, btn('‹ Your pulls', 'small', () => { celebrate(); root.closest('.sheet-body')?.scrollTo({ top: 0 }); }, { 'data-key': 'pulls' }));
-        protectFlow(host, { cards, tags, head, done: () => [btn('Done', 'primary', finish),
+      // after: the last pack (how it works on top, and "Not now"), over everything pulled this visit; else this pack's cards
+      function wizard(after = false) {
+        if (after) prompted = true;
+        const P = Store.PRICES, mine = after ? pulled : cards;
+        const head = h('div', { class: 'op-sum-h' }, btn('‹ Your pulls', 'small', () => { celebrate(); root.closest('.sheet-body')?.scrollTo({ top: 0 }); }, { 'data-key': 'pulls' }),
+          after ? btn('Not now', 'small', closeAll, { 'data-key': 'notnow' }) : null);
+        const intro = after ? h('div', { class: 'wz-how', 'data-key': 'how' }, h('h3', { text: 'Case or grade your pulls' }),
+          h('ul', {}, h('li', { text: 'Raw cards wear with time and moves.' }),
+            h('li', {}, h('b', { text: `A case (${Wear.usd(P.CASE_USD)})` }), ' stops wear.'),
+            h('li', {}, h('b', { text: `Grading (${Wear.usd(P.GRADE_USD)})` }), ' gives a PDA 1–10 grade in a slab. Random and final.'))) : null;
+        protectFlow(host, { cards: mine, tags: after ? pulledTags : tags, head, intro, done: () => [btn('Done', 'primary', closeAll),
           canNext ? btn(`Open next (${left})`, 'gold', next) : null, btn('My cards', '', seeAll)] });
         root.closest('.sheet-body')?.scrollTo({ top: 0 });
       }
-      celebrate();
+      if (!canNext && fresh().length) wizard(true); // no packs left: straight to Case & grade (the pulls are a tap back)
+      else celebrate();
       window.Fun?.emit('opened', { host, cards, series, packs: Math.max(1, Math.round(cards.length / (S().series.cardsPerPack || 6))) });
       Store.update(() => {}); // let the shell refresh counts
       root.closest('.sheet-body')?.scrollTo({ top: 0 });
@@ -1041,7 +1056,24 @@
   /** The wizard, drawn into `host`. cards: the cards on offer. pre: { grade: [ids], case: [ids] }, start: first step.
    *  tags: id -> a tag element (New / Duplicate), head: an element above the steps, done(el): buttons for the last screen.
    *  station: opened from Case & grade (no "Keep all raw"; nothing picked, the primary waits and "Skip to cases" is secondary). */
-  function protectFlow(host, { cards, pre = {}, start = 'grade', tags = new Map(), head = null, done = () => [], station = false }) {
+  // the slabbed card, drawn under a card that's being graded (same box, hidden) and decoded before its reveal: show()
+  // puts it on top in one frame (the press calls it at its thunk), fade() crosses to it; the old face goes once the slab
+  // has drawn, so the card is on screen the whole time
+  function slabUnder(w, c) {
+    const wrap = w.querySelector('.cwrap'), old = [...wrap.querySelectorAll('.cface')], face = cardFace(c);
+    face.classList.add('slab-next'); wrap.append(face);
+    const img = face.querySelector('.cframe');
+    const ready = Promise.race([Promise.all([img.decode ? img.decode().catch(() => {}) : null, face._ready]), wait(4000)]);
+    let shown = false;
+    const show = () => {
+      if (shown) return; shown = true;
+      face.style.opacity = '1'; window.Sound?.play('grade-stamp', { gap: 60 });
+      ready.then(() => { old.forEach((f) => f.remove()); face.classList.remove('slab-next'); face.style.opacity = ''; });
+    };
+    const fade = () => face.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: 'ease-out' }).finished.catch(() => {}).then(show);
+    return { ready, show, fade };
+  }
+  function protectFlow(host, { cards, pre = {}, start = 'grade', tags = new Map(), head = null, intro = null, done = () => [], station = false }) {
     const P = Store.PRICES;
     const canGrade = (c) => c && c.grade == null && !c.pending;
     const canCase = (c) => canGrade(c) && !c.cased;
@@ -1073,7 +1105,7 @@
       const fresh = h('p', { class: 'wz-fresh', 'data-fresh': '' });
       paintFresh(fresh);
       return h('div', { class: 'wz-top' },
-        head,
+        head, step === start ? intro : null,
         h('div', { class: 'wz-bar' },
           h('ol', { class: 'wz-steps', 'aria-label': 'Steps' }, STEPS.map(([k, t], i) => h('li', { class: i < at ? 'done' : i === at ? 'now' : '', 'aria-current': i === at ? 'step' : null },
             h('span', { class: 'wz-n', text: String(i + 1) }), t))),
@@ -1138,7 +1170,9 @@
         picksEl = h('div', { class: 'wz-picks', 'aria-live': 'polite' });
         put(host, h('div', { class: 'wz' }, top(),
           h('div', { class: 'wz-ask' }, h('h3', { text: 'Grade any now?' }),
-            h('p', { class: 'muted', text: `${gradeVaries() ? 'Priced by card type (under each card).' : Wear.usd(P.GRADE_USD) + ' each.'} See the grade, get a slab.` }), oddsChart()),
+            h('p', { class: 'muted', text: `${gradeVaries() ? 'Priced by card type (under each card).' : Wear.usd(P.GRADE_USD) + ' each.'} See the grade, get a slab.` }),
+            // right after opening: the cards first, the odds chart a tap away
+            intro ? h('details', { class: 'wz-oddsd' }, h('summary', { text: 'Fresh card odds' }), oddsChart()) : oddsChart()),
           picksEl, quick(gSel, canGrade), grid(gSel, canGrade, (c) => (c.grade != null ? 'Slabbed' : null)), foot));
       } else if (step === 'case') {
         [...cSel].forEach((id) => { if (gSel.has(id)) cSel.delete(id); });
@@ -1260,6 +1294,8 @@
         const order = gradeTiles.map((w, k) => { const c0 = byId(w._id); return { w, k, gr: LIVE ? liveGrades.get(w._id) : Wear.draw(c0.frozenAge / 1000, c0.moves) }; })
           .sort((a, b) => a.gr - b.gr || a.k - b.k);
         const best = Math.max(...order.map((x) => x.gr)), many = order.length > 1;
+        // every slab is drawn and decoded under its card now, while the scan runs, so the reveal never shows a blank frame
+        const slabs = new Map(order.map(({ w, gr }) => [w, slabUnder(w, { ...byId(w._id), grade: gr, pending: false })]));
         gradeTiles.forEach((w) => w.classList.remove('scanning'));
         for (const [i, { w, gr }] of order.entries()) {
           const last = i === order.length - 1, c0 = byId(w._id);
@@ -1267,16 +1303,18 @@
           msg.textContent = last && many ? 'And the best for last…' : `Grading ${c0.character}…`;
           await wait(reduced() ? 250 : last && many ? 1500 : 700);
           w.classList.remove('scan-now');
-          await window.Fun?.slabPress?.(w); // the slab press comes down, then the grade shows
+          const slab = slabs.get(w); await slab.ready;
+          // the slab press (fx.js): the slab comes down over the card and shows the slabbed card at its thunk, then the
+          // grade prints on the label. Reduced motion, or no fun layer: the slabbed card fades in over the card.
+          const press = !reduced() && window.Fun?.slabPress;
+          await (press ? press(w, slab.show) : slab.fade());
           got.push(gr);
           Store.update((s) => { const c = s.cards.find((x) => x.id === w._id); if (c) { c.grade = gr; c.pending = false; } });
           const c = byId(w._id) || { ...c0, grade: gr, pending: false };
-          w.querySelector('.cwrap').replaceChildren(cardFace(c), h('span', { class: 'stamp g' + gr, style: `--sc:${Wear.bandOf(gr).c}`, 'aria-hidden': 'true' }, h('small', { text: 'PDA' }), h('b', { text: gr })));
-          // the grade stays in view after the stamp lifts: a PDA pill and the slab's word
+          // the grade stays in view: a PDA pill and the slab's word
           w.querySelector('.cmeta').before(h('div', { class: 'gres' }, h('span', { class: 'pda-pill g' + gr, style: `--sc:${Wear.bandOf(gr).c}`, text: 'PDA ' + gr }), h('b', { class: 'gword', text: Wear.WORD[gr] })));
-          w.classList.add('stamped', 'slabbed'); setTimeout(() => window.Sound?.play('grade-stamp', { gap: 60 }), reduced() ? 0 : 150); // lands with the stamp's thud
+          w.classList.add('slabbed');
           w.setAttribute('aria-label', `${c.character}, PDA ${gr}, ${Wear.WORD[gr]}, slabbed`); window.Fun?.emit('graded', { card: c, grade: gr });
-          if (reduced()) { const st = w.querySelector('.stamp'); setTimeout(() => st.remove(), 1500); } // reduced motion: the stamp shows still, then goes
           msg.textContent = `${c.character}: PDA ${gr} · ${Wear.WORD[gr]}`;
           if (gr === 10) { // its own moment (the opening's big reveal, in gold), then a share prompt
             await wait(reduced() ? 0 : 380);

@@ -1,8 +1,8 @@
-/* Omni Cardworks (fun layer): feel. Haptics on the tear, a rare pull, a case snapping shut and a grade stamp (Android;
+/* Omni Cardworks (fun layer): feel. Haptics on the tear, a rare pull, a case snapping shut and a grade landing (Android;
    iPhones ignore vibrate), with an on/off setting next to Sound. The workshop reacts: a rare or better pull, or a PDA
    10, makes the furnace flare in that card's colour once the sheet closes, and after a buy, case or grade the
-   furnace eats a few sheets of PAPER (animation only). And the slab press: a grade's slab presses down before its
-   grade shows. Effects are drawn on one overlay canvas over the scene (transform-free: only while something plays),
+   furnace eats a few sheets of PAPER (animation only). And the slab press: the slab comes down over a graded card
+   and its grade prints on the label. Effects are drawn on one overlay canvas over the scene (transform-free: only while something plays),
    the scene itself is nudged through its 'scene-fx' event (scene.js). Reduced motion: short glows, no sparks. */
 (() => {
   const { h, mem, reduced } = Fun;
@@ -19,17 +19,36 @@
   Fun.on('case', () => buzz(PAT.case));
   Fun.on('graded', ({ grade }) => buzz(grade === 10 ? PAT.g10 : PAT.stamp));
 
-  // ---------- the slab press: the press comes down on the slab before its grade shows (screens.js awaits it)
-  Fun.slabPress = (tile) => {
-    const wrap = tile?.querySelector('.cwrap'); if (!wrap || reduced()) return Promise.resolve();
-    const plate = h('i', { class: 'fun-plate', 'aria-hidden': 'true' }); wrap.append(plate);
-    const T = 560;
-    plate.animate([{ transform: 'translateY(-115%)', opacity: 0 }, { transform: 'translateY(-115%)', opacity: 1, offset: 0.12 }, { transform: 'translateY(0)', opacity: 1, offset: 0.42 },
-      { transform: 'translateY(0)', opacity: 1, offset: 0.7 }, { transform: 'translateY(-115%)', opacity: 0 }], { duration: T, easing: 'cubic-bezier(.5,0,.3,1)' });
-    const face = wrap.querySelector('.cface') || wrap;
-    face.animate([{ transform: 'none' }, { transform: 'none', offset: 0.4 }, { transform: 'translateY(3%) scale(.95)', offset: 0.5 }, { transform: 'translateY(3%) scale(.95)', offset: 0.7 }, { transform: 'none' }],
-      { duration: T, easing: 'ease-out' });
-    return new Promise((ok) => setTimeout(() => { plate.remove(); ok(); }, T));
+  // ---------- the slab press (screens.js awaits it): the clear slab comes down over the card, the press squashes it
+  // shut with a flash and a thunk, the card shows in its slab, then the grade prints onto the slab's label. The card
+  // never leaves: show() (screens.js) puts the slabbed card, already drawn and decoded under it, on top at the flash.
+  // Transform and opacity only. Reduced motion never comes here (screens.js crossfades).
+  Fun.slabPress = (tile, show) => {
+    const wrap = tile?.querySelector('.cwrap'); if (!wrap) { show(); return Promise.resolve(); }
+    const shell = h('i', { class: 'fun-slab', 'aria-hidden': 'true' }), flash = h('i', { class: 'fun-flash', 'aria-hidden': 'true' });
+    const blank = h('i', { class: 'fun-label', 'aria-hidden': 'true' }), head = h('i', { class: 'fun-head', 'aria-hidden': 'true' });
+    // everything sits on the card's own box (a tile's wrap can be taller than its card)
+    const face = wrap.querySelector('.cface'), box = h('div', { class: 'fun-press', 'aria-hidden': 'true' });
+    if (face) Object.assign(box.style, { left: face.offsetLeft + 'px', top: face.offsetTop + 'px', width: face.offsetWidth + 'px', height: face.offsetHeight + 'px' });
+    box.append(shell, flash); wrap.append(box);
+    const DROP = 300, at = (ms, fn) => setTimeout(fn, ms);
+    shell.animate([{ transform: 'translateY(-36%) scale(1.05)', opacity: 0 }, { opacity: 1, offset: 0.4 }, { transform: 'none', opacity: 1 }],
+      { duration: DROP, easing: 'cubic-bezier(.55,0,.85,.4)', fill: 'forwards' }); // it falls: slow, then fast
+    wrap.style.transformOrigin = '50% 100%';
+    wrap.animate([{ transform: 'none' }, { transform: 'none', offset: 0.48 }, { transform: 'translateY(1.5%) scale(1.03, .95)', offset: 0.6 },
+      { transform: 'translateY(-.4%) scale(.995, 1.012)', offset: 0.8 }, { transform: 'none' }], { duration: 620, easing: 'ease-out' }); // the squash
+    at(DROP - 20, () => flash.animate([{ opacity: 0 }, { opacity: 0.9, offset: 0.3 }, { opacity: 0 }], { duration: 240, easing: 'ease-out', fill: 'forwards' }));
+    at(DROP + 30, () => { // under the flash: the slabbed card on top, its label blank until it prints
+      box.append(blank, head); show(); buzz(PAT.case);
+      shell.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' });
+    });
+    const PRINT = 420;
+    at(DROP + 170, () => { // the label prints, left to right, a bright head running along it
+      blank.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }], { duration: PRINT, easing: 'cubic-bezier(.4,0,.6,1)', fill: 'forwards' });
+      head.animate([{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(100%)', opacity: 1, offset: 0.9 }, { transform: 'translateX(100%)', opacity: 0 }],
+        { duration: PRINT + 40, easing: 'cubic-bezier(.4,0,.6,1)', fill: 'forwards' });
+    });
+    return new Promise((ok) => at(DROP + 170 + PRINT + 60, () => { box.remove(); wrap.style.transformOrigin = ''; ok(); }));
   };
 
   // ---------- the workshop reacts: an overlay canvas over the scene, drawn only while an effect runs

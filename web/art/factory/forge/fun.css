@@ -3,10 +3,18 @@
 /* the scene overlay (fx.js) */
 .fun-fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2 }
 
-/* the slab press (fx.js): a steel plate comes down on the card */
-.fun-plate { position: absolute; left: -5%; right: -5%; top: -4%; height: 38%; z-index: 6; border-radius: 6px; pointer-events: none;
-  background: linear-gradient(#cfd3d8, #8b9198 45%, #5b6067 55%, #9aa0a7); box-shadow: 0 6px 14px rgba(0,0,0,.55), inset 0 2px 0 rgba(255,255,255,.6); transform: translateY(-115%); opacity: 0 }
-.fun-plate::after { content: ''; position: absolute; left: 44%; right: 44%; bottom: 100%; height: 90%; background: linear-gradient(90deg, #5b6067, #c9ced4, #5b6067) }
+/* the slab press (fx.js): a clear slab (the same box and label as the slabbed card's) comes down over the card, a flash
+   at the thunk, then the label prints: a blank over the label's inside shrinks away behind a bright print head */
+.fun-press { position: absolute; z-index: 5; inset: 0; pointer-events: none }
+.fun-slab { position: absolute; inset: 0; z-index: 2; border-radius: 3.3% / 2.4%; pointer-events: none; opacity: 0;
+  background: linear-gradient(160deg, rgba(255,255,255,.38), rgba(214,228,240,.18) 36%, rgba(255,255,255,.06) 58%, rgba(214,228,240,.24));
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.8), inset 0 0 0 3.5px rgba(50,70,90,.5), 0 10px 22px rgba(0,0,0,.5) }
+.fun-slab::before { content: ''; position: absolute; left: 2.27%; right: 2.27%; top: 1.43%; height: 8.38%; border-radius: 6px; background: rgb(246,238,220); box-shadow: inset 0 0 0 2px rgb(176,132,52) }
+.fun-flash { position: absolute; inset: -8%; z-index: 3; pointer-events: none; opacity: 0;
+  background: radial-gradient(closest-side, rgba(255,255,255,.95), rgba(255,236,200,.55) 55%, rgba(255,236,200,0)) }
+.fun-label, .fun-head { position: absolute; left: 3.3%; right: 3.3%; top: 2.15%; height: 6.9%; z-index: 1; pointer-events: none }
+.fun-label { background: rgb(246,238,220); border-radius: 3px; transform-origin: 100% 50% }
+.fun-head::before { content: ''; position: absolute; left: -1.5px; top: -18%; bottom: -18%; width: 3px; border-radius: 2px; background: #fffbe8; box-shadow: 0 0 6px 2px rgba(255,200,90,.85) }
 
 /* gyro (gyro.js): "Tilt to shine" */
 .fun-tilt { min-height: 34px; padding: 0 14px; border-radius: 999px; border: 1.5px solid #c48aff; color: var(--ink); cursor: pointer; font: 800 13px var(--body);

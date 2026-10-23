@@ -40,7 +40,7 @@ a.btn { text-decoration: none }
 /* the live holo (holo.js): a canvas over the card image, drawn at the mouse or finger's tilt; fades in once its parts load */
 .cface .cholo { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; opacity: 0; transition: opacity .3s }
 .cface.live.ready .cholo { opacity: 1 }
-.cface.live.ready .cframe { visibility: hidden } /* the canvas draws the whole card (and its case or slab) sharp */
+.cface.live.ready .cframe { visibility: hidden; transition: visibility 0s .3s } /* the canvas draws the whole card (and its case or slab) sharp; the image goes once the canvas has faded in over it (no blank blink) */
 .cface.live { touch-action: pan-y; transition: transform .15s ease-out }
 @keyframes holo-pan { to { background-position: 300% 300% } }
 
@@ -356,16 +356,6 @@ a.btn { text-decoration: none }
 .ggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 150px)); gap: 16px 12px; justify-content: center }
 .gslot { display: grid; gap: 6px }
 .gslot.scan-now .cwrap { animation: scan .55s ease-in-out infinite; filter: brightness(1.15) }
-.stamp { position: absolute; z-index: 5; left: 50%; top: 42%; width: 56%; aspect-ratio: 1; border-radius: 50%; display: grid; place-content: center; text-align: center; line-height: 1;
-  background: radial-gradient(circle, rgba(140,14,10,.92) 55%, rgba(110,8,6,.95)); color: #ffe7c2; border: 3px double #ffd27a; box-shadow: 0 0 0 3px rgba(140,14,10,.85), 0 6px 14px rgba(0,0,0,.6);
-  transform: translate(-50%, -50%) rotate(-12deg); animation: stamp .42s cubic-bezier(.3,1.4,.5,1) both }
-.stamp small { font: 400 12px var(--display); letter-spacing: .1em }
-.stamp b { font: 400 clamp(26px, 9vw, 40px) var(--display) }
-/* the stamp in its band's colour (--sc, set per grade); PDA 10 gold */
-.stamp[style*="--sc"] { background: radial-gradient(circle, var(--sc) 52%, color-mix(in srgb, var(--sc) 62%, #000)); color: #0d1016; border-color: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--sc) 55%, #000), 0 6px 14px rgba(0,0,0,.6) }
-.stamp.g10 { background: radial-gradient(circle, #ffe08a 50%, #c48a1c); color: #3a1f04; border-color: #fff }
-.gslot.stamped { animation: thud .3s .18s }
-@keyframes stamp { from { transform: translate(-50%, -50%) rotate(-40deg) scale(2.6); opacity: 0 } to { transform: translate(-50%, -50%) rotate(-12deg) scale(1); opacity: 1 } }
 @keyframes thud { 0%, 100% { transform: none } 40% { transform: translateY(3px) scale(.98) } }
 @keyframes scan { 0%, 100% { filter: brightness(1) } 50% { filter: brightness(1.25) drop-shadow(0 0 8px rgba(217,200,255,.6)) } }
 
@@ -587,6 +577,16 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 
 .wz { display: grid; gap: 14px; width: 100% }
 .wz-top { display: grid; gap: 10px }
+/* after the last pack: how Case & grade works, in three lines (screens.js summary) */
+.wz-how { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--brass); background: var(--panel-2) }
+.wz-how h3 { margin: 0; font: 400 17px var(--display) }
+.wz-how ul { margin: 4px 0 0; padding-left: 1.1em; display: grid; gap: 2px }
+.wz-how b { color: var(--gold) }
+.wz-oddsd summary { cursor: pointer; color: var(--muted); font-weight: 800; min-height: 32px; display: flex; align-items: center; gap: 6px; list-style: none }
+.wz-oddsd summary::-webkit-details-marker { display: none }
+.wz-oddsd summary::before { content: '▸' } .wz-oddsd[open] summary::before { content: '▾' }
+.wz-oddsd[open] summary { margin-bottom: 6px }
+.wz-ask .wz-oddsd { grid-column: 1 }
 .wz-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap }
 .wz-steps { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap }
 .wz-steps li { display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font: 800 14px var(--body) }
@@ -628,11 +628,15 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .gslot .case-in { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 6; pointer-events: none; animation: case-slide .5s cubic-bezier(.2,.8,.3,1) both }
 @keyframes case-slide { 0% { transform: translateY(-115%); opacity: .2 } 70% { opacity: 1 } 100% { transform: none; opacity: 1 } }
 .gslot.cased-done .cwrap { animation: thud .3s }
-.gslot.slabbed .cwrap { animation: slab-drop .45s cubic-bezier(.2,.8,.3,1) }
-@keyframes slab-drop { 0% { transform: translateY(-14px) scale(1.06); opacity: .3 } 100% { transform: none; opacity: 1 } }
-@media (prefers-reduced-motion: reduce) { .gslot .case-in, .gslot.slabbed .cwrap, .gslot.cased-done .cwrap, .gslot.scanning .cwrap, .gslot.scan-now .cwrap, .gslot.stamped { animation: none } }
+@media (prefers-reduced-motion: reduce) { .gslot .case-in, .gslot.cased-done .cwrap, .gslot.scanning .cwrap, .gslot.scan-now .cwrap { animation: none } }
+/* grading: the slabbed card waits under the card, drawn and decoded, until its reveal puts it on top (screens.js slabUnder) */
+.cwrap > .cface.slab-next { position: absolute; inset: 0; z-index: 4; opacity: 0; pointer-events: none }
+.cface.slab-next .cholo { transition: none }
 /* the result stays in view: a PDA pill and the slab's word under each card; the best is lit */
 .gres { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 6px; margin-top: 4px }
+.gslot .gres { animation: gres-in .32s cubic-bezier(.3,1.5,.5,1) both }
+@keyframes gres-in { from { transform: translateY(-6px) scale(.7); opacity: 0 } }
+@media (prefers-reduced-motion: reduce) { .gslot .gres { animation: none } }
 .pda-pill { font: 400 13px/1 var(--display); letter-spacing: .03em; padding: 5px 9px; border-radius: 999px; border: 1.5px solid #fff0bf; white-space: nowrap }
 .gword { font: 800 12px/1.1 var(--body); letter-spacing: .08em; color: var(--ink); text-align: center }
 .gslot.best .cwrap { border-radius: 6px; box-shadow: 0 0 0 2px var(--gold), 0 0 18px rgba(255,210,122,.55) }
@@ -676,10 +680,6 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .how-p { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0 } .how-p dt { color: var(--muted) } .how-p dd { margin: 0; font-weight: 800 }
 .how-burn { padding: 12px; border-radius: 12px; background: rgba(255,122,46,.12); border: 1px solid #a8471f }
 @media (max-width: 600px) { .how-two { grid-template-columns: 1fr } }
-/* the stamp lands, then lifts off so the slab label shows */
-.gslot.slabbed .stamp { animation: stamp .42s cubic-bezier(.3,1.4,.5,1) both, stamp-off .5s 1.3s ease-in forwards }
-@keyframes stamp-off { to { opacity: 0; transform: translate(-50%, -60%) rotate(-12deg) scale(1.15) } }
-@media (prefers-reduced-motion: reduce) { .gslot.slabbed .stamp { animation: none; opacity: 1 } } /* still, for 1.5 s (screens.js removes it) */
 /* opening (Open packs): the sheet sizes to the stage instead of filling the screen */
 @media (min-width: 601px) { dialog.sheet.wide.fit { height: fit-content } }
 

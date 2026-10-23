@@ -234,9 +234,12 @@ try {
   await page.waitForTimeout(2500);
   await shot("09-reveal");
   await page.click("#sheet-table .skip-b");
-  await page.locator("#sheet-table .op-sum .cel, #sheet-table .op-sum .wz").first().waitFor({ timeout: 30_000 });
-  if (await page.locator('#sheet-table [data-key="protect"]').count()) await page.click('#sheet-table [data-key="protect"]'); // the pulls first, then "Case & grade them"
-  await page.locator("#sheet-table .op-sum .wz").waitFor({ timeout: 30_000 });
+  // no packs left: straight to Case & grade with every pull, a short how-it-works on top (no fund flows), Not now to skip
+  await page.locator("#sheet-table .op-sum .wz .wz-how").waitFor({ timeout: 30_000 });
+  const how = await page.locator("#sheet-table .wz-how").innerText();
+  check(how.split("\n").filter((l) => l.trim()).length <= 4 && /wear/.test(how) && /case \(\$0\.05\)/i.test(how) && /PDA 1–10/.test(how) && !/burn|split|buy-?back|treasury/i.test(how)
+    && await page.locator('#sheet-table [data-key="notnow"]').isVisible() && await page.locator("#sheet-table .wz-grid .ctile").count() === 48,
+    "after the last pack: Case & grade with all 48 pulls, three lines on how it works, Not now");
   const dealt = await page.evaluate(() => Store.state.cards.length);
   check(dealt === 48, `48 cards dealt and revealed (${dealt})`);
   await shot("10-after-open");
@@ -268,6 +271,8 @@ try {
   await page.click('#sheet-table [data-key="diy"]');
   await page.waitForFunction(() => /graded/.test(document.querySelector("#sheet-table .wz-work .stage-msg")?.textContent || ""), null, { timeout: 120_000 });
   await shot("12-graded");
+  const slots = await page.evaluate(() => [...document.querySelectorAll("#sheet-table .gslot .cwrap")].map((w) => [w.querySelectorAll(".cface").length, w.querySelectorAll(".slab-next, .fun-press").length]));
+  check(slots.every(([f, x]) => f === 1 && x === 0), `each slab shows one card face, the press gone (${JSON.stringify(slots)})`);
   const res = await page.locator("#sheet-table .gres").allTextContents();
   check(res.length === 2 && res.every((t) => /PDA \d+(GEM MINT|MINT|NM-MT|NEAR MINT|EX-MT|EXCELLENT|VG-EX|VERY GOOD|GOOD|POOR)/.test(t)), `the grades stay in view: ${res.join(" / ")}`);
   await sync();
@@ -548,6 +553,7 @@ try {
     await p.locator("#sheet-table .prac-sum").waitFor({ timeout: 20_000 });
     const prac = await p.evaluate(() => ({ cards: Store.state.cards.length, any: Store.state.cards.some((c) => c.practice), sealed: Store.state.sealed[6], shown: document.querySelectorAll("#sheet-table .prac-c").length }));
     check(prac.shown === 6 && prac.cards === 46 && !prac.any && prac.sealed === 3, `practice: 6 cards shown, nothing saved (still 46 cards, 3 sealed packs) ${JSON.stringify(prac)}`);
+    check(!(await p.locator("#sheet-table .wz, #sheet-table .wz-how").count()), "practice: never Case & grade");
     await p.keyboard.press("Escape");
 
     await p.evaluate(() => Fun.go("binder", { series: 6 }));
@@ -564,9 +570,15 @@ try {
     await p.click("#sheet-table .pk2"); await p.waitForTimeout(1500);
     await p.click("#sheet-table .skip-b");
     await p.locator("#sheet-table .op-sum").waitFor({ timeout: 20_000 });
-    check(await p.locator("#sheet-table .fun-packshare").count() === 1, "after an opening: Share this pack");
+    check(await p.locator("#sheet-table .fun-packshare").count() === 1 && await p.locator('#sheet-table [data-key="next"]').isVisible(), "after an opening with packs left: the celebration, Open next, Share this pack");
     await p.waitForFunction(() => JSON.parse(localStorage.getItem("omni.badges.demo") || "{}")["first-open"], null, { timeout: 5000 });
     check(true, "badge: First rip, kept per wallet in this browser");
+    await p.click('#sheet-table [data-key="done2"]'); // Done with packs left: Case & grade these first
+    await p.locator("#sheet-table .wz-how").waitFor({ timeout: 5000 });
+    check(await p.locator("#sheet-table .wz-grid .ctile").count() === 6, "Done: straight to Case & grade with the 6 pulls, how it works on top");
+    await p.click('#sheet-table [data-key="pulls"]'); await p.locator("#sheet-table .cel").waitFor();
+    await p.click('#sheet-table [data-key="done2"]'); await p.waitForTimeout(300);
+    check(!(await p.locator("#sheet-table[open]").count()), "‹ Your pulls goes back; Done then closes (asked once)");
     await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
 
     await p.evaluate(() => Fun.go("feed", { tab: "pulls" }));
@@ -580,6 +592,7 @@ try {
     check((await p.locator("#sheet-feed .fd-board tbody tr").count()) >= 5, "Top stokers: a board per Series");
     await p.keyboard.press("Escape");
 
+    await p.waitForTimeout(500); // the feed sheet's close steps history back: let it land before navigating
     await p.goto(`${SITE}?show=0x7a3f2b9c41d0e5a6b8f9c0d1e2f3a4b5c6d7c91e&c=1000.1001`);
     await p.locator("#sheet-show .sv-shelf .sc-slot").first().waitFor({ timeout: 30_000 });
     check((await p.locator("#sheet-show .sv-shelf .sc-slot").count()) === 2 && (await p.locator(".fun-tour").count()) === 0, "a showcase link (?show=&c=) opens that wallet's picked cards, no tour over it");
