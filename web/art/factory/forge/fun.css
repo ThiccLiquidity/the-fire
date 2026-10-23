@@ -19,7 +19,7 @@
 /* gyro (gyro.js): "Tilt to shine" */
 .fun-tilt { min-height: 34px; padding: 0 14px; border-radius: 999px; border: 1.5px solid #c48aff; color: var(--ink); cursor: pointer; font: 800 13px var(--body);
   background: linear-gradient(115deg, #3a1f4a, #1f2a4a 50%, #1a3a36) }
-.fun-tilt.in-zv { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 5 }
+.fun-tilt.in-zv { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 5 }
 
 /* tap-to-explain words (terms.js) */
 .gl-term { display: inline; padding: 0; margin: 0; border: 0; background: none; font: inherit; color: inherit; cursor: help; letter-spacing: inherit; text-transform: inherit;

@@ -260,5 +260,5 @@
     L.drawnStill = !!on; kick(); } // held: what's drawn stays (no redraw)
   /** Fetch and decode a card's live parts ahead of time (the pack's cards, during the tear). */
   function preload(c) { const p = PARTS?.(c); return p ? Promise.all([loadImg(p.plain), loadImg(p.print)]).catch(() => null) : Promise.resolve(null); }
-  window.Holo = { render, attach, size, aim, hold, defer, preload, STILL };
+  window.Holo = { render, renderHeld, attach, size, aim, hold, defer, preload, STILL };
 })();

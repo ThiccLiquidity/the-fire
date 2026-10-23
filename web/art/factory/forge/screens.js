@@ -287,6 +287,10 @@
   }
   // label: the visible text (several Share buttons side by side each name their card)
   const shareBtn = (c, cls = '', label = 'Share') => { const b = btn(label, 'share-b ' + cls, () => shareCard(c, b), { 'aria-label': `Share your ${c.character}, ${[Store.MAT_LABEL[c.material], holoLabel(c)].filter(Boolean).join(' ')}` }); return b; };
+  // a tilt clip (clip.js): a few seconds of the card shining, as a video; where video can't be recorded, the picture above
+  const setPicture = () => { if (window.Clip) Clip.picture = (c, from) => shareCard(c, from); }; // clip.js loads after this file
+  if (document.readyState === 'loading') addEventListener('DOMContentLoaded', setPicture, { once: true }); else setPicture();
+  const clipBtn = (c, cls = '') => (window.Clip ? Clip.button(c, { cls }) : null);
 
   // ---------- pack contents: 3 Paper, 1 Wood, 1 Wood or better, 1 Fire or better
   function roll(table) { let u = Math.random(), acc = 0; for (const [v, p] of table) { acc += p; if (u < acc) return v; } return table[table.length - 1][0]; }
@@ -897,7 +901,7 @@
               cardFace(c, true), tags.get(c.id)?.cloneNode(true) || null)))),
           h('div', { class: 'cel-acts' },
             canNext ? btn(`Open next (${left})`, 'gold big', next, { 'data-key': 'next' }) : btn('Done', 'primary big', finish, { 'data-key': 'done' }),
-            h('div', { class: 'row' }, shareBtn(best, '', 'Share best'), ps || null, btn('My cards', '', seeAll, { 'data-key': 'mycards' }), canNext ? btn('Done', '', finish, { 'data-key': 'done2' }) : null)),
+            h('div', { class: 'row' }, shareBtn(best, '', 'Share best'), clipBtn(best), ps || null, btn('My cards', '', seeAll, { 'data-key': 'mycards' }), canNext ? btn('Done', '', finish, { 'data-key': 'done2' }) : null)),
           caseable.length ? h('p', { class: 'cel-protect' }, btn('Case & grade them', 'linkish', wizard, { 'data-key': 'protect' }),
             h('span', { class: 'muted', text: ` · case all ${caseable.length} for ${Wear.usd(caseUsd)}, grade from ${Wear.usd(Math.min(...caseable.map(Store.gradeUsd)))}` })) : null));
         host.querySelector('.cel-acts .btn.big')?.focus({ preventScroll: true });
@@ -961,7 +965,7 @@
     const zoom = () => viewCard(c, ids);
     const body = h('div', { class: 'detail' },
       h('div', { class: 'big' }, h('div', { class: 'cwrap', onclick: (e) => { if (!e.target.closest('button')) zoom(); } }, face, gradeBadge(c),
-        window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null)),
+        window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null), clipBtn(c, 'small big-clip')),
       h('div', { class: 'traits' },
         h('div', { class: 'cmeta' }, matChip(c.material), holoChip(c), od.tier ? h('span', { class: 'tier-b ' + od.tier, text: TIER_LABEL[od.tier] }) : null),
         h('div', { class: 'dstats' },
@@ -1338,7 +1342,7 @@
           if (gr === 10) { // its own moment (the opening's big reveal, in gold), then a share prompt
             await wait(reduced() ? 0 : 380);
             bigMoment(c, w, host, { kind: 'g10', title: 'PDA 10! GEM MINT' });
-            put(share, h('p', {}, h('b', { text: 'PDA 10!' }), ' That’s 1 in 100. Show it off?'), shareBtn(c, 'gold', 'Share your PDA 10'));
+            put(share, h('p', {}, h('b', { text: 'PDA 10!' }), ' That’s 1 in 100. Show it off?'), shareBtn(c, 'gold', 'Share your PDA 10'), clipBtn(c));
             share.hidden = false;
             await wait(reduced() ? 600 : 2400);
           } else if (!reduced()) await wait(900);

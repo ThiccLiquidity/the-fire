@@ -509,6 +509,22 @@ try {
       return { modal: d.matches(":modal"), label: d.getAttribute("aria-label"), focus: d.contains(document.activeElement), w: r.width, h: r.height, slab: !!d.querySelector(".cface.hd-slab"), hist: !!history.state?.zv }; });
     check(v1.modal && v1.focus && /^.+, .*PDA \d+$/.test(v1.label) && v1.slab && v1.hist, `${name}: ${w < 500 ? "tapping the card" : "the expand button"} opens the viewer (modal, "${v1.label}", focus inside, the slab in its slab)`);
     check(w < 500 ? v1.w >= w * 0.9 : v1.h >= h * 0.9, `${name}: the card fills the screen (${Math.round(v1.w)} x ${Math.round(v1.h)} of ${w} x ${h})`);
+    // Share clip (clip.js): in the viewer; on desktop a tap records a few seconds of the card and downloads the video
+    check(await p.locator(`${zv} .zv-clip`).isVisible() && /Share clip/.test(await p.locator(`${zv} .zv-clip`).textContent()), `${name}: the viewer has Share clip`);
+    if (w >= 500) {
+      await p.evaluate(() => { window.__clips = []; document.addEventListener("clip", (e) => __clips.push({ type: e.detail.blob.type, size: e.detail.blob.size, name: e.detail.name }), { once: true }); });
+      const mime = await p.evaluate(() => Clip.mime());
+      const dl = p.waitForEvent("download", { timeout: 60_000 });
+      await p.click(`${zv} .zv-clip`);
+      await p.waitForFunction(() => document.querySelector("dialog.zv .zv-clip")?.dataset.state === "rec", null, { timeout: 10_000 });
+      check(/Recording/.test(await p.locator(`${zv} .zv-clip`).textContent()), `${name}: Share clip says Recording… while it records`);
+      const d = await dl, got = await p.evaluate(() => window.__clips[0]);
+      const want = mime.split(";")[0];
+      check(got && got.size > 10_000 && got.type === want && /^video\/(webm|mp4)$/.test(got.type) && d.suggestedFilename() === got.name && got.name.endsWith(want === "video/mp4" ? ".mp4" : ".webm"),
+        `${name}: the clip is a non-empty ${got?.type} video (${got?.size} bytes, ${mime}), downloaded as ${d.suggestedFilename()}`);
+      await p.waitForFunction(() => /Saved/.test(document.querySelector("dialog.zv .zv-clip")?.textContent || ""), null, { timeout: 5_000 });
+      check(true, `${name}: then Saved`);
+    }
     // zoom in: a double tap (phone) or double click, then back out
     if (w < 500) { await p.touchscreen.tap(w / 2, h / 2); await p.touchscreen.tap(w / 2, h / 2); } else await p.mouse.dblclick(w / 2, h / 2);
     await p.waitForFunction(() => /scale\((2\.[3-9]|2\.5)/.test(document.querySelector("dialog.zv .zv-card").style.transform), null, { timeout: 10_000 });

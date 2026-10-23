@@ -34,3 +34,19 @@ dialog.zv:focus { outline: none }
 .zv-open::before { content: ''; position: absolute; inset: -5px } /* a 44px target */
 .zv-open svg { width: 18px; height: 18px }
 .zv-open:hover, .zv-open:focus-visible { opacity: 1; transform: scale(1.08) }
+
+/* Share clip (clip.js): a film icon and "Share clip"; while it records, a ring fills around a red dot */
+.clip-b .clip-i, .clip-b .clip-ring { width: 18px; height: 18px; flex: none }
+.clip-b .clip-ring, .clip-b[data-state=rec] .clip-i { display: none }
+.clip-b[data-state=rec] .clip-ring { display: block }
+.clip-b[data-state=rec] { cursor: progress }
+.clip-b[data-state=ready] { border-color: var(--brass) }
+.zv-clip { position: absolute; z-index: 2; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); min-height: var(--tap);
+  padding: 0 16px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,.28); background: rgba(10,8,6,.6); color: #fff; font-weight: 800;
+  opacity: var(--ui); transition: opacity .2s }
+.zv-clip:hover { background: rgba(40,30,20,.8); border-color: var(--brass) }
+/* wide screens: the card fills the height, so the button sits in the corner beside it */
+@media (min-aspect-ratio: 1/1) { .zv-clip { left: auto; right: max(16px, env(safe-area-inset-right)); transform: none } }
+.zv-hint { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 58px) }
+/* the card detail: a small Share clip under the card (below its grade badge) */
+.detail .big .big-clip { display: flex; margin: 22px auto 0; font-size: 13px }

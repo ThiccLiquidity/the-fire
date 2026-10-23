@@ -1,6 +1,7 @@
 /* Omni Cardworks: the full-screen card viewer. Tap the big card (or its expand button) to see it as large as the screen
    allows: the live holo follows the finger or mouse (device tilt where it needs no permission), pinch or double-tap to zoom
    in and pan, swipe left and right through the list it came from, swipe down, tap outside, Esc, X or Back to close.
+   "Share clip" (clip.js) records the card shining as a short video.
    Transform and opacity only, one requestAnimationFrame writer, no layout reads inside a frame. */
 (() => {
   const RATIO = 1008 / 720, MAX = 4, TAP_ZOOM = 2.5, FILL = 0.94;
@@ -24,7 +25,10 @@
     const prev = el('button', 'zv-nav prev', { type: 'button', 'aria-label': 'Previous card' }); prev.innerHTML = ICON.prev;
     const next = el('button', 'zv-nav next', { type: 'button', 'aria-label': 'Next card' }); next.innerHTML = ICON.next;
     const said = el('p', 'zv-sr', { 'aria-live': 'polite' });
-    stage.append(card); d.append(bd, stage, x, prev, next, said);
+    // Share clip (clip.js): records the card shown now; the viewer's own holo holds still while it records
+    const clip = window.Clip ? Clip.button(() => V && V.d === d ? V.cards[V.i] : null, { cls: 'zv-clip',
+      before: () => { if (V?.f) window.Holo?.hold(V.f, true); }, after: () => { if (V?.f && V.s <= 1.02) window.Holo?.hold(V.f, false); } }) : null;
+    stage.append(card); d.append(bd, stage, x, prev, next, said); if (clip) d.append(clip);
     const v = V = { d, bd, stage, card, prev, next, said, cards, i: clamp(index, 0, cards.length - 1), face, name, from, onNav,
       s: 1, x: 0, y: 0, ox: 0, oy: 0, W: 0, H: 0, cw: 0, ch: 0, f: null, src: null, raf: 0, anim: null, P: new Map(), g: null,
       lastTap: null, drawnScale: 1, ac: new AbortController(), pushed: false, closing: false, opener: document.activeElement };
