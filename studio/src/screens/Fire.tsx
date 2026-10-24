@@ -1,15 +1,17 @@
 import { useMemo, useState } from 'react'
-import { Notice, useAction } from '../components'
+import { Notice, PercentOfCards, PercentTotalBar, useAction } from '../components'
 import { hasCategory, hasValidName } from '../categories'
 import { frameSetLabel } from '../frames'
 import { randomSeed } from '../prng'
 import { standardRecipe } from '../recipe'
 import { saleOf, salePacks, standardSale } from '../sale'
-import { artNeeds, characterWeightsOf, isReadyFor, missingArt } from '../series'
-import { characterOdds } from '../recipe'
+import { artNeeds, characterOddsProblems, characterPercentsOf, characterWeightsOf, charactersAllEqual, isReadyFor, missingArt } from '../series'
+import { characterOdds, weightsToPercents } from '../recipe'
+import { aboutOneIn, oddsText } from '../rarity'
 import { deleteFire, getStudio, saveFire, saveGlobal, updateFire, useStudio } from '../store'
 import { fireStatus, type Character, type FireRecord } from '../types'
 import { SeriesResult } from './SeriesResult'
+import { Count, CountsGrid } from './Counts'
 
 export function FireList({ selected, onSelect }: { selected: number | null; onSelect: (n: number) => void }) {
   const s = useStudio()
@@ -68,11 +70,25 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
 
   const toggle = (id: string, on: boolean) => run(() => updateFire(fire.number, (f) => ({ characterIds: on ? [...f.characterIds, id] : f.characterIds.filter((x) => x !== id) })))
   const notReady = fire.characterIds.filter((id) => { const c = byId.get(id); return !c || !ready(c) })
-  // character odds: optional weights (1 = the default); a character's chance = its weight over the total
+  // character odds: "All equal" (the default) or each character's % of cards, adding up to 100%
+  const allEqual = charactersAllEqual(fire)
+  const percents = characterPercentsOf(fire)
   const weights = characterWeightsOf(fire)
   const odds = characterOdds(weights, fire.characterIds.length)
-  const weightOf = (id: string) => Math.max(1, Math.floor(fire.characterWeights?.[id] ?? 1))
-  const setWeight = (id: string, w: number) => run(() => updateFire(fire.number, (f) => ({ characterWeights: { ...(f.characterWeights ?? {}), [id]: Math.max(1, Math.floor(w)) } })))
+  const nameAt = (k: number) => byId.get(fire.characterIds[k])?.name ?? `c${k}`
+  // expected cards per character over every type, for the Series' base packs
+  const cardsTotal = Math.max(0, fire.packs) * Math.max(0, fire.recipe.cardsPerPack)
+  const castNames = useMemo(() => fire.characterIds.map((id, k) => ({ id, name: byId.get(id)?.name ?? `c${k}` })), [fire.characterIds, byId])
+  const oddsProblems = characterOddsProblems(fire, nameAt)
+  // the total's problem shows on the total line itself
+  const perCharProblems = oddsProblems.filter((p) => !p.startsWith('The characters add up'))
+  const setPercent = (id: string, p: string) => run(() => updateFire(fire.number, (f) => ({ characterPercents: { ...(f.characterPercents ?? {}), [id]: p } })))
+  // "All equal" off: every picked character starts at an equal share (rounded so they add up to exactly 100%)
+  const setAllEqual = (on: boolean) => run(() => updateFire(fire.number, (f) => {
+    if (on) return { characterPercents: undefined }
+    const p = weightsToPercents(f.characterIds.map(() => 1))
+    return { characterPercents: Object.fromEntries(f.characterIds.map((id, k) => [id, p[k]])) }
+  }))
 
   return (
     <section className="panel grow">
@@ -93,8 +109,17 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
           <p className="muted small">
             Any number (the contract stores them in batches). A character needs a valid name and category, and the art this
             recipe uses: {[...needs].map(([set, vs]) => `${frameSetLabel(set)} ${[...vs].join(' + ')}`).join(', ')}.
-            Odds: every character is equally likely unless you give some a bigger weight (a character's chance is its weight over the total).
+            Odds: every character is equally likely, unless you turn off "All equal" and give each one its % of cards (they must add up to exactly 100%).
           </p>
+          <div className="row wrap" data-testid="char-odds-mode">
+            <label className="check"><input type="checkbox" checked={allEqual} disabled={locked || !!fire.characterWeights} onChange={(e) => void setAllEqual(e.target.checked)} data-testid="odds-all-equal" /> All equal</label>
+            {allEqual
+              ? fire.characterIds.length > 0 && <span className="muted small" data-testid="odds-equal-line">Each character: {oddsText(1 / fire.characterIds.length)}</span>
+              : fire.characterIds.length > 0 && percents && (
+                <PercentTotalBar percents={percents} names={fire.characterIds.map((_, k) => nameAt(k))} what="The characters" disabled={locked || !!fire.characterWeights} testId="char-total"
+                  onFill={(k, p) => void setPercent(fire.characterIds[k], p)} />
+              )}
+          </div>
           <div className="row wrap">
             <input placeholder="Search name, category, short id" value={query} onChange={(e) => { setQuery(e.target.value); setPage(0) }} data-testid="char-search" style={{ width: 220 }} />
             <label className="check small"><input type="checkbox" checked={onlyReady} onChange={(e) => { setOnlyReady(e.target.checked); setPage(0) }} /> ready only</label>
@@ -111,13 +136,16 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
                     <input type="checkbox" checked={on} disabled={locked || (!on && !ok)} onChange={(e) => toggle(c.id, e.target.checked)} data-testid={`pick-${c.name}`} />
                     {on && <span className="muted small">c{fire.characterIds.indexOf(c.id)}</span>}
                     {c.name} {c.placeholder && <span className="tag">placeholder</span>}
-                    {on && (
-                      <span className="char-odds small" title="Character odds: its weight over the total (1 = the default)">
-                        odds <input type="number" min={1} step={1} value={weightOf(c.id)} disabled={locked} style={{ width: 56 }} data-testid={`odds-${c.name}`}
-                          onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 1) void setWeight(c.id, n) }} />
-                        <span className="muted"> {(odds[fire.characterIds.indexOf(c.id)] * 100).toPrecision(3)}%</span>
-                      </span>
-                    )}
+                    {on && (() => {
+                      const k = fire.characterIds.indexOf(c.id)
+                      return (
+                        <span className="char-odds small" title="This character's % of cards">
+                          {!allEqual && percents && <PercentOfCards value={percents[k]} disabled={locked || !!fire.characterWeights} onChange={(p) => void setPercent(c.id, p)} testId={`odds-${c.name}`} />}
+                          {(allEqual || oddsProblems.length === 0) && <span className="muted" data-testid={`char-odds-${c.name}`}> {allEqual ? oddsText(odds[k], '') : aboutOneIn(odds[k], '')}</span>}
+                          {cardsTotal > 0 && (allEqual || oddsProblems.length === 0) && <span data-testid={`char-count-${c.name}`}> · <Count x={odds[k] * cardsTotal} unit="cards" /></span>}
+                        </span>
+                      )
+                    })()}
                     <span className={`badge ${ok ? 'badge-ok' : 'badge-warn'}`} title={miss.join(', ')}>
                       {ok ? 'ready' : miss.length ? `${miss.length} image${miss.length === 1 ? '' : 's'} missing` : ''}{hasCategory(c) ? '' : ' · no category'}{hasValidName(c) ? '' : ' · bad name'}
                     </span>
@@ -139,10 +167,10 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
               <button onClick={() => update({ characterIds: [...fire.characterIds, ...s.characters.filter((c) => !picked.has(c.id) && ready(c)).map((c) => c.id)] })} data-testid="pick-all">Pick all ready</button>
               {query && <button onClick={() => update({ characterIds: [...fire.characterIds, ...list.filter((c) => !picked.has(c.id) && ready(c)).map((c) => c.id)] })}>Pick the ready ones shown</button>}
               <button onClick={() => update({ characterIds: [] })}>Clear</button>
-              {weights && <button onClick={() => update({ characterWeights: undefined })} data-testid="odds-equal">Equal odds for every character</button>}
               {notReady.length > 0 && <button onClick={() => update({ characterIds: fire.characterIds.filter((id) => !notReady.includes(id)) })}>Unpick the {notReady.length} not ready</button>}
             </div>
           )}
+          {perCharProblems.length > 0 && <Notice kind="error"><div data-testid="char-odds-problems">{perCharProblems.slice(0, 4).map((p) => <div key={p}>{p}</div>)}{perCharProblems.length > 4 && <div>... and {perCharProblems.length - 4} more.</div>}</div></Notice>}
           {notReady.length > 0 && <Notice kind="error">{notReady.length} picked character{notReady.length === 1 ? " isn't" : "s aren't"} ready for this recipe (art, name or category); finish them or unpick them.</Notice>}
           <p data-testid="packs-line">
             <b data-testid="packs">{fire.packs.toLocaleString()}</b> packs{' '}
@@ -156,6 +184,8 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
           <p className="muted small">Change it on the Recipe tab.</p>
         </div>
       </div>
+      <h3>How many of each card</h3>
+      <CountsGrid recipe={fire.recipe} basePacks={fire.packs} characters={castNames} weights={weights} />
       {error && <Notice kind="error">{error}</Notice>}
       {busy && <span className="muted small">saving...</span>}
     </section>

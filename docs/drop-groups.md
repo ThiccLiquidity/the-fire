@@ -21,6 +21,11 @@ wallet-limit timers of the old `DropConfig`. Built before the testnet card redep
     Both 0 = free (holders' claims). PAPER is capped by the drop's `paperCapUsd` as today.
   - **coins** accepted for the dollar price: bit mask PLANK=1, ETH=2, USDG=4 (ETH includes `buyWithEthAll`).
   - **perWallet**: most packs one wallet can take in this group (0 = no limit).
+  - **limitFor** (owner-approved): a timer on the per-wallet limit, in seconds (0 = the limit holds the whole time).
+    The limit only applies until `limitFor` after the group actually opened; from that second on a wallet buys as
+    many as it likes (`perTx`, `maxPerTx` and the gate still apply). Needs a `perWallet`; at most 30 days. Set in
+    advance and locked with the drop like everything else. `groupsOf` shows it (`config.limitFor`) and when it lifts
+    (`limitUntil` = `opensAt` + `limitFor`; 0 until the group's opening time is known).
   - **start**: `afterGroup` = 255 → opens with the drop (`start` + `startDelay`); otherwise it opens when group
     `afterGroup` ends (+ `startDelay`). So groups run side by side or one after another.
   - **duration**: longest it stays open (seconds, 0 = until its packs are gone). It ends the moment its packs are
@@ -72,10 +77,12 @@ ends at, price, coins, gate) and a wallet's standing in each group.
 ## The Standard preset (what today's Standard drop becomes)
 
 167 packs (as today), 3 groups:
-1. Paper Press holders: 50 packs, 1 PAPER, 1 per Press, opens with the drop, up to 6 h, leftovers to group 3.
+1. Paper Press holders: 50 packs, 1 PAPER, 1 per Press, 2 per wallet, opens with the drop, up to 6 h, leftovers to group 3.
 2. PLANK holders (snapshot, $69+ held for 7 days): 40 packs, $2.50 + 1 PAPER, PLANK only, 5 per wallet, opens with
    the drop, up to 24 h, leftovers to group 3.
-3. Everyone: 77 packs (+ leftovers), $2.50 + 1 PAPER, any coin, 5 per wallet, opens when group 2 ends, until sold.
+3. Everyone: 77 packs (+ leftovers), $2.50 + 1 PAPER, any coin, 5 per wallet for its first 24 h (`limitFor` 86400; a
+   placeholder until the owner confirms the number: `EVERYONE_LIMIT_HOURS` in `studio/src/sale.ts`), then no limit,
+   opens when group 2 ends, until sold.
 4. After sell-out (owner-approved addition): no pack count (`unlimited`), $2.50 rising 4% a pack (`taxBps` 400) +
    1 PAPER, ETH only, 1 per purchase (`perTx`), no wallet limit, opens when group 3 ends (sells out), no time limit,
    ends 15 minutes after its last sale (`idle` 900), rolls nowhere.

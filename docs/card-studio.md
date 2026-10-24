@@ -85,12 +85,23 @@ are ports of the contract's and are tested against it. New Series start from the
 Set on the **Recipe** tab, per Series, and locked with the deal:
 
 - **Card types**, any number: name (the Material trait, 1-64 bytes), slug (image file names, `[a-z0-9-]`, 1-32
-  bytes, unique; follows the name until typed), rank (the rarity order the site shows), an **odds weight** (its chance
-  per card is its weight over the total; at least 1), holo (two independent rolls, frame and picture, or explicit
-  weights for none / frame / picture / full) and its frame set.
+  bytes, unique; follows the name until typed), rank (the rarity order the site shows), its **% of cards** (up to 2
+  decimals, above 0), holo (two independent rolls, frame and picture, or a split in parts for plain / frame / picture /
+  full) and its frame set. The types must add up to exactly 100%: the tab shows a running total ("Total 96.01% · 3.99%
+  left to assign"), refuses anything else, and offers a one-click "Fill the rest into Paper" (the biggest type takes
+  what's left, or gives up the extra).
 - **Cards per pack**: 1 to 1,000.
-- **Character odds** (Series tab, optional): a weight per picked character (1 by default: every character equally
-  likely). Exported as each character's `weight` in recipe.json only when they differ.
+- **Character odds** (Series tab): **All equal** by default (every character equally likely, no inputs). Turned off,
+  each picked character gets a % of cards (starting equal), with the same total, "left to assign" and fill helper;
+  they must add up to exactly 100% (the Deal and Export tabs block until they do). Exported as each character's
+  `weight` in recipe.json only when they differ.
+- **Percentages in, weights out:** the owner only ever sees percentages; odds everywhere read "3.99% · about 1 in 25
+  cards". The contract takes whole-number weights: percent x 10,000 (100% = 1,000,000), with the zeros every weight
+  shares dropped (same ratios), so the Standard still exports 5000 / 2415 / 1497 / 489 / 399 / 200 and 10 / 10 / 10 /
+  70% exports 1 / 1 / 1 / 7 (`studio/src/recipe.ts` `percentsToWeights`, `simplifyWeights`). Saves store the
+  percentages. Older saves with weights load as percentages (2 decimals, rounded so they add up to exactly 100%:
+  `weightsToPercents`); a Series whose deal is locked also keeps its exact weights, so its odds and its recipe.json
+  never change.
 - **PDA odds** are fixed forever (the same for every Series) and shown read-only; recipe.json never carries them. A
   Series saved with its own odds drops them when it loads and uses the fixed ones.
 - **Holo rolls** show at most 2 decimals (the exact stored value on hover); the stored value stays exact (the Standard
@@ -108,12 +119,20 @@ a copy of another Series' recipe. Older saves load as odds: Series from before r
 at its old shares; a recipe saved with the old pool rules (supply, slots) gets each type's weight from the cards its
 rules gave for that Series' packs and characters, so its expected shares stay about the same.
 
+**How many of each card** (Recipe tab under the card types, and the Series tab under the cast) shows what the Series
+prints if the odds land exactly: total cards x type odds [x character odds] [x holo look odds]
+(`studio/src/rarity.ts` `expectedCounts`). Each type reads "Gold · 3.99% · about 1 in 25 cards · ≈ 40 cards" with the total cards, each
+character its "≈ N cards", and a grid of types x characters, optionally split by holo look (per type or per cell).
+Counts under 10 get one decimal, others whole numbers; anything expected below 1 shows in red as "< 1, may not print".
+The pack count is the Sale's base packs, with a "what if" field (not saved); packs sold after sell-out add more cards
+at the same odds. Labelled "If the odds land exactly: expected counts. Real pulls will vary."
+
 ## The Standard recipe
 
 Each Series stands alone: its cards come only from its own packs and nothing carries over. Every card is rolled on its
 own (6 a pack):
 
-| Material | Weight (of 10,000) | Per card |
+| Material | recipe.json weight (of 10,000) | Per card |
 |---|---|---|
 | Paper | 5,000 | 50% |
 | Wood | 2,415 | 24.15% |
@@ -204,8 +223,8 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and each card
 2. **Frames & Layout:** text fields' font, size and colour are set once per frame set; the art window is fixed by
    the frames.
 3. **Series:** pick the characters (any number; their order is the image order c0, c1, ...). The pack count is the
-   drop's total (base) packs, set on the Sale tab (one number: the expected counts use it). Each picked character has
-   optional odds (a weight; 1 by default).
+   drop's total (base) packs, set on the Sale tab (one number: the expected counts use it). Character odds: All equal
+   (the default), or each character's % of cards, adding up to 100%.
 4. **Recipe:** card types with their odds, cards per pack, the contract's checks and the result (odds, expected
    counts, rarity, per-pack chances).
    **Sale** (next tab): the drop as **groups** (`docs/drop-groups.md`) for `FireSale.configureDrop`, in plain units.
@@ -213,7 +232,8 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and each card
    added from a template (Paper Press holders, Coin holders (snapshot), NFT holders, Everyone, After sell-out (rising
    price)) and moved up/down or removed: name; packs as a count, a % of the total or "the rest" (one group); who
    (anyone, NFT holders: the Paper Press or a contract address + packs per NFT, or a snapshot list whose root the
-   snapshot script fills in before launch); price in $ and PAPER; coins (PLANK/ETH/USDG); per wallet; opens with the
+   snapshot script fills in before launch); price in $ and PAPER; coins (PLANK/ETH/USDG); per wallet (and "limit lifts
+   after (hours)", blank = never: 5 per wallet for Everyone's first 24 h, then no limit); opens with the
    drop or after an earlier group; max time (0 = until sold); leftovers to a later group or nowhere; rising price %
    and unlimited (needs a rising price and an idle end); behind "more": delay, per purchase, ends after N minutes
    with no sale. Each card ends with a one-line summary, and a taxed group shows packs 1, 10, 25 and 50 at the
@@ -242,7 +262,7 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and each card
 7. **Export & Upload:** a readiness checklist (recipe valid, frames for every type, characters valid, deal locked,
    approved, the full grid built, sale settings valid, the sale's packs equal to the Series' or the locked deal's);
    **recipe.json** (what `contracts/script/ConfigureSeries.s.sol` reads: cards per pack, types, characters (with
-   their weights if they have odds), `imagesBase` once
+   their weights if they have their own odds), `imagesBase` once
    uploaded, and the `sale` block; tied to the uploaded build; it warns until both pins are checked and the CAR is
    confirmed stored); a zip of the images, per-card metadata (preview only), `fire.json` and `recipe.json` (big Series
    in parts of at most 1.5 GB or 60,000 files, the metadata in its own parts, written straight into a folder the owner

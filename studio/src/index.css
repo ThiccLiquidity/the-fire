@@ -329,3 +329,34 @@ button.small-btn { padding: 4px 10px; font-size: 12px; }
   .sale-field.wide { grid-column: auto; }
   .group-name { width: 100%; }
 }
+
+/* expected print counts (Recipe, Series) */
+.counts-note { font-size: 12px; color: var(--warn); margin: 4px 0 8px; }
+.type-counts { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.type-count { font-size: 13px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; white-space: nowrap; }
+.type-count.total { border-color: var(--accent); }
+.count { font-variant-numeric: tabular-nums; }
+.count-low { color: var(--err); font-weight: 600; }
+.count-low .may-not { font-weight: 400; font-size: 11px; }
+.counts-scroll { max-height: 560px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; margin: 6px 0 12px; }
+.counts-table { margin: 0; width: 100%; }
+.counts-table thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; vertical-align: bottom; }
+.counts-table thead tr.holo-row th { top: 44px; font-weight: 400; vertical-align: top; }
+.counts-table tfoot td { position: sticky; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); }
+.counts-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.counts-table td.low { background: rgba(239, 91, 91, .08); }
+.counts-table td.low .may-not { display: block; }
+.counts-table tbody tr:hover td { background: var(--panel-2); }
+.cell-looks { font-size: 11px; color: var(--muted); line-height: 1.35; }
+.cell-looks .count-low .may-not { display: none; }
+.char-odds .count, .char-odds .count-low { white-space: nowrap; }
+
+/* % of cards: the running total that must reach exactly 100% */
+.share-input input { width: 72px; }
+.pct-total { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0 10px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); }
+.pct-total.ok b { color: var(--ok); }
+.pct-total.off { border-color: var(--err); }
+.pct-total .err { color: var(--err); font-size: 13px; }
+.char-odds .share-input input { width: 64px; }
+.char-odds > span { white-space: nowrap; }
+.pick-list .check { flex-wrap: wrap; }

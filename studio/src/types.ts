@@ -174,8 +174,12 @@ export interface BuildState {
 export interface FireRecord {
   number: number
   characterIds: string[]
-  /** Character odds (optional): a weight per character id, 1 when missing. All equal (or none) = every character
-   *  equally likely, the default. Exported as each character's "weight" in recipe.json only when they differ. */
+  /** Character odds, as the owner sets them: each character's % of cards by id ("0" when missing), adding up to
+   *  exactly 100%. Missing = "All equal" (every character equally likely, the default). Exported as each character's
+   *  "weight" in recipe.json (percent x 10,000, simplified) only when they differ (series.ts characterWeightsOf). */
+  characterPercents?: Record<string, string>
+  /** Legacy: character weights saved before percentages. Kept only on a Series whose deal is locked (its odds can't
+   *  change); an open Series' weights become characterPercents when it loads (migrate.ts). */
   characterWeights?: Record<string, number>
   packs: number
   /** The Series' recipe: card types with their odds and cards per pack (recipe.ts; PDA odds are fixed for every

@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Notice, useAction } from '../components'
+import { Notice, PercentOfCards, PercentTotalBar, useAction } from '../components'
 import { newId } from '../db'
 import { SHOWN_FRAME_SETS, frameSetFiles, frameSetLabel, missingFramesFor } from '../frames'
 import {
-  FRESH_PDA_ODDS, HOLO_ONE, MAX_CARDS_PER_PACK, UINT32_MAX, cardsPerPack, checkRecipe, cloneRecipe, holoLooksFor,
-  holoOdds, parseUint, percentToScaled, roundedPercent, scaledToPercent, slugify,
+  FRESH_PDA_ODDS, HOLO_ONE, MAX_CARDS_PER_PACK, UINT32_MAX, cardsPerPack, checkRecipe, cloneRecipe, dropExactWeights,
+  formatPercent, holoLooksFor, holoOdds, parseUint, percentToScaled, percentTotal, roundedPercent, scaledToPercent, slugify,
   specialAllHoloRecipe, standardRecipe, type CardTypeDef, type HoloRule, type Problem, type Recipe,
 } from '../recipe'
-import { oneIn, seriesResult, type TypeResult } from '../rarity'
+import { aboutOneIn, expectedCounts, oddsText, seriesResult, type TypeResult } from '../rarity'
 import { characterWeightsOf } from '../series'
 import { HOLO_LABEL, HOLO_TYPES } from '../rules'
 import { CARDS_PER_CREDIT } from '../sale'
 import { updateFire, useStudio } from '../store'
 import type { FireRecord } from '../types'
 import { SeriesResult } from './SeriesResult'
+import { COUNTS_NOTE, Count, CountsGrid, TypeCounts } from './Counts'
 
 const pct = (x: number, digits = 2) => `${(x * 100).toFixed(digits).replace(/\.?0+$/, '')}%`
 
@@ -62,7 +63,8 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
   const locked = !!fire.deal
   const r = fire.recipe
   const problems = useMemo(() => checkRecipe(r), [r])
-  const set = (next: Recipe) => { if (!locked) void run(() => updateFire(fire.number, { recipe: next, build: undefined, approvedAt: undefined })) }
+  // an edit sets the recipe by its percentages (exact weights from a recipe.json are dropped)
+  const set = (next: Recipe) => { if (!locked) void run(() => updateFire(fire.number, { recipe: dropExactWeights(next), build: undefined, approvedAt: undefined })) }
   const setType = (i: number, patch: Partial<CardTypeDef>) => set({ ...r, types: r.types.map((t, j) => (j === i ? { ...t, ...patch } : t)) })
   const move = <T,>(arr: T[], i: number, d: number) => { const a = [...arr]; const j = i + d; if (j < 0 || j >= a.length) return a; [a[i], a[j]] = [a[j], a[i]]; return a }
   const others = s.fires.filter((f) => f.number !== fire.number)
@@ -76,10 +78,12 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
   const addType = () => {
     const maxRank = Math.max(0, ...r.types.map((t) => t.rank))
     const name = 'New type'
+    // it starts with whatever is left to assign (0% when the types already add up to 100%)
+    const left = percentTotal(r.types.map((t) => t.percent)).left
     set({
       ...r,
       types: [...r.types, {
-        id: newId(), name, slug: uniqueSlug(slugify(name), r), rank: maxRank + 1, weight: '1',
+        id: newId(), name, slug: uniqueSlug(slugify(name), r), rank: maxRank + 1, percent: formatPercent(Math.max(0, left)),
         holo: { mode: 'independent', frame: '100000000000000000', picture: '100000000000000000' }, frameSet: 'gold',
       }],
     })
@@ -88,6 +92,7 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
 
   const typeProblems = (i: number) => problems.filter((p) => p.where === 'type' && p.index === i)
   const recipeProblems = problems.filter((p) => p.where === 'recipe')
+  const percents = r.types.map((t) => t.percent)
   const perPack = cardsPerPack(r)
   const valid = problems.length === 0
 
@@ -98,14 +103,20 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
   useEffect(() => setCharsText(String(Math.max(1, fire.characterIds.length))), [fire.characterIds.length])
   const P = parseUint(packsText)
   const chars = Number(parseUint(charsText) ?? 1n) || 1
-  // the type cards always show the Series' own numbers (the what-if above is only for the result table)
+  // the type cards and counts follow the what-if packs (the Series' own until another count is typed)
   const ownPacks = BigInt(Math.max(0, fire.packs))
   const ownChars = Math.max(1, fire.characterIds.length)
+  const shownPacks = P ?? ownPacks
   const weights = useMemo(() => characterWeightsOf(fire), [fire])
   const res = useMemo(() => {
     if (!valid) return null
-    try { return seriesResult(r, ownPacks, ownChars, weights) } catch { return null }
-  }, [r, ownPacks, ownChars, weights, valid])
+    try { return seriesResult(r, shownPacks, ownChars, weights) } catch { return null }
+  }, [r, shownPacks, ownChars, weights, valid])
+  const counts = useMemo(() => (valid ? expectedCounts(r, weights ?? fire.characterIds.length, shownPacks) : null), [r, weights, fire.characterIds.length, shownPacks, valid])
+  const castNames = useMemo(() => {
+    const byId = new Map(s.characters.map((c) => [c.id, c.name]))
+    return fire.characterIds.map((id, k) => ({ id, name: byId.get(id) ?? `c${k}` }))
+  }, [s.characters, fire.characterIds])
 
   return (
     <section className="panel grow recipe" data-testid="recipe-editor">
@@ -169,12 +180,22 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
 
       <h3>Card types</h3>
       <p className="muted small">
-        Odds: each type's weight over the total weight is its chance per card (Standard: out of 10,000). Rank is the
-        rarity order the site shows.
+        Odds: each type's % of cards (up to 2 decimals). The types must add up to exactly 100%. Rank is the rarity
+        order the site shows.
       </p>
+      {r.types.length > 0 && (
+        <PercentTotalBar percents={percents} names={r.types.map((t) => t.name)} what="The card types" disabled={locked} testId="type-total"
+          onFill={(i, percent) => setType(i, { percent })} />
+      )}
+      {counts && (
+        <div data-testid="type-odds-counts">
+          <TypeCounts recipe={r} counts={counts} />
+          <p className="counts-note">{COUNTS_NOTE}</p>
+        </div>
+      )}
       <div className="type-list">
         {r.types.map((t, i) => (
-          <TypeCard key={t.id} r={r} t={t} i={i} locked={locked} problems={typeProblems(i)} result={res?.types[i] ?? null}
+          <TypeCard key={t.id} r={r} t={t} i={i} locked={locked} problems={typeProblems(i)} result={res?.types[i] ?? null} packs={shownPacks}
             onChange={(patch) => setType(i, patch)}
             onMove={(d) => set({ ...r, types: move(r.types, i, d) })}
             onRemove={() => removeType(i)} />
@@ -182,13 +203,16 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       </div>
       {!locked && <button onClick={addType} data-testid="add-type">Add a card type</button>}
 
+      <h3>How many of each card</h3>
+      <CountsGrid recipe={r} basePacks={fire.packs} characters={castNames} weights={weights} packsText={packsText} setPacksText={setPacksText} />
+
       <PdaOdds />
     </section>
   )
 }
 
-function TypeCard({ r, t, i, locked, problems, result, onChange, onMove, onRemove }: {
-  r: Recipe; t: CardTypeDef; i: number; locked: boolean; problems: Problem[]
+function TypeCard({ r, t, i, locked, problems, result, packs, onChange, onMove, onRemove }: {
+  r: Recipe; t: CardTypeDef; i: number; locked: boolean; problems: Problem[]; packs: bigint
   /** What this type makes in the Series (its odds and expected cards). */
   result: TypeResult | null
   onChange: (p: Partial<CardTypeDef>) => void; onMove: (d: number) => void; onRemove: () => void
@@ -212,10 +236,10 @@ function TypeCard({ r, t, i, locked, problems, result, onChange, onMove, onRemov
           </span></label>
         <label className="field"><span className="field-label">Rank</span>
           <SmallInt value={t.rank} disabled={locked} onChange={(v) => onChange({ rank: v ?? 0 })} testId={`type-${i}-rank`} /></label>
-        <label className="field"><span className="field-label">Odds weight</span>
+        <label className="field"><span className="field-label">% of cards</span>
           <span className="twin">
-            <UintInput value={t.weight} disabled={locked} onChange={(v) => onChange({ weight: v })} testId={`type-${i}-weight`} />
-            {result && <span className="muted small pad" data-testid={`type-${i}-share`}>= {pct(result.share, 3)} of cards · 1 in {oneIn(result.share)}</span>}
+            <PercentOfCards value={t.percent} disabled={locked} onChange={(v) => onChange({ percent: v })} testId={`type-${i}-percent`} />
+            {result && <span className="small pad" data-testid={`type-${i}-share`}><span className="muted">{aboutOneIn(result.share)} ·</span> <Count x={result.expected} unit="cards" /></span>}
           </span></label>
         <label className="field"><span className="field-label">Frames</span>
           <select value={t.frameSet} disabled={locked} onChange={(e) => onChange({ frameSet: e.target.value })} data-testid={`type-${i}-frames`}>
@@ -229,13 +253,13 @@ function TypeCard({ r, t, i, locked, problems, result, onChange, onMove, onRemov
             if (e.target.value === t.holo.mode) return
             if (e.target.value === 'independent') setHolo({ mode: 'independent', frame: '100000000000000000', picture: '100000000000000000' })
             else {
-              // the same odds as weights (out of 1e6)
+              // the same odds as parts (out of 1e6)
               const w = odds.map((x) => String(Math.round(x * 1e6))) as [string, string, string, string]
               setHolo({ mode: 'distribution', weights: w.some((x) => x !== '0') ? w : ['1', '0', '0', '0'] })
             }
           }}>
             <option value="independent">Two independent rolls</option>
-            <option value="distribution">Weights: none / frame / picture / full</option>
+            <option value="distribution">Split in parts: plain / frame / picture / full</option>
           </select></label>
         {t.holo.mode === 'independent' ? (
           <>
@@ -246,7 +270,7 @@ function TypeCard({ r, t, i, locked, problems, result, onChange, onMove, onRemov
           </>
         ) : (
           (['none', 'frame', 'picture', 'full'] as const).map((h, k) => (
-            <label key={h} className="field"><span className="field-label">{HOLO_LABEL[h]} weight</span>
+            <label key={h} className="field"><span className="field-label">{h === 'none' ? 'Plain' : HOLO_LABEL[h]} · parts</span>
               <UintInput value={(t.holo as { weights: string[] }).weights[k]} width={70} disabled={locked}
                 onChange={(v) => { const w = [...(t.holo as { weights: [string, string, string, string] }).weights] as [string, string, string, string]; w[k] = v; setHolo({ mode: 'distribution', weights: w }) }}
                 testId={`type-${i}-w-${h}`} /></label>
@@ -264,7 +288,7 @@ function TypeCard({ r, t, i, locked, problems, result, onChange, onMove, onRemov
       </div>
       {result && (
         <p className="type-result" data-testid={`type-${i}-makes`}>
-          {pct(result.share, 3)} of cards · about <b>{Math.round(result.expected).toLocaleString('en-US')}</b> in this Series · ≈{+result.perCharacter.toFixed(1)} per character
+          <b>{t.name || 'This type'}</b> · {oddsText(result.share)} · <b><Count x={result.expected} unit="cards" /></b> in {packs.toLocaleString('en-US')} packs · <Count x={result.perCharacter} /> per character
         </p>
       )}
       {missing.length > 0 && (

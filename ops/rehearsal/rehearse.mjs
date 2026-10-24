@@ -343,7 +343,7 @@ async function main() {
   recipe.imagesBase = "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/";
   // the Standard preset's shape, scaled small: 1 press pack, 2 for PLANK holders (by snapshot allowance), 1 for
   // everyone (opens when the PLANK group ends), then an unlimited group at a rising 4% a pack that ends 5 minutes
-  // after its last sale. Leftovers of the first two roll into Everyone.
+  // after its last sale. Leftovers of the first two roll into Everyone (5 per wallet for its first 24 h).
   const E18 = "1000000000000000000";
   const saleBlock = {
     start: 0, packs: 4, plankBurnBps: 1000, paperBurnBps: 2000, paperCapUsd: "100000000", maxPerTx: 0, regularWalletsFor: 0,
@@ -351,7 +351,7 @@ async function main() {
     groups: [
       { name: "Paper Press holders", packs: 1, gate: "nft", nft: "press", perNft: 1, priceUsd: "0", paper: E18, coins: 0, perWallet: 0, afterGroup: 255, startDelay: 0, duration: 3600, rollTo: 2 },
       { name: "PLANK holders", packs: 2, gate: "snapshot", priceUsd: "250000000", paper: E18, coins: 3, perWallet: 5, afterGroup: 255, startDelay: 0, duration: 3600, rollTo: 2 },
-      { name: "Everyone", packs: 1, gate: "open", priceUsd: "250000000", paper: E18, coins: 7, perWallet: 5, afterGroup: 1, startDelay: 0, duration: 0, rollTo: 255 },
+      { name: "Everyone", packs: 1, gate: "open", priceUsd: "250000000", paper: E18, coins: 7, perWallet: 5, limitFor: 86400, afterGroup: 1, startDelay: 0, duration: 0, rollTo: 255 },
       { name: "After sell-out", packs: 0, unlimited: true, gate: "open", taxBps: 400, idle: 300, perTx: 1, priceUsd: "250000000", paper: E18, coins: 2, perWallet: 0, afterGroup: 2, startDelay: 0, duration: 0, rollTo: 255 },
     ],
   };
@@ -467,6 +467,8 @@ async function main() {
   }
   gv = await groupsOf();
   check(gv[0].state === 2 && gv[1].state === 2 && gv[2].state === 1, "the press and PLANK groups ended (sold out); Everyone is open");
+  check(gv[2].config.limitFor === 86400 && gv[2].limitUntil === gv[2].opensAt + 86400n && gv[1].limitUntil === 0n,
+    "Everyone: 5 per wallet until 24 h after it opened (limitUntil), then no limit; PLANK holders: no timer");
   await buy(buyer1, 2n, FORK ? 2n : 1n);
   let st = await status();
   gv = await groupsOf();

@@ -499,6 +499,20 @@ try {
     const slabId = await p.evaluate(() => Store.state.cards.find((c) => c.grade != null && c.material !== "diamond").id);
     await p.locator(`#sheet-table .cgrid .ctile[data-id="${slabId}"]`).click();
     await p.locator("#sheet-card[open] .big .cface").waitFor();
+    if (w >= 500) { // the mouse leans the big card calmly (holo.js): eased in the frame, at most ~8 degrees, eased back when it leaves
+      await p.locator("#sheet-card[open] .big .cface.live.ready").waitFor({ timeout: 15_000 });
+      const fb = await p.locator("#sheet-card[open] .big .cface").boundingBox();
+      const lean = () => p.evaluate(() => { const el = document.querySelector("#sheet-card[open] .big .cface"), t = getComputedStyle(el).transform;
+        if (!t || t === "none") return 0; const m = new DOMMatrixReadOnly(t); return Math.abs(Math.atan2(-m.m13, m.m11)) * 180 / Math.PI; }); // its rotateY
+      await p.mouse.move(fb.x - 20, fb.y + fb.height / 2);
+      for (let x = fb.x + 4; x < fb.x + fb.width - 2; x += 6) await p.mouse.move(x, fb.y + fb.height * 0.2);
+      await p.waitForTimeout(700);
+      const a1 = await lean(), tr = await p.evaluate(() => { const cs = getComputedStyle(document.querySelector("#sheet-card[open] .big .cface")), d = cs.transitionDuration.split(", ");
+        return cs.transitionProperty.split(", ").some((x, i) => /^(transform|all)$/.test(x) && parseFloat(d[i % d.length]) > 0); }); // a CSS transition would fight the frame
+      await p.mouse.move(fb.x + fb.width + 60, fb.y + fb.height / 2); await p.waitForTimeout(80);
+      const a2 = await lean(); await p.waitForTimeout(1500); const a3 = await lean();
+      check(a1 > 4 && a1 <= 8.5 && !tr && a2 > 1 && a3 < 0.3, `${name}: the mouse leans the card calmly (${a1.toFixed(1)} deg sideways at the edge, no CSS transition on it), easing back when it leaves (${a2.toFixed(1)} -> ${a3.toFixed(1)})`);
+    }
     const zv = "dialog.zv";
     const settled = () => p.waitForFunction(() => { const c = document.querySelector("dialog.zv .zv-card"); return c && !c.classList.contains("moving"); }, null, { timeout: 10_000 });
     const gone = () => p.locator(zv).waitFor({ state: "detached", timeout: 10_000 });
@@ -563,6 +577,7 @@ try {
 
     await p.evaluate(() => Fun.go("practice"));
     await p.locator("#sheet-table .pk2").waitFor();
+    check(!(await p.locator("#sheet-table .pk2 .pk-hand").count()), "practice pack: no hand (it's for the first real pack)");
     check(await p.locator("#sheet-table.sheet .st-table.practice").count() === 1 && /Practice pack/.test(await p.locator("#sheet-table h2").textContent()), "practice pack: its own table, titled Practice pack");
     await p.click("#sheet-table .pk2"); await p.waitForTimeout(1500);
     await p.click("#sheet-table .skip-b");
@@ -583,9 +598,13 @@ try {
     check(!before["first-open"], "no badge before the first real open (the practice pack didn't count)");
     await p.evaluate(() => Stations.open("open"));
     await p.locator("#sheet-table .pk2").waitFor();
+    check(await p.locator("#sheet-table .pk2 .pk-hand").count() === 1 && !(await p.locator(".fun-coach").count()) && !/\S/.test(await p.locator("#sheet-table .pk2 .pk-hand").textContent()),
+      "the first real pack: a small hand shows the drag (no words, no coach marks)");
     await p.click("#sheet-table .pk2"); await p.waitForTimeout(1500);
+    check(!(await p.locator(".pk-hand, .fun-coach").count()), "the hand goes once it's torn; no coach marks on the cards");
     await p.click("#sheet-table .skip-b");
     await p.locator("#sheet-table .op-sum").waitFor({ timeout: 20_000 });
+    check(!(await p.locator(".fun-coach").count()) && await p.evaluate(() => localStorage.getItem("omni.coached")) === "1", "after the first open: no coach mark, and the hand never shows again");
     check(await p.locator("#sheet-table .fun-packshare").count() === 1 && await p.locator('#sheet-table [data-key="next"]').isVisible(), "after an opening with packs left: the celebration, Open next, Share this pack");
     await p.waitForFunction(() => JSON.parse(localStorage.getItem("omni.badges.demo") || "{}")["first-open"], null, { timeout: 5000 });
     check(true, "badge: First rip, kept per wallet in this browser");
@@ -648,14 +667,14 @@ try {
     }
     await p.screenshot({ path: join(SHOTS, "17-rotated-phone.png") });
 
-    // the furnace takes PLANK, never PAPER (fx.js draws onto its overlay canvas: record what it draws)
+    // the furnace takes PLANK down the chute only: fx.js draws nothing tossed in from the front
     const drawn = await p.evaluate(async () => {
       const seen = new Set(), orig = CanvasRenderingContext2D.prototype.drawImage;
       CanvasRenderingContext2D.prototype.drawImage = function (im, ...a) { if (this.canvas.classList?.contains("fun-fx") && im?.src) seen.add(im.src.split("/").pop()); return orig.call(this, im, ...a); };
       Fun.eat(3); await new Promise((r) => setTimeout(r, 1800));
       CanvasRenderingContext2D.prototype.drawImage = orig; return [...seen];
     });
-    check(drawn.length > 0 && drawn.every((n) => /^s-log\d\.webp$/.test(n)), `the furnace eats PLANK logs, no PAPER (${drawn.join(", ")})`);
+    check(drawn.length === 0 && (await p.evaluate(() => typeof Scene.feed === "function")), `the furnace's logs come only down the chute, never tossed in from the front (${drawn.join(", ") || "nothing drawn in front"})`);
 
     // one free pack per 42 burned: one token, one pack flying, +1 in the wallet, one toast
     await p.evaluate(() => { window.__fp = { toasts: [], fly: 0, tokens: 0 };

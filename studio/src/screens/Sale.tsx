@@ -22,9 +22,10 @@ const fromLocal = (v: string) => (v ? Math.floor(new Date(v).getTime() / 1000) :
 /** One colour per group (its place in the list), the same in the split bar, the timeline and its card. */
 export const GROUP_COLORS = ['#4a7fe8', '#b9772e', '#f08a24', '#c99bff', '#4cc38a', '#e5b33b']
 
-function Num({ value, onChange, testId, step = 1, width = 90 }: { value: number; onChange: (v: number) => void; testId: string; step?: number; width?: number }) {
+function Num({ value, onChange, testId, step = 1, width = 90, blank }: { value: number; onChange: (v: number) => void; testId: string; step?: number; width?: number; blank?: string }) {
+  // blank: 0 shows as an empty box with this placeholder ("never")
   return (
-    <input type="number" min={0} step={step} value={Number.isFinite(value) ? value : ''} style={{ width }} data-testid={testId}
+    <input type="number" min={0} step={step} value={Number.isFinite(value) && !(blank && value === 0) ? value : ''} placeholder={blank} style={{ width }} data-testid={testId}
       onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))} />
   )
 }
@@ -234,6 +235,9 @@ function GroupCard({ s, i, packs, problems, busy, set, remove, move }: {
           </span>
         </GF>
         <GF all={mine} gi={i} f="perWallet" label="Per wallet" hint="0 = no limit."><Num value={g.perWallet} onChange={(v) => set({ perWallet: v })} testId={tid('per-wallet')} width={70} /></GF>
+        {(g.perWallet > 0 || g.limitHours > 0) && (
+          <GF all={mine} gi={i} f="limitHours" label="Limit lifts after (hours)" hint="From when it opens. Blank = never."><Num value={g.limitHours} step={0.5} blank="never" onChange={(v) => set({ limitHours: v })} testId={tid('limit-hours')} width={70} /></GF>
+        )}
         <GF all={mine} gi={i} f="afterGroup" label="Opens">
           <select value={g.afterGroup} onChange={(e) => set({ afterGroup: Number(e.target.value) })} data-testid={tid('after')}>
             <option value={-1}>with the drop</option>

@@ -82,6 +82,8 @@ export async function runTest(ctx: Ctx): Promise<number> {
     `group 1: ${gp.name}, ${gp.capacity} pack, ${gp.paper.text} PAPER, no dollar price, 1 per Press, leftovers to Everyone`);
   check(ge.gate === "open" && ge.name === "Everyone" && ge.priceUsd === "2.50" && ge.coins.join() === "PLANK,ETH,USDG" && ge.capacity === 6 && ge.left === 6 && ge.state === "upcoming",
     `group 2: ${ge.name}, ${ge.capacity} packs, $${ge.priceUsd} + ${ge.paper.text} PAPER in ${ge.coins.join(", ")}`);
+  check(ge.perWallet === 3 && ge.limitFor === 600 && ge.limitUntil === Number(ctx.start) + 600 && gp.limitFor === 0 && gp.limitUntil === 0,
+    "Everyone: 3 per wallet for its first 10 minutes, then no limit (limitUntil: 10 minutes after it opens); the Press group has no timer");
   check(gx.unlimited && gx.name === "Extra packs" && gx.capacity === null && gx.left === null && gx.coins.join() === "ETH" && gx.perTx === 1 && gx.taxBps === 400 && gx.idle === 300 && gx.afterGroup === 1 && gx.opensAt === 0,
     "group 3: Extra packs, no limit, ETH only, 1 per purchase, 4% rising, ends 5 minutes after its last sale, opens when Everyone ends");
   check(gx.next?.usd === "2.60" && gx.next.tax === "0.10" && gx.after.map((x) => x.usd).join() === "2.70,2.81,2.92", `its next packs: $${gx.next?.usd} ($2.50 + $${gx.next?.tax} tax), then ${gx.after.map((x) => "$" + x.usd).join(", ")}`);
@@ -150,9 +152,14 @@ export async function runTest(ctx: Ctx): Promise<number> {
   await L.buyPacks({ fire, group: 1, n: 2, pay: "ETH", paperInEth: true, quote: { cost: qe.cost!.raw, paperEth: q.paperEth!.raw } }, o);
   check(BigInt((await L.balances(me)).PAPER!.raw) === paperHeld, "2 packs with ETH alone (buyWithEthAll): the sale bought and burned their PAPER, none of the wallet's own");
   await L.buyPacks({ fire, group: 1, n: 1, pay: "ETH" }, o);
+  // the per-wallet limit (3) holds for the group's first 10 minutes, then lifts
+  let limMsg = "";
+  try { await L.buyPacks({ fire, group: 1, n: 1, pay: "PLANK" }, o); } catch (e) { limMsg = (e as Error).message; }
+  check(limMsg === "Wallet limit reached for this group." && (await L.myGroupStanding(fire, me)).bought[1] === 3, `a 4th pack while the limit is on is refused: "${limMsg}"`);
+  await ctx.warp(Number(ctx.start) + 600 - Number(await ctx.now()));
   await L.buyPacks({ fire, group: 1, n: 1, pay: "PLANK" }, o);
   await L.buyPacks({ fire, group: 1, n: 1, pay: "USDG" }, o);
-  check((await L.myGroupStanding(fire, me)).bought.join() === "0,5,0", "5 packs from Everyone (2 ETH alone, 1 ETH, 1 PLANK, 1 USDG), each step approved and confirmed");
+  check((await L.myGroupStanding(fire, me)).bought.join() === "0,5,0", "5 packs from Everyone (2 ETH alone, 1 ETH, then past the 3-per-wallet limit once it lifted: 1 PLANK, 1 USDG), each step approved and confirmed");
   // the cap is the price the buyer was shown + 3%: a buy shown a price far below the market's is refused, nothing charged
   let capMsg = "", capCode: string | undefined;
   try { await L.buyPacks({ fire, group: 1, n: 1, pay: "ETH", quote: { cost: "1000" } }, o); } catch (e) { capMsg = (e as Error).message; capCode = (e as { code?: string }).code; }

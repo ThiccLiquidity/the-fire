@@ -162,7 +162,7 @@
     return { s, P, usd, G, finite, press, holders, everyone, extra, cg: G[s.creditGroup] || null, cpp,
       price: usd(P.PACK_USD || 0), paper: paperT(P.PACK_PAPER || 0), coins: orList(coins.length ? coins : ['PLANK', 'ETH', 'USDG']),
       packs: (s.total || 0).toLocaleString('en-US'), cards: about((s.total || 0) * cpp),
-      perWallet: everyone?.perWallet || holders[0]?.perWallet || 0, maxTx: s.maxPerTx || 50,
+      perWallet: everyone?.perWallet || holders[0]?.perWallet || 0, limitFor: (everyone?.perWallet && everyone.limitFor) || 0, maxTx: s.maxPerTx || 50,
       rwHours: Math.round((s.regularWalletsFor || 0) / 3600), cap: +s.paperCapUsd || 0 };
   }
 
@@ -172,7 +172,7 @@
     if (!G.length) return '';
     const first = [press, ...holders].filter(Boolean).filter((g) => g.afterGroup == null);
     const holderLine = (g) => g.gate === 'nft'
-      ? `<li><b>${g.isPress ? 'Paper Press holders' : g.name}:</b> ${nf(g.perNft || 1)} ${g.perNft > 1 ? 'packs' : 'pack'} per ${g.isPress ? 'Press' : 'NFT'} for ${costOf(g, usd)}. ${g.capacity != null ? `${nf(g.capacity)} packs, ` : ''}${lenOf(g) ? `open for ${durT(lenOf(g))} or until they're claimed, whichever comes first` : 'open until they\'re claimed'}.</li>`
+      ? `<li><b>${g.isPress ? 'Paper Press holders' : g.name}:</b> ${nf(g.perNft || 1)} ${g.perNft > 1 ? 'packs' : 'pack'} per ${g.isPress ? 'Press' : 'NFT'}${g.perWallet ? `, up to ${nf(g.perWallet)} per wallet,` : ''} for ${costOf(g, usd)}. ${g.capacity != null ? `${nf(g.capacity)} packs, ` : ''}${lenOf(g) ? `open for ${durT(lenOf(g))} or until they're claimed, whichever comes first` : 'open until they\'re claimed'}.</li>`
       : `<li><b>${Store.holdersName(g)}</b>${Store.holdRule(g) ? ` (${Store.holdRule(g)})` : ''}: ${costOf(g, usd)}${g.coins?.length ? `, paid in ${orList(g.coins)}` : ''}${g.perWallet ? `, up to ${nf(g.perWallet)} each` : ''}. ${g.capacity != null ? `${nf(g.capacity)} packs, ` : ''}${lenOf(g) ? `open for ${durT(lenOf(g))} or until they're gone` : 'open until they\'re gone'}.</li>`;
     const steps = [];
     if (first.length) {
@@ -183,7 +183,7 @@
     if (everyone) {
       const after = everyone.afterGroup != null ? G[everyone.afterGroup] : null, rolls = G.some((g) => g.rollTo === everyone.index && g !== everyone);
       const coin = (everyone.coins || []).length >= 3 ? 'in any coin' : everyone.coins?.length ? `in ${orList(everyone.coins)}` : '';
-      steps.push(`<li><b>Everyone.</b> ${after ? `The moment the ${groupWord(after)} group ends, everyone` : 'Everyone'} can buy${coin ? `, ${coin}` : ''}${everyone.perWallet ? `, up to ${nf(everyone.perWallet)} per wallet` : ''}.${rolls ? ' Any holder packs left unclaimed roll in here, so every pack still finds a home.' : ''}</li>`);
+      steps.push(`<li><b>Everyone.</b> ${after ? `The moment the ${groupWord(after)} group ends, everyone` : 'Everyone'} can buy${coin ? `, ${coin}` : ''}${everyone.perWallet ? `, up to ${nf(everyone.perWallet)} per wallet${everyone.limitFor ? ` for the first ${durT(everyone.limitFor)}, then as many as you like` : ''}` : ''}.${rolls ? ' Any holder packs left unclaimed roll in here, so every pack still finds a home.' : ''}</li>`);
     }
     if (extra) {
       steps.push(`<li><b>Extra packs.</b> Sold out? Extra packs go on sale${extra.perTx === 1 ? ' one at a time' : ''}${extra.coins?.length ? `, paid in ${orList(extra.coins)}` : ''}${extra.taxBps ? `, each with a pack tax ${bpsPct(extra.taxBps)} higher than the last` : ''}.${extra.idle ? ` If ${durT(extra.idle)} pass with no buyer, sales end.` : ''}</li>`);
@@ -244,7 +244,7 @@
           <li><b>Price:</b> pay the dollar price in ${F.coins}, plus the pack's PAPER. Short on PAPER and paying in ETH? Tick <i>Pay PAPER with ETH</i> and we'll buy it for you in the same step.</li>
           ${F.cap ? `<li><b>PAPER cap:</b> ${inS}, we'll never require more than ${usd(F.cap)} worth of PAPER per pack. If PAPER's price climbs, a pack simply takes less of it.</li>` : ''}
           <li><b>Safe checkout:</b> you see the price before you sign. If it moves more than 3% before your buy lands, nothing is charged. Your wallet may show up to 3% more as a ceiling; anything unused comes back.</li>
-          <li><b>Groups and limits:</b> a Series sells in groups, each with its own turn.${orderTxt} ${InS}, each wallet can buy ${F.perWallet ? `up to ${nf(F.perWallet)} packs in each group, and ` : ''}up to ${nf(F.maxTx)} packs in a single checkout.${F.rwHours ? ` For the first ${nf(F.rwHours)} hours, only regular wallets (MetaMask, Rabby and friends) can buy, so no bot can sweep the drop.` : ''}</li>
+          <li><b>Groups and limits:</b> a Series sells in groups, each with its own turn.${orderTxt} ${InS}, each wallet can buy ${F.perWallet ? `up to ${nf(F.perWallet)} packs in each group${F.limitFor ? ` (in the Everyone group, for the first ${durT(F.limitFor)}, then as many as you like)` : ''}, and ` : ''}up to ${nf(F.maxTx)} packs in a single checkout.${F.rwHours ? ` For the first ${nf(F.rwHours)} hours, only regular wallets (MetaMask, Rabby and friends) can buy, so no bot can sweep the drop.` : ''}</li>
           <li><b>Keep it sealed if you like.</b> A sealed pack is an NFT too: hold it, collect it, or trade it unopened.</li>
         </ul>
         ${timeline(no, F)}
@@ -258,7 +258,7 @@
         </ul>`),
       sec('press', 'Press packs', 'First dibs for Paper Press holders.', `
         <ul>
-          <li>Every Series sets aside a limited number of Press packs. ${press ? `${InS}: ${pressCap != null ? `${pressCap} packs, ` : ''}at most ${nf(press.perNft || 1)} per Press, for ${press.priceUsd > 0 ? `${usd(press.priceUsd)} + ${paperT(press.paper)}` : `${paperT(press.paper)} each with no dollar price`}.` : `Series ${no} has none.`}</li>
+          <li>Every Series sets aside a limited number of Press packs. ${press ? `${InS}: ${pressCap != null ? `${pressCap} packs, ` : ''}at most ${nf(press.perNft || 1)} per Press${press.perWallet ? ` and ${nf(press.perWallet)} per wallet` : ''}, for ${press.priceUsd > 0 ? `${usd(press.priceUsd)} + ${paperT(press.paper)}` : `${paperT(press.paper)} each with no dollar price`}.` : `Series ${no} has none.`}</li>
           <li>First come, first served while the Press group is open${press ? ` (${inS}: ${lenOf(press) ? `${durT(lenOf(press))}, or until all ${pressCap ?? 'of them'} are claimed` : `until all ${pressCap ?? 'of them'} are claimed`})` : ''}.</li>
           <li>The Press itself is checked, not the wallet, so passing it around never claims twice.</li>
           <li>Unclaimed Press packs roll on to everyone. A Press pack is just like every other pack: rip it, or keep it sealed and trade it.</li>

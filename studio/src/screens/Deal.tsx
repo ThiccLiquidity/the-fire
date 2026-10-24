@@ -7,7 +7,7 @@ import { dealInputKey, useDealPreview } from '../dealPreview'
 import { randomSeed } from '../prng'
 import { cardsPerPack, checkRecipe } from '../recipe'
 import { HOLO_LABEL, HOLO_TYPES, MAX_DEAL_CARDS } from '../rules'
-import { artNeeds, characterWeightsOf, missingArt } from '../series'
+import { artNeeds, characterOddsProblems, characterWeightsOf, missingArt } from '../series'
 import { getStudio, saveGlobal, updateFire, useStudio } from '../store'
 import type { FireRecord } from '../types'
 
@@ -24,6 +24,8 @@ export function Deal({ fire }: { fire: FireRecord }) {
   const problems: string[] = []
   if (recipeProblems.length) problems.push(`The recipe has ${recipeProblems.length} problem${recipeProblems.length === 1 ? '' : 's'} (Recipe tab): ${recipeProblems[0].message}`)
   if (!fire.characterIds.length) problems.push('Pick at least one character on the Series tab.')
+  const oddsProblems = characterOddsProblems(fire, (k) => names[fire.characterIds[k]] ?? `c${k}`)
+  if (oddsProblems.length) problems.push(`Character odds (Series tab): ${oddsProblems[0]}`)
   if (fire.packs < 1) problems.push('Set at least 1 pack on the Series tab.')
   if (fire.packs * S > MAX_DEAL_CARDS) problems.push(`The sample deal deals at most ${MAX_DEAL_CARDS.toLocaleString()} cards (${fire.packs.toLocaleString()} packs x ${S}). Lower the packs to preview a deal; the odds on the Recipe tab cover any size.`)
   const needs = artNeeds(recipe)

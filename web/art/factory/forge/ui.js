@@ -167,6 +167,9 @@
   const coinsTxt = (g) => (!g.coins.length ? '' : g.coins.length === 3 ? 'PLANK, ETH or USDG' : g.coins.length === 1 ? `${g.coins[0]} only` : g.coins.join(' or '));
   const pct = (bps) => `${+(bps / 100).toFixed(2)}%`;
   const leftTxt = (g) => (g.left == null ? `+${pct(g.taxBps)} per pack` : `${g.left.toLocaleString('en-US')} left`);
+  /** A wallet limit on a timer (limitFor): " · 5 per wallet for 18h 2m", " · no limit" once it lifts; '' without one. */
+  const limitTxt = (g) => (!g.limitFor || !g.perWallet ? '' : !Store.walletLimit(g) ? ' · no limit'
+    : ` · ${g.perWallet} per wallet for ${g.limitUntil ? cd(g.limitUntil) : Store.spanTxt(g.limitFor)}`);
   const groupName = (i) => groups()[i]?.name || `group ${i + 1}`;
   /** Why a sold-out group may still get packs: "more may come in 4h 59m". */
   const moreTxt = (g) => `more may come${g.moreAt ? ` in ${cd(g.moreAt)}` : ' soon'}`;
@@ -212,7 +215,7 @@
           usable && p ? (main ? 'extra' : (main = true, 'extra main')) : 'off']);
         continue;
       }
-      const sub = g.waiting ? `Sold out · ${moreTxt(g)}` : g.left === 0 ? 'Sold out' : usable ? `${priceTxt(g)}${coinsTxt(g) && g.coins.length < 3 ? ` · ${coinsTxt(g)}` : ''}<br>${leftTxt(g)}${g.endsAt ? ` · ends in ${cd(g.endsAt)}` : ''}` : esc(a?.why || g.who);
+      const sub = g.waiting ? `Sold out · ${moreTxt(g)}` : g.left === 0 ? 'Sold out' : usable ? `${priceTxt(g)}${coinsTxt(g) && g.coins.length < 3 ? ` · ${coinsTxt(g)}` : ''}<br>${leftTxt(g)}${limitTxt(g)}${g.endsAt ? ` · ends in ${cd(g.endsAt)}` : ''}` : esc(a?.why || g.who);
       out.push([`g${g.index}`, esc(g.name), sub, usable ? (main ? 'alt' : (main = true, 'main')) : 'off']);
     }
     const cg = groups()[S.series.creditGroup];
@@ -566,7 +569,7 @@
               <p>+${pct(g.taxBps)} each sale. Sales end ${idleTxt(g.idle)} after the last buy.</p>
               ${g.endsAt ? `<p class="xend">Ends in ${cd(g.endsAt)} if nobody buys.</p>` : ''}
               ${g.after?.length ? `<p class="xnext">Then ${g.after.map((x) => money(x.usd)).join(', ')}…</p>` : ''}</div>`
-          : `<p class="lead">${esc(g.who)} · ${esc(leftTxt(g))}${g.endsAt ? ` · ends in ${cd(g.endsAt)}` : ''}</p>`;
+          : `<p class="lead">${esc(g.who)} · ${esc(leftTxt(g))}${limitTxt(g)}${g.endsAt ? ` · ends in ${cd(g.endsAt)}` : ''}</p>`;
         body.innerHTML = `${head}${notice ? `<p class="xmoved" role="alert">${esc(notice)}</p>` : ''}
           ${max > 1 ? `<div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output aria-live="polite">${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button>
             <span class="muted">${n === 1 ? 'pack' : 'packs'} · max ${max}</span></div>` : ''}

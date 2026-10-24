@@ -20,7 +20,9 @@ interface IGroupsSale {
  *           (wallet, allowance), double-hashed like OpenZeppelin's StandardMerkleTree of ["address","uint256"]).
  *         - `priceUsd` (8 decimals; 0 = none) in the `coins` it accepts (PLANK = 1, ETH = 2, USDG = 4), and/or `paper`
  *           per pack (PAPER wei, capped by the drop's dollar ceiling in FireSale). Both 0 = free.
- *         - `perWallet` (0 = no limit), on top of the gate's own allowance.
+ *         - `perWallet` (0 = no limit), on top of the gate's own allowance. `limitFor` (0 = the whole time): the
+ *           per-wallet limit only applies for this long after the group opened; then a wallet buys as many as it
+ *           likes (perTx, maxPerTx and the gate still apply). Needs a perWallet.
  *         - Timing: it opens `startDelay` after the drop's start (`afterGroup` = NONE) or after group `afterGroup`
  *           ends (a lower index); it ends when its packs are gone for good, or `duration` after it opened
  *           (0 = until its packs are gone), whichever is first.
@@ -71,6 +73,7 @@ contract FireGroups {
         uint32 startDelay; // seconds after the drop's start / the group before it ends
         uint32 duration; // longest it stays open, seconds (0 = until its packs are gone)
         uint32 perWallet; // most packs one wallet takes in this group (0 = no limit)
+        uint32 limitFor; // perWallet only applies this long after the group opened, seconds (0 = the whole time)
         uint32 perNft; // NFT gate: packs per NFT id per drop
         uint16 taxBps; // rising tax (0 = off): the k-th pack sold costs priceUsd * (1 + taxBps/10000)^k; the part
         // above priceUsd is the tax and all of it buys and burns PAPER. Needs a price; no group may roll into it
@@ -105,6 +108,7 @@ contract FireGroups {
         // it, which runs until sold, sells out)
         uint256 endsAt; // when it ended, or ends if nothing more sells (duration, or idle since its last sale; 0 =
         // until its packs are gone)
+        uint256 limitUntil; // when its per-wallet limit lifts (opensAt + limitFor; 0 = no timer, or not known yet)
     }
 
     struct Sched {
@@ -198,7 +202,7 @@ contract FireGroups {
     function _check(Group calldata g, uint256 i, uint256 n) internal view {
         bool ok = (g.afterGroup == NONE || g.afterGroup < i) && (g.rollTo == NONE || (g.rollTo > i && g.rollTo < n))
             && g.startDelay <= MAX_WINDOW && g.duration <= MAX_WINDOW && g.idle <= MAX_WINDOW && g.coins <= 7
-            && (g.priceUsd == 0 || g.coins != 0);
+            && (g.priceUsd == 0 || g.coins != 0) && g.limitFor <= MAX_WINDOW && (g.limitFor == 0 || g.perWallet != 0);
         if (g.gate == Gate.OPEN) ok = ok && g.nft == address(0) && g.perNft == 0 && g.root == 0 && (g.priceUsd | g.paper) != 0;
         else if (g.gate == Gate.NFT) ok = ok && g.nft.code.length > 0 && g.perNft != 0 && g.root == 0;
         else ok = ok && g.root != 0 && g.nft == address(0) && g.perNft == 0;
@@ -221,19 +225,24 @@ contract FireGroups {
         returns (uint256 usd8, uint256 tax8, uint256 paper, uint256 left)
     {
         uint256 sold;
-        (left, sold) = _takeFrom(fire, g, n);
+        uint256 opens;
+        (left, sold, opens) = _takeFrom(fire, g, n);
         Group storage G = groups[fire][g];
         (usd8, tax8) = _price(G, sold, n);
         paper = G.paper;
         if (usd8 != 0 && G.coins & coin == 0) revert CoinNotAccepted();
         if (G.perTx != 0 && n > G.perTx) revert PerTxLimit();
-        _admit(fire, g, G, buyer, n, a);
+        _admit(fire, g, G, buyer, n, a, opens);
     }
 
-    /// @dev The gate and the wallet limit; counts the buyer's packs.
-    function _admit(uint256 fire, uint256 g, Group storage G, address buyer, uint256 n, Access calldata a) internal {
+    /// @dev The gate and the wallet limit (until `limitFor` after the group opened at `opens`); counts the buyer's
+    ///      packs.
+    function _admit(uint256 fire, uint256 g, Group storage G, address buyer, uint256 n, Access calldata a, uint256 opens)
+        internal
+    {
         uint256 mine = boughtIn[fire][g][buyer] + n;
-        if (G.perWallet != 0 && mine > G.perWallet) revert WalletLimit();
+        uint256 lf = G.limitFor;
+        if (G.perWallet != 0 && mine > G.perWallet && (lf == 0 || block.timestamp < opens + lf)) revert WalletLimit();
         Gate gate = G.gate;
         if (gate == Gate.SNAPSHOT) {
             bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(buyer, a.allowance))));
@@ -248,12 +257,12 @@ contract FireGroups {
     /// @notice Take `n` credit packs from group `g` (the drop's credit group): open, with `n` left. Gate, price, coins
     ///         and wallet limit don't apply (a credit was earned). Returns its PAPER per pack and the packs left.
     function takeCredit(uint256 fire, uint256 g, uint256 n) external onlySale returns (uint256 paper, uint256 left) {
-        (left,) = _takeFrom(fire, g, n);
+        (left,,) = _takeFrom(fire, g, n);
         paper = groups[fire][g].paper;
     }
 
-    /// @dev Returns what can still sell after these packs, and the group's sold count before them.
-    function _takeFrom(uint256 fire, uint256 g, uint256 n) internal returns (uint256, uint256) {
+    /// @dev Returns what can still sell after these packs, the group's sold count before them, and when it opened.
+    function _takeFrom(uint256 fire, uint256 g, uint256 n) internal returns (uint256, uint256, uint256) {
         Calc memory c = _calc(fire);
         Sched storage s = sched[fire];
         if (g >= s.count || c.opensAt[g] == 0 || block.timestamp < c.opensAt[g] || c.ended[g]) revert GroupNotOpen();
@@ -262,7 +271,7 @@ contract FireGroups {
         s.sold[g] = uint64(sold + n);
         s.lastSaleAt[g] = uint64(block.timestamp);
         // a sale only ends groups with nothing left (this one, or ones waiting on it), so the rest is the same less n
-        return (c.unlimitedOpen ? type(uint256).max : c.left - n, sold);
+        return (c.unlimitedOpen ? type(uint256).max : c.left - n, sold, c.opensAt[g]);
     }
 
     // ================================================================ the rising tax
@@ -449,6 +458,8 @@ contract FireGroups {
             x.left = unl ? (c.ended[i] ? 0 : type(uint256).max) : c.cap[i] - x.sold;
             x.opensAt = c.opensAt[i];
             x.endsAt = c.endsAt[i];
+            uint256 lf = x.config.limitFor;
+            if (lf != 0 && x.opensAt != 0) x.limitUntil = x.opensAt + lf;
             x.state = c.ended[i] ? State.ENDED : c.opensAt[i] != 0 && block.timestamp >= c.opensAt[i] ? State.OPEN : State.UPCOMING;
         }
     }

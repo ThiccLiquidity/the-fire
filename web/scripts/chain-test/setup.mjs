@@ -33,7 +33,8 @@ const artifact = (file, name) => {
 };
 
 /** Start anvil and deploy everything. Returns the RPC, the deployments file and helpers; stop() ends anvil. */
-export async function setupChain({ port = 8547, log = console.log } = {}) {
+// everyone: extra settings for the Everyone group (chain.test.ts: a per-wallet limit that lifts on a timer)
+export async function setupChain({ port = 8547, log = console.log, everyone = {} } = {}) {
   const RPC = `http://127.0.0.1:${port}`;
   const DEP_FILE = resolve(REPO, "deployments", "rehearsal-chaintest.json") /* gitignored */;
   const OUT = resolve(here, "out");
@@ -143,7 +144,7 @@ export async function setupChain({ port = 8547, log = console.log } = {}) {
     creditPacksMax: 0, creditPacksPerWallet: 0, creditGroup: 1,
     groups: [
       g({ name: "Paper Press holders", packs: 1, gate: "nft", nft: "press", perNft: 1, priceUsd: "0", paper: "1000000000000000000", coins: 0, duration: 3600, rollTo: 1 }),
-      g({ name: "Everyone", packs: 6, gate: "open", priceUsd: "250000000", paper: "1000000000000000000", coins: 7 }),
+      g({ name: "Everyone", packs: 6, gate: "open", priceUsd: "250000000", paper: "1000000000000000000", coins: 7, ...everyone }),
       g({ name: "After sell-out", packs: 0, gate: "open", priceUsd: "250000000", paper: "1000000000000000000", coins: 2, afterGroup: 1, taxBps: 400, idle: 300, perTx: 1, unlimited: true }),
     ],
   };

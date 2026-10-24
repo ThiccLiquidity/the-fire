@@ -1,9 +1,9 @@
-/* Omni Cardworks (fun layer): the workshop tour and the first-open coach marks.
+/* Omni Cardworks (fun layer): the workshop tour and the first pack's hand.
    Tour: three stops on the scene (the furnace, the press, your desk), one line each, a ring that follows the scene
    (and the phone's camera), Skip any time. Shown once by itself (localStorage), and again from Help (Info), the
    menu or "New here?". It never blocks the page: only its own card takes taps.
-   Coach marks: your first real pack (never a practice one) gets a few pointers: tear it, turn the card, the pull, then
-   "keep them safe: case". Once. */
+   The first real pack (never a practice one): a small hand rides the tear line's dot, showing the drag. No words; it
+   fades at the first touch and never shows again once that pack is torn. */
 (() => {
   const { h, mem, reduced } = Fun;
   const SEEN = 'omni.tour', COACHED = 'omni.coached';
@@ -58,37 +58,15 @@
     setTimeout(tryStart, 1600);
   }
 
-  // ---------- coach marks: the first real open
-  let C = null; // { step, el }
-  const coached = () => !!mem(COACHED);
-  function mark(target, text, { done, place = 'below' } = {}) {
-    unmark();
-    const host = target?.closest('dialog'); if (!host) return;
-    const el = h('div', { class: 'fun-coach ' + place, role: 'note' }, h('span', { text })); // never takes taps: it points, the page works under it
-    if (done) setTimeout(() => { if (C?.el === el) unmark(); done(); }, 7000);
-    host.append(el); C = { el, target, host };
-    const put = () => {
-      if (!C || C.el !== el || !target.isConnected) return;
-      const r = target.getBoundingClientRect(), hr = host.getBoundingClientRect(), w = el.offsetWidth;
-      const x = Math.max(8, Math.min(hr.width - w - 8, r.left - hr.left + r.width / 2 - w / 2));
-      const y = place === 'above' ? r.top - hr.top - el.offsetHeight - 10 : r.bottom - hr.top + 10;
-      el.style.transform = `translate(${x.toFixed(0)}px, ${Math.max(8, y).toFixed(0)}px)`;
-    };
-    put(); setTimeout(put, 600); // after the card settles in
-  }
-  function unmark() { C?.el.remove(); C = null; }
-  Fun.on('pack-shown', ({ el, practice }) => { if (practice || coached()) return; mark(el, 'Your first pack! Drag across the top to tear it.'); });
-  Fun.on('tear', () => unmark());
-  Fun.on('card-ready', ({ el, i, practice }) => { if (practice || coached() || i !== 0) return; mark(el, 'Tap the card to turn it over.'); });
-  Fun.on('flip', ({ el, tier, last, practice }) => {
-    if (practice || coached()) return;
-    unmark();
-    if (tier) mark(el, 'That glow means a rare pull!');
-    else if (last) mark(el, 'Rarest card comes last. Swipe on.');
+  // ---------- the first real pack: a hand showing the drag across the top (screens.css .pk-hand), no words
+  const HAND = '<svg viewBox="0 0 24 30" aria-hidden="true"><path d="M10.2 2.6c0-1.3 1-2.2 2.2-2.2s2.2.9 2.2 2.2v9.1l.3-.1c1.3-.3 2.4.4 2.6 1.4l.1.3c1.3-.4 2.5.3 2.7 1.4l.1.4c1.3-.2 2.3.6 2.3 1.8v4.6c0 4.6-3.4 8.1-7.9 8.1h-1.2c-2.6 0-4.6-1.1-6-3.2l-4.1-6.3c-.7-1.1-.4-2.4.6-3 1-.6 2.2-.3 2.9.6l1.9 2.5z" fill="#fffaf0" stroke="#2a1a05" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  Fun.on('pack-shown', ({ el, practice }) => {
+    if (practice || mem(COACHED)) return;
+    if (!el || el.querySelector('.pk-hand')) return;
+    const hand = h('i', { class: 'pk-hand', 'aria-hidden': 'true' }, h('b', { html: HAND }));
+    el.append(hand);
+    const fade = () => { hand.classList.add('gone'); setTimeout(() => hand.remove(), 400); };
+    el.addEventListener('pointerdown', fade, { once: true }); el.addEventListener('keydown', fade, { once: true });
   });
-  Fun.on('opened', ({ host, practice }) => {
-    if (practice || coached()) return;
-    unmark();
-    setTimeout(() => { const t = host?.querySelector('.cel-protect') || host?.querySelector('.wz-steps li:nth-child(2)') || host?.querySelector('.wz-steps'); if (t) mark(t, 'Keep them safe: a case stops wear.', { done: () => mem(COACHED, 1) }); mem(COACHED, 1); }, 500);
-  });
+  Fun.on('tear', ({ practice } = {}) => { document.querySelectorAll('.pk-hand').forEach((x) => x.remove()); if (!practice) mem(COACHED, 1); });
 })();

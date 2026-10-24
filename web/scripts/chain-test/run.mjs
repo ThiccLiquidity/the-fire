@@ -16,7 +16,8 @@ await build({
 
 const t0 = Date.now();
 console.log("local chain: deploying (anvil, DevStack, the deploy scripts, Series 7)");
-const ctx = await setupChain({ log: (m) => console.log(`  ${m}`) });
+// Everyone: 3 per wallet for its first 10 minutes, then no limit (FireGroups.limitFor), so the test buys past it
+const ctx = await setupChain({ log: (m) => console.log(`  ${m}`), everyone: { perWallet: 3, limitFor: 600 } });
 let code = 0;
 try {
   const { runTest } = await import(pathToFileURL(resolve(OUT, "chain.test.mjs")).href);

@@ -230,8 +230,9 @@
       if (cap <= 0) return { ok: false, why: `You've hit your limit here (${e.allowance})` };
       access = { allowance: e.allowance, proof: e.proof };
     }
-    const max = Math.min(g.perTx || 50, g.left ?? Infinity, g.perWallet ? g.perWallet - bought : Infinity, cap);
-    if (max <= 0) return { ok: false, why: g.left === 0 ? 'Sold out' : `Limit: ${g.perWallet} per wallet` };
+    const pw = Store.walletLimit(g); // a limit on a timer lifts at g.limitUntil (FireGroups.limitFor)
+    const max = Math.min(g.perTx || 50, g.left ?? Infinity, pw ? pw - bought : Infinity, cap);
+    if (max <= 0) return { ok: false, why: g.left === 0 ? 'Sold out' : Store.limitWhy(g) };
     return { ok: true, max, access };
   };
   /** Re-read the chain (cards too with { cards: true }). Calls made while one runs wait for it, then run once more.

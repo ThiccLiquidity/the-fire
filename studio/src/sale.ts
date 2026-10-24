@@ -40,6 +40,8 @@ export interface SaleGroup {
   coins: number
   /** Packs per wallet in this group; 0 = no limit. */
   perWallet: number
+  /** The per-wallet limit lifts this many hours after the group opens (then as many as you like); 0 = never. */
+  limitHours: number
   /** Packs per purchase in this group; 0 = the drop's limit. */
   perTx: number
   /** -1 = opens with the drop; else the index of an EARLIER group it opens after. */
@@ -90,11 +92,15 @@ export const MAX_TAX_PERCENT = 50
 /** FireGroups.MAX_TAX_GROWTH: no pack of a taxed group may cost more than 1e9 times its base. */
 const MAX_TAX_GROWTH = 1_000_000_000n
 
+/** The Standard drop's Everyone group: 5 per wallet for this many hours after it opens, then no limit. A placeholder
+ *  until the owner confirms the number. */
+export const EVERYONE_LIMIT_HOURS = 24
+
 /** A group with every field at "off". */
 export function blankGroup(): SaleGroup {
   return {
     name: '', packsAs: 'count', packs: 0, percent: '0', unlimited: false, gate: 'open', nft: '', perNft: 0, root: '',
-    priceUsd: '0', paper: '0', coins: 0, perWallet: 0, perTx: 0, afterGroup: -1, delayHours: 0, hours: 0,
+    priceUsd: '0', paper: '0', coins: 0, perWallet: 0, limitHours: 0, perTx: 0, afterGroup: -1, delayHours: 0, hours: 0,
     idleMinutes: 0, rollTo: -1, taxPercent: '0',
   }
 }
@@ -104,7 +110,7 @@ export function blankGroup(): SaleGroup {
 export const GROUP_TEMPLATES: { name: string; make: (others: SaleGroup[]) => SaleGroup }[] = [
   {
     name: 'Paper Press holders',
-    make: () => ({ ...blankGroup(), name: 'Paper Press holders', gate: 'nft', nft: 'press', perNft: 1, paper: '1', hours: 6 }),
+    make: () => ({ ...blankGroup(), name: 'Paper Press holders', gate: 'nft', nft: 'press', perNft: 1, perWallet: 2, paper: '1', hours: 6 }),
   },
   {
     name: 'Coin holders (snapshot)',
@@ -118,7 +124,7 @@ export const GROUP_TEMPLATES: { name: string; make: (others: SaleGroup[]) => Sal
     name: 'Everyone',
     make: (others) => ({
       ...blankGroup(), name: 'Everyone', packsAs: others.some((g) => g.packsAs === 'rest' && !g.unlimited) ? 'count' : 'rest',
-      priceUsd: '2.50', paper: '1', coins: 7, perWallet: 5,
+      priceUsd: '2.50', paper: '1', coins: 7, perWallet: 5, limitHours: EVERYONE_LIMIT_HOURS,
     }),
   },
   {
@@ -130,9 +136,10 @@ export const GROUP_TEMPLATES: { name: string; make: (others: SaleGroup[]) => Sal
   },
 ]
 
-/** The Standard drop (docs/drop-groups.md): 167 base packs. Paper Press holders 50 (1 PAPER, 1 per Press, up to 6h),
+/** The Standard drop (docs/drop-groups.md): 167 base packs. Paper Press holders 50 (1 PAPER, 1 per Press, 2 per wallet, up to 6h),
  *  PLANK holders 40 (snapshot, $2.50 + 1 PAPER, PLANK only, 5 per wallet, up to 24h), both rolling leftovers to
- *  Everyone; Everyone the other 77 ($2.50 + 1 PAPER, any coin, 5 per wallet) after the PLANK group, until sold; then
+ *  Everyone; Everyone the other 77 ($2.50 + 1 PAPER, any coin, 5 per wallet for the first
+ *  EVERYONE_LIMIT_HOURS, then no limit) after the PLANK group, until sold; then
  *  After sell-out: no count, $2.50 rising 4% a pack + 1 PAPER, ETH only, 1 per purchase, ends 15 minutes after its
  *  last sale. Free packs up to 10% (16), 3 per wallet, from Everyone. 10% PLANK burn, 20% PAPER buy & burn, a pack's
  *  PAPER never more than $1, 50 per purchase, contracts kept out for 48h. */
@@ -140,9 +147,9 @@ export function standardSale(): SaleSettings {
   return {
     start: 0, packs: 167,
     groups: [
-      { ...blankGroup(), name: 'Paper Press holders', packs: 50, gate: 'nft', nft: 'press', perNft: 1, paper: '1', hours: 6, rollTo: 2 },
+      { ...blankGroup(), name: 'Paper Press holders', packs: 50, gate: 'nft', nft: 'press', perNft: 1, perWallet: 2, paper: '1', hours: 6, rollTo: 2 },
       { ...blankGroup(), name: 'PLANK holders', packs: 40, gate: 'snapshot', priceUsd: '2.50', paper: '1', coins: COIN.PLANK, perWallet: 5, hours: 24, rollTo: 2 },
-      { ...blankGroup(), name: 'Everyone', packsAs: 'rest', priceUsd: '2.50', paper: '1', coins: 7, perWallet: 5, afterGroup: 1 },
+      { ...blankGroup(), name: 'Everyone', packsAs: 'rest', priceUsd: '2.50', paper: '1', coins: 7, perWallet: 5, limitHours: EVERYONE_LIMIT_HOURS, afterGroup: 1 },
       {
         ...blankGroup(), name: 'After sell-out', unlimited: true, priceUsd: '2.50', paper: '1', coins: COIN.ETH, perTx: 1,
         idleMinutes: 15, taxPercent: '4', afterGroup: 2,
@@ -160,7 +167,7 @@ export function giantSale(): SaleSettings {
   return {
     ...s, packs: 10_000, maxPerTx: 100,
     groups: [
-      { ...press, packs: 1_000, perNft: 3, hours: 24 },
+      { ...press, packs: 1_000, perNft: 3, perWallet: 0, hours: 24 },
       { ...plank, packs: 1_000, perWallet: 100 },
       { ...everyone, perWallet: 100 },
       after,
@@ -473,6 +480,8 @@ export function checkSale(s: SaleSettings, now = Date.now() / 1000): SaleProblem
     if (g.gate === 'open' && price === 0n && paper === 0n) gp('priceUsd', 'Free packs open to everyone are refused: give it a price, PAPER or a "who".')
     gwhole('perWallet', g.perWallet, U32, 'Per wallet')
     gwhole('perTx', g.perTx, U32, 'Per purchase')
+    if (!hours(g.limitHours)) gp('limitHours', `Hours, 0 to ${MAX_WINDOW_HOURS} (30 days; 0 = never).`)
+    else if (g.limitHours > 0 && !g.perWallet) gp('limitHours', 'Lifts the per-wallet limit: set a per wallet first (or leave this blank).')
     // when
     if (g.afterGroup !== -1 && !(Number.isInteger(g.afterGroup) && g.afterGroup >= 0 && g.afterGroup < i)) {
       gp('afterGroup', 'It can only open after a group above it (or with the drop).')
@@ -528,6 +537,8 @@ export interface SaleGroupJson {
   paper: string
   coins: number
   perWallet: number
+  /** Seconds after the group opens that perWallet lifts (FireGroups.Group.limitFor); left out = never. */
+  limitFor?: number
   afterGroup: number
   startDelay: number
   duration: number
@@ -586,6 +597,7 @@ function groupJson(g: SaleGroup, packs: number): SaleGroupJson {
     paper: String(parseDecimal(g.paper, 18) ?? 0n),
     coins: price === 0n ? 0 : g.coins,
     perWallet: g.perWallet,
+    ...(g.limitHours > 0 ? { limitFor: seconds(g.limitHours) } : {}),
     afterGroup: g.afterGroup < 0 ? NONE : g.afterGroup,
     startDelay: seconds(g.delayHours),
     duration: seconds(g.hours),
@@ -700,7 +712,7 @@ export function groupSummary(s: SaleSettings, i: number): string {
   parts.push([usd, paper].filter(Boolean).join(' + ') || 'free')
   if (price > 0) parts.push(coinsText(g.coins))
   if (g.gate === 'nft') parts.push(`${g.perNft} per ${g.nft === 'press' ? 'Press' : 'NFT'}`)
-  if (g.perWallet) parts.push(`${g.perWallet} per wallet`)
+  if (g.perWallet) parts.push(`${g.perWallet} per wallet${g.limitHours > 0 ? ` for ${fmtHours(g.limitHours)}, then no limit` : ''}`)
   if (g.perTx) parts.push(`${g.perTx} per purchase`)
   const delay = g.delayHours > 0 ? ` + ${fmtHours(g.delayHours)}` : ''
   if (g.afterGroup >= 0) parts.push(`opens after ${groupName(s, g.afterGroup)}${delay}`)

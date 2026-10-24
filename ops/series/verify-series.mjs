@@ -18,7 +18,8 @@
 //   - every NFT group's collection is a contract ("press": the deployments file's MILL)
 //   - the sale block against the sale policy (sale-policy.mjs: drop-wide burns 10-100% with PAPER at least 10%, a
 //     PAPER cap of $0.10 or more; per group a price of $1-$10 (0 for holders' groups), PAPER per pack at least 0.1,
-//     at most 50 per wallet, a rising tax up to 10%, an unlimited group idling out within 1 h), each RED unless
+//     at most 50 per wallet (a limit on a timer lifting 1 h to 7 days after the group opens), a rising tax up to 10%,
+//     an unlimited group idling out within 1 h), each RED unless
 //     --allow <rule> (some only warn); FireSale's revenue wallet and burners are the deployments file's, and FireGroups
 //     is wired to FireSale; once the drop is configured, the drop on chain too
 // It prints one line per check and GREEN or RED. Only sign batch B when it's GREEN.

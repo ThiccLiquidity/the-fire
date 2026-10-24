@@ -239,6 +239,11 @@
             "internalType": "uint32"
           },
           {
+            "name": "limitFor",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
             "name": "perNft",
             "type": "uint32",
             "internalType": "uint32"
@@ -375,6 +380,11 @@
             "internalType": "uint32"
           },
           {
+            "name": "limitFor",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
             "name": "perNft",
             "type": "uint32",
             "internalType": "uint32"
@@ -486,6 +496,11 @@
                 "internalType": "uint32"
               },
               {
+                "name": "limitFor",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
                 "name": "perNft",
                 "type": "uint32",
                 "internalType": "uint32"
@@ -559,6 +574,11 @@
           },
           {
             "name": "endsAt",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "limitUntil",
             "type": "uint256",
             "internalType": "uint256"
           }

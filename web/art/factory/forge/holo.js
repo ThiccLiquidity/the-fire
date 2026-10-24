@@ -175,10 +175,49 @@
   // decoded before first use (img.decode()), so the first draw never stalls on decoding
   const loadImg = (src) => { if (!imgCache.has(src)) imgCache.set(src, new Promise((ok, no) => { const i = new Image(); i.decoding = 'async'; i.onload = () => (i.decode ? i.decode().catch(() => {}) : Promise.resolve()).then(() => ok(i)); i.onerror = no; i.src = src; })); return imgCache.get(src); };
   const live = new Set();
-  // sway: the card drifts on its own when nobody is touching it (the big card, the pack reveal); otherwise it holds the
-  // saved image's angle and moves only while the mouse or a finger is on it (grids and lists)
-  const moving = (L, t) => L.active && t - L.last < 2500;
-  const tiltNow = (L, t) => moving(L, t) ? L.tilt : L.sway && !still.matches ? { tx: Math.sin(t / 2400 + L.phase) * 0.64, ty: Math.cos((t / 2400 + L.phase) * 0.8) * 0.48, o: 0.55 } : STILL;
+  // ---------- the tilt: one smoothed value per card drives both the light and the card's lean
+  // Input (the mouse over it, a finger, device tilt) only sets a target. Every frame a critically damped spring moves the
+  // card's value toward it (no CSS transition fights it), so the card eases in, follows calmly, ignores a resting hand's
+  // jitter and eases back to rest when let go. A small dead zone keeps the middle still; a soft curve rounds off the edges.
+  // sway: untouched, the light drifts on its own (the big card, the pack reveal); rock: the card also leans a little with
+  // it (the reveal). Reduced motion: the card never leans and never drifts.
+  const fine = matchMedia('(pointer: fine)');
+  const MAX = () => (fine.matches ? 8 : 10); // degrees of lean at the card's edge (rotateY; rotateX a little less)
+  const FOLLOW = 10, REST = 6.5, DEAD = 0.06, MARGIN = 6; // springs (rad/s: following ~0.45 s, easing back to rest ~0.7 s), dead zone (of the half-width), the mouse's grace past the edge (px)
+  const shape = (u) => { const g = Math.max(0, Math.min(1, Math.abs(u)) - DEAD) / (1 - DEAD); return Math.sign(u) * g * (1.25 - 0.25 * g * g); }; // gentle in the middle, softer still at the edge
+  const swayAt = (L, t) => ({ tx: Math.sin(t / 2400 + L.phase) * 0.64, ty: Math.cos((t / 2400 + L.phase) * 0.8) * 0.48, o: 0.55 });
+  const drifts = (L) => L.sway && !still.matches;
+  // engaged: the mouse is over it, or a finger / device tilt aimed it in the last 2.5 s
+  const engaged = (L, t) => L.active && (L.hover || t - L.last < 2500);
+  function goal(L, t) {
+    if (engaged(L, t)) return { tx: L.tilt.tx, ty: L.tilt.ty, o: 1, w: 1 };
+    const s = drifts(L) ? swayAt(L, t) : STILL;
+    return { tx: s.tx, ty: s.ty, o: s.o, w: drifts(L) ? L.rock : 0 };
+  }
+  // advance the springs to time t (exact critically damped step, any frame length); true while anything still moves
+  function step(L, t, keys = ['tx', 'ty', 'o', 'w'], g = goal(L, t)) {
+    const gap = t - (L.st ?? t), dt = gap > 100 ? 1 / 60 : Math.max(0, gap) / 1000; L.st = t; // after a pause (nothing moved): one frame, not a jump
+    const k0 = engaged(L, t) ? FOLLOW : REST, e = Math.exp(-k0 * dt);
+    let busy = false;
+    for (const k of keys) {
+      const c1 = L.s[k] - g[k], c2 = L.v[k] + k0 * c1;
+      L.s[k] = g[k] + (c1 + c2 * dt) * e; L.v[k] = (c2 - k0 * (c1 + c2 * dt)) * e;
+      if (Math.abs(L.s[k] - g[k]) > 5e-4 || Math.abs(L.v[k]) > 5e-3) busy = true; else { L.s[k] = g[k]; L.v[k] = 0; }
+    }
+    return busy;
+  }
+  // the card leans with the light (the same smoothed value); written only when it changes
+  function lean(el, L) {
+    const w = still.matches ? 0 : L.s.w, m = MAX();
+    const css = w > 0.002 ? `perspective(800px) rotateY(${(L.s.tx * w * m).toFixed(2)}deg) rotateX(${(-L.s.ty * w * m * 0.85).toFixed(2)}deg)` : '';
+    if (css !== L.css) { el.style.transform = css; L.css = css; }
+  }
+  // a new aim, -1..1 from the card's middle: shaped, and a move under ~half a pixel is ignored
+  function setAim(L, u, v) {
+    const x = shape(u), y = shape(v);
+    if (L.active && Math.abs(x - L.tilt.tx) < 0.004 && Math.abs(y - L.tilt.ty) < 0.004) return false;
+    L.tilt = { tx: x, ty: y, o: 1 }; return true;
+  }
   // a sized face (the viewer) draws its moving frames at a lower resolution while a frame takes too long here, so
   // the light keeps up on a slow phone; a still or held frame is always drawn full size
   const QUALITY = [1, 0.75, 0.55];
@@ -186,12 +225,11 @@
     const L = el._holo; if (!L || !L.plain || L.defer) return;
     // a sized face (the full-screen viewer: Holo.size) knows its width, so the frame reads no layout; zoomed in, it draws sharper
     const bw = L.cssW || el.getBoundingClientRect().width; if (!bw) return;
-    const tl = L.held || tiltNow(L, t); // held (zoomed in): the light stays where it was
-    const lively = !!L.cssW && tl !== STILL && tl !== L.held, q = lively ? QUALITY[L.qi || 0] : 1;
+    const tl = L.held || L.s; // held (zoomed in): the light stays where it was
+    const lively = !!L.cssW && !L.held && !!L.busy, q = lively ? QUALITY[L.qi || 0] : 1;
     const dpr = Math.min(2, devicePixelRatio || 1), W = Math.min(L.cssW ? 1440 : 1100, Math.round(bw * dpr * (L.scale || 1) * q)), H = Math.round(W * 1008 / 720);
     if (L.canvas.width !== W || L.canvas.height !== H) { L.canvas.width = W; L.canvas.height = H; }
-    // the card itself tips toward the light a little while it's being moved
-    el.style.transform = !L.held && moving(L, t) && !still.matches ? `perspective(800px) rotateY(${(tl.tx * 10).toFixed(2)}deg) rotateX(${(-tl.ty * 10).toFixed(2)}deg)` : '';
+    lean(el, L);
     const t0 = performance.now();
     if (L.holder === 'raw') render(L.canvas.getContext('2d'), L.plain, L.print, L.material, L.look, tl, L.state);
     else renderHeld(L.canvas.getContext('2d'), L, L.material, L.look, tl);
@@ -200,44 +238,83 @@
       if (L.slow >= 3 && (L.qi || 0) < QUALITY.length - 1) { L.qi = (L.qi || 0) + 1; L.slow = 0; }
       else if (L.slow <= -30 && L.qi) { L.qi--; L.slow = 0; }
     }
-    L.drawnStill = tl === STILL || tl === L.held;
+    L.drawnStill = !L.busy || !!L.held;
   }
   let raf = 0;
   function loop(t) {
     raf = 0; let again = false;
     for (const el of live) {
-      if (!el.isConnected) { live.delete(el); continue; }
+      if (!el.isConnected) { live.delete(el); if (hov === el) unhover(); continue; }
       const L = el._holo; if (!L.visible) continue;
-      const busy = !L.held && (moving(L, t) || (L.sway && !still.matches));
+      if (L.held) { // held: the picture stays as drawn; only the lean eases back to flat
+        if (step(L, t, ['w'], { w: 0 })) again = true;
+        lean(el, L); continue;
+      }
+      // an aim that runs out (2.5 s after the last finger or device move) must still be noticed: keep looking until then
+      const busy = step(L, t) || drifts(L) || (L.active && !L.hover && t - L.last < 2600);
+      L.busy = busy;
       if (busy || !L.drawnStill) draw(el, t);
       if (busy) again = true;
     }
     if (again) raf = requestAnimationFrame(loop);
   }
   const kick = () => { if (!raf && live.size) raf = requestAnimationFrame(loop); };
+  // the mouse: followed from the window while it's over a card (never from the card's own leave: the leaning card's
+  // edge moves under a still mouse, which made it flicker), measured from the card's middle and its unleaned size,
+  // let go a few pixels past the edge, when something covers it, or when the page scrolls
+  let hov = null;
+  function track(e) {
+    if (e.pointerType && e.pointerType !== 'mouse' && e.pointerType !== 'pen') return;
+    const face = hov, L = face?._holo; if (!L || !face.isConnected) return unhover();
+    const b = face.getBoundingClientRect(), w = face.offsetWidth || b.width, h = face.offsetHeight || b.height;
+    const u = (e.clientX - (b.left + b.width / 2)) / (w / 2), v = (e.clientY - (b.top + b.height / 2)) / (h / 2), m = 1 + (2 * MARGIN) / Math.min(w, h);
+    const t = e.target, near = t instanceof Node && (!!face.parentElement?.contains(t) || t.contains(face));
+    if (Math.abs(u) > m || Math.abs(v) > m || !near) return unhover();
+    L.active = true; L.hover = true; L.last = performance.now();
+    if (setAim(L, u, v)) kick();
+  }
+  function unhover() {
+    const L = hov?._holo; hov = null;
+    if (L) { L.hover = false; L.active = false; kick(); }
+    removeEventListener('pointermove', track, true); removeEventListener('scroll', unhover, true); document.documentElement.removeEventListener('pointerleave', unhover);
+  }
+  function hover(face, e) {
+    if (hov !== face) {
+      if (hov) unhover();
+      hov = face; addEventListener('pointermove', track, true); addEventListener('scroll', unhover, true); document.documentElement.addEventListener('pointerleave', unhover);
+    }
+    track(e);
+  }
   // a turn of the phone (or any resize) changes every card's size: still cards draw again at their new size
   addEventListener('resize', () => { for (const el of live) if (el._holo) el._holo.drawnStill = false; kick(); });
   const io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => { for (const e of es) if (e.target._holo) e.target._holo.visible = e.isIntersecting; kick(); }) : null;
   /** Draw a card face live from its parts (any card but a retired Diamond): raw, cased or slabbed; sway: a holo card
-   *  drifts when untouched. */
-  function attach(face, c, sway = false) {
+   *  drifts when untouched; rock (0..1): it also leans with the drift (the pack reveal). */
+  function attach(face, c, sway = false, { rock = 0 } = {}) {
     if (!PARTS) return;
     const parts = PARTS(c); if (!parts) return;
     const canvas = document.createElement('canvas'); canvas.className = 'cholo'; canvas.setAttribute('aria-hidden', 'true');
     face.append(canvas); face.classList.add('live');
-    // a card with no holo still draws here (sharp at any size, and it tips when moved), but never drifts on its own
-    const L = face._holo = { canvas, material: c.material, look: parts.look, holder: parts.holder, state: parts.state, label: parts.label, sway: sway && parts.look !== 'none',
-      plain: null, print: null, tilt: STILL, active: false, last: -1e9, visible: true, drawnStill: false, phase: Math.random() * 6 };
+    // a card with no holo still draws here (sharp at any size, and it leans when moved), but never drifts on its own
+    const L = face._holo = { canvas, material: c.material, look: parts.look, holder: parts.holder, state: parts.state, label: parts.label, sway: sway && parts.look !== 'none', rock,
+      plain: null, print: null, tilt: { ...STILL }, active: false, hover: false, last: -1e9, visible: true, drawnStill: false, phase: Math.random() * 6,
+      v: { tx: 0, ty: 0, o: 0, w: 0 } };
+    L.s = { ...goal(L, performance.now()) }; // it starts where it rests: nothing moves until something does
     const fonts = parts.holder === 'slab' && document.fonts ? document.fonts.load(`400 52px ${LABEL_FONT}`).catch(() => null) : null;
     // face._ready: resolves once the live card has drawn (or fell back to its image), so a reveal never turns over a half-drawn card
     face._ready = Promise.all([loadImg(parts.plain), loadImg(parts.print), fonts])
       .then(([p, q]) => { L.plain = p; L.print = q; face.classList.add('ready'); live.add(face); if (io) io.observe(face); draw(face, performance.now()); kick(); })
       .catch(() => { canvas.remove(); face.classList.remove('live'); });
-    const point = (e) => { if (L.external) return; const b = face.getBoundingClientRect(); L.active = true; L.last = performance.now();
-      L.tilt = { tx: Math.max(-1, Math.min(1, (e.clientX - b.left) / b.width * 2 - 1)), ty: Math.max(-1, Math.min(1, (e.clientY - b.top) / b.height * 2 - 1)), o: 1 };
-      kick(); };
-    face.addEventListener('pointermove', point); face.addEventListener('pointerdown', point);
-    face.addEventListener('pointerleave', () => { if (L.external) return; L.active = false; L.last = -1e9; kick(); });
+    // the mouse (and a pen) hovers: followed from the window (hover); a finger: its own moves, let go when it lifts
+    const point = (e) => {
+      if (L.external) return;
+      if (e.pointerType === 'mouse' || e.pointerType === 'pen') return hover(face, e);
+      const b = face.getBoundingClientRect(), w = face.offsetWidth || b.width, h = face.offsetHeight || b.height;
+      L.active = true; L.hover = false; L.last = performance.now();
+      if (setAim(L, (e.clientX - (b.left + b.width / 2)) / (w / 2), (e.clientY - (b.top + b.height / 2)) / (h / 2))) kick();
+    };
+    face.addEventListener('pointerenter', point); face.addEventListener('pointermove', point); face.addEventListener('pointerdown', point);
+    face.addEventListener('pointerleave', (e) => { if (L.external || e.pointerType === 'mouse' || e.pointerType === 'pen') return; L.active = false; kick(); });
   }
   // the full-screen viewer (zoom.js) drives a face itself: its size (no layout reads in a frame), the light's aim, and
   // holding it still while zoomed in (one sharp redraw instead of one every frame)
@@ -248,15 +325,15 @@
    *  now and swap the live card in, in the same frame. */
   function defer(face, on) { const L = sw(face); if (!L || !!L.defer === !!on) return; L.defer = !!on; face.classList.toggle('defer', !!on);
     if (!on) { L.drawnStill = false; if (L.plain) draw(face, performance.now()); kick(); } }
-  /** Aim the light: tx, ty in -1..1 (finger, mouse or device tilt); null lets go (it drifts again). */
-  function aim(face, tx, ty) { const L = sw(face); if (!L || L.held) return;
-    if (tx == null) { L.active = false; L.last = -1e9; } else { L.active = true; L.last = performance.now(); L.tilt = { tx: Math.max(-1, Math.min(1, tx)), ty: Math.max(-1, Math.min(1, ty)), o: 1 }; }
+  /** Aim the light: tx, ty in -1..1 from the card's middle (finger, mouse or device tilt); null lets go (it eases back and
+   *  drifts again). hover: a mouse over it (held until let go; otherwise it lets go by itself 2.5 s after the last aim). */
+  function aim(face, tx, ty, { hover: hv = false } = {}) { const L = sw(face); if (!L || L.held) return;
+    if (tx == null) { L.active = false; L.hover = false; } else { L.active = true; L.hover = hv; L.last = performance.now(); setAim(L, Math.max(-1, Math.min(1, tx)), Math.max(-1, Math.min(1, ty))); }
     kick(); }
-  /** Hold the light where it is (true) or let it move again (false). */
+  /** Hold the light where it is (true) or let it move again (false): the card eases flat while held. */
   function hold(face, on) { const L = sw(face); if (!L || !!L.held === !!on) return;
     const t = performance.now();
-    if (on) { L.held = tiltNow(L, t); L.heldAt = t; } else { L.held = null; L.phase -= (t - L.heldAt) / 2400; } // the drift picks up where it stopped
-    if (on) face.style.transform = '';
+    if (on) { L.held = { tx: L.s.tx, ty: L.s.ty, o: L.s.o }; L.heldAt = t; } else { L.held = null; L.phase -= (t - L.heldAt) / 2400; L.st = t; } // the drift picks up where it stopped
     L.drawnStill = !!on; kick(); } // held: what's drawn stays (no redraw)
   /** Fetch and decode a card's live parts ahead of time (the pack's cards, during the tear). */
   function preload(c) { const p = PARTS?.(c); return p ? Promise.all([loadImg(p.plain), loadImg(p.print)]).catch(() => null) : Promise.resolve(null); }

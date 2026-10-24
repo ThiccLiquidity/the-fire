@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { legacyDiamondRecipe, standardRecipe, typeWeights } from './recipe'
+import { checkRecipe, legacyDiamondRecipe, standardRecipe, typeWeights } from './recipe'
+import { characterOddsProblems, characterPercentsOf, characterWeightsOf, charactersAllEqual } from './series'
 import { migrateCharacterArt, migrateFire, needsMigration, oldRecipeToOdds } from './migrate'
 import { creditPacksMax, groupPacks, saleOf, standardSale } from './sale'
 import type { Character, FireRecord, ImageSlot } from './types'
@@ -47,9 +48,12 @@ describe('old saves and backups', () => {
     expect(r.types.map((t) => t.id)).toEqual(['p', 'w', 'f', 'c', 'g', 'a'])
     const { deal: _deal, ...open } = migrateFire(oldFire)
     const m = migrateFire({ ...open, packs: 167, characterIds: Array.from({ length: 20 }, (_, i) => `c${i}`), recipe: old as never })
-    expect(typeWeights(m.recipe).weights).toEqual([501n, 242n, 150n, 49n, 40n, 20n])
+    // an open Series: its odds become percentages (the old pool's shares are the Standard's)
+    expect(m.recipe.types.map((t) => t.percent)).toEqual(['50', '24.15', '14.97', '4.89', '3.99', '2'])
+    expect(m.recipe.types.some((t) => 'weight' in t)).toBe(false)
+    expect(typeWeights(m.recipe).weights).toEqual([5000n, 2415n, 1497n, 489n, 399n, 200n])
     expect(needsMigration(m)).toBe(false)
-    expect(standardRecipe().types.map((t) => t.weight)).toEqual(['5000', '2415', '1497', '489', '399', '200'])
+    expect(typeWeights(standardRecipe()).weights).toEqual([5000n, 2415n, 1497n, 489n, 399n, 200n])
   })
 
   it('a locked deal is re-labelled: materials to Standard type indexes, pool to an array', () => {
@@ -141,6 +145,76 @@ describe('old saves and backups', () => {
     const locked = migrateFire(oldFire)
     expect(locked.packs).toBe(2)
     expect(needsMigration(locked)).toBe(false)
+  })
+})
+
+describe('odds saved as weights become percentages', () => {
+  const { deal: _deal, ...openBase } = migrateFire(oldFire)
+  /** A recipe as saved before percentages: each type with only a weight. */
+  const weightsOnly = (w: string[]) => ({ ...standardRecipe(), types: standardRecipe().types.map(({ percent: _p, ...t }, i) => ({ ...t, weight: w[i] })) })
+
+  it('an open Series: type weights to % of cards (adding up to 100%), exact weights dropped', () => {
+    const saved = { ...openBase, recipe: weightsOnly(['5000', '2415', '1497', '489', '399', '200']) }
+    expect(needsMigration(saved)).toBe(true)
+    const m = migrateFire(saved)
+    expect(m.recipe).toEqual(standardRecipe())
+    expect(needsMigration(m)).toBe(false)
+    // rounding fixed so they add up to exactly 100%
+    const odd = migrateFire({ ...openBase, recipe: weightsOnly(['1', '1', '1', '1', '1', '1']) })
+    expect(odd.recipe.types.map((t) => t.percent)).toEqual(['16.67', '16.67', '16.67', '16.67', '16.66', '16.66'])
+    expect(checkRecipe(odd.recipe)).toEqual([])
+  })
+
+  it('an open Series: character weights to % of cards; all equal weights to "All equal"', () => {
+    const ids = ['a', 'b', 'c', 'd']
+    const m = migrateFire({ ...openBase, characterIds: ids, characterWeights: { a: 1, b: 1, c: 1, d: 7 } })
+    expect(m.characterPercents).toEqual({ a: '10', b: '10', c: '10', d: '70' })
+    expect('characterWeights' in m).toBe(false)
+    expect(characterWeightsOf(m)).toEqual([1, 1, 1, 7])
+    expect(needsMigration(m)).toBe(false)
+    const eq = migrateFire({ ...openBase, characterIds: ids, characterWeights: { a: 2, b: 2, c: 2, d: 2 } })
+    expect(eq.characterPercents).toBeUndefined()
+    expect(charactersAllEqual(eq)).toBe(true)
+    const thirds = migrateFire({ ...openBase, characterIds: ['a', 'b', 'c'], characterWeights: { a: 1, b: 2, c: 3 } })
+    expect(thirds.characterPercents).toEqual({ a: '16.67', b: '33.33', c: '50' })
+    expect(characterOddsProblems(thirds)).toEqual([])
+  })
+
+  it('a locked Series keeps its exact weights (its odds and recipe.json never change), shown as %', () => {
+    const f = migrateFire(oldFire)
+    expect(typeWeights(f.recipe).weights).toEqual([501n, 301n, 150n, 49n, 1n])
+    expect(f.recipe.types.map((t) => t.percent)).toEqual(['50', '30.04', '14.97', '4.89', '0.1'])
+    const locked = migrateFire({ ...f, recipe: weightsOnly(['7', '3', '1', '1', '1', '1']), characterWeights: { a: 3, b: 1 } })
+    expect(typeWeights(locked.recipe).weights).toEqual([7n, 3n, 1n, 1n, 1n, 1n])
+    expect(locked.recipe.types.map((t) => t.percent)).toEqual(['50', '21.43', '7.15', '7.14', '7.14', '7.14'])
+    expect(locked.characterWeights).toEqual({ a: 3, b: 1 })
+    expect(locked.characterIds).toEqual(['a', 'b'])
+    expect(characterWeightsOf(locked)).toEqual([3, 1])
+    expect(characterPercentsOf(locked)).toEqual(['75', '25'])
+    expect(characterOddsProblems(locked)).toEqual([])
+    expect(needsMigration(locked)).toBe(false)
+  })
+})
+
+describe('character odds as percentages', () => {
+  const f = (p?: Record<string, string>) => ({ characterIds: ['a', 'b', 'c'], characterPercents: p })
+  it('"All equal" (no percentages): no weights, no problems', () => {
+    expect(charactersAllEqual(f())).toBe(true)
+    expect(characterWeightsOf(f())).toBeUndefined()
+    expect(characterOddsProblems(f())).toEqual([])
+  })
+  it('percentages to weights (percent x 10,000, simplified); equal percentages send none', () => {
+    expect(characterWeightsOf(f({ a: '10', b: '20', c: '70' }))).toEqual([1, 2, 7])
+    expect(characterWeightsOf(f({ a: '33.34', b: '33.33', c: '33.33' }))).toEqual([3334, 3333, 3333])
+    expect(characterWeightsOf({ characterIds: ['a', 'b'], characterPercents: { a: '50', b: '50' } })).toBeUndefined()
+  })
+  it('must each be above 0 and add up to exactly 100%', () => {
+    expect(characterOddsProblems(f({ a: '10', b: '20', c: '70' }))).toEqual([])
+    expect(characterOddsProblems(f({ a: '10', b: '20' }), (k) => ['Ember', 'Ash', 'Cinder'][k])).toEqual([
+      'Cinder has 0% of cards: give every character more than 0%, or turn "All equal" back on.',
+      'The characters add up to 30%: they must add up to exactly 100% (70% left to assign).',
+    ])
+    expect(characterOddsProblems(f({ a: '10.123', b: '20', c: '70' }))[0]).toBe('c0: % of cards must be a number from 0 to 100, with at most 2 decimals.')
   })
 })
 

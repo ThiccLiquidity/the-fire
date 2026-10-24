@@ -10,9 +10,11 @@
 //   no-paper        a group has no PAPER per pack (paper 0)
 //   paper-cap       paperCapUsd is at least $0.10 (0 = no cap: a warning, not RED)
 //   wallet-limit    a group's perWallet is 50 or less (0 = no limit: a warning for a finite open group)
+//   limit-lifts     a per-wallet limit with a timer (limitFor) lifts 1 h to 7 days after the group opens
 //   tax             a group's rising tax is at most 10% a pack (a warning above; the owner's default is 4%)
 //   idle            an unlimited group idles out within 1 h (a warning above)
-// Hard (no --allow): a snapshot group has a root at LOCK; an NFT group's collection has code; an open group isn't free.
+// Hard (no --allow): a snapshot group has a root at LOCK; an NFT group's collection has code; an open group isn't free;
+// a limitFor has a perWallet to lift.
 //
 // The wallets: FireSale.revenueWallet, plankBurner and paperBurner must be the deployments file's REVENUE_WALLET
 // (inputs) and PlankBurner / PaperBurner (contracts); FireGroups is wired to FireSale both ways. The field names are
@@ -28,6 +30,7 @@ export const RULES = {
   "no-paper": "a group's PAPER per pack is not 0",
   "paper-cap": "paperCapUsd is at least $0.10, or 0 (no cap)",
   "wallet-limit": "a group's perWallet is 50 or less",
+  "limit-lifts": "a group's per-wallet limit lifts 1 h to 7 days after it opens (limitFor)",
   tax: "a group's taxBps is 1000 (10%) or less",
   idle: "an unlimited group's idle is 1 h or less",
 };
@@ -37,8 +40,8 @@ const ZERO_ROOT = /^0x0{64}$/i;
 const big = (v) => BigInt(v ?? 0);
 export const DROP_FIELDS = ["start", "packs", "plankBurnBps", "paperBurnBps", "paperCapUsd", "maxPerTx", "regularWalletsFor", "creditsPerPick",
   "creditPacksMax", "creditPacksPerWallet", "creditGroup"];
-export const GROUP_FIELDS = ["packs", "gate", "coins", "afterGroup", "rollTo", "startDelay", "duration", "perWallet", "perNft", "taxBps", "priceUsd",
-  "paper", "nft", "idle", "perTx", "unlimited", "root"];
+export const GROUP_FIELDS = ["packs", "gate", "coins", "afterGroup", "rollTo", "startDelay", "duration", "perWallet", "limitFor", "perNft", "taxBps",
+  "priceUsd", "paper", "nft", "idle", "perTx", "unlimited", "root"];
 
 /** "--allow price,wallet-limit" (a string, a list or nothing) -> the set of allowed rules. Unknown names throw. */
 export function parseAllow(v) {
@@ -75,7 +78,7 @@ export function normSale(sale, { mill, roots = {}, start } = {}) {
     return {
       name: g.name, gate, nft, root: root && !ZERO_ROOT.test(String(root)) ? String(root).toLowerCase() : `0x${"0".repeat(64)}`,
       unlimited: !!g.unlimited,
-      ...Object.fromEntries(["packs", "coins", "afterGroup", "rollTo", "startDelay", "duration", "perWallet", "perNft", "taxBps", "priceUsd", "paper", "idle", "perTx"].map((k) => [k, big(g[k])])),
+      ...Object.fromEntries(["packs", "coins", "afterGroup", "rollTo", "startDelay", "duration", "perWallet", "limitFor", "perNft", "taxBps", "priceUsd", "paper", "idle", "perTx"].map((k) => [k, big(g[k])])),
     };
   });
   return {
@@ -123,7 +126,11 @@ export function salePolicy(sale0, { allow = new Set(), roots, nftCode = {}, mill
     if (g.perWallet === 0n) {
       const fine = g.unlimited || holders;
       rule("wallet-limit", fine, `${n}: no wallet limit${g.unlimited ? " (an unlimited group: its rising price limits it)" : holders ? ` (the gate limits it: ${g.gate === "nft" ? `${g.perNft} per NFT` : "each wallet's snapshot allowance"})` : ""}`, { warnOnly: true });
-    } else rule("wallet-limit", g.perWallet <= 50n, `${n}: ${g.perWallet} packs per wallet`);
+    } else rule("wallet-limit", g.perWallet <= 50n, `${n}: ${g.perWallet} packs per wallet${g.limitFor ? ` for the first ${dur(g.limitFor)}` : ""}`);
+    if (g.limitFor !== 0n) {
+      if (g.perWallet === 0n) rule("limit-lifts", false, `${n}: limitFor ${dur(g.limitFor)} with no per-wallet limit to lift`, { hard: true });
+      else rule("limit-lifts", g.limitFor >= 3600n && g.limitFor <= 7n * 86400n, `${n}: the per-wallet limit lifts ${dur(g.limitFor)} after it opens, then no limit`);
+    }
     if (g.taxBps !== 0n) rule("tax", g.taxBps <= 1000n, `${n}: the price rises ${pct(g.taxBps)} a pack`, { warnOnly: true });
     if (g.unlimited) rule("idle", g.idle !== 0n && g.idle <= 3600n, `${n}: no pack count, ends ${g.idle === 0n ? "never by idling (the contract refuses it)" : `${dur(g.idle)} after its last sale`}`, { warnOnly: g.idle !== 0n, hard: g.idle === 0n });
     if (g.gate === "snapshot") rule("snapshot-root", !ZERO_ROOT.test(g.root), `${n}: snapshot root ${ZERO_ROOT.test(g.root) ? "missing (take the snapshot: GROUP_ROOT_" + i + ")" : g.root}`, { hard: true });
@@ -180,7 +187,7 @@ export function describeGroup(g, i, sale, { mill } = {}) {
     `  Packs:      ${g.unlimited ? "no limit (unlimited: adds on top of the total)" : `${g.packs}${g.packs === 0n ? " (only leftovers rolled in)" : ""}`}`,
     `  Price:      ${price} a pack${g.taxBps ? `, rising ${pct(g.taxBps)} a pack (taxBps ${g.taxBps}: the rise buys and burns PAPER)` : ""}`,
     `  Coins:      ${g.priceUsd === 0n ? "- (no dollar price)" : coinNames(g.coins)}`,
-    `  Per wallet: ${g.perWallet === 0n ? "no limit" : g.perWallet}; per purchase: ${g.perTx === 0n ? `${sale.maxPerTx === 0n ? 50n : sale.maxPerTx} (the drop's)` : g.perTx}`,
+    `  Per wallet: ${g.perWallet === 0n ? "no limit" : g.limitFor ? `${g.perWallet} for the first ${dur(g.limitFor)} after it opens, then no limit` : g.perWallet}; per purchase: ${g.perTx === 0n ? `${sale.maxPerTx === 0n ? 50n : sale.maxPerTx} (the drop's)` : g.perTx}`,
     `  Opens:      ${opens}`,
     `  Max time:   ${g.duration === 0n ? (g.unlimited ? "no time limit" : "until its packs are gone") : dur(g.duration)}; idle: ${g.idle === 0n ? "off" : `ends ${dur(g.idle)} after its last sale`}`,
     `  Leftovers:  ${Number(g.rollTo) === NONE ? "nowhere (never made)" : `to ${ref(Number(g.rollTo))}`}`,

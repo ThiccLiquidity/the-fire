@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react'
+import { fillTheRest, formatPercent, parsePercent, percentTotal, percentTotalLine, percentTotalProblem } from './recipe'
 
 export function ProgressBar({ value, label, tone }: { value: number; label?: ReactNode; tone?: string }) {
   const pct = Math.max(0, Math.min(1, value)) * 100
@@ -108,4 +109,39 @@ export function useAction(): [boolean, string | null, (fn: () => Promise<void>) 
     }
   }
   return [busy, error, run, setError]
+}
+
+/** A "% of cards" field: up to 2 decimals, 0 to 100. Kept as typed (flagged when it isn't a number), tidied on blur
+ *  ("24.10" to "24.1"). */
+export function PercentOfCards({ value, onChange, disabled, testId }: { value: string; onChange: (v: string) => void; disabled?: boolean; testId?: string }) {
+  const bad = parsePercent(value) == null
+  return (
+    <span className="pct-input share-input">
+      <input value={value} disabled={disabled} aria-invalid={bad} inputMode="decimal" data-testid={testId}
+        onChange={(e) => onChange(e.target.value.trim())}
+        onBlur={() => { const v = parsePercent(value); if (v != null && formatPercent(v) !== value) onChange(formatPercent(v)) }} />%
+    </span>
+  )
+}
+
+/** The running total of a list of percentages that must add up to exactly 100%: "Total 96.01% · 3.99% left to
+ *  assign", the problem when it's off, and the one-click fix ("Fill the rest into Paper"). `what` names the list in the
+ *  problem ("The card types"); `names` names each entry. */
+export function PercentTotalBar({ percents, names, what, onFill, disabled, testId }: {
+  percents: string[]; names: string[]; what: string; onFill: (index: number, percent: string) => void; disabled?: boolean; testId?: string
+}) {
+  const t = percentTotal(percents)
+  const fix = fillTheRest(percents)
+  const problem = t.bad.length ? `${t.bad.length === 1 ? 'One % isn\'t' : `${t.bad.length} %s aren't`} a number from 0 to 100 (at most 2 decimals).` : percentTotalProblem(t, what)
+  return (
+    <div className={`pct-total ${t.ok ? 'ok' : 'off'}`} data-testid={testId}>
+      <b data-testid={testId ? `${testId}-line` : undefined}>{percentTotalLine(t)}</b>
+      {problem && <span className="err" data-testid={testId ? `${testId}-problem` : undefined}>{problem}</span>}
+      {!disabled && fix && (
+        <button onClick={() => onFill(fix.index, fix.percent)} data-testid={testId ? `${testId}-fill` : undefined}>
+          {t.left > 0 ? `Fill the rest into ${names[fix.index] || `#${fix.index + 1}`}` : `Take the extra ${formatPercent(-t.left)}% from ${names[fix.index] || `#${fix.index + 1}`}`}
+        </button>
+      )}
+    </div>
+  )
 }

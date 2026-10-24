@@ -7,10 +7,12 @@
  *  saleFromOld; a free-pack cap saved as a number of packs becomes a percent of the drop). A Series whose deal isn't
  *  locked takes its pack count from its sale (the groups' total); one saved without
  *  sale settings gets the Standard sale resized to its packs. A deal saved with editions ("k of N") gets print
- *  numbers instead (numberPrints: per exact card, in the order dealt). Runs on load (store.ts loadStudio), so imports of old backups migrate too. */
+ *  numbers instead (numberPrints: per exact card, in the order dealt). Odds saved as weights (card types and
+ *  characters) become percentages (2 decimals, rounded so they add up to exactly 100%: weightsToPercents); a Series
+ *  whose deal is locked keeps its exact weights too, so its odds (and its recipe.json) never change. Runs on load (store.ts loadStudio), so imports of old backups migrate too. */
 
 import { numberPrints, type DealResult, type DealtCard } from './deal'
-import { legacyDiamondRecipe, type CardTypeDef, type HoloRule, type Recipe } from './recipe'
+import { dropExactWeights, legacyDiamondRecipe, weightsToPercents, withPercentsFromWeights, type CardTypeDef, type HoloRule, type Recipe } from './recipe'
 import { CARDS_PER_PACK, MATERIALS, type Material } from './rules'
 import { isOldSale, saleFromOld, salePacks, saleOf, saleWithPacks, standardSale, type OldSaleSettings } from './sale'
 import type { Character, FireRecord } from './types'
@@ -47,15 +49,22 @@ export function oldRecipeToOdds(r: OldRecipe, packs: number, chars: number): Rec
   if (fi >= 0) counts[fi] = N > used ? N - used : 0n
   const types: CardTypeDef[] = r.types.map((t, i) => ({
     id: t.id, name: t.name, slug: t.slug, ...(t.slugEdited ? { slugEdited: true } : {}), rank: t.rank,
-    weight: String(counts[i] > 0n ? counts[i] : 1n), holo: t.holo, frameSet: t.frameSet,
+    percent: '', weight: String(counts[i] > 0n ? counts[i] : 1n), holo: t.holo, frameSet: t.frameSet,
   }))
-  return { types, cardsPerPack: perPack }
+  return withPercentsFromWeights({ types, cardsPerPack: perPack })
 }
 type OldDeal = Omit<DealResult, 'pool' | 'cards' | 'cardsPerPack'> & { pool: number[] | Record<Material, number>; cards: OldCard[]; cardsPerPack?: number; diamonds?: number }
 
+/** Odds saved as weights: a type without a percentage, or (open Series) exact weights or character weights. */
+function oddsNeedMigration(r: Partial<FireRecord>): boolean {
+  const types = (r.recipe?.types ?? []) as Partial<CardTypeDef>[]
+  if (types.some((t) => typeof t.percent !== 'string')) return true
+  return !r.deal && (types.some((t) => t.weight !== undefined) || !!r.characterWeights)
+}
+
 export function needsMigration(f: unknown): boolean {
   const r = f as Partial<FireRecord> & { deal?: OldDeal }
-  return !r.recipe || 'pdaOdds' in r.recipe || isOldRecipe(r.recipe) || (!!r.deal && !Array.isArray(r.deal.pool)) || hasEditions(r.deal) || saleNeedsMigration(r)
+  return !r.recipe || 'pdaOdds' in r.recipe || isOldRecipe(r.recipe) || (!!r.deal && !Array.isArray(r.deal.pool)) || hasEditions(r.deal) || saleNeedsMigration(r) || oddsNeedMigration(r)
 }
 
 function saleNeedsMigration(r: Partial<FireRecord>): boolean {
@@ -72,6 +81,18 @@ export function migrateFire(raw: unknown): FireRecord {
     f.recipe = recipe
   }
   if (isOldRecipe(f.recipe)) f.recipe = oldRecipeToOdds(f.recipe, old.deal?.packs ?? old.packs ?? 167, (old.deal?.characterIds ?? old.characterIds ?? []).length)
+  // odds as percentages; a locked Series keeps its exact weights beside them
+  if (f.recipe.types.some((t) => typeof (t as Partial<CardTypeDef>).percent !== 'string')) f.recipe = withPercentsFromWeights(f.recipe)
+  if (!old.deal) {
+    f.recipe = dropExactWeights(f.recipe)
+    if (f.characterWeights) {
+      const ids = f.characterIds ?? []
+      const w = ids.map((id) => Math.max(1, Math.floor(f.characterWeights?.[id] ?? 1)))
+      const p = weightsToPercents(w)
+      delete f.characterWeights
+      if (w.some((x) => x !== w[0])) f.characterPercents = Object.fromEntries(ids.map((id, k) => [id, p[k]]))
+    }
+  }
   const d = old.deal
   if (d && !Array.isArray(d.pool)) {
     const pool = d.pool as Record<Material, number>

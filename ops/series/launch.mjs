@@ -37,7 +37,7 @@
 //                        blocks in that many days (ops/snapshot)
 //   --holders-out <file> where the site's holders file goes (default web/art/factory/forge/holders/series-<N>.json)
 //   --allow <rule>,...   sale settings outside the policy that are meant (ops/series/sale-policy.mjs: price,
-//                        burn-total, paper-burn, paper-per-pack, no-paper, paper-cap, wallet-limit, tax, idle);
+//                        burn-total, paper-burn, paper-per-pack, no-paper, paper-cap, wallet-limit, limit-lifts, tax, idle);
 //                        anything else outside it stops the launch before batch A and again before LOCK
 //   --gateways a,b       IPFS gateways for VerifySeries and the pack art check (default VerifySeries' list)
 //   --verify-tries 4 --verify-wait 90   VerifySeries retries (seconds between) while images don't load yet

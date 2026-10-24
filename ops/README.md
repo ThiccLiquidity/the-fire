@@ -159,6 +159,7 @@ LOCK). Drop-wide and per group; each rule is RED unless `--allow <rule>` names i
 | `no-paper` | a group's `paper` is not 0 |
 | `paper-cap` | `paperCapUsd` is at least $0.10; 0 (no cap) is a warning |
 | `wallet-limit` | a group's `perWallet` is 50 or less; 0 (no limit) is a warning for a finite open group (fine for a gated group, where the gate limits it, and for the unlimited group, where the rising price does) |
+| `limit-lifts` | a group's per-wallet limit on a timer (`limitFor`) lifts 1 h to 7 days after the group opens (the Standard Everyone group: 24 h); a `limitFor` with no `perWallet` is hard (the contract refuses it) |
 | `tax` | warning: a group's `taxBps` is over 1000 (10% a pack; the owner's default is 400) |
 | `idle` | warning: an unlimited group's `idle` is over 1 h |
 

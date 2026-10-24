@@ -1897,11 +1897,18 @@ contract SaleTest is SaleBase {
         assertEq(v[1].config.perWallet, 5);
         assertEq(v[1].config.duration, 24 hours);
         assertEq(v[1].config.rollTo, 2);
-        // 3. Everyone: 77 (+ leftovers), $2.50 + 1 PAPER, any coin, 5 per wallet, after group 2, until sold
+        // 3. Everyone: 77 (+ leftovers), $2.50 + 1 PAPER, any coin, 5 per wallet for its first 24h (then no limit),
+        //    after group 2, until sold
         assertEq(v[2].config.packs, 77);
         assertEq(uint8(v[2].config.gate), uint8(FireGroups.Gate.OPEN));
         assertEq(v[2].config.coins, 7);
         assertEq(v[2].config.perWallet, 5);
+        assertEq(v[2].config.limitFor, 24 hours);
+        assertEq(v[2].limitUntil, 1_810_000_000 + 48 hours, "24h after it opens (at the latest)");
+        assertEq(v[0].config.perWallet, 2);
+        assertEq(v[0].config.limitFor, 0, "Press: the limit holds the whole time");
+        assertEq(v[1].config.limitFor, 0, "PLANK: the limit holds the whole time");
+        assertEq(v[0].limitUntil, 0);
         assertEq(v[2].config.afterGroup, 1);
         assertEq(v[2].config.duration, 0);
         assertEq(v[2].config.rollTo, NONE);
@@ -1983,5 +1990,9 @@ contract SaleTest is SaleBase {
         cs.parseSale(vm.replace(json, '"taxBps": 400', '"taxBps": 5001'));
         vm.expectRevert(bytes(".sale.groups[2]: nft and perNft are for gate nft only"));
         cs.parseSale(vm.replace(json, '"gate": "open",', '"gate": "open", "perNft": 1,'));
+        vm.expectRevert(bytes(".sale.groups[2].limitFor is too big for its field (most 2592000)"));
+        cs.parseSale(vm.replace(json, '"limitFor": 86400', '"limitFor": 2592001'));
+        vm.expectRevert(bytes(".sale.groups[2].limitFor: lifts the per-wallet limit, so it needs a perWallet"));
+        cs.parseSale(vm.replace(json, '"perWallet": 5,\n    "limitFor"', '"perWallet": 0,\n    "limitFor"'));
     }
 }

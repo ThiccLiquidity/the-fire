@@ -703,6 +703,11 @@
                 "internalType": "uint32"
               },
               {
+                "name": "limitFor",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
                 "name": "perNft",
                 "type": "uint32",
                 "internalType": "uint32"
@@ -1396,6 +1401,11 @@
               },
               {
                 "name": "perWallet",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "limitFor",
                 "type": "uint32",
                 "internalType": "uint32"
               },

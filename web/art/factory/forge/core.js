@@ -135,9 +135,29 @@
       if (g.gate === 'snapshot' && !w.inSnapshot) return { ok: false, why: g.who };
       if (g.gate === 'nft' && bought >= g.perNft) return { ok: false, why: 'Your Press already got its pack' };
       if (w.isContract && g.gate !== 'nft' && g.index < 3) return { ok: false, why: 'Regular wallets only for now' };
-      const lim = [g.perTx || 50, g.left ?? Infinity, g.perWallet ? g.perWallet - bought : Infinity, g.gate === 'nft' ? g.perNft - bought : Infinity];
+      const pw = Store.walletLimit(g);
+      const lim = [g.perTx || 50, g.left ?? Infinity, pw ? pw - bought : Infinity, g.gate === 'nft' ? g.perNft - bought : Infinity];
       const max = Math.max(0, Math.min(...lim));
-      return max ? { ok: true, max } : { ok: false, why: g.left === 0 ? 'Sold out' : `Limit: ${g.perWallet} per wallet` };
+      return max ? { ok: true, max } : { ok: false, why: g.left === 0 ? 'Sold out' : Store.limitWhy(g) };
+    },
+    // ---- a per-wallet limit on a timer (limitFor, seconds): it lifts at limitUntil (0 = not known yet), then no limit
+    /** The per-wallet limit that applies now (0 = none). */
+    walletLimit(g) {
+      const t = Date.now() / 1000 + (Store.clockSkew || 0);
+      return g.perWallet && !(g.limitFor && g.limitUntil && t >= g.limitUntil) ? g.perWallet : 0;
+    },
+    /** "24 hours", "90 minutes", "3 days". */
+    spanTxt(sec) {
+      const s = Math.round(sec || 0), u = (n, w) => `${n.toLocaleString('en-US')} ${n === 1 ? w : w + 's'}`;
+      return s >= 3 * 86400 && s % 86400 === 0 ? u(s / 86400, 'day') : s >= 3600 ? u(+(s / 3600).toFixed(1), 'hour') : u(Math.max(1, Math.round(s / 60)), 'minute');
+    },
+    /** "Sat 3:00 PM": a unix second on this device's clock. */
+    clockTxt(t) { return new Date(t * 1000).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }); },
+    /** "Limit: 5 per wallet", or with a timer "Limit: 5 per wallet until Sat 3:00 PM, then no limit". */
+    limitWhy(g) {
+      const base = `Limit: ${g.perWallet} per wallet`;
+      if (!g.limitFor) return base;
+      return `${base} ${g.limitUntil ? `until ${Store.clockTxt(g.limitUntil)}` : `for the first ${Store.spanTxt(g.limitFor)}`}, then no limit`;
     },
     // ---- refusals that quote this Series' own settings (one wording for the demo and live.js; never a fixed number)
     FREE_CLOSED: "Free packs work while a Series' free-pack group is open. Yours are safe until then.",
@@ -158,7 +178,7 @@
     /** Why this wallet can't buy in group g, as the sheet says it (groupAccess's short `why`, spelled out). */
     refusal(g, a) {
       const why = a?.why || g.who;
-      if (why === g.who && g.gate === 'nft') return g.isPress ? 'Paper Press holders only. At most 1 pack per Press, while they last.' : `${g.who}.`;
+      if (why === g.who && g.gate === 'nft') return g.isPress ? `Paper Press holders only. At most 1 pack per Press${g.perWallet ? ` and ${g.perWallet} per wallet` : ''}, while they last.` : `${g.who}.`;
       if (why === g.who && g.gate === 'snapshot') { const r = Store.holdRule(g); return r ? `${Store.holdersName(g)} only: ${r} before this Series (checked by snapshot).` : `${g.who}.`; }
       if (/^Regular wallets/.test(why)) return Store.botRule();
       return /[.!?]$/.test(why) ? why : why + '.';
@@ -169,18 +189,20 @@
     demoStage(stage) {
       const now = Math.floor(Date.now() / 1000), H = 3600, s = state.series;
       const mk = (o) => {
-        const g = { perWallet: 0, perNft: 0, perTx: 50, unlimited: false, taxBps: 0, idle: 0, duration: 0, sold: 0, waiting: false, moreFrom: null, moreAt: 0, afterGroup: null, rollTo: null, snap: null, ...o };
+        const g = { perWallet: 0, limitFor: 0, limitUntil: 0, perNft: 0, perTx: 50, unlimited: false, taxBps: 0, idle: 0, duration: 0, sold: 0, waiting: false, moreFrom: null, moreAt: 0, afterGroup: null, rollTo: null, snap: null, ...o };
         // the next pack's price and the few after it (live: read from the contract), from the sold count
         return Object.defineProperties(g, { next: { enumerable: true, get: () => Store.packPrice(g, 1) }, after: { enumerable: true, get: () => (g.taxBps ? [2, 3, 4].map((k) => Store.packPrice(g, k)) : []) } });
       };
       // duration: how long a timed group runs (seconds; 0 = until sold out); rollTo: where its unsold packs go; snap: who the
       // holders list counts (live: the published snapshot file's settings)
-      const press = mk({ index: 0, name: 'Paper Press holders', who: 'Paper Press holders only', gate: 'nft', isPress: true, priceUsd: 0, paper: Store.PRICES.PRESS_PAPER, coins: [], perNft: 1, capacity: 50, duration: 6 * H, rollTo: 2 });
+      const press = mk({ index: 0, name: 'Paper Press holders', who: 'Paper Press holders only', gate: 'nft', isPress: true, priceUsd: 0, paper: Store.PRICES.PRESS_PAPER, coins: [], perNft: 1, perWallet: 2, capacity: 50, duration: 6 * H, rollTo: 2 });
       const plank = mk({ index: 1, name: 'PLANK holders', who: 'PLANK holders only', gate: 'snapshot', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK'], perWallet: 5, capacity: 40, duration: 24 * H, rollTo: 2,
         snap: { unit: 'usd', min: '69', days: 7, symbol: 'PLANK' } });
-      const all = mk({ index: 2, name: 'Everyone', who: 'Everyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK', 'ETH', 'USDG'], perWallet: 5, capacity: 77, afterGroup: 1 });
+      const all = mk({ index: 2, name: 'Everyone', who: 'Everyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK', 'ETH', 'USDG'], perWallet: 5, limitFor: 24 * H, capacity: 77, afterGroup: 1 });
       const extra = mk({ index: 3, name: 'Extra packs', who: 'Everyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['ETH'], perTx: 1, unlimited: true, taxBps: 400, idle: 900, capacity: null, left: null, afterGroup: 2 });
-      const set = (g, o) => Object.assign(g, o, { left: g.unlimited ? (o.state === 'ended' ? 0 : null) : (o.capacity ?? g.capacity) - (o.sold ?? 0) });
+      // limitUntil: a timed wallet limit lifts limitFor after the group opened (0 = not known yet)
+      const set = (g, o) => Object.assign(g, o, { left: g.unlimited ? (o.state === 'ended' ? 0 : null) : (o.capacity ?? g.capacity) - (o.sold ?? 0),
+        limitUntil: g.limitFor && o.opensAt ? o.opensAt + g.limitFor : 0 });
       if (stage === 'open') {
         set(press, { state: 'ended', opensAt: now - 30 * H, endsAt: now - 24 * H, sold: 41 }); set(plank, { state: 'ended', opensAt: now - 30 * H, endsAt: now - 6 * H, sold: 40 });
         set(all, { state: 'open', opensAt: now - 6 * H, endsAt: 0, capacity: 86, sold: 30 }); set(extra, { state: 'upcoming', opensAt: 0, endsAt: 0 });

@@ -326,13 +326,16 @@ contract ConfigureSeries is Deployments {
     /// @dev Group `i` of `n` in the sale block, checked like FireGroups checks it, with the reason by name.
     function parseGroup(string memory json, uint256 i, uint256 n) public view returns (FireGroups.Group memory g) {
         string memory p = string.concat(".sale.groups[", vm.toString(i), "]");
-        _onlyKeys(json, p, "name,packs,gate,nft,perNft,root,priceUsd,paper,coins,perWallet,afterGroup,startDelay,duration,rollTo,taxBps,idle,perTx,unlimited");
+        _onlyKeys(json, p, "name,packs,gate,nft,perNft,root,priceUsd,paper,coins,perWallet,limitFor,afterGroup,startDelay,duration,rollTo,taxBps,idle,perTx,unlimited");
         g.packs = uint64(_u(json, p, "packs", type(uint64).max));
         g.priceUsd = uint128(_u(json, p, "priceUsd", type(uint128).max));
         g.paper = uint128(_u(json, p, "paper", type(uint128).max));
         g.coins = uint8(_u(json, p, "coins", 7));
         require(g.priceUsd == 0 || g.coins != 0, string.concat(p, ".coins: a dollar price needs a coin (PLANK 1 + ETH 2 + USDG 4)"));
         g.perWallet = uint32(_u(json, p, "perWallet", type(uint32).max));
+        // optional, 0 = the whole time: the per-wallet limit lifts this long after the group opened
+        if (json.keyExists(string.concat(p, ".limitFor"))) g.limitFor = uint32(_u(json, p, "limitFor", 30 days));
+        require(g.limitFor == 0 || g.perWallet != 0, string.concat(p, ".limitFor: lifts the per-wallet limit, so it needs a perWallet"));
         g.afterGroup = uint8(_u(json, p, "afterGroup", 255));
         require(g.afterGroup == 255 || g.afterGroup < i, string.concat(p, ".afterGroup: an earlier group's index, or 255 to open with the drop"));
         g.startDelay = uint32(_u(json, p, "startDelay", 30 days));

@@ -17,7 +17,7 @@ import { buildManifest } from '../manifest'
 import { categoryProblem, nameProblem, normalizeCategory, normalizeName } from '../categories'
 import { checkRecipe, recipeJson } from '../recipe'
 import { saleErrors, saleJson, saleOf, salePacks } from '../sale'
-import { artNeeds, buildGridKey, characterWeightsOf, missingArt, missingFrames } from '../series'
+import { artNeeds, buildGridKey, characterOddsProblems, characterWeightsOf, missingArt, missingFrames } from '../series'
 import { lastAssetChange, updateFire, useStudio } from '../store'
 import { BUILD_GRID_VERSION, fireStatus, type FireRecord, type UploadState } from '../types'
 import { refreshDevFlags, useDevFlags } from '../devFlags'
@@ -56,7 +56,7 @@ export function Export({ fire }: { fire: FireRecord }) {
   const sale = useMemo(() => saleOf(fire), [fire])
   const saleProblems = useMemo(() => saleErrors(sale), [sale])
 
-  const charProblems: string[] = []
+  const charProblems: string[] = characterOddsProblems(fire, (k) => chars[ids[k]]?.name ?? `c${k}`).map((p) => `Character odds (Series tab): ${p}`)
   const needs = artNeeds(r)
   for (const id of ids) {
     const c = chars[id]

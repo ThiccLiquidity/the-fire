@@ -30,9 +30,11 @@ type StatusRaw = {
 };
 type GroupRaw = {
   packs: bigint; gate: number; coins: number; afterGroup: number; rollTo: number; startDelay: number; duration: number; perWallet: number;
-  perNft: number; taxBps: number; priceUsd: bigint; paper: bigint; nft: Address; idle: number; perTx: number; unlimited: boolean; root: Hex;
+  limitFor: number; perNft: number; taxBps: number; priceUsd: bigint; paper: bigint; nft: Address; idle: number; perTx: number; unlimited: boolean; root: Hex;
 };
-type GroupViewRaw = { config: GroupRaw; state: number; capacity: bigint; sold: bigint; left: bigint; opensAt: bigint; endsAt: bigint };
+type GroupViewRaw = {
+  config: GroupRaw; state: number; capacity: bigint; sold: bigint; left: bigint; opensAt: bigint; endsAt: bigint; limitUntil: bigint;
+};
 
 /** FireGroups.NONE: no group (opens with the drop, rolls nowhere, no credit packs). */
 const NONE = 255;
@@ -65,6 +67,9 @@ export type GroupInfo = {
   coins: PayCoin[];
   /** Most packs per wallet in this group (0 = no limit), most per purchase (the group's, under the drop's). */
   perWallet: number; perTx: number;
+  /** The per-wallet limit lifts this long after the group opens (seconds; 0 = it holds the whole time), and when
+   *  (unix seconds; 0 = no timer, or not known yet: the group before it runs until sold). After it: no limit. */
+  limitFor: number; limitUntil: number;
   state: "upcoming" | "open" | "ended";
   /** When it opened / opens (0: when the group before it, which runs until sold, sells out), and when it ends if
    *  nothing more sells (0: until its packs are gone). */
@@ -146,6 +151,7 @@ export async function groups(fire: number, maxPerTx = 50): Promise<GroupInfo[]> 
       priceUsd: usd8(c.priceUsd), paper: amount(c.paper), free: c.priceUsd === 0n && c.paper === 0n,
       coins: c.priceUsd === 0n ? [] : COIN_BITS.filter(([, b]) => c.coins & b).map(([k]) => k).filter((k) => k !== "USDG" || !!input("USDG")),
       perWallet: Number(c.perWallet), perTx: Math.min(Number(c.perTx) || maxPerTx, maxPerTx),
+      limitFor: Number(c.limitFor), limitUntil: Number(v.limitUntil),
       state: v.state === 2 ? "ended" : v.state === 1 ? "open" : "upcoming",
       opensAt: Number(v.opensAt), endsAt: Number(v.endsAt),
       capacity: count(v.capacity), sold: Number(v.sold), left: count(v.left), unlimited: c.unlimited,

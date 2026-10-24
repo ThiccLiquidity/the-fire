@@ -2,7 +2,7 @@
  *  recipe.json the contract tests parse is checked in scripts/sale-sample.test.ts.) */
 import { describe, expect, it } from 'vitest'
 import {
-  GROUP_TEMPLATES, blankGroup, checkSale, creditPacksMax, dropPlan, giantSale, groupPacks, groupSummary, groupTimes, parseDecimal,
+  EVERYONE_LIMIT_HOURS, GROUP_TEMPLATES, blankGroup, checkSale, creditPacksMax, dropPlan, giantSale, groupPacks, groupSummary, groupTimes, parseDecimal,
   saleErrors, saleJson, saleOf, salePacks, saleWithPacks, standardSale, taxGrowthOk, taxedPrices,
   type OldSaleSettings, type SaleGroup, type SaleSettings,
 } from './sale'
@@ -23,9 +23,9 @@ describe('the Standard and Giant presets', () => {
       start: 0, packs: 167, plankBurnBps: 1_000, paperBurnBps: 2_000, paperCapUsd: '100000000', maxPerTx: 50, regularWalletsFor: 172_800,
       creditsPerPick: 1, creditPacksMax: 16, creditPacksPerWallet: 3, creditGroup: 2,
       groups: [
-        { name: 'Paper Press holders', packs: 50, gate: 'nft', nft: 'press', perNft: 1, priceUsd: '0', paper: '1000000000000000000', coins: 0, perWallet: 0, afterGroup: 255, startDelay: 0, duration: 21_600, rollTo: 2 },
+        { name: 'Paper Press holders', packs: 50, gate: 'nft', nft: 'press', perNft: 1, priceUsd: '0', paper: '1000000000000000000', coins: 0, perWallet: 2, afterGroup: 255, startDelay: 0, duration: 21_600, rollTo: 2 },
         { name: 'PLANK holders', packs: 40, gate: 'snapshot', priceUsd: '250000000', paper: '1000000000000000000', coins: 1, perWallet: 5, afterGroup: 255, startDelay: 0, duration: 86_400, rollTo: 2 },
-        { name: 'Everyone', packs: 77, gate: 'open', priceUsd: '250000000', paper: '1000000000000000000', coins: 7, perWallet: 5, afterGroup: 1, startDelay: 0, duration: 0, rollTo: 255 },
+        { name: 'Everyone', packs: 77, gate: 'open', priceUsd: '250000000', paper: '1000000000000000000', coins: 7, perWallet: 5, limitFor: 86_400, afterGroup: 1, startDelay: 0, duration: 0, rollTo: 255 },
         { name: 'After sell-out', packs: 0, gate: 'open', priceUsd: '250000000', paper: '1000000000000000000', coins: 2, perWallet: 0, afterGroup: 2, startDelay: 0, duration: 0, rollTo: 255, taxBps: 400, idle: 900, perTx: 1, unlimited: true },
       ],
     })
@@ -34,7 +34,7 @@ describe('the Standard and Giant presets', () => {
   it('exports only the keys ConfigureSeries reads, in its order', () => {
     const j = saleJson({ ...standardSale(), groups: standardSale().groups.map((x, i) => (i === 1 ? { ...x, root: '0x' + 'AB'.repeat(32) } : x)) })
     expect(Object.keys(j).join(',')).toBe('start,packs,plankBurnBps,paperBurnBps,paperCapUsd,maxPerTx,regularWalletsFor,creditsPerPick,creditPacksMax,creditPacksPerWallet,creditGroup,groups')
-    const allowed = 'name,packs,gate,nft,perNft,root,priceUsd,paper,coins,perWallet,afterGroup,startDelay,duration,rollTo,taxBps,idle,perTx,unlimited'.split(',')
+    const allowed = 'name,packs,gate,nft,perNft,root,priceUsd,paper,coins,perWallet,limitFor,afterGroup,startDelay,duration,rollTo,taxBps,idle,perTx,unlimited'.split(',')
     for (const grp of j.groups) {
       const keys = Object.keys(grp)
       expect(keys.every((k) => allowed.includes(k))).toBe(true)
@@ -182,6 +182,23 @@ describe('the checks mirror ConfigureSeries and FireGroups.configure', () => {
     expect(errs(g(1, { perTx: 2 ** 32 }))).toEqual(['1.perTx'])
   })
 
+  it('the per-wallet limit lifts after its hours (Everyone: EVERYONE_LIMIT_HOURS); at most 30 days, and only with a per wallet', () => {
+    const everyone = standardSale().groups[2]
+    expect(everyone).toMatchObject({ perWallet: 5, limitHours: EVERYONE_LIMIT_HOURS })
+    expect(standardSale().groups.map((x) => x.limitHours)).toEqual([0, 0, EVERYONE_LIMIT_HOURS, 0]) // Press, PLANK: no timer
+    expect(errs(g(2, { limitHours: 720 }))).toEqual([])
+    expect(errs(g(2, { limitHours: 721 }))).toEqual(['2.limitHours'])
+    expect(errs(g(2, { limitHours: -1 }))).toEqual(['2.limitHours'])
+    expect(errs(g(2, { perWallet: 0 }))).toEqual(['2.limitHours']) // nothing to lift
+    expect(saleErrors(withStart(g(2, { perWallet: 0 })), NOW)[0].message).toMatch(/set a per wallet first/)
+    expect(errs(g(2, { perWallet: 0, limitHours: 0 }))).toEqual([])
+    // blank (0) = never: no limitFor key; hours become seconds
+    expect(saleJson(withStart(g(2, { limitHours: 0 }))).groups[2]).not.toHaveProperty('limitFor')
+    expect(saleJson(withStart(g(2, { limitHours: 1.5 }))).groups[2].limitFor).toBe(5_400)
+    expect(groupSummary(withStart(g(2, { limitHours: 0 })), 2)).toMatch(/· 5 per wallet · opens/)
+    expect(GROUP_TEMPLATES.find((t) => t.name === 'Everyone')!.make([]).limitHours).toBe(EVERYONE_LIMIT_HOURS)
+  })
+
   it('a rising price: at most 50%, needs a dollar price, and a finite group fits the 1e9 bound', () => {
     expect(errs(g(3, { taxPercent: '50.01' }))).toEqual(['3.taxPercent'])
     expect(errs(g(3, { taxPercent: '50' }))).toEqual([])
@@ -208,9 +225,9 @@ describe('the rising price bound', () => {
 describe('what the owner reads', () => {
   it('one plain line per group', () => {
     const s = standardSale()
-    expect(groupSummary(s, 0)).toBe('50 packs for Paper Press holders · 1 PAPER · 1 per Press · up to 6h · leftovers → Everyone')
+    expect(groupSummary(s, 0)).toBe('50 packs for Paper Press holders · 1 PAPER · 1 per Press · 2 per wallet · up to 6h · leftovers → Everyone')
     expect(groupSummary(s, 1)).toBe('40 packs for the snapshot list · $2.50 + 1 PAPER · PLANK only · 5 per wallet · up to 24h · leftovers → Everyone')
-    expect(groupSummary(s, 2)).toBe('77 packs for everyone · $2.50 + 1 PAPER · any coin · 5 per wallet · opens after PLANK holders · until sold')
+    expect(groupSummary(s, 2)).toBe('77 packs for everyone · $2.50 + 1 PAPER · any coin · 5 per wallet for 24h, then no limit · opens after PLANK holders · until sold')
     expect(groupSummary(s, 3)).toBe('No pack count, for everyone · $2.50 rising 4% a pack + 1 PAPER · ETH only · 1 per purchase · opens after Everyone · no time limit · ends after 15 min with no sale')
   })
 

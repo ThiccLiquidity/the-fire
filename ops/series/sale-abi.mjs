@@ -3,7 +3,7 @@
 // checks every item against the compiled contracts (contracts/out) when they're built.
 import { parseAbi } from "viem";
 
-const GROUP = "struct Group { uint64 packs; uint8 gate; uint8 coins; uint8 afterGroup; uint8 rollTo; uint32 startDelay; uint32 duration; uint32 perWallet; uint32 perNft; uint16 taxBps; uint128 priceUsd; uint128 paper; address nft; uint32 idle; uint32 perTx; bool unlimited; bytes32 root; }";
+const GROUP = "struct Group { uint64 packs; uint8 gate; uint8 coins; uint8 afterGroup; uint8 rollTo; uint32 startDelay; uint32 duration; uint32 perWallet; uint32 limitFor; uint32 perNft; uint16 taxBps; uint128 priceUsd; uint128 paper; address nft; uint32 idle; uint32 perTx; bool unlimited; bytes32 root; }";
 const ACCESS = "struct Access { uint256[] nftIds; uint256 allowance; bytes32[] proof; }";
 
 export const saleAbi = parseAbi([
@@ -33,7 +33,7 @@ export const saleAbi = parseAbi([
 
 export const groupsAbi = parseAbi([
   GROUP,
-  "struct GroupView { Group config; uint8 state; uint256 capacity; uint256 sold; uint256 left; uint256 opensAt; uint256 endsAt; }",
+  "struct GroupView { Group config; uint8 state; uint256 capacity; uint256 sold; uint256 left; uint256 opensAt; uint256 endsAt; uint256 limitUntil; }",
   "function groupsOf(uint256 fire) view returns (GroupView[])",
   "function groupCount(uint256 fire) view returns (uint256)",
   "function sale() view returns (address)",

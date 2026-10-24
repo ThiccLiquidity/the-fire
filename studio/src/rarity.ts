@@ -26,6 +26,32 @@ export function oneIn(p: number): string {
   return (n >= 100 ? Math.round(n / 10) * 10 : Math.round(n)).toLocaleString('en-US')
 }
 
+/** A chance (0 to 1) as a percentage the owner reads: up to 2 decimals ("3.99%", "50%"); under 0.01%, two significant
+ *  digits ("0.0042%"). */
+export function percentText(p: number): string {
+  if (!(p > 0)) return '0%'
+  const v = p * 100
+  if (v >= 100) return '100%'
+  if (v < 0.01) return `${+v.toPrecision(2)}%`
+  const r = +v.toFixed(2)
+  return `${r >= 100 ? 99.99 : r}%`
+}
+
+/** "about 1 in N" for the studio: N to one decimal under 10 (68% = 1 in 1.5, 30% = 1 in 3.3), else as oneIn. */
+export function aboutOneIn(p: number, unit = 'cards'): string {
+  if (!(p > 0)) return 'never'
+  if (p >= 1) return unit ? `every ${unit.replace(/s$/, '')}` : 'every one'
+  const n = 1 / p
+  return `about 1 in ${n < 10 ? +n.toFixed(1) : oneIn(p)}${unit ? ` ${unit}` : ''}`
+}
+
+/** Odds the way the studio shows them everywhere: "3.99% · about 1 in 25 cards". `unit` '' leaves the noun off. */
+export function oddsText(p: number, unit = 'cards'): string {
+  if (!(p > 0)) return '0%'
+  if (p >= 1) return unit ? `100% · every ${unit.replace(/s$/, '')}` : '100%'
+  return `${percentText(p)} · ${aboutOneIn(p, unit)}`
+}
+
 /** The holo look odds a type's cards get (RecipeDealer.holoOdds). */
 export function lookOdds(r: Recipe, i: number): Record<HoloType, number> {
   const o = holoOdds(r.types[i])
@@ -50,7 +76,7 @@ export interface LookResult {
 }
 
 export interface TypeResult {
-  /** The type's chance per card (its weight over the total). */
+  /** The type's chance per card (its % of cards). */
   share: number
   /** Expected cards of the type in the Series (share x cards). */
   expected: number
@@ -65,14 +91,14 @@ export interface SeriesResult {
   cardsPerPack: number
   total: bigint
   types: TypeResult[]
-  /** Whether characters have their own odds (some weights differ). */
+  /** Whether characters have their own odds (not all equal). */
   weighted: boolean
   /** Every exact card the Series can make, in all (characters x looks). */
   distinct: number
 }
 
-/** The whole picture for `packs` packs and `chars` characters (at least 1), with the characters' weights if they
- *  have their own odds. */
+/** The whole picture for `packs` packs and `chars` characters (at least 1), with the characters' weights (series.ts
+ *  characterWeightsOf, from their percentages) if they have their own odds. */
 export function seriesResult(r: Recipe, packs: bigint, chars: number, characterWeights?: readonly number[]): SeriesResult {
   const ch = Math.max(1, Math.floor(chars))
   const cOdds = characterOdds(characterWeights, ch)
@@ -116,3 +142,52 @@ export function packChances(r: Recipe): PackChances {
     twoOrMore: q.map((x) => (S < 2 ? 0 : 1 - (1 - x) ** S - S * x * (1 - x) ** (S - 1))),
   }
 }
+
+// ---------------------------------------------------------------- expected print counts
+
+export interface ExpectedCounts {
+  packs: number
+  cardsPerPack: number
+  /** packs x cards per pack. */
+  totalCards: number
+  /** Per type: its chance per card, its expected cards, and those split by holo look (summing to `count`). */
+  types: { share: number; count: number; looks: Record<HoloType, number> }[]
+  /** Per character (image order): its chance per card and its expected cards over every type. */
+  characters: { share: number; count: number }[]
+  /** grid[type][character]: expected cards of that type and character. */
+  grid: number[][]
+}
+
+/** How many of each card the Series prints if the odds land exactly: total cards x P(type) [x P(character)]
+ *  [x P(holo look)]. `characters` is the character count (every character equally likely) or their weights (from
+ *  their percentages: series.ts characterWeightsOf). Real pulls vary around these. */
+export function expectedCounts(r: Recipe, characters: number | readonly number[], packs: bigint | number): ExpectedCounts {
+  const P = Math.max(0, Number(packs) || 0)
+  const S = Math.max(0, r.cardsPerPack || 0)
+  const N = P * S
+  const cOdds = typeof characters === 'number' ? characterOdds(undefined, characters) : characterOdds(characters, characters.length)
+  const types = typeOdds(r).map((share, i) => {
+    const count = share * N
+    const o = lookOdds(r, i)
+    return { share, count, looks: { none: count * o.none, frame: count * o.frame, picture: count * o.picture, full: count * o.full } }
+  })
+  return {
+    packs: P,
+    cardsPerPack: S,
+    totalCards: N,
+    types,
+    characters: cOdds.map((share) => ({ share, count: share * N })),
+    grid: types.map((t) => cOdds.map((c) => t.count * c)),
+  }
+}
+
+/** An expected count as the owner reads it: "0", "< 1" (may not print), one decimal under 10, whole numbers above. */
+export function printCount(x: number): string {
+  if (!(x > 0)) return '0'
+  if (x < 1) return '< 1'
+  if (x < 10) return (Math.round(x * 10) / 10).toFixed(1).replace(/\.0$/, '')
+  return Math.round(x).toLocaleString('en-US')
+}
+
+/** Expected below one card (but possible): it may not print at all. */
+export const mayNotPrint = (x: number) => x > 0 && x < 1

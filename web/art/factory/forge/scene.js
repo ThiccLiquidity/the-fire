@@ -309,6 +309,10 @@ function buy(n) {
   queue += n;
   for (let k = 0; k < n; k++) { ready.push(now + k * 0.6 + 1.8); jobs.push({ id: ++jobId, t0: now + k * 0.6, born: now, pack: null, cap: null, done: -1 }); } // a pack once its logs are in
 }
+/** Logs only, down the chute into the firebox (a case or grade fee feeding the fire): no pack comes of it. */
+function feed(n = 2) {
+  for (let k = 0; k < n; k++) items.push({ kind: 'log', t0: now + k * 0.35, img: LOGS[k % 3], dx: -90 + Math.random() * 180, rot: (Math.random() - .5) * .6 });
+}
 const cardsIn = []; let ashFlare = 0;
 function burn() { cardsIn.push({ t0: now, rot: Math.random() * 0.4 - 0.2, landed: false, acc: 0 }); }
 function cardLanded(x, y) { ashFlare = 1.6; sparkBurst(x, y, Math.round(18 * PN()), 0.7); emit('cardBurned'); }
@@ -896,7 +900,7 @@ addEventListener('scene-fx', (e) => { const d = e.detail || {};
   if (d.look) funLook = d.look.s === 0 ? null : { ...d.look, t0: now, until: now + (d.look.s || 3) }; });
 requestAnimationFrame(frame);
 window.Scene = {
-  buy, burn, popToken, finale: finaleFx,
+  buy, feed, burn, popToken, finale: finaleFx,
   setState(o) { if ('left' in o) { left = o.left; if (left > 0 && finale >= 0 && now - finale > 1) finale = -1; } if ('total' in o) total = o.total; if ('burnCount' in o) burnCount = o.burnCount; if ('windowFrac' in o) windowFrac = o.windowFrac; if ('series' in o) seriesNo = o.series; if ('openable' in o) openable = o.openable; if ('extra' in o) extra = o.extra || null; }, // the board redraws itself when what it shows changes (its key)
   setView(v) { Object.assign(view, v); fit(); camUpdate(0); }, // follow:true (cover mode) turns on the follow camera
   home: camHome,

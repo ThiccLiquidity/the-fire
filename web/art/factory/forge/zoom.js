@@ -191,8 +191,11 @@
     const track = (g, px, py) => { const t = now(); g.tr.push({ t, x: px, y: py }); while (g.tr.length > 2 && t - g.tr[0].t > 100) g.tr.shift(); };
     const vel = (g) => { if (g.tr.length < 2) return { x: 0, y: 0 }; const a = g.tr[0], b = g.tr[g.tr.length - 1], dt = b.t - a.t; return dt > 8 && now() - b.t < 80 ? { x: (b.x - a.x) / dt, y: (b.y - a.y) / dt } : { x: 0, y: 0 }; };
     // the light follows the finger or mouse over the card (its box at zoom 1, from layout: no reads)
-    const aim = (px, py) => { if (v.s > 1.02 || !window.Holo) return;
-      const l = (v.W - v.cw) / 2, t = (v.H - v.ch) / 2; window.Holo.aim(v.f, (px - l) / v.cw * 2 - 1, (py - t) / v.ch * 2 - 1); };
+    // (the mouse: held while it's over the card, let go a few pixels past its edge, so the card eases back to rest)
+    const aim = (px, py, hover = false) => { if (v.s > 1.02 || !window.Holo) return;
+      const l = (v.W - v.cw) / 2, t = (v.H - v.ch) / 2, u = (px - l) / v.cw * 2 - 1, w = (py - t) / v.ch * 2 - 1;
+      if (hover && (Math.abs(u) > 1.03 || Math.abs(w) > 1.03)) return window.Holo.aim(v.f, null);
+      window.Holo.aim(v.f, u, w, { hover }); };
     const onCard = (px, py) => { const w = v.cw * v.s, h = v.ch * v.s, l = v.W / 2 + v.x - w / 2, t = v.H / 2 + v.y - h / 2; return px >= l && px <= l + w && py >= t && py <= t + h; };
     const mid = () => { const [a, b] = [...P.values()]; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 }; };
     const startPinch = () => { const m = mid(); v.g = { kind: 'pinch', d0: m.d, s0: v.s, mx0: m.x, my0: m.y, x0: v.x, y0: v.y, tr: [] }; v.ox = v.oy = 0; moving(v, true); };
@@ -216,7 +219,7 @@
 
     stage.addEventListener('pointermove', (e) => {
       T = e.timeStamp;
-      if (!P.has(e.pointerId)) { if (e.pointerType === 'mouse' && !v.closing && !v.anim) aim(e.clientX, e.clientY); return; } // hover: the light follows
+      if (!P.has(e.pointerId)) { if (e.pointerType === 'mouse' && !v.closing && !v.anim) aim(e.clientX, e.clientY, true); return; } // hover: the light follows
       P.set(e.pointerId, { x: e.clientX, y: e.clientY });
       const g = v.g; if (!g) return;
       if (g.kind === 'pinch') {
@@ -281,6 +284,7 @@
         if (e.type === 'pointerup' && now() - g.t0 < 350) tap(e.clientX, e.clientY, g);
       }
     };
+    stage.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && !P.size) window.Holo?.aim(v.f, null); }, sig);
     stage.addEventListener('pointerup', up, sig);
     stage.addEventListener('pointercancel', up, sig);
     stage.addEventListener('lostpointercapture', up, sig);

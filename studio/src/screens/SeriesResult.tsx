@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Notice } from '../components'
 import { checkRecipe, type Recipe } from '../recipe'
-import { TIERS, TIER_LABEL, oneIn, packChances, seriesResult, type LookResult } from '../rarity'
+import { TIERS, TIER_LABEL, aboutOneIn, oneIn, packChances, percentText, seriesResult, type LookResult } from '../rarity'
 import { HOLO_LABEL, HOLO_TYPES } from '../rules'
 
 /** A colour per frame set, for the mix bar. */
@@ -85,7 +85,8 @@ export function SeriesResult({ recipe, packs, chars, characterWeights, compact }
                 <tr key={t.id} data-testid={`result-${t.slug}`}>
                   <td><span className="swatch" style={{ background: typeColor(t.frameSet) }} />{t.name}</td>
                   <td>
-                    <b data-testid={`odds-${t.slug}`}>{pct(r.share)}</b> <span className="muted small">1 in {oneIn(r.share)}</span>
+                    <b data-testid={`odds-${t.slug}`}>{percentText(r.share)}</b>
+                    <div className="muted small nowrap">{aboutOneIn(r.share, '')}</div>
                     <div className="muted small" data-testid={`pool-${t.slug}`}>{avg(r.expected)} cards</div>
                   </td>
                   <td>{avg(r.perCharacter)}</td>

@@ -1,7 +1,7 @@
 /** Rarity on the site's scale and the per-pack chances, from the recipe's fixed odds. */
 import { describe, expect, it } from 'vitest'
 import { checkRecipe, specialAllHoloRecipe, standardRecipe } from './recipe'
-import { cardChance, oneIn, packChances, seriesResult, tierOf } from './rarity'
+import { cardChance, expectedCounts, mayNotPrint, oneIn, packChances, printCount, seriesResult, tierOf } from './rarity'
 
 describe('rarity', () => {
   it('matches the site (info.js): Standard, 167 packs, 20 characters', () => {
@@ -60,5 +60,64 @@ describe('rarity', () => {
     expect(checkRecipe(r)).toEqual([])
     const res = seriesResult(r, 100n, 5)
     for (const t of res.types) expect(t.looks.some((l) => l.look === 'none')).toBe(false)
+  })
+})
+
+describe('expectedCounts', () => {
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
+
+  it('every count sums to the Series\' cards (packs x cards per pack)', () => {
+    const r = standardRecipe()
+    const c = expectedCounts(r, 20, 167n)
+    expect(c.totalCards).toBe(1002)
+    expect(sum(c.types.map((t) => t.count))).toBeCloseTo(1002, 6)
+    expect(sum(c.characters.map((t) => t.count))).toBeCloseTo(1002, 6)
+    expect(sum(c.grid.flat())).toBeCloseTo(1002, 6)
+    // Gold 3.99% of 1,002
+    expect(c.types[4].count).toBeCloseTo(39.98, 2)
+    // each type's row sums to the type
+    c.grid.forEach((row, i) => expect(sum(row)).toBeCloseTo(c.types[i].count, 9))
+  })
+
+  it('uniform characters split evenly; weighted by their weight over the total', () => {
+    const r = standardRecipe()
+    const even = expectedCounts(r, 4, 100)
+    expect(even.characters.map((x) => x.count)).toEqual([150, 150, 150, 150])
+    const w = expectedCounts(r, [1, 1, 1, 7], 100)
+    expect(w.characters.map((x) => x.count)).toEqual([60, 60, 60, 420])
+    expect(w.grid[0][3]).toBeCloseTo(600 * 0.5 * 0.7, 9) // Paper (50%) x character 4 (70%)
+    // equal weights = no weights
+    expect(expectedCounts(r, [3, 3, 3, 3], 100).grid).toEqual(even.grid)
+  })
+
+  it('the holo split sums to the type\'s count, in both holo modes', () => {
+    const r = standardRecipe()
+    r.types[0].holo = { mode: 'independent', frame: '250000000000000000', picture: '100000000000000000' }
+    r.types[1].holo = { mode: 'distribution', weights: ['6', '2', '1', '1'] }
+    const c = expectedCounts(r, 10, 1000)
+    c.types.forEach((t) => expect(sum(Object.values(t.looks))).toBeCloseTo(t.count, 9))
+    const paper = c.types[0]
+    expect(paper.looks.frame).toBeCloseTo(paper.count * 0.25 * 0.9, 9)
+    expect(paper.looks.full).toBeCloseTo(paper.count * 0.025, 9)
+    expect(c.types[1].looks.none).toBeCloseTo(c.types[1].count * 0.6, 9)
+  })
+
+  it('no packs or no characters: zero cards, no character rows', () => {
+    const c = expectedCounts(standardRecipe(), 0, 0n)
+    expect(c.totalCards).toBe(0)
+    expect(c.characters).toEqual([])
+    expect(c.types.every((t) => t.count === 0)).toBe(true)
+  })
+
+  it('reads counts sensibly', () => {
+    expect(printCount(0)).toBe('0')
+    expect(printCount(0.3)).toBe('< 1')
+    expect(mayNotPrint(0.3)).toBe(true)
+    expect(mayNotPrint(0)).toBe(false)
+    expect(printCount(4.04)).toBe('4')
+    expect(printCount(4.26)).toBe('4.3')
+    expect(printCount(9.96)).toBe('10')
+    expect(printCount(39.98)).toBe('40')
+    expect(printCount(12345.4)).toBe('12,345')
   })
 })

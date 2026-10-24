@@ -30,7 +30,8 @@ contract GroupsTest is SaleBase {
 
     /// The Standard preset (docs/drop-groups.md): Press holders 50 (1 PAPER, 1 per press, up to 6h, leftovers to the
     /// Everyone group), PLANK holders 40 (snapshot, $2.50 + 1 PAPER, PLANK only, 5 per wallet, up to 24h, leftovers to
-    /// Everyone), Everyone 77 ($2.50 + 1 PAPER, any coin, 5 per wallet, after group 2, until sold). Sizes scaled by
+    /// Everyone), Everyone 77 ($2.50 + 1 PAPER, any coin, 5 per wallet for its first 24h then no limit, after group 2, until
+    /// sold). Sizes scaled by
     /// `press`, `snap`, `all` so tests can sell them out.
     function _standardDrop(uint64 pressN, uint64 snapN, uint64 allN, bytes32 root) internal {
         FireGroups.Group memory p = _pressGroup(pressN, 1);
@@ -43,6 +44,7 @@ contract GroupsTest is SaleBase {
         s.rollTo = 2;
         FireGroups.Group memory e = _g(allN);
         e.perWallet = 5;
+        e.limitFor = 24 hours;
         e.afterGroup = 1;
         FireSale.DropConfig memory c = _with(_cfg(start, 0), _three(p, s, e));
         c.plankBurnBps = 1_000;
@@ -751,6 +753,9 @@ contract GroupsTest is SaleBase {
         vm.expectRevert(FireGroups.WalletLimit.selector);
         sale.buy(1, 2, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
         assertEq(sale.status(1).left, 167 - 11);
+        _warp(start + 48 hours); // Everyone's limit lifts 24h after it opened
+        _eth(bob, 1, 2, 10);
+        assertEq(groups.boughtIn(1, 2, bob), 15);
         _assertHoldsNothing();
     }
 
@@ -1033,6 +1038,111 @@ contract GroupsTest is SaleBase {
         vm.prank(alice, alice);
         credits.useCredits(2, 2, type(uint256).max);
         assertEq(packs.balanceOf(alice, 2), 2);
+    }
+
+    // ---------------------------------------------------------------- the per-wallet limit lifting on a timer
+
+    /// 5 per wallet for the first 24 hours after the group opens; from that second on, as many as a wallet likes
+    /// (perTx and maxPerTx still apply).
+    function test_limitFor_enforcedThenLifted() public {
+        FireGroups.Group memory a = _g(100);
+        a.perWallet = 5;
+        a.limitFor = 24 hours;
+        a.perTx = 20;
+        FireGroups.Group memory b = _g(100); // limitFor 0: the limit holds for good
+        b.perWallet = 5;
+        _set(1, _with(_cfg(start, 0), _two(a, b)));
+        _open();
+        _plank(alice, 1, 0, 5);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.WalletLimit.selector);
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+        _warp(start + 24 hours - 1); // the last second of the limit
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.WalletLimit.selector);
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+        _plank(bob, 1, 0, 5); // a fresh wallet still gets its 5
+        vm.prank(bob, bob);
+        vm.expectRevert(FireGroups.WalletLimit.selector);
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+        _warp(start + 24 hours); // lifted, to the second
+        _plank(alice, 1, 0, 20);
+        _plank(alice, 1, 0, 20);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.PerTxLimit.selector);
+        sale.buy(1, 0, 21, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na()); // perTx still holds
+        assertEq(groups.boughtIn(1, 0, alice), 45, "still counted");
+        assertEq(packs.balanceOf(alice, 1), 45);
+        _plank(alice, 1, 1, 5);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.WalletLimit.selector);
+        sale.buy(1, 1, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+    }
+
+    /// The timer runs from when the group actually opened: for one that opens when the group before it sells out,
+    /// from that moment, not from the drop's start. The views show it (limitUntil 0 until it is known).
+    function test_limitFor_countsFromWhenTheGroupOpened() public {
+        FireGroups.Group memory a = _g(5);
+        FireGroups.Group memory e = _g(100);
+        e.perWallet = 5;
+        e.limitFor = 2 hours;
+        e.afterGroup = 0;
+        _set(1, _with(_cfg(start, 0), _two(a, e)));
+        FireGroups.GroupView[] memory v = groups.groupsOf(1);
+        assertEq(v[1].config.limitFor, 2 hours);
+        assertEq(v[1].limitUntil, 0, "opens when group 0 sells out: not known yet");
+        assertEq(v[0].limitUntil, 0, "no timer");
+        _open();
+        _warp(start + 10 hours);
+        _plank(carol, 1, 0, 5); // group 0 sells out: Everyone opens now
+        uint256 opened = block.timestamp;
+        v = groups.groupsOf(1);
+        assertEq(v[1].opensAt, opened);
+        assertEq(v[1].limitUntil, opened + 2 hours);
+        _plank(alice, 1, 1, 5);
+        _warp(opened + 2 hours - 1);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.WalletLimit.selector);
+        sale.buy(1, 1, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
+        _warp(opened + 2 hours);
+        _plank(alice, 1, 1, 10);
+        assertEq(groups.boughtIn(1, 1, alice), 15);
+    }
+
+    /// A snapshot gate's own allowance still applies after the per-wallet limit lifts.
+    function test_limitFor_gateStillApplies() public {
+        bytes32 la = _leaf(alice, 8);
+        bytes32 root = _pair(la, _leaf(bob, 8));
+        FireGroups.Group memory g = _snapGroup(20, root);
+        g.perWallet = 3;
+        g.limitFor = 1 hours;
+        _set(1, _with(_cfg(start, 0), _two(g, _g(5))));
+        _open();
+        vm.prank(alice, alice);
+        sale.buy(1, 0, 3, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _proof(8, _leaf(bob, 8)));
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.WalletLimit.selector);
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _proof(8, _leaf(bob, 8)));
+        _warp(start + 1 hours);
+        vm.prank(alice, alice);
+        sale.buy(1, 0, 5, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _proof(8, _leaf(bob, 8)));
+        vm.prank(alice, alice);
+        vm.expectRevert(FireGroups.WalletLimit.selector); // her allowance of 8
+        sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _proof(8, _leaf(bob, 8)));
+    }
+
+    /// limitFor needs a perWallet to lift, and is bounded like every other time.
+    function test_validation_limitFor() public {
+        FireGroups.Group memory a = _g(5);
+        a.limitFor = 1 hours; // perWallet 0: nothing to lift
+        _badGroup(_two(a, _g(5)), 0);
+        a.perWallet = 5;
+        a.limitFor = 30 days + 1;
+        _badGroup(_two(a, _g(5)), 0);
+        a.limitFor = 30 days;
+        _set(1, _with(_cfg(start, 0), _two(a, _g(5))));
+        assertEq(groups.groupOf(1, 0).limitFor, 30 days);
+        assertEq(_view(1, 0).limitUntil, start + 30 days);
     }
 
     function test_validation_idleBounded() public {

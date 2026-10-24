@@ -576,7 +576,9 @@
         const pk = h('button', { type: 'button', class: 'pk2', 'aria-label': `${label}. Drag across the top to tear it open, or press Enter` },
           inside, body, edge, keep, torn, hint, tag ? h('span', { class: 'pk-n', text: tag }) : null);
         put(area, pk); pk.focus({ preventScroll: true }); window.Fun?.emit('pack-shown', { el: pk, practice: practiceRun });
-        msg.textContent = tag ? `${label}: tear across the top` : 'Drag across the top to tear it open';
+        // the words only until the first real pack is torn (then the dashed line and its dot say enough)
+        let coached = false; try { coached = !!localStorage.getItem('omni.coached'); } catch { /* not remembered */ }
+        msg.textContent = coached ? (tag ? label : '') : tag ? `${label}: tear across the top` : 'Drag across the top to tear it open';
         let prog = 0, dir = 1, done = false, drag = null, moved = false, grain = 0;
         const draw = () => {
           const px = dir > 0 ? prog * 240 : 240 - prog * 240;
@@ -683,7 +685,7 @@
           const slow = big && !rm;
           if (big) { await leak(el, c, tier === 'legendary', msg, pause, due - (tier === 'legendary' && !rm ? LEG_HOLD : 0)); if (halted()) return; }
           const fc = el.querySelector('.face.front .cface');
-          if (fc && !fc._holo && Store.cardParts(c) && window.Holo) Holo.attach(fc, c, true); // one live card at a time (its parts were loaded during the tear)
+          if (fc && !fc._holo && Store.cardParts(c) && window.Holo) Holo.attach(fc, c, true, { rock: 0.3 }); // one live card at a time (its parts were loaded during the tear)
           await faceShown(fc); if (halted()) return; // never turn over a card that isn't drawn yet
           el.classList.toggle('slow', slow); el.classList.toggle('hslow', ho && !tier && !rm); el.classList.add('flipped'); Sfx.flip();
           if (big) { el.classList.remove('tease'); el._lk?.(); }
@@ -763,7 +765,7 @@
             if (drag.moved && !reduced()) el.style.transform = `translate(${dx * k}px, ${dy * 0.3 * k}px) rotate(${dx * 0.05 * k}deg)`;
             if (arm && drag.moved) arm.set(Math.min(1, Math.abs(dx) / (drag.w * 0.28)));
           }
-          if (drag || e.pointerType === 'mouse') tilt.aim((e.clientX - b.left) / b.width, (e.clientY - b.top) / b.height);
+          if (drag || e.pointerType === 'mouse') tilt.aim((e.clientX - b.left) / b.width, (e.clientY - b.top) / b.height, !!drag && e.pointerType !== 'mouse'); // a live card follows the mouse itself
         });
         const up = (e) => {
           if (!drag) return; const d = drag; drag = null;
@@ -838,22 +840,30 @@
       return sv;
     }
 
-    // holo: pointer or device tilt moves a rainbow sheen across the card and tips it a little
+    // holo: pointer or device tilt moves a rainbow sheen across the card and tips it a little. A live card (holo.js) leans
+    // and shines itself from one smoothed value (mouse, finger, device tilt via gyro.js): here it only gets the finger
+    // while a drag holds the pointer (the card then never sees the moves). The old CSS sheen (a card with no live parts) is
+    // tipped here, eased the same way.
     function holoTilt(halted, signal) {
       let s = null;
       if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission !== 'function') // never prompt for motion access
-        addEventListener('deviceorientation', (e) => { if (e.gamma != null) aim(0.5 + Math.max(-0.5, Math.min(0.5, e.gamma / 50)), 0.5 + Math.max(-0.5, Math.min(0.5, (e.beta - 45) / 50))); }, { signal });
-      function aim(x, y) { if (!s) return; s.tx = Math.max(0, Math.min(1, x)); s.ty = Math.max(0, Math.min(1, y)); s.last = performance.now(); }
-      function stop() { if (!s) return; cancelAnimationFrame(s.raf); s.t.style.transform = ''; s = null; }
+        addEventListener('deviceorientation', (e) => { if (e.gamma != null && s && !s.face) aim(0.5 + Math.max(-0.5, Math.min(0.5, e.gamma / 50)), 0.5 + Math.max(-0.5, Math.min(0.5, (e.beta - 45) / 50))); }, { signal });
+      function aim(x, y, drag = true) {
+        if (!s) return;
+        if (s.face) { if (drag) window.Holo?.aim(s.face, x * 2 - 1, y * 2 - 1); return; }
+        s.tx = Math.max(0, Math.min(1, x)); s.ty = Math.max(0, Math.min(1, y)); s.last = performance.now();
+      }
+      function stop() { if (!s) return; cancelAnimationFrame(s.raf); if (s.t) s.t.style.transform = ''; s = null; }
       function start(el) {
-        stop(); const t = el.querySelector('.sc-tilt');
+        stop(); const t = el.querySelector('.sc-tilt'), face = el.querySelector('.cface.live');
+        if (face?._holo) { s = { face }; return; } // one source of truth: the live card's own
         s = { t, x: 0.2, y: 0.3, tx: 0.2, ty: 0.3, last: 0, t0: performance.now(), raf: 0 };
         const loop = (now) => {
           if (!s || s.t !== t || halted() || !t.isConnected) return;
           if (now - s.last > 1800 && !reduced()) { const a = (now - s.t0) / 1000; s.tx = 0.5 + Math.sin(a * 1.4 - 1.2) * 0.38; s.ty = 0.5 + Math.cos(a * 0.9) * 0.25; }
-          s.x += (s.tx - s.x) * 0.14; s.y += (s.ty - s.y) * 0.14;
+          s.x += (s.tx - s.x) * 0.1; s.y += (s.ty - s.y) * 0.1;
           t.style.setProperty('--mx', s.x.toFixed(3)); t.style.setProperty('--my', s.y.toFixed(3));
-          if (!reduced()) t.style.transform = `rotateY(${((s.x - 0.5) * 20).toFixed(2)}deg) rotateX(${((0.5 - s.y) * 16).toFixed(2)}deg)`;
+          if (!reduced()) t.style.transform = `rotateY(${((s.x - 0.5) * 16).toFixed(2)}deg) rotateX(${((0.5 - s.y) * 13).toFixed(2)}deg)`;
           s.raf = requestAnimationFrame(loop);
         };
         s.raf = requestAnimationFrame(loop);
