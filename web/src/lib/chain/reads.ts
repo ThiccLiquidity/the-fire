@@ -280,6 +280,13 @@ export async function balances(owner: Address): Promise<Record<"ETH" | "PAPER" |
   return { ETH: eth, PAPER: paper, PLANK: plank, USDG: usdg };
 }
 
+/** ETH to keep for the network fee on top of an ETH price: the gas price now x `gas` (room for a buy, an open or a
+ *  grading on this L2), never under a small floor (0.00002 ETH). */
+export async function gasReserve(gas = 1_000_000n): Promise<Amount> {
+  const floor = 20_000_000_000_000n, v = (await pub().getGasPrice().catch(() => 0n)) * gas;
+  return amount(v > floor ? v : floor, 18, 8);
+}
+
 /** Sealed packs held, per Series that has any. `nums`: seriesNumbers() when the caller already has it. */
 export async function packsOf(owner: Address, nums?: number[]): Promise<{ fire: number; count: number }[]> {
   nums ??= await seriesNumbers();
@@ -489,7 +496,16 @@ export type OpenStatus = {
    *  dealt yet; dealt: done; cancelled: randomness never came, packs back. */
   status: "waiting" | "deliverable" | "ready" | "dealt" | "cancelled";
   round: number | null; roundAt: number | null; requestedAt: number;
+  /** When anyone may cancel it if no answer came (requestedAt + CANCEL_AFTER), and whether that's now (writes.cancelOpen). */
+  cancelAt: number; canCancel: boolean;
+  /** The chain's clock when this was read. */
+  now: number;
 };
+/** FireCards / FirePsa CANCEL_AFTER: a request with no answer this long after it was asked for can be cancelled. */
+export const CANCEL_AFTER = 24 * 3600;
+/** No answer yet, and CANCEL_AFTER has passed (the contracts' own test: not ready, not answered, late enough). */
+const cancellable = (ready: boolean, requestedAt: number, now: number, r: { fulfilled: boolean } | null) =>
+  !ready && !!r && !r.fulfilled && now >= requestedAt + CANCEL_AFTER;
 type OpenRaw = { to: Address; requestedAt: bigint; readyAt: bigint; ready: boolean; count: bigint; packsDone: bigint; cardInPack: number; source: Address; requestId: bigint; packBase: bigint; word: bigint };
 
 const routerRequestsAbi = [{
@@ -518,38 +534,40 @@ export async function opensOf(owner: Address): Promise<OpenStatus[]> {
       read<OpenRaw>("FireCards", cardsAbi, "openOf", [a.fire, a.openIndex]),
       read<bigint>("FireCards", cardsAbi, "headOf", [a.fire]),
     ]);
-    let status: OpenStatus["status"]; let round: number | null = null; let roundAt: number | null = null;
+    let status: OpenStatus["status"]; let round: number | null = null; let roundAt: number | null = null, canCancel = false;
     if (o.count === 0n && o.ready) status = "cancelled";
     else if (a.openIndex < head) status = "dealt";
-    else if (o.ready) status = "ready";
     else {
       const r = await requestInfo(o.source, o.requestId).catch(() => null);
       round = r?.round ?? null; roundAt = r?.roundAt ?? null;
-      status = r && (r.fulfilled || now >= r.roundAt) ? "deliverable" : "waiting";
+      status = o.ready ? "ready" : r && (r.fulfilled || now >= r.roundAt) ? "deliverable" : "waiting";
+      canCancel = cancellable(o.ready, Number(o.requestedAt), now, r);
     }
-    return { fire: Number(a.fire), index: Number(a.openIndex), packs: Number(a.count), status, round, roundAt, requestedAt: Number(o.requestedAt) };
+    return { fire: Number(a.fire), index: Number(a.openIndex), packs: Number(a.count), status, round, roundAt, requestedAt: Number(o.requestedAt),
+      cancelAt: Number(o.requestedAt) + CANCEL_AFTER, canCancel, now };
   }));
   return out.sort((x, y) => y.requestedAt - x.requestedAt || y.index - x.index);
 }
 
 /** One open, by its index (what openPacks returned): where it is, with no log scan, so it can be polled cheaply while
  *  the buyer waits. `now` is the chain's clock. */
-export async function openStatus(fire: number, index: number): Promise<OpenStatus & { now: number }> {
+export async function openStatus(fire: number, index: number): Promise<OpenStatus> {
   const f = BigInt(fire);
   const [o, head, now] = await Promise.all([
     read<OpenRaw>("FireCards", cardsAbi, "openOf", [f, BigInt(index)]),
     read<bigint>("FireCards", cardsAbi, "headOf", [f]),
     chainNow(),
   ]);
-  let status: OpenStatus["status"]; let round: number | null = null; let roundAt: number | null = null;
+  let status: OpenStatus["status"]; let round: number | null = null; let roundAt: number | null = null, canCancel = false;
   if (o.count === 0n && o.ready) status = "cancelled";
   else if (BigInt(index) < head) status = "dealt";
   else {
     const r = await requestInfo(o.source, o.requestId).catch(() => null);
     round = r?.round ?? null; roundAt = r?.roundAt ?? null;
     status = o.ready ? "ready" : r && (r.fulfilled || now >= r.roundAt) ? "deliverable" : "waiting";
+    canCancel = cancellable(o.ready, Number(o.requestedAt), now, r);
   }
-  return { fire, index, packs: Number(o.count), status, round, roundAt, requestedAt: Number(o.requestedAt), now };
+  return { fire, index, packs: Number(o.count), status, round, roundAt, requestedAt: Number(o.requestedAt), cancelAt: Number(o.requestedAt) + CANCEL_AFTER, canCancel, now };
 }
 
 /** A Series' opening queue: opens waiting, and how many at its head are ready to deal. */
@@ -576,7 +594,10 @@ export async function quoteProtect(caseIds: readonly number[], gradeIds: readonl
   return amount(raw, pay === "USDG" && input("USDG") ? await decimalsOf(input("USDG")!) : 18);
 }
 
-export type GradingStatus = { index: number; ids: number[]; status: "waiting" | "deliverable" | "ready" | "done"; round: number | null; roundAt: number | null; requestedAt: number };
+/** A grading: done also when it was cancelled (its cards came back ungraded). cancelAt / canCancel: as for opens
+ *  (writes.cancelGrading). `now`: the chain's clock. */
+export type GradingStatus = { index: number; ids: number[]; status: "waiting" | "deliverable" | "ready" | "done"; round: number | null; roundAt: number | null; requestedAt: number;
+  cancelAt: number; canCancel: boolean; now: number };
 type GradingRaw = { by: Address; requestedAt: bigint; ready: boolean; done: boolean; source: Address; requestId: bigint; word: bigint; idsHash: Hex };
 
 /** A wallet's gradings (cards sent for grading together), newest first. */
@@ -586,30 +607,32 @@ export async function gradingsOf(owner: Address): Promise<GradingStatus[]> {
   const NONE = (1n << 256n) - 1n;
   const out = await Promise.all(logs.map((l) => argsOf<{ graded: readonly bigint[]; gradingIndex: bigint }>(l)).filter((a) => a.gradingIndex !== NONE).map(async (a) => {
     const g = await read<GradingRaw>("FirePsa", psaAbi, "gradingOf", [a.gradingIndex]);
-    let status: GradingStatus["status"]; let round: number | null = null; let roundAt: number | null = null;
+    let status: GradingStatus["status"]; let round: number | null = null; let roundAt: number | null = null, canCancel = false;
     if (g.done) status = "done";
-    else if (g.ready) status = "ready";
     else {
       const r = await requestInfo(g.source, g.requestId).catch(() => null);
       round = r?.round ?? null; roundAt = r?.roundAt ?? null;
-      status = r && (r.fulfilled || now >= r.roundAt) ? "deliverable" : "waiting";
+      status = g.ready ? "ready" : r && (r.fulfilled || now >= r.roundAt) ? "deliverable" : "waiting";
+      canCancel = cancellable(g.ready, Number(g.requestedAt), now, r);
     }
-    return { index: Number(a.gradingIndex), ids: a.graded.map(Number), status, round, roundAt, requestedAt: Number(g.requestedAt) };
+    return { index: Number(a.gradingIndex), ids: a.graded.map(Number), status, round, roundAt, requestedAt: Number(g.requestedAt),
+      cancelAt: Number(g.requestedAt) + CANCEL_AFTER, canCancel, now };
   }));
   return out.sort((x, y) => y.index - x.index);
 }
 
 /** One grading, by its index: where it is, with no log scan (for polling while the buyer waits). `now`: the chain's clock. */
-export async function gradingStatus(index: number): Promise<{ index: number; status: GradingStatus["status"]; round: number | null; roundAt: number | null; now: number }> {
+export async function gradingStatus(index: number): Promise<Omit<GradingStatus, "ids">> {
   const [g, now] = await Promise.all([read<GradingRaw>("FirePsa", psaAbi, "gradingOf", [BigInt(index)]), chainNow()]);
-  let status: GradingStatus["status"]; let round: number | null = null; let roundAt: number | null = null;
+  let status: GradingStatus["status"]; let round: number | null = null; let roundAt: number | null = null, canCancel = false;
   if (g.done) status = "done";
   else {
     const r = await requestInfo(g.source, g.requestId).catch(() => null);
     round = r?.round ?? null; roundAt = r?.roundAt ?? null;
     status = g.ready ? "ready" : r && (r.fulfilled || now >= r.roundAt) ? "deliverable" : "waiting";
+    canCancel = cancellable(g.ready, Number(g.requestedAt), now, r);
   }
-  return { index, status, round, roundAt, now };
+  return { index, status, round, roundAt, requestedAt: Number(g.requestedAt), cancelAt: Number(g.requestedAt) + CANCEL_AFTER, canCancel, now };
 }
 
 /** The card list a grading was sent with, in order: what finish() needs. `known`: the list the page sent, used as is

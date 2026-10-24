@@ -6,6 +6,7 @@
 // mock posts only when TWITTERAPI_IO_KEY is unset.
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { PAPER_DIR, args, env, issueDate, issueNumber, loadEnv, readJson, soft, writeJson } from "./lib/util.mjs";
 import { readFeed } from "./lib/rss.mjs";
 import { gatherX, mockX } from "./lib/x.mjs";
@@ -68,7 +69,8 @@ export async function gather({ date, mock }) {
   };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// main module (pathToFileURL: on Windows argv[1] is C:\..., and a path may have spaces)
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const a = args();
   const date = issueDate(a.date);
   const pack = await gather({ date, mock: Boolean(a.mock) });

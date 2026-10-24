@@ -34,7 +34,7 @@ import { createPublicClient, http, parseAbiItem, getAddress } from 'viem'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { fetchRound, firstRoundAfter, roundTime, verifyRound, randomnessOf, QUICKNET } from './beacon.mjs'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /** Invisible characters someone could add to make one idea look like a different one: bidi controls and zero-width
  *  characters. */
@@ -222,9 +222,11 @@ async function main() {
     return verifyDraw(client, args.verify)
   }
   const chainId = Number(args.chain ?? await client.getChainId())
-  const dep = JSON.parse(readFileSync(new URL(`../../deployments/${chainId}.json`, import.meta.url), 'utf8'))
+  // DEPLOYMENTS_FILE points it at another file (rehearsals), like every other tool
+  const depFile = process.env.DEPLOYMENTS_FILE || fileURLToPath(new URL(`../../deployments/${chainId}.json`, import.meta.url))
+  const dep = JSON.parse(readFileSync(depFile, 'utf8'))
   const credits = dep.contracts?.FireCredits
-  if (!credits) throw new Error(`No FireCredits in deployments/${chainId}.json`)
+  if (!credits) throw new Error(`No FireCredits in ${depFile}`)
   const kinds = KINDS[args.kind ?? 'look']
   if (!kinds) throw new Error('--kind is look, theme, style or character')
   const count = Number(args.count ?? 10)

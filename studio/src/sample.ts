@@ -3,7 +3,7 @@
  *  Everything is clearly labelled PLACEHOLDER on the image itself. */
 
 import * as db from './db'
-import { MATERIALS, MATERIAL_LABEL, type Material } from './rules'
+import { SHOWN_FRAME_SETS, frameSetLabel, ownsArt, type FrameSetId } from './frames'
 import { saveCharacter, setCharacterImage } from './store'
 import type { Character } from './types'
 
@@ -16,8 +16,11 @@ function rainbow(ctx: Ctx, w: number, h: number): CanvasGradient {
   return g
 }
 
-const BODY: Record<Material, string> = { paper: '#fbf8f1', wood: '#a46a3a', burning: '#c8662a', charcoal: '#2a2a2e', diamond: '#bdf2ff' }
-const LINE: Record<Material, string> = { paper: '#9c8f78', wood: '#5a3516', burning: '#5a1a05', charcoal: '#6a6a72', diamond: '#3d9ec2' }
+/** The sets the owner drops a picture in for (Paper, Wood, Fire, Coal, Full Art; Gold uses Wood's, Diamond is retired). */
+export const SAMPLE_ART_SETS: FrameSetId[] = SHOWN_FRAME_SETS.filter(ownsArt)
+
+const BODY: Record<string, string> = { paper: '#fbf8f1', wood: '#a46a3a', burning: '#c8662a', charcoal: '#2a2a2e', fullart: '#f2d9a6' }
+const LINE: Record<string, string> = { paper: '#9c8f78', wood: '#5a3516', burning: '#5a1a05', charcoal: '#6a6a72', fullart: '#6b4a1e' }
 
 type Shape = 'rabbit' | 'bird' | 'fox'
 
@@ -46,12 +49,27 @@ function shapePath(ctx: Ctx, s: Shape) {
   }
 }
 
-export async function makePlaceholderArt(name: string, shape: Shape, m: Material, holo: boolean): Promise<Blob> {
+/** A placeholder picture for set `m`: 1000 x 1000 on flat magenta (keyed) for a framed set; for Full Art (no frame:
+ *  the picture is the whole card) 1500 x 2100 on a full scene, not keyed. */
+export async function makePlaceholderArt(name: string, shape: Shape, m: FrameSetId, holo: boolean): Promise<Blob> {
+  const full = m === 'fullart'
   const S = 1000
-  const c = new OffscreenCanvas(S, S)
+  const c = full ? new OffscreenCanvas(1500, 2100) : new OffscreenCanvas(S, S)
   const ctx = c.getContext('2d')!
-  ctx.fillStyle = '#ff00ff'
-  ctx.fillRect(0, 0, S, S)
+  if (full) {
+    const bg = ctx.createLinearGradient(0, 0, 0, 2100)
+    bg.addColorStop(0, '#1d2b4f')
+    bg.addColorStop(0.6, '#7a3b5e')
+    bg.addColorStop(1, '#e08a3c')
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, 1500, 2100)
+    // the shape in the middle of the card, at 1.3x
+    ctx.translate(100, 400)
+    ctx.scale(1.3, 1.3)
+  } else {
+    ctx.fillStyle = '#ff00ff'
+    ctx.fillRect(0, 0, S, S)
+  }
   if (m === 'burning') {
     // flames behind the shape
     ctx.fillStyle = '#ffb000'
@@ -63,7 +81,7 @@ export async function makePlaceholderArt(name: string, shape: Shape, m: Material
     }
   }
   shapePath(ctx, shape)
-  ctx.fillStyle = BODY[m]
+  ctx.fillStyle = BODY[m] ?? '#cccccc'
   ctx.fill('nonzero')
   if (holo) {
     ctx.save()
@@ -76,7 +94,7 @@ export async function makePlaceholderArt(name: string, shape: Shape, m: Material
   }
   shapePath(ctx, shape)
   ctx.lineWidth = 12
-  ctx.strokeStyle = LINE[m]
+  ctx.strokeStyle = LINE[m] ?? '#555555'
   ctx.stroke()
   // eye
   ctx.fillStyle = m === 'charcoal' ? '#ff7a2a' : '#111'
@@ -92,7 +110,7 @@ export async function makePlaceholderArt(name: string, shape: Shape, m: Material
   ctx.font = '700 34px Arial, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(`PLACEHOLDER ${name} · ${MATERIAL_LABEL[m]}${holo ? ' · HOLO' : ''}`, 500, 930)
+  ctx.fillText(`PLACEHOLDER ${name} · ${frameSetLabel(m)}${holo ? ' · HOLO' : ''}`, 500, 930)
   return c.convertToBlob({ type: 'image/png' })
 }
 
@@ -107,10 +125,10 @@ export async function loadSampleAssets(onStatus: (s: string) => void): Promise<v
     const now = Date.now()
     const c: Character = { id: db.newId(), name: s.name, shortId: s.shortId, category: s.category, images: {}, createdAt: now, updatedAt: now, placeholder: true }
     await saveCharacter(c)
-    // one picture per material: the studio draws the holo over it
-    for (const m of MATERIALS) {
-      onStatus(`Character: ${s.name} ${m}`)
-      await setCharacterImage(c.id, m, 'normal', await makePlaceholderArt(s.name, s.shape, m, false), `placeholder-${s.shortId}-${m}-normal.png`, true)
+    // one picture per art set (Paper, Wood, Fire, Coal, Full Art): the studio draws the holo over it
+    for (const m of SAMPLE_ART_SETS) {
+      onStatus(`Character: ${s.name} ${frameSetLabel(m)}`)
+      await setCharacterImage(c.id, m, 'normal', await makePlaceholderArt(s.name, s.shape, m, false), `placeholder-${s.shortId}-${m}-normal.png`, m !== 'fullart')
     }
   }
   onStatus('Sample assets loaded.')

@@ -1,11 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Notice, useAction } from '../components'
 import {
-  CARDS_PER_CREDIT, COIN, COINS, GROUP_TEMPLATES, MAX_GROUPS, MAX_WINDOW_HOURS, SALE_PRESETS, checkSale, creditPacksMax, dropPlan, fmtHours,
+  CARDS_PER_CREDIT, COIN, COINS, GROUP_TEMPLATES, MAX_GROUPS, MAX_WINDOW_HOURS, SALE_PRESETS, checkSale, creditGroupOk, creditPacksMax, dropPlan, fmtHours,
   groupName, groupPacks, groupSummary, groupTimes, saleJson, saleOf, salePacks, taxedPrice, taxedPrices,
   type Gate, type GroupField, type PacksAs, type SaleField, type SaleGroup, type SaleProblem, type SaleSettings,
 } from '../sale'
 import { cardsPerPack } from '../recipe'
+import { salePolicy, type PolicyProblem } from '../salePolicy'
 import { MAX_PACKS } from '../rules'
 import { updateFire } from '../store'
 import type { FireRecord } from '../types'
@@ -43,7 +44,9 @@ function remap(s: SaleSettings, groups: SaleGroup[], map: number[]): SaleSetting
 export function SaleEditor({ fire }: { fire: FireRecord }) {
   const [busy, error, run] = useAction()
   const s = useMemo(() => saleOf(fire), [fire])
-  const problems = useMemo(() => checkSale(s), [s])
+  const policy = useMemo(() => salePolicy(s), [s])
+  // the contract's checks, then the ops policy's warnings (launch.mjs marks those RED), each on its field
+  const problems = useMemo(() => [...checkSale(s), ...policy], [s, policy])
   const errors = problems.filter((p) => !p.warning)
   const json = useMemo(() => saleJson(s), [s])
   const packs = useMemo(() => groupPacks(s), [s])
@@ -88,6 +91,11 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
         <span className={`badge ${toFix ? 'badge-warn' : 'badge-ok'}`} data-testid="sale-status">
           {toFix ? `${toFix} to fix` : 'Valid'}
         </span>
+        {policy.length > 0 && (
+          <span className="badge badge-warn" data-testid="sale-policy-status" title="Outside the ops sale policy: launch.mjs and VerifySeries mark these RED unless run with --allow">
+            {policy.length} outside policy
+          </span>
+        )}
       </div>
       <DropPicture s={s} lockedPacks={fire.deal ? fire.deal.packs : null} cardsPerPack={perPack} />
 
@@ -139,7 +147,10 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
         <F all={problems} f="creditGroup" label="Free packs come from" hint="That group's packs, while it's open. A free pack pays only its PAPER.">
           <select value={s.creditGroup} onChange={(e) => set({ creditGroup: Number(e.target.value) })} data-testid="sale-credit-group">
             <option value={-1}>None (no free packs)</option>
-            {s.groups.map((_, i) => <option key={i} value={i}>{groupName(s, i)}</option>)}
+            {/* only a fixed, untaxed group can give free packs (FireGroups refuses the others) */}
+            {s.groups.map((g, i) => creditGroupOk(g) || i === s.creditGroup
+              ? <option key={i} value={i} disabled={!creditGroupOk(g)}>{groupName(s, i)}{creditGroupOk(g) ? '' : g.unlimited ? ' (can\'t: unlimited)' : ' (can\'t: rising price)'}</option>
+              : null)}
           </select>
         </F>
       </div>
@@ -152,6 +163,7 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
         <pre className="small" data-testid="sale-json">{JSON.stringify(json, null, 1)}</pre>
       </details>
       {errors.length > 0 && <SaleProblems s={s} problems={errors} />}
+      {policy.length > 0 && <PolicyProblems s={s} problems={policy} />}
     </section>
   )
 }
@@ -388,6 +400,19 @@ function GF({ all, gi, f, also = [], label, hint, children, wide }: { all: SaleP
       {hint && <span className="muted small">{hint}</span>}
       {ps.map((p, k) => <span key={k} className={p.warning ? 'warn-text small' : 'err-text small'}>{p.message}</span>)}
     </div>
+  )
+}
+
+/** The ops sale policy's warnings: the contract takes the drop, but launch.mjs and VerifySeries stop on it. */
+function PolicyProblems({ s, problems }: { s: SaleSettings; problems: PolicyProblem[] }) {
+  const red = [...new Set(problems.filter((p) => p.red).map((p) => p.policy))]
+  return (
+    <Notice kind="warn">
+      <span data-testid="sale-policy">
+        Outside the ops sale policy. The contract takes it, but launch.mjs and VerifySeries {red.length ? <>stop on the RED ones (run them with <code>--allow {red.join(',')}</code> only if meant)</> : 'warn'}:
+      </span>
+      <ul className="problems">{problems.map((p, i) => <li key={i}>{p.red ? <b>RED </b> : 'warn '}· {p.group !== undefined ? `${groupName(s, p.group)}: ` : ''}{p.message.replace(/^Policy: /, '')}</li>)}</ul>
+    </Notice>
   )
 }
 

@@ -11,7 +11,7 @@ Commands are shown for PowerShell.
 
 ```powershell
 cd contracts; copy .env.example .env   # then fill in the real .env, never .env.example
-$env:RPC = Read-Host "RPC URL"                  # once per PowerShell window: forge reads .env, PowerShell doesn't
+$s = Read-Host "RPC URL" -AsSecureString; $env:RPC = [System.Net.NetworkCredential]::new("", $s).Password   # once per window (hidden: an Alchemy URL holds a key)
 ```
 
 ### The owner's Ledger account
@@ -155,7 +155,7 @@ Put the studio's `recipe.json` in `contracts/series/` (the scripts may only read
 Once per machine: `cd ops; npm ci; cd snapshot; npm ci; cd ..\..`. Then, from the repo:
 ```powershell
 cd C:\Users\DubT1\the-fire
-$env:RPC = Read-Host "RPC URL"
+$s = Read-Host "RPC URL" -AsSecureString; $env:RPC = [System.Net.NetworkCredential]::new("", $s).Password
 $env:OWNER_HD_PATH = "m/44'/60'/1'/0/0"        # or keep it in contracts\.env
 node ops\series\launch.mjs --recipe contracts\series\recipe-fire-7.json --start "2026-11-01 18:00"
 ```
@@ -285,7 +285,7 @@ the Robinhood Chain testnet faucet.
 
 ```powershell
 cd contracts
-$env:RPC = Read-Host "Testnet RPC URL"          # e.g. https://rpc.testnet.chain.robinhood.com/rpc, or Alchemy's
+$s = Read-Host "Testnet RPC URL" -AsSecureString; $env:RPC = [System.Net.NetworkCredential]::new("", $s).Password   # e.g. https://rpc.testnet.chain.robinhood.com/rpc, or Alchemy's (hidden)
 $env:EXPECTED_CHAIN_ID = "46630"                # every deploy script refuses any other chain
 $verify = "--verify", "--verifier", "blockscout", "--verifier-url", "https://explorer.testnet.chain.robinhood.com/api/"   # testnet Blockscout
 ```

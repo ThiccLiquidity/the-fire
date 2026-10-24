@@ -19,7 +19,7 @@ gather (code) -> editor: budget + assign (Claude) -> writers pitch ~10 headlines
 | Check | `node paper/check.mjs paper/out/<date>/issue.json` (`--draft` on the draft, `--publish` before publishing) | errors / ok |
 | Layout | `node paper/layout.mjs --date <date>` | `front.svg` (NFT image), `preview.html`, `metadata.json` |
 | Preview | `node paper/publish.mjs --date <date> --preview` | IPFS folder + preview link |
-| Publish | `node paper/publish.mjs --date <date>` (dry run) then `--send` | `MorningWood.publish(number, uri, opensAt)` via `cast --account editor` |
+| Publish | `node paper/publish.mjs --date <date>` (dry run) then `--send` (refused unless `PUBLISH_FROM_TASK=1`) | `MorningWood.publish(number, uri, opensAt)` via `cast --account editor` |
 | Remember | `node paper/remember.mjs --date <date>` | `paper/memory/*` |
 
 `<date>` is the morning the paper is sold (tomorrow, when run at night). Issue number = days since 2026-10-22, plus 1
@@ -31,7 +31,8 @@ gather (code) -> editor: budget + assign (Claude) -> writers pitch ~10 headlines
   `IMGFLIP_USERNAME`/`IMGFLIP_PASSWORD` (free account), `PINATA_JWT`, `RPC_URL` (Alchemy recommended). See
   `paper/.env.example`.
 - The editor key: `cast wallet import editor --interactive` on the machine that publishes; then the owner calls
-  `MorningWood.setEditor(<editor address>)`. The editor key can only publish/re-publish unopened issues.
+  `MorningWood.setEditor(<editor address>)`. The editor key can only publish/re-publish unopened issues, at least
+  1 hour before they open (and can't change one in its last hour: only the owner can).
 - Schedule: every night ~22:30 America/New_York. The task needs network access to the feeds, TwitterAPI.io, the image
   API, Imgflip, Pinata, Open-Meteo, CoinGecko, the Robinhood Chain RPC and Blockscout.
 - Publishing on chain from the scheduled task is **off until the owner says so** (step 10 stops at the preview link

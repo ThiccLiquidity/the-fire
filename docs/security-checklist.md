@@ -20,6 +20,12 @@ can change the site is taken. Tick each box; anything you can't tick, ask.
       the owner accepts ownership; don't reuse it for anything.
 - [ ] **Keeper wallets** (Railway): hold gas money only. Keep about 0.005-0.01 ETH each and top up when the
       low-balance alert fires (under 0.002 ETH). Never send them tokens. Their keys live only in Railway's variables.
+- [ ] **Morning Wood editor** (Foundry keystore `editor`, on the machine that publishes the paper): a hot key that can
+      only publish or re-publish issues that haven't opened, at least 1 hour ahead (it can't open one at once or swap
+      one in its last hour). Keep only gas money on it. Its keystore password is never in the repo; if the scheduled
+      task ever signs unattended, the password file that allows it lives outside the repo and makes the key hot. If
+      it leaks: `MorningWood.setEditor(0x0)` (or a new editor) from the Ledger, and `unpublish` anything you didn't
+      write.
 - [ ] No seed phrase or private key has ever been pasted into a chat, email, Discord, Telegram, a website or a
       screenshot. If one has: move the funds to a new wallet now, then replace that wallet everywhere.
 
@@ -65,7 +71,14 @@ passkey** (not SMS), and the recovery codes saved offline.
 - [ ] **Keeper keys**: if they were ever shown on screen in a shared place, make new keeper wallets and update
       Railway. Otherwise keep them.
 - [ ] **RPC URL with an API key** (Alchemy or similar): it's in Railway's variables. If it was ever pasted
-      anywhere public, regenerate it.
+      anywhere public, regenerate it. Type it hidden (`Read-Host -AsSecureString`). Forge keeps it in
+      `contracts/cache/*/<chain id>/run-latest.json` (and the broadcast files): git-ignored, but don't zip, upload or
+      share the `contracts` folder.
+- [ ] **The paper's keys** (scheduled task's environment or `paper/.env`, git-ignored): `PINATA_JWT` (pin-only scope),
+      `TWITTERAPI_IO_KEY`, `IMAGE_API_KEY`, `IMGFLIP_USERNAME`/`IMGFLIP_PASSWORD`, and the `RPC_URL`. Never in chat or a
+      commit. Rotate any that shows up in a task transcript.
+- [ ] **Healthchecks URLs** (`HEARTBEAT_URL`, one per keeper): anyone with one can ping it and hide a dead keeper.
+      Railway variables only; regenerate a check's URL if it leaks. Same for `ALERT_WEBHOOK_URL`.
 
 Checked Oct 21, 2026: the repository's whole history holds no private keys, seed phrases or API keys (only public
 addresses, the published AWS example key in a test, and Anvil's public dev keys).

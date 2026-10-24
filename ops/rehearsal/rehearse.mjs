@@ -285,10 +285,11 @@ async function main() {
   check(Object.keys(C).length === 17 && C.FireProfiles, `deployments file has all 17 contracts, FireProfiles included (${DEP_FILE.replace(REPO + "/", "")})`);
 
   step("VerifyDeploy before the owner accepts (expect WAIT on seven owners)");
-  let vd = forgeRead("script/VerifyDeploy.s.sol", {});
+  const verifyEnv = { KEEPERS: `${keeperA.address},${keeperB.address}`, ROYALTY_BPS: "500" }; // what DeployCards was given
+  let vd = forgeRead("script/VerifyDeploy.s.sol", verifyEnv);
   console.log(logLines(vd, /^(OK|WAIT|FAIL|INFO)|FAIL, /));
   const pendingAccepts = (vd.match(/acceptOwnership/g) ?? []).length;
-  check(/0 FAIL/.test(vd) && pendingAccepts === 7, `VerifyDeploy: nothing wrong, ${pendingAccepts} acceptOwnership() pending`);
+  check(/(^|\s)0 FAIL/m.test(vd) && pendingAccepts === 7, `VerifyDeploy: nothing wrong, ${pendingAccepts} acceptOwnership() pending`);
 
   step("the owner accepts ownership: AcceptOwnership.s.sol signed by the owner (impersonated)");
   const outRefused = forgeRead("script/AcceptOwnership.s.sol", {});
@@ -671,7 +672,7 @@ async function main() {
   }
 
   step("VerifyDeploy at the end");
-  vd = forgeRead("script/VerifyDeploy.s.sol", { SERIES: "7" });
+  vd = forgeRead("script/VerifyDeploy.s.sol", { ...verifyEnv, SERIES: "7" });
   console.log(logLines(vd, /^(OK|WAIT|FAIL|INFO)|FAIL, /));
   check(/ 0 FAIL/.test(vd) || /^0 FAIL/m.test(vd), "VerifyDeploy: no FAIL");
 

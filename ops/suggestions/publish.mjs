@@ -18,7 +18,7 @@
 // loud WARNING and still published, marked offList (the site shows what the chain did). Publishing the same Series
 // and wave again replaces that entry. The draw's closing block, drand round and signature go into the results file, so
 // anyone can re-run it (draw.mjs --verify). A test draw (draw.mjs --seed) is refused unless --allow-test-draw. Then
-// sync and deploy the site (web/art/factory/sync_forge.sh).
+// commit and push it: the site's build syncs it (web/package.json prebuild runs sync_forge.sh; nothing to run by hand).
 import { createPublicClient, http, parseAbiItem, getAddress } from 'viem'
 import { kindOf } from './draw.mjs'
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
@@ -139,7 +139,7 @@ async function main() {
   if (args['dry-run']) { console.log(JSON.stringify(entry, null, 2)); return }
   mkdirSync(dirname(out), { recursive: true })
   writeFileSync(out, JSON.stringify(merged, null, 2) + '\n')
-  console.log(`\nSaved ${out} (${merged.waves.length} wave${merged.waves.length === 1 ? '' : 's'}). Sync the site: web/art/factory/sync_forge.sh`)
+  console.log(`\nSaved ${out} (${merged.waves.length} wave${merged.waves.length === 1 ? '' : 's'}). Commit and push it: the site's build syncs it (no script to run).`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) await main()

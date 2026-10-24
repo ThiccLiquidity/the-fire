@@ -31,13 +31,24 @@ export function args(argv = process.argv.slice(2)) {
   return out;
 }
 
+/** A URL safe to print or keep in notes: no query, and any key-like path part masked (an Alchemy RPC URL is
+ *  https://<net>.g.alchemy.com/v2/<key>). */
+export function redactUrl(url) {
+  try {
+    const u = new URL(String(url));
+    return `${u.origin}${u.pathname.replace(/[A-Za-z0-9_-]{16,}/g, "<key>")}`;
+  } catch {
+    return "<url>";
+  }
+}
+
 export async function fetchText(url, { timeoutMs = 15000, headers = {}, method = "GET", body } = {}) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
     const r = await fetch(url, { method, headers: { "user-agent": "MorningWood/1.0 (+satire newspaper)", ...headers }, body, signal: ctl.signal });
     const text = await r.text();
-    if (!r.ok) throw new Error(`${r.status} ${url.split("?")[0]}`);
+    if (!r.ok) throw new Error(`${r.status} ${redactUrl(url)}`);
     return text;
   } finally {
     clearTimeout(t);

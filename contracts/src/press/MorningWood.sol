@@ -47,6 +47,9 @@ contract MorningWood is ERC1155, ERC2981, Ownable2Step, ReentrancyGuard {
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint256 public constant WINDOW = 24 hours;
     uint256 public constant MAX_LEAD = 7 days; // an issue can be published at most this long before it opens
+    /// @notice The editor publishes (and re-publishes) at least this long before an issue opens, so the owner always
+    ///         has time to see it and veto it. The owner is exempt.
+    uint256 public constant EDITOR_LEAD = 1 hours;
     uint256 public constant MAX_QTY = 1000; // copies per buy
     uint256 public constant MAX_LETTER_BYTES = 200;
     uint256 public constant MAX_PAPER = 10e18; // price bounds: PAPER per copy or letter
@@ -77,7 +80,8 @@ contract MorningWood is ERC1155, ERC2981, Ownable2Step, ReentrancyGuard {
     event PricesSet(uint256 paperPerCopy, uint256 usdPerCopy, uint256 letterPaper);
     event WiringSet(address paperBurner, address ethUsd);
     event PausedSet(bool paused);
-    event ContractURISet(string uri);
+    event RoyaltySet(address to, uint96 bps);
+    event ContractURIUpdated(); // ERC-7572
 
     error ZeroAddress();
     error NotEditor();
@@ -94,6 +98,7 @@ contract MorningWood is ERC1155, ERC2981, Ownable2Step, ReentrancyGuard {
     error BadLetter();
     error TransferFailed();
     error RenounceDisabled();
+    error TooLate();
 
     constructor(address owner_, address paper, address usdg, address paperBurner_, address ethUsd_, address royaltyTo)
         ERC1155("")
@@ -140,11 +145,12 @@ contract MorningWood is ERC1155, ERC2981, Ownable2Step, ReentrancyGuard {
     function setRoyalty(address to, uint96 bps) external onlyOwner {
         if (bps > MAX_ROYALTY_BPS) revert OutOfBounds();
         _setDefaultRoyalty(to, bps);
+        emit RoyaltySet(to, bps);
     }
 
     function setContractURI(string calldata u) external onlyOwner {
         contractURI = u;
-        emit ContractURISet(u);
+        emit ContractURIUpdated();
     }
 
     /// @notice Correct an issue's metadata URI (e.g. a broken IPFS pin). The owner only.
@@ -168,13 +174,18 @@ contract MorningWood is ERC1155, ERC2981, Ownable2Step, ReentrancyGuard {
 
     /// @notice Publish issue `issue` (its number, never 0) to open at `opensAt` (0 = now), at most MAX_LEAD ahead.
     ///         An issue not yet open can be published again (a new URI or time, at the current prices).
+    ///         The editor must publish at least EDITOR_LEAD ahead (so never "now"), and can't re-publish an issue
+    ///         that opens within EDITOR_LEAD (TooLate): what the owner previewed is what opens. The owner is exempt.
     function publish(uint256 issue, string calldata u, uint64 opensAt) external {
-        if (msg.sender != editor && msg.sender != owner()) revert NotEditor();
+        bool isOwner = msg.sender == owner();
+        if (msg.sender != editor && !isOwner) revert NotEditor();
         if (issue == 0 || bytes(u).length == 0) revert BadIssue();
         Issue storage s = _issues[issue];
         if (s.opensAt != 0 && block.timestamp >= s.opensAt) revert AlreadyOpen();
+        if (!isOwner && s.opensAt != 0 && s.opensAt < block.timestamp + EDITOR_LEAD) revert TooLate();
         if (opensAt == 0) opensAt = uint64(block.timestamp);
-        if (opensAt < block.timestamp || opensAt > block.timestamp + MAX_LEAD) revert BadTime();
+        uint256 earliest = isOwner ? block.timestamp : block.timestamp + EDITOR_LEAD;
+        if (opensAt < earliest || opensAt > block.timestamp + MAX_LEAD) revert BadTime();
         (s.uri, s.opensAt, s.paperPerCopy, s.usdPerCopy) = (u, opensAt, paperPerCopy, usdPerCopy);
         emit Published(issue, u, opensAt, paperPerCopy, usdPerCopy);
         emit URI(u, issue);

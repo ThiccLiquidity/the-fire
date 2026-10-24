@@ -4,7 +4,7 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 
 /* loading */
 .loading { position: fixed; inset: 0; z-index: 90; display: grid; place-content: center; justify-items: center; gap: 10px; background: #000; transition: opacity .6s }
-.loading img { width: 120px; animation: breathe 1.8s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,110,30,.5)) }
+.loading .ld-mark { width: 120px; animation: breathe 1.8s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,110,30,.5)) }
 .loading p { margin: 0; font: 400 15px var(--display); letter-spacing: .08em; color: var(--muted) }
 .loading .demo-load { font: 700 12px var(--body); color: var(--dim); letter-spacing: .04em }
 .loading.done { opacity: 0; pointer-events: none }
@@ -404,8 +404,28 @@ body[data-mode=land] .receipt { right: 252px; bottom: 12px }
 body[data-mode=port] .topbar { gap: 6px; padding: 0 8px 0 10px }
 body[data-mode=port] .wallet { flex-shrink: 0; max-width: 42vw; padding: 0 10px }
 @media (max-width: 374px) { body[data-mode=port] .brand .word { display: none } }
+/* phones: the Testnet badge is a small tag tucked under the logo, so the wallet button keeps its room */
+body[data-mode=port] .net-badge { position: absolute; left: 6px; bottom: 5px; margin: 0; font-size: 8.5px; padding: 2px 4px 1px; letter-spacing: .06em; pointer-events: none }
 body[data-mode=port] .buybar.open > * { grid-column: 1 / -1 }
 body[data-mode=port] .buybar.open .bb-more { grid-row: 1; justify-self: end; min-height: 44px }
 
 /* desktop: the card's detail is wide enough for its odds table and its actions in one row */
 @media (min-width: 760px) { #sheet-card { width: min(760px, calc(100vw - 24px)) } }
+
+/* PLANK and PAPER (brand.js): the coins inline beside their amounts, and the two characters where the owner placed them */
+.coin { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -.22em; margin-right: .3em; flex: none; border-radius: 50% }
+.coin.big { width: 1.1em; height: 1.1em; margin-right: .38em; vertical-align: -.16em }
+.coin-amt { white-space: nowrap }
+.coin-pair { display: inline-flex; gap: 3px } .coin-pair .coin { margin: 0 }
+.seg button .coin { margin-right: .4em }
+.wallet .wcoin { width: 18px; height: 18px; margin: 0 -2px 0 0; vertical-align: 0 } .wallet .wcoin[hidden] { display: none }
+body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
+.bal b { white-space: nowrap }
+.loading .ld-row { display: flex; align-items: flex-end; gap: 14px }
+.loading .ld-pal { width: auto; filter: drop-shadow(0 0 12px rgba(255,110,30,.35)); animation: ld-bob 2.4s ease-in-out infinite }
+.loading .ld-plank { height: 70px; --r: -8deg; transform: rotate(-8deg) } .loading .ld-paper { height: 62px; --r: 8deg; transform: rotate(8deg); animation-delay: -1.2s }
+@keyframes ld-bob { 50% { transform: translateY(-4px) rotate(var(--r)) } }
+.receipt .rc-peek { position: absolute; right: 52px; bottom: 100%; width: 66px; height: 74px; overflow: hidden; pointer-events: none } /* he stands behind the top edge */
+.receipt .rc-peek img { position: absolute; left: 4px; top: 10px; height: 92px; width: auto; filter: drop-shadow(0 2px 3px rgba(0,0,0,.65)); transform: translateY(66px); transition: transform .5s cubic-bezier(.3,1.4,.5,1) .2s }
+.receipt.on .rc-peek img { transform: none }
+@media (prefers-reduced-motion: reduce) { .loading .ld-pal { animation: none } .receipt .rc-peek img { transition: none } }

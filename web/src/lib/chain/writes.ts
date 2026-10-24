@@ -199,6 +199,16 @@ export async function deliverAndDeal(p: { fire: number; index: number }, o: Writ
   return { delivered, dealt: need > 0n, reached, keeper: keeper || !reached };
 }
 
+/** Last resort, once an open's randomness has had no answer for 24 hours (reads.opensOf / openStatus: canCancel):
+ *  cancel it, and its packs go back to the holder, sealed. Anyone may send it (the packs always go to the holder). */
+export const cancelOpen = (p: { fire: number; index: number; packs?: number }, o: WriteOpts = {}) =>
+  send(addr("FireCards"), cardsAbi, "cancelOpen", [BigInt(p.fire), BigInt(p.index)], p.packs ? `Get ${plural(p.packs, "pack")} back` : "Get your packs back", "cancel", o);
+
+/** Keeper / advanced only (the site doesn't show it): an open at the head of a Series' queue that has been ready for 7
+ *  days but can't be dealt is skipped, so the queue moves on; its packs not yet started go back, sealed. */
+export const skipStuck = (p: { fire: number }, o: WriteOpts = {}) =>
+  send(addr("FireCards"), cardsAbi, "skipStuck", [BigInt(p.fire)], "Skip a stuck open", "cancel", o);
+
 // ---------------------------------------------------------------- cases and grading
 
 /** Case `caseIds` and send `gradeIds` for grading in one transaction, paid in `pay` (PLANK and ETH at the quote plus
@@ -237,6 +247,13 @@ export async function deliverAndFinish(p: { index: number; ids?: number[] }, o: 
   }
   await send(addr("FirePsa"), psaAbi, "finish", [i, await gradingIds(p.index, p.ids)], "Reveal the grades", "grade", o);
   return true;
+}
+
+/** Last resort, once a grading's randomness has had no answer for 24 hours (reads.gradingsOf / gradingStatus:
+ *  canCancel): its cards come back unlocked and ungraded. `ids`: the cards it was sent with (else read from its event). */
+export async function cancelGrading(p: { index: number; ids?: number[] }, o: WriteOpts = {}): Promise<TransactionReceipt> {
+  const ids = await gradingIds(p.index, p.ids);
+  return send(addr("FirePsa"), psaAbi, "cancelGrading", [BigInt(p.index), ids], `Return ${plural(ids.length, "card")} ungraded`, "cancel", o);
 }
 
 // ---------------------------------------------------------------- burning

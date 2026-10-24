@@ -3,11 +3,13 @@
 One page, top to bottom, on your PC in PowerShell. Every step: what it does, the command, what "good" looks like,
 what to do if not. Play tokens only; nothing here touches mainnet or `main`.
 
-What goes again: the drand router + PAPER price feed (DeployInfra) and every card contract (DeployCards, FireProfiles
-included). What stays: the stand-in tokens and pools and the PLANK price feed. The testnet router gets the new
-exact-output swaps first (DevRouter).
+What goes again: the drand router + PAPER price feed (DeployInfra), every card contract (DeployCards, FireProfiles
+included) and the Morning Wood (DeployPress, new). What stays: the stand-in tokens and pools and the PLANK price feed.
+The testnet router gets the new exact-output swaps first (DevRouter).
 
-Rehearsed on a local chain (chain id 46630) in this exact order on Oct 22, 2026: all steps pass, VerifyDeploy 0 FAIL.
+Dress-rehearsed on a local chain (chain id 46630) in this order on Oct 24, 2026, the Morning Wood included: all steps
+pass, VerifyDeploy 0 FAIL. (`node rehearsal\rehearse.mjs` in step 3 covers the deploy, the owner's accept, a Series,
+buying, opening, grading and the keepers; it does not cover DevRouter or the Morning Wood.)
 
 ## What only you can supply
 
@@ -20,6 +22,8 @@ Rehearsed on a local chain (chain id 46630) in this exact order on Oct 22, 2026:
   its password.
 - **The Ledger**, testnet owner account (`0x4D57C7eB9D18Ac8a846b470292E155Cf2AF0640A` last time) and its path.
 - **Both keeper addresses** (main and backup) from Railway (public addresses, not keys).
+- **The Morning Wood editor wallet**: a new key, imported once on the PC that will publish the paper
+  (`cast wallet import editor --interactive`), with a little test ETH (~0.01). It can only publish issues.
 - **The practice Series** from Card Studio: `recipe.json`, art uploaded to Filebase, the pack art folder.
 - **Railway, Vercel, Alchemy** logins.
 
@@ -138,7 +142,7 @@ node ..\ops\deploy\record.mjs --rpc $env:RPC
 ```
 - Good: it lists FirePacks, FireCards, ... FireGroups, FireProfiles, ... and "Next: the OWNER hardware wallet
   accepts"; no "KEEPERS not set" line; record OK. `deployments\46630.json` now has 17 contracts: all new except
-  `PlankUsdTwap`.
+  `PlankUsdTwap`. Keep this window open: steps 8b-10 use `$env:KEEPERS` and `$env:ROYALTY_BPS`.
 - If not: "OWNER is the deployer" → `$env:OWNER` is wrong (run `Load-Inputs`). "V2_ROUTER" / "PLANK_USD_FEED"
   errors → `Load-Inputs` again after step 6. Ran out of gas money → faucet, then delete the `.pending` only if record
   says nothing landed, and run again.
@@ -146,7 +150,24 @@ node ..\ops\deploy\record.mjs --rpc $env:RPC
 **Profiles:** FireProfiles comes with DeployCards. Do **not** run `DeployProfiles.s.sol` here (it refuses: "FireProfiles
 is already in the deployments file"). It's only for adding profiles to a deploy made before it existed.
 
-## 9. AcceptOwnership on the Ledger (7 confirmations)
+## 8b. DeployPress: the Morning Wood
+
+The daily paper's contract, paying PaperBurner. The editor key (the paper's nightly pipeline) can only publish issues,
+at least an hour before they open; the owner can veto until then.
+```powershell
+cast wallet import editor --interactive            # once, on the PC that publishes the paper (type the new key, hidden)
+$env:EDITOR = cast wallet address --account editor
+$env:EDITOR
+forge script script/DeployPress.s.sol:DeployPress --rpc-url $env:RPC --account testnet-deployer --sender $DEPLOYER --slow --broadcast @verify
+node ..\ops\deploy\record.mjs --rpc $env:RPC
+```
+- Good: forge prints `MorningWood 0x...` and `editor 0x...` (your `$env:EDITOR`); record OK. `deployments\46630.json`
+  now has 18 contracts (the 17 + `MorningWood`).
+- If not: "Multiple contracts in the target path" → the `:DeployPress` after the file name is missing. "MorningWood is
+  already in the deployments file" → it was deployed already: skip to step 9 (or `$env:REPLACE_PRESS = "true"` for a
+  new one). "OWNER / ROYALTY_RECEIVER missing" or "have no code" → `Load-Inputs` (step 4). Pending file: as step 6.
+
+## 9. AcceptOwnership + AcceptPress on the Ledger (7 + 1 confirmations)
 
 Dry run first (nothing sent), then for real:
 ```powershell
@@ -155,6 +176,14 @@ forge script script/AcceptOwnership.s.sol --rpc-url $env:RPC --ledger --hd-paths
 ```
 - Good: seven confirmations on the device (FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa,
   PaperBurner). Check each contract address on the screen against `deployments\46630.json`.
+
+Then the Morning Wood (one confirmation; dry run first):
+```powershell
+forge script script/DeployPress.s.sol:AcceptPress --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH --sender $env:OWNER --slow
+forge script script/DeployPress.s.sol:AcceptPress --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH --sender $env:OWNER --slow --broadcast
+```
+- Good: one confirmation (the address is `MorningWood` in `deployments\46630.json`); it prints `accepted 0x...` (or "The
+  owner already holds MorningWood").
 - If not: "refuses any other signer" → the Ledger account isn't `OWNER` (step 4 check). Ledger errors → Ledger Live
   closed? Ethereum app open? Blind signing on? It skips what's already accepted, so just run it again.
 
@@ -163,17 +192,23 @@ forge script script/AcceptOwnership.s.sol --rpc-url $env:RPC --ledger --hd-paths
 ```powershell
 forge script script/VerifyDeploy.s.sol --rpc-url $env:RPC
 ```
+Run it in the **same window** as steps 8 and 8b: it checks the keepers, the royalty and the editor against
+`$env:KEEPERS`, `$env:ROYALTY_BPS` and `$env:EDITOR`. In a new window, set those three again first (without
+`KEEPERS` it FAILs with "KEEPERS not set here").
 - Good: last line `0 FAIL`. Expected WAIT: `PAPER/USD: no PAPER pool with $10 found yet` (the new PAPER feed needs
-  ~40 h after the keepers' first checkpoint). Lines `a keeper in KEEPERS may flush PaperBurner` (twice) and
-  `FireProfiles.CARDS is FireCards` say OK.
-- If not: any FAIL → stop and send me the FAIL lines. WAIT on `acceptOwnership` → step 9 didn't finish: run it again.
+  ~40 h after the keepers' first checkpoint), maybe `PLANK/USD not live yet` (the keepers checkpoint it every 30 min).
+  Lines `a keeper in KEEPERS may flush PaperBurner` (twice), `FireProfiles.CARDS is FireCards`, `OpenDrandRouter is
+  the real one`, the token and USDG lines, `MorningWood owned by the hardware wallet`, `MorningWood.editor is EDITOR`
+  and `MorningWood pays PaperBurner` say OK.
+- If not: any FAIL → stop and send me the FAIL lines. WAIT on `acceptOwnership` or `AcceptPress` → step 9 didn't
+  finish: run it again.
 
 ## 11. Push the new addresses
 
 ```powershell
 cd C:\Users\DubT1\the-fire
 git add deployments\46630.json
-git commit -m "Testnet redeploy: drand router, PAPER feed, card contracts, FireProfiles"
+git commit -m "Testnet redeploy: drand router, PAPER feed, card contracts, FireProfiles, Morning Wood"
 git push origin wip/pending-approval
 git push origin wip/pending-approval:refs/heads/claude/practical-gates-va0gq1
 ```
@@ -185,9 +220,17 @@ git push origin wip/pending-approval:refs/heads/claude/practical-gates-va0gq1
 
 In railway.com, for **each** testnet keeper service (main and backup):
 1. Settings → Source: branch `wip/pending-approval`; config file `ops/keeper/railway.json`.
-2. Variables. These must be set: `CHAIN_ID` = `46630`, `RPC_URL` (testnet RPC), `KEEPER_PRIVATE_KEY` (already there;
-   never re-paste it anywhere else), `KEEPER_ROLE` = `main` or `backup`, `ALERT_WEBHOOK_URL`, `HEARTBEAT_URL`; backup
-   only: `MAIN_KEEPER_ADDRESS` = the main keeper's address. Optional: `FALLBACK_RPC_URL`.
+2. Variables, per service. These must be set:
+   - `CHAIN_ID` = `46630`
+   - `RPC_URL`: the testnet RPC (Alchemy; sealed)
+   - `KEEPER_PRIVATE_KEY`: already there (sealed); never re-paste it anywhere else
+   - `KEEPER_ROLE` = `main` on one service, `backup` on the other
+   - `ALERT_WEBHOOK_URL` (sealed) and `HEARTBEAT_URL` (its own healthchecks.io check per service). Without these two
+     the keeper refuses to start.
+   - backup only: `MAIN_KEEPER_ADDRESS` = the main keeper's address.
+   Optional: `FALLBACK_RPC_URL` (default: the public testnet RPC; `none` turns it off) and the thresholds
+   (`CANCEL_WARN_HOURS` 6, `LOW_BALANCE_ETH` 0.002, `MIN_FLUSH_USD` 1). Nothing is needed for the Morning Wood: its
+   ETH/USDG lands in PaperBurner and the normal flush burns it.
 3. These must **not** be set (they'd pin the old contracts): `DEPLOYMENTS_FILE`, `START_BLOCK`, `FIRE_CARDS`,
    `FIRE_SALE`, `FIRE_PSA`, `PAPER_BURNER`, `PLANK_BURNER`, `DRAND_ROUTER`, `CARDS_ADAPTER`, `PSA_ADAPTER`,
    `PAPER_USD_FEED`, `PLANK_USD_FEED`, `ETH_USD_FEED`, `SERIES`. Delete any you find.
@@ -222,8 +265,28 @@ Then Deployments → the newest `wip/pending-approval` preview → Redeploy.
 ## 14. Series: the Standard drop groups + snapshot
 
 Put the studio's recipe in `contracts\series\recipe-fire-<N>.json`. Its sale should have the Standard groups: Paper
-Press holders, PLANK holders (snapshot), Everyone, After sell-out. For a testnet afternoon use short group times and a
-short idle (e.g. 15 min) in the studio.
+Press holders, PLANK holders (snapshot), Everyone, After sell-out. The Standard counts (167 packs, 5 per wallet for
+24 h) can't sell out in an afternoon, so make the practice Series small in the studio, about 10 packs:
+- Paper Press holders: **2** packs, **20 min** (0.33 h).
+- PLANK holders: **3** packs, **20 min**.
+- Everyone: the rest (**5** packs), 5 per wallet, the limit lifting after **15 min** (0.25 h).
+- After sell-out: idle **10 min**.
+- Free packs: 1 credit per pick, the credit group **Everyone**, at least 10% (1 pack; 20% = 2).
+The whole flow (groups, sell-out, extra packs, close, open, grade) then fits in an afternoon.
+
+**Free packs this run: suggestions, picked before the start.** A burn credit (step 15) only works in a *later*
+Series (cards exist only after this one closes), so test free packs with a picked suggestion:
+1. Before the launch, a test wallet suggests something on the site (Suggest). Its id is the newest:
+   `cast call (Get-Content C:\Users\DubT1\the-fire\deployments\46630.json | ConvertFrom-Json).contracts.FireCredits "suggestionCount()(uint256)" --rpc-url $env:RPC`
+   minus 1.
+2. Launch with a start time at least 30 min after you expect to type `LOCK`.
+3. After `LOCK` and **before the start**, pick it from the Ledger:
+   ```powershell
+   $credits = (Get-Content C:\Users\DubT1\the-fire\deployments\46630.json | ConvertFrom-Json).contracts.FireCredits
+   cast send $credits "pickSuggestions(uint256,uint256[])" <N> "[<id>]" --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC
+   ```
+   (After the start it refuses: `DropStarted`.) The wallet then has a credit; it claims the free pack on the site
+   while Everyone is open.
 
 Next to it, the snapshot side file `contracts\series\fire-<N>-snapshots.json` (group index 1 = the PLANK group):
 ```json
@@ -232,13 +295,16 @@ Next to it, the snapshot side file `contracts\series\fire-<N>-snapshots.json` (g
 Test wallets must hold the PLANK through that window (`days` 1 = the last day). Mint them PLANK and a Paper Press a day
 before (deployer pays; amounts in wei; on the testnet kit 10^27 wei of PLANK is about $1, so this is about $1,000):
 ```powershell
-cast send $env:PLANK "mint(address,uint256)" <test wallet> 1000000000000000000000000000000 --account testnet-deployer --rpc-url $env:RPC
+cast send $env:PLANK "mint(address,uint256)" <test wallet> "1000000000000000000000000000000" --account testnet-deployer --rpc-url $env:RPC
 cast send $env:MILL "mint(address)" <test wallet> --account testnet-deployer --rpc-url $env:RPC
 ```
-Launch (Ledger: batch A, then one confirmation for batch B):
+(Quote big numbers like the PLANK amount: PowerShell would otherwise turn them into `1E+30`.) Mint two Paper Presses
+in all (the Press group is 2 packs, 1 per Press).
+
+Launch (Ledger: batch A, then one confirmation for batch B). `$env:RPC` is already set from step 4:
 ```powershell
 cd C:\Users\DubT1\the-fire
-.\ops\series\launch.ps1 --recipe contracts\series\recipe-fire-<N>.json --start "2026-10-25 18:00" --chain 46630
+node ops\series\launch.mjs --recipe contracts\series\recipe-fire-<N>.json --start "2026-10-25 18:00" --chain 46630
 ```
 - Good: one OK line per check; a PLANK snapshot line like `2 wallets hold $69+ of PLANK`; `GREEN`; you type `LOCK`;
   `Series locked`; `7  Done`. It writes `web\art\factory\forge\holders\series-<N>.json`. Expected WARN: `PAPER price
@@ -284,11 +350,26 @@ Use a test wallet with test ETH. Tick each:
 - [ ] **Profiles**: set a name and a picture from a card you hold; it shows next to your pulls; sell or send the card
       and the picture goes away.
 - [ ] **Feed**: your rare pulls show in the feed; the Series board shows who fed the fire.
-- [ ] **Burn** 42 cards for a free pack credit, then use it.
+- [ ] **Free pack**: the wallet whose suggestion you picked (step 14) claims its free pack while Everyone is open.
+- [ ] **Burn** 42 cards: the wallet gets a free pack credit (it can only be used in a later Series).
 - [ ] **Suggest** a theme and style in one transaction; suggest a character.
 - [ ] **Pause** and unpause the sale from the Ledger (`cast send <FireSale> "setPaused(bool)" true --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC`, then `false`): buying stops, then works.
 - [ ] **Backup keeper**: stop the main keeper in Railway for 10 min while a pack opens; the backup steps in (webhook
       says so); start the main keeper again.
 - [ ] **Explorer**: packs and cards show with the right images and traits.
+- [ ] **Morning Wood** (cast or the explorer's Write tab only: the site's paper page doesn't buy yet). In the step 4
+      window, `$press = (Get-Content C:\Users\DubT1\the-fire\deployments\46630.json | ConvertFrom-Json).contracts.MorningWood`, then:
+  - The editor publishes issue 1 to open in 70 min:
+    `$at = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 4200`, then
+    `cast send $press "publish(uint256,string,uint64)" 1 "ipfs://<any test CID>/metadata.json" $at --account editor --rpc-url $env:RPC`.
+    Publishing to open now (`0`) or in under an hour is refused (`BadTime`).
+  - The owner vetoes it: `cast send $press "unpublish(uint256)" 1 --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC`.
+  - The owner publishes issue 2 to open now (only the owner can):
+    `cast send $press "publish(uint256,string,uint64)" 2 "ipfs://<any test CID>/metadata.json" 0 --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC`.
+  - A test wallet buys a copy in ETH: `cast call $press "quote(uint256,uint256,uint8)(uint256,uint256)" 2 1 0 --rpc-url $env:RPC`
+    gives the ETH cost and the PAPER; approve that PAPER to `$press`, then `buy(uint256,uint256,uint8,uint256)` with
+    `2 1 0 <cost>` and `--value <cost>` (the explorer's Write tab, or `cast send ... --account <a test keystore>`).
+    The ETH lands in PaperBurner.
+  - It sends a letter: `submitLetter(uint256,string)` `2 "Dear editor ..."` (burns 1 PAPER; approve it first).
 
 Anything that fails: write down what you did, what you saw, and the time. Send it to me; I fix it, you redo that line.

@@ -10,7 +10,8 @@
 // lists its groups, buy from Everyone with ETH, PLANK and USDG (PAPER burned each time), a free pack (Everyone sold
 // out: "more may come"), the Press group's pack, the after-sell-out group (its panel, the confirm step, a race with
 // another buyer: "Someone just bought it"), the idle end ("Closing…") and the keeper's close, open, deliver the draw,
-// deal, reveal, case + grade (the draw, the grades), burn, a profile (name + picture), the results; in the demo, the
+// deal, reveal, an open and a grading left unfinished across a reload (In progress in My cards and Case & grade: Deal
+// now, and after 24 hours with no draw the packs back / the card back ungraded), case + grade (the draw, the grades), burn, a profile (name + picture), the results; in the demo, the
 // profile editor (pick, pinch / wheel, save). Screenshots go to $SHOTS (default ./shots).
 // Anvil's public test accounts only.
 import { createServer } from "node:http";
@@ -73,6 +74,21 @@ try {
   const sync = () => page.evaluate(() => window.Live.sync({ cards: true }));
   const toastSeen = (re) => page.waitForFunction((src) => [...document.querySelectorAll(".toast")].some((t) => new RegExp(src).test(t.textContent)), re.source, { timeout: 60_000 });
   const txDone = () => page.waitForFunction(() => !document.querySelector("#sheet-tx[open]"), null, { timeout: 60_000 });
+  const closeSheets = () => page.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
+  // the Menu's buttons (the menu button shows on phones; the sheet is the same everywhere)
+  const menuKeys = async () => { await page.evaluate(() => document.querySelector('[data-go="menu"]').click()); await page.locator("#sheet-menu[open]").waitFor();
+    const k = await page.evaluate(() => [...document.querySelectorAll("#sheet-menu [data-m]")].map((b) => `${b.dataset.m}:${b.textContent.trim()}`)); await closeSheets(); return k; };
+  // a day goes by on the chain: the price windows move on as the keeper's checkpoints would (two: a short window again)
+  const cpAbi = [{ type: "function", name: "checkpoint", inputs: [], outputs: [], stateMutability: "nonpayable" }];
+  const aDay = async () => { await ctx.warp(24 * 3600 + 1); for (const w of [0, 1801]) { if (w) await ctx.warp(w); for (const t of [ctx.C.PlankUsdTwap, ctx.C.PaperUsdTwap]) await ctx.tx(acct(0), t, cpAbi, "checkpoint"); } };
+  const reloadLive = async () => {
+    await page.reload();
+    await page.waitForFunction(() => /Series 7/.test(document.querySelector("#seriesChip")?.textContent || ""), null, { timeout: 60_000 });
+    await page.waitForTimeout(1500);
+    if (!(await page.evaluate(() => Store.state.wallet.connected))) await page.click("#walletBtn");
+    await page.waitForFunction(() => Store.state.wallet.connected && Store.state.wallet.balances.PAPER > 0, null, { timeout: 30_000 });
+    await page.waitForTimeout(500); await closeSheets(); await sync();
+  };
 
   console.log("\n== live mode: no demo");
   await page.goto(`${SITE}?live=testnet`);
@@ -94,6 +110,8 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForTimeout(500); // the connect's own wallet sheet can open again just after: close whatever is open
   await page.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
+
+  check(!(await menuKeys()).some((k) => k.startsWith("open:")), "live, nothing that can open: the Menu has no Open packs");
 
   console.log("\n== suggest a theme and an art style (one transaction)");
   await page.evaluate(() => Stations.open("suggest"));
@@ -122,6 +140,10 @@ try {
   check(/Paper Press holders/.test(bx) && /1 PAPER/.test(bx) && /ends in/.test(bx), "Paper Press holders: 1 PAPER, with its end countdown");
   check(/Next: Extra packs · after Everyone/.test(bx), "what opens next: Extra packs, after Everyone");
   await shot("04-on-sale");
+  const eth = await page.evaluate(async () => { const q = await window.Live.chain.quoteGroup(7, 1, 1), e = q.quotes.find((x) => x.pay === "ETH");
+    return { est: Store.PRICES.ETH_USD, exact: +q.usd / (Number(BigInt(e.cost.raw)) / 1e18), text: e.cost.text, n: e.cost.n }; });
+  check(Math.abs(eth.est - eth.exact) / eth.exact < 1e-9 && eth.n > 0 && Number(eth.text) > 0 && Math.abs(Number(eth.text) - eth.n) / eth.n < 1e-3,
+    `ETH price estimated from the raw quote ($${eth.est.toFixed(2)} an ETH; a pack is ${eth.text} ETH, 4 significant digits)`);
   const buy = async (n, coin) => {
     await page.click('#buybox [data-buy="g1"]');
     await page.locator("#sheet-buy[open] .go:not([disabled])").waitFor({ timeout: 30_000 });
@@ -218,6 +240,54 @@ try {
   await sync();
   check(await page.evaluate(() => Store.state.sealed[7] === 8 && Store.state.series.phase === 4), "8 sealed packs; Series 7 closed (closed by the keeper)");
   await shot("07-closed");
+  check((await menuKeys()).includes("open:Open packs (8)"), "packs that can open: the Menu shows Open packs (8)");
+
+  console.log("\n== an open in progress survives a reload; after 24 hours with no draw, the packs come back");
+  await page.evaluate(() => Stations.open("cards"));
+  await page.click('#sheet-table [data-key="open1-7"]');
+  await page.waitForFunction(() => /draw/i.test(document.querySelector("#sheet-table .op-wait .stage-msg")?.textContent || ""), null, { timeout: 60_000 });
+  await reloadLive();
+  check(await page.evaluate(() => Store.state.sealed[7] === 7 && Store.state.wallet.unfinished.length === 1), "after a reload: 7 sealed, and the open still unfinished");
+  await page.evaluate(() => Stations.open("cards"));
+  const ip = () => page.locator("#sheet-table .inprog").innerText().then((t) => t.replace(/\s+/g, " "));
+  await page.locator("#sheet-table .inprog .ip").waitFor({ timeout: 30_000 });
+  check(/In progress/.test(await ip()) && /Series 7 · 1 pack/.test(await ip()) && /Drawing…/.test(await ip()) && !(await page.locator("#sheet-table .inprog button").count()), `My cards shows it: "${await ip()}"`);
+  await shot("08a-reload-drawing");
+  await ctx.warp(240); await sync(); // the draw is out, the keeper (there is none here) over two minutes late
+  await page.waitForFunction(() => /Ready/.test(document.querySelector("#sheet-table .inprog")?.textContent || ""), null, { timeout: 30_000 });
+  check(/Ready/.test(await ip()) && (await page.locator('#sheet-table [data-key="ip-open-0-deal"]').textContent()) === "Deal now (small fee)" && !(await page.locator('#sheet-table [data-key="ip-open-0-cancel"]').count()),
+    "the keeper is late: Ready, Deal now (small fee); no cancel before 24 hours");
+  await shot("08b-reload-ready");
+  await aDay(); await sync();
+  await page.locator('#sheet-table [data-key="ip-open-0-cancel"]').waitFor({ timeout: 30_000 });
+  check(/No draw after 24 hours\./.test(await ip()) && (await page.locator('#sheet-table [data-key="ip-open-0-cancel"]').textContent()) === "Get my packs back", `a day with no draw: "${await ip()}"`);
+  await shot("08c-reload-24h");
+  await page.click('#sheet-table [data-key="ip-open-0-cancel"]');
+  await page.locator("#sheet-cancel[open]").waitFor();
+  check(/Get your 1 pack back, still sealed\?/.test(await page.locator("#sheet-cancel").innerText()), "a short confirm");
+  await shot("08d-cancel-confirm");
+  await page.click("#sheet-cancel .go");
+  await toastSeen(/1 pack back, sealed/);
+  await txDone(); await sync();
+  check(await page.evaluate(() => Store.state.sealed[7] === 8 && Store.state.wallet.unfinished.length === 0) && !(await page.locator("#sheet-table .inprog .ip").count()), "cancelled: 8 sealed again, nothing in progress");
+  await closeSheets();
+
+  console.log("\n== after a reload, Deal now in My cards deals the open, then the same reveal");
+  await page.evaluate(() => Stations.open("cards"));
+  await page.click('#sheet-table [data-key="open1-7"]');
+  await page.waitForFunction(() => /draw/i.test(document.querySelector("#sheet-table .op-wait .stage-msg")?.textContent || ""), null, { timeout: 60_000 });
+  await reloadLive();
+  await ctx.warp(240); await sync();
+  await page.evaluate(() => Stations.open("cards"));
+  await page.locator('#sheet-table [data-key="ip-open-1-deal"]').waitFor({ timeout: 30_000 });
+  await page.click('#sheet-table [data-key="ip-open-1-deal"]');
+  await page.locator("#sheet-table .op").waitFor({ timeout: 120_000 });
+  await page.waitForTimeout(1500);
+  await shot("08e-resume-reveal");
+  await page.click("#sheet-table .skip-b");
+  await page.locator("#sheet-table .op-sum").waitFor({ timeout: 30_000 });
+  check(await page.evaluate(() => Store.state.cards.length === 6 && Store.state.sealed[7] === 7 && !Store.state.wallet.unfinished.length), "dealt from My cards: its 6 cards revealed; 7 packs still sealed, nothing in progress");
+  await closeSheets();
 
   console.log("\n== open: wait for the draw, deliver it, deal, reveal");
   await page.evaluate(() => Stations.open("cards"));
@@ -240,8 +310,8 @@ try {
   await page.locator("#sheet-table .op-sum .wz .wz-how").waitFor({ timeout: 30_000 });
   const how = await page.locator("#sheet-table .wz-how").innerText();
   check(how.split("\n").filter((l) => l.trim()).length <= 4 && /wear/.test(how) && /case \(\$0\.05\)/i.test(how) && /PDA 1–10/.test(how) && !/burn|split|buy-?back|treasury/i.test(how)
-    && await page.locator('#sheet-table [data-key="notnow"]').isVisible() && await page.locator("#sheet-table .wz-grid .ctile").count() === 48,
-    "after the last pack: Case & grade with all 48 pulls, three lines on how it works, Not now");
+    && await page.locator('#sheet-table [data-key="notnow"]').isVisible() && await page.locator("#sheet-table .wz-grid .ctile").count() === 42,
+    "after the last pack: Case & grade with all 42 pulls of this visit, three lines on how it works, Not now");
   const dealt = await page.evaluate(() => Store.state.cards.length);
   check(dealt === 48, `48 cards dealt and revealed (${dealt})`);
   await shot("10-after-open");
@@ -392,10 +462,40 @@ try {
     await page.route(/ipfs\.io/, (r) => r.abort());
   }
 
+  console.log("\n== a grading in progress survives a reload; after 24 hours with no draw, the card comes back ungraded");
+  {
+    const gid = await page.evaluate(async () => { const c = Store.state.cards.find((x) => x.grade == null && !x.cased && !x.pending);
+      const q = await window.Live.quoteProtect([], [c.id], "ETH"); const r = await window.Live.protect([], [c.id], "ETH", q); return r?.gradingIndex >= 0 ? c.id : null; });
+    await txDone();
+    await reloadLive();
+    await page.evaluate(() => Stations.open("grade"));
+    const gp = () => page.locator("#sheet-grade .inprog").innerText().then((t) => t.replace(/\s+/g, " "));
+    await page.locator("#sheet-grade .inprog .ip").waitFor({ timeout: 30_000 });
+    check(gid && /1 card to grade/.test(await gp()) && /Drawing…/.test(await gp()), `after a reload, Case & grade shows the grading: "${await gp()}"`);
+    await shot("13f-grading-drawing");
+    await aDay(); await sync();
+    await page.locator("#sheet-grade [data-key$=-cancel]").waitFor({ timeout: 30_000 });
+    check(/No draw after 24 hours\./.test(await gp()) && /Return ungraded/.test(await gp()), `a day with no draw: "${await gp()}"`);
+    await shot("13g-grading-24h");
+    await page.click("#sheet-grade [data-key$=-cancel]");
+    await page.locator("#sheet-cancel[open]").waitFor();
+    check(/Return 1 card ungraded\? The fee isn't refunded\./.test(await page.locator("#sheet-cancel").innerText()), "a short confirm");
+    await page.click("#sheet-cancel .go");
+    await toastSeen(/1 card back, ungraded/);
+    await txDone(); await sync();
+    check(await page.evaluate((id) => { const c = Store.state.cards.find((x) => x.id === id); return c && !c.pending && c.grade == null && !Store.state.wallet.unfinished.length; }, gid), "the card is back, unlocked and ungraded; nothing in progress");
+    await closeSheets();
+  }
+
   console.log("\n== My cards, the results");
   await page.evaluate(() => Stations.open("cards"));
   await page.waitForTimeout(600);
   await shot("14-my-cards");
+  await page.locator("#sheet-table .cgrid .ctile").first().click();
+  await page.locator("#sheet-card[open] .big .cface").waitFor();
+  check(!(await page.locator('#sheet-card a:has-text("OpenSea")').count()) && (await page.locator('#sheet-card [data-key], #sheet-card button:has-text("Binder")').count()) > 0,
+    "live: no OpenSea button until the network's collection is set");
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await page.evaluate(() => Stations.open("results"));
   await page.waitForTimeout(600);
@@ -456,6 +556,9 @@ try {
     const demo = await p.evaluate(() => ({ live: window.Live?.on, demo: Store.state.demo, cards: Store.state.cards.length, note: !!document.querySelector(".demo-note") && getComputedStyle(document.querySelector(".demo-note")).display !== "none" }));
     check(demo.live === false && demo.demo && demo.cards === 46 && demo.note, `${name}: the demo (46 demo cards, the demo notice)`);
     check(vendor.length === 0, `${name}: no wallet or chain code loaded`);
+    await p.evaluate(() => document.querySelector('[data-go="menu"]').click()); await p.locator("#sheet-menu[open]").waitFor();
+    check((await p.locator('#sheet-menu [data-m="open"]').count()) === 1, `${name}: the demo's Menu keeps Open packs`);
+    await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
     const f = join(SHOTS, `16-demo-${name}.png`); await p.screenshot({ path: f }); console.log(`  shot ${f}`);
 
     // a profile (profile.js): the demo keeps it in this browser. Edit from the wallet, pick a card, frame it, save
@@ -499,6 +602,7 @@ try {
     const slabId = await p.evaluate(() => Store.state.cards.find((c) => c.grade != null && c.material !== "diamond").id);
     await p.locator(`#sheet-table .cgrid .ctile[data-id="${slabId}"]`).click();
     await p.locator("#sheet-card[open] .big .cface").waitFor();
+    check((await p.locator('#sheet-card a:has-text("OpenSea")').count()) === 1, `${name}: the demo keeps its OpenSea button`);
     if (w >= 500) { // the mouse leans the big card calmly (holo.js): eased in the frame, at most ~8 degrees, eased back when it leaves
       await p.locator("#sheet-card[open] .big .cface.live.ready").waitFor({ timeout: 15_000 });
       const fb = await p.locator("#sheet-card[open] .big .cface").boundingBox();
@@ -717,6 +821,61 @@ try {
       "suggestion results: the reveal opens directly, no Guess the pick (guess.js not loaded)");
     await p2.close();
     check(errs.length === 0, `owner fixes: no page errors${errs.length ? ": " + errs.join(" | ") : ""}`);
+  }
+  // ---------- PLANK and PAPER (demo, desktop): the coins in the Buy box, the wallet and Get PAPER; the scene's own
+  // PLANK and PAPER load and draw; My cards with no cards: PLANK and the way to a pack
+  console.log("\n== PLANK and PAPER (demo)");
+  {
+    const p = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
+    const bad = []; p.on("response", (r) => { if (/\/ui\/brand\//.test(r.url()) && r.status() >= 400) bad.push(r.url()); }); p.on("requestfailed", (r) => { if (/\/ui\/brand\//.test(r.url())) bad.push(r.url()); });
+    await p.addInitScript(() => { try { localStorage.setItem("omni.tour", "1"); localStorage.setItem("omni.coached", "1"); } catch { /* */ } });
+    await p.goto(SITE);
+    await p.locator("#loading.done").waitFor({ state: "attached", timeout: 30_000 });
+    check(await p.locator("#loading .ld-plank").count() === 1 && await p.locator("#loading .ld-paper").count() === 1, "the loading screen: PLANK and PAPER either side of the mark");
+    await p.waitForFunction(() => window.Scene?.brand?.ready, null, { timeout: 30_000 });
+    const drew = await p.evaluate(async () => { // the scene draws them: watch its drawImage calls for a couple of frames
+      const seen = { n: 0 }, orig = CanvasRenderingContext2D.prototype.drawImage, cv = document.getElementById("c");
+      Scene.brand.ride(); Scene.brand.peek(); await new Promise((r) => setTimeout(r, 1200));
+      CanvasRenderingContext2D.prototype.drawImage = function (...a) { if (this.canvas === cv && a[0] instanceof HTMLCanvasElement && a[0].dh) seen.n++; return orig.apply(this, a); };
+      await new Promise((r) => setTimeout(r, 400)); CanvasRenderingContext2D.prototype.drawImage = orig; return seen.n; });
+    check(drew > 0 && bad.length === 0, `the scene's PLANK and PAPER (belt ride, the press peek, the BURN sign) load and draw (${drew} draws${bad.length ? "; failed: " + bad.join(", ") : ""})`);
+    const coins = (sel) => p.evaluate((sel) => [...document.querySelectorAll(sel + " img.coin")].filter((i) => i.complete && i.naturalWidth > 0).map((i) => i.getAttribute("src").split("/").pop()), sel);
+    const box = await coins("#buybox");
+    check(box.some((c) => /^paper-coin/.test(c)) && box.some((c) => /^plank-coin/.test(c)), `Buy box: PAPER coins on the prices, PLANK on PLANK holders (${box.join(", ")})`);
+    await p.evaluate(() => Store.update(() => Store.demoStage("open"))); await p.waitForTimeout(300); // Everyone: PLANK, ETH or USDG
+    await p.evaluate(() => [...document.querySelectorAll("#buybox [data-buy]")].find((b) => /Everyone/.test(b.textContent)).click());
+    await p.locator("#sheet-buy[open] .sum").waitFor();
+    await p.waitForFunction(() => /PLANK/.test(document.querySelector("#sheet-buy .sum")?.textContent || ""));
+    const pay = await coins("#sheet-buy .seg"), sum = await coins("#sheet-buy .sum");
+    check(pay.length === 1 && /^plank-coin/.test(pay[0]) && sum.filter((c) => /^paper-coin/.test(c)).length >= 2 && sum.some((c) => /^plank-coin/.test(c)),
+      `checkout: coins on the pay-with choice, the price, the PAPER line and You have (${[...pay, ...sum].join(", ")})`);
+    await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close())); await p.waitForTimeout(300);
+    check(await p.locator("#walletBtn .wcoin").isVisible() && /PAPER/.test(await p.locator("#walletBtn").textContent()), "the wallet chip: the PAPER coin before the balance");
+    await p.click("#walletBtn"); await p.locator("#sheet-wallet[open] .bal").waitFor();
+    const bal = await coins("#sheet-wallet .bal");
+    check(bal.length === 2 && bal.some((c) => /^plank/.test(c)) && bal.some((c) => /^paper/.test(c)), `wallet: PLANK and PAPER balances with their coins (${bal.join(", ")})`);
+    await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close())); await p.waitForTimeout(300);
+    await p.evaluate(() => UI.openGetPaper()); await p.locator("#sheet-paper[open] .go").waitFor();
+    const gp = await coins("#sheet-paper");
+    check(await p.locator("#sheet-paper h2 img.coin").count() === 1 && await p.locator("#sheet-paper .seg img.coin").count() === 2 && await p.locator("#sheet-paper .go img.coin").count() === 1 && gp.length === 4 && /Get 10 PAPER/.test(await p.locator("#sheet-paper .go").textContent()),
+      "Get PAPER: coins on the title, the PAPER and PLANK buttons and the Get button");
+    await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close())); await p.waitForTimeout(300);
+    // My cards, none yet: packs ready to open -> Open a pack tears one; none -> Get a pack opens the Buy flow
+    await p.evaluate(() => { Store.update((s) => { s.cards = []; }); Stations.open("cards"); });
+    await p.locator("#sheet-table .empty-cards").waitFor();
+    check(await p.evaluate(() => { const i = document.querySelector("#sheet-table .empty-cards .ec-plank"); return !!i && i.complete && i.naturalWidth > 0; }) && /No cards yet\. Open a pack!/.test(await p.locator("#sheet-table .empty-cards").textContent()), "My cards, empty: PLANK over \"No cards yet. Open a pack!\"");
+    check(/Open a pack/.test(await p.locator('#sheet-table [data-key="empty-go"]').textContent()), "with packs ready to open, the button opens one");
+    await p.click('#sheet-table [data-key="empty-go"]'); await p.locator("#sheet-table .pk2").waitFor({ timeout: 10_000 });
+    check(true, "Open a pack: straight to tearing a pack");
+    await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close())); await p.waitForTimeout(400);
+    await p.evaluate(() => { Store.update((s) => { s.cards = []; s.sealed = {}; }); Stations.open("cards"); });
+    await p.locator('#sheet-table .empty-cards [data-key="empty-go"]').waitFor();
+    check(/Get a pack/.test(await p.locator('#sheet-table [data-key="empty-go"]').textContent()), "no packs to open, a sale on: Get a pack");
+    await p.click('#sheet-table [data-key="empty-go"]'); await p.locator("#sheet-buy[open]").waitFor({ timeout: 10_000 });
+    check(!(await p.locator("#sheet-table[open]").count()), "Get a pack: My cards closes and the Buy flow opens");
+    await p.close();
+    check(errs.length === 0, `PLANK and PAPER: no page errors${errs.length ? ": " + errs.join(" | ") : ""}`);
   }
   console.log(`\nPASS: ${checks} checks`);
 } catch (e) {

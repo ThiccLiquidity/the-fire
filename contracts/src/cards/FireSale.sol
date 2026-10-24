@@ -213,6 +213,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
             || c.cards == address(0) || c.ethUsd == address(0) || c.plankUsd == address(0) || c.router == address(0)
             || c.credits == address(0) || c.groups == address(0)) revert ZeroAddress();
         if (c.router.code.length == 0) revert BadConfig(); // a swap to an address with no code would revert uncaught
+        _checkFeeds(c.ethUsd, c.plankUsd, c.paperUsd);
         PAPER = IERC20(c.paper);
         PLANK = IERC20(c.plank);
         USDG = IERC20(c.usdg);
@@ -254,7 +255,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     function setFeeds(address ethUsd, address plankUsd, address paperUsd, address router) external onlyOwner {
         if (activeDrops != 0) revert DropsActive();
         if (ethUsd == address(0) || plankUsd == address(0) || router.code.length == 0) revert BadConfig();
-        if (paperUsd != address(0) && _decimals(paperUsd) != 18) revert BadConfig(); // PaperUsdTwap
+        _checkFeeds(ethUsd, plankUsd, paperUsd);
         ETH_USD = ISaleFeed(ethUsd);
         PLANK_USD = ISaleFeed(plankUsd);
         if (paperUsd != address(PAPER_USD)) lastPaperUsd = 0; // a new (or no) PAPER feed starts from its own price
@@ -710,6 +711,13 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         plankBurner = plankBurner_;
         paperBurner = paperBurner_;
         emit WalletsSet(revenue, plankBurner_, paperBurner_);
+    }
+
+    /// @dev The prices assume ETH/USD has 8 decimals and PLANK/USD and PAPER/USD (the TWAPs) 18: a wrong feed would
+    ///      misprice packs by up to 1e10, so refuse it.
+    function _checkFeeds(address ethUsd, address plankUsd, address paperUsd) private view {
+        if (_decimals(ethUsd) != 8 || _decimals(plankUsd) != 18) revert BadConfig();
+        if (paperUsd != address(0) && _decimals(paperUsd) != 18) revert BadConfig(); // PaperUsdTwap
     }
 
     function _decimals(address token) private view returns (uint8) {

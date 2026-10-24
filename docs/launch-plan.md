@@ -3,12 +3,12 @@
 The order to go live, what each step needs from you, and what's already done. Nothing goes to `main`, the live
 site address or mainnet without your OK. Work lands on `wip/pending-approval` and shows on Vercel preview links only.
 
-## Where things are (Oct 21, 2026)
+## Where things are (Oct 24, 2026)
 
 | Done | Not done |
 |---|---|
-| Card contracts, tested and reviewed internally (rounds 5-8) | An outside audit |
-| Testnet deploy (chain 46630), VerifyDeploy 0 FAIL, owner on the Ledger | The testnet card contracts predate `suggestMany` (theme + style in one transaction): redeploy them (step 1) |
+| Card contracts and the Morning Wood, tested and reviewed internally (rounds 5-8, pre-testnet audit Oct 24: no Critical/High/Medium) | An outside audit |
+| Testnet deploy (chain 46630), owner on the Ledger | The testnet card contracts predate FireGroups, FireProfiles and the Morning Wood: redeploy them (step 1, `docs/testnet-runbook.md`) |
 | Railway keeper on the testnet | A full end-to-end testnet run with a real Series |
 | Card Studio: library, recipe, deal, build, drawn holo, Filebase upload | The practice Series built and uploaded with the new holo |
 | Demo site: buy, open, case & grade, burn, suggest, live holo | |
@@ -17,6 +17,9 @@ site address or mainnet without your OK. Work lands on `wip/pending-approval` an
 | Security checklist (`docs/security-checklist.md`) | You working through it |
 
 ## 1. Testnet redeploy (about 30 minutes, needs your Ledger)
+
+Follow `docs/testnet-runbook.md` top to bottom: it is the up-to-date version of this step (DevRouter, DeployInfra,
+DeployCards, the Morning Wood, AcceptOwnership + AcceptPress, VerifyDeploy, Railway). The notes below are background.
 
 The testnet `FireCredits` has no `suggestMany`, the sale now has its PAPER share, the PAPER price feed has the
 per-pool clocks and PaperBurner the flusher list (Oct 22 wallet audit), so the PAPER feed and the card contracts go
@@ -65,7 +68,8 @@ Use the practice Series with real art (five pictures per character, the studio d
          Series (`FireSale.close`); or sell out or end the drop; the Series closes
    - [ ] Open a pack; drand arrives (~90 s); the cards appear; the keeper log shows `fulfillMany` and `process`
    - [ ] Case a card; grade a card; the slab shows the grade
-   - [ ] Burn 42 cards for a free pack credit, then use it
+   - [ ] Burn 42 cards for a free pack credit (it can only be used in a later Series: cards exist only once this
+         one has closed). Free packs this run come from picked suggestions (runbook step 14)
    - [ ] Suggest a theme and an art style in one transaction; suggest a character
    - [ ] Announce the wave's closing block and drand round (`draw.mjs --plan`), run the draw with them
      (`--to-block`, `--drand-round`), `draw.mjs --verify` it, pick winners, publish results; a winner claims the free pack

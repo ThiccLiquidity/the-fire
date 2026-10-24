@@ -117,11 +117,12 @@ jobs:
           (cd ops && npm ci --no-audit --no-fund)
           (cd ops/keeper && npm ci --no-audit --no-fund)
           (cd ops/snapshot && npm ci --no-audit --no-fund)
-      - name: unit tests (keeper, VerifySeries, record, the launcher, snapshot Merkle)
+      - name: unit tests (keeper, VerifySeries, record, the launcher, snapshot Merkle, the Morning Wood pipeline)
         run: |
           (cd ops/keeper && npm test)
           (cd ops && npm test)
           (cd ops/snapshot && npm run selftest > /dev/null)
+          node --test paper/test/*.test.mjs
       - name: build the contracts
         working-directory: contracts
         run: forge build

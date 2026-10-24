@@ -18,7 +18,7 @@ The owner (the `OWNER` hardware wallet) sets these for each drop (each Series) b
 (its start time), so nothing can change while people are buying. The Series itself (its recipe: card types and their
 odds, pack size, holo odds, characters and optionally their odds; see `docs/cards-contracts.md`) must be set up in the card contracts before its
 drop can be set up, and locks when the drop is set up. The numbers below are the Standard sale (the studio's "Standard"
-preset; its "Giant" preset is an example of a 10,000-pack drop with 100 per wallet and 100 per purchase). The full
+preset; its "Giant" preset is an example of a 10,000-pack drop with 50 per wallet and 100 per purchase). The full
 list, with bounds, is in `docs/cards-contracts.md` ("Every sale and economy setting"). One number is **not** a
 setting: cards burned per free pack is 42, forever.
 

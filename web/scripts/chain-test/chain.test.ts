@@ -6,7 +6,7 @@
 // finished), burning, profiles (FireProfiles: set, rename, a name unique in any case, the picture falling back once its
 // card is sold, clear), and every read the site uses. Run by run.mjs.
 
-import { concat, encodeFunctionData, erc20Abi, keccak256, toHex, type Address, type Hex } from "viem";
+import { concat, decodeFunctionData, encodeFunctionData, erc20Abi, keccak256, toHex, type Address, type Hex } from "viem";
 import { privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
 import type { Net } from "../../src/lib/net";
 import { cardsAbi, creditsAbi } from "../../src/lib/cards";
@@ -40,7 +40,10 @@ export async function runTest(ctx: Ctx): Promise<number> {
   // every RPC request the layer makes (to check the log scans are incremental)
   const rpcLog: { method: string; params: unknown[] }[] = [];
   const realFetch = globalThis.fetch;
+  // KyberSwap stand-in (the Get PAPER section): answers the aggregator's URLs while set
+  let kyberMock: ((url: string, init?: RequestInit) => Response) | null = null;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (kyberMock && String(input).startsWith("https://aggregator-api.kyberswap.com/")) return kyberMock(String(input), init);
     try { const b = JSON.parse(String(init?.body ?? "")); for (const x of Array.isArray(b) ? b : [b]) rpcLog.push({ method: x.method, params: x.params ?? [] }); } catch { /* not JSON-RPC */ }
     return realFetch(input, init);
   }) as typeof fetch;
@@ -214,11 +217,32 @@ export async function runTest(ctx: Ctx): Promise<number> {
   check(s.state === "closed" && s.cards.closed && s.cards.packs === 9 && !s.closing, "closed by another wallet: 9 packs (6 Everyone + 1 Press + 2 extra)");
   check(JSON.stringify(await L.packsOf(me)) === JSON.stringify([{ fire: 7, count: 9 }]), "9 sealed packs held");
 
+  console.log("\n== an open whose draw never comes: after 24 hours, the packs come back sealed");
+  const stuck = await L.openPacks({ fire, n: 2 }, o);
+  let opens = await L.opensOf(me);
+  check(stuck.index === 0 && opens.length === 1 && opens[0].status === "waiting" && !opens[0].canCancel && opens[0].cancelAt === opens[0].requestedAt + 24 * 3600,
+    "opened 2 packs (open #0): waiting for its draw, no cancel before 24 hours (cancelAt: asked + 24 h)");
+  let cmsg = "";
+  try { await L.cancelOpen({ fire, index: 0 }, o); } catch (e) { cmsg = (e as Error).message; }
+  check(/24 hours/.test(cmsg) && JSON.stringify(await L.packsOf(me)) === JSON.stringify([{ fire: 7, count: 7 }]), `cancelling early is refused before the wallet (NotStuck: "${cmsg}")`);
+  await ctx.warp(24 * 3600 + 1);
+  // the day the test skipped: the price windows move on, as the keeper's would (two checkpoints: a short window again)
+  for (const w of [0, 1801]) {
+    if (w) await ctx.warp(w);
+    for (const t of [ctx.C.PlankUsdTwap, ctx.C.PaperUsdTwap]) await ctx.tx(deployer, t, [{ type: "function", name: "checkpoint", inputs: [], outputs: [], stateMutability: "nonpayable" }], "checkpoint");
+  }
+  opens = await L.opensOf(me);
+  const st24 = await L.openStatus(fire, 0);
+  check(opens[0].canCancel && opens[0].status === "deliverable" && st24.canCancel, "24 hours with no answer: it can be cancelled (opensOf and openStatus agree)");
+  await L.cancelOpen({ fire, index: 0, packs: 2 }, o);
+  opens = await L.opensOf(me);
+  check(opens[0].status === "cancelled" && !opens[0].canCancel && JSON.stringify(await L.packsOf(me)) === JSON.stringify([{ fire: 7, count: 9 }]), "cancelled: the 2 packs are back, sealed (9 held), and the open reads as cancelled");
+
   console.log("\n== open, deliver randomness, deal");
   const op = await L.openPacks({ fire, n: 9 }, o);
-  check(op.index === 0, "opened 9 packs (open #0)");
-  let opens = await L.opensOf(me);
-  check(opens.length === 1 && opens[0].status === "waiting" && opens[0].round !== null, `waiting for drand round ${opens[0].round}`);
+  check(op.index === 1, "opened 9 packs (open #1, behind the cancelled one)");
+  opens = await L.opensOf(me);
+  check(opens.length === 2 && opens[0].index === 1 && opens[0].status === "waiting" && opens[0].round !== null, `waiting for drand round ${opens[0].round}`);
   const st0 = await L.openStatus(fire, op.index);
   check(st0.status === "waiting" && st0.round === opens[0].round && st0.now < st0.roundAt!, "openStatus (by index, no log scan) agrees: waiting, with the round and the chain's clock");
   check((await L.deliverAndDeal({ fire, index: op.index }, o)).delivered === 0, "before the round is out: nothing delivered");
@@ -365,6 +389,71 @@ export async function runTest(ctx: Ctx): Promise<number> {
   check(pf?.name === "Ember" && pf.pfpCard === null && pf.storedPfp === pfp && pf.image === null, "the picture card sold: the name stays, the picture falls back");
   await L.clearProfile(o);
   check((await L.profile(me, true)) === null && (await L.nameOwner("ember")) === null, "cleared: no profile, the name is free");
+
+  console.log("\n== a grading whose draw never comes: after 24 hours, the cards come back ungraded");
+  const gc = cards[14].serial, gq = await L.quoteProtect([], [gc], "ETH");
+  const gpt = await L.protect({ gradeIds: [gc], pay: "ETH", quote: gq.raw }, o);
+  let gs = (await L.gradingsOf(me)).find((x) => x.index === gpt.gradingIndex)!;
+  check(gpt.gradingIndex > 0 && gs.status === "waiting" && !gs.canCancel && (await L.card(gc)).gradePending, `sent for grading (#${gpt.gradingIndex}): waiting, can't be cancelled yet, the card is locked`);
+  await ctx.warp(24 * 3600 + 1);
+  gs = (await L.gradingsOf(me)).find((x) => x.index === gpt.gradingIndex)!;
+  check(gs.canCancel && (await L.gradingStatus(gpt.gradingIndex)).canCancel, "24 hours with no answer: it can be cancelled");
+  await L.cancelGrading({ index: gpt.gradingIndex, ids: gs.ids }, o);
+  const gcard = await L.card(gc);
+  check(!gcard.gradePending && gcard.grade === null && (await L.gradingsOf(me)).find((x) => x.index === gpt.gradingIndex)!.status === "done" && !(await L.gradingStatus(gpt.gradingIndex)).canCancel,
+    "cancelled: the card is back, unlocked and ungraded; the grading reads as done");
+
+  console.log("\n== amounts: numbers from raw, 4 significant digits under 1; the network fee reserve");
+  const a1 = L.amount(750075007500751n), a2 = L.amount(1_234_567n * 10n ** 18n + 5n * 10n ** 13n), a3 = L.amount(2_500_000n, 6);
+  check(a1.text === "0.00075" && Math.abs(a1.n - 0.000750075007500751) < 1e-18 && a2.text === "1,234,567" && a2.n > 1234567 && a3.text === "2.5" && a3.n === 2.5,
+    `0.000750075 ETH reads "${a1.text}" (not 0.0007) and its number is exact; 1,234,567.00005 reads "${a2.text}"; 2.5 USDG`);
+  const gr = await L.gasReserve();
+  check(gr.n >= 0.00002 && gr.n < 0.01, `ETH kept for the network fee: ${gr.text} (gas price x 1M gas, at least 0.00002)`);
+
+  console.log("\n== Get PAPER on mainnet: KyberSwap (a stand-in for its API), checked by the guard");
+  {
+    const K = await import("../../src/lib/kyber");
+    const PAPER = ctx.deployment.inputs.PAPER as Address;
+    let rate = 1000n; // PAPER (wei) per ETH (wei)
+    const builds: number[] = [];
+    kyberMock = (url, init) => {
+      const json = (x: unknown) => new Response(JSON.stringify(x), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/routes?")) {
+        const amountIn = BigInt(new URL(url).searchParams.get("amountIn")!);
+        return json({ data: { routerAddress: K.KYBER_ROUTER, routeSummary: { amountIn: amountIn.toString(), amountOut: (amountIn * rate).toString() } } });
+      }
+      const b = JSON.parse(String(init?.body));
+      builds.push(b.slippageTolerance);
+      const amountIn = BigInt(b.routeSummary.amountIn), out = BigInt(b.routeSummary.amountOut);
+      const desc = { srcToken: K.NATIVE, dstToken: PAPER, srcReceivers: [], srcAmounts: [], feeReceivers: [], feeAmounts: [], dstReceiver: b.recipient, amount: amountIn,
+        minReturnAmount: (out * BigInt(10_000 - b.slippageTolerance)) / 10_000n, flags: 0n, permit: "0x" as Hex };
+      const data = encodeFunctionData({ abi: K.kyberRouterAbi, functionName: "swapSimpleMode", args: [K.KYBER_ROUTER, desc, "0x", "0x"] });
+      return json({ data: { data, routerAddress: K.KYBER_ROUTER, transactionValue: amountIn.toString() } });
+    };
+    try {
+      const want = 5n * 10n ** 18n;
+      const kq = (await L.quoteKyber("ETH", want, 100))!;
+      const expected = BigInt(kq.maxIn) * rate;
+      check(kq.via === "kyber" && expected >= want && expected <= (want * 10_101n) / 10_000n && expected >= (want * 10_099n) / 10_000n,
+        `routed for about the PAPER asked + 1% (${Number(expected * 10_000n / want) / 100}% of it): room for the price to move`);
+      const tx = await L.kyberTx(kq, me);
+      const d = (decodeFunctionData({ abi: K.kyberRouterAbi, data: tx.data }).args as unknown as [Address, { minReturnAmount: bigint; amount: bigint }])[1];
+      check(d.minReturnAmount >= want && d.minReturnAmount - want < want / 10_000n && d.amount === BigInt(kq.maxIn) && tx.value === BigInt(kq.maxIn) && builds.at(-1) === L.kyberSlipBps(expected, want),
+        `the swap passes the guard: minimum return ${d.minReturnAmount} >= the ${want} asked (slippage ${builds.at(-1)} bps, the headroom), spends exactly the quote`);
+      // what it did before: a flat 1% tolerance on a route sized at +1% leaves the minimum just under what was asked
+      const flat = await K.kyberBuild((await K.kyberRoute("ETH", PAPER, BigInt(kq.maxIn)))!, me, 100);
+      let blocked = "";
+      try { K.checkSwap(flat, { from: "ETH", to: PAPER, amountIn: BigInt(kq.maxIn), minOut: want, account: me }); } catch (e) { blocked = (e as Error).message; }
+      check(/blocked/.test(blocked), `a flat 1% slippage would be refused by the guard ("${blocked}")`);
+      rate = 985n; // the price moved 1.5% against the buyer before the click
+      let moved = "";
+      try { await L.kyberTx(kq, me); } catch (e) { moved = (e as Error).message; }
+      check(moved === "Price changed. Try again.", `the price moved past the room: "${moved}", nothing built`);
+      rate = 1000n;
+      check((await L.quoteKyber("ETH", want, 100, BigInt(kq.maxIn) / 2n)) === undefined, "dearer per PAPER than the pools: not chosen");
+      check(L.kyberSlipBps(1010n, 1000n) === 99 && L.kyberSlipBps(1000n, 1000n) === 0 && L.kyberSlipBps(900n, 1000n) === 0, "kyberSlipBps: the headroom, rounded down");
+    } finally { kyberMock = null; }
+  }
 
   console.log("\n== errors come back in plain words");
   W.setLocalSigner(privateKeyToAccount(toHex(other.getHdKey().privateKey!)));

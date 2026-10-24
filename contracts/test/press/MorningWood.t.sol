@@ -58,8 +58,9 @@ contract MorningWoodTest is Test {
         }
     }
 
+    /// @dev at == 0 (open now) is the owner's: the editor must publish EDITOR_LEAD ahead.
     function _publish(uint256 issue, uint64 at) internal {
-        vm.prank(editor);
+        vm.prank(at == 0 ? owner : editor);
         press.publish(issue, string.concat("ipfs://issue-", vm.toString(issue)), at);
     }
 
@@ -217,6 +218,10 @@ contract MorningWoodTest is Test {
         press.publish(1, "ipfs://x", T0 - 1);
         vm.expectRevert(MorningWood.BadTime.selector);
         press.publish(1, "ipfs://x", T0 + 7 days + 1);
+        vm.expectRevert(MorningWood.BadTime.selector); // the editor can't open an issue at once
+        press.publish(1, "ipfs://x", 0);
+        vm.expectRevert(MorningWood.BadTime.selector); // nor with less than EDITOR_LEAD for the owner to look
+        press.publish(1, "ipfs://x", T0 + 1 hours - 1);
         press.publish(1, "ipfs://x", T0 + 6 hours);
         press.publish(1, "ipfs://y", T0 + 7 hours); // re-publish before it opens
         vm.stopPrank();
@@ -226,6 +231,33 @@ contract MorningWoodTest is Test {
         vm.prank(editor);
         vm.expectRevert(MorningWood.AlreadyOpen.selector);
         press.publish(1, "ipfs://z", 0);
+    }
+
+    function test_editorCantSwapInTheLastHour() public {
+        _publish(1, T0 + 3 hours);
+        vm.warp(T0 + 2 hours); // exactly EDITOR_LEAD before: the swap is still allowed (to a later time)
+        _publish(1, T0 + 4 hours);
+        vm.warp(T0 + 3 hours + 1); // within the last hour before it opens
+        vm.prank(editor);
+        vm.expectRevert(MorningWood.TooLate.selector);
+        press.publish(1, "ipfs://swapped", T0 + 6 hours);
+        // the owner can always fix it (or open it now)
+        vm.prank(owner);
+        press.publish(1, "ipfs://fixed", 0);
+        assertEq(press.uri(1), "ipfs://fixed");
+        assertTrue(press.onSale(1));
+    }
+
+    function test_royaltyAndContractUriEvents() public {
+        vm.startPrank(owner);
+        vm.expectEmit(address(press));
+        emit MorningWood.RoyaltySet(alice, 100);
+        press.setRoyalty(alice, 100);
+        vm.expectEmit(address(press));
+        emit MorningWood.ContractURIUpdated();
+        press.setContractURI("ipfs://c");
+        vm.stopPrank();
+        assertEq(press.contractURI(), "ipfs://c");
     }
 
     function test_ownerVetoBeforeOpen() public {
@@ -361,13 +393,14 @@ contract MorningWoodTest is Test {
         vm.stopPrank();
         // the editor can only publish
         vm.startPrank(editor);
-        press.publish(1, "ipfs://x", 0);
+        press.publish(1, "ipfs://x", T0 + 2 hours);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, editor));
         press.setUri(1, "ipfs://evil");
         vm.stopPrank();
         // the owner can publish too, and fix a URI after opening
         vm.startPrank(owner);
         press.publish(2, "ipfs://two", 0);
+        vm.warp(T0 + 2 hours);
         press.setUri(1, "ipfs://fixed");
         press.setEditor(address(0));
         vm.stopPrank();

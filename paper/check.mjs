@@ -5,6 +5,7 @@
 // --publish: also refuses sample numbers, placeholder images and anything marked sample (what publish.mjs runs).
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { PAPER_DIR, args, readJson } from "./lib/util.mjs";
 import { TOKEN_RE } from "./lib/tokens.mjs";
 
@@ -75,7 +76,8 @@ export function check(issue, { draft = false, publish = false, dir } = {}) {
   return { errors, warnings };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// main module (pathToFileURL: on Windows argv[1] is C:\..., and a path may have spaces)
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const a = args();
   const file = a._[0];
   if (!file) { console.error("usage: node paper/check.mjs <issue.json> [--draft] [--publish]"); process.exit(2); }

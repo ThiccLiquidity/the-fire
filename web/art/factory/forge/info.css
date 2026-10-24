@@ -168,3 +168,9 @@
 .inf-ca .cp { font-size: .8em; color: var(--brass) }
 .inf-pcol.aged .inf-pval { color: var(--muted); font-style: italic; font-weight: 700; text-align: center; line-height: 1.1 }
 .inf-links { display: flex; flex-wrap: wrap; gap: 8px }
+
+/* Info › PLANK & PAPER: the two characters side by side */
+.inf-duo { display: flex; gap: 18px; align-items: flex-end; justify-content: center; margin: 10px 0 6px }
+.inf-duo figure { margin: 0; text-align: center } .inf-duo img { width: auto; filter: drop-shadow(0 6px 8px rgba(0,0,0,.6)) }
+.inf-duo figure:first-child img { height: 120px } .inf-duo figure:last-child img { height: 110px }
+.inf-duo figcaption { font: 800 13px var(--body); color: var(--gold) }

@@ -12,8 +12,8 @@ wallet-limit timers of the old `DropConfig`. Built before the testnet card redep
   - **who** (`gate`):
     - `OPEN`: anyone.
     - `NFT`: holders of one ERC-721 collection (the Paper Press, or any other), checked live at purchase.
-      `perNft` packs per NFT id per Series (an NFT can't be passed around to buy again: each id is spent once its
-      allowance is used, whoever holds it).
+      `perNft` packs per NFT id per group per drop (an NFT can't be passed around to buy again: each id is spent
+      once its allowance is used, whoever holds it; two groups on the same collection count separately).
     - `SNAPSHOT`: wallets in a Merkle snapshot (any coin or NFT, any minimum, minimum balance over N days, LPs
       counted; built off-chain by `ops/snapshot`). Each leaf carries the wallet's own allowance (so tiers like "1M
       PLANK = 2 packs, 10M = 5" are possible); `perWallet` still caps it.
@@ -147,7 +147,8 @@ shape and every bound: `docs/cards-contracts.md`.
   Standard preset, later only while its unlimited group is open: see below), and at least `MIN_DROP_TIME` (1 day) after the start; anyone `END_GRACE` (7 days) later.
 - **Credits** spend packs from `creditGroup` only while it is open (not at any time as before); its gate, price,
   coins and wallet limit and the regular-wallets rule don't apply; they don't count toward the group's wallet limit.
-  `creditGroup` 255 = no credit packs.
+  `creditGroup` 255 = no credit packs. The credit group must be a fixed, untaxed group (not a rising-tax or
+  unlimited one), or `configure` reverts `BadConfig`.
 - **NFT gate:** `perNft` packs per NFT id per group per drop (two groups gated on the same collection count
   separately). A buyer names its ids; packs are taken from them in order, each checked with `ownerOf` live.
 - **Snapshot gate:** leaf = `keccak256(bytes.concat(keccak256(abi.encode(wallet, allowance))))` (OpenZeppelin

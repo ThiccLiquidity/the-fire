@@ -19,7 +19,7 @@
   Object.assign(S, { demo: false, cards: [], sealed: {}, suggestions: [], activity: [], burned: {}, teases: {} });
   S.series = { no: 0, total: 0, cast: 0, phase: 3, closed: false, closing: false, groups: [], creditGroup: null, creditPacksLeft: 0, left: 0, note: 'Loading…' };
   S.wallet = { connected: false, address: '', full: '', name: '', isPressHolder: false, inSnapshot: false, isContract: false,
-    balances: { ETH: 0, PLANK: 0, PAPER: 0, USDG: 0 }, credits: 0, burnCount: 0, boughtIn: {}, pending: [], allowance: { PAPER: 0, PLANK: 0, USDG: 0 } };
+    balances: { ETH: 0, PLANK: 0, PAPER: 0, USDG: 0 }, credits: 0, burnCount: 0, boughtIn: {}, pending: [], allowance: { PAPER: 0, PLANK: 0, USDG: 0 }, unfinished: [] };
   Store.SUGGEST_WAVE.closes = null; // the live box has no closing time on chain
   Store.SUGGEST_WAVE.count = 0;
 
@@ -70,8 +70,11 @@
 
   // ---------- small helpers
   const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  const num = (a) => (a ? parseFloat(String(a.text).replace(/,/g, '')) || 0 : 0);
+  // an Amount as a number: from its raw value (chain/contracts.ts amount: `n`), never parsed back from the rounded text
+  const num = (a) => (a ? (Number.isFinite(a.n) ? a.n : parseFloat(String(a.text).replace(/,/g, '')) || 0) : 0);
   const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
+  /** A balance for people: 4 significant digits under 1 (0.0007501 ETH), else up to 4 decimals. */
+  const show = (v) => (+v || 0).toLocaleString('en-US', v > 0 && v < 1 ? { maximumSignificantDigits: 4 } : { maximumFractionDigits: 4 });
   const me = () => FW?.state().address || null;
   const friendly = (e) => (e?.name === 'TxError' ? e.message : FW ? FW.friendly(e) : 'Something went wrong. Try again.').split('\n')[0];
   const MAT = { paper: 'paper', wood: 'wood', fire: 'fire', coal: 'charcoal', charcoal: 'charcoal', diamond: 'diamond', gold: 'gold', 'full art': 'fullart', fullart: 'fullart' };
@@ -88,7 +91,8 @@
     };
   };
   const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, String(v)); } catch { /* private window */ } return null; };
-  const hours = (t) => Math.max(1, Math.ceil((t - Date.now() / 1000) / 3600));
+  const chainNowS = () => Date.now() / 1000 + (Store.clockSkew || 0); // the chain's clock (readSeries sets the skew)
+  const hours = (t) => Math.max(1, Math.ceil((t - chainNowS()) / 3600));
 
   // ---------- reading the chain into the Store
   // info: the Series now (reads.currentSeries: its drop, status and groups). gate[i]: this wallet's way into NFT group i
@@ -141,7 +145,8 @@
     }).catch(() => {});
   }
   async function readRules() {
-    const [p, r] = await Promise.all([L.psaPrices().catch(() => null), L.suggestionRules().catch(() => null)]);
+    const [p, r, gas] = await Promise.all([L.psaPrices().catch(() => null), L.suggestionRules().catch(() => null), L.gasReserve().catch(() => null)]);
+    if (gas) GAS_ETH = gas.n;
     if (p) { Object.assign(Store.PRICES, { CASE_USD: +p.caseUsd, GRADE_USD: +p.gradeUsd }); Store.MAX_BATCH = p.maxBatch; }
     if (r) { Store.PRICES.SUGGEST_PAPER = num(r.paperEach); Store.SUGGEST_MAX_BYTES = r.maxBytes; Store.SUGGEST_WAVE.count = r.total; Live.rules = r; }
   }
@@ -190,12 +195,14 @@
   }
   async function readWallet(withCards, fires) {
     const a = me();
-    if (!a) { Object.assign(S.wallet, { connected: false, full: '', address: '', credits: 0, burnCount: 0, boughtIn: {}, balances: { ETH: 0, PLANK: 0, PAPER: 0, USDG: 0 } }); S.cards = []; S.sealed = {}; S.suggestions = []; gate = {}; return; }
+    if (!a) { Object.assign(S.wallet, { connected: false, full: '', address: '', credits: 0, burnCount: 0, boughtIn: {}, balances: { ETH: 0, PLANK: 0, PAPER: 0, USDG: 0 }, unfinished: [] }); S.cards = []; S.sealed = {}; S.suggestions = []; gate = {}; return; }
     const fire = info?.fire;
-    const [bal, packs, cr, mine, pn, st, gs] = await Promise.all([L.balances(a), L.packsOf(a, fires), L.credits(a), L.suggestions({ by: a }).catch(() => []),
-      L.pressCount(a).catch(() => 0), fire ? L.myGroupStanding(fire, a).catch(() => null) : null, fire ? readGates(fire, a).catch(() => ({})) : {}]);
+    const [bal, packs, cr, mine, pn, st, gs, ops, grs] = await Promise.all([L.balances(a), L.packsOf(a, fires), L.credits(a), L.suggestions({ by: a }).catch(() => []),
+      L.pressCount(a).catch(() => 0), fire ? L.myGroupStanding(fire, a).catch(() => null) : null, fire ? readGates(fire, a).catch(() => ({})) : {},
+      L.opensOf(a).catch(() => null), L.gradingsOf(a).catch(() => null)]);
     if (me() !== a) return; // switched wallets meanwhile
     gate = gs;
+    if (ops && grs) S.wallet.unfinished = unfinished(ops, grs);
     S.wallet.balances = { ETH: num(bal.ETH), PLANK: num(bal.PLANK), PAPER: num(bal.PAPER), USDG: num(bal.USDG) };
     S.wallet.credits = cr.credits; S.wallet.burnCount = cr.burnedTowardNext;
     S.wallet.isPressHolder = pn > 0; S.wallet.boughtIn = st ? Object.fromEntries(st.bought.map((n, i) => [i, n])) : {};
@@ -301,7 +308,11 @@
     if (!list.length) return;
     list.forEach((t) => { following.add(t.hash); pend.push(t); });
     paintBar(); Store.update(() => {});
-    L.resumePending((t, outcome) => { unpend(t); toast(landed(t, outcome), outcome === 'success' ? 'good' : 'bad'); sync({ cards: true }); }, a, (t) => these.has(t.hash));
+    L.resumePending((t, outcome) => {
+      unpend(t); sync({ cards: true });
+      // an approval that lands after a reload: the buy it was for was never sent
+      toast(t.kind === 'approve' && outcome === 'success' ? 'Approved. Tap Buy to finish.' : landed(t, outcome), outcome === 'success' ? 'good' : 'bad');
+    }, a, (t) => these.has(t.hash));
   }
   /** A buy, free pack or suggestion of this wallet still on its way (sent from this browser in the last 30 minutes):
    *  starting another of the same kind could pay twice, so it waits. True (and says so) when blocked. */
@@ -355,11 +366,11 @@
     if (await connect()) { if (FW.state().chainOk) { toast('Wallet connected', 'good'); await sync({ cards: true }); then?.(); } else wrongNet(then); }
   }
   function openWallet() {
-    const w = S.wallet, sealed = Object.values(S.sealed).reduce((a, n) => a + n, 0), fmt = (v) => (+v.toFixed(4)).toLocaleString('en-US');
+    const w = S.wallet, sealed = Object.values(S.sealed).reduce((a, n) => a + n, 0), fmt = show;
     const d = Sheet.open('wallet', { title: w.name || 'Wallet', body: `
       <div class="wmenu">
         <div class="who"><div class="avatar">${esc((w.name || '?')[0])}</div><div><b>${esc(w.name)}</b><small>${esc(w.address)}</small></div></div>
-        <div class="bal">${Object.entries(w.balances).map(([k, v]) => `<div><small>${k}</small><b>${fmt(v)}</b></div>`).join('')}</div>
+        <div class="bal">${Object.entries(w.balances).map(([k, v]) => `<div><small>${k}</small><b>${Brand.coin(k)}${fmt(v)}</b></div>`).join('')}</div>
         <div class="rows">
           <div><span>Free packs</span><b>${w.credits}</b></div>
           <div><span>Burn progress</span><b>${w.burnCount % 42} / 42</b></div>
@@ -440,7 +451,10 @@
   // hold that cap (and a little ETH for gas when paying in ETH); anything unused comes back. A rising-price group's
   // next pack costs 4% more once someone else buys: that refusal (PriceMoved) comes back as 'moved', and the sheet
   // shows the new price.
-  const SLIP = 1.03, GAS_ETH = 0.0005, REQUOTE = 15_000;
+  // GAS_ETH: ETH kept for the network fee on top of an ETH price: the gas price now x a buy's gas, with a small floor
+  // (reads.gasReserve, read on each sync; this until the first read)
+  const SLIP = 1.03, REQUOTE = 15_000;
+  let GAS_ETH = 0.00005;
   const capOf = (amt, coin) => (coin === 'USDG' ? amt : amt * SLIP) + (coin === 'ETH' ? GAS_ETH : 0); // what the wallet needs
   /** The collection can't list its owners' tokens: the holder types the number of one they hold (checked on chain:
    *  theirs, and with packs left in this group). Resolves the id, or null. */
@@ -542,12 +556,12 @@
     const paint = () => {
       const have = S.wallet.balances[tok], cost = num(q?.cost), short = q && cost > have;
       body.querySelector('.sum').innerHTML = `<dt>You pay</dt><dd>${q ? `≈ ${esc(q.cost.text)} ${tok}` : amt > 0 && !err ? 'getting price…' : '—'}</dd>
-        <dt>You have</dt><dd>${(+have.toFixed(4)).toLocaleString('en-US')} ${tok}</dd>`;
+        <dt>You have</dt><dd>${show(have)} ${tok}</dd>`;
       body.querySelector('.err').textContent = err || (short ? `Not enough ${tok}.` : '');
       body.querySelector('.fine').textContent = tok === 'ETH' ? '1 tap in your wallet.' : '2 taps: approve, then swap.';
-      const go = body.querySelector('.go'); go.disabled = !q || !!short; go.textContent = `Get ${amt.toLocaleString('en-US')} PAPER`;
+      const go = body.querySelector('.go'); go.disabled = !q || !!short; go.innerHTML = `${Brand.coin('PAPER')}Get ${amt.toLocaleString('en-US')} PAPER`;
     };
-    body.innerHTML = `<div class="seg" role="group" aria-label="Pay with">${coins.map((c) => `<button type="button" data-t="${c}" aria-pressed="${c === tok}">${c}</button>`).join('')}</div>
+    body.innerHTML = `<div class="seg" role="group" aria-label="Pay with">${coins.map((c) => `<button type="button" data-t="${c}" aria-pressed="${c === tok}">${Brand.coin(c)}${c}</button>`).join('')}</div>
       <label class="amt" for="paperamt">How much PAPER</label><input id="paperamt" inputmode="decimal" value="${amt}">
       <dl class="sum"></dl><p class="warn err" aria-live="polite"></p><p class="fine"></p>
       <button class="btn primary go" type="submit" disabled></button>`;
@@ -558,7 +572,8 @@
       const buy = q, n = amt; Sheet.close('paper');
       if (await run(`Get ${n.toLocaleString('en-US')} PAPER`, (o) => L.buyPaper(buy, o), `+${n.toLocaleString('en-US')} PAPER`)) { Store.log(`Got ${n} PAPER`); if (then) setTimeout(then, 400); }
     };
-    Sheet.open('paper', { title: 'Get PAPER', body, onClose: () => { seq++; clearTimeout(t); } });
+    const d = Sheet.open('paper', { title: 'Get PAPER', body, onClose: () => { seq++; clearTimeout(t); } });
+    d.querySelector('.sheet-head h2').innerHTML = `${Brand.coin('PAPER', 'big')}Get PAPER`;
     requote();
   }
 
@@ -566,9 +581,11 @@
   // The keeper does the delivering and dealing. Nothing reaches the wallet unless the buyer asks: if the keeper is
   // late (LATE after the draw is out) the page says so calmly, and from OFFER on it shows a button to finish it
   // themselves (one delivery for the opens up to theirs, one deal: writes.ts deliverAndDeal), used at most once.
+  // If no draw ever comes (24 hours after it was asked for: reads canCancel), it offers the packs back (cancelOpen).
   const LATE = 45, OFFER = 120, POLL = 4000;
   const SAFE = "Taking a little longer than usual. Your cards are safe.";
   const DIY = 'Skip the wait. Same cards.';
+  const STUCK = 'No draw after 24 hours.';
   const sleep = (ms) => new Promise((k) => setTimeout(k, ms));
   async function openPacks(fire, n, say, alive) {
     await need();
@@ -577,28 +594,94 @@
     const r = await run(`Open ${plural(n, 'pack')}`, (o) => L.openPacks({ fire, n }, o));
     if (!r) return null;
     if (r.late || !(r.index >= 0)) { toast('Opened! Your cards land in My cards soon.'); return null; }
+    return followOpen(fire, r.index, say, alive, { before });
+  }
+  /** Follow open `index` of Series `fire` until it's dealt (the one just sent, or one still unfinished after a reload:
+   *  My cards), then resolve its new cards for the reveal; null if the window closed, or it was cancelled.
+   *  o.dealNow: the buyer already asked to deal it (My cards' "Deal now"). */
+  async function followOpen(fire, index, say, alive, o = {}) {
+    await need();
+    const before = o.before || new Set(S.cards.map((c) => c.id));
     say('Drawing your cards… about 90 seconds');
-    for (let asked = false, tried = false; alive();) {
-      const op = await L.openStatus(fire, r.index).catch(() => null); // one open by its index: no log scan
+    for (let asked = !!o.dealNow, tried = false, cancel = false; alive();) {
+      const op = await L.openStatus(fire, index).catch(() => null); // one open by its index: no log scan
       if (op?.status === 'cancelled') { toast('The draw never came. Your packs are back.', 'bad'); sync(); return null; }
       if (op?.status === 'dealt') break;
-      if (asked && !tried) { // the buyer tapped "Deal them now"
+      if (cancel) { // the buyer tapped "Get my packs back"
+        cancel = false;
+        if (await cancelWith({ kind: 'open', fire, index, packs: op?.packs || 0 })) return null;
+      } else if (asked && !tried) { // the buyer tapped "Deal now (small fee)"
         tried = true;
-        const d = await run('Deal your cards', (o) => L.deliverAndDeal({ fire, index: r.index }, o));
+        const d = await run('Deal your cards', (w) => L.deliverAndDeal({ fire, index }, w));
         if (d?.reached) continue;
         say(SAFE);
+      } else if (op?.canCancel) {
+        say(STUCK, { label: 'Get my packs back', note: 'They come back sealed.', fn: () => { cancel = true; } });
       } else if (op?.roundAt && op.now >= op.roundAt && !tried) {
         const late = op.now - op.roundAt;
         say(late < LATE ? 'Dealing your cards…' : SAFE,
           late >= OFFER ? { label: 'Deal now (small fee)', note: DIY, fn: () => { asked = true; } } : undefined);
       }
-      await sleep(asked && !tried ? 50 : POLL);
+      await sleep((asked && !tried) || cancel ? 50 : POLL);
     }
     if (!alive()) { toast('Your cards land in My cards soon.'); return null; }
     say('Here they come…');
     const all = (await L.cardsOf(me())).map(toCard);
-    S.cards = all; cardsAt = Date.now();
+    S.cards = all; cardsAt = Date.now(); sync();
     return all.filter((c) => !before.has(c.id) && c.series === fire).sort((a, b) => a.serial - b.serial);
+  }
+
+  // ---------- unfinished opens and gradings (reads.opensOf / gradingsOf, every sync): what My cards and Case & grade
+  // show after a reload. Each: { kind, fire, index, packs | ids, title, line, acts: [{ act, label }] }, plain data.
+  function unfinished(ops, grs) {
+    const late = (x) => (x.roundAt && x.now >= x.roundAt ? x.now - x.roundAt : -1);
+    const view = (x, kind) => {
+      const open = kind === 'open', acts = [], l = late(x);
+      let line;
+      if (x.status === 'waiting') line = 'Drawing…';
+      else if (l >= OFFER) { line = 'Ready'; acts.push({ act: 'deal', label: open ? 'Deal now (small fee)' : 'Reveal now (small fee)' }); }
+      else line = open ? 'Dealing…' : 'Revealing…';
+      if (x.canCancel) { line = STUCK; acts.push({ act: 'cancel', label: open ? 'Get my packs back' : 'Return ungraded' }); }
+      return open
+        ? { kind, fire: x.fire, index: x.index, packs: x.packs, title: `Series ${x.fire} · ${plural(x.packs, 'pack')}`, line, acts }
+        : { kind, index: x.index, ids: x.ids, title: `${plural(x.ids.length, 'card')} to grade`, line, acts };
+    };
+    return [...ops.filter((x) => x.status !== 'dealt' && x.status !== 'cancelled').map((x) => view(x, 'open')),
+      ...grs.filter((x) => x.status !== 'done').map((x) => view(x, 'grading'))];
+  }
+  /** "Get my packs back" / "Return ungraded": a short confirm, then cancelOpen / cancelGrading. Resolves true once done. */
+  function cancelWith(x) {
+    const open = x.kind === 'open', n = open ? x.packs : x.ids.length;
+    return new Promise((done) => {
+      const body = document.createElement('div');
+      body.innerHTML = `<p class="lead">${open ? `No draw came in 24 hours. Get your ${plural(n, 'pack')} back, still sealed?` : `No draw came in 24 hours. Return ${plural(n, 'card')} ungraded? The fee isn't refunded.`}</p>
+        <button class="btn primary go" type="button">${open ? 'Get my packs back' : 'Return ungraded'}</button><button class="btn" type="button" data-x="no">Not now</button>`;
+      let went = false;
+      body.querySelector('[data-x=no]').onclick = () => Sheet.close('cancel');
+      body.querySelector('.go').onclick = async () => {
+        went = true; Sheet.close('cancel');
+        await need(); await requireWallet();
+        const r = await run(open ? `Get ${plural(n, 'pack')} back` : `Return ${plural(n, 'card')} ungraded`,
+          (o) => (open ? L.cancelOpen({ fire: x.fire, index: x.index, packs: n }, o) : L.cancelGrading({ index: x.index, ids: x.ids }, o)),
+          open ? `${plural(n, 'pack')} back, sealed` : `${plural(n, 'card')} back, ungraded`);
+        done(!!r);
+      };
+      Sheet.open('cancel', { title: open ? 'Get your packs back' : 'Return ungraded', body, onClose: () => { if (!went) done(false); } });
+    });
+  }
+  /** An unfinished item's button (My cards, Case & grade). An open's "Deal now" goes through the reveal (screens.js
+   *  calls followOpen); here: a grading's "Reveal now", and both cancels. */
+  async function progressAct(x, act) {
+    if (act === 'cancel') return cancelWith(x);
+    await need(); await requireWallet();
+    if (x.kind === 'open') { const d = await run('Deal your cards', (o) => L.deliverAndDeal({ fire: x.fire, index: x.index }, o)); if (d?.reached) toast('Your cards are in My cards', 'good'); return d; }
+    const ok = await run('Reveal the grades', (o) => L.deliverAndFinish({ index: x.index, ids: x.ids }, o));
+    if (ok) {
+      const cs = await Promise.all(x.ids.map((id) => L.card(id))).catch(() => []);
+      const gr = cs.filter((c) => c.grade != null).map((c) => `PDA ${c.grade}`);
+      toast(gr.length ? `Graded: ${gr.join(', ')}` : 'Graded', 'good');
+    }
+    return ok;
   }
 
   // ---------- case & grade: priced by FirePsa.quote, capped at the price shown + 3%
@@ -615,25 +698,31 @@
     return r?.late ? { gradingIndex: -1, late: true } : r; // landed late: the grades show in My cards once revealed
   }
   /** Wait for a grading's draw (the keeper delivers it and sets the grades; if it's late, the page offers once) and
-   *  reveal the grades. Resolves id -> grade, or null if the window closed. */
+   *  reveal the grades. Resolves id -> grade, null if the window closed, or 'cancelled' (no draw in 24 hours: the
+   *  buyer took the cards back ungraded). */
   async function finishGrading(index, ids, say, alive) {
     if (!(index >= 0)) return null;
     say('Grading… about 90 seconds');
-    for (let asked = false, tried = false; alive();) {
+    for (let asked = false, tried = false, cancel = false; alive();) {
       const g = await L.gradingStatus(index).catch(() => null); // one grading by its index: no log scan
       if (g?.status === 'done') break;
-      if (asked && !tried) { // the buyer tapped "Reveal them now"
+      if (cancel) { // the buyer tapped "Return ungraded"
+        cancel = false;
+        if (await cancelWith({ kind: 'grading', index, ids })) return 'cancelled';
+      } else if (asked && !tried) { // the buyer tapped "Reveal now (small fee)"
         tried = true;
         if (await run('Reveal the grades', (o) => L.deliverAndFinish({ index, ids }, o))) continue;
         // it didn't go through: they can try again, or leave it (the grades land in My cards once revealed)
         say("Didn't go through. Your cards are safe.",
           { label: 'Try again', note: DIY, fn: () => { asked = true; tried = false; }, alt: { label: 'My cards', fn: () => window.Stations?.open('cards') } });
+      } else if (g?.canCancel) {
+        say(STUCK, { label: 'Return ungraded', note: 'Your cards come back as they were.', fn: () => { cancel = true; } });
       } else if (g?.roundAt && g.now >= g.roundAt && !tried) {
         const late = g.now - g.roundAt;
         say(late < LATE ? 'Revealing the grades…' : SAFE,
           late >= OFFER ? { label: 'Reveal now (small fee)', note: DIY, fn: () => { asked = true; } } : undefined);
       }
-      await sleep(asked && !tried ? 50 : POLL);
+      await sleep((asked && !tried) || cancel ? 50 : POLL);
     }
     if (!alive()) return null;
     const cs = await Promise.all(ids.map((id) => L.card(id)));
@@ -658,7 +747,7 @@
   const suggest = async (texts) => { await need(); if (stillSending('suggest')) return null; return run(texts.length > 1 ? `Send ${texts.length} ideas` : 'Send your idea', (o) => L.suggest({ texts }, o)); };
 
   window.Live = {
-    on: true, net, testnet: net === 'testnet', sync, needWallet, openWallet, run, groupApi, free, getPaper, openPacks, quoteProtect, protect, finishGrading, popReport, burn, suggest,
+    on: true, net, testnet: net === 'testnet', sync, needWallet, openWallet, run, groupApi, free, getPaper, openPacks, followOpen, progressAct, quoteProtect, protect, finishGrading, popReport, burn, suggest,
     gateway, toMaterial: (name) => MAT[String(name).toLowerCase()] || null, // practice.js: a Series' own images and type names
     walletNeeds: capOf, // what the wallet must hold to pay `amt` in a coin: the cap (+3%, not USDG) and gas for ETH
     rules: null, snapshot: null, get chain() { return L; },

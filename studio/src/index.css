@@ -158,6 +158,7 @@ table.cards-table tbody tr:hover { background: var(--panel-2); }
 .pack { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .pack-no { width: 64px; color: var(--muted); font-size: 12px; }
 .chip { font-size: 11px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; background: #3f3a52; color: #e6defc; }
+.chip-ids { opacity: 0.7; }
 .mat-paper { background: #4d4636; color: #f3e9d2; }
 .mat-wood { background: #5b3a1d; color: #f6dcc0; }
 .mat-burning { background: #7a2c0c; color: #ffd9b8; }

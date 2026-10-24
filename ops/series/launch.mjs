@@ -2,7 +2,8 @@
 // -> VerifySeries GREEN -> "LOCK" -> batch B), one short line per check, OK / WARN / STOP.
 //
 //   PowerShell, from the repo:
-//   $env:RPC = Read-Host "RPC URL"                     (or run ops\series\launch.ps1, which asks for it)
+//   $s = Read-Host "RPC URL" -AsSecureString; $env:RPC = [System.Net.NetworkCredential]::new("", $s).Password
+//   (typed hidden: an Alchemy URL holds a key; or run ops\series\launch.ps1, which asks for it)
 //   node ops\series\launch.mjs --recipe contracts\series\recipe-fire-7.json --start "2026-11-01 18:00" [--chain 46630]
 //
 // Steps: 0 preflight (chain, deployments, Series not locked, the Ledger is the owner, keeper alive, pack art, start
@@ -301,7 +302,7 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
     ok(`Recipe: Series ${N}, ${json.types.length} card types, ${json.characters.length} characters.`);
 
     const rpc = env.RPC ?? env.RPC_URL ?? dotEnv.RPC;
-    if (!rpc) stop('No RPC. Set it first: $env:RPC = Read-Host "RPC URL" (or run ops\\series\\launch.ps1).');
+    if (!rpc) stop('No RPC. Set it first, hidden: $s = Read-Host "RPC URL" -AsSecureString; $env:RPC = [System.Net.NetworkCredential]::new("", $s).Password (or run ops\\series\\launch.ps1).');
     const client = createPublicClient({ transport: http(rpc, { retryCount: 3, timeout: 30_000 }) });
     let chainId;
     try { chainId = await client.getChainId(); } catch (e) { stop(`The RPC doesn't answer: ${e?.shortMessage ?? e?.message}`); }

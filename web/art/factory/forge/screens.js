@@ -47,7 +47,8 @@
     const key = text + '|' + (a?.label || '');
     if (el.dataset.key === key) return;
     el.dataset.key = key; el.textContent = text;
-    if (a) el.append(h('span', { class: 'stage-act' }, btn(a.label, 'small', () => { el.querySelector('.stage-act')?.remove(); a.fn(); }, { 'data-key': 'diy' }),
+    // tapped: the action goes, and the same line may offer it again later (a "Not now" in its confirm)
+    if (a) el.append(h('span', { class: 'stage-act' }, btn(a.label, 'small', () => { el.querySelector('.stage-act')?.remove(); el.dataset.key = ''; a.fn(); }, { 'data-key': 'diy' }),
       a.alt ? btn(a.alt.label, 'small', () => a.alt.fn(), { 'data-key': 'diy-alt' }) : null, h('small', { text: a.note })));
   };
   const paper = () => S().wallet.balances.PAPER;
@@ -228,7 +229,8 @@
     canGradeNow(c) ? nowBands(c).map((b) => pctNow(b.p)).join(',') : ''].join('|');
 
   // ---------- share your pull: a 1080 x 1350 PNG of the card, its odds and the wordmark, then the share sheet (or a download)
-  const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
+  // cross-origin art (live: the IPFS gateway) loads with CORS, so the canvas can still be saved (share.js, clip.js do the same)
+  const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); if (/^https?:/.test(src)) i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = no; i.src = src; });
   const holoLabel = (c) => { const hl = (c.material === 'gold' || c.material === 'fullart') ? 'full' : c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none'; return hl === 'none' ? '' : HOLO[hl]; };
   const pullLine = (c) => Store.trueOdds(c).label; // includes the grade when graded
   const kindLine = (c) => [Store.MAT_LABEL[c.material], holoLabel(c), c.grade != null ? 'PDA ' + c.grade : ''].filter(Boolean).join(' · ');
@@ -272,11 +274,18 @@
   }
   async function shareCard(c, from) {
     if (from) { if (from.getAttribute('aria-busy') === 'true') return; from.setAttribute('aria-busy', 'true'); }
+    const kind = kindLine(c), odds = pullLine(c);
+    const title = `${c.character}, ${kind}`, text = `I pulled ${c.character} (${kind}${odds ? ', ' + odds : ''}) at Omni Cardworks.`;
     try {
-      const blob = await shareImage(c), slug = c.character.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      // the card's art couldn't be drawn (its host refused it): share the words alone where the device can
+      const blob = await shareImage(c).catch(async (e) => {
+        if (!navigator.share) throw e;
+        try { await navigator.share({ title, text }); } catch (x) { if (x?.name !== 'AbortError') toast('Couldn’t share it', 'bad'); }
+        return null;
+      });
+      if (!blob) return;
+      const slug = c.character.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const name = `omni-cardworks-${slug || 'card'}.png`, file = new File([blob], name, { type: 'image/png' });
-      const kind = kindLine(c), odds = pullLine(c);
-      const title = `${c.character}, ${kind}`, text = `I pulled ${c.character} (${kind}${odds ? ', ' + odds : ''}) at Omni Cardworks.`;
       if (navigator.canShare?.({ files: [file] })) {
         try { await navigator.share({ files: [file], title, text }); } catch (e) { if (e?.name !== 'AbortError') toast('Couldn’t share it', 'bad'); }
         return;
@@ -370,11 +379,24 @@
       .sort((a, b) => a - b).map((no) => ({ series: no, n: s.sealed[no] }));
   }
   const openableCount = () => openable().reduce((a, o) => a + o.n, 0);
+  const dealing = () => (S().wallet.unfinished || []).some((x) => x.kind === 'open'); // live: an open still being drawn or dealt
+  // live: opens and gradings not finished yet (Live's sync: S().wallet.unfinished, so they survive a reload): a status
+  // line each ("Drawing…", "Ready"), and what the buyer may do (deal or reveal now; after 24 hours with no draw, take
+  // the packs back or the cards back ungraded). onDeal: an open's "Deal now" through the reveal (My cards).
+  function progressList(host, kinds, onDeal) {
+    const list = (S().wallet.unfinished || []).filter((x) => kinds.includes(x.kind));
+    patch(host, JSON.stringify(list), () => put(host, list.length ? [h('h3', { class: 'ip-h', text: 'In progress' }),
+      h('ul', { class: 'ip-list' }, list.map((x) => h('li', { class: 'ip' },
+        h('span', { class: 'ip-t' }, h('b', { text: x.title }), h('span', { class: 'ip-s', text: x.line })),
+        x.acts.length ? h('span', { class: 'ip-acts' }, x.acts.map((a) => btn(a.label, 'small' + (a.act === 'deal' ? ' primary' : ''),
+          () => (a.act === 'deal' && x.kind === 'open' && onDeal ? onDeal(x) : Live.progressAct(x, a.act)), { 'data-key': `ip-${x.kind}-${x.index}-${a.act}` }))) : null)))] : []));
+  }
   // one sheet, two jobs: view 'cards' = My cards (sealed packs + the whole collection); view 'open' = straight into tearing the next pack
   function openTable(opts = {}) {
     let view = opts.view === 'open' ? 'open' : 'cards';
-    if (view === 'open' && !openable().length) { toast('No packs to open', 'bad'); return; }
-    const packsEl = h('section', { class: 'packs', 'aria-labelledby': 'packs-h' });
+    if (view === 'open' && !openable().length) { if (!dealing()) { toast('No packs to open', 'bad'); return; } view = 'cards'; } // after a reload: the open in progress
+    const progEl = h('div', { class: 'inprog' }), tilesEl = h('div');
+    const packsEl = h('section', { class: 'packs', 'aria-label': 'Your packs' }, progEl, tilesEl);
     const stage = h('section', { class: 'stage', hidden: true, 'aria-label': 'Opening' });
     const coll = h('section', { class: 'coll', 'aria-labelledby': 'coll-h' });
     const root = h('div', { class: 'st st-table' }, packsEl, stage, coll);
@@ -392,7 +414,8 @@
 
     function renderPacks() {
       const s = S();
-      patch(packsEl, JSON.stringify([s.sealed, s.series.no, s.series.phase, connected()]), () => drawPacks(s));
+      progressList(progEl, ['open', 'grading'], resumeLive);
+      patch(tilesEl, JSON.stringify([s.sealed, s.series.no, s.series.phase, connected()]), () => drawPacks(s));
     }
     function drawPacks(s) {
       const keys = Object.keys(s.sealed).map(Number).sort((a, b) => b - a);
@@ -410,8 +433,8 @@
             n > 0 ? h('span', { class: 'pcount', text: '×' + n }) : null),
           h('div', { class: 'pinfo' }, h('h4', { text: `Series ${no}` }), h('p', { class: 'muted', text: n ? `${n} sealed` : 'None sealed' }), act));
       });
-      if (!tiles.length) return put(packsEl);
-      put(packsEl, h('h3', { id: 'packs-h', text: 'Your packs' }), h('p', { class: 'muted small packs-nft', text: 'A sealed pack is an NFT too: keep it sealed, collect it, or trade it unopened.' }), h('div', { class: 'ptiles' }, tiles));
+      if (!tiles.length) return put(tilesEl);
+      put(tilesEl, h('h3', { id: 'packs-h', text: 'Your packs' }), h('p', { class: 'muted small packs-nft', text: 'A sealed pack is an NFT too: keep it sealed, collect it, or trade it unopened.' }), h('div', { class: 'ptiles' }, tiles));
     }
 
     function renderColl() {
@@ -465,12 +488,26 @@
       // copies (same character and material) show a small "×N" here; the reveal never tags them
       const grid = list.length ? h('div', { class: 'cgrid' }, list.map((c) => cardTile(c, { onTap: (card) => openDetail(card.id, ids),
           tag: dups.get(c.id)?.n > 1 ? h('span', { class: 'dupn', text: '×' + dups.get(c.id).n, 'aria-label': `${dups.get(c.id).n} copies` }) : null })))
-        : h('div', { class: 'empty-state' }, h('p', { text: all.length ? 'No cards match.' : 'No cards yet. Open a pack!' }),
-          all.length ? btn('Clear filters', 'small', () => { Object.assign(filt, FILT0); renderColl(); }, { 'data-key': 'clear' }) : null);
+        : all.length ? h('div', { class: 'empty-state' }, h('p', { text: 'No cards match.' }),
+          btn('Clear filters', 'small', () => { Object.assign(filt, FILT0); renderColl(); }, { 'data-key': 'clear' }))
+        : emptyColl();
       put(coll, h('div', { class: 'coll-h' }, h('h3', { id: 'coll-h', text: 'Your cards' }), h('span', { class: 'muted', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }),
         btn(on ? `Filter · ${on}` : 'Filter', 'small filter-b' + (on ? ' on' : ''), openFilter, { 'data-key': 'filter', 'aria-haspopup': 'dialog', 'aria-label': on ? `Filter and sort (${on} on)` : 'Filter and sort' }),
         h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) })),
         btn('Pop report', 'small pop-b', () => openPop(), { 'data-key': 'pop' }), btn('Binder', 'small', () => window.Fun?.go('binder', { series: filt.series === 'all' ? null : +filt.series }), { 'data-key': 'binder' })), freshNudge(all), grid);
+    }
+    // no cards at all: PLANK, and the way to a first pack. Packs ready to open: open one (packs only open once their
+    // Series sells out); a sale on: Get a pack (the Buy flow); neither: just the line.
+    function emptyColl() {
+      const ready = !practice && openableCount() > 0, sale = !practice && !ready && S().series.groups?.some((g) => g.state === 'open' && !g.waiting && g.left !== 0);
+      return h('div', { class: 'empty-state empty-cards' },
+        h('img', { class: 'ec-plank', src: 'ui/brand/plank-256.webp', alt: '', 'aria-hidden': 'true', width: 95, height: 150 }),
+        h('p', { text: dealing() ? 'Your cards are on their way.' : 'No cards yet. Open a pack!' }),
+        ready ? btn('Open a pack', 'primary', () => { // as a sealed pack's own Open does
+            if (LIVE) return Live.needWallet(() => openable().length && openPacks(openable()[0].series, 1));
+            if (!connected()) { Store.update((s) => { s.wallet.connected = true; }); toast('Demo wallet connected', 'good'); }
+            openPacks(openable()[0].series, 1); }, { 'data-key': 'empty-go' })
+          : sale ? btn('Get a pack', 'primary', () => { Sheet.close('table'); window.UI?.openGroup?.(); }, { 'data-key': 'empty-go' }) : null);
     }
     const render = () => { renderPacks(); renderColl(); };
     // the fresh window: "5 cards still fresh · 3h 12m left · Case all fresh for $0.25" (the wizard, with them picked)
@@ -486,9 +523,10 @@
     }
 
     // ---------- opening: rip the pack, one card at a time (rarest last), then a summary of everything pulled
+    const priorOf = () => { const prior = new Map(); S().cards.forEach((c) => { const k = dupKey(c); prior.set(k, (prior.get(k) || 0) + 1); }); return prior; };
     async function openPacks(series, n) {
       if (busy) return; busy = true; practiceRun = false;
-      const prior = new Map(); S().cards.forEach((c) => { const k = dupKey(c); prior.set(k, (prior.get(k) || 0) + 1); });
+      const prior = priorOf();
       if (LIVE) return openLive(series, n, prior);
       const packs = []; for (let i = 0; i < n; i++) packs.push(makePack(series));
       // test hook: window.__forcePull = [{ material: 'diamond', holo: 'full' }, ...] sets the first pack's last cards, once
@@ -503,12 +541,18 @@
       await runOpening(series, packs, prior);
     }
 
-    // live: open on chain, wait for the draw and the deal (the stage says where it is), then the same reveal
-    async function openLive(series, n, prior) {
+    // live: an open still unfinished (In progress, after a reload): "Deal now" deals it, then the same reveal
+    async function resumeLive(x) {
+      if (busy) return; busy = true; practiceRun = false;
+      return openLive(x.fire, x.packs, priorOf(), x.index);
+    }
+    // live: open on chain (or follow open `index`), wait for the draw and the deal (the stage says where it is), then the same reveal
+    async function openLive(series, n, prior, index) {
       const msg = h('p', { class: 'stage-msg', 'aria-live': 'polite', text: 'Opening…' });
       packsEl.hidden = true; stage.hidden = false; if (view === 'open') coll.hidden = true;
       put(stage, h('div', { class: 'op-wait' }, h('img', { src: '../build3/pack.webp', alt: '', width: 240, height: 336 }), msg));
-      const got = await Live.openPacks(series, n, (t, a) => sayTo(msg, t, a), () => root.isConnected);
+      const say = (t, a) => sayTo(msg, t, a), alive = () => root.isConnected;
+      const got = index != null ? await Live.followOpen(series, index, say, alive, { dealNow: true }) : await Live.openPacks(series, n, say, alive);
       if (!got?.length) { busy = false; stage.hidden = true; put(stage); packsEl.hidden = view === 'open'; coll.hidden = false; render(); return; }
       const per = S().series.cardsPerPack || 6, packs = [];
       for (let i = 0; i < got.length; i += per) packs.push(got.slice(i, i + per).sort((a, b) => rarity(a) - rarity(b))); // rarest last
@@ -986,8 +1030,8 @@
         canGradeNow(c) ? (c.cased ? nowBar(c, true, 'If graded now (cased)') : oddsClock(c, () => goto('grade', { as: 'case' }), canCase)) : null,
         h('details', { class: 'dmore' }, h('summary', { text: 'Details' }),
           h('dl', {}, traits.map(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })]), popDd ? [h('dt', { text: 'Pop' }), popDd] : null)),
-        h('div', { class: 'row' }, // collection link is a placeholder until the contract exists; then Store.openSeaItem links the card itself
-          sea('OpenSea', Store.openSeaItem(c), { 'aria-label': 'OpenSea: view, buy or list (opens a new tab)' }), btn('Binder', '', () => window.Fun?.go('binder', { series: c.series, at: c.id }))),
+        h('div', { class: 'row' }, // demo: the placeholder collection; live: only once the network's collection is set (Store.openSeaItem)
+          Store.openSeaItem(c) ? sea('OpenSea', Store.openSeaItem(c), { 'aria-label': 'OpenSea: view, buy or list (opens a new tab)' }) : null, btn('Binder', '', () => window.Fun?.go('binder', { series: c.series, at: c.id }))),
         Wear.howPill(),
         LIVE ? null : h('p', { class: 'muted small', text: 'Demo floors. OpenSea links are placeholders.' })));
     const d = document.getElementById('sheet-card'), opener = d?.open ? d._opener : null;
@@ -1236,7 +1280,7 @@
       if (!coins.includes(coin)) coin = 'ETH';
       const usd = total(), key = `${cs.join(',')}|${g.join(',')}|${coin}`;
       if (LIVE && usd && key !== liveKey) { liveKey = key; liveQ = null; fetchQ(key, cs, g, coin); }
-      const quoting = LIVE && usd && !liveQ, amt = LIVE && liveQ ? parseFloat(String(liveQ.text).replace(/,/g, '')) || 0 : Wear.inCoin(usd, coin);
+      const quoting = LIVE && usd && !liveQ, amt = LIVE && liveQ ? liveQ.n ?? (parseFloat(String(liveQ.text).replace(/,/g, '')) || 0) : Wear.inCoin(usd, coin); // live: from the raw quote
       const bal = S().wallet.balances[coin] || 0, short = !quoting && (LIVE ? Live.walletNeeds(amt, coin) : amt) > bal;
       const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Pay with' }, coins.map((k) =>
         h('button', { type: 'button', 'aria-pressed': String(k === coin), 'data-coin': k, onclick: () => { coin = k; review(); } }, k)));
@@ -1312,6 +1356,7 @@
         msg.textContent = 'Grading…';
         gradeTiles.forEach((w) => w.classList.add('scanning'));
         const liveGrades = LIVE ? await Live.finishGrading(gIndex, g, (t, a) => sayTo(msg, t, a), () => host.isConnected) : null;
+        if (LIVE && liveGrades === 'cancelled') { gradeH.textContent = 'Returned ungraded'; gradeTiles.forEach((w) => w.classList.remove('scanning')); msg.textContent = 'Returned ungraded.'; put(ctrls, done()); return; }
         if (LIVE && !liveGrades) { msg.textContent = 'Grades land in My cards soon.'; return finish(cs, [], msg, ctrls); }
         await wait(reduced() ? 300 : 1200);
         // the suspense: every grade is known now; they're revealed lowest first, the best last, each after a short scan
@@ -1374,12 +1419,14 @@
 
   // the Case & grade station: every ungraded card you own, rarest first
   function openGrade(opts = {}) {
-    const root = h('div', { class: 'st st-grade' });
+    const prog = h('div', { class: 'inprog' }), wiz = h('div'), root = h('div', { class: 'st st-grade' }, prog, wiz);
     const pool = S().cards.filter((c) => c.grade == null && !c.pending).sort((a, b) => rarity(b) - rarity(a) || b.serial - a.serial);
     const pick = opts.pick || [];
-    Sheet.open('grade', { title: 'Case & grade', body: root, wide: true });
-    if (!pool.length) { put(root, h('div', { class: 'empty-state' }, h('p', { text: 'Every card you have is slabbed. Open a pack for more!' }), Wear.howPill())); return; }
-    protectFlow(root, { cards: pool, station: true, start: opts.as === 'case' ? 'case' : 'grade', pre: opts.as === 'case' ? { case: pick } : { grade: pick },
+    const drawProg = () => progressList(prog, ['grading']); // gradings still out (after a reload too)
+    drawProg(); listen('grade', drawProg);
+    Sheet.open('grade', { title: 'Case & grade', body: root, wide: true, onClose: () => unlisten('grade') });
+    if (!pool.length) { put(wiz, h('div', { class: 'empty-state' }, h('p', { text: 'Every card you have is slabbed. Open a pack for more!' }), Wear.howPill())); return; }
+    protectFlow(wiz, { cards: pool, station: true, start: opts.as === 'case' ? 'case' : 'grade', pre: opts.as === 'case' ? { case: pick } : { grade: pick },
       done: () => [btn('Case or grade more', '', () => openGrade()), btn('Done', 'primary', () => Sheet.close('grade'))] });
   }
 
@@ -1617,7 +1664,7 @@
       h('p', { class: 'sg-joke', text: 'Jokes cost PAPER too. Only real ideas get picked.' }),
       h('p', { class: 'reward', text: 'Get picked, get a free pack.' }),
       Store.SUGGEST_RESULTS.length ? h('p', {}, btn('Last results', 'rs-link', () => { Sheet.close('suggest'); openResults(); })) : null);
-    const stage = h('div', { class: 'sg-stage' }, paperEl, doneEl);
+    const stage = h('div', { class: 'sg-stage' }, paperEl, doneEl, h('img', { class: 'sg-mascot', src: 'ui/brand/paper-256.webp', alt: '', 'aria-hidden': 'true', width: 62, height: 80 }));
     const formBits = [notes, act];
 
     function inkField(f, i) {

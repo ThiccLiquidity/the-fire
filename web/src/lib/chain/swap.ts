@@ -3,7 +3,8 @@
 // Elsewhere (the testnet), or if KyberSwap doesn't answer: the chain's own V2 pools (the router the contracts use),
 // the cheaper of straight to PAPER or through PLANK / WETH, for exactly the PAPER asked for.
 //
-// Paying in ETH is one confirmation; PLANK or USDG need an approval first (exactly the amount, never unlimited).
+// Paying in ETH is one confirmation; PLANK or USDG need an approval first (capped at the most the swap may spend,
+// never unlimited).
 
 import { decodeFunctionData, getAddress, parseAbi, type Address, type TransactionReceipt } from "viem";
 import { approveMax } from "../approve";
@@ -11,7 +12,7 @@ import { sendTx } from "../tx";
 import { getAccount } from "../wallet";
 import { NET } from "../net";
 import { inputAddress } from "../config";
-import { checkSwap, kyberBuild, kyberRoute, kyberRouterAbi, KYBER_ROUTER } from "../kyber";
+import { checkSwap, kyberBuild, kyberRoute, kyberRouterAbi, KYBER_ROUTER, type KyberRoute } from "../kyber";
 import { amount, decimalsOf, input, pub, type Amount } from "./contracts";
 import type { PayCoin } from "./reads";
 import type { WriteOpts } from "./writes";
@@ -61,28 +62,55 @@ async function bestPools(from: PayCoin, out: bigint): Promise<[bigint, Address[]
   return best;
 }
 
+/** KyberSwap's slippage tolerance (bps) that keeps the minimum return at `minOut` or above for a route expected to
+ *  return `expectedOut`: the headroom between them, rounded down (Kyber's minReturn = expected x (1 - bps / 10000)). */
+export const kyberSlipBps = (expectedOut: bigint, minOut: bigint): number =>
+  expectedOut <= minOut ? 0 : Number(((expectedOut - minOut) * 10_000n) / expectedOut);
+
+/** A KyberSwap route for at least `paperOut` PAPER: KyberSwap prices an amount in, so it's sized from the pools' price
+ *  (or a first probe) to return about `paperOut` x (1 + slippage): the room for the price to move before it lands.
+ *  The swap's minimum return is then `paperOut` itself (kyberSlipBps), so the buyer gets at least what they asked
+ *  for, or nothing is spent. Undefined when KyberSwap has no route or it's dearer per PAPER than `poolsCost`. */
+export async function quoteKyber(from: PayCoin, paperOut: bigint, slippageBps = 100, poolsCost?: bigint): Promise<PaperBuy | undefined> {
+  const tIn = tokenOf(from), paper = input("PAPER")!, dec = await decimalsFor(from);
+  const want = withSlip(paperOut, slippageBps);
+  let amountIn = poolsCost ? withSlip(poolsCost, slippageBps) : 10n ** BigInt(Math.max(0, dec - 2));
+  let r: KyberRoute | undefined;
+  for (let i = 0; i < 3; i++) { // probe, then twice more to land on `want`
+    r = await kyberRoute(tIn, paper, amountIn);
+    if (!r || r.amountOut === 0n) return undefined;
+    if (i === 2) break;
+    amountIn = (r.amountIn * want + r.amountOut - 1n) / r.amountOut;
+  }
+  if (!r || r.amountOut < paperOut) return undefined;
+  if (poolsCost && r.amountIn * paperOut > poolsCost * r.amountOut) return undefined; // dearer per PAPER than the pools
+  return { from, paperOut, maxIn: r.amountIn, cost: amount(r.amountIn, dec, 8), via: "kyber", confirmations: from === "ETH" ? 1 : 2 };
+}
+
 /** What `paperOut` PAPER costs in `from`, by the best route available. Throws if PAPER can't be bought with it. */
 export async function quotePaperBuy(from: PayCoin, paperOut: bigint, slippageBps = 100): Promise<PaperBuy> {
   const pools = await bestPools(from, paperOut);
   const confirmations = from === "ETH" ? 1 : 2, dec = await decimalsFor(from);
   if (NET.name === "mainnet") {
     try {
-      // KyberSwap quotes an amount in; size it from the pools' price (or a first probe), then once more to land on paperOut
-      const tIn = tokenOf(from), paper = input("PAPER")!;
-      let guess = pools?.[0] ?? 10n ** BigInt(dec - 2);
-      for (let i = 0; i < 2; i++) {
-        const r = await kyberRoute(tIn, paper, guess);
-        if (!r || r.amountOut === 0n) break;
-        guess = (r.amountIn * paperOut + r.amountOut - 1n) / r.amountOut;
-      }
-      const r = await kyberRoute(tIn, paper, withSlip(guess, slippageBps));
-      if (r && r.amountOut >= paperOut && (!pools || r.amountIn <= withSlip(pools[0], slippageBps))) {
-        return { from, paperOut, maxIn: r.amountIn, cost: amount(r.amountIn, dec, 8), via: "kyber", confirmations };
-      }
+      const k = await quoteKyber(from, paperOut, slippageBps, pools?.[0]);
+      if (k) return k;
     } catch { /* KyberSwap down: the pools */ }
   }
   if (!pools) throw new Error(`Can't swap ${from} for PAPER right now. Try ETH.`);
   return { from, paperOut, maxIn: withSlip(pools[0], slippageBps), cost: amount(pools[0], dec, 8), via: "pools", confirmations };
+}
+
+/** The KyberSwap transaction for a quote: routed again for `q.maxIn`, built with a minimum return of `q.paperOut`,
+ *  and checked by checkSwap (refused unless it's exactly that swap). Throws "Price changed" when the route now
+ *  returns less than asked. */
+export async function kyberTx(q: PaperBuy, owner: Address): Promise<{ to: Address; data: `0x${string}`; value: bigint }> {
+  const tIn = tokenOf(q.from), paper = input("PAPER")!;
+  const r = await kyberRoute(tIn, paper, q.maxIn);
+  if (!r || r.amountOut < q.paperOut) throw new Error("Price changed. Try again.");
+  const tx = await kyberBuild(r, owner, kyberSlipBps(r.amountOut, q.paperOut));
+  checkSwap(tx, { from: tIn, to: paper, amountIn: q.maxIn, minOut: q.paperOut, account: owner }); // refuses anything else
+  return tx;
 }
 
 /** Buy at least `q.paperOut` PAPER into the buyer's own wallet, spending at most `q.maxIn`. */
@@ -90,11 +118,8 @@ export async function buyPaper(q: PaperBuy, o: WriteOpts = {}): Promise<Transact
   const owner = me(), label = `Get ${amount(q.paperOut).text} PAPER`, step = (s: Parameters<NonNullable<WriteOpts["onStep"]>>[0], l: string, h?: `0x${string}`) => o.onStep?.(s, l, h);
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
   if (q.via === "kyber") {
-    const tIn = tokenOf(q.from), paper = input("PAPER")!;
-    const r = await kyberRoute(tIn, paper, q.maxIn);
-    if (!r || r.amountOut < q.paperOut) throw new Error("Price changed. Try again.");
-    const tx = await kyberBuild(r, owner, 100);
-    checkSwap(tx, { from: tIn, to: paper, amountIn: q.maxIn, minOut: q.paperOut, account: owner }); // refuses anything else
+    const tIn = tokenOf(q.from);
+    const tx = await kyberTx(q, owner);
     if (tIn !== "ETH") await approveMax({ token: tIn, spender: KYBER_ROUTER, owner, max: q.maxIn, label: `Approve ${q.from}`, onStep: (s, h) => step(s, `Approve ${q.from}`, h) });
     const call = decodeFunctionData({ abi: kyberRouterAbi, data: tx.data });
     return sendTx({ address: KYBER_ROUTER, abi: kyberRouterAbi, functionName: call.functionName, args: call.args, value: tx.value } as Parameters<typeof sendTx>[0],

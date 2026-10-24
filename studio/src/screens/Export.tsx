@@ -113,7 +113,8 @@ export function Export({ fire }: { fire: FireRecord }) {
 
   const downloadRecipe = () => run(async () => {
     if (!recipeReady) throw new Error(!checks[0].ok ? checks[0].detail : !checks[2].ok ? checks[2].detail : !saleCheck.ok ? saleCheck.detail : packsCheck.detail)
-    if (fire.upload?.imagesCid && !uploadCurrent) {
+    // a mock upload of this build is fine (recipe.json carries its CID, as the zip and the CID table do)
+    if (fire.upload?.imagesCid && !uploadOfBuild) {
       throw new Error('The uploaded images are from an earlier build: upload this build first, so recipe.json points at the right images.')
     }
     if (pinsOpen && !confirm(`Not yet: ${pinsOpen}. Download recipe.json anyway?`)) return
@@ -181,7 +182,7 @@ export function Export({ fire }: { fire: FireRecord }) {
         for (let i = from; i < to; i++) {
           const c = cards[i]
           const img = fileOf(c)
-          const meta = cardMetadata(c, charOf(c.characterId), r.types[c.type]?.name ?? '?', imagesCid ? `ipfs://${imagesCid}/${img}` : `images/${img}`)
+          const meta = cardMetadata(c, charOf(c.characterId), r.types[c.type]?.name ?? '?', imagesCid ? `ipfs://${imagesCid}/${img}` : `images/${img}`, sale.start || undefined)
           zip.addText(`metadata/${metadataFileName(c)}`, JSON.stringify(meta, null, 2))
           if ((i + 1) % 500 === 0) {
             setProgress({ value: (i + 1) / cards.length, label: `Metadata ${(i + 1).toLocaleString()} / ${cards.length.toLocaleString()}` })
@@ -254,7 +255,7 @@ export function Export({ fire }: { fire: FireRecord }) {
       imagesDirName,
       makeMetadata: (cid) => deal!.cards.map((c) => ({
         name: metadataFileName(c),
-        blob: new Blob([JSON.stringify(cardMetadata(c, charOf(c.characterId), r.types[c.type]?.name ?? '?', `ipfs://${cid}/${fileOf(c)}`), null, 2)], { type: 'application/json' }),
+        blob: new Blob([JSON.stringify(cardMetadata(c, charOf(c.characterId), r.types[c.type]?.name ?? '?', `ipfs://${cid}/${fileOf(c)}`, sale.start || undefined), null, 2)], { type: 'application/json' }),
       })),
       existing: { imagesCid: current.imagesCid, metadataCid: current.metadataCid, pending: current.pending },
       save: async (patch) => {
@@ -468,7 +469,7 @@ export function Export({ fire }: { fire: FireRecord }) {
         <table className="mini" data-testid="cids">
           <tbody>
             <tr><td>Images CID</td><td><code>{fire.upload.imagesCid ?? '-'}</code></td></tr>
-            <tr><td>imagesBase (on-chain, in recipe.json)</td><td><code data-testid="images-base">{fire.upload.imagesCid ? `ipfs://${fire.upload.imagesCid}/` : '-'}</code></td></tr>
+            <tr><td>imagesBase (on-chain, in recipe.json)</td><td><code data-testid="images-base">{fire.upload.imagesCid ? `ipfs://${fire.upload.imagesCid}/` : '-'}</code>{fire.upload.mock && fire.upload.imagesCid && <span className="muted small"> (a mock CID: not on IPFS, for testing only)</span>}</td></tr>
             <tr><td>Pinata</td><td>{fire.upload.filebaseOnly ? <span className="muted">skipped (Filebase only)</span> : fire.upload.imagesCid ? <span className="ok-text">pinned</span> : '-'}</td></tr>
             <tr>
               <td>Filebase (second pin)</td>

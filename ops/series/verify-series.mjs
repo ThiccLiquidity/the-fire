@@ -25,7 +25,7 @@
 // It prints one line per check and GREEN or RED. Only sign batch B when it's GREEN.
 //
 //   cd ops; npm install
-//   $env:RPC = Read-Host "RPC URL"
+//   $s = Read-Host "RPC URL" -AsSecureString; $env:RPC = [System.Net.NetworkCredential]::new("", $s).Password
 //   node series/verify-series.mjs --recipe ..\contracts\series\recipe-fire-7.json [--snapshots 1=fire-7-group-1.json]
 //
 // Options: --gateways <url>,<url> (default ipfs.io, dweb.link, Pinata's and Filebase's public gateways; each URL is

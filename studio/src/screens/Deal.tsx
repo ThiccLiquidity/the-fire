@@ -137,8 +137,8 @@ export function Deal({ fire }: { fire: FireRecord }) {
                   const c = cardOf(serial)
                   const t = recipe.types[c.type]
                   return (
-                    <span key={serial} className={`chip mat-${t?.frameSet ?? 'x'}`} title={`#${c.serial} ${names[c.characterId]} ${typeName(c.type)} holo:${c.holo} #${c.printNumber}`}>
-                      {typeName(c.type).slice(0, 4)} {names[c.characterId]?.slice(0, 6)} #{c.serial}{c.holo !== 'none' ? ` ✦${c.holo[0].toUpperCase()}` : ''}
+                    <span key={serial} className={`chip mat-${t?.frameSet ?? 'x'}`} title={`${typeName(c.type)} ${names[c.characterId]} · serial ${c.serial} (the token id) · print #${c.printNumber} of this exact card · holo: ${c.holo}`}>
+                      {typeName(c.type)} {names[c.characterId]}{c.holo !== 'none' ? ` ✦${c.holo[0].toUpperCase()}` : ''} <span className="chip-ids">serial {c.serial} · print #{c.printNumber}</span>
                     </span>
                   )
                 })}

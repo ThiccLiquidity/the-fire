@@ -8,6 +8,7 @@
 // A picture that can't be made keeps placeholder: true (the site draws a stand-in; publish refuses it).
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { PAPER_DIR, args, env, issueDate, loadEnv, readJson, writeJson } from "./lib/util.mjs";
 import { HOUSE_STYLE, provider } from "./lib/images/index.mjs";
 import { caption } from "./lib/images/imgflip.mjs";
@@ -46,7 +47,8 @@ export async function makeImages(issue, dir, { log = console.log } = {}) {
   return { made, left, provider: gen.name, imgflip: Boolean(imgflip) };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// main module (pathToFileURL: on Windows argv[1] is C:\..., and a path may have spaces)
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   loadEnv();
   const a = args();
   const file = a._[0] ?? resolve(PAPER_DIR, "out", issueDate(a.date), "issue.json");

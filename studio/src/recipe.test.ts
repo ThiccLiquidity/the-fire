@@ -232,6 +232,12 @@ describe('odds as percentages (the owner sets %, the contract gets weights)', ()
     expect(fillTheRest(['50', '50'])).toBeNull()
     expect(fillTheRest(['50', 'x'])).toBeNull()
     expect(fillTheRest(['1', '150'])).toBeNull() // 150 isn't a %
+    // never the one just edited: the biggest of the others takes it
+    expect(fillTheRest(['1.5', '0.84', '0.83'].concat(Array(117).fill('0.83')), 0)?.index).toBe(1)
+    expect(fillTheRest(p, 0)).toEqual({ index: 1, percent: '28.14' })
+    expect(fillTheRest(over, 0)).toEqual({ index: 1, percent: '29' })
+    expect(fillTheRest(['90', '5'], 1)).toEqual({ index: 0, percent: '95' })
+    expect(fillTheRest(['95'], 0)).toEqual({ index: 0, percent: '100' }) // the only one
     expect(percentTotal(['1', '150']).bad).toEqual([1])
   })
 
@@ -264,6 +270,9 @@ describe('odds as percentages (the owner sets %, the contract gets weights)', ()
     expect(oddsText(0.5)).toBe('50% · about 1 in 2 cards')
     expect(oddsText(0.002)).toBe('0.2% · about 1 in 500 cards')
     expect(oddsText(0.25, '')).toBe('25% · about 1 in 4')
+    expect(oddsText(0.9999)).toBe('99.99% · almost every card') // never "about 1 in 1" under 100%
+    expect(oddsText(0.96, '')).toBe('96% · almost every one')
+    expect(oddsText(0.9)).toBe('90% · about 1 in 1.1 cards')
     expect(oddsText(0.68)).toBe('68% · about 1 in 1.5 cards')
     expect(oddsText(0.3)).toBe('30% · about 1 in 3.3 cards')
     expect(oddsText(0.001)).toBe('0.1% · about 1 in 1,000 cards')

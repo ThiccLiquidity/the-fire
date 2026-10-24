@@ -7,6 +7,7 @@
 // - weather numbers come from the pack; the draft keeps only its quips (matched by city).
 // - letters/classifieds that cite a chain letter (`tx`) get the sender's exact text and name back from the pack.
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { PAPER_DIR, args, issueDate, readJson, writeJson } from "./lib/util.mjs";
 import { fill } from "./lib/tokens.mjs";
 
@@ -36,7 +37,8 @@ export function inject(draft, pack) {
   return { issue: out, missing };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// main module (pathToFileURL: on Windows argv[1] is C:\..., and a path may have spaces)
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const a = args();
   const date = issueDate(a.date);
   const dir = resolve(PAPER_DIR, "out", date);

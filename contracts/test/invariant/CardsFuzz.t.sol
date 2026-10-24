@@ -51,6 +51,8 @@ contract CardsFuzzTest is SeriesHelper {
         ethFeed = new MockFeed(3_333e8);
         plankFeed = new MockFeed(1e9);
         paperFeed = new MockFeed(0.05e18);
+        plankFeed.setDecimals(18);
+        paperFeed.setDecimals(18);
         router = new InvRouter(plank, 3_333e9, 1e21);
         rng = new MockRandomness();
         packs = new FirePacks(owner);

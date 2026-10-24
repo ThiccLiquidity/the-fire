@@ -4,6 +4,7 @@
 //   node paper/remember.mjs --date YYYY-MM-DD   |   node paper/remember.mjs <issue.json>
 import { appendFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { PAPER_DIR, args, issueDate, readJson, writeJson } from "./lib/util.mjs";
 
 export function remember(issue, dir = resolve(PAPER_DIR, "memory")) {
@@ -21,7 +22,8 @@ export function remember(issue, dir = resolve(PAPER_DIR, "memory")) {
   return entry;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// main module (pathToFileURL: on Windows argv[1] is C:\..., and a path may have spaces)
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const a = args();
   const file = a._[0] ?? resolve(PAPER_DIR, "out", issueDate(a.date), "issue.json");
   const e = remember(readJson(file));

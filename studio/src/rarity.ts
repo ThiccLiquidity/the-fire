@@ -42,6 +42,8 @@ export function aboutOneIn(p: number, unit = 'cards'): string {
   if (!(p > 0)) return 'never'
   if (p >= 1) return unit ? `every ${unit.replace(/s$/, '')}` : 'every one'
   const n = 1 / p
+  // under 100% but "1 in 1" once rounded (above about 95.2%): say so in words, never "about 1 in 1"
+  if (+n.toFixed(1) <= 1) return unit ? `almost every ${unit.replace(/s$/, '')}` : 'almost every one'
   return `about 1 in ${n < 10 ? +n.toFixed(1) : oneIn(p)}${unit ? ` ${unit}` : ''}`
 }
 

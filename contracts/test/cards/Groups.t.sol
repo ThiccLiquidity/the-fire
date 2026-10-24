@@ -563,6 +563,31 @@ contract GroupsTest is SaleBase {
         _set(1, c); // 255 = no credit packs
     }
 
+    /// Free (credit) packs come from a fixed, untaxed group: never a taxed one (it would raise later buyers' price)
+    /// nor an unlimited one (it would mint on top of the total and keep the Series open).
+    function test_validation_creditGroupNotTaxedOrUnlimited() public {
+        bytes memory bad = abi.encodeWithSelector(FireGroups.BadConfig.selector);
+        FireGroups.Group memory a = _g(5);
+        FireGroups.Group memory o = _g(10);
+        o.taxBps = 400;
+        o.afterGroup = 0;
+        o.duration = 12 hours;
+        FireSale.DropConfig memory c = _with(_cfg(start, 0), _two(a, o));
+        c.creditGroup = 1;
+        _bad(c, bad); // taxed
+        FireGroups.Group memory u = _g(0);
+        u.unlimited = true;
+        u.priceUsd = PRICE;
+        u.taxBps = 400;
+        u.idle = 15 minutes;
+        u.afterGroup = 0;
+        c = _with(_cfg(start, 0), _two(a, u));
+        c.creditGroup = 1;
+        _bad(c, bad); // unlimited
+        c.creditGroup = 0;
+        _set(1, c); // the fixed, untaxed group is fine
+    }
+
     function test_validation_indicesAndCycles() public {
         FireGroups.Group memory a = _g(5);
         FireGroups.Group memory b = _g(5);

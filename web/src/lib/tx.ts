@@ -13,7 +13,7 @@
 import type { Abi, Address, Hex, TransactionReceipt } from "viem";
 import { explain, revertOf } from "./errors";
 import { assertRobinhood } from "./network";
-import { getAccount, getPublicClient, getWalletClient, robinhood, txUrl } from "./wallet";
+import { getAccount, getPublicClient, getWalletClient, isNoFunds, robinhood, txUrl } from "./wallet";
 
 export type TxStep = "check" | "simulate" | "confirm" | "pending" | "done";
 /** For a stepper: what the user sees at each step. */
@@ -189,17 +189,23 @@ export async function sendTx(call: TxCall, opts: TxOptions): Promise<Transaction
 
   step("simulate");
   const pub = getPublicClient();
+  // not enough ETH: for the price itself (the value sent, its 3% cap included), or only for the network fee on top
+  const why = async (e: unknown) => {
+    if (!isNoFunds(e) || !call.value) return explain(e);
+    const bal = await pub.getBalance({ address: from }).catch(() => undefined);
+    return bal !== undefined && bal < call.value ? "Not enough ETH for the price." : "Not enough ETH for the network fee.";
+  };
   let request: unknown;
   try {
     ({ request } = await pub.simulateContract({ ...call, account: from } as Parameters<typeof pub.simulateContract>[0]));
-  } catch (e) { throw new TxError(explain(e), "simulate", e); }
+  } catch (e) { throw new TxError(await why(e), "simulate", e); }
 
   step("confirm");
   let hash: Hex;
   try {
     const wallet = await getWalletClient();
     hash = await wallet.writeContract(request as Parameters<typeof wallet.writeContract>[0]);
-  } catch (e) { throw new TxError(explain(e), "confirm", e); }
+  } catch (e) { throw new TxError(await why(e), "confirm", e); }
 
   const ref = track({ hash, label: opts.label, kind: opts.kind ?? "tx", chainId: robinhood.id, from, at: Date.now() }, (h) => step("pending", h));
   remember(ref.tx);

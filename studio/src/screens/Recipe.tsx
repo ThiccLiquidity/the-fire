@@ -7,14 +7,14 @@ import {
   formatPercent, holoLooksFor, holoOdds, parseUint, percentToScaled, percentTotal, roundedPercent, scaledToPercent, slugify,
   specialAllHoloRecipe, standardRecipe, type CardTypeDef, type HoloRule, type Problem, type Recipe,
 } from '../recipe'
-import { aboutOneIn, expectedCounts, oddsText, seriesResult, type TypeResult } from '../rarity'
+import { aboutOneIn, seriesResult, type TypeResult } from '../rarity'
 import { characterWeightsOf } from '../series'
 import { HOLO_LABEL, HOLO_TYPES } from '../rules'
 import { CARDS_PER_CREDIT } from '../sale'
 import { updateFire, useStudio } from '../store'
 import type { FireRecord } from '../types'
 import { SeriesResult } from './SeriesResult'
-import { COUNTS_NOTE, Count, CountsGrid, TypeCounts } from './Counts'
+import { Count, CountsGrid } from './Counts'
 
 const pct = (x: number, digits = 2) => `${(x * 100).toFixed(digits).replace(/\.?0+$/, '')}%`
 
@@ -68,6 +68,9 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
   const setType = (i: number, patch: Partial<CardTypeDef>) => set({ ...r, types: r.types.map((t, j) => (j === i ? { ...t, ...patch } : t)) })
   const move = <T,>(arr: T[], i: number, d: number) => { const a = [...arr]; const j = i + d; if (j < 0 || j >= a.length) return a; [a[i], a[j]] = [a[j], a[i]]; return a }
   const others = s.fires.filter((f) => f.number !== fire.number)
+  // the type whose % the owner typed last ("Fill the rest" leaves it alone), by id so a move keeps it
+  const [lastTyped, setLastTyped] = useState<string | null>(null)
+  const lastEdited = r.types.findIndex((t) => t.id === lastTyped)
   const [copyFrom, setCopyFrom] = useState<number | ''>(others.at(-1)?.number ?? '')
 
   const preset = (name: string, next: Recipe) => {
@@ -112,7 +115,6 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
     if (!valid) return null
     try { return seriesResult(r, shownPacks, ownChars, weights) } catch { return null }
   }, [r, shownPacks, ownChars, weights, valid])
-  const counts = useMemo(() => (valid ? expectedCounts(r, weights ?? fire.characterIds.length, shownPacks) : null), [r, weights, fire.characterIds.length, shownPacks, valid])
   const castNames = useMemo(() => {
     const byId = new Map(s.characters.map((c) => [c.id, c.name]))
     return fire.characterIds.map((id, k) => ({ id, name: byId.get(id) ?? `c${k}` }))
@@ -149,8 +151,14 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       {problems.length > 0 && (
         <Notice kind="error">
           <div data-testid="recipe-problems">
-            <b>The contract would refuse this recipe:</b>
-            <ul className="problems">{problems.map((p, i) => <li key={i}>{p.message}</li>)}</ul>
+            {problems.some((p) => p.where !== 'total') && <>
+              <b>The contract would refuse this recipe:</b>
+              <ul className="problems">{problems.filter((p) => p.where !== 'total').map((p, i) => <li key={i}>{p.message}</li>)}</ul>
+            </>}
+            {problems.some((p) => p.where === 'total') && <>
+              <b>Fix before export (the studio's rule):</b>
+              <ul className="problems">{problems.filter((p) => p.where === 'total').map((p, i) => <li key={i}>{p.message}</li>)}</ul>
+            </>}
           </div>
         </Notice>
       )}
@@ -185,18 +193,12 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       </p>
       {r.types.length > 0 && (
         <PercentTotalBar percents={percents} names={r.types.map((t) => t.name)} what="The card types" disabled={locked} testId="type-total"
-          onFill={(i, percent) => setType(i, { percent })} />
-      )}
-      {counts && (
-        <div data-testid="type-odds-counts">
-          <TypeCounts recipe={r} counts={counts} />
-          <p className="counts-note">{COUNTS_NOTE}</p>
-        </div>
+          lastEdited={lastEdited >= 0 ? lastEdited : undefined} onFill={(i, percent) => setType(i, { percent })} />
       )}
       <div className="type-list">
         {r.types.map((t, i) => (
-          <TypeCard key={t.id} r={r} t={t} i={i} locked={locked} problems={typeProblems(i)} result={res?.types[i] ?? null} packs={shownPacks}
-            onChange={(patch) => setType(i, patch)}
+          <TypeCard key={t.id} r={r} t={t} i={i} locked={locked} problems={typeProblems(i)} result={res?.types[i] ?? null}
+            onChange={(patch) => { if (patch.percent !== undefined) setLastTyped(t.id); setType(i, patch) }}
             onMove={(d) => set({ ...r, types: move(r.types, i, d) })}
             onRemove={() => removeType(i)} />
         ))}
@@ -204,15 +206,15 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       {!locked && <button onClick={addType} data-testid="add-type">Add a card type</button>}
 
       <h3>How many of each card</h3>
-      <CountsGrid recipe={r} basePacks={fire.packs} characters={castNames} weights={weights} packsText={packsText} setPacksText={setPacksText} />
+      <CountsGrid recipe={r} basePacks={fire.packs} characters={castNames} weights={weights} packsText={packsText} setPacksText={setPacksText} typeLine={false} />
 
       <PdaOdds />
     </section>
   )
 }
 
-function TypeCard({ r, t, i, locked, problems, result, packs, onChange, onMove, onRemove }: {
-  r: Recipe; t: CardTypeDef; i: number; locked: boolean; problems: Problem[]; packs: bigint
+function TypeCard({ r, t, i, locked, problems, result, onChange, onMove, onRemove }: {
+  r: Recipe; t: CardTypeDef; i: number; locked: boolean; problems: Problem[]
   /** What this type makes in the Series (its odds and expected cards). */
   result: TypeResult | null
   onChange: (p: Partial<CardTypeDef>) => void; onMove: (d: number) => void; onRemove: () => void
@@ -286,11 +288,6 @@ function TypeCard({ r, t, i, locked, problems, result, packs, onChange, onMove, 
           <button className="link danger" onClick={onRemove} data-testid={`type-${i}-remove`}>remove</button>
         </span>}
       </div>
-      {result && (
-        <p className="type-result" data-testid={`type-${i}-makes`}>
-          <b>{t.name || 'This type'}</b> · {oddsText(result.share)} · <b><Count x={result.expected} unit="cards" /></b> in {packs.toLocaleString('en-US')} packs · <Count x={result.perCharacter} /> per character
-        </p>
-      )}
       {missing.length > 0 && (
         <p className="field-msg err" data-testid={`type-${i}-missing-frames`}>
           Missing frames for {t.name || 'this type'} ({files.have}/{files.total} in the {frameSetLabel(t.frameSet)} set): {missing.join(', ')}. The build is blocked until they are built by

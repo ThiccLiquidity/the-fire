@@ -111,6 +111,11 @@ describe('shared images', () => {
     expect(m.image).toBe('ipfs://cid/rabbit.webp')
     const t = Object.fromEntries(m.attributes.map((a) => [a.trait_type, a.value]))
     expect(t).toMatchObject({ Serial: 42, 'Print number': '#3', Series: 5, Category: 'Animal', PDA: 'Ungraded', Material: 'Wood', Cased: 'No', Moves: 0 })
+    // CardsRenderer's traits, in its order: Dealt (a date), and Age when cased only once cased
+    const at = cardMetadata(c, { name: 'Rabbit', category: 'Animal' }, 'Wood', 'x', 1_800_000_000).attributes
+    expect(at.map((a) => a.trait_type)).toEqual(['Character', 'Category', 'Material', 'Holo', 'Series', 'Print number', 'Serial', 'PDA', 'Cased', 'Dealt', 'Moves'])
+    expect(at.find((a) => a.trait_type === 'Dealt')).toEqual({ trait_type: 'Dealt', value: 1_800_000_000, display_type: 'date' })
+    expect(cardMetadata({ ...c, cased: true }, { name: 'Rabbit' }, 'Wood', 'x').attributes.at(-1)).toMatchObject({ trait_type: 'Age when cased (days)', value: 0 })
     const slab = Object.fromEntries(cardMetadata({ ...c, grade: 8 }, { name: 'Rabbit' }, 'Wood', 'x').attributes.map((a) => [a.trait_type, a.value]))
     expect(slab.PDA).toBe('PDA 8')
     expect(slab.Cased).toBeUndefined()

@@ -331,6 +331,7 @@
           <li><b>Get weird.</b> Go full degen. Ridiculous, raunchy, unhinged: send it. Every suggestion burns PAPER, so even your jokes do something good for the community.</li>
         </ul>`),
       sec('paper', 'PLANK & PAPER', 'Two coins and a press run the workshop.', `
+        <div class="inf-duo" aria-hidden="true"><figure><img src="ui/brand/plank-256.webp" alt="" width="76" height="120" loading="lazy"><figcaption>PLANK · the wood</figcaption></figure><figure><img src="ui/brand/paper-256.webp" alt="" width="85" height="110" loading="lazy"><figcaption>PAPER · the press</figcaption></figure></div>
         <p><b>PLANK</b> and <b>PAPER</b> are meme coins on Robinhood Chain. The <b>Paper Press</b> (the paper mills) is an NFT that lets its holder produce PAPER.</p>
         <ul>
           <li><b>PLANK is the wood.</b> It's the workshop's fuel and its community coin. ${s.plankBurnBps ? `${InS}, ${bpsPct(s.plankBurnBps)} of every pack sale buys PLANK and throws it on the fire. ` : ''}You can pay for packs, cases and grading in PLANK, and PLANK holders get their own early group in each Series${holdShort ? ` (${inS}: ${holdShort})` : ''}.</li>
@@ -390,7 +391,7 @@
       </div>
       ${list.map((s, i) => `
         <details class="inf-sec${s.tag ? ' hot' : ''}" id="info-${s.id}"${i === 0 ? ' open' : ''}>
-          <summary><span class="inf-st">${s.title}${s.tag ? `<em>${s.tag}</em>` : ''}</span><span class="inf-ss">${s.sum}</span></summary>
+          <summary><span class="inf-st">${s.id === 'paper' ? `<span class="coin-pair">${Brand.coin('PLANK')}${Brand.coin('PAPER')}</span>` : ''}${s.title}${s.tag ? `<em>${s.tag}</em>` : ''}</span><span class="inf-ss">${s.sum}</span></summary>
           <div class="inf-body">${s.body}</div>
         </details>`).join('')}
       <p class="menu-links"><button class="inf-link" type="button" data-fun="tour">Workshop tour</button><button class="inf-link" type="button" data-fun="practice">Practice pack</button><button class="inf-link" type="button" data-fun="feed">Top stokers</button><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>`;

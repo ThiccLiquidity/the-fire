@@ -8,6 +8,7 @@
 //   node paper/layout.mjs --date YYYY-MM-DD   |   node paper/layout.mjs <issue.json>
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { PAPER_DIR, args, issueDate, readJson, writeJson } from "./lib/util.mjs";
 
 const esc = (s = "") => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -133,7 +134,8 @@ export function layout(file) {
   return dir;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// main module (pathToFileURL: on Windows argv[1] is C:\..., and a path may have spaces)
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const a = args();
   const file = a._[0] ?? resolve(PAPER_DIR, "out", issueDate(a.date), "issue.json");
   const dir = layout(file);

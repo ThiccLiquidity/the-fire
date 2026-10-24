@@ -160,7 +160,8 @@ export function standardSale(): SaleSettings {
   }
 }
 
-/** An example of a giant drop: 10,000 base packs, 100 per wallet and per purchase, 3 packs per Press. */
+/** An example of a giant drop: 10,000 base packs, 50 per wallet (the ops policy's most), 100 per purchase, 3 packs
+ *  per Press. */
 export function giantSale(): SaleSettings {
   const s = standardSale()
   const [press, plank, everyone, after] = s.groups
@@ -168,8 +169,8 @@ export function giantSale(): SaleSettings {
     ...s, packs: 10_000, maxPerTx: 100,
     groups: [
       { ...press, packs: 1_000, perNft: 3, perWallet: 0, hours: 24 },
-      { ...plank, packs: 1_000, perWallet: 100 },
-      { ...everyone, perWallet: 100 },
+      { ...plank, packs: 1_000, perWallet: 50 },
+      { ...everyone, perWallet: 50 },
       after,
     ],
   }
@@ -434,6 +435,8 @@ export function checkSale(s: SaleSettings, now = Date.now() / 1000): SaleProblem
   if (n > MAX_GROUPS) bad('packs', `At most ${MAX_GROUPS} groups.`)
   if (s.creditGroup !== -1 && !(Number.isInteger(s.creditGroup) && s.creditGroup >= 0 && s.creditGroup < n)) {
     bad('creditGroup', 'Pick a group for free packs, or "none".')
+  } else if (s.creditGroup >= 0 && !creditGroupOk(s.groups[s.creditGroup])) {
+    bad('creditGroup', `Free packs need a fixed, untaxed group: ${groupName(s, s.creditGroup)} is ${s.groups[s.creditGroup].unlimited ? 'unlimited' : 'taxed (rising price)'}.`)
   }
 
   const packs = groupPacks(s)
@@ -482,6 +485,7 @@ export function checkSale(s: SaleSettings, now = Date.now() / 1000): SaleProblem
     gwhole('perTx', g.perTx, U32, 'Per purchase')
     if (!hours(g.limitHours)) gp('limitHours', `Hours, 0 to ${MAX_WINDOW_HOURS} (30 days; 0 = never).`)
     else if (g.limitHours > 0 && !g.perWallet) gp('limitHours', 'Lifts the per-wallet limit: set a per wallet first (or leave this blank).')
+    else if (g.limitHours > 0 && seconds(g.limitHours) < 60) gp('limitHours', 'At least 1 minute (0.02 hours), or blank for never.')
     // when
     if (g.afterGroup !== -1 && !(Number.isInteger(g.afterGroup) && g.afterGroup >= 0 && g.afterGroup < i)) {
       gp('afterGroup', 'It can only open after a group above it (or with the drop).')
@@ -522,6 +526,9 @@ export function checkSale(s: SaleSettings, now = Date.now() / 1000): SaleProblem
 }
 
 export const saleErrors = (s: SaleSettings, now?: number) => checkSale(s, now).filter((p) => !p.warning)
+
+/** Whether free (credit) packs can come from this group: FireGroups refuses a taxed or unlimited credit group. */
+export const creditGroupOk = (g: SaleGroup | undefined): boolean => !!g && !g.unlimited && bpsOf(g.taxPercent) === 0
 
 // ---------------------------------------------------------------- export
 

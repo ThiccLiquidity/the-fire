@@ -838,7 +838,7 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
   .coll-h { gap: 6px 10px } .coll-h .cfloor { order: 3; margin-left: 0 } .coll-h .pop-b { order: 4 }
   .ptiles { gap: 8px } .ptile { grid-template-columns: 44px 1fr; gap: 10px; padding: 6px 10px } .pimg img:first-child { width: 44px }
   .ptile .pinfo { grid-template-columns: auto 1fr; align-items: center; justify-items: start; gap: 2px 10px } .ptile .pinfo h4 { grid-column: 1 } .ptile .pinfo > p.muted { grid-column: 2 } .ptile .pinfo > :last-child { grid-column: 1 / -1 }
-  .st-table > .packs h3 { display: none }
+  .st-table > .packs h3:not(.ip-h) { display: none }
 }
 
 /* card detail: the actions sit right under the card and stick to the sheet's bottom; the traits fold under Details */
@@ -896,3 +896,21 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 @keyframes fp-pop { 0% { transform: scale(.3); opacity: 0 } 15% { transform: scale(1.2); opacity: 1 } 30% { transform: scale(1) } 80% { opacity: 1 } 100% { opacity: 0; transform: translateY(-8px) } }
 @media (prefers-reduced-motion: reduce) { .fp-plus { animation: none } }
 .fp-got { box-shadow: 0 0 0 2px var(--gold, #ffd25a), 0 0 18px rgba(255,200,90,.6) !important; transition: box-shadow .3s }
+
+/* PLANK on an empty My cards; PAPER, the Suggest mascot, at the top-right of the writing paper */
+.empty-cards { padding: 30px 12px 28px }
+.empty-cards .ec-plank { height: 150px; width: auto; transform: rotate(-6deg); filter: drop-shadow(0 10px 10px rgba(0,0,0,.65)) }
+.empty-cards p { margin: 0; font-size: 16px }
+.sg-stage { position: relative }
+.sg-mascot { position: absolute; z-index: 3; right: -6px; top: -96px; height: 80px; width: auto; transform: rotate(8deg); filter: drop-shadow(0 4px 6px rgba(0,0,0,.65)); pointer-events: none }
+.sg-done:not([hidden]) ~ .sg-mascot, .sg-paper[hidden] ~ .sg-mascot { display: none }
+
+/* live: opens and gradings not finished yet (My cards, Case & grade): survives a reload */
+.inprog:empty { display: none }
+.inprog { margin-bottom: 14px }
+.inprog h3 { margin: 0 }
+.ip-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px }
+.ip { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2) }
+.ip-t { display: grid; gap: 2px; min-width: 0 }
+.ip-s { font: 700 14px/1.3 var(--chalk); color: var(--gold) }
+.ip-acts { display: flex; flex-wrap: wrap; gap: 8px }

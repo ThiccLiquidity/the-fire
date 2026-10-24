@@ -45,6 +45,7 @@ contract GroupsFuzzTest is SaleBase {
         c = _with(_cfg(start, 0), gs);
         c.regularWalletsFor = 0;
         c.creditGroup = uint8(_r() % (count + 1) == count ? NONE : _r() % count);
+        if (c.creditGroup != NONE && gs[c.creditGroup].taxBps != 0) c.creditGroup = NONE; // credits: untaxed groups only
     }
 
     /// forge-config: default.fuzz.runs = 400

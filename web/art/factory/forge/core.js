@@ -21,10 +21,14 @@
   const CARD_ODDS = [['paper', 5000], ['wood', 2415], ['fire', 1497], ['charcoal', 489], ['gold', 399], ['fullart', 200]];
   const ODDS_TOTAL = CARD_ODDS.reduce((a, [, w]) => a + w, 0);
   const HOLO_RATE = { paper: 0.05, wood: 0.1, fire: 0.5, charcoal: 0.9 };
-  /** One card at the Standard odds: { material, holo }. */
-  const rollCard = (rand = Math.random) => {
-    let u = rand() * ODDS_TOTAL, material = CARD_ODDS[CARD_ODDS.length - 1][0];
-    for (const [m, w] of CARD_ODDS) { if (u < w) { material = m; break; } u -= w; }
+  // the demo's own pulls lean rare (owner's call) so visitors get to see Gold and Full Art; the odds the site shows
+  // stay the Series' real ones, and the live site always deals at the chain's odds
+  const DEMO_PULL_ODDS = [['paper', 4200], ['wood', 2200], ['fire', 1600], ['charcoal', 800], ['gold', 700], ['fullart', 500]];
+  /** One card: { material, holo }. The demo deals at DEMO_PULL_ODDS; `odds` overrides (e.g. the real CARD_ODDS). */
+  const rollCard = (rand = Math.random, odds = DEMO_PULL_ODDS) => {
+    const total = odds.reduce((a, [, w]) => a + w, 0);
+    let u = rand() * total, material = odds[odds.length - 1][0];
+    for (const [m, w] of odds) { if (u < w) { material = m; break; } u -= w; }
     if (!HOLO_RATE[material]) return { material, holo: 'full' };
     const q = 1 - Math.sqrt(1 - HOLO_RATE[material]), f = rand() < q, p = rand() < q;
     return { material, holo: f && p ? 'full' : f ? 'frame' : p ? 'picture' : 'none' };
@@ -221,7 +225,7 @@
       if (stage === 'closed') s.groups.forEach((g) => { g.state = 'ended'; g.left = 0; });
     },
 
-    CARD_ODDS, ODDS_TOTAL, HOLO_RATE, rollCard,
+    CARD_ODDS, ODDS_TOTAL, HOLO_RATE, DEMO_PULL_ODDS, rollCard,
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },
     cardStrip(c) { // the finished card images for a look (character, material, holo): one strip, raw, cased, then slabbed PDA 1-10
       // demo: only the Bowling Ball has Gold and Full Art art, so those always show it
@@ -292,9 +296,16 @@
     },
     collectionFloor() { return Math.min(...NAMES.map((character) => Store.floor({ character, material: 'paper', holo: 'none', grade: null }))); }, // the commonest type's floor
     eth(v) { return v.toLocaleString('en-US', { maximumSignificantDigits: 2 }) + ' ETH'; },
-    // OpenSea: the collection slug is a PLACEHOLDER until the contract is deployed. With a contract + token ids, item() links the card itself.
+    // OpenSea. Demo: a PLACEHOLDER collection slug. Live: per network, set once the collection really is on OpenSea
+    // ({ collection: 'https://opensea.io/collection/<slug>', chain: '<opensea chain>', contract: '0x…' }); null hides the
+    // OpenSea button (testnet cards aren't on OpenSea). With a chain + contract, item() links the card itself.
     OPENSEA: { collection: 'https://opensea.io/collection/omni-cards', account: 'https://opensea.io/account', chain: null, contract: null },
-    openSeaItem(c) { const o = Store.OPENSEA; return o.contract && c.tokenId != null ? `https://opensea.io/item/${o.chain}/${o.contract}/${c.tokenId}` : o.collection; },
+    OPENSEA_LIVE: { testnet: null, mainnet: null },
+    openSeaItem(c) {
+      const o = LIVE_NET ? Store.OPENSEA_LIVE[LIVE_NET] : Store.OPENSEA;
+      if (!o) return null;
+      return o.chain && o.contract && c.tokenId != null ? `https://opensea.io/item/${o.chain}/${o.contract}/${c.tokenId}` : o.collection || null;
+    },
     // a card's print number: it's the k-th of that exact card (Series, character, material, holo look) ever pulled, shown
     // as "#k" (no "of N": the odds are open-ended). null for a card without one (a practice card).
     printNo(c) { const k = parseInt(c?.edition, 10); return k > 0 ? k : null; },

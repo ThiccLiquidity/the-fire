@@ -44,12 +44,15 @@ export function input(name: "PAPER" | "PLANK" | "USDG" | "WETH" | "MILL"): Addre
 
 export const pub = () => getPublicClient();
 
-/** A token amount: raw units as a decimal string (safe in JSON and plain JS), and the same for people. */
-export type Amount = { raw: string; text: string };
+/** A token amount: raw units as a decimal string (safe in JSON and plain JS), the same for people, and as a plain
+ *  number for math on the page (from raw, never parsed back from the text). */
+export type Amount = { raw: string; text: string; n: number };
+/** `digits` decimals at most; under 1, at least 4 significant digits (0.00075 ETH, not 0.0007). */
 export function amount(raw: bigint, decimals = 18, digits = 4): Amount {
-  const [i, f = ""] = formatUnits(raw, decimals).split(".");
-  const frac = f.slice(0, digits).replace(/0+$/, "");
-  return { raw: raw.toString(), text: BigInt(i).toLocaleString("en-US") + (frac ? "." + frac : "") };
+  const s = formatUnits(raw, decimals), [i, f = ""] = s.split(".");
+  const lead = BigInt(i) === 0n ? (f.match(/^0*/)?.[0].length ?? 0) : 0;
+  const frac = f.slice(0, BigInt(i) === 0n && f ? Math.max(digits, lead + 4) : digits).replace(/0+$/, "");
+  return { raw: raw.toString(), text: BigInt(i).toLocaleString("en-US") + (frac ? "." + frac : ""), n: Number(s) };
 }
 
 const decimalsCache = new Map<string, Promise<number>>();

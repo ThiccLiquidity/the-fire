@@ -301,6 +301,9 @@ const is = (e: unknown, name: string, code?: number) => e instanceof BaseError
   ? !!e.walk((x) => (x as Error)?.name === name || (code !== undefined && (x as { code?: unknown })?.code === code))
   : (e as Error)?.name === name || (code !== undefined && hasCode(e, code));
 
+/** The wallet or node said there isn't enough ETH (for the value sent plus the network fee). */
+export const isNoFunds = (e: unknown): boolean => is(e, InsufficientFundsError.name);
+
 /** A short, human reason for a failed wallet action. Contract errors are errors.ts explain() (which falls back to
  *  this); sending and waiting for a transaction has one path, tx.ts sendTx. */
 export function friendly(e: unknown): string {

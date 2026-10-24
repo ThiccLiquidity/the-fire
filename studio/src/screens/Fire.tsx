@@ -53,6 +53,8 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
   const [query, setQuery] = useState('')
   const [onlyReady, setOnlyReady] = useState(false)
   const [page, setPage] = useState(0)
+  // the character whose % the owner typed last: "Fill the rest" takes from (or gives to) another one
+  const [lastTyped, setLastTyped] = useState<string | null>(null)
   const locked = !!fire.deal
   const sale = useMemo(() => saleOf(fire), [fire])
   const update = (patch: Partial<FireRecord>) => run(() => updateFire(fire.number, patch))
@@ -117,6 +119,7 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
               ? fire.characterIds.length > 0 && <span className="muted small" data-testid="odds-equal-line">Each character: {oddsText(1 / fire.characterIds.length)}</span>
               : fire.characterIds.length > 0 && percents && (
                 <PercentTotalBar percents={percents} names={fire.characterIds.map((_, k) => nameAt(k))} what="The characters" disabled={locked || !!fire.characterWeights} testId="char-total"
+                  lastEdited={lastTyped && fire.characterIds.includes(lastTyped) ? fire.characterIds.indexOf(lastTyped) : undefined}
                   onFill={(k, p) => void setPercent(fire.characterIds[k], p)} />
               )}
           </div>
@@ -140,7 +143,7 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
                       const k = fire.characterIds.indexOf(c.id)
                       return (
                         <span className="char-odds small" title="This character's % of cards">
-                          {!allEqual && percents && <PercentOfCards value={percents[k]} disabled={locked || !!fire.characterWeights} onChange={(p) => void setPercent(c.id, p)} testId={`odds-${c.name}`} />}
+                          {!allEqual && percents && <PercentOfCards value={percents[k]} disabled={locked || !!fire.characterWeights} onChange={(p) => { setLastTyped(c.id); void setPercent(c.id, p) }} testId={`odds-${c.name}`} />}
                           {(allEqual || oddsProblems.length === 0) && <span className="muted" data-testid={`char-odds-${c.name}`}> {allEqual ? oddsText(odds[k], '') : aboutOneIn(odds[k], '')}</span>}
                           {cardsTotal > 0 && (allEqual || oddsProblems.length === 0) && <span data-testid={`char-count-${c.name}`}> · <Count x={odds[k] * cardsTotal} unit="cards" /></span>}
                         </span>

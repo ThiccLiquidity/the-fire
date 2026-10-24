@@ -164,7 +164,8 @@ Art are always full holo.
 A card's condition is hidden until it is graded, once, through `FirePsa`; it is then sealed in a slab. Until then it
 wears with time uncased and with moves between wallets, unless it is cased. Rules, fresh odds and prices:
 `docs/grading.md` and `docs/omni-economy.md`. An ungraded card uses its clean frame and the seal shows "?". The grade
-picks a wear level, each a full frame per material and holo variant:
+picks a wear level: one set of wear layers (`studio/src/assets/wear`) drawn over every card type, framed or Full
+Art, with no per-frame wear files:
 
 | Wear level | Grades | Fresh odds |
 |---|---|---|
@@ -184,7 +185,8 @@ Fresh odds are `FirePsa`'s constants (`freshOdds`), fixed forever for every Seri
   the finished card, the same for every card (`studio/src/protect.ts`); the frames are never touched.
 - **Readability:** on PDA 3-2 and 1, dark text gets a light outline so it reads over the scorch marks.
 - **PDA seal:** a round wax seal on the right of the bottom panel, matched to each frame (Paper graphite, Wood walnut,
-  Fire ember, Coal silver-graphite, Diamond icy crystal) with a thin gold rim, "PDA" small on top and the grade (or
+  Fire ember, Coal silver-graphite, Gold gold wax on bronze, Full Art the same gold; the retired Diamond icy
+  crystal) with a thin gold rim, "PDA" small on top and the grade (or
   "?") in the middle. A graded seal gets a ring in the grade's colour: 10 green, 9-8 teal, 7-6 sky blue, 5-4 blue,
   3-2 orange, 1 red.
 
@@ -245,8 +247,12 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and each card
    ConfigureSeries checks is checked live, next to its field (the groups add up to the total, opens-after earlier /
    leftovers later, nothing rolls into an unlimited or taxed group, unlimited needs a rising price and idle and rolls
    nowhere, gate data, a price needs a coin, no free group open to everyone, times at most 30 days, a rise at most 50%
-   and within the 1e9 price bound). Presets: Standard (the drop in `docs/drop-groups.md`) and Giant (10,000 packs,
-   100 per wallet and per purchase, 3 per Press). Cards per free pack shows as fixed (42, forever). Old saves (paid +
+   and within the 1e9 price bound, free packs only from a fixed, untaxed group: the picker lists only those). The ops
+   sale policy (`ops/series/sale-policy.mjs`, which launch.mjs and VerifySeries run) shows as warnings on the same
+   fields, with a "N outside policy" badge: its bounds live in `ops/series/sale-policy-bounds.json`, read by both
+   (price $1 to $10, at least 0.1 PAPER a pack, burns 10% to 100% with PAPER at least 10%, at most 50 per wallet, a
+   limit lift 1 h to 7 days, a rise at most 10%, an unlimited group idles out within 1 h). Presets: Standard (the drop
+   in `docs/drop-groups.md`) and Giant (10,000 packs, 50 per wallet, 100 per purchase, 3 per Press). Cards per free pack shows as fixed (42, forever). Old saves (paid +
    press packs) become a Paper Press group (its packs, per press, per wallet, window and price) rolling leftovers into
    an Everyone group (the paid packs at the old price and wallet limit), free packs from Everyone; a Series saved
    without sale settings gets the Standard drop resized to its packs.

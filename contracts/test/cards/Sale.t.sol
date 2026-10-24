@@ -77,6 +77,7 @@ contract CheckpointFeed {
     uint256 public checkpoints;
     bool public fail;
     constructor(int256 a) { answer = a; updatedAt = block.timestamp; }
+    function decimals() external pure returns (uint8) { return 18; }
     function setFail(bool f) external { fail = f; }
     function checkpoint() external {
         require(!fail, "checkpoint down");
@@ -132,6 +133,7 @@ abstract contract SaleBase is SeriesHelper {
         press = new MockMill(address(plank), 0);
         ethFeed = new MockFeed(ETH_USD);
         plankFeed = new MockFeed(PLANK_USD);
+        plankFeed.setDecimals(18);
         router = new MockV2Router(plank, PER_ETH, PER_USDG);
         rng = new MockRandomness();
         packs = new FirePacks(owner);
@@ -868,6 +870,21 @@ contract SaleTest is SaleBase {
         vm.prank(owner, owner);
         sale.setFeeds(address(newEth), address(plankFeed), address(0), address(router));
         assertEq(address(sale.ETH_USD()), address(newEth));
+    }
+
+    /// A feed with the wrong decimals would misprice packs by up to 1e10: ETH/USD must have 8, PLANK/USD 18.
+    function test_audit4_feedDecimalsChecked() public {
+        _endDrop1();
+        MockFeed eth18 = new MockFeed(ETH_USD);
+        eth18.setDecimals(18);
+        MockFeed plank8 = new MockFeed(PLANK_USD);
+        vm.startPrank(owner, owner);
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.setFeeds(address(eth18), address(plankFeed), address(0), address(router));
+        vm.expectRevert(FireSale.BadConfig.selector);
+        sale.setFeeds(address(ethFeed), address(plank8), address(0), address(router));
+        sale.setFeeds(address(ethFeed), address(plankFeed), address(0), address(router));
+        vm.stopPrank();
     }
 
     function test_audit_walletsLockedWhileADropIsSetUp() public {

@@ -19,13 +19,15 @@
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
   };
   const svg = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
-  const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(+n.toFixed(3));
+  // big numbers compact, 3 significant digits: 22.9K, 1.25M, 1T (never "1000.00B")
+  const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 });
+  const fmt = (n) => (n >= 1e3 ? compact.format(n) : String(+n.toFixed(3)));
   const LIVE = window.Live?.on; // live mode (live.js): the chain's data, and Live sends the transactions
   const P = Store.PRICES; // read each time: live mode fills them in from the contracts
 
   // ---------- markup
   $('#app').innerHTML = `
-  <div id="loading" class="loading"><img src="ui/omni-mark.webp" alt=""><p>Lighting the furnace…</p><small class="demo-load">Demo: nothing here is real</small></div>
+  <div id="loading" class="loading"><div class="ld-row"><img class="ld-pal ld-plank" src="ui/brand/plank-256.webp" alt="" width="44" height="70"><img class="ld-mark" src="ui/omni-mark.webp" alt=""><img class="ld-pal ld-paper" src="ui/brand/paper-256.webp" alt="" width="48" height="62"></div><p>Lighting the furnace…</p><small class="demo-load">Demo: nothing here is real</small></div>
   <header class="topbar">
     <a class="brand" href="#" aria-label="Omni Cardworks"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">CARDWORKS</span><em class="tag">Wood and paper in, packs out.</em></a>${LIVE && Live.testnet ? '<span class="net-badge">Testnet</span>' : ''}
     <button class="chip series" id="seriesChip" type="button"></button>
@@ -39,7 +41,7 @@
       <button class="chip demo" type="button" data-go="demo">Demo</button>
     </nav>
     <button class="chip round menu-btn" type="button" data-go="menu" aria-label="Menu">${svg('menu')}</button>
-    <button class="wallet" id="walletBtn" type="button">${svg('wallet')}<span>Connect</span></button>
+    <button class="wallet" id="walletBtn" type="button">${svg('wallet')}${Brand.coin('PAPER', 'wcoin').replace('<img ', '<img hidden ')}<span>Connect</span></button>
   </header>
   <div class="qbanner" id="qbanner" hidden></div>
   <div class="demo-note" role="note"><b>Demo</b><span>Nothing here is real.</span><button class="start-link" type="button" data-go="start">New here?</button></div>
@@ -238,7 +240,7 @@
     const a = document.activeElement, box = a?.closest?.('#buybox, #buybar');
     const back = box && (a.dataset.buy ? `#${box.id} [data-buy="${a.dataset.buy}"]` : a.classList.contains('tease-inline') ? `#${box.id} .tease-inline` : null);
     const optsHtml = (list) => list.length ? '<div class="opts">' + list.map(([k, t, sub, cls]) =>
-      `<button class="opt ${cls}" type="button" data-buy="${k}"${cls === 'off' ? ' aria-disabled="true"' : ''}>${/main/.test(cls) && !/extra/.test(cls) ? '<img class="mini" src="../build3/pack.webp" alt="">' : ''}<span>${t}${sub ? `<small>${sub}</small>` : ''}</span></button>`).join('') + '</div>' : '';
+      `<button class="opt ${cls}" type="button" data-buy="${k}"${cls === 'off' ? ' aria-disabled="true"' : ''}>${/main/.test(cls) && !/extra/.test(cls) ? '<img class="mini" src="../build3/pack.webp" alt="">' : ''}<span>${/^PLANK\b/.test(t) ? Brand.amt('PLANK', t) : t}${sub ? `<small>${Brand.tag(sub)}</small>` : ''}</span></button>`).join('') + '</div>' : '';
     const extras = (next ? `<p class="gnext">${next.html}</p>` : '') + (sub ? `<p class="gnext">${sub}</p>` : '');
     $('#buybox').innerHTML = `<div class="phase"></div>${optsHtml(opts)}${extras}`; $('#buybox .phase').textContent = line;
     // sold out, the stations' Open packs is enough
@@ -309,7 +311,8 @@
       if (g) return { kind: 'buy', title: 'Buy a pack', sub: plainTxt(priceTxt(g)), label: `Buy a pack: ${plainTxt(priceTxt(g))}`, go: () => openGroup(g.index) };
     }
     const nx = !note() && !sold() ? nextUp() : null;
-    const sub = note() || (sold() ? `Series ${S.series.no + 1} is coming` : nx ? plainTxt(nx.html) : `${S.cards.length} ${S.cards.length === 1 ? 'card' : 'cards'}`);
+    const coming = (S.wallet.unfinished || []).some((x) => x.kind === 'open'); // live: an open still being drawn or dealt
+    const sub = coming ? 'Cards on their way' : note() || (sold() ? `Series ${S.series.no + 1} is coming` : nx ? plainTxt(nx.html) : `${S.cards.length} ${S.cards.length === 1 ? 'card' : 'cards'}`);
     return { kind: 'cards', title: 'See your cards', sub, label: `See your cards. ${sub}`, go: () => openStation('cards') };
   }
   let hero = null;
@@ -326,7 +329,8 @@
     setText($('#sCards'), `${S.cards.length} ${S.cards.length === 1 ? 'card' : 'cards'} · ${sealed} ${sealed === 1 ? 'pack' : 'packs'}`);
     const wb = $('#walletBtn span');
     const nm = mode === 'port' || innerWidth < 1500 ? '' : S.wallet.name; // phones: the icon and the balance, so the button fits beside the brand
-    setText(wb, S.wallet.connected ? `${nm ? nm + ' · ' : ''}${fmtChip(S.wallet.balances.PAPER)} PAPER` : 'Connect');
+    // phones: the PAPER coin before the number says what it is, so the chip is just the avatar, the coin and "1.23M"
+    setText(wb, S.wallet.connected ? `${nm ? nm + ' · ' : ''}${fmtChip(S.wallet.balances.PAPER)}${mode === 'port' ? '' : ' PAPER'}` : 'Connect');
     setAttr($('#walletBtn'), 'aria-label', S.wallet.connected ? `Wallet: ${fmt(S.wallet.balances.PAPER)} PAPER` : 'Connect a wallet');
     renderStrip();
     if (LIVE) { // prices from the contracts
@@ -335,6 +339,7 @@
       if (S.series.no) { setText($('.strip .sw'), `SERIES ${S.series.no}`); setAttr($('.strip .packart'), 'alt', `Series ${S.series.no} pack`); }
     }
     $('#walletBtn').classList.toggle('on', S.wallet.connected);
+    const wc = $('#walletBtn .wcoin'); if (wc && wc.hidden === S.wallet.connected) wc.hidden = !S.wallet.connected;
   }
   // the pack strip: this Series' cards a pack and each card's odds by material (every card rolls on its own: the same
   // odds for every card of every pack; live: the Series' own odds from the chain, Info.materials)
@@ -431,7 +436,7 @@
     const d = Sheet.open('wallet', { title: w.name || 'Wallet', body: `
       <div class="wmenu">
         <div class="who"><div class="avatar">${esc((w.name || '?')[0])}</div><div><b>${nm || 'No name yet'}</b><small>${esc(w.address)}</small></div><button class="btn small" type="button" data-w="name">Edit</button></div>
-        <div class="bal">${Object.entries(w.balances).map(([k, v]) => `<div><small>${k}</small><b>${fmt(v)}</b></div>`).join('')}</div>
+        <div class="bal">${Object.entries(w.balances).map(([k, v]) => `<div><small>${k}</small><b>${Brand.coin(k)}${fmt(v)}</b></div>`).join('')}</div>
         <div class="rows">
           <div><span>Free packs</span><b>${w.credits}</b></div>
           <div><span>Burn progress</span><b>${w.burnCount % 42} / 42</b></div>
@@ -516,7 +521,7 @@
       const acc = await api.prepare(g0);
       if (!acc) return; // live: the holder closed the "which NFT" question
       if (!acc.ok) return Sheet.open('nope', { title: g0.name, body: `<p class="lead">${esc(Store.refusal(g0, acc))}</p>` });
-      const max = Math.max(1, acc.max || 1), extra = g0.unlimited || g0.taxBps > 0;
+      let max = Math.max(1, acc.max || 1); const extra = g0.unlimited || g0.taxBps > 0; // max: recomputed as the group and limits change
       let n = 1, cur = g0.coins[0] || null, q = null, seq = 0, ethAll = null, view = 'form', busy = false, notice = '', understood = false;
       const body = document.createElement('div'); body.className = 'checkout' + (extra ? ' xcheck' : '');
       const requote = (quiet) => {
@@ -528,12 +533,15 @@
       let tick = 0, stopWatch = () => {};
       const start = () => {
         tick = api.refresh ? setInterval(() => { if (!body.isConnected) return clearInterval(tick); if (!document.hidden && !busy) requote(true); }, api.refresh) : 0;
-        stopWatch = watch(body, () => { if (!busy) draw(); }, () => JSON.stringify([walletKey(), groups()[i]?.sold, groups()[i]?.left, groups()[i]?.endsAt, groups()[i]?.state]));
+        stopWatch = watch(body, () => { if (!busy) draw(); }, () => JSON.stringify([walletKey(), groups()[i]?.sold, groups()[i]?.left, groups()[i]?.endsAt, groups()[i]?.state, groups()[i] && Store.groupAccess(groups()[i]).max]));
       };
       const stop = () => { seq++; clearInterval(tick); stopWatch(); };
       const pack = (k) => `${k} ${k === 1 ? 'pack' : 'packs'}`;
       const draw = () => {
         const g = groups()[i], w = S.wallet, priced = g.priceUsd > 0;
+        const ax = Store.groupAccess(g); // a wallet limit lifting (or packs selling) while the sheet is open moves the max
+        if (ax.ok) max = Math.max(1, ax.max || 1);
+        if (n > max && view === 'form') { n = max; return requote(); }
         const qc = q?.coins.find((c) => c.pay === cur), paper = q ? q.paper : n * g.paper;
         const canAll = q?.paperEth != null && paper > 0 && (!priced || cur === 'ETH');
         const allOn = canAll && (ethAll ?? w.balances.PAPER < paper); // ETH pays for the PAPER too: the sale buys it on the market and burns it
@@ -573,11 +581,11 @@
         body.innerHTML = `${head}${notice ? `<p class="xmoved" role="alert">${esc(notice)}</p>` : ''}
           ${max > 1 ? `<div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output aria-live="polite">${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button>
             <span class="muted">${n === 1 ? 'pack' : 'packs'} · max ${max}</span></div>` : ''}
-          ${priced && g.coins.length > 1 ? `<div class="seg" role="group" aria-label="Pay with">${g.coins.map((c) => `<button type="button" data-c="${c}" aria-pressed="${c === cur}">${c}</button>`).join('')}</div>` : ''}
-          <dl class="sum">${priced ? `<dt>Price</dt><dd>${money(usd)} <small>${!q ? '· getting price…' : qc?.available ? `≈ ${coinAmt(qc.cost)} ${cur}` : esc(qc?.reason || 'Not available')}</small></dd>` : ''}
-            <dt>PAPER</dt><dd>${(+paper.toFixed(4)).toLocaleString('en-US')} ${P.PAPER_USD > 0 ? `<small>≈ ${money(paper * P.PAPER_USD)}</small>` : ''}</dd>
+          ${priced && g.coins.length > 1 ? `<div class="seg" role="group" aria-label="Pay with">${g.coins.map((c) => `<button type="button" data-c="${c}" aria-pressed="${c === cur}">${Brand.coin(c)}${c}</button>`).join('')}</div>` : ''}
+          <dl class="sum">${priced ? `<dt>Price</dt><dd>${money(usd)} <small>${!q ? '· getting price…' : qc?.available ? `≈ ${Brand.tag(`${coinAmt(qc.cost)} ${cur}`)}` : esc(qc?.reason || 'Not available')}</small></dd>` : ''}
+            <dt>PAPER</dt><dd>${Brand.amt('PAPER', (+paper.toFixed(4)).toLocaleString('en-US'))} ${P.PAPER_USD > 0 ? `<small>≈ ${money(paper * P.PAPER_USD)}</small>` : ''}</dd>
             ${allOn ? `<dt>Total</dt><dd>≈ ${coinAmt(amt)} ETH <small>${priced ? '(price + PAPER)' : '(PAPER)'}</small></dd>` : ''}
-            <dt>You have</dt><dd>${payIn ? `${coinAmt(w.balances[payIn])} ${payIn} <small>· ` : '<small>'}${(+w.balances.PAPER.toFixed(2)).toLocaleString('en-US')} PAPER</small></dd></dl>
+            <dt>You have</dt><dd>${payIn ? `${Brand.amt(payIn, `${coinAmt(w.balances[payIn])} ${payIn}`)} <small>· ` : '<small>'}${Brand.amt('PAPER', `${(+w.balances.PAPER.toFixed(2)).toLocaleString('en-US')} PAPER`)}</small></dd></dl>
           ${canAll ? `<label class="paycheck"><input type="checkbox" data-all ${allOn ? 'checked' : ''}><span><b>Pay PAPER with ETH</b><small>One step. We buy the PAPER for you.</small></span></label>` : ''}
           ${needPaper ? `<div class="getpaper"><p class="warn">Need ${missing.toLocaleString('en-US')} more PAPER.</p><button class="btn small" type="button" data-x="paper">Get PAPER</button></div>` : ''}
           ${shortCur ? `<p class="warn">Not enough ${payIn}.${LIVE && payIn !== 'USDG' ? ` Keep 3% extra${payIn === 'ETH' ? ' plus a little for fees' : ''}.` : ''}${!LIVE && payIn !== 'ETH' ? ` <button class="btn small" type="button" data-x="cur">Get ${payIn}</button>` : ''}</p>` : ''}
@@ -642,7 +650,7 @@
         const paper = n * per, short = w.balances.PAPER < paper, need = !short && Store.needsApproval('PAPER', paper);
         body.innerHTML = `<p class="lead">Free packs still cost ${per} PAPER each.</p>
           ${w.credits > 1 ? `<div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output>${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button><span class="muted">of ${w.credits}</span></div>` : ''}
-          <dl class="sum"><dt>PAPER</dt><dd>${paper}</dd><dt>You have</dt><dd>${w.balances.PAPER} PAPER</dd></dl>
+          <dl class="sum"><dt>PAPER</dt><dd>${Brand.amt('PAPER', paper)}</dd><dt>You have</dt><dd>${Brand.amt('PAPER', `${w.balances.PAPER} PAPER`)}</dd></dl>
           ${short ? shortLine('PAPER', paper - w.balances.PAPER) : ''}${DEMO_LINE}
           <button class="btn gold go" type="button" ${short ? 'disabled' : ''}>${busy ? 'Sending…' : need ? 'Approve PAPER' : `Use ${n} free ${n === 1 ? 'pack' : 'packs'}`}</button>`;
         body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { n = Math.max(1, Math.min(S.wallet.credits, n + +b.dataset.q)); redraw(body, draw); });
@@ -668,11 +676,11 @@
     const why = () => !(amt > 0 && ethOf() > 0) ? 'Enter an amount' : S.wallet.connected && ethOf() > S.wallet.balances.ETH ? 'Not enough ETH' : '';
     const paint = () => {
       body.querySelector('.sum dd').innerHTML = `${ethOf().toFixed(5)} ETH <small>≈ ${Wear.usd(usdOf() * 1.003)}</small>`;
-      const go = body.querySelector('.go'), w = why(); go.disabled = !!w; go.textContent = w || `Get ${fmt(amt)} ${tok}`;
+      const go = body.querySelector('.go'), w = why(); go.disabled = !!w; go.innerHTML = w ? esc(w) : `${Brand.coin(tok)}Get ${fmt(amt)} ${tok}`;
     };
     const draw = () => {
-      const hd = document.querySelector('#sheet-paper .sheet-head h2'); if (hd) hd.textContent = 'Get ' + tok; // the title follows the token
-      body.innerHTML = `<div class="seg" role="group" aria-label="Get">${['PAPER', 'PLANK', 'USDG'].map((c) => `<button type="button" data-t="${c}" aria-pressed="${c === tok}">${c}</button>`).join('')}</div>
+      title(); // the title follows the token
+      body.innerHTML = `<div class="seg" role="group" aria-label="Get">${['PAPER', 'PLANK', 'USDG'].map((c) => `<button type="button" data-t="${c}" aria-pressed="${c === tok}">${Brand.coin(c)}${c}</button>`).join('')}</div>
         <label class="amt" for="amt">How much ${tok}</label><input id="amt" inputmode="decimal" value="${amt}">
         <dl class="sum"><dt>You pay</dt><dd></dd></dl>
         ${DEMO_LINE}<button class="btn primary go" type="submit"></button><p class="fine">Best price across all pools. 1 tap.</p>`;
@@ -684,7 +692,8 @@
       e.preventDefault(); if (why()) return;
       needWallet(() => { if (why()) return paint(); const eth = ethOf(), got = amt, t = tok; Sheet.close('paper'); Store.update((s) => { s.wallet.balances[t] += got; s.wallet.balances.ETH -= eth; }); toast(`+${fmt(got)} ${t}`, 'good'); did.add('paper'); });
     };
-    draw(); Sheet.open('paper', { title: 'Get ' + tok, body });
+    const title = () => { const hd = document.querySelector('#sheet-paper .sheet-head h2'); if (hd) hd.innerHTML = `${Brand.coin(tok, 'big')}Get ${tok}`; };
+    draw(); Sheet.open('paper', { title: 'Get ' + tok, body }); title();
   }
   // ---------- New here? a short checklist. A step ticks only for what this visitor did in this visit (the demo wallet
   // starts with PAPER and packs: that's not them having done it); packs ready to open come first, with the main button.
@@ -721,7 +730,7 @@
     document.querySelector('.receipt')?.remove();
     const ready = Stations.openableCount(), x = Store.extraOpen(), left = Store.left();
     const el = document.createElement('div'); el.className = 'receipt'; el.setAttribute('role', 'status');
-    el.innerHTML = `<button class="x" type="button" aria-label="Close">×</button>
+    el.innerHTML = `<span class="rc-peek" aria-hidden="true"><img src="ui/brand/plank-256.webp" alt="" width="58" height="92"></span><button class="x" type="button" aria-label="Close">×</button>
       <p class="rc-t"><b>${n === 1 ? (free ? 'Free pack added' : 'Pack added') : `${n} ${free ? 'free ' : ''}packs added`}</b> · ${n === 1 ? 'opens' : 'they open'} when sales end</p>
       <p class="rc-s">${x ? 'Extra packs on sale now' : sold() ? `Series ${S.series.no} is sold out` : `${left.toLocaleString('en-US')} ${left === 1 ? 'pack' : 'packs'} left`}</p>
       ${ready ? `<p class="rc-r">You have ${ready} ${ready === 1 ? 'pack' : 'packs'} ready to open</p>` : ''}
@@ -750,7 +759,7 @@
   }
   function openMenu() {
     const d = Sheet.open('menu', { title: 'Menu', body: `<div class="menu">
-      <button class="btn" type="button" data-m="cards">${svg('cards')}My cards</button><button class="btn" type="button" data-m="open">${svg('pack')}Open packs${Stations.openableCount() ? ` (${Stations.openableCount()})` : ''}</button>
+      <button class="btn" type="button" data-m="cards">${svg('cards')}My cards</button>${!LIVE || Stations.openableCount() ? `<button class="btn" type="button" data-m="open">${svg('pack')}Open packs${Stations.openableCount() ? ` (${Stations.openableCount()})` : ''}</button>` : ''}
       <button class="btn" type="button" data-m="paper">${svg('paper')}Get PAPER</button><button class="btn" type="button" data-m="info">${svg('info')}Info</button>
       <button class="btn" type="button" data-m="feed">${svg('feed')}Activity</button><button class="btn" type="button" data-m="sound">${svg('sound')}Sound: ${window.Sound?.on ? 'On' : 'Off'}</button>
       <button class="btn" type="button" data-m="start">New here?</button>${LIVE ? '' : '<button class="btn" type="button" data-m="demo">Demo controls</button>'}
@@ -804,6 +813,7 @@
   // My cards opens the collection; Open packs goes straight to tearing the next pack, or (none to open) says why and points at Buy
   function openStation(k) {
     if (k !== 'open' || Stations.openableCount()) return Stations.open(k);
+    if ((S.wallet.unfinished || []).some((x) => x.kind === 'open')) return Stations.open('cards'); // live: an open still being dealt (In progress)
     const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0);
     if (sealed) return toast(`Your Series ${S.series.no} packs open when sales end.`);
     if (sold()) return toast(`No packs to open. Series ${S.series.no + 1} is coming soon`);

@@ -41,8 +41,10 @@ type HoloView = 'off' | 'type' | 'cell'
 
 /** The grid the owner scans: expected cards per type x character, optionally split by holo look. Its "what if" pack
  *  field starts at the Series' base packs; pass `packsText` / `setPacksText` to share it with another field. */
-export function CountsGrid({ recipe, basePacks, characters, weights, ...shared }: {
+export function CountsGrid({ recipe, basePacks, characters, weights, typeLine = true, ...shared }: {
   recipe: Recipe
+  /** Show each type's odds line above the grid (off where the odds already show, e.g. the Recipe tab). */
+  typeLine?: boolean
   /** The Series' base packs (Sale tab). */
   basePacks: number
   characters: { id: string; name: string }[]
@@ -83,7 +85,7 @@ export function CountsGrid({ recipe, basePacks, characters, weights, ...shared }
       </p>
       {!valid ? <p className="muted small">Fix the recipe to see the counts.</p> : !counts ? <p className="muted small">Type a pack count.</p> : (
         <>
-          <TypeCounts recipe={recipe} counts={counts} />
+          {typeLine && <TypeCounts recipe={recipe} counts={counts} />}
           {lowCells > 0 && <p className="small" data-testid="counts-low"><span className="count-low">{lowCells.toLocaleString('en-US')} type × character card{lowCells === 1 ? '' : 's'}</span> expected below 1: they may not print.</p>}
           <div className="table-scroll counts-scroll">
             <table className="mini counts-table" data-testid="counts-table">

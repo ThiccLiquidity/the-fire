@@ -198,7 +198,8 @@ per Series"). The owner's steps for one Series:
    kind, saved to `draw-round-<r>-look.json` with the closing block, the round, its randomness and its signature
    (checked against quicknet's public key). Choose the theme and the art style from those 10.
 2. **Announce them** (nothing on chain yet): `node suggestions/publish.mjs --draw draw-round-<r>-look.json --series <n>
-   --picks <theme id>,<style id> --next "The characters wave is open"`, then `web/art/factory/sync_forge.sh` and deploy.
+   --picks <theme id>,<style id> --next "The characters wave is open"`, then commit and push: the site's build syncs it
+   (the build runs `sync_forge.sh`; nothing to run by hand, no bash needed on Windows).
    The site shows the results and opens the characters wave for that theme and style.
 3. **Characters wave closes.** `node suggestions/draw.mjs --rpc <url> --kind character --series <n> --to-block N2
    --drand-round R2` (the pair announced with that wave), choose the characters, publish them the same way (`--draw draw-round-<r>-character.json --picks <ids>`).

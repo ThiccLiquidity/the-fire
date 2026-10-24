@@ -307,6 +307,16 @@ contract ConfigureSeries is Deployments {
             c.groups[i] = parseGroup(json, i, n);
             sum += c.groups[i].packs;
         }
+        if (c.creditGroup != 255) {
+            FireGroups.Group memory cg = c.groups[c.creditGroup];
+            require(
+                cg.taxBps == 0 && !cg.unlimited,
+                string.concat(
+                    "sale.creditGroup: free packs need a fixed, untaxed group; group ", vm.toString(uint256(c.creditGroup)),
+                    cg.unlimited ? " is unlimited" : " has a rising tax (taxBps)"
+                )
+            );
+        }
         for (uint256 i; i < n; i++) {
             uint8 to = c.groups[i].rollTo;
             require(

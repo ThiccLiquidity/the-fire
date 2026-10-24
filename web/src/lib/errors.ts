@@ -63,7 +63,7 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   GradingInProgress: "That card is being graded.",
   NotConfigured: "This Series isn't set up yet.",
   NotHolder: "That card isn't in your wallet.",
-  NotStuck: "Not stuck yet. Give it a minute.",
+  NotStuck: "Can't cancel: the draw came in, or 24 hours haven't passed.",
   RoyaltyTooHigh: "The royalty can be at most 10%.",
   TooMany: "Too many packs for this Series.",
   BadWeights: "Character odds need one weight per character, each at least 1.",
@@ -84,6 +84,7 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   NotEditor: INTERNAL,
   NotOnSale: "This issue isn't on sale right now.",
   OutOfBounds: "That setting is out of range.",
+  TooLate: "This issue opens within the hour, so only the owner can change it now.",
 
   // profiles (FireProfiles)
   BadName: "Names are 1-20 letters, numbers or symbols, with single spaces between words.",

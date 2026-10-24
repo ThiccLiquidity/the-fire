@@ -45,7 +45,7 @@ const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a
 // ---------- the view (declared before fit() runs)
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 let dpr = 1, scale = 1, ox = 0, oy = 0;
-let plateCache = null, plateHi = null, packSpr = null, rollBuf = [];
+let plateCache = null, plateHi = null, packSpr = null, rollBuf = [], brandK = 0; // brandK: the scale PLANK and PAPER were last baked at
 let view = { x: 0, y: 0, w: innerWidth, h: innerHeight, mode: 'contain', focus: 0.5, follow: false }; // CSS px box the scene draws into
 // the follow camera (cover mode with follow:true, i.e. phones held upright): pans and gently zooms onto the action
 const ZMAX = 1.6, CAM_HOLD = 2.5, CAM_MANUAL = 6;
@@ -65,7 +65,7 @@ function fit() {
   cam.homeX = (bx + bw / 2 - ox) / scale; cam.homeY = (by + bh / 2 - oy) / scale;
   if (!cam.on) { Object.assign(cam, { x: cam.homeX, y: cam.homeY, lz: 0, vx: 0, vy: 0, vz: 0, gx: cam.homeX, gy: cam.homeY, gz: 0, fvx: 0, fvy: 0 }); }
   curS = scale; curOX = ox; curOY = oy;
-  plateCache = null; plateHi = null; packSpr = null; rollBuf = [];
+  plateCache = null; plateHi = null; packSpr = null; rollBuf = []; brandK = 0;
   // the view grew past the plate's size (a bigger window, the zoomed camera): load the next one up, swap it in when it's here
   const want = plateFor(SW * scale * (view.follow ? ZMAX : 1));
   if (want > plateW && !fit.loading) { fit.loading = true; load(plateFile(want)).then((im) => { fit.loading = false; if (im && want > plateW) { plateW = want; img.plate = im; plateCache = plateHi = null; } }); }
@@ -196,6 +196,85 @@ const PADLOCK = [1290, 1528];
 const TOPROLL = { cx: 2268, cy: 147, R: 59, nip: 206 }; // the small top roll of the press; PAPER is drawn into its nip
 const BELT_SKEW = 0.2; // the slats' lean: the belt's top surface in perspective
 const CHUTE_A = -1.13; // logs lie along the chute (its slope), butt end down toward us
+
+// ---------- PLANK and PAPER in the workshop (owner-approved placements; the characters' own art, no new art):
+// PLANK now and then rides the belt toward the drum and hops off; PAPER now and then peeks up out of the press's roll;
+// PLANK holds a wooden BURN sign (drawn here) by the ash bin. Each is baked once per view size, warmed and dimmed to the
+// room like the mocks; per frame it's a drawImage or two. Reduced motion: PLANK stands still on the belt, PAPER stays up.
+const BRAND = {}; // the two characters (ui/brand/*-256.webp), loaded after the scene's own art, never awaited
+for (const k of ['plank', 'paper']) { const im = new Image(); im.decoding = 'async'; im.onload = () => { BRAND[k] = im; brandK = 0; }; im.src = 'ui/brand/' + k + '-256.webp'; }
+const RIDE = { y: 1014, h: 196, rot: -0.07, from: 2470, to: 3190, perch: 2846 }; // on the belt (base y), scene px
+const PEEK = { x: 2297, y: 773, h: 203 }; // PAPER: up from behind the press housing, in front of the lower roll (y: its edge)
+const SIGN = { x: 676, y: 1447, h: 245, rot: 0.105, sx: 588, sy: 1112, srot: -0.14 }; // PLANK by the ash bin; the sign's centre
+const G_SHADOW = glowSprite([[0, 'rgba(0,0,0,.55)'], [1, 'rgba(0,0,0,0)']], 64);
+const brand = { plank: null, peek: null, burn: null, sign: null };
+function bakeBrand() { // the characters at the size this view draws them (sharp under the zoomed camera too)
+  const k = Math.min(1, scale * (view.follow ? ZMAX : 1)) || 0.5; brandK = k;
+  const warm = (im, h, light) => { const H = Math.max(8, Math.round(h * k * 1.15)), W = Math.round(H * im.width / im.height), c = prescale(im, W, H), g = c.getContext('2d');
+    if (CAN_FILTER) { const t = mk(W, H), tg = t.getContext('2d'); tg.filter = 'brightness(.86) saturate(.92) sepia(.12)'; tg.drawImage(c, 0, 0); g.clearRect(0, 0, W, H); g.drawImage(t, 0, 0); }
+    else { g.globalCompositeOperation = 'multiply'; g.fillStyle = 'rgb(222,205,186)'; g.fillRect(0, 0, W, H); g.globalCompositeOperation = 'destination-in'; g.drawImage(prescale(im, W, H), 0, 0); }
+    if (light) { g.globalCompositeOperation = 'source-atop'; const gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, light); gr.addColorStop(0.55, 'rgba(255,130,50,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, H); } // the fire's light on its near side
+    g.globalCompositeOperation = 'source-over'; c.dw = h * im.width / im.height; c.dh = h; return c; };
+  brand.plank = BRAND.plank ? warm(BRAND.plank, RIDE.h) : null;
+  brand.burn = BRAND.plank ? warm(BRAND.plank, SIGN.h, 'rgba(255,130,50,.2)') : null;
+  brand.peek = BRAND.paper ? warm(BRAND.paper, PEEK.h) : null;
+  // the sign: a plank of wood on a post, BURN in the display face (as the mock), lit like the room
+  const s = k * 1.15, BW = 250, BH = 78, PH = 150, c = mk((BW + 20) * s, (BH + PH + 20) * s), g = c.getContext('2d');
+  g.scale(s, s); g.translate(10, 10);
+  g.fillStyle = '#5a3818'; g.strokeStyle = '#1b0f06'; g.lineWidth = 4; g.fillRect(BW / 2 - 7, BH - 6, 14, PH); g.strokeRect(BW / 2 - 7, BH - 6, 14, PH); // the post
+  g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 12; g.shadowOffsetY = 6;
+  const gr = g.createLinearGradient(0, 0, 0, BH); gr.addColorStop(0, '#8a5a2b'); gr.addColorStop(1, '#6b4220');
+  g.fillStyle = gr; g.beginPath(); if (g.roundRect) g.roundRect(0, 0, BW, BH, 12); else g.rect(0, 0, BW, BH); g.fill(); g.shadowColor = 'transparent';
+  g.lineWidth = 7; g.stroke();
+  g.strokeStyle = 'rgba(40,20,8,.35)'; g.lineWidth = 2; for (const y of [22, 41, 60]) { g.beginPath(); g.moveTo(14, y); g.bezierCurveTo(80, y - 4, 160, y + 4, BW - 14, y - 1); g.stroke(); } // grain
+  g.fillStyle = '#ffd59a'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '400 49px "Russo One", "Arial Black", sans-serif';
+  if ('letterSpacing' in g) g.letterSpacing = '3px'; g.fillText('BURN', BW / 2, BH / 2 + 2);
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-atop'; g.fillStyle = 'rgba(40,24,12,.14)'; g.fillRect(0, 0, c.width, c.height); // into the room's light
+  c.dw = BW + 20; c.dh = BH + PH + 20; c.ax = 10 + BW / 2; c.ay = 10 + BH / 2; brand.sign = c;
+}
+function drawFig(spr, x, y, rot, a = 1, shadow = 1, sw = 1.25) { // a figure standing at (x, y) (its base centre), with a soft contact shadow
+  if (!spr) return;
+  if (shadow > 0) { const w = spr.dw * sw, h = Math.max(22, spr.dw * 0.2); ctx.save(); ctx.globalAlpha = a * shadow; ctx.translate(x + 6, y - 2); ctx.transform(1, 0, BELT_SKEW * 0.5, 1, 0, 0); ctx.drawImage(G_SHADOW, -w / 2, -h / 2, w, h); ctx.restore(); }
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(x, y); ctx.rotate(rot); ctx.drawImage(spr, -spr.dw / 2, -spr.dh, spr.dw, spr.dh); ctx.restore();
+}
+// PLANK's ride: every so often (never while packs are coming) he hops on past the press, rides with the belt and hops off near the drum
+const rider = { x: -1, t: 0, next: 9 + Math.random() * 6, off: -1 };
+function drawRider(dt, busy) {
+  if (!brand.plank) return;
+  if (RM) return drawFig(brand.plank, RIDE.perch, RIDE.y, RIDE.rot); // still: standing on the belt
+  if (rider.x < 0) {
+    if (now < rider.next) return;
+    if (busy) { rider.next = now + 8; return; } // packs on the belt: later
+    Object.assign(rider, { x: RIDE.from, t: 0, off: -1 });
+  }
+  rider.t += dt;
+  const P = G.belt.period, on = smooth(0, 0.45, rider.t), hopIn = rider.t < 0.45 ? Math.sin(rider.t / 0.45 * Math.PI) * 26 * (1 - rider.t / 0.45) : 0;
+  if (rider.t > 0.3) rider.x += dt * beltSp * 190; // he rides at the belt's speed
+  if (rider.off < 0 && rider.x >= RIDE.to) rider.off = rider.t;
+  let lift = hopIn, a = on, dx = 0, rot = RIDE.rot + Math.sin(beltX / P * Math.PI * 2) * 0.012; // a slight rock with the slats
+  if (rider.off >= 0) { const u = (rider.t - rider.off) / 0.7; if (u >= 1) { rider.x = -1; rider.next = now + 40 + Math.random() * 35; return; }
+    lift = Math.sin(Math.min(1, u * 1.15) * Math.PI) * 70; dx = 90 * u; a = 1 - smooth(0.45, 1, u); rot += 0.25 * u; } // hops off, away out of sight
+  drawFig(brand.plank, rider.x + dx, RIDE.y - lift, rot, a, 1 - Math.min(1, lift / 90) * 0.7);
+}
+// PAPER's peek: up from behind the press housing, a look around, back down; every half a minute or so
+const peek = { t0: 6 + Math.random() * 5 };
+function drawPeek() {
+  const spr = brand.peek; if (!spr) return;
+  let up = 1, tilt = 0;
+  if (!RM) { const t = now - peek.t0, D = 5.2;
+    if (t < 0) return;
+    if (t > D) { peek.t0 = now + 22 + Math.random() * 20; return; }
+    up = smooth(0, 0.9, t) * (1 - smooth(D - 0.8, D, t)); tilt = Math.sin(Math.max(0, t - 1) * 2.2) * 0.06 * smooth(1, 1.6, t) * (1 - smooth(D - 1.2, D - 0.8, t)); }
+  if (up <= 0.001) return;
+  ctx.save(); ctx.beginPath(); ctx.rect(PEEK.x - 200, PEEK.y - PEEK.h - 60, 400, PEEK.h + 60); ctx.clip(); // the housing's edge hides the rest
+  drawFig(spr, PEEK.x, PEEK.y + PEEK.h * 0.22 + (1 - up) * PEEK.h * 0.8, tilt, 1, 0);
+  ctx.restore();
+}
+function drawSign() { // PLANK holding the BURN sign by the ash bin (still)
+  const s = brand.sign; if (!s) return;
+  ctx.save(); ctx.translate(SIGN.sx, SIGN.sy); ctx.rotate(SIGN.srot); ctx.drawImage(s, -s.ax, -s.ay, s.dw, s.dh); ctx.restore();
+  drawFig(brand.burn, SIGN.x, SIGN.y, SIGN.rot, 1, 1, 1.1);
+}
 
 // ---------- made-once sprites
 const G_ROOM = glowSprite([[0, 'rgba(255,120,40,1)'], [30 / 820, 'rgba(255,120,40,1)'], [1, 'rgba(255,90,20,0)']]);
@@ -869,8 +948,12 @@ function frame(tms) {
   if (!(hi ? plateHi : plateCache)) { const k = hi ? scale * ZMAX : scale, c = mk(SW * k, SH * k);
     const pg = c.getContext('2d'); pg.imageSmoothingQuality = 'high'; pg.drawImage(img.plate, 0, 0, c.width, c.height); if (hi) plateHi = c; else plateCache = c; } // the plate, scaled once per resize (and once more for the zoomed camera)
   ctx.drawImage(hi ? plateHi : plateCache, 0, 0, SW, SH);
+  if (brandK === 0 && (BRAND.plank || BRAND.paper)) bakeBrand();
   drawRolls();
+  drawPeek();
   drawBelt(dt);
+  drawRider(dt, queue > 0 || packs.length > 0);
+  drawSign();
   drawEngine();
   const base = 0.85 + 0.15 * Math.sin(now * 7.3) * Math.sin(now * 3.1) + flare * 0.35;
   const fl = base * (1 - bank) + (0.45 + 0.05 * Math.sin(now * 1.7)) * bank;
@@ -909,6 +992,8 @@ window.Scene = {
   toScreen(x, y) { return [(curOX + x * curS) / dpr, (curOY + y * curS) / dpr]; },
   get scale() { return scale / dpr; },
   get reducedMotion() { return RM; },
+  // PLANK and PAPER (test hook and the fun layer): ready once both are baked; ride() / peek() start one now
+  brand: { get ready() { return !!(brand.plank && brand.peek && brand.burn && brand.sign); }, ride() { rider.x = -1; rider.next = now; }, peek() { peek.t0 = now; } },
   debug() { return { packs: packs.length, caps: caps.length, cards: cardsIn.length, puffs: puffs.length, now }; },
 };
 window.dispatchEvent(new Event('scene-ready'));

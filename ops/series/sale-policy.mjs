@@ -21,6 +21,8 @@
 // FireSale.DropConfig's and FireGroups.Group's (the recipe's "sale" block, contracts/test/cards/recipe-studio-sale.json).
 import { getAddress, formatUnits, zeroAddress } from "viem";
 import { saleAbi, groupsAbi, GATES, NONE } from "./sale-abi.mjs";
+// The numbers, shared with the Card Studio's Sale tab (studio/src/salePolicy.ts): one source of truth.
+import BOUNDS from "./sale-policy-bounds.json" with { type: "json" };
 
 export const RULES = {
   price: "a group's price is $1 to $10, or 0 for a holders' group",
@@ -35,7 +37,7 @@ export const RULES = {
   idle: "an unlimited group's idle is 1 h or less",
 };
 
-const USD = 100_000_000n; // FireSale's dollars have 8 decimals
+const B = Object.fromEntries(Object.entries(BOUNDS).filter(([k]) => !k.startsWith("_")).map(([k, v]) => [k, BigInt(v)]));
 const ZERO_ROOT = /^0x0{64}$/i;
 const big = (v) => BigInt(v ?? 0);
 export const DROP_FIELDS = ["start", "packs", "plankBurnBps", "paperBurnBps", "paperCapUsd", "maxPerTx", "regularWalletsFor", "creditsPerPick",
@@ -110,29 +112,29 @@ export function salePolicy(sale0, { allow = new Set(), roots, nftCode = {}, mill
   };
   const plankBps = sale.plankBurnBps;
   const paperBps = sale.paperBurnBps;
-  rule("burn-total", plankBps + paperBps >= 1000n && plankBps + paperBps <= 10000n, `burns ${pct(plankBps + paperBps)} of each sale (PLANK ${pct(plankBps)} + PAPER ${pct(paperBps)})`);
-  rule("paper-burn", paperBps >= 1000n, `PAPER buy-and-burn ${pct(paperBps)} of each sale`);
+  rule("burn-total", plankBps + paperBps >= B.burnTotalBpsMin && plankBps + paperBps <= B.burnTotalBpsMax, `burns ${pct(plankBps + paperBps)} of each sale (PLANK ${pct(plankBps)} + PAPER ${pct(paperBps)})`);
+  rule("paper-burn", paperBps >= B.paperBurnBpsMin, `PAPER buy-and-burn ${pct(paperBps)} of each sale`);
   const cap = sale.paperCapUsd;
   if (cap === 0n) rule("paper-cap", false, "no dollar cap on a pack's PAPER (paperCapUsd 0)", { warnOnly: true });
-  else rule("paper-cap", cap >= USD / 10n, `a pack's PAPER is capped at ${usd(cap)}`);
+  else rule("paper-cap", cap >= B.paperCapUsdMin, `a pack's PAPER is capped at ${usd(cap)}`);
   sale.groups.forEach((g, i) => {
     const n = NAME(g, i);
     const holders = g.gate === "nft" || g.gate === "snapshot";
     if (g.gate === "open" && g.priceUsd === 0n && g.paper === 0n) rule("free-open", false, `${n}: free packs open to everyone`, { hard: true });
     if (g.priceUsd === 0n) rule("price", holders, `${n}: no dollar price${holders ? ` (a holders' group: ${g.paper === 0n ? "free" : "PAPER only"})` : " in an open group"}`);
-    else rule("price", g.priceUsd >= 1n * USD && g.priceUsd <= 10n * USD, `${n}: ${usd(g.priceUsd)} a pack`);
+    else rule("price", g.priceUsd >= B.priceUsdMin && g.priceUsd <= B.priceUsdMax, `${n}: ${usd(g.priceUsd)} a pack`);
     if (g.paper === 0n) rule("no-paper", false, `${n}: no PAPER per pack (paper 0)`);
-    else rule("paper-per-pack", g.paper >= 10n ** 17n, `${n}: ${paper(g.paper)} per pack`);
+    else rule("paper-per-pack", g.paper >= B.paperPerPackMin, `${n}: ${paper(g.paper)} per pack`);
     if (g.perWallet === 0n) {
       const fine = g.unlimited || holders;
       rule("wallet-limit", fine, `${n}: no wallet limit${g.unlimited ? " (an unlimited group: its rising price limits it)" : holders ? ` (the gate limits it: ${g.gate === "nft" ? `${g.perNft} per NFT` : "each wallet's snapshot allowance"})` : ""}`, { warnOnly: true });
-    } else rule("wallet-limit", g.perWallet <= 50n, `${n}: ${g.perWallet} packs per wallet${g.limitFor ? ` for the first ${dur(g.limitFor)}` : ""}`);
+    } else rule("wallet-limit", g.perWallet <= B.perWalletMax, `${n}: ${g.perWallet} packs per wallet${g.limitFor ? ` for the first ${dur(g.limitFor)}` : ""}`);
     if (g.limitFor !== 0n) {
       if (g.perWallet === 0n) rule("limit-lifts", false, `${n}: limitFor ${dur(g.limitFor)} with no per-wallet limit to lift`, { hard: true });
-      else rule("limit-lifts", g.limitFor >= 3600n && g.limitFor <= 7n * 86400n, `${n}: the per-wallet limit lifts ${dur(g.limitFor)} after it opens, then no limit`);
+      else rule("limit-lifts", g.limitFor >= B.limitForMin && g.limitFor <= B.limitForMax, `${n}: the per-wallet limit lifts ${dur(g.limitFor)} after it opens, then no limit`);
     }
-    if (g.taxBps !== 0n) rule("tax", g.taxBps <= 1000n, `${n}: the price rises ${pct(g.taxBps)} a pack`, { warnOnly: true });
-    if (g.unlimited) rule("idle", g.idle !== 0n && g.idle <= 3600n, `${n}: no pack count, ends ${g.idle === 0n ? "never by idling (the contract refuses it)" : `${dur(g.idle)} after its last sale`}`, { warnOnly: g.idle !== 0n, hard: g.idle === 0n });
+    if (g.taxBps !== 0n) rule("tax", g.taxBps <= B.taxBpsMax, `${n}: the price rises ${pct(g.taxBps)} a pack`, { warnOnly: true });
+    if (g.unlimited) rule("idle", g.idle !== 0n && g.idle <= B.idleMax, `${n}: no pack count, ends ${g.idle === 0n ? "never by idling (the contract refuses it)" : `${dur(g.idle)} after its last sale`}`, { warnOnly: g.idle !== 0n, hard: g.idle === 0n });
     if (g.gate === "snapshot") rule("snapshot-root", !ZERO_ROOT.test(g.root), `${n}: snapshot root ${ZERO_ROOT.test(g.root) ? "missing (take the snapshot: GROUP_ROOT_" + i + ")" : g.root}`, { hard: true });
     if (g.gate === "nft" && nftCode[i] !== undefined) rule("nft-code", nftCode[i], `${n}: NFT ${g.nft} ${nftCode[i] ? "is a contract" : "has no code"}`, { hard: true });
   });

@@ -282,14 +282,16 @@ export function percentTotalProblem(t: PercentTotal, what: string): string | nul
     : `${what} add up to ${formatPercent(t.total)}%: they must add up to exactly 100% (${formatPercent(-t.left)}% too much).`
 }
 
-/** The one-click fix: the one with the biggest share takes what's left (or gives up the extra). Its index and new
+/** The one-click fix: the one with the biggest share takes what's left (or gives up the extra), never the one the
+ *  owner just edited (`lastEdited`, when there are others: the fix would undo that edit). Its index and new
  *  percentage, or null when the total is already 100%, a percentage isn't a number, or the fix would leave it at 0 or
  *  below. */
-export function fillTheRest(percents: readonly (string | undefined)[]): { index: number; percent: string } | null {
+export function fillTheRest(percents: readonly (string | undefined)[], lastEdited?: number): { index: number; percent: string } | null {
   const t = percentTotal(percents)
   if (t.bad.length || t.left === 0 || !percents.length) return null
   const vals = percents.map((p) => parsePercent(p) ?? 0)
-  const index = vals.reduce((b, v, j) => (v > vals[b] ? j : b), 0)
+  const skip = lastEdited !== undefined && lastEdited >= 0 && lastEdited < vals.length && vals.length > 1 ? lastEdited : -1
+  const index = vals.reduce((b, v, j) => (j === skip ? b : b === skip || v > vals[b] ? j : b), skip === 0 ? 1 : 0)
   const next = vals[index] + t.left
   return next > 0 && next <= ALL ? { index, percent: formatPercent(next) } : null
 }

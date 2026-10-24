@@ -186,7 +186,7 @@ only.
 **Run one pass by hand** (from the repository, with Node 22):
 ```powershell
 cd ops\keeper; npm ci
-$env:RPC_URL = Read-Host "RPC URL"
+$s = Read-Host "RPC URL" -AsSecureString; $env:RPC_URL = [System.Net.NetworkCredential]::new("", $s).Password
 $k = Read-Host "Keeper key" -AsSecureString
 $env:KEEPER_PRIVATE_KEY = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($k))
 $env:ONCE = "1"; node src/keeper.mjs

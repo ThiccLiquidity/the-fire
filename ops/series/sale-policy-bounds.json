@@ -1,0 +1,15 @@
+{
+  "_about": "The sale policy's bounds, in contract units: ops/series/sale-policy.mjs (launch.mjs, VerifySeries) and the Card Studio's Sale tab (studio/src/salePolicy.ts) both read this file. Dollars have 8 decimals, PAPER 18, shares are basis points, times are seconds.",
+  "priceUsdMin": 100000000,
+  "priceUsdMax": 1000000000,
+  "burnTotalBpsMin": 1000,
+  "burnTotalBpsMax": 10000,
+  "paperBurnBpsMin": 1000,
+  "paperPerPackMin": "100000000000000000",
+  "paperCapUsdMin": 10000000,
+  "perWalletMax": 50,
+  "limitForMin": 3600,
+  "limitForMax": 604800,
+  "taxBpsMax": 1000,
+  "idleMax": 3600
+}

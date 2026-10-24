@@ -18,6 +18,7 @@ import {PlankBurner} from "../src/cards/PlankBurner.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
 import {PlankUsdTwap} from "../src/PlankUsdTwap.sol";
 import {PaperUsdTwap} from "../src/PaperUsdTwap.sol";
+import {MorningWood} from "../src/press/MorningWood.sol";
 
 interface IOwnable2 {
     function owner() external view returns (address);
@@ -26,6 +27,19 @@ interface IOwnable2 {
 
 interface IVFeed {
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80);
+}
+
+interface IVToken {
+    function decimals() external view returns (uint8);
+}
+
+interface IVPair {
+    function token0() external view returns (address);
+    function token1() external view returns (address);
+}
+
+interface IVRoyalty {
+    function royaltyInfo(uint256, uint256) external view returns (address, uint256);
 }
 
 /**
@@ -38,6 +52,10 @@ interface IVFeed {
  *
  * The expected owner is the deployments file's OWNER (an OWNER setting overrides it). SERIES=7,8 limits the Series
  * checked (default: ids 0..SERIES_SCAN, 64). Nothing is sent and no key is needed.
+ *
+ * KEEPERS (the keeper addresses, comma-separated, as given to DeployCards) must be set: the file doesn't record them,
+ * and without them nobody is checked to be allowed to flush PaperBurner (FAIL). ROYALTY_BPS (as given to DeployCards)
+ * and EDITOR (the Morning Wood editor, as given to DeployPress) are checked when set.
  */
 contract VerifyDeploy is Deployments {
     uint256 internal fails;
@@ -78,6 +96,12 @@ contract VerifyDeploy is Deployments {
         _feeds();
         _locks();
         _profiles();
+        _tokens();
+        _twaps();
+        _drandRouter();
+        _royalties();
+        _psaSettings();
+        _press(owner);
         console.log(string.concat("\n", vm.toString(fails), " FAIL, ", vm.toString(waits), " WAIT"));
         if (fails > 0) revert("VerifyDeploy: FAIL");
     }
@@ -177,15 +201,167 @@ contract VerifyDeploy is Deployments {
         _ok(burner.routesOf(PaperBurner.Pay.ETH).length > 0 && burner.routesOf(PaperBurner.Pay.PLANK).length > 0, "PaperBurner has ETH and PLANK routes");
         _ok(burner.flusher(address(psa)), "FirePsa may flush PaperBurner");
         address[] memory keepers = vm.envOr("KEEPERS", ",", new address[](0));
-        if (keepers.length == 0) _wait("KEEPERS not set here: check the keepers may flush PaperBurner (PaperBurner.flusher)");
-        for (uint256 i; i < keepers.length; i++) _ok(burner.flusher(keepers[i]), "a keeper in KEEPERS may flush PaperBurner");
-        address royaltyTo = deployedInput("ROYALTY_RECEIVER");
-        if (royaltyTo != address(0)) {
-            (address r1,) = FireCards(deployed("FireCards")).royaltyInfo(1, 10_000);
-            (address r2,) = FirePacks(deployed("FirePacks")).royaltyInfo(1, 10_000);
-            _eq(r1, royaltyTo, "FireCards royalty goes to ROYALTY_RECEIVER");
-            _eq(r2, royaltyTo, "FirePacks royalty goes to ROYALTY_RECEIVER");
+        if (keepers.length == 0) {
+            _ok(false, "KEEPERS not set here, so the keepers' flush rights weren't checked: set $env:KEEPERS = \"<main>,<backup>\" (the keeper addresses given to DeployCards) and run again");
         }
+        for (uint256 i; i < keepers.length; i++) _ok(burner.flusher(keepers[i]), "a keeper in KEEPERS may flush PaperBurner");
+    }
+
+    /// Royalty receivers and rates (FireCards, FirePacks, MorningWood): to ROYALTY_RECEIVER, at most 10%, and at
+    /// ROYALTY_BPS when it is set here (MorningWood starts at 2.5%).
+    function _royalties() internal {
+        address royaltyTo = deployedInput("ROYALTY_RECEIVER");
+        uint256 want = vm.envOr("ROYALTY_BPS", type(uint256).max);
+        string[3] memory names = ["FireCards", "FirePacks", "MorningWood"];
+        for (uint256 i; i < names.length; i++) {
+            address a = deployed(names[i]);
+            if (a == address(0)) continue;
+            (address to, uint256 bps) = IVRoyalty(a).royaltyInfo(1, 10_000);
+            if (royaltyTo != address(0)) _eq(to, royaltyTo, string.concat(names[i], " royalty goes to ROYALTY_RECEIVER"));
+            bool cards = i < 2;
+            if (cards && want != type(uint256).max) {
+                _ok(bps == want, string.concat(names[i], " royalty is ROYALTY_BPS (", vm.toString(bps), " bps)"));
+            } else {
+                _ok(bps <= 1_000, string.concat(names[i], " royalty at most 10% (", vm.toString(bps), " bps)"));
+            }
+        }
+        if (want == type(uint256).max) console.log("INFO  ROYALTY_BPS not set here: royalty rates checked only against the 10% cap");
+    }
+
+    function _tokenEq(address a, string memory input, string memory what) internal {
+        address want = deployedInput(input);
+        if (want == address(0) && a == address(0)) return; // e.g. no USDG on this chain
+        _eq(a, want, string.concat(what, " is ", input));
+    }
+
+    function _unitOk(uint256 unit, string memory what) internal {
+        address usdg = deployedInput("USDG");
+        uint256 want = usdg == address(0) ? 0 : 10 ** IVToken(usdg).decimals();
+        _ok(unit == want, string.concat(what, ".USDG_UNIT matches USDG's decimals (", vm.toString(unit), ")"));
+    }
+
+    /// The token immutables against the inputs: PlankBurner has no withdraw, so a wrong token there traps its share.
+    function _tokens() internal {
+        FireSale sale = FireSale(payable(deployed("FireSale")));
+        PaperBurner burner = PaperBurner(payable(deployed("PaperBurner")));
+        PlankBurner pb = PlankBurner(payable(deployed("PlankBurner")));
+        FirePsa psa = FirePsa(payable(deployed("FirePsa")));
+        _tokenEq(address(sale.PAPER()), "PAPER", "FireSale.PAPER");
+        _tokenEq(address(sale.PLANK()), "PLANK", "FireSale.PLANK");
+        _tokenEq(address(sale.USDG()), "USDG", "FireSale.USDG");
+        _tokenEq(sale.WETH(), "WETH", "FireSale.WETH");
+        _unitOk(sale.USDG_UNIT(), "FireSale");
+        _tokenEq(address(burner.PAPER()), "PAPER", "PaperBurner.PAPER");
+        _tokenEq(address(burner.PLANK()), "PLANK", "PaperBurner.PLANK");
+        _tokenEq(address(burner.USDG()), "USDG", "PaperBurner.USDG");
+        _tokenEq(burner.WETH(), "WETH", "PaperBurner.WETH");
+        _unitOk(burner.USDG_UNIT(), "PaperBurner");
+        _tokenEq(address(pb.PLANK()), "PLANK", "PlankBurner.PLANK");
+        _tokenEq(address(pb.USDG()), "USDG", "PlankBurner.USDG");
+        _tokenEq(pb.WETH(), "WETH", "PlankBurner.WETH");
+        _unitOk(pb.USDG_UNIT(), "PlankBurner");
+        _tokenEq(address(psa.PLANK()), "PLANK", "FirePsa.PLANK");
+        _tokenEq(address(psa.USDG()), "USDG", "FirePsa.USDG");
+        if (deployedInput("USDG") != address(0)) {
+            _ok(burner.routesOf(PaperBurner.Pay.USDG).length > 0, "PaperBurner has USDG routes (USDG fees get burned)");
+        }
+    }
+
+    /// The price feeds are built on the recorded pool, tokens and ETH/USD feed (DeployCards.check, after the fact).
+    function _twaps() internal {
+        PlankUsdTwap pt = PlankUsdTwap(deployed("PlankUsdTwap"));
+        PaperUsdTwap ppt = PaperUsdTwap(deployed("PaperUsdTwap"));
+        address pair = address(pt.PAIR());
+        if (deployedInput("PLANK_WETH_V2_PAIR") != address(0)) _tokenEq(pair, "PLANK_WETH_V2_PAIR", "PlankUsdTwap.PAIR");
+        (address t0, address t1) = (IVPair(pair).token0(), IVPair(pair).token1());
+        (address plank, address weth) = (deployedInput("PLANK"), deployedInput("WETH"));
+        _ok((t0 == plank && t1 == weth) || (t0 == weth && t1 == plank), "PlankUsdTwap's pool is PLANK/WETH");
+        _ok(pt.PLANK_IS_TOKEN0() == (t0 == plank), "PlankUsdTwap reads the PLANK side of its pool");
+        _tokenEq(address(pt.ETH_USD()), "ETH_USD_FEED", "PlankUsdTwap.ETH_USD");
+        _tokenEq(ppt.PAPER(), "PAPER", "PaperUsdTwap.PAPER");
+        _tokenEq(ppt.WETH(), "WETH", "PaperUsdTwap.WETH");
+        _tokenEq(ppt.USDG(), "USDG", "PaperUsdTwap.USDG");
+        _tokenEq(ppt.PLANK(), "PLANK", "PaperUsdTwap.PLANK");
+        _tokenEq(address(ppt.ETH_USD()), "ETH_USD_FEED", "PaperUsdTwap.ETH_USD");
+        _eq(address(ppt.PLANK_USD()), address(pt), "PaperUsdTwap.PLANK_USD is PlankUsdTwap");
+        if (deployedInput("UNIV2_FACTORY") != address(0)) _tokenEq(address(ppt.FACTORY()), "UNIV2_FACTORY", "PaperUsdTwap.FACTORY");
+        _ok(IVToken(address(pt)).decimals() == 18 && IVToken(address(ppt)).decimals() == 18, "PLANK/USD and PAPER/USD have 18 decimals");
+        address ethUsd = deployedInput("ETH_USD_FEED");
+        if (ethUsd != address(0)) _ok(IVToken(ethUsd).decimals() == 8, "ETH_USD_FEED has 8 decimals");
+    }
+
+    function _uintAt(address a, bytes memory call) internal view returns (bool ok, uint256 v) {
+        bytes memory ret;
+        (ok, ret) = a.staticcall(call);
+        ok = ok && ret.length == 32;
+        if (ok) v = abi.decode(ret, (uint256));
+    }
+
+    /// The randomness is permanent: the router must be the OpenDrandRouter (no fee, drand quicknet, 90 s delay).
+    function _drandRouter() internal {
+        address router = deployed("OpenDrandRouter");
+        (bool ok1, uint256 fee) = _uintAt(router, abi.encodeWithSignature("requestFee()"));
+        (bool ok2, uint256 chainHash) = _uintAt(router, abi.encodeWithSignature("CHAIN_HASH()"));
+        (bool ok3, uint256 delay) = _uintAt(router, abi.encodeWithSignature("MIN_DELAY()"));
+        (bool ok4, uint256 period) = _uintAt(router, abi.encodeWithSignature("PERIOD()"));
+        (bool ok5, uint256 genesis) = _uintAt(router, abi.encodeWithSignature("GENESIS()"));
+        _ok(ok1 && ok2 && ok3 && ok4 && ok5 && fee == 0 && chainHash == 0x04f1e9062b8a81f848fded9c12306733282b2727ecced50032187751166ec8c3
+            && delay == 90 && period == 3 && genesis == 1727521075,
+            "OpenDrandRouter is the real one (no fee, drand quicknet, 90 s delay)");
+    }
+
+    /// FirePsa's batch size and prices: within the contract's bounds, and the defaults unless changed on purpose.
+    function _psaSettings() internal {
+        FirePsa psa = FirePsa(payable(deployed("FirePsa")));
+        (uint256 b, uint256 c, uint256 g) = (psa.maxBatch(), psa.caseUsd18(), psa.gradeUsd18());
+        _ok(b > 0 && b <= psa.MAX_BATCH_CAP() && c > 0 && g > 0 && c <= psa.MAX_PRICE_USD18() && g <= psa.MAX_PRICE_USD18(),
+            string.concat("FirePsa: up to ", vm.toString(b), " cards a batch, case $", _usd18(c), ", grade $", _usd18(g)));
+        if (b != 20 || c != 0.05e18 || g != 1e18) _wait("FirePsa batch size or prices changed from the defaults (20, $0.05, $1): check that was meant");
+    }
+
+    /// The Morning Wood (DeployPress): owner, editor, where its money goes, its ETH/USD feed, its tokens and prices.
+    function _press(address owner) internal {
+        address a = deployed("MorningWood");
+        if (a == address(0)) {
+            _wait("MorningWood not deployed (script/DeployPress.s.sol:DeployPress)");
+            return;
+        }
+        MorningWood press = MorningWood(payable(a));
+        _ok(a.code.length > 0, string.concat("MorningWood has code at ", vm.toString(a)));
+        if (press.owner() == owner) _ok(press.pendingOwner() == address(0), "MorningWood owned by the hardware wallet, nothing pending");
+        else if (press.pendingOwner() == owner) _wait("MorningWood: the hardware wallet still has to accept (script/DeployPress.s.sol:AcceptPress)");
+        else _ok(false, string.concat("MorningWood owner is ", vm.toString(press.owner()), ", not the hardware wallet"));
+        address editor = vm.envOr("EDITOR", address(0));
+        if (editor != address(0)) _eq(press.editor(), editor, "MorningWood.editor is EDITOR");
+        else if (press.editor() == address(0)) _wait("MorningWood has no editor yet (the owner calls setEditor)");
+        else console.log(string.concat("INFO  MorningWood.editor is ", vm.toString(press.editor()), " (set EDITOR here to check it)"));
+        _ok(press.editor() != owner || owner == address(0), "MorningWood.editor is not the owner's hardware wallet");
+        _eq(press.paperBurner(), deployed("PaperBurner"), "MorningWood pays PaperBurner");
+        address ethUsd = deployedInput("ETH_USD_FEED");
+        if (ethUsd != address(0)) _eq(address(press.ethUsd()), ethUsd, "MorningWood.ethUsd is ETH_USD_FEED");
+        _tokenEq(address(press.PAPER()), "PAPER", "MorningWood.PAPER");
+        _tokenEq(address(press.USDG()), "USDG", "MorningWood.USDG");
+        _unitOk(press.USDG_UNIT(), "MorningWood");
+        _ok(!press.paused(), "MorningWood not paused");
+        (uint256 pp, uint256 usd, uint256 lp) = (press.paperPerCopy(), press.usdPerCopy(), press.letterPaper());
+        _ok(pp <= press.MAX_PAPER() && usd <= press.MAX_USD8() && lp <= press.MAX_PAPER(), string.concat(
+            "MorningWood prices: ", _usd18(pp), " PAPER + $", _usd8(usd), " a copy, ", _usd18(lp), " PAPER a letter"));
+        if (pp != 1e18 || usd != 5e6 || lp != 1e18) _wait("MorningWood prices changed from the defaults (1 PAPER + $0.05, 1 PAPER): check that was meant");
+    }
+
+    /// 18-decimal amount as "1.25" (two places).
+    function _usd18(uint256 v) internal pure returns (string memory) {
+        uint256 cents = v / 1e16;
+        return _cents(cents);
+    }
+
+    function _usd8(uint256 v) internal pure returns (string memory) {
+        return _cents(v / 1e6);
+    }
+
+    function _cents(uint256 cents) internal pure returns (string memory) {
+        uint256 c = cents % 100;
+        return string.concat(vm.toString(cents / 100), ".", c < 10 ? "0" : "", vm.toString(c));
     }
 
     /// FireProfiles (names and profile pictures): optional, a deploy made before it existed adds it with

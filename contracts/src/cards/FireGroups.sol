@@ -178,7 +178,7 @@ contract FireGroups {
 
     /// @notice Set (or, before the drop opens, reset: FireSale checks that) a drop's groups. Reverts BadConfig for the
     ///         drop as a whole (1 to 6 groups, their packs adding up to `total` (unlimited groups have none: they add
-    ///         on top), a valid `creditGroup`) and
+    ///         on top), a valid `creditGroup`, which is neither taxed nor unlimited) and
     ///         BadGroup(i) for a group that's wrong.
     function configure(uint256 fire, uint64 start, uint64 total, Group[] calldata gs, uint8 creditGroup) external onlySale {
         uint256 n = gs.length;
@@ -192,6 +192,8 @@ contract FireGroups {
             groups[fire][i] = g;
         }
         if (sum != total || total == 0) revert BadConfig();
+        // free packs come from a fixed, untaxed group: they never move a taxed price or mint on top of the total
+        if (creditGroup != NONE && (gs[creditGroup].taxBps != 0 || gs[creditGroup].unlimited)) revert BadConfig();
         Sched storage s = sched[fire];
         s.start = start;
         s.count = uint8(n);

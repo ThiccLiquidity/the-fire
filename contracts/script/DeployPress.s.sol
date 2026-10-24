@@ -15,18 +15,22 @@ interface IPressFeedInfo {
  * PAPER, USDG and ETH_USD_FEED (the inputs) and PaperBurner (the contracts) from deployments/<chainId>.json, or the
  * same names in the environment.
  *
- *   forge script script/DeployPress.s.sol --rpc-url $env:RPC --account deployer --sender <deployer address> --slow --broadcast \
+ *   $env:EDITOR = "<editor address>"     (cast wallet address --account editor)
+ *   forge script script/DeployPress.s.sol:DeployPress --rpc-url $env:RPC --account deployer --sender <deployer address> --slow --broadcast \
  *     --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
  *   node ..\ops\deploy\record.mjs --rpc $env:RPC        (adds "MorningWood" to the deployments file)
- *   forge script script/DeployPress.s.sol:AcceptPress --rpc-url $env:RPC --ledger --sender <owner> --broadcast
+ *   forge script script/DeployPress.s.sol:AcceptPress --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH --sender $env:OWNER --slow --broadcast
+ *
+ * The file holds two scripts, so always name the one to run (":DeployPress" / ":AcceptPress"), or forge refuses
+ * ("Multiple contracts in the target path").
  *
  * Testnet: EXPECTED_CHAIN_ID=46630 (Robinhood Chain testnet), deployments/46630.json is read.
  *
  * Settings:
  *   OWNER             takes over after the deploy (two steps: AcceptPress below, signed on the hardware wallet).
  *                     Read from the deployments file when not set. Must not be the deployer.
- *   EDITOR            the nightly pipeline's key (Foundry keystore "editor"): it can only publish issues. Optional;
- *                     the owner can set it later (setEditor).
+ *   EDITOR            the nightly pipeline's key (Foundry keystore "editor"): it can only publish issues, at least an
+ *                     hour before they open (the owner's time to veto). Optional; the owner can set it later (setEditor).
  *   ROYALTY_RECEIVER  2.5% royalty (setRoyalty later, max 10%). Read from the deployments file when not set.
  *   PRESS_CONTRACT_URI  collection metadata (optional).
  *
@@ -64,7 +68,7 @@ contract DeployPress is Deployments {
         press = deploy(p);
         console.log("MorningWood", address(press));
         console.log("editor", p.editor);
-        console.log("Next: the OWNER accepts: forge script script/DeployPress.s.sol:AcceptPress --ledger --sender <owner> --broadcast");
+        console.log("Next: the OWNER accepts: forge script script/DeployPress.s.sol:AcceptPress --rpc-url <RPC> --ledger --hd-paths <OWNER_HD_PATH> --sender <owner> --slow --broadcast");
         _recordPress(address(press));
     }
 

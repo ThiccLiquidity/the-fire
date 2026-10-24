@@ -3,9 +3,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   EVERYONE_LIMIT_HOURS, GROUP_TEMPLATES, blankGroup, checkSale, creditPacksMax, dropPlan, giantSale, groupPacks, groupSummary, groupTimes, parseDecimal,
-  saleErrors, saleJson, saleOf, salePacks, saleWithPacks, standardSale, taxGrowthOk, taxedPrices,
+  creditGroupOk, saleErrors, saleJson, saleOf, salePacks, saleWithPacks, standardSale, taxGrowthOk, taxedPrices,
   type OldSaleSettings, type SaleGroup, type SaleSettings,
 } from './sale'
+import { salePolicy } from './salePolicy'
 
 const NOW = 1_800_000_000
 const withStart = (s: Partial<SaleSettings>): SaleSettings => ({ ...standardSale(), start: NOW + 3600, ...s })
@@ -43,12 +44,13 @@ describe('the Standard and Giant presets', () => {
     expect(j.groups[1].root).toBe('0x' + 'ab'.repeat(32)) // lower case
   })
 
-  it('Giant: 10,000 base packs, 100 per wallet and per purchase, 3 per Press', () => {
+  it('Giant: 10,000 base packs, 50 per wallet (the policy\'s most), 100 per purchase, 3 per Press', () => {
     const s = giantSale()
     expect(saleErrors({ ...s, start: NOW + 3600 }, NOW)).toEqual([])
     expect(groupPacks(s)).toEqual([1_000, 1_000, 8_000, 0])
     expect(saleJson(s)).toMatchObject({ packs: 10_000, maxPerTx: 100, creditPacksMax: 1_000, creditGroup: 2 })
-    expect(s.groups.map((x) => x.perWallet)).toEqual([0, 100, 100, 0])
+    expect(s.groups.map((x) => x.perWallet)).toEqual([0, 50, 50, 0])
+    expect(salePolicy(s)).toEqual([])
     expect(s.groups[0].perNft).toBe(3)
   })
 })
@@ -120,6 +122,13 @@ describe('the checks mirror ConfigureSeries and FireGroups.configure', () => {
     expect(errs({ creditPacksPerWallet: 1.5 })).toContain('creditPacksPerWallet')
     expect(errs({ creditGroup: 4 })).toContain('creditGroup')
     expect(errs({ creditGroup: -1 })).toEqual([]) // none: a warning only
+    // FireGroups refuses a taxed or unlimited credit group
+    expect(errs({ creditGroup: 3 })).toEqual(['creditGroup'])
+    expect(saleErrors(withStart({ creditGroup: 3 }), NOW)[0].message).toBe('Free packs need a fixed, untaxed group: After sell-out is unlimited.')
+    expect(errs({ ...g(2, { taxPercent: '1' }), creditGroup: 2 })).toContain('creditGroup')
+    expect(creditGroupOk(standardSale().groups[2])).toBe(true)
+    expect(creditGroupOk(standardSale().groups[3])).toBe(false)
+    expect(creditGroupOk(undefined)).toBe(false)
     expect(errs({ start: NOW + 366 * 86_400 })).toContain('start')
   })
 
@@ -136,8 +145,8 @@ describe('the checks mirror ConfigureSeries and FireGroups.configure', () => {
     expect(errs(g(2, { rollTo: 3, hours: 1 }))).toEqual(['2.rollTo'])
     const ps = saleErrors(withStart(g(2, { rollTo: 3, hours: 1 })), NOW)
     expect(ps[0].message).toBe('After sell-out is unlimited: nothing rolls into it.')
-    expect(errs(g(2, { taxPercent: '1' }))).toEqual(['0.rollTo', '1.rollTo'])
-    expect(saleErrors(withStart(g(2, { taxPercent: '1' })), NOW)[0].message).toBe('Everyone has a rising price: it takes no leftovers.')
+    expect(errs(g(2, { taxPercent: '1' }, { creditGroup: -1 }))).toEqual(['0.rollTo', '1.rollTo'])
+    expect(saleErrors(withStart(g(2, { taxPercent: '1' }, { creditGroup: -1 })), NOW)[0].message).toBe('Everyone has a rising price: it takes no leftovers.')
   })
 
   it('an unlimited group needs a rising price and an idle end, and rolls nowhere', () => {
@@ -359,4 +368,38 @@ it('reads decimals exactly', () => {
   expect(parseDecimal('', 2)).toBeNull()
   expect(parseDecimal('1.2.3', 2)).toBeNull()
   expect(parseDecimal('-1', 2)).toBeNull()
+})
+
+describe('a per-wallet limit that lifts', () => {
+  it('lifts after at least a minute (never exported as 0 when set)', () => {
+    expect(errs(g(2, { limitHours: 0.0001 }))).toEqual(['2.limitHours'])
+    expect(errs(g(2, { limitHours: 1 / 60 }))).toEqual([])
+    expect(saleJson(withStart(g(2, { limitHours: 1 / 60 }))).groups[2].limitFor).toBe(60)
+  })
+})
+
+describe('the ops sale policy, as warnings', () => {
+  const rules = (s: Partial<SaleSettings>) => salePolicy(withStart(s)).map((p) => `${p.group ?? '-'}.${p.policy}`)
+  it('Standard is inside it', () => {
+    expect(salePolicy(standardSale())).toEqual([])
+  })
+  it('flags what launch.mjs marks RED or warns on', () => {
+    expect(rules(g(2, { perWallet: 100 }))).toEqual(['2.wallet-limit'])
+    expect(rules(g(2, { limitHours: 0.5 }))).toEqual(['2.limit-lifts'])
+    expect(rules(g(2, { limitHours: 24 * 8 }))).toEqual(['2.limit-lifts'])
+    expect(rules(g(2, { priceUsd: '0.5' }))).toEqual(['2.price'])
+    expect(rules(g(2, { priceUsd: '11' }))).toEqual(['2.price'])
+    expect(rules(g(2, { paper: '0.05' }))).toEqual(['2.paper-per-pack'])
+    expect(rules(g(2, { paper: '0' }))).toEqual(['2.no-paper'])
+    expect(rules(g(3, { taxPercent: '11' }))).toEqual(['3.tax'])
+    expect(rules(g(3, { idleMinutes: 61 }))).toEqual(['3.idle'])
+    expect(rules(g(2, { perWallet: 0, limitHours: 0 }))).toEqual(['2.wallet-limit'])
+    expect(rules({ paperBurnPercent: '5' })).toEqual(['-.paper-burn'])
+    expect(rules({ plankBurnPercent: '0', paperBurnPercent: '5' })).toEqual(['-.burn-total', '-.paper-burn'])
+    expect(rules({ paperCapUsd: '0' })).toEqual(['-.paper-cap'])
+    expect(rules({ paperCapUsd: '0.05' })).toEqual(['-.paper-cap'])
+    const p = salePolicy(withStart(g(2, { perWallet: 100 })))[0]
+    expect(p).toMatchObject({ field: 'perWallet', group: 2, warning: true, red: true })
+    expect(salePolicy(withStart(g(3, { taxPercent: '11' })))[0].red).toBe(false) // ops only warns on a steep rise
+  })
 })

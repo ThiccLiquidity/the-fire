@@ -104,6 +104,8 @@ contract CardsHandler is Test {
         ethFeed = new MockFeed(ethPx);
         plankFeed = new MockFeed(plankPx);
         paperFeed = new MockFeed(paperPx);
+        plankFeed.setDecimals(18);
+        paperFeed.setDecimals(18);
         router = new InvRouter(plank, _perEth(), _perUsdg());
         cardRng = new MockRandomness();
         psaRng = new MockRandomness();

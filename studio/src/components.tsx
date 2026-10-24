@@ -125,13 +125,15 @@ export function PercentOfCards({ value, onChange, disabled, testId }: { value: s
 }
 
 /** The running total of a list of percentages that must add up to exactly 100%: "Total 96.01% · 3.99% left to
- *  assign", the problem when it's off, and the one-click fix ("Fill the rest into Paper"). `what` names the list in the
- *  problem ("The card types"); `names` names each entry. */
-export function PercentTotalBar({ percents, names, what, onFill, disabled, testId }: {
+ *  assign", the problem when it's off, and the one-click fix ("Fill the rest into Paper": the biggest entry other than
+ *  `lastEdited`). `what` names the list in the problem ("The card types"); `names` names each entry. */
+export function PercentTotalBar({ percents, names, what, onFill, disabled, testId, lastEdited }: {
   percents: string[]; names: string[]; what: string; onFill: (index: number, percent: string) => void; disabled?: boolean; testId?: string
+  /** The entry the owner edited last: the fix takes from (or gives to) one of the others. */
+  lastEdited?: number
 }) {
   const t = percentTotal(percents)
-  const fix = fillTheRest(percents)
+  const fix = fillTheRest(percents, lastEdited)
   const problem = t.bad.length ? `${t.bad.length === 1 ? 'One % isn\'t' : `${t.bad.length} %s aren't`} a number from 0 to 100 (at most 2 decimals).` : percentTotalProblem(t, what)
   return (
     <div className={`pct-total ${t.ok ? 'ok' : 'off'}`} data-testid={testId}>

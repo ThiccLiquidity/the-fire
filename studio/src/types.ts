@@ -153,7 +153,7 @@ export interface UploadState {
 export type OutputFormat = 'webp' | 'png'
 
 /** Bumped when what a build contains changes; builds saved under another version must be redone. 1 = the full
- *  Standard grid (209 images per character); 2 = the grid of the Series' recipe (looks.ts seriesGrid), keyed by type
+ *  Standard grid (216 images per character); 2 = the grid of the Series' recipe (looks.ts seriesGrid), keyed by type
  *  slug. */
 export const BUILD_GRID_VERSION = 2
 
