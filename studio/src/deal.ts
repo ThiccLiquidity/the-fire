@@ -1,25 +1,21 @@
 /** The SAMPLE deal of a Series, on its recipe. Pure functions only: no I/O, no Date, no Math.random.
  *
  *  It follows RecipeDealer's dealing (contracts/src/cards/RecipeDealer.sol) with the studio's own seeded randomness:
- *  1. The pool: previewPool (recipe.ts, the contract's maths) for the Series' pack count.
- *  2. Pack by pack, its slot groups most specific (deepest nested set) first. A card for a group walks down the nested
- *     sets: at each level a part is picked with weight = its cards not held back for later packs (a set) or its cards
- *     left (a type in no smaller set). So every pack keeps its slots and the totals come out exact.
- *  3. Holo: frame and picture rolled independently at the type's chances, or picked by its weights; a must-holo slot
- *     picks given holo.
- *  4. Character: uniform per card; a per-character type (one Full Art each) picks by how many of each character are
- *     still owed, so every character gets exactly its share. Serials: a seeded permutation of the Series' block.
- *  5. Edition: within the Series, per character + type, 1..N in serial order.
+ *  every card of every pack is rolled on its own, from the Series' fixed odds:
+ *  1. Type: by the type weights (a type's chance = its weight / the total).
+ *  2. Holo: frame and picture rolled independently at the type's chances, or picked by its weights.
+ *  3. Character: by the character weights (none: every character equally likely).
+ *  No slots, guarantees, caps or pool, so nothing depends on the packs before: the first and the last pack have the
+ *  same odds. Serials: a seeded permutation of the Series' block. Print number: within the Series, per exact card
+ *  (character + type + holo look), #1, #2, ... in the order dealt (pack, then position), as FireCards numbers them.
  *  On-chain the drand words decide all this when each pack is opened; this is a preview of the same rules. PDA grades
  *  are not rolled here. */
 
 import { Stream } from './prng'
-import { compileRecipe, holoOdds, parseUint, poolOf, type Recipe } from './recipe'
-import {
-  CARDS_PER_PACK, HOLO_TYPES, MAX_DEAL_CARDS, SHARE_SCALE, SHARE_UNITS, holoTypeOf, type HoloType, type Material,
-} from './rules'
+import { characterOdds, holoOdds, parseUint, typeWeights, type Recipe } from './recipe'
+import { HOLO_TYPES, MAX_DEAL_CARDS, holoTypeOf, type HoloType } from './rules'
 
-export const DEAL_METHOD = 'sample-recipe-v1'
+export const DEAL_METHOD = 'sample-odds-v1'
 
 export interface DealInput {
   /** Series number (printed as "Series F"). */
@@ -27,6 +23,8 @@ export interface DealInput {
   packs: number
   /** The Series' characters, in image order (c0, c1, ...). */
   characterIds: string[]
+  /** Each character's odds weight (same order); missing = every character equally likely. */
+  characterWeights?: number[]
   /** Stand-in for the drand randomness. */
   seed: string
   recipe: Recipe
@@ -39,20 +37,16 @@ export interface DealtCard {
   fire: number
   /** 1-based pack number within this Series. */
   pack: number
-  /** 1-based position in the pack, in dealing order (RecipeDealer.dealOrder). */
+  /** 1-based position in the pack, in dealing order. */
   slot: number
-  /** The recipe slot group the position belongs to (0-based). */
-  group: number
   /** Index into the Series' recipe types. */
   type: number
   characterId: string
   holoFrame: boolean
   holoPicture: boolean
   holo: HoloType
-  /** k in "k of N · Series F". */
-  edition: number
-  /** N in "k of N · Series F". */
-  editionOf: number
+  /** Print number: #k of this exact card (character, type, holo look) in this Series, in the order dealt. */
+  printNumber: number
   /** PDA grade 1-10 once revealed (slabbed); absent until then. */
   grade?: number | null
   /** In a case (ungraded). */
@@ -65,7 +59,7 @@ export interface DealResult {
   packs: number
   seed: string
   characterIds: string[]
-  /** Cards per type, in recipe order. */
+  /** Cards dealt of each type, in recipe order (what the odds gave this time). */
   pool: number[]
   cardsPerPack: number
   firstSerial: number
@@ -77,6 +71,21 @@ export interface DealResult {
   packContents: number[][]
 }
 
+/** The first index whose cumulative weight is above u x total (u in [0, 1)). */
+function pickCum(cum: number[], u: number): number {
+  const x = u * cum[cum.length - 1]
+  let lo = 0
+  let hi = cum.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (cum[mid] > x) hi = mid
+    else lo = mid + 1
+  }
+  return lo
+}
+
+const cumulative = (w: number[]) => { let s = 0; return w.map((x) => (s += x)) }
+
 export function dealFire(input: DealInput): DealResult {
   const { fire, packs, characterIds, seed, recipe, firstSerial } = input
   if (!Number.isInteger(fire) || fire < 1) throw new Error('fire must be a whole number >= 1')
@@ -85,17 +94,19 @@ export function dealFire(input: DealInput): DealResult {
   if (characterIds.length < 1) throw new Error('a Series needs at least one character')
   if (new Set(characterIds).size !== characterIds.length) throw new Error('duplicate character in the Series')
   if (!seed) throw new Error('seed is required')
-  const plan = compileRecipe(recipe)
-  const S = plan.S
+  const S = recipe.cardsPerPack
+  if (!Number.isInteger(S) || S < 1) throw new Error('cards per pack must be at least 1')
   if (packs * S > MAX_DEAL_CARDS) {
-    throw new Error(`The sample deal deals at most ${MAX_DEAL_CARDS.toLocaleString()} cards (${packs.toLocaleString()} packs x ${S} = ${(packs * S).toLocaleString()}). The pool preview still covers any size.`)
+    throw new Error(`The sample deal deals at most ${MAX_DEAL_CARDS.toLocaleString()} cards (${packs.toLocaleString()} packs x ${S} = ${(packs * S).toLocaleString()}).`)
   }
-  const { counts, sums } = poolOf(plan, BigInt(packs), BigInt(characterIds.length))
-  const pool = counts.map(Number)
-  const typeLeft = [...pool]
-  const nodeLeft = sums.map(Number)
+  const { weights, total } = typeWeights(recipe)
+  if (total <= 0n) throw new Error('the recipe has no odds (every type weight is 0)')
+  // weights as numbers, scaled so the biggest fits a double exactly enough for a preview
+  const scale = total > BigInt(Number.MAX_SAFE_INTEGER) ? total / BigInt(Number.MAX_SAFE_INTEGER) + 1n : 1n
+  const typeCum = cumulative(weights.map((w) => Number(w / scale)))
+  const charCum = cumulative(characterOdds(input.characterWeights, characterIds.length))
 
-  // holo odds per type: [none, frame, picture, full] as fractions; independent types roll two numbers
+  // holo odds per type: independent types roll two numbers, the others pick by weight
   const holo = recipe.types.map((t) => {
     if (t.holo.mode === 'independent') return { ind: true, a: Number(parseUint(t.holo.frame)) / 1e18, b: Number(parseUint(t.holo.picture)) / 1e18, w: holoOdds(t) }
     return { ind: false, a: 0, b: 0, w: holoOdds(t) }
@@ -105,58 +116,29 @@ export function dealFire(input: DealInput): DealResult {
   const holoStream = new Stream(seed, 'holo')
   const charStream = new Stream(seed, 'character')
 
-  const pick = (weights: number[], u: Stream): number => {
-    const total = weights.reduce((s, w) => s + w, 0)
-    if (total <= 0) throw new Error('internal: nothing left to deal')
-    let x = u.int(total)
-    for (let j = 0; j < weights.length; j++) {
-      if (x < weights[j]) return j
-      x -= weights[j]
-    }
-    return weights.length - 1
-  }
-
-  type Pending = { pack: number; slot: number; group: number; type: number; holoFrame: boolean; holoPicture: boolean }
+  type Pending = { pack: number; slot: number; type: number; holoFrame: boolean; holoPicture: boolean; character: number }
   const pending: Pending[] = []
+  const pool = new Array<number>(recipe.types.length).fill(0)
   for (let p = 0; p < packs; p++) {
-    const later = packs - p - 1 // packs still to come after this one
-    let pos = 0
-    for (const step of plan.steps) {
-      for (let c = 0; c < step.count; c++) {
-        // walk down from the group's set
-        let x = step.node
-        let t: number
-        for (;;) {
-          const n = plan.nodes[x]
-          if (n.single >= 0) { t = n.single; break }
-          const w = [...n.children.map((y) => nodeLeft[y] - later * plan.nodes[y].k), ...n.bare.map((b) => typeLeft[b])]
-          const j = pick(w, dealStream)
-          if (j < n.children.length) { x = n.children[j]; continue }
-          t = n.bare[j - n.children.length]
-          break
-        }
-        typeLeft[t]--
-        for (let y = plan.inner[t]; ; y = plan.nodes[y].parent) { nodeLeft[y]--; if (y === 0) break }
-        const h = holo[t]
-        const u1 = holoStream.float()
-        const u2 = holoStream.float() // always two draws per card
-        let f: boolean
-        let pic: boolean
-        if (!step.mustHolo && h.ind) { f = u1 < h.a; pic = u2 < h.b }
-        else {
-          const w = step.mustHolo ? [0, h.w[1], h.w[2], h.w[3]] : h.w
-          const total = w.reduce((s, v) => s + v, 0)
-          let y = u1 * total
-          let k = 0
-          while (k < 3 && y >= w[k]) { y -= w[k]; k++ }
-          f = k === 1 || k === 3
-          pic = k === 2 || k === 3
-        }
-        pending.push({ pack: p + 1, slot: ++pos, group: step.slot, type: t, holoFrame: f, holoPicture: pic })
+    for (let pos = 0; pos < S; pos++) {
+      const t = pickCum(typeCum, dealStream.float())
+      pool[t]++
+      const h = holo[t]
+      const u1 = holoStream.float()
+      const u2 = holoStream.float() // always two draws per card
+      let f: boolean
+      let pic: boolean
+      if (h.ind) { f = u1 < h.a; pic = u2 < h.b }
+      else {
+        let y = u1
+        let k = 0
+        while (k < 3 && y >= h.w[k]) { y -= h.w[k]; k++ }
+        f = k === 1 || k === 3
+        pic = k === 2 || k === 3
       }
+      pending.push({ pack: p + 1, slot: pos + 1, type: t, holoFrame: f, holoPicture: pic, character: pickCum(charCum, charStream.float()) })
     }
   }
-  for (let t = 0; t < typeLeft.length; t++) if (typeLeft[t] !== 0) throw new Error('internal: the deal did not use the whole pool')
 
   // Serials: a seeded permutation of this Series' block [firstSerial, firstSerial + cards).
   const order = pending.map((_, i) => i)
@@ -166,32 +148,12 @@ export function dealFire(input: DealInput): DealResult {
   const cards: DealtCard[] = new Array(pending.length)
   pending.forEach((p, i) => {
     cards[serialOf[i] - firstSerial] = {
-      serial: serialOf[i], fire, pack: p.pack, slot: p.slot, group: p.group, type: p.type, characterId: '',
-      holoFrame: p.holoFrame, holoPicture: p.holoPicture, holo: holoTypeOf(p.holoFrame, p.holoPicture), edition: 0, editionOf: 0,
+      serial: serialOf[i], fire, pack: p.pack, slot: p.slot, type: p.type, characterId: characterIds[p.character],
+      holoFrame: p.holoFrame, holoPicture: p.holoPicture, holo: holoTypeOf(p.holoFrame, p.holoPicture), printNumber: 0,
     }
   })
-  // per-character types: each character is owed `amount` cards of the type
-  const owed = recipe.types.map((t) => (t.supply === 'perCharacter' ? characterIds.map(() => Number(parseUint(t.amount) ?? 0n)) : null))
-  for (const card of cards) {
-    const o = owed[card.type]
-    if (!o || o.every((x) => x === 0)) {
-      card.characterId = characterIds[charStream.int(characterIds.length)]
-      continue
-    }
-    const c = pick(o, charStream)
-    o[c]--
-    card.characterId = characterIds[c]
-  }
 
-  // Edition: k of N within this Series, per character + type, in serial order.
-  const groups = new Map<string, DealtCard[]>()
-  for (const card of cards) {
-    const key = `${card.characterId}\u0000${card.type}`
-    const g = groups.get(key)
-    if (g) g.push(card)
-    else groups.set(key, [card])
-  }
-  for (const g of groups.values()) g.forEach((card, i) => { card.edition = i + 1; card.editionOf = g.length })
+  numberPrints(cards)
 
   const packContents: number[][] = Array.from({ length: packs }, () => new Array<number>(S))
   for (const card of cards) packContents[card.pack - 1][card.slot - 1] = card.serial
@@ -209,37 +171,15 @@ export function holoCounts(cards: DealtCard[], types: number): Record<HoloType, 
   return out
 }
 
-// ---------------------------------------------------------------- the Standard pool, as before
-
-/** The Diamond setting actually used: at least 1, whatever was saved. */
-export function effectiveDiamonds(diamonds: number | undefined): number {
-  return Math.max(1, diamonds ?? 1)
-}
-
-/** The Standard recipe's pool, written out the way the studio first did it (kept as the reference for
- *  contracts/test/cards/pool-fixture.json; recipe.ts previewPool gives the same numbers for the Standard recipe).
- *  a. Paper = 3 x packs. b. Fire = N x 15% and Coal = N x 4.9%, rounded half up. c. Diamond = the setting (at least
- *  1), at most one per pack; 0 with no packs. d. Wood = the rest. e. Floor: Fire-or-better between packs and 2 x packs
- *  (over: Fire, then Coal, to Wood; under: Wood to Fire). */
-export function computePool(packs: number, diamonds = 1): Record<Material, number> {
-  if (!Number.isInteger(packs) || packs < 0) throw new Error(`packs must be a whole number >= 0 (got ${packs})`)
-  if (packs > 0xffff_ffff) throw new Error(`packs must fit in 32 bits, like the old contract (got ${packs})`)
-  if (!Number.isInteger(diamonds)) throw new Error(`diamonds must be a whole number (got ${diamonds})`)
-  const n = packs * CARDS_PER_PACK
-  const half = SHARE_SCALE / 2
-  let fire = Math.floor((SHARE_UNITS.burning * n + half) / SHARE_SCALE)
-  let charcoal = Math.floor((SHARE_UNITS.charcoal * n + half) / SHARE_SCALE)
-  const diamond = packs === 0 ? 0 : Math.min(effectiveDiamonds(diamonds), packs)
-  const bp = fire + charcoal + diamond
-  if (bp > 2 * packs) {
-    const over = bp - 2 * packs
-    const fromFire = Math.min(over, fire)
-    fire -= fromFire
-    charcoal -= over - fromFire
-  } else if (bp < packs) {
-    fire += packs - bp
+/** Print numbers, as FireCards gives them: per exact card (character, type, holo look) within the Series, #1, #2, ...
+ *  in the order dealt (pack, then position in the pack). Sets `printNumber` on each card, in place. */
+export function numberPrints(cards: DealtCard[]): void {
+  const seen = new Map<string, number>()
+  const byDeal = [...cards].sort((a, b) => a.pack - b.pack || a.slot - b.slot)
+  for (const card of byDeal) {
+    const key = `${card.characterId}\u0000${card.type}\u0000${card.holoFrame ? 1 : 0}${card.holoPicture ? 1 : 0}`
+    const k = (seen.get(key) ?? 0) + 1
+    seen.set(key, k)
+    card.printNumber = k
   }
-  const wood = 3 * packs - fire - charcoal - diamond
-  return { paper: 3 * packs, wood, burning: fire, charcoal, diamond }
 }
-

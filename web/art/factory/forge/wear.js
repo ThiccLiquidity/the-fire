@@ -81,12 +81,11 @@
   const hhmm = (ms) => { const m = Math.max(1, Math.floor(ms / 60000)), h = Math.floor(m / 60); return h ? `${h}h ${m % 60}m` : `${m}m`; }; // "23h 59m", not a clock
   const ageTxt = (ms) => { const d = ms / 86400000; return d < 1 ? `${Math.max(1, Math.round(d * 24))} h` : d < 60 ? `${Math.round(d)} days` : d < 730 ? `${Math.round(d / 30.4)} months` : `${(d / 365).toFixed(1)} years`; };
 
-  // ---- paying for cases and grades: dollars, in ETH (the default), PLANK, USDG or PAPER (FirePsa burns PAPER directly) ----
+  // ---- paying for cases and grades: dollars, in ETH (the default), PLANK or USDG ----
   const COINS = ['ETH', 'PLANK', 'USDG'];
-  const coins = () => (Store.PSA_PAPER ? [...COINS, 'PAPER'] : COINS);
+  const coins = () => COINS;
   const inCoin = (usd, coin) => {
     const P = Store.PRICES;
-    if (coin === 'PAPER') return usd / P.PAPER_USD * (1 - (Store.PSA_PAPER_DISCOUNT_BPS || 0) / 10000); // at the PAPER price, less the owner's discount
     return coin === 'ETH' ? usd / P.ETH_USD : coin === 'USDG' ? usd : usd / P.PLANK_USD;
   };
   const fmtCoin = (v, coin) => coin === 'ETH' ? v.toFixed(v < 0.01 ? 6 : 4) : coin === 'USDG' || coin === 'PAPER' ? v.toFixed(2) : Math.round(v).toLocaleString('en-US');

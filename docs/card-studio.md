@@ -2,11 +2,12 @@
 
 The Card Studio (`studio/`) is a standalone browser app that builds every card image and its metadata for a Series.
 It is kept separate from the site so it can feed whichever front end the cards are shown in. The rules are
-set per Series as a **recipe** (`studio/src/recipe.ts`): card types, how many of each, holo odds and what each pack
-holds. PDA grade odds and wear rules are not part of it: they are fixed forever in `FirePsa`, the same for every
-Series. It is the same recipe `RecipeDealer` deals on-chain (`docs/cards-contracts.md`); the studio's
-checks and pool maths are ports of the contract's and are tested against it. New Series start from the **Standard recipe**
-(the original rules below, `contracts/src/cards/StandardRecipe.sol`).
+set per Series as a **recipe** (`studio/src/recipe.ts`): card types and their odds, holo odds and cards per pack.
+Every card of every pack is rolled on its own from those fixed odds (straight odds: no slots, guarantees, caps or
+pool). PDA grade odds and wear rules are not part of it: they are fixed forever in `FirePsa`, the same for every
+Series. It is the same recipe `RecipeDealer` deals on-chain (`docs/cards-contracts.md`); the studio's checks and odds
+are ports of the contract's and are tested against it. New Series start from the **Standard recipe** (below,
+`contracts/src/cards/StandardRecipe.sol`).
 
 ## The card
 
@@ -16,8 +17,9 @@ checks and pool maths are ports of the contract's and are tested against it. New
   `burning`, `charcoal`, `diamond`, `gold`, `fullart`; the ids are kept so saved data stays valid.)
 - **Printed on the image:** character name (top bar), and in the bottom panel the material, the category and
   "Forged · Series #", with the PDA seal on the right.
-- **In the metadata only:** the global serial (never resets) and the edition ("12 of 43"). This lets every card with
-  the same look and grade share one image.
+- **In the metadata only:** the global serial (never resets) and the print number ("#12": the 12th of that exact card,
+  same character, type and holo look, in the order opened; the first one opened is #1). This lets every card with the
+  same look and grade share one image.
 - **Name** per character: at most 64 bytes of UTF-8 (the contract's `MAX_NAME_BYTES`), no `"`, `\`, control
   characters or DEL (`RecipeCompiler._checkText`). A Series takes any number of characters (the contract stores them in batches).
 - **Category** per character: free text, typed in the Library. There is no preset list; the field suggests the
@@ -83,53 +85,46 @@ checks and pool maths are ports of the contract's and are tested against it. New
 Set on the **Recipe** tab, per Series, and locked with the deal:
 
 - **Card types**, any number: name (the Material trait, 1-64 bytes), slug (image file names, `[a-z0-9-]`, 1-32
-  bytes, unique; follows the name until typed), rank (for "X-or-better" slots), supply (a share of the cards, a
-  number per pack, an exact count, a number per character, or the filler: exactly one type takes the rest), an
-  optional cap per pack's worth,
-  holo (two independent rolls, frame and picture, or explicit weights for none / frame / picture / full) and its
-  frame set.
-- **Slot groups**: a number of cards that may be any type in a set (a list of types, or a rank range), optionally
-  must-holo. Cards per pack is their sum. Two groups' sets must be nested or disjoint.
+  bytes, unique; follows the name until typed), rank (the rarity order the site shows), an **odds weight** (its chance
+  per card is its weight over the total; at least 1), holo (two independent rolls, frame and picture, or explicit
+  weights for none / frame / picture / full) and its frame set.
+- **Cards per pack**: 1 to 1,000.
+- **Character odds** (Series tab, optional): a weight per picked character (1 by default: every character equally
+  likely). Exported as each character's `weight` in recipe.json only when they differ.
 - **PDA odds** are fixed forever (the same for every Series) and shown read-only; recipe.json never carries them. A
   Series saved with its own odds drops them when it loads and uses the fixed ones.
 - **Holo rolls** show at most 2 decimals (the exact stored value on hover); the stored value stays exact (the Standard
   rolls match `StandardRecipe` to the wei) until the field is edited.
 
-The tab lists every problem the contract would refuse (filler, slugs, text, shares, holo, nested sets, a type no slot
-takes, a never-holo type in a must-holo slot). **What it makes** (top of the tab, for the Series' packs and characters
-or any others typed in) shows the result: exact cards per type, cards per character, and for every holo look how rare
-one exact card is on the site's scale (copies of that character + type + look over the Series' cards, "1 in N"; Rare
-from 1 in 100, Epic 1 in 400, Legendary 1 in 1,000; `studio/src/rarity.ts` mirrors `trueOdds` / `Info.lookP`), and
-the share of packs holding at least one (and two or more) of each type, from test deals with the contract's dealing.
-A percent supply can be typed as a number of cards (it sets the percent that gives exactly that many) and an exact
-number as a percent; these fields always use the Series' own packs and the type's max per pack, so they match its
-"Makes" line. "Packs with one" shows "-" for a Series too big to test-deal here (over 600,000 cards). Packs of 42 or
-more cards get a warning: free-pack credits (42 cards burned each) can't be spent on that Series. The Series tab shows the same result. Presets: **Standard**,
-**Special: 3 cards, all holo** (Fire the filler, Coal 30%, Gold 2% at most one per pack; 2 Fire-or-better and 1
-Coal-or-better, all must-holo), or a copy of another Series' recipe. Series saved before recipes load with the old
-Standard recipe (Diamond) and their Diamond setting.
+The tab lists every problem the contract would refuse (no types, cards per pack, slugs, text, weights, holo). **What it
+makes** (top of the tab, for the Series' packs and characters or any others typed in) shows each type's odds per card
+and expected cards, and for every holo look how rare one exact card is on the site's scale (its chance per card dealt:
+type x holo x character odds, "1 in N"; with character odds, the rarest character's too; Rare from 1 in 100, Epic
+1 in 400, Legendary 1 in 1,000; `studio/src/rarity.ts` mirrors `trueOdds` / `Info.lookP`), and the exact chance a pack
+holds at least one (and two or more) of each type: 1 - (1 - odds)^cards, the same for every pack. Packs of 42 or more
+cards get a warning: free-pack credits (42 cards burned each) can't be spent on that Series. The Series tab shows the
+same result. Presets: **Standard**, **Special: 3 cards, all holo** (Fire 68%, Coal 30%, Gold 2%; every card holo), or
+a copy of another Series' recipe. Older saves load as odds: Series from before recipes get the old Standard (Diamond)
+at its old shares; a recipe saved with the old pool rules (supply, slots) gets each type's weight from the cards its
+rules gave for that Series' packs and characters, so its expected shares stay about the same.
 
 ## The Standard recipe
 
-Each Series stands alone: its cards come only from its own packs and nothing carries over. For P packs (N = 6P cards):
+Each Series stands alone: its cards come only from its own packs and nothing carries over. Every card is rolled on its
+own (6 a pack):
 
-| Material | Count |
-|---|---|
-| Paper | 3P (half the cards) |
-| Fire | 15% of N, rounded half up |
-| Coal | 4.9% of N, rounded half up |
-| Gold | per character (2 by default, so always twice Full Art; set per Series), never more than one per pack's worth over the Series |
-| Full Art | 1 per character, never more than one per pack's worth over the Series |
+| Material | Weight (of 10,000) | Per card |
+|---|---|---|
+| Paper | 5,000 | 50% |
+| Wood | 2,415 | 24.15% |
+| Fire | 1,497 | 14.97% |
+| Coal | 489 | 4.89% |
+| Gold | 399 | 3.99% |
+| Full Art | 200 | 2% |
 
-The per-pack cap is a Series total (at most packs x 1), not a rule for each pack. With too many characters for the
-packs, Gold and Full Art crowd out Fire and Coal; the Series tab warns when Gold would outnumber Coal.
-| Wood | the rest |
-
-Then the pack floor: Fire-or-better stays between P and 2P (extra Fire, then Coal, becomes Wood; a shortfall is
-taken from Wood). Example: 167 packs, 20 characters make 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold,
-20 Full Art.
-
-**Pack (6 cards):** slots 1-3 Paper, 4 Wood, 5 Wood-or-better, 6 Fire-or-better.
+These keep the old pool dealing's expected share of each type for the example Series (167 packs, 20 characters: 501
+Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art of 1,002). Real counts vary around the expectation, and any
+pack can hold any mix (all Paper, or two Full Arts).
 
 ## Holo (Standard)
 
@@ -178,8 +173,8 @@ Fresh odds are `FirePsa`'s constants (`freshOdds`), fixed forever for every Seri
 
 One image per character x card type x holo look x state within a Series. Each grade has its own image (the slab and
 seal print the number), even where two grades share a wear layer. The image folder holds the full grid the recipe can
-produce: every character x type x the holo looks that type can have (from its holo rule and slots: a type dealt only
-in must-holo slots has no `none` image, a 0% holo type only `none`) x 12 states (ungraded, cased, PDA 1 to 10
+produce: every character x type x the holo looks that type can have (from its holo rule: a type that is always holo has
+no `none` image, a 0% holo type only `none`) x 12 states (ungraded, cased, PDA 1 to 10
 slabbed), WEBP only. Standard: 4 types x 4 holo looks + Gold + Full Art = 18 looks x 12 = **216 images** per
 character; Special 3-card all-holo: (Fire 3 + Coal 3 + Gold 1) x 12 = 84. Every one is built before upload, since
 cards are cased and graded on-chain later. Each Series
@@ -190,7 +185,7 @@ has its own "Forged · Series #" line, so images are never shared across Series.
 - **Omni Card Packs** (`FirePacks`, ERC-1155): one stackable token type per Series, so "Series 7 Sealed Pack x 3"
   lists and trades like any item. Pack art is `<packImageBase>fire<N>.webp`.
 - **Omni Cards** (`FireCards`, ERC-721): every card unique, with character, category, material, holo, Series,
-  edition, serial and PDA as traits (Material = the type's name). Ungraded cards add Cased, Dealt (a date) and
+  print number, serial and PDA as traits (Material = the type's name). Ungraded cards add Cased, Dealt (a date) and
   Moves, plus Age when cased (days) once cased, with PDA "Ungraded"; graded cards show "PDA N" only. Image file names match the studio's export and
   `CardsRenderer.imageName`: `c<character>-<type slug>-<holo>-<state>.webp`, `holo` one of `none`, `frame`,
   `picture`, `full`, `state` `u` (ungraded), `c` (cased) or `1` to `10` (slabbed). Standard slugs are `paper`, `wood`,
@@ -198,7 +193,7 @@ has its own "Forged · Series #" line, so images are never shared across Series.
   A Series' images lock when its drop is set up.
 
 A pack's contents are decided only when it is opened: the pack is burned, drand randomness arrives about 90 seconds
-later (the router commits to a drand round 90 to 93 seconds ahead) and its cards are drawn from what is left in the Series' pool, keeping the pack guarantees. See
+later (the router commits to a drand round 90 to 93 seconds ahead) and each card is rolled from the Series' fixed odds. See
 `docs/cards-contracts.md`.
 
 ## Studio workflow, per Series
@@ -209,8 +204,10 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and its cards
 2. **Frames & Layout:** text fields' font, size and colour are set once per frame set; the art window is fixed by
    the frames.
 3. **Series:** pick the characters (any number; their order is the image order c0, c1, ...). The pack count is the
-   drop's total (base) packs, set on the Sale tab (one number: the pool, rarity and per-pack numbers use it).
-4. **Recipe:** card types and slots, with the contract's checks and the result (counts, rarity, per-pack chances).
+   drop's total (base) packs, set on the Sale tab (one number: the expected counts use it). Each picked character has
+   optional odds (a weight; 1 by default).
+4. **Recipe:** card types with their odds, cards per pack, the contract's checks and the result (odds, expected
+   counts, rarity, per-pack chances).
    **Sale** (next tab): the drop as **groups** (`docs/drop-groups.md`) for `FireSale.configureDrop`, in plain units.
    Work backwards from the total: set the total (base) packs, then split it into 1 to 6 groups, each a compact card
    added from a template (Paper Press holders, Coin holders (snapshot), NFT holders, Everyone, After sell-out (rising
@@ -244,7 +241,8 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and its cards
    means building again.
 7. **Export & Upload:** a readiness checklist (recipe valid, frames for every type, characters valid, deal locked,
    approved, the full grid built, sale settings valid, the sale's packs equal to the Series' or the locked deal's);
-   **recipe.json** (what `contracts/script/ConfigureSeries.s.sol` reads: types, slots, characters, `imagesBase` once
+   **recipe.json** (what `contracts/script/ConfigureSeries.s.sol` reads: cards per pack, types, characters (with
+   their weights if they have odds), `imagesBase` once
    uploaded, and the `sale` block; tied to the uploaded build; it warns until both pins are checked and the CAR is
    confirmed stored); a zip of the images, per-card metadata (preview only), `fire.json` and `recipe.json` (big Series
    in parts of at most 1.5 GB or 60,000 files, the metadata in its own parts, written straight into a folder the owner
@@ -264,7 +262,7 @@ per session and never stored. The legacy one-request folder upload is not used: 
 can't be built from several pins.
 
 **manifest.json.** The images folder also holds `manifest.json`: every image's name, size and sha256, the studio's
-grid key, and the recipe hash (sha256 of `recipe.json`'s fire, types, slots and characters; `imagesBase` and
+grid key, and the recipe hash (sha256 of `recipe.json`'s fire, cardsPerPack, types and characters; `imagesBase` and
 the sale block left out). VerifySeries (`ops/series`) reads it before the Series is locked.
 
 **Filebase only.** Pinata's free plan refuses CAR uploads, so **Upload to Filebase only** sends the images CAR

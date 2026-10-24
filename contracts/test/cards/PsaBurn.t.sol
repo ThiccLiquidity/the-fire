@@ -13,7 +13,7 @@ import {SeriesHelper} from "./SeriesHelper.sol";
 import {PoolRouter} from "./Burner.t.sol";
 
 /// @dev FirePsa against the real PaperBurner: a fee burns only itself (the backlog can't be sandwiched through
-///      `protect`), PAPER payments at the burner's PAPER feed, and gas for the biggest batches (docs/grading.md).
+///      `protect`), a stale PAPER feed, and gas for the biggest batches (docs/grading.md).
 contract PsaBurnTest is SeriesHelper {
     address constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address owner = address(0xA11CE0);
@@ -74,7 +74,7 @@ contract PsaBurnTest is SeriesHelper {
         cards.setRenderer(address(new CardsRenderer(address(cards))));
         psa.setRandomness(address(psaRng));
         vm.stopPrank();
-        _standard(cards, dealer, owner, 1, 2, 1);
+        _standard(cards, dealer, owner, 1, 2);
         vm.startPrank(seller);
         packs.mint(alice, 1, 20);
         cards.closeFire(1);
@@ -158,55 +158,30 @@ contract PsaBurnTest is SeriesHelper {
         assertLt(address(burner).balance, backlog);
     }
 
-    /// PAPER payments against the real burner's feed: $1 at $0.08 = 12.5 PAPER burned to DEAD; a stale feed: refused.
-    function test_paperPaymentAtTheFeedPrice() public {
-        paper.mint(alice, 1_000e18);
-        uint256 c = psa.quote(0, 1, FirePsa.Pay.PAPER);
-        assertEq(c, 12.5e18);
-        vm.startPrank(alice);
-        paper.approve(address(psa), type(uint256).max);
-        psa.protect(_none(), _one(2), FirePsa.Pay.PAPER, c);
-        vm.stopPrank();
-        assertEq(paper.balanceOf(DEAD), c);
-        assertEq(paper.balanceOf(address(burner)), 0);
+    /// A stale PAPER feed: case and grading in ETH still work, the fee waits in the burner for a later buy.
+    function test_staleFeedFeeWaits() public {
         vm.warp(block.timestamp + 2 days + 1); // the PAPER feed goes stale
         ethUsd.set(2_500e8);
-        vm.expectRevert(FirePsa.FeedUnavailable.selector);
-        psa.quote(1, 0, FirePsa.Pay.PAPER);
-        vm.prank(alice);
-        vm.expectRevert(FirePsa.FeedUnavailable.selector);
-        psa.protect(_one(3), _none(), FirePsa.Pay.PAPER, type(uint256).max);
-        // ETH still works (its fee waits in the burner while PAPER's price is missing)
         uint256 ce = psa.quote(1, 0, FirePsa.Pay.ETH);
         vm.prank(alice);
         psa.protect{value: ce}(_one(3), _none(), FirePsa.Pay.ETH, ce);
         assertEq(address(burner).balance, ce);
     }
 
-    /// Unnaming FirePsa as a flusher stops case and grading payments in ETH, PLANK and USDG (a pause in effect);
-    /// PAPER payments don't touch the burner and still work.
-    function test_unflushingPsaStopsCoinPaymentsOnly() public {
+    /// Unnaming FirePsa as a flusher stops case and grading payments (a pause in effect).
+    function test_unflushingPsaStopsPayments() public {
         vm.prank(owner);
         burner.setFlusher(address(psa), false);
         uint256 c = psa.quote(1, 0, FirePsa.Pay.ETH);
         vm.prank(alice);
         vm.expectRevert(PaperBurner.NotFlusher.selector);
         psa.protect{value: c}(_one(1), _none(), FirePsa.Pay.ETH, c);
-        paper.mint(alice, 10e18);
-        uint256 cp = psa.quote(1, 0, FirePsa.Pay.PAPER);
-        vm.startPrank(alice);
-        paper.approve(address(psa), cp);
-        psa.protect(_one(1), _none(), FirePsa.Pay.PAPER, cp);
-        vm.stopPrank();
-        assertEq(paper.balanceOf(DEAD), cp);
     }
 
-    /// Gas for a 100-card grading, worst wear (3+ years uncased, 10 moves), with a price set per rank.
+    /// Gas for a 100-card grading, worst wear (3+ years uncased, 10 moves).
     function test_gas_finish100Worn() public {
-        vm.startPrank(owner);
+        vm.prank(owner);
         psa.setMaxBatch(100);
-        psa.setGradePrice(1, 2e18);
-        vm.stopPrank();
         uint256[] memory ids = _first(100);
         address bob = address(0xB0B);
         for (uint256 i; i < 100; i++) {
@@ -220,11 +195,11 @@ contract PsaBurnTest is SeriesHelper {
         vm.warp(block.timestamp + 3 * 365 days + 17 days);
         ethUsd.set(2_500e8);
         paperUsd.set(0.08e18);
-        uint256 cost = psa.quoteFor(_none(), ids, FirePsa.Pay.ETH);
+        uint256 cost = psa.quote(0, 100, FirePsa.Pay.ETH);
         vm.prank(alice);
         uint256 g0 = gasleft();
         uint256 index = psa.protect{value: cost}(_none(), ids, FirePsa.Pay.ETH, cost);
-        emit log_named_uint("protect 100 (rank prices) gas", g0 - gasleft());
+        emit log_named_uint("protect 100 (worn) gas", g0 - gasleft());
         psaRng.fulfill(psaRng.last(), 12345);
         g0 = gasleft();
         psa.finish(index, ids);

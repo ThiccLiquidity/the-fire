@@ -82,6 +82,19 @@
   },
   {
     "type": "function",
+    "name": "SKIP_AFTER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "acceptOwnership",
     "inputs": [],
     "outputs": [],
@@ -202,12 +215,7 @@
             "internalType": "uint256"
           },
           {
-            "name": "edition",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "editionOf",
+            "name": "printNumber",
             "type": "uint256",
             "internalType": "uint256"
           },
@@ -1342,25 +1350,6 @@
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "BatchMetadataUpdate",
-    "inputs": [
-      {
-        "name": "fromTokenId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "toTokenId",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false

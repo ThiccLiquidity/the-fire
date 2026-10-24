@@ -1,73 +1,50 @@
-/** The studio's recipe checks and pool maths (src/recipe.ts) against the contract (RecipeDealer.check and
- *  previewPool), on recipes in the exact recipe.json shape the studio exports and ConfigureSeries.s.sol reads.
+/** The studio's recipe checks and odds (src/recipe.ts) against the contract (RecipeDealer.check, oddsOf and holoOdds),
+ *  on recipes in the exact recipe.json shape the studio exports and ConfigureSeries.s.sol reads.
  *
  *  scripts/fixtures/recipe-parity.json holds the cases and the contract's answers. Refresh it with
  *  scripts/contract-parity.sh (needs forge): it writes the cases (WRITE_RECIPE_CASES=<dir>), runs
  *  scripts/forge/StudioParity.t.sol on a scratch copy of contracts/, and stores the results here. Case 0 is the
- *  Standard export (the forge side also checks it parses to StandardRecipe.build(0) and that ConfigureSeries.build
+ *  Standard export (the forge side also checks it parses to StandardRecipe.build() and that ConfigureSeries.build
  *  accepts it); case 1 the Special 3-card all-holo export. */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  checkRecipe, previewPool, recipeFromJson, recipeJson, specialAllHoloRecipe, standardRecipe, type RecipeJson,
+  checkRecipe, holoOdds, recipeFromJson, recipeJson, specialAllHoloRecipe, standardRecipe, typeWeights, type RecipeJson,
 } from '../src/recipe'
 
 const FIXTURE = new URL('./fixtures/recipe-parity.json', import.meta.url)
-const PACKS = ['0', '1', '2', '3', '5', '7', '13', '100', '999', '1000003', '1099511627776']
 
-type Case = RecipeJson & { packs: string[] }
-interface Result { ok: boolean; error?: string; perPack?: number; pools?: string[][]; calls?: number }
+type Case = RecipeJson
+interface Result { ok: boolean; error?: string; perPack?: number; weights?: string[]; total?: string; holo?: string[][]; calls?: number }
 
-/** Deterministic random recipes: mostly the shapes people make (rank ranges, single types), some invalid. */
+/** Deterministic random recipes: mostly valid shapes, some invalid. */
 function cases(): Case[] {
-  let x = 20261005
+  let x = 20261024
   const rnd = (n: number) => { x = (x * 1103515245 + 12345) % 2147483648; return Math.floor((x / 2147483648) * n) }
   const chance = (p: number) => rnd(1000) < p * 1000
   const chars = [{ name: 'Ember Fox', category: 'Animals' }, { name: 'Ash Wolf', category: 'Animals' }]
   const out: Case[] = [
-    { ...recipeJson(7, standardRecipe(), chars, 'ipfs://bafyexampleimages/'), packs: PACKS },
-    { ...recipeJson(8, specialAllHoloRecipe(), chars), packs: PACKS },
+    recipeJson(7, standardRecipe(), chars, 'ipfs://bafyexampleimages/'),
+    recipeJson(8, specialAllHoloRecipe(), chars),
   ]
   for (let k = 0; k < 400; k++) {
-    const T = 1 + rnd(7)
-    const filler = rnd(T)
+    const T = chance(0.02) ? 0 : 1 + rnd(7)
     const types: RecipeJson['types'] = []
     for (let t = 0; t < T; t++) {
-      let supply: RecipeJson['types'][number]['supply'] = t === filler ? 'filler' : (['share', 'perPack', 'count', 'perCharacter'] as const)[rnd(4)]
-      if (chance(0.02)) supply = 'filler'
-      if (t === filler && chance(0.02)) supply = 'count'
-      const amount = supply === 'share' ? (chance(0.02) ? 1_000_000_001 : rnd(400_000_000)) : supply === 'perPack' ? rnd(4)
-        : supply === 'perCharacter' ? (chance(0.05) ? 0 : chance(0.03) ? 65_536 : 1 + rnd(5)) : rnd(60)
+      const weight = chance(0.03) ? 0 : chance(0.1) ? String(BigInt(1 + rnd(1_000_000)) * 10n ** 12n) : 1 + rnd(10_000)
       const mode = chance(0.7) ? 'independent' : 'distribution'
-      const ch = () => String(chance(0.15) ? 0 : chance(0.1) ? 10n ** 18n : BigInt(rnd(1_000_000)) * 10n ** 12n)
+      const ch = () => String(chance(0.15) ? 0 : chance(0.1) ? 10n ** 18n : chance(0.01) ? 10n ** 18n + 1n : BigInt(rnd(1_000_000)) * 10n ** 12n)
       types.push({
-        name: chance(0.01) ? 'Bad"Name' : `Type ${t}`,
+        name: chance(0.01) ? 'Bad"Name' : chance(0.005) ? '' : `Type ${t}`,
         slug: chance(0.01) ? 'Bad Slug' : chance(0.01) && t > 0 ? `t${t - 1}` : `t${t}`,
-        rank: rnd(6), supply,
-        ...(supply !== 'filler' ? { amount } : {}),
-        ...(chance(0.25) ? { maxPerPack: 1 + rnd(3) } : {}),
+        rank: rnd(6), weight,
         holo: mode === 'independent'
           ? { mode, frame: ch(), picture: ch() }
           : { mode, weights: [0, 0, 0, 0].map(() => String(chance(0.4) ? 0 : rnd(5))) },
       })
     }
-    const G = 1 + rnd(4)
-    const slots: RecipeJson['slots'] = []
-    for (let s = 0; s < G; s++) {
-      const count = chance(0.03) ? 0 : 1 + rnd(4)
-      const mustHolo = chance(0.2) ? { mustHolo: true } : {}
-      if (chance(0.45)) {
-        const n = chance(0.6) ? 1 : 1 + rnd(Math.min(3, T))
-        const set = new Set<number>()
-        while (set.size < n) set.add(rnd(T))
-        slots.push({ count, types: [...set].sort((a, b) => a - b), ...mustHolo })
-      } else {
-        const minRank = rnd(6)
-        slots.push({ count, minRank, ...(chance(0.3) ? { maxRank: minRank > 0 && chance(0.1) ? minRank - 1 : minRank + rnd(4) } : {}), ...mustHolo })
-      }
-    }
-    if (chance(0.5)) slots.push({ count: 1, minRank: 0 }) // a catch-all group: every type is dealt somewhere
-    out.push({ fire: 100 + k, types, slots, characters: chars, packs: PACKS })
+    const cardsPerPack = chance(0.03) ? 0 : chance(0.02) ? 1001 : chance(0.05) ? 1000 : 1 + rnd(12)
+    out.push({ fire: 100 + k, cardsPerPack, types, characters: chars })
   }
   return out
 }
@@ -76,11 +53,8 @@ describe.runIf(process.env.WRITE_RECIPE_CASES)('write recipe cases', () => {
   it('writes <dir>/<i>.json', () => {
     const dir = process.env.WRITE_RECIPE_CASES!
     mkdirSync(dir, { recursive: true })
-    // the recipe.json exactly as exported, and its pack counts beside it (ConfigureSeries refuses unknown keys)
-    cases().forEach(({ packs, ...c }, i) => {
-      writeFileSync(`${dir}/${i}.json`, JSON.stringify(c))
-      writeFileSync(`${dir}/${i}.packs.json`, JSON.stringify({ packs }))
-    })
+    // the recipe.json exactly as exported (ConfigureSeries refuses unknown keys)
+    cases().forEach((c, i) => writeFileSync(`${dir}/${i}.json`, JSON.stringify(c)))
     writeFileSync(`${dir}/cases.json`, JSON.stringify(cases()))
   })
 })
@@ -100,18 +74,23 @@ describe.runIf(!process.env.WRITE_RECIPE_CASES && existsSync(FIXTURE))('recipe p
     expect(fx.results[1]).toMatchObject({ ok: true, perPack: 3 })
   })
 
-  it('same verdict (and the same first reason) and the same pools for every pack count', () => {
+  it('same verdict (and the same first reason), the same weights and the same holo odds', () => {
     fx.cases.forEach((c, i) => {
       const want = fx.results[i]
-      const problems = checkRecipe(recipeFromJson(c)).filter((p) => p.code !== 'Studio') // check() dry-runs the pool too
+      const problems = checkRecipe(recipeFromJson(c)).filter((p) => p.code !== 'Studio')
       if (!want.ok) {
         expect(problems[0]?.code, `case ${i}`).toBe(want.error)
         return
       }
       expect(problems, `case ${i}`).toEqual([])
       const r = recipeFromJson(c)
-      c.packs.forEach((p, k) => {
-        expect(previewPool(r, BigInt(p), BigInt(c.characters.length)).map(String), `case ${i}, ${p} packs`).toEqual(want.pools![k])
+      expect(want.perPack, `case ${i}`).toBe(r.cardsPerPack)
+      const { weights, total } = typeWeights(r)
+      expect(weights.map(String), `case ${i}`).toEqual(want.weights)
+      expect(String(total), `case ${i}`).toBe(want.total)
+      r.types.forEach((t, k) => {
+        const o = holoOdds(t)
+        want.holo![k].forEach((v, h) => expect(Math.abs(Number(v) / 1e18 - o[h]), `case ${i}, type ${k}`).toBeLessThan(1e-12))
       })
     })
   })

@@ -87,19 +87,6 @@
   },
   {
     "type": "function",
-    "name": "MAX_SLUG_BYTES",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "PACKS",
     "inputs": [],
     "outputs": [
@@ -107,19 +94,6 @@
         "name": "",
         "type": "address",
         "internalType": "contract IDealerPacks"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "SHARE_SCALE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -255,6 +229,30 @@
   },
   {
     "type": "function",
+    "name": "characterOddsOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "weights",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "total",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "characterOf",
     "inputs": [
       {
@@ -346,17 +344,7 @@
                 "internalType": "uint32"
               },
               {
-                "name": "supply",
-                "type": "uint8",
-                "internalType": "enum RecipeDealer.Supply"
-              },
-              {
-                "name": "amount",
-                "type": "uint128",
-                "internalType": "uint128"
-              },
-              {
-                "name": "maxPerPack",
+                "name": "weight",
                 "type": "uint64",
                 "internalType": "uint64"
               },
@@ -373,36 +361,9 @@
             ]
           },
           {
-            "name": "slots",
-            "type": "tuple[]",
-            "internalType": "struct RecipeDealer.Slot[]",
-            "components": [
-              {
-                "name": "count",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "types",
-                "type": "uint32[]",
-                "internalType": "uint32[]"
-              },
-              {
-                "name": "minRank",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "maxRank",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "mustHolo",
-                "type": "bool",
-                "internalType": "bool"
-              }
-            ]
+            "name": "cardsPerPack",
+            "type": "uint32",
+            "internalType": "uint32"
           }
         ]
       }
@@ -448,25 +409,6 @@
         "internalType": "uint256[]"
       }
     ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "dealOrder",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "slotOf",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
     "stateMutability": "view"
   },
   {
@@ -495,6 +437,30 @@
   },
   {
     "type": "function",
+    "name": "oddsOf",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "weights",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "total",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -515,159 +481,6 @@
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "poolFor",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "packs",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "poolOf",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "previewPool",
-    "inputs": [
-      {
-        "name": "r",
-        "type": "tuple",
-        "internalType": "struct RecipeDealer.Recipe",
-        "components": [
-          {
-            "name": "types",
-            "type": "tuple[]",
-            "internalType": "struct RecipeDealer.CardType[]",
-            "components": [
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "slug",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "rank",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "supply",
-                "type": "uint8",
-                "internalType": "enum RecipeDealer.Supply"
-              },
-              {
-                "name": "amount",
-                "type": "uint128",
-                "internalType": "uint128"
-              },
-              {
-                "name": "maxPerPack",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "holoMode",
-                "type": "uint8",
-                "internalType": "enum RecipeDealer.HoloMode"
-              },
-              {
-                "name": "holo",
-                "type": "uint64[4]",
-                "internalType": "uint64[4]"
-              }
-            ]
-          },
-          {
-            "name": "slots",
-            "type": "tuple[]",
-            "internalType": "struct RecipeDealer.Slot[]",
-            "components": [
-              {
-                "name": "count",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "types",
-                "type": "uint32[]",
-                "internalType": "uint32[]"
-              },
-              {
-                "name": "minRank",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "maxRank",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "mustHolo",
-                "type": "bool",
-                "internalType": "bool"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "name": "packs",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "chars",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
       }
     ],
     "stateMutability": "view"
@@ -728,17 +541,7 @@
                 "internalType": "uint32"
               },
               {
-                "name": "supply",
-                "type": "uint8",
-                "internalType": "enum RecipeDealer.Supply"
-              },
-              {
-                "name": "amount",
-                "type": "uint128",
-                "internalType": "uint128"
-              },
-              {
-                "name": "maxPerPack",
+                "name": "weight",
                 "type": "uint64",
                 "internalType": "uint64"
               },
@@ -755,62 +558,11 @@
             ]
           },
           {
-            "name": "slots",
-            "type": "tuple[]",
-            "internalType": "struct RecipeDealer.Slot[]",
-            "components": [
-              {
-                "name": "count",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "types",
-                "type": "uint32[]",
-                "internalType": "uint32[]"
-              },
-              {
-                "name": "minRank",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "maxRank",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "mustHolo",
-                "type": "bool",
-                "internalType": "bool"
-              }
-            ]
+            "name": "cardsPerPack",
+            "type": "uint32",
+            "internalType": "uint32"
           }
         ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "remainingOf",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "left",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "packsLeft",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -821,6 +573,24 @@
     "inputs": [],
     "outputs": [],
     "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "setCharacterWeights",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "weights",
+        "type": "uint64[]",
+        "internalType": "uint64[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -880,17 +650,7 @@
                 "internalType": "uint32"
               },
               {
-                "name": "supply",
-                "type": "uint8",
-                "internalType": "enum RecipeDealer.Supply"
-              },
-              {
-                "name": "amount",
-                "type": "uint128",
-                "internalType": "uint128"
-              },
-              {
-                "name": "maxPerPack",
+                "name": "weight",
                 "type": "uint64",
                 "internalType": "uint64"
               },
@@ -907,83 +667,15 @@
             ]
           },
           {
-            "name": "slots",
-            "type": "tuple[]",
-            "internalType": "struct RecipeDealer.Slot[]",
-            "components": [
-              {
-                "name": "count",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "types",
-                "type": "uint32[]",
-                "internalType": "uint32[]"
-              },
-              {
-                "name": "minRank",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "maxRank",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "mustHolo",
-                "type": "bool",
-                "internalType": "bool"
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "stateOf",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct RecipeDealer.State",
-        "components": [
-          {
-            "name": "started",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "packs",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "packsLeft",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "characters",
+            "name": "cardsPerPack",
             "type": "uint32",
             "internalType": "uint32"
           }
         ]
       }
     ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -997,6 +689,31 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "CharacterWeightsSet",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "count",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "total",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -1082,31 +799,6 @@
   },
   {
     "type": "event",
-    "name": "PoolSet",
-    "inputs": [
-      {
-        "name": "fire",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "packs",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "counts",
-        "type": "uint256[]",
-        "indexed": false,
-        "internalType": "uint256[]"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "RecipeSet",
     "inputs": [
       {
@@ -1126,12 +818,6 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
-      {
-        "name": "slots",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1143,23 +829,13 @@
   },
   {
     "type": "error",
-    "name": "BadFiller",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "BadLength",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "BadSlot",
+    "name": "BadRecipe",
     "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
       {
         "name": "why",
         "type": "string",
@@ -1190,64 +866,17 @@
   },
   {
     "type": "error",
+    "name": "BadWeights",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "FireIsLocked",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "Infeasible",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NeverHolo",
-    "inputs": [
-      {
-        "name": "slot",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "typeIndex",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotCards",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotClosed",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "NotConfigured",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotNested",
-    "inputs": [
-      {
-        "name": "slotA",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "slotB",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NothingLeft",
     "inputs": []
   },
   {
@@ -1276,16 +905,5 @@
     "type": "error",
     "name": "RenounceDisabled",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TypeNeverDealt",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
   }
 ]

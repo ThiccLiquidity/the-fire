@@ -61,7 +61,7 @@ contract SaleForkTest is Test {
         for (uint256 k; k < cats.length; k++) cats[k] = "Person";
         names[0] = "Test";
         RecipeDealer dealer = new RecipeDealer(address(this), address(cards), address(new RecipeCompiler()));
-        dealer.setRecipe(1, StandardRecipe.build(1));
+        dealer.setRecipe(1, StandardRecipe.build());
         dealer.setCharacters(1, names, cats);
         cards.setDealer(1, address(dealer));
         cards.setImagesBase(1, "ipfs://x/");

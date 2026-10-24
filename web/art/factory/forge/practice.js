@@ -2,7 +2,7 @@
    the full reveal (the same tear, flips, glows and sounds), stamped PRACTICE over the card (drawn in code), and never
    saved anywhere: they're not in My cards, the binder, badges or the counts.
    Demo: the demo cast's finished card images (cards/<id>/). Live: the current Series' own cards: its recipe's types,
-   slots and holo odds, its characters and its image folder (Live.chain.practiceSet / practiceDeal: the same file
+   their odds and holo odds, its characters and its image folder (Live.chain.practiceSet / practiceDeal: the same file
    names CardsRenderer gives real cards). If those reads fail or nothing is deployed yet, the demo cast stands in. */
 (() => {
   const { h } = Fun;
@@ -18,7 +18,6 @@
     Store.cardImg = (c) => (c?.practice && !c.image ? `cards/${artOf(c)}/${c.material}-${look(c)}.webp` : img(c));
     Store.cardPos = (c) => (c?.practice && !c.image ? '0% 0' : pos(c));
   }
-  const roll = (t) => { let u = Math.random(), a = 0; for (const [v, p] of t) { a += p; if (u < a) return v; } return t[t.length - 1][0]; };
   let n = 0;
   const RANKED = ['paper', 'wood', 'fire', 'charcoal', 'gold', 'fullart'];
   /** Live: a pack of the current Series' own cards, or null (no Series yet, or the reads failed or took too long). */
@@ -35,14 +34,11 @@
   // live: read the Series' set ahead (cached by the chain layer), so the first rip doesn't wait on it
   let pre = 0;
   if (window.Live?.on) Store.on(() => { const no = Store.state.series.no; if (no && no !== pre && window.Live.chain) { pre = no; window.Live.chain.practiceSet(no).catch(() => {}); } });
-  /** Six practice cards. Live: the current Series' (a promise); else the demo cast: 3 Paper, 1 Wood, 1 Wood or better,
-   *  1 Fire or better (Gold and Full Art turn up often here). */
+  /** Six practice cards. Live: the current Series' (a promise); else the demo cast, each card rolled on its own at
+   *  the Standard odds (Store.rollCard), like the contract. */
   Fun.practicePack = () => (window.Live?.on ? livePack().catch(() => null).then((p) => p || demoPack()) : demoPack());
   const demoPack = () => {
-    const mats = ['paper', 'paper', 'paper', 'wood', roll([['wood', 0.7], ['fire', 0.2], ['charcoal', 0.06], ['gold', 0.04]]), roll([['fire', 0.55], ['charcoal', 0.15], ['gold', 0.18], ['fullart', 0.12]])];
-    return mats.map((m) => {
-      const q = 1 - Math.sqrt(1 - ({ paper: 0.05, wood: 0.1, fire: 0.5, charcoal: 0.9 }[m] || 1)), f = Math.random() < q, p = Math.random() < q;
-      const holo = m === 'gold' || m === 'fullart' ? 'full' : f && p ? 'full' : f ? 'frame' : p ? 'picture' : 'none';
+    return Array.from({ length: 6 }, () => Store.rollCard()).map(({ material: m, holo }) => {
       return { id: -(++n), serial: 0, series: ART_SERIES, practice: true, character: m === 'gold' || m === 'fullart' ? SPECIAL : CAST[Math.floor(Math.random() * CAST.length)],
         material: m, holo, edition: 'Practice', grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
     });

@@ -45,7 +45,7 @@ export function faceOf(card: DealtCard, r: Recipe): CardFace {
 }
 
 /** Everything printed on a card. Only what's shared by every card of the same look (looks.ts): no serial, no
- *  edition, no Series #. Those are in the metadata. */
+ *  print number, no Series #. Those are in the metadata. */
 export interface CardView {
   frameSet: string
   name: string

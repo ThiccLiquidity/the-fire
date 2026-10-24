@@ -25,9 +25,9 @@
 
   // ---------- markup
   $('#app').innerHTML = `
-  <div id="loading" class="loading"><img src="ui/omni-mark.webp" alt=""><p>Lighting the forge…</p><small class="demo-load">Demo: nothing here is real</small></div>
+  <div id="loading" class="loading"><img src="ui/omni-mark.webp" alt=""><p>Lighting the furnace…</p><small class="demo-load">Demo: nothing here is real</small></div>
   <header class="topbar">
-    <a class="brand" href="#" aria-label="Omni Cardworks"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">CARDWORKS</span><em class="tag">Wood in. Packs out.</em></a>${LIVE && Live.testnet ? '<span class="net-badge">Testnet</span>' : ''}
+    <a class="brand" href="#" aria-label="Omni Cardworks"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">CARDWORKS</span><em class="tag">Wood and paper in, packs out.</em></a>${LIVE && Live.testnet ? '<span class="net-badge">Testnet</span>' : ''}
     <button class="chip series" id="seriesChip" type="button"></button>
     <div class="grow"></div>
     <nav class="tools" aria-label="Tools">
@@ -66,11 +66,8 @@
   <footer class="strip" aria-label="What's in a pack">
     <img class="packart" src="ui/omni-pack.webp" alt="Series 7 pack">
     <div class="what">
-      <h3><b class="sw">SERIES 7</b> PACK<span>6 cards</span></h3>
-      <table class="types" aria-label="Cards in a pack">
-        <tr><th scope="row">Material</th><td><span class="mat paper">Paper</span></td><td><span class="mat wood">Wood</span></td><td><span class="mat fire">Fire</span></td><td><span class="mat charcoal">Coal</span></td><td><span class="mat gold">Gold</span></td><td><span class="mat fullart">Full Art</span></td></tr>
-        <tr><th scope="row">Per pack</th><td>3</td><td>1–2</td><td colspan="4" class="span">At least 1</td></tr>
-      </table>
+      <h3><b class="sw">SERIES 7</b> PACK<span class="cpp">6 cards</span></h3>
+      <table class="types" aria-label="The odds for each card in a pack"></table>
     </div>
     <button class="btn small more" type="button" data-go="info-cards">Odds</button>
   </footer>
@@ -173,6 +170,9 @@
   const groupName = (i) => groups()[i]?.name || `group ${i + 1}`;
   /** Why a sold-out group may still get packs: "more may come in 4h 59m". */
   const moreTxt = (g) => `more may come${g.moreAt ? ` in ${cd(g.moreAt)}` : ' soon'}`;
+  /** A group that isn't open, for people: when it opens, or that it ended. */
+  const notOpenTxt = (g) => (g.state === 'ended' ? 'This group has ended. Check the Buy box for what\'s open now.'
+    : g.opensAt > nowS() ? `Opens in ${cd(g.opensAt)}.` : g.afterGroup != null ? `Opens when the ${esc(groupName(g.afterGroup))} group ends.` : 'Opens soon.');
   /** The group(s) opening next, for people (the earliest first). */
   function nextUp() {
     const up = groups().filter((g) => g.state === 'upcoming').sort((a, b) => (a.opensAt || 9e12) - (b.opensAt || 9e12));
@@ -265,11 +265,11 @@
     if (i == null) { const g = open().find((x) => !x.waiting && x.left !== 0 && Store.groupAccess(x).ok) || open()[0]; if (!g) return toast(S.series.note || 'Nothing on sale right now', 'bad'); i = g.index; }
     const g = groups()[i];
     if (!g) return;
-    if (g.state !== 'open') return Sheet.open('nope', { title: g.name, body: `<p class="lead">${g.state === 'ended' ? 'This group has ended.' : 'This group isn\'t open yet.'}</p>` });
+    if (g.state !== 'open') return Sheet.open('nope', { title: g.name, body: `<p class="lead">${notOpenTxt(g)}</p>` });
     if (g.waiting || g.left === 0) return Sheet.open('nope', { title: g.name, body: `<p class="lead">Sold out.${g.waiting ? ` Unclaimed packs from ${esc(groupName(g.moreFrom))} land here ${g.moreAt ? `in ${cd(g.moreAt)}` : 'when it ends'}.` : ''}</p>` });
     const a = Store.groupAccess(g);
     if (!a.ok && LIVE && !S.wallet.connected) return Live.needWallet(() => openGroup(i)); // the wallet decides what it can use
-    if (!a.ok && !a.ask) return Sheet.open('nope', { title: g.name, body: `<p class="lead">${esc(a.why || g.who)}.</p>` });
+    if (!a.ok && !a.ask) return Sheet.open('nope', { title: g.name, body: `<p class="lead">${esc(Store.refusal(g, a))}</p>` });
     return checkout(i);
   }
   // the peek buttons: what's in the Series on sale (sold out, the next one's tease sits in the Buy box / bar instead)
@@ -325,12 +325,24 @@
     const nm = mode === 'port' || innerWidth < 1500 ? '' : S.wallet.name; // phones: the icon and the balance, so the button fits beside the brand
     setText(wb, S.wallet.connected ? `${nm ? nm + ' · ' : ''}${fmtChip(S.wallet.balances.PAPER)} PAPER` : 'Connect');
     setAttr($('#walletBtn'), 'aria-label', S.wallet.connected ? `Wallet: ${fmt(S.wallet.balances.PAPER)} PAPER` : 'Connect a wallet');
+    renderStrip();
     if (LIVE) { // prices from the contracts
       document.querySelectorAll('[data-price=psa]').forEach((el) => setText(el, `from ${Wear.usd(P.CASE_USD)}`));
       document.querySelectorAll('[data-price=suggest]').forEach((el) => setText(el, `${P.SUGGEST_PAPER} PAPER`));
       if (S.series.no) { setText($('.strip .sw'), `SERIES ${S.series.no}`); setAttr($('.strip .packart'), 'alt', `Series ${S.series.no} pack`); }
     }
     $('#walletBtn').classList.toggle('on', S.wallet.connected);
+  }
+  // the pack strip: this Series' cards a pack and each card's odds by material (every card rolls on its own: the same
+  // odds for every card of every pack; live: the Series' own odds from the chain, Info.materials)
+  let stripKey = '';
+  function renderStrip() {
+    const mats = window.Info?.materials?.() || [], n = S.series.cardsPerPack || 6, key = JSON.stringify([n, mats]);
+    if (key === stripKey) return; stripKey = key;
+    setText($('.strip .cpp'), `${n} cards`);
+    const pc = (x) => `${+(x * 100).toPrecision(2)}%`;
+    $('.strip .types').innerHTML = `<tr><th scope="row">Material</th>${mats.map((m) => `<td><span class="mat ${m.id}">${m.name}</span></td>`).join('')}</tr>
+      <tr><th scope="row">Each card</th>${mats.map((m) => `<td>${pc(m.share)}</td>`).join('')}</tr>`;
   }
   document.querySelectorAll('[data-hero]').forEach((b) => b.addEventListener('click', () => hero?.go()));
   // ---------- between Series: the quiet shift. Nothing on sale, so the press and the belt rest (the fire, casing and
@@ -500,7 +512,7 @@
       if (!g0 || g0.state !== 'open') return;
       const acc = await api.prepare(g0);
       if (!acc) return; // live: the holder closed the "which NFT" question
-      if (!acc.ok) return Sheet.open('nope', { title: g0.name, body: `<p class="lead">${esc(acc.why || g0.who)}.</p>` });
+      if (!acc.ok) return Sheet.open('nope', { title: g0.name, body: `<p class="lead">${esc(Store.refusal(g0, acc))}</p>` });
       const max = Math.max(1, acc.max || 1), extra = g0.unlimited || g0.taxBps > 0;
       let n = 1, cur = g0.coins[0] || null, q = null, seq = 0, ethAll = null, view = 'form', busy = false, notice = '', understood = false;
       const body = document.createElement('div'); body.className = 'checkout' + (extra ? ' xcheck' : '');
@@ -616,6 +628,9 @@
   }
   function useFree() {
     if (LIVE) return Live.free();
+    const cg0 = groups()[S.series.creditGroup];
+    if (cg0?.state !== 'open' || sold()) return toast(Store.FREE_CLOSED, 'bad');
+    if (S.series.creditPacksLeft === 0) return toast(Store.FREE_GONE, 'bad');
     needWallet(() => {
       let n = 1, busy = false; const cg = groups()[S.series.creditGroup], per = cg ? cg.paper : P.PACK_PAPER;
       const body = document.createElement('div'); body.className = 'checkout';
@@ -671,15 +686,17 @@
   // ---------- New here? a short checklist. A step ticks only for what this visitor did in this visit (the demo wallet
   // starts with PAPER and packs: that's not them having done it); packs ready to open come first, with the main button.
   const did = new Set(); // 'paper', 'buy' this visit (connect, open and grade are read from the state)
+  // the coins this Series' paid groups take, for people: "PLANK, ETH or USDG"
+  const payCoins = () => { const all = ['PLANK', 'ETH', 'USDG'].filter((c) => groups().some((g) => g.priceUsd > 0 && g.coins.includes(c))); return (all.length ? all : ['PLANK', 'ETH', 'USDG']).join(', ').replace(/, ([^,]*)$/, ' or $1'); };
   function openStart() {
     const ready = () => Stations.openableCount();
     const opened = () => S.activity.some((a) => a.text.startsWith('Opened'));
     const open = ['Open your packs', () => (ready() ? `${ready()} ready to open now.` : 'Packs open when sales end.'), opened, 'Open packs', () => openStation('open')];
     const rest = [
       ['Connect a wallet', 'Any wallet on Robinhood Chain.', () => S.wallet.connected, 'Connect', () => needWallet(() => openStart())],
-      ['Get PAPER', 'Every pack takes some.', () => did.has('paper'), 'Get PAPER', () => openGetPaper()],
-      ['Buy a pack', 'PLANK, ETH or USDG, plus PAPER. Opens when sales end.', () => did.has('buy'), 'Buy', () => openGroup()],
-      ['Case or grade', 'Within 24h to stop wear.', () => S.activity.some((a) => a.text.startsWith('Paid')), 'Case & grade', () => Stations.open('grade')],
+      ['Get PAPER', () => `Every pack takes some PAPER to print (${paperTxt(P.PACK_PAPER)} a pack in Series ${S.series.no}).`, () => did.has('paper'), 'Get PAPER', () => openGetPaper()],
+      ['Buy a pack', () => `${money(P.PACK_USD)} + ${paperTxt(P.PACK_PAPER)} in Series ${S.series.no}, paid in ${payCoins()}. Packs open when sales end, and until then they're collectibles you can hold or trade sealed.`, () => did.has('buy'), 'Buy', () => openGroup()],
+      ['Case or grade', 'Case or grade new cards within 24 hours to keep fresh odds. A case stops wear any time.', () => S.activity.some((a) => a.text.startsWith('Paid')), 'Case & grade', () => Stations.open('grade')],
     ];
     const steps = ready() && !opened() ? [open, ...rest] : [...rest.slice(0, 3), open, rest[3]];
     const body = document.createElement('div'); body.className = 'start';
@@ -718,7 +735,7 @@
     if (LIVE) return;
     const n = pendingDeliver; pendingDeliver = 0;
     Store.update((s) => { if (n) s.sealed[s.series.no] = (s.sealed[s.series.no] || 0) + n; Store.demoStage('closed'); });
-    window.Scene?.finale?.(); setTimeout(() => toast('Sales ended (demo). Open your packs!', 'good'), 600);
+    window.Scene?.finale?.(); setTimeout(() => toast('Sales ended (demo). Time to rip!', 'good'), 600);
   }
   window.UI = { openGetPaper, checkout, openStart, approveNow, afterBuy, openGroup };
 
@@ -823,13 +840,13 @@
       Store.update(() => { all.state = 'ended'; all.endsAt = Math.floor(now); Object.assign(x, { state: 'open', opensAt: Math.floor(now), endsAt: Math.floor(now) + x.idle }); S.series.stage = 'after'; });
       toast('Sold out! Extra packs on sale now.', 'good');
     } else if (x?.state === 'open' && x.endsAt && now >= x.endsAt) {
-      Store.update(() => Store.demoStage('closed')); Scene.finale(); setTimeout(() => toast(`Series ${S.series.no} is closed. Open your packs!`, 'good'), 600);
+      Store.update(() => Store.demoStage('closed')); Scene.finale(); setTimeout(() => toast(`Series ${S.series.no} is closed. Time to rip!`, 'good'), 600);
     } else if (x?.state === 'open' || all?.state === 'open') renderChip();
   }
   if (!LIVE && new URLSearchParams(location.search).has('between')) Store.update(() => Store.demoStage('closed'));
   if (window.Scene) hookScene(); else addEventListener('scene-ready', hookScene, { once: true });
   layout(); render();
   // the UI is ready: show it now, over a still of the workshop; the live scene fades in when it has loaded (slow networks
-  // used to wait ~20 s on "Lighting the forge…")
+  // used to wait ~20 s on the loading screen)
   requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 120));
 })();

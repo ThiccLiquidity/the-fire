@@ -44,6 +44,7 @@
 .inf-body li::marker { color: var(--ember) }
 .inf-sub { margin: 14px 0 6px; font: 400 14px var(--display); letter-spacing: .04em; color: var(--ink) }
 .inf-note { margin: 6px 0 0; font-size: 13px; color: var(--muted) }
+.inf-body > p { margin: 12px 0 }
 
 /* chart plates */
 .inf-plate { margin: 14px 0; padding: 14px 14px 12px; border-radius: 14px; border: 1px solid var(--line-2);
@@ -116,19 +117,19 @@
 .inf-holo th[scope=row] { vertical-align: middle }
 
 /* pack slots */
-.inf-pack { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px }
+.inf-pack { display: grid; grid-template-columns: repeat(var(--n, 6), 1fr); gap: 6px }
 .inf-slot { display: grid; justify-items: center; gap: 6px; padding: 8px 2px; border-radius: 10px; border: 1px solid var(--line); background: #110c08; min-width: 0 }
 .inf-slot i { font: 400 13px var(--display); font-style: normal; color: var(--dim) }
 .inf-slot .mat { padding: 3px 7px; font-size: 13px }
 @media (max-width: 600px) { .inf-pack { grid-template-columns: repeat(3, 1fr) } }
 
-/* timeline */
-.inf-time { list-style: none; margin: 6px 0 12px; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; counter-reset: t }
-.inf-time li { margin: 0; padding: 10px; border-radius: 10px; background: #110c08; border: 1px solid var(--line); border-top: 3px solid var(--ember); display: grid; gap: 3px; align-content: start }
-.inf-time b { font: 400 14px var(--display); color: var(--gold) }
-.inf-time span { font-size: 13.5px; color: var(--ink) }
-@media (max-width: 600px) { .inf-time { grid-template-columns: 1fr }
-  .inf-time li { grid-template-columns: 78px 1fr; align-items: baseline; border-top-width: 1px; border-left: 3px solid var(--ember) } }
+/* timeline: how a Series sells, one numbered step a row */
+.inf-time { list-style: none; margin: 6px 0 12px; padding: 0; display: grid; gap: 6px; counter-reset: t }
+.inf-time > li { margin: 0; padding: 10px 12px 10px 44px; border-radius: 10px; background: #110c08; border: 1px solid var(--line); border-left: 3px solid var(--ember); position: relative; counter-increment: t }
+.inf-time > li::before { content: counter(t); position: absolute; left: 12px; top: 9px; font: 400 16px var(--display); color: var(--ember) }
+.inf-time > li > b:first-child { font: 400 15px var(--display); color: var(--gold); letter-spacing: .02em }
+.inf-time ul { margin: 6px 0 0; padding-left: 18px }
+.inf-time ul li { margin: 0 0 4px }
 
 /* link + FAQ */
 .inf-link { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); padding: 0 16px; border-radius: 12px; border: 1.5px solid var(--line-2);

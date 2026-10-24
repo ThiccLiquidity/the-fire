@@ -1,5 +1,5 @@
 /** Shared images: every card with the same character, card type, holo frame, holo picture and PDA grade shares one
- *  image. Only those are printed on the card; serial, edition and Series # are per card and go in the metadata.
+ *  image. Only those are printed on the card; serial, print number and Series # are per card and go in the metadata.
  *
  *  A Series' image folder holds the FULL grid of what its recipe can deal, not just the looks its sample deal happens
  *  to produce: grades are revealed on-chain later, and FireCards.imageFile points every card at
@@ -112,7 +112,7 @@ export function seriesGrid(fire: number, characterIds: readonly string[], r: Rec
         for (const { grade, cased } of STATES) {
           const look: Look = { characterId, type, slug: ty.slug, holoFrame, holoPicture, grade, cased, fire }
           const card: DealtCard = {
-            serial: 0, fire, pack: 0, slot: 0, group: 0, type, characterId, holoFrame, holoPicture, holo, edition: 1, editionOf: 1, grade, cased,
+            serial: 0, fire, pack: 0, slot: 0, type, characterId, holoFrame, holoPicture, holo, printNumber: 1, grade, cased,
           }
           out.push({ key: lookKey(look), look, card, characterIndex, file: lookFileName(look, characterIndex) })
         }

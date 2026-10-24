@@ -1085,11 +1085,7 @@ contract GroupsTest is SaleBase {
         (, bool closed,,, uint64 packCount,) = cards.fires(1);
         assertTrue(closed);
         assertEq(packCount, 62, "the Series is what was minted: 60 more than its base total");
-        // its pool is the recipe at 62 packs, and an overflow pack opens and deals like any other
-        uint256[] memory pool = dealer.poolOf(1);
-        uint256 total;
-        for (uint256 m; m < pool.length; m++) total += pool[m];
-        assertEq(total, 62 * 6);
+        // an overflow pack opens and deals like any other (same odds: nothing depends on the pack count)
         vm.prank(bob, bob);
         cards.open(1, 15);
         rng.fulfill(rng.last(), 77);

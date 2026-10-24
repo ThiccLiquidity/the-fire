@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { allImageNames, imageName, loads, looksFor, recipeFromJson, recipeHash, retryAfterMs, STATES } from "./verify-series.mjs";
+import { allImageNames, characterWeightsFromJson, imageName, loads, looksFor, recipeFromJson, recipeHash, retryAfterMs, STATES } from "./verify-series.mjs";
 
 const standard = JSON.parse(readFileSync(new URL("../../contracts/test/cards/recipe-standard.json", import.meta.url), "utf8"));
 
@@ -16,21 +16,24 @@ test("Standard recipe: 18 looks per character (4 types x 4 holo, Gold full, Full
   assert.equal(imageName(2, "coal", "full", "10"), "c2-coal-full-10.webp");
 });
 
-test("a rank range with no top means 'or better'; a list slot has no rank range", () => {
+test("odds recipe: type weights, cards per pack, character weights (none = equal)", () => {
   const r = recipeFromJson(standard);
-  assert.equal(r.slots[2].maxRank, 4294967295n);
-  assert.equal(r.slots[0].maxRank, 0n);
+  assert.deepEqual(r.types.map((t) => t.weight), [5000n, 2415n, 1497n, 489n, 399n, 200n]);
+  assert.equal(r.cardsPerPack, 6n);
+  assert.deepEqual(characterWeightsFromJson(standard), [1n, 1n, 1n]);
+  const j = structuredClone(standard);
+  j.characters.forEach((c, i) => { c.weight = i + 2; });
+  assert.deepEqual(characterWeightsFromJson(j), [2n, 3n, 4n]);
 });
 
-test("holo looks follow the dealer: certain holo has no 'none'; a must-holo-only type has no 'none'", () => {
+test("holo looks follow the dealer: certain holo has no 'none'", () => {
   const j = structuredClone(standard);
   j.types[0].holo = { mode: "independent", frame: "1000000000000000000", picture: "0" };
   let r = recipeFromJson(j);
   assert.deepEqual(looksFor(r, 0), ["frame"]);
   j.types[0].holo = { mode: "independent", frame: "5", picture: "7" };
-  j.slots[0].mustHolo = true;
   r = recipeFromJson(j);
-  assert.deepEqual(looksFor(r, 0), ["frame", "picture", "full"], "paper only sits in a must-holo slot");
+  assert.deepEqual(looksFor(r, 0), ["none", "frame", "picture", "full"]);
   j.types[2].holo = { mode: "distribution", weights: ["3", "0", "2", "0"] };
   r = recipeFromJson(j);
   assert.deepEqual(looksFor(r, 2), ["none", "picture"]);
@@ -39,7 +42,7 @@ test("holo looks follow the dealer: certain holo has no 'none'; a must-holo-only
 test("recipe hash: the studio's manifest fingerprint ignores imagesBase and the sale block", () => {
   const a = recipeHash(standard);
   // the same constant is asserted in studio/src/manifest.test.ts (the studio writes it into manifest.json)
-  assert.equal(a, "6acc2a38b47895668716cef8bff923f37c125f86412b6604aa238db6b6e30ce1");
+  assert.equal(a, "38b4bc2a2bf99d87c772167f1acab4eb9e12d95be2ca3c8bd5c844faea4472db");
   assert.equal(recipeHash({ ...standard, imagesBase: "ipfs://other/", sale: { start: 1 } }), a);
   assert.notEqual(recipeHash({ ...standard, characters: standard.characters.slice(1) }), a);
 });

@@ -121,7 +121,7 @@ export function Preview() {
             <div>
               <h3>{char.name} · {frameSetLabel(big.material)} frames</h3>
               <p className="muted">Holo: {big.holo === 'none' ? 'none' : HOLO_LABEL[big.holo]}<br />PDA: {grade == null ? (cased ? 'ungraded, in a case' : 'ungraded') : `${grade}, slabbed (${WEAR_LABEL[wearLookOf(grade)]} wear)`}</p>
-              <p className="muted small">Every card of a type using these frames, of {char.name}, with this holo{grade == null ? '' : ' and grade'} shares this image. Serial, edition and Series # are in each NFT's data.</p>
+              <p className="muted small">Every card of a type using these frames, of {char.name}, with this holo{grade == null ? '' : ' and grade'} shares this image. Serial, print number and Series # are in each NFT's data.</p>
               <button onClick={() => setBig(null)}>Close</button>
             </div>
           </div>

@@ -88,17 +88,18 @@ export async function runTest(ctx: Ctx): Promise<number> {
   check(s.creditGroup === 1 && s.status.left === null && !s.closing, "free packs come from Everyone; with an unlimited group ahead, no end to what can sell");
   check(s.cards.cardsPerPack === 6 && s.cards.characters === 3, `${s.cards.cardsPerPack} cards a pack, ${s.cards.characters} characters`);
 
-  console.log("\n== the practice pack: the Series' own cards at its recipe's odds (read-only)");
+  console.log("\n== the practice pack: the Series' own cards at its recipe's fixed odds (read-only)");
   const ps = await L.practiceSet(fire);
   check(ps && ps.imagesBase === "ipfs://bafyexampleimages/" && ps.characters.join() === "Ember Fox,Ash Wolf,Cinder Queen" && ps.types.map((t) => t.slug).join() === "paper,wood,fire,coal,gold,fullart",
-    `practice set: Series 7's image folder, characters and card types (${ps?.types.map((t) => `${t.slug} ${t.perPack.toFixed(2)}/pack`).join(", ")})`);
-  check(Math.abs(ps.types.reduce((a, t) => a + t.perPack, 0) - 6) < 1e-9 && ps.types[0].perPack === 3, "its pool: 6 cards a pack, 3 of them Paper");
+    `practice set: Series 7's image folder, characters and card types (${ps?.types.map((t) => `${t.slug} ${(t.share * 100).toFixed(2)}%`).join(", ")})`);
+  check(Math.abs(ps.types.reduce((a, t) => a + t.share, 0) - 1) < 1e-9 && ps.types[0].share === 0.5 && ps.types[5].share === 0.02 && ps.cardsPerPack === 6
+    && ps.characterOdds.every((p) => Math.abs(p - 1 / 3) < 1e-12), "its odds: 6 cards a pack, Paper 50% ... Full Art 2% per card (RecipeDealer.oddsOf), characters equally likely");
   const many = Array.from({ length: 400 }, () => L.practiceDeal(ps));
-  const rankOk = many.every((p) => p.length === 6 && p.filter((c) => c.slug === "paper").length === 3 && p.some((c) => c.slug === "wood") && p.some((c) => c.rank >= 2) && p.filter((c) => c.rank >= 1).length === 3);
-  const imgOk = many.flat().every((c) => c.image === `ipfs://bafyexampleimages/c${c.characterIndex}-${c.slug}-${c.holo}-u.webp` && ps.characters[c.characterIndex] === c.character);
-  const special = many.flat().filter((c) => c.rank >= 4);
-  check(rankOk && imgOk && special.every((c) => c.holo === "full"),
-    `400 practice packs: 3 Paper, 1 Wood, 1 Wood or better, 1 Fire or better; each card's image is the Series' own (c<character>-<slug>-<holo>-u.webp); Gold and Full Art always full holo (${special.length} of them)`);
+  const cardsAll = many.flat(), paperN = cardsAll.filter((c) => c.slug === "paper").length;
+  const imgOk = cardsAll.every((c) => c.image === `ipfs://bafyexampleimages/c${c.characterIndex}-${c.slug}-${c.holo}-u.webp` && ps.characters[c.characterIndex] === c.character);
+  const special = cardsAll.filter((c) => c.rank >= 4);
+  check(many.every((p) => p.length === 6) && Math.abs(paperN - 1200) < 125 && imgOk && special.every((c) => c.holo === "full"),
+    `400 practice packs: every card rolled on its own (Paper ${paperN} of 2,400); each card's image is the Series' own (c<character>-<slug>-<holo>-u.webp); Gold and Full Art always full holo (${special.length} of them)`);
 
   console.log("\n== suggestions: theme + art style in one transaction, then the owner picks");
   const rules = await L.suggestionRules();
@@ -228,22 +229,19 @@ export async function runTest(ctx: Ctx): Promise<number> {
   check(cards.length === 54, "54 cards found by scanning the chain (no explorer on a local chain)");
   const c0 = cards[0];
   check(c0.name.includes(c0.character) && c0.image.startsWith("ipfs://") && c0.image.endsWith("-u.webp") && c0.grade === null && !c0.cased, `a card: "${c0.name}", ${c0.material}, holo ${c0.holo}, image ${c0.image.split("/").pop()}`);
-  check(["Character", "Category", "Material", "Holo", "Series", "Edition", "PDA"].every((k) => k in c0.traits), "its traits are the metadata's");
+  check(["Character", "Category", "Material", "Holo", "Series", "Print number", "PDA"].every((k) => k in c0.traits), "its traits are the metadata's");
+  check(c0.print >= 1 && String(c0.traits["Print number"]).replace(/^#/, "") === String(c0.print) && cards.every((c) => c.print >= 1), `its print number: #${c0.print} (the metadata's "Print number")`);
   await ctx.warp(3600); // an hour raw
   const nowA = Number(await ctx.now()), c0b = await L.card(c0.serial);
   check(c0b.age >= 3600 && Math.abs(nowA - c0b.dealtAt - c0b.age) <= 2, `a raw card's age is the chain's (wearOf): ${c0b.age} s since it was dealt, and running`);
 
   console.log("\n== case one card, grade two");
   const pr = await L.psaPrices();
-  check(pr.caseUsd === "0.05" && pr.gradeUsd === "1.00" && pr.maxBatch === 20 && pr.paperDiscountBps === 0, `prices: case $${pr.caseUsd}, grade $${pr.gradeUsd}, up to ${pr.maxBatch} cards, no PAPER discount`);
+  check(pr.caseUsd === "0.05" && pr.gradeUsd === "1.00" && pr.maxBatch === 20, `prices: case $${pr.caseUsd}, grade $${pr.gradeUsd} (every card), up to ${pr.maxBatch} cards`);
   const [ca, g1, g2] = [cards[1].serial, cards[2].serial, cards[3].serial];
-  const per = await L.gradeUsdOf([g1, g2]);
-  check(per[g1] === 1 && per[g2] === 1, `grading each card: $${per[g1]} and $${per[g2]} (gradeUsdOf, by card type)`);
   const pq2 = await L.quoteProtect([ca], [g1, g2], "ETH");
-  check(BigInt(pq2.raw) > 0n, `1 case + 2 grades = ${pq2.text} ETH (quoteFor: exactly what protect charges)`);
-  let pqPaper: Awaited<ReturnType<typeof L.quoteProtect>> | null = null, paperWhy = "";
-  try { pqPaper = await L.quoteProtect([ca], [], "PAPER"); } catch (e) { paperWhy = (e as Error).message.split("\n").slice(0, 8).join(" | "); }
-  check(pqPaper ? BigInt(pqPaper.raw) > 0n : /FeedUnavailable|price/i.test(paperWhy), pqPaper ? `a case in PAPER: ${pqPaper.text} PAPER` : `PAPER quote refused while its price can't be read: ${paperWhy}`);
+  check(BigInt(pq2.raw) > 0n, `1 case + 2 grades = ${pq2.text} ETH (FirePsa.quote: exactly what protect charges)`);
+  check(L.PSA_PAY.join(",") === "PLANK,ETH,USDG", `cases and grading take ${L.PSA_PAY.join(", ")} (no PAPER)`);
   const pt = await L.protect({ caseIds: [ca], gradeIds: [g1, g2], pay: "ETH", quote: pq2.raw }, o);
   check(pt.gradingIndex === 0, "cased and sent for grading in one transaction (grading #0), capped at the price shown");
   check((await L.card(ca)).cased && (await L.card(g1)).gradePending, "the case shows; the graded cards are pending (they can't move)");
@@ -317,16 +315,15 @@ export async function runTest(ctx: Ctx): Promise<number> {
   await done;
   check(resumed.join() === "Approve some more: success" && L.pendingTxs(me).length === 0, `a reload resumes it: ${resumed.join()}`);
 
-  console.log("\n== a case paid in PAPER, once the PAPER price is up (PaperUsdTwap: a pool qualifies for 20 h, then a window)");
+  console.log("\n== a case paid in USDG, once the PAPER price is up (PaperUsdTwap: a pool qualifies for 20 h, then a window)");
   const cp = [{ type: "function", name: "checkpoint", inputs: [], outputs: [], stateMutability: "nonpayable" }];
   for (let k = 0; k < 3; k++) { await ctx.warp(20 * 3600 + 60); await ctx.tx(deployer, ctx.C.PlankUsdTwap, cp, "checkpoint"); await ctx.tx(deployer, ctx.C.PaperUsdTwap, cp, "checkpoint"); }
-  const card9 = cards[9].serial, q5 = await L.quoteProtect([card9], [], "PAPER");
-  const paperBefore2 = BigInt((await L.balances(me)).PAPER!.raw), DEAD = "0x000000000000000000000000000000000000dEaD" as Address;
-  const deadBefore = BigInt((await L.balances(DEAD)).PAPER!.raw);
-  const pt3 = await L.protect({ caseIds: [card9], pay: "PAPER", quote: q5.raw }, o);
-  const spent = paperBefore2 - BigInt((await L.balances(me)).PAPER!.raw);
-  check(BigInt(q5.raw) > 0n && pt3.gradingIndex === -1 && (await L.card(card9)).cased && spent === BigInt(q5.raw) && BigInt((await L.balances(DEAD)).PAPER!.raw) - deadBefore === spent,
-    `a case paid in PAPER (approved to FirePsa, burned directly): ${q5.text} PAPER, exactly the quote`);
+  const card9 = cards[9].serial, q5 = await L.quoteProtect([card9], [], "USDG");
+  const usdgBefore = BigInt((await L.balances(me)).USDG!.raw);
+  const pt3 = await L.protect({ caseIds: [card9], pay: "USDG", quote: q5.raw }, o);
+  const spent = usdgBefore - BigInt((await L.balances(me)).USDG!.raw);
+  check(BigInt(q5.raw) > 0n && pt3.gradingIndex === -1 && (await L.card(card9)).cased && spent === BigInt(q5.raw),
+    `a case paid in USDG (approved to FirePsa; the fee goes to PaperBurner, which buys PAPER and burns it): ${q5.text} USDG, exactly the quote`);
 
   console.log("\n== profiles (FireProfiles): a name and a card as the picture");
   const otherAcct = privateKeyToAccount(toHex(other.getHdKey().privateKey!));

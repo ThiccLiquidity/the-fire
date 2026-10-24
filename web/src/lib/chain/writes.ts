@@ -40,7 +40,7 @@ export const withSlip = (v: bigint, bps = 300) => (v * BigInt(10_000 + bps) + 9_
 const shown = async (raw: string | null | undefined, fresh: () => Promise<bigint>): Promise<bigint> => (raw != null && raw !== "" ? BigInt(raw) : fresh());
 
 const coinAddr = (pay: PayCoin | PsaCoin): Address => {
-  const t = input(pay === "PLANK" ? "PLANK" : pay === "PAPER" ? "PAPER" : "USDG");
+  const t = input(pay === "PLANK" ? "PLANK" : "USDG");
   if (!t) throw new Error(`${pay} isn't set up on ${NET.label}.`);
   return t;
 };
@@ -205,11 +205,11 @@ export async function deliverAndDeal(p: { fire: number; index: number }, o: Writ
  *  `slippageBps`). `quote`: what the buyer was shown (quoteProtect's raw): the cap is built from it. Returns the
  *  grading's index (-1 when nothing was sent for grading). */
 /** Case `caseIds` and send `gradeIds` for grading, in one payment. The cap is the quote the page showed
- *  (FirePsa.quoteFor: exactly what protect charges) + slippage (none for USDG). ETH is sent (the rest comes back);
- *  PLANK, USDG and PAPER are approved to FirePsa first (PAPER is burned directly). */
+ *  (FirePsa.quote: exactly what protect charges) + slippage (none for USDG). ETH is sent (the rest comes back);
+ *  PLANK and USDG are approved to FirePsa first. */
 export async function protect(p: { caseIds?: number[]; gradeIds?: number[]; pay: PsaCoin; slippageBps?: number; quote?: string | null }, o: WriteOpts = {}): Promise<{ receipt: TransactionReceipt; gradingIndex: number }> {
   const cases = (p.caseIds ?? []).map(BigInt), grades = (p.gradeIds ?? []).map(BigInt), psa = addr("FirePsa"), slip = p.slippageBps ?? 300;
-  const cost = await shown(p.quote, () => read<bigint>("FirePsa", psaAbi, "quoteFor", [cases, grades, psaPayIndex(p.pay)]));
+  const cost = await shown(p.quote, () => read<bigint>("FirePsa", psaAbi, "quote", [BigInt(cases.length), BigInt(grades.length), psaPayIndex(p.pay)]));
   let maxCost: bigint, value = 0n;
   if (p.pay === "ETH") value = maxCost = withSlip(cost, slip);
   else { maxCost = p.pay === "USDG" ? cost : withSlip(cost, slip); await approve(coinAddr(p.pay), psa, maxCost, `Approve ${p.pay}`, o); }

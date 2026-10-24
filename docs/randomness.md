@@ -31,15 +31,23 @@ the name is historical).
 - **There is no re-request.** One open or grading, one request, one number. A re-request after a stall used to be
   possible a day on; it was removed because drand publishes each round before anyone delivers it, so a re-request
   could act as a re-roll for someone who had already seen their number.
-- **No word for 7 days** after the request (randomness gone for good): anyone calls `FireCards.cancelOpen(fire, index)`
-  (the packs go back, sealed) or `FirePsa.cancelGrading(index, ids)` (the cards unlock, still ungraded; the fee is
-  not refunded: it went to the PAPER burn). Both refuse while the request's source holds a word: deliver it instead.
-  A cancelled grading can be sent again with fresh randomness, so this is a re-roll only for a grading nobody delivers
-  for 7 days, and every drand round is public, so anyone (the holder included) can deliver the word at any time. In
-  practice the keeper delivers each word within minutes and alerts on any opening or grading still waiting past its
-  window (`ops/keeper`), long before 7 days.
-- **An open that is ready but can't be dealt** for 7 days (a dealer that can't deal it): anyone calls
-  `FireCards.skipStuck(fire)`; its unstarted packs go back, sealed, and that Series' queue moves on.
+- **No word for 24 hours** after the request (`CANCEL_AFTER`, randomness gone for good): anyone calls
+  `FireCards.cancelOpen(fire, index)` (the packs go back, sealed) or `FirePsa.cancelGrading(index, ids)` (the cards
+  unlock, still ungraded; the fee is not refunded: it went to the PAPER burn). Both refuse while the request's source
+  holds a word: deliver it instead.
+  - **Why 24 hours.** drand publishes each round before anyone delivers it, so a cancel only works while nobody has
+    delivered the word, and the holder can see the word first. A holder who didn't like it could sit on it and cancel
+    for a re-roll (packs back sealed, or the cards sent for grading again with fresh randomness). That can only happen
+    if every keeper is down for the whole window: anyone (the site, the holder, a stranger) can deliver the word at any
+    time. So the window must be longer than any keeper outage; with two keepers (main and backup) and alerts, 24
+    hours is the owner's choice.
+  - In practice the keeper delivers each word within minutes. It alerts on any opening or grading still without its
+    word 10 minutes after its drand round (repeated hourly), and again, marked URGENT, 6 hours after the request
+    (`ops/keeper`, `CANCEL_WARN_HOURS`), long before 24 hours.
+- **An open that is ready but can't be dealt** for 7 days (`SKIP_AFTER`; a dealer that can't deal it): anyone calls
+  `FireCards.skipStuck(fire)`; its unstarted packs go back, sealed, and that Series' queue moves on. Its word is
+  already known, so this window too must outlast any keeper outage (anyone can call `process`); it stays at 7 days
+  because it should only ever be needed for a dealer that can't deal.
 
 ## Switching the randomness source
 The owner can point FireCards and FirePsa at a new source at any time (`setRandomness`, no delay; the owner announces
@@ -48,7 +56,7 @@ it publicly first). Every switch emits `RandomnessSet(source)`.
 - Each open and grading remembers the source that took its request (`source`, `requestId` in `openOf` /
   `gradingOf`). Only that source can answer it: an answer from any other address, or for a request it never took,
   is refused. Request ids from different sources can't collide.
-- A request still waiting on the old source can be answered by it as usual, or cancelled after 7 days as above.
+- A request still waiting on the old source can be answered by it as usual, or cancelled after 24 hours as above.
 
 ## Why not OpenVRF as deployed
 [Robinhood-OSS/OpenVRF](https://github.com/Robinhood-OSS/OpenVRF) (Apache-2.0) is the base: same round selection,

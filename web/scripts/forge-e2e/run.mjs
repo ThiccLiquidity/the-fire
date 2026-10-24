@@ -186,10 +186,12 @@ try {
   check(/\$2\.60 \+ 1 PAPER/.test(xc) && /Next one costs \$2\.70/.test(xc) && /after the last buy/.test(xc) && !/burn|tax/i.test(xc), `it says the price, the next price and the timer, no fund flows: ${xc.replace(/\s+/g, " ")}`);
   await page.click("#sheet-buy [data-ok]");
   await shot("07d-after-sellout-confirm");
+  await page.evaluate(() => document.querySelectorAll(".toast").forEach((t) => t.remove())); // the Press claim's "1 pack bought" may still show: wait for this buy's
   await page.click("#sheet-buy .go:not([disabled])");
   await txDone(); await toastSeen(/bought/);
   await sync();
-  check(await page.evaluate(() => Store.state.sealed[7] === 8 && Store.state.series.groups[2].sold === 1), "extra pack #1 bought");
+  const x1 = await page.evaluate(() => ({ sealed: Store.state.sealed[7], sold: Store.state.series.groups[2].sold }));
+  check(x1.sealed === 8 && x1.sold === 1, `extra pack #1 bought (${JSON.stringify(x1)})`);
   // the race: the sheet shows pack #2 at $2.70; someone else buys it first
   await page.click('#buybox [data-buy="g2"]');
   await page.locator("#sheet-buy[open] .go:not([disabled])").waitFor({ timeout: 30_000 });
@@ -253,11 +255,9 @@ try {
   check(await page.locator('#sheet-table .wz-coin [aria-pressed="true"]').textContent() === "ETH", "the review pays in ETH by default");
   check(/Grades are random and final\. No regrades, no refunds\. Nothing you pay raises the odds\./.test(await page.locator("#sheet-table .wz-final").textContent()) && !/burn/i.test(await page.locator("#sheet-table .wz-pay").innerText()), "where grades are paid for: random and final, no regrades, no refunds; no fund flows");
   check(await page.locator("#sheet-table .wz-thumbs .gt-odds").count() === 2, "each card to the grader shows its own odds (PDA 10 %)");
-  // PAPER: no PAPER price on this chain yet (the PaperUsdTwap needs its first window): the option turns off with a reason
-  await page.click('#sheet-table .wz-coin [data-coin="PAPER"]');
-  await page.waitForFunction(() => document.querySelector('#sheet-table .wz-coin [data-coin="PAPER"]')?.disabled, null, { timeout: 30_000 });
-  check(/PAPER unavailable right now/.test(await page.locator("#sheet-table .wz-coin .warn").textContent()) && await page.locator('#sheet-table .wz-coin [aria-pressed="true"]').textContent() === "ETH",
-    "PAPER while its price can't be read (FeedUnavailable): turned off with a short reason, back to ETH");
+  // cases and grading take PLANK, ETH or USDG only: no PAPER option
+  const payCoins = await page.evaluate(() => [...document.querySelectorAll('#sheet-table .wz-coin [data-coin]')].map((b) => b.dataset.coin));
+  check(payCoins.join(",") === "ETH,PLANK,USDG", `pay with ETH, PLANK or USDG, no PAPER (${payCoins.join(", ")})`);
   await page.click('#sheet-table .wz-coin [aria-pressed]:text("ETH")');
   await page.waitForFunction(() => /≈ .* ETH/.test(document.querySelector("#sheet-table .wz-pay .price")?.textContent || ""), null, { timeout: 30_000 });
   const quoted = await page.evaluate(async () => { const ids = Store.state.cards.filter((c) => c.grade == null && !c.cased).map((c) => c.id); return (await window.Live.quoteProtect(ids.slice(0, 1), ids.slice(1, 3), "ETH")).text; });

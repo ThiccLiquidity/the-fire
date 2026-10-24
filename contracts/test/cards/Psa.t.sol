@@ -56,7 +56,7 @@ contract PsaTest is SeriesHelper {
         cards.setRenderer(address(renderer));
         psa.setRandomness(address(psaRng));
         vm.stopPrank();
-        _standard(cards, dealer, owner, 1, 2, 1);
+        _standard(cards, dealer, owner, 1, 2);
 
         // alice gets 2 packs' worth of cards (serials 1..12)
         vm.startPrank(seller);
@@ -238,7 +238,7 @@ contract PsaTest is SeriesHelper {
             assertLe(g, 10);
         }
         // a second Series, left uncased for 20 years
-        _standard(cards, dealer, owner, 2, 2, 1);
+        _standard(cards, dealer, owner, 2, 2);
         vm.startPrank(seller);
         packs.mint(bob, 2, 3);
         cards.closeFire(2);
@@ -406,17 +406,18 @@ contract PsaTest is SeriesHelper {
 
     // ================================================================ randomness
 
-    function test_cancelAfterAWeekFromTheRequestAndTheClockRunsOn() public {
+    function test_cancelAfterADayFromTheRequestAndTheClockRunsOn() public {
+        assertEq(psa.CANCEL_AFTER(), 24 hours);
         vm.warp(block.timestamp + 2 days);
         uint256 cost = psa.quote(0, 1, FirePsa.Pay.ETH);
         vm.prank(alice);
         uint256 index = psa.protect{value: cost}(_none(), _one(8), FirePsa.Pay.ETH, cost);
         (bool ok,) = address(psa).call(abi.encodeWithSignature("rerequest(uint256)", index));
         assertFalse(ok, "no re-request: one grading, one number");
-        vm.warp(block.timestamp + 6 days);
+        vm.warp(block.timestamp + 24 hours - 1);
         vm.expectRevert(FirePsa.NotStuck.selector);
-        psa.cancelGrading(index, _one(8)); // 6 days since the request
-        vm.warp(block.timestamp + 1 days);
+        psa.cancelGrading(index, _one(8)); // a second short of a day since the request
+        vm.warp(block.timestamp + 1);
         vm.expectRevert(FirePsa.BadIds.selector);
         psa.cancelGrading(index, _one(9)); // the list must be the grading's
         psa.cancelGrading(index, _one(8));
@@ -529,151 +530,74 @@ contract PsaTest is SeriesHelper {
         cards.setGradePending(1, true);
     }
 
-    // ================================================================ paying in PAPER
+    // ================================================================ coins and one grading price
 
     event Protected(address indexed by, uint256[] cased, uint256[] graded, FirePsa.Pay pay, uint256 paid, uint256 gradingIndex);
     event MetadataUpdate(uint256 tokenId);
     event Moved(uint256 indexed tokenId, uint256 moves);
 
-    function _paper() internal view returns (MockERC20) {
-        return MockERC20(burner.PAPER());
+    /// Cases and grading take PLANK, ETH or USDG only: PAPER (the old Pay 3) is not a payment option.
+    function test_paperIsNotAPaymentOption() public {
+        (bool ok,) = address(psa).staticcall(abi.encodeWithSignature("quote(uint256,uint256,uint8)", 1, 0, 3));
+        assertFalse(ok, "no Pay 3 quote");
+        vm.prank(alice);
+        (ok,) = address(psa).call(
+            abi.encodeWithSignature("protect(uint256[],uint256[],uint8,uint256)", _one(1), _none(), 3, type(uint256).max)
+        );
+        assertFalse(ok, "no Pay 3 payment");
+        (bool exists,,, bool cased,,) = cards.wearOf(1);
+        assertTrue(exists && !cased, "nothing happened");
+        // the old PAPER settings are gone
+        (ok,) = address(psa).staticcall(abi.encodeWithSignature("paperDiscountBps()"));
+        assertFalse(ok);
+        (ok,) = address(psa).staticcall(abi.encodeWithSignature("gradeUsdOf(uint256)", 1));
+        assertFalse(ok);
+        _case(alice, _one(1)); // the other coins still work
     }
 
-    /// PAPER: the dollar price at the PAPER feed's price, less the discount, rounded up, burned straight to DEAD.
-    function test_paysInPaperBurnedToDead() public {
-        address dead = 0x000000000000000000000000000000000000dEaD;
-        MockERC20 paper = _paper();
-        paper.mint(alice, 1_000_000e18);
-        burner.setPaperPrice(0.08e18); // $0.08
-        // 2 cases + 1 grade = $1.10 -> 13.75 PAPER
-        uint256 c = psa.quote(2, 1, FirePsa.Pay.PAPER);
-        assertEq(c, 13.75e18, "$1.10 at $0.08");
-        assertEq(psa.quoteFor(_ids(1, 2), _one(3), FirePsa.Pay.PAPER), c);
-        vm.startPrank(alice);
-        paper.approve(address(psa), c);
-        uint256 before = alice.balance;
-        vm.expectEmit(true, false, false, true, address(psa));
-        emit Protected(alice, _ids(1, 2), _one(3), FirePsa.Pay.PAPER, c, 0);
-        psa.protect{value: 1 ether}(_ids(1, 2), _one(3), FirePsa.Pay.PAPER, c); // stray ETH comes back
-        vm.stopPrank();
-        assertEq(alice.balance, before, "no ETH taken");
-        assertEq(paper.balanceOf(dead), c, "burned to the dead address");
-        assertEq(paper.balanceOf(address(burner)), 0, "never through the burner");
-        assertEq(paper.balanceOf(address(psa)), 0);
-        assertEq(burner.flushes(), 0, "no flush for PAPER");
-
-        // a 20% discount, a price that doesn't divide evenly: rounded up
-        vm.prank(owner);
-        psa.setPaperDiscount(2_000);
-        burner.setPaperPrice(0.07e18);
-        // $0.05 * 0.8 / $0.07 = 0.571428... PAPER, rounded up
-        uint256 want = (uint256(0.05e18) * 8_000 * 1e18 + 10_000 * 0.07e18 - 1) / (10_000 * 0.07e18);
-        assertEq(psa.quote(1, 0, FirePsa.Pay.PAPER), want);
-        assertEq(want, 571428571428571429);
-        vm.startPrank(alice);
-        paper.approve(address(psa), want);
-        vm.expectRevert(FirePsa.PriceMoved.selector);
-        psa.protect(_one(4), _none(), FirePsa.Pay.PAPER, want - 1); // maxCost guards PAPER too
-        psa.protect(_one(4), _none(), FirePsa.Pay.PAPER, want);
-        vm.stopPrank();
-        assertEq(paper.balanceOf(dead), c + want);
-    }
-
-    /// No fresh PAPER price: PAPER payments (and quotes) are refused; other coins still work.
-    function test_paperRefusedWithoutAPrice() public {
-        _paper().mint(alice, 1_000e18);
-        vm.expectRevert(FirePsa.FeedUnavailable.selector);
-        psa.quote(1, 0, FirePsa.Pay.PAPER);
-        vm.startPrank(alice);
-        _paper().approve(address(psa), type(uint256).max);
-        vm.expectRevert(FirePsa.FeedUnavailable.selector);
-        psa.protect(_one(1), _none(), FirePsa.Pay.PAPER, type(uint256).max);
-        vm.stopPrank();
-        _case(alice, _one(1));
-    }
-
-    // ================================================================ grade price by rank
-
-    /// Standard recipe ranks: Paper 0, Wood 1, Fire 2, Coal 3, Gold 4, Full Art 5 (the card type index here).
-    function test_rankOfFollowsTheRecipe() public {
-        for (uint256 i = 1; i <= 12; i++) {
-            FireCards.Card memory c = cards.cardOf(i);
-            assertEq(cards.rankOf(i), c.cardType, "Standard: rank = type index");
+    /// One grading price for every card, whatever its type: a batch of mixed types costs cases x case price +
+    /// grades x grading price, and `quote` is exactly what `protect` charges.
+    function test_oneGradingPriceForEveryCard() public {
+        bool[6] memory seen;
+        uint256[] memory g = new uint256[](3);
+        uint256 k;
+        for (uint256 i = 1; i <= 12 && k < 3; i++) {
+            uint256 t = cards.cardOf(i).cardType;
+            if (seen[t]) continue;
+            seen[t] = true;
+            g[k++] = i;
         }
-        assertEq(dealer.rankOf(1, StandardRecipe.PAPER), 0);
-        assertEq(dealer.rankOf(1, StandardRecipe.WOOD), 1);
-        assertEq(dealer.rankOf(1, StandardRecipe.GOLD), 4);
-        vm.expectRevert(RecipeDealer.NotConfigured.selector);
-        dealer.rankOf(1, 5); // the classic recipe has no Full Art
-        _series(cards, dealer, owner, 2, StandardRecipe.build(0), 2);
-        assertEq(dealer.rankOf(2, StandardRecipe.FIRE), 2);
-        assertEq(dealer.rankOf(2, StandardRecipe.COAL), 3);
-        assertEq(dealer.rankOf(2, StandardRecipe.FULL_ART), 5);
-        // ranks are the recipe's numbers, not the type index
-        RecipeDealer.Recipe memory r = StandardRecipe.build(0);
-        r.types[StandardRecipe.FULL_ART].rank = 9;
-        _series(cards, dealer, owner, 3, r, 2);
-        assertEq(dealer.rankOf(3, StandardRecipe.FULL_ART), 9);
-    }
-
-    /// A mixed batch: each graded card at its rank's price (0 = the default), cases flat; quote and payment agree.
-    function test_gradePriceByRankMixedBatch() public {
-        (uint256 paperCard, uint256 other) = (0, 0);
-        for (uint256 i = 1; i <= 12; i++) {
-            uint256 r = cards.rankOf(i);
-            if (r == 0 && paperCard == 0) paperCard = i;
-            if (r != 0 && other == 0) other = i;
-        }
-        assertTrue(paperCard != 0 && other != 0);
-        assertEq(psa.gradeUsdOf(paperCard), 1e18, "launch: every rank at the default $1");
-        uint256 rank = cards.rankOf(other);
+        assertEq(k, 3, "three cards of different types");
+        uint256 caseId = 12;
+        for (uint256 i; i < 3; i++) if (g[i] == caseId) caseId = 11;
+        uint256 c = psa.quote(1, 3, FirePsa.Pay.ETH);
+        assertEq(c, 0.05e18 + 3e18, "case $0.05 + 3 x $1");
         vm.prank(owner);
-        psa.setGradePrice(rank, 3e18);
-        assertEq(psa.rankPriceCount(), 1);
-        assertEq(psa.gradeUsdOf(other), 3e18);
-        assertEq(psa.gradeUsdOf(paperCard), 1e18, "unset ranks keep the default");
-        uint256[] memory g = new uint256[](2);
-        (g[0], g[1]) = (paperCard, other);
-        uint256 caseId = paperCard == 1 || other == 1 ? (paperCard == 2 || other == 2 ? 3 : 2) : 1;
-        uint256 c = psa.quoteFor(_one(caseId), g, FirePsa.Pay.ETH);
-        assertEq(c, 0.05e18 + 1e18 + 3e18, "case $0.05 + $1 + $3");
-        assertEq(psa.quote(1, 2, FirePsa.Pay.ETH), 0.05e18 + 2e18, "the old quote: default prices only");
+        psa.setPrices(0.1e18, 2e18);
+        c = psa.quote(1, 3, FirePsa.Pay.ETH);
+        assertEq(c, 0.1e18 + 6e18, "the owner's new grading price, for every type");
         vm.prank(alice);
         vm.expectRevert(FirePsa.PriceMoved.selector);
         psa.protect{value: c}(_one(caseId), g, FirePsa.Pay.ETH, c - 1);
+        vm.expectEmit(true, false, false, true, address(psa));
+        emit Protected(alice, _one(caseId), g, FirePsa.Pay.ETH, c, 0);
         vm.prank(alice);
         psa.protect{value: c}(_one(caseId), g, FirePsa.Pay.ETH, c);
         assertEq(address(burner).balance, c);
-        // PAPER at the rank prices too
-        burner.setPaperPrice(0.5e18);
-        assertEq(psa.quoteFor(_none(), _one(other), FirePsa.Pay.PAPER), 6e18, "$3 at $0.50");
-        // back to the default
-        vm.prank(owner);
-        psa.setGradePrice(rank, 0);
-        assertEq(psa.rankPriceCount(), 0);
-        assertEq(psa.gradeUsdOf(other), 1e18);
+        assertEq(burner.lastMax(), c, "the burner burns exactly this fee");
     }
 
-    function test_priceAndDiscountSettersOwnerOnlyAndBounded() public {
-        vm.startPrank(alice);
+    function test_priceSetterOwnerOnlyAndBounded() public {
+        vm.prank(alice);
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", alice));
-        psa.setGradePrice(5, 2e18);
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", alice));
-        psa.setPaperDiscount(100);
-        vm.stopPrank();
+        psa.setPrices(1e18, 1e18);
         vm.startPrank(owner);
         vm.expectRevert(FirePsa.BadAmount.selector);
-        psa.setGradePrice(5, 100e18 + 1);
-        psa.setGradePrice(5, 100e18); // the per-card cap
-        assertEq(psa.gradeUsdByRank(5), 100e18);
-        psa.setGradePrice(5, 100e18); // setting it again doesn't double count
-        assertEq(psa.rankPriceCount(), 1);
+        psa.setPrices(1e18, 100e18 + 1);
         vm.expectRevert(FirePsa.BadAmount.selector);
-        psa.setPaperDiscount(2_001);
-        psa.setPaperDiscount(2_000);
-        assertEq(psa.paperDiscountBps(), 2_000);
-        psa.setPaperDiscount(0);
-        assertEq(psa.paperDiscountBps(), 0);
+        psa.setPrices(1e18, 0);
+        psa.setPrices(1e18, 100e18); // the per-card cap
+        assertEq(psa.gradeUsd18(), 100e18);
         vm.stopPrank();
     }
 

@@ -39,6 +39,13 @@ export function missingFrames(r: Recipe): { type: string; missing: string[] }[] 
     .filter((x) => x.missing.length > 0)
 }
 
+/** The Series' character weights in character order, or undefined when every character has the same odds (the
+ *  default: no weights are sent on chain). Weights are whole numbers, at least 1. */
+export function characterWeightsOf(f: { characterIds: readonly string[]; characterWeights?: Record<string, number> }): number[] | undefined {
+  const w = f.characterIds.map((id) => Math.max(1, Math.floor(f.characterWeights?.[id] ?? 1)))
+  return w.some((x) => x !== w[0]) ? w : undefined
+}
+
 /** Identifies what a Series' image grid contains (types, slugs, names, frame sets, holo looks, characters in order):
  *  a build made for another grid is stale. */
 export function buildGridKey(r: Recipe, characterIds: readonly string[]): string {

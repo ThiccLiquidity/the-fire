@@ -113,9 +113,7 @@ contract MockRouterInfo {
 contract MockBurner {
     address public PLANK; address public USDG; address public PAPER;
     uint256 public flushes; uint256 public lastMax;
-    uint256 public paperPrice; // 0 = no fresh PAPER price
     constructor(address plank, address usdg) { PLANK = plank; USDG = usdg; PAPER = address(new MockERC20("PAPER", "PAPER")); }
-    function setPaperPrice(uint256 px) external { paperPrice = px; }
     function quote(uint8, uint256 usd18) external pure returns (uint256) { return usd18; }
     function flushLight(uint8, uint256 maxAmount) external returns (uint256) { flushes++; lastMax = maxAmount; return 0; }
     receive() external payable {}

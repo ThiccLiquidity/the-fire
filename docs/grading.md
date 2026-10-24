@@ -100,30 +100,13 @@ switches images when it is cased or graded; nothing is drawn live.
 
 ## Prices
 
-- **Case $0.05 per card**, flat. **Grading $1 per card** by default (`gradeUsd18`; not final until the last numbers
-  audit). Set by the owner in dollars (`setPrices`), at most $100 a card.
-- **Grading price by card rank.** The owner can give any rank its own grading price (`setGradePrice(rank, usd18)`,
-  at most $100; 0 = back to the default). Read with `gradeUsdByRank(rank)`, or a card's price with
-  `gradeUsdOf(serial)`. The rank is the card type's rank in its Series' recipe (`FireCards.rankOf(serial)`, from the
-  dealer), so the table means the same thing in every Series that keeps the Standard ranks:
-
-  | Rank | 0 | 1 | 2 | 3 | 4 | 5 |
-  |---|---|---|---|---|---|---|
-  | Standard type | Paper | Wood | Fire | Coal | Gold | Full Art |
-  | Grading at launch | $1 | $1 | $1 | $1 | $1 | $1 |
-
-  At launch no rank has its own price (all $1, and no rank is looked up). A recipe with other types should reuse these
-  rank numbers for comparable rarity, since prices follow the number.
-- **What a batch costs:** `quoteFor(caseIds, gradeIds, pay)`, exactly what `protect` charges (cases flat, each graded
-  card at its rank's price). The older `quote(cases, grades, pay)` prices every grade at the default and is exact only
-  while no rank has its own price. Every purchase names the most it pays (`maxCost`, or the ETH sent).
-- **Paid in ETH, USDG, PLANK or PAPER.** `Pay`: PLANK 0, ETH 1, USDG 2, PAPER 3. **100% of every fee is burned as
-  PAPER**, none of it goes to us. The 100% is fixed in the contract.
-- **Paying in PAPER:** the dollar price at the PAPER feed's 20-hour price (`PaperBurner.paperPrice()`), less
-  `paperDiscountBps` (owner setting, 0 to 20%, 0 at launch), rounded up. The PAPER goes straight from the buyer to
-  the dead address: never through the burner, never to anyone. Refused (`FeedUnavailable`) while the PAPER feed has no
-  fresh price (older than 2 days, or a window over 30 hours), the same rule the burner's guard uses.
-- **ETH, USDG or PLANK** go to `PaperBurner`, which buys PAPER and burns it in the same transaction: **only that fee**
+- **Case $0.05 per card**, flat. **Grading $1 per card** (`gradeUsd18`; not final until the last numbers audit): one
+  grading price for every card, whatever its type. Set by the owner in dollars (`setPrices`), at most $100 a card.
+- **What a batch costs:** `quote(cases, grades, pay)`, exactly what `protect` charges (cases x the case price + grades
+  x the grading price, in `pay`, rounded up). Every purchase names the most it pays (`maxCost`, or the ETH sent).
+- **Paid in PLANK, ETH or USDG.** `Pay`: PLANK 0, ETH 1, USDG 2 (the same numbers as `PaperBurner.Pay`). PAPER is not a
+  payment option. **100% of every fee is burned as PAPER**, none of it goes to us. The 100% is fixed in the contract.
+- **Every fee** goes to `PaperBurner`, which buys PAPER and burns it in the same transaction: **only that fee**
   (`flushLight(pay, fee)`, the whole fee or half). Anything else the burner holds (FireSale's 20% sale share, rising-
   price extras, a fee that had to wait) is the keepers' to flush (`flush`). So nobody can wrap a case or a grading in a
   buy and a sell to make the burner spend its backlog at a pushed-up price: wrapping one only moves the fee you paid
@@ -143,10 +126,11 @@ switches images when it is cased or graded; nothing is drawn live.
   `cancelGrading(index, ids)` take the list from the grading's `Protected` event (`graded`), in the same order.
 - The owner can pause case and grading payments (`setPaused`); finishing and cancelling never pause.
 - The randomness source can be switched at any time (only new gradings use it; each grading keeps its own:
-  `docs/randomness.md`). There is no re-request; a grading with no answer for 7 days can be cancelled.
+  `docs/randomness.md`). There is no re-request; a grading with no answer 24 hours after its request (`CANCEL_AFTER`) can be
+  cancelled (why 24 hours: `docs/randomness.md`).
 - **Gas** (measured with `contracts/test/cards/PsaBurn.t.sol`, each call its own transaction): `finish` for 100
-  fresh cards ~7.1M gas, for 100 worn cards (3+ years uncased, 10 moves) ~17M; `protect` sending 100 cards for
-  grading ~8.4M (~8.9M once a rank has its own price). `maxBatch` is 20 at launch (cap 100). Arbitrum Orbit chains
+  fresh cards ~6.3M gas, for 100 worn cards (3+ years uncased, 10 moves) ~16.3M; `protect` sending 100 cards for
+  grading ~8.3M (fresh) to ~7.4M (worn). `maxBatch` is 20 at launch (cap 100). Arbitrum Orbit chains
   like Robinhood Chain cap one transaction at 32M gas by default (confirm on the chain before raising `maxBatch`), so a
   full batch of the most worn cards still fits.
 
@@ -154,4 +138,4 @@ switches images when it is cased or graded; nothing is drawn live.
 
 | Fixed forever | Fixed per Series when its drop is set up | Owner can change (announced) |
 |---|---|---|
-| Fresh PDA odds and wear rules (time, moves, fade-in), the same for every Series; 24h fresh window, 100% fee burn, slabs final, cards per free pack 42, suggestion PAPER ceiling $1 | Recipe, characters, dealer, card images, the drop's PAPER ceiling per pack | Case and grading prices (and per-rank grading prices), the PAPER payment discount (0-20%), cards per grading batch, the PAPER feed, routes, the randomness source (new gradings only), pause on case and grading payments (`setPaused`; also, in effect, `PaperBurner.setFlusher(FirePsa, false)`: ETH, PLANK and USDG cases and grading then revert, PAPER payments still work) |
+| Fresh PDA odds and wear rules (time, moves, fade-in), the same for every Series; 24h fresh window, 100% fee burn, slabs final, cards per free pack 42, suggestion PAPER ceiling $1 | Recipe (type odds, holo, cards per pack), characters and their odds, dealer, card images, the drop's PAPER ceiling per pack | Case and grading prices (one grading price for every card), cards per grading batch, the PAPER feed, routes, the randomness source (new gradings only), pause on case and grading payments (`setPaused`; also, in effect, `PaperBurner.setFlusher(FirePsa, false)`: cases and grading then revert) |

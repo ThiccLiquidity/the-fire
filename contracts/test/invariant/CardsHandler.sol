@@ -76,7 +76,7 @@ contract CardsHandler is Test {
     mapping(address => uint256) public ghostBurnCreditsUsed;
     mapping(uint256 => mapping(address => uint256)) public ghostPicks;
     mapping(uint256 => mapping(address => uint256)) public ghostPicksUsed;
-    mapping(uint256 => uint256[5]) internal _ghostMat;
+    mapping(uint256 => uint256[6]) internal _ghostMat;
     mapping(uint256 => uint256) public ghostCards;
     mapping(uint256 => uint256) public ghostGrade;
     mapping(uint256 => uint256) public ghostGradedTimes;
@@ -196,7 +196,7 @@ contract CardsHandler is Test {
         string[] memory cats = new string[](n);
         for (uint256 i; i < n; i++) { names[i] = string.concat("Char", vm.toString(i)); cats[i] = string.concat("Cat ", vm.toString(i)); }
         vm.startPrank(owner, owner);
-        dealer.setRecipe(fire, StandardRecipe.classic(1));
+        dealer.setRecipe(fire, StandardRecipe.build());
         dealer.setCharacters(fire, names, cats);
         cards.setDealer(fire, address(dealer));
         cards.setImagesBase(fire, "ipfs://x/");
@@ -528,21 +528,18 @@ contract CardsHandler is Test {
         } catch {}
     }
 
-    /// The Series' Diamond setting (small numbers, so it often exceeds the pack count and the cap kicks in): a new
-    ///    Standard recipe, which only works until the Series' first pack.
-    function setDiamonds(uint256 fireSeed, uint256 n) external at {
-        calls["setDiamonds"]++;
+    /// A new recipe for a Series (the Standard recipe with another Full Art weight), which only works until the
+    ///    Series' first pack.
+    function setRecipe(uint256 fireSeed, uint256 n) external at {
+        calls["setRecipe"]++;
         uint256 fire = 2 + fireSeed % (FIRES - 1);
-        n = bound(n, 1, 20);
+        RecipeDealer.Recipe memory r = StandardRecipe.build();
+        r.types[StandardRecipe.FULL_ART].weight = uint64(bound(n, 1, 5_000));
         vm.prank(owner, owner);
-        try dealer.setRecipe(fire, StandardRecipe.classic(n)) {
-            diamondsOf[fire] = n;
-            calls["setDiamonds.ok"]++;
+        try dealer.setRecipe(fire, r) {
+            calls["setRecipe.ok"]++;
         } catch {}
     }
-
-    /// The Diamond setting each Series was last given (1 by default).
-    mapping(uint256 => uint256) public diamondsOf;
 
     function endDrop(uint256 fireSeed) external at {
         calls["endDrop"]++;
@@ -628,7 +625,7 @@ contract CardsHandler is Test {
             (uint256 openIndex, uint256 cardType,,,) = abi.decode(logs[i].data, (uint256, uint256, bool, bool, uint256));
             if (inPack == 0) { _packOpen = openIndex; _packFire = fire; }
             if (openIndex != _packOpen || fire != _packFire) _flag("a pack's cards span opens or Fires");
-            if (cardType > 4) _flag("card type out of range");
+            if (cardType > 5) _flag("card type out of range");
             _mats[inPack++] = cardType;
             _ghostMat[fire][cardType] += 1;
             ghostCards[fire] += 1;
@@ -640,17 +637,9 @@ contract CardsHandler is Test {
         if (seen != n || n > max) _flag("process count is off");
     }
 
+    /// Straight odds: no per-pack guarantees to check, only that every card is a Standard type (done per card).
     function _checkPack(uint256[6] memory mats) internal {
-        uint256 p; uint256 w; uint256 b;
-        for (uint256 k; k < 6; k++) {
-            if (mats[k] == 0) p++;
-            else if (mats[k] == 1) w++;
-            else b++;
-        }
-        if (p < 3) _flag("pack with fewer than 3 Paper");
-        if (p > 3) _flag("pack with more than 3 Paper");
-        if (w < 1) _flag("pack with no Wood");
-        if (b < 1) _flag("pack with no Fire-or-better");
+        for (uint256 k; k < 6; k++) if (mats[k] > 5) _flag("card type out of range");
         calls["packsChecked"]++;
     }
 

@@ -6,31 +6,32 @@
 **Naming.** The contracts are named `Fire*` for historical reasons: `Fire*` is the card system. In identifiers
 (`fire`, `lockFire`, `fires`), "fire" is a Series number. This doc says "Series" in prose.
 
-**The idea.** Every rule about what a Series' cards are is a per-Series setting: card types, how many of each, holo
-odds, cards per pack, what each slot may hold, characters, card images. The only limits left are
-technical (type widths and block gas), and big work is split into batches instead of capped. Every setting locks when
-the Series' drop is set up (`configureDrop`), before anyone can buy, so buyers can trust the odds, and all of it can be
-read on-chain. PDA grading is the exception the other way: its fresh odds and wear rules are fixed forever in
-`FirePsa`, the same for every Series (`docs/grading.md`); only case and grading prices (and the PAPER discount) can
-change.
+**The idea.** Every rule about what a Series' cards are is a per-Series setting: card types and their odds, holo
+odds, cards per pack, characters (and optionally their odds), card images. Dealing is **straight odds**: every card of
+every pack is rolled on its own from those fixed odds, so the first and the last pack of a Series have exactly the same
+odds (no slots, guarantees, caps or pool). The only limits left are technical (type widths and block gas), and big work
+is split into batches instead of capped. Every setting locks when the Series' drop is set up (`configureDrop`), before
+anyone can buy, so buyers can trust the odds, and all of it can be read on-chain. PDA grading is the exception the
+other way: its fresh odds and wear rules are fixed forever in `FirePsa`, the same for every Series
+(`docs/grading.md`); only the case and grading prices can change.
 
 ## The pieces
 
 | Contract | What it is |
 |---|---|
 | `FirePacks` | Sealed packs, ERC-1155 ("Omni Card Packs", `OMNIPACK`): one stackable token type per Series (token id = Series number). The seller mints; only `FireCards` burns, when a pack is opened. Pack art: `<packImageBase>fire<N>.webp`. The description reads the Series' cards per pack from `FireCards`. Royalty (ERC-2981). |
-| `FireCards` | The permanent core. The cards, ERC-721 ("Omni Cards", `OMNICARD`; token id = global serial), one opening queue per Series, randomness (drand router and adapter), serials, editions, each card's wear (age uncased, moves, cased) and PDA grade. Per Series it keeps the dealer, the image folder, the frozen pack count and progress. Royalty (ERC-2981), ERC-4906 metadata updates. |
+| `FireCards` | The permanent core. The cards, ERC-721 ("Omni Cards", `OMNICARD`; token id = global serial), one opening queue per Series, randomness (drand router and adapter), serials, print numbers, each card's wear (age uncased, moves, cased) and PDA grade. Per Series it keeps the dealer, the image folder, the frozen pack count and progress. Royalty (ERC-2981), ERC-4906 metadata updates. |
 | `CardsRenderer` | Builds each card's `tokenURI` JSON and image name (`imageName`, `imageFile`) from `FireCards` and the dealer. No owner, no settings; set once on `FireCards`. |
 | `IDealer` | What `FireCards` asks of a Series' dealer: `ready`, `cardsPerPack`, `characterCount`, `deal(fire, seed, fromCard, count)` and `cardText`. The owner picks a dealer per Series. Future dealers can add mechanics (their own state, 32 bits of per-card "extra" data, extra metadata attributes) without touching `FireCards`. |
-| `RecipeDealer` | The first dealer: deals each Series from its own recipe (below). Owned by the owner (the hardware wallet). |
-| `RecipeCompiler` | The recipe checker, compiler and pool maths, split out of `RecipeDealer` for contract size. Pure: no state, no owner. |
-| `StandardRecipe` | The original Omni rules as a recipe (library). |
+| `RecipeDealer` | The first dealer: deals each Series from its own recipe by straight odds (below). It keeps no dealing state: `deal` is a view of the seed, so anyone can check a pack. Owned by the owner (the hardware wallet). |
+| `RecipeCompiler` | The recipe checker and compiler (the plan the dealer reads: cumulative type weights and holo odds), its own contract. Pure: no state, no owner. |
+| `StandardRecipe` | The Standard Omni odds as a recipe (library). |
 | `FireSale` | Sells the packs (`docs/omni-economy.md`, `docs/drop-groups.md`): a purchase names its group (`buy(fire, group, n, pay, maxCost, maxPaper, access)`) and pays the group's dollar price in PLANK, ETH or USDG (the coins the group takes), or ETH alone (`buyWithEthAll`: it also buys the packs' PAPER on the market and burns it), plus the group's PAPER. Every product rule is a per-drop setting (total packs and its groups, PAPER dollar ceiling, PLANK and PAPER burn shares, regular-wallets rule, packs per purchase, credits per picked suggestion and credit caps). Closes the Series the moment nothing can still sell, or when the drop is ended. The owner can pause buying (`setPaused`). Never holds funds. |
 | `FireGroups` | Each drop's groups (split out of `FireSale` for contract size): config, timing (opens with the drop or after another group; ends sold out, at its duration, or after `idle` with no sale), unlimited groups, the rising tax, per-purchase limits, capacity with rolled-in leftovers, gates (open, NFT with packs per NFT id, Merkle snapshot with a per-wallet allowance), wallet limits, and the views the site reads (`groupsOf`, `boughtBy`, `remaining`, `openLeft`, `scheduleEnd`). Only `FireSale` writes to it (set once at deploy); no owner. |
 | `FireCredits` | Free pack credits, card burning (42 cards = 1 credit, fixed forever) and character suggestions, split out of `FireSale` for contract size (same rules). It spends credits, burns cards and takes suggestion PAPER through `FireSale` hooks only it can call (`creditPacks`, `burnCardsFor`, `burnPaperFor`), so PAPER is approved to `FireSale` alone. Owned by the owner (picks, suggestion rules). |
 | `PlankBurner` | Gets the sale's PLANK burn share when the swap can't run (a stale PLANK price or a failed swap). No owner, no withdraw: anyone calls `flush`, which buys PLANK (95% TWAP guard, halving for a backlog) and sends it to the dead address. |
-| `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars (cases flat, grading per card rank: `quoteFor(caseIds, gradeIds, pay)`), paid in ETH, USDG, PLANK or PAPER (`Pay` PLANK 0, ETH 1, USDG 2, PAPER 3; PAPER at the 20-hour PAPER price less an owner-set 0-20% discount, burned straight to the dead address). drand picks each grade (1 to 10) from the fresh odds and the card's frozen wear (both fixed forever, the same for every Series); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
-| `PaperBurner` | Gets FireSale's PAPER share of every sale (20% in the Standard drop) and 100% of every case and grading fee paid in ETH, PLANK or USDG, buys PAPER with it on owner-set routes and burns it. Only flushers the owner names (FirePsa and the keepers, `setFlusher`) can flush it. FirePsa burns only the fee it just took (`flushLight(pay, fee)`), so wrapping a case in a buy and a sell can't make it spend the backlog; the keepers' `flush` (its own transaction; Robinhood Chain's sequencer is first-come with no public mempool) drains the rest. A PAPER price from a window over 30 hours makes it wait. No withdraw; the router is fixed at deploy. |
+| `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars (one case price and one grading price for every card: `quote(cases, grades, pay)`), paid in PLANK, ETH or USDG (`Pay` PLANK 0, ETH 1, USDG 2); every fee buys PAPER and burns it. drand picks each grade (1 to 10) from the fresh odds and the card's frozen wear (both fixed forever, the same for every Series); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
+| `PaperBurner` | Gets FireSale's PAPER share of every sale (20% in the Standard drop) and 100% of every case and grading fee (paid in PLANK, ETH or USDG), buys PAPER with it on owner-set routes and burns it. Only flushers the owner names (FirePsa and the keepers, `setFlusher`) can flush it. FirePsa burns only the fee it just took (`flushLight(pay, fee)`), so wrapping a case in a buy and a sell can't make it spend the backlog; the keepers' `flush` (its own transaction; Robinhood Chain's sequencer is first-come with no public mempool) drains the rest. A PAPER price from a window over 30 hours makes it wait. No withdraw; the router is fixed at deploy. |
 | `FireProfiles` | Each wallet's public profile: a name and a profile picture cut from one of its own cards. No owner, no fees, no admin, no upgrade; it only reads `FireCards` (fixed at deploy). Details below. |
 
 Every owned contract refuses `renounceOwnership` (control can't be lost by mistake); ownership moves only in two
@@ -39,9 +40,17 @@ steps (`transferOwnership`, then `acceptOwnership`). `FirePacks` and `FireCards`
 
 ## A Series' recipe (RecipeDealer)
 
-`setRecipe(fire, recipe)`, `setCharacters(fire, names, categories)` and `appendCharacters(...)`, by the owner, until
-the Series is locked (its drop is set up, or `lockFire`), its first pack is minted or it closes. `check(recipe)`
-validates a recipe without storing it and reverts with the reason; `previewPool(recipe, packs)` gives its pool for any pack count. The studio can call both.
+`setRecipe(fire, recipe)`, `setCharacters(fire, names, categories)`, `appendCharacters(...)` and
+`setCharacterWeights(fire, weights)`, by the owner, until the Series is locked (its drop is set up, or `lockFire`), its
+first pack is minted or it closes. `check(recipe)` validates a recipe without storing it and reverts with the reason
+(the studio can call it).
+
+A recipe is a list of card types and a number of cards per pack:
+
+```solidity
+struct CardType { string name; string slug; uint32 rank; uint64 weight; HoloMode holoMode; uint64[4] holo; }
+struct Recipe { CardType[] types; uint32 cardsPerPack; }
+```
 
 ### Card types
 
@@ -51,75 +60,69 @@ A list, any length (index stored in 32 bits). Each type has:
 |---|---|
 | `name` | The "Material" trait and the first word of the card's name. 1 to 64 bytes of valid UTF-8, no `"`, `\` or control characters. |
 | `slug` | Used in image file names. 1 to 32 bytes of `[a-z0-9-]`, unique in the recipe. |
-| `rank` | For rank-range slots ("Fire-or-better" = rank 2 and up). Ties allowed. |
-| `supply`, `amount` | `Share`: `amount` parts per billion of the Series' cards, rounded half up. `PerPack`: `amount` per pack. `Count`: exactly `amount`. `PerCharacter`: exactly `amount` of each character (at most 65,535). `Filler`: whatever is left (exactly one type). |
-| `maxPerPack` | 0 = no cap; else at most `maxPerPack` x packs (Standard Gold and Full Art: 1, "never more than one per pack's worth"). A Series total, not checked per pack. |
-| `holoMode`, `holo[4]` | `Independent`: frame and picture rolled separately, chances out of 1e18 in `holo[0]`, `holo[1]` (two 100% = always full holo). `Distribution`: weights for none, frame, picture, full (any total). |
+| `rank` | Rarity order for display (higher = rarer; the site sorts by it). Ties allowed. Dealing doesn't use it. |
+| `weight` | The type's odds: a card is this type with chance `weight / (sum of the weights)`. A whole number, at least 1 (`uint64`). |
+| `holoMode`, `holo[4]` | `Independent`: frame and picture rolled separately, chances out of 1e18 in `holo[0]`, `holo[1]` (two 100% = always full holo). `Distribution`: weights for none, frame, picture, full (any total above 0). |
 
-### Slots
+`cardsPerPack`: 1 to 1,000 (`MAX_CARDS_PER_PACK`).
 
-The pack, as groups of slots. Each group: `count` cards (at least 1) that may be any type in a set, given either as
-an explicit list `types` (one type = a guaranteed type) or, when the list is empty, as a rank range
-`minRank..maxRank` (inclusive; `maxRank = 2^32 - 1` for "or better"). `mustHolo` makes the group's cards always holo,
-using the type's own holo odds given it is holo. Cards per pack = the sum of the counts (any number from 1).
-
-Two groups' sets must be **nested or disjoint** (one inside the other, or no type in common), and every type must fit
-some group. Overlapping sets (say "Paper or Wood" with "Wood or Fire") are refused (`NotNested`), because with
-nesting the guarantee below is exact and cheap to keep. Rank ranges like "X-or-better" and single types always nest.
+Checks (`RecipeCompiler.compile`, in this order; errors `BadRecipe(why)`, `BadType(index, why)`, `BadText`): at least one
+type (`"no types"`), cards per pack 1 to 1,000 (`"cards per pack"`), then per type: name length and text, slug length,
+characters and uniqueness, a weight of at least 1 (`"weight"`, so the total is above 0), holo chances at most 100% and
+`holo[2..3]` zero in `Independent` mode (`"holo chances"`), holo weights above 0 in `Distribution` mode (`"holo
+weights"`).
 
 ### Characters
 
 Names and categories, in image order (`c0`, `c1`, ...), any number (index stored in 32 bits). Names 0 to 64 bytes,
-categories 1 to 32 bytes, both free text with the same rules as type names (valid UTF-8, JSON-safe). `setCharacters` replaces the list
-(a fresh list, so a long one can always be replaced); `appendCharacters` adds batches for long lists.
+categories 1 to 32 bytes, both free text with the same rules as type names (valid UTF-8, JSON-safe). `setCharacters`
+replaces the list (a fresh list, so a long one can always be replaced); `appendCharacters` adds batches for long lists.
 
-### The pool
-
-When the Series closes with P packs (N = P x cards per pack), the pool is:
-1. Each type's rule, cap applied; the filler takes the rest of N.
-2. **The floor.** Every slot set must hold at least P x (slots per pack inside it) cards:
-   - sets without the filler, deepest first: if short, top up their lowest-ranked type from the filler;
-   - sets holding the filler, from the filler up: if short (or the filler below 0), take cards back into the filler
-     from types outside the set that have more than their own sets need: rule-by-share and per-pack types first,
-     exact counts last, lowest rank first.
-
-This always works, for every P (a fuzz test checks it over random recipes), so a Series can never close into a pool
-that can't fill its packs. A guarantee beats a count: a guaranteed type set to fewer cards than packs is raised. For
-the Standard recipe it is exactly the studio's `computePool` (pack floor P <= Fire-or-better <= 2P; parity test
-against `pool-fixture.json`).
+**Character odds (optional).** `setCharacterWeights(fire, weights)`: one weight per character, in character order,
+each at least 1 (`BadWeights` otherwise); a character's chance is its weight over the total. An empty list = every
+character equally likely: the default, and Series 7's. Weights belong to the character list: `setCharacters` starts a
+new list with equal odds, and after `appendCharacters` the Series isn't `ready` (nor lockable) until the weights match
+the longer list again. They lock with the Series like everything else. Stored as cumulative weights in code storage;
+dealing reads them once per `deal` call and binary-searches each card.
 
 ### Dealing
 
-A pack's groups are dealt most specific (deepest set) first (`dealOrder(fire)` lists each position's slot). A card for
-a group is drawn by walking down the nested sets: at each level a part is chosen with weight equal to its cards not
-held back for later packs (sets) or its cards left (types in no smaller set). So every later pack can still be filled,
-the Series' totals are exact, and nothing is dealt beyond the pool. For the Standard recipe the odds are exactly the
-previous contract's (slot 6 uniform over Fire-or-better left; slot 5 Fire-or-better with weight "Fire-or-better not
-needed for slot 6 of later packs" against "spare Wood"). Then holo (two drand-derived words) and a character
-(uniform). All from the pack's randomness: `keccak256(word, pack index)`, per card `keccak256(packSeed, position)`.
+Straight odds. For each card (per pack seed `keccak256(word, pack index)`, per card `r = keccak256(packSeed,
+position)`): its type is the first type whose cumulative weight is above `r % total`; then its holo from
+`keccak256(r, 1)` and `keccak256(r, 2)` by the type's holo rule; then its character from `keccak256(r, 3)`: uniform
+(`% characters`) or, with weights, the first character whose cumulative weight is above it (equal weights give exactly
+the uniform result). A card's chance = type odds x holo odds x character odds.
+
+No slots, guarantees, caps, pool or holdbacks: nothing depends on what was dealt before or how many packs there are, so
+the first and the last pack of a Series have exactly the same odds, and a card type or a character can come up any
+number of times (or not at all) in a Series. `deal` is a view: it depends only on the seed and the Series' fixed
+settings, so anyone can call it to check a pack (FireCards passes the same seeds).
 
 ### The Standard recipe
 
-| Type | Rank | Supply | Holo |
-|---|---|---|---|
-| Paper | 0 | 3 per pack | independent, each roll 1 - sqrt(0.95) (5% any holo) |
-| Wood | 1 | filler | 10% |
-| Fire | 2 | 15% (150,000,000 ppb) | 50% |
-| Coal | 3 | 4.9% (49,000,000 ppb) | 90% |
-| Gold | 4 | per character (default 2, so always twice Full Art), at most 1 per pack's worth | always full holo |
-| Full Art | 5 | 1 per character, at most 1 per pack's worth | always full holo |
+Six cards a pack; type weights out of 10,000:
 
-Slots: 3 x Paper, 1 x Wood, 1 x rank 1 and up (Wood-or-better), 1 x rank 2 and up (Fire-or-better). Example: 167 packs,
-20 characters make 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art. Gold took Diamond's place
-(`StandardRecipe.classic` is the first five types alone); Full Art needed no slot change: the "or better" ranges take
-it.
+| Type | Rank | Weight | Per card | Holo |
+|---|---|---|---|---|
+| Paper | 0 | 5,000 | 50% | independent, each roll 1 - sqrt(0.95) (5% any holo) |
+| Wood | 1 | 2,415 | 24.15% | 10% |
+| Fire | 2 | 1,497 | 14.97% | 50% |
+| Coal | 3 | 489 | 4.89% | 90% |
+| Gold | 4 | 399 | 3.99% | always full holo |
+| Full Art | 5 | 200 | 2% | always full holo |
+
+Characters: equal odds. The weights keep the old pool dealing's expected share of each type per card for the example
+Series this doc always used (167 packs, 20 characters: 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art
+of 1,002 cards). Under the old pool Gold and Full Art followed the cast size (2 and 1 per character); with odds they
+are the same share whatever the cast (with 20 characters one exact Full Art is 1 in 1,000 cards, as before; with 10,
+1 in 500).
 
 ### Views
 
-`recipeOf(fire)` (the whole recipe), `poolOf(fire)` (after close), `poolFor(fire, packs)`, `previewPool(recipe,
-packs)`, `remainingOf(fire)` (cards left per type, packs not yet started), `holoOdds(fire, type)` (none / frame /
-picture / full out of 1e18), `characterOf`, `charactersOf(fire, from, count)`, `characterCount`, `cardsPerPack`,
-`dealOrder`, `stateOf`, `check(recipe)`.
+`recipeOf(fire)` (the whole recipe), `oddsOf(fire)` (each type's weight and the total), `characterOddsOf(fire)` (each
+character's weight and the total; all 1 with no weights), `holoOdds(fire, type)` (none / frame / picture / full out of
+1e18), `deal(fire, seed, fromCard, count)` (a view), `characterOf`, `charactersOf(fire, from, count)`,
+`characterCount`, `cardsPerPack`, `check(recipe)`.
 
 ### Recipe JSON (for the studio)
 
@@ -130,20 +133,16 @@ picture / full out of 1e18), `characterOf`, `charactersOf(fire, from, count)`, `
 {
   "fire": 7,
   "imagesBase": "ipfs://<images CID>/",
+  "cardsPerPack": 6,
   "types": [
-    { "name": "Paper", "slug": "paper", "rank": 0, "supply": "perPack", "amount": 3,
+    { "name": "Paper", "slug": "paper", "rank": 0, "weight": 5000,
       "holo": { "mode": "independent", "frame": "25320565519103609", "picture": "25320565519103609" } },
-    { "name": "Wood", "slug": "wood", "rank": 1, "supply": "filler",
+    { "name": "Wood", "slug": "wood", "rank": 1, "weight": 2415,
       "holo": { "mode": "independent", "frame": "51316701949486200", "picture": "51316701949486200" } },
-    { "name": "Gold", "slug": "gold", "rank": 4, "supply": "perCharacter", "amount": 2, "maxPerPack": 1,
+    { "name": "Gold", "slug": "gold", "rank": 4, "weight": 399,
       "holo": { "mode": "distribution", "weights": ["0", "0", "0", "1"] } },
-    { "name": "Full Art", "slug": "fullart", "rank": 5, "supply": "perCharacter", "amount": 1, "maxPerPack": 1,
+    { "name": "Full Art", "slug": "fullart", "rank": 5, "weight": 200,
       "holo": { "mode": "distribution", "weights": ["0", "0", "0", "1"] } }
-  ],
-  "slots": [
-    { "count": 3, "types": [0] },
-    { "count": 1, "minRank": 1 },
-    { "count": 1, "minRank": 2, "maxRank": 4, "mustHolo": true }
   ],
   "characters": [ { "name": "Ember Fox", "category": "Animals" } ],
   "sale": {
@@ -168,11 +167,12 @@ picture / full out of 1e18), `characterOf`, `charactersOf(fire, from, count)`, `
 }
 ```
 
-`supply`: `filler` | `share` (ppb of the Series' cards) | `perPack` | `count` | `perCharacter`. `holo.mode`:
-`independent` (`frame`, `picture` out of 1e18) | `distribution` (`weights`: none, frame, picture, full). A slot has
-`types` (indexes) or a rank range (`minRank`, default 0; `maxRank`, default "no top"). `imagesBase` is optional. There
-are no PDA odds in it: they are fixed in `FirePsa` for every Series. The JSON is read strictly: unknown keys (a
-`pdaOdds` key included), numbers too big for their field and a drop start more than 365 days away are refused.
+`cardsPerPack` and each type's `weight` are required. `holo.mode`: `independent` (`frame`, `picture` out of 1e18) |
+`distribution` (`weights`: none, frame, picture, full). A character may have a `weight` (character odds): every
+character or none (equal odds); each at least 1; the script then sends `setCharacterWeights` after the characters.
+`imagesBase` is optional. There are no PDA odds in it: they are fixed in `FirePsa` for every Series. The JSON is read
+strictly: unknown keys (a `pdaOdds` key, and the old pool keys `slots`, `supply`, `amount`, `maxPerPack`, included),
+numbers too big for their field and a drop start more than 365 days away are refused.
 
 `sale` (optional; the studio's Sale tab) is `FireSale.DropConfig` by name, in contract units: seconds, dollars with 8
 decimals, PAPER in wei, burn shares in basis points. Every key is required unless said otherwise.
@@ -218,9 +218,8 @@ decimals, PAPER in wei, burn shares in basis points. Every key is required unles
 
 **Total packs.** `packs` is the base Series: the sum of the finite groups' packs. Packs a finite group doesn't sell
 that roll nowhere are simply never made (the Series ends smaller); an unlimited group adds what it sells on top. The
-Series' final pack count is whatever was minted (`FireCards.closeFire` freezes `FirePacks.minted`), and the dealer's
-pool is the recipe worked out for that count at close, so a Series larger than its base total deals like any other
-(per-character types like Gold and Full Art stay at their fixed counts, so extra packs make them rarer per pack).
+Series' final pack count is whatever was minted (`FireCards.closeFire` freezes `FirePacks.minted`). Dealing doesn't
+depend on it: every pack of a Series larger than its base total deals at the same odds as any other.
 
 `DROP_START` overrides `start` and `GROUP_ROOT_<i>` group i's root. The script checks every rule the contract checks
 and names the field that is wrong (`sale.groups: the groups' packs add up to 168, not sale.packs (167)`,
@@ -235,25 +234,26 @@ studio's sample export is `contracts/test/cards/recipe-studio-sale.json` (the St
    must already have the Series ready), `FireCards.setImagesBase(fire, base)`. Then
    `FireSale.configureDrop` (it requires `FireCards.ready(fire)`; the script adds it last from the `sale` block).
    `configureDrop` calls `FireCards.lockForSale(fire)`: from then the dealer, recipe, characters and image folder are
-   fixed. Every lock (`lockForSale`, `lockFire`) and `ready` check again that the Series has an image folder and that
-   its dealer's cards per pack is 1 to `MAX_CARDS_PER_PACK` (a recipe changed after `setDealer` isn't otherwise
-   rechecked), so a locked Series can always be dealt.
+   fixed. Every lock (`lockForSale`, `lockFire`) and `ready` check again that the Series has an image folder, that
+   its dealer's cards per pack is 1 to `MAX_CARDS_PER_PACK` and that the dealer has it `ready` (character weights
+   matching the characters; a dealer setting changed after `setDealer` isn't otherwise rechecked), so a locked Series
+   can always be dealt.
 2. **During the drop:** the seller (`FireSale`) mints packs. They're tradeable sealed.
 3. **When the drop ends:** the seller calls `closeFire(fire)`. The pack count freezes. Closing never calls the dealer.
-   The pool (`poolOf`) is worked out from the recipe and that count; the dealer lays it out at the first deal.
 4. **Opening:** a holder calls `open(fire, count)` (any number of packs). The packs are burned and drand randomness
-   is requested. Each Series has its own queue. **Nothing about the packs exists before this.** (The leftover pool is public, so the last pack of a
-   Series gets exactly what's left. That comes with exact totals.)
+   is requested. Each Series has its own queue. **Nothing about the packs exists before this.** Every card is rolled
+   from the Series' fixed odds, so no pack (the last included) can be predicted from what was opened before.
 5. **Dealing:** when the randomness arrives, anyone calls `process(fire, maxCards)` (the live site is planned to call it
    right away). A Series' opens are dealt strictly in order, up to `maxCards` cards per call; a pack can be split across
    calls (a 1,000-card pack, the most allowed (`MAX_CARDS_PER_PACK`), is ~63M gas, so a few calls of ~300 cards each). Each pack gets the next block of serials, in a
    shuffled order (Fisher-Yates for packs up to 256 cards, a keyed Feistel permutation above), so a serial says nothing
-   about its slot. Results depend only on the words and the open order, never on who processes or how it is split.
+   about its position. Results depend only on the words and the open order, never on who processes or how it is split.
 6. **Metadata:** `tokenURI` is built on-chain by `CardsRenderer`. Name `<type name> <character> #<serial>`; image
    `<imagesBase>` + `c<character>-<type slug>-<holo>-<state>.webp` (`imageName`; `holo` is `none`, `frame`, `picture` or
    `full`, `state` `u` (ungraded), `c` (cased) or `1` to `10` (slabbed)). Traits: Character, Category, Material (the type
-   name), Holo, Series, Edition ("k", then "k of N" once every pack of the Series is dealt), Serial, plus any the dealer
-   adds. Ungraded: PDA "Ungraded", Cased, Dealt (a `date` trait), Moves, and once cased Age when cased (days), frozen
+   name), Holo, Series, Print number (a number: this is the k-th of this exact card, i.e. the same Series, character, type
+   and holo look, in the order dealt; the first one opened is #1; final the moment it is dealt, no "of N"), Serial,
+   plus any the dealer adds. Ungraded: PDA "Ungraded", Cased, Dealt (a `date` trait), Moves, and once cased Age when cased (days), frozen
    (the condition is never shown; nothing changes just because time passes). Graded: "PDA N" only. Example: `c0-coal-full-7.webp`.
 7. **Wear, cases and grading:** each card wears with time uncased and with moves between wallets until it is cased or
    graded; `FirePsa.protect` cases and grades. A card being graded can't be transferred. A move that counts emits
@@ -264,8 +264,8 @@ studio's sample export is `contracts/test/cards/recipe-studio-sale.json` (the St
 | Setting | Where | Locks |
 |---|---|---|
 | Dealer | `FireCards.setDealer` | drop set up (`configureDrop` -> `lockForSale`), first pack minted, `lockFire`, or close |
-| Card types, slots, cards per pack, supply, caps, holo | `RecipeDealer.setRecipe` | same |
-| Characters | `setCharacters`, `appendCharacters` | same |
+| Card types, their odds (weights), cards per pack, holo | `RecipeDealer.setRecipe` | same |
+| Characters and their odds | `setCharacters`, `appendCharacters`, `setCharacterWeights` | same |
 | Image folder | `FireCards.setImagesBase` | same (the art people buy can never be swapped) |
 | Drop settings (all of them, below) | `FireSale.configureDrop` | the drop's start |
 
@@ -302,13 +302,11 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | Cards per free pack credit | `FireCredits.CARDS_PER_CREDIT` | constant | 42 | **fixed forever**: burn progress carries over between Series, so changing it would move the goalposts. Credits can't be spent on a Series whose packs hold 42 cards or more (`FireCredits.useCredits` reverts `BadConfig`): a burned pack would earn a free pack of itself |
 | Suggestion cost, longest text | `FireCredits.setSuggestionRules` | global (suggestions aren't tied to a drop) | 1 PAPER, 280 bytes | any cost incl. 0 (each `suggest` names its most PAPER), never more than $1 of PAPER (`SUGGESTION_PAPER_CAP_USD`, fixed); text 1 to 1,024 bytes (event size). **Set the longest text to about 1,000 bytes** (`setSuggestionRules(paper, 1000)`): the site packs a character, its personality and its background into one text (format below) |
 | Cards per case/grading batch | `FirePsa.setMaxBatch` | global | 20 | 1 to 100 (gas guard: `finish` grades a batch in one tx) |
-| Case and grading prices | `FirePsa.setPrices` | global | $0.05, $1 | above 0, at most $100 each (typo guard; each batch names its most) |
-| Grading price per card rank | `FirePsa.setGradePrice(rank, usd18)` | global | 0 for every rank (= the default grading price) | at most $100; 0 = the default. Rank = `FireCards.rankOf(serial)`, the type's rank in its recipe (Standard: Paper 0, Wood 1, Fire 2, Coal 3, Gold 4, Full Art 5) |
-| PAPER payment discount | `FirePsa.setPaperDiscount(bps)` | global | 0 | 0 to 2,000 (20%) |
+| Case and grading prices | `FirePsa.setPrices` | global | $0.05, $1 (one grading price for every card) | above 0, at most $100 each (typo guard; each batch names its most) |
 | Fee burn routes | `PaperBurner.setRoutes` | global | set at deploy | each route starts at the currency and ends at PAPER, passing only through WETH, PLANK or USDG (2-4 tokens, at most 4 routes); the 95% guard checks every buy. The router is fixed and the burner's price feeds (`setFeeds`) can be set only once |
 | Fresh PDA odds and wear rules | `FirePsa` constants (`FRESH_*`, `WEAR_*`; `freshOdds`, `oddsFor`) | constant | 7-10 table (`docs/grading.md`) | **fixed forever**, the same for every Series; no setter |
 | Revenue wallet and PlankBurner, feeds, router | `setWallets`, `setFeeds` | global | - | only between drops (unchanged) |
-| Pause | `FireSale.setPaused`, `FirePsa.setPaused` | global | off | blocks every buy (every group), credit spending, paid suggestions (`FireSale`) and case/grading payments (`FirePsa`). Never opening, dealing, transfers, ending or closing a drop, burning cards, finishing or cancelling a grading, or keeper calls. No expiry. `PaperBurner.setFlusher(FirePsa, false)` also stops case and grading payments in ETH, PLANK and USDG (PAPER payments still work) |
+| Pause | `FireSale.setPaused`, `FirePsa.setPaused` | global | off | blocks every buy (every group), credit spending, paid suggestions (`FireSale`) and case/grading payments (`FirePsa`). Never opening, dealing, transfers, ending or closing a drop, burning cards, finishing or cancelling a grading, or keeper calls. No expiry. `PaperBurner.setFlusher(FirePsa, false)` also stops case and grading payments |
 | Randomness source | `FireCards.setRandomness`, `FirePsa.setRandomness` | global | the drand adapters | any time, no delay (announced first); only new requests use it, each pending request keeps its source (`docs/randomness.md`) |
 | Collection metadata | `FirePacks.setContractURI`, `FireCards.setContractURI` | global | empty | any (ERC-7572) |
 
@@ -358,7 +356,7 @@ and `PlankBurner`); the wear rules and 100% fee burn (`docs/grading.md`); feed f
 25h, `PLANK_FEED_MAX_AGE` and `PLANK_WINDOW_MAX` 2h, `PAPER_FEED_MAX_AGE` 2 days); every group delay and duration and
 the regular-wallets rule at most 30 days (`MAX_WINDOW`) and `END_GRACE` 7 days, so a stalled drop can always be ended
 (by the owner once its schedule is over: every timed group has run its full time, every until-sold group has opened
-and every unlimited group that opened has idled out, and at least a day after the start; by anyone a week later); no re-request, and cancel after a week for randomness; royalty at most 10%; ownership can't
+and every unlimited group that opened has idled out, and at least a day after the start; by anyone a week later); no re-request, and cancel after 24 hours for randomness (`CANCEL_AFTER`); royalty at most 10%; ownership can't
 be renounced.
 
 ## Technical ceilings (not product rules)
@@ -369,11 +367,11 @@ be renounced.
 | Packs per Series < 2^64 (`FirePacks` refuses more) | the frozen count is 64-bit |
 | Cards per pack at most 1,000 (`MAX_CARDS_PER_PACK`) | one pack's shuffle and dealing fit in a block |
 | Types < 2^32, characters < 2^32 | per-card fields are 32-bit; a card is one storage word |
-| Cards of one type per Series < 2^128 | dealing counts are packed two per slot |
-| Editions < 2^40 | per-card field |
+| Type weights < 2^64 each, character weights < 2^64 each | stored and summed in 256-bit words |
+| Print numbers < 2^40 per exact card | per-card field (40 bits; `BadDeal` past it) |
 | Name 64 bytes, category 32, slug 32 | metadata size; same rules as the studio |
 | Recipe size | owner gas per transaction (stored as contract code in 24,000-byte chunks, so no hard size) |
-| Dealing | block gas: `process(fire, maxCards)` splits any pack; a card costs ~60k gas |
+| Dealing | block gas: `process(fire, maxCards)` splits any pack; a card costs ~60k gas (almost all of it the mint) |
 | Cases and grading: at most 100 cards per batch (`maxBatch`, 20 to start) | gas guard on `finish` |
 | Royalty <= 10%, group delays and durations <= 30 days, end grace 7 days, price-feed ages, 90% swap floor | buyer-protection guards (kept) |
 | At most 6 groups per drop | every buy works out the groups' timing (a loop over them, about 2 storage reads each) |
@@ -384,12 +382,16 @@ be renounced.
   how the work is split.
 - Cards are minted without the receiver callback, so a holder's contract can't stall the queue for everyone else.
 - One open, one randomness request: there is no re-request (it could act as a re-roll once a drand round is public).
-  After 7 days with no answer (randomness gone for good), anyone can `cancelOpen(fire, index)`: the packs go back to
+  After 24 hours with no answer (`CANCEL_AFTER`; randomness gone for good), anyone can `cancelOpen(fire, index)`: the packs go back to
   the holder, sealed (minted back without the ERC-1155 receiver hook, so a wallet that refuses them can't block the
   cancel and freeze the queue; same for `skipStuck`). Each open remembers its randomness source and only that source can answer it, so switching the
-  source never strands or re-rolls an open. If a ready open sits at the head of its queue undealt for 7 days (a dealer
-  that can't deal it), anyone can `skipStuck(fire)`: its unstarted packs go back, sealed, and the queue moves on. Each
+  source never strands or re-rolls an open. If a ready open sits at the head of its queue undealt for 7 days (`SKIP_AFTER`; a
+  dealer that can't deal it), anyone can `skipStuck(fire)`: its unstarted packs go back, sealed, and the queue moves on. Each
   Series' queue stands alone, so one stuck Series never blocks another.
+- Why 24 hours for a cancel: drand rounds are public once out, so a cancel only works while nobody has delivered the
+  word, and the holder can see it first. A holder could sit on a word they don't like and cancel for a re-roll only if
+  every keeper (main and backup, which alert at 10 minutes and again at 6 hours) stays down for the whole window, since
+  anyone can deliver the word (`docs/randomness.md`). The same holds for `FirePsa.cancelGrading`.
 - The owner can't change a Series' dealer, recipe, characters or image folder once its drop is set up, and can never
   change the PDA fresh odds or wear rules (constants in `FirePsa`).
   Closing doesn't depend on the dealer, so a drop can always close.
@@ -430,31 +432,36 @@ whose deployments file has no `FireProfiles` (mainnet and testnet until it is de
 
 ## Gas (Standard recipe, `forge test --match-test gas -vv`, measured 2026-10)
 
-| | Before | Now |
+| | Pool dealing (2026-10) | Straight odds (now) |
 |---|---|---|
-| `open` 1 pack | ~101.9k | ~102.8k (the open now also stores its randomness source, packed with the request id) |
-| `process` 1 pack (6 cards) | ~345.8k | ~370.9k (+7.3%) |
-| `process` a 10-pack open | ~3.26M | ~3.49M (+7.1%) |
+| `open` 1 pack | ~102.8k | ~102.8k |
+| `process` 1 pack (6 cards) | ~370.9k | ~361.4k (-2.5%) |
+| `process` a 10-pack open | ~3.49M | ~3.42M (-2.0%) |
+| the dealer's part of a pack (`deal`, 6 cards) | ~41.2k | ~20.0k (-52%) |
+| `process(300)` of a 1,000-card pack (most in one call) | ~19.2M | ~18.2M |
 
-The extra is the call to the dealer and reading the compiled recipe (stored as contract code, read in one copy).
+Almost all of a pack's gas is minting the cards (owner, balance, the card word, its print-number counter). The dealer now
+reads the compiled recipe (one code copy) and does a binary search per card, with no storage writes.
 
 ## Tests
 
 `contracts/test/cards/` (`Cards.t.sol`, `Recipe.t.sol`, `Sale.t.sol`, `Groups.t.sol`, `Psa.t.sol`, `Burner.t.sol`,
 `PlankBurner.t.sol`, `SaleFork.t.sol`, `ImageParity.t.sol`, `SeriesCheck.t.sol`, `Profiles.t.sol`) and
 `contracts/test/invariant/` (fuzz and invariant suites, including `RecipeFuzz.t.sol` and `GroupsFuzz.t.sol`). They cover:
-- the Standard pool (`classic`, Gold in Diamond's place) matches the studio's own code over 344 Series sizes and
-  count settings (`pool-fixture.json`,
-  written by `studio/scripts/pool-fixture.test.ts` with `WRITE_POOL_FIXTURE=1`; format unchanged), and the Standard
-  odds match a re-implementation of the previous contract's dealing
-- every Standard pack keeps its guarantees, totals are exact, holo rates converge (Gold and Full Art always full holo)
-- new shapes: 3-card all-holo packs, 100 characters in batches, per-character types, 1-card packs, a 1,000-card pack in
-  10 calls (same cards as one call), recipes spanning several storage chunks, the floor topping up and taking back
-- bad recipes refused with the reason (not nested, a type no slot takes, filler, never-holo in a must-holo slot, slots,
-  slugs, shares, holo)
+- straight odds: the Standard type odds, holo rates (Gold and Full Art always full holo) and characters converge to
+  their weights over 24,000 cards (5 standard deviations); a whole opened Series follows its odds; no guarantees and
+  no caps (all-Paper packs, two Full Arts in a pack, any number per character); the last pack of a 300-pack Series and
+  the only pack of a 1-pack Series get the same cards from the same word; print numbers count each exact card
+  (character, type, holo look) #1, #2, ... in deal order, per Series
+- character weights converge to their weights, independent of type; equal weights deal exactly what no weights deal;
+  one weight per character, each at least 1, lock with the Series, and a list that grew needs its weights again
+- new shapes: 3-card all-holo packs, 100 characters in batches, 1,000 weighted characters, 1-card packs, a 1,000-card
+  pack in 10 calls (same cards as one call), recipes spanning several storage chunks
+- bad recipes refused with the reason (no types, cards per pack, weight, slugs, names, holo)
 - every setting locks at the first pack, and a dealer can't be swapped after it
-- fuzz: random nested recipes and Series sizes; every card fits its slot, must-holo slots are holo, totals exact,
-  never beyond the pool, every slot set always has enough
+- fuzz: random recipes (1-12 types, weights up to 2^64, both holo modes, 1-40 cards a pack) and random character
+  weights; every card is a type and a character of the Series, holo only as its type allows, the same however a pack
+  is split; the views read back the weights
 - the same words give the same cards however processing is split; out-of-order randomness waits its turn
 - permissions, burns, royalties, metadata, image names, the image folder lock, the JSON configure path
 - image names match the studio's files for every look a recipe can deal (`ImageParity.t.sol`, `image-parity/`), and
@@ -494,7 +501,7 @@ Every deploy script writes what it deployed to `deployments/<chainId>.json` (rep
 tool reads; `contracts/script/VerifyDeploy.s.sol` checks the wiring listed below from it.
 
 `contracts/script/ConfigureSeries.s.sol` sets up a Series from a recipe JSON in two batches sent from the owner's hardware wallet: `BATCH=A` (content:
-recipe, characters, dealer, images base) and, after `ops/series/verify-series.mjs` is green, `BATCH=B`
+recipe, characters, character weights if the JSON has them, dealer, images base) and, after `ops/series/verify-series.mjs` is green, `BATCH=B`
 (`configureDrop`, the lock; refused unless the chain holds batch A exactly). It checks the recipe against the dealer,
 prints each call and sends it from the owner (`--ledger`/`--trezor`; any other signer is refused); `SIMULATE=true` runs
 a batch as the impersonated owner on a fork (`BATCH=AB` only there). It rejects unknown JSON keys (`pdaOdds` too) and a drop start more than 365 days away. Inputs: `RECIPE_JSON` (under `contracts/series/`), `BATCH`,
@@ -532,7 +539,8 @@ The site has the ABIs: `web/src/lib/abi/` (`fireCardsAbi.json`, `firePacksAbi.js
 
 ## Past review fixes after the redesign
 
-See `docs/audit-2026-10.md` ("Per-Series recipes"). Every guarantee is kept; a few are widened or moved.
+See `docs/audit-2026-10.md` ("Per-Series recipes"). Pool dealing (slots, per-pack guarantees, exact totals) was
+replaced by straight odds in 2026-10 (owner decision: "straight odds for all cards, no guarantees and no caps").
 
 ## Money and the economy
 

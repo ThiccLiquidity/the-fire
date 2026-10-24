@@ -121,6 +121,9 @@ export function loadConfig(env = process.env) {
     heartbeatHours: num(e("HEARTBEAT_HOURS"), 24),
     alertRepeatMin: num(e("ALERT_REPEAT_MIN"), 60),
     stuckMin: num(e("STUCK_MIN"), 10),
+    // an open or grading with no word this long after its request: a louder alert (anyone may cancel it 24 h after the
+    // request, which would let a holder who saw the word re-roll)
+    cancelWarnHours: num(e("CANCEL_WARN_HOURS"), 6),
     plankStaleMin: num(e("PLANK_STALE_MIN"), 90),
     paperStaleHours: num(e("PAPER_STALE_HOURS"), 22),
     paperCandidateLateHours: num(e("PAPER_CANDIDATE_LATE_HOURS"), 3),

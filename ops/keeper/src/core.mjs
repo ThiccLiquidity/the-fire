@@ -27,8 +27,43 @@ import { drandClient, roundAt, roundTime } from "./drand.mjs";
 import { createSender, errMsg } from "./tx.mjs";
 import { createNotifier } from "./alerts.mjs";
 
+/** FireCards.CANCEL_AFTER and FirePsa.CANCEL_AFTER (24 h): an open or grading with no word this long after its request
+ *  can be cancelled by anyone. */
+const CANCEL_HOURS = 24;
 const PAY = [["PLANK", 0], ["ETH", 1], ["USDG", 2]];
 const idsHash = (ids) => keccak256(encodeAbiParameters([{ type: "uint256[]" }], [ids]));
+
+/** Alerts for opens and gradings still waiting: a round published but not delivered, no randomness yet, a ready open
+ *  not dealt, a ready grading not finished (after STUCK_MIN), and URGENT once one has had no word for
+ *  CANCEL_WARN_HOURS (anyone may cancel it CANCEL_HOURS after the request; drand rounds are public, so a holder who saw
+ *  the word could cancel for a re-roll: deliver it before then). */
+export function waitAlerts(items, now, cfg) {
+  const alerts = [];
+  const ago = (t) => Number(BigInt(now) - BigInt(t));
+  const min = (s) => `${Math.round(s / 60)} min`;
+  const stuck = cfg.stuckMin * 60;
+  const cancelWarn = (cfg.cancelWarnHours ?? 6) * 3600;
+  for (const it of items) {
+    const name = it.kind === "open" ? `open ${it.fire}/${it.index}` : `grading ${it.index}`;
+    if (!it.ready && it.roundAt !== undefined && ago(it.roundAt) > stuck) {
+      alerts.push({ key: `stuck:${it.kind}:${it.fire ?? ""}:${it.index}`, text: `${name}: drand round ${it.round} was published ${min(ago(it.roundAt))} ago and still isn't delivered` });
+    }
+    if (!it.ready && it.roundAt === undefined && ago(it.requestedAt) > stuck + 93) {
+      alerts.push({ key: `stuck:${it.kind}:${it.fire ?? ""}:${it.index}`, text: `${name}: requested ${min(ago(it.requestedAt))} ago, no randomness yet (source ${it.source})` });
+    }
+    if (!it.ready && ago(it.requestedAt) >= cancelWarn) {
+      const left = CANCEL_HOURS * 3600 - ago(it.requestedAt);
+      alerts.push({ key: `cancel:${it.kind}:${it.fire ?? ""}:${it.index}`, text: `URGENT ${name}: no word ${(ago(it.requestedAt) / 3600).toFixed(1)} h after the request; ${left > 0 ? `anyone can cancel it in ${(left / 3600).toFixed(1)} h` : "anyone can cancel it now"} (${it.kind === "open" ? "FireCards.cancelOpen" : "FirePsa.cancelGrading"}). Deliver its drand round now` });
+    }
+    if (it.kind === "open" && it.ready && it.head && it.count > 0n && ago(it.readyAt) > stuck) {
+      alerts.push({ key: `deal:${it.fire}:${it.index}`, text: `${name}: ready ${min(ago(it.readyAt))} ago and still not dealt (FireCards.process)` });
+    }
+    if (it.kind === "grading" && it.ready && ago(it.requestedAt) > stuck + 93) {
+      alerts.push({ key: `finish:${it.index}`, text: `${name}: randomness arrived but grades aren't set (FirePsa.finish) ${min(ago(it.requestedAt))} after the request` });
+    }
+  }
+  return alerts;
+}
 
 /** Whether to flush a burner balance now. `usd`: what it's worth (undefined: no price to value it); `waitedMs`: since
  *  it was first seen; `sinceFlushMs`: since this keeper last sent a flush for it (undefined: never). */
@@ -170,10 +205,14 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   }
 
   /** The alert for unfinished gradings older than the window (the sweep reaches each once per lap). */
-  function behindAlert() {
+  function behindAlert(ago) {
     if (!gradingsBehind.size) return undefined;
     const oldest = [...gradingsBehind.keys()].reduce((a, b) => (b < a ? b : a));
-    return { key: "gradings:behind", text: `${gradingsBehind.size} unfinished grading(s) are older than the newest ${cfg.gradingLookback} (oldest: grading ${oldest}): the keeper sweeps them ${cfg.gradingLookback} per pass; check why they aren't finished` };
+    const age = ago ? ago(gradingsBehind.get(oldest)) : 0;
+    const late = age >= (cfg.cancelWarnHours ?? 6) * 3600
+      ? ` It was requested ${(age / 3600).toFixed(1)} h ago: anyone can cancel a grading with no word ${CANCEL_HOURS} h after its request.`
+      : "";
+    return { key: "gradings:behind", text: `${gradingsBehind.size} unfinished grading(s) are older than the newest ${cfg.gradingLookback} (oldest: grading ${oldest}): the keeper sweeps them ${cfg.gradingLookback} per pass; check why they aren't finished.${late}` };
   }
 
   // ------------------------------------------------------------------ randomness
@@ -468,25 +507,10 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
       const age = ago(updated);
       if (ethPx <= 0n || age > cfg.ethStaleHours * 3600) alerts.push({ key: "feed:eth", text: `ETH/USD feed stale: updated ${(age / 3600).toFixed(1)} h ago (prices stop at 25 h)` });
     }
-    // opens and gradings
-    const stuck = cfg.stuckMin * 60;
-    // gradings older than the window are covered by one alert (the sweep reaches each only once per lap)
-    for (const it of [...opens, ...gradings.filter((g) => !g.behind)]) {
-      const name = it.kind === "open" ? `open ${it.fire}/${it.index}` : `grading ${it.index}`;
-      if (!it.ready && it.roundAt !== undefined && ago(it.roundAt) > stuck) {
-        alerts.push({ key: `stuck:${it.kind}:${it.fire ?? ""}:${it.index}`, text: `${name}: drand round ${it.round} was published ${min(ago(it.roundAt))} ago and still isn't delivered` });
-      }
-      if (!it.ready && it.roundAt === undefined && ago(it.requestedAt) > stuck + 93) {
-        alerts.push({ key: `stuck:${it.kind}:${it.fire ?? ""}:${it.index}`, text: `${name}: requested ${min(ago(it.requestedAt))} ago, no randomness yet (source ${it.source})` });
-      }
-      if (it.kind === "open" && it.ready && it.head && it.count > 0n && ago(it.readyAt) > stuck) {
-        alerts.push({ key: `deal:${it.fire}:${it.index}`, text: `${name}: ready ${min(ago(it.readyAt))} ago and still not dealt (FireCards.process)` });
-      }
-      if (it.kind === "grading" && it.ready && ago(it.requestedAt) > stuck + 93) {
-        alerts.push({ key: `finish:${it.index}`, text: `${name}: randomness arrived but grades aren't set (FirePsa.finish) ${min(ago(it.requestedAt))} after the request` });
-      }
-    }
-    const behind = behindAlert();
+    // opens and gradings (gradings older than the window are covered by one alert: the sweep reaches each only once
+    // per lap)
+    alerts.push(...waitAlerts([...opens, ...gradings.filter((g) => !g.behind)], now, cfg));
+    const behind = behindAlert(ago);
     if (behind) alerts.push(behind);
     for (const n of notes) {
       const name = n.it.kind === "open" ? `open ${n.it.fire}/${n.it.index}` : `grading ${n.it.index}`;

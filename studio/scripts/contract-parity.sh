@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Refreshes scripts/fixtures/recipe-parity.json: the contract's answers (RecipeDealer.check / previewPool, parsed by
+# Refreshes scripts/fixtures/recipe-parity.json: the contract's answers (RecipeDealer.check, oddsOf, holoOdds; parsed by
 # ConfigureSeries.s.sol) for the recipe cases in scripts/recipe-parity.test.ts. Needs forge (Foundry) and solc 0.8.28.
 # Works on a scratch copy of contracts/, so contracts/ itself is never touched. Run from studio/:
 #   bash scripts/contract-parity.sh

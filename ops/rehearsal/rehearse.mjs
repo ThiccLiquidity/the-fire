@@ -13,7 +13,7 @@
 //   (fulfillMany) and deals (process) -> case and
 //   grade (protect) -> keeper delivers and finishes the grading (finish(index, ids) from the Protected event)
 //   -> keeper flushes PlankBurner; PaperBurner waits (no PAPER price) and alerts -> 40 h later the PAPER feed is live
-//   and the keeper flushes PaperBurner -> a case and a grade paid in PAPER (to the dead address) -> VerifyDeploy again.
+//   and the keeper flushes PaperBurner -> a case and a grade paid in USDG (PAPER refused) -> VerifyDeploy again.
 //
 // Two modes:
 //   node rehearsal/rehearse.mjs                 plain anvil with stand-ins (script/DevStack.s.sol), no network
@@ -632,7 +632,7 @@ async function main() {
     r = await pass();
     check(hook.posts.some((p) => /resolved: PaperBurner holds/.test(p)), "the webhook got the 'resolved' line");
 
-    step("buyer 2 cases one card and grades one paying in PAPER (straight to the dead address; PaperBurner untouched)");
+    step("buyer 2 cases one card and grades one paying in USDG (one grading price for every card; the fee buys PAPER and burns it)");
     const free = [];
     for (let s = 1n; s < next; s++) {
       const o = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "ownerOf", args: [s] }).catch(() => undefined);
@@ -641,25 +641,28 @@ async function main() {
       if (!c.cased && c.grade === 0n) free.push(s);
     }
     check(free.length >= 2, `buyer 2 has ${free.length} cards neither cased nor graded`);
-    const payPaper = 3; // FirePsa.Pay.PAPER
-    const costP = await pub.readContract({ address: C.FirePsa, abi: ABI.psa, functionName: "quoteFor", args: [[free[0]], [free[1]], payPaper] });
+    const payUsdg = 2; // FirePsa.Pay.USDG (PLANK 0, ETH 1, USDG 2; PAPER is not a payment option)
+    const costP = await pub.readContract({ address: C.FirePsa, abi: ABI.psa, functionName: "quote", args: [1n, 1n, payUsdg] });
+    const paperRefused = await pub.simulateContract({ account: buyer2, address: C.FirePsa, abi: ABI.psa, functionName: "protect", args: [[free[0]], [free[1]], 3, MAX] }).then(() => false, () => true);
+    check(paperRefused, "paying in PAPER (the old Pay 3) is refused");
     const DEAD = "0x000000000000000000000000000000000000dEaD";
-    const bal = (a) => pub.readContract({ address: dev.paper.address, abi: dev.paper.abi, functionName: "balanceOf", args: [a] });
-    await tx(deployer, dev.paper.address, dev.paper.abi, "mint", [buyer2.address, costP]);
-    await tx(buyer2, dev.paper.address, dev.paper.abi, "approve", [C.FirePsa, costP]);
-    const dead0 = await bal(DEAD);
-    const burnerEth0 = await pub.getBalance({ address: C.PaperBurner });
+    const bal = (t, a) => pub.readContract({ address: t.address, abi: t.abi, functionName: "balanceOf", args: [a] });
+    await tx(deployer, dev.usdg.address, dev.usdg.abi, "mint", [buyer2.address, costP]);
+    await tx(buyer2, dev.usdg.address, dev.usdg.abi, "approve", [C.FirePsa, costP]);
+    const dead0 = await bal(dev.paper, DEAD);
     // FirePsa is back on the real drand router (the stand-in relay only has round 1000's real signature): this grading
     // takes its randomness through the stand-in router, then FirePsa goes back
     const pa2 = await deploy(deployer, "OpenVRFAdapter", "OpenVRFAdapter", [dev.devDrand.address, C.FirePsa]);
     await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [pa2.address] }));
-    await tx(buyer2, C.FirePsa, ABI.psa, "protect", [[free[0]], [free[1]], payPaper, costP]);
-    check((await bal(DEAD)) - dead0 === costP, `${formatEther(costP)} PAPER went to the dead address`);
-    check((await pub.getBalance({ address: C.PaperBurner })) === burnerEth0, "PaperBurner untouched by a PAPER payment");
+    const usdg0 = await bal(dev.usdg, C.PaperBurner);
+    await tx(buyer2, C.FirePsa, ABI.psa, "protect", [[free[0]], [free[1]], payUsdg, costP]);
+    const burned = (await bal(dev.paper, DEAD)) - dead0;
+    const waiting = (await bal(dev.usdg, C.PaperBurner)) - usdg0;
+    check(burned > 0n || waiting === costP, burned > 0n ? `the USDG fee (${costP} units: $1.05) bought and burned ${formatEther(burned)} PAPER` : `the USDG fee (${costP} units) waits in PaperBurner for a later buy`);
     const gp = (await pub.readContract({ address: C.FirePsa, abi: ABI.psa, functionName: "gradingCount" })) - 1n;
     await warp(100);
     r = await pass();
-    check((await pub.readContract({ address: C.FirePsa, abi: ABI.psa, functionName: "gradingOf", args: [gp] })).done, "the PAPER-paid grading finished");
+    check((await pub.readContract({ address: C.FirePsa, abi: ABI.psa, functionName: "gradingOf", args: [gp] })).done, "the USDG-paid grading finished");
     const cp = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "cardOf", args: [free[1]] });
     check(cp.grade > 0n, `card ${free[1]} graded PDA ${cp.grade}`);
     await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [C.PsaAdapter] }));

@@ -2,11 +2,11 @@
 //
 // After batch A (recipe, characters, dealer, images) is on chain and BEFORE batch B (configureDrop, which locks
 // the Series), this reads everything back from the chain and checks it, read-only:
-//   - the on-chain recipe, characters, dealer and image folder equal the studio's recipe.json, field by field; FirePsa's
+//   - the on-chain recipe (type odds, holo, cards per pack), characters (and their odds), dealer and image folder equal the studio's recipe.json, field by field; FirePsa's
 //     fixed fresh PDA odds are the published ones (docs/grading.md)
 //   - imagesBase is ipfs://<CID>/ (a real CID, ending in /)
 //   - every image the contract can ever point a card at (CardsRenderer.imageName for each character x card type x holo
-//     look its odds and slots allow x 12 states) loads through at least two IPFS gateways (HEAD, or a 1-byte GET);
+//     look its holo odds allow x 12 states) loads through at least two IPFS gateways (HEAD, or a 1-byte GET);
 //     a gateway missing some is a warning as long as each image still loads from two others. Each gateway gets its
 //     own few connections at a time, and a 429 (or 503) slows that gateway down for its Retry-After
 //   - the images folder's manifest.json (written by the studio) lists them all and names this recipe
@@ -54,27 +54,23 @@ export const DEFAULT_GATEWAYS = ["https://ipfs.io/ipfs/", "https://dweb.link/ipf
 export const STATES = ["u", "c", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
 const HOLO = ["none", "frame", "picture", "full"];
 const ONE = 10n ** 18n;
-const U32 = 4294967295n;
-const SUPPLY = { filler: 0, share: 1, perPack: 2, count: 3, perCharacter: 4 };
 const CID_RE = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{50,})$/;
 
 /** The recipe.json the studio exports, normalized the way ConfigureSeries.s.sol parses it (contract units). */
 export function recipeFromJson(j) {
   return {
     types: j.types.map((t) => ({
-      name: t.name, slug: t.slug, rank: BigInt(t.rank), supply: SUPPLY[t.supply],
-      amount: t.supply === "filler" ? 0n : BigInt(t.amount ?? 0), maxPerPack: BigInt(t.maxPerPack ?? 0),
+      name: t.name, slug: t.slug, rank: BigInt(t.rank), weight: BigInt(t.weight),
       holoMode: t.holo.mode === "independent" ? 0 : 1,
       holo: t.holo.mode === "independent" ? [BigInt(t.holo.frame), BigInt(t.holo.picture), 0n, 0n] : t.holo.weights.map(BigInt),
     })),
-    slots: j.slots.map((s) => {
-      const types = (s.types ?? []).map(BigInt);
-      return {
-        count: BigInt(s.count), types, minRank: BigInt(s.minRank ?? 0),
-        maxRank: s.maxRank !== undefined ? BigInt(s.maxRank) : types.length === 0 ? U32 : 0n, mustHolo: !!s.mustHolo,
-      };
-    }),
+    cardsPerPack: BigInt(j.cardsPerPack),
   };
+}
+
+/** The character weights the JSON asks for (each character's "weight"; none = every character 1). */
+export function characterWeightsFromJson(j) {
+  return j.characters.map((c) => (c.weight === undefined ? 1n : BigInt(c.weight)));
 }
 
 /** The holo looks a type's cards can come out as, exactly as RecipeDealer deals them (and the studio's holoLooksFor). */
@@ -84,9 +80,7 @@ export function looksFor(recipe, t) {
   const exact = ty.holoMode === 0
     ? { none: h0 < ONE && h1 < ONE, frame: h0 > 0n && h1 < ONE, picture: h0 < ONE && h1 > 0n, full: h0 > 0n && h1 > 0n }
     : { none: h0 > 0n, frame: h1 > 0n, picture: h2 > 0n, full: h3 > 0n };
-  const has = (s) => (s.types.length ? s.types.map(Number).includes(t) : BigInt(s.minRank) <= BigInt(ty.rank) && BigInt(ty.rank) <= BigInt(s.maxRank));
-  const plain = recipe.slots.some((s) => !s.mustHolo && has(s));
-  return HOLO.filter((h) => (h === "none" ? exact.none && plain : exact[h]));
+  return HOLO.filter((h) => exact[h]);
 }
 
 /** CardsRenderer.imageName. */
@@ -108,7 +102,7 @@ export const FRESH_PDA_ODDS = [0n, 0n, 0n, 0n, 0n, 0n, 2900n, 4000n, 3000n, 100n
 
 /** The recipe fingerprint the studio puts in the images folder's manifest.json. */
 export function recipeHash(j) {
-  return createHash("sha256").update(JSON.stringify({ fire: j.fire, types: j.types, slots: j.slots, characters: j.characters })).digest("hex");
+  return createHash("sha256").update(JSON.stringify({ fire: j.fire, cardsPerPack: j.cardsPerPack, types: j.types, characters: j.characters })).digest("hex");
 }
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -196,20 +190,12 @@ export async function verifySeries(opts) {
     if (!g) return;
     const diffs = [];
     for (const k of ["name", "slug"]) if (g[k] !== w[k]) diffs.push(`${k} ${JSON.stringify(g[k])} != ${JSON.stringify(w[k])}`);
-    for (const k of ["rank", "amount", "maxPerPack"]) if (BigInt(g[k]) !== w[k]) diffs.push(`${k} ${g[k]} != ${w[k]}`);
-    if (Number(g.supply) !== w.supply) diffs.push(`supply ${g.supply} != ${w.supply}`);
+    for (const k of ["rank", "weight"]) if (BigInt(g[k]) !== w[k]) diffs.push(`${k} ${g[k]} != ${w[k]}`);
     if (Number(g.holoMode) !== w.holoMode) diffs.push(`holo mode ${g.holoMode} != ${w.holoMode}`);
     if (g.holo.some((x, k) => BigInt(x) !== w.holo[k])) diffs.push(`holo ${g.holo.join("/")} != ${w.holo.join("/")}`);
     ok(diffs.length === 0, `type ${i} (${w.name}) ${diffs.length ? diffs.join("; ") : "matches"}`);
   });
-  ok(got.slots.length === want.slots.length, `slot groups: ${got.slots.length} on chain, ${want.slots.length} in recipe.json`);
-  want.slots.forEach((w, i) => {
-    const g = got.slots[i];
-    if (!g) return;
-    const same = BigInt(g.count) === w.count && g.types.map(BigInt).join() === w.types.join() && BigInt(g.minRank) === w.minRank
-      && BigInt(g.maxRank) === w.maxRank && g.mustHolo === w.mustHolo;
-    ok(same, `slot group ${i} ${same ? "matches" : `differs (chain ${g.count}x types[${g.types.join(",")}] ranks ${g.minRank}-${g.maxRank} holo ${g.mustHolo})`}`);
-  });
+  ok(BigInt(got.cardsPerPack) === want.cardsPerPack, `cards per pack: ${got.cardsPerPack} on chain, ${want.cardsPerPack} in recipe.json`);
 
   // ---- characters
   const n = Number(await read(dealer, dealerAbi, "characterCount", [fire]));
@@ -225,6 +211,11 @@ export async function verifySeries(opts) {
     });
   }
   ok(charDiffs === 0, `every character's name and category in order${charDiffs ? ` (${charDiffs} differ)` : ""}`);
+  const [cw] = await read(dealer, dealerAbi, "characterOddsOf", [fire]);
+  const wantW = characterWeightsFromJson(json);
+  const wDiffs = wantW.filter((w, k) => cw[k] === undefined || BigInt(cw[k]) !== w).length;
+  const even = wantW.every((w) => w === 1n);
+  ok(wDiffs === 0 && cw.length === wantW.length, `character odds ${even ? "equal (no weights)" : "weighted"}${wDiffs ? `: ${wDiffs} differ from recipe.json` : " match recipe.json"}`);
 
   // ---- dealer, images base, fixed PDA odds, lock state
   ok(getAddress(await read(cards, cardsAbi, "dealerOf", [fire])) === dealer, "FireCards' dealer for the Series is RecipeDealer");

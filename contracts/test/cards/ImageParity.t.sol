@@ -15,7 +15,7 @@ import {MockRandomness} from "../Mocks.sol";
 ///      <i>.files.json the image files the studio builds for it (studio/scripts/image-parity.test.ts writes both and
 ///      fails when they drift from the studio). For each recipe:
 ///      1. every holo look the dealer can produce for each card type (from the recipe as stored, with the dealer's own
-///         rules: chances or weights, must-holo groups), for every character and every state (u, c, PDA 1-10), named by
+///         rules: chances or weights), for every character and every state (u, c, PDA 1-10), named by
 ///         CardsRenderer.imageName, is in the studio's list, and the two lists are the same size: the sets are equal;
 ///      2. dealing real packs through FireCards and RecipeDealer, every card's CardsRenderer.imageFile is in the
 ///         studio's list and is one of the looks in (1), ungraded, cased and graded.
@@ -55,34 +55,23 @@ contract ImageParityTest is SeriesHelper {
         return f && p ? "full" : f ? "frame" : p ? "picture" : "none";
     }
 
-    /// The looks the dealer can produce for type t (RecipeDealer._holo, over every group that can deal t).
+    /// The looks the dealer can produce for type t (RecipeDealer._holo).
     function _looks(RecipeDealer.Recipe memory r, uint256 t) internal pure returns (bool[4] memory can) {
         RecipeDealer.CardType memory ty = r.types[t];
-        for (uint256 s; s < r.slots.length; s++) {
-            RecipeDealer.Slot memory sl = r.slots[s];
-            bool has;
-            if (sl.types.length > 0) {
-                for (uint256 k; k < sl.types.length; k++) if (sl.types[k] == t) has = true;
-            } else {
-                has = sl.minRank <= ty.rank && ty.rank <= sl.maxRank;
-            }
-            if (!has) continue;
-            uint256 h0 = ty.holo[0];
-            uint256 h1 = ty.holo[1];
-            if (ty.holoMode == RecipeDealer.HoloMode.Independent) {
-                // two rolls: frame hits below h0, picture below h1 (out of 1e18); a must-holo group conditions on a hit
-                bool f = h0 > 0;
-                bool nf = h0 < ONE;
-                bool p = h1 > 0;
-                bool np = h1 < ONE;
-                if (!sl.mustHolo && nf && np) can[0] = true;
-                if (f && np) can[1] = true;
-                if (nf && p) can[2] = true;
-                if (f && p) can[3] = true;
-            } else {
-                if (!sl.mustHolo && ty.holo[0] > 0) can[0] = true;
-                for (uint256 k = 1; k < 4; k++) if (ty.holo[k] > 0) can[k] = true;
-            }
+        uint256 h0 = ty.holo[0];
+        uint256 h1 = ty.holo[1];
+        if (ty.holoMode == RecipeDealer.HoloMode.Independent) {
+            // two rolls: frame hits below h0, picture below h1 (out of 1e18)
+            bool f = h0 > 0;
+            bool nf = h0 < ONE;
+            bool p = h1 > 0;
+            bool np = h1 < ONE;
+            can[0] = nf && np;
+            can[1] = f && np;
+            can[2] = nf && p;
+            can[3] = f && p;
+        } else {
+            for (uint256 k; k < 4; k++) can[k] = ty.holo[k] > 0;
         }
     }
 
@@ -112,6 +101,7 @@ contract ImageParityTest is SeriesHelper {
         uint256 fire = 1000 + i; // fresh Series per case
         dealer.setRecipe(fire, s.recipe);
         dealer.setCharacters(fire, s.names, s.categories);
+        if (s.weights.length > 0) dealer.setCharacterWeights(fire, s.weights);
         cards.setDealer(fire, address(dealer));
         cards.setImagesBase(fire, "ipfs://parity/");
 

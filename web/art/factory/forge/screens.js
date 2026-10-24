@@ -66,6 +66,7 @@
   const isBig = (t) => t === 'epic' || t === 'legendary';
   const isHolo = (c) => !!Store.ALWAYS_HOLO[c.material] || (c.holo || 'none') !== 'none';
   const TIER_LABEL = { rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
+  const CEL_HEAD = { rare: 'Nice pull!', epic: 'Huge pull!', legendary: 'Legendary pull!' }; // the after-party's heading, by the best pull's tier
   const HOLO_NAME = { frame: 'Holo frame', picture: 'Holo picture', full: 'Full holo' };
   const cardName = (c) => (Store.ALWAYS_HOLO[c.material] ? Store.MAT_LABEL[c.material] : ((c.holo || 'none') !== 'none' ? HOLO_NAME[c.holo] + ' ' : '') + Store.MAT_LABEL[c.material])
     + (c.grade != null ? ' · PDA ' + c.grade : ''); // "Full holo Paper", "Diamond · PDA 10"
@@ -189,7 +190,7 @@
   const matChip = (m) => h('span', { class: 'mat ' + m, text: Store.MAT_LABEL[m] });
   const holoBadge = (holo) => holo && holo !== 'none' ? h('span', { class: 'holo-b', text: HOLO[holo] }) : null;
   const holoChip = (c) => (c.material === 'gold' || c.material === 'fullart' ? null : holoBadge(c.holo)); // Gold and Full Art are always full holo: no chip
-  const describe = (c) => `${c.character}, ${Store.MAT_LABEL[c.material]}${c.holo !== 'none' ? ', ' + HOLO[c.holo] : ''}, ${c.pending ? 'being graded' : c.grade == null ? (c.cased ? 'cased, not graded' : 'raw, not graded') : 'slabbed, PDA ' + c.grade}, ${Store.trueOdds(c).label}, Series ${c.series}, ${c.edition}`;
+  const describe = (c) => `${c.character}, ${Store.MAT_LABEL[c.material]}${c.holo !== 'none' ? ', ' + HOLO[c.holo] : ''}, ${c.pending ? 'being graded' : c.grade == null ? (c.cased ? 'cased, not graded' : 'raw, not graded') : 'slabbed, PDA ' + c.grade}, ${Store.trueOdds(c).label}, Series ${c.series}${Store.printNo(c) ? `, #${Store.printNo(c)}` : ''}`;
 
   // "If graded now": the grade odds an ungraded card has today (Wear.odds on its uncased age and moves; a case froze them),
   // by wear band (PDA 10, 9-8, 7-6, 5-4, 3-2, 1). The thin bar sits on every ungraded tile; the card's detail adds the key.
@@ -292,23 +293,18 @@
   if (document.readyState === 'loading') addEventListener('DOMContentLoaded', setPicture, { once: true }); else setPicture();
   const clipBtn = (c, cls = '') => (window.Clip ? Clip.button(c, { cls }) : null);
 
-  // ---------- pack contents: 3 Paper, 1 Wood, 1 Wood or better, 1 Fire or better
-  function roll(table) { let u = Math.random(), acc = 0; for (const [v, p] of table) { acc += p; if (u < acc) return v; } return table[table.length - 1][0]; }
+  // ---------- pack contents: six cards, each rolled on its own at the Series' fixed odds (Store.rollCard), like the contract
   function makePack(series) {
     const names = [...new Set(S().cards.map((c) => c.character))]; const pool = names.length ? names : FALLBACK_NAMES;
-    const mats = ['paper', 'paper', 'paper', 'wood',
-      roll([['wood', 0.8], ['fire', 0.15], ['charcoal', 0.04], ['gold', 0.01]]),
-      // DEMO: Gold and Full Art come up far more often than the real odds, so people get to see them
-      roll([['fire', 0.6], ['charcoal', 0.12], ['gold', 0.17], ['fullart', 0.11]])];
     let id = Math.max(999, ...S().cards.map((c) => c.id)), serial = Math.max(0, ...S().cards.map((c) => c.serial));
-    return mats.map((m) => {
-      const holoP = { paper: 0.05, wood: 0.1, fire: 0.5, charcoal: 0.9, diamond: 1 }[m];
-      const holo = m === 'gold' || m === 'fullart' ? 'full' : m === 'diamond' ? roll([['frame', 1 / 3], ['picture', 1 / 3], ['full', 1 / 3]])
-        : ((q) => { const f = Math.random() < q, pi = Math.random() < q; return f && pi ? 'full' : f ? 'frame' : pi ? 'picture' : 'none'; })(1 - Math.sqrt(1 - holoP)); // frame and art each roll, like the contract
-      const of = m === 'fullart' ? 1 : m === 'gold' ? 2 : { paper: 80, wood: 48, fire: 24, charcoal: 8, diamond: 3 }[m] + Math.floor(Math.random() * 12);
+    const ser = S().series, cardsInSeries = Math.max(1, ser.total) * (ser.cardsPerPack || 6), cast = Math.max(1, ser.cast);
+    return Array.from({ length: 6 }, () => Store.rollCard()).map(({ material: m, holo }) => {
+      // DEMO DATA: a print number (#k: the k-th of this exact card pulled), somewhere up to what the odds give it in a full Series
+      const w = (Store.CARD_ODDS.find(([x]) => x === m) || [m, 1])[1];
+      const of = Math.max(1, Math.round((w / Store.ODDS_TOTAL) * cardsInSeries / cast * (m === 'gold' || m === 'fullart' ? 1 : window.Info?.holoP(m, holo) ?? 1)) + 2);
       const character = m === 'gold' || m === 'fullart' ? Store.SPECIAL_CAST : pool[Math.floor(Math.random() * pool.length)];
       return { id: ++id, serial: ++serial, series, character, material: m, holo,
-        edition: `${1 + Math.floor(Math.random() * of)} of ${of}`, grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
+        edition: String(1 + Math.floor(Math.random() * of)), grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
     });
   }
   // demo data: graded cards were graded at some age (their grade drawn on the wear model at that age); one PDA 10 so the demo shows the gold edge
@@ -415,7 +411,7 @@
           h('div', { class: 'pinfo' }, h('h4', { text: `Series ${no}` }), h('p', { class: 'muted', text: n ? `${n} sealed` : 'None sealed' }), act));
       });
       if (!tiles.length) return put(packsEl);
-      put(packsEl, h('h3', { id: 'packs-h', text: 'Your packs' }), h('div', { class: 'ptiles' }, tiles));
+      put(packsEl, h('h3', { id: 'packs-h', text: 'Your packs' }), h('p', { class: 'muted small packs-nft', text: 'A sealed pack is an NFT too: keep it sealed, collect it, or trade it unopened.' }), h('div', { class: 'ptiles' }, tiles));
     }
 
     function renderColl() {
@@ -444,7 +440,7 @@
         sel('mat', 'Material', [['all', 'All'], ...Store.MATS.map((m) => [m, Store.MAT_LABEL[m]])]),
         sel('holo', 'Holo', [['any', 'Any'], ['none', 'None'], ['frame', 'Frame'], ['picture', 'Picture'], ['full', 'Full']]),
         sel('grade', 'Grade', [['all', 'All'], ['none', 'Not graded'], ['10', 'PDA 10'], ['9-8', 'PDA 9–8'], ['7-6', 'PDA 7–6'], ['5-4', 'PDA 5–4'], ['3-2', 'PDA 3–2'], ['1', 'PDA 1']]),
-        sel('sort', 'Sort', [['serial', 'Newest'], ['rarity', 'Rarity'], ['grade', 'Grade'], ['edition', 'Edition']]));
+        sel('sort', 'Sort', [['serial', 'Newest'], ['rarity', 'Rarity'], ['grade', 'Grade'], ['edition', 'Print #']]));
       return [holdSeg, filters];
     }
     function openFilter() {
@@ -695,7 +691,7 @@
           if (ho) holoLand(el, !tier, slow, rm);
           const name = cardName(c);
           if (isHolo(c)) el.classList.add('holo-glow'); // every holo card, any material, glows on reveal
-          if (tier) { el.classList.add('rare', 'burst'); if (tier !== 'legendary') Sfx.hit(tier); msg.textContent = name + '!'; }
+          if (tier) { el.classList.add('rare', 'burst'); if (tier !== 'legendary') Sfx.hit(tier); msg.textContent = tier === 'legendary' ? `LEGENDARY. ${name}` : tier === 'epic' ? `Epic pull! ${name}` : name + '!'; }
           else msg.textContent = isHolo(c) ? name + '!' : last ? name : 'Swipe or tap for the next card';
           const od = Store.trueOdds(c);
           put(meta, h('span', { class: 'op-n', text: `${i + 1} / ${order.length}` }), matChip(c.material), holoChip(c),
@@ -891,7 +887,7 @@
         const od = Store.trueOdds(best), tier = tierOf(best), ids = cards.map((c) => c.id);
         const caseable = cards.filter((c) => c.grade == null && !c.pending && !c.cased), caseUsd = caseable.reduce((a, c) => a + Store.caseUsd(c), 0);
         put(host, h('div', { class: 'cel' + (tier ? ' t-' + tier : '') },
-          h('h3', { class: 'cel-k', text: cards.length > 6 ? `Your ${cards.length} cards` : 'Your pulls' }),
+          h('h3', { class: 'cel-k', text: CEL_HEAD[tier] || (cards.length > 6 ? `Your ${cards.length} cards` : 'Your pulls') }),
           h('div', { class: 'cel-best', style: `--glow:${GLOW[best.material]}` },
             h('button', { type: 'button', class: 'cel-big', 'aria-label': `Best: ${describe(best)}. See it`, onclick: () => openDetail(best.id, ids) }, cardFace(best, false, true)),
             h('div', { class: 'cel-name' }, h('small', { text: 'Best pull' }), h('b', { text: best.character }), h('span', { text: cardName(best) }),
@@ -903,7 +899,7 @@
             canNext ? btn(`Open next (${left})`, 'gold big', next, { 'data-key': 'next' }) : btn('Done', 'primary big', finish, { 'data-key': 'done' }),
             h('div', { class: 'row' }, shareBtn(best, '', 'Share best'), clipBtn(best), ps || null, btn('My cards', '', seeAll, { 'data-key': 'mycards' }), canNext ? btn('Done', '', finish, { 'data-key': 'done2' }) : null)),
           caseable.length ? h('p', { class: 'cel-protect' }, btn('Case & grade them', 'linkish', wizard, { 'data-key': 'protect' }),
-            h('span', { class: 'muted', text: ` · case all ${caseable.length} for ${Wear.usd(caseUsd)}, grade from ${Wear.usd(Math.min(...caseable.map(Store.gradeUsd)))}` })) : null));
+            h('span', { class: 'muted', text: ` · case all ${caseable.length} for ${Wear.usd(caseUsd)}, grade for ${Wear.usd(Store.PRICES.GRADE_USD)} each` })) : null));
         host.querySelector('.cel-acts .btn.big')?.focus({ preventScroll: true });
       };
       // after: the last pack (how it works on top, and "Not now"), over everything pulled this visit; else this pack's cards
@@ -943,10 +939,10 @@
   function openDetail(id, ids) {
     const c = byId(id); if (!c) return;
     const od = Store.trueOdds(c);
-    const ed = Store.editionInfo(c); // edition + this exact look, with burned counts (demo numbers)
     const frozenAt = (ms) => { const d = Math.floor(ms / Store.DAY); return d < 1 ? 'under a day' : `${d.toLocaleString('en-US')} ${d === 1 ? 'day' : 'days'}`; };
     const traits = [['Character', c.character], ['Category', Store.CHARS[c.character]?.category || c.category || '—'], ['Material', Store.MAT_LABEL[c.material]], ['Holo', HOLO[c.holo || 'none']], ['Series', 'Series ' + c.series],
-      ['Edition', c.edition + (ed.burned ? ` · ${ed.burned} burned` : '')], ['Same look', `${ed.lookK} of ${ed.lookN}` + (ed.lookBurned ? ` · ${ed.lookBurned} burned` : '')], ['Serial', '#' + c.serial],
+      // print number: the k-th of this exact card ever pulled ("#k", never "of N"); the serial counts every card
+      ['Print number', Store.printNo(c) ? '#' + Store.printNo(c) : '—'], ['Serial', '#' + c.serial],
       ['Grade', c.pending ? 'Grading…' : c.grade == null ? 'None' : `PDA ${c.grade} · ${Wear.WORD[c.grade]}`],
       // what an ungraded card's metadata shows (its condition stays hidden); a slab shows only its grade
       // (docs/grading.md: a fixed Dealt date, plus the age frozen when it was cased)
@@ -1107,11 +1103,9 @@
     const full = () => toast(`Up to ${maxBatch()} cards a payment`, 'bad');
     let step = start;
     const list = () => cards.map((c) => byId(c.id)).filter(Boolean);
-    // dollars: each card at its own price (grading by card type: Store.gradeUsd)
+    // dollars: one case price and one grading price for every card
     const usdOf = (ids, f) => [...ids].reduce((a, id) => a + f(byId(id)), 0);
     const total = () => usdOf(gSel, Store.gradeUsd) + usdOf(cSel, Store.caseUsd);
-    // per-card grade prices are shown only when they differ (today every card type is the same)
-    const gradeVaries = () => new Set(list().filter(canGrade).map(Store.gradeUsd)).size > 1;
     const howMany = (ids, f) => { const v = new Set(ids.map((id) => f(byId(id)))); return v.size === 1 ? `${ids.length} × ${Wear.usd([...v][0])}` : `${ids.length} cards · ${Wear.usd(usdOf(ids, f))}`; };
     const tick = setInterval(() => { if (!host.isConnected) return clearInterval(tick); host.querySelectorAll('[data-fresh]').forEach(paintFresh); }, 30000);
     // "3 fresh cards · 22h 59m left. Case now to stop wear."; on a phone it folds into the step row
@@ -1182,7 +1176,7 @@
         : btn(gSel.size + cSel.size ? 'Next: review' : 'Skip cases', 'primary', () => go('review'));
       const keepRaw = station ? null : btn('Keep all raw', '', () => finish([], [])); // one tap, straight to the end, nothing paid
       put(foot, h('div', { class: 'fsum' }, h('b', { text: n ? `${n} picked · ${Wear.usd(usd)}` : 'None picked' }),
-        h('span', { class: 'muted', text: `${step === 'grade' && gradeVaries() ? `from ${Wear.usd(Math.min(...list().filter(canGrade).map(Store.gradeUsd)))}` : Wear.usd(each)} each · max ${maxBatch()}` })),
+        h('span', { class: 'muted', text: `${Wear.usd(each)} each · max ${maxBatch()}` })),
         h('div', { class: 'row' }, step === 'case' ? btn('Back', '', () => go('grade')) : null, keepRaw, next));
     }
     function go(k) { step = k; render(); host.closest('.sheet-body')?.scrollTo({ top: 0 }); }
@@ -1193,7 +1187,7 @@
         picksEl = h('div', { class: 'wz-picks', 'aria-live': 'polite' });
         put(host, h('div', { class: 'wz' }, top(),
           h('div', { class: 'wz-ask' }, h('h3', { text: 'Grade any now?' }),
-            h('p', { class: 'muted', text: `${gradeVaries() ? 'Priced by card type (under each card).' : Wear.usd(P.GRADE_USD) + ' each.'} See the grade, get a slab.` }),
+            h('p', { class: 'muted', text: `${Wear.usd(P.GRADE_USD)} each. See the grade, get a slab.` }),
             // right after opening: the cards first, the odds chart a tap away
             intro ? h('details', { class: 'wz-oddsd' }, h('summary', { text: 'Fresh card odds' }), oddsChart()) : oddsChart()),
           picksEl, quick(gSel, canGrade), grid(gSel, canGrade, (c) => (c.grade != null ? 'Slabbed' : null)), foot));
@@ -1212,7 +1206,6 @@
       return h('ul', { class: 'wz-thumbs', 'aria-label': label }, ids.map((id) => { const c = byId(id);
         const b = withOdds ? nowBands(c) : null, p10 = withOdds ? Wear.bandOdds(oddsNow(c))[0].p : 0;
         return h('li', { title: withOdds ? saysOf(b) : null }, h('div', { class: 'cwrap' }, cardFace(c, true)), h('span', { class: 'gt-name', text: c.character }),
-          withOdds && gradeVaries() ? h('span', { class: 'gt-price', text: Wear.usd(Store.gradeUsd(c)) }) : null,
           withOdds ? [bandBar(b), h('span', { class: 'gt-odds' }, h('span', { class: 'sr', text: 'Chance of ' }), 'PDA 10 · ', h('b', { text: Wear.pct(p10) }))] : null); }));
     }
     // live: the price is FirePsa.quote for these cards in this coin (re-read every 15 s while the review is open), and
@@ -1229,15 +1222,14 @@
     const qTick = LIVE ? setInterval(() => { if (!host.isConnected) return clearInterval(qTick); if (step === 'review' && liveArgs && !document.hidden) fetchQ(...liveArgs); }, 15000) : 0;
     function review() {
       const g = [...gSel], cs = [...cSel], raw = list().filter((c) => canCase(c) && !gSel.has(c.id) && !cSel.has(c.id));
-      const coins = Wear.coins(), paperOff = Store.PSA_PAPER_OFF; // PAPER off: its price can't be read right now
-      if (!coins.includes(coin) || (coin === 'PAPER' && paperOff)) coin = 'ETH';
+      const coins = Wear.coins();
+      if (!coins.includes(coin)) coin = 'ETH';
       const usd = total(), key = `${cs.join(',')}|${g.join(',')}|${coin}`;
       if (LIVE && usd && key !== liveKey) { liveKey = key; liveQ = null; fetchQ(key, cs, g, coin); }
       const quoting = LIVE && usd && !liveQ, amt = LIVE && liveQ ? parseFloat(String(liveQ.text).replace(/,/g, '')) || 0 : Wear.inCoin(usd, coin);
       const bal = S().wallet.balances[coin] || 0, short = !quoting && (LIVE ? Live.walletNeeds(amt, coin) : amt) > bal;
       const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Pay with' }, coins.map((k) =>
-        h('button', { type: 'button', 'aria-pressed': String(k === coin), 'data-coin': k, disabled: k === 'PAPER' && !!paperOff, title: k === 'PAPER' && paperOff ? paperOff : null, onclick: () => { coin = k; review(); } }, k)));
-      const disc = Store.PSA_PAPER_DISCOUNT_BPS > 0 && coins.includes('PAPER') ? `−${+(Store.PSA_PAPER_DISCOUNT_BPS / 100).toFixed(2)}% when paying in PAPER` : '';
+        h('button', { type: 'button', 'aria-pressed': String(k === coin), 'data-coin': k, onclick: () => { coin = k; review(); } }, k)));
       const amtTxt = quoting ? (liveQ === false ? 'price unavailable right now' : 'getting price…') : `≈ ${LIVE ? liveQ.text : Wear.fmtCoin(amt, coin)} ${coin}`;
       const rawFresh = raw.filter((c) => Wear.freshLeft(c) > 0), rawOld = raw.filter((c) => !Wear.freshLeft(c));
       const soonest = rawFresh.length ? Math.min(...rawFresh.map(Wear.freshLeft)) : 0;
@@ -1254,8 +1246,7 @@
           g.length ? h('p', { class: 'wz-final' }, h('b', { text: 'Before you pay: ' }), Wear.FINAL_LINE) : null,
           h('dl', { class: 'sum' }, h('dt', { text: 'Total' }), h('dd', { class: 'price' }, Wear.usd(usd), h('small', { text: quoting ? ' · ' + amtTxt : ' ' + amtTxt })),
             h('dt', { text: 'You have' }), h('dd', { text: `${Wear.fmtCoin(bal, coin)} ${coin}` })),
-          h('div', { class: 'wz-coin' }, h('span', { class: 'muted small', text: 'Pay with' }), seg,
-            paperOff ? h('span', { class: 'small warn', text: paperOff }) : disc ? h('span', { class: 'small disc', text: disc }) : null),
+          h('div', { class: 'wz-coin' }, h('span', { class: 'muted small', text: 'Pay with' }), seg),
           LIVE && coin !== 'USDG' ? h('p', { class: 'fine', text: 'Price moves over 3%? Nothing is charged.' }) : null,
           h('p', { class: 'demo-line', text: 'Demo: nothing is charged' })) : null,
         h('div', { class: 'foot' }, h('div', { class: 'fsum' }, h('b', { text: usd ? `${g.length + cs.length} ${g.length + cs.length === 1 ? 'card' : 'cards'} · ${Wear.usd(usd)}` : 'Keep all raw?' }),
@@ -1363,7 +1354,7 @@
         const top = got.length ? Math.max(...got) : 0;
         const parts = [cs.length ? `${cs.length} cased` : '', got.length ? `${got.length} graded` : '', got.length ? `${got.length > 1 ? 'best ' : ''}PDA ${top} ${Wear.WORD[top]}` : ''];
         msg.textContent = parts.filter(Boolean).join(' · '); // "4 cased · 2 graded · best PDA 8 NM-MT"
-        if (got.length) toast(got.length === 1 ? `Graded: PDA ${got[0]}` : `${got.length} cards graded`, 'good');
+        if (got.length) toast(got.length === 1 ? `Graded: PDA ${got[0]} · ${Wear.WORD[got[0]]}!` : `${got.length} cards graded · best: PDA ${top} · ${Wear.WORD[top]}`, 'good');
       }
       put(ctrls, done());
       ctrls.querySelector('.btn.primary')?.focus({ preventScroll: true });

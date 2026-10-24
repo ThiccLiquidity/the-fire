@@ -228,14 +228,6 @@ contract PaperBurner is Ownable2Step, ReentrancyGuard {
         return (usd18 * 1e18 + px - 1) / px;
     }
 
-    /// @notice PAPER's price in dollars (18 decimals) from the PAPER feed (the 20-hour average), or 0 while it has no
-    ///         fresh price (older than PAPER_FEED_MAX_AGE, or a window longer than PAPER_WINDOW_MAX). FirePsa prices
-    ///         PAPER payments with it.
-    function paperPrice() external view returns (uint256) {
-        uint256 paper = _feed18(paperUsd, PAPER_FEED_MAX_AGE);
-        return paper == 0 || _longWindow(address(paperUsd), PAPER_WINDOW_MAX) ? 0 : paper;
-    }
-
     function routesOf(Pay pay) external view returns (address[][] memory) {
         return _routes[pay];
     }

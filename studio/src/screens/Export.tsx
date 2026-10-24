@@ -17,7 +17,7 @@ import { buildManifest } from '../manifest'
 import { categoryProblem, nameProblem, normalizeCategory, normalizeName } from '../categories'
 import { checkRecipe, recipeJson } from '../recipe'
 import { saleErrors, saleJson, saleOf, salePacks } from '../sale'
-import { artNeeds, buildGridKey, missingArt, missingFrames } from '../series'
+import { artNeeds, buildGridKey, characterWeightsOf, missingArt, missingFrames } from '../series'
 import { lastAssetChange, updateFire, useStudio } from '../store'
 import { BUILD_GRID_VERSION, fireStatus, type FireRecord, type UploadState } from '../types'
 import { refreshDevFlags, useDevFlags } from '../devFlags'
@@ -98,6 +98,7 @@ export function Export({ fire }: { fire: FireRecord }) {
     ids.map((id) => ({ name: normalizeName(chars[id]?.name ?? ''), category: normalizeCategory(chars[id]?.category ?? '') })),
     imagesCid ? `ipfs://${imagesCid}/` : undefined,
     saleJson(sale),
+    characterWeightsOf(fire),
   )
 
   /** The upload is of the current build (only then does recipe.json name its folder as the images base). */
@@ -130,7 +131,7 @@ export function Export({ fire }: { fire: FireRecord }) {
       out.push({ name: g.file, blob: bl })
       onEach?.(out.length, grid.length)
     }
-    const manifest = await buildManifest(fire.number, gridKey, recipeJson(fire.number, r, ids.map((id) => ({ name: normalizeName(chars[id]?.name ?? ''), category: normalizeCategory(chars[id]?.category ?? '') }))), out, onHash)
+    const manifest = await buildManifest(fire.number, gridKey, recipeJson(fire.number, r, ids.map((id) => ({ name: normalizeName(chars[id]?.name ?? ''), category: normalizeCategory(chars[id]?.category ?? '') })), undefined, undefined, characterWeightsOf(fire)), out, onHash)
     out.push({ name: manifest.name, blob: manifest.blob })
     return out
   }

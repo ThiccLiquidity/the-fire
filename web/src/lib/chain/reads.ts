@@ -13,8 +13,8 @@ import {
 export const PAY = ["PLANK", "ETH", "USDG"] as const;
 export type PayCoin = (typeof PAY)[number];
 export const payIndex = (p: PayCoin): number => PAY.indexOf(p);
-/** Cases and grading (FirePsa.Pay) also take PAPER: PLANK 0, ETH 1, USDG 2, PAPER 3. PAPER is burned directly. */
-export const PSA_PAY = [...PAY, "PAPER"] as const;
+/** Cases and grading (FirePsa.Pay) take the same coins: PLANK 0, ETH 1, USDG 2 (the fee buys PAPER and burns it). */
+export const PSA_PAY = PAY;
 export type PsaCoin = (typeof PSA_PAY)[number];
 export const psaPayIndex = (p: PsaCoin): number => PSA_PAY.indexOf(p);
 
@@ -87,6 +87,8 @@ export type SeriesInfo = {
   fire: number;
   /** The drop's drop-wide settings. `packs`: the base total (the finite groups); an unlimited group adds on top. */
   start: number; packs: number; maxPerTx: number; regularWalletsEnds: number; paperCapUsd: string; creditsPerPick: number;
+  /** Seconds after the start that only regular wallets can buy, and the sale's burn splits (bps of each pack's price). */
+  regularWalletsFor: number; plankBurnBps: number; paperBurnBps: number;
   /** The group credit packs come from (null = no credit packs), and the caps on them (0 = no cap). */
   creditGroup: number | null; creditPacksMax: number; creditPacksPerWallet: number;
   /** Packs taken (bought and free, all groups) and credit packs minted. */
@@ -181,6 +183,7 @@ export async function series(fire: number): Promise<SeriesInfo> {
   const closed = p.closed || d.closed, left = closed ? 0 : count(p.left);
   return {
     fire, start: s, packs: Number(d.packs), maxPerTx, regularWalletsEnds: s + d.regularWalletsFor, paperCapUsd: usd8(d.paperCapUsd),
+    regularWalletsFor: Number(d.regularWalletsFor), plankBurnBps: Number(d.plankBurnBps), paperBurnBps: Number(d.paperBurnBps),
     creditsPerPick: d.creditsPerPick, creditGroup: d.creditGroup === NONE ? null : d.creditGroup,
     creditPacksMax: Number(d.creditPacksMax), creditPacksPerWallet: Number(d.creditPacksPerWallet),
     sold: Number(d.sold), creditPacks: Number(d.creditPacks),
@@ -309,6 +312,18 @@ export async function pressCount(owner: Address): Promise<number> {
   return press ? nftCount(press, owner) : 0;
 }
 
+/** How many Paper Presses exist now (the Press contract's totalSupply: burned Presses don't count), or null when it
+ *  can't be read (no Press on this network, or a collection without totalSupply). Cached for 10 minutes. */
+let pressSupplyAt = 0, pressSupplyV: Promise<number | null> | null = null;
+export function pressSupply(): Promise<number | null> {
+  const press = input("MILL");
+  if (!press) return Promise.resolve(null);
+  if (pressSupplyV && Date.now() - pressSupplyAt < 600_000) return pressSupplyV;
+  pressSupplyAt = Date.now();
+  pressSupplyV = pub().readContract({ address: press, abi: erc20Abi, functionName: "totalSupply" }).then((n) => Number(n), () => { pressSupplyAt = 0; return null; });
+  return pressSupplyV;
+}
+
 /** Packs already taken with each NFT id in an NFT-gated group this drop (FireGroups.usedWith), whoever held it. */
 export async function nftUse(fire: number, group: number, ids: number[]): Promise<{ id: number; used: number }[]> {
   const f = BigInt(fire), g = BigInt(group);
@@ -319,14 +334,18 @@ export async function nftUse(fire: number, group: number, ids: number[]): Promis
 
 export type Card = {
   serial: number; fire: number; name: string; image: string; character: string; category: string; material: string;
-  holo: "none" | "frame" | "picture" | "full"; holoFrame: boolean; holoPicture: boolean; edition: string;
+  holo: "none" | "frame" | "picture" | "full"; holoFrame: boolean; holoPicture: boolean;
+  /** Print number: this is the k-th of this exact card (Series, character, material, holo look) ever dealt ("#k").
+   *  `edition` is the same number as text (kept for older callers). */
+  print: number; edition: string;
   grade: number | null; cased: boolean; moves: number; dealtAt: number; gradePending: boolean;
   /** Seconds of wear time: uncased since dealt, frozen once cased or sent for grading (FireCards.wearOf; a cancelled
    *  grading's frozen gap doesn't count). Read at the chain's latest block. */
   age: number;
   traits: Record<string, string | number>;
 };
-type CardRaw = { fire: bigint; cardType: bigint; holoFrame: boolean; holoPicture: boolean; character: bigint; edition: bigint; editionOf: bigint;
+// printNumber: FireCards' print number (#k of this exact card: Series, character, type, holo look, in the order dealt).
+type CardRaw = { fire: bigint; cardType: bigint; holoFrame: boolean; holoPicture: boolean; character: bigint; printNumber: bigint;
   grade: bigint; cased: boolean; age: bigint; moves: bigint; dealtAt: bigint; extra: bigint };
 
 /** The card's metadata JSON from tokenURI (data:application/json;base64,...). */
@@ -352,10 +371,12 @@ export async function card(serial: number): Promise<Card> {
   const traits: Record<string, string | number> = {};
   for (const a of meta.attributes ?? []) traits[a.trait_type] = a.value;
   const holo = c.holoFrame && c.holoPicture ? "full" : c.holoFrame ? "frame" : c.holoPicture ? "picture" : "none";
+  // the metadata's "Print number", else the card's own field
+  const print = Number(String(traits["Print number"] ?? c.printNumber).replace(/^#/, "")) || 0;
   return {
     serial, fire: Number(c.fire), name: meta.name ?? `#${serial}`, image: meta.image ?? "",
     character: String(traits.Character ?? ""), category: String(traits.Category ?? ""), material: String(traits.Material ?? ""),
-    holo, holoFrame: c.holoFrame, holoPicture: c.holoPicture, edition: String(traits.Edition ?? c.edition),
+    holo, holoFrame: c.holoFrame, holoPicture: c.holoPicture, print, edition: String(print),
     grade: c.grade ? Number(c.grade) : null, cased: c.cased, moves: Number(c.moves), dealtAt: Number(c.dealtAt), gradePending: pending,
     age: Number(c.age), traits,
   };
@@ -533,26 +554,19 @@ export async function queue(fire: number) {
 
 // ---------------------------------------------------------------- cases and grading
 
-/** Case and grading prices (dollars), the batch limit, and the discount when paying in PAPER (basis points, 0-2000). */
+/** Case and grading prices (dollars: one case price and one grading price for every card) and the batch limit. */
 export async function psaPrices() {
-  const [caseUsd, gradeUsd, maxBatch, paused, discount] = await Promise.all([
+  const [caseUsd, gradeUsd, maxBatch, paused] = await Promise.all([
     read<bigint>("FirePsa", psaAbi, "caseUsd18"), read<bigint>("FirePsa", psaAbi, "gradeUsd18"),
     read<bigint>("FirePsa", psaAbi, "maxBatch"), read<boolean>("FirePsa", psaAbi, "paused"),
-    read<bigint>("FirePsa", psaAbi, "paperDiscountBps").catch(() => 0n),
   ]);
-  return { caseUsd: (Number(caseUsd) / 1e18).toFixed(2), gradeUsd: (Number(gradeUsd) / 1e18).toFixed(2), maxBatch: Number(maxBatch), paused, paperDiscountBps: Number(discount) };
+  return { caseUsd: (Number(caseUsd) / 1e18).toFixed(2), gradeUsd: (Number(gradeUsd) / 1e18).toFixed(2), maxBatch: Number(maxBatch), paused };
 }
 
-/** What grading each card costs, in dollars (FirePsa.gradeUsdOf: by its card type; the default otherwise). */
-export async function gradeUsdOf(serials: readonly number[]): Promise<Record<number, number>> {
-  const v = await Promise.all(serials.map((id) => read<bigint>("FirePsa", psaAbi, "gradeUsdOf", [BigInt(id)])));
-  return Object.fromEntries(serials.map((id, i) => [id, Number(v[i]) / 1e18]));
-}
-
-/** Exactly what casing `caseIds` and grading `gradeIds` costs now in `pay` (FirePsa.quoteFor: what protect charges).
- *  Paying in PAPER, it reverts FeedUnavailable while the PAPER price can't be read (the page then turns PAPER off). */
+/** Exactly what casing `caseIds` and grading `gradeIds` costs now in `pay` (FirePsa.quote: what protect charges; every
+ *  card costs the same, so only the counts matter). */
 export async function quoteProtect(caseIds: readonly number[], gradeIds: readonly number[], pay: PsaCoin): Promise<Amount> {
-  const raw = await read<bigint>("FirePsa", psaAbi, "quoteFor", [caseIds.map(BigInt), gradeIds.map(BigInt), psaPayIndex(pay)]);
+  const raw = await read<bigint>("FirePsa", psaAbi, "quote", [BigInt(caseIds.length), BigInt(gradeIds.length), psaPayIndex(pay)]);
   return amount(raw, pay === "USDG" && input("USDG") ? await decimalsOf(input("USDG")!) : 18);
 }
 

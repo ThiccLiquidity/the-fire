@@ -1,13 +1,13 @@
 {
  "fire": 7,
  "imagesBase": "ipfs://bafyexampleimages/",
+ "cardsPerPack": 6,
  "types": [
   {
    "name": "Paper",
    "slug": "paper",
    "rank": 0,
-   "supply": "perPack",
-   "amount": 3,
+   "weight": 5000,
    "holo": {
     "mode": "independent",
     "frame": "25320565519103609",
@@ -18,7 +18,7 @@
    "name": "Wood",
    "slug": "wood",
    "rank": 1,
-   "supply": "filler",
+   "weight": 2415,
    "holo": {
     "mode": "independent",
     "frame": "51316701949486200",
@@ -29,8 +29,7 @@
    "name": "Fire",
    "slug": "fire",
    "rank": 2,
-   "supply": "share",
-   "amount": 150000000,
+   "weight": 1497,
    "holo": {
     "mode": "independent",
     "frame": "292893218813452475",
@@ -41,8 +40,7 @@
    "name": "Coal",
    "slug": "coal",
    "rank": 3,
-   "supply": "share",
-   "amount": 49000000,
+   "weight": 489,
    "holo": {
     "mode": "independent",
     "frame": "683772233983162066",
@@ -53,9 +51,7 @@
    "name": "Gold",
    "slug": "gold",
    "rank": 4,
-   "supply": "perCharacter",
-   "amount": 2,
-   "maxPerPack": 1,
+   "weight": 399,
    "holo": {
     "mode": "distribution",
     "weights": [
@@ -70,9 +66,7 @@
    "name": "Full Art",
    "slug": "fullart",
    "rank": 5,
-   "supply": "perCharacter",
-   "amount": 1,
-   "maxPerPack": 1,
+   "weight": 200,
    "holo": {
     "mode": "distribution",
     "weights": [
@@ -82,28 +76,6 @@
      "1"
     ]
    }
-  }
- ],
- "slots": [
-  {
-   "count": 3,
-   "types": [
-    0
-   ]
-  },
-  {
-   "count": 1,
-   "types": [
-    1
-   ]
-  },
-  {
-   "count": 1,
-   "minRank": 1
-  },
-  {
-   "count": 1,
-   "minRank": 2
   }
  ],
  "characters": [

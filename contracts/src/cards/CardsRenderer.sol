@@ -14,7 +14,8 @@ import {FireCards} from "./FireCards.sol";
  *         Image: <Series image folder>c<character>-<type slug>-<holo>-<state>.webp, holo none|frame|picture|full,
  *         state `u` (ungraded), `c` (cased) or `1`-`10` (slabbed at that grade). The Card Studio builds every one.
  *
- *         Traits: Character, Category, Material, Holo, Series, Edition, Serial, PDA. An ungraded card adds Cased,
+ *         Traits: Character, Category, Material, Holo, Series, Print number (#k of that exact card, in the order
+ *         dealt), Serial, PDA. An ungraded card adds Cased,
  *         Dealt (the date it was dealt, a "date" trait marketplaces show as a date), Moves and, once cased, Age when
  *         cased (days, frozen), so a buyer can see what it has been through; its condition is never shown. A slabbed
  *         card shows its grade only. Fixed values only: the metadata never changes just because time passes.
@@ -59,7 +60,6 @@ contract CardsRenderer {
     }
 
     function _attributes(FireCards.Card memory c, IDealer.CardText memory t, uint256 serial) private pure returns (string memory) {
-        string memory edition = c.editionOf == 0 ? c.edition.toString() : string.concat(c.edition.toString(), " of ", c.editionOf.toString());
         string memory head = string.concat( // in parts: one concat of everything is too deep for the stack
             '[{"trait_type":"Character","value":"', t.characterName,
             '"},{"trait_type":"Category","value":"', t.category,
@@ -67,7 +67,7 @@ contract CardsRenderer {
             '"},{"trait_type":"Holo","value":"', _holoLabel(c.holoFrame, c.holoPicture)
         );
         string memory mid = string.concat(
-            '"},{"trait_type":"Series","value":', c.fire.toString(), ',"display_type":"number"},{"trait_type":"Edition","value":"', edition,
+            '"},{"trait_type":"Series","value":', c.fire.toString(), ',"display_type":"number"},{"trait_type":"Print number","value":"#', c.printNumber.toString(),
             '"},{"trait_type":"Serial","value":', serial.toString(), ',"display_type":"number"}'
         );
         string memory wear = c.grade != 0

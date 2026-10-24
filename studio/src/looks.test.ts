@@ -7,8 +7,8 @@ import { HOLO_TYPES, wearLookOf } from './rules'
 
 const STD = standardRecipe()
 const card = (over: Partial<DealtCard>): DealtCard => ({
-  serial: 1, fire: 1, pack: 1, slot: 1, group: 0, type: 1, characterId: 'abcdef123', holoFrame: false, holoPicture: false,
-  holo: 'none', edition: 1, editionOf: 1, ...over,
+  serial: 1, fire: 1, pack: 1, slot: 1, type: 1, characterId: 'abcdef123', holoFrame: false, holoPicture: false,
+  holo: 'none', printNumber: 1, ...over,
 })
 
 describe('wear looks', () => {
@@ -22,15 +22,15 @@ describe('wear looks', () => {
 })
 
 describe('shared images', () => {
-  it('cards that look the same share one image; serial and edition do not matter, every grade has its own', () => {
+  it('cards that look the same share one image; serial and print number do not matter, every grade has its own', () => {
     const cards = [
-      card({ serial: 1, edition: 1, editionOf: 3 }),
-      card({ serial: 2, edition: 2, editionOf: 3, pack: 2 }),
+      card({ serial: 1, printNumber: 1 }),
+      card({ serial: 2, printNumber: 2, pack: 2 }),
       card({ serial: 3, holoFrame: true, holo: 'frame' }),
       card({ serial: 4, type: 0 }),
       card({ serial: 5, grade: 7 }),
       card({ serial: 6, grade: 6 }),
-      card({ serial: 7, grade: 7, edition: 2 }),
+      card({ serial: 7, grade: 7, printNumber: 2 }),
     ]
     expect(distinctLooks(cards, STD).map((l) => l.card.serial)).toEqual([1, 3, 4, 5, 6])
   })
@@ -88,7 +88,7 @@ describe('shared images', () => {
 
   it('a new type gets its own slug in file names; a type that is never plain gets no none images', () => {
     const r: Recipe = standardRecipe()
-    r.types.push({ id: 'plat', name: 'Platinum', slug: 'platinum', rank: 6, supply: 'count', amount: '1', maxPerPack: '1', holo: { mode: 'distribution', weights: ['0', '0', '0', '1'] }, frameSet: 'gold' })
+    r.types.push({ id: 'plat', name: 'Platinum', slug: 'platinum', rank: 6, weight: '1', holo: { mode: 'distribution', weights: ['0', '0', '0', '1'] }, frameSet: 'gold' })
     expect(holoLooksFor(r, 6)).toEqual(['full'])
     expect(imagesPerCharacter(r)).toBe(228)
     const files = seriesGrid(1, ['x'], r).map((g) => g.file)
@@ -104,13 +104,13 @@ describe('shared images', () => {
   })
 
   it('metadata keeps the per-card details, the type name as Material, and points at the shared image', () => {
-    const c = card({ serial: 42, edition: 3, editionOf: 9, fire: 5 })
+    const c = card({ serial: 42, printNumber: 3, fire: 5 })
     const m = cardMetadata(c, { name: 'Rabbit', category: 'Animal' }, 'Wood', 'ipfs://cid/rabbit.webp')
     expect(metadataFileName(c)).toBe('42.json')
     expect(m.name).toBe('Wood Rabbit #42')
     expect(m.image).toBe('ipfs://cid/rabbit.webp')
     const t = Object.fromEntries(m.attributes.map((a) => [a.trait_type, a.value]))
-    expect(t).toMatchObject({ Serial: 42, Edition: '3 of 9', Series: 5, Category: 'Animal', PDA: 'Ungraded', Material: 'Wood', Cased: 'No', Moves: 0 })
+    expect(t).toMatchObject({ Serial: 42, 'Print number': '#3', Series: 5, Category: 'Animal', PDA: 'Ungraded', Material: 'Wood', Cased: 'No', Moves: 0 })
     const slab = Object.fromEntries(cardMetadata({ ...c, grade: 8 }, { name: 'Rabbit' }, 'Wood', 'x').attributes.map((a) => [a.trait_type, a.value]))
     expect(slab.PDA).toBe('PDA 8')
     expect(slab.Cased).toBeUndefined()

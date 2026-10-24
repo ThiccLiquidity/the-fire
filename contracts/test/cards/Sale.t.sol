@@ -180,7 +180,7 @@ abstract contract SaleBase is SeriesHelper {
     // ---------------------------------------------------------------- config helpers
 
     function _configureCards(uint256 fire) internal {
-        _standard(cards, dealer, owner, fire, 3, 1);
+        _standard(cards, dealer, owner, fire, 3);
     }
 
     /// An open group: anyone, $2.50 + 1 PAPER a pack in any coin, no wallet limit, opens with the drop, until sold.
@@ -1185,12 +1185,9 @@ contract SaleTest is SaleBase {
 
     /// Credit packs aren't available in a Series whose packs hold 42+ cards (burning one would pay for itself).
     function test_noCreditsInBigPackSeries() public {
-        RecipeDealer.Recipe memory r;
-        r.types = new RecipeDealer.CardType[](1);
-        r.types[0] = _type("Common", "common", 0, RecipeDealer.Supply.Filler, 0);
-        r.slots = new RecipeDealer.Slot[](1);
-        r.slots[0] = _slotOne(42, 0);
-        _series(cards, dealer, owner, 5, r, 2);
+        RecipeDealer.CardType[] memory ts = new RecipeDealer.CardType[](1);
+        ts[0] = _type("Common", "common", 0, 1);
+        _series(cards, dealer, owner, 5, _recipe(ts, 42), 2);
         _endDrop1();
         uint64 s5 = uint64(block.timestamp + 1 hours);
         _set(5, _cfg(s5, 10));

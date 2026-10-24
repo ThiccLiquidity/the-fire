@@ -6,18 +6,25 @@
   const { h } = Fun;
   // one short line each (no prices, nothing about where money goes: these show on buy and grading screens too)
   const GLOSSARY = {
-    PDA: 'The grade on a slab, 1 to 10. A 10 is gem mint.',
-    cased: 'In a case. No more wear. Grade it any time.',
-    slab: 'A graded card, sealed for good.',
-    fresh: 'A card’s first 24h. Time doesn’t wear it.',
+    PDA: 'Professional Digital Authenticators: the grade on a slab, 1 to 10. A 10 is GEM MINT.',
+    cased: 'In a clear case. No more wear. Grade it any time.',
+    slab: 'A graded card, sealed for good with its grade.',
+    fresh: 'A card’s first 24 hours. Time doesn’t wear it, and casing or grading it now keeps fresh odds.',
     wear: 'Raw cards wear with time and moves. Wear lowers the grade.',
-    Series: 'One numbered set of cards, with its own cast and odds.',
-    PAPER: 'The coin every pack and idea takes. Tap Get PAPER.',
-    PLANK: 'The workshop’s coin. Holders get in early.',
+    raw: 'Not cased or graded yet. Raw cards wear.',
+    holo: 'A rainbow foil on the frame, the picture, or both (full holo).',
+    Series: 'One numbered run of cards, with its own cast, odds and settings.',
+    sealed: 'An unopened pack. It’s an NFT too: keep it, collect it, or trade it sealed.',
+    PAPER: 'A meme coin on Robinhood Chain, and what the cards are printed on. Every pack takes some. Tap Get PAPER.',
+    PLANK: 'A meme coin on Robinhood Chain, and the wood that feeds the workshop’s fire. Holders get in early.',
   };
+  // the word shown in bold at the start of each pop
+  const LABEL = { cased: 'Cased', slab: 'Slab', fresh: 'Fresh', wear: 'Wear', raw: 'Raw', holo: 'Holo', sealed: 'Sealed pack' };
   // the words as they appear in sentences, and which entry each one opens
   const FORMS = [['PDA', 'PDA', true], ['cased', 'cased', false], ['Cased', 'cased', true], ['slabs?', 'slab', false], ['slabbed', 'slab', false],
-    ['fresh', 'fresh', false], ['Fresh', 'fresh', true], ['wear', 'wear', false], ['Wear', 'wear', true], ['Series', 'Series', true], ['PAPER', 'PAPER', true], ['PLANK', 'PLANK', true]];
+    ['fresh', 'fresh', false], ['Fresh', 'fresh', true], ['wear', 'wear', false], ['Wear', 'wear', true], ['raw', 'raw', false], ['Raw', 'raw', true],
+    ['holo', 'holo', false], ['Holo', 'holo', true], ['sealed packs?', 'sealed', false], ['Sealed packs?', 'sealed', true],
+    ['Series', 'Series', true], ['PAPER', 'PAPER', true], ['PLANK', 'PLANK', true]];
   const RE = new RegExp(`(?<![\\w-])(${FORMS.map(([f]) => f).join('|')})(?![\\w-])`);
   const keyOf = (w) => (FORMS.find(([f]) => new RegExp(`^${f}$`).test(w)) || [])[1];
   const SKIP = 'button, a, label, select, option, input, textarea, code, [aria-live], .stage-msg, .st-table .stage, .op, .tier-b, .mat, .pda, .gl-term, .gl-pop, .sr, svg, .fun-noterms, h2, .bw-flag, .sum dt, .bal, .wmenu .rows, .fun-badges, .fd-board, .bd-head, .prac-sum, .rs-wins';
@@ -58,7 +65,7 @@
   function show(b) {
     close();
     const key = b.dataset.term, host = b.closest('dialog') || document.body;
-    pop = h('span', { class: 'gl-pop', role: 'tooltip', id: 'gl-pop' }, h('b', { text: key === 'cased' ? 'Cased' : key === 'slab' ? 'Slab' : key === 'fresh' ? 'Fresh' : key === 'wear' ? 'Wear' : key }), ' ', GLOSSARY[key]);
+    pop = h('span', { class: 'gl-pop', role: 'tooltip', id: 'gl-pop' }, h('b', { text: LABEL[key] || key }), ' ', GLOSSARY[key]);
     host.append(pop); b.setAttribute('aria-describedby', 'gl-pop');
     const r = b.getBoundingClientRect(), hr = host === document.body ? { left: 0, top: 0, width: innerWidth } : host.getBoundingClientRect();
     const w = Math.min(280, hr.width - 16), x = Math.max(8, Math.min(hr.width - w - 8, r.left - hr.left + r.width / 2 - w / 2));

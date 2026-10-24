@@ -98,7 +98,7 @@ async function start(opts: WalletOptions): Promise<Kit> {
   const icon = new URL(opts.icon ?? "/forge/ui/omni-mark.webp", location.href).href;
   const metadata = {
     name: "Omni Cardworks",
-    description: "Wood in. Packs out. Trading cards forged on Robinhood Chain.",
+    description: "Wood and paper in, packs out. Trading cards made on Robinhood Chain.",
     // must match the page's origin or WalletConnect's Verify flags the site; on the live site this is SITE_URL
     url: location.origin,
     icons: [icon],

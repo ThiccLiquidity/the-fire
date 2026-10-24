@@ -260,7 +260,7 @@ everyone, an unlimited taxed group idling out after 5 minutes) → buy through t
 script; a raised allowance refused; one buy with the PLANK swap down) → the taxed group's price rises, then it idles
 out → the keeper closes the Series (`FireSale.close`) → open → the keeper delivers drand and deals → the main keeper and the backup race → case and grade → the
 keeper finishes the grading → the backup steps in while the main keeper is down → a pause, a randomness switch and
-FireSale's `WalletsSet` reach the webhook → both burners flushed (the PAPER feed going live 40 h later) → a case and a grade paid in PAPER → VerifyDeploy.
+FireSale's `WalletsSet` reach the webhook → both burners flushed (the PAPER feed going live 40 h later) → a case and a grade paid in USDG (PAPER refused) → VerifyDeploy.
 ```powershell
 cd ops; npm ci; cd keeper; npm ci; cd ..\snapshot; npm ci; cd ..
 node rehearsal/rehearse.mjs                       # plain anvil, nothing needed from outside

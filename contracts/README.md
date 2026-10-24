@@ -6,7 +6,7 @@ Foundry project.
   - `FirePacks` (sealed packs, ERC-1155) and `FireCards` (cards, ERC-721, the opening queue, wear and grades)
   - `CardsRenderer` (each card's on-chain metadata and image name; no owner)
   - `RecipeDealer` (deals each Series from its own recipe; `IDealer` is the interface, `StandardRecipe` the original
-    rules) and `RecipeCompiler` (the recipe checker, compiler and pool maths; pure, no owner)
+    rules) and `RecipeCompiler` (the recipe checker and compiler; pure, no owner)
   - `FireSale` (the pack sale), `FireCredits` (free pack credits, card burning, suggestions) and `PlankBurner` (the
     PLANK burn fallback; no owner, no withdraw)
   - `FirePsa` (cases and PDA grading) and `PaperBurner` (case and grading fees buy and burn PAPER; no withdraw)

@@ -23,7 +23,7 @@
     const s = stats(who); s[field] = set ? n : (s[field] || 0) + n; mem(k.s, s);
     const have = earned(who), now = [];
     for (const [id, name, , ok] of BADGES) if (!have[id] && ok(s)) { have[id] = Date.now(); now.push(name); }
-    if (now.length) { mem(k.b, have); now.forEach((n2, i) => setTimeout(() => toast(`Badge: ${n2}`, 'good'), 900 + i * 1400)); }
+    if (now.length) { mem(k.b, have); now.forEach((n2, i) => setTimeout(() => toast(`Badge earned: ${n2}!`, 'good'), 900 + i * 1400)); }
   }
   Fun.badge = add;
   Fun.on('opened', async ({ packs = 1, practice }) => {

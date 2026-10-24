@@ -3,11 +3,12 @@ import { Notice, useAction } from '../components'
 import { newId } from '../db'
 import { SHOWN_FRAME_SETS, frameSetFiles, frameSetLabel, missingFramesFor } from '../frames'
 import {
-  FRESH_PDA_ODDS, HOLO_ONE, SHARE_SCALE, SUPPLY_LABEL, UINT32_MAX, cardsPerPack, checkRecipe, cloneRecipe, holoLooksFor,
-  holoOdds, holoOddsGivenHolo, parseUint, percentToScaled, roundedPercent, scaledToPercent, slotTypeIndexes, slugify,
-  specialAllHoloRecipe, standardRecipe, type CardTypeDef, type HoloRule, type Problem, type Recipe, type SlotDef, type Supply,
+  FRESH_PDA_ODDS, HOLO_ONE, MAX_CARDS_PER_PACK, UINT32_MAX, cardsPerPack, checkRecipe, cloneRecipe, holoLooksFor,
+  holoOdds, parseUint, percentToScaled, roundedPercent, scaledToPercent, slugify,
+  specialAllHoloRecipe, standardRecipe, type CardTypeDef, type HoloRule, type Problem, type Recipe,
 } from '../recipe'
-import { countForShare, seriesResult, shareForCount, type TypeResult } from '../rarity'
+import { oneIn, seriesResult, type TypeResult } from '../rarity'
+import { characterWeightsOf } from '../series'
 import { HOLO_LABEL, HOLO_TYPES } from '../rules'
 import { CARDS_PER_CREDIT } from '../sale'
 import { updateFire, useStudio } from '../store'
@@ -16,7 +17,7 @@ import { SeriesResult } from './SeriesResult'
 
 const pct = (x: number, digits = 2) => `${(x * 100).toFixed(digits).replace(/\.?0+$/, '')}%`
 
-/** A percentage typed as text, stored exactly as an integer at `scale` (1e9 for shares, 1e18 for holo chances). With
+/** A percentage typed as text, stored exactly as an integer at `scale` (1e18 for holo chances). With
  *  `round`, a stored value is shown to at most 2 decimals (the exact value on hover); it stays exact until edited. */
 function PercentInput({ value, scale, onChange, disabled, testId, round }: { value: bigint; scale: bigint; onChange: (v: bigint) => void; disabled?: boolean; testId?: string; round?: boolean }) {
   const show = (v: bigint) => (round ? roundedPercent(v, scale) : scaledToPercent(v, scale))
@@ -63,7 +64,6 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
   const problems = useMemo(() => checkRecipe(r), [r])
   const set = (next: Recipe) => { if (!locked) void run(() => updateFire(fire.number, { recipe: next, build: undefined, approvedAt: undefined })) }
   const setType = (i: number, patch: Partial<CardTypeDef>) => set({ ...r, types: r.types.map((t, j) => (j === i ? { ...t, ...patch } : t)) })
-  const setSlot = (i: number, patch: Partial<SlotDef>) => set({ ...r, slots: r.slots.map((x, j) => (j === i ? { ...x, ...patch } : x)) })
   const move = <T,>(arr: T[], i: number, d: number) => { const a = [...arr]; const j = i + d; if (j < 0 || j >= a.length) return a; [a[i], a[j]] = [a[j], a[i]]; return a }
   const others = s.fires.filter((f) => f.number !== fire.number)
   const [copyFrom, setCopyFrom] = useState<number | ''>(others.at(-1)?.number ?? '')
@@ -79,19 +79,15 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
     set({
       ...r,
       types: [...r.types, {
-        id: newId(), name, slug: uniqueSlug(slugify(name), r), rank: maxRank + 1, supply: 'count', amount: '1', maxPerPack: '0',
+        id: newId(), name, slug: uniqueSlug(slugify(name), r), rank: maxRank + 1, weight: '1',
         holo: { mode: 'independent', frame: '100000000000000000', picture: '100000000000000000' }, frameSet: 'gold',
       }],
     })
   }
-  const removeType = (i: number) => {
-    const id = r.types[i].id
-    set({ ...r, types: r.types.filter((_, j) => j !== i), slots: r.slots.map((x) => ({ ...x, typeIds: x.typeIds.filter((t) => t !== id) })) })
-  }
-  const addSlot = () => set({ ...r, slots: [...r.slots, { count: 1, kind: 'rank', typeIds: [], minRank: 0, maxRank: null, mustHolo: false }] })
+  const removeType = (i: number) => set({ ...r, types: r.types.filter((_, j) => j !== i) })
 
   const typeProblems = (i: number) => problems.filter((p) => p.where === 'type' && p.index === i)
-  const slotProblems = (i: number) => problems.filter((p) => p.where === 'slot' && p.index === i)
+  const recipeProblems = problems.filter((p) => p.where === 'recipe')
   const perPack = cardsPerPack(r)
   const valid = problems.length === 0
 
@@ -105,11 +101,11 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
   // the type cards always show the Series' own numbers (the what-if above is only for the result table)
   const ownPacks = BigInt(Math.max(0, fire.packs))
   const ownChars = Math.max(1, fire.characterIds.length)
-  const N = ownPacks > 0n ? ownPacks * BigInt(perPack) : null
+  const weights = useMemo(() => characterWeightsOf(fire), [fire])
   const res = useMemo(() => {
     if (!valid) return null
-    try { return seriesResult(r, ownPacks, ownChars) } catch { return null }
-  }, [r, ownPacks, ownChars, valid])
+    try { return seriesResult(r, ownPacks, ownChars, weights) } catch { return null }
+  }, [r, ownPacks, ownChars, weights, valid])
 
   return (
     <section className="panel grow recipe" data-testid="recipe-editor">
@@ -121,7 +117,7 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       </div>
       {perPack >= CARDS_PER_CREDIT && <Notice kind="warn"><span data-testid="recipe-credit-off">Packs of {CARDS_PER_CREDIT}+ cards: free-pack credits can't be spent on this Series.</span></Notice>}
       {locked && <Notice kind="info">The deal for this Series is locked, so its recipe is too. (Undo the lock on the Deal tab to change it.)</Notice>}
-      <p className="muted small">The card types, how many of each, holo and the pack. Locks with the Series' first pack. Checks are the contract's.</p>
+      <p className="muted small">The card types, their odds, holo and cards per pack. Every card is rolled on its own from these odds, the same for the first and the last pack. Locks with the Series' first pack. Checks are the contract's.</p>
       {!locked && (
         <div className="row wrap" data-testid="recipe-presets">
           <span className="muted small">Start from:</span>
@@ -162,16 +158,23 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
           </button>
         )}
       </div>
-      <SeriesResult recipe={r} packs={P} chars={chars} />
+      <SeriesResult recipe={r} packs={P} chars={chars} characterWeights={chars === ownChars ? weights : undefined} />
+
+      <h3>The pack</h3>
+      <div className="row wrap" data-testid="pack-size">
+        <label className="field"><span className="field-label">Cards per pack (1 to {MAX_CARDS_PER_PACK.toLocaleString('en-US')})</span>
+          <SmallInt value={r.cardsPerPack} min={1} disabled={locked} onChange={(v) => set({ ...r, cardsPerPack: v ?? 0 })} testId="cards-per-pack" /></label>
+        {recipeProblems.map((p, k) => <span key={k} className="field-msg err">{p.message}</span>)}
+      </div>
 
       <h3>Card types</h3>
       <p className="muted small">
-        How many: a percent of the cards, a number per pack, an exact number, a number per character, or the rest (one type).
-        Type a percent or a number of cards: the other follows. Max / pack caps it at that many per pack's worth.
+        Odds: each type's weight over the total weight is its chance per card (Standard: out of 10,000). Rank is the
+        rarity order the site shows.
       </p>
       <div className="type-list">
         {r.types.map((t, i) => (
-          <TypeCard key={t.id} r={r} t={t} i={i} locked={locked} problems={typeProblems(i)} n={N} packs={ownPacks} result={res?.types[i] ?? null}
+          <TypeCard key={t.id} r={r} t={t} i={i} locked={locked} problems={typeProblems(i)} result={res?.types[i] ?? null}
             onChange={(patch) => setType(i, patch)}
             onMove={(d) => set({ ...r, types: move(r.types, i, d) })}
             onRemove={() => removeType(i)} />
@@ -179,71 +182,15 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       </div>
       {!locked && <button onClick={addType} data-testid="add-type">Add a card type</button>}
 
-      <h3>The pack: slot groups</h3>
-      <p className="muted small">
-        Each group is some cards of any type in its set: listed types (one type = guaranteed) or a rank range (rank 2 and up
-        = Fire-or-better). Two sets must be nested or apart. Must holo: every card of the group is holo.
-      </p>
-      <div className="table-scroll"><table className="mini slots" data-testid="slots-table">
-        <thead><tr><th>#</th><th>Cards</th><th>Set</th><th>Takes</th><th>Must holo</th><th /></tr></thead>
-        <tbody>
-          {r.slots.map((x, i) => {
-            const takes = slotTypeIndexes(r, x)
-            const sp = slotProblems(i)
-            return (
-              <tr key={i} className={sp.length ? 'has-problem' : ''} data-testid={`slot-${i}`}>
-                <td>{i + 1}</td>
-                <td><SmallInt value={x.count} min={1} disabled={locked} onChange={(v) => setSlot(i, { count: v ?? 0 })} testId={`slot-${i}-count`} /></td>
-                <td>
-                  <select value={x.kind} disabled={locked} onChange={(e) => setSlot(i, { kind: e.target.value as SlotDef['kind'] })} data-testid={`slot-${i}-kind`}>
-                    <option value="types">These types</option>
-                    <option value="rank">Rank range</option>
-                  </select>{' '}
-                  {x.kind === 'types' ? (
-                    <span className="type-picks">
-                      {r.types.map((t) => (
-                        <label key={t.id} className="check small">
-                          <input type="checkbox" disabled={locked} checked={x.typeIds.includes(t.id)}
-                            onChange={(e) => setSlot(i, { typeIds: e.target.checked ? [...x.typeIds, t.id] : x.typeIds.filter((id) => id !== t.id) })} />
-                          {t.name || '?'}
-                        </label>
-                      ))}
-                    </span>
-                  ) : (
-                    <span className="row inline">
-                      rank <SmallInt value={x.minRank} disabled={locked} onChange={(v) => setSlot(i, { minRank: v ?? 0 })} testId={`slot-${i}-min`} />
-                      to <SmallInt value={x.maxRank} placeholder="top" disabled={locked} onChange={(v) => setSlot(i, { maxRank: v })} testId={`slot-${i}-max`} />
-                    </span>
-                  )}
-                </td>
-                <td className="small">{takes.length ? takes.map((k) => r.types[k].name).join(', ') : <span className="err-text">nothing</span>}
-                  {sp.map((p, k) => <div key={k} className="err-text">{p.message}</div>)}
-                </td>
-                <td><input type="checkbox" disabled={locked} checked={x.mustHolo} onChange={(e) => setSlot(i, { mustHolo: e.target.checked })} data-testid={`slot-${i}-holo`} /></td>
-                <td className="nowrap">
-                  {!locked && <>
-                    <button className="link" onClick={() => set({ ...r, slots: move(r.slots, i, -1) })} disabled={i === 0}>up</button>
-                    <button className="link" onClick={() => set({ ...r, slots: move(r.slots, i, 1) })} disabled={i === r.slots.length - 1}>down</button>
-                    <button className="link danger" onClick={() => set({ ...r, slots: r.slots.filter((_, j) => j !== i) })}>remove</button>
-                  </>}
-                </td>
-              </tr>
-            )
-          })}
-          <tr><td /><td><b>{perPack}</b></td><td colSpan={4} className="muted small">cards per pack (the sum of the groups)</td></tr>
-        </tbody>
-      </table></div>
-      {!locked && <button onClick={addSlot} data-testid="add-slot">Add a slot group</button>}
-
       <PdaOdds />
     </section>
   )
 }
 
-function TypeCard({ r, t, i, locked, problems, n, packs, result, onChange, onMove, onRemove }: {
+function TypeCard({ r, t, i, locked, problems, result, onChange, onMove, onRemove }: {
   r: Recipe; t: CardTypeDef; i: number; locked: boolean; problems: Problem[]
-  /** The Series' cards in all (for percent <-> cards), its packs (for the max per pack), and what this type makes. */
-  n: bigint | null; packs: bigint; result: TypeResult | null
+  /** What this type makes in the Series (its odds and expected cards). */
+  result: TypeResult | null
   onChange: (p: Partial<CardTypeDef>) => void; onMove: (d: number) => void; onRemove: () => void
 }) {
   const looks = holoLooksFor(r, i)
@@ -252,10 +199,6 @@ function TypeCard({ r, t, i, locked, problems, n, packs, result, onChange, onMov
   const odds = holoOdds(t)
   const setName = (name: string) => onChange(t.slugEdited ? { name } : { name, slug: uniqueSlug(slugify(name), r, t.id) })
   const setHolo = (holo: HoloRule) => onChange({ holo })
-  const amount = parseUint(t.amount) ?? 0n
-  // the cap over the Series (max per pack x packs), as the contract applies it: the "= cards" fields match "Makes"
-  const capPer = parseUint(t.maxPerPack) ?? 0n
-  const capped = (c: bigint) => (capPer > 0n && c > capPer * packs ? capPer * packs : c)
   return (
     <div className={`type-card ${problems.length ? 'has-problem' : ''}`} data-testid={`type-${i}`}>
       <div className="type-main">
@@ -269,35 +212,11 @@ function TypeCard({ r, t, i, locked, problems, n, packs, result, onChange, onMov
           </span></label>
         <label className="field"><span className="field-label">Rank</span>
           <SmallInt value={t.rank} disabled={locked} onChange={(v) => onChange({ rank: v ?? 0 })} testId={`type-${i}-rank`} /></label>
-        <label className="field"><span className="field-label">How many</span>
-          <select value={t.supply} disabled={locked} data-testid={`type-${i}-supply`} onChange={(e) => {
-            const supply = e.target.value as Supply
-            // keep the same number of cards where it can: a percent from the count, a count from the percent
-            const now = result?.count
-            let next = supply === 'share' ? '50000000' : supply === 'filler' ? t.amount : '1'
-            if (supply === 'share' && now != null && n) next = (shareForCount(now, n)?.share ?? 50_000_000n).toString()
-            if (supply === 'count' && now != null) next = now.toString()
-            onChange({ supply, amount: next })
-          }}>
-            {(['share', 'count', 'perPack', 'perCharacter', 'filler'] as Supply[]).map((x) => <option key={x} value={x}>{SUPPLY_LABEL[x]}</option>)}
-          </select></label>
-        <label className="field"><span className="field-label">{t.supply === 'share' ? 'Percent · cards' : t.supply === 'perPack' ? 'Cards per pack' : t.supply === 'count' ? 'Cards · percent' : t.supply === 'perCharacter' ? 'Cards of each character' : 'Cards'}</span>
-          {t.supply === 'share' ? (
-            <span className="twin">
-              <PercentInput value={amount} scale={SHARE_SCALE} disabled={locked} onChange={(v) => onChange({ amount: v.toString() })} testId={`type-${i}-amount`} />
-              <CardsInput n={n} value={n ? capped(countForShare(amount, n)) : null} disabled={locked} testId={`type-${i}-cards`}
-                onChange={(c) => { const s = n ? shareForCount(c, n) : null; if (s) onChange({ amount: s.share.toString() }) }} />
-            </span>
-          ) : t.supply === 'count' ? (
-            <span className="twin">
-              <UintInput value={t.amount} disabled={locked} onChange={(v) => onChange({ amount: v })} testId={`type-${i}-amount`} />
-              <SharePercent n={n} count={capped(amount)} disabled={locked} testId={`type-${i}-pct`}
-                onChange={(share) => n && onChange({ amount: countForShare(share, n).toString() })} />
-            </span>
-          ) : t.supply === 'filler' ? <span className="muted small pad">whatever is left</span>
-            : <UintInput value={t.amount} disabled={locked} onChange={(v) => onChange({ amount: v })} testId={`type-${i}-amount`} />}</label>
-        <label className="field"><span className="field-label">Max / pack (0 = none)</span>
-          <UintInput value={t.maxPerPack} width={70} disabled={locked} onChange={(v) => onChange({ maxPerPack: v })} testId={`type-${i}-cap`} /></label>
+        <label className="field"><span className="field-label">Odds weight</span>
+          <span className="twin">
+            <UintInput value={t.weight} disabled={locked} onChange={(v) => onChange({ weight: v })} testId={`type-${i}-weight`} />
+            {result && <span className="muted small pad" data-testid={`type-${i}-share`}>= {pct(result.share, 3)} of cards · 1 in {oneIn(result.share)}</span>}
+          </span></label>
         <label className="field"><span className="field-label">Frames</span>
           <select value={t.frameSet} disabled={locked} onChange={(e) => onChange({ frameSet: e.target.value })} data-testid={`type-${i}-frames`}>
             {(SHOWN_FRAME_SETS.includes(t.frameSet) ? SHOWN_FRAME_SETS : [...SHOWN_FRAME_SETS, t.frameSet]).map((f) => <option key={f} value={f}>{frameSetLabel(f)}{frameSetFiles(f).total ? ` (${frameSetFiles(f).have}/${frameSetFiles(f).total})` : ' (no frame)'}</option>)}
@@ -335,7 +254,6 @@ function TypeCard({ r, t, i, locked, problems, n, packs, result, onChange, onMov
         )}
         <span className="small muted holo-odds" data-testid={`type-${i}-odds`}>
           {HOLO_TYPES.map((h, k) => `${h === 'none' ? 'Plain' : HOLO_LABEL[h]} ${pct(odds[k])}`).join(' · ')} (any holo {pct(1 - odds[0])})
-          {r.slots.some((x) => x.mustHolo && slotTypeIndexes(r, x).includes(i)) && <><br />In a must-holo slot: {(['frame', 'picture', 'full'] as const).map((h, k) => `${HOLO_LABEL[h]} ${pct(holoOddsGivenHolo(t)[k + 1])}`).join(' · ')}</>}
           <br />Images per character: {looks.length} look{looks.length === 1 ? '' : 's'} x 12 = {looks.length * 12}
         </span>
         {!locked && <span className="nowrap type-actions">
@@ -346,8 +264,7 @@ function TypeCard({ r, t, i, locked, problems, n, packs, result, onChange, onMov
       </div>
       {result && (
         <p className="type-result" data-testid={`type-${i}-makes`}>
-          Makes <b>{result.count.toLocaleString('en-US')}</b> cards · {pct(result.share, 3)} of all · {Number.isInteger(result.perCharacter) ? result.perCharacter.toLocaleString('en-US') : `≈${+result.perCharacter.toFixed(1)}`} per character
-          {result.count !== result.rule && t.supply !== 'filler' && <> · {result.count > result.rule ? '+' : ''}{(result.count - result.rule).toLocaleString('en-US')} by the pack floor</>}
+          {pct(result.share, 3)} of cards · about <b>{Math.round(result.expected).toLocaleString('en-US')}</b> in this Series · ≈{+result.perCharacter.toFixed(1)} per character
         </p>
       )}
       {missing.length > 0 && (
@@ -358,42 +275,6 @@ function TypeCard({ r, t, i, locked, problems, n, packs, result, onChange, onMov
       )}
       {problems.map((p, k) => <p key={k} className="field-msg err">{p.message}</p>)}
     </div>
-  )
-}
-
-/** A number of cards typed next to a percent: typing it sets the percent that gives exactly that many. */
-function CardsInput({ n, value, onChange, disabled, testId }: { n: bigint | null; value: bigint | null; onChange: (c: bigint) => void; disabled?: boolean; testId?: string }) {
-  const [text, setText] = useState(value == null ? '' : value.toString())
-  useEffect(() => {
-    if (parseUint(text) !== value) setText(value == null ? '' : value.toString())
-    // only when the stored value changes from outside
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value])
-  const c = parseUint(text)
-  const bad = c == null || (n != null && c > n)
-  return (
-    <span className="twin">
-      =<input value={text} disabled={disabled || !n} aria-invalid={bad} data-testid={testId} inputMode="numeric"
-        onChange={(e) => { setText(e.target.value); const v = parseUint(e.target.value); if (v != null && n != null && v <= n) onChange(v) }} />cards
-    </span>
-  )
-}
-
-/** A percent typed next to an exact number of cards: typing it sets the cards it gives (rounded like the contract). */
-function SharePercent({ n, count, onChange, disabled, testId }: { n: bigint | null; count: bigint; onChange: (share: bigint) => void; disabled?: boolean; testId?: string }) {
-  const shown = n ? (shareForCount(count > n ? n : count, n)?.share ?? null) : null
-  const [text, setText] = useState(shown == null ? '' : scaledToPercent(shown, SHARE_SCALE))
-  useEffect(() => {
-    const v = percentToScaled(text, SHARE_SCALE)
-    if (v == null || !n || countForShare(v, n) !== count) setText(shown == null ? '' : scaledToPercent(shown, SHARE_SCALE))
-    // only when the count or the total changes from outside
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [count, n])
-  return (
-    <span className="twin pct-input">
-      =<input value={text} disabled={disabled || !n} aria-invalid={percentToScaled(text, SHARE_SCALE) == null} data-testid={testId} inputMode="decimal"
-        onChange={(e) => { setText(e.target.value); const v = percentToScaled(e.target.value, SHARE_SCALE); if (v != null) onChange(v) }} />%
-    </span>
   )
 }
 

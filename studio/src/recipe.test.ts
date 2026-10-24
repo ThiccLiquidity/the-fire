@@ -1,53 +1,27 @@
-import poolFixtureText from '../../contracts/test/cards/pool-fixture.json?raw'
 import standardSampleText from '../../contracts/test/cards/recipe-standard.json?raw'
 import { describe, expect, it } from 'vitest'
-import { computePool } from './deal'
 import {
-  FRESH_PDA_ODDS, HOLO_ONE, SHARE_SCALE, STANDARD_ROLLS, castWarning, checkRecipe, classicRecipe, compileRecipe, holoLooksFor, percentToScaled, previewPool, recipeFromJson, recipeJson,
-  roundedPercent, scaledToPercent, slugify, specialAllHoloRecipe, standardRecipe, type Recipe,
+  FRESH_PDA_ODDS, HOLO_ONE, MAX_CARDS_PER_PACK, STANDARD_ROLLS, STANDARD_WEIGHTS, characterOdds, characterWeightsFromJson, checkRecipe,
+  holoLooksFor, percentToScaled, recipeFromJson, recipeJson, roundedPercent, scaledToPercent, slugify, specialAllHoloRecipe,
+  standardRecipe, typeOdds, typeWeights, type Recipe,
 } from './recipe'
-import { MATERIALS } from './rules'
 
-const fixture = JSON.parse(poolFixtureText) as {
-  rows: { packs: number; diamonds: number; counts: number[] }[]
-}
 const codes = (r: Recipe) => checkRecipe(r).map((p) => p.code)
 
 describe('Standard recipe', () => {
   it('is valid, 6 cards per pack', () => {
     expect(checkRecipe(standardRecipe())).toEqual([])
-    expect(compileRecipe(standardRecipe()).S).toBe(6)
+    expect(standardRecipe().cardsPerPack).toBe(6)
   })
 
-  it('pool port = computePool on every row of pool-fixture.json (the contract parity fixture)', () => {
-    for (const row of fixture.rows) {
-      const got = previewPool(classicRecipe(row.diamonds), BigInt(row.packs)).map(Number)
-      expect(got, `${row.packs} packs, ${row.diamonds} diamonds`).toEqual(row.counts)
-      if (row.packs < 1e6) expect(got).toEqual(MATERIALS.map((m) => computePool(row.packs, row.diamonds)[m]))
-    }
-  })
-
-  it('167 packs and 1 Gold: 501 / 301 / 150 / 49 / 1', () => {
-    expect(previewPool(classicRecipe(1), 167n)).toEqual([501n, 301n, 150n, 49n, 1n])
-  })
-
-  it('the Standard recipe: 2 Gold and one Full Art per character', () => {
-    // 167 packs, 10 characters: Full Art and Gold come out of the Wood-or-better / Fire-or-better slots
-    expect(previewPool(standardRecipe(), 167n, 10n)).toEqual([501n, 272n, 150n, 49n, 20n, 10n])
-    expect(previewPool(standardRecipe(), 167n, 30n)).toEqual([501n, 212n, 150n, 49n, 60n, 30n]) // Gold stays 2x Full Art
-    expect(previewPool(standardRecipe(), 167n, 1n)[5]).toBe(1n)
-    expect(previewPool(standardRecipe(), 3n, 10n)[5]).toBe(3n) // at most one per pack's worth
-  })
-
-  it('a per-character type: 1 to 65,535 each', () => {
-    const r = standardRecipe()
-    r.types[5].amount = '0'
-    expect(codes(r)).toContain('BadType(5,per character)')
-    r.types[5].amount = '65536'
-    expect(codes(r)).toContain('BadType(5,per character)')
-    r.types[5].amount = '2'
-    expect(codes(r)).toEqual([])
-    expect(previewPool(r, 1000n, 7n)[5]).toBe(14n)
+  it('odds out of 10,000: the old pool dealing\'s expected share per card (167 packs, 20 characters)', () => {
+    const { weights, total } = typeWeights(standardRecipe())
+    expect(total).toBe(10_000n)
+    expect(weights).toEqual([5000n, 2415n, 1497n, 489n, 399n, 200n])
+    // the old pool for 167 packs and 20 characters: 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art of 1,002
+    const old = [501, 242, 150, 49, 40, 20]
+    typeOdds(standardRecipe()).forEach((p, i) => expect(Math.abs(p - old[i] / 1002)).toBeLessThan(0.00005))
+    expect(STANDARD_WEIGHTS.fullart).toBe('200')
   })
 
   it('recipe.json has no PDA odds: they are fixed in FirePsa for every Series', () => {
@@ -56,18 +30,25 @@ describe('Standard recipe', () => {
     expect(FRESH_PDA_ODDS).toEqual([0, 0, 0, 0, 0, 0, 2900, 4000, 3000, 100])
   })
 
-  it('recipe.json is exactly the shape of contracts/test/cards/recipe-standard.json', () => {
+  it('recipe.json is exactly contracts/test/cards/recipe-standard.json', () => {
     const sample = JSON.parse(standardSampleText)
     const j = recipeJson(7, standardRecipe(), sample.characters, 'ipfs://bafyexampleimages/')
-    // the sample writes slot 2 as an explicit list and slot 4 with an explicit mustHolo: false; same recipe
-    expect(j.types).toEqual(sample.types)
-    expect(Object.keys(j)).toEqual(Object.keys(sample)) // no pdaOdds on either side
-    expect(j.slots).toEqual([{ count: 3, types: [0] }, { count: 1, types: [1] }, { count: 1, minRank: 1 }, { count: 1, minRank: 2 }])
-    expect(j.fire).toBe(7)
-    expect(j.imagesBase).toBe('ipfs://bafyexampleimages/')
-    // and it reads back to the same pools
+    expect(j).toEqual(sample)
+    expect(Object.keys(j)).toEqual(Object.keys(sample))
     const back = recipeFromJson(j)
-    for (const p of [1n, 7n, 167n]) expect(previewPool(back, p, 3n)).toEqual(previewPool(standardRecipe(), p, 3n))
+    expect(back.cardsPerPack).toBe(6)
+    expect(back.types.map((t) => t.weight)).toEqual(standardRecipe().types.map((t) => t.weight))
+    expect(characterWeightsFromJson(j)).toBeUndefined()
+  })
+
+  it('character weights go into recipe.json only when they differ', () => {
+    const chars = [{ name: 'A', category: 'X' }, { name: 'B', category: 'X' }]
+    expect(recipeJson(7, standardRecipe(), chars, undefined, undefined, [1, 1]).characters).toEqual(chars)
+    const j = recipeJson(7, standardRecipe(), chars, undefined, undefined, [3, 1])
+    expect(j.characters).toEqual([{ name: 'A', category: 'X', weight: 3 }, { name: 'B', category: 'X', weight: 1 }])
+    expect(characterWeightsFromJson(j)).toEqual([3, 1])
+    expect(characterOdds([3, 1], 2)).toEqual([0.75, 0.25])
+    expect(characterOdds(undefined, 4)).toEqual([0.25, 0.25, 0.25, 0.25])
   })
 
   it('holo looks: 4 per type, Gold and Full Art 1 (always full holo) = 18 per character', () => {
@@ -80,29 +61,22 @@ describe('Special 3-card all-holo recipe', () => {
   it('is valid, 3 cards, never plain', () => {
     const r = specialAllHoloRecipe()
     expect(checkRecipe(r)).toEqual([])
-    expect(compileRecipe(r).S).toBe(3)
+    expect(r.cardsPerPack).toBe(3)
     expect(r.types.map((_, i) => holoLooksFor(r, i))).toEqual([['frame', 'picture', 'full'], ['frame', 'picture', 'full'], ['full']])
-  })
-  it('the floor keeps one Coal-or-better per pack', () => {
-    for (const p of [1n, 2n, 3n, 10n, 100n, 12345n]) {
-      const [fire, coal, diamond] = previewPool(specialAllHoloRecipe(), p)
-      expect(fire + coal + diamond).toBe(3n * p)
-      expect(coal + diamond).toBeGreaterThanOrEqual(p)
-      expect(diamond).toBeLessThanOrEqual(p)
-    }
   })
 })
 
-describe('checkRecipe mirrors RecipeDealer.check', () => {
+describe('checkRecipe mirrors RecipeCompiler.compile', () => {
   const base = () => standardRecipe()
-  it('filler: none, or two', () => {
+  it('no types; cards per pack 1 to 1,000', () => {
+    expect(codes({ types: [], cardsPerPack: 6 })[0]).toBe('BadRecipe(no types)')
     const r = base()
-    r.types[1].supply = 'share'
-    r.types[1].amount = '1'
-    expect(codes(r)[0]).toBe('BadFiller')
-    const r2 = base()
-    r2.types[0].supply = 'filler'
-    expect(codes(r2)[0]).toBe('BadFiller')
+    r.cardsPerPack = 0
+    expect(codes(r)[0]).toBe('BadRecipe(cards per pack)')
+    r.cardsPerPack = MAX_CARDS_PER_PACK + 1
+    expect(codes(r)[0]).toBe('BadRecipe(cards per pack)')
+    r.cardsPerPack = MAX_CARDS_PER_PACK
+    expect(codes(r)).toEqual([])
   })
   it('slug and text rules', () => {
     const r = base()
@@ -118,10 +92,10 @@ describe('checkRecipe mirrors RecipeDealer.check', () => {
     r.types[2].name = ''
     expect(codes(r)[0]).toBe('BadType(2,name length)')
   })
-  it('share above 100%, holo chances and weights', () => {
+  it('weights at least 1, holo chances and weights', () => {
     const r = base()
-    r.types[2].amount = '1000000001'
-    expect(codes(r)[0]).toBe('BadType(2,share above 100%)')
+    r.types[2].weight = '0'
+    expect(codes(r)[0]).toBe('BadType(2,weight)')
     const r2 = base()
     r2.types[0].holo = { mode: 'independent', frame: '1000000000000000001', picture: '0' }
     expect(codes(r2)[0]).toBe('BadType(0,holo chances)')
@@ -129,40 +103,13 @@ describe('checkRecipe mirrors RecipeDealer.check', () => {
     r3.types[4].holo = { mode: 'distribution', weights: ['0', '0', '0', '0'] }
     expect(codes(r3)[0]).toBe('BadType(4,holo weights)')
   })
-  it('overlapping slot sets are refused (NotNested); nested and disjoint are fine', () => {
-    const r = base()
-    r.slots[0] = { ...r.slots[0], typeIds: ['paper', 'wood'] }
-    r.slots[1] = { ...r.slots[1], typeIds: ['wood', 'fire'] }
-    expect(codes(r)[0]).toBe('NotNested(0,1)')
-    expect(checkRecipe(r)[0].message).toMatch(/overlap/)
-  })
-  it('a type no slot takes, and never-holo in a must-holo slot', () => {
-    const r = base()
-    r.slots[2] = { ...r.slots[2], kind: 'types', typeIds: ['wood'] }
-    r.slots[3] = { ...r.slots[3], minRank: 2, maxRank: 3 }
-    expect(codes(r)[0]).toBe('TypeNeverDealt(4)')
-    const r2 = base()
-    r2.slots[0].mustHolo = true
-    r2.types[0].holo = { mode: 'independent', frame: '0', picture: '0' }
-    expect(codes(r2)[0]).toBe('NeverHolo(0,0)')
-  })
-  it('slots: none, a zero count, an empty rank range', () => {
-    const r = base()
-    r.slots = []
-    expect(codes(r)[0]).toBe('BadSlot(0,no slots)')
-    const r2 = base()
-    r2.slots[1].count = 0
-    expect(codes(r2)[0]).toBe('BadSlot(1,count)')
-    const r3 = base()
-    r3.slots[3] = { ...r3.slots[3], minRank: 9 }
-    expect(codes(r3)[0]).toBe('BadSlot(3,no type in rank range)')
-    r3.slots[3] = { ...r3.slots[3], minRank: 3, maxRank: 2 }
-    expect(codes(r3)[0]).toBe('BadSlot(3,rank range)')
-  })
   it('studio checks: number formats', () => {
     const r = base()
-    r.types[2].amount = '1.5'
+    r.types[2].weight = '1.5'
     expect(checkRecipe(r)[0].code).toBe('Studio')
+    const r2 = base()
+    r2.types[2].weight = (1n << 64n).toString()
+    expect(checkRecipe(r2)[0].code).toBe('Studio')
   })
 })
 
@@ -177,7 +124,6 @@ describe('helpers', () => {
     expect(roundedPercent(HOLO_ONE, HOLO_ONE)).toBe('100')
     expect(roundedPercent(0n, HOLO_ONE)).toBe('0')
     expect(roundedPercent(10n ** 12n, HOLO_ONE)).toBe('0.0001') // too small to round: shown exactly
-    expect(roundedPercent(150_000_000n, SHARE_SCALE)).toBe('15')
     expect(standardRecipe().types[0].holo).toEqual({ mode: 'independent', frame: STANDARD_ROLLS.paper, picture: STANDARD_ROLLS.paper })
   })
   it('slugify', () => {
@@ -193,12 +139,6 @@ describe('helpers', () => {
     expect(percentToScaled('0.00000001', 1_000_000_000n)).toBeNull()
     expect(percentToScaled('101', 1_000_000_000n)).toBeNull()
     expect(scaledToPercent(25320565519103609n, 10n ** 18n)).toBe('2.5320565519103609')
-    expect(scaledToPercent(150_000_000n, 1_000_000_000n)).toBe('15')
     expect(percentToScaled('2.5320565519103609', 10n ** 18n)).toBe(25320565519103609n)
-  })
-  it('warns when a cast is too big for its packs (Gold would outnumber Coal)', () => {
-    const r = standardRecipe()
-    expect(castWarning(r, previewPool(r, 167n, 10n))).toBeNull()
-    expect(castWarning(r, previewPool(r, 60n, 20n))).toMatch(/Too many characters/)
   })
 })

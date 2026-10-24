@@ -197,8 +197,8 @@ In railway.com, for **each** testnet keeper service (main and backup):
 - If not: FireCards is the old address → step 3 above, or the service builds another branch. "expected 46630" → wrong
   RPC_URL. Low ETH alert → faucet.
 
-**The PAPER price comes ~40 h after this.** Until then: packs take the set PAPER (fine), case and grading fees in
-ETH/PLANK/USDG wait in PaperBurner (fine), and **paying for cases/grading in PAPER is refused** (no price yet). Check:
+**The PAPER price comes ~40 h after this.** Until then: packs take the set PAPER (fine) and case and grading fees
+(PLANK, ETH or USDG; PAPER is not a payment option) wait in PaperBurner (fine). Check:
 ```powershell
 cd C:\Users\DubT1\the-fire\contracts
 $feed = (Get-Content ..\deployments\46630.json | ConvertFrom-Json).contracts.PaperUsdTwap
@@ -278,9 +278,9 @@ Use a test wallet with test ETH. Tick each:
       the cards appear. Keeper log: `fulfillMany success`, `process success`.
 - [ ] **Case and grade, paid in ETH**: the slab shows the grade; the card's page on the explorer shows the grade
       after a refresh.
-- [ ] **Case and grade, paid in PAPER** (after the PAPER price is live, ~40 h): the PAPER cost shown, the wallet asks
-      to approve PAPER, then it goes through.
-- [ ] **Grade prices per rank** (if you set any with `FirePsa.setGradePrice`): the price shown matches.
+- [ ] **Case and grade, paid in USDG or PLANK**: the cost shown, the wallet asks to approve it, then it goes through;
+      Pay with shows ETH, PLANK and USDG only (no PAPER).
+- [ ] **One grading price**: every card shows the same grading price (`FirePsa.gradeUsd18`).
 - [ ] **Profiles**: set a name and a picture from a card you hold; it shows next to your pulls; sell or send the card
       and the picture goes away.
 - [ ] **Feed**: your rare pulls show in the feed; the Series board shows who fed the fire.

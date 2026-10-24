@@ -31,16 +31,20 @@ abstract contract SeriesHelper is Test {
         vm.stopPrank();
     }
 
-    /// The original five-type Standard recipe (Gold in Diamond's place) with `gold` Gold and `nChars` characters.
-    function _standard(FireCards cards, RecipeDealer dealer, address owner_, uint256 fire, uint256 nChars, uint256 gold)
-        internal
-    {
-        _series(cards, dealer, owner_, fire, StandardRecipe.classic(gold), nChars);
+    /// The Standard recipe with `nChars` characters.
+    function _standard(FireCards cards, RecipeDealer dealer, address owner_, uint256 fire, uint256 nChars) internal {
+        _series(cards, dealer, owner_, fire, StandardRecipe.build(), nChars);
+    }
+
+    /// A recipe of `types` with `perPack` cards a pack.
+    function _recipe(RecipeDealer.CardType[] memory types, uint32 perPack) internal pure returns (RecipeDealer.Recipe memory r) {
+        r.types = types;
+        r.cardsPerPack = perPack;
     }
 
     // ---------- recipe building ----------
 
-    function _type(string memory name, string memory slug, uint32 rank, RecipeDealer.Supply supply, uint128 amount)
+    function _type(string memory name, string memory slug, uint32 rank, uint64 weight)
         internal
         pure
         returns (RecipeDealer.CardType memory t)
@@ -48,8 +52,7 @@ abstract contract SeriesHelper is Test {
         t.name = name;
         t.slug = slug;
         t.rank = rank;
-        t.supply = supply;
-        t.amount = amount;
+        t.weight = weight;
         t.holoMode = RecipeDealer.HoloMode.Independent;
     }
 
@@ -71,23 +74,6 @@ abstract contract SeriesHelper is Test {
         t.holoMode = RecipeDealer.HoloMode.Independent;
         t.holo = [frame, picture, 0, 0];
         return t;
-    }
-
-    function _slotTypes(uint32 count, uint32[] memory types) internal pure returns (RecipeDealer.Slot memory s) {
-        s.count = count;
-        s.types = types;
-    }
-
-    function _slotOne(uint32 count, uint32 t) internal pure returns (RecipeDealer.Slot memory s) {
-        s.count = count;
-        s.types = new uint32[](1);
-        s.types[0] = t;
-    }
-
-    function _slotRange(uint32 count, uint32 minRank, uint32 maxRank) internal pure returns (RecipeDealer.Slot memory s) {
-        s.count = count;
-        s.minRank = minRank;
-        s.maxRank = maxRank;
     }
 
     function _ids(uint256 from, uint256 n) internal pure returns (uint256[] memory ids) {
@@ -132,7 +118,7 @@ abstract contract SeriesHelper is Test {
     }
 }
 
-/// @dev Exposes the dealer's internals for exact checks (pool on a compiled recipe, holo rolls).
+/// @dev Exposes the dealer's internals for exact checks (holo rolls on a compiled recipe).
 contract RecipeHarness is RecipeDealer {
     constructor(address cards) RecipeDealer(msg.sender, cards, address(new RecipeCompiler())) {}
 
@@ -140,16 +126,7 @@ contract RecipeHarness is RecipeDealer {
         (plan,) = COMPILER.compile(r);
     }
 
-    function pool(bytes memory plan, uint256 packs) external view returns (uint256[] memory) {
-        return poolChars(plan, packs, 1);
-    }
-
-    function poolChars(bytes memory plan, uint256 packs, uint256 chars) public view returns (uint256[] memory) {
-        (int256[] memory c,) = COMPILER.pool(plan, packs, chars);
-        return _toUint(c);
-    }
-
-    function holo(bytes memory plan, uint256 t, bool must, uint256 r1, uint256 r2) external pure returns (bool, bool) {
-        return _holo(plan, t, must, r1, r2);
+    function holo(bytes memory plan, uint256 t, uint256 r1, uint256 r2) external pure returns (bool, bool) {
+        return _holo(plan, t, r1, r2);
     }
 }

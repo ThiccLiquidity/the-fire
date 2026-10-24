@@ -1,5 +1,5 @@
 /* Omni Cardworks (fun layer): the Binder. One page per Series: a row per character, a slot per card type. A slot
-   shows your best copy (graded, then holo, then the lowest edition); an empty slot is the card back, dimmed. On top,
+   shows your best copy (graded, then holo, then the lowest print number); an empty slot is the card back, dimmed. On top,
    how complete it is: the Common set (Paper, Wood, Fire, Coal) and the Master set (+ Gold + Full Art). From My cards
    and a card's detail. The cast comes from the Series' recipe on chain (live) or the demo cast; any character you
    hold is always listed. */

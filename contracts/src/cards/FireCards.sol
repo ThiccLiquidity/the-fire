@@ -25,14 +25,14 @@ interface ICardsRenderer {
 /**
  * @title FireCards
  * @notice The cards ("Omni Cards"). Every card is a unique ERC-721 (token id = its global serial). This contract is
- *         the permanent part: the cards, the opening queues, randomness, serials, editions, each card's wear state
+ *         the permanent part: the cards, the opening queues, randomness, serials, print numbers, each card's wear state
  *         and PDA grade. What a Series' cards are is up to its dealer (IDealer; the first one is RecipeDealer), set
  *         per Series by the owner and fixed once the Series' first pack is minted. The metadata JSON comes from the
  *         renderer (CardsRenderer), set once.
  *
  *         How a pack is opened:
- *         1. When a Series goes out, the seller closes it: the pack count freezes. Its dealer works out the pool
- *            from that count. Each Series stands alone, with its own opening queue.
+ *         1. When a Series goes out, the seller closes it: the pack count freezes. Each Series stands alone, with
+ *            its own opening queue.
  *         2. A holder calls open(): their sealed packs are burned and fresh drand randomness is requested. Nothing
  *            about the packs existed before this; their cards depend on randomness that doesn't exist yet.
  *         3. When the randomness arrives, anyone calls process(fire, maxCards) (the site or the keeper, right away).
@@ -54,13 +54,24 @@ interface ICardsRenderer {
  *         switch). Only new opens use the new source. Each open remembers the source that took its request, only that
  *         source can answer it, and an open waiting on an old source can still be answered by it (or cancelled after
  *         CANCEL_AFTER). There is no re-request: one open, one request, one number.
+ *
+ *         Print number: each exact card (Series, character, type and holo look) is numbered in the order it is
+ *         dealt: the first one opened is #1, the next #2, and so on. There is no "of N": the number is final the
+ *         moment the card is dealt.
  */
 contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     uint96 public constant MAX_ROYALTY_BPS = 1_000;
     /// @dev Last resort if randomness is gone for good: an open with no answer this long after it was asked for
-    ///      can be cancelled and its packs go back to the holder, sealed. Also how long a ready open can sit at the
-    ///      head of its queue without being dealt (a dealer that can't deal it) before anyone can skip it.
-    uint256 public constant CANCEL_AFTER = 7 days;
+    ///      can be cancelled and its packs go back to the holder, sealed. Every drand round is public once it is
+    ///      out, so a cancel only works while nobody has delivered the word, and anyone (the holder included) can
+    ///      see it first: a holder who didn't like their word could sit on it and cancel for a re-roll. The window
+    ///      must outlast any keeper outage (two keepers, alerting long before it ends); 24 hours is the owner's
+    ///      choice.
+    uint256 public constant CANCEL_AFTER = 24 hours;
+    /// @dev How long a ready open can sit at the head of its queue without being dealt (a dealer that can't deal
+    ///      it) before anyone can skip it (`skipStuck`). Its word is known, so this too must outlast any keeper
+    ///      outage; it stays long because it should only ever be needed for a dealer that can't deal.
+    uint256 public constant SKIP_AFTER = 7 days;
     /// @dev Most cards in one pack: keeps one pack's shuffle and dealing inside a block.
     uint256 public constant MAX_CARDS_PER_PACK = 1_000;
     /// @dev Moves (wallet to wallet, uncased and ungraded) that count toward wear; more add nothing.
@@ -73,7 +84,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     // card word layout
     uint256 internal constant B_TYPE = 64; // 32 bits
     uint256 internal constant B_CHAR = 96; // 32 bits
-    uint256 internal constant B_EDITION = 128; // 40 bits
+    uint256 internal constant B_PRINT = 128; // 40 bits: print number
     uint256 internal constant B_CLOCK = 168; // 40 bits: dealt-at time, or the frozen age once frozen
     uint256 internal constant B_HOLO_FRAME = 208;
     uint256 internal constant B_HOLO_PICTURE = 209;
@@ -127,10 +138,11 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     /// @dev (source << 96 | requestId) -> (fire << 128) | (index + 1)
     mapping(uint256 request => uint256) internal _openOf;
 
-    /// @dev Per card (see the B_ layout): Series, type, character, edition, clock, holo, grade, frozen, cased,
-    ///      moves, dealer extra.
+    /// @dev Per card (see the B_ layout): Series, type, character, print number, clock, holo, grade, frozen,
+    ///      cased, moves, dealer extra.
     mapping(uint256 tokenId => uint256) internal _card;
-    mapping(bytes32 => uint64) internal _editions; // (fire, character, type) -> cards dealt so far
+    /// @dev (fire, character, type, holo look) -> how many of that exact card have been dealt (its last print number)
+    mapping(bytes32 => uint64) internal _prints;
     /// @notice A grading is waiting for its randomness: the card can't move until its grade is set.
     mapping(uint256 tokenId => bool) public gradePending;
     /// @dev When a card was dealt, kept once its clock first freezes (cased or sent for grading); until then the
@@ -155,7 +167,6 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     event PacksOpened(uint256 indexed fire, uint256 indexed openIndex, address indexed holder, uint256 count, uint256 requestId);
     event OpenReady(uint256 indexed fire, uint256 indexed openIndex, uint256 word);
     event CardDealt(uint256 indexed fire, uint256 indexed serial, uint256 openIndex, uint256 cardType, bool holoFrame, bool holoPicture, uint256 character);
-    event BatchMetadataUpdate(uint256 fromTokenId, uint256 toTokenId); // ERC-4906
     event ContractURIUpdated(); // ERC-7572
 
     error AlreadySet();
@@ -439,20 +450,18 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         emit OpenCancelled(fire, index, o.to, count);
     }
 
-    /// @notice If the open at the head of a Series' queue has been ready for CANCEL_AFTER and still isn't dealt (its
+    /// @notice If the open at the head of a Series' queue has been ready for SKIP_AFTER and still isn't dealt (its
     ///         dealer can't deal it), anyone can skip it so the queue moves on: the packs it hadn't started go back to
     ///         the holder, sealed (cards already dealt stay theirs).
     function skipStuck(uint256 fire) external nonReentrant {
         uint256 h = headOf[fire];
         Open storage o = _opens[fire][h];
-        if (!o.ready || o.count == 0 || block.timestamp < o.readyAt + CANCEL_AFTER) revert NotStuck();
+        if (!o.ready || o.count == 0 || block.timestamp < o.readyAt + SKIP_AFTER) revert NotStuck();
         uint256 back = o.count - o.packsDone - (o.cardInPack != 0 ? 1 : 0);
         if (o.cardInPack != 0) {
-            // the part-dealt pack is dropped (its other cards never exist): count it as dealt, so editions still finish
-            FireInfo storage f = fires[fire];
-            uint64 done = f.dealt + 1;
-            f.dealt = done;
-            if (done == f.packs) emit BatchMetadataUpdate(1, nextSerial - 1);
+            // the part-dealt pack is dropped (its other cards never exist): count it as dealt, so `dealt` still
+            // reaches the Series' pack count
+            fires[fire].dealt++;
         }
         o.count = 0;
         headOf[fire] = h + 1;
@@ -490,10 +499,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
                     if (k == per) {
                         k = 0;
                         j++;
-                        uint64 done = f.dealt + 1;
-                        f.dealt = done;
-                        // the Series' last pack: every card now shows "k of N" as its Edition
-                        if (done == f.packs) emit BatchMetadataUpdate(1, nextSerial - 1);
+                        f.dealt++;
                     }
                 }
                 base = c.base;
@@ -587,10 +593,11 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     function _mintCard(Chunk memory c, uint256 a, uint256 serial) private {
         uint256 t = uint32(a);
         uint256 character = uint32(a >> 32);
-        uint64 edition = ++_editions[keccak256(abi.encode(c.fire, character, t))];
-        if (edition > M40) revert BadDeal();
-        _card[serial] = c.fire | (t << B_TYPE) | (character << B_CHAR) | (uint256(edition) << B_EDITION)
-            | (block.timestamp << B_CLOCK) | (((a >> 64) & 3) << B_HOLO_FRAME) | (uint256(uint32(a >> 96)) << B_EXTRA);
+        uint256 holo = (a >> 64) & 3; // bit 0 frame, bit 1 picture
+        uint64 print = ++_prints[keccak256(abi.encode(c.fire, character, t, holo))];
+        if (print > M40) revert BadDeal();
+        _card[serial] = c.fire | (t << B_TYPE) | (character << B_CHAR) | (uint256(print) << B_PRINT)
+            | (block.timestamp << B_CLOCK) | (holo << B_HOLO_FRAME) | (uint256(uint32(a >> 96)) << B_EXTRA);
         _mint(c.to, serial); // no receiver callback: nobody can stall the queue
         emit CardDealt(c.fire, serial, c.openIndex, t, (a >> 64) & 1 == 1, (a >> 65) & 1 == 1, character);
     }
@@ -621,20 +628,20 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
 
     // ---------- reading Series and cards ----------
 
-    /// @notice A Series is set up enough to sell: a dealer that has it (with a pack size it can deal), an image
+    /// @notice A Series is set up enough to sell: a dealer that has it ready (with a pack size it can deal), an image
     ///         folder, and it isn't closed.
     function ready(uint256 fire) external view returns (bool) {
-        FireInfo storage f = fires[fire];
-        return !f.closed && _lockable(fire) && f.dealer.ready(fire);
+        return !fires[fire].closed && _lockable(fire);
     }
 
-    /// @dev A dealer, an image folder, and 1..MAX_CARDS_PER_PACK cards per pack. setDealer checks the pack size, but a
-    ///      recipe changed after it isn't, so every lock checks again: a locked Series can always be dealt.
+    /// @dev A dealer that has the Series ready, an image folder, and 1..MAX_CARDS_PER_PACK cards per pack. setDealer
+    ///      checks these, but the dealer's settings (recipe, characters, character weights) may change after it, so
+    ///      every lock checks again: a locked Series can always be dealt.
     function _lockable(uint256 fire) private view returns (bool) {
         IDealer d = fires[fire].dealer;
         if (address(d) == address(0) || bytes(imagesBase[fire]).length == 0) return false;
         uint256 per = d.cardsPerPack(fire);
-        return per != 0 && per <= MAX_CARDS_PER_PACK;
+        return per != 0 && per <= MAX_CARDS_PER_PACK && d.ready(fire);
     }
 
     function isClosed(uint256 fire) external view returns (bool) {
@@ -659,8 +666,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         bool holoFrame;
         bool holoPicture;
         uint256 character;
-        uint256 edition;
-        uint256 editionOf; // 0 until every pack of the Series is dealt
+        uint256 printNumber; // #k of this exact card (Series, character, type, holo look), in the order dealt
         uint256 grade; // 0 = ungraded
         bool cased;
         uint256 age; // seconds uncased since dealt (frozen once cased or sent for grading)
@@ -675,28 +681,13 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         c.fire = uint64(d);
         c.cardType = uint32(d >> B_TYPE);
         c.character = uint32(d >> B_CHAR);
-        c.edition = (d >> B_EDITION) & M40;
+        c.printNumber = (d >> B_PRINT) & M40;
         c.holoFrame = (d >> B_HOLO_FRAME) & 1 == 1;
         c.holoPicture = (d >> B_HOLO_PICTURE) & 1 == 1;
         c.extra = uint32(d >> B_EXTRA);
         (,, c.grade, c.cased, c.age, c.moves) = wearOf(serial);
         uint256 at = _dealtAt[serial];
         c.dealtAt = at != 0 ? at : (d >> B_CLOCK) & M40;
-        FireInfo storage f = fires[c.fire];
-        if (f.dealt == f.packs) c.editionOf = _editions[keccak256(abi.encode(c.fire, c.character, c.cardType))];
-    }
-
-    /// @notice A card's rank, as its Series' dealer ranks its type (`IDealer.rankOf`; Standard recipe: Paper 0, Wood 1,
-    ///         Fire 2, Coal 3, Gold 4, Full Art 5). If the dealer can't say, its type index. FirePsa prices grading by it.
-    function rankOf(uint256 serial) external view returns (uint256) {
-        _requireOwned(serial);
-        uint256 d = _card[serial];
-        uint256 t = uint32(d >> B_TYPE);
-        try fires[uint64(d)].dealer.rankOf(uint64(d), t) returns (uint256 r) {
-            return r;
-        } catch {
-            return t;
-        }
     }
 
     function dealerOf(uint256 fire) external view returns (IDealer) {

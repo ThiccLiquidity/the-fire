@@ -11,23 +11,11 @@ export const MATERIAL_LABEL: Record<Material, string> = {
   diamond: 'Diamond',
 }
 
-/** Each Series stands alone: its pool is worked out from its own pack count, nothing carries over.
- *  Fire and Coal take their share of the Series' cards, in integer units of 1/SHARE_SCALE of a card:
- *  Fire 15%, Coal 4.9%. Paper is always half (3 per pack), Diamond is set per Series
- *  (at least 1), and Wood takes the rest. See computePool in deal.ts. */
-export const SHARE_SCALE = 100_000
-export const SHARE_UNITS = {
-  burning: 15_000, // 15%
-  charcoal: 4_900, // 4.90%
-} as const
-
-
-/** Most packs a Series can be set to in the studio (the contract allows up to 2^64 - 1; the pool preview is exact for
- *  any count). */
+/** Most packs a Series can be set to in the studio (the contract allows up to 2^64 - 1; the odds hold for any count). */
 export const MAX_PACKS = 1_000_000_000_000
 
 /** Most cards the studio's SAMPLE deal deals (packs x cards per pack). It keeps the sample deal, the stored deal record
- *  and the metadata export a sane size; the pool preview has no such limit. */
+ *  and the metadata export a sane size; the odds preview has no such limit. */
 export const MAX_DEAL_CARDS = 600_000
 
 /** Chance that a card of this material is holo at all (frame and/or picture). */

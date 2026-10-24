@@ -14,7 +14,8 @@ import {Deployments} from "./Deployments.sol";
  * signings on the owner's hardware wallet with a check in between (docs/deploy.md, step 6):
  *
  *   Batch A, the content: RecipeDealer.setRecipe, setCharacters (+ appendCharacters in batches for long lists),
- *     FireCards.setDealer, FireCards.setImagesBase (if "imagesBase" is given).
+ *     setCharacterWeights (only if the characters have a "weight"), FireCards.setDealer, FireCards.setImagesBase (if
+ *     "imagesBase" is given).
  *     Nothing is locked yet: any of it can still be set again.
  *   Then ops/series (VerifySeries) reads it all back from the chain, diffs it against the JSON and loads every image
  *     the contract can point at through two gateways. Only when it's green:
@@ -55,6 +56,7 @@ contract ConfigureSeries is Deployments {
         RecipeDealer.Recipe recipe;
         string[] names;
         string[] categories;
+        uint64[] weights; // character odds; empty = every character equally likely
         string imagesBase; // "" = leave as is
         bool hasSale;
         FireSale.DropConfig drop;
@@ -142,6 +144,15 @@ contract ConfigureSeries is Deployments {
             "on chain: the recipe differs from the JSON (run batch A)"
         );
         require(d.characterCount(s.fire) == s.names.length, "on chain: the character count differs from the JSON");
+        {
+            (uint256[] memory w,) = d.characterOddsOf(s.fire);
+            for (uint256 i; i < w.length; i++) {
+                require(
+                    w[i] == (s.weights.length == 0 ? 1 : s.weights[i]),
+                    string.concat("on chain: character ", vm.toString(i), "'s weight differs from the JSON")
+                );
+            }
+        }
         for (uint256 from; from < s.names.length; from += 200) {
             (string[] memory n, string[] memory c) = d.charactersOf(s.fire, from, 200);
             for (uint256 i; i < n.length; i++) {
@@ -187,9 +198,17 @@ contract ConfigureSeries is Deployments {
         require(n > 0, "the recipe has no characters");
         uint256 batches = (n + batch - 1) / batch;
         bool withSale = s.hasSale && sale != address(0);
-        calls = new Call[](batches + 2 + (bytes(s.imagesBase).length > 0 ? 1 : 0) + (withSale ? 1 : 0));
+        bool weighted = s.weights.length > 0;
+        calls = new Call[](
+            batches + 2 + (weighted ? 1 : 0) + (bytes(s.imagesBase).length > 0 ? 1 : 0) + (withSale ? 1 : 0)
+        );
         calls[0] = Call(dealer, abi.encodeCall(RecipeDealer.setRecipe, (s.fire, s.recipe)), "RecipeDealer.setRecipe");
         uint256 k = _characterCalls(calls, s, dealer, batch);
+        if (weighted) {
+            calls[k++] = Call(
+                dealer, abi.encodeCall(RecipeDealer.setCharacterWeights, (s.fire, s.weights)), "RecipeDealer.setCharacterWeights"
+            );
+        }
         calls[k++] = Call(cards, abi.encodeCall(FireCards.setDealer, (s.fire, dealer)), "FireCards.setDealer");
         if (bytes(s.imagesBase).length > 0) {
             calls[k++] = Call(cards, abi.encodeCall(FireCards.setImagesBase, (s.fire, s.imagesBase)), "FireCards.setImagesBase");
@@ -229,24 +248,31 @@ contract ConfigureSeries is Deployments {
 
     /// @dev `withSale` false: the sale block is left unread (batch A doesn't need the drop's start yet).
     function _parse(string memory json, bool withSale) internal view returns (Series memory s) {
-        _onlyKeys(json, ".", "fire,imagesBase,types,slots,characters,sale");
+        _onlyKeys(json, ".", "fire,imagesBase,cardsPerPack,types,characters,sale");
         s.fire = _num(json, ".fire", type(uint64).max);
         if (json.keyExists(".imagesBase")) s.imagesBase = json.readString(".imagesBase");
         uint256 nt = _count(json, ".types");
         s.recipe.types = new RecipeDealer.CardType[](nt);
         for (uint256 i; i < nt; i++) s.recipe.types[i] = _type(json, string.concat(".types[", vm.toString(i), "]"));
-        uint256 ns = _count(json, ".slots");
-        s.recipe.slots = new RecipeDealer.Slot[](ns);
-        for (uint256 i; i < ns; i++) s.recipe.slots[i] = _slot(json, string.concat(".slots[", vm.toString(i), "]"));
+        s.recipe.cardsPerPack = uint32(_num(json, ".cardsPerPack", type(uint32).max));
         uint256 nc = _count(json, ".characters");
         s.names = new string[](nc);
         s.categories = new string[](nc);
+        uint256 weighted;
+        uint64[] memory w = new uint64[](nc);
         for (uint256 i; i < nc; i++) {
             string memory p = string.concat(".characters[", vm.toString(i), "]");
-            _onlyKeys(json, p, "name,category");
+            _onlyKeys(json, p, "name,category,weight");
             s.names[i] = json.readString(string.concat(p, ".name"));
             s.categories[i] = json.readString(string.concat(p, ".category"));
+            if (json.keyExists(string.concat(p, ".weight"))) {
+                w[i] = uint64(_num(json, string.concat(p, ".weight"), type(uint64).max));
+                require(w[i] > 0, string.concat(p, ".weight: at least 1 (leave every weight out for equal odds)"));
+                weighted++;
+            }
         }
+        require(weighted == 0 || weighted == nc, ".characters: give every character a weight, or none (equal odds)");
+        if (weighted > 0) s.weights = w;
         if (withSale && json.keyExists(".sale")) {
             s.drop = parseSale(json);
             s.hasSale = true;
@@ -369,20 +395,12 @@ contract ConfigureSeries is Deployments {
     }
 
     function _type(string memory json, string memory p) internal view returns (RecipeDealer.CardType memory t) {
-        _onlyKeys(json, p, "name,slug,rank,supply,amount,maxPerPack,holo");
+        _onlyKeys(json, p, "name,slug,rank,weight,holo");
         _onlyKeys(json, string.concat(p, ".holo"), "mode,frame,picture,weights");
         t.name = json.readString(string.concat(p, ".name"));
         t.slug = json.readString(string.concat(p, ".slug"));
         t.rank = uint32(_num(json, string.concat(p, ".rank"), type(uint32).max));
-        bytes32 sup = keccak256(bytes(json.readString(string.concat(p, ".supply"))));
-        if (sup == keccak256("filler")) t.supply = RecipeDealer.Supply.Filler;
-        else if (sup == keccak256("share")) t.supply = RecipeDealer.Supply.Share;
-        else if (sup == keccak256("perPack")) t.supply = RecipeDealer.Supply.PerPack;
-        else if (sup == keccak256("count")) t.supply = RecipeDealer.Supply.Count;
-        else if (sup == keccak256("perCharacter")) t.supply = RecipeDealer.Supply.PerCharacter;
-        else revert(string.concat(p, ".supply: filler, share, perPack, count or perCharacter"));
-        if (t.supply != RecipeDealer.Supply.Filler) t.amount = uint128(_num(json, string.concat(p, ".amount"), type(uint128).max));
-        if (json.keyExists(string.concat(p, ".maxPerPack"))) t.maxPerPack = uint64(_num(json, string.concat(p, ".maxPerPack"), type(uint64).max));
+        t.weight = uint64(_num(json, string.concat(p, ".weight"), type(uint64).max));
         bytes32 mode = keccak256(bytes(json.readString(string.concat(p, ".holo.mode"))));
         if (mode == keccak256("independent")) {
             t.holoMode = RecipeDealer.HoloMode.Independent;
@@ -399,24 +417,6 @@ contract ConfigureSeries is Deployments {
         } else {
             revert(string.concat(p, ".holo.mode: independent or distribution"));
         }
-    }
-
-    function _slot(string memory json, string memory p) internal view returns (RecipeDealer.Slot memory s) {
-        _onlyKeys(json, p, "count,types,minRank,maxRank,mustHolo");
-        s.count = uint32(_num(json, string.concat(p, ".count"), type(uint32).max));
-        if (json.keyExists(string.concat(p, ".types"))) {
-            uint256[] memory ts = json.readUintArray(string.concat(p, ".types"));
-            s.types = new uint32[](ts.length);
-            for (uint256 i; i < ts.length; i++) {
-                require(ts[i] <= type(uint32).max, string.concat(p, ".types: an index is too big"));
-                s.types[i] = uint32(ts[i]);
-            }
-        }
-        if (json.keyExists(string.concat(p, ".minRank"))) s.minRank = uint32(_num(json, string.concat(p, ".minRank"), type(uint32).max));
-        // a rank range with no top means "or better": every rank from minRank up
-        if (json.keyExists(string.concat(p, ".maxRank"))) s.maxRank = uint32(_num(json, string.concat(p, ".maxRank"), type(uint32).max));
-        else if (s.types.length == 0) s.maxRank = type(uint32).max;
-        if (json.keyExists(string.concat(p, ".mustHolo"))) s.mustHolo = json.readBool(string.concat(p, ".mustHolo"));
     }
 
     /// @dev A whole number that must fit `max`.

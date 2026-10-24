@@ -75,7 +75,7 @@ contract CardsFuzzTest is SeriesHelper {
         cards.setRandomness(address(rng));
         cards.setPsa(address(psa));
         vm.stopPrank();
-        _standard(cards, dealer, owner, 1, 3, 1);
+        _standard(cards, dealer, owner, 1, 3);
         harness = new RecipeHarness(address(cards));
 
         paper.mint(alice, 1e30);
@@ -235,77 +235,22 @@ contract CardsFuzzTest is SeriesHelper {
 
     uint256 constant word0 = 0xF1E;
 
-    // ---------------------------------------------------------------- pool math (the Standard recipe)
+    // ---------------------------------------------------------------- dealing (the Standard recipe)
 
-    function _pool(uint256 n, uint256 d) internal view returns (uint256[5] memory c) {
-        uint256[] memory got = harness.pool(harness.compile(StandardRecipe.classic(d)), n);
-        for (uint256 m; m < 5; m++) c[m] = got[m];
-    }
-
-    function _checkPool(uint256 n, uint256 d, uint256[5] memory c) internal pure {
-        assertEq(c[0] + c[1] + c[2] + c[3] + c[4], 6 * n, "counts sum to 6 x packs");
-        assertEq(c[0], 3 * n, "Paper == 3 x packs");
-        assertGe(c[1], n, "Wood >= packs");
-        uint256 bp = c[2] + c[3] + c[4];
-        assertGe(bp, n, "Fire-or-better >= packs");
-        assertLe(bp, 2 * n, "Fire-or-better <= 2 x packs");
-        if (n == 0) {
-            assertEq(c[4], 0, "no packs, no Diamond");
-        } else {
-            assertGe(c[4], 1, "at least one Diamond");
-            assertEq(c[4], (d == 0 ? 1 : d) < n ? (d == 0 ? 1 : d) : n, "Diamond == min(setting, packs)");
+    /// Any seed, any split: Standard cards are one of its six types and three characters, Gold and Full Art full holo,
+    /// and a pack dealt in two pieces is the same pack.
+    function testFuzz_standardDealAnySeed(uint256 seed, uint256 k) public view {
+        uint256[] memory got = dealer.deal(1, seed, 0, 6);
+        for (uint256 i; i < 6; i++) {
+            uint256 t = uint32(got[i]);
+            assertLt(t, 6);
+            assertLt(uint32(got[i] >> 32), 3);
+            if (t >= 4) assertEq((got[i] >> 64) & 3, 3, "Gold and Full Art: full holo");
         }
-        // Fire and Coal are their rounded shares unless the pack floor had to move cards
-        uint256 fire = (15_000 * 6 * n + 50_000) / 100_000;
-        uint256 charcoal = (4_900 * 6 * n + 50_000) / 100_000;
-        uint256 raw = fire + charcoal + c[4];
-        if (raw >= n && raw <= 2 * n) {
-            assertEq(c[2], fire, "Fire share");
-            assertEq(c[3], charcoal, "Coal share");
-        } else if (raw > 2 * n) {
-            assertEq(bp, 2 * n, "over the floor: trimmed to 2 x packs");
-            assertLe(c[2], fire);
-            assertLe(c[3], charcoal);
-            if (c[3] < charcoal) assertEq(c[2], 0, "Coal only trimmed once Fire is gone");
-        } else {
-            assertEq(bp, n, "under the floor: topped up to packs");
-            assertEq(c[3], charcoal);
-        }
-    }
-
-    /// The rule's invariants over any pack count and any Diamond setting up to the pack count (and beyond: capped).
-    /// forge-config: default.fuzz.runs = 1000
-    function testFuzz_computePool(uint256 n, uint256 d) public view {
-        n = bound(n, 0, type(uint64).max);
-        d = n == 0 ? bound(d, 1, 1000) : bound(d, 1, n + 1000);
-        _checkPool(n, d, _pool(n, d));
-    }
-
-    /// Small Series, where the floor and the Diamond cap bite.
-    /// forge-config: default.fuzz.runs = 1000
-    function testFuzz_computePoolSmall(uint256 n, uint256 d) public view {
-        n = bound(n, 0, 60);
-        d = bound(d, 1, 1000);
-        _checkPool(n, d, _pool(n, d));
-    }
-
-    /// Each Series stands alone: the same inputs always give the same pool, and more Diamonds only take from Wood
-    /// (or, at tiny sizes, from Fire/Coal through the floor), never change Paper.
-    /// forge-config: default.fuzz.runs = 500
-    function testFuzz_computePoolMoreDiamonds(uint256 n, uint256 d) public view {
-        n = bound(n, 1, 100_000);
-        d = bound(d, 1, 999);
-        uint256[5] memory a = _pool(n, d);
-        uint256[5] memory b = _pool(n, d + 1);
-        assertEq(a[0], b[0]);
-        assertGe(b[4], a[4]);
-        assertLe(b[1], a[1]);
-        assertEq(a[1] + a[2] + a[3] + a[4], b[1] + b[2] + b[3] + b[4]);
-    }
-
-    /// No product ceiling on Series size: the pool works out for 2^64 - 1 packs.
-    function test_computePoolHugeSeries() public view {
-        uint256 n = type(uint64).max;
-        _checkPool(n, 1, _pool(n, 1));
+        k = bound(k, 1, 5);
+        uint256[] memory a = dealer.deal(1, seed, 0, k);
+        uint256[] memory b = dealer.deal(1, seed, k, 6 - k);
+        for (uint256 i; i < k; i++) assertEq(a[i], got[i]);
+        for (uint256 i; i < 6 - k; i++) assertEq(b[i], got[k + i]);
     }
 }

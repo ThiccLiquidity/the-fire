@@ -7,7 +7,7 @@ import { dealInputKey, useDealPreview } from '../dealPreview'
 import { randomSeed } from '../prng'
 import { cardsPerPack, checkRecipe } from '../recipe'
 import { HOLO_LABEL, HOLO_TYPES, MAX_DEAL_CARDS } from '../rules'
-import { artNeeds, missingArt } from '../series'
+import { artNeeds, characterWeightsOf, missingArt } from '../series'
 import { getStudio, saveGlobal, updateFire, useStudio } from '../store'
 import type { FireRecord } from '../types'
 
@@ -25,7 +25,7 @@ export function Deal({ fire }: { fire: FireRecord }) {
   if (recipeProblems.length) problems.push(`The recipe has ${recipeProblems.length} problem${recipeProblems.length === 1 ? '' : 's'} (Recipe tab): ${recipeProblems[0].message}`)
   if (!fire.characterIds.length) problems.push('Pick at least one character on the Series tab.')
   if (fire.packs < 1) problems.push('Set at least 1 pack on the Series tab.')
-  if (fire.packs * S > MAX_DEAL_CARDS) problems.push(`The sample deal deals at most ${MAX_DEAL_CARDS.toLocaleString()} cards (${fire.packs.toLocaleString()} packs x ${S}). Lower the packs to preview a deal; the pool preview on the Recipe tab covers any size.`)
+  if (fire.packs * S > MAX_DEAL_CARDS) problems.push(`The sample deal deals at most ${MAX_DEAL_CARDS.toLocaleString()} cards (${fire.packs.toLocaleString()} packs x ${S}). Lower the packs to preview a deal; the odds on the Recipe tab cover any size.`)
   const needs = artNeeds(recipe)
   const byId = new Map(s.characters.map((c) => [c.id, c]))
   let notReady = 0
@@ -47,8 +47,8 @@ export function Deal({ fire }: { fire: FireRecord }) {
   const canDeal = !fire.deal && fire.characterIds.length > 0 && !!fire.seed.trim() && fire.packs * S <= MAX_DEAL_CARDS && !recipeProblems.length
   const input: DealInput | null = useMemo(() => {
     if (!canDeal) return null
-    return { fire: fire.number, packs: fire.packs, characterIds: fire.characterIds, seed: fire.seed.trim(), recipe, firstSerial: s.global.nextSerial }
-  }, [canDeal, fire.number, fire.packs, fire.characterIds, fire.seed, recipe, s.global.nextSerial])
+    return { fire: fire.number, packs: fire.packs, characterIds: fire.characterIds, characterWeights: characterWeightsOf(fire), seed: fire.seed.trim(), recipe, firstSerial: s.global.nextSerial }
+  }, [canDeal, fire, recipe, s.global.nextSerial])
   const live = useDealPreview(input)
   const current = !!input && live.key === dealInputKey(input)
   const preview: DealResult | null = fire.deal ?? (current ? live.result : null)
@@ -126,7 +126,7 @@ export function Deal({ fire }: { fire: FireRecord }) {
               })}
             </tbody>
           </table>
-          <h4>Packs (first {Math.min(packsShown, preview.packs)} of {preview.packs.toLocaleString()}; in dealing order: most specific slot group first)</h4>
+          <h4>Packs (first {Math.min(packsShown, preview.packs)} of {preview.packs.toLocaleString()}; cards in dealing order)</h4>
           <div className="packs" data-testid="deal-packs">
             {preview.packContents.slice(0, packsShown).map((pack, i) => (
               <div className="pack" key={i}>
@@ -135,7 +135,7 @@ export function Deal({ fire }: { fire: FireRecord }) {
                   const c = cardOf(serial)
                   const t = recipe.types[c.type]
                   return (
-                    <span key={serial} className={`chip mat-${t?.frameSet ?? 'x'}`} title={`#${c.serial} ${names[c.characterId]} ${typeName(c.type)} holo:${c.holo} ${c.edition} of ${c.editionOf} · slot group ${c.group + 1}`}>
+                    <span key={serial} className={`chip mat-${t?.frameSet ?? 'x'}`} title={`#${c.serial} ${names[c.characterId]} ${typeName(c.type)} holo:${c.holo} #${c.printNumber}`}>
                       {typeName(c.type).slice(0, 4)} {names[c.characterId]?.slice(0, 6)} #{c.serial}{c.holo !== 'none' ? ` ✦${c.holo[0].toUpperCase()}` : ''}
                     </span>
                   )

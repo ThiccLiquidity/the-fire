@@ -15,8 +15,8 @@ made of it. Each drop opens with PLANK lighting the forge.
 ## Every number is set per drop
 
 The owner (the `OWNER` hardware wallet) sets these for each drop (each Series) before it launches (`configureDrop`). They lock when the drop opens
-(its start time), so nothing can change while people are buying. The Series itself (its recipe: card types, pack
-size and slots, holo odds, characters; see `docs/cards-contracts.md`) must be set up in the card contracts before its
+(its start time), so nothing can change while people are buying. The Series itself (its recipe: card types and their
+odds, pack size, holo odds, characters and optionally their odds; see `docs/cards-contracts.md`) must be set up in the card contracts before its
 drop can be set up, and locks when the drop is set up. The numbers below are the Standard sale (the studio's "Standard"
 preset; its "Giant" preset is an example of a 10,000-pack drop with 100 per wallet and 100 per purchase). The full
 list, with bounds, is in `docs/cards-contracts.md` ("Every sale and economy setting"). One number is **not** a
@@ -26,8 +26,8 @@ setting: cards burned per free pack is 42, forever.
 |---|---|
 | Packs in the drop | 167 **total, every group included** (about 1,000 cards). Sold out means gone: no more packs for that Series, ever. |
 | Groups | 4 (below): Press holders 50, PLANK holders 40, Everyone 77 (+ leftovers), After sell-out (no pack count: the Series is 167 packs plus whatever sells after the sell-out) |
-| Gold cards | 2 per character (at least 1; set per Series in its recipe, before its drop is set up) |
-| Full Art cards | 1 per character |
+| Card odds (per card, every pack) | Paper 50%, Wood 24.15%, Fire 14.97%, Coal 4.89%, Gold 3.99%, Full Art 2% (the Standard recipe's weights out of 10,000; set per Series, before its drop is set up) |
+| Character odds | Equal (optional weights per Series) |
 | Pack price | $2.50 (the PLANK and Everyone groups; press packs have no dollar price) |
 | PAPER per pack | 1 (every group) |
 | PAPER ceiling per pack | $1: a pack's PAPER is never worth more than this at the PAPER price (0 = no ceiling) |
@@ -137,10 +137,11 @@ nowhere). Setup is signed on the owner's hardware wallet; the public site has no
   start. If the owner doesn't, anyone can, 7 days after that, so packs are never stranded. The Series closes with the
   packs that were minted.
 - **One drop at a time.** The next drop can only be set up once the current one has closed.
-- **Each Series stands alone.** Its cards come only from its own packs, by its own recipe. Standard recipe: Paper
-  half, Fire 15%, Coal 4.9%, Gold 2 per character, Full Art 1 per character, Wood the rest. Nothing carries over
-  between Series. Example: 167 packs, 20 characters make 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold,
-  20 Full Art.
+- **Each Series stands alone.** Its cards come only from its own packs, by its own recipe: every card is rolled on its
+  own from the Series' fixed odds, the same for the first and the last pack (no guarantees, no caps). Standard odds
+  per card: Paper 50%, Wood 24.15%, Fire 14.97%, Coal 4.89%, Gold 3.99%, Full Art 2%. Nothing carries over between
+  Series. Example: 167 packs (1,002 cards) make on average 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full
+  Art; the real counts vary around these.
 - **Every purchase names its limits:** the most PLANK/USDG (or the ETH sent), and the most PAPER. If a number moved,
   the purchase fails and costs nothing.
 - **Price feeds and the router** can be replaced by the owner only between drops (a retired Chainlink feed, a moved
@@ -207,7 +208,7 @@ Every PAPER spent anywhere is burned.
 |---|---|
 | Any pack (paid, press or free) | 1 PAPER per pack, never more than the drop's PAPER ceiling ($1 in the Standard sale) |
 | Character suggestion | 1 PAPER, never more than $1 of PAPER (owner setting, `FireCredits.setSuggestionRules`, any amount incl. 0; the suggester names their most). Open all the time. The list clears after every picking session: picking for a Series takes the current list, new suggestions start the next list, and unpicked ones don't carry over. A suggestion is a character plus an optional personality and background, packed into one text (`Character: …` / `Personality: …` / `Background: …` lines, `docs/cards-contracts.md`); set the longest text to about 1,000 bytes. |
-| Cases and grading | Paid in PAPER (at the 20-hour PAPER price, less an owner-set discount of 0-20%, 0 at launch; burned straight to the dead address), or in ETH, USDG or PLANK (100% of it buys PAPER and burns it, `PaperBurner`). |
+| Cases and grading | Paid in PLANK, ETH or USDG; 100% of it buys PAPER and burns it (`PaperBurner`). Not payable in PAPER. |
 
 - **The PAPER price feed.** PAPER already has a live pool, but `PAPER_USD_FEED` must be the deployed `PaperUsdTwap`
   (step 2 of `docs/deploy.md`), never the pool itself. It prices the PAPER ceilings and guards the fee burn. The feed
@@ -235,14 +236,11 @@ original name, `FirePsa`.) The full rules (condition, wear, fresh odds, slabs) a
 - **A card's condition is decided by public randomness when it is graded** (drand, asked for after payment), from
   its wear: it wears with time uncased and with every move between wallets. A **Case** freezes the wear. **Grading**
   sets the PDA grade (1-10) once and seals the card in a **Slab**: final, no regrade.
-- **Prices:** Case $0.05 per card (flat); grading $1 per card by default, and the owner can give each card rank its
-  own grading price (`setGradePrice`; Standard ranks: Paper 0, Wood 1, Fire 2, Coal 3, Gold 4, Full Art 5; all $1 at
-  launch). The owner can change them (`setPrices`, each at most $100 a card). Up to 20 cards per transaction
-  (`setMaxBatch`, at most 100), cases and grades together (`protect`); `quoteFor(caseIds, gradeIds, pay)` prices the
-  actual cards.
-- **Paid in ETH, USDG, PLANK or PAPER.** PAPER: at the 20-hour PAPER price less `paperDiscountBps` (0-20%, 0 at
-  launch), burned straight to the dead address; refused while the PAPER feed has no fresh price.
-- **100% of every fee is burned as PAPER,** none of it goes to us. ETH, USDG and PLANK go to `PaperBurner`, which
+- **Prices:** Case $0.05 per card (flat); grading $1 per card, one price for every card type. The owner can change
+  them (`setPrices`, each at most $100 a card). Up to 20 cards per transaction (`setMaxBatch`, at most 100), cases and
+  grades together (`protect`); `quote(cases, grades, pay)` is exactly what it charges.
+- **Paid in PLANK, ETH or USDG.** Not in PAPER.
+- **100% of every fee is burned as PAPER,** none of it goes to us. Every fee goes to `PaperBurner`, which
   buys PAPER with that fee (and only that fee) in the same transaction: it takes the best owner-set route (or half and
   half across two routes that share no pool) and refuses to buy below 95% of the PAPER the 20-hour price feed says the
   fee is worth (trying half if the whole fee is too much for the pools); then the fee waits in the burner for the
@@ -252,9 +250,9 @@ original name, `FirePsa`.) The full rules (condition, wear, fresh odds, slabs) a
 - **The holder names the most they'll pay;** if the price moved, the batch fails and costs nothing.
 - **While a card is being graded it can't be transferred** (it can still be burned), so nobody can sell a card whose
   drand number they've already seen.
-- **If randomness is gone for good** (no answer for 7 days), anyone can cancel a grading (`cancelGrading`): the cards
-  unlock, still ungraded. The fee was burned. Opens work the same way: a stuck open can be cancelled after 7 days and
-  the packs come back sealed.
+- **If randomness is gone for good** (no answer 24 hours after the request), anyone can cancel a grading
+  (`cancelGrading`): the cards unlock, still ungraded. The fee was burned. Opens work the same way: a stuck open can be
+  cancelled after 24 hours and the packs come back sealed.
 - **Fresh odds** (a card cased or graded within 24 hours of opening): constants in `FirePsa` (`freshOdds`), fixed
   forever, the same for every Series and every material. Grades 1-6 come only from wear:
 

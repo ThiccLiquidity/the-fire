@@ -14,6 +14,21 @@
   const MAT_LABEL = { paper: 'Paper', wood: 'Wood', fire: 'Fire', charcoal: 'Coal', diamond: 'Diamond', gold: 'Gold', fullart: 'Full Art' };
   // always holo: Diamond (the old top card) and the Standard's Gold and Full Art (always full holo)
   const ALWAYS_HOLO = { diamond: true, gold: true, fullart: true };
+  // the Standard recipe's fixed odds per card (contracts StandardRecipe.sol, out of 10,000; docs/cards-contracts.md):
+  // every card of every pack is rolled on its own, its material by these weights, then its holo (frame and picture each
+  // roll at 1 - sqrt(1 - rate); Gold and Full Art always full holo), then its character. No slots or guarantees: the
+  // first and the last pack have the same odds. The live site reads each Series' own odds from the chain.
+  const CARD_ODDS = [['paper', 5000], ['wood', 2415], ['fire', 1497], ['charcoal', 489], ['gold', 399], ['fullart', 200]];
+  const ODDS_TOTAL = CARD_ODDS.reduce((a, [, w]) => a + w, 0);
+  const HOLO_RATE = { paper: 0.05, wood: 0.1, fire: 0.5, charcoal: 0.9 };
+  /** One card at the Standard odds: { material, holo }. */
+  const rollCard = (rand = Math.random) => {
+    let u = rand() * ODDS_TOTAL, material = CARD_ODDS[CARD_ODDS.length - 1][0];
+    for (const [m, w] of CARD_ODDS) { if (u < w) { material = m; break; } u -= w; }
+    if (!HOLO_RATE[material]) return { material, holo: 'full' };
+    const q = 1 - Math.sqrt(1 - HOLO_RATE[material]), f = rand() < q, p = rand() < q;
+    return { material, holo: f && p ? 'full' : f ? 'frame' : p ? 'picture' : 'none' };
+  };
   // demo: only the Bowling Ball has Gold and Full Art art so far, so every Gold or Full Art pulled is a Bowling Ball
   const SPECIAL_CAST = 'Bowling Ball';
   // the demo cast: real card art, rendered by the Card Studio's own card builder into cards/<id>/<material>-<holo>-<grade|u>.webp
@@ -36,7 +51,8 @@
     const g = R();
     cards.push({
       id: 1000 + i, serial: 300 + i * 7, series, character: NAMES[Math.floor(R() * NAMES.length)], material,
-      holo: material === 'paper' && i === 5 ? 'full' : holo, edition: `${1 + Math.floor(R() * 40)} of ${41 + Math.floor(R() * 20)}`,
+      // print number: the k-th of this exact card pulled (the second roll keeps the demo's seeded cards as they were)
+      holo: material === 'paper' && i === 5 ? 'full' : holo, edition: ((k) => (R(), String(k)))(1 + Math.floor(R() * 40)),
       grade: g < 0.55 ? null : Math.max(1, Math.min(10, Math.round(5.5 + (R() - 0.5) * 6))), pending: false,
       // wear (docs/grading.md): dealt this long ago, cased or not (a case freezes the clock), moves between wallets
       dealt: Date.now() - Math.round((2 + R() * 200) * DAY), cased: false, frozenAge: 0, moves: Math.floor(R() * R() * 4),
@@ -53,7 +69,10 @@
     // this Series' settings (per drop; the live site reads them from the contracts): the base total of packs, the cast
     // size (characters) its recipe was built with, and its groups (docs/drop-groups.md: who can buy, how many, at what
     // price, when; Store.demoStage fills them in). phase: 3 on sale (or about to be), 4 sold out / closed.
-    series: { no: 7, total: 167, cast: 10, phase: 3, closed: false, groups: [], creditGroup: 2, creditPacksLeft: 16, left: null, closing: false },
+    // Drop-wide settings too (live: FireSale.dropOf): cards per pack, most packs per checkout, the regular-wallets window
+    // (seconds), the PAPER $ cap per pack, the burn splits (bps of the price) and the free-pack caps.
+    series: { no: 7, total: 167, cast: 10, phase: 3, closed: false, groups: [], creditGroup: 2, creditPacksLeft: 16, left: null, closing: false,
+      cardsPerPack: 6, maxPerTx: 50, regularWalletsFor: 48 * 3600, paperCapUsd: 1, paperBurnBps: 2000, plankBurnBps: 1000, creditPacksMax: 16, creditPacksPerWallet: 3 },
     wallet: {
       connected: false, address: '0x7a3f…c91e', full: DEMO_ADDR, name: 'Demo wallet', isPressHolder: true, inSnapshot: true, isContract: false,
       balances: { ETH: 0.42, PLANK: 1250000000, PAPER: 24, USDG: 50 },
@@ -73,7 +92,7 @@
       { text: 'Character: Grandma’s cast-iron pan\nBackground: Four generations of Sunday breakfasts.', at: 'Series 7', picked: false },
     ],
     activity: [],
-    burned: {}, // cards this wallet burned, by edition and by look (Store.editionInfo)
+    burned: {}, // cards this wallet burned, by character + material and by look (Store.noteBurned)
   };
   const listeners = new Set();
   const Store = {
@@ -120,18 +139,45 @@
       const max = Math.max(0, Math.min(...lim));
       return max ? { ok: true, max } : { ok: false, why: g.left === 0 ? 'Sold out' : `Limit: ${g.perWallet} per wallet` };
     },
+    // ---- refusals that quote this Series' own settings (one wording for the demo and live.js; never a fixed number)
+    FREE_CLOSED: "Free packs work while a Series' free-pack group is open. Yours are safe until then.",
+    FREE_GONE: "This Series' free packs are gone. Yours carry over to the next one.",
+    /** The regular-wallets rule: "... for the first 48 hours of this sale ..." (the drop's window). */
+    botRule() {
+      const h = Math.round((state.series.regularWalletsFor || 0) / 3600);
+      return h ? `Regular wallets only for the first ${h.toLocaleString('en-US')} ${h === 1 ? 'hour' : 'hours'} of this sale, so bots can't sweep it.` : "Regular wallets only for now, so bots can't sweep the sale.";
+    },
+    /** Who a holders-list group counts: "wallets that held $69+ of PLANK for 7 days" (its snapshot's settings), or null. */
+    holdRule(g) {
+      const x = g?.snap; if (!x || !x.min) return null;
+      const amt = x.unit === 'usd' ? `$${(+x.min).toLocaleString('en-US')}+ of ${x.symbol || 'the token'}` : `${(+x.min).toLocaleString('en-US')}+ ${x.symbol || 'tokens'}`;
+      return `wallets that held ${amt}${x.days ? ` for ${+x.days} ${+x.days === 1 ? 'day' : 'days'}` : ''}`;
+    },
+    /** A holders-list group's name for people: "PLANK holders" (its snapshot's token), else its own name. */
+    holdersName(g) { return g?.gate === 'snapshot' && g.snap?.symbol ? `${g.snap.symbol} holders` : g?.name || ''; },
+    /** Why this wallet can't buy in group g, as the sheet says it (groupAccess's short `why`, spelled out). */
+    refusal(g, a) {
+      const why = a?.why || g.who;
+      if (why === g.who && g.gate === 'nft') return g.isPress ? 'Paper Press holders only. At most 1 pack per Press, while they last.' : `${g.who}.`;
+      if (why === g.who && g.gate === 'snapshot') { const r = Store.holdRule(g); return r ? `${Store.holdersName(g)} only: ${r} before this Series (checked by snapshot).` : `${g.who}.`; }
+      if (/^Regular wallets/.test(why)) return Store.botRule();
+      return /[.!?]$/.test(why) ? why : why + '.';
+    },
     // DEMO: the Standard preset's groups (docs/drop-groups.md) at a stage of the sale: 'holders' (Press and PLANK
     // holders first), 'open' (Everyone), 'waiting' (Everyone sold out, more may come from the Press group), 'after'
     // (after sell-out: the rising price), 'closed'. ?stage=... in the URL, or Demo controls.
     demoStage(stage) {
       const now = Math.floor(Date.now() / 1000), H = 3600, s = state.series;
       const mk = (o) => {
-        const g = { perWallet: 0, perNft: 0, perTx: 50, unlimited: false, taxBps: 0, idle: 0, sold: 0, waiting: false, moreFrom: null, moreAt: 0, afterGroup: null, ...o };
+        const g = { perWallet: 0, perNft: 0, perTx: 50, unlimited: false, taxBps: 0, idle: 0, duration: 0, sold: 0, waiting: false, moreFrom: null, moreAt: 0, afterGroup: null, rollTo: null, snap: null, ...o };
         // the next pack's price and the few after it (live: read from the contract), from the sold count
         return Object.defineProperties(g, { next: { enumerable: true, get: () => Store.packPrice(g, 1) }, after: { enumerable: true, get: () => (g.taxBps ? [2, 3, 4].map((k) => Store.packPrice(g, k)) : []) } });
       };
-      const press = mk({ index: 0, name: 'Paper Press holders', who: 'Paper Press holders only', gate: 'nft', isPress: true, priceUsd: 0, paper: Store.PRICES.PRESS_PAPER, coins: [], perNft: 1, capacity: 50 });
-      const plank = mk({ index: 1, name: 'PLANK holders', who: 'PLANK holders only', gate: 'snapshot', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK'], perWallet: 5, capacity: 40 });
+      // duration: how long a timed group runs (seconds; 0 = until sold out); rollTo: where its unsold packs go; snap: who the
+      // holders list counts (live: the published snapshot file's settings)
+      const press = mk({ index: 0, name: 'Paper Press holders', who: 'Paper Press holders only', gate: 'nft', isPress: true, priceUsd: 0, paper: Store.PRICES.PRESS_PAPER, coins: [], perNft: 1, capacity: 50, duration: 6 * H, rollTo: 2 });
+      const plank = mk({ index: 1, name: 'PLANK holders', who: 'PLANK holders only', gate: 'snapshot', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK'], perWallet: 5, capacity: 40, duration: 24 * H, rollTo: 2,
+        snap: { unit: 'usd', min: '69', days: 7, symbol: 'PLANK' } });
       const all = mk({ index: 2, name: 'Everyone', who: 'Everyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK', 'ETH', 'USDG'], perWallet: 5, capacity: 77, afterGroup: 1 });
       const extra = mk({ index: 3, name: 'Extra packs', who: 'Everyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['ETH'], perTx: 1, unlimited: true, taxBps: 400, idle: 900, capacity: null, left: null, afterGroup: 2 });
       const set = (g, o) => Object.assign(g, o, { left: g.unlimited ? (o.state === 'ended' ? 0 : null) : (o.capacity ?? g.capacity) - (o.sold ?? 0) });
@@ -153,6 +199,7 @@
       if (stage === 'closed') s.groups.forEach((g) => { g.state = 'ended'; g.left = 0; });
     },
 
+    CARD_ODDS, ODDS_TOTAL, HOLO_RATE, rollCard,
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },
     cardStrip(c) { // the finished card images for a look (character, material, holo): one strip, raw, cased, then slabbed PDA 1-10
       // demo: only the Bowling Ball has Gold and Full Art art, so those always show it
@@ -182,14 +229,10 @@
     // wear time so far: frozen once cased, sent for grading or slabbed; otherwise still running (live: `dealt` is when the
     // wear clock started, read back from the chain's age, so a cancelled grading's frozen gap isn't counted)
     ageMs(c) { return c.cased || c.pending || c.grade != null ? c.frozenAge : Date.now() - c.dealt; },
-    // what casing or grading this card costs, in dollars: grading is priced by card type (FirePsa.gradeUsdOf; live.js
-    // puts it on each card as c.gradeUsd), else the default price
-    caseUsd(_c) { return PRICES.CASE_USD; }, // one case price for every card
-    gradeUsd(c) { return c?.gradeUsd ?? PRICES.GRADE_USD; },
-    // cases and grades can be paid in PAPER: burned directly, at the PAPER feed's price less the owner's discount
-    // (FirePsa.paperDiscountBps, 0-2000; DEMO: a made-up 10%). PSA_PAPER_OFF: why it can't be used right now (live: the
-    // PAPER price can't be read, FeedUnavailable), else null.
-    PSA_PAPER: true, PSA_PAPER_DISCOUNT_BPS: LIVE_NET ? 0 : 1000, PSA_PAPER_OFF: null,
+    // what casing or grading a card costs, in dollars: one case price and one grading price for every card
+    // (FirePsa.caseUsd18, gradeUsd18). Paid in PLANK, ETH or USDG.
+    caseUsd(_c) { return PRICES.CASE_USD; },
+    gradeUsd(_c) { return PRICES.GRADE_USD; },
     // the words on a slab, by grade
     GRADE_WORD: { 10: 'GEM MINT', 9: 'MINT', 8: 'NM-MT', 7: 'NEAR MINT', 6: 'EX-MT', 5: 'EXCELLENT', 4: 'VG-EX', 3: 'VERY GOOD', 2: 'GOOD', 1: 'POOR' },
     /** The pop report: how many slabs of each grade exist, by Series and material: { [series]: { [material]: { [grade]: n } } }.
@@ -207,12 +250,12 @@
       state.cards.forEach((c) => { if (c.grade != null) add(c.series, c.material, c.grade); });
       return out;
     },
-    // true rarity of one card, on one scale: how rare that exact card (character + material + holo) is in its Series
-    // (Info.lookP), x "this grade or better" once graded (Info.gradeP). Tiers on the same scale (Info.TIERS):
+    // true rarity of one card, on one scale: the chance of that exact card (character + material + holo) per card dealt
+    // in its Series, from its fixed odds (Info.lookP: material x holo x character odds), x "this grade or better" once graded (Info.gradeP). Tiers on the same scale (Info.TIERS):
     // Rare 1 in 100 or rarer, Epic 1 in 400, Legendary 1 in 1,000.
     trueOdds(c) {
       const I = window.Info; if (!I?.lookP) return { p: 1, n: 1, label: '', tier: null };
-      const p = I.lookP(c.material, c.holo || 'none') * I.gradeP(c.grade);
+      const p = I.lookP(c.material, c.holo || 'none', c.character) * I.gradeP(c.grade);
       const n = p > 0 ? 1 / p : Infinity;
       return { p, n, label: p > 0 ? '1 in ' + I.oneIn(p) : '', tier: (I.TIERS.find(([, at]) => n >= at) || [null])[0] };
     },
@@ -230,19 +273,12 @@
     // OpenSea: the collection slug is a PLACEHOLDER until the contract is deployed. With a contract + token ids, item() links the card itself.
     OPENSEA: { collection: 'https://opensea.io/collection/omni-cards', account: 'https://opensea.io/account', chain: null, contract: null },
     openSeaItem(c) { const o = Store.OPENSEA; return o.contract && c.tokenId != null ? `https://opensea.io/item/${o.chain}/${o.contract}/${c.tokenId}` : o.collection; },
-    // DEMO DATA: the edition ("12 of 43": this character in this material), how many of those are burned, and the same
-    // for its exact look (+ holo). The live site counts these from the indexer; here they're deterministic per card,
-    // plus whatever this wallet burns (state.burned).
-    editionInfo(c) {
-      const [k, of] = String(c.edition).split(' of ').map((x) => parseInt(x, 10)), n = of || k || 1;
-      const ed = [c.series, c.character, c.material].join('|'), look = ed + '|' + (c.holo || 'none');
-      const hash = (s) => { let x = 2166136261; for (let i = 0; i < s.length; i++) x = Math.imul(x ^ s.charCodeAt(i), 16777619); return x >>> 0; };
-      const always = c.material === 'gold' || c.material === 'fullart';
-      const lookN = always ? n : Math.max(1, Math.min(n, Math.round(n * (window.Info?.holoP(c.material, c.holo || 'none') ?? 1))));
-      const burned = Math.min(n - 1, hash(ed) % Math.max(1, Math.floor(n / 6))) + (state.burned[ed] || 0);
-      const lookBurned = Math.min(lookN - 1, burned, hash(look) % Math.max(1, Math.floor(lookN / 4) + 1)) + (state.burned[look] || 0);
-      return { k: k || 1, n, burned, lookK: 1 + (hash(look + c.serial) % lookN), lookN, lookBurned };
-    },
+    // a card's print number: it's the k-th of that exact card (Series, character, material, holo look) ever pulled, shown
+    // as "#k" (no "of N": the odds are open-ended). null for a card without one (a practice card).
+    printNo(c) { const k = parseInt(c?.edition, 10); return k > 0 ? k : null; },
+    // how many Paper Presses exist now (live: the Press contract's totalSupply, cached; null if it can't be read, and the
+    // line that shows it hides). DEMO DATA: a fixed number.
+    pressSupply() { return Promise.resolve(2071); },
     // Character suggestions: one text on chain, as plain "Label: value" lines, only the filled ones, in this order.
     // SUGGEST_MAX_BYTES mirrors FireCredits.suggestionMaxBytes (an owner setting, 1 to 1,024; set it to about 1,000).
     SUGGEST_MAX_BYTES: 1000,

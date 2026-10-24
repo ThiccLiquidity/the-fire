@@ -71,6 +71,10 @@ while it lasts, and "resolved" when it clears:
   updated for 24 h (prices stop at 25 h).
 - **Stuck opens and gradings:** drand published the round 10 min ago and it still isn't delivered; an open ready but
   not dealt, or a grading ready but not finished, for 10 min.
+- **Near the cancel window (URGENT):** an open or grading still without its word 6 h after the request
+  (`CANCEL_WARN_HOURS`). Anyone can cancel it 24 h after the request (`cancelOpen` / `cancelGrading`), and drand rounds
+  are public, so a holder who saw a word they didn't like could wait out a keeper outage and cancel for a re-roll:
+  deliver it before then. The same applies to the swept gradings alert once its oldest is 6 h old.
 - **Stuck opens and gradings** older than the 300 the keeper reads each pass: one alert with how many and the oldest.
 - **Waiting fees:** a burner holds ETH, PLANK or USDG worth flushing that it can't burn yet (no PAPER price yet, or
   the price guard). Dust below the flush minimum waits quietly.
@@ -117,7 +121,7 @@ while it lasts, and "resolved" when it clears:
 | `PROCESS_MAX_CARDS` | 120 | cards per `process` call |
 | `GRADING_LOOKBACK` | 300 | gradings read per pass: the newest this many, plus this many older ones (the sweep) |
 | `MIN_FLUSH_USD`, `FLUSH_EVERY_MIN`, `FLUSH_NOW_X`, `FLUSH_MAX_WAIT_HOURS`, `FLUSH_DUST_USD` | 1, 15, 25, 6, 0.05 | burner flushes: the minimum in dollars, once per this many minutes, at once when worth this many times the minimum, and anything over the dust floor once it has waited this many hours |
-| `LOW_BALANCE_ETH`, `STUCK_MIN`, `PLANK_STALE_MIN`, `PAPER_STALE_HOURS`, `PAPER_CANDIDATE_LATE_HOURS`, `ETH_STALE_HOURS`, `DRAND_LAG_ROUNDS`, `ALERT_REPEAT_MIN`, `HEARTBEAT_HOURS` | 0.002, 10, 90, 22, 3, 24, 20, 60, 24 | alert thresholds |
+| `LOW_BALANCE_ETH`, `STUCK_MIN`, `CANCEL_WARN_HOURS`, `PLANK_STALE_MIN`, `PAPER_STALE_HOURS`, `PAPER_CANDIDATE_LATE_HOURS`, `ETH_STALE_HOURS`, `DRAND_LAG_ROUNDS`, `ALERT_REPEAT_MIN`, `HEARTBEAT_HOURS` | 0.002, 10, 6, 90, 22, 3, 24, 20, 60, 24 | alert thresholds |
 
 "Production" is `NODE_ENV=production`, which the Docker image sets: there a keeper without `HEARTBEAT_URL` or
 `ALERT_WEBHOOK_URL` refuses to start (and says so). Any contract address can be overridden (`FIRE_CARDS`, `FIRE_PSA`,

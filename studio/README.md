@@ -31,8 +31,10 @@ reading the zip in pieces. Built card images are not part of the backup.
    size range, colour, outline and alignment. Custom .ttf/.otf/.woff2 fonts can be uploaded. **Preview** shows any
    card look.
 3. **Series:** create a Series and pick its characters (any number; their order is the image order). Its packs are
-   the sale's (paid + press, set on the Sale tab). The table shows the exact pool and the expected holos.
-4. **Recipe:** the Series' card types and slots (below), with the contract's checks and a pool preview. PDA odds are
+   the sale's (paid + press, set on the Sale tab). Each picked character has optional odds (a weight, 1 by default:
+   every character equally likely). The table shows each type's odds and the expected cards and holos.
+4. **Recipe:** the Series' card types, their odds and cards per pack (below), with the contract's checks and an odds
+   preview. PDA odds are
    fixed (FirePsa) and shown read-only. Packs of 42 or more cards get a warning: free-pack credits can't be spent on
    them. **Sale:** the drop's settings for `FireSale.configureDrop` (paid and press packs, price, PAPER, windows,
    limits, free-pack caps); the pack price is always above 0 (unclaimed press packs sell at it).
@@ -58,15 +60,19 @@ reading the zip in pieces. Built card images are not part of the backup.
 
 A Series' recipe is the same thing `RecipeDealer` deals on-chain (`docs/cards-contracts.md`):
 
-- **Card types**: name, slug (auto from the name until typed), rank, supply (share of the cards, per pack, exact
-  count, per character, or the filler), optional max per pack, holo (two independent rolls, or weights for none /
-  frame / picture / full) and a frame set. Standard types use the Standard frame sets (Fire = `burning`, Coal = `charcoal`).
-- **Slot groups**: count, the allowed types (a list or a rank range), must-holo. Cards per pack is their sum.
+- **Card types**: name, slug (auto from the name until typed), rank (the rarity order the site shows), an odds weight
+  (its chance per card = its weight over the total; Standard out of 10,000), holo (two independent rolls, or weights
+  for none / frame / picture / full) and a frame set. Standard types use the Standard frame sets (Fire = `burning`,
+  Coal = `charcoal`).
+- **Cards per pack**: 1 to 1,000. Every card of every pack is rolled on its own from the odds: no slots, guarantees,
+  caps or pool, so the first and the last pack have the same odds.
+- **Character odds** (Series tab): optional weights; none = every character equally likely.
 - **PDA odds**: fixed in `FirePsa` for every Series, shown read-only (never in recipe.json).
 
 Presets: Standard (exactly `StandardRecipe.sol`), Special: 3 cards, all holo, or a copy of another Series' recipe.
-The checks mirror `RecipeDealer.check` in the same order; the pool preview is a port of its pool and floor maths.
-Series and backups from before recipes load with the Standard recipe and their Diamond setting.
+The checks mirror `RecipeCompiler.compile` in the same order. Series and backups from before recipes load with the old
+Standard (Diamond) recipe; recipes saved with the old pool rules load as odds at the cards their rules gave (their
+expected shares stay about the same).
 
 A new card type needs a frame set: reuse one or build a new set with `frames-src/clean_frames.py` (put `<set>.png`,
 `<set>-holo.png` in `frames-src/originals`, run `python3 frames-src/clean_frames.py`, bump `FRAMES_UPDATED_AT` in
@@ -76,8 +82,7 @@ card. Full Art has no frame. The studio finds the new set by its files. Its text
 
 ### The image grid and file names
 
-Every character x type x the holo looks that type can have (a type dealt only in must-holo slots has no `none`
-image) x 12 states (ungraded, cased, PDA 1-10 slabbed). Standard: 216 images per character; Special all-holo: 84.
+Every character x type x the holo looks that type's holo odds allow x 12 states (ungraded, cased, PDA 1-10 slabbed). Standard: 216 images per character; Special all-holo: 84.
 
 `c<characterIndex>-<type slug>-<holo>-<state>.webp`, exactly what `CardsRenderer.imageName` builds on-chain:
 
@@ -91,9 +96,11 @@ E.g. `c0-wood-none-u.webp`, `c0-wood-none-c.webp`, `c1-fire-frame-7.webp`, `c2-g
 ### recipe.json
 
 The shape `contracts/script/ConfigureSeries.s.sol` reads (`docs/cards-contracts.md`): `fire`, `imagesBase` (once the
-images are uploaded), `types`, `slots`, `characters` (in image order) and the `sale` block. No PDA odds: they are fixed
+images are uploaded), `cardsPerPack`, `types` (each with its `weight`), `characters` (in image order; each with a
+`weight` only when the characters have their own odds) and the `sale` block. No PDA odds: they are fixed
 in FirePsa, the same for every Series. The script checks it against the dealer and prints the owner's calls
-(setRecipe, setCharacters and appendCharacters in batches, setDealer, setImagesBase, then configureDrop).
+(setRecipe, setCharacters and appendCharacters in batches, setCharacterWeights if weighted, setDealer, setImagesBase,
+then configureDrop).
 
 ### Upload
 
@@ -125,12 +132,13 @@ locally (real CIDs, nothing stored).
 
 | File | Purpose |
 |---|---|
-| `src/recipe.ts` | Recipes: presets, the contract's checks (`checkRecipe`), pool maths (`previewPool`), holo looks, `recipe.json` |
+| `src/recipe.ts` | Recipes: presets, the contract's checks (`checkRecipe`), odds (`typeOdds`, `characterOdds`, `holoOdds`), holo looks, `recipe.json` |
 | `src/rules.ts` | Standard numbers (materials, holo rates, wear levels, limits) |
 | `src/series.ts` | What a Series needs: art per frame set, missing frames, readiness, build fingerprint |
 | `src/categories.ts` | On-chain text rules (`textProblem`): character names (64 bytes) and categories (free text, 32 bytes, suggestions, old-save migration) |
-| `src/deal.ts` | The sample deal on a recipe (`dealFire`); `computePool` is the original Standard pool |
-| `src/migrate.ts` | Older saves and backups: the Standard recipe, the free-pack cap as a percent, packs from the sale |
+| `src/deal.ts` | The sample deal on a recipe (`dealFire`): every card rolled from the odds |
+| `src/rarity.ts` | What a recipe makes: odds per type, "1 in N" per exact card (character weights included), per-pack chances |
+| `src/migrate.ts` | Older saves and backups: old pool recipes to odds, the free-pack cap as a percent, packs from the sale |
 | `src/deal.worker.ts`, `src/dealPreview.ts` | The Deal tab's preview, dealt in a worker and debounced |
 | `src/prng.ts` | Seeded randomness (SHA-256 counter mode) |
 | `src/render.ts`, `src/renderCore.ts` | Card rendering (Canvas 2D, 1500 x 2100); builds run in `src/build.worker.ts` |
@@ -142,6 +150,5 @@ locally (real CIDs, nothing stored).
 | `src/sale.ts` | The drop's settings (`FireSale.configureDrop` checks) and recipe.json's `sale` block |
 | `src/files.ts`, `src/backup.ts` | Streaming zips (export parts, backups) and the save pickers |
 | `src/chroma.ts` | Magenta chroma key |
-| `scripts/pool-fixture.test.ts` | Writes `contracts/test/cards/pool-fixture.json` with `WRITE_POOL_FIXTURE=1`, for the contract parity test |
-| `scripts/recipe-parity.test.ts` | Checks `recipe.ts` against `RecipeDealer` on 400+ recipes in recipe.json shape (`scripts/fixtures/recipe-parity.json`) |
+| `scripts/recipe-parity.test.ts` | Checks `recipe.ts` against `RecipeDealer` (verdict, weights, holo odds) on 400+ recipes in recipe.json shape (`scripts/fixtures/recipe-parity.json`) |
 | `scripts/contract-parity.sh` | Refreshes that fixture with forge, on a scratch copy of `contracts/` (`scripts/forge/StudioParity.t.sol`) |

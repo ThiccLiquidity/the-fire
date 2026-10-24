@@ -46,7 +46,7 @@ function sampleCards(fire: FireRecord, page: number): Sample[] {
         const key = `${characterId}:${type}:${holo}`
         const card: DealtCard = { ...(first.get(key) ?? {
           serial: 0, fire: fire.number, pack: 0, slot: 0, group: 0, type, characterId,
-          holoFrame: holo === 'frame' || holo === 'full', holoPicture: holo === 'picture' || holo === 'full', holo, edition: 1, editionOf: 1,
+          holoFrame: holo === 'frame' || holo === 'full', holoPicture: holo === 'picture' || holo === 'full', holo, printNumber: 1,
         }), grade: null }
         out.push({ key, characterId, type, holo, card, dealt: count.get(key) ?? 0 })
       }
@@ -359,7 +359,7 @@ function CardList({ fire, recipe, names, onOpen }: { fire: FireRecord; recipe: R
     onOpen({
       url: URL.createObjectURL(b),
       title: cardTitle(tn, names[c.characterId], c.serial),
-      detail: `${tn} · holo ${HOLO_LABEL[c.holo]} · ${c.edition} of ${c.editionOf} · pack ${c.pack} position ${c.slot} (slot group ${c.group + 1})`,
+      detail: `${tn} · holo ${HOLO_LABEL[c.holo]} · #${c.printNumber} · pack ${c.pack} position ${c.slot}`,
     })
   }
 
@@ -384,12 +384,12 @@ function CardList({ fire, recipe, names, onOpen }: { fire: FireRecord; recipe: R
         </span>
       </div>
       <table className="cards-table">
-        <thead><tr><th>Serial</th><th>Name</th><th>Type</th><th>Holo</th><th>Edition</th><th>Pack/position</th></tr></thead>
+        <thead><tr><th>Serial</th><th>Name</th><th>Type</th><th>Holo</th><th>Print #</th><th>Pack/position</th></tr></thead>
         <tbody>
           {filtered.slice(0, limit).map((c) => (
             <tr key={c.serial} onClick={() => void open(c)}>
               <td>#{c.serial}</td><td>{names[c.characterId]}</td><td><span className={`chip mat-${recipe.types[c.type]?.frameSet}`}>{recipe.types[c.type]?.name}</span></td>
-              <td>{HOLO_LABEL[c.holo]}</td><td>{c.edition} of {c.editionOf} · Series {c.fire}</td><td>{c.pack}/{c.slot}</td>
+              <td>{HOLO_LABEL[c.holo]}</td><td>#{c.printNumber} · Series {c.fire}</td><td>{c.pack}/{c.slot}</td>
             </tr>
           ))}
         </tbody>

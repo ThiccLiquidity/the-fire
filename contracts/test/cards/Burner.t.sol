@@ -315,13 +315,6 @@ contract BurnerTest is Test {
         assertLt(address(b).balance, 2e18 - 1e15, "the keeper's flush takes the backlog");
     }
 
-    /// paperPrice: the PAPER feed's price while fresh, else 0.
-    function test_paperPrice() public {
-        assertEq(b.paperPrice(), uint256(paperUsd.answer()), "fresh");
-        vm.warp(block.timestamp + 2 days + 1);
-        assertEq(b.paperPrice(), 0, "stale");
-    }
-
     /// A backlog too big for the pools at once is bought in pieces (half, a quarter, ...) instead of waiting forever.
     function test_backlogDrainsInPieces() public {
         vm.deal(address(b), 8e18); // $20k against ~$80k-a-side pools

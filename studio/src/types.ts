@@ -76,7 +76,7 @@ export interface TextStyle {
   uppercase: boolean
 }
 
-/** What's printed on the card image. Serial, edition and Series # are per card, so they live in the metadata (and the
+/** What's printed on the card image. Serial, print number and Series # are per card, so they live in the metadata (and the
  *  live version), not on the shared image. */
 export type TextField = 'name' | 'material' | 'category' | 'forged'
 export const TEXT_FIELDS: TextField[] = ['name', 'material', 'category', 'forged']
@@ -174,9 +174,12 @@ export interface BuildState {
 export interface FireRecord {
   number: number
   characterIds: string[]
+  /** Character odds (optional): a weight per character id, 1 when missing. All equal (or none) = every character
+   *  equally likely, the default. Exported as each character's "weight" in recipe.json only when they differ. */
+  characterWeights?: Record<string, number>
   packs: number
-  /** The Series' recipe: card types and slots (recipe.ts; PDA odds are fixed for every Series). Series saved before recipes existed get the
-   *  Standard recipe with their Diamond setting when loaded (migrate.ts). */
+  /** The Series' recipe: card types with their odds and cards per pack (recipe.ts; PDA odds are fixed for every
+   *  Series). Older saves are migrated when loaded (migrate.ts). */
   recipe: Recipe
   /** The drop settings (FireSale.configureDrop), exported in recipe.json's "sale" block. Missing = the Standard
    *  sale (sale.ts standardSale). */

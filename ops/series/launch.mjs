@@ -55,7 +55,7 @@ import { homedir, tmpdir } from "node:os";
 import { createInterface } from "node:readline/promises";
 import { createPublicClient, http, getAddress, keccak256, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { verifySeries, recipeFromJson, DEFAULT_GATEWAYS } from "./verify-series.mjs";
+import { verifySeries, recipeFromJson, characterWeightsFromJson, DEFAULT_GATEWAYS } from "./verify-series.mjs";
 import { salePolicy, saleWallets, parseAllow, describeSale, normSale, nftCodeOf, dropDiffs } from "./sale-policy.mjs";
 import { saleAbi, groupsAbi } from "./sale-abi.mjs";
 
@@ -172,8 +172,8 @@ export async function batchADiffs(read, json, C) {
   const diffs = [];
   const got = await read(C.RecipeDealer, ABI.dealer, "recipeOf", [fire]);
   const norm = (r) => JSON.stringify({
-    types: r.types.map((t) => [t.name, t.slug, String(t.rank), Number(t.supply), String(t.amount), String(t.maxPerPack), Number(t.holoMode), t.holo.map(String)]),
-    slots: r.slots.map((s) => [String(s.count), s.types.map(String), String(s.minRank), String(s.maxRank), !!s.mustHolo]),
+    types: r.types.map((t) => [t.name, t.slug, String(t.rank), String(t.weight), Number(t.holoMode), t.holo.map(String)]),
+    cardsPerPack: String(r.cardsPerPack),
   });
   if (norm(got) !== norm(want)) diffs.push("the recipe");
   const n = Number(await read(C.RecipeDealer, ABI.dealer, "characterCount", [fire]));
@@ -184,6 +184,9 @@ export async function batchADiffs(read, json, C) {
       if (names.some((nm, k) => nm !== json.characters[from + k].name || cats[k] !== json.characters[from + k].category)) { diffs.push("a character's name or category"); break; }
     }
   }
+  const [cw] = await read(C.RecipeDealer, ABI.dealer, "characterOddsOf", [fire]);
+  const wantW = characterWeightsFromJson(json);
+  if (cw.length !== wantW.length || wantW.some((w, k) => BigInt(cw[k]) !== w)) diffs.push("the character odds");
   if (getAddress(await read(C.FireCards, ABI.cards, "dealerOf", [fire])) !== getAddress(C.RecipeDealer)) diffs.push("FireCards' dealer");
   if (json.imagesBase && (await read(C.FireCards, ABI.cards, "imagesBase", [fire])) !== json.imagesBase) diffs.push("the images folder");
   return diffs;

@@ -1,5 +1,5 @@
 /** ERC-721 style metadata, one JSON per card, as CardsRenderer.tokenURI writes it on-chain for a freshly dealt card.
- *  The image is shared by every card of the same look (looks.ts); what makes each card unique (serial, edition,
+ *  The image is shared by every card of the same look (looks.ts); what makes each card unique (serial, print number,
  *  Series #) is here. The Material trait is the card type's name. An ungraded card also shows Cased, Uncased Age (days)
  *  and Moves; a slabbed one only its grade (docs/grading.md). */
 
@@ -24,7 +24,6 @@ export function cardMetadata(card: DealtCard, character: { name: string; categor
   const name = character.name
   const material = typeName
   const holo = HOLO_LABEL[card.holo]
-  const edition = `${card.edition} of ${card.editionOf}`
   const psa = card.grade == null ? 'Ungraded' : `PDA ${card.grade}`
   const wear = card.grade == null
     ? [
@@ -42,7 +41,7 @@ export function cardMetadata(card: DealtCard, character: { name: string; categor
       { trait_type: 'Material', value: material },
       { trait_type: 'Holo', value: holo },
       { trait_type: 'Series', value: card.fire, display_type: 'number' as const },
-      { trait_type: 'Edition', value: edition },
+      { trait_type: 'Print number', value: `#${card.printNumber}` },
       { trait_type: 'Serial', value: card.serial, display_type: 'number' as const },
       { trait_type: 'PDA', value: psa },
       ...wear,

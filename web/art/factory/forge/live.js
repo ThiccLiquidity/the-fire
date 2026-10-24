@@ -31,7 +31,8 @@
   Store.cardParts = () => null;
   Store.needsApproval = () => false; // the chain layer approves exactly what each call needs, as a step of the same action
   Store.floor = () => 0;
-  Store.editionInfo = (c) => { const [k, of] = String(c.edition).split(' of ').map((x) => parseInt(x, 10)); const n = of || k || 1; return { k: k || 1, n, burned: 0, lookK: k || 1, lookN: n, lookBurned: 0 }; };
+  // the Paper Presses that exist now (Info › PLANK & PAPER): the Press contract's totalSupply, cached; null hides the line
+  Store.pressSupply = () => ready.then(() => chainUp).then(() => (L ? L.pressSupply() : null)).catch(() => null);
   addEventListener('error', (e) => { const t = e.target; if (t?.classList?.contains('cframe') && !t.src.endsWith('ui/card-back.webp')) t.src = 'ui/card-back.webp'; }, true);
 
   // ---------- the wallet bundle
@@ -81,7 +82,7 @@
     const ageMs = Math.max(0, (c.age || 0) * 1000), frozen = !!c.cased || !!c.gradePending || c.grade != null;
     return {
       id: c.serial, serial: c.serial, series: c.fire, character: c.character || c.name, category: c.category,
-      material: MAT[String(c.material).toLowerCase()] || 'paper', holo: c.holo || 'none', edition: String(c.edition), grade: c.grade, pending: !!c.gradePending,
+      material: MAT[String(c.material).toLowerCase()] || 'paper', holo: c.holo || 'none', edition: String(c.print ?? c.edition), grade: c.grade, pending: !!c.gradePending,
       cased: !!c.cased, moves: c.moves, dealt: Date.now() - ageMs, dealtAt: Math.min(Date.now(), c.dealtAt * 1000), frozenAge: frozen ? ageMs : 0,
       image: gateway(c.image), tokenId: c.serial,
     };
@@ -98,7 +99,10 @@
   const toGroup = (g) => {
     const part = g.gate === 'snapshot' && Live.snapshot ? L.snapshotFor(Live.snapshot, g.root) : null; // the holders list can name its group
     const pp = (x) => x && { usd: +x.usd, tax: +x.tax };
-    return { ...g, name: part?.name || part?.label || g.name, priceUsd: +g.priceUsd, paper: num(g.paper), next: pp(g.next), after: g.after.map(pp) };
+    // snap: who the holders list counts (the snapshot file's settings: a $ or token minimum held over some days), for the
+    // copy that says who qualifies; null until the list has loaded
+    const snapOf = (f) => (f && f.min != null ? { unit: f.unit, min: String(f.min), days: Number(f.days) || 0, symbol: f.symbol || '' } : null);
+    return { ...g, name: part?.name || part?.label || g.name, priceUsd: +g.priceUsd, paper: num(g.paper), next: pp(g.next), after: g.after.map(pp), snap: snapOf(part) };
   };
   async function readSeries(fires) {
     const s = await L.currentSeries(fires);
@@ -106,13 +110,16 @@
     const was = S.series.phase, ph = s.state === 'closed' ? 4 : 3, changed = info?.fire !== s.fire;
     info = s;
     Store.clockSkew = s.now - Date.now() / 1000; // countdowns run on the chain's clock
-    if (changed) { gate = {}; loadSnapshot(s); }
+    if (changed) { gate = {}; loadSnapshot(s); loadOdds(s.fire); }
     Object.assign(S.series, {
       no: s.fire, total: s.packs, cast: s.cards.characters, phase: ph, closed: s.state === 'closed', closing: s.closing, cardsPerPack: s.cards.cardsPerPack || 6,
+      // the drop-wide settings the copy quotes ("in Series N"): read from the drop, never typed in
+      maxPerTx: s.maxPerTx, regularWalletsFor: s.regularWalletsFor, paperCapUsd: +s.paperCapUsd, paperBurnBps: s.paperBurnBps, plankBurnBps: s.plankBurnBps,
+      creditPacksMax: s.creditPacksMax, creditPacksPerWallet: s.creditPacksPerWallet,
       groups: s.groups.map(toGroup), creditGroup: s.creditGroup, creditPacksLeft: s.status.creditPacksLeft, left: s.status.left,
       note: s.state === 'upcoming' ? `Opens in ${hours(s.start)}h` : s.status.paused ? 'Paused' : null,
     });
-    if (was < 4 && ph === 4 && S.series.loaded) { window.Scene?.finale?.(); setTimeout(() => toast(`Series ${s.fire} is closed. Open your packs!`, 'good'), 600); }
+    if (was < 4 && ph === 4 && S.series.loaded) { window.Scene?.finale?.(); setTimeout(() => toast(`Series ${s.fire} is closed. Time to rip!`, 'good'), 600); }
     S.series.loaded = true;
     const priced = s.groups.find((g) => +g.priceUsd > 0 && g.state !== 'ended') || s.groups.find((g) => +g.priceUsd > 0);
     const cg = s.groups[s.creditGroup] || priced || s.groups[0];
@@ -122,9 +129,20 @@
       if (num(q.paperEth) > 0 && num(q.paper) > 0) Store.PRICES.PAPER_USD = num(q.paperEth) * Store.PRICES.ETH_USD / num(q.paper); // PAPER at its market price
     }).catch(() => {});
   }
+  // the Series' fixed odds (RecipeDealer: type weights, holo odds, character weights), for the rarity shown on every
+  // card ("1 in N" = material x holo x character odds; Info.lookP). The same odds for every pack.
+  function loadOdds(fire) {
+    L.practiceSet(fire).then((set) => {
+      if (!set || S.series.no !== fire) return;
+      const types = {};
+      for (const t of set.types) { const m = MAT[String(t.name).toLowerCase()] || MAT[t.slug] || t.slug; types[m] = { share: t.share, holo: t.holo }; }
+      Store.LIVE_ODDS = { types, chars: Object.fromEntries(set.characters.map((c, i) => [c, set.characterOdds[i]])) };
+      Store.update(() => {});
+    }).catch(() => {});
+  }
   async function readRules() {
     const [p, r] = await Promise.all([L.psaPrices().catch(() => null), L.suggestionRules().catch(() => null)]);
-    if (p) { Object.assign(Store.PRICES, { CASE_USD: +p.caseUsd, GRADE_USD: +p.gradeUsd }); Store.MAX_BATCH = p.maxBatch; Store.PSA_PAPER_DISCOUNT_BPS = p.paperDiscountBps || 0; }
+    if (p) { Object.assign(Store.PRICES, { CASE_USD: +p.caseUsd, GRADE_USD: +p.gradeUsd }); Store.MAX_BATCH = p.maxBatch; }
     if (r) { Store.PRICES.SUGGEST_PAPER = num(r.paperEach); Store.SUGGEST_MAX_BYTES = r.maxBytes; Store.SUGGEST_WAVE.count = r.total; Live.rules = r; }
   }
   // snapshot groups: the holders list published with the drop (ops/snapshot), at holders/series-<n>.json next to the
@@ -187,10 +205,6 @@
     S.wallet.inSnapshot = snapGroups(info).some((g) => !!(Live.snapshot && L.snapshotEntry(Live.snapshot, g.root, a)));
     if (withCards || Date.now() - cardsAt > 60_000) {
       cardsAt = Date.now(); const cs = (await L.cardsOf(a)).map(toCard);
-      // grading is priced by card type (FirePsa.gradeUsdOf): each ungraded card's own price
-      const open = cs.filter((c) => c.grade == null && !c.pending).map((c) => c.id);
-      const usd = open.length ? await L.gradeUsdOf(open).catch(() => ({})) : {};
-      cs.forEach((c) => { if (usd[c.id] > 0) c.gradeUsd = usd[c.id]; });
       if (me() === a) S.cards = cs;
     }
   }
@@ -479,7 +493,8 @@
       const a = Store.groupAccess(g), quote = { cost: coin ? q.coins.find((c) => c.pay === coin)?.raw : null, paperEth: all ? q.paperEthRaw : null };
       let moved = false;
       const r = await run(`Buy ${plural(n, 'pack')}`, (o) => L.buyPacks({ fire: info.fire, group: g.index, n, pay: coin, access: a.access, paperInEth: all, quote }, o),
-        `${plural(n, 'pack')} bought`, (e) => (e?.code === 'PriceMoved' ? (moved = true) : false));
+        `${plural(n, 'pack')} bought`, (e) => (e?.code === 'PriceMoved' ? (moved = true)
+          : e?.code === 'NoContracts' ? (Sheet.open('nope', { title: g.name, body: `<p class="lead">${esc(Store.botRule())}</p>` }), true) : false));
       if (moved) return 'moved';
       if (r) { window.Scene?.buy?.(n); window.Sound?.play('pack-drop'); Store.log(`Bought ${plural(n, 'pack')}`); window.UI?.afterBuy?.(n); window.Fun?.emit('bought', { n }); }
       return !!r;
@@ -488,8 +503,8 @@
   async function free() {
     await need(); await requireWallet();
     const cg = S.series.groups[S.series.creditGroup];
-    if (!info || info.state !== 'live' || cg?.state !== 'open') return toast('No free-pack sale right now.', 'bad');
-    if (S.series.creditPacksLeft === 0) return toast("This Series' free packs are gone. Yours carry over.", 'bad');
+    if (!info || info.state !== 'live' || cg?.state !== 'open') return toast(Store.FREE_CLOSED, 'bad');
+    if (S.series.creditPacksLeft === 0) return toast(Store.FREE_GONE, 'bad');
     if (stillSending('credits')) return;
     let n = 1; const body = document.createElement('div'); body.className = 'checkout';
     const draw = () => {
@@ -581,26 +596,16 @@
     if (!alive()) { toast('Your cards land in My cards soon.'); return null; }
     say('Here they come…');
     const all = (await L.cardsOf(me())).map(toCard);
-    const usd = await L.gradeUsdOf(all.filter((c) => c.grade == null).map((c) => c.id)).catch(() => ({}));
-    all.forEach((c) => { if (usd[c.id] > 0) c.gradeUsd = usd[c.id]; });
     S.cards = all; cardsAt = Date.now();
     return all.filter((c) => !before.has(c.id) && c.series === fire).sort((a, b) => a.serial - b.serial);
   }
 
   // ---------- case & grade: priced by FirePsa.quote, capped at the price shown + 3%
-  /** Exactly what casing the cards `caseIds` and grading `gradeIds` costs now in `coin` (FirePsa.quoteFor: what
-   *  protect charges): an Amount (raw + text), or null. Paying in PAPER while its price can't be read (FeedUnavailable):
-   *  null, and Store.PSA_PAPER_OFF says why (the review turns PAPER off); a working PAPER quote clears it. */
+  /** Exactly what casing the cards `caseIds` and grading `gradeIds` costs now in `coin` (PLANK, ETH or USDG;
+   *  FirePsa.quote: what protect charges): an Amount (raw + text), or null. */
   async function quoteProtect(caseIds, gradeIds, coin) {
     await need();
-    try {
-      const q = await L.quoteProtect(caseIds, gradeIds, coin);
-      if (coin === 'PAPER' && Store.PSA_PAPER_OFF) { Store.PSA_PAPER_OFF = null; Store.update(() => {}); }
-      return q;
-    } catch (e) {
-      if (/FeedUnavailable/.test(String(e?.message || e)) && coin === 'PAPER') { Store.PSA_PAPER_OFF = 'PAPER unavailable right now. Pick another coin.'; Store.update(() => {}); }
-      return null;
-    }
+    try { return await L.quoteProtect(caseIds, gradeIds, coin); } catch { return null; }
   }
   async function protect(caseIds, gradeIds, coin, quote) {
     await need();

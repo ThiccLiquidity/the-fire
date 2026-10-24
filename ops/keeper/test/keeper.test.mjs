@@ -8,7 +8,7 @@ import { DRAND_CHAIN, DRAND_GENESIS, drandClient, roundAt, roundTime } from "../
 import { createNotifier } from "../src/alerts.mjs";
 import { loadConfig, loadKey } from "../src/config.mjs";
 import { createSender } from "../src/tx.mjs";
-import { createKeeper, dropEndTimes, lastGroupEnd, flushPlan } from "../src/core.mjs";
+import { createKeeper, dropEndTimes, lastGroupEnd, flushPlan, waitAlerts } from "../src/core.mjs";
 import { saleAbi, groupsAbi } from "../src/abis.mjs";
 import { existsSync, readFileSync } from "node:fs";
 
@@ -475,6 +475,8 @@ test("gradings: the window plus a sweep from the oldest unfinished, so nothing o
   assert.deepEqual(idx(gs), [1n, 8n], "chunk 0-2 and the window 7-9");
   assert.equal(gs[0].behind, true);
   assert.match(k.jobs.behindAlert().text, /1 unfinished grading\(s\) are older than the newest 3 \(oldest: grading 1\)/);
+  assert.doesNotMatch(k.jobs.behindAlert((t) => 5 * 3600 - Number(t) + 101).text, /cancel/, "5 h old: no cancel warning yet");
+  assert.match(k.jobs.behindAlert((t) => 6 * 3600 - Number(t) + 101).text, /requested 6\.0 h ago: anyone can cancel a grading with no word 24 h after its request/, "6 h old: the cancel window is named");
   assert.deepEqual(idx(await k.jobs.gradingsWaiting()), [1n, 8n], "a rescan in the same pass reads the same chunk");
   assert.deepEqual(idx(await k.jobs.gradingsWaiting(true)), [1n, 8n], "next pass: the oldest unfinished, chunk 3-5 and the window");
   assert.ok(k.jobs.behindAlert(), "grading 1 is still remembered");
@@ -529,4 +531,21 @@ test("sale settings: each WalletsSet / FeedsSet from FireSale is one event with 
   await k.jobs.saleSettings(105n);
   assert.deepEqual(asked.at(-1), ["retry", 104n], "a failed read is retried from the same block");
   assert.deepEqual(await keeperOn(chain, { optional: {} }).jobs.saleSettings(100n), [], "no FireSale known: nothing");
+});
+
+test("waiting opens and gradings: alert after STUCK_MIN, URGENT from 6 h without a word (cancel opens at 24 h)", () => {
+  const cfg = { stuckMin: 10 };
+  const H = 3600n;
+  const open = { kind: "open", fire: 7n, index: 0n, ready: false, requestedAt: 0n, source: A(0xd), head: true, count: 1n };
+  const keys = (now, it = open) => waitAlerts([it], now, cfg).map((a) => a.key);
+  assert.deepEqual(keys(600n), [], "within 10 min: quiet");
+  assert.deepEqual(keys(30n * 60n), ["stuck:open:7:0"], "30 min: the stuck alert");
+  assert.deepEqual(keys(6n * H - 1n), ["stuck:open:7:0"], "just under 6 h: still only the stuck alert");
+  const at6 = waitAlerts([open], 6n * H, cfg);
+  assert.deepEqual(at6.map((a) => a.key), ["stuck:open:7:0", "cancel:open:7:0"]);
+  assert.match(at6[1].text, /^URGENT open 7\/0: no word 6\.0 h after the request; anyone can cancel it in 18\.0 h \(FireCards\.cancelOpen\)/);
+  const g = { kind: "grading", index: 3n, ready: false, requestedAt: 0n, source: A(0xd) };
+  assert.match(waitAlerts([g], 25n * H, cfg)[1].text, /^URGENT grading 3: .*anyone can cancel it now \(FirePsa\.cancelGrading\)/);
+  assert.deepEqual(keys(7n * H, { ...open, ready: true, readyAt: 7n * H - 60n }), [], "delivered: no cancel alert");
+  assert.deepEqual(waitAlerts([open], 6n * H, { ...cfg, cancelWarnHours: 1 }).length, 2, "CANCEL_WARN_HOURS moves it");
 });

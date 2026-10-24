@@ -85,7 +85,7 @@ The site deploys on Vercel from `main` with Root Directory `web`.
 | [`docs/omni-economy.md`](docs/omni-economy.md) | Drops, prices, burns, starter packs, free pack credits, case and grading prices |
 | [`docs/grading.md`](docs/grading.md) | Cases, PDA grading and slabs: hidden condition, wear rules, fresh odds, images, metadata |
 | [`docs/cards-contracts.md`](docs/cards-contracts.md) | The card contracts: pieces, the open/deal flow, safety properties, deployment wiring |
-| [`docs/card-studio.md`](docs/card-studio.md) | Card rules (pool, pack slots, holo, PDA wear) and how the studio builds a Series |
+| [`docs/card-studio.md`](docs/card-studio.md) | Card rules (odds per card, holo, PDA wear) and how the studio builds a Series |
 | [`docs/randomness.md`](docs/randomness.md) | The drand router: request flow, recovery paths, how to verify a number |
 | [`docs/deploy.md`](docs/deploy.md) | Deploy runbook: mainnet, the local rehearsal and the testnet (46630) |
 | [`docs/addresses.md`](docs/addresses.md) | Robinhood Chain addresses and on-chain findings |

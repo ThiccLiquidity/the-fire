@@ -8,7 +8,7 @@ import type { Address, Hex } from "viem";
 export type OwnedPack = { series: number; count: bigint; image?: string };
 
 /** One card (FireCards, ERC-721: token id = the card's serial) a wallet holds, with its metadata when the indexer
- *  has it. Traits are as the contract writes them (Character, Material, Holo, Series, Edition, PDA, ...). */
+ *  has it. Traits are as the contract writes them (Character, Material, Holo, Series, Print number, PDA, ...). */
 export type OwnedCard = {
   tokenId: bigint;
   name?: string;

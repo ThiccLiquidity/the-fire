@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { compileRecipe, legacyDiamondRecipe, previewPool } from './recipe'
-import { migrateCharacterArt, migrateFire, needsMigration } from './migrate'
+import { legacyDiamondRecipe, standardRecipe, typeWeights } from './recipe'
+import { migrateCharacterArt, migrateFire, needsMigration, oldRecipeToOdds } from './migrate'
 import { creditPacksMax, groupPacks, saleOf, standardSale } from './sale'
 import type { Character, FireRecord, ImageSlot } from './types'
 
@@ -13,32 +13,58 @@ const oldFire = {
     cards: Array.from({ length: 12 }, (_, i) => ({
       serial: i + 1, fire: 3, pack: i < 6 ? 1 : 2, slot: (i % 6) + 1,
       material: (['paper', 'paper', 'paper', 'wood', 'wood', 'diamond'] as const)[i % 6], characterId: i % 2 ? 'a' : 'b',
-      holoFrame: false, holoPicture: false, holo: 'none', edition: 1, editionOf: 1,
+      holoFrame: false, holoPicture: false, holo: 'none', edition: 1, editionOf: 1, // saved before print numbers
     })),
     packContents: [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]],
   },
 }
 
 describe('old saves and backups', () => {
-  it('a Series without a recipe gets the Standard recipe with its Diamond setting', () => {
+  it('a Series without a recipe gets the old Standard (Diamond) recipe, as odds', () => {
     expect(needsMigration(oldFire)).toBe(true)
     const f = migrateFire(oldFire)
-    expect(f.recipe).toEqual(legacyDiamondRecipe(2))
-    expect(compileRecipe(f.recipe).S).toBe(6)
-    expect(previewPool(f.recipe, 2n).map(Number)).toEqual([6, 2, 1, 1, 2])
+    expect(f.recipe).toEqual(legacyDiamondRecipe())
+    expect(f.recipe.cardsPerPack).toBe(6)
+    expect(typeWeights(f.recipe).weights).toEqual([501n, 301n, 150n, 49n, 1n])
     expect(needsMigration(f)).toBe(false)
   })
 
-  it('a locked deal is re-labelled: materials to Standard type indexes, slots to slot groups, pool to an array', () => {
+  it('a recipe saved with the old pool rules becomes odds at the cards its rules gave', () => {
+    const old = {
+      types: [
+        { id: 'p', name: 'Paper', slug: 'paper', rank: 0, supply: 'perPack', amount: '3', maxPerPack: '0', holo: { mode: 'independent', frame: '1', picture: '1' }, frameSet: 'paper' },
+        { id: 'w', name: 'Wood', slug: 'wood', rank: 1, supply: 'filler', amount: '0', maxPerPack: '0', holo: { mode: 'independent', frame: '1', picture: '1' }, frameSet: 'wood' },
+        { id: 'f', name: 'Fire', slug: 'fire', rank: 2, supply: 'share', amount: '150000000', maxPerPack: '0', holo: { mode: 'independent', frame: '1', picture: '1' }, frameSet: 'burning' },
+        { id: 'c', name: 'Coal', slug: 'coal', rank: 3, supply: 'share', amount: '49000000', maxPerPack: '0', holo: { mode: 'independent', frame: '1', picture: '1' }, frameSet: 'charcoal' },
+        { id: 'g', name: 'Gold', slug: 'gold', rank: 4, supply: 'perCharacter', amount: '2', maxPerPack: '1', holo: { mode: 'distribution', weights: ['0', '0', '0', '1'] }, frameSet: 'gold' },
+        { id: 'a', name: 'Full Art', slug: 'fullart', rank: 5, supply: 'perCharacter', amount: '1', maxPerPack: '1', holo: { mode: 'distribution', weights: ['0', '0', '0', '1'] }, frameSet: 'fullart' },
+      ],
+      slots: [{ count: 3 }, { count: 1 }, { count: 1 }, { count: 1 }],
+    } as const
+    const r = oldRecipeToOdds(old as never, 167, 20)
+    expect(r.cardsPerPack).toBe(6)
+    expect(typeWeights(r).weights).toEqual([501n, 242n, 150n, 49n, 40n, 20n])
+    expect(r.types.map((t) => t.id)).toEqual(['p', 'w', 'f', 'c', 'g', 'a'])
+    const { deal: _deal, ...open } = migrateFire(oldFire)
+    const m = migrateFire({ ...open, packs: 167, characterIds: Array.from({ length: 20 }, (_, i) => `c${i}`), recipe: old as never })
+    expect(typeWeights(m.recipe).weights).toEqual([501n, 242n, 150n, 49n, 40n, 20n])
+    expect(needsMigration(m)).toBe(false)
+    expect(standardRecipe().types.map((t) => t.weight)).toEqual(['5000', '2415', '1497', '489', '399', '200'])
+  })
+
+  it('a locked deal is re-labelled: materials to Standard type indexes, pool to an array', () => {
     const f = migrateFire(oldFire)
     const d = f.deal!
     expect(d.pool).toEqual([6, 2, 1, 1, 2])
     expect(d.cardsPerPack).toBe(6)
     expect(d.cards.slice(0, 6).map((c) => c.type)).toEqual([0, 0, 0, 1, 1, 4])
-    expect(d.cards.slice(0, 6).map((c) => c.group)).toEqual([0, 0, 0, 1, 2, 3])
     expect('material' in d.cards[0]).toBe(false)
     expect('diamonds' in d).toBe(false)
     expect(d.packContents).toEqual(oldFire.deal.packContents)
+    // editions ("k of N") become print numbers: per exact card, in the order dealt
+    expect(d.cards.map((c) => c.printNumber)).toEqual([1, 1, 2, 1, 1, 1, 3, 2, 4, 2, 2, 2])
+    expect('edition' in d.cards[0] || 'editionOf' in d.cards[0]).toBe(false)
+    expect(needsMigration(f)).toBe(false)
   })
 
   it('a Series that already has a recipe is left alone', () => {
@@ -57,10 +83,6 @@ describe('old saves and backups', () => {
     expect(needsMigration(m)).toBe(false)
   })
 
-  it('a missing Diamond setting reads as 1', () => {
-    const { diamonds: _d, deal: _deal, ...noDiamonds } = oldFire
-    expect(migrateFire(noDiamonds).recipe).toEqual(legacyDiamondRecipe(1))
-  })
 
   /** The Standard sale as saved before drop groups. */
   const oldStandard = {

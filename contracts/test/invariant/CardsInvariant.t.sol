@@ -54,7 +54,7 @@ contract CardsInvariantTest is StdInvariant, Test {
         all[i] = h.setPrices.selector;
         all[i + 1] = h.setPaperPrice.selector;
         all[i + 2] = h.passPress.selector;
-        all[i + 3] = h.setDiamonds.selector;
+        all[i + 3] = h.setRecipe.selector;
         all[i + 4] = h.caseCards.selector;
         targetSelector(FuzzSelector({addr: address(h), selectors: all}));
     }
@@ -185,20 +185,11 @@ contract CardsInvariantTest is StdInvariant, Test {
             assertLe(dealtCards, 6 * uint256(nPacks), "cards <= 6 x packs");
             assertGe(dealtCards, 6 * uint256(dealt), "6 per fully dealt pack");
             assertLt(dealtCards, 6 * uint256(dealt) + 6, "at most one pack part-dealt");
-            uint256[] memory pool = dealer.poolOf(f);
-            uint256 poolTotal;
-            for (uint256 m; m < 5; m++) poolTotal += pool[m];
-            assertEq(poolTotal, 6 * uint256(nPacks), "pool == 6 x packs");
-            // each Series stands alone: its pool is the rule applied to its own packs and Diamond setting
-            uint256 d = h.diamondsOf(f);
-            uint256[] memory want = dealer.previewPool(StandardRecipe.classic(d == 0 ? 1 : d), nPacks, 1);
-            for (uint256 m; m < 5; m++) assertEq(pool[m], want[m], "pool == Standard(packs, diamonds)");
-            if (nPacks > 0) assertGe(pool[4], 1, "at least one Diamond");
-            (uint256[] memory left,) = dealer.remainingOf(f);
-            for (uint256 m; m < 5; m++) {
-                assertEq(h.ghostMat(f, m) + left[m], pool[m], "dealt + left == pool");
-                if (dealt == nPacks) assertEq(h.ghostMat(f, m), pool[m], "fully dealt: totals == pool");
-            }
+            // every card is one of the recipe's six types; the counts add up to the cards dealt
+            uint256 sum;
+            for (uint256 m; m < 6; m++) sum += h.ghostMat(f, m);
+            assertEq(sum, dealtCards, "every dealt card has a type");
+            assertEq(dealer.cardsPerPack(f), 6);
         }
     }
 

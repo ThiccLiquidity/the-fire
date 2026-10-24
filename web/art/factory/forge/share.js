@@ -75,7 +75,9 @@
     if (!cards?.length || cards.length > 6) return null; // one pack
     const b = h('button', { type: 'button', class: 'btn small share-b fun-packshare', text: 'Share this pack', onclick: () => busyBtn(b, async () => {
       const blob = await packImage(cards, series);
-      await sharePng(blob, `omni-cardworks-series-${series}-pack.png`, `My Series ${series} pack`, 'My pack from Omni Cardworks.', b);
+      const top = [...cards].sort((x, y) => rarity(y) - rarity(x))[0]; // the same best card the image leads with
+      const look = [{ frame: 'Holo frame', picture: 'Holo picture', full: 'Full holo' }[!Store.ALWAYS_HOLO[top.material] && top.holo] || '', Store.MAT_LABEL[top.material], top.character].filter(Boolean).join(' ');
+      await sharePng(blob, `omni-cardworks-series-${series}-pack.png`, `My Series ${series} pack`, `Ripped a Series ${series} pack at Omni Cardworks. Best pull: ${look}!`, b);
     }) });
     return b;
   };

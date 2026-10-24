@@ -8,9 +8,9 @@
   const { h, mem, reduced } = Fun;
   const SEEN = 'omni.tour', COACHED = 'omni.coached';
   const STOPS = [
-    { x: 627, y: 900, r: 330, z: 1.35, t: 'The furnace', s: 'PLANK feeds the fire.' },
-    { x: 2280, y: 600, r: 400, z: 1.3, t: 'The press', s: 'PAPER goes in. Packs come out.' },
-    { x: 1880, y: 1400, r: 620, z: 1.1, t: 'Your desk', s: 'Open packs. Case and grade your best.' },
+    { x: 627, y: 900, r: 330, z: 1.35, t: 'The furnace', s: 'PLANK is the wood. It keeps this fire roaring, and the fire runs the press.' },
+    { x: 2280, y: 600, r: 400, z: 1.3, t: 'The press', s: 'Every card is printed on PAPER. Packs come out sealed, and nobody knows what’s inside until you rip one.' },
+    { x: 1880, y: 1400, r: 620, z: 1.1, t: 'Your desk', s: 'Rip your packs here. Case your keepers, grade your best, and burn the rest toward free packs.' },
   ];
   let T = null; // the running tour
 
