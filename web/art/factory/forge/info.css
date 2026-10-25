@@ -118,9 +118,10 @@
 
 /* pack slots */
 .inf-pack { display: grid; grid-template-columns: repeat(var(--n, 6), 1fr); gap: 6px }
-.inf-slot { display: grid; justify-items: center; gap: 6px; padding: 8px 2px; border-radius: 10px; border: 1px solid var(--line); background: #110c08; min-width: 0 }
+.inf-slot { display: grid; justify-items: center; align-content: start; gap: 6px; padding: 8px 2px; border-radius: 10px; border: 1px solid var(--line); background: #110c08; min-width: 0 }
 .inf-slot i { font: 400 13px var(--display); font-style: normal; color: var(--dim) }
 .inf-slot .mat { padding: 3px 7px; font-size: 13px }
+.inf-slot small { font-size: 12px; line-height: 1; color: var(--muted); margin-top: -2px }
 @media (max-width: 600px) { .inf-pack { grid-template-columns: repeat(3, 1fr) } }
 
 /* timeline: how a Series sells, one numbered step a row */

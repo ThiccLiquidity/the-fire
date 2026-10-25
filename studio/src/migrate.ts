@@ -1,8 +1,10 @@
 /** Saves and backups from before per-Series recipes. Every Series made then was a Standard Series: it gets the
  *  old Standard (Diamond) recipe, and a locked deal's cards (stored by material) are re-labelled with the
- *  Standard type indexes. Recipes saved with the old pool rules (supply, slots) become odds recipes: each type's
- *  weight is the cards its old rule gave for the Series' packs and characters (so its expected share stays about
- *  the same), cards per pack is the old slots' total, and holo is kept (oldRecipeToOdds). Recipes saved with their own PDA odds drop them: the odds are fixed in FirePsa for every
+ *  Standard type indexes. Recipes saved with straight odds (one weight or % per type, a cards per pack) become one slot
+ *  of that many cards at those odds (oddsRecipeToSlots: the same cards, the same odds). Recipes saved with the old pool
+ *  rules (supply, slot groups) become slot recipes: each old slot group becomes a slot of its count, dealing the types
+ *  it could hold at the odds those types had over the whole Series (each type's weight = the cards its old rule gave
+ *  for the Series' packs and characters: oldRecipeToSlots), and holo is kept. Recipes saved with their own PDA odds drop them: the odds are fixed in FirePsa for every
  *  Series now. Sale settings saved before drop groups (paid + press packs, one price) become groups (sale.ts
  *  saleFromOld; a free-pack cap saved as a number of packs becomes a percent of the drop). A Series whose deal isn't
  *  locked takes its pack count from its sale (the groups' total); one saved without
@@ -12,7 +14,7 @@
  *  whose deal is locked keeps its exact weights too, so its odds (and its recipe.json) never change. Runs on load (store.ts loadStudio), so imports of old backups migrate too. */
 
 import { numberPrints, type DealResult, type DealtCard } from './deal'
-import { dropExactWeights, legacyDiamondRecipe, weightsToPercents, withPercentsFromWeights, type CardTypeDef, type HoloRule, type Recipe } from './recipe'
+import { dropExactWeights, legacyDiamondRecipe, weightsToPercents, withPercentsFromWeights, type CardTypeDef, type HoloRule, type Recipe, type SlotDef } from './recipe'
 import { CARDS_PER_PACK, MATERIALS, type Material } from './rules'
 import { isOldSale, saleFromOld, salePacks, saleOf, saleWithPacks, standardSale, type OldSaleSettings } from './sale'
 import type { Character, FireRecord } from './types'
@@ -23,14 +25,44 @@ const hasEditions = (d: { cards?: unknown[] } | undefined) => !!d?.cards?.some((
 
 /** A recipe saved with the old pool rules (RecipeDealer before straight odds). */
 interface OldType { id: string; name: string; slug: string; slugEdited?: boolean; rank: number; supply: 'filler' | 'share' | 'perPack' | 'count' | 'perCharacter'; amount: string; maxPerPack: string; holo: HoloRule; frameSet: string }
-interface OldRecipe { types: OldType[]; slots: { count: number }[] }
+interface OldSlot { count: number; kind?: 'types' | 'rank'; typeIds?: string[]; minRank?: number; maxRank?: number | null }
+interface OldRecipe { types: OldType[]; slots: OldSlot[] }
+/** A recipe saved with straight odds (before slots): one weight or % per type, and a cards per pack. */
+interface OddsType extends CardTypeDef { percent?: string; weight?: string }
+interface OddsRecipe { types: OddsType[]; cardsPerPack: number }
 
-const isOldRecipe = (r: unknown): r is OldRecipe => !!r && typeof r === 'object' && ('slots' in r || ((r as OldRecipe).types ?? []).some((t) => 'supply' in t))
+const isOldRecipe = (r: unknown): r is OldRecipe => !!r && typeof r === 'object'
+  && (((r as OldRecipe).types ?? []).some((t) => 'supply' in t) || ((r as OldRecipe).slots ?? []).some((s) => s && typeof s === 'object' && ('kind' in s || !('percents' in s))))
+const isOddsRecipe = (r: unknown): r is OddsRecipe => !!r && typeof r === 'object' && !Array.isArray((r as Recipe).slots)
 
-/** An old pool recipe as odds: each type's weight = the cards its old rule gave for `packs` packs (at least 1) and
- *  `chars` characters, capped as before; the filler the rest (at least 1). Cards per pack = the old slots' total. */
-export function oldRecipeToOdds(r: OldRecipe, packs: number, chars: number): Recipe {
-  const perPack = (r.slots ?? []).reduce((n, s) => n + (Number.isFinite(s.count) ? s.count : 0), 0) || 6
+const typeOnly = ({ percent: _p, weight: _w, ...t }: OddsType): CardTypeDef => t
+
+/** A straight-odds recipe as one slot of its cards per pack, at its odds: the exact weights when every type has one
+ *  (a locked deal's, or a recipe.json's), else its percentages. */
+export function oddsRecipeToSlots(r: OddsRecipe): Recipe {
+  const count = Number.isFinite(r.cardsPerPack) && r.cardsPerPack > 0 ? r.cardsPerPack : 6
+  const allExact = r.types.length > 0 && r.types.every((t) => t.weight !== undefined)
+  const anyPercent = r.types.some((t) => typeof t.percent === 'string' && t.percent.trim() !== '')
+  const slot: SlotDef = !allExact && anyPercent
+    ? { id: 'all', count, percents: Object.fromEntries(r.types.flatMap((t) => (typeof t.percent === 'string' && t.percent.trim() !== '' ? [[t.id, t.percent]] : []))) }
+    : { id: 'all', count, percents: {}, weights: Object.fromEntries(r.types.map((t) => [t.id, String(t.weight ?? '1')])) }
+  return withPercentsFromWeights({ types: r.types.map(typeOnly), slots: [slot] })
+}
+
+/** The type indexes an old slot group could hold (an explicit list, or a rank range), in recipe order. */
+function oldSlotTypes(r: OldRecipe, s: OldSlot): number[] {
+  if (s.kind === 'types' || (!s.kind && s.typeIds)) return r.types.flatMap((t, i) => ((s.typeIds ?? []).includes(t.id) ? [i] : []))
+  const lo = s.minRank ?? 0
+  const hi = s.maxRank ?? Number.MAX_SAFE_INTEGER
+  return r.types.flatMap((t, i) => (t.rank >= lo && t.rank <= hi ? [i] : []))
+}
+
+/** An old pool recipe as slots: each type's weight = the cards its old rule gave for `packs` packs (at least 1) and
+ *  `chars` characters, capped as before; the filler the rest (at least 1). Each old slot group becomes a slot of its
+ *  count over the types it could hold, at those weights (no old slots: one slot of 6 over every type). */
+export function oldRecipeToSlots(r: OldRecipe, packs: number, chars: number): Recipe {
+  const oldSlots = (r.slots ?? []).filter((s) => Number.isFinite(s.count) && s.count > 0)
+  const perPack = oldSlots.reduce((n, s) => n + s.count, 0) || 6
   const P = BigInt(Math.max(1, Math.floor(packs)))
   const C = BigInt(Math.max(1, Math.floor(chars)))
   const N = P * BigInt(perPack)
@@ -47,19 +79,26 @@ export function oldRecipeToOdds(r: OldRecipe, packs: number, chars: number): Rec
   })
   const fi = r.types.findIndex((t) => t.supply === 'filler')
   if (fi >= 0) counts[fi] = N > used ? N - used : 0n
-  const types: CardTypeDef[] = r.types.map((t, i) => ({
-    id: t.id, name: t.name, slug: t.slug, ...(t.slugEdited ? { slugEdited: true } : {}), rank: t.rank,
-    percent: '', weight: String(counts[i] > 0n ? counts[i] : 1n), holo: t.holo, frameSet: t.frameSet,
+  const w = counts.map((x) => (x > 0n ? x : 1n))
+  const types: CardTypeDef[] = r.types.map((t) => ({
+    id: t.id, name: t.name, slug: t.slug, ...(t.slugEdited ? { slugEdited: true } : {}), rank: t.rank, holo: t.holo, frameSet: t.frameSet,
   }))
-  return withPercentsFromWeights({ types, cardsPerPack: perPack })
+  const groups = oldSlots.length ? oldSlots.map((s) => ({ count: s.count, set: oldSlotTypes(r, s) })) : [{ count: perPack, set: r.types.map((_, i) => i) }]
+  // a type no group could hold would never be dealt: it joins the last group
+  const covered = new Set(groups.flatMap((g) => g.set))
+  r.types.forEach((_, i) => { if (!covered.has(i)) groups[groups.length - 1].set.push(i) })
+  const slots: SlotDef[] = groups.map((g, k) => ({
+    id: `s${k}`, count: g.count, percents: {},
+    weights: Object.fromEntries((g.set.length ? g.set : r.types.map((_, i) => i)).map((i) => [r.types[i].id, String(w[i])])),
+  }))
+  return withPercentsFromWeights({ types, slots })
 }
 type OldDeal = Omit<DealResult, 'pool' | 'cards' | 'cardsPerPack'> & { pool: number[] | Record<Material, number>; cards: OldCard[]; cardsPerPack?: number; diamonds?: number }
 
-/** Odds saved as weights: a type without a percentage, or (open Series) exact weights or character weights. */
+/** A recipe from before slots, or (open Series) exact weights or character weights. */
 function oddsNeedMigration(r: Partial<FireRecord>): boolean {
-  const types = (r.recipe?.types ?? []) as Partial<CardTypeDef>[]
-  if (types.some((t) => typeof t.percent !== 'string')) return true
-  return !r.deal && (types.some((t) => t.weight !== undefined) || !!r.characterWeights)
+  if (!r.recipe || isOddsRecipe(r.recipe)) return true
+  return !r.deal && (r.recipe.slots.some((s) => s.weights !== undefined) || !!r.characterWeights)
 }
 
 export function needsMigration(f: unknown): boolean {
@@ -80,9 +119,9 @@ export function migrateFire(raw: unknown): FireRecord {
     const { pdaOdds: _fixedNow, ...recipe } = f.recipe as FireRecord['recipe'] & { pdaOdds?: string[] }
     f.recipe = recipe
   }
-  if (isOldRecipe(f.recipe)) f.recipe = oldRecipeToOdds(f.recipe, old.deal?.packs ?? old.packs ?? 167, (old.deal?.characterIds ?? old.characterIds ?? []).length)
-  // odds as percentages; a locked Series keeps its exact weights beside them
-  if (f.recipe.types.some((t) => typeof (t as Partial<CardTypeDef>).percent !== 'string')) f.recipe = withPercentsFromWeights(f.recipe)
+  if (isOldRecipe(f.recipe)) f.recipe = oldRecipeToSlots(f.recipe, old.deal?.packs ?? old.packs ?? 167, (old.deal?.characterIds ?? old.characterIds ?? []).length)
+  // straight odds (one weight or % per type): one slot of the cards per pack; a locked Series keeps its exact weights
+  if (isOddsRecipe(f.recipe)) f.recipe = oddsRecipeToSlots(f.recipe)
   if (!old.deal) {
     f.recipe = dropExactWeights(f.recipe)
     if (f.characterWeights) {

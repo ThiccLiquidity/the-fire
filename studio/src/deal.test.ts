@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { dealFire, holoCounts, type DealInput } from './deal'
 import { dealInBackground, dealInputKey } from './dealPreview'
 import { sha256Hex, Stream } from './prng'
-import { holoOdds, specialAllHoloRecipe, standardRecipe, typeOdds } from './recipe'
+import { holoOdds, slotOdds, specialAllHoloRecipe, standardRecipe, typeOdds } from './recipe'
 import { HOLO_RATE, expectedHolos, holoRollChance } from './rules'
 
 const CHARS = ['rabbit', 'bird', 'fox']
@@ -52,7 +52,7 @@ describe('expectedHolos', () => {
   })
 })
 
-describe('dealFire (straight odds)', () => {
+describe('dealFire (slots, each card its own roll)', () => {
   it('deals exactly packs x cards per pack with consecutive serials; pool = what was dealt', () => {
     const r = dealFire(input())
     expect(r.cards).toHaveLength(900)
@@ -69,21 +69,26 @@ describe('dealFire (straight odds)', () => {
     typeOdds(standardRecipe()).forEach((p, t) => near(cards.filter((c) => c.type === t).length, cards.length, p))
   })
 
-  it('no guarantees and no caps: all-Paper packs, packs with no Fire-or-better, two Full Arts in a pack', () => {
+  it('every pack has the shape (3 Paper, a Wood, a Wood or better, a Fire or better); each slot converges to its own odds; no caps', () => {
     const r = dealFire(input({ packs: 5000, seed: 'caps' }))
     const bySerial = new Map(r.cards.map((c) => [c.serial, c]))
-    let allPaper = 0
-    let noFire = 0
+    const odds = slotOdds(standardRecipe())
+    const at = Array.from({ length: 6 }, () => new Array<number>(6).fill(0)) // at[position][type]
     let twoFa = 0
     for (const pack of r.packContents) {
       const types = pack.map((s) => bySerial.get(s)!.type)
-      if (types.every((t) => t === 0)) allPaper++
-      if (types.every((t) => t < 2)) noFire++
+      expect(types.slice(0, 3)).toEqual([0, 0, 0])
+      expect(types[3]).toBe(1)
+      expect(types[4]).toBeGreaterThanOrEqual(1)
+      expect(types[5]).toBeGreaterThanOrEqual(2)
+      types.forEach((t, k) => at[k][t]++)
       if (types.filter((t) => t === 5).length >= 2) twoFa++
     }
-    expect(allPaper).toBeGreaterThan(30) // 1 in 64
-    expect(noFire).toBeGreaterThan(500) // 1 in 6
-    expect(twoFa).toBeGreaterThan(5)
+    for (let t = 0; t < 6; t++) {
+      near(at[4][t], 5000, odds[2][t])
+      near(at[5][t], 5000, odds[3][t])
+    }
+    expect(twoFa).toBeGreaterThan(5) // 4.5% x 7.5% of packs
     // and a character can get any number of Full Arts
     for (const id of CHARS) expect(r.cards.filter((c) => c.type === 5 && c.characterId === id).length).toBeGreaterThan(1)
   })

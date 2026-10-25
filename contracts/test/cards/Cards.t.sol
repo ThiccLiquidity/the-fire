@@ -471,13 +471,13 @@ contract CardsTest is SeriesHelper {
 
     function test_recipePerSeries() public {
         RecipeDealer.Recipe memory r = StandardRecipe.build();
-        r.types[5].weight = 1;
+        r.slots[3].weights[5] = 1;
         vm.prank(owner);
         dealer.setRecipe(1, r);
-        assertEq(dealer.recipeOf(1).types[5].weight, 1);
+        assertEq(dealer.recipeOf(1).slots[3].weights[5], 1);
         vm.prank(owner);
         dealer.setRecipe(1, StandardRecipe.build()); // can change until the packs sell
-        assertEq(dealer.recipeOf(1).types[5].weight, 200);
+        assertEq(dealer.recipeOf(1).slots[3].weights[5], 750);
         assertEq(dealer.recipeOf(2).types.length, 0, "other Series untouched");
     }
 
@@ -520,7 +520,10 @@ contract CardsTest is SeriesHelper {
     function test_eachSeriesStandsAlone() public {
         _configure(2, 3);
         RecipeDealer.Recipe memory r = StandardRecipe.build();
-        r.cardsPerPack = 3;
+        r.slots[0].count = 1; // 3 cards: 1 Paper, 1 Wood or better, 1 Fire or better
+        RecipeDealer.Slot[] memory three = new RecipeDealer.Slot[](3);
+        three[0] = r.slots[0]; three[1] = r.slots[2]; three[2] = r.slots[3];
+        r.slots = three;
         vm.prank(owner);
         dealer.setRecipe(2, r);
         assertEq(cards.cardsPerPack(1), 6);
@@ -933,7 +936,7 @@ contract CardsTest is SeriesHelper {
         vm.expectRevert(FireCards.BadDeal.selector);
         cards.setDealer(12, address(big));
         RecipeDealer.Recipe memory r = StandardRecipe.build();
-        r.cardsPerPack = 1_001;
+        r.slots[0].count = 998; // 998 + 1 + 1 + 1
         vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadRecipe.selector, "cards per pack"));
         dealer.check(r);
     }

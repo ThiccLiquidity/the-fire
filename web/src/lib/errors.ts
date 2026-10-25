@@ -57,6 +57,7 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   BadRecipe: (a) => `The recipe isn't set up right: ${String(a[0])}.`,
   BadText: "That text has characters that aren't allowed.",
   BadType: (a) => `Card type ${String(a[0])} isn't set up right: ${String(a[1])}.`,
+  BadSlot: (a) => `Pack slot ${String(a[0])} isn't set up right: ${String(a[1])}.`,
   FireIsClosed: "This Series is closed.",
   FireIsLocked: "This Series is locked, so that can't change.",
   FireNotClosed: "Packs open when sales end.",

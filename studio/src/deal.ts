@@ -1,21 +1,22 @@
 /** The SAMPLE deal of a Series, on its recipe. Pure functions only: no I/O, no Date, no Math.random.
  *
  *  It follows RecipeDealer's dealing (contracts/src/cards/RecipeDealer.sol) with the studio's own seeded randomness:
- *  every card of every pack is rolled on its own, from the Series' fixed odds:
- *  1. Type: by the type weights (a type's chance = its weight / the total).
+ *  every pack has the recipe's shape (its slots, in order), and every card is rolled on its own, from its slot's fixed
+ *  odds:
+ *  1. Type: by its slot's weights (a type's chance = its weight / the slot's total).
  *  2. Holo: frame and picture rolled independently at the type's chances, or picked by its weights.
  *  3. Character: by the character weights (none: every character equally likely).
- *  No slots, guarantees, caps or pool, so nothing depends on the packs before: the first and the last pack have the
- *  same odds. Serials: a seeded permutation of the Series' block. Print number: within the Series, per exact card
+ *  No pool, caps or guarantees beyond the slots, so nothing depends on the packs before: the first and the last pack
+ *  have the same odds. Serials: a seeded permutation of the Series' block. Print number: within the Series, per exact card
  *  (character + type + holo look), #1, #2, ... in the order dealt (pack, then position), as FireCards numbers them.
  *  On-chain the drand words decide all this when each pack is opened; this is a preview of the same rules. PDA grades
  *  are not rolled here. */
 
 import { Stream } from './prng'
-import { characterOdds, holoOdds, parseUint, typeWeights, type Recipe } from './recipe'
+import { cardsPerPack, characterOdds, holoOdds, parseUint, slotWeights, type Recipe } from './recipe'
 import { HOLO_TYPES, MAX_DEAL_CARDS, holoTypeOf, type HoloType } from './rules'
 
-export const DEAL_METHOD = 'sample-odds-v1'
+export const DEAL_METHOD = 'sample-slots-v1'
 
 export interface DealInput {
   /** Series number (printed as "Series F"). */
@@ -94,16 +95,20 @@ export function dealFire(input: DealInput): DealResult {
   if (characterIds.length < 1) throw new Error('a Series needs at least one character')
   if (new Set(characterIds).size !== characterIds.length) throw new Error('duplicate character in the Series')
   if (!seed) throw new Error('seed is required')
-  const S = recipe.cardsPerPack
+  const S = cardsPerPack(recipe)
   if (!Number.isInteger(S) || S < 1) throw new Error('cards per pack must be at least 1')
   if (packs * S > MAX_DEAL_CARDS) {
     throw new Error(`The sample deal deals at most ${MAX_DEAL_CARDS.toLocaleString()} cards (${packs.toLocaleString()} packs x ${S} = ${(packs * S).toLocaleString()}).`)
   }
-  const { weights, total } = typeWeights(recipe)
-  if (total <= 0n) throw new Error('the recipe has no odds (every type weight is 0)')
-  // weights as numbers, scaled so the biggest fits a double exactly enough for a preview
-  const scale = total > BigInt(Number.MAX_SAFE_INTEGER) ? total / BigInt(Number.MAX_SAFE_INTEGER) + 1n : 1n
-  const typeCum = cumulative(weights.map((w) => Number(w / scale)))
+  const slots = slotWeights(recipe)
+  if (slots.some((sl) => sl.total <= 0n)) throw new Error('a slot of the recipe has no odds (every type weight is 0)')
+  // each slot's weights as numbers, scaled so the biggest fits a double exactly enough for a preview
+  const slotCum = slots.map(({ weights, total }) => {
+    const scale = total > BigInt(Number.MAX_SAFE_INTEGER) ? total / BigInt(Number.MAX_SAFE_INTEGER) + 1n : 1n
+    return cumulative(weights.map((w) => Number(w / scale)))
+  })
+  // the slot of each position in the pack
+  const slotAt = slots.flatMap((sl, k) => new Array<number>(sl.count).fill(k))
   const charCum = cumulative(characterOdds(input.characterWeights, characterIds.length))
 
   // holo odds per type: independent types roll two numbers, the others pick by weight
@@ -121,7 +126,7 @@ export function dealFire(input: DealInput): DealResult {
   const pool = new Array<number>(recipe.types.length).fill(0)
   for (let p = 0; p < packs; p++) {
     for (let pos = 0; pos < S; pos++) {
-      const t = pickCum(typeCum, dealStream.float())
+      const t = pickCum(slotCum[slotAt[pos]], dealStream.float())
       pool[t]++
       const h = holo[t]
       const u1 = holoStream.float()

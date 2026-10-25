@@ -4,6 +4,7 @@
 
 import { type Address } from "viem";
 import { addr, argsOf, cardsAbi, dealerAbi, eventOf, pub, psaAbi, read, saleAbi, scanLogs } from "./contracts";
+import { seriesSlots, type SlotOdds } from "./reads";
 
 /** One card dealt: who opened the pack it came from, and its kind (no image: card(serial) reads that when needed). */
 export type DealtCard = {
@@ -117,18 +118,21 @@ export function seriesCharacters(fire: number): Promise<string[]> {
 
 // ---------------------------------------------------------------- the practice pack (forge/practice.js)
 
-/** What a practice pack of a Series is made from: its image folder, its card types (each with its fixed odds per card
- *  and its holo odds), its cards per pack and its characters (with their odds). Read-only; nothing is ever dealt or
- *  saved. */
+/** What a practice pack of a Series is made from: its image folder, its card types (each with its share of cards and
+ *  its holo odds), its pack's slots (each slot's cards and its own odds per type), its cards per pack and its
+ *  characters (with their odds). Read-only; nothing is ever dealt or saved. */
 export type PracticeSet = {
   fire: number; imagesBase: string; characters: string[]; cardsPerPack: number;
   /** Each character's chance per card (equal unless the Series gives them their own odds). */
   characterOdds: number[];
+  /** `share`: the type's share of all cards (its expected cards per pack over cards per pack: "about 1 in N cards"). */
   types: { name: string; slug: string; rank: number; share: number; holo: [number, number, number, number] }[];
+  /** The pack's shape, in pack order (RecipeDealer.slotsOf): each slot's cards and its chance of each type. */
+  slots: SlotOdds[];
 };
 type RecipeRaw = {
-  types: readonly { name: string; slug: string; rank: number; weight: bigint; holoMode: number; holo: readonly bigint[] }[];
-  cardsPerPack: number;
+  types: readonly { name: string; slug: string; rank: number; holoMode: number; holo: readonly bigint[] }[];
+  slots: readonly { count: number; weights: readonly bigint[] }[];
 };
 const practiceSets = new Map<number, Promise<PracticeSet | null>>();
 /** A Series' practice set (cached), or null when it has no recipe, characters or image folder yet. */
@@ -137,25 +141,29 @@ export function practiceSet(fire: number): Promise<PracticeSet | null> {
   if (!p) {
     p = (async () => {
       const f = BigInt(fire);
-      const [base, r, chars, codds] = await Promise.all([
+      const [base, r, chars, codds, sraw] = await Promise.all([
         read<string>("FireCards", cardsAbi, "imagesBase", [f]),
         read<RecipeRaw>("RecipeDealer", dealerAbi, "recipeOf", [f]),
         seriesCharacters(fire),
         read<readonly [readonly bigint[], bigint]>("RecipeDealer", dealerAbi, "characterOddsOf", [f]).catch(() => null),
+        seriesSlots(fire).catch(() => null),
       ]);
-      if (!base || !r.types.length || !Number(r.cardsPerPack) || !chars.length) return null;
-      // each type's chance per card: its weight over the total (RecipeDealer.oddsOf), the same for every card
-      const total = r.types.reduce((a, t) => a + BigInt(t.weight), 0n);
+      if (!base || !r.types.length || !sraw?.length || !chars.length) return null;
+      // the pack's slots (RecipeDealer.slotsOf), and each type's share of cards: its expected cards per pack (count x
+      // the slot's odds, added up) over cards per pack. The same in every pack.
+      const slots = sraw;
+      const per = slots.reduce((a, s) => a + s.count, 0);
       const ONE = 1e18;
-      const types = r.types.map((t) => {
+      const types = r.types.map((t, ti) => {
         const h = t.holo.map(Number);
         const holo: [number, number, number, number] = t.holoMode === 0 // Independent: frame and picture rolls; else weights of none/frame/picture/full
           ? [(1 - h[0] / ONE) * (1 - h[1] / ONE), (h[0] / ONE) * (1 - h[1] / ONE), (1 - h[0] / ONE) * (h[1] / ONE), (h[0] / ONE) * (h[1] / ONE)]
           : ((s) => [h[0] / s, h[1] / s, h[2] / s, h[3] / s] as [number, number, number, number])(h[0] + h[1] + h[2] + h[3] || 1);
-        return { name: t.name, slug: t.slug, rank: Number(t.rank), share: total > 0n ? Number((BigInt(t.weight) * 10n ** 12n) / total) / 1e12 : 0, holo };
+        const share = per > 0 ? slots.reduce((a, s) => a + s.count * (s.odds[ti] ?? 0), 0) / per : 0;
+        return { name: t.name, slug: t.slug, rank: Number(t.rank), share, holo };
       });
       const cw = codds && codds[0].length === chars.length && codds[1] > 0n ? codds[0].map((w) => Number(w) / Number(codds[1])) : chars.map(() => 1 / chars.length);
-      return { fire, imagesBase: base, characters: chars, cardsPerPack: Number(r.cardsPerPack), characterOdds: cw, types } as PracticeSet;
+      return { fire, imagesBase: base, characters: chars, cardsPerPack: per, characterOdds: cw, types, slots } as PracticeSet;
     })().catch((e) => { practiceSets.delete(fire); throw e; });
     practiceSets.set(fire, p);
   }
@@ -166,8 +174,9 @@ export function practiceSet(fire: number): Promise<PracticeSet | null> {
  *  name CardsRenderer gives a real card). */
 export type PracticeCard = { typeIndex: number; typeName: string; slug: string; rank: number; holo: "none" | "frame" | "picture" | "full"; character: string; characterIndex: number; image: string };
 const HOLOS = ["none", "frame", "picture", "full"] as const;
-/** One practice pack from a set, at the real recipe's odds, exactly as the dealer deals: every card on its own, its
- *  type by the type odds, then its holo by that type's holo odds, then its character by the character odds. */
+/** One practice pack from a set, at the real recipe's odds, exactly as the dealer deals: slot by slot, every card on
+ *  its own, its type by its slot's odds, then its holo by that type's holo odds, then its character by the character
+ *  odds. */
 export function practiceDeal(set: PracticeSet, rand: () => number = Math.random): PracticeCard[] {
   const pick = <T>(xs: readonly T[], w: (x: T, i: number) => number): number => {
     const total = xs.reduce((a, x, i) => a + Math.max(0, w(x, i)), 0);
@@ -177,8 +186,10 @@ export function practiceDeal(set: PracticeSet, rand: () => number = Math.random)
     return xs.length - 1;
   };
   const out: PracticeCard[] = [];
-  for (let k = 0; k < set.cardsPerPack; k++) {
-    const ti = pick(set.types, (t) => t.share);
+  const slotAt = set.slots.flatMap((s, k) => Array.from({ length: s.count }, () => k));
+  for (let k = 0; k < slotAt.length; k++) {
+    const odds = set.slots[slotAt[k]].odds;
+    const ti = pick(set.types, (_, i) => odds[i] ?? 0);
     const t = set.types[ti];
     const holo = pick(HOLOS, (_, j) => t.holo[j]);
     const ci = pick(set.characters, (_, i) => set.characterOdds[i] ?? 0);

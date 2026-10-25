@@ -1,4 +1,4 @@
-/** The studio's recipe checks and odds (src/recipe.ts) against the contract (RecipeDealer.check, oddsOf and holoOdds),
+/** The studio's recipe checks and odds (src/recipe.ts) against the contract (RecipeDealer.check, slotsOf and holoOdds),
  *  on recipes in the exact recipe.json shape the studio exports and ConfigureSeries.s.sol reads.
  *
  *  scripts/fixtures/recipe-parity.json holds the cases and the contract's answers. Refresh it with
@@ -9,13 +9,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  checkRecipe, holoOdds, recipeFromJson, recipeJson, specialAllHoloRecipe, standardRecipe, typeWeights, type RecipeJson,
+  cardsPerPack, checkRecipe, holoOdds, recipeFromJson, recipeJson, slotWeights, specialAllHoloRecipe, standardRecipe, type RecipeJson,
 } from '../src/recipe'
 
 const FIXTURE = new URL('./fixtures/recipe-parity.json', import.meta.url)
 
 type Case = RecipeJson
-interface Result { ok: boolean; error?: string; perPack?: number; weights?: string[]; total?: string; holo?: string[][]; calls?: number }
+interface Result { ok: boolean; error?: string; perPack?: number; counts?: string[]; weights?: string[][]; totals?: string[]; holo?: string[][]; calls?: number }
 
 /** Deterministic random recipes: mostly valid shapes, some invalid. */
 function cases(): Case[] {
@@ -31,20 +31,31 @@ function cases(): Case[] {
     const T = chance(0.02) ? 0 : 1 + rnd(7)
     const types: RecipeJson['types'] = []
     for (let t = 0; t < T; t++) {
-      const weight = chance(0.03) ? 0 : chance(0.1) ? String(BigInt(1 + rnd(1_000_000)) * 10n ** 12n) : 1 + rnd(10_000)
       const mode = chance(0.7) ? 'independent' : 'distribution'
       const ch = () => String(chance(0.15) ? 0 : chance(0.1) ? 10n ** 18n : chance(0.01) ? 10n ** 18n + 1n : BigInt(rnd(1_000_000)) * 10n ** 12n)
       types.push({
         name: chance(0.01) ? 'Bad"Name' : chance(0.005) ? '' : `Type ${t}`,
         slug: chance(0.01) ? 'Bad Slug' : chance(0.01) && t > 0 ? `t${t - 1}` : `t${t}`,
-        rank: rnd(6), weight,
+        rank: rnd(6),
         holo: mode === 'independent'
           ? { mode, frame: ch(), picture: ch() }
           : { mode, weights: [0, 0, 0, 0].map(() => String(chance(0.4) ? 0 : rnd(5))) },
       })
     }
-    const cardsPerPack = chance(0.03) ? 0 : chance(0.02) ? 1001 : chance(0.05) ? 1000 : 1 + rnd(12)
-    out.push({ fire: 100 + k, cardsPerPack, types, characters: chars })
+    // slots: each with a count (sometimes 0, sometimes too many cards) and a weight for some of the types (by slug;
+    // sometimes 0, sometimes none at all, sometimes above 2^53)
+    const S = chance(0.02) ? 0 : 1 + rnd(4)
+    const slots: RecipeJson['slots'] = []
+    for (let s = 0; s < S; s++) {
+      const count = chance(0.03) ? 0 : chance(0.02) ? 1001 : chance(0.03) ? 997 : 1 + rnd(4)
+      const weights: Record<string, number | string> = {}
+      for (const t of types) {
+        if (t.slug in weights || chance(0.35)) continue
+        weights[t.slug] = chance(0.04) ? 0 : chance(0.1) ? String(BigInt(1 + rnd(1_000_000)) * 10n ** 12n) : 1 + rnd(10_000)
+      }
+      slots.push({ count, weights })
+    }
+    out.push({ fire: 100 + k, types, slots, characters: chars })
   }
   return out
 }
@@ -84,10 +95,11 @@ describe.runIf(!process.env.WRITE_RECIPE_CASES && existsSync(FIXTURE))('recipe p
       }
       expect(problems, `case ${i}`).toEqual([])
       const r = recipeFromJson(c)
-      expect(want.perPack, `case ${i}`).toBe(r.cardsPerPack)
-      const { weights, total } = typeWeights(r)
-      expect(weights.map(String), `case ${i}`).toEqual(want.weights)
-      expect(String(total), `case ${i}`).toBe(want.total)
+      expect(want.perPack, `case ${i}`).toBe(cardsPerPack(r))
+      const sw = slotWeights(r)
+      expect(sw.map((x) => String(x.count)), `case ${i}`).toEqual(want.counts)
+      expect(sw.map((x) => x.weights.map(String)), `case ${i}`).toEqual(want.weights)
+      expect(sw.map((x) => String(x.total)), `case ${i}`).toEqual(want.totals)
       r.types.forEach((t, k) => {
         const o = holoOdds(t)
         want.holo![k].forEach((v, h) => expect(Math.abs(Number(v) / 1e18 - o[h]), `case ${i}, type ${k}`).toBeLessThan(1e-12))

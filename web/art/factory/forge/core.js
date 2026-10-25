@@ -14,18 +14,40 @@
   const MAT_LABEL = { paper: 'Paper', wood: 'Wood', fire: 'Fire', charcoal: 'Coal', diamond: 'Diamond', gold: 'Gold', fullart: 'Full Art' };
   // always holo: Diamond (the old top card) and the Standard's Gold and Full Art (always full holo)
   const ALWAYS_HOLO = { diamond: true, gold: true, fullart: true };
-  // the Standard recipe's fixed odds per card (contracts StandardRecipe.sol, out of 10,000; docs/cards-contracts.md):
-  // every card of every pack is rolled on its own, its material by these weights, then its holo (frame and picture each
-  // roll at 1 - sqrt(1 - rate); Gold and Full Art always full holo), then its character. No slots or guarantees: the
-  // first and the last pack have the same odds. The live site reads each Series' own odds from the chain.
-  const CARD_ODDS = [['paper', 5000], ['wood', 2415], ['fire', 1497], ['charcoal', 489], ['gold', 399], ['fullart', 200]];
+  // the Standard recipe's pack (contracts StandardRecipe.sol; docs/cards-contracts.md): every pack has the same shape,
+  // its slots in order, and each card rolls its material from its own slot's fixed odds, then its holo (frame and
+  // picture each roll at 1 - sqrt(1 - rate); Gold and Full Art always full holo), then its character. No pool or caps:
+  // the first and the last pack have the same odds. The live site reads each Series' own slots from the chain.
+  const PACK_SLOTS = [
+    { count: 3, odds: [['paper', 1]] },
+    { count: 1, odds: [['wood', 1]] },
+    { count: 1, odds: [['wood', 449], ['fire', 300], ['charcoal', 120], ['gold', 86], ['fullart', 45]] }, // Wood or better, of 1,000
+    { count: 1, odds: [['fire', 5982], ['charcoal', 1734], ['gold', 1534], ['fullart', 750]] }, // Fire or better, of 10,000
+  ];
+  const MAT_ORDER = ['paper', 'wood', 'fire', 'charcoal', 'gold', 'fullart'];
+  /** Each material's share of all cards from a pack's slots: its expected cards per pack over cards per pack (Standard:
+   *  50 / 24.15 / 14.97 / 4.89 / 3.99 / 2%), as [material, share] in rank order. */
+  const shareOf = (slots) => {
+    const per = slots.reduce((a, s) => a + s.count, 0) || 1;
+    return MAT_ORDER.map((m) => [m, slots.reduce((a, s) => {
+      const total = s.odds.reduce((x, [, w]) => x + w, 0);
+      return a + s.count * ((s.odds.find(([x]) => x === m) || [m, 0])[1] / (total || 1));
+    }, 0) / per]).filter(([, p]) => p > 0);
+  };
+  const CARD_ODDS = shareOf(PACK_SLOTS);
   const ODDS_TOTAL = CARD_ODDS.reduce((a, [, w]) => a + w, 0);
   const HOLO_RATE = { paper: 0.05, wood: 0.1, fire: 0.5, charcoal: 0.9 };
-  // the demo's own pulls lean rare (owner's call) so visitors get to see Gold and Full Art; the odds the site shows
-  // stay the Series' real ones, and the live site always deals at the chain's odds
-  const DEMO_PULL_ODDS = [['paper', 4200], ['wood', 2200], ['fire', 1600], ['charcoal', 800], ['gold', 700], ['fullart', 500]];
-  /** One card: { material, holo }. The demo deals at DEMO_PULL_ODDS; `odds` overrides (e.g. the real CARD_ODDS). */
-  const rollCard = (rand = Math.random, odds = DEMO_PULL_ODDS) => {
+  // the demo's own pulls lean rare (owner's call) so visitors get to see Gold and Full Art: the same pack shape, with
+  // Gold and Full Art boosted in the Wood-or-better and Fire-or-better slots (about 0.41 Gold and 0.29 Full Art a pack,
+  // against 0.24 and 0.12). The odds the site shows stay the Series' real ones, and the live site always deals at the
+  // chain's odds.
+  const DEMO_PACK_SLOTS = [
+    PACK_SLOTS[0], PACK_SLOTS[1],
+    { count: 1, odds: [['wood', 33], ['fire', 27], ['charcoal', 12], ['gold', 16], ['fullart', 12]] },
+    { count: 1, odds: [['fire', 42], ['charcoal', 16], ['gold', 25], ['fullart', 17]] },
+  ];
+  /** One card from a slot's odds ([material, weight] pairs): { material, holo }. */
+  const rollCard = (rand = Math.random, odds = CARD_ODDS) => {
     const total = odds.reduce((a, [, w]) => a + w, 0);
     let u = rand() * total, material = odds[odds.length - 1][0];
     for (const [m, w] of odds) { if (u < w) { material = m; break; } u -= w; }
@@ -33,6 +55,9 @@
     const q = 1 - Math.sqrt(1 - HOLO_RATE[material]), f = rand() < q, p = rand() < q;
     return { material, holo: f && p ? 'full' : f ? 'frame' : p ? 'picture' : 'none' };
   };
+  /** One pack, slot by slot, each card its own roll from its slot's odds. The demo deals DEMO_PACK_SLOTS; `slots`
+   *  overrides (e.g. the real PACK_SLOTS). */
+  const rollPack = (rand = Math.random, slots = DEMO_PACK_SLOTS) => slots.flatMap((s) => Array.from({ length: s.count }, () => rollCard(rand, s.odds)));
   // demo: only the Bowling Ball has Gold and Full Art art so far, so every Gold or Full Art pulled is a Bowling Ball
   const SPECIAL_CAST = 'Bowling Ball';
   // the demo cast: real card art, rendered by the Card Studio's own card builder into cards/<id>/<material>-<holo>-<grade|u>.webp
@@ -225,7 +250,7 @@
       if (stage === 'closed') s.groups.forEach((g) => { g.state = 'ended'; g.left = 0; });
     },
 
-    CARD_ODDS, ODDS_TOTAL, HOLO_RATE, DEMO_PULL_ODDS, rollCard,
+    CARD_ODDS, ODDS_TOTAL, HOLO_RATE, PACK_SLOTS, DEMO_PACK_SLOTS, MAT_ORDER, shareOf, rollCard, rollPack,
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },
     cardStrip(c) { // the finished card images for a look (character, material, holo): one strip, raw, cased, then slabbed PDA 1-10
       // demo: only the Bowling Ball has Gold and Full Art art, so those always show it

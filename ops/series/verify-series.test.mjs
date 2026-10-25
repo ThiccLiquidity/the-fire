@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { allImageNames, characterWeightsFromJson, imageName, loads, looksFor, recipeFromJson, recipeHash, retryAfterMs, STATES } from "./verify-series.mjs";
+import { allImageNames, cardsPerPackOf, characterWeightsFromJson, imageName, loads, looksFor, recipeFromJson, recipeHash, retryAfterMs, STATES } from "./verify-series.mjs";
 
 const standard = JSON.parse(readFileSync(new URL("../../contracts/test/cards/recipe-standard.json", import.meta.url), "utf8"));
 
@@ -16,10 +16,14 @@ test("Standard recipe: 18 looks per character (4 types x 4 holo, Gold full, Full
   assert.equal(imageName(2, "coal", "full", "10"), "c2-coal-full-10.webp");
 });
 
-test("odds recipe: type weights, cards per pack, character weights (none = equal)", () => {
+test("slot recipe: each slot's count and weights in type order, cards per pack, character weights (none = equal)", () => {
   const r = recipeFromJson(standard);
-  assert.deepEqual(r.types.map((t) => t.weight), [5000n, 2415n, 1497n, 489n, 399n, 200n]);
-  assert.equal(r.cardsPerPack, 6n);
+  assert.deepEqual(r.slots.map((s) => s.count), [3n, 1n, 1n, 1n]);
+  assert.deepEqual(r.slots.map((s) => s.weights), [
+    [1n, 0n, 0n, 0n, 0n, 0n], [0n, 1n, 0n, 0n, 0n, 0n], [0n, 449n, 300n, 120n, 86n, 45n], [0n, 0n, 5982n, 1734n, 1534n, 750n],
+  ]);
+  assert.equal(cardsPerPackOf(r), 6n);
+  assert.throws(() => recipeFromJson({ ...standard, slots: [{ count: 1, weights: { diamond: 1 } }] }), /diamond is not the slug/);
   assert.deepEqual(characterWeightsFromJson(standard), [1n, 1n, 1n]);
   const j = structuredClone(standard);
   j.characters.forEach((c, i) => { c.weight = i + 2; });
@@ -42,7 +46,7 @@ test("holo looks follow the dealer: certain holo has no 'none'", () => {
 test("recipe hash: the studio's manifest fingerprint ignores imagesBase and the sale block", () => {
   const a = recipeHash(standard);
   // the same constant is asserted in studio/src/manifest.test.ts (the studio writes it into manifest.json)
-  assert.equal(a, "38b4bc2a2bf99d87c772167f1acab4eb9e12d95be2ca3c8bd5c844faea4472db");
+  assert.equal(a, "32cdd060a21eb44c9f434f0d857bcb749661f473e7dc457288b969cc75efa7f7");
   assert.equal(recipeHash({ ...standard, imagesBase: "ipfs://other/", sale: { start: 1 } }), a);
   assert.notEqual(recipeHash({ ...standard, characters: standard.characters.slice(1) }), a);
 });

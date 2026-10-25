@@ -2,9 +2,10 @@
 
 The Card Studio (`studio/`) is a standalone browser app that builds every card image and its metadata for a Series.
 It is kept separate from the site so it can feed whichever front end the cards are shown in. The rules are
-set per Series as a **recipe** (`studio/src/recipe.ts`): card types and their odds, holo odds and cards per pack.
-Every card of every pack is rolled on its own from those fixed odds (straight odds: no slots, guarantees, caps or
-pool). PDA grade odds and wear rules are not part of it: they are fixed forever in `FirePsa`, the same for every
+set per Series as a **recipe** (`studio/src/recipe.ts`): card types, their holo odds, and the pack's shape: its
+**slots**, each a number of cards with its own fixed odds per type. Every pack has the same shape, and every card is
+rolled on its own from its slot's odds (no pool, no caps, no guarantees beyond what the slots say), so the last pack
+is exactly as random as the first. PDA grade odds and wear rules are not part of it: they are fixed forever in `FirePsa`, the same for every
 Series. It is the same recipe `RecipeDealer` deals on-chain (`docs/cards-contracts.md`); the studio's checks and odds
 are ports of the contract's and are tested against it. New Series start from the **Standard recipe** (below,
 `contracts/src/cards/StandardRecipe.sol`).
@@ -85,21 +86,31 @@ are ports of the contract's and are tested against it. New Series start from the
 Set on the **Recipe** tab, per Series, and locked with the deal:
 
 - **Card types**, any number: name (the Material trait, 1-64 bytes), slug (image file names, `[a-z0-9-]`, 1-32
-  bytes, unique; follows the name until typed), rank (the rarity order the site shows), its **% of cards** (up to 2
-  decimals, above 0), holo (two independent rolls, frame and picture, or a split in parts for plain / frame / picture /
-  full) and its frame set. The types must add up to exactly 100%: the tab shows a running total ("Total 96.01% · 3.99%
-  left to assign"), refuses anything else, and offers a one-click "Fill the rest into Paper" (the biggest type takes
-  what's left, or gives up the extra).
-- **Cards per pack**: 1 to 1,000.
+  bytes, unique; follows the name until typed), rank (the rarity order the site shows), holo (two independent rolls,
+  frame and picture, or a split in parts for plain / frame / picture / full) and its frame set. Each type card shows
+  what the slots add up to for it: "0.2394 a pack · 3.99% of cards · about 1 in 25 cards · ≈ 40 cards".
+- **Slots** (The pack), in pack order, added, moved and removed like types: each slot's **cards** (at least 1) and each
+  type's **% of this slot** (up to 2 decimals; blank = never in this slot). Each slot must add up to exactly 100%: it
+  shows a running total ("Total 99.9% · 0.1% left to assign"), refuses anything else, and offers a one-click "Fill the
+  rest into Fire" (the biggest type of the slot other than the one just typed takes what's left, or gives up the
+  extra). Under it: "This slot: Fire 59.82% · about 1 in 1.7 · Coal 17.34% · about 1 in 5.8 ...". The slot's name
+  follows its types: one type ("3 Paper"), every type from the lowest rank it holds up ("1 Wood or better"), else its
+  types ("1 Fire or Gold"). Cards per pack = the slots' cards added up, 1 to 1,000; the tab shows the pack in one line
+  ("6 cards a pack: 3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better"). Every type must be in at least one slot
+  (else the contract refuses it: listed but never dealt).
 - **Character odds** (Series tab): **All equal** by default (every character equally likely, no inputs). Turned off,
   each picked character gets a % of cards (starting equal), with the same total, "left to assign" and fill helper;
   they must add up to exactly 100% (the Deal and Export tabs block until they do). Exported as each character's
   `weight` in recipe.json only when they differ.
 - **Percentages in, weights out:** the owner only ever sees percentages; odds everywhere read "3.99% · about 1 in 25
-  cards". The contract takes whole-number weights: percent x 10,000 (100% = 1,000,000), with the zeros every weight
-  shares dropped (same ratios), so the Standard still exports 5000 / 2415 / 1497 / 489 / 399 / 200 and 10 / 10 / 10 /
-  70% exports 1 / 1 / 1 / 7 (`studio/src/recipe.ts` `percentsToWeights`, `simplifyWeights`). Saves store the
-  percentages. Older saves with weights load as percentages (2 decimals, rounded so they add up to exactly 100%:
+  cards". The contract takes whole-number weights per slot: percent x 10,000 (100% = 1,000,000), with the zeros every
+  weight of the slot shares dropped (same ratios), so the Standard exports Wood or better 449 / 300 / 120 / 86 / 45 and
+  Fire or better 5982 / 1734 / 1534 / 750, and 10 / 10 / 10 / 70% exports 1 / 1 / 1 / 7 (`studio/src/recipe.ts`
+  `percentsToWeights`, `simplifyWeights`). Saves store the percentages. Older saves load as slots: a recipe saved with
+  straight odds (one % or weight per type and a cards per pack) becomes one slot of that many cards at those odds (the
+  same cards, the same odds); a recipe saved with the old pool rules (supply, slot groups) becomes one slot per old
+  slot group, over the types that group could hold, at the cards their rules gave for that Series' packs and
+  characters. Weights load as percentages (2 decimals, rounded so each slot adds up to exactly 100%:
   `weightsToPercents`); a Series whose deal is locked also keeps its exact weights, so its odds and its recipe.json
   never change.
 - **PDA odds** are fixed forever (the same for every Series) and shown read-only; recipe.json never carries them. A
@@ -107,21 +118,24 @@ Set on the **Recipe** tab, per Series, and locked with the deal:
 - **Holo rolls** show at most 2 decimals (the exact stored value on hover); the stored value stays exact (the Standard
   rolls match `StandardRecipe` to the wei) until the field is edited.
 
-The tab lists every problem the contract would refuse (no types, cards per pack, slugs, text, weights, holo). **What it
-makes** (top of the tab, for the Series' packs and characters or any others typed in) shows each type's odds per card
-and expected cards, and for every holo look how rare one exact card is on the site's scale (its chance per card dealt:
-type x holo x character odds, "1 in N"; with character odds, the rarest character's too; Rare from 1 in 100, Epic
-1 in 400, Legendary 1 in 1,000; `studio/src/rarity.ts` mirrors `trueOdds` / `Info.lookP`), and the exact chance a pack
-holds at least one (and two or more) of each type: 1 - (1 - odds)^cards, the same for every pack. Packs of 42 or more
+The tab lists every problem the contract would refuse (no types, no slots, a slot with no cards or no odds, cards per
+pack, a type in no slot, slugs, text, holo). **What it makes** (top of the tab, for the Series' packs and characters
+or any others typed in) shows each type's expected cards per pack (the sum over the slots of cards x the slot's odds),
+its share of cards (that over cards per pack) and expected cards, and for every holo look how rare one exact card is
+on the site's scale (its chance per card dealt: share of cards x holo x character odds, "1 in N"; with character odds,
+the rarest character's too; Rare from 1 in 100, Epic 1 in 400, Legendary 1 in 1,000; `studio/src/rarity.ts` mirrors
+`trueOdds` / `Info.lookP`), and the exact chance a pack holds at least one (and two or more) of each type, from the
+slots (none = the product over the slots of (1 - odds)^cards), the same for every pack. Packs of 42 or more
 cards get a warning: free-pack credits (42 cards burned each) can't be spent on that Series. The Series tab shows the
 same result. Presets: **Standard**, **Special: 3 cards, all holo** (Fire 68%, Coal 30%, Gold 2%; every card holo), or
-a copy of another Series' recipe. Older saves load as odds: Series from before recipes get the old Standard (Diamond)
-at its old shares; a recipe saved with the old pool rules (supply, slots) gets each type's weight from the cards its
-rules gave for that Series' packs and characters, so its expected shares stay about the same.
+a copy of another Series' recipe. Older saves load as slots (above): Series from before recipes get the old Standard
+(Diamond) at its old shares, in one slot of 6.
 
 **How many of each card** (Recipe tab under the card types, and the Series tab under the cast) shows what the Series
-prints if the odds land exactly: total cards x type odds [x character odds] [x holo look odds]
-(`studio/src/rarity.ts` `expectedCounts`). Each type reads "Gold · 3.99% · about 1 in 25 cards · ≈ 40 cards" with the total cards, each
+prints if the odds land exactly: packs x the sum over the slots of cards x the slot's type odds [x character odds]
+[x holo look odds] (`studio/src/rarity.ts` `expectedCounts`). A line per slot ("1 Fire or better: Fire 59.82%, Coal
+17.34%, Gold 15.34%, Full Art 7.5%"), then each type reads "Gold · 0.2394 a pack · 3.99% · about 1 in 25 cards · ≈ 40
+cards" with the total cards, each
 character its "≈ N cards", and a grid of types x characters, optionally split by holo look (per type or per cell).
 Counts under 10 get one decimal, others whole numbers; anything expected below 1 shows in red as "< 1, may not print".
 The pack count is the Sale's base packs, with a "what if" field (not saved); packs sold after sell-out add more cards
@@ -129,21 +143,34 @@ at the same odds. Labelled "If the odds land exactly: expected counts. Real pull
 
 ## The Standard recipe
 
-Each Series stands alone: its cards come only from its own packs and nothing carries over. Every card is rolled on its
-own (6 a pack):
+Each Series stands alone: its cards come only from its own packs and nothing carries over. Six cards a pack, in four
+slots; every card is rolled on its own from its slot's odds:
 
-| Material | recipe.json weight (of 10,000) | Per card |
+| Slot | Cards | Odds (recipe.json weights) |
 |---|---|---|
-| Paper | 5,000 | 50% |
-| Wood | 2,415 | 24.15% |
-| Fire | 1,497 | 14.97% |
-| Coal | 489 | 4.89% |
-| Gold | 399 | 3.99% |
-| Full Art | 200 | 2% |
+| Paper | 3 | Paper 100% (1) |
+| Wood | 1 | Wood 100% (1) |
+| Wood or better | 1 | Wood 44.9%, Fire 30%, Coal 12%, Gold 8.6%, Full Art 4.5% (449 / 300 / 120 / 86 / 45 of 1,000) |
+| Fire or better | 1 | Fire 59.82%, Coal 17.34%, Gold 15.34%, Full Art 7.5% (5,982 / 1,734 / 1,534 / 750 of 10,000) |
 
-These keep the old pool dealing's expected share of each type for the example Series (167 packs, 20 characters: 501
-Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art of 1,002). Real counts vary around the expectation, and any
-pack can hold any mix (all Paper, or two Full Arts).
+Per pack, on average:
+
+| Material | Per pack | Share of cards | About 1 in |
+|---|---|---|---|
+| Paper | 3 | 50% | 2 cards |
+| Wood | 1.449 | 24.15% | 4.1 cards |
+| Fire | 0.8982 | 14.97% | 6.7 cards |
+| Coal | 0.2934 | 4.89% | 20 cards |
+| Gold | 0.2394 | 3.99% | 25 cards |
+| Full Art | 0.12 | 2% | 50 cards |
+
+The slot odds were chosen so these are exactly the averages of the straight odds they replace (50 / 24.15 / 14.97 /
+4.89 / 3.99 / 2% of 6 cards), which kept the old pool dealing's expected shares for the example Series (167 packs, 20
+characters: 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art of 1,002). So every exact card is exactly as
+rare as before (with 20 characters one exact Full Art is still 1 in 1,000 cards). What the slots change is the feel:
+every pack has 3 Paper, a Wood and a Fire or better (a Fire, Coal, Gold or Full Art in its last slot, every time). Real
+counts vary around the expectation and nothing caps them: a pack can hold two Full Arts (4.5% x 7.5%, about 1 in 300
+packs) or two Golds (about 1 in 76).
 
 ## Holo (Standard)
 
@@ -214,7 +241,7 @@ has its own "Forged · Series #" line, so images are never shared across Series.
   A Series' images lock when its drop is set up.
 
 A pack's contents are decided only when it is opened: the pack is burned, drand randomness arrives about 90 seconds
-later (the router commits to a drand round 90 to 93 seconds ahead) and each card is rolled from the Series' fixed odds. See
+later (the router commits to a drand round 90 to 93 seconds ahead) and each card is rolled from its slot's fixed odds. See
 `docs/cards-contracts.md`.
 
 ## Studio workflow, per Series
@@ -227,8 +254,8 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and each card
 3. **Series:** pick the characters (any number; their order is the image order c0, c1, ...). The pack count is the
    drop's total (base) packs, set on the Sale tab (one number: the expected counts use it). Character odds: All equal
    (the default), or each character's % of cards, adding up to 100%.
-4. **Recipe:** card types with their odds, cards per pack, the contract's checks and the result (odds, expected
-   counts, rarity, per-pack chances).
+4. **Recipe:** the pack's slots (cards and odds per slot), the card types, the contract's checks and the result (per
+   pack, share of cards, expected counts, rarity, per-pack chances).
    **Sale** (next tab): the drop as **groups** (`docs/drop-groups.md`) for `FireSale.configureDrop`, in plain units.
    Work backwards from the total: set the total (base) packs, then split it into 1 to 6 groups, each a compact card
    added from a template (Paper Press holders, Coin holders (snapshot), NFT holders, Everyone, After sell-out (rising
@@ -267,7 +294,7 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and each card
    means building again.
 7. **Export & Upload:** a readiness checklist (recipe valid, frames for every type, characters valid, deal locked,
    approved, the full grid built, sale settings valid, the sale's packs equal to the Series' or the locked deal's);
-   **recipe.json** (what `contracts/script/ConfigureSeries.s.sol` reads: cards per pack, types, characters (with
+   **recipe.json** (what `contracts/script/ConfigureSeries.s.sol` reads: types, slots, characters (with
    their weights if they have their own odds), `imagesBase` once
    uploaded, and the `sale` block; tied to the uploaded build; it warns until both pins are checked and the CAR is
    confirmed stored); a zip of the images, per-card metadata (preview only), `fire.json` and `recipe.json` (big Series

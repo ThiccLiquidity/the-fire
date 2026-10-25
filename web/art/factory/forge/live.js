@@ -133,14 +133,16 @@
       if (num(q.paperEth) > 0 && num(q.paper) > 0) Store.PRICES.PAPER_USD = num(q.paperEth) * Store.PRICES.ETH_USD / num(q.paper); // PAPER at its market price
     }).catch(() => {});
   }
-  // the Series' fixed odds (RecipeDealer: type weights, holo odds, character weights), for the rarity shown on every
-  // card ("1 in N" = material x holo x character odds; Info.lookP). The same odds for every pack.
+  // the Series' fixed odds (RecipeDealer: its pack's slots, each with its own type odds; holo odds; character weights),
+  // for the rarity shown on every card ("1 in N" = material share x holo x character odds; Info.lookP) and the pack row
+  // (Info: "3 Paper · 1 Wood · ..."). The same odds for every pack.
   function loadOdds(fire) {
     L.practiceSet(fire).then((set) => {
       if (!set || S.series.no !== fire) return;
-      const types = {};
-      for (const t of set.types) { const m = MAT[String(t.name).toLowerCase()] || MAT[t.slug] || t.slug; types[m] = { share: t.share, holo: t.holo }; }
-      Store.LIVE_ODDS = { types, chars: Object.fromEntries(set.characters.map((c, i) => [c, set.characterOdds[i]])) };
+      const types = {}, ids = set.types.map((t) => MAT[String(t.name).toLowerCase()] || MAT[t.slug] || t.slug);
+      set.types.forEach((t, i) => { types[ids[i]] = { share: t.share, holo: t.holo, name: t.name, rank: t.rank }; });
+      const slots = set.slots.map((s) => ({ count: s.count, odds: s.odds.flatMap((p, i) => (p > 0 ? [[ids[i], p]] : [])) }));
+      Store.LIVE_ODDS = { types, slots, chars: Object.fromEntries(set.characters.map((c, i) => [c, set.characterOdds[i]])) };
       Store.update(() => {});
     }).catch(() => {});
   }

@@ -13,7 +13,7 @@ import {Deployments} from "./Deployments.sol";
  * Sets up one Series from a recipe JSON (the Card Studio exports it; shape in ../docs/cards-contracts.md), in two
  * signings on the owner's hardware wallet with a check in between (docs/deploy.md, step 6):
  *
- *   Batch A, the content: RecipeDealer.setRecipe, setCharacters (+ appendCharacters in batches for long lists),
+ *   Batch A, the content: RecipeDealer.setRecipe (card types and slots), setCharacters (+ appendCharacters in batches for long lists),
  *     setCharacterWeights (only if the characters have a "weight"), FireCards.setDealer, FireCards.setImagesBase (if
  *     "imagesBase" is given).
  *     Nothing is locked yet: any of it can still be set again.
@@ -248,13 +248,15 @@ contract ConfigureSeries is Deployments {
 
     /// @dev `withSale` false: the sale block is left unread (batch A doesn't need the drop's start yet).
     function _parse(string memory json, bool withSale) internal view returns (Series memory s) {
-        _onlyKeys(json, ".", "fire,imagesBase,cardsPerPack,types,characters,sale");
+        _onlyKeys(json, ".", "fire,imagesBase,types,slots,characters,sale");
         s.fire = _num(json, ".fire", type(uint64).max);
         if (json.keyExists(".imagesBase")) s.imagesBase = json.readString(".imagesBase");
         uint256 nt = _count(json, ".types");
         s.recipe.types = new RecipeDealer.CardType[](nt);
         for (uint256 i; i < nt; i++) s.recipe.types[i] = _type(json, string.concat(".types[", vm.toString(i), "]"));
-        s.recipe.cardsPerPack = uint32(_num(json, ".cardsPerPack", type(uint32).max));
+        uint256 ns = _count(json, ".slots");
+        s.recipe.slots = new RecipeDealer.Slot[](ns);
+        for (uint256 i; i < ns; i++) s.recipe.slots[i] = _slot(json, string.concat(".slots[", vm.toString(i), "]"), s.recipe.types);
         uint256 nc = _count(json, ".characters");
         s.names = new string[](nc);
         s.categories = new string[](nc);
@@ -407,13 +409,32 @@ contract ConfigureSeries is Deployments {
         require(v <= max, string.concat(k, " is too big for its field (most ", vm.toString(max), ")"));
     }
 
+    /// @dev A slot: its `count` and its `weights` by type slug ({"wood": 449, "fire": 300, ...}); a type left out
+    ///      has weight 0 (never in this slot). A slug that isn't one of the recipe's types is refused.
+    function _slot(string memory json, string memory p, RecipeDealer.CardType[] memory types)
+        internal
+        view
+        returns (RecipeDealer.Slot memory sl)
+    {
+        _onlyKeys(json, p, "count,weights");
+        sl.count = uint32(_num(json, string.concat(p, ".count"), type(uint32).max));
+        string memory wp = string.concat(p, ".weights");
+        string[] memory keys = vm.parseJsonKeys(json, wp);
+        sl.weights = new uint64[](types.length);
+        for (uint256 i; i < keys.length; i++) {
+            uint256 t;
+            while (t < types.length && keccak256(bytes(types[t].slug)) != keccak256(bytes(keys[i]))) t++;
+            require(t < types.length, string.concat(wp, ": ", keys[i], " is not the slug of a card type"));
+            sl.weights[t] = uint64(_num(json, string.concat("$", wp, "['", keys[i], "']"), type(uint64).max));
+        }
+    }
+
     function _type(string memory json, string memory p) internal view returns (RecipeDealer.CardType memory t) {
-        _onlyKeys(json, p, "name,slug,rank,weight,holo");
+        _onlyKeys(json, p, "name,slug,rank,holo");
         _onlyKeys(json, string.concat(p, ".holo"), "mode,frame,picture,weights");
         t.name = json.readString(string.concat(p, ".name"));
         t.slug = json.readString(string.concat(p, ".slug"));
         t.rank = uint32(_num(json, string.concat(p, ".rank"), type(uint32).max));
-        t.weight = uint64(_num(json, string.concat(p, ".weight"), type(uint64).max));
         bytes32 mode = keccak256(bytes(json.readString(string.concat(p, ".holo.mode"))));
         if (mode == keccak256("independent")) {
             t.holoMode = RecipeDealer.HoloMode.Independent;

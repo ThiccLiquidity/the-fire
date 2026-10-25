@@ -22,23 +22,26 @@ interface IRecipeCompiler {
 
 /**
  * @title RecipeDealer
- * @notice Deals each Series from its own recipe, by straight odds. Every setting is per Series and is fixed once the
- *         Series' first pack is minted (or the Series is locked or closed), so a buyer always knows the odds. Every
- *         setting can be read here.
+ * @notice Deals each Series from its own recipe: every pack has the same shape (its slots), and every card is rolled
+ *         on its own from its slot's fixed odds. Every setting is per Series and is fixed once the Series' first pack
+ *         is minted (or the Series is locked or closed), so a buyer always knows the odds. Every setting can be read
+ *         here.
  *
  *         A recipe:
- *         - Card types, in any number. Each has a name (the "Material" trait), a file slug (image file names), a rank
- *           (rarity order, for display) and a weight: its odds, out of the recipe's total weight. Holo: two
- *           independent rolls (frame, picture) at chances out of 1e18, or weights for none / frame / picture / full.
- *         - Cards per pack.
+ *         - Card types, in any number. Each has a name (the "Material" trait), a file slug (image file names) and a
+ *           rank (rarity order, for display). Holo: two independent rolls (frame, picture) at chances out of 1e18, or
+ *           weights for none / frame / picture / full.
+ *         - Slots, in pack order: each a number of cards and its own odds, one weight per card type (0 = never in this
+ *           slot). Cards per pack = the slots' counts added up. "3 Paper, 1 Wood, 1 Wood or better, 1 Fire or better"
+ *           is four slots.
  *         - Characters (names and categories), any number, added in batches if the list is long, and optional
  *           character weights (none = every character equally likely).
  *
  *         Dealing (FireCards calls it, in opening order): every card of every pack is rolled on its own: its type by
- *         the type weights, then its holo by that type's holo odds, then its character by the character weights. No
- *         slots, no guarantees, no caps, no pool: nothing depends on what was dealt before, so the first and the last
- *         pack of a Series have exactly the same odds. A card's chance = type odds x holo odds x character odds. All
- *         from the pack's drand randomness: per card keccak256(packSeed, position).
+ *         its slot's weights, then its holo by that type's holo odds, then its character by the character weights. No
+ *         pool, no caps, no guarantees beyond what the slots' weights say: nothing depends on what was dealt before,
+ *         so the first and the last pack of a Series have exactly the same odds. A card's chance = its slot's type odds
+ *         x holo odds x character odds. All from the pack's drand randomness: per card keccak256(packSeed, position).
  */
 contract RecipeDealer is IDealer, Ownable2Step {
     // ================================================================ recipe
@@ -52,14 +55,20 @@ contract RecipeDealer is IDealer, Ownable2Step {
         string name; // 1..64 bytes, no quotes, backslashes or control characters
         string slug; // 1..32 bytes of [a-z0-9-], unique in the recipe
         uint32 rank; // rarity order for display (higher = rarer); ties allowed
-        uint64 weight; // odds: this type's share of the recipe's total weight (at least 1)
         HoloMode holoMode;
         uint64[4] holo;
     }
 
+    /// @notice `count` cards in a row of the pack, each rolled from these odds: one weight per card type (recipe
+    ///         order; 0 = never in this slot), a type's chance = its weight / the slot's total (above 0).
+    struct Slot {
+        uint32 count; // at least 1
+        uint64[] weights;
+    }
+
     struct Recipe {
         CardType[] types;
-        uint32 cardsPerPack; // 1 to MAX_CARDS_PER_PACK
+        Slot[] slots; // in pack order; cards per pack = the counts added up (1 to MAX_CARDS_PER_PACK)
     }
 
     uint256 public constant HOLO_ONE = 1e18;
@@ -90,7 +99,7 @@ contract RecipeDealer is IDealer, Ownable2Step {
     /// @dev Cumulative character weights (one uint256 word per character), in code-storage chunks; none = uniform.
     mapping(uint256 fire => mapping(uint256 gen => address[])) internal _charOdds;
 
-    event RecipeSet(uint256 indexed fire, uint256 cardsPerPack, uint256 types);
+    event RecipeSet(uint256 indexed fire, uint256 cardsPerPack, uint256 types, uint256 slots);
     event CharactersSet(uint256 indexed fire, uint256 count);
     event CharactersAdded(uint256 indexed fire, uint256 first, uint256 count);
     event CharacterWeightsSet(uint256 indexed fire, uint256 count, uint256 total);
@@ -103,11 +112,13 @@ contract RecipeDealer is IDealer, Ownable2Step {
     error BadDeal();
     /// @notice Character weights: one per character, each at least 1 (or none, for equal odds).
     error BadWeights();
-    /// @notice Raised by RecipeCompiler (setRecipe and check pass it on): no types, or a cards per pack outside 1 to
-    ///         1,000.
+    /// @notice Raised by RecipeCompiler (setRecipe and check pass it on): no types, no slots, or cards per pack (the
+    ///         slots' counts added up) above 1,000.
     error BadRecipe(string why);
-    /// @notice Raised by RecipeCompiler: a card type that isn't valid, and why.
+    /// @notice Raised by RecipeCompiler: a card type that isn't valid (or that no slot can deal), and why.
     error BadType(uint256 index, string why);
+    /// @notice Raised by RecipeCompiler: a slot that isn't valid, and why.
+    error BadSlot(uint256 index, string why);
 
     constructor(address owner_, address cards, address compiler) Ownable(owner_) {
         CARDS = IDealerCards(cards);
@@ -131,7 +142,7 @@ contract RecipeDealer is IDealer, Ownable2Step {
         _replace(_recipeData[fire], abi.encode(m));
         address first = _planData[fire].length == 1 ? _planData[fire][0] : MULTI_CHUNK;
         _config[fire] = Config(first, uint32(perPack), uint32(m.types.length));
-        emit RecipeSet(fire, perPack, m.types.length);
+        emit RecipeSet(fire, perPack, m.types.length, m.slots.length);
     }
 
     /// @notice Replace a Series' characters (names and categories, in image order: c0, c1, ...). At least one. The
@@ -196,22 +207,41 @@ contract RecipeDealer is IDealer, Ownable2Step {
     }
 
     /// @notice Cards `fromCard` .. `fromCard + count - 1` of a pack dealt from `seed` (FireCards passes each pack's
-    ///         seed). Each card is rolled on its own from keccak256(seed, position), so this depends only on the seed
-    ///         and the Series' fixed settings: anyone can call it to check a pack.
+    ///         seed). Each card is rolled on its own from keccak256(seed, position) at its slot's odds, so this depends
+    ///         only on the seed and the Series' fixed settings: anyone can call it to check a pack.
     function deal(uint256 fire, uint256 seed, uint256 fromCard, uint256 count) external view returns (uint256[] memory out) {
         bytes memory p = _plan(fire);
         if (count == 0 || fromCard + count > _at(p, H_S)) revert BadDeal();
-        uint256 chars = _names(fire).length;
-        address[] storage w = _charOdds[fire][_charGen[fire]];
-        bytes memory cw = w.length == 0 ? bytes("") : _read(w);
-        if (chars == 0 || (cw.length != 0 && cw.length != chars * 32)) revert NotConfigured();
-        out = new uint256[](count);
-        for (uint256 i; i < count; i++) out[i] = _dealOne(p, cw, chars, _rand(seed, fromCard + i));
+        (bytes memory cw, uint256 chars) = _charWeights(fire);
+        out = _dealRange(p, cw, chars, seed, fromCard, count);
     }
 
-    /// @dev One card: type by weight, holo by the type's odds, character by weight (uniform with no weights).
-    function _dealOne(bytes memory p, bytes memory cw, uint256 chars, uint256 r) internal pure returns (uint256) {
-        uint256 t = _search(p, HEADER, TW, _at(p, H_T), r % _at(p, H_TOTAL));
+    /// @dev The character count and cumulative character weights ("" = equal odds) that dealing reads.
+    function _charWeights(uint256 fire) internal view returns (bytes memory cw, uint256 chars) {
+        chars = _names(fire).length;
+        address[] storage w = _charOdds[fire][_charGen[fire]];
+        cw = w.length == 0 ? bytes("") : _read(w);
+        if (chars == 0 || (cw.length != 0 && cw.length != chars * 32)) revert NotConfigured();
+    }
+
+    /// @dev Cards `from` .. `from + count - 1`, each at its slot's odds.
+    function _dealRange(bytes memory p, bytes memory cw, uint256 chars, uint256 seed, uint256 from, uint256 count)
+        internal
+        pure
+        returns (uint256[] memory out)
+    {
+        out = new uint256[](count);
+        uint256 at = HEADER + _at(p, H_T) * TW; // the first slot's record
+        for (uint256 pos = from; pos < from + count; pos++) {
+            while (pos >= _at(p, at)) at += SW_HEAD + _at(p, H_T); // the slot this card is in (a record starts with its end)
+            out[pos - from] = _dealOne(p, at, cw, chars, _rand(seed, pos));
+        }
+    }
+
+    /// @dev One card: type by its slot's weights (the slot record at word `s`), holo by the type's odds, character by
+    ///      weight (uniform with no weights).
+    function _dealOne(bytes memory p, uint256 s, bytes memory cw, uint256 chars, uint256 r) internal pure returns (uint256) {
+        uint256 t = _search(p, s + SW_HEAD, 1, _at(p, H_T), r % _at(p, s + 1));
         (bool hf, bool hp) = _holo(p, t, _rand(r, 1), _rand(r, 2));
         uint256 r3 = _rand(r, 3);
         uint256 ch = cw.length == 0 ? r3 % chars : _search(cw, 0, 1, chars, r3 % _at(cw, chars - 1));
@@ -257,19 +287,36 @@ contract RecipeDealer is IDealer, Ownable2Step {
         (, perPack) = COMPILER.compile(r);
     }
 
-    /// @notice The type odds of a Series: each type's weight (recipe order) and their total. A card is type t with
-    ///         chance weights[t] / total, the same for every card of every pack.
-    function oddsOf(uint256 fire) external view returns (uint256[] memory weights, uint256 total) {
+    /// @notice The shape and odds of a Series' packs, slot by slot (pack order): each slot's number of cards, its
+    ///         weight for each type (recipe order; 0 = never in that slot) and their total. A card in slot s is type t
+    ///         with chance weights[s][t] / totals[s], the same in every pack.
+    function slotsOf(uint256 fire)
+        external
+        view
+        returns (uint256[] memory counts, uint256[][] memory weights, uint256[] memory totals)
+    {
         bytes memory p = _plan(fire);
         uint256 n = _at(p, H_T);
-        weights = new uint256[](n);
-        uint256 prev;
-        for (uint256 t; t < n; t++) {
-            uint256 c = _at(p, HEADER + t * TW);
-            weights[t] = c - prev;
-            prev = c;
+        uint256 k = _at(p, H_SLOTS);
+        counts = new uint256[](k);
+        weights = new uint256[][](k);
+        totals = new uint256[](k);
+        uint256 at = HEADER + n * TW;
+        uint256 end;
+        for (uint256 s; s < k; s++) {
+            counts[s] = _at(p, at) - end;
+            end = _at(p, at);
+            totals[s] = _at(p, at + 1);
+            uint256[] memory w = new uint256[](n);
+            uint256 prev;
+            for (uint256 t; t < n; t++) {
+                uint256 c = _at(p, at + SW_HEAD + t);
+                w[t] = c - prev;
+                prev = c;
+            }
+            weights[s] = w;
+            at += SW_HEAD + n;
         }
-        total = prev;
     }
 
     /// @notice The character odds of a Series: each character's weight (character order) and their total. With no
@@ -392,11 +439,14 @@ contract RecipeDealer is IDealer, Ownable2Step {
 
     uint256 private constant H_T = 0; // types
     uint256 private constant H_S = 1; // cards per pack
-    uint256 private constant H_TOTAL = 2; // total type weight
+    uint256 private constant H_SLOTS = 2; // slots
     uint256 private constant HEADER = 3;
-    // Type record (TW words): cumulative weight (this type and every one before it), holo mode, holo[0..3]
-    uint256 private constant TW = 6;
-    uint256 private constant T_HOLOMODE = 1;
+    // Type record (TW words): holo mode, holo[0..3]
+    uint256 private constant TW = 5;
+    uint256 private constant T_HOLOMODE = 0;
+    // Slot record (SW_HEAD + types words), after the type records, in pack order: the position just past the slot (its
+    // end), its total weight, then the cumulative weight of each type (that type and every one before it)
+    uint256 private constant SW_HEAD = 2;
 
     /// @dev A card's holo from two random words. Independent: frame and picture each hit below their chance.
     ///      Distribution: none / frame / picture / full by weight.

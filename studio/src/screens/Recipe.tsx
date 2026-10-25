@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Notice, PercentOfCards, PercentTotalBar, useAction } from '../components'
+import { Notice, PercentTotalBar, useAction } from '../components'
 import { newId } from '../db'
 import { SHOWN_FRAME_SETS, frameSetFiles, frameSetLabel, missingFramesFor } from '../frames'
 import {
   FRESH_PDA_ODDS, HOLO_ONE, MAX_CARDS_PER_PACK, UINT32_MAX, cardsPerPack, checkRecipe, cloneRecipe, dropExactWeights,
-  formatPercent, holoLooksFor, holoOdds, parseUint, percentToScaled, percentTotal, roundedPercent, scaledToPercent, slugify,
-  specialAllHoloRecipe, standardRecipe, type CardTypeDef, type HoloRule, type Problem, type Recipe,
+  formatPercent, holoLooksFor, holoOdds, packShapeLine, parsePercent, parseUint, percentToScaled, percentTotal, roundedPercent,
+  scaledToPercent, slotLabel, slotName, slotOdds, slotPercents, slugify, specialAllHoloRecipe, standardRecipe,
+  type CardTypeDef, type HoloRule, type Problem, type Recipe, type SlotDef,
 } from '../recipe'
-import { aboutOneIn, seriesResult, type TypeResult } from '../rarity'
+import { aboutOneIn, percentText, seriesResult, type TypeResult } from '../rarity'
 import { characterWeightsOf } from '../series'
 import { HOLO_LABEL, HOLO_TYPES } from '../rules'
 import { CARDS_PER_CREDIT } from '../sale'
@@ -15,6 +16,7 @@ import { updateFire, useStudio } from '../store'
 import type { FireRecord } from '../types'
 import { SeriesResult } from './SeriesResult'
 import { Count, CountsGrid } from './Counts'
+import { perPackText } from './SeriesResult'
 
 const pct = (x: number, digits = 2) => `${(x * 100).toFixed(digits).replace(/\.?0+$/, '')}%`
 
@@ -66,11 +68,16 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
   // an edit sets the recipe by its percentages (exact weights from a recipe.json are dropped)
   const set = (next: Recipe) => { if (!locked) void run(() => updateFire(fire.number, { recipe: dropExactWeights(next), build: undefined, approvedAt: undefined })) }
   const setType = (i: number, patch: Partial<CardTypeDef>) => set({ ...r, types: r.types.map((t, j) => (j === i ? { ...t, ...patch } : t)) })
+  const setSlot = (k: number, patch: Partial<SlotDef>) => set({ ...r, slots: r.slots.map((sl, j) => (j === k ? { ...sl, ...patch } : sl)) })
+  const setSlotPercent = (k: number, typeId: string, percent: string) => {
+    setLastTyped(`${r.slots[k].id}:${typeId}`)
+    const { [typeId]: _old, ...rest } = r.slots[k].percents
+    setSlot(k, { percents: percent.trim() === '' ? rest : { ...rest, [typeId]: percent } })
+  }
   const move = <T,>(arr: T[], i: number, d: number) => { const a = [...arr]; const j = i + d; if (j < 0 || j >= a.length) return a; [a[i], a[j]] = [a[j], a[i]]; return a }
   const others = s.fires.filter((f) => f.number !== fire.number)
-  // the type whose % the owner typed last ("Fill the rest" leaves it alone), by id so a move keeps it
+  // the slot % the owner typed last ("slot id:type id": "Fill the rest" leaves it alone), by id so a move keeps it
   const [lastTyped, setLastTyped] = useState<string | null>(null)
-  const lastEdited = r.types.findIndex((t) => t.id === lastTyped)
   const [copyFrom, setCopyFrom] = useState<number | ''>(others.at(-1)?.number ?? '')
 
   const preset = (name: string, next: Recipe) => {
@@ -81,21 +88,31 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
   const addType = () => {
     const maxRank = Math.max(0, ...r.types.map((t) => t.rank))
     const name = 'New type'
-    // it starts with whatever is left to assign (0% when the types already add up to 100%)
-    const left = percentTotal(r.types.map((t) => t.percent)).left
+    const id = newId()
+    // it goes into the last slot with whatever is left to assign there (nothing when that slot adds up to 100%: give
+    // it a % in a slot)
+    const last = r.slots.length - 1
+    const left = last >= 0 ? percentTotal(slotPercents(r, r.slots[last]).map((x) => x || '0')).left : 0
     set({
       ...r,
       types: [...r.types, {
-        id: newId(), name, slug: uniqueSlug(slugify(name), r), rank: maxRank + 1, percent: formatPercent(Math.max(0, left)),
+        id, name, slug: uniqueSlug(slugify(name), r), rank: maxRank + 1,
         holo: { mode: 'independent', frame: '100000000000000000', picture: '100000000000000000' }, frameSet: 'gold',
       }],
+      slots: r.slots.map((sl, k) => (k === last && left > 0 ? { ...sl, percents: { ...sl.percents, [id]: formatPercent(left) } } : sl)),
     })
   }
-  const removeType = (i: number) => set({ ...r, types: r.types.filter((_, j) => j !== i) })
+  // a removed type leaves every slot too
+  const removeType = (i: number) => {
+    const id = r.types[i].id
+    set({ ...r, types: r.types.filter((_, j) => j !== i), slots: r.slots.map((sl) => { const { [id]: _gone, ...rest } = sl.percents; return { ...sl, percents: rest } }) })
+  }
+  const addSlot = () => set({ ...r, slots: [...r.slots, { id: newId(), count: 1, percents: {} }] })
+  const removeSlot = (k: number) => set({ ...r, slots: r.slots.filter((_, j) => j !== k) })
 
   const typeProblems = (i: number) => problems.filter((p) => p.where === 'type' && p.index === i)
+  const slotProblems = (k: number) => problems.filter((p) => p.where === 'slot' && p.index === k)
   const recipeProblems = problems.filter((p) => p.where === 'recipe')
-  const percents = r.types.map((t) => t.percent)
   const perPack = cardsPerPack(r)
   const valid = problems.length === 0
 
@@ -126,11 +143,12 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
         <h2>Recipe · Series {fire.number}</h2>
         <span className="badge big" data-testid="recipe-per-pack">{perPack} card{perPack === 1 ? '' : 's'} per pack</span>
         <span className="badge big">{r.types.length} type{r.types.length === 1 ? '' : 's'}</span>
+        <span className="badge big" data-testid="recipe-slots">{r.slots.length} slot{r.slots.length === 1 ? '' : 's'}</span>
         <span className={`badge big ${valid ? 'badge-ok' : 'badge-warn'}`} data-testid="recipe-status">{valid ? 'valid' : `${problems.length} problem${problems.length === 1 ? '' : 's'}`}</span>
       </div>
       {perPack >= CARDS_PER_CREDIT && <Notice kind="warn"><span data-testid="recipe-credit-off">Packs of {CARDS_PER_CREDIT}+ cards: free-pack credits can't be spent on this Series.</span></Notice>}
       {locked && <Notice kind="info">The deal for this Series is locked, so its recipe is too. (Undo the lock on the Deal tab to change it.)</Notice>}
-      <p className="muted small">The card types, their odds, holo and cards per pack. Every card is rolled on its own from these odds, the same for the first and the last pack. Locks with the Series' first pack. Checks are the contract's.</p>
+      <p className="muted small">The card types, their holo, and the pack: its slots, each with its own odds. Every pack has the same shape, and every card is rolled on its own from its slot's odds, the same for the first and the last pack. Locks with the Series' first pack. Checks are the contract's.</p>
       {!locked && (
         <div className="row wrap" data-testid="recipe-presets">
           <span className="muted small">Start from:</span>
@@ -156,7 +174,7 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
               <ul className="problems">{problems.filter((p) => p.where !== 'total').map((p, i) => <li key={i}>{p.message}</li>)}</ul>
             </>}
             {problems.some((p) => p.where === 'total') && <>
-              <b>Fix before export (the studio's rule):</b>
+              <b>Fix before export (the studio's rule: each slot adds up to 100%):</b>
               <ul className="problems">{problems.filter((p) => p.where === 'total').map((p, i) => <li key={i}>{p.message}</li>)}</ul>
             </>}
           </div>
@@ -180,25 +198,30 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       <SeriesResult recipe={r} packs={P} chars={chars} characterWeights={chars === ownChars ? weights : undefined} />
 
       <h3>The pack</h3>
-      <div className="row wrap" data-testid="pack-size">
-        <label className="field"><span className="field-label">Cards per pack (1 to {MAX_CARDS_PER_PACK.toLocaleString('en-US')})</span>
-          <SmallInt value={r.cardsPerPack} min={1} disabled={locked} onChange={(v) => set({ ...r, cardsPerPack: v ?? 0 })} testId="cards-per-pack" /></label>
-        {recipeProblems.map((p, k) => <span key={k} className="field-msg err">{p.message}</span>)}
+      <p className="muted small" data-testid="pack-shape">
+        <b>{perPack} card{perPack === 1 ? '' : 's'} a pack</b>{r.slots.length > 0 && valid ? `: ${packShapeLine(r)}` : ''}. Each slot is its own roll: a
+        type's % of that slot's cards (blank = never in that slot; each slot adds up to exactly 100%). Cards per pack is
+        the slots' cards added up (1 to {MAX_CARDS_PER_PACK.toLocaleString('en-US')}).
+      </p>
+      {recipeProblems.map((p, k) => <p key={k} className="field-msg err">{p.message}</p>)}
+      <div className="slot-list" data-testid="slot-list">
+        {r.slots.map((sl, k) => (
+          <SlotCard key={sl.id} r={r} sl={sl} k={k} locked={locked} problems={slotProblems(k)} lastTyped={lastTyped}
+            onCount={(count) => setSlot(k, { count })} onPercent={(typeId, v) => setSlotPercent(k, typeId, v)}
+            onMove={(d) => set({ ...r, slots: move(r.slots, k, d) })} onRemove={() => removeSlot(k)} />
+        ))}
       </div>
+      {!locked && <button onClick={addSlot} data-testid="add-slot">Add a slot</button>}
 
       <h3>Card types</h3>
       <p className="muted small">
-        Odds: each type's % of cards (up to 2 decimals). The types must add up to exactly 100%. Rank is the rarity
-        order the site shows.
+        Name, file slug, rank (the rarity order the site shows), frames and holo. How often each type comes out is set
+        by the slots above; here is what they add up to.
       </p>
-      {r.types.length > 0 && (
-        <PercentTotalBar percents={percents} names={r.types.map((t) => t.name)} what="The card types" disabled={locked} testId="type-total"
-          lastEdited={lastEdited >= 0 ? lastEdited : undefined} onFill={(i, percent) => setType(i, { percent })} />
-      )}
       <div className="type-list">
         {r.types.map((t, i) => (
           <TypeCard key={t.id} r={r} t={t} i={i} locked={locked} problems={typeProblems(i)} result={res?.types[i] ?? null}
-            onChange={(patch) => { if (patch.percent !== undefined) setLastTyped(t.id); setType(i, patch) }}
+            onChange={(patch) => setType(i, patch)}
             onMove={(d) => set({ ...r, types: move(r.types, i, d) })}
             onRemove={() => removeType(i)} />
         ))}
@@ -210,6 +233,66 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
 
       <PdaOdds />
     </section>
+  )
+}
+
+/** A % of one slot's cards, typed as text: blank = this type is never in the slot. */
+function SlotPercent({ value, onChange, disabled, testId }: { value: string; onChange: (v: string) => void; disabled?: boolean; testId?: string }) {
+  const bad = value.trim() !== '' && parsePercent(value) == null
+  return (
+    <span className="pct-input share-input">
+      <input value={value} disabled={disabled} aria-invalid={bad} inputMode="decimal" data-testid={testId} placeholder="-"
+        onChange={(e) => onChange(e.target.value.trim())}
+        onBlur={() => { const v = parsePercent(value); if (value !== '' && v != null) onChange(v === 0 ? '' : formatPercent(v)) }} />%
+    </span>
+  )
+}
+
+/** One slot: its cards, each type's % of them, its total (with the one-click fix) and what it deals: "This slot: Fire
+ *  59.82% · 1 in 1.7 · ...". */
+function SlotCard({ r, sl, k, locked, problems, lastTyped, onCount, onPercent, onMove, onRemove }: {
+  r: Recipe; sl: SlotDef; k: number; locked: boolean; problems: Problem[]; lastTyped: string | null
+  onCount: (n: number) => void; onPercent: (typeId: string, v: string) => void; onMove: (d: number) => void; onRemove: () => void
+}) {
+  const percents = slotPercents(r, sl)
+  // the total bar counts the types in this slot (a blank is not in it)
+  const inSlot = r.types.flatMap((_, i) => (percents[i] !== '' ? [i] : []))
+  const last = inSlot.findIndex((i) => lastTyped === `${sl.id}:${r.types[i].id}`)
+  const odds = useMemo(() => slotOdds(r)[k] ?? [], [r, k])
+  const shown = r.types.flatMap((_, i) => ((odds[i] ?? 0) > 0 ? [i] : []))
+  const exact = sl.weights !== undefined
+  return (
+    <div className={`type-card slot-card ${problems.length ? 'has-problem' : ''}`} data-testid={`slot-${k}`}>
+      <div className="type-main">
+        <b className="type-no">{k + 1}</b>
+        <label className="field"><span className="field-label">Cards</span>
+          <SmallInt value={sl.count} min={1} disabled={locked} onChange={(v) => onCount(v ?? 0)} testId={`slot-${k}-count`} /></label>
+        <span className="field"><span className="field-label">{slotName(k)}</span>
+          <b className="pad" data-testid={`slot-${k}-label`}>{sl.count} {shown.length ? slotLabel(r, k) : '…'}</b></span>
+        <span className="spacer" />
+        {!locked && <span className="nowrap type-actions">
+          <button className="link" onClick={() => onMove(-1)} disabled={k === 0}>up</button>
+          <button className="link" onClick={() => onMove(1)} disabled={k === r.slots.length - 1}>down</button>
+          <button className="link danger" onClick={onRemove} data-testid={`slot-${k}-remove`}>remove</button>
+        </span>}
+      </div>
+      <div className="row wrap slot-odds">
+        {r.types.map((t, i) => (
+          <label key={t.id} className={`field slot-type ${percents[i] === '' ? 'off' : ''}`}><span className="field-label">{t.name || `Type ${i + 1}`}</span>
+            <SlotPercent value={percents[i]} disabled={locked || exact} onChange={(v) => onPercent(t.id, v)} testId={`slot-${k}-type-${i}`} /></label>
+        ))}
+      </div>
+      {inSlot.length > 0 && !exact && (
+        <PercentTotalBar percents={inSlot.map((i) => percents[i])} names={inSlot.map((i) => r.types[i].name)} what={`${slotName(k)}'s types`} disabled={locked}
+          testId={`slot-${k}-total`} lastEdited={last >= 0 ? last : undefined} onFill={(j, percent) => onPercent(r.types[inSlot[j]].id, percent)} />
+      )}
+      {shown.length > 0 && (
+        <p className="small slot-line" data-testid={`slot-${k}-line`}>
+          <span className="muted">This slot:</span> {shown.map((i) => `${r.types[i].name} ${percentText(odds[i])} · ${aboutOneIn(odds[i], '')}`).join('  ·  ')}
+        </p>
+      )}
+      {problems.map((p, j) => <p key={j} className="field-msg err">{p.message}</p>)}
+    </div>
   )
 }
 
@@ -238,11 +321,11 @@ function TypeCard({ r, t, i, locked, problems, result, onChange, onMove, onRemov
           </span></label>
         <label className="field"><span className="field-label">Rank</span>
           <SmallInt value={t.rank} disabled={locked} onChange={(v) => onChange({ rank: v ?? 0 })} testId={`type-${i}-rank`} /></label>
-        <label className="field"><span className="field-label">% of cards</span>
-          <span className="twin">
-            <PercentOfCards value={t.percent} disabled={locked} onChange={(v) => onChange({ percent: v })} testId={`type-${i}-percent`} />
-            {result && <span className="small pad" data-testid={`type-${i}-share`}><span className="muted">{aboutOneIn(result.share)} ·</span> <Count x={result.expected} unit="cards" /></span>}
-          </span></label>
+        <span className="field"><span className="field-label">From the slots</span>
+          {result
+            ? <span className="small pad" data-testid={`type-${i}-share`}><b>{perPackText(result.perPack)} a pack</b> <span className="muted">· {percentText(result.share)} of cards · {aboutOneIn(result.share)} ·</span> <Count x={result.expected} unit="cards" /></span>
+            : <span className="small pad muted" data-testid={`type-${i}-share`}>-</span>}
+        </span>
         <label className="field"><span className="field-label">Frames</span>
           <select value={t.frameSet} disabled={locked} onChange={(e) => onChange({ frameSet: e.target.value })} data-testid={`type-${i}-frames`}>
             {(SHOWN_FRAME_SETS.includes(t.frameSet) ? SHOWN_FRAME_SETS : [...SHOWN_FRAME_SETS, t.frameSet]).map((f) => <option key={f} value={f}>{frameSetLabel(f)}{frameSetFiles(f).total ? ` (${frameSetFiles(f).have}/${frameSetFiles(f).total})` : ' (no frame)'}</option>)}

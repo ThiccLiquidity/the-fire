@@ -36,23 +36,42 @@ abstract contract SeriesHelper is Test {
         _series(cards, dealer, owner_, fire, StandardRecipe.build(), nChars);
     }
 
-    /// A recipe of `types` with `perPack` cards a pack.
-    function _recipe(RecipeDealer.CardType[] memory types, uint32 perPack) internal pure returns (RecipeDealer.Recipe memory r) {
+    /// A recipe of `types` in one slot of `perPack` cards, each type at its weight (recipe order).
+    function _recipe(RecipeDealer.CardType[] memory types, uint64[] memory weights, uint32 perPack)
+        internal
+        pure
+        returns (RecipeDealer.Recipe memory r)
+    {
         r.types = types;
-        r.cardsPerPack = perPack;
+        r.slots = new RecipeDealer.Slot[](1);
+        r.slots[0] = RecipeDealer.Slot({count: perPack, weights: weights});
+    }
+
+    function _slot(uint32 count, uint64[] memory weights) internal pure returns (RecipeDealer.Slot memory) {
+        return RecipeDealer.Slot({count: count, weights: weights});
+    }
+
+    function _w(uint64 a) internal pure returns (uint64[] memory w) {
+        w = new uint64[](1);
+        w[0] = a;
+    }
+
+    function _w(uint64 a, uint64 b) internal pure returns (uint64[] memory w) {
+        w = new uint64[](2);
+        w[0] = a; w[1] = b;
+    }
+
+    function _w(uint64 a, uint64 b, uint64 c) internal pure returns (uint64[] memory w) {
+        w = new uint64[](3);
+        w[0] = a; w[1] = b; w[2] = c;
     }
 
     // ---------- recipe building ----------
 
-    function _type(string memory name, string memory slug, uint32 rank, uint64 weight)
-        internal
-        pure
-        returns (RecipeDealer.CardType memory t)
-    {
+    function _type(string memory name, string memory slug, uint32 rank) internal pure returns (RecipeDealer.CardType memory t) {
         t.name = name;
         t.slug = slug;
         t.rank = rank;
-        t.weight = weight;
         t.holoMode = RecipeDealer.HoloMode.Independent;
     }
 

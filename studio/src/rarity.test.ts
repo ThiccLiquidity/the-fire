@@ -1,7 +1,7 @@
 /** Rarity on the site's scale and the per-pack chances, from the recipe's fixed odds. */
 import { describe, expect, it } from 'vitest'
 import { checkRecipe, specialAllHoloRecipe, standardRecipe } from './recipe'
-import { cardChance, expectedCounts, mayNotPrint, oneIn, packChances, printCount, seriesResult, tierOf } from './rarity'
+import { cardChance, expectedCounts, mayNotPrint, oneIn, packChances, printCount, seriesResult, slotSummaries, tierOf } from './rarity'
 
 describe('rarity', () => {
   it('matches the site (info.js): Standard, 167 packs, 20 characters', () => {
@@ -46,13 +46,31 @@ describe('rarity', () => {
     expect(tierOf(1000)).toBe('legendary')
   })
 
-  it('per pack: exact chances, the same in every pack (no guarantees)', () => {
+  it('per pack: exact chances from the slots, the same in every pack', () => {
     const r = standardRecipe()
     const c = packChances(r)
-    expect(c.atLeastOne[0]).toBeCloseTo(1 - 0.5 ** 6, 12) // Paper
-    expect(c.atLeastOne[5]).toBeCloseTo(1 - 0.98 ** 6, 12) // Full Art ~11.4%
-    expect(c.twoOrMore[5]).toBeCloseTo(1 - 0.98 ** 6 - 6 * 0.02 * 0.98 ** 5, 12)
-    expect(c.atLeastOne.every((p) => p < 1)).toBe(true)
+    expect(c.atLeastOne[0]).toBe(1) // 3 Paper, always
+    expect(c.twoOrMore[0]).toBe(1)
+    expect(c.atLeastOne[1]).toBe(1) // the Wood slot
+    expect(c.atLeastOne[2]).toBeCloseTo(1 - 0.7 * 0.4018, 12) // Fire: slot 3 (30%) or slot 4 (59.82%)
+    expect(c.twoOrMore[2]).toBeCloseTo(0.3 * 0.5982, 12)
+    expect(c.atLeastOne[5]).toBeCloseTo(1 - 0.955 * 0.925, 12) // Full Art ~11.7%
+    expect(c.twoOrMore[5]).toBeCloseTo(0.045 * 0.075, 12)
+    // a single slot of 6 at 2%: the straight-odds numbers
+    const one = { ...r, slots: [{ id: 'a', count: 6, percents: { paper: '50', wood: '24.15', fire: '14.97', coal: '4.89', gold: '3.99', fullart: '2' } }] }
+    expect(packChances(one).atLeastOne[5]).toBeCloseTo(1 - 0.98 ** 6, 12)
+    expect(packChances(one).twoOrMore[5]).toBeCloseTo(1 - 0.98 ** 6 - 6 * 0.02 * 0.98 ** 5, 12)
+  })
+
+  it('per slot: each slot\'s odds; per pack: count x odds added up', () => {
+    const r = standardRecipe()
+    const s = slotSummaries(r)
+    expect(s.map((x) => x.count)).toEqual([3, 1, 1, 1])
+    expect(s[3].odds[5]).toBeCloseTo(0.075, 12)
+    const c = expectedCounts(r, 20, 167)
+    c.types.forEach((t, i) => expect(t.perPack).toBeCloseTo([3, 1.449, 0.8982, 0.2934, 0.2394, 0.12][i], 10))
+    // one exact Full Art (20 characters): 0.12 a pack / 6 cards / 20 = 1 in 1,000 cards
+    expect(oneIn(seriesResult(r, 167n, 20).types[5].looks[0].p)).toBe('1,000')
   })
 
   it('the special all-holo recipe has no plain looks', () => {

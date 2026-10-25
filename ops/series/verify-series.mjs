@@ -57,17 +57,29 @@ const HOLO = ["none", "frame", "picture", "full"];
 const ONE = 10n ** 18n;
 const CID_RE = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{50,})$/;
 
-/** The recipe.json the studio exports, normalized the way ConfigureSeries.s.sol parses it (contract units). */
+/** The recipe.json the studio exports, normalized the way ConfigureSeries.s.sol parses it (contract units): its types
+ *  and its slots, each slot's weights in type order (a type the slot leaves out: 0; a slug names the first type that
+ *  has it). */
 export function recipeFromJson(j) {
-  return {
-    types: j.types.map((t) => ({
-      name: t.name, slug: t.slug, rank: BigInt(t.rank), weight: BigInt(t.weight),
-      holoMode: t.holo.mode === "independent" ? 0 : 1,
-      holo: t.holo.mode === "independent" ? [BigInt(t.holo.frame), BigInt(t.holo.picture), 0n, 0n] : t.holo.weights.map(BigInt),
-    })),
-    cardsPerPack: BigInt(j.cardsPerPack),
-  };
+  const types = j.types.map((t) => ({
+    name: t.name, slug: t.slug, rank: BigInt(t.rank),
+    holoMode: t.holo.mode === "independent" ? 0 : 1,
+    holo: t.holo.mode === "independent" ? [BigInt(t.holo.frame), BigInt(t.holo.picture), 0n, 0n] : t.holo.weights.map(BigInt),
+  }));
+  const slots = (j.slots ?? []).map((s) => {
+    const weights = types.map(() => 0n);
+    for (const [slug, w] of Object.entries(s.weights ?? {})) {
+      const t = types.findIndex((x) => x.slug === slug);
+      if (t < 0) throw new Error(`recipe.json slot weights: ${slug} is not the slug of a card type`);
+      weights[t] = BigInt(w);
+    }
+    return { count: BigInt(s.count), weights };
+  });
+  return { types, slots };
 }
+
+/** Cards per pack: the slots' counts added up. */
+export const cardsPerPackOf = (recipe) => recipe.slots.reduce((a, s) => a + BigInt(s.count), 0n);
 
 /** The character weights the JSON asks for (each character's "weight"; none = every character 1). */
 export function characterWeightsFromJson(j) {
@@ -103,7 +115,7 @@ export const FRESH_PDA_ODDS = [0n, 0n, 0n, 0n, 0n, 0n, 2900n, 4000n, 3000n, 100n
 
 /** The recipe fingerprint the studio puts in the images folder's manifest.json. */
 export function recipeHash(j) {
-  return createHash("sha256").update(JSON.stringify({ fire: j.fire, cardsPerPack: j.cardsPerPack, types: j.types, characters: j.characters })).digest("hex");
+  return createHash("sha256").update(JSON.stringify({ fire: j.fire, types: j.types, slots: j.slots, characters: j.characters })).digest("hex");
 }
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -191,12 +203,26 @@ export async function verifySeries(opts) {
     if (!g) return;
     const diffs = [];
     for (const k of ["name", "slug"]) if (g[k] !== w[k]) diffs.push(`${k} ${JSON.stringify(g[k])} != ${JSON.stringify(w[k])}`);
-    for (const k of ["rank", "weight"]) if (BigInt(g[k]) !== w[k]) diffs.push(`${k} ${g[k]} != ${w[k]}`);
+    if (BigInt(g.rank) !== w.rank) diffs.push(`rank ${g.rank} != ${w.rank}`);
     if (Number(g.holoMode) !== w.holoMode) diffs.push(`holo mode ${g.holoMode} != ${w.holoMode}`);
     if (g.holo.some((x, k) => BigInt(x) !== w.holo[k])) diffs.push(`holo ${g.holo.join("/")} != ${w.holo.join("/")}`);
     ok(diffs.length === 0, `type ${i} (${w.name}) ${diffs.length ? diffs.join("; ") : "matches"}`);
   });
-  ok(BigInt(got.cardsPerPack) === want.cardsPerPack, `cards per pack: ${got.cardsPerPack} on chain, ${want.cardsPerPack} in recipe.json`);
+  ok(got.slots.length === want.slots.length, `slots: ${got.slots.length} on chain, ${want.slots.length} in recipe.json`);
+  want.slots.forEach((w, s) => {
+    const g = got.slots[s];
+    if (!g) return;
+    const diffs = [];
+    if (BigInt(g.count) !== w.count) diffs.push(`count ${g.count} != ${w.count}`);
+    if (g.weights.length !== w.weights.length || g.weights.some((x, t) => BigInt(x) !== w.weights[t])) diffs.push(`weights ${g.weights.join("/")} != ${w.weights.join("/")}`);
+    ok(diffs.length === 0, `slot ${s + 1} (${w.count} card${w.count === 1n ? "" : "s"}) ${diffs.length ? diffs.join("; ") : "matches"}`);
+  });
+  // the odds the dealer deals by (slotsOf) are the recipe's
+  const [sc, sw, st] = await read(dealer, dealerAbi, "slotsOf", [fire]);
+  const oddsOk = sc.length === want.slots.length && want.slots.every((w, s) => BigInt(sc[s]) === w.count
+    && w.weights.every((x, t) => BigInt(sw[s][t]) === x) && BigInt(st[s]) === w.weights.reduce((a, x) => a + x, 0n));
+  ok(oddsOk, `slotsOf (the odds dealing reads) ${oddsOk ? "matches recipe.json" : "differs from recipe.json"}`);
+  ok(BigInt(await read(dealer, dealerAbi, "cardsPerPack", [fire])) === cardsPerPackOf(want), `cards per pack: ${cardsPerPackOf(want)} (the slots' cards added up)`);
 
   // ---- characters
   const n = Number(await read(dealer, dealerAbi, "characterCount", [fire]));

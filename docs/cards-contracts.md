@@ -6,10 +6,10 @@
 **Naming.** The contracts are named `Fire*` for historical reasons: `Fire*` is the card system. In identifiers
 (`fire`, `lockFire`, `fires`), "fire" is a Series number. This doc says "Series" in prose.
 
-**The idea.** Every rule about what a Series' cards are is a per-Series setting: card types and their odds, holo
-odds, cards per pack, characters (and optionally their odds), card images. Dealing is **straight odds**: every card of
-every pack is rolled on its own from those fixed odds, so the first and the last pack of a Series have exactly the same
-odds (no slots, guarantees, caps or pool). The only limits left are technical (type widths and block gas), and big work
+**The idea.** Every rule about what a Series' cards are is a per-Series setting: card types, holo odds, the pack's
+shape (its **slots**, each a number of cards with its own odds per type), characters (and optionally their odds), card
+images. Every pack has the same shape and every card is rolled on its own from its slot's fixed odds, so the first and
+the last pack of a Series have exactly the same odds (no pool, no caps, no guarantees beyond what the slots say). The only limits left are technical (type widths and block gas), and big work
 is split into batches instead of capped. Every setting locks when the Series' drop is set up (`configureDrop`), before
 anyone can buy, so buyers can trust the odds, and all of it can be read on-chain. PDA grading is the exception the
 other way: its fresh odds and wear rules are fixed forever in `FirePsa`, the same for every Series
@@ -23,8 +23,8 @@ other way: its fresh odds and wear rules are fixed forever in `FirePsa`, the sam
 | `FireCards` | The permanent core. The cards, ERC-721 ("Omni Cards", `OMNICARD`; token id = global serial), one opening queue per Series, randomness (drand router and adapter), serials, print numbers, each card's wear (age uncased, moves, cased) and PDA grade. Per Series it keeps the dealer, the image folder, the frozen pack count and progress. Royalty (ERC-2981), ERC-4906 metadata updates. |
 | `CardsRenderer` | Builds each card's `tokenURI` JSON and image name (`imageName`, `imageFile`) from `FireCards` and the dealer. No owner, no settings; set once on `FireCards`. |
 | `IDealer` | What `FireCards` asks of a Series' dealer: `ready`, `cardsPerPack`, `characterCount`, `deal(fire, seed, fromCard, count)` and `cardText`. The owner picks a dealer per Series. Future dealers can add mechanics (their own state, 32 bits of per-card "extra" data, extra metadata attributes) without touching `FireCards`. |
-| `RecipeDealer` | The first dealer: deals each Series from its own recipe by straight odds (below). It keeps no dealing state: `deal` is a view of the seed, so anyone can check a pack. Owned by the owner (the hardware wallet). |
-| `RecipeCompiler` | The recipe checker and compiler (the plan the dealer reads: cumulative type weights and holo odds), its own contract. Pure: no state, no owner. |
+| `RecipeDealer` | The first dealer: deals each Series from its own recipe, slot by slot (below). It keeps no dealing state: `deal` is a view of the seed, so anyone can check a pack. Owned by the owner (the hardware wallet). |
+| `RecipeCompiler` | The recipe checker and compiler (the plan the dealer reads: the types' holo odds, and per slot its end in the pack and cumulative type weights), its own contract. Pure: no state, no owner. |
 | `StandardRecipe` | The Standard Omni odds as a recipe (library). |
 | `FireSale` | Sells the packs (`docs/omni-economy.md`, `docs/drop-groups.md`): a purchase names its group (`buy(fire, group, n, pay, maxCost, maxPaper, access)`) and pays the group's dollar price in PLANK, ETH or USDG (the coins the group takes), or ETH alone (`buyWithEthAll`: it also buys the packs' PAPER on the market and burns it), plus the group's PAPER. Every product rule is a per-drop setting (total packs and its groups, PAPER dollar ceiling, PLANK and PAPER burn shares, regular-wallets rule, packs per purchase, credits per picked suggestion and credit caps). Closes the Series the moment nothing can still sell, or when the drop is ended. The owner can pause buying (`setPaused`). Never holds funds. |
 | `FireGroups` | Each drop's groups (split out of `FireSale` for contract size): config, timing (opens with the drop or after another group; ends sold out, at its duration, or after `idle` with no sale), unlimited groups, the rising tax, per-purchase limits, capacity with rolled-in leftovers, gates (open, NFT with packs per NFT id, Merkle snapshot with a per-wallet allowance), wallet limits (optionally lifting on a timer, `limitFor`), and the views the site reads (`groupsOf`, `boughtBy`, `remaining`, `openLeft`, `scheduleEnd`). Only `FireSale` writes to it (set once at deploy); no owner. |
@@ -45,11 +45,12 @@ steps (`transferOwnership`, then `acceptOwnership`). `FirePacks` and `FireCards`
 first pack is minted or it closes. `check(recipe)` validates a recipe without storing it and reverts with the reason
 (the studio can call it).
 
-A recipe is a list of card types and a number of cards per pack:
+A recipe is a list of card types and the pack's slots:
 
 ```solidity
-struct CardType { string name; string slug; uint32 rank; uint64 weight; HoloMode holoMode; uint64[4] holo; }
-struct Recipe { CardType[] types; uint32 cardsPerPack; }
+struct CardType { string name; string slug; uint32 rank; HoloMode holoMode; uint64[4] holo; }
+struct Slot { uint32 count; uint64[] weights; } // one weight per card type (recipe order); 0 = never in this slot
+struct Recipe { CardType[] types; Slot[] slots; }
 ```
 
 ### Card types
@@ -61,16 +62,27 @@ A list, any length (index stored in 32 bits). Each type has:
 | `name` | The "Material" trait and the first word of the card's name. 1 to 64 bytes of valid UTF-8, no `"`, `\` or control characters. |
 | `slug` | Used in image file names. 1 to 32 bytes of `[a-z0-9-]`, unique in the recipe. |
 | `rank` | Rarity order for display (higher = rarer; the site sorts by it). Ties allowed. Dealing doesn't use it. |
-| `weight` | The type's odds: a card is this type with chance `weight / (sum of the weights)`. A whole number, at least 1 (`uint64`). |
 | `holoMode`, `holo[4]` | `Independent`: frame and picture rolled separately, chances out of 1e18 in `holo[0]`, `holo[1]` (two 100% = always full holo). `Distribution`: weights for none, frame, picture, full (any total above 0). |
 
-`cardsPerPack`: 1 to 1,000 (`MAX_CARDS_PER_PACK`).
+### Slots
 
-Checks (`RecipeCompiler.compile`, in this order; errors `BadRecipe(why)`, `BadType(index, why)`, `BadText`): at least one
-type (`"no types"`), cards per pack 1 to 1,000 (`"cards per pack"`), then per type: name length and text, slug length,
-characters and uniqueness, a weight of at least 1 (`"weight"`, so the total is above 0), holo chances at most 100% and
-`holo[2..3]` zero in `Independent` mode (`"holo chances"`), holo weights above 0 in `Distribution` mode (`"holo
-weights"`).
+The pack's shape, in pack order: slot 1's cards come first, then slot 2's, and so on. Each slot has:
+
+| Field | Meaning |
+|---|---|
+| `count` | Cards in the slot, at least 1. Cards per pack = the slots' counts added up, 1 to 1,000 (`MAX_CARDS_PER_PACK`). |
+| `weights` | One weight per card type, in recipe order (`uint64`). A card of this slot is type t with chance `weights[t] / (the slot's total)`. 0 = never in this slot; the total must be above 0. |
+
+A slot can allow every type, some, or one (one = that type, every pack). Nothing is shared between slots: no pool,
+no caps, no guarantees beyond what the weights say.
+
+Checks (`RecipeCompiler.compile`, in this order; errors `BadRecipe(why)`, `BadType(index, why)`, `BadSlot(index, why)`,
+`BadText`): at least one type (`"no types"`), at least one slot (`"no slots"`), then per type: name length and text,
+slug length, characters and uniqueness, holo chances at most 100% and `holo[2..3]` zero in `Independent` mode (`"holo
+chances"`), holo weights above 0 in `Distribution` mode (`"holo weights"`); then per slot: a count of at least 1
+(`BadSlot(s, "count")`), one weight per type (`"one weight per type"`), cards per pack so far at most 1,000
+(`BadRecipe("cards per pack")`), a total above 0 (`BadSlot(s, "weights")`); then every type in at least one slot
+(`BadType(t, "in no slot")`: a type listed but never dealt is refused).
 
 ### Characters
 
@@ -87,39 +99,52 @@ dealing reads them once per `deal` call and binary-searches each card.
 
 ### Dealing
 
-Straight odds. For each card (per pack seed `keccak256(word, pack index)`, per card `r = keccak256(packSeed,
-position)`): its type is the first type whose cumulative weight is above `r % total`; then its holo from
+Slot by slot. For each card (per pack seed `keccak256(word, pack index)`, per card `r = keccak256(packSeed,
+position)`): its slot is the one its position falls in; its type is the first type whose cumulative weight in that
+slot is above `r % (the slot's total)` (a binary search over the slot's cumulative weights, compiled ahead); then its
+holo from
 `keccak256(r, 1)` and `keccak256(r, 2)` by the type's holo rule; then its character from `keccak256(r, 3)`: uniform
 (`% characters`) or, with weights, the first character whose cumulative weight is above it (equal weights give exactly
-the uniform result). A card's chance = type odds x holo odds x character odds.
+the uniform result). A card's chance = its slot's type odds x holo odds x character odds; a type's expected cards per
+pack = the sum over the slots of count x the slot's odds for it.
 
-No slots, guarantees, caps, pool or holdbacks: nothing depends on what was dealt before or how many packs there are, so
-the first and the last pack of a Series have exactly the same odds, and a card type or a character can come up any
-number of times (or not at all) in a Series. `deal` is a view: it depends only on the seed and the Series' fixed
+No pool, caps or holdbacks: nothing depends on what was dealt before or how many packs there are, so the first and the
+last pack of a Series have exactly the same odds, and a card type or a character can come up any number of times (or
+not at all) in a Series, within what the slots allow. `deal` is a view: it depends only on the seed and the Series' fixed
 settings, so anyone can call it to check a pack (FireCards passes the same seeds).
 
 ### The Standard recipe
 
-Six cards a pack; type weights out of 10,000:
+Six cards a pack, in four slots ("3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better", the old pool's shape):
 
-| Type | Rank | Weight | Per card | Holo |
+| Slot | Cards | Weights |
+|---|---|---|
+| 1 | 3 | Paper 1 (always Paper) |
+| 2 | 1 | Wood 1 (always Wood) |
+| 3, Wood or better | 1 | of 1,000: Wood 449, Fire 300, Coal 120, Gold 86, Full Art 45 |
+| 4, Fire or better | 1 | of 10,000: Fire 5,982, Coal 1,734, Gold 1,534, Full Art 750 |
+
+| Type | Rank | Per pack (average) | Share of cards | Holo |
 |---|---|---|---|---|
-| Paper | 0 | 5,000 | 50% | independent, each roll 1 - sqrt(0.95) (5% any holo) |
-| Wood | 1 | 2,415 | 24.15% | 10% |
-| Fire | 2 | 1,497 | 14.97% | 50% |
-| Coal | 3 | 489 | 4.89% | 90% |
-| Gold | 4 | 399 | 3.99% | always full holo |
-| Full Art | 5 | 200 | 2% | always full holo |
+| Paper | 0 | 3 | 50% | independent, each roll 1 - sqrt(0.95) (5% any holo) |
+| Wood | 1 | 1.449 | 24.15% | 10% |
+| Fire | 2 | 0.8982 | 14.97% | 50% |
+| Coal | 3 | 0.2934 | 4.89% | 90% |
+| Gold | 4 | 0.2394 | 3.99% | always full holo |
+| Full Art | 5 | 0.12 | 2% | always full holo |
 
-Characters: equal odds. The weights keep the old pool dealing's expected share of each type per card for the example
-Series this doc always used (167 packs, 20 characters: 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art
-of 1,002 cards). Under the old pool Gold and Full Art followed the cast size (2 and 1 per character); with odds they
-are the same share whatever the cast (with 20 characters one exact Full Art is 1 in 1,000 cards, as before; with 10,
-1 in 500).
+Characters: equal odds. Slots 3 and 4 were set so the per-pack averages are exactly the straight odds' they replace
+(50 / 24.15 / 14.97 / 4.89 / 3.99 / 2% of 6 cards; slots 3 + 4 together: Wood 0.449, Fire 0.8982, Coal 0.2934, Gold
+0.2394, Full Art 0.12), which kept the old pool dealing's expected share of each type for the example Series this doc
+always used (167 packs, 20 characters: 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art of 1,002). So
+every exact card is as rare as before (with 20 characters one exact Full Art is 1 in 1,000 cards; with 10, 1 in 500),
+and every pack has 3 Paper, a Wood and a Fire or better. Nothing caps the rest: two Full Arts in a pack (4.5% x 7.5%,
+about 1 in 300 packs) or two Golds (about 1 in 76) happen.
 
 ### Views
 
-`recipeOf(fire)` (the whole recipe), `oddsOf(fire)` (each type's weight and the total), `characterOddsOf(fire)` (each
+`recipeOf(fire)` (the whole recipe), `slotsOf(fire)` (per slot, in pack order: its count, its weight for each type and
+its total), `characterOddsOf(fire)` (each
 character's weight and the total; all 1 with no weights), `holoOdds(fire, type)` (none / frame / picture / full out of
 1e18), `deal(fire, seed, fromCard, count)` (a view), `characterOf`, `charactersOf(fire, from, count)`,
 `characterCount`, `cardsPerPack`, `check(recipe)`.
@@ -133,16 +158,25 @@ character's weight and the total; all 1 with no weights), `holoOdds(fire, type)`
 {
   "fire": 7,
   "imagesBase": "ipfs://<images CID>/",
-  "cardsPerPack": 6,
   "types": [
-    { "name": "Paper", "slug": "paper", "rank": 0, "weight": 5000,
+    { "name": "Paper", "slug": "paper", "rank": 0,
       "holo": { "mode": "independent", "frame": "25320565519103609", "picture": "25320565519103609" } },
-    { "name": "Wood", "slug": "wood", "rank": 1, "weight": 2415,
+    { "name": "Wood", "slug": "wood", "rank": 1,
       "holo": { "mode": "independent", "frame": "51316701949486200", "picture": "51316701949486200" } },
-    { "name": "Gold", "slug": "gold", "rank": 4, "weight": 399,
+    { "name": "Fire", "slug": "fire", "rank": 2,
+      "holo": { "mode": "independent", "frame": "292893218813452475", "picture": "292893218813452475" } },
+    { "name": "Coal", "slug": "coal", "rank": 3,
+      "holo": { "mode": "independent", "frame": "683772233983162066", "picture": "683772233983162066" } },
+    { "name": "Gold", "slug": "gold", "rank": 4,
       "holo": { "mode": "distribution", "weights": ["0", "0", "0", "1"] } },
-    { "name": "Full Art", "slug": "fullart", "rank": 5, "weight": 200,
+    { "name": "Full Art", "slug": "fullart", "rank": 5,
       "holo": { "mode": "distribution", "weights": ["0", "0", "0", "1"] } }
+  ],
+  "slots": [
+    { "count": 3, "weights": { "paper": 1 } },
+    { "count": 1, "weights": { "wood": 1 } },
+    { "count": 1, "weights": { "wood": 449, "fire": 300, "coal": 120, "gold": 86, "fullart": 45 } },
+    { "count": 1, "weights": { "fire": 5982, "coal": 1734, "gold": 1534, "fullart": 750 } }
   ],
   "characters": [ { "name": "Ember Fox", "category": "Animals" } ],
   "sale": {
@@ -167,11 +201,13 @@ character's weight and the total; all 1 with no weights), `holoOdds(fire, type)`
 }
 ```
 
-`cardsPerPack` and each type's `weight` are required. `holo.mode`: `independent` (`frame`, `picture` out of 1e18) |
+`slots` is required, in pack order: each slot's `count` and its `weights` by type slug (a type left out has weight 0
+in that slot; a slug that isn't one of the types is refused); cards per pack is the counts added up. `holo.mode`: `independent` (`frame`, `picture` out of 1e18) |
 `distribution` (`weights`: none, frame, picture, full). A character may have a `weight` (character odds): every
 character or none (equal odds); each at least 1; the script then sends `setCharacterWeights` after the characters.
 `imagesBase` is optional. There are no PDA odds in it: they are fixed in `FirePsa` for every Series. The JSON is read
-strictly: unknown keys (a `pdaOdds` key, and the old pool keys `slots`, `supply`, `amount`, `maxPerPack`, included),
+strictly: unknown keys (a `pdaOdds` key, the straight-odds keys `cardsPerPack` and a type's `weight`, and the old pool
+keys `supply`, `amount`, `maxPerPack`, `minRank`, included),
 numbers too big for their field and a drop start more than 365 days away are refused.
 
 `sale` (optional; the studio's Sale tab) is `FireSale.DropConfig` by name, in contract units: seconds, dollars with 8
@@ -265,7 +301,7 @@ studio's sample export is `contracts/test/cards/recipe-studio-sale.json` (the St
 | Setting | Where | Locks |
 |---|---|---|
 | Dealer | `FireCards.setDealer` | drop set up (`configureDrop` -> `lockForSale`), first pack minted, `lockFire`, or close |
-| Card types, their odds (weights), cards per pack, holo | `RecipeDealer.setRecipe` | same |
+| Card types, holo, the pack's slots (cards and weights per slot) | `RecipeDealer.setRecipe` | same |
 | Characters and their odds | `setCharacters`, `appendCharacters`, `setCharacterWeights` | same |
 | Image folder | `FireCards.setImagesBase` | same (the art people buy can never be swapped) |
 | Drop settings (all of them, below) | `FireSale.configureDrop` | the drop's start |
@@ -369,7 +405,7 @@ be renounced.
 | Packs per Series < 2^64 (`FirePacks` refuses more) | the frozen count is 64-bit |
 | Cards per pack at most 1,000 (`MAX_CARDS_PER_PACK`) | one pack's shuffle and dealing fit in a block |
 | Types < 2^32, characters < 2^32 | per-card fields are 32-bit; a card is one storage word |
-| Type weights < 2^64 each, character weights < 2^64 each | stored and summed in 256-bit words |
+| Slot weights < 2^64 each, character weights < 2^64 each | stored and summed in 256-bit words |
 | Print numbers < 2^40 per exact card | per-card field (40 bits; `BadDeal` past it) |
 | Name 64 bytes, category 32, slug 32 | metadata size; same rules as the studio |
 | Recipe size | owner gas per transaction (stored as contract code in 24,000-byte chunks, so no hard size) |
@@ -434,36 +470,45 @@ whose deployments file has no `FireProfiles` (mainnet and testnet until it is de
 
 ## Gas (Standard recipe, `forge test --match-test gas -vv`, measured 2026-10)
 
-| | Pool dealing (2026-10) | Straight odds (now) |
+| | Pool dealing (2026-10) | Straight odds (2026-10) |
 |---|---|---|
 | `open` 1 pack | ~102.8k | ~102.8k |
-| `process` 1 pack (6 cards) | ~370.9k | ~361.4k (-2.5%) |
-| `process` a 10-pack open | ~3.49M | ~3.42M (-2.0%) |
-| the dealer's part of a pack (`deal`, 6 cards) | ~41.2k | ~20.0k (-52%) |
+| `process` 1 pack (6 cards) | ~370.9k | ~376.4k |
+| `process` a 10-pack open | ~3.49M | ~3.47M |
+| the dealer's part of a pack (`deal`, 6 cards) | ~41.2k | ~20.2k |
 | `process(300)` of a 1,000-card pack (most in one call) | ~19.2M | ~18.2M |
 
-Almost all of a pack's gas is minting the cards (owner, balance, the card word, its print-number counter). The dealer now
-reads the compiled recipe (one code copy) and does a binary search per card, with no storage writes.
+Slots (2026-10, measured on the same tests): `open` ~102.8k; `process` 1 pack ~380.3k (+1.0%); a 10-pack open ~3.50M
+(+0.8%); the dealer's part of a pack ~23.3k (+3.1k, about 0.5k a card: finding the card's slot and its weights); a
+1,000-card pack's `process(300)` ~18.3M. (The straight-odds column was re-measured after print numbers: 376.4k, 3.47M,
+20.2k.)
+
+Almost all of a pack's gas is minting the cards (owner, balance, the card word, its print-number counter). The dealer
+reads the compiled recipe (one code copy), walks to each card's slot (its end is the first word of its record) and does
+a binary search over that slot's cumulative weights, with no storage writes.
 
 ## Tests
 
 `contracts/test/cards/` (`Cards.t.sol`, `Recipe.t.sol`, `Sale.t.sol`, `Groups.t.sol`, `Psa.t.sol`, `Burner.t.sol`,
 `PlankBurner.t.sol`, `SaleFork.t.sol`, `ImageParity.t.sol`, `SeriesCheck.t.sol`, `Profiles.t.sol`) and
 `contracts/test/invariant/` (fuzz and invariant suites, including `RecipeFuzz.t.sol` and `GroupsFuzz.t.sol`). They cover:
-- straight odds: the Standard type odds, holo rates (Gold and Full Art always full holo) and characters converge to
-  their weights over 24,000 cards (5 standard deviations); a whole opened Series follows its odds; no guarantees and
-  no caps (all-Paper packs, two Full Arts in a pack, any number per character); the last pack of a 300-pack Series and
-  the only pack of a 1-pack Series get the same cards from the same word; print numbers count each exact card
-  (character, type, holo look) #1, #2, ... in deal order, per Series
+- slots: over 4,000 Standard packs every slot's types converge to its own weights (positions 1-3 always Paper, 4
+  always Wood, 5 and 6 at their slot's odds, 5 standard deviations), the per-pack averages are exactly 3 / 1.449 /
+  0.8982 / 0.2934 / 0.2394 / 0.12, and holo rates (Gold and Full Art always full holo) and characters converge; a whole
+  opened Series follows its odds; the shape is the only guarantee (3 Paper and a Fire or better in every pack) and
+  nothing caps the rest (two Full Arts or two Golds in a pack, any number per character); the last pack of a 300-pack
+  Series and the only pack of a 1-pack Series get the same cards from the same word; print numbers count each exact
+  card (character, type, holo look) #1, #2, ... in deal order, per Series
 - character weights converge to their weights, independent of type; equal weights deal exactly what no weights deal;
   one weight per character, each at least 1, lock with the Series, and a list that grew needs its weights again
 - new shapes: 3-card all-holo packs, 100 characters in batches, 1,000 weighted characters, 1-card packs, a 1,000-card
   pack in 10 calls (same cards as one call), recipes spanning several storage chunks
-- bad recipes refused with the reason (no types, cards per pack, weight, slugs, names, holo)
+- bad recipes refused with the reason (no types, no slots, a slot's count or weights, one weight per type, cards per
+  pack over several slots, a type in no slot, slugs, names, holo)
 - every setting locks at the first pack, and a dealer can't be swapped after it
-- fuzz: random recipes (1-12 types, weights up to 2^64, both holo modes, 1-40 cards a pack) and random character
-  weights; every card is a type and a character of the Series, holo only as its type allows, the same however a pack
-  is split; the views read back the weights
+- fuzz: random slot recipes (1-12 types, 1-6 slots of 1-8 cards, weights up to 2^64 with gaps, both holo modes) and
+  random character weights; every card is a type its slot can deal and a character of the Series, holo only as its type
+  allows, the same however a pack is split (across slot boundaries too); `slotsOf` reads back every slot
 - the same words give the same cards however processing is split; out-of-order randomness waits its turn
 - permissions, burns, royalties, metadata, image names, the image folder lock, the JSON configure path
 - image names match the studio's files for every look a recipe can deal (`ImageParity.t.sol`, `image-parity/`), and
@@ -542,7 +587,9 @@ The site has the ABIs: `web/src/lib/abi/` (`fireCardsAbi.json`, `firePacksAbi.js
 ## Past review fixes after the redesign
 
 See `docs/audit-2026-10.md` ("Per-Series recipes"). Pool dealing (slots, per-pack guarantees, exact totals) was
-replaced by straight odds in 2026-10 (owner decision: "straight odds for all cards, no guarantees and no caps").
+replaced by straight odds in 2026-10 (owner decision: "straight odds for all cards, no guarantees and no caps"); then
+the pack shape came back as slots with their own fixed odds (owner decision, 2026-10: each slot rolled from its own
+odds, no shared pool, no caps, so the last pack is exactly as random as the first).
 
 ## Money and the economy
 

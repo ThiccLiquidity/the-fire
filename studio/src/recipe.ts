@@ -1,19 +1,21 @@
-/** A Series' recipe: its card types (each with its odds) and its cards per pack. This is the studio's copy of
+/** A Series' recipe: its card types and its pack's shape (slots, each with its own odds). This is the studio's copy of
  *  RecipeDealer.Recipe (contracts/src/cards/RecipeDealer.sol) plus what only the studio needs (each type's frame set).
  *
- *  Dealing is straight odds: every card of every pack is rolled on its own, its type by the type odds (each type's
- *  % of cards), then its holo by that type's holo odds, then its character by the character odds (none = every
- *  character equally likely). No slots, guarantees, caps or pool: the first and the last pack of
- *  a Series have the same odds.
+ *  Dealing: every pack has the same shape, its slots in order ("3 Paper · 1 Wood · 1 Wood or better · 1 Fire or
+ *  better"). Every card is rolled on its own, its type by its slot's odds (each type's % of that slot's cards), then
+ *  its holo by that type's holo odds, then its character by the character odds (none = every character equally
+ *  likely). No pool, caps or guarantees beyond what the slots say: the first and the last pack of a Series have the
+ *  same odds.
  *
  *  - checkRecipe: every check RecipeCompiler.compile makes, in the same order (so the first problem is the contract's
- *    revert), plus the studio's own (number formats).
- *  - typeOdds / holoOdds / holoLooksFor: the odds the contract deals by.
+ *    revert), plus the studio's own (number formats, each slot adding up to 100%).
+ *  - slotOdds / perPackCounts / typeOdds / holoOdds / holoLooksFor: the odds the contract deals by.
  *  - recipeJson: the recipe.json that contracts/script/ConfigureSeries.s.sol reads.
  *
- *  The owner sets odds as plain percentages (up to 2 decimals, adding up to exactly 100%). The contract takes whole-number
- *  weights: a percentage becomes percent x 10,000 (100% = 1,000,000), with the zeros every weight shares dropped
- *  (simplifyWeights: same ratios, so the Standard still exports 5000 / 2415 / ... of 10,000).
+ *  The owner sets each slot's odds as plain percentages (up to 2 decimals, adding up to exactly 100% in each slot; blank
+ *  or 0 = not in that slot). The contract takes whole-number weights: a percentage becomes percent x 10,000 (100% =
+ *  1,000,000), with the zeros every weight of the slot shares dropped (simplifyWeights: same ratios, so the Standard's
+ *  Fire-or-better slot exports 5982 / 1734 / 1534 / 750).
  *
  *  Numbers the contract stores above 2^53 (weights, holo chances) are kept as decimal strings. */
 
@@ -37,21 +39,30 @@ export interface CardTypeDef {
   slugEdited?: boolean
   /** Rarity order for display (higher = rarer); ties allowed. */
   rank: number
-  /** The type's odds as the owner sets them: its % of cards, above 0 and up to 100 with at most 2 decimals. All types
-   *  add up to exactly 100%. */
-  percent: string
-  /** Exact odds (the contract's weight) kept from a save whose deal is locked, or read from a recipe.json: the studio
-   *  deals and exports by these while every type has one. Any edit to an open recipe drops them. */
-  weight?: string
   holo: HoloRule
   /** The frame set (src/assets/frames/<set>.webp) and character art this type uses. */
   frameSet: string
 }
 
+/** `count` cards in a row of the pack, each rolled from this slot's odds. */
+export interface SlotDef {
+  /** Local id (stable across reordering). */
+  id: string
+  /** Cards in this slot, at least 1. */
+  count: number
+  /** Each type's % of this slot's cards, by type id: up to 2 decimals, adding up to exactly 100%. Missing, blank or 0 =
+   *  never in this slot. */
+  percents: Record<string, string>
+  /** Exact odds (the contract's weights, by type id; missing = 0) kept from a save whose deal is locked, or read from a
+   *  recipe.json: the studio deals and exports by these while every slot has them. Any edit to an open recipe drops
+   *  them. */
+  weights?: Record<string, string>
+}
+
 export interface Recipe {
   types: CardTypeDef[]
-  /** Cards in one pack, 1 to MAX_CARDS_PER_PACK. */
-  cardsPerPack: number
+  /** The pack's shape, in pack order. Cards per pack = the counts added up (1 to MAX_CARDS_PER_PACK). */
+  slots: SlotDef[]
 }
 
 export const HOLO_ONE = 1_000_000_000_000_000_000n
@@ -75,69 +86,79 @@ export const STANDARD_ROLLS = {
   coal: '683772233983162066',
 } as const
 
-/** StandardRecipe.sol's type weights, out of 10,000: the old pool dealing's expected share of each type per card (167
- *  packs, 20 characters: 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art of 1,002). */
-export const STANDARD_WEIGHTS = { paper: '5000', wood: '2415', fire: '1497', coal: '489', gold: '399', fullart: '200' } as const
-/** The same odds as the owner sets them: % of cards. */
-export const STANDARD_PERCENTS = { paper: '50', wood: '24.15', fire: '14.97', coal: '4.89', gold: '3.99', fullart: '2' } as const
+/** StandardRecipe.sol's slots, as the owner sets them (% of each slot's cards). Per pack on average: 3 Paper, 1.449
+ *  Wood, 0.8982 Fire, 0.2934 Coal, 0.2394 Gold, 0.12 Full Art (the averages of the straight odds before slots: 50 /
+ *  24.15 / 14.97 / 4.89 / 3.99 / 2% of 6 cards). */
+export const STANDARD_SLOTS: { id: string; count: number; percents: Record<string, string> }[] = [
+  { id: 'paper', count: 3, percents: { paper: '100' } },
+  { id: 'wood', count: 1, percents: { wood: '100' } },
+  { id: 'wood-up', count: 1, percents: { wood: '44.9', fire: '30', coal: '12', gold: '8.6', fullart: '4.5' } },
+  { id: 'fire-up', count: 1, percents: { fire: '59.82', coal: '17.34', gold: '15.34', fullart: '7.5' } },
+]
+/** The weights StandardRecipe.sol has, per slot (recipe type order: paper, wood, fire, coal, gold, fullart). */
+export const STANDARD_SLOT_WEIGHTS = [['1', '0', '0', '0', '0', '0'], ['0', '1', '0', '0', '0', '0'], ['0', '449', '300', '120', '86', '45'], ['0', '0', '5982', '1734', '1534', '750']] as const
 
 const ind = (roll: string): HoloRule => ({ mode: 'independent', frame: roll, picture: roll })
 
 const fullHolo = (): HoloRule => ({ mode: 'distribution', weights: ['0', '0', '0', '1'] })
 
-/** Exactly StandardRecipe.build(): 6 cards a pack; Paper 50%, Wood 24.15%, Fire 14.97%, Coal 4.89%, Gold 3.99%, Full
- *  Art 2% per card; Paper / Wood / Fire / Coal any holo 5 / 10 / 50 / 90% (two independent rolls), Gold and Full Art
- *  always full holo. */
+/** One slot holding every type of the list, at these percentages (by type id). */
+const oneSlot = (count: number, percents: Record<string, string>, weights?: Record<string, string>): SlotDef => ({ id: 'all', count, percents, ...(weights ? { weights } : {}) })
+
+/** Exactly StandardRecipe.build(): 6 cards a pack in four slots: 3 Paper · 1 Wood · 1 Wood or better (Wood 44.9%, Fire
+ *  30%, Coal 12%, Gold 8.6%, Full Art 4.5%) · 1 Fire or better (Fire 59.82%, Coal 17.34%, Gold 15.34%, Full Art 7.5%);
+ *  Paper / Wood / Fire / Coal any holo 5 / 10 / 50 / 90% (two independent rolls), Gold and Full Art always full holo. */
 export function standardRecipe(): Recipe {
-  const w = STANDARD_PERCENTS
   return {
-    cardsPerPack: 6,
     types: [
-      { id: 'paper', name: 'Paper', slug: 'paper', rank: 0, percent: w.paper, holo: ind(STANDARD_ROLLS.paper), frameSet: 'paper' },
-      { id: 'wood', name: 'Wood', slug: 'wood', rank: 1, percent: w.wood, holo: ind(STANDARD_ROLLS.wood), frameSet: 'wood' },
-      { id: 'fire', name: 'Fire', slug: 'fire', rank: 2, percent: w.fire, holo: ind(STANDARD_ROLLS.fire), frameSet: 'burning' },
-      { id: 'coal', name: 'Coal', slug: 'coal', rank: 3, percent: w.coal, holo: ind(STANDARD_ROLLS.coal), frameSet: 'charcoal' },
-      { id: 'gold', name: 'Gold', slug: 'gold', rank: 4, percent: w.gold, holo: fullHolo(), frameSet: 'gold' },
-      { id: 'fullart', name: 'Full Art', slug: 'fullart', rank: 5, percent: w.fullart, holo: fullHolo(), frameSet: 'fullart' },
+      { id: 'paper', name: 'Paper', slug: 'paper', rank: 0, holo: ind(STANDARD_ROLLS.paper), frameSet: 'paper' },
+      { id: 'wood', name: 'Wood', slug: 'wood', rank: 1, holo: ind(STANDARD_ROLLS.wood), frameSet: 'wood' },
+      { id: 'fire', name: 'Fire', slug: 'fire', rank: 2, holo: ind(STANDARD_ROLLS.fire), frameSet: 'burning' },
+      { id: 'coal', name: 'Coal', slug: 'coal', rank: 3, holo: ind(STANDARD_ROLLS.coal), frameSet: 'charcoal' },
+      { id: 'gold', name: 'Gold', slug: 'gold', rank: 4, holo: fullHolo(), frameSet: 'gold' },
+      { id: 'fullart', name: 'Full Art', slug: 'fullart', rank: 5, holo: fullHolo(), frameSet: 'fullart' },
     ],
+    slots: STANDARD_SLOTS.map((sl) => ({ ...sl, percents: { ...sl.percents } })),
   }
 }
 
 /** The recipe Series saved before Gold had: the old Standard with Diamond (frame / picture / full, a third each), at
  *  the old pool's shares for a 167-pack Series with one Diamond (501 Paper, 301 Wood, 150 Fire, 49 Coal, 1 Diamond of
- *  1,002). Only migrate.ts uses it, so old saves keep their cards and images. */
+ *  1,002), in one slot of 6. Only migrate.ts uses it, so old saves keep their cards and images. */
 export function legacyDiamondRecipe(): Recipe {
   return withPercentsFromWeights({
-    cardsPerPack: 6,
     types: [
-      { id: 'paper', name: 'Paper', slug: 'paper', rank: 0, weight: '501', holo: ind(STANDARD_ROLLS.paper), frameSet: 'paper' },
-      { id: 'wood', name: 'Wood', slug: 'wood', rank: 1, weight: '301', holo: ind(STANDARD_ROLLS.wood), frameSet: 'wood' },
-      { id: 'fire', name: 'Fire', slug: 'fire', rank: 2, weight: '150', holo: ind(STANDARD_ROLLS.fire), frameSet: 'burning' },
-      { id: 'coal', name: 'Coal', slug: 'coal', rank: 3, weight: '49', holo: ind(STANDARD_ROLLS.coal), frameSet: 'charcoal' },
-      { id: 'diamond', name: 'Diamond', slug: 'diamond', rank: 4, weight: '1', holo: { mode: 'distribution', weights: ['0', '1', '1', '1'] }, frameSet: 'diamond' },
-    ].map((t) => ({ ...t, percent: '' })) as CardTypeDef[],
+      { id: 'paper', name: 'Paper', slug: 'paper', rank: 0, holo: ind(STANDARD_ROLLS.paper), frameSet: 'paper' },
+      { id: 'wood', name: 'Wood', slug: 'wood', rank: 1, holo: ind(STANDARD_ROLLS.wood), frameSet: 'wood' },
+      { id: 'fire', name: 'Fire', slug: 'fire', rank: 2, holo: ind(STANDARD_ROLLS.fire), frameSet: 'burning' },
+      { id: 'coal', name: 'Coal', slug: 'coal', rank: 3, holo: ind(STANDARD_ROLLS.coal), frameSet: 'charcoal' },
+      { id: 'diamond', name: 'Diamond', slug: 'diamond', rank: 4, holo: { mode: 'distribution', weights: ['0', '1', '1', '1'] }, frameSet: 'diamond' },
+    ],
+    slots: [oneSlot(6, {}, { paper: '501', wood: '301', fire: '150', coal: '49', diamond: '1' })],
   })
 }
 
-/** An example special Series: 3 cards per pack, every card holo (frame, picture or full, a third each; Gold always
- *  full), so no "none" images are built. Fire 68%, Coal 30%, Gold 2% per card. */
+/** An example special Series: 3 cards per pack in one slot, every card holo (frame, picture or full, a third each;
+ *  Gold always full), so no "none" images are built. Fire 68%, Coal 30%, Gold 2% per card. */
 export function specialAllHoloRecipe(): Recipe {
   const anyHolo = (): HoloRule => ({ mode: 'distribution', weights: ['0', '1', '1', '1'] })
   return {
-    cardsPerPack: 3,
     types: [
-      { id: 'fire', name: 'Fire', slug: 'fire', rank: 2, percent: '68', holo: anyHolo(), frameSet: 'burning' },
-      { id: 'coal', name: 'Coal', slug: 'coal', rank: 3, percent: '30', holo: anyHolo(), frameSet: 'charcoal' },
-      { id: 'gold', name: 'Gold', slug: 'gold', rank: 4, percent: '2', holo: fullHolo(), frameSet: 'gold' },
+      { id: 'fire', name: 'Fire', slug: 'fire', rank: 2, holo: anyHolo(), frameSet: 'burning' },
+      { id: 'coal', name: 'Coal', slug: 'coal', rank: 3, holo: anyHolo(), frameSet: 'charcoal' },
+      { id: 'gold', name: 'Gold', slug: 'gold', rank: 4, holo: fullHolo(), frameSet: 'gold' },
     ],
+    slots: [oneSlot(3, { fire: '68', coal: '30', gold: '2' })],
   }
 }
 
-/** A fresh copy with new type ids, set by its percentages (exact weights from an old save are not copied). */
+/** A fresh copy with new type and slot ids, set by its percentages (exact weights from an old save are not copied). */
 export function cloneRecipe(r: Recipe, newId: () => string): Recipe {
+  const ids = new Map(r.types.map((t) => [t.id, newId()]))
+  const remap = (rec: Record<string, string>) => Object.fromEntries(Object.entries(rec).flatMap(([k, v]) => (ids.has(k) ? [[ids.get(k)!, v]] : [])))
   return {
-    cardsPerPack: r.cardsPerPack,
-    types: r.types.map(({ weight: _exact, ...t }) => ({ ...t, id: newId(), holo: t.holo.mode === 'independent' ? { ...t.holo } : { mode: 'distribution', weights: [...t.holo.weights] } })),
+    types: r.types.map((t) => ({ ...t, id: ids.get(t.id)!, holo: t.holo.mode === 'independent' ? { ...t.holo } : { mode: 'distribution', weights: [...t.holo.weights] } })),
+    slots: r.slots.map((sl) => ({ id: newId(), count: sl.count, percents: remap(sl.percents) })),
   }
 }
 
@@ -296,33 +317,83 @@ export function fillTheRest(percents: readonly (string | undefined)[], lastEdite
   return next > 0 && next <= ALL ? { index, percent: formatPercent(next) } : null
 }
 
-/** A recipe whose types carry exact weights, with each type's percent filled in from them (adding up to 100%). */
+// ---------------------------------------------------------------- slots
+
+/** A slot's percentage for each type, in recipe order ('' where the type isn't in the slot). */
+export function slotPercents(r: Recipe, sl: SlotDef): string[] {
+  return r.types.map((t) => (sl.percents[t.id] ?? '').trim())
+}
+
+/** Blank counts as 0% (not in this slot). */
+const p0 = (x: string) => (x === '' ? '0' : x)
+
+/** Whether a slot deals by exact weights (from a locked old save or a recipe.json) rather than by its percentages. */
+const slotExact = (sl: SlotDef) => sl.weights !== undefined
+
+/** Whether the recipe deals by exact weights (every slot has them) rather than by its percentages. */
+export const hasExactWeights = (r: Recipe) => r.slots.length > 0 && r.slots.every(slotExact)
+
+/** A recipe whose slots carry exact weights, with each slot's percentages filled in from them (adding up to 100% per
+ *  slot; a type with weight 0 has no percentage). */
 export function withPercentsFromWeights(r: Recipe): Recipe {
-  const p = weightsToPercents(r.types.map((t) => t.weight ?? '0'))
-  return { ...r, types: r.types.map((t, i) => ({ ...t, percent: p[i] })) }
+  return {
+    ...r,
+    slots: r.slots.map((sl) => {
+      if (!sl.weights) return sl
+      const w = r.types.map((t) => sl.weights?.[t.id] ?? '0')
+      const p = weightsToPercents(w)
+      return { ...sl, percents: Object.fromEntries(r.types.flatMap((t, i) => ((parseUint(w[i]) ?? 0n) > 0n ? [[t.id, p[i]]] : []))) }
+    }),
+  }
 }
 
 /** The recipe set by its percentages only (exact weights dropped). */
 export function dropExactWeights(r: Recipe): Recipe {
-  return r.types.some((t) => t.weight !== undefined) ? { ...r, types: r.types.map(({ weight: _exact, ...t }) => t) } : r
+  return r.slots.some(slotExact) ? { ...r, slots: r.slots.map(({ weights: _exact, ...sl }) => sl) } : r
 }
 
-/** Whether the recipe deals by exact weights (every type has one) rather than by its percentages. */
-export const hasExactWeights = (r: Recipe) => r.types.length > 0 && r.types.every((t) => t.weight !== undefined)
+/** Which types a slot can deal (weight above 0), in recipe order. */
+export function slotTypes(r: Recipe, s: number): number[] {
+  const w = slotWeights(r)[s]?.weights ?? []
+  return w.flatMap((x, i) => (x > 0n ? [i] : []))
+}
+
+/** A slot as people read it: "Paper", "Wood or better" (every type from the lowest rank it holds up), else its types
+ *  ("Fire or Gold"). The site's pack row says the same (info.js slotLabel). */
+export function slotLabel(r: Recipe, s: number): string {
+  const ts = slotTypes(r, s)
+  if (!ts.length) return 'nothing'
+  const name = (i: number) => r.types[i].name || `Type ${i + 1}`
+  if (ts.length === 1) return name(ts[0])
+  const low = Math.min(...ts.map((i) => r.types[i].rank))
+  const upFrom = r.types.flatMap((t, i) => (t.rank >= low ? [i] : []))
+  if (upFrom.length === ts.length && upFrom.every((i) => ts.includes(i))) {
+    const first = ts.filter((i) => r.types[i].rank === low)
+    if (first.length === 1) return `${name(first[0])} or better`
+  }
+  return ts.map(name).join(', ').replace(/, ([^,]*)$/, ' or $1')
+}
+
+/** "3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better". */
+export function packShapeLine(r: Recipe): string {
+  return r.slots.map((sl, s) => `${sl.count} ${slotLabel(r, s)}`).join(' · ')
+}
 
 // ---------------------------------------------------------------- checks
 
 export interface Problem {
-  /** The contract's error ('BadType(i,why)', 'BadRecipe(why)', 'BadText') or 'Studio' for the studio's own checks. */
+  /** The contract's error ('BadType(i,why)', 'BadSlot(s,why)', 'BadRecipe(why)', 'BadText') or 'Studio' for the
+   *  studio's own checks. */
   code: string
-  /** 'total': the card types' percentages don't add up to 100%. */
-  where: 'recipe' | 'type' | 'total'
+  /** 'total': a slot's percentages don't add up to 100% (index = the slot). */
+  where: 'recipe' | 'type' | 'slot' | 'total'
   index?: number
   message: string
 }
 
+/** Cards per pack: the slots' counts added up. */
 export function cardsPerPack(r: Recipe): number {
-  return Number.isFinite(r.cardsPerPack) ? r.cardsPerPack : 0
+  return r.slots.reduce((n, sl) => n + (Number.isFinite(sl.count) ? sl.count : 0), 0)
 }
 
 function badText(s: string): boolean {
@@ -331,21 +402,15 @@ function badText(s: string): boolean {
 }
 
 const typeLabel = (r: Recipe, i: number) => `Type ${i + 1}${r.types[i]?.name ? ` (${r.types[i].name})` : ''}`
+export const slotName = (s: number) => `Slot ${s + 1}`
 
 /** Studio-side format checks: every number is a whole number in its on-chain range. */
 function formatProblems(r: Recipe): Problem[] {
   const out: Problem[] = []
   const typeP = (i: number, message: string) => out.push({ code: 'Studio', where: 'type', index: i, message: `${typeLabel(r, i)}: ${message}` })
-  if (!Number.isInteger(r.cardsPerPack) || r.cardsPerPack < 0 || r.cardsPerPack > UINT32_MAX) {
-    out.push({ code: 'Studio', where: 'recipe', message: 'Cards per pack must be a whole number.' })
-  }
-  const exact = hasExactWeights(r)
+  const slotP = (s: number, message: string) => out.push({ code: 'Studio', where: 'slot', index: s, message: `${slotName(s)}: ${message}` })
   r.types.forEach((t, i) => {
     if (!Number.isInteger(t.rank) || t.rank < 0 || t.rank > UINT32_MAX) typeP(i, 'rank must be a whole number from 0 to 4,294,967,295.')
-    if (exact) {
-      const w = parseUint(t.weight ?? '')
-      if (w == null || w > U64) typeP(i, 'its odds are not a valid whole number.')
-    } else if (parsePercent(t.percent) == null) typeP(i, '% of cards must be a number from 0 to 100, with at most 2 decimals.')
     if (t.holo.mode === 'independent') {
       for (const [k, v] of [['frame', t.holo.frame], ['picture', t.holo.picture]] as const) {
         const x = parseUint(v)
@@ -353,6 +418,15 @@ function formatProblems(r: Recipe): Problem[] {
       }
     } else {
       if (t.holo.weights.length !== 4 || t.holo.weights.some((w) => { const x = parseUint(w); return x == null || x > U64 })) typeP(i, 'holo weights must be 4 whole numbers.')
+    }
+  })
+  r.slots.forEach((sl, s) => {
+    if (!Number.isInteger(sl.count) || sl.count < 0 || sl.count > UINT32_MAX) slotP(s, 'cards must be a whole number.')
+    if (slotExact(sl)) {
+      if (r.types.some((t) => { const w = parseUint(sl.weights?.[t.id] ?? '0'); return w == null || w > U64 })) slotP(s, 'its odds are not valid whole numbers.')
+    } else {
+      const bad = slotPercents(r, sl).flatMap((x, i) => (parsePercent(p0(x)) == null ? [i] : []))
+      if (bad.length) slotP(s, `% of this slot must be a number from 0 to 100, with at most 2 decimals (${bad.map((i) => r.types[i].name || typeLabel(r, i)).join(', ')}).`)
     }
   })
   return out
@@ -365,13 +439,10 @@ export function checkRecipe(r: Recipe): Problem[] {
   const out = formatProblems(r)
   if (out.length) return out
   const T = r.types.length
-  const { weights } = typeWeights(r)
-  const exact = hasExactWeights(r)
   const typeP = (i: number, why: string, message: string, code = 'BadType') => out.push({ code: code === 'BadType' ? `BadType(${i},${why})` : code, where: 'type', index: i, message: `${typeLabel(r, i)}: ${message}` })
-  if (T === 0 || T > UINT32_MAX) out.push({ code: 'BadRecipe(no types)', where: 'recipe', message: 'Add at least one card type.' })
-  else if (r.cardsPerPack < 1 || r.cardsPerPack > MAX_CARDS_PER_PACK) {
-    out.push({ code: 'BadRecipe(cards per pack)', where: 'recipe', message: `Cards per pack must be 1 to ${MAX_CARDS_PER_PACK.toLocaleString('en-US')}.` })
-  }
+  const slotP = (s: number, why: string, message: string) => out.push({ code: `BadSlot(${s},${why})`, where: 'slot', index: s, message: `${slotName(s)}: ${message}` })
+  if (T === 0 || T > UINT32_MAX) { out.push({ code: 'BadRecipe(no types)', where: 'recipe', message: 'Add at least one card type.' }); return out }
+  if (r.slots.length === 0) { out.push({ code: 'BadRecipe(no slots)', where: 'recipe', message: 'Add at least one slot.' }); return out }
   const slugs = new Map<string, number>()
   r.types.forEach((t, i) => {
     const n = byteLength(t.name)
@@ -382,18 +453,37 @@ export function checkRecipe(r: Recipe): Problem[] {
     else if (!/^[a-z0-9-]+$/.test(t.slug)) typeP(i, 'slug characters', 'slug: only a-z, 0-9 and "-".')
     else if (slugs.has(t.slug)) typeP(i, 'slug repeated', `slug "${t.slug}" is already used by ${typeLabel(r, slugs.get(t.slug)!)}.`)
     if (!slugs.has(t.slug)) slugs.set(t.slug, i)
-    if (weights[i] === 0n) typeP(i, 'weight', exact ? 'its odds must be above 0 (remove the type to leave it out).' : 'its % of cards must be above 0 (remove the type to leave it out).')
     if (t.holo.mode === 'independent') {
       if (parseUint(t.holo.frame)! > HOLO_ONE || parseUint(t.holo.picture)! > HOLO_ONE) typeP(i, 'holo chances', 'a holo chance is above 100%.')
     } else if (t.holo.weights.reduce((a, w) => a + parseUint(w)!, 0n) === 0n) {
       typeP(i, 'holo weights', 'the holo split adds up to 0 (give at least one look a part).')
     }
   })
-  // the owner's percentages must add up to exactly 100% (the contract would take any total: this is the studio's rule)
-  if (!exact && T > 0) {
-    const msg = percentTotalProblem(percentTotal(r.types.map((t) => t.percent)), 'The card types')
-    if (msg) out.push({ code: 'Studio', where: 'total', message: msg })
+  const sw = slotWeights(r)
+  const exact = hasExactWeights(r)
+  let perPack = 0
+  for (let s = 0; s < r.slots.length; s++) {
+    const sl = r.slots[s]
+    if (sl.count === 0) slotP(s, 'count', 'give it at least 1 card (remove the slot to leave it out).')
+    perPack += sl.count
+    if (perPack > MAX_CARDS_PER_PACK) {
+      out.push({ code: 'BadRecipe(cards per pack)', where: 'recipe', message: `Cards per pack (the slots' cards added up) must be 1 to ${MAX_CARDS_PER_PACK.toLocaleString('en-US')}: it's ${cardsPerPack(r).toLocaleString('en-US')}.` })
+      break
+    }
+    if (sw[s].total === 0n) slotP(s, 'weights', exact ? 'its odds add up to 0.' : 'give at least one type a % of this slot.')
   }
+  const dealt = new Set(sw.flatMap((x) => x.weights.flatMap((w, i) => (w > 0n ? [i] : []))))
+  r.types.forEach((t, i) => {
+    if (!dealt.has(i)) typeP(i, 'in no slot', `no slot deals ${t.name || 'it'}: give it a % in a slot, or remove the type.`)
+  })
+  // each slot's percentages must add up to exactly 100% (the contract would take any total: this is the studio's rule)
+  r.slots.forEach((sl, s) => {
+    if (slotExact(sl)) return
+    const t = percentTotal(slotPercents(r, sl).map(p0))
+    if (t.total === 0) return // reported above (no type in the slot)
+    const msg = percentTotalProblem(t, `${slotName(s)}'s types`)
+    if (msg) out.push({ code: 'Studio', where: 'total', index: s, message: msg })
+  })
   return out
 }
 
@@ -404,17 +494,34 @@ export function contractProblems(problems: Problem[]): Problem[] {
 
 // ---------------------------------------------------------------- odds
 
-/** Each type's weight (recipe order, BigInt) and their total: what the contract gets. From the percentages (percent x
- *  10,000, simplified), or the exact weights a locked old save or a recipe.json carries. */
-export function typeWeights(r: Recipe): { weights: bigint[]; total: bigint } {
-  const weights = hasExactWeights(r) ? r.types.map((t) => parseUint(t.weight ?? '') ?? 0n) : simplifyWeights(percentsToWeights(r.types.map((t) => t.percent)))
-  return { weights, total: weights.reduce((a, w) => a + w, 0n) }
+/** Each slot's weight for each type (recipe order, BigInt; 0 = not in the slot) and their total: what the contract
+ *  gets. From the percentages (percent x 10,000, simplified per slot), or the exact weights a locked old save or a
+ *  recipe.json carries. */
+export function slotWeights(r: Recipe): { count: number; weights: bigint[]; total: bigint }[] {
+  return r.slots.map((sl) => {
+    const weights = slotExact(sl)
+      ? r.types.map((t) => parseUint(sl.weights?.[t.id] ?? '0') ?? 0n)
+      : simplifyWeights(percentsToWeights(slotPercents(r, sl).map(p0)))
+    return { count: Number.isFinite(sl.count) ? Math.max(0, sl.count) : 0, weights, total: weights.reduce((a, w) => a + w, 0n) }
+  })
 }
 
-/** Each type's chance per card (recipe order), as fractions (RecipeDealer.oddsOf: its weight over the total). */
+/** Each slot's chance of each type for one of its cards (RecipeDealer.slotsOf: its weight over the slot's total). */
+export function slotOdds(r: Recipe): number[][] {
+  return slotWeights(r).map(({ weights, total }) => weights.map((w) => (total > 0n ? Number((w * 1_000_000_000_000n) / total) / 1e12 : 0)))
+}
+
+/** Expected cards of each type in one pack (recipe order): the sum over the slots of count x the slot's odds. */
+export function perPackCounts(r: Recipe): number[] {
+  const odds = slotOdds(r)
+  return r.types.map((_, t) => r.slots.reduce((a, sl, s) => a + (Number.isFinite(sl.count) ? sl.count : 0) * (odds[s][t] ?? 0), 0))
+}
+
+/** Each type's share of all cards (recipe order): its expected cards per pack over cards per pack. The chance a card
+ *  picked at random from a Series is that type (the site's "about 1 in N cards"). */
 export function typeOdds(r: Recipe): number[] {
-  const { weights, total } = typeWeights(r)
-  return weights.map((w) => (total > 0n ? Number((w * 1_000_000_000_000n) / total) / 1e12 : 0))
+  const S = cardsPerPack(r)
+  return perPackCounts(r).map((x) => (S > 0 ? x / S : 0))
 }
 
 /** Each character's chance per card, from its weight (missing or no weights: equal). RecipeDealer.characterOddsOf. */
@@ -457,11 +564,18 @@ export function holoLooksFor(r: Recipe, typeIndex: number): HoloType[] {
 
 export interface RecipeJsonCharacter { name: string; category: string; weight?: number | string }
 
+export interface RecipeJsonSlot {
+  count: number
+  /** The slot's weight for each type it can deal, by slug (a type left out: never in this slot). */
+  weights: Record<string, number | string>
+}
+
 export interface RecipeJson {
   fire: number
   imagesBase?: string
-  cardsPerPack: number
-  types: ({ name: string; slug: string; rank: number; weight: number | string; holo: { mode: 'independent'; frame: string; picture: string } | { mode: 'distribution'; weights: string[] } })[]
+  types: ({ name: string; slug: string; rank: number; holo: { mode: 'independent'; frame: string; picture: string } | { mode: 'distribution'; weights: string[] } })[]
+  /** The pack's shape, in pack order (cards per pack = the counts added up). */
+  slots: RecipeJsonSlot[]
   /** Characters in image order; each has a "weight" only when the Series gives characters their own odds. */
   characters: RecipeJsonCharacter[]
   /** FireSale.configureDrop's settings (sale.ts saleJson). */
@@ -474,33 +588,38 @@ const num = (v: bigint): number | string => (v <= BigInt(Number.MAX_SAFE_INTEGER
  *  with `weight` only if `weights` gives the characters different odds (all equal: left out, the default). */
 export function recipeJson(fire: number, r: Recipe, characters: { name: string; category: string }[], imagesBase?: string, sale?: SaleJson, weights?: readonly number[]): RecipeJson {
   const weighted = !!weights && weights.length === characters.length && weights.some((w) => w !== weights[0])
-  const typeW = typeWeights(r).weights
+  const sw = slotWeights(r)
   return {
     fire,
     ...(imagesBase ? { imagesBase } : {}),
-    cardsPerPack: r.cardsPerPack,
-    types: r.types.map((t, i) => ({
-      name: t.name, slug: t.slug, rank: t.rank, weight: num(typeW[i]),
+    types: r.types.map((t) => ({
+      name: t.name, slug: t.slug, rank: t.rank,
       holo: t.holo.mode === 'independent'
         ? { mode: 'independent' as const, frame: String(parseUint(t.holo.frame)), picture: String(parseUint(t.holo.picture)) }
         : { mode: 'distribution' as const, weights: t.holo.weights.map((w) => String(parseUint(w))) },
     })),
+    slots: sw.map(({ count, weights: w }) => ({ count, weights: Object.fromEntries(r.types.flatMap((t, i) => (w[i] > 0n ? [[t.slug, num(w[i])]] : []))) })),
     characters: weighted ? characters.map((c, i) => ({ ...c, weight: weights![i] })) : characters,
     ...(sale ? { sale } : {}),
   }
 }
 
-/** Read a recipe.json back (for tests and for copying a recipe in). Frame sets default to the type's slug. Each type
- *  keeps the JSON's exact weight (so the odds are the contract's) and gets its percentage from it (2 decimals, adding
- *  up to 100%); editing the recipe drops the exact weights. */
+/** Read a recipe.json back (for tests and for copying a recipe in). Frame sets default to the type's slug. Each slot
+ *  keeps the JSON's exact weights (so the odds are the contract's) and gets its percentages from them (2 decimals,
+ *  adding up to 100%); editing the recipe drops the exact weights. */
 export function recipeFromJson(j: RecipeJson, frameSetOf: (slug: string) => string = (s) => s): Recipe {
+  // a slug names the first type that has it (as ConfigureSeries.s.sol reads it)
+  const idOf = new Map([...j.types].reverse().map((t, k) => [t.slug, `t${j.types.length - 1 - k}`]))
   return withPercentsFromWeights({
-    cardsPerPack: j.cardsPerPack,
     types: j.types.map((t, i) => ({
-      id: `t${i}`, name: t.name, slug: t.slug, slugEdited: t.slug !== slugify(t.name), rank: t.rank, percent: '', weight: String(t.weight),
+      id: `t${i}`, name: t.name, slug: t.slug, slugEdited: t.slug !== slugify(t.name), rank: t.rank,
       holo: t.holo.mode === 'independent' ? { mode: 'independent', frame: String(t.holo.frame), picture: String(t.holo.picture) }
         : { mode: 'distribution', weights: t.holo.weights.map(String) as [string, string, string, string] },
       frameSet: frameSetOf(t.slug),
+    })),
+    slots: (j.slots ?? []).map((sl, s) => ({
+      id: `s${s}`, count: sl.count, percents: {},
+      weights: Object.fromEntries(Object.entries(sl.weights ?? {}).flatMap(([slug, w]) => (idOf.has(slug) ? [[idOf.get(slug)!, String(w)]] : []))),
     })),
   })
 }

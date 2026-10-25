@@ -34,6 +34,9 @@ function Look({ l, weighted }: { l: LookResult | undefined; weighted: boolean })
   )
 }
 
+/** Expected cards per pack: "3", "1.449", "0.12". */
+export const perPackText = (x: number) => (x >= 100 ? Math.round(x).toLocaleString('en-US') : String(+x.toPrecision(4)))
+
 /** What the recipe makes for this many packs and characters: each type's odds, the expected cards per type and look,
  *  how rare each exact card is (the site's "1 in N" and tiers) and the chance a pack holds one. */
 export function SeriesResult({ recipe, packs, chars, characterWeights, compact }: { recipe: Recipe; packs: bigint | null; chars: number; characterWeights?: number[]; compact?: boolean }) {
@@ -72,7 +75,7 @@ export function SeriesResult({ recipe, packs, chars, characterWeights, compact }
         <table className="mini result-table" data-testid="pool-table">
           <thead>
             <tr>
-              <th rowSpan={2}>Type</th><th rowSpan={2}>Odds per card · cards</th><th rowSpan={2}>Each character</th>
+              <th rowSpan={2}>Type</th><th rowSpan={2}>Per pack · share of cards · cards</th><th rowSpan={2}>Each character</th>
               <th colSpan={4} className="center">How rare one exact card is · how many</th>
               <th rowSpan={2}>Packs with one</th>
             </tr>
@@ -85,8 +88,8 @@ export function SeriesResult({ recipe, packs, chars, characterWeights, compact }
                 <tr key={t.id} data-testid={`result-${t.slug}`}>
                   <td><span className="swatch" style={{ background: typeColor(t.frameSet) }} />{t.name}</td>
                   <td>
-                    <b data-testid={`odds-${t.slug}`}>{percentText(r.share)}</b>
-                    <div className="muted small nowrap">{aboutOneIn(r.share, '')}</div>
+                    <b data-testid={`per-pack-avg-${t.slug}`}>{perPackText(r.perPack)} a pack</b>
+                    <div className="muted small nowrap" data-testid={`odds-${t.slug}`}>{percentText(r.share)} · {aboutOneIn(r.share, 'cards')}</div>
                     <div className="muted small" data-testid={`pool-${t.slug}`}>{avg(r.expected)} cards</div>
                   </td>
                   <td>{avg(r.perCharacter)}</td>
@@ -114,7 +117,8 @@ export function SeriesResult({ recipe, packs, chars, characterWeights, compact }
         <p className="muted small legend">
           {TIERS.slice().reverse().map(([tier, at]) => <span key={tier}><span className={`tier ${tier}`}>{TIER_LABEL[tier]}</span> 1 in {at.toLocaleString('en-US')}+ </span>)}
           · One exact card = character + type + look: its chance per card dealt (the site's scale), the same in every pack.
-          {' '}Every card is rolled on its own from these odds, so card counts are expectations (≈) and vary.
+          {' '}Every pack has the same slots and every card is rolled on its own from its slot's odds, so card counts are
+          expectations (≈) and vary.
         </p>
       )}
     </div>

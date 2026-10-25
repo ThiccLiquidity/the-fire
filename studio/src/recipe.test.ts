@@ -2,28 +2,44 @@ import standardSampleText from '../../contracts/test/cards/recipe-standard.json?
 import { describe, expect, it } from 'vitest'
 import { oddsText, percentText } from './rarity'
 import {
-  FRESH_PDA_ODDS, HOLO_ONE, MAX_CARDS_PER_PACK, STANDARD_ROLLS, STANDARD_WEIGHTS, WEIGHT_TOTAL, characterOdds, characterWeightsFromJson,
-  checkRecipe, cloneRecipe, fillTheRest, formatPercent, holoLooksFor, parsePercent, percentToScaled, percentTotal, percentTotalLine,
-  percentTotalProblem, percentsToWeights, recipeFromJson, recipeJson, roundedPercent, scaledToPercent, simplifyWeights, slugify,
-  specialAllHoloRecipe, standardRecipe, typeOdds, typeWeights, weightsToPercents, type Recipe,
+  FRESH_PDA_ODDS, HOLO_ONE, MAX_CARDS_PER_PACK, STANDARD_ROLLS, STANDARD_SLOT_WEIGHTS, WEIGHT_TOTAL, cardsPerPack, characterOdds,
+  characterWeightsFromJson, checkRecipe, cloneRecipe, fillTheRest, formatPercent, holoLooksFor, packShapeLine, parsePercent,
+  percentToScaled, percentTotal, percentTotalLine, percentTotalProblem, percentsToWeights, perPackCounts, recipeFromJson, recipeJson,
+  roundedPercent, scaledToPercent, simplifyWeights, slotLabel, slotOdds, slotPercents, slotWeights, slugify, specialAllHoloRecipe,
+  standardRecipe, typeOdds, weightsToPercents, type Recipe,
 } from './recipe'
 
 const codes = (r: Recipe) => checkRecipe(r).map((p) => p.code)
 
 describe('Standard recipe', () => {
-  it('is valid, 6 cards per pack', () => {
-    expect(checkRecipe(standardRecipe())).toEqual([])
-    expect(standardRecipe().cardsPerPack).toBe(6)
+  it('is valid, 6 cards per pack: 3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better', () => {
+    const r = standardRecipe()
+    expect(checkRecipe(r)).toEqual([])
+    expect(cardsPerPack(r)).toBe(6)
+    expect(packShapeLine(r)).toBe('3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better')
+    expect(r.slots.map((_, s) => slotLabel(r, s))).toEqual(['Paper', 'Wood', 'Wood or better', 'Fire or better'])
   })
 
-  it('odds out of 10,000: the old pool dealing\'s expected share per card (167 packs, 20 characters)', () => {
-    const { weights, total } = typeWeights(standardRecipe())
-    expect(total).toBe(10_000n)
-    expect(weights).toEqual([5000n, 2415n, 1497n, 489n, 399n, 200n])
-    // the old pool for 167 packs and 20 characters: 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art of 1,002
-    const old = [501, 242, 150, 49, 40, 20]
-    typeOdds(standardRecipe()).forEach((p, i) => expect(Math.abs(p - old[i] / 1002)).toBeLessThan(0.00005))
-    expect(STANDARD_WEIGHTS.fullart).toBe('200')
+  it('slot weights are StandardRecipe.sol\'s: Wood or better of 1,000, Fire or better of 10,000', () => {
+    const sw = slotWeights(standardRecipe())
+    expect(sw.map((x) => x.count)).toEqual([3, 1, 1, 1])
+    expect(sw.map((x) => x.weights.map(String))).toEqual(STANDARD_SLOT_WEIGHTS)
+    expect(sw.map((x) => x.total)).toEqual([1n, 1n, 1000n, 10_000n])
+    // each slot's % add up to exactly 100%
+    standardRecipe().slots.forEach((sl) => expect(percentTotal(slotPercents(standardRecipe(), sl).map((x) => x || '0')).total).toBe(10_000))
+  })
+
+  it('per pack: exactly the averages of the straight odds before slots (3 / 1.449 / 0.8982 / 0.2934 / 0.2394 / 0.12)', () => {
+    const per = perPackCounts(standardRecipe())
+    const want = [3, 1.449, 0.8982, 0.2934, 0.2394, 0.12]
+    per.forEach((x, i) => expect(x).toBeCloseTo(want[i], 10))
+    expect(per.reduce((a, x) => a + x, 0)).toBeCloseTo(6, 10)
+    // so each type's share of cards is the old per-card odds: 50 / 24.15 / 14.97 / 4.89 / 3.99 / 2%
+    const old = [0.5, 0.2415, 0.1497, 0.0489, 0.0399, 0.02]
+    typeOdds(standardRecipe()).forEach((p, i) => expect(p).toBeCloseTo(old[i], 10))
+    const so = slotOdds(standardRecipe())
+    expect(so[3][2]).toBeCloseTo(0.5982, 10)
+    expect(so[2][5]).toBeCloseTo(0.045, 10)
   })
 
   it('recipe.json has no PDA odds: they are fixed in FirePsa for every Series', () => {
@@ -38,9 +54,9 @@ describe('Standard recipe', () => {
     expect(j).toEqual(sample)
     expect(Object.keys(j)).toEqual(Object.keys(sample))
     const back = recipeFromJson(j)
-    expect(back.cardsPerPack).toBe(6)
-    expect(typeWeights(back)).toEqual(typeWeights(standardRecipe()))
-    expect(back.types.map((t) => t.percent)).toEqual(standardRecipe().types.map((t) => t.percent))
+    expect(cardsPerPack(back)).toBe(6)
+    expect(slotWeights(back)).toEqual(slotWeights(standardRecipe()))
+    expect(back.slots.map((sl) => slotPercents(back, sl))).toEqual(standardRecipe().slots.map((sl) => slotPercents(standardRecipe(), sl)))
     expect(characterWeightsFromJson(j)).toBeUndefined()
   })
 
@@ -64,22 +80,34 @@ describe('Special 3-card all-holo recipe', () => {
   it('is valid, 3 cards, never plain', () => {
     const r = specialAllHoloRecipe()
     expect(checkRecipe(r)).toEqual([])
-    expect(r.cardsPerPack).toBe(3)
+    expect(cardsPerPack(r)).toBe(3)
     expect(r.types.map((_, i) => holoLooksFor(r, i))).toEqual([['frame', 'picture', 'full'], ['frame', 'picture', 'full'], ['full']])
   })
 })
 
 describe('checkRecipe mirrors RecipeCompiler.compile', () => {
   const base = () => standardRecipe()
-  it('no types; cards per pack 1 to 1,000', () => {
-    expect(codes({ types: [], cardsPerPack: 6 })[0]).toBe('BadRecipe(no types)')
+  it('no types, no slots; slots of at least 1 card, adding up to at most 1,000', () => {
+    expect(codes({ types: [], slots: base().slots })[0]).toBe('BadRecipe(no types)')
+    expect(codes({ ...base(), slots: [] })[0]).toBe('BadRecipe(no slots)')
     const r = base()
-    r.cardsPerPack = 0
+    r.slots[1].count = 0
+    expect(codes(r)[0]).toBe('BadSlot(1,count)')
+    r.slots[1].count = 1
+    r.slots[0].count = MAX_CARDS_PER_PACK - 2
     expect(codes(r)[0]).toBe('BadRecipe(cards per pack)')
-    r.cardsPerPack = MAX_CARDS_PER_PACK + 1
-    expect(codes(r)[0]).toBe('BadRecipe(cards per pack)')
-    r.cardsPerPack = MAX_CARDS_PER_PACK
+    r.slots[0].count = MAX_CARDS_PER_PACK - 3
     expect(codes(r)).toEqual([])
+    expect(cardsPerPack(r)).toBe(MAX_CARDS_PER_PACK)
+  })
+  it('a slot with no type, a type in no slot', () => {
+    const r = base()
+    r.slots[1].percents = {}
+    expect(codes(r)).toEqual(['BadSlot(1,weights)'])
+    const r2 = base()
+    r2.slots[0].percents = { wood: '100' }
+    expect(codes(r2)).toEqual(['BadType(0,in no slot)'])
+    expect(checkRecipe(r2)[0].message).toBe('Type 1 (Paper): no slot deals Paper: give it a % in a slot, or remove the type.')
   })
   it('slug and text rules', () => {
     const r = base()
@@ -95,11 +123,7 @@ describe('checkRecipe mirrors RecipeCompiler.compile', () => {
     r.types[2].name = ''
     expect(codes(r)[0]).toBe('BadType(2,name length)')
   })
-  it('weights at least 1, holo chances and weights', () => {
-    const r = base()
-    r.types[2].percent = '0'
-    expect(codes(r)[0]).toBe('BadType(2,weight)')
-    expect(checkRecipe(r)[0].message).toBe('Type 3 (Fire): its % of cards must be above 0 (remove the type to leave it out).')
+  it('holo chances and weights', () => {
     const r2 = base()
     r2.types[0].holo = { mode: 'independent', frame: '1000000000000000001', picture: '0' }
     expect(codes(r2)[0]).toBe('BadType(0,holo chances)')
@@ -109,14 +133,14 @@ describe('checkRecipe mirrors RecipeCompiler.compile', () => {
   })
   it('studio checks: number formats', () => {
     const r = base()
-    r.types[2].percent = '1.555'
-    expect(checkRecipe(r)[0]).toMatchObject({ code: 'Studio', message: 'Type 3 (Fire): % of cards must be a number from 0 to 100, with at most 2 decimals.' })
+    r.slots[3].percents.fire = '1.555'
+    expect(checkRecipe(r)[0]).toMatchObject({ code: 'Studio', where: 'slot', index: 3, message: 'Slot 4: % of this slot must be a number from 0 to 100, with at most 2 decimals (Fire).' })
     const r2 = base()
-    r2.types[2].percent = '101'
+    r2.slots[3].percents.fire = '101'
     expect(checkRecipe(r2)[0].code).toBe('Studio')
     // exact weights (a recipe.json or a locked old save): checked as weights
     const r3 = recipeFromJson(recipeJson(7, base(), []))
-    r3.types[2].weight = (1n << 64n).toString()
+    r3.slots[3].weights!.t2 = (1n << 64n).toString()
     expect(checkRecipe(r3)[0].code).toBe('Studio')
   })
 })
@@ -168,24 +192,25 @@ describe('odds as percentages (the owner sets %, the contract gets weights)', ()
   })
 
   it('exactly 100% gives weights that add up to 1,000,000 (percent x 10,000)', () => {
-    const w = percentsToWeights(standardRecipe().types.map((t) => t.percent))
-    expect(w).toEqual([500_000n, 241_500n, 149_700n, 48_900n, 39_900n, 20_000n])
+    const r = standardRecipe()
+    const w = percentsToWeights(slotPercents(r, r.slots[3]).map((x) => x || '0'))
+    expect(w).toEqual([0n, 0n, 598_200n, 173_400n, 153_400n, 75_000n])
     expect(sum(w)).toBe(WEIGHT_TOTAL)
     expect(WEIGHT_TOTAL).toBe(1_000_000n)
     expect(sum(percentsToWeights(['33.34', '33.33', '33.33']))).toBe(1_000_000n)
     expect(sum(percentsToWeights(['0.01', '99.99']))).toBe(1_000_000n)
   })
 
-  it('the Standard exports the same odds as before: 5000 / 2415 / 1497 / 489 / 399 / 200 of 10,000', () => {
-    const w = percentsToWeights(standardRecipe().types.map((t) => t.percent))
-    const old = [5000n, 2415n, 1497n, 489n, 399n, 200n]
-    // the same ratios at 1,000,000 ...
-    w.forEach((x, i) => expect(x * 10_000n).toBe(old[i] * 1_000_000n))
-    // ... and, with the shared zeros dropped, the very same numbers in recipe.json
-    expect(simplifyWeights(w)).toEqual(old)
-    expect(typeWeights(standardRecipe())).toEqual({ weights: old, total: 10_000n })
-    expect(recipeJson(7, standardRecipe(), []).types.map((t) => t.weight)).toEqual([5000, 2415, 1497, 489, 399, 200])
-    expect(recipeJson(8, specialAllHoloRecipe(), []).types.map((t) => t.weight)).toEqual([68, 30, 2])
+  it('the Standard exports StandardRecipe.sol\'s slot weights: the shared zeros of each slot dropped', () => {
+    const r = standardRecipe()
+    const w = percentsToWeights(slotPercents(r, r.slots[2]).map((x) => x || '0'))
+    expect(simplifyWeights(w)).toEqual([0n, 449n, 300n, 120n, 86n, 45n])
+    expect(recipeJson(7, standardRecipe(), []).slots).toEqual([
+      { count: 3, weights: { paper: 1 } }, { count: 1, weights: { wood: 1 } },
+      { count: 1, weights: { wood: 449, fire: 300, coal: 120, gold: 86, fullart: 45 } },
+      { count: 1, weights: { fire: 5982, coal: 1734, gold: 1534, fullart: 750 } },
+    ])
+    expect(recipeJson(8, specialAllHoloRecipe(), []).slots).toEqual([{ count: 3, weights: { fire: 68, coal: 30, gold: 2 } }])
     expect(simplifyWeights([0n, 0n])).toEqual([0n, 0n])
     expect(simplifyWeights([123n, 1000n])).toEqual([123n, 1000n])
   })
@@ -241,28 +266,29 @@ describe('odds as percentages (the owner sets %, the contract gets weights)', ()
     expect(percentTotal(['1', '150']).bad).toEqual([1])
   })
 
-  it('a recipe is valid only when its types add up to exactly 100%', () => {
+  it('a recipe is valid only when each slot adds up to exactly 100%', () => {
     const r = standardRecipe()
-    r.types[5].percent = '1'
+    r.slots[3].percents.fullart = '6.5'
     const problems = checkRecipe(r)
-    expect(problems).toEqual([{ code: 'Studio', where: 'total', message: 'The card types add up to 99%: they must add up to exactly 100% (1% left to assign).' }])
-    r.types[0].percent = '51'
+    expect(problems).toEqual([{ code: 'Studio', where: 'total', index: 3, message: "Slot 4's types add up to 99%: they must add up to exactly 100% (1% left to assign)." }])
+    r.slots[3].percents.fire = '60.82'
     expect(checkRecipe(r)).toEqual([])
     // the contract itself would take any total: only the studio refuses it
-    r.types[0].percent = '60'
+    r.slots[3].percents.fire = '70'
     expect(checkRecipe(r).filter((p) => p.code !== 'Studio')).toEqual([])
   })
 
   it('a recipe.json keeps its exact weights (the contract\'s odds) beside its percentages; a copy is set by %', () => {
     const j = recipeJson(7, standardRecipe(), [])
-    j.types.forEach((t, i) => { t.weight = [7, 3, 1, 1, 1, 1][i] })
+    j.slots[3].weights = { fire: 7, coal: 3, gold: 1, fullart: 1 }
     const r = recipeFromJson(j)
-    expect(typeWeights(r).weights).toEqual([7n, 3n, 1n, 1n, 1n, 1n])
-    expect(r.types.map((t) => t.percent)).toEqual(['50', '21.43', '7.15', '7.14', '7.14', '7.14'])
+    expect(slotWeights(r)[3].weights).toEqual([0n, 0n, 7n, 3n, 1n, 1n])
+    expect(slotPercents(r, r.slots[3])).toEqual(['', '', '58.34', '25', '8.33', '8.33'])
     expect(checkRecipe(r)).toEqual([])
-    const copy = cloneRecipe(r, () => 'id')
-    expect(copy.types.some((t) => 'weight' in t)).toBe(false)
-    expect(typeWeights(copy).weights).toEqual([5000n, 2143n, 715n, 714n, 714n, 714n])
+    const copy = cloneRecipe(r, (() => { let n = 0; return () => `id${n++}` })())
+    expect(copy.slots.some((sl) => 'weights' in sl)).toBe(false)
+    expect(slotWeights(copy)[3].weights).toEqual([0n, 0n, 5834n, 2500n, 833n, 833n])
+    expect(copy.types.map((t) => t.id)).toEqual(['id0', 'id1', 'id2', 'id3', 'id4', 'id5'])
   })
 
   it('odds read "% · about 1 in N"', () => {

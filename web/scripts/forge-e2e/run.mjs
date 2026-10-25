@@ -97,6 +97,10 @@ try {
   check(!(await page.locator(".demo-note").isVisible()) && !(await page.locator(".chip.demo").isVisible()), "no demo notice, no Demo button");
   check(await page.evaluate(() => Store.state.cards.length === 0 && !Store.state.demo), "no demo cards");
   check(/Series 7 · Opens in/.test(await page.locator("#seriesChip").textContent()), "Series 7 from the chain: opens soon");
+  await page.waitForFunction(() => Store.LIVE_ODDS?.slots?.length, null, { timeout: 30_000 });
+  const shape = await page.evaluate(() => ({ line: Info.packLine(), fa: Info.shareOf("fullart"), paper: Info.shareOf("paper") }));
+  check(shape.line === "3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better" && Math.abs(shape.fa - 0.02) < 1e-9 && shape.paper === 0.5,
+    `Info reads the Series' pack from the chain (RecipeDealer.slotsOf): "${shape.line}"; Full Art ${(shape.fa * 100).toFixed(2)}% of cards`);
   await page.locator("#loading.done").waitFor({ state: "attached" });
   await shot("01-live-before-connect");
 

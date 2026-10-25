@@ -173,8 +173,8 @@ export async function batchADiffs(read, json, C) {
   const diffs = [];
   const got = await read(C.RecipeDealer, ABI.dealer, "recipeOf", [fire]);
   const norm = (r) => JSON.stringify({
-    types: r.types.map((t) => [t.name, t.slug, String(t.rank), String(t.weight), Number(t.holoMode), t.holo.map(String)]),
-    cardsPerPack: String(r.cardsPerPack),
+    types: r.types.map((t) => [t.name, t.slug, String(t.rank), Number(t.holoMode), t.holo.map(String)]),
+    slots: r.slots.map((s) => [String(s.count), s.weights.map(String)]),
   });
   if (norm(got) !== norm(want)) diffs.push("the recipe");
   const n = Number(await read(C.RecipeDealer, ABI.dealer, "characterCount", [fire]));

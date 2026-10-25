@@ -13,8 +13,8 @@ import {MockRandomness, MockBurner} from "../Mocks.sol";
 import {SeriesHelper} from "./SeriesHelper.sol";
 import {ConfigureSeries} from "../../script/ConfigureSeries.s.sol";
 
-/// @dev Per-Series recipes dealt by straight odds: every card rolled on its own (type by weight, holo, character by
-///      weight). No slots, guarantees, caps or pool; the first and the last pack have the same odds.
+/// @dev Per-Series recipes: every pack has the same shape (its slots), every card rolled on its own (type by its
+///      slot's weights, holo, character by weight). No pool and no caps; the first and the last pack have the same odds.
 contract RecipeTest is SeriesHelper {
     address owner = address(0xA11CE);
     address seller = address(0x5E11);
@@ -138,7 +138,8 @@ contract RecipeTest is SeriesHelper {
     function test_standardRecipeViews() public view {
         RecipeDealer.Recipe memory r = dealer.recipeOf(1);
         assertEq(r.types.length, 6);
-        assertEq(r.cardsPerPack, 6);
+        assertEq(r.slots.length, 4);
+        assertEq(r.slots[0].count, 3);
         assertEq(r.types[4].slug, "gold");
         assertEq(r.types[2].name, "Fire");
         assertEq(r.types[5].rank, 5);
@@ -149,11 +150,13 @@ contract RecipeTest is SeriesHelper {
         assertTrue(dealer.ready(1));
         assertTrue(cards.ready(1));
         assertFalse(cards.ready(2));
-        (uint256[] memory w, uint256 total) = dealer.oddsOf(1);
-        assertEq(total, 10_000);
-        assertEq(w.length, 6);
-        assertEq(w[0], 5000); assertEq(w[1], 2415); assertEq(w[2], 1497);
-        assertEq(w[3], 489); assertEq(w[4], 399); assertEq(w[5], 200);
+        (uint256[] memory counts, uint256[][] memory w, uint256[] memory totals) = dealer.slotsOf(1);
+        assertEq(counts.length, 4);
+        assertEq(counts[0], 3); assertEq(counts[1], 1); assertEq(counts[2], 1); assertEq(counts[3], 1);
+        assertEq(totals[0], 1); assertEq(totals[1], 1); assertEq(totals[2], 1_000); assertEq(totals[3], 10_000);
+        assertEq(w[0][0], 1); assertEq(w[0][1], 0); assertEq(w[1][1], 1); assertEq(w[1][0], 0);
+        assertEq(w[2][0], 0); assertEq(w[2][1], 449); assertEq(w[2][2], 300); assertEq(w[2][3], 120); assertEq(w[2][4], 86); assertEq(w[2][5], 45);
+        assertEq(w[3][1], 0); assertEq(w[3][2], 5982); assertEq(w[3][3], 1734); assertEq(w[3][4], 1534); assertEq(w[3][5], 750);
         (uint256[] memory cw, uint256 ctotal) = dealer.characterOddsOf(1);
         assertEq(cw.length, 3);
         assertEq(ctotal, 3, "no weights set: every character 1");
@@ -174,13 +177,41 @@ contract RecipeTest is SeriesHelper {
 
     // ---------------------------------------------------------------- the odds
 
-    /// Over many packs every type, holo look and character comes out at its odds (Standard recipe, 20 characters).
+    /// Over many packs every slot's types, every holo look and character come out at their odds (Standard recipe,
+    /// 20 characters), and the per-pack averages are the Standard's: 3 Paper, 1.449 Wood, 0.8982 Fire, 0.2934 Coal,
+    /// 0.2394 Gold, 0.12 Full Art.
     function test_standardOddsConverge() public {
         _standard(cards, dealer, owner, 2, 20);
-        Tally memory t = _tally(2, 4000, 1); // 24,000 cards
-        (uint256[] memory w, uint256 total) = dealer.oddsOf(2);
+        uint256 n = 4000;
+        Tally memory t = _tally(2, n, 1); // 24,000 cards
         string[6] memory names = ["Paper", "Wood", "Fire", "Coal", "Gold", "Full Art"];
-        for (uint256 i; i < 6; i++) _near(t.types[i], t.cards, w[i], total, names[i]);
+        // each slot on its own: positions 0-2 always Paper, 3 always Wood, 4 and 5 at their slot's weights
+        uint256[6][6] memory at; // at[position][type]
+        for (uint256 p; p < n; p++) {
+            uint256[] memory got = dealer.deal(2, uint256(keccak256(abi.encode(uint256(1), p))), 0, 6);
+            for (uint256 i; i < 6; i++) at[i][uint32(got[i])]++;
+        }
+        for (uint256 i; i < 3; i++) assertEq(at[i][0], n, "slot 1: Paper only");
+        assertEq(at[3][1], n, "slot 2: Wood only");
+        (, uint256[][] memory w, uint256[] memory totals) = dealer.slotsOf(2);
+        for (uint256 ty; ty < 6; ty++) {
+            _near(at[4][ty], n, w[2][ty], totals[2], string.concat("slot 3 (Wood or better): ", names[ty]));
+            _near(at[5][ty], n, w[3][ty], totals[3], string.concat("slot 4 (Fire or better): ", names[ty]));
+        }
+        assertEq(at[4][0], 0, "slot 3: never Paper");
+        assertEq(at[5][0] + at[5][1], 0, "slot 4: never Paper or Wood");
+        // per pack (out of 10,000 packs' worth): Paper 30,000, Wood 14,490, Fire 8,982, Coal 2,934, Gold 2,394, Full Art 1,200
+        uint256[6] memory perPack = [uint256(30_000), 14_490, 8_982, 2_934, 2_394, 1_200];
+        uint256 sum;
+        for (uint256 ty; ty < 6; ty++) {
+            uint256 expect = (3 * (w[0][ty] * 10_000 / totals[0]) + w[1][ty] * 10_000 / totals[1] + w[2][ty] * 10_000 / totals[2]
+                + w[3][ty] * 10_000 / totals[3]);
+            assertEq(expect, perPack[ty], string.concat(names[ty], ": expected per pack"));
+            sum += expect;
+            // the whole tally per card: its per-pack average / 6 (within 5 standard deviations of the per-card rate)
+            _near(t.types[ty], t.cards, perPack[ty], 60_000, names[ty]);
+        }
+        assertEq(sum, 60_000, "6 cards a pack");
         // holo: any holo 5 / 10 / 50 / 90%; Gold and Full Art always full holo
         uint16[4] memory any = [500, 1000, 5000, 9000];
         for (uint256 i; i < 4; i++) _near(t.holo[i], t.types[i], any[i], 10_000, string.concat(names[i], " holo"));
@@ -191,31 +222,36 @@ contract RecipeTest is SeriesHelper {
         for (uint256 c; c < 20; c++) _near(t.chars[c], t.cards, 1, 20, "a character");
     }
 
-    /// No guarantees and no caps: a pack can be all Paper, can hold several Full Arts, and a character can get any
-    /// number of Full Arts.
-    function test_noGuaranteesNoCaps() public view {
-        uint256 allPaper;
+    /// The pack's shape is all the guarantee there is: every Standard pack has 3 Paper, a Wood, a Wood-or-better and
+    /// a Fire-or-better, and nothing caps the rest: a pack can hold two Full Arts, two Golds, or no Fire at all past
+    /// its last slot's, and a character can get any number of Full Arts.
+    function test_shapeIsTheOnlyGuarantee() public view {
         uint256 twoFullArts;
-        uint256 noFireOrBetter;
+        uint256 twoGolds;
+        uint256 woodWood; // slot 3 came out Wood: the only Fire or better is slot 4's
         uint256[3] memory fullArtOf;
         for (uint256 p; p < 3000; p++) {
             uint256[] memory got = dealer.deal(1, uint256(keccak256(abi.encode("caps", p))), 0, 6);
             uint256 paper;
             uint256 fa;
+            uint256 gold;
             uint256 better;
             for (uint256 i; i < 6; i++) {
                 uint256 ty = uint32(got[i]);
                 if (ty == 0) paper++;
                 if (ty >= 2) better++;
+                if (ty == 4) gold++;
                 if (ty == 5) { fa++; fullArtOf[uint32(got[i] >> 32)]++; }
             }
-            if (paper == 6) allPaper++;
+            assertEq(paper, 3, "3 Paper, always");
+            assertGe(better, 1, "a Fire or better, always");
             if (fa >= 2) twoFullArts++;
-            if (better == 0) noFireOrBetter++;
+            if (gold >= 2) twoGolds++;
+            if (uint32(got[4]) == 1) woodWood++;
         }
-        assertGt(allPaper, 20, "all-Paper packs happen (1 in 64)");
-        assertGt(twoFullArts, 3, "two Full Arts in one pack happen");
-        assertGt(noFireOrBetter, 300, "no Fire-or-better guarantee (1 in 6 packs)");
+        assertGt(twoFullArts, 3, "two Full Arts in one pack happen (4.5% x 7.5%)");
+        assertGt(twoGolds, 15, "two Golds in one pack happen (8.6% x 15.34%)");
+        assertGt(woodWood, 1100, "slot 3 is Wood 44.9% of the time");
         for (uint256 c; c < 3; c++) assertGt(fullArtOf[c], 1, "no one-per-character cap");
     }
 
@@ -277,10 +313,10 @@ contract RecipeTest is SeriesHelper {
     /// The type odds of a pack hold over a whole Series that was actually opened (FireCards, print numbers and all).
     function test_openedSeriesFollowsTheOdds() public {
         RecipeDealer.CardType[] memory ts = new RecipeDealer.CardType[](3);
-        ts[0] = _type("Common", "common", 0, 70);
-        ts[1] = _holoChances(_type("Rare", "rare", 1, 25), 0.5e18, 0);
-        ts[2] = _holoWeights(_type("Epic", "epic", 2, 5), 0, 0, 0, 1);
-        _series(cards, dealer, owner, 5, _recipe(ts, 4), 3);
+        ts[0] = _type("Common", "common", 0);
+        ts[1] = _holoChances(_type("Rare", "rare", 1), 0.5e18, 0);
+        ts[2] = _holoWeights(_type("Epic", "epic", 2), 0, 0, 0, 1);
+        _series(cards, dealer, owner, 5, _recipe(ts, _w(70, 25, 5), 4), 3);
         _sellAndClose(5, 400);
         Dealt[] memory d = _openAll(5, 400, 9);
         assertEq(d.length, 1600);
@@ -332,6 +368,7 @@ contract RecipeTest is SeriesHelper {
         }
         uint256 nfa = fa[0] + fa[1] + fa[2] + fa[3];
         for (uint256 c; c < 4; c++) _near(fa[c], nfa, c + 1, 10, "character weight among Coal-or-better");
+        assertGt(nfa, 1500, "enough Coal-or-better to tell");
     }
 
     /// Equal weights deal exactly what no weights deal (uniform is the default).
@@ -405,10 +442,10 @@ contract RecipeTest is SeriesHelper {
     /// 3-card packs, every card holo (by the types' own holo odds).
     function test_threeCardAllHoloPack() public {
         RecipeDealer.CardType[] memory ts = new RecipeDealer.CardType[](3);
-        ts[0] = _holoWeights(_type("Flame", "flame", 0, 90), 0, 1, 1, 0);
-        ts[1] = _holoWeights(_type("Diamond", "diamond", 1, 9), 0, 1, 1, 1);
-        ts[2] = _holoWeights(_type("Gold", "gold", 2, 1), 0, 0, 0, 1);
-        _series(cards, dealer, owner, 7, _recipe(ts, 3), 4);
+        ts[0] = _holoWeights(_type("Flame", "flame", 0), 0, 1, 1, 0);
+        ts[1] = _holoWeights(_type("Diamond", "diamond", 1), 0, 1, 1, 1);
+        ts[2] = _holoWeights(_type("Gold", "gold", 2), 0, 0, 0, 1);
+        _series(cards, dealer, owner, 7, _recipe(ts, _w(90, 9, 1), 3), 4);
         assertEq(cards.cardsPerPack(7), 3);
         _sellAndClose(7, 20);
         assertTrue(_contains(_json(packs.uri(7)), "A sealed pack of 3 cards from Series 7"));
@@ -493,16 +530,28 @@ contract RecipeTest is SeriesHelper {
         dealer.setCharacters(1, new string[](0), new string[](0));
     }
 
-    /// A new card type, Platinum, added to the Standard recipe: its own weight, always full holo.
+    /// A new card type, Platinum, added to the Standard recipe in its Fire-or-better slot: its own weight there,
+    /// always full holo. Every other slot gets a 0 for it (never dealt there).
     function test_newTypeAdded() public {
         RecipeDealer.Recipe memory r = StandardRecipe.build();
         RecipeDealer.CardType[] memory ts = new RecipeDealer.CardType[](7);
         for (uint256 i; i < 6; i++) ts[i] = r.types[i];
-        ts[6] = _holoWeights(_type("Platinum", "platinum", 6, 2000), 0, 0, 0, 1);
+        ts[6] = _holoWeights(_type("Platinum", "platinum", 6), 0, 0, 0, 1);
         r.types = ts;
+        for (uint256 s; s < 4; s++) {
+            uint64[] memory w = new uint64[](7);
+            for (uint256 i; i < 6; i++) w[i] = r.slots[s].weights[i];
+            if (s == 3) w[6] = 10_000; // Fire or better: Platinum half the time
+            r.slots[s].weights = w;
+        }
+        // a type no slot deals is refused before the slot weights are there
+        r.slots[3].weights[6] = 0;
+        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadType.selector, 6, "in no slot"));
+        dealer.check(r);
+        r.slots[3].weights[6] = 10_000;
         _series(cards, dealer, owner, 9, r, 5);
-        (, uint256 total) = dealer.oddsOf(9);
-        assertEq(total, 12_000);
+        (,, uint256[] memory totals) = dealer.slotsOf(9);
+        assertEq(totals[3], 20_000);
         _sellAndClose(9, 50);
         Dealt[] memory d = _openAll(9, 50, 3);
         uint256 plat;
@@ -510,7 +559,7 @@ contract RecipeTest is SeriesHelper {
         for (uint256 i; i < d.length; i++) {
             if (d[i].cardType == 6) { plat++; platSerial = d[i].serial; assertTrue(d[i].frame && d[i].picture); }
         }
-        _near(plat, 300, 2000, 12_000, "Platinum");
+        _near(plat, 50, 1, 2, "Platinum: half of slot 4");
         FireCards.Card memory g = cards.cardOf(platSerial);
         assertEq(renderer.imageFile(platSerial), string.concat("c", vm.toString(g.character), "-platinum-full-u.webp"));
         string memory json = _json(cards.tokenURI(platSerial));
@@ -521,9 +570,9 @@ contract RecipeTest is SeriesHelper {
     /// One card per pack.
     function test_oneCardPacks() public {
         RecipeDealer.CardType[] memory ts = new RecipeDealer.CardType[](2);
-        ts[0] = _type("Common", "common", 0, 9);
-        ts[1] = _holoChances(_type("Rare", "rare", 1, 1), 1e18, 0);
-        _series(cards, dealer, owner, 10, _recipe(ts, 1), 2);
+        ts[0] = _type("Common", "common", 0);
+        ts[1] = _holoChances(_type("Rare", "rare", 1), 1e18, 0);
+        _series(cards, dealer, owner, 10, _recipe(ts, _w(9, 1), 1), 2);
         _sellAndClose(10, 50);
         assertTrue(_contains(_json(packs.uri(10)), "A sealed pack of 1 card from Series 10"));
         Dealt[] memory d = _openAll(10, 50, 4);
@@ -538,10 +587,10 @@ contract RecipeTest is SeriesHelper {
     /// A 1,000-card pack, dealt over many calls well under a block each, gives exactly what one long call gives.
     function test_hugePackChunked() public {
         RecipeDealer.CardType[] memory ts = new RecipeDealer.CardType[](3);
-        ts[0] = _type("Common", "common", 0, 893);
-        ts[1] = _holoChances(_type("Rare", "rare", 1, 100), 0.1e18, 0.1e18);
-        ts[2] = _holoWeights(_type("Epic", "epic", 2, 7), 0, 1, 1, 1);
-        _series(cards, dealer, owner, 11, _recipe(ts, 1000), 30);
+        ts[0] = _type("Common", "common", 0);
+        ts[1] = _holoChances(_type("Rare", "rare", 1), 0.1e18, 0.1e18);
+        ts[2] = _holoWeights(_type("Epic", "epic", 2), 0, 1, 1, 1);
+        _series(cards, dealer, owner, 11, _recipe(ts, _w(893, 100, 7), 1000), 30);
         vm.prank(seller);
         packs.mint(_holder(0), 11, 3);
         vm.prank(seller);
@@ -583,10 +632,10 @@ contract RecipeTest is SeriesHelper {
 
     function _two() internal pure returns (RecipeDealer.Recipe memory r) {
         RecipeDealer.CardType[] memory ts = new RecipeDealer.CardType[](3);
-        ts[0] = _type("A", "a", 0, 8);
-        ts[1] = _type("B", "b", 1, 1);
-        ts[2] = _type("C", "c", 2, 1);
-        r = _recipe(ts, 3);
+        ts[0] = _type("A", "a", 0);
+        ts[1] = _type("B", "b", 1);
+        ts[2] = _type("C", "c", 2);
+        r = _recipe(ts, _w(8, 1, 1), 3);
     }
 
     function test_badRecipesRevert() public {
@@ -601,22 +650,51 @@ contract RecipeTest is SeriesHelper {
         vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadRecipe.selector, "no types"));
         dealer.setRecipe(20, r);
 
-        // cards per pack: 1 to 1,000
+        // no slots
         r = _two();
-        r.cardsPerPack = 0;
-        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadRecipe.selector, "cards per pack"));
+        r.slots = new RecipeDealer.Slot[](0);
+        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadRecipe.selector, "no slots"));
         dealer.check(r);
-        r.cardsPerPack = 1001;
-        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadRecipe.selector, "cards per pack"));
-        dealer.check(r);
-        r.cardsPerPack = 1000;
-        assertEq(dealer.check(r), 1000);
 
-        // weights: every type at least 1
+        // cards per pack: the slots' counts add up to 1 to 1,000; every slot at least 1 card
         r = _two();
-        r.types[2].weight = 0;
-        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadType.selector, 2, "weight"));
+        r.slots[0].count = 0;
+        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadSlot.selector, 0, "count"));
         dealer.check(r);
+        r.slots[0].count = 1001;
+        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadRecipe.selector, "cards per pack"));
+        dealer.check(r);
+        r.slots[0].count = 1000;
+        assertEq(dealer.check(r), 1000);
+        RecipeDealer.Slot[] memory two = new RecipeDealer.Slot[](2);
+        two[0] = _slot(600, _w(1, 0, 0));
+        two[1] = _slot(401, _w(0, 1, 1));
+        r.slots = two;
+        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadRecipe.selector, "cards per pack"));
+        dealer.check(r);
+        two[1].count = 400;
+        assertEq(dealer.check(r), 1000, "two slots, 1,000 cards");
+
+        // weights: one per type, some above 0 in every slot, and every type in some slot
+        r = _two();
+        r.slots[0].weights = _w(8, 1);
+        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadSlot.selector, 0, "one weight per type"));
+        dealer.check(r);
+        r.slots[0].weights = _w(0, 0, 0);
+        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadSlot.selector, 0, "weights"));
+        dealer.check(r);
+        r.slots[0].weights = _w(8, 0, 1);
+        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadType.selector, 1, "in no slot"));
+        dealer.check(r);
+        RecipeDealer.Slot[] memory pair = new RecipeDealer.Slot[](2);
+        pair[0] = _slot(2, _w(8, 0, 1));
+        pair[1] = _slot(1, _w(0, 1, 0));
+        r.slots = pair;
+        assertEq(dealer.check(r), 3, "B only in the second slot: fine");
+        r.slots[1].weights = _w(0, 0, 0);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadSlot.selector, 1, "weights"));
+        dealer.setRecipe(20, r);
 
         // types
         r = _two();
@@ -717,19 +795,20 @@ contract RecipeTest is SeriesHelper {
             ts[t] = _type(
                 string.concat("Type number ", vm.toString(t), " with a long descriptive name ok"),
                 string.concat("type-", vm.toString(t)),
-                uint32(t),
-                uint64(t + 1)
+                uint32(t)
             );
         }
-        RecipeDealer.Recipe memory r = _recipe(ts, 3);
+        uint64[] memory tw = new uint64[](T);
+        for (uint256 t; t < T; t++) tw[t] = uint64(t + 1);
+        RecipeDealer.Recipe memory r = _recipe(ts, tw, 3);
         _series(cards, dealer, owner, 14, r, 2);
         assertGt(abi.encode(r).length, 24_000, "more than one chunk");
         RecipeDealer.Recipe memory back = dealer.recipeOf(14);
         assertEq(back.types.length, T);
         assertEq(back.types[149].slug, "type-149");
-        (uint256[] memory w, uint256 total) = dealer.oddsOf(14);
-        assertEq(total, T * (T + 1) / 2);
-        assertEq(w[149], 150);
+        (, uint256[][] memory w, uint256[] memory totals) = dealer.slotsOf(14);
+        assertEq(totals[0], T * (T + 1) / 2);
+        assertEq(w[0][149], 150);
         _sellAndClose(14, 200);
         Dealt[] memory d = _openAll(14, 200, 8);
         assertEq(d.length, 600);
@@ -779,8 +858,8 @@ contract RecipeTest is SeriesHelper {
         assertEq(cards.imagesBase(7), "ipfs://bafyexampleimages/");
         cs.checkOnChain(json, address(dealer), address(cards));
         // a bad recipe is caught before anything is printed
-        string memory bad = vm.replace(json, '"weight": 489', '"weight": 0');
-        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadType.selector, 3, "weight"));
+        string memory bad = vm.replace(json, '{ "count": 1, "weights": { "wood": 1 } }', '{ "count": 1, "weights": { "wood": 0 } }');
+        vm.expectRevert(abi.encodeWithSelector(RecipeCompiler.BadSlot.selector, 1, "weights"));
         cs.build(bad, address(dealer), address(cards), 2);
     }
 
@@ -828,14 +907,22 @@ contract RecipeTest is SeriesHelper {
         vm.expectRevert(bytes(".: unknown key imagesBas"));
         cs.parse(vm.replace(json, '"imagesBase"', '"imagesBas"'));
         vm.expectRevert(bytes(".types[0]: unknown key supply"));
-        cs.parse(vm.replace(json, '"weight": 5000,', '"weight": 5000, "supply": "perPack",'));
-        vm.expectRevert(bytes(".: unknown key slots"));
-        cs.parse(vm.replace(json, '"cardsPerPack": 6,', '"cardsPerPack": 6, "slots": [],'));
+        cs.parse(vm.replace(json, '"rank": 0,', '"rank": 0, "supply": "perPack",'));
+        vm.expectRevert(bytes(".types[0]: unknown key weight"));
+        cs.parse(vm.replace(json, '"rank": 0,', '"rank": 0, "weight": 5000,'));
+        vm.expectRevert(bytes(".: unknown key cardsPerPack"));
+        cs.parse(vm.replace(json, '"fire": 7,', '"fire": 7, "cardsPerPack": 6,'));
+        vm.expectRevert(bytes(".slots[0]: unknown key minRank"));
+        cs.parse(vm.replace(json, '{ "count": 3, "weights": { "paper": 1 } }', '{ "count": 3, "minRank": 1, "weights": { "paper": 1 } }'));
+        vm.expectRevert(bytes(".slots[0].weights: diamond is not the slug of a card type"));
+        cs.parse(vm.replace(json, '{ "count": 3, "weights": { "paper": 1 } }', '{ "count": 3, "weights": { "paper": 1, "diamond": 1 } }'));
         vm.expectRevert(bytes(".: unknown key pdaOdds"));
         cs.parse(vm.replace(json, '"fire": 7,', '"fire": 7, "pdaOdds": ["0", "0", "0", "0", "1", "1", "1", "1", "1", "1"],'));
         vm.expectRevert(bytes(".types[2].rank is too big for its field"));
         cs.parse(vm.replace(json, '"rank": 2,', '"rank": 4294967296,'));
-        vm.expectRevert(bytes(".types[2].weight is too big for its field"));
-        cs.parse(vm.replace(json, '"weight": 1497,', '"weight": 18446744073709551616,'));
+        vm.expectRevert(bytes("$.slots[3].weights['fire'] is too big for its field"));
+        cs.parse(vm.replace(json, '"fire": 5982,', '"fire": 18446744073709551616,'));
+        vm.expectRevert(bytes(".slots[0].count is too big for its field"));
+        cs.parse(vm.replace(json, '{ "count": 3,', '{ "count": 4294967296,'));
     }
 }

@@ -34,11 +34,11 @@
   // live: read the Series' set ahead (cached by the chain layer), so the first rip doesn't wait on it
   let pre = 0;
   if (window.Live?.on) Store.on(() => { const no = Store.state.series.no; if (no && no !== pre && window.Live.chain) { pre = no; window.Live.chain.practiceSet(no).catch(() => {}); } });
-  /** Six practice cards. Live: the current Series' (a promise); else the demo cast, each card rolled on its own at
-   *  the Standard odds (Store.rollCard), like the contract. */
+  /** Six practice cards. Live: the current Series' (a promise); else the demo cast, slot by slot, each card rolled on
+   *  its own at its slot's odds (Store.rollPack), like the contract. */
   Fun.practicePack = () => (window.Live?.on ? livePack().catch(() => null).then((p) => p || demoPack()) : demoPack());
   const demoPack = () => {
-    return Array.from({ length: 6 }, () => Store.rollCard()).map(({ material: m, holo }) => {
+    return Store.rollPack().map(({ material: m, holo }) => {
       return { id: -(++n), serial: 0, series: ART_SERIES, practice: true, character: m === 'gold' || m === 'fullart' ? SPECIAL : CAST[Math.floor(Math.random() * CAST.length)],
         material: m, holo, edition: 'Practice', grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
     });

@@ -3,7 +3,7 @@ import { Notice, PercentOfCards, PercentTotalBar, useAction } from '../component
 import { hasCategory, hasValidName } from '../categories'
 import { frameSetLabel } from '../frames'
 import { randomSeed } from '../prng'
-import { standardRecipe } from '../recipe'
+import { cardsPerPack, standardRecipe } from '../recipe'
 import { saleOf, salePacks, standardSale } from '../sale'
 import { artNeeds, characterOddsProblems, characterPercentsOf, characterWeightsOf, charactersAllEqual, isReadyFor, missingArt } from '../series'
 import { characterOdds, weightsToPercents } from '../recipe'
@@ -32,7 +32,7 @@ export function FireList({ selected, onSelect }: { selected: number | null; onSe
         {s.fires.map((f) => (
           <li key={f.number} className={selected === f.number ? 'active' : ''} onClick={() => onSelect(f.number)} data-testid={`fire-${f.number}`}>
             <span className="char-name">Series {f.number}</span>
-            <span className="muted small">{f.packs.toLocaleString()} packs · {f.characterIds.length} chars · {f.recipe.cardsPerPack}/pack</span>
+            <span className="muted small">{f.packs.toLocaleString()} packs · {f.characterIds.length} chars · {cardsPerPack(f.recipe)}/pack</span>
             <span className={`badge status-${fireStatus(f)}`}>{fireStatus(f)}</span>
           </li>
         ))}
@@ -79,7 +79,7 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
   const odds = characterOdds(weights, fire.characterIds.length)
   const nameAt = (k: number) => byId.get(fire.characterIds[k])?.name ?? `c${k}`
   // expected cards per character over every type, for the Series' base packs
-  const cardsTotal = Math.max(0, fire.packs) * Math.max(0, fire.recipe.cardsPerPack)
+  const cardsTotal = Math.max(0, fire.packs) * Math.max(0, cardsPerPack(fire.recipe))
   const castNames = useMemo(() => fire.characterIds.map((id, k) => ({ id, name: byId.get(id)?.name ?? `c${k}` })), [fire.characterIds, byId])
   const oddsProblems = characterOddsProblems(fire, nameAt)
   // the total's problem shows on the total line itself

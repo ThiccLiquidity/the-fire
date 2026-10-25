@@ -15,8 +15,8 @@ made of it. Each drop opens with PLANK lighting the forge.
 ## Every number is set per drop
 
 The owner (the `OWNER` hardware wallet) sets these for each drop (each Series) before it launches (`configureDrop`). They lock when the drop opens
-(its start time), so nothing can change while people are buying. The Series itself (its recipe: card types and their
-odds, pack size, holo odds, characters and optionally their odds; see `docs/cards-contracts.md`) must be set up in the card contracts before its
+(its start time), so nothing can change while people are buying. The Series itself (its recipe: card types, the pack's
+slots and their odds, holo odds, characters and optionally their odds; see `docs/cards-contracts.md`) must be set up in the card contracts before its
 drop can be set up, and locks when the drop is set up. The numbers below are the Standard sale (the studio's "Standard"
 preset; its "Giant" preset is an example of a 10,000-pack drop with 50 per wallet and 100 per purchase). The full
 list, with bounds, is in `docs/cards-contracts.md` ("Every sale and economy setting"). One number is **not** a
@@ -26,7 +26,7 @@ setting: cards burned per free pack is 42, forever.
 |---|---|
 | Packs in the drop | 167 **total, every group included** (about 1,000 cards). Sold out means gone: no more packs for that Series, ever. |
 | Groups | 4 (below): Press holders 50, PLANK holders 40, Everyone 77 (+ leftovers), After sell-out (no pack count: the Series is 167 packs plus whatever sells after the sell-out) |
-| Card odds (per card, every pack) | Paper 50%, Wood 24.15%, Fire 14.97%, Coal 4.89%, Gold 3.99%, Full Art 2% (the Standard recipe's weights out of 10,000; set per Series, before its drop is set up) |
+| Pack (every pack, same odds) | 6 cards: 3 Paper · 1 Wood · 1 Wood or better (Wood 44.9%, Fire 30%, Coal 12%, Gold 8.6%, Full Art 4.5%) · 1 Fire or better (Fire 59.82%, Coal 17.34%, Gold 15.34%, Full Art 7.5%). Per pack on average 3 Paper, 1.449 Wood, 0.8982 Fire, 0.2934 Coal, 0.2394 Gold, 0.12 Full Art: of all cards Paper 50%, Wood 24.15%, Fire 14.97%, Coal 4.89%, Gold 3.99%, Full Art 2% (the Standard recipe; set per Series, before its drop is set up) |
 | Character odds | Equal (optional weights per Series) |
 | Pack price | $2.50 (the PLANK and Everyone groups; press packs have no dollar price) |
 | PAPER per pack | 1 (every group) |
@@ -137,9 +137,10 @@ nowhere). Setup is signed on the owner's hardware wallet; the public site has no
   start. If the owner doesn't, anyone can, 7 days after that, so packs are never stranded. The Series closes with the
   packs that were minted.
 - **One drop at a time.** The next drop can only be set up once the current one has closed.
-- **Each Series stands alone.** Its cards come only from its own packs, by its own recipe: every card is rolled on its
-  own from the Series' fixed odds, the same for the first and the last pack (no guarantees, no caps). Standard odds
-  per card: Paper 50%, Wood 24.15%, Fire 14.97%, Coal 4.89%, Gold 3.99%, Full Art 2%. Nothing carries over between
+- **Each Series stands alone.** Its cards come only from its own packs, by its own recipe: every pack has the same slots and
+  every card is rolled on its own from its slot's fixed odds, the same for the first and the last pack (no pool, no
+  caps). Standard: 3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better; of all cards Paper 50%, Wood 24.15%, Fire
+  14.97%, Coal 4.89%, Gold 3.99%, Full Art 2%. Nothing carries over between
   Series. Example: 167 packs (1,002 cards) make on average 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full
   Art; the real counts vary around these.
 - **Every purchase names its limits:** the most PLANK/USDG (or the ETH sent), and the most PAPER. If a number moved,

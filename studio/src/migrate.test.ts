@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { checkRecipe, legacyDiamondRecipe, standardRecipe, typeWeights } from './recipe'
+import { cardsPerPack, checkRecipe, legacyDiamondRecipe, slotPercents, slotWeights, standardRecipe, type Recipe } from './recipe'
 import { characterOddsProblems, characterPercentsOf, characterWeightsOf, charactersAllEqual } from './series'
-import { migrateCharacterArt, migrateFire, needsMigration, oldRecipeToOdds } from './migrate'
+import { migrateCharacterArt, migrateFire, needsMigration, oddsRecipeToSlots, oldRecipeToSlots } from './migrate'
 import { creditPacksMax, groupPacks, saleOf, standardSale } from './sale'
 import type { Character, FireRecord, ImageSlot } from './types'
+
+/** Each slot's weights, as numbers. */
+const W = (r: Recipe) => slotWeights(r).map((x) => x.weights.map(Number))
+const P = (r: Recipe) => r.slots.map((sl) => slotPercents(r, sl))
 
 /** A Series as saved before recipes: Diamonds on the record, a locked deal stored by material. */
 const oldFire = {
@@ -21,16 +25,16 @@ const oldFire = {
 }
 
 describe('old saves and backups', () => {
-  it('a Series without a recipe gets the old Standard (Diamond) recipe, as odds', () => {
+  it('a Series without a recipe gets the old Standard (Diamond) recipe, as one slot of 6', () => {
     expect(needsMigration(oldFire)).toBe(true)
     const f = migrateFire(oldFire)
     expect(f.recipe).toEqual(legacyDiamondRecipe())
-    expect(f.recipe.cardsPerPack).toBe(6)
-    expect(typeWeights(f.recipe).weights).toEqual([501n, 301n, 150n, 49n, 1n])
+    expect(cardsPerPack(f.recipe)).toBe(6)
+    expect(W(f.recipe)).toEqual([[501, 301, 150, 49, 1]])
     expect(needsMigration(f)).toBe(false)
   })
 
-  it('a recipe saved with the old pool rules becomes odds at the cards its rules gave', () => {
+  it('a recipe saved with the old pool rules becomes slots: each old slot group over the types it held, at the cards their rules gave', () => {
     const old = {
       types: [
         { id: 'p', name: 'Paper', slug: 'paper', rank: 0, supply: 'perPack', amount: '3', maxPerPack: '0', holo: { mode: 'independent', frame: '1', picture: '1' }, frameSet: 'paper' },
@@ -40,20 +44,42 @@ describe('old saves and backups', () => {
         { id: 'g', name: 'Gold', slug: 'gold', rank: 4, supply: 'perCharacter', amount: '2', maxPerPack: '1', holo: { mode: 'distribution', weights: ['0', '0', '0', '1'] }, frameSet: 'gold' },
         { id: 'a', name: 'Full Art', slug: 'fullart', rank: 5, supply: 'perCharacter', amount: '1', maxPerPack: '1', holo: { mode: 'distribution', weights: ['0', '0', '0', '1'] }, frameSet: 'fullart' },
       ],
-      slots: [{ count: 3 }, { count: 1 }, { count: 1 }, { count: 1 }],
+      // the old Standard: 3 Paper, 1 Wood, 1 Wood or better, 1 Fire or better
+      slots: [
+        { count: 3, kind: 'types', typeIds: ['p'], minRank: 0, maxRank: null, mustHolo: false },
+        { count: 1, kind: 'types', typeIds: ['w'], minRank: 0, maxRank: null, mustHolo: false },
+        { count: 1, kind: 'rank', typeIds: [], minRank: 1, maxRank: null, mustHolo: false },
+        { count: 1, kind: 'rank', typeIds: [], minRank: 2, maxRank: null, mustHolo: false },
+      ],
     } as const
-    const r = oldRecipeToOdds(old as never, 167, 20)
-    expect(r.cardsPerPack).toBe(6)
-    expect(typeWeights(r).weights).toEqual([501n, 242n, 150n, 49n, 40n, 20n])
+    const r = oldRecipeToSlots(old as never, 167, 20)
+    expect(cardsPerPack(r)).toBe(6)
+    // 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art over the whole Series, split by slot
+    expect(W(r)).toEqual([[501, 0, 0, 0, 0, 0], [0, 242, 0, 0, 0, 0], [0, 242, 150, 49, 40, 20], [0, 0, 150, 49, 40, 20]])
     expect(r.types.map((t) => t.id)).toEqual(['p', 'w', 'f', 'c', 'g', 'a'])
+    expect(r.types.some((t) => 'supply' in t)).toBe(false)
     const { deal: _deal, ...open } = migrateFire(oldFire)
     const m = migrateFire({ ...open, packs: 167, characterIds: Array.from({ length: 20 }, (_, i) => `c${i}`), recipe: old as never })
-    // an open Series: its odds become percentages (the old pool's shares are the Standard's)
-    expect(m.recipe.types.map((t) => t.percent)).toEqual(['50', '24.15', '14.97', '4.89', '3.99', '2'])
-    expect(m.recipe.types.some((t) => 'weight' in t)).toBe(false)
-    expect(typeWeights(m.recipe).weights).toEqual([5000n, 2415n, 1497n, 489n, 399n, 200n])
+    // an open Series: its odds become percentages, exact weights dropped
+    expect(P(m.recipe)[3]).toEqual(['', '', '57.92', '18.92', '15.44', '7.72'])
+    expect(m.recipe.slots.some((sl) => 'weights' in sl)).toBe(false)
+    expect(checkRecipe(m.recipe)).toEqual([])
     expect(needsMigration(m)).toBe(false)
-    expect(typeWeights(standardRecipe()).weights).toEqual([5000n, 2415n, 1497n, 489n, 399n, 200n])
+    // slot groups with nothing but a count hold every type
+    expect(W(oldRecipeToSlots({ ...old, slots: [{ count: 2 }] } as never, 10, 1))[0].every((x) => x > 0)).toBe(true)
+  })
+
+  it('a recipe saved with straight odds (one % or weight per type) becomes one slot of its cards per pack', () => {
+    const typesOf = (f: (i: number) => object) => standardRecipe().types.map((t, i) => ({ ...t, ...f(i) }))
+    const pct = ['50', '24.15', '14.97', '4.89', '3.99', '2']
+    const byPct = oddsRecipeToSlots({ types: typesOf((i) => ({ percent: pct[i] })) as never, cardsPerPack: 6 })
+    expect(byPct.slots).toEqual([{ id: 'all', count: 6, percents: Object.fromEntries(standardRecipe().types.map((t, i) => [t.id, pct[i]])) }])
+    expect(W(byPct)).toEqual([[5000, 2415, 1497, 489, 399, 200]])
+    expect(byPct.types.some((t) => 'percent' in t || 'weight' in t)).toBe(false)
+    const byW = oddsRecipeToSlots({ types: typesOf((i) => ({ percent: '', weight: String([7, 3, 1, 1, 1, 1][i]) })) as never, cardsPerPack: 3 })
+    expect(cardsPerPack(byW)).toBe(3)
+    expect(W(byW)).toEqual([[7, 3, 1, 1, 1, 1]])
+    expect(P(byW)).toEqual([['50', '21.43', '7.15', '7.14', '7.14', '7.14']])
   })
 
   it('a locked deal is re-labelled: materials to Standard type indexes, pool to an array', () => {
@@ -150,18 +176,19 @@ describe('old saves and backups', () => {
 
 describe('odds saved as weights become percentages', () => {
   const { deal: _deal, ...openBase } = migrateFire(oldFire)
-  /** A recipe as saved before percentages: each type with only a weight. */
-  const weightsOnly = (w: string[]) => ({ ...standardRecipe(), types: standardRecipe().types.map(({ percent: _p, ...t }, i) => ({ ...t, weight: w[i] })) })
+  /** A recipe as saved before percentages and slots: each type with only a weight, and a cards per pack. */
+  const weightsOnly = (w: string[]) => ({ cardsPerPack: 6, types: standardRecipe().types.map((t, i) => ({ ...t, weight: w[i] })) }) as never
 
-  it('an open Series: type weights to % of cards (adding up to 100%), exact weights dropped', () => {
+  it('an open Series: type weights to one slot\'s % (adding up to 100%), exact weights dropped', () => {
     const saved = { ...openBase, recipe: weightsOnly(['5000', '2415', '1497', '489', '399', '200']) }
     expect(needsMigration(saved)).toBe(true)
     const m = migrateFire(saved)
-    expect(m.recipe).toEqual(standardRecipe())
+    expect(P(m.recipe)).toEqual([['50', '24.15', '14.97', '4.89', '3.99', '2']])
+    expect(m.recipe.slots.some((sl) => 'weights' in sl)).toBe(false)
     expect(needsMigration(m)).toBe(false)
     // rounding fixed so they add up to exactly 100%
     const odd = migrateFire({ ...openBase, recipe: weightsOnly(['1', '1', '1', '1', '1', '1']) })
-    expect(odd.recipe.types.map((t) => t.percent)).toEqual(['16.67', '16.67', '16.67', '16.67', '16.66', '16.66'])
+    expect(P(odd.recipe)).toEqual([['16.67', '16.67', '16.67', '16.67', '16.66', '16.66']])
     expect(checkRecipe(odd.recipe)).toEqual([])
   })
 
@@ -182,11 +209,11 @@ describe('odds saved as weights become percentages', () => {
 
   it('a locked Series keeps its exact weights (its odds and recipe.json never change), shown as %', () => {
     const f = migrateFire(oldFire)
-    expect(typeWeights(f.recipe).weights).toEqual([501n, 301n, 150n, 49n, 1n])
-    expect(f.recipe.types.map((t) => t.percent)).toEqual(['50', '30.04', '14.97', '4.89', '0.1'])
+    expect(W(f.recipe)).toEqual([[501, 301, 150, 49, 1]])
+    expect(P(f.recipe)).toEqual([['50', '30.04', '14.97', '4.89', '0.1']])
     const locked = migrateFire({ ...f, recipe: weightsOnly(['7', '3', '1', '1', '1', '1']), characterWeights: { a: 3, b: 1 } })
-    expect(typeWeights(locked.recipe).weights).toEqual([7n, 3n, 1n, 1n, 1n, 1n])
-    expect(locked.recipe.types.map((t) => t.percent)).toEqual(['50', '21.43', '7.15', '7.14', '7.14', '7.14'])
+    expect(W(locked.recipe)).toEqual([[7, 3, 1, 1, 1, 1]])
+    expect(P(locked.recipe)).toEqual([['50', '21.43', '7.15', '7.14', '7.14', '7.14']])
     expect(locked.characterWeights).toEqual({ a: 3, b: 1 })
     expect(locked.characterIds).toEqual(['a', 'b'])
     expect(characterWeightsOf(locked)).toEqual([3, 1])

@@ -88,7 +88,8 @@ describe('shared images', () => {
 
   it('a new type gets its own slug in file names; a type that is never plain gets no none images', () => {
     const r: Recipe = standardRecipe()
-    r.types.push({ id: 'plat', name: 'Platinum', slug: 'platinum', rank: 6, percent: '1', holo: { mode: 'distribution', weights: ['0', '0', '0', '1'] }, frameSet: 'gold' })
+    r.types.push({ id: 'plat', name: 'Platinum', slug: 'platinum', rank: 6, holo: { mode: 'distribution', weights: ['0', '0', '0', '1'] }, frameSet: 'gold' })
+    r.slots[3].percents = { ...r.slots[3].percents, plat: '1', fire: '58.82' }
     expect(holoLooksFor(r, 6)).toEqual(['full'])
     expect(imagesPerCharacter(r)).toBe(228)
     const files = seriesGrid(1, ['x'], r).map((g) => g.file)

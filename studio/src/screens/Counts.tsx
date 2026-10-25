@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { checkRecipe, holoLooksFor, parseUint, type Recipe } from '../recipe'
-import { expectedCounts, mayNotPrint, oddsText, printCount, type ExpectedCounts } from '../rarity'
+import { checkRecipe, holoLooksFor, parseUint, slotLabel, type Recipe } from '../recipe'
+import { expectedCounts, mayNotPrint, oddsText, percentText, printCount, slotSummaries, type ExpectedCounts } from '../rarity'
 import { HOLO_LABEL, type HoloType } from '../rules'
-import { typeColor } from './SeriesResult'
+import { perPackText, typeColor } from './SeriesResult'
 
 const lookName = (h: HoloType) => (h === 'none' ? 'Plain' : HOLO_LABEL[h])
 
@@ -19,14 +19,33 @@ export function Count({ x, unit, testId }: { x: number; unit?: string; testId?: 
 
 export const COUNTS_NOTE = 'If the odds land exactly: expected counts. Real pulls will vary.'
 
-/** Each type's odds and expected cards, plus the total: "Gold · 3.99% · about 1 in 25 cards · ≈ 40 cards". */
+/** The pack slot by slot, each with its odds: "3 Paper · 1 Wood · 1 Wood or better: Wood 44.9%, Fire 30%, ...". */
+export function SlotSummary({ recipe }: { recipe: Recipe }) {
+  const slots = useMemo(() => slotSummaries(recipe), [recipe])
+  return (
+    <div className="slot-summary" data-testid="slot-summary">
+      {slots.map((sl, k) => {
+        const ts = recipe.types.flatMap((t, i) => (sl.odds[i] > 0 ? [{ t, p: sl.odds[i] }] : []))
+        return (
+          <span key={recipe.slots[k].id} className="type-count" data-testid={`slot-summary-${k}`}>
+            <b>{sl.count} {slotLabel(recipe, k)}</b>
+            {ts.length > 1 && <span className="muted">: {ts.map(({ t, p }) => `${t.name} ${percentText(p)}`).join(', ')}</span>}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Each type's expected cards per pack, its share of cards and expected cards, plus the total: "Gold · ≈0.2394 a pack
+ *  · 3.99% · about 1 in 25 cards · ≈ 40 cards". */
 export function TypeCounts({ recipe, counts }: { recipe: Recipe; counts: ExpectedCounts }) {
   return (
     <div className="type-counts" data-testid="type-counts">
       {recipe.types.map((t, i) => (
         <span key={t.id} className="type-count" data-testid={`type-count-${t.slug}`}>
           <span className="swatch" style={{ background: typeColor(t.frameSet) }} />
-          <b>{t.name}</b> · {oddsText(counts.types[i].share)} · <Count x={counts.types[i].count} unit="cards" />
+          <b>{t.name}</b> · {perPackText(counts.types[i].perPack)} a pack · {oddsText(counts.types[i].share)} · <Count x={counts.types[i].count} unit="cards" />
         </span>
       ))}
       <span className="type-count total" data-testid="type-count-total">
@@ -85,6 +104,7 @@ export function CountsGrid({ recipe, basePacks, characters, weights, typeLine = 
       </p>
       {!valid ? <p className="muted small">Fix the recipe to see the counts.</p> : !counts ? <p className="muted small">Type a pack count.</p> : (
         <>
+          <SlotSummary recipe={recipe} />
           {typeLine && <TypeCounts recipe={recipe} counts={counts} />}
           {lowCells > 0 && <p className="small" data-testid="counts-low"><span className="count-low">{lowCells.toLocaleString('en-US')} type × character card{lowCells === 1 ? '' : 's'}</span> expected below 1: they may not print.</p>}
           <div className="table-scroll counts-scroll">
@@ -94,7 +114,7 @@ export function CountsGrid({ recipe, basePacks, characters, weights, typeLine = 
                   <th>Character</th><th>Odds</th>
                   {recipe.types.map((t, i) => (
                     <th key={t.id} className="num"><span className="swatch" style={{ background: typeColor(t.frameSet) }} />{t.name}
-                      <div className="muted small">{oddsText(counts.types[i].share, '')}</div></th>
+                      <div className="muted small">{perPackText(counts.types[i].perPack)} a pack · {oddsText(counts.types[i].share, '')}</div></th>
                   ))}
                   <th className="num">All types</th>
                 </tr>

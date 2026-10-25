@@ -302,12 +302,12 @@
   if (document.readyState === 'loading') addEventListener('DOMContentLoaded', setPicture, { once: true }); else setPicture();
   const clipBtn = (c, cls = '') => (window.Clip ? Clip.button(c, { cls }) : null);
 
-  // ---------- pack contents: six cards, each rolled on its own at the Series' fixed odds (Store.rollCard), like the contract
+  // ---------- pack contents: the pack's slots, each card rolled on its own at its slot's fixed odds (Store.rollPack), like the contract
   function makePack(series) {
     const names = [...new Set(S().cards.map((c) => c.character))]; const pool = names.length ? names : FALLBACK_NAMES;
     let id = Math.max(999, ...S().cards.map((c) => c.id)), serial = Math.max(0, ...S().cards.map((c) => c.serial));
     const ser = S().series, cardsInSeries = Math.max(1, ser.total) * (ser.cardsPerPack || 6), cast = Math.max(1, ser.cast);
-    return Array.from({ length: 6 }, () => Store.rollCard()).map(({ material: m, holo }) => {
+    return Store.rollPack().map(({ material: m, holo }) => {
       // DEMO DATA: a print number (#k: the k-th of this exact card pulled), somewhere up to what the odds give it in a full Series
       const w = (Store.CARD_ODDS.find(([x]) => x === m) || [m, 1])[1];
       const of = Math.max(1, Math.round((w / Store.ODDS_TOTAL) * cardsInSeries / cast * (m === 'gold' || m === 'fullart' ? 1 : window.Info?.holoP(m, holo) ?? 1)) + 2);

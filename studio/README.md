@@ -60,19 +60,21 @@ reading the zip in pieces. Built card images are not part of the backup.
 
 A Series' recipe is the same thing `RecipeDealer` deals on-chain (`docs/cards-contracts.md`):
 
-- **Card types**: name, slug (auto from the name until typed), rank (the rarity order the site shows), an odds weight
-  (its chance per card = its weight over the total; Standard out of 10,000), holo (two independent rolls, or weights
-  for none / frame / picture / full) and a frame set. Standard types use the Standard frame sets (Fire = `burning`,
-  Coal = `charcoal`).
-- **Cards per pack**: 1 to 1,000. Every card of every pack is rolled on its own from the odds: no slots, guarantees,
-  caps or pool, so the first and the last pack have the same odds.
+- **Card types**: name, slug (auto from the name until typed), rank (the rarity order the site shows), holo (two
+  independent rolls, or weights for none / frame / picture / full) and a frame set. Standard types use the Standard
+  frame sets (Fire = `burning`, Coal = `charcoal`).
+- **Slots** (the pack's shape, in order): each slot's number of cards and each type's % of that slot's cards (blank =
+  never in that slot; each slot adds up to exactly 100%). Cards per pack = the slots' cards added up (1 to 1,000).
+  Every pack has the same shape and every card is rolled on its own from its slot's odds: no pool or caps, so the first
+  and the last pack have the same odds. Standard: 3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better.
 - **Character odds** (Series tab): optional weights; none = every character equally likely.
 - **PDA odds**: fixed in `FirePsa` for every Series, shown read-only (never in recipe.json).
 
 Presets: Standard (exactly `StandardRecipe.sol`), Special: 3 cards, all holo, or a copy of another Series' recipe.
 The checks mirror `RecipeCompiler.compile` in the same order. Series and backups from before recipes load with the old
-Standard (Diamond) recipe; recipes saved with the old pool rules load as odds at the cards their rules gave (their
-expected shares stay about the same).
+Standard (Diamond) recipe; recipes saved with straight odds (one % per type) load as one slot of their cards per pack
+at those odds; recipes saved with the old pool rules load as slots (each old slot group over the types it held, at the
+cards their rules gave).
 
 A new card type needs a frame set: reuse one or build a new set with `frames-src/clean_frames.py` (put `<set>.png`,
 `<set>-holo.png` in `frames-src/originals`, run `python3 frames-src/clean_frames.py`, bump `FRAMES_UPDATED_AT` in

@@ -8,7 +8,7 @@ pragma solidity ^0.8.28;
  *         picks a dealer per Series (FireCards.setDealer), and it is fixed once the Series' first pack is minted.
  *
  *         A dealer may keep its own per-Series state (RecipeDealer keeps none: every card is rolled on its own from
- *         fixed odds). FireCards calls `deal` strictly in order: packs in the order they were opened, and each pack's
+ *         its slot's fixed odds). FireCards calls `deal` strictly in order: packs in the order they were opened, and each pack's
  *         cards from position 0 to cardsPerPack - 1, possibly over several calls (big packs are dealt in chunks). The
  *         result must depend only on `seed`, the position and the dealer's state, so it never matters who processes
  *         or how the work is split.

@@ -25,6 +25,7 @@ export const ABI_ERRORS = {
   BadRecipe: { inputs: [{ name: "why", type: "string" }], contracts: ["recipeDealer"] },
   BadRequest: { inputs: [], contracts: ["fireCards", "firePsa"] },
   BadRoute: { inputs: [], contracts: ["paperBurner"] },
+  BadSlot: { inputs: [{ name: "index", type: "uint256" }, { name: "why", type: "string" }], contracts: ["recipeDealer"] },
   BadText: { inputs: [], contracts: ["fireCards", "firePacks", "recipeDealer"] },
   BadTime: { inputs: [], contracts: ["morningWood"] },
   BadType: { inputs: [{ name: "index", type: "uint256" }, { name: "why", type: "string" }], contracts: ["recipeDealer"] },

@@ -2,11 +2,13 @@
    Facts: docs/omni-economy.md, docs/cards-contracts.md, docs/card-studio.md */
 (() => {
   // ---- rarity numbers (computed, not typed in) ----
-  // Straight odds (docs/cards-contracts.md): every card of every pack is rolled on its own from the Series' fixed odds:
-  // its material by the type weights, then its holo, then its character. The same odds for the first and the last pack;
-  // no slots, guarantees or caps. Demo: the Standard recipe (Store.CARD_ODDS, out of 10,000; characters equally
-  // likely). Live: the Series' own odds read from the chain (Store.LIVE_ODDS, set by live.js). Every Series sets its own
-  // recipe, so the copy only ever shows these as "this Series", never as fixed rules.
+  // Slots (docs/cards-contracts.md): every pack has the same shape, its slots in order (Standard: 3 Paper · 1 Wood · 1
+  // Wood or better · 1 Fire or better), and every card is rolled on its own from its slot's fixed odds: its material,
+  // then its holo, then its character. The same odds for the first and the last pack; no pool or caps. A material's
+  // share of cards (the "about 1 in N cards") = its expected cards per pack over cards per pack. Demo: the Standard
+  // recipe (Store.PACK_SLOTS, Store.CARD_ODDS; characters equally likely). Live: the Series' own slots and odds read
+  // from the chain (Store.LIVE_ODDS, set by live.js). Every Series sets its own recipe, so the copy only ever shows
+  // these as "this Series", never as fixed rules.
   // Diamond is the old top card (Series before Gold): kept only so older cards still show their odds.
   const series = () => window.Store?.state?.series || { total: 167, cast: 10 };
   let PACKS, CHARACTERS, SERIES_CARDS, LIVE, MATS, M, charP, modelKey;
@@ -16,7 +18,7 @@
     if (modelKey && key === modelKey && live === LIVE) return;
     modelKey = key;
     PACKS = Math.max(1, series().total); CHARACTERS = Math.max(1, series().cast); SERIES_CARDS = PACKS * (series().cardsPerPack || 6);
-    LIVE = window.Store?.LIVE_ODDS || null; // { types: { [material]: { share, holo: [none, frame, picture, full] } }, chars: { [name]: p } }
+    LIVE = window.Store?.LIVE_ODDS || null; // { types: { [material]: { share, holo: [none, frame, picture, full], name, rank } }, slots: [{ count, odds: [[material, p]] }], chars: { [name]: p } }
     const STD = window.Store?.CARD_ODDS || [['paper', 5000], ['wood', 2415], ['fire', 1497], ['charcoal', 489], ['gold', 399], ['fullart', 200]];
     const STD_TOTAL = STD.reduce((a, [, w]) => a + w, 0);
     const NAME = { paper: 'Paper', wood: 'Wood', fire: 'Fire', charcoal: 'Coal', gold: 'Gold', fullart: 'Full Art' };
@@ -122,12 +124,31 @@
     </figure>`;
   }
 
+  // the pack's slots: the live Series' (from the chain), else the Standard's
+  const packSlots = () => { model(); return LIVE?.slots?.length ? LIVE.slots : window.Store?.PACK_SLOTS || []; };
+  const rankOf = (id) => (LIVE?.types?.[id]?.rank ?? MATS.findIndex((m) => m.id === id));
+  /** A slot in words: "Paper", "Wood or better" (every material from the lowest it holds up), else "Fire or Gold". The
+   *  studio says the same (recipe.ts slotLabel). `lead` is the material its chip shows, `tail` the words after it. */
+  function slotLabel(slot) {
+    const ids = slot.odds.filter(([, p]) => p > 0).map(([m]) => m).filter((m) => M[m]);
+    if (!ids.length) return { lead: 'paper', text: 'Any', tail: '' };
+    if (ids.length === 1) return { lead: ids[0], text: M[ids[0]].name, tail: '' };
+    const low = Math.min(...ids.map(rankOf)), up = MATS.filter((m) => rankOf(m.id) >= low).map((m) => m.id), first = ids.filter((m) => rankOf(m) === low);
+    if (first.length === 1 && up.length === ids.length && up.every((m) => ids.includes(m))) return { lead: first[0], text: `${M[first[0]].name} or better`, tail: 'or better' };
+    return { lead: ids[0], text: orList(ids.map((m) => M[m].name)), tail: 'or ' + orList(ids.slice(1).map((m) => M[m].name)) };
+  }
+  /** "3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better" */
+  const packLine = () => packSlots().map((s) => `${nf(s.count)} ${slotLabel(s).text}`).join(' · ');
   function packRow(no, cpp) {
-    const n = Math.max(1, cpp);
-    return `<div class="inf-pack" role="img" aria-label="A Series ${no} pack: ${n} cards, each rolled on its own from the same odds" style="--n:${Math.min(n, 6)}">
-      ${Array.from({ length: n }, (_, i) => `<span class="inf-slot"><i>${i + 1}</i>${chip('paper', 'Any')}</span>`).join('')}
+    const slots = packSlots();
+    const cells = slots.flatMap((s) => Array.from({ length: s.count }, () => slotLabel(s)));
+    const n = Math.max(1, cells.length || cpp);
+    const row = cells.length ? cells : Array.from({ length: n }, () => ({ lead: 'paper', text: 'Any', tail: '' }));
+    const line = cells.length ? packLine() : `${n} cards`;
+    return `<div class="inf-pack" role="img" aria-label="A Series ${no} pack: ${line}" style="--n:${Math.min(n, 6)}">
+      ${row.map((l, i) => `<span class="inf-slot"><i>${i + 1}</i>${chip(l.lead, l.text === 'Any' ? 'Any' : M[l.lead].name)}${l.tail ? `<small>${l.tail}</small>` : ''}</span>`).join('')}
     </div>
-    <p class="inf-note">${n} cards, each rolled on its own from the same odds.</p>`;
+    <p class="inf-note">${line}.</p>`;
   }
 
   // ---- the Series' own settings, for the copy (every number reads the current Series: "in Series N", never fixed)
@@ -279,7 +300,7 @@
         <p class="inf-sub">A Series ${no} pack</p>
         ${packRow(no, cpp)}
         <ul>
-          <li><b>Every card is its own roll.</b> The first pack and the last pack have exactly the same odds.</li>
+          <li><b>Every pack has the same shape, and each slot is its own roll.</b> The first pack and the last pack have exactly the same odds.</li>
           <li><b>Sales stalled?</b> We can end the sale once every group has had its turn. If we don't, anyone can end it 7 days later. Either way, your packs always open.</li>
           <li><b>Stuck?</b> If the randomness never arrives within 24 hours, anyone can cancel and your packs come back sealed.</li>
         </ul>`),
@@ -348,7 +369,7 @@
       sec('fair', 'Fairness', 'Public randomness, fixed odds, no bot sweeps.', `
         <ul>
           <li><b>Nobody picks your cards.</b> Cards and grades come from drand, a public randomness source run by independent groups around the world. Nobody owns it, us included. Each pack you open, and each card you grade, is tied to a drand number that doesn't exist yet when you hit the button, about 90 seconds in the future. One request, one number: no re-rolls.</li>
-          <li><b>Every card is its own roll.</b> Its material, its holo and its character are each rolled from the Series' fixed odds. The first pack and the last pack have exactly the same odds, so nobody can tell what's left or what's coming.</li>
+          <li><b>Every pack has the same shape, and each slot is its own roll.</b> The first pack and the last pack have exactly the same odds, so nobody can tell what's left or what's coming.</li>
           <li><b>Locked before the sale.</b> A Series' odds, characters, prices and limits are set and locked before anyone can buy.</li>
           <li><b>No bot sweeps.</b> Holders get their turn first, and for the first part of a sale only regular wallets can buy${F.rwHours ? ` (${inS}: the first ${nf(F.rwHours)} hours)` : ''}.</li>
           <li><b>Your money never sits in the contract.</b> Every payment is split and sent where it goes (the burns, and the rest) in the same transaction you sign.</li>
@@ -433,8 +454,11 @@
     },
     // a material's chance per card (Series' odds)
     shareOf(material) { model(); return M[material]?.share ?? 0; },
-    // this Series' materials, in order, with each one's chance per card (the pack strip)
+    // this Series' materials, in order, with each one's share of cards (the pack strip)
     materials() { model(); return MATS.map(({ id, name, share }) => ({ id, name, share })); },
+    // this Series' pack, slot by slot: [{ count, odds: [[material, p]], text: "Wood or better" }], and the one-line shape
+    slots() { return packSlots().map((s) => ({ count: s.count, odds: s.odds, text: slotLabel(s).text })); },
+    packLine,
     // a grade counts as "this grade or better" (fresh odds), so a PDA 5 never reads rarer than a PDA 9.
     // Ungraded, PDA 5 and the aged 1-4 all come to 1: no grade factor.
     gradeP(g) { return g == null ? 1 : Math.min(1, PDA.filter((x) => x.g >= g).reduce((a, x) => a + x.p, 0) / 100); },

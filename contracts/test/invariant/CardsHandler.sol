@@ -530,13 +530,13 @@ contract CardsHandler is Test {
         } catch {}
     }
 
-    /// A new recipe for a Series (the Standard recipe with another Full Art weight), which only works until the
-    ///    Series' first pack.
+    /// A new recipe for a Series (the Standard recipe with another Full Art weight in its Fire-or-better slot), which
+    ///    only works until the Series' first pack.
     function setRecipe(uint256 fireSeed, uint256 n) external at {
         calls["setRecipe"]++;
         uint256 fire = 2 + fireSeed % (FIRES - 1);
         RecipeDealer.Recipe memory r = StandardRecipe.build();
-        r.types[StandardRecipe.FULL_ART].weight = uint64(bound(n, 1, 5_000));
+        r.slots[StandardRecipe.SLOT_FIRE_UP].weights[StandardRecipe.FULL_ART] = uint64(bound(n, 1, 5_000));
         vm.prank(owner, owner);
         try dealer.setRecipe(fire, r) {
             calls["setRecipe.ok"]++;

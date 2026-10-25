@@ -1203,8 +1203,8 @@ contract SaleTest is SaleBase {
     /// Credit packs aren't available in a Series whose packs hold 42+ cards (burning one would pay for itself).
     function test_noCreditsInBigPackSeries() public {
         RecipeDealer.CardType[] memory ts = new RecipeDealer.CardType[](1);
-        ts[0] = _type("Common", "common", 0, 1);
-        _series(cards, dealer, owner, 5, _recipe(ts, 42), 2);
+        ts[0] = _type("Common", "common", 0);
+        _series(cards, dealer, owner, 5, _recipe(ts, _w(1), 42), 2);
         _endDrop1();
         uint64 s5 = uint64(block.timestamp + 1 hours);
         _set(5, _cfg(s5, 10));

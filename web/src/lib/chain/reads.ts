@@ -173,6 +173,25 @@ export async function groups(fire: number, maxPerTx = 50): Promise<GroupInfo[]> 
   return out;
 }
 
+/** RecipeDealer.slotsOf: each slot's cards, its weight per type (recipe order) and its total. */
+type SlotsRaw = readonly [readonly bigint[], readonly (readonly bigint[])[], readonly bigint[]];
+/** One slot of a Series' pack: its cards and its chance of each card type (recipe order; 0 = never in this slot). */
+export type SlotOdds = { count: number; odds: number[] };
+
+/** Each slot's cards and its chance of each type, from RecipeDealer.slotsOf's counts, weights and totals. */
+export function slotOddsOf([counts, weights, totals]: SlotsRaw): SlotOdds[] {
+  return counts.map((c, s) => ({
+    count: Number(c),
+    odds: weights[s].map((w) => (totals[s] > 0n ? Number((BigInt(w) * 10n ** 12n) / totals[s]) / 1e12 : 0)),
+  }));
+}
+
+/** A Series' pack shape and odds (RecipeDealer.slotsOf): its slots in pack order, each with its cards and its own odds
+ *  per card type. Fixed once the Series locks; the same in every pack. */
+export async function seriesSlots(fire: number): Promise<SlotOdds[]> {
+  return slotOddsOf(await read<SlotsRaw>("RecipeDealer", dealerAbi, "slotsOf", [BigInt(fire)]));
+}
+
 /** One Series: its drop's settings, status and groups, and its cards' dealing state. */
 export async function series(fire: number): Promise<SeriesInfo> {
   const f = BigInt(fire);

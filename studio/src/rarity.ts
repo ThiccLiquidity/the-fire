@@ -1,15 +1,16 @@
-/** What a recipe makes, as the owner sees it: each type's odds per card, the expected cards per type and look, how rare
- *  each exact card is, and the chance a pack holds at least one of a type.
+/** What a recipe makes, as the owner sees it: each type's expected cards per pack and share of cards, the expected
+ *  cards per type and look, how rare each exact card is, and the chance a pack holds at least one of a type.
  *
- *  Dealing is straight odds (recipe.ts): a card's chance = type odds x holo odds x character odds, the same for every
- *  card of every pack. So everything here is exact odds; card counts for a Series are expectations (the real counts
- *  vary around them, and nothing caps them).
+ *  Dealing (recipe.ts): every pack has the same slots, and each card rolls its type from its slot's odds, then holo,
+ *  then character. A type's expected cards per pack = the sum over the slots of count x the slot's odds for it; its
+ *  share of cards = that over cards per pack. So everything here is exact odds; card counts for a Series are
+ *  expectations (the real counts vary around them, and nothing caps them).
  *
  *  Rarity is the site's one scale (web/art/factory/forge/core.js trueOdds, info.js lookP / TIERS): the chance of one
  *  exact card (character + type + holo look) per card dealt, read as "1 in N". Tiers: Rare from 1 in 100, Epic from
  *  1 in 400, Legendary from 1 in 1,000. */
 
-import { characterOdds, holoLooksFor, holoOdds, typeOdds, type Recipe } from './recipe'
+import { cardsPerPack, characterOdds, holoLooksFor, holoOdds, perPackCounts, slotOdds, typeOdds, type Recipe } from './recipe'
 import type { HoloType } from './rules'
 
 export type Tier = 'legendary' | 'epic' | 'rare'
@@ -60,7 +61,8 @@ export function lookOdds(r: Recipe, i: number): Record<HoloType, number> {
   return { none: o[0], frame: o[1], picture: o[2], full: o[3] }
 }
 
-/** The chance of one exact card per card dealt: type odds x holo odds x that character's odds. */
+/** The chance of one exact card per card dealt (a card picked at random from the Series): the type's share of cards x
+ *  holo odds x that character's odds. */
 export function cardChance(r: Recipe, typeIndex: number, look: HoloType, characterP: number): number {
   return (typeOdds(r)[typeIndex] ?? 0) * lookOdds(r, typeIndex)[look] * characterP
 }
@@ -78,8 +80,10 @@ export interface LookResult {
 }
 
 export interface TypeResult {
-  /** The type's chance per card (its % of cards). */
+  /** The type's share of all cards (its expected cards per pack over cards per pack). */
   share: number
+  /** Expected cards of the type in one pack (the sum over the slots of count x the slot's odds). */
+  perPack: number
   /** Expected cards of the type in the Series (share x cards). */
   expected: number
   /** Expected cards per (average) character. */
@@ -106,7 +110,7 @@ export function seriesResult(r: Recipe, packs: bigint, chars: number, characterW
   const cOdds = characterOdds(characterWeights, ch)
   const weighted = cOdds.some((p) => Math.abs(p - cOdds[0]) > 1e-15)
   const rarest = Math.min(...cOdds)
-  const total = packs * BigInt(Math.max(0, r.cardsPerPack))
+  const total = packs * BigInt(Math.max(0, cardsPerPack(r)))
   const N = Number(total)
   const tOdds = typeOdds(r)
   let distinct = 0
@@ -120,9 +124,9 @@ export function seriesResult(r: Recipe, packs: bigint, chars: number, characterW
       return { look, total: expected * odds[look], perCharacter: (expected * odds[look]) / ch, p, pRarest, tier: p > 0 ? tierOf(1 / p) : null }
     })
     distinct += looks.filter((l) => l.p > 0).length * ch
-    return { share, expected, perCharacter: expected / ch, looks }
+    return { share, perPack: share * cardsPerPack(r), expected, perCharacter: expected / ch, looks }
   })
-  return { packs, chars: ch, cardsPerPack: r.cardsPerPack, total, types, weighted, distinct }
+  return { packs, chars: ch, cardsPerPack: cardsPerPack(r), total, types, weighted, distinct }
 }
 
 // ---------------------------------------------------------------- per pack
@@ -134,15 +138,37 @@ export interface PackChances {
   twoOrMore: number[]
 }
 
-/** The chance a pack holds at least one (and two or more) of each type. Exact: every card is rolled on its own, so
- *  with q the type's odds and S cards a pack, at least one = 1 - (1 - q)^S. The same for every pack of the Series. */
+/** The chance a pack holds at least one (and two or more) of each type. Exact: every card is rolled on its own from
+ *  its slot's odds q_s, so none = the product over the slots of (1 - q_s)^count, and exactly one = none x the sum of
+ *  count x q_s / (1 - q_s) (a slot that always deals the type: handled on its own). The same for every pack. */
 export function packChances(r: Recipe): PackChances {
-  const S = Math.max(0, r.cardsPerPack)
-  const q = typeOdds(r)
-  return {
-    atLeastOne: q.map((x) => 1 - (1 - x) ** S),
-    twoOrMore: q.map((x) => (S < 2 ? 0 : 1 - (1 - x) ** S - S * x * (1 - x) ** (S - 1))),
-  }
+  const odds = slotOdds(r)
+  const atLeastOne: number[] = []
+  const twoOrMore: number[] = []
+  r.types.forEach((_, t) => {
+    // the count of this type in a pack, as a distribution over 0, 1 and "2 or more"
+    let p0 = 1
+    let p1 = 0
+    r.slots.forEach((sl, s) => {
+      const q = odds[s]?.[t] ?? 0
+      for (let k = 0; k < Math.max(0, sl.count); k++) { p1 = p1 * (1 - q) + p0 * q; p0 *= 1 - q }
+    })
+    atLeastOne.push(1 - p0)
+    twoOrMore.push(Math.max(0, 1 - p0 - p1))
+  })
+  return { atLeastOne, twoOrMore }
+}
+
+export interface SlotSummary {
+  count: number
+  /** Per type (recipe order): its chance for one card of this slot. */
+  odds: number[]
+}
+
+/** Each slot's cards and odds (recipe.ts slotOdds), for the per-slot lines. */
+export function slotSummaries(r: Recipe): SlotSummary[] {
+  const odds = slotOdds(r)
+  return r.slots.map((sl, s) => ({ count: Math.max(0, sl.count), odds: odds[s] }))
 }
 
 // ---------------------------------------------------------------- expected print counts
@@ -152,26 +178,28 @@ export interface ExpectedCounts {
   cardsPerPack: number
   /** packs x cards per pack. */
   totalCards: number
-  /** Per type: its chance per card, its expected cards, and those split by holo look (summing to `count`). */
-  types: { share: number; count: number; looks: Record<HoloType, number> }[]
+  /** Per type: its share of cards, its expected cards per pack, its expected cards, and those split by holo look
+   *  (summing to `count`). */
+  types: { share: number; perPack: number; count: number; looks: Record<HoloType, number> }[]
   /** Per character (image order): its chance per card and its expected cards over every type. */
   characters: { share: number; count: number }[]
   /** grid[type][character]: expected cards of that type and character. */
   grid: number[][]
 }
 
-/** How many of each card the Series prints if the odds land exactly: total cards x P(type) [x P(character)]
- *  [x P(holo look)]. `characters` is the character count (every character equally likely) or their weights (from
- *  their percentages: series.ts characterWeightsOf). Real pulls vary around these. */
+/** How many of each card the Series prints if the odds land exactly: packs x (the sum over the slots of count x
+ *  P_slot(type)) [x P(character)] [x P(holo look)]. `characters` is the character count (every character equally
+ *  likely) or their weights (from their percentages: series.ts characterWeightsOf). Real pulls vary around these. */
 export function expectedCounts(r: Recipe, characters: number | readonly number[], packs: bigint | number): ExpectedCounts {
   const P = Math.max(0, Number(packs) || 0)
-  const S = Math.max(0, r.cardsPerPack || 0)
+  const S = Math.max(0, cardsPerPack(r))
   const N = P * S
   const cOdds = typeof characters === 'number' ? characterOdds(undefined, characters) : characterOdds(characters, characters.length)
+  const per = perPackCounts(r)
   const types = typeOdds(r).map((share, i) => {
-    const count = share * N
+    const count = per[i] * P
     const o = lookOdds(r, i)
-    return { share, count, looks: { none: count * o.none, frame: count * o.frame, picture: count * o.picture, full: count * o.full } }
+    return { share, perPack: per[i], count, looks: { none: count * o.none, frame: count * o.frame, picture: count * o.picture, full: count * o.full } }
   })
   return {
     packs: P,

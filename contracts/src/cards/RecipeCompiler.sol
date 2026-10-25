@@ -6,8 +6,8 @@ import {RecipeDealer} from "./RecipeDealer.sol";
 /**
  * @title RecipeCompiler
  * @notice RecipeDealer's recipe checker and compiler, as its own contract (pure, no state, no owner). `compile`
- *         checks a recipe and turns it into the plan the dealer reads for every card: the types' cumulative weights
- *         and holo odds.
+ *         checks a recipe and turns it into the plan the dealer reads for every card: the types' holo odds and, slot
+ *         by slot, where the slot ends in the pack and its cumulative type weights.
  */
 contract RecipeCompiler {
     uint256 public constant HOLO_ONE = 1e18;
@@ -17,26 +17,30 @@ contract RecipeCompiler {
     uint256 public constant MAX_CARDS_PER_PACK = 1_000;
 
     error BadText();
-    /// @notice The recipe has no type, or a cards-per-pack outside 1 to MAX_CARDS_PER_PACK.
+    /// @notice No type, no slot, or cards per pack (the slots' counts added up) above MAX_CARDS_PER_PACK.
     error BadRecipe(string why);
     error BadType(uint256 index, string why);
+    error BadSlot(uint256 index, string why);
 
-    // Plan layout (uint256 words): types, cards per pack, total weight, then per type: cumulative weight, holo mode,
-    // holo[0..3]. RecipeDealer reads the same layout.
+    // Plan layout (uint256 words): types, cards per pack, slots; per type: holo mode, holo[0..3]; then per slot (pack
+    // order): its end (the position just past it), its total weight, the cumulative weight of each type. RecipeDealer
+    // reads the same layout.
     uint256 private constant HEADER = 3;
-    uint256 private constant TW = 6;
+    uint256 private constant TW = 5;
+    uint256 private constant SW_HEAD = 2;
 
     /// @notice Check a recipe and compile it. Reverts with the reason if it isn't valid.
     function compile(RecipeDealer.Recipe memory r) external pure returns (bytes memory plan, uint256 perPack) {
         uint256 n = r.types.length;
         if (n == 0 || n > type(uint32).max) revert BadRecipe("no types");
-        perPack = r.cardsPerPack;
-        if (perPack == 0 || perPack > MAX_CARDS_PER_PACK) revert BadRecipe("cards per pack");
-        uint256[] memory p = new uint256[](HEADER + n * TW);
+        uint256 k = r.slots.length;
+        if (k == 0) revert BadRecipe("no slots");
+        uint256 sw = SW_HEAD + n;
+        uint256 sb = HEADER + n * TW;
+        uint256[] memory p = new uint256[](sb + k * sw);
         p[0] = n;
-        p[1] = perPack;
+        p[2] = k;
         bytes32[] memory slugs = new bytes32[](n);
-        uint256 total;
         for (uint256 t; t < n; t++) {
             RecipeDealer.CardType memory c = r.types[t];
             uint256 len = bytes(c.name).length;
@@ -50,19 +54,36 @@ contract RecipeCompiler {
             }
             slugs[t] = keccak256(s);
             for (uint256 u; u < t; u++) if (slugs[u] == slugs[t]) revert BadType(t, "slug repeated");
-            if (c.weight == 0) revert BadType(t, "weight");
             if (c.holoMode == RecipeDealer.HoloMode.Independent) {
                 if (c.holo[0] > HOLO_ONE || c.holo[1] > HOLO_ONE || c.holo[2] != 0 || c.holo[3] != 0) revert BadType(t, "holo chances");
             } else if (uint256(c.holo[0]) + c.holo[1] + c.holo[2] + c.holo[3] == 0) {
                 revert BadType(t, "holo weights");
             }
-            total += c.weight;
             uint256 at = HEADER + t * TW;
-            p[at] = total;
-            p[at + 1] = uint256(c.holoMode);
-            for (uint256 i; i < 4; i++) p[at + 2 + i] = c.holo[i];
+            p[at] = uint256(c.holoMode);
+            for (uint256 i; i < 4; i++) p[at + 1 + i] = c.holo[i];
         }
-        p[2] = total;
+        bool[] memory dealt = new bool[](n);
+        for (uint256 s; s < k; s++) {
+            RecipeDealer.Slot memory sl = r.slots[s];
+            if (sl.count == 0) revert BadSlot(s, "count");
+            if (sl.weights.length != n) revert BadSlot(s, "one weight per type");
+            perPack += sl.count;
+            if (perPack > MAX_CARDS_PER_PACK) revert BadRecipe("cards per pack");
+            uint256 at = sb + s * sw;
+            uint256 total;
+            for (uint256 t; t < n; t++) {
+                uint256 w = sl.weights[t];
+                if (w != 0) dealt[t] = true;
+                total += w;
+                p[at + SW_HEAD + t] = total;
+            }
+            if (total == 0) revert BadSlot(s, "weights");
+            p[at] = perPack;
+            p[at + 1] = total;
+        }
+        for (uint256 t; t < n; t++) if (!dealt[t]) revert BadType(t, "in no slot");
+        p[1] = perPack;
         plan = abi.encodePacked(p);
     }
 
