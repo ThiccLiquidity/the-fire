@@ -1,0 +1,21 @@
+name: security
+# Weekly: npm audit across every package; fails (and GitHub emails the owner) on a new high or critical advisory, or
+# an accepted one whose review date has passed (.github/security/accepted.json). Also on any lockfile change.
+on:
+  schedule:
+    - cron: "17 14 * * 1" # Mondays 14:17 UTC
+  workflow_dispatch:
+  push:
+    paths: ["**/package-lock.json", ".github/security/**"]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          check-latest: true
+      - run: node .github/security/audit.mjs
