@@ -303,19 +303,28 @@ export async function verifySeries(opts) {
     const need = opts.minGateways ?? 2;
     const failed = new Map(gateways.map((g) => [g, []]));
     const loadsFrom = new Map(list.map((name) => [name, 0]));
-    const state = new Map(gateways.map((g) => [g, { pauseUntil: 0, throttled: 0 }]));
+    const state = new Map(gateways.map((g) => [g, { pauseUntil: 0, throttled: 0, ok: 0, failsInARow: 0, dead: false }]));
+    // a gateway that serves none of its first DEAD_AFTER images (e.g. Pinata's for files pinned only on Filebase) is
+    // given up on, instead of retrying every image for an hour; the others still have to reach minGateways
+    const DEAD_AFTER = opts.deadAfter ?? 12;
     let done = 0;
     // each gateway on its own, a few requests at a time (opts.concurrency per gateway)
     await Promise.all(gateways.map((g) => pool(list, opts.concurrency ?? 6, async (name) => {
-      if (await loads(`${g}${cid}/${name}`, fetchFn, state.get(g), opts.loadOptions)) loadsFrom.set(name, loadsFrom.get(name) + 1);
-      else failed.get(g).push(name);
+      const st = state.get(g);
+      if (st.dead) { failed.get(g).push(name); return; }
+      if (await loads(`${g}${cid}/${name}`, fetchFn, st, opts.loadOptions)) { loadsFrom.set(name, loadsFrom.get(name) + 1); st.ok++; st.failsInARow = 0; }
+      else {
+        failed.get(g).push(name);
+        if (++st.failsInARow >= DEAD_AFTER && st.ok === 0 && !st.dead) { st.dead = true; log(`  ... ${new URL(g).host}: none of its first ${DEAD_AFTER} images load: skipping it`); }
+      }
       if (++done % 2000 === 0) log(`  ... ${done.toLocaleString()} / ${(list.length * gateways.length).toLocaleString()} fetched`);
     })));
     const short = list.filter((name) => loadsFrom.get(name) < need);
     ok(short.length === 0, `every image loads from at least ${need} gateways: ${list.length - short.length} / ${list.length}${short.length ? ` (first short: ${short.slice(0, 3).map((x) => `${x} from ${loadsFrom.get(x)}`).join(", ")})` : ""}`);
     for (const [g, f] of failed) {
       const throttled = state.get(g).throttled ? `; slowed down ${state.get(g).throttled} time(s) by 429/503` : "";
-      if (f.length) warn(`${new URL(g).host}: ${list.length - f.length} / ${list.length} images load (first missing: ${f.slice(0, 3).join(", ")})${throttled}`);
+      if (state.get(g).dead) warn(`${new URL(g).host}: skipped (none of its first ${DEAD_AFTER} images loaded; the images may not be pinned where it looks)`);
+      else if (f.length) warn(`${new URL(g).host}: ${list.length - f.length} / ${list.length} images load (first missing: ${f.slice(0, 3).join(", ")})${throttled}`);
       else ok(true, `${new URL(g).host}: ${list.length} / ${list.length} images load${throttled}`);
     }
     if (opts.sample) ok(false, `only ${list.length} of ${names.length} images checked (--sample): run without it before signing`);
