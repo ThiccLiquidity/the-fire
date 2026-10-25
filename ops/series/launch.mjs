@@ -42,6 +42,8 @@
 //                        anything else outside it stops the launch before batch A and again before LOCK
 //   --gateways a,b       IPFS gateways for VerifySeries and the pack art check (default VerifySeries' list)
 //   --verify-tries 4 --verify-wait 90   VerifySeries retries (seconds between) while images don't load yet
+//   --image-sample N     testnet only (refused on 4663): VerifySeries loads N random images instead of all of them
+//                        (public gateways can throttle a full check for an hour; the studio read every image back)
 //   --key-env <VAR>      testnet/anvil only: sign with the private key in env var VAR instead of the Ledger (never
 //                        printed; handed to forge as a throwaway encrypted keystore in a temp folder, deleted after)
 //   --yes                tests only (refused on 4663): skip the LOCK question
@@ -561,13 +563,17 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
     else if (state.steps.verify?.plan === plan) ok(`GREEN before (${state.steps.verify.at}).`);
     else {
       const tries = Number(args["verify-tries"] ?? 4);
+      const imageSample = args["image-sample"] !== undefined ? Number(args["image-sample"]) : 0;
+      if (imageSample && chainId === 4663) stop("--image-sample is for the testnet only: on mainnet every image is checked.");
+      if (imageSample && !(imageSample >= 1)) stop("--image-sample N: N is how many random images to check (1 or more).");
+      if (imageSample) warn(`Checking ${imageSample} random images, not all of them (--image-sample, testnet only).`);
       const waitSec = Number(args["verify-wait"] ?? 90);
       for (let i = 1; ; i++) {
         let v;
         try {
           v = await verifySeries({
             client, recipe: json, deploymentsFile: depFile, gateways, snapshots: snapPaths, roots,
-            allow, log: (l) => toLog(`verify: ${l}`),
+            allow, log: (l) => toLog(`verify: ${l}`), ...(imageSample ? { sample: imageSample, sampleOk: true } : {}),
           });
         } catch (e) {
           v = { green: false, problems: [`VerifySeries couldn't run: ${e?.shortMessage ?? e?.message ?? e}`], warnings: [], retry: true };

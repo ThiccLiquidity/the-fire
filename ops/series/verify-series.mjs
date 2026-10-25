@@ -317,7 +317,8 @@ export async function verifySeries(opts) {
         failed.get(g).push(name);
         if (++st.failsInARow >= DEAD_AFTER && st.ok === 0 && !st.dead) { st.dead = true; log(`  ... ${new URL(g).host}: none of its first ${DEAD_AFTER} images load: skipping it`); }
       }
-      if (++done % 2000 === 0) log(`  ... ${done.toLocaleString()} / ${(list.length * gateways.length).toLocaleString()} fetched`);
+      // progress every 100 (the whole check can take minutes on fresh pins or a throttling gateway)
+      if (++done % 100 === 0) log(`  ... ${done.toLocaleString()} / ${(list.length * gateways.length).toLocaleString()} fetched${gateways.map((x) => state.get(x).throttled ? `; ${new URL(x).host} slowed us ${state.get(x).throttled}x (429/503)` : "").join("")}`);
     })));
     const short = list.filter((name) => loadsFrom.get(name) < need);
     ok(short.length === 0, `every image loads from at least ${need} gateways: ${list.length - short.length} / ${list.length}${short.length ? ` (first short: ${short.slice(0, 3).map((x) => `${x} from ${loadsFrom.get(x)}`).join(", ")})` : ""}`);
@@ -327,7 +328,8 @@ export async function verifySeries(opts) {
       else if (f.length) warn(`${new URL(g).host}: ${list.length - f.length} / ${list.length} images load (first missing: ${f.slice(0, 3).join(", ")})${throttled}`);
       else ok(true, `${new URL(g).host}: ${list.length} / ${list.length} images load${throttled}`);
     }
-    if (opts.sample) ok(false, `only ${list.length} of ${names.length} images checked (--sample): run without it before signing`);
+    if (opts.sample && opts.sampleOk) warn(`only ${list.length} of ${names.length} images checked (a sample: testnet only)`);
+    else if (opts.sample) ok(false, `only ${list.length} of ${names.length} images checked (--sample): run without it before signing`);
   }
 
   // ---- the groups: snapshot roots and files, NFT collections
