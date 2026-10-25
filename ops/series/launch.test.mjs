@@ -52,6 +52,8 @@ test("snapshotArgs: the side file's spec as ops/snapshot flags; the run's defaul
   assert.deepEqual(snapshotArgs({ token: "plank", minUsd: 69 }, { out: "o.json", days: "0.02" }), ["--token", "plank", "--out", "o.json", "--min-usd", "69", "--days", "0.02"]);
   assert.deepEqual(snapshotArgs({ token: "press", min: 1, allowance: 2, days: 3, blocks: 4 }, { out: "o", days: "9", blocks: "9" }), ["--token", "press", "--out", "o", "--min", "1", "--allowance", "2", "--days", "3", "--blocks", "4"]);
   assert.deepEqual(snapshotArgs({ token: "0xab", tiers: [{ min: "5", allowance: 1 }, { min: "50", allowance: 3 }] }, { out: "o" }), ["--token", "0xab", "--out", "o", "--tiers", "5:1,50:3"]);
+  // where the holder scan starts and its log-search size (a free RPC plan allows only a few blocks per search)
+  assert.deepEqual(snapshotArgs({ token: "plank", minUsd: 69, fromBlock: 142600000, step: 10 }, { out: "o" }), ["--token", "plank", "--out", "o", "--min-usd", "69", "--from-block", "142600000", "--step", "10"]);
 });
 
 test("holdersFile: { groups: { <index>: { root, wallets: { <lowercase address>: { allowance, proof } } } } }", () => {

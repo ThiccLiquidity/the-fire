@@ -112,7 +112,7 @@ export function planHash(recipeText, start, roots = {}) {
   return createHash("sha256").update(JSON.stringify([recipeText, String(start), r])).digest("hex").slice(0, 16);
 }
 
-const SIDE_KEYS = ["token", "min", "minUsd", "tiers", "allowance", "days", "blocks", "file"];
+const SIDE_KEYS = ["token", "min", "minUsd", "tiers", "allowance", "days", "blocks", "file", "fromBlock", "step"];
 
 /** The snapshot groups' side file (fire-<N>-snapshots.json): { "<group index>": spec }. Checked against the recipe's
  *  groups: every snapshot group has a spec, and nothing else does. Returns { [i]: spec }; throws a readable error. */
@@ -149,6 +149,9 @@ export function snapshotArgs(spec, { out, days, blocks }) {
   const b = spec.blocks ?? blocks;
   if (d !== undefined) a.push("--days", String(d));
   if (b !== undefined) a.push("--blocks", String(b));
+  // where the holder scan starts and how many blocks each log search covers (a free RPC plan can allow only a few)
+  if (spec.fromBlock !== undefined) a.push("--from-block", String(spec.fromBlock));
+  if (spec.step !== undefined) a.push("--step", String(spec.step));
   return a;
 }
 

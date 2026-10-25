@@ -310,7 +310,7 @@ export async function takeSnapshot(o) {
     version: 3, root: tree.root, token, kind: info.kind, symbol: info.symbol, decimals: info.decimals,
     unit, min, minRaw: minRaw.toString(), tiers: tiersRaw, allowance: flat,
     ...(unit === 'usd' ? { feed: getAddress(o.feed), tokenUsd: px.toString() } : {}),
-    block: last.toString(), blocks: blocks.map(String), seed, days, blockCount: n, fromBlock: fromBlock.toString(),
+    block: last.toString(), blocks: blocks.map(String), seed, days, blockCount: n, fromBlock: fromBlock.toString(), step: step.toString(),
     pairs: pairs.map((p) => ({ pair: p.pair, tokenIs0: p.tokenIs0 })), count: holders.length, holders, wallets,
   }
 }
@@ -370,7 +370,7 @@ export async function verifySnapshot({ client, snap, discover, log }) {
   }
   const again = await takeSnapshot({
     client, token: snap.token, feed: snap.feed, ...(snap.unit === 'usd' ? { minUsd: snap.min } : { min: snap.min }), tiers: snap.tiers, allowance: snap.allowance,
-    block: last, blocks: snap.blockCount ?? snap.blocks.length, days: snap.days, seed: snap.seed, fromBlock: snap.fromBlock ?? 0, pairs, allowStale: true, log,
+    block: last, blocks: snap.blockCount ?? snap.blocks.length, days: snap.days, seed: snap.seed, fromBlock: snap.fromBlock ?? 0, ...(snap.step ? { step: snap.step } : {}), pairs, allowStale: true, log,
   })
   problems.push(...compareSnapshots(snap, again))
   return { ok: problems.length === 0, problems, count: again.count, root: again.root }

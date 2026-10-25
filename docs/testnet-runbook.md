@@ -288,7 +288,10 @@ Series (cards exist only after this one closes), so test free packs with a picke
    (After the start it refuses: `DropStarted`.) The wallet then has a credit; it claims the free pack on the site
    while Everyone is open.
 
-Next to it, the snapshot side file `contracts\series\fire-<N>-snapshots.json` (group index 1 = the PLANK group):
+Next to it, the snapshot side file `contracts\series\fire-<N>-snapshots.json` (group index 1 = the PLANK group).
+The snapshot scans the token's transfers in log searches: Alchemy's free plan allows only 10 blocks per search, so
+run the launch on the public RPC (big searches), and start the scan at this deploy (`fromBlock`: the deployments
+file's `startBlock`; the test PLANK goes out after it). For a practice run, `days` can be a fraction (0.02 = ~30 min).
 ```json
 { "1": { "token": "plank", "minUsd": 69, "tiers": "69:1,300:2", "days": 1 } }
 ```
