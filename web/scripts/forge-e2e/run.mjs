@@ -715,6 +715,16 @@ try {
     await p.locator("#sheet-table .op-sum").waitFor({ timeout: 20_000 });
     check(!(await p.locator(".fun-coach").count()) && await p.evaluate(() => localStorage.getItem("omni.coached")) === "1", "after the first open: no coach mark, and the hand never shows again");
     check(await p.locator("#sheet-table .fun-packshare").count() === 1 && await p.locator('#sheet-table [data-key="next"]').isVisible(), "after an opening with packs left: the celebration, Open next, Share this pack");
+    // the rip video: offered where the browser can record one, and its film draws every part without an error
+    const rip = await p.evaluate(async () => {
+      const shown = !!document.querySelector('#sheet-table [data-key="ripvideo"]'), can = !!Rip.mime();
+      const cards = [...document.querySelectorAll('#sheet-table .cel-pulls .cel-c')].length;
+      const S = await Rip.scene(Store.state.cards.slice(-6), { series: Store.state.series.no });
+      for (const t of [1, 6, 10, 12.6, 15, 20, 23.5, 25, 28, 33]) S.draw(t);
+      return { shown, can, cards, secs: S.secs };
+    });
+    check(rip.shown === rip.can && rip.cards === 6 && rip.secs > 30 && rip.secs < 40, `the celebration offers "Rip video" (recordable here: ${rip.can}); its film draws start to end (${rip.secs.toFixed(1)} s)`);
+    await p.locator("#sheet-table .cel").screenshot({ path: join(SHOTS, "19-rip-button.png") });
     await p.waitForFunction(() => JSON.parse(localStorage.getItem("omni.badges.demo") || "{}")["first-open"], null, { timeout: 5000 });
     check(true, "badge: First rip, kept per wallet in this browser");
     await p.click('#sheet-table [data-key="done2"]'); // Done with packs left: Case & grade these first

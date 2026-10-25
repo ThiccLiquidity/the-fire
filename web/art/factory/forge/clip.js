@@ -194,5 +194,5 @@
   }
 
   // the share picture is screens.js's (Clip.picture is set there)
-  const Clip = window.Clip = { mime, record, frames, button, picture: null, SIZE: { W, H }, SECS };
+  const Clip = window.Clip = { mime, record, frames, button, picture: null, SIZE: { W, H }, SECS, drawer: cardDrawer, CARD, loadImg, path, ICONS: { FILM, RING } };
 })();

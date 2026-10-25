@@ -951,7 +951,7 @@
               cardFace(c, true), tags.get(c.id)?.cloneNode(true) || null)))),
           h('div', { class: 'cel-acts' },
             canNext ? btn(`Open next (${left})`, 'gold big', next, { 'data-key': 'next' }) : btn('Done', 'primary big', finish, { 'data-key': 'done' }),
-            h('div', { class: 'row' }, shareBtn(best, '', 'Share best'), clipBtn(best), ps || null, btn('My cards', '', seeAll, { 'data-key': 'mycards' }), canNext ? btn('Done', '', finish, { 'data-key': 'done2' }) : null)),
+            h('div', { class: 'row' }, shareBtn(best, '', 'Share best'), clipBtn(best), window.Rip?.button(cards, series) || null, ps || null, btn('My cards', '', seeAll, { 'data-key': 'mycards' }), canNext ? btn('Done', '', finish, { 'data-key': 'done2' }) : null)),
           caseable.length ? h('p', { class: 'cel-protect' }, btn('Case & grade them', 'linkish', wizard, { 'data-key': 'protect' }),
             h('span', { class: 'muted', text: ` · case all ${caseable.length} for ${Wear.usd(caseUsd)}, grade for ${Wear.usd(Store.PRICES.GRADE_USD)} each` })) : null));
         host.querySelector('.cel-acts .btn.big')?.focus({ preventScroll: true });
