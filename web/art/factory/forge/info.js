@@ -321,7 +321,7 @@
       sec('pda', 'Cases & grading', 'Raw cards wear like real ones. Case to stop the clock, or grade for a slab.', `
         <p>Every card comes out of the pack raw. Raw cards age like real ones: time and trips between wallets slowly wear them down. You decide what to protect.</p>
         <ul>
-          <li><b>Fresh for 24 hours.</b> For its first day, time doesn't touch a new card (moves still count). Case or grade it in that window and it keeps fresh odds: 7 to 10, with a 1-in-100 shot at a PDA 10.</li>
+          <li><b>Fresh for 24 hours.</b> For its first day, time doesn't touch a new card (moves still count). Case or grade it in that window and it keeps fresh odds: 7 to 10, with a ${Wear.TEN_FRESH} shot at a PDA 10. After that, raw cards wear every day, and after ${Wear.NO_TEN_DAYS} days raw a PDA 10 is gone for good.</li>
           <li><b>Case · ${usd(P.CASE_USD)}.</b> A clear top-loader that freezes the card: no more wear from time or moves, from the moment it's cased. It stays ungraded, so you can trade it as a mystery or grade it later with the odds it had when you cased it.</li>
           <li><b>Grade · ${usd(P.GRADE_USD)}.</b> Sends the card to PDA (Professional Digital Authenticators). Its condition is revealed, it gets a grade from 1 to 10, and it's sealed in a slab with its grade word: GEM MINT, MINT, NEAR MINT… Grades are random and final: no regrades, no refunds. Nothing you pay raises the odds.</li>
         </ul>
@@ -383,7 +383,7 @@
           <dt>When can I open my packs?</dt><dd>Once the Series' sales end. Until then, nobody knows what's inside.</dd>
           <dt>Can I keep a pack sealed?</dt><dd>Yes. Sealed packs are NFTs too. Collect them, hold them, or trade them unopened, even years from now.</dd>
           <dt>Why do I need PAPER too?</dt><dd>The press prints on it. Every pack takes PAPER, Press and free packs included.</dd>
-          <dt>How rare is a PDA 10?</dt><dd>1 in 100 on a fresh card. After the first 24 hours raw, rarer every day.</dd>
+          <dt>How rare is a PDA 10?</dt><dd>${Wear.TEN_FRESH} on a fresh card. After the first 24 hours raw, rarer every day. After ${Wear.NO_TEN_DAYS} days raw, never.</dd>
           <dt>Should I grade every card?</dt><dd>Up to you. Grades are final. Not sure? Case it now for ${usd(P.CASE_USD)} and grade it later.</dd>
           <dt>Do free packs expire?</dt><dd>No. They stack and wait for a future Series' free-pack group.</dd>
           <dt>What if opening gets stuck?</dt><dd>Cards usually land in about 90 seconds. If the randomness never arrives within 24 hours, anyone can cancel and your packs come back sealed. <a href="help.html">More help</a></dd>
@@ -406,7 +406,7 @@
         ${list.map((s) => `<button type="button" class="inf-jump${s.tag ? ' hot' : ''}" data-go="${s.id}">${SHORT[s.id]}</button>`).join('')}
       </nav>
       <div class="inf-glance" aria-label="Rarity at a glance">
-        <button type="button" data-go="pda"><b>1 in 100</b><span>PDA 10 on a fresh card</span></button>
+        <button type="button" data-go="pda"><b>${Wear.TEN_FRESH}</b><span>PDA 10 on a fresh card</span></button>
         ${M.paper?.full ? `<button type="button" data-go="cards"><b>1 in ${oneIn(M.paper.full)}</b><span>Paper comes out full holo in Series ${no}</span></button>` : ''}
         ${M.fullart?.share ? `<button type="button" data-go="cards"><b>1 in ${oneIn(M.fullart.share)}</b><span>Full Art in Series ${no}</span></button>` : ''}
       </div>

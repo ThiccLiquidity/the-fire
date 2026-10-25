@@ -26,11 +26,12 @@ Fresh odds (every Series):
 
 | PDA 10 | PDA 9 | PDA 8 | PDA 7 |
 |---|---|---|---|
-| 1% | 30% | 40% | 29% |
+| 3% | 30% | 40% | 27% |
 
 Why: real factory flaws leave a pack-fresh card at 7-9 (below that takes handling damage), and our wear images show
-white edges from PDA 5, so a fresh card never looks worn. A PDA 10 stays a 1-in-100 chase card. The floor only
-covers a card protected in its first 24 hours; after that time and moves wear it as below.
+white edges from PDA 5, so a fresh card never looks worn. A PDA 10 is a 1-in-33 chase card, but only for a card protected early: the floor only
+covers a card protected in its first 24 hours; after that time and moves wear it as below, fast (owner, Oct 2026: case or
+grade right away, like a real collector).
 
 ## Wear (fixed forever)
 
@@ -42,11 +43,14 @@ The wear rules are built into `FirePsa` as constants: the same for every Series,
    takes a grade off with a 20% chance. Moves alone never take a card below 5 (a draw that would is re-drawn, so the
    odds above 5 keep their shape).
 3. **Time.** Time uncased after the first free 24 hours, `t` in years, takes `D` grades off, `D` drawn from a Poisson
-   distribution with mean `1.45 x t^0.68`, read from a fixed table (below). A card can't go below 1.
+   distribution with mean `6 x t^0.6`, read from a fixed table (below). A card can't go below 1. Wear starts the
+   day after the free day and adds up every day.
 4. **Low grades fade in.** Grades below 5 open slowly: PDA 4 from 1 month (fully open at 2 months), PDA 3 from 6 months
    (fully at 1 year), PDA 2 from 1 year (fully at 2 years), PDA 1 from 2 years (fully at 4 years). A card that would
    land on a grade that isn't fully open lands one higher with the missing share, and so on up. No overnight jumps:
-   the odds change by less than one percent on any day (the most, 0.75, is the first day after the free day).
+   the odds change by less than 5 points on any day (the most, 4.5, is the first day after the free day).
+5. **No 10 after 14 days.** A card uncased for more than 14 days since it was dealt (`NO_TEN_AFTER`) can't grade 10:
+   that share grades 9. Until then a 10 gets rarer every day: 3% fresh, 2.3% on day 3, 1.8% on day 7, 1.3% on day 14.
 
 Casing freezes the clock and the move count where they are. Grading freezes them at the moment it is asked for (the
 randomness wait doesn't count).
@@ -56,18 +60,21 @@ What a card grades at (no moves; time uncased after the free first day; the same
 
 | Uncased for | 10 | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | Avg |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| ≤ 24 hours | 1.0 | 30 | 40 | 29 | | | | | | | 8.0 |
-| 1 month | 0.8 | 23 | 37 | 31 | 7.0 | 1.0 | | | | | 7.8 |
-| 6 months | 0.4 | 13 | 27 | 31 | 19 | 7.1 | 2.5 | | | | 7.1 |
-| 1 year | 0.2 | 7.4 | 20 | 28 | 23 | 13 | 5.6 | 2.5 | | | 6.6 |
-| 3 years | | 1.5 | 6.4 | 14 | 20 | 21 | 17 | 11 | 8.1 | 2.2 | 5.0 |
-| 5 years | | 0.5 | 2.4 | 6.5 | 12 | 17 | 18 | 16 | 12 | 16 | 3.9 |
-| 10 years | | | 0.3 | 1.1 | 2.8 | 5.8 | 9.4 | 13 | 14 | 54 | 2.1 |
+| ≤ 24 hours | 3.0 | 30 | 40 | 27 | | | | | | | 8.1 |
+| 1 week | 1.7 | 18 | 33 | 31 | 13 | 3.8 | | | | | 7.5 |
+| 1 month | | 9.7 | 22 | 29 | 22 | 18 | | | | | 6.8 |
+| 3 months | | 3.0 | 9.5 | 18 | 22 | 20 | 28 | | | | 5.7 |
+| 6 months | | 0.9 | 3.5 | 8.7 | 15 | 18 | 54 | | | | 4.9 |
+| 1 year | | 0.1 | 0.7 | 2.3 | 5.3 | 9.3 | 13 | 69 | | | 3.6 |
+| 2 years | | | | 0.2 | 0.7 | 1.8 | 3.7 | 6.2 | 87 | | 2.2 |
+| 3 years | | | | | 0.1 | 0.4 | 0.9 | 1.9 | 50 | 47 | 1.6 |
+| 5 years | | | | | | | 0.1 | 0.2 | 0.4 | 99 | 1.0 |
 
-By moves (cased right after): 1 move takes PDA 10 from 1% to 0.8%; 3 moves 0.5%; 5 moves 0.3%; 10 or more 0.1%
-(average 6.4). Moves can take a fresh 7 down to 6 or 5: after 1 move 5.8% of cards are below 7, after 5 moves 31%.
+By moves (cased right after): 1 move takes PDA 10 from 3% to 2.4%; 3 moves 1.5%; 5 moves 1.0%; 10 or more 0.3%
+(average 6.4). Moves can take a fresh 7 down to 6 or 5: after 1 move 5.4% of cards are below 7, after 5 moves 30%.
 
-**PDA 1 is a patience trophy:** only a card held uncased for years can get one. **PDA 10 needs a fresh card.**
+**PDA 1 is a patience trophy:** only a card held uncased for years can get one. **PDA 10 needs a card protected
+within 14 days**, and the sooner the better.
 
 The odds model and its charts: `contracts/test/cards/wear-model.py` (the contract's table is generated from it, and a
 test checks the contract against it).

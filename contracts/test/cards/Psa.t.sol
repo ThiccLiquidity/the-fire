@@ -119,14 +119,33 @@ contract PsaTest is SeriesHelper {
     function test_freshCardsOnlyGrade7To10() public view {
         uint256[10] memory o = psa.oddsFor(23 hours, 0);
         for (uint256 g; g < 6; g++) assertEq(o[g], 0);
-        assertApproxEqAbs(o[9], 0.01e18, 1e10, "PDA 10: 1%");
+        assertApproxEqAbs(o[9], 0.03e18, 1e10, "PDA 10: 3%");
         assertApproxEqAbs(o[8], 0.30e18, 1e10, "PDA 9: 30%");
         assertApproxEqAbs(o[7], 0.40e18, 1e10, "PDA 8: 40%");
-        assertApproxEqAbs(o[6], 0.29e18, 1e10, "PDA 7: 29%");
+        assertApproxEqAbs(o[6], 0.27e18, 1e10, "PDA 7: 27%");
         // moves alone never go below 5
         o = psa.oddsFor(0, 1_000);
         for (uint256 g; g < 4; g++) assertEq(o[g], 0);
         assertEq(psa.oddsFor(0, 10)[9], psa.oddsFor(0, 25)[9], "moves past 10 add nothing");
+    }
+
+    /// A 10 thins out every day uncased and is gone for good after 14 days: that share grades 9.
+    function test_noTenAfterFourteenDays() public view {
+        uint256 prev = psa.oddsFor(1 days, 0)[9];
+        for (uint256 d = 2; d <= 14; d++) {
+            uint256 p10 = psa.oddsFor(d * 1 days, 0)[9];
+            assertLt(p10, prev, "a 10 rarer every day");
+            prev = p10;
+        }
+        assertGt(psa.oddsFor(14 days, 0)[9], 0, "still possible on day 14");
+        uint256[10] memory late = psa.oddsFor(14 days + 1, 0);
+        assertEq(late[9], 0, "no 10 after 14 days");
+        assertEq(psa.oddsFor(14 days + 1, 3)[9], 0, "moves don't bring it back");
+        uint256 sum;
+        for (uint256 g; g < 10; g++) sum += late[g];
+        assertApproxEqAbs(sum, 1e18, 1e12, "still a full distribution");
+        // a card cased on day 3 keeps its day-3 odds, 10 included (its age stops when cased)
+        assertGt(psa.oddsFor(3 days, 0)[9], 0.02e18);
     }
 
     function test_lowGradesFadeInWithTime() public view {
@@ -136,13 +155,13 @@ contract PsaTest is SeriesHelper {
         assertEq(psa.oddsFor(1 days + 2 * 365 days, 0)[0], 0, "PDA 1 closed at two years");
         assertGt(psa.oddsFor(1 days + 3 * 365 days, 0)[0], 0.02e18, "PDA 1 at three years");
         assertGt(psa.oddsFor(1 days + 10 * 365 days, 0)[0], 0.5e18, "PDA 1 likely at ten years");
-        // no overnight jumps: under a point a day (the most, 0.75, is the first day after the free day)
+        // no overnight jumps: under 5 points a day (the most, 4.5, is the first day after the free day)
         uint256[10] memory prev = psa.oddsFor(0, 0);
         for (uint256 d = 1; d < 5 * 365; d += 1) {
             uint256[10] memory cur = psa.oddsFor(d * 1 days, 0);
             for (uint256 g; g < 10; g++) {
                 uint256 diff = cur[g] > prev[g] ? cur[g] - prev[g] : prev[g] - cur[g];
-                assertLt(diff, 0.008e18, "a day never moves a grade by more than 0.8 points");
+                assertLt(diff, 0.05e18, "a day never moves a grade by more than 5 points");
             }
             prev = cur;
         }
@@ -383,7 +402,7 @@ contract PsaTest is SeriesHelper {
     /// The fresh odds are constants, the same for every Series, and nothing can change them.
     function test_freshOddsAreFixedForever() public {
         (uint64[10] memory o, uint256 total) = psa.freshOdds();
-        uint64[10] memory want = [uint64(0), 0, 0, 0, 0, 0, 2900, 4000, 3000, 100];
+        uint64[10] memory want = [uint64(0), 0, 0, 0, 0, 0, 2700, 4000, 3000, 300];
         for (uint256 g; g < 10; g++) assertEq(o[g], want[g]);
         assertEq(total, 10_000);
         assertEq(psa.ODDS_TOTAL(), 10_000);

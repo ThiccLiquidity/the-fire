@@ -962,10 +962,7 @@
         const P = Store.PRICES, mine = after ? pulled : cards;
         const head = h('div', { class: 'op-sum-h' }, btn('‹ Your pulls', 'small', () => { celebrate(); root.closest('.sheet-body')?.scrollTo({ top: 0 }); }, { 'data-key': 'pulls' }),
           after ? btn('Not now', 'small', closeAll, { 'data-key': 'notnow' }) : null);
-        const intro = after ? h('div', { class: 'wz-how', 'data-key': 'how' }, h('h3', { text: 'Case or grade your pulls' }),
-          h('ul', {}, h('li', { text: 'Raw cards wear with time and moves.' }),
-            h('li', {}, h('b', { text: `A case (${Wear.usd(P.CASE_USD)})` }), ' stops wear.'),
-            h('li', {}, h('b', { text: `Grading (${Wear.usd(P.GRADE_USD)})` }), ' gives a PDA 1–10 grade in a slab. Random and final.'))) : null;
+        const intro = after ? Wear.nowOrNever() : null;
         protectFlow(host, { cards: mine, tags: after ? pulledTags : tags, head, intro, done: () => [btn('Done', 'primary', closeAll),
           canNext ? btn(`Open next (${left})`, 'gold', next) : null, btn('My cards', '', seeAll)] });
         root.closest('.sheet-body')?.scrollTo({ top: 0 });
@@ -1388,7 +1385,7 @@
           if (gr === 10) { // its own moment (the opening's big reveal, in gold), then a share prompt
             await wait(reduced() ? 0 : 380);
             bigMoment(c, w, host, { kind: 'g10', title: 'PDA 10! GEM MINT' });
-            put(share, h('p', {}, h('b', { text: 'PDA 10!' }), ' That’s 1 in 100. Show it off?'), shareBtn(c, 'gold', 'Share your PDA 10'), clipBtn(c));
+            put(share, h('p', {}, h('b', { text: 'PDA 10!' }), ` That’s ${Wear.TEN_FRESH}. Show it off?`), shareBtn(c, 'gold', 'Share your PDA 10'), clipBtn(c));
             share.hidden = false;
             await wait(reduced() ? 600 : 2400);
           } else if (!reduced()) await wait(900);

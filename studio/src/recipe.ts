@@ -74,7 +74,7 @@ export const MAX_SLUG_BYTES = 32
 export const MAX_CARDS_PER_PACK = 1000
 /** FirePsa's fresh odds (out of 10,000), grade 1 first: fixed forever, the same for every Series (docs/grading.md).
  *  10 1%, 9 30%, 8 40%, 7 29%; 1-6 come only from wear. Shown, never set or exported. */
-export const FRESH_PDA_ODDS = [0, 0, 0, 0, 0, 0, 2900, 4000, 3000, 100] as const
+export const FRESH_PDA_ODDS = [0, 0, 0, 0, 0, 0, 2700, 4000, 3000, 300] as const
 
 // ---------------------------------------------------------------- presets
 

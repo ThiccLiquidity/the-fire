@@ -582,6 +582,24 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .wz-how h3 { margin: 0; font: 400 17px var(--display) }
 .wz-how ul { margin: 4px 0 0; padding-left: 1.1em; display: grid; gap: 2px }
 .wz-how b { color: var(--gold) }
+/* right after opening: "Fresh cards grade best." (Wear.nowOrNever) */
+.non { padding: 16px 16px 14px; border-radius: 16px; border: 2px solid var(--gold); background: radial-gradient(120% 90% at 50% 0%, rgba(255,211,106,.16), transparent 60%), var(--panel-2); display: grid; gap: 12px }
+.non-h { margin: 0; font: 400 clamp(24px, 7vw, 32px)/1.05 var(--display); color: var(--ink); letter-spacing: .02em }
+.non-h span { display: block; margin-top: 4px; font: 700 clamp(16px, 4.6vw, 20px)/1.2 var(--chalk); color: var(--gold) }
+.non-chart { display: grid; gap: 6px }
+.non-cap { font-size: 12px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase }
+.non-bars { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; align-items: end; min-height: 104px }
+.non-bar { display: grid; justify-items: center; gap: 4px; align-content: end; min-width: 0 }
+.non-bar b { font: 800 14px var(--body); color: var(--gold); font-variant-numeric: tabular-nums }
+.non-bar i { display: block; width: 100%; max-width: 46px; border-radius: 6px 6px 2px 2px; background: linear-gradient(#fff3c4, var(--gold)) }
+.non-bar small { font-size: 12px; color: var(--muted); white-space: nowrap }
+.non-bar.gone b { color: var(--muted) }
+.non-bar.gone i { height: 2px !important; background: var(--line-2) }
+.non-l { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; font-size: 15px; line-height: 1.35 }
+.non-l b { color: var(--ink) }
+.non-fix { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px }
+.non-fix span { padding: 8px 10px; border-radius: 10px; background: rgba(0,0,0,.25); border: 1px solid var(--line-2); color: var(--muted) }
+.non-fix b { display: block; color: var(--gold) }
 .wz-oddsd summary { cursor: pointer; color: var(--muted); font-weight: 800; min-height: 32px; display: flex; align-items: center; gap: 6px; list-style: none }
 .wz-oddsd summary::-webkit-details-marker { display: none }
 .wz-oddsd summary::before { content: '▸' } .wz-oddsd[open] summary::before { content: '▾' }

@@ -310,12 +310,13 @@ try {
   await page.waitForTimeout(2500);
   await shot("09-reveal");
   await page.click("#sheet-table .skip-b");
-  // no packs left: straight to Case & grade with every pull, a short how-it-works on top (no fund flows), Not now to skip
-  await page.locator("#sheet-table .op-sum .wz .wz-how").waitFor({ timeout: 30_000 });
-  const how = await page.locator("#sheet-table .wz-how").innerText();
-  check(how.split("\n").filter((l) => l.trim()).length <= 4 && /wear/.test(how) && /case \(\$0\.05\)/i.test(how) && /PDA 1–10/.test(how) && !/burn|split|buy-?back|treasury/i.test(how)
+  // no packs left: straight to Case & grade with every pull, "Fresh cards grade best." on top (no fund flows), Not now to skip
+  await page.locator("#sheet-table .op-sum .wz .non").waitFor({ timeout: 30_000 });
+  const how = await page.locator("#sheet-table .non").innerText();
+  check(/Fresh cards grade best/.test(how) && /wear a little every day/.test(how) && /1 in 33/.test(how) && /Day 14 is last call for a 10/.test(how) && /Case · \$0\.05/.test(how) && /Grade · \$1/.test(how)
+    && !/burn|split|buy-?back|treasury/i.test(how) && await page.locator("#sheet-table .non-bar").count() === 5 && await page.locator("#sheet-table .non-bar.gone").count() === 1
     && await page.locator('#sheet-table [data-key="notnow"]').isVisible() && await page.locator("#sheet-table .wz-grid .ctile").count() === 42,
-    "after the last pack: Case & grade with all 42 pulls of this visit, three lines on how it works, Not now");
+    "after the last pack: Case & grade with all 42 pulls, the PDA 10 chart (no 10 after 14 days), case and grade prices, Not now");
   const dealt = await page.evaluate(() => Store.state.cards.length);
   check(dealt === 48, `48 cards dealt and revealed (${dealt})`);
   await shot("10-after-open");
@@ -692,7 +693,7 @@ try {
     await p.locator("#sheet-table .prac-sum").waitFor({ timeout: 20_000 });
     const prac = await p.evaluate(() => ({ cards: Store.state.cards.length, any: Store.state.cards.some((c) => c.practice), sealed: Store.state.sealed[6], shown: document.querySelectorAll("#sheet-table .prac-c").length }));
     check(prac.shown === 6 && prac.cards === 46 && !prac.any && prac.sealed === 3, `practice: 6 cards shown, nothing saved (still 46 cards, 3 sealed packs) ${JSON.stringify(prac)}`);
-    check(!(await p.locator("#sheet-table .wz, #sheet-table .wz-how").count()), "practice: never Case & grade");
+    check(!(await p.locator("#sheet-table .wz, #sheet-table .non").count()), "practice: never Case & grade");
     await p.keyboard.press("Escape");
 
     await p.evaluate(() => Fun.go("binder", { series: 6 }));
@@ -717,7 +718,7 @@ try {
     await p.waitForFunction(() => JSON.parse(localStorage.getItem("omni.badges.demo") || "{}")["first-open"], null, { timeout: 5000 });
     check(true, "badge: First rip, kept per wallet in this browser");
     await p.click('#sheet-table [data-key="done2"]'); // Done with packs left: Case & grade these first
-    await p.locator("#sheet-table .wz-how").waitFor({ timeout: 5000 });
+    await p.locator("#sheet-table .non").waitFor({ timeout: 5000 });
     check(await p.locator("#sheet-table .wz-grid .ctile").count() === 6, "Done: straight to Case & grade with the 6 pulls, how it works on top");
     await p.click('#sheet-table [data-key="pulls"]'); await p.locator("#sheet-table .cel").waitFor();
     await p.click('#sheet-table [data-key="done2"]'); await p.waitForTimeout(300);

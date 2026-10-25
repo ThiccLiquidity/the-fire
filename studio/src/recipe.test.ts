@@ -45,7 +45,7 @@ describe('Standard recipe', () => {
   it('recipe.json has no PDA odds: they are fixed in FirePsa for every Series', () => {
     const j = recipeJson(7, standardRecipe(), [{ name: 'A', category: 'B' }])
     expect('pdaOdds' in j).toBe(false)
-    expect(FRESH_PDA_ODDS).toEqual([0, 0, 0, 0, 0, 0, 2900, 4000, 3000, 100])
+    expect(FRESH_PDA_ODDS).toEqual([0, 0, 0, 0, 0, 0, 2700, 4000, 3000, 300])
   })
 
   it('recipe.json is exactly contracts/test/cards/recipe-standard.json', () => {

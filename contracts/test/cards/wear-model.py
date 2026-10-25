@@ -5,7 +5,7 @@
   python3 wear-model.py vectors  -> wear-vectors.json, checked against FirePsa.oddsFor by Psa.t.sol
   python3 wear-model.py odds     -> the odds tables in docs/grading.md
 
-Time damage D ~ Poisson(1.45 * years^0.68), years = time uncased after the free first day. The contract doesn't do
+Time damage D ~ Poisson(6 * years^0.6), years = time uncased after the free first day. The contract doesn't do
 that math: it reads D's distribution from a table at fixed ages (BREAKS) and blends linearly between the two nearest
 (a blend of two distributions is a distribution). This file is the reference for exactly that table math, so the
 contract and this model agree to rounding.
@@ -17,17 +17,18 @@ import sys
 DAY = 86400
 YEAR = 365 * DAY  # the contract's year
 FREE = DAY  # the first day is free
-L, P = 1.45, 0.68
+L, P = 6, 0.6
 P_MOVE_NUM, P_MOVE_DEN = 1, 5  # 20% per move
 MOVE_CAP = 10
 FADE = {4: YEAR // 12, 3: YEAR // 2, 2: YEAR, 1: 2 * YEAR}  # grade -> opens at (fully open at twice that)
 DMAX = 9  # D = 0..8 stored; 9+ is the rest (any card loses everything to 1 by then)
 SCALE = 1 << 23  # CDF resolution (fits the 24-bit cells)
+NO_TEN_AFTER = 14 * DAY  # uncased longer than this since it was dealt, a card can't grade 10 (that share grades 9)
 
 BREAK_DAYS = [0, 1, 2, 4, 7, 10, 14, 21, 30, 45, 60, 90, 120, 180, 240, 300, 365, 456, 548, 730, 913, 1095, 1460,
               1825, 2190, 2555, 2920, 3650, 4380, 5475, 7300, 10950]
 BREAKS = [d * DAY for d in BREAK_DAYS]
-STANDARD = [0, 0, 0, 0, 0, 0, 2900, 4000, 3000, 100]  # fresh grade 1..10 weights (out of 10,000), fixed forever
+STANDARD = [0, 0, 0, 0, 0, 0, 2700, 4000, 3000, 300]  # fresh grade 1..10 weights (out of 10,000), fixed forever
 
 
 def poisson_cdf(lam):
@@ -106,6 +107,9 @@ def odds(age, moves, weights=STANDARD):
         keep = mass * fade(g, t) // one
         out[g] = keep
         carry = mass - keep
+    if age > NO_TEN_AFTER:
+        out[9] += out[10]
+        out[10] = 0
     return out[1:]
 
 
@@ -124,7 +128,7 @@ if __name__ == '__main__':
         print(f'    bytes internal constant WEAR_CDFS = hex"{cdfs}";')
     elif cmd == 'vectors':
         cases = []
-        ages = [0, DAY // 2, DAY, DAY + 1, 3 * DAY, 7 * DAY + 5, 29 * DAY, 45 * DAY + 7, 61 * DAY, 100 * DAY, 200 * DAY,
+        ages = [0, DAY // 2, DAY, DAY + 1, 3 * DAY, 7 * DAY + 5, 14 * DAY, 14 * DAY + 1, 29 * DAY, 45 * DAY + 7, 61 * DAY, 100 * DAY, 200 * DAY,
                 365 * DAY, 400 * DAY, 2 * YEAR + DAY, 3 * YEAR, 5 * YEAR + 12345, 10 * YEAR, 31 * YEAR, 80 * YEAR]
         for a in ages:
             for m in (0, 1, 3, 10, 25):
