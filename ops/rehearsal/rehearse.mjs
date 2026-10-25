@@ -150,6 +150,16 @@ async function asImpersonated(from, to, data, value = 0n) {
 
 // an RPC hiccup between forge and anvil is retried once (and logged); a real failure fails at once
 const TRANSIENT = /error sending request|connection (refused|reset|closed)|timed? ?out|EOF while parsing|nonce too low|replacement transaction|already known/i;
+// Foundry reads contracts/.env on its own, and a real deploy's .env (OWNER, KEEPERS, the token addresses...) would
+// override the stand-ins here (it did on the owner's PC). Every setting the scripts read is set on every forge run:
+// blank ("" reads as not set, and a set variable wins over .env) unless the rehearsal gives it a value.
+const SCRIPT_ENV = ["BATCH", "CHARACTER_BATCH", "DEV_ETH_USD", "DROP_START", "EDITOR", "ETH_USD_FEED", "FIRE_SALE", "KEEPERS", "MILL",
+  "MORNING_WOOD", "OWNER", "PACK_IMAGE_BASE", "PAPER", "PLANK", "PLANK_WETH_V2_PAIR", "PRESS_CONTRACT_URI", "RECIPE_JSON", "REPLACE_PRESS",
+  "REPLACE_PROFILES", "REVENUE_WALLET", "ROYALTY_BPS", "ROYALTY_RECEIVER", "SERIES", "SERIES_SCAN", "SIMULATE", "SUGGESTION_PAPER",
+  "UNIV2_FACTORY", "USDG", "V2_ROUTER", "WETH", "DRAND_ROUTER", "FIRE_CARDS", "PAPER_BURNER", "PAPER_USD_FEED", "PLANK_USD_FEED",
+  "RECIPE_DEALER", ...Array.from({ length: 8 }, (_, i) => `GROUP_ROOT_${i}`)];
+const BLANK = Object.fromEntries(SCRIPT_ENV.map((k) => [k, ""]));
+let PIN = { ...BLANK };
 function forge(script, env, extra = [], sender = deployer.address) {
   const argv = ["script", script, "--rpc-url", RPC, "--unlocked", "--sender", sender, "--broadcast", "--slow", "--offline", ...(SOLC ? ["--use", SOLC] : []), ...extra];
   say(`forge ${argv.slice(0, 2).join(" ")} ...`);
@@ -157,7 +167,7 @@ function forge(script, env, extra = [], sender = deployer.address) {
     try {
       return execFileSync(bin("forge"), argv, {
         cwd: CONTRACTS, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20,
-        env: { ...process.env, DEPLOYMENTS_FILE: DEP_FILE, EXPECTED_CHAIN_ID: String(chain.id), FOUNDRY_DISABLE_NIGHTLY_WARNING: "1", ...env },
+        env: { ...process.env, ...PIN, DEPLOYMENTS_FILE: DEP_FILE, EXPECTED_CHAIN_ID: String(chain.id), FOUNDRY_DISABLE_NIGHTLY_WARNING: "1", ...env },
       });
     } catch (e) {
       const out = `${e.stdout ?? ""}\n${e.stderr ?? ""}`;
@@ -177,7 +187,7 @@ function forgeRead(script, env) {
   try {
     return execFileSync(bin("forge"), ["script", script, "--rpc-url", RPC, "--offline", ...(SOLC ? ["--use", SOLC] : [])], {
       cwd: CONTRACTS, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20,
-      env: { ...process.env, DEPLOYMENTS_FILE: DEP_FILE, EXPECTED_CHAIN_ID: String(chain.id), FOUNDRY_DISABLE_NIGHTLY_WARNING: "1", ...env },
+      env: { ...process.env, ...PIN, DEPLOYMENTS_FILE: DEP_FILE, EXPECTED_CHAIN_ID: String(chain.id), FOUNDRY_DISABLE_NIGHTLY_WARNING: "1", ...env },
     });
   } catch (e) {
     return `${e.stdout ?? ""}\n${e.stderr ?? ""}`;
@@ -234,6 +244,8 @@ async function main() {
   let inputs;
   // the owner: one hardware wallet (a plain address); nobody here holds its key
   const owner = getAddress(args.owner ?? process.env.OWNER ?? "0x1edfe11e1edfe11e1edfe11e1edfe11e1edfe11e");
+  PIN = { ...BLANK, OWNER: owner };
+  if (existsSync(resolve(CONTRACTS, ".env"))) say("contracts/.env is there (a real deploy's settings): the rehearsal sets its own values over it");
   let dev = {};
   if (!FORK) {
     step(`stand-ins: DevStack.s.sol, the testnet kit (tokens, ETH/USD, Uniswap V2 with PLANK/WETH and PAPER/WETH pools, router, Paper Press) on chain ${id}`);
@@ -275,6 +287,7 @@ async function main() {
   // ---------------- deploy with the real scripts
   step("deploy: DeployTwap, DeployInfra, DeployCards (the real scripts), each recorded after its broadcast (ops/deploy/record.mjs)");
   const env = { ...inputs, OWNER: owner, ROYALTY_RECEIVER: royalty.address, ROYALTY_BPS: "500", REVENUE_WALLET: revenue.address, KEEPERS: `${keeperA.address},${keeperB.address}`, PACK_IMAGE_BASE: "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/" };
+  PIN = { ...BLANK, ...env }; // the deploy settings, over any contracts/.env, for every forge run from here on
   forgeRead("script/DeployTwap.s.sol", env);
   check(!existsSync(`${DEP_FILE}.pending`), "a dry run (no --broadcast) leaves nothing to record");
   await forgeDeploy("script/DeployTwap.s.sol", env);
