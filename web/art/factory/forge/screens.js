@@ -1009,12 +1009,14 @@
     const canGrade = c.grade == null && !c.pending, canCase = canGrade && !c.cased;
     const sea = (label, href, extra) => h('a', { class: 'btn sea', href, target: '_blank', rel: 'noopener', ...extra }, label, h('span', { 'aria-hidden': 'true', text: '↗' }));
     const face = cardFace(c, false, true);
+    const upside = window.Info?.upsideDown?.(c.material, c.holo || 'none'); // a full holo Paper, a plain Coal…
     const zoom = () => viewCard(c, ids);
     const body = h('div', { class: 'detail' },
       h('div', { class: 'big' }, h('div', { class: 'cwrap', onclick: (e) => { if (!e.target.closest('button')) zoom(); } }, face, gradeBadge(c),
         window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null), clipBtn(c, 'small big-clip')),
       h('div', { class: 'traits' },
         h('div', { class: 'cmeta' }, matChip(c.material), holoChip(c), od.tier ? h('span', { class: 'tier-b ' + od.tier, text: TIER_LABEL[od.tier] }) : null),
+        upside ? h('p', { class: 'upside-b' }, h('b', { text: 'Upside-down rare' }), ` · about 1 in ${Info.oneIn(upside.p)} cards`) : null,
         h('div', { class: 'dstats' },
           h('div', { class: 'dodds' }, h('small', { text: c.grade != null ? 'Odds with grade' : 'Pull odds' }), h('b', { text: od.label })),
           h('div', { class: 'dfloor' }, h('small', { text: 'Floor (demo)' }), h('b', { text: floorTxt(c) }))),

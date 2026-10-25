@@ -175,3 +175,11 @@
 .inf-duo figure { margin: 0; text-align: center } .inf-duo img { width: auto; filter: drop-shadow(0 6px 8px rgba(0,0,0,.6)) }
 .inf-duo figure:first-child img { height: 120px } .inf-duo figure:last-child img { height: 110px }
 .inf-duo figcaption { font: 800 13px var(--body); color: var(--gold) }
+/* upside-down rarity: holo flips the odds (the box under the holo table) */
+.inf-upside { margin: 14px 0 4px; padding: 14px 14px 12px; border-radius: 14px; border: 1.5px solid transparent;
+  background: linear-gradient(var(--panel-2), var(--panel-2)) padding-box, linear-gradient(120deg, #ff6ad5, #ffd36a, #6affc1, #6ac8ff) border-box }
+.inf-upside h4 { margin: 0 0 6px; font: 400 20px var(--display); color: var(--ink); display: inline-block; transform: rotate(180deg) }
+.inf-upside p { margin: 0 0 6px }
+.inf-upside ul { margin: 0 0 8px; padding-left: 1.1em; display: grid; gap: 4px }
+.inf-upside li b { color: var(--gold) }
+.inf-upside-k { font: 700 15px var(--chalk); color: var(--gold) }

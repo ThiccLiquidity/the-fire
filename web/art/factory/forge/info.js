@@ -43,8 +43,7 @@
   model();
   // fresh PDA grade odds in percent (FirePsa, fixed forever for every Series: grades 7-10 only; 1-6 come only from wear), and the
   // wear frame each band gets (card-studio.md).
-  const PDA = [10, 1, 9, 30, 8, 40, 7, 29]
-    .reduce((a, v, i, arr) => (i % 2 ? a : [...a, { g: v, p: arr[i + 1] }]), []);
+  const PDA = Wear.FRESH.map((w, i) => ({ g: i + 1, p: w / Wear.FRESH.reduce((a, b) => a + b, 0) * 100 })).filter((x) => x.p).reverse();
   // the six grade bands (Wear.BANDS: one set everywhere, with their colours), each with how its slab looks: the one set
   // of wear layers (studio/frames-src/wear_overlays.py, the same over every card type), shown over one clean card
   const NAMES = ['Clean + gold glow', 'Barely used', 'Lightly played', 'Played', 'Heavily played', 'Damaged'];
@@ -104,6 +103,36 @@
       <figcaption><b>Materials</b><span>Series ${no}: each card's odds</span></figcaption>
       <div class="inf-mat">${rows}</div>
     </figure>`;
+  }
+
+  // upside-down rarity: holo flips the odds. A look that goes against its material (full holo where holo is unlikely,
+  // no holo where it's likely) at least twice as rare as a Full Art. Rarest first; empty if the Series has none.
+  function upsideDown() {
+    model();
+    const top = M.fullart?.share || 0; if (!top) return [];
+    const out = [];
+    MATS.filter((m) => !m.always).forEach((m) => {
+      if (m.full && m.full < m.none) out.push({ id: m.id, holo: 'full', p: m.share * m.full, label: 'Full holo ' + m.name });
+      if (m.none && m.none < m.full) out.push({ id: m.id, holo: 'none', p: m.share * m.none, label: 'Plain ' + m.name, plain: true });
+    });
+    return out.filter((x) => x.p * 2 <= top).sort((a, b) => a.p - b.p);
+  }
+  // the highest material a look is rarer than ("a Full Art", "a Gold")
+  const beats = (p) => { const m = [...MATS].sort((a, b) => a.share - b.share).find((x) => p < x.share); return m ? m.name : null; };
+  function upsideBox(no) {
+    const list = upsideDown(); if (!list.length) return '';
+    const fa = M.fullart.share;
+    const line = (x, i) => {
+      const extra = i === 0 && fa / x.p >= 2 ? ` That's ${Math.round(fa / x.p)} times rarer than a Full Art.` : x.plain && beats(x.p) ? ` Rarer than a ${beats(x.p)}.` : '';
+      return `<li><b>${x.label}${x.plain ? ' (no holo at all)' : ''}:</b> about 1 in ${oneIn(x.p)} cards.${extra}</li>`;
+    };
+    const lo = MATS.find((m) => !m.always && m.full < m.none), hi = [...MATS].reverse().find((m) => !m.always && m.none < m.full);
+    return `<aside class="inf-upside" id="info-upside">
+      <h4>Upside-down rarity.</h4>
+      <p>Holo flips the odds.${lo && hi ? ` ${lo.name} almost never shines, and ${hi.name} almost always does.` : ''} So the plainest cards in a pack can be the rarest:</p>
+      <ul>${list.map(line).join('')}</ul>
+      <p class="inf-upside-k">Check the bottom of your stack before you burn it.</p>
+    </aside>`;
   }
 
   function holoTable(no) {
@@ -312,6 +341,7 @@
           <li><b>Holo.</b> Any card can come out holo: on the frame, on the picture, or both (full holo). Higher materials shine more often.</li>
         </ul>
         ${holoTable(no)}
+        ${upsideBox(no)}
         <ul>
           <li><b>Characters.</b> ${characterLine(no)}</li>
           <li><b>Rarity.</b> "Rare," "Epic" and "Legendary" count that exact card: character, material and holo, plus its grade once it's slabbed. Rare: 1 in 100 or rarer · Epic: 1 in 400 · Legendary: 1 in 1,000. The reveal glows when you hit one.</li>
@@ -407,7 +437,7 @@
       </nav>
       <div class="inf-glance" aria-label="Rarity at a glance">
         <button type="button" data-go="pda"><b>${Wear.TEN_FRESH}</b><span>PDA 10 on a fresh card</span></button>
-        ${M.paper?.full ? `<button type="button" data-go="cards"><b>1 in ${oneIn(M.paper.full)}</b><span>Paper comes out full holo in Series ${no}</span></button>` : ''}
+        ${(() => { const u = upsideDown()[0]; return u ? `<button type="button" data-go="cards" data-upside><b>1 in ${oneIn(u.p)}</b><span>${u.label}. Rarer than a Full Art.</span></button>` : ''; })()}
         ${M.fullart?.share ? `<button type="button" data-go="cards"><b>1 in ${oneIn(M.fullart.share)}</b><span>Full Art in Series ${no}</span></button>` : ''}
       </div>
       ${list.map((s, i) => `
@@ -417,7 +447,7 @@
         </details>`).join('')}
       <p class="menu-links"><button class="inf-link" type="button" data-fun="tour">Workshop tour</button><button class="inf-link" type="button" data-fun="practice">Practice pack</button><button class="inf-link" type="button" data-fun="feed">Top stokers</button><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>`;
     root.addEventListener('click', (e) => {
-      const b = e.target.closest('[data-go]'); if (b) go(root, b.dataset.go);
+      const b = e.target.closest('[data-go]'); if (b) go(root, b.dataset.go, b.hasAttribute('data-upside') ? '#info-upside' : null);
     });
     // the Presses that exist now, read on chain (demo: a fixed number); the line stays hidden if it can't be read
     const pr = root.querySelector('.inf-presses');
@@ -428,11 +458,11 @@
     }, () => {});
     return root;
   }
-  function go(root, id) {
+  function go(root, id, inner) {
     const d = root.querySelector('#info-' + id); if (!d) return;
     d.open = true;
     requestAnimationFrame(() => {
-      d.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+      (inner && d.querySelector(inner) || d).scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
       d.querySelector('summary').focus({ preventScroll: true });
     });
   }
@@ -451,6 +481,12 @@
       model();
       const m = M[material]; if (!m) return 0;
       return m.share * this.holoP(material, holo) * charP(character);
+    },
+    /** An upside-down rare look (a full holo low material, a plain high one, at least twice as rare as a Full Art): its chance per card
+     *  (any character), else null. The card detail's "Upside-down rare" badge. */
+    upsideDown(material, holo = 'none') {
+      const h = holo === 'full' ? 'full' : holo === 'none' ? 'none' : null;
+      return h ? upsideDown().find((x) => x.id === material && x.holo === h) || null : null;
     },
     // a material's chance per card (Series' odds)
     shareOf(material) { model(); return M[material]?.share ?? 0; },
