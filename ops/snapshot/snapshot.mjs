@@ -209,7 +209,8 @@ export const usdToRaw = (usd, px, decimals) => (BigInt(Math.round(Number(usd) * 
 /**
  * Builds the holder list. opts: { client, token, feed (for minUsd), min | minUsd, tiers, allowance (1), block (the
  * last; default latest), blocks (5), days (7), seed, fromBlock, step, pairs ([{ pair, tokenIs0 }]: given, else found
- * with `discover`), discover, allowStale, log }. Returns the file's content (no holders: count 0).
+ * with `discover`), discover, allowStale, log, logsClient (the log searches on another RPC: they need no history, while
+ * the balance reads need an archive RPC; default `client`) }. Returns the file's content (no holders: count 0).
  */
 export async function takeSnapshot(o) {
   const { client } = o
@@ -258,7 +259,7 @@ export async function takeSnapshot(o) {
     const event = k === 0 && info.kind === 'erc721' ? transfer721 : transfer20
     for (let b = fromBlock; b <= last; b += step) {
       const to = b + step - 1n > last ? last : b + step - 1n
-      const logs = await client.getLogs({ address: addr, event, fromBlock: b, toBlock: to })
+      const logs = await (o.logsClient ?? client).getLogs({ address: addr, event, fromBlock: b, toBlock: to })
       for (const l of logs) { if (!l.args?.to) continue; const w = getAddress(l.args.to); seen.add(w); if (k > 0) lpSeen[k - 1].add(w) }
     }
   }
@@ -356,7 +357,7 @@ export function ownTree(file) {
  * Rebuilds `snap` (a file's content) from the chain at its saved blocks and compares. `discover` (the pools to look
  * for, as takeSnapshot) also checks the file counted every pool. Returns { ok, problems, count, root }.
  */
-export async function verifySnapshot({ client, snap, discover, log }) {
+export async function verifySnapshot({ client, logsClient, snap, discover, log }) {
   if (!snap.blocks?.length || !snap.seed || !(snap.version >= 3)) {
     return { ok: false, problems: ['the file has no saved blocks, seed or allowances (taken before snapshot groups): take it again'], count: 0, root: null }
   }
@@ -369,7 +370,7 @@ export async function verifySnapshot({ client, snap, discover, log }) {
     if (want !== pairs.map((p) => p.pair).sort().join()) problems.push(`pools: file ${pairs.map((p) => p.pair).join(', ') || 'none'}, found ${f.pairs.map((p) => p.pair).join(', ') || 'none'}`)
   }
   const again = await takeSnapshot({
-    client, token: snap.token, feed: snap.feed, ...(snap.unit === 'usd' ? { minUsd: snap.min } : { min: snap.min }), tiers: snap.tiers, allowance: snap.allowance,
+    client, logsClient, token: snap.token, feed: snap.feed, ...(snap.unit === 'usd' ? { minUsd: snap.min } : { min: snap.min }), tiers: snap.tiers, allowance: snap.allowance,
     block: last, blocks: snap.blockCount ?? snap.blocks.length, days: snap.days, seed: snap.seed, fromBlock: snap.fromBlock ?? 0, ...(snap.step ? { step: snap.step } : {}), pairs, allowStale: true, log,
   })
   problems.push(...compareSnapshots(snap, again))
@@ -414,6 +415,9 @@ async function main() {
   const rpc = process.env.RPC
   if (!rpc) throw new Error('Set RPC first ($env:RPC = "...")')
   const client = createPublicClient({ transport: http(rpc, { retryCount: 3, timeout: 60_000 }) })
+  // LOGS_RPC: the transfer-log searches on another RPC (a non-archive public node takes big searches; an archive plan
+  // like Alchemy free allows only 10 blocks a search but keeps the past balances RPC must read)
+  const logsClient = process.env.LOGS_RPC ? createPublicClient({ transport: http(process.env.LOGS_RPC, { retryCount: 3, timeout: 60_000 }) }) : undefined
   const chainId = await client.getChainId()
   const dep = fromDeployments(chainId)
   const inp = { ...(dep.inputs ?? {}) }
@@ -422,7 +426,7 @@ async function main() {
   if (args.verify) {
     if (args.verify === true) throw new Error('--verify <the snapshot file>')
     const snap = JSON.parse(readFileSync(args.verify, 'utf8'))
-    const v = await verifySnapshot({ client, snap, discover: snap.token ? discoverFor(snap.token, inp, extra) : undefined, log: (l) => console.log(`  ${l}`) })
+    const v = await verifySnapshot({ client, logsClient, snap, discover: snap.token ? discoverFor(snap.token, inp, extra) : undefined, log: (l) => console.log(`  ${l}`) })
     for (const p of v.problems) console.log(`FAIL  ${p}`)
     console.log(v.ok ? `GREEN: rebuilt from the chain at its ${snap.blocks.length} blocks: the same ${v.count} wallets, balances, allowances and root ${v.root}.` : `RED: ${v.problems.length} difference(s). Don't use this file.`)
     process.exitCode = v.ok ? 0 : 1
@@ -446,7 +450,7 @@ async function main() {
   if (minUsd !== undefined && !feed) throw new Error('Set PLANK_USD_FEED (the PlankUsdTwap address), or deploy first (deployments/<chainId>.json)')
   const out = str('out') ?? 'holders.json'
   const snap = await takeSnapshot({
-    client, token, feed, minUsd, min: str('min'), tiers: str('tiers'), allowance: str('allowance') ?? 1,
+    client, logsClient, token, feed, minUsd, min: str('min'), tiers: str('tiers'), allowance: str('allowance') ?? 1,
     block: str('block') === undefined ? undefined : BigInt(args.block), blocks: str('blocks') ?? 5, days: str('days') ?? 7, seed: str('seed'),
     fromBlock: str('from-block') ?? 0, step: str('step'), discover: discoverFor(token, inp, extra), allowStale: !!args['allow-stale'], log: console.log,
   })

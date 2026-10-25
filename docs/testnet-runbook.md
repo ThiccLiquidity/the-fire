@@ -290,7 +290,8 @@ Series (cards exist only after this one closes), so test free packs with a picke
 
 Next to it, the snapshot side file `contracts\series\fire-<N>-snapshots.json` (group index 1 = the PLANK group).
 The snapshot scans the token's transfers in log searches: Alchemy's free plan allows only 10 blocks per search, so
-run the launch on the public RPC (big searches), and start the scan at this deploy (`fromBlock`: the deployments
+run the launch with `RPC` = Alchemy (it keeps past balances; the public node doesn't) and `LOGS_RPC` = the public
+RPC (big log searches), and start the scan at this deploy (`fromBlock`: the deployments
 file's `startBlock`; the test PLANK goes out after it). For a practice run, `days` can be a fraction (0.02 = ~30 min).
 ```json
 { "1": { "token": "plank", "minUsd": 69, "tiers": "69:1,300:2", "days": 1 } }

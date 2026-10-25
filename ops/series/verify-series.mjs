@@ -345,7 +345,10 @@ export async function verifySeries(opts) {
     // rebuilt from the chain at the snapshot's own blocks: catches a wallet, balance or allowance edited into the file
     if (opts.snapshotChain !== false) {
       try {
-        const v = await verifySnapshot({ client, snap, discover: snap.token ? discoverFor(snap.token, inp) : undefined });
+        // the transfer-log searches on LOGS_RPC when set (as ops/snapshot): an archive RPC with a small search limit reads the balances
+        const logsRpc = opts.logsRpc ?? process.env.LOGS_RPC;
+        const logsClient = logsRpc ? createPublicClient({ transport: http(logsRpc) }) : undefined;
+        const v = await verifySnapshot({ client, logsClient, snap, discover: snap.token ? discoverFor(snap.token, inp) : undefined });
         for (const p of v.problems.slice(0, 5)) ok(false, `${label} snapshot: ${p}`);
         ok(v.ok, `${label}: the snapshot of ${snap.symbol || snap.token} rebuilt from the chain at its ${snap.blocks?.length ?? 0} saved blocks matches the file${v.ok ? ` (${v.count} wallets, root ${v.root})` : ` (${v.problems.length} difference(s))`}`);
       } catch (e) {
