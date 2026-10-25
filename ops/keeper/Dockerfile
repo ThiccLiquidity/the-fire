@@ -2,7 +2,8 @@
 #   docker build -f ops/keeper/Dockerfile .
 # The image holds the keeper and deployments/ (the contract addresses); the key and the RPC come from the host's
 # variables at run time, never from the image.
-FROM node:22-alpine
+# Pinned at or past the HTTP2Shell fix (CVE-2026-111497); the keeper also refuses an older Node at startup
+FROM node:22.23.4-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY ops/keeper/package.json ops/keeper/package-lock.json ops/keeper/

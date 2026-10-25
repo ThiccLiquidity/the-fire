@@ -3,7 +3,7 @@
   "private": true,
   "description": "Ops tools: VerifySeries and the Series launcher (series/), recording a deploy (deploy/) and the deploy rehearsal (rehearsal/). The keeper (keeper/) and the snapshot (snapshot/) have their own packages.",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=22.23.4" },
   "scripts": {
     "verify-series": "node series/verify-series.mjs",
     "rehearse": "node rehearsal/rehearse.mjs",

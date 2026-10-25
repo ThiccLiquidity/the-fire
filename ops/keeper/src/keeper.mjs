@@ -7,6 +7,7 @@ import { loadConfig, loadKey } from "./config.mjs";
 import { createKeeper } from "./core.mjs";
 import { errMsg } from "./tx.mjs";
 import { labelOf, pingHeartbeat, postWebhook } from "./alerts.mjs";
+import { NODE_FIX, nodePatched } from "./node-check.mjs";
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"; // the same address on every chain that has it
@@ -28,6 +29,9 @@ async function startupFailed(what, e, cfg) {
   }
   process.exit(1);
 }
+
+// HTTP2Shell (CVE-2026-111497): a keeper on an unpatched Node won't start (it says so, like any startup failure)
+if (!nodePatched()) await startupFailed("Node " + process.versions.node + " has the Brotli bug (CVE-2026-111497)", new Error(`update Node to ${NODE_FIX} or later`));
 
 let cfg;
 let account;

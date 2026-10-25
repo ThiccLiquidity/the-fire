@@ -3,7 +3,7 @@
   "private": true,
   "description": "Omni Cardworks keeper: feed checkpoints, drand delivery, dealing, grading reveals, burner flushes, alerts",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=22.23.4" },
   "scripts": {
     "start": "node src/keeper.mjs",
     "once": "ONCE=1 node src/keeper.mjs",

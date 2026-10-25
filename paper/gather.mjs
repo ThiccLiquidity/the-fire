@@ -7,7 +7,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { PAPER_DIR, args, env, issueDate, issueNumber, loadEnv, readJson, soft, writeJson } from "./lib/util.mjs";
+import { PAPER_DIR, args, env, issueDate, issueNumber, loadEnv, nodePatched, readJson, soft, writeJson } from "./lib/util.mjs";
 import { readFeed } from "./lib/rss.mjs";
 import { gatherX, mockX } from "./lib/x.mjs";
 import { gatherMarkets, mockMarkets } from "./lib/markets.mjs";
@@ -72,6 +72,10 @@ export async function gather({ date, mock }) {
 // main module (pathToFileURL: on Windows argv[1] is C:\..., and a path may have spaces)
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const a = args();
+  if (!a.mock && !nodePatched()) { // reading the web on an unpatched Node: stop (CVE-2026-111497)
+    console.error(`Node ${process.versions.node} has the Brotli bug (CVE-2026-111497): update Node to 22.23.4, 24.22.1 or 26.12.1 or later, then run again.`);
+    process.exit(1);
+  }
   const date = issueDate(a.date);
   const pack = await gather({ date, mock: Boolean(a.mock) });
   const out = a.out ?? resolve(PAPER_DIR, "out", date, "newspack.json");

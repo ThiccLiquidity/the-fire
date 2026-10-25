@@ -47,14 +47,14 @@ git log --oneline -1
 ## 2. Install (once per machine, or after a pull that changed packages)
 
 ```powershell
-node -v                     # v22 or newer
+node -v                     # v22.23.4 or newer (the Brotli fix, CVE-2026-111497)
 forge --version             # Foundry
 cd C:\Users\DubT1\the-fire\ops;          npm ci
 cd C:\Users\DubT1\the-fire\ops\keeper;   npm ci
 cd C:\Users\DubT1\the-fire\ops\snapshot; npm ci
 ```
 - Good: each `npm ci` ends with "added N packages".
-- If not: node too old → install Node 22 LTS. `forge` not found → install Foundry (`foundryup`), new window.
+- If not: node too old → install the latest Node 22 LTS from nodejs.org (22.23.4 or newer; the keeper won't start on older). `forge` not found → install Foundry (`foundryup`), new window.
 
 ## 3. Build and rehearse on your PC (no keys, no network)
 
