@@ -16,7 +16,7 @@ import { sendTx, type TxStep } from "../tx";
 import { getAccount } from "../wallet";
 import { NET } from "../net";
 import {
-  addr, argsOf, cardsAbi, chainNow, creditsAbi, dealerAbi, eventOf, hasFunction, input, psaAbi, pub, read, readGroups, saleAbi,
+  addr, argsOf, cardsAbi, chainNow, creditsAbi, dealerAbi, eventOf, gamesAbi, hasFunction, input, psaAbi, pub, read, readGroups, saleAbi,
 } from "./contracts";
 import { gradingIds, payIndex, psaPayIndex, requestInfo, type PayCoin, type PsaCoin } from "./reads";
 
@@ -284,6 +284,32 @@ export async function suggest(p: { texts: string[] }, o: WriteOpts = {}): Promis
   const receipts: TransactionReceipt[] = [];
   for (const [i, t] of texts.entries()) receipts.push(await send(credits, creditsAbi, "suggest", [t, each], `Send suggestion ${i + 1} of ${texts.length}`, "suggest", o));
   return { receipts, oneByOne: true };
+}
+
+// ---------------------------------------------------------------- the game room
+
+/** Pay for a competitive run (FireGames.payRun): the game server's approval (from its create call) in, the game's
+ *  entry PAPER approved to FireGames (exactly that) and burned by the contract. Returns the receipt; the server reads
+ *  RunPaid from it (confirm). */
+export async function payRun(p: { gameId: number; runId: Hex; series: number; deadline: number; sig: Hex }, o: WriteOpts = {}): Promise<TransactionReceipt> {
+  const games = addr("FireGames");
+  const entry = await read<bigint>("FireGames", gamesAbi, "entryOf", [BigInt(p.gameId)]);
+  if (!entry) throw new Error("That game isn't open.");
+  await approve(input("PAPER")!, games, entry, "Approve PAPER", o);
+  return send(games, gamesAbi, "payRun", [BigInt(p.gameId), p.runId, BigInt(p.series), BigInt(p.deadline), p.sig], "Pay for the run", "game", o);
+}
+
+/** FireGames' switches, for the room: whether paid runs can be bought now (game open, not paused, a competition on). */
+export async function gameStatus(gameId: number) {
+  const [entry, gameOpen, paused, series, signer] = await Promise.all([
+    read<bigint>("FireGames", gamesAbi, "entryOf", [BigInt(gameId)]),
+    read<boolean>("FireGames", gamesAbi, "gameOpen", [BigInt(gameId)]),
+    read<boolean>("FireGames", gamesAbi, "paused"),
+    read<bigint>("FireGames", gamesAbi, "series"),
+    read<Address>("FireGames", gamesAbi, "signer"),
+  ]);
+  const open = entry > 0n && gameOpen && !paused && series > 0n && signer !== "0x0000000000000000000000000000000000000000";
+  return { entry: entry.toString(), open, series: Number(series) };
 }
 
 // ---------------------------------------------------------------- odds and ends

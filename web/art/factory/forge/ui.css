@@ -451,7 +451,7 @@ body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
 .gm { width: 100%; max-width: 720px; display: grid; gap: 8px; margin: 0 auto }
 .gm-bar { display: flex; align-items: center; gap: 8px; justify-content: space-between }
 .gm-note { font: 700 14px var(--body); color: var(--muted); text-align: center; flex: 1 } .gm-note.ready { color: var(--good) }
-.gm-stage { position: relative; width: 100%; aspect-ratio: 9 / 8; max-height: 72vh; border-radius: 14px; overflow: hidden; border: 1px solid var(--line-2); background: #120c08 }
+.gm-stage { position: relative; width: 100%; aspect-ratio: 4 / 5; max-height: 72vh; border-radius: 14px; overflow: hidden; border: 1px solid var(--line-2); background: #120c08 }
 @media (min-width: 700px) { .gm-stage { aspect-ratio: 4 / 3 } }
 .gm-stage .pf-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab }
 .gr { display: grid; gap: 14px }
@@ -467,3 +467,19 @@ body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
 .pf-note { font: 700 14px var(--body); color: var(--muted); text-align: center; flex: 1 } .pf-note.ready { color: var(--good) }
 .pf-hud { display: flex; justify-content: space-around; font: 600 13px var(--body); color: var(--muted) } .pf-hud b { color: var(--gold) }
 .pf-cv { width: 100%; height: auto; aspect-ratio: 600 / 400; border-radius: 14px; border: 1px solid var(--line-2); touch-action: none; cursor: grab }
+/* competitive runs (games.js) */
+.gm-start { display: grid; gap: 10px; max-width: 560px; margin: 0 auto }
+.gm-start > .btn.small { justify-self: start }
+.gm-start h3 { margin: 4px 0 0; font: 400 20px var(--display); color: var(--gold) }
+.gm-rules { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--ink, #f6e8cf) }
+.gm-adult { display: flex; gap: 10px; align-items: flex-start; font: 600 14px var(--body) }
+.gm-adult input { width: 20px; height: 20px; accent-color: var(--brass, #e9b45a); flex: none; margin-top: 1px }
+.gm-over { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(300px, 86%); padding: 18px; border-radius: 14px; text-align: center;
+  background: rgba(18, 12, 8, .94); border: 2px solid #b98632; box-shadow: 0 10px 40px rgba(0,0,0,.6); display: grid; gap: 8px }
+.gm-over h3 { margin: 0; font: 400 22px var(--display); color: var(--gold) } .gm-over p { margin: 0 } .gm-over b { font: 400 28px var(--display); color: #f6e8cf }
+.gm-over .gr-acts { justify-content: center }
+.gm-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px }
+.gm-rows li { display: grid; grid-template-columns: 34px 1fr auto; gap: 4px 10px; align-items: center; padding: 8px 12px; border-radius: 10px; background: rgba(255,255,255,.04) }
+.gm-rows li small { grid-column: 2 / 4; color: var(--gold); font: 700 12px var(--body) }
+.gm-rows li.prize { border: 1px solid rgba(233,180,90,.45) } .gm-rows li.me { background: rgba(111,207,122,.12) }
+.gm-rows .rk { font: 400 18px var(--display); color: var(--gold) } .gm-rows b { font: 400 20px var(--display) }

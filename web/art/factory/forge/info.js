@@ -258,7 +258,7 @@
 
   // ---- sections ----
   const SHORT = { about: 'About', buy: 'Buying', press: 'Press packs', free: 'Free packs', open: 'Opening', cards: 'Cards', pda: 'Cases & grading',
-    burn: 'Burning', suggest: 'Suggest', paper: 'PLANK & PAPER', fair: 'Fairness', faq: 'FAQ' };
+    burn: 'Burning', suggest: 'Suggest', games: 'Game room', paper: 'PLANK & PAPER', fair: 'Fairness', faq: 'FAQ' };
   const sec = (id, title, sum, body, tag) => ({ id, title, sum, body, tag });
   function sections(no) {
     const F = facts(), { s, P, usd, press, everyone, extra, cg, cpp } = F;
@@ -396,6 +396,17 @@
           ${TOKENS.map(([t, a]) => `<button class="inf-link inf-ca" type="button" data-ca="${a}">${t} <code>${short(a)}</code> <span class="cp">Copy</span></button>`).join('')}
           <a class="inf-link" href="https://opensea.io/collection/the-plank-press" target="_blank" rel="noopener">Paper Press on OpenSea <span aria-hidden="true">↗</span></a>
         </div>`),
+      sec('games', 'Game room', 'Free play any time; competitive runs for free packs. The official rules.', `
+        <ul>
+          <li><b>Free play</b> is free, any time, and during pack and grade waits. No prizes.</li>
+          <li><b>A competitive run costs 1 PAPER</b>, always. The entry is burned. Up to 3 practice kicks come first and don't count; then your first miss ends the run.</li>
+          <li><b>The board:</b> your best streak this Series, one place per wallet. A tie goes to whoever reached that streak first.</li>
+          <li><b>Prizes:</b> when the Series ends, the top three get 3, 2 and 1 free pack credits, sent to their wallets at the next Series' launch. They never expire.</li>
+          <li><b>Skill, not luck:</b> every shot's distance, wind and goal are shown before you kick, and the same kick always lands the same way. Our game server replays each kick and its call is final. A kick it can't count (a timing or connection problem) is never a miss: you kick again.</li>
+          <li><b>Who can play for prizes:</b> 18 and older, outside the US states where it isn't allowed (Arizona, Arkansas, Connecticut, Delaware, Indiana, Louisiana, Maine, Montana, South Carolina, South Dakota and Tennessee). Free play is open to everyone.</li>
+          <li><b>Lost connection?</b> Your paid run waits for you: open the Game room again to pick it up.</li>
+          <li><b>What we can do:</b> pause competitive play at any time (runs already paid for can still finish), and review the top runs before prizes go out.</li>
+        </ul>`),
       sec('fair', 'Fairness', 'Public randomness, fixed odds, no bot sweeps.', `
         <ul>
           <li><b>Nobody picks your cards.</b> Cards and grades come from drand, a public randomness source run by independent groups around the world. Nobody owns it, us included. Each pack you open, and each card you grade, is tied to a drand number that doesn't exist yet when you hit the button, about 90 seconds in the future. One request, one number: no re-rolls.</li>

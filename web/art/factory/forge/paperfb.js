@@ -64,7 +64,7 @@
       bench = null;
       if (A.bench?.complete && A.bench.naturalWidth) {
         const ps = Math.max((W * 1.3) / SPEC.w, H / SPEC.h);  // wide enough for the view to lean toward an off-centre goal
-        const oy = Math.min(0, Math.max(H - SPEC.h * ps, 0.45 * H - SPEC.edgeY * ps)), yE = SPEC.edgeY * ps + oy;
+        const oy = Math.min(0, Math.max(H - SPEC.h * ps, 0.5 * H - SPEC.edgeY * ps)), yE = SPEC.edgeY * ps + oy;
         const near = CAM_DB - 0.26, far = TABLE_END + CAM_DB, K = (0.93 * H - yE) / (1 / near - 1 / far);
         CAM_H = K / F; EYE = yE - K / far; plate = { ps, oy };
         // the furnace mouth, from the plate's pixels to the world (the plane z = FURN_Z)
@@ -85,8 +85,9 @@
       shot = s; shot.t0 = clock;
       if (shot.unlock && !(levelStats[shot.level]?.[1])) note = { text: shot.unlock, at: clock };
     }
-    function nextShot() { showShot(opts.shotFor?.(n, streak) || shotFor(seed, n, streak, T)); }
-    nextShot();
+    let waiting = !!opts.waitForShot; // a paid run: no shot until the server sends one (setShot)
+    function nextShot() { if (opts.waitForShot) { waiting = true; return; } showShot(opts.shotFor?.(n, streak) || shotFor(seed, n, streak, T)); }
+    if (opts.waitForShot) showShot(shotFor(seed, 0, 0, T)); else nextShot();
     const emit = (type, detail = {}) => opts.onEvent?.(type, { ...detail, streak, best, makes, kicks });
 
     // ---------- input: phone flick (touch) and desktop pull-back (mouse); both produce { power, aim, contact }. The
@@ -99,7 +100,7 @@
     }
     const sample = (pr, p) => S.quantize(p.x, p.y, p.t - pr.t0);
     cv.addEventListener('pointerdown', (e) => {
-      if (press || ball || result || !alive || !e.isPrimary) return;
+      if (press || ball || result || waiting || !alive || !e.isPrimary) return;
       const p = pos(e), b = ballScreen(), stage = { w: Math.round(W), h: Math.round(H) };
       const edge = S.quantize(b.x, b.y, 0), start = S.quantize(p.x, p.y, 0);
       if (!S.onPaper(S.edgeScale(stage), (start[0] - edge[0]) / S.Q_XY, (start[1] - edge[1]) / S.Q_XY)) return; // start on the paper
@@ -633,21 +634,21 @@
       }
       g.fillStyle = 'rgba(14,10,7,.85)'; g.beginPath(); g.arc(cx, cy, r * 0.42, 0, Math.PI * 2); g.fill();
       g.textAlign = 'center'; g.fillStyle = mph ? '#f6e8cf' : '#9a8a70'; g.font = `400 ${r * 0.5}px ${DISP}`; g.fillText(mph ? String(mph) : '0', cx, cy + r * 0.17);
-      label('MPH', cx, cy + r * 0.62, Math.max(8, r * 0.2)); label('WIND', cx, cy + r + 13, 11);
+      label('MPH', cx, cy + r * 0.62, Math.max(7, r * 0.2)); label('WIND', cx, cy + r + 11, 9);
     }
     function hud() {
-      const top = 10;
-      windDial(12 + 32, top + 32, 32);
+      const top = 8; // kept compact: the goal's tops must stay clear of them
+      windDial(10 + 24, top + 24, 24);
       // the streak board, centre: STREAK in flip digits, BEST under it
-      const bw = 132, bh = 66, bx = W / 2 - bw / 2;
-      ironPlate(bx, top, bw, bh); label(streak || !best ? 'STREAK' : 'STREAK', W / 2, top + 17, 10);
-      flipText('streak', W / 2 - 25, top + 22, String(Math.min(99, streak)).padStart(2, '0'), 30, 23);
-      label(`BEST ${best}  ·  LV ${shot.level}`, W / 2, top + bh - 5, 9);
+      const bw = 104, bh = 50, bx = W / 2 - bw / 2;
+      ironPlate(bx, top, bw, bh); label('STREAK', W / 2, top + 13, 8);
+      flipText('streak', W / 2 - 19, top + 16, String(Math.min(99, streak)).padStart(2, '0'), 22, 17);
+      label(`BEST ${best} · LV ${shot.level}`, W / 2, top + bh - 4, 8);
       // the distance plate, right
-      const dw = 86, dx = W - 12 - dw;
-      ironPlate(dx, top, dw, 54); label('DISTANCE', dx + dw / 2, top + 17, 10);
-      flipText('dist', dx + 14, top + 22, String(Math.round(shot.dist)).padStart(2, '0'), 24, 17);
-      label('IN', dx + dw - 16, top + 41, 11);
+      const dw = 70, dx = W - 10 - dw;
+      ironPlate(dx, top, dw, 44); label('DISTANCE', dx + dw / 2, top + 13, 8);
+      flipText('dist', dx + 10, top + 17, String(Math.round(shot.dist)).padStart(2, '0'), 19, 14);
+      label('IN', dx + dw - 13, top + 32, 9);
       g.textAlign = 'center';
       if (shot.move && !ball) { g.font = `400 ${Math.max(12, H * 0.024)}px ${DISP}`; g.fillStyle = '#ffb07a'; g.fillText('MOVING POSTS · TIME IT', W / 2, top + bh + 18); }
       if (note && clock - note.at < 3.5 && !ball) { const nw = Math.min(W - 40, 280); ironPlate(W / 2 - nw / 2, H * 0.17, nw, 34); g.font = `400 ${Math.max(11, H * 0.022)}px ${DISP}`; g.fillStyle = '#ffd27a'; g.textAlign = 'center'; g.fillText(note.text.toUpperCase(), W / 2, H * 0.17 + 22); }
@@ -786,9 +787,13 @@
       /** tests and replays: a kick from code */
       kick: (k) => { if (!ball && !result) kick(k); },
       /** a paid run: show the server's next shot (conditions as the server sent them); only between kicks */
-      setShot: (s) => { if (ball || result) return false; showShot({ ...s }); return true; },
+      setShot: (s) => { if (ball || result) return false; waiting = false; showShot({ ...s }); return true; },
+      /** a paid run: the streak the server counts (practice kicks don't), shown on the board */
+      setStreak: (v) => { streak = v; if (v > best) best = v; },
+      /** a paid run is over (or paused): no more kicks until a new shot */
+      hold: () => { waiting = true; },
       /** tests and automation: whether a kick can start now, and where the strike edge is on screen (CSS px) */
-      ready: () => !ball && !result && !press,
+      ready: () => !ball && !result && !press && !waiting,
       strikeEdge: () => { const b = ballScreen(); return { x: b.x, y: b.y, half: b.half }; },
       destroy() { alive = false; removeEventListener('resize', size); cv.remove(); },
     };

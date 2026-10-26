@@ -789,8 +789,12 @@
   const burn = async (ids) => { await need(); return run(`Burn ${plural(ids.length, 'card')}`, (o) => L.burnCards({ ids }, o), `Burned ${plural(ids.length, 'card')}`); };
   const suggest = async (texts) => { await need(); if (stillSending('suggest')) return null; return run(texts.length > 1 ? `Send ${texts.length} ideas` : 'Send your idea', (o) => L.suggest({ texts }, o)); };
 
+  // ---------- the game room (games.js): FireGames' switches, and paying for a competitive run
+  const gameStatus = async (gameId) => { await need(); return L.gameStatus(gameId); };
+  const payRun = async (p) => { await need(); await requireWallet(); return run('Pay for the run', (o) => L.payRun(p, o)); };
+
   window.Live = {
-    on: true, net, testnet: net === 'testnet', sync, needWallet, openWallet, run, groupApi, free, getPaper, openPacks, followOpen, progressAct, quoteProtect, protect, finishGrading, popReport, burn, suggest,
+    on: true, gameStatus, payRun, net, testnet: net === 'testnet', sync, needWallet, openWallet, run, groupApi, free, getPaper, openPacks, followOpen, progressAct, quoteProtect, protect, finishGrading, popReport, burn, suggest,
     gateway, toMaterial: (name) => MAT[String(name).toLowerCase()] || null, // practice.js: a Series' own images and type names
     walletNeeds: capOf, // what the wallet must hold to pay `amt` in a coin: the cap (+3%, not USDG) and gas for ETH
     rules: null, snapshot: null, get chain() { return L; },
