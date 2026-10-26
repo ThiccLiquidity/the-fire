@@ -394,7 +394,7 @@
   // one sheet, two jobs: view 'cards' = My cards (sealed packs + the whole collection); view 'open' = straight into tearing the next pack
   function openTable(opts = {}) {
     let view = opts.view === 'open' ? 'open' : 'cards';
-    if (view === 'open' && !openable().length) { if (!dealing()) { toast('No packs to open', 'bad'); return; } view = 'cards'; } // after a reload: the open in progress
+    if (view === 'open' && !openable().length && !dealing()) { toast('No packs to open', 'bad'); return; }
     const progEl = h('div', { class: 'inprog' }), tilesEl = h('div');
     const packsEl = h('section', { class: 'packs', 'aria-label': 'Your packs' }, progEl, tilesEl);
     const stage = h('section', { class: 'stage', hidden: true, 'aria-label': 'Opening' });
@@ -406,8 +406,10 @@
     const practice = !!opts.practice; let practiceRun = false; // a practice pack (fun layer: practice.js): never saved
     if (practice) root.classList.add('practice');
     const TITLE = { cards: 'My cards', open: 'Open packs', practice: 'Practice pack' };
+    // live: Open packs lists the packs first (their Open button is what asks the wallet); the demo tears one at once
+    const packsOff = () => view === 'open' && !LIVE;
     function setView(v) {
-      view = v; packsEl.hidden = v === 'open' || !stage.hidden; coll.hidden = v === 'open';
+      view = v; packsEl.hidden = packsOff() || !stage.hidden; coll.hidden = v === 'open';
       const d = root.closest('dialog'), t = d?.querySelector('.sheet-head h2'); if (t) t.textContent = TITLE[practice ? 'practice' : v];
       d?.classList.toggle('fit', v === 'open'); // opening only: the sheet sizes to the stage (desktop)
     }
@@ -517,9 +519,11 @@
       const pick = fresh.slice(0, maxBatch()), usd = pick.reduce((a, c) => a + Store.caseUsd(c), 0), n = fresh.length;
       return h('div', { class: 'fresh-nudge' },
         h('p', {}, h('span', {}, h('b', { text: `${n} fresh ${n === 1 ? 'card' : 'cards'}` }), ` · ${Wear.hhmm(Wear.freshLeft(fresh[0]))} left`)), // one line: the detail and How say why
-        btn(pick.length < n ? `Case ${pick.length} fresh for ${Wear.usd(usd)}` : `Case all fresh for ${Wear.usd(usd)}`, 'primary small', () => {
-          Sheet.close('table'); Stations.open('grade', { as: 'case', pick: pick.map((c) => c.id) });
-        }, { 'data-key': 'case-fresh' }));
+        h('div', { class: 'row' },
+          btn('Grade', 'small', () => { Sheet.close('table'); Stations.open('grade', { pick: [] }); }, { 'data-key': 'grade-fresh' }),
+          btn(pick.length < n ? `Case ${pick.length} fresh for ${Wear.usd(usd)}` : `Case all fresh for ${Wear.usd(usd)}`, 'primary small', () => {
+            Sheet.close('table'); Stations.open('grade', { as: 'case', pick: pick.map((c) => c.id) });
+          }, { 'data-key': 'case-fresh' })));
     }
 
     // ---------- opening: rip the pack, one card at a time (rarest last), then a summary of everything pulled
@@ -542,18 +546,18 @@
     }
 
     // live: an open still unfinished (In progress, after a reload): "Deal now" deals it, then the same reveal
-    async function resumeLive(x) {
+    async function resumeLive(x, dealNow = true) {
       if (busy) return; busy = true; practiceRun = false;
-      return openLive(x.fire, x.packs, priorOf(), x.index);
+      return openLive(x.fire, x.packs, priorOf(), x.index, dealNow);
     }
     // live: open on chain (or follow open `index`), wait for the draw and the deal (the stage says where it is), then the same reveal
-    async function openLive(series, n, prior, index) {
+    async function openLive(series, n, prior, index, dealNow = true) {
       const msg = h('p', { class: 'stage-msg', 'aria-live': 'polite', text: 'Opening…' });
       packsEl.hidden = true; stage.hidden = false; if (view === 'open') coll.hidden = true;
       put(stage, h('div', { class: 'op-wait' }, h('img', { src: '../build3/pack.webp', alt: '', width: 240, height: 336 }), msg));
       const say = (t, a) => sayTo(msg, t, a), alive = () => root.isConnected;
-      const got = index != null ? await Live.followOpen(series, index, say, alive, { dealNow: true }) : await Live.openPacks(series, n, say, alive);
-      if (!got?.length) { busy = false; stage.hidden = true; put(stage); packsEl.hidden = view === 'open'; coll.hidden = false; render(); return; }
+      const got = index != null ? await Live.followOpen(series, index, say, alive, { dealNow }) : await Live.openPacks(series, n, say, alive);
+      if (!got?.length) { busy = false; stage.hidden = true; put(stage); packsEl.hidden = packsOff(); coll.hidden = view === 'open'; render(); return; }
       const per = S().series.cardsPerPack || 6, packs = [];
       for (let i = 0; i < got.length; i += per) packs.push(got.slice(i, i + per).sort((a, b) => rarity(a) - rarity(b))); // rarest last
       got.forEach((c) => hide.add(c.id));
@@ -927,7 +931,7 @@
       const fresh = () => pulled.map((c) => byId(c.id)).filter((c) => c && c.grade == null && !c.pending && !c.cased);
       const rank = (a, b) => rarity(b) - rarity(a) || HRANK[b.holo || 'none'] - HRANK[a.holo || 'none'] || b.serial - a.serial; // one ranking for Best and Share
       const best = [...cards].sort(rank)[0];
-      const close = () => { busy = false; stage.hidden = true; stage.classList.remove('opening'); packsEl.hidden = view === 'open'; put(stage); render(); };
+      const close = () => { busy = false; stage.hidden = true; stage.classList.remove('opening'); packsEl.hidden = packsOff(); put(stage); render(); };
       const seeAll = () => { close(); setView('cards'); renderColl(); root.closest('.sheet-body')?.scrollTo({ top: 0 }); coll.querySelector('h3')?.setAttribute('tabindex', '-1'); coll.querySelector('h3')?.focus({ preventScroll: true }); };
       const more = openable(), left = more.reduce((a, o) => a + o.n, 0);
       const nextSeries = (more.find((o) => o.series === series) || more[0])?.series; // same Series first, then the oldest
@@ -979,7 +983,10 @@
     setView(view); render();
     if (practice) { setView('open'); return openPractice(); }
     if (view === 'open') { // straight to the table: the oldest Series' next pack (demo: connects the demo wallet if needed)
-      if (LIVE) return Live.needWallet(() => openable().length && openPacks(openable()[0].series, 1));
+      if (LIVE) { // an open still waiting on its draw: back to its waiting screen (no new transaction); else the packs list
+        const going = (S().wallet.unfinished || []).find((x) => x.kind === 'open');
+        return going ? resumeLive(going, false) : Live.needWallet(() => {});
+      }
       if (!connected()) { Store.update((s) => { s.wallet.connected = true; }); toast('Demo wallet connected', 'good'); }
       openPacks(openable()[0].series, 1);
     }
@@ -1345,6 +1352,7 @@
         const c = byId(w._id), wrap = w.querySelector('.cwrap');
         const shell = h('img', { class: 'case-in', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: '' });
         wrap.append(shell);
+        w.scrollIntoView({ block: 'nearest', behavior: reduced() ? 'auto' : 'smooth' }); // the ones below the fold too
         await wait(reduced() ? 60 : 520);
         const f = wrap.querySelector('.cframe'); f.src = Store.cardImg(c); f.style.objectPosition = Store.cardPos(c); wrap.querySelector('.cface').className = wrap.querySelector('.cface').className.replace('hd-raw', 'hd-case');
         shell.remove(); w.classList.add('cased-done'); window.Sound?.play('case-snap', { gap: 60 }); window.Fun?.emit('case'); w.setAttribute('aria-label', `${c.character} cased`);

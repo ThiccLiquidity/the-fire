@@ -812,8 +812,7 @@
   }
   // My cards opens the collection; Open packs goes straight to tearing the next pack, or (none to open) says why and points at Buy
   function openStation(k) {
-    if (k !== 'open' || Stations.openableCount()) return Stations.open(k);
-    if ((S.wallet.unfinished || []).some((x) => x.kind === 'open')) return Stations.open('cards'); // live: an open still being dealt (In progress)
+    if (k !== 'open' || Stations.openableCount() || (S.wallet.unfinished || []).some((x) => x.kind === 'open')) return Stations.open(k); // live: an open still being dealt shows its waiting screen
     const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0);
     if (sealed) return toast(`Your Series ${S.series.no} packs open when sales end.`);
     if (sold()) return toast(`No packs to open. Series ${S.series.no + 1} is coming soon`);

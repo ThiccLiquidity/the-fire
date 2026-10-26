@@ -591,7 +591,10 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
       events.push({ key: "backup-acted", text: `the backup keeper had to step in (${sent.length} tx: ${sent.map((s) => s.split(" ")[0]).join(", ")}); is the main keeper down?` });
     }
     await notifier.report(h.alerts, { balance: h.balance, series, opens: opens.length, gradings: gradingsAfter.length, sent: sent.length, address: account.address, now: wallSec(wall) }, events);
-    return { now, sent, dealt, finished, alerts: h.alerts, opens, gradings: gradingsAfter, waiting, series };
+    // seconds until the soonest drand round still to come is published (keeper.mjs wakes then rather than at the interval)
+    const due = [...opens, ...gradingsAfter].filter((it) => !it.ready && it.roundAt !== undefined).map((it) => it.roundAt + cfg.actAfterSec - now).filter((s) => s >= 0n);
+    const nextRoundIn = due.length ? Number(due.reduce((a, b) => (b < a ? b : a))) : undefined;
+    return { now, sent, dealt, finished, alerts: h.alerts, opens, gradings: gradingsAfter, waiting, series, nextRoundIn };
   }
 
   // ------------------------------------------------------------------ FireSale's wallets and feeds

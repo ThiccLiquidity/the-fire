@@ -26,7 +26,8 @@
   // the card on screen is the metadata's image for its state now (one image, not a strip); no live holo parts (those
   // exist only for the demo cast), the plain image is drawn
   const gateway = Store.ipfs;
-  Store.cardImg = (c) => c.image || 'ui/card-back.webp';
+  // cased on screen before the chain's metadata says so (the casing animation): the same look's cased image (-c)
+  Store.cardImg = (c) => (!c.image ? 'ui/card-back.webp' : c.cased && c.grade == null && !c.pending ? c.image.replace(/-u\.webp$/, '-c.webp') : c.image);
   Store.cardPos = () => '50% 50%';
   Store.cardParts = () => null;
   Store.needsApproval = () => false; // the chain layer approves exactly what each call needs, as a step of the same action
@@ -603,6 +604,7 @@
     const r = await run(`Open ${plural(n, 'pack')}`, (o) => L.openPacks({ fire, n }, o));
     if (!r) return null;
     if (r.late || !(r.index >= 0)) { toast('Opened! Your cards land in My cards soon.'); return null; }
+    sync(); // the open shows as in progress at once, so reopening Open packs comes back to its wait, not a new transaction
     return followOpen(fire, r.index, say, alive, { before });
   }
   /** Follow open `index` of Series `fire` until it's dealt (the one just sent, or one still unfinished after a reload:

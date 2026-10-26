@@ -104,11 +104,14 @@ if (cfg.once) {
   for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { stopping = true; log(`${sig}: stopping after this pass`); wake?.(); });
   while (!stopping) {
     const t = Date.now();
-    try { await keeper.tick(); } catch (e) {
+    let r;
+    try { r = await keeper.tick(); } catch (e) {
       log(`pass failed: ${errMsg(e)}`);
       await keeper.notifier.report([{ key: "pass", text: `pass failed: ${errMsg(e)}` }], undefined, [], { passFailed: true });
     }
-    const wait = Math.max(1000, cfg.intervalSec * 1000 - (Date.now() - t));
+    // the interval, or sooner: a second after the next drand round a request waits on is out (it's delivered then)
+    const round = r?.nextRoundIn !== undefined ? (r.nextRoundIn + 1) * 1000 - (Date.now() - t) : Infinity;
+    const wait = Math.max(1000, Math.min(cfg.intervalSec * 1000 - (Date.now() - t), round));
     await new Promise((r) => { wake = r; setTimeout(r, wait); });
   }
 }
