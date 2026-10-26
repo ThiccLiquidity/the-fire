@@ -121,7 +121,7 @@
     const T = { ...DEFAULT_TUNING, ...(opts.tuning || {}) };
     const art = opts.art || {};
     const img = (src) => { if (!src) return null; const i = new Image(); i.src = src; return i; };
-    const A = { plank: img(art.plank), backdrop: img(art.backdrop), pack: img(art.pack), card: img(art.card), cardBack: img(art.cardBack), coinP: img(art.paperCoin), coinK: img(art.plankCoin) };
+    const A = { bench: img(art.bench), plank: img(art.plank), plankHit: img(art.plankHit), plankWow: img(art.plankSurprised), plankBlink: img(art.plankBlink), backdrop: img(art.backdrop), pack: img(art.pack), card: img(art.card), cardBack: img(art.cardBack), coinP: img(art.paperCoin), coinK: img(art.plankCoin) };
     const loaded = () => Object.values(A).map((i) => (i?.complete && i.naturalWidth ? 1 : 0)).join('');
     const cv = document.createElement('canvas'); cv.className = 'pf-canvas'; cv.setAttribute('role', 'img');
     cv.setAttribute('aria-label', 'Paper football: flick the folded paper through the pencil uprights');
@@ -129,14 +129,28 @@
     host.append(cv);
     const g = cv.getContext('2d');
     // the camera: chin on the table, 4 in behind the football and just over its top; level, fixed during the kick
-    const CAM_DB = 4.0, CAM_H = 1.9;
-    let W = 600, H = 420, dpr = 1, EYE = 0, F = 0, CX = 300;
+    const CAM_DB = 4.0;
+    let CAM_H = 1.9, W = 600, H = 420, dpr = 1, EYE = 0, F = 0, CX = 300;
+    // a painted bench plate (art.bench): where its bench's far edge, its centre line and its furnace mouth sit, in the
+    // plate's own pixels. The camera is fitted to it: the far edge (z = TABLE_END) lands on the plate's far edge and the
+    // football's base stays at 0.93H, so everything the game draws stands on the painted bench.
+    const SPEC = { w: 1536, h: 1024, edgeY: 465, midX: 768, mouth: [665, 240, 885, 410], ...(opts.benchSpec || {}) };
+    let plate = null; // { ps, oy } once the plate has loaded
     function size() {
       const r = cv.getBoundingClientRect(); dpr = Math.min(2, window.devicePixelRatio || 1);
       W = Math.max(280, r.width); H = Math.max(240, r.height);
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); g.setTransform(dpr, 0, 0, dpr, 0, 0);
       F = Math.min(0.85 * H, (W / 2 - 16) / Math.tan(18 * Math.PI / 180));
-      EYE = 0.93 * H - CAM_H * F / (CAM_DB - 0.26);           // the tee's table contact sits at 0.93H
+      bench = null;
+      if (A.bench?.complete && A.bench.naturalWidth) {
+        const ps = Math.max((W * 1.3) / SPEC.w, H / SPEC.h);  // wide enough for the view to lean toward an off-centre goal
+        const oy = Math.min(0, Math.max(H - SPEC.h * ps, 0.45 * H - SPEC.edgeY * ps)), yE = SPEC.edgeY * ps + oy;
+        const near = CAM_DB - 0.26, far = TABLE_END + CAM_DB, K = (0.93 * H - yE) / (1 / near - 1 / far);
+        CAM_H = K / F; EYE = yE - K / far; plate = { ps, oy };
+        // the furnace mouth, from the plate's pixels to the world (the plane z = FURN_Z)
+        const sz = F / (FURN_Z - TEE_Z + CAM_DB), [mx0, my0, mx1, my1] = SPEC.mouth;
+        MOUTH.x = ((mx1 - mx0) / 2) * ps / sz; MOUTH.y1 = CAM_H - (my0 * ps + oy - EYE) / sz; MOUTH.y0 = CAM_H - (my1 * ps + oy - EYE) / sz;
+      } else { plate = null; CAM_H = 1.9; EYE = 0.93 * H - CAM_H * F / (CAM_DB - 0.26); } // the tee's table contact sits at 0.93H
     }
     const proj = (x, y, z) => { const s = F / Math.max(0.5, z - TEE_Z + CAM_DB); return { x: CX + x * s, y: EYE + (CAM_H - y) * s, s }; };
 
@@ -235,7 +249,7 @@
         const cx = px + s * (shot.half + PEN_R), dx = b.x - cx, dz = b.z - D, d = Math.hypot(dx, dz);
         if (d < PEN_R + BALL_R && b.y > BLOCK_H - BALL_R && b.y < POST_H + BALL_R) {
           const nx = dx / (d || 1), nz = dz / (d || 1); b.x = cx + nx * (PEN_R + BALL_R); b.z = D + nz * (PEN_R + BALL_R);
-          if (bounce(b, nx, 0, nz, 0.45)) { b.doinked = true; sfx('doink'); shake = 3; burst('chips', b.x, b.y, b.z); emit('doink'); }
+          if (bounce(b, nx, 0, nz, 0.45)) { b.doinked = true; sfx('doink'); shake = 3; burst('chips', b.x, b.y, b.z); emit('doink'); wowUntil = clock + 1.2; }
         }
       }
       // the crossbar: a pencil lying across between the uprights
@@ -243,7 +257,7 @@
         const dy = b.y - BAR, dz = b.z - D, d = Math.hypot(dy, dz);
         if (d < PEN_R + BALL_R) {
           const ny = dy / (d || 1), nz = dz / (d || 1); b.y = BAR + ny * (PEN_R + BALL_R); b.z = D + nz * (PEN_R + BALL_R);
-          if (bounce(b, 0, ny, nz, 0.4)) { b.doinked = true; sfx('doink'); shake = 3; burst('chips', b.x, b.y, b.z); emit('doink'); }
+          if (bounce(b, 0, ny, nz, 0.4)) { b.doinked = true; sfx('doink'); shake = 3; burst('chips', b.x, b.y, b.z); emit('doink'); wowUntil = clock + 1.2; }
         }
       }
       // the oak block (or the RC car) the pencils stand in
@@ -259,6 +273,7 @@
       if (!b.thunked && z0 < P && b.z >= P && Math.abs(b.x - pc) < PLANK_W && b.y < PLANK_H) {
         b.thunked = true; b.z = P; bounce(b, 0, 0, -1, 0.32, 0.5); b.vy = Math.max(b.vy, 30); sfx('thunk'); shake = 6; emit('plank');
       }
+      if (!b.thunked && !b.passed && z0 < P && b.z >= P) { b.passed = true; if (Math.abs(b.x - pc) < PLANK_W + 3) wowUntil = clock + 1.2; } // whizzing past or over him
       // the table
       // the furnace: through the open door it burns; the iron front stops it
       if (z0 < FURN_Z && b.z >= FURN_Z) {
@@ -418,8 +433,22 @@
       shaving(h, -2.9, 6.2, 0.35, 0.7);
     }
     let bench = null, benchKey = '', grain = null;
+    A.bench && (A.bench.onload = () => size());
     const PAD = 0.2; // the cached bench is wider than the view, so the view can lean toward an off-centre goal
-    function backdrop() { // the far wall and the workbench (planks, grain, kid-table marks), drawn once per size, cached
+    function backdrop() { // the painted bench plate if there is one; otherwise the bench drawn here, once per size, cached
+      if (plate) {
+        const ps = plate.ps, pw = SPEC.w * ps, ph = SPEC.h * ps, key = `p${pw}x${ph}x${dpr}`;
+        if (!(bench && benchKey === key)) {
+          const c = document.createElement('canvas'); c.width = Math.round(pw * dpr); c.height = Math.round(ph * dpr); const h = c.getContext('2d');
+          h.drawImage(A.bench, 0, 0, c.width, c.height);
+          const back = document.createElement('canvas'); back.width = c.width; back.height = c.height; const b = back.getContext('2d');
+          b.filter = `blur(${Math.max(1.2, 1.6 * dpr)}px) brightness(.74) saturate(.82)`; b.drawImage(A.bench, 0, 0, c.width, c.height); b.filter = 'none';
+          const edge = SPEC.edgeY * ps * dpr, m = b.createLinearGradient(0, edge - 6 * dpr, 0, edge + 26 * dpr); m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(1, 'rgba(0,0,0,0)');
+          b.globalCompositeOperation = 'destination-in'; b.fillStyle = m; b.fillRect(0, 0, back.width, back.height);
+          h.drawImage(back, 0, 0); bench = c; benchKey = key;
+        }
+        g.drawImage(bench, CX - SPEC.midX * ps, plate.oy, pw, ph); return;
+      }
       const key = `${W}x${H}x${dpr}x${loaded()}`;
       if (!(bench && benchKey === key)) {
         const BW = W * (1 + 2 * PAD), c = document.createElement('canvas'); c.width = Math.round(BW * dpr); c.height = cv.height;
@@ -477,9 +506,19 @@
       g.drawImage(bench, CX - W / 2 - PAD * W, 0, W * (1 + 2 * PAD), H);
     }
     // ---------- the furnace behind the bench, its door open: kick a football over Plank and into it and it burns
-    const TABLE_END = 44, FURN_Z = 46, FURN_W = 26, MOUTH = { x: 6.5, y0: 1, y1: 9 };
+    const TABLE_END = 44, FURN_Z = 46, FURN_W = 26, MOUTH = { x: 6.5, y0: 1, y1: 9 }; // MOUTH is refitted to a painted plate
     let burnFlash = 0;
     function furnace(real) {
+      if (plate) { // the painted furnace: make its fire breathe, and flare when a football goes in
+        const ps = plate.ps, [mx0, my0, mx1, my1] = SPEC.mouth, x0 = CX + (mx0 - SPEC.midX) * ps, x1 = CX + (mx1 - SPEC.midX) * ps, y0 = my0 * ps + plate.oy, y1 = my1 * ps + plate.oy;
+        const flick = 0.5 + 0.5 * Math.sin(clock * 11) * Math.sin(clock * 5.3 + 2), heat = 0.07 + 0.06 * flick + burnFlash * 0.8;
+        const cx = (x0 + x1) / 2, gr = g.createRadialGradient(cx, y1, 0, cx, y1, (x1 - x0) * (1.1 + burnFlash));
+        gr.addColorStop(0, `rgba(255,150,50,${heat})`); gr.addColorStop(1, 'rgba(255,120,40,0)');
+        g.save(); g.globalCompositeOperation = 'lighter'; g.fillStyle = gr; g.fillRect(cx - (x1 - x0) * 2.2, y0 - (y1 - y0), (x1 - x0) * 4.4, (y1 - y0) * 3);
+        if (burnFlash > 0) { g.fillStyle = `rgba(255,140,60,${burnFlash * 0.18})`; g.fillRect(0, 0, W, H); }
+        g.restore();
+        burnFlash = Math.max(0, burnFlash - real * 1.2); return;
+      }
       const yEdge = proj(0, 0, TABLE_END).y; // the bench's far edge: everything here is behind the bench
       g.save(); g.beginPath(); g.rect(0, 0, W, yEdge); g.clip();
       const L = proj(-FURN_W / 2, -6, FURN_Z), R = proj(FURN_W / 2, 30, FURN_Z), s = L.s;
@@ -520,7 +559,7 @@
     function atmosphere(D, real) {
       const gp = proj(shot.offset, 0, D);
       const lamp = g.createRadialGradient(gp.x, gp.y, 0, gp.x, gp.y, Math.max(W, H) * 0.75);
-      lamp.addColorStop(0, `rgba(255,${Math.round(190 - burnFlash * 60)},${Math.round(110 - burnFlash * 60)},${0.2 + burnFlash * 0.25})`); lamp.addColorStop(0.45, 'rgba(255,170,90,.07)'); lamp.addColorStop(1, 'rgba(255,170,90,0)');
+      lamp.addColorStop(0, `rgba(255,${Math.round(190 - burnFlash * 60)},${Math.round(110 - burnFlash * 60)},${(plate ? 0.08 : 0.2) + burnFlash * 0.25})`); lamp.addColorStop(0.45, 'rgba(255,170,90,.07)'); lamp.addColorStop(1, 'rgba(255,170,90,0)');
       g.fillStyle = lamp; g.fillRect(0, 0, W, H);
       for (const m of motes) {
         m.x = (m.x + m.v * real) % 1; const x = m.x * W, y = H * 0.12 + m.y * H * 0.5 + Math.sin(clock * 0.7 + m.ph) * 6;
@@ -542,9 +581,12 @@
         if (z % 6 === 0 && p.s > 9) { const m = proj(-1.2, 0.01, TEE_Z + z); g.font = `700 ${Math.max(7, Math.min(13, p.s * 0.22))}px Nunito, system-ui, sans-serif`; g.fillText(String(z), m.x, m.y + 1); }
       }
     }
-    let pc = null; // Plank, lit by the lamp, on his own small canvas
+    let pc = null, wowUntil = -1; // Plank, lit by the lamp, on his own small canvas; until when he looks surprised
     function plank() {
-      const k = A.plank, P = TEE_Z + shot.dist + PLANK_BACK, base = proj(shot.offset, 0, P), hh = PLANK_H * base.s;
+      const ok = (i) => i?.complete && i.naturalWidth, hitAge = ball?.thunkAt ? clock - ball.thunkAt : 9;
+      // his face: spirals for a moment after a hit; wide-eyed at a doink, a near miss past him or a kick into the furnace
+      const blink = (clock % 4.7) < 0.16 || (clock % 4.7 > 0.32 && clock % 4.7 < 0.44 && Math.floor(clock / 4.7) % 3 === 0); // now and then, sometimes twice
+      const k = hitAge < 1.1 && ok(A.plankHit) ? A.plankHit : clock < wowUntil && ok(A.plankWow) ? A.plankWow : blink && ok(A.plankBlink) ? A.plankBlink : A.plank, P = TEE_Z + shot.dist + PLANK_BACK, base = proj(shot.offset, 0, P), hh = PLANK_H * base.s;
       const sh = g.createRadialGradient(base.x, base.y, 0, base.x, base.y, 2.4 * base.s); sh.addColorStop(0, 'rgba(15,6,1,.5)'); sh.addColorStop(1, 'rgba(15,6,1,0)');
       g.fillStyle = sh; g.save(); g.translate(base.x, base.y); g.scale(1, 0.2); g.translate(-base.x, -base.y); g.beginPath(); g.arc(base.x, base.y, 2.4 * base.s, 0, Math.PI * 2); g.fill(); g.restore();
       if (!(k?.complete && k.naturalWidth)) { g.fillStyle = '#e8c860'; g.fillRect(base.x - 1.4 * base.s, base.y - hh, 2.8 * base.s, hh); return; }
@@ -557,11 +599,12 @@
       // a hit: he squashes and wobbles
       const age = ball?.thunkAt ? clock - ball.thunkAt : 9, kk = Math.max(0, 1 - age / 0.55), wob = Math.sin(age * 28) * kk;
       g.save(); g.translate(base.x, base.y); g.rotate(wob * 0.07); g.scale(1 + 0.1 * kk * Math.max(0, Math.cos(age * 28)), 1 - 0.12 * kk * Math.max(0, Math.cos(age * 28)));
-      g.drawImage(pc, -ww / 2, -hh, ww, hh); g.restore();
+      g.shadowColor = 'rgba(8,3,0,.9)'; g.shadowBlur = Math.max(6, ww * 0.12); g.drawImage(pc, -ww / 2, -hh, ww, hh); g.restore();
     }
     // a sharpened #2 pencil standing eraser-up from y0 to y1 at (x, z): three faces of the hexagon, a shine, the ferrule
     function pencil(x, z, y0, y1) {
       const b = proj(x, y0, z), t = proj(x, y1, z), w = Math.max(2.5, PEN_R * 2 * b.s);
+      g.save(); g.shadowColor = 'rgba(8,3,0,.95)'; g.shadowBlur = Math.max(4, w * 1.4); g.fillStyle = '#1a0d04'; g.fillRect(b.x - w / 2 - 1, t.y - 1, w + 2, b.y - t.y + 1); g.restore();
       const top = t.y + w * 1.3, er = w * 0.8, L = b.x - w / 2;
       g.fillStyle = 'rgba(15,6,1,.35)'; g.fillRect(L + w * 0.6, top + w, w * 0.7, b.y - top - w); // its shadow on the block's face
       g.fillStyle = '#ffd864'; g.fillRect(L, top, w * 0.28, b.y - top);
@@ -598,6 +641,7 @@
       pencil(lx, z, BLOCK_H, POST_H); pencil(rx, z, BLOCK_H, POST_H);
       // the crossbar: a pencil lashed level where the thumbs touched, with red rubber bands
       const a = proj(lx - PEN_R, BAR, z), b = proj(rx + PEN_R, BAR, z), w = Math.max(2.5, PEN_R * 2 * a.s), y0 = a.y - w / 2;
+      g.save(); g.shadowColor = 'rgba(8,3,0,.95)'; g.shadowBlur = Math.max(4, w * 1.4); g.fillStyle = '#1a0d04'; g.fillRect(a.x - 1, y0 - 1, b.x - a.x + 2, w + 2); g.restore();
       g.fillStyle = 'rgba(15,6,1,.3)'; g.fillRect(a.x, y0 + w * 0.6, b.x - a.x, w * 0.6);
       g.fillStyle = '#ffd864'; g.fillRect(a.x, y0, b.x - a.x, w * 0.3); g.fillStyle = '#f1b51c'; g.fillRect(a.x, y0 + w * 0.3, b.x - a.x, w * 0.4); g.fillStyle = '#b9800f'; g.fillRect(a.x, y0 + w * 0.7, b.x - a.x, w * 0.3);
       g.fillStyle = 'rgba(255,250,220,.7)'; g.fillRect(a.x, y0 + w * 0.2, b.x - a.x, Math.max(0.8, w * 0.08));
@@ -675,7 +719,7 @@
     }
     // ---------- the HUD: brass-and-iron scoreboards with flip digits (the factory's look) and a wind dial
     const DISP = 'Russo One, "Arial Black", system-ui, sans-serif';
-    function plate(x, y, w, h) { // an iron panel in a brass bezel, four rivets
+    function ironPlate(x, y, w, h) { // an iron panel in a brass bezel, four rivets
       const r = 8;
       g.fillStyle = 'rgba(0,0,0,.45)'; g.beginPath(); g.roundRect(x + 2, y + 3, w, h, r); g.fill();
       const br = g.createLinearGradient(x, y, x, y + h); br.addColorStop(0, '#f0c56a'); br.addColorStop(0.45, '#b98632'); br.addColorStop(1, '#6e4a17');
@@ -733,17 +777,17 @@
       windDial(12 + 32, top + 32, 32);
       // the streak board, centre: STREAK in flip digits, BEST under it
       const bw = 132, bh = 66, bx = W / 2 - bw / 2;
-      plate(bx, top, bw, bh); label(streak || !best ? 'STREAK' : 'STREAK', W / 2, top + 17, 10);
+      ironPlate(bx, top, bw, bh); label(streak || !best ? 'STREAK' : 'STREAK', W / 2, top + 17, 10);
       flipText('streak', W / 2 - 25, top + 22, String(Math.min(99, streak)).padStart(2, '0'), 30, 23);
       label(`BEST ${best}  ·  LV ${shot.level}`, W / 2, top + bh - 5, 9);
       // the distance plate, right
       const dw = 86, dx = W - 12 - dw;
-      plate(dx, top, dw, 54); label('DISTANCE', dx + dw / 2, top + 17, 10);
+      ironPlate(dx, top, dw, 54); label('DISTANCE', dx + dw / 2, top + 17, 10);
       flipText('dist', dx + 14, top + 22, String(Math.round(shot.dist)).padStart(2, '0'), 24, 17);
       label('IN', dx + dw - 16, top + 41, 11);
       g.textAlign = 'center';
       if (shot.move && !ball) { g.font = `400 ${Math.max(12, H * 0.024)}px ${DISP}`; g.fillStyle = '#ffb07a'; g.fillText('MOVING POSTS · TIME IT', W / 2, top + bh + 18); }
-      if (note && clock - note.at < 3.5 && !ball) { const nw = Math.min(W - 40, 280); plate(W / 2 - nw / 2, H * 0.17, nw, 34); g.font = `400 ${Math.max(11, H * 0.022)}px ${DISP}`; g.fillStyle = '#ffd27a'; g.textAlign = 'center'; g.fillText(note.text.toUpperCase(), W / 2, H * 0.17 + 22); }
+      if (note && clock - note.at < 3.5 && !ball) { const nw = Math.min(W - 40, 280); ironPlate(W / 2 - nw / 2, H * 0.17, nw, 34); g.font = `400 ${Math.max(11, H * 0.022)}px ${DISP}`; g.fillStyle = '#ffd27a'; g.textAlign = 'center'; g.fillText(note.text.toUpperCase(), W / 2, H * 0.17 + 22); }
       if (hint && !ball && !press) { g.font = `800 ${Math.max(12, H * 0.03)}px Nunito, system-ui, sans-serif`; g.fillStyle = 'rgba(0,0,0,.5)'; const tx = matchMedia('(pointer: fine)').matches ? 'Press on the paper, pull back, let go' : 'Touch the paper and flick up'; g.fillText(tx, W / 2 + 1, H - 13); g.fillStyle = 'rgba(246,232,207,.95)'; g.fillText(tx, W / 2, H - 14); }
     }
     // ---------- juice: chips and dust that fly off a hit, confetti at the big streaks, a comic burst behind POW
@@ -795,15 +839,20 @@
       }
       if (result && result !== 'good' && clock - resultAt < 1.2) {
         const word = { short: 'Short', under: 'Under the bar', 'wide-left': 'Wide left', 'wide-right': 'Wide right', doink: 'Doink!' }[result];
-        g.font = `700 ${Math.max(26, H * 0.065)}px ${HAND}`; g.textAlign = 'center';
+        g.font = `400 ${Math.max(24, H * 0.06)}px ${DISP}`; g.textAlign = 'center';
         g.save(); g.translate(W / 2, H * 0.3); g.rotate(-0.04);
         g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,.7)'; g.strokeText(word, 0, 0); g.fillStyle = '#ff6b5a'; g.fillText(word, 0, 0); g.restore();
       }
     }
 
     let freeze = 0, wasThunk = false, lastStreak = 0;
+    // one frame; a drawing error is logged and the game keeps running (it never freezes on a bad frame)
     function frame(now) {
       if (!alive) return;
+      try { drawFrame(now); } catch (e) { console.error('paper football frame', e); last = now; }
+      requestAnimationFrame(frame);
+    }
+    function drawFrame(now) {
       const real = Math.min(0.05, (now - last) / 1000); last = now;
       if (freeze > 0) freeze -= real; // the hit-stop on Plank: the world holds for a beat
       const dt = freeze > 0 ? 0 : real * (ball ? T.slow : 1); clock += dt;
@@ -825,7 +874,7 @@
       backdrop();
       const D = TEE_Z + shot.dist, Pz = D + PLANK_BACK, t = clock - shot.t0;
       furnace(real); if (ball?.burning && !ball.gone) paper(ball); particles(dt, true); atmosphere(D, real);
-      tape(D);
+      if (!plate) tape(D);
       // far to near: Plank, the goal, the football (wherever it is between them), with a soft trail in flight
       const bz = ball ? ball.z : TEE_Z, drawBall = () => {
         if (!ball || ball.gone || ball.burning) return; shadow(ball);
@@ -840,7 +889,6 @@
       vignette();
       g.restore();
       hud(); banners(); drawConfetti(real);
-      requestAnimationFrame(frame);
     }
     size(); CX = W / 2; addEventListener('resize', size); requestAnimationFrame(frame);
 
