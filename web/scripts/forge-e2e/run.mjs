@@ -48,6 +48,22 @@ await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
 const SITE = `http://127.0.0.1:${server.address().port}/forge/`;
 
 let checks = 0;
+/** Burn: pick `n` cards, a single card by a tap, a stack of copies through its picker (how many from it). */
+async function pickBurn(pg, n) {
+  const tiles = pg.locator("#sheet-burn .cgrid .ctile");
+  let got = 0;
+  for (let i = 0; got < n; i++) {
+    const t = tiles.nth(i);
+    if (await t.evaluate((el) => el.classList.contains("stack"))) {
+      await t.click(); await pg.locator("#sheet-burnstack[open]").waitFor();
+      await pg.click('#sheet-burnstack [data-key="stk-none"]');
+      const room = await t.evaluate((el) => +/×(\d+)/.exec(el.querySelector(".stack-n").textContent)[1]);
+      for (let k = 0; k < Math.min(room, n - got); k++) { await pg.click('#sheet-burnstack [data-key="stk-more"]'); got++; }
+      await pg.click('#sheet-burnstack [data-key="stk-done"]'); await pg.locator("#sheet-burnstack[open]").waitFor({ state: "detached" }).catch(() => {});
+    } else { await t.click(); got++; }
+  }
+}
+
 const check = (cond, what) => { if (!cond) throw new Error(`CHECK FAILED: ${what}`); checks++; console.log(`  ok  ${what}`); };
 
 console.log("local chain: deploying");
@@ -367,7 +383,7 @@ try {
   console.log("\n== burn");
   await page.evaluate(() => Stations.open("burn"));
   const bt = page.locator("#sheet-burn .cgrid .ctile");
-  await bt.nth(0).click(); await bt.nth(1).click(); await bt.nth(2).click();
+  await bt.first().waitFor(); await pickBurn(page, 3);
   await page.click('#sheet-burn [data-key="burn"]');
   await page.locator("#sheet-burnwarn[open]").waitFor();
   if (await page.locator("#bw-type").count()) await page.fill("#bw-type", "BURN");
@@ -821,7 +837,7 @@ try {
       const pt = Scene.popToken; Scene.popToken = (...a) => { __fp.tokens++; return pt(...a); };
       Store.update((s) => { s.wallet.burnCount = 40; s.wallet.connected = true; }); __fp.credits0 = Store.state.wallet.credits; });
     await p.evaluate(() => Stations.open("burn")); await p.locator("#sheet-burn .ctile").first().waitFor();
-    for (let i = 0; i < 4; i++) await p.locator("#sheet-burn .ctile").nth(i).click();
+    await pickBurn(p, 4);
     await p.click('#sheet-burn [data-key="burn"]'); await p.locator("#sheet-burnwarn").waitFor();
     if (await p.locator("#bw-type").count()) await p.fill("#bw-type", "BURN");
     await p.click("#sheet-burnwarn .bw-act .btn.danger");

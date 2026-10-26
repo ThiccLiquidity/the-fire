@@ -943,3 +943,20 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .qp[aria-pressed="true"] { background: var(--brass); border-color: var(--brass); color: #1a1209 }
 .qp:hover:not([aria-pressed="true"]) { color: var(--ink); border-color: var(--brass) }
 .qp-gap { flex: none; width: 1px; height: 22px; background: var(--line-2); margin: 0 4px }
+
+/* Burn: a stack of exact copies (two cards peek out behind it), its count, and how many of it are picked */
+.ctile.stack .cwrap { position: relative }
+.ctile.stack .cwrap::before, .ctile.stack .cwrap::after { content: ''; position: absolute; inset: 0; border-radius: 6%/4.3%; background: #2a1d12; border: 1px solid var(--line-2); z-index: -1 }
+.ctile.stack .cwrap::before { transform: translate(7px, 6px) rotate(3deg) } .ctile.stack .cwrap::after { transform: translate(3px, 3px) rotate(1.5deg) }
+.ctile.stack .cwrap { isolation: isolate }
+.stack-n { font: 800 13px var(--body); padding: 2px 9px; border-radius: 999px; background: var(--ink); color: #1a1209 }
+.stack-burn { position: absolute; z-index: 5; left: 50%; bottom: 10%; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: var(--ember); color: #1a0d05; font: 800 14px var(--body); white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.5) }
+.stack-burn[hidden] { display: none }
+.st-stack { display: grid; gap: 14px }
+.stk-top { display: grid; grid-template-columns: 96px 1fr; gap: 14px; align-items: center }
+.stk-top h3 { margin: 0 0 2px } .stk-top p { margin: 0 }
+.stk-have { margin-top: 6px !important; font-weight: 800; color: var(--gold) }
+.stk-step { display: grid; grid-template-columns: 56px 1fr 56px; gap: 10px; align-items: center }
+.stk-b { min-height: 56px; font: 800 26px var(--body) }
+.stk-k { text-align: center; display: grid } .stk-k b { font: 400 40px var(--display); color: var(--ember) } .stk-k small { color: var(--muted); font-weight: 700 }
+.stk-quick { justify-content: center }

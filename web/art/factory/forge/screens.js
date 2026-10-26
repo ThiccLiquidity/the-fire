@@ -1497,6 +1497,7 @@
   // Best to burn: spare copies first (never the best copy of a character+material), then least rare.
   // Within a group of copies the keeper is the most valuable one; every other copy is a spare.
   const dupKey = (c) => c.character + '|' + c.material; // copies = same character and material
+  const stackKey = (c) => [c.series, c.character, c.material, c.holo || 'none', c.cased ? 'case' : 'raw'].join('|'); // exact copies (Burn's stacks)
   const gradeKey = (c) => c.grade ?? 0; // ungraded burns like a low grade
   const keepOrder = (a, b) => HRANK[b.holo || 'none'] - HRANK[a.holo || 'none'] || gradeKey(b) - gradeKey(a) || (edNum(a) || 1e9) - (edNum(b) || 1e9) || a.serial - b.serial;
   function dupInfo() { // id -> { n, spare }
@@ -1545,6 +1546,37 @@
         h('span', { class: 'muted', text: packs ? `+${packs} free pack${packs > 1 ? 's' : ''}` : `${BURN_GOAL - b - n} to a free pack` })), act); // counts the picks, like the confirm window
     }
     function toggle(c, el) { sel.has(c.id) ? sel.delete(c.id) : sel.add(c.id); el.setAttribute('aria-pressed', String(sel.has(c.id))); renderFoot(); }
+    // a stack of exact copies: one tile with its count; tapping it picks how many of them to burn
+    function stackTile(g) {
+      const k = g.filter((c) => sel.has(c.id)).length;
+      const b = cardTile(g[0], { onTap: () => pickFromStack(g), tag: h('span', { class: 'stack-n', text: `×${g.length}` }) });
+      b.classList.add('stack', 'pick'); b.setAttribute('aria-pressed', String(k > 0));
+      b.setAttribute('aria-label', `${describe(g[0])}, ${g.length} copies${k ? `, ${k} to burn` : ''}. Pick how many to burn`);
+      b.querySelector('.cwrap').append(h('span', { class: 'stack-burn', hidden: !k, text: `Burn ${k}` }));
+      return b;
+    }
+    // which copies go first: the highest print numbers (the low ones are the keepers), then the newest
+    const burnFirst = (a, b) => (edNum(b) || 0) - (edNum(a) || 0) || b.serial - a.serial;
+    function pickFromStack(g) {
+      const order = [...g].sort(burnFirst), n = g.length;
+      let k = g.filter((c) => sel.has(c.id)).length || n - 1;
+      const body = h('div', { class: 'st st-stack' });
+      const draw = () => put(body,
+        h('div', { class: 'stk-top' }, h('div', { class: 'stk-card' }, cardFace(g[0], true)),
+          h('div', {}, h('h3', { text: g[0].character }), h('p', { class: 'muted', text: `${kindLine(g[0])} · ${g[0].cased ? 'Cased' : 'Raw'} · Series ${g[0].series}` }),
+            h('p', { class: 'stk-have', text: `You have ${n}` }))),
+        h('div', { class: 'stk-step', role: 'group', 'aria-label': 'How many to burn' },
+          btn('−', 'stk-b', () => { k = Math.max(0, k - 1); draw(); }, { disabled: k <= 0, 'aria-label': 'One fewer', 'data-key': 'stk-less' }),
+          h('div', { class: 'stk-k' }, h('b', { text: String(k) }), h('small', { text: `to burn · ${n - k} left` })),
+          btn('+', 'stk-b', () => { k = Math.min(n, k + 1); draw(); }, { disabled: k >= n, 'aria-label': 'One more', 'data-key': 'stk-more' })),
+        h('div', { class: 'row stk-quick' }, btn('All but one', 'small', () => { k = n - 1; draw(); }, { 'data-key': 'stk-allbut' }), btn('None', 'small', () => { k = 0; draw(); }, { 'data-key': 'stk-none' })),
+        k === n ? h('p', { class: 'why', text: `That's every copy: none left after.` }) : null,
+        h('div', { class: 'row' }, btn(k ? `Pick ${k} to burn` : 'Done', 'primary', () => {
+          g.forEach((c) => sel.delete(c.id)); order.slice(0, k).forEach((c) => sel.add(c.id));
+          Sheet.close('burnstack'); render(true);
+        }, { 'data-key': 'stk-done' })));
+      draw(); Sheet.open('burnstack', { title: `${g[0].character} ×${n}`, body });
+    }
     // force: the picks changed from here (All Paper, Clear); a Store update rebuilds only when the cards or filters did
     function render(force) {
       const n0 = sel.size; [...sel].forEach((id) => { const c = byId(id); if (!c || c.pending) sel.delete(id); });
@@ -1565,7 +1597,12 @@
         sel_('holo', 'Holo', [['any', 'Any'], ['none', 'None'], ['frame', 'Frame'], ['picture', 'Picture'], ['full', 'Full']]),
         sel_('grade', 'Grade', [['all', 'All'], ['none', 'Not graded'], ['10', 'PDA 10'], ['9-8', 'PDA 9–8'], ['7-6', 'PDA 7–6'], ['5-4', 'PDA 5–4'], ['3-2', 'PDA 3–2'], ['1', 'PDA 1']]),
         sel_('sort', 'Sort', [['best', 'Best to burn'], ['serial', 'Newest'], ['rarity', 'Rarity'], ['grade', 'Grade']]));
-      const tagFor = (c) => { const d = dups.get(c.id); return d?.spare ? h('span', { class: 'dup-b', text: `Duplicate ×${d.n}` }) : null; };
+      // stacks: exact copies (same Series, character, material and holo; raw or cased apart; a slab is always its own)
+      const stacks = new Map();
+      for (const c of list) { const k = c.grade != null ? 'g' + c.id : stackKey(c); (stacks.get(k) || stacks.set(k, []).get(k)).push(c); }
+      const tiles = [...stacks.values()].map((g) => (g.length === 1
+        ? cardTile(g[0], { selectable: true, selected: sel.has(g[0].id), onTap: toggle })
+        : stackTile(g)));
       const visPaper = list.filter((c) => c.material === 'paper');
       const quick = h('div', { class: 'row quick' },
         visPaper.length ? btn('All Paper', 'small', () => { visPaper.forEach((c) => sel.add(c.id)); render(true); }, { 'data-key': 'allpaper' }) : null,
@@ -1576,7 +1613,7 @@
         all.length ? filters : null,
         all.length && bfilt.sort === 'best' ? h('p', { class: 'muted small burn-hint', text: spares ? 'Spares first. Your best copy is never picked.' : 'Commons first.' }) : null,
         all.length ? quick : null,
-        list.length ? h('div', { class: 'cgrid' }, list.map((c) => cardTile(c, { selectable: true, selected: sel.has(c.id), onTap: toggle, tag: tagFor(c) })))
+        list.length ? h('div', { class: 'cgrid' }, tiles)
           : h('div', { class: 'empty-state' }, h('p', { text: all.length ? 'No cards match.' : 'No cards to burn.' }),
             all.length ? btn('Clear filters', 'small', () => { Object.assign(bfilt, { series: 'all', mat: 'all', holo: 'any', grade: 'all' }); render(); }, { 'data-key': 'clear' }) : null), foot);
       prog._key = foot._key = null; renderFoot();

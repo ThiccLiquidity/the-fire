@@ -264,8 +264,8 @@ function watchAfterConnect(config: Config) {
 let pub: PublicClient | undefined;
 /** Reads Robinhood Chain through the site's RPC, whatever chain the wallet is on. Needs no wallet. */
 export function getPublicClient(): PublicClient {
-  // reads made together (a page of cards, a wallet's balances) go as one JSON-RPC batch request, not one each
-  return (pub ??= createPublicClient({ chain: robinhood, transport: http(READ_RPC, { batch: { batchSize: 50, wait: 16 } }) }) as PublicClient);
+  // one request per read: the testnet RPC refused big JSON-RPC batches (a wallet's cards), so none are sent
+  return (pub ??= createPublicClient({ chain: robinhood, transport: http(READ_RPC) }) as PublicClient);
 }
 
 /** The connected wallet, on Robinhood Chain (for the live contract calls later). Throws if not connected. */

@@ -664,7 +664,10 @@
     }
     if (!alive()) { toast('Your cards land in My cards soon.'); return null; }
     say('Here they come…');
-    const all = (await L.cardsOf(me())).map(toCard);
+    // the new cards: read again a few times; if the reads keep failing, they're safe in My cards (never a stuck screen)
+    let all = null;
+    for (let i = 0; i < 3 && !all; i++) all = await L.cardsOf(me()).then((cs) => cs.map(toCard), (e) => { console.warn('cards read failed', e); return null; });
+    if (!all) { toast('Your cards are in your wallet. Open My cards to see them.', 'bad'); return null; }
     S.cards = all; cardsAt = Date.now(); sync();
     return all.filter((c) => !before.has(c.id) && c.series === fire).sort((a, b) => a.serial - b.serial);
   }

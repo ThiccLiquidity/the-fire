@@ -448,7 +448,7 @@ export async function cardSerialsOf(owner: Address): Promise<number[]> {
 export async function cardsOf(owner: Address): Promise<Card[]> {
   const serials = await cardSerialsOf(owner);
   const out: Card[] = [];
-  for (let i = 0; i < serials.length; i += 50) out.push(...(await Promise.all(serials.slice(i, i + 50).map(card)))); // one batch request per 50 cards (wallet.ts)
+  for (let i = 0; i < serials.length; i += 20) out.push(...(await Promise.all(serials.slice(i, i + 20).map(card))));
   return out;
 }
 
