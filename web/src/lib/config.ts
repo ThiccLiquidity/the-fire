@@ -21,7 +21,7 @@ export interface Deployment {
 export type ContractName =
   | "PlankUsdTwap" | "OpenDrandRouter" | "PaperUsdTwap" | "FirePacks" | "FireCards" | "CardsRenderer" | "RecipeDealer"
   | "RecipeCompiler" | "PlankBurner" | "FireCredits" | "FireGroups" | "FireSale" | "PaperBurner" | "FirePsa" | "CardsAdapter" | "PsaAdapter"
-  | "FireProfiles";
+  | "FireProfiles" | "FireGames";
 
 /** The chosen network's deployment (net.ts: ?live=testnet, ?live=mainnet, or a test's local chain). */
 export const DEPLOYMENT: Deployment = NET.deployment;

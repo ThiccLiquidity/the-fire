@@ -86,9 +86,11 @@ are built on this `ETH_USD_FEED` (and this PAPER and `PLANK_USD_FEED`, for the P
 required. Then it deploys FirePacks, FireCards, CardsRenderer, RecipeDealer and RecipeCompiler, PlankBurner (no
 owner, no withdraw: it holds the PLANK burn share when a sale's swap can't run), FireCredits, FireSale, PaperBurner
 (with its feeds and default routes), FirePsa, one drand adapter each for FireCards and FirePsa, and FireProfiles
-(names and profile pictures; no owner, nothing to wire), wires them (set-once
+(names and profile pictures; no owner, nothing to wire) and FireGames (the game room's run entries: paper football
+is game 1 at 1 PAPER, prizes allowed in FireCredits; the server signer, the Series and the prize awarder stay unset,
+so paid play is closed until the owner sets them), wires them (set-once
 links, each checked: FireSale and FireCredits point at each other, FireSale's PlankBurner uses the same router and
-feeds; FireSale's PaperBurner is the one deployed; FirePsa and the `KEEPERS` wallets may flush PaperBurner), and offers ownership of all seven owned contracts to `OWNER` (two steps: the owner accepts in step 4). It
+feeds; FireSale's PaperBurner is the one deployed; FirePsa and the `KEEPERS` wallets may flush PaperBurner), and offers ownership of all eight owned contracts to `OWNER` (two steps: the owner accepts in step 4). It
 refuses an `OWNER` equal to the deployer.
 
 **FireProfiles on a deploy made before it existed** (no redeploy of anything else; no owner, so no Ledger step):
@@ -103,8 +105,8 @@ deploys a new one: every profile starts empty). Until `FireProfiles` is in the f
 VerifyDeploy shows a WAIT for it, not a FAIL. Then push the file and rebuild the site.
 
 ## 4. Hardware wallet accepts
-The owner accepts FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa and PaperBurner in one run
-(PlankBurner has no owner). Until then the deployer key controls those seven, so do it right after step 3. Seven
+The owner accepts FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa, PaperBurner and FireGames in one
+run (PlankBurner has no owner). Until then the deployer key controls those eight, so do it right after step 3. Eight
 confirmations on the device:
 ```powershell
 forge script script/AcceptOwnership.s.sol --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH `
@@ -303,7 +305,7 @@ $verify = "--verify", "--verifier", "blockscout", "--verifier-url", "https://exp
 2. **Steps 1–3** exactly as above, with `--account testnet-deployer`, `@verify` in place of the mainnet
    `--verify ...` line, and `OWNER` = the testnet owner. DeployInfra deploys the **real** `OpenDrandRouter` (real drand,
    no stand-in). Record after each one. Every script reads and writes `deployments/46630.json` (the chain's id).
-3. **Owner accepts** (step 4 above: all seven owned contracts, seven confirmations) with the testnet owner, then
+3. **Owner accepts** (step 4 above: all eight owned contracts, eight confirmations) with the testnet owner, then
    VerifyDeploy. To add profiles to a testnet deploy without redeploying the rest: `DeployProfiles.s.sol` (step 3 above) with
    `--account testnet-deployer` and `@verify`.
 4. **Keepers**: the same Railway setup (`ops/keeper/README.md`) as two more services with `CHAIN_ID=46630`, the testnet

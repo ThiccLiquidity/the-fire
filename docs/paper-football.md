@@ -67,24 +67,32 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
 26. **Keep it simple:** a straightforward, fun game. Any new infrastructure, contract change or cost is explained in
     plain English before it's built. The finished game still needs the owner's review and approval, and none of this
     authorizes going live.
+27. **Game room:** games are added to FireGames with a fixed entry each; prizes are capped at 6 per game per Series.
 
-## On chain (designed Oct 26, tests in `contracts/test/cards/Kicks.t.sol`)
+## On chain (game room added Oct 26, tests in `contracts/test/cards/Games.t.sol`)
 
-- **`FireKicks`** (new, `contracts/src/cards/FireKicks.sol`): `payRun(runId, series)` burns exactly 1 PAPER (`ENTRY`,
-  a constant) to the dead address and records who paid that run id, once. The game server starts a paid run only
-  after it sees `RunPaid` for its run id from the player's wallet.
-  - The owner's switches: `setPaused` (the kill switch) and `setSeries` (the competition new runs go into, moved on
-    at each Series launch, 0 = closed). There is no price setting.
+- **`FireGames`** (`contracts/src/cards/FireGames.sol`) takes the entries for every game in the game room.
+  - The owner adds a game once with `addGame(gameId, entry)`. Its entry is fixed forever: nothing can change it.
+    Paper football is game 1 at 1 PAPER (`DeployCards` adds it).
+  - `payRun(gameId, runId, series, deadline, sig)` burns exactly that game's entry from the player to the dead
+    address and records who paid that run id, once. It needs the game server's EIP-712 approval (`signer`) of that
+    game, run id, player, Series and deadline, so the server's checks (state, 18+) come first. The server starts a
+    paid run only after it sees `RunPaid` for its run id from the player's wallet.
+  - The owner's switches: `setPaused` (every game), `setGameOpen` (one game), `setSeries` (the competition new runs go
+    into, moved on at each Series launch, 0 = closed) and `setSigner`. The deploy leaves the signer and Series unset,
+    so paid play stays closed until the owner sets both.
   - The player names the competition, so a run paid during a switch can't land in the wrong one.
-  - Holds no funds. Ownership can't be renounced.
-- **`FireCredits.awardPrizes(series, winners, counts)`** gives the top three their free pack credits. Only the
-  owner or the `prizeAwarder` the owner sets (the server's wallet) can call it.
-  - Hard cap: at most `MAX_PRIZE_CREDITS = 6` per Series, however many calls, fixed forever. Even a stolen server
-    key can't print more than 6 packs a Series.
+  - Holds no funds, and moves nothing but the entry from the caller. Ownership can't be renounced.
+- **`FireCredits.awardPrizes(series, gameId, winners, counts)`** gives a game's winners their free pack credits. Only
+  the owner or the `prizeAwarder` the owner sets (the server's wallet) can call it.
+  - Only for games the owner allows (`setPrizeGame`; the deploy allows game 1), so a stolen server key can't make up
+    games.
+  - Hard cap: at most `MAX_PRIZE_CREDITS = 6` per game per Series, however many calls, fixed forever.
   - Only for a Series whose drop has started, so made-up Series numbers can't add more.
   - Prize credits are ordinary free-pack credits, spent the usual way in the next Series.
-- **Still to do:** wire both into `DeployCards` and `VerifyDeploy`; the server (run ids, shot seeds, replaying kicks,
-  the leaderboard); the site's paid-run flow; then the final audit covers them.
+- **Wired:** `DeployCards`, `AcceptOwnership` (FireGames is the eighth owned contract) and `VerifyDeploy`.
+- **Still to do:** the server (run ids, approvals, shot seeds, replaying kicks, the leaderboard); the site's paid-run
+  flow; then the final audit covers them.
 
 ## Rounds
 

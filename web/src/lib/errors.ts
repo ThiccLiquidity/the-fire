@@ -92,6 +92,18 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   NameTaken: "That name is taken.",
   NotYourCard: "That card isn't in your wallet.",
 
+  // the game room (FireGames) and its prizes (FireCredits)
+  AlreadyAdded: "That game is already added.",
+  AlreadyPaid: "This run is already paid. Start a new one.",
+  BadSignature: "This run's ticket doesn't match. Start a new run. Nothing was charged.",
+  Expired: "This run's ticket expired. Start a new run. Nothing was charged.",
+  NoGame: "That game isn't here.",
+  NotOpen: "Paid play is closed right now. Nothing was charged.",
+  NotAwarder: OWNER,
+  NotPrizeGame: "That game doesn't give prizes.",
+  InvalidShortString: INTERNAL,
+  StringTooLong: INTERNAL,
+
   // only the owner or Cardworks' own contracts
   AlreadySet: "That's already set.",
   NotCards: INTERNAL,

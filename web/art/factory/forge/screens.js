@@ -2023,7 +2023,7 @@
     + '<path d="M8 44 H112 M8 66 H112" stroke="#8a5a2b" stroke-width="2"/><rect x="44" y="40" width="32" height="14" rx="3" fill="#f0ece5" stroke="#3a2412" stroke-width="2"/>'
     + '<path d="M48 45 H72 M48 49 H66" stroke="#8a7b62" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
-  const OPEN = { cards: openTable, open: (o) => openTable({ ...o, view: 'open' }), table: openTable, grade: openGrade, burn: openBurn, suggest: openSuggest, results: openResults, pop: openPop };
+  const OPEN = { cards: openTable, open: (o) => openTable({ ...o, view: 'open' }), table: openTable, grade: openGrade, burn: openBurn, suggest: openSuggest, results: openResults, pop: openPop, games: () => window.Games?.room() };
   window.Stations = {
     openable, openableCount,
     open(name, opts) { (OPEN[name] || (() => toast('Unknown station', 'bad')))(opts); },

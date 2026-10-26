@@ -17,6 +17,7 @@
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     cards: '<rect x="3.5" y="6" width="11" height="15" rx="1.8"/><path d="M8.5 3.5l9.6 1.7a1.8 1.8 0 0 1 1.5 2.1l-2 11.1"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+    game: '<path d="M12 4l8 14H4z"/><path d="M9 13h6"/>', // a folded paper football
   };
   const svg = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
   // big numbers compact, 3 significant digits: 22.9K, 1.25M, 1T (never "1000.00B")
@@ -64,6 +65,7 @@
     <button class="station tool" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
     <button class="station tool" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small data-price="psa">from ${Wear.usd(Store.PRICES.CASE_USD)}</small></button>
     <button class="station tool" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></button>
+    <button class="station tool" type="button" data-st="games" style="--c: var(--gold)">${svg('game')}<b>Game room</b><small>Paper Football</small></button>
   </section>
   <footer class="strip" aria-label="What's in a pack">
     <img class="packart" src="ui/omni-pack.webp" alt="Series 7 pack">

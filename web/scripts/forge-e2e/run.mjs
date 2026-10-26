@@ -494,7 +494,9 @@ try {
       if (!m) return r.abort();
       tiltAsked.push(u.split("/").pop());
       const mat = m[1] === "coal" ? "charcoal" : m[1], file = m[2] === "plain" ? `${mat}-plain.webp` : `p/${mat}-print-0.webp`;
-      return r.fulfill({ status: 200, contentType: "image/webp", body: readFileSync(join(FACTORY, `forge/cards/cactus/${file}`)) });
+      // a Full Art or Gold card has no stand-in layer of its own here: any real layer will do (packs are random)
+      const path = join(FACTORY, `forge/cards/cactus/${file}`), body = readFileSync(existsSync(path) ? path : join(FACTORY, "forge/cards/cactus/paper-plain.webp"));
+      return r.fulfill({ status: 200, contentType: "image/webp", body });
     });
     const card = await page.evaluate(() => { const c = Store.state.cards.find((x) => x.src); Store.cardParts(c); return c && { id: c.id, src: c.src }; });
     await page.waitForFunction((id) => !!Store.cardParts(Store.state.cards.find((x) => x.id === id)), card.id, { timeout: 45_000, polling: 1000 })

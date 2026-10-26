@@ -1,5 +1,8 @@
 # Paper Football v1: Build Plan (revised)
 
+> Since this plan: FireKicks became **FireGames** (any number of games, server-signed `payRun`), and prizes are
+> `FireCredits.awardPrizes(series, gameId, …)`, capped at 6 per game per Series (docs/paper-football.md, decisions 14-27).
+
 ## 1. Verdict in brief
 
 1. **Copy the real game first.** The football is a right isosceles triangle flag-folded from a strip of notebook paper. On the lunch table, one kid held it upright with a fingertip and flicked it with the other hand. The goal was the other kid's hands: thumbs touching made the crossbar, index fingers pointed up made the uprights, and there was no top. We copy that exactly. A paperclip tee stands in for the holding finger (decision 3). Pencil uprights match the finger goal's size: a 5.0 in gap, a 2.5 in bar and tips at 5.5 in. Plank's face sits right behind the goal, just like the face behind the real hands. The score is kept as pencil tally marks on a torn scrap.

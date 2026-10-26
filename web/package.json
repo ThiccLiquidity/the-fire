@@ -12,11 +12,13 @@
     "test:chain": "node scripts/chain-test/run.mjs",
     "test:forge": "npm run build:wallet && bash art/factory/sync_forge.sh && node scripts/forge-e2e/run.mjs",
     "test:press": "node scripts/press-e2e/run.mjs",
+    "test:games": "node --test scripts/games-test/*.test.mjs",
     "lint": "oxlint",
     "gen:errors": "node scripts/gen-abi-errors.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
     "@reown/appkit": "1.8.24",
     "@reown/appkit-adapter-wagmi": "1.8.24",
     "@reown/appkit-controllers": "1.8.24",

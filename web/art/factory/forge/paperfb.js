@@ -7,96 +7,16 @@
    lower: pops up and floats; dead centre and higher: flat, and knuckling); the swipe's slant sends it sideways. Kicking harder costs accuracy.
    Levels unlock one factor at a time (distance, offset, wind, gap, then the RC car). Every condition is shown before
    the kick and comes from a seeded stream, so a kick can be replayed exactly.
-   Units are inches and seconds. A kick is { power 0..1, aim (radians), contact -1..1 }.
+   Units are inches and seconds. A kick is { power 0..1, aim (radians), contact -1..1 }. The rules, the input mapping and
+   the physics are the shared deterministic sim, paperfb-sim.js (load it first): the game server replays paid kicks with it.
    PaperFootball.mount(host, { art: { plank, backdrop }, onEvent }) returns { setTuning, tuning, stats, destroy, ... }. */
 (() => {
-  // ---------- tuning (the panel edits these; the owner sends the numbers back)
-  const DEFAULT_TUNING = {
-    slow: 0.45,        // flight time scale (1 = real time; lower = slower to watch)
-    vMin: 45, vMax: 150, // launch speed (in/s) at power 0 and 1
-    loft: 34,          // launch angle for a clean hit (degrees)
-    loftHit: 24,       // loft gained per half-edge lower you hit (degrees): low pops it up, high flies flat
-    sweetAt: -0.25,    // the clean spot: a little below the middle of the strike edge (share of half the edge)
-    aimMax: 22,        // widest aim (degrees either side)
-    flickFull: 2.6,    // phone: flick speed (CSS px/ms) that gives full power
-    pullFull: 0.38,    // desktop: pull-back length (share of the field's height) that gives full power
-    sweet: 0.22,       // the clean band around that spot (share of half the edge), at low power
-    sweetPower: 0.5,   // how much the clean middle shrinks at full power (share)
-    offPenalty: 0.3,   // speed lost at the very end of the edge (share)
-    drift: 30,         // sideways drift of a mishit at full power (in/s² at the end of the edge)
-    windK: 7,          // sideways push per mph (in/s²)
-    ramp: 0.2,         // difficulty budget added per level (spread across the unlocked factors)
-    start: 0.1,        // difficulty budget at level 0
-  };
-  const G = 386;                       // gravity, in/s²
-  // the goal: pencils sized like the finger goal, taller (full-length pencils) so a make reads at a glance
-  const BAR = 2.5, POST_H = 7.5, PEN_R = 0.14, BLOCK_H = 0.9, PLANK_BACK = 4.5, PLANK_H = 6.8, PLANK_W = 2.2;
-  const TEE_Z = 0, TEE_Y = 0.22, BALL_R = 0.2;
-  // the football: a right isosceles triangle flag-folded from a notebook strip. Long edge 1.6 in (toward the kicker,
-  // nearly upright), short edges 1.13 in, the right angle at the front point. (z, y) about its centroid.
-  const TRI = (() => {
-    const L = 1.6, lean = 0.1;                                  // the long edge leans a little forward at the top
-    const b = [0, 0], t = [Math.sin(lean) * L, Math.cos(lean) * L]; // bottom corner, top of the long edge
-    const m = [(b[0] + t[0]) / 2, (b[1] + t[1]) / 2], n = [Math.cos(lean), -Math.sin(lean)]; // normal toward the goal
-    const f = [m[0] + n[0] * L / 2, m[1] + n[1] * L / 2];       // front point
-    const c = [(b[0] + t[0] + f[0]) / 3, (b[1] + t[1] + f[1]) / 3];
-    return [b, t, f].map((p) => [p[0] - c[0], p[1] - c[1]]);
-  })();
-  const EDGE_MID = [(TRI[0][0] + TRI[1][0]) / 2, (TRI[0][1] + TRI[1][1]) / 2], EDGE_HALF = 0.8;
-  const REST_Y = TEE_Y - TRI[0][1], YAW0 = 0.22, YAW_FLY = 0.45; // standing on its bottom corner; a sliver of the face shows
-
-  // ---------- a small seeded random stream (mulberry32): a shot's conditions are a function of (seed, shot number)
-  function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-
-  // the shot at a level: factors unlock one at a time, in the order kids made the game harder
-  const UNLOCK = { dist: 0, offset: 1, wind: 2, gap: 3, car: 4 };
-  const LEVEL_NAMES = { 1: 'Over here: the goal moves off centre', 2: "Fan's on: wind", 3: 'Squeeze it: the gap closes', 4: 'Hands on the move: the RC car' };
-  function shotFor(seed, n, level, T) {
-    const r = rng(seed * 7919 + n * 104729 + 13);
-    // the level's budget grows smoothly (a touch faster later on) and is shared by the unlocked factors, so a new factor
-    // takes a share of the budget instead of adding to it: no sudden jump when the caps open up
-    const budget = T.start + level * T.ramp + 0.004 * level * level;
-    const keys = Object.keys(UNLOCK).filter((k) => level >= UNLOCK[k]);
-    const w = keys.map(() => 0.15 + r());                      // how this shot spends its difficulty
-    const sum = w.reduce((a, b) => a + b, 0);
-    const x = {};
-    keys.forEach((k, i) => {
-      const cap = k === 'dist' ? 0.25 + 0.05 * level : 0.15 * (level - UNLOCK[k] + 1);
-      x[k] = Math.min(1, cap, (w[i] / sum) * budget);
-    });
-    const side = () => (r() < 0.5 ? -1 : 1);
-    const dist = 12 + (x.dist || 0) * 26;                      // 12..38 in
-    return {
-      level, dist,
-      wind: side() * (x.wind || 0) * 9,                        // ±9 mph
-      half: Math.max(1.2, 2.5 - (x.gap || 0) * 1.1),            // half the clear gap: 5.0 in .. 2.8 in
-      offset: side() * (x.offset || 0) * Math.tan(6 * Math.PI / 180) * (dist + 4), // within a 6° turn of the head
-      move: x.car ? { amp: x.car * 4, speed: 0.6 + x.car * 1.4, phase: r() * Math.PI * 2 } : null,
-      drift: side(),                                           // which way a mishit drifts this shot
-      unlock: Object.keys(UNLOCK).find((k) => UNLOCK[k] === level && level > 0) ? LEVEL_NAMES[level] : null,
-    };
-  }
-  const postX = (s, t) => s.offset + (s.move ? Math.sin(s.phase0 + t * s.move.speed * Math.PI) * s.move.amp : 0);
-
-  // ---------- the kick: launch velocity and spin from { power, aim, contact }
-  function launch(k, T, s) {
-    const p = Math.max(0, Math.min(1, k.power)), c = Math.max(-1, Math.min(1, k.contact));
-    // the clean band sits a little below the middle (it gets the football up); it shrinks the harder you kick, but
-    // never below the band the player could see (k.sweetMin, ~7 mm on screen)
-    const sweet = Math.max(k.sweetMin || 0, T.sweet * (1 - T.sweetPower * p)), miss = Math.abs(c - T.sweetAt), clean = miss <= sweet;
-    const off = clean ? 0 : Math.min(1, (miss - sweet) / (1 - sweet)); // 0 at the clean band's edge .. 1 at the end
-    const v = (T.vMin + (T.vMax - T.vMin) * p) * (1 - T.offPenalty * off * off);
-    const th = (T.loft - (c - T.sweetAt) * T.loftHit) * Math.PI / 180; // below the middle pops it up; dead centre and higher fly flat
-    const aimMax = T.aimMax * Math.PI / 180, aim = Math.max(-aimMax, Math.min(aimMax, k.aim));
-    return {
-      x: 0, y: REST_Y, z: TEE_Z,
-      vx: v * Math.cos(th) * Math.sin(aim), vy: v * Math.sin(th), vz: v * Math.cos(th) * Math.cos(aim),
-      ax: (s?.drift || 1) * off * T.drift * p * p,             // a mishit drifts, more the harder it's hit
-      lift: c < T.sweetAt ? (T.sweetAt - c) * 60 : 0,         // a low hit's backspin floats it a little
-      pitch: 0, pitchRate: -(10 + 14 * p) * (1 - 0.4 * off) * (c > T.sweetAt + sweet ? 0.5 : 1), // end over end; a high hit knuckles
-      wob: off, roll: 0, yaw: YAW0, yawTo: (aim < 0 ? -1 : 1) * YAW_FLY, t: 0, clean,
-    };
-  }
+  // ---------- the rules and the physics live in the shared sim (paperfb-sim.js, loaded first): the server replays a paid
+  // kick with the same code. This file draws its states and adds what's only for the eye and ear.
+  const S = window.PaperFBSim;
+  if (!S) throw new Error('paperfb.js needs paperfb-sim.js loaded first');
+  const { DEFAULT_TUNING, shotFor, launch, postX } = S;
+  const { BAR, POST_H, PEN_R, BLOCK_H, PLANK_BACK, PLANK_H, TEE_Z, TEE_Y, TRI, EDGE_MID, EDGE_HALF, REST_Y, YAW0 } = S.world;
 
   // ---------- 3D: the folded triangle. Its outline is sampled along each edge; the folds make it fattest in the middle
   // of an edge and thin to a point at each corner (the strike edge, folded the most, is fattest). Each outline point
@@ -157,66 +77,57 @@
     // ---------- state
     const seed = opts.seed ?? ((Math.random() * 2 ** 31) | 0);
     let n = 0, streak = 0, best = 0, makes = 0, kicks = 0;
-    let shot = null, ball = null, result = null, resultAt = 0, clock = 0, last = performance.now(), alive = true, pop = null, note = null;
+    let shot = null, ball = null, flight = null, acc = 0, result = null, resultAt = 0, clock = 0, last = performance.now(), alive = true, pop = null, note = null;
     let press = null, hint = true, lastKick = null, shake = 0;
     const levelStats = {}; // level -> [makes, tries]
-    function nextShot() {
-      shot = shotFor(seed, n, streak, T); shot.phase0 = shot.move ? shot.move.phase : 0; shot.t0 = clock;
-      if (shot.unlock && !(levelStats[streak]?.[1])) note = { text: shot.unlock, at: clock };
+    // the shot: from this game's seed, or (a paid run) from the game server through opts.shotFor / setShot
+    function showShot(s) {
+      shot = s; shot.t0 = clock;
+      if (shot.unlock && !(levelStats[shot.level]?.[1])) note = { text: shot.unlock, at: clock };
     }
+    function nextShot() { showShot(opts.shotFor?.(n, streak) || shotFor(seed, n, streak, T)); }
     nextShot();
     const emit = (type, detail = {}) => opts.onEvent?.(type, { ...detail, streak, best, makes, kicks });
 
-    // ---------- input: phone flick (touch) and desktop pull-back (mouse); both produce { power, aim, contact }
+    // ---------- input: phone flick (touch) and desktop pull-back (mouse); both produce { power, aim, contact }. The
+    // samples are quantized to integers and mapped by the sim (S.kickFromInput), exactly as the server maps them.
     const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, t: e.timeStamp || performance.now() }; };
     function ballScreen() {
       const [x, y, z] = rotate([0, EDGE_MID[1], EDGE_MID[0]], 0, YAW0, 0), p = proj(x, REST_Y + y, TEE_Z + z);
       p.half = EDGE_HALF * p.s; p.sweet = Math.max(22.5, T.sweet * p.half); p.sweetY = p.y - T.sweetAt * p.half; // the clean band is never under ~7 mm
       return p;
     }
+    const sample = (pr, p) => S.quantize(p.x, p.y, p.t - pr.t0);
     cv.addEventListener('pointerdown', (e) => {
       if (press || ball || result || !alive || !e.isPrimary) return;
-      const p = pos(e), b = ballScreen();
-      if (Math.abs(p.x - b.x) > Math.max(44, b.s * 0.45) || Math.abs(p.y - b.y) > b.half * 1.15) return; // start on the paper
-      const dy = b.y - p.y; // up the edge = +
-      press = { id: e.pointerId, mouse: e.pointerType === 'mouse', start: p, pts: [p], contact: Math.max(-1, Math.min(1, dy / b.half)), sweetMin: 22.5 / b.half };
+      const p = pos(e), b = ballScreen(), stage = { w: Math.round(W), h: Math.round(H) };
+      const edge = S.quantize(b.x, b.y, 0), start = S.quantize(p.x, p.y, 0);
+      if (!S.onPaper(S.edgeScale(stage), (start[0] - edge[0]) / S.Q_XY, (start[1] - edge[1]) / S.Q_XY)) return; // start on the paper
+      press = { id: e.pointerId, mouse: e.pointerType === 'mouse', t0: p.t, stage, edge: { x: edge[0], y: edge[1] }, start, pts: [start] };
       cv.setPointerCapture(e.pointerId); e.preventDefault();
     });
     cv.addEventListener('pointermove', (e) => {
-      if (!press || e.pointerId !== press.id) return; const p = pos(e); press.pts.push(p); if (press.pts.length > 48) press.pts.shift();
+      if (!press || e.pointerId !== press.id) return; press.pts.push(sample(press, pos(e))); if (press.pts.length > 48) press.pts.shift();
     });
-    // the swipe's speed over its last ~90 ms, by least squares (steadier than first-to-last)
-    function velocity(pts) {
-      const end = pts[pts.length - 1].t, use = pts.filter((q) => end - q.t <= 90);
-      if (use.length < 2) return null;
-      const mt = use.reduce((a, q) => a + q.t, 0) / use.length, mx = use.reduce((a, q) => a + q.x, 0) / use.length, my = use.reduce((a, q) => a + q.y, 0) / use.length;
-      let tt = 0, tx = 0, ty = 0; for (const q of use) { const d = q.t - mt; tt += d * d; tx += d * (q.x - mx); ty += d * (q.y - my); }
-      if (tt < 1) return null;
-      return { vx: tx / tt, vy: ty / tt };
-    }
     const endPress = (e) => {
       if (!press || e.pointerId !== press.id) return; const pr = press; press = null;
-      const p = pos(e); pr.pts.push(p);
-      let power, aim;
-      if (pr.mouse) { // pull back (down) and release: length is power, the opposite of the pull's slant is the aim
-        const dx = p.x - pr.start.x, dy = p.y - pr.start.y; if (dy < 8) return;
-        power = Math.min(1, (dy / H) / T.pullFull); aim = Math.atan2(-dx, dy);
-      } else { // flick up: a fast snap kicks, a slow push does nothing; the slant is the aim
-        const v = velocity(pr.pts); if (!v || v.vy > -0.25) return;
-        power = Math.min(1, -v.vy / T.flickFull); aim = Math.atan2(v.vx, -v.vy);
-      }
-      kick({ power, aim, contact: pr.contact, sweetMin: pr.sweetMin });
+      pr.pts.push(sample(pr, pos(e)));
+      const input = { kind: pr.mouse ? 'pull' : 'flick', stage: pr.stage, edge: pr.edge, start: pr.start, samples: pr.pts };
+      const m = S.kickFromInput(input, T); if (!m.kick) return;
+      kick(m.kick, input);
     };
     cv.addEventListener('pointerup', endPress);
     cv.addEventListener('pointercancel', (e) => { if (press && e.pointerId === press.id) press = null; });
 
-    function kick(k) {
-      ball = launch(k, T, shot); ball.t0 = clock; hint = false; kicks++; lastKick = { ...k, clean: ball.clean };
-      ball.wobPhase = (shot.drift > 0 ? 1 : 4) + n * 0.7;
-      sfx('flick'); emit('kick', { kick: k });
+    function kick(k, input = null) {
+      // the kick's moment on the moving posts' clock, in whole sim ticks since the shot was shown
+      const kickTick = Math.max(0, Math.round((clock - shot.t0) * S.HZ));
+      flight = S.createFlight(shot, k, T, { kickTick, mouth: MOUTH, wobPhase: (shot.drift > 0 ? 1 : 4) + n * 0.7 });
+      ball = flight.ball; acc = 0; ball.t0 = clock; hint = false; kicks++; lastKick = { ...k, clean: ball.clean, kickTick };
+      sfx('flick'); emit('kick', { kick: k, input, kickTick, n, shot: { ...shot } });
     }
 
-    // ---------- flight: the football hits the pencils, the bar, the block, Plank and the table; nothing passes through
+    // ---------- flight: the sim steps the football (S.createFlight); here each step's events become sound and sparks
     function settle(r) {
       if (result) return;
       result = r; resultAt = clock;
@@ -228,65 +139,17 @@
       } else { emit('miss', { why: r }); streak = 0; sfx('miss'); }
       lastKick && (lastKick.result = r);
     }
-    // bounce off a surface with outward normal (nx, ny, nz): keep the slide, lose most of the push
-    function bounce(b, nx, ny, nz, e = 0.35, f = 0.7) {
-      const vn = b.vx * nx + b.vy * ny + b.vz * nz; if (vn >= 0) return false;
-      b.vx = (b.vx - vn * nx) * f - e * vn * nx; b.vy = (b.vy - vn * ny) * f - e * vn * ny; b.vz = (b.vz - vn * nz) * f - e * vn * nz;
-      b.pitchRate *= -0.6; b.wob = Math.min(1, b.wob + 0.5); return true;
-    }
-    function step(dt) {
-      const b = ball; if (!b) return;
-      if (b.burning || b.gone) { b.t += dt; return; }
-      const z0 = b.z;
-      b.vx += (b.ax + shot.wind * T.windK) * dt; b.vy -= (G - b.lift * Math.max(0, b.vy) / 100) * dt;
-      b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt; b.t += dt;
-      b.pitch += b.pitchRate * dt;
-      b.yaw += (b.yawTo + Math.sin(b.t * 6.5) * 0.9 * b.wob - b.yaw) * Math.min(1, dt / 0.06);
-      b.roll = Math.sin(b.t * 9 + b.wobPhase) * 0.8 * b.wob;
-      const D = TEE_Z + shot.dist, P = D + PLANK_BACK, px = postX(shot, clock - shot.t0);
-      // the pencils: upright cylinders standing in the block
-      for (const s of [-1, 1]) {
-        const cx = px + s * (shot.half + PEN_R), dx = b.x - cx, dz = b.z - D, d = Math.hypot(dx, dz);
-        if (d < PEN_R + BALL_R && b.y > BLOCK_H - BALL_R && b.y < POST_H + BALL_R) {
-          const nx = dx / (d || 1), nz = dz / (d || 1); b.x = cx + nx * (PEN_R + BALL_R); b.z = D + nz * (PEN_R + BALL_R);
-          if (bounce(b, nx, 0, nz, 0.45)) { b.doinked = true; sfx('doink'); shake = 3; burst('chips', b.x, b.y, b.z); emit('doink'); wowUntil = clock + 1.2; }
-        }
+    function step() {
+      const b = ball;
+      for (const ev of flight.step()) {
+        if (ev.type === 'doink') { sfx('doink'); shake = 3; burst('chips', b.x, b.y, b.z); emit('doink'); wowUntil = clock + 1.2; }
+        else if (ev.type === 'block' || ev.type === 'front') sfx('tick');
+        else if (ev.type === 'result') settle(ev.result);
+        else if (ev.type === 'plank') { sfx('thunk'); shake = 6; emit('plank'); }
+        else if (ev.type === 'pass') { if (ev.near) wowUntil = clock + 1.2; }
+        else if (ev.type === 'furnace') { b.burnAt = clock; burnFlash = 1; sfx('whoosh'); emit('furnace'); pop = { text: 'INTO THE FIRE!', at: clock }; }
+        else if (ev.type === 'land') { sfx('tick'); burst('dust', b.x, 0.05, b.z); }
       }
-      // the crossbar: a pencil lying across between the uprights
-      if (Math.abs(b.x - px) < shot.half + PEN_R) {
-        const dy = b.y - BAR, dz = b.z - D, d = Math.hypot(dy, dz);
-        if (d < PEN_R + BALL_R) {
-          const ny = dy / (d || 1), nz = dz / (d || 1); b.y = BAR + ny * (PEN_R + BALL_R); b.z = D + nz * (PEN_R + BALL_R);
-          if (bounce(b, 0, ny, nz, 0.4)) { b.doinked = true; sfx('doink'); shake = 3; burst('chips', b.x, b.y, b.z); emit('doink'); wowUntil = clock + 1.2; }
-        }
-      }
-      // the oak block (or the RC car) the pencils stand in
-      const bw = shot.half + PEN_R * 2 + 0.6;
-      if (b.y - BALL_R < BLOCK_H && Math.abs(b.x - px) < bw && b.z + BALL_R > D - 0.45 && z0 + BALL_R <= D - 0.45) { b.z = D - 0.45 - BALL_R; bounce(b, 0, 0, -1, 0.3); sfx('tick'); }
-      // judged where the football's centre crosses the goal's plane: between the uprights and over the bar is good
-      if (!result && z0 < D && b.z >= D) {
-        const inside = Math.abs(b.x - px) < shot.half;
-        settle(inside && b.y >= BAR ? 'good' : inside ? 'under' : b.x < px ? 'wide-left' : 'wide-right');
-      }
-      // Plank, just behind the goal: a make bounces off his face
-      const pc = shot.offset;
-      if (!b.thunked && z0 < P && b.z >= P && Math.abs(b.x - pc) < PLANK_W && b.y < PLANK_H) {
-        b.thunked = true; b.z = P; bounce(b, 0, 0, -1, 0.32, 0.5); b.vy = Math.max(b.vy, 30); sfx('thunk'); shake = 6; emit('plank');
-      }
-      if (!b.thunked && !b.passed && z0 < P && b.z >= P) { b.passed = true; if (Math.abs(b.x - pc) < PLANK_W + 3) wowUntil = clock + 1.2; } // whizzing past or over him
-      // the table
-      // the furnace: through the open door it burns; the iron front stops it
-      if (z0 < FURN_Z && b.z >= FURN_Z) {
-        if (Math.abs(b.x) < MOUTH.x && b.y > MOUTH.y0 && b.y < MOUTH.y1) { b.burning = clock; b.z = FURN_Z + 1.2; burnFlash = 1; sfx('whoosh'); emit('furnace'); pop = { text: 'INTO THE FIRE!', at: clock }; return; }
-        if (Math.abs(b.x) < FURN_W / 2 && b.y > -6) { b.z = FURN_Z; bounce(b, 0, 0, -1, 0.3); sfx('tick'); }
-      }
-      if (b.y < -8) { b.gone = true; return; } // off the end of the bench
-      if (b.y <= 0.05 && b.vy < 0 && b.z < TABLE_END) {
-        if (!result && b.z < D) settle(b.doinked ? 'doink' : 'short');
-        b.y = 0.05; b.vy *= -0.25; b.vz *= 0.55; b.vx *= 0.55; b.pitchRate *= 0.5; b.wob *= 0.5; if (Math.abs(b.vy) < 8) b.vy = 0;
-        if (!b.landed) { b.landed = true; sfx('tick'); burst('dust', b.x, 0.05, b.z); }
-      }
-      if (!result && b.vz < 0 && b.z < D - 1) settle(b.doinked ? 'doink' : 'short'); // knocked back off the goal
     }
 
     // ---------- drawing
@@ -506,7 +369,7 @@
       g.drawImage(bench, CX - W / 2 - PAD * W, 0, W * (1 + 2 * PAD), H);
     }
     // ---------- the furnace behind the bench, its door open: kick a football over Plank and into it and it burns
-    const TABLE_END = 44, FURN_Z = 46, FURN_W = 26, MOUTH = { x: 6.5, y0: 1, y1: 9 }; // MOUTH is refitted to a painted plate
+    const { TABLE_END, FURN_Z, FURN_W } = S.world, MOUTH = { ...S.world.MOUTH }; // MOUTH is refitted to a painted plate
     let burnFlash = 0;
     function furnace(real) {
       if (plate) { // the painted furnace: make its fire breathe, and flare when a football goes in
@@ -858,14 +721,14 @@
       const dt = freeze > 0 ? 0 : real * (ball ? T.slow : 1); clock += dt;
       if (ball) {
         ball.trail = [{ x: ball.x, y: ball.y, z: ball.z, pitch: ball.pitch, yaw: ball.yaw, roll: ball.roll, t: ball.t, wob: ball.wob }, ...(ball.trail || [])].slice(0, 3);
-        let t = dt; while (t > 0) { const s = Math.min(t, 1 / 480); step(s); t -= s; }
+        acc += dt; while (acc >= S.DT && flight) { acc -= S.DT; step(); } // whole sim ticks: the same states the server replays
         if (ball.thunked && !ball.thunkAt) ball.thunkAt = clock;
         if (ball.thunked && !wasThunk) { freeze = 0.07; burst('plank', ball.x, ball.y, ball.z); }
         wasThunk = !!ball.thunked;
       } else wasThunk = false;
       if (streak !== lastStreak) { if ([5, 10, 15, 20, 25].includes(streak)) confettiBurst(); lastStreak = streak; }
-      if (ball?.burning && !ball.gone) { const age = clock - ball.burning; ball.char = Math.min(1, age / 0.9); if (Math.random() < 0.7) burst('flame', ball.x, ball.y, ball.z); if (age > 1.1) ball.gone = true; }
-      if (result && clock - resultAt > (result === 'good' ? 1.4 : 1.5) && !(ball?.burning && !ball.gone)) { result = null; ball = null; n++; nextShot(); }
+      if (ball?.burning && !ball.gone) { const age = clock - ball.burnAt; ball.char = Math.min(1, age / 0.9); if (Math.random() < 0.7) burst('flame', ball.x, ball.y, ball.z); if (age > 1.1) ball.gone = true; }
+      if (result && flight?.done && !(ball?.burning && !ball.gone)) { result = null; ball = null; flight = null; n++; nextShot(); }
       // the view leans a little toward an off-centre goal, between shots only (fixed during the kick)
       if (!ball) { const want = W / 2 - Math.max(-0.15 * W, Math.min(0.15 * W, 0.5 * (proj(shot.offset, 0, TEE_Z + shot.dist).x - CX))); CX += (want - CX) * Math.min(1, real * 6); }
       const sh = shake > 0 ? (shake -= real * 30, Math.max(0, shake)) : 0;
@@ -922,9 +785,14 @@
       stats: () => ({ streak, best, makes, kicks, levels: JSON.parse(JSON.stringify(levelStats)), lastKick, shot: { ...shot } }),
       /** tests and replays: a kick from code */
       kick: (k) => { if (!ball && !result) kick(k); },
+      /** a paid run: show the server's next shot (conditions as the server sent them); only between kicks */
+      setShot: (s) => { if (ball || result) return false; showShot({ ...s }); return true; },
+      /** tests and automation: whether a kick can start now, and where the strike edge is on screen (CSS px) */
+      ready: () => !ball && !result && !press,
+      strikeEdge: () => { const b = ballScreen(); return { x: b.x, y: b.y, half: b.half }; },
       destroy() { alive = false; removeEventListener('resize', size); cv.remove(); },
     };
   }
 
-  window.PaperFootball = { mount, DEFAULT_TUNING, shotFor, launch };
+  window.PaperFootball = { mount, DEFAULT_TUNING, shotFor, launch, sim: S };
 })();

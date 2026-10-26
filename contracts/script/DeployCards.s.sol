@@ -15,6 +15,7 @@ import {PlankBurner} from "../src/cards/PlankBurner.sol";
 import {FireCredits} from "../src/cards/FireCredits.sol";
 import {FireGroups} from "../src/cards/FireGroups.sol";
 import {FireProfiles} from "../src/cards/FireProfiles.sol";
+import {FireGames} from "../src/cards/FireGames.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
 import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
@@ -63,7 +64,10 @@ interface ICardsPair {
  *   PlankBurner (holds the PLANK burn share when a sale's swap can't run, and burns it later), FirePsa (cases and PDA
  *   grading), PaperBurner (case and grading fees buy and burn PAPER), and a drand adapter for each of FireCards and
  *   FirePsa. Also FireProfiles (names and profile pictures; no owner). On a deploy made before it existed, add it
- *   on its own with script/DeployProfiles.s.sol.
+ *   on its own with script/DeployProfiles.s.sol. And FireGames (the game room's run entries, docs/paper-football.md):
+ *   it adds paper football as game 1 (1 PAPER a run, fixed forever) and FireCredits allows prizes for game 1, but
+ *   leaves the server's `signer` and the `series` unset, so paid play stays closed until the owner sets both.
+ *   FireCredits' prizeAwarder stays unset too (the owner sets the game server's wallet).
  * Checks every input before sending anything.
  *
  *   forge script script/DeployCards.s.sol --rpc-url $RPC --account deployer --sender <deployer address> --slow --broadcast \
@@ -75,10 +79,10 @@ interface ICardsPair {
  * Settings (.env.example, card contracts section):
  *   DRAND_ROUTER      the OpenDrandRouter from DeployInfra.s.sol (it has no owner)
  *   OWNER             the hardware wallet (Ledger or Trezor) that will own everything. Afterwards it calls
- *                     acceptOwnership() on FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa and
- *                     PaperBurner (Ownable2Step), all seven in one run of script/AcceptOwnership.s.sol signed on the
- *                     device, so a mistyped OWNER owns nothing (the deployer still does). PlankBurner and FireGroups
- *                     have no owner.
+ *                     acceptOwnership() on FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa,
+ *                     PaperBurner and FireGames (Ownable2Step), all eight in one run of script/AcceptOwnership.s.sol
+ *                     signed on the device, so a mistyped OWNER owns nothing (the deployer still does). PlankBurner
+ *                     and FireGroups have no owner.
  *                     Must not be the deployer.
  *   EXPECTED_CHAIN_ID the chain it must run on (default 4663, Robinhood Chain; set it for a rehearsal)
  *   ROYALTY_RECEIVER, ROYALTY_BPS (500 = 5%, max 1000)
@@ -104,6 +108,10 @@ interface ICardsPair {
  * Series); and FireCredits.pickSuggestions.
  */
 contract DeployCards is Deployments {
+    /// @notice Paper football's FireGames id and entry (1 PAPER a run, docs/paper-football.md decision 13).
+    uint256 public constant PAPER_FOOTBALL = 1;
+    uint256 public constant PAPER_FOOTBALL_ENTRY = 1e18;
+
     struct Params {
         address router; // drand
         address owner;
@@ -138,6 +146,7 @@ contract DeployCards is Deployments {
         PlankBurner plankBurner;
         FireGroups groups;
         FireProfiles profiles;
+        FireGames games;
     }
 
     function run() external returns (Deployed memory d) {
@@ -178,6 +187,7 @@ contract DeployCards is Deployments {
         console.log("FireCredits", address(d.credits));
         console.log("FireGroups ", address(d.groups));
         console.log("FireProfiles", address(d.profiles));
+        console.log("FireGames  ", address(d.games));
         console.log("PlankBurner", address(d.plankBurner));
         console.log("FirePsa    ", address(d.psa));
         console.log("PaperBurner", address(d.burner));
@@ -185,13 +195,13 @@ contract DeployCards is Deployments {
         console.log("RecipeCompiler", address(d.compiler));
         console.log("Adapter (cards)", address(d.adapter));
         console.log("Adapter (PDA)  ", address(d.psaAdapter));
-        console.log("Next: the OWNER hardware wallet accepts the seven contracts: script/AcceptOwnership.s.sol --ledger (or --trezor).");
+        console.log("Next: the OWNER hardware wallet accepts the eight contracts: script/AcceptOwnership.s.sol --ledger (or --trezor).");
         _recordCards(d, p);
     }
 
     function _recordCards(Deployed memory d, Params memory p) internal {
-        string[] memory names = new string[](17);
-        address[] memory addrs = new address[](17);
+        string[] memory names = new string[](18);
+        address[] memory addrs = new address[](18);
         (names[0], addrs[0]) = ("FirePacks", address(d.packs));
         (names[1], addrs[1]) = ("FireCards", address(d.cards));
         (names[2], addrs[2]) = ("CardsRenderer", address(d.renderer));
@@ -209,6 +219,7 @@ contract DeployCards is Deployments {
         (names[14], addrs[14]) = ("PaperUsdTwap", p.paperUsd);
         (names[15], addrs[15]) = ("FireGroups", address(d.groups));
         (names[16], addrs[16]) = ("FireProfiles", address(d.profiles));
+        (names[17], addrs[17]) = ("FireGames", address(d.games));
         string[] memory inNames = new string[](11);
         address[] memory inAddrs = new address[](11);
         (inNames[0], inAddrs[0]) = ("PAPER", p.paper);
@@ -261,6 +272,14 @@ contract DeployCards is Deployments {
         d.psaAdapter = new OpenVRFAdapter(p.router, address(d.psa));
         require(d.psaAdapter.FIRE() == address(d.psa), "PDA adapter points elsewhere");
         d.profiles = new FireProfiles(address(d.cards)); // names and profile pictures; no owner
+        // the game room: paper football is game 1 at 1 PAPER a run (fixed forever), with prizes allowed in FireCredits.
+        // signer and series stay 0, so paid play is closed until the owner sets both; the prizeAwarder stays unset.
+        d.games = new FireGames(deployer, p.paper);
+        d.games.addGame(PAPER_FOOTBALL, PAPER_FOOTBALL_ENTRY);
+        d.credits.setPrizeGame(PAPER_FOOTBALL, true);
+        require(address(d.games.PAPER()) == p.paper && d.games.entryOf(PAPER_FOOTBALL) == PAPER_FOOTBALL_ENTRY
+            && d.games.signer() == address(0) && d.games.series() == 0 && d.credits.prizeGame(PAPER_FOOTBALL)
+            && d.credits.prizeAwarder() == address(0), "games wiring");
 
         d.packs.setCards(address(d.cards));
         d.packs.setSeller(address(d.sale));
@@ -280,6 +299,7 @@ contract DeployCards is Deployments {
         d.sale.transferOwnership(p.owner);
         d.psa.transferOwnership(p.owner);
         d.burner.transferOwnership(p.owner);
+        d.games.transferOwnership(p.owner);
     }
 
     /// @dev The burner's starting routes: straight to PAPER, or through PLANK (where most PAPER liquidity sits).

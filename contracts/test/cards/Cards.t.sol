@@ -12,6 +12,7 @@ import {CardsRenderer} from "../../src/cards/CardsRenderer.sol";
 import {PaperBurner} from "../../src/cards/PaperBurner.sol";
 import {FireCredits} from "../../src/cards/FireCredits.sol";
 import {FireGroups} from "../../src/cards/FireGroups.sol";
+import {FireGames} from "../../src/cards/FireGames.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {DeployCards} from "../../script/DeployCards.s.sol";
 import {AcceptOwnership} from "../../script/AcceptOwnership.s.sol";
@@ -1128,21 +1129,24 @@ contract CardsTest is SeriesHelper {
 }
 
 contract DeployCardsTest is Test {
-    /// @dev The hardware wallet accepts the seven contracts in one run: AcceptOwnership lists exactly the ones still
+    /// @dev The hardware wallet accepts the eight contracts in one run: AcceptOwnership lists exactly the ones still
     ///      pending for it, skips the ones it holds, and refuses a contract pending to someone else.
-    function test_acceptOwnershipListsTheSevenForTheHardwareWallet() public {
+    function test_acceptOwnershipListsTheEightForTheHardwareWallet() public {
         address owner = address(0x1ED6E2);
         FirePacks packs = new FirePacks(address(this));
         FireCards cards = new FireCards(address(this), address(packs));
         RecipeDealer dealer = new RecipeDealer(address(this), address(cards), address(new RecipeCompiler()));
         FireCredits credits = new FireCredits(address(this), address(cards), 0);
+        FireGames games = new FireGames(address(this), address(new MockERC20("PAPER", "PAPER")));
         // FireSale, FirePsa and PaperBurner stand-ins: three more two-step-owned contracts
-        address[7] memory c = [address(packs), address(cards), address(dealer), address(credits),
-            address(new FirePacks(address(this))), address(new FirePacks(address(this))), address(new FirePacks(address(this)))];
+        address[8] memory c = [address(packs), address(cards), address(dealer), address(credits),
+            address(new FirePacks(address(this))), address(new FirePacks(address(this))), address(new FirePacks(address(this))),
+            address(games)];
         string memory json = "{";
-        string[7] memory names = new AcceptOwnership().owned();
+        string[8] memory names = new AcceptOwnership().owned();
         assertEq(names[4], "FireSale");
-        for (uint256 i; i < 7; i++) {
+        assertEq(names[7], "FireGames");
+        for (uint256 i; i < 8; i++) {
             FirePacks(c[i]).transferOwnership(owner);
             json = string.concat(json, i == 0 ? '"contracts":{"' : ',"', names[i], '":"', vm.toString(c[i]), '"');
         }
@@ -1151,12 +1155,12 @@ contract DeployCardsTest is Test {
         vm.setEnv("DEPLOYMENTS_FILE", file);
         AcceptOwnership a = new AcceptOwnership();
         address[] memory list = a.toAccept(owner);
-        assertEq(list.length, 7, "all seven pending");
-        for (uint256 i; i < 7; i++) assertEq(list[i], c[i]);
+        assertEq(list.length, 8, "all eight pending");
+        for (uint256 i; i < 8; i++) assertEq(list[i], c[i]);
         vm.prank(owner); packs.acceptOwnership();
         vm.prank(owner); credits.acceptOwnership();
         list = a.toAccept(owner);
-        assertEq(list.length, 5, "the ones it holds are skipped");
+        assertEq(list.length, 6, "the ones it holds are skipped");
         for (uint256 i; i < list.length; i++) {
             vm.prank(owner);
             FirePacks(list[i]).acceptOwnership();
@@ -1246,12 +1250,25 @@ contract DeployCardsTest is Test {
         assertEq(address(d.sale.PAPER_USD()), address(paperUsd));
         assertEq(address(d.burner.paperUsd()), address(paperUsd));
         assertEq(d.burner.routesOf(PaperBurner.Pay.ETH).length, 2, "ETH: straight and through PLANK");
+        // the game room: paper football at 1 PAPER, prizes allowed, but paid play closed until the owner sets it up
+        assertEq(address(d.games.PAPER()), address(paper));
+        assertEq(d.games.entryOf(1), 1e18);
+        assertTrue(d.games.gameOpen(1));
+        assertEq(d.games.signer(), address(0), "no server signer: paid play closed");
+        assertEq(d.games.series(), 0, "no Series: paid play closed");
+        assertTrue(d.credits.prizeGame(1));
+        assertFalse(d.credits.prizeGame(2));
+        assertEq(d.credits.prizeAwarder(), address(0), "the owner sets the awarder");
+        assertEq(d.games.pendingOwner(), safe);
+        assertEq(d.games.owner(), address(s));
         vm.prank(safe); d.packs.acceptOwnership();
         vm.prank(safe); d.cards.acceptOwnership();
         vm.prank(safe); d.psa.acceptOwnership();
         vm.prank(safe); d.dealer.acceptOwnership();
         vm.prank(safe); d.credits.acceptOwnership();
         vm.prank(safe); d.sale.acceptOwnership();
+        vm.prank(safe); d.games.acceptOwnership();
+        assertEq(d.games.owner(), safe);
         assertEq(d.sale.owner(), safe);
         assertEq(d.credits.owner(), safe);
         assertEq(d.dealer.owner(), safe);

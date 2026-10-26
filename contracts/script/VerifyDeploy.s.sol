@@ -11,6 +11,7 @@ import {FirePsa} from "../src/cards/FirePsa.sol";
 import {FireCredits} from "../src/cards/FireCredits.sol";
 import {FireGroups} from "../src/cards/FireGroups.sol";
 import {FireProfiles} from "../src/cards/FireProfiles.sol";
+import {FireGames} from "../src/cards/FireGames.sol";
 import {RecipeDealer} from "../src/cards/RecipeDealer.sol";
 import {CardsRenderer} from "../src/cards/CardsRenderer.sol";
 import {PaperBurner} from "../src/cards/PaperBurner.sol";
@@ -79,7 +80,7 @@ contract VerifyDeploy is Deployments {
     }
 
     function run() external {
-        string[17] memory names = _contractNames();
+        string[18] memory names = _contractNames();
         console.log(string.concat("deployments file: ", deploymentsFile()));
         for (uint256 i; i < names.length; i++) {
             address a = deployed(names[i]);
@@ -96,6 +97,7 @@ contract VerifyDeploy is Deployments {
         _feeds();
         _locks();
         _profiles();
+        _games();
         _tokens();
         _twaps();
         _drandRouter();
@@ -109,7 +111,7 @@ contract VerifyDeploy is Deployments {
     function _owners(address owner) internal {
         require(owner != address(0), "no OWNER in the deployments file (set OWNER, the hardware wallet)");
         console.log(string.concat("INFO  expected owner (the hardware wallet): ", vm.toString(owner)));
-        string[7] memory owned = ["FirePacks", "FireCards", "RecipeDealer", "FireCredits", "FirePsa", "PaperBurner", "FireSale"];
+        string[8] memory owned = ["FirePacks", "FireCards", "RecipeDealer", "FireCredits", "FirePsa", "PaperBurner", "FireSale", "FireGames"];
         for (uint256 i; i < owned.length; i++) {
             IOwnable2 c = IOwnable2(deployed(owned[i]));
             address o = c.owner();
@@ -373,6 +375,27 @@ contract VerifyDeploy is Deployments {
             return;
         }
         _eq(address(FireProfiles(a).CARDS()), deployed("FireCards"), "FireProfiles.CARDS is FireCards");
+    }
+
+    /// FireGames (the game room) and its prizes in FireCredits: paper football is game 1 at 1 PAPER, prizes allowed.
+    /// Paid play stays closed (WAIT) until the owner sets the server's signer and the Series; prizes go out once the
+    /// owner sets the prizeAwarder (the server's wallet).
+    function _games() internal {
+        FireGames g = FireGames(deployed("FireGames"));
+        FireCredits credits = FireCredits(deployed("FireCredits"));
+        address paper = deployedInput("PAPER");
+        if (paper != address(0)) _eq(address(g.PAPER()), paper, "FireGames.PAPER is PAPER");
+        _ok(g.entryOf(1) == 1e18, "FireGames: paper football (game 1) costs 1 PAPER a run");
+        _ok(credits.prizeGame(1), "FireCredits allows prizes for paper football (game 1)");
+        _ok(!g.paused(), "FireGames not paused");
+        _ok(g.gameOpen(1), "FireGames: paper football open");
+        if (g.signer() == address(0) || g.series() == 0) {
+            _wait("FireGames: paid play closed until the owner sets the server's signer (setSigner) and the Series (setSeries)");
+        } else {
+            console.log(string.concat("INFO  FireGames signer ", vm.toString(g.signer()), ", Series ", vm.toString(g.series())));
+        }
+        if (credits.prizeAwarder() == address(0)) _wait("FireCredits.prizeAwarder unset: only the owner can award prizes until it's the server's wallet");
+        else console.log(string.concat("INFO  FireCredits.prizeAwarder ", vm.toString(credits.prizeAwarder())));
     }
 
     function _feeds() internal {
