@@ -92,7 +92,11 @@
   };
   const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, String(v)); } catch { /* private window */ } return null; };
   const chainNowS = () => Date.now() / 1000 + (Store.clockSkew || 0); // the chain's clock (readSeries sets the skew)
-  const hours = (t) => Math.max(1, Math.ceil((t - chainNowS()) / 3600));
+  // time until t: "21 min", "1h 20m", "5h" (it said "1h" for 21 minutes: hours rounded up)
+  const until = (t) => {
+    const m = Math.max(1, Math.ceil((t - chainNowS()) / 60));
+    return m < 60 ? `${m} min` : m < 180 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}` : `${Math.round(m / 60)}h`;
+  };
 
   // ---------- reading the chain into the Store
   // info: the Series now (reads.currentSeries: its drop, status and groups). gate[i]: this wallet's way into NFT group i
@@ -121,7 +125,7 @@
       maxPerTx: s.maxPerTx, regularWalletsFor: s.regularWalletsFor, paperCapUsd: +s.paperCapUsd, paperBurnBps: s.paperBurnBps, plankBurnBps: s.plankBurnBps,
       creditPacksMax: s.creditPacksMax, creditPacksPerWallet: s.creditPacksPerWallet,
       groups: s.groups.map(toGroup), creditGroup: s.creditGroup, creditPacksLeft: s.status.creditPacksLeft, left: s.status.left,
-      note: s.state === 'upcoming' ? `Opens in ${hours(s.start)}h` : s.status.paused ? 'Paused' : null,
+      note: s.state === 'upcoming' ? `Opens in ${until(s.start)}` : s.status.paused ? 'Paused' : null,
     });
     if (was < 4 && ph === 4 && S.series.loaded) { window.Scene?.finale?.(); setTimeout(() => toast(`Series ${s.fire} is closed. Time to rip!`, 'good'), 600); }
     S.series.loaded = true;
@@ -486,7 +490,7 @@
       await need(); if (!info) { toast(S.series.note || 'No Series on sale', 'bad'); return null; }
       await requireWallet();
       if (stillSending('buy')) return null;
-      if (info.state !== 'live') { Sheet.open('nope', { title: `Series ${info.fire}`, body: `<p class="lead">${info.state === 'upcoming' ? `Opens in ${hours(info.start)}h.` : 'Sold out.'}</p>` }); return null; }
+      if (info.state !== 'live') { Sheet.open('nope', { title: `Series ${info.fire}`, body: `<p class="lead">${info.state === 'upcoming' ? `Opens in ${until(info.start)}.` : 'Sold out.'}</p>` }); return null; }
       if (info.status.paused) { Sheet.open('nope', { title: 'Paused', body: '<p class="lead">Sales are paused.</p>' }); return null; }
       let a = Store.groupAccess(g);
       if (a.ask) { if ((await askNft(g)) == null) return null; a = Store.groupAccess(g); }
