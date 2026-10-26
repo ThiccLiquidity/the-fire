@@ -64,7 +64,7 @@
     const L = window.Live.chain; if (!L) throw new Error('not connected');
     const MAT = { coal: 'charcoal', 'full art': 'fullart' };
     return (await L.cardsOf(addr)).map((c) => ({ id: c.serial, serial: c.serial, series: c.fire, character: c.character || c.name, material: MAT[String(c.material).toLowerCase()] || String(c.material).toLowerCase() || 'paper',
-      holo: c.holo, edition: c.edition, grade: c.grade, cased: c.cased, pending: c.gradePending, image: c.image.startsWith('ipfs://') ? 'https://ipfs.io/ipfs/' + c.image.slice(7) : c.image }));
+      holo: c.holo, edition: c.edition, grade: c.grade, cased: c.cased, pending: c.gradePending, image: Store.ipfs(c.image) }));
   }
   Fun.open.showView = async ({ addr, ids = [] }) => {
     const root = h('div', { class: 'st showcase' }, h('p', { class: 'muted', text: 'Loading cards…' }));

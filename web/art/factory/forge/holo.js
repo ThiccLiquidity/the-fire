@@ -173,7 +173,7 @@
   const still = matchMedia('(prefers-reduced-motion: reduce)');
   const imgCache = new Map();
   // decoded before first use (img.decode()), so the first draw never stalls on decoding
-  const loadImg = (src) => { if (!imgCache.has(src)) imgCache.set(src, new Promise((ok, no) => { const i = new Image(); i.decoding = 'async'; i.onload = () => (i.decode ? i.decode().catch(() => {}) : Promise.resolve()).then(() => ok(i)); i.onerror = no; i.src = src; })); return imgCache.get(src); };
+  const loadImg = (src) => { if (!imgCache.has(src)) imgCache.set(src, new Promise((ok, no) => { const i = new Image(); i.decoding = 'async'; i.onload = () => (i.decode ? i.decode().catch(() => {}) : Promise.resolve()).then(() => ok(i)); i.onerror = () => { const n = Store.nextGateway(i.src); if (n) i.src = n; else no(); }; i.src = src; })); return imgCache.get(src); };
   const live = new Set();
   // ---------- the tilt: one smoothed value per card drives both the light and the card's lean
   // Input (the mouse over it, a finger, device tilt) only sets a target. Every frame a critically damped spring moves the

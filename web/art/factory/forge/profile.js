@@ -18,7 +18,7 @@
   const artOf = (m) => (m === 'fullart' ? WHOLE : ART);
   const MAT = (m) => { const k = low(m).replace(/\s+/g, ''); return k === 'coal' ? 'charcoal' : k; };
   const ZMAX = 4, CENTER = { x: 0.5, y: 0.5, zoom: 1 };
-  const gateway = (u) => (String(u).startsWith('ipfs://') ? 'https://ipfs.io/ipfs/' + String(u).slice(7) : String(u || ''));
+  const gateway = Store.ipfs;
   // a card's image at its best: live, the raw card of the same look (a cased or slabbed state's image moves the art)
   const rawUrl = (u) => gateway(u).replace(/-(c|\d+)\.webp(\?.*)?$/, '-u.webp');
 
@@ -48,7 +48,7 @@
   const imgs = new Map();
   const loadImg = (src) => {
     let p = imgs.get(src);
-    if (!p) { p = new Promise((ok, no) => { const i = new Image(); i.decoding = 'async'; i.onload = () => ok(i); i.onerror = no; i.src = src; }); imgs.set(src, p); p.catch(() => imgs.delete(src)); }
+    if (!p) { p = new Promise((ok, no) => { const i = new Image(); i.decoding = 'async'; i.onload = () => ok(i); i.onerror = () => { const n = Store.nextGateway(i.src); if (n) i.src = n; else no(); }; i.src = src; }); imgs.set(src, p); p.catch(() => imgs.delete(src)); }
     return p;
   };
   const srcs = new Map();

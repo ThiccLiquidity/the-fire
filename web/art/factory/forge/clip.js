@@ -14,7 +14,7 @@
   const MIMES = ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
-  const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); if (/^https?:/.test(src)) i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = no; i.src = src; });
+  const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); if (/^https?:/.test(src)) i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = () => { const n = Store.nextGateway(i.src); if (n) i.src = n; else no(); }; i.src = src; });
 
   /** The video type this browser records (MP4 first), or '' when it can't record a canvas. */
   function mime() {

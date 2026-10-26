@@ -521,5 +521,10 @@
     } else fetch('suggestions/results.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).then((f) => { if (f?.waves?.length) Store.update(() => Store.setResults(f.waves)); }).catch(() => {});
   }
   Store.demoStage(['open', 'waiting', 'after', 'closed'].includes(demoQ.get('stage')) ? demoQ.get('stage') : 'holders'); // the demo's sale (live.js replaces it)
+  // IPFS pictures: Filebase first (the images are pinned there), then public gateways; an <img> that fails on one
+  // tries the next (ipfs.io refuses some connections)
+  Store.IPFS = ['https://ipfs.filebase.io/ipfs/', 'https://dweb.link/ipfs/', 'https://ipfs.io/ipfs/'];
+  Store.ipfs = (u) => (String(u || '').startsWith('ipfs://') ? Store.IPFS[0] + String(u).slice(7) : String(u || ''));
+  Store.nextGateway = (src) => { const i = Store.IPFS.findIndex((g) => String(src).startsWith(g)); return i >= 0 && i < Store.IPFS.length - 1 ? Store.IPFS[i + 1] + src.slice(Store.IPFS[i].length) : null; };
   window.Store = Store; window.Sheet = Sheet; window.toast = toast;
 })();

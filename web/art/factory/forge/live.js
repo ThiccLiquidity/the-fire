@@ -25,7 +25,7 @@
 
   // the card on screen is the metadata's image for its state now (one image, not a strip); no live holo parts (those
   // exist only for the demo cast), the plain image is drawn
-  const gateway = (u) => (String(u).startsWith('ipfs://') ? 'https://ipfs.io/ipfs/' + String(u).slice(7) : u);
+  const gateway = Store.ipfs;
   Store.cardImg = (c) => c.image || 'ui/card-back.webp';
   Store.cardPos = () => '50% 50%';
   Store.cardParts = () => null;
@@ -33,7 +33,7 @@
   Store.floor = () => 0;
   // the Paper Presses that exist now (Info › PLANK & PAPER): the Press contract's totalSupply, cached; null hides the line
   Store.pressSupply = () => ready.then(() => chainUp).then(() => (L ? L.pressSupply() : null)).catch(() => null);
-  addEventListener('error', (e) => { const t = e.target; if (t?.classList?.contains('cframe') && !t.src.endsWith('ui/card-back.webp')) t.src = 'ui/card-back.webp'; }, true);
+  addEventListener('error', (e) => { const t = e.target; if (t?.tagName !== 'IMG') return; const next = Store.nextGateway(t.src); if (next) t.src = next; else if (t.classList?.contains('cframe') && !t.src.endsWith('ui/card-back.webp')) t.src = 'ui/card-back.webp'; }, true);
 
   // ---------- the wallet bundle
   const vendor = document.createElement('script'); vendor.type = 'module'; vendor.src = 'vendor/wallet.js';

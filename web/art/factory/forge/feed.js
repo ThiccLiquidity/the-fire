@@ -44,7 +44,7 @@
       const all = (await Promise.all(fires.map((f) => L.dealtCards(f, 150).catch(() => [])))).flat();
       const rare = all.map((d) => ({ id: d.serial, serial: d.serial, series: d.fire, character: d.character, material: LMAT[d.material.toLowerCase()] || 'paper', holo: d.holo, grade: null, cased: false, by: d.holder, at: d.at || Date.now() / 1000 }))
         .filter((c) => tierOf(c)).sort((a, b) => b.at - a.at).slice(0, 24);
-      await Promise.all(rare.map(async (c) => { if (!imgs.has(c.serial)) imgs.set(c.serial, L.card(c.serial).then((x) => (x.image.startsWith('ipfs://') ? 'https://ipfs.io/ipfs/' + x.image.slice(7) : x.image), () => '')); c.image = await imgs.get(c.serial); }));
+      await Promise.all(rare.map(async (c) => { if (!imgs.has(c.serial)) imgs.set(c.serial, L.card(c.serial).then((x) => Store.ipfs(x.image), () => '')); c.image = await imgs.get(c.serial); }));
       liveList = rare; liveAt = Date.now(); return rare;
     })().finally(() => { liveBusy = null; });
     return liveBusy;
