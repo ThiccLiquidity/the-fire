@@ -15,8 +15,8 @@
     aimMax: 22,        // widest aim (degrees either side)
     flickFull: 2.6,    // phone: flick speed (px/ms, at a 400 px-tall field) that gives full power
     pullFull: 0.38,    // desktop: pull-back length (share of the field's height) that gives full power
-    contactZone: 1.1,  // how wide the strike edge is to touch (in), centre to edge
-    sweet: 0.25,       // contact within this share of the zone counts as clean
+    contactZone: 1.3,  // how much of the long edge's height you can touch (1 = the edge itself), centre to end
+    sweet: 0.3,        // contact within this share of it counts as clean
     offPenalty: 0.32,  // speed lost at the very edge of the zone (share)
     curve: 38,         // sideways curve from an off-centre strike (in/s² at the edge)
     windK: 7,          // sideways push per mph (in/s²)
@@ -25,7 +25,12 @@
     moveFrom: 4,       // moving posts can appear from this streak on
   };
   const G = 386;                      // gravity, in/s²
-  const BAR = 3, POST_H = 5.2, TRI_A = 0.95, TRI_H = 0.8, THICK = 0.24, TEE_Z = 2.5, TEE_Y = 0.28;
+  const BAR = 3, POST_H = 5.2, THICK = 0.05, TEE_Z = 2.5, TEE_Y = 0.28;
+  // the football: a thin sheet folded into a flat, oblong triangle, standing on its bottom corner with its long edge
+  // toward the kicker. From behind it's that thin edge; its broad side shows only as it turns. (z, y), about its centre
+  const TRI = [[-0.26, -0.48], [-0.12, 0.52], [0.38, -0.04]]; // bottom corner, top of the long edge, front point
+  const EDGE_MID = [(TRI[0][0] + TRI[1][0]) / 2, (TRI[0][1] + TRI[1][1]) / 2], EDGE_HALF = Math.hypot(TRI[1][0] - TRI[0][0], TRI[1][1] - TRI[0][1]) / 2;
+  const REST_Y = TEE_Y - TRI[0][1], YAW0 = 0.22; // resting on its bottom corner; turned a little so a sliver of the face shows
 
   // ---------- a small seeded random stream (mulberry32): a shot's conditions are a function of (seed, shot number)
   function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -54,21 +59,21 @@
     const c = Math.max(-1, Math.min(1, k.contact)), clean = Math.abs(c) <= T.sweet;
     const off = clean ? 0 : (Math.abs(c) - T.sweet) / (1 - T.sweet); // 0 at the sweet spot's edge .. 1 at the zone's edge
     const v = (T.vMin + (T.vMax - T.vMin) * Math.max(0, Math.min(1, k.power))) * (1 - T.offPenalty * off * off);
-    const th = T.loft * Math.PI / 180, aim = Math.max(-1, Math.min(1, k.aim / (T.aimMax * Math.PI / 180))) * T.aimMax * Math.PI / 180;
+    // hit high on the edge: it pops up; low: it flies flat
+    const th = (T.loft + c * off * 9) * Math.PI / 180, aim = Math.max(-1, Math.min(1, k.aim / (T.aimMax * Math.PI / 180))) * T.aimMax * Math.PI / 180;
     return {
-      x: 0, y: TEE_Y, z: TEE_Z,
+      z: TEE_Z,
       vx: v * Math.cos(th) * Math.sin(aim), vy: v * Math.sin(th), vz: v * Math.cos(th) * Math.cos(aim),
-      ax: Math.sign(c) * off * T.curve,                  // an off-centre strike curves toward the side it was hit on
+      ax: Math.sign(c) * off * T.curve * 0.4,            // an off-centre strike wobbles off line
       pitch: 0, pitchRate: -(16 - 7 * off),              // end over end (forward)
-      wob: off, roll: 0, yaw: 0.15, t: 0, clean,
+      x: 0, y: REST_Y, wob: off, roll: 0, yaw: YAW0, t: 0, clean,
     };
   }
 
   // ---------- 3D: the folded triangle as a prism (triangle in the y-z plane, thickness along x)
   const LOCAL = (() => {
-    const p = [[-TRI_A / 2, -TRI_H / 3], [TRI_A / 2, -TRI_H / 3], [0, (2 * TRI_H) / 3]]; // (z, y): back-bottom, front-bottom, top
     const v = [];
-    for (const sx of [-1, 1]) for (const [z, y] of p) v.push([sx * THICK / 2, y, z]);
+    for (const sx of [-1, 1]) for (const [z, y] of TRI) v.push([sx * THICK / 2, y, z]);
     return v; // 0-2 left face, 3-5 right face
   })();
   const FACES = [[0, 1, 2, 'face'], [5, 4, 3, 'face'], [0, 2, 5, 3, 'edge'], [0, 3, 4, 1, 'edge'], [1, 4, 5, 2, 'edge']];
@@ -112,12 +117,12 @@
 
     // ---------- input: phone flick (touch) and desktop pull-back (mouse); both produce { power, aim, contact }
     const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, t: performance.now() }; };
-    function ballScreen() { const p = proj(0, TEE_Y + TRI_H / 6, TEE_Z); return p; }
+    function ballScreen() { const [x, y, z] = rotate([0, EDGE_MID[1], EDGE_MID[0]], 0, YAW0, 0); const p = proj(x, REST_Y + y, TEE_Z + z); p.half = EDGE_HALF * p.s; return p; }
     cv.addEventListener('pointerdown', (e) => {
       if (ball || result || !alive) return;
-      const p = pos(e), b = ballScreen(), zone = T.contactZone * b.s * 0.5;
-      if (Math.abs(p.x - b.x) > zone * 1.4 || p.y < b.y - b.s * 1.2 || p.y > b.y + b.s * 1.4) return; // start on the paper
-      press = { mouse: e.pointerType === 'mouse', start: p, pts: [p], contact: (p.x - b.x) / zone };
+      const p = pos(e), b = ballScreen(), zone = T.contactZone * b.half;
+      if (Math.abs(p.x - b.x) > b.s * 0.9 || Math.abs(p.y - b.y) > zone * 1.25) return; // start on the paper's edge
+      press = { mouse: e.pointerType === 'mouse', start: p, pts: [p], contact: (b.y - p.y) / zone }; // up the edge = +
       cv.setPointerCapture(e.pointerId); e.preventDefault();
     });
     cv.addEventListener('pointermove', (e) => {
@@ -166,7 +171,7 @@
       b.vx += (b.ax + shot.wind * T.windK) * dt; b.vy -= G * dt;
       b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt; b.t += dt;
       b.pitch += b.pitchRate * dt;
-      b.roll = Math.sin(b.t * 9 + b.spin.wobPhase) * 0.7 * b.wob; b.yaw = 0.15 + Math.sin(b.t * 6.5) * 0.9 * b.wob;
+      b.roll = Math.sin(b.t * 9 + b.spin.wobPhase) * 0.7 * b.wob; b.yaw = YAW0 + Math.sin(b.t * 6.5) * 0.9 * b.wob;
       const D = TEE_Z + shot.dist, P = D + 16; // posts' plane, Plank's plane
       if (!result && z0 < D && b.z >= D) { // crossing the posts' plane: judged exactly there
         const f = (D - z0) / (b.z - z0), x = x0 + (b.x - x0) * f, y = y0 + (b.y - y0) * f, px = postX(shot, clock - shot.t0);
@@ -263,19 +268,20 @@
       }
     }
     const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, s: a.s });
-    function shadow(b) { const p = proj(b.x, 0, b.z), r = 0.55 * p.s * Math.max(0.3, 1 - b.y / 12); g.fillStyle = 'rgba(30,14,4,.4)'; g.beginPath(); g.ellipse(p.x, p.y, r, r * 0.22, 0, 0, Math.PI * 2); g.fill(); }
+    function shadow(b) { const p = proj(b.x, 0, b.z), r = 0.3 * p.s * Math.max(0.3, 1 - b.y / 12); g.fillStyle = 'rgba(30,14,4,.4)'; g.beginPath(); g.ellipse(p.x, p.y, r, r * 0.22, 0, 0, Math.PI * 2); g.fill(); }
     function tee() { // a bent paperclip holding the paper up
-      const a = proj(-0.35, 0.02, TEE_Z - 0.2), b = proj(0.35, 0.02, TEE_Z + 0.2), c = proj(0, TEE_Y, TEE_Z), s = c.s;
+      const a = proj(-0.16, 0.02, TEE_Z - 0.26), b = proj(0.16, 0.02, TEE_Z - 0.2), c = proj(0, TEE_Y, TEE_Z - 0.26), s = c.s;
       g.strokeStyle = '#c3c7cc'; g.lineWidth = Math.max(1.2, 0.05 * s); g.lineCap = 'round';
       g.beginPath(); g.moveTo(a.x, a.y); g.bezierCurveTo(a.x, c.y, b.x, c.y, b.x, b.y); g.stroke();
       g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = Math.max(0.6, 0.02 * s); g.beginPath(); g.moveTo(a.x + 1, a.y - 1); g.bezierCurveTo(a.x + 1, c.y, b.x - 1, c.y, b.x - 1, b.y - 1); g.stroke();
     }
     function sweetMark() { // the strike edge's centre: a faint notch to aim the touch at
-      const b = ballScreen(), z = T.contactZone * b.s * 0.5, y = proj(0, 0, TEE_Z).y + 14;
+      // a dashed guide beside the long edge, its clean middle in green: touch level with it
+      const b = ballScreen(), z = T.contactZone * b.half, x = b.x - Math.max(16, b.s * 0.35);
       g.strokeStyle = 'rgba(255,210,122,.5)'; g.lineWidth = 1.5; g.setLineDash([3, 4]);
-      g.beginPath(); g.moveTo(b.x - z, y); g.lineTo(b.x + z, y); g.stroke(); g.setLineDash([]);
-      const sw = T.sweet * z; g.strokeStyle = 'rgba(111,207,122,.85)'; g.lineWidth = 3; g.beginPath(); g.moveTo(b.x - sw, y); g.lineTo(b.x + sw, y); g.stroke();
-      if (press) { const cx = b.x + press.contact * z; g.fillStyle = Math.abs(press.contact) <= T.sweet ? 'rgba(111,207,122,.95)' : 'rgba(255,107,90,.95)'; g.beginPath(); g.arc(cx, y, 6, 0, Math.PI * 2); g.fill(); }
+      g.beginPath(); g.moveTo(x, b.y - z); g.lineTo(x, b.y + z); g.stroke(); g.setLineDash([]);
+      const sw = T.sweet * z; g.strokeStyle = 'rgba(111,207,122,.85)'; g.lineWidth = 3; g.beginPath(); g.moveTo(x, b.y - sw); g.lineTo(x, b.y + sw); g.stroke();
+      if (press) { const cy = b.y - press.contact * z; g.fillStyle = Math.abs(press.contact) <= T.sweet ? 'rgba(111,207,122,.95)' : 'rgba(255,107,90,.95)'; g.beginPath(); g.arc(x, cy, 6, 0, Math.PI * 2); g.fill(); }
     }
     function hudBox(x, y, top, big, right) {
       const fs = Math.max(11, H * 0.03), fb = Math.max(15, H * 0.046);
@@ -319,7 +325,7 @@
       const bz = ball ? ball.z : TEE_Z;
       if (bz > Pz) { if (ball) { shadow(ball); paper(ball); } plank(D); posts(clock - shot.t0); }
       else { plank(D); if (bz > Dz && ball) { shadow(ball); paper(ball); posts(clock - shot.t0); } else { posts(clock - shot.t0); if (ball) { shadow(ball); paper(ball); } } }
-      if (!ball) { tee(); const rest = { x: 0, y: TEE_Y + TRI_H / 3, z: TEE_Z, pitch: 0, yaw: 0.15, roll: 0 }; shadow({ x: 0, y: 0, z: TEE_Z }); paper(rest); sweetMark(); }
+      if (!ball) { tee(); const rest = { x: 0, y: REST_Y, z: TEE_Z, pitch: 0, yaw: YAW0, roll: 0 }; shadow({ x: 0, y: 0, z: TEE_Z }); paper(rest); sweetMark(); }
       aimGuide(); hud(); banners();
       requestAnimationFrame(frame);
     }
