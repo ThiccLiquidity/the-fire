@@ -50,6 +50,7 @@
     "@fontsource/teko": "^5.3.0",
     "@fontsource/uncial-antiqua": "^5.3.0",
     "@ipld/car": "^5.4.7",
+    "@noble/curves": "~1.9.1",
     "fflate": "^0.8.2",
     "ipfs-unixfs-importer": "^17.1.1",
     "multiformats": "^14.0.5",

@@ -3,6 +3,7 @@ import { Notice } from './components'
 import { Data } from './screens/Data'
 import { Deal } from './screens/Deal'
 import { Export } from './screens/Export'
+import { Suggestions } from './screens/Suggestions'
 import { FireList, FireSetup } from './screens/Fire'
 import { Frames } from './screens/Frames'
 import { Library } from './screens/Library'
@@ -23,6 +24,7 @@ const TABS = [
   { id: 'deal', label: '5 Deal' },
   { id: 'review', label: '6 Build & Review' },
   { id: 'export', label: '7 Export & Upload' },
+  { id: 'suggest', label: 'Suggestions' },
   { id: 'data', label: 'Data' },
 ] as const
 type Tab = (typeof TABS)[number]['id']
@@ -52,7 +54,7 @@ export default function App() {
   }
 
   const fire = s.fires.find((f) => f.number === fireNo) ?? s.fires[s.fires.length - 1]
-  const perFire = tab === 'fire' || tab === 'recipe' || tab === 'sale' || tab === 'deal' || tab === 'review' || tab === 'export'
+  const perFire = tab === 'fire' || tab === 'recipe' || tab === 'sale' || tab === 'deal' || tab === 'review' || tab === 'export' || tab === 'suggest'
 
   return (
     <div className="app">
@@ -81,6 +83,7 @@ export default function App() {
             {fire && tab === 'deal' && <Deal key={fire.number} fire={fire} />}
             {fire && tab === 'review' && <Review key={fire.number} fire={fire} />}
             {fire && tab === 'export' && <Export key={fire.number} fire={fire} />}
+            {fire && tab === 'suggest' && <Suggestions key={fire.number} fire={fire} />}
           </div>
         )}
       </main>

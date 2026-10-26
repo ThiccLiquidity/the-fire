@@ -368,3 +368,26 @@ button.small-btn { padding: 4px 10px; font-size: 12px; }
 .char-odds .share-input input { width: 64px; }
 .char-odds > span { white-space: nowrap; }
 .pick-list .check { flex-wrap: wrap; }
+
+/* Suggestions screen */
+.sg-steps { margin: 10px 0 14px; gap: 8px }
+.sg-step { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted) }
+.sg-step.on { border-color: var(--accent); color: var(--accent) } .sg-step.done { border-color: var(--ok); color: var(--ok) }
+.sg-fair { background: rgba(76,195,138,.08); border: 1px solid rgba(76,195,138,.4); border-radius: 8px; padding: 10px 12px; margin: 12px 0; display: grid; gap: 4px }
+.sg-fair b { color: var(--ok) } .sg-fair.bad { background: rgba(239,91,91,.08); border-color: rgba(239,91,91,.5) } .sg-fair.bad b { color: var(--err) }
+.sg-fair ul { margin: 4px 0 0 18px; padding: 0 }
+.sg-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 18px; margin-top: 8px }
+.sg-h { display: flex; justify-content: space-between; align-items: baseline }
+.sg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
+.sg-idea { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; position: relative; display: block }
+.sg-idea q { display: block; font-size: 15px; font-weight: 600; margin-bottom: 6px; quotes: '“' '”' }
+.sg-idea.on { border-color: var(--accent); background: rgba(240,138,36,.1) }
+.sg-idea.on::after { content: '✓ Picked'; position: absolute; right: 10px; top: 8px; color: var(--accent); font-weight: 700; font-size: 12px }
+.sg-merged { color: var(--warn) }
+.sg-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-top: 20px }
+.sg-picks { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; margin: 8px 0 14px } .sg-picks dt { color: var(--muted) } .sg-picks dd { margin: 0; font-weight: 600 }
+.suggestions pre { background: #0e0e10; border: 1px solid var(--line); border-radius: 6px; padding: 10px; white-space: pre-wrap; word-break: break-all; font: 12px ui-monospace, monospace }
+/* a file picker that looks like a button (a <label> around a hidden <input type="file">) */
+label.btn { display: inline-block; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer }
+label.btn:hover { border-color: #55555f }
+.sg-idea.on q { padding-right: 70px }
