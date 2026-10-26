@@ -38,6 +38,9 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
     uint256 public constant EXTRA_PICKS = 2;
     /// @notice A suggestion's PAPER never costs more than this many dollars (8 decimals) at the PAPER feed's price.
     uint256 public constant SUGGESTION_PAPER_CAP_USD = 1e8;
+    /// @notice Free pack credits a Series' paper football competition can award in all (1st 3, 2nd 2, 3rd 1). Fixed,
+    ///         so the game server's wallet can never give out more, whatever happens to it.
+    uint256 public constant MAX_PRIZE_CREDITS = 6;
 
     ICreditsCards public immutable CARDS;
     /// @notice The pack sale (set once): it takes the PAPER, burns the cards and mints the credit packs.
@@ -63,6 +66,10 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
     /// @notice The Series being picked for, and the list it picks from.
     uint256 public sessionFire;
     uint32 public sessionRound;
+    /// @notice Who may award competition prizes (the game server's wallet); the owner always may.
+    address public prizeAwarder;
+    /// @notice Prize credits each Series' competition has awarded (at most MAX_PRIZE_CREDITS).
+    mapping(uint256 fire => uint256) public prizesOf;
 
     event SaleSet(address sale);
     event CardsBurned(address indexed holder, uint256 count, uint256 creditsEarned, uint256 burnCount);
@@ -70,6 +77,8 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
     event PickingSession(uint256 indexed fire, uint32 round);
     event SuggestionPicked(uint256 indexed fire, uint256 indexed id, address indexed by, uint256 credits);
     event SuggestionRulesSet(uint256 paper, uint256 maxBytes);
+    event PrizeAwarderSet(address awarder);
+    event PrizeAwarded(uint256 indexed fire, address indexed winner, uint256 credits);
 
     error AlreadySet();
     error ZeroAddress();
@@ -80,6 +89,7 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
     error NotThisRound();
     error AlreadyClaimed();
     error RenounceDisabled();
+    error NotAwarder();
 
     constructor(address owner_, address cards, uint256 paperPerSuggestion) Ownable(owner_) {
         if (cards == address(0)) revert ZeroAddress();
@@ -138,6 +148,32 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
             credits[s.by] += each;
             emit SuggestionPicked(fire, ids[i], s.by, each);
         }
+    }
+
+    /// @notice Who may award competition prizes (0 = only the owner).
+    function setPrizeAwarder(address a) external onlyOwner {
+        prizeAwarder = a;
+        emit PrizeAwarderSet(a);
+    }
+
+    /// @notice Give a Series' paper football competition winners their free pack credits (FireKicks takes the
+    ///         entries). Only for a Series whose drop has started (so made-up Series numbers can't add more), and at
+    ///         most MAX_PRIZE_CREDITS for the Series in all, however many calls.
+    function awardPrizes(uint256 fire, address[] calldata winners, uint256[] calldata counts) external {
+        if (msg.sender != prizeAwarder && msg.sender != owner()) revert NotAwarder();
+        if (winners.length == 0 || winners.length != counts.length) revert BadAmount();
+        FireSale.Drop memory d = sale.dropOf(fire);
+        if (d.start == 0 || block.timestamp < d.start) revert BadConfig();
+        uint256 total = prizesOf[fire];
+        for (uint256 i; i < winners.length; i++) {
+            if (winners[i] == address(0)) revert ZeroAddress();
+            if (counts[i] == 0) revert BadAmount();
+            total += counts[i];
+            credits[winners[i]] += counts[i];
+            emit PrizeAwarded(fire, winners[i], counts[i]);
+        }
+        if (total > MAX_PRIZE_CREDITS) revert BadAmount();
+        prizesOf[fire] = total;
     }
 
     // ================================================================ anyone
