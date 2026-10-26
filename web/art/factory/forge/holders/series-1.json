@@ -1,0 +1,22 @@
+{
+ "series": 1,
+ "chainId": 46630,
+ "updated": "2026-10-26T00:10:52.132Z",
+ "groups": {
+  "1": {
+   "name": "PLANK holders",
+   "root": "0x94d351bceda45ccd07fde97aadd857b04daad830393f117d7c542293207af9d8",
+   "token": "0x6F36b55eF57621975921DaB1Cc5CFa8655F7FcCB",
+   "kind": "erc20",
+   "symbol": "PLANK",
+   "count": 1,
+   "block": "142661182",
+   "wallets": {
+    "0x1290ab0f256221767aec7dbc7a5c195fb40762f6": {
+     "allowance": 2,
+     "proof": []
+    }
+   }
+  }
+ }
+}

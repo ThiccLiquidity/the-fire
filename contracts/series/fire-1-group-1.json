@@ -1,0 +1,54 @@
+{
+  "version": 3,
+  "root": "0x94d351bceda45ccd07fde97aadd857b04daad830393f117d7c542293207af9d8",
+  "token": "0x6F36b55eF57621975921DaB1Cc5CFa8655F7FcCB",
+  "kind": "erc20",
+  "symbol": "PLANK",
+  "decimals": 18,
+  "unit": "usd",
+  "min": "69",
+  "minRaw": "69000000069000000069000000069",
+  "tiers": [
+    {
+      "min": "69",
+      "allowance": 1,
+      "minRaw": "69000000069000000069000000069"
+    },
+    {
+      "min": "300",
+      "allowance": 2,
+      "minRaw": "300000000300000000300000000300"
+    }
+  ],
+  "allowance": 1,
+  "feed": "0xB4f6350287b1e6ef5f4F288F65113D48DA8E4974",
+  "tokenUsd": "999999999",
+  "block": "142661182",
+  "blocks": [
+    "142653057",
+    "142653285",
+    "142656929",
+    "142659003",
+    "142661182"
+  ],
+  "seed": "30d4171873778d4e45fd7e70d3d1a228",
+  "days": 0.02,
+  "blockCount": 5,
+  "fromBlock": "133109036",
+  "step": "5000",
+  "pairs": [],
+  "count": 1,
+  "holders": [
+    {
+      "wallet": "0x1290AB0f256221767Aec7DBC7a5c195fB40762F6",
+      "balance": "1000000000000000000000000000000",
+      "allowance": 2
+    }
+  ],
+  "wallets": {
+    "0x1290AB0f256221767Aec7DBC7a5c195fB40762F6": {
+      "allowance": 2,
+      "proof": []
+    }
+  }
+}
