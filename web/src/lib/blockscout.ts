@@ -97,6 +97,20 @@ export class BlockscoutData implements ForgeData {
     return { items: out, next: encodeNext(more) };
   }
 
+  /** The ids of any ERC-721 `contract` that `owner` holds, per the explorer (all pages, up to 1,000 NFTs looked at):
+   *  for a collection that can't list its owners' tokens itself (no ERC721Enumerable), like the testnet Paper Press. */
+  async erc721IdsOf(owner: Address, contract: string): Promise<number[]> {
+    const want = contract.toLowerCase(), out: number[] = [];
+    let params: Json | undefined;
+    for (let i = 0; i < 20; i++) {
+      const page = await this.get<BsPage<BsNft>>(`/addresses/${owner}/nft`, { type: "ERC-721", ...(params ?? {}) });
+      for (const n of page.items ?? []) if (tokenAddr(n.token) === want && n.id != null) out.push(Number(n.id));
+      if (!page.next_page_params) break;
+      params = page.next_page_params as Json;
+    }
+    return out;
+  }
+
   async packsOf(owner: Address): Promise<OwnedPack[]> {
     const all: BsNft[] = [];
     let next: string | undefined;

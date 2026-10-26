@@ -233,6 +233,8 @@
       if (!x.ids.length) return { ok: false, ask: true, why: `Pick your ${nft}` };
       const free = x.uses.filter((u) => u.used < g.perNft);
       cap = free.reduce((s, u) => s + g.perNft - u.used, 0);
+      // the wallet holds more than the ones known here (one typed in): ask for another
+      if (!cap && x.count > x.ids.length) return { ok: false, ask: true, why: `Pick your other ${g.isPress ? 'Press' : nft}` };
       if (!cap) return { ok: false, why: `Your ${g.isPress ? 'Press' : nft} already got ${g.perNft === 1 ? 'its pack' : 'its packs'}` };
       access = { nftIds: free.map((u) => u.id) };
     } else if (g.gate === 'snapshot') {
@@ -475,7 +477,8 @@
         if (!(id >= 0) || !a || !(await L.ownsNft(g.nft, a, id))) return say(`That ${what} isn't in this wallet.`);
         const [u] = await L.nftUse(info.fire, g.index, [id]).catch(() => [{ id, used: 0 }]);
         if (u.used >= g.perNft) return say(`That ${g.isPress ? 'Press' : what} already got ${g.perNft === 1 ? 'its pack' : 'its packs'}.`);
-        store(typedKey(g.nft, a), id); gate[g.index] = { ...(gate[g.index] || { count: 1 }), ids: [id], uses: [u] }; ok = true; Sheet.close('press'); done(id);
+        store(typedKey(g.nft, a), id); const was = gate[g.index] || { count: 1, ids: [], uses: [] };
+        gate[g.index] = { ...was, ids: [...was.ids.filter((x) => x !== id), id], uses: [...was.uses.filter((x) => x.id !== id), u] }; ok = true; Sheet.close('press'); done(id);
       };
       Sheet.open('press', { title: what, body: f, onClose: () => { if (!ok) done(null); } });
       setTimeout(() => f.querySelector('input').focus(), 50);

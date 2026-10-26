@@ -329,12 +329,19 @@ export async function ownsNft(nft: Address, owner: Address, id: number): Promise
   try { return getAddress(await pub().readContract({ address: nft, abi: nftAbi, functionName: "ownerOf", args: [BigInt(id)] })) === getAddress(owner); } catch { return false; }
 }
 
-/** The NFT ids of `nft` a wallet holds (up to 50). Empty if the collection can't list its owners' tokens. */
+/** The NFT ids of `nft` a wallet holds (up to 50): the collection's own list (ERC721Enumerable), else the explorer's,
+ *  each checked on chain (ownerOf: the explorer can lag a transfer). Empty if neither can list them: the holder types it. */
 export async function nftsOf(nft: Address, owner: Address): Promise<number[]> {
   try {
     const n = Number(await pub().readContract({ address: nft, abi: nftAbi, functionName: "balanceOf", args: [owner] }));
     const ids = await Promise.all(Array.from({ length: Math.min(n, 50) }, (_, i) => pub().readContract({ address: nft, abi: nftAbi, functionName: "tokenOfOwnerByIndex", args: [owner, BigInt(i)] })));
     return ids.map(Number);
+  } catch { /* not enumerable: ask the explorer */ }
+  if (!NET.explorer) return [];
+  try {
+    const listed = await new BlockscoutData({ packs: addr("FirePacks"), cards: addr("FireCards") }, NET.explorer).erc721IdsOf(owner, nft);
+    const mine = await Promise.all([...new Set(listed)].slice(0, 50).map(async (id) => ((await ownsNft(nft, owner, id)) ? id : null)));
+    return mine.filter((id): id is number => id !== null).sort((a, b) => a - b);
   } catch { return []; }
 }
 
