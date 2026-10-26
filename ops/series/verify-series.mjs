@@ -147,6 +147,7 @@ export async function loads(url, fetchFn, gw = { pauseUntil: 0, throttled: 0 }, 
       if ((r.status === 429 || r.status === 503) && throttles < maxThrottle) {
         throttles++;
         gw.throttled++;
+        gw.onThrottle?.(r.status, retryAfterMs(r.headers?.get?.("retry-after")));
         const ms = Math.min(retryAfterMs(r.headers?.get?.("retry-after")) ?? 1000 * 2 ** throttles, 60_000);
         gw.pauseUntil = Math.max(gw.pauseUntil, Date.now() + ms);
         continue;
@@ -298,12 +299,15 @@ export async function verifySeries(opts) {
       ok(manifest.recipeHash === recipeHash(json), `manifest.json's recipe hash ${manifest.recipeHash === recipeHash(json) ? "matches recipe.json" : "is for another recipe"}`);
       ok(Number(manifest.fire) === Number(fire), `manifest.json is for Series ${manifest.fire}`);
     }
-    let list = names;
-    if (opts.sample) list = [...names].sort(() => Math.random() - 0.5).slice(0, opts.sample);
+    let list = opts.skipImages ? [] : names;
+    if (opts.skipImages) warn(`the ${names.length} images weren't loaded through the gateways (skipped: testnet only; the studio read every one back after the upload)`);
+    else if (opts.sample) list = [...names].sort(() => Math.random() - 0.5).slice(0, opts.sample);
     const need = opts.minGateways ?? 2;
     const failed = new Map(gateways.map((g) => [g, []]));
     const loadsFrom = new Map(list.map((name) => [name, 0]));
-    const state = new Map(gateways.map((g) => [g, { pauseUntil: 0, throttled: 0, ok: 0, failsInARow: 0, dead: false }]));
+    // a gateway that says "slow down" (429/503) is noted in the log at once, not only at the end
+    const state = new Map(gateways.map((g) => [g, { pauseUntil: 0, throttled: 0, ok: 0, failsInARow: 0, dead: false,
+      onThrottle: (status, ms) => log(`  ... ${new URL(g).host} answered ${status} (slow down)${ms != null ? `, asks to wait ${Math.round(ms / 1000)} s` : ""}: pausing it`) }]));
     // a gateway that serves none of its first DEAD_AFTER images (e.g. Pinata's for files pinned only on Filebase) is
     // given up on, instead of retrying every image for an hour; the others still have to reach minGateways
     const DEAD_AFTER = opts.deadAfter ?? 12;
