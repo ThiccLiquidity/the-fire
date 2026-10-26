@@ -17,7 +17,7 @@
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     cards: '<rect x="3.5" y="6" width="11" height="15" rx="1.8"/><path d="M8.5 3.5l9.6 1.7a1.8 1.8 0 0 1 1.5 2.1l-2 11.1"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
-    game: '<path d="M12 4l8 14H4z"/><path d="M9 13h6"/>', // a folded paper football
+    game: '<path d="M7 8h10a4.5 4.5 0 0 1 4.4 5.4l-.8 3.6a2.4 2.4 0 0 1-4.2 1l-1.9-2.5H9.5L7.6 18a2.4 2.4 0 0 1-4.2-1l-.8-3.6A4.5 4.5 0 0 1 7 8z"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.6" r=".6"/><circle cx="17.3" cy="13.4" r=".6"/>', // a game controller
   };
   const svg = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
   // big numbers compact, 3 significant digits: 22.9K, 1.25M, 1T (never "1000.00B")
@@ -762,7 +762,7 @@
   function openMenu() {
     const d = Sheet.open('menu', { title: 'Menu', body: `<div class="menu">
       <button class="btn" type="button" data-m="cards">${svg('cards')}My cards</button>${!LIVE || Stations.openableCount() ? `<button class="btn" type="button" data-m="open">${svg('pack')}Open packs${Stations.openableCount() ? ` (${Stations.openableCount()})` : ''}</button>` : ''}
-      <button class="btn" type="button" data-m="paper">${svg('paper')}Get PAPER</button><button class="btn" type="button" data-m="info">${svg('info')}Info</button>
+      <button class="btn" type="button" data-m="games">${svg('game')}Game room</button><button class="btn" type="button" data-m="paper">${svg('paper')}Get PAPER</button><button class="btn" type="button" data-m="info">${svg('info')}Info</button>
       <button class="btn" type="button" data-m="feed">${svg('feed')}Activity</button><button class="btn" type="button" data-m="sound">${svg('sound')}Sound: ${window.Sound?.on ? 'On' : 'Off'}</button>
       <button class="btn" type="button" data-m="start">New here?</button>${LIVE ? '' : '<button class="btn" type="button" data-m="demo">Demo controls</button>'}
       <button class="btn" type="button" data-m="fun:practice">Practice pack</button><button class="btn" type="button" data-m="fun:binder">Binder</button>
@@ -810,7 +810,7 @@
     if (k === 'haptics' && window.Fun?.haptics) return toast(`Vibration: ${Fun.haptics.set(!Fun.haptics.on) ? 'On' : 'Off'}`);
     if (k === 'paper') openGetPaper(); if (k === 'info') Info.open(); if (k === 'info-cards') Info.open('cards'); if (k === 'feed') openFeed();
     if (k === 'menu') openMenu(); if (k === 'demo' && !LIVE) openDemo(); if (k === 'start') openStart(); if (k === 'sound') $('#soundBtn').click();
-    if (k === 'cards' || k === 'open') openStation(k);
+    if (k === 'cards' || k === 'open' || k === 'games') openStation(k);
   }
   // My cards opens the collection; Open packs goes straight to tearing the next pack, or (none to open) says why and points at Buy
   function openStation(k) {

@@ -348,7 +348,7 @@ body.hero-cards .pill.hero::after { display: none }
 body.fresh .pill.tool { opacity: .8; border-style: dashed } body.fresh .pill.tool small { display: none }
 
 /* ---------- phones held upright: the hero first, then My cards and the Series, then the tools; one-row Buy bar */
-body[data-mode=port] .stations { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; padding-bottom: calc(var(--bbH, 80px) + 16px + env(safe-area-inset-bottom, 0px)) }
+body[data-mode=port] .stations { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; padding-bottom: calc(var(--bbH, 80px) + 16px + env(safe-area-inset-bottom, 0px)) }
 body[data-mode=port] .stations .pitch { grid-column: 1 / -1; margin-top: -2px }
 body[data-mode=port] .openbtn { grid-column: 1 / -1; position: relative; min-height: 62px }
 body[data-mode=port] .openbtn.hero { color: #2a1a05; background: linear-gradient(#ffe39a, #e8b54a); border: 2px solid #fff0bf;
@@ -358,9 +358,12 @@ body[data-mode=port].hero-buy .openbtn.hero { display: none } /* the Buy bar is 
 body[data-mode=port].hero-cards .openbtn.hero { color: var(--ink); background: var(--panel); border: 1.5px solid var(--wood); box-shadow: none }
 body[data-mode=port].hero-cards .openbtn.hero b { color: var(--gold) } body[data-mode=port].hero-cards .openbtn.hero small { color: var(--muted) } body[data-mode=port].hero-cards .openbtn.hero svg { color: var(--wood) }
 body[data-mode=port].hero-cards .openbtn.hero::after { display: none }
-body[data-mode=port] .station { grid-column: span 3; min-height: 56px }
-body[data-mode=port] .station.peek { grid-column: span 3 }
-body[data-mode=port] .station.tool { grid-column: span 2; min-height: 48px; grid-template-columns: 1fr; justify-items: center; text-align: center; padding: 6px 4px; row-gap: 2px }
+body[data-mode=port] .station { grid-column: span 6; min-height: 56px }
+body[data-mode=port] .station.peek { grid-column: span 6 }
+/* no Series teaser beside it: My cards takes the whole row */
+body[data-mode=port] .stations:has(.station.peek[hidden]) .station:not(.tool):not(.peek) { grid-column: 1 / -1 }
+/* the four tools (Burn, Case & grade, Suggest, Game room) share one row */
+body[data-mode=port] .station.tool { grid-column: span 3; min-height: 48px; grid-template-columns: 1fr; justify-items: center; text-align: center; padding: 6px 4px; row-gap: 2px }
 body[data-mode=port] .station.tool svg { grid-row: auto; width: 20px; height: 20px } body[data-mode=port] .station.tool b { font-size: 13px; line-height: 1.15 }
 body[data-mode=port] .station.tool small { display: none }
 body[data-mode=port].fresh .station.tool { border-style: dashed; border-color: var(--line-2); opacity: .85 } body[data-mode=port].fresh .station.tool svg { color: var(--muted) }
@@ -483,3 +486,15 @@ body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
 .gm-rows li small { grid-column: 2 / 4; color: var(--gold); font: 700 12px var(--body) }
 .gm-rows li.prize { border: 1px solid rgba(233,180,90,.45) } .gm-rows li.me { background: rgba(111,207,122,.12) }
 .gm-rows .rk { font: 400 18px var(--display); color: var(--gold) } .gm-rows b { font: 400 20px var(--display) }
+
+/* phones: the station buttons as enamel tiles, each filled with its own colour, a glossy top (owner's pick, Oct 26) */
+body[data-mode=port] .station { position: relative; overflow: hidden; border: 1px solid color-mix(in srgb, var(--c, var(--gold)) 80%, #fff 10%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c, var(--gold)) 58%, #1a120b), color-mix(in srgb, var(--c, var(--gold)) 28%, #0d0805));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), inset 0 -3px 0 rgba(0,0,0,.35), 0 4px 10px rgba(0,0,0,.5) }
+body[data-mode=port] .station::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 45%; background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,0)); pointer-events: none }
+body[data-mode=port] .station svg { color: #fff6e0; filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)) }
+body[data-mode=port] .station b { color: #fff6e0; text-shadow: 0 1px 2px rgba(0,0,0,.6) } body[data-mode=port] .station small { color: rgba(255,240,215,.8) }
+body[data-mode=port] .station.peek { --c: var(--gold) }
+body[data-mode=port] .station:not([style*="--c"]):not(.peek) { --c: var(--wood) }
+body[data-mode=port].fresh .station.tool { border-style: solid; border-color: color-mix(in srgb, var(--c, var(--gold)) 60%, #000); opacity: .8 } /* until a first pack: dimmer, not dashed */
+body[data-mode=port].fresh .station.tool svg { color: #fff6e0 }
