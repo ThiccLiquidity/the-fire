@@ -5,6 +5,7 @@
 //   node suggestions/draw.mjs --rpc <url> --to-block <n> [--drand-round <r>] [--kind look|theme|style|character]
 //                             [--count 10] [--round <n>] [--series <n>] [--from-block <n>] [--out draw.json]
 //   node suggestions/draw.mjs --rpc <url> --verify draw-round-3-look.json      (anyone: re-runs a published draw)
+//                             [--expect-to-block <n>] [--expect-round <drand round>]   (as announced with the wave)
 //   node suggestions/draw.mjs --rpc <url> --plan --close "2026-11-08 18:00"    (what to announce when a wave opens)
 //
 // A fair draw needs two things fixed before anyone can know the result, both announced when the wave opens:
@@ -35,6 +36,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { fetchRound, firstRoundAfter, roundTime, verifyRound, randomnessOf, QUICKNET } from './beacon.mjs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { requirePatchedNode } from '../keeper/src/node-check.mjs'
 
 /** Invisible characters someone could add to make one idea look like a different one: bidi controls and zero-width
  *  characters. */
@@ -111,7 +113,7 @@ export async function readSuggestions(client, credits, round, fromBlock, toBlock
   for (let b = BigInt(fromBlock); b <= BigInt(toBlock); b += step) {
     const to = b + step - 1n > BigInt(toBlock) ? BigInt(toBlock) : b + step - 1n
     const logs = await client.getLogs({ address: credits, event: suggestedEv, args: { round }, fromBlock: b, toBlock: to })
-    for (const l of logs) all.push({ id: Number(l.args.id), by: getAddress(l.args.by), text: l.args.text, ...kindOf(l.args.text) })
+    for (const l of logs) all.push({ id: Number(l.args.id), by: getAddress(l.args.by), text: l.args.text, ...kindOf(l.args.text), block: l.blockNumber })
   }
   return all
 }
@@ -168,7 +170,29 @@ export function checkSavedRound(saved) {
   return p
 }
 
-async function verifyDraw(client, file) {
+const sameAddress = (a, b) => { try { return getAddress(String(a)) === getAddress(String(b)) } catch { return false } }
+
+/** Checks a saved draw against what the file can't vouch for itself: its FireCredits is the deployments file's
+ *  (`credits`), no suggestion of its round was mined before its fromBlock (`early`: those, read from the deploy block),
+ *  and, when given, its closing block and drand round are the ones announced with the wave. */
+export function checkDrawSource(saved, { credits, early = [], expectToBlock, expectRound } = {}) {
+  const p = []
+  if (!sameAddress(saved.credits, credits)) p.push(`FireCredits: file ${saved.credits}, deployments file ${credits ?? 'none'}`)
+  if (early.length) p.push(`${early.length} suggestion(s) of round ${saved.round} were mined before the draw's fromBlock ${saved.fromBlock} and left out (first #${early[0].id})`)
+  if (expectToBlock !== undefined && String(saved.toBlock) !== String(BigInt(expectToBlock))) p.push(`closing block: file ${saved.toBlock}, announced ${expectToBlock}`)
+  if (expectRound !== undefined && String(saved.drand?.round) !== String(BigInt(expectRound))) p.push(`drand round: file ${saved.drand?.round}, announced ${expectRound}`)
+  return p
+}
+
+/** deployments/<chainId>.json (DEPLOYMENTS_FILE points it at another file: rehearsals, like every other tool). */
+export function deploymentsOf(chainId) {
+  const depFile = process.env.DEPLOYMENTS_FILE || fileURLToPath(new URL(`../../deployments/${chainId}.json`, import.meta.url))
+  const dep = JSON.parse(readFileSync(depFile, 'utf8'))
+  if (!dep.contracts?.FireCredits) throw new Error(`No FireCredits in ${depFile}`)
+  return dep
+}
+
+async function verifyDraw(client, file, expect = {}) {
   const saved = JSON.parse(readFileSync(file, 'utf8'))
   if (saved.test) throw new Error(`${file} is a test draw (--seed), not a real one: nothing to verify`)
   if (!saved.drand || saved.toBlock === undefined) throw new Error(`${file} has no closing block and drand round (made before they were required): it can't be verified`)
@@ -181,7 +205,13 @@ async function verifyDraw(client, file) {
   const beacon = await fetchRound(saved.drand.round)
   if (beacon.signature !== String(saved.drand.signature).toLowerCase()) problems.push(`drand's signature for round ${saved.drand.round} isn't the saved one`)
   console.log(`Closing block ${saved.toBlock} (${iso(close.timestamp)}), drand quicknet round ${saved.drand.round} (${iso(roundTime(saved.drand.round))}) from ${beacon.relay}: randomness ${beacon.randomness}`)
-  const all = await readSuggestions(client, saved.credits, saved.round, BigInt(saved.fromBlock ?? 0), BigInt(saved.toBlock))
+  // from the deploy block, whatever the file says: suggestions of the round before its fromBlock would be left out
+  const dep = deploymentsOf(chainId)
+  const credits = getAddress(dep.contracts.FireCredits)
+  const from = BigInt(saved.fromBlock ?? 0), start = BigInt(dep.startBlock ?? 0)
+  const read = await readSuggestions(client, credits, saved.round, start < from ? start : from, BigInt(saved.toBlock))
+  const all = read.filter((s) => !(s.block < from))
+  problems.push(...checkDrawSource(saved, { credits, early: read.filter((s) => s.block < from), ...expect }))
   const again = runDraw(all, Object.keys(saved.shortlists), beacon.randomness, Number(saved.count ?? 10))
   problems.push(...compareDraws(saved, { ...again, suggestions: all.length }))
   for (const p of problems) console.log(`FAIL  ${p}`)
@@ -219,14 +249,12 @@ async function main() {
   if (args.plan) return plan(client, args)
   if (args.verify) {
     if (args.verify === 'true') throw new Error('--verify <the draw file>')
-    return verifyDraw(client, args.verify)
+    // the closing block and drand round announced with the wave, when the checker has them
+    const given = (k) => (args[k] !== undefined && args[k] !== 'true' ? args[k] : undefined)
+    return verifyDraw(client, args.verify, { expectToBlock: given('expect-to-block'), expectRound: given('expect-round') })
   }
   const chainId = Number(args.chain ?? await client.getChainId())
-  // DEPLOYMENTS_FILE points it at another file (rehearsals), like every other tool
-  const depFile = process.env.DEPLOYMENTS_FILE || fileURLToPath(new URL(`../../deployments/${chainId}.json`, import.meta.url))
-  const dep = JSON.parse(readFileSync(depFile, 'utf8'))
-  const credits = dep.contracts?.FireCredits
-  if (!credits) throw new Error(`No FireCredits in ${depFile}`)
+  const credits = deploymentsOf(chainId).contracts.FireCredits
   const kinds = KINDS[args.kind ?? 'look']
   if (!kinds) throw new Error('--kind is look, theme, style or character')
   const count = Number(args.count ?? 10)
@@ -286,4 +314,5 @@ Announce the picks with suggestions/publish.mjs --picks <ids>. On chain they're 
 Series' drop setup: FireCredits.pickSuggestions(<series>, [theme, style and character ids]).`)
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) await main()
+// reads RPCs (and drand relays): not on a Node with the Brotli bug (CVE-2026-111497)
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) { requirePatchedNode(); await main() }

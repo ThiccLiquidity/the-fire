@@ -58,11 +58,34 @@ export function checkDraw(d: DrawFile, publicKey = QUICKNET.publicKey): string[]
 export const kindsOf = (d: DrawFile): DrawKind[] => (Object.keys(d.shortlists) as DrawKind[]).filter((k) => d.shortlists[k]?.length)
 export const shortAddr = (a: string) => (a && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a)
 
+/** The commands below are copied into PowerShell, so nothing in them may run code: the draw file's name must be a
+ *  plain file name (letters, digits, dot, dash, underscore, ending .json) and goes in a single-quoted literal; the
+ *  series, chain and ids must be whole numbers. Anything else throws, and the screen shows the error, not a command. */
+export const SAFE_FILE = /^[A-Za-z0-9._-]+\.json$/
+const psQuote = (s: string) => `'${s.replace(/'/g, "''")}'`
+function safeFile(file: string): string {
+  if (typeof file !== 'string' || !SAFE_FILE.test(file)) throw new Error(`The draw file name "${file}" isn't safe to put in a command: rename it to letters, digits, dots, dashes or underscores ending in .json (e.g. draw-round-3-look.json) and load it again.`)
+  return psQuote(file)
+}
+function uint(what: string, n: unknown): number {
+  if (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0) throw new Error(`The ${what} (${String(n)}) isn't a whole number, so there's no command.`)
+  return n
+}
+const uints = (what: string, ids: unknown[]) => ids.map((id) => uint(what, id))
+
 /** The command that announces a wave's picks on the results page (ops/suggestions/publish.mjs). */
 export const publishCommand = (file: string, series: number, ids: number[]) =>
-  `cd C:\\Users\\DubT1\\the-fire\\ops\nnode suggestions\\publish.mjs --draw "${file}" --series ${series} --picks ${ids.join(',')}`
+  `cd C:\\Users\\DubT1\\the-fire\\ops\nnode suggestions\\publish.mjs --draw ${safeFile(file)} --series ${uint('Series', series)} --picks ${uints('pick id', ids).join(',')}`
+
+/** The command that re-runs a draw from the chain and checks it matches the file. */
+export const verifyCommand = (file: string) => `node suggestions/draw.mjs --rpc <url> --verify ${safeFile(file)}`
 
 /** The Ledger transaction that marks every pick of a Series at once (the authors' free packs). */
 export const pickCommand = (series: number, ids: number[], chainId: number) =>
-  `$credits = (Get-Content C:\\Users\\DubT1\\the-fire\\deployments\\${chainId}.json | ConvertFrom-Json).contracts.FireCredits\n` +
-  `cast send $credits "pickSuggestions(uint256,uint256[])" ${series} "[${ids.join(',')}]" --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC`
+  `$credits = (Get-Content C:\\Users\\DubT1\\the-fire\\deployments\\${uint('chain id', chainId)}.json | ConvertFrom-Json).contracts.FireCredits\n` +
+  `cast send $credits "pickSuggestions(uint256,uint256[])" ${uint('Series', series)} "[${uints('pick id', ids).join(',')}]" --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC`
+
+/** A command, or why there isn't one. */
+export function commandOr(make: () => string): { cmd: string; error?: undefined } | { cmd?: undefined; error: string } {
+  try { return { cmd: make() } } catch (e) { return { error: (e as Error).message } }
+}

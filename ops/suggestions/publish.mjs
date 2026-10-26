@@ -20,10 +20,11 @@
 // anyone can re-run it (draw.mjs --verify). A test draw (draw.mjs --seed) is refused unless --allow-test-draw. Then
 // commit and push it: the site's build syncs it (web/package.json prebuild runs sync_forge.sh; nothing to run by hand).
 import { createPublicClient, http, parseAbiItem, getAddress } from 'viem'
-import { kindOf } from './draw.mjs'
+import { kindOf, checkDrawSource, checkSavedRound, deploymentsOf } from './draw.mjs'
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { requirePatchedNode } from '../keeper/src/node-check.mjs'
 
 export const KIND_LABEL = { theme: 'Theme', style: 'Art style', character: 'Character' }
 const WAVE_OF = { look: 'look', theme: 'look', style: 'look', character: 'characters' }
@@ -102,6 +103,9 @@ async function main() {
   const draw = JSON.parse(readFileSync(args.draw, 'utf8'))
   if (draw.test && !args['allow-test-draw']) throw new Error(`${args.draw} is a TEST draw (draw.mjs --seed), not a real one. Draw again with --to-block (and the announced drand round), or --allow-test-draw for a test site.`)
   if (!draw.test && !draw.drand) console.warn('WARNING: this draw has no drand round and closing block (made before they were required): nobody can check it was fair.')
+  // a hand-edited file doesn't publish: its seed must be its drand round's, and its FireCredits the deployments file's
+  const bad = [...(draw.drand ? checkSavedRound(draw) : []), ...checkDrawSource(draw, { credits: deploymentsOf(draw.chainId).contracts.FireCredits })]
+  if (bad.length) throw new Error(`${args.draw} doesn't check out: ${bad.join('; ')}. Run draw.mjs --verify on it.`)
   const series = Number(args.series)
   let picks, onChain = null, offList = []
   if (args.picks && args.picks !== 'true') picks = args.picks.split(',').map((x) => ({ id: Number(x.trim().replace(/^#/, '')) }))
@@ -142,4 +146,5 @@ async function main() {
   console.log(`\nSaved ${out} (${merged.waves.length} wave${merged.waves.length === 1 ? '' : 's'}). Commit and push it: the site's build syncs it (no script to run).`)
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) await main()
+// reads an RPC: not on a Node with the Brotli bug (CVE-2026-111497)
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) { requirePatchedNode(); await main() }

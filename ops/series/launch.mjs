@@ -62,6 +62,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { verifySeries, recipeFromJson, characterWeightsFromJson, DEFAULT_GATEWAYS } from "./verify-series.mjs";
 import { salePolicy, saleWallets, parseAllow, describeSale, normSale, nftCodeOf, dropDiffs } from "./sale-policy.mjs";
 import { saleAbi, groupsAbi } from "./sale-abi.mjs";
+import { requirePatchedNode } from "../keeper/src/node-check.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(here, "../..");
@@ -69,6 +70,9 @@ const CONTRACTS = resolve(REPO, "contracts");
 const SERIES_DIR = resolve(CONTRACTS, "series");
 const MAINNET = 4663;
 const CHARACTER_BATCH = 200;
+// every vm.env* name ConfigureSeries (and Deployments.sol under it) reads; each forge run sets all of them (see forge)
+const FORGE_ENV = ["BATCH", "SIMULATE", "FIRE_SALE", "RECIPE_DEALER", "FIRE_CARDS", "CHARACTER_BATCH", "DROP_START", "MILL",
+  ...Array.from({ length: 8 }, (_, i) => `GROUP_ROOT_${i}`)];
 const MIN_LEAD_SEC = 15 * 60; // the start must leave time to sign batch B
 const MAX_AHEAD_SEC = 365 * 86400; // ConfigureSeries refuses more (a typo)
 const KEEPER_STALE_SEC = 90 * 60; // the keeper alerts at 90 min; FireSale stops PLANK pricing at 2 h
@@ -519,9 +523,12 @@ export async function launch(argv, { env = process.env, stdout = console.log, as
 
     // forge, from contracts/ (the RPC URL is shown as <RPC> in the log: it can hold an API key)
     const forgeExtra = (env.LAUNCH_FORGE_ARGS ?? "").split(" ").filter(Boolean); // tests only (--offline --use <solc>)
+    // forge reads contracts/.env for any name not set here, so every name ConfigureSeries reads is set: the checked MILL,
+    // the contracts from the deployments file, the rest blank (a stale or other-chain .env can't steer the batches)
+    const pin = { ...Object.fromEntries(FORGE_ENV.map((k) => [k, ""])), MILL: mill ?? "", FIRE_SALE: C.FireSale, RECIPE_DEALER: C.RecipeDealer, FIRE_CARDS: C.FireCards };
     const forge = (extra, extraEnv) => run(bin("forge"), ["script", "script/ConfigureSeries.s.sol", ...extra, ...forgeExtra], {
       cwd: CONTRACTS,
-      env: { ...env, ...extraEnv, RECIPE_JSON: recipePath, DEPLOYMENTS_FILE: depFile, FOUNDRY_DISABLE_NIGHTLY_WARNING: "1" },
+      env: { ...env, ...pin, ...extraEnv, RECIPE_JSON: recipePath, DEPLOYMENTS_FILE: depFile, FOUNDRY_DISABLE_NIGHTLY_WARNING: "1" },
     }, (t) => toLog(t.split(rpc).join("<RPC>")));
 
     // ---------------------------------------------------------------- 2. fork rehearsal
@@ -709,6 +716,7 @@ export function lastError(out) {
 
 // ---------------------------------------------------------------- CLI
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  requirePatchedNode(); // the Ledger is attached and it reads gateways, drand and RPCs: not on a Node with the Brotli bug
   const code = await launch(process.argv.slice(2));
   process.exit(code);
 }

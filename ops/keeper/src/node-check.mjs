@@ -11,3 +11,11 @@ export function nodePatched(version = process.versions.node) {
   return true;
 }
 export const NODE_FIX = "22.23.4, 24.22.1 or 26.12.1";
+
+/** For the ops and paper command-line tools (they fetch from RPCs, gateways and relays too): stop on a Node without
+ *  the fix. Call it first thing when run as a command, not on import, so the tests can still load the modules. */
+export function requirePatchedNode(version = process.versions.node) {
+  if (nodePatched(version)) return;
+  console.error(`Node ${version} has the Brotli bug (CVE-2026-111497): update Node to ${NODE_FIX} or later, then run again.`);
+  process.exit(1);
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { bls12_381 as bls } from '@noble/curves/bls12-381'
 import { sha256 } from '@noble/hashes/sha2'
-import { checkDraw, pickCommand, publishCommand, randomnessOf, roundMessage, roundTime, type DrawFile } from './suggestDraw'
+import { checkDraw, commandOr, pickCommand, publishCommand, verifyCommand, randomnessOf, roundMessage, roundTime, type DrawFile } from './suggestDraw'
 
 // a stand-in drand network with its own key: the same scheme as quicknet (as ops/suggestions/draw.test.mjs)
 const sk = bls.utils.randomPrivateKey()
@@ -33,9 +33,25 @@ describe('suggestion draw files', () => {
     expect(checkDraw({} as DrawFile)[0]).toMatch(/isn't a draw file/)
   })
   it('the commands carry the picks', () => {
-    expect(publishCommand('draw-round-3-look.json', 2, [1, 2])).toContain('--draw "draw-round-3-look.json" --series 2 --picks 1,2')
+    expect(publishCommand('draw-round-3-look.json', 2, [1, 2])).toContain(`--draw 'draw-round-3-look.json' --series 2 --picks 1,2`)
+    expect(verifyCommand('draw-round-3-look.json')).toBe(`node suggestions/draw.mjs --rpc <url> --verify 'draw-round-3-look.json'`)
     const c = pickCommand(2, [1, 2, 5, 6, 7], 46630)
     expect(c).toContain('deployments\\46630.json')
     expect(c).toContain('"pickSuggestions(uint256,uint256[])" 2 "[1,2,5,6,7]" --ledger')
+  })
+  it('no command when a file name or a number could run code in PowerShell', () => {
+    for (const bad of ['$(calc).json', 'a`b.json', "it's.json", 'draw round.json', 'x";calc;".json', '..\\x.json', 'draw.json.txt', 'draw', '']) {
+      expect(() => publishCommand(bad, 2, [1, 2])).toThrow(/isn't safe/)
+      expect(() => verifyCommand(bad)).toThrow(/isn't safe/)
+    }
+    for (const bad of [-1, 1.5, NaN, Infinity, 2 ** 53, '2' as unknown as number]) {
+      expect(() => publishCommand('d.json', bad, [1])).toThrow(/whole number/)
+      expect(() => publishCommand('d.json', 2, [1, bad])).toThrow(/whole number/)
+      expect(() => pickCommand(bad, [1], 46630)).toThrow(/whole number/)
+      expect(() => pickCommand(2, [bad], 46630)).toThrow(/whole number/)
+      expect(() => pickCommand(2, [1], bad)).toThrow(/whole number/)
+    }
+    expect(commandOr(() => publishCommand('$(calc).json', 2, [1]))).toEqual({ error: expect.stringMatching(/isn't safe/) })
+    expect(commandOr(() => pickCommand(2, [0, 1], 1))).toEqual({ cmd: expect.stringContaining('"[0,1]"') })
   })
 })

@@ -46,6 +46,7 @@ import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { buildTree, verify } from './merkle.mjs'
+import { requirePatchedNode } from '../keeper/src/node-check.mjs'
 
 export const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
 const DEAD = '0x000000000000000000000000000000000000dEaD'
@@ -206,6 +207,21 @@ async function priceAt(client, feed, block, allowStale) {
 /** Token base units worth `usd` dollars at `px` (18-decimal price): usd * 10^decimals * 1e18 / px. */
 export const usdToRaw = (usd, px, decimals) => (BigInt(Math.round(Number(usd) * 100)) * 10n ** BigInt(decimals + 16)) / px
 
+/** Refuses log searches that could miss holders without an error: a fromBlock after the token existed (every wallet
+ *  that got it earlier and never moved it would be left out), or a logs RPC on another chain or behind `last`.
+ *  Throws; no logsClient: the logs come from `client`. */
+export async function checkLogSource({ client, logsClient, token, fromBlock, last }) {
+  if (fromBlock > 0n) {
+    const code = await client.getCode({ address: token, blockNumber: fromBlock - 1n })
+    if (code && code !== '0x') throw new Error(`from block ${fromBlock}: ${token} already existed at block ${fromBlock - 1n}, so earlier holders would be missed. Leave --from-block out, or give a block from before the token was deployed`)
+  }
+  if (!logsClient) return
+  const [want, got] = await Promise.all([client.getChainId(), logsClient.getChainId()])
+  if (want !== got) throw new Error(`LOGS_RPC is chain ${got}, RPC is chain ${want}`)
+  const head = await logsClient.getBlockNumber()
+  if (head < last) throw new Error(`LOGS_RPC is at block ${head}, behind the last block ${last}: it would miss transfers`)
+}
+
 /**
  * Builds the holder list. opts: { client, token, feed (for minUsd), min | minUsd, tiers, allowance (1), block (the
  * last; default latest), blocks (5), days (7), seed, fromBlock, step, pairs ([{ pair, tokenIs0 }]: given, else found
@@ -225,7 +241,8 @@ export async function takeSnapshot(o) {
   if (!Number.isInteger(flat) || flat < 1 || flat > Number(MAX_ALLOWANCE)) throw new Error('--allowance is a whole number of packs, 1 or more')
   const last = o.block !== undefined ? BigInt(o.block) : await client.getBlockNumber()
   const seed = o.seed ?? randomBytes(16).toString('hex')
-  const info = await tokenInfo(client, token, last)
+  await checkLogSource({ client, logsClient: o.logsClient, token, fromBlock, last })
+  const info =await tokenInfo(client, token, last)
   const unit = o.minUsd !== undefined && o.minUsd !== null ? 'usd' : 'token'
   const tiers = parseTiers(o.tiers)
   const min = String(unit === 'usd' ? o.minUsd : o.min ?? tiers[0]?.min ?? '')
@@ -460,4 +477,5 @@ async function main() {
   console.log(`Wrote ${out} (with its seed and blocks: node snapshot.mjs --verify ${out} rebuilds it).`)
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) await main()
+// reads RPCs: not on a Node with the Brotli bug (CVE-2026-111497)
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) { requirePatchedNode(); await main() }

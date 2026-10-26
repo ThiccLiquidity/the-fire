@@ -17,14 +17,8 @@ export function loadEnv(file = resolve(PAPER_DIR, ".env")) {
 }
 
 // HTTP2Shell (CVE-2026-111497): Node unpacks Brotli replies for fetch, and builds before the fix could be attacked by a
-// bad server; gather reads feeds from all over the web. Fixed in 22.23.4, 24.22.1 and 26.12.1 (the lines in between never got it).
-const NODE_FIXED = { 22: [22, 23, 4], 24: [24, 22, 1], 26: [26, 12, 1] };
-export function nodePatched(version = process.versions.node) {
-  const v = version.split(".").map(Number), f = NODE_FIXED[v[0]];
-  if (!f) return v[0] > 26;
-  for (let i = 0; i < 3; i++) if (v[i] !== f[i]) return v[i] > f[i];
-  return true;
-}
+// bad server; gather reads feeds from all over the web. One table for the keeper, ops and paper.
+export { nodePatched, requirePatchedNode } from "../../ops/keeper/src/node-check.mjs";
 export const env = (k, d = undefined) => (process.env[k] !== undefined && process.env[k] !== "" ? process.env[k] : d);
 
 export function args(argv = process.argv.slice(2)) {

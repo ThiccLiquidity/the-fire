@@ -41,6 +41,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createPublicClient, http, getAddress } from "viem";
 import { salePolicy, saleWallets, parseAllow, normSale, saleFromChain, nftCodeOf } from "./sale-policy.mjs";
 import { saleAbi, groupsAbi } from "./sale-abi.mjs";
+import { requirePatchedNode } from "../keeper/src/node-check.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(here, "../..");
@@ -360,7 +361,9 @@ export async function verifySeries(opts) {
     // rebuilt from the chain at the snapshot's own blocks: catches a wallet, balance or allowance edited into the file
     if (opts.snapshotChain !== false) {
       try {
-        // the transfer-log searches on LOGS_RPC when set (as ops/snapshot): an archive RPC with a small search limit reads the balances
+        // the transfer-log searches on LOGS_RPC when set (as ops/snapshot): an archive RPC with a small search limit reads the balances.
+        // The file's fromBlock isn't trusted: the rebuild refuses one after the token existed (getCode at fromBlock-1),
+        // and a LOGS_RPC on another chain or behind the last block (snapshot.mjs checkLogSource), so that's RED here
         const logsRpc = opts.logsRpc ?? process.env.LOGS_RPC;
         const logsClient = logsRpc ? createPublicClient({ transport: http(logsRpc) }) : undefined;
         const v = await verifySnapshot({ client, logsClient, snap, discover: snap.token ? discoverFor(snap.token, inp) : undefined });
@@ -410,6 +413,7 @@ export function byGroup(v) {
 
 // ---------------------------------------------------------------- CLI
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  requirePatchedNode(); // it reads gateways and RPCs: not on a Node with the Brotli bug (CVE-2026-111497)
   const args = {};
   process.argv.slice(2).forEach((a, i, all) => { if (a.startsWith("--")) args[a.slice(2)] = all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true; });
   const rpc = process.env.RPC ?? process.env.RPC_URL;

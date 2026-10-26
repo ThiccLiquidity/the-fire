@@ -44,7 +44,7 @@ interface IPsaBurner {
  *
  *         The odds: a fresh grade (7-10) from the fresh odds, then wear (moves and time uncased). Both are fixed
  *         here forever, the same for every Series (FRESH_* and WEAR_* constants, `oddsFor`); nobody can change them.
- *         Fresh: 10: 1%, 9: 30%, 8: 40%, 7: 29% (never below 7). Only the prices can change.
+ *         Fresh: 10: 3%, 9: 30%, 8: 40%, 7: 27% (never below 7). Only the prices can change.
  *
  *         The owner can pause case and grading payments (`setPaused`); finishing and cancelling gradings never pause.
  *         The randomness source can be switched at any time (only new gradings use it; each grading remembers its

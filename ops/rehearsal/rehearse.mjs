@@ -41,6 +41,7 @@ import {
 } from "viem";
 import { mnemonicToAccount, nonceManager } from "viem/accounts";
 import { drandServer, gatewayServer, webhookServer } from "./servers.mjs";
+import { requirePatchedNode } from "../keeper/src/node-check.mjs";
 import { createKeeper } from "../keeper/src/core.mjs";
 import { loadConfig } from "../keeper/src/config.mjs";
 import { roundTime, DRAND_GENESIS } from "../keeper/src/drand.mjs";
@@ -51,6 +52,7 @@ import { PAY } from "../series/sale-abi.mjs";
 import { record } from "../deploy/record.mjs";
 import { routerAbi as keeperRouterAbi, twapAbi as keeperTwapAbi, cardsAbi as keeperCardsAbi, psaAbi as keeperPsaAbi, burnerAbi as keeperBurnerAbi, adapterAbi as keeperAdapterAbi } from "../keeper/src/abis.mjs";
 
+requirePatchedNode(); // a command only (nothing imports it); --fork reads a real RPC: not on a Node with the Brotli bug
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(here, "../..");
 const CONTRACTS = resolve(REPO, "contracts");

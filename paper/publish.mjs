@@ -13,7 +13,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { PAPER_DIR, args, env, issueDate, loadEnv, readJson, writeJson } from "./lib/util.mjs";
+import { PAPER_DIR, args, env, issueDate, loadEnv, readJson, requirePatchedNode, writeJson } from "./lib/util.mjs";
 import { check } from "./check.mjs";
 import { deployments } from "./lib/chain.mjs";
 
@@ -49,6 +49,7 @@ export function opensAt(date, hour = 6) {
 
 // main module (pathToFileURL: on Windows argv[1] is C:\..., and a path may have spaces)
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  requirePatchedNode(); // it uploads to Pinata and reads the chain: not on a Node with the Brotli bug (CVE-2026-111497)
   loadEnv();
   const a = args();
   if (a.send && env("PUBLISH_FROM_TASK") !== "1") {

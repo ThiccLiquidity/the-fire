@@ -10,7 +10,7 @@ import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { getAddress } from 'viem'
 import { buildTree, leafOf, verify } from './merkle.mjs'
-import { isWallet, lpShare, blockTimes, minBalances, takeSnapshot, verifySnapshot, compareSnapshots, parseTiers, allowanceFor, usdToRaw, SELFTEST, MULTICALL3 } from './snapshot.mjs'
+import { isWallet, lpShare, blockTimes, minBalances, checkLogSource, takeSnapshot, verifySnapshot, compareSnapshots, parseTiers, allowanceFor, usdToRaw, SELFTEST, MULTICALL3 } from './snapshot.mjs'
 
 const E = 10n ** 18n
 const A = (n) => getAddress(`0x${n.toString(16).padStart(40, '0')}`)
@@ -249,4 +249,17 @@ test('compareSnapshots: a proof or an allowance edited in the served wallets', (
   assert.deepEqual(compareSnapshots({ ...base, wallets }, { ...base, wallets }), [])
   assert.ok(compareSnapshots({ ...base, wallets: { ...wallets, [HOLDER]: { allowance: 1, proof: [] } } }, base).some((p) => /don't verify/.test(p)))
   assert.ok(compareSnapshots({ ...base, wallets: { ...wallets, [LPER]: { ...wallets[LPER], allowance: 9 } } }, base).some((p) => /don't verify/.test(p)))
+})
+
+test('the log searches: no --from-block after the token existed; LOGS_RPC on the same chain and caught up', async () => {
+  const c = fakeChain()
+  const deployed = (at) => ({ ...c, getChainId: async () => 4663, getCode: async ({ address, blockNumber }) => (getAddress(address) === PLANK && blockNumber >= at ? '0x60' : '0x') })
+  const logs = (chainId, head) => ({ getChainId: async () => chainId, getBlockNumber: async () => head })
+  await checkLogSource({ client: deployed(40n), token: PLANK, fromBlock: 0n, last: LAST })
+  await checkLogSource({ client: deployed(40n), token: PLANK, fromBlock: 40n, last: LAST }) // the token's own block
+  await assert.rejects(checkLogSource({ client: deployed(40n), token: PLANK, fromBlock: 41n, last: LAST }), /already existed at block 40/)
+  await assert.rejects(takeSnapshot(opts(deployed(10n), { fromBlock: 50 })), /already existed/, 'and the snapshot refuses it')
+  await checkLogSource({ client: deployed(40n), logsClient: logs(4663, LAST), token: PLANK, fromBlock: 0n, last: LAST })
+  await assert.rejects(checkLogSource({ client: deployed(40n), logsClient: logs(46630, LAST + 5n), token: PLANK, fromBlock: 0n, last: LAST }), /LOGS_RPC is chain 46630, RPC is chain 4663/)
+  await assert.rejects(checkLogSource({ client: deployed(40n), logsClient: logs(4663, LAST - 1n), token: PLANK, fromBlock: 0n, last: LAST }), /behind the last block/)
 })

@@ -69,7 +69,7 @@ test('the session check: a round that can no longer be picked for the Series', (
 // ------------------------------------------------------------------ the closing block and the drand seed
 import { bls12_381 as bls } from '@noble/curves/bls12-381'
 import { createHash } from 'node:crypto'
-import { checkSavedRound, compareDraws, drawRound, runDraw } from './draw.mjs'
+import { checkDrawSource, checkSavedRound, compareDraws, drawRound, runDraw } from './draw.mjs'
 import { QUICKNET, fetchRound, firstRoundAfter, randomnessOf, roundMessage, roundTime, verifyRound } from './beacon.mjs'
 
 // a stand-in drand network (its own key): the same scheme as quicknet (BLS12-381 short signatures, RFC 9380 hash to G1)
@@ -144,4 +144,16 @@ test('a saved draw\'s round: the signature, the randomness and the seed must agr
   assert.ok(checkSavedRound({ ...saved, seed: 'ab' }).some((x) => /seed isn't/.test(x)))
   assert.ok(checkSavedRound({ ...saved, drand: { ...saved.drand, randomness: 'cd' } }).some((x) => /sha256/.test(x)))
   assert.ok(checkSavedRound({ ...saved, toBlockTime: Number(roundTime(9n)) }).some((x) => /before the closing block/.test(x)))
+})
+
+test('a saved draw\'s source: the deployments file\'s FireCredits, nothing left out before fromBlock, the announced close and round', () => {
+  const credits = '0x00000000000000000000000000000000000000cc'
+  const saved = { credits, round: 3, fromBlock: '0', toBlock: '500', drand: { round: 1100 } }
+  assert.deepEqual(checkDrawSource(saved, { credits: '0x00000000000000000000000000000000000000CC', expectToBlock: '500', expectRound: 1100 }), [])
+  assert.ok(checkDrawSource({ ...saved, credits: '0x00000000000000000000000000000000000000dd' }, { credits }).some((x) => /FireCredits: file/.test(x)), 'a fake contract')
+  assert.ok(checkDrawSource({ ...saved, credits: undefined }, { credits }).some((x) => /FireCredits/.test(x)))
+  assert.ok(checkDrawSource(saved, { credits: undefined }).some((x) => /deployments file none/.test(x)))
+  assert.ok(checkDrawSource({ ...saved, fromBlock: '200' }, { credits, early: [{ id: 4 }, { id: 9 }] }).some((x) => /2 suggestion\(s\) of round 3 were mined before the draw's fromBlock 200.*#4/.test(x)))
+  assert.ok(checkDrawSource(saved, { credits, expectToBlock: 501 }).some((x) => /closing block: file 500, announced 501/.test(x)))
+  assert.ok(checkDrawSource(saved, { credits, expectRound: '1101' }).some((x) => /drand round: file 1100, announced 1101/.test(x)))
 })

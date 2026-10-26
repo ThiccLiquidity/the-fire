@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Notice, useAction } from '../components'
 import { updateFire } from '../store'
 import type { FireRecord } from '../types'
-import { checkDraw, kindsOf, pickCommand, publishCommand, roundTime, shortAddr, type DrawEntry, type DrawFile, type DrawKind } from '../suggestDraw'
+import { checkDraw, commandOr, kindsOf, pickCommand, publishCommand, roundTime, shortAddr, verifyCommand, type DrawEntry, type DrawFile, type DrawKind } from '../suggestDraw'
 
 const LABEL: Record<DrawKind, string> = { theme: 'Themes', style: 'Art styles', character: 'Characters' }
 type Wave = 'look' | 'character'
@@ -50,6 +50,15 @@ export function Suggestions({ fire }: { fire: FireRecord }) {
   const ready = lookIds.length === 2 && charIds.length === need && waves.every((w) => !w.problems.length)
   const chainId = (look ?? chars)?.d.chainId ?? 46630
 
+  /** A command to copy, or the reason there isn't one (an unsafe file name or a number that isn't whole). */
+  const command = (key: string, testId: string, label: string, make: () => string) => {
+    const c = commandOr(make)
+    return c.error !== undefined
+      ? <p className="warn-text small" data-testid={`${testId}-error`}>{c.error}</p>
+      : <><pre data-testid={testId}>{c.cmd}</pre>
+        <button onClick={() => copy(key, c.cmd)}>{copied === key ? 'Copied' : label}</button></>
+  }
+
   const step = (n: number, label: string, done: boolean, on: boolean) => (
     <span className={`sg-step${done ? ' done' : on ? ' on' : ''}`}>{n} {label}{done ? ' ✓' : ''}</span>
   )
@@ -80,7 +89,7 @@ export function Suggestions({ fire }: { fire: FireRecord }) {
               <span>{w.wave === 'look' ? 'Look' : 'Characters'} wave closed at block {Number(w.d.toBlock).toLocaleString()}
                 {w.d.toBlockTime ? ` (${new Date(w.d.toBlockTime * 1000).toLocaleString()})` : ''} · seed: drand round {Number(w.d.drand!.round).toLocaleString()}
                 {' '}(out {new Date(Number(roundTime(w.d.drand!.round)) * 1000).toLocaleString()}, signature verified) · {w.d.suggestions} ideas → {w.d.count} per kind, drawn at random.
-                {' '}<span className="muted small">Full re-run from the chain: <code>node suggestions/draw.mjs --rpc &lt;url&gt; --verify {w.file}</code></span></span></>}
+                {' '}<span className="muted small">Full re-run from the chain: <code>{commandOr(() => verifyCommand(w.file)).cmd ?? `(rename ${w.file} first)`}</code></span></span></>}
         </div>
       ))}
 
@@ -116,22 +125,17 @@ export function Suggestions({ fire }: { fire: FireRecord }) {
 
           <h4>3 · Announce on the results page</h4>
           <p className="muted small">Run in PowerShell, then commit and push the results file it writes. Nothing on chain yet.</p>
-          {lookIds.length === 2 && look && (<>
-            <pre data-testid="sg-publish-look">{publishCommand(look.file, fire.number, lookIds)}</pre>
-            <button onClick={() => copy('pl', publishCommand(look.file, fire.number, lookIds))}>{copied === 'pl' ? 'Copied' : 'Copy (theme and art style)'}</button>
-          </>)}
-          {chars && charIds.length === need && (<>
-            <pre data-testid="sg-publish-chars">{publishCommand(chars.file, fire.number, charIds)}</pre>
-            <button onClick={() => copy('pc', publishCommand(chars.file, fire.number, charIds))}>{copied === 'pc' ? 'Copied' : 'Copy (characters)'}</button>
-          </>)}
+          {lookIds.length === 2 && look && command('pl', 'sg-publish-look', 'Copy (theme and art style)', () => publishCommand(look.file, fire.number, lookIds))}
+          {chars && charIds.length === need && command('pc', 'sg-publish-chars', 'Copy (characters)', () => publishCommand(chars.file, fire.number, charIds))}
           {lookIds.length < 2 && <p className="muted small">Pick a theme and an art style first.</p>}
 
           <h4>4 · Mark picked on chain (once, after the characters wave, before the Series starts)</h4>
-          {ready ? (<>
-            <pre data-testid="sg-pick-cmd">{pickCommand(fire.number, allIds, chainId)}</pre>
-            <div className="row wrap"><button className="primary" onClick={() => copy('pk', pickCommand(fire.number, allIds, chainId))}>{copied === 'pk' ? 'Copied' : 'Copy command'}</button>
+          {ready ? (() => { const pk = commandOr(() => pickCommand(fire.number, allIds, chainId)); return pk.error !== undefined
+            ? <p className="warn-text small" data-testid="sg-pick-cmd-error">{pk.error}</p> : (<>
+            <pre data-testid="sg-pick-cmd">{pk.cmd}</pre>
+            <div className="row wrap"><button className="primary" onClick={() => copy('pk', pk.cmd)}>{copied === 'pk' ? 'Copied' : 'Copy command'}</button>
               <span className="muted small">{allIds.length} authors get a free pack (theme, art style, {need} characters). After it, publish again with <code>--rpc &lt;url&gt;</code> so the results page shows the transaction.</span></div>
-          </>) : <p className="muted small">Needs the theme, the art style and {need} characters picked.</p>}
+          </>) })() : <p className="muted small">Needs the theme, the art style and {need} characters picked.</p>}
         </div>
       )}
     </section>

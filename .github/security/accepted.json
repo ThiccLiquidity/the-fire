@@ -1,9 +1,10 @@
 {
-  "_": "High/critical npm advisories we know about and accept for now, each with why and when to look again. The weekly check (.github/workflows/security.yml) fails on anything not listed here, and on anything listed here once its review date has passed.",
+  "_": "High/critical npm advisories we know about and accept for now, each with why and when to look again. The weekly check (.github/workflows/security.yml) fails on anything not listed here (by id and package folder: dir), and on anything listed here once its review date has passed.",
   "accepted": [
     {
       "id": "GHSA-mrhx-c7xc-m3w5",
       "package": "zod",
+      "dir": "web",
       "where": "web (wallet libraries: @reown/appkit, @walletconnect, @coinbase/cdp-sdk)",
       "why": "Memory exhaustion while validating oversized input, inside the wallet-connect code in the visitor's own browser. It can't touch funds, keys or the contracts. No fixed version upstream yet; npm audit fix breaks the site build.",
       "review": "2026-11-25"

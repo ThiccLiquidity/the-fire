@@ -196,15 +196,19 @@ export async function sendTx(call: TxCall, opts: TxOptions): Promise<Transaction
     return bal !== undefined && bal < call.value ? "Not enough ETH for the price." : "Not enough ETH for the network fee.";
   };
   let request: unknown;
+  let gas: bigint;
   try {
     ({ request } = await pub.simulateContract({ ...call, account: from } as Parameters<typeof pub.simulateContract>[0]));
+    // sent with a 25% margin over the estimate (the same for a browser wallet and the local signer), so a little state
+    // change between the estimate and the block doesn't run it out of gas
+    gas = (await pub.estimateContractGas({ ...call, account: from } as Parameters<typeof pub.estimateContractGas>[0])) * 125n / 100n;
   } catch (e) { throw new TxError(await why(e), "simulate", e); }
 
   step("confirm");
   let hash: Hex;
   try {
     const wallet = await getWalletClient();
-    hash = await wallet.writeContract(request as Parameters<typeof wallet.writeContract>[0]);
+    hash = await wallet.writeContract({ ...(request as object), gas } as Parameters<typeof wallet.writeContract>[0]);
   } catch (e) { throw new TxError(await why(e), "confirm", e); }
 
   const ref = track({ hash, label: opts.label, kind: opts.kind ?? "tx", chainId: robinhood.id, from, at: Date.now() }, (h) => step("pending", h));
