@@ -447,9 +447,26 @@
     const FILT0 = { series: 'all', hold: 'all', mat: 'all', holo: 'any', grade: 'all' };
     const matching = (all) => all.filter((c) => (filt.series === 'all' || c.series === +filt.series) && (filt.mat === 'all' || c.material === filt.mat)
       && (filt.hold === 'all' || Store.holder(c) === filt.hold)
-      && (filt.holo === 'any' || (c.holo || 'none') === filt.holo)
+      && (filt.holo === 'any' || (filt.holo === 'yes' ? isHolo(c) : (c.holo || 'none') === filt.holo))
       && (filt.grade === 'all' || (filt.grade === 'none' ? c.grade == null : c.grade != null && filt.grade.split('-').map(Number).includes(c.grade))));
     const filtersOn = () => Object.keys(FILT0).filter((k) => filt[k] !== FILT0[k]).length;
+    const isHolo = (c) => !!Store.ALWAYS_HOLO[c.material] || (c.holo || 'none') !== 'none';
+    // one tap: sort (Newest, Best first) and one filter at a time (only what this collection has); Filter has the rest
+    function quickPills(all) {
+      const has = (f) => all.some(f), only = (k, v) => Object.keys(FILT0).every((x) => filt[x] === (x === k ? v : FILT0[x]));
+      const pill = (t, on, fn, key) => h('button', { type: 'button', class: 'qp', 'aria-pressed': String(on), onclick: () => { fn(); renderColl(); }, 'data-q': key }, t);
+      const pick = (k, v) => () => { Object.assign(filt, FILT0, { sort: filt.sort }); if (k) filt[k] = v; };
+      const mats = Store.MATS.filter((m) => has((c) => c.material === m));
+      return h('div', { class: 'qpills', role: 'group', 'aria-label': 'Quick filters' },
+        pill('Newest', filt.sort === 'serial', () => { filt.sort = 'serial'; }, 'newest'),
+        pill('Best first', filt.sort === 'rarity', () => { filt.sort = 'rarity'; }, 'best'),
+        h('span', { class: 'qp-gap', 'aria-hidden': 'true' }),
+        pill('All', only(null), pick(), 'all'),
+        has(isHolo) ? pill('Holo', only('holo', 'yes'), pick('holo', 'yes'), 'holo') : null,
+        has((c) => c.grade != null) ? pill('Slabbed', only('hold', 'slab'), pick('hold', 'slab'), 'slab') : null,
+        has((c) => Store.holder(c) === 'case') ? pill('Cased', only('hold', 'case'), pick('hold', 'case'), 'case') : null,
+        ...(mats.length > 1 ? mats.map((m) => pill(Store.MAT_LABEL[m], only('mat', m), pick('mat', m), m)) : []));
+    }
     // the filters and sort: one "Filter" button on the collection, the choices in their own sheet (cards come first)
     function filterControls(all, after) {
       const seriesList = [...new Set(all.map((c) => c.series))].sort((a, b) => b - a);
@@ -463,7 +480,7 @@
       const filters = h('div', { class: 'filters' },
         sel('series', 'Series', [['all', 'All'], ...seriesList.map((n) => [n, 'Series ' + n])]),
         sel('mat', 'Material', [['all', 'All'], ...Store.MATS.map((m) => [m, Store.MAT_LABEL[m]])]),
-        sel('holo', 'Holo', [['any', 'Any'], ['none', 'None'], ['frame', 'Frame'], ['picture', 'Picture'], ['full', 'Full']]),
+        sel('holo', 'Holo', [['any', 'Any'], ['yes', 'Any holo'], ['none', 'None'], ['frame', 'Frame'], ['picture', 'Picture'], ['full', 'Full']]),
         sel('grade', 'Grade', [['all', 'All'], ['none', 'Not graded'], ['10', 'PDA 10'], ['9-8', 'PDA 9–8'], ['7-6', 'PDA 7–6'], ['5-4', 'PDA 5–4'], ['3-2', 'PDA 3–2'], ['1', 'PDA 1']]),
         sel('sort', 'Sort', [['serial', 'Newest'], ['rarity', 'Rarity'], ['grade', 'Grade'], ['edition', 'Print #']]));
       return [holdSeg, filters];
@@ -496,7 +513,7 @@
       put(coll, h('div', { class: 'coll-h' }, h('h3', { id: 'coll-h', text: 'Your cards' }), h('span', { class: 'muted', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }),
         btn(on ? `Filter · ${on}` : 'Filter', 'small filter-b' + (on ? ' on' : ''), openFilter, { 'data-key': 'filter', 'aria-haspopup': 'dialog', 'aria-label': on ? `Filter and sort (${on} on)` : 'Filter and sort' }),
         h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) })),
-        btn('Pop report', 'small pop-b', () => openPop(), { 'data-key': 'pop' }), btn('Binder', 'small', () => window.Fun?.go('binder', { series: filt.series === 'all' ? null : +filt.series }), { 'data-key': 'binder' })), freshNudge(all), grid);
+        btn('Pop report', 'small pop-b', () => openPop(), { 'data-key': 'pop' }), btn('Binder', 'small', () => window.Fun?.go('binder', { series: filt.series === 'all' ? null : +filt.series }), { 'data-key': 'binder' })), all.length ? quickPills(all) : null, freshNudge(all), grid);
     }
     // no cards at all: PLANK, and the way to a first pack. Packs ready to open: open one (packs only open once their
     // Series sells out); a sale on: Get a pack (the Buy flow); neither: just the line.

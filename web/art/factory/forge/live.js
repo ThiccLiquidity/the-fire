@@ -225,23 +225,28 @@
     const a = me();
     if (!a) { Object.assign(S.wallet, { connected: false, full: '', address: '', credits: 0, burnCount: 0, boughtIn: {}, balances: { ETH: 0, PLANK: 0, PAPER: 0, USDG: 0 }, unfinished: [] }); S.cards = []; S.sealed = {}; S.suggestions = []; gate = {}; return; }
     const fire = info?.fire;
-    const [bal, packs, cr, mine, pn, st, gs, ops, grs] = await Promise.all([L.balances(a), L.packsOf(a, fires), L.credits(a), L.suggestions({ by: a }).catch(() => []),
-      L.pressCount(a).catch(() => 0), fire ? L.myGroupStanding(fire, a).catch(() => null) : null, fire ? readGates(fire, a).catch(() => ({})) : {},
-      L.opensOf(a).catch(() => null), L.gradingsOf(a).catch(() => null)]);
-    if (me() !== a) return; // switched wallets meanwhile
-    gate = gs;
-    if (ops && grs) S.wallet.unfinished = unfinished(ops, grs);
-    S.wallet.balances = { ETH: num(bal.ETH), PLANK: num(bal.PLANK), PAPER: num(bal.PAPER), USDG: num(bal.USDG) };
-    S.wallet.credits = cr.credits; S.wallet.burnCount = cr.burnedTowardNext;
-    S.wallet.isPressHolder = pn > 0; S.wallet.boughtIn = st ? Object.fromEntries(st.bought.map((n, i) => [i, n])) : {};
-    S.sealed = Object.fromEntries(packs.map((p) => [p.fire, p.count]));
-    const round = Live.rules?.round;
-    S.suggestions = mine.map((x) => ({ text: x.text, at: x.round === round ? 'Series ' + S.series.no : 'Earlier', picked: x.picked }));
-    S.wallet.inSnapshot = snapGroups(info).some((g) => !!(Live.snapshot && L.snapshotEntry(Live.snapshot, g.root, a)));
-    if (withCards || Date.now() - cardsAt > 60_000) {
-      cardsAt = Date.now(); const cs = (await L.cardsOf(a)).map(toCard);
-      if (me() === a) S.cards = cs;
-    }
+    // everything at once; each part shows as soon as it's in (coins and packs first; the cards and the history scans,
+    // the slow ones, after), so the page never waits on the slowest read to show the rest
+    const mine = (fn) => (v) => { if (me() !== a) return; fn(v); Store.update(() => {}); }; // switched wallets meanwhile: dropped
+    const cardsDue = withCards || Date.now() - cardsAt > 60_000;
+    if (cardsDue) cardsAt = Date.now();
+    await Promise.all([
+      Promise.all([L.balances(a), L.packsOf(a, fires), L.credits(a), L.pressCount(a).catch(() => 0)]).then(mine(([bal, packs, cr, pn]) => {
+        S.wallet.balances = { ETH: num(bal.ETH), PLANK: num(bal.PLANK), PAPER: num(bal.PAPER), USDG: num(bal.USDG) };
+        S.wallet.credits = cr.credits; S.wallet.burnCount = cr.burnedTowardNext; S.wallet.isPressHolder = pn > 0;
+        S.sealed = Object.fromEntries(packs.map((p) => [p.fire, p.count]));
+        S.wallet.inSnapshot = snapGroups(info).some((g) => !!(Live.snapshot && L.snapshotEntry(Live.snapshot, g.root, a)));
+      })),
+      Promise.all([fire ? L.myGroupStanding(fire, a).catch(() => null) : null, fire ? readGates(fire, a).catch(() => ({})) : {}]).then(mine(([st, gs]) => {
+        gate = gs; S.wallet.boughtIn = st ? Object.fromEntries(st.bought.map((n, i) => [i, n])) : {};
+      })),
+      Promise.all([L.opensOf(a).catch(() => null), L.gradingsOf(a).catch(() => null)]).then(mine(([ops, grs]) => { if (ops && grs) S.wallet.unfinished = unfinished(ops, grs); })),
+      L.suggestions({ by: a }).catch(() => []).then(mine((list) => {
+        const round = Live.rules?.round;
+        S.suggestions = list.map((x) => ({ text: x.text, at: x.round === round ? 'Series ' + S.series.no : 'Earlier', picked: x.picked }));
+      })),
+      cardsDue ? L.cardsOf(a).then(mine((cs) => { S.cards = cs.map(toCard); })) : null,
+    ]);
   }
   /** Can this wallet buy in group g now, and how many? { ok, max, access } or { ok: false, why } (ask: the collection
    *  can't list its owners' tokens, so the holder says which NFT; retry: the holders list didn't load yet). */
@@ -282,7 +287,8 @@
     const run = async () => {
       try {
         const fires = await L.seriesNumbers(); // once per sync: the Series and the sealed packs both use it
-        await readSeries(fires); await readRules(); await readWallet(o.cards, fires);
+        await Promise.all([readSeries(fires), readRules()]); Store.update(() => {}); // the Series shows before the wallet's reads
+        await readWallet(o.cards, fires);
         picks = await L.picks().catch(() => picks);
         fails = 0; nextAt = 0; setStale(false);
       } catch (e) {

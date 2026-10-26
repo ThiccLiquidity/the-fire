@@ -935,3 +935,11 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 /* the card detail: an upside-down rare look (Info.upsideDown) */
 .upside-b { margin: 6px 0 0; font-size: 13px; color: var(--muted) }
 .upside-b b { background: linear-gradient(90deg, #ff6ad5, #ffd36a, #6affc1, #6ac8ff); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 800 }
+
+/* My cards: one-tap sort and filter pills (a row that scrolls sideways on a phone) */
+.qpills { display: flex; gap: 6px; align-items: center; overflow-x: auto; scrollbar-width: none; margin: 0 0 12px; padding-bottom: 2px }
+.qpills::-webkit-scrollbar { display: none }
+.qp { flex: none; min-height: var(--tap); padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--muted); font: 800 13px var(--body); cursor: pointer; white-space: nowrap }
+.qp[aria-pressed="true"] { background: var(--brass); border-color: var(--brass); color: #1a1209 }
+.qp:hover:not([aria-pressed="true"]) { color: var(--ink); border-color: var(--brass) }
+.qp-gap { flex: none; width: 1px; height: 22px; background: var(--line-2); margin: 0 4px }
