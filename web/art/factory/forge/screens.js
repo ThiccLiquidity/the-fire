@@ -571,9 +571,11 @@
     async function openLive(series, n, prior, index, dealNow = true) {
       const msg = h('p', { class: 'stage-msg', 'aria-live': 'polite', text: 'Opening…' });
       packsEl.hidden = true; stage.hidden = false; if (view === 'open') coll.hidden = true;
-      put(stage, h('div', { class: 'op-wait' }, h('img', { src: '../build3/pack.webp', alt: '', width: 240, height: 336 }), msg));
-      const say = (t, a) => sayTo(msg, t, a), alive = () => root.isConnected;
-      const got = index != null ? await Live.followOpen(series, index, say, alive, { dealNow }) : await Live.openPacks(series, n, say, alive);
+      const wp = window.Wait?.panel({ kind: 'open', msg }); // the gauge counts down to the draw
+      put(stage, h('div', { class: 'op-wait' }, wp ? wp.el : [h('img', { src: '../build3/pack.webp', alt: '', width: 240, height: 336 }), msg]));
+      const say = (t, a) => sayTo(msg, t, a), alive = () => root.isConnected, tick = (s) => wp?.at(s);
+      const got = index != null ? await Live.followOpen(series, index, say, alive, { dealNow, tick }) : await Live.openPacks(series, n, say, alive, tick);
+      if (got?.length && wp) { wp.arrived(); await wp.free(); } // playing: the rip waits for them
       if (!got?.length) { busy = false; stage.hidden = true; put(stage); packsEl.hidden = packsOff(); coll.hidden = view === 'open'; render(); return; }
       const per = S().series.cardsPerPack || 6, packs = [];
       for (let i = 0; i < got.length; i += per) packs.push(got.slice(i, i + per).sort((a, b) => rarity(a) - rarity(b))); // rarest last
@@ -1379,7 +1381,13 @@
       if (gradeTiles.length) {
         msg.textContent = 'Grading…';
         gradeTiles.forEach((w) => w.classList.add('scanning'));
-        const liveGrades = LIVE ? await Live.finishGrading(gIndex, g, (t, a) => sayTo(msg, t, a), () => host.isConnected) : null;
+        // live: the gauge counts down to the draw (the status line moves into it meanwhile, then back)
+        const anchor = document.createComment('msg');
+        if (LIVE && window.Wait) msg.before(anchor); // its place, marked before the panel takes it
+        const wp = LIVE ? window.Wait?.panel({ kind: 'grade', msg }) : null;
+        if (wp) anchor.after(wp.el);
+        const liveGrades = LIVE ? await Live.finishGrading(gIndex, g, (t, a) => sayTo(msg, t, a), () => host.isConnected, (sec) => wp?.at(sec)) : null;
+        if (wp) { if (liveGrades && liveGrades !== 'cancelled') { wp.arrived(); await wp.free(); } anchor.replaceWith(msg); wp.el.remove(); }
         if (LIVE && liveGrades === 'cancelled') { gradeH.textContent = 'Returned ungraded'; gradeTiles.forEach((w) => w.classList.remove('scanning')); msg.textContent = 'Returned ungraded.'; put(ctrls, done()); return; }
         if (LIVE && !liveGrades) { msg.textContent = 'Grades land in My cards soon.'; return finish(cs, [], msg, ctrls); }
         await wait(reduced() ? 300 : 1200);

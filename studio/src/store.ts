@@ -157,21 +157,26 @@ export async function setCharacterImage(charId: string, m: string, v: Variant, f
   const c = data.characters.find((x) => x.id === charId)
   if (!c) throw new Error('character not found')
   const { width, height } = await imageSize(file) // throws on non-images
-  const old = c.images[m]?.[v]
-  if (old) await deleteSlotBlobs(old)
   const originalKey = `img:${charId}:${m}:${v}:${db.newId()}`
   await db.putBlob(originalKey, file)
   const keyMagenta = forceKey ?? (await looksMagenta(file))
   let slot: ImageSlot = { originalKey, keyMagenta, ...DEFAULT_KEY, width, height, fileName, updatedAt: Date.now() }
-  if (keyMagenta) slot = await processSlot(slot, file)
-  await saveCharacter({ ...c, images: { ...c.images, [m]: { ...c.images[m], [v]: slot } } })
+  try {
+    if (keyMagenta) slot = await processSlot(slot, file)
+  } catch (e) {
+    await db.deleteBlob(originalKey)
+    throw e
+  }
+  // the old picture's files go only once the character points at the new ones, so the slot never names a deleted blob
+  const cur = data.characters.find((x) => x.id === charId) ?? c
+  const old = cur.images[m]?.[v]
+  await saveCharacter({ ...cur, images: { ...cur.images, [m]: { ...cur.images[m], [v]: slot } } })
+  if (old) await deleteSlotBlobs(old)
 }
 
+/** The slot re-keyed (or un-keyed) into a new processed file. The old processed file is NOT deleted here: the caller
+ *  deletes it after saving the slot that no longer names it (a failed re-key then leaves the old picture intact). */
 async function processSlot(slot: ImageSlot, original?: Blob): Promise<ImageSlot> {
-  if (slot.processedKey) {
-    await db.deleteBlob(slot.processedKey)
-    blobChanged(slot.processedKey)
-  }
   if (!slot.keyMagenta) return { ...slot, processedKey: undefined, updatedAt: Date.now() }
   const src = original ?? (await db.getBlob(slot.originalKey))
   if (!src) throw new Error('original image missing')
@@ -186,7 +191,12 @@ export async function updateImageKey(charId: string, m: string, v: Variant, opts
   const slot = c?.images[m]?.[v]
   if (!c || !slot) return
   const next = await processSlot({ ...slot, ...opts })
-  await saveCharacter({ ...c, images: { ...c.images, [m]: { ...c.images[m], [v]: next } } })
+  const cur = data.characters.find((x) => x.id === charId) ?? c
+  await saveCharacter({ ...cur, images: { ...cur.images, [m]: { ...cur.images[m], [v]: next } } })
+  if (slot.processedKey && slot.processedKey !== next.processedKey) {
+    await db.deleteBlob(slot.processedKey)
+    blobChanged(slot.processedKey)
+  }
 }
 
 /** Full-card art: how this character's photo sits on the card (zoom and move). Undefined resets it. */
@@ -341,20 +351,32 @@ export function blobUrl(key: string): Promise<string | null> {
   if (!p) {
     p = db.getBlob(key).then((b) => (b ? URL.createObjectURL(b) : null))
     urlCache.set(key, p)
+    p.catch(() => { if (urlCache.get(key) === p) urlCache.delete(key) }) // a failed read is retried next time
   }
   return p
 }
 
+/** Calls `onUrl` with an object URL for the stored blob (null when it isn't stored), and again whenever that blob
+ *  changes: a delete, a re-key, or a reload after an import, all of which revoke the old URL. Returns the unsubscribe. */
+export function watchBlobUrl(key: string, onUrl: (url: string | null) => void): () => void {
+  let live = true
+  let seq = 0
+  const load = () => {
+    const mine = ++seq
+    void blobUrl(key).then((u) => { if (live && mine === seq) onUrl(u) }, () => { if (live && mine === seq) onUrl(null) })
+  }
+  const off = onBlobChanged((k) => { if (k === key) load() })
+  load()
+  return () => { live = false; off() }
+}
+
+/** An object URL for a stored blob, refreshed when the blob changes (a cached URL that was revoked would show as a
+ *  broken image). */
 export function useBlobUrl(key: string | undefined): string | null {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
-    let live = true
-    if (!key) {
-      setUrl(null)
-      return
-    }
-    void blobUrl(key).then((u) => live && setUrl(u))
-    return () => { live = false }
+    if (!key) { setUrl(null); return }
+    return watchBlobUrl(key, setUrl)
   }, [key])
   return url
 }

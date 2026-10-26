@@ -624,7 +624,7 @@
   const DIY = 'Skip the wait. Same cards.';
   const STUCK = 'No draw after 24 hours.';
   const sleep = (ms) => new Promise((k) => setTimeout(k, ms));
-  async function openPacks(fire, n, say, alive) {
+  async function openPacks(fire, n, say, alive, tick) {
     await need();
     const before = new Set(S.cards.map((c) => c.id));
     if (info?.fire === fire && !info.cards.closed) { toast(`Your Series ${fire} packs open when sales end.`, 'bad'); return null; }
@@ -632,7 +632,7 @@
     if (!r) return null;
     if (r.late || !(r.index >= 0)) { toast('Opened! Your cards land in My cards soon.'); return null; }
     sync(); // the open shows as in progress at once, so reopening Open packs comes back to its wait, not a new transaction
-    return followOpen(fire, r.index, say, alive, { before });
+    return followOpen(fire, r.index, say, alive, { before, tick });
   }
   /** Follow open `index` of Series `fire` until it's dealt (the one just sent, or one still unfinished after a reload:
    *  My cards), then resolve its new cards for the reveal; null if the window closed, or it was cancelled.
@@ -640,9 +640,10 @@
   async function followOpen(fire, index, say, alive, o = {}) {
     await need();
     const before = o.before || new Set(S.cards.map((c) => c.id));
-    say('Drawing your cards… about 90 seconds');
+    say(window.Wait ? 'Drawing your cards…' : 'Drawing your cards… about 90 seconds');
     for (let asked = !!o.dealNow, tried = false, cancel = false; alive();) {
       const op = await L.openStatus(fire, index).catch(() => null); // one open by its index: no log scan
+      if (op?.roundAt) o.tick?.(op.roundAt - op.now); // the wait's gauge: seconds until the draw
       if (op?.status === 'cancelled') { toast('The draw never came. Your packs are back.', 'bad'); sync(); return null; }
       if (op?.status === 'dealt') break;
       if (cancel) { // the buyer tapped "Get my packs back"
@@ -741,11 +742,12 @@
   /** Wait for a grading's draw (the keeper delivers it and sets the grades; if it's late, the page offers once) and
    *  reveal the grades. Resolves id -> grade, null if the window closed, or 'cancelled' (no draw in 24 hours: the
    *  buyer took the cards back ungraded). */
-  async function finishGrading(index, ids, say, alive) {
+  async function finishGrading(index, ids, say, alive, tick) {
     if (!(index >= 0)) return null;
-    say('Grading… about 90 seconds');
+    say(window.Wait ? 'Grading…' : 'Grading… about 90 seconds');
     for (let asked = false, tried = false, cancel = false; alive();) {
       const g = await L.gradingStatus(index).catch(() => null); // one grading by its index: no log scan
+      if (g?.roundAt) tick?.(g.roundAt - g.now);
       if (g?.status === 'done') break;
       if (cancel) { // the buyer tapped "Return ungraded"
         cancel = false;

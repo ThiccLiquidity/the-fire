@@ -429,3 +429,25 @@ body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
 .receipt .rc-peek img { position: absolute; left: 4px; top: 10px; height: 92px; width: auto; filter: drop-shadow(0 2px 3px rgba(0,0,0,.65)); transform: translateY(66px); transition: transform .5s cubic-bezier(.3,1.4,.5,1) .2s }
 .receipt.on .rc-peek img { transform: none }
 @media (prefers-reduced-motion: reduce) { .loading .ld-pal { animation: none } .receipt .rc-peek img { transition: none } }
+
+/* the wait for a drand draw (wait.js): a brass gauge, a countdown plate, a steam puff when it's out */
+.wg-host { width: 100%; display: grid; justify-items: center }
+.wg-wait { display: grid; justify-items: center; gap: 10px; text-align: center }
+.wg-wait[hidden] { display: none }
+.wg { display: grid; justify-items: center; gap: 4px }
+.wg-dial { width: 180px; height: 180px; overflow: visible }
+.wg-steam { opacity: 0; transform-origin: 100px 30px; transition: opacity .4s }
+.wg.done .wg-steam { opacity: .6; animation: wg-puff 1.4s ease-out infinite }
+@keyframes wg-puff { 0% { transform: translateY(6px) scale(.8) } 60% { transform: translateY(-8px) scale(1.1) } 100% { transform: translateY(-14px) scale(1.2); opacity: 0 } }
+.wg-plate { min-width: 108px; padding: 4px 16px; border: 2px solid var(--line-2); border-radius: 8px; background: #0d0906; font: 400 30px var(--display); color: var(--gold); text-shadow: 0 0 10px rgba(255,122,46,.5); font-variant-numeric: tabular-nums }
+.wg-unit { font: 700 11px var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); min-height: 14px }
+.wg-sub { margin: 0; max-width: 300px }
+.wg-grade .wg-dial { width: 140px; height: 140px } .wg-grade .wg-plate { font-size: 24px }
+.op-wait .wg-dial { animation: none }
+@media (prefers-reduced-motion: reduce) { .wg.done .wg-steam { animation: none } }
+/* paper football */
+.pf { width: 100%; max-width: 640px; display: grid; gap: 8px }
+.pf-bar { display: flex; align-items: center; gap: 8px; justify-content: space-between }
+.pf-note { font: 700 14px var(--body); color: var(--muted); text-align: center; flex: 1 } .pf-note.ready { color: var(--good) }
+.pf-hud { display: flex; justify-content: space-around; font: 600 13px var(--body); color: var(--muted) } .pf-hud b { color: var(--gold) }
+.pf-cv { width: 100%; height: auto; aspect-ratio: 600 / 400; border-radius: 14px; border: 1px solid var(--line-2); touch-action: none; cursor: grab }

@@ -333,13 +333,14 @@ export function Export({ fire }: { fire: FireRecord }) {
     const p = state.filebasePending
     const resumeId = p && p.object === dir && p.root === car.root && p.size === car.size ? p.id : undefined
     if (resumeId) say('Resuming the earlier Filebase upload of this folder...')
-    say(`Second pin: ${dir}.car (${(car.size / 1024 / 1024).toFixed(1)} MB) to Filebase bucket "${filebaseBucket()}"...`)
+    say(`${state.filebaseOnly ? 'Pinning' : 'Second pin:'} ${dir}.car (${(car.size / 1024 / 1024).toFixed(1)} MB) to Filebase bucket "${filebaseBucket()}"...`)
     const cid = await pinOnFilebase(flags.mockPinata ? mockFilebase : realFilebase, {
       name: dir, root: car.root, size: car.size, resumeId, bytes: (from) => carBytes(files, car.root, from),
       onResumeId: async (id) => save({ filebasePending: id ? { object: dir, root: car.root, size: car.size, id } : undefined }),
     }, say, (l, t) => setProgress({ value: l / Math.max(1, t), label: `Filebase ${((l / Math.max(1, t)) * 100).toFixed(1)}%` }))
     await save({ filebaseCid: cid, filebaseObject: dir, filebaseAt: Date.now(), filebasePending: undefined })
-    say(`Filebase pinned ${cid}: the same root CID as Pinata.`)
+    // only a Pinata pin gives something to compare with; Filebase alone just pins (uploadFilebaseOnly checks the folder's root)
+    say(state.filebaseOnly ? `Filebase pinned ${cid}.` : `Filebase pinned ${cid}: the same root CID as Pinata.`)
     return state
   }
 
@@ -467,7 +468,7 @@ export function Export({ fire }: { fire: FireRecord }) {
   })
 
   const resetUpload = () => run(async () => {
-    if (!confirm('Forget the saved CIDs for this Series? (Nothing is deleted on Pinata.)')) return
+    if (!confirm(`Forget the saved CIDs for this Series? (Nothing is deleted on ${fire.upload?.filebaseOnly ? 'Filebase' : 'Pinata or Filebase'}.)`)) return
     await updateFire(fire.number, { upload: undefined })
   })
 
@@ -543,11 +544,13 @@ export function Export({ fire }: { fire: FireRecord }) {
             <tr><td>imagesBase (on-chain, in recipe.json)</td><td><code data-testid="images-base">{fire.upload.imagesCid ? `ipfs://${fire.upload.imagesCid}/` : '-'}</code>{fire.upload.mock && fire.upload.imagesCid && <span className="muted small"> (a mock CID: not on IPFS, for testing only)</span>}</td></tr>
             <tr><td>Pinata</td><td>{fire.upload.filebaseOnly ? <span className="muted">skipped (Filebase only)</span> : fire.upload.imagesCid ? <span className="ok-text">pinned</span> : '-'}</td></tr>
             <tr>
-              <td>Filebase (second pin)</td>
+              <td>{fire.upload.filebaseOnly ? 'Filebase' : 'Filebase (second pin)'}</td>
               <td data-testid="filebase-cid">
                 {fire.upload.filebaseCid
-                  ? <>{fire.upload.filebaseCid === fire.upload.imagesCid ? <span className="ok-text">pinned, same root CID</span> : <span className="warn-text">different CID: {fire.upload.filebaseCid}</span>} <span className="muted small">{fire.upload.filebaseObject}.car</span></>
-                  : fire.upload.filebasePending ? <span className="warn-text">unfinished: resumes on "Resume Filebase pin"</span>
+                  ? <>{fire.upload.filebaseCid === fire.upload.imagesCid || (fire.upload.filebaseOnly && !fire.upload.imagesCid)
+                    ? <span className="ok-text">{fire.upload.filebaseOnly ? 'pinned' : 'pinned, same root CID'}</span>
+                    : <span className="warn-text">different CID: {fire.upload.filebaseCid}</span>} <span className="muted small">{fire.upload.filebaseObject}.car</span></>
+                  : fire.upload.filebasePending ? <span className="warn-text">unfinished: resumes on "{fire.upload.filebaseOnly ? 'Resume Filebase upload' : 'Resume Filebase pin'}"</span>
                   : <span className="warn-text">not yet</span>}
               </td>
             </tr>
@@ -593,6 +596,7 @@ export function Export({ fire }: { fire: FireRecord }) {
           <p className="muted small">For a Series already locked on-chain: the site loads the tilt layers from this folder.</p>
         </div>
       )}
+
       {flags.mockPinata && flags.mockFailNext > 0 && <p className="muted small">Mock will fail the next {flags.mockFailNext} upload(s) halfway.</p>}
     </section>
   )
