@@ -38,6 +38,36 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
     football and play one run. A player pays with PAPER they hold, or buys that 1 PAPER with ETH, USDG or PLANK in
     the same step. The contract has no way to change the price.
 
+### Owner's answers to the research plan (Oct 26; plan: `docs/paper-football-plan.md`)
+
+14. **No top on the goal.** Anything between the uprights and over the bar is good, at any height. The pencil
+    uprights are drawn taller so a make reads clearly. The football really collides with the pencils, the bar and
+    Plank: it bounces, deflects or drops, and never passes through anything.
+15. **The kick:** where you hit the strike edge, high or low, sets loft and spin. The swipe's slant sets the sideways
+    curve.
+16. **Doink and in counts** ("DOINK… GOOD!").
+17. **The fold:** a 2 s fold animation starts every paid run. Free play can skip it.
+18. **Difficulty unlocks gradually** (distance, offset, wind, gap, then the car). Claude may pick another scheme if it
+    plays better.
+19. **Every run starts at level 0,** free or paid. The best streak sets the leaderboard place. (This replaces the
+    plan's "paid starts at L3".)
+20. **Free and paid runs can both start from the pack/grade wait,** as well as from the game's own page. The pack is
+    never held up, and the player can close the game and go straight to the ready pack.
+21. **No daily cap on paid runs.** Each run is exactly 1 PAPER (decision 13).
+22. **Prizes go out automatically.** When a new Series launches, the previous Series' top three get 3, 2 and 1 free
+    pack credits, straight to their wallets. They never expire and are spent whenever the winner likes. There's no
+    manual step: the game server's wallet is the `prizeAwarder`, and the contract's 6-per-Series cap stays.
+23. **Server-signed `payRun` on Vercel** (the team is already on a paid plan): OK if it works and the owner approves
+    the result.
+24. **Plank keeps his look.** There's no lawyer review (owner's call): the legal risks are listed in the plan, §12, and
+    this isn't legal clearance.
+25. **No fake wait in the demo.** During a real pack/grade wait, show an inviting Paper Football preview with a play
+    button. It offers free and paid play, with simple explanations of the controls, the rules and the prizes. Where
+    the PAPER goes stays behind Info/Help.
+26. **Keep it simple:** a straightforward, fun game. Any new infrastructure, contract change or cost is explained in
+    plain English before it's built. The finished game still needs the owner's review and approval, and none of this
+    authorizes going live.
+
 ## On chain (designed Oct 26, tests in `contracts/test/cards/Kicks.t.sol`)
 
 - **`FireKicks`** (new, `contracts/src/cards/FireKicks.sol`): `payRun(runId, series)` burns exactly 1 PAPER (`ENTRY`,
