@@ -1636,7 +1636,9 @@
   }
 
   // The burn warning: a big window listing exactly what is about to be destroyed (most valuable first, with warnings),
-  // what it earns toward a free pack, and (only when a card is flagged) a box where the player types BURN first.
+  // what it earns toward a free pack, and (when a card is flagged, or BIG_BURN cards or more go at once) a box where the
+  // player types BURN first.
+  const BIG_BURN = 10; // this many cards at once always asks for BURN typed (a careless "All Paper")
   function confirmBurn(ids, onBurn) {
     const cards = ids.map(byId).filter(Boolean); if (!cards.length) return;
     const n = cards.length, b = S().wallet.burnCount % BURN_GOAL, after = b + n, packs = Math.floor(after / BURN_GOAL), rest = after % BURN_GOAL;
@@ -1650,7 +1652,7 @@
     const list = cards.map((c) => ({ c, f: flags(c) })).sort((x, y) => (y.f.length > 0) - (x.f.length > 0) || rarity(y.c) - rarity(x.c) || Store.floor(y.c) - Store.floor(x.c));
     const flagged = list.filter((x) => x.f.length).length, worth = cards.reduce((a, c) => a + Store.floor(c), 0);
     const plural = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
-    const word = 'BURN', typed = flagged > 0, ok = () => !typed || input.value.trim().toUpperCase() === word; // nothing flagged: a plain confirm
+    const word = 'BURN', typed = flagged > 0 || n >= BIG_BURN, ok = () => !typed || input.value.trim().toUpperCase() === word; // a few plain spares: a plain confirm
     const input = h('input', { id: 'bw-type', type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', enterkeyhint: 'done',
       oninput: () => { const m = ok(); fire.disabled = !m; wrap.classList.toggle('ok', m); },
       onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); if (ok()) burn(); } } });
