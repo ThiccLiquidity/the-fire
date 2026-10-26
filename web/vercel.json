@@ -28,6 +28,23 @@
           "value": "strict-origin-when-cross-origin"
         }
       ]
+    },
+    {
+      "source": "/ipfs/:path*",
+      "headers": [
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "1"
+        },
+        {
+          "key": "CDN-Cache-Control",
+          "value": "max-age=31536000"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
   ],
   "redirects": [
@@ -45,6 +62,12 @@
       "source": "/cards/:path*",
       "destination": "/forge/:path*",
       "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/ipfs/:path*",
+      "destination": "https://ipfs.filebase.io/ipfs/:path*"
     }
   ]
 }
