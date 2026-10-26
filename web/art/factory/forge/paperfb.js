@@ -3,8 +3,8 @@
    plan: docs/paper-football-plan.md). The goal is the finger goal made of pencils: a bar where the thumbs touched, tall
    uprights and no top, so anything between the uprights and over the bar is good. The football really hits things:
    the pencils, the bar, the oak block and Plank (who stands just behind the goal, so every make bounces off his face).
-   Where you touch the strike edge sets loft and spin (centre: clean end over end; high: pops up and floats; low: flat
-   and knuckling); the swipe's slant sends it sideways. Kicking harder costs accuracy.
+   Where you touch the strike edge sets loft and spin (a little below the middle: clean, end over end, with lift;
+   lower: pops up and floats; dead centre and higher: flat, and knuckling); the swipe's slant sends it sideways. Kicking harder costs accuracy.
    Levels unlock one factor at a time (distance, offset, wind, gap, then the RC car). Every condition is shown before
    the kick and comes from a seeded stream, so a kick can be replayed exactly.
    Units are inches and seconds. A kick is { power 0..1, aim (radians), contact -1..1 }.
@@ -12,25 +12,26 @@
 (() => {
   // ---------- tuning (the panel edits these; the owner sends the numbers back)
   const DEFAULT_TUNING = {
-    slow: 0.55,        // flight time scale (1 = real time; lower = slower to watch)
+    slow: 0.45,        // flight time scale (1 = real time; lower = slower to watch)
     vMin: 45, vMax: 150, // launch speed (in/s) at power 0 and 1
     loft: 34,          // launch angle for a clean hit (degrees)
-    loftHit: 14,       // extra (high hit) or less (low hit) loft at the end of the edge (degrees)
+    loftHit: 24,       // loft gained per half-edge lower you hit (degrees): low pops it up, high flies flat
+    sweetAt: -0.25,    // the clean spot: a little below the middle of the strike edge (share of half the edge)
     aimMax: 22,        // widest aim (degrees either side)
     flickFull: 2.6,    // phone: flick speed (CSS px/ms) that gives full power
     pullFull: 0.38,    // desktop: pull-back length (share of the field's height) that gives full power
-    sweet: 0.3,        // the clean middle of the strike edge (share of half the edge), at low power
+    sweet: 0.22,       // the clean band around that spot (share of half the edge), at low power
     sweetPower: 0.5,   // how much the clean middle shrinks at full power (share)
     offPenalty: 0.3,   // speed lost at the very end of the edge (share)
     drift: 30,         // sideways drift of a mishit at full power (in/s² at the end of the edge)
     windK: 7,          // sideways push per mph (in/s²)
-    ramp: 0.07,        // difficulty added per level (0..1 scale)
-    start: 0.04,       // difficulty at level 0
+    ramp: 0.2,         // difficulty budget added per level (spread across the unlocked factors)
+    start: 0.1,        // difficulty budget at level 0
   };
   const G = 386;                       // gravity, in/s²
   // the goal: pencils sized like the finger goal, taller (full-length pencils) so a make reads at a glance
   const BAR = 2.5, POST_H = 7.5, PEN_R = 0.14, BLOCK_H = 0.9, PLANK_BACK = 4.5, PLANK_H = 8, PLANK_W = 2.2;
-  const TEE_Z = 0, TEE_Y = 0.22, BALL_R = 0.2, THICK = 0.09;
+  const TEE_Z = 0, TEE_Y = 0.22, BALL_R = 0.2;
   // the football: a right isosceles triangle flag-folded from a notebook strip. Long edge 1.6 in (toward the kicker,
   // nearly upright), short edges 1.13 in, the right angle at the front point. (z, y) about its centroid.
   const TRI = (() => {
@@ -52,14 +53,16 @@
   const LEVEL_NAMES = { 1: 'Over here: the goal moves off centre', 2: "Fan's on: wind", 3: 'Squeeze it: the gap closes', 4: 'Hands on the move: the RC car' };
   function shotFor(seed, n, level, T) {
     const r = rng(seed * 7919 + n * 104729 + 13);
-    const d = T.start + level * T.ramp;
+    // the level's budget grows smoothly (a touch faster later on) and is shared by the unlocked factors, so a new factor
+    // takes a share of the budget instead of adding to it: no sudden jump when the caps open up
+    const budget = T.start + level * T.ramp + 0.004 * level * level;
     const keys = Object.keys(UNLOCK).filter((k) => level >= UNLOCK[k]);
     const w = keys.map(() => 0.15 + r());                      // how this shot spends its difficulty
     const sum = w.reduce((a, b) => a + b, 0);
     const x = {};
     keys.forEach((k, i) => {
       const cap = k === 'dist' ? 0.25 + 0.05 * level : 0.15 * (level - UNLOCK[k] + 1);
-      x[k] = Math.min(1, cap, (w[i] / sum) * d * keys.length * 1.4);
+      x[k] = Math.min(1, cap, (w[i] / sum) * budget);
     });
     const side = () => (r() < 0.5 ? -1 : 1);
     const dist = 12 + (x.dist || 0) * 26;                      // 12..38 in
@@ -78,28 +81,35 @@
   // ---------- the kick: launch velocity and spin from { power, aim, contact }
   function launch(k, T, s) {
     const p = Math.max(0, Math.min(1, k.power)), c = Math.max(-1, Math.min(1, k.contact));
-    const sweet = T.sweet * (1 - T.sweetPower * p), clean = Math.abs(c) <= sweet;
-    const off = clean ? 0 : (Math.abs(c) - sweet) / (1 - sweet); // 0 at the clean middle's edge .. 1 at the end
+    // the clean band sits a little below the middle (it gets the football up); it shrinks the harder you kick, but
+    // never below the band the player could see (k.sweetMin, ~7 mm on screen)
+    const sweet = Math.max(k.sweetMin || 0, T.sweet * (1 - T.sweetPower * p)), miss = Math.abs(c - T.sweetAt), clean = miss <= sweet;
+    const off = clean ? 0 : Math.min(1, (miss - sweet) / (1 - sweet)); // 0 at the clean band's edge .. 1 at the end
     const v = (T.vMin + (T.vMax - T.vMin) * p) * (1 - T.offPenalty * off * off);
-    const th = (T.loft + c * T.loftHit) * Math.PI / 180;      // high on the edge pops it up, low flies flat
+    const th = (T.loft - (c - T.sweetAt) * T.loftHit) * Math.PI / 180; // below the middle pops it up; dead centre and higher fly flat
     const aimMax = T.aimMax * Math.PI / 180, aim = Math.max(-aimMax, Math.min(aimMax, k.aim));
     return {
       x: 0, y: REST_Y, z: TEE_Z,
       vx: v * Math.cos(th) * Math.sin(aim), vy: v * Math.sin(th), vz: v * Math.cos(th) * Math.cos(aim),
       ax: (s?.drift || 1) * off * T.drift * p * p,             // a mishit drifts, more the harder it's hit
-      lift: c > 0 ? c * 60 : 0,                                // a high hit's backspin floats it a little
-      pitch: 0, pitchRate: -(10 + 14 * p) * (1 - 0.4 * off) * (c < -sweet ? 0.5 : 1), // end over end; a low hit knuckles
+      lift: c < T.sweetAt ? (T.sweetAt - c) * 60 : 0,         // a low hit's backspin floats it a little
+      pitch: 0, pitchRate: -(10 + 14 * p) * (1 - 0.4 * off) * (c > T.sweetAt + sweet ? 0.5 : 1), // end over end; a high hit knuckles
       wob: off, roll: 0, yaw: YAW0, yawTo: (aim < 0 ? -1 : 1) * YAW_FLY, t: 0, clean,
     };
   }
 
-  // ---------- 3D: the folded triangle as a thin prism (triangle in the y-z plane, thickness along x)
-  const LOCAL = (() => {
-    const v = [];
-    for (const sx of [-1, 1]) for (const [z, y] of TRI) v.push([sx * THICK / 2, y, z]);
-    return v; // 0-2 left face, 3-5 right face
+  // ---------- 3D: the folded triangle. Its outline is sampled along each edge; the folds make it fattest in the middle
+  // of an edge and thin to a point at each corner (the strike edge, folded the most, is fattest). Each outline point
+  // has a left and a right vertex (x = -t/2 and +t/2); faces are the two outlines, the edges are strips between them.
+  const OUT = (() => {
+    const o = [], seg = [[0, 1, 12, 0.085], [1, 2, 8, 0.055], [2, 0, 8, 0.055]]; // from, to, samples, thickness mid-edge (in)
+    for (const [i, j, N, tm] of seg) for (let k = 0; k < N; k++) {
+      const u = k / N, z = TRI[i][0] + (TRI[j][0] - TRI[i][0]) * u, y = TRI[i][1] + (TRI[j][1] - TRI[i][1]) * u;
+      o.push({ y, z, t: 0.008 + tm * Math.sin(Math.PI * u) ** 0.6, strike: i === 0 });
+    }
+    return o;
   })();
-  const FACES = [[0, 1, 2, 'face'], [5, 4, 3, 'face'], [0, 3, 4, 1, 'strike'], [0, 2, 5, 3, 'edge'], [1, 4, 5, 2, 'edge']];
+  const NO = OUT.length, CORNER = [0, 12, 20]; // outline indices of the bottom corner, the top of the long edge, the front point
   function rotate([x, y, z], pitch, yaw, roll) {
     let c = Math.cos(pitch), s = Math.sin(pitch); [y, z] = [y * c - z * s, y * s + z * c];   // about x: end over end
     c = Math.cos(yaw); s = Math.sin(yaw); [x, z] = [x * c + z * s, -x * s + z * c];          // about y
@@ -146,7 +156,7 @@
     const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, t: e.timeStamp || performance.now() }; };
     function ballScreen() {
       const [x, y, z] = rotate([0, EDGE_MID[1], EDGE_MID[0]], 0, YAW0, 0), p = proj(x, REST_Y + y, TEE_Z + z);
-      p.half = EDGE_HALF * p.s; p.sweet = Math.max(22.5, T.sweet * p.half); // the clean band is never under ~7 mm
+      p.half = EDGE_HALF * p.s; p.sweet = Math.max(22.5, T.sweet * p.half); p.sweetY = p.y - T.sweetAt * p.half; // the clean band is never under ~7 mm
       return p;
     }
     cv.addEventListener('pointerdown', (e) => {
@@ -154,8 +164,7 @@
       const p = pos(e), b = ballScreen();
       if (Math.abs(p.x - b.x) > Math.max(44, b.s * 0.45) || Math.abs(p.y - b.y) > b.half * 1.15) return; // start on the paper
       const dy = b.y - p.y; // up the edge = +
-      const contact = Math.abs(dy) <= b.sweet ? (dy / b.sweet) * T.sweet : Math.sign(dy) * (T.sweet + (1 - T.sweet) * Math.min(1, (Math.abs(dy) - b.sweet) / Math.max(1, b.half - b.sweet)));
-      press = { id: e.pointerId, mouse: e.pointerType === 'mouse', start: p, pts: [p], contact };
+      press = { id: e.pointerId, mouse: e.pointerType === 'mouse', start: p, pts: [p], contact: Math.max(-1, Math.min(1, dy / b.half)), sweetMin: 22.5 / b.half };
       cv.setPointerCapture(e.pointerId); e.preventDefault();
     });
     cv.addEventListener('pointermove', (e) => {
@@ -181,7 +190,7 @@
         const v = velocity(pr.pts); if (!v || v.vy > -0.25) return;
         power = Math.min(1, -v.vy / T.flickFull); aim = Math.atan2(v.vx, -v.vy);
       }
-      kick({ power, aim, contact: pr.contact });
+      kick({ power, aim, contact: pr.contact, sweetMin: pr.sweetMin });
     };
     cv.addEventListener('pointerup', endPress);
     cv.addEventListener('pointercancel', (e) => { if (press && e.pointerId === press.id) press = null; });
@@ -337,49 +346,42 @@
     }
     const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, s: a.s });
     function paper(b) {
-      const R = LOCAL.map((v) => rotate(v, b.pitch, b.yaw, b.roll));
+      // a soft bow across the sheet (it's paper, not a board), flexing as it wobbles in flight
+      const flex = 0.05 + (b.t ? Math.sin(b.t * 22) * 0.05 * (0.3 + b.wob) : 0);
+      const vert = (o, sx) => { const r2 = (o.y * o.y + o.z * o.z) / 0.7; return rotate([sx * o.t / 2 + flex * (1 - r2), o.y, o.z], b.pitch, b.yaw, b.roll); };
+      const R = [...OUT.map((o) => vert(o, -1)), ...OUT.map((o) => vert(o, 1))]; // 0..NO-1 left, NO.. right
       if (b.z + Math.min(...R.map((v) => v[2])) - TEE_Z + CAM_DB < 0.6) return; // past the eye: off screen
       const pts = R.map(([x, y, z]) => proj(b.x + x, b.y + y, b.z + z));
       const light = [-0.4, 0.7, -0.6];
-      const order = FACES.map((f, i) => ({ f, i, depth: f.slice(0, -1).reduce((s, k) => s + R[k][2], 0) / (f.length - 1) })).sort((p, q) => q.depth - p.depth);
-      for (const { f, i } of order) {
-        const idx = f.slice(0, -1), kind = f[f.length - 1], P = idx.map((k) => pts[k]);
+      const items = [{ idx: OUT.map((_, k) => k), kind: 'face', side: 0 }, { idx: OUT.map((_, k) => NO + NO - 1 - k), kind: 'face', side: 1 }];
+      for (let k = 0; k < NO; k++) { const j = (k + 1) % NO; items.push({ idx: [k, j, NO + j, NO + k], kind: OUT[k].strike ? 'strike' : 'edge' }); }
+      for (const it of items) it.depth = it.idx.reduce((s, k) => s + R[k][2], 0) / it.idx.length;
+      items.sort((p, q) => q.depth - p.depth);
+      for (const it of items) {
+        const P = it.idx.map((k) => pts[k]);
         const area = P.reduce((s, p, j) => { const q = P[(j + 1) % P.length]; return s + (p.x * q.y - q.x * p.y); }, 0);
-        if (Math.abs(area) < 0.3) continue;
-        const v = idx.map((k) => R[k]);
+        if (it.kind === 'face' ? Math.abs(area) < 0.3 : Math.abs(area) < 0.02) continue;
+        const v = it.kind === 'face' ? CORNER.map((c) => R[c + (it.side ? NO : 0)]) : it.idx.slice(0, 3).map((k) => R[k]);
         const u = [v[1][0] - v[0][0], v[1][1] - v[0][1], v[1][2] - v[0][2]], w = [v[2][0] - v[0][0], v[2][1] - v[0][1], v[2][2] - v[0][2]];
         const nn = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]], l = Math.hypot(...nn) || 1;
-        const lit = 0.74 + 0.26 * Math.abs(nn[0] * light[0] + nn[1] * light[1] + nn[2] * light[2]) / l;
+        const lit = 0.72 + 0.28 * Math.abs(nn[0] * light[0] + nn[1] * light[1] + nn[2] * light[2]) / l;
         g.beginPath(); P.forEach((p, j) => (j ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath();
-        g.fillStyle = kind === 'face' ? `rgb(${Math.round(248 * lit)},${Math.round(244 * lit)},${Math.round(232 * lit)})` : `rgb(${Math.round(236 * lit)},${Math.round(229 * lit)},${Math.round(212 * lit)})`;
+        g.fillStyle = it.kind === 'face' ? `rgb(${Math.round(248 * lit)},${Math.round(244 * lit)},${Math.round(232 * lit)})` : `rgb(${Math.round(240 * lit)},${Math.round(233 * lit)},${Math.round(216 * lit)})`;
+        if (it.kind !== 'face') { g.strokeStyle = g.fillStyle; g.lineWidth = 0.6; g.stroke(); } // close the hairline gaps between strips
         g.fill();
-        g.save(); g.clip();
-        if (kind === 'face') { // wide-ruled blue lines across the strip (parallel to a short edge); a red margin on one face
-          g.strokeStyle = 'rgba(70,120,210,.55)'; g.lineWidth = Math.max(0.6, P[0].s * 0.012);
-          for (let k = 1; k < 7; k++) { const t = k / 7; const a = lerp(P[0], P[1], t), c = lerp(P[0], P[2], t); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(c.x, c.y); g.stroke(); }
-          if (i === 0) { g.strokeStyle = 'rgba(210,60,60,.7)'; const m1 = lerp(P[1], P[2], 0.25), m2 = lerp(P[0], P[1], 0.75); g.beginPath(); g.moveTo(m1.x, m1.y); g.lineTo(m2.x, m2.y); g.stroke(); }
-          if (i === 1) { // a ballpoint Plank doodle: ring eyes and a smile
-            const c = { x: (P[0].x + P[1].x + P[2].x) / 3, y: (P[0].y + P[1].y + P[2].y) / 3 }, r = Math.max(1, Math.abs(area) ** 0.5 * 0.05);
-            g.strokeStyle = 'rgba(30,50,140,.6)'; g.lineWidth = Math.max(0.6, r * 0.35);
-            g.beginPath(); g.arc(c.x - r * 1.6, c.y - r, r, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(c.x + r * 1.6, c.y - r, r, 0, Math.PI * 2); g.stroke();
-            g.beginPath(); g.arc(c.x, c.y + r * 0.6, r * 1.8, 0.2, Math.PI - 0.2); g.stroke();
-          }
-        } else if (kind === 'strike') { // the strike edge: stacked, rounded crease loops (folds, not cut sheets)
-          const L = 7;
-          for (let k = 0; k < L; k++) {
-            const t0 = k / L, t1 = (k + 1) / L, a0 = lerp(P[0], P[1], t0), a1 = lerp(P[3], P[2], t0), c0 = lerp(P[0], P[1], t1), c1 = lerp(P[3], P[2], t1);
-            const gr = g.createLinearGradient(a0.x, a0.y, c0.x, c0.y);
-            gr.addColorStop(0, 'rgba(120,100,70,.35)'); gr.addColorStop(0.35, 'rgba(255,252,240,.25)'); gr.addColorStop(1, 'rgba(110,90,60,.3)');
-            g.fillStyle = gr; g.beginPath(); g.moveTo(a0.x, a0.y); g.lineTo(a1.x, a1.y); g.lineTo(c1.x, c1.y); g.lineTo(c0.x, c0.y); g.closePath(); g.fill();
-          }
-          g.strokeStyle = 'rgba(110,95,70,.4)'; g.lineWidth = Math.max(0.5, P[0].s * 0.006);
-          for (const t of [0.33, 0.66]) { const a = lerp(P[0], P[3], t), c = lerp(P[1], P[2], t); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(c.x, c.y); g.stroke(); }
-        } else { // the other two edges: a few raw layer lines
-          g.strokeStyle = 'rgba(120,105,80,.4)'; g.lineWidth = Math.max(0.5, P[0].s * 0.006);
-          for (let k = 1; k < 4; k++) { const t = k / 4; const a = lerp(P[0], P[3], t), c = lerp(P[1], P[2], t); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(c.x, c.y); g.stroke(); }
+        if (it.kind === 'face') { // wide-ruled blue lines across the strip (parallel to a short edge); a red margin on one face
+          const [B, Tp, Fp] = CORNER.map((c) => pts[c + (it.side ? NO : 0)]);
+          g.save(); g.clip();
+          g.strokeStyle = 'rgba(70,120,210,.5)'; g.lineWidth = Math.max(0.6, B.s * 0.011);
+          for (let k = 1; k < 7; k++) { const t = k / 7; const a = lerp(B, Tp, t), c = lerp(B, Fp, t); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(c.x, c.y); g.stroke(); }
+          if (it.side === 0) { g.strokeStyle = 'rgba(210,60,60,.65)'; const m1 = lerp(Tp, Fp, 0.25), m2 = lerp(B, Tp, 0.75); g.beginPath(); g.moveTo(m1.x, m1.y); g.lineTo(m2.x, m2.y); g.stroke(); }
+          g.restore();
+          g.strokeStyle = 'rgba(120,100,75,.45)'; g.lineWidth = Math.max(0.6, B.s * 0.006); g.stroke();
+        } else { // the folded layers: fine lines along the edge, meeting at the corners
+          const [a0, a1, a2, a3] = P, n = it.kind === 'strike' ? [0.22, 0.45, 0.68] : [0.4, 0.7];
+          g.strokeStyle = it.kind === 'strike' ? 'rgba(125,105,75,.5)' : 'rgba(125,105,75,.35)'; g.lineWidth = Math.max(0.5, a0.s * 0.005);
+          for (const f of n) { const p = lerp(a0, a3, f), q = lerp(a1, a2, f); g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); g.stroke(); }
         }
-        g.restore();
-        g.strokeStyle = 'rgba(90,75,55,.5)'; g.lineWidth = Math.max(0.7, P[0].s * 0.008); g.beginPath(); P.forEach((p, j) => (j ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath(); g.stroke();
       }
     }
     function shadow(b) { const p = proj(b.x, 0, b.z), r = 0.55 * p.s * Math.max(0.3, 1 - b.y / 12); g.fillStyle = `rgba(30,14,4,${0.42 * Math.max(0.25, 1 - b.y / 10)})`; g.beginPath(); g.ellipse(p.x, p.y, r, r * 0.25, 0, 0, Math.PI * 2); g.fill(); }
@@ -393,8 +395,8 @@
       const b = ballScreen(), x = b.x - Math.max(24, b.s * 0.3);
       g.strokeStyle = 'rgba(255,210,122,.55)'; g.lineWidth = 1.5; g.setLineDash([3, 4]);
       g.beginPath(); g.moveTo(x, b.y - b.half); g.lineTo(x, b.y + b.half); g.stroke(); g.setLineDash([]);
-      g.strokeStyle = 'rgba(111,207,122,.9)'; g.lineWidth = 3; g.beginPath(); g.moveTo(x, b.y - b.sweet); g.lineTo(x, b.y + b.sweet); g.stroke();
-      if (press) { const cy = b.y - (Math.abs(press.contact) <= T.sweet ? press.contact / T.sweet * b.sweet : Math.sign(press.contact) * (b.sweet + (Math.abs(press.contact) - T.sweet) / (1 - T.sweet) * (b.half - b.sweet))); g.fillStyle = Math.abs(press.contact) <= T.sweet ? 'rgba(111,207,122,.95)' : 'rgba(255,107,90,.95)'; g.beginPath(); g.arc(x, cy, 6, 0, Math.PI * 2); g.fill(); }
+      g.strokeStyle = 'rgba(111,207,122,.9)'; g.lineWidth = 3; g.beginPath(); g.moveTo(x, b.sweetY - b.sweet); g.lineTo(x, b.sweetY + b.sweet); g.stroke();
+      if (press) { const cy = b.y - press.contact * b.half, ok = Math.abs(cy - b.sweetY) <= b.sweet; g.fillStyle = ok ? 'rgba(111,207,122,.95)' : 'rgba(255,107,90,.95)'; g.beginPath(); g.arc(x, cy, 6, 0, Math.PI * 2); g.fill(); }
     }
     function hudBox(x, y, top, big, right) {
       const fs = Math.max(11, H * 0.026), fb = Math.max(15, H * 0.04);
