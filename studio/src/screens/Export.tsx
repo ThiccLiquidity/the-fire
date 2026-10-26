@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { renderKey } from '../builder'
+import { BatchRenderer, renderKey, tiltKey } from '../builder'
 import { Field, Notice, ProgressBar, useAction } from '../components'
-import { getBlob } from '../db'
+import { blobKeys, deleteBlobsWithPrefix, getBlob, putBlobs } from '../db'
 import { ZipWriter, blobBytes, canSaveToFile, downloadBlob, pickFolder, pickSaveFile } from '../files'
 import type { DealtCard } from '../deal'
-import { lookFileName, lookOf, seriesGrid } from '../looks'
+import { lookFileName, lookOf, seriesGrid, tiltParts, tiltPartsPerCharacter } from '../looks'
+import { faceOf } from '../render'
 import { cardMetadata, metadataFileName } from '../metadata'
 import {
   clearPinataJwt, filesFingerprint, hasPinataJwt, metadataDirName, mockTransport, pinataHas, realTransport, setPinataJwt, uploadFire, type UploadFile,
@@ -17,7 +18,7 @@ import { buildManifest } from '../manifest'
 import { categoryProblem, nameProblem, normalizeCategory, normalizeName } from '../categories'
 import { checkRecipe, recipeJson } from '../recipe'
 import { saleErrors, saleJson, saleOf, salePacks } from '../sale'
-import { artNeeds, buildGridKey, characterOddsProblems, characterWeightsOf, missingArt, missingFrames } from '../series'
+import { artNeeds, buildGridKey, characterOddsProblems, characterWeightsOf, frameSetsOf, missingArt, missingFrames } from '../series'
 import { lastAssetChange, updateFire, useStudio } from '../store'
 import { BUILD_GRID_VERSION, fireStatus, type FireRecord, type UploadState } from '../types'
 import { refreshDevFlags, useDevFlags } from '../devFlags'
@@ -44,6 +45,8 @@ export function Export({ fire }: { fire: FireRecord }) {
   const [keySet, setKeySet] = useState(hasPinataJwt())
   const [fbInput, setFbInput] = useState({ accessKeyId: '', secretAccessKey: '', bucket: '' })
   const [fbSet, setFbSet] = useState(hasFilebaseKey())
+  const [tiltRunning, setTiltRunning] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const deal = fire.deal
   const r = fire.recipe
@@ -52,6 +55,7 @@ export function Export({ fire }: { fire: FireRecord }) {
   const frames = useMemo(() => missingFrames(r), [r])
   const gridLen = useMemo(() => seriesGrid(fire.number, ids, r).length, [fire.number, ids, r])
   const gridKey = useMemo(() => buildGridKey(r, ids), [r, ids])
+  const tiltLen = ids.length * tiltPartsPerCharacter(r)
   const changed = lastAssetChange(ids)
   const sale = useMemo(() => saleOf(fire), [fire])
   const saleProblems = useMemo(() => saleErrors(sale), [sale])
@@ -132,10 +136,46 @@ export function Export({ fire }: { fire: FireRecord }) {
       out.push({ name: g.file, blob: bl })
       onEach?.(out.length, grid.length)
     }
+    out.push(...await tiltFiles(tiltProgress))
     const manifest = await buildManifest(fire.number, gridKey, recipeJson(fire.number, r, ids.map((id) => ({ name: normalizeName(chars[id]?.name ?? ''), category: normalizeCategory(chars[id]?.category ?? '') })), undefined, undefined, characterWeightsOf(fire)), out, onHash)
     out.push({ name: manifest.name, blob: manifest.blob })
     return out
   }
+  /** The tilt layers of this build (looks.ts tiltParts): rendered the first time an export needs them, then kept in
+   *  IndexedDB under the build (builder.ts tiltKey), so every export of the same build has the same files and CID. */
+  async function tiltFiles(onEach?: (i: number, total: number) => void): Promise<UploadFile[]> {
+    if (!b || !deal) throw new Error('Build all images first (Build & Review).')
+    const builtAt = b.builtAt
+    const parts = tiltParts(fire.number, deal.characterIds, r)
+    const all = `tilt:${fire.number}:`
+    let keys = await blobKeys(all)
+    if (keys.some((k) => !k.startsWith(`${all}${builtAt}:`))) {
+      await deleteBlobsWithPrefix(all) // layers of an earlier build
+      keys = []
+    }
+    const have = new Set(keys)
+    const todo = parts.filter((p) => !have.has(tiltKey(fire.number, builtAt, p.file)))
+    if (todo.length) {
+      const rr = await BatchRenderer.create(deal.characterIds, true, frameSetsOf(r))
+      try {
+        await rr.renderJobs(todo.map((p) => ({ face: faceOf(p.card, r), part: p.part })), 'webp', {
+          batchSize: 4,
+          onProgress: (pr) => onEach?.(parts.length - todo.length + pr.done, parts.length),
+          onBatch: (_jobs, blobs, start) => putBlobs(blobs.map((bl, i) => [tiltKey(fire.number, builtAt, todo[start + i].file), bl])),
+        })
+      } finally {
+        rr.dispose()
+      }
+    }
+    const out: UploadFile[] = []
+    for (const p of parts) {
+      const bl = await getBlob(tiltKey(fire.number, builtAt, p.file))
+      if (!bl) throw new Error(`A tilt layer (${p.file}) is missing; try again.`)
+      out.push({ name: p.file, blob: bl })
+    }
+    return out
+  }
+  const tiltProgress = (i: number, t: number) => { if (i % 4 === 0 || i === t) setProgress({ value: i / t, label: `Tilt layers ${i.toLocaleString()} / ${t.toLocaleString()}` }) }
   const readingProgress = (i: number, t: number) => { if (i % 200 === 0) setProgress({ value: i / t / 2, label: `Reading built images ${i.toLocaleString()} / ${t.toLocaleString()}` }) }
   const hashingProgress = (i: number, t: number) => { if (i % 200 === 0) setProgress({ value: 0.5 + i / t / 2, label: `manifest.json: hashing ${i.toLocaleString()} / ${t.toLocaleString()}` }) }
 
@@ -395,6 +435,37 @@ export function Export({ fire }: { fire: FireRecord }) {
     await updateFire(fire.number, { upload: { ...fire.upload, carStoredAt: on ? Date.now() : undefined } })
   })
 
+  /** The tilt layers alone, as their own folder on Filebase: for a Series whose images folder is already on-chain. */
+  const uploadTilt = () => run(async () => {
+    setTiltRunning(true)
+    try {
+      setLog([])
+      const say = (t: string) => setLog((l) => [...l, `${new Date().toLocaleTimeString()} ${t}`])
+      setProgress({ value: 0, label: 'Tilt layers...' })
+      const files = await tiltFiles(tiltProgress)
+      const dir = `fire-${fire.number}-tilt-${filesFingerprint(files)}`
+      setProgress({ value: 0, label: 'Packing the CAR (hashing)...' })
+      const car = await planCar(files)
+      say(`Tilt layers: ${files.length.toLocaleString()} files, folder CID ${car.root} (${(car.size / 1024 / 1024).toFixed(1)} MB CAR).`)
+      const cid = await pinOnFilebase(flags.mockPinata ? mockFilebase : realFilebase, {
+        name: dir, root: car.root, size: car.size, bytes: (from) => carBytes(files, car.root, from), onResumeId: async () => {},
+      }, say, (l, t) => setProgress({ value: l / Math.max(1, t), label: `Filebase ${((l / Math.max(1, t)) * 100).toFixed(1)}%` }))
+      await updateFire(fire.number, { tiltUpload: { cid, dir, at: Date.now(), buildAt: b?.builtAt, mock: flags.mockPinata } })
+      say(`Tilt layers pinned: ipfs://${cid}/`)
+    } finally {
+      refreshDevFlags()
+      setProgress(null)
+      setTiltRunning(false)
+    }
+  })
+
+  const copyTilt = () => run(async () => {
+    if (!fire.tiltUpload) return
+    await navigator.clipboard.writeText(`ipfs://${fire.tiltUpload.cid}/`)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  })
+
   const resetUpload = () => run(async () => {
     if (!confirm('Forget the saved CIDs for this Series? (Nothing is deleted on Pinata.)')) return
     await updateFire(fire.number, { upload: undefined })
@@ -425,7 +496,7 @@ export function Export({ fire }: { fire: FireRecord }) {
       </div>
 
       <h3>Download everything</h3>
-      <p className="muted small">{gridLen.toLocaleString()} images, metadata and the JSON, in one zip. Big Series: parts of up to 1.5 GB or 60,000 files, metadata apart, into a folder you pick.</p>
+      <p className="muted small">{gridLen.toLocaleString()} images, {tiltLen.toLocaleString()} tilt layers, metadata and the JSON, in one zip. Big Series: parts of up to 1.5 GB or 60,000 files, metadata apart, into a folder you pick.</p>
       <button className="primary" disabled={!ready || busy} onClick={downloadZip} data-testid="download-zip">Download zip</button>
 
       <h3>Upload: Filebase (+ Pinata)</h3>
@@ -501,6 +572,27 @@ export function Export({ fire }: { fire: FireRecord }) {
         </Notice>
       )}
       {log.length > 0 && <pre className="log" data-testid="upload-log">{log.join('\n')}</pre>}
+
+      <h3>Tilt layers</h3>
+      <p className="muted small">{tiltLen.toLocaleString()} layers ({tiltPartsPerCharacter(r)} per character): the plain card and its print, for the site's moving holo.
+        A new Series gets them in its images folder.</p>
+      <div className="row wrap">
+        <button disabled={busy || !deal || !!buildDetail || !fbSet} onClick={uploadTilt} data-testid="upload-tilt">Upload tilt layers</button>
+        {!fbSet && <span className="muted small">Enter the Filebase key above.</span>}
+        {fbSet && buildDetail && <span className="muted small">{buildDetail}</span>}
+      </div>
+      {tiltRunning && progress && <ProgressBar value={progress.value} label={progress.label} />}
+      {fire.tiltUpload && (
+        <div data-testid="tilt-upload">
+          <div className="row wrap">
+            <code data-testid="tilt-cid">ipfs://{fire.tiltUpload.cid}/</code>
+            <button disabled={busy} onClick={copyTilt} data-testid="copy-tilt">{copied ? 'Copied' : 'Copy'}</button>
+            {fire.tiltUpload.mock && <span className="tag">mock upload</span>}
+            {fire.tiltUpload.buildAt !== b?.builtAt && <span className="warn-text small">From an earlier build.</span>}
+          </div>
+          <p className="muted small">For a Series already locked on-chain: the site loads the tilt layers from this folder.</p>
+        </div>
+      )}
       {flags.mockPinata && flags.mockFailNext > 0 && <p className="muted small">Mock will fail the next {flags.mockFailNext} upload(s) halfway.</p>}
     </section>
   )

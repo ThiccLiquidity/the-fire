@@ -228,6 +228,20 @@ character; Special 3-card all-holo: (Fire 3 + Coal 3 + Gold 1) x 12 = 84. Every 
 cards are cased and graded on-chain later. Each Series
 has its own "Forged · Series #" line, so images are never shared across Series.
 
+**Tilt layers.** The site (`web/art/factory/forge/holo.js`) redraws holo cards with a moving holo from two layers per
+character x type, drawn plain → live holo → print. The images folder holds them next to the images (and `manifest.json`
+lists them), 720 x 1008 RGBA WEBP, rendered at 1500 x 2100 and scaled down:
+- `c<i>-<slug>-plain.webp`: the picture and frame only (Full Art: the picture cut to the card's outline; Gold: its
+  frame with the Wood picture). No holo, gold leaf, text, seal, PDA 10 glow or wear.
+- `c<i>-<slug>-print-<state>.webp`, state `u`, `c`, `1`..`10`: transparent except what goes over the holo: the PDA 10
+  glow, the texts, the seal and the wear, exactly as on that state's finished image. No case or slab (the site draws
+  holders).
+
+Every type of the recipe, so 13 per type: Standard 6 x 13 = **78 per character**. They are rendered the first time an
+export needs them and kept with the build, so every export of a build has the same files. **Upload tilt layers**
+(Export) puts them alone in their own Filebase folder, for a Series whose images folder is already locked on-chain; the
+site loads the tilt layers from that folder's `ipfs://<CID>/`.
+
 ## Collections
 
 - **Omni Card Packs** (`FirePacks`, ERC-1155): one stackable token type per Series, so "Series 7 Sealed Pack x 3"

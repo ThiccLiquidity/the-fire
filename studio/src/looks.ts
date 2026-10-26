@@ -132,3 +132,50 @@ export function distinctLooks(cards: DealtCard[], r: Recipe): { key: string; loo
   }
   return [...seen.values()]
 }
+
+/** One tilt layer (render.ts drawTiltPart): what the site (web/art/factory/forge/holo.js) redraws a moving holo from,
+ *  plain -> live holo -> print. Per character and type: one plain layer and one print layer per state. */
+export interface TiltEntry {
+  characterId: string
+  characterIndex: number
+  type: number
+  slug: string
+  part: 'plain' | 'print'
+  /** The state the print is of (STATES); the plain layer is the same for every state (ungraded here). */
+  grade: number | null
+  cased: boolean
+  /** A stand-in card to render from (serial 0). Its holo is the type's first holo look: neither layer draws holo. */
+  card: DealtCard
+  file: string
+}
+
+/** "c<i>-<slug>-plain.webp", or "c<i>-<slug>-print-<state>.webp" with the state as in lookFileName ('u', 'c', 1..10). */
+export function tiltFileName(slug: string, characterIndex: number, part: 'plain' | 'print', grade: number | null = null, cased = false): string {
+  if (!Number.isInteger(characterIndex) || characterIndex < 0) throw new Error(`Bad character index ${characterIndex}`)
+  return part === 'plain' ? `c${characterIndex}-${slug}-plain.webp` : `c${characterIndex}-${slug}-print-${stateId(grade, cased)}.webp`
+}
+
+/** Tilt layers per character: every type of the recipe x (1 plain + 12 prints). */
+export function tiltPartsPerCharacter(r: Recipe): number {
+  return r.types.length * (1 + STATES.length)
+}
+
+/** Every tilt layer a Series needs, in order: character, type, then plain and the 12 prints. */
+export function tiltParts(fire: number, characterIds: readonly string[], r: Recipe): TiltEntry[] {
+  const out: TiltEntry[] = []
+  characterIds.forEach((characterId, characterIndex) => {
+    r.types.forEach((ty, type) => {
+      const holo = holoLooksFor(r, type)[0] ?? 'none'
+      const holoFrame = holo === 'frame' || holo === 'full'
+      const holoPicture = holo === 'picture' || holo === 'full'
+      const make = (part: 'plain' | 'print', grade: number | null, cased: boolean): TiltEntry => ({
+        characterId, characterIndex, type, slug: ty.slug, part, grade, cased,
+        card: { serial: 0, fire, pack: 0, slot: 0, type, characterId, holoFrame, holoPicture, holo, printNumber: 1, grade, cased },
+        file: tiltFileName(ty.slug, characterIndex, part, grade, cased),
+      })
+      out.push(make('plain', null, false))
+      for (const { grade, cased } of STATES) out.push(make('print', grade, cased))
+    })
+  })
+  return out
+}

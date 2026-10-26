@@ -387,9 +387,9 @@ export function drawPda10(ctx: Ctx2D, frame: ImgSrc | null): void {
   ctx.drawImage(c, 0, 0)
 }
 
-/** Draw a full card onto a 1500 x 2100 context. */
-export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardView): void {
-  ctx.save()
+/** The card up to and including the frame (and, with `holo`, the drawn holo): everything under the print. With holo
+ *  off this is the tilt layer "plain" (the site draws the live holo over it). Clears the context first. */
+function baseLayers(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardView, holo: boolean): void {
   ctx.clearRect(0, 0, CARD_W, CARD_H)
   const frameless = FRAMELESS_SETS.includes(view.frameSet)
   if (!assets.frame && !frameless) {
@@ -399,7 +399,7 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
   }
   // holo is drawn, not delivered as images (holoFx.ts): on the picture right after the art (under the frame's edge),
   // on the frame right after the frame, and always before the text, the seal and the wear
-  const fx = typeof OffscreenCanvas !== 'undefined'
+  const fx = holo && typeof OffscreenCanvas !== 'undefined'
   const gold = view.frameSet === 'gold'
   const pictureFx = () => {
     if (!fx || frameless || !assets.art) return
@@ -427,6 +427,11 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
     if (gold) goldFrameShine(ctx, assets.frame, layout.art.box)
     else if (view.holoFrame) frameHolo(ctx, assets.frame, layout.art.box)
   }
+}
+
+/** Everything drawn over the holo: the PDA 10 glow, the texts, the seal and the wear. Alone on a clear context this is
+ *  the tilt layer "print" (transparent elsewhere). */
+function printLayers(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardView): void {
   if (view.pda10 && typeof OffscreenCanvas !== 'undefined') drawPda10(ctx, assets.frame)
   // heavy wear (PDA 3-1) puts scorch and stains under the text: give un-outlined text its outline so it stays readable
   const worn = view.wear === 'L5' || view.wear === 'L6'
@@ -438,7 +443,44 @@ export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: C
   drawPsa(ctx, view.psaValue, layout.psa, view.wear === 'clean' ? null : GRADE_COLOR[view.wear])
   // PDA wear, the same layer on every card type: over the art, the frame and the print alike
   if (assets.wear) ctx.drawImage(assets.wear, 0, 0, CARD_W, CARD_H)
+}
+
+/** The card under its print onto a cleared 1500 x 2100 context: art and frame, plus the drawn holo when `holo` is on. */
+export function drawBase(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardView, opts: { holo: boolean }): void {
+  ctx.save()
+  baseLayers(ctx, assets, layout, view, opts.holo)
   ctx.restore()
+}
+
+/** The print (PDA 10 glow, texts, seal, wear) over whatever the context holds; on a clear one, alone. */
+export function drawPrint(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardView): void {
+  ctx.save()
+  printLayers(ctx, assets, layout, view)
+  ctx.restore()
+}
+
+/** Draw a full card onto a 1500 x 2100 context: drawBase (holo on) then drawPrint. */
+export function drawCard(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardView): void {
+  ctx.save()
+  baseLayers(ctx, assets, layout, view, true)
+  printLayers(ctx, assets, layout, view)
+  ctx.restore()
+}
+
+/** The tilt layers the site (web/art/factory/forge/holo.js) redraws a moving holo from: plain -> live holo -> print. */
+export const TILT_W = 720
+export const TILT_H = 1008
+export type TiltPart = 'plain' | 'print'
+
+/** Draw one tilt layer at 1500 x 2100 onto a cleared context: 'plain' is the card with no holo, no print and no wear;
+ *  'print' is only what drawCard puts over the holo. Never a case or slab (the site draws the holders). */
+export function drawTiltPart(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardView, part: TiltPart): void {
+  if (part === 'plain') {
+    drawBase(ctx, assets, layout, view, { holo: false })
+    return
+  }
+  ctx.clearRect(0, 0, CARD_W, CARD_H)
+  drawPrint(ctx, assets, layout, view)
 }
 
 export const WEBP_QUALITY = 0.92
@@ -470,4 +512,21 @@ export async function renderCardBlob(
   if (!ctx) throw new Error('2D canvas unavailable')
   drawPresented(ctx, assets, layout, view)
   return c.convertToBlob({ type: mimeOf(format), quality: format === 'webp' ? WEBP_QUALITY : undefined })
+}
+
+/** Render one tilt layer (drawTiltPart) at 1500 x 2100, scaled down to TILT_W x TILT_H, as an RGBA WEBP. */
+export async function renderTiltPartBlob(
+  assets: CardAssets, layout: Layout, view: CardView, part: TiltPart, canvas?: OffscreenCanvas,
+): Promise<Blob> {
+  const c = canvas ?? new OffscreenCanvas(CARD_W, CARD_H)
+  const ctx = c.getContext('2d')
+  if (!ctx) throw new Error('2D canvas unavailable')
+  drawTiltPart(ctx, assets, layout, view, part)
+  const out = new OffscreenCanvas(TILT_W, TILT_H)
+  const o = out.getContext('2d')
+  if (!o) throw new Error('2D canvas unavailable')
+  o.imageSmoothingEnabled = true
+  o.imageSmoothingQuality = 'high'
+  o.drawImage(c, 0, 0, TILT_W, TILT_H)
+  return out.convertToBlob({ type: 'image/webp', quality: WEBP_QUALITY })
 }

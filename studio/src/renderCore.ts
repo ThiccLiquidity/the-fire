@@ -1,7 +1,7 @@
 /** Shared by the build worker and the main-thread fallback: decodes asset blobs lazily (small LRU of bitmaps, art
  *  downscaled to what the art window needs) and renders cards to encoded Blobs via render.ts. */
 
-import { cardView, renderCardBlob, solidFullCardArt, withPlacement, type CardAssets, type CardFace } from './render'
+import { cardView, renderCardBlob, renderTiltPartBlob, solidFullCardArt, withPlacement, type CardAssets, type CardFace, type TiltPart } from './render'
 import { FULL_CARD_ART_SETS, artSetOf, frameId } from './frames'
 import { CARD_H, CARD_W, wearLookOf, type WearLevel, type WearLook } from './rules'
 import type { Layout, OutputFormat, Placement, Variant } from './types'
@@ -27,6 +27,8 @@ export interface AssetBundle {
 
 export interface RenderJob {
   face: CardFace
+  /** A tilt layer (render.ts drawTiltPart, 720 x 1008 WEBP) instead of the finished image. */
+  part?: TiltPart
 }
 
 /** Decoded bitmaps kept per renderer (each frame or wear layer is 1500 x 2100, about 12.6 MB decoded). A full-grid
@@ -112,12 +114,14 @@ export class CardRenderer {
     return { frame, art, wear }
   }
 
-  async render(face: CardFace, format: OutputFormat): Promise<Blob> {
-    const assets = await this.assetsFor(face)
+  async render(face: CardFace, format: OutputFormat, part?: TiltPart): Promise<Blob> {
+    // the plain layer has no wear: don't decode a wear layer for it
+    const assets = await this.assetsFor(part === 'plain' ? { ...face, grade: null } : face)
     const view = cardView(face, this.bundle.names[face.characterId] ?? face.characterId, this.bundle.categories[face.characterId])
     const base = this.bundle.layouts[face.frameSet]
     if (!base) throw new Error(`No layout for frame set ${face.frameSet}`)
     const layout = withPlacement(base, this.placementOf(face.characterId, artSetOf(face.frameSet), 'normal'))
+    if (part) return renderTiltPartBlob(assets, layout, view, part, this.canvas)
     return renderCardBlob(assets, layout, view, format, this.canvas)
   }
 

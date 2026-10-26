@@ -199,6 +199,9 @@ export interface FireRecord {
    *  The next "Build all" keeps the images already stored for it, unless art, layouts or fonts changed since. */
   buildPending?: { gridKey: string; startedAt: number; bytes: number; ms: number }
   upload?: UploadState
+  /** The tilt layers (looks.ts tiltParts) uploaded on their own, for a Series whose images folder is already locked
+   *  on-chain: the folder's CID, its name, when, and the build they came from. */
+  tiltUpload?: { cid: string; dir: string; at: number; buildAt?: number; mock?: boolean }
   createdAt: number
   updatedAt: number
 }

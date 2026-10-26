@@ -128,19 +128,18 @@ export class BatchRenderer {
     }
   }
 
-  private async renderBatch(lane: number, cards: CardFace[], format: OutputFormat): Promise<Blob[]> {
+  private async renderBatch(lane: number, jobs: RenderJob[], format: OutputFormat): Promise<Blob[]> {
     const w = this.workers[lane]
     if (w) {
       const id = this.nextId++
-      const jobs: RenderJob[] = cards.map((face) => ({ face }))
       return new Promise<Blob[]>((resolve, reject) => {
         this.pending.set(id, { resolve, reject })
         w.postMessage({ type: 'render', id, jobs, format } satisfies WorkerIn)
       })
     }
     const out: Blob[] = []
-    for (const card of cards) {
-      out.push(await this.fallback!.render(card, format))
+    for (const job of jobs) {
+      out.push(await this.fallback!.render(job.face, format, job.part))
       await yieldToUi()
     }
     return out
@@ -155,20 +154,35 @@ export class BatchRenderer {
       signal?: AbortSignal
     } = {},
   ): Promise<void> {
+    const { onBatch, ...rest } = opts
+    await this.renderJobs(cards.map((face) => ({ face })), format, {
+      ...rest, onBatch: onBatch && ((jobs, blobs, start) => onBatch(jobs.map((j) => j.face), blobs, start)),
+    })
+  }
+
+  /** renderAll for jobs: finished images or tilt layers (RenderJob.part). */
+  async renderJobs(
+    jobs: RenderJob[], format: OutputFormat, opts: {
+      batchSize?: number
+      onProgress?: (p: Progress) => void
+      onBatch?: (jobs: RenderJob[], blobs: Blob[], start: number) => Promise<void> | void
+      signal?: AbortSignal
+    } = {},
+  ): Promise<void> {
     const size = opts.batchSize ?? 4
     let next = 0
     let done = 0
-    opts.onProgress?.({ done, total: cards.length })
+    opts.onProgress?.({ done, total: jobs.length })
     const lane = async (i: number) => {
-      while (next < cards.length) {
+      while (next < jobs.length) {
         if (opts.signal?.aborted) throw new DOMException('Build cancelled', 'AbortError')
         const start = next
         next += size
-        const batch = cards.slice(start, start + size)
+        const batch = jobs.slice(start, start + size)
         const blobs = await this.renderBatch(i, batch, format)
         await opts.onBatch?.(batch, blobs, start)
         done += batch.length
-        opts.onProgress?.({ done, total: cards.length })
+        opts.onProgress?.({ done, total: jobs.length })
         await yieldToUi()
       }
     }
@@ -185,4 +199,10 @@ export class BatchRenderer {
 /** Where a built image is stored: one per look (looks.ts), not per card. */
 export function renderKey(fire: number, lookKey: string): string {
   return `render:${fire}:${lookKey}`
+}
+
+/** Where a tilt layer (looks.ts tiltParts) is kept: tied to the build it was made from, so every export of that build
+ *  reuses the same files (and the same CIDs). */
+export function tiltKey(fire: number, builtAt: number, file: string): string {
+  return `tilt:${fire}:${builtAt}:${file}`
 }

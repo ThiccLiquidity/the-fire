@@ -68,7 +68,7 @@ try {
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   page.on("console", (m) => { if (m.type() === "warning" && !/WebGL|GL Driver/.test(m.text())) console.log(`  page warning: ${m.text()}`); if (m.type() === "error" && !/ipfs\.io|ERR_FAILED|Failed to load resource/.test(m.text())) errors.push(m.text()); });
-  await page.route(/ipfs\.io/, (r) => r.abort()); // card images: no IPFS here (the page falls back to the card back)
+  await page.route(/\/ipfs\//, (r) => r.abort()); // card images: no IPFS here (the page falls back to the card back)
   await page.addInitScript(([n, k]) => { globalThis.__FORGE_NET__ = n; globalThis.__FORGE_TEST__ = { key: k }; }, [net, key]);
   const shot = async (name) => { const f = join(SHOTS, `${name}.png`); await page.screenshot({ path: f }); console.log(`  shot ${f}`); };
   const sync = () => page.evaluate(() => window.Live.sync({ cards: true }));
@@ -380,8 +380,8 @@ try {
   console.log("\n== profile: a name and one of the cards as the picture (FireProfiles, one transaction)");
   {
     // the card images live on IPFS (aborted above): here a local card stands in, so the picture can be cut
-    await page.unroute(/ipfs\.io/);
-    await page.route(/ipfs\.io/, (r) => r.fulfill({ contentType: "image/webp", body: readFileSync(join(FACTORY, "forge/cards/bowling/wood-plain.webp")) }));
+    await page.unroute(/\/ipfs\//);
+    await page.route(/\/ipfs\//, (r) => r.fulfill({ contentType: "image/webp", body: readFileSync(join(FACTORY, "forge/cards/bowling/wood-plain.webp")) }));
     check(await page.evaluate(async () => { await window.Live.chain; return window.Profiles.on && !!window.Live.chain.profilesOn(); }), "profiles are on (FireProfiles in the deployments file)");
     await page.waitForTimeout(1000); // anything the reveal opens after it (a recap) first
     await page.evaluate(() => { document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()); window.Live.openWallet(); });
@@ -406,8 +406,8 @@ try {
     await page.waitForFunction(() => /Fire Kid/.test(document.querySelector("#walletBtn").textContent) && !!document.querySelector("#walletBtn .pf-av canvas"), null, { timeout: 15_000 });
     check(true, `the wallet chip shows the picture and the name (${await page.locator("#walletBtn").textContent()})`);
     await shot("13c-profile-chip");
-    await page.unroute(/ipfs\.io/);
-    await page.route(/ipfs\.io/, (r) => r.abort());
+    await page.unroute(/\/ipfs\//);
+    await page.route(/\/ipfs\//, (r) => r.abort());
   }
 
   console.log("\n== the fun layer, live: the pulls feed, the board, a showcase, a practice pack (all read-only)");
@@ -437,8 +437,8 @@ try {
     // the Series' image folder (ipfs://bafyexampleimages/) has no files here: stand in the demo cast's plain cards for
     // its file names, so the screenshot shows pictures (the check is on the file names asked for)
     const asked = [];
-    await page.unroute(/ipfs\.io/);
-    await page.route(/ipfs\.io/, (r) => {
+    await page.unroute(/\/ipfs\//);
+    await page.route(/\/ipfs\//, (r) => {
       const m = /\/ipfs\/bafyexampleimages\/c(\d+)-([a-z0-9-]+)-(none|frame|picture|full)-u\.webp$/.exec(r.request().url());
       if (!m) return r.abort();
       asked.push(r.request().url());
@@ -455,7 +455,7 @@ try {
     await page.waitForTimeout(800);
     const pr = await page.evaluate(() => [...document.querySelectorAll("#sheet-table .prac-c .cframe")].map((i) => ({ src: i.src, alt: i.alt, ok: i.complete && i.naturalWidth > 0 })));
     const names = ["Ember Fox", "Ash Wolf", "Cinder Queen"];
-    check(pr.length === 6 && pr.every((x) => /^https:\/\/ipfs\.io\/ipfs\/bafyexampleimages\/c[0-2]-(paper|wood|fire|coal|gold|fullart)-(none|frame|picture|full)-u\.webp$/.test(x.src) && x.ok && names.some((n) => x.alt.startsWith(n + ","))) && asked.length >= 6,
+    check(pr.length === 6 && pr.every((x) => /\/ipfs\/bafyexampleimages\/c[0-2]-(paper|wood|fire|coal|gold|fullart)-(none|frame|picture|full)-u\.webp$/.test(x.src) && x.ok && names.some((n) => x.alt.startsWith(n + ","))) && asked.length >= 6,
       `live practice uses Series 7's own card art and cast, not the demo's (${pr.map((x) => x.src.split("/").pop()).join(", ")})`);
     check(await page.locator("#sheet-table .st-table.practice").count() === 1 && /PRACTICE/.test(await page.evaluate(() => getComputedStyle(document.querySelector("#sheet-table .prac-c .cface"), "::after").content)),
       "still stamped PRACTICE");
@@ -463,8 +463,28 @@ try {
     const fb = await page.evaluate(async () => { const no = Store.state.series.no; Store.state.series.no = 0; try { return (await Fun.practicePack()).map((c) => [c.character, !!c.image, Store.cardImg(c)]); } finally { Store.state.series.no = no; } });
     check(fb.length === 6 && fb.every(([, img, src]) => !img && /^cards\/(bowling|cactus|jellyfish)\//.test(src)), `no Series to read: the demo cast stands in (${fb.map((x) => x[0]).join(", ")})`);
     await page.keyboard.press("Escape");
-    await page.unroute(/ipfs\.io/);
-    await page.route(/ipfs\.io/, (r) => r.abort());
+    // the live holo: a card's tilt layers from its Series' folder (c<i>-<slug>-plain.webp, -print-<state>.webp) draw it
+    // moving, as in the demo
+    await page.unroute(/\/ipfs\//);
+    const tiltAsked = [];
+    await page.route(/\/ipfs\//, (r) => {
+      const u = r.request().url(), m = /\/ipfs\/bafyexampleimages\/c\d+-([a-z0-9]+)-(plain|print-(?:u|c|\d+))\.webp$/.exec(u);
+      if (!m) return r.abort();
+      tiltAsked.push(u.split("/").pop());
+      const mat = m[1] === "coal" ? "charcoal" : m[1], file = m[2] === "plain" ? `${mat}-plain.webp` : `p/${mat}-print-0.webp`;
+      return r.fulfill({ status: 200, contentType: "image/webp", body: readFileSync(join(FACTORY, `forge/cards/cactus/${file}`)) });
+    });
+    const card = await page.evaluate(() => { const c = Store.state.cards.find((x) => x.src); Store.cardParts(c); return c && { id: c.id, src: c.src }; });
+    await page.waitForFunction((id) => !!Store.cardParts(Store.state.cards.find((x) => x.id === id)), card.id, { timeout: 45_000, polling: 1000 })
+      .catch((e) => { throw new Error(`tilt layers never loaded for ${card?.src} (asked: ${tiltAsked.join(", ") || "nothing"}): ${e.message}`); });
+    await page.evaluate((id) => Stations.openCard(id), card.id);
+    await page.locator(".cface.live.ready canvas.cholo").first().waitFor({ timeout: 15_000 });
+    check(tiltAsked.some((f) => /-plain\.webp$/.test(f)) && tiltAsked.some((f) => /-print-(u|c|\d+)\.webp$/.test(f)),
+      `live: a card draws its holo moving from its tilt layers (${[...new Set(tiltAsked)].join(", ")})`);
+    await page.waitForTimeout(800); await shot("13f-live-tilt");
+    await page.keyboard.press("Escape");
+    await page.unroute(/\/ipfs\//);
+    await page.route(/\/ipfs\//, (r) => r.abort());
   }
 
   console.log("\n== a grading in progress survives a reload; after 24 hours with no draw, the card comes back ungraded");

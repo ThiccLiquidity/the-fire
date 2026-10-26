@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DealtCard } from './deal'
-import { STATES, distinctLooks, gridSize, imagesPerCharacter, lookFileName, lookKey, lookOf, looksPerCharacter, seriesGrid } from './looks'
+import { STATES, distinctLooks, gridSize, imagesPerCharacter, lookFileName, lookKey, lookOf, looksPerCharacter, seriesGrid, tiltFileName, tiltParts, tiltPartsPerCharacter } from './looks'
 import { cardMetadata, metadataFileName } from './metadata'
 import { holoLooksFor, specialAllHoloRecipe, standardRecipe, type Recipe } from './recipe'
 import { HOLO_TYPES, wearLookOf } from './rules'
@@ -120,5 +120,28 @@ describe('shared images', () => {
     const slab = Object.fromEntries(cardMetadata({ ...c, grade: 8 }, { name: 'Rabbit' }, 'Wood', 'x').attributes.map((a) => [a.trait_type, a.value]))
     expect(slab.PDA).toBe('PDA 8')
     expect(slab.Cased).toBeUndefined()
+  })
+})
+
+describe('tilt layers', () => {
+  it('3-character Standard: per character and type one plain + 12 prints, 78 per character, named apart from the images', () => {
+    const parts = tiltParts(4, ['a', 'b', 'c'], STD)
+    expect(tiltPartsPerCharacter(STD)).toBe(6 * 13)
+    expect(parts).toHaveLength(3 * 78)
+    const names = parts.map((p) => p.file)
+    expect(new Set(names).size).toBe(names.length)
+    const slugs = ['paper', 'wood', 'fire', 'coal', 'gold', 'fullart']
+    const states = ['u', 'c', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+    const want = [0, 1, 2].flatMap((i) => slugs.flatMap((s) => [`c${i}-${s}-plain.webp`, ...states.map((st) => `c${i}-${s}-print-${st}.webp`)]))
+    expect(names).toEqual(want)
+    const grid = new Set(seriesGrid(4, ['a', 'b', 'c'], STD).map((g) => g.file))
+    expect(names.some((n) => grid.has(n))).toBe(false)
+    // each print carries its state, from the same stand-in the finished images use
+    const c = parts.find((p) => p.file === 'c1-coal-print-c.webp')!
+    expect(c).toMatchObject({ characterId: 'b', part: 'print', grade: null, cased: true })
+    expect(c.card).toMatchObject({ characterId: 'b', type: 3, grade: null, cased: true, fire: 4, serial: 0 })
+    expect(parts.find((p) => p.file === 'c2-gold-print-10.webp')!.card.grade).toBe(10)
+    expect(tiltFileName('wood', 0, 'print', 7)).toBe('c0-wood-print-7.webp')
+    expect(() => tiltFileName('wood', -1, 'plain')).toThrow()
   })
 })

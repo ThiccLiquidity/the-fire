@@ -29,7 +29,28 @@
   // cased on screen before the chain's metadata says so (the casing animation): the same look's cased image (-c)
   Store.cardImg = (c) => (!c.image ? 'ui/card-back.webp' : c.cased && c.grade == null && !c.pending ? c.image.replace(/-u\.webp$/, '-c.webp') : c.image);
   Store.cardPos = () => '50% 50%';
-  Store.cardParts = () => null;
+  // the live holo (holo.js): a card's tilt layers, which the Card Studio uploads next to the finished images
+  // (c<i>-<slug>-plain.webp: picture + frame; c<i>-<slug>-print-<state>.webp: text, seal, wear), or from TILT for a
+  // Series whose folder was locked before it had them. A folder is checked once; until its layers load, the card shows
+  // its finished image (which has the holo drawn in at one angle)
+  const TILT = { testnet: {}, mainnet: {} }; // Series -> 'ipfs://<CID>/' (the studio's "Upload tilt layers")
+  const LOOK = /^(.*\/)(c\d+-[a-z0-9]+)-(none|frame|picture|full)-(?:u|c|\d+)\.webp$/;
+  const HOLO_WORD = { frame: 'Holo frame', picture: 'Holo picture', full: 'Full holo' };
+  const tiltOk = new Map(); // folder -> true | 'checking' | the time its check failed (tried again 30 s later)
+  Store.cardParts = (c) => {
+    const m = LOOK.exec(c?.src || ''); if (!m || !window.Holo) return null;
+    const base = TILT[net]?.[c.series] || m[1], ok = tiltOk.get(base);
+    const plain = gateway(`${base}${m[2]}-plain.webp`);
+    if (ok === undefined || (typeof ok === 'number' && Date.now() - ok > 30_000)) { // the first card from this folder: are its layers there? (then every card from it redraws live)
+      tiltOk.set(base, 'checking');
+      const i = new Image(); i.onload = () => { tiltOk.set(base, true); Store.update(() => {}); };
+      i.onerror = () => { const n = Store.nextGateway(i.src); if (n) i.src = n; else tiltOk.set(base, Date.now()); }; i.src = plain;
+    }
+    if (ok !== true) return null;
+    const always = c.material === 'gold' || c.material === 'fullart', look = always ? 'full' : m[3], state = c.grade != null ? c.grade : c.cased ? 'c' : 'u';
+    return { look, holder: Store.holder(c), state: 0, plain, print: gateway(`${base}${m[2]}-print-${state}.webp`),
+      label: { name: c.character, sub: [`Series ${c.series}`, Store.MAT_LABEL[c.material], HOLO_WORD[look]].filter(Boolean).join(' · '), grade: c.grade } };
+  };
   Store.needsApproval = () => false; // the chain layer approves exactly what each call needs, as a step of the same action
   Store.floor = () => 0;
   // the Paper Presses that exist now (Info › PLANK & PAPER): the Press contract's totalSupply, cached; null hides the line
@@ -88,7 +109,7 @@
       id: c.serial, serial: c.serial, series: c.fire, character: c.character || c.name, category: c.category,
       material: MAT[String(c.material).toLowerCase()] || 'paper', holo: c.holo || 'none', edition: String(c.print ?? c.edition), grade: c.grade, pending: !!c.gradePending,
       cased: !!c.cased, moves: c.moves, dealt: Date.now() - ageMs, dealtAt: Math.min(Date.now(), c.dealtAt * 1000), frozenAge: frozen ? ageMs : 0,
-      image: gateway(c.image), tokenId: c.serial,
+      image: gateway(c.image), src: c.image, tokenId: c.serial,
     };
   };
   const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, String(v)); } catch { /* private window */ } return null; };
