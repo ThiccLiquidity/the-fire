@@ -20,6 +20,9 @@ export interface Net {
   chainId: number;
   /** The chain's name, as wallets show it. */
   label: string;
+  /** Reads sent together go as one JSON-RPC batch of up to this many (VITE_RPC_BATCH); 0 = one request each. Off by
+   *  default: the public testnet RPC refused big batches. Turn on with a paid RPC that takes them (try 10). */
+  readBatch: number;
   /** What the site reads through (may be a private RPC from VITE_RPC_URL). Never handed to a wallet. */
   readRpc: string;
   /** What a wallet is given (wallet_addEthereumChain): the public RPC only. */
@@ -36,13 +39,13 @@ const env = ((import.meta as { env?: Record<string, string | undefined> }).env ?
 const DRAND = ["https://api.drand.sh", "https://api2.drand.sh", "https://api3.drand.sh"];
 
 export const MAINNET: Net = {
-  name: "mainnet", chainId: 4663, label: "Robinhood Chain", readRpc: env.VITE_RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
+  name: "mainnet", chainId: 4663, label: "Robinhood Chain", readRpc: env.VITE_RPC_URL || "https://rpc.mainnet.chain.robinhood.com", readBatch: Math.max(0, Number(env.VITE_RPC_BATCH) || 0),
   publicRpc: "https://rpc.mainnet.chain.robinhood.com", explorer: "https://robinhoodchain.blockscout.com",
   deployment: mainnetDeployment as Deployment, drandUrls: DRAND, testnet: false,
 };
 export const TESTNET_NET: Net = {
   name: "testnet", chainId: 46630, label: "Robinhood Chain Testnet",
-  readRpc: env.VITE_TESTNET_RPC_URL || "https://rpc.testnet.chain.robinhood.com/rpc", publicRpc: "https://rpc.testnet.chain.robinhood.com/rpc",
+  readRpc: env.VITE_TESTNET_RPC_URL || "https://rpc.testnet.chain.robinhood.com/rpc", readBatch: Math.max(0, Number(env.VITE_RPC_BATCH) || 0), publicRpc: "https://rpc.testnet.chain.robinhood.com/rpc",
   explorer: "https://explorer.testnet.chain.robinhood.com", deployment: testnetDeployment as Deployment, drandUrls: DRAND, testnet: true,
 };
 

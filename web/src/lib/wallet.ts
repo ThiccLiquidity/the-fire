@@ -264,8 +264,9 @@ function watchAfterConnect(config: Config) {
 let pub: PublicClient | undefined;
 /** Reads Robinhood Chain through the site's RPC, whatever chain the wallet is on. Needs no wallet. */
 export function getPublicClient(): PublicClient {
-  // one request per read: the testnet RPC refused big JSON-RPC batches (a wallet's cards), so none are sent
-  return (pub ??= createPublicClient({ chain: robinhood, transport: http(READ_RPC) }) as PublicClient);
+  // one request per read unless VITE_RPC_BATCH is set (net.ts readBatch): the public testnet RPC refused big batches
+  const batch = NET.readBatch > 0 ? { batch: { batchSize: NET.readBatch, wait: 16 } } : {};
+  return (pub ??= createPublicClient({ chain: robinhood, transport: http(READ_RPC, batch) }) as PublicClient);
 }
 
 /** The connected wallet, on Robinhood Chain (for the live contract calls later). Throws if not connected. */

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BatchRenderer, renderKey, tiltKey } from '../builder'
 import { Field, Notice, ProgressBar, useAction } from '../components'
 import { blobKeys, deleteBlobsWithPrefix, getBlob, putBlobs } from '../db'
@@ -47,6 +47,8 @@ export function Export({ fire }: { fire: FireRecord }) {
   const [fbSet, setFbSet] = useState(hasFilebaseKey())
   const [tiltRunning, setTiltRunning] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [packArt, setPackArt] = useState<number[] | null>(null) // the Series numbers that have pack art saved
+  const [packUrl, setPackUrl] = useState<string | null>(null)
 
   const deal = fire.deal
   const r = fire.recipe
@@ -460,6 +462,55 @@ export function Export({ fire }: { fire: FireRecord }) {
     }
   })
 
+  // ---------- pack art: one image per Series (fire<N>.webp), kept in this browser; all of them go up as one folder,
+  // whose ipfs://<CID>/ is FirePacks.setPackImageBase (a new Series adds its image, so the folder and CID change)
+  const PACK_PREFIX = 'packart:'
+  const refreshPackArt = async () => {
+    const keys = await blobKeys(PACK_PREFIX)
+    const nums = keys.map((k) => Number(k.slice(PACK_PREFIX.length))).filter((n) => Number.isInteger(n) && n > 0).sort((a, b) => a - b)
+    setPackArt(nums)
+    const mine = await getBlob(PACK_PREFIX + fire.number)
+    setPackUrl((old) => { if (old) URL.revokeObjectURL(old); return mine ? URL.createObjectURL(mine) : null })
+  }
+  useEffect(() => { void refreshPackArt() }, [fire.number]) // eslint-disable-line react-hooks/exhaustive-deps
+  const setPackImage = (file: File | undefined) => run(async () => {
+    if (!file) return
+    const bmp = await createImageBitmap(file)
+    const k = Math.min(1, 1400 / bmp.height), c = new OffscreenCanvas(Math.round(bmp.width * k), Math.round(bmp.height * k))
+    const g = c.getContext('2d'); if (!g) throw new Error('2D canvas unavailable')
+    g.imageSmoothingQuality = 'high'; g.drawImage(bmp, 0, 0, c.width, c.height); bmp.close()
+    await putBlobs([[PACK_PREFIX + fire.number, await c.convertToBlob({ type: 'image/webp', quality: 0.92 })]])
+    await refreshPackArt()
+  })
+  const uploadPackArt = () => run(async () => {
+    try {
+      setLog([])
+      const say = (t: string) => setLog((l) => [...l, `${new Date().toLocaleTimeString()} ${t}`])
+      const nums = (await blobKeys(PACK_PREFIX)).map((k) => Number(k.slice(PACK_PREFIX.length))).filter((n) => Number.isInteger(n) && n > 0).sort((a, b) => a - b)
+      if (!nums.length) throw new Error('Add this Series\' pack art first.')
+      const files: UploadFile[] = []
+      for (const n of nums) { const bl = await getBlob(PACK_PREFIX + n); if (bl) files.push({ name: `fire${n}.webp`, blob: bl }) }
+      const dir = `pack-art-${filesFingerprint(files)}`
+      setProgress({ value: 0, label: 'Packing the CAR...' })
+      const car = await planCar(files)
+      say(`Pack art: ${files.map((f) => f.name).join(', ')}, folder CID ${car.root}.`)
+      const cid = await pinOnFilebase(flags.mockPinata ? mockFilebase : realFilebase, {
+        name: dir, root: car.root, size: car.size, bytes: (from) => carBytes(files, car.root, from), onResumeId: async () => {},
+      }, say, (l, t) => setProgress({ value: l / Math.max(1, t), label: `Filebase ${((l / Math.max(1, t)) * 100).toFixed(1)}%` }))
+      await updateFire(fire.number, { packArtUpload: { cid, dir, at: Date.now(), series: nums, mock: flags.mockPinata } })
+      say(`Pack art pinned: ipfs://${cid}/`)
+    } finally {
+      refreshDevFlags()
+      setProgress(null)
+    }
+  })
+  const copyPackArt = () => run(async () => {
+    if (!fire.packArtUpload) return
+    await navigator.clipboard.writeText(`ipfs://${fire.packArtUpload.cid}/`)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  })
+
   const copyTilt = () => run(async () => {
     if (!fire.tiltUpload) return
     await navigator.clipboard.writeText(`ipfs://${fire.tiltUpload.cid}/`)
@@ -597,6 +648,27 @@ export function Export({ fire }: { fire: FireRecord }) {
         </div>
       )}
 
+      <h3>Pack art</h3>
+      <p className="muted small">The pack's picture for Series {fire.number} (<code>fire{fire.number}.webp</code>). Every Series' pack art goes up as one folder;
+        its address is the one FirePacks shows packs from (<code>setPackImageBase</code>), so upload again after adding a new Series' art.</p>
+      <div className="row wrap">
+        {packUrl && <img src={packUrl} alt={`Series ${fire.number} pack art`} style={{ height: 120, borderRadius: 6 }} data-testid="pack-art-img" />}
+        <label className="btn">{packUrl ? 'Replace' : 'Add'} pack art<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => setPackImage(e.target.files?.[0])} data-testid="pack-art-file" /></label>
+        <button disabled={busy || !fbSet || !packArt?.length} onClick={uploadPackArt} data-testid="upload-pack-art">Upload pack art</button>
+        {!fbSet && <span className="muted small">Enter the Filebase key above.</span>}
+      </div>
+      {!!packArt?.length && <p className="muted small" data-testid="pack-art-list">In the folder: {packArt.map((n) => `fire${n}.webp`).join(', ')}</p>}
+      {fire.packArtUpload && (
+        <div data-testid="pack-art-upload">
+          <div className="row wrap">
+            <code data-testid="pack-art-cid">ipfs://{fire.packArtUpload.cid}/</code>
+            <button disabled={busy} onClick={copyPackArt} data-testid="copy-pack-art">{copied ? 'Copied' : 'Copy'}</button>
+            {fire.packArtUpload.mock && <span className="tag">mock upload</span>}
+            {packArt && packArt.join() !== fire.packArtUpload.series.join() && <span className="warn-text small">The pack art changed since: upload again.</span>}
+          </div>
+          <p className="muted small">Then, from the Ledger: <code>cast send &lt;FirePacks&gt; "setPackImageBase(string)" "ipfs://{fire.packArtUpload.cid}/" --ledger ...</code></p>
+        </div>
+      )}
       {flags.mockPinata && flags.mockFailNext > 0 && <p className="muted small">Mock will fail the next {flags.mockFailNext} upload(s) halfway.</p>}
     </section>
   )

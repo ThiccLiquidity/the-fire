@@ -37,6 +37,7 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import {
   createPublicClient, createWalletClient, http, parseEther, formatEther, getAddress, encodeFunctionData, zeroHash, toHex, decodeFunctionData,
+  decodeErrorResult,
 } from "viem";
 import { mnemonicToAccount, nonceManager } from "viem/accounts";
 import { drandServer, gatewayServer, webhookServer } from "./servers.mjs";
@@ -122,15 +123,45 @@ const mine = async (ts) => { if (ts !== undefined) await rpc("evm_setNextBlockTi
 const warp = async (sec) => { await rpc("evm_increaseTime", [toHex(BigInt(sec))]); await rpc("evm_mine"); };
 let chain;
 const walletOf = (account) => createWalletClient({ account, chain, transport: http(RPC) });
+/** Send a contract call and wait for it; a revert fails the rehearsal with the custom error's name.
+ *  Gas: the estimate plus 30%, as the keeper sends (ops/keeper/src/tx.mjs) and wallets do. viem's bare estimate is the
+ *  least gas that works at the estimate's block, and a buy's gas depends on the clock: FireGroups.take writes
+ *  lastSaleAt = block.timestamp, a near-free no-op SSTORE when the group's last sale was in the same second, a real
+ *  write (+2.9k gas) once the next block is a second later. Anvil mines several blocks in one second here, so a buy
+ *  estimated in the second of the group's previous sale and mined in the next one ran out of gas ("buy reverted"). */
 async function tx(account, address, abi, functionName, args = [], value) {
   let hash;
-  try { hash = await walletOf(account).writeContract({ address, abi, functionName, args, value, chain }); } catch (e) {
+  try {
+    const gas = ((await pub.estimateContractGas({ account, address, abi, functionName, args, value })) * 13n) / 10n;
+    hash = await walletOf(account).writeContract({ address, abi, functionName, args, value, gas, chain });
+  } catch (e) {
     const why = e?.cause?.data?.errorName ?? e?.walk?.((x) => x?.data?.errorName)?.data?.errorName ?? e?.cause?.reason;
     throw new Error(`${functionName} reverted${why ? `: ${why}` : ""} (${e?.shortMessage ?? e?.message})`);
   }
   const r = await pub.waitForTransactionReceipt({ hash });
-  if (r.status !== "success") fail(`${functionName} reverted (${hash})`);
+  if (r.status !== "success") fail(`${functionName} reverted: ${await whyReverted(hash, r, abi)} (${hash})`);
   return r;
+}
+/** Why a mined transaction reverted, from anvil's trace: the custom error by name (the contract's ABI, else every ABI
+ *  here), "out of gas" with the gas used against the limit, or the raw revert data. Never throws. */
+async function whyReverted(hash, receipt, abi = []) {
+  try {
+    const [t, sent] = await Promise.all([rpc("debug_traceTransaction", [hash, { tracer: "callTracer" }]), pub.getTransaction({ hash })]);
+    const gas = `gas ${receipt.gasUsed}/${sent.gas}${receipt.blockNumber !== undefined ? `, block ${receipt.blockNumber}` : ""}`;
+    const data = t?.output && t.output !== "0x" ? t.output : null;
+    if (data) {
+      for (const a of [abi, ABI.sale, ABI.groups, ABI.cards, ABI.psa, ABI.packs, ABI.burner, ABI.plankBurner]) {
+        try {
+          const d = decodeErrorResult({ abi: a, data });
+          return `${d.errorName}(${(d.args ?? []).map(String).join(", ")}) [${gas}]`;
+        } catch { /* not this ABI's */ }
+      }
+      return `${t.error ?? "revert"} ${data.slice(0, 74)} [${gas}]`;
+    }
+    return `${t?.error ?? "no revert data"} [${gas}]`;
+  } catch (e) {
+    return `(no trace: ${e?.shortMessage ?? e?.message})`;
+  }
 }
 async function deploy(account, file, name, args = []) {
   const { abi, bytecode } = artifact(file, name);
@@ -144,7 +175,7 @@ async function asImpersonated(from, to, data, value = 0n) {
   const hash = await pub.request({ method: "eth_sendTransaction", params: [{ from, to, data, value: toHex(value), gas: toHex(15_000_000n) }] });
   const r = await pub.waitForTransactionReceipt({ hash });
   await rpc("anvil_stopImpersonatingAccount", [from]);
-  if (r.status !== "success") fail(`owner transaction to ${to} reverted (${hash})`);
+  if (r.status !== "success") fail(`owner transaction to ${to} reverted: ${await whyReverted(hash, r)} (${hash})`);
   return r;
 }
 

@@ -135,8 +135,14 @@ try {
 
   console.log("\n== suggest a theme and an art style (one transaction)");
   await page.evaluate(() => Stations.open("suggest"));
+  // the sheet puts the caret in its first field 50 ms after it opens (openSuggest: setTimeout(focus, 50)); typing
+  // before that can land in the wrong field (fill focuses #sg-style, the timer moves focus to #sg-theme, the text goes
+  // there: one suggestion "Theme: Haunted dinerOld woodcut print"). Wait for it, as a person would, then type.
+  await page.waitForFunction(() => document.activeElement?.id === "sg-theme");
   await page.fill("#sg-theme", "Haunted diner");
   await page.fill("#sg-style", "Old woodcut print");
+  check(await page.evaluate(() => document.querySelector("#sg-theme").value === "Haunted diner" && document.querySelector("#sg-style").value === "Old woodcut print"),
+    "the theme and the art style each in their own field");
   await page.click('#sheet-suggest [data-key="send"]');
   await toastSeen(/Sent/);
   await sync();

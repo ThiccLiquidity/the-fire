@@ -3,7 +3,29 @@
 The order to go live, what each step needs from you, and what's already done. Nothing goes to `main`, the live
 site address or mainnet without your OK. Work lands on `wip/pending-approval` and shows on Vercel preview links only.
 
-## Where things are (Oct 24, 2026)
+## Before mainnet (Oct 26, 2026)
+
+Testnet Series 1 ran end to end on Oct 25-26: Press, PLANK and Everyone groups, free packs (suggestion and burn),
+ETH/USDG/PLANK buys, extra packs, opening, casing, grading, burning, profiles, the live holo, the backup keeper.
+What's left, in order:
+
+1. **Series 2 on testnet** (`docs/series-2-runbook.md`): the Studio's pack art and tilt layers in the images folder
+   end to end, pausing and unpausing a live sale, a second launch.
+2. **A paid RPC for the site** (Alchemy app, key locked to the site's domains) in Vercel as `VITE_TESTNET_RPC_URL` /
+   `VITE_RPC_URL`; then try `VITE_RPC_BATCH=10` (bundled reads; the public testnet RPC refused big batches) and check
+   load times. The launcher's snapshot also needs it on mainnet (the free plan allows 10 blocks per log search).
+3. **Final testnet run on that setup**: buy, open, case, grade, burn; load times.
+4. **Final audit** of everything since the pre-testnet audit (`docs/audit-prep-2026-10-26.md` lists it: the slots
+   recipe and the new grading odds are contract changes and come first). Decide on an outside audit.
+5. **Ops for real money**: Railway on a paid plan; the backup keeper with its own heartbeat check (it shares the main
+   one's today); gas in the deployer and both keepers; the revenue wallet checked.
+6. **Your decisions**: whether the real Paper Press can list its holders' tokens (ERC721Enumerable; if not, the site
+   finds them through the explorer, as on testnet), case and grade prices, the pack art for Series 1.
+7. **Mainnet** (step 4 below), then your OK to merge to `main` and leave demo mode.
+8. Later: the Morning Wood (once the paper is final), the paper football game (free play; prizes only after a legal
+   read and anti-cheat).
+
+## Where things were (Oct 24, 2026)
 
 | Done | Not done |
 |---|---|

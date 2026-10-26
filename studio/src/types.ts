@@ -202,6 +202,8 @@ export interface FireRecord {
   /** The tilt layers (looks.ts tiltParts) uploaded on their own, for a Series whose images folder is already locked
    *  on-chain: the folder's CID, its name, when, and the build they came from. */
   tiltUpload?: { cid: string; dir: string; at: number; buildAt?: number; mock?: boolean }
+  /** The pack art folder (every Series' fire<N>.webp, Export > Pack art) as last uploaded from this Series' screen. */
+  packArtUpload?: { cid: string; dir: string; at: number; series: number[]; mock?: boolean }
   createdAt: number
   updatedAt: number
 }
