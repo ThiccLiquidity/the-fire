@@ -33,7 +33,7 @@
   // (c<i>-<slug>-plain.webp: picture + frame; c<i>-<slug>-print-<state>.webp: text, seal, wear), or from TILT for a
   // Series whose folder was locked before it had them. A folder is checked once; until its layers load, the card shows
   // its finished image (which has the holo drawn in at one angle)
-  const TILT = { testnet: {}, mainnet: {} }; // Series -> 'ipfs://<CID>/' (the studio's "Upload tilt layers")
+  const TILT = { testnet: { 1: 'ipfs://bafybeidpaf5dvzwqeheowuerdfneoi3vbnx355jacpdtw3ryoqvrzo52e4/' }, mainnet: {} }; // Series -> 'ipfs://<CID>/' (the studio's "Upload tilt layers")
   const LOOK = /^(.*\/)(c\d+-[a-z0-9]+)-(none|frame|picture|full)-(?:u|c|\d+)\.webp$/;
   const HOLO_WORD = { frame: 'Holo frame', picture: 'Holo picture', full: 'Full holo' };
   const tiltOk = new Map(); // folder -> true | 'checking' | the time its check failed (tried again 30 s later)
