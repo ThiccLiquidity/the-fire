@@ -74,8 +74,9 @@
     offPenalty: 0.3,   // speed lost at the very end of the edge (share)
     drift: 30,         // sideways drift of a mishit at full power (in/s² at the end of the edge)
     windK: 7,          // sideways push per mph (in/s²)
-    ramp: 0.2,         // difficulty budget added per level (spread across the unlocked factors)
-    start: 0.1,        // difficulty budget at level 0
+    ramp: 0.07,        // difficulty budget added per level (distance and movement share it)
+    curve: 0.0035,     // ...plus this times level²: gentle early, steep late
+    start: 0.12,       // difficulty budget at level 0 (1 = a 40 in kick, or a 3 in swing at 12 in)
   });
 
   // ---------- the world
@@ -103,35 +104,38 @@
   // ---------- a small seeded random stream (mulberry32): a shot's conditions are a function of (seed, shot number)
   function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
-  // the shot at a level: factors unlock one at a time, in the order kids made the game harder
-  const UNLOCK = Object.freeze({ dist: 0, offset: 1, wind: 2, gap: 3, car: 4 });
-  const LEVEL_NAMES = Object.freeze({ 1: 'Over here: the goal moves off centre', 2: "Fan's on: wind", 3: 'Squeeze it: the gap closes', 4: 'Hands on the move: the RC car' });
+  // the shot at a level (owner, Oct 27): difficulty is a trade between DISTANCE and MOVEMENT. A level's budget is spent
+  // on the two together, so a short kick at a swinging goal is as hard as a long kick at a still one. A 40 in kick
+  // counts the same as a 0.75 car (a 3 in swing): an average player makes each about half the time (measured with
+  // the sim and a wobbly-thumb player model). The budget grows slowly, then faster: past 1 both have to rise, and the
+  // last stretch is long kicks at fast, wide swings. Wind and a narrower gap come in late, as spice.
+  const LEVEL_NAMES = Object.freeze({ 1: 'Over here: the goal moves off centre', 8: "Fan's on: wind", 12: 'Squeeze it: the gap closes' });
+  const MOVE_PER_DIST = 0.75, MOVE_MAX = 1.5;
   function shotFor(seed, n, level, T) {
     T = T || DEFAULT_TUNING;
     const r = rng(seed * 7919 + n * 104729 + 13);
-    // the level's budget grows smoothly (a touch faster later on) and is shared by the unlocked factors, so a new factor
-    // takes a share of the budget instead of adding to it: no sudden jump when the caps open up
-    const budget = T.start + level * T.ramp + 0.004 * level * level;
-    const keys = Object.keys(UNLOCK).filter((k) => level >= UNLOCK[k]);
-    const w = keys.map(() => 0.15 + r());                      // how this shot spends its difficulty
-    const sum = w.reduce((a, b) => a + b, 0);
-    const x = {};
-    keys.forEach((k, i) => {
-      const cap = k === 'dist' ? 0.25 + 0.05 * level : 0.15 * (level - UNLOCK[k] + 1);
-      x[k] = Math.min(1, cap, (w[i] / sum) * budget);
-    });
+    const budget = T.start + level * T.ramp + T.curve * level * level;
+    // how much of the budget goes to movement: anywhere the caps allow, chosen by the shot's seed
+    const moveCap = Math.min(MOVE_MAX / MOVE_PER_DIST, 1 + 0.06 * level); // movement can outgrow distance late on
+    const lo = Math.max(0, budget - 1), hi = Math.min(budget, moveCap);
+    const uMove = lo >= hi ? hi : lo + (hi - lo) * r(), uDist = Math.min(1, budget - uMove);
+    const car = uMove * MOVE_PER_DIST;
     const side = () => (r() < 0.5 ? -1 : 1);
-    const dist = 12 + (x.dist || 0) * 26;                      // 12..38 in
+    const spice = (from, per) => Math.min(1, Math.max(0, (level - from + 1) * per)) * (0.5 + 0.5 * r());
+    const off = level >= 1 ? Math.min(0.6, 0.06 * level) * r() : 0, wind = level >= 8 ? spice(8, 0.07) : 0, gap = level >= 12 ? spice(12, 0.08) : 0;
+    const dist = 12 + uDist * 28;                              // 12..40 in
     return {
       level, dist,
-      wind: side() * (x.wind || 0) * 9,                        // ±9 mph
-      half: Math.max(1.2, 2.5 - (x.gap || 0) * 1.1),            // half the clear gap: 5.0 in .. 2.8 in
-      offset: side() * (x.offset || 0) * TAN6 * (dist + 4),    // within a 6° turn of the head
-      move: x.car ? { amp: x.car * 4, speed: 0.6 + x.car * 1.4, phase: r() * PI * 2 } : null,
+      wind: side() * wind * 9 || 0,                            // ±9 mph (|| 0: never -0)
+      half: Math.max(1.2, 2.5 - gap * 1.1),                    // half the clear gap: 5.0 in .. 2.8 in
+      offset: side() * off * TAN6 * (dist + 4) || 0,           // within a 6° turn of the head
+      move: car > 0.02 ? { amp: car * 4, speed: 0.6 + car * 1.4, phase: r() * PI * 2 } : null,
       drift: side(),                                           // which way a mishit drifts this shot
-      unlock: Object.keys(UNLOCK).find((k) => UNLOCK[k] === level && level > 0) ? LEVEL_NAMES[level] : null,
+      unlock: LEVEL_NAMES[level] || null,
     };
   }
+  /** where Plank stands: 4.5 in behind the posts, tucked in front of the bench's far edge on the longest kicks */
+  const plankZ = (s) => Math.min(TEE_Z + s.dist + PLANK_BACK, TABLE_END - 0.3);
   /** where the posts stand t seconds (game time) after the shot was shown */
   const postX = (s, t) => s.offset + (s.move ? sin(s.move.phase + t * s.move.speed * PI) * s.move.amp : 0);
 
@@ -166,7 +170,7 @@
     const b = launch(k, T, shot);
     b.wobPhase = o.wobPhase == null ? 1 : o.wobPhase;
     const mouth = o.mouth || MOUTH, kickTick = Math.max(0, Math.floor(o.kickTick || 0));
-    const D = TEE_Z + shot.dist, P = D + PLANK_BACK, wind = shot.wind * T.windK;
+    const D = TEE_Z + shot.dist, P = plankZ(shot), wind = shot.wind * T.windK;
     const f = { ball: b, tick: 0, kickTick, result: null, resultTick: -1, furnace: false, done: false, step };
     // bounce off a surface with outward normal (nx, ny, nz): keep the slide, lose most of the push
     function bounce(nx, ny, nz, e, fr) {
@@ -331,8 +335,8 @@
     VERSION, HZ, DT, DEFAULT_TUNING,
     math: Object.freeze({ PI, sqrt, hypot, sin, cos, atan, atan2, clamp }),
     world: Object.freeze({ G, BAR, POST_H, PEN_R, BLOCK_H, PLANK_BACK, PLANK_H, PLANK_W, TEE_Z, TEE_Y, BALL_R, TABLE_END, FURN_Z, FURN_W, MOUTH, TRI, EDGE_MID, EDGE_HALF, REST_Y, YAW0, YAW_FLY, CAM_DB, TAN18 }),
-    UNLOCK, LEVEL_NAMES, Q_XY, Q_T, MAX_SAMPLES,
-    rng, shotFor, postX, launch, createFlight, simulate,
+    LEVEL_NAMES, Q_XY, Q_T, MAX_SAMPLES,
+    rng, shotFor, postX, plankZ, launch, createFlight, simulate,
     quantize, edgeScale, onPaper, velocity, kickFromInput, checkInput,
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

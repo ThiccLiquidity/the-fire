@@ -16,7 +16,7 @@
   const S = window.PaperFBSim;
   if (!S) throw new Error('paperfb.js needs paperfb-sim.js loaded first');
   const { DEFAULT_TUNING, shotFor, launch, postX } = S;
-  const { BAR, POST_H, PEN_R, BLOCK_H, PLANK_BACK, PLANK_H, TEE_Z, TEE_Y, TRI, EDGE_MID, EDGE_HALF, REST_Y, YAW0 } = S.world;
+  const { BAR, POST_H, PEN_R, BLOCK_H, PLANK_H, TEE_Z, TEE_Y, TRI, EDGE_MID, EDGE_HALF, REST_Y, YAW0 } = S.world;
 
   // ---------- 3D: the folded triangle. Its outline is sampled along each edge; the folds make it fattest in the middle
   // of an edge and thin to a point at each corner (the strike edge, folded the most, is fattest). Each outline point
@@ -450,7 +450,7 @@
       const ok = (i) => i?.complete && i.naturalWidth, hitAge = ball?.thunkAt ? clock - ball.thunkAt : 9;
       // his face: spirals for a moment after a hit; wide-eyed at a doink, a near miss past him or a kick into the furnace
       const blink = (clock % 4.7) < 0.16 || (clock % 4.7 > 0.32 && clock % 4.7 < 0.44 && Math.floor(clock / 4.7) % 3 === 0); // now and then, sometimes twice
-      const k = hitAge < 1.1 && ok(A.plankHit) ? A.plankHit : clock < wowUntil && ok(A.plankWow) ? A.plankWow : blink && ok(A.plankBlink) ? A.plankBlink : A.plank, P = TEE_Z + shot.dist + PLANK_BACK, base = proj(shot.offset, 0, P), hh = PLANK_H * base.s;
+      const k = hitAge < 1.1 && ok(A.plankHit) ? A.plankHit : clock < wowUntil && ok(A.plankWow) ? A.plankWow : blink && ok(A.plankBlink) ? A.plankBlink : A.plank, P = S.plankZ(shot), base = proj(shot.offset, 0, P), hh = PLANK_H * base.s;
       const sh = g.createRadialGradient(base.x, base.y, 0, base.x, base.y, 2.4 * base.s); sh.addColorStop(0, 'rgba(15,6,1,.5)'); sh.addColorStop(1, 'rgba(15,6,1,0)');
       g.fillStyle = sh; g.save(); g.translate(base.x, base.y); g.scale(1, 0.2); g.translate(-base.x, -base.y); g.beginPath(); g.arc(base.x, base.y, 2.4 * base.s, 0, Math.PI * 2); g.fill(); g.restore();
       if (!(k?.complete && k.naturalWidth)) { g.fillStyle = '#e8c860'; g.fillRect(base.x - 1.4 * base.s, base.y - hh, 2.8 * base.s, hh); return; }
@@ -736,7 +736,7 @@
       g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
       g.save(); if (sh) g.translate((Math.sin(clock * 90) * sh), (Math.cos(clock * 70) * sh));
       backdrop();
-      const D = TEE_Z + shot.dist, Pz = D + PLANK_BACK, t = clock - shot.t0;
+      const D = TEE_Z + shot.dist, Pz = S.plankZ(shot), t = clock - shot.t0;
       furnace(real); if (ball?.burning && !ball.gone) paper(ball); particles(dt, true); atmosphere(D, real);
       if (!plate) tape(D);
       // far to near: Plank, the goal, the football (wherever it is between them), with a soft trail in flight

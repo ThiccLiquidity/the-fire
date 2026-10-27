@@ -55,7 +55,18 @@ test('shots are a pure function of (seed, n, level)', () => {
   assert.deepEqual(S.shotFor(9, 2, 7), S.shotFor(9, 2, 7));
   assert.notDeepEqual(S.shotFor(9, 2, 7), S.shotFor(9, 3, 7));
   const s = S.shotFor(123, 0, 0);
-  assert.ok(s.dist >= 12 && s.dist <= 38 && s.wind === 0 && s.offset === 0 && s.move === null);
+  assert.ok(s.dist >= 12 && s.dist <= 40 && s.wind === 0 && s.offset === 0 && s.half === 2.5, 'level 0: no wind, no offset, the full gap');
+  assert.ok(!s.move || s.move.amp < 1, 'level 0: at most a slight sway');
+  // distance and movement share the budget: a still goal is far, a swinging one is near (owner, Oct 27)
+  const lvl5 = Array.from({ length: 200 }, (_, n) => S.shotFor(5, n, 5));
+  const uOf = (x) => (x.dist - 12) / 28 + (x.move ? x.move.amp / 4 / 0.75 : 0);
+  for (const x of lvl5) assert.ok(Math.abs(uOf(x) - lvl5.map(uOf).reduce((a, b) => a + b) / lvl5.length) < 0.04, 'every level-5 shot costs the same');
+  assert.ok(lvl5.some((x) => !x.move && x.dist > 25) && lvl5.some((x) => x.move && x.dist < 16), 'long and still, or short and moving');
+  assert.ok(lvl5.every((x) => x.wind === 0 && x.half === 2.5), 'no wind or narrow gap yet');
+  // late on, both: long and moving, plus wind and a narrower gap
+  const late = Array.from({ length: 100 }, (_, n) => S.shotFor(5, n, 20));
+  assert.ok(late.every((x) => x.move && x.move.amp > 3 && x.dist > 37), 'level 20: far and swinging');
+  assert.ok(late.some((x) => x.wind !== 0) && late.some((x) => x.half < 2.5));
   const car = Array.from({ length: 40 }, (_, n) => S.shotFor(5, n, 9)).find((x) => x.move);
   assert.ok(car && car.move.amp > 0, 'level 9 has moving posts');
   // practice shots (n < 0) are their own stream

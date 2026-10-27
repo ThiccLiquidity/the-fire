@@ -72,6 +72,14 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
     ceiling with its entry (`addGame(gameId, entry, capUsd8)`), prices it with the PaperUsdTwap (`setPaperFeed`; a
     late feed falls back to the last good price), and `payRun` takes the most PAPER the player agrees to (`maxPaper`).
     Paper football: 1 PAPER, at most $0.10. Spit-Wad Sniper: the same.
+29. **Difficulty is distance traded against movement (owner, Oct 27; replaces 6 and 18).** Each level has one budget,
+    spent on the two together: a short kick at a swinging goal is as hard as a long kick at a still one (a 40 in kick
+    counts the same as a 3 in swing at 12 in, matched with the sim and a wobbly-thumb player model). Small swings
+    show up from the start at short range; the farthest kicks are still. Past level ~10 both rise together, and late
+    levels are long kicks at wide, fast swings. Wind (from level 8) and a narrower gap (from level 12) come in late,
+    small at first. Model make rates per kick: L0 61%, L4 52%, L8 51%, L10 50%, L12 45%, L14 42%, L16 35%, L18 29%,
+    L20 22%. Shortest kick 12 in, longest 40 in (owner, Oct 27): on the longest kicks Plank stands closer behind the
+    posts so he stays on the bench (`plankZ`).
 27. **Game room:** games are added to FireGames with a fixed entry each; prizes are capped at 6 per game per Series (replaced Oct 27: 6 packs, 50 cases and 20 gradings per Series across all games, any mix).
 
 ## On chain (game room added Oct 26, tests in `contracts/test/cards/Games.t.sol`)

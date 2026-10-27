@@ -204,10 +204,10 @@ test('implausible input is turned down, not judged', async () => {
   env.clock.t += 900;
   const input = flickInput(0.5, 0);
   const teleport = { ...input, samples: [...input.samples.slice(0, -1), [input.start[0], 0, input.samples.at(-1)[2]]] };
-  const r = await env.call('kick', { token: s.body.token, cap: run.cap, input: teleport, kickTick: 300 });
+  const r = await env.call('kick', { token: s.body.token, cap: run.cap, input: teleport, kickTick: Math.round((900 - 30 - 50) * 0.48) }); // honest timing (a level-0 goal may sway)
   assert.equal(r.status, 422); assert.equal(r.body.rejected, 'too fast');
   env.clock.t += 1000;
-  const slow = await env.call('kick', { token: s.body.token, cap: run.cap, input: flickInput(0.05, 0), kickTick: 300 });
+  const slow = await env.call('kick', { token: s.body.token, cap: run.cap, input: flickInput(0.05, 0), kickTick: Math.round((1900 - 30 - 50) * 0.48) });
   assert.equal(slow.status, 422); assert.match(slow.body.rejected, /no kick/);
   assert.equal((await env.store.getRun(run.runId)).status, 'playing');
 });
