@@ -92,7 +92,7 @@ function recording(run: (ctx: Ctx2D) => void): string[] {
 const img = (name: string) => ({ width: CARD_W, height: CARD_H, __name: name }) as unknown as ImgSrc
 const assets: CardAssets = { frame: img('FRAME'), art: img('ART'), wear: img('WEAR') }
 const view = (frameSet: string, grade: number | null, holo = true) =>
-  cardView({ frameSet, typeName: frameSet, grade, fire: 3, holoFrame: holo, holoPicture: holo }, 'Rabbit', 'Animals')
+  cardView({ frameSet, typeName: frameSet, grade, fire: 3, holoFrame: holo, holoPicture: holo }, 'Rabbit', 'Animals', { theme: 'Haunted Carnival', style: 'Ink Wash' })
 /** The root context's calls, without save/restore (the split adds one pair; it changes no pixel). */
 const root = (log: string[]) => log.filter((l) => l.startsWith('ctx.') && !/^ctx\.(save|restore)\(\)$/.test(l))
 
@@ -133,7 +133,7 @@ describe('drawCard = drawBase (holo) + drawPrint', () => {
     expect(r.some((l) => l.startsWith('ctx.drawImage(WEAR'))).toBe(true)
     expect(r.some((l) => l.startsWith('ctx.drawImage(oc'))).toBe(true) // the PDA 10 glow
     const texts = r.filter((l) => l.startsWith('ctx.fillText(')).map((l) => l.slice('ctx.fillText('.length).split(',')[0].toUpperCase())
-    for (const t of ['RABBIT', 'WOOD', 'ANIMALS', 'FORGED · SERIES 3', 'PDA', '10']) expect(texts).toContain(t)
+    for (const t of ['RABBIT', 'HAUNTED CARNIVAL', 'INK WASH', 'WOOD', '  ·  ANIMALS', '  ·  SERIES 3', 'PDA', '10']) expect(texts).toContain(t)
     expect(view('wood', 9).pda10).toBe(false)
     const nine = recording((ctx) => drawTiltPart(ctx, assets, layout, view('wood', 9), 'print'))
     expect(root(nine).some((l) => l.startsWith('ctx.drawImage(oc'))).toBe(false)

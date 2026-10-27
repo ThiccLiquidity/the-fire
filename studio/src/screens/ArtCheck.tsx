@@ -2,6 +2,7 @@
  *  each uploaded image, and a live preview of the card (in its frame, or the whole card for Full Art, with the print
  *  zones outlined) where the art can be zoomed and moved for this character. */
 
+import { sampleFire, withSampleLook } from '../series'
 import { useEffect, useRef, useState } from 'react'
 import { Notice, useAction } from '../components'
 import { FULL_CARD_ART_SETS, artBoxOf, frameBlob, frameSetLabel } from '../frames'
@@ -129,8 +130,9 @@ export function ArtCheck({ c, m, v, slot }: { c: Character; m: string; v: Varian
     const ctx = canvas.current?.getContext('2d')
     if (!ctx) return
     const raf = requestAnimationFrame(() => {
-      const fire = Math.max(1, getStudio().global.nextFireNumber - 1)
-      const view = cardView({ frameSet: m, typeName: frameSetLabel(m), grade: null, fire, holoFrame: v === 'holo', holoPicture: v === 'holo' }, c.name, c.category)
+      const fire = sampleFire(getStudio())
+      const view = cardView({ frameSet: m, typeName: frameSetLabel(m), grade: null, fire, holoFrame: v === 'holo', holoPicture: v === 'holo' }, c.name, c.category,
+        withSampleLook(getStudio().fires.find((f) => f.number === fire)))
       ctx.save()
       ctx.clearRect(0, 0, CARD_W, CARD_H)
       const l = withPlacement(layoutFor(m), p)

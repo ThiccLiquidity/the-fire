@@ -1,3 +1,4 @@
+import { sampleFire, withSampleLook } from '../series'
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { DropZone, Field, Notice, NumberInput, useAction } from '../components'
 import { BUILTIN_FRAMES, FRAME_SETS, FRAMELESS_SETS, HOLO_ONLY_SETS, SHOWN_FRAME_SETS, artSetOf, frameBlob, frameSetFiles, frameSetLabel, wearBlob } from '../frames'
@@ -133,17 +134,18 @@ function LayoutEditor({ m }: { m: string }) {
   const artBmp = useBitmap(artSlot ? effectiveKey(artSlot) : undefined)
 
   const canvas = useRef<HTMLCanvasElement>(null)
+  const sampleLook = useMemo(() => withSampleLook(s.fires.find((f) => f.number === sampleFire(s))), [s])
   const sampleCard: CardFace = useMemo(() => ({
-    fire: Math.max(1, s.global.nextFireNumber - 1), frameSet: m, typeName: frameSetLabel(m), characterId: char?.id ?? '',
+    fire: sampleFire(s), frameSet: m, typeName: frameSetLabel(m), characterId: char?.id ?? '',
     holoFrame: frameHolo || holoOnly, holoPicture: picHolo || holoOnly, grade,
   }), [m, char?.id, frameHolo, picHolo, holoOnly, grade, s.global.nextFireNumber])
 
   useEffect(() => {
     const ctx = canvas.current?.getContext('2d')
     if (!ctx) return
-    const raf = requestAnimationFrame(() => drawCard(ctx, { frame: frameBmp, art: artBmp, wear: wearBmp }, layout, cardView(sampleCard, char?.name ?? 'Character Name', char?.category ?? 'Category')))
+    const raf = requestAnimationFrame(() => drawCard(ctx, { frame: frameBmp, art: artBmp, wear: wearBmp }, layout, cardView(sampleCard, char?.name ?? 'Character Name', char?.category ?? 'Category', sampleLook)))
     return () => cancelAnimationFrame(raf)
-  }, [layout, frameBmp, artBmp, wearBmp, sampleCard, char?.name, char?.category, s.fonts, fontsVersion])
+  }, [layout, frameBmp, artBmp, wearBmp, sampleCard, sampleLook, char?.name, char?.category, s.fonts, fontsVersion])
 
   const rectOf = (id: BoxId): Rect => (id === 'art' ? layout.art.box : id === 'psa' ? layout.psa.box : layout.text[id].box)
   const setRect = (id: BoxId, r: Rect) => setLayout((l) => {

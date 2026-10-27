@@ -7,7 +7,7 @@ import { STATES, imagesPerCharacter, lookFileName, lookKey, lookOf, seriesGrid, 
 import { cardTitle, faceOf } from '../render'
 import { checkRecipe, holoLooksFor, type Recipe } from '../recipe'
 import { HOLO_LABEL, HOLO_TYPES, WEAR_LABEL, wearLookOf, type HoloType } from '../rules'
-import { buildGridKey, buildRates, frameSetsOf, missingFrames } from '../series'
+import { buildGridKey, buildRates, seriesLook, frameSetsOf, missingFrames } from '../series'
 import { lastAssetChange, updateFire, useStudio } from '../store'
 import { BUILD_GRID_VERSION, type FireRecord } from '../types'
 
@@ -75,7 +75,9 @@ function ReviewInner({ fire, names }: { fire: FireRecord; names: Record<string, 
   const [big, setBig] = useState<{ url: string; title: string; detail: string } | null>(null)
   const abort = useRef<AbortController | null>(null)
   const grid = useMemo(() => seriesGrid(fire.number, deal.characterIds, r), [fire.number, deal.characterIds, r])
-  const gridKey = useMemo(() => buildGridKey(r, deal.characterIds), [r, deal.characterIds])
+  const look = seriesLook(fire), lookKey = `${look.theme}|${look.style}`
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const gridKey = useMemo(() => buildGridKey(r, deal.characterIds, look), [r, deal.characterIds, lookKey])
   const assetsChanged = lastAssetChange(deal.characterIds)
   const approvalStale = !!fire.approvedAt && assetsChanged > fire.approvedAt
   const b = fire.build

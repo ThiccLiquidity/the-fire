@@ -16,8 +16,9 @@ are ports of the contract's and are tested against it. New Series start from the
 - **Materials**, common to rare: Paper, Wood, Fire, Coal, Gold, then **Full Art** (the character art over the whole
   card). Diamond is the older top material, kept for Series saved before Gold. (Frame set ids: `paper`, `wood`,
   `burning`, `charcoal`, `diamond`, `gold`, `fullart`; the ids are kept so saved data stays valid.)
-- **Printed on the image:** character name (top bar), and in the bottom panel the material, the category and
-  "Forged · Series #", with the PDA seal on the right.
+- **Printed on the image:** character name (top bar), and in the bottom panel the Series' theme (big), its art style
+  (under it, italic) and one small row "TYPE · Category · Series #", with the PDA seal on the right (owner, Oct 2026).
+  The theme and art style default to the picked suggestions' titles; shorter wording is set on the Suggestions screen.
 - **In the metadata only:** the global serial (never resets) and the print number ("#12": the 12th of that exact card,
   same character, type and holo look, in the order opened; the first one opened is #1). This lets every card with the
   same look and grade share one image.
@@ -50,7 +51,7 @@ are ports of the contract's and are tested against it. New Series start from the
   In the preview, drag the picture to move it and scroll to zoom; bright green behind it shows any gap (with a
   warning).
 - **Text positions are fixed** on every frame set: the name is centred in the top bar both ways, whatever the font or
-  size; the type, category and Series lines sit left in the bottom panel; the seal in its spot. Text is placed by the
+  size; the theme, art style and the small type · category · Series row sit left in the bottom panel; the seal in its spot. Text is placed by the
   letters actually drawn (capital height centred, a centred line centred on its ink; the seal's grade or "?" centred
   on its own shape), so changing font never shifts it. Frames & Layout sets only the look: font, size, colour,
   outline, bold, italic, capitals, shown or hidden.
@@ -226,7 +227,7 @@ no `none` image, a 0% holo type only `none`) x 12 states (ungraded, cased, PDA 1
 slabbed), WEBP only. Standard: 4 types x 4 holo looks + Gold + Full Art = 18 looks x 12 = **216 images** per
 character; Special 3-card all-holo: (Fire 3 + Coal 3 + Gold 1) x 12 = 84. Every one is built before upload, since
 cards are cased and graded on-chain later. Each Series
-has its own "Forged · Series #" line, so images are never shared across Series.
+has its own "Series #" (and its own theme and art style), so images are never shared across Series.
 
 **Tilt layers.** The site (`web/art/factory/forge/holo.js`) redraws holo cards with a moving holo from two layers per
 character x type, drawn plain → live holo → print. The images folder holds them next to the images (and `manifest.json`

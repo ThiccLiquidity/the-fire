@@ -21,6 +21,8 @@ export interface AssetBundle {
   placement?: Record<string, Partial<Record<string, Partial<Record<Variant, Placement>>>>>
   names: Record<string, string>
   categories: Record<string, string | undefined>
+  /** looks[series]: the theme and art style printed on that Series' cards (series.ts seriesLook). */
+  looks?: Record<number, { theme: string; style: string }>
   /** Uploaded fonts (registered in the worker's FontFaceSet; the main thread already has them). */
   fonts: { family: string; data: ArrayBuffer; weight?: string }[]
 }
@@ -117,7 +119,7 @@ export class CardRenderer {
   async render(face: CardFace, format: OutputFormat, part?: TiltPart): Promise<Blob> {
     // the plain layer has no wear: don't decode a wear layer for it
     const assets = await this.assetsFor(part === 'plain' ? { ...face, grade: null } : face)
-    const view = cardView(face, this.bundle.names[face.characterId] ?? face.characterId, this.bundle.categories[face.characterId])
+    const view = cardView(face, this.bundle.names[face.characterId] ?? face.characterId, this.bundle.categories[face.characterId], this.bundle.looks?.[face.fire])
     const base = this.bundle.layouts[face.frameSet]
     if (!base) throw new Error(`No layout for frame set ${face.frameSet}`)
     const layout = withPlacement(base, this.placementOf(face.characterId, artSetOf(face.frameSet), 'normal'))

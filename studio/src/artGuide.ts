@@ -37,17 +37,17 @@ export function fitReport(w: number, h: number, box: { w: number; h: number } = 
 
 export interface Zone { rect: Rect; label: string }
 
-/** Where the card's print goes on a Full Art card: the name at the top, the type, category, Series and PDA seal at
- *  the bottom. */
+/** Where the card's print goes on a Full Art card: the name at the top; the theme, art style, the small type ·
+ *  category · Series row and the PDA seal at the bottom. */
 export function textZones(layout: Layout): Zone[] {
   const pad = 14
   const grow = (r: Rect): Rect => ({ x: r.x - pad, y: r.y - pad, w: r.w + 2 * pad, h: r.h + 2 * pad })
-  const bottom = [layout.text.material.box, layout.text.category.box, layout.text.forged.box, layout.psa.box]
+  const bottom = [layout.text.theme.box, layout.text.style.box, layout.text.material.box, layout.text.category.box, layout.text.forged.box, layout.psa.box]
   const x0 = Math.min(...bottom.map((r) => r.x)), y0 = Math.min(...bottom.map((r) => r.y))
   const x1 = Math.max(...bottom.map((r) => r.x + r.w)), y1 = Math.max(...bottom.map((r) => r.y + r.h))
   return [
     { rect: grow(layout.text.name.box), label: 'NAME PRINTS HERE' },
-    { rect: grow({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }), label: 'TYPE · CATEGORY · SERIES · PDA SEAL' },
+    { rect: grow({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }), label: 'THEME · ART STYLE · TYPE · SERIES · PDA SEAL' },
   ]
 }
 

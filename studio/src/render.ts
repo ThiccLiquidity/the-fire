@@ -49,9 +49,12 @@ export function faceOf(card: DealtCard, r: Recipe): CardFace {
 export interface CardView {
   frameSet: string
   name: string
+  /** The Series' theme and art style, printed big on the bottom panel (series.ts seriesLook). */
+  themeLabel: string
+  styleLabel: string
   materialLabel: string
   categoryLabel: string
-  /** "Forged · Series 7": the Series the card came from. */
+  /** "Series 7": the Series the card came from (the small row, after the type and category). */
   forgedLabel: string
   /** '?' until the grade is paid for and revealed, then the number. */
   psaValue: string
@@ -70,15 +73,17 @@ export interface CardView {
 
 export function cardView(
   face: Pick<CardFace, 'frameSet' | 'typeName' | 'grade' | 'fire'> & Partial<Pick<CardFace, 'cased' | 'holoFrame' | 'holoPicture'>>,
-  characterName: string, category?: string,
+  characterName: string, category?: string, look?: { theme?: string; style?: string },
 ): CardView {
   const holo = face.holoFrame && face.holoPicture ? 'Full Holo' : face.holoFrame ? 'Holo Frame' : face.holoPicture ? 'Holo Picture' : ''
   return {
     frameSet: face.frameSet,
     name: characterName,
+    themeLabel: look?.theme ?? '',
+    styleLabel: look?.style ?? '',
     materialLabel: face.typeName,
     categoryLabel: category ?? '',
-    forgedLabel: `Forged · Series ${face.fire > 0 ? face.fire : 1}`,
+    forgedLabel: `Series ${face.fire > 0 ? face.fire : 1}`,
     psaValue: face.grade == null ? '?' : String(face.grade),
     wear: wearLookOf(face.grade),
     pda10: face.grade === 10,
@@ -172,6 +177,44 @@ function drawText(ctx: Ctx2D, raw: string, tb: TextBox, ink = false): void {
   }
   ctx.fillStyle = s.color
   ctx.fillText(text, x, y)
+  ctx.restore()
+}
+
+/** The small row: type · category · Series #, one after the other on the first box's line, each in its own look.
+ *  Shown, non-empty pieces only; all shrink together (not below their min size) to fit the row. */
+function drawRow(ctx: Ctx2D, parts: [string, TextBox][]): void {
+  const shown = parts.filter(([t, b]) => b.visible && t)
+  if (!shown.length) return
+  const row = shown[0][1].box
+  const items = shown.map(([raw, b], i) => ({ text: (i ? '  ·  ' : '') + (b.style.uppercase ? raw.toUpperCase() : raw), s: b.style }))
+  const widthAt = (k: number) => items.reduce((w, it) => {
+    ctx.font = fontString(it.s, Math.max(it.s.minSize, Math.min(it.s.size, row.h) * k))
+    return w + ctx.measureText(it.text).width
+  }, 0)
+  const pad = Math.max(...items.map((it) => it.s.outlineWidth)) * 2
+  let k = 1
+  for (let i = 0; i < 40 && widthAt(k) + pad > row.w && k > 0.3; i++) k *= 0.97
+  const sizeOf = (s: TextStyle) => Math.max(s.minSize, Math.min(s.size, row.h) * k)
+  ctx.save()
+  ctx.textBaseline = 'alphabetic'
+  ctx.textAlign = 'left'
+  ctx.font = fontString(items[0].s, sizeOf(items[0].s))
+  const cap = ctx.measureText('H').actualBoundingBoxAscent || sizeOf(items[0].s) * 0.7
+  const y = row.y + row.h / 2 + cap / 2
+  let x = row.x + pad / 2
+  for (const it of items) {
+    ctx.font = fontString(it.s, sizeOf(it.s))
+    if (it.s.outlineWidth > 0) {
+      ctx.lineJoin = 'round'
+      ctx.miterLimit = 2
+      ctx.lineWidth = it.s.outlineWidth * 2
+      ctx.strokeStyle = it.s.outlineColor
+      ctx.strokeText(it.text, x, y)
+    }
+    ctx.fillStyle = it.s.color
+    ctx.fillText(it.text, x, y)
+    x += ctx.measureText(it.text).width
+  }
   ctx.restore()
 }
 
@@ -437,9 +480,9 @@ function printLayers(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardV
   const worn = view.wear === 'L5' || view.wear === 'L6'
   const tb = (b: TextBox): TextBox => (worn && b.style.outlineWidth === 0 ? { ...b, style: { ...b.style, outlineWidth: 6 } } : b)
   drawText(ctx, view.name, tb(layout.text.name))
-  drawText(ctx, view.materialLabel, tb(layout.text.material))
-  drawText(ctx, view.categoryLabel, tb(layout.text.category))
-  drawText(ctx, view.forgedLabel, tb(layout.text.forged))
+  drawText(ctx, view.themeLabel, tb(layout.text.theme))
+  drawText(ctx, view.styleLabel, tb(layout.text.style))
+  drawRow(ctx, [[view.materialLabel, tb(layout.text.material)], [view.categoryLabel, tb(layout.text.category)], [view.forgedLabel, tb(layout.text.forged)]])
   drawPsa(ctx, view.psaValue, layout.psa, view.wear === 'clean' ? null : GRADE_COLOR[view.wear])
   // PDA wear, the same layer on every card type: over the art, the frame and the print alike
   if (assets.wear) ctx.drawImage(assets.wear, 0, 0, CARD_W, CARD_H)

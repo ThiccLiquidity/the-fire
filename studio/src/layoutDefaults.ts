@@ -15,7 +15,7 @@ export const BUILTIN_FONTS: { label: string; css: string }[] = [
 
 /** Layouts saved before the built-in frames existed were made for placeholder frames; they are replaced by the
  *  defaults below. Bump when the default layout changes in a way old saved layouts must not keep. */
-export const LAYOUT_VERSION = 4
+export const LAYOUT_VERSION = 5
 
 /** Text colours per frame: Paper, Wood and Diamond have light panels (dark ink); Burning and Coal have dark panels
  *  (light ink). `window` fills the art window behind keyed art. */
@@ -47,6 +47,17 @@ function tb(box: Rect, over: Partial<TextStyle>): TextBox {
   return { box, style: style(over), visible: true }
 }
 
+/** The small row under the theme and art style: type, category and Series # side by side (render.ts drawRow
+ *  places them one after the other; each box spans the row so any one of them can be the widest). */
+function smallRow(info: Rect, w: number, c: Partial<TextStyle>): Pick<Layout['text'], 'material' | 'category' | 'forged'> {
+  const box = { x: info.x, y: info.y + 188, w, h: 50 }
+  return {
+    material: tb({ ...box }, { ...c, size: 40, minSize: 18, uppercase: true }),
+    category: tb({ ...box }, { ...c, size: 40, minSize: 18, bold: false }),
+    forged: tb({ ...box }, { ...c, size: 40, minSize: 18, bold: false }),
+  }
+}
+
 /** The default layout of a frame set (layouts are per frame set; every card type using the set shares it). */
 export function defaultLayout(material: string): Layout {
   const ink = INK[material] ?? NEUTRAL_INK
@@ -66,9 +77,10 @@ export function defaultLayout(material: string): Layout {
     art: { box: artBoxOf(material), fit: 'cover', scale: 1, offsetX: 0, offsetY: 0, background: ink.window },
     text: {
       name: tb({ ...g.nameBar }, { ...c, size: 104, align: 'center' }),
-      material: tb({ x: info.x, y: info.y + 4, w: textW, h: 110 }, { ...c, size: 96, uppercase: true }),
-      category: tb({ x: info.x, y: info.y + 118, w: textW, h: 66 }, { ...c, size: 58, bold: false }),
-      forged: tb({ x: info.x, y: info.y + 186, w: textW, h: 58 }, { ...c, size: 48, bold: false, italic: true }),
+      // the Series' theme big, its art style under it, then one small row: type · category · Series #
+      theme: tb({ x: info.x, y: info.y + 4, w: textW, h: 100 }, { ...c, size: 84 }),
+      style: tb({ x: info.x, y: info.y + 110, w: textW, h: 70 }, { ...c, size: 58, bold: false, italic: true }),
+      ...smallRow(info, textW, c),
     },
     psa,
     updatedAt: 0,
@@ -93,6 +105,20 @@ export function normalizeLayout(material: string, stored: Partial<Layout> | unde
     t.forged = { ...d.text.forged, style: { ...d.text.forged.style, ...(font ? { font, color: t.category?.style.color ?? d.text.forged.style.color } : {}) } }
     stored = { ...stored, text: t }
   }
+  // v4 -> v5: the theme and art style take the big spots; type, category and Series # shrink to one small row.
+  // Fonts and colours stay (the new lines take the old type and category looks)
+  if ((stored.version ?? 0) < 5 && stored.text) {
+    const t = { ...stored.text }
+    const look = (f: 'theme' | 'style', from?: TextBox) => ({ ...d.text[f], style: { ...d.text[f].style,
+      ...(from ? { font: from.style.font, color: from.style.color, outlineColor: from.style.outlineColor, outlineWidth: from.style.outlineWidth } : {}) } })
+    t.theme = look('theme', t.material)
+    t.style = look('style', t.category)
+    for (const f of ['material', 'category', 'forged'] as const) {
+      const st = t[f]
+      if (st) t[f] = { ...st, box: { ...d.text[f].box }, style: { ...st.style, size: d.text[f].style.size, minSize: d.text[f].style.minSize, italic: d.text[f].style.italic } }
+    }
+    stored = { ...stored, text: t }
+  }
   return lockPositions({
     ...d,
     ...stored,
@@ -109,7 +135,7 @@ export function normalizeLayout(material: string, stored: Partial<Layout> | unde
 }
 
 /** Where everything prints is fixed, the same on every frame set: the name centred in the top bar (both ways, any
- *  font or size), the type, category and Series lines left in the bottom panel, the seal in its spot, and the art
+ *  font or size), the theme, art style and the small type · category · Series row left in the bottom panel, the seal in its spot, and the art
  *  filling its window (a character's own framing is per image, Library). Only the look (font, size, colour, outline,
  *  bold, italic, capitals, shown or hidden) is set per frame set. */
 export function lockPositions(l: Layout): Layout {
@@ -120,7 +146,10 @@ export function lockPositions(l: Layout): Layout {
     ...l,
     layering: 'art-behind',
     art: { ...l.art, box: artBoxOf(l.material), fit: 'cover', scale: 1, offsetX: 0, offsetY: 0 },
-    text: { name: fix('name', 'center'), material: fix('material', 'left'), category: fix('category', 'left'), forged: fix('forged', 'left') },
+    text: {
+      name: fix('name', 'center'), theme: fix('theme', 'left'), style: fix('style', 'left'),
+      material: fix('material', 'left'), category: fix('category', 'left'), forged: fix('forged', 'left'),
+    },
     psa: { ...l.psa, box: { ...d.psa.box }, style: { ...l.psa.style, align: 'center' } },
   }
 }

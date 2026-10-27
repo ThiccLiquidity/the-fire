@@ -7,6 +7,7 @@ import { FRAME_SETS, artSetOf, frameBlob, frameId, wearBlob } from './frames'
 import type { CardFace } from './render'
 import { CardRenderer, type AssetBundle, type RenderJob, type VariantBlobs } from './renderCore'
 import { WEAR_LEVELS } from './rules'
+import { seriesLook } from './series'
 import { effectiveKey, getStudio, layoutFor } from './store'
 import type { OutputFormat } from './types'
 import type { WorkerIn, WorkerOut } from './build.worker'
@@ -58,7 +59,8 @@ export async function collectBundle(characterIds: string[], withWear = false, fr
   // bundled fonts the layouts use (the page has all of them; workers only get what they need)
   const used = sets.flatMap((m) => [...Object.values(layouts[m].text).map((t) => t.style.font), layouts[m].psa.style.font])
   fonts.push(...(await bundledFontData(used)))
-  return { layouts, frames, wear, art, placement, names, categories, fonts }
+  const looks = Object.fromEntries(s.fires.map((f) => [f.number, seriesLook(f)]))
+  return { layouts, frames, wear, art, placement, names, categories, looks, fonts }
 }
 
 const yieldToUi = () => new Promise<void>((r) => setTimeout(r, 0))

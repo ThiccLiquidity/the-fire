@@ -1,3 +1,4 @@
+import { SAMPLE_LOOK } from '../series'
 import { useMemo, useState } from 'react'
 import { Field, NumberInput } from '../components'
 import { BUNDLED_FONTS, FONT_GROUPS, bundledFontCss } from '../fonts'
@@ -50,12 +51,12 @@ export function FontPicker({ value, sample, onPick }: { value: string; sample: s
 
 type Target = 'all' | (typeof TEXT_FIELDS)[number] | 'psa'
 const TARGETS: { id: Target; label: string }[] = [
-  { id: 'all', label: 'All lines' }, { id: 'name', label: 'Name' }, { id: 'material', label: 'Type' },
-  { id: 'category', label: 'Category' }, { id: 'forged', label: 'Series line' }, { id: 'psa', label: 'PDA seal' },
+  { id: 'all', label: 'All lines' }, { id: 'name', label: 'Name' }, { id: 'theme', label: 'Theme' }, { id: 'style', label: 'Art style' },
+  { id: 'material', label: 'Type' }, { id: 'category', label: 'Category' }, { id: 'forged', label: 'Series #' }, { id: 'psa', label: 'PDA seal' },
 ]
 
-/** The text style of one frame set: every line at once ("All lines"), or one line at a time (name, type, category,
- *  Series line, the seal's number): font, colour, outline and size. Positions are fixed (lockPositions). */
+/** The text style of one frame set: every line at once ("All lines"), or one line at a time (name, theme, art style,
+ *  type, category, Series #, the seal's number): font, colour, outline and size. Positions are fixed (lockPositions). */
 export function CardTextStyle({ m, layout, setLayout, sample, onFontToAll }: {
   m: string
   layout: Layout
@@ -78,7 +79,8 @@ export function CardTextStyle({ m, layout, setLayout, sample, onFontToAll }: {
     }
   })
   const sampleFor: Record<Target, string> = {
-    all: sample, name: sample, material: frameSetLabel(m).toUpperCase(), category: 'Category', forged: 'Forged · Series 1', psa: '7',
+    all: sample, name: sample, theme: SAMPLE_LOOK.theme, style: SAMPLE_LOOK.style, material: frameSetLabel(m).toUpperCase(), category: 'Category',
+    forged: 'Series 1', psa: '7',
   }
   return (
     <div className="text-style" data-testid="card-text-style">

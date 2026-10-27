@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Notice, useAction } from '../components'
+import { seriesLook } from '../series'
 import { updateFire } from '../store'
 import type { FireRecord } from '../types'
 import { checkDraw, commandOr, kindsOf, pickCommand, publishCommand, roundTime, shortAddr, verifyCommand, type DrawEntry, type DrawFile, type DrawKind } from '../suggestDraw'
@@ -49,6 +50,7 @@ export function Suggestions({ fire }: { fire: FireRecord }) {
   const allIds = [...lookIds, ...charIds]
   const ready = lookIds.length === 2 && charIds.length === need && waves.every((w) => !w.problems.length)
   const chainId = (look ?? chars)?.d.chainId ?? 46630
+  const printed = seriesLook({ suggest: fire.suggest })
 
   /** A command to copy, or the reason there isn't one (an unsafe file name or a number that isn't whole). */
   const command = (key: string, testId: string, label: string, make: () => string) => {
@@ -122,6 +124,15 @@ export function Suggestions({ fire }: { fire: FireRecord }) {
             <dt>Characters</dt><dd>{chars ? (charIds.length ? charIds.map((id) => `“${entry(chars, 'character', id)?.title ?? '#' + id}”`).join(', ') : <span className="muted">not picked</span>)
               : <span className="muted">After the characters wave (load its draw file)</span>}</dd>
           </dl>
+
+          <h4>Printed on the cards</h4>
+          <p className="muted small">Big on the bottom panel of every card in this Series. Blank = the picked title. Keep it short.</p>
+          <div className="row wrap">
+            <label>Theme <input value={fire.themeName ?? ''} placeholder={printed.theme || 'Theme'} maxLength={40} disabled={busy}
+              onChange={(e) => void updateFire(fire.number, { themeName: e.target.value })} data-testid="sg-theme-name" /></label>
+            <label>Art style <input value={fire.styleName ?? ''} placeholder={printed.style || 'Art style'} maxLength={40} disabled={busy}
+              onChange={(e) => void updateFire(fire.number, { styleName: e.target.value })} data-testid="sg-style-name" /></label>
+          </div>
 
           <h4>3 · Announce on the results page</h4>
           <p className="muted small">Run in PowerShell, then commit and push the results file it writes. Nothing on chain yet.</p>

@@ -5,7 +5,7 @@ import { hasCategory, hasValidName } from './categories'
 import { artSetOf, frameSetLabel, missingFramesFor } from './frames'
 import { sha256Hex } from './prng'
 import { holoLooksFor, parsePercent, percentTotal, percentTotalProblem, percentsToWeights, recipeGridKey, simplifyWeights, weightsToPercents, type Recipe } from './recipe'
-import type { Character, Variant } from './types'
+import type { Character, FireRecord, Variant } from './types'
 
 /** The pictures a recipe needs, by the set they're uploaded under: one normal picture per set its types use (Gold's
  *  is the Wood one). Every holo look is drawn over that picture (holoFx.ts), so no holo pictures. */
@@ -79,10 +79,11 @@ export function characterOddsProblems(f: CharacterOddsFields, nameOf: (k: number
   return out
 }
 
-/** Identifies what a Series' image grid contains (types, slugs, names, frame sets, holo looks, characters in order):
- *  a build made for another grid is stale. */
-export function buildGridKey(r: Recipe, characterIds: readonly string[]): string {
-  return sha256Hex(`${recipeGridKey(r)}|${characterIds.join(',')}`).slice(0, 16)
+/** Identifies what a Series' image grid contains (types, slugs, names, frame sets, holo looks, characters in order,
+ *  and the theme and art style printed on it): a build made for another grid is stale. */
+export function buildGridKey(r: Recipe, characterIds: readonly string[], look?: { theme: string; style: string }): string {
+  const printed = look && (look.theme || look.style) ? `|${look.theme}|${look.style}` : ''
+  return sha256Hex(`${recipeGridKey(r)}|${characterIds.join(',')}${printed}`).slice(0, 16)
 }
 
 /** Average size and render time per image from earlier builds (any Series), for the estimate before a build. */
@@ -95,4 +96,29 @@ export function buildRates(fires: { build?: { count: number; bytes?: number; ms?
     if (b && b.count > 0 && b.bytes != null && b.ms != null) { n += b.count; bytes += b.bytes; ms += b.ms }
   }
   return n ? { bytes: bytes / n, ms: ms / n, measured: true } : { bytes: 450 * 1024, ms: 150, measured: false }
+}
+
+/** The theme and art style a Series prints big on its cards: the owner's wording when set, else the picked
+ *  suggestions' titles (Suggestions screen). Empty when neither is there yet. */
+export function seriesLook(f: Pick<FireRecord, 'themeName' | 'styleName' | 'suggest'>): { theme: string; style: string } {
+  const titleOf = (kind: 'theme' | 'style', id?: number) => {
+    const d = f.suggest?.look?.draw as { shortlists?: Partial<Record<string, { id: number; title: string }[]>> } | undefined
+    return id == null ? '' : d?.shortlists?.[kind]?.find((e) => e.id === id)?.title ?? ''
+  }
+  return {
+    theme: (f.themeName ?? '').trim() || titleOf('theme', f.suggest?.theme),
+    style: (f.styleName ?? '').trim() || titleOf('style', f.suggest?.style),
+  }
+}
+
+/** What the studio's previews print when a Series has no theme or art style yet. */
+export const SAMPLE_LOOK = { theme: 'Series Theme', style: 'Art Style' }
+
+/** The Series the studio's previews show: the newest one. */
+export const sampleFire = (s: { global: { nextFireNumber: number } }) => Math.max(1, s.global.nextFireNumber - 1)
+
+/** A Series' look for a preview, with the sample wording standing in for whatever isn't set yet. */
+export function withSampleLook(f: FireRecord | undefined): { theme: string; style: string } {
+  const l = f ? seriesLook(f) : { theme: '', style: '' }
+  return { theme: l.theme || SAMPLE_LOOK.theme, style: l.style || SAMPLE_LOOK.style }
 }

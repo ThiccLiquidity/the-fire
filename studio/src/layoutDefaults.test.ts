@@ -26,3 +26,25 @@ describe('text positions are fixed on every frame set', () => {
     }
   })
 })
+
+describe('v4 -> v5: theme and art style big, type · category · Series # small', () => {
+  it('a v4 layout gets the theme and art style lines in its own font and colours, and the small row', () => {
+    const d = defaultLayout('wood')
+    const { theme: _t, style: _s, ...oldText } = d.text
+    const v4 = {
+      ...d, version: 4,
+      text: {
+        ...oldText,
+        material: { ...d.text.material, style: { ...d.text.material.style, font: 'Anton', color: '#112233', size: 96 } },
+        category: { ...d.text.category, style: { ...d.text.category.style, font: 'Bangers', color: '#445566', size: 58 } },
+      },
+    }
+    const l = normalizeLayout('wood', v4 as never)
+    expect(l.version).toBe(5)
+    expect(l.text.theme.style).toMatchObject({ font: 'Anton', color: '#112233', size: d.text.theme.style.size })
+    expect(l.text.style.style).toMatchObject({ font: 'Bangers', color: '#445566', size: d.text.style.style.size })
+    expect(l.text.material.style).toMatchObject({ font: 'Anton', size: 40 })
+    expect(l.text.category.box).toEqual(d.text.material.box)
+    expect(l.text.theme.style.size).toBeGreaterThan(l.text.material.style.size * 2 - 1)
+  })
+})

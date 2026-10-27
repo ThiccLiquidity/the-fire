@@ -18,7 +18,7 @@ import { buildManifest } from '../manifest'
 import { categoryProblem, nameProblem, normalizeCategory, normalizeName } from '../categories'
 import { checkRecipe, recipeJson } from '../recipe'
 import { saleErrors, saleJson, saleOf, salePacks } from '../sale'
-import { artNeeds, buildGridKey, characterOddsProblems, characterWeightsOf, frameSetsOf, missingArt, missingFrames } from '../series'
+import { artNeeds, buildGridKey, seriesLook, characterOddsProblems, characterWeightsOf, frameSetsOf, missingArt, missingFrames } from '../series'
 import { lastAssetChange, updateFire, useStudio } from '../store'
 import { BUILD_GRID_VERSION, fireStatus, type FireRecord, type UploadState } from '../types'
 import { refreshDevFlags, useDevFlags } from '../devFlags'
@@ -56,7 +56,9 @@ export function Export({ fire }: { fire: FireRecord }) {
   const recipeProblems = useMemo(() => checkRecipe(r), [r])
   const frames = useMemo(() => missingFrames(r), [r])
   const gridLen = useMemo(() => seriesGrid(fire.number, ids, r).length, [fire.number, ids, r])
-  const gridKey = useMemo(() => buildGridKey(r, ids), [r, ids])
+  const look = seriesLook(fire), lookKey = `${look.theme}|${look.style}`
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const gridKey = useMemo(() => buildGridKey(r, ids, look), [r, ids, lookKey])
   const tiltLen = ids.length * tiltPartsPerCharacter(r)
   const changed = lastAssetChange(ids)
   const sale = useMemo(() => saleOf(fire), [fire])
@@ -77,7 +79,7 @@ export function Export({ fire }: { fire: FireRecord }) {
   const b = fire.build
   const buildDetail = !b ? 'Build all images (Build & Review).'
     : b.grid !== BUILD_GRID_VERSION || b.format !== 'webp' ? 'This build is from an older version of the studio: rebuild.'
-    : b.gridKey !== gridKey ? 'The recipe or characters changed since the build: rebuild.'
+    : b.gridKey !== gridKey ? 'The recipe, characters, theme or art style changed since the build: rebuild.'
     : b.count !== gridLen ? `Only ${b.count.toLocaleString()} of ${gridLen.toLocaleString()} images are built: rebuild.`
     : changed > b.builtAt ? 'Art, layouts or fonts changed after the build: rebuild.' : undefined
   const checks: Check[] = [

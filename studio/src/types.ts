@@ -78,9 +78,11 @@ export interface TextStyle {
 
 /** What's printed on the card image. Serial, print number and Series # are per card, so they live in the metadata (and the
  *  live version), not on the shared image. */
-export type TextField = 'name' | 'material' | 'category' | 'forged'
-export const TEXT_FIELDS: TextField[] = ['name', 'material', 'category', 'forged']
-export const TEXT_FIELD_LABEL: Record<TextField, string> = { name: 'Name', material: 'Material', category: 'Category', forged: 'Forged (Series #)' }
+export type TextField = 'name' | 'theme' | 'style' | 'material' | 'category' | 'forged'
+export const TEXT_FIELDS: TextField[] = ['name', 'theme', 'style', 'material', 'category', 'forged']
+export const TEXT_FIELD_LABEL: Record<TextField, string> = {
+  name: 'Name', theme: 'Theme', style: 'Art style', material: 'Type', category: 'Category', forged: 'Series #',
+}
 
 export interface TextBox { box: Rect; style: TextStyle; visible: boolean }
 export interface PsaBox extends TextBox { fill: string; border: string; borderWidth: number; radius: number }
@@ -204,6 +206,10 @@ export interface FireRecord {
   tiltUpload?: { cid: string; dir: string; at: number; buildAt?: number; mock?: boolean }
   /** The suggestion picks for this Series (Suggestions screen): the draw files loaded and what was chosen from them. */
   suggest?: { look?: { file: string; draw: unknown }; character?: { file: string; draw: unknown }; theme?: number; style?: number; characters?: number[] }
+  /** The theme and art style printed big on the bottom panel. Missing = the picked suggestions' titles (series.ts
+   *  seriesLook). */
+  themeName?: string
+  styleName?: string
   /** The pack art folder (every Series' fire<N>.webp, Export > Pack art) as last uploaded from this Series' screen. */
   packArtUpload?: { cid: string; dir: string; at: number; series: number[]; mock?: boolean }
   createdAt: number
