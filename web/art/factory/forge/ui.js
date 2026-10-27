@@ -65,7 +65,7 @@
     <button class="station tool" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
     <button class="station tool" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small data-price="psa">from ${Wear.usd(Store.PRICES.CASE_USD)}</small></button>
     <button class="station tool" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></button>
-    <button class="station tool" type="button" data-st="games" style="--c: var(--gold)">${svg('game')}<b>Game room</b><small>Paper Football</small></button>
+    <button class="station tool" type="button" data-st="games" style="--c: var(--gold)">${svg('game')}<b>Game room</b><small>Fold and Flick · Spit-Wad</small></button>
   </section>
   <footer class="strip" aria-label="What's in a pack">
     <img class="packart" src="ui/omni-pack.webp" alt="Series 7 pack">

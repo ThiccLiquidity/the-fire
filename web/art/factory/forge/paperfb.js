@@ -44,7 +44,7 @@
     const A = { bench: img(art.bench), plank: img(art.plank), plankHit: img(art.plankHit), plankWow: img(art.plankSurprised), plankBlink: img(art.plankBlink), backdrop: img(art.backdrop), pack: img(art.pack), card: img(art.card), cardBack: img(art.cardBack), coinP: img(art.paperCoin), coinK: img(art.plankCoin) };
     const loaded = () => Object.values(A).map((i) => (i?.complete && i.naturalWidth ? 1 : 0)).join('');
     const cv = document.createElement('canvas'); cv.className = 'pf-canvas'; cv.setAttribute('role', 'img');
-    cv.setAttribute('aria-label', 'Paper football: flick the folded paper through the pencil uprights');
+    cv.setAttribute('aria-label', 'Fold and Flick: flick the folded paper through the pencil uprights');
     cv.style.touchAction = 'none';
     host.append(cv);
     const g = cv.getContext('2d');

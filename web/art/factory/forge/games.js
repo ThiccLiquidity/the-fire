@@ -36,7 +36,7 @@
       onEvent(type, d) {
         if (mode === 'paid') { onKick?.(type, d); return; } // a competitive run: the run counts, not the free-play stats
         if (type === 'kick') st.kicks++;
-        if (type === 'make') { st.makes++; if (d.streak > st.best) st.best = d.streak; window.Fun?.badge?.('fg', 1); if (d.streak >= 3) window.Fun?.badge?.('fgBest', st.best, true); }
+        if (type === 'make') { st.makes++; if (d.streak > st.best) st.best = d.streak; if (id === 'paperfb') { window.Fun?.badge?.('fg', 1); if (d.streak >= 3) window.Fun?.badge?.('fgBest', st.best, true); } }
         if (type === 'kick' || type === 'make') saveStats(id, st);
       },
     });
@@ -70,7 +70,7 @@
             h('div', { class: 'gr-art', style: `background-image:url(${g.art})`, 'aria-hidden': 'true' }),
             h('div', { class: 'gr-info' },
               h('h3', { text: g.name }), h('p', { class: 'muted small', text: g.blurb }),
-              st.kicks ? h('p', { class: 'small gr-stats' }, 'Best streak ', h('b', { text: String(st.best) }), ' · ', h('b', { text: String(st.makes) }), ' makes') : null,
+              st.kicks ? h('p', { class: 'small gr-stats' }, `${g.bestLabel || 'Best streak'} `, h('b', { text: String(st.best) }), ' · ', h('b', { text: String(st.makes) }), ` ${g.makesLabel || 'makes'}`) : null,
               h('div', { class: 'gr-acts' },
                 h('button', { type: 'button', class: 'btn primary', 'data-key': `game-free-${g.id}`, onclick: () => start(g, 'free') }, 'Free play'),
                 h('button', { type: 'button', class: 'btn', 'data-key': `game-paid-${g.id}`, disabled: !paid, onclick: () => start(g, 'paid') }, paid ? `Competitive · ${g.entry}` : 'Competitive · soon'),
@@ -113,9 +113,10 @@
   const Comp = {
     /** live: whether FireGames is open for paid runs (and the Series it counts toward); the demo: always */
     async refresh() {
-      if (!LIVE) { Games.PAID = list.map((g) => g.gameId); return; }
+      const comp = list.filter((g) => g.comp !== false); // games whose competitive runs are built (Spit-Wad's come with its server judging)
+      if (!LIVE) { Games.PAID = comp.map((g) => g.gameId); return; }
       const open = [];
-      for (const g of list) { try { if ((await window.Live.gameStatus(g.gameId)).open) open.push(g.gameId); } catch { /* not deployed yet */ } }
+      for (const g of comp) { try { if ((await window.Live.gameStatus(g.gameId)).open) open.push(g.gameId); } catch { /* not deployed yet */ } }
       Games.PAID = open;
     },
     /** the start screen: the rules, the 18+ check, then pay and play (or pick up a run already paid for) */
@@ -294,10 +295,19 @@
   // ---------- paper football (paperfb.js): game 1 on chain
   const ART = { bench: 'ui/paperfb/bench.webp', plank: 'ui/paperfb/plank.webp', plankHit: 'ui/paperfb/plank-hit.webp', plankSurprised: 'ui/paperfb/plank-surprised.webp', plankBlink: 'ui/paperfb/plank-blink.webp', backdrop: '../build3/plate-1280.webp', pack: 'ui/omni-pack.webp', cardBack: 'ui/card-back.webp', paperCoin: 'ui/brand/paper-coin-64.webp', plankCoin: 'ui/brand/plank-coin-64.webp' };
   Games.add({
-    id: 'paperfb', gameId: 1, name: 'Paper Football', entry: '1 PAPER', capUsd: 0.1, art: ART.bench, // FireGames: 1 PAPER, at most $0.10
+    id: 'paperfb', gameId: 1, name: 'Fold and Flick', entry: '1 PAPER', capUsd: 0.1, art: ART.bench, // FireGames: 1 PAPER, at most $0.10
     blurb: 'Flick the folded paper through the pencils. Every make moves the goal. Clear Plank and find the furnace.',
     // what each place wins: kept the same as ops/games/prizes.json (the owner sets both before a Series)
     places: [{ packs: 2, grades: 4, cases: 10 }, { packs: 1, grades: 3, cases: 8 }, { packs: 0, grades: 3, cases: 7 }],
     mount: (host, opts) => window.PaperFootball?.mount(host, { art: ART, onEvent: opts.onEvent, waitForShot: opts.waitForShot, mute: () => !(window.Sound?.on ?? true), haptic: (p) => window.Fun?.haptics?.on !== false && navigator.vibrate?.(p) }),
+  });
+
+  // ---------- Spit-Wad Sniper (spitwad.js): game 2. Free play now; competitive runs come with the server's round judging.
+  Games.add({
+    id: 'spitwad', gameId: 2, name: 'Spit-Wad Sniper', entry: '1 PAPER', capUsd: 0.1, art: 'ui/spitwad/hall.webp', comp: false,
+    blurb: 'Plank pops out from all over the factory floor. Hold to aim, breathe, let go to spit. Hit him before he ducks.',
+    bestLabel: 'Best score', makesLabel: 'hits',
+    places: [{ packs: 2, grades: 4, cases: 10 }, { packs: 1, grades: 3, cases: 8 }, { packs: 0, grades: 3, cases: 7 }],
+    mount: (host, opts) => window.SpitWad?.mount(host, { onEvent: opts.onEvent, mute: () => !(window.Sound?.on ?? true), haptic: (p) => window.Fun?.haptics?.on !== false && navigator.vibrate?.(p) }),
   });
 })();

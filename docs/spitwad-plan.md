@@ -407,6 +407,26 @@ https://claude.ai/artifact/MQNgfGmWQYKVjd7dqgdoD1). The owner played both and ap
 5. **Fit the phone:** every hiding spot sits inside the view of a phone-width screen (the first grey box had the near
    spots off its sides).
 
+## Build v1 (Oct 27, 2026): free play in the Game room
+
+- **Art pipeline:** `web/art/spitwad-src/cut_layers.py` cuts the occluders out of `hall-master.png` (GrabCut, dark-pixel
+  masks for the rail/flywheel/cubbies, straight rects for the truss/pipe/chest) and cleans the Plank faces (ChatGPT
+  renders on black, all the same body as `plank-master-raw.png`; each is checked against it). It writes
+  `web/art/factory/forge/ui/spitwad/` (hall.webp, occ-*.webp, plank-*.webp, scene.json; about 550 KB) and, with
+  `--preview`, `preview-1/2.png` showing every spot. Spots live in `spots.json` (plate pixels plus depth).
+- **23 spots**, the drawer dropped (it read as Plank standing on the cabinet): crate, chest, scrap bin, cabinet, belt
+  (ride), press, spool, barrel, flywheel, ink drums, pallets, boiler, far crates, paper-roll gap, catwalk (walk),
+  doorway (walk, a silhouette), wall hatch, three cubbies, hanging crate, truss (drop), pipe (drop). Every still spot
+  hits when aimed right in a scripted test; moving ones need a lead.
+- **Faces:** idle, blink, duck (a wad coming), splat (hit), dizzy (sinking after a hit), taunt (getting away). Sly
+  and surprised aren't used yet.
+- **Engine:** `web/art/factory/forge/spitwad.js`: hits are judged where you see them (each occluder's own pixels, then
+  Plank's box, in depth order); a 2.2x scope while holding (the world pans under a still crosshair); 60 s rounds
+  with the planned goals (65/70/85, then the formula); several Planks at once (2, up to 4 late); critters; the
+  feel-test effects; placeholder synth sounds.
+- **Game room:** Spit-Wad is game 2, free play only (`comp: false`); Paper Football is now shown as **Fold and Flick**.
+- **Next:** the server's round judging and competitive runs (plan §9), the sound set, wait-panel tiles.
+
 ## Critique notes
 
 - **Accepted in full or adapted:** points 1 to 35. Notes on the adapted ones:

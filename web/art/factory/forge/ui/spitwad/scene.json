@@ -1,0 +1,460 @@
+{
+ "plate": {
+  "src": "hall.webp",
+  "w": 1024,
+  "h": 1536,
+  "F": 1646.9813149513411,
+  "pitchDeg": -10,
+  "camY": 64
+ },
+ "occluders": {
+  "crateR": {
+   "x": 190,
+   "y": 1005,
+   "w": 126,
+   "h": 181
+  },
+  "chest": {
+   "x": 8,
+   "y": 984,
+   "w": 196,
+   "h": 84
+  },
+  "bin": {
+   "x": 305,
+   "y": 975,
+   "w": 185,
+   "h": 210
+  },
+  "cabinet": {
+   "x": 655,
+   "y": 985,
+   "w": 330,
+   "h": 215
+  },
+  "cartons": {
+   "x": 712,
+   "y": 1112,
+   "w": 280,
+   "h": 143
+  },
+  "press": {
+   "x": 560,
+   "y": 760,
+   "w": 315,
+   "h": 160
+  },
+  "barrel": {
+   "x": 372,
+   "y": 688,
+   "w": 110,
+   "h": 127
+  },
+  "sacks": {
+   "x": 372,
+   "y": 776,
+   "w": 162,
+   "h": 102
+  },
+  "pallets": {
+   "x": 326,
+   "y": 626,
+   "w": 104,
+   "h": 96
+  },
+  "drums": {
+   "x": 632,
+   "y": 664,
+   "w": 120,
+   "h": 110
+  },
+  "spool": {
+   "x": 880,
+   "y": 734,
+   "w": 144,
+   "h": 176
+  },
+  "boiler": {
+   "x": 900,
+   "y": 440,
+   "w": 124,
+   "h": 308
+  },
+  "flywheel": {
+   "x": 22,
+   "y": 522,
+   "w": 300,
+   "h": 344
+  },
+  "crateFarL": {
+   "x": 0,
+   "y": 600,
+   "w": 76,
+   "h": 152
+  },
+  "rollL": {
+   "x": 32,
+   "y": 295,
+   "w": 128,
+   "h": 200
+  },
+  "rollR": {
+   "x": 168,
+   "y": 295,
+   "w": 130,
+   "h": 200
+  },
+  "rail": {
+   "x": 0,
+   "y": 448,
+   "w": 640,
+   "h": 64
+  },
+  "hungCrate": {
+   "x": 440,
+   "y": 150,
+   "w": 122,
+   "h": 108
+  },
+  "truss": {
+   "x": 0,
+   "y": 16,
+   "w": 1024,
+   "h": 48
+  },
+  "pipe": {
+   "x": 626,
+   "y": 310,
+   "w": 398,
+   "h": 48
+  },
+  "cubbies": {
+   "x": 0,
+   "y": 170,
+   "w": 328,
+   "h": 130
+  }
+ },
+ "faces": {
+  "blink": "plank-blink.webp",
+  "dizzy": "plank-dizzy.webp",
+  "duck": "plank-duck.webp",
+  "idle": "plank-idle.webp",
+  "splat": "plank-splat.webp",
+  "taunt": "plank-taunt.webp"
+ },
+ "plankAspect": 0.43561442236938924,
+ "spots": [
+  {
+   "id": "crate",
+   "cx": 252,
+   "bottom": 1095,
+   "z": 108,
+   "look": "pop",
+   "occ": [
+    "crateR"
+   ],
+   "h": 244,
+   "w": 106
+  },
+  {
+   "id": "chest",
+   "cx": 104,
+   "bottom": 1045,
+   "z": 112,
+   "look": "pop",
+   "occ": [
+    "chest"
+   ],
+   "h": 235,
+   "w": 102
+  },
+  {
+   "id": "bin",
+   "cx": 397,
+   "bottom": 1110,
+   "z": 128,
+   "look": "pop",
+   "occ": [
+    "bin"
+   ],
+   "h": 206,
+   "w": 90
+  },
+  {
+   "id": "cabinet",
+   "cx": 835,
+   "bottom": 1075,
+   "z": 92,
+   "look": "pop",
+   "occ": [
+    "cabinet",
+    "cartons"
+   ],
+   "h": 286,
+   "w": 125
+  },
+  {
+   "id": "belt",
+   "cx": 500,
+   "bottom": 940,
+   "z": 150,
+   "look": "ride",
+   "x0": 120,
+   "x1": 880,
+   "occ": [],
+   "h": 176,
+   "w": 77
+  },
+  {
+   "id": "press",
+   "cx": 735,
+   "bottom": 800,
+   "z": 196,
+   "look": "pop",
+   "occ": [
+    "press"
+   ],
+   "h": 134,
+   "w": 58
+  },
+  {
+   "id": "spool",
+   "cx": 905,
+   "bottom": 885,
+   "z": 180,
+   "look": "lean",
+   "side": -1,
+   "occ": [
+    "spool"
+   ],
+   "h": 146,
+   "w": 64
+  },
+  {
+   "id": "barrel",
+   "cx": 452,
+   "bottom": 790,
+   "z": 262,
+   "look": "lean",
+   "side": 1,
+   "occ": [
+    "barrel",
+    "sacks"
+   ],
+   "h": 101,
+   "w": 44
+  },
+  {
+   "id": "flywheel",
+   "cx": 92,
+   "bottom": 805,
+   "z": 250,
+   "look": "pop",
+   "occ": [
+    "flywheel"
+   ],
+   "h": 105,
+   "w": 46
+  },
+  {
+   "id": "drums",
+   "cx": 652,
+   "bottom": 764,
+   "z": 300,
+   "look": "lean",
+   "occ": [
+    "drums"
+   ],
+   "side": -1,
+   "h": 88,
+   "w": 38
+  },
+  {
+   "id": "pallets",
+   "cx": 398,
+   "bottom": 705,
+   "z": 330,
+   "look": "lean",
+   "occ": [
+    "pallets"
+   ],
+   "side": 1,
+   "h": 80,
+   "w": 35
+  },
+  {
+   "id": "boiler",
+   "cx": 930,
+   "bottom": 735,
+   "z": 330,
+   "look": "lean",
+   "side": -1,
+   "occ": [
+    "boiler"
+   ],
+   "h": 80,
+   "w": 35
+  },
+  {
+   "id": "farCrates",
+   "cx": 50,
+   "bottom": 690,
+   "z": 380,
+   "look": "lean",
+   "occ": [
+    "crateFarL"
+   ],
+   "side": 1,
+   "h": 69,
+   "w": 30
+  },
+  {
+   "id": "rollGap",
+   "cx": 164,
+   "bottom": 492,
+   "z": 400,
+   "look": "pop",
+   "occ": [
+    "rollL",
+    "rollR",
+    "rail"
+   ],
+   "h": 66,
+   "w": 29
+  },
+  {
+   "id": "catwalk",
+   "cx": 450,
+   "bottom": 492,
+   "z": 404,
+   "look": "walk",
+   "x0": 320,
+   "x1": 610,
+   "occ": [
+    "rail"
+   ],
+   "h": 65,
+   "w": 28
+  },
+  {
+   "id": "arch",
+   "cx": 518,
+   "bottom": 610,
+   "z": 540,
+   "look": "walk",
+   "x0": 452,
+   "x1": 584,
+   "clip": [
+    436,
+    340,
+    602,
+    612
+   ],
+   "occ": [],
+   "h": 49,
+   "w": 21
+  },
+  {
+   "id": "hatch",
+   "cx": 820,
+   "bottom": 316,
+   "z": 540,
+   "look": "clip",
+   "clip": [
+    796,
+    268,
+    845,
+    306
+   ],
+   "occ": [],
+   "h": 49,
+   "w": 21
+  },
+  {
+   "id": "cubbyA",
+   "cx": 127,
+   "bottom": 222,
+   "z": 540,
+   "look": "clip",
+   "clip": [
+    108,
+    180,
+    150,
+    212
+   ],
+   "occ": [],
+   "h": 49,
+   "w": 21
+  },
+  {
+   "id": "cubbyB",
+   "cx": 238,
+   "bottom": 262,
+   "z": 540,
+   "look": "clip",
+   "clip": [
+    216,
+    219,
+    261,
+    252
+   ],
+   "occ": [],
+   "h": 49,
+   "w": 21
+  },
+  {
+   "id": "cubbyC",
+   "cx": 25,
+   "bottom": 300,
+   "z": 540,
+   "look": "clip",
+   "clip": [
+    3,
+    258,
+    48,
+    292
+   ],
+   "occ": [],
+   "h": 49,
+   "w": 21
+  },
+  {
+   "id": "hungCrate",
+   "cx": 530,
+   "bottom": 240,
+   "z": 335,
+   "look": "lean",
+   "side": 1,
+   "occ": [
+    "hungCrate"
+   ],
+   "h": 79,
+   "w": 34
+  },
+  {
+   "id": "truss",
+   "cx": 330,
+   "bottom": 44,
+   "z": 400,
+   "look": "drop",
+   "occ": [
+    "truss"
+   ],
+   "h": 66,
+   "w": 29
+  },
+  {
+   "id": "pipe",
+   "cx": 880,
+   "bottom": 334,
+   "z": 262,
+   "look": "drop",
+   "occ": [
+    "pipe"
+   ],
+   "h": 101,
+   "w": 44
+  }
+ ]
+}

@@ -5,7 +5,7 @@ import Sim from '../../../art/factory/forge/paperfb-sim.mjs';
 const paperfb = {
   gameId: 1,
   slug: 'paperfb',
-  name: 'Paper Football',
+  name: 'Fold and Flick',
   version: Sim.VERSION,
   practiceLevels: [3, 5, 7],
   /** shot n's conditions at a level (n < 0: practice) */
