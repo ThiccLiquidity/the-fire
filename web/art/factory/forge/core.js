@@ -121,6 +121,7 @@
       { text: 'Character: Grandma’s cast-iron pan\nBackground: Four generations of Sunday breakfasts.', at: 'Series 7', picked: false },
     ],
     activity: [],
+    burnTally: { paper: 412880, plank: 1248300000 }, // all-time PAPER and PLANK burned (live: the burn address's balances)
     burned: {}, // cards this wallet burned, by character + material and by look (Store.noteBurned)
   };
   const listeners = new Set();

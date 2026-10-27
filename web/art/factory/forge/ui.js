@@ -45,6 +45,12 @@
     <button class="wallet" id="walletBtn" type="button">${svg('wallet')}${Brand.coin('PAPER', 'wcoin').replace('<img ', '<img hidden ')}<span>Connect</span></button>
   </header>
   <div class="qbanner" id="qbanner" hidden></div>
+  <button class="burn-tally" id="burnTally" type="button" aria-label="Burned all time" hidden>
+    <span class="bt-h">Burned <br>all time</span>
+    <span class="bt-row">${Brand.coin('PLANK', 'bt-coin')}<b data-bt="plank">0</b></span>
+    <span class="bt-row">${Brand.coin('PAPER', 'bt-coin')}<b data-bt="paper">0</b></span>
+    <span class="bt-usd" data-bt="usd"></span>
+  </button>
   <div class="demo-note" role="note"><b>Demo</b><span>Nothing here is real.</span><button class="start-link" type="button" data-go="start">New here?</button></div>
   <div class="ui" id="pills">
     <div class="buybox" id="buybox" data-x="1480" data-y="250"></div>
@@ -417,8 +423,36 @@
   document.addEventListener('pointerdown', (e) => { if ($('#buybar')?.classList.contains('open') && !e.target.closest('#buybar')) barOpen(false); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('#buybar')?.classList.contains('open')) barOpen(false); });
   $('#buybar').addEventListener('click', (e) => { if (e.target.closest('[data-buy], [data-q], .tease-inline')) barOpen(false); });
+  // ---------- the burn tally: all-time PLANK and PAPER burned, and what that's worth at today's prices
+  const bt = { shown: { plank: 0, paper: 0, usd: 0 }, raf: 0 };
+  function renderBurned() {
+    const t = S.burnTally || {}, el = $('#burnTally');
+    if (t.plank == null && t.paper == null) { el.hidden = true; return; }
+    el.hidden = false;
+    const P = Store.PRICES, usdOk = P.PLANK_USD > 0 && P.PAPER_USD > 0;
+    const goal = { plank: t.plank || 0, paper: t.paper || 0, usd: (t.plank || 0) * (P.PLANK_USD || 0) + (t.paper || 0) * (P.PAPER_USD || 0) };
+    const paint = (v) => {
+      el.querySelector('[data-bt=plank]').textContent = fmt(Math.round(v.plank));
+      el.querySelector('[data-bt=paper]').textContent = fmt(Math.round(v.paper));
+      el.querySelector('[data-bt=usd]').textContent = usdOk ? `≈ $${v.usd >= 1e3 ? compact.format(v.usd) : v.usd.toFixed(2)}` : '';
+    };
+    el.setAttribute('aria-label', `Burned all time: ${fmt(goal.plank)} PLANK and ${fmt(goal.paper)} PAPER${usdOk ? `, worth about $${compact.format(goal.usd)} today` : ''}`);
+    const from = { ...bt.shown };
+    if (from.plank === goal.plank && from.paper === goal.paper && from.usd === goal.usd) return;
+    cancelAnimationFrame(bt.raf); bt.shown = goal;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return paint(goal);
+    const t0 = performance.now(), dur = from.plank || from.paper ? 800 : 1600;
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / dur), e = 1 - (1 - k) ** 3;
+      paint({ plank: from.plank + (goal.plank - from.plank) * e, paper: from.paper + (goal.paper - from.paper) * e, usd: from.usd + (goal.usd - from.usd) * e });
+      if (k < 1) bt.raf = requestAnimationFrame(step);
+    };
+    bt.raf = requestAnimationFrame(step);
+  }
+  $('#burnTally').onclick = () => Info.open('paper');
+
   function render() {
-    renderChip(); renderBuy(); renderPeek(); renderCounts(); renderQuiet(); syncScene(); placePills();
+    renderBurned(); renderChip(); renderBuy(); renderPeek(); renderCounts(); renderQuiet(); syncScene(); placePills();
     const h = mode === 'port' && !$('#buybar').classList.contains('open') ? $('#buybar').offsetHeight : bbH; if (h !== bbH) { bbH = h; if (h) layout(); } // the Buy bar changed height: keep the stations clear of it
   }
   Store.on(render);

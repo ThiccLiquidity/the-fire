@@ -289,6 +289,7 @@
         const fires = await L.seriesNumbers(); // once per sync: the Series and the sealed packs both use it
         await Promise.all([readSeries(fires), readRules()]); Store.update(() => {}); // the Series shows before the wallet's reads
         await readWallet(o.cards, fires);
+        await L.burnedTotals().then((b) => { S.burnTally = { paper: b.PAPER ? num(b.PAPER) : null, plank: b.PLANK ? num(b.PLANK) : null }; }, () => {}); // the burn tally
         picks = await L.picks().catch(() => picks);
         fails = 0; nextAt = 0; setStale(false);
       } catch (e) {

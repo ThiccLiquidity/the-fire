@@ -259,6 +259,21 @@ body[data-mode=port].quiet .sdock-bar .sd-t { font-size: 18px }
 .qbanner[hidden] { display: none }
 .qb-go { font: 800 13px/1 var(--body); color: #1b0f06; background: linear-gradient(#ffd27a, #f0a640); border: 0; border-radius: 999px; padding: 7px 14px; cursor: pointer }
 .qb-go:hover { filter: brightness(1.08) } .qb-go:focus-visible { outline: 2px solid #fff; outline-offset: 2px }
+/* the burn tally: all-time PLANK and PAPER burned (and their worth today); left edge on desktop, top right on phones */
+.burn-tally { position: fixed; left: 8px; top: 50%; transform: translateY(-50%); z-index: 8; width: 92px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 9px 6px 8px; border-radius: 14px; border: 1px solid #ff9a3c55; background: linear-gradient(#2a140acc, #170a05e6); color: #ffe2b0; font: 800 14px/1.1 var(--body);
+  box-shadow: 0 0 18px #ff6a1a33, inset 0 1px 0 #ffffff14; cursor: pointer; text-align: center }
+.burn-tally[hidden] { display: none }
+.burn-tally:hover { border-color: #ffbf5e99 } .burn-tally:focus-visible { outline: 2px solid #fff; outline-offset: 2px }
+.burn-tally .bt-h { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #ffb36b; line-height: 1.15; margin-bottom: 2px }
+.burn-tally .bt-row { display: flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums }
+.burn-tally .bt-coin { width: 18px; height: 18px }
+.burn-tally .bt-usd { font-size: 12px; color: #9fe39a; font-variant-numeric: tabular-nums; min-height: 1em }
+body[data-mode=port] .burn-tally { left: auto; right: 6px; top: 156px; transform: none; width: auto; min-width: 70px; padding: 6px 7px; gap: 2px; font-size: 12px; border-radius: 11px }
+body[data-mode=port] .burn-tally .bt-h { font-size: 8.5px; margin-bottom: 1px }
+body[data-mode=port] .burn-tally .bt-h br { display: none }
+body[data-mode=port] .burn-tally .bt-coin { width: 14px; height: 14px }
+body[data-mode=port] .burn-tally .bt-usd { font-size: 10.5px }
 body[data-mode=port] .qbanner { font-size: 13px; gap: 8px; flex-wrap: wrap; text-align: center }
 @media (prefers-reduced-motion: reduce) { body.quiet .spot, body.quiet .pill[data-st="suggest"] { animation: none } }
 .sd-won { font-size: 13.5px; font-weight: 800; color: var(--gold) }

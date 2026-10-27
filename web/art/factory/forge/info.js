@@ -406,6 +406,7 @@
           <li><b>The Paper Press makes PAPER.</b> Over 2,000 Presses were minted in a single seven-day window by locking up PLANK, and no more will ever be minted. Each Press lets its holder mint 1 PAPER a day. It isn't automatic: the holder has to mint it.<span class="inf-presses" hidden> (Presses today: <b data-presses></b>.)</span></li>
           <li><b>Burning a Press.</b> A holder can burn their Press at any time to get its locked PLANK back. That leaves fewer Presses, and so less PAPER that can be made in the future. It doesn't touch the PAPER that already exists.</li>
           <li><b>Press holders get first dibs.</b> Each Series gives them their own group${press ? ` (${inS}: ${nf(press.perNft || 1)} ${press.perNft > 1 ? 'packs' : 'pack'} per Press for ${press.priceUsd > 0 ? `${usd(press.priceUsd)} + ` : ''}${paperT(press.paper)})` : ''}.</li>
+          <li><b>The burn tally</b> on the main screen counts every PLANK and PAPER ever burned (sent to the burn address <code>0x…dEaD</code>, gone for good), and what that much would be worth at today's prices.</li>
           <li><b>Need some?</b> <i>Get PAPER</i> swaps ETH, PLANK or USDG for exactly the PAPER you need.</li>
         </ul>
         <div class="inf-cas">

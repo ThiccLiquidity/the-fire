@@ -304,6 +304,15 @@ export async function balances(owner: Address): Promise<Record<"ETH" | "PAPER" |
   return { ETH: eth, PAPER: paper, PLANK: plank, USDG: usdg };
 }
 
+/** The burn address: PAPER and PLANK sent here are gone for good. */
+export const DEAD = "0x000000000000000000000000000000000000dEaD" as Address;
+
+/** All-time PAPER and PLANK burned: what the burn address holds (the site's burn tally). */
+export async function burnedTotals(): Promise<{ PAPER: Amount | null; PLANK: Amount | null }> {
+  const b = await balances(DEAD);
+  return { PAPER: b.PAPER, PLANK: b.PLANK };
+}
+
 /** ETH to keep for the network fee on top of an ETH price: the gas price now x `gas` (room for a buy, an open or a
  *  grading on this L2), never under a small floor (0.00002 ETH). */
 export async function gasReserve(gas = 1_000_000n): Promise<Amount> {
