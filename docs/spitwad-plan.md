@@ -293,6 +293,11 @@ drawn from the game's own camera (`layout-guide.html`; `layout-guide-labelled.pn
   ink drums x 63-71% y 47-54%; ladder against the shelf x 61-67% y 26-62%; twine spool x 87-99% y 59-68%; scrap bin
   with crumpled paper x 31-45% y 70-82%. About 30 hiding spots in all (the cubbies alone give several).
 
+- **Plate chosen (owner, Oct 27): version 1 of 3,** kept as `web/art/spitwad-src/hall-master.png` (1024x1536). It
+  follows the guide closely and has every object (catwalk railing, paper-roll gap, hatch, boiler, ladder, drums,
+  spool, cubbies, hung crate, open drawer), plus a lamp in the arch, two wall lanterns and a few paper balls on the
+  floor. Spots are refitted to it next.
+
 **P2–P5: Plank's faces only** (attach `plank.webp`):
 > "Draw only a cartoon face for the attached character, at exactly the same scale and position as his face: thick black marker lines, red ring eyes with dot pupils, a thin teal-blue mouth. Nothing else: no body, no outline, transparent background. Face: [FACE]"
 
