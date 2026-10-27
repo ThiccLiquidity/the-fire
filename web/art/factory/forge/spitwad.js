@@ -65,7 +65,8 @@
     addEventListener('resize', size); size();
     // the scope: while you hold, the view zooms in on what you aim at (ZMAX). Plate point P sits at screen point S;
     // dragging moves P (the world pans under a still crosshair), so a thumb never covers it.
-    const ZMAX = 2.2;
+    const ZMAX = 2.2, SCOPE_Z = 320; // the scope zoom, and how far (inches) a Plank must be for it
+    const near = (a, q) => { const r = rectOf(a); return Math.hypot(q.x - (r.x + r.w / 2), q.y - (r.y + r.h / 2)) < 70; };
     let zoom = 1, K = k, vx = 0, vy = 0, P = { x: PW / 2, y: 600 }, S = { x: 0, y: 0 };
     const baseX = (px) => ox + px * k, baseY = (py) => oy + py * k;
     function view() {
@@ -238,11 +239,18 @@
       if (rnd() < dt * 0.5) for (let i = 0; i < 6; i++) sparks.push({ x: 600 + rnd() * 240, y: 770, vx: (rnd() - 0.5) * 120, vy: -60 - rnd() * 80, t: now, col: '#ffb347' });
       puffs = puffs.filter((p) => now - p.t < 2.6); sparks = sparks.filter((p) => now - p.t < 0.8);
       for (const p of sparks) { p.vy += 380 * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
-      if (press) { // the world pans under the crosshair, a little faster than the thumb so it reaches the edges
-        const t = clampP({ x: press.P0.x + (press.last.x - press.x0) / (k * 1.25), y: press.P0.y + (press.last.y - press.y0) / (k * 1.25) }), q = 1 - Math.exp(-30 * dt);
+      if (press) {
+        // unzoomed the crosshair moves 1:1 with the thumb; in the scope the world pans under it, a little faster than
+        // the thumb so it still reaches the edges
+        const g2 = press.scope ? 1.25 : 1;
+        const t = clampP({ x: press.P0.x + (press.last.x - press.x0) / (k * g2), y: press.P0.y + (press.last.y - press.y0) / (k * g2) }), q = 1 - Math.exp(-30 * dt);
         P = { x: P.x + (t.x - P.x) * q, y: P.y + (t.y - P.y) * q };
+        // the scope: only for long shots, once the crosshair rests near a far Plank (it stays on until you let go)
+        if (!press.scope && now - press.t0 > 0.12 && apps.some((a) => !a.hit && a.rise > 0.3 && a.s.z >= SCOPE_Z && near(a, P))) {
+          press.scope = true; S = { x: sx(P.x), y: sy(P.y) }; press.P0 = { ...P }; press.x0 = press.last.x; press.y0 = press.last.y;
+        }
       }
-      const zt = press && now - press.t0 > 0.12 ? ZMAX : wad && !wad.done ? zoom : 1; // stay in while the wad flies, then ease out
+      const zt = press?.scope ? ZMAX : wad && !wad.done ? zoom : 1; // stay in while the wad flies, then ease out
       zoom += (zt - zoom) * (1 - Math.exp(-(zt > zoom ? 10 : 5) * dt)); if (Math.abs(zoom - 1) < 0.002) zoom = 1;
       stepWad(dt);
       if (phase !== 'play') return;
@@ -330,6 +338,36 @@
       }
       g.restore();
     }
+    /** the straw, first person: it comes out of your mouth just below the bottom centre, big and close, and runs
+     *  away from you to a small open tip low in the middle of the view; it only leans a little toward the aim, and
+     *  kicks back a touch when you spit. Returns its tip (where the wad comes out). */
+    function drawStraw(a, kick) {
+      const m = Math.min(W, H * 0.75), bx = W / 2, by = H + m * 0.1;                 // the mouth end, below the view
+      const tx = W / 2 + (a.x - W / 2) * 0.16, ty = H - m * (0.46 - 0.03 * kick) + (a.y - H / 2) * 0.05; // the far tip
+      const r0 = m * 0.075, r1 = m * 0.024;                                             // radius at the mouth and at the tip
+      const ang = Math.atan2(ty - by, tx - bx), nx = -Math.sin(ang), ny = Math.cos(ang);
+      g.save();
+      // the tube: a tapered body, lit from the upper left
+      g.beginPath(); g.moveTo(bx + nx * r0, by + ny * r0); g.lineTo(tx + nx * r1, ty + ny * r1); g.lineTo(tx - nx * r1, ty - ny * r1); g.lineTo(bx - nx * r0, by - ny * r0); g.closePath();
+      const sg = g.createLinearGradient(bx - nx * r0, by - ny * r0, bx + nx * r0, by + ny * r0);
+      sg.addColorStop(0, '#fbf6ea'); sg.addColorStop(0.35, '#fffdf6'); sg.addColorStop(0.75, '#d9d0bf'); sg.addColorStop(1, '#a89e8c');
+      g.fillStyle = sg; g.fill(); g.save(); g.clip();
+      // the stripes: two thin red spirals, wound tighter as the straw goes away (perspective)
+      g.strokeStyle = '#d23a2e';
+      for (let i = -1; i < 16; i++) {
+        const at = (v) => 1 - Math.pow(1 - Math.min(1, Math.max(0, v)), 1.7), u0 = at(i / 14), u1 = at((i + 1.6) / 14), r = r0 + (r1 - r0) * u0;
+        const p0x = bx + (tx - bx) * u0, p0y = by + (ty - by) * u0, p1x = bx + (tx - bx) * u1, p1y = by + (ty - by) * u1;
+        g.lineWidth = Math.max(1.2, r * 0.22); g.beginPath(); g.moveTo(p0x + nx * r * 1.1, p0y + ny * r * 1.1); g.lineTo(p1x - nx * r * 1.1, p1y - ny * r * 1.1); g.stroke();
+      }
+      g.restore();
+      // the open end, seen almost head on: a cream rim around a dark hole
+      g.fillStyle = '#efe7d6'; g.beginPath(); g.ellipse(tx, ty, r1 * 1.05, r1 * 0.75, ang + Math.PI / 2, 0, 7); g.fill();
+      g.fillStyle = '#2a1c12'; g.beginPath(); g.ellipse(tx, ty, r1 * 0.7, r1 * 0.48, ang + Math.PI / 2, 0, 7); g.fill();
+      // a soft edge line so it reads against bright floor
+      g.strokeStyle = 'rgba(60,40,25,.35)'; g.lineWidth = 1; g.beginPath(); g.moveTo(bx + nx * r0, by + ny * r0); g.lineTo(tx + nx * r1, ty + ny * r1); g.moveTo(bx - nx * r0, by - ny * r0); g.lineTo(tx - nx * r1, ty - ny * r1); g.stroke();
+      g.restore();
+      return { x: tx, y: ty, dx: (tx - bx) / Math.hypot(tx - bx, ty - by), r: r1 };
+    }
     function wadBall(x, y, r, spin) {
       g.save(); g.translate(x, y); g.rotate(spin); g.beginPath();
       for (let i = 0; i < 9; i++) { const an = i / 9 * Math.PI * 2, rr = r * (0.82 + 0.18 * Math.sin(i * 2.7 + 1.3)); i ? g.lineTo(Math.cos(an) * rr, Math.sin(an) * rr) : g.moveTo(Math.cos(an) * rr, Math.sin(an) * rr); }
@@ -357,17 +395,14 @@
       for (const s of splats) splat(s); splats = splats.filter((s) => now - s.t < 2.5);
       for (const p of sparks) { g.fillStyle = p.col; g.fillRect(sx(p.x) - 1, sy(p.y) - 1, 2, 2); }
       // the straw (decoration), the puff and spit at its tip, then the wad tumbling out
-      const ap = aim(), a = { x: sx(ap.x), y: sy(ap.y) }, bx = W * 0.62, by = H + 20, ang = Math.atan2(a.y - by, a.x - bx), kk = Math.max(0, 1 - (now - kick) / 0.18), L = Math.min(H * 0.34, 260) * (1 - 0.06 * kk);
-      tip = { x: bx + Math.cos(ang) * L, y: by + Math.sin(ang) * L, dx: Math.cos(ang) };
-      g.save(); g.translate(bx, by); g.rotate(ang + Math.PI / 2); const w0 = 26, w1 = 12; g.beginPath(); g.moveTo(-w0 / 2, 0); g.lineTo(-w1 / 2, -L); g.lineTo(w1 / 2, -L); g.lineTo(w0 / 2, 0); g.closePath();
-      const sg = g.createLinearGradient(-w0 / 2, 0, w0 / 2, 0); sg.addColorStop(0, '#cfc8ba'); sg.addColorStop(.45, '#fffaf0'); sg.addColorStop(1, '#b4ab9b'); g.fillStyle = sg; g.fill(); g.clip();
-      g.strokeStyle = '#d23a2e'; g.lineWidth = 6; for (let q = -10; q < L + 30; q += 26) { g.beginPath(); g.moveTo(-20, -q); g.lineTo(20, -q - 20); g.stroke(); } g.restore();
+      const ap = aim(), a = { x: sx(ap.x), y: sy(ap.y) }, kk = Math.max(0, 1 - (now - kick) / 0.18);
+      tip = drawStraw(a, kk);
       if (kk > 0) { g.fillStyle = `rgba(240,235,225,${0.45 * kk})`; g.beginPath(); g.arc(tip.x, tip.y, 6 + 14 * (1 - kk), 0, 7); g.fill(); }
       for (const d of drops) { const q = now - d.t; if (q > 0.35) continue; g.fillStyle = `rgba(215,235,245,${0.8 * (1 - q / 0.35)})`; g.beginPath(); g.arc(d.x + d.vx * q, d.y + d.vy * q + 300 * q * q, d.r, 0, 7); g.fill(); }
       drops = drops.filter((d) => now - d.t < 0.35);
       if (wad) {
         const q = proj(wad.x, wad.y, wad.z), e = Math.min(1, wad.t / 0.1), ease = 1 - (1 - e) ** 2;
-        const x = tip.x + (sx(q.x) - tip.x) * ease, y = tip.y + (sy(q.y) - tip.y) * ease, r = Math.max(2.5, 0.6 * q.s * K) * (1 + 1.6 * (1 - ease));
+        const x = tip.x + (sx(q.x) - tip.x) * ease, y = tip.y + (sy(q.y) - tip.y) * ease, rf = Math.max(2.5, 0.6 * q.s * K), r = rf + ((tip.r || rf) * 0.85 - rf) * (1 - ease); // the size of the straw's opening as it leaves, then its true size
         wad.trail.push({ x, y, r }); if (wad.trail.length > 5) wad.trail.shift();
         wad.trail.forEach((t, i) => { g.fillStyle = `rgba(215,235,245,${0.08 * i})`; g.beginPath(); g.arc(t.x, t.y, t.r * 0.35, 0, 7); g.fill(); });
         wadBall(x, y, r, wad.t * 18);
