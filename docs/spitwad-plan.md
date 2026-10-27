@@ -264,8 +264,34 @@ Fm = 1 + 0.4 · min(s, 1.25)
 **STYLE:**
 > "Stylized 3D render of a cozy miniature diorama, high-end toy-scale Blender/Cycles look: warm dim steampunk workshop palette of honey oak, dark walnut, copper, brass and cream paper; soft global illumination; a single warm 2700K brass desk lamp as key light from the upper left front, faint ember-orange rim light from the right, deep warm-brown shadows (never pure black, never blue); clean readable shapes, crisp edges, no outlines, no text, no logos, no people, no hands, no lemon or saturated yellow."
 
-**P1 `hall.webp`** (attach the bench and the guide; 3 variations):
-> STYLE + "Match the attached grey block-out guide's composition and the attached render's look. Portrait. A miniature toy-scale card factory seen from a low wooden balcony; the factory floor is about four crate-heights below; crates are about as tall as a ruler. Horizon one third from the top. A copper handrail across the bottom 8%. Balcony, left edge: two stacked ream crates with a narrow gap, an open tool chest with its lid propped. Right edge: an oak cabinet with its top drawer pulled open and empty, a low pile of twine-tied cartons. Floor: a conveyor with a plain smooth dark belt; a brass card press with a flat platen on four open legs; a high shelf of card-stock reams with gaps; a still cast-iron flywheel with open spokes; a riveted copper boiler; copper pipes high on the right. Far wall, hazier: a wide amber-lit arched doorway, an iron catwalk with a solid toe-board, two stacks of paper rolls with a dark gap, a small open dark hatch. Plain wall or floor directly behind every edge. The bottom fifth stays plain. Everything in focus. No characters, animals, signs or text."
+**P1 `hall.webp`** (attach `web/art/spitwad-src/layout-guide.png` and `ui/paperfb/bench.webp`; 3 variations). The guide is
+drawn from the game's own camera (`layout-guide.html`; `layout-guide-labelled.png` numbers the 14 places and shows
+16 in Plank boxes):
+> STYLE + "Paint over the attached grey block-out exactly: keep every object where it is, at the same size, and the
+> same camera. Match the look of the other attached render. Portrait 1024x1536. A miniature toy-scale card factory
+> seen from a balcony, looking down at its floor. Left, nearest: two stacked wooden ream crates with a narrow dark gap
+> between the top two. Just behind them, left: a small open tool chest with its lid propped up. Right, nearest: an
+> oak cabinet with its top drawer pulled open and empty, and a low pile of twine-tied cardboard cartons in front of
+> it. Across the middle: a conveyor with a plain smooth dark belt. Centre right, behind it: a brass card press with a
+> flat platen on four open legs. Left middle: a still cast-iron flywheel with open spokes on a dark iron stand. Right
+> middle: a tall shelf of cream card-stock reams with gaps between them. Far right: a riveted copper boiler. High
+> right: a copper pipe run. Far wall, softer and hazier: a wide amber-lit arched doorway in the centre, an iron
+> catwalk across the whole wall with a solid toe-board, two tall stacks of paper rolls on the catwalk at the left with
+> a dark gap between them, and a small open dark hatch high on the right. The bottom fifth is plain floor, then a
+> copper handrail across the very bottom. Warm, dim, everything in focus. No characters, animals, people, signs, text,
+> numbers or labels."
+- **The full P1 as sent to the owner (Oct 27)** adds the positions of every object as percent of the image (measured
+  from the guide's camera): arch x 39-61% y 23-44%; catwalk y 35-38%; paper rolls x 3-28% y 21-35%; hatch x 78-84%
+  y 21-24%; pipes x 61-100% y 23-25%; ream shelf x 67-92% y 27-45%; boiler x 84-100% y 34-51%; flywheel x 3-30%
+  y 37-59%; press x 56-84% y 54-65%; conveyor x 3-97% y 65-75%; tool chest x 3-19% y 64-73%; crates x 0-35%
+  y 70-80%; cabinet and cartons x 64-97% y 68-80%; plain floor y 80-100%, handrail y 92-100%; horizon 31%, wall
+  meets floor 44%.
+
+- **Added clutter (owner, Oct 27: "more clutter, nothing moving but Plank and critters; he pops out from all over"):**
+  ceiling truss y 4-6%; hanging lamp x 16-22% y 2-7%; crate hung on a chain x 46-54% y 12-17%; mail cubbies (6x3)
+  high on the wall x 0-31% y 13-21%; pallets x 32-40% y 45-49%; barrel x 37-45% y 50-57%; sacks x 37-49% y 57-61%;
+  ink drums x 63-71% y 47-54%; ladder against the shelf x 61-67% y 26-62%; twine spool x 87-99% y 59-68%; scrap bin
+  with crumpled paper x 31-45% y 70-82%. About 30 hiding spots in all (the cubbies alone give several).
 
 **P2–P5: Plank's faces only** (attach `plank.webp`):
 > "Draw only a cartoon face for the attached character, at exactly the same scale and position as his face: thick black marker lines, red ring eyes with dot pupils, a thin teal-blue mouth. Nothing else: no body, no outline, transparent background. Face: [FACE]"
@@ -356,6 +382,25 @@ Fm = 1 + 0.4 · min(s, 1.25)
 9. **No exemption from the PAPER burn rule:** every priced group, the PLANK group included, sends at least 10% to
    buy and burn PAPER. A PLANK group can still burn up to 90% of its PLANK alongside that: the two shares must add up
    to at most 100%.
+
+## Feel test results (Oct 27, 2026)
+
+From the grey-box tests (feel: https://claude.ai/artifact/PkyjHtVkZaHh2gMZ3WDdpK, action:
+https://claude.ai/artifact/MQNgfGmWQYKVjd7dqgdoD1). The owner played both and approved the direction.
+
+1. **The crosshair sits up and left of the thumb** (about 95 px up, 55 px left; mirrored by a "Thumb: left" setting),
+   and moves 1:1 with the thumb so the thumb never covers it. A mouse aims at the pointer. Smoothing is the stable
+   kind (no spring that can blow up on a slow frame).
+2. **A flatter, faster wad:** the straw points 3° above the sight (was 6°), about 22 m/s on a far shot. The breath
+   maps twice as steeply (`SPAN = 1440`), so the timing window is the same width as before.
+3. **More action:** several Planks up at once (2, then 3 late in the round), a Plank riding the conveyor (+25%),
+   critters crossing (roaches, a cat; a gag, no penalty), hit-stop, screen shake, SPLAT text, dizzy stars, streak
+   callouts (3/5/8/12 in a row; looks only, no points), Plank taunts when he gets away (the streak resets), steam,
+   sparks, a flickering lamp and a moving belt.
+4. **The shot looks like a spit-wad:** the straw kicks, a puff and spit droplets leave the tip, a lumpy creased wad
+   tumbles out with a wet trail, and lands as a flattened wet splat with a damp ring and a drip.
+5. **Fit the phone:** every hiding spot sits inside the view of a phone-width screen (the first grey box had the near
+   spots off its sides).
 
 ## Critique notes
 

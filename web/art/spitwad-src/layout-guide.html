@@ -1,0 +1,63 @@
+<!doctype html><html><body style="margin:0;background:#000"><canvas id="c" width="1024" height="1536"></canvas><script>
+const CLEAN = location.hash === '#clean', PL = 16, CAM_Y = 4 * PL, PITCH = -10 * Math.PI / 180, VFOV = 50 * Math.PI / 180, W = 1024, H = 1536, F = (H / 2) / Math.tan(VFOV / 2);
+const cp = Math.cos(PITCH), sp = Math.sin(PITCH), g = document.getElementById('c').getContext('2d');
+const proj = (x, y, z) => { const yc = y - CAM_Y, y2 = yc * cp - z * sp, z2 = yc * sp + z * cp, s = F / z2; return { x: W / 2 + x * s, y: H / 2 - y2 * s, s }; };
+const BACK = 34 * PL;
+function box(x0, x1, y0, y1, z, col, d = 0) { // front face, plus a top and a side for depth
+  if (d) { const a = proj(x0, y1, z), b = proj(x1, y1, z), c = proj(x1, y1, z + d), e = proj(x0, y1, z + d); g.fillStyle = shade(col, 1.18); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.lineTo(c.x, c.y); g.lineTo(e.x, e.y); g.fill(); }
+  const p = [proj(x0, y0, z), proj(x1, y0, z), proj(x1, y1, z), proj(x0, y1, z)]; g.fillStyle = col; g.beginPath(); p.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2; g.stroke();
+}
+function shade(hex, k) { const n = parseInt(hex.slice(1), 16), r = Math.min(255, (n >> 16) * k), gg = Math.min(255, ((n >> 8) & 255) * k), b = Math.min(255, (n & 255) * k); return `rgb(${r|0},${gg|0},${b|0})`; }
+function label(n, x, y, z) { if (CLEAN) return; const p = proj(x, y, z); g.fillStyle = '#111'; g.beginPath(); g.arc(p.x, p.y, 19, 0, 7); g.fill(); g.strokeStyle = '#ffd27a'; g.lineWidth = 3; g.stroke(); g.fillStyle = '#ffd27a'; g.font = '800 20px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(n, p.x, p.y + 1); }
+function plank(x, y, z) { if (CLEAN) return; const a = proj(x - 3.5, y, z), b = proj(x + 3.5, y + PL, z); g.strokeStyle = 'rgba(255,230,90,.95)'; g.setLineDash([6, 5]); g.lineWidth = 2; g.strokeRect(a.x, b.y, b.x - a.x, a.y - b.y); g.setLineDash([]); }
+// back wall and floor
+const wl = proj(0, 0, BACK); g.fillStyle = '#5b5550'; g.fillRect(0, 0, W, wl.y); g.fillStyle = '#7a736b'; g.fillRect(0, wl.y, W, H - wl.y);
+g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 1; for (let z = 2 * PL; z <= BACK; z += 2 * PL) { const a = proj(-400, 0, z), b = proj(400, 0, z); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); }
+// far wall: arch (11), hatch (14); catwalk (12), paper rolls (13)
+const arch = [proj(-38, 0, BACK), proj(38, 0, BACK), proj(38, 64, BACK), proj(-38, 64, BACK)]; g.fillStyle = '#c99a55'; g.beginPath(); g.moveTo(arch[0].x, arch[0].y); g.lineTo(arch[1].x, arch[1].y); g.lineTo(arch[2].x, arch[2].y); g.arc((arch[2].x + arch[3].x) / 2, arch[2].y, (arch[2].x - arch[3].x) / 2, 0, Math.PI, true); g.lineTo(arch[0].x, arch[0].y); g.fill();
+box(92, 110, 96, 110, BACK - 1, '#2a2622');
+box(-150, 150, 40, 50, 25 * PL + 1, '#4a4440', 14);
+box(-112, -86, 50, 100, 25 * PL - 6, '#b9ab90', 10); box(-78, -52, 50, 100, 25 * PL - 6, '#b9ab90', 10);
+// more clutter (all still): ceiling truss + hanging lamp, a crate hung on a chain, mail cubbies high on the wall, pallets,
+// a barrel, sacks, ink drums, a ladder against the shelf, a twine spool, a scrap bin
+box(-220, 220, 150, 158, 400, '#3a3633', 10); for (let x = -200; x <= 200; x += 40) { const a = proj(x, 150, 400), b = proj(x + 20, 120, 400); g.strokeStyle = '#3a3633'; g.lineWidth = 4; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); }
+{ const a = proj(-55, 150, 300), b = proj(-55, 140, 300); g.strokeStyle = '#222'; g.lineWidth = 2; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); } box(-60, -50, 128, 140, 300, '#b08a3a');
+{ const a = proj(0, 150, 330), b = proj(0, 120, 330); g.strokeStyle = '#2a2622'; g.lineWidth = 3; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); } box(-8, 8, 104, 120, 330, '#8a6237', 10);
+box(-165, -60, 112, 150, BACK - 1, '#6a5038'); for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) box(-162 + i * 17.3, -149 + i * 17.3, 115 + j * 12, 124 + j * 12, BACK - 2, '#2a2420');
+box(-42, -24, 0, 7, 380, '#9a7a4a', 18); box(-42, -24, 7, 14, 380, '#8a6a3a', 18);
+box(-22, -8, 0, 18, 262, '#5a4030', 12);
+box(24, 32, 0, 20, 300, '#3a4048', 8); box(32, 40, 0, 20, 300, '#3a4048', 8);
+// midground: flywheel (8) left; shelf (7), pipes (10), boiler (9) right
+const fw = proj(-50, 30, 15 * PL); g.strokeStyle = '#3c3a38'; g.lineWidth = 12; g.beginPath(); g.arc(fw.x, fw.y, 20 * fw.s, 0, 7); g.stroke(); g.lineWidth = 5; for (let k = 0; k < 6; k++) { const an = k * Math.PI / 3; g.beginPath(); g.moveTo(fw.x, fw.y); g.lineTo(fw.x + Math.cos(an) * 20 * fw.s, fw.y + Math.sin(an) * 20 * fw.s); g.stroke(); }
+box(-56, -44, 0, 30, 15 * PL + 2, '#3c3a38', 6);
+box(72, 104, 0, 56, 21 * PL, '#a8653a', 20);
+box(20, 110, 80, 85, 18 * PL, '#a8653a');
+for (const y of [36, 48, 60]) box(24, 58, y, y + 4, 14 * PL, '#8a6a44', 12);
+for (const [x, y] of [[26, 40], [36, 40], [50, 40], [28, 52], [42, 52], [52, 52], [32, 64], [48, 64]]) box(x, x + 5, y, y + 7, 14 * PL + 2, '#efe6cf');
+box(-18, -2, 0, 10, 222, '#a89070', 10);
+{ for (const y of [6, 18, 30, 42, 54, 66]) box(16, 23, y, y + 1.5, 218, '#7a5a3a'); for (const x of [16, 21.5]) box(x, x + 1.5, 0, 74, 218, '#7a5a3a'); }
+// the press (6): a platen on four open legs
+box(8, 42, 15, 20, 12 * PL, '#7d7f82', 16); for (const x of [9, 39]) box(x, x + 2.5, 0, 15, 12 * PL, '#55575a');
+// the conveyor (5): a plain dark belt across the middle
+box(-46, 46, 0, 12, 9 * PL + 6, '#2b2826', 10);
+box(43, 56, 0, 16, 180, '#9a7848', 10); box(44, 55, 5, 11, 179, '#c8b088');
+// foreground: crates with a gap (1) and tool chest (2) left; cabinet + open drawer (3) and cartons (4) right
+box(-25, -9, 0, 14, 5 * PL, '#8a6237', 14); box(-25, -18, 14, 28, 5 * PL, '#8a6237', 14); box(-16.5, -9, 14, 28, 5 * PL, '#8a6237', 14);
+box(-40, -26, 0, 11, 7.5 * PL, '#6a4a2a', 10); { const a = proj(-40, 11, 7.5 * PL + 10), b = proj(-26, 11, 7.5 * PL + 10), c = proj(-26, 22, 7.5 * PL + 13), d = proj(-40, 22, 7.5 * PL + 13); g.fillStyle = '#7a5532'; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.lineTo(c.x, c.y); g.lineTo(d.x, d.y); g.fill(); }
+box(9, 24, 0, 30, 5 * PL, '#7a5230', 16); box(10, 23, 22, 27, 5 * PL - 7, '#5a3b22', 7);
+box(18, 36, 0, 9, 7 * PL, '#a88a5c', 14); box(21, 32, 9, 15, 7 * PL + 3, '#a88a5c', 10);
+box(-16, -4, 0, 16, 128, '#5a5a58', 10); for (const [x, y] of [[-14, 15], [-9, 17], [-6, 15]]) { const p = proj(x, y, 128); g.fillStyle = '#efe6cf'; g.beginPath(); g.arc(p.x, p.y, 2.2 * p.s, 0, 7); g.fill(); }
+// sample Plank cards (16 in tall) at a few spots, dashed
+plank(-17.3, 16, 5 * PL + 4); plank(16.5, 22, 5 * PL - 10); plank(-33, 10, 7.5 * PL + 6); plank(0, 12, 9 * PL + 10); plank(25, 20, 12 * PL + 8); plank(-50, 12, 15 * PL + 8); plank(-82, 50, 25 * PL - 3); plank(0, 0, BACK - 10); plank(101, 50, 25 * PL + 4); plank(36, 44, 14 * PL + 6);
+plank(0, 88, 330); plank(-120, 120, BACK - 3); plank(-15, 4, 262); plank(-10, 6, 128 + 6); plank(19.5, 30, 226);
+label(15, 60, 164, 400); label(16, 14, 112, 330); label(17, -150, 154, BACK); label(18, -33, 18, 380); label(19, -15, 22, 262); label(20, -10, 14, 222); label(21, 32, 24, 300); label(22, 19, 80, 218); label(23, 50, 20, 180); label(24, -10, 21, 128); label(25, -55, 134, 300);
+// labels
+label(1, -17, 33, 5 * PL); label(2, -33, 30, 7.5 * PL + 12); label(3, 16, 35, 5 * PL); label(4, 27, 19, 7 * PL); label(5, 34, 16, 9 * PL + 6); label(6, 25, 25, 12 * PL);
+label(7, 41, 72, 14 * PL); label(8, -50, 56, 15 * PL); label(9, 88, 62, 21 * PL); label(10, 40, 92, 18 * PL); label(11, -46, 60, BACK); label(12, 128, 56, 25 * PL); label(13, -69, 108, 25 * PL); label(14, 101, 118, BACK);
+// handrail (bottom 8%) and the plain bottom fifth
+g.fillStyle = CLEAN ? '#6e6760' : 'rgba(30,30,30,.55)'; g.fillRect(0, H * 0.8, W, H * 0.2); g.fillStyle = '#b8733f'; g.fillRect(0, H * 0.92, W, H * 0.03); g.fillStyle = '#8a5530'; g.fillRect(0, H * 0.95, W, H * 0.05);
+if (!CLEAN) { g.fillStyle = 'rgba(255,255,255,.85)'; g.font = '700 30px system-ui'; g.textAlign = 'center'; g.fillText('KEEP PLAIN (straw + HUD)', W / 2, H * 0.865); g.font = '700 24px system-ui'; g.fillText('copper handrail', W / 2, H * 0.975); }
+// horizon tick
+if (!CLEAN) { const hz = H / 2 - F * Math.tan(-PITCH); g.strokeStyle = 'rgba(255,255,255,.35)'; g.setLineDash([10, 8]); g.beginPath(); g.moveTo(0, hz); g.lineTo(W, hz); g.stroke(); g.setLineDash([]); }
+</script></body></html>
