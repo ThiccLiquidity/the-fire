@@ -4,8 +4,10 @@
 // a deliberate exception, never a default. Some rules only warn; a few are hard (the contract refuses those anyway).
 //
 //   price           a group's dollar price is $1 to $10; 0 only for a holders' group (NFT or snapshot: free or PAPER only)
-//   burn-total      plankBurnBps + paperBurnBps is 10% to 100% of each sale (drop-wide)
-//   paper-burn      paperBurnBps is at least 10% (PAPER buy pressure is the point; Standard is 20%)
+//   burn-total      a group's plankBurnBps + paperBurnBps is 10% to 100% of each of its sales (per group, for a group
+//                   with a dollar price; over 100% is hard: the contract refuses it)
+//   paper-burn      a group's paperBurnBps is at least 10% (PAPER buy pressure is the point; Standard is 20%). A group
+//                   set to burn all its PLANK (plankBurnBps 10000) needs --allow paper-burn: a deliberate exception
 //   paper-per-pack  a group's PAPER per pack is at least 0.1 PAPER
 //   no-paper        a group has no PAPER per pack (paper 0)
 //   paper-cap       paperCapUsd is at least $0.10 (0 = no cap: a warning, not RED)
@@ -26,8 +28,8 @@ import BOUNDS from "./sale-policy-bounds.json" with { type: "json" };
 
 export const RULES = {
   price: "a group's price is $1 to $10, or 0 for a holders' group",
-  "burn-total": "plankBurnBps + paperBurnBps is 10% to 100%",
-  "paper-burn": "paperBurnBps is at least 10%",
+  "burn-total": "a group's plankBurnBps + paperBurnBps is 10% to 100%",
+  "paper-burn": "a group's paperBurnBps is at least 10%",
   "paper-per-pack": "a group's PAPER per pack is at least 0.1 PAPER",
   "no-paper": "a group's PAPER per pack is not 0",
   "paper-cap": "paperCapUsd is at least $0.10, or 0 (no cap)",
@@ -40,10 +42,12 @@ export const RULES = {
 const B = Object.fromEntries(Object.entries(BOUNDS).filter(([k]) => !k.startsWith("_")).map(([k, v]) => [k, BigInt(v)]));
 const ZERO_ROOT = /^0x0{64}$/i;
 const big = (v) => BigInt(v ?? 0);
-export const DROP_FIELDS = ["start", "packs", "plankBurnBps", "paperBurnBps", "paperCapUsd", "maxPerTx", "regularWalletsFor", "creditsPerPick",
+export const DROP_FIELDS = ["start", "packs", "paperCapUsd", "maxPerTx", "regularWalletsFor", "creditsPerPick",
   "creditPacksMax", "creditPacksPerWallet", "creditGroup"];
 export const GROUP_FIELDS = ["packs", "gate", "coins", "afterGroup", "rollTo", "startDelay", "duration", "perWallet", "limitFor", "perNft", "taxBps",
-  "priceUsd", "paper", "nft", "idle", "perTx", "unlimited", "root"];
+  "plankBurnBps", "paperBurnBps", "priceUsd", "paper", "nft", "idle", "perTx", "unlimited", "root"];
+const GROUP_NUMS = ["packs", "coins", "afterGroup", "rollTo", "startDelay", "duration", "perWallet", "limitFor", "perNft", "taxBps", "plankBurnBps",
+  "paperBurnBps", "priceUsd", "paper", "idle", "perTx"];
 
 /** "--allow price,wallet-limit" (a string, a list or nothing) -> the set of allowed rules. Unknown names throw. */
 export function parseAllow(v) {
@@ -73,6 +77,9 @@ export const coinNames = (mask) => ["PLANK", "ETH", "USDG"].filter((_, i) => Num
  * `start` override, as GROUP_ROOT_<i> and DROP_START do for ConfigureSeries.
  */
 export function normSale(sale, { mill, roots = {}, start } = {}) {
+  if (sale.plankBurnBps !== undefined || sale.paperBurnBps !== undefined) {
+    throw new Error("sale: the burn shares are per group: set plankBurnBps and paperBurnBps in each of sale.groups (Standard 1000 / 2000)");
+  }
   const groups = (sale.groups ?? []).map((g, i) => {
     const gate = typeof g.gate === "string" ? g.gate : GATES[Number(g.gate)];
     const nft = g.nft === undefined || g.nft === zeroAddress ? zeroAddress : g.nft === "press" ? (mill ? getAddress(mill) : "press") : getAddress(g.nft);
@@ -80,7 +87,7 @@ export function normSale(sale, { mill, roots = {}, start } = {}) {
     return {
       name: g.name, gate, nft, root: root && !ZERO_ROOT.test(String(root)) ? String(root).toLowerCase() : `0x${"0".repeat(64)}`,
       unlimited: !!g.unlimited,
-      ...Object.fromEntries(["packs", "coins", "afterGroup", "rollTo", "startDelay", "duration", "perWallet", "limitFor", "perNft", "taxBps", "priceUsd", "paper", "idle", "perTx"].map((k) => [k, big(g[k])])),
+      ...Object.fromEntries(GROUP_NUMS.map((k) => [k, big(g[k])])),
     };
   });
   return {
@@ -110,10 +117,6 @@ export function salePolicy(sale0, { allow = new Set(), roots, nftCode = {}, mill
     const why = hard ? "the contract refuses it" : `policy: ${RULES[name]}; --allow ${name} if meant`;
     out.push({ rule: name, level, text: `${text}${level === "allowed" ? ` (allowed: --allow ${name})` : level === "red" ? ` (${why})` : ""}` });
   };
-  const plankBps = sale.plankBurnBps;
-  const paperBps = sale.paperBurnBps;
-  rule("burn-total", plankBps + paperBps >= B.burnTotalBpsMin && plankBps + paperBps <= B.burnTotalBpsMax, `burns ${pct(plankBps + paperBps)} of each sale (PLANK ${pct(plankBps)} + PAPER ${pct(paperBps)})`);
-  rule("paper-burn", paperBps >= B.paperBurnBpsMin, `PAPER buy-and-burn ${pct(paperBps)} of each sale`);
   const cap = sale.paperCapUsd;
   if (cap === 0n) rule("paper-cap", false, "no dollar cap on a pack's PAPER (paperCapUsd 0)", { warnOnly: true });
   else rule("paper-cap", cap >= B.paperCapUsdMin, `a pack's PAPER is capped at ${usd(cap)}`);
@@ -123,6 +126,14 @@ export function salePolicy(sale0, { allow = new Set(), roots, nftCode = {}, mill
     if (g.gate === "open" && g.priceUsd === 0n && g.paper === 0n) rule("free-open", false, `${n}: free packs open to everyone`, { hard: true });
     if (g.priceUsd === 0n) rule("price", holders, `${n}: no dollar price${holders ? ` (a holders' group: ${g.paper === 0n ? "free" : "PAPER only"})` : " in an open group"}`);
     else rule("price", g.priceUsd >= B.priceUsdMin && g.priceUsd <= B.priceUsdMax, `${n}: ${usd(g.priceUsd)} a pack`);
+    // the group's own burn shares: they split its dollar payments (a group with no dollar price has nothing to split)
+    const burn = g.plankBurnBps + g.paperBurnBps;
+    const shares = `PLANK ${pct(g.plankBurnBps)} + PAPER ${pct(g.paperBurnBps)}`;
+    if (burn > 10000n) rule("burn-total", false, `${n}: burns ${pct(burn)} of each sale (${shares})`, { hard: true });
+    else if (g.priceUsd !== 0n) {
+      rule("burn-total", burn >= B.burnTotalBpsMin && burn <= B.burnTotalBpsMax, `${n}: burns ${pct(burn)} of each sale (${shares})`);
+      rule("paper-burn", g.paperBurnBps >= B.paperBurnBpsMin, `${n}: PAPER buy-and-burn ${pct(g.paperBurnBps)} of each sale`);
+    }
     if (g.paper === 0n) rule("no-paper", false, `${n}: no PAPER per pack (paper 0)`);
     else rule("paper-per-pack", g.paper >= B.paperPerPackMin, `${n}: ${paper(g.paper)} per pack`);
     if (g.perWallet === 0n) {
@@ -189,6 +200,7 @@ export function describeGroup(g, i, sale, { mill } = {}) {
     `  Packs:      ${g.unlimited ? "no limit (unlimited: adds on top of the total)" : `${g.packs}${g.packs === 0n ? " (only leftovers rolled in)" : ""}`}`,
     `  Price:      ${price} a pack${g.taxBps ? `, rising ${pct(g.taxBps)} a pack (taxBps ${g.taxBps}: the rise buys and burns PAPER)` : ""}`,
     `  Coins:      ${g.priceUsd === 0n ? "- (no dollar price)" : coinNames(g.coins)}`,
+    `  Each sale:  ${g.priceUsd === 0n ? "- (no dollar price)" : `${pct(g.plankBurnBps)} burns PLANK, ${pct(g.paperBurnBps)} buys and burns PAPER, ${pct(10000n - g.plankBurnBps - g.paperBurnBps)} to the revenue wallet`}`,
     `  Per wallet: ${g.perWallet === 0n ? "no limit" : g.limitFor ? `${g.perWallet} for the first ${dur(g.limitFor)} after it opens, then no limit` : g.perWallet}; per purchase: ${g.perTx === 0n ? `${sale.maxPerTx === 0n ? 50n : sale.maxPerTx} (the drop's)` : g.perTx}`,
     `  Opens:      ${opens}`,
     `  Max time:   ${g.duration === 0n ? (g.unlimited ? "no time limit" : "until its packs are gone") : dur(g.duration)}; idle: ${g.idle === 0n ? "off" : `ends ${dur(g.idle)} after its last sale`}`,
@@ -196,17 +208,16 @@ export function describeGroup(g, i, sale, { mill } = {}) {
   ];
 }
 
-/** Every sale field in plain units, for the LOCK screen: the drop-wide fields, then each group. `start`: the opening
+/** Every sale field in plain units, for the LOCK screen: the drop-wide fields, then each group (with its own burn
+ *  shares). `start`: the opening
  *  time as text. */
 export function describeSale(sale0, { start, roots, mill } = {}) {
   const sale = normSale(sale0, { roots, mill });
-  const rest = 10000n - sale.plankBurnBps - sale.paperBurnBps;
   const finite = sale.groups.filter((g) => !g.unlimited).length;
   const cg = Number(sale.creditGroup);
   return [
     `Opens:                ${start ?? `unix ${sale.start}`}`,
     `Packs:                ${sale.packs} in ${finite} group(s)${finite < sale.groups.length ? ", plus what the unlimited group sells on top" : ""}`,
-    `Each sale:            ${pct(sale.plankBurnBps)} burns PLANK, ${pct(sale.paperBurnBps)} buys and burns PAPER, ${pct(rest)} to the revenue wallet`,
     `PAPER ceiling:        a pack's PAPER is worth at most ${sale.paperCapUsd === 0n ? "no cap" : usd(sale.paperCapUsd)} (paperCapUsd)`,
     `Most per purchase:    ${sale.maxPerTx === 0n ? "50 (default)" : sale.maxPerTx} (maxPerTx)`,
     `Regular wallets only: ${sale.regularWalletsFor === 0n ? "off" : dur(sale.regularWalletsFor)} (regularWalletsFor)`,

@@ -47,17 +47,17 @@ interface IV2Router {
  * @title FireSale
  * @notice Sells the Omni packs (docs/omni-economy.md, docs/drop-groups.md). Every product rule is a per-drop setting the
  *         owner picks before the drop opens (`DropConfig`): the total packs split into 1 to 6 groups (FireGroups: who
- *         can buy each, how many, at what price and PAPER, in which coins, when, and where unsold packs go), the PLANK
- *         and PAPER burn shares, the PAPER dollar ceiling, most packs per purchase, how long only regular wallets can
+ *         can buy each, how many, at what price and PAPER, in which coins, when, where unsold packs go, and its PLANK
+ *         and PAPER burn shares), the PAPER dollar ceiling, most packs per purchase, how long only regular wallets can
  *         buy, credits per picked suggestion and caps on free (credit) packs. Nothing about a drop can change once it
  *         opens. What a pack holds is the Series' recipe (FireCards and its dealer), fixed from the first pack minted.
  *
  *         - A purchase names its group (`buy`). The group's dollar price is paid in a coin it accepts (PLANK, ETH or
  *           USDG; or ETH alone with `buyWithEthAll`, which also buys the packs' PAPER on the market), plus the group's
  *           PAPER per pack (burned, never more than the drop's dollar ceiling worth). A group can have no dollar price
- *           (PAPER only) or neither (free holders' claims). Of each dollar payment, the PLANK burn share buys PLANK and
- *           burns it (PLANK payments burn directly), the PAPER burn share goes to PaperBurner (which buys PAPER on the
- *           market and burns it), and the rest goes to the revenue wallet. If the PLANK swap can't go through, the
+ *           (PAPER only) or neither (free holders' claims). Of each dollar payment, the group's PLANK burn share buys
+ *           PLANK and burns it (PLANK payments burn directly), its PAPER burn share goes to PaperBurner (which buys
+ *           PAPER on the market and burns it), and the rest goes to the revenue wallet. If the PLANK swap can't go through, the
  *           PLANK burn share goes to PlankBurner instead (no withdraw: it can only buy PLANK and burn it later), so a
  *           purchase never fails because of PLANK.
  *         - The Series closes the moment nothing can still sell (every group that hasn't ended is empty), however
@@ -143,8 +143,6 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         uint32 maxPerTx; // most packs in one purchase or credit spend
         uint32 regularWalletsFor; // only regular wallets (not contracts) can buy until then (seconds after start)
         uint16 creditsPerPick; // credits per picked suggestion
-        uint16 plankBurnBps;
-        uint16 paperBurnBps;
         uint8 creditGroup; // the group credit packs come from (FireGroups.NONE = no credit packs)
         bool closed;
         uint64 creditPacksMax; // most credit packs in this drop in all (0 = no limit)
@@ -268,8 +266,6 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     struct DropConfig {
         uint64 start; // when it opens (unix seconds); everything locks then
         uint64 packs; // total packs (167); the groups' packs must add up to it
-        uint16 plankBurnBps; // share of each dollar payment that burns PLANK (1000 = 10%)
-        uint16 paperBurnBps; // share that buys PAPER and burns it (2000 = 20%); with plankBurnBps <= 100%
         uint128 paperCapUsd; // most a pack's PAPER may be worth, 8 decimals ($1 = 100_000_000), at the PAPER feed's
         // price: every group's packs and credit packs alike. 0 = no ceiling
         uint32 maxPerTx; // most packs in one purchase or credit spend; 0 = DEFAULT_MAX_PER_TX (50)
@@ -278,15 +274,14 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         uint64 creditPacksMax; // most free (credit) packs in this drop in all; 0 = no limit
         uint64 creditPacksPerWallet; // most free (credit) packs per wallet in this drop; 0 = no limit
         uint8 creditGroup; // the group credit packs come from (its packs and timing); 255 = no credit packs
-        FireGroups.Group[] groups; // 1 to 6 (docs/drop-groups.md)
+        FireGroups.Group[] groups; // 1 to 6 (docs/drop-groups.md), each with its own PLANK and PAPER burn shares
     }
 
     /// @notice Set up a drop. Allowed until it opens (`start`); after that nothing about it can change.
     function configureDrop(uint256 fire, DropConfig calldata c) external onlyOwner {
         Drop storage d = drops[fire];
         if (d.start != 0 && block.timestamp >= d.start) revert DropStarted();
-        if (fire > type(uint64).max || c.start <= block.timestamp || uint256(c.plankBurnBps) + c.paperBurnBps > BPS
-            || c.regularWalletsFor > MAX_WINDOW) revert BadConfig();
+        if (fire > type(uint64).max || c.start <= block.timestamp || c.regularWalletsFor > MAX_WINDOW) revert BadConfig();
         // The Series must be set up in the card contract first (its dealer, recipe and characters), or the sale that
         // sells it out couldn't close it.
         if (!CARDS.ready(fire)) revert BadConfig();
@@ -299,8 +294,6 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         GROUPS.configure(fire, c.start, c.packs, c.groups, c.creditGroup); // checks the groups
         d.start = c.start;
         d.packs = c.packs;
-        d.plankBurnBps = c.plankBurnBps;
-        d.paperBurnBps = c.paperBurnBps;
         d.paperCapUsd = c.paperCapUsd;
         d.maxPerTx = c.maxPerTx == 0 ? uint32(DEFAULT_MAX_PER_TX) : c.maxPerTx;
         d.regularWalletsFor = c.regularWalletsFor;
@@ -336,12 +329,12 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         payable
         nonReentrant
     {
-        (Drop storage d, uint256 usd8, uint256 tax8, uint256 left) = _take(fire, group, n, pay, maxPaper, access, false);
+        (Drop storage d, Taken memory t) = _take(fire, group, n, pay, maxPaper, access, false);
         uint256 cost;
         uint256 burnShare;
         bool burned;
-        if (usd8 != 0) (cost, burnShare, burned) = _collect(d, pay, usd8, tax8, maxCost);
-        _finish(fire, d, group, n, pay, cost, burnShare, burned, left);
+        if (t.usd8 != 0) (cost, burnShare, burned) = _collect(t, pay, maxCost);
+        _finish(fire, d, group, n, pay, cost, burnShare, burned, t.left);
         _refund(pay, cost);
     }
 
@@ -350,12 +343,12 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     ///         `quote(fire, group, n, Pay.ETH)`'s cost plus `quotePaperInEth` of its PAPER; anything above comes back.
     ///         One transaction, no approval. The group must accept ETH (if it has a dollar price).
     function buyWithEthAll(uint256 fire, uint256 group, uint256 n, FireGroups.Access calldata access) external payable nonReentrant {
-        (Drop storage d, uint256 usd8, uint256 tax8, uint256 left) = _take(fire, group, n, Pay.ETH, type(uint256).max, access, true);
+        (Drop storage d, Taken memory t) = _take(fire, group, n, Pay.ETH, type(uint256).max, access, true);
         uint256 cost;
         uint256 burnShare;
         bool burned;
-        if (usd8 != 0) (cost, burnShare, burned) = _collect(d, Pay.ETH, usd8, tax8, type(uint256).max);
-        _finish(fire, d, group, n, Pay.ETH, cost, burnShare, burned, left);
+        if (t.usd8 != 0) (cost, burnShare, burned) = _collect(t, Pay.ETH, type(uint256).max);
+        _finish(fire, d, group, n, Pay.ETH, cost, burnShare, burned, t.left);
         _sendEth(msg.sender, address(this).balance); // what's left of msg.value (this never holds ETH otherwise)
     }
 
@@ -481,12 +474,21 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         if (over < min) over = min;
     }
 
+    /// @dev What a purchase took from its group: the dollar total (8 decimals, the group's rising tax included:
+    ///      `tax8` of it), what can still sell after these packs, and the group's burn shares (basis points).
+    struct Taken {
+        uint256 usd8;
+        uint256 tax8;
+        uint256 left;
+        uint256 plankBps;
+        uint256 paperBps;
+    }
+
     /// @dev Checks shared by every purchase, takes the packs from the group (FireGroups checks it's open, has them,
-    ///      takes this coin and lets the buyer in), then takes the PAPER. Returns the dollar total and what can still
-    ///      sell after these packs. The dollar total includes the group's rising tax (`tax8` of it).
+    ///      takes this coin and lets the buyer in), then takes the PAPER.
     function _take(uint256 fire, uint256 group, uint256 n, Pay pay, uint256 maxPaper, FireGroups.Access calldata access, bool buyPaper)
         internal
-        returns (Drop storage d, uint256 usd8, uint256 tax8, uint256 left)
+        returns (Drop storage d, Taken memory t)
     {
         _notPaused();
         d = _live(fire);
@@ -495,45 +497,50 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         // throwaway wallets to sweep a drop in one transaction.
         if (block.timestamp - d.start < d.regularWalletsFor && msg.sender != tx.origin) revert NoContracts();
         uint256 per;
-        (usd8, tax8, per, left) = GROUPS.take(fire, group, msg.sender, n, uint8(1 << uint8(pay)), access);
+        (t.usd8, t.tax8, per, t.left, t.plankBps, t.paperBps) =
+            GROUPS.take(fire, group, msg.sender, n, uint8(1 << uint8(pay)), access);
         d.sold += uint64(n);
         _burnPaper(buyPaper ? address(this) : msg.sender, n, per, d.paperCapUsd, maxPaper);
     }
 
-    /// @dev Takes a dollar amount `usd8` (of which `tax8` is a group's rising tax) in `pay` and sends it on in this
-    ///      transaction: of the base price, the PLANK burn share burns PLANK (or goes to PlankBurner if the swap can't
-    ///      go through), the PAPER burn share goes to PaperBurner (it buys PAPER and burns it; the keeper flushes it),
-    ///      the rest to the revenue wallet; the whole tax goes to PaperBurner too. ETH comes from msg.value
+    /// @dev Takes a dollar amount `t.usd8` (of which `t.tax8` is a group's rising tax) in `pay` and sends it on in
+    ///      this transaction: of the base price, the group's PLANK burn share burns PLANK (or goes to PlankBurner if
+    ///      the swap can't go through), its PAPER burn share goes to PaperBurner (it buys PAPER and burns it; the
+    ///      keeper flushes it), the rest to the revenue wallet; the whole tax goes to PaperBurner too. Exactly `cost`
+    ///      is taken from the buyer, whatever the shares. ETH comes from msg.value
     ///      (the caller refunds the rest). First it refreshes the PLANK price (PlankUsdTwap.checkpoint: a cheap no-op
     ///      when not due; a failure is ignored), so buyers don't depend on the keeper for a fresh price.
-    function _collect(Drop storage d, Pay pay, uint256 usd8, uint256 tax8, uint256 maxCost)
+    function _collect(Taken memory t, Pay pay, uint256 maxCost)
         internal
         returns (uint256 cost, uint256 burnShare, bool burned)
     {
         (bool poked,) = address(PLANK_USD).call{gas: CHECKPOINT_GAS}(abi.encodeWithSignature("checkpoint()"));
         poked; // a feed without checkpoint(), or one that fails, just keeps its price
-        uint256 bps = d.plankBurnBps;
+        uint256 bps = t.plankBps;
+        uint256 usd8 = t.usd8;
         uint256 paperShare;
         if (pay == Pay.USDG && address(USDG) == address(0)) revert BadConfig();
         cost = pay == Pay.PLANK ? _plankFor(usd8) : pay == Pay.ETH ? _ethFor(usd8) : _usdgFor(usd8);
         if (cost > maxCost || (pay == Pay.ETH && msg.value < cost)) revert PriceMoved();
-        // the rising tax (its share of the cost) all goes to PaperBurner; the base price splits as usual
-        uint256 tax = cost * tax8 / usd8;
+        // the rising tax (its share of the cost) all goes to PaperBurner; the base price splits by the group's shares
+        // (FireGroups keeps them at most 100% together, so the three parts are exactly `cost`)
+        uint256 tax = cost * t.tax8 / usd8;
         burnShare = (cost - tax) * bps / BPS;
-        paperShare = (cost - tax) * d.paperBurnBps / BPS + tax;
-        uint256 floorUsd8 = (usd8 - tax8) * bps / BPS; // the swap floor is worked out on the base burn share
+        paperShare = (cost - tax) * t.paperBps / BPS + tax;
+        uint256 rest = cost - burnShare - paperShare;
+        uint256 floorUsd8 = (usd8 - t.tax8) * bps / BPS; // the swap floor is worked out on the base burn share
         if (pay == Pay.PLANK) {
             if (burnShare > 0) PLANK.safeTransferFrom(msg.sender, DEAD, burnShare);
             if (paperShare > 0) PLANK.safeTransferFrom(msg.sender, paperBurner, paperShare);
-            PLANK.safeTransferFrom(msg.sender, revenueWallet, cost - burnShare - paperShare);
+            if (rest > 0) PLANK.safeTransferFrom(msg.sender, revenueWallet, rest);
             burned = true;
         } else if (pay == Pay.ETH) {
             burned = burnShare > 0 && _swapEthToPlank(burnShare, floorUsd8);
             if (burnShare > 0 && !burned) _sendEth(plankBurner, burnShare);
             _sendEth(paperBurner, paperShare);
-            _sendEth(revenueWallet, cost - burnShare - paperShare);
+            _sendEth(revenueWallet, rest);
         } else {
-            USDG.safeTransferFrom(msg.sender, revenueWallet, cost - burnShare - paperShare);
+            if (rest > 0) USDG.safeTransferFrom(msg.sender, revenueWallet, rest);
             if (paperShare > 0) USDG.safeTransferFrom(msg.sender, paperBurner, paperShare);
             if (burnShare > 0) {
                 USDG.safeTransferFrom(msg.sender, address(this), burnShare);

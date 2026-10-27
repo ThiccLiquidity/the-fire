@@ -138,9 +138,10 @@ export async function setupChain({ port = 8547, log = console.log, everyone = {}
   // leftovers to Everyone), Everyone (6 packs, $2.50 + 1 PAPER, any coin; the free packs come from it), and an
   // unlimited "after sell-out" group ($2.50 rising 4% a pack, ETH only, 1 per purchase, ends 5 minutes after its last
   // sale). The tests take every finite pack, buy 2 extra, let it idle out and close it, so the packs can be opened.
-  const g = (o) => ({ perWallet: 0, afterGroup: 255, startDelay: 0, duration: 0, rollTo: 255, ...o });
+  // every group burns the Standard 10% PLANK / 20% PAPER of its dollar payments (each group sets its own)
+  const g = (o) => ({ perWallet: 0, afterGroup: 255, startDelay: 0, duration: 0, rollTo: 255, plankBurnBps: 1000, paperBurnBps: 2000, ...o });
   recipe.sale = {
-    start: 0, packs: 7, plankBurnBps: 1000, paperBurnBps: 2000, paperCapUsd: 100000000, maxPerTx: 0, regularWalletsFor: 0, creditsPerPick: 1,
+    start: 0, packs: 7, paperCapUsd: 100000000, maxPerTx: 0, regularWalletsFor: 0, creditsPerPick: 1,
     creditPacksMax: 0, creditPacksPerWallet: 0, creditGroup: 1,
     groups: [
       g({ name: "Paper Press holders", packs: 1, gate: "nft", nft: "press", perNft: 1, priceUsd: "0", paper: "1000000000000000000", coins: 0, duration: 3600, rollTo: 1 }),

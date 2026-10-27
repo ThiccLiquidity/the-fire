@@ -201,8 +201,9 @@ async function main() {
   const snap = JSON.parse(readFileSync(SNAP_PATH, "utf8"));
   check(drop.start === startUnix && drop.packs === 5n && views.length === 4 && views[1].config.root === snap.root && views[1].config.root !== recipe.sale.groups[1].root
     && getAddress(views[0].config.nft) === getAddress(inputs.MILL) && views[2].config.priceUsd === 250000000n && views[3].config.taxBps === 400
-    && views[2].config.perWallet === 5 && views[2].config.limitFor === 86400 && views[1].config.limitFor === 0 && views[0].config.limitFor === 0,
-    `the drop: start ${drop.start}, 5 packs in 4 groups, the snapshot's root (not the recipe's placeholder) on group 2, the Paper Press on group 1, Everyone 5 per wallet for its first 24 h`);
+    && views[2].config.perWallet === 5 && views[2].config.limitFor === 86400 && views[1].config.limitFor === 0 && views[0].config.limitFor === 0
+    && views.every((v) => v.config.plankBurnBps === 1000 && v.config.paperBurnBps === 2000),
+    `the drop: start ${drop.start}, 5 packs in 4 groups, the snapshot's root (not the recipe's placeholder) on group 2, the Paper Press on group 1, Everyone 5 per wallet for its first 24 h, every group's burn shares 10% / 20%`);
   check(/OK +FireSale's drop for Series 7: .*every field as meant/.test(r.out) && /7  Done/.test(r.out), "read back OK and done");
   const holders = JSON.parse(readFileSync(HOLDERS_OUT, "utf8"));
   const h4 = holders.groups?.["1"]?.wallets?.[acct(4).address.toLowerCase()];

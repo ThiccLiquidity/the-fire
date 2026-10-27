@@ -26,7 +26,7 @@ other way: its fresh odds and wear rules are fixed forever in `FirePsa`, the sam
 | `RecipeDealer` | The first dealer: deals each Series from its own recipe, slot by slot (below). It keeps no dealing state: `deal` is a view of the seed, so anyone can check a pack. Owned by the owner (the hardware wallet). |
 | `RecipeCompiler` | The recipe checker and compiler (the plan the dealer reads: the types' holo odds, and per slot its end in the pack and cumulative type weights), its own contract. Pure: no state, no owner. |
 | `StandardRecipe` | The Standard Omni odds as a recipe (library). |
-| `FireSale` | Sells the packs (`docs/omni-economy.md`, `docs/drop-groups.md`): a purchase names its group (`buy(fire, group, n, pay, maxCost, maxPaper, access)`) and pays the group's dollar price in PLANK, ETH or USDG (the coins the group takes), or ETH alone (`buyWithEthAll`: it also buys the packs' PAPER on the market and burns it), plus the group's PAPER. Every product rule is a per-drop setting (total packs and its groups, PAPER dollar ceiling, PLANK and PAPER burn shares, regular-wallets rule, packs per purchase, credits per picked suggestion and credit caps). Closes the Series the moment nothing can still sell, or when the drop is ended. The owner can pause buying (`setPaused`). Never holds funds. |
+| `FireSale` | Sells the packs (`docs/omni-economy.md`, `docs/drop-groups.md`): a purchase names its group (`buy(fire, group, n, pay, maxCost, maxPaper, access)`) and pays the group's dollar price in PLANK, ETH or USDG (the coins the group takes), or ETH alone (`buyWithEthAll`: it also buys the packs' PAPER on the market and burns it), plus the group's PAPER. Every product rule is a per-drop setting (total packs and its groups, each with its own PLANK and PAPER burn shares; PAPER dollar ceiling, regular-wallets rule, packs per purchase, credits per picked suggestion and credit caps). Closes the Series the moment nothing can still sell, or when the drop is ended. The owner can pause buying (`setPaused`). Never holds funds. |
 | `FireGroups` | Each drop's groups (split out of `FireSale` for contract size): config, timing (opens with the drop or after another group; ends sold out, at its duration, or after `idle` with no sale), unlimited groups, the rising tax, per-purchase limits, capacity with rolled-in leftovers, gates (open, NFT with packs per NFT id, Merkle snapshot with a per-wallet allowance), wallet limits (optionally lifting on a timer, `limitFor`), and the views the site reads (`groupsOf`, `boughtBy`, `remaining`, `openLeft`, `scheduleEnd`). Only `FireSale` writes to it (set once at deploy); no owner. |
 | `FireCredits` | Free pack credits, card burning (42 cards = 1 credit, fixed forever) and character suggestions, split out of `FireSale` for contract size (same rules). It spends credits, burns cards and takes suggestion PAPER through `FireSale` hooks only it can call (`creditPacks`, `burnCardsFor`, `burnPaperFor`), so PAPER is approved to `FireSale` alone. Owned by the owner (picks, suggestion rules). |
 | `PlankBurner` | Gets the sale's PLANK burn share when the swap can't run (a stale PLANK price or a failed swap). No owner, no withdraw: anyone calls `flush`, which buys PLANK (95% TWAP guard, halving for a backlog) and sends it to the dead address. |
@@ -180,21 +180,22 @@ character's weight and the total; all 1 with no weights), `holoOdds(fire, type)`
   ],
   "characters": [ { "name": "Ember Fox", "category": "Animals" } ],
   "sale": {
-    "start": 1900000000, "packs": 167, "plankBurnBps": 1000, "paperBurnBps": 2000, "paperCapUsd": "100000000",
+    "start": 1900000000, "packs": 167, "paperCapUsd": "100000000",
     "maxPerTx": 50, "regularWalletsFor": 172800,
     "creditsPerPick": 1, "creditPacksMax": 16, "creditPacksPerWallet": 3, "creditGroup": 2,
     "groups": [
       { "name": "Paper Press holders", "packs": 50, "gate": "nft", "nft": "press", "perNft": 1,
-        "priceUsd": "0", "paper": "1000000000000000000", "coins": 0, "perWallet": 2,
+        "priceUsd": "0", "paper": "1000000000000000000", "coins": 0, "plankBurnBps": 1000, "paperBurnBps": 2000, "perWallet": 2,
         "afterGroup": 255, "startDelay": 0, "duration": 21600, "rollTo": 2 },
       { "name": "PLANK holders", "packs": 40, "gate": "snapshot", "root": "0x...",
-        "priceUsd": "250000000", "paper": "1000000000000000000", "coins": 1, "perWallet": 5,
+        "priceUsd": "250000000", "paper": "1000000000000000000", "coins": 1, "plankBurnBps": 1000, "paperBurnBps": 2000, "perWallet": 5,
         "afterGroup": 255, "startDelay": 0, "duration": 86400, "rollTo": 2 },
       { "name": "Everyone", "packs": 77, "gate": "open",
-        "priceUsd": "250000000", "paper": "1000000000000000000", "coins": 7, "perWallet": 5, "limitFor": 86400,
+        "priceUsd": "250000000", "paper": "1000000000000000000", "coins": 7, "plankBurnBps": 1000, "paperBurnBps": 2000,
+        "perWallet": 5, "limitFor": 86400,
         "afterGroup": 1, "startDelay": 0, "duration": 0, "rollTo": 255 },
       { "name": "After sell-out", "packs": 0, "unlimited": true, "gate": "open", "taxBps": 400, "idle": 900, "perTx": 1,
-        "priceUsd": "250000000", "paper": "1000000000000000000", "coins": 2, "perWallet": 0,
+        "priceUsd": "250000000", "paper": "1000000000000000000", "coins": 2, "plankBurnBps": 1000, "paperBurnBps": 2000, "perWallet": 0,
         "afterGroup": 2, "startDelay": 0, "duration": 0, "rollTo": 255 }
     ]
   }
@@ -213,8 +214,7 @@ numbers too big for their field and a drop start more than 365 days away are ref
 `sale` (optional; the studio's Sale tab) is `FireSale.DropConfig` by name, in contract units: seconds, dollars with 8
 decimals, PAPER in wei, burn shares in basis points. Every key is required unless said otherwise.
 
-- Drop-wide: `start`, `packs` (the total; the groups' `packs` must add up to it), `plankBurnBps` + `paperBurnBps`
-  (together at most 10000), `paperCapUsd` (0 = no ceiling), `maxPerTx` (0 = 50), `regularWalletsFor` (at most 30
+- Drop-wide: `start`, `packs` (the total; the groups' `packs` must add up to it), `paperCapUsd` (0 = no ceiling), `maxPerTx` (0 = 50), `regularWalletsFor` (at most 30
   days; 0 = off), `creditsPerPick`, `creditPacksMax` and `creditPacksPerWallet` (0 = no limit), `creditGroup` (the
   index of the group credit packs come from, 0 = the first; 255 = no credit packs), `groups` (1 to 6, in order: a
   group's index is its place in the list).
@@ -222,7 +222,9 @@ decimals, PAPER in wei, burn shares in basis points. Every key is required unles
   rolled in come on top; 0 allowed for a group that only takes leftovers), `gate` (`"open"`, `"nft"` or `"snapshot"`),
   `priceUsd` (0 = no dollar price), `paper` (PAPER per pack, 0 = none; both 0 = free, never for an open group),
   `coins` (for the dollar price: PLANK 1 + ETH 2 + USDG 4, so 7 = any; at least one when there is a price; ETH includes
-  `buyWithEthAll`), `perWallet` (0 = no limit), `afterGroup` (255 = opens with the drop; else an EARLIER group's
+  `buyWithEthAll`), `plankBurnBps` + `paperBurnBps` (the group's burn shares of its dollar price, together at most
+  10000; the rest goes to the revenue wallet; Standard 1000 + 2000 in every group; a group with no dollar price has
+  nothing to split but still sets them), `perWallet` (0 = no limit), `afterGroup` (255 = opens with the drop; else an EARLIER group's
   index: opens when that group ends), `startDelay` (seconds after the drop's start or that group's end, at most 30
   days), `duration` (longest it stays open, at most 30 days; 0 = until its packs are gone), `rollTo` (where its
   unsold packs go when it ends: a LATER group's index, or 255 = nowhere, never made), and optional keys (0 /
@@ -329,8 +331,8 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | Most packs per purchase in the group | `Group.perTx` | per group | 1 on "After sell-out" | 0 = the drop's `maxPerTx`; credits ignore it |
 | No pack count | `Group.unlimited` | per group | "After sell-out" | packs 0, needs `taxBps` and `idle`, rolls nowhere; adds on top of the total |
 | PAPER ceiling per pack | `paperCapUsd` (8 dec.) | per Series | $1 | any, 0 = no ceiling. A pack's PAPER (every group's and credit packs) is never worth more than this at the `PAPER_USD` feed's price; while the feed is late the last good price holds (`lastPaperUsd`); before its first price, the set PAPER |
-| PLANK burn share | `plankBurnBps` | per Series | 10% | 0 to 100%, with the PAPER share |
-| PAPER buy & burn share (to `PaperBurner`) | `paperBurnBps` | per Series | 20% | 0 to 100%, with the PLANK share |
+| PLANK burn share | `Group.plankBurnBps` | per group | 10% in every group | 0 to 100%, with the group's PAPER share (`BadGroup(i)` over 100%). The PLANK holders' group could burn 100% of the PLANK it takes |
+| PAPER buy & burn share (to `PaperBurner`) | `Group.paperBurnBps` | per group | 20% in every group | 0 to 100%, with the group's PLANK share |
 | Most packs per purchase / credit spend | `maxPerTx` | per Series | 50 (0 = 50) | < 2^32. Gas is flat: 100 packs cost about what 1 does |
 | Regular wallets only for | `regularWalletsFor` | per Series | 48h | <= 30 days; 0 = off. Every group; not credits |
 | Credit group | `creditGroup` | per Series | group 3 | a group index, or 255 = no credit packs. Credits spend its packs while it is open, for its PAPER only (its gate, price, coins and wallet limit don't apply) |

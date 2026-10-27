@@ -1258,6 +1258,8 @@ contract DeployCardsTest is Test {
         assertEq(d.games.series(), 0, "no Series: paid play closed");
         assertTrue(d.credits.prizeGame(1));
         assertFalse(d.credits.prizeGame(2));
+        assertEq(address(d.credits.psa()), address(d.psa), "case and grading prizes go through FirePsa");
+        assertEq(d.psa.couponIssuer(), address(d.credits), "and only FireCredits gives coupons");
         assertEq(d.credits.prizeAwarder(), address(0), "the owner sets the awarder");
         assertEq(d.games.pendingOwner(), safe);
         assertEq(d.games.owner(), address(s));

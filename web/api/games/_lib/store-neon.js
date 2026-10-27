@@ -56,6 +56,12 @@ export function neonStore(url, { sql = neon(url) } = {}) {
       return (await q('select wallet, streak, reached_at from game_board where series = $1 and game_id = $2 order by streak desc, reached_at asc limit $3', [series, gameId, limit]))
         .map((r) => ({ wallet: r.wallet, streak: r.streak, reachedAt: num(r.reached_at) }));
     },
+    async allTime({ gameId, limit = 100 }) {
+      // each wallet's best across every Series (the earliest if it tied itself), then ranked the same way
+      return (await q(`select * from (select distinct on (wallet) wallet, streak, reached_at, series from game_board where game_id = $1
+                        order by wallet, streak desc, reached_at asc) b order by streak desc, reached_at asc limit $2`, [gameId, limit]))
+        .map((r) => ({ wallet: r.wallet, streak: r.streak, reachedAt: num(r.reached_at), series: Number(r.series) }));
+    },
     async rateHit(key, windowMs, max, now) {
       const rows = await q(`insert into game_rate (key, window_start, count) values ($1, $2, 1)
                             on conflict (key) do update set

@@ -99,9 +99,9 @@
     // size (characters) its recipe was built with, and its groups (docs/drop-groups.md: who can buy, how many, at what
     // price, when; Store.demoStage fills them in). phase: 3 on sale (or about to be), 4 sold out / closed.
     // Drop-wide settings too (live: FireSale.dropOf): cards per pack, most packs per checkout, the regular-wallets window
-    // (seconds), the PAPER $ cap per pack, the burn splits (bps of the price) and the free-pack caps.
+    // (seconds), the PAPER $ cap per pack and the free-pack caps. The burn splits (bps of the price) are each group's.
     series: { no: 7, total: 167, cast: 10, phase: 3, closed: false, groups: [], creditGroup: 2, creditPacksLeft: 16, left: null, closing: false,
-      cardsPerPack: 6, maxPerTx: 50, regularWalletsFor: 48 * 3600, paperCapUsd: 1, paperBurnBps: 2000, plankBurnBps: 1000, creditPacksMax: 16, creditPacksPerWallet: 3 },
+      cardsPerPack: 6, maxPerTx: 50, regularWalletsFor: 48 * 3600, paperCapUsd: 1, creditPacksMax: 16, creditPacksPerWallet: 3 },
     wallet: {
       connected: false, address: '0x7a3f…c91e', full: DEMO_ADDR, name: 'Demo wallet', isPressHolder: true, inSnapshot: true, isContract: false,
       balances: { ETH: 0.42, PLANK: 1250000000, PAPER: 24, USDG: 50 },
@@ -218,7 +218,8 @@
     demoStage(stage) {
       const now = Math.floor(Date.now() / 1000), H = 3600, s = state.series;
       const mk = (o) => {
-        const g = { perWallet: 0, limitFor: 0, limitUntil: 0, perNft: 0, perTx: 50, unlimited: false, taxBps: 0, idle: 0, duration: 0, sold: 0, waiting: false, moreFrom: null, moreAt: 0, afterGroup: null, rollTo: null, snap: null, ...o };
+        // plankBurnBps / paperBurnBps: the group's burn splits (bps of its price; live: FireGroups), the Standard 10% / 20%
+        const g = { perWallet: 0, limitFor: 0, limitUntil: 0, perNft: 0, perTx: 50, unlimited: false, taxBps: 0, plankBurnBps: 1000, paperBurnBps: 2000, idle: 0, duration: 0, sold: 0, waiting: false, moreFrom: null, moreAt: 0, afterGroup: null, rollTo: null, snap: null, ...o };
         // the next pack's price and the few after it (live: read from the contract), from the sold count
         return Object.defineProperties(g, { next: { enumerable: true, get: () => Store.packPrice(g, 1) }, after: { enumerable: true, get: () => (g.taxBps ? [2, 3, 4].map((k) => Store.packPrice(g, k)) : []) } });
       };

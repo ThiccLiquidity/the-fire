@@ -161,12 +161,12 @@ contract CardsHandler is Test {
         FireSale.DropConfig memory c;
         c.start = uint64(time + 1);
         c.packs = 40;
-        c.plankBurnBps = 3_000;
         c.paperCapUsd = 1e8;
         c.regularWalletsFor = 1 hours;
         c.creditsPerPick = 1;
         c.groups = new FireGroups.Group[](1);
         c.groups[0] = _openGroup(40, 250_000_000, 1e18);
+        c.groups[0].plankBurnBps = 3_000;
         c.groups[0].perWallet = 10;
         vm.prank(owner, owner);
         sale.configureDrop(1, c);
@@ -387,7 +387,7 @@ contract CardsHandler is Test {
             }
         }
         ghostPaid[uint8(b.pay)] += paid;
-        ghostBurnShare[uint8(b.pay)] += paid * sale.dropOf(b.fire).plankBurnBps / BPS;
+        ghostBurnShare[uint8(b.pay)] += paid * G.plankBurnBps / BPS; // the group's own share
         ghostPaperBurned += b.n * G.paper;
         calls["buy.ok"]++;
     }
@@ -467,7 +467,6 @@ contract CardsHandler is Test {
         uint256 count = 1 + shape % 3;
         FireSale.DropConfig memory c;
         c.start = uint64(time + bound(startIn, 1, 2 hours));
-        c.plankBurnBps = uint16(bps % 3 == 0 ? 3_000 : bound(bps, 0, BPS));
         c.regularWalletsFor = uint32(window % 4 == 0 ? 0 : bound(window, 1 hours, 48 hours));
         c.creditsPerPick = 1;
         c.creditGroup = uint8(shape / 3 % 4 == 3 ? 255 : (shape / 3 % 4) % count);
@@ -492,6 +491,9 @@ contract CardsHandler is Test {
             }
             if (i > 0 && (seed >> 40) % 2 == 0) g.afterGroup = uint8(i - 1);
             if ((seed >> 48) % 4 == 0) g.startDelay = uint32(bound(seed >> 56, 0, 2 hours));
+            // each group its own PLANK burn share (0 to 100%; PAPER share 0, so the rest is revenue)
+            uint256 gb = uint256(keccak256(abi.encode(bps, i)));
+            g.plankBurnBps = uint16(gb % 3 == 0 ? 3_000 : gb % 3 == 1 ? BPS : bound(gb, 0, BPS));
             total += g.packs;
             c.groups[i] = g;
         }

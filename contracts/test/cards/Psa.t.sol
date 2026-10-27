@@ -381,6 +381,59 @@ contract PsaTest is SeriesHelper {
         psa.protect{value: c}(_one(9), _none(), FirePsa.Pay.ETH, c);
     }
 
+    /// Game-prize coupons: only the issuer (FireCredits, set once) adds them; `protect` uses them first and charges only
+    /// the rest, nothing at all when they cover the batch.
+    function test_couponsAreUsedFirstAndOnlyTheIssuerAddsThem() public {
+        address issuer = address(0xC0);
+        vm.expectRevert(FirePsa.NotIssuer.selector);
+        psa.addCoupons(alice, 1, 1); // no issuer yet
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", alice));
+        psa.setCouponIssuer(issuer);
+        vm.prank(owner);
+        vm.expectRevert(FirePsa.ZeroAddress.selector);
+        psa.setCouponIssuer(address(0));
+        vm.prank(owner);
+        psa.setCouponIssuer(issuer);
+        vm.prank(owner);
+        vm.expectRevert(FirePsa.AlreadySet.selector);
+        psa.setCouponIssuer(address(0xBAD)); // set once
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.NotIssuer.selector);
+        psa.addCoupons(alice, 5, 5);
+        vm.prank(issuer);
+        psa.addCoupons(alice, 1, 2);
+        assertEq(psa.caseCoupons(alice), 1);
+        assertEq(psa.gradeCoupons(alice), 2);
+
+        // a case and a grading, both covered: nothing is charged, and ETH sent comes back
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        uint256 index = psa.protect{value: 1 ether}(_one(1), _one(2), FirePsa.Pay.ETH, 0);
+        assertEq(alice.balance, before, "free");
+        assertEq(burner.flushes(), 0, "nothing paid");
+        assertEq(psa.caseCoupons(alice), 0);
+        assertEq(psa.gradeCoupons(alice), 1);
+        psaRng.fulfill(psaRng.last(), 3);
+        psa.finish(index, _one(2));
+        (,, uint256 grade) = cards.gradeInfo(2);
+        assertGt(grade, 0, "the free grading grades like any other");
+
+        // two gradings with one coupon left: only one is charged
+        uint256 one = psa.quote(0, 1, FirePsa.Pay.ETH);
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.PriceMoved.selector);
+        psa.protect{value: one}(_none(), _ids(3, 2), FirePsa.Pay.ETH, one - 1);
+        vm.prank(alice);
+        psa.protect{value: one}(_none(), _ids(3, 2), FirePsa.Pay.ETH, one);
+        assertEq(address(burner).balance, one);
+        assertEq(psa.gradeCoupons(alice), 0);
+        // and with none left, the full price again
+        vm.prank(alice);
+        vm.expectRevert(FirePsa.PriceMoved.selector);
+        psa.protect{value: 1 ether}(_one(5), _none(), FirePsa.Pay.ETH, 0);
+    }
+
     function test_ownerSettings() public {
         vm.startPrank(owner);
         psa.setPrices(0.1e18, 2e18);

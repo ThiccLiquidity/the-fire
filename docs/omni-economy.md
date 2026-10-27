@@ -31,8 +31,8 @@ setting: cards burned per free pack is 42, forever.
 | Pack price | $2.50 (the PLANK and Everyone groups; press packs have no dollar price) |
 | PAPER per pack | 1 (every group) |
 | PAPER ceiling per pack | $1: a pack's PAPER is never worth more than this at the PAPER price (0 = no ceiling) |
-| PLANK burn share | 10% |
-| PAPER buy & burn share | 20% (to `PaperBurner`, which buys PAPER on the market and burns it) |
+| PLANK burn share | 10% (every group; each group sets its own) |
+| PAPER buy & burn share | 20% (every group; to `PaperBurner`, which buys PAPER on the market and burns it) |
 | Group 1: Paper Press holders | 50 packs, 1 PAPER each, 1 per press, opens with the drop, up to 6 hours, leftovers to Everyone |
 | Group 2: PLANK holders | 40 packs, snapshot ($69+ of PLANK held for 7 days), $2.50 + 1 PAPER, PLANK only, 5 per wallet, opens with the drop, up to 24 hours, leftovers to Everyone |
 | Group 3: Everyone | 77 packs + leftovers, $2.50 + 1 PAPER, any coin, 5 per wallet, opens when group 2 ends, until sold |
@@ -114,7 +114,10 @@ nowhere). Setup is signed on the owner's hardware wallet; the public site has no
     can call `flush`, which buys PLANK (at least 95% of what the 30-minute average says, trying half, a quarter and
     so on for a backlog) and sends it to the dead address; otherwise the share waits there.
   - **70% goes to the revenue wallet.**
-  - Both shares are set per drop (`plankBurnBps`, `paperBurnBps`; together at most 100%).
+  - Both shares are set per group, with the drop (`plankBurnBps`, `paperBurnBps` on each group; together at most
+    100%), and lock when it opens. The Standard drop uses 10% / 20% in every group; the PLANK holders' group could
+    instead burn 100% of the PLANK it takes (nothing to PaperBurner or revenue from those sales).
+  - The buyer pays exactly the quoted cost, whatever the shares: nothing can take more.
   - The contract keeps nothing.
 - **ETH alone:** `buyWithEthAll` takes the price and the packs' PAPER in one ETH payment: FireSale buys that PAPER
   on the market (the cheaper of ETH -> PAPER and ETH -> PLANK -> PAPER, through the same V2 router) and burns it. One
@@ -164,7 +167,7 @@ nowhere). Setup is signed on the owner's hardware wallet; the public site has no
   claimable in any split; a wallet limit on top if wanted), checked live; a press is spent once its packs are
   claimed, whoever holds it later.
 - **Price:** 1 PAPER, burned. No dollar price. (Per group: free, a PAPER amount, a dollar price paid in the coins it
-  takes with the same burn shares, or a dollar price plus PAPER.)
+  takes with the group's burn shares, or a dollar price plus PAPER.)
 - **Window:** 6 hours (or until claimed), then leftovers roll into Everyone.
 - **Trading:** press packs are normal packs and can be traded sealed.
 - **Known gap:** someone with many presses could spread them across wallets. Each one is still a real press.

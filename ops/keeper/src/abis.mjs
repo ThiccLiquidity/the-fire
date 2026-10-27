@@ -31,7 +31,7 @@ export const saleAbi = parseAbi([
 ]);
 
 export const groupsAbi = parseAbi([
-  "struct Group { uint64 packs; uint8 gate; uint8 coins; uint8 afterGroup; uint8 rollTo; uint32 startDelay; uint32 duration; uint32 perWallet; uint32 limitFor; uint32 perNft; uint16 taxBps; uint128 priceUsd; uint128 paper; address nft; uint32 idle; uint32 perTx; bool unlimited; bytes32 root; }",
+  "struct Group { uint64 packs; uint8 gate; uint8 coins; uint8 afterGroup; uint8 rollTo; uint32 startDelay; uint32 duration; uint32 perWallet; uint32 limitFor; uint32 perNft; uint16 taxBps; uint16 plankBurnBps; uint16 paperBurnBps; uint128 priceUsd; uint128 paper; address nft; uint32 idle; uint32 perTx; bool unlimited; bytes32 root; }",
   "struct GroupView { Group config; uint8 state; uint256 capacity; uint256 sold; uint256 left; uint256 opensAt; uint256 endsAt; uint256 limitUntil; }",
   "function groupsOf(uint256 fire) view returns (GroupView[])",
 ]);

@@ -35,6 +35,9 @@ interface IGroupsSale {
  *         - `taxBps` (0 = off), a rising tax: the k-th pack sold in the group (k = 1 for its first) costs
  *           priceUsd * (1 + taxBps/10000)^k. The base price splits like any sale; the tax above it all goes to
  *           PaperBurner (FireSale). Its capacity is its own packs (nothing may roll into it).
+ *         - `plankBurnBps` / `paperBurnBps`: how its dollar payments split (FireSale): the PLANK burn share, the
+ *           PAPER buy & burn share (to PaperBurner), the rest to the revenue wallet. Together at most 100%, so a group
+ *           can burn all the PLANK it takes (plankBurnBps 10000) while another keeps the Standard 10% / 20%.
  *
  *         "Gone for good": a group whose packs are all sold ends the moment its last pack goes, unless a group that
  *         rolls into it is still open or yet to open (more packs may still arrive), in which case it ends when the
@@ -55,6 +58,8 @@ contract FireGroups {
     ///      buys past it (PriceTooHigh) and simply idles out.
     uint256 public constant MAX_TAX_BPS = 5_000;
     uint256 public constant MAX_TAX_GROWTH = 1e9;
+    /// @dev Basis points in 100%: a group's two burn shares together are at most this.
+    uint256 public constant BPS = 10_000;
     /// @dev An unlimited group's capacity, internally (its sold count is 64-bit). Views show it as type(uint256).max.
     uint256 internal constant UNLIMITED = type(uint64).max;
     uint8 public constant PLANK = 1;
@@ -77,6 +82,9 @@ contract FireGroups {
         uint32 perNft; // NFT gate: packs per NFT id per drop
         uint16 taxBps; // rising tax (0 = off): the k-th pack sold costs priceUsd * (1 + taxBps/10000)^k; the part
         // above priceUsd is the tax and all of it buys and burns PAPER. Needs a price; no group may roll into it
+        uint16 plankBurnBps; // share of this group's dollar payments that burns PLANK (1000 = 10%; 10000 = all of it)
+        uint16 paperBurnBps; // share that goes to PaperBurner to buy and burn PAPER (2000 = 20%); the two together
+        // are at most 10000 (100%); the rest goes to the revenue wallet. The rising tax is apart: all of it buys PAPER
         uint128 priceUsd; // dollars per pack, 8 decimals (0 = no dollar price)
         uint128 paper; // PAPER wei per pack (0 = none)
         address nft; // NFT gate: the ERC-721
@@ -200,11 +208,12 @@ contract FireGroups {
     }
 
     /// @dev One group's rules: indices point the right way (so there are no cycles), every time is bounded, a price
-    ///      has a coin, the gate has what it needs and nothing it doesn't, and free packs are never open to all.
+    ///      has a coin, its two burn shares together are at most 100%, the gate has what it needs and nothing it doesn't, and free packs are never open to all.
     function _check(Group calldata g, uint256 i, uint256 n) internal view {
         bool ok = (g.afterGroup == NONE || g.afterGroup < i) && (g.rollTo == NONE || (g.rollTo > i && g.rollTo < n))
             && g.startDelay <= MAX_WINDOW && g.duration <= MAX_WINDOW && g.idle <= MAX_WINDOW && g.coins <= 7
-            && (g.priceUsd == 0 || g.coins != 0) && g.limitFor <= MAX_WINDOW && (g.limitFor == 0 || g.perWallet != 0);
+            && (g.priceUsd == 0 || g.coins != 0) && g.limitFor <= MAX_WINDOW && (g.limitFor == 0 || g.perWallet != 0)
+            && uint256(g.plankBurnBps) + g.paperBurnBps <= BPS;
         if (g.gate == Gate.OPEN) ok = ok && g.nft == address(0) && g.perNft == 0 && g.root == 0 && (g.priceUsd | g.paper) != 0;
         else if (g.gate == Gate.NFT) ok = ok && g.nft.code.length > 0 && g.perNft != 0 && g.root == 0;
         else ok = ok && g.root != 0 && g.nft == address(0) && g.perNft == 0;
@@ -220,10 +229,20 @@ contract FireGroups {
     /// @notice Take `n` packs from group `g` for `buyer`, paying in `coin` (PLANK 1, ETH 2, USDG 4): the group must
     ///         be open with `n` left, take that coin (if it has a dollar price), and let the buyer in (gate, wallet
     ///         limit). Returns the dollar price of these packs (8 decimals) and its rising tax part, the group's PAPER
-    ///         per pack, and the packs that can still sell after these (0: the Series is done).
+    ///         per pack, the packs that can still sell after these (0: the Series is done), and the group's PLANK and
+    ///         PAPER burn shares (basis points) for FireSale's split.
     function take(uint256 fire, uint256 g, address buyer, uint256 n, uint8 coin, Access calldata a)
         external
         onlySale
+        returns (uint256 usd8, uint256 tax8, uint256 paper, uint256 left, uint256 plankBps, uint256 paperBps)
+    {
+        (usd8, tax8, paper, left) = _take(fire, g, buyer, n, coin, a);
+        Group storage G = groups[fire][g];
+        (plankBps, paperBps) = (G.plankBurnBps, G.paperBurnBps);
+    }
+
+    function _take(uint256 fire, uint256 g, address buyer, uint256 n, uint8 coin, Access calldata a)
+        internal
         returns (uint256 usd8, uint256 tax8, uint256 paper, uint256 left)
     {
         uint256 sold;

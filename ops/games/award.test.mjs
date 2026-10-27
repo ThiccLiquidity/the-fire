@@ -1,7 +1,10 @@
 // ops/games/award.mjs: the winners from a board, and its dry run. Run: node --test games/award.test.mjs (from ops/).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { award, winnersFrom } from './award.mjs';
+import { award, prizeTable, winnersFrom } from './award.mjs';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const A = '0x' + 'a'.repeat(40), B = '0x' + 'b'.repeat(40), C = '0x' + 'c'.repeat(40), D = '0x' + 'd'.repeat(40);
 const rows = [{ wallet: A, streak: 9, reachedAt: 5 }, { wallet: B, streak: 7, reachedAt: 2 }, { wallet: C, streak: 7, reachedAt: 3 }, { wallet: D, streak: 1, reachedAt: 1 }];
@@ -22,4 +25,18 @@ test('a dry run reads the board and sends nothing; --send without a key or RPC s
   await assert.rejects(award([], { env: {}, out: () => {} }), /--series/);
   const empty = await award(['--series', '7', '--site', 'https://x.test'], { env: {}, out: () => {}, fetchImpl: async () => ({ ok: true, json: async () => ({ rows: [] }) }) });
   assert.deepEqual(empty.winners, []);
+});
+
+test('the prizes file sets each place; the shipped file stays within the Series caps for both games', () => {
+  const t1 = prizeTable(new URL('./prizes.json', import.meta.url), 1), t2 = prizeTable(new URL('./prizes.json', import.meta.url), 2);
+  const sum = (k) => [...t1, ...t2].reduce((a, p) => a + p[k], 0);
+  assert.ok(sum('packs') <= 6 && sum('cases') <= 50 && sum('grades') <= 20);
+  const w = winnersFrom(rows, { table: t1 });
+  assert.deepEqual(w.map((x) => [x.packs, x.grades, x.cases]), [[2, 4, 10], [1, 3, 8], [0, 3, 7]]);
+  const dir = mkdtempSync(join(tmpdir(), 'prizes-')), f = join(dir, 'p.json');
+  writeFileSync(f, JSON.stringify({ 1: [{ packs: 1 }, { cases: 0 }] }));
+  assert.throws(() => prizeTable(f, 1), /at least one/);
+  assert.throws(() => prizeTable(f, 3), /no prizes for game 3/);
+  writeFileSync(f, JSON.stringify({ 1: [{ packs: 1.5 }] }));
+  assert.throws(() => prizeTable(f, 1), /whole numbers/);
 });

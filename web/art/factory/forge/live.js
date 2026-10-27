@@ -144,7 +144,7 @@
     Object.assign(S.series, {
       no: s.fire, total: s.packs, cast: s.cards.characters, phase: ph, closed: s.state === 'closed', closing: s.closing, cardsPerPack: s.cards.cardsPerPack || 6,
       // the drop-wide settings the copy quotes ("in Series N"): read from the drop, never typed in
-      maxPerTx: s.maxPerTx, regularWalletsFor: s.regularWalletsFor, paperCapUsd: +s.paperCapUsd, paperBurnBps: s.paperBurnBps, plankBurnBps: s.plankBurnBps,
+      maxPerTx: s.maxPerTx, regularWalletsFor: s.regularWalletsFor, paperCapUsd: +s.paperCapUsd,
       creditPacksMax: s.creditPacksMax, creditPacksPerWallet: s.creditPacksPerWallet,
       groups: s.groups.map(toGroup), creditGroup: s.creditGroup, creditPacksLeft: s.status.creditPacksLeft, left: s.status.left,
       note: s.state === 'upcoming' ? `Opens in ${until(s.start)}` : s.status.paused ? 'Paused' : null,
@@ -728,10 +728,11 @@
 
   // ---------- case & grade: priced by FirePsa.quote, capped at the price shown + 3%
   /** Exactly what casing the cards `caseIds` and grading `gradeIds` costs now in `coin` (PLANK, ETH or USDG;
-   *  FirePsa.quote: what protect charges): an Amount (raw + text), or null. */
+   *  FirePsa.quote: what protect charges), after the wallet's free case and grading coupons (game prizes, used
+   *  first): an Amount (raw + text) plus freeCases / freeGrades, or null. */
   async function quoteProtect(caseIds, gradeIds, coin) {
     await need();
-    try { return await L.quoteProtect(caseIds, gradeIds, coin); } catch { return null; }
+    try { return await L.quoteProtect(caseIds, gradeIds, coin, me()); } catch { return null; } // net of the wallet's free coupons
   }
   async function protect(caseIds, gradeIds, coin, quote) {
     await need();

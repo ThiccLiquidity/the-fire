@@ -16,7 +16,7 @@ const MILL = `0x${"4".repeat(40)}`;
 test("the studio's sale block (the Standard preset: press, PLANK snapshot, everyone, after sell-out) is inside the policy", () => {
   assert.deepEqual(reds(studio), []);
   assert.deepEqual(warns(studio), []);
-  assert.deepEqual(salePolicy(studio).map((p) => p.level), Array(19).fill("ok"));
+  assert.deepEqual(salePolicy(studio).map((p) => p.level), Array(23).fill("ok"));
 });
 
 test("each rule: RED outside its bounds, per group", () => {
@@ -35,11 +35,32 @@ test("each rule: RED outside its bounds, per group", () => {
   assert.deepEqual(reds(withGroup(2, { limitFor: 3600 })), []);
   assert.deepEqual(reds(withGroup(2, { limitFor: 7 * 86400 })), []);
   assert.deepEqual(reds(withGroup(2, { limitFor: undefined })), [], "no timer: the limit holds the whole time");
-  assert.deepEqual(reds({ ...studio, plankBurnBps: 0, paperBurnBps: 900 }), ["burn-total", "paper-burn"]);
-  assert.deepEqual(reds({ ...studio, plankBurnBps: 9500, paperBurnBps: 1000 }), ["burn-total"], "over 100%");
-  assert.deepEqual(reds({ ...studio, plankBurnBps: 0, paperBurnBps: 1000 }), [], "10% all PAPER is in");
-  assert.deepEqual(reds({ ...studio, plankBurnBps: 2000, paperBurnBps: 999 }), ["paper-burn"]);
+  assert.deepEqual(reds(withGroup(2, { plankBurnBps: 0, paperBurnBps: 900 })), ["burn-total", "paper-burn"]);
+  assert.deepEqual(reds(withGroup(2, { plankBurnBps: 0, paperBurnBps: 1000 })), [], "10% all PAPER is in");
+  assert.deepEqual(reds(withGroup(2, { plankBurnBps: 2000, paperBurnBps: 999 })), ["paper-burn"]);
+  assert.deepEqual(reds(withGroup(0, { plankBurnBps: 0, paperBurnBps: 0 })), [], "a group with no dollar price has nothing to split");
   assert.deepEqual(reds({ ...studio, paperCapUsd: "9999999" }), ["paper-cap"], "under $0.10");
+});
+
+test("the burn shares are per group: each group's own, a PLANK group may burn all its PLANK (allowed by name)", () => {
+  // the PLANK holders burn 100% of the PLANK they pay; Everyone keeps 10% / 20%
+  const allPlank = withGroup(1, { plankBurnBps: 10000, paperBurnBps: 0 });
+  assert.deepEqual(reds(allPlank), ["paper-burn"], "no PAPER share: a deliberate exception");
+  assert.deepEqual(reds(allPlank, { allow: parseAllow("paper-burn") }), []);
+  const p = salePolicy(allPlank, { allow: parseAllow("paper-burn") });
+  assert.match(p.find((x) => x.rule === "burn-total" && x.text.startsWith("group 2")).text, /burns 100% of each sale \(PLANK 100% \+ PAPER 0%\)/);
+  assert.match(p.find((x) => x.rule === "burn-total" && x.text.startsWith("group 3")).text, /burns 30% of each sale \(PLANK 10% \+ PAPER 20%\)/);
+  // over 100% in any group is hard: the contract refuses it, --allow can't pass it
+  const over = withGroup(2, { plankBurnBps: 9500, paperBurnBps: 1000 });
+  assert.deepEqual(reds(over, { allow: parseAllow("burn-total") }), ["burn-total"], "over 100%");
+  assert.match(salePolicy(over).find((x) => x.level === "red").text, /group 3 \(Everyone\): burns 105%.*the contract refuses it/);
+  assert.deepEqual(reds(withGroup(0, { plankBurnBps: 10000, paperBurnBps: 1 })), ["burn-total"], "even with no dollar price");
+  // the old drop-wide fields are refused, not silently dropped
+  assert.throws(() => salePolicy({ ...studio, plankBurnBps: 1000 }), /burn shares are per group/);
+  // the LOCK screen shows each group's split
+  const text = describeSale(allPlank, { mill: MILL }).join("\n");
+  assert.ok(text.includes("Each sale:  100% burns PLANK, 0% buys and burns PAPER, 0% to the revenue wallet"), text);
+  assert.ok(text.includes("Each sale:  10% burns PLANK, 20% buys and burns PAPER, 70% to the revenue wallet"), text);
 });
 
 test("warnings: no wallet limit in a finite open group, a tax over 10%, an unlimited group idling over 1 h, no PAPER cap", () => {
@@ -67,10 +88,10 @@ test("hard rules (no --allow): a snapshot group's root, an NFT group's code, a f
 
 test("--allow turns a RED rule into an allowed one, by name only", () => {
   const allow = parseAllow("price,wallet-limit");
-  const p = salePolicy({ ...withGroup(2, { priceUsd: "5000000000", perWallet: 100 }), paperBurnBps: 0 }, { allow });
+  const p = salePolicy(withGroup(2, { priceUsd: "5000000000", perWallet: 100, paperBurnBps: 0 }), { allow });
   assert.deepEqual(p.filter((x) => x.level === "allowed").map((x) => x.rule), ["price", "wallet-limit"]);
   assert.deepEqual(p.filter((x) => x.level === "red").map((x) => x.rule), ["paper-burn"]);
-  assert.match(p.find((x) => x.rule === "paper-burn").text, /--allow paper-burn if meant/);
+  assert.match(p.find((x) => x.rule === "paper-burn" && x.level === "red").text, /^group 3 \(Everyone\).*--allow paper-burn if meant/);
   assert.match(p.find((x) => x.rule === "price" && x.level === "allowed").text, /^group 3 \(Everyone\): \$50\.00 a pack/);
   assert.throws(() => parseAllow("price,everything"), /no such rule/);
   assert.throws(() => parseAllow("snapshot-root"), /no such rule/, "hard rules can't be allowed");
@@ -143,7 +164,10 @@ test("dropDiffs reads back every drop-wide and group field; maxPerTx 0 is stored
   const { drop, views } = chainOf(want);
   assert.deepEqual(dropDiffs(drop, views, want), []);
   assert.equal(saleFromChain(drop, views).groups[1].gate, "snapshot");
-  assert.match(dropDiffs({ ...drop, paperBurnBps: 0n }, views, want).join(), /paperBurnBps 0 \(meant 2000\)/);
+  assert.match(dropDiffs({ ...drop, paperCapUsd: 0n }, views, want).join(), /paperCapUsd 0 \(meant 100000000\)/);
+  const v2 = structuredClone(views);
+  v2[1].config.paperBurnBps = 0n;
+  assert.match(dropDiffs(drop, v2, want).join(), /groups\[1\]\.paperBurnBps 0 \(meant 2000\)/);
   assert.match(dropDiffs({ ...drop, creditGroup: 1n }, views, want).join(), /creditGroup/);
   for (const k of GROUP_FIELDS) {
     const v = structuredClone(views);

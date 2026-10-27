@@ -22,7 +22,7 @@ export const psaPayIndex = (p: PsaCoin): number => PSA_PAY.indexOf(p);
 
 type DropRaw = {
   start: bigint; packs: bigint; sold: bigint; creditPacks: bigint; maxPerTx: number; regularWalletsFor: number; creditsPerPick: number;
-  plankBurnBps: number; paperBurnBps: number; creditGroup: number; closed: boolean; creditPacksMax: bigint; creditPacksPerWallet: bigint; paperCapUsd: bigint;
+  creditGroup: number; closed: boolean; creditPacksMax: bigint; creditPacksPerWallet: bigint; paperCapUsd: bigint;
 };
 type StatusRaw = {
   configured: boolean; live: boolean; closed: boolean; paused: boolean; plankPriceOk: boolean; regularWalletsOnly: boolean;
@@ -30,7 +30,7 @@ type StatusRaw = {
 };
 type GroupRaw = {
   packs: bigint; gate: number; coins: number; afterGroup: number; rollTo: number; startDelay: number; duration: number; perWallet: number;
-  limitFor: number; perNft: number; taxBps: number; priceUsd: bigint; paper: bigint; nft: Address; idle: number; perTx: number; unlimited: boolean; root: Hex;
+  limitFor: number; perNft: number; taxBps: number; plankBurnBps: number; paperBurnBps: number; priceUsd: bigint; paper: bigint; nft: Address; idle: number; perTx: number; unlimited: boolean; root: Hex;
 };
 type GroupViewRaw = {
   config: GroupRaw; state: number; capacity: bigint; sold: bigint; left: bigint; opensAt: bigint; endsAt: bigint; limitUntil: bigint;
@@ -79,6 +79,10 @@ export type GroupInfo = {
   unlimited: boolean;
   /** Rising tax per pack (400 = 4%), and the idle end (seconds without a sale; 0 = off). */
   taxBps: number; idle: number; duration: number;
+  /** How this group's dollar payments split (bps of each pack's base price; set per group, locked with the drop): the
+   *  share that buys PLANK and burns it, and the share that buys PAPER and burns it. The rest goes to the revenue
+   *  wallet; a rising tax all buys PAPER. */
+  plankBurnBps: number; paperBurnBps: number;
   afterGroup: number | null; rollTo: number | null;
   /** The next pack's price now (the rising tax included), and the few after it (taxed groups; [] otherwise). null:
    *  past the price safety bound (PriceTooHigh: it can't sell more). */
@@ -92,8 +96,8 @@ export type SeriesInfo = {
   fire: number;
   /** The drop's drop-wide settings. `packs`: the base total (the finite groups); an unlimited group adds on top. */
   start: number; packs: number; maxPerTx: number; regularWalletsEnds: number; paperCapUsd: string; creditsPerPick: number;
-  /** Seconds after the start that only regular wallets can buy, and the sale's burn splits (bps of each pack's price). */
-  regularWalletsFor: number; plankBurnBps: number; paperBurnBps: number;
+  /** Seconds after the start that only regular wallets can buy (the burn splits are each group's: GroupInfo). */
+  regularWalletsFor: number;
   /** The group credit packs come from (null = no credit packs), and the caps on them (0 = no cap). */
   creditGroup: number | null; creditPacksMax: number; creditPacksPerWallet: number;
   /** Packs taken (bought and free, all groups) and credit packs minted. */
@@ -156,6 +160,7 @@ export async function groups(fire: number, maxPerTx = 50): Promise<GroupInfo[]> 
       opensAt: Number(v.opensAt), endsAt: Number(v.endsAt),
       capacity: count(v.capacity), sold: Number(v.sold), left: count(v.left), unlimited: c.unlimited,
       taxBps: Number(c.taxBps), idle: Number(c.idle), duration: Number(c.duration),
+      plankBurnBps: Number(c.plankBurnBps), paperBurnBps: Number(c.paperBurnBps),
       afterGroup: c.afterGroup === NONE ? null : Number(c.afterGroup), rollTo: c.rollTo === NONE ? null : Number(c.rollTo),
       next: taxed ? prices[0] : base, after: taxed ? (prices.slice(1).filter(Boolean) as PackPrice[]) : [],
       waiting: false, moreFrom: null, moreAt: 0,
@@ -208,7 +213,7 @@ export async function series(fire: number): Promise<SeriesInfo> {
   const closed = p.closed || d.closed, left = closed ? 0 : count(p.left);
   return {
     fire, start: s, packs: Number(d.packs), maxPerTx, regularWalletsEnds: s + d.regularWalletsFor, paperCapUsd: usd8(d.paperCapUsd),
-    regularWalletsFor: Number(d.regularWalletsFor), plankBurnBps: Number(d.plankBurnBps), paperBurnBps: Number(d.paperBurnBps),
+    regularWalletsFor: Number(d.regularWalletsFor),
     creditsPerPick: d.creditsPerPick, creditGroup: d.creditGroup === NONE ? null : d.creditGroup,
     creditPacksMax: Number(d.creditPacksMax), creditPacksPerWallet: Number(d.creditPacksPerWallet),
     sold: Number(d.sold), creditPacks: Number(d.creditPacks),
@@ -615,9 +620,19 @@ export async function psaPrices() {
 
 /** Exactly what casing `caseIds` and grading `gradeIds` costs now in `pay` (FirePsa.quote: what protect charges; every
  *  card costs the same, so only the counts matter). */
-export async function quoteProtect(caseIds: readonly number[], gradeIds: readonly number[], pay: PsaCoin): Promise<Amount> {
-  const raw = await read<bigint>("FirePsa", psaAbi, "quote", [BigInt(caseIds.length), BigInt(gradeIds.length), psaPayIndex(pay)]);
-  return amount(raw, pay === "USDG" && input("USDG") ? await decimalsOf(input("USDG")!) : 18);
+export async function quoteProtect(caseIds: readonly number[], gradeIds: readonly number[], pay: PsaCoin, owner?: Address | null): Promise<Amount & { freeCases: number; freeGrades: number }> {
+  const c = await couponsOf(owner);
+  const freeCases = Math.min(c.cases, caseIds.length), freeGrades = Math.min(c.grades, gradeIds.length);
+  const nc = caseIds.length - freeCases, ng = gradeIds.length - freeGrades;
+  const raw = nc + ng ? await read<bigint>("FirePsa", psaAbi, "quote", [BigInt(nc), BigInt(ng), psaPayIndex(pay)]) : 0n;
+  return { ...amount(raw, pay === "USDG" && input("USDG") ? await decimalsOf(input("USDG")!) : 18), freeCases, freeGrades };
+}
+
+/** Free cases and gradings a wallet holds (game prizes, FirePsa coupons). FirePsa.protect uses them first. */
+export async function couponsOf(owner?: Address | null): Promise<{ cases: number; grades: number }> {
+  if (!owner) return { cases: 0, grades: 0 };
+  const [cases, grades] = await Promise.all([read<bigint>("FirePsa", psaAbi, "caseCoupons", [owner]), read<bigint>("FirePsa", psaAbi, "gradeCoupons", [owner])]);
+  return { cases: Number(cases), grades: Number(grades) };
 }
 
 /** A grading: done also when it was cancelled (its cards came back ungraded). cancelAt / canCancel: as for opens

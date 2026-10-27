@@ -486,6 +486,10 @@ body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
 .gm-rows li small { grid-column: 2 / 4; color: var(--gold); font: 700 12px var(--body) }
 .gm-rows li.prize { border: 1px solid rgba(233,180,90,.45) } .gm-rows li.me { background: rgba(111,207,122,.12) }
 .gm-rows .rk { font: 400 18px var(--display); color: var(--gold) } .gm-rows b { font: 400 20px var(--display) }
+.gm-rows .who { display: flex; align-items: center; gap: 8px; min-width: 0 } .gm-rows .who .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.gm-rows li small.sub { color: var(--muted) }
+.gm-tabs { display: flex; gap: 6px; margin: 0 0 12px } .gm-tabs button { flex: 1; padding: 8px 10px; border-radius: 999px; border: 1px solid rgba(233,180,90,.35); background: transparent; color: inherit; font: 700 14px var(--body); cursor: pointer }
+.gm-tabs button[aria-selected="true"] { background: rgba(233,180,90,.18); border-color: var(--gold); color: var(--gold) }
 
 /* phones: the station buttons as enamel tiles, each filled with its own colour, a glossy top (owner's pick, Oct 26) */
 body[data-mode=port] .station { position: relative; overflow: hidden; border: 1px solid color-mix(in srgb, var(--c, var(--gold)) 80%, #fff 10%);

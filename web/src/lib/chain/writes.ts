@@ -18,7 +18,7 @@ import { NET } from "../net";
 import {
   addr, argsOf, cardsAbi, chainNow, creditsAbi, dealerAbi, eventOf, gamesAbi, hasFunction, input, psaAbi, pub, read, readGroups, saleAbi,
 } from "./contracts";
-import { gradingIds, payIndex, psaPayIndex, requestInfo, type PayCoin, type PsaCoin } from "./reads";
+import { gradingIds, payIndex, psaPayIndex, quoteProtect, requestInfo, type PayCoin, type PsaCoin } from "./reads";
 
 export type Step = (step: TxStep, label: string, hash?: Hex) => void;
 export type WriteOpts = { onStep?: Step };
@@ -219,9 +219,11 @@ export const skipStuck = (p: { fire: number }, o: WriteOpts = {}) =>
  *  PLANK and USDG are approved to FirePsa first. */
 export async function protect(p: { caseIds?: number[]; gradeIds?: number[]; pay: PsaCoin; slippageBps?: number; quote?: string | null }, o: WriteOpts = {}): Promise<{ receipt: TransactionReceipt; gradingIndex: number }> {
   const cases = (p.caseIds ?? []).map(BigInt), grades = (p.gradeIds ?? []).map(BigInt), psa = addr("FirePsa"), slip = p.slippageBps ?? 300;
-  const cost = await shown(p.quote, () => read<bigint>("FirePsa", psaAbi, "quote", [BigInt(cases.length), BigInt(grades.length), psaPayIndex(p.pay)]));
-  let maxCost: bigint, value = 0n;
-  if (p.pay === "ETH") value = maxCost = withSlip(cost, slip);
+  // the quote is for the cards the wallet's free coupons don't cover (FirePsa.protect uses them first); 0 = all free
+  const cost = await shown(p.quote, () => quoteProtect(p.caseIds ?? [], p.gradeIds ?? [], p.pay, me()).then((q) => BigInt(q.raw)));
+  let maxCost = 0n, value = 0n;
+  if (cost === 0n) { /* nothing to pay */ }
+  else if (p.pay === "ETH") value = maxCost = withSlip(cost, slip);
   else { maxCost = p.pay === "USDG" ? cost : withSlip(cost, slip); await approve(coinAddr(p.pay), psa, maxCost, `Approve ${p.pay}`, o); }
   const what = [cases.length ? `case ${plural(cases.length, "card")}` : "", grades.length ? `grade ${plural(grades.length, "card")}` : ""].filter(Boolean).join(", ");
   const receipt = await send(psa, psaAbi, "protect", [cases, grades, psaPayIndex(p.pay), maxCost], what[0].toUpperCase() + what.slice(1), "protect", o, value);
@@ -288,21 +290,23 @@ export async function suggest(p: { texts: string[] }, o: WriteOpts = {}): Promis
 
 // ---------------------------------------------------------------- the game room
 
-/** Pay for a competitive run (FireGames.payRun): the game server's approval (from its create call) in, the game's
- *  entry PAPER approved to FireGames (exactly that) and burned by the contract. Returns the receipt; the server reads
- *  RunPaid from it (confirm). */
-export async function payRun(p: { gameId: number; runId: Hex; series: number; deadline: number; sig: Hex }, o: WriteOpts = {}): Promise<TransactionReceipt> {
+/** Pay for a competitive run (FireGames.payRun): the game server's approval (from its create call) in, the run's
+ *  price (FireGames.priceOf: the entry, or less under the game's dollar ceiling) + 3% for a moving PAPER price
+ *  approved to FireGames and burned by the contract (it burns the price, never more than that cap). Returns the
+ *  receipt; the server reads RunPaid from it (confirm). */
+export async function payRun(p: { gameId: number; runId: Hex; series: number; deadline: number; sig: Hex; slippageBps?: number }, o: WriteOpts = {}): Promise<TransactionReceipt> {
   const games = addr("FireGames");
-  const entry = await read<bigint>("FireGames", gamesAbi, "entryOf", [BigInt(p.gameId)]);
-  if (!entry) throw new Error("That game isn't open.");
-  await approve(input("PAPER")!, games, entry, "Approve PAPER", o);
-  return send(games, gamesAbi, "payRun", [BigInt(p.gameId), p.runId, BigInt(p.series), BigInt(p.deadline), p.sig], "Pay for the run", "game", o);
+  const price = await read<bigint>("FireGames", gamesAbi, "priceOf", [BigInt(p.gameId)]).catch(() => 0n);
+  if (!price) throw new Error("That game isn't open.");
+  const maxPaper = withSlip(price, p.slippageBps ?? 300);
+  await approve(input("PAPER")!, games, maxPaper, "Approve PAPER", o);
+  return send(games, gamesAbi, "payRun", [BigInt(p.gameId), p.runId, BigInt(p.series), BigInt(p.deadline), maxPaper, p.sig], "Pay for the run", "game", o);
 }
 
 /** FireGames' switches, for the room: whether paid runs can be bought now (game open, not paused, a competition on). */
 export async function gameStatus(gameId: number) {
   const [entry, gameOpen, paused, series, signer] = await Promise.all([
-    read<bigint>("FireGames", gamesAbi, "entryOf", [BigInt(gameId)]),
+    read<bigint>("FireGames", gamesAbi, "priceOf", [BigInt(gameId)]).catch(() => 0n), // no game, or no PAPER price yet
     read<boolean>("FireGames", gamesAbi, "gameOpen", [BigInt(gameId)]),
     read<boolean>("FireGames", gamesAbi, "paused"),
     read<bigint>("FireGames", gamesAbi, "series"),

@@ -6,6 +6,19 @@
   },
   {
     "type": "function",
+    "name": "BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "DEPLOYER",
     "inputs": [],
     "outputs": [
@@ -254,6 +267,16 @@
             "internalType": "uint16"
           },
           {
+            "name": "plankBurnBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "paperBurnBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
             "name": "priceUsd",
             "type": "uint128",
             "internalType": "uint128"
@@ -395,6 +418,16 @@
             "internalType": "uint16"
           },
           {
+            "name": "plankBurnBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "paperBurnBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
             "name": "priceUsd",
             "type": "uint128",
             "internalType": "uint128"
@@ -507,6 +540,16 @@
               },
               {
                 "name": "taxBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "plankBurnBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "paperBurnBps",
                 "type": "uint16",
                 "internalType": "uint16"
               },
@@ -779,6 +822,16 @@
       },
       {
         "name": "left",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "plankBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "paperBps",
         "type": "uint256",
         "internalType": "uint256"
       }

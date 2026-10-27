@@ -613,16 +613,6 @@
             "internalType": "uint64"
           },
           {
-            "name": "plankBurnBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "paperBurnBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
             "name": "paperCapUsd",
             "type": "uint128",
             "internalType": "uint128"
@@ -714,6 +704,16 @@
               },
               {
                 "name": "taxBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "plankBurnBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "paperBurnBps",
                 "type": "uint16",
                 "internalType": "uint16"
               },
@@ -860,16 +860,6 @@
           },
           {
             "name": "creditsPerPick",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "plankBurnBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "paperBurnBps",
             "type": "uint16",
             "internalType": "uint16"
           },
@@ -1315,16 +1305,6 @@
             "internalType": "uint64"
           },
           {
-            "name": "plankBurnBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "paperBurnBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
             "name": "paperCapUsd",
             "type": "uint128",
             "internalType": "uint128"
@@ -1416,6 +1396,16 @@
               },
               {
                 "name": "taxBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "plankBurnBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "paperBurnBps",
                 "type": "uint16",
                 "internalType": "uint16"
               },

@@ -153,8 +153,8 @@ LOCK). Drop-wide and per group; each rule is RED unless `--allow <rule>` names i
 | Rule | Bound |
 |---|---|
 | `price` | a group's `priceUsd` is $1 to $10; 0 only for a holders' group (NFT or snapshot: free or PAPER only) |
-| `burn-total` | `plankBurnBps + paperBurnBps` is 10% to 100% |
-| `paper-burn` | `paperBurnBps` is at least 10% (the goal is PAPER buy pressure; Standard is 20%) |
+| `burn-total` | a group's `plankBurnBps + paperBurnBps` is 10% to 100% (each group sets its own; checked for groups with a dollar price; over 100% is hard: the contract refuses it) |
+| `paper-burn` | a group's `paperBurnBps` is at least 10% (the goal is PAPER buy pressure; Standard is 20%). A PLANK group set to burn all its PLANK (`plankBurnBps` 10000, `paperBurnBps` 0) needs `--allow paper-burn` |
 | `paper-per-pack` | a group's `paper` is at least 0.1 PAPER |
 | `no-paper` | a group's `paper` is not 0 |
 | `paper-cap` | `paperCapUsd` is at least $0.10; 0 (no cap) is a warning |
@@ -164,7 +164,8 @@ LOCK). Drop-wide and per group; each rule is RED unless `--allow <rule>` names i
 | `idle` | warning: an unlimited group's `idle` is over 1 h |
 
 Hard (no `--allow`; the contract refuses them anyway): a snapshot group without a root at LOCK, an NFT group whose
-collection has no code, an open group with neither a price nor PAPER. `FireSale.revenueWallet`, `plankBurner` and
+collection has no code, an open group with neither a price nor PAPER, a group whose two burn shares add up to more
+than 100%. `FireSale.revenueWallet`, `plankBurner` and
 `paperBurner` must equal the deployments file's `inputs.REVENUE_WALLET` and `contracts.PlankBurner` / `PaperBurner`,
 and `FireSale.GROUPS` the deployments file's `FireGroups` (whose `sale` is FireSale): RED otherwise (no `--allow`).
 

@@ -182,15 +182,17 @@ export function createGameServer({ store, chain, config, now = Date.now, random 
     return json(200, { ...out, ...runView({ ...run, status: 'over' }), ...seedReveal(run) });
   }
 
-  // ---------------------------------------------------------------- board: per (Series, game), cached for 5 s
+  // ---------------------------------------------------------------- board: per (Series, game), or all time
+  // (?series=all: each wallet's best ever, no prizes), cached for 5 s
   async function board(req, game) {
-    const u = new URL(req.url), series = Number(u.searchParams.get('series')), limit = Math.max(1, Math.min(100, Number(u.searchParams.get('limit')) || 100));
-    if (!Number.isSafeInteger(series) || series < 1) return bad(400, 'Which Series? ?series=N');
+    const u = new URL(req.url), raw = u.searchParams.get('series'), all = raw === 'all', series = all ? 'all' : Number(raw);
+    const limit = Math.max(1, Math.min(100, Number(u.searchParams.get('limit')) || 100));
+    if (!all && (!Number.isSafeInteger(series) || series < 1)) return bad(400, 'Which Series? ?series=N (or ?series=all)');
     if (!store) return closed('storage');
     const key = `${series}:${game.gameId}:${limit}`, hit = boardCache.get(key), t = now();
     let rows;
     if (hit && t - hit.at < 5000) rows = hit.rows;
-    else { rows = await store.board({ series, gameId: game.gameId, limit }); boardCache.set(key, { at: t, rows }); }
+    else { rows = await (all ? store.allTime({ gameId: game.gameId, limit }) : store.board({ series, gameId: game.gameId, limit })); boardCache.set(key, { at: t, rows }); }
     return json(200, { series, gameId: game.gameId, rows: rows.map((r, i) => ({ rank: i + 1, ...r })) }, { 'cache-control': 'public, max-age=0, s-maxage=5, stale-while-revalidate=30' });
   }
 

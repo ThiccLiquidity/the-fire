@@ -185,9 +185,11 @@ abstract contract SaleBase is SeriesHelper {
         _standard(cards, dealer, owner, fire, 3);
     }
 
-    /// An open group: anyone, $2.50 + 1 PAPER a pack in any coin, no wallet limit, opens with the drop, until sold.
+    /// An open group: anyone, $2.50 + 1 PAPER a pack in any coin, no wallet limit, opens with the drop, until sold;
+    /// 30% of each payment burns PLANK, the rest to revenue.
     function _g(uint64 n) internal pure returns (FireGroups.Group memory g) {
         g.packs = n;
+        g.plankBurnBps = 3_000;
         g.coins = 7;
         g.afterGroup = NONE;
         g.rollTo = NONE;
@@ -195,12 +197,11 @@ abstract contract SaleBase is SeriesHelper {
         g.paper = 1e18;
     }
 
-    /// A drop of one open group (`_g(n)`): 30% PLANK burn, $1 PAPER ceiling, regular wallets only for 48h, credits
+    /// A drop of one open group (`_g(n)`: 30% PLANK burn), $1 PAPER ceiling, regular wallets only for 48h, credits
     /// from the group.
     function _cfg(uint64 s, uint64 n) internal pure returns (FireSale.DropConfig memory c) {
         c.start = s;
         c.packs = n;
-        c.plankBurnBps = 3_000;
         c.paperCapUsd = 1e8;
         c.regularWalletsFor = 48 hours;
         c.creditsPerPick = 1;
@@ -215,6 +216,11 @@ abstract contract SaleBase is SeriesHelper {
         for (uint256 i; i < gs.length; i++) total += gs[i].packs;
         c.packs = uint64(total);
         return c;
+    }
+
+    /// Every group of `c` burns `plankBps` of its dollar payments as PLANK and sends `paperBps` to PaperBurner.
+    function _shares(FireSale.DropConfig memory c, uint16 plankBps, uint16 paperBps) internal pure {
+        for (uint256 i; i < c.groups.length; i++) (c.groups[i].plankBurnBps, c.groups[i].paperBurnBps) = (plankBps, paperBps);
     }
 
     function _two(FireGroups.Group memory a, FireGroups.Group memory b) internal pure returns (FireGroups.Group[] memory gs) {
@@ -553,8 +559,8 @@ contract SaleTest is SaleBase {
     /// Drop 1 again (before it opens) with 10% PLANK burn and 20% to PaperBurner.
     function _split() internal {
         FireSale.DropConfig memory c = _cfg(start, 13);
-        c.plankBurnBps = 1_000;
-        c.paperBurnBps = 2_000;
+        c.groups[0].plankBurnBps = 1_000;
+        c.groups[0].paperBurnBps = 2_000;
         _set(1, c);
     }
 
@@ -606,13 +612,166 @@ contract SaleTest is SaleBase {
 
     function test_split_overHundredPercentRefused() public {
         FireSale.DropConfig memory c = _cfg(start, 10);
-        c.plankBurnBps = 5_000;
-        c.paperBurnBps = 5_001;
+        c.groups[0].plankBurnBps = 5_000;
+        c.groups[0].paperBurnBps = 5_001;
         vm.prank(owner, owner);
-        vm.expectRevert(FireSale.BadConfig.selector);
+        vm.expectRevert(abi.encodeWithSelector(FireGroups.BadGroup.selector, 0));
         sale.configureDrop(1, c);
-        c.paperBurnBps = 5_000; // exactly 100%: allowed (nothing to revenue)
+        c.groups[0].paperBurnBps = 5_000; // exactly 100%: allowed (nothing to revenue)
         _set(1, c);
+    }
+
+    // ---------------------------------------------------------------- per-group burn shares
+
+    /// A PLANK-holders-style group (PLANK only) that burns all the PLANK it takes, then Everyone at 10% / 20%.
+    function _plankAllThenEveryone(uint64 a, uint64 b) internal {
+        FireGroups.Group memory p = _g(a);
+        p.coins = 1; // PLANK only
+        (p.plankBurnBps, p.paperBurnBps) = (10_000, 0);
+        p.duration = 1 hours;
+        p.rollTo = 1;
+        FireGroups.Group memory e = _g(b);
+        (e.plankBurnBps, e.paperBurnBps) = (1_000, 2_000);
+        e.afterGroup = 0;
+        _set(1, _with(_cfg(start, 0), _two(p, e)));
+    }
+
+    /// Each group keeps its own shares: what's stored is what was set, group by group.
+    function test_groupShares_storedPerGroup() public {
+        _plankAllThenEveryone(4, 6);
+        FireGroups.GroupView[] memory v = groups.groupsOf(1);
+        assertEq(v[0].config.plankBurnBps, 10_000);
+        assertEq(v[0].config.paperBurnBps, 0);
+        assertEq(v[1].config.plankBurnBps, 1_000);
+        assertEq(v[1].config.paperBurnBps, 2_000);
+    }
+
+    /// A group's two shares together are at most 100%, checked group by group (BadGroup names the group).
+    function test_groupShares_sumCap() public {
+        FireGroups.Group memory a = _g(5);
+        FireGroups.Group memory b = _g(5);
+        (b.plankBurnBps, b.paperBurnBps) = (10_000, 1);
+        vm.prank(owner, owner);
+        vm.expectRevert(abi.encodeWithSelector(FireGroups.BadGroup.selector, 1));
+        sale.configureDrop(1, _with(_cfg(start, 0), _two(a, b)));
+        (b.plankBurnBps, b.paperBurnBps) = (0, 10_001);
+        vm.prank(owner, owner);
+        vm.expectRevert(abi.encodeWithSelector(FireGroups.BadGroup.selector, 1));
+        sale.configureDrop(1, _with(_cfg(start, 0), _two(a, b)));
+        (b.plankBurnBps, b.paperBurnBps) = (type(uint16).max, type(uint16).max); // no overflow past the cap
+        vm.prank(owner, owner);
+        vm.expectRevert(abi.encodeWithSelector(FireGroups.BadGroup.selector, 1));
+        sale.configureDrop(1, _with(_cfg(start, 0), _two(a, b)));
+        (b.plankBurnBps, b.paperBurnBps) = (4_000, 6_000); // exactly 100%: allowed
+        _set(1, _with(_cfg(start, 0), _two(a, b)));
+    }
+
+    /// The shares lock with the drop: once it opens they can't be set again.
+    function test_groupShares_lockAtStart() public {
+        _plankAllThenEveryone(4, 6);
+        _open();
+        FireSale.DropConfig memory c = _cfg(start + 1 days, 10);
+        vm.prank(owner, owner);
+        vm.expectRevert(FireSale.DropStarted.selector);
+        sale.configureDrop(1, c);
+    }
+
+    /// 100% PLANK burn in a PLANK-only group: every bit of the buyer's PLANK is burned, PaperBurner and the revenue
+    /// wallet get nothing, and the buyer pays exactly the quote.
+    function test_groupShares_plankGroupBurnsAll() public {
+        _plankAllThenEveryone(4, 6);
+        _open();
+        uint256 cost = _cost(1, 0, 3, FireSale.Pay.PLANK);
+        uint256 before = plank.balanceOf(alice);
+        uint256 dead = plank.balanceOf(DEAD);
+        vm.prank(alice, alice);
+        sale.buy(1, 0, 3, FireSale.Pay.PLANK, cost, type(uint256).max, _na());
+        assertEq(before - plank.balanceOf(alice), cost, "exactly the quote");
+        assertEq(plank.balanceOf(DEAD) - dead, cost, "all of it burned");
+        assertEq(plank.balanceOf(paperW), 0, "nothing to PaperBurner");
+        assertEq(plank.balanceOf(revenue), 0, "nothing to revenue");
+        assertEq(plank.balanceOf(burnW), 0, "nothing to PlankBurner");
+        assertEq(packs.balanceOf(alice, 1), 3);
+        // the group takes PLANK only
+        uint256 eth = _cost(1, 0, 1, FireSale.Pay.ETH);
+        vm.prank(bob, bob);
+        vm.expectRevert(FireGroups.CoinNotAccepted.selector);
+        sale.buy{value: eth}(1, 0, 1, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
+        _assertHoldsNothing();
+    }
+
+    /// A 100% PLANK-burn group paid in ETH whose swap can't go through: all of it waits in PlankBurner and the mint
+    /// still goes through (a purchase never fails because of PLANK).
+    function test_groupShares_allBurnSwapFailsFallsBack() public {
+        FireGroups.Group memory g = _g(5);
+        (g.plankBurnBps, g.paperBurnBps) = (10_000, 0);
+        FireSale.DropConfig memory c = _cfg(start, 5);
+        c.groups[0] = g;
+        _set(1, c);
+        _open();
+        router.setFail(true);
+        uint256 cost = _cost(1, 0, 2, FireSale.Pay.ETH);
+        uint256 before = alice.balance;
+        vm.prank(alice, alice);
+        sale.buy{value: cost + 1 ether}(1, 0, 2, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
+        assertEq(before - alice.balance, cost, "exactly the quote; the extra comes back");
+        assertEq(burnW.balance, cost, "all of it waits in PlankBurner");
+        assertEq(paperW.balance, 0);
+        assertEq(revenue.balance, 0);
+        assertEq(packs.balanceOf(alice, 1), 2, "minted anyway");
+        // and in USDG, with the swap working: all of it buys PLANK
+        router.setFail(false);
+        _usdg(bob, 1, 0, 1); // $2.50
+        assertEq(usdg.balanceOf(address(router)), 2_500_000, "all of it swapped for PLANK");
+        assertEq(usdg.balanceOf(revenue), 0);
+        assertEq(usdg.balanceOf(paperW), 0);
+        _assertHoldsNothing();
+    }
+
+    /// A mixed drop: the PLANK group burns all its PLANK, Everyone splits 10% / 20% / 70%; each sale uses its own
+    /// group's shares.
+    function test_groupShares_mixedDrop() public {
+        _plankAllThenEveryone(2, 6);
+        _open();
+        uint256 c0 = _cost(1, 0, 2, FireSale.Pay.PLANK);
+        _plank(alice, 1, 0, 2); // the PLANK group sells out: Everyone opens
+        assertEq(plank.balanceOf(DEAD), c0, "group 1: all burned");
+        uint256 c1 = _cost(1, 1, 2, FireSale.Pay.PLANK);
+        _plank(bob, 1, 1, 2);
+        assertEq(plank.balanceOf(DEAD), c0 + c1 * 1_000 / 10_000, "group 2: 10% burned");
+        assertEq(plank.balanceOf(paperW), c1 * 2_000 / 10_000, "group 2: 20% to PaperBurner");
+        assertEq(plank.balanceOf(revenue), c1 - c1 * 1_000 / 10_000 - c1 * 2_000 / 10_000, "group 2: 70% revenue");
+        uint256 e1 = _cost(1, 1, 2, FireSale.Pay.ETH);
+        _eth(carol, 1, 1, 2);
+        assertEq(paperW.balance, e1 * 2_000 / 10_000, "ETH in group 2: 20% to PaperBurner");
+        assertEq(revenue.balance, e1 - e1 * 1_000 / 10_000 - e1 * 2_000 / 10_000, "ETH in group 2: 70% revenue");
+        _usdg(alice, 1, 1, 2); // $5.00
+        assertEq(usdg.balanceOf(address(router)), 500_000, "USDG in group 2: 10% swapped for PLANK");
+        assertEq(usdg.balanceOf(paperW), 1_000_000);
+        assertEq(usdg.balanceOf(revenue), 3_500_000);
+        assertTrue(_closed(1), "sold out");
+        _assertHoldsNothing();
+    }
+
+    /// A taxed group's shares split its base price; the whole tax still goes to PaperBurner.
+    function test_groupShares_withTax() public {
+        FireGroups.Group memory g = _g(5);
+        g.taxBps = 400;
+        (g.plankBurnBps, g.paperBurnBps) = (10_000, 0);
+        FireSale.DropConfig memory c = _cfg(start, 5);
+        c.groups[0] = g;
+        c.creditGroup = NONE; // free packs never come from a taxed group
+        _set(1, c);
+        _open();
+        (uint256 usd8, uint256 tax8) = groups.priceOf(1, 0, 2);
+        uint256 cost = _cost(1, 0, 2, FireSale.Pay.USDG);
+        _usdg(alice, 1, 0, 2);
+        uint256 tax = cost * tax8 / usd8;
+        assertGt(tax, 0);
+        assertEq(usdg.balanceOf(paperW), tax, "the tax to PaperBurner");
+        assertEq(usdg.balanceOf(address(router)), cost - tax, "the base price all burns PLANK");
+        assertEq(usdg.balanceOf(revenue), 0);
+        _assertHoldsNothing();
     }
 
     function test_split_walletsMustDiffer() public {
@@ -1886,8 +2045,6 @@ contract SaleTest is SaleBase {
         assertEq(d.packs, 167, "the base Series; the unlimited group adds on top");
         assertEq(d.regularWalletsFor, 48 hours);
         assertEq(d.maxPerTx, 50);
-        assertEq(d.plankBurnBps, 1_000);
-        assertEq(d.paperBurnBps, 2_000);
         assertEq(d.paperCapUsd, 100_000_000);
         assertEq(d.creditsPerPick, 1);
         assertEq(d.creditPacksMax, 16);
@@ -1895,6 +2052,10 @@ contract SaleTest is SaleBase {
         assertEq(d.creditGroup, 2);
         FireGroups.GroupView[] memory v = groups.groupsOf(7);
         assertEq(v.length, 4);
+        for (uint256 i; i < 4; i++) {
+            assertEq(v[i].config.plankBurnBps, 1_000, "every group: the Standard 10% PLANK burn");
+            assertEq(v[i].config.paperBurnBps, 2_000, "every group: the Standard 20% PAPER buy & burn");
+        }
         // 1. Paper Press holders: 50, 1 PAPER, 1 per press, opens with the drop, up to 6h, leftovers to group 3
         assertEq(v[0].config.packs, 50);
         assertEq(uint8(v[0].config.gate), uint8(FireGroups.Gate.NFT));
@@ -1989,6 +2150,18 @@ contract SaleTest is SaleBase {
         cs.parseSale(vm.replace(json, '"coins": 7', '"coins": 0'));
         vm.expectRevert(bytes(".sale.groups[2].coins is too big for its field (most 7)"));
         cs.parseSale(vm.replace(json, '"coins": 7', '"coins": 8'));
+        // the burn shares are per group: required in each, at most 100% together, and refused drop-wide
+        vm.expectRevert(bytes(".sale.groups[2]: plankBurnBps + paperBurnBps is over 10000 (100%)"));
+        cs.parseSale(vm.replace(json, '"coins": 7,\n    "plankBurnBps": 1000', '"coins": 7,\n    "plankBurnBps": 8001'));
+        vm.expectRevert(bytes(".sale.groups[0].plankBurnBps is missing"));
+        cs.parseSale(vm.replace(json, '"coins": 0,\n    "plankBurnBps": 1000,', '"coins": 0,'));
+        vm.expectRevert(bytes("sale: the burn shares are per group: set plankBurnBps and paperBurnBps in each of sale.groups (Standard 1000 / 2000)"));
+        cs.parseSale(vm.replace(json, '"packs": 167,', '"packs": 167,\n  "plankBurnBps": 1000,'));
+        // 100% PLANK burn in one group is fine
+        FireSale.DropConfig memory all = cs.parseSale(vm.replace(json, '"coins": 1,\n    "plankBurnBps": 1000,\n    "paperBurnBps": 2000', '"coins": 1,\n    "plankBurnBps": 10000,\n    "paperBurnBps": 0'));
+        assertEq(all.groups[1].plankBurnBps, 10_000);
+        assertEq(all.groups[1].paperBurnBps, 0);
+        assertEq(all.groups[2].plankBurnBps, 1_000);
         vm.expectRevert(bytes(".sale.groups[0].duration is too big for its field (most 2592000)"));
         cs.parseSale(vm.replace(json, '"duration": 21600', '"duration": 2592001'));
         vm.expectRevert(bytes("sale.creditGroup: the index of a group (0 is the first), or 255 for no credit packs"));

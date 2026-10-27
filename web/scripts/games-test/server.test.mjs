@@ -140,6 +140,9 @@ test('the board: best streak per wallet, ties to whoever got there first, cached
   env.clock.t += 5001;
   assert.equal((await env.call('board', null, { method: 'GET', qs: '?series=7' })).body.rows[0].wallet, 'd');
   assert.equal((await env.call('board', null, { method: 'GET', qs: '?series=7', game: '1' })).status, 200); // by FireGames id too
+  const all = await env.call('board', null, { method: 'GET', qs: '?series=all' });
+  assert.equal(all.status, 200); assert.equal(all.body.series, 'all'); assert.equal(all.body.rows[0].rank, 1);
+  assert.equal((await env.call('board', null, { method: 'GET', qs: '?series=nope' })).status, 400);
 });
 
 test('a replayed or stale token gets no second verdict', async () => {

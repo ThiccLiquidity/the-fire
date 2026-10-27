@@ -385,8 +385,11 @@ contract VerifyDeploy is Deployments {
         FireCredits credits = FireCredits(deployed("FireCredits"));
         address paper = deployedInput("PAPER");
         if (paper != address(0)) _eq(address(g.PAPER()), paper, "FireGames.PAPER is PAPER");
-        _ok(g.entryOf(1) == 1e18, "FireGames: paper football (game 1) costs 1 PAPER a run");
+        _ok(g.entryOf(1) == 1e18 && g.capUsdOf(1) == 10_000_000, "FireGames: paper football (game 1) costs 1 PAPER a run, at most $0.10 of PAPER");
+        _eq(address(g.paperUsd()), deployed("PaperUsdTwap"), "FireGames prices the ceiling with the PaperUsdTwap");
         _ok(credits.prizeGame(1), "FireCredits allows prizes for paper football (game 1)");
+        _eq(address(credits.psa()), deployed("FirePsa"), "FireCredits gives case and grading prizes through FirePsa");
+        _eq(FirePsa(payable(deployed("FirePsa"))).couponIssuer(), address(credits), "FirePsa takes coupons only from FireCredits");
         _ok(!g.paused(), "FireGames not paused");
         _ok(g.gameOpen(1), "FireGames: paper football open");
         if (g.signer() == address(0) || g.series() == 0) {

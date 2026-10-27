@@ -33,7 +33,7 @@ test('the approval matches FireGames on chain, end to end', { skip: SKIP, timeou
     if (existsSync(solc)) args.push('--use', solc);
     execFileSync(join(BIN, 'forge'), args, { cwd: CONTRACTS, stdio: 'pipe' });
     const art = (f, c) => JSON.parse(readFileSync(join(out, 'out', f, `${c}.json`), 'utf8'));
-    const games = art('FireGames.sol', 'FireGames'), token = art('Mocks.sol', 'MockERC20');
+    const games = art('FireGames.sol', 'FireGames'), token = art('Mocks.sol', 'MockERC20'), feedArt = art('Mocks.sol', 'MockFeed');
     const rpc = `http://127.0.0.1:${port}`, transport = http(rpc);
     const pub = createPublicClient({ chain: foundry, transport });
     for (let i = 0; i < 100; i++) { try { await pub.getBlockNumber(); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
@@ -41,9 +41,10 @@ test('the approval matches FireGames on chain, end to end', { skip: SKIP, timeou
     const deploy = async (a, args) => (await pub.waitForTransactionReceipt({ hash: await owner.deployContract({ abi: a.abi, bytecode: a.bytecode.object, args }) })).contractAddress;
     const paper = await deploy(token, ['Paper', 'PAPER']);
     const fg = await deploy(games, [OWNER.address, paper]);
+    const feed = await deploy(feedArt, [2n * 10n ** 17n]); // PAPER at $0.20: the $0.10 ceiling makes a run 0.5 PAPER
     const send = async (w, address, abi, functionName, args) => pub.waitForTransactionReceipt({ hash: await w.writeContract({ address, abi, functionName, args }) });
     const signer = runSigner({ signerKey: SIGNER_KEY, chainId: 31337, gamesAddress: fg });
-    for (const [f, a] of [['addGame', [1n, 10n ** 18n]], ['setSeries', [7n]], ['setSigner', [signer.address]]]) await send(owner, fg, games.abi, f, a);
+    for (const [f, a] of [['addGame', [1n, 10n ** 18n, 10_000_000n]], ['setPaperFeed', [feed]], ['setSeries', [7n]], ['setSigner', [signer.address]]]) await send(owner, fg, games.abi, f, a);
     await send(owner, paper, token.abi, 'mint', [PLAYER.address, 5n * 10n ** 18n]);
     await send(player, paper, token.abi, 'approve', [fg, 10n ** 18n]);
 
@@ -54,10 +55,13 @@ test('the approval matches FireGames on chain, end to end', { skip: SKIP, timeou
     assert.equal(onChain, hashTypedData({ domain: runDomain(31337, fg), types: RUN_TYPES, primaryType: 'Run', message }));
     const sig = await signer.signRun({ gameId: 1, runId, player: PLAYER.address, series: 7, deadline: Number(deadline) });
     // a tampered approval (another Series) is refused; the real one pays
-    await assert.rejects(pub.simulateContract({ account: PLAYER, address: fg, abi: games.abi, functionName: 'payRun', args: [1n, runId, 6n, deadline, sig] }), /BadSignature/);
-    await assert.rejects(pub.simulateContract({ account: OWNER, address: fg, abi: games.abi, functionName: 'payRun', args: [1n, runId, 7n, deadline, sig] }), /BadSignature/); // another wallet
-    const rc = await send(player, fg, games.abi, 'payRun', [1n, runId, 7n, deadline, sig]);
+    await assert.rejects(pub.simulateContract({ account: PLAYER, address: fg, abi: games.abi, functionName: 'payRun', args: [1n, runId, 6n, deadline, 10n ** 18n, sig] }), /BadSignature/);
+    await assert.rejects(pub.simulateContract({ account: OWNER, address: fg, abi: games.abi, functionName: 'payRun', args: [1n, runId, 7n, deadline, 10n ** 18n, sig] }), /BadSignature/); // another wallet
+    assert.equal(await pub.readContract({ address: fg, abi: FIRE_GAMES_ABI, functionName: 'priceOf', args: [1n] }), 5n * 10n ** 17n);
+    await assert.rejects(pub.simulateContract({ account: PLAYER, address: fg, abi: games.abi, functionName: 'payRun', args: [1n, runId, 7n, deadline, 4n * 10n ** 17n, sig] }), /PriceMoved/);
+    const rc = await send(player, fg, games.abi, 'payRun', [1n, runId, 7n, deadline, 10n ** 18n, sig]);
     assert.equal(rc.status, 'success');
+    assert.equal(await pub.readContract({ address: paper, abi: token.abi, functionName: 'balanceOf', args: [PLAYER.address] }), 45n * 10n ** 17n, 'burned 0.5 PAPER, not 1');
     // the server's chain adapter sees it
     const chain = viemChain({ rpcUrl: rpc, chainId: 31337, gamesAddress: fg, signerKey: SIGNER_KEY });
     assert.deepEqual(await chain.runPaid(rc.transactionHash), [{ gameId: 1, runId, player: PLAYER.address, series: 7 }]);

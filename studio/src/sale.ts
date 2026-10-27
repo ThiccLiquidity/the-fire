@@ -56,6 +56,11 @@ export interface SaleGroup {
   rollTo: number
   /** Rising price: each pack costs this % more than the one before ('0' = off; at most 50). */
   taxPercent: string
+  /** Share of this group's dollar price that buys PLANK and burns it (the Standard 10%; 100 = all of it). */
+  plankBurnPercent: string
+  /** Share sent to PaperBurner, which buys PAPER on the market and burns it (the Standard 20%). With the PLANK share at
+   *  most 100%; the rest goes to the revenue wallet, and a rising-price tax all buys PAPER. */
+  paperBurnPercent: string
 }
 
 export interface SaleSettings {
@@ -63,10 +68,8 @@ export interface SaleSettings {
   start: number
   /** The base Series: the finite groups' packs add up to it (an unlimited group sells on top). */
   packs: number
+  /** Each with its own burn shares (plankBurnPercent, paperBurnPercent). */
   groups: SaleGroup[]
-  plankBurnPercent: string
-  /** Share of each sale sent to PaperBurner, which buys PAPER on the market and burns it. */
-  paperBurnPercent: string
   /** Most a pack's PAPER may be worth, in dollars, at the PAPER price; 0 = no ceiling. */
   paperCapUsd: string
   /** Most packs in one purchase, drop-wide. */
@@ -96,12 +99,16 @@ const MAX_TAX_GROWTH = 1_000_000_000n
  *  until the owner confirms the number. */
 export const EVERYONE_LIMIT_HOURS = 24
 
-/** A group with every field at "off". */
+/** The Standard burn shares every group starts with: 10% of its dollar price burns PLANK, 20% buys and burns PAPER. */
+export const STANDARD_PLANK_BURN = '10'
+export const STANDARD_PAPER_BURN = '20'
+
+/** A group with every field at "off" (the burn shares at the Standard 10% / 20%). */
 export function blankGroup(): SaleGroup {
   return {
     name: '', packsAs: 'count', packs: 0, percent: '0', unlimited: false, gate: 'open', nft: '', perNft: 0, root: '',
     priceUsd: '0', paper: '0', coins: 0, perWallet: 0, limitHours: 0, perTx: 0, afterGroup: -1, delayHours: 0, hours: 0,
-    idleMinutes: 0, rollTo: -1, taxPercent: '0',
+    idleMinutes: 0, rollTo: -1, taxPercent: '0', plankBurnPercent: STANDARD_PLANK_BURN, paperBurnPercent: STANDARD_PAPER_BURN,
   }
 }
 
@@ -141,8 +148,9 @@ export const GROUP_TEMPLATES: { name: string; make: (others: SaleGroup[]) => Sal
  *  Everyone; Everyone the other 77 ($2.50 + 1 PAPER, any coin, 5 per wallet for the first
  *  EVERYONE_LIMIT_HOURS, then no limit) after the PLANK group, until sold; then
  *  After sell-out: no count, $2.50 rising 4% a pack + 1 PAPER, ETH only, 1 per purchase, ends 15 minutes after its
- *  last sale. Free packs up to 10% (16), 3 per wallet, from Everyone. 10% PLANK burn, 20% PAPER buy & burn, a pack's
- *  PAPER never more than $1, 50 per purchase, contracts kept out for 48h. */
+ *  last sale. Free packs up to 10% (16), 3 per wallet, from Everyone. Every group: 10% PLANK burn, 20% PAPER buy &
+ *  burn (each group can set its own: the PLANK holders could burn 100% of their PLANK). A pack's PAPER never more than
+ *  $1, 50 per purchase, contracts kept out for 48h. */
 export function standardSale(): SaleSettings {
   return {
     start: 0, packs: 167,
@@ -155,7 +163,7 @@ export function standardSale(): SaleSettings {
         idleMinutes: 15, taxPercent: '4', afterGroup: 2,
       },
     ],
-    plankBurnPercent: '10', paperBurnPercent: '20', paperCapUsd: '1', maxPerTx: 50, regularWalletsHours: 48,
+    paperCapUsd: '1', maxPerTx: 50, regularWalletsHours: 48,
     creditsPerPick: 1, creditPacksPercent: '10', creditPacksPerWallet: 3, creditGroup: 2,
   }
 }
@@ -243,8 +251,8 @@ export function saleFromOld(old: OldSaleSettings): SaleSettings {
     })
   }
   groups.push({ ...blankGroup(), name: 'Everyone', packs: paid, priceUsd: price, paper, coins: 7, perWallet: num(old.walletLimit, 5) })
-  let plankBurnPercent = old.plankBurnPercent ?? std.plankBurnPercent
-  let paperBurnPercent = old.paperBurnPercent ?? std.paperBurnPercent
+  let plankBurnPercent = old.plankBurnPercent ?? STANDARD_PLANK_BURN
+  let paperBurnPercent = old.paperBurnPercent ?? STANDARD_PAPER_BURN
   if (old.paperBurnPercent === undefined && old.plankBurnPercent !== undefined) {
     const oldStandard = old.plankBurnPercent.trim() === '30'
     plankBurnPercent = oldStandard ? '10' : old.plankBurnPercent
@@ -253,7 +261,7 @@ export function saleFromOld(old: OldSaleSettings): SaleSettings {
   const total = paid + press
   const creditPacksPercent = old.creditPacksPercent ?? (old.creditPacksMax !== undefined ? capPercentOf(old.creditPacksMax, total) : std.creditPacksPercent)
   return {
-    start: num(old.start, 0), packs: total, groups, plankBurnPercent, paperBurnPercent,
+    start: num(old.start, 0), packs: total, groups: groups.map((g) => ({ ...g, plankBurnPercent, paperBurnPercent })),
     paperCapUsd: old.paperCapUsd ?? std.paperCapUsd, maxPerTx: num(old.maxPerTx, std.maxPerTx),
     regularWalletsHours: num(old.regularWalletsHours, std.regularWalletsHours), creditsPerPick: num(old.creditsPerPick, std.creditsPerPick),
     creditPacksPercent,
@@ -263,12 +271,14 @@ export function saleFromOld(old: OldSaleSettings): SaleSettings {
 }
 
 /** A Series' sale settings: the saved ones over the Standard drop's drop-wide defaults (each group over a blank
- *  group), or an old save converted to groups (saleFromOld); no sale saved = the Standard drop. */
+ *  group), or an old save converted to groups (saleFromOld); no sale saved = the Standard drop. A save from when the
+ *  burn shares were drop-wide gives each group those shares (unless the group has its own). */
 export function saleOf(f: { sale?: Partial<SaleSettings> | OldSaleSettings }): SaleSettings {
   if (!f.sale) return standardSale()
   if (isOldSale(f.sale)) return saleFromOld(f.sale as OldSaleSettings)
-  const s = f.sale as Partial<SaleSettings>
-  return { ...standardSale(), ...s, groups: (s.groups ?? []).map((g) => ({ ...blankGroup(), ...g })) }
+  const { plankBurnPercent, paperBurnPercent, ...s } = f.sale as Partial<SaleSettings> & { plankBurnPercent?: string; paperBurnPercent?: string }
+  const shares = { ...(plankBurnPercent !== undefined ? { plankBurnPercent } : {}), ...(paperBurnPercent !== undefined ? { paperBurnPercent } : {}) }
+  return { ...standardSale(), ...s, groups: (s.groups ?? []).map((g) => ({ ...blankGroup(), ...shares, ...g })) }
 }
 
 // ---------------------------------------------------------------- packs
@@ -424,11 +434,6 @@ export function checkSale(s: SaleSettings, now = Date.now() / 1000): SaleProblem
   if (paperCap == null || paperCap > U128) bad('paperCapUsd', 'A dollar amount, up to 8 decimals (0 = no ceiling).')
   const creditPct = parseDecimal(s.creditPacksPercent, 2)
   if (creditPct == null || creditPct > 10_000n) bad('creditPacksPercent', '0 to 100%, up to 2 decimals (0 = no limit).')
-  const burn = parseDecimal(s.plankBurnPercent, 2)
-  if (burn == null || burn > 10_000n) bad('plankBurnPercent', '0 to 100%, up to 2 decimals.')
-  const paperBurn = parseDecimal(s.paperBurnPercent, 2)
-  if (paperBurn == null || paperBurn > 10_000n) bad('paperBurnPercent', '0 to 100%, up to 2 decimals.')
-  else if (burn != null && burn + paperBurn > 10_000n) bad('paperBurnPercent', 'The PLANK and PAPER shares add up to more than 100%.')
   if (!hours(s.regularWalletsHours)) bad('regularWalletsHours', `Hours, 0 to ${MAX_WINDOW_HOURS} (30 days).`)
 
   if (n === 0) bad('packs', 'Add at least one group: it says who can buy the packs.')
@@ -480,6 +485,12 @@ export function checkSale(s: SaleSettings, now = Date.now() / 1000): SaleProblem
     if (paper == null || paper > U128) gp('paper', 'A PAPER amount, up to 18 decimals (0 = none).')
     if (!Number.isInteger(g.coins) || g.coins < 0 || g.coins > 7) gp('coins', 'PLANK, ETH and/or USDG.')
     else if (price != null && price > 0n && g.coins === 0) gp('coins', 'A dollar price needs a coin: tick PLANK, ETH or USDG.')
+    // the group's burn shares: at most 100% together (FireGroups refuses more)
+    const burn = parseDecimal(g.plankBurnPercent, 2)
+    if (burn == null || burn > 10_000n) gp('plankBurnPercent', '0 to 100%, up to 2 decimals.')
+    const paperBurn = parseDecimal(g.paperBurnPercent, 2)
+    if (paperBurn == null || paperBurn > 10_000n) gp('paperBurnPercent', '0 to 100%, up to 2 decimals.')
+    else if (burn != null && burn + paperBurn > 10_000n) gp('paperBurnPercent', 'The PLANK and PAPER shares add up to more than 100%.')
     if (g.gate === 'open' && price === 0n && paper === 0n) gp('priceUsd', 'Free packs open to everyone are refused: give it a price, PAPER or a "who".')
     gwhole('perWallet', g.perWallet, U32, 'Per wallet')
     gwhole('perTx', g.perTx, U32, 'Per purchase')
@@ -543,6 +554,9 @@ export interface SaleGroupJson {
   priceUsd: string
   paper: string
   coins: number
+  /** The group's burn shares, basis points of its dollar price (FireGroups.Group); together at most 10000. */
+  plankBurnBps: number
+  paperBurnBps: number
   perWallet: number
   /** Seconds after the group opens that perWallet lifts (FireGroups.Group.limitFor); left out = never. */
   limitFor?: number
@@ -560,8 +574,6 @@ export interface SaleGroupJson {
 export interface SaleJson {
   start: number
   packs: number
-  plankBurnBps: number
-  paperBurnBps: number
   paperCapUsd: string
   maxPerTx: number
   regularWalletsFor: number
@@ -577,8 +589,6 @@ export function saleJson(s: SaleSettings): SaleJson {
   return {
     start: s.start,
     packs: s.packs,
-    plankBurnBps: bpsOf(s.plankBurnPercent),
-    paperBurnBps: bpsOf(s.paperBurnPercent),
     paperCapUsd: String(usd8(s.paperCapUsd)),
     maxPerTx: s.maxPerTx,
     regularWalletsFor: seconds(s.regularWalletsHours),
@@ -603,6 +613,8 @@ function groupJson(g: SaleGroup, packs: number): SaleGroupJson {
     priceUsd: String(price),
     paper: String(parseDecimal(g.paper, 18) ?? 0n),
     coins: price === 0n ? 0 : g.coins,
+    plankBurnBps: bpsOf(g.plankBurnPercent),
+    paperBurnBps: bpsOf(g.paperBurnPercent),
     perWallet: g.perWallet,
     ...(g.limitHours > 0 ? { limitFor: seconds(g.limitHours) } : {}),
     afterGroup: g.afterGroup < 0 ? NONE : g.afterGroup,
@@ -631,9 +643,9 @@ export interface DropPlan {
   revenueUsd: number
   /** The same with every free pack used. */
   revenueMinUsd: number
-  /** The PLANK burn share of the base prices. */
+  /** The PLANK burn share of the base prices (each group's own share). */
   burnUsd: number
-  /** PaperBurner's: its share of the base prices plus every rising-price tax. */
+  /** PaperBurner's: each group's share of its base prices plus every rising-price tax. */
   paperUsd: number
   /** What's left for the revenue wallet. */
   keepUsd: number
@@ -644,16 +656,18 @@ export interface DropPlan {
 export function dropPlan(s: SaleSettings): DropPlan {
   const packs = groupPacks(s).map((p) => (Number.isFinite(p) && p > 0 ? Math.floor(p) : 0))
   const total = packs.reduce((a, b) => a + b, 0)
-  const burn = bpsOf(s.plankBurnPercent) / 10_000
-  const paperBurn = bpsOf(s.paperBurnPercent) / 10_000
   let base = 0
   let tax = 0
+  let burnUsd = 0
+  let paperShare = 0
   let paperPaid = 0
   s.groups.forEach((g, i) => {
     const p = Number(usd8(g.priceUsd)) / 1e8
     const bps = bpsOf(g.taxPercent)
     const n = g.unlimited ? 0 : packs[i]
     base += n * p
+    burnUsd += n * p * (bpsOf(g.plankBurnPercent) / 10_000)
+    paperShare += n * p * (bpsOf(g.paperBurnPercent) / 10_000)
     if (bps > 0 && n > 0) {
       const r = 1 + bps / 10_000
       tax += (p * r * (r ** n - 1)) / (r - 1) - n * p
@@ -668,7 +682,7 @@ export function dropPlan(s: SaleSettings): DropPlan {
   const revenueUsd = base + tax
   return {
     total, packs, freeMax, freeCapped: cap > 0, revenueUsd, revenueMinUsd: revenueUsd - freeMax * cgPrice,
-    burnUsd: base * burn, paperUsd: base * paperBurn + tax, keepUsd: base * (1 - burn - paperBurn), paperPaid,
+    burnUsd, paperUsd: paperShare + tax, keepUsd: base - burnUsd - paperShare, paperPaid,
   }
 }
 
@@ -718,6 +732,10 @@ export function groupSummary(s: SaleSettings, i: number): string {
   const usd = price > 0 ? `${money(price)}${tax ? ` rising ${tax / 100}% a pack` : ''}` : ''
   parts.push([usd, paper].filter(Boolean).join(' + ') || 'free')
   if (price > 0) parts.push(coinsText(g.coins))
+  // the burn shares, when the group's differ from the Standard 10% / 20%
+  const pk = bpsOf(g.plankBurnPercent)
+  const pp = bpsOf(g.paperBurnPercent)
+  if (price > 0 && (pk !== bpsOf(STANDARD_PLANK_BURN) || pp !== bpsOf(STANDARD_PAPER_BURN))) parts.push(`burns ${pk / 100}% PLANK + ${pp / 100}% PAPER`)
   if (g.gate === 'nft') parts.push(`${g.perNft} per ${g.nft === 'press' ? 'Press' : 'NFT'}`)
   if (g.perWallet) parts.push(`${g.perWallet} per wallet${g.limitHours > 0 ? ` for ${fmtHours(g.limitHours)}, then no limit` : ''}`)
   if (g.perTx) parts.push(`${g.perTx} per purchase`)

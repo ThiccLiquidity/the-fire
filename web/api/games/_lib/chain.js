@@ -10,7 +10,8 @@ export const FIRE_GAMES_ABI = parseAbi([
   'function signer() view returns (address)',
   'function gameOpen(uint256 gameId) view returns (bool)',
   'function entryOf(uint256 gameId) view returns (uint256)',
-  'function payRun(uint256 gameId, bytes32 runId, uint256 forSeries, uint256 deadline, bytes sig)',
+  'function priceOf(uint256 gameId) view returns (uint256)',
+  'function payRun(uint256 gameId, bytes32 runId, uint256 forSeries, uint256 deadline, uint256 maxPaper, bytes sig)',
   'function runDigest(uint256 gameId, bytes32 runId, address player, uint256 forSeries, uint256 deadline) view returns (bytes32)',
   'event RunPaid(uint256 indexed gameId, bytes32 indexed runId, address indexed player, uint256 series, uint256 paper)',
 ]);

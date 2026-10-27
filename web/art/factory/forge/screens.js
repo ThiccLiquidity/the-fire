@@ -1309,7 +1309,9 @@
       const bal = S().wallet.balances[coin] || 0, short = !quoting && (LIVE ? Live.walletNeeds(amt, coin) : amt) > bal;
       const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Pay with' }, coins.map((k) =>
         h('button', { type: 'button', 'aria-pressed': String(k === coin), 'data-coin': k, onclick: () => { coin = k; review(); } }, k)));
-      const amtTxt = quoting ? (liveQ === false ? 'price unavailable right now' : 'getting price…') : `≈ ${LIVE ? liveQ.text : Wear.fmtCoin(amt, coin)} ${coin}`;
+      const free = LIVE && liveQ ? [[liveQ.freeGrades, 'free grading'], [liveQ.freeCases, 'free case']].filter(([k]) => k).map(([k, w]) => `${k} ${w}${k === 1 ? '' : 's'}`).filter(Boolean).join(' and ') : '';
+      const amtTxt = quoting ? (liveQ === false ? 'price unavailable right now' : 'getting price…')
+        : LIVE && free && liveQ.raw === '0' ? `Free: your ${free}` : `≈ ${LIVE ? liveQ.text : Wear.fmtCoin(amt, coin)} ${coin}${free ? ` (after your ${free})` : ''}`;
       const rawFresh = raw.filter((c) => Wear.freshLeft(c) > 0), rawOld = raw.filter((c) => !Wear.freshLeft(c));
       const soonest = rawFresh.length ? Math.min(...rawFresh.map(Wear.freshLeft)) : 0;
       const toCoin = () => { const sg = host.querySelector('.wz-coin .seg'); sg?.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); sg?.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true }); };

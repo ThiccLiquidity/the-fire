@@ -74,7 +74,6 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
   const packsOff = !!fire.deal && salePacks(s) !== fire.deal.packs
   const toFix = errors.length + (packsOff ? 1 : 0)
   const cap = creditPacksMax(s)
-  const d = dropPlan(s)
 
   return (
     <section className="panel grow sale" data-testid="sale-editor">
@@ -127,8 +126,6 @@ export function SaleEditor({ fire }: { fire: FireRecord }) {
             {s.start !== 0 && <button className="link" onClick={() => set({ start: 0 })}>clear</button>}
           </span>
         </F>
-        <F all={problems} f="plankBurnPercent" label="PLANK burn (%)" hint={`Of every dollar price · ${usd(d.burnUsd)} sold out.`}><Text value={s.plankBurnPercent} onChange={(v) => set({ plankBurnPercent: v })} testId="sale-burn" /></F>
-        <F all={problems} f="paperBurnPercent" label="PAPER buy & burn (%)" hint={`Plus every rising-price tax · ${usd(d.paperUsd)} sold out.`}><Text value={s.paperBurnPercent} onChange={(v) => set({ paperBurnPercent: v })} testId="sale-paper-burn" /></F>
         <F all={problems} f="paperCapUsd" label="PAPER ceiling ($)" hint="Most a pack's PAPER can be worth. 0 = none."><Text value={s.paperCapUsd} onChange={(v) => set({ paperCapUsd: v })} testId="sale-paper-cap" /></F>
         <F all={problems} f="maxPerTx" label="Packs per purchase, at most" hint="Every group; a group can set fewer."><Num value={s.maxPerTx} onChange={(v) => set({ maxPerTx: v })} testId="sale-maxtx" /></F>
         <F all={problems} f="regularWalletsHours" label="Bots kept out for (hours)" hint="Contracts can't buy. 0 = off."><Num value={s.regularWalletsHours} step={0.5} onChange={(v) => set({ regularWalletsHours: v })} testId="sale-regular" /></F>
@@ -246,6 +243,10 @@ function GroupCard({ s, i, packs, problems, busy, set, remove, move }: {
             ))}
           </span>
         </GF>
+        {priced && <>
+          <GF all={mine} gi={i} f="plankBurnPercent" label="PLANK burn (%)" hint="Of its dollar price. 100 = all of it."><Text value={g.plankBurnPercent} onChange={(v) => set({ plankBurnPercent: v })} testId={tid('burn')} width={60} /></GF>
+          <GF all={mine} gi={i} f="paperBurnPercent" label="PAPER buy & burn (%)" hint="Plus any rising-price tax."><Text value={g.paperBurnPercent} onChange={(v) => set({ paperBurnPercent: v })} testId={tid('paper-burn')} width={60} /></GF>
+        </>}
         <GF all={mine} gi={i} f="perWallet" label="Per wallet" hint="0 = no limit."><Num value={g.perWallet} onChange={(v) => set({ perWallet: v })} testId={tid('per-wallet')} width={70} /></GF>
         {(g.perWallet > 0 || g.limitHours > 0) && (
           <GF all={mine} gi={i} f="limitHours" label="Limit lifts after (hours)" hint="From when it opens. Blank = never."><Num value={g.limitHours} step={0.5} blank="never" onChange={(v) => set({ limitHours: v })} testId={tid('limit-hours')} width={70} /></GF>

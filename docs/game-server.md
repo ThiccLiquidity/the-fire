@@ -12,7 +12,7 @@ Nothing here is live until the owner sets it up and opens it (below). The live s
    in the list below get no approval), that they said they're 18+, and that every switch is open. It returns a run id
    and a signed approval.
 2. **Pay.** The player's wallet calls `FireGames.payRun(gameId, runId, series, deadline, sig)` within 10 minutes.
-   It burns 1 PAPER. The contract checks the server's signature.
+   It burns the run's price (1 PAPER, or less: at most $0.10 of PAPER). The contract checks the server's signature.
 3. **Confirm.** The site sends the transaction hash (`confirm`). The server reads `RunPaid` from the receipt and the
    run starts.
 4. **Play.** Up to 3 practice kicks, then scored kicks until the first miss. For each shot the server sends the
@@ -20,8 +20,9 @@ Nothing here is live until the owner sets it up and opens it (below). The live s
    turns them into the kick and replays it with the same sim the browser used (`web/art/factory/forge/paperfb-sim.js`).
    **The server's verdict is final.**
 5. **Board.** Each wallet's best streak per Series and game; a tie goes to whoever reached it first.
-6. **Prizes.** At each Series launch, `ops/games/award.mjs` gives the finished Series' top three 3, 2 and 1 free packs
-   through `FireCredits.awardPrizes` (capped at 6 per game per Series on chain).
+6. **Prizes.** At each Series launch, `ops/games/award.mjs` gives each game's places for the finished Series what
+   `ops/games/prizes.json` says (free packs, cases and gradings, any mix) through `FireCredits.awardPrizes`. On chain,
+   all games together are capped at 6 packs, 50 cases and 20 gradings per Series.
 
 The browser and the server get the same result because the sim is deterministic: fixed 1/480 s ticks, integer inputs,
 and its own trig and square root (no engine maths that can differ by a bit). The tests check this in Chromium and
@@ -125,7 +126,7 @@ that. What they do:
   ids are public on chain.
 - Limits: 20 new runs per IP per 10 minutes, 2 kick posts per run per second. No daily cap (decision 21).
 - Every kick's raw input and every turned-down kick are kept in Neon for the owner's review before prizes, and the
-  chain caps prizes at 6 per game per Series.
+  chain caps prizes at 6 packs, 50 cases and 20 gradings per Series across all games.
 
 ## Files
 

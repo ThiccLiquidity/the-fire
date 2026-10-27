@@ -2,7 +2,7 @@
 //   createRun(run) · getRun(runId) · updateRun(runId, patch, expect?) → bool
 //   issueShot({ runId, n, t0, nonce, shot, level, practice }) · getShot(runId, n) · pingShot(runId, n, nonce, at) → bool
 //   recordKick(kick) → bool (false: that shot was already judged) · getKicks(runId) · logReject(r)
-//   bumpBoard({ series, gameId, wallet, streak, reachedAt, runId }) · board({ series, gameId, limit })
+//   bumpBoard({ series, gameId, wallet, streak, reachedAt, runId }) · board({ series, gameId, limit }) · allTime({ gameId, limit })
 //   rateHit(key, windowMs, max, now) → bool (allowed) · getFlag(name) · setFlag(name, value, at)
 const clone = (v) => (v == null ? v : structuredClone(v));
 
@@ -35,6 +35,16 @@ export function memoryStore() {
       return [...board.values()].filter((b) => b.series === series && b.gameId === gameId)
         .sort((a, b) => b.streak - a.streak || a.reachedAt - b.reachedAt).slice(0, limit)
         .map(({ wallet, streak, reachedAt }) => ({ wallet, streak, reachedAt }));
+    },
+    async allTime({ gameId, limit = 100 }) {
+      const best = new Map();
+      for (const b of board.values()) {
+        if (b.gameId !== gameId) continue;
+        const cur = best.get(b.wallet);
+        if (!cur || b.streak > cur.streak || (b.streak === cur.streak && b.reachedAt < cur.reachedAt)) best.set(b.wallet, b);
+      }
+      return [...best.values()].sort((a, b) => b.streak - a.streak || a.reachedAt - b.reachedAt).slice(0, limit)
+        .map(({ wallet, streak, reachedAt, series }) => ({ wallet, streak, reachedAt, series }));
     },
     async rateHit(key, windowMs, max, now) {
       const r = rate.get(key);

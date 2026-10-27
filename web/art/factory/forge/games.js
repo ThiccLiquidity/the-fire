@@ -63,7 +63,7 @@
       current?.status({ text: 'Free play' });
     }
     function render() {
-      body.replaceChildren(h('p', { class: 'muted gr-lead', text: 'Games from the workshop floor. Free to play any time. Competitive runs play for free packs.' }),
+      body.replaceChildren(h('p', { class: 'muted gr-lead', text: 'Games from the workshop floor. Free to play any time. Competitive runs play for free packs, gradings and cases.' }),
         ...list.map((g) => {
           const st = loadStats(g.id), paid = Games.paidOpen(g);
           return h('article', { class: 'gr-game' },
@@ -75,7 +75,7 @@
                 h('button', { type: 'button', class: 'btn primary', 'data-key': `game-free-${g.id}`, onclick: () => start(g, 'free') }, 'Free play'),
                 h('button', { type: 'button', class: 'btn', 'data-key': `game-paid-${g.id}`, disabled: !paid, onclick: () => start(g, 'paid') }, paid ? `Competitive · ${g.entry}` : 'Competitive · soon'),
                 h('button', { type: 'button', class: 'btn small ghost', 'data-key': `game-board-${g.id}`, onclick: () => Comp.board(g) }, 'Leaderboard')),
-              h('p', { class: 'muted small gr-prize', text: g.prizes })));
+              h('p', { class: 'muted small gr-prize', text: `Each Series: ${placesText(g)}.` })));
         }));
     }
     render();
@@ -130,11 +130,11 @@
         h('button', { type: 'button', class: 'btn small', onclick: back }, '← Back'),
         h('h3', { text: `${g.name}: competitive` }),
         h('ul', { class: 'gm-rules' },
-          h('li', { text: `${g.entry} per run.` }),
+          h('li', { text: g.capUsd ? `${g.entry} per run, or less: a run never costs more than $${g.capUsd.toFixed(2)} of PAPER.` : `${g.entry} per run.` }),
           h('li', { text: 'Up to 3 practice kicks first. They don\'t count.' }),
           h('li', { text: 'Your first miss ends the run.' }),
           h('li', { text: 'Your best streak this Series is your place on the board. A tie goes to whoever got there first.' }),
-          h('li', { text: 'When the Series ends, the top three win 3, 2 and 1 free packs.' }),
+          h('li', { text: `When the Series ends: ${placesText(g)}.` }),
           h('li', { text: 'Each kick is checked by our game server. Its call is final.' })),
         saved ? h('button', { type: 'button', class: 'btn', 'data-key': 'comp-resume', onclick: () => Comp.resume(g, saved, body, back, setCurrent).catch((e) => { msg.textContent = e.message; msg.hidden = false; }) }, 'Pick up your run') : null,
         h('label', { class: 'gm-adult', for: 'gm-adult' }, adult, ' I\'m 18 or older and competitive play is allowed where I live.'),
@@ -233,39 +233,71 @@
       }
       next();
     },
-    /** the Series' leaderboard: one row per wallet, its best streak */
-    async board(g) {
-      const el = h('div', { class: 'gm-board' }, h('p', { class: 'muted', text: 'Loading…' }));
-      window.Sheet.open('game-board', { title: `${g.name} · Series ${series()}`, body: el });
+    /** The leaderboards: "This Series" (one row per wallet, its best streak, places win prizes) and "All time" (each
+     *  wallet's best ever, for bragging rights). Rows show the profile name and picture, else the short address. */
+    async board(g, scope = 'series') {
+      const el = h('div', { class: 'gm-board' });
+      if (boardEl?.isConnected && boardEl.dataset.game === g.id) boardEl.replaceWith(el); // switching tabs
+      else window.Sheet.open('game-board', { title: g.name, body: el });
+      boardEl = el; el.dataset.game = g.id;
+      const tab = (k, label) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(k === scope), onclick: () => k !== scope && Comp.board(g, k) }, label);
+      const tabs = h('div', { class: 'gm-tabs', role: 'tablist' }, tab('series', `Series ${series()}`), tab('all', 'All time'));
+      el.replaceChildren(tabs, h('p', { class: 'muted', text: 'Loading…' }));
+      const all = scope === 'all';
       let rows = [];
       try {
         if (!LIVE) {
           const mine = JSON.parse(localStorage.getItem(DEMO_BOARD) || '[]'), best = mine.reduce((a, x) => Math.max(a, x.streak), 0);
-          rows = [{ wallet: '0x7a3…91c', streak: 14 }, { wallet: '0x2be…04d', streak: 11 }, { wallet: '0x9f1…7aa', streak: 9 }, { wallet: '0x51c…e02', streak: 6 }];
+          rows = all ? [{ wallet: '0x7a31c0de0000000000000000000000000000091c', streak: 23, series: 3 }, { wallet: '0x2be4400000000000000000000000000000004d04', streak: 19, series: 5 }, { wallet: '0x9f1aa00000000000000000000000000000007aa1', streak: 17, series: 2 }, { wallet: '0x51ce020000000000000000000000000000000e02', streak: 14, series: 6 }]
+            : [{ wallet: '0x7a31c0de0000000000000000000000000000091c', streak: 14 }, { wallet: '0x2be4400000000000000000000000000000004d04', streak: 11 }, { wallet: '0x9f1aa00000000000000000000000000000007aa1', streak: 9 }, { wallet: '0x51ce020000000000000000000000000000000e02', streak: 6 }];
           if (mine.length) rows.push({ wallet: 'you', streak: best, me: true });
           rows.sort((a, b) => b.streak - a.streak); rows.forEach((x, i) => { x.rank = i + 1; });
         } else {
-          const j = await api(g, `board?series=${series()}`); const me = wallet().toLowerCase();
+          const j = await api(g, `board?series=${all ? 'all' : series()}`); const me = wallet().toLowerCase();
           rows = j.rows.map((x) => ({ ...x, me: x.wallet?.toLowerCase() === me }));
         }
-      } catch (e) { el.replaceChildren(h('p', { class: 'muted', text: e.data?.closed ? 'The leaderboard opens with competitive play.' : e.message })); return; }
-      const short = (a) => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
-      el.replaceChildren(
-        rows.length ? h('ol', { class: 'gm-rows' }, rows.slice(0, 50).map((x) => h('li', { class: (x.me ? 'me ' : '') + (x.rank <= 3 ? 'prize' : '') },
-          h('span', { class: 'rk', text: String(x.rank) }), h('span', { class: 'who', text: x.me ? 'You' : short(x.wallet) }), h('b', { text: String(x.streak) }),
-          x.rank <= 3 ? h('small', { text: `${[3, 2, 1][x.rank - 1]} free ${x.rank === 3 ? 'pack' : 'packs'}` }) : null)))
-          : h('p', { class: 'muted', text: 'No runs yet this Series.' }),
-        h('p', { class: 'muted small', text: LIVE ? 'Best streak per wallet. A tie goes to whoever got there first.' : 'Demo: sample rows, and your runs from this browser.' }));
+      } catch (e) { el.replaceChildren(tabs, h('p', { class: 'muted', text: e.data?.closed ? 'The leaderboard opens with competitive play.' : e.message })); return; }
+      const F = window.Fun, isAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a || '');
+      const who = (x) => {
+        const name = h('span', { class: 'nm', text: x.me ? 'You' : F?.label ? F.label(x.wallet) : x.wallet });
+        if (!x.me && isAddr(x.wallet)) F?.profileOf?.(x.wallet).then((p) => { if (p?.name) name.textContent = p.name; });
+        const av = isAddr(x.wallet) && F?.avatar ? F.avatar(x.wallet, 28) : h('span', { class: 'fun-av', 'aria-hidden': 'true', style: '--s:28px;--h:120' }, 'Y');
+        return h('span', { class: 'who' }, av, name);
+      };
+      el.replaceChildren(tabs,
+        rows.length ? h('ol', { class: 'gm-rows' }, rows.slice(0, 50).map((x) => h('li', { class: (x.me ? 'me ' : '') + (!all && x.rank <= 3 ? 'prize' : '') },
+          h('span', { class: 'rk', text: String(x.rank) }), who(x), h('b', { text: String(x.streak) }),
+          all ? (x.series ? h('small', { class: 'sub', text: `Series ${x.series}` }) : null)
+            : g.places?.[x.rank - 1] ? h('small', { text: prizeText(g.places[x.rank - 1]) }) : null)))
+          : h('p', { class: 'muted', text: all ? 'No runs yet.' : 'No runs yet this Series.' }),
+        h('p', { class: 'muted small', text: !LIVE ? 'Demo: sample rows, and your runs from this browser.'
+          : all ? 'Each wallet\'s best ever. A tie goes to whoever got there first. No prizes: just glory.'
+          : 'Best streak per wallet, from this Series\' launch to the next. A tie goes to whoever got there first.' }));
     },
   };
   Games.competitive = Comp;
+  let boardEl = null; // the open leaderboard (a tab switch swaps it in place)
+
+  /** A place's prizes ({ packs, grades, cases }, as in ops/games/prizes.json): "2 packs, 4 gradings, 10 cases". */
+  function prizeText(p) {
+    const n = (k, w) => (k ? `${k} ${w}${k === 1 ? '' : 's'}` : '');
+    return [n(p.packs, 'pack'), n(p.grades, 'grading'), n(p.cases, 'case')].filter(Boolean).join(', ');
+  }
+  /** The prize list by place: "1st 2 packs, 4 gradings, 10 cases · 2nd …". */
+  function placesText(g) {
+    const th = ['1st', '2nd', '3rd'];
+    return (g.places || []).map((p, i) => `${th[i] || `${i + 1}th`} ${prizeText(p)}`).join(' · ');
+  }
+  Games.prizeText = prizeText;
+  Games.placesText = placesText;
 
   // ---------- paper football (paperfb.js): game 1 on chain
   const ART = { bench: 'ui/paperfb/bench.webp', plank: 'ui/paperfb/plank.webp', plankHit: 'ui/paperfb/plank-hit.webp', plankSurprised: 'ui/paperfb/plank-surprised.webp', plankBlink: 'ui/paperfb/plank-blink.webp', backdrop: '../build3/plate-1280.webp', pack: 'ui/omni-pack.webp', cardBack: 'ui/card-back.webp', paperCoin: 'ui/brand/paper-coin-64.webp', plankCoin: 'ui/brand/plank-coin-64.webp' };
   Games.add({
-    id: 'paperfb', gameId: 1, name: 'Paper Football', entry: '1 PAPER', art: ART.bench,
+    id: 'paperfb', gameId: 1, name: 'Paper Football', entry: '1 PAPER', capUsd: 0.1, art: ART.bench, // FireGames: 1 PAPER, at most $0.10
     blurb: 'Flick the folded paper through the pencils. Every make moves the goal. Clear Plank and find the furnace.',
-    prizes: 'Each Series, the three best competitive streaks win 3, 2 and 1 free packs.',
+    // what each place wins: kept the same as ops/games/prizes.json (the owner sets both before a Series)
+    places: [{ packs: 2, grades: 4, cases: 10 }, { packs: 1, grades: 3, cases: 8 }, { packs: 0, grades: 3, cases: 7 }],
     mount: (host, opts) => window.PaperFootball?.mount(host, { art: ART, onEvent: opts.onEvent, waitForShot: opts.waitForShot, mute: () => !(window.Sound?.on ?? true), haptic: (p) => window.Fun?.haptics?.on !== false && navigator.vibrate?.(p) }),
   });
 })();

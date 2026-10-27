@@ -1,0 +1,13 @@
+{
+  "_note": "Prizes per game (FireGames id), by place: the owner-approved split (Oct 27). The owner edits this before each award. All games together stay within 6 packs, 50 cases and 20 gradings per Series (fixed on chain in FireCredits).",
+  "1": [
+    { "packs": 2, "grades": 4, "cases": 10 },
+    { "packs": 1, "grades": 3, "cases": 8 },
+    { "packs": 0, "grades": 3, "cases": 7 }
+  ],
+  "2": [
+    { "packs": 2, "grades": 4, "cases": 10 },
+    { "packs": 1, "grades": 3, "cases": 8 },
+    { "packs": 0, "grades": 3, "cases": 7 }
+  ]
+}

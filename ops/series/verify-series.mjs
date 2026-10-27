@@ -16,8 +16,8 @@
 //     root: a wallet added or changed by hand is RED (needs an RPC that serves those blocks: an archive node). A
 //     snapshot group with no root is RED.
 //   - every NFT group's collection is a contract ("press": the deployments file's MILL)
-//   - the sale block against the sale policy (sale-policy.mjs: drop-wide burns 10-100% with PAPER at least 10%, a
-//     PAPER cap of $0.10 or more; per group a price of $1-$10 (0 for holders' groups), PAPER per pack at least 0.1,
+//   - the sale block against the sale policy (sale-policy.mjs: a PAPER cap of $0.10 or more; per group its own burn
+//     shares, 10-100% with PAPER at least 10% (a group with a dollar price), a price of $1-$10 (0 for holders' groups), PAPER per pack at least 0.1,
 //     at most 50 per wallet (a limit on a timer lifting 1 h to 7 days after the group opens), a rising tax up to 10%,
 //     an unlimited group idling out within 1 h), each RED unless
 //     --allow <rule> (some only warn); FireSale's revenue wallet and burners are the deployments file's, and FireGroups

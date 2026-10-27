@@ -3,15 +3,15 @@
 // checks every item against the compiled contracts (contracts/out) when they're built.
 import { parseAbi } from "viem";
 
-const GROUP = "struct Group { uint64 packs; uint8 gate; uint8 coins; uint8 afterGroup; uint8 rollTo; uint32 startDelay; uint32 duration; uint32 perWallet; uint32 limitFor; uint32 perNft; uint16 taxBps; uint128 priceUsd; uint128 paper; address nft; uint32 idle; uint32 perTx; bool unlimited; bytes32 root; }";
+const GROUP = "struct Group { uint64 packs; uint8 gate; uint8 coins; uint8 afterGroup; uint8 rollTo; uint32 startDelay; uint32 duration; uint32 perWallet; uint32 limitFor; uint32 perNft; uint16 taxBps; uint16 plankBurnBps; uint16 paperBurnBps; uint128 priceUsd; uint128 paper; address nft; uint32 idle; uint32 perTx; bool unlimited; bytes32 root; }";
 const ACCESS = "struct Access { uint256[] nftIds; uint256 allowance; bytes32[] proof; }";
 
 export const saleAbi = parseAbi([
   GROUP,
   ACCESS,
-  "struct Drop { uint64 start; uint64 packs; uint64 sold; uint64 creditPacks; uint32 maxPerTx; uint32 regularWalletsFor; uint16 creditsPerPick; uint16 plankBurnBps; uint16 paperBurnBps; uint8 creditGroup; bool closed; uint64 creditPacksMax; uint64 creditPacksPerWallet; uint128 paperCapUsd; }",
+  "struct Drop { uint64 start; uint64 packs; uint64 sold; uint64 creditPacks; uint32 maxPerTx; uint32 regularWalletsFor; uint16 creditsPerPick; uint8 creditGroup; bool closed; uint64 creditPacksMax; uint64 creditPacksPerWallet; uint128 paperCapUsd; }",
   "struct Status { bool configured; bool live; bool closed; bool paused; bool plankPriceOk; bool regularWalletsOnly; uint256 left; uint256 endableAt; uint256 creditPacksLeft; }",
-  "struct DropConfig { uint64 start; uint64 packs; uint16 plankBurnBps; uint16 paperBurnBps; uint128 paperCapUsd; uint32 maxPerTx; uint32 regularWalletsFor; uint16 creditsPerPick; uint64 creditPacksMax; uint64 creditPacksPerWallet; uint8 creditGroup; Group[] groups; }",
+  "struct DropConfig { uint64 start; uint64 packs; uint128 paperCapUsd; uint32 maxPerTx; uint32 regularWalletsFor; uint16 creditsPerPick; uint64 creditPacksMax; uint64 creditPacksPerWallet; uint8 creditGroup; Group[] groups; }",
   "function dropOf(uint256 fire) view returns (Drop)",
   "function status(uint256 fire) view returns (Status)",
   "function activeDrops() view returns (uint256)",

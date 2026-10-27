@@ -20,7 +20,8 @@ import {Deployments} from "./Deployments.sol";
  *   Then ops/series (VerifySeries) reads it all back from the chain, diffs it against the JSON and loads every image
  *     the contract can point at through two gateways. Only when it's green:
  *   Batch B, the lock: FireSale.configureDrop from the "sale" block (the drop-wide FireSale.DropConfig fields and a
- *     "groups" list of FireGroups.Group, by name, in contract units; docs/cards-contracts.md). It locks the Series:
+ *     "groups" list of FireGroups.Group, by name, in contract units, each with its own PLANK and PAPER burn shares;
+ *     docs/cards-contracts.md). It locks the Series:
  *     recipe, characters and images are fixed from then. Before sending batch B the script reads the chain and
  *     refuses unless batch A is there exactly as the JSON says.
  *
@@ -285,14 +286,15 @@ contract ConfigureSeries is Deployments {
     ///      name, in contract units (seconds, 8-decimal dollars, PAPER wei, basis points). DROP_START overrides the
     ///      start and GROUP_ROOT_<i> a snapshot group's root. Shape: docs/cards-contracts.md.
     function parseSale(string memory json) public view returns (FireSale.DropConfig memory c) {
-        _onlyKeys(json, ".sale", "start,packs,plankBurnBps,paperBurnBps,paperCapUsd,maxPerTx,regularWalletsFor,creditsPerPick,creditPacksMax,creditPacksPerWallet,creditGroup,groups");
+        require(
+            !json.keyExists(".sale.plankBurnBps") && !json.keyExists(".sale.paperBurnBps"),
+            "sale: the burn shares are per group: set plankBurnBps and paperBurnBps in each of sale.groups (Standard 1000 / 2000)"
+        );
+        _onlyKeys(json, ".sale", "start,packs,paperCapUsd,maxPerTx,regularWalletsFor,creditsPerPick,creditPacksMax,creditPacksPerWallet,creditGroup,groups");
         c.start = uint64(vm.envOr("DROP_START", _u(json, ".sale", "start", type(uint64).max)));
         require(c.start != 0, "sale.start is 0: set it in the studio or with DROP_START");
         require(c.start < block.timestamp + MAX_START_AHEAD, "sale.start is more than a year away: a typo?");
         c.packs = uint64(_u(json, ".sale", "packs", type(uint64).max));
-        c.plankBurnBps = uint16(_u(json, ".sale", "plankBurnBps", 10_000));
-        c.paperBurnBps = uint16(_u(json, ".sale", "paperBurnBps", 10_000));
-        require(uint256(c.plankBurnBps) + c.paperBurnBps <= 10_000, "sale: plankBurnBps + paperBurnBps is over 10000 (100%)");
         c.paperCapUsd = uint128(_u(json, ".sale", "paperCapUsd", type(uint128).max));
         c.maxPerTx = uint32(_u(json, ".sale", "maxPerTx", type(uint32).max));
         c.regularWalletsFor = uint32(_u(json, ".sale", "regularWalletsFor", 30 days));
@@ -338,12 +340,19 @@ contract ConfigureSeries is Deployments {
     /// @dev Group `i` of `n` in the sale block, checked like FireGroups checks it, with the reason by name.
     function parseGroup(string memory json, uint256 i, uint256 n) public view returns (FireGroups.Group memory g) {
         string memory p = string.concat(".sale.groups[", vm.toString(i), "]");
-        _onlyKeys(json, p, "name,packs,gate,nft,perNft,root,priceUsd,paper,coins,perWallet,limitFor,afterGroup,startDelay,duration,rollTo,taxBps,idle,perTx,unlimited");
+        _onlyKeys(json, p, "name,packs,gate,nft,perNft,root,priceUsd,paper,coins,plankBurnBps,paperBurnBps,perWallet,limitFor,afterGroup,startDelay,duration,rollTo,taxBps,idle,perTx,unlimited");
         g.packs = uint64(_u(json, p, "packs", type(uint64).max));
         g.priceUsd = uint128(_u(json, p, "priceUsd", type(uint128).max));
         g.paper = uint128(_u(json, p, "paper", type(uint128).max));
         g.coins = uint8(_u(json, p, "coins", 7));
         require(g.priceUsd == 0 || g.coins != 0, string.concat(p, ".coins: a dollar price needs a coin (PLANK 1 + ETH 2 + USDG 4)"));
+        // how the group's dollar payments split: PLANK burn, PAPER buy & burn, the rest to revenue (Standard 10% / 20%)
+        g.plankBurnBps = uint16(_u(json, p, "plankBurnBps", 10_000));
+        g.paperBurnBps = uint16(_u(json, p, "paperBurnBps", 10_000));
+        require(
+            uint256(g.plankBurnBps) + g.paperBurnBps <= 10_000,
+            string.concat(p, ": plankBurnBps + paperBurnBps is over 10000 (100%)")
+        );
         g.perWallet = uint32(_u(json, p, "perWallet", type(uint32).max));
         // optional, 0 = the whole time: the per-wallet limit lifts this long after the group opened
         if (json.keyExists(string.concat(p, ".limitFor"))) g.limitFor = uint32(_u(json, p, "limitFor", 30 days));

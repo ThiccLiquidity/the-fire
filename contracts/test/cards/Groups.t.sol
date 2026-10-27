@@ -47,8 +47,7 @@ contract GroupsTest is SaleBase {
         e.limitFor = 24 hours;
         e.afterGroup = 1;
         FireSale.DropConfig memory c = _with(_cfg(start, 0), _three(p, s, e));
-        c.plankBurnBps = 1_000;
-        c.paperBurnBps = 2_000;
+        _shares(c, 1_000, 2_000);
         c.creditPacksMax = 16;
         c.creditPacksPerWallet = 3;
         c.creditGroup = 2;
@@ -683,7 +682,7 @@ contract GroupsTest is SaleBase {
                 next := mload(add(add(data, 32), add(i, 32)))
             }
             if (w == 5 && next == 0) {
-                // the group's packs; the drop's packs (also 5) is followed by plankBurnBps (3000), not 0
+                // the group's packs; the drop's packs (also 5) is followed by paperCapUsd (1e8), not 0
                 assembly { mstore(add(add(data, 32), add(i, 32)), gate) }
                 return data;
             }
@@ -805,8 +804,7 @@ contract GroupsTest is SaleBase {
         o.afterGroup = 0;
         o.duration = 12 hours;
         FireSale.DropConfig memory c = _with(_cfg(start, 0), _two(a, o));
-        c.plankBurnBps = 1_000;
-        c.paperBurnBps = 2_000;
+        _shares(c, 1_000, 2_000);
         _set(1, c);
     }
 

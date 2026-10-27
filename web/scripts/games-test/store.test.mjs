@@ -52,6 +52,12 @@ async function contract(store) {
   await store.bumpBoard({ series: 7, gameId: 2, wallet: 'w9', streak: 50, reachedAt: 1 });
   assert.deepEqual(await store.board({ ...b, limit: 10 }), [{ wallet: 'w3', streak: 5, reachedAt: 90 }, { wallet: 'w2', streak: 3, reachedAt: 40 }, { wallet: 'w1', streak: 3, reachedAt: 50 }]);
   assert.equal((await store.board({ ...b, limit: 1 })).length, 1);
+  // all time: each wallet's best across every Series, one game only
+  await store.bumpBoard({ series: 8, gameId: 1, wallet: 'w1', streak: 9, reachedAt: 200 });
+  await store.bumpBoard({ series: 8, gameId: 1, wallet: 'w3', streak: 2, reachedAt: 210 });
+  assert.deepEqual(await store.allTime({ gameId: 1, limit: 10 }), [{ wallet: 'w1', streak: 9, reachedAt: 200, series: 8 }, { wallet: 'w3', streak: 5, reachedAt: 90, series: 7 }, { wallet: 'w2', streak: 3, reachedAt: 40, series: 7 }]);
+  assert.equal((await store.allTime({ gameId: 1, limit: 1 })).length, 1);
+  assert.deepEqual((await store.allTime({ gameId: 2, limit: 10 })).map((r) => r.wallet), ['w9']);
   // rate limits: a window
   const hits = [];
   for (let i = 0; i < 3; i++) hits.push(await store.rateHit('k', 1000, 2, 100 + i));

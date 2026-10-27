@@ -67,14 +67,20 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
 26. **Keep it simple:** a straightforward, fun game. Any new infrastructure, contract change or cost is explained in
     plain English before it's built. The finished game still needs the owner's review and approval, and none of this
     authorizes going live.
-27. **Game room:** games are added to FireGames with a fixed entry each; prizes are capped at 6 per game per Series.
+28. **Entry: 1 PAPER or $0.10 of PAPER, whichever is less (owner, Oct 27; replaces "always 1 PAPER" in 13 and
+    21).** At a high PAPER price, 1 PAPER a run would burn through the supply. FireGames fixes each game's dollar
+    ceiling with its entry (`addGame(gameId, entry, capUsd8)`), prices it with the PaperUsdTwap (`setPaperFeed`; a
+    late feed falls back to the last good price), and `payRun` takes the most PAPER the player agrees to (`maxPaper`).
+    Paper football: 1 PAPER, at most $0.10. Spit-Wad Sniper: the same.
+27. **Game room:** games are added to FireGames with a fixed entry each; prizes are capped at 6 per game per Series (replaced Oct 27: 6 packs, 50 cases and 20 gradings per Series across all games, any mix).
 
 ## On chain (game room added Oct 26, tests in `contracts/test/cards/Games.t.sol`)
 
 - **`FireGames`** (`contracts/src/cards/FireGames.sol`) takes the entries for every game in the game room.
-  - The owner adds a game once with `addGame(gameId, entry)`. Its entry is fixed forever: nothing can change it.
-    Paper football is game 1 at 1 PAPER (`DeployCards` adds it).
-  - `payRun(gameId, runId, series, deadline, sig)` burns exactly that game's entry from the player to the dead
+  - The owner adds a game once with `addGame(gameId, entry, capUsd8)`. Its entry and dollar ceiling are fixed
+    forever. Paper football is game 1 at 1 PAPER, at most $0.10 of PAPER (`DeployCards` adds it). `priceOf(gameId)`
+    is what a run burns now.
+  - `payRun(gameId, runId, series, deadline, maxPaper, sig)` burns that game's price (at most `maxPaper`) from the player to the dead
     address and records who paid that run id, once. It needs the game server's EIP-712 approval (`signer`) of that
     game, run id, player, Series and deadline, so the server's checks (state, 18+) come first. The server starts a
     paid run only after it sees `RunPaid` for its run id from the player's wallet.
@@ -83,13 +89,19 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
     so paid play stays closed until the owner sets both.
   - The player names the competition, so a run paid during a switch can't land in the wrong one.
   - Holds no funds, and moves nothing but the entry from the caller. Ownership can't be renounced.
-- **`FireCredits.awardPrizes(series, gameId, winners, counts)`** gives a game's winners their free pack credits. Only
-  the owner or the `prizeAwarder` the owner sets (the server's wallet) can call it.
+- **`FireCredits.awardPrizes(series, gameId, winners, packs, cases, grades)`** gives a game's winners their prizes:
+  free pack credits, free cases and free gradings, any mix per place (owner's call, Oct 27). Only the owner or the
+  `prizeAwarder` the owner sets (the server's wallet) can call it.
   - Only for games the owner allows (`setPrizeGame`; the deploy allows game 1), so a stolen server key can't make up
     games.
-  - Hard cap: at most `MAX_PRIZE_CREDITS = 6` per game per Series, however many calls, fixed forever.
+  - Hard caps per Series, **across all games**, fixed forever: `MAX_PRIZE_CREDITS = 6` packs, `MAX_PRIZE_CASES = 50`,
+    `MAX_PRIZE_GRADES = 20`, however many calls.
   - Only for a Series whose drop has started, so made-up Series numbers can't add more.
-  - Prize credits are ordinary free-pack credits, spent the usual way in the next Series.
+  - Pack prizes are ordinary free-pack credits, spent the usual way in the next Series.
+  - Cases and gradings are coupons in FirePsa (`caseCoupons`, `gradeCoupons`). Only FireCredits can add them
+    (`FirePsa.setCouponIssuer`, set once; `FireCredits.setPsa`, set once; the deploy wires both). `protect` uses a
+    wallet's coupons first and charges only for the rest; nothing at all when they cover the batch.
+  - Which place wins what is set in `ops/games/prizes.json` before each award (`ops/games/award.mjs`).
 - **Wired:** `DeployCards`, `AcceptOwnership` (FireGames is the eighth owned contract) and `VerifyDeploy`.
 - **Still to do:** the server (run ids, approvals, shot seeds, replaying kicks, the leaderboard); the site's paid-run
   flow; then the final audit covers them.

@@ -50,11 +50,6 @@ export function salePolicy(s: SaleSettings): PolicyProblem[] {
   const warn = (policy: string, field: SaleProblem['field'], message: string, group?: number, red = true) =>
     out.push({ policy, red, field, message: `Policy: ${message}`, warning: true, ...(group !== undefined ? { group } : {}) })
 
-  const burn = j.plankBurnBps + j.paperBurnBps
-  if (burn < B.burnTotalBpsMin || burn > B.burnTotalBpsMax) {
-    warn('burn-total', 'plankBurnPercent', `the PLANK and PAPER shares together are ${burn / 100}%: keep them ${POLICY.burnMin}% to ${POLICY.burnMax}%.`)
-  }
-  if (j.paperBurnBps < B.paperBurnBpsMin) warn('paper-burn', 'paperBurnPercent', `PAPER buy & burn at least ${POLICY.paperBurnMin}%.`)
   const cap = BigInt(j.paperCapUsd)
   if (cap === 0n) warn('paper-cap', 'paperCapUsd', 'no PAPER ceiling (0).', undefined, false)
   else if (cap < B.paperCapUsdMin) warn('paper-cap', 'paperCapUsd', `a PAPER ceiling of at least $${POLICY.paperCapMin.toFixed(2)}.`)
@@ -63,6 +58,16 @@ export function salePolicy(s: SaleSettings): PolicyProblem[] {
     const sg = s.groups[i]
     const holders = g.gate === 'nft' || g.gate === 'snapshot'
     const price = BigInt(g.priceUsd)
+    // each group's own burn shares (a group with no dollar price has nothing to split; over 100% is a checkSale error)
+    const burn = g.plankBurnBps + g.paperBurnBps
+    if (price !== 0n && burn <= 10_000) {
+      if (burn < B.burnTotalBpsMin || burn > B.burnTotalBpsMax) {
+        warn('burn-total', 'plankBurnPercent', `the PLANK and PAPER shares together are ${burn / 100}%: keep them ${POLICY.burnMin}% to ${POLICY.burnMax}%.`, i)
+      }
+      if (g.paperBurnBps < B.paperBurnBpsMin) {
+        warn('paper-burn', 'paperBurnPercent', `PAPER buy & burn at least ${POLICY.paperBurnMin}%${g.plankBurnBps === 10_000 ? ' (all-PLANK burn: launch with --allow paper-burn if meant)' : ''}.`, i)
+      }
+    }
     if (price === 0n) {
       if (!holders) warn('price', 'priceUsd', 'no dollar price is only for a holders\' group (NFT or snapshot).', i)
     } else if (price < B.priceUsdMin || price > B.priceUsdMax) warn('price', 'priceUsd', `a price of $${POLICY.priceMin} to $${POLICY.priceMax} a pack.`, i)

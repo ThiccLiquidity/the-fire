@@ -106,6 +106,12 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     uint256 public gradeUsd18 = 1e18;
     /// @notice While true, cases and grading can't be paid for (`protect`). Finishing and cancelling never pause.
     bool public paused;
+    /// @notice The only contract that can give out free case and grading coupons: FireCredits, for game prizes (its
+    ///         per-Series caps limit how many). Set once.
+    address public couponIssuer;
+    /// @notice Free cases and gradings each wallet holds. `protect` uses them first, before charging anything.
+    mapping(address => uint256) public caseCoupons;
+    mapping(address => uint256) public gradeCoupons;
 
     /// @dev Never reorder: the numbers are the ABI (PLANK 0, ETH 1, USDG 2), the same as PaperBurner's.
     enum Pay { PLANK, ETH, USDG }
@@ -133,6 +139,9 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     event Graded(uint256 indexed serial, uint256 grade);
     event GradingCancelled(uint256 indexed index);
     event PausedSet(bool paused);
+    event CouponIssuerSet(address issuer);
+    event CouponsAdded(address indexed to, uint256 cases, uint256 grades);
+    event CouponsUsed(address indexed by, uint256 cases, uint256 grades);
 
     error ZeroAddress();
     error BadAmount();
@@ -148,6 +157,8 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     error BadIds();
     error BadRequest();
     error RenounceDisabled();
+    error AlreadySet();
+    error NotIssuer();
 
     constructor(address owner_, address cards, address burner) Ownable(owner_) {
         if (cards == address(0) || burner == address(0)) revert ZeroAddress();
@@ -194,6 +205,25 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         emit PricesSet(caseUsd, gradeUsd);
     }
 
+    /// @notice Who can give out coupons (FireCredits). Set once, never changed.
+    function setCouponIssuer(address issuer) external onlyOwner {
+        if (issuer == address(0)) revert ZeroAddress();
+        if (couponIssuer != address(0)) revert AlreadySet();
+        couponIssuer = issuer;
+        emit CouponIssuerSet(issuer);
+    }
+
+    // ================================================================ coupons
+
+    /// @notice Give `to` free cases and gradings (game prizes). Only the coupon issuer.
+    function addCoupons(address to, uint256 cases, uint256 grades) external {
+        if (msg.sender != couponIssuer) revert NotIssuer();
+        if (to == address(0)) revert ZeroAddress();
+        caseCoupons[to] += cases;
+        gradeCoupons[to] += grades;
+        emit CouponsAdded(to, cases, grades);
+    }
+
     // ================================================================ cases and grading
 
     /// @notice What `cases` cases and `grades` gradings cost in `pay` right now (rounded up): exactly what `protect`
@@ -206,7 +236,9 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     ///         none graded or being graded. Pay in `pay`: `maxCost` is the most PLANK/USDG (approve this contract), or
     ///         send ETH (the rest comes back). The price is `quote(caseIds.length, gradeIds.length, pay)`. Grades are
     ///         set when the randomness arrives (anyone can then call `finish`; the site does it right away); until
-    ///         then those cards can't move. Returns the grading's index (type(uint256).max: no grading).
+    ///         then those cards can't move. Your free case and grading coupons are used first, and only the rest is
+    ///         charged (nothing at all if coupons cover the batch). Returns the grading's index (type(uint256).max: no
+    ///         grading).
     function protect(uint256[] calldata caseIds, uint256[] calldata gradeIds, Pay pay, uint256 maxCost)
         external
         payable
@@ -230,7 +262,16 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
             pending[id] = true;
             CARDS.setGradePending(id, true); // freezes its wear where it is
         }
-        uint256 cost = _pay(pay, quote(nc, ng, pay), maxCost);
+        uint256 fc = caseCoupons[msg.sender];
+        uint256 fg = gradeCoupons[msg.sender];
+        if (fc > nc) fc = nc;
+        if (fg > ng) fg = ng;
+        if (fc + fg > 0) {
+            caseCoupons[msg.sender] -= fc;
+            gradeCoupons[msg.sender] -= fg;
+            emit CouponsUsed(msg.sender, fc, fg);
+        }
+        uint256 cost = fc + fg < nc + ng ? _pay(pay, quote(nc - fc, ng - fg, pay), maxCost) : 0;
         index = type(uint256).max;
         if (ng > 0) {
             IPsaRandomness src = randomness;

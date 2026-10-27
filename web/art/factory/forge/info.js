@@ -202,6 +202,18 @@
   /** "the PLANK group", "the Press group": a group as one word, for "when ... ends". */
   const groupWord = (g) => (g.gate === 'snapshot' && g.snap?.symbol ? g.snap.symbol : g.isPress ? 'Press' : g.name);
   const whoOf = (g) => (g.gate === 'open' ? 'everyone' : g.gate === 'snapshot' ? Store.holdersName(g) : g.name);
+  /** A group's name as a heading: "Paper Press holders", the holders list's name, "Everyone". */
+  const titleOf = (g) => (g.isPress ? 'Paper Press holders' : g.gate === 'snapshot' ? Store.holdersName(g) : g.name);
+  /** The burn splits of the groups with a dollar price (each group sets its own; bps of the price): `same` when every
+   *  one has the same two, then `plank` / `paper` are them; else each share's lowest and highest. */
+  function burnsOf(G) {
+    const priced = G.filter((g) => g.priceUsd > 0), pk = priced.map((g) => g.plankBurnBps || 0), pp = priced.map((g) => g.paperBurnBps || 0);
+    const same = priced.every((g, i) => pk[i] === pk[0] && pp[i] === pp[0]);
+    return { priced, same, plank: same ? pk[0] || 0 : null, paper: same ? pp[0] || 0 : null,
+      plankMin: pk.length ? Math.min(...pk) : 0, plankMax: Math.max(0, ...pk), paperMin: pp.length ? Math.min(...pp) : 0, paperMax: Math.max(0, ...pp) };
+  }
+  /** "10%", "10% to 100%", "up to 100%": a share across the groups. */
+  const shareT = (lo, hi) => (lo === hi ? bpsPct(hi) : lo ? `${bpsPct(lo)} to ${bpsPct(hi)}` : `up to ${bpsPct(hi)}`);
   function facts() {
     const s = series(), P = window.Store?.PRICES || {}, usd = window.Wear?.usd || ((v) => '$' + v);
     const G = s.groups || [], finite = G.filter((g) => !g.unlimited);
@@ -213,7 +225,7 @@
       price: usd(P.PACK_USD || 0), paper: paperT(P.PACK_PAPER || 0), coins: orList(coins.length ? coins : ['PLANK', 'ETH', 'USDG']),
       packs: (s.total || 0).toLocaleString('en-US'), cards: about((s.total || 0) * cpp),
       perWallet: everyone?.perWallet || holders[0]?.perWallet || 0, limitFor: (everyone?.perWallet && everyone.limitFor) || 0, maxTx: s.maxPerTx || 50,
-      rwHours: Math.round((s.regularWalletsFor || 0) / 3600), cap: +s.paperCapUsd || 0 };
+      rwHours: Math.round((s.regularWalletsFor || 0) / 3600), cap: +s.paperCapUsd || 0, burn: burnsOf(G) };
   }
 
   // how a Series sells: built from its own groups (the Buy box shows the live ones)
@@ -299,10 +311,14 @@
         </ul>
         ${timeline(no, F)}
         <p class="inf-sub">Where the money goes</p>
-        <p>Every pack is a little bonfire (Series ${no} splits):</p>
+        <p>Every pack is a little bonfire (Series ${no} splits${F.burn.same ? '' : ', group by group'}):</p>
         <ul>
-          ${s.paperBurnBps ? `<li>${bpsPct(s.paperBurnBps)} of the price buys PAPER on the market and burns it.</li>` : ''}
-          ${s.plankBurnBps ? `<li>${bpsPct(s.plankBurnBps)} buys PLANK and burns it.</li>` : ''}
+          ${F.burn.same ? `${F.burn.paper ? `<li>${bpsPct(F.burn.paper)} of the price buys PAPER on the market and burns it.</li>` : ''}
+          ${F.burn.plank ? `<li>${bpsPct(F.burn.plank)} buys PLANK and burns it.</li>` : ''}`
+    : F.burn.priced.map((g) => {
+      const parts = [g.paperBurnBps ? `${bpsPct(g.paperBurnBps)} of the price buys PAPER on the market and burns it` : '', g.plankBurnBps ? `${bpsPct(g.plankBurnBps)} buys PLANK and burns it` : ''].filter(Boolean);
+      return `<li><b>${esc(titleOf(g))}:</b> ${parts.length ? andList(parts) : 'none of the price is burned'}.</li>`;
+    }).join('')}
           <li>The pack's own PAPER is burned too.</li>
           ${F.G.some((g) => g.taxBps > 0) ? '<li>Extra packs: the pack tax buys PAPER and burns it.</li>' : ''}
         </ul>`),
@@ -385,8 +401,8 @@
         <div class="inf-duo" aria-hidden="true"><figure><img src="ui/brand/plank-256.webp" alt="" width="76" height="120" loading="lazy"><figcaption>PLANK · the wood</figcaption></figure><figure><img src="ui/brand/paper-256.webp" alt="" width="85" height="110" loading="lazy"><figcaption>PAPER · the press</figcaption></figure></div>
         <p><b>PLANK</b> and <b>PAPER</b> are meme coins on Robinhood Chain. The <b>Paper Press</b> (the paper mills) is an NFT that lets its holder produce PAPER.</p>
         <ul>
-          <li><b>PLANK is the wood.</b> It's the workshop's fuel and its community coin. ${s.plankBurnBps ? `${InS}, ${bpsPct(s.plankBurnBps)} of every pack sale buys PLANK and throws it on the fire. ` : ''}You can pay for packs, cases and grading in PLANK, and PLANK holders get their own early group in each Series${holdShort ? ` (${inS}: ${holdShort})` : ''}.</li>
-          <li><b>PAPER is what everything is printed on.</b> Every pack takes PAPER to print (${inS}, ${F.paper}${F.cap ? `, never more than ${usd(F.cap)} worth` : ''}), and every idea you suggest takes PAPER to write on. Every case and grade fee buys PAPER on the market and burns it${s.paperBurnBps ? `, and so does ${bpsPct(s.paperBurnBps)} of every Series ${no} pack sale` : ''}.</li>
+          <li><b>PLANK is the wood.</b> It's the workshop's fuel and its community coin. ${F.burn.plankMax ? `${InS}, ${shareT(F.burn.plankMin, F.burn.plankMax)} of ${F.burn.same ? 'every' : 'a'} pack sale${F.burn.same ? '' : ' (it depends on the group)'} buys PLANK and throws it on the fire. ` : ''}You can pay for packs, cases and grading in PLANK, and PLANK holders get their own early group in each Series${holdShort ? ` (${inS}: ${holdShort})` : ''}.</li>
+          <li><b>PAPER is what everything is printed on.</b> Every pack takes PAPER to print (${inS}, ${F.paper}${F.cap ? `, never more than ${usd(F.cap)} worth` : ''}), and every idea you suggest takes PAPER to write on. Every case and grade fee buys PAPER on the market and burns it${F.burn.paperMax ? `, and so does ${shareT(F.burn.paperMin, F.burn.paperMax)} of ${F.burn.same ? 'every' : 'a'} Series ${no} pack sale${F.burn.same ? '' : ' (it depends on the group)'}` : ''}.</li>
           <li><b>The Paper Press makes PAPER.</b> Over 2,000 Presses were minted in a single seven-day window by locking up PLANK, and no more will ever be minted. Each Press lets its holder mint 1 PAPER a day. It isn't automatic: the holder has to mint it.<span class="inf-presses" hidden> (Presses today: <b data-presses></b>.)</span></li>
           <li><b>Burning a Press.</b> A holder can burn their Press at any time to get its locked PLANK back. That leaves fewer Presses, and so less PAPER that can be made in the future. It doesn't touch the PAPER that already exists.</li>
           <li><b>Press holders get first dibs.</b> Each Series gives them their own group${press ? ` (${inS}: ${nf(press.perNft || 1)} ${press.perNft > 1 ? 'packs' : 'pack'} per Press for ${press.priceUsd > 0 ? `${usd(press.priceUsd)} + ` : ''}${paperT(press.paper)})` : ''}.</li>
@@ -396,12 +412,12 @@
           ${TOKENS.map(([t, a]) => `<button class="inf-link inf-ca" type="button" data-ca="${a}">${t} <code>${short(a)}</code> <span class="cp">Copy</span></button>`).join('')}
           <a class="inf-link" href="https://opensea.io/collection/the-plank-press" target="_blank" rel="noopener">Paper Press on OpenSea <span aria-hidden="true">↗</span></a>
         </div>`),
-      sec('games', 'Game room', 'Free play any time; competitive runs for free packs. The official rules.', `
+      sec('games', 'Game room', 'Free play any time; competitive runs for free packs, gradings and cases. The official rules.', `
         <ul>
           <li><b>Free play</b> is free, any time, and during pack and grade waits. No prizes.</li>
-          <li><b>A competitive run costs 1 PAPER</b>, always. The entry is burned. Up to 3 practice kicks come first and don't count; then your first miss ends the run.</li>
-          <li><b>The board:</b> your best streak this Series, one place per wallet. A tie goes to whoever reached that streak first.</li>
-          <li><b>Prizes:</b> when the Series ends, the top three get 3, 2 and 1 free pack credits, sent to their wallets at the next Series' launch. They never expire.</li>
+          <li><b>A competitive run costs 1 PAPER, or less:</b> never more than $0.10 of PAPER at its current price. The entry is burned. Up to 3 practice kicks come first and don't count; then your first miss ends the run.</li>
+          <li><b>The boards:</b> each game has one for this Series (from its launch to the next Series' launch) and an all-time one. Your best streak, one place per wallet. A tie goes to whoever reached that streak first. Only this Series' board wins prizes.</li>
+          <li><b>Prizes:</b> when the Series ends, each game's top places win free packs, free gradings and free cases, as listed on its leaderboard for that Series. They're sent to the winners' wallets at the next Series' launch and never expire. Free gradings and cases are used first the next time you case or grade.</li>
           <li><b>Skill, not luck:</b> every shot's distance, wind and goal are shown before you kick, and the same kick always lands the same way. Our game server replays each kick and its call is final. A kick it can't count (a timing or connection problem) is never a miss: you kick again.</li>
           <li><b>Who can play for prizes:</b> 18 and older, outside the US states where it isn't allowed (Arizona, Arkansas, Connecticut, Delaware, Indiana, Louisiana, Maine, Montana, South Carolina, South Dakota and Tennessee). Free play is open to everyone.</li>
           <li><b>Lost connection?</b> Your paid run waits for you: open the Game room again to pick it up.</li>

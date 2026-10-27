@@ -111,6 +111,8 @@ contract DeployCards is Deployments {
     /// @notice Paper football's FireGames id and entry (1 PAPER a run, docs/paper-football.md decision 13).
     uint256 public constant PAPER_FOOTBALL = 1;
     uint256 public constant PAPER_FOOTBALL_ENTRY = 1e18;
+    /// @dev ...but never more than $0.10 of PAPER (8 decimals), fixed with the game (owner, Oct 27).
+    uint256 public constant PAPER_FOOTBALL_CAP_USD = 10_000_000;
 
     struct Params {
         address router; // drand
@@ -275,9 +277,15 @@ contract DeployCards is Deployments {
         // the game room: paper football is game 1 at 1 PAPER a run (fixed forever), with prizes allowed in FireCredits.
         // signer and series stay 0, so paid play is closed until the owner sets both; the prizeAwarder stays unset.
         d.games = new FireGames(deployer, p.paper);
-        d.games.addGame(PAPER_FOOTBALL, PAPER_FOOTBALL_ENTRY);
+        d.games.addGame(PAPER_FOOTBALL, PAPER_FOOTBALL_ENTRY, PAPER_FOOTBALL_CAP_USD);
+        d.games.setPaperFeed(p.paperUsd);
         d.credits.setPrizeGame(PAPER_FOOTBALL, true);
+        // game prizes can include free cases and gradings: FirePsa takes coupons only from FireCredits (both set once)
+        d.psa.setCouponIssuer(address(d.credits));
+        d.credits.setPsa(address(d.psa));
+        require(d.psa.couponIssuer() == address(d.credits) && address(d.credits.psa()) == address(d.psa), "coupons wiring");
         require(address(d.games.PAPER()) == p.paper && d.games.entryOf(PAPER_FOOTBALL) == PAPER_FOOTBALL_ENTRY
+            && d.games.capUsdOf(PAPER_FOOTBALL) == PAPER_FOOTBALL_CAP_USD && address(d.games.paperUsd()) == p.paperUsd
             && d.games.signer() == address(0) && d.games.series() == 0 && d.credits.prizeGame(PAPER_FOOTBALL)
             && d.credits.prizeAwarder() == address(0), "games wiring");
 

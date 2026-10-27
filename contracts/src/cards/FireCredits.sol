@@ -5,6 +5,11 @@ import {Ownable2Step, Ownable} from "openzeppelin-contracts/contracts/access/Own
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {FireSale} from "./FireSale.sol";
 
+interface IPrizePsa {
+    function couponIssuer() external view returns (address);
+    function addCoupons(address to, uint256 cases, uint256 grades) external;
+}
+
 interface ICreditsCards {
     function characterCount(uint256 fire) external view returns (uint256);
     function cardsPerPack(uint256 fire) external view returns (uint256);
@@ -38,9 +43,12 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
     uint256 public constant EXTRA_PICKS = 2;
     /// @notice A suggestion's PAPER never costs more than this many dollars (8 decimals) at the PAPER feed's price.
     uint256 public constant SUGGESTION_PAPER_CAP_USD = 1e8;
-    /// @notice Free pack credits one game's competition can award in a Series in all (paper football: 1st 3, 2nd 2,
-    ///         3rd 1). Fixed, so the game server's wallet can never give out more, whatever happens to it.
+    /// @notice The most game prizes a Series can give out in all, across every game in the game room: free pack
+    ///         credits, free cases and free gradings. Fixed, so the game server's wallet can never give out more,
+    ///         whatever happens to it. Which place wins what is the owner's choice each Series, within these.
     uint256 public constant MAX_PRIZE_CREDITS = 6;
+    uint256 public constant MAX_PRIZE_CASES = 50;
+    uint256 public constant MAX_PRIZE_GRADES = 20;
 
     ICreditsCards public immutable CARDS;
     /// @notice The pack sale (set once): it takes the PAPER, burns the cards and mints the credit packs.
@@ -68,8 +76,11 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
     uint32 public sessionRound;
     /// @notice Who may award competition prizes (the game server's wallet); the owner always may.
     address public prizeAwarder;
-    /// @notice Prize credits each game's competition has awarded in each Series (at most MAX_PRIZE_CREDITS).
-    mapping(uint256 fire => mapping(uint256 gameId => uint256)) public prizesOf;
+    /// @notice Game prizes given out in each Series, across all games (at most the MAX_PRIZE_* caps).
+    struct Prizes { uint64 packs; uint64 cases; uint64 grades; }
+    mapping(uint256 fire => Prizes) public prizesOf;
+    /// @notice FirePsa, which holds the case and grading coupons (set once; until then prizes are packs only).
+    IPrizePsa public psa;
     /// @notice The games (FireGames ids) the owner allows prizes for, so the awarder can't make up games.
     mapping(uint256 gameId => bool) public prizeGame;
 
@@ -80,7 +91,8 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
     event SuggestionPicked(uint256 indexed fire, uint256 indexed id, address indexed by, uint256 credits);
     event SuggestionRulesSet(uint256 paper, uint256 maxBytes);
     event PrizeAwarderSet(address awarder);
-    event PrizeAwarded(uint256 indexed fire, uint256 indexed gameId, address indexed winner, uint256 credits);
+    event PrizeAwarded(uint256 indexed fire, uint256 indexed gameId, address indexed winner, uint256 packs, uint256 cases, uint256 grades);
+    event PsaSet(address psa);
     event PrizeGameSet(uint256 indexed gameId, bool on);
 
     error AlreadySet();
@@ -167,26 +179,65 @@ contract FireCredits is Ownable2Step, ReentrancyGuard {
         emit PrizeGameSet(gameId, on);
     }
 
-    /// @notice Give a game's competition winners for a Series their free pack credits (FireGames takes the entries).
-    ///         Only for a game the owner allows prizes for, only for a Series whose drop has started (so made-up
-    ///         games or Series numbers can't add more), and at most MAX_PRIZE_CREDITS per game per Series in all,
-    ///         however many calls.
-    function awardPrizes(uint256 fire, uint256 gameId, address[] calldata winners, uint256[] calldata counts) external {
+    /// @notice FirePsa, for case and grading prizes. Set once; FirePsa must name this contract as its coupon issuer.
+    function setPsa(address p) external onlyOwner {
+        if (p == address(0)) revert ZeroAddress();
+        if (address(psa) != address(0)) revert AlreadySet();
+        if (IPrizePsa(p).couponIssuer() != address(this)) revert BadConfig();
+        psa = IPrizePsa(p);
+        emit PsaSet(p);
+    }
+
+    /// @notice Give a game's competition winners for a Series their prizes: free pack credits (`packs`), free cases
+    ///         and free gradings (coupons in FirePsa), any mix per winner. Only for a game the owner allows prizes
+    ///         for, only for a Series whose drop has started (so made-up games or Series numbers can't add more), and
+    ///         at most MAX_PRIZE_CREDITS packs, MAX_PRIZE_CASES cases and MAX_PRIZE_GRADES gradings per Series across
+    ///         all games, however many calls.
+    function awardPrizes(
+        uint256 fire,
+        uint256 gameId,
+        address[] calldata winners,
+        uint256[] calldata packs,
+        uint256[] calldata cases,
+        uint256[] calldata grades
+    ) external {
         if (msg.sender != prizeAwarder && msg.sender != owner()) revert NotAwarder();
         if (!prizeGame[gameId]) revert NotPrizeGame();
-        if (winners.length == 0 || winners.length != counts.length) revert BadAmount();
+        uint256 n = winners.length;
+        if (n == 0 || packs.length != n || cases.length != n || grades.length != n) revert BadAmount();
         FireSale.Drop memory d = sale.dropOf(fire);
         if (d.start == 0 || block.timestamp < d.start) revert BadConfig();
-        uint256 total = prizesOf[fire][gameId];
+        _countPrizes(fire, winners, packs, cases, grades);
+        for (uint256 i; i < n; i++) {
+            address w = winners[i];
+            if (packs[i] > 0) credits[w] += packs[i];
+            if (cases[i] + grades[i] > 0) psa.addCoupons(w, cases[i], grades[i]);
+            emit PrizeAwarded(fire, gameId, w, packs[i], cases[i], grades[i]);
+        }
+    }
+
+    /// @dev Checks the winners and adds their prizes to the Series' totals, within the caps (before anything is given).
+    function _countPrizes(
+        uint256 fire,
+        address[] calldata winners,
+        uint256[] calldata packs,
+        uint256[] calldata cases,
+        uint256[] calldata grades
+    ) internal {
+        Prizes memory t = prizesOf[fire];
+        uint256 tp = t.packs;
+        uint256 tc = t.cases;
+        uint256 tg = t.grades;
         for (uint256 i; i < winners.length; i++) {
             if (winners[i] == address(0)) revert ZeroAddress();
-            if (counts[i] == 0) revert BadAmount();
-            total += counts[i];
-            credits[winners[i]] += counts[i];
-            emit PrizeAwarded(fire, gameId, winners[i], counts[i]);
+            if (packs[i] + cases[i] + grades[i] == 0) revert BadAmount();
+            tp += packs[i];
+            tc += cases[i];
+            tg += grades[i];
         }
-        if (total > MAX_PRIZE_CREDITS) revert BadAmount();
-        prizesOf[fire][gameId] = total;
+        if (tp > MAX_PRIZE_CREDITS || tc > MAX_PRIZE_CASES || tg > MAX_PRIZE_GRADES) revert BadAmount();
+        if (tc + tg > uint256(t.cases) + t.grades && address(psa) == address(0)) revert BadConfig();
+        prizesOf[fire] = Prizes(uint64(tp), uint64(tc), uint64(tg));
     }
 
     // ================================================================ anyone

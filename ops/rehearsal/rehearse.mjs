@@ -392,14 +392,15 @@ async function main() {
   // everyone (opens when the PLANK group ends), then an unlimited group at a rising 4% a pack that ends 5 minutes
   // after its last sale. Leftovers of the first two roll into Everyone (5 per wallet for its first 24 h).
   const E18 = "1000000000000000000";
+  const STD = { plankBurnBps: 1000, paperBurnBps: 2000 }; // each group's burn shares: the Standard 10% / 20%
   const saleBlock = {
-    start: 0, packs: 4, plankBurnBps: 1000, paperBurnBps: 2000, paperCapUsd: "100000000", maxPerTx: 0, regularWalletsFor: 0,
+    start: 0, packs: 4, paperCapUsd: "100000000", maxPerTx: 0, regularWalletsFor: 0,
     creditsPerPick: 0, creditPacksMax: 0, creditPacksPerWallet: 0, creditGroup: 255,
     groups: [
-      { name: "Paper Press holders", packs: 1, gate: "nft", nft: "press", perNft: 1, priceUsd: "0", paper: E18, coins: 0, perWallet: 0, afterGroup: 255, startDelay: 0, duration: 3600, rollTo: 2 },
-      { name: "PLANK holders", packs: 2, gate: "snapshot", priceUsd: "250000000", paper: E18, coins: 3, perWallet: 5, afterGroup: 255, startDelay: 0, duration: 3600, rollTo: 2 },
-      { name: "Everyone", packs: 1, gate: "open", priceUsd: "250000000", paper: E18, coins: 7, perWallet: 5, limitFor: 86400, afterGroup: 1, startDelay: 0, duration: 0, rollTo: 255 },
-      { name: "After sell-out", packs: 0, unlimited: true, gate: "open", taxBps: 400, idle: 300, perTx: 1, priceUsd: "250000000", paper: E18, coins: 2, perWallet: 0, afterGroup: 2, startDelay: 0, duration: 0, rollTo: 255 },
+      { name: "Paper Press holders", packs: 1, gate: "nft", nft: "press", perNft: 1, priceUsd: "0", paper: E18, coins: 0, ...STD, perWallet: 0, afterGroup: 255, startDelay: 0, duration: 3600, rollTo: 2 },
+      { name: "PLANK holders", packs: 2, gate: "snapshot", priceUsd: "250000000", paper: E18, coins: 3, ...STD, perWallet: 5, afterGroup: 255, startDelay: 0, duration: 3600, rollTo: 2 },
+      { name: "Everyone", packs: 1, gate: "open", priceUsd: "250000000", paper: E18, coins: 7, ...STD, perWallet: 5, limitFor: 86400, afterGroup: 1, startDelay: 0, duration: 0, rollTo: 255 },
+      { name: "After sell-out", packs: 0, unlimited: true, gate: "open", taxBps: 400, idle: 300, perTx: 1, priceUsd: "250000000", paper: E18, coins: 2, ...STD, perWallet: 0, afterGroup: 2, startDelay: 0, duration: 0, rollTo: 255 },
     ],
   };
   recipe.sale = saleBlock;

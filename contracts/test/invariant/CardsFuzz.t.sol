@@ -97,13 +97,12 @@ contract CardsFuzzTest is SeriesHelper {
         FireSale.DropConfig memory c;
         c.start = start;
         c.packs = 1_000;
-        c.plankBurnBps = bps;
         c.paperCapUsd = 1e8;
         c.regularWalletsFor = 1 hours;
         c.creditsPerPick = 1;
         c.groups = new FireGroups.Group[](1);
         c.groups[0] = FireGroups.Group({packs: 1_000, gate: FireGroups.Gate.OPEN, coins: 7, afterGroup: 255, rollTo: 255,
-            startDelay: 0, duration: 0, perWallet: 1_000, limitFor: 0, perNft: 0, taxBps: 0, priceUsd: price, paper: 1e18, nft: address(0), idle: 0, perTx: 0, unlimited: false, root: 0});
+            startDelay: 0, duration: 0, perWallet: 1_000, limitFor: 0, perNft: 0, taxBps: 0, plankBurnBps: bps, paperBurnBps: 0, priceUsd: price, paper: 1e18, nft: address(0), idle: 0, perTx: 0, unlimited: false, root: 0});
         sale.configureDrop(1, c);
     }
 
