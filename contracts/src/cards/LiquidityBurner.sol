@@ -5,6 +5,7 @@ import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 interface ILiqFeed {
     function latestRoundData() external view returns (uint80, int256 answer, uint256, uint256 updatedAt, uint80);
@@ -40,6 +41,8 @@ interface ILiqPair {
     function token0() external view returns (address);
     function token1() external view returns (address);
     function getReserves() external view returns (uint112, uint112, uint32);
+    function price0CumulativeLast() external view returns (uint256);
+    function price1CumulativeLast() external view returns (uint256);
 }
 
 /**
@@ -61,10 +64,19 @@ interface ILiqPair {
  *            tokens to the dead address.
  *         4. A side worth more than CAP_USD burns the excess.
  *
- *         Guards: every buy must get at least SWAP_MIN_BPS (95%) of what the price feeds (the 30-minute PLANK and
- *         PAPER averages, Chainlink ETH/USD) say it is worth, else a smaller piece is tried (half, a quarter, ...)
- *         and otherwise the coins wait; liquidity is added only while the pool's own price is within POOL_BPS (3%) of
- *         the feeds'. Only the keepers can run it: an open run could be wrapped (push the price, run, push back).
+ *         Prices: PLANK is the 30-minute PlankUsdTwap average, ETH is Chainlink ETH/USD. PAPER is a short average
+ *         this contract keeps itself: the PAPER/PLANK pool's own time-weighted price (Uniswap V2 cumulative prices)
+ *         over the last MIN_WINDOW (30 min) to MAX_WINDOW (2 h), ending now, times the PLANK price. Anyone can
+ *         `checkpoint()` it (the keepers do whenever `due()`, and every run does). PaperUsdTwap averages 20 h or more,
+ *         far too slow to guard a trade, so it is only a sanity bound: a run waits while the short price is more than
+ *         MAX_DRIFT (2x) away from it either way, or while it is missing. No short price (just deployed, or no
+ *         checkpoint for over 2 h): the run waits.
+ *
+ *         Guards: every buy must get at least SWAP_MIN_BPS (95%) of what those prices say it is worth, else a smaller
+ *         piece is tried (half, a quarter, ...) and otherwise the coins wait; liquidity is added only while the pool's
+ *         spot price is within POOL_BPS (3%) of its own short average. A price pushed in the run's block doesn't reach
+ *         the average at all; holding it there costs the arbitrage for as long as it's held. Only the keepers can run
+ *         it: an open run could be wrapped (push the price, run, push back).
  *
  *         Locked so the coins can only ever end as burned liquidity or burned PAPER/PLANK: no withdraw, the router,
  *         tokens and pool are fixed at deploy, the price feeds are set once, and buy routes may only pass through
@@ -92,6 +104,11 @@ contract LiquidityBurner is Ownable2Step, ReentrancyGuard {
     uint256 public constant PLANK_WINDOW_MAX = 2 hours;
     uint256 public constant PAPER_FEED_MAX_AGE = 2 days;
     uint256 public constant PAPER_WINDOW_MAX = 30 hours;
+    /// @notice The short PAPER average (the PAPER/PLANK pool's own) spans MIN_WINDOW to MAX_WINDOW, ending now.
+    uint256 public constant MIN_WINDOW = 30 minutes;
+    uint256 public constant MAX_WINDOW = 2 hours;
+    /// @notice A run waits while the short PAPER price is more than MAX_DRIFT times off PaperUsdTwap's, either way.
+    uint256 public constant MAX_DRIFT = 2;
 
     IERC20 public immutable PAPER;
     IERC20 public immutable PLANK;
@@ -103,6 +120,7 @@ contract LiquidityBurner is Ownable2Step, ReentrancyGuard {
     ILiqRouter public immutable ROUTER;
     /// @notice The PAPER/PLANK Uniswap V2 pool the liquidity goes into.
     ILiqPair public immutable PAIR;
+    bool public immutable PAPER_IS_TOKEN0;
 
     ILiqFeed public ethUsd; // 8 decimals (Chainlink)
     ILiqFeed public plankUsd; // 18 decimals (PlankUsdTwap)
@@ -121,6 +139,16 @@ contract LiquidityBurner is Ownable2Step, ReentrancyGuard {
     uint256 public paperBurned;
     uint256 public plankBurned;
 
+    /// @notice The short PAPER average's checkpoints: the pool's cumulative PLANK-per-PAPER price (UQ112x112, raw
+    ///         units) and when. The average runs from `last` (or `prev`, while `last` is under MIN_WINDOW old) to now.
+    struct Obs {
+        uint256 cum;
+        uint32 ts;
+    }
+
+    Obs public prev;
+    Obs public last;
+
     event RoutesSet(Pay indexed pay, Side indexed side, address[][] routes);
     event FeedsSet(address ethUsd, address plankUsd, address paperUsd);
     event KeeperSet(address indexed who, bool allowed);
@@ -128,6 +156,7 @@ contract LiquidityBurner is Ownable2Step, ReentrancyGuard {
     event LiquidityBurned(uint256 paper, uint256 plank, uint256 lp);
     event OverCap(Side indexed side, uint256 amount);
     event Waiting(uint256 paperUsd18, uint256 plankUsd18, uint256 spendUsd18);
+    event Checkpoint(uint32 ts);
 
     error ZeroAddress();
     error BadRoute();
@@ -162,6 +191,10 @@ contract LiquidityBurner is Ownable2Step, ReentrancyGuard {
         WETH = weth;
         ROUTER = ILiqRouter(router);
         PAIR = ILiqPair(pair);
+        PAPER_IS_TOKEN0 = t0 == paper;
+        (uint256 cum, uint32 ts) = _current();
+        prev = Obs(cum, ts);
+        last = Obs(cum, ts);
     }
 
     receive() external payable {}
@@ -227,12 +260,10 @@ contract LiquidityBurner is Ownable2Step, ReentrancyGuard {
     ///         holds changed (false: everything waited), so a keeper can simulate first and skip a run that does nothing.
     function run() external nonReentrant returns (bool moved) {
         if (!keeper[msg.sender]) revert NotKeeper();
+        _checkpoint();
         bytes32 before = _holdings();
-        uint256 p = _feed18(paperUsd, PAPER_FEED_MAX_AGE);
-        if (_longWindow(address(paperUsd), PAPER_WINDOW_MAX)) p = 0;
-        uint256 k = _feed18(plankUsd, PLANK_FEED_MAX_AGE);
-        if (_longWindow(address(plankUsd), PLANK_WINDOW_MAX)) k = 0;
-        if (p == 0 || k == 0) {
+        (uint256 p, uint256 k) = _prices();
+        if (p == 0) {
             emit Waiting(0, 0, 0); // no price: everything waits
             return false;
         }
@@ -250,6 +281,73 @@ contract LiquidityBurner is Ownable2Step, ReentrancyGuard {
     function _holdings() internal view returns (bytes32) {
         uint256 u = address(USDG) == address(0) ? 0 : USDG.balanceOf(address(this));
         return keccak256(abi.encode(address(this).balance, PAPER.balanceOf(address(this)), PLANK.balanceOf(address(this)), u));
+    }
+
+    // ================================================================ the short PAPER average
+
+    /// @notice Anyone. Moves the short PAPER average on once the last checkpoint is at least MIN_WINDOW old; earlier
+    ///         calls do nothing. The average always spans at least MIN_WINDOW, so calling often can't shorten it.
+    function checkpoint() external {
+        _checkpoint();
+    }
+
+    /// @notice True when checkpoint() would move the average on (the keepers' cue).
+    function due() external view returns (bool) {
+        return block.timestamp - last.ts >= MIN_WINDOW;
+    }
+
+    /// @notice The prices a run would use (USD per whole coin, 18 decimals): PAPER (the short PAPER/PLANK average
+    ///         times PLANK) and PLANK. Both 0 while a run would wait for a price.
+    function prices() external view returns (uint256 paperUsd18, uint256 plankUsd18) {
+        return _prices();
+    }
+
+    function _checkpoint() internal {
+        (uint256 cum, uint32 ts) = _current();
+        if (ts - last.ts < MIN_WINDOW) return;
+        prev = last;
+        last = Obs(cum, ts);
+        emit Checkpoint(ts);
+    }
+
+    /// @dev The pool's cumulative PLANK-per-PAPER price (UQ112x112, raw units), synced to now as the pool would.
+    function _current() internal view returns (uint256 cum, uint32 ts) {
+        (uint112 r0, uint112 r1, uint32 tLast) = PAIR.getReserves();
+        cum = PAPER_IS_TOKEN0 ? PAIR.price0CumulativeLast() : PAIR.price1CumulativeLast();
+        ts = uint32(block.timestamp);
+        if (tLast != ts && r0 != 0 && r1 != 0) {
+            uint256 px = PAPER_IS_TOKEN0 ? (uint256(r1) << 112) / r0 : (uint256(r0) << 112) / r1;
+            unchecked {
+                cum += px * (ts - tLast); // V2 cumulatives are meant to wrap
+            }
+        }
+    }
+
+    /// @dev The short average, PLANK raw units per PAPER raw unit (UQ112x112), from `last` (or `prev` while `last`
+    ///      is under MIN_WINDOW old) to now; 0 if that's under MIN_WINDOW or over MAX_WINDOW.
+    function _shortPaperInPlank() internal view returns (uint256 avg) {
+        (uint256 cum, uint32 ts) = _current();
+        Obs memory start = ts - last.ts >= MIN_WINDOW ? last : prev;
+        uint256 dt = ts - start.ts;
+        if (dt < MIN_WINDOW || dt > MAX_WINDOW) return 0;
+        unchecked {
+            avg = (cum - start.cum) / dt;
+        }
+    }
+
+    /// @dev The prices for a run (see the contract notes), or (0, 0) when it must wait: PLANK missing, stale or over
+    ///      a long window; the short PAPER average missing; or PaperUsdTwap missing, stale, over a long window or
+    ///      more than MAX_DRIFT away from the short price.
+    function _prices() internal view returns (uint256 p, uint256 k) {
+        k = _feed18(plankUsd, PLANK_FEED_MAX_AGE);
+        if (k == 0 || _longWindow(address(plankUsd), PLANK_WINDOW_MAX)) return (0, 0);
+        uint256 q = _shortPaperInPlank();
+        if (q == 0) return (0, 0);
+        // USD per whole PAPER = (PLANK raw per PAPER raw) * (USD per whole PLANK) * PAPER_UNIT / PLANK_UNIT
+        p = Math.mulDiv(Math.mulDiv(q, k, 1 << 112), PAPER_UNIT, PLANK_UNIT);
+        uint256 longP = _feed18(paperUsd, PAPER_FEED_MAX_AGE);
+        if (p == 0 || longP == 0 || _longWindow(address(paperUsd), PAPER_WINDOW_MAX)) return (0, 0);
+        if (p / MAX_DRIFT > longP || longP / MAX_DRIFT > p) return (0, 0);
     }
 
     // ================================================================ views
@@ -270,11 +368,11 @@ contract LiquidityBurner is Ownable2Step, ReentrancyGuard {
         return _routes[pay][side];
     }
 
-    /// @notice What it holds now, in dollars (18 decimals; 0 where a price is missing): the PAPER side, the PLANK
-    ///         side, and ETH + USDG still to spend.
+    /// @notice What it holds now, in dollars (18 decimals): the PAPER side and the PLANK side (both 0 while a run
+    ///         would wait for a price, exactly as run() sees the prices), and ETH + USDG still to spend (its ETH counts
+    ///         0 while ETH/USD is stale).
     function held() external view returns (uint256 paperSide, uint256 plankSide, uint256 toSpend) {
-        uint256 p = _feed18(paperUsd, PAPER_FEED_MAX_AGE);
-        uint256 k = _feed18(plankUsd, PLANK_FEED_MAX_AGE);
+        (uint256 p, uint256 k) = _prices();
         (paperSide, plankSide) = _sides(p, k);
         toSpend = _spendable();
     }
@@ -440,7 +538,8 @@ contract LiquidityBurner is Ownable2Step, ReentrancyGuard {
         return v;
     }
 
-    /// @dev The pool's PLANK-per-PAPER within POOL_BPS of the feeds' (p / k): nobody has pushed it before an add.
+    /// @dev The pool's spot PLANK-per-PAPER within POOL_BPS of p / k (its own short average): nobody has pushed it
+    ///      before an add.
     function _poolPriceOk(uint256 p, uint256 k) internal view returns (bool) {
         (uint112 r0, uint112 r1,) = PAIR.getReserves();
         if (r0 == 0 || r1 == 0) return false;

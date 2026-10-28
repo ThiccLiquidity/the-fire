@@ -571,7 +571,7 @@ a batch as the impersonated owner on a fork (`BATCH=AB` only there). It rejects 
   renderer is CardsRenderer, FirePsa and FireGames pay LiquidityBurner, randomness points at the two adapters, no Series is configured or locked yet,
   the royalty is what was set, and FireProfiles reads FireCards (a WAIT, not a FAIL, while it isn't deployed).
 - **Keeper** (`ops/keeper`; every call is permissionless except `LiquidityBurner.run`, which only named keepers may call):
-  - `PlankUsdTwap.checkpoint()` every 30 minutes and `PaperUsdTwap.checkpoint()` when `due()`
+  - `PlankUsdTwap.checkpoint()` every 30 minutes, and `PaperUsdTwap.checkpoint()` and `LiquidityBurner.checkpoint()` (its short PAPER average) when `due()`
   - delivering drand numbers to the router (`OpenDrandRouter.fulfillMany`; `adapter.settle` if a callback didn't
     land)
   - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` (ids from the `Protected` event)

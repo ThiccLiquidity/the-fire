@@ -6,7 +6,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// Uniswap V2 for tests, in 0.8: the same pool math (x*y=k, 0.3% fee, sqrt first mint, MINIMUM_LIQUIDITY locked),
 /// the same router quoting (getAmountsOut, addLiquidity's optimal amounts) and the same swaps, so LiquidityBurner is
-/// tested against how a real V2 pool behaves. No flash swaps, no protocol fee, no TWAP accumulators.
+/// tested against how a real V2 pool behaves, including V2's cumulative prices (price0CumulativeLast,
+/// price1CumulativeLast, blockTimestampLast) that time-weighted averages read. No flash swaps, no protocol fee.
 
 contract V2Token is ERC20 {
     uint8 internal immutable _dec;
@@ -27,10 +28,13 @@ contract V2Pair is ERC20("UNI-V2", "UNI-V2") {
     address public token1;
     uint112 internal r0;
     uint112 internal r1;
+    uint32 internal blockTimestampLast;
+    uint256 public price0CumulativeLast;
+    uint256 public price1CumulativeLast;
 
     constructor(address a, address b) { (token0, token1) = a < b ? (a, b) : (b, a); }
 
-    function getReserves() external view returns (uint112, uint112, uint32) { return (r0, r1, uint32(block.timestamp)); }
+    function getReserves() external view returns (uint112, uint112, uint32) { return (r0, r1, blockTimestampLast); }
 
     function mint(address to) external returns (uint256 liquidity) {
         uint256 b0 = IERC20(token0).balanceOf(address(this));
@@ -67,7 +71,24 @@ contract V2Pair is ERC20("UNI-V2", "UNI-V2") {
         _update(b0, b1);
     }
 
-    function _update(uint256 b0, uint256 b1) internal { r0 = uint112(b0); r1 = uint112(b1); }
+    /// @dev As UniswapV2Pair._update: the cumulative prices grow by the OLD reserves' price times the time since the
+    ///      last update (UQ112x112, wrapping), then the reserves change.
+    function _update(uint256 b0, uint256 b1) internal {
+        uint32 ts = uint32(block.timestamp);
+        unchecked {
+            uint32 dt = ts - blockTimestampLast;
+            if (dt > 0 && r0 != 0 && r1 != 0) {
+                price0CumulativeLast += ((uint256(r1) << 112) / r0) * dt;
+                price1CumulativeLast += ((uint256(r0) << 112) / r1) * dt;
+            }
+        }
+        r0 = uint112(b0);
+        r1 = uint112(b1);
+        blockTimestampLast = ts;
+    }
+
+    /// @dev As UniswapV2Pair.sync: reserves to the balances (a donation shows in the price).
+    function sync() external { _update(IERC20(token0).balanceOf(address(this)), IERC20(token1).balanceOf(address(this))); }
 
     function _sqrt(uint256 y) internal pure returns (uint256 z) {
         if (y > 3) { z = y; uint256 x = y / 2 + 1; while (x < z) { z = x; x = (y / x + x) / 2; } } else if (y != 0) { z = 1; }

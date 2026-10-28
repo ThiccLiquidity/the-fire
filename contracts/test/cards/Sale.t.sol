@@ -845,7 +845,7 @@ contract SaleTest is SaleBase {
         assertEq(paperEth, (paperNeed + 31_250 - 1) / 31_250, "the PLANK route");
         vm.deal(dave, 1 ether);
         vm.prank(dave, dave);
-        sale.buyWithEthAll{value: cost + paperEth + 0.01 ether}(1, 0, 2, _na());
+        sale.buyWithEthAll{value: cost + paperEth + 0.01 ether}(1, 0, 2, paperEth, _na());
         assertEq(packs.balanceOf(dave, 1), 2);
         assertGe(paper.balanceOf(liq), paperNeed, "the PAPER bought lands at LiquidityBurner");
         assertEq(paper.balanceOf(liq), paperEth * 31_250, "all of what the market buy returned");
@@ -863,13 +863,33 @@ contract SaleTest is SaleBase {
         _open();
         uint256 need = sale.paperFor(1, 0, 1);
         assertEq(sale.quotePaperInEth(need), (need + 31_250 - 1) / 31_250);
-        uint256 total = _cost(1, 0, 1, FireSale.Pay.ETH) + sale.quotePaperInEth(need);
+        uint256 paperEth = sale.quotePaperInEth(need);
+        uint256 total = _cost(1, 0, 1, FireSale.Pay.ETH) + paperEth;
         vm.deal(dave, total);
         vm.prank(dave, dave);
-        sale.buyWithEthAll{value: total}(1, 0, 1, _na());
+        sale.buyWithEthAll{value: total}(1, 0, 1, paperEth, _na());
         assertEq(dave.balance, 0, "exactly enough");
         assertGe(paper.balanceOf(liq), need, "the PAPER lands at LiquidityBurner");
         _assertHoldsNothing();
+    }
+
+    /// The PAPER costs more ETH than the buyer allowed (the market moved, or someone pushed it): PriceMoved, nothing
+    /// bought, instead of paying whatever msg.value covers.
+    function test_ethAll_maxPaperEthCapsThePaperBuy() public {
+        address dave = address(0xDA7E);
+        router.setPaper(paper, 31_250, 0);
+        _open();
+        uint256 need = sale.quotePaperInEth(sale.paperFor(1, 0, 1));
+        vm.deal(dave, 1 ether);
+        router.setPaper(paper, 28_400, 0); // PAPER 10% dearer after the buyer's quote
+        vm.prank(dave, dave);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.buyWithEthAll{value: 1 ether}(1, 0, 1, need * 103 / 100, _na());
+        assertEq(packs.balanceOf(dave, 1), 0);
+        assertEq(dave.balance, 1 ether);
+        vm.prank(dave, dave);
+        sale.buyWithEthAll{value: 1 ether}(1, 0, 1, need * 112 / 100, _na());
+        assertEq(packs.balanceOf(dave, 1), 1, "within what was allowed: bought");
     }
 
     function test_ethAll_notEnoughEthOrNoPoolReverts() public {
@@ -878,12 +898,12 @@ contract SaleTest is SaleBase {
         vm.deal(dave, 1 ether);
         vm.prank(dave, dave);
         vm.expectRevert(FireSale.FeedUnavailable.selector); // no pool to buy PAPER from
-        sale.buyWithEthAll{value: 0.1 ether}(1, 0, 1, _na());
+        sale.buyWithEthAll{value: 0.1 ether}(1, 0, 1, type(uint256).max, _na());
         router.setPaper(paper, 31_250, 0);
         uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
         vm.prank(dave, dave);
         vm.expectRevert(); // the price is covered but not the PAPER
-        sale.buyWithEthAll{value: cost}(1, 0, 1, _na());
+        sale.buyWithEthAll{value: cost}(1, 0, 1, type(uint256).max, _na());
         assertEq(packs.balanceOf(dave, 1), 0);
     }
 
@@ -903,11 +923,11 @@ contract SaleTest is SaleBase {
         _open();
         vm.prank(alice, alice);
         vm.expectRevert(FireGroups.CoinNotAccepted.selector);
-        sale.buyWithEthAll{value: 1 ether}(1, 0, 1, _na());
+        sale.buyWithEthAll{value: 1 ether}(1, 0, 1, type(uint256).max, _na());
         uint256 need = sale.quotePaperInEth(sale.paperFor(1, 1, 2));
         uint256 bal = carol.balance;
         vm.prank(carol, carol);
-        sale.buyWithEthAll{value: need + 1 ether}(1, 1, 2, _nfts(pid));
+        sale.buyWithEthAll{value: need + 1 ether}(1, 1, 2, need, _nfts(pid));
         assertEq(bal - carol.balance, need, "only the PAPER, bought with ETH");
         assertEq(packs.balanceOf(carol, 1), 2);
         assertEq(revenue.balance, 0);
@@ -1944,7 +1964,7 @@ contract SaleTest is SaleBase {
         vm.expectRevert(FireSale.IsPaused.selector);
         sale.buy(2, 0, 1, FireSale.Pay.USDG, type(uint256).max, type(uint256).max, _na());
         vm.expectRevert(FireSale.IsPaused.selector);
-        sale.buyWithEthAll{value: 1 ether}(2, 0, 1, _na());
+        sale.buyWithEthAll{value: 1 ether}(2, 0, 1, type(uint256).max, _na());
         vm.expectRevert(FireSale.IsPaused.selector);
         credits.useCredits(2, 1, type(uint256).max);
         vm.expectRevert(FireSale.IsPaused.selector);

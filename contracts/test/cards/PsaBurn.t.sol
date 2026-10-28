@@ -108,6 +108,15 @@ contract PsaBurnTest is SeriesHelper {
         plank.approve(address(psa), type(uint256).max);
         usdg.approve(address(psa), type(uint256).max);
         vm.stopPrank();
+        // LiquidityBurner's short PAPER average needs 30 minutes of the pool's prices
+        vm.warp(block.timestamp + 31 minutes);
+        _freshFeeds();
+    }
+
+    function _freshFeeds() internal {
+        ethUsd.set(2_500e8);
+        plankUsd.set(int256(K));
+        paperUsd.set(int256(P));
     }
 
     // ---------------------------------------------------------------- helpers
@@ -226,7 +235,8 @@ contract PsaBurnTest is SeriesHelper {
         burner.run();
         assertEq(address(burner).balance, ce, "no PAPER price: the fee waits");
         assertEq(burner.lpBurned(), 0);
-        paperUsd.set(int256(P));
+        vm.warp(block.timestamp + 31 minutes); // and a short window again (the first run checkpointed)
+        _freshFeeds();
         vm.prank(keeper);
         burner.run();
         assertEq(address(burner).balance, 0, "spent once the price is back");

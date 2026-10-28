@@ -333,9 +333,15 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     /// @notice Buy `n` packs from group `group` with ETH alone: the price, and the packs' PAPER too, which this buys
     ///         on the market (the cheaper of ETH -> PAPER and ETH -> PLANK -> PAPER) for LiquidityBurner. Send at least
     ///         `quote(fire, group, n, Pay.ETH)`'s cost plus `quotePaperInEth` of its PAPER; anything above comes back.
-    ///         One transaction, no approval. The group must accept ETH (if it has a dollar price).
-    function buyWithEthAll(uint256 fire, uint256 group, uint256 n, FireGroups.Access calldata access) external payable nonReentrant {
-        (Drop storage d, Taken memory t) = _take(fire, group, n, Pay.ETH, type(uint256).max, access, true);
+    ///         `maxPaperEth`: the most ETH the PAPER may cost (`quotePaperInEth` plus a little slippage); if the market
+    ///         wants more, it reverts PriceMoved rather than buying at whatever msg.value covers. One transaction, no
+    ///         approval. The group must accept ETH (if it has a dollar price).
+    function buyWithEthAll(uint256 fire, uint256 group, uint256 n, uint256 maxPaperEth, FireGroups.Access calldata access)
+        external
+        payable
+        nonReentrant
+    {
+        (Drop storage d, Taken memory t) = _take(fire, group, n, Pay.ETH, maxPaperEth, access, true);
         uint256 cost;
         uint256 toLiq;
         if (t.usd8 != 0) (cost, toLiq) = _collect(t, Pay.ETH, type(uint256).max);
@@ -476,8 +482,8 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
     }
 
     /// @dev Checks shared by every purchase, takes the packs from the group (FireGroups checks it's open, has them,
-    ///      takes this coin and lets the buyer in), then takes the PAPER.
-    function _take(uint256 fire, uint256 group, uint256 n, Pay pay, uint256 maxPaper, FireGroups.Access calldata access, bool buyPaper)
+    ///      takes this coin and lets the buyer in), then takes the PAPER (`max`: as _burnPaper).
+    function _take(uint256 fire, uint256 group, uint256 n, Pay pay, uint256 max, FireGroups.Access calldata access, bool buyPaper)
         internal
         returns (Drop storage d, Taken memory t)
     {
@@ -491,7 +497,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         (t.usd8, t.tax8, per, t.left, t.plankBps, t.paperBps) =
             GROUPS.take(fire, group, msg.sender, n, uint8(1 << uint8(pay)), access);
         d.sold += uint64(n);
-        _burnPaper(buyPaper ? address(this) : msg.sender, n, per, d.paperCapUsd, maxPaper);
+        _burnPaper(buyPaper ? address(this) : msg.sender, n, per, d.paperCapUsd, max);
     }
 
     /// @dev Takes a dollar amount `t.usd8` (of which `t.tax8` is a group's rising tax) in `pay` and sends it on in
@@ -552,15 +558,20 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         return cap < per ? cap : per;
     }
 
-    function _burnPaper(address from, uint256 n, uint256 per, uint256 capUsd8, uint256 maxPaper) internal {
+    /// @dev Sends `n` packs' PAPER to LiquidityBurner: from `from` (at most `max` PAPER), or, `from` being this
+    ///      contract (buyWithEthAll), bought on the market with the buyer's ETH for at most `max` ETH.
+    function _burnPaper(address from, uint256 n, uint256 per, uint256 capUsd8, uint256 max) internal {
         if (per == 0) return;
         uint256 px = _paperUsd();
         if (px != lastPaperUsd && px != 0) lastPaperUsd = px; // a fresh price: remember it for when the feed is late
         uint256 paper = n * _perPaper(per, capUsd8, px);
-        if (paper > maxPaper) revert PriceMoved();
-        if (from != address(this)) return PAPER.safeTransferFrom(from, liquidity, paper);
+        if (from != address(this)) {
+            if (paper > max) revert PriceMoved();
+            return PAPER.safeTransferFrom(from, liquidity, paper);
+        }
         // buyWithEthAll: buy the PAPER with the buyer's ETH for LiquidityBurner (a real market buy)
         (uint256 eth, address[] memory path) = _paperRoute(paper);
+        if (eth > max) revert PriceMoved();
         ROUTER.swapExactETHForTokens{value: eth}(paper, path, liquidity, block.timestamp);
     }
 

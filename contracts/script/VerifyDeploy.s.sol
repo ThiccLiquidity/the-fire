@@ -198,6 +198,9 @@ contract VerifyDeploy is Deployments {
             _ok(pool != address(0), "V2_ROUTER's factory has the PAPER/PLANK pool");
             _eq(address(liq.PAIR()), pool, "LiquidityBurner.PAIR is the PAPER/PLANK pool");
         }
+        // its short PAPER average reads the PAPER side of that pool (PAIR.price0/1CumulativeLast)
+        _ok(liq.PAPER_IS_TOKEN0() == (IVPair(address(liq.PAIR())).token0() == address(liq.PAPER())),
+            "LiquidityBurner's short PAPER average reads the PAPER side of its pool");
         _eq(address(psa.CARDS()), deployed("FireCards"), "FirePsa.CARDS is FireCards");
         _eq(address(psa.BURNER()), address(liq), "FirePsa pays LiquidityBurner");
         _eq(FireGames(deployed("FireGames")).LIQUIDITY(), address(liq), "FireGames pays LiquidityBurner");

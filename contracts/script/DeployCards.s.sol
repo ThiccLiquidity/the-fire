@@ -91,7 +91,8 @@ interface ICardsPair {
  *   ETH_USD_FEED      Chainlink ETH/USD; PLANK_USD_FEED the PlankUsdTwap (DeployTwap.s.sol); PAPER_USD_FEED the PaperUsdTwap (DeployInfra.s.sol),
  *                     never the PAPER pool itself. Both feeds must be built on this PAPER/PLANK and ETH_USD_FEED.
  *   V2_ROUTER         Uniswap V2 router (LiquidityBurner's buys and its PAPER/PLANK liquidity; its factory must already
- *                     have the PAPER/PLANK pool)
+ *                     have the PAPER/PLANK pool; LiquidityBurner averages that pool's own price over 30 minutes
+ *                     for its guards, starting at deploy, so its first run can go 30 minutes after it)
  *   REVENUE_WALLET    gets the rest of every sale after the drop's liquidity shares
  *   KEEPERS           the keeper wallets (main and backup, comma-separated), allowed to run LiquidityBurner. Optional:
  *                     the owner can add them later (LiquidityBurner.setKeeper).
