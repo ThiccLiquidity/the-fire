@@ -5,6 +5,7 @@
   --brass: #e9b45a; --ember: #ff7a2e; --gold: #ffd27a;
   --paper: #f0ece5; --wood: #dca356; --fire: #e0341c; --charcoal: #5b5b60; --diamond: #a9cbf2;
   --good: #6fcf7a; --bad: #ff6b5a;
+  --card-r: 6.2% / 4.43%; /* a card's corner: the studio's 46.5 px on a 750 x 1050 card (holo.js RADIUS), for anything drawn round a card */
   --display: "Russo One", "Arial Black", sans-serif; --body: Nunito, system-ui, sans-serif; --chalk: Kalam, cursive;
   --r: 14px; --tap: 44px;
   color-scheme: dark;

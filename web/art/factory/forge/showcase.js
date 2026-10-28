@@ -12,7 +12,11 @@
   const MAX = 6;
   const rank = (c) => (c.grade != null ? 1e6 * c.grade : 0) + Store.trueOdds(c).n;
   const best = (cards, n) => [...cards].sort((a, b) => rank(b) - rank(a)).slice(0, n);
-  const face = (c) => h('div', { class: `cface m-${c.material} hd-${Store.holder(c)}` }, h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: `${c.character}, ${Store.MAT_LABEL[c.material]}`, loading: 'lazy', decoding: 'async', draggable: 'false' }));
+  // the real card face (screens.js): live holo, drawn sharp at its size; lazy (the picker grid, the shelf): the saved
+  // image until a mouse comes over it. Without the stations, the saved image.
+  const face = (c, lazy = true, sway = false) => window.Stations?.cardFace ? Stations.cardFace(c, lazy, sway) : h('div', { class: `cface m-${c.material} hd-${Store.holder(c)}` }, h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: `${c.character}, ${Store.MAT_LABEL[c.material]}`, loading: 'lazy', decoding: 'async', draggable: 'false' }));
+  const bigFace = (c) => face(c, false); // the showcase's six: live from the start
+  const viewFace = (c) => face(c, false, true); // the viewer's: live, and its holo drifts when untouched
   const kind = (c) => [Store.MAT_LABEL[c.material], c.grade != null ? 'PDA ' + c.grade : c.cased ? 'Cased' : ''].filter(Boolean).join(' · ');
   const myAddr = () => (LIVE ? S.wallet.full : S.wallet.full || '0xdemo');
   const pickKey = () => 'omni.showcase.' + (Fun.who() || 'none');
@@ -22,7 +26,7 @@
     u.searchParams.set('show', addr); if (ids.length) u.searchParams.set('c', ids.join('.'));
     return u.href;
   }
-  const view = (cards, i) => window.Zoom?.open({ cards, index: i, face, name: (x) => `${x.character}, ${kind(x)}`, from: () => null });
+  const view = (cards, i) => window.Zoom?.open({ cards, index: i, face: viewFace, name: (x) => `${x.character}, ${kind(x)}`, from: () => null });
 
   // ---------- your showcase: pick, preview, share
   Fun.open.showcase = () => {
@@ -64,7 +68,7 @@
     const L = window.Live.chain; if (!L) throw new Error('not connected');
     const MAT = { coal: 'charcoal', 'full art': 'fullart' };
     return (await L.cardsOf(addr)).map((c) => ({ id: c.serial, serial: c.serial, series: c.fire, character: c.character || c.name, material: MAT[String(c.material).toLowerCase()] || String(c.material).toLowerCase() || 'paper',
-      holo: c.holo, edition: c.edition, grade: c.grade, cased: c.cased, pending: c.gradePending, image: Store.ipfs(c.image) }));
+      holo: c.holo, edition: c.edition, grade: c.grade, cased: c.cased, pending: c.gradePending, image: Store.ipfs(c.image), src: c.image })); // src: the metadata's own path (Store.cardParts finds the tilt layers from it)
   }
   Fun.open.showView = async ({ addr, ids = [] }) => {
     const root = h('div', { class: 'st showcase' }, h('p', { class: 'muted', text: 'Loading cards…' }));
@@ -81,7 +85,7 @@
       h('div', { class: 'bd-bar' }, h('span', { class: 'bd-l' }, h('b', { text: `Series ${series[i]}` }), ' common set'), h('span', { class: 'bd-meter', 'aria-hidden': 'true' }, h('i', { style: `transform:scaleX(${f.common.toFixed(4)})` })), h('b', { class: 'bd-p', text: Math.round(f.common * 100) + '%' })))));
     Fun.put(root, 
       h('div', { class: 'sv-head' }, Fun.avatar(addr, 48), h('div', {}, name, h('small', { class: 'muted', text: `${Fun.label(addr) === Fun.short(addr) ? '' : Fun.short(addr) + ' · '}${cards.length} cards` }))),
-      shown.length ? h('div', { class: 'sc-shelf sv-shelf' }, shown.map((c, i) => h('button', { type: 'button', class: 'sc-slot', 'aria-label': `${c.character}, ${kind(c)}. View it big`, onclick: () => view(shown, i) }, face(c), h('small', { text: kind(c) }))))
+      shown.length ? h('div', { class: 'sc-shelf sv-shelf' }, shown.map((c, i) => h('button', { type: 'button', class: 'sc-slot', 'aria-label': `${c.character}, ${kind(c)}. View it big`, onclick: () => view(shown, i) }, bigFace(c), h('small', { text: kind(c) }))))
         : h('p', { class: 'muted', text: 'No cards here yet.' }),
       series.length ? h('h3', { text: 'Series progress' }) : h('span'), prog,
       mine && Fun.badgeRow ? h('div', { class: 'sv-badges' }, h('h3', { text: 'Badges' }), Fun.badgeRow(Fun.who(), { all: false }) || h('p', { class: 'muted', text: 'None yet. Open, case and grade to earn them.' })) : h('span'),

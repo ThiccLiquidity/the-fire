@@ -35,7 +35,8 @@
     for (const no of [...new Set(cards.map((c) => c.series))]) { const f = fill(cards, no, await castOf(no)); if (f.cast.length && f.commonN === f.cast.length * 4) out.push(no); }
     return out;
   };
-  const face = (c) => h('div', { class: `cface m-${c.material} hd-${Store.holder(c)}` }, h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: '', loading: 'lazy', decoding: 'async', draggable: 'false' }));
+  // the real card face (screens.js): its saved image, live holo once a mouse comes over it (sharp, moving)
+  const face = (c) => window.Stations?.cardFace ? Stations.cardFace(c, true) : h('div', { class: `cface m-${c.material} hd-${Store.holder(c)}` }, h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: '', loading: 'lazy', decoding: 'async', draggable: 'false' }));
   const bar = (label, p, n, of) => h('div', { class: 'bd-bar' }, h('span', { class: 'bd-l' }, h('b', { text: label }), ` ${n} of ${of}`),
     h('span', { class: 'bd-meter', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': Math.round(p * 100), 'aria-label': `${label}: ${Math.round(p * 100)}% complete` }, h('i', { style: `transform:scaleX(${p.toFixed(4)})` })),
     h('b', { class: 'bd-p', text: Math.round(p * 100) + '%' }));
