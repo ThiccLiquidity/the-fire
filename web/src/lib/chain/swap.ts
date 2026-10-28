@@ -6,9 +6,9 @@
 // Paying in ETH is one confirmation; PLANK or USDG need an approval first (capped at the most the swap may spend,
 // never unlimited).
 
-import { decodeFunctionData, getAddress, parseAbi, type Address, type TransactionReceipt } from "viem";
-import { approveMax } from "../approve";
-import { sendTx } from "../tx";
+import { decodeFunctionData, erc20Abi, getAddress, parseAbi, type Address, type TransactionReceipt } from "viem";
+import { allowanceOf, approveMax } from "../approve";
+import { sendTx, TxStillPending } from "../tx";
 import { getAccount } from "../wallet";
 import { NET } from "../net";
 import { inputAddress } from "../config";
@@ -117,17 +117,39 @@ export async function kyberTx(q: PaperBuy, owner: Address): Promise<{ to: Addres
   return tx;
 }
 
-/** Buy at least `q.paperOut` PAPER into the buyer's own wallet, spending at most `q.maxIn`. */
+/** Run the swap `go` after approving `token` for `router`; if the swap fails or is abandoned (declined in the wallet,
+ *  refused by the simulation, reverted), the router's approval is taken back to 0 so it doesn't sit there (one more
+ *  confirmation; declining it just leaves the capped approval). Not while the swap may still land (TxStillPending). */
+export async function resetAfterFailure<T>(token: Address, router: Address, owner: Address, go: () => Promise<T>, onStep?: WriteOpts["onStep"]): Promise<T> {
+  try {
+    return await go();
+  } catch (e) {
+    if (!(e instanceof TxStillPending)) {
+      try {
+        if ((await allowanceOf(token, owner, router)) > 0n) {
+          await sendTx({ address: token, abi: erc20Abi, functionName: "approve", args: [router, 0n] },
+            { label: "Remove the approval", kind: "approve", onStep: (s, h) => onStep?.(s, "Remove the approval", h) });
+        }
+      } catch { /* declined or failed: the approval stays capped at the swap's maximum */ }
+    }
+    throw e;
+  }
+}
+
+/** Buy at least `q.paperOut` PAPER into the buyer's own wallet, spending at most `q.maxIn`. A coin swap that fails
+ *  after its approval takes the approval back (resetAfterFailure). */
 export async function buyPaper(q: PaperBuy, o: WriteOpts = {}): Promise<TransactionReceipt> {
   const owner = me(), label = `Get ${amount(q.paperOut).text} PAPER`, step = (s: Parameters<NonNullable<WriteOpts["onStep"]>>[0], l: string, h?: `0x${string}`) => o.onStep?.(s, l, h);
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
   if (q.via === "kyber") {
     const tIn = tokenOf(q.from);
     const tx = await kyberTx(q, owner);
-    if (tIn !== "ETH") await approveMax({ token: tIn, spender: KYBER_ROUTER, owner, max: q.maxIn, label: `Approve ${q.from}`, onStep: (s, h) => step(s, `Approve ${q.from}`, h) });
     const call = decodeFunctionData({ abi: kyberRouterAbi, data: tx.data });
-    return sendTx({ address: KYBER_ROUTER, abi: kyberRouterAbi, functionName: call.functionName, args: call.args, value: tx.value } as Parameters<typeof sendTx>[0],
+    const swap = () => sendTx({ address: KYBER_ROUTER, abi: kyberRouterAbi, functionName: call.functionName, args: call.args, value: tx.value } as Parameters<typeof sendTx>[0],
       { label, kind: "swap", onStep: (s, h) => step(s, label, h) });
+    if (tIn === "ETH") return swap();
+    await approveMax({ token: tIn, spender: KYBER_ROUTER, owner, max: q.maxIn, label: `Approve ${q.from}`, onStep: (s, h) => step(s, `Approve ${q.from}`, h) });
+    return resetAfterFailure(tIn, KYBER_ROUTER, owner, swap, o.onStep);
   }
   const router = v2Router()!, best = await bestPools(q.from, q.paperOut);
   if (!best) throw new Error("No pool has PAPER right now.");
@@ -136,7 +158,8 @@ export async function buyPaper(q: PaperBuy, o: WriteOpts = {}): Promise<Transact
     return sendTx({ address: router, abi: v2Abi, functionName: "swapETHForExactTokens", args: [q.paperOut, path, owner, deadline], value: q.maxIn },
       { label, kind: "swap", onStep: (s, h) => step(s, label, h) }); // unused ETH comes straight back
   }
-  await approveMax({ token: input(q.from)!, spender: router, owner, max: q.maxIn, label: `Approve ${q.from}`, onStep: (s, h) => step(s, `Approve ${q.from}`, h) });
-  return sendTx({ address: router, abi: v2Abi, functionName: "swapTokensForExactTokens", args: [q.paperOut, q.maxIn, path, owner, deadline] },
-    { label, kind: "swap", onStep: (s, h) => step(s, label, h) });
+  const coin = input(q.from)!;
+  await approveMax({ token: coin, spender: router, owner, max: q.maxIn, label: `Approve ${q.from}`, onStep: (s, h) => step(s, `Approve ${q.from}`, h) });
+  return resetAfterFailure(coin, router, owner, () => sendTx({ address: router, abi: v2Abi, functionName: "swapTokensForExactTokens", args: [q.paperOut, q.maxIn, path, owner, deadline] },
+    { label, kind: "swap", onStep: (s, h) => step(s, label, h) }), o.onStep);
 }

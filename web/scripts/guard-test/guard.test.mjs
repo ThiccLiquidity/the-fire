@@ -24,7 +24,7 @@ const blocked = (call) => assert.throws(() => checkCall(call, me, dep), { name: 
 
 test('the site\'s own calls go through', () => {
   ok({ address: C.FireSale, functionName: 'buy', args: [1n, 0n, 1n, 0n, 0n, 0n, {}] });
-  ok({ address: C.FireSale, functionName: 'buyWithEthAll', args: [], value: 10n ** 15n });
+  ok({ address: C.FireSale, functionName: 'buyWithEthAll', args: [1n, 0n, 1n, 10n ** 14n, {}], value: 10n ** 15n });
   ok({ address: C.FireCards, functionName: 'open', args: [] });
   ok({ address: C.FirePsa, functionName: 'protect', args: [], value: 1n });
   ok({ address: C.FireCredits, functionName: 'suggest', args: ['Theme: x', 1n] });
@@ -59,9 +59,17 @@ test('moving coins or cards anywhere is refused', () => {
 });
 
 test('never more than 0.5 ETH in one transaction', () => {
-  ok({ address: C.FireSale, functionName: 'buyWithEthAll', args: [], value: 5n * 10n ** 17n });
-  blocked({ address: C.FireSale, functionName: 'buyWithEthAll', args: [], value: 5n * 10n ** 17n + 1n });
+  ok({ address: C.FireSale, functionName: 'buyWithEthAll', args: [1n, 0n, 1n, 1n, {}], value: 5n * 10n ** 17n });
+  blocked({ address: C.FireSale, functionName: 'buyWithEthAll', args: [1n, 0n, 1n, 1n, {}], value: 5n * 10n ** 17n + 1n });
   blocked({ address: I.V2_ROUTER, functionName: 'swapETHForExactTokens', args: [1n, [I.WETH, I.PAPER], me, 0n], value: 10n ** 18n });
+});
+
+test('ETH alone: the PAPER it buys is capped, never above the ETH sent', () => {
+  ok({ address: C.FireSale, functionName: 'buyWithEthAll', args: [1n, 0n, 1n, 0n, {}], value: 10n ** 15n }); // no PAPER to buy
+  blocked({ address: C.FireSale, functionName: 'buyWithEthAll', args: [], value: 10n ** 15n });
+  blocked({ address: C.FireSale, functionName: 'buyWithEthAll', args: [1n, 0n, 1n, {}], value: 10n ** 15n }); // the old shape
+  blocked({ address: C.FireSale, functionName: 'buyWithEthAll', args: [1n, 0n, 1n, 10n ** 15n + 1n, {}], value: 10n ** 15n });
+  blocked({ address: C.FireSale, functionName: 'buyWithEthAll', args: [1n, 0n, 1n, 2n ** 256n - 1n, {}], value: 10n ** 15n });
 });
 
 test('owner-only and unknown functions on our own contracts are refused', () => {
@@ -83,4 +91,9 @@ test('swaps: only PAPER, only into your own wallet', () => {
   blocked(kyber({ feeReceivers: [thief], feeAmounts: [1n] }));
   blocked(kyber({}, 6n));
   blocked(kyber({ srcToken: thief }, 0n));
+  blocked(kyber({ minReturnAmount: 0n })); // no minimum return: any price would do
+  blocked(kyber({ minReturnAmount: undefined }));
+  const simple = (o) => ({ address: KYBER_ROUTER, functionName: 'swapSimpleMode', args: [thief, desc({ srcToken: I.USDG, ...o }), '0x', '0x'], value: 0n });
+  ok(simple({}));
+  blocked(simple({ minReturnAmount: 0n }));
 });

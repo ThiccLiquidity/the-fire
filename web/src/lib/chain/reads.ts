@@ -445,12 +445,42 @@ function decodeUri(uri: string): { name?: string; image?: string; attributes?: {
   } catch { return {}; }
 }
 
+/** CardsRenderer.tokenURI is a full on-chain render per card, and it only changes when the card's own fields do
+ *  (CardsRenderer reads nothing else, apart from the Series' image folder): each card's last render is kept for
+ *  URI_TTL with the fields it was made from, and reused while they still match. A list view re-read after an action
+ *  then costs one cardOf per card instead of a render. A card not seen yet renders alongside its cardOf (one round). */
+const URI_TTL = 10 * 60_000;
+const uris = new Map<number, { key?: string; uri: Promise<string>; at: number }>();
+// an uncased, ungraded card's `age` grows by the second but isn't in its metadata; a cased one's is (in days)
+const uriKey = (c: CardRaw) => [c.fire, c.cardType, c.character, c.extra, c.holoFrame, c.holoPicture, c.printNumber, c.grade, c.cased, c.moves,
+  c.dealtAt, c.cased && !c.grade ? c.age / 86_400n : ""].join(",");
+function renderUri(serial: number): { uri: Promise<string>; at: number } {
+  const e = { uri: read<string>("CardsRenderer", rendererAbi, "tokenURI", [BigInt(serial)]).catch(() => ""), at: Date.now() };
+  e.uri.then((u) => { if (!u && uris.get(serial) === e) uris.delete(serial); }); // a failed read isn't kept
+  return e;
+}
+async function uriOf(serial: number, cardOf: Promise<CardRaw>): Promise<string> {
+  const hit = uris.get(serial);
+  if (!hit || Date.now() - hit.at >= URI_TTL) {
+    const e = renderUri(serial);
+    uris.set(serial, e);
+    cardOf.then((c) => { if (uris.get(serial) === e) uris.set(serial, { ...e, key: uriKey(c) }); }, () => {});
+    return e.uri;
+  }
+  const key = uriKey(await cardOf);
+  if (hit.key === key) return hit.uri;
+  const e = { ...renderUri(serial), key };
+  uris.set(serial, e);
+  return e.uri;
+}
+
 /** One card, with everything the site shows. */
 export async function card(serial: number): Promise<Card> {
   const s = BigInt(serial);
+  const cardOf = read<CardRaw>("FireCards", cardsAbi, "cardOf", [s]);
   const [c, uri, pending] = await Promise.all([
-    read<CardRaw>("FireCards", cardsAbi, "cardOf", [s]),
-    read<string>("CardsRenderer", rendererAbi, "tokenURI", [s]).catch(() => ""),
+    cardOf,
+    uriOf(serial, cardOf),
     read<boolean>("FireCards", cardsAbi, "gradePending", [s]).catch(() => false),
   ]);
   const meta = decodeUri(uri);
