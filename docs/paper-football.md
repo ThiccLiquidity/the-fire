@@ -73,7 +73,7 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
     ceiling with its entry (`addGame(gameId, entry, capUsd8)`), prices it with the PaperUsdTwap (`setPaperFeed`; a
     late feed falls back to the last good price), and `payRun` takes the most PAPER the player agrees to (`maxPaper`).
     Paper football: 1 PAPER, at most $0.10. Spit-Wad Sniper: the same.
-29. **Difficulty is distance traded against movement (owner, Oct 27; replaces 6 and 18).** Each level has one budget,
+29. **Difficulty is distance traded against movement (owner, Oct 27; replaces 6 and 18; replaced Oct 28 by 31).** Each level has one budget,
     spent on the two together: a short kick at a swinging goal is as hard as a long kick at a still one (a 40 in kick
     counts the same as a 3 in swing at 12 in, matched with the sim and a wobbly-thumb player model). Small swings
     show up from the start at short range; the farthest kicks are still. Past level ~10 both rise together, and late
@@ -84,6 +84,21 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
 30. **One control everywhere: the flick (owner, Oct 28; replaces the desktop pull in 4).** The desktop pull-back set
     power by its length and let you hold the aim, which made desktop much easier than a phone. Desktop now grabs the
     paper with the mouse and flicks it up, the same mapping as a finger; the server rejects the old pull input.
+31. **Difficulty: distance, then wind, then movement, mixed at random per kick (owner, Oct 28; replaces 29; sim
+    VERSION 2).** Distance is always in. Wind is the second thing to come in, at level 2, and moving posts the third,
+    at level 6. Each level still has one budget (it grows slowly, then faster), but every kick spends it in its own
+    random mix of the factors unlocked so far: random weights from the shot's seed, normalized, the budget times each
+    weight (give or take 15%, so early kicks vary in length). A factor at its cap (40 in, 9 mph, a 6 in swing) passes
+    the rest of its share to the others. So one kick is long and still, the next short in a crosswind, the next a
+    swing: not everything harder every time. A factor's first level always shows it clearly (it gets a big share).
+    One unit of budget is the full 12 to 40 in of distance, about 16 mph of wind or a 0.9 car (a 3.6 in swing),
+    matched with the sim and a wobbly-thumb player model (`web/scripts/games-test/difficulty.mjs`: power ±8%, aim
+    ±1.9°, contact ±0.5, release ±0.2 s, reads 75% ± 35% of the wind; it puts a 40 in kick at 43% and a 3 in swing
+    at 12 in at 47%, as decision 29 measured). The off-centre goal (from level 1) and a narrower gap (from level 12)
+    stay small extras. Practice kicks in a competitive run are levels 2, 4 and 6 (wind, then the first moving posts).
+    Model make rates per kick: L0 63%, L2 63%, L4 56%, L6 58%, L8 52%, L10 44%, L12 37%, L14 31%, L16 24%, L18 19%,
+    L20 13%. The football now touches a pencil 0.3 in from its middle (`BALL_R`, was 0.2; the paper is a 1.6 in
+    triangle, so 0.2 let visible grazes pass).
 27. **Game room:** games are added to FireGames with a fixed entry each; prizes are capped at 6 per game per Series (replaced Oct 27: 6 packs, 50 cases and 20 gradings per Series across all games, any mix).
 
 ## On chain (game room added Oct 26, tests in `contracts/test/cards/Games.t.sol`)

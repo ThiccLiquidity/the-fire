@@ -191,7 +191,7 @@
         try {
           if (demo) {
             const n = practicing ? -(4 - practiceLeft) : streak;
-            cur = { shot: window.PaperFBSim.shotFor(r.seed ??= (Math.random() * 2 ** 31) | 0, n, practicing ? [3, 5, 7][3 - practiceLeft] : streak, window.PaperFootball.DEFAULT_TUNING) };
+            cur = { shot: window.PaperFBSim.shotFor(r.seed ??= (Math.random() * 2 ** 31) | 0, n, practicing ? [2, 4, 6][3 - practiceLeft] : streak, window.PaperFootball.DEFAULT_TUNING) };
           } else {
             cur = await api(g, 'shot', { runId: r.runId, cap: r.cap, practice: practicing });
             if (cur.over) return end(cur.streak);

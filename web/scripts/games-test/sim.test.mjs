@@ -54,23 +54,52 @@ test('simulate is repeatable and its frames are the flight', () => {
 test('shots are a pure function of (seed, n, level)', () => {
   assert.deepEqual(S.shotFor(9, 2, 7), S.shotFor(9, 2, 7));
   assert.notDeepEqual(S.shotFor(9, 2, 7), S.shotFor(9, 3, 7));
-  const s = S.shotFor(123, 0, 0);
-  assert.ok(s.dist >= 12 && s.dist <= 40 && s.wind === 0 && s.offset === 0 && s.half === 2.5, 'level 0: no wind, no offset, the full gap');
-  assert.ok(!s.move || s.move.amp < 1, 'level 0: at most a slight sway');
-  // distance and movement share the budget: a still goal is far, a swinging one is near (owner, Oct 27)
-  const lvl5 = Array.from({ length: 200 }, (_, n) => S.shotFor(5, n, 5));
-  const uOf = (x) => (x.dist - 12) / 28 + (x.move ? x.move.amp / 4 / 0.75 : 0);
-  for (const x of lvl5) assert.ok(Math.abs(uOf(x) - lvl5.map(uOf).reduce((a, b) => a + b) / lvl5.length) < 0.04, 'every level-5 shot costs the same');
-  assert.ok(lvl5.some((x) => !x.move && x.dist > 25) && lvl5.some((x) => x.move && x.dist < 16), 'long and still, or short and moving');
-  assert.ok(lvl5.every((x) => x.wind === 0 && x.half === 2.5), 'no wind or narrow gap yet');
-  // late on, both: long and moving, plus wind and a narrower gap
-  const late = Array.from({ length: 100 }, (_, n) => S.shotFor(5, n, 20));
-  assert.ok(late.every((x) => x.move && x.move.amp > 3 && x.dist > 37), 'level 20: far and swinging');
+  const at = (lv, k = 200) => Array.from({ length: k }, (_, n) => S.shotFor(5, n, lv));
+  for (const s of at(0)) assert.ok(s.dist >= 12 && s.dist <= 40 && s.wind === 0 && s.offset === 0 && s.half === 2.5 && !s.move, 'level 0: distance only');
+  assert.ok(new Set(at(0).map((s) => Math.round(s.dist * 10))).size > 5, 'level 0 kicks are not all the same length');
+  // the order things come in (owner, Oct 28): distance, then wind at level 2, then moving posts at level 6
+  assert.ok(at(1).every((s) => s.wind === 0 && !s.move));
+  assert.ok(at(2).some((s) => s.wind !== 0) && at(2).every((s) => !s.move), 'level 2: wind, no movement yet');
+  assert.ok(at(5).every((s) => !s.move));
+  assert.ok(at(6).some((s) => s.move), 'level 6: moving posts');
+  assert.equal(S.LEVEL_NAMES[2], "Fan's on: wind"); assert.ok(S.LEVEL_NAMES[6]);
+  assert.equal(S.shotFor(5, 0, 2).unlock, S.LEVEL_NAMES[2]);
+  // every kick spends the level's budget (give or take 15%) unless every factor is at its cap
+  const C = S.COSTS, T = S.DEFAULT_TUNING;
+  const cost = (x) => (x.dist - 12) / C.DIST_PER + Math.abs(x.wind) / C.WIND_PER + (x.move ? x.move.amp / 4 / C.MOVE_PER : 0);
+  for (const lv of [0, 3, 7, 10, 14]) {
+    const b = T.start + lv * T.ramp + T.curve * lv * lv;
+    for (const x of at(lv)) {
+      const capped = x.dist >= 39.99 && (lv < C.WIND_FROM || Math.abs(x.wind) >= C.WIND_MAX - 1e-9) && (lv < C.MOVE_FROM || (x.move && x.move.amp >= C.MOVE_MAX * 4 - 1e-9));
+      const c = cost(x); // (a wind under 0.5 mph is dropped: the 0.04 slack)
+      assert.ok(capped || (c > 0.85 * b - 0.04 && c < 1.15 * b + 1e-9), `level ${lv}: cost ${c} vs budget ${b}`);
+    }
+  }
+  // a random mix per kick, not everything harder at once: at level 10 some kicks lean on each factor
+  const l10 = at(10);
+  assert.ok(l10.some((x) => x.dist > 32 && Math.abs(x.wind) < 4), 'long, little wind');
+  assert.ok(l10.some((x) => Math.abs(x.wind) >= 7 && x.dist < 26), 'windy, shorter');
+  assert.ok(l10.some((x) => x.move && x.move.amp > 1.8 * 4 * 0.5 && x.dist < 26), 'swinging, shorter');
+  // late on: near the caps, with wind and a narrower gap
+  const late = at(20, 100);
+  assert.ok(late.filter((x) => x.dist > 37).length > 70 && late.filter((x) => x.move && x.move.amp > 3).length > 80, 'level 20: mostly far and swinging');
   assert.ok(late.some((x) => x.wind !== 0) && late.some((x) => x.half < 2.5));
-  const car = Array.from({ length: 40 }, (_, n) => S.shotFor(5, n, 9)).find((x) => x.move);
-  assert.ok(car && car.move.amp > 0, 'level 9 has moving posts');
   // practice shots (n < 0) are their own stream
   assert.notDeepEqual(S.shotFor(9, -1, 3), S.shotFor(9, 1, 3));
+});
+
+test('the football touches a pencil within BALL_R of it (a 1.6 in triangle, not a dot)', () => {
+  assert.ok(S.world.BALL_R >= 0.3);
+  const shot = { level: 0, dist: 20, wind: 0, half: 2.5, offset: 0, move: null, drift: 1 };
+  // aim so the football's centre passes ~0.25 in outside the right pencil's surface, chest high: it must doink
+  const post = shot.half + S.world.PEN_R, gap = S.world.PEN_R + 0.25;
+  let hit = 0;
+  for (let a = -0.1; a <= 0.25; a += 0.0025) {
+    const k = { power: 0.45, aim: a, contact: -0.25, sweetMin: 0.2 }, f = S.createFlight(shot, k);
+    let x = null; for (let i = 0; i < 2000 && x === null; i++) { const z0 = f.ball.z; f.step(); if (z0 < shot.dist - 0.6 && f.ball.z >= shot.dist - 0.6) x = f.ball.x + (shot.dist - f.ball.z) * f.ball.vx / f.ball.vz; } // where it would cross the pencils' line
+    if (x !== null && Math.abs(x - (post + gap)) < 0.03) { hit++; assert.ok(S.simulate(shot, k).doinked, `passes ${gap} from the pencil's axis: a doink`); }
+  }
+  assert.ok(hit > 0, 'found a grazing kick');
 });
 
 // ---------- input mapping

@@ -91,7 +91,8 @@ test('desktop mouse flicks in Chromium replay identically in Node', { skip: SKIP
   const browser = await launch();
   try {
     const { page, errors } = await gamePage(browser, false), cdp = await page.context().newCDPSession(page);
-    for (let i = 0; i < 14; i++) { await waitReady(page); await mouseFlick(page, cdp); await page.waitForTimeout(30); }
+    // a flick that comes out too slow (a loaded machine batches the moves) is no kick: keep flicking until enough count
+    for (let i = 0; i < 40 && (await page.evaluate(() => window.__rec.length)) < 12; i++) { await waitReady(page); await mouseFlick(page, cdp); await page.waitForTimeout(30); }
     await waitReady(page);
     const rec = await page.evaluate(() => window.__rec);
     assert.deepEqual(errors, []);
@@ -106,7 +107,7 @@ test('phone flicks in Chromium replay identically in Node', { skip: SKIP, timeou
   const browser = await launch();
   try {
     const { page, errors } = await gamePage(browser, true), cdp = await page.context().newCDPSession(page);
-    for (let i = 0; i < 14; i++) { await waitReady(page); await flickKick(page, cdp); await page.waitForTimeout(30); }
+    for (let i = 0; i < 40 && (await page.evaluate(() => window.__rec.length)) < 10; i++) { await waitReady(page); await flickKick(page, cdp); await page.waitForTimeout(30); }
     await waitReady(page);
     const rec = await page.evaluate(() => window.__rec);
     assert.deepEqual(errors, []);

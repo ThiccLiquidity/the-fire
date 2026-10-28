@@ -478,7 +478,7 @@ body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
 .gm-stage { position: relative; width: 100%; aspect-ratio: 4 / 5; max-height: 72vh; border-radius: 14px; overflow: hidden; border: 1px solid var(--line-2); background: #120c08 }
 @media (min-width: 700px) { .gm-stage { aspect-ratio: 4 / 3 } }
 .gm-stage.sw-stage { aspect-ratio: 2 / 3; max-height: 76vh } /* Spit-Wad: the factory is a portrait scene */
-@media (min-width: 700px) { .gm-stage.sw-stage { aspect-ratio: 4 / 3; max-height: 78vh } }
+@media (min-width: 700px) { .gm-stage.sw-stage { aspect-ratio: 2 / 3; max-height: min(86vh, calc(100vh - 190px)) } } /* desktop: as tall as the sheet allows; the sides show the wings */
 .gm-stage .pf-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab }
 .gr { display: grid; gap: 14px }
 .gr-lead { margin: 0 }
