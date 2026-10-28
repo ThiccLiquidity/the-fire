@@ -44,6 +44,8 @@ can change the site is taken. Tick each box; anything you can't tick, ask.
 - [ ] The repository clone (`C:\Users\DubT1\the-fire`) holds no keys: `git status` before every push shows nothing
       like `.env`, `*.key`, keystore files or JSON with `privateKey`. (`.gitignore` already blocks `.env` and the
       Foundry keystore lives in your user folder, not the repo.)
+      Checked Oct 29: the whole history (every branch) has no private keys, seed phrases, API keys or `.env` files; only
+      the `.env.example` templates and public test vectors.
 
 ## 3. Accounts that can change the project
 

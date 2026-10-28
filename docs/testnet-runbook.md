@@ -280,6 +280,11 @@ Press holders, PLANK holders (snapshot), Everyone, After sell-out. The Standard 
 - Free packs: 1 credit per pick, the credit group **Everyone**, at least 10% (1 pack; 20% = 2).
 The whole flow (groups, sell-out, extra packs, close, open, grade) then fits in an afternoon.
 
+**Full Art is one per character (Oct 29).** In the studio's Recipe tab, Full Art must show **1 per character** (the
+Standard has it; an older saved recipe with your own odds: tick the box). Give the practice Series **4 characters**
+so all four Full Arts can come out of its 10 packs and you can check there's exactly one of each. More characters than
+packs means some can't come out (the studio warns).
+
 **Free packs this run: suggestions, picked before the start.** A burn credit (step 15) only works in a *later*
 Series (cards exist only after this one closes), so test free packs with a picked suggestion:
 1. Before the launch, a test wallet suggests something on the site (Suggest). Its id is the newest:
@@ -380,6 +385,25 @@ Use a test wallet with test ETH. Tick each:
     gives the ETH cost and the PAPER; approve that PAPER to `$press`, then `buy(uint256,uint256,uint8,uint256)` with
     `2 1 0 <cost>` and `--value <cost>` (the explorer's Write tab, or `cast send ... --account <a test keystore>`).
     The ETH lands in LiquidityBurner.
-  - It sends a letter: `submitLetter(uint256,string)` `2 "Dear editor ..."` (burns 1 PAPER; approve it first).
+  - It sends a letter: `submitLetter(uint256,string)` `2 "Dear editor ..."` (1 PAPER, to the liquidity fire; approve it first).
+
+- [ ] **Full Art**: once every pack is open, exactly 4 Full Arts, one per character, each in a pack with 2 Papers.
+      `cast call (Get-Content C:\Users\DubT1\the-fire\deployments\46630.json | ConvertFrom-Json).contracts.RecipeDealer "onePerCharacterOwed(uint256)(uint256[])" <N> --rpc-url $env:RPC`
+      gives `[]` when all are out.
+- [ ] **Liquidity on the home page**: after the keeper's first LiquidityBurner run that adds liquidity (it needs the
+      PAPER price, ~40 h after step 12), the burn gauge shows "Liquidity locked" in dollars next to the burned PLANK and
+      PAPER.
 
 Anything that fails: write down what you did, what you saw, and the time. Send it to me; I fix it, you redo that line.
+
+## 16. Mainnet-fork liquidity test (read-only, any time, no keys)
+
+Runs LiquidityBurner against the **real** PAPER/PLANK pool on a copy of Robinhood Chain: nothing is sent anywhere.
+```powershell
+cd C:\Users\DubT1\the-fire\contracts
+$env:FORK_RPC = "https://rpc.mainnet.chain.robinhood.com"
+forge test --match-path test/cards/LiquidityFork.t.sol -vv
+Remove-Item Env:FORK_RPC
+```
+- Good: `[PASS] test_fork_pairsAndBurnsOnTheRealPool`, with the PAPER and PLANK prices it read and "pool tokens burned".
+- If it says `[SKIP]`: `FORK_RPC` wasn't set in this window. Any other failure: send me the output.
