@@ -24,8 +24,10 @@
   const BAR = 38;                                      // the top bar: the plate is shown below it
   // the round's goal: points are 6 (near) to 26 (far and small), so no single far hit makes much of it
   const goalFor = (r) => (r <= 3 ? [60, 70, 85][r - 1] : 5 * Math.round((40 + 12 * r + 0.6 * r * r) / 5));
-  // how deep the dealer may go: near spots in round 1, the middle distance in round 2, everything after
+  // how deep the dealer may go: near spots in round 1, the middle distance in round 2, everything after; a few far
+  // shots mixed in early (owner, Oct 29): about 1 Plank in 5 in rounds 1 and 2 may come from anywhere
   const zMaxFor = (r) => (r <= 1 ? 200 : r === 2 ? 340 : Infinity);
+  const FAR_MIX = 0.2;
   const TAUNTS = ['Nyah!', 'Too slow!', 'Missed me!', 'Ha!', 'Over here!', 'Nope!'];
   const PRAISE = { 3: 'HAT TRICK!', 5: 'ON FIRE!', 8: 'UNSTOPPABLE!', 12: 'PLANK PANIC!' };
   const NOTCH = 7 / (2 * 75.4);                        // half the green notch, in breath
@@ -192,7 +194,7 @@
     function deal() {
       const live = apps.filter((a) => !a.gone).length, maxLive = Math.min(4, 2 + Math.floor((round - 1) / 2) + (clock < 30 ? 1 : 0));
       if (live >= maxLive) { nextAt = now + 0.25; return; }
-      const zMax = zMaxFor(round);
+      const zMax = round <= 2 && rnd() < FAR_MIX ? Infinity : zMaxFor(round);
       const free = scene.spots.filter((s) => s.z <= zMax && !apps.some((a) => a.s === s) && !recent.includes(s.id));
       if (!free.length) { nextAt = now + 0.25; return; }
       const s = free[Math.floor(rnd() * free.length)];

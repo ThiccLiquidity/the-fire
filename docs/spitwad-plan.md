@@ -451,7 +451,7 @@ https://claude.ai/artifact/MQNgfGmWQYKVjd7dqgdoD1). The owner played both and ap
   the scope's drag is 1.25x the thumb as meant (it was 0.8x); points tags stay clear of the top bar.
 - **The straw** is a 3D striped paper straw (true perspective, helix stripes, shading), points more than halfway to
   the crosshair, and fades while you aim low.
-- **Difficulty:** round 1 deals near spots (to 200 in), round 2 to 340 in, then all; points are 6 (near) to 26 (far
+- **Difficulty:** round 1 deals near spots (to 200 in), round 2 to 340 in, then all, with about 1 Plank in 5 from anywhere in rounds 1 and 2 (a few far shots early); points are 6 (near) to 26 (far
   and peeking), so a far hit is no longer most of a goal (goals 60/70/85, then 5·round((40 + 12r + 0.6r²)/5)); a
   Plank stays out at least long enough to aim, breathe to the notch and fly there.
 - **Speed:** the blurred side wings are drawn once per resize, and Plank's shadow, haze and rim light are made once
