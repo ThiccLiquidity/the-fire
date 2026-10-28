@@ -21,13 +21,13 @@ interface IPressFeed {
  *         time it goes on sale. Until then the owner can pull it (`unpublish`: the veto). It sells for 24 hours from
  *         `opensAt`, unlimited copies, then never again.
  *
- *         A copy costs `paperPerCopy` PAPER (burned: sent straight to the dead address) plus `usdPerCopy` dollars in
- *         ETH (priced with the ETH/USD feed) or USDG, which goes to `paperBurner` (LiquidityBurner: the keepers turn it
- *         into burned PAPER/PLANK liquidity, as with FireSale). Both prices are fixed per issue when it is published, so a price change never
+ *         A copy costs `paperPerCopy` PAPER plus `usdPerCopy` dollars in ETH (priced with the ETH/USD feed) or USDG.
+ *         All of it goes to `paperBurner` (LiquidityBurner: the keepers turn it into burned PAPER/PLANK liquidity, as
+ *         with FireSale). Both prices are fixed per issue when it is published, so a price change never
  *         touches an issue already announced; `maxCost` covers the ETH price moving. Nothing stays in this contract.
  *
- *         Holders of an issue can send a one-line letter or classified (`submitLetter`) for burning `letterPaper`
- *         PAPER. The text lives only in the `Letter` event, which the paper's pipeline reads.
+ *         Holders of an issue can send a one-line letter or classified (`submitLetter`) for `letterPaper` PAPER
+ *         (to LiquidityBurner too). The text lives only in the `Letter` event, which the paper's pipeline reads.
  */
 contract MorningWood is ERC1155, ERC2981, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -44,7 +44,6 @@ contract MorningWood is ERC1155, ERC2981, Ownable2Step, ReentrancyGuard {
 
     string public constant name = "The Morning Wood";
     string public constant symbol = "WOOD";
-    address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint256 public constant WINDOW = 24 hours;
     uint256 public constant MAX_LEAD = 7 days; // an issue can be published at most this long before it opens
     /// @notice The editor publishes (and re-publishes) at least this long before an issue opens, so the owner always
@@ -74,7 +73,7 @@ contract MorningWood is ERC1155, ERC2981, Ownable2Step, ReentrancyGuard {
 
     event Published(uint256 indexed issue, string uri, uint64 opensAt, uint256 paperPerCopy, uint256 usdPerCopy);
     event Unpublished(uint256 indexed issue);
-    event Bought(uint256 indexed issue, address indexed buyer, uint256 qty, Pay pay, uint256 cost, uint256 paperBurned);
+    event Bought(uint256 indexed issue, address indexed buyer, uint256 qty, Pay pay, uint256 cost, uint256 paper); // paper: PAPER sent to LiquidityBurner
     event Letter(uint256 indexed issue, address indexed from, string text);
     event EditorSet(address editor);
     event PricesSet(uint256 paperPerCopy, uint256 usdPerCopy, uint256 letterPaper);
@@ -206,7 +205,7 @@ contract MorningWood is ERC1155, ERC2981, Ownable2Step, ReentrancyGuard {
         if (cost > maxCost) revert PriceMoved();
         // forge-lint: disable-next-line(unsafe-typecast)
         s.sold += uint64(qty); // qty <= MAX_QTY
-        if (paper != 0) PAPER.safeTransferFrom(msg.sender, DEAD, paper);
+        if (paper != 0) PAPER.safeTransferFrom(msg.sender, paperBurner, paper);
         uint256 refund = msg.value;
         if (pay == Pay.ETH) {
             if (msg.value < cost) revert PriceMoved();
@@ -227,7 +226,7 @@ contract MorningWood is ERC1155, ERC2981, Ownable2Step, ReentrancyGuard {
         if (balanceOf(msg.sender, issue) == 0) revert NotHolder();
         uint256 n = bytes(text).length;
         if (n == 0 || n > MAX_LETTER_BYTES) revert BadLetter();
-        if (letterPaper != 0) PAPER.safeTransferFrom(msg.sender, DEAD, letterPaper);
+        if (letterPaper != 0) PAPER.safeTransferFrom(msg.sender, paperBurner, letterPaper);
         emit Letter(issue, msg.sender, text);
     }
 

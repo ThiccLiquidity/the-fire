@@ -69,7 +69,7 @@ contract MorningWoodTest is Test {
 
     // ---------------------------------------------------------------- buying
 
-    function test_buyWithEth_burnsPaper_paysBurner_refunds() public {
+    function test_buyWithEth_paperAndEthToLiquidity_refunds() public {
         _publish(1, 0);
         (uint256 cost, uint256 p) = press.quote(1, 3, MorningWood.Pay.ETH);
         assertEq(p, 3e18);
@@ -79,7 +79,7 @@ contract MorningWoodTest is Test {
         vm.prank(alice);
         press.buy{value: 1 ether}(1, 3, MorningWood.Pay.ETH, cost);
         assertEq(press.balanceOf(alice, 1), 3);
-        assertEq(paper.balanceOf(DEAD), 3e18);
+        assertEq(paper.balanceOf(address(burner)), 3e18); assertEq(paper.balanceOf(DEAD), 0, "nothing burned outright");
         assertEq(paper.balanceOf(alice), 997e18);
         assertEq(address(burner).balance, cost);
         assertEq(alice.balance, before - cost); // the rest came back
@@ -94,7 +94,7 @@ contract MorningWoodTest is Test {
         assertEq(press.balanceOf(alice, 1), 2);
         assertEq(usdg.balanceOf(address(burner)), 0.1e6);
         assertEq(usdg.balanceOf(alice), 1_000e6 - 0.1e6);
-        assertEq(paper.balanceOf(DEAD), 2e18);
+        assertEq(paper.balanceOf(address(burner)), 2e18); assertEq(paper.balanceOf(DEAD), 0, "nothing burned outright");
     }
 
     function test_usdgBuyRefundsStrayEth() public {
@@ -136,7 +136,7 @@ contract MorningWoodTest is Test {
         press.buy(1, 1000, MorningWood.Pay.USDG, type(uint256).max); // unlimited supply, 1,000 a go
         vm.stopPrank();
         assertEq(press.balanceOf(alice, 1), 1000);
-        assertEq(paper.balanceOf(DEAD), 1000e18);
+        assertEq(paper.balanceOf(address(burner)), 1000e18); assertEq(paper.balanceOf(DEAD), 0, "nothing burned outright");
     }
 
     function test_noPaperNoCopy() public {
@@ -288,7 +288,7 @@ contract MorningWoodTest is Test {
         press.buy(1, 1, MorningWood.Pay.USDG, 0.05e6); // old prices
         press.buy(2, 1, MorningWood.Pay.USDG, 0.1e6); // new prices
         vm.stopPrank();
-        assertEq(paper.balanceOf(DEAD), 3e18);
+        assertEq(paper.balanceOf(address(burner)), 3e18); assertEq(paper.balanceOf(DEAD), 0, "nothing burned outright");
         assertEq(usdg.balanceOf(address(burner)), 0.15e6);
     }
 
@@ -306,7 +306,7 @@ contract MorningWoodTest is Test {
         vm.prank(alice);
         press.buy(1, 4, MorningWood.Pay.ETH, 0);
         assertEq(press.balanceOf(alice, 1), 4);
-        assertEq(paper.balanceOf(DEAD), 0);
+        assertEq(paper.balanceOf(address(burner)), 0); assertEq(paper.balanceOf(DEAD), 0, "nothing burned outright");
     }
 
     function test_paused() public {
@@ -329,7 +329,7 @@ contract MorningWoodTest is Test {
 
     // ---------------------------------------------------------------- letters
 
-    function test_letterHolderOnly_burnsPaper_emits() public {
+    function test_letterHolderOnly_paperToLiquidity_emits() public {
         _publish(1, 0);
         vm.prank(bob);
         vm.expectRevert(MorningWood.NotHolder.selector);
@@ -340,7 +340,7 @@ contract MorningWoodTest is Test {
         emit MorningWood.Letter(1, alice, "Dear Editor, the wood was hard this morning.");
         vm.prank(alice);
         press.submitLetter(1, "Dear Editor, the wood was hard this morning.");
-        assertEq(paper.balanceOf(DEAD), 2e18); // copy + letter
+        assertEq(paper.balanceOf(address(burner)), 2e18); assertEq(paper.balanceOf(DEAD), 0, "nothing burned outright"); // copy + letter
         // a holder of issue 1 only: not issue 2
         _publish(2, 0);
         vm.prank(alice);

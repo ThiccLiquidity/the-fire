@@ -21,7 +21,8 @@ if (!existsSync(join(DIST, "press/index.html"))) throw new Error("No build: run 
 
 // ---------- web/dist as Vercel serves it
 const vercel = JSON.parse(readFileSync(resolve(here, "../../vercel.json"), "utf8"));
-const HEADERS = vercel.headers.flatMap((h) => h.headers);
+// each header rule only on the paths its source matches (":path*" is "(.*)" in Vercel's syntax)
+const HEADERS = vercel.headers.map((h) => ({ re: new RegExp(`^${h.source.replace(":path*", "(.*)")}$`), headers: h.headers }));
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".webp": "image/webp", ".json": "application/json", ".woff2": "font/woff2", ".jpg": "image/jpeg", ".png": "image/png", ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".svg": "image/svg+xml" };
 const server = createServer((req, res) => {
   const u = new URL(req.url, "http://x");
@@ -33,7 +34,7 @@ const server = createServer((req, res) => {
   if (existsSync(f) && statSync(f).isDirectory()) f = join(f, "index.html"); // /press → /press/index.html
   if (!f.startsWith(DIST) || !existsSync(f) || !statSync(f).isFile()) { res.writeHead(404); return res.end(); }
   const h = { "content-type": TYPES[extname(f)] ?? "application/octet-stream" };
-  for (const { key, value } of HEADERS) if (key !== "Strict-Transport-Security") h[key] = value;
+  for (const { re, headers } of HEADERS) if (re.test(p)) for (const { key, value } of headers) if (key !== "Strict-Transport-Security") h[key] = value;
   res.writeHead(200, h);
   res.end(readFileSync(f));
 });
@@ -94,7 +95,7 @@ try {
     await shot("2-press-sale");
 
     await page.click('[data-act="info"] >> nth=0');
-    check(/burned/.test(await page.locator("#sheet-info").innerText()), "Info explains where the money goes");
+    check(/liquidity fire/.test(await page.locator("#sheet-info").innerText()), "Info explains where the money goes");
     await page.click('#sheet-info [data-act="close"]');
 
     await page.click(".sale .btn.buy");

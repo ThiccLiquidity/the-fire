@@ -6,7 +6,7 @@ Nothing here is decided until the owner says so.
 ## Agreed so far
 - **What:** a daily issue, minted as an NFT. It's edgy and obviously satire, with a SATIRE stamp on every page.
   Guard rails are kept to a minimum.
-- **Price:** about 1 PAPER (burned) plus $0.05 of ETH, which goes to the liquidity contract (`LiquidityBurner`,
+- **Price:** about 1 PAPER plus $0.05 of ETH, both of which go to the liquidity contract (`LiquidityBurner`,
   `docs/liquidity-burn.md`). It isn't meant to make money.
 - **Content:** real news turned into satire.
   - Crypto and world news.

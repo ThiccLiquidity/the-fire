@@ -3,8 +3,8 @@
 Nothing on the site is burned outright any more. Everything that used to burn PAPER or PLANK goes to one new
 contract, the **liquidity contract** (working name `LiquidityBurner`). It pairs PAPER with PLANK, adds the pair to the
 PAPER/PLANK Uniswap V2 pool (the biggest PAPER pool) and burns the pool tokens: the liquidity is locked for good.
-The only coins still burned outright are a side's amount over its $100 limit, and Morning Wood's own PAPER (copies and
-letters).
+The only coins still burned outright are a side's amount over its $100 limit. Morning Wood's PAPER (copies and
+letters) goes to the liquidity fire too (owner, Oct 29).
 
 The model: `ops/models/lp_model.py` (its runs are summarised at the end of this page).
 

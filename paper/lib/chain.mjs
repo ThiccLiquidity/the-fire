@@ -22,8 +22,8 @@ export const SEL = Object.fromEntries(Object.entries(SIG).map(([k, s]) => [k, se
 export const EVENT = {
   // MorningWood.Letter(uint256 indexed issue, address indexed from, string text): data is the string (decodeString)
   Letter: { sig: "Letter(uint256,address,string)", data: [] },
-  // MorningWood.Bought(uint256 indexed issue, address indexed buyer, uint256 qty, Pay pay, uint256 cost, uint256 paperBurned)
-  Bought: { sig: "Bought(uint256,address,uint256,uint8,uint256,uint256)", data: ["qty", "pay", "cost", "paperBurned"] },
+  // MorningWood.Bought(uint256 indexed issue, address indexed buyer, uint256 qty, Pay pay, uint256 cost, uint256 paper)
+  Bought: { sig: "Bought(uint256,address,uint256,uint8,uint256,uint256)", data: ["qty", "pay", "cost", "paper"] },
   // FireSale.PacksBought(uint256 indexed fire, uint256 indexed group, address indexed buyer, uint256 count, uint8 pay,
   //   uint256 paid, uint256 toLiquidity)
   PacksBought: { sig: "PacksBought(uint256,uint256,address,uint256,uint8,uint256,uint256)", data: ["count", "pay", "paid", "toLiquidity"] },
