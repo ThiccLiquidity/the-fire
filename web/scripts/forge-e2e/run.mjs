@@ -474,7 +474,8 @@ try {
     await page.locator("#sheet-table .prac-sum").waitFor({ timeout: 20_000 });
     check((await page.locator("#sheet-table .prac-c").count()) === 6 && (await page.evaluate(() => Store.state.cards.length)) === n0 && !(await page.locator("#sheet-tx[open]").count()),
       "live: a practice pack opens 6 cards, asks nothing of the wallet and saves nothing");
-    await page.waitForTimeout(800);
+    // the practice cards' images finish loading (a fixed wait flaked under load)
+    await page.waitForFunction(() => [...document.querySelectorAll("#sheet-table .prac-c .cframe")].every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 15_000 }).catch(() => {});
     const pr = await page.evaluate(() => [...document.querySelectorAll("#sheet-table .prac-c .cframe")].map((i) => ({ src: i.src, alt: i.alt, ok: i.complete && i.naturalWidth > 0 })));
     const names = ["Ember Fox", "Ash Wolf", "Cinder Queen"];
     check(pr.length === 6 && pr.every((x) => /\/ipfs\/bafyexampleimages\/c[0-2]-(paper|wood|fire|coal|gold|fullart)-(none|frame|picture|full)-u\.webp$/.test(x.src) && x.ok && names.some((n) => x.alt.startsWith(n + ","))) && asked.length >= 6,
