@@ -117,9 +117,10 @@ try {
     "live never shows the demo's numbers (burn tally, PLANK and PAPER prices)");
   check(/Series 7 · Opens in/.test(await page.locator("#seriesChip").textContent()), "Series 7 from the chain: opens soon");
   await page.waitForFunction(() => Store.LIVE_ODDS?.slots?.length, null, { timeout: 30_000 });
-  const shape = await page.evaluate(() => ({ line: Info.packLine(), fa: Info.shareOf("fullart"), paper: Info.shareOf("paper") }));
-  check(shape.line === "3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better" && Math.abs(shape.fa - 0.02) < 1e-9 && shape.paper === 0.5,
-    `Info reads the Series' pack from the chain (RecipeDealer.slotsOf): "${shape.line}"; Full Art ${(shape.fa * 100).toFixed(2)}% of cards`);
+  const shape = await page.evaluate(() => { const s = Store.state.series; return { line: Info.packLine(), fa: Info.shareOf("fullart"), paper: Info.shareOf("paper"),
+    exact: Math.min(s.cast, s.total) / (s.total * (s.cardsPerPack || 6)) }; });
+  check(shape.line === "3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better" && Math.abs(shape.fa - shape.exact) < 1e-9 && Math.abs(shape.paper - (0.5 - shape.exact)) < 1e-9,
+    `Info reads the Series' pack from the chain (RecipeDealer.slotsOf): "${shape.line}"; Full Art exactly one per character (${(shape.fa * 100).toFixed(2)}% of cards), each in a Paper's place`);
   await page.locator("#loading.done").waitFor({ state: "attached" });
   await shot("01-live-before-connect");
 

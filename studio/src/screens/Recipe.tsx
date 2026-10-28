@@ -4,11 +4,11 @@ import { newId } from '../db'
 import { SHOWN_FRAME_SETS, frameSetFiles, frameSetLabel, missingFramesFor } from '../frames'
 import {
   FRESH_PDA_ODDS, HOLO_ONE, MAX_CARDS_PER_PACK, UINT32_MAX, cardsPerPack, checkRecipe, cloneRecipe, dropExactWeights,
-  formatPercent, holoLooksFor, holoOdds, packShapeLine, parsePercent, parseUint, percentToScaled, percentTotal, roundedPercent,
-  scaledToPercent, slotLabel, slotName, slotOdds, slotPercents, slugify, specialAllHoloRecipe, standardRecipe,
+  formatPercent, holoLooksFor, holoOdds, onePerIndex, packShapeLine, parsePercent, parseUint, percentToScaled, percentTotal, roundedPercent,
+  scaledToPercent, setOnePerCharacter, slotLabel, slotName, slotOdds, slotPercents, slugify, specialAllHoloRecipe, standardRecipe,
   type CardTypeDef, type HoloRule, type Problem, type Recipe, type SlotDef,
 } from '../recipe'
-import { aboutOneIn, percentText, seriesResult, type TypeResult } from '../rarity'
+import { aboutOneIn, onePerCharacterLine, onePerCharacterText, percentText, seriesResult, type TypeResult } from '../rarity'
 import { characterWeightsOf } from '../series'
 import { HOLO_LABEL, HOLO_TYPES } from '../rules'
 import { CARDS_PER_CREDIT } from '../sale'
@@ -105,7 +105,8 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
   // a removed type leaves every slot too
   const removeType = (i: number) => {
     const id = r.types[i].id
-    set({ ...r, types: r.types.filter((_, j) => j !== i), slots: r.slots.map((sl) => { const { [id]: _gone, ...rest } = sl.percents; return { ...sl, percents: rest } }) })
+    const next = { ...r, types: r.types.filter((_, j) => j !== i), slots: r.slots.map((sl) => { const { [id]: _gone, ...rest } = sl.percents; return { ...sl, percents: rest } }) }
+    set(r.onePerCharacter === id ? setOnePerCharacter(next, null) : next)
   }
   const addSlot = () => set({ ...r, slots: [...r.slots, { id: newId(), count: 1, percents: {} }] })
   const removeSlot = (k: number) => set({ ...r, slots: r.slots.filter((_, j) => j !== k) })
@@ -203,6 +204,12 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
         type's % of that slot's cards (blank = never in that slot; each slot adds up to exactly 100%). Cards per pack is
         the slots' cards added up (1 to {MAX_CARDS_PER_PACK.toLocaleString('en-US')}).
       </p>
+      {onePerIndex(r) >= 0 && (
+        <p className="small" data-testid="pack-one-per-character">
+          <b>{onePerCharacterLine(r, { packs: fire.packs, chars: fire.characterIds.length })}</b>
+          <span className="muted"> · in no slot: it takes the place of a pack's first card ({r.slots[0] ? slotLabel(r, 0) : 'the first slot'}), at random packs, until every character has one.</span>
+        </p>
+      )}
       {recipeProblems.map((p, k) => <p key={k} className="field-msg err">{p.message}</p>)}
       <div className="slot-list" data-testid="slot-list">
         {r.slots.map((sl, k) => (
@@ -221,7 +228,8 @@ export function RecipeEditor({ fire }: { fire: FireRecord }) {
       <div className="type-list">
         {r.types.map((t, i) => (
           <TypeCard key={t.id} r={r} t={t} i={i} locked={locked} problems={typeProblems(i)} result={res?.types[i] ?? null}
-            onChange={(patch) => setType(i, patch)}
+            size={{ packs: Number(shownPacks), chars: ownChars }}
+            onChange={(patch) => setType(i, patch)} onOnePerCharacter={(on) => set(setOnePerCharacter(r, on ? t.id : null))}
             onMove={(d) => set({ ...r, types: move(r.types, i, d) })}
             onRemove={() => removeType(i)} />
         ))}
@@ -249,7 +257,7 @@ function SlotPercent({ value, onChange, disabled, testId }: { value: string; onC
 }
 
 /** One slot: its cards, each type's % of them, its total (with the one-click fix) and what it deals: "This slot: Fire
- *  59.82% · 1 in 1.7 · ...". */
+ *  67.32% · 1 in 1.7 · ...". */
 function SlotCard({ r, sl, k, locked, problems, lastTyped, onCount, onPercent, onMove, onRemove }: {
   r: Recipe; sl: SlotDef; k: number; locked: boolean; problems: Problem[]; lastTyped: string | null
   onCount: (n: number) => void; onPercent: (typeId: string, v: string) => void; onMove: (d: number) => void; onRemove: () => void
@@ -261,6 +269,7 @@ function SlotCard({ r, sl, k, locked, problems, lastTyped, onCount, onPercent, o
   const odds = useMemo(() => slotOdds(r)[k] ?? [], [r, k])
   const shown = r.types.flatMap((_, i) => ((odds[i] ?? 0) > 0 ? [i] : []))
   const exact = sl.weights !== undefined
+  const one = onePerIndex(r)
   return (
     <div className={`type-card slot-card ${problems.length ? 'has-problem' : ''}`} data-testid={`slot-${k}`}>
       <div className="type-main">
@@ -278,8 +287,9 @@ function SlotCard({ r, sl, k, locked, problems, lastTyped, onCount, onPercent, o
       </div>
       <div className="row wrap slot-odds">
         {r.types.map((t, i) => (
-          <label key={t.id} className={`field slot-type ${percents[i] === '' ? 'off' : ''}`}><span className="field-label">{t.name || `Type ${i + 1}`}</span>
-            <SlotPercent value={percents[i]} disabled={locked || exact} onChange={(v) => onPercent(t.id, v)} testId={`slot-${k}-type-${i}`} /></label>
+          <label key={t.id} className={`field slot-type ${percents[i] === '' ? 'off' : ''}`} title={i === one && percents[i] === '' ? `${t.name} is 1 per character: in no slot` : undefined}>
+            <span className="field-label">{t.name || `Type ${i + 1}`}{i === one ? ' · 1 per character' : ''}</span>
+            <SlotPercent value={percents[i]} disabled={locked || exact || (i === one && percents[i] === '')} onChange={(v) => onPercent(t.id, v)} testId={`slot-${k}-type-${i}`} /></label>
         ))}
       </div>
       {inSlot.length > 0 && !exact && (
@@ -296,12 +306,15 @@ function SlotCard({ r, sl, k, locked, problems, lastTyped, onCount, onPercent, o
   )
 }
 
-function TypeCard({ r, t, i, locked, problems, result, onChange, onMove, onRemove }: {
+function TypeCard({ r, t, i, locked, problems, result, size, onChange, onOnePerCharacter, onMove, onRemove }: {
   r: Recipe; t: CardTypeDef; i: number; locked: boolean; problems: Problem[]
   /** What this type makes in the Series (its odds and expected cards). */
   result: TypeResult | null
-  onChange: (p: Partial<CardTypeDef>) => void; onMove: (d: number) => void; onRemove: () => void
+  /** The packs and characters the result is for. */
+  size: { packs: number; chars: number }
+  onChange: (p: Partial<CardTypeDef>) => void; onOnePerCharacter: (on: boolean) => void; onMove: (d: number) => void; onRemove: () => void
 }) {
+  const isOne = onePerIndex(r) === i
   const looks = holoLooksFor(r, i)
   const missing = missingFramesFor(t.frameSet, looks)
   const files = frameSetFiles(t.frameSet)
@@ -321,8 +334,10 @@ function TypeCard({ r, t, i, locked, problems, result, onChange, onMove, onRemov
           </span></label>
         <label className="field"><span className="field-label">Rank</span>
           <SmallInt value={t.rank} disabled={locked} onChange={(v) => onChange({ rank: v ?? 0 })} testId={`type-${i}-rank`} /></label>
-        <span className="field"><span className="field-label">From the slots</span>
-          {result
+        <span className="field"><span className="field-label">{isOne ? 'One per character' : 'From the slots'}</span>
+          {isOne
+            ? <span className="small pad" data-testid={`type-${i}-share`}><b>{onePerCharacterText(size)}</b> <span className="muted">· in place of a pack's first card</span></span>
+            : result
             ? <span className="small pad" data-testid={`type-${i}-share`}><b>{perPackText(result.perPack)} a pack</b> <span className="muted">· {percentText(result.share)} of cards · {aboutOneIn(result.share)} ·</span> <Count x={result.expected} unit="cards" /></span>
             : <span className="small pad muted" data-testid={`type-${i}-share`}>-</span>}
         </span>
@@ -330,7 +345,9 @@ function TypeCard({ r, t, i, locked, problems, result, onChange, onMove, onRemov
           <select value={t.frameSet} disabled={locked} onChange={(e) => onChange({ frameSet: e.target.value })} data-testid={`type-${i}-frames`}>
             {(SHOWN_FRAME_SETS.includes(t.frameSet) ? SHOWN_FRAME_SETS : [...SHOWN_FRAME_SETS, t.frameSet]).map((f) => <option key={f} value={f}>{frameSetLabel(f)}{frameSetFiles(f).total ? ` (${frameSetFiles(f).have}/${frameSetFiles(f).total})` : ' (no frame)'}</option>)}
           </select></label>
-
+        <label className="check small" title="Dealt exactly once per character per Series, at random packs, in place of a pack's first card. In no slot (its slot % moves to the slot's lowest type).">
+          <input type="checkbox" checked={isOne} disabled={locked} onChange={(e) => onOnePerCharacter(e.target.checked)} data-testid={`type-${i}-one-per-character`} /> 1 per character
+        </label>
       </div>
       <div className="row wrap">
         <label className="field"><span className="field-label">Holo</span>

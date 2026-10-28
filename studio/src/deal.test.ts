@@ -66,7 +66,44 @@ describe('dealFire (slots, each card its own roll)', () => {
 
   it('type odds converge to the weights over many cards (Standard)', () => {
     const cards = runFires(20, () => 500, 'odds').flatMap((r) => r.cards) // 60,000 cards
-    typeOdds(standardRecipe()).forEach((p, t) => near(cards.filter((c) => c.type === t).length, cards.length, p))
+    typeOdds(standardRecipe(), { packs: 500, chars: 3 }).forEach((p, t) => near(cards.filter((c) => c.type === t).length, cards.length, p))
+  })
+
+  it('Full Art: exactly one per character per Series, each as a pack\'s first card, at random packs', () => {
+    const packsAt: number[] = []
+    for (let k = 0; k < 200; k++) {
+      const r = dealFire(input({ packs: 10, seed: `one-${k}` }))
+      const fa = r.cards.filter((c) => c.type === 5)
+      expect(fa.map((c) => c.characterId).sort()).toEqual([...CHARS].sort())
+      expect(fa.every((c) => c.slot === 1 && c.holo === 'full')).toBe(true)
+      expect(r.pool[5]).toBe(3)
+      expect(r.pool.reduce((a, x) => a + x, 0)).toBe(60)
+      packsAt.push(...fa.map((c) => c.pack))
+    }
+    // spread over the Series' packs: each pack about 3 / 10 of the time
+    for (let p = 1; p <= 10; p++) near(packsAt.filter((x) => x === p).length, 200, 0.3)
+    // packs = characters: every pack has one; fewer packs: one per pack, the rest never come out
+    expect(dealFire(input({ packs: 3, seed: 'eq' })).cards.filter((c) => c.type === 5)).toHaveLength(3)
+    const short = dealFire(input({ packs: 2, seed: 'short' })).cards.filter((c) => c.type === 5)
+    expect(short).toHaveLength(2)
+    expect(new Set(short.map((c) => c.characterId)).size).toBe(2)
+    // weighted characters still get exactly one each
+    const w = dealFire(input({ packs: 50, characterWeights: [1, 1, 50], seed: 'w1' })).cards.filter((c) => c.type === 5)
+    expect(w.map((c) => c.characterId).sort()).toEqual([...CHARS].sort())
+  })
+
+  it('the one-per-character card only replaces the first card: the rest of the deal is the same without the rule', () => {
+    const { onePerCharacter: _x, ...plain } = standardRecipe()
+    plain.types = plain.types.slice(0, 5)
+    const a = dealFire(input({ packs: 40, seed: 'same' }))
+    const b = dealFire(input({ packs: 40, seed: 'same', recipe: plain }))
+    const key = (c: { pack: number; slot: number }) => `${c.pack}/${c.slot}`
+    const bOf = new Map(b.cards.map((c) => [key(c), c]))
+    for (const c of a.cards) {
+      if (c.type === 5) continue
+      const o = bOf.get(key(c))!
+      expect([c.type, c.characterId, c.holo]).toEqual([o.type, o.characterId, o.holo])
+    }
   })
 
   it('every pack has the shape (3 Paper, a Wood, a Wood or better, a Fire or better); each slot converges to its own odds; no caps', () => {
@@ -77,7 +114,8 @@ describe('dealFire (slots, each card its own roll)', () => {
     let twoFa = 0
     for (const pack of r.packContents) {
       const types = pack.map((s) => bySerial.get(s)!.type)
-      expect(types.slice(0, 3)).toEqual([0, 0, 0])
+      expect(types.slice(1, 3)).toEqual([0, 0])
+      expect([0, 5]).toContain(types[0])
       expect(types[3]).toBe(1)
       expect(types[4]).toBeGreaterThanOrEqual(1)
       expect(types[5]).toBeGreaterThanOrEqual(2)
@@ -88,9 +126,8 @@ describe('dealFire (slots, each card its own roll)', () => {
       near(at[4][t], 5000, odds[2][t])
       near(at[5][t], 5000, odds[3][t])
     }
-    expect(twoFa).toBeGreaterThan(5) // 4.5% x 7.5% of packs
-    // and a character can get any number of Full Arts
-    for (const id of CHARS) expect(r.cards.filter((c) => c.type === 5 && c.characterId === id).length).toBeGreaterThan(1)
+    expect(twoFa).toBe(0) // Full Art is never in a slot
+    for (const id of CHARS) expect(r.cards.filter((c) => c.type === 5 && c.characterId === id)).toHaveLength(1)
   })
 
   it('the last pack has the same odds as the first (nothing depends on the packs before)', () => {
@@ -98,7 +135,7 @@ describe('dealFire (slots, each card its own roll)', () => {
     const bySerial = new Map(r.cards.map((c) => [c.serial, c]))
     const firstHalf = r.packContents.slice(0, 2000).flat().map((s) => bySerial.get(s)!.type)
     const lastHalf = r.packContents.slice(2000).flat().map((s) => bySerial.get(s)!.type)
-    typeOdds(standardRecipe()).forEach((p, t) => {
+    typeOdds(standardRecipe(), { packs: 4000, chars: 3 }).forEach((p, t) => {
       near(firstHalf.filter((x) => x === t).length, firstHalf.length, p)
       near(lastHalf.filter((x) => x === t).length, lastHalf.length, p)
     })

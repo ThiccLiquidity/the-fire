@@ -377,13 +377,14 @@ contract CardsTest is SeriesHelper {
         assertEq(cards.balanceOf(_holder(2)), 6);
     }
 
-    /// The dealer keeps no state: what anyone gets from `deal` for a seed is what FireCards mints for it.
+    /// What anyone gets from `roll` for a seed is what FireCards mints for it, except a pack's first card when the
+    /// one-per-character rule gives it the Full Art (certain here: one pack, more characters than packs).
     function test_dealerViewMatchesTheMintedPack() public {
         _sellAndClose(1, 1);
         vm.prank(_holder(0));
         cards.open(1, 1);
         rng.deliver(rng.next() - 1, 4242);
-        uint256[] memory want = dealer.deal(1, uint256(keccak256(abi.encode(uint256(4242), uint256(0)))), 0, 6);
+        uint256[] memory want = dealer.roll(1, uint256(keccak256(abi.encode(uint256(4242), uint256(0)))), 0, 6);
         cards.process(1, 6);
         uint256[6] memory a;
         uint256[6] memory b;
@@ -392,7 +393,10 @@ contract CardsTest is SeriesHelper {
             a[c.cardType]++;
             b[uint32(want[i])]++;
         }
+        b[uint32(want[0])]--;
+        b[StandardRecipe.FULL_ART]++;
         for (uint256 t; t < 6; t++) assertEq(a[t], b[t]);
+        assertEq(dealer.onePerCharacterDealt(1), 1);
     }
 
     function test_refusingContractCannotStallTheQueue() public {
@@ -480,13 +484,13 @@ contract CardsTest is SeriesHelper {
 
     function test_recipePerSeries() public {
         RecipeDealer.Recipe memory r = StandardRecipe.build();
-        r.slots[3].weights[5] = 1;
+        r.slots[3].weights[4] = 1;
         vm.prank(owner);
         dealer.setRecipe(1, r);
-        assertEq(dealer.recipeOf(1).slots[3].weights[5], 1);
+        assertEq(dealer.recipeOf(1).slots[3].weights[4], 1);
         vm.prank(owner);
         dealer.setRecipe(1, StandardRecipe.build()); // can change until the packs sell
-        assertEq(dealer.recipeOf(1).slots[3].weights[5], 750);
+        assertEq(dealer.recipeOf(1).slots[3].weights[4], 1_534);
         assertEq(dealer.recipeOf(2).types.length, 0, "other Series untouched");
     }
 
@@ -586,7 +590,7 @@ contract CardsTest is SeriesHelper {
         uint256 td;
         for (uint256 k; k < 100; k++) {
             uint256 g3 = gasleft();
-            dealer.deal(5, uint256(keccak256(abi.encode("d", k))), 0, 6);
+            dealer.roll(5, uint256(keccak256(abi.encode("d", k))), 0, 6);
             td += g3 - gasleft();
         }
         emit log_named_uint("dealer.deal 6 cards (the dealer's part of a pack), avg gas", td / 100);

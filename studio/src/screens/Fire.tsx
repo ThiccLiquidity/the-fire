@@ -7,7 +7,7 @@ import { cardsPerPack, standardRecipe } from '../recipe'
 import { saleOf, salePacks, standardSale } from '../sale'
 import { artNeeds, characterOddsProblems, characterPercentsOf, characterWeightsOf, charactersAllEqual, isReadyFor, missingArt } from '../series'
 import { characterOdds, weightsToPercents } from '../recipe'
-import { aboutOneIn, oddsText } from '../rarity'
+import { aboutOneIn, oddsText, onePerCharacterLine, onePerCharacterWarning } from '../rarity'
 import { deleteFire, getStudio, saveFire, saveGlobal, updateFire, useStudio } from '../store'
 import { fireStatus, type Character, type FireRecord } from '../types'
 import { SeriesResult } from './SeriesResult'
@@ -180,6 +180,15 @@ export function FireSetup({ fire, onDeleted }: { fire: FireRecord; onDeleted: ()
             <span className="muted small">(split into {sale.groups.length} group{sale.groups.length === 1 ? '' : 's'}) · set on the <a href="#sale">Sale</a> tab</span>
           </p>
           {fire.packs < 1 && !locked && <p className="field-msg err" data-testid="packs-problem">No packs: set the total packs on the Sale tab.</p>}
+          {(() => {
+            const size = { packs: fire.packs, chars: fire.characterIds.length }
+            const line = onePerCharacterLine(fire.recipe, size)
+            const warn = fire.packs > 0 ? onePerCharacterWarning(fire.recipe, size) : null
+            return <>
+              {line && !warn && <p className="small" data-testid="one-per-character-line">{line}</p>}
+              {warn && <Notice kind="warn"><span data-testid="one-per-character-warn">{warn}</span></Notice>}
+            </>
+          })()}
         </div>
         <div>
           <h4>This Series will make</h4>

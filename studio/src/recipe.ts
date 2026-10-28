@@ -7,6 +7,12 @@
  *  likely). No pool, caps or guarantees beyond what the slots say: the first and the last pack of a Series have the
  *  same odds.
  *
+ *  One per character (optional, the Standard's Full Art): one type in no slot, dealt exactly once per character per
+ *  Series. As each pack starts, with chance (still owed) / (packs still to deal, this one included), the pack's first
+ *  card becomes that type for a character still owed one (picked at random); the pack's other cards roll as always.
+ *  So a Series of at least as many packs as characters ends with exactly one per character (RecipeDealer
+ *  _onePerCharacter). Its odds need the Series' size: perPackCounts / typeOdds take it (SeriesSize).
+ *
  *  - checkRecipe: every check RecipeCompiler.compile makes, in the same order (so the first problem is the contract's
  *    revert), plus the studio's own (number formats, each slot adding up to 100%).
  *  - slotOdds / perPackCounts / typeOdds / holoOdds / holoLooksFor: the odds the contract deals by.
@@ -15,7 +21,7 @@
  *  The owner sets each slot's odds as plain percentages (up to 2 decimals, adding up to exactly 100% in each slot; blank
  *  or 0 = not in that slot). The contract takes whole-number weights: a percentage becomes percent x 10,000 (100% =
  *  1,000,000), with the zeros every weight of the slot shares dropped (simplifyWeights: same ratios, so the Standard's
- *  Fire-or-better slot exports 5982 / 1734 / 1534 / 750).
+ *  Fire-or-better slot exports 6732 / 1734 / 1534).
  *
  *  Numbers the contract stores above 2^53 (weights, holo chances) are kept as decimal strings. */
 
@@ -63,7 +69,13 @@ export interface Recipe {
   types: CardTypeDef[]
   /** The pack's shape, in pack order. Cards per pack = the counts added up (1 to MAX_CARDS_PER_PACK). */
   slots: SlotDef[]
+  /** The type (by id) dealt exactly once per character per Series, in no slot (RecipeDealer.Recipe.onePerCharacter).
+   *  Missing = none. */
+  onePerCharacter?: string
 }
+
+/** A Series' size, for the odds that depend on it (the one-per-character type). */
+export interface SeriesSize { packs: number; chars: number }
 
 export const HOLO_ONE = 1_000_000_000_000_000_000n
 export const UINT32_MAX = 0xffff_ffff
@@ -86,17 +98,17 @@ export const STANDARD_ROLLS = {
   coal: '683772233983162066',
 } as const
 
-/** StandardRecipe.sol's slots, as the owner sets them (% of each slot's cards). Per pack on average: 3 Paper, 1.449
- *  Wood, 0.8982 Fire, 0.2934 Coal, 0.2394 Gold, 0.12 Full Art (the averages of the straight odds before slots: 50 /
- *  24.15 / 14.97 / 4.89 / 3.99 / 2% of 6 cards). */
+/** StandardRecipe.sol's slots, as the owner sets them (% of each slot's cards). Per pack on average: 3 Paper (less the
+ *  Full Arts that take a Paper's place), 1.494 Wood, 0.9732 Fire, 0.2934 Coal, 0.2394 Gold. Full Art is in no slot:
+ *  exactly one per character per Series (its old 4.5% and 7.5% went to Wood and Fire; Coal and Gold unchanged). */
 export const STANDARD_SLOTS: { id: string; count: number; percents: Record<string, string> }[] = [
   { id: 'paper', count: 3, percents: { paper: '100' } },
   { id: 'wood', count: 1, percents: { wood: '100' } },
-  { id: 'wood-up', count: 1, percents: { wood: '44.9', fire: '30', coal: '12', gold: '8.6', fullart: '4.5' } },
-  { id: 'fire-up', count: 1, percents: { fire: '59.82', coal: '17.34', gold: '15.34', fullart: '7.5' } },
+  { id: 'wood-up', count: 1, percents: { wood: '49.4', fire: '30', coal: '12', gold: '8.6' } },
+  { id: 'fire-up', count: 1, percents: { fire: '67.32', coal: '17.34', gold: '15.34' } },
 ]
 /** The weights StandardRecipe.sol has, per slot (recipe type order: paper, wood, fire, coal, gold, fullart). */
-export const STANDARD_SLOT_WEIGHTS = [['1', '0', '0', '0', '0', '0'], ['0', '1', '0', '0', '0', '0'], ['0', '449', '300', '120', '86', '45'], ['0', '0', '5982', '1734', '1534', '750']] as const
+export const STANDARD_SLOT_WEIGHTS = [['1', '0', '0', '0', '0', '0'], ['0', '1', '0', '0', '0', '0'], ['0', '494', '300', '120', '86', '0'], ['0', '0', '6732', '1734', '1534', '0']] as const
 
 const ind = (roll: string): HoloRule => ({ mode: 'independent', frame: roll, picture: roll })
 
@@ -105,9 +117,10 @@ const fullHolo = (): HoloRule => ({ mode: 'distribution', weights: ['0', '0', '0
 /** One slot holding every type of the list, at these percentages (by type id). */
 const oneSlot = (count: number, percents: Record<string, string>, weights?: Record<string, string>): SlotDef => ({ id: 'all', count, percents, ...(weights ? { weights } : {}) })
 
-/** Exactly StandardRecipe.build(): 6 cards a pack in four slots: 3 Paper · 1 Wood · 1 Wood or better (Wood 44.9%, Fire
- *  30%, Coal 12%, Gold 8.6%, Full Art 4.5%) · 1 Fire or better (Fire 59.82%, Coal 17.34%, Gold 15.34%, Full Art 7.5%);
- *  Paper / Wood / Fire / Coal any holo 5 / 10 / 50 / 90% (two independent rolls), Gold and Full Art always full holo. */
+/** Exactly StandardRecipe.build(): 6 cards a pack in four slots: 3 Paper · 1 Wood · 1 Wood or better (Wood 49.4%, Fire
+ *  30%, Coal 12%, Gold 8.6%) · 1 Fire or better (Fire 67.32%, Coal 17.34%, Gold 15.34%); Full Art one per character
+ *  (in place of a Paper); Paper / Wood / Fire / Coal any holo 5 / 10 / 50 / 90% (two independent rolls), Gold and Full
+ *  Art always full holo. */
 export function standardRecipe(): Recipe {
   return {
     types: [
@@ -119,7 +132,17 @@ export function standardRecipe(): Recipe {
       { id: 'fullart', name: 'Full Art', slug: 'fullart', rank: 5, holo: fullHolo(), frameSet: 'fullart' },
     ],
     slots: STANDARD_SLOTS.map((sl) => ({ ...sl, percents: { ...sl.percents } })),
+    onePerCharacter: 'fullart',
   }
+}
+
+/** The Standard as it was before Full Art became one per character (Full Art 4.5% of Wood or better, 7.5% of Fire or
+ *  better; Wood 44.9%, Fire 59.82%). migrate.ts moves an open Series still on exactly this to the new Standard. */
+export function oldStandardRecipe(): Recipe {
+  const { onePerCharacter: _none, ...r } = standardRecipe()
+  r.slots[2].percents = { wood: '44.9', fire: '30', coal: '12', gold: '8.6', fullart: '4.5' }
+  r.slots[3].percents = { fire: '59.82', coal: '17.34', gold: '15.34', fullart: '7.5' }
+  return r
 }
 
 /** The recipe Series saved before Gold had: the old Standard with Diamond (frame / picture / full, a third each), at
@@ -159,6 +182,7 @@ export function cloneRecipe(r: Recipe, newId: () => string): Recipe {
   return {
     types: r.types.map((t) => ({ ...t, id: ids.get(t.id)!, holo: t.holo.mode === 'independent' ? { ...t.holo } : { mode: 'distribution', weights: [...t.holo.weights] } })),
     slots: r.slots.map((sl) => ({ id: newId(), count: sl.count, percents: remap(sl.percents) })),
+    ...(r.onePerCharacter && ids.has(r.onePerCharacter) ? { onePerCharacter: ids.get(r.onePerCharacter)! } : {}),
   }
 }
 
@@ -366,7 +390,9 @@ export function slotLabel(r: Recipe, s: number): string {
   const name = (i: number) => r.types[i].name || `Type ${i + 1}`
   if (ts.length === 1) return name(ts[0])
   const low = Math.min(...ts.map((i) => r.types[i].rank))
-  const upFrom = r.types.flatMap((t, i) => (t.rank >= low ? [i] : []))
+  // the one-per-character type is in no slot: "or better" leaves it out
+  const one = onePerIndex(r)
+  const upFrom = r.types.flatMap((t, i) => (t.rank >= low && i !== one ? [i] : []))
   if (upFrom.length === ts.length && upFrom.every((i) => ts.includes(i))) {
     const first = ts.filter((i) => r.types[i].rank === low)
     if (first.length === 1) return `${name(first[0])} or better`
@@ -377,6 +403,50 @@ export function slotLabel(r: Recipe, s: number): string {
 /** "3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better". */
 export function packShapeLine(r: Recipe): string {
   return r.slots.map((sl, s) => `${sl.count} ${slotLabel(r, s)}`).join(' · ')
+}
+
+// ---------------------------------------------------------------- one per character
+
+/** The one-per-character type's index (-1 = none, or its id names no type). */
+export function onePerIndex(r: Recipe): number {
+  return r.onePerCharacter ? r.types.findIndex((t) => t.id === r.onePerCharacter) : -1
+}
+
+/** Cards of the one-per-character type a Series deals: one per character, at most one per pack (so all of them only
+ *  when packs >= characters). */
+export function onePerCharacterCount(size: SeriesSize): number {
+  return Math.max(0, Math.min(Math.floor(size.packs) || 0, Math.floor(size.chars) || 0))
+}
+
+/** The chance a pack's first card is the one-per-character card (averaged over the Series' packs): its count / packs. */
+export function onePerPackChance(r: Recipe, size?: SeriesSize): number {
+  if (onePerIndex(r) < 0 || !size || !(size.packs > 0)) return 0
+  return onePerCharacterCount(size) / size.packs
+}
+
+/** The slot of a pack's first card (the one the one-per-character card replaces). */
+export function firstCardSlot(r: Recipe): number {
+  return r.slots.findIndex((sl) => Number.isFinite(sl.count) && sl.count > 0)
+}
+
+/** The one-per-character type marked or cleared. Marking takes it out of every slot (the contract refuses it in one):
+ *  its share of a slot goes to the slot's lowest-rank other type (as the Standard's Full Art share went to Wood and
+ *  Fire), so each slot still adds up to 100%. Exact weights are dropped (the recipe is set by its percentages). */
+export function setOnePerCharacter(r: Recipe, typeId: string | null): Recipe {
+  if (!typeId) { const { onePerCharacter: _off, ...rest } = r; return rest }
+  const t = r.types.find((x) => x.id === typeId)
+  if (!t) return r
+  const slots = dropExactWeights(r).slots.map((sl) => {
+    const share = parsePercent(sl.percents[typeId])
+    const { [typeId]: _gone, ...percents } = sl.percents
+    if (share) {
+      const others = r.types.filter((x) => x.id !== typeId && (parsePercent(percents[x.id]) ?? 0) > 0)
+      const to = others.sort((a, b) => a.rank - b.rank)[0]
+      if (to) percents[to.id] = formatPercent((parsePercent(percents[to.id]) ?? 0) + share)
+    }
+    return { ...sl, percents }
+  })
+  return { ...r, slots, onePerCharacter: typeId }
 }
 
 // ---------------------------------------------------------------- checks
@@ -461,6 +531,10 @@ export function checkRecipe(r: Recipe): Problem[] {
   })
   const sw = slotWeights(r)
   const exact = hasExactWeights(r)
+  const one = onePerIndex(r)
+  if (r.onePerCharacter !== undefined && one < 0) {
+    out.push({ code: 'BadRecipe(one per character)', where: 'recipe', message: 'The one-per-character type is not one of the card types.' })
+  }
   let perPack = 0
   for (let s = 0; s < r.slots.length; s++) {
     const sl = r.slots[s]
@@ -470,9 +544,11 @@ export function checkRecipe(r: Recipe): Problem[] {
       out.push({ code: 'BadRecipe(cards per pack)', where: 'recipe', message: `Cards per pack (the slots' cards added up) must be 1 to ${MAX_CARDS_PER_PACK.toLocaleString('en-US')}: it's ${cardsPerPack(r).toLocaleString('en-US')}.` })
       break
     }
+    if (one >= 0 && sw[s].weights[one] > 0n) slotP(s, 'one-per-character type in a slot', `${r.types[one].name || 'the one-per-character type'} is one per character: take it out of this slot (give it 0%).`)
     if (sw[s].total === 0n) slotP(s, 'weights', exact ? 'its odds add up to 0.' : 'give at least one type a % of this slot.')
   }
   const dealt = new Set(sw.flatMap((x) => x.weights.flatMap((w, i) => (w > 0n ? [i] : []))))
+  if (one >= 0) dealt.add(one) // dealt once per character, in no slot
   r.types.forEach((t, i) => {
     if (!dealt.has(i)) typeP(i, 'in no slot', `no slot deals ${t.name || 'it'}: give it a % in a slot, or remove the type.`)
   })
@@ -511,17 +587,26 @@ export function slotOdds(r: Recipe): number[][] {
   return slotWeights(r).map(({ weights, total }) => weights.map((w) => (total > 0n ? Number((w * 1_000_000_000_000n) / total) / 1e12 : 0)))
 }
 
-/** Expected cards of each type in one pack (recipe order): the sum over the slots of count x the slot's odds. */
-export function perPackCounts(r: Recipe): number[] {
+/** Expected cards of each type in one pack (recipe order): the sum over the slots of count x the slot's odds. With a
+ *  one-per-character type and the Series' size: that type gets its count / packs, taken from the first card's slot
+ *  (the first card's types each lose that share of their odds). Without the size: the slots only. */
+export function perPackCounts(r: Recipe, size?: SeriesSize): number[] {
   const odds = slotOdds(r)
-  return r.types.map((_, t) => r.slots.reduce((a, sl, s) => a + (Number.isFinite(sl.count) ? sl.count : 0) * (odds[s][t] ?? 0), 0))
+  const out = r.types.map((_, t) => r.slots.reduce((a, sl, s) => a + (Number.isFinite(sl.count) ? sl.count : 0) * (odds[s][t] ?? 0), 0))
+  const f = onePerPackChance(r, size)
+  const s0 = firstCardSlot(r)
+  if (f > 0 && s0 >= 0) {
+    out.forEach((_, t) => { out[t] -= f * (odds[s0][t] ?? 0) })
+    out[onePerIndex(r)] += f
+  }
+  return out
 }
 
 /** Each type's share of all cards (recipe order): its expected cards per pack over cards per pack. The chance a card
  *  picked at random from a Series is that type (the site's "about 1 in N cards"). */
-export function typeOdds(r: Recipe): number[] {
+export function typeOdds(r: Recipe, size?: SeriesSize): number[] {
   const S = cardsPerPack(r)
-  return perPackCounts(r).map((x) => (S > 0 ? x / S : 0))
+  return perPackCounts(r, size).map((x) => (S > 0 ? x / S : 0))
 }
 
 /** Each character's chance per card, from its weight (missing or no weights: equal). RecipeDealer.characterOddsOf. */
@@ -576,6 +661,8 @@ export interface RecipeJson {
   types: ({ name: string; slug: string; rank: number; holo: { mode: 'independent'; frame: string; picture: string } | { mode: 'distribution'; weights: string[] } })[]
   /** The pack's shape, in pack order (cards per pack = the counts added up). */
   slots: RecipeJsonSlot[]
+  /** The slug of the type dealt exactly once per character per Series (in no slot); left out = none. */
+  onePerCharacter?: string
   /** Characters in image order; each has a "weight" only when the Series gives characters their own odds. */
   characters: RecipeJsonCharacter[]
   /** FireSale.configureDrop's settings (sale.ts saleJson). */
@@ -599,6 +686,7 @@ export function recipeJson(fire: number, r: Recipe, characters: { name: string; 
         : { mode: 'distribution' as const, weights: t.holo.weights.map((w) => String(parseUint(w))) },
     })),
     slots: sw.map(({ count, weights: w }) => ({ count, weights: Object.fromEntries(r.types.flatMap((t, i) => (w[i] > 0n ? [[t.slug, num(w[i])]] : []))) })),
+    ...(onePerIndex(r) >= 0 ? { onePerCharacter: r.types[onePerIndex(r)].slug } : {}),
     characters: weighted ? characters.map((c, i) => ({ ...c, weight: weights![i] })) : characters,
     ...(sale ? { sale } : {}),
   }
@@ -621,6 +709,8 @@ export function recipeFromJson(j: RecipeJson, frameSetOf: (slug: string) => stri
       id: `s${s}`, count: sl.count, percents: {},
       weights: Object.fromEntries(Object.entries(sl.weights ?? {}).flatMap(([slug, w]) => (idOf.has(slug) ? [[idOf.get(slug)!, String(w)]] : []))),
     })),
+    // a slug that names no type: kept as a missing id, so checkRecipe reports it (ConfigureSeries refuses it too)
+    ...(j.onePerCharacter !== undefined ? { onePerCharacter: idOf.get(j.onePerCharacter) ?? `missing:${j.onePerCharacter}` } : {}),
   })
 }
 

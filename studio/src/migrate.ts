@@ -11,10 +11,14 @@
  *  sale settings gets the Standard sale resized to its packs. A deal saved with editions ("k of N") gets print
  *  numbers instead (numberPrints: per exact card, in the order dealt). Odds saved as weights (card types and
  *  characters) become percentages (2 decimals, rounded so they add up to exactly 100%: weightsToPercents); a Series
- *  whose deal is locked keeps its exact weights too, so its odds (and its recipe.json) never change. Runs on load (store.ts loadStudio), so imports of old backups migrate too. */
+ *  whose deal is locked keeps its exact weights too, so its odds (and its recipe.json) never change. An open Series still on exactly
+ *  the old Standard (Full Art 4.5% / 7.5% in the top two slots) moves to the new Standard (Full Art one per character,
+ *  its share to Wood and Fire): it never chose those odds, the Standard did. Every other recipe (the owner's own, or
+ *  any locked Series) keeps its odds; the owner can mark a type one per character on the Recipe tab. Runs on load
+ *  (store.ts loadStudio), so imports of old backups migrate too. */
 
 import { numberPrints, type DealResult, type DealtCard } from './deal'
-import { dropExactWeights, legacyDiamondRecipe, weightsToPercents, withPercentsFromWeights, type CardTypeDef, type HoloRule, type Recipe, type SlotDef } from './recipe'
+import { dropExactWeights, legacyDiamondRecipe, oldStandardRecipe, standardRecipe, weightsToPercents, withPercentsFromWeights, type CardTypeDef, type HoloRule, type Recipe, type SlotDef } from './recipe'
 import { CARDS_PER_PACK, MATERIALS, type Material } from './rules'
 import { isOldSale, saleFromOld, salePacks, saleOf, saleWithPacks, standardSale, type OldSaleSettings } from './sale'
 import type { Character, FireRecord } from './types'
@@ -101,9 +105,21 @@ function oddsNeedMigration(r: Partial<FireRecord>): boolean {
   return !r.deal && (r.recipe.slots.some((s) => s.weights !== undefined) || !!r.characterWeights)
 }
 
+/** An open Series' recipe that is exactly the Standard from before Full Art became one per character. */
+function isOldStandard(r: Partial<FireRecord>): boolean {
+  if (r.deal || !r.recipe || !Array.isArray(r.recipe.slots) || r.recipe.onePerCharacter !== undefined) return false
+  const want = oldStandardRecipe()
+  const sorted = (o: object | undefined) => (o ? Object.entries(o).sort(([a], [b]) => (a < b ? -1 : 1)) : null)
+  const key = (x: Recipe) => JSON.stringify([
+    x.types.map((t) => [t.id, t.name, t.slug, !!t.slugEdited, t.rank, t.frameSet, sorted(t.holo)]),
+    x.slots.map((sl) => [sl.count, sorted(sl.percents), sorted(sl.weights)]),
+  ])
+  return key(r.recipe) === key(want)
+}
+
 export function needsMigration(f: unknown): boolean {
   const r = f as Partial<FireRecord> & { deal?: OldDeal }
-  return !r.recipe || 'pdaOdds' in r.recipe || isOldRecipe(r.recipe) || (!!r.deal && !Array.isArray(r.deal.pool)) || hasEditions(r.deal) || saleNeedsMigration(r) || oddsNeedMigration(r)
+  return isOldStandard(r) || !r.recipe || 'pdaOdds' in r.recipe || isOldRecipe(r.recipe) || (!!r.deal && !Array.isArray(r.deal.pool)) || hasEditions(r.deal) || saleNeedsMigration(r) || oddsNeedMigration(r)
 }
 
 function saleNeedsMigration(r: Partial<FireRecord>): boolean {
@@ -132,6 +148,7 @@ export function migrateFire(raw: unknown): FireRecord {
       if (w.some((x) => x !== w[0])) f.characterPercents = Object.fromEntries(ids.map((id, k) => [id, p[k]]))
     }
   }
+  if (isOldStandard(f)) f.recipe = standardRecipe()
   const d = old.deal
   if (d && !Array.isArray(d.pool)) {
     const pool = d.pool as Record<Material, number>

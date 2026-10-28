@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cardsPerPack, checkRecipe, legacyDiamondRecipe, slotPercents, slotWeights, standardRecipe, type Recipe } from './recipe'
+import { cardsPerPack, checkRecipe, legacyDiamondRecipe, oldStandardRecipe, slotPercents, slotWeights, standardRecipe, type Recipe } from './recipe'
 import { characterOddsProblems, characterPercentsOf, characterWeightsOf, charactersAllEqual } from './series'
 import { migrateCharacterArt, migrateFire, needsMigration, oddsRecipeToSlots, oldRecipeToSlots } from './migrate'
 import { creditPacksMax, groupPacks, saleOf, standardSale } from './sale'
@@ -171,6 +171,31 @@ describe('old saves and backups', () => {
     const locked = migrateFire(oldFire)
     expect(locked.packs).toBe(2)
     expect(needsMigration(locked)).toBe(false)
+  })
+})
+
+describe('Full Art one per character', () => {
+  const { deal: _deal, ...open } = migrateFire(oldFire)
+  const sale = standardSale()
+
+  it('an open Series still on the old Standard (Full Art in the top slots) moves to the new Standard', () => {
+    const f = { ...open, packs: 167, sale, recipe: oldStandardRecipe() }
+    expect(checkRecipe(f.recipe)).toEqual([]) // the old one still loads and is valid as it is
+    expect(needsMigration(f)).toBe(true)
+    const m = migrateFire(f)
+    expect(m.recipe).toEqual(standardRecipe())
+    expect(needsMigration(m)).toBe(false)
+  })
+
+  it('the owner\'s own odds and a locked Series keep their recipe (Full Art stays in its slots)', () => {
+    const own = oldStandardRecipe()
+    own.slots[3].percents = { fire: '58.82', coal: '17.34', gold: '15.34', fullart: '8.5' }
+    const f = { ...open, packs: 167, sale, recipe: own }
+    expect(needsMigration(f)).toBe(false)
+    expect(migrateFire(f).recipe).toEqual(own)
+    const locked = { ...migrateFire(oldFire), recipe: oldStandardRecipe() }
+    expect(needsMigration(locked)).toBe(false)
+    expect(migrateFire(locked).recipe).toEqual(oldStandardRecipe())
   })
 })
 

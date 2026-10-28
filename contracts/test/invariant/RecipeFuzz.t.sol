@@ -104,7 +104,7 @@ contract RecipeFuzzTest is SeriesHelper {
         assertEq(dealer.cardsPerPack(fire), per);
         for (uint256 p; p < 5; p++) {
             uint256 s = _r(seed, 1000 + p);
-            uint256[] memory got = dealer.deal(fire, s, 0, per);
+            uint256[] memory got = dealer.roll(fire, s, 0, per);
             assertEq(got.length, per);
             for (uint256 i; i < per; i++) {
                 uint256 a = got[i];
@@ -128,8 +128,8 @@ contract RecipeFuzzTest is SeriesHelper {
             // split anywhere: the same cards
             uint256 k = _r(s, 7) % per;
             if (k > 0) {
-                uint256[] memory a1 = dealer.deal(fire, s, 0, k);
-                uint256[] memory a2 = dealer.deal(fire, s, k, per - k);
+                uint256[] memory a1 = dealer.roll(fire, s, 0, k);
+                uint256[] memory a2 = dealer.roll(fire, s, k, per - k);
                 for (uint256 i; i < k; i++) assertEq(a1[i], got[i]);
                 for (uint256 i; i < per - k; i++) assertEq(a2[i], got[k + i]);
             }
@@ -168,7 +168,7 @@ contract RecipeFuzzTest is SeriesHelper {
         (string[] memory names, string[] memory cats) = _chars(1);
         dealer.setRecipe(fire, _recipe(ts, _w(1_000_000, 1), 50));
         dealer.setCharacters(fire, names, cats);
-        uint256[] memory got = dealer.deal(fire, seed, 0, 50);
+        uint256[] memory got = dealer.roll(fire, seed, 0, 50);
         uint256 light;
         for (uint256 i; i < 50; i++) if (uint32(got[i]) == 1) light++;
         assertLe(light, 2, "1 in a million");
@@ -185,8 +185,9 @@ contract RecipeFuzzTest is SeriesHelper {
         assertEq(counts[0], StandardRecipe.PAPER_COUNT);
         assertEq(totals[StandardRecipe.SLOT_WOOD_UP], StandardRecipe.WOOD_UP_TOTAL);
         assertEq(totals[StandardRecipe.SLOT_FIRE_UP], StandardRecipe.FIRE_UP_TOTAL);
-        assertEq(w[StandardRecipe.SLOT_FIRE_UP][StandardRecipe.FULL_ART], 750);
-        assertEq(w[StandardRecipe.SLOT_WOOD_UP][StandardRecipe.FULL_ART], 45);
+        assertEq(w[StandardRecipe.SLOT_FIRE_UP][StandardRecipe.FULL_ART], 0, "Full Art is in no slot");
+        assertEq(w[StandardRecipe.SLOT_WOOD_UP][StandardRecipe.FULL_ART], 0);
+        assertEq(dealer.recipeOf(fire).onePerCharacter, StandardRecipe.FULL_ART + 1, "one Full Art per character");
         assertEq(dealer.cardsPerPack(fire), 6);
     }
 }

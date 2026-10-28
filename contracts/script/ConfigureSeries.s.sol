@@ -249,7 +249,7 @@ contract ConfigureSeries is Deployments {
 
     /// @dev `withSale` false: the sale block is left unread (batch A doesn't need the drop's start yet).
     function _parse(string memory json, bool withSale) internal view returns (Series memory s) {
-        _onlyKeys(json, ".", "fire,imagesBase,types,slots,characters,sale");
+        _onlyKeys(json, ".", "fire,imagesBase,types,slots,onePerCharacter,characters,sale");
         s.fire = _num(json, ".fire", type(uint64).max);
         if (json.keyExists(".imagesBase")) s.imagesBase = json.readString(".imagesBase");
         uint256 nt = _count(json, ".types");
@@ -258,6 +258,14 @@ contract ConfigureSeries is Deployments {
         uint256 ns = _count(json, ".slots");
         s.recipe.slots = new RecipeDealer.Slot[](ns);
         for (uint256 i; i < ns; i++) s.recipe.slots[i] = _slot(json, string.concat(".slots[", vm.toString(i), "]"), s.recipe.types);
+        // the type dealt exactly once per character per Series, by slug (Full Art in the Standard); left out: none
+        if (json.keyExists(".onePerCharacter")) {
+            string memory slug = json.readString(".onePerCharacter");
+            uint256 t;
+            while (t < nt && keccak256(bytes(s.recipe.types[t].slug)) != keccak256(bytes(slug))) t++;
+            require(t < nt, string.concat(".onePerCharacter: ", slug, " is not the slug of a card type"));
+            s.recipe.onePerCharacter = uint32(t + 1);
+        }
         uint256 nc = _count(json, ".characters");
         s.names = new string[](nc);
         s.categories = new string[](nc);

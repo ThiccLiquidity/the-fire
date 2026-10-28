@@ -170,7 +170,7 @@
       const types = {}, ids = set.types.map((t) => MAT[String(t.name).toLowerCase()] || MAT[t.slug] || t.slug);
       set.types.forEach((t, i) => { types[ids[i]] = { share: t.share, holo: t.holo, name: t.name, rank: t.rank }; });
       const slots = set.slots.map((s) => ({ count: s.count, odds: s.odds.flatMap((p, i) => (p > 0 ? [[ids[i], p]] : [])) }));
-      Store.LIVE_ODDS = { types, slots, chars: Object.fromEntries(set.characters.map((c, i) => [c, set.characterOdds[i]])) };
+      Store.LIVE_ODDS = { types, slots, chars: Object.fromEntries(set.characters.map((c, i) => [c, set.characterOdds[i]])), onePer: ids[set.onePerCharacter] || null };
       Store.update(() => {});
     }).catch(() => {});
   }

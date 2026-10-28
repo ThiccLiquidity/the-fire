@@ -126,16 +126,22 @@ its share of cards (that over cards per pack) and expected cards, and for every 
 on the site's scale (its chance per card dealt: share of cards x holo x character odds, "1 in N"; with character odds,
 the rarest character's too; Rare from 1 in 100, Epic 1 in 400, Legendary 1 in 1,000; `studio/src/rarity.ts` mirrors
 `trueOdds` / `Info.lookP`), and the exact chance a pack holds at least one (and two or more) of each type, from the
-slots (none = the product over the slots of (1 - odds)^cards), the same for every pack. Packs of 42 or more
+slots (none = the product over the slots of (1 - odds)^cards), the same for every pack. A type marked **1 per
+character** (a checkbox on the type; the Standard's Full Art) is in no slot: it reads "Full Art · 1 per character ·
+exactly 20 in the Series" instead of slot odds, and the first card's types lose that share. Marking it moves its slot %
+to the slot's lowest other type. The Series tab warns when there are fewer packs than characters (not every one can
+come out). Packs of 42 or more
 cards get a warning: free-pack credits (42 cards burned each) can't be spent on that Series. The Series tab shows the
 same result. Presets: **Standard**, **Special: 3 cards, all holo** (Fire 68%, Coal 30%, Gold 2%; every card holo), or
 a copy of another Series' recipe. Older saves load as slots (above): Series from before recipes get the old Standard
-(Diamond) at its old shares, in one slot of 6.
+(Diamond) at its old shares, in one slot of 6. An open Series still on exactly the old Standard (Full Art 4.5% / 7.5% in
+the top slots) moves to the new one; the owner's own odds and locked Series stay as they were.
 
 **How many of each card** (Recipe tab under the card types, and the Series tab under the cast) shows what the Series
 prints if the odds land exactly: packs x the sum over the slots of cards x the slot's type odds [x character odds]
-[x holo look odds] (`studio/src/rarity.ts` `expectedCounts`). A line per slot ("1 Fire or better: Fire 59.82%, Coal
-17.34%, Gold 15.34%, Full Art 7.5%"), then each type reads "Gold · 0.2394 a pack · 3.99% · about 1 in 25 cards · ≈ 40
+[x holo look odds] (`studio/src/rarity.ts` `expectedCounts`); a 1-per-character type is exactly 1 per character. A
+line per slot ("1 Fire or better: Fire 67.32%, Coal 17.34%, Gold 15.34%", then "Full Art · 1 per character · exactly 20
+in the Series"), then each type reads "Gold · 0.2394 a pack · 3.99% · about 1 in 25 cards · ≈ 40
 cards" with the total cards, each
 character its "≈ N cards", and a grid of types x characters, optionally split by holo look (per type or per cell).
 Counts under 10 get one decimal, others whole numbers; anything expected below 1 shows in red as "< 1, may not print".
@@ -145,33 +151,37 @@ at the same odds. Labelled "If the odds land exactly: expected counts. Real pull
 ## The Standard recipe
 
 Each Series stands alone: its cards come only from its own packs and nothing carries over. Six cards a pack, in four
-slots; every card is rolled on its own from its slot's odds:
+slots; every card is rolled on its own from its slot's odds. Full Art is in no slot: exactly **one per character** per
+Series (below):
 
 | Slot | Cards | Odds (recipe.json weights) |
 |---|---|---|
 | Paper | 3 | Paper 100% (1) |
 | Wood | 1 | Wood 100% (1) |
-| Wood or better | 1 | Wood 44.9%, Fire 30%, Coal 12%, Gold 8.6%, Full Art 4.5% (449 / 300 / 120 / 86 / 45 of 1,000) |
-| Fire or better | 1 | Fire 59.82%, Coal 17.34%, Gold 15.34%, Full Art 7.5% (5,982 / 1,734 / 1,534 / 750 of 10,000) |
+| Wood or better | 1 | Wood 49.4%, Fire 30%, Coal 12%, Gold 8.6% (494 / 300 / 120 / 86 of 1,000) |
+| Fire or better | 1 | Fire 67.32%, Coal 17.34%, Gold 15.34% (6,732 / 1,734 / 1,534 of 10,000) |
+| Full Art | - | 1 per character per Series (recipe.json `"onePerCharacter": "fullart"`) |
 
-Per pack, on average:
+**Full Art, one per character.** As each pack opens, it gets a Full Art with chance (still owed) / (packs left, this
+one included), for a character still owed one, picked at random; it takes the place of the pack's first Paper. So the
+Series ends with exactly one Full Art per character, at random packs (it needs at least as many packs as characters).
+Full Art used to be 4.5% and 7.5% of the top two slots; that share went to Wood and Fire, so Coal and Gold are as
+before.
 
-| Material | Per pack | Share of cards | About 1 in |
-|---|---|---|---|
-| Paper | 3 | 50% | 2 cards |
-| Wood | 1.449 | 24.15% | 4.1 cards |
-| Fire | 0.8982 | 14.97% | 6.7 cards |
-| Coal | 0.2934 | 4.89% | 20 cards |
-| Gold | 0.2394 | 3.99% | 25 cards |
-| Full Art | 0.12 | 2% | 50 cards |
+Per pack, on average (example Series: 167 packs, 20 characters, 1,002 cards):
 
-The slot odds were chosen so these are exactly the averages of the straight odds they replace (50 / 24.15 / 14.97 /
-4.89 / 3.99 / 2% of 6 cards), which kept the old pool dealing's expected shares for the example Series (167 packs, 20
-characters: 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art of 1,002). So every exact card is exactly as
-rare as before (with 20 characters one exact Full Art is still 1 in 1,000 cards). What the slots change is the feel:
-every pack has 3 Paper, a Wood and a Fire or better (a Fire, Coal, Gold or Full Art in its last slot, every time). Real
-counts vary around the expectation and nothing caps them: a pack can hold two Full Arts (4.5% x 7.5%, about 1 in 300
-packs) or two Golds (about 1 in 76).
+| Material | Per pack | Share of cards | About 1 in | Cards |
+|---|---|---|---|---|
+| Paper | 2.88 | 48% | 2.1 cards | ≈ 481 |
+| Wood | 1.494 | 24.9% | 4 cards | ≈ 250 |
+| Fire | 0.9732 | 16.22% | 6.2 cards | ≈ 163 |
+| Coal | 0.2934 | 4.89% | 20 cards | ≈ 49 |
+| Gold | 0.2394 | 3.99% | 25 cards | ≈ 40 |
+| Full Art | 1 per character | 2% | 50 cards | exactly 20 |
+
+With 20 characters one exact Full Art is still 1 in 1,000 cards, now exactly one of each. Every pack has 2-3 Paper, a
+Wood and a Fire or better (a Fire, Coal or Gold in its last slot, every time). Other counts vary around the expectation
+and nothing caps them: a pack can hold two Golds (about 1 in 76).
 
 ## Holo (Standard)
 

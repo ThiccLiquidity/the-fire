@@ -1,7 +1,10 @@
 /** Rarity on the site's scale and the per-pack chances, from the recipe's fixed odds. */
 import { describe, expect, it } from 'vitest'
 import { checkRecipe, specialAllHoloRecipe, standardRecipe } from './recipe'
-import { cardChance, expectedCounts, mayNotPrint, oneIn, packChances, printCount, seriesResult, slotSummaries, tierOf } from './rarity'
+import {
+  cardChance, expectedCounts, mayNotPrint, oneIn, onePerCharacterLine, onePerCharacterWarning, packChances, printCount, seriesResult,
+  slotSummaries, tierOf,
+} from './rarity'
 
 describe('rarity', () => {
   it('matches the site (info.js): Standard, 167 packs, 20 characters', () => {
@@ -9,7 +12,10 @@ describe('rarity', () => {
     const res = seriesResult(r, 167n, 20)
     expect(res.total).toBe(1002n)
     const by = (slug: string) => res.types[r.types.findIndex((t) => t.slug === slug)]
-    // Full Art: 2% per card, always full holo, 1 of 20 characters: 1 in 1,000, Legendary
+    // Full Art: exactly 20 (one per character) of 1,002 cards, always full holo: 1 in 1,000 per exact card, Legendary
+    expect(by('fullart').onePerCharacter).toBe(true)
+    expect(by('fullart').expected).toBeCloseTo(20, 9)
+    expect(by('fullart').perCharacter).toBeCloseTo(1, 9)
     const fa = by('fullart').looks
     expect(fa.map((l) => l.look)).toEqual(['full'])
     expect(oneIn(fa[0].p)).toBe('1,000')
@@ -17,15 +23,15 @@ describe('rarity', () => {
     // Gold: 3.99% -> 1 in 500, Epic
     expect(oneIn(by('gold').looks[0].p)).toBe('500')
     expect(by('gold').looks[0].tier).toBe('epic')
-    // Paper plain: 50% x 95% / 20 -> 1 in 42, no tier
+    // Paper plain: (501 - 20 Full Arts) / 1,002 x 95% / 20 -> 1 in 44, no tier
     const paper = by('paper').looks.find((l) => l.look === 'none')!
-    expect(oneIn(paper.p)).toBe('42')
+    expect(oneIn(paper.p)).toBe('44')
     expect(paper.tier).toBe(null)
     // Paper full holo: Legendary
     expect(by('paper').looks.find((l) => l.look === 'full')!.tier).toBe('legendary')
     // expected cards follow the odds
-    expect(by('paper').expected).toBeCloseTo(501, 6)
-    expect(by('fullart').expected).toBeCloseTo(20.04, 6)
+    expect(by('paper').expected).toBeCloseTo(481, 6)
+    expect(by('wood').expected).toBeCloseTo(1.494 * 167, 6)
     expect(res.weighted).toBe(false)
   })
 
@@ -33,10 +39,15 @@ describe('rarity', () => {
     const r = standardRecipe()
     const res = seriesResult(r, 167n, 4, [1, 1, 1, 7])
     expect(res.weighted).toBe(true)
+    const gold = res.types[4].looks[0]
+    expect(gold.p).toBeCloseTo(0.0399 / 4, 12) // an average character
+    expect(gold.pRarest).toBeCloseTo(0.0399 * 0.1, 12) // weight 1 of 10
+    expect(cardChance(r, 4, 'full', 0.7)).toBeCloseTo(0.0399 * 0.7, 12)
+    // Full Art: one per character whatever their odds, so the rarest character has the same chance
     const fa = res.types[5].looks[0]
-    expect(fa.p).toBeCloseTo(0.02 / 4, 12) // an average character
-    expect(fa.pRarest).toBeCloseTo(0.02 * 0.1, 12) // weight 1 of 10
-    expect(cardChance(r, 5, 'full', 0.7)).toBeCloseTo(0.014, 12)
+    expect(fa.p).toBeCloseTo(4 / 1002 / 4, 12)
+    expect(fa.pRarest).toBeCloseTo(fa.p, 12)
+    expect(cardChance(r, 5, 'full', 0.7, { packs: 167, chars: 4 })).toBeCloseTo(1 / 1002, 12)
   })
 
   it('tiers', () => {
@@ -52,10 +63,15 @@ describe('rarity', () => {
     expect(c.atLeastOne[0]).toBe(1) // 3 Paper, always
     expect(c.twoOrMore[0]).toBe(1)
     expect(c.atLeastOne[1]).toBe(1) // the Wood slot
-    expect(c.atLeastOne[2]).toBeCloseTo(1 - 0.7 * 0.4018, 12) // Fire: slot 3 (30%) or slot 4 (59.82%)
-    expect(c.twoOrMore[2]).toBeCloseTo(0.3 * 0.5982, 12)
-    expect(c.atLeastOne[5]).toBeCloseTo(1 - 0.955 * 0.925, 12) // Full Art ~11.7%
-    expect(c.twoOrMore[5]).toBeCloseTo(0.045 * 0.075, 12)
+    expect(c.atLeastOne[2]).toBeCloseTo(1 - 0.7 * 0.3268, 12) // Fire: slot 3 (30%) or slot 4 (67.32%)
+    expect(c.twoOrMore[2]).toBeCloseTo(0.3 * 0.6732, 12)
+    expect(c.atLeastOne[5]).toBe(0) // Full Art is in no slot
+    // with the Series' size: 20 Full Arts in 167 packs, each in place of the first Paper
+    const sized = packChances(r, { packs: 167, chars: 20 })
+    expect(sized.atLeastOne[5]).toBeCloseTo(20 / 167, 12)
+    expect(sized.twoOrMore[5]).toBeCloseTo(0, 12)
+    expect(sized.atLeastOne[0]).toBe(1) // still 2 Papers
+    expect(sized.twoOrMore[0]).toBe(1)
     // a single slot of 6 at 2%: the straight-odds numbers
     const one = { ...r, slots: [{ id: 'a', count: 6, percents: { paper: '50', wood: '24.15', fire: '14.97', coal: '4.89', gold: '3.99', fullart: '2' } }] }
     expect(packChances(one).atLeastOne[5]).toBeCloseTo(1 - 0.98 ** 6, 12)
@@ -66,11 +82,21 @@ describe('rarity', () => {
     const r = standardRecipe()
     const s = slotSummaries(r)
     expect(s.map((x) => x.count)).toEqual([3, 1, 1, 1])
-    expect(s[3].odds[5]).toBeCloseTo(0.075, 12)
+    expect(s[3].odds[5]).toBe(0)
     const c = expectedCounts(r, 20, 167)
-    c.types.forEach((t, i) => expect(t.perPack).toBeCloseTo([3, 1.449, 0.8982, 0.2934, 0.2394, 0.12][i], 10))
-    // one exact Full Art (20 characters): 0.12 a pack / 6 cards / 20 = 1 in 1,000 cards
+    c.types.forEach((t, i) => expect(t.perPack).toBeCloseTo([3 - 20 / 167, 1.494, 0.9732, 0.2934, 0.2394, 20 / 167][i], 10))
+    expect(c.types[5].count).toBeCloseTo(20, 9)
+    // one exact Full Art (20 characters): 1 of 1,002 cards
     expect(oneIn(seriesResult(r, 167n, 20).types[5].looks[0].p)).toBe('1,000')
+  })
+
+  it('says Full Art plainly, and warns when packs < characters', () => {
+    const r = standardRecipe()
+    expect(onePerCharacterLine(r, { packs: 167, chars: 20 })).toBe('Full Art · 1 per character · exactly 20 in the Series')
+    expect(onePerCharacterLine(r, { packs: 12, chars: 20 })).toBe('Full Art · 1 per character · only 12 of 20 can come out (12 packs, one each at most)')
+    expect(onePerCharacterLine(specialAllHoloRecipe(), { packs: 12, chars: 20 })).toBeNull()
+    expect(onePerCharacterWarning(r, { packs: 167, chars: 20 })).toBeNull()
+    expect(onePerCharacterWarning(r, { packs: 12, chars: 20 })).toBe('12 packs for 20 characters: Full Art is one per character, at most one a pack, so only 12 can come out. Add packs (at least 20) or take characters out.')
   })
 
   it('the special all-holo recipe has no plain looks', () => {
@@ -100,10 +126,12 @@ describe('expectedCounts', () => {
   it('uniform characters split evenly; weighted by their weight over the total', () => {
     const r = standardRecipe()
     const even = expectedCounts(r, 4, 100)
-    expect(even.characters.map((x) => x.count)).toEqual([150, 150, 150, 150])
+    even.characters.forEach((x) => expect(x.count).toBeCloseTo(150, 9))
     const w = expectedCounts(r, [1, 1, 1, 7], 100)
-    expect(w.characters.map((x) => x.count)).toEqual([60, 60, 60, 420])
-    expect(w.grid[0][3]).toBeCloseTo(600 * 0.5 * 0.7, 9) // Paper (50%) x character 4 (70%)
+    // Full Art: one each (not by weight); every other card by weight: (600 - 4) x 10% + 1
+    w.characters.forEach((x, i) => expect(x.count).toBeCloseTo(596 * [0.1, 0.1, 0.1, 0.7][i] + 1, 9))
+    expect(w.grid[5]).toEqual([1, 1, 1, 1])
+    expect(w.grid[0][3]).toBeCloseTo((300 - 4) * 0.7, 9) // Paper (less 4 Full Arts) x character 4 (70%)
     // equal weights = no weights
     expect(expectedCounts(r, [3, 3, 3, 3], 100).grid).toEqual(even.grid)
   })

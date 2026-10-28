@@ -538,10 +538,19 @@
       g.fillStyle = 'rgba(50,25,15,.28)'; band(1.05, 1.57, false);
       g.fillStyle = 'rgba(50,25,15,.18)'; band(-1.57, -1.3, false);
       g.restore();
-      // its far end: the paper's cut edge, an ellipse (nearly edge-on) with the dark opening
-      const ang = Math.atan2(ay, ax), rr = p1.r;
-      g.fillStyle = '#efe6d4'; g.beginPath(); g.ellipse(p1.x, p1.y, rr * 1.02, rr * 0.42, ang + Math.PI / 2, 0, 7); g.fill();
-      g.fillStyle = '#3b2a1d'; g.beginPath(); g.ellipse(p1.x + ax / al * rr * 0.06, p1.y + ay / al * rr * 0.06, rr * 0.78, rr * 0.28, ang + Math.PI / 2, 0, 7); g.fill();
+      // its far end, seen from behind (you're at the mouth end): the opening faces away from you, so you never see into
+      // it, only the tube's outside ending in a rounded rim. That rim is the end circle in perspective: as wide as the
+      // tube, and as deep as the angle between your line of sight and the straw (looking straight down it, a full
+      // round end; side on, a flat cut). Only its far half shows; the near half is behind the tube.
+      const ang = Math.atan2(ay, ax), rr = p1.r, Lt = 0.12 * len + 0.88 * len;
+      const E = [M[0] + D[0] * Lt, M[1] + D[1] * Lt, M[2] + D[2] * Lt], el = Math.hypot(...E) || 1;
+      const deep = rr * Math.max(0.08, Math.abs((E[0] * D[0] + E[1] * D[1] + E[2] * D[2]) / el));
+      g.save(); g.translate(p1.x, p1.y); g.rotate(ang);
+      g.beginPath(); g.ellipse(0, 0, deep, rr, 0, -Math.PI / 2, Math.PI / 2); g.closePath();
+      g.fillStyle = '#ece4d3'; g.fill();
+      g.strokeStyle = 'rgba(60,40,25,.45)'; g.lineWidth = Math.max(0.8, rr * 0.12);
+      g.beginPath(); g.ellipse(0, 0, deep, rr, 0, -Math.PI / 2, Math.PI / 2); g.stroke();
+      g.restore();
       g.strokeStyle = 'rgba(60,40,25,.35)'; g.lineWidth = 1; g.beginPath(); g.moveTo(...at(p0, p0.r)); g.lineTo(...at(p1, p1.r)); g.moveTo(...at(p0, -p0.r)); g.lineTo(...at(p1, -p1.r)); g.stroke();
       g.restore();
       return { x: p1.x, y: p1.y, dx: ax / al, r: rr };

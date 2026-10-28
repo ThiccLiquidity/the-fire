@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Notice } from '../components'
 import { checkRecipe, type Recipe } from '../recipe'
-import { TIERS, TIER_LABEL, aboutOneIn, oneIn, packChances, percentText, seriesResult, type LookResult } from '../rarity'
+import { TIERS, TIER_LABEL, aboutOneIn, oneIn, onePerCharacterText, onePerCharacterWarning, packChances, percentText, seriesResult, type LookResult } from '../rarity'
 import { HOLO_LABEL, HOLO_TYPES } from '../rules'
 
 /** A colour per frame set, for the mix bar. */
@@ -34,7 +34,7 @@ function Look({ l, weighted }: { l: LookResult | undefined; weighted: boolean })
   )
 }
 
-/** Expected cards per pack: "3", "1.449", "0.12". */
+/** Expected cards per pack: "3", "1.494", "0.2394". */
 export const perPackText = (x: number) => (x >= 100 ? Math.round(x).toLocaleString('en-US') : String(+x.toPrecision(4)))
 
 /** What the recipe makes for this many packs and characters: each type's odds, the expected cards per type and look,
@@ -45,7 +45,8 @@ export function SeriesResult({ recipe, packs, chars, characterWeights, compact }
     if (problems.length || packs == null) return null
     try { return seriesResult(recipe, packs, chars, characterWeights) } catch (e) { return { error: (e as Error).message } }
   }, [recipe, packs, chars, characterWeights, problems])
-  const perPack = useMemo(() => (problems.length ? null : packChances(recipe)), [recipe, problems])
+  const size = useMemo(() => (packs == null ? undefined : { packs: Number(packs), chars: Math.max(1, Math.floor(chars)) }), [packs, chars])
+  const perPack = useMemo(() => (problems.length ? null : packChances(recipe, size)), [recipe, problems, size])
 
   if (problems.length) return <p className="muted small" data-testid="series-result">Fix the recipe to see what it makes.</p>
   if (!res) return null
@@ -71,6 +72,7 @@ export function SeriesResult({ recipe, packs, chars, characterWeights, compact }
           })}
         </div>
       )}
+      {!compact && size && onePerCharacterWarning(recipe, size) && <Notice kind="warn"><span data-testid="result-one-per-character-warn">{onePerCharacterWarning(recipe, size)}</span></Notice>}
       <div className="table-scroll">
         <table className="mini result-table" data-testid="pool-table">
           <thead>
@@ -86,7 +88,9 @@ export function SeriesResult({ recipe, packs, chars, characterWeights, compact }
               const r = res.types[i]
               return (
                 <tr key={t.id} data-testid={`result-${t.slug}`}>
-                  <td><span className="swatch" style={{ background: typeColor(t.frameSet) }} />{t.name}</td>
+                  <td><span className="swatch" style={{ background: typeColor(t.frameSet) }} />{t.name}
+                    {r.onePerCharacter && size && <div className="small" data-testid={`one-per-character-${t.slug}`}>{onePerCharacterText(size)}</div>}
+                  </td>
                   <td>
                     <b data-testid={`per-pack-avg-${t.slug}`}>{perPackText(r.perPack)} a pack</b>
                     <div className="muted small nowrap" data-testid={`odds-${t.slug}`}>{percentText(r.share)} · {aboutOneIn(r.share, 'cards')}</div>
@@ -119,6 +123,7 @@ export function SeriesResult({ recipe, packs, chars, characterWeights, compact }
           · One exact card = character + type + look: its chance per card dealt (the site's scale), the same in every pack.
           {' '}Every pack has the same slots and every card is rolled on its own from its slot's odds, so card counts are
           expectations (≈) and vary.
+          {recipe.onePerCharacter && ' A one-per-character type is the exception: exactly one per character, each in place of a pack\'s first card, at random packs.'}
         </p>
       )}
     </div>

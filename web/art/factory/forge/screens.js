@@ -319,13 +319,15 @@
     const pool = Store.castOf(series);
     let id = Math.max(999, ...S().cards.map((c) => c.id)), serial = Math.max(0, ...S().cards.map((c) => c.serial));
     const ser = S().series, cardsInSeries = Math.max(1, ser.total) * (ser.cardsPerPack || 6), cast = Math.max(1, ser.cast);
-    return Store.rollPack().map(({ material: m, holo }) => {
+    // the characters whose Full Art hasn't come out yet (one per character per Series): the demo counts the visitor's own
+    const pulled = new Set(S().cards.filter((c) => c.series === series && c.material === Store.ONE_PER).map((c) => c.character));
+    return Store.rollPack(Math.random, undefined, pool.filter((c) => !pulled.has(c))).map(({ material: m, holo, character: fixed }) => {
       // DEMO DATA: a print number (#k: the k-th of this exact card pulled), somewhere up to what the odds give it in a full Series
       const w = (Store.CARD_ODDS.find(([x]) => x === m) || [m, 1])[1];
       const of = Math.max(1, Math.round((w / Store.ODDS_TOTAL) * cardsInSeries / cast * (m === 'gold' || m === 'fullart' ? 1 : window.Info?.holoP(m, holo) ?? 1)) + 2);
-      const character = pool[Math.floor(Math.random() * pool.length)];
+      const character = fixed || pool[Math.floor(Math.random() * pool.length)];
       return { id: ++id, serial: ++serial, series, character, material: m, holo,
-        edition: String(1 + Math.floor(Math.random() * of)), grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
+        edition: m === Store.ONE_PER ? '1' : String(1 + Math.floor(Math.random() * of)), grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
     });
   }
   // demo data: graded cards were graded at some age (their grade drawn on the wear model at that age); one PDA 10 so the demo shows the gold edge

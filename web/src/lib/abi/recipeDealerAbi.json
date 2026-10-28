@@ -371,6 +371,11 @@
                 "internalType": "uint64[]"
               }
             ]
+          },
+          {
+            "name": "onePerCharacter",
+            "type": "uint32",
+            "internalType": "uint32"
           }
         ]
       }
@@ -416,7 +421,7 @@
         "internalType": "uint256[]"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -438,6 +443,44 @@
         "name": "o",
         "type": "uint256[4]",
         "internalType": "uint256[4]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "onePerCharacterDealt",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "onePerCharacterOwed",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "chars",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
     "stateMutability": "view"
@@ -551,6 +594,11 @@
                 "internalType": "uint64[]"
               }
             ]
+          },
+          {
+            "name": "onePerCharacter",
+            "type": "uint32",
+            "internalType": "uint32"
           }
         ]
       }
@@ -563,6 +611,40 @@
     "inputs": [],
     "outputs": [],
     "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "roll",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "seed",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "fromCard",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -667,6 +749,11 @@
                 "internalType": "uint64[]"
               }
             ]
+          },
+          {
+            "name": "onePerCharacter",
+            "type": "uint32",
+            "internalType": "uint32"
           }
         ]
       }
@@ -778,6 +865,31 @@
       },
       {
         "name": "count",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OnePerCharacterDealt",
+    "inputs": [
+      {
+        "name": "fire",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "character",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "left",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -920,6 +1032,11 @@
   {
     "type": "error",
     "name": "FireIsLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotCards",
     "inputs": []
   },
   {

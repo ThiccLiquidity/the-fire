@@ -305,3 +305,37 @@ body[data-mode=port] .buybar:not(.open) .bb-more { align-self: start }
 .cel-protect .linkish:hover { color: #fff3d6 }
 /* the Game room sheet hugs Spit-Wad's portrait stage on very wide screens (it left ~480px empty each side) */
 #sheet-games:has(.sw-stage) { width: fit-content; min-width: 720px }
+
+/* the furnace gauge (owner, Oct 29): the burn tally lit like the furnace. Two parts, kept apart so nothing is counted
+   twice: "Liquidity locked" (dollars, the headline, gold) and "Burned all time" (PLANK and PAPER actually burned). A
+   warm glow from below that breathes, and a few embers rising; still for reduced motion. */
+.burn-tally { overflow: hidden; isolation: isolate; gap: 6px; border-color: #ffa04a80;
+  background: radial-gradient(120% 70% at 50% 115%, #ff6a1a66, #ff6a1a00 70%), linear-gradient(#2c150acc, #140803ee);
+  box-shadow: 0 0 22px #ff6a1a44, 0 0 2px #ffb36b66, inset 0 1px 0 #ffd9a024, inset 0 -10px 18px -10px #ff8a2a55;
+  animation: bt-breathe 3.6s ease-in-out infinite }
+@keyframes bt-breathe { 50% { box-shadow: 0 0 30px #ff6a1a66, 0 0 3px #ffc27a88, inset 0 1px 0 #ffd9a024, inset 0 -12px 22px -10px #ff9a3a77 } }
+.burn-tally .bt-liq, .burn-tally .bt-burn { display: flex; flex-direction: column; align-items: center; gap: 3px; position: relative; z-index: 1 }
+.burn-tally .bt-liq[hidden] { display: none }
+.burn-tally .bt-liq + .bt-burn { padding-top: 6px; border-top: 1px solid #ff9a3c40; width: 100% }
+.burn-tally .bt-h { color: #ffbe7a; text-shadow: 0 0 6px #ff6a1a80 }
+.burn-tally .bt-big { font: 900 19px/1 var(--display, var(--body)); letter-spacing: .01em; font-variant-numeric: tabular-nums;
+  background: linear-gradient(#fff3c4, #ffd25a 45%, #f39a2a); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 6px #ffb02e88) }
+.burn-tally .bt-row b { color: #fff0d6; text-shadow: 0 0 8px #ff7a2a66 }
+.burn-tally .bt-embers { position: absolute; inset: 0; z-index: 0; pointer-events: none }
+.burn-tally .bt-embers i { position: absolute; bottom: -4px; width: 3px; height: 3px; border-radius: 50%; background: #ffcf7a; box-shadow: 0 0 6px 1px #ff7a1a;
+  opacity: 0; animation: bt-ember 4.2s linear infinite }
+.burn-tally .bt-embers i:nth-child(1) { left: 18% } .burn-tally .bt-embers i:nth-child(2) { left: 72%; animation-delay: .7s; animation-duration: 5s }
+.burn-tally .bt-embers i:nth-child(3) { left: 42%; animation-delay: 1.6s } .burn-tally .bt-embers i:nth-child(4) { left: 86%; animation-delay: 2.4s; animation-duration: 3.6s }
+.burn-tally .bt-embers i:nth-child(5) { left: 30%; animation-delay: 3.1s; animation-duration: 4.8s } .burn-tally .bt-embers i:nth-child(6) { left: 58%; animation-delay: 3.8s }
+@keyframes bt-ember { 0% { transform: translate(0, 0) scale(1); opacity: 0 } 12% { opacity: .9 } 60% { opacity: .55 } 100% { transform: translate(6px, -120px) scale(.4); opacity: 0 } }
+@media (prefers-reduced-motion: reduce) { .burn-tally { animation: none } .burn-tally .bt-embers { display: none } }
+@media (min-width: 2200px) and (min-height: 1200px) { .burn-tally .bt-big { font-size: 24px } }
+/* upright phones: the same two parts, a touch smaller */
+body[data-mode=port] .burn-tally { gap: 4px; padding: 7px 9px } body[data-mode=port] .burn-tally .bt-big { font-size: 16px }
+body[data-mode=port] .burn-tally .bt-liq + .bt-burn { padding-top: 4px }
+/* sideways phones: one glowing pill, both parts in a row ("Liquidity locked $8.36K | Burned all time PLANK PAPER") */
+body[data-mode=land] .burn-tally { gap: 10px; padding: 5px 14px }
+body[data-mode=land] .burn-tally .bt-liq, body[data-mode=land] .burn-tally .bt-burn { flex-direction: row; gap: 7px }
+body[data-mode=land] .burn-tally .bt-liq + .bt-burn { padding: 0 0 0 10px; border-top: 0; border-left: 1px solid #ff9a3c40; width: auto }
+body[data-mode=land] .burn-tally .bt-h br { display: none } body[data-mode=land] .burn-tally .bt-big { font-size: 14px }

@@ -20,9 +20,12 @@ test("slot recipe: each slot's count and weights in type order, cards per pack, 
   const r = recipeFromJson(standard);
   assert.deepEqual(r.slots.map((s) => s.count), [3n, 1n, 1n, 1n]);
   assert.deepEqual(r.slots.map((s) => s.weights), [
-    [1n, 0n, 0n, 0n, 0n, 0n], [0n, 1n, 0n, 0n, 0n, 0n], [0n, 449n, 300n, 120n, 86n, 45n], [0n, 0n, 5982n, 1734n, 1534n, 750n],
+    [1n, 0n, 0n, 0n, 0n, 0n], [0n, 1n, 0n, 0n, 0n, 0n], [0n, 494n, 300n, 120n, 86n, 0n], [0n, 0n, 6732n, 1734n, 1534n, 0n],
   ]);
   assert.equal(cardsPerPackOf(r), 6n);
+  assert.equal(r.onePerCharacter, 6n, "Full Art: one per character");
+  assert.equal(recipeFromJson({ ...standard, onePerCharacter: undefined }).onePerCharacter, 0n);
+  assert.throws(() => recipeFromJson({ ...standard, onePerCharacter: "diamond" }), /onePerCharacter: diamond/);
   assert.throws(() => recipeFromJson({ ...standard, slots: [{ count: 1, weights: { diamond: 1 } }] }), /diamond is not the slug/);
   assert.deepEqual(characterWeightsFromJson(standard), [1n, 1n, 1n]);
   const j = structuredClone(standard);
@@ -46,7 +49,7 @@ test("holo looks follow the dealer: certain holo has no 'none'", () => {
 test("recipe hash: the studio's manifest fingerprint ignores imagesBase and the sale block", () => {
   const a = recipeHash(standard);
   // the same constant is asserted in studio/src/manifest.test.ts (the studio writes it into manifest.json)
-  assert.equal(a, "32cdd060a21eb44c9f434f0d857bcb749661f473e7dc457288b969cc75efa7f7");
+  assert.equal(a, "0ba2257fcb65378888bf7037d08bc73f81a7703beb12ac616bfd84b02b65c166");
   assert.equal(recipeHash({ ...standard, imagesBase: "ipfs://other/", sale: { start: 1 } }), a);
   assert.notEqual(recipeHash({ ...standard, characters: standard.characters.slice(1) }), a);
 });

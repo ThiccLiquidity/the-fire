@@ -18,9 +18,10 @@
   "slots": [
     { "count": 3, "weights": { "paper": 1 } },
     { "count": 1, "weights": { "wood": 1 } },
-    { "count": 1, "weights": { "wood": 449, "fire": 300, "coal": 120, "gold": 86, "fullart": 45 } },
-    { "count": 1, "weights": { "fire": 5982, "coal": 1734, "gold": 1534, "fullart": 750 } }
+    { "count": 1, "weights": { "wood": 494, "fire": 300, "coal": 120, "gold": 86 } },
+    { "count": 1, "weights": { "fire": 6732, "coal": 1734, "gold": 1534 } }
   ],
+  "onePerCharacter": "fullart",
   "characters": [
     { "name": "Ember Fox", "category": "Animals" },
     { "name": "Ash Wolf", "category": "Animals" },

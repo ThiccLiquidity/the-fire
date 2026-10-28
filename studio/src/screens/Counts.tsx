@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { checkRecipe, holoLooksFor, parseUint, slotLabel, type Recipe } from '../recipe'
-import { expectedCounts, mayNotPrint, oddsText, percentText, printCount, slotSummaries, type ExpectedCounts } from '../rarity'
+import { checkRecipe, holoLooksFor, onePerIndex, parseUint, slotLabel, type Recipe, type SeriesSize } from '../recipe'
+import { expectedCounts, mayNotPrint, oddsText, onePerCharacterLine, onePerCharacterText, percentText, printCount, slotSummaries, type ExpectedCounts } from '../rarity'
 import { HOLO_LABEL, type HoloType } from '../rules'
 import { perPackText, typeColor } from './SeriesResult'
 
 const lookName = (h: HoloType) => (h === 'none' ? 'Plain' : HOLO_LABEL[h])
 
 /** One expected count: "≈ N", or "< 1" marked as maybe not printing; "-" when it can't print at all. */
-export function Count({ x, unit, testId }: { x: number; unit?: string; testId?: string }) {
+export function Count({ x, unit, testId, exact }: { x: number; unit?: string; testId?: string; exact?: boolean }) {
   if (!(x > 0)) return <span className="muted" data-testid={testId}>-</span>
+  // an exact count (the one-per-character type): no "≈"
+  if (exact && Number.isInteger(x)) return <span className="count" data-testid={testId}>{x.toLocaleString('en-US')}{unit ? ` ${unit}` : ''}</span>
   const low = mayNotPrint(x)
   return (
     <span className={low ? 'count-low' : 'count'} data-testid={testId} title={`${x.toPrecision(4)} expected${low ? ': may not print' : ''}`}>
@@ -19,9 +21,10 @@ export function Count({ x, unit, testId }: { x: number; unit?: string; testId?: 
 
 export const COUNTS_NOTE = 'If the odds land exactly: expected counts. Real pulls will vary.'
 
-/** The pack slot by slot, each with its odds: "3 Paper · 1 Wood · 1 Wood or better: Wood 44.9%, Fire 30%, ...". */
-export function SlotSummary({ recipe }: { recipe: Recipe }) {
+/** The pack slot by slot, each with its odds: "3 Paper · 1 Wood · 1 Wood or better: Wood 49.4%, Fire 30%, ...". */
+export function SlotSummary({ recipe, size }: { recipe: Recipe; size?: SeriesSize }) {
   const slots = useMemo(() => slotSummaries(recipe), [recipe])
+  const one = size ? onePerCharacterLine(recipe, size) : null
   return (
     <div className="slot-summary" data-testid="slot-summary">
       {slots.map((sl, k) => {
@@ -33,6 +36,7 @@ export function SlotSummary({ recipe }: { recipe: Recipe }) {
           </span>
         )
       })}
+      {one && <span className="type-count" data-testid="slot-summary-one-per-character"><b>{one}</b> <span className="muted">(in place of a pack's first card)</span></span>}
     </div>
   )
 }
@@ -40,12 +44,15 @@ export function SlotSummary({ recipe }: { recipe: Recipe }) {
 /** Each type's expected cards per pack, its share of cards and expected cards, plus the total: "Gold · ≈0.2394 a pack
  *  · 3.99% · about 1 in 25 cards · ≈ 40 cards". */
 export function TypeCounts({ recipe, counts }: { recipe: Recipe; counts: ExpectedCounts }) {
+  const one = onePerIndex(recipe)
   return (
     <div className="type-counts" data-testid="type-counts">
       {recipe.types.map((t, i) => (
         <span key={t.id} className="type-count" data-testid={`type-count-${t.slug}`}>
           <span className="swatch" style={{ background: typeColor(t.frameSet) }} />
-          <b>{t.name}</b> · {perPackText(counts.types[i].perPack)} a pack · {oddsText(counts.types[i].share)} · <Count x={counts.types[i].count} unit="cards" />
+          {i === one
+            ? <><b>{t.name}</b> · {onePerCharacterText({ packs: counts.packs, chars: counts.characters.length })}</>
+            : <><b>{t.name}</b> · {perPackText(counts.types[i].perPack)} a pack · {oddsText(counts.types[i].share)} · <Count x={counts.types[i].count} unit="cards" /></>}
         </span>
       ))}
       <span className="type-count total" data-testid="type-count-total">
@@ -81,6 +88,7 @@ export function CountsGrid({ recipe, basePacks, characters, weights, typeLine = 
   const counts = useMemo(() => (valid && P != null ? expectedCounts(recipe, weights ?? characters.length, P) : null), [recipe, weights, characters.length, P, valid])
   const looks = useMemo(() => recipe.types.map((_, i) => (valid ? holoLooksFor(recipe, i) : [])), [recipe, valid])
   const lowCells = counts ? counts.grid.flat().filter(mayNotPrint).length : 0
+  const one = onePerIndex(recipe)
 
   return (
     <div className="counts" data-testid="counts-grid">
@@ -104,7 +112,7 @@ export function CountsGrid({ recipe, basePacks, characters, weights, typeLine = 
       </p>
       {!valid ? <p className="muted small">Fix the recipe to see the counts.</p> : !counts ? <p className="muted small">Type a pack count.</p> : (
         <>
-          <SlotSummary recipe={recipe} />
+          <SlotSummary recipe={recipe} size={{ packs: counts.packs, chars: characters.length }} />
           {typeLine && <TypeCounts recipe={recipe} counts={counts} />}
           {lowCells > 0 && <p className="small" data-testid="counts-low"><span className="count-low">{lowCells.toLocaleString('en-US')} type × character card{lowCells === 1 ? '' : 's'}</span> expected below 1: they may not print.</p>}
           <div className="table-scroll counts-scroll">
@@ -114,7 +122,7 @@ export function CountsGrid({ recipe, basePacks, characters, weights, typeLine = 
                   <th>Character</th><th>Odds</th>
                   {recipe.types.map((t, i) => (
                     <th key={t.id} className="num"><span className="swatch" style={{ background: typeColor(t.frameSet) }} />{t.name}
-                      <div className="muted small">{perPackText(counts.types[i].perPack)} a pack · {oddsText(counts.types[i].share, '')}</div></th>
+                      <div className="muted small">{i === one ? '1 per character' : `${perPackText(counts.types[i].perPack)} a pack · ${oddsText(counts.types[i].share, '')}`}</div></th>
                   ))}
                   <th className="num">All types</th>
                 </tr>
@@ -140,7 +148,7 @@ export function CountsGrid({ recipe, basePacks, characters, weights, typeLine = 
                       const o = counts.types[i].count > 0 ? x / counts.types[i].count : 0
                       return (
                         <td key={t.id} className={`num ${mayNotPrint(x) ? 'low' : ''}`}>
-                          <Count x={x} />
+                          <Count x={x} exact={i === one} />
                           {holo === 'cell' && looks[i].length > 1 && (
                             <div className="cell-looks">
                               {looks[i].map((h) => <div key={h}>{lookName(h)} <Count x={counts.types[i].looks[h] * o} /></div>)}
@@ -160,7 +168,7 @@ export function CountsGrid({ recipe, basePacks, characters, weights, typeLine = 
               <tfoot>
                 <tr className="total">
                   <td><b>All characters</b></td><td />
-                  {recipe.types.map((t, i) => <td key={t.id} className="num"><b><Count x={counts.types[i].count} /></b></td>)}
+                  {recipe.types.map((t, i) => <td key={t.id} className="num"><b><Count x={counts.types[i].count} exact={i === one} /></b></td>)}
                   <td className="num"><b>{counts.totalCards.toLocaleString('en-US')}</b></td>
                 </tr>
               </tfoot>

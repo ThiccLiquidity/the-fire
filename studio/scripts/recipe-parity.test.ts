@@ -4,8 +4,9 @@
  *  scripts/fixtures/recipe-parity.json holds the cases and the contract's answers. Refresh it with
  *  scripts/contract-parity.sh (needs forge): it writes the cases (WRITE_RECIPE_CASES=<dir>), runs
  *  scripts/forge/StudioParity.t.sol on a scratch copy of contracts/, and stores the results here. Case 0 is the
- *  Standard export (the forge side also checks it parses to StandardRecipe.build() and that ConfigureSeries.build
- *  accepts it); case 1 the Special 3-card all-holo export. */
+ *  Standard export (the forge side also checks it parses to StandardRecipe.build(), Full Art one per character
+ *  included, and that ConfigureSeries.build accepts it); case 1 the Special 3-card all-holo export. Some cases carry
+ *  "onePerCharacter" (in no slot, or left in one: BadSlot). */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
@@ -27,7 +28,8 @@ function cases(): Case[] {
     recipeJson(7, standardRecipe(), chars, 'ipfs://bafyexampleimages/'),
     recipeJson(8, specialAllHoloRecipe(), chars),
   ]
-  for (let k = 0; k < 400; k++) {
+  // cases 2-401 as before; 402-521 each with a one-per-character type (drawn after, so the earlier cases never change)
+  for (let k = 0; k < 520; k++) {
     const T = chance(0.02) ? 0 : 1 + rnd(7)
     const types: RecipeJson['types'] = []
     for (let t = 0; t < T; t++) {
@@ -55,7 +57,15 @@ function cases(): Case[] {
       }
       slots.push({ count, weights })
     }
-    out.push({ fire: 100 + k, types, slots, characters: chars })
+    // sometimes a one-per-character type (by slug, as ConfigureSeries reads it): mostly taken out of every slot (valid),
+    // sometimes left in one (BadSlot), sometimes the only place a type would be dealt
+    let onePerCharacter: string | undefined
+    if (k >= 400 && types.length) {
+      const t = types[rnd(types.length)]
+      if (chance(0.7)) for (const sl of slots) delete sl.weights[t.slug]
+      onePerCharacter = t.slug
+    }
+    out.push({ fire: 100 + k, types, slots, ...(onePerCharacter !== undefined ? { onePerCharacter } : {}), characters: chars })
   }
   return out
 }
@@ -78,6 +88,13 @@ describe.runIf(!process.env.WRITE_RECIPE_CASES && existsSync(FIXTURE))('recipe p
     expect(fx.cases.length).toBeGreaterThan(300)
     expect(fx.results.filter((r) => r.ok).length).toBeGreaterThan(50)
     expect(fx.results.filter((r) => !r.ok).length).toBeGreaterThan(50)
+  })
+
+  it('some cases have a one-per-character type, valid and refused', () => {
+    const withOne = fx.cases.flatMap((c, i) => (c.onePerCharacter !== undefined ? [i] : []))
+    expect(withOne.filter((i) => fx.results[i].ok).length).toBeGreaterThan(10)
+    expect(withOne.filter((i) => fx.results[i].error?.includes('one-per-character type in a slot')).length).toBeGreaterThan(5)
+    expect(fx.cases[0].onePerCharacter).toBe('fullart')
   })
 
   it('the Standard and Special exports go through ConfigureSeries and check()', () => {

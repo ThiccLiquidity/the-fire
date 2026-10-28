@@ -76,7 +76,14 @@ export function recipeFromJson(j) {
     }
     return { count: BigInt(s.count), weights };
   });
-  return { types, slots };
+  // 1 + the type dealt exactly once per character per Series (the Standard's Full Art), 0 = none
+  let onePerCharacter = 0n;
+  if (j.onePerCharacter !== undefined) {
+    const t = types.findIndex((x) => x.slug === j.onePerCharacter);
+    if (t < 0) throw new Error(`recipe.json onePerCharacter: ${j.onePerCharacter} is not the slug of a card type`);
+    onePerCharacter = BigInt(t + 1);
+  }
+  return { types, slots, onePerCharacter };
 }
 
 /** Cards per pack: the slots' counts added up. */
@@ -116,7 +123,7 @@ export const FRESH_PDA_ODDS = [0n, 0n, 0n, 0n, 0n, 0n, 2700n, 4000n, 3000n, 300n
 
 /** The recipe fingerprint the studio puts in the images folder's manifest.json. */
 export function recipeHash(j) {
-  return createHash("sha256").update(JSON.stringify({ fire: j.fire, types: j.types, slots: j.slots, characters: j.characters })).digest("hex");
+  return createHash("sha256").update(JSON.stringify({ fire: j.fire, types: j.types, slots: j.slots, onePerCharacter: j.onePerCharacter, characters: j.characters })).digest("hex");
 }
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -224,6 +231,8 @@ export async function verifySeries(opts) {
   const oddsOk = sc.length === want.slots.length && want.slots.every((w, s) => BigInt(sc[s]) === w.count
     && w.weights.every((x, t) => BigInt(sw[s][t]) === x) && BigInt(st[s]) === w.weights.reduce((a, x) => a + x, 0n));
   ok(oddsOk, `slotsOf (the odds dealing reads) ${oddsOk ? "matches recipe.json" : "differs from recipe.json"}`);
+  const one = BigInt(got.onePerCharacter ?? 0);
+  ok(one === want.onePerCharacter, `one per character: ${one ? got.types[Number(one) - 1]?.name : "none"} on chain, ${want.onePerCharacter ? want.types[Number(want.onePerCharacter) - 1].name : "none"} in recipe.json`);
   ok(BigInt(await read(dealer, dealerAbi, "cardsPerPack", [fire])) === cardsPerPackOf(want), `cards per pack: ${cardsPerPackOf(want)} (the slots' cards added up)`);
 
   // ---- characters

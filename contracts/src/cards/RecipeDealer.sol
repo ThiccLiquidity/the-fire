@@ -36,12 +36,20 @@ interface IRecipeCompiler {
  *           is four slots.
  *         - Characters (names and categories), any number, added in batches if the list is long, and optional
  *           character weights (none = every character equally likely).
+ *         - Optionally one type dealt exactly once per character per Series (`onePerCharacter`, the Standard's Full
+ *           Art). It is in no slot; see below.
  *
  *         Dealing (FireCards calls it, in opening order): every card of every pack is rolled on its own: its type by
- *         its slot's weights, then its holo by that type's holo odds, then its character by the character weights. No
- *         pool, no caps, no guarantees beyond what the slots' weights say: nothing depends on what was dealt before,
- *         so the first and the last pack of a Series have exactly the same odds. A card's chance = its slot's type odds
- *         x holo odds x character odds. All from the pack's drand randomness: per card keccak256(packSeed, position).
+ *         its slot's weights, then its holo by that type's holo odds, then its character by the character weights. A
+ *         card's chance = its slot's type odds x holo odds x character odds. All from the pack's drand randomness:
+ *         per card keccak256(packSeed, position).
+ *
+ *         One per character: as each pack starts, it carries one of that type with chance (still owed) / (packs still
+ *         to deal, this one included), for a character that hasn't had one yet, picked at random. That card takes the
+ *         place of the pack's first card (in the Standard, one of its three Papers); the pack's other cards are rolled
+ *         as always. By the Series' last pack every character has exactly one, at random places nobody can know ahead
+ *         (each pack's own fresh randomness decides). A Series needs at least as many packs as characters for all of
+ *         them to come out; packs never opened keep theirs. This is the dealer's only state.
  */
 contract RecipeDealer is IDealer, Ownable2Step {
     // ================================================================ recipe
@@ -69,6 +77,7 @@ contract RecipeDealer is IDealer, Ownable2Step {
     struct Recipe {
         CardType[] types;
         Slot[] slots; // in pack order; cards per pack = the counts added up (1 to MAX_CARDS_PER_PACK)
+        uint32 onePerCharacter; // 1 + the type dealt exactly once per character per Series, in no slot (0 = none)
     }
 
     uint256 public constant HOLO_ONE = 1e18;
@@ -84,6 +93,7 @@ contract RecipeDealer is IDealer, Ownable2Step {
         address plan; // the compiled recipe's code-storage chunk (MULTI_CHUNK: several, in _planData); 0 = no recipe
         uint32 cardsPerPack;
         uint32 typeCount;
+        uint32 onePerCharacter; // as in the recipe: 1 + the type, 0 = none
     }
 
     address private constant MULTI_CHUNK = address(1);
@@ -98,11 +108,20 @@ contract RecipeDealer is IDealer, Ownable2Step {
     mapping(uint256 fire => mapping(uint256 gen => string[])) internal _categoryLists;
     /// @dev Cumulative character weights (one uint256 word per character), in code-storage chunks; none = uniform.
     mapping(uint256 fire => mapping(uint256 gen => address[])) internal _charOdds;
+    /// @notice One-per-character cards dealt so far in a Series.
+    mapping(uint256 fire => uint256) public onePerCharacterDealt;
+    /// @dev The characters still owed one, as a sparse shuffle: entry i is _owed[fire][i] - 1 (or i when 0), for
+    ///      i below (characters - dealt).
+    mapping(uint256 fire => mapping(uint256 => uint256)) internal _owed;
+
+    /// @dev Domain tag for the one-per-character roll (kept apart from the cards' own randomness).
+    uint256 internal constant ONE_PER_TAG = uint256(keccak256("omni.dealer.onePerCharacter"));
 
     event RecipeSet(uint256 indexed fire, uint256 cardsPerPack, uint256 types, uint256 slots);
     event CharactersSet(uint256 indexed fire, uint256 count);
     event CharactersAdded(uint256 indexed fire, uint256 first, uint256 count);
     event CharacterWeightsSet(uint256 indexed fire, uint256 count, uint256 total);
+    event OnePerCharacterDealt(uint256 indexed fire, uint256 indexed character, uint256 left);
 
     error RenounceDisabled();
     error FireIsLocked();
@@ -110,6 +129,7 @@ contract RecipeDealer is IDealer, Ownable2Step {
     error BadText();
     error BadLength();
     error BadDeal();
+    error NotCards();
     /// @notice Character weights: one per character, each at least 1 (or none, for equal odds).
     error BadWeights();
     /// @notice Raised by RecipeCompiler (setRecipe and check pass it on): no types, no slots, or cards per pack (the
@@ -141,7 +161,7 @@ contract RecipeDealer is IDealer, Ownable2Step {
         Recipe memory m = r;
         _replace(_recipeData[fire], abi.encode(m));
         address first = _planData[fire].length == 1 ? _planData[fire][0] : MULTI_CHUNK;
-        _config[fire] = Config(first, uint32(perPack), uint32(m.types.length));
+        _config[fire] = Config(first, uint32(perPack), uint32(m.types.length), m.onePerCharacter);
         emit RecipeSet(fire, perPack, m.types.length, m.slots.length);
     }
 
@@ -206,14 +226,67 @@ contract RecipeDealer is IDealer, Ownable2Step {
         return _names(fire).length;
     }
 
-    /// @notice Cards `fromCard` .. `fromCard + count - 1` of a pack dealt from `seed` (FireCards passes each pack's
-    ///         seed). Each card is rolled on its own from keccak256(seed, position) at its slot's odds, so this depends
-    ///         only on the seed and the Series' fixed settings: anyone can call it to check a pack.
-    function deal(uint256 fire, uint256 seed, uint256 fromCard, uint256 count) external view returns (uint256[] memory out) {
+    /// @notice FireCards only: cards `fromCard` .. `fromCard + count - 1` of a pack dealt from `seed` (each pack's
+    ///         seed). The slot cards are `roll`; a pack's first card may instead be its one-per-character card.
+    function deal(uint256 fire, uint256 seed, uint256 fromCard, uint256 count) external returns (uint256[] memory out) {
+        if (msg.sender != address(CARDS)) revert NotCards();
         bytes memory p = _plan(fire);
         if (count == 0 || fromCard + count > _at(p, H_S)) revert BadDeal();
         (bytes memory cw, uint256 chars) = _charWeights(fire);
         out = _dealRange(p, cw, chars, seed, fromCard, count);
+        uint256 one = _config[fire].onePerCharacter;
+        if (fromCard == 0 && one != 0) _onePerCharacter(fire, p, one - 1, chars, seed, out);
+    }
+
+    /// @notice The slot cards of a pack from `seed`: each rolled on its own from keccak256(seed, position) at its
+    ///         slot's odds, so this depends only on the seed and the Series' fixed settings (anyone can check a pack;
+    ///         a pack's first card may have become its one-per-character card instead).
+    function roll(uint256 fire, uint256 seed, uint256 fromCard, uint256 count) external view returns (uint256[] memory out) {
+        bytes memory p = _plan(fire);
+        if (count == 0 || fromCard + count > _at(p, H_S)) revert BadDeal();
+        (bytes memory cw, uint256 chars) = _charWeights(fire);
+        out = _dealRange(p, cw, chars, seed, fromCard, count);
+    }
+
+    /// @dev As a pack starts: with chance (still owed) / (packs still to deal, this one included) its first card
+    ///      becomes type `t` for a character still owed one, picked at random. Certain once the packs left are no more
+    ///      than the characters owed, so every character has exactly one by the Series' last pack.
+    function _onePerCharacter(uint256 fire, bytes memory p, uint256 t, uint256 chars, uint256 seed, uint256[] memory out)
+        internal
+    {
+        uint256 done = onePerCharacterDealt[fire];
+        if (done >= chars) return;
+        uint256 owed = chars - done;
+        (,,,, uint64 packs, uint64 dealtPacks) = CARDS.fires(fire);
+        uint256 left = packs > dealtPacks ? packs - dealtPacks : 1;
+        uint256 r = _rand(seed, ONE_PER_TAG);
+        if (left > owed && r % left >= owed) return;
+        uint256 ch = _takeOwed(fire, _rand(r, 1) % owed, owed);
+        onePerCharacterDealt[fire] = done + 1;
+        (bool hf, bool hp) = _holo(p, t, _rand(r, 2), _rand(r, 3));
+        out[0] = t | (ch << 32) | (hf ? 1 << 64 : 0) | (hp ? 1 << 65 : 0);
+        emit OnePerCharacterDealt(fire, ch, owed - 1);
+    }
+
+    /// @dev Take entry `j` of the `owed` characters still owed; the last one owed takes its place.
+    function _takeOwed(uint256 fire, uint256 j, uint256 owed) internal returns (uint256 ch) {
+        ch = _owedAt(fire, j);
+        _owed[fire][j] = _owedAt(fire, owed - 1) + 1;
+    }
+
+    function _owedAt(uint256 fire, uint256 i) internal view returns (uint256) {
+        uint256 v = _owed[fire][i];
+        return v == 0 ? i : v - 1;
+    }
+
+    /// @notice The characters still owed their one-per-character card (unordered), for collectors tracking which
+    ///         are still out there. Empty when the Series has no such type or all are dealt.
+    function onePerCharacterOwed(uint256 fire) external view returns (uint256[] memory chars) {
+        if (_config[fire].onePerCharacter == 0) return chars;
+        uint256 n = _names(fire).length;
+        uint256 done = onePerCharacterDealt[fire];
+        chars = new uint256[](done < n ? n - done : 0);
+        for (uint256 i; i < chars.length; i++) chars[i] = _owedAt(fire, i);
     }
 
     /// @dev The character count and cumulative character weights ("" = equal odds) that dealing reads.

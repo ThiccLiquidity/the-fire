@@ -9,7 +9,9 @@
 **The idea.** Every rule about what a Series' cards are is a per-Series setting: card types, holo odds, the pack's
 shape (its **slots**, each a number of cards with its own odds per type), characters (and optionally their odds), card
 images. Every pack has the same shape and every card is rolled on its own from its slot's fixed odds, so the first and
-the last pack of a Series have exactly the same odds (no pool, no caps, no guarantees beyond what the slots say). The only limits left are technical (type widths and block gas), and big work
+the last pack of a Series have exactly the same odds (no pool, no caps, no guarantees beyond what the slots say). The
+one exception is a recipe's optional **one-per-character** type (the Standard's Full Art): exactly one of each character
+per Series, at random packs (see below). The only limits left are technical (type widths and block gas), and big work
 is split into batches instead of capped. Every setting locks when the Series' drop is set up (`configureDrop`), before
 anyone can buy, so buyers can trust the odds, and all of it can be read on-chain. PDA grading is the exception the
 other way: its fresh odds and wear rules are fixed forever in `FirePsa`, the same for every Series
@@ -107,10 +109,20 @@ holo from
 the uniform result). A card's chance = its slot's type odds x holo odds x character odds; a type's expected cards per
 pack = the sum over the slots of count x the slot's odds for it.
 
-No pool, caps or holdbacks: nothing depends on what was dealt before or how many packs there are, so the first and the
-last pack of a Series have exactly the same odds, and a card type or a character can come up any number of times (or
-not at all) in a Series, within what the slots allow. `deal` is a view: it depends only on the seed and the Series' fixed
-settings, so anyone can call it to check a pack (FireCards passes the same seeds).
+No pool, caps or holdbacks in the slots: a slot card depends on nothing dealt before or how many packs there are, so
+the first and the last pack of a Series have exactly the same slot odds, and a type or a character can come up any
+number of times (or not at all) in a Series, within what the slots allow. `roll(fire, seed, from, count)` is a view of
+the slot cards: it depends only on the seed and the Series' fixed settings, so anyone can check a pack (FireCards passes
+the same seeds). `deal` is FireCards-only, because of the one rule below.
+
+**One per character** (owner, Oct 29). A recipe can name one type (`onePerCharacter` = 1 + its index; 0 = none) that is
+in no slot and comes out exactly once per character per Series. As each pack starts, it gets one with chance (still
+owed) / (packs still to deal, this one included), from that pack's own fresh randomness, for a character still owed one
+(picked at random); it takes the place of the pack's first card (in the Standard, one of the three Papers) and the
+pack's other cards are rolled as always. So by the Series' last pack every character has exactly one, at places nobody
+can know ahead. If a Series has fewer packs than characters, every pack carries one and the rest stay owed; packs never
+opened keep theirs. `onePerCharacterDealt(fire)` and `onePerCharacterOwed(fire)` (the characters still waiting) are
+public, so collectors can see which are still out there; each one dealt also emits `OnePerCharacterDealt`.
 
 ### The Standard recipe
 
@@ -120,25 +132,25 @@ Six cards a pack, in four slots ("3 Paper · 1 Wood · 1 Wood or better · 1 Fir
 |---|---|---|
 | 1 | 3 | Paper 1 (always Paper) |
 | 2 | 1 | Wood 1 (always Wood) |
-| 3, Wood or better | 1 | of 1,000: Wood 449, Fire 300, Coal 120, Gold 86, Full Art 45 |
-| 4, Fire or better | 1 | of 10,000: Fire 5,982, Coal 1,734, Gold 1,534, Full Art 750 |
+| 3, Wood or better | 1 | of 1,000: Wood 494, Fire 300, Coal 120, Gold 86 |
+| 4, Fire or better | 1 | of 10,000: Fire 6,732, Coal 1,734, Gold 1,534 |
+
+Full Art is the one-per-character type: in no slot, exactly one of each character per Series.
 
 | Type | Rank | Per pack (average) | Share of cards | Holo |
 |---|---|---|---|---|
-| Paper | 0 | 3 | 50% | independent, each roll 1 - sqrt(0.95) (5% any holo) |
-| Wood | 1 | 1.449 | 24.15% | 10% |
-| Fire | 2 | 0.8982 | 14.97% | 50% |
+| Paper | 0 | 3, less the Full Arts | 50%, less the Full Arts | independent, each roll 1 - sqrt(0.95) (5% any holo) |
+| Wood | 1 | 1.494 | 24.9% | 10% |
+| Fire | 2 | 0.9732 | 16.22% | 50% |
 | Coal | 3 | 0.2934 | 4.89% | 90% |
 | Gold | 4 | 0.2394 | 3.99% | always full holo |
-| Full Art | 5 | 0.12 | 2% | always full holo |
+| Full Art | 5 | characters / packs | exactly one per character | always full holo |
 
-Characters: equal odds. Slots 3 and 4 were set so the per-pack averages are exactly the straight odds' they replace
-(50 / 24.15 / 14.97 / 4.89 / 3.99 / 2% of 6 cards; slots 3 + 4 together: Wood 0.449, Fire 0.8982, Coal 0.2934, Gold
-0.2394, Full Art 0.12), which kept the old pool dealing's expected share of each type for the example Series this doc
-always used (167 packs, 20 characters: 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full Art of 1,002). So
-every exact card is as rare as before (with 20 characters one exact Full Art is 1 in 1,000 cards; with 10, 1 in 500),
-and every pack has 3 Paper, a Wood and a Fire or better. Nothing caps the rest: two Full Arts in a pack (4.5% x 7.5%,
-about 1 in 300 packs) or two Golds (about 1 in 76) happen.
+Characters: equal odds. Full Art used to be in slots 3 and 4 (45 of 1,000 and 750 of 10,000); when it became one per
+character (Oct 29) those shares went to each slot's first type (Wood in slot 3, Fire in slot 4), so Coal and Gold are
+exactly as before. Example: 167 packs (1,002 cards) and 10 characters make exactly 10 Full Arts and on average 491
+Paper, 250 Wood, 163 Fire, 49 Coal and 40 Gold. Every pack has 3 Paper (or 2 and a Full Art), a Wood and a Fire or
+better. Nothing caps the rest: two Golds in a pack (about 1 in 76) happen.
 
 ### Views
 
@@ -495,10 +507,14 @@ a binary search over that slot's cumulative weights, with no storage writes.
 `LiquidityBurner.t.sol`, `Games.t.sol`, `SaleFork.t.sol`, `ImageParity.t.sol`, `SeriesCheck.t.sol`, `Profiles.t.sol`) and
 `contracts/test/invariant/` (fuzz and invariant suites, including `RecipeFuzz.t.sol` and `GroupsFuzz.t.sol`). They cover:
 - slots: over 4,000 Standard packs every slot's types converge to its own weights (positions 1-3 always Paper, 4
-  always Wood, 5 and 6 at their slot's odds, 5 standard deviations), the per-pack averages are exactly 3 / 1.449 /
-  0.8982 / 0.2934 / 0.2394 / 0.12, and holo rates (Gold and Full Art always full holo) and characters converge; a whole
-  opened Series follows its odds; the shape is the only guarantee (3 Paper and a Fire or better in every pack) and
-  nothing caps the rest (two Full Arts or two Golds in a pack, any number per character); the last pack of a 300-pack
+  always Wood, 5 and 6 at their slot's odds, 5 standard deviations), the slot rolls' per-pack averages are exactly 3 /
+  1.494 / 0.9732 / 0.2934 / 0.2394 (no Full Art from a slot), and holo rates and characters converge; a whole
+  opened Series follows its odds; the slots' shape is their only guarantee (3 Paper and a Fire or better in every pack)
+  and nothing caps the rest (two Golds in a pack);
+- one per character (`OnePerCharacter.t.sol`): 10 characters over 167 packs give exactly 10 Full Arts, one each, each
+  in a Paper's place, even dealt a few cards at a time; over 30 Series they land evenly through the Series; cancelled
+  packs still count; fewer packs than characters leaves the rest owed; the owed list always matches; only FireCards
+  deals; the compiler's rules; the last pack of a 300-pack
   Series and the only pack of a 1-pack Series get the same cards from the same word; print numbers count each exact
   card (character, type, holo look) #1, #2, ... in deal order, per Series
 - character weights converge to their weights, independent of type; equal weights deal exactly what no weights deal;

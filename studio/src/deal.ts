@@ -7,16 +7,19 @@
  *  2. Holo: frame and picture rolled independently at the type's chances, or picked by its weights.
  *  3. Character: by the character weights (none: every character equally likely).
  *  No pool, caps or guarantees beyond the slots, so nothing depends on the packs before: the first and the last pack
- *  have the same odds. Serials: a seeded permutation of the Series' block. Print number: within the Series, per exact card
+ *  have the same odds. One per character (recipe.ts, RecipeDealer _onePerCharacter): as each pack starts, with chance
+ *  (still owed) / (packs still to deal, this one included) its first card becomes the one-per-character type, for a
+ *  character still owed one picked at random (the contract's sparse shuffle), holo by that type's odds; its own stream,
+ *  so the other cards roll exactly as without it. Serials: a seeded permutation of the Series' block. Print number: within the Series, per exact card
  *  (character + type + holo look), #1, #2, ... in the order dealt (pack, then position), as FireCards numbers them.
  *  On-chain the drand words decide all this when each pack is opened; this is a preview of the same rules. PDA grades
  *  are not rolled here. */
 
 import { Stream } from './prng'
-import { cardsPerPack, characterOdds, holoOdds, parseUint, slotWeights, type Recipe } from './recipe'
+import { cardsPerPack, characterOdds, holoOdds, onePerIndex, parseUint, slotWeights, type Recipe } from './recipe'
 import { HOLO_TYPES, MAX_DEAL_CARDS, holoTypeOf, type HoloType } from './rules'
 
-export const DEAL_METHOD = 'sample-slots-v1'
+export const DEAL_METHOD = 'sample-slots-v2'
 
 export interface DealInput {
   /** Series number (printed as "Series F"). */
@@ -120,28 +123,50 @@ export function dealFire(input: DealInput): DealResult {
   const dealStream = new Stream(seed, 'deal')
   const holoStream = new Stream(seed, 'holo')
   const charStream = new Stream(seed, 'character')
+  const oneStream = new Stream(seed, 'one-per-character')
+  const one = onePerIndex(recipe)
+  // the characters still owed their one-per-character card: entries [0, owed) of a sparse shuffle, as the contract keeps it
+  const owedList = characterIds.map((_, i) => i)
+  let owed = one >= 0 ? characterIds.length : 0
+
+  /** Holo look for a card of type t from two uniforms. */
+  const rollHolo = (t: number, u1: number, u2: number): [boolean, boolean] => {
+    const h = holo[t]
+    if (h.ind) return [u1 < h.a, u2 < h.b]
+    let y = u1
+    let k = 0
+    while (k < 3 && y >= h.w[k]) { y -= h.w[k]; k++ }
+    return [k === 1 || k === 3, k === 2 || k === 3]
+  }
 
   type Pending = { pack: number; slot: number; type: number; holoFrame: boolean; holoPicture: boolean; character: number }
   const pending: Pending[] = []
   const pool = new Array<number>(recipe.types.length).fill(0)
   for (let p = 0; p < packs; p++) {
+    const first = pending.length
     for (let pos = 0; pos < S; pos++) {
       const t = pickCum(slotCum[slotAt[pos]], dealStream.float())
       pool[t]++
-      const h = holo[t]
       const u1 = holoStream.float()
       const u2 = holoStream.float() // always two draws per card
-      let f: boolean
-      let pic: boolean
-      if (h.ind) { f = u1 < h.a; pic = u2 < h.b }
-      else {
-        let y = u1
-        let k = 0
-        while (k < 3 && y >= h.w[k]) { y -= h.w[k]; k++ }
-        f = k === 1 || k === 3
-        pic = k === 2 || k === 3
-      }
+      const [f, pic] = rollHolo(t, u1, u2)
       pending.push({ pack: p + 1, slot: pos + 1, type: t, holoFrame: f, holoPicture: pic, character: pickCum(charCum, charStream.float()) })
+    }
+    if (owed > 0) {
+      // chance owed / left: certain once the packs left are no more than the characters owed
+      const left = packs - p
+      const r = oneStream.int(left)
+      if (left <= owed || r < owed) {
+        const j = oneStream.int(owed)
+        const ch = owedList[j]
+        owedList[j] = owedList[owed - 1]
+        owed--
+        const [f, pic] = rollHolo(one, oneStream.float(), oneStream.float())
+        const card = pending[first]
+        pool[card.type]--
+        pool[one]++
+        pending[first] = { ...card, type: one, holoFrame: f, holoPicture: pic, character: ch }
+      }
     }
   }
 

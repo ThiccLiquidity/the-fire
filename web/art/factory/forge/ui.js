@@ -54,12 +54,11 @@
   </header>
   <div class="qbanner" id="qbanner" hidden></div>
   <button class="burn-tally" id="burnTally" type="button" aria-label="Burned all time" hidden>
-    <span class="bt-h">Burned <br>all time</span>
-    <span class="bt-row">${Brand.coin('PLANK', 'bt-coin')}<b data-bt="plank">0</b></span>
-    <span class="bt-row">${Brand.coin('PAPER', 'bt-coin')}<b data-bt="paper">0</b></span>
-    <span class="bt-row bt-lp" hidden><span class="bt-pair">${Brand.coin('PAPER', 'bt-coin')}${Brand.coin('PLANK', 'bt-coin')}</span><b data-bt="lp">0</b></span>
-    <span class="bt-lp-k" hidden>liquidity</span>
-    <span class="bt-usd" data-bt="usd"></span>
+    <span class="bt-liq" hidden><span class="bt-h">Liquidity <br>locked</span><b class="bt-big" data-bt="lp">$0</b></span>
+    <span class="bt-burn"><span class="bt-h">Burned <br>all time</span>
+      <span class="bt-row">${Brand.coin('PLANK', 'bt-coin')}<b data-bt="plank">0</b></span>
+      <span class="bt-row">${Brand.coin('PAPER', 'bt-coin')}<b data-bt="paper">0</b></span></span>
+    <span class="bt-embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
   </button>
   <div class="demo-note" role="note"><b>Demo</b><span>Nothing here is real.</span><button class="start-link" type="button" data-go="start">New here?</button></div>
   <div class="ui" id="pills">
@@ -412,7 +411,7 @@
     setText($('.strip .cpp'), `${n} cards`);
     const pc = (x) => `${+(x * 100).toPrecision(2)}%`;
     $('.strip .types').innerHTML = `<tr><th scope="row">Material</th>${mats.map((m) => `<td><span class="mat ${m.id}">${m.name}</span></td>`).join('')}</tr>
-      <tr><th scope="row">Each card</th>${mats.map((m) => `<td>${pc(m.share)}</td>`).join('')}</tr>`;
+      <tr><th scope="row">Each card</th>${mats.map((m) => `<td>${m.onePer ? '<span class="one-per" title="Exactly one of each character in the Series">1 each</span>' : pc(m.share)}</td>`).join('')}</tr>`;
   }
   document.querySelectorAll('[data-hero]').forEach((b) => b.addEventListener('click', () => hero?.go()));
   // ---------- between Series: the quiet shift. Nothing on sale, so the press and the belt rest (the fire, casing and
@@ -477,9 +476,10 @@
   document.addEventListener('pointerdown', (e) => { if ($('#buybar')?.classList.contains('open') && !e.target.closest('#buybar')) barOpen(false); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('#buybar')?.classList.contains('open')) barOpen(false); });
   $('#buybar').addEventListener('click', (e) => { if (e.target.closest('[data-buy], [data-q], .tease-inline')) barOpen(false); });
-  // ---------- the burn tally: all-time PLANK and PAPER burned, the liquidity burned (in dollars: what its burned pool
-  // tokens hold), and what it's all worth at today's prices
-  const bt = { shown: { plank: 0, paper: 0, lp: 0, usd: 0 }, raf: 0 };
+  // ---------- the burn tally: the liquidity locked for good (in dollars: what its burned pool tokens hold at today's
+  // prices), and the PLANK and PAPER actually burned (the burn address's own balances). Kept apart: the coins in the
+  // locked liquidity are never counted as burned, and nothing is added up across the two.
+  const bt = { shown: { plank: 0, paper: 0, lp: 0 }, raf: 0 };
   const usdT = (v) => `$${v >= 1e3 ? compact.format(v) : v.toFixed(2)}`;
   function renderBurned() {
     const t = S.burnTally || {}, el = $('#burnTally');
@@ -488,23 +488,23 @@
     const P = Store.PRICES, usdOk = P.PLANK_USD > 0 && P.PAPER_USD > 0;
     const worth = (paper, plank) => (paper || 0) * (P.PAPER_USD || 0) + (plank || 0) * (P.PLANK_USD || 0);
     const lp = t.lp ? worth(t.lp.paper, t.lp.plank) : 0, lpShown = !!t.lp && usdOk;
-    el.querySelector('.bt-lp').hidden = el.querySelector('.bt-lp-k').hidden = !lpShown;
-    const goal = { plank: t.plank || 0, paper: t.paper || 0, lp, usd: worth(t.paper, t.plank) + lp };
+    el.querySelector('.bt-liq').hidden = !lpShown;
+    el.classList.toggle('has-liq', lpShown);
+    const goal = { plank: t.plank || 0, paper: t.paper || 0, lp };
     const paint = (v) => {
       el.querySelector('[data-bt=plank]').textContent = fmt(Math.round(v.plank));
       el.querySelector('[data-bt=paper]').textContent = fmt(Math.round(v.paper));
       el.querySelector('[data-bt=lp]').textContent = usdT(v.lp);
-      el.querySelector('[data-bt=usd]').textContent = usdOk ? `≈ ${usdT(v.usd)}` : '';
     };
-    el.setAttribute('aria-label', `Burned all time: ${fmt(goal.plank)} PLANK and ${fmt(goal.paper)} PAPER${lpShown ? `, and liquidity worth about $${compact.format(lp)}` : ''}${usdOk ? `, about $${compact.format(goal.usd)} in all today` : ''}`);
+    el.setAttribute('aria-label', `${lpShown ? `Liquidity locked for good: about $${compact.format(lp)}. ` : ''}Burned all time: ${fmt(goal.plank)} PLANK and ${fmt(goal.paper)} PAPER`);
     const from = { ...bt.shown };
-    if (from.plank === goal.plank && from.paper === goal.paper && from.lp === goal.lp && from.usd === goal.usd) return;
+    if (from.plank === goal.plank && from.paper === goal.paper && from.lp === goal.lp) return;
     cancelAnimationFrame(bt.raf); bt.shown = goal;
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return paint(goal);
     const t0 = performance.now(), dur = from.plank || from.paper ? 800 : 1600;
     const step = (now) => {
       const k = Math.min(1, (now - t0) / dur), e = 1 - (1 - k) ** 3;
-      paint({ plank: from.plank + (goal.plank - from.plank) * e, paper: from.paper + (goal.paper - from.paper) * e, lp: from.lp + (goal.lp - from.lp) * e, usd: from.usd + (goal.usd - from.usd) * e });
+      paint({ plank: from.plank + (goal.plank - from.plank) * e, paper: from.paper + (goal.paper - from.paper) * e, lp: from.lp + (goal.lp - from.lp) * e });
       if (k < 1) bt.raf = requestAnimationFrame(step);
     };
     bt.raf = requestAnimationFrame(step);

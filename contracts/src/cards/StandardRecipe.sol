@@ -9,10 +9,12 @@ import {RecipeDealer} from "./RecipeDealer.sol";
  *         from its slot's fixed odds:
  *         - slot 1, 3 cards: Paper
  *         - slot 2, 1 card: Wood
- *         - slot 3, 1 card, Wood or better (out of 1,000): Wood 449, Fire 300, Coal 120, Gold 86, Full Art 45
- *         - slot 4, 1 card, Fire or better (out of 10,000): Fire 5,982, Coal 1,734, Gold 1,534, Full Art 750
- *         Per pack that is on average 3 Paper, 1.449 Wood, 0.8982 Fire, 0.2934 Coal, 0.2394 Gold and 0.12 Full Art:
- *         exactly the averages of the straight odds it replaces (50 / 24.15 / 14.97 / 4.89 / 3.99 / 2% of 6 cards).
+ *         - slot 3, 1 card, Wood or better (out of 1,000): Wood 494, Fire 300, Coal 120, Gold 86
+ *         - slot 4, 1 card, Fire or better (out of 10,000): Fire 6,732, Coal 1,734, Gold 1,534
+ *         Full Art: exactly one per character per Series (RecipeDealer's one-per-character rule), at random packs; it
+ *         takes the place of one of that pack's Papers. Full Art used to be in slots 3 and 4 (45 of 1,000 and 750 of
+ *         10,000); those shares went to the slots' first type (Wood, Fire), so Coal and Gold are exactly as before.
+ *         Per pack that is on average just under 3 Paper, 1.494 Wood, 0.9732 Fire, 0.2934 Coal and 0.2394 Gold.
  *         Holo: two independent rolls (frame, picture), each at 1 - sqrt(1 - rate) for 5/10/50/90%, so the chance
  *         of any holo is that rate; Gold and Full Art are always full holo. Characters: equal odds.
  */
@@ -34,17 +36,15 @@ library StandardRecipe {
 
     /// @dev Slot 3 ("Wood or better") weights, out of 1,000.
     uint64 internal constant WOOD_UP_TOTAL = 1_000;
-    uint64 internal constant WOOD_UP_WOOD = 449;
+    uint64 internal constant WOOD_UP_WOOD = 494;
     uint64 internal constant WOOD_UP_FIRE = 300;
     uint64 internal constant WOOD_UP_COAL = 120;
     uint64 internal constant WOOD_UP_GOLD = 86;
-    uint64 internal constant WOOD_UP_FULL_ART = 45;
     /// @dev Slot 4 ("Fire or better") weights, out of 10,000.
     uint64 internal constant FIRE_UP_TOTAL = 10_000;
-    uint64 internal constant FIRE_UP_FIRE = 5_982;
+    uint64 internal constant FIRE_UP_FIRE = 6_732;
     uint64 internal constant FIRE_UP_COAL = 1_734;
     uint64 internal constant FIRE_UP_GOLD = 1_534;
-    uint64 internal constant FIRE_UP_FULL_ART = 750;
 
     /// @dev Holo roll chances at 1e18 scale: 1 - sqrt(1 - rate) for 5%, 10%, 50%, 90%.
     uint64 internal constant PAPER_ROLL = 25320565519103609;
@@ -64,8 +64,9 @@ library StandardRecipe {
         r.slots = new RecipeDealer.Slot[](4);
         r.slots[SLOT_PAPER] = _slot(PAPER_COUNT, [uint64(1), 0, 0, 0, 0, 0]);
         r.slots[SLOT_WOOD] = _slot(1, [uint64(0), 1, 0, 0, 0, 0]);
-        r.slots[SLOT_WOOD_UP] = _slot(1, [uint64(0), WOOD_UP_WOOD, WOOD_UP_FIRE, WOOD_UP_COAL, WOOD_UP_GOLD, WOOD_UP_FULL_ART]);
-        r.slots[SLOT_FIRE_UP] = _slot(1, [uint64(0), 0, FIRE_UP_FIRE, FIRE_UP_COAL, FIRE_UP_GOLD, FIRE_UP_FULL_ART]);
+        r.slots[SLOT_WOOD_UP] = _slot(1, [uint64(0), WOOD_UP_WOOD, WOOD_UP_FIRE, WOOD_UP_COAL, WOOD_UP_GOLD, 0]);
+        r.slots[SLOT_FIRE_UP] = _slot(1, [uint64(0), 0, FIRE_UP_FIRE, FIRE_UP_COAL, FIRE_UP_GOLD, 0]);
+        r.onePerCharacter = FULL_ART + 1;
     }
 
     function _slot(uint32 count, uint64[6] memory w) internal pure returns (RecipeDealer.Slot memory s) {

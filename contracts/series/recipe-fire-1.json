@@ -87,23 +87,22 @@
   {
    "count": 1,
    "weights": {
-    "wood": 27,
+    "wood": 30,
     "fire": 18,
     "coal": 6,
-    "gold": 6,
-    "fullart": 3
+    "gold": 6
    }
   },
   {
    "count": 1,
    "weights": {
-    "fire": 18,
+    "fire": 21,
     "coal": 6,
-    "gold": 6,
-    "fullart": 3
+    "gold": 6
    }
   }
  ],
+ "onePerCharacter": "fullart",
  "characters": [
   {
    "name": "Pickle",

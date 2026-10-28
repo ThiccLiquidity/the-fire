@@ -26,7 +26,7 @@ setting: cards burned per free pack is 42, forever.
 |---|---|
 | Packs in the drop | 167 **total, every group included** (about 1,000 cards). Sold out means gone: no more packs for that Series, ever. |
 | Groups | 4 (below): Press holders 50, PLANK holders 40, Everyone 77 (+ leftovers), After sell-out (no pack count: the Series is 167 packs plus whatever sells after the sell-out) |
-| Pack (every pack, same odds) | 6 cards: 3 Paper · 1 Wood · 1 Wood or better (Wood 44.9%, Fire 30%, Coal 12%, Gold 8.6%, Full Art 4.5%) · 1 Fire or better (Fire 59.82%, Coal 17.34%, Gold 15.34%, Full Art 7.5%). Per pack on average 3 Paper, 1.449 Wood, 0.8982 Fire, 0.2934 Coal, 0.2394 Gold, 0.12 Full Art: of all cards Paper 50%, Wood 24.15%, Fire 14.97%, Coal 4.89%, Gold 3.99%, Full Art 2% (the Standard recipe; set per Series, before its drop is set up) |
+| Pack (every pack, same odds) | 6 cards: 3 Paper · 1 Wood · 1 Wood or better (Wood 49.4%, Fire 30%, Coal 12%, Gold 8.6%) · 1 Fire or better (Fire 67.32%, Coal 17.34%, Gold 15.34%). Full Art: exactly one per character per Series, in random packs, each in a Paper's place. Per pack on average 1.494 Wood, 0.9732 Fire, 0.2934 Coal, 0.2394 Gold (the Standard recipe; set per Series, before its drop is set up) |
 | Character odds | Equal (optional weights per Series) |
 | Pack price | $2.50 (the PLANK and Everyone groups; press packs have no dollar price) |
 | PAPER per pack | 1 (every group) |
@@ -137,10 +137,10 @@ nowhere). Setup is signed on the owner's hardware wallet; the public site has no
 - **One drop at a time.** The next drop can only be set up once the current one has closed.
 - **Each Series stands alone.** Its cards come only from its own packs, by its own recipe: every pack has the same slots and
   every card is rolled on its own from its slot's fixed odds, the same for the first and the last pack (no pool, no
-  caps). Standard: 3 Paper · 1 Wood · 1 Wood or better · 1 Fire or better; of all cards Paper 50%, Wood 24.15%, Fire
-  14.97%, Coal 4.89%, Gold 3.99%, Full Art 2%. Nothing carries over between
-  Series. Example: 167 packs (1,002 cards) make on average 501 Paper, 242 Wood, 150 Fire, 49 Coal, 40 Gold, 20 Full
-  Art; the real counts vary around these.
+  caps), except Full Art: exactly one per character per Series. Standard: 3 Paper · 1 Wood · 1 Wood or better · 1 Fire
+  or better; of all cards Wood 24.9%, Fire 16.22%, Coal 4.89%, Gold 3.99%, the rest Paper and the Full Arts. Nothing
+  carries over between Series. Example: 167 packs (1,002 cards) and 10 characters make exactly 10 Full Arts and on
+  average 491 Paper, 250 Wood, 163 Fire, 49 Coal, 40 Gold; the real counts vary around these.
 - **Every purchase names its limits:** the most PLANK/USDG (or the ETH sent), and the most PAPER. If a number moved,
   the purchase fails and costs nothing.
 - **Price feeds and the router** can be replaced by the owner only between drops (a retired Chainlink feed, a moved

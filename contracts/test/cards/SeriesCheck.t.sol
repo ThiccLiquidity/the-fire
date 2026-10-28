@@ -62,7 +62,7 @@ contract SeriesCheckTest is SeriesHelper {
         vm.expectRevert(bytes("on chain: imagesBase differs from the JSON"));
         cs.checkOnChain(vm.replace(json, "bafyexampleimages", "bafyotherimages"), address(dealer), address(cards));
         vm.expectRevert(bytes("on chain: the recipe differs from the JSON (run batch A)"));
-        cs.checkOnChain(vm.replace(json, '"fire": 5982', '"fire": 5983'), address(dealer), address(cards));
+        cs.checkOnChain(vm.replace(json, '"fire": 6732', '"fire": 6733'), address(dealer), address(cards));
         // the owner changes the folder after the check: caught too
         vm.prank(owner);
         cards.setImagesBase(7, "ipfs://bafychanged/");

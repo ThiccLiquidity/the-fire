@@ -242,7 +242,7 @@ contract CardsFuzzTest is SeriesHelper {
     /// Any seed, any split: Standard cards are one of its six types and three characters, Gold and Full Art full holo,
     /// and a pack dealt in two pieces is the same pack.
     function testFuzz_standardDealAnySeed(uint256 seed, uint256 k) public view {
-        uint256[] memory got = dealer.deal(1, seed, 0, 6);
+        uint256[] memory got = dealer.roll(1, seed, 0, 6);
         for (uint256 i; i < 6; i++) {
             uint256 t = uint32(got[i]);
             assertLt(t, 6);
@@ -250,8 +250,8 @@ contract CardsFuzzTest is SeriesHelper {
             if (t >= 4) assertEq((got[i] >> 64) & 3, 3, "Gold and Full Art: full holo");
         }
         k = bound(k, 1, 5);
-        uint256[] memory a = dealer.deal(1, seed, 0, k);
-        uint256[] memory b = dealer.deal(1, seed, k, 6 - k);
+        uint256[] memory a = dealer.roll(1, seed, 0, k);
+        uint256[] memory b = dealer.roll(1, seed, k, 6 - k);
         for (uint256 i; i < k; i++) assertEq(a[i], got[i]);
         for (uint256 i; i < 6 - k; i++) assertEq(b[i], got[k + i]);
     }

@@ -27,6 +27,15 @@
     id, name: NAME[id] || id, share: LIVE ? LIVE.types[id].share : (STD.find(([x]) => x === id)?.[1] || 0) / STD_TOTAL,
     always: LIVE ? LIVE.types[id].holo[0] === 0 && LIVE.types[id].holo[1] === 0 && LIVE.types[id].holo[2] === 0 : !RATE[id],
     }));
+    // one per character (the Standard's Full Art): in no slot, exactly one of each character in the Series, each in a
+    // Paper's place, so its share is exact: characters / cards (live: the chain's share is 0 for it; worked out here)
+    const ONE = LIVE ? LIVE.onePer : window.Store?.ONE_PER;
+    const one = MATS.find((m) => m.id === ONE);
+    if (one) {
+      const fa = Math.min(CHARACTERS, PACKS) / SERIES_CARDS, paper = MATS.find((m) => m.id === 'paper');
+      if (LIVE && paper) paper.share = Math.max(0, paper.share - fa); // the demo's CARD_ODDS already has it taken off
+      one.share = fa; one.onePer = true;
+    }
     const LEGACY = [{ id: 'diamond', name: 'Diamond', share: 1 / SERIES_CARDS, always: true }];
     [...MATS, ...LEGACY].forEach((m) => {
     m.count = m.share * SERIES_CARDS; // expected cards in a full Series (the odds, not a fixed count)
@@ -37,7 +46,7 @@
     m.frame = r * (1 - r); m.full = r * r; m.none = (1 - r) * (1 - r);
     });
     // a character's chance per card: its odds on the chain (live), else every character equally likely
-    charP = (character) => (LIVE?.chars && character != null && LIVE.chars[character] != null ? LIVE.chars[character] : 1 / CHARACTERS);
+    charP = (character, m) => (!m?.onePer && LIVE?.chars && character != null && LIVE.chars[character] != null ? LIVE.chars[character] : 1 / CHARACTERS);
     M = Object.fromEntries([...MATS, ...LEGACY].map((m) => [m.id, m]));
   }
   model();
@@ -94,10 +103,10 @@
   function matChart(no) {
     const max = Math.max(...MATS.map((m) => m.share));
     const rows = MATS.map((m) => `
-      <div class="inf-mrow" title="${m.name}: ${pct(m.share)} of cards, 1 in ${oneIn(m.share)}">
+      <div class="inf-mrow" title="${m.name}: ${m.onePer ? `exactly one per character, ${nf(Math.round(m.count))} in the Series` : `${pct(m.share)} of cards, 1 in ${oneIn(m.share)}`}">
         ${chip(m.id)}
         <span class="inf-mtrack"><span class="inf-mfill ${m.id}" style="--w:${m.share / max}"></span></span>
-        <span class="inf-mval">${pct(m.share)}<small>1 in ${oneIn(m.share)}</small></span>
+        <span class="inf-mval">${m.onePer ? `${nf(Math.round(m.count))}<small>1 per character</small>` : `${pct(m.share)}<small>1 in ${oneIn(m.share)}</small>`}</span>
       </div>`).join('');
     return `<figure class="inf-plate">
       <figcaption><b>Materials</b><span>Series ${no}: each card's odds</span></figcaption>
@@ -162,7 +171,8 @@
     const ids = slot.odds.filter(([, p]) => p > 0).map(([m]) => m).filter((m) => M[m]);
     if (!ids.length) return { lead: 'paper', text: 'Any', tail: '' };
     if (ids.length === 1) return { lead: ids[0], text: M[ids[0]].name, tail: '' };
-    const low = Math.min(...ids.map(rankOf)), up = MATS.filter((m) => rankOf(m.id) >= low).map((m) => m.id), first = ids.filter((m) => rankOf(m) === low);
+    // "or better" leaves out the one-per-character material (in no slot)
+    const low = Math.min(...ids.map(rankOf)), up = MATS.filter((m) => rankOf(m.id) >= low && !m.onePer).map((m) => m.id), first = ids.filter((m) => rankOf(m) === low);
     if (first.length === 1 && up.length === ids.length && up.every((m) => ids.includes(m))) return { lead: first[0], text: `${M[first[0]].name} or better`, tail: 'or better' };
     return { lead: ids[0], text: orList(ids.map((m) => M[m].name)), tail: 'or ' + orList(ids.slice(1).map((m) => M[m].name)) };
   }
@@ -257,7 +267,8 @@
 
   // the cards a Series prints, per material: "about 1 in N cards", with a line of flavour
   const FLAVOR = { paper: 'The everyday stock.', fire: 'This is where the heat starts.', gold: 'Gold leaf and gold holo on the art, a gold shine on the frame.',
-    fullart: 'The art takes over the whole card with no frame, always full holo. Pull a Full Art of a character nobody else has, and you\'re holding something special.' };
+    fullart: 'The art takes over the whole card with no frame, always full holo.' };
+  const ONE_PER_LINE = 'Exactly one of each character in the whole Series, hidden in random packs. Only one exists, so keep track of which are still out there.';
   function characterLine(no) {
     const chars = LIVE?.chars ? Object.entries(LIVE.chars).filter(([, p]) => p > 0) : [];
     const ps = chars.map(([, p]) => p), equal = !ps.length || Math.max(...ps) - Math.min(...ps) <= 1e-9 * Math.max(...ps);
@@ -350,7 +361,7 @@
         </ul>`),
       sec('cards', 'The cards', 'Every card is its own roll: material, holo and character.', `
         <p>Each card is printed on a material. The higher the material, the rarer the card, and the likelier it is to come out holo. In Series ${no}, each card rolls:</p>
-        <ul>${MATS.map((m) => `<li><b>${m.name}:</b> about 1 in ${oneIn(m.share)} cards.${FLAVOR[m.id] ? ' ' + FLAVOR[m.id] : ''}</li>`).join('')}</ul>
+        <ul>${MATS.map((m) => `<li><b>${m.name}:</b> ${m.onePer ? ONE_PER_LINE : `about 1 in ${oneIn(m.share)} cards.`}${FLAVOR[m.id] ? ' ' + FLAVOR[m.id] : ''}</li>`).join('')}</ul>
         ${matChart(no)}
         <ul>
           <li><b>Holo.</b> Any card can come out holo: on the frame, on the picture, or both (full holo). Higher materials shine more often.</li>
@@ -466,7 +477,7 @@
       <div class="inf-glance" aria-label="Rarity at a glance">
         <button type="button" data-go="pda"><b>${Wear.TEN_FRESH}</b><span>PDA 10 on a fresh card</span></button>
         ${(() => { const u = upsideDown()[0]; return u ? `<button type="button" data-go="cards" data-upside><b>1 in ${oneIn(u.p)}</b><span>${u.label}. Rarer than a Full Art.</span></button>` : ''; })()}
-        ${M.fullart?.share ? `<button type="button" data-go="cards"><b>1 in ${oneIn(M.fullart.share)}</b><span>Full Art in Series ${no}</span></button>` : ''}
+        ${M.fullart?.share ? (M.fullart.onePer ? `<button type="button" data-go="cards"><b>${nf(Math.round(M.fullart.count))} Full Arts</b><span>One per character in Series ${no}</span></button>` : `<button type="button" data-go="cards"><b>1 in ${oneIn(M.fullart.share)}</b><span>Full Art in Series ${no}</span></button>`) : ''}
       </div>
       ${list.map((s, i) => `
         <details class="inf-sec${s.tag ? ' hot' : ''}" id="info-${s.id}"${i === 0 ? ' open' : ''}>
@@ -508,7 +519,7 @@
     lookP(material, holo = 'none', character) {
       model();
       const m = M[material]; if (!m) return 0;
-      return m.share * this.holoP(material, holo) * charP(character);
+      return m.share * this.holoP(material, holo) * charP(character, m);
     },
     /** An upside-down rare look (a full holo low material, a plain high one, at least twice as rare as a Full Art): its chance per card
      *  (any character), else null. The card detail's "Upside-down rare" badge. */
@@ -519,7 +530,7 @@
     // a material's chance per card (Series' odds)
     shareOf(material) { model(); return M[material]?.share ?? 0; },
     // this Series' materials, in order, with each one's share of cards (the pack strip)
-    materials() { model(); return MATS.map(({ id, name, share }) => ({ id, name, share })); },
+    materials() { model(); return MATS.map(({ id, name, share, onePer }) => ({ id, name, share, onePer: !!onePer })); },
     // this Series' pack, slot by slot: [{ count, odds: [[material, p]], text: "Wood or better" }], and the one-line shape
     slots() { return packSlots().map((s) => ({ count: s.count, odds: s.odds, text: slotLabel(s).text })); },
     packLine,

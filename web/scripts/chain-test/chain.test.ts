@@ -99,19 +99,22 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const ps = await L.practiceSet(fire);
   check(ps && ps.imagesBase === "ipfs://bafyexampleimages/" && ps.characters.join() === "Ember Fox,Ash Wolf,Cinder Queen" && ps.types.map((t) => t.slug).join() === "paper,wood,fire,coal,gold,fullart",
     `practice set: Series 7's image folder, characters and card types (${ps?.types.map((t) => `${t.slug} ${(t.share * 100).toFixed(2)}%`).join(", ")})`);
-  check(Math.abs(ps.types.reduce((a, t) => a + t.share, 0) - 1) < 1e-9 && ps.types[0].share === 0.5 && Math.abs(ps.types[5].share - 0.02) < 1e-12 && ps.cardsPerPack === 6
-    && ps.characterOdds.every((p) => Math.abs(p - 1 / 3) < 1e-12), "its odds: 6 cards a pack, Paper 50% ... Full Art 2% of cards, characters equally likely");
+  check(Math.abs(ps.types.reduce((a, t) => a + t.share, 0) - 1) < 1e-9 && ps.types[0].share === 0.5 && ps.types[5].share === 0 && ps.onePerCharacter === 5 && ps.cardsPerPack === 6
+    && ps.characterOdds.every((p) => Math.abs(p - 1 / 3) < 1e-12), "its odds: 6 cards a pack, Paper 50% of slot cards, Full Art one per character (in no slot), characters equally likely");
   check(ps.slots.map((x) => x.count).join() === "3,1,1,1" && ps.slots[0].odds[0] === 1 && ps.slots[1].odds[1] === 1
-    && Math.abs(ps.slots[2].odds[1] - 0.449) < 1e-12 && Math.abs(ps.slots[3].odds[2] - 0.5982) < 1e-12 && ps.slots[3].odds[0] === 0 && ps.slots[3].odds[1] === 0,
-    "its pack (RecipeDealer.slotsOf): 3 Paper · 1 Wood · 1 Wood or better (Wood 44.9%) · 1 Fire or better (Fire 59.82%)");
+    && Math.abs(ps.slots[2].odds[1] - 0.494) < 1e-12 && Math.abs(ps.slots[3].odds[2] - 0.6732) < 1e-12 && ps.slots[3].odds[0] === 0 && ps.slots[3].odds[1] === 0,
+    "its pack (RecipeDealer.slotsOf): 3 Paper · 1 Wood · 1 Wood or better (Wood 49.4%) · 1 Fire or better (Fire 67.32%)");
   const many = Array.from({ length: 400 }, () => L.practiceDeal(ps));
   const cardsAll = many.flat(), paperN = cardsAll.filter((c) => c.slug === "paper").length;
   const imgOk = cardsAll.every((c) => c.image === `ipfs://bafyexampleimages/c${c.characterIndex}-${c.slug}-${c.holo}-u.webp` && ps.characters[c.characterIndex] === c.character);
   const special = cardsAll.filter((c) => c.rank >= 4);
   const shaped = many.every((p) => p.length === 6 && p.slice(0, 3).every((c) => c.slug === "paper") && p[3].slug === "wood" && p[4].rank >= 1 && p[5].rank >= 2);
   const woodUp = many.filter((p) => p[4].slug === "wood").length;
-  check(shaped && paperN === 1200 && Math.abs(woodUp - 180) < 55 && imgOk && special.every((c) => c.holo === "full"),
+  check(shaped && paperN === 1200 && Math.abs(woodUp - 198) < 55 && imgOk && special.every((c) => c.holo === "full"),
     `400 practice packs, slot by slot: 3 Paper, a Wood, a Wood or better (Wood ${woodUp} of 400), a Fire or better in every pack; each card's image is the Series' own (c<character>-<slug>-<holo>-u.webp); Gold and Full Art always full holo (${special.length} of them)`);
+  const tight = Array.from({ length: 50 }, () => L.practiceDeal(ps, Math.random, 3)); // as many packs as characters: one each
+  check(tight.every((p) => p[0].slug === "fullart" && p[0].holo === "full" && p.slice(1, 3).every((c) => c.slug === "paper")),
+    "a practice pack's Full Art takes its first Paper's place, with the Series' chance (characters / packs)");
 
   console.log("\n== suggestions: theme + art style in one transaction, then the owner picks");
   const rules = await L.suggestionRules();

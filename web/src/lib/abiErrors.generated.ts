@@ -86,7 +86,7 @@ export const ABI_ERRORS = {
   NoPrice: { inputs: [], contracts: ["fireGames"] },
   NotAllowed: { inputs: [], contracts: ["fireGroups"] },
   NotAwarder: { inputs: [], contracts: ["fireCredits"] },
-  NotCards: { inputs: [], contracts: ["firePacks"] },
+  NotCards: { inputs: [], contracts: ["firePacks", "recipeDealer"] },
   NotConfigured: { inputs: [], contracts: ["fireCards", "recipeDealer"] },
   NotCredits: { inputs: [], contracts: ["fireSale"] },
   NotEditor: { inputs: [], contracts: ["morningWood"] },

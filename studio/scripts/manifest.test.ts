@@ -9,7 +9,7 @@ const standard = JSON.parse(readFileSync(new URL('../../contracts/test/cards/rec
 describe('manifest.json', () => {
   it('recipe hash: the value ops/series/verify-series.mjs computes for the same recipe.json', () => {
     // the same constant is asserted in ops/series/verify-series.test.mjs
-    expect(recipeHash(standard)).toBe('32cdd060a21eb44c9f434f0d857bcb749661f473e7dc457288b969cc75efa7f7')
+    expect(recipeHash(standard)).toBe('0ba2257fcb65378888bf7037d08bc73f81a7703beb12ac616bfd84b02b65c166')
     expect(recipeHash({ ...standard, imagesBase: 'ipfs://x/' })).toBe(recipeHash(standard))
   })
 

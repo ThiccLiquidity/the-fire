@@ -106,7 +106,7 @@ contract RecipeTest is SeriesHelper {
         t.full = new uint256[](nt);
         t.chars = new uint256[](dealer.characterCount(fire));
         for (uint256 p; p < n; p++) {
-            uint256[] memory got = dealer.deal(fire, uint256(keccak256(abi.encode(salt, p))), 0, per);
+            uint256[] memory got = dealer.roll(fire, uint256(keccak256(abi.encode(salt, p))), 0, per);
             for (uint256 i; i < got.length; i++) {
                 uint256 a = got[i];
                 uint256 ty = uint32(a);
@@ -155,8 +155,9 @@ contract RecipeTest is SeriesHelper {
         assertEq(counts[0], 3); assertEq(counts[1], 1); assertEq(counts[2], 1); assertEq(counts[3], 1);
         assertEq(totals[0], 1); assertEq(totals[1], 1); assertEq(totals[2], 1_000); assertEq(totals[3], 10_000);
         assertEq(w[0][0], 1); assertEq(w[0][1], 0); assertEq(w[1][1], 1); assertEq(w[1][0], 0);
-        assertEq(w[2][0], 0); assertEq(w[2][1], 449); assertEq(w[2][2], 300); assertEq(w[2][3], 120); assertEq(w[2][4], 86); assertEq(w[2][5], 45);
-        assertEq(w[3][1], 0); assertEq(w[3][2], 5982); assertEq(w[3][3], 1734); assertEq(w[3][4], 1534); assertEq(w[3][5], 750);
+        assertEq(w[2][0], 0); assertEq(w[2][1], 494); assertEq(w[2][2], 300); assertEq(w[2][3], 120); assertEq(w[2][4], 86); assertEq(w[2][5], 0);
+        assertEq(w[3][1], 0); assertEq(w[3][2], 6732); assertEq(w[3][3], 1734); assertEq(w[3][4], 1534); assertEq(w[3][5], 0);
+        assertEq(r.onePerCharacter, 6, "Full Art: one per character");
         (uint256[] memory cw, uint256 ctotal) = dealer.characterOddsOf(1);
         assertEq(cw.length, 3);
         assertEq(ctotal, 3, "no weights set: every character 1");
@@ -178,8 +179,8 @@ contract RecipeTest is SeriesHelper {
     // ---------------------------------------------------------------- the odds
 
     /// Over many packs every slot's types, every holo look and character come out at their odds (Standard recipe,
-    /// 20 characters), and the per-pack averages are the Standard's: 3 Paper, 1.449 Wood, 0.8982 Fire, 0.2934 Coal,
-    /// 0.2394 Gold, 0.12 Full Art.
+    /// 20 characters), and the slot rolls' per-pack averages are the Standard's: 3 Paper, 1.494 Wood, 0.9732 Fire,
+    /// 0.2934 Coal, 0.2394 Gold (Full Art is only ever the one-per-character card).
     function test_standardOddsConverge() public {
         _standard(cards, dealer, owner, 2, 20);
         uint256 n = 4000;
@@ -188,7 +189,7 @@ contract RecipeTest is SeriesHelper {
         // each slot on its own: positions 0-2 always Paper, 3 always Wood, 4 and 5 at their slot's weights
         uint256[6][6] memory at; // at[position][type]
         for (uint256 p; p < n; p++) {
-            uint256[] memory got = dealer.deal(2, uint256(keccak256(abi.encode(uint256(1), p))), 0, 6);
+            uint256[] memory got = dealer.roll(2, uint256(keccak256(abi.encode(uint256(1), p))), 0, 6);
             for (uint256 i; i < 6; i++) at[i][uint32(got[i])]++;
         }
         for (uint256 i; i < 3; i++) assertEq(at[i][0], n, "slot 1: Paper only");
@@ -200,8 +201,8 @@ contract RecipeTest is SeriesHelper {
         }
         assertEq(at[4][0], 0, "slot 3: never Paper");
         assertEq(at[5][0] + at[5][1], 0, "slot 4: never Paper or Wood");
-        // per pack (out of 10,000 packs' worth): Paper 30,000, Wood 14,490, Fire 8,982, Coal 2,934, Gold 2,394, Full Art 1,200
-        uint256[6] memory perPack = [uint256(30_000), 14_490, 8_982, 2_934, 2_394, 1_200];
+        // per pack (out of 10,000 packs' worth): Paper 30,000, Wood 14,940, Fire 9,732, Coal 2,934, Gold 2,394, Full Art 0
+        uint256[6] memory perPack = [uint256(30_000), 14_940, 9_732, 2_934, 2_394, 0];
         uint256 sum;
         for (uint256 ty; ty < 6; ty++) {
             uint256 expect = (3 * (w[0][ty] * 10_000 / totals[0]) + w[1][ty] * 10_000 / totals[1] + w[2][ty] * 10_000 / totals[2]
@@ -209,31 +210,28 @@ contract RecipeTest is SeriesHelper {
             assertEq(expect, perPack[ty], string.concat(names[ty], ": expected per pack"));
             sum += expect;
             // the whole tally per card: its per-pack average / 6 (within 5 standard deviations of the per-card rate)
-            _near(t.types[ty], t.cards, perPack[ty], 60_000, names[ty]);
+            if (perPack[ty] != 0) _near(t.types[ty], t.cards, perPack[ty], 60_000, names[ty]);
+            else assertEq(t.types[ty], 0, string.concat(names[ty], ": never from a slot"));
         }
         assertEq(sum, 60_000, "6 cards a pack");
         // holo: any holo 5 / 10 / 50 / 90%; Gold and Full Art always full holo
         uint16[4] memory any = [500, 1000, 5000, 9000];
         for (uint256 i; i < 4; i++) _near(t.holo[i], t.types[i], any[i], 10_000, string.concat(names[i], " holo"));
         assertEq(t.full[4], t.types[4], "Gold: full holo");
-        assertEq(t.full[5], t.types[5], "Full Art: full holo");
         // full holo = both rolls: Coal 1 - sqrt(0.1) per roll, squared ~ 46.8%
         _near(t.full[3], t.types[3], 4675, 10_000, "Coal full holo");
         for (uint256 c; c < 20; c++) _near(t.chars[c], t.cards, 1, 20, "a character");
     }
 
-    /// The pack's shape is all the guarantee there is: every Standard pack has 3 Paper, a Wood, a Wood-or-better and
-    /// a Fire-or-better, and nothing caps the rest: a pack can hold two Full Arts, two Golds, or no Fire at all past
-    /// its last slot's, and a character can get any number of Full Arts.
+    /// The slots' shape is all the guarantee they give: every Standard pack rolls 3 Paper, a Wood, a Wood-or-better
+    /// and a Fire-or-better, and nothing caps the rest: a pack can hold two Golds, or no Fire at all past its last
+    /// slot's. Full Art never comes from a slot (only from the one-per-character rule).
     function test_shapeIsTheOnlyGuarantee() public view {
-        uint256 twoFullArts;
         uint256 twoGolds;
         uint256 woodWood; // slot 3 came out Wood: the only Fire or better is slot 4's
-        uint256[3] memory fullArtOf;
         for (uint256 p; p < 3000; p++) {
-            uint256[] memory got = dealer.deal(1, uint256(keccak256(abi.encode("caps", p))), 0, 6);
+            uint256[] memory got = dealer.roll(1, uint256(keccak256(abi.encode("caps", p))), 0, 6);
             uint256 paper;
-            uint256 fa;
             uint256 gold;
             uint256 better;
             for (uint256 i; i < 6; i++) {
@@ -241,25 +239,26 @@ contract RecipeTest is SeriesHelper {
                 if (ty == 0) paper++;
                 if (ty >= 2) better++;
                 if (ty == 4) gold++;
-                if (ty == 5) { fa++; fullArtOf[uint32(got[i] >> 32)]++; }
+                assertTrue(ty != 5, "no Full Art from a slot");
             }
             assertEq(paper, 3, "3 Paper, always");
             assertGe(better, 1, "a Fire or better, always");
-            if (fa >= 2) twoFullArts++;
             if (gold >= 2) twoGolds++;
             if (uint32(got[4]) == 1) woodWood++;
         }
-        assertGt(twoFullArts, 3, "two Full Arts in one pack happen (4.5% x 7.5%)");
         assertGt(twoGolds, 15, "two Golds in one pack happen (8.6% x 15.34%)");
-        assertGt(woodWood, 1100, "slot 3 is Wood 44.9% of the time");
-        for (uint256 c; c < 3; c++) assertGt(fullArtOf[c], 1, "no one-per-character cap");
+        assertGt(woodWood, 1300, "slot 3 is Wood 49.4% of the time");
     }
 
     /// The last pack of a big Series gets exactly what the only pack of a one-pack Series gets from the same word:
-    /// nothing depends on what was dealt before, how many packs there are, or what is left.
+    /// the slot rolls depend on nothing dealt before, how many packs there are, or what is left. (A recipe without
+    /// the one-per-character rule: that rule is the one thing that does look at what is left.)
     function test_lastPackSameOddsAsFirst() public {
-        _standard(cards, dealer, owner, 3, 5);
-        _standard(cards, dealer, owner, 4, 5);
+        RecipeDealer.Recipe memory old = StandardRecipe.build();
+        old.onePerCharacter = 0;
+        old.slots[3].weights[5] = 750;
+        _series(cards, dealer, owner, 3, old, 5);
+        _series(cards, dealer, owner, 4, old, 5);
         vm.startPrank(seller);
         packs.mint(_holder(0), 3, 1);
         packs.mint(_holder(0), 4, 300);
@@ -293,7 +292,7 @@ contract RecipeTest is SeriesHelper {
         }
         // and the dealer's view gives the same pack, before and after everything was dealt
         uint256 seed = uint256(keccak256(abi.encode(w, uint256(0))));
-        assertEq(keccak256(abi.encode(dealer.deal(3, seed, 0, 6))), keccak256(abi.encode(dealer.deal(4, seed, 0, 6))));
+        assertEq(keccak256(abi.encode(dealer.roll(3, seed, 0, 6))), keccak256(abi.encode(dealer.roll(4, seed, 0, 6))));
         // print numbers count each Series on its own: Series 3's only pack starts at #1, while the same cards in
         // Series 4 come after 299 packs of it
         bool one;
@@ -363,7 +362,7 @@ contract RecipeTest is SeriesHelper {
         // independent of type: among Full Arts too
         uint256[4] memory fa;
         for (uint256 p; p < 3000; p++) {
-            uint256[] memory got = dealer.deal(6, uint256(keccak256(abi.encode(uint256(2), p))), 0, 6);
+            uint256[] memory got = dealer.roll(6, uint256(keccak256(abi.encode(uint256(2), p))), 0, 6);
             for (uint256 i; i < 6; i++) if (uint32(got[i]) >= 3) fa[uint32(got[i] >> 32)]++;
         }
         uint256 nfa = fa[0] + fa[1] + fa[2] + fa[3];
@@ -381,7 +380,7 @@ contract RecipeTest is SeriesHelper {
         dealer.setCharacterWeights(7, ones);
         for (uint256 p; p < 50; p++) {
             uint256 seed = uint256(keccak256(abi.encode("u", p)));
-            assertEq(keccak256(abi.encode(dealer.deal(6, seed, 0, 6))), keccak256(abi.encode(dealer.deal(7, seed, 0, 6))));
+            assertEq(keccak256(abi.encode(dealer.roll(6, seed, 0, 6))), keccak256(abi.encode(dealer.roll(7, seed, 0, 6))));
         }
         // clearing them goes back to uniform
         vm.prank(owner);
@@ -820,16 +819,16 @@ contract RecipeTest is SeriesHelper {
 
     /// deal is a view of the seed: anyone can check a pack, and it never changes the dealer.
     function test_dealIsAPureViewOfTheSeed() public {
-        uint256[] memory a = dealer.deal(1, 42, 0, 6);
+        uint256[] memory a = dealer.roll(1, 42, 0, 6);
         vm.prank(_holder(3));
-        uint256[] memory b = dealer.deal(1, 42, 2, 4);
+        uint256[] memory b = dealer.roll(1, 42, 2, 4);
         for (uint256 i; i < 4; i++) assertEq(a[2 + i], b[i], "a pack dealt in pieces is the same");
         vm.expectRevert(RecipeDealer.BadDeal.selector);
-        dealer.deal(1, 42, 4, 3);
+        dealer.roll(1, 42, 4, 3);
         vm.expectRevert(RecipeDealer.BadDeal.selector);
-        dealer.deal(1, 42, 0, 0);
+        dealer.roll(1, 42, 0, 0);
         vm.expectRevert(RecipeDealer.NotConfigured.selector);
-        dealer.deal(99, 42, 0, 1);
+        dealer.roll(99, 42, 0, 1);
     }
 
     // ---------------------------------------------------------------- the studio's recipe JSON
@@ -921,7 +920,7 @@ contract RecipeTest is SeriesHelper {
         vm.expectRevert(bytes(".types[2].rank is too big for its field"));
         cs.parse(vm.replace(json, '"rank": 2,', '"rank": 4294967296,'));
         vm.expectRevert(bytes("$.slots[3].weights['fire'] is too big for its field"));
-        cs.parse(vm.replace(json, '"fire": 5982,', '"fire": 18446744073709551616,'));
+        cs.parse(vm.replace(json, '"fire": 6732,', '"fire": 18446744073709551616,'));
         vm.expectRevert(bytes(".slots[0].count is too big for its field"));
         cs.parse(vm.replace(json, '{ "count": 3,', '{ "count": 4294967296,'));
     }

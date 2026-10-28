@@ -25,7 +25,7 @@
     if (!L?.on || !L.chain || !no) return null;
     const set = await Promise.race([L.chain.practiceSet(no), new Promise((ok) => setTimeout(() => ok(null), 6000))]).catch(() => null);
     if (!set) return null;
-    return L.chain.practiceDeal(set).map((x) => ({
+    return L.chain.practiceDeal(set, Math.random, Store.state.series.total || 0).map((x) => ({
       id: -(++n), serial: 0, series: set.fire, practice: true, character: x.character,
       material: L.toMaterial(x.typeName) || L.toMaterial(x.slug) || RANKED[Math.min(x.rank, RANKED.length - 1)], holo: x.holo, image: L.gateway(x.image),
       edition: 'Practice', grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 }));
@@ -37,8 +37,8 @@
    *  its own at its slot's odds (Store.rollPack), like the contract. */
   Fun.practicePack = () => (window.Live?.on ? livePack().catch(() => null).then((p) => p || demoPack()) : demoPack());
   const demoPack = () => {
-    return Store.rollPack().map(({ material: m, holo }) => {
-      return { id: -(++n), serial: 0, series: ART_SERIES, practice: true, character: CAST[Math.floor(Math.random() * CAST.length)],
+    return Store.rollPack(Math.random, undefined, CAST).map(({ material: m, holo, character }) => {
+      return { id: -(++n), serial: 0, series: ART_SERIES, practice: true, character: character || CAST[Math.floor(Math.random() * CAST.length)],
         material: m, holo, edition: 'Practice', grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
     });
   };

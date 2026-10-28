@@ -64,6 +64,9 @@ contract RecipeCompiler {
             for (uint256 i; i < 4; i++) p[at + 1 + i] = c.holo[i];
         }
         bool[] memory dealt = new bool[](n);
+        uint256 one = r.onePerCharacter; // 1 + the type dealt once per character, in no slot (0 = none)
+        if (one > n) revert BadRecipe("one per character");
+        if (one != 0) dealt[one - 1] = true;
         for (uint256 s; s < k; s++) {
             RecipeDealer.Slot memory sl = r.slots[s];
             if (sl.count == 0) revert BadSlot(s, "count");
@@ -74,6 +77,7 @@ contract RecipeCompiler {
             uint256 total;
             for (uint256 t; t < n; t++) {
                 uint256 w = sl.weights[t];
+                if (w != 0 && t + 1 == one) revert BadSlot(s, "one-per-character type in a slot");
                 if (w != 0) dealt[t] = true;
                 total += w;
                 p[at + SW_HEAD + t] = total;
