@@ -235,7 +235,7 @@ function GroupCard({ s, i, packs, problems, busy, set, remove, move }: {
           </span>
         </GF>
         <GF all={mine} gi={i} f="priceUsd" label="Price ($)" hint="0 = none."><Text value={g.priceUsd} onChange={(v) => set({ priceUsd: v })} testId={tid('price')} width={80} /></GF>
-        <GF all={mine} gi={i} f="paper" label="PAPER" hint="Burned. 0 = none."><Text value={g.paper} onChange={(v) => set({ paper: v })} testId={tid('paper')} width={70} /></GF>
+        <GF all={mine} gi={i} f="paper" label="PAPER" hint="To liquidity. 0 = none."><Text value={g.paper} onChange={(v) => set({ paper: v })} testId={tid('paper')} width={70} /></GF>
         <GF all={mine} gi={i} f="coins" label="Pays in">
           <span className={`row inline coins ${priced ? '' : 'off'}`}>
             {COINS.map((c) => (
@@ -266,7 +266,7 @@ function GroupCard({ s, i, packs, problems, busy, set, remove, move }: {
             </select>
           </GF>
         )}
-        <GF all={mine} gi={i} f="taxPercent" label="Rising price (% a pack)" hint="0 = off. The rise burns PAPER."><Text value={g.taxPercent} onChange={(v) => set({ taxPercent: v })} testId={tid('tax')} width={60} /></GF>
+        <GF all={mine} gi={i} f="taxPercent" label="Rising price (% a pack)" hint="0 = off. The rise goes to liquidity."><Text value={g.taxPercent} onChange={(v) => set({ taxPercent: v })} testId={tid('tax')} width={60} /></GF>
         <GF all={mine} gi={i} f="unlimited" label="Unlimited" hint="Needs a rising price + idle end.">
           <label className="small"><input type="checkbox" checked={g.unlimited} onChange={(e) => set({ unlimited: e.target.checked, ...(e.target.checked ? { rollTo: -1 } : {}) })} data-testid={tid('unlimited')} /> sells until nobody buys</label>
         </GF>

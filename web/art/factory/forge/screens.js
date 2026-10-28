@@ -759,7 +759,7 @@
           if (ho) holoLand(el, !tier, slow, rm);
           const name = cardName(c);
           if (isHolo(c)) el.classList.add('holo-glow'); // every holo card, any material, glows on reveal
-          if (tier) { el.classList.add('rare', 'burst'); if (tier !== 'legendary') Sfx.hit(tier); msg.textContent = tier === 'legendary' ? `LEGENDARY. ${name}` : tier === 'epic' ? `Epic pull! ${name}` : name + '!'; }
+          if (tier) { el.classList.add('rare', 'burst'); if (tier !== 'legendary') Sfx.hit(tier); msg.textContent = tier === 'legendary' ? `Legendary pull! ${name}` : tier === 'epic' ? `Epic pull! ${name}` : name + '!'; }
           else msg.textContent = isHolo(c) ? name + '!' : last ? name : 'Swipe or tap for the next card';
           const od = Store.trueOdds(c);
           put(meta, h('span', { class: 'op-n', text: `${i + 1} / ${order.length}` }), matChip(c.material), holoChip(c),
@@ -1458,7 +1458,7 @@
     const drawProg = () => progressList(prog, ['grading']); // gradings still out (after a reload too)
     drawProg(); listen('grade', drawProg);
     Sheet.open('grade', { title: 'Case & grade', body: root, wide: true, onClose: () => unlisten('grade') });
-    if (!pool.length) { put(wiz, h('div', { class: 'empty-state' }, h('p', { text: 'Every card you have is slabbed. Open a pack for more!' }), Wear.howPill())); return; }
+    if (!pool.length) { put(wiz, h('div', { class: 'empty-state' }, h('p', { text: 'No cards to case or grade. Open a pack for more!' }), Wear.howPill())); return; }
     protectFlow(wiz, { cards: pool, station: true, start: opts.as === 'case' ? 'case' : 'grade', pre: opts.as === 'case' ? { case: pick } : { grade: pick },
       done: () => [btn('Case or grade more', '', () => openGrade()), btn('Done', 'primary', () => Sheet.close('grade'))] });
   }
@@ -1733,8 +1733,8 @@
       btn('Write another', '', () => { doneEl.hidden = true; formBits.forEach((el) => { el.hidden = false; }); paperEl.hidden = false; paperEl.style.visibility = ''; renderAct(); fields.forEach((f) => f.grow()); fields[0].ta.focus(); }));
     const act = h('div', { class: 'sg-act' }); const listEl = h('div', { class: 'sg-list' });
     const notes = h('div', { class: 'sg-notes' },
-      h('p', { class: 'sg-joke', text: 'Jokes cost PAPER too. Only real ideas get picked.' }),
-      h('p', { class: 'reward', text: 'Get picked, get a free pack.' }),
+      h('p', { class: 'sg-joke', text: 'Go weird. Jokes cost PAPER too, and the best ones can get picked.' }),
+      h('p', { class: 'reward', text: 'Get picked, win a free pack.' }),
       Store.SUGGEST_RESULTS.length ? h('p', {}, btn('Last results', 'rs-link', () => { Sheet.close('suggest'); openResults(); })) : null);
     const stage = h('div', { class: 'sg-stage' }, paperEl, doneEl, h('img', { class: 'sg-mascot', src: 'ui/brand/paper-256.webp', alt: '', 'aria-hidden': 'true', width: 62, height: 80 }));
     const formBits = [notes, act];
@@ -1904,7 +1904,7 @@
       stage, notes, act, listEl);
     const render = () => { renderAct(); renderList(); };
     listen('suggest', render);
-    Sheet.open('suggest', { title: LOOK ? 'Suggest a theme and art style' : 'Suggest a character', body: root, onClose: () => { unlisten('suggest'); document.querySelectorAll('.sg-fly, .sg-dropbox').forEach((el) => el.remove()); } });
+    Sheet.open('suggest', { title: LOOK ? 'Suggest a theme and an art style' : 'Suggest a character', body: root, onClose: () => { unlisten('suggest'); document.querySelectorAll('.sg-fly, .sg-dropbox').forEach((el) => el.remove()); } });
     render(); fields.forEach((f) => f.sync()); setTimeout(() => fields[0].ta.focus(), 50);
     document.fonts?.ready.then(() => fields.forEach((f) => f.grow())); // the handwriting font changes the line breaks
   }
@@ -1923,7 +1923,7 @@
   const waveKey = (w) => `${w.series}-${w.wave}`;
   const day = (t) => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const KIND_LABEL = { theme: 'Theme', style: 'Art style', character: 'Character' };
-  const drawCmd = (w) => `node suggestions/draw.mjs --round ${w.round} --seed ${w.seed} --kind ${w.wave === 'look' ? 'look' : 'character'}`;
+  const drawCmd = (w) => `cd ops && node suggestions/draw.mjs --rpc <RPC url> --verify draw-round-${w.round}-${w.wave === 'look' ? 'look' : 'character'}.json`;
   function youBanner(w, compact = false) {
     if (!connected()) return h('div', { class: 'rs-you' }, h('p', { text: 'Connect to see how your idea did.' }), compact ? null : connectBtn());
     const r = Store.resultFor(w, me());
@@ -1937,7 +1937,7 @@
           : `Your free pack lands before Series ${w.series} goes on sale.`) }),
         compact || !landed ? null : open
           ? btn('Use my free pack', 'primary', () => { Sheet.close('results'); Sheet.close('reveal'); const b = document.querySelector('#buybox [data-buy], #buybar [data-buy]'); b?.focus({ preventScroll: true }); b?.classList.add('nudge'); })
-          : h('p', { class: 'muted', text: `Use it on any pack when Series ${S().series.no + 1} opens.` }));
+          : h('p', { class: 'muted', text: `Use it in Series ${S().series.no + 1} while its free-pack group is open.` }));
     }
     if (r === 'shortlisted') {
       const mine = w.kinds.flatMap((k) => k.shortlist).find(mineIn);
@@ -1969,7 +1969,7 @@
       h('details', { class: 'rs-fair' }, h('summary', { text: 'How the 10 were drawn' }),
         h('p', { text: 'A fair random draw: one entry per wallet. Same idea twice? The first one wins.' }),
         h('details', { class: 'rs-check' }, h('summary', { text: 'Check the draw' }),
-        h('p', { class: 'muted', text: 'Run this to get the same 10:' }),
+        h('p', { class: 'muted', text: 'Check it against the chain (with the published draw file):' }),
         h('code', { class: 'rs-cmd', text: drawCmd(w) }),
         h('p', { class: 'muted' }, 'Seed ', h('b', { text: w.seed }), w.suggestions ? ` · ${Number(w.suggestions).toLocaleString('en-US')} ideas sent · ` : ' · ',
           h('a', { href: 'https://github.com/ThiccLiquidity/the-fire/blob/main/ops/suggestions/draw.mjs', target: '_blank', rel: 'noopener', text: 'the draw script' })),

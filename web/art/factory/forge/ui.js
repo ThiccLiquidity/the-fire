@@ -179,7 +179,7 @@
   };
   const coinsTxt = (g) => (!g.coins.length ? '' : g.coins.length === 3 ? 'PLANK, ETH or USDG' : g.coins.length === 1 ? `${g.coins[0]} only` : g.coins.join(' or '));
   const pct = (bps) => `${+(bps / 100).toFixed(2)}%`;
-  const leftTxt = (g) => (g.left == null ? `+${pct(g.taxBps)} per pack` : `${g.left.toLocaleString('en-US')} left`);
+  const leftTxt = (g) => (g.left == null ? `+${pct(g.taxBps)} a pack` : `${g.left.toLocaleString('en-US')} left`);
   /** A wallet limit on a timer (limitFor): " · 5 per wallet for 18h 2m", " · no limit" once it lifts; '' without one. */
   const limitTxt = (g) => (!g.limitFor || !g.perWallet ? '' : !Store.walletLimit(g) ? ' · no limit'
     : ` · ${g.perWallet} per wallet for ${g.limitUntil ? cd(g.limitUntil) : Store.spanTxt(g.limitFor)}`);
@@ -224,7 +224,7 @@
     for (const { g, a, usable } of rows) {
       if (g.unlimited) {
         const p = g.next;
-        out.push([`g${g.index}`, 'Extra pack', p ? `${money(p.usd)} + ${paperTxt(g.paper)}<br>+${pct(g.taxBps)} each${g.endsAt ? ` · ends in ${cd(g.endsAt)}` : ''}` : 'Price cap reached',
+        out.push([`g${g.index}`, 'Extra pack', p ? `${money(p.usd)} + ${paperTxt(g.paper)}<br>+${pct(g.taxBps)} a pack${g.endsAt ? ` · ends in ${cd(g.endsAt)}` : ''}` : 'Price cap reached',
           usable && p ? (main ? 'extra' : (main = true, 'extra main')) : 'off']);
         continue;
       }
@@ -619,7 +619,7 @@
         }
         const head = extra
           ? `<div class="xpanel"><p class="xhead">Extra pack: <b>${money(usd / n)}</b></p>
-              <p>+${pct(g.taxBps)} each sale. Sales end ${idleTxt(g.idle)} after the last buy.</p>
+              <p>+${pct(g.taxBps)} a pack. Sales end ${idleTxt(g.idle)} after the last buy.</p>
               ${g.endsAt ? `<p class="xend">Ends in ${cd(g.endsAt)} if nobody buys.</p>` : ''}
               ${g.after?.length ? `<p class="xnext">Then ${g.after.map((x) => money(x.usd)).join(', ')}…</p>` : ''}</div>`
           : `<p class="lead">${esc(g.who)} · ${esc(leftTxt(g))}${limitTxt(g)}${g.endsAt ? ` · ends in ${cd(g.endsAt)}` : ''}</p>`;
@@ -693,7 +693,7 @@
       const draw = () => {
         const w = S.wallet; n = Math.max(1, Math.min(w.credits, n));
         const paper = n * per, short = w.balances.PAPER < paper, need = !short && Store.needsApproval('PAPER', paper);
-        body.innerHTML = `<p class="lead">Free packs still cost ${per} PAPER each.</p>
+        body.innerHTML = `<p class="lead">Free packs still take ${per} PAPER each.</p>
           ${w.credits > 1 ? `<div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output>${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button><span class="muted">of ${w.credits}</span></div>` : ''}
           <dl class="sum"><dt>PAPER</dt><dd>${Brand.amt('PAPER', paper)}</dd><dt>You have</dt><dd>${Brand.amt('PAPER', `${w.balances.PAPER} PAPER`)}</dd></dl>
           ${short ? shortLine('PAPER', paper - w.balances.PAPER) : ''}${DEMO_LINE}
@@ -860,7 +860,7 @@
     if (k !== 'open' || Stations.openableCount() || (S.wallet.unfinished || []).some((x) => x.kind === 'open')) return Stations.open(k); // live: an open still being dealt shows its waiting screen
     const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0);
     if (sealed) return toast(`Your Series ${S.series.no} packs open when sales end.`);
-    if (sold()) return toast(`No packs to open. Series ${S.series.no + 1} is coming soon`);
+    if (sold()) return toast(`No packs to open. Series ${S.series.no + 1} is coming soon.`);
     toast('No packs to open yet. Buy one first!');
     const b = $(mode === 'desk' ? '#buybox [data-buy]' : '#buybar [data-buy]'); if (!b) return;
     b.focus({ preventScroll: true }); b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge');

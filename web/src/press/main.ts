@@ -50,7 +50,7 @@ ${LIVE ? "" : '<div class="demo-note" role="note"><b>Demo</b><span>Nothing here 
     <li><b>One issue a day.</b> Written overnight, out in the morning. The whole issue is one NFT, read right here: flip it like a paper.</li>
     <li><b>Today only.</b> Each issue sells for 24 hours, then closes for good. After that, old issues only come from other holders.</li>
     <li><b>Price.</b> 1 PAPER plus $0.05 in ETH or USDG.</li>
-    <li><b>Where it goes.</b> The PAPER is burned. The $0.05 buys PAPER on the market, and that's burned too. The paper isn't here to make money.</li>
+    <li><b>Where it goes.</b> The PAPER is burned. The $0.05 goes to the liquidity fire, which pairs PAPER with PLANK and locks it in the pool for good. The paper isn't here to make money.</li>
     <li><b>Streaks.</b> Buy 7 days in a row for the Subscriber badge, 30 for Paperboy. They show on your profile.</li>
     <li><b>Letters and classifieds.</b> Holders of today's issue can send one line for tomorrow's paper (1 PAPER). The best are printed under your profile name.</li>
     <li><b>Satire.</b> Every page is stamped SATIRE. Nothing in it is news.</li>

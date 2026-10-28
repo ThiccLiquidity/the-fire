@@ -75,7 +75,7 @@
                 h('button', { type: 'button', class: 'btn primary', 'data-key': `game-free-${g.id}`, onclick: () => start(g, 'free') }, 'Free play'),
                 h('button', { type: 'button', class: 'btn', 'data-key': `game-paid-${g.id}`, disabled: !paid, onclick: () => start(g, 'paid') }, paid ? `Competitive · ${g.entry}` : 'Competitive · soon'),
                 h('button', { type: 'button', class: 'btn small ghost', 'data-key': `game-board-${g.id}`, onclick: () => Comp.board(g) }, 'Leaderboard')),
-              h('p', { class: 'muted small gr-prize', text: `Each Series: ${placesText(g)}.` })));
+              h('p', { class: 'muted small gr-prize', text: g.comp === false ? 'Prizes start with competitive play.' : `Each Series: ${placesText(g)}.` })));
         }));
     }
     render();

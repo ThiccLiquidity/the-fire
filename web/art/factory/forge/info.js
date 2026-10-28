@@ -256,7 +256,7 @@
   }
 
   // the cards a Series prints, per material: "about 1 in N cards", with a line of flavour
-  const FLAVOR = { paper: 'The everyday stock.', fire: 'This is where the heat starts.', gold: 'Gold leaf on the art, always full holo.',
+  const FLAVOR = { paper: 'The everyday stock.', fire: 'This is where the heat starts.', gold: 'Gold leaf and gold holo on the art, a gold shine on the frame.',
     fullart: 'The art takes over the whole card with no frame, always full holo. Pull a Full Art of a character nobody else has, and you\'re holding something special.' };
   function characterLine(no) {
     const chars = LIVE?.chars ? Object.entries(LIVE.chars).filter(([, p]) => p > 0) : [];
@@ -286,13 +286,13 @@
     return [
       sec('about', 'What is Omni Cardworks?', 'A trading-card workshop on Robinhood Chain. Wood and paper in, packs out.', `
         <p>Welcome to the workshop. Omni Cardworks makes trading cards the old-fashioned way: a roaring furnace, a big iron press and a stack of paper. Every pack and every card is an NFT on Robinhood Chain, and the characters on them are suggested and picked by the community. Nobody, us included, knows what's in a pack until you rip it.</p>
-        <p><b>PLANK is the wood.</b> It feeds the furnace, and the furnace runs the Card Press. A slice of every pack sold buys PLANK and throws it on the fire, gone for good.</p>
-        <p><b>PAPER is what the cards are printed on.</b> Every pack takes PAPER (${F.paper} a pack ${inS}), and the press eats it: paid packs, Press packs and free packs alike. Paper Press holders are the ones printing that PAPER, so they get first dibs on every Series.</p>
+        <p><b>PLANK is the wood.</b> It feeds the furnace, and the furnace runs the Card Press. A slice of every pack sold feeds the liquidity fire, which pairs it with PAPER and locks it in the pool for good.</p>
+        <p><b>PAPER is what the cards are printed on.</b> Every pack takes PAPER (${F.paper} a pack ${inS}), and that PAPER feeds the liquidity fire too: paid packs, Press packs and free packs alike. Paper Press holders are the ones printing that PAPER, so they get first dibs on every Series.</p>
         <p><b>Every Series is a small, fixed run.</b> ${run} When it sells out, it's done. Fan favorites might just come back someday, with a twist.</p>
         <p><b>${nf(cpp)} cards a pack.</b> Series ${no} prints on ${printsOn}. Any card can come out holo: on the frame, on the picture, or both.</p>
         <p><b>Then they're yours to play with:</b></p>
         <ul>
-          <li><b>Rip</b> packs once the Series sells out. Public randomness deals your cards in about 90 seconds. Or keep them sealed: a sealed pack is an NFT too.</li>
+          <li><b>Rip</b> packs once sales end. Public randomness deals your cards in about 90 seconds. Or keep them sealed: a sealed pack is an NFT too.</li>
           <li><b>Protect</b> your keepers. Raw cards wear with time and trades, like real ones. A case stops the clock; a PDA grade (1 to 10) seals a card in a slab for good.</li>
           <li><b>Burn</b> what you don't want. Every 42 cards burned earns a free pack for a future Series.</li>
           <li><b>Shape</b> the next Series. Suggest its theme, art style or characters. Every idea costs a little PAPER, because you need paper to write it on, just like the cards. Get picked, win a free pack.</li>
@@ -319,6 +319,7 @@
     }).join('')}
           <li>The pack's own PAPER goes there too.</li>
           ${F.G.some((g) => g.taxBps > 0) ? '<li>Extra packs: the pack tax goes there too.</li>' : ''}
+          <li>The rest is the workshop's revenue.</li>
         </ul>`),
       sec('press', 'Press packs', 'First dibs for Paper Press holders.', `
         <ul>
@@ -397,11 +398,11 @@
         </ul>`),
       sec('paper', 'PLANK & PAPER', 'Two coins and a press run the workshop.', `
         <div class="inf-duo" aria-hidden="true"><figure><img src="ui/brand/plank-256.webp" alt="" width="76" height="120" loading="lazy"><figcaption>PLANK · the wood</figcaption></figure><figure><img src="ui/brand/paper-256.webp" alt="" width="85" height="110" loading="lazy"><figcaption>PAPER · the press</figcaption></figure></div>
-        <p><b>PLANK</b> and <b>PAPER</b> are meme coins on Robinhood Chain. The <b>Paper Press</b> (the paper mills) is an NFT that lets its holder produce PAPER.</p>
+        <p><b>PLANK</b> and <b>PAPER</b> are meme coins on Robinhood Chain. The <b>Paper Press</b> (the Paper Mills) is an NFT that lets its holder produce PAPER.</p>
         <ul>
           <li><b>PLANK is the wood.</b> It's the workshop's fuel and its community coin. You can pay for packs, cases and grading in PLANK, and PLANK holders get their own early group in each Series${holdShort ? ` (${inS}: ${holdShort})` : ''}.</li>
           <li><b>PAPER is what everything is printed on.</b> Every pack takes PAPER to print (${inS}, ${F.paper}${F.cap ? `, never more than ${usd(F.cap)} worth` : ''}), and every idea you suggest takes PAPER to write on. That PAPER goes to the liquidity fire.</li>
-          <li><b>The liquidity fire.</b> ${F.burn.liqMax ? `${InS}, ${shareT(F.burn.liqMin, F.burn.liqMax)} of ${F.burn.same ? 'every' : 'a'} pack sale${F.burn.same ? '' : ' (it depends on the group)'}, ` : 'Pack sales, '}each pack's PAPER, case and grade fees, suggestions and game entries all go to one contract. It pairs PAPER with PLANK, adds them to the PAPER/PLANK pool and burns the pool tokens, so that liquidity is locked for good: nobody can ever pull it. Coins paid in ETH or USDG buy PAPER first. Each side waits for the other to pair; if one side piles up past $100 waiting, the extra is burned outright.</li>
+          <li><b>The liquidity fire.</b> ${F.burn.liqMax ? `${InS}, ${shareT(F.burn.liqMin, F.burn.liqMax)} of ${F.burn.same ? 'every' : 'a'} pack sale${F.burn.same ? '' : ' (it depends on the group)'}, ` : 'Pack sales, '}each pack's PAPER, case and grade fees, suggestions and game entries all go to one contract. It pairs PAPER with PLANK, adds them to the PAPER/PLANK pool and burns the pool tokens, so that liquidity is locked for good: nobody can ever pull it. While the PAPER side is low, most of the ETH and USDG that comes in buys PAPER; the rest goes to whichever side is short. Each side waits for the other to pair; if one side piles up past $100 waiting, the extra is burned outright.</li>
           <li><b>The Paper Press makes PAPER.</b> Over 2,000 Presses were minted in a single seven-day window by locking up PLANK, and no more will ever be minted. Each Press lets its holder mint 1 PAPER a day. It isn't automatic: the holder has to mint it.<span class="inf-presses" hidden> (Presses today: <b data-presses></b>.)</span></li>
           <li><b>Burning a Press.</b> A holder can burn their Press at any time to get its locked PLANK back. That leaves fewer Presses, and so less PAPER that can be made in the future. It doesn't touch the PAPER that already exists.</li>
           <li><b>Press holders get first dibs.</b> Each Series gives them their own group${press ? ` (${inS}: ${nf(press.perNft || 1)} ${press.perNft > 1 ? 'packs' : 'pack'} per Press for ${press.priceUsd > 0 ? `${usd(press.priceUsd)} + ` : ''}${paperT(press.paper)})` : ''}.</li>
@@ -429,7 +430,7 @@
           <li><b>Every pack has the same shape, and each slot is its own roll.</b> The first pack and the last pack have exactly the same odds, so nobody can tell what's left or what's coming.</li>
           <li><b>Locked before the sale.</b> A Series' odds, characters, prices and limits are set and locked before anyone can buy.</li>
           <li><b>No bot sweeps.</b> Holders get their turn first, and for the first part of a sale only regular wallets can buy${F.rwHours ? ` (${inS}: the first ${nf(F.rwHours)} hours)` : ''}.</li>
-          <li><b>Your money never sits in the contract.</b> Every payment is split and sent where it goes (the liquidity fire, and the rest) in the same transaction you sign. The liquidity fire can only ever add burned liquidity or burn coins: it has no withdraw.</li>
+          <li><b>Your money never sits in the contract.</b> Every payment is split and sent where it goes (the liquidity fire, and the rest) in the same transaction you sign. The liquidity fire holds at most $100 of each coin while it waits to pair. It can only buy PAPER and PLANK, add liquidity and burn it, or burn coins: it has no withdraw.</li>
           <li><b>What we can do:</b> pause buying, casing and grading in an emergency, and switch the randomness source (announced first; only new requests use it).</li>
           <li><b>What we can't do:</b> stop opening, dealing or transfers. Those never pause.</li>
           <li><b>Randomness never arrives?</b> After 24 hours, anyone can cancel: packs come back sealed, and cards sent for grading come back ungraded.</li>

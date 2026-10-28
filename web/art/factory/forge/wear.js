@@ -118,7 +118,6 @@
   const usd = (v) => '$' + (Number.isInteger(+v.toFixed(2)) ? Math.round(v) : v.toFixed(2)); // $1, $0.05, $4.10
 
   // ---- "How it works": one window, over whatever is open (no fund flows here: Info › Grading says where fees go) ----
-  const BURN_LINE = 'Every case and grade fee buys PAPER and burns it.';
   function howBody() {
     const P = Store.PRICES;
     const rows = [['Fresh', 0], ['1 week', 7], ['1 month', 30], ['3 months', 91], ['1 year', 365], ['3 years', 3 * 365]].map(([l, d]) => {
@@ -157,6 +156,6 @@
     b.onclick = openHow; return b;
   }
 
-  window.Wear = { DAY, YEAR, FRESH, odds, draw, avg, ageSecOf, freshLeft, hhmm, ageTxt, COINS, coins, inCoin, fmtCoin, usd, openHow, howPill, BURN_LINE,
+  window.Wear = { DAY, YEAR, FRESH, odds, draw, avg, ageSecOf, freshLeft, hhmm, ageTxt, COINS, coins, inCoin, fmtCoin, usd, openHow, howPill,
     BANDS, bandOf, bandOdds, mixOdds, pct, WORD, FINAL_LINE, TROPHY_LINE, FRESH_LINE, FRESH_ODDS, TEN_FRESH, NO_TEN_DAYS, nowOrNever };
 })();

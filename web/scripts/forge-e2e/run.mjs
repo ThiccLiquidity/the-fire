@@ -218,13 +218,13 @@ try {
 
   console.log("\n== extra packs: the rising price, a clear confirm, a race");
   bx = await box();
-  check(/Extra packs/i.test(bx) && /Extra pack\b/.test(bx) && /\$2\.60 \+ 1 PAPER/.test(bx) && /\+4% each/.test(bx) && /ends in/.test(bx), `the buy box: ${bx}`);
+  check(/Extra packs/i.test(bx) && /Extra pack\b/.test(bx) && /\$2\.60 \+ 1 PAPER/.test(bx) && /\+4% a pack/.test(bx) && /ends in/.test(bx), `the buy box: ${bx}`);
   check(/Extra packs/.test(await page.locator("#seriesChip").textContent()), `the chip: ${await page.locator("#seriesChip").textContent()}`);
   await shot("07b-after-sellout-buybox");
   await page.click('#buybox [data-buy="g2"]');
   await page.locator("#sheet-buy[open] .go:not([disabled])").waitFor({ timeout: 30_000 });
   const panel = (await page.locator("#sheet-buy .xpanel").innerText()).replace(/\s+/g, " ");
-  check(/Extra pack: \$2\.60/.test(panel) && /\+4% each sale\. Sales end 5 minutes after the last buy\./.test(panel) && !/burn|tax/i.test(panel), `its panel (a price, no fund flows): ${panel}`);
+  check(/Extra pack: \$2\.60/.test(panel) && /\+4% a pack\. Sales end 5 minutes after the last buy\./.test(panel) && !/burn|tax/i.test(panel), `its panel (a price, no fund flows): ${panel}`);
   check(/Ends in \d+m \d+s if nobody buys/.test(panel), "a live countdown to the idle end");
   await shot("07c-after-sellout-panel");
   await page.click("#sheet-buy .go");

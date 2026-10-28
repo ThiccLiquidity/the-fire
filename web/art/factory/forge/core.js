@@ -227,7 +227,7 @@
     demoStage(stage) {
       const now = Math.floor(Date.now() / 1000), H = 3600, s = state.series;
       const mk = (o) => {
-        // plankBurnBps / paperBurnBps: the group's burn splits (bps of its price; live: FireGroups), the Standard 10% / 20%
+        // plankBurnBps + paperBurnBps: the group's liquidity share (bps of its price; live: FireGroups), the Standard 10% + 20%
         const g = { perWallet: 0, limitFor: 0, limitUntil: 0, perNft: 0, perTx: 50, unlimited: false, taxBps: 0, plankBurnBps: 1000, paperBurnBps: 2000, idle: 0, duration: 0, sold: 0, waiting: false, moreFrom: null, moreAt: 0, afterGroup: null, rollTo: null, snap: null, ...o };
         // the next pack's price and the few after it (live: read from the contract), from the sold count
         return Object.defineProperties(g, { next: { enumerable: true, get: () => Store.packPrice(g, 1) }, after: { enumerable: true, get: () => (g.taxBps ? [2, 3, 4].map((k) => Store.packPrice(g, k)) : []) } });
@@ -235,7 +235,7 @@
       // duration: how long a timed group runs (seconds; 0 = until sold out); rollTo: where its unsold packs go; snap: who the
       // holders list counts (live: the published snapshot file's settings)
       const press = mk({ index: 0, name: 'Paper Press holders', who: 'Paper Press holders only', gate: 'nft', isPress: true, priceUsd: 0, paper: Store.PRICES.PRESS_PAPER, coins: [], perNft: 1, perWallet: 2, capacity: 50, duration: 6 * H, rollTo: 2 });
-      const plank = mk({ index: 1, name: 'PLANK holders', who: 'PLANK holders only', gate: 'snapshot', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK'], perWallet: 5, capacity: 40, duration: 24 * H, rollTo: 2,
+      const plank = mk({ index: 1, name: 'PLANK holders', who: 'PLANK holders only', gate: 'snapshot', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK'], perWallet: 5, capacity: 40, duration: 24 * H, rollTo: 2, plankBurnBps: 10000, paperBurnBps: 0,
         snap: { unit: 'usd', min: '69', days: 7, symbol: 'PLANK' } });
       const all = mk({ index: 2, name: 'Everyone', who: 'Everyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['PLANK', 'ETH', 'USDG'], perWallet: 5, limitFor: 24 * H, capacity: 77, afterGroup: 1 });
       const extra = mk({ index: 3, name: 'Extra packs', who: 'Everyone', gate: 'open', priceUsd: PRICES.PACK_USD, paper: PRICES.PACK_PAPER, coins: ['ETH'], perTx: 1, unlimited: true, taxBps: 400, idle: 900, capacity: null, left: null, afterGroup: 2 });
