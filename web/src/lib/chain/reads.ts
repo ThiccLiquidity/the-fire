@@ -197,6 +197,12 @@ export async function seriesSlots(fire: number): Promise<SlotOdds[]> {
   return slotOddsOf(await read<SlotsRaw>("RecipeDealer", dealerAbi, "slotsOf", [BigInt(fire)]));
 }
 
+/** Where every Series' pack art lives (FirePacks.packImageBase: each Series' sealed pack is <base>fire<N>.webp), or ""
+ *  before the owner has set it. */
+export async function packImageBase(): Promise<string> {
+  return read<string>("FirePacks", packsAbi, "packImageBase", []);
+}
+
 /** One Series: its drop's settings, status and groups, and its cards' dealing state. */
 export async function series(fire: number): Promise<SeriesInfo> {
   const f = BigInt(fire);

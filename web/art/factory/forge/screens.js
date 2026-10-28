@@ -444,7 +444,7 @@
         else act = h('div', { class: 'row' }, btn('Open', 'primary', () => openPacks(no, 1), { 'data-key': 'open1-' + no }),
           n > 1 ? btn(n > 10 ? 'Open 10' : `Open all (${n})`, '', () => openPacks(no, Math.min(n, 10)), { 'data-key': 'openN-' + no }) : null);
         return h('div', { class: 'ptile' + (live ? ' live' : '') + (!n ? ' empty' : '') },
-          h('div', { class: 'pimg' }, h('img', { src: '../build3/pack.webp', alt: `Series ${no} pack`, width: 240, height: 336, decoding: 'async' }),
+          h('div', { class: 'pimg' }, h('img', { src: Store.packImg(no), alt: `Series ${no} pack`, width: 240, height: 336, decoding: 'async' }),
             live ? h('img', { class: 'padlock', src: '../build3/s-padlock.webp', alt: 'Locked' }) : null,
             n > 0 ? h('span', { class: 'pcount', text: '×' + n }) : null),
           h('div', { class: 'pinfo' }, h('h4', { text: `Series ${no}` }), h('p', { class: 'muted', text: n ? `${n} sealed` : 'None sealed' }), act));
@@ -592,7 +592,7 @@
       const msg = h('p', { class: 'stage-msg', 'aria-live': 'polite', text: 'Opening…' });
       packsEl.hidden = true; stage.hidden = false; if (view === 'open') coll.hidden = true;
       const wp = window.Wait?.panel({ kind: 'open', msg }); // the gauge counts down to the draw
-      put(stage, h('div', { class: 'op-wait' }, wp ? wp.el : [h('img', { src: '../build3/pack.webp', alt: '', width: 240, height: 336 }), msg]));
+      put(stage, h('div', { class: 'op-wait' }, wp ? wp.el : [h('img', { src: Store.packImg(series), alt: '', width: 240, height: 336 }), msg]));
       const say = (t, a) => sayTo(msg, t, a), alive = () => root.isConnected, tick = (s) => wp?.at(s);
       const got = index != null ? await Live.followOpen(series, index, say, alive, { dealNow, tick }) : await Live.openPacks(series, n, say, alive, tick);
       if (got?.length && wp) { wp.arrived(); await wp.free(); } // playing: the rip waits for them
@@ -635,7 +635,7 @@
       for (let p = 0; p < n && !halted(); p++) {
         put(meta); const label = n > 1 ? `Pack ${p + 1} of ${n}` : `Series ${series} pack`;
         warmUp(p);
-        const from = await race(ripPack({ area, msg, label, tag: n > 1 ? `${p + 1} / ${n}` : null, halted, pause }));
+        const from = await race(ripPack({ area, msg, label, tag: n > 1 ? `${p + 1} / ${n}` : null, halted, pause, art: Store.packImg(series) }));
         warmUp(p + 1);
         if (halted()) break;
         await race(runStack({ order: packs[p], from, area, msg, meta, op, ctrls, said, halted, pause, tilt, lastPack: p === n - 1 }));
@@ -648,7 +648,7 @@
     }
 
     // the pack: drag across the top and the foil strip follows the pointer; tap / Enter tears it for you
-    function ripPack({ area, msg, label, tag, halted, pause }) {
+    function ripPack({ area, msg, label, tag, halted, pause, art }) {
       return new Promise((resolve) => {
         const Y = 46, steps = 24, pts = []; // tear line in pack pixels (240 x 336), just under the crimp
         for (let k = 0; k <= steps; k++) pts.push([(k / steps) * 240, Y + (k % 2 ? -3.5 : 3.5) + (k % 3 ? (Math.random() - 0.5) * 3 : 0)]);
@@ -656,9 +656,10 @@
         const P = ([x, y]) => `${(x / 2.4).toFixed(2)}% ${(y / 3.36).toFixed(2)}%`;
         const region = (x0, x1) => `polygon(${[[x0, 0], [x1, 0], [x1, yAt(x1)], ...pts.filter(([x]) => x > x0 && x < x1).reverse(), [x0, yAt(x0)]].map(P).join(', ')})`;
         const inside = h('div', { class: 'pk-cards', 'aria-hidden': 'true' }, [0, 1, 2].map(() => h('img', { src: BACK, alt: '', draggable: 'false' })));
-        const body = h('div', { class: 'pk-body', style: `clip-path:polygon(${pts.map(P).join(', ')}, 100% 100%, 0% 100%)` });
+        const bg = `background-image:url("${art}")`; // this Series' own pack
+        const body = h('div', { class: 'pk-body', style: `${bg};clip-path:polygon(${pts.map(P).join(', ')}, 100% 100%, 0% 100%)` });
         const edge = h('span', { class: 'pk-edge', html: '<svg viewBox="0 0 240 336" preserveAspectRatio="none" aria-hidden="true"><polyline/></svg>' });
-        const keep = h('div', { class: 'pk-strip', style: `clip-path:${region(0, 240)}` }), torn = h('div', { class: 'pk-strip torn' });
+        const keep = h('div', { class: 'pk-strip', style: `${bg};clip-path:${region(0, 240)}` }), torn = h('div', { class: 'pk-strip torn', style: bg });
         const hint = h('span', { class: 'pk-hint', 'aria-hidden': 'true' });
         const pk = h('button', { type: 'button', class: 'pk2', 'aria-label': `${label}. Drag across the top to tear it open, or press Enter` },
           inside, body, edge, keep, torn, hint, tag ? h('span', { class: 'pk-n', text: tag }) : null);
@@ -1518,7 +1519,7 @@
     const from = window.Scene?.toScreen ? window.Scene.toScreen(330, 1150) : [innerWidth / 2, innerHeight / 2];
     const r = to.getBoundingClientRect(), tx = r.left + r.width / 2, ty = r.top + r.height / 2;
     const [fx0, fy0] = [Math.min(innerWidth - 30, Math.max(30, from[0])), Math.min(innerHeight - 40, Math.max(40, from[1]))];
-    const pk = h('img', { class: 'fp-fly', src: 'ui/omni-pack.webp', alt: '', 'aria-hidden': 'true' });
+    const pk = h('img', { class: 'fp-fly', src: Store.packImg(S().series.no), alt: '', 'aria-hidden': 'true' });
     document.body.append(pk);
     const dx = tx - fx0, dy = ty - fy0;
     const a = pk.animate([

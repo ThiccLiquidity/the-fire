@@ -983,7 +983,13 @@ addEventListener('scene-fx', (e) => { const d = e.detail || {};
   if (d.shake && !RM) shake = Math.max(shake, d.shake);
   if (d.look) funLook = d.look.s === 0 ? null : { ...d.look, t0: now, until: now + (d.look.s || 3) }; });
 requestAnimationFrame(frame);
+let packArtSrc = '';
 window.Scene = {
+  /** the packs on the belt wear this Series' own pack art (an image URL; ignored until it has loaded) */
+  setPackArt(src) {
+    if (!src || src === packArtSrc) return; packArtSrc = src;
+    const im = new Image(); im.onload = () => { if (packArtSrc === src) { img.pack = im; packSpr = null; } }; im.src = src;
+  },
   buy, feed, burn, popToken, finale: finaleFx,
   setState(o) { if ('left' in o) { left = o.left; if (left > 0 && finale >= 0 && now - finale > 1) finale = -1; } if ('total' in o) total = o.total; if ('burnCount' in o) burnCount = o.burnCount; if ('windowFrac' in o) windowFrac = o.windowFrac; if ('series' in o) seriesNo = o.series; if ('openable' in o) openable = o.openable; if ('extra' in o) extra = o.extra || null; }, // the board redraws itself when what it shows changes (its key)
   setView(v) { Object.assign(view, v); fit(); camUpdate(0); }, // follow:true (cover mode) turns on the follow camera

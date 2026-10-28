@@ -23,9 +23,10 @@
   const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
   const rnd = (s) => () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646; // fixed seed: every frame draws the same sparks
 
-  async function assets() {
+  async function assets(series) {
     const L = Clip.loadImg;
-    const [pack, back_, word] = await Promise.all([L('ui/omni-pack.webp'), L('ui/card-back.webp'), L('ui/omni-wordmark.webp').catch(() => null)]);
+    // this Series' own pack (the generic one if it can't be drawn, e.g. a gateway without CORS)
+    const [pack, back_, word] = await Promise.all([L(Store.packImg(series)).catch(() => L('ui/omni-pack.webp')), L('ui/card-back.webp'), L('ui/omni-wordmark.webp').catch(() => null)]);
     await Promise.all(['400 60px "Russo One"', '800 34px Nunito', '700 40px Kalam'].map((f) => document.fonts?.load(f).catch(() => {})));
     // the pack art has see-through margins: find its real left and right edge on the tear row, and keep a mask of it
     const pc = mk(pack.naturalWidth, pack.naturalHeight), px = pc.getContext('2d', { willReadFrequently: true }); px.drawImage(pack, 0, 0);
@@ -185,7 +186,7 @@
   /** The film for a pack: cards (any order) and its Series number. Resolves { W, H, secs, draw(t) -> the canvas at t
    *  seconds }; t runs with the soundtrack from its start. */
   async function scene(cards, { series = 7 } = {}) {
-    const A = await assets(), bg = backdrop();
+    const A = await assets(series), bg = backdrop();
     const odds = (c) => Store.trueOdds(c);
     const order = [...cards].sort((a, b) => odds(a).n - odds(b).n); // most common first, rarest last
     const faces = await Promise.all(order.map((c) => Clip.drawer(c)));

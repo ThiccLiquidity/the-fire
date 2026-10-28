@@ -603,6 +603,23 @@
   // then Filebase direct and public gateways; an <img> that fails on one tries the next (ipfs.io refuses some connections)
   Store.IPFS = [location.origin + '/ipfs/', 'https://ipfs.filebase.io/ipfs/', 'https://dweb.link/ipfs/', 'https://ipfs.io/ipfs/'];
   Store.ipfs = (u) => (String(u || '').startsWith('ipfs://') ? Store.IPFS[0] + String(u).slice(7) : String(u || ''));
+  // each Series' own pack art (the sealed pack's wrapper). Live: FirePacks' image for that Series (<packImageBase>fire<N>.webp,
+  // live.js sets Store.packBase); the demo: its two collections' packs. A pack art not loaded yet (or missing) shows the
+  // generic Omni pack, so a pack never shows as a broken image; once it loads the page redraws with it.
+  const PACK_DEF = '../build3/pack.webp', DEMO_PACKS = { 6: 'ui/packs/fire6.webp', 7: 'ui/packs/fire7.webp' }, packSeen = {};
+  Store.packImg = (no) => {
+    const u = LIVE_NET ? (Store.packBase && no ? Store.ipfs(`${Store.packBase}fire${no}.webp`) : '') : DEMO_PACKS[no] || '';
+    if (!u) return PACK_DEF;
+    if (packSeen[u] === 'ok') return u;
+    if (!packSeen[u]) {
+      packSeen[u] = 'loading'; const im = new Image();
+      im.onload = () => { packSeen[u] = 'ok'; Store.update?.(() => {}); };
+      im.onerror = () => { packSeen[u] = 'bad'; };
+      im.src = u;
+    }
+    return PACK_DEF;
+  };
+  if (!LIVE_NET) Object.keys(DEMO_PACKS).forEach((n) => Store.packImg(+n)); // ready before the first rip
   Store.nextGateway = (src) => { const i = Store.IPFS.findIndex((g) => String(src).startsWith(g)); return i >= 0 && i < Store.IPFS.length - 1 ? Store.IPFS[i + 1] + src.slice(Store.IPFS[i].length) : null; };
   // a picture that won't load (offline, a gateway down): the next IPFS gateway, then (a card) the card back, never a
   // broken-image box. Demo and live alike.

@@ -143,6 +143,7 @@
     info = s;
     Store.clockSkew = s.now - Date.now() / 1000; // countdowns run on the chain's clock
     if (changed) { gate = {}; loadSnapshot(s); loadOdds(s.fire); }
+    if (changed || Store.packBase == null) L.packImageBase().then((b) => { Store.packBase = b || ''; Store.update(() => {}); }, () => {}); // each Series' pack art
     Object.assign(S.series, {
       no: s.fire, total: s.packs, cast: s.cards.characters, phase: ph, closed: s.state === 'closed', closing: s.closing, cardsPerPack: s.cards.cardsPerPack || 6,
       // the drop-wide settings the copy quotes ("in Series N"): read from the drop, never typed in

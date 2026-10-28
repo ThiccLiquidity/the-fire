@@ -292,13 +292,14 @@
     const x = Store.extraOpen();
     const head = sold() || S.series.closing || x || note() ? line : `${Store.left()} left · ${line}`; // phones: no Series chip up top, so the bar's header says how many are left
     const strip = (h) => String(h).replace(/<span class="cd" data-until="(\d+)">[^<]*<\/span>/g, '<cd $1>'); // the key ignores the ticking text
-    const key = JSON.stringify([line, opts.map((o) => o.map(strip)), next && strip(next.html), sub, tease && [tease.no, tease.id, tease.line], sold()]);
+    const packArt = Store.packImg(S.series.no); // this Series' own pack (the generic one until it has loaded)
+    const key = JSON.stringify([line, opts.map((o) => o.map(strip)), next && strip(next.html), sub, tease && [tease.no, tease.id, tease.line], sold(), packArt]);
     if (key === buyKey) { const ph = $('#buybar .phase'); if (ph && ph.textContent !== head) ph.textContent = head; return; }
     buyKey = key;
     const a = document.activeElement, box = a?.closest?.('#buybox, #buybar');
     const back = box && (a.dataset.buy ? `#${box.id} [data-buy="${a.dataset.buy}"]` : a.classList.contains('tease-inline') ? `#${box.id} .tease-inline` : null);
     const optsHtml = (list) => list.length ? '<div class="opts">' + list.map(([k, t, sub, cls]) =>
-      `<button class="opt ${cls}" type="button" data-buy="${k}"${cls === 'off' ? ' aria-disabled="true"' : ''}>${/main/.test(cls) && !/extra/.test(cls) ? '<img class="mini" src="../build3/pack.webp" alt="">' : ''}<span>${/^PLANK\b/.test(t) ? Brand.amt('PLANK', t) : t}${sub ? `<small>${Brand.tag(sub)}</small>` : ''}</span></button>`).join('') + '</div>' : '';
+      `<button class="opt ${cls}" type="button" data-buy="${k}"${cls === 'off' ? ' aria-disabled="true"' : ''}>${/main/.test(cls) && !/extra/.test(cls) ? `<img class="mini" src="${packArt}" alt="">` : ''}<span>${/^PLANK\b/.test(t) ? Brand.amt('PLANK', t) : t}${sub ? `<small>${Brand.tag(sub)}</small>` : ''}</span></button>`).join('') + '</div>' : '';
     const extras = (next ? `<p class="gnext">${next.html}</p>` : '') + (sub ? `<p class="gnext">${sub}</p>` : '');
     $('#buybox').innerHTML = `<div class="phase"></div>${optsHtml(opts)}${extras}`; $('#buybox .phase').textContent = line;
     // sold out, the stations' Open packs is enough
@@ -399,6 +400,8 @@
       document.querySelectorAll('[data-price=suggest]').forEach((el) => setText(el, `${P.SUGGEST_PAPER} PAPER`));
       if (S.series.no) { setText($('.strip .sw'), `SERIES ${S.series.no}`); setAttr($('.strip .packart'), 'alt', `Series ${S.series.no} pack`); }
     }
+    setAttr($('.strip .packart'), 'src', Store.packImg(S.series.no)); // this Series' own pack, demo and live
+    window.Scene?.setPackArt?.(Store.packImg(S.series.no)); // the packs riding the belt
     $('#walletBtn').classList.toggle('on', S.wallet.connected);
     const wc = $('#walletBtn .wcoin'); if (wc && wc.hidden === S.wallet.connected) wc.hidden = !S.wallet.connected;
   }
