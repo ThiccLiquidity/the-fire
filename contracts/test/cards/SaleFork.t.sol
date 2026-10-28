@@ -13,7 +13,7 @@ import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {PlankUsdTwap} from "../../src/PlankUsdTwap.sol";
 import {MockERC20} from "../Mocks.sol";
 
-/// Gas and the real PLANK swap, on a copy of Robinhood Chain. Skipped unless FORK_RPC is set:
+/// Gas on a copy of Robinhood Chain (no swap at sale time: the liquidity share goes to LiquidityBurner in ETH). Skipped unless FORK_RPC is set:
 ///   $env:FORK_RPC = "https://rpc.mainnet.chain.robinhood.com"   (PowerShell)
 ///   forge test --match-path test/cards/SaleFork.t.sol -vv
 /// Uses the real PLANK, WETH, Uniswap V2 router and pair, and Chainlink ETH/USD; a stand-in PAPER.
@@ -26,9 +26,9 @@ contract SaleForkTest is Test {
     address constant ROUTER = 0x89e5DB8B5aA49aA85AC63f691524311AEB649eba;
     address constant PAIR = 0x01b1BEf6fBA02c846eA5c4Ff59193988B5f86F73;
     address constant ETH_USD = 0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9;
-    address constant DEAD = 0x000000000000000000000000000000000000dEaD;
+    address constant LIQ = address(0xB0B); // LiquidityBurner stand-in
 
-    function test_fork_ethBuyBurnsRealPlank() public {
+    function test_fork_ethBuyGasAndLiquidityShare() public {
         string memory rpc = vm.envOr("FORK_RPC", string(""));
         if (bytes(rpc).length == 0) {
             vm.skip(true);
@@ -48,7 +48,7 @@ contract SaleForkTest is Test {
         FireSale sale = new FireSale(FireSale.Config({
             owner: address(this), paper: address(paper), plank: PLANK, usdg: address(0), weth: WETH,
             packs: address(packs), cards: address(cards), ethUsd: ETH_USD, plankUsd: address(twap), paperUsd: address(0), router: ROUTER,
-            revenueWallet: address(0xBEEF), plankBurner: address(0xB0B), paperBurner: address(0xBA9E5), credits: address(credits),
+            revenueWallet: address(0xBEEF), liquidity: LIQ, credits: address(credits),
             groups: address(groups)
         }));
         groups.setSale(address(sale));
@@ -83,20 +83,19 @@ contract SaleForkTest is Test {
         vm.prank(buyer, buyer);
         paper.approve(address(sale), type(uint256).max);
 
-        uint256 dead = MockERC20(PLANK).balanceOf(DEAD);
         (uint256 cost,) = sale.quote(1, 0, 1, FireSale.Pay.ETH);
         uint256 g = gasleft();
         vm.prank(buyer, buyer);
         sale.buy{value: cost}(1, 0, 1, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
-        emit log_named_uint("ETH, 1 pack, real swap: gas", g - gasleft());
-        assertGt(MockERC20(PLANK).balanceOf(DEAD), dead, "PLANK burned");
-        assertEq(address(0xB0B).balance, 0, "the swap went through, nothing to the burn wallet");
+        emit log_named_uint("ETH, 1 pack: gas", g - gasleft());
+        assertEq(LIQ.balance, cost * 3_000 / 10_000, "the liquidity share, in ETH");
+        assertEq(paper.balanceOf(LIQ), 1e18, "the pack's PAPER");
 
         (cost,) = sale.quote(1, 0, 5, FireSale.Pay.ETH);
         g = gasleft();
         vm.prank(buyer, buyer);
         sale.buy{value: cost}(1, 0, 5, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
-        emit log_named_uint("ETH, 5 packs, real swap: gas", g - gasleft());
+        emit log_named_uint("ETH, 5 packs: gas", g - gasleft());
         assertEq(address(sale).balance, 0);
     }
 }

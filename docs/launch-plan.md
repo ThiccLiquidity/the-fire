@@ -43,9 +43,10 @@ What's left, in order:
 Follow `docs/testnet-runbook.md` top to bottom: it is the up-to-date version of this step (DevRouter, DeployInfra,
 DeployCards, the Morning Wood, AcceptOwnership + AcceptPress, VerifyDeploy, Railway). The notes below are background.
 
-The testnet `FireCredits` has no `suggestMany`, the sale now has its PAPER share, the PAPER price feed has the
-per-pool clocks and PaperBurner the flusher list (Oct 22 wallet audit), so the PAPER feed and the card contracts go
-again. The PLANK price feed stays (runbook step 1 is not repeated); runbook step 2 (DeployInfra: the drand router and
+The testnet `FireCredits` has no `suggestMany`, the PAPER price feed has the per-pool clocks (Oct 22 wallet audit),
+and the sale, cases, grading, suggestions and games now pay `LiquidityBurner` (it replaced PaperBurner and PlankBurner,
+Oct 28), so the PAPER feed and the card contracts go again. DeployCards needs a PAPER/PLANK pool on the testnet
+factory (see the note at the top of the runbook). The PLANK price feed stays (runbook step 1 is not repeated); runbook step 2 (DeployInfra: the drand router and
 the PAPER feed) is.
 
 1. `git pull` in `C:\Users\DubT1\the-fire`.
@@ -81,7 +82,7 @@ Use the practice Series with real art (five pictures per character, the studio d
    each wallet's smallest holding (Uniswap V2 LP share included) over 5 blocks in the past week; `node
    ops/snapshot/snapshot.mjs --verify <file>` rebuilds it from the chain (needs an archive RPC; VerifySeries runs it too).
 3. Walk every flow and tick it:
-   - [ ] Buy packs with PLANK, with ETH (with your own PAPER, and with "Pay the PAPER in ETH too"), with USDG; each burns the PAPER per pack
+   - [ ] Buy packs with PLANK, with ETH (with your own PAPER, and with "Pay the PAPER in ETH too"), with USDG; each sends the PAPER per pack to LiquidityBurner
    - [ ] Get PAPER on the site (ETH, PLANK, USDG)
    - [ ] The groups: a Press holder claims in the Press group; a wallet in the snapshot buys up to its allowance in the
          PLANK group, one not in it can't; Everyone opens when the PLANK group ends
@@ -90,6 +91,7 @@ Use the practice Series with real art (five pictures per character, the studio d
          Series (`FireSale.close`); or sell out or end the drop; the Series closes
    - [ ] Open a pack; drand arrives (~90 s); the cards appear; the keeper log shows `fulfillMany` and `process`
    - [ ] Case a card; grade a card; the slab shows the grade
+   - [ ] The keepers run LiquidityBurner: its pool tokens go to the dead address and no side holds over $100
    - [ ] Burn 42 cards for a free pack credit (it can only be used in a later Series: cards exist only once this
          one has closed). Free packs this run come from picked suggestions (runbook step 14)
    - [ ] Suggest a theme and an art style in one transaction; suggest a character
@@ -135,7 +137,8 @@ Then your OK to merge to `main`: the live site switches from demo to the real co
 
 - Real-chain gas test (`contracts/test/cards/SaleFork.t.sol` against Robinhood Chain). Runs on your PC: the cloud
   machine I build on can't reach Robinhood Chain's RPC.
-- On-chain checks: PAPER is 18 decimals; transfers to `0x…dEaD` work for PAPER and PLANK; a USDG/WETH pool exists;
+- On-chain checks: PAPER is 18 decimals; transfers to `0x…dEaD` work for PAPER and PLANK; the PAPER/PLANK V2 pool
+  exists (DeployCards refuses otherwise); a USDG/WETH pool exists (LiquidityBurner spends USDG through it);
   PLANK's reward-list status.
 - Final case and grade prices.
 - Marketplace support for Robinhood Chain; a trademark search for the name; a legal read on selling packs with

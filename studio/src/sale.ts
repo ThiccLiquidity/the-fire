@@ -99,11 +99,13 @@ const MAX_TAX_GROWTH = 1_000_000_000n
  *  until the owner confirms the number. */
 export const EVERYONE_LIMIT_HOURS = 24
 
-/** The Standard burn shares every group starts with: 10% of its dollar price burns PLANK, 20% buys and burns PAPER. */
+/** The Standard shares every group starts with: 10% + 20% = 30% of its dollar price goes to LiquidityBurner (in the
+ *  coin paid; docs/liquidity-burn.md). The two names are kept from when they burned PLANK and bought PAPER apart:
+ *  only their sum matters now. */
 export const STANDARD_PLANK_BURN = '10'
 export const STANDARD_PAPER_BURN = '20'
 
-/** A group with every field at "off" (the burn shares at the Standard 10% / 20%). */
+/** A group with every field at "off" (the liquidity shares at the Standard 10% + 20%). */
 export function blankGroup(): SaleGroup {
   return {
     name: '', packsAs: 'count', packs: 0, percent: '0', unlimited: false, gate: 'open', nft: '', perNft: 0, root: '',
@@ -148,15 +150,15 @@ export const GROUP_TEMPLATES: { name: string; make: (others: SaleGroup[]) => Sal
  *  Everyone; Everyone the other 77 ($2.50 + 1 PAPER, any coin, 5 per wallet for the first
  *  EVERYONE_LIMIT_HOURS, then no limit) after the PLANK group, until sold; then
  *  After sell-out: no count, $2.50 rising 4% a pack + 1 PAPER, ETH only, 1 per purchase, ends 15 minutes after its
- *  last sale. Free packs up to 10% (16), 3 per wallet, from Everyone. Every group: 10% PLANK burn, 20% PAPER buy &
- *  burn (each group can set its own: the PLANK holders could burn 100% of their PLANK). A pack's PAPER never more than
+ *  last sale. Free packs up to 10% (16), 3 per wallet, from Everyone. Every group sends 30% of its dollar price to
+ *  liquidity, except the PLANK holders: all of their PLANK goes to liquidity (owner, Oct 2026). A pack's PAPER never more than
  *  $1, 50 per purchase, contracts kept out for 48h. */
 export function standardSale(): SaleSettings {
   return {
     start: 0, packs: 167,
     groups: [
       { ...blankGroup(), name: 'Paper Press holders', packs: 50, gate: 'nft', nft: 'press', perNft: 1, perWallet: 2, paper: '1', hours: 6, rollTo: 2 },
-      { ...blankGroup(), name: 'PLANK holders', packs: 40, gate: 'snapshot', priceUsd: '2.50', paper: '1', coins: COIN.PLANK, perWallet: 5, hours: 24, rollTo: 2 },
+      { ...blankGroup(), name: 'PLANK holders', packs: 40, gate: 'snapshot', priceUsd: '2.50', paper: '1', coins: COIN.PLANK, perWallet: 5, hours: 24, rollTo: 2, plankBurnPercent: '100', paperBurnPercent: '0' },
       { ...blankGroup(), name: 'Everyone', packsAs: 'rest', priceUsd: '2.50', paper: '1', coins: 7, perWallet: 5, limitHours: EVERYONE_LIMIT_HOURS, afterGroup: 1 },
       {
         ...blankGroup(), name: 'After sell-out', unlimited: true, priceUsd: '2.50', paper: '1', coins: COIN.ETH, perTx: 1,
@@ -643,10 +645,12 @@ export interface DropPlan {
   revenueUsd: number
   /** The same with every free pack used. */
   revenueMinUsd: number
-  /** The PLANK burn share of the base prices (each group's own share). */
+  /** The plankBurnBps part of the base prices (each group's own share), to LiquidityBurner. */
   burnUsd: number
-  /** PaperBurner's: each group's share of its base prices plus every rising-price tax. */
+  /** The paperBurnBps part of the base prices plus every rising-price tax, to LiquidityBurner. */
   paperUsd: number
+  /** All of it to LiquidityBurner: burnUsd + paperUsd. */
+  liquidityUsd: number
   /** What's left for the revenue wallet. */
   keepUsd: number
   /** PAPER paid (and burned) with the base packs. */
@@ -682,7 +686,7 @@ export function dropPlan(s: SaleSettings): DropPlan {
   const revenueUsd = base + tax
   return {
     total, packs, freeMax, freeCapped: cap > 0, revenueUsd, revenueMinUsd: revenueUsd - freeMax * cgPrice,
-    burnUsd, paperUsd: paperShare + tax, keepUsd: base - burnUsd - paperShare, paperPaid,
+    burnUsd, paperUsd: paperShare + tax, liquidityUsd: burnUsd + paperShare + tax, keepUsd: base - burnUsd - paperShare, paperPaid,
   }
 }
 
@@ -732,10 +736,9 @@ export function groupSummary(s: SaleSettings, i: number): string {
   const usd = price > 0 ? `${money(price)}${tax ? ` rising ${tax / 100}% a pack` : ''}` : ''
   parts.push([usd, paper].filter(Boolean).join(' + ') || 'free')
   if (price > 0) parts.push(coinsText(g.coins))
-  // the burn shares, when the group's differ from the Standard 10% / 20%
-  const pk = bpsOf(g.plankBurnPercent)
-  const pp = bpsOf(g.paperBurnPercent)
-  if (price > 0 && (pk !== bpsOf(STANDARD_PLANK_BURN) || pp !== bpsOf(STANDARD_PAPER_BURN))) parts.push(`burns ${pk / 100}% PLANK + ${pp / 100}% PAPER`)
+  // the liquidity share, when the group's differs from the Standard 30%
+  const lq = bpsOf(g.plankBurnPercent) + bpsOf(g.paperBurnPercent)
+  if (price > 0 && lq !== bpsOf(STANDARD_PLANK_BURN) + bpsOf(STANDARD_PAPER_BURN)) parts.push(`${lq / 100}% to liquidity`)
   if (g.gate === 'nft') parts.push(`${g.perNft} per ${g.nft === 'press' ? 'Press' : 'NFT'}`)
   if (g.perWallet) parts.push(`${g.perWallet} per wallet${g.limitHours > 0 ? ` for ${fmtHours(g.limitHours)}, then no limit` : ''}`)
   if (g.perTx) parts.push(`${g.perTx} per purchase`)

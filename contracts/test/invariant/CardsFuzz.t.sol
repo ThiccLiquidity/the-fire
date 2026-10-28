@@ -14,15 +14,14 @@ import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockBurner} fro
 import {InvRouter} from "./InvRouter.sol";
 import {SeriesHelper, RecipeHarness} from "../cards/SeriesHelper.sol";
 
-/// @dev Stateless fuzz tests: pricing math, the burn split, PDA grades and price, and the Standard pool math.
+/// @dev Stateless fuzz tests: pricing math, the liquidity split, PDA grades and price, and the Standard pool math.
 contract CardsFuzzTest is SeriesHelper {
     function _na() internal pure returns (FireGroups.Access memory a) {}
 
     address constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address owner = address(0xA11CE0);
     address revenue = address(0xBEEF);
-    address burnW = address(0xB0B);
-    address paperW = address(0xBA9E5);
+    address liq = address(0xB0B); // LiquidityBurner
     address alice = address(0xA1);
 
     MockERC20 paper;
@@ -64,7 +63,7 @@ contract CardsFuzzTest is SeriesHelper {
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW, credits: address(credits),
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, liquidity: liq, credits: address(credits),
             groups: address(groups)
         }));
         groups.setSale(address(sale));
@@ -92,6 +91,10 @@ contract CardsFuzzTest is SeriesHelper {
     }
 
     function _drop(uint128 price, uint16 bps) internal returns (uint64 start) {
+        return _drop(price, bps, 0);
+    }
+
+    function _drop(uint128 price, uint16 plankBps, uint16 paperBps) internal returns (uint64 start) {
         start = uint64(block.timestamp + 1);
         vm.prank(owner, owner);
         FireSale.DropConfig memory c;
@@ -102,7 +105,7 @@ contract CardsFuzzTest is SeriesHelper {
         c.creditsPerPick = 1;
         c.groups = new FireGroups.Group[](1);
         c.groups[0] = FireGroups.Group({packs: 1_000, gate: FireGroups.Gate.OPEN, coins: 7, afterGroup: 255, rollTo: 255,
-            startDelay: 0, duration: 0, perWallet: 1_000, limitFor: 0, perNft: 0, taxBps: 0, plankBurnBps: bps, paperBurnBps: 0, priceUsd: price, paper: 1e18, nft: address(0), idle: 0, perTx: 0, unlimited: false, root: 0});
+            startDelay: 0, duration: 0, perWallet: 1_000, limitFor: 0, perNft: 0, taxBps: 0, plankBurnBps: plankBps, paperBurnBps: paperBps, priceUsd: price, paper: 1e18, nft: address(0), idle: 0, perTx: 0, unlimited: false, root: 0});
         sale.configureDrop(1, c);
     }
 
@@ -141,58 +144,56 @@ contract CardsFuzzTest is SeriesHelper {
         assertEq(_q(n, FireSale.Pay.USDG), (usd8 + 99) / 100, "USDG: 6 decimals, rounded up");
     }
 
-    // ---------------------------------------------------------------- the burn split
+    // ---------------------------------------------------------------- the liquidity split
 
+    /// Any price, pack count, PLANK and PAPER shares and coin, with the router up, down or pumped (it's never used at
+    /// sale time): the buyer pays exactly the quote, LiquidityBurner gets exactly (cost * shares) in the coin paid, the
+    /// revenue wallet the rest, nothing is burned or swapped, and each pack's PAPER reaches LiquidityBurner.
     /// forge-config: default.fuzz.runs = 1000
-    function testFuzz_burnShareAndRevenueSumToTheCost(uint256 price, uint256 n, uint256 bps, uint8 pay, bool routerFails, bool pumped)
-        public
-    {
+    function testFuzz_liquidityShareAndRevenueSumToTheCost(
+        uint256 price, uint256 n, uint256 plankBps, uint256 paperBps, uint8 pay, bool routerFails, bool pumped
+    ) public {
         price = bound(price, 1, 1e10); // up to $100 a pack
         n = bound(n, 1, 50);
-        bps = bound(bps, 0, 10_000);
-        uint64 start = _drop(uint128(price), uint16(bps));
+        plankBps = bound(plankBps, 0, 10_000);
+        paperBps = bound(paperBps, 0, 10_000 - plankBps);
+        uint64 start = _drop(uint128(price), uint16(plankBps), uint16(paperBps));
         vm.warp(start);
         _setFeeds(3_333e8, 1e9);
         router.setFail(routerFails);
         if (pumped) router.setRates(3_333e9 * 85 / 100, 1e21 * 85 / 100);
         pay = pay % 3;
         uint256 cost;
+        uint256 bps = plankBps + paperBps;
         if (pay == 0) {
             cost = _q(n, FireSale.Pay.PLANK);
             uint256 bal = plank.balanceOf(alice);
             vm.prank(alice, alice);
             sale.buy(1, 0, n, FireSale.Pay.PLANK, cost, type(uint256).max, _na());
             assertEq(bal - plank.balanceOf(alice), cost, "paid");
-            assertEq(plank.balanceOf(DEAD), cost * bps / 10_000, "burn share burned");
-            assertEq(plank.balanceOf(revenue) + plank.balanceOf(DEAD), cost, "revenue + burn == cost");
+            assertEq(plank.balanceOf(liq), cost * bps / 10_000, "liquidity share");
+            assertEq(plank.balanceOf(revenue) + plank.balanceOf(liq), cost, "revenue + liquidity == cost");
         } else if (pay == 1) {
             cost = _q(n, FireSale.Pay.ETH);
             uint256 bal = alice.balance;
             vm.prank(alice, alice);
             sale.buy{value: cost + 12345}(1, 0, n, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
             assertEq(bal - alice.balance, cost, "paid (excess refunded)");
-            uint256 share = cost * bps / 10_000;
-            assertEq(burnW.balance + address(router).balance, share, "burn share: swapped or to the burn wallet");
-            assertEq(revenue.balance + burnW.balance + address(router).balance, cost, "revenue + burn == cost");
-            bool swapped = address(router).balance > 0;
-            if (routerFails) assertFalse(swapped, "no swap when the router fails");
-            // The 90% floor is worked out from the USD burn share truncated to 8 decimals, so at dust sizes (a share
-            // under $0.00001) the truncation alone can exceed the 15% pump. Only check the pump guard above that.
-            if (pumped && n * price * bps / 10_000 >= 1_000) assertFalse(swapped, "no swap when the pool is pumped");
-            if (swapped) assertEq(plank.balanceOf(DEAD), share * router.plankPerEthWei(), "swap output burned");
+            assertEq(liq.balance, cost * bps / 10_000, "liquidity share");
+            assertEq(revenue.balance + liq.balance, cost, "revenue + liquidity == cost");
         } else {
             cost = _q(n, FireSale.Pay.USDG);
             uint256 bal = usdg.balanceOf(alice);
             vm.prank(alice, alice);
             sale.buy(1, 0, n, FireSale.Pay.USDG, cost, type(uint256).max, _na());
             assertEq(bal - usdg.balanceOf(alice), cost, "paid");
-            uint256 share = cost * bps / 10_000;
-            assertEq(usdg.balanceOf(burnW) + usdg.balanceOf(address(router)), share, "burn share");
-            assertEq(usdg.balanceOf(revenue) + usdg.balanceOf(burnW) + usdg.balanceOf(address(router)), cost, "revenue + burn == cost");
+            assertEq(usdg.balanceOf(liq), cost * bps / 10_000, "liquidity share");
+            assertEq(usdg.balanceOf(revenue) + usdg.balanceOf(liq), cost, "revenue + liquidity == cost");
         }
         assertEq(address(sale).balance + usdg.balanceOf(address(sale)) + plank.balanceOf(address(sale)) + paper.balanceOf(address(sale)), 0, "holds nothing");
-        assertEq(usdg.allowance(address(sale), address(router)), 0, "no allowance left");
-        assertEq(paper.balanceOf(DEAD), n * 1e18, "1 PAPER per pack burned");
+        assertEq(router.ethSwapped() + router.usdgSwapped() + router.plankOut(), 0, "no swap at sale time");
+        assertEq(plank.balanceOf(DEAD) + paper.balanceOf(DEAD), 0, "nothing burned at sale time");
+        assertEq(paper.balanceOf(liq), n * 1e18, "1 PAPER per pack to LiquidityBurner");
     }
 
     // ---------------------------------------------------------------- PDA

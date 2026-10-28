@@ -25,7 +25,7 @@ describe('the Standard and Giant presets', () => {
       creditsPerPick: 1, creditPacksMax: 16, creditPacksPerWallet: 3, creditGroup: 2,
       groups: [
         { name: 'Paper Press holders', packs: 50, gate: 'nft', nft: 'press', perNft: 1, priceUsd: '0', paper: '1000000000000000000', coins: 0, plankBurnBps: 1_000, paperBurnBps: 2_000, perWallet: 2, afterGroup: 255, startDelay: 0, duration: 21_600, rollTo: 2 },
-        { name: 'PLANK holders', packs: 40, gate: 'snapshot', priceUsd: '250000000', paper: '1000000000000000000', coins: 1, plankBurnBps: 1_000, paperBurnBps: 2_000, perWallet: 5, afterGroup: 255, startDelay: 0, duration: 86_400, rollTo: 2 },
+        { name: 'PLANK holders', packs: 40, gate: 'snapshot', priceUsd: '250000000', paper: '1000000000000000000', coins: 1, plankBurnBps: 10_000, paperBurnBps: 0, perWallet: 5, afterGroup: 255, startDelay: 0, duration: 86_400, rollTo: 2 },
         { name: 'Everyone', packs: 77, gate: 'open', priceUsd: '250000000', paper: '1000000000000000000', coins: 7, plankBurnBps: 1_000, paperBurnBps: 2_000, perWallet: 5, limitFor: 86_400, afterGroup: 1, startDelay: 0, duration: 0, rollTo: 255 },
         { name: 'After sell-out', packs: 0, gate: 'open', priceUsd: '250000000', paper: '1000000000000000000', coins: 2, plankBurnBps: 1_000, paperBurnBps: 2_000, perWallet: 0, afterGroup: 2, startDelay: 0, duration: 0, rollTo: 255, taxBps: 400, idle: 900, perTx: 1, unlimited: true },
       ],
@@ -237,7 +237,7 @@ describe('what the owner reads', () => {
   it('one plain line per group', () => {
     const s = standardSale()
     expect(groupSummary(s, 0)).toBe('50 packs for Paper Press holders · 1 PAPER · 1 per Press · 2 per wallet · up to 6h · leftovers → Everyone')
-    expect(groupSummary(s, 1)).toBe('40 packs for the snapshot list · $2.50 + 1 PAPER · PLANK only · 5 per wallet · up to 24h · leftovers → Everyone')
+    expect(groupSummary(s, 1)).toBe('40 packs for the snapshot list · $2.50 + 1 PAPER · PLANK only · 100% to liquidity · 5 per wallet · up to 24h · leftovers → Everyone')
     expect(groupSummary(s, 2)).toBe('77 packs for everyone · $2.50 + 1 PAPER · any coin · 5 per wallet for 24h, then no limit · opens after PLANK holders · until sold')
     expect(groupSummary(s, 3)).toBe('No pack count, for everyone · $2.50 rising 4% a pack + 1 PAPER · ETH only · 1 per purchase · opens after Everyone · no time limit · ends after 15 min with no sale')
   })
@@ -261,18 +261,19 @@ describe('what the owner reads', () => {
     expect(d).toMatchObject({ total: 167, packs: [50, 40, 77, 0], freeMax: 16, freeCapped: true, paperPaid: 167 })
     expect(d.revenueUsd).toBeCloseTo(292.5)
     expect(d.revenueMinUsd).toBeCloseTo(292.5 - 16 * 2.5) // 16 free packs from Everyone
-    expect(d.burnUsd).toBeCloseTo(29.25) // 10% PLANK
-    expect(d.paperUsd).toBeCloseTo(58.5) // 20% PAPER
-    expect(d.keepUsd).toBeCloseTo(204.75) // 70% revenue
-    // each group's own shares: the PLANK holders (40 × $2.50) burn all their PLANK, Everyone keeps 10% / 20%
-    const all = dropPlan(withStart(g(1, { plankBurnPercent: '100', paperBurnPercent: '0' })))
-    expect(all.burnUsd).toBeCloseTo(100 + 19.25 + 0) // group 2: $100; Everyone: 10% of $192.50
-    expect(all.paperUsd).toBeCloseTo(38.5) // Everyone: 20% of $192.50
-    expect(all.keepUsd).toBeCloseTo(134.75) // Everyone: 70%
+    // each group's own shares: the PLANK holders (40 × $2.50) send all their PLANK to liquidity, Everyone 10% + 20%
+    expect(d.burnUsd).toBeCloseTo(100 + 19.25) // group 2: $100; Everyone: 10% of $192.50
+    expect(d.paperUsd).toBeCloseTo(38.5) // Everyone: 20% of $192.50
+    expect(d.liquidityUsd).toBeCloseTo(157.75)
+    expect(d.keepUsd).toBeCloseTo(134.75) // Everyone: 70%
+    // every group at 10% + 20%
+    const flat = dropPlan(withStart(g(1, { plankBurnPercent: '10', paperBurnPercent: '20' })))
+    expect(flat.liquidityUsd).toBeCloseTo(87.75) // 30% of $292.50
+    expect(flat.keepUsd).toBeCloseTo(204.75) // 70% revenue
     // no cap: every pack of the credit group could go free; no credit group: none
     expect(dropPlan({ ...standardSale(), creditPacksPercent: '0' })).toMatchObject({ freeMax: 77, freeCapped: false })
     expect(dropPlan({ ...standardSale(), creditGroup: -1 }).freeMax).toBe(0)
-    // a finite taxed group's tax all goes to PaperBurner
+    // a finite taxed group's tax all goes to liquidity
     const taxed = dropPlan({ ...standardSale(), packs: 10, creditGroup: -1, groups: [{ ...standardSale().groups[2], packsAs: 'count', packs: 10, afterGroup: -1, taxPercent: '10' }] })
     const r = 1.1
     const sum = (2.5 * r * (r ** 10 - 1)) / (r - 1)
@@ -369,7 +370,7 @@ describe('old saves (before drop groups)', () => {
     // the export: per group, none drop-wide
     const j = saleJson(withStart(g(1, { plankBurnPercent: '100', paperBurnPercent: '0' })))
     expect(j.groups.map((x) => [x.plankBurnBps, x.paperBurnBps])).toEqual([[1000, 2000], [10000, 0], [1000, 2000], [1000, 2000]])
-    expect(groupSummary(withStart(g(1, { plankBurnPercent: '100', paperBurnPercent: '0' })), 1)).toMatch(/· PLANK only · burns 100% PLANK \+ 0% PAPER ·/)
+    expect(groupSummary(withStart(g(1, { plankBurnPercent: '100', paperBurnPercent: '0' })), 1)).toMatch(/· PLANK only · 100% to liquidity ·/)
   })
 
   it('a free-pack cap saved as packs becomes the percent of that drop', () => {
@@ -419,13 +420,11 @@ describe('the ops sale policy, as warnings', () => {
     expect(rules(g(3, { taxPercent: '11' }))).toEqual(['3.tax'])
     expect(rules(g(3, { idleMinutes: 61 }))).toEqual(['3.idle'])
     expect(rules(g(2, { perWallet: 0, limitHours: 0 }))).toEqual(['2.wallet-limit'])
-    expect(rules(g(2, { paperBurnPercent: '5' }))).toEqual(['2.paper-burn'])
-    expect(rules(g(2, { plankBurnPercent: '0', paperBurnPercent: '5' }))).toEqual(['2.burn-total', '2.paper-burn'])
+    expect(rules(g(2, { paperBurnPercent: '5' }))).toEqual([]) // only the sum matters: 15% to liquidity
+    expect(rules(g(2, { plankBurnPercent: '0', paperBurnPercent: '5' }))).toEqual(['2.burn-total'])
     expect(rules(g(0, { plankBurnPercent: '0', paperBurnPercent: '0' }))).toEqual([]) // no dollar price: nothing to split
-    // a PLANK group burning all its PLANK: ops wants --allow paper-burn for it
-    const all = salePolicy(withStart(g(1, { plankBurnPercent: '100', paperBurnPercent: '0' })))
-    expect(all.map((p) => `${p.group}.${p.policy}`)).toEqual(['1.paper-burn'])
-    expect(all[0].message).toMatch(/--allow paper-burn/)
+    // the Standard's PLANK group sends all its PLANK to liquidity: inside the policy
+    expect(salePolicy(withStart({}))).toEqual([])
     expect(rules({ paperCapUsd: '0' })).toEqual(['-.paper-cap'])
     expect(rules({ paperCapUsd: '0.05' })).toEqual(['-.paper-cap'])
     const p = salePolicy(withStart(g(2, { perWallet: 100 })))[0]

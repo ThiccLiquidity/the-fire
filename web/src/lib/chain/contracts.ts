@@ -3,12 +3,12 @@
 // features an older deploy lacks.
 
 import { erc20Abi, formatUnits, getAddress, toFunctionSelector, type Abi, type AbiEvent, type Address, type Log } from "viem";
-import { burnerAbi, cardsAbi, creditsAbi, dealerAbi, gamesAbi, groupsAbi, packsAbi, psaAbi, rendererAbi, saleAbi } from "../cards";
+import { cardsAbi, creditsAbi, dealerAbi, gamesAbi, groupsAbi, liquidityAbi, packsAbi, psaAbi, rendererAbi, saleAbi } from "../cards";
 import { NET } from "../net";
 import type { ContractName } from "../config";
 import { getPublicClient } from "../wallet";
 
-export { burnerAbi, cardsAbi, creditsAbi, dealerAbi, gamesAbi, groupsAbi, packsAbi, psaAbi, rendererAbi, saleAbi };
+export { cardsAbi, creditsAbi, dealerAbi, gamesAbi, groupsAbi, liquidityAbi, packsAbi, psaAbi, rendererAbi, saleAbi };
 
 /** Thrown by everything here when the network has no card contracts (mainnet before the deploy). */
 export class NotDeployedError extends Error {

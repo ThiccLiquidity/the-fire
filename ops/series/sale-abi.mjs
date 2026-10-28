@@ -17,8 +17,7 @@ export const saleAbi = parseAbi([
   "function activeDrops() view returns (uint256)",
   "function GROUPS() view returns (address)",
   "function revenueWallet() view returns (address)",
-  "function plankBurner() view returns (address)",
-  "function paperBurner() view returns (address)",
+  "function liquidity() view returns (address)",
   "function quote(uint256 fire, uint256 group, uint256 n, uint8 pay) view returns (uint256 cost, uint256 paper)",
   "function paperFor(uint256 fire, uint256 group, uint256 n) view returns (uint256)",
   "function buy(uint256 fire, uint256 group, uint256 n, uint8 pay, uint256 maxCost, uint256 maxPaper, Access access) payable",
@@ -27,7 +26,7 @@ export const saleAbi = parseAbi([
   "function endDrop(uint256 fire)",
   "function configureDrop(uint256 fire, DropConfig c)",
   "event DropConfigured(uint256 indexed fire, DropConfig config)",
-  "event PacksBought(uint256 indexed fire, uint256 indexed group, address indexed buyer, uint256 count, uint8 pay, uint256 paid, uint256 burnShare, bool plankBurned)",
+  "event PacksBought(uint256 indexed fire, uint256 indexed group, address indexed buyer, uint256 count, uint8 pay, uint256 paid, uint256 toLiquidity)",
   "event DropClosed(uint256 indexed fire, uint256 packs)",
 ]);
 

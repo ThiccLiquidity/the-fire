@@ -4,10 +4,9 @@
 // a deliberate exception, never a default. Some rules only warn; a few are hard (the contract refuses those anyway).
 //
 //   price           a group's dollar price is $1 to $10; 0 only for a holders' group (NFT or snapshot: free or PAPER only)
-//   burn-total      a group's plankBurnBps + paperBurnBps is 10% to 100% of each of its sales (per group, for a group
-//                   with a dollar price; over 100% is hard: the contract refuses it)
-//   paper-burn      a group's paperBurnBps is at least 10% (PAPER buy pressure is the point; Standard is 20%). A group
-//                   set to burn all its PLANK (plankBurnBps 10000) needs --allow paper-burn: a deliberate exception
+//   burn-total      a group's liquidity share (plankBurnBps + paperBurnBps: both go to LiquidityBurner, so only the
+//                   sum matters) is 10% to 100% of each of its sales (per group, for a group with a dollar price; over
+//                   100% is hard: the contract refuses it)
 //   paper-per-pack  a group's PAPER per pack is at least 0.1 PAPER
 //   no-paper        a group has no PAPER per pack (paper 0)
 //   paper-cap       paperCapUsd is at least $0.10 (0 = no cap: a warning, not RED)
@@ -18,8 +17,8 @@
 // Hard (no --allow): a snapshot group has a root at LOCK; an NFT group's collection has code; an open group isn't free;
 // a limitFor has a perWallet to lift.
 //
-// The wallets: FireSale.revenueWallet, plankBurner and paperBurner must be the deployments file's REVENUE_WALLET
-// (inputs) and PlankBurner / PaperBurner (contracts); FireGroups is wired to FireSale both ways. The field names are
+// The wallets: FireSale.revenueWallet and liquidity must be the deployments file's REVENUE_WALLET (inputs) and
+// LiquidityBurner (contracts); FireGroups is wired to FireSale both ways. The field names are
 // FireSale.DropConfig's and FireGroups.Group's (the recipe's "sale" block, contracts/test/cards/recipe-studio-sale.json).
 import { getAddress, formatUnits, zeroAddress } from "viem";
 import { saleAbi, groupsAbi, GATES, NONE } from "./sale-abi.mjs";
@@ -28,8 +27,7 @@ import BOUNDS from "./sale-policy-bounds.json" with { type: "json" };
 
 export const RULES = {
   price: "a group's price is $1 to $10, or 0 for a holders' group",
-  "burn-total": "a group's plankBurnBps + paperBurnBps is 10% to 100%",
-  "paper-burn": "a group's paperBurnBps is at least 10%",
+  "burn-total": "a group's liquidity share (plankBurnBps + paperBurnBps) is 10% to 100%",
   "paper-per-pack": "a group's PAPER per pack is at least 0.1 PAPER",
   "no-paper": "a group's PAPER per pack is not 0",
   "paper-cap": "paperCapUsd is at least $0.10, or 0 (no cap)",
@@ -126,13 +124,11 @@ export function salePolicy(sale0, { allow = new Set(), roots, nftCode = {}, mill
     if (g.gate === "open" && g.priceUsd === 0n && g.paper === 0n) rule("free-open", false, `${n}: free packs open to everyone`, { hard: true });
     if (g.priceUsd === 0n) rule("price", holders, `${n}: no dollar price${holders ? ` (a holders' group: ${g.paper === 0n ? "free" : "PAPER only"})` : " in an open group"}`);
     else rule("price", g.priceUsd >= B.priceUsdMin && g.priceUsd <= B.priceUsdMax, `${n}: ${usd(g.priceUsd)} a pack`);
-    // the group's own burn shares: they split its dollar payments (a group with no dollar price has nothing to split)
+    // the group's own liquidity share: it splits its dollar payments (a group with no dollar price has nothing to split)
     const burn = g.plankBurnBps + g.paperBurnBps;
-    const shares = `PLANK ${pct(g.plankBurnBps)} + PAPER ${pct(g.paperBurnBps)}`;
-    if (burn > 10000n) rule("burn-total", false, `${n}: burns ${pct(burn)} of each sale (${shares})`, { hard: true });
+    if (burn > 10000n) rule("burn-total", false, `${n}: sends ${pct(burn)} of each sale to liquidity`, { hard: true });
     else if (g.priceUsd !== 0n) {
-      rule("burn-total", burn >= B.burnTotalBpsMin && burn <= B.burnTotalBpsMax, `${n}: burns ${pct(burn)} of each sale (${shares})`);
-      rule("paper-burn", g.paperBurnBps >= B.paperBurnBpsMin, `${n}: PAPER buy-and-burn ${pct(g.paperBurnBps)} of each sale`);
+      rule("burn-total", burn >= B.burnTotalBpsMin && burn <= B.burnTotalBpsMax, `${n}: sends ${pct(burn)} of each sale to liquidity`);
     }
     if (g.paper === 0n) rule("no-paper", false, `${n}: no PAPER per pack (paper 0)`);
     else rule("paper-per-pack", g.paper >= B.paperPerPackMin, `${n}: ${paper(g.paper)} per pack`);
@@ -164,13 +160,13 @@ export async function nftCodeOf(sale, getCode) {
   return out;
 }
 
-/** FireSale's revenue wallet and burners against the deployments file, and FireGroups wired to FireSale both ways.
+/** FireSale's revenue wallet and LiquidityBurner against the deployments file, and FireGroups wired to FireSale both ways.
  *  `read(address, abi, fn)`; `dep`: the whole deployments JSON. Returns [{ ok, text }]. */
 export async function saleWallets(read, sale, dep) {
-  const want = { revenueWallet: dep.inputs?.REVENUE_WALLET, plankBurner: dep.contracts?.PlankBurner, paperBurner: dep.contracts?.PaperBurner };
-  const src = { revenueWallet: "inputs.REVENUE_WALLET", plankBurner: "contracts.PlankBurner", paperBurner: "contracts.PaperBurner" };
+  const want = { revenueWallet: dep.inputs?.REVENUE_WALLET, liquidity: dep.contracts?.LiquidityBurner };
+  const src = { revenueWallet: "inputs.REVENUE_WALLET", liquidity: "contracts.LiquidityBurner" };
   const out = [];
-  for (const fn of ["revenueWallet", "plankBurner", "paperBurner"]) {
+  for (const fn of ["revenueWallet", "liquidity"]) {
     const got = getAddress(await read(sale, saleAbi, fn));
     if (!want[fn]) { out.push({ ok: false, text: `FireSale.${fn} is ${got}: no ${src[fn]} in the deployments file to check it against` }); continue; }
     const same = got === getAddress(want[fn]);

@@ -12,7 +12,7 @@ import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
 import {ConfigureSeries} from "../../script/ConfigureSeries.s.sol";
 import {SeriesHelper} from "./SeriesHelper.sol";
-import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockPlankTwap, MockPair, MockBurner} from "../Mocks.sol";
+import {MockERC20, MockUSDG, MockMill, MockFeed, MockRandomness, MockPlankTwap, MockPair} from "../Mocks.sol";
 import {PlankUsdTwap} from "../../src/PlankUsdTwap.sol";
 import {PaperUsdTwap} from "../../src/PaperUsdTwap.sol";
 import {MockPair as CumPair} from "../PlankUsdTwap.t.sol";
@@ -90,14 +90,13 @@ contract CheckpointFeed {
 }
 
 /// @dev The sale's test bench: every contract wired as DeployCards wires it, two buyers with every coin, a press NFT,
-///      and drop 1 set up (one open group of 13 packs, $2.50 + 1 PAPER, any coin, 30% PLANK burn) opening in an hour.
+///      and drop 1 set up (one open group of 13 packs, $2.50 + 1 PAPER, any coin, 30% to liquidity) opening in an hour.
 abstract contract SaleBase is SeriesHelper {
     address constant DEAD = 0x000000000000000000000000000000000000dEaD;
     uint8 constant NONE = 255;
     address owner = address(0xA11CE0);
     address revenue = address(0xBEEF);
-    address burnW = address(0xB0B);
-    address paperW = address(0xBA9E5);
+    address liq = address(0xB0B); // LiquidityBurner
     address alice = address(0xA1);
     address bob = address(0xB2);
     address carol = address(0xC3);
@@ -174,7 +173,7 @@ abstract contract SaleBase is SeriesHelper {
         return FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             packs: address(packs), cards: address(cards), ethUsd: address(ethFeed), plankUsd: plankUsd, paperUsd: address(0),
-            router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW,
+            router: address(router), revenueWallet: revenue, liquidity: liq,
             credits: address(credits), groups: address(groups)
         });
     }
@@ -186,7 +185,7 @@ abstract contract SaleBase is SeriesHelper {
     }
 
     /// An open group: anyone, $2.50 + 1 PAPER a pack in any coin, no wallet limit, opens with the drop, until sold;
-    /// 30% of each payment burns PLANK, the rest to revenue.
+    /// 30% of each payment to LiquidityBurner (its PLANK share), the rest to revenue.
     function _g(uint64 n) internal pure returns (FireGroups.Group memory g) {
         g.packs = n;
         g.plankBurnBps = 3_000;
@@ -197,7 +196,7 @@ abstract contract SaleBase is SeriesHelper {
         g.paper = 1e18;
     }
 
-    /// A drop of one open group (`_g(n)`: 30% PLANK burn), $1 PAPER ceiling, regular wallets only for 48h, credits
+    /// A drop of one open group (`_g(n)`: 30% to liquidity), $1 PAPER ceiling, regular wallets only for 48h, credits
     /// from the group.
     function _cfg(uint64 s, uint64 n) internal pure returns (FireSale.DropConfig memory c) {
         c.start = s;
@@ -218,7 +217,7 @@ abstract contract SaleBase is SeriesHelper {
         return c;
     }
 
-    /// Every group of `c` burns `plankBps` of its dollar payments as PLANK and sends `paperBps` to PaperBurner.
+    /// Every group of `c` sends `plankBps` + `paperBps` of its dollar payments to LiquidityBurner.
     function _shares(FireSale.DropConfig memory c, uint16 plankBps, uint16 paperBps) internal pure {
         for (uint256 i; i < c.groups.length; i++) (c.groups[i].plankBurnBps, c.groups[i].paperBurnBps) = (plankBps, paperBps);
     }
@@ -429,7 +428,7 @@ contract SaleTest is SaleBase {
 
     // ---------------------------------------------------------------- PLANK
 
-    function test_plankBuy_splitsAndBurns() public {
+    function test_plankBuy_splitsToLiquidity() public {
         _open();
         uint256 cost = _cost(1, 0, 2, FireSale.Pay.PLANK);
         assertEq(cost, 5e27, "2 packs = $5 = 5e9 PLANK");
@@ -437,9 +436,10 @@ contract SaleTest is SaleBase {
         vm.prank(alice, alice);
         sale.buy(1, 0, 2, FireSale.Pay.PLANK, cost, type(uint256).max, _na());
         assertEq(before - plank.balanceOf(alice), cost);
-        assertEq(plank.balanceOf(DEAD), cost * 3_000 / 10_000, "30% burned");
+        assertEq(plank.balanceOf(liq), cost * 3_000 / 10_000, "30% to LiquidityBurner");
         assertEq(plank.balanceOf(revenue), cost - cost * 3_000 / 10_000, "70% revenue");
-        assertEq(paper.balanceOf(DEAD), 2e18, "1 PAPER per pack burned");
+        assertEq(paper.balanceOf(liq), 2e18, "1 PAPER per pack to LiquidityBurner");
+        assertEq(plank.balanceOf(DEAD) + paper.balanceOf(DEAD), 0, "nothing burned at sale time");
         assertEq(packs.balanceOf(alice, 1), 2);
         _assertHoldsNothing();
     }
@@ -473,18 +473,19 @@ contract SaleTest is SaleBase {
 
     // ---------------------------------------------------------------- ETH and USDG
 
-    function test_ethBuy_burnsPlankAndRefunds() public {
+    function test_ethBuy_splitsToLiquidityAndRefunds() public {
         _open();
         uint256 cost = _cost(1, 0, 2, FireSale.Pay.ETH);
         assertEq(cost, (500_000_000 * uint256(1e18) + uint256(ETH_USD) - 1) / uint256(ETH_USD));
-        uint256 burnShare = cost * 3_000 / 10_000;
+        uint256 toLiq = cost * 3_000 / 10_000;
         uint256 balBefore = alice.balance;
         vm.prank(alice, alice);
         sale.buy{value: cost + 0.01 ether}(1, 0, 2, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
         assertEq(balBefore - alice.balance, cost, "excess refunded");
-        assertEq(revenue.balance, cost - burnShare, "70% revenue");
-        assertEq(plank.balanceOf(DEAD), burnShare * PER_ETH, "30% bought PLANK, burned");
-        assertEq(burnW.balance, 0);
+        assertEq(revenue.balance, cost - toLiq, "70% revenue");
+        assertEq(liq.balance, toLiq, "30% to LiquidityBurner, in ETH");
+        assertEq(plank.balanceOf(DEAD), 0, "no PLANK bought or burned at sale time");
+        assertEq(paper.balanceOf(liq), 2e18, "the packs' PAPER");
         _assertHoldsNothing();
     }
 
@@ -499,23 +500,27 @@ contract SaleTest is SaleBase {
         sale.buy{value: cost}(1, 0, 1, FireSale.Pay.ETH, cost - 1, type(uint256).max, _na());
     }
 
-    function test_ethSwapFails_burnShareToBurnWallet() public {
+    /// No swap happens at sale time: a broken or pumped router never blocks an ETH or USDG sale, and the whole
+    /// liquidity share still reaches LiquidityBurner in the coin paid.
+    function test_brokenOrPumpedRouterNeverBlocksASale() public {
         _open();
         router.setFail(true);
         uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
         _eth(alice, 1, 0, 1);
-        assertEq(burnW.balance, cost * 3_000 / 10_000, "burn wallet");
+        assertEq(liq.balance, cost * 3_000 / 10_000, "ETH share to LiquidityBurner");
         assertEq(revenue.balance, cost - cost * 3_000 / 10_000);
-        assertEq(packs.balanceOf(alice, 1), 1, "the purchase still went through");
-        _assertHoldsNothing();
-    }
-
-    function test_pumpedPool_skipsSwap() public {
-        _open();
+        _usdg(alice, 1, 0, 1); // $2.50
+        assertEq(usdg.balanceOf(liq), 750_000, "USDG share to LiquidityBurner");
+        assertEq(usdg.balanceOf(revenue), 1_750_000);
+        assertEq(packs.balanceOf(alice, 1), 2, "both purchases went through");
+        router.setFail(false);
         router.setRates(PER_ETH * 85 / 100, PER_USDG * 85 / 100); // pool 15% worse than the 30-minute average
-        uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
-        _eth(alice, 1, 0, 1);
-        assertEq(burnW.balance, cost * 3_000 / 10_000, "falls back instead of overpaying");
+        _eth(bob, 1, 0, 1);
+        _usdg(bob, 1, 0, 1);
+        assertEq(liq.balance, 2 * (cost * 3_000 / 10_000), "same share whatever the pool says");
+        assertEq(usdg.balanceOf(liq), 1_500_000);
+        assertEq(usdg.balanceOf(address(router)) + plank.balanceOf(DEAD), 0, "the router is never used");
+        assertEq(packs.balanceOf(bob, 1), 2);
         _assertHoldsNothing();
     }
 
@@ -526,20 +531,11 @@ contract SaleTest is SaleBase {
         vm.prank(alice, alice);
         sale.buy(1, 0, 2, FireSale.Pay.USDG, cost, type(uint256).max, _na());
         assertEq(usdg.balanceOf(revenue), 3_500_000, "70%");
-        assertEq(usdg.balanceOf(address(router)), 1_500_000, "30% swapped");
-        assertEq(plank.balanceOf(DEAD), 1_500_000 * PER_USDG);
+        assertEq(usdg.balanceOf(liq), 1_500_000, "30% to LiquidityBurner, in USDG");
+        assertEq(usdg.balanceOf(address(router)), 0, "nothing swapped");
         vm.prank(alice, alice);
         vm.expectRevert(FireSale.PriceMoved.selector);
         sale.buy(1, 0, 1, FireSale.Pay.USDG, 2_499_999, type(uint256).max, _na());
-        _assertHoldsNothing();
-    }
-
-    function test_usdgSwapFails_burnShareToBurnWallet() public {
-        _open();
-        router.setFail(true);
-        _usdg(alice, 1, 0, 1);
-        assertEq(usdg.balanceOf(burnW), 750_000);
-        assertEq(usdg.balanceOf(revenue), 1_750_000);
         _assertHoldsNothing();
     }
 
@@ -547,16 +543,16 @@ contract SaleTest is SaleBase {
         FireSale s2 = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(0), weth: address(0xE7),
             packs: address(packs), cards: address(cards), ethUsd: address(ethFeed), plankUsd: address(plankFeed),
-            paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW,
+            paperUsd: address(0), router: address(router), revenueWallet: revenue, liquidity: liq,
             credits: address(credits), groups: address(groups)
         }));
         assertEq(address(s2.USDG()), address(0));
         assertEq(s2.USDG_UNIT(), 0);
     }
 
-    // ---------------------------------------------------------------- the PAPER burn share (20/10/70)
+    // ---------------------------------------------------------------- the liquidity share (10% + 20% / 70%)
 
-    /// Drop 1 again (before it opens) with 10% PLANK burn and 20% to PaperBurner.
+    /// Drop 1 again (before it opens) with 10% PLANK share and 20% PAPER share: 30% to LiquidityBurner.
     function _split() internal {
         FireSale.DropConfig memory c = _cfg(start, 13);
         c.groups[0].plankBurnBps = 1_000;
@@ -569,9 +565,8 @@ contract SaleTest is SaleBase {
         _open();
         uint256 cost = _cost(1, 0, 2, FireSale.Pay.PLANK);
         _plank(alice, 1, 0, 2);
-        assertEq(plank.balanceOf(DEAD), cost * 1_000 / 10_000, "10% PLANK burned");
-        assertEq(plank.balanceOf(paperW), cost * 2_000 / 10_000, "20% to PaperBurner");
-        assertEq(plank.balanceOf(revenue), cost - cost * 1_000 / 10_000 - cost * 2_000 / 10_000, "70% revenue");
+        assertEq(plank.balanceOf(liq), cost * 3_000 / 10_000, "10% + 20% to LiquidityBurner");
+        assertEq(plank.balanceOf(revenue), cost - cost * 3_000 / 10_000, "70% revenue");
         _assertHoldsNothing();
     }
 
@@ -581,22 +576,9 @@ contract SaleTest is SaleBase {
         uint256 cost = _cost(1, 0, 2, FireSale.Pay.ETH);
         vm.prank(alice, alice);
         sale.buy{value: cost + 0.01 ether}(1, 0, 2, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
-        uint256 plankShare = cost * 1_000 / 10_000;
-        uint256 paperShare = cost * 2_000 / 10_000;
-        assertEq(plank.balanceOf(DEAD), plankShare * PER_ETH, "10% bought PLANK, burned");
-        assertEq(paperW.balance, paperShare, "20% to PaperBurner");
-        assertEq(revenue.balance, cost - plankShare - paperShare, "70% revenue");
-        _assertHoldsNothing();
-    }
-
-    function test_split_ethSwapFails() public {
-        _split();
-        _open();
-        router.setFail(true);
-        uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
-        _eth(alice, 1, 0, 1);
-        assertEq(burnW.balance, cost * 1_000 / 10_000, "PLANK share waits in PlankBurner");
-        assertEq(paperW.balance, cost * 2_000 / 10_000, "PAPER share still to PaperBurner");
+        uint256 toLiq = cost * 3_000 / 10_000;
+        assertEq(liq.balance, toLiq, "10% + 20% to LiquidityBurner");
+        assertEq(revenue.balance, cost - toLiq, "70% revenue");
         _assertHoldsNothing();
     }
 
@@ -604,8 +586,7 @@ contract SaleTest is SaleBase {
         _split();
         _open();
         _usdg(alice, 1, 0, 2); // $5.00
-        assertEq(usdg.balanceOf(address(router)), 500_000, "10% swapped for PLANK");
-        assertEq(usdg.balanceOf(paperW), 1_000_000, "20% to PaperBurner");
+        assertEq(usdg.balanceOf(liq), 1_500_000, "10% + 20% to LiquidityBurner");
         assertEq(usdg.balanceOf(revenue), 3_500_000, "70% revenue");
         _assertHoldsNothing();
     }
@@ -621,9 +602,68 @@ contract SaleTest is SaleBase {
         _set(1, c);
     }
 
-    // ---------------------------------------------------------------- per-group burn shares
+    /// A taxed group (10% PLANK + 20% PAPER shares, 4% rising tax), bought in each coin: exactly
+    /// toLiq = (cost - tax) * 30% + tax reaches LiquidityBurner in the coin paid, the rest the revenue wallet, the
+    /// buyer pays exactly the quote, and PacksBought reports toLiq.
+    function test_toLiquidity_withTax_everyCoin() public {
+        FireGroups.Group memory g = _g(12);
+        g.taxBps = 400;
+        (g.plankBurnBps, g.paperBurnBps) = (1_000, 2_000);
+        FireSale.DropConfig memory c = _cfg(start, 12);
+        c.groups[0] = g;
+        c.creditGroup = NONE; // free packs never come from a taxed group
+        _set(1, c);
+        _open();
 
-    /// A PLANK-holders-style group (PLANK only) that burns all the PLANK it takes, then Everyone at 10% / 20%.
+        // PLANK
+        (uint256 usd8, uint256 tax8) = groups.priceOf(1, 0, 2);
+        uint256 cost = _cost(1, 0, 2, FireSale.Pay.PLANK);
+        uint256 tax = cost * tax8 / usd8;
+        assertGt(tax, 0);
+        uint256 toLiq = (cost - tax) * 3_000 / 10_000 + tax;
+        uint256 before = plank.balanceOf(alice);
+        vm.expectEmit(address(sale));
+        emit FireSale.PacksBought(1, 0, alice, 2, FireSale.Pay.PLANK, cost, toLiq);
+        _plank(alice, 1, 0, 2);
+        assertEq(before - plank.balanceOf(alice), cost, "PLANK: exactly the quote");
+        assertEq(plank.balanceOf(liq), toLiq, "PLANK: share + tax to LiquidityBurner");
+        assertEq(plank.balanceOf(revenue), cost - toLiq, "PLANK: the rest to revenue");
+
+        // ETH (the tax has risen with the packs sold)
+        (usd8, tax8) = groups.priceOf(1, 0, 3);
+        cost = _cost(1, 0, 3, FireSale.Pay.ETH);
+        tax = cost * tax8 / usd8;
+        toLiq = (cost - tax) * 3_000 / 10_000 + tax;
+        before = bob.balance;
+        vm.expectEmit(address(sale));
+        emit FireSale.PacksBought(1, 0, bob, 3, FireSale.Pay.ETH, cost, toLiq);
+        vm.prank(bob, bob);
+        sale.buy{value: cost + 0.5 ether}(1, 0, 3, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
+        assertEq(before - bob.balance, cost, "ETH: exactly the quote, the extra back");
+        assertEq(liq.balance, toLiq, "ETH: share + tax to LiquidityBurner");
+        assertEq(revenue.balance, cost - toLiq, "ETH: the rest to revenue");
+
+        // USDG
+        (usd8, tax8) = groups.priceOf(1, 0, 4);
+        cost = _cost(1, 0, 4, FireSale.Pay.USDG);
+        tax = cost * tax8 / usd8;
+        toLiq = (cost - tax) * 3_000 / 10_000 + tax;
+        before = usdg.balanceOf(carol);
+        vm.expectEmit(address(sale));
+        emit FireSale.PacksBought(1, 0, carol, 4, FireSale.Pay.USDG, cost, toLiq);
+        _usdg(carol, 1, 0, 4);
+        assertEq(before - usdg.balanceOf(carol), cost, "USDG: exactly the quote");
+        assertEq(usdg.balanceOf(liq), toLiq, "USDG: share + tax to LiquidityBurner");
+        assertEq(usdg.balanceOf(revenue), cost - toLiq, "USDG: the rest to revenue");
+
+        assertEq(paper.balanceOf(liq), 9e18, "every pack's PAPER");
+        _assertHoldsNothing();
+    }
+
+    // ---------------------------------------------------------------- per-group shares
+
+    /// A PLANK-holders-style group (PLANK only) that sends all the PLANK it takes to liquidity, then Everyone at
+    /// 10% / 20%.
     function _plankAllThenEveryone(uint64 a, uint64 b) internal {
         FireGroups.Group memory p = _g(a);
         p.coins = 1; // PLANK only
@@ -676,21 +716,19 @@ contract SaleTest is SaleBase {
         sale.configureDrop(1, c);
     }
 
-    /// 100% PLANK burn in a PLANK-only group: every bit of the buyer's PLANK is burned, PaperBurner and the revenue
-    /// wallet get nothing, and the buyer pays exactly the quote.
-    function test_groupShares_plankGroupBurnsAll() public {
+    /// A 100% share in a PLANK-only group: every bit of the buyer's PLANK goes to LiquidityBurner, the revenue
+    /// wallet gets nothing, and the buyer pays exactly the quote.
+    function test_groupShares_plankGroupAllToLiquidity() public {
         _plankAllThenEveryone(4, 6);
         _open();
         uint256 cost = _cost(1, 0, 3, FireSale.Pay.PLANK);
         uint256 before = plank.balanceOf(alice);
-        uint256 dead = plank.balanceOf(DEAD);
         vm.prank(alice, alice);
         sale.buy(1, 0, 3, FireSale.Pay.PLANK, cost, type(uint256).max, _na());
         assertEq(before - plank.balanceOf(alice), cost, "exactly the quote");
-        assertEq(plank.balanceOf(DEAD) - dead, cost, "all of it burned");
-        assertEq(plank.balanceOf(paperW), 0, "nothing to PaperBurner");
+        assertEq(plank.balanceOf(liq), cost, "all of it to LiquidityBurner");
         assertEq(plank.balanceOf(revenue), 0, "nothing to revenue");
-        assertEq(plank.balanceOf(burnW), 0, "nothing to PlankBurner");
+        assertEq(plank.balanceOf(DEAD), 0, "nothing burned at sale time");
         assertEq(packs.balanceOf(alice, 1), 3);
         // the group takes PLANK only
         uint256 eth = _cost(1, 0, 1, FireSale.Pay.ETH);
@@ -700,9 +738,9 @@ contract SaleTest is SaleBase {
         _assertHoldsNothing();
     }
 
-    /// A 100% PLANK-burn group paid in ETH whose swap can't go through: all of it waits in PlankBurner and the mint
-    /// still goes through (a purchase never fails because of PLANK).
-    function test_groupShares_allBurnSwapFailsFallsBack() public {
+    /// A 100% group paid in ETH with the router down: all of it reaches LiquidityBurner in ETH and the mint goes
+    /// through; in USDG likewise.
+    function test_groupShares_allToLiquidity_ethAndUsdg() public {
         FireGroups.Group memory g = _g(5);
         (g.plankBurnBps, g.paperBurnBps) = (10_000, 0);
         FireSale.DropConfig memory c = _cfg(start, 5);
@@ -715,45 +753,39 @@ contract SaleTest is SaleBase {
         vm.prank(alice, alice);
         sale.buy{value: cost + 1 ether}(1, 0, 2, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
         assertEq(before - alice.balance, cost, "exactly the quote; the extra comes back");
-        assertEq(burnW.balance, cost, "all of it waits in PlankBurner");
-        assertEq(paperW.balance, 0);
+        assertEq(liq.balance, cost, "all of it to LiquidityBurner");
         assertEq(revenue.balance, 0);
-        assertEq(packs.balanceOf(alice, 1), 2, "minted anyway");
-        // and in USDG, with the swap working: all of it buys PLANK
-        router.setFail(false);
+        assertEq(packs.balanceOf(alice, 1), 2, "minted");
         _usdg(bob, 1, 0, 1); // $2.50
-        assertEq(usdg.balanceOf(address(router)), 2_500_000, "all of it swapped for PLANK");
+        assertEq(usdg.balanceOf(liq), 2_500_000, "all of it to LiquidityBurner");
         assertEq(usdg.balanceOf(revenue), 0);
-        assertEq(usdg.balanceOf(paperW), 0);
         _assertHoldsNothing();
     }
 
-    /// A mixed drop: the PLANK group burns all its PLANK, Everyone splits 10% / 20% / 70%; each sale uses its own
-    /// group's shares.
+    /// A mixed drop: the PLANK group sends all its PLANK to liquidity, Everyone splits 30% / 70%; each sale uses its
+    /// own group's shares.
     function test_groupShares_mixedDrop() public {
         _plankAllThenEveryone(2, 6);
         _open();
         uint256 c0 = _cost(1, 0, 2, FireSale.Pay.PLANK);
         _plank(alice, 1, 0, 2); // the PLANK group sells out: Everyone opens
-        assertEq(plank.balanceOf(DEAD), c0, "group 1: all burned");
+        assertEq(plank.balanceOf(liq), c0, "group 1: all to liquidity");
         uint256 c1 = _cost(1, 1, 2, FireSale.Pay.PLANK);
         _plank(bob, 1, 1, 2);
-        assertEq(plank.balanceOf(DEAD), c0 + c1 * 1_000 / 10_000, "group 2: 10% burned");
-        assertEq(plank.balanceOf(paperW), c1 * 2_000 / 10_000, "group 2: 20% to PaperBurner");
-        assertEq(plank.balanceOf(revenue), c1 - c1 * 1_000 / 10_000 - c1 * 2_000 / 10_000, "group 2: 70% revenue");
+        assertEq(plank.balanceOf(liq), c0 + c1 * 3_000 / 10_000, "group 2: 10% + 20% to liquidity");
+        assertEq(plank.balanceOf(revenue), c1 - c1 * 3_000 / 10_000, "group 2: 70% revenue");
         uint256 e1 = _cost(1, 1, 2, FireSale.Pay.ETH);
         _eth(carol, 1, 1, 2);
-        assertEq(paperW.balance, e1 * 2_000 / 10_000, "ETH in group 2: 20% to PaperBurner");
-        assertEq(revenue.balance, e1 - e1 * 1_000 / 10_000 - e1 * 2_000 / 10_000, "ETH in group 2: 70% revenue");
+        assertEq(liq.balance, e1 * 3_000 / 10_000, "ETH in group 2: 30% to liquidity");
+        assertEq(revenue.balance, e1 - e1 * 3_000 / 10_000, "ETH in group 2: 70% revenue");
         _usdg(alice, 1, 1, 2); // $5.00
-        assertEq(usdg.balanceOf(address(router)), 500_000, "USDG in group 2: 10% swapped for PLANK");
-        assertEq(usdg.balanceOf(paperW), 1_000_000);
+        assertEq(usdg.balanceOf(liq), 1_500_000, "USDG in group 2: 30% to liquidity");
         assertEq(usdg.balanceOf(revenue), 3_500_000);
         assertTrue(_closed(1), "sold out");
         _assertHoldsNothing();
     }
 
-    /// A taxed group's shares split its base price; the whole tax still goes to PaperBurner.
+    /// A taxed group's shares split its base price; the whole tax goes to LiquidityBurner too.
     function test_groupShares_withTax() public {
         FireGroups.Group memory g = _g(5);
         g.taxBps = 400;
@@ -768,12 +800,12 @@ contract SaleTest is SaleBase {
         _usdg(alice, 1, 0, 2);
         uint256 tax = cost * tax8 / usd8;
         assertGt(tax, 0);
-        assertEq(usdg.balanceOf(paperW), tax, "the tax to PaperBurner");
-        assertEq(usdg.balanceOf(address(router)), cost - tax, "the base price all burns PLANK");
+        assertEq(usdg.balanceOf(liq), cost, "the base price and the tax all to LiquidityBurner");
         assertEq(usdg.balanceOf(revenue), 0);
         _assertHoldsNothing();
     }
 
+    /// The revenue wallet and LiquidityBurner must differ and neither may be zero, in the constructor and later.
     function test_split_walletsMustDiffer() public {
         _drop(1, start, 4);
         _open();
@@ -781,10 +813,24 @@ contract SaleTest is SaleBase {
         assertEq(sale.activeDrops(), 0);
         vm.startPrank(owner, owner);
         vm.expectRevert(FireSale.ZeroAddress.selector);
-        sale.setWallets(address(0x1111), address(0x2222), address(0x2222));
+        sale.setWallets(address(0x1111), address(0x1111));
         vm.expectRevert(FireSale.ZeroAddress.selector);
-        sale.setWallets(address(0x1111), address(0x2222), address(0));
+        sale.setWallets(address(0x1111), address(0));
+        vm.expectRevert(FireSale.ZeroAddress.selector);
+        sale.setWallets(address(0), address(0x2222));
+        vm.expectEmit(address(sale));
+        emit FireSale.WalletsSet(address(0x1111), address(0x2222));
+        sale.setWallets(address(0x1111), address(0x2222));
         vm.stopPrank();
+        assertEq(sale.revenueWallet(), address(0x1111));
+        assertEq(sale.liquidity(), address(0x2222));
+        FireSale.Config memory cfg = _saleConfig(address(plankFeed));
+        cfg.liquidity = revenue;
+        vm.expectRevert(FireSale.ZeroAddress.selector);
+        new FireSale(cfg);
+        cfg.liquidity = address(0);
+        vm.expectRevert(FireSale.ZeroAddress.selector);
+        new FireSale(cfg);
     }
 
     // ---------------------------------------------------------------- buyWithEthAll: ETH pays for the PAPER too
@@ -801,10 +847,13 @@ contract SaleTest is SaleBase {
         vm.prank(dave, dave);
         sale.buyWithEthAll{value: cost + paperEth + 0.01 ether}(1, 0, 2, _na());
         assertEq(packs.balanceOf(dave, 1), 2);
-        assertGe(paper.balanceOf(DEAD), paperNeed, "the PAPER bought and burned");
+        assertGe(paper.balanceOf(liq), paperNeed, "the PAPER bought lands at LiquidityBurner");
+        assertEq(paper.balanceOf(liq), paperEth * 31_250, "all of what the market buy returned");
+        assertEq(paper.balanceOf(DEAD), 0, "none burned at sale time");
         assertEq(paper.balanceOf(dave), 0, "none of the buyer's own PAPER");
         assertEq(dave.balance, 1 ether - cost - paperEth, "the rest refunded");
         assertEq(revenue.balance, cost - cost * 3_000 / 10_000, "revenue as usual");
+        assertEq(liq.balance, cost * 3_000 / 10_000, "the liquidity share in ETH as usual");
         _assertHoldsNothing();
     }
 
@@ -819,6 +868,7 @@ contract SaleTest is SaleBase {
         vm.prank(dave, dave);
         sale.buyWithEthAll{value: total}(1, 0, 1, _na());
         assertEq(dave.balance, 0, "exactly enough");
+        assertGe(paper.balanceOf(liq), need, "the PAPER lands at LiquidityBurner");
         _assertHoldsNothing();
     }
 
@@ -877,7 +927,7 @@ contract SaleTest is SaleBase {
     }
 
     /// A PLANK-only group can't sell while the PLANK price is down, but it can't stall the drop: when its time runs
-    /// out its packs roll to the next group, which takes ETH (the burn share then waits in PlankBurner).
+    /// out its packs roll to the next group, which takes ETH (its liquidity share goes to LiquidityBurner in ETH).
     function test_plankFeedDown_drop_doesNotGetStuck() public {
         FireGroups.Group memory a = _g(4);
         a.coins = 1; // PLANK only
@@ -902,10 +952,10 @@ contract SaleTest is SaleBase {
         assertEq(_view(1, 1).capacity, 10, "the 4 PLANK-only packs rolled in");
         uint256 cost = _cost(1, 1, 1, FireSale.Pay.ETH);
         _eth(alice, 1, 1, 1);
-        assertEq(burnW.balance, cost * 3_000 / 10_000, "no PLANK price: the burn share waits in PlankBurner");
+        assertEq(liq.balance, cost * 3_000 / 10_000, "no PLANK price needed: the share goes to LiquidityBurner in ETH");
     }
 
-    function test_audit_stalePlankPricePausesPlankAndSkipsTheSwap() public {
+    function test_audit_stalePlankPricePausesPlankNotEth() public {
         _open();
         vm.warp(block.timestamp + 3 hours); // keeper down: the average is 3 hours old
         ethFeed.set(ETH_USD);
@@ -914,7 +964,7 @@ contract SaleTest is SaleBase {
         sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
         uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
         _eth(alice, 1, 0, 1);
-        assertEq(burnW.balance, cost * 3_000 / 10_000, "no swap on an old price");
+        assertEq(liq.balance, cost * 3_000 / 10_000, "ETH still sells; its share to LiquidityBurner in ETH");
     }
 
     function test_audit_longWindowAfterAKeeperGapRejected() public {
@@ -1049,13 +1099,13 @@ contract SaleTest is SaleBase {
     function test_audit_walletsLockedWhileADropIsSetUp() public {
         vm.prank(owner, owner);
         vm.expectRevert(FireSale.DropsActive.selector);
-        sale.setWallets(address(0x1111), address(0x2222), address(0x3333));
+        sale.setWallets(address(0x1111), address(0x2222));
         _drop(1, start, 4);
         _open();
         _plank(alice, 1, 0, 4); // sells out, closes
         assertEq(sale.activeDrops(), 0);
         vm.prank(owner, owner);
-        sale.setWallets(address(0x1111), address(0x2222), address(0x3333));
+        sale.setWallets(address(0x1111), address(0x2222));
         assertEq(sale.revenueWallet(), address(0x1111));
     }
 
@@ -1111,13 +1161,13 @@ contract SaleTest is SaleBase {
         _plank(alice, 1, 0, 100);
         emit log_named_uint("PLANK, 100 packs", g - gasleft());
         assertEq(packs.balanceOf(alice, 1), 100);
-        assertEq(paper.balanceOf(DEAD), 101e18, "1 PAPER a pack");
+        assertEq(paper.balanceOf(liq), 101e18, "1 PAPER a pack");
         vm.prank(alice, alice);
         vm.expectRevert(FireGroups.WalletLimit.selector);
         sale.buy(1, 0, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
         g = gasleft();
         _eth(bob, 1, 0, 99);
-        emit log_named_uint("ETH, 99 packs (with PLANK swap)", g - gasleft());
+        emit log_named_uint("ETH, 99 packs", g - gasleft());
         assertEq(packs.balanceOf(bob, 1), 100);
         _assertHoldsNothing();
     }
@@ -1214,13 +1264,13 @@ contract SaleTest is SaleBase {
         credits.useCredits(2, 1, type(uint256).max); // no drop live: credits wait
 
         _warp(s2);
-        uint256 deadPaper = paper.balanceOf(DEAD);
+        uint256 deadPaper = paper.balanceOf(liq);
         uint256 revBefore = plank.balanceOf(revenue);
         vm.prank(alice, alice);
         credits.useCredits(2, 3, type(uint256).max);
         assertEq(packs.balanceOf(alice, 2), 3);
         assertEq(credits.credits(alice), 0);
-        assertEq(paper.balanceOf(DEAD) - deadPaper, 3e18, "1 PAPER each");
+        assertEq(paper.balanceOf(liq) - deadPaper, 3e18, "1 PAPER each");
         assertEq(plank.balanceOf(revenue), revBefore, "nothing else paid");
         assertEq(sale.status(2).left, 7, "out of the credit group");
         assertEq(_view(2, 0).sold, 3);
@@ -1376,10 +1426,10 @@ contract SaleTest is SaleBase {
     // ---------------------------------------------------------------- suggestions
 
     function test_suggestions() public {
-        uint256 before = paper.balanceOf(DEAD);
+        uint256 before = paper.balanceOf(liq);
         vm.prank(bob, bob);
         uint256 id = credits.suggest("Captain Kindling", type(uint256).max);
-        assertEq(paper.balanceOf(DEAD) - before, 1e18);
+        assertEq(paper.balanceOf(liq) - before, 1e18);
         uint256[] memory ids = new uint256[](1);
         ids[0] = id;
         vm.prank(owner, owner);
@@ -1447,13 +1497,13 @@ contract SaleTest is SaleBase {
         string[] memory two = new string[](2);
         two[0] = "Theme: Haunted diner";
         two[1] = "Style: Woodcut print";
-        uint256 before = paper.balanceOf(DEAD);
+        uint256 before = paper.balanceOf(liq);
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.PriceMoved.selector);
         credits.suggestMany(two, 1e18); // two cost 2 PAPER
         vm.prank(bob, bob);
         uint256 first = credits.suggestMany(two, 2e18);
-        assertEq(paper.balanceOf(DEAD) - before, 2e18, "one PAPER each");
+        assertEq(paper.balanceOf(liq) - before, 2e18, "one PAPER each");
         assertEq(credits.suggestionCount(), first + 2);
         (address by,,,) = credits.suggestions(first + 1);
         assertEq(by, bob);
@@ -1595,7 +1645,7 @@ contract SaleTest is SaleBase {
         credits.setSuggestionRules(0, 10);
         vm.prank(bob, bob);
         credits.suggest("Ember Fox", 0); // free
-        assertEq(paper.balanceOf(DEAD), 0);
+        assertEq(paper.balanceOf(liq), 0);
         vm.prank(bob, bob);
         vm.expectRevert(FireCredits.BadAmount.selector);
         credits.suggest("Captain Kindling", 0); // 16 bytes > 10
@@ -1606,7 +1656,7 @@ contract SaleTest is SaleBase {
         credits.suggest("Ash Wolf", 1e18);
         vm.prank(bob, bob);
         credits.suggest("Ash Wolf", 5e18);
-        assertEq(paper.balanceOf(DEAD), 5e18);
+        assertEq(paper.balanceOf(liq), 5e18);
         vm.startPrank(owner, owner);
         vm.expectRevert(FireCredits.BadConfig.selector);
         credits.setSuggestionRules(0, 0);
@@ -1629,10 +1679,10 @@ contract SaleTest is SaleBase {
         emit log_named_uint("PLANK, 5 packs", g - gasleft());
         g = gasleft();
         _eth(bob, 1, 0, 1);
-        emit log_named_uint("ETH, 1 pack (with PLANK swap)", g - gasleft());
+        emit log_named_uint("ETH, 1 pack", g - gasleft());
         g = gasleft();
         _eth(bob, 1, 0, 5);
-        emit log_named_uint("ETH, 5 packs (with PLANK swap)", g - gasleft());
+        emit log_named_uint("ETH, 5 packs", g - gasleft());
     }
 
     /// The Standard drop's worst case: three groups (press, PLANK snapshot, everyone) to work out on every buy.
@@ -1726,16 +1776,16 @@ contract SaleTest is SaleBase {
         assertEq(sale.paperFor(2, 1, 1), 0.25e18, "$0.50 of PAPER at $2");
         (, uint256 pp) = sale.quote(2, 0, 1, FireSale.Pay.PLANK);
         assertEq(pp, 0.25e18, "press packs too");
-        uint256 dead = paper.balanceOf(DEAD);
+        uint256 dead = paper.balanceOf(liq);
         vm.prank(alice, alice);
         sale.buy(2, 1, 2, FireSale.Pay.PLANK, type(uint256).max, 0.5e18, _na());
-        assertEq(paper.balanceOf(DEAD) - dead, 0.5e18, "paid packs");
+        assertEq(paper.balanceOf(liq) - dead, 0.5e18, "paid packs");
         vm.prank(alice, alice);
         sale.buy(2, 0, 1, FireSale.Pay.PLANK, 0, 0.25e18, _nfts(p1));
-        assertEq(paper.balanceOf(DEAD) - dead, 0.75e18, "press packs");
+        assertEq(paper.balanceOf(liq) - dead, 0.75e18, "press packs");
         vm.prank(bob, bob);
         credits.useCredits(2, 2, 0.5e18);
-        assertEq(paper.balanceOf(DEAD) - dead, 1.25e18, "credit packs");
+        assertEq(paper.balanceOf(liq) - dead, 1.25e18, "credit packs");
         f.set(0.1e18); // PAPER at $0.10: the full PAPER is under the ceiling
         assertEq(sale.paperFor(2, 1, 1), 1e18);
         (, pp) = sale.quote(2, 0, 1, FireSale.Pay.PLANK);
@@ -1774,7 +1824,7 @@ contract SaleTest is SaleBase {
         _open();
         vm.prank(alice, alice);
         sale.buy(1, 0, 2, FireSale.Pay.PLANK, type(uint256).max, 0, _na());
-        assertEq(paper.balanceOf(DEAD), 0);
+        assertEq(paper.balanceOf(liq), 0);
         assertEq(packs.balanceOf(alice, 1), 2);
     }
 
@@ -1784,13 +1834,13 @@ contract SaleTest is SaleBase {
         vm.prank(owner, owner);
         credits.setSuggestionRules(3e18, 280);
         f.set(4e18);
-        uint256 dead = paper.balanceOf(DEAD);
+        uint256 dead = paper.balanceOf(liq);
         vm.prank(bob, bob);
         vm.expectRevert(FireSale.PriceMoved.selector);
         credits.suggest("Ember Fox", 0.24e18);
         vm.prank(bob, bob);
         credits.suggest("Ember Fox", 0.25e18);
-        assertEq(paper.balanceOf(DEAD) - dead, 0.25e18, "$1 at $4, not 3 PAPER");
+        assertEq(paper.balanceOf(liq) - dead, 0.25e18, "$1 at $4, not 3 PAPER");
     }
 
     function test_audit8_lopsidedPaperPoolCantZeroPackPaper() public {
@@ -2000,7 +2050,7 @@ contract SaleTest is SaleBase {
         assertEq(packs.balanceOf(alice, 2), 3);
     }
 
-    /// A PLANK checkpoint that fails inside a buy never blocks it: the ETH buy still sells, the burn share waits.
+    /// A PLANK checkpoint that fails inside a buy never blocks it: the ETH buy still sells, its share to LiquidityBurner.
     function test_aFailingPlankCheckpointNeverBlocksABuy() public {
         CheckpointFeed twap = new CheckpointFeed(PLANK_USD);
         _endDrop1();
@@ -2012,9 +2062,9 @@ contract SaleTest is SaleBase {
         ethFeed.set(ETH_USD);
         twap.setFail(true);
         uint256 cost = _cost(2, 0, 1, FireSale.Pay.ETH);
-        _eth(alice, 2, 0, 1); // still sells; the burn share waits
+        _eth(alice, 2, 0, 1); // still sells
         assertEq(twap.checkpoints(), 0);
-        assertEq(burnW.balance, cost * 3_000 / 10_000, "to PlankBurner");
+        assertEq(liq.balance, cost * 3_000 / 10_000, "to LiquidityBurner");
         assertEq(packs.balanceOf(alice, 2), 1);
     }
 
@@ -2053,8 +2103,14 @@ contract SaleTest is SaleBase {
         FireGroups.GroupView[] memory v = groups.groupsOf(7);
         assertEq(v.length, 4);
         for (uint256 i; i < 4; i++) {
-            assertEq(v[i].config.plankBurnBps, 1_000, "every group: the Standard 10% PLANK burn");
-            assertEq(v[i].config.paperBurnBps, 2_000, "every group: the Standard 20% PAPER buy & burn");
+            if (i == 1) {
+                // the Standard's PLANK holders group sends 100% of its PLANK to liquidity
+                assertEq(v[i].config.plankBurnBps, 10_000, "PLANK holders: 100% to liquidity");
+                assertEq(v[i].config.paperBurnBps, 0, "PLANK holders: no PAPER share");
+            } else {
+                assertEq(v[i].config.plankBurnBps, 1_000, "the Standard 10% PLANK share");
+                assertEq(v[i].config.paperBurnBps, 2_000, "the Standard 20% PAPER share");
+            }
         }
         // 1. Paper Press holders: 50, 1 PAPER, 1 per press, opens with the drop, up to 6h, leftovers to group 3
         assertEq(v[0].config.packs, 50);
@@ -2157,11 +2213,16 @@ contract SaleTest is SaleBase {
         cs.parseSale(vm.replace(json, '"coins": 0,\n    "plankBurnBps": 1000,', '"coins": 0,'));
         vm.expectRevert(bytes("sale: the burn shares are per group: set plankBurnBps and paperBurnBps in each of sale.groups (Standard 1000 / 2000)"));
         cs.parseSale(vm.replace(json, '"packs": 167,', '"packs": 167,\n  "plankBurnBps": 1000,'));
-        // 100% PLANK burn in one group is fine
-        FireSale.DropConfig memory all = cs.parseSale(vm.replace(json, '"coins": 1,\n    "plankBurnBps": 1000,\n    "paperBurnBps": 2000', '"coins": 1,\n    "plankBurnBps": 10000,\n    "paperBurnBps": 0'));
+        // 100% in one group is fine (the export's PLANK holders group), and so is the 10% / 20% split there
+        FireSale.DropConfig memory all = cs.parseSale(json);
         assertEq(all.groups[1].plankBurnBps, 10_000);
         assertEq(all.groups[1].paperBurnBps, 0);
         assertEq(all.groups[2].plankBurnBps, 1_000);
+        string memory split = vm.replace(json, '"coins": 1,\n    "plankBurnBps": 10000,\n    "paperBurnBps": 0', '"coins": 1,\n    "plankBurnBps": 1000,\n    "paperBurnBps": 2000');
+        assertTrue(keccak256(bytes(split)) != keccak256(bytes(json)), "the replace matched");
+        all = cs.parseSale(split);
+        assertEq(all.groups[1].plankBurnBps, 1_000);
+        assertEq(all.groups[1].paperBurnBps, 2_000);
         vm.expectRevert(bytes(".sale.groups[0].duration is too big for its field (most 2592000)"));
         cs.parseSale(vm.replace(json, '"duration": 21600', '"duration": 2592001'));
         vm.expectRevert(bytes("sale.creditGroup: the index of a group (0 is the first), or 255 for no credit packs"));

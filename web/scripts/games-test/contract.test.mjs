@@ -40,7 +40,8 @@ test('the approval matches FireGames on chain, end to end', { skip: SKIP, timeou
     const owner = createWalletClient({ account: OWNER, chain: foundry, transport }), player = createWalletClient({ account: PLAYER, chain: foundry, transport });
     const deploy = async (a, args) => (await pub.waitForTransactionReceipt({ hash: await owner.deployContract({ abi: a.abi, bytecode: a.bytecode.object, args }) })).contractAddress;
     const paper = await deploy(token, ['Paper', 'PAPER']);
-    const fg = await deploy(games, [OWNER.address, paper]);
+    const LIQ = '0x00000000000000000000000000000000000011c0'; // LiquidityBurner's stand-in: where entries go
+    const fg = await deploy(games, [OWNER.address, paper, LIQ]);
     const feed = await deploy(feedArt, [2n * 10n ** 17n]); // PAPER at $0.20: the $0.10 ceiling makes a run 0.5 PAPER
     const send = async (w, address, abi, functionName, args) => pub.waitForTransactionReceipt({ hash: await w.writeContract({ address, abi, functionName, args }) });
     const signer = runSigner({ signerKey: SIGNER_KEY, chainId: 31337, gamesAddress: fg });
@@ -61,7 +62,8 @@ test('the approval matches FireGames on chain, end to end', { skip: SKIP, timeou
     await assert.rejects(pub.simulateContract({ account: PLAYER, address: fg, abi: games.abi, functionName: 'payRun', args: [1n, runId, 7n, deadline, 4n * 10n ** 17n, sig] }), /PriceMoved/);
     const rc = await send(player, fg, games.abi, 'payRun', [1n, runId, 7n, deadline, 10n ** 18n, sig]);
     assert.equal(rc.status, 'success');
-    assert.equal(await pub.readContract({ address: paper, abi: token.abi, functionName: 'balanceOf', args: [PLAYER.address] }), 45n * 10n ** 17n, 'burned 0.5 PAPER, not 1');
+    assert.equal(await pub.readContract({ address: paper, abi: token.abi, functionName: 'balanceOf', args: [PLAYER.address] }), 45n * 10n ** 17n, 'paid 0.5 PAPER, not 1');
+    assert.equal(await pub.readContract({ address: paper, abi: token.abi, functionName: 'balanceOf', args: [LIQ] }), 5n * 10n ** 17n, 'the entry went to LiquidityBurner');
     // the server's chain adapter sees it
     const chain = viemChain({ rpcUrl: rpc, chainId: 31337, gamesAddress: fg, signerKey: SIGNER_KEY });
     assert.deepEqual(await chain.runPaid(rc.transactionHash), [{ gameId: 1, runId, player: PLAYER.address, series: 7 }]);

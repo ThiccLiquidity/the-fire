@@ -8,7 +8,7 @@ import { DRAND_CHAIN, DRAND_GENESIS, drandClient, roundAt, roundTime } from "../
 import { createNotifier } from "../src/alerts.mjs";
 import { loadConfig, loadKey } from "../src/config.mjs";
 import { createSender } from "../src/tx.mjs";
-import { createKeeper, dropEndTimes, lastGroupEnd, flushPlan, waitAlerts } from "../src/core.mjs";
+import { createKeeper, dropEndTimes, lastGroupEnd, flushPlan, liquidityWork, waitAlerts } from "../src/core.mjs";
 import { saleAbi, groupsAbi } from "../src/abis.mjs";
 import { existsSync, readFileSync } from "node:fs";
 
@@ -148,7 +148,7 @@ test("config: addresses from the deployments file, env overrides, readable error
   const a = (n) => `0x${String(n).repeat(40)}`;
   writeFileSync(file, JSON.stringify({
     chainId: 4663, startBlock: 123, inputs: { ETH_USD_FEED: a(9) },
-    contracts: { PlankUsdTwap: a(1), PaperUsdTwap: a(2), FireCards: a(3), FirePsa: a(4), PaperBurner: a(5), PlankBurner: a(6) },
+    contracts: { PlankUsdTwap: a(1), PaperUsdTwap: a(2), FireCards: a(3), FirePsa: a(4), LiquidityBurner: a(5) },
   }));
   const cfg = loadConfig({ RPC_URL: "https://rpc", DEPLOYMENTS_FILE: file, FIRE_CARDS: a(7) });
   assert.equal(cfg.contracts.cards, a(7), "env override");
@@ -166,7 +166,7 @@ test("config: KEEPER_ROLE=backup waits 5 min and yields; production needs HEARTB
   const file = join(dir, "46630.json");
   const a = (n) => `0x${String(n).repeat(40)}`;
   writeFileSync(file, JSON.stringify({
-    chainId: 46630, contracts: { PlankUsdTwap: a(1), PaperUsdTwap: a(2), FireCards: a(3), FirePsa: a(4), PaperBurner: a(5), PlankBurner: a(6), FireSale: a(7), CardsAdapter: a(8) },
+    chainId: 46630, contracts: { PlankUsdTwap: a(1), PaperUsdTwap: a(2), FireCards: a(3), FirePsa: a(4), LiquidityBurner: a(5), FireSale: a(7), CardsAdapter: a(8) },
   }));
   const base = { RPC_URL: "https://rpc", DEPLOYMENTS_FILE: file, CHAIN_ID: "46630" };
   const main = loadConfig(base);
@@ -225,7 +225,7 @@ test("key: only from KEEPER_PRIVATE_KEY, checked, never echoed", () => {
 test("heartbeat: alive after every completed pass, even with long-lasting alerts; /fail only when a whole pass failed", async () => {
   let t = 1_000_000_000_000;
   const { n, pings } = notifier({ heartbeatHours: 1e9 }, () => t);
-  const soft = [{ key: "balance", text: "keeper is low on gas" }, { key: "waiting:PaperBurner:ETH", text: "PaperBurner holds 0.001 ETH it can't burn yet" }];
+  const soft = [{ key: "balance", text: "keeper is low on gas" }, { key: "waiting:LiquidityBurner", text: "LiquidityBurner has $0.50 of work a run couldn't do yet" }];
   for (let i = 0; i < 5; i++) { await n.report(soft); t += 3_600_000; }
   assert.ok(pings.every((u) => u === "https://hc/x"), "never failing while passes complete");
   await n.report([{ key: "pass", text: "pass failed: RPC down" }], undefined, [], { passFailed: true });
@@ -234,11 +234,11 @@ test("heartbeat: alive after every completed pass, even with long-lasting alerts
   assert.equal(pings.at(-1), "https://hc/x");
 });
 
-test("config: low-balance alert at 0.002 ETH, burner flush minimums, overrides", () => {
+test("config: low-balance alert at 0.002 ETH, liquidity run minimums, overrides", () => {
   const dir = mkdtempSync(join(tmpdir(), "keeper-"));
   const file = join(dir, "4663.json");
   const a = (n) => `0x${String(n).repeat(40)}`;
-  writeFileSync(file, JSON.stringify({ chainId: 4663, contracts: { PlankUsdTwap: a(1), PaperUsdTwap: a(2), FireCards: a(3), FirePsa: a(4), PaperBurner: a(5), PlankBurner: a(6) } }));
+  writeFileSync(file, JSON.stringify({ chainId: 4663, contracts: { PlankUsdTwap: a(1), PaperUsdTwap: a(2), FireCards: a(3), FirePsa: a(4), LiquidityBurner: a(5) } }));
   const base = { RPC_URL: "https://rpc", DEPLOYMENTS_FILE: file };
   const c = loadConfig(base);
   assert.equal(c.lowBalanceEth, 0.002);
@@ -289,7 +289,7 @@ test("the keeper's FireSale / FireGroups ABI slices match the compiled contracts
 // ------------------------------------------------------------------ the keeper's jobs against a fake chain
 const A = (n) => `0x${n.toString(16).padStart(40, "0")}`;
 const ME = A(0xaa);
-const CON = { plankTwap: A(1), paperTwap: A(2), cards: A(3), psa: A(4), paperBurner: A(5), plankBurner: A(6) };
+const CON = { plankTwap: A(1), paperTwap: A(2), cards: A(3), psa: A(4), liquidity: A(5) };
 const SALE = A(7);
 const ETH_FEED = A(8);
 const PLANK = A(9);
@@ -329,65 +329,90 @@ function keeperOn(chain, cfg = {}) {
   });
 }
 
-test("burners: dust isn't flushed, $1+ is (once per 15 min), large at once, dust that waited 6 h is; PaperBurner flusher check", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"], now: 1_000_000_000_000 });
-  const balances = {};
-  const usd = (d) => BigInt(Math.round(d * 1e6)) * 10n ** 12n / 2000n; // ETH wei worth $d at $2,000
-  const chain = fakeChain({
-    balances,
-    reads: {
-      PLANK: () => PLANK, USDG: () => "0x0000000000000000000000000000000000000000", flusher: () => false,
-      balanceOf: () => 0n, latestRoundData: (a) => [0n, a === ETH_FEED ? 2000n * 10n ** 8n : 0n, 0n, 0n, 0n],
-      "sim:flush": (a) => balances[a],
-    },
-    onWrite: (c) => { balances[c.address] = 0n; },
-  });
-  const k = keeperOn(chain);
-  const flushes = () => chain.writes.filter((w) => w.functionName === "flush").length;
-  const pass = async () => { const w = []; await k.jobs.burners(w); return w; };
+const $ = (d) => BigInt(Math.round(d * 100)) * 10n ** 16n; // dollars, 18 decimals
 
-  balances[CON.plankBurner] = 1000n; // a few wei: an attacker's dust
-  await pass();
-  assert.equal(flushes(), 0, "dust: no flush");
-  balances[CON.plankBurner] = usd(5);
-  await pass();
-  assert.equal(flushes(), 1, "$5: flushed");
-  balances[CON.plankBurner] = usd(5);
-  t.mock.timers.tick(5 * 60_000);
-  await pass();
-  assert.equal(flushes(), 1, "again 5 min later: waits for FLUSH_EVERY_MIN");
-  balances[CON.plankBurner] = usd(30);
-  await pass();
-  assert.equal(flushes(), 2, "$30 (25x the minimum): at once");
-  balances[CON.plankBurner] = usd(0.2);
-  t.mock.timers.tick(60 * 60_000);
-  await pass();
-  assert.equal(flushes(), 2, "$0.20: waits");
-  t.mock.timers.tick(6 * 3_600_000);
-  await pass();
-  assert.equal(flushes(), 3, "$0.20 that waited 6 h: flushed so nothing waits forever");
-
-  balances[CON.paperBurner] = usd(5);
-  const w = await pass();
-  assert.equal(flushes(), 3, "a keeper PaperBurner doesn't allow doesn't flush it");
-  assert.ok(w.some((x) => x.notFlusher && x.name === "PaperBurner"), "it alerts instead");
-  balances[CON.paperBurner] = 1000n;
-  assert.equal((await pass()).length, 0, "no alert for dust");
+test("liquidityWork: coins to spend, sides to pair or even out, a side over the cap; a side alone isn't work", () => {
+  assert.equal(liquidityWork([$(20), 0n, 0n]), 0, "PAPER waiting alone for PLANK");
+  assert.equal(liquidityWork([$(20), $(0.5), 0n]), 0, "under the $1 pair minimum");
+  assert.equal(liquidityWork([$(20), $(10), 0n]), 20, "$10 of each to pair");
+  assert.equal(liquidityWork([0n, $(10), 0n]), 5, "PLANK heavy: half the difference sold for PAPER");
+  assert.equal(liquidityWork([$(130), 0n, 0n]), 30, "over the $100 cap");
+  assert.equal(liquidityWork([0n, 0n, $(3)]), 3, "ETH/USDG to spend");
 });
 
-test("burners: the backup flushes only a balance that has waited ACT_AFTER_SEC", async (t) => {
+test("liquidity: a side waiting alone isn't run, $1+ of work is (once per 15 min), large at once, dust after 6 h; keeper check", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: 1_000_000_000_000 });
-  const balances = { [CON.plankBurner]: 10n ** 16n }; // $20
+  let held = [0n, 0n, 0n];
+  let allowed = true;
   const chain = fakeChain({
-    balances,
-    reads: { PLANK: () => PLANK, USDG: () => "0x0000000000000000000000000000000000000000", flusher: () => true, balanceOf: () => 0n, latestRoundData: () => [0n, 2000n * 10n ** 8n, 0n, 0n, 0n], "sim:flush": (a) => balances[a] },
-    onWrite: (c) => { balances[c.address] = 0n; },
+    reads: { held: () => held, keeper: () => allowed, "sim:run": () => true },
+    onWrite: () => { held = [0n, 0n, 0n]; },
   });
+  const k = keeperOn(chain);
+  const runs = () => chain.writes.filter((w) => w.functionName === "run").length;
+  const pass = async () => { const w = []; await k.jobs.liquidity(w); return w; };
+
+  held = [$(20), 0n, 0n];
+  await pass();
+  assert.equal(runs(), 0, "PAPER alone waits for PLANK: no run");
+  held = [0n, 0n, 1000n]; // a few wei: an attacker's dust
+  await pass();
+  assert.equal(runs(), 0, "dust: no run");
+  held = [$(20), $(5), 0n];
+  await pass();
+  assert.equal(runs(), 1, "$5 of PLANK to pair: run");
+  held = [$(20), $(5), 0n];
+  t.mock.timers.tick(5 * 60_000);
+  await pass();
+  assert.equal(runs(), 1, "again 5 min later: waits for FLUSH_EVERY_MIN");
+  held = [0n, 0n, $(30)];
+  await pass();
+  assert.equal(runs(), 2, "$30 to spend (25x the minimum): at once");
+  held = [0n, 0n, $(0.2)];
+  t.mock.timers.tick(60 * 60_000);
+  await pass();
+  assert.equal(runs(), 2, "$0.20: waits");
+  t.mock.timers.tick(6 * 3_600_000);
+  await pass();
+  assert.equal(runs(), 3, "$0.20 that waited 6 h: run so nothing waits forever");
+
+  allowed = false;
+  t.mock.timers.tick(20 * 60_000);
+  held = [$(5), $(5), 0n];
+  const w = await pass();
+  assert.equal(runs(), 3, "a wallet that isn't a keeper doesn't run it");
+  assert.ok(w.some((x) => x.notKeeper && x.name === "LiquidityBurner"), "it alerts instead");
+});
+
+test("liquidity: a run that would move nothing (the price guards) is not sent, and the work stays on the waiting list", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_000_000_000_000 });
+  let moves = false;
+  const chain = fakeChain({ reads: { held: () => [$(10), $(10), 0n], keeper: () => true, "sim:run": () => moves } });
+  const k = keeperOn(chain);
+  const w = [];
+  await k.jobs.liquidity(w);
+  assert.equal(chain.writes.length, 0, "the simulation says nothing would move (the price guards): no transaction");
+  assert.equal(w.length, 1, "left behind: waiting");
+  moves = true;
+  t.mock.timers.tick(60_000);
+  await k.jobs.liquidity([]);
+  assert.equal(chain.writes.length, 1, "it would move now: sent (a skipped simulation doesn't start the 15 minutes)");
+  t.mock.timers.tick(5 * 60_000);
+  const w2 = [];
+  await k.jobs.liquidity(w2);
+  assert.equal(chain.writes.length, 1, "no second run within FLUSH_EVERY_MIN");
+  assert.equal(w2.length, 1, "the work is still there: the alert stays open");
+});
+
+test("liquidity: the backup runs it only for work that has waited ACT_AFTER_SEC", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_000_000_000_000 });
+  let held = [$(10), $(10), 0n];
+  const chain = fakeChain({ reads: { held: () => held, keeper: () => true, "sim:run": () => true }, onWrite: () => { held = [0n, 0n, 0n]; } });
   const k = keeperOn(chain, { actAfterSec: 300n });
-  await k.jobs.burners([]);
+  await k.jobs.liquidity([]);
   assert.equal(chain.writes.length, 0);
   t.mock.timers.tick(301_000);
-  await k.jobs.burners([]);
+  await k.jobs.liquidity([]);
   assert.equal(chain.writes.length, 1);
 });
 
@@ -511,16 +536,16 @@ test("sale settings: each WalletsSet / FeedsSet from FireSale is one event with 
   const chain = fakeChain({ reads: {} });
   chain.pub.getLogs = async ({ address, fromBlock, toBlock }) => { asked.push([address, fromBlock, toBlock]); return logs.filter((l) => l.blockNumber >= fromBlock && l.blockNumber <= toBlock); };
   const k = keeperOn(chain);
-  logs.push({ eventName: "WalletsSet", blockNumber: 90n, transactionHash: "0xold", logIndex: 0, args: { revenue: A(0xe1), plankBurner: CON.plankBurner, paperBurner: CON.paperBurner } });
+  logs.push({ eventName: "WalletsSet", blockNumber: 90n, transactionHash: "0xold", logIndex: 0, args: { revenue: A(0xe1), liquidity: CON.liquidity } });
   assert.deepEqual(await k.jobs.saleSettings(100n), [], "the first pass starts at the next block (the deploy's own WalletsSet isn't replayed)");
   assert.equal(asked.length, 0);
-  logs.push({ eventName: "WalletsSet", blockNumber: 101n, transactionHash: "0xa", logIndex: 3, args: { revenue: A(0xe2), plankBurner: A(0xe3), paperBurner: CON.paperBurner } });
+  logs.push({ eventName: "WalletsSet", blockNumber: 101n, transactionHash: "0xa", logIndex: 3, args: { revenue: A(0xe2), liquidity: A(0xe3) } });
   logs.push({ eventName: "FeedsSet", blockNumber: 102n, transactionHash: "0xb", logIndex: 0, args: { ethUsd: ETH_FEED, plankUsd: CON.plankTwap, paperUsd: A(0xe4), router: A(0xe5) } });
   const ev = await k.jobs.saleSettings(102n);
   assert.deepEqual(asked.at(-1), [SALE, 101n, 102n]);
   assert.equal(ev.length, 2);
   assert.equal(ev[0].key, "sale:WalletsSet:0xa:3");
-  assert.match(ev[0].text, new RegExp(`wallets were CHANGED.*revenue ${A(0xe2)}, PlankBurner ${A(0xe3)} \\(NOT the deployed PlankBurner ${CON.plankBurner}\\), PaperBurner ${CON.paperBurner} \\(`));
+  assert.match(ev[0].text, new RegExp(`wallets were CHANGED.*revenue ${A(0xe2)}, LiquidityBurner ${A(0xe3)} \\(NOT the deployed LiquidityBurner ${CON.liquidity}\\) \\(`));
   assert.match(ev[1].text, new RegExp(`price feeds were CHANGED.*PAPER/USD ${A(0xe4)} \\(NOT the deployed PaperUsdTwap.*router ${A(0xe5)}`));
   assert.deepEqual(await k.jobs.saleSettings(102n), [], "each event once");
   assert.deepEqual(await k.jobs.saleSettings(103n), []);

@@ -333,9 +333,7 @@ contract PsaTest is SeriesHelper {
         vm.prank(alice);
         psa.protect{value: c + 5 ether}(_ids(1, 2), _one(3), FirePsa.Pay.ETH, c);
         assertEq(alice.balance, before - c, "the rest of the ETH comes back");
-        assertEq(address(burner).balance, c);
-        assertEq(burner.flushes(), 1);
-        assertEq(burner.lastMax(), c, "the burner is told to spend only this fee");
+        assertEq(address(burner).balance, c, "exactly the fee to the burner");
         assertEq(address(psa).balance, 0, "FirePsa keeps nothing");
 
         uint256 cp = psa.quote(1, 0, FirePsa.Pay.PLANK);
@@ -411,7 +409,7 @@ contract PsaTest is SeriesHelper {
         vm.prank(alice);
         uint256 index = psa.protect{value: 1 ether}(_one(1), _one(2), FirePsa.Pay.ETH, 0);
         assertEq(alice.balance, before, "free");
-        assertEq(burner.flushes(), 0, "nothing paid");
+        assertEq(address(burner).balance, 0, "nothing paid");
         assertEq(psa.caseCoupons(alice), 0);
         assertEq(psa.gradeCoupons(alice), 1);
         psaRng.fulfill(psaRng.last(), 3);
@@ -655,8 +653,7 @@ contract PsaTest is SeriesHelper {
         emit Protected(alice, _one(caseId), g, FirePsa.Pay.ETH, c, 0);
         vm.prank(alice);
         psa.protect{value: c}(_one(caseId), g, FirePsa.Pay.ETH, c);
-        assertEq(address(burner).balance, c);
-        assertEq(burner.lastMax(), c, "the burner burns exactly this fee");
+        assertEq(address(burner).balance, c, "the burner gets exactly this fee");
     }
 
     function test_priceSetterOwnerOnlyAndBounded() public {

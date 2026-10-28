@@ -15,6 +15,8 @@ const { checkCall, MAX_APPROVAL } = await import(pathToFileURL(out).href);
 const KYBER_ROUTER = '0x6131B5fae19EA4f9D964eAc0408E4408b66337b5'; // kyber.ts
 
 const dep = JSON.parse(readFileSync(join(web, '../deployments/46630.json'), 'utf8'));
+// the liquidity contract (LiquidityBurner), standing in until the testnet is redeployed with it
+dep.contracts.LiquidityBurner ??= '0x3333333333333333333333333333333333333333';
 const C = dep.contracts, I = dep.inputs;
 const me = '0x1111111111111111111111111111111111111111', thief = '0x2222222222222222222222222222222222222222';
 const ok = (call) => assert.doesNotThrow(() => checkCall(call, me, dep));
@@ -38,7 +40,7 @@ test('approvals: never unlimited, never for someone else, never "approve all"', 
   blocked({ address: I.PAPER, functionName: 'approve', args: [C.FireSale, MAX_APPROVAL] });
   blocked({ address: I.PAPER, functionName: 'approve', args: [C.FireSale, 2n ** 256n - 1n] });
   blocked({ address: I.PAPER, functionName: 'approve', args: [thief, 1n] });
-  blocked({ address: I.PAPER, functionName: 'approve', args: [C.PaperBurner, 1n] }); // ours, but it never takes payments
+  blocked({ address: I.PAPER, functionName: 'approve', args: [C.LiquidityBurner, 1n] }); // ours, but it never takes payments
   blocked({ address: I.PLANK, functionName: 'approve', args: [C.FireCards, 1n] });
   blocked({ address: I.PAPER, functionName: 'increaseAllowance', args: [C.FireSale, 1n] });
   blocked({ address: I.PAPER, functionName: 'permit', args: [] });
@@ -65,7 +67,8 @@ test('never more than 0.5 ETH in one transaction', () => {
 test('owner-only and unknown functions on our own contracts are refused', () => {
   blocked({ address: C.FireSale, functionName: 'withdraw', args: [] });
   blocked({ address: C.FireCards, functionName: 'transferOwnership', args: [thief] });
-  blocked({ address: C.PaperBurner, functionName: 'burn', args: [] });
+  blocked({ address: C.LiquidityBurner, functionName: 'run', args: [] }); // keepers only, never a visitor's wallet
+  blocked({ address: C.LiquidityBurner, functionName: 'setRoutes', args: [] });
 });
 
 test('swaps: only PAPER, only into your own wallet', () => {

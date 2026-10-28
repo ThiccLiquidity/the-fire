@@ -4,7 +4,6 @@
   "priceUsdMax": 1000000000,
   "burnTotalBpsMin": 1000,
   "burnTotalBpsMax": 10000,
-  "paperBurnBpsMin": 1000,
   "paperPerPackMin": "100000000000000000",
   "paperCapUsdMin": 10000000,
   "perWalletMax": 50,

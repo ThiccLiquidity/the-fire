@@ -33,7 +33,7 @@ interface IUniswapV2Factory {
  *         with under MIN_PAPER_RESERVE PAPER counts as $0 of liquidity: it can't start a run, a run that drops under
  *         it breaks, and an adopted pool that drops under it can be replaced by any pool that
  *         qualifies. While the adopted pool holds under MIN_PAPER_RESERVE, the price reads 0 (FireSale keeps its last
- *         good PAPER price, PaperBurner waits). With 1,000 PAPER in the pool, showing a PAPER price of $P takes about
+ *         good PAPER price, LiquidityBurner waits). With 1,000 PAPER in the pool, showing a PAPER price of $P takes about
  *         $P x 1,000 on the quote side, which anyone can arbitrage away; the dollar floor alone set no such cost. This
  *         is a size rule only: nothing here reacts to how far or how fast the price moves.
  *

@@ -5,7 +5,7 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {MockERC20} from "../Mocks.sol";
 
 /// @dev Copy of Sale.t.sol's MockV2Router (fixed PLANK price, can fail, enforces amountOutMin), plus a counter of the
-///      PLANK it minted, so the invariant tests can tell swap burns from direct PLANK burns at the dead address.
+///      PLANK it minted and what it swapped, so the invariant tests can check that no swap ever happens at sale time.
 contract InvRouter {
     MockERC20 public plank;
     uint256 public plankPerEthWei; // PLANK wei out per ETH wei in

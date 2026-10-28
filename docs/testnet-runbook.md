@@ -7,6 +7,11 @@ What goes again: the drand router + PAPER price feed (DeployInfra), every card c
 included) and the Morning Wood (DeployPress, new). What stays: the stand-in tokens and pools and the PLANK price feed.
 The testnet router gets the new exact-output swaps first (DevRouter).
 
+**Not yet updated for LiquidityBurner (Oct 28):** DeployCards now refuses a V2 factory without a PAPER/PLANK pool, and
+LiquidityBurner adds liquidity to that pool. The testnet's current stand-ins (from an older DevStack) have only
+PLANK/WETH and PAPER/WETH pools, and their pools can't take liquidity. A fresh DevStack has the PAPER/PLANK and
+USDG/WETH pools and a router that adds liquidity. Settle how the testnet gets them before running step 8.
+
 Dress-rehearsed on a local chain (chain id 46630) in this order on Oct 24, 2026, the Morning Wood included: all steps
 pass, VerifyDeploy 0 FAIL. (`node rehearsal\rehearse.mjs` in step 3 covers the deploy, the owner's accept, a Series,
 buying, opening, grading and the keepers; it does not cover DevRouter or the Morning Wood.)
@@ -132,7 +137,7 @@ node ..\ops\deploy\record.mjs --rpc $env:RPC
 - If not: "has no contract code" or "decimals" → `Load-Inputs` didn't run in this window (step 4). Pending file: as
   step 6.
 
-## 8. DeployCards: every card contract, keepers allowed to flush
+## 8. DeployCards: every card contract, keepers allowed to run LiquidityBurner
 
 ```powershell
 $env:KEEPERS = "<main keeper address>,<backup keeper address>"
@@ -144,7 +149,8 @@ node ..\ops\deploy\record.mjs --rpc $env:RPC
   accepts"; no "KEEPERS not set" line; record OK. `deployments\46630.json` now has 17 contracts: all new except
   `PlankUsdTwap`. Keep this window open: steps 8b-10 use `$env:KEEPERS` and `$env:ROYALTY_BPS`.
 - If not: "OWNER is the deployer" → `$env:OWNER` is wrong (run `Load-Inputs`). "V2_ROUTER" / "PLANK_USD_FEED"
-  errors → `Load-Inputs` again after step 6. Ran out of gas money → faucet, then delete the `.pending` only if record
+  errors → `Load-Inputs` again after step 6. "V2_ROUTER's factory has no PAPER/PLANK pool for the liquidity" → see
+  the note at the top. Ran out of gas money → faucet, then delete the `.pending` only if record
   says nothing landed, and run again.
 
 **Profiles:** FireProfiles comes with DeployCards. Do **not** run `DeployProfiles.s.sol` here (it refuses: "FireProfiles
@@ -152,7 +158,7 @@ is already in the deployments file"). It's only for adding profiles to a deploy 
 
 ## 8b. DeployPress: the Morning Wood
 
-The daily paper's contract, paying PaperBurner. The editor key (the paper's nightly pipeline) can only publish issues,
+The daily paper's contract, paying LiquidityBurner (its PAPER still burns). The editor key (the paper's nightly pipeline) can only publish issues,
 at least an hour before they open; the owner can veto until then.
 ```powershell
 cast wallet import editor --interactive            # once, on the PC that publishes the paper (type the new key, hidden)
@@ -167,15 +173,15 @@ node ..\ops\deploy\record.mjs --rpc $env:RPC
   already in the deployments file" → it was deployed already: skip to step 9 (or `$env:REPLACE_PRESS = "true"` for a
   new one). "OWNER / ROYALTY_RECEIVER missing" or "have no code" → `Load-Inputs` (step 4). Pending file: as step 6.
 
-## 9. AcceptOwnership + AcceptPress on the Ledger (7 + 1 confirmations)
+## 9. AcceptOwnership + AcceptPress on the Ledger (8 + 1 confirmations)
 
 Dry run first (nothing sent), then for real:
 ```powershell
 forge script script/AcceptOwnership.s.sol --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH --sender $env:OWNER --slow
 forge script script/AcceptOwnership.s.sol --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH --sender $env:OWNER --slow --broadcast
 ```
-- Good: seven confirmations on the device (FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa,
-  PaperBurner). Check each contract address on the screen against `deployments\46630.json`.
+- Good: eight confirmations on the device (FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa,
+  LiquidityBurner, FireGames). Check each contract address on the screen against `deployments\46630.json`.
 
 Then the Morning Wood (one confirmation; dry run first):
 ```powershell
@@ -197,9 +203,9 @@ Run it in the **same window** as steps 8 and 8b: it checks the keepers, the roya
 `KEEPERS` it FAILs with "KEEPERS not set here").
 - Good: last line `0 FAIL`. Expected WAIT: `PAPER/USD: no PAPER pool with $10 found yet` (the new PAPER feed needs
   ~40 h after the keepers' first checkpoint), maybe `PLANK/USD not live yet` (the keepers checkpoint it every 30 min).
-  Lines `a keeper in KEEPERS may flush PaperBurner` (twice), `FireProfiles.CARDS is FireCards`, `OpenDrandRouter is
+  Lines `a keeper in KEEPERS may run LiquidityBurner` (twice), `FireProfiles.CARDS is FireCards`, `OpenDrandRouter is
   the real one`, the token and USDG lines, `MorningWood owned by the hardware wallet`, `MorningWood.editor is EDITOR`
-  and `MorningWood pays PaperBurner` say OK.
+  and `MorningWood pays LiquidityBurner` say OK.
 - If not: any FAIL → stop and send me the FAIL lines. WAIT on `acceptOwnership` or `AcceptPress` → step 9 didn't
   finish: run it again.
 
@@ -230,9 +236,9 @@ In railway.com, for **each** testnet keeper service (main and backup):
    - backup only: `MAIN_KEEPER_ADDRESS` = the main keeper's address.
    Optional: `FALLBACK_RPC_URL` (default: the public testnet RPC; `none` turns it off) and the thresholds
    (`CANCEL_WARN_HOURS` 6, `LOW_BALANCE_ETH` 0.002, `MIN_FLUSH_USD` 1). Nothing is needed for the Morning Wood: its
-   ETH/USDG lands in PaperBurner and the normal flush burns it.
+   ETH/USDG lands in LiquidityBurner and the keepers' normal run takes it.
 3. These must **not** be set (they'd pin the old contracts): `DEPLOYMENTS_FILE`, `START_BLOCK`, `FIRE_CARDS`,
-   `FIRE_SALE`, `FIRE_PSA`, `PAPER_BURNER`, `PLANK_BURNER`, `DRAND_ROUTER`, `CARDS_ADAPTER`, `PSA_ADAPTER`,
+   `FIRE_SALE`, `FIRE_PSA`, `LIQUIDITY_BURNER`, `PAPER_BURNER`, `PLANK_BURNER`, `DRAND_ROUTER`, `CARDS_ADAPTER`, `PSA_ADAPTER`,
    `PAPER_USD_FEED`, `PLANK_USD_FEED`, `ETH_USD_FEED`, `SERIES`. Delete any you find.
 4. Deployments → Redeploy (if it didn't rebuild by itself after step 11).
 - Good: the log's first line is `keeper (main) 0x... on chain 46630; FireCards 0x<the NEW FireCards>`; the webhook gets
@@ -240,8 +246,8 @@ In railway.com, for **each** testnet keeper service (main and backup):
 - If not: FireCards is the old address → step 3 above, or the service builds another branch. "expected 46630" → wrong
   RPC_URL. Low ETH alert → faucet.
 
-**The PAPER price comes ~40 h after this.** Until then: packs take the set PAPER (fine) and case and grading fees
-(PLANK, ETH or USDG; PAPER is not a payment option) wait in PaperBurner (fine). Check:
+**The PAPER price comes ~40 h after this.** Until then: packs take the set PAPER (fine) and everything sent to
+LiquidityBurner (sale shares, pack PAPER, case and grading fees) waits there (fine). Check:
 ```powershell
 cd C:\Users\DubT1\the-fire\contracts
 $feed = (Get-Content ..\deployments\46630.json | ConvertFrom-Json).contracts.PaperUsdTwap
@@ -373,7 +379,7 @@ Use a test wallet with test ETH. Tick each:
   - A test wallet buys a copy in ETH: `cast call $press "quote(uint256,uint256,uint8)(uint256,uint256)" 2 1 0 --rpc-url $env:RPC`
     gives the ETH cost and the PAPER; approve that PAPER to `$press`, then `buy(uint256,uint256,uint8,uint256)` with
     `2 1 0 <cost>` and `--value <cost>` (the explorer's Write tab, or `cast send ... --account <a test keystore>`).
-    The ETH lands in PaperBurner.
+    The ETH lands in LiquidityBurner.
   - It sends a letter: `submitLetter(uint256,string)` `2 "Dear editor ..."` (burns 1 PAPER; approve it first).
 
 Anything that fails: write down what you did, what you saw, and the time. Send it to me; I fix it, you redo that line.

@@ -31,10 +31,10 @@ abstract contract Deployments is Script {
     using stdJson for string;
 
     /// Every contract name the file can hold, in the order it is written.
-    function _contractNames() internal pure returns (string[18] memory) {
+    function _contractNames() internal pure returns (string[17] memory) {
         return [
             "PlankUsdTwap", "OpenDrandRouter", "PaperUsdTwap", "FirePacks", "FireCards", "CardsRenderer", "RecipeDealer",
-            "RecipeCompiler", "PlankBurner", "FireCredits", "FireGroups", "FireSale", "PaperBurner", "FirePsa", "CardsAdapter",
+            "RecipeCompiler", "FireCredits", "FireGroups", "FireSale", "LiquidityBurner", "FirePsa", "CardsAdapter",
             "PsaAdapter", "FireProfiles", "FireGames"
         ];
     }
@@ -105,7 +105,7 @@ abstract contract Deployments is Script {
         string memory old = _deploymentsJson();
         string memory c = "contracts";
         string memory cj = "{}";
-        string[18] memory cn = _contractNames();
+        string[17] memory cn = _contractNames();
         for (uint256 i; i < cn.length; i++) {
             address a = old.readAddressOr(string.concat(".contracts.", cn[i]), address(0));
             for (uint256 k; k < names.length; k++) if (keccak256(bytes(names[k])) == keccak256(bytes(cn[i]))) a = addrs[k];

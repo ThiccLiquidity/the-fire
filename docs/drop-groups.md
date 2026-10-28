@@ -32,15 +32,15 @@ wallet-limit timers of the old `DropConfig`. Built before the testnet card redep
     gone, or when the duration runs out, whichever is first.
   - **rollTo**: where its unsold packs go when it ends: another group's index (added to that group's packs), or
     255 = nowhere (they're never made; the Series is smaller).
-  - **burn shares** (`plankBurnBps`, `paperBurnBps`): how the group's dollar payments split: the share that burns
-    PLANK, the share that goes to `PaperBurner` to buy and burn PAPER, the rest to the revenue wallet. Each group
-    sets its own (together at most 10000 = 100%), locked with the drop like every other group setting. The Standard is
-    10% / 20% in every group; the PLANK holders' group could instead burn 100% of the PLANK it takes
-    (`plankBurnBps` 10000, `paperBurnBps` 0).
+  - **liquidity share** (`plankBurnBps` + `paperBurnBps`; the names are kept from the old burns): how the group's
+    dollar payments split: both shares go to `LiquidityBurner` in the coin paid (`docs/liquidity-burn.md`), the rest
+    to the revenue wallet; only their sum matters. Each group sets its own (together at most 10000 = 100%), locked with
+    the drop like every other group setting. The Standard is 10% + 20% in every group except the PLANK holders',
+    which sends all the PLANK it takes (`plankBurnBps` 10000, `paperBurnBps` 0).
 - **Free packs (credits)**: `creditPacksMax` (in all) and `creditPacksPerWallet`, spent from `creditGroup` (a
   group index; its packs and timing; credits ignore its gate, price and coins: a credit pays only the group's PAPER).
 - Drop-wide, as today: `start`, `paperCapUsd`, `maxPerTx`, `regularWalletsFor` (bots guard), `creditsPerPick`. (The
-  burn shares were drop-wide until Oct 27 2026; they are each group's now.)
+  shares were drop-wide until Oct 27 2026; they are each group's now.)
 
 ## Rules the contract enforces
 
@@ -49,8 +49,8 @@ wallet-limit timers of the old `DropConfig`. Built before the testnet card redep
   LOWER index for `afterGroup`, and to any other group for `rollTo` as long as the roll graph has no cycle; simplest
   rule: `rollTo` must be a HIGHER index or 255, `afterGroup` a LOWER index or 255); every duration and delay at most
   MAX_WINDOW (30 days) so every group always ends; gate fields consistent (NFT needs a token with code, SNAPSHOT
-  needs a root); a group with a dollar price needs at least one coin; a group's two burn shares add up to at most
-  100%.
+  needs a root); a group with a dollar price needs at least one coin; a group's two liquidity shares add up to at
+  most 100%.
 - A group's **capacity** = its packs + the unsold packs rolled into it from groups that have ended. Ended groups
   report what they rolled.
 - **Close**: the moment the last pack that can still be made is minted (nothing left in any group that is open or
@@ -58,9 +58,9 @@ wallet-limit timers of the old `DropConfig`. Built before the testnet card redep
   by anyone END_GRACE (7 days) later, as today (`endDrop`).
 - Buying names the group: `buy(fire, group, n, pay, maxCost, maxPaper, Access)` style (plus the ETH-alone path that
   buys the PAPER on the market). `Access` = `{ nftIds[], allowance, proof[] }`.
-- Payment split (by the group's own PLANK and PAPER burn shares), PAPER burn and its ceiling, the 90% PLANK swap
-  floor, PlankBurner fallback, refunds, pause, never holding funds, one drop at a time, credits via FireCredits only:
-  all as today. A purchase takes exactly its quoted cost from the buyer, whatever the group's shares.
+- Payment split (by the group's own liquidity share, to `LiquidityBurner` in the coin paid, with each pack's PAPER),
+  the PAPER ceiling, refunds, pause, never holding funds, one drop at a time, credits via FireCredits only: all as
+  today. No swap at sale time. A purchase takes exactly its quoted cost from the buyer, whatever the group's shares.
 
 ## Contract layout
 
@@ -92,8 +92,8 @@ ends at, price, coins, gate) and a wallet's standing in each group.
 4. After sell-out (owner-approved addition): no pack count (`unlimited`), $2.50 rising 4% a pack (`taxBps` 400) +
    1 PAPER, ETH only, 1 per purchase (`perTx`), no wallet limit, opens when group 3 ends (sells out), no time limit,
    ends 15 minutes after its last sale (`idle` 900), rolls nowhere.
-Free packs: up to 10% (16), 3 per wallet, from group 3. PLANK 10% / PAPER 20% burn shares in every group (each
-group can set its own: the PLANK holders could burn 100% of their PLANK), $1 PAPER ceiling,
+Free packs: up to 10% (16), 3 per wallet, from group 3. 30% of the dollar price to liquidity (10% + 20%) in every group
+except the PLANK holders' (all of their PLANK; each group sets its own), $1 PAPER ceiling,
 contracts (bots) kept out for the first 48 h. Total packs 167: the base Series (the finite groups); whatever the
 unlimited group sells adds on top.
 
@@ -104,8 +104,8 @@ deployer) and `FireSale.sol` (groups replace the press packs, holder window, PLA
 shape and every bound: `docs/cards-contracts.md`.
 
 - **Rising tax** (`taxBps`, owner-approved addition): the k-th pack sold in a group (k = 1 for its first) costs
-  `priceUsd * (1 + taxBps/10000)^k`. The base price splits as any sale; the whole tax goes to PaperBurner in the coin
-  paid. Bounds: at most 5000 (50%), needs a price, no group may roll into a taxed group (its capacity is its own
+  `priceUsd * (1 + taxBps/10000)^k`. The base price splits as any sale; the whole tax goes to `LiquidityBurner` in the
+  coin paid. Bounds: at most 5000 (50%), needs a price, no group may roll into a taxed group (its capacity is its own
   packs), and any pack at most 1e9 times the base (see the price safety bound below). Credit packs from a taxed group count as sold (they raise the next price).
 - **When a group ends.** Its duration runs out, or its packs are gone **for good**: sold out AND no group that rolls
   into it (directly, or through a group that has already ended) is still open or yet to open. Until then a sold-out
@@ -143,12 +143,11 @@ shape and every bound: `docs/cards-contracts.md`.
 - **Burn shares per group** (owner decision, Oct 27 2026: "modular like every other group setting"): each group's
   `plankBurnBps` and `paperBurnBps` replace the drop-wide pair (removed from `DropConfig` and `dropOf`; a JSON with
   them drop-wide is refused by name). FireGroups checks each group's two add up to at most 10000 (`BadGroup(i)`) and
-  hands them to FireSale with each purchase (`take`); the split is otherwise as before: of the base price the PLANK
-  share burns PLANK (or goes to PlankBurner when the swap can't run), the PAPER share and the whole rising tax go to
-  PaperBurner, the rest to the revenue wallet, all from exactly the quoted cost. A 100% PLANK group paid in PLANK
-  burns every bit of it (nothing to PaperBurner or revenue); paid in ETH/USDG it all buys PLANK, or all waits in
-  PlankBurner. Standard: 10% / 20% in every group. The ops policy wants PAPER at least 10% in a priced group, so an
-  all-PLANK group launches with `--allow paper-burn`.
+  hands them to FireSale with each purchase (`take`). Since the liquidity burn (Oct 28 2026): both shares of the base
+  price and the whole rising tax go to `LiquidityBurner` in the coin paid, the rest to the revenue wallet, all from
+  exactly the quoted cost; only the sum of the two shares matters. A 100% group sends all of it to `LiquidityBurner`
+  (no revenue). Standard: 10% + 20% in every group, the PLANK holders' 100% + 0%. The ops policy wants the sum
+  between 10% and 100% in a priced group (`burn-total`).
   `FirePacks.mint` caps only at 2^64; `FireCards.closeFire` freezes `FirePacks.minted`; the dealer works out the pool
   from that frozen count at close. So a Series larger than its base total closes and deals normally (tested: 62 packs
   on a base of 2, opened and dealt). Effect to know: per-character types (Gold 2, Full Art 1 per character) are fixed

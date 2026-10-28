@@ -68,12 +68,7 @@
             "internalType": "address"
           },
           {
-            "name": "plankBurner",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "paperBurner",
+            "name": "liquidity",
             "type": "address",
             "internalType": "address"
           },
@@ -121,19 +116,6 @@
   {
     "type": "function",
     "name": "CREDITS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "DEAD",
     "inputs": [],
     "outputs": [
       {
@@ -348,19 +330,6 @@
         "name": "",
         "type": "address",
         "internalType": "contract IV2Router"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "SWAP_MIN_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -921,7 +890,7 @@
   },
   {
     "type": "function",
-    "name": "owner",
+    "name": "liquidity",
     "inputs": [],
     "outputs": [
       {
@@ -934,7 +903,7 @@
   },
   {
     "type": "function",
-    "name": "paperBurner",
+    "name": "owner",
     "inputs": [],
     "outputs": [
       {
@@ -990,19 +959,6 @@
   {
     "type": "function",
     "name": "pendingOwner",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "plankBurner",
     "inputs": [],
     "outputs": [
       {
@@ -1142,12 +1098,7 @@
         "internalType": "address"
       },
       {
-        "name": "plankBurner_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "paperBurner_",
+        "name": "liquidity_",
         "type": "address",
         "internalType": "address"
       }
@@ -1561,16 +1512,10 @@
         "internalType": "uint256"
       },
       {
-        "name": "burnShare",
+        "name": "toLiquidity",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
-      {
-        "name": "plankBurned",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
       }
     ],
     "anonymous": false
@@ -1599,13 +1544,7 @@
         "internalType": "address"
       },
       {
-        "name": "plankBurner",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "paperBurner",
+        "name": "liquidity",
         "type": "address",
         "indexed": false,
         "internalType": "address"

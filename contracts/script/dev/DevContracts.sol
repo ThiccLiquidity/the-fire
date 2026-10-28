@@ -10,6 +10,7 @@ pragma solidity ^0.8.28;
 
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
+import {Math} from "openzeppelin-contracts/contracts/utils/math/Math.sol";
 
 /// The deployer, and only the deployer, can change a stand-in.
 abstract contract DevOwned {
@@ -70,7 +71,10 @@ contract DevFeed is DevOwned {
     }
 }
 
-/// Uniswap V2 pair stand-in: fixed reserves, real cumulative-price bookkeeping (what the TWAP feeds read).
+/// Uniswap V2 pair stand-in: reserves the owner sets (swaps don't move them), real cumulative-price bookkeeping (what
+/// the TWAP feeds read), and pool tokens: `mint` (through DevRouter.addLiquidity) takes the tokens sent in since the
+/// last mint and mints pool tokens for the balanced part (the first mint counts the set reserves as owned by nobody).
+/// Only that balanced part joins the reserves, so the price never moves: a stranger can't skew it by minting.
 contract DevPair is DevOwned {
     address public token0;
     address public token1;
@@ -79,6 +83,12 @@ contract DevPair is DevOwned {
     uint32 private blockTimestampLast;
     uint256 public price0CumulativeLast;
     uint256 public price1CumulativeLast;
+    uint256 public totalSupply;
+    mapping(address => uint256) public balanceOf;
+    uint256 private held0; // the real token balances at the last mint
+    uint256 private held1;
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
 
     constructor(address a, address b, address o) DevOwned(o) {
         (token0, token1) = a < b ? (a, b) : (b, a);
@@ -94,6 +104,26 @@ contract DevPair is DevOwned {
         _update();
         reserve0 = r0;
         reserve1 = r1;
+    }
+
+    function mint(address to) external returns (uint256 liquidity) {
+        uint256 b0 = ERC20(token0).balanceOf(address(this));
+        uint256 b1 = ERC20(token1).balanceOf(address(this));
+        uint256 a0 = b0 - held0;
+        uint256 a1 = b1 - held1;
+        require(a0 > 0 && a1 > 0 && reserve0 > 0 && reserve1 > 0, "nothing to mint");
+        if (totalSupply == 0) totalSupply = Math.sqrt(uint256(reserve0) * reserve1); // the set reserves: nobody's
+        uint256 l0 = a0 * totalSupply / reserve0;
+        uint256 l1 = a1 * totalSupply / reserve1;
+        liquidity = l0 < l1 ? l0 : l1;
+        require(liquidity > 0, "INSUFFICIENT_LIQUIDITY_MINTED");
+        _update();
+        reserve0 += uint112(liquidity * reserve0 / totalSupply);
+        reserve1 += uint112(liquidity * reserve1 / totalSupply);
+        (held0, held1) = (b0, b1);
+        totalSupply += liquidity;
+        balanceOf[to] += liquidity;
+        emit Transfer(address(0), to, liquidity);
     }
 
     function _update() internal {
@@ -124,7 +154,7 @@ contract DevFactory is DevOwned {
 
 /// Uniswap V2 router stand-in: quotes from the pairs' reserves (0.3% fee); a swap mints the output token at that quote
 /// (the reserves don't move), so it needs to be a minter of the tokens. `setFail` makes every swap revert (to show a
-/// burn share waiting in PlankBurner). On the testnet, swapping test ETH for PAPER here is how a tester gets PAPER.
+/// burn share waiting in LiquidityBurner). On the testnet, swapping test ETH for PAPER here is how a tester gets PAPER.
 contract DevRouter is DevOwned {
     address public immutable WETH;
     address public immutable factory;
@@ -214,6 +244,34 @@ contract DevRouter is DevOwned {
         amounts = getAmountsOut(amountIn, path);
         require(amounts[amounts.length - 1] >= minOut, "INSUFFICIENT_OUTPUT_AMOUNT");
         DevToken(path[path.length - 1]).mint(to, amounts[amounts.length - 1]);
+    }
+
+    /// Uniswap V2's addLiquidity on an existing pair: the optimal amounts at its reserves, sent to the pair, which
+    /// mints the pool tokens to `to`.
+    function addLiquidity(address a, address b, uint256 aDesired, uint256 bDesired, uint256 aMin, uint256 bMin, address to, uint256)
+        external
+        returns (uint256 amountA, uint256 amountB, uint256 liquidity)
+    {
+        require(!fail, "router down");
+        (address p, uint256 ra, uint256 rb) = _reservesOf(a, b);
+        uint256 bOpt = aDesired * rb / ra;
+        if (bOpt <= bDesired) {
+            require(bOpt >= bMin, "INSUFFICIENT_B_AMOUNT");
+            (amountA, amountB) = (aDesired, bOpt);
+        } else {
+            uint256 aOpt = bDesired * ra / rb;
+            require(aOpt <= aDesired && aOpt >= aMin, "INSUFFICIENT_A_AMOUNT");
+            (amountA, amountB) = (aOpt, bDesired);
+        }
+        require(ERC20(a).transferFrom(msg.sender, p, amountA) && ERC20(b).transferFrom(msg.sender, p, amountB), "transferFrom");
+        liquidity = DevPair(p).mint(to);
+    }
+
+    function _reservesOf(address a, address b) internal view returns (address p, uint256 ra, uint256 rb) {
+        p = DevFactory(factory).getPair(a, b);
+        require(p != address(0), "no pair");
+        (uint112 r0, uint112 r1,) = DevPair(p).getReserves();
+        (ra, rb) = a == DevPair(p).token0() ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
     }
 }
 

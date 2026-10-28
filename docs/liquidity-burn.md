@@ -1,4 +1,4 @@
-# The liquidity burn (owner-approved Oct 28 2026; not built yet)
+# The liquidity burn (owner-approved Oct 28 2026; built: contracts/src/cards/LiquidityBurner.sol)
 
 Nothing on the site is burned outright any more. Everything that used to burn PAPER or PLANK goes to one new
 contract, the **liquidity contract** (working name `LiquidityBurner`). It pairs PAPER with PLANK, adds the pair to the

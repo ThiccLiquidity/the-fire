@@ -34,10 +34,11 @@ interface IGroupsSale {
  *           (or its duration runs out). Needs a rising tax and `idle`, rolls nowhere, and adds on top of the total.
  *         - `taxBps` (0 = off), a rising tax: the k-th pack sold in the group (k = 1 for its first) costs
  *           priceUsd * (1 + taxBps/10000)^k. The base price splits like any sale; the tax above it all goes to
- *           PaperBurner (FireSale). Its capacity is its own packs (nothing may roll into it).
- *         - `plankBurnBps` / `paperBurnBps`: how its dollar payments split (FireSale): the PLANK burn share, the
- *           PAPER buy & burn share (to PaperBurner), the rest to the revenue wallet. Together at most 100%, so a group
- *           can burn all the PLANK it takes (plankBurnBps 10000) while another keeps the Standard 10% / 20%.
+ *           LiquidityBurner (FireSale). Its capacity is its own packs (nothing may roll into it).
+ *         - `plankBurnBps` / `paperBurnBps`: how its dollar payments split (FireSale): both shares go to
+ *           LiquidityBurner in the coin paid (it pairs PAPER with PLANK and burns the liquidity; the two names are
+ *           kept from when they burned PLANK and PAPER apart), the rest to the revenue wallet. Together at most 100%,
+ *           so a group can send everything it takes to liquidity (10000 together).
  *
  *         "Gone for good": a group whose packs are all sold ends the moment its last pack goes, unless a group that
  *         rolls into it is still open or yet to open (more packs may still arrive), in which case it ends when the
@@ -82,9 +83,9 @@ contract FireGroups {
         uint32 perNft; // NFT gate: packs per NFT id per drop
         uint16 taxBps; // rising tax (0 = off): the k-th pack sold costs priceUsd * (1 + taxBps/10000)^k; the part
         // above priceUsd is the tax and all of it buys and burns PAPER. Needs a price; no group may roll into it
-        uint16 plankBurnBps; // share of this group's dollar payments that burns PLANK (1000 = 10%; 10000 = all of it)
-        uint16 paperBurnBps; // share that goes to PaperBurner to buy and burn PAPER (2000 = 20%); the two together
-        // are at most 10000 (100%); the rest goes to the revenue wallet. The rising tax is apart: all of it buys PAPER
+        uint16 plankBurnBps; // with paperBurnBps: the share of this group's dollar payments that goes to LiquidityBurner
+        uint16 paperBurnBps; // (1000 + 2000 = 30%); the two together are at most 10000 (100%); the rest goes to the
+        // revenue wallet. The rising tax is apart: all of it goes to LiquidityBurner
         uint128 priceUsd; // dollars per pack, 8 decimals (0 = no dollar price)
         uint128 paper; // PAPER wei per pack (0 = none)
         address nft; // NFT gate: the ERC-721

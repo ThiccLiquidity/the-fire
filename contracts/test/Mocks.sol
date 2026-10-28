@@ -104,17 +104,22 @@ contract MockV2Factory {
     function getPair(address, address) external view returns (address) { return pair; }
 }
 
+/// @dev A V2 factory that knows each pair by its two tokens (either order); unknown pairs are address(0).
+contract MockV2Pairs {
+    mapping(address => mapping(address => address)) public getPair;
+    function setPair(address a, address b, address p) external { getPair[a][b] = p; getPair[b][a] = p; }
+}
+
 contract MockRouterInfo {
     address public WETH; address public factory;
     constructor(address w, address f) { WETH = w; factory = f; }
 }
 
-/// @dev Stand-in for PaperBurner where a test only needs FirePsa wired: quotes $1 = 1e18 of anything, keeps what it gets.
+/// @dev Stand-in for LiquidityBurner where a test only needs FirePsa wired: quotes $1 = 1e18 of anything, keeps what it
+///      gets.
 contract MockBurner {
     address public PLANK; address public USDG; address public PAPER;
-    uint256 public flushes; uint256 public lastMax;
     constructor(address plank, address usdg) { PLANK = plank; USDG = usdg; PAPER = address(new MockERC20("PAPER", "PAPER")); }
     function quote(uint8, uint256 usd18) external pure returns (uint256) { return usd18; }
-    function flushLight(uint8, uint256 maxAmount) external returns (uint256) { flushes++; lastMax = maxAmount; return 0; }
     receive() external payable {}
 }

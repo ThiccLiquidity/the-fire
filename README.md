@@ -1,10 +1,11 @@
 # Omni Cardworks
 
 Omni Cardworks is a collectible NFT card game on Robinhood Chain. Cards are sold in sealed packs, one Series at a time.
-PLANK fuels the forge (part of every sale buys and burns it) and every pack burns PAPER. Packs are opened with
-drand randomness, so nobody can know a pack's contents in advance. Cards wear while left uncased; a Case freezes a
-card, and PDA grading reveals its grade (1 to 10) once and seals it in a Slab. Case and grading fees buy PAPER and
-burn it ([`docs/grading.md`](docs/grading.md)).
+Part of every sale and each pack's PAPER go into PAPER/PLANK liquidity that is locked for good
+([`docs/liquidity-burn.md`](docs/liquidity-burn.md)). Packs are opened with drand randomness, so nobody can know a
+pack's contents in advance. Cards wear while left uncased; a Case freezes a card, and PDA grading reveals its grade
+(1 to 10) once and seals it in a Slab. Case and grading fees go to the same locked liquidity
+([`docs/grading.md`](docs/grading.md)).
 
 Live site: https://web-mu-mocha-95.vercel.app (Cardworks in demo mode: demo data, no wallet, no payments).
 
@@ -83,6 +84,7 @@ The site deploys on Vercel from `main` with Root Directory `web`.
 | Doc | Covers |
 |---|---|
 | [`docs/omni-economy.md`](docs/omni-economy.md) | Drops, prices, burns, starter packs, free pack credits, case and grading prices |
+| [`docs/liquidity-burn.md`](docs/liquidity-burn.md) | LiquidityBurner: how sale shares, PAPER and fees become locked PAPER/PLANK liquidity |
 | [`docs/grading.md`](docs/grading.md) | Cases, PDA grading and slabs: hidden condition, wear rules, fresh odds, images, metadata |
 | [`docs/cards-contracts.md`](docs/cards-contracts.md) | The card contracts: pieces, the open/deal flow, safety properties, deployment wiring |
 | [`docs/card-studio.md`](docs/card-studio.md) | Card rules (the pack's slots and odds, holo, PDA wear) and how the studio builds a Series |
@@ -95,12 +97,13 @@ The site deploys on Vercel from `main` with Root Directory `web`.
 
 ## Key properties
 
-- **The sale contracts never hold funds.** Everything paid for packs is forwarded or burned in the same transaction:
-  70% of a sale to the revenue wallet; 20% goes to `PaperBurner`, which buys PAPER on the market and burns it; the 10%
-  PLANK share buys PLANK and burns it (or goes to `PlankBurner`, which has no withdraw and burns it later, if the swap
-  can't go through). All PAPER spent is burned.
-- **Case and grading fees all burn PAPER.** `PaperBurner` buys PAPER with 100% of each fee and burns it; none goes to
-  the team. If the price guard says no, the fee waits in `PaperBurner` (it has no withdraw) for a later buy.
+- **The sale contracts never hold funds.** Everything paid for packs is forwarded in the same transaction, in the coin
+  paid: the group's PAPER and PLANK shares (Standard: 30%), any rising tax and each pack's PAPER go to
+  `LiquidityBurner`; the rest (Standard: 70%) to the revenue wallet.
+- **Case and grading fees all go to `LiquidityBurner`**; none goes to the team.
+- **`LiquidityBurner` locks it all as liquidity.** The keepers run it: it buys PAPER or PLANK with what it holds, adds
+  matching amounts to the PAPER/PLANK Uniswap V2 pool and sends the pool tokens to the dead address. Only a side worth
+  over $100 burns outright. It has no withdraw; if a price guard says no, the coins wait for a later run.
 - **Randomness** comes from drand through an ownerless router that anyone can fulfill.
 - **The owner is one hardware wallet** (Ledger or Trezor; no multisig: nothing holds funds) that configures each Series and drop. It can pause buying and case/grading payments
   (never opening, dealing, transfers or finishing grades) and can't renounce ownership. What it can and can't change

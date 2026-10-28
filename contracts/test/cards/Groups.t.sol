@@ -20,7 +20,7 @@ contract TaxHarness is FireGroups {
 contract GroupsTest is SaleBase {
     event PacksBought(
         uint256 indexed fire, uint256 indexed group, address indexed buyer, uint256 count, FireSale.Pay pay, uint256 paid,
-        uint256 burnShare, bool plankBurned
+        uint256 toLiquidity
     );
     event DropClosed(uint256 indexed fire, uint256 packs);
 
@@ -479,17 +479,18 @@ contract GroupsTest is SaleBase {
         _open();
         uint256 eth = alice.balance;
         vm.expectEmit(address(sale));
-        emit PacksBought(1, 0, alice, 1, FireSale.Pay.ETH, 0, 0, false);
+        emit PacksBought(1, 0, alice, 1, FireSale.Pay.ETH, 0, 0);
         vm.prank(alice, alice);
         sale.buy{value: 1 ether}(1, 0, 1, FireSale.Pay.ETH, 0, 0, _nfts(p1));
         assertEq(packs.balanceOf(alice, 1), 1);
         assertEq(alice.balance, eth, "ETH back");
-        assertEq(paper.balanceOf(DEAD), 0);
+        assertEq(paper.balanceOf(liq), 0);
+        assertEq(liq.balance, 0);
         assertEq(revenue.balance, 0);
         _assertHoldsNothing();
     }
 
-    /// A PAPER-only group: only its PAPER is burned (capped like any pack), whatever coin is named.
+    /// A PAPER-only group: only its PAPER goes to LiquidityBurner (capped like any pack), whatever coin is named.
     function test_paperOnlyGroup() public {
         FireGroups.Group memory g = _pressGroup(5, 3);
         g.paper = 2e18;
@@ -504,8 +505,8 @@ contract GroupsTest is SaleBase {
         sale.buy(1, 0, 3, FireSale.Pay.USDG, 0, 6e18 - 1, _nfts(p1));
         vm.prank(alice, alice);
         sale.buy(1, 0, 3, FireSale.Pay.USDG, 0, 6e18, _nfts(p1));
-        assertEq(paper.balanceOf(DEAD), 6e18);
-        assertEq(usdg.balanceOf(revenue), 0);
+        assertEq(paper.balanceOf(liq), 6e18);
+        assertEq(usdg.balanceOf(revenue) + usdg.balanceOf(liq), 0);
         _assertHoldsNothing();
     }
 
@@ -522,7 +523,7 @@ contract GroupsTest is SaleBase {
         assertEq(c1, 2.5e6);
         assertEq(p1, 1e18);
         vm.expectEmit(address(sale));
-        emit PacksBought(1, 0, alice, 2, FireSale.Pay.USDG, 2e6, 2e6 * 3_000 / 10_000, true);
+        emit PacksBought(1, 0, alice, 2, FireSale.Pay.USDG, 2e6, 2e6 * 3_000 / 10_000);
         _usdg(alice, 1, 0, 2);
     }
 
@@ -764,9 +765,8 @@ contract GroupsTest is SaleBase {
         uint256 cost = _cost(1, 1, 5, FireSale.Pay.PLANK);
         vm.prank(alice, alice);
         sale.buy(1, 1, 5, FireSale.Pay.PLANK, cost, 5e18, _proof(5, _leaf(bob, 5)));
-        assertEq(plank.balanceOf(DEAD), cost / 10, "10% PLANK burned");
-        assertEq(plank.balanceOf(paperW), cost / 5, "20% to PaperBurner");
-        assertEq(plank.balanceOf(revenue), cost - cost / 10 - cost / 5, "70% revenue");
+        assertEq(plank.balanceOf(liq), cost * 3_000 / 10_000, "10% + 20% to LiquidityBurner");
+        assertEq(plank.balanceOf(revenue), cost - cost * 3_000 / 10_000, "70% revenue");
         vm.prank(bob, bob);
         vm.expectRevert(FireGroups.GroupNotOpen.selector);
         sale.buy(1, 2, 1, FireSale.Pay.PLANK, type(uint256).max, type(uint256).max, _na());
@@ -832,9 +832,9 @@ contract GroupsTest is SaleBase {
         assertApproxEqAbs(next, PRICE * 104 ** 10 / 100 ** 10, 2); // the 10th taxed pack: $2.50 * 1.04^10
     }
 
-    /// The base price splits as any sale (70% revenue, 10% PLANK burn, 20% PaperBurner); the whole tax goes to
-    /// PaperBurner, in the coin paid.
-    function test_tax_allToPaperBurner() public {
+    /// The base price splits as any sale (70% revenue, 10% + 20% to LiquidityBurner); the whole tax goes to
+    /// LiquidityBurner too, in the coin paid.
+    function test_tax_allToLiquidity() public {
         _taxDrop(1, 20, 400, 7);
         _open();
         _plank(alice, 1, 0, 1);
@@ -844,16 +844,16 @@ contract GroupsTest is SaleBase {
         uint256 base = cost - tax;
         assertApproxEqAbs(base, 4 * 2.5e6, 1, "the base is 4 x $2.50");
         _usdg(bob, 1, 1, 4);
-        assertEq(usdg.balanceOf(paperW), base * 2_000 / 10_000 + tax, "20% of the base + all the tax");
-        assertEq(usdg.balanceOf(address(router)), base * 1_000 / 10_000, "10% of the base burns PLANK");
-        assertEq(usdg.balanceOf(revenue), base - base * 1_000 / 10_000 - base * 2_000 / 10_000, "70% of the base");
+        assertEq(usdg.balanceOf(liq), base * 3_000 / 10_000 + tax, "30% of the base + all the tax");
+        assertEq(usdg.balanceOf(address(router)), 0, "nothing swapped at sale time");
+        assertEq(usdg.balanceOf(revenue), base - base * 3_000 / 10_000, "70% of the base");
         // in ETH too
         uint256 ethCost = _cost(1, 1, 2, FireSale.Pay.ETH);
         (usd8, tax8) = groups.priceOf(1, 1, 2);
         uint256 ethTax = ethCost * tax8 / usd8;
         _eth(carol, 1, 1, 2);
-        assertEq(paperW.balance, (ethCost - ethTax) * 2_000 / 10_000 + ethTax);
-        assertEq(revenue.balance, (ethCost - ethTax) - (ethCost - ethTax) * 1_000 / 10_000 - (ethCost - ethTax) * 2_000 / 10_000);
+        assertEq(liq.balance, (ethCost - ethTax) * 3_000 / 10_000 + ethTax);
+        assertEq(revenue.balance, (ethCost - ethTax) - (ethCost - ethTax) * 3_000 / 10_000);
         // and the most the buyer named still guards it
         uint256 c = _cost(1, 1, 1, FireSale.Pay.USDG);
         vm.prank(alice, alice);

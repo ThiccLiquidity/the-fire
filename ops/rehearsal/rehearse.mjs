@@ -7,13 +7,14 @@
 //   (ConfigureSeries) -> snapshots (PLANK with allowance tiers for the snapshot group; the Paper Press, an ERC-721) ->
 //   VerifySeries (RED with a missing image, then GREEN) -> batch B: a drop of four groups (the Standard preset scaled
 //   small: Press holders, PLANK snapshot holders, everyone, an unlimited "after sell-out" group with a rising price and
-//   a 5-minute idle) -> buy through the groups (a snapshot proof from the real script; one buy with the PLANK swap
-//   failing: its burn share waits in PlankBurner) -> the finite groups sell out, the taxed group sells two packs at a
+//   a 5-minute idle) -> buy through the groups (a snapshot proof from the real script; one buy with the router down:
+//   the sale doesn't need it, its share waits in LiquidityBurner) -> the finite groups sell out, the taxed group sells two packs at a
 //   rising price and idles out -> the keeper closes the Series (FireSale.close) -> open -> keeper delivers drand
 //   (fulfillMany) and deals (process) -> case and
 //   grade (protect) -> keeper delivers and finishes the grading (finish(index, ids) from the Protected event)
-//   -> keeper flushes PlankBurner; PaperBurner waits (no PAPER price) and alerts -> 40 h later the PAPER feed is live
-//   and the keeper flushes PaperBurner -> a case and a grade paid in USDG (PAPER refused) -> VerifyDeploy again.
+//   -> LiquidityBurner waits (no PAPER price: the keeper's simulation says a run would move nothing) and alerts ->
+//   40 h later the PAPER feed is live and the keeper runs LiquidityBurner: PAPER/PLANK liquidity added, its pool tokens
+//   burned -> a case and a grade paid in USDG (PAPER refused; the fee lands in LiquidityBurner) -> VerifyDeploy again.
 //
 // Two modes:
 //   node rehearsal/rehearse.mjs                 plain anvil with stand-ins (script/DevStack.s.sol), no network
@@ -37,7 +38,7 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import {
   createPublicClient, createWalletClient, http, parseEther, formatEther, getAddress, encodeFunctionData, zeroHash, toHex, decodeFunctionData,
-  decodeErrorResult,
+  decodeErrorResult, erc20Abi,
 } from "viem";
 import { mnemonicToAccount, nonceManager } from "viem/accounts";
 import { drandServer, gatewayServer, webhookServer } from "./servers.mjs";
@@ -50,7 +51,7 @@ import { verifySnapshot } from "../snapshot/snapshot.mjs";
 import { buildTree } from "../snapshot/merkle.mjs";
 import { PAY } from "../series/sale-abi.mjs";
 import { record } from "../deploy/record.mjs";
-import { routerAbi as keeperRouterAbi, twapAbi as keeperTwapAbi, cardsAbi as keeperCardsAbi, psaAbi as keeperPsaAbi, burnerAbi as keeperBurnerAbi, adapterAbi as keeperAdapterAbi } from "../keeper/src/abis.mjs";
+import { routerAbi as keeperRouterAbi, twapAbi as keeperTwapAbi, cardsAbi as keeperCardsAbi, psaAbi as keeperPsaAbi, liquidityAbi as keeperLiquidityAbi, adapterAbi as keeperAdapterAbi } from "../keeper/src/abis.mjs";
 
 requirePatchedNode(); // a command only (nothing imports it); --fork reads a real RPC: not on a Node with the Brotli bug
 const here = dirname(fileURLToPath(import.meta.url));
@@ -111,7 +112,7 @@ const ABI = {
   // carries FireGroups' errors too: they come back through FireSale's calls.
   sale: [...saleArtifact, ...groupsArtifact.filter((x) => x.type === "error" && !saleArtifact.some((y) => y.type === "error" && y.name === x.name))],
   groups: groupsArtifact, cards: webAbi("fireCards"), psa: webAbi("firePsa"), packs: webAbi("firePacks"), dealer: webAbi("recipeDealer"),
-  burner: webAbi("paperBurner"), plankBurner: webAbi("plankBurner"),
+  liquidity: webAbi("liquidityBurner"),
   ownable: [{ type: "function", name: "owner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" }],
   setRandomness: [{ type: "function", name: "setRandomness", inputs: [{ name: "s", type: "address" }], outputs: [], stateMutability: "nonpayable" }],
 };
@@ -152,7 +153,7 @@ async function whyReverted(hash, receipt, abi = []) {
     const gas = `gas ${receipt.gasUsed}/${sent.gas}${receipt.blockNumber !== undefined ? `, block ${receipt.blockNumber}` : ""}`;
     const data = t?.output && t.output !== "0x" ? t.output : null;
     if (data) {
-      for (const a of [abi, ABI.sale, ABI.groups, ABI.cards, ABI.psa, ABI.packs, ABI.burner, ABI.plankBurner]) {
+      for (const a of [abi, ABI.sale, ABI.groups, ABI.cards, ABI.psa, ABI.packs, ABI.liquidity]) {
         try {
           const d = decodeErrorResult({ abi: a, data });
           return `${d.errorName}(${(d.args ?? []).map(String).join(", ")}) [${gas}]`;
@@ -335,17 +336,17 @@ async function main() {
   let vd = forgeRead("script/VerifyDeploy.s.sol", verifyEnv);
   console.log(logLines(vd, /^(OK|WAIT|FAIL|INFO)|FAIL, /));
   const pendingAccepts = (vd.match(/acceptOwnership/g) ?? []).length;
-  check(/(^|\s)0 FAIL/m.test(vd) && pendingAccepts === 7, `VerifyDeploy: nothing wrong, ${pendingAccepts} acceptOwnership() pending`);
+  check(/(^|\s)0 FAIL/m.test(vd) && pendingAccepts === 8, `VerifyDeploy: nothing wrong, ${pendingAccepts} acceptOwnership() pending`);
 
   step("the owner accepts ownership: AcceptOwnership.s.sol signed by the owner (impersonated)");
   const outRefused = forgeRead("script/AcceptOwnership.s.sol", {});
   check(/sign as the owner/.test(outRefused), "AcceptOwnership refuses any signer but the owner");
   await forgeAsOwner(owner, "script/AcceptOwnership.s.sol", {});
-  for (const n of ["FirePacks", "FireCards", "RecipeDealer", "FireCredits", "FirePsa", "PaperBurner", "FireSale"]) {
+  for (const n of ["FirePacks", "FireCards", "RecipeDealer", "FireCredits", "FirePsa", "LiquidityBurner", "FireSale", "FireGames"]) {
     const o = await pub.readContract({ address: C[n], abi: ABI.ownable, functionName: "owner" });
     if (getAddress(o) !== owner) fail(`${n} is owned by ${o}, not the owner`);
   }
-  say("the owner holds FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa, PaperBurner and FireSale");
+  say("the owner holds FirePacks, FireCards, RecipeDealer, FireCredits, FirePsa, LiquidityBurner, FireSale and FireGames");
 
   // ---------------- keeper: first checkpoints
   const drand = await drandServer(() => clockNow, { real: !!FORK });
@@ -356,7 +357,7 @@ async function main() {
     RPC_URL: RPC, FALLBACK_RPC_URL: "none", CHAIN_ID: String(id), DEPLOYMENTS_FILE: DEP_FILE, ALERT_WEBHOOK_URL: hook.url,
     DRAND_URLS: FORK ? "https://api.drand.sh,https://api2.drand.sh,https://api3.drand.sh" : drand.url, SERIES_SCAN: "8", WAITING_ALERT_MIN: "0",
     CLOCK_SKEW_SEC: FORK ? "120" : "0", ETH_STALE_HOURS: "24", LOW_BALANCE_ETH: "0.01",
-    MIN_FLUSH_USD: "0.25", // the rehearsal's burners hold well under the $1 default (PlankBurner: a $0.50 burn share)
+    MIN_FLUSH_USD: "0.25", // the rehearsal's LiquidityBurner holds little (a pack's share is $0.75)
   };
   const main = await keeperFor(keeperA, { ...keeperEnv, KEEPER_LABEL: "keeper" }, wallNow);
   const pass = async (k = main, label = "keeper pass") => {
@@ -504,8 +505,8 @@ async function main() {
   if (!FORK) await tx(deployer, dev.router.address, dev.router.abi, "setFail", [true]);
   await buy(buyer2, 1n, 2n, snapAccess(buyer2));
   if (!FORK) await tx(deployer, dev.router.address, dev.router.abi, "setFail", [false]);
-  const pbEth = await pub.getBalance({ address: C.PlankBurner });
-  check(FORK || pbEth > 0n, `PlankBurner holds ${formatEther(pbEth)} ETH (the burn share it couldn't swap)`);
+  const lbEth = await pub.getBalance({ address: C.LiquidityBurner });
+  check(lbEth > 0n, `a sale with the router down still went through: LiquidityBurner holds ${formatEther(lbEth)} ETH (its share, no swap at sale time)`);
   say("buyer 2 took the PLANK group's 2 packs with its snapshot allowance (2) and proof");
   if (!FORK) {
     await buy(buyer1, 0n, 1n, access({ nftIds: [pressId] }));
@@ -618,7 +619,7 @@ async function main() {
   check(next - 1n === 36n, `${next - 1n} cards dealt (6 packs x 6)`);
 
   // ---------------- case and grade
-  step("buyer 2 cases one card and sends two for grading (pays ETH; the fee goes to PaperBurner)");
+  step("buyer 2 cases one card and sends two for grading (pays ETH; the fee goes to LiquidityBurner)");
   const owned = [];
   for (let s = 1n; s < next; s++) {
     const o = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "ownerOf", args: [s] });
@@ -645,12 +646,12 @@ async function main() {
   }
 
   // ---------------- burners
-  step("burners: PlankBurner flushed by the keeper; PaperBurner waits for a PAPER price and alerts");
-  const pbLeft = await pub.getBalance({ address: C.PlankBurner });
-  check(pbLeft === 0n, `PlankBurner emptied (it held ${formatEther(pbEth)} ETH)`);
-  const paperBurnerEth = await pub.getBalance({ address: C.PaperBurner });
-  check(paperBurnerEth > 0n, `PaperBurner holds ${formatEther(paperBurnerEth)} ETH`);
-  check(r.alerts.some((a) => /PaperBurner holds/.test(a.text)) && hook.posts.some((p) => /PaperBurner holds/.test(p)), "the 'fees waiting' alert reached the webhook");
+  step("LiquidityBurner waits for a PAPER price (a run would move nothing, so the keeper doesn't send one) and alerts");
+  const liqAbi = ABI.liquidity;
+  const lpRead = (fn) => pub.readContract({ address: C.LiquidityBurner, abi: liqAbi, functionName: fn });
+  const lbHeld = await pub.getBalance({ address: C.LiquidityBurner });
+  check(lbHeld > 0n && (await lpRead("lpBurned")) === 0n, `LiquidityBurner holds ${formatEther(lbHeld)} ETH, no liquidity burned yet`);
+  check(r.alerts.some((a) => /LiquidityBurner has .* couldn't do yet/.test(a.text)) && hook.posts.some((p) => /LiquidityBurner has/.test(p)), "the 'work waiting' alert reached the webhook");
 
   if (!FORK) {
     step("20 hours pass with the main keeper down: a keeper that won't act still sees the stale PLANK price");
@@ -665,7 +666,7 @@ async function main() {
     check(hook.posts.some((p) => /had to step in/.test(p)), "the webhook heard that the backup stepped in");
     step("the owner pauses FireSale, switches FirePsa's randomness back and sets FireSale's wallets: the keeper posts all three");
     await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setPaused", args: [true] }));
-    await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setWallets", args: [revenue.address, C.PlankBurner, C.PaperBurner] }));
+    await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setWallets", args: [revenue.address, C.LiquidityBurner] }));
     await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [C.PsaAdapter] }));
     step("the main keeper is back: PAPER pool adopted");
     r = await pass();
@@ -673,16 +674,25 @@ async function main() {
     check(hook.posts.some((p) => /FirePsa's randomness source was SWITCHED/.test(p)), "the randomness switch reached the webhook");
     check(hook.posts.filter((p) => new RegExp(`FireSale's wallets were CHANGED by the owner \\(WalletsSet\\): revenue ${revenue.address}`).test(p)).length === 1, "FireSale's WalletsSet reached the webhook, once");
     await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setPaused", args: [false] }));
-    step("another 20 hours: the PAPER feed reports its first price; the keeper flushes PaperBurner");
+    step("another 20 hours: the PAPER feed reports its first price; the keeper runs LiquidityBurner");
     await warp(20 * 3600);
     r = await pass();
     const paperPx = (await pub.readContract({ address: C.PaperUsdTwap, abi: twapAbi, functionName: "latestRoundData" }))[1];
     check(paperPx > 0n, `PAPER/USD live: $${(Number(paperPx) / 1e18).toFixed(4)}`);
-    check((await pub.getBalance({ address: C.PaperBurner })) === 0n, "PaperBurner flushed: the fee bought PAPER and burned it");
+    // the PLANK window the 20 h gap left is too long for LiquidityBurner (2 h at most): the next checkpoint, 31 min
+    // on, makes a short one, and the same pass runs it
+    await warp(31 * 60);
     r = await pass();
-    check(hook.posts.some((p) => /resolved: PaperBurner holds/.test(p)), "the webhook got the 'resolved' line");
+    const lp = await lpRead("lpBurned");
+    const pool = await lpRead("PAIR");
+    const deadLp = await pub.readContract({ address: pool, abi: erc20Abi, functionName: "balanceOf", args: ["0x000000000000000000000000000000000000dEaD"] });
+    check(lp > 0n && deadLp === lp, `LiquidityBurner run by the keeper: ${lp} PAPER/PLANK pool tokens minted to the dead address`);
+    const [hp, hk, hs] = await lpRead("held");
+    check(hs === 0n && hp <= 100n * 10n ** 18n && hk <= 100n * 10n ** 18n, `after the run: nothing left to spend; PAPER side $${(Number(hp) / 1e18).toFixed(2)}, PLANK side $${(Number(hk) / 1e18).toFixed(2)}`);
+    r = await pass();
+    check(hook.posts.some((p) => /resolved: LiquidityBurner has/.test(p)), "the webhook got the 'resolved' line");
 
-    step("buyer 2 cases one card and grades one paying in USDG (one grading price for every card; the fee buys PAPER and burns it)");
+    step("buyer 2 cases one card and grades one paying in USDG (one grading price for every card; the fee goes to LiquidityBurner)");
     const free = [];
     for (let s = 1n; s < next; s++) {
       const o = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "ownerOf", args: [s] }).catch(() => undefined);
@@ -704,11 +714,10 @@ async function main() {
     // takes its randomness through the stand-in router, then FirePsa goes back
     const pa2 = await deploy(deployer, "OpenVRFAdapter", "OpenVRFAdapter", [dev.devDrand.address, C.FirePsa]);
     await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [pa2.address] }));
-    const usdg0 = await bal(dev.usdg, C.PaperBurner);
+    const usdg0 = await bal(dev.usdg, C.LiquidityBurner);
     await tx(buyer2, C.FirePsa, ABI.psa, "protect", [[free[0]], [free[1]], payUsdg, costP]);
-    const burned = (await bal(dev.paper, DEAD)) - dead0;
-    const waiting = (await bal(dev.usdg, C.PaperBurner)) - usdg0;
-    check(burned > 0n || waiting === costP, burned > 0n ? `the USDG fee (${costP} units: $1.05) bought and burned ${formatEther(burned)} PAPER` : `the USDG fee (${costP} units) waits in PaperBurner for a later buy`);
+    const landed = (await bal(dev.usdg, C.LiquidityBurner)) - usdg0;
+    check(landed === costP && (await bal(dev.paper, DEAD)) === dead0, `the USDG fee (${costP} units) landed in LiquidityBurner, nothing burned at payment`);
     const gp = (await pub.readContract({ address: C.FirePsa, abi: ABI.psa, functionName: "gradingCount" })) - 1n;
     await warp(100);
     r = await pass();
@@ -737,7 +746,7 @@ async function main() {
  * something (emitted an event), and no drand request may appear in two deliveries.
  */
 async function race(pairs, done, timeoutMs, setClock) {
-  const fnAbi = [...keeperRouterAbi, ...keeperTwapAbi, ...keeperCardsAbi, ...keeperPsaAbi, ...keeperBurnerAbi, ...keeperAdapterAbi];
+  const fnAbi = [...keeperRouterAbi, ...keeperTwapAbi, ...keeperCardsAbi, ...keeperPsaAbi, ...keeperLiquidityAbi, ...keeperAdapterAbi];
   const from = await pub.getBlockNumber();
   await rpc("evm_setAutomine", [false]);
   await rpc("evm_setIntervalMining", [1]);

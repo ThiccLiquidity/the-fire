@@ -10,8 +10,7 @@ import {FirePsa} from "../src/cards/FirePsa.sol";
 import {RecipeDealer} from "../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../src/cards/RecipeCompiler.sol";
 import {CardsRenderer} from "../src/cards/CardsRenderer.sol";
-import {PaperBurner} from "../src/cards/PaperBurner.sol";
-import {PlankBurner} from "../src/cards/PlankBurner.sol";
+import {LiquidityBurner} from "../src/cards/LiquidityBurner.sol";
 import {FireCredits} from "../src/cards/FireCredits.sol";
 import {FireGroups} from "../src/cards/FireGroups.sol";
 import {FireProfiles} from "../src/cards/FireProfiles.sol";
@@ -61,9 +60,9 @@ interface ICardsPair {
  *   FirePacks (sealed packs), FireCards (cards), CardsRenderer (card metadata), RecipeDealer + RecipeCompiler (deal each
  *   Series from its recipe), FireSale (the pack sale), FireGroups (each drop's groups: who can buy, how many, when;
  *   only FireSale writes to it, no owner), FireCredits (free pack credits, card burning, suggestions),
- *   PlankBurner (holds the PLANK burn share when a sale's swap can't run, and burns it later), FirePsa (cases and PDA
- *   grading), PaperBurner (case and grading fees buy and burn PAPER), and a drand adapter for each of FireCards and
- *   FirePsa. Also FireProfiles (names and profile pictures; no owner). On a deploy made before it existed, add it
+ *   LiquidityBurner (every sale's liquidity share, each pack's PAPER, case and grading fees, suggestions and game
+ *   entries: paired into PAPER/PLANK liquidity and burned, docs/liquidity-burn.md), FirePsa (cases and PDA grading),
+ *   and a drand adapter for each of FireCards and FirePsa. Also FireProfiles (names and profile pictures; no owner). On a deploy made before it existed, add it
  *   on its own with script/DeployProfiles.s.sol. And FireGames (the game room's run entries, docs/paper-football.md):
  *   it adds paper football as game 1 (1 PAPER a run, fixed forever) and FireCredits allows prizes for game 1, but
  *   leaves the server's `signer` and the `series` unset, so paid play stays closed until the owner sets both.
@@ -80,9 +79,9 @@ interface ICardsPair {
  *   DRAND_ROUTER      the OpenDrandRouter from DeployInfra.s.sol (it has no owner)
  *   OWNER             the hardware wallet (Ledger or Trezor) that will own everything. Afterwards it calls
  *                     acceptOwnership() on FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa,
- *                     PaperBurner and FireGames (Ownable2Step), all eight in one run of script/AcceptOwnership.s.sol
- *                     signed on the device, so a mistyped OWNER owns nothing (the deployer still does). PlankBurner
- *                     and FireGroups have no owner.
+ *                     LiquidityBurner and FireGames (Ownable2Step), all eight in one run of script/AcceptOwnership.s.sol
+ *                     signed on the device, so a mistyped OWNER owns nothing (the deployer still does). FireGroups
+ *                     has no owner.
  *                     Must not be the deployer.
  *   EXPECTED_CHAIN_ID the chain it must run on (default 4663, Robinhood Chain; set it for a rehearsal)
  *   ROYALTY_RECEIVER, ROYALTY_BPS (500 = 5%, max 1000)
@@ -91,10 +90,11 @@ interface ICardsPair {
  *                     a drop's NFT groups name their collection themselves)
  *   ETH_USD_FEED      Chainlink ETH/USD; PLANK_USD_FEED the PlankUsdTwap (DeployTwap.s.sol); PAPER_USD_FEED the PaperUsdTwap (DeployInfra.s.sol),
  *                     never the PAPER pool itself. Both feeds must be built on this PAPER/PLANK and ETH_USD_FEED.
- *   V2_ROUTER         Uniswap V2 router (buys the PLANK that each sale burns, and the PAPER that fees burn)
- *   REVENUE_WALLET    gets the rest of every sale after the drop's PLANK and PAPER burn shares (70% in the Standard drop)
- *   KEEPERS           the keeper wallets (main and backup, comma-separated), allowed to flush PaperBurner. Optional:
- *                     the owner can add them later (PaperBurner.setFlusher). FirePsa is always allowed.
+ *   V2_ROUTER         Uniswap V2 router (LiquidityBurner's buys and its PAPER/PLANK liquidity; its factory must already
+ *                     have the PAPER/PLANK pool)
+ *   REVENUE_WALLET    gets the rest of every sale after the drop's liquidity shares
+ *   KEEPERS           the keeper wallets (main and backup, comma-separated), allowed to run LiquidityBurner. Optional:
+ *                     the owner can add them later (LiquidityBurner.setKeeper).
  *   SUGGESTION_PAPER  PAPER wei per character suggestion to start (default 1e18 = 1 PAPER; 0 = free). The owner can
  *                     change it later (FireCredits.setSuggestionRules). Every other sale number is set per drop.
  *
@@ -143,9 +143,8 @@ contract DeployCards is Deployments {
         OpenVRFAdapter psaAdapter;
         RecipeCompiler compiler;
         CardsRenderer renderer;
-        PaperBurner burner;
+        LiquidityBurner liquidity;
         FireCredits credits;
-        PlankBurner plankBurner;
         FireGroups groups;
         FireProfiles profiles;
         FireGames games;
@@ -177,10 +176,10 @@ contract DeployCards is Deployments {
         address[] memory keepers = vm.envOr("KEEPERS", ",", new address[](0));
         vm.startBroadcast();
         d = deploy(p, msg.sender);
-        // the deployer still owns PaperBurner until the owner accepts: let the keepers flush it
-        for (uint256 i; i < keepers.length; i++) d.burner.setFlusher(keepers[i], true);
+        // the deployer still owns LiquidityBurner until the owner accepts: let the keepers run it
+        for (uint256 i; i < keepers.length; i++) d.liquidity.setKeeper(keepers[i], true);
         vm.stopBroadcast();
-        if (keepers.length == 0) console.log("KEEPERS not set: the owner adds them with PaperBurner.setFlusher");
+        if (keepers.length == 0) console.log("KEEPERS not set: the owner adds them with LiquidityBurner.setKeeper");
 
         console.log("FirePacks  ", address(d.packs));
         console.log("FireCards  ", address(d.cards));
@@ -190,9 +189,8 @@ contract DeployCards is Deployments {
         console.log("FireGroups ", address(d.groups));
         console.log("FireProfiles", address(d.profiles));
         console.log("FireGames  ", address(d.games));
-        console.log("PlankBurner", address(d.plankBurner));
         console.log("FirePsa    ", address(d.psa));
-        console.log("PaperBurner", address(d.burner));
+        console.log("LiquidityBurner", address(d.liquidity));
         console.log("CardsRenderer", address(d.renderer));
         console.log("RecipeCompiler", address(d.compiler));
         console.log("Adapter (cards)", address(d.adapter));
@@ -202,26 +200,25 @@ contract DeployCards is Deployments {
     }
 
     function _recordCards(Deployed memory d, Params memory p) internal {
-        string[] memory names = new string[](18);
-        address[] memory addrs = new address[](18);
+        string[] memory names = new string[](17);
+        address[] memory addrs = new address[](17);
         (names[0], addrs[0]) = ("FirePacks", address(d.packs));
         (names[1], addrs[1]) = ("FireCards", address(d.cards));
         (names[2], addrs[2]) = ("CardsRenderer", address(d.renderer));
         (names[3], addrs[3]) = ("RecipeDealer", address(d.dealer));
         (names[4], addrs[4]) = ("RecipeCompiler", address(d.compiler));
-        (names[5], addrs[5]) = ("PlankBurner", address(d.plankBurner));
-        (names[6], addrs[6]) = ("FireCredits", address(d.credits));
-        (names[7], addrs[7]) = ("FireSale", address(d.sale));
-        (names[8], addrs[8]) = ("PaperBurner", address(d.burner));
-        (names[9], addrs[9]) = ("FirePsa", address(d.psa));
-        (names[10], addrs[10]) = ("CardsAdapter", address(d.adapter));
-        (names[11], addrs[11]) = ("PsaAdapter", address(d.psaAdapter));
-        (names[12], addrs[12]) = ("OpenDrandRouter", p.router);
-        (names[13], addrs[13]) = ("PlankUsdTwap", p.plankUsd);
-        (names[14], addrs[14]) = ("PaperUsdTwap", p.paperUsd);
-        (names[15], addrs[15]) = ("FireGroups", address(d.groups));
-        (names[16], addrs[16]) = ("FireProfiles", address(d.profiles));
-        (names[17], addrs[17]) = ("FireGames", address(d.games));
+        (names[5], addrs[5]) = ("FireCredits", address(d.credits));
+        (names[6], addrs[6]) = ("FireSale", address(d.sale));
+        (names[7], addrs[7]) = ("LiquidityBurner", address(d.liquidity));
+        (names[8], addrs[8]) = ("FirePsa", address(d.psa));
+        (names[9], addrs[9]) = ("CardsAdapter", address(d.adapter));
+        (names[10], addrs[10]) = ("PsaAdapter", address(d.psaAdapter));
+        (names[11], addrs[11]) = ("OpenDrandRouter", p.router);
+        (names[12], addrs[12]) = ("PlankUsdTwap", p.plankUsd);
+        (names[13], addrs[13]) = ("PaperUsdTwap", p.paperUsd);
+        (names[14], addrs[14]) = ("FireGroups", address(d.groups));
+        (names[15], addrs[15]) = ("FireProfiles", address(d.profiles));
+        (names[16], addrs[16]) = ("FireGames", address(d.games));
         string[] memory inNames = new string[](11);
         address[] memory inAddrs = new address[](11);
         (inNames[0], inAddrs[0]) = ("PAPER", p.paper);
@@ -249,34 +246,31 @@ contract DeployCards is Deployments {
         d.adapter = new OpenVRFAdapter(p.router, address(d.cards));
         require(d.adapter.FIRE() == address(d.cards), "adapter points elsewhere");
         uint8 usdgDecimals = p.usdg == address(0) ? 0 : IERC20Metadata(p.usdg).decimals();
-        d.plankBurner = new PlankBurner(p.plank, p.usdg, usdgDecimals, p.weth, p.v2Router, p.ethUsd, p.plankUsd);
         d.credits = new FireCredits(deployer, address(d.cards), p.suggestionPaper);
-        d.burner = new PaperBurner(deployer, p.paper, p.plank, p.usdg, usdgDecimals, p.weth, p.v2Router);
-        d.burner.setFeeds(p.ethUsd, p.plankUsd, p.paperUsd);
-        _setRoutes(d.burner, p);
+        address lpPair = ICardsV2Factory(ICardsV2Router(p.v2Router).factory()).getPair(p.paper, p.plank);
+        d.liquidity = new LiquidityBurner(deployer, p.paper, p.plank, p.usdg, usdgDecimals, p.weth, p.v2Router, lpPair);
+        d.liquidity.setFeeds(p.ethUsd, p.plankUsd, p.paperUsd);
+        _setRoutes(d.liquidity, p);
         d.groups = new FireGroups();
         d.sale = new FireSale(FireSale.Config({
             owner: deployer, paper: p.paper, plank: p.plank, usdg: p.usdg, weth: p.weth,
             packs: address(d.packs), cards: address(d.cards), ethUsd: p.ethUsd, plankUsd: p.plankUsd, paperUsd: p.paperUsd,
-            router: p.v2Router, revenueWallet: p.revenueWallet, plankBurner: address(d.plankBurner),
-            paperBurner: address(d.burner), credits: address(d.credits), groups: address(d.groups)
+            router: p.v2Router, revenueWallet: p.revenueWallet, liquidity: address(d.liquidity), credits: address(d.credits), groups: address(d.groups)
         }));
         d.credits.setSale(address(d.sale)); // set once; it checks the sale points back here and sells the same cards
         require(address(d.credits.sale()) == address(d.sale) && d.sale.CREDITS() == address(d.credits), "credits wiring");
         d.groups.setSale(address(d.sale)); // set once, by the deployer; it checks the sale points back here
         require(d.groups.sale() == address(d.sale) && address(d.sale.GROUPS()) == address(d.groups), "groups wiring");
-        require(d.sale.plankBurner() == address(d.plankBurner) && address(d.plankBurner.ROUTER()) == address(d.sale.ROUTER())
-            && address(d.plankBurner.PLANK_USD()) == p.plankUsd && address(d.plankBurner.ETH_USD()) == p.ethUsd,
-            "PlankBurner wiring");
-        require(d.sale.paperBurner() == address(d.burner), "PaperBurner wiring");
-        d.psa = new FirePsa(deployer, address(d.cards), address(d.burner));
-        d.burner.setFlusher(address(d.psa), true); // FirePsa flushes each fee as it's paid
+        require(d.sale.liquidity() == address(d.liquidity) && address(d.liquidity.ROUTER()) == address(d.sale.ROUTER())
+            && address(d.liquidity.plankUsd()) == p.plankUsd && address(d.liquidity.ethUsd()) == p.ethUsd
+            && address(d.liquidity.paperUsd()) == p.paperUsd && address(d.liquidity.PAIR()) == lpPair, "LiquidityBurner wiring");
+        d.psa = new FirePsa(deployer, address(d.cards), address(d.liquidity));
         d.psaAdapter = new OpenVRFAdapter(p.router, address(d.psa));
         require(d.psaAdapter.FIRE() == address(d.psa), "PDA adapter points elsewhere");
         d.profiles = new FireProfiles(address(d.cards)); // names and profile pictures; no owner
         // the game room: paper football is game 1 at 1 PAPER a run (fixed forever), with prizes allowed in FireCredits.
         // signer and series stay 0, so paid play is closed until the owner sets both; the prizeAwarder stays unset.
-        d.games = new FireGames(deployer, p.paper);
+        d.games = new FireGames(deployer, p.paper, address(d.liquidity));
         d.games.addGame(PAPER_FOOTBALL, PAPER_FOOTBALL_ENTRY, PAPER_FOOTBALL_CAP_USD);
         d.games.setPaperFeed(p.paperUsd);
         d.credits.setPrizeGame(PAPER_FOOTBALL, true);
@@ -284,7 +278,7 @@ contract DeployCards is Deployments {
         d.psa.setCouponIssuer(address(d.credits));
         d.credits.setPsa(address(d.psa));
         require(d.psa.couponIssuer() == address(d.credits) && address(d.credits.psa()) == address(d.psa), "coupons wiring");
-        require(address(d.games.PAPER()) == p.paper && d.games.entryOf(PAPER_FOOTBALL) == PAPER_FOOTBALL_ENTRY
+        require(address(d.games.PAPER()) == p.paper && d.games.LIQUIDITY() == address(d.liquidity) && d.games.entryOf(PAPER_FOOTBALL) == PAPER_FOOTBALL_ENTRY
             && d.games.capUsdOf(PAPER_FOOTBALL) == PAPER_FOOTBALL_CAP_USD && address(d.games.paperUsd()) == p.paperUsd
             && d.games.signer() == address(0) && d.games.series() == 0 && d.credits.prizeGame(PAPER_FOOTBALL)
             && d.credits.prizeAwarder() == address(0), "games wiring");
@@ -306,24 +300,30 @@ contract DeployCards is Deployments {
         d.credits.transferOwnership(p.owner);
         d.sale.transferOwnership(p.owner);
         d.psa.transferOwnership(p.owner);
-        d.burner.transferOwnership(p.owner);
+        d.liquidity.transferOwnership(p.owner);
         d.games.transferOwnership(p.owner);
     }
 
-    /// @dev The burner's starting routes: straight to PAPER, or through PLANK (where most PAPER liquidity sits).
-    function _setRoutes(PaperBurner b, Params memory p) internal {
+    /// @dev LiquidityBurner's starting routes. PAPER: straight, or through PLANK (where most PAPER liquidity sits).
+    ///      PLANK: straight from WETH (its deepest pool). PLANK only ever buys PAPER.
+    function _setRoutes(LiquidityBurner b, Params memory p) internal {
         address[][] memory r = new address[][](2);
         r[0] = _path2(p.weth, p.paper);
         r[1] = _path3(p.weth, p.plank, p.paper);
-        b.setRoutes(PaperBurner.Pay.ETH, r);
+        b.setRoutes(LiquidityBurner.Pay.ETH, LiquidityBurner.Side.PAPER, r);
         r[0] = _path2(p.plank, p.paper);
         r[1] = _path3(p.plank, p.weth, p.paper);
-        b.setRoutes(PaperBurner.Pay.PLANK, r);
+        b.setRoutes(LiquidityBurner.Pay.PLANK, LiquidityBurner.Side.PAPER, r);
+        address[][] memory one = new address[][](1);
+        one[0] = _path2(p.weth, p.plank);
+        b.setRoutes(LiquidityBurner.Pay.ETH, LiquidityBurner.Side.PLANK, one);
         if (p.usdg != address(0)) {
             r[0] = _path3(p.usdg, p.weth, p.paper);
             r[1] = new address[](4);
             (r[1][0], r[1][1], r[1][2], r[1][3]) = (p.usdg, p.weth, p.plank, p.paper);
-            b.setRoutes(PaperBurner.Pay.USDG, r);
+            b.setRoutes(LiquidityBurner.Pay.USDG, LiquidityBurner.Side.PAPER, r);
+            one[0] = _path3(p.usdg, p.weth, p.plank);
+            b.setRoutes(LiquidityBurner.Pay.USDG, LiquidityBurner.Side.PLANK, one);
         }
     }
 
@@ -368,11 +368,13 @@ contract DeployCards is Deployments {
         address t0 = ICardsPair(pair).token0();
         address t1 = ICardsPair(pair).token1();
         require((t0 == p.plank && t1 == p.weth) || (t1 == p.plank && t0 == p.weth), "PLANK_USD_FEED is not on the PLANK/WETH pool");
-        // the router must trade on the same WETH and the same PLANK pool the price comes from, or every burn swap
-        // would quietly fail over to PlankBurner
+        // the router must trade on the same WETH and the same PLANK pool the price comes from, or LiquidityBurner's
+        // buys would never pass their price check
         require(ICardsV2Router(p.v2Router).WETH() == p.weth, "V2_ROUTER uses a different WETH");
         require(ICardsV2Factory(ICardsV2Router(p.v2Router).factory()).getPair(p.plank, p.weth) == pair,
             "V2_ROUTER's factory doesn't own the PLANK_USD_FEED pool");
+        require(ICardsV2Factory(ICardsV2Router(p.v2Router).factory()).getPair(p.paper, p.plank) != address(0),
+            "V2_ROUTER's factory has no PAPER/PLANK pool for the liquidity");
         // the PAPER price must come from the same tokens and the same factory, or it never finds the PAPER pools
         require(ICardsPaperTwap(p.paperUsd).PLANK() == p.plank, "PAPER_USD_FEED looks for a different PLANK");
         require(ICardsPaperTwap(p.paperUsd).WETH() == p.weth, "PAPER_USD_FEED uses a different WETH");

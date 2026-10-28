@@ -313,6 +313,39 @@ export async function burnedTotals(): Promise<{ PAPER: Amount | null; PLANK: Amo
   return { PAPER: b.PAPER, PLANK: b.PLANK };
 }
 
+const liquidityAbi = [
+  { type: "function", name: "lpBurned", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "PAIR", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
+] as const;
+const pairAbi = [
+  { type: "function", name: "totalSupply", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "token0", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
+  { type: "function", name: "getReserves", inputs: [], outputs: [{ type: "uint112" }, { type: "uint112" }, { type: "uint32" }], stateMutability: "view" },
+] as const;
+
+/** The liquidity LiquidityBurner has burned (docs/liquidity-burn.md): its pool tokens sent to the burn address, and
+ *  the PAPER and PLANK they hold in the PAPER/PLANK pool today (their share of its reserves). null before it's
+ *  deployed or before its first burn. */
+export async function liquidityBurned(): Promise<{ lp: Amount; PAPER: Amount; PLANK: Amount } | null> {
+  const deployed = NET.deployment.contracts?.LiquidityBurner;
+  if (!deployed) return null;
+  const at = getAddress(deployed);
+  const [lp, pair] = await Promise.all([
+    pub().readContract({ address: at, abi: liquidityAbi, functionName: "lpBurned" }),
+    pub().readContract({ address: at, abi: liquidityAbi, functionName: "PAIR" }),
+  ]);
+  if (lp === 0n) return null;
+  const [supply, token0, [r0, r1]] = await Promise.all([
+    pub().readContract({ address: pair, abi: pairAbi, functionName: "totalSupply" }),
+    pub().readContract({ address: pair, abi: pairAbi, functionName: "token0" }),
+    pub().readContract({ address: pair, abi: pairAbi, functionName: "getReserves" }),
+  ]);
+  if (supply === 0n) return null;
+  const paper = input("PAPER");
+  const [rPaper, rPlank] = paper && getAddress(token0) === getAddress(paper) ? [r0, r1] : [r1, r0];
+  return { lp: amount(lp), PAPER: amount((rPaper * lp) / supply), PLANK: amount((rPlank * lp) / supply) };
+}
+
 /** ETH to keep for the network fee on top of an ETH price: the gas price now x `gas` (room for a buy, an open or a
  *  grading on this L2), never under a small floor (0.00002 ETH). */
 export async function gasReserve(gas = 1_000_000n): Promise<Amount> {

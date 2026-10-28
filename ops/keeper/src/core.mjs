@@ -8,8 +8,8 @@
 //   3. dealing:     FireCards.process(fire, maxCards) while a Series' queue head is ready
 //   4. grading:     FirePsa.finish(index, ids) for ready gradings, ids from the grading's Protected event (the newest
 //                   GRADING_LOOKBACK each pass, plus a sweep of older ones from the oldest not finished)
-//   5. burners:     PaperBurner.flush(pay) and PlankBurner.flush(pay) when they hold enough to be worth the gas (or
-//                   have waited long enough) and a flush would move it
+//   5. liquidity:   LiquidityBurner.run() when it has work worth the gas (coins to spend, sides to pair or even out,
+//                   a side over its cap) or work has waited long enough
 //   6. drops:       a Series nothing can still sell in (FireSale.status(fire).left 0: its groups' time ran out or
 //                   its unlimited group idled out, with no purchase to close it) -> FireSale.close(fire) (the backup
 //                   ACT_AFTER_SEC after the last group ended); a drop that hasn't sold out once its schedule is over
@@ -21,7 +21,7 @@
 // on work left waiting ACT_AFTER_SEC, and yields to the main keeper on a tie (tx.mjs).
 import { encodeAbiParameters, keccak256, formatEther, formatUnits, zeroAddress } from "viem";
 import {
-  adapterAbi, burnerAbi, cardsAbi, erc20Abi, feedAbi, groupsAbi, paperTwapAbi, pausableAbi, protectedEvent, psaAbi, routerAbi, saleAbi, saleSettingsEvents, twapAbi,
+  adapterAbi, cardsAbi, erc20Abi, feedAbi, groupsAbi, liquidityAbi, paperTwapAbi, pausableAbi, protectedEvent, psaAbi, routerAbi, saleAbi, saleSettingsEvents, twapAbi,
 } from "./abis.mjs";
 import { drandClient, roundAt, roundTime } from "./drand.mjs";
 import { createSender, errMsg } from "./tx.mjs";
@@ -30,7 +30,6 @@ import { createNotifier } from "./alerts.mjs";
 /** FireCards.CANCEL_AFTER and FirePsa.CANCEL_AFTER (24 h): an open or grading with no word this long after its request
  *  can be cancelled by anyone. */
 const CANCEL_HOURS = 24;
-const PAY = [["PLANK", 0], ["ETH", 1], ["USDG", 2]];
 const idsHash = (ids) => keccak256(encodeAbiParameters([{ type: "uint256[]" }], [ids]));
 
 /** Alerts for opens and gradings still waiting: a round published but not delivered, no randomness yet, a ready open
@@ -65,7 +64,19 @@ export function waitAlerts(items, now, cfg) {
   return alerts;
 }
 
-/** Whether to flush a burner balance now. `usd`: what it's worth (undefined: no price to value it); `waitedMs`: since
+/** The work a LiquidityBurner run would do, in dollars, from held() (18 decimals each): ETH + USDG to spend, the
+ *  matching amount of each side to pair (at least $1), a PLANK side heavier than the PAPER side to even out, and a
+ *  side over the $100 cap. 0 = nothing (a side waiting alone for the other is normal). */
+export function liquidityWork([paperSide, plankSide, toSpend]) {
+  const d = (x) => Number(formatUnits(x, 18));
+  const [p, k, sp] = [d(paperSide), d(plankSide), d(toSpend)];
+  const pair = Math.min(p, k) >= 1 ? 2 * Math.min(p, k) : 0;
+  const even = k > p + 1 ? (k - p) / 2 : 0;
+  const over = Math.max(p - 100, 0) + Math.max(k - 100, 0);
+  return sp + pair + even + over;
+}
+
+/** Whether to run LiquidityBurner now (flushPlan: named for the burner flushes it first paced). `usd`: what it's worth (undefined: no price to value it); `waitedMs`: since
  *  it was first seen; `sinceFlushMs`: since this keeper last sent a flush for it (undefined: never). */
 export function flushPlan({ usd, waitedMs, sinceFlushMs }, cfg) {
   const min = cfg.minFlushUsd ?? 1;
@@ -123,9 +134,9 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   const sourceRouter = new Map(); // source -> router address | null (not a drand adapter)
   const idsOf = new Map(); // grading index -> ids (from its Protected event)
   const blockTs = new Map(); // block number -> timestamp
-  const waitingSince = new Map(); // "burner:pay" -> first seen holding something (ms)
-  const lastFlush = new Map(); // "burner:pay" -> when this keeper last sent a flush for it (ms)
-  const cantBurn = new Set(); // "burner:pay" whose last flush left something it couldn't burn
+  const waitingSince = new Map(); // "LiquidityBurner" -> first seen with work (ms)
+  const lastFlush = new Map(); // "LiquidityBurner" -> when this keeper last sent a run (ms)
+  const stuckSince = new Map(); // "LiquidityBurner" -> since a run first left work behind (ms)
   const sources = new Map(); // "FireCards" | "FirePsa" -> randomness source last seen
   let saleLogFrom; // the next block to read FireSale's WalletsSet / FeedsSet from (set at the first pass)
 
@@ -352,58 +363,41 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     return finished;
   }
 
-  // ------------------------------------------------------------------ burners
-  /** Dollar prices for valuing burner balances (undefined: no price): ETH from Chainlink (8 decimals), PLANK from
-   *  PlankUsdTwap (18 decimals), USDG at face value. */
-  async function burnPrices() {
-    const px = async (feed) => { try { const p = (await read(feed, feedAbi, "latestRoundData"))[1]; return p > 0n ? p : undefined; } catch { return undefined; } };
-    const [eth, plank] = await Promise.all([cfg.ethUsdFeed ? px(cfg.ethUsdFeed) : undefined, px(C.plankTwap)]);
-    return { eth, plank };
-  }
-
-  async function burners(waiting) {
-    const prices = await burnPrices();
-    for (const [name, address] of [["PaperBurner", C.paperBurner], ["PlankBurner", C.plankBurner]]) {
-      const [plank, usdg] = await Promise.all([once(address, burnerAbi, "PLANK"), once(address, burnerAbi, "USDG")]);
-      // only flushers the owner names may flush PaperBurner (PlankBurner is open to anyone)
-      const allowed = name !== "PaperBurner" || (await read(address, burnerAbi, "flusher", [account.address]));
-      for (const [pay, code] of PAY) {
-        const token = pay === "PLANK" ? plank : pay === "USDG" ? usdg : undefined;
-        if (pay === "USDG" && usdg === zeroAddress) continue;
-        const balance = () => (pay === "ETH" ? pub.getBalance({ address }) : read(token, erc20Abi, "balanceOf", [address]));
-        const held = await balance();
-        const key = `${name}:${pay}`;
-        if (held === 0n) { waitingSince.delete(key); cantBurn.delete(key); continue; }
-        if (!waitingSince.has(key)) waitingSince.set(key, Date.now());
-        const since = waitingSince.get(key);
-        // the backup flushes only a balance that has waited its grace period (the main keeper flushes at once)
-        if (backup && Date.now() - since < Number(cfg.actAfterSec) * 1000) continue;
-        // worth the gas? (anyone can send dust to a burner; a flush costs the keeper 50-250k gas)
-        let usd;
-        if (pay === "ETH" && prices.eth) usd = Number(formatUnits(held * prices.eth, 26));
-        else if (pay === "PLANK" && prices.plank) usd = Number(formatUnits(held * prices.plank, 36));
-        else if (pay === "USDG") usd = Number(formatUnits(held, await once(usdg, erc20Abi, "decimals").catch(() => 6)));
-        const plan = flushPlan({ usd, waitedMs: Date.now() - since, sinceFlushMs: lastFlush.has(key) ? Date.now() - lastFlush.get(key) : undefined }, cfg);
-        if (!plan.go) {
-          // still the same waiting fees as the last flush left: keep the alert open
-          if (cantBurn.has(key)) waiting.push({ key, name, pay, amount: held, since, flushed: false });
-          continue;
-        }
-        if (!allowed) {
-          waiting.push({ key, name, pay, amount: held, since, flushed: false, notFlusher: true });
-          continue;
-        }
-        const r = await sender.send(
-          { address, abi: burnerAbi, functionName: "flush", args: [code] },
-          { job: `flush:${address}:${code}`, accept: (out) => out > 0n },
-        );
-        if (r.status !== "skipped") lastFlush.set(key, Date.now()); // a transaction went out: the next one waits FLUSH_EVERY_MIN
-        const left = await balance();
-        if (left === 0n) { waitingSince.delete(key); cantBurn.delete(key); continue; }
-        cantBurn.add(key);
-        waiting.push({ key, name, pay, amount: left, since, flushed: r.status === "done" });
-      }
+  // ------------------------------------------------------------------ liquidity
+  /** LiquidityBurner.run() when its work is worth the gas (flushPlan: MIN_FLUSH_USD, at most once per FLUSH_EVERY_MIN,
+   *  at once when large, small work once it has waited). Work a run left behind (the price guards, the pool's price
+   *  off, a missing price) goes on `waiting` for the alert. */
+  async function liquidity(waiting) {
+    const address = C.liquidity;
+    if (!address) return;
+    const key = "LiquidityBurner";
+    const held = () => read(address, liquidityAbi, "held");
+    const work = liquidityWork(await held());
+    if (work === 0) { waitingSince.delete(key); stuckSince.delete(key); return; }
+    if (!waitingSince.has(key)) waitingSince.set(key, Date.now());
+    const since = waitingSince.get(key);
+    // the backup runs it only for work that has waited its grace period (the main keeper runs it at once)
+    if (backup && Date.now() - since < Number(cfg.actAfterSec) * 1000) return;
+    const plan = flushPlan({ usd: work, waitedMs: Date.now() - since, sinceFlushMs: lastFlush.has(key) ? Date.now() - lastFlush.get(key) : undefined }, cfg);
+    if (!plan.go) {
+      // still the work the last run left: keep the alert open
+      if (stuckSince.has(key)) waiting.push({ key, name: key, work, since: stuckSince.get(key) });
+      return;
     }
+    if (!(await read(address, liquidityAbi, "keeper", [account.address]))) {
+      waiting.push({ key, name: key, work, since, notKeeper: true });
+      return;
+    }
+    const r = await sender.send({ address, abi: liquidityAbi, functionName: "run", args: [] }, { job: `run:${address}`, accept: (moved) => moved === true });
+    if (r.status !== "skipped") {
+      // a transaction went out: the next waits FLUSH_EVERY_MIN, and what's left counts as new from now
+      lastFlush.set(key, Date.now());
+      waitingSince.set(key, Date.now());
+    }
+    const left = liquidityWork(await held());
+    if (left === 0) { waitingSince.delete(key); stuckSince.delete(key); return; }
+    if (!stuckSince.has(key)) stuckSince.set(key, since);
+    waiting.push({ key, name: key, work: left, since: stuckSince.get(key) });
   }
 
   // ------------------------------------------------------------------ drops
@@ -495,7 +489,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     if (paperPair !== zeroAddress) {
       const paperLast = await read(C.paperTwap, twapAbi, "last");
       const paperAge = ago(paperLast[1]);
-      if (paperAge > cfg.paperStaleHours * 3600) alerts.push({ key: "feed:paper", text: `PAPER price stale: last checkpoint ${(paperAge / 3600).toFixed(1)} h ago (PaperBurner waits at 2 days)` });
+      if (paperAge > cfg.paperStaleHours * 3600) alerts.push({ key: "feed:paper", text: `PAPER price stale: last checkpoint ${(paperAge / 3600).toFixed(1)} h ago (LiquidityBurner waits)` });
     }
     if (paperCand !== zeroAddress) {
       // a candidate pool is adopted by the first checkpoint MIN_WINDOW (20 h) after it was recorded
@@ -516,14 +510,14 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
       const name = n.it.kind === "open" ? `open ${n.it.fire}/${n.it.index}` : `grading ${n.it.index}`;
       alerts.push({ key: `note:${n.it.kind}:${n.it.fire ?? ""}:${n.it.index}`, text: `${name}: ${n.why}`, quiet: true });
     }
-    // fees waiting in the burners
+    // work waiting in LiquidityBurner
     for (const w of waiting) {
       const age = (Date.now() - w.since) / 60_000;
       if (cfg.once || age >= cfg.waitingAlertMin) {
-        const amt = w.pay === "ETH" ? `${formatEther(w.amount)} ETH` : w.pay === "USDG" ? `${formatUnits(w.amount, 6)} USDG` : `${formatEther(w.amount)} PLANK`;
-        alerts.push({ key: `waiting:${w.key}`, text: w.notFlusher
-          ? `${w.name} holds ${amt} and this keeper (${account.address}) isn't allowed to flush it: the owner calls PaperBurner.setFlusher(${account.address}, true)`
-          : `${w.name} holds ${amt} it can't burn yet (Waiting: price guard or a missing price feed)` });
+        const amt = `$${w.work.toFixed(2)} of work`;
+        alerts.push({ key: `waiting:${w.key}`, text: w.notKeeper
+          ? `${w.name} has ${amt} and this keeper (${account.address}) isn't allowed to run it: the owner calls LiquidityBurner.setKeeper(${account.address}, true)`
+          : `${w.name} has ${amt} a run couldn't do yet (Waiting: a price guard, the pool's price off, or a missing price feed)` });
       }
     }
     // drand and clocks
@@ -569,7 +563,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     // re-read the gradings: some just became ready
     if (gradings.some((g) => !g.ready)) gradings = (await job("rescan gradings", () => gradingsWaiting())) ?? gradings;
     const finished = (await job("finish", () => finishReady(gradings, now, block.number, notes))) ?? 0;
-    await job("burners", () => burners(waiting));
+    await job("liquidity", () => liquidity(waiting));
     const drop = (await job("drops", () => drops(now))) ?? { alerts: [], events: [] };
     // what's still waiting after this pass's work, for the alerts
     const after = (await job("rescan opens", opensWaiting)) ?? opens;
@@ -614,7 +608,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
       const a = l.args;
       const where = `block ${l.blockNumber}, tx ${l.transactionHash}`;
       const text = l.eventName === "WalletsSet"
-        ? `FireSale's wallets were CHANGED by the owner (WalletsSet): revenue ${a.revenue}, PlankBurner ${a.plankBurner}${not(a.plankBurner, C.plankBurner, "PlankBurner")}, PaperBurner ${a.paperBurner}${not(a.paperBurner, C.paperBurner, "PaperBurner")} (${where}). If that wasn't you, pause the sale.`
+        ? `FireSale's wallets were CHANGED by the owner (WalletsSet): revenue ${a.revenue}, LiquidityBurner ${a.liquidity}${not(a.liquidity, C.liquidity, "LiquidityBurner")} (${where}). If that wasn't you, pause the sale.`
         : `FireSale's price feeds were CHANGED by the owner (FeedsSet): ETH/USD ${a.ethUsd}, PLANK/USD ${a.plankUsd}${not(a.plankUsd, C.plankTwap, "PlankUsdTwap")}, PAPER/USD ${a.paperUsd}${not(a.paperUsd, C.paperTwap, "PaperUsdTwap")}, router ${a.router} (${where}). If that wasn't you, pause the sale.`;
       return { key: `sale:${l.eventName}:${l.transactionHash}:${l.logIndex}`, text };
     });
@@ -648,7 +642,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     return { filled, sources: Object.fromEntries(sources) };
   }
 
-  return { tick, startup, sender, notifier, drand, jobs: { gradingsWaiting, burners, drops, behindAlert, saleSettings } };
+  return { tick, startup, sender, notifier, drand, jobs: { gradingsWaiting, liquidity, drops, behindAlert, saleSettings } };
 }
 
 const wallSec = (wall) => Number(wall());

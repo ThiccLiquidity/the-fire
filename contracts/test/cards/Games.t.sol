@@ -19,7 +19,7 @@ contract GamesTest is SaleBase {
     function setUp() public override {
         super.setUp();
         signerAddr = vm.addr(signerKey);
-        games = new FireGames(owner, address(paper));
+        games = new FireGames(owner, address(paper), liq);
         vm.startPrank(owner);
         games.addGame(FB, FB_ENTRY, 0);
         games.setSigner(signerAddr);
@@ -49,15 +49,17 @@ contract GamesTest is SaleBase {
 
     // ---------------------------------------------------------------- entries
 
-    function test_aRunBurnsExactlyTheEntryOnceAndRecordsThePlayer() public {
+    function test_aRunSendsExactlyTheEntryToLiquidityOnceAndRecordsThePlayer() public {
         uint256 before = paper.balanceOf(alice);
+        uint256 atLiq = paper.balanceOf(liq);
         uint256 dead = paper.balanceOf(DEAD);
         bytes memory sig = _sig(bytes32("run1"), alice);
         vm.expectEmit(true, true, true, true);
         emit FireGames.RunPaid(FB, bytes32("run1"), alice, 1, FB_ENTRY);
         vm.prank(alice); games.payRun(FB, bytes32("run1"), 1, deadline, type(uint256).max, sig);
         assertEq(paper.balanceOf(alice), before - FB_ENTRY, "exactly the entry");
-        assertEq(paper.balanceOf(DEAD), dead + FB_ENTRY, "burned");
+        assertEq(paper.balanceOf(liq), atLiq + FB_ENTRY, "the entry reaches LiquidityBurner");
+        assertEq(paper.balanceOf(DEAD), dead, "nothing burned directly");
         assertEq(paper.balanceOf(address(games)), 0, "holds nothing");
         assertEq(paper.allowance(alice, address(games)), type(uint256).max); // infinite approval untouched (OZ)
         assertEq(games.runBy(bytes32("run1")), alice);
@@ -66,14 +68,25 @@ contract GamesTest is SaleBase {
         vm.prank(alice); vm.expectRevert(FireGames.AlreadyPaid.selector); games.payRun(FB, bytes32(0), 1, deadline, type(uint256).max, zero);
     }
 
-    function test_eachGameBurnsItsOwnEntry() public {
+    /// The entry's destination is LiquidityBurner, fixed at deploy; it can't be zero (nor PAPER).
+    function test_liquidityFixedAtDeployAndNeverZero() public {
+        assertEq(games.LIQUIDITY(), liq);
+        vm.expectRevert(FireGames.BadConfig.selector);
+        new FireGames(owner, address(paper), address(0));
+        vm.expectRevert(FireGames.BadConfig.selector);
+        new FireGames(owner, address(0), liq);
+    }
+
+    function test_eachGameTakesItsOwnEntry() public {
         vm.prank(owner); games.addGame(2, 3e18, 0);
         uint256 before = paper.balanceOf(bob);
+        uint256 atLiq = paper.balanceOf(liq);
         bytes memory sig = _sig(signerKey, 2, bytes32("g2"), bob, 1, deadline);
         vm.prank(bob); games.payRun(2, bytes32("g2"), 1, deadline, type(uint256).max, sig);
         assertEq(paper.balanceOf(bob), before - 3e18);
         _pay(bob, bytes32("g1"));
         assertEq(paper.balanceOf(bob), before - 4e18);
+        assertEq(paper.balanceOf(liq), atLiq + 4e18, "both entries reach LiquidityBurner");
     }
 
     function test_aPlayerWithoutEnoughPaperOrApprovalPaysNothing() public {
@@ -185,7 +198,7 @@ contract GamesTest is SaleBase {
         vm.prank(owner); vm.expectRevert(FireGames.RenounceDisabled.selector); games.renounceOwnership();
     }
 
-    /// A game with a dollar ceiling burns its entry or less: never more than $0.10 of PAPER at the feed's price.
+    /// A game with a dollar ceiling takes its entry or less: never more than $0.10 of PAPER at the feed's price.
     function test_theEntryIsOnePaperOrTenCentsOfPaperWhicheverIsLess() public {
         uint256 G = 3;
         MockFeed feed = new MockFeed(0.05e18); // PAPER at $0.05 (18 decimals, like PaperUsdTwap)
@@ -203,11 +216,11 @@ contract GamesTest is SaleBase {
         feed.set(100e18); // PAPER at $100
         assertEq(games.priceOf(G), 0.001e18);
         assertEq(games.priceOf(FB), FB_ENTRY, "a game without a ceiling: its entry");
-        // paying: exactly the price, burned, capped by maxPaper
-        uint256 dead = paper.balanceOf(DEAD);
+        // paying: exactly the price, to LiquidityBurner, capped by maxPaper
+        uint256 atLiq = paper.balanceOf(liq);
         vm.prank(alice); vm.expectRevert(FireGames.PriceMoved.selector); games.payRun(G, bytes32("c0"), 1, deadline, 0.001e18 - 1, sig);
         vm.prank(alice); games.payRun(G, bytes32("c0"), 1, deadline, 0.001e18, sig);
-        assertEq(paper.balanceOf(DEAD), dead + 0.001e18);
+        assertEq(paper.balanceOf(liq), atLiq + 0.001e18);
         assertEq(games.lastPaperUsd(), 100e18);
         // a late or broken feed: the last good price stands in
         vm.warp(block.timestamp + 3 days); deadline = block.timestamp + 10 minutes;

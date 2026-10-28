@@ -6,8 +6,8 @@ import {IERC1155Receiver} from "openzeppelin-contracts/contracts/token/ERC1155/I
 import {IERC2981} from "openzeppelin-contracts/contracts/interfaces/IERC2981.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {MorningWood} from "../../src/press/MorningWood.sol";
-import {PaperBurner} from "../../src/cards/PaperBurner.sol";
-import {MockERC20, MockUSDG, MockFeed} from "../Mocks.sol";
+import {LiquidityBurner} from "../../src/cards/LiquidityBurner.sol";
+import {MockERC20, MockUSDG, MockFeed, MockPair} from "../Mocks.sol";
 
 /// @dev A buyer contract that refuses ETH (refunds must then fail the buy, not vanish).
 contract NoEthBuyer {
@@ -31,7 +31,7 @@ contract MorningWoodTest is Test {
     MockERC20 paper;
     MockUSDG usdg;
     MockFeed ethUsd;
-    PaperBurner burner;
+    LiquidityBurner burner;
     MorningWood press;
 
     uint64 T0;
@@ -42,7 +42,10 @@ contract MorningWoodTest is Test {
         paper = new MockERC20("PAPER", "PAPER");
         usdg = new MockUSDG();
         ethUsd = new MockFeed(2_500e8); // $2,500
-        burner = new PaperBurner(owner, address(paper), address(0x91A), address(usdg), 6, address(0x3E7), address(0x707));
+        burner = new LiquidityBurner(
+            owner, address(paper), address(0x91A), address(usdg), 6, address(0x3E7), address(0x707),
+            address(new MockPair(address(paper), address(0x91A)))
+        );
         press = new MorningWood(owner, address(paper), address(usdg), address(burner), address(ethUsd), royalty);
         vm.prank(owner);
         press.setEditor(editor);
@@ -469,7 +472,10 @@ contract DeployPressTest is Test {
         MockERC20 paper = new MockERC20("PAPER", "PAPER");
         MockUSDG usdg = new MockUSDG();
         MockFeed eth = new MockFeed(2_500e8);
-        PaperBurner burner = new PaperBurner(address(0xA11CE), address(paper), address(0x91A), address(usdg), 6, address(0x3E7), address(0x707));
+        LiquidityBurner burner = new LiquidityBurner(
+            address(0xA11CE), address(paper), address(0x91A), address(usdg), 6, address(0x3E7), address(0x707),
+            address(new MockPair(address(paper), address(0x91A)))
+        );
         DeployPress s = new DeployPress();
         MorningWood press = s.deploy(DeployPress.Params({
             paper: address(paper), usdg: address(usdg), ethUsd: address(eth), burner: address(burner),

@@ -12,7 +12,7 @@ interface IPressFeedInfo {
 
 /**
  * The Morning Wood (docs/morning-wood.md): the daily paper's ERC-1155, on its own. Wired to what's already deployed:
- * PAPER, USDG and ETH_USD_FEED (the inputs) and PaperBurner (the contracts) from deployments/<chainId>.json, or the
+ * PAPER, USDG and ETH_USD_FEED (the inputs) and LiquidityBurner (the contracts) from deployments/<chainId>.json, or the
  * same names in the environment.
  *
  *   $env:EDITOR = "<editor address>"     (cast wallet address --account editor)
@@ -34,8 +34,8 @@ interface IPressFeedInfo {
  *   ROYALTY_RECEIVER  2.5% royalty (setRoyalty later, max 10%). Read from the deployments file when not set.
  *   PRESS_CONTRACT_URI  collection metadata (optional).
  *
- * PaperBurner needs no change: the press only sends ETH/USDG to it (receive() / a plain transfer), like FireSale, and
- * the keeper's regular flush (ops/keeper) buys and burns PAPER with whatever it holds. The press is not a flusher.
+ * The press sends its burn share as ETH/USDG to LiquidityBurner (receive() / a plain transfer), like FireSale; the
+ * keepers' run (ops/keeper) turns it into burned PAPER/PLANK liquidity with everything else it holds.
  */
 contract DeployPress is Deployments {
     using stdJson for string;
@@ -59,7 +59,7 @@ contract DeployPress is Deployments {
             paper: _in("PAPER"),
             usdg: _in("USDG"),
             ethUsd: _in("ETH_USD_FEED"),
-            burner: _addr("PAPER_BURNER", "PaperBurner"),
+            burner: _addr("LIQUIDITY_BURNER", "LiquidityBurner"),
             owner: vm.envOr("OWNER", deployedInput("OWNER")),
             royaltyTo: vm.envOr("ROYALTY_RECEIVER", deployedInput("ROYALTY_RECEIVER")),
             editor: vm.envOr("EDITOR", address(0)),
@@ -76,7 +76,7 @@ contract DeployPress is Deployments {
     function deploy(Params memory p) public returns (MorningWood press) {
         require(p.owner != address(0) && p.royaltyTo != address(0), "OWNER / ROYALTY_RECEIVER missing");
         require(p.owner != msg.sender, "OWNER is the deployer: use a throwaway deployer and the hardware wallet as OWNER");
-        require(p.paper.code.length > 0 && p.usdg.code.length > 0 && p.burner.code.length > 0, "PAPER / USDG / PaperBurner have no code");
+        require(p.paper.code.length > 0 && p.usdg.code.length > 0 && p.burner.code.length > 0, "PAPER / USDG / LiquidityBurner have no code");
         require(IPressFeedInfo(p.ethUsd).decimals() == 8, "ETH_USD_FEED must have 8 decimals");
 
         vm.startBroadcast(msg.sender); // --sender: the deployer owns it until the hand-over below

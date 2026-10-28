@@ -69,10 +69,13 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   TooMany: "Too many packs for this Series.",
   BadWeights: "Character odds need one weight per character, each at least 1.",
 
-  // cases and grading (FirePsa, PaperBurner)
+  // cases and grading (FirePsa, LiquidityBurner)
+  BadPair: INTERNAL,
+  NotKeeper: "That isn't allowed.",
+  NotIssuer: INTERNAL,
+  NoPrice: "No PAPER price yet. Try again soon.",
   BadRoute: "That isn't set up right.",
   FeedsAlreadySet: "The price feeds are already set.",
-  NotFlusher: "That isn't allowed.",
   NotReady: "Not ready yet. Try again soon.",
   Pending: "That card is being graded.",
 
@@ -117,7 +120,6 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   ZeroAddress: "An address is missing.",
   // added with the strategic review contracts
   BadIds: "Cards changed. Refresh and try again.",
-  BadPay: "That way to pay isn't supported here.",
   BadRequest: "That request doesn't match. Refresh and try again.",
   IsPaused: "Paused for a moment. Nothing was charged. Try again soon.",
   NotCredits: INTERNAL,

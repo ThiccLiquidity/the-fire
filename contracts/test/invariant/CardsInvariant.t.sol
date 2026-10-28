@@ -83,19 +83,22 @@ contract CardsInvariantTest is StdInvariant, Test {
 
     // ---------------------------------------------------------------- PAPER
 
-    function invariant_everyPaperSpentWentToDead() public view {
+    /// All the PAPER the actors spent (pack PAPER, credit packs, suggestions) is at LiquidityBurner, none burned.
+    function invariant_everyPaperSpentWentToLiquidity() public view {
         uint256 spent;
         for (uint256 i; i < h.actorCount(); i++) spent += h.PAPER0() - h.paper().balanceOf(h.actors(i));
-        assertEq(h.paper().balanceOf(DEAD), spent, "dead == actors' PAPER spent");
-        assertEq(spent, h.ghostPaperBurned(), "spent == what the rules charge");
+        assertEq(h.paper().balanceOf(h.liq()), spent, "LiquidityBurner == actors' PAPER spent");
+        assertEq(h.paper().balanceOf(DEAD), 0, "nothing burned at sale time");
+        assertEq(spent, h.ghostPaperToLiq(), "spent == what the rules charge");
     }
 
     // ---------------------------------------------------------------- money, per currency
 
+    /// Per coin: revenue + LiquidityBurner == what buyers paid, LiquidityBurner holds exactly the groups' shares, no
+    /// swap and no burn at sale time; every FirePsa fee reaches its burner.
     function invariant_moneyGoesWhereItShould() public view {
         address rev = h.revenue();
-        address bw = h.burnW();
-        // PLANK: 70% revenue, 30% straight to dead. The router's swap output is the only other PLANK at dead.
+        address liq = h.liq();
         uint256 plankSpent;
         uint256 ethSpent;
         uint256 usdgSpent;
@@ -111,22 +114,21 @@ contract CardsInvariantTest is StdInvariant, Test {
         assertEq(address(h.psa()).balance, 0, "FirePsa keeps nothing");
         assertEq(usdgSpent, h.ghostPaid(2), "USDG spent");
 
-        assertEq(h.plank().balanceOf(rev), h.ghostPaid(0) - h.ghostBurnShare(0), "PLANK revenue");
-        assertEq(h.plank().balanceOf(DEAD) - h.router().plankOut(), h.ghostBurnShare(0), "PLANK burned directly");
-        assertEq(h.plank().balanceOf(bw), 0, "burn wallet never gets PLANK");
+        assertEq(h.plank().balanceOf(liq), h.ghostLiqShare(0), "PLANK liquidity share");
+        assertEq(h.plank().balanceOf(rev), h.ghostPaid(0) - h.ghostLiqShare(0), "PLANK revenue");
+        assertEq(liq.balance, h.ghostLiqShare(1), "ETH liquidity share");
+        assertEq(rev.balance, h.ghostPaid(1) - h.ghostLiqShare(1), "ETH revenue");
+        assertEq(h.usdg().balanceOf(liq), h.ghostLiqShare(2), "USDG liquidity share");
+        assertEq(h.usdg().balanceOf(rev), h.ghostPaid(2) - h.ghostLiqShare(2), "USDG revenue");
 
-        assertEq(rev.balance, h.ghostPaid(1) - h.ghostBurnShare(1), "ETH revenue");
-        assertEq(bw.balance + h.router().ethSwapped(), h.ghostBurnShare(1), "ETH burn share: swapped or burn wallet");
-        assertEq(address(h.router()).balance, h.router().ethSwapped(), "router ETH");
+        // nothing swapped or burned at sale time, whatever the router does
+        assertEq(h.router().ethSwapped() + h.router().usdgSwapped() + h.router().plankOut(), 0, "no swap at sale time");
+        assertEq(h.plank().balanceOf(DEAD), 0, "no PLANK burned at sale time");
 
-        assertEq(h.usdg().balanceOf(rev), h.ghostPaid(2) - h.ghostBurnShare(2), "USDG revenue");
-        assertEq(h.usdg().balanceOf(bw) + h.router().usdgSwapped(), h.ghostBurnShare(2), "USDG burn share");
-        assertEq(h.usdg().balanceOf(address(h.router())), h.router().usdgSwapped(), "router USDG");
-
-        // the totals, as the spec states it
-        assertEq(h.plank().balanceOf(rev) + h.plank().balanceOf(DEAD) - h.router().plankOut(), plankSpent, "PLANK total");
-        assertEq(rev.balance + bw.balance + h.router().ethSwapped() + address(h.burner()).balance, ethSpent, "ETH total");
-        assertEq(h.usdg().balanceOf(rev) + h.usdg().balanceOf(bw) + h.router().usdgSwapped(), usdgSpent, "USDG total");
+        // the totals, as the spec states it: revenue + liquidity == cost, per coin
+        assertEq(h.plank().balanceOf(rev) + h.plank().balanceOf(liq), plankSpent, "PLANK total");
+        assertEq(rev.balance + liq.balance + address(h.burner()).balance, ethSpent, "ETH total");
+        assertEq(h.usdg().balanceOf(rev) + h.usdg().balanceOf(liq), usdgSpent, "USDG total");
     }
 
     // ---------------------------------------------------------------- credits

@@ -9,14 +9,14 @@ import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {IDealer} from "../../src/cards/IDealer.sol";
 import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {CardsRenderer} from "../../src/cards/CardsRenderer.sol";
-import {PaperBurner} from "../../src/cards/PaperBurner.sol";
+import {LiquidityBurner} from "../../src/cards/LiquidityBurner.sol";
 import {FireCredits} from "../../src/cards/FireCredits.sol";
 import {FireGroups} from "../../src/cards/FireGroups.sol";
 import {FireGames} from "../../src/cards/FireGames.sol";
 import {StandardRecipe} from "../../src/cards/StandardRecipe.sol";
 import {DeployCards} from "../../script/DeployCards.s.sol";
 import {AcceptOwnership} from "../../script/AcceptOwnership.s.sol";
-import {MockERC20, MockUSDG, MockFeed, MockPlankTwap, MockPair, MockV2Factory, MockRouterInfo} from "../Mocks.sol";
+import {MockERC20, MockUSDG, MockFeed, MockPlankTwap, MockPair, MockV2Factory, MockV2Pairs, MockRouterInfo} from "../Mocks.sol";
 import {OpenDrandRouter} from "../../src/OpenDrandRouter.sol";
 import {SeriesHelper, RecipeHarness} from "./SeriesHelper.sol";
 
@@ -1137,8 +1137,8 @@ contract DeployCardsTest is Test {
         FireCards cards = new FireCards(address(this), address(packs));
         RecipeDealer dealer = new RecipeDealer(address(this), address(cards), address(new RecipeCompiler()));
         FireCredits credits = new FireCredits(address(this), address(cards), 0);
-        FireGames games = new FireGames(address(this), address(new MockERC20("PAPER", "PAPER")));
-        // FireSale, FirePsa and PaperBurner stand-ins: three more two-step-owned contracts
+        FireGames games = new FireGames(address(this), address(new MockERC20("PAPER", "PAPER")), address(0x11B));
+        // FireSale, FirePsa and LiquidityBurner stand-ins: three more two-step-owned contracts
         address[8] memory c = [address(packs), address(cards), address(dealer), address(credits),
             address(new FirePacks(address(this))), address(new FirePacks(address(this))), address(new FirePacks(address(this))),
             address(games)];
@@ -1172,6 +1172,21 @@ contract DeployCardsTest is Test {
         vm.removeFile(file);
     }
 
+    /// A V2 factory with the PLANK/WETH pool (`plankPair`) and a PAPER/PLANK pool for the liquidity.
+    function _factory(address paper, address plank, address weth, address plankPair) internal returns (address) {
+        MockV2Pairs pairs = new MockV2Pairs();
+        pairs.setPair(plank, weth, plankPair);
+        pairs.setPair(paper, plank, address(new MockPair(paper, plank)));
+        return address(pairs);
+    }
+
+    /// A router whose factory has the PLANK/WETH pool but no PAPER/PLANK pool.
+    function _noLpRouter(address plank, address weth, address plankPair) internal returns (address) {
+        MockV2Pairs pairs = new MockV2Pairs();
+        pairs.setPair(plank, weth, plankPair);
+        return address(new MockRouterInfo(weth, address(pairs)));
+    }
+
     function test_deployWiresEverythingAndHandsOwnershipToTheOwner() public {
         vm.warp(1_800_000_000);
         DeployCards s = new DeployCards();
@@ -1188,7 +1203,7 @@ contract DeployCardsTest is Test {
         paperUsd.setDecimals(18);
         paperUsd.setIds(address(paper), ethUsd);
         paperUsd.setPlankUsd(address(twap));
-        address v2Factory = address(new MockV2Factory(twap.PAIR()));
+        address v2Factory = _factory(address(paper), address(plank), address(weth), twap.PAIR());
         paperUsd.setPools(address(plank), address(weth), address(usdg), v2Factory);
         DeployCards.Params memory p = DeployCards.Params({
             router: drand, owner: safe, royaltyTo: safe, royaltyBps: 500, packBase: "ipfs://packs/",
@@ -1217,12 +1232,17 @@ contract DeployCardsTest is Test {
         assertEq(address(d.sale.PACKS()), address(d.packs));
         assertEq(address(d.sale.CARDS()), address(d.cards));
         assertEq(d.sale.revenueWallet(), address(0xBEEF));
-        assertEq(d.sale.plankBurner(), address(d.plankBurner));
-        assertEq(d.sale.paperBurner(), address(d.burner));
-        assertEq(address(d.plankBurner.ROUTER()), p.v2Router);
-        assertEq(address(d.plankBurner.PLANK_USD()), address(twap));
-        assertEq(address(d.plankBurner.ETH_USD()), ethUsd);
-        assertEq(address(d.plankBurner.USDG()), address(usdg));
+        assertEq(d.sale.liquidity(), address(d.liquidity), "every sale's liquidity share goes to LiquidityBurner");
+        assertEq(address(d.liquidity.ROUTER()), p.v2Router);
+        assertEq(address(d.liquidity.PAIR()), MockV2Pairs(v2Factory).getPair(address(paper), address(plank)), "the PAPER/PLANK pool from the router's factory");
+        assertEq(address(d.liquidity.PAPER()), address(paper));
+        assertEq(address(d.liquidity.PLANK()), address(plank));
+        assertEq(address(d.liquidity.WETH()), address(weth));
+        assertEq(address(d.liquidity.plankUsd()), address(twap));
+        assertEq(address(d.liquidity.ethUsd()), ethUsd);
+        assertEq(address(d.liquidity.USDG()), address(usdg));
+        assertEq(d.liquidity.USDG_UNIT(), 1e6);
+        assertEq(d.games.LIQUIDITY(), address(d.liquidity), "game entries too");
         assertEq(d.sale.CREDITS(), address(d.credits));
         assertEq(address(d.sale.GROUPS()), address(d.groups));
         assertEq(d.groups.sale(), address(d.sale), "FireGroups' only writer is FireSale");
@@ -1243,13 +1263,20 @@ contract DeployCardsTest is Test {
         assertEq(d.packs.pendingOwner(), safe);
         assertEq(d.cards.pendingOwner(), safe);
         assertEq(d.psa.pendingOwner(), safe);
-        assertEq(d.burner.pendingOwner(), safe);
+        assertEq(d.liquidity.pendingOwner(), safe);
+        assertEq(d.liquidity.owner(), address(s));
         assertEq(address(d.cards.renderer()), address(d.renderer));
-        assertEq(address(d.psa.BURNER()), address(d.burner));
+        assertEq(address(d.psa.BURNER()), address(d.liquidity), "case and grading fees too");
         assertEq(address(d.dealer.COMPILER()), address(d.compiler));
         assertEq(address(d.sale.PAPER_USD()), address(paperUsd));
-        assertEq(address(d.burner.paperUsd()), address(paperUsd));
-        assertEq(d.burner.routesOf(PaperBurner.Pay.ETH).length, 2, "ETH: straight and through PLANK");
+        assertEq(address(d.liquidity.paperUsd()), address(paperUsd));
+        assertEq(d.liquidity.routesOf(LiquidityBurner.Pay.ETH, LiquidityBurner.Side.PAPER).length, 2, "ETH -> PAPER: straight and through PLANK");
+        assertEq(d.liquidity.routesOf(LiquidityBurner.Pay.ETH, LiquidityBurner.Side.PLANK).length, 1, "ETH -> PLANK: straight");
+        assertEq(d.liquidity.routesOf(LiquidityBurner.Pay.PLANK, LiquidityBurner.Side.PAPER).length, 2, "PLANK -> PAPER: straight and through WETH");
+        assertEq(d.liquidity.routesOf(LiquidityBurner.Pay.USDG, LiquidityBurner.Side.PAPER).length, 2, "USDG -> PAPER");
+        assertEq(d.liquidity.routesOf(LiquidityBurner.Pay.USDG, LiquidityBurner.Side.PLANK).length, 1, "USDG -> PLANK");
+        assertEq(d.liquidity.routesOf(LiquidityBurner.Pay.ETH, LiquidityBurner.Side.PAPER)[1][1], address(plank));
+        assertFalse(d.liquidity.keeper(address(s)), "keepers are set by run(), not deploy()");
         // the game room: paper football at 1 PAPER, prizes allowed, but paid play closed until the owner sets it up
         assertEq(address(d.games.PAPER()), address(paper));
         assertEq(d.games.entryOf(1), 1e18);
@@ -1270,7 +1297,9 @@ contract DeployCardsTest is Test {
         vm.prank(safe); d.credits.acceptOwnership();
         vm.prank(safe); d.sale.acceptOwnership();
         vm.prank(safe); d.games.acceptOwnership();
+        vm.prank(safe); d.liquidity.acceptOwnership();
         assertEq(d.games.owner(), safe);
+        assertEq(d.liquidity.owner(), safe);
         assertEq(d.sale.owner(), safe);
         assertEq(d.credits.owner(), safe);
         assertEq(d.dealer.owner(), safe);
@@ -1302,6 +1331,9 @@ contract DeployCardsTest is Test {
         s.check(p);
         p.v2Router = address(new MockRouterInfo(address(weth), address(new MockV2Factory(address(0xDEAD)))));
         vm.expectRevert(bytes("V2_ROUTER's factory doesn't own the PLANK_USD_FEED pool"));
+        s.check(p);
+        p.v2Router = _noLpRouter(address(plank), address(weth), twap.PAIR()); // the PLANK pool, no PAPER/PLANK pool
+        vm.expectRevert(bytes("V2_ROUTER's factory has no PAPER/PLANK pool for the liquidity"));
         s.check(p);
         p.v2Router = goodRouter;
 

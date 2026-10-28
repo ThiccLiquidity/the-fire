@@ -204,13 +204,12 @@
   const whoOf = (g) => (g.gate === 'open' ? 'everyone' : g.gate === 'snapshot' ? Store.holdersName(g) : g.name);
   /** A group's name as a heading: "Paper Press holders", the holders list's name, "Everyone". */
   const titleOf = (g) => (g.isPress ? 'Paper Press holders' : g.gate === 'snapshot' ? Store.holdersName(g) : g.name);
-  /** The burn splits of the groups with a dollar price (each group sets its own; bps of the price): `same` when every
-   *  one has the same two, then `plank` / `paper` are them; else each share's lowest and highest. */
+  /** The liquidity share of the groups with a dollar price (each group sets its own: its PLANK and PAPER shares
+   *  together, bps of the price): `same` when every one has the same, then `liq` is it; else the lowest and highest. */
   function burnsOf(G) {
-    const priced = G.filter((g) => g.priceUsd > 0), pk = priced.map((g) => g.plankBurnBps || 0), pp = priced.map((g) => g.paperBurnBps || 0);
-    const same = priced.every((g, i) => pk[i] === pk[0] && pp[i] === pp[0]);
-    return { priced, same, plank: same ? pk[0] || 0 : null, paper: same ? pp[0] || 0 : null,
-      plankMin: pk.length ? Math.min(...pk) : 0, plankMax: Math.max(0, ...pk), paperMin: pp.length ? Math.min(...pp) : 0, paperMax: Math.max(0, ...pp) };
+    const priced = G.filter((g) => g.priceUsd > 0), lq = priced.map((g) => (g.plankBurnBps || 0) + (g.paperBurnBps || 0));
+    const same = lq.every((v) => v === lq[0]);
+    return { priced, same, liq: same ? lq[0] || 0 : null, liqMin: lq.length ? Math.min(...lq) : 0, liqMax: Math.max(0, ...lq) };
   }
   /** "10%", "10% to 100%", "up to 100%": a share across the groups. */
   const shareT = (lo, hi) => (lo === hi ? bpsPct(hi) : lo ? `${bpsPct(lo)} to ${bpsPct(hi)}` : `up to ${bpsPct(hi)}`);
@@ -311,16 +310,15 @@
         </ul>
         ${timeline(no, F)}
         <p class="inf-sub">Where the money goes</p>
-        <p>Every pack is a little bonfire (Series ${no} splits${F.burn.same ? '' : ', group by group'}):</p>
+        <p>Every pack feeds the liquidity fire (Series ${no} splits${F.burn.same ? '' : ', group by group'}; see PLANK &amp; PAPER for how it works):</p>
         <ul>
-          ${F.burn.same ? `${F.burn.paper ? `<li>${bpsPct(F.burn.paper)} of the price buys PAPER on the market and burns it.</li>` : ''}
-          ${F.burn.plank ? `<li>${bpsPct(F.burn.plank)} buys PLANK and burns it.</li>` : ''}`
+          ${F.burn.same ? (F.burn.liq ? `<li>${bpsPct(F.burn.liq)} of the price goes to the liquidity fire.</li>` : '')
     : F.burn.priced.map((g) => {
-      const parts = [g.paperBurnBps ? `${bpsPct(g.paperBurnBps)} of the price buys PAPER on the market and burns it` : '', g.plankBurnBps ? `${bpsPct(g.plankBurnBps)} buys PLANK and burns it` : ''].filter(Boolean);
-      return `<li><b>${esc(titleOf(g))}:</b> ${parts.length ? andList(parts) : 'none of the price is burned'}.</li>`;
+      const lq = (g.plankBurnBps || 0) + (g.paperBurnBps || 0);
+      return `<li><b>${esc(titleOf(g))}:</b> ${lq ? `${bpsPct(lq)} of the price goes to the liquidity fire` : 'none of the price goes to the liquidity fire'}.</li>`;
     }).join('')}
-          <li>The pack's own PAPER is burned too.</li>
-          ${F.G.some((g) => g.taxBps > 0) ? '<li>Extra packs: the pack tax buys PAPER and burns it.</li>' : ''}
+          <li>The pack's own PAPER goes there too.</li>
+          ${F.G.some((g) => g.taxBps > 0) ? '<li>Extra packs: the pack tax goes there too.</li>' : ''}
         </ul>`),
       sec('press', 'Press packs', 'First dibs for Paper Press holders.', `
         <ul>
@@ -378,7 +376,7 @@
           <li><b>Why case instead of grade?</b> Sell it as a mystery, save the gamble for later, protect a stack cheaply, or age a card on purpose and then freeze it.</li>
           <li><b>Hidden from everyone.</b> A card's condition isn't decided until it's graded: not in its data, not on our servers.</li>
           <li><b>The rules are fixed forever.</b> Fresh odds and wear are written into the contract, the same for every Series, and nobody can change them.</li>
-          <li><b>Pay in PLANK, ETH or USDG.</b> Every case and grade fee buys PAPER on the market and burns it. 100% of the PAPER purchased through these fees is burned.</li>
+          <li><b>Pay in PLANK, ETH or USDG.</b> Every case and grade fee goes to the liquidity fire (see PLANK &amp; PAPER).</li>
         </ul>
         <p class="inf-links"><button type="button" class="inf-link" data-how>How it works</button><button type="button" class="inf-link" data-pop>Pop report</button></p>`),
       sec('burn', 'Burning cards', 'Burn 42 cards, get a free pack.', `
@@ -391,22 +389,23 @@
         <ul>
           <li><b>The look.</b> Suggest a theme and an art style, like "A haunted diner" or "Old woodcut print."</li>
           <li><b>The cast.</b> Once the look is announced, suggest who goes on the cards: anyone or anything, plus a personality and a backstory if you like.</li>
-          <li><b>Ideas take PAPER.</b> You need paper to write your suggestion on, just like the press needs paper to print cards. Right now an idea costs ${paperT(P.SUGGEST_PAPER || 0)} (never more than $1 worth), and it's burned.</li>
+          <li><b>Ideas take PAPER.</b> You need paper to write your suggestion on, just like the press needs paper to print cards. Right now an idea costs ${paperT(P.SUGGEST_PAPER || 0)} (never more than $1 worth), and it goes to the liquidity fire.</li>
           <li><b>A fair shortlist.</b> When a round closes, 10 ideas of each kind are drawn at random: one entry per wallet, and the same idea from two people counts once. The results, the random seed and the script are published, so anyone can re-run the draw and check it.</li>
           <li><b>The final picks.</b> From that random shortlist, the final picks are chosen by hand, so there's an element of curation at the end.</li>
           <li><b>Prizes.</b> The picked theme, the picked art style and every picked character each win a free pack. Same idea from two people? The first to send it wins. Packs land before the Series goes on sale.</li>
-          <li><b>Get weird.</b> Go full degen. Ridiculous, raunchy, unhinged: send it. Every suggestion burns PAPER, so even your jokes do something good for the community.</li>
+          <li><b>Get weird.</b> Go full degen. Ridiculous, raunchy, unhinged: send it. Every suggestion feeds PAPER to the liquidity fire, so even your jokes do something good for the community.</li>
         </ul>`),
       sec('paper', 'PLANK & PAPER', 'Two coins and a press run the workshop.', `
         <div class="inf-duo" aria-hidden="true"><figure><img src="ui/brand/plank-256.webp" alt="" width="76" height="120" loading="lazy"><figcaption>PLANK · the wood</figcaption></figure><figure><img src="ui/brand/paper-256.webp" alt="" width="85" height="110" loading="lazy"><figcaption>PAPER · the press</figcaption></figure></div>
         <p><b>PLANK</b> and <b>PAPER</b> are meme coins on Robinhood Chain. The <b>Paper Press</b> (the paper mills) is an NFT that lets its holder produce PAPER.</p>
         <ul>
-          <li><b>PLANK is the wood.</b> It's the workshop's fuel and its community coin. ${F.burn.plankMax ? `${InS}, ${shareT(F.burn.plankMin, F.burn.plankMax)} of ${F.burn.same ? 'every' : 'a'} pack sale${F.burn.same ? '' : ' (it depends on the group)'} buys PLANK and throws it on the fire. ` : ''}You can pay for packs, cases and grading in PLANK, and PLANK holders get their own early group in each Series${holdShort ? ` (${inS}: ${holdShort})` : ''}.</li>
-          <li><b>PAPER is what everything is printed on.</b> Every pack takes PAPER to print (${inS}, ${F.paper}${F.cap ? `, never more than ${usd(F.cap)} worth` : ''}), and every idea you suggest takes PAPER to write on. Every case and grade fee buys PAPER on the market and burns it${F.burn.paperMax ? `, and so does ${shareT(F.burn.paperMin, F.burn.paperMax)} of ${F.burn.same ? 'every' : 'a'} Series ${no} pack sale${F.burn.same ? '' : ' (it depends on the group)'}` : ''}.</li>
+          <li><b>PLANK is the wood.</b> It's the workshop's fuel and its community coin. You can pay for packs, cases and grading in PLANK, and PLANK holders get their own early group in each Series${holdShort ? ` (${inS}: ${holdShort})` : ''}.</li>
+          <li><b>PAPER is what everything is printed on.</b> Every pack takes PAPER to print (${inS}, ${F.paper}${F.cap ? `, never more than ${usd(F.cap)} worth` : ''}), and every idea you suggest takes PAPER to write on. That PAPER goes to the liquidity fire.</li>
+          <li><b>The liquidity fire.</b> ${F.burn.liqMax ? `${InS}, ${shareT(F.burn.liqMin, F.burn.liqMax)} of ${F.burn.same ? 'every' : 'a'} pack sale${F.burn.same ? '' : ' (it depends on the group)'}, ` : 'Pack sales, '}each pack's PAPER, case and grade fees, suggestions and game entries all go to one contract. It pairs PAPER with PLANK, adds them to the PAPER/PLANK pool and burns the pool tokens, so that liquidity is locked for good: nobody can ever pull it. Coins paid in ETH or USDG buy PAPER first. Each side waits for the other to pair; if one side piles up past $100 waiting, the extra is burned outright.</li>
           <li><b>The Paper Press makes PAPER.</b> Over 2,000 Presses were minted in a single seven-day window by locking up PLANK, and no more will ever be minted. Each Press lets its holder mint 1 PAPER a day. It isn't automatic: the holder has to mint it.<span class="inf-presses" hidden> (Presses today: <b data-presses></b>.)</span></li>
           <li><b>Burning a Press.</b> A holder can burn their Press at any time to get its locked PLANK back. That leaves fewer Presses, and so less PAPER that can be made in the future. It doesn't touch the PAPER that already exists.</li>
           <li><b>Press holders get first dibs.</b> Each Series gives them their own group${press ? ` (${inS}: ${nf(press.perNft || 1)} ${press.perNft > 1 ? 'packs' : 'pack'} per Press for ${press.priceUsd > 0 ? `${usd(press.priceUsd)} + ` : ''}${paperT(press.paper)})` : ''}.</li>
-          <li><b>The burn tally</b> on the main screen counts every PLANK and PAPER ever burned (sent to the burn address <code>0x…dEaD</code>, gone for good), and what that much would be worth at today's prices.</li>
+          <li><b>The burn tally</b> on the main screen counts every PLANK and PAPER ever burned (sent to the burn address <code>0x…dEaD</code>, gone for good), the liquidity burned by the liquidity fire (what its burned pool tokens hold), and what it's all worth at today's prices.</li>
           <li><b>Need some?</b> <i>Get PAPER</i> swaps ETH, PLANK or USDG for exactly the PAPER you need.</li>
         </ul>
         <div class="inf-cas">
@@ -416,7 +415,7 @@
       sec('games', 'Game room', 'Free play any time; competitive runs for free packs, gradings and cases. The official rules.', `
         <ul>
           <li><b>Free play</b> is free, any time, and during pack and grade waits. No prizes.</li>
-          <li><b>A competitive run costs 1 PAPER, or less:</b> never more than $0.10 of PAPER at its current price. The entry is burned. Up to 3 practice kicks come first and don't count; then your first miss ends the run.</li>
+          <li><b>A competitive run costs 1 PAPER, or less:</b> never more than $0.10 of PAPER at its current price. The entry goes to the liquidity fire. Up to 3 practice kicks come first and don't count; then your first miss ends the run.</li>
           <li><b>The boards:</b> each game has one for this Series (from its launch to the next Series' launch) and an all-time one. Your best streak, one place per wallet. A tie goes to whoever reached that streak first. Only this Series' board wins prizes.</li>
           <li><b>Prizes:</b> when the Series ends, each game's top places win free packs, free gradings and free cases, as listed on its leaderboard for that Series. They're sent to the winners' wallets at the next Series' launch and never expire. Free gradings and cases are used first the next time you case or grade.</li>
           <li><b>Skill, not luck:</b> every shot's distance, wind and goal are shown before you kick, and the same kick always lands the same way. Our game server replays each kick and its call is final. A kick it can't count (a timing or connection problem) is never a miss: you kick again.</li>
@@ -430,7 +429,7 @@
           <li><b>Every pack has the same shape, and each slot is its own roll.</b> The first pack and the last pack have exactly the same odds, so nobody can tell what's left or what's coming.</li>
           <li><b>Locked before the sale.</b> A Series' odds, characters, prices and limits are set and locked before anyone can buy.</li>
           <li><b>No bot sweeps.</b> Holders get their turn first, and for the first part of a sale only regular wallets can buy${F.rwHours ? ` (${inS}: the first ${nf(F.rwHours)} hours)` : ''}.</li>
-          <li><b>Your money never sits in the contract.</b> Every payment is split and sent where it goes (the burns, and the rest) in the same transaction you sign.</li>
+          <li><b>Your money never sits in the contract.</b> Every payment is split and sent where it goes (the liquidity fire, and the rest) in the same transaction you sign. The liquidity fire can only ever add burned liquidity or burn coins: it has no withdraw.</li>
           <li><b>What we can do:</b> pause buying, casing and grading in an emergency, and switch the randomness source (announced first; only new requests use it).</li>
           <li><b>What we can't do:</b> stop opening, dealing or transfers. Those never pause.</li>
           <li><b>Randomness never arrives?</b> After 24 hours, anyone can cancel: packs come back sealed, and cards sent for grading come back ungraded.</li>

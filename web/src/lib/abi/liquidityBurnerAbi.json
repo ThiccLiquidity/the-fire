@@ -36,6 +36,11 @@
         "name": "router",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "pair",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -47,6 +52,19 @@
   {
     "type": "function",
     "name": "BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "CAP_USD",
     "inputs": [],
     "outputs": [
       {
@@ -111,6 +129,32 @@
   },
   {
     "type": "function",
+    "name": "MIN_PAIR_USD",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PAIR",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract ILiqPair"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "PAPER",
     "inputs": [],
     "outputs": [
@@ -125,6 +169,32 @@
   {
     "type": "function",
     "name": "PAPER_FEED_MAX_AGE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PAPER_FIRST_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PAPER_UNIT",
     "inputs": [],
     "outputs": [
       {
@@ -176,7 +246,33 @@
   },
   {
     "type": "function",
+    "name": "PLANK_UNIT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "PLANK_WINDOW_MAX",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "POOL_BPS",
     "inputs": [],
     "outputs": [
       {
@@ -195,7 +291,20 @@
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IBurnRouter"
+        "internalType": "contract ILiqRouter"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "SOFT_USD",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -267,57 +376,37 @@
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IBurnFeed"
+        "internalType": "contract ILiqFeed"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "flush",
-    "inputs": [
-      {
-        "name": "pay",
-        "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
-      }
-    ],
+    "name": "held",
+    "inputs": [],
     "outputs": [
       {
-        "name": "",
+        "name": "paperSide",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "flushLight",
-    "inputs": [
-      {
-        "name": "pay",
-        "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
       },
       {
-        "name": "maxAmount",
+        "name": "plankSide",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "outputs": [
+      },
       {
-        "name": "",
+        "name": "toSpend",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "flusher",
+    "name": "keeper",
     "inputs": [
       {
         "name": "",
@@ -330,6 +419,19 @@
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lpBurned",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -349,13 +451,68 @@
   },
   {
     "type": "function",
+    "name": "paperBurned",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "paperShare",
+    "inputs": [
+      {
+        "name": "total",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "vp",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "vk",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "toPaper",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "paperToLiquidity",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "paperUsd",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IBurnFeed"
+        "internalType": "contract ILiqFeed"
       }
     ],
     "stateMutability": "view"
@@ -375,37 +532,24 @@
   },
   {
     "type": "function",
-    "name": "planFor",
-    "inputs": [
+    "name": "plankBurned",
+    "inputs": [],
+    "outputs": [
       {
-        "name": "pay",
-        "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
-      },
-      {
-        "name": "amount",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "plankToLiquidity",
+    "inputs": [],
     "outputs": [
       {
-        "name": "a",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "b",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "inA",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "quoted",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -420,7 +564,7 @@
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IBurnFeed"
+        "internalType": "contract ILiqFeed"
       }
     ],
     "stateMutability": "view"
@@ -432,7 +576,7 @@
       {
         "name": "pay",
         "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
+        "internalType": "enum LiquidityBurner.Pay"
       },
       {
         "name": "usd18",
@@ -463,7 +607,12 @@
       {
         "name": "pay",
         "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
+        "internalType": "enum LiquidityBurner.Pay"
+      },
+      {
+        "name": "side",
+        "type": "uint8",
+        "internalType": "enum LiquidityBurner.Side"
       }
     ],
     "outputs": [
@@ -474,6 +623,19 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "run",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "moved",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -500,7 +662,7 @@
   },
   {
     "type": "function",
-    "name": "setFlusher",
+    "name": "setKeeper",
     "inputs": [
       {
         "name": "who",
@@ -523,7 +685,12 @@
       {
         "name": "pay",
         "type": "uint8",
-        "internalType": "enum PaperBurner.Pay"
+        "internalType": "enum LiquidityBurner.Pay"
+      },
+      {
+        "name": "side",
+        "type": "uint8",
+        "internalType": "enum LiquidityBurner.Side"
       },
       {
         "name": "routes",
@@ -549,13 +716,19 @@
   },
   {
     "type": "event",
-    "name": "Burned",
+    "name": "Bought",
     "inputs": [
       {
         "name": "pay",
         "type": "uint8",
         "indexed": true,
-        "internalType": "enum PaperBurner.Pay"
+        "internalType": "enum LiquidityBurner.Pay"
+      },
+      {
+        "name": "side",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum LiquidityBurner.Side"
       },
       {
         "name": "spent",
@@ -564,7 +737,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "paperOut",
+        "name": "got",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -599,7 +772,7 @@
   },
   {
     "type": "event",
-    "name": "FlusherSet",
+    "name": "KeeperSet",
     "inputs": [
       {
         "name": "who",
@@ -612,6 +785,50 @@
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LiquidityBurned",
+    "inputs": [
+      {
+        "name": "paper",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "plank",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "lp",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OverCap",
+    "inputs": [
+      {
+        "name": "side",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum LiquidityBurner.Side"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -662,7 +879,13 @@
         "name": "pay",
         "type": "uint8",
         "indexed": true,
-        "internalType": "enum PaperBurner.Pay"
+        "internalType": "enum LiquidityBurner.Pay"
+      },
+      {
+        "name": "side",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum LiquidityBurner.Side"
       },
       {
         "name": "routes",
@@ -678,19 +901,30 @@
     "name": "Waiting",
     "inputs": [
       {
-        "name": "pay",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PaperBurner.Pay"
+        "name": "paperUsd18",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       },
       {
-        "name": "amount",
+        "name": "plankUsd18",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "spendUsd18",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "BadPair",
+    "inputs": []
   },
   {
     "type": "error",
@@ -709,7 +943,7 @@
   },
   {
     "type": "error",
-    "name": "NotFlusher",
+    "name": "NotKeeper",
     "inputs": []
   },
   {

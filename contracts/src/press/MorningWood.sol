@@ -8,7 +8,7 @@ import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/Safe
 import {Ownable2Step, Ownable} from "openzeppelin-contracts/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-/// @notice Chainlink-style ETH/USD feed (8 decimals), the same one FireSale and PaperBurner read.
+/// @notice Chainlink-style ETH/USD feed (8 decimals), the same one FireSale and LiquidityBurner read.
 interface IPressFeed {
     function latestRoundData() external view returns (uint80, int256 answer, uint256, uint256 updatedAt, uint80);
 }
@@ -22,8 +22,8 @@ interface IPressFeed {
  *         `opensAt`, unlimited copies, then never again.
  *
  *         A copy costs `paperPerCopy` PAPER (burned: sent straight to the dead address) plus `usdPerCopy` dollars in
- *         ETH (priced with the ETH/USD feed) or USDG, which goes to PaperBurner to buy PAPER and burn it (the keeper
- *         flushes it, as with FireSale). Both prices are fixed per issue when it is published, so a price change never
+ *         ETH (priced with the ETH/USD feed) or USDG, which goes to `paperBurner` (LiquidityBurner: the keepers turn it
+ *         into burned PAPER/PLANK liquidity, as with FireSale). Both prices are fixed per issue when it is published, so a price change never
  *         touches an issue already announced; `maxCost` covers the ETH price moving. Nothing stays in this contract.
  *
  *         Holders of an issue can send a one-line letter or classified (`submitLetter`) for burning `letterPaper`
@@ -132,7 +132,7 @@ contract MorningWood is ERC1155, ERC2981, Ownable2Step, ReentrancyGuard {
         emit PricesSet(paperPer, usdPer8, letter);
     }
 
-    /// @notice Where the ETH/USDG goes (PaperBurner) and the ETH/USD feed (8 decimals).
+    /// @notice Where the ETH/USDG goes (LiquidityBurner) and the ETH/USD feed (8 decimals).
     function setWiring(address paperBurner_, address ethUsd_) external onlyOwner {
         _setWiring(paperBurner_, ethUsd_);
     }

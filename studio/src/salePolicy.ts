@@ -11,7 +11,6 @@ const B = {
   priceUsdMax: BigInt(BOUNDS.priceUsdMax),
   burnTotalBpsMin: BOUNDS.burnTotalBpsMin,
   burnTotalBpsMax: BOUNDS.burnTotalBpsMax,
-  paperBurnBpsMin: BOUNDS.paperBurnBpsMin,
   paperPerPackMin: BigInt(BOUNDS.paperPerPackMin),
   paperCapUsdMin: BigInt(BOUNDS.paperCapUsdMin),
   perWalletMax: BOUNDS.perWalletMax,
@@ -27,7 +26,6 @@ export const POLICY = {
   priceMax: Number(B.priceUsdMax) / 1e8,
   burnMin: B.burnTotalBpsMin / 100,
   burnMax: B.burnTotalBpsMax / 100,
-  paperBurnMin: B.paperBurnBpsMin / 100,
   paperMin: Number(B.paperPerPackMin) / 1e18,
   paperCapMin: Number(B.paperCapUsdMin) / 1e8,
   perWalletMax: B.perWalletMax,
@@ -58,14 +56,12 @@ export function salePolicy(s: SaleSettings): PolicyProblem[] {
     const sg = s.groups[i]
     const holders = g.gate === 'nft' || g.gate === 'snapshot'
     const price = BigInt(g.priceUsd)
-    // each group's own burn shares (a group with no dollar price has nothing to split; over 100% is a checkSale error)
+    // each group's own liquidity share (a group with no dollar price has nothing to split; over 100% is a checkSale
+    // error). Only the sum matters: both parts go to LiquidityBurner, which decides what to buy.
     const burn = g.plankBurnBps + g.paperBurnBps
     if (price !== 0n && burn <= 10_000) {
       if (burn < B.burnTotalBpsMin || burn > B.burnTotalBpsMax) {
-        warn('burn-total', 'plankBurnPercent', `the PLANK and PAPER shares together are ${burn / 100}%: keep them ${POLICY.burnMin}% to ${POLICY.burnMax}%.`, i)
-      }
-      if (g.paperBurnBps < B.paperBurnBpsMin) {
-        warn('paper-burn', 'paperBurnPercent', `PAPER buy & burn at least ${POLICY.paperBurnMin}%${g.plankBurnBps === 10_000 ? ' (all-PLANK burn: launch with --allow paper-burn if meant)' : ''}.`, i)
+        warn('burn-total', 'plankBurnPercent', `the liquidity share is ${burn / 100}%: keep it ${POLICY.burnMin}% to ${POLICY.burnMax}%.`, i)
       }
     }
     if (price === 0n) {

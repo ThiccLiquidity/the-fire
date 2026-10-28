@@ -1,8 +1,8 @@
 # Grading, cases and slabs
 
 How a card's PDA grade works: a real card's condition, protected by a **Case**, revealed and sealed in a **Slab**.
-The contract side is `FirePsa` (grading and casing), `FireCards` (each card's wear state) and `PaperBurner` (fees buy
-and burn PAPER). Prices and pricing models are in `docs/omni-economy.md`.
+The contract side is `FirePsa` (grading and casing), `FireCards` (each card's wear state) and `LiquidityBurner` (fees
+become locked PAPER/PLANK liquidity, `docs/liquidity-burn.md`). Prices and pricing models are in `docs/omni-economy.md`.
 
 ## The idea
 
@@ -111,21 +111,19 @@ switches images when it is cased or graded; nothing is drawn live.
   grading price for every card, whatever its type. Set by the owner in dollars (`setPrices`), at most $100 a card.
 - **What a batch costs:** `quote(cases, grades, pay)`, exactly what `protect` charges (cases x the case price + grades
   x the grading price, in `pay`, rounded up). Every purchase names the most it pays (`maxCost`, or the ETH sent).
-- **Paid in PLANK, ETH or USDG.** `Pay`: PLANK 0, ETH 1, USDG 2 (the same numbers as `PaperBurner.Pay`). PAPER is not a
-  payment option. **100% of every fee is burned as PAPER**, none of it goes to us. The 100% is fixed in the contract.
-- **Every fee** goes to `PaperBurner`, which buys PAPER and burns it in the same transaction: **only that fee**
-  (`flushLight(pay, fee)`, the whole fee or half). Anything else the burner holds (FireSale's 20% sale share, rising-
-  price extras, a fee that had to wait) is the keepers' to flush (`flush`). So nobody can wrap a case or a grading in a
-  buy and a sell to make the burner spend its backlog at a pushed-up price: wrapping one only moves the fee you paid
-  yourself (a test checks no front-run size profits). The keepers' flush is its own transaction, and Robinhood Chain's
-  sequencer is first-come with no public mempool, so it can't be sandwiched either.
-- The purchase goes through the best route among the known PAPER pools (direct, or through PLANK), split across two
-  when that gives more, guarded by the PAPER price feed: the buy must get at least 95% of the PAPER the feed says the
-  fee is worth. If the whole amount wouldn't, it tries half (the keepers' flush: a quarter and so on); if no piece
-  would, or a price is missing, nothing is spent and the fee waits in `PaperBurner` for a later buy. `PaperBurner` has
-  no withdraw, its router is fixed, its price feeds are set once, and its routes may only pass through WETH, PLANK or
-  USDG. Only FirePsa and the keepers (flushers the owner names) can flush it, and a PAPER price from a window over 30
-  hours (a checkpoint after a keeper gap) makes it wait.
+- **Paid in PLANK, ETH or USDG.** `Pay`: PLANK 0, ETH 1, USDG 2 (the same numbers as `LiquidityBurner.Pay`). PAPER is
+  not a payment option. **100% of every fee goes to `LiquidityBurner`**, none of it goes to us. The 100% is fixed in
+  the contract. `LiquidityBurner.quote` prices it.
+- **Every fee** goes to `LiquidityBurner` in the coin paid; nothing is swapped when a case or grading is paid, so
+  there is nothing to wrap in a buy and a sell. Only the keepers can run `LiquidityBurner` (`run`): it buys PAPER or
+  PLANK with what it holds, pairs matching dollar amounts into the PAPER/PLANK pool and burns the pool tokens; a side
+  worth over $100 burns outright. A run is its own transaction, and Robinhood Chain's sequencer is first-come with no
+  public mempool, so it can't be sandwiched either.
+- Every buy must get at least 95% of what the price feeds say it is worth (else it tries half, a quarter and so on),
+  and liquidity is added only while the pool's price is within 3% of the feeds'; otherwise the coins wait for a later
+  run. A price missing, or a PAPER price from a window over 30 hours (a checkpoint after a keeper gap), makes it wait.
+  `LiquidityBurner` has no withdraw, its router, tokens and pool are fixed, its price feeds are set once, and its
+  routes may only pass through WETH, PLANK, USDG or PAPER.
 
 ## Grading requests
 
@@ -145,4 +143,4 @@ switches images when it is cased or graded; nothing is drawn live.
 
 | Fixed forever | Fixed per Series when its drop is set up | Owner can change (announced) |
 |---|---|---|
-| Fresh PDA odds and wear rules (time, moves, fade-in), the same for every Series; 24h fresh window, 100% fee burn, slabs final, cards per free pack 42, suggestion PAPER ceiling $1 | Recipe (card types, holo, the pack's slots and their odds), characters and their odds, dealer, card images, the drop's PAPER ceiling per pack | Case and grading prices (one grading price for every card), cards per grading batch, the PAPER feed, routes, the randomness source (new gradings only), pause on case and grading payments (`setPaused`; also, in effect, `PaperBurner.setFlusher(FirePsa, false)`: cases and grading then revert) |
+| Fresh PDA odds and wear rules (time, moves, fade-in), the same for every Series; 24h fresh window, 100% of fees to liquidity, slabs final, cards per free pack 42, suggestion PAPER ceiling $1 | Recipe (card types, holo, the pack's slots and their odds), characters and their odds, dealer, card images, the drop's PAPER ceiling per pack | Case and grading prices (one grading price for every card), cards per grading batch, LiquidityBurner's routes and keepers, the randomness source (new gradings only), pause on case and grading payments (`setPaused`) |

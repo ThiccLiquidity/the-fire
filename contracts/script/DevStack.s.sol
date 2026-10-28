@@ -10,8 +10,11 @@ import {DevToken, DevFeed, DevFactory, DevPair, DevRouter, DevPress} from "./dev
  * what mainnet already has (script/dev/DevContracts.sol), so the real deploy scripts can run on top of them.
  *   - PAPER, PLANK, USDG (6 decimals) and WETH tokens
  *   - an ETH/USD feed at $3,333 that never goes stale
- *   - a Uniswap V2 factory with a PLANK/WETH pool ($0.000000001 PLANK) and a PAPER/WETH pool ($0.01 PAPER), and a
- *     router that trades on their reserves (it mints what it pays out, so it's a minter of every token)
+ *   - a Uniswap V2 factory with a PLANK/WETH pool ($0.000000001 PLANK), a PAPER/WETH pool ($0.01 PAPER) and a
+ *     PAPER/PLANK pool at the same prices (where LiquidityBurner adds liquidity and burns the pool tokens), a
+ *     USDG/WETH pool at $1 (LiquidityBurner spends USDG through it), and a
+ *     router that trades on their reserves (it mints what it pays out, so it's a minter of every token) and adds
+ *     liquidity
  *   - a Paper Press NFT (press packs)
  * Every setter is the deployer's only (mint, set, setReserves, setFail, createPair). The randomness is NOT a stand-in:
  * DeployInfra deploys the real OpenDrandRouter (real drand).
@@ -36,6 +39,8 @@ contract DevStack is Deployments {
         DevFactory factory;
         address plankPair;
         address paperPair;
+        address paperPlankPair;
+        address usdgPair;
         DevRouter router;
         DevPress press;
     }
@@ -57,6 +62,12 @@ contract DevStack is Deployments {
         // PLANK $0.000000001 (28 WETH : 93.3T PLANK at $3,333 ETH); PAPER $0.01 (1 WETH : 333,300 PAPER)
         DevPair(s.plankPair).setReserves(address(s.weth), 28 ether, 28 ether * 3_333_000_000_000);
         DevPair(s.paperPair).setReserves(address(s.weth), 1 ether, 333_300 ether);
+        // PAPER/PLANK at the same prices: 10,000,000 PLANK per PAPER, $3,333 a side
+        s.paperPlankPair = s.factory.createPair(address(s.paper), address(s.plank));
+        DevPair(s.paperPlankPair).setReserves(address(s.paper), 333_300 ether, 333_300 ether * 10_000_000);
+        // USDG $1 (1 WETH : 3,333 USDG)
+        s.usdgPair = s.factory.createPair(address(s.usdg), address(s.weth));
+        DevPair(s.usdgPair).setReserves(address(s.weth), 1 ether, 3_333e6);
         s.router = new DevRouter(address(s.weth), address(s.factory));
         s.paper.setMinter(address(s.router), true);
         s.plank.setMinter(address(s.router), true);

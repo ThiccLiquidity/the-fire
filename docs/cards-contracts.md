@@ -26,12 +26,11 @@ other way: its fresh odds and wear rules are fixed forever in `FirePsa`, the sam
 | `RecipeDealer` | The first dealer: deals each Series from its own recipe, slot by slot (below). It keeps no dealing state: `deal` is a view of the seed, so anyone can check a pack. Owned by the owner (the hardware wallet). |
 | `RecipeCompiler` | The recipe checker and compiler (the plan the dealer reads: the types' holo odds, and per slot its end in the pack and cumulative type weights), its own contract. Pure: no state, no owner. |
 | `StandardRecipe` | The Standard Omni odds as a recipe (library). |
-| `FireSale` | Sells the packs (`docs/omni-economy.md`, `docs/drop-groups.md`): a purchase names its group (`buy(fire, group, n, pay, maxCost, maxPaper, access)`) and pays the group's dollar price in PLANK, ETH or USDG (the coins the group takes), or ETH alone (`buyWithEthAll`: it also buys the packs' PAPER on the market and burns it), plus the group's PAPER. Every product rule is a per-drop setting (total packs and its groups, each with its own PLANK and PAPER burn shares; PAPER dollar ceiling, regular-wallets rule, packs per purchase, credits per picked suggestion and credit caps). Closes the Series the moment nothing can still sell, or when the drop is ended. The owner can pause buying (`setPaused`). Never holds funds. |
+| `FireSale` | Sells the packs (`docs/omni-economy.md`, `docs/drop-groups.md`): a purchase names its group (`buy(fire, group, n, pay, maxCost, maxPaper, access)`) and pays the group's dollar price in PLANK, ETH or USDG (the coins the group takes), or ETH alone (`buyWithEthAll`: it also buys the packs' PAPER on the market, straight to `LiquidityBurner`), plus the group's PAPER. Of each dollar payment, the group's liquidity share and the whole rising tax go to `LiquidityBurner` in the coin paid, the rest to the revenue wallet; each pack's PAPER goes to `LiquidityBurner` too. No swap at sale time. Every product rule is a per-drop setting (total packs and its groups, each with its own liquidity share, `plankBurnBps` + `paperBurnBps`; PAPER dollar ceiling, regular-wallets rule, packs per purchase, credits per picked suggestion and credit caps). Closes the Series the moment nothing can still sell, or when the drop is ended. The owner can pause buying (`setPaused`). Never holds funds. |
 | `FireGroups` | Each drop's groups (split out of `FireSale` for contract size): config, timing (opens with the drop or after another group; ends sold out, at its duration, or after `idle` with no sale), unlimited groups, the rising tax, per-purchase limits, capacity with rolled-in leftovers, gates (open, NFT with packs per NFT id, Merkle snapshot with a per-wallet allowance), wallet limits (optionally lifting on a timer, `limitFor`), and the views the site reads (`groupsOf`, `boughtBy`, `remaining`, `openLeft`, `scheduleEnd`). Only `FireSale` writes to it (set once at deploy); no owner. |
 | `FireCredits` | Free pack credits, card burning (42 cards = 1 credit, fixed forever) and character suggestions, split out of `FireSale` for contract size (same rules). It spends credits, burns cards and takes suggestion PAPER through `FireSale` hooks only it can call (`creditPacks`, `burnCardsFor`, `burnPaperFor`), so PAPER is approved to `FireSale` alone. Owned by the owner (picks, suggestion rules). |
-| `PlankBurner` | Gets the sale's PLANK burn share when the swap can't run (a stale PLANK price or a failed swap). No owner, no withdraw: anyone calls `flush`, which buys PLANK (95% TWAP guard, halving for a backlog) and sends it to the dead address. |
-| `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars (one case price and one grading price for every card: `quote(cases, grades, pay)`), paid in PLANK, ETH or USDG (`Pay` PLANK 0, ETH 1, USDG 2); every fee buys PAPER and burns it. drand picks each grade (1 to 10) from the fresh odds and the card's frozen wear (both fixed forever, the same for every Series); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
-| `PaperBurner` | Gets FireSale's PAPER share of every sale (20% in the Standard drop) and 100% of every case and grading fee (paid in PLANK, ETH or USDG), buys PAPER with it on owner-set routes and burns it. Only flushers the owner names (FirePsa and the keepers, `setFlusher`) can flush it. FirePsa burns only the fee it just took (`flushLight(pay, fee)`), so wrapping a case in a buy and a sell can't make it spend the backlog; the keepers' `flush` (its own transaction; Robinhood Chain's sequencer is first-come with no public mempool) drains the rest. A PAPER price from a window over 30 hours makes it wait. No withdraw; the router is fixed at deploy. |
+| `FirePsa` | Cases and PDA grading (`docs/grading.md`): `protect(caseIds, gradeIds, pay, maxCost)` cases and/or sends for grading up to `maxBatch` cards (20; owner setting, at most 100) in one transaction, priced in dollars (one case price and one grading price for every card: `quote(cases, grades, pay)`), paid in PLANK, ETH or USDG (`Pay` PLANK 0, ETH 1, USDG 2); every fee goes to `LiquidityBurner` (its `quote` prices it). drand picks each grade (1 to 10) from the fresh odds and the card's frozen wear (both fixed forever, the same for every Series); the card is slabbed. The only contract that can case a card or set a grade, once per card. |
+| `LiquidityBurner` | Turns everything that used to burn into locked PAPER/PLANK liquidity (`docs/liquidity-burn.md`). Gets every sale's liquidity share and rising tax (in the coin paid), each pack's PAPER, 100% of every case and grading fee, suggestions' PAPER (through `FireSale.burnPaperFor`), game entries (`FireGames`) and the press's ETH/USDG (`MorningWood`). Only keepers the owner names (`setKeeper`) can `run` it: it spends ETH and USDG (60% to PAPER while the PAPER side is under $50, then the short side, then half and half), sells PLANK for PAPER when the PLANK side is heavier (never sells PAPER), adds matching dollar amounts to the PAPER/PLANK Uniswap V2 pool with the pool tokens to the dead address, and burns any side over $100 outright. Guards: every buy gets at least 95% of what the feeds say (else half, a quarter, ...), liquidity is added only while the pool's price is within 3% of the feeds', feeds set once, routes only through WETH, PLANK, USDG or PAPER; a PAPER price from a window over 30 hours makes it wait. No withdraw; the router, tokens and pool are fixed at deploy. Totals: `paperToLiquidity`, `plankToLiquidity`, `lpBurned`, `paperBurned`, `plankBurned`; `held()` is what waits. |
 | `FireProfiles` | Each wallet's public profile: a name and a profile picture cut from one of its own cards. No owner, no fees, no admin, no upgrade; it only reads `FireCards` (fixed at deploy). Details below. |
 
 Every owned contract refuses `renounceOwnership` (control can't be lost by mistake); ownership moves only in two
@@ -212,7 +211,7 @@ keys `supply`, `amount`, `maxPerPack`, `minRank`, included),
 numbers too big for their field and a drop start more than 365 days away are refused.
 
 `sale` (optional; the studio's Sale tab) is `FireSale.DropConfig` by name, in contract units: seconds, dollars with 8
-decimals, PAPER in wei, burn shares in basis points. Every key is required unless said otherwise.
+decimals, PAPER in wei, liquidity shares in basis points. Every key is required unless said otherwise.
 
 - Drop-wide: `start`, `packs` (the total; the groups' `packs` must add up to it), `paperCapUsd` (0 = no ceiling), `maxPerTx` (0 = 50), `regularWalletsFor` (at most 30
   days; 0 = off), `creditsPerPick`, `creditPacksMax` and `creditPacksPerWallet` (0 = no limit), `creditGroup` (the
@@ -222,8 +221,9 @@ decimals, PAPER in wei, burn shares in basis points. Every key is required unles
   rolled in come on top; 0 allowed for a group that only takes leftovers), `gate` (`"open"`, `"nft"` or `"snapshot"`),
   `priceUsd` (0 = no dollar price), `paper` (PAPER per pack, 0 = none; both 0 = free, never for an open group),
   `coins` (for the dollar price: PLANK 1 + ETH 2 + USDG 4, so 7 = any; at least one when there is a price; ETH includes
-  `buyWithEthAll`), `plankBurnBps` + `paperBurnBps` (the group's burn shares of its dollar price, together at most
-  10000; the rest goes to the revenue wallet; Standard 1000 + 2000 in every group; a group with no dollar price has
+  `buyWithEthAll`), `plankBurnBps` + `paperBurnBps` (the group's liquidity share of its dollar price, both to `LiquidityBurner` in the
+  coin paid, together at most 10000; the names are kept from the old burns, only the sum matters; the rest goes to the
+  revenue wallet; Standard 1000 + 2000, the PLANK holders' group 10000 + 0; a group with no dollar price has
   nothing to split but still sets them), `perWallet` (0 = no limit), `afterGroup` (255 = opens with the drop; else an EARLIER group's
   index: opens when that group ends), `startDelay` (seconds after the drop's start or that group's end, at most 30
   days), `duration` (longest it stays open, at most 30 days; 0 = until its packs are gone), `rollTo` (where its
@@ -241,8 +241,8 @@ decimals, PAPER in wei, burn shares in basis points. Every key is required unles
     allowance))))`. A buyer passes its allowance and proof.
   - `nft`/`perNft` on a non-NFT group, or `root` on a non-snapshot group, are refused.
   - **Rising tax** (`taxBps`): the k-th pack sold in the group (k = 1 for its first sale, credit packs counted) costs
-    `priceUsd * (1 + taxBps/10000)^k`. The part above `priceUsd` is the tax: ALL of it goes to PaperBurner (buys PAPER
-    and burns it), in the coin paid; the base price splits like any sale. Buying n packs prices packs sold+1 .. sold+n
+    `priceUsd * (1 + taxBps/10000)^k`. The part above `priceUsd` is the tax: ALL of it goes to `LiquidityBurner`, in the
+    coin paid; the base price splits like any sale. Buying n packs prices packs sold+1 .. sold+n
     (closed form, 18-decimal fixed point, rounded up); `quote` includes it and `maxCost` guards it. It needs a dollar
     price; no group may roll leftovers into a taxed group (its capacity is its own `packs`); and the last pack may cost
     at most 1e9 times the base (`(1 + taxBps/10000)^k <= 1e9`). That is a safety bound for the maths, not a sales cap:
@@ -326,13 +326,12 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | When it opens | `Group.afterGroup`, `startDelay` | per group | with the drop / with the drop / after group 2 | `afterGroup` an earlier group or 255; delay <= 30 days |
 | How long it stays open | `Group.duration` | per group | 6h / 24h / until sold | <= 30 days; 0 = until its packs are gone. It ends sold out (once no leftovers can still arrive) or at its duration |
 | Where its unsold packs go | `Group.rollTo` | per group | group 3 / group 3 / nowhere / nowhere | a later group or 255 (never made: the Series closes smaller) |
-| Rising tax | `Group.taxBps` | per group | 4% a pack on "After sell-out" | 0 = off; at most 50%; needs a price; nothing rolls into it; any pack at most 1e9 x the base (safety bound). The whole tax buys and burns PAPER |
+| Rising tax | `Group.taxBps` | per group | 4% a pack on "After sell-out" | 0 = off; at most 50%; needs a price; nothing rolls into it; any pack at most 1e9 x the base (safety bound). The whole tax goes to `LiquidityBurner` |
 | Ends after no sale for | `Group.idle` | per group | 15 min on "After sell-out" | 0 = off; <= 30 days |
 | Most packs per purchase in the group | `Group.perTx` | per group | 1 on "After sell-out" | 0 = the drop's `maxPerTx`; credits ignore it |
 | No pack count | `Group.unlimited` | per group | "After sell-out" | packs 0, needs `taxBps` and `idle`, rolls nowhere; adds on top of the total |
 | PAPER ceiling per pack | `paperCapUsd` (8 dec.) | per Series | $1 | any, 0 = no ceiling. A pack's PAPER (every group's and credit packs) is never worth more than this at the `PAPER_USD` feed's price; while the feed is late the last good price holds (`lastPaperUsd`); before its first price, the set PAPER |
-| PLANK burn share | `Group.plankBurnBps` | per group | 10% in every group | 0 to 100%, with the group's PAPER share (`BadGroup(i)` over 100%). The PLANK holders' group could burn 100% of the PLANK it takes |
-| PAPER buy & burn share (to `PaperBurner`) | `Group.paperBurnBps` | per group | 20% in every group | 0 to 100%, with the group's PLANK share |
+| Liquidity share (to `LiquidityBurner`, in the coin paid) | `Group.plankBurnBps` + `Group.paperBurnBps` | per group | 10% + 20% in every group; the PLANK holders' 100% + 0% | each 0 to 100%, together at most 100% (`BadGroup(i)` over); only the sum matters |
 | Most packs per purchase / credit spend | `maxPerTx` | per Series | 50 (0 = 50) | < 2^32. Gas is flat: 100 packs cost about what 1 does |
 | Regular wallets only for | `regularWalletsFor` | per Series | 48h | <= 30 days; 0 = off. Every group; not credits |
 | Credit group | `creditGroup` | per Series | group 3 | a group index, or 255 = no credit packs. Credits spend its packs while it is open, for its PAPER only (its gate, price, coins and wallet limit don't apply) |
@@ -343,10 +342,10 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | Suggestion cost, longest text | `FireCredits.setSuggestionRules` | global (suggestions aren't tied to a drop) | 1 PAPER, 280 bytes | any cost incl. 0 (each `suggest` names its most PAPER), never more than $1 of PAPER (`SUGGESTION_PAPER_CAP_USD`, fixed); text 1 to 1,024 bytes (event size). **Set the longest text to about 1,000 bytes** (`setSuggestionRules(paper, 1000)`): the site packs a character, its personality and its background into one text (format below) |
 | Cards per case/grading batch | `FirePsa.setMaxBatch` | global | 20 | 1 to 100 (gas guard: `finish` grades a batch in one tx) |
 | Case and grading prices | `FirePsa.setPrices` | global | $0.05, $1 (one grading price for every card) | above 0, at most $100 each (typo guard; each batch names its most) |
-| Fee burn routes | `PaperBurner.setRoutes` | global | set at deploy | each route starts at the currency and ends at PAPER, passing only through WETH, PLANK or USDG (2-4 tokens, at most 4 routes); the 95% guard checks every buy. The router is fixed and the burner's price feeds (`setFeeds`) can be set only once |
+| LiquidityBurner routes and keepers | `LiquidityBurner.setRoutes`, `setKeeper` | global | set at deploy (keepers from `KEEPERS`) | each route starts at the coin paid and ends at PAPER or PLANK, passing only through WETH, PLANK, USDG or PAPER (at most 4 routes); the 95% guard checks every buy. The router, tokens and pool are fixed and its price feeds (`setFeeds`) can be set only once |
 | Fresh PDA odds and wear rules | `FirePsa` constants (`FRESH_*`, `WEAR_*`; `freshOdds`, `oddsFor`) | constant | 7-10 table (`docs/grading.md`) | **fixed forever**, the same for every Series; no setter |
-| Revenue wallet and PlankBurner, feeds, router | `setWallets`, `setFeeds` | global | - | only between drops (unchanged) |
-| Pause | `FireSale.setPaused`, `FirePsa.setPaused` | global | off | blocks every buy (every group), credit spending, paid suggestions (`FireSale`) and case/grading payments (`FirePsa`). Never opening, dealing, transfers, ending or closing a drop, burning cards, finishing or cancelling a grading, or keeper calls. No expiry. `PaperBurner.setFlusher(FirePsa, false)` also stops case and grading payments |
+| Revenue wallet and LiquidityBurner, feeds, router | `FireSale.setWallets(revenue, liquidity)`, `setFeeds` | global | - | only between drops (unchanged) |
+| Pause | `FireSale.setPaused`, `FirePsa.setPaused` | global | off | blocks every buy (every group), credit spending, paid suggestions (`FireSale`) and case/grading payments (`FirePsa`). Never opening, dealing, transfers, ending or closing a drop, burning cards, finishing or cancelling a grading, or keeper calls. No expiry. |
 | Randomness source | `FireCards.setRandomness`, `FirePsa.setRandomness` | global | the drand adapters | any time, no delay (announced first); only new requests use it, each pending request keeps its source (`docs/randomness.md`) |
 | Collection metadata | `FirePacks.setContractURI`, `FireCards.setContractURI` | global | empty | any (ERC-7572) |
 
@@ -391,8 +390,8 @@ anyone can re-run it (`draw.mjs --verify`).
 
 Guards that stay fixed (safety, not product): settings lock at the drop's start; one drop at a time; every purchase
 names its most PLANK/USDG/ETH and PAPER; the PAPER ceilings (per drop for packs, $1 for suggestions; the last good
-price holds while the PAPER feed is late); the swap floors (`SWAP_MIN_BPS`: 90% in `FireSale`, 95% in `PaperBurner`
-and `PlankBurner`); the wear rules and 100% fee burn (`docs/grading.md`); feed freshness (`ETH_FEED_MAX_AGE`
+price holds while the PAPER feed is late); the swap floor (`SWAP_MIN_BPS`: 95% in `LiquidityBurner`)
+and its 3% pool price check (`POOL_BPS`); the wear rules and 100% of fees to `LiquidityBurner` (`docs/grading.md`); feed freshness (`ETH_FEED_MAX_AGE`
 25h, `PLANK_FEED_MAX_AGE` and `PLANK_WINDOW_MAX` 2h, `PAPER_FEED_MAX_AGE` 2 days); every group delay and duration and
 the regular-wallets rule at most 30 days (`MAX_WINDOW`) and `END_GRACE` 7 days, so a stalled drop can always be ended
 (by the owner once its schedule is over: every timed group has run its full time, every until-sold group has opened
@@ -413,7 +412,7 @@ be renounced.
 | Recipe size | owner gas per transaction (stored as contract code in 24,000-byte chunks, so no hard size) |
 | Dealing | block gas: `process(fire, maxCards)` splits any pack; a card costs ~60k gas (almost all of it the mint) |
 | Cases and grading: at most 100 cards per batch (`maxBatch`, 20 to start) | gas guard on `finish` |
-| Royalty <= 10%, group delays and durations <= 30 days, end grace 7 days, price-feed ages, 90% swap floor | buyer-protection guards (kept) |
+| Royalty <= 10%, group delays and durations <= 30 days, end grace 7 days, price-feed ages, 95% swap floor | buyer-protection guards (kept) |
 | At most 6 groups per drop | every buy works out the groups' timing (a loop over them, about 2 storage reads each) |
 
 ## Safety
@@ -436,8 +435,9 @@ be renounced.
   change the PDA fresh odds or wear rules (constants in `FirePsa`).
   Closing doesn't depend on the dealer, so a drop can always close.
 - The owner can't change a dealt card. A card being graded can't be transferred (it can be burned); grades are final.
-- `PaperBurner` and `PlankBurner` have no withdraw: what they hold only ever leaves as a PAPER (or PLANK) buy sent to
-  the dead address.
+- `LiquidityBurner` has no withdraw: what it holds only ever leaves as PAPER/PLANK liquidity whose pool tokens go to
+  the dead address, or as a side's excess over $100 burned. Only the keepers can run it (an open run could be wrapped
+  in a price push).
 - Trust: the dealer is code the owner chooses per Series (before its first pack). `RecipeDealer` is the one in this
   repo, covered by the tests; a future dealer is trusted like the owner's other settings, and must deal only from its
   own state and the seed and keep its text JSON-safe.
@@ -491,8 +491,8 @@ a binary search over that slot's cumulative weights, with no storage writes.
 
 ## Tests
 
-`contracts/test/cards/` (`Cards.t.sol`, `Recipe.t.sol`, `Sale.t.sol`, `Groups.t.sol`, `Psa.t.sol`, `Burner.t.sol`,
-`PlankBurner.t.sol`, `SaleFork.t.sol`, `ImageParity.t.sol`, `SeriesCheck.t.sol`, `Profiles.t.sol`) and
+`contracts/test/cards/` (`Cards.t.sol`, `Recipe.t.sol`, `Sale.t.sol`, `Groups.t.sol`, `Psa.t.sol`, `PsaBurn.t.sol`,
+`LiquidityBurner.t.sol`, `Games.t.sol`, `SaleFork.t.sol`, `ImageParity.t.sol`, `SeriesCheck.t.sol`, `Profiles.t.sol`) and
 `contracts/test/invariant/` (fuzz and invariant suites, including `RecipeFuzz.t.sol` and `GroupsFuzz.t.sol`). They cover:
 - slots: over 4,000 Standard packs every slot's types converge to its own weights (positions 1-3 always Paper, 4
   always Wood, 5 and 6 at their slot's odds, 5 standard deviations), the per-pack averages are exactly 3 / 1.449 /
@@ -516,8 +516,11 @@ a binary search over that slot's cumulative weights, with no storage writes.
 - image names match the studio's files for every look a recipe can deal (`ImageParity.t.sol`, `image-parity/`), and
   batch B is refused unless the chain holds batch A exactly (`SeriesCheck.t.sol`)
 - the wear odds match `wear-model.py` (`wear-vectors.json`); the fresh odds are the fixed constants with no setter;
-  cases and grades freeze wear; grades are final; the
-  burner's best route, split, 95% guard, piece-by-piece backlog, set-once feeds and known-token routes
+  cases and grades freeze wear; grades are final
+- LiquidityBurner (`LiquidityBurner.t.sol`): the owner's example, ETH buying PAPER first then the short side, PLANK sold
+  for PAPER but never PAPER sold, a side over $100 burned, no liquidity added at a pushed pool price, a bad buy or a
+  stale price waiting, only keepers run it, set-once feeds and known-token routes, the wrong pair refused, the quote
+  FirePsa charges, and a fuzz of mixed flows
 - drop groups (`Groups.t.sol`, `GroupsFuzz.t.sol`): groups one after another (the next opens the moment the first sells
   out, or when its time runs out) and side by side; leftovers adding capacity, passing through a group that has ended,
   or rolling nowhere (the Series closes smaller); the Series closing the instant its last makeable pack is minted, and
@@ -526,8 +529,7 @@ a binary search over that slot's cumulative weights, with no storage writes.
   groups, every config check, the views; a fuzz of random group shapes and buys checking capacity, counts, timing and
   closing after every step
 - the strategic review: what pause blocks and never blocks, a randomness switch (old requests answered only by their
-  own source, or cancelled), the per-drop PAPER ceiling on every group's packs and credit packs, PlankBurner (no withdraw,
-  flush, guard, halvings), renounce refused, the Dealt date trait, contractURI, a buy refreshing the PLANK price
+  own source, or cancelled), the per-drop PAPER ceiling on every group's packs and credit packs, renounce refused, the Dealt date trait, contractURI, a buy refreshing the PLANK price
 - profiles (`Profiles.t.sol`): the name rules, names unique ignoring case, a rename or clear freeing the name, the
   picture must be the caller's card (and goes invalid when sold), the batch read, events, gas, and fuzzes of raw and
   printable names against a plain re-implementation of the rules
@@ -535,13 +537,14 @@ a binary search over that slot's cumulative weights, with no storage writes.
 ## Deploying
 
 `contracts/script/DeployCards.s.sol` deploys and wires everything in one run: FirePacks, FireCards, CardsRenderer,
-RecipeDealer and RecipeCompiler, PlankBurner, FireCredits, FireGroups, FireSale (wired to both; `FireCredits.setSale`
-and `FireGroups.setSale` are set once and check the sale points back; only the deployer can wire FireGroups), PaperBurner (its feeds and default routes: direct to PAPER or through PLANK/WETH),
-FirePsa, two drand adapters (FireCards, FirePsa), FireProfiles, the royalty. It needs `PAPER_USD_FEED` (the `PaperUsdTwap`). It
+RecipeDealer and RecipeCompiler, LiquidityBurner (on the V2 factory's existing PAPER/PLANK pool, which must exist; its
+feeds set once, default routes, and the `KEEPERS` wallets as keepers), FireCredits, FireGroups, FireSale (wired to both; `FireCredits.setSale`
+and `FireGroups.setSale` are set once and check the sale points back; only the deployer can wire FireGroups),
+FirePsa, two drand adapters (FireCards, FirePsa), FireProfiles, FireGames, the royalty. It needs `PAPER_USD_FEED` (the `PaperUsdTwap`). It
 hands ownership to `OWNER`, one hardware wallet (Ledger or Trezor; no multisig: nothing holds funds, the risk is key
-theft), which then accepts FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa and PaperBurner in one
-run of `contracts/script/AcceptOwnership.s.sol` signed on the device (until then the deployer owns them, so a mistyped
-`OWNER` owns nothing); PlankBurner, FireGroups and FireProfiles have no owner. A deploy made before FireProfiles
+theft), which then accepts FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa, LiquidityBurner and FireGames
+in one run of `contracts/script/AcceptOwnership.s.sol` signed on the device (until then the deployer owns them, so a mistyped
+`OWNER` owns nothing); FireGroups and FireProfiles have no owner. A deploy made before FireProfiles
 existed adds it on its own with `contracts/script/DeployProfiles.s.sol` (reads FireCards from the deployments file). The script runs only on chain 4663 (`EXPECTED_CHAIN_ID` for the testnet,
 46630, or a rehearsal), checks every input first and refuses an `OWNER` equal to the deployer (a throwaway hot wallet that only
 pays gas). A test runs the same steps.
@@ -563,16 +566,17 @@ a batch as the impersonated owner on a fork (`BATCH=AB` only there). It rejects 
   `VerifyDeploy.s.sol` checks the owner and the wiring: the seller is FireSale on packs
   and cards, cards point at packs, the dealer points at cards and packs, FireSale and FireCredits point at each other,
   FireSale and FireGroups point at each other,
-  FireSale's `paperBurner` is the deployed PaperBurner, its `plankBurner` is the deployed PlankBurner (same router and PLANK/ETH feeds), the PDA is FirePsa, the
-  renderer is CardsRenderer, FirePsa pays PaperBurner, randomness points at the two adapters, no Series is configured or locked yet,
+  FireSale's `liquidity` is the deployed LiquidityBurner (FireSale's router, the PAPER/PLANK pool, the deployed feeds,
+  ETH and PLANK routes), the keepers in `KEEPERS` may run it, the PDA is FirePsa, the
+  renderer is CardsRenderer, FirePsa and FireGames pay LiquidityBurner, randomness points at the two adapters, no Series is configured or locked yet,
   the royalty is what was set, and FireProfiles reads FireCards (a WAIT, not a FAIL, while it isn't deployed).
-- **Keeper** (`ops/keeper`; every call is permissionless):
+- **Keeper** (`ops/keeper`; every call is permissionless except `LiquidityBurner.run`, which only named keepers may call):
   - `PlankUsdTwap.checkpoint()` every 30 minutes and `PaperUsdTwap.checkpoint()` when `due()`
   - delivering drand numbers to the router (`OpenDrandRouter.fulfillMany`; `adapter.settle` if a callback didn't
     land)
   - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` (ids from the `Protected` event)
-  - `PaperBurner.flush(pay)` when a fee is waiting (`Waiting` events) and `PlankBurner.flush(pay)` when it holds ETH,
-    USDG or PLANK
+  - `LiquidityBurner.run()` when it holds work worth $1 or more (at most every 15 minutes, at once from $25, smaller
+    amounts after 6 hours)
   - `FireSale.close(fire)` when a live drop has nothing left that can sell (`status(fire).left == 0`, not closed): a
     group's time ran out with its leftovers rolling nowhere, so no purchase closed it
 - **Before deploy day:** run the real-chain gas test (PowerShell, from `contracts`):
@@ -582,7 +586,7 @@ a batch as the impersonated owner on a fork (`BATCH=AB` only there). It rejects 
   ```
 
 The site has the ABIs: `web/src/lib/abi/` (`fireCardsAbi.json`, `firePacksAbi.json`, `fireSaleAbi.json`,
-`fireCreditsAbi.json`, `fireGroupsAbi.json` (to add with the site's groups update), `firePsaAbi.json`, `recipeDealerAbi.json`, `paperBurnerAbi.json`, `plankBurnerAbi.json`,
+`fireCreditsAbi.json`, `fireGroupsAbi.json` (to add with the site's groups update), `firePsaAbi.json`, `recipeDealerAbi.json`, `liquidityBurnerAbi.json`, `fireGamesAbi.json`,
 `cardsRendererAbi.json`, `fireProfilesAbi.json`), exported by `web/src/lib/cards.ts`. Each file is the `abi` field of
 `contracts/out/<Contract>.sol/<Contract>.json` after `forge build`, written as 2-space JSON.
 
@@ -595,9 +599,9 @@ odds, no shared pool, no caps, so the last pack is exactly as random as the firs
 
 ## Money and the economy
 
-See `docs/omni-economy.md`. The sale never holds funds: whatever is paid for packs is forwarded or burned in the same
-transaction. Case and grading fees go to `PaperBurner`, which only buys and burns PAPER (a fee waits there if the
-price guard says no).
+See `docs/omni-economy.md`. The sale never holds funds: whatever is paid for packs is forwarded in the same
+transaction. Its liquidity share, each pack's PAPER, and case and grading fees go to `LiquidityBurner`, which only
+turns them into burned PAPER/PLANK liquidity (`docs/liquidity-burn.md`; they wait there if a price guard says no).
 
 ## Still open
 

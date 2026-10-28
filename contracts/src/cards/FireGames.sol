@@ -12,7 +12,8 @@ import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.s
  * @notice The game room's entries (docs/paper-football.md, "On chain"). Each game has an id and an entry in PAPER
  *         with a dollar ceiling, both fixed forever once the owner adds it (paper football is game 1: 1 PAPER a run,
  *         but never more than $0.10 of PAPER at the PAPER feed's price). A player pays for one run of one game: the
- *         entry is burned straight to the dead address, and the run id is recorded as theirs, once.
+ *         entry goes to LiquidityBurner (paired with PLANK and burned as liquidity), and the run id is recorded as
+ *         theirs, once.
  *
  *         Every run needs the game server's EIP-712 approval (`signer`) over the game, the run id, the player, the
  *         Series and a deadline. The server gives it only after its own checks (where the player is, 18+), and starts
@@ -23,7 +24,7 @@ import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.s
  *         runs go into (moved on at each Series launch; 0 = closed), and a run names the one it pays for, so a run paid
  *         as the switch happens can't land in the wrong one.
  *
- *         Holds nothing, and the only token it ever moves is the entry, from the caller, to the dead address.
+ *         Holds nothing, and the only token it ever moves is the entry, from the caller, to LiquidityBurner.
  */
 interface IGamesFeed {
     function latestRoundData() external view returns (uint80, int256 answer, uint256, uint256 updatedAt, uint80);
@@ -32,7 +33,6 @@ interface IGamesFeed {
 contract FireGames is Ownable2Step, EIP712 {
     using SafeERC20 for IERC20;
 
-    address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     bytes32 public constant RUN_TYPEHASH =
         keccak256("Run(uint256 gameId,bytes32 runId,address player,uint256 series,uint256 deadline)");
 
@@ -40,6 +40,8 @@ contract FireGames is Ownable2Step, EIP712 {
     uint256 public constant PAPER_FEED_MAX_AGE = 2 days;
 
     IERC20 public immutable PAPER;
+    /// @notice LiquidityBurner: where every entry goes. Fixed at deploy.
+    address public immutable LIQUIDITY;
     /// @notice PAPER/USD (PaperUsdTwap, 18 decimals) for the dollar ceilings. Until it has given a price, games with a
     ///         ceiling take no runs.
     IGamesFeed public paperUsd;
@@ -53,7 +55,7 @@ contract FireGames is Ownable2Step, EIP712 {
     bool public paused;
     /// @notice Each game's entry in PAPER wei (0 = no such game). Set once, when the game is added; never changes.
     mapping(uint256 gameId => uint256) public entryOf;
-    /// @notice Each game's dollar ceiling (8 decimals, $0.10 = 10_000_000; 0 = none): a run never burns more PAPER than
+    /// @notice Each game's dollar ceiling (8 decimals, $0.10 = 10_000_000; 0 = none): a run never takes more PAPER than
     ///         this is worth. Set once, with the entry; never changes.
     mapping(uint256 gameId => uint256) public capUsdOf;
     /// @notice Whether a game takes new runs (its own kill switch).
@@ -81,12 +83,13 @@ contract FireGames is Ownable2Step, EIP712 {
     error NoPrice();
     error PriceMoved();
 
-    constructor(address owner_, address paper) Ownable(owner_) EIP712("FireGames", "1") {
-        if (paper == address(0)) revert BadConfig();
+    constructor(address owner_, address paper, address liquidity) Ownable(owner_) EIP712("FireGames", "1") {
+        if (paper == address(0) || liquidity == address(0)) revert BadConfig();
         PAPER = IERC20(paper);
+        LIQUIDITY = liquidity;
     }
 
-    /// @notice Pay for run `runId` of game `gameId` in Series `forSeries`' competition: burns `priceOf(gameId)` (the
+    /// @notice Pay for run `runId` of game `gameId` in Series `forSeries`' competition: takes `priceOf(gameId)` (the
     ///         entry, or less under the dollar ceiling), at most `maxPaper` (approve this contract for it). `sig` is
     ///         the game server's approval of exactly this run for the caller.
     function payRun(uint256 gameId, bytes32 runId, uint256 forSeries, uint256 deadline, uint256 maxPaper, bytes calldata sig)
@@ -106,11 +109,11 @@ contract FireGames is Ownable2Step, EIP712 {
         uint256 entry = _entry(gameId, px);
         if (entry > maxPaper) revert PriceMoved();
         runBy[runId] = msg.sender;
-        PAPER.safeTransferFrom(msg.sender, DEAD, entry);
+        PAPER.safeTransferFrom(msg.sender, LIQUIDITY, entry);
         emit RunPaid(gameId, runId, msg.sender, forSeries, entry);
     }
 
-    /// @notice What a run of `gameId` burns right now: its entry, or less when that's worth more than its dollar
+    /// @notice What a run of `gameId` costs right now: its entry, or less when that's worth more than its dollar
     ///         ceiling at the PAPER feed's price. Reverts NoPrice while a game with a ceiling has no price yet.
     function priceOf(uint256 gameId) external view returns (uint256) {
         if (entryOf[gameId] == 0) revert NoGame();

@@ -25,7 +25,6 @@ interface IPsaRandomness {
 
 interface IPsaBurner {
     function quote(uint8 pay, uint256 usd18) external view returns (uint256);
-    function flushLight(uint8 pay, uint256 maxAmount) external returns (uint256);
     function PLANK() external view returns (address);
     function USDG() external view returns (address);
 }
@@ -39,8 +38,7 @@ interface IPsaBurner {
  *           know it in advance, and it is slabbed at that grade (1-10), once, for good.
  *         Both in one transaction (`protect`), up to `maxBatch` cards. Prices are in dollars: `caseUsd18` per case
  *         and `gradeUsd18` per grade, the same for every card. Paid in PLANK, ETH or USDG, every cent goes to
- *         PaperBurner, which buys PAPER and burns that fee in the same transaction (only that fee: the burner's
- *         backlog is the keepers' to flush).
+ *         LiquidityBurner, which pairs it into PAPER/PLANK liquidity and burns that (docs/liquidity-burn.md).
  *
  *         The odds: a fresh grade (7-10) from the fresh odds, then wear (moves and time uncased). Both are fixed
  *         here forever, the same for every Series (FRESH_* and WEAR_* constants, `oddsFor`); nobody can change them.
@@ -59,7 +57,7 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     /// @dev Highest dollar price the owner can set per card (a typo guard; every purchase names its most anyway).
     uint256 public constant MAX_PRICE_USD18 = 100e18;
     /// @dev Last resort if randomness is gone for good: a grading with no answer this long after it was asked for
-    ///      can be cancelled, unlocking its cards (still ungraded). The fee was burned and can't come back. Every
+    ///      can be cancelled, unlocking its cards (still ungraded). The fee went to liquidity and can't come back. Every
     ///      drand round is public once it is out, so a cancel only works while nobody has delivered the word, and
     ///      anyone (the holder included) can see it first: a holder who didn't like their grades could sit on the
     ///      word, cancel and send the cards again for a re-roll. The window must outlast any keeper outage (two
@@ -113,7 +111,7 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     mapping(address => uint256) public caseCoupons;
     mapping(address => uint256) public gradeCoupons;
 
-    /// @dev Never reorder: the numbers are the ABI (PLANK 0, ETH 1, USDG 2), the same as PaperBurner's.
+    /// @dev Never reorder: the numbers are the ABI (PLANK 0, ETH 1, USDG 2), the same as LiquidityBurner's.
     enum Pay { PLANK, ETH, USDG }
 
     struct Grading {
@@ -288,8 +286,7 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         if (msg.value > spentEth) _sendEth(msg.sender, msg.value - spentEth); // last: the unspent ETH back
     }
 
-    /// @dev Takes `cost` in `pay` to PaperBurner, which burns this fee (at most this fee: never the backlog waiting
-    ///      for the keepers).
+    /// @dev Takes `cost` in `pay` to LiquidityBurner.
     function _pay(Pay pay, uint256 cost, uint256 maxCost) internal returns (uint256) {
         if (cost > maxCost) revert PriceMoved();
         if (pay == Pay.ETH) {
@@ -298,7 +295,6 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         } else {
             (pay == Pay.PLANK ? PLANK : USDG).safeTransferFrom(msg.sender, address(BURNER), cost);
         }
-        BURNER.flushLight(uint8(pay), cost);
         return cost;
     }
 

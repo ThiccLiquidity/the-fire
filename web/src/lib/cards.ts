@@ -1,8 +1,8 @@
 // ABIs of the card contracts (contracts/src/cards). The names are historical: FirePacks = sealed packs, FireCards =
 // cards, FireSale = the pack sale, FirePsa = cases and PDA grading. FireCredits holds free pack credits, card burning
 // and character suggestions (PAPER is still approved to FireSale). RecipeDealer holds each Series' recipe (card types,
-// pack slots, characters) and deals it. PaperBurner turns case and grading fees into a PAPER burn; PlankBurner holds a
-// sale's PLANK burn share when its swap can't run and burns it later; CardsRenderer writes each card's metadata.
+// pack slots, characters) and deals it. LiquidityBurner takes every sale's liquidity share, each pack's PAPER, case and
+// grading fees, suggestions and game entries, and burns them as PAPER/PLANK liquidity; CardsRenderer writes each card's metadata.
 // FireGroups holds each drop's groups (who can buy, how many, at what price, when; docs/drop-groups.md). FireProfiles
 // holds each wallet's name and profile picture (one of its cards).
 // Regenerate from contracts/out after any contract change.
@@ -16,8 +16,7 @@ import groups from "./abi/fireGroupsAbi.json";
 import credits from "./abi/fireCreditsAbi.json";
 import games from "./abi/fireGamesAbi.json";
 import dealer from "./abi/recipeDealerAbi.json";
-import burner from "./abi/paperBurnerAbi.json";
-import plankBurner from "./abi/plankBurnerAbi.json";
+import liquidity from "./abi/liquidityBurnerAbi.json";
 import renderer from "./abi/cardsRendererAbi.json";
 import profiles from "./abi/fireProfilesAbi.json";
 
@@ -29,7 +28,6 @@ export const groupsAbi = groups as unknown as Abi;
 export const creditsAbi = credits as unknown as Abi;
 export const gamesAbi = games as unknown as Abi;
 export const dealerAbi = dealer as unknown as Abi;
-export const burnerAbi = burner as unknown as Abi;
-export const plankBurnerAbi = plankBurner as unknown as Abi;
+export const liquidityAbi = liquidity as unknown as Abi;
 export const rendererAbi = renderer as unknown as Abi;
 export const profilesAbi = profiles as unknown as Abi;

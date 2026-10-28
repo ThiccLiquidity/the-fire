@@ -14,8 +14,7 @@ import {FireProfiles} from "../src/cards/FireProfiles.sol";
 import {FireGames} from "../src/cards/FireGames.sol";
 import {RecipeDealer} from "../src/cards/RecipeDealer.sol";
 import {CardsRenderer} from "../src/cards/CardsRenderer.sol";
-import {PaperBurner} from "../src/cards/PaperBurner.sol";
-import {PlankBurner} from "../src/cards/PlankBurner.sol";
+import {LiquidityBurner} from "../src/cards/LiquidityBurner.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
 import {PlankUsdTwap} from "../src/PlankUsdTwap.sol";
 import {PaperUsdTwap} from "../src/PaperUsdTwap.sol";
@@ -39,6 +38,14 @@ interface IVPair {
     function token1() external view returns (address);
 }
 
+interface IVRouter {
+    function factory() external view returns (address);
+}
+
+interface IVFactory {
+    function getPair(address a, address b) external view returns (address);
+}
+
 interface IVRoyalty {
     function royaltyInfo(uint256, uint256) external view returns (address, uint256);
 }
@@ -55,7 +62,7 @@ interface IVRoyalty {
  * checked (default: ids 0..SERIES_SCAN, 64). Nothing is sent and no key is needed.
  *
  * KEEPERS (the keeper addresses, comma-separated, as given to DeployCards) must be set: the file doesn't record them,
- * and without them nobody is checked to be allowed to flush PaperBurner (FAIL). ROYALTY_BPS (as given to DeployCards)
+ * and without them nobody is checked to be allowed to run LiquidityBurner (FAIL). ROYALTY_BPS (as given to DeployCards)
  * and EDITOR (the Morning Wood editor, as given to DeployPress) are checked when set.
  */
 contract VerifyDeploy is Deployments {
@@ -80,7 +87,7 @@ contract VerifyDeploy is Deployments {
     }
 
     function run() external {
-        string[18] memory names = _contractNames();
+        string[17] memory names = _contractNames();
         console.log(string.concat("deployments file: ", deploymentsFile()));
         for (uint256 i; i < names.length; i++) {
             address a = deployed(names[i]);
@@ -111,7 +118,7 @@ contract VerifyDeploy is Deployments {
     function _owners(address owner) internal {
         require(owner != address(0), "no OWNER in the deployments file (set OWNER, the hardware wallet)");
         console.log(string.concat("INFO  expected owner (the hardware wallet): ", vm.toString(owner)));
-        string[8] memory owned = ["FirePacks", "FireCards", "RecipeDealer", "FireCredits", "FirePsa", "PaperBurner", "FireSale", "FireGames"];
+        string[8] memory owned = ["FirePacks", "FireCards", "RecipeDealer", "FireCredits", "FirePsa", "LiquidityBurner", "FireSale", "FireGames"];
         for (uint256 i; i < owned.length; i++) {
             IOwnable2 c = IOwnable2(deployed(owned[i]));
             address o = c.owner();
@@ -168,8 +175,7 @@ contract VerifyDeploy is Deployments {
         _eq(address(credits.CARDS()), address(cards), "FireCredits.CARDS is FireCards");
         _eq(address(sale.GROUPS()), deployed("FireGroups"), "FireSale.GROUPS is FireGroups");
         _eq(FireGroups(deployed("FireGroups")).sale(), address(sale), "FireGroups.sale is FireSale (its only writer)");
-        _eq(sale.plankBurner(), deployed("PlankBurner"), "FireSale.plankBurner is PlankBurner");
-        _eq(sale.paperBurner(), deployed("PaperBurner"), "FireSale.paperBurner is PaperBurner");
+        _eq(sale.liquidity(), deployed("LiquidityBurner"), "FireSale.liquidity is LiquidityBurner");
         address rev = deployedInput("REVENUE_WALLET");
         if (rev != address(0)) _eq(sale.revenueWallet(), rev, "FireSale.revenueWallet is REVENUE_WALLET");
         _eq(address(sale.PLANK_USD()), deployed("PlankUsdTwap"), "FireSale.PLANK_USD is PlankUsdTwap");
@@ -182,31 +188,31 @@ contract VerifyDeploy is Deployments {
     function _wiringBurners() internal {
         FireSale sale = FireSale(payable(deployed("FireSale")));
         FirePsa psa = FirePsa(payable(deployed("FirePsa")));
-        PaperBurner burner = PaperBurner(payable(deployed("PaperBurner")));
-        PlankBurner plankBurner = PlankBurner(payable(deployed("PlankBurner")));
+        LiquidityBurner liq = LiquidityBurner(payable(deployed("LiquidityBurner")));
         address ethUsd = deployedInput("ETH_USD_FEED");
         address v2 = deployedInput("V2_ROUTER");
         if (v2 != address(0)) {
             _eq(address(sale.ROUTER()), v2, "FireSale.ROUTER is V2_ROUTER");
-            _eq(address(burner.ROUTER()), v2, "PaperBurner.ROUTER is V2_ROUTER");
-            _eq(address(plankBurner.ROUTER()), v2, "PlankBurner.ROUTER is V2_ROUTER");
+            _eq(address(liq.ROUTER()), v2, "LiquidityBurner.ROUTER is V2_ROUTER");
+            address pool = IVFactory(IVRouter(v2).factory()).getPair(deployedInput("PAPER"), deployedInput("PLANK"));
+            _ok(pool != address(0), "V2_ROUTER's factory has the PAPER/PLANK pool");
+            _eq(address(liq.PAIR()), pool, "LiquidityBurner.PAIR is the PAPER/PLANK pool");
         }
         _eq(address(psa.CARDS()), deployed("FireCards"), "FirePsa.CARDS is FireCards");
-        _eq(address(psa.BURNER()), address(burner), "FirePsa pays PaperBurner");
-        _eq(address(burner.plankUsd()), deployed("PlankUsdTwap"), "PaperBurner.plankUsd is PlankUsdTwap");
-        _eq(address(burner.paperUsd()), deployed("PaperUsdTwap"), "PaperBurner.paperUsd is PaperUsdTwap");
-        _eq(address(plankBurner.PLANK_USD()), deployed("PlankUsdTwap"), "PlankBurner.PLANK_USD is PlankUsdTwap");
-        if (ethUsd != address(0)) {
-            _eq(address(burner.ethUsd()), ethUsd, "PaperBurner.ethUsd is ETH_USD_FEED");
-            _eq(address(plankBurner.ETH_USD()), ethUsd, "PlankBurner.ETH_USD is ETH_USD_FEED");
-        }
-        _ok(burner.routesOf(PaperBurner.Pay.ETH).length > 0 && burner.routesOf(PaperBurner.Pay.PLANK).length > 0, "PaperBurner has ETH and PLANK routes");
-        _ok(burner.flusher(address(psa)), "FirePsa may flush PaperBurner");
+        _eq(address(psa.BURNER()), address(liq), "FirePsa pays LiquidityBurner");
+        _eq(FireGames(deployed("FireGames")).LIQUIDITY(), address(liq), "FireGames pays LiquidityBurner");
+        _eq(address(liq.plankUsd()), deployed("PlankUsdTwap"), "LiquidityBurner.plankUsd is PlankUsdTwap");
+        _eq(address(liq.paperUsd()), deployed("PaperUsdTwap"), "LiquidityBurner.paperUsd is PaperUsdTwap");
+        if (ethUsd != address(0)) _eq(address(liq.ethUsd()), ethUsd, "LiquidityBurner.ethUsd is ETH_USD_FEED");
+        _ok(liq.routesOf(LiquidityBurner.Pay.ETH, LiquidityBurner.Side.PAPER).length > 0
+            && liq.routesOf(LiquidityBurner.Pay.ETH, LiquidityBurner.Side.PLANK).length > 0
+            && liq.routesOf(LiquidityBurner.Pay.PLANK, LiquidityBurner.Side.PAPER).length > 0,
+            "LiquidityBurner has ETH and PLANK routes");
         address[] memory keepers = vm.envOr("KEEPERS", ",", new address[](0));
         if (keepers.length == 0) {
-            _ok(false, "KEEPERS not set here, so the keepers' flush rights weren't checked: set $env:KEEPERS = \"<main>,<backup>\" (the keeper addresses given to DeployCards) and run again");
+            _ok(false, "KEEPERS not set here, so the keepers' run rights weren't checked: set $env:KEEPERS = \"<main>,<backup>\" (the keeper addresses given to DeployCards) and run again");
         }
-        for (uint256 i; i < keepers.length; i++) _ok(burner.flusher(keepers[i]), "a keeper in KEEPERS may flush PaperBurner");
+        for (uint256 i; i < keepers.length; i++) _ok(liq.keeper(keepers[i]), "a keeper in KEEPERS may run LiquidityBurner");
     }
 
     /// Royalty receivers and rates (FireCards, FirePacks, MorningWood): to ROYALTY_RECEIVER, at most 10%, and at
@@ -242,30 +248,26 @@ contract VerifyDeploy is Deployments {
         _ok(unit == want, string.concat(what, ".USDG_UNIT matches USDG's decimals (", vm.toString(unit), ")"));
     }
 
-    /// The token immutables against the inputs: PlankBurner has no withdraw, so a wrong token there traps its share.
+    /// The token immutables against the inputs: LiquidityBurner has no withdraw, so a wrong token there traps its coins.
     function _tokens() internal {
         FireSale sale = FireSale(payable(deployed("FireSale")));
-        PaperBurner burner = PaperBurner(payable(deployed("PaperBurner")));
-        PlankBurner pb = PlankBurner(payable(deployed("PlankBurner")));
+        LiquidityBurner liq = LiquidityBurner(payable(deployed("LiquidityBurner")));
         FirePsa psa = FirePsa(payable(deployed("FirePsa")));
         _tokenEq(address(sale.PAPER()), "PAPER", "FireSale.PAPER");
         _tokenEq(address(sale.PLANK()), "PLANK", "FireSale.PLANK");
         _tokenEq(address(sale.USDG()), "USDG", "FireSale.USDG");
         _tokenEq(sale.WETH(), "WETH", "FireSale.WETH");
         _unitOk(sale.USDG_UNIT(), "FireSale");
-        _tokenEq(address(burner.PAPER()), "PAPER", "PaperBurner.PAPER");
-        _tokenEq(address(burner.PLANK()), "PLANK", "PaperBurner.PLANK");
-        _tokenEq(address(burner.USDG()), "USDG", "PaperBurner.USDG");
-        _tokenEq(burner.WETH(), "WETH", "PaperBurner.WETH");
-        _unitOk(burner.USDG_UNIT(), "PaperBurner");
-        _tokenEq(address(pb.PLANK()), "PLANK", "PlankBurner.PLANK");
-        _tokenEq(address(pb.USDG()), "USDG", "PlankBurner.USDG");
-        _tokenEq(pb.WETH(), "WETH", "PlankBurner.WETH");
-        _unitOk(pb.USDG_UNIT(), "PlankBurner");
+        _tokenEq(address(liq.PAPER()), "PAPER", "LiquidityBurner.PAPER");
+        _tokenEq(address(liq.PLANK()), "PLANK", "LiquidityBurner.PLANK");
+        _tokenEq(address(liq.USDG()), "USDG", "LiquidityBurner.USDG");
+        _tokenEq(liq.WETH(), "WETH", "LiquidityBurner.WETH");
         _tokenEq(address(psa.PLANK()), "PLANK", "FirePsa.PLANK");
         _tokenEq(address(psa.USDG()), "USDG", "FirePsa.USDG");
         if (deployedInput("USDG") != address(0)) {
-            _ok(burner.routesOf(PaperBurner.Pay.USDG).length > 0, "PaperBurner has USDG routes (USDG fees get burned)");
+            _ok(liq.routesOf(LiquidityBurner.Pay.USDG, LiquidityBurner.Side.PAPER).length > 0
+                && liq.routesOf(LiquidityBurner.Pay.USDG, LiquidityBurner.Side.PLANK).length > 0,
+                "LiquidityBurner has USDG routes (USDG gets spent)");
         }
     }
 
@@ -338,7 +340,7 @@ contract VerifyDeploy is Deployments {
         else if (press.editor() == address(0)) _wait("MorningWood has no editor yet (the owner calls setEditor)");
         else console.log(string.concat("INFO  MorningWood.editor is ", vm.toString(press.editor()), " (set EDITOR here to check it)"));
         _ok(press.editor() != owner || owner == address(0), "MorningWood.editor is not the owner's hardware wallet");
-        _eq(press.paperBurner(), deployed("PaperBurner"), "MorningWood pays PaperBurner");
+        _eq(press.paperBurner(), deployed("LiquidityBurner"), "MorningWood pays LiquidityBurner");
         address ethUsd = deployedInput("ETH_USD_FEED");
         if (ethUsd != address(0)) _eq(address(press.ethUsd()), ethUsd, "MorningWood.ethUsd is ETH_USD_FEED");
         _tokenEq(address(press.PAPER()), "PAPER", "MorningWood.PAPER");

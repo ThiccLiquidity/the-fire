@@ -244,8 +244,8 @@ function GroupCard({ s, i, packs, problems, busy, set, remove, move }: {
           </span>
         </GF>
         {priced && <>
-          <GF all={mine} gi={i} f="plankBurnPercent" label="PLANK burn (%)" hint="Of its dollar price. 100 = all of it."><Text value={g.plankBurnPercent} onChange={(v) => set({ plankBurnPercent: v })} testId={tid('burn')} width={60} /></GF>
-          <GF all={mine} gi={i} f="paperBurnPercent" label="PAPER buy & burn (%)" hint="Plus any rising-price tax."><Text value={g.paperBurnPercent} onChange={(v) => set({ paperBurnPercent: v })} testId={tid('paper-burn')} width={60} /></GF>
+          <GF all={mine} gi={i} f="plankBurnPercent" label="To liquidity, part 1 (%)" hint="Of its dollar price, in the coin paid. With part 2: 100 = all of it."><Text value={g.plankBurnPercent} onChange={(v) => set({ plankBurnPercent: v })} testId={tid('burn')} width={60} /></GF>
+          <GF all={mine} gi={i} f="paperBurnPercent" label="To liquidity, part 2 (%)" hint="Plus any rising-price tax."><Text value={g.paperBurnPercent} onChange={(v) => set({ paperBurnPercent: v })} testId={tid('paper-burn')} width={60} /></GF>
         </>}
         <GF all={mine} gi={i} f="perWallet" label="Per wallet" hint="0 = no limit."><Num value={g.perWallet} onChange={(v) => set({ perWallet: v })} testId={tid('per-wallet')} width={70} /></GF>
         {(g.perWallet > 0 || g.limitHours > 0) && (
@@ -306,8 +306,7 @@ function DropPicture({ s, lockedPacks, cardsPerPack }: { s: SaleSettings; locked
       <div className="stats-row">
         <div className="stat"><b data-testid="drop-total">{n(s.packs)}</b><span>base packs · {n(s.packs * cardsPerPack)} cards</span></div>
         <div className="stat"><b data-testid="drop-revenue">{usd(d.revenueUsd)}</b><span>sold out{d.freeMax > 0 ? ` · ${usd(d.revenueMinUsd)} if every free pack is used` : ''}</span></div>
-        <div className="stat"><b>{usd(d.paperUsd)}</b><span>of PAPER bought &amp; burned</span></div>
-        <div className="stat"><b>{usd(d.burnUsd)}</b><span>of PLANK burned</span></div>
+        <div className="stat"><b>{usd(d.liquidityUsd)}</b><span>to liquidity (paired &amp; burned)</span></div>
         <div className="stat"><b>{usd(d.keepUsd)}</b><span>to the revenue wallet</span></div>
       </div>
       {d.total > 0 && (

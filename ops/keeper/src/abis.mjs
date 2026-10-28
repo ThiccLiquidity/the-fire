@@ -27,7 +27,7 @@ export const saleAbi = parseAbi([
   "function endDrop(uint256 fire)",
   "function END_GRACE() view returns (uint256)",
   "function GROUPS() view returns (address)",
-  "event PacksBought(uint256 indexed fire, uint256 indexed group, address indexed buyer, uint256 count, uint8 pay, uint256 paid, uint256 burnShare, bool plankBurned)",
+  "event PacksBought(uint256 indexed fire, uint256 indexed group, address indexed buyer, uint256 count, uint8 pay, uint256 paid, uint256 toLiquidity)",
 ]);
 
 export const groupsAbi = parseAbi([
@@ -36,9 +36,9 @@ export const groupsAbi = parseAbi([
   "function groupsOf(uint256 fire) view returns (GroupView[])",
 ]);
 
-/** FireSale's owner settings: the wallets (revenue, PlankBurner, PaperBurner) and the price feeds and router. */
+/** FireSale's owner settings: the wallets (revenue, LiquidityBurner) and the price feeds and router. */
 export const saleSettingsEvents = parseAbi([
-  "event WalletsSet(address revenue, address plankBurner, address paperBurner)",
+  "event WalletsSet(address revenue, address liquidity)",
   "event FeedsSet(address ethUsd, address plankUsd, address paperUsd, address router)",
 ]);
 
@@ -84,12 +84,13 @@ export const routerAbi = parseAbi([
   "function PERIOD() view returns (uint256)",
 ]);
 
-/** PaperBurner and PlankBurner: flush(pay) returns what it burned (0 = nothing moved; a Waiting event says why). */
-export const burnerAbi = parseAbi([
-  "function flush(uint8 pay) returns (uint256)",
-  "function flusher(address) view returns (bool)",
-  "function PLANK() view returns (address)",
-  "function USDG() view returns (address)",
+/** LiquidityBurner: run() spends, evens out, pairs and burns (keepers only; true if anything it held changed, so a
+ *  simulation says whether a run is worth sending); held() is what waits, in dollars
+ *  (18 decimals): the PAPER side, the PLANK side, ETH + USDG still to spend. */
+export const liquidityAbi = parseAbi([
+  "function run() returns (bool)",
+  "function keeper(address) view returns (bool)",
+  "function held() view returns (uint256 paperSide, uint256 plankSide, uint256 toSpend)",
 ]);
 
 export const erc20Abi = parseAbi(["function balanceOf(address) view returns (uint256)", "function decimals() view returns (uint8)"]);

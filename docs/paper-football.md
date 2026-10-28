@@ -28,7 +28,8 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
     without stopping a kick.
 11. **Paid competitive play launches with the site (owner's call, Oct 26).** The owner's kill switch can pause it at
     any time:
-    - 1 PAPER per run, burned, with up to 3 optional practice kicks; the first miss ends the run.
+    - 1 PAPER per run, to the liquidity contract (`LiquidityBurner`), with up to 3 optional practice kicks; the first
+      miss ends the run.
     - One leaderboard place per wallet, its best streak this Series; a tie goes to whoever got there first.
     - At the end of the Series: 3, 2 and 1 free packs for the top three, to open in the next Series.
     - Kicks are checked on the server (each shot's conditions come from a seed; the server replays the inputs).
@@ -90,9 +91,10 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
 - **`FireGames`** (`contracts/src/cards/FireGames.sol`) takes the entries for every game in the game room.
   - The owner adds a game once with `addGame(gameId, entry, capUsd8)`. Its entry and dollar ceiling are fixed
     forever. Paper football is game 1 at 1 PAPER, at most $0.10 of PAPER (`DeployCards` adds it). `priceOf(gameId)`
-    is what a run burns now.
-  - `payRun(gameId, runId, series, deadline, maxPaper, sig)` burns that game's price (at most `maxPaper`) from the player to the dead
-    address and records who paid that run id, once. It needs the game server's EIP-712 approval (`signer`) of that
+    is what a run costs now.
+  - `payRun(gameId, runId, series, deadline, maxPaper, sig)` sends that game's price (at most `maxPaper`) from the player to
+    `LiquidityBurner` (`LIQUIDITY()`, fixed at deploy; it pairs the PAPER with PLANK and burns the liquidity,
+    `docs/liquidity-burn.md`) and records who paid that run id, once. It needs the game server's EIP-712 approval (`signer`) of that
     game, run id, player, Series and deadline, so the server's checks (state, 18+) come first. The server starts a
     paid run only after it sees `RunPaid` for its run id from the player's wallet.
   - The owner's switches: `setPaused` (every game), `setGameOpen` (one game), `setSeries` (the competition new runs go

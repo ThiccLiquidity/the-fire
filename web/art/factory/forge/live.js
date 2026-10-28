@@ -290,7 +290,10 @@
         await Promise.all([readSeries(fires), readRules()]); Store.update(() => {}); // the Series shows before the wallet's reads
         await readWallet(o.cards, fires);
         // the burn tally: read alongside, never holding up the sync (or anything waiting on it, like the wallet sheet)
-        L.burnedTotals().then((b) => { S.burnTally = { paper: b.PAPER ? num(b.PAPER) : null, plank: b.PLANK ? num(b.PLANK) : null }; Store.update(() => {}); }, () => {});
+        Promise.all([L.burnedTotals(), L.liquidityBurned().catch(() => null)]).then(([b, lq]) => {
+          S.burnTally = { paper: b.PAPER ? num(b.PAPER) : null, plank: b.PLANK ? num(b.PLANK) : null, lp: lq ? { paper: num(lq.PAPER), plank: num(lq.PLANK) } : null };
+          Store.update(() => {});
+        }, () => {});
         picks = await L.picks().catch(() => picks);
         fails = 0; nextAt = 0; setStale(false);
       } catch (e) {

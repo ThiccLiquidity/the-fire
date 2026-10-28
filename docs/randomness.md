@@ -33,7 +33,7 @@ the name is historical).
   could act as a re-roll for someone who had already seen their number.
 - **No word for 24 hours** after the request (`CANCEL_AFTER`, randomness gone for good): anyone calls
   `FireCards.cancelOpen(fire, index)` (the packs go back, sealed) or `FirePsa.cancelGrading(index, ids)` (the cards
-  unlock, still ungraded; the fee is not refunded: it went to the PAPER burn). Both refuse while the request's source
+  unlock, still ungraded; the fee is not refunded: it went to LiquidityBurner). Both refuse while the request's source
   holds a word: deliver it instead.
   - **Why 24 hours.** drand publishes each round before anyone delivers it, so a cancel only works while nobody has
     delivered the word, and the holder can see the word first. A holder who didn't like it could sit on it and cancel

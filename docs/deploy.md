@@ -70,8 +70,8 @@ It finds a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool holding at least $10 on it
 `PLANK_USD_FEED`) and at least 1,000 PAPER, and reports its first price about 40 hours after the keeper's first checkpoint (20 hours as
 candidate, then one 20-hour window). Each pool keeps its own 20-hour clock, so a pool that appears for a moment (a flash
 loan) can't restart the real pool's; when several finish, the one that held the most liquidity all along wins. After a
-switch to a new pool, the last full window's price keeps serving until the new pool has its own. Until then packs take the set PAPER (no dollar ceiling) and case and grading fees wait in
-`PaperBurner`.
+switch to a new pool, the last full window's price keeps serving until the new pool has its own. Until then packs take the set PAPER (no dollar ceiling) and everything sent to
+`LiquidityBurner` waits there (a run does nothing without both prices).
 
 ## 3. Card contracts
 Fill the card section of `.env` (`OWNER` = the hardware wallet's address, royalty, revenue wallet; details at the top of
@@ -81,16 +81,17 @@ forge script script/DeployCards.s.sol --rpc-url $env:RPC --account deployer --se
   --verify --verifier blockscout --verifier-url https://robinhoodchain.blockscout.com/api/
 ```
 Then `node ..\ops\deploy\record.mjs --rpc $env:RPC`. It checks every input first, including that `DRAND_ROUTER` returns a zero `requestFee()` like the OpenDrandRouter,
-that `PLANK_USD_FEED` sits on the PLANK/WETH pool the V2 router trades, and that `PLANK_USD_FEED` and `PAPER_USD_FEED`
+that `PLANK_USD_FEED` sits on the PLANK/WETH pool the V2 router trades, that the V2 router's factory already has the
+PAPER/PLANK pool, and that `PLANK_USD_FEED` and `PAPER_USD_FEED`
 are built on this `ETH_USD_FEED` (and this PAPER and `PLANK_USD_FEED`, for the PAPER feed). `PAPER_USD_FEED` is
-required. Then it deploys FirePacks, FireCards, CardsRenderer, RecipeDealer and RecipeCompiler, PlankBurner (no
-owner, no withdraw: it holds the PLANK burn share when a sale's swap can't run), FireCredits, FireSale, PaperBurner
-(with its feeds and default routes), FirePsa, one drand adapter each for FireCards and FirePsa, and FireProfiles
+required. Then it deploys FirePacks, FireCards, CardsRenderer, RecipeDealer and RecipeCompiler, LiquidityBurner (on
+that PAPER/PLANK pool, with its feeds set once, its default routes and the `KEEPERS` wallets as keepers; no withdraw;
+`docs/liquidity-burn.md`), FireCredits, FireSale, FirePsa, one drand adapter each for FireCards and FirePsa, and FireProfiles
 (names and profile pictures; no owner, nothing to wire) and FireGames (the game room's run entries: paper football
 is game 1 at 1 PAPER, prizes allowed in FireCredits; the server signer, the Series and the prize awarder stay unset,
 so paid play is closed until the owner sets them), wires them (set-once
-links, each checked: FireSale and FireCredits point at each other, FireSale's PlankBurner uses the same router and
-feeds; FireSale's PaperBurner is the one deployed; FirePsa and the `KEEPERS` wallets may flush PaperBurner), and offers ownership of all eight owned contracts to `OWNER` (two steps: the owner accepts in step 4). It
+links, each checked: FireSale and FireCredits point at each other; FireSale, FirePsa and FireGames pay the
+LiquidityBurner deployed, which uses FireSale's router and the same feeds), and offers ownership of all eight owned contracts to `OWNER` (two steps: the owner accepts in step 4). It
 refuses an `OWNER` equal to the deployer.
 
 **FireProfiles on a deploy made before it existed** (no redeploy of anything else; no owner, so no Ledger step):
@@ -105,8 +106,8 @@ deploys a new one: every profile starts empty). Until `FireProfiles` is in the f
 VerifyDeploy shows a WAIT for it, not a FAIL. Then push the file and rebuild the site.
 
 ## 4. Hardware wallet accepts
-The owner accepts FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa, PaperBurner and FireGames in one
-run (PlankBurner has no owner). Until then the deployer key controls those eight, so do it right after step 3. Eight
+The owner accepts FirePacks, FireCards, RecipeDealer, FireCredits, FireSale, FirePsa, LiquidityBurner and FireGames in
+one run. Until then the deployer key controls those eight, so do it right after step 3. Eight
 confirmations on the device:
 ```powershell
 forge script script/AcceptOwnership.s.sol --rpc-url $env:RPC --ledger --hd-paths $env:OWNER_HD_PATH `
@@ -114,13 +115,15 @@ forge script script/AcceptOwnership.s.sol --rpc-url $env:RPC --ledger --hd-paths
 ```
 It reads the addresses and the expected owner from `deployments/4663.json`, refuses any other signer, and skips what
 the owner already holds (safe to run again). Leave out `--broadcast` for a dry run. Then the read-only check (no key
-needed):
+needed; `KEEPERS` must be set, as given to DeployCards, or the keepers' right to run LiquidityBurner FAILs):
 ```powershell
+$env:KEEPERS = "<main keeper>,<backup keeper>"
 forge script script/VerifyDeploy.s.sol --rpc-url $env:RPC
 ```
 It prints OK / WAIT / FAIL per line: code at every address, every owner is the hardware wallet recorded as `OWNER` in
 the deployments file (or it still has to accept), every set-once link (the list
-in `docs/cards-contracts.md`), the feeds live, nothing paused or locked by mistake. It fails on any FAIL; WAIT means
+in `docs/cards-contracts.md`), the feeds live, the `KEEPERS` wallets allowed to run LiquidityBurner, nothing paused
+or locked by mistake. It fails on any FAIL; WAIT means
 "not yet" (an acceptOwnership still to sign, the PLANK feed before its first checkpoint, the PAPER feed before its
 pool). Ownership can never be renounced. Optional:
 `FirePacks.setContractURI` and `FireCards.setContractURI` (collection pages on marketplaces).
@@ -130,12 +133,14 @@ pool). Ownership can never be renounced. Optional:
 (`KEEPER_ROLE=main`) and a backup (`KEEPER_ROLE=backup`) that only acts on work left waiting 5 minutes. Each has its own
 gas-only wallet (its key only in a Railway variable, typed in there) and its own dead-man's switch (`HEARTBEAT_URL`,
 required). A GitHub Actions workflow can run a third, best-effort pass every 5 minutes (optional, off by default).
-Start them right after step 1 (the PLANK feed needs its checkpoints). Every call is permissionless:
+Start them right after step 1 (the PLANK feed needs its checkpoints). Every call is permissionless except
+`LiquidityBurner.run()`, which only the keeper wallets may call (`KEEPERS` in step 3, or `LiquidityBurner.setKeeper`
+from the owner):
 - `PlankUsdTwap.checkpoint()` every 30 minutes; `PaperUsdTwap.checkpoint()` when `due()`
 - drand numbers to the router (`OpenDrandRouter.fulfillMany`; `adapter.settle` if a callback didn't land)
 - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` (ids from the grading's `Protected` event)
-- `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when they hold something a flush can burn worth the gas
-  ($1 by default, at most every 15 min; smaller balances after 6 h, so dust can't drain the keeper)
+- `LiquidityBurner.run()` when it holds work worth the gas ($1 by default, at most every 15 min, at once from $25;
+  smaller amounts after 6 h, so dust can't drain the keeper)
 - `FireSale.close(fire)` once nothing can still sell in a Series (`status(fire).left` 0: a group's time ran out with
   its leftovers rolling nowhere, or the unlimited "after sell-out" group idled out); no purchase closes it then
 - `FireSale.endDrop(fire)` for a drop that didn't sell out, once anyone may (7 days after `status(fire).endableAt`)
@@ -167,7 +172,7 @@ node ops\series\launch.mjs --recipe contracts\series\recipe-fire-7.json --start 
    Ledger account at `OWNER_HD_PATH`, the Series isn't locked, no other drop is open, the keeper is alive (recent PLANK
    checkpoint; PAPER feed live), the pack art `fire<N>.webp` is up, the start is at least 15 minutes away, the sale
    settings (the drop-wide fields and each group) are inside the policy (below), every NFT group's collection is a
-   contract, and FireSale's revenue wallet, burners and FireGroups are the deployments file's.
+   contract, and FireSale's revenue wallet, LiquidityBurner and FireGroups are the deployments file's.
 2. **Snapshots** (one per snapshot group, from the side file): each wallet's smallest holding of the group's token
    (LP share included for a coin) over 5 blocks in the past 7 days (`--snapshot-blocks`, `--snapshot-days` as
    defaults), with its allowance (tiers), saved as `fire-<N>-group-<i>.json` next to the recipe with its seed and
@@ -183,14 +188,14 @@ node ops\series\launch.mjs --recipe contracts\series\recipe-fire-7.json --start 
    FireGroups, and writes the site's holders file `web/art/factory/forge/holders/series-<N>.json` (every snapshot
    group's wallets, allowances and proofs; format in `ops/README.md`). Commit it and deploy the site with the drop.
 
-**Sale policy** (`ops/series/sale-policy.mjs`; the table is in `ops/README.md`): drop-wide, PLANK + PAPER burn 10-100%
-of each sale, with PAPER at least 10% (Standard: 10% + 20%), and a PAPER cap of $0.10 or more (0 = no cap: a
+**Sale policy** (`ops/series/sale-policy.mjs`; the table is in `ops/README.md`): drop-wide, the PLANK + PAPER shares to
+LiquidityBurner 10-100% of each sale (Standard: 10% + 20%; the PLANK holders' group 100% + 0%), and a PAPER cap of $0.10 or more (0 = no cap: a
 warning); per group, a price of $1-$10 a pack (0 only for an NFT or snapshot group: free or PAPER only), at least 0.1
 PAPER a pack, at most 50 per wallet (no limit warns for a finite open group), a rising tax up to 10% a pack (a warning
 above; the owner's default is 4%), an unlimited group idling out within 1 h (a warning above), and a root on every
 snapshot group. Outside a bound the launch STOPs, before batch A and again before LOCK, unless that rule is allowed by
 name: `--allow price,wallet-limit` (VerifySeries takes the same `--allow`). The wallets have no `--allow`: a FireSale
-revenue wallet or burner that isn't the deployments file's, or a FireGroups not wired to FireSale, is always RED.
+revenue wallet or LiquidityBurner that isn't the deployments file's, or a FireGroups not wired to FireSale, is always RED.
 
 After a STOP, fix the problem and run the same command again: finished steps are skipped, and batch A and B are
 judged by the chain, so neither is sent twice. State and log: `ops\series\out\series-<N>.state.json` and
@@ -229,7 +234,7 @@ reads the folder's `manifest.json`, checks each snapshot group's root against it
 proof it serves) and rebuilds the snapshot from the chain at its saved blocks (a wallet, amount or allowance edited
 into the file is RED; `node ops/snapshot/snapshot.mjs --verify <file>` does the same on its own), checks every NFT
 group's collection has code, the sale block against the sale policy (`--allow <rule>` for a meant exception),
-FireSale's revenue wallet and burners against the deployments file and FireGroups wired to FireSale. Sign batch B only
+FireSale's revenue wallet and LiquidityBurner against the deployments file and FireGroups wired to FireSale. Sign batch B only
 when it says **GREEN**.
 
 **Batch B, the lock:** `configureDrop` from the JSON's `sale` block (it locks the Series: recipe, characters and images
@@ -264,10 +269,10 @@ wallet in, a last-block whale out, $500 = 2 packs; a wallet added to the file by
 ERC-721) → VerifySeries (RED with an image missing, then GREEN, the snapshot rebuilt from the chain, the sale policy
 and wallets) → batch B: four groups, the Standard preset scaled small (Press holders, PLANK snapshot holders,
 everyone, an unlimited taxed group idling out after 5 minutes) → buy through the groups (a proof from the snapshot
-script; a raised allowance refused; one buy with the PLANK swap down) → the taxed group's price rises, then it idles
+script; a raised allowance refused) → the taxed group's price rises, then it idles
 out → the keeper closes the Series (`FireSale.close`) → open → the keeper delivers drand and deals → the main keeper and the backup race → case and grade → the
 keeper finishes the grading → the backup steps in while the main keeper is down → a pause, a randomness switch and
-FireSale's `WalletsSet` reach the webhook → both burners flushed (the PAPER feed going live 40 h later) → a case and a grade paid in USDG (PAPER refused) → VerifyDeploy.
+FireSale's `WalletsSet` reach the webhook → the keeper runs LiquidityBurner (the PAPER feed going live 40 h later) → a case and a grade paid in USDG (PAPER refused) → VerifyDeploy.
 ```powershell
 cd ops; npm ci; cd keeper; npm ci; cd ..\snapshot; npm ci; cd ..
 node rehearsal/rehearse.mjs                       # plain anvil, nothing needed from outside
@@ -297,7 +302,8 @@ $env:EXPECTED_CHAIN_ID = "46630"                # every deploy script refuses an
 $verify = "--verify", "--verifier", "blockscout", "--verifier-url", "https://explorer.testnet.chain.robinhood.com/api/"   # testnet Blockscout
 ```
 1. **Stand-ins** (refuses chain 4663): PAPER, PLANK, USDG, WETH, an ETH/USD feed that never goes stale, a Uniswap V2
-   factory with PLANK/WETH and PAPER/WETH pools, a router, a Paper Press. Only the deployer can mint, set prices or
+   factory with PLANK/WETH, PAPER/WETH, PAPER/PLANK (LiquidityBurner's pool) and USDG/WETH pools, a router (it can
+   add liquidity too), a Paper Press. Only the deployer can mint, set prices or
    reserves, or break the router, so nobody else can wreck the testnet.
    ```powershell
    forge script script/DevStack.s.sol --rpc-url $env:RPC --account testnet-deployer --sender <deployer address> --slow --broadcast @verify

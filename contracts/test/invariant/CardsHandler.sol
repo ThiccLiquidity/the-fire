@@ -45,8 +45,7 @@ contract CardsHandler is Test {
     MockRandomness public psaRng;
     address public owner;
     address public revenue;
-    address public burnW;
-    address public paperW = address(0xBA9E5);
+    address public liq; // LiquidityBurner (a plain address: it only receives)
 
     address[] public actors;
     uint256[] public pressIds;
@@ -67,10 +66,10 @@ contract CardsHandler is Test {
     uint256 public constant ETH0 = 1_000_000 ether;
 
     // ---------------------------------------------------------------- ghosts
-    uint256 public ghostPaperBurned; // PAPER every successful action should have burned, by the rules
+    uint256 public ghostPaperToLiq; // PAPER every successful action should have sent to LiquidityBurner, by the rules
     uint256 public ghostProtectEth; // ETH paid for cases and grades (all of it goes to the burner)
     uint256[3] public ghostPaid; // per currency (0 PLANK, 1 ETH, 2 USDG): what buyers paid
-    uint256[3] public ghostBurnShare; // per currency: the burn share of what they paid
+    uint256[3] public ghostLiqShare; // per currency: the liquidity share (PLANK + PAPER shares) of what they paid
     mapping(uint256 => mapping(uint256 => mapping(address => uint256))) public ghostBoughtIn; // fire, group, wallet
     mapping(address => uint256) public ghostBurned;
     mapping(address => uint256) public ghostBurnCreditsUsed;
@@ -94,7 +93,7 @@ contract CardsHandler is Test {
     constructor() {
         owner = address(0xA11CE0);
         revenue = address(0xBEEF);
-        burnW = address(0xB0B);
+        liq = address(0xB0B);
         time = 1_800_000_000;
         vm.warp(time);
         paper = new MockERC20("PAPER", "PAPER");
@@ -118,7 +117,7 @@ contract CardsHandler is Test {
         sale = new FireSale(FireSale.Config({
             owner: owner, paper: address(paper), plank: address(plank), usdg: address(usdg), weth: address(0xE7),
             packs: address(packs), cards: address(cards), ethUsd: address(ethFeed),
-            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, plankBurner: burnW, paperBurner: paperW, credits: address(credits),
+            plankUsd: address(plankFeed), paperUsd: address(0), router: address(router), revenueWallet: revenue, liquidity: liq, credits: address(credits),
             groups: address(groups)
         }));
         groups.setSale(address(sale));
@@ -387,8 +386,8 @@ contract CardsHandler is Test {
             }
         }
         ghostPaid[uint8(b.pay)] += paid;
-        ghostBurnShare[uint8(b.pay)] += paid * G.plankBurnBps / BPS; // the group's own share
-        ghostPaperBurned += b.n * G.paper;
+        ghostLiqShare[uint8(b.pay)] += paid * (uint256(G.plankBurnBps) + G.paperBurnBps) / BPS; // the group's own shares
+        ghostPaperToLiq += b.n * G.paper;
         calls["buy.ok"]++;
     }
 
@@ -418,7 +417,7 @@ contract CardsHandler is Test {
         vm.prank(a, a);
         try credits.useCredits(fire, n, type(uint256).max) {
             ghostBurnCreditsUsed[a] += n; // all credits (burn and picked) are one pool now
-            ghostPaperBurned += n * per;
+            ghostPaperToLiq += n * per;
             calls["useCredits.ok"]++;
         } catch {}
     }
@@ -444,7 +443,7 @@ contract CardsHandler is Test {
         address a = _actor(actorSeed);
         vm.prank(a, a);
         credits.suggest("A fox made of embers", type(uint256).max);
-        ghostPaperBurned += 1e18;
+        ghostPaperToLiq += 1e18;
     }
 
     // ================================================================ owner
@@ -491,9 +490,10 @@ contract CardsHandler is Test {
             }
             if (i > 0 && (seed >> 40) % 2 == 0) g.afterGroup = uint8(i - 1);
             if ((seed >> 48) % 4 == 0) g.startDelay = uint32(bound(seed >> 56, 0, 2 hours));
-            // each group its own PLANK burn share (0 to 100%; PAPER share 0, so the rest is revenue)
+            // each group its own PLANK and PAPER shares (together 0 to 100%; the rest is revenue)
             uint256 gb = uint256(keccak256(abi.encode(bps, i)));
             g.plankBurnBps = uint16(gb % 3 == 0 ? 3_000 : gb % 3 == 1 ? BPS : bound(gb, 0, BPS));
+            g.paperBurnBps = uint16(bound(gb >> 128, 0, BPS - g.plankBurnBps));
             total += g.packs;
             c.groups[i] = g;
         }

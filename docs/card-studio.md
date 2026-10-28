@@ -276,9 +276,9 @@ later (the router commits to a drand round 90 to 93 seconds ahead) and each card
    added from a template (Paper Press holders, Coin holders (snapshot), NFT holders, Everyone, After sell-out (rising
    price)) and moved up/down or removed: name; packs as a count, a % of the total or "the rest" (one group); who
    (anyone, NFT holders: the Paper Press or a contract address + packs per NFT, or a snapshot list whose root the
-   snapshot script fills in before launch); price in $ and PAPER; coins (PLANK/ETH/USDG); with a price, its own PLANK
-   burn % and PAPER buy & burn % (Standard 10 / 20; e.g. 100 / 0 for a PLANK group that burns all its PLANK; the
-   summary line names shares other than the Standard); per wallet (and "limit lifts
+   snapshot script fills in before launch); price in $ and PAPER; coins (PLANK/ETH/USDG); with a price, its own share to
+   liquidity in two parts, "To liquidity, part 1 / part 2 (%)" (both go to LiquidityBurner in the coin paid; Standard
+   10 / 20, the PLANK holders' group 100 / 0: all its PLANK; the summary line names shares other than the Standard); per wallet (and "limit lifts
    after (hours)", blank = never: 5 per wallet for Everyone's first 24 h, then no limit); opens with the
    drop or after an earlier group; max time (0 = until sold); leftovers to a later group or nowhere; rising price %
    and unlimited (needs a rising price and an idle end); behind "more": delay, per purchase, ends after N minutes

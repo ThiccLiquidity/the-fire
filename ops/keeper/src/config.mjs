@@ -17,8 +17,7 @@ export const CONTRACT_ENV = {
   OpenDrandRouter: "DRAND_ROUTER",
   FireCards: "FIRE_CARDS",
   FirePsa: "FIRE_PSA",
-  PaperBurner: "PAPER_BURNER",
-  PlankBurner: "PLANK_BURNER",
+  LiquidityBurner: "LIQUIDITY_BURNER",
 };
 
 /** Optional: watched for the pause and randomness-switch alerts when known. */
@@ -75,8 +74,7 @@ export function loadConfig(env = process.env) {
       paperTwap: addr("PaperUsdTwap"),
       cards: addr("FireCards"),
       psa: addr("FirePsa"),
-      paperBurner: addr("PaperBurner"),
-      plankBurner: addr("PlankBurner"),
+      liquidity: addr("LiquidityBurner"),
     },
     ethUsdFeed: e("ETH_USD_FEED", dep.inputs.ETH_USD_FEED) ? getAddress(e("ETH_USD_FEED", dep.inputs.ETH_USD_FEED)) : undefined,
     drandUrls: e("DRAND_URLS") ? e("DRAND_URLS").split(",").map((s) => s.trim()).filter(Boolean) : DEFAULT_DRAND_URLS,
@@ -105,10 +103,10 @@ export function loadConfig(env = process.env) {
     // gradings read per pass: the newest GRADING_LOOKBACK, plus as many older ones from the oldest not finished
     // (a sweep that wraps around, so a backlog older than the window is still finished, a chunk per pass)
     gradingLookback: num(e("GRADING_LOOKBACK"), 300),
-    // burner flushes are a sweep (sales and gradings pay the burners as they go), and anyone can send dust to a burner:
-    // flush a balance worth MIN_FLUSH_USD at most once per FLUSH_EVERY_MIN per burner and currency (at once when it's
-    // worth FLUSH_NOW_X times that), and anything over FLUSH_DUST_USD (or with no price to value it) once it has
-    // waited FLUSH_MAX_WAIT_HOURS, so nothing waits forever and dust can't drain the keeper's gas
+    // LiquidityBurner runs: when it has work worth MIN_FLUSH_USD (coins to spend, sides to pair or even out, a side
+    // over its cap), at most once per FLUSH_EVERY_MIN (at once when it's worth FLUSH_NOW_X times that), and work over
+    // FLUSH_DUST_USD once it has waited FLUSH_MAX_WAIT_HOURS, so nothing waits forever and dust can't drain the
+    // keeper's gas. A side waiting alone for the other is not work.
     minFlushUsd: num(e("MIN_FLUSH_USD"), 1),
     flushEveryMin: num(e("FLUSH_EVERY_MIN"), 15),
     flushNowX: num(e("FLUSH_NOW_X"), 25),

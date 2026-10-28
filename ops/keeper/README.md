@@ -2,7 +2,7 @@
 
 Two always-on processes that make the permissionless calls the card system needs: the **main** keeper and a
 **backup**, each a Railway service in its own region with its own gas-only wallet. They have no special powers: anyone
-can make these calls (except flushing PaperBurner, which the owner allows for the keeper wallets), the keepers are just
+can make these calls (except running LiquidityBurner, which the owner allows for the keeper wallets), the keepers are just
 reliably awake.
 
 Each pass (every 20 s for the main keeper, 30 s for the backup):
@@ -19,15 +19,15 @@ Each pass (every 20 s for the main keeper, 30 s for the backup):
    one not done, and the next 300 older ones from there (a sweep that wraps around), so a backlog older than the window
    (an outage in a busy week, or someone paying for hundreds of gradings) is still finished, 300 a pass. Nothing below
    the oldest not done is read again.
-5. **Burners:** `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when what they hold is worth the gas and a flush
-   would actually burn it. Sales and gradings pay the burners as they go, so the keeper's flush is only a sweep, and
-   anyone can send a burner a few wei: a balance is flushed when it is worth `MIN_FLUSH_USD` ($1; ETH at Chainlink's
-   price, PLANK at PlankUsdTwap's, USDG at face value), at most once per `FLUSH_EVERY_MIN` (15) per burner and currency
-   unless it is worth `FLUSH_NOW_X` (25) times that. Less than that (or one with no price to value it) is flushed once
-   it has waited `FLUSH_MAX_WAIT_HOURS` (6) if it is worth over `FLUSH_DUST_USD` ($0.05), so nothing waits forever and
-   dust can't drain the keeper. PaperBurner only lets flushers the owner names flush it (an open flush could be
-   sandwiched): set both keeper wallets with `KEEPERS` at deploy, or `PaperBurner.setFlusher(<keeper>, true)` from the
-   owner. A keeper that isn't one alerts instead of flushing.
+5. **Liquidity:** `LiquidityBurner.run()` (`docs/liquidity-burn.md`): it spends the ETH and USDG it holds, evens out a
+   heavy PLANK side, pairs the two sides into the PAPER/PLANK pool and burns the pool tokens, and burns a side over
+   its $100 cap. Sales, fees, suggestions and game entries pay it as they go; the keeper runs it when that work
+   (`held()`: dollars to spend, the matching amount of each side to pair, half a PLANK surplus, anything over the cap)
+   is worth `MIN_FLUSH_USD` ($1), at most once per `FLUSH_EVERY_MIN` (15) unless it is worth `FLUSH_NOW_X` (25) times
+   that; smaller work is run once it has waited `FLUSH_MAX_WAIT_HOURS` (6) if over `FLUSH_DUST_USD` ($0.05), so nothing
+   waits forever and dust can't drain the keeper. One side waiting alone for the other is not work. Only keepers the
+   owner names may run it (an open run could be sandwiched): set both keeper wallets with `KEEPERS` at deploy, or
+   `LiquidityBurner.setKeeper(<keeper>, true)` from the owner. A keeper that isn't one alerts instead.
 6. **Drops** (read from `FireSale.status(N)`; the groups from `FireGroups.groupsOf(N)`, `docs/drop-groups.md`):
    - **Close:** when nothing can still sell (`status.left` 0) and nothing closed the Series. A purchase that takes the
      last pack closes it in the same transaction, but when the last sellable packs vanish because a group's time ran
@@ -49,7 +49,7 @@ a call that would do nothing isn't sent. Reads made together go out as one Multi
 
 **Two keepers, no double work.** The backup (`KEEPER_ROLE=backup`) acts only on work left waiting `ACT_AFTER_SEC`
 (5 min): a feed window or a candidate adoption 5 min late, a drand round published 5 min ago and not delivered, an open
-ready 5 min and not dealt, a burner balance waiting 5 min, a Series nothing can sell in 5 min after its last group ended, an unsold drop 5 min
+ready 5 min and not dealt, LiquidityBurner work waiting 5 min, a Series nothing can sell in 5 min after its last group ended, an unsold drop 5 min
 past the time anyone may end it. Even then it waits `BACKUP_YIELD_MS` before each
 transaction, looks again, and stands down while the main keeper's wallet (`MAIN_KEEPER_ADDRESS`) has a transaction
 waiting, so the main keeper wins a tie. When the backup does act it says so on the webhook. The rehearsal races the two
@@ -76,8 +76,8 @@ while it lasts, and "resolved" when it clears:
   are public, so a holder who saw a word they didn't like could wait out a keeper outage and cancel for a re-roll:
   deliver it before then. The same applies to the swept gradings alert once its oldest is 6 h old.
 - **Stuck opens and gradings** older than the 300 the keeper reads each pass: one alert with how many and the oldest.
-- **Waiting fees:** a burner holds ETH, PLANK or USDG worth flushing that it can't burn yet (no PAPER price yet, or
-  the price guard). Dust below the flush minimum waits quietly.
+- **Waiting work:** LiquidityBurner has work a run couldn't do (a price guard, the pool's price off, or a missing
+  price feed). Dust below the run minimum waits quietly.
 - **An unsold drop:** "Series N hasn't sold out; the owner can end it now with FireSale.endDrop(N), or anyone can after
   <date>"; after that date, only if the keeper's own `endDrop` didn't go through. Posted when the keeper ends it.
 - **A close that didn't go through:** "Series N: nothing can still sell, but this keeper's FireSale.close(N) didn't go
@@ -86,7 +86,7 @@ while it lasts, and "resolved" when it clears:
   2+ min.
 - **The owner's switches:** FireSale or FirePsa paused (posted once, and when it ends); FireCards' or FirePsa's
   randomness source switched (posted when it happens); FireSale's wallets or price feeds changed (`WalletsSet`,
-  `FeedsSet`: posted once per event with the new addresses, and whether a burner or feed isn't the deployed one).
+  `FeedsSet`: posted once per event with the new addresses, and whether LiquidityBurner or a feed isn't the deployed one).
   The always-on keepers watch these from their start; a one-pass run (`ONCE`) doesn't.
 - **Low keeper ETH:** under 0.002 ETH (`LOW_BALANCE_ETH`). Keep about 0.005-0.01 ETH in each keeper wallet.
 - **The keeper itself:** a job failing, a transaction in flight 15+ min, the backup having to step in, and a keeper that
@@ -120,12 +120,12 @@ while it lasts, and "resolved" when it clears:
 | `MAX_FEE_GWEI` | none | fee cap |
 | `PROCESS_MAX_CARDS` | 120 | cards per `process` call |
 | `GRADING_LOOKBACK` | 300 | gradings read per pass: the newest this many, plus this many older ones (the sweep) |
-| `MIN_FLUSH_USD`, `FLUSH_EVERY_MIN`, `FLUSH_NOW_X`, `FLUSH_MAX_WAIT_HOURS`, `FLUSH_DUST_USD` | 1, 15, 25, 6, 0.05 | burner flushes: the minimum in dollars, once per this many minutes, at once when worth this many times the minimum, and anything over the dust floor once it has waited this many hours |
+| `MIN_FLUSH_USD`, `FLUSH_EVERY_MIN`, `FLUSH_NOW_X`, `FLUSH_MAX_WAIT_HOURS`, `FLUSH_DUST_USD` | 1, 15, 25, 6, 0.05 | LiquidityBurner runs: the minimum in dollars of work, once per this many minutes, at once when worth this many times the minimum, and anything over the dust floor once it has waited this many hours |
 | `LOW_BALANCE_ETH`, `STUCK_MIN`, `CANCEL_WARN_HOURS`, `PLANK_STALE_MIN`, `PAPER_STALE_HOURS`, `PAPER_CANDIDATE_LATE_HOURS`, `ETH_STALE_HOURS`, `DRAND_LAG_ROUNDS`, `ALERT_REPEAT_MIN`, `HEARTBEAT_HOURS` | 0.002, 10, 6, 90, 22, 3, 24, 20, 60, 24 | alert thresholds |
 
 "Production" is `NODE_ENV=production`, which the Docker image sets: there a keeper without `HEARTBEAT_URL` or
 `ALERT_WEBHOOK_URL` refuses to start (and says so). Any contract address can be overridden (`FIRE_CARDS`, `FIRE_PSA`,
-`PAPER_BURNER`, `PLANK_BURNER`, `PLANK_USD_FEED`, `PAPER_USD_FEED`, `FIRE_SALE`), but normally they all come from
+`LIQUIDITY_BURNER`, `PLANK_USD_FEED`, `PAPER_USD_FEED`, `FIRE_SALE`), but normally they all come from
 `deployments/<CHAIN_ID>.json`. Railway rebuilds when that file changes on the deployed branch.
 
 ## Setup (PowerShell)
@@ -197,13 +197,13 @@ Remove-Item Env:KEEPER_PRIVATE_KEY, Env:ONCE
 
 - `npm test`: drand client, alerts (dedupe, hourly repeat, resolved, pause notices, events, one-pass state file and
   window), the heartbeat (alive whatever the alerts, failing only on a failed pass), config (roles, production
-  requirements, thresholds) and key handling, start-up nonce-gap replacement, and against a stand-in chain: burner
-  flush minimums (dust, the rate limit, large balances, the long wait, the PaperBurner flusher check, the backup's
-  grace), closing a Series nothing can still sell (`status.left` 0: the main keeper at once, the backup after its
+  requirements, thresholds) and key handling, start-up nonce-gap replacement, and against a stand-in chain: LiquidityBurner
+  run minimums (a side alone isn't work, dust, the rate limit, large work, the long wait, work a run left behind, the
+  keeper check, the backup's grace), closing a Series nothing can still sell (`status.left` 0: the main keeper at once, the backup after its
   grace, a failed simulation alerting, an unlimited group still open left alone), unsold drops (`status.endableAt`:
   the owner's alert, the keeper's `endDrop`, the backup's grace), the grading sweep, FireSale's `WalletsSet` /
   `FeedsSet` events, and the FireSale / FireGroups ABI slices against `contracts/out`.
 - The whole keeper runs end to end in the rehearsal (`ops/rehearsal`, see `docs/deploy.md`): on a local anvil chain it
   checkpoints, delivers a real drand signature through the real router, deals, finishes a grading from its
-  `Protected` event, closes a Series whose unlimited group idled out, flushes both burners, races the main keeper against the backup with automine off, lets the
+  `Protected` event, closes a Series whose unlimited group idled out, runs LiquidityBurner, races the main keeper against the backup with automine off, lets the
   backup step in while the main keeper is down, and posts to a local webhook.

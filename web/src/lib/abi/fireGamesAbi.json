@@ -11,13 +11,18 @@
         "name": "paper",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "liquidity",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "DEAD",
+    "name": "LIQUIDITY",
     "inputs": [],
     "outputs": [
       {

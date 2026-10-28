@@ -1,12 +1,12 @@
 // The live chain layer (src/lib/chain) end to end on a local chain (setup.mjs): suggestions (theme + style in one
 // transaction) and the owner's picks, the drop's groups (docs/drop-groups.md): buying from Everyone with ETH, PLANK,
-// USDG and ETH alone (PAPER burned each time), a free pack from the credit group, the Press group's pack with a Paper
-// Press, the after-sell-out group's rising price (and a buy refused when someone else's moved it), the idle end and
-// the close by anyone, opening, delivering randomness and dealing, reading the cards, casing and grading (delivered and
-// finished), burning, profiles (FireProfiles: set, rename, a name unique in any case, the picture falling back once its
+// USDG and ETH alone (PAPER to the liquidity fire each time), a free pack from the credit group, the Press group's pack
+// with a Paper Press, the after-sell-out group's rising price (and a buy refused when someone else's moved it), the
+// idle end and the close by anyone, opening, delivering randomness and dealing, reading the cards, casing and grading
+// (delivered and finished), burning, the liquidity fire (a keeper's LiquidityBurner run burning real pool tokens), profiles (FireProfiles: set, rename, a name unique in any case, the picture falling back once its
 // card is sold, clear), and every read the site uses. Run by run.mjs.
 
-import { concat, decodeFunctionData, encodeFunctionData, erc20Abi, keccak256, toHex, type Address, type Hex } from "viem";
+import { concat, decodeFunctionData, encodeFunctionData, erc20Abi, keccak256, toHex, type Address, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
 import type { Net } from "../../src/lib/net";
 import { cardsAbi, creditsAbi } from "../../src/lib/cards";
@@ -18,6 +18,7 @@ type Ctx = {
   tx: (account: unknown, address: Address, abi: unknown[], fn: string, args?: unknown[]) => Promise<{ logs: { topics: Hex[]; data: Hex; address: Address }[] }>;
   asOwner: (to: Address, data: Hex) => Promise<unknown>;
   rpc: (method: string, params?: unknown[]) => Promise<unknown>;
+  pub: PublicClient;
 };
 
 const MNEMONIC = "test test test test test test test test test test test junk";
@@ -117,7 +118,7 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const paperBefore = BigInt((await L.balances(me)).PAPER!.raw);
   const sg = await L.suggest({ texts: ["Theme: Haunted diner", "Art style: Old woodcut print"] }, o);
   check(sg.receipts.length === 1 && !sg.oneByOne, "both sent in one transaction (suggestMany)");
-  check(paperBefore - BigInt((await L.balances(me)).PAPER!.raw) === 2n * 10n ** 18n, "2 PAPER burned (1 each)");
+  check(paperBefore - BigInt((await L.balances(me)).PAPER!.raw) === 2n * 10n ** 18n, "2 PAPER paid (1 each, to the liquidity fire)");
   await L.suggest({ texts: ["Character: A sleepy volcano\nPersonality: Grumpy before coffee"] }, o);
   const mine = await L.suggestions({ by: me });
   check(mine.length === 3 && mine[2].text === "Theme: Haunted diner" && mine.every((x) => x.round === 0 && !x.picked), "the wallet's 3 suggestions read back (texts, round 0, not picked)");
@@ -158,7 +159,7 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const paperHeld = BigInt((await L.balances(me)).PAPER!.raw);
   const qe = q.quotes.find((x) => x.pay === "ETH")!;
   await L.buyPacks({ fire, group: 1, n: 2, pay: "ETH", paperInEth: true, quote: { cost: qe.cost!.raw, paperEth: q.paperEth!.raw } }, o);
-  check(BigInt((await L.balances(me)).PAPER!.raw) === paperHeld, "2 packs with ETH alone (buyWithEthAll): the sale bought and burned their PAPER, none of the wallet's own");
+  check(BigInt((await L.balances(me)).PAPER!.raw) === paperHeld, "2 packs with ETH alone (buyWithEthAll): the sale bought their PAPER for the liquidity fire, none of the wallet's own");
   await L.buyPacks({ fire, group: 1, n: 1, pay: "ETH" }, o);
   // the per-wallet limit (3) holds for the group's first 10 minutes, then lifts
   let limMsg = "";
@@ -359,7 +360,40 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const pt3 = await L.protect({ caseIds: [card9], pay: "USDG", quote: q5.raw }, o);
   const spent = usdgBefore - BigInt((await L.balances(me)).USDG!.raw);
   check(BigInt(q5.raw) > 0n && pt3.gradingIndex === -1 && (await L.card(card9)).cased && spent === BigInt(q5.raw),
-    `a case paid in USDG (approved to FirePsa; the fee goes to PaperBurner, which buys PAPER and burns it): ${q5.text} USDG, exactly the quote`);
+    `a case paid in USDG (approved to FirePsa; the fee goes to LiquidityBurner): ${q5.text} USDG, exactly the quote`);
+
+  console.log("\n== the liquidity fire (LiquidityBurner): everything paid in so far is paired and burned as PAPER/PLANK liquidity");
+  const LB = ctx.C.LiquidityBurner;
+  const lbAbi = [
+    { type: "function", name: "run", inputs: [], outputs: [], stateMutability: "nonpayable" },
+    { type: "function", name: "setKeeper", inputs: [{ type: "address" }, { type: "bool" }], outputs: [], stateMutability: "nonpayable" },
+    { type: "function", name: "held", inputs: [], outputs: [{ type: "uint256" }, { type: "uint256" }, { type: "uint256" }], stateMutability: "view" },
+    { type: "function", name: "lpBurned", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+    { type: "function", name: "PAIR", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
+  ] as const;
+  const lbRead = <T,>(functionName: "held" | "lpBurned" | "PAIR") => ctx.pub.readContract({ address: LB, abi: lbAbi, functionName }) as Promise<T>;
+  const usd = (x: bigint) => (Number(x) / 1e18).toFixed(2);
+  check(BigInt(await ctx.pub.getBalance({ address: LB })) > 0n && BigInt(await ctx.pub.readContract({ address: paperTok, abi: erc20Abi, functionName: "balanceOf", args: [LB] })) > 0n,
+    "sales, fees and suggestions paid LiquidityBurner (ETH and PAPER held; nothing went to the dead address at sale time)");
+  // a short price window again (the run refuses a long one), as the keeper's checkpoints keep it
+  await ctx.warp(31 * 60);
+  for (const t of [ctx.C.PlankUsdTwap, ctx.C.PaperUsdTwap]) await ctx.tx(deployer, t, cp, "checkpoint");
+  const [hp, hk, hs] = await lbRead<[bigint, bigint, bigint]>("held");
+  let refused = "";
+  try { await ctx.tx(deployer, LB, lbAbi as unknown as unknown[], "run"); } catch (e) { refused = (e as Error).message; }
+  check(refused.length > 0, "a wallet the owner hasn't named can't run it (keepers only: an open run could be sandwiched)");
+  await ctx.asOwner(LB, encodeFunctionData({ abi: lbAbi, functionName: "setKeeper", args: [deployer.address, true] }));
+  await ctx.tx(deployer, LB, lbAbi as unknown as unknown[], "run");
+  const lp = await lbRead<bigint>("lpBurned");
+  const pair = await lbRead<Address>("PAIR");
+  const deadLp = await ctx.pub.readContract({ address: pair, abi: erc20Abi, functionName: "balanceOf", args: ["0x000000000000000000000000000000000000dEaD"] });
+  const [ap, ak, as] = await lbRead<[bigint, bigint, bigint]>("held");
+  check(lp > 0n && deadLp === lp, `a keeper's run: ${lp} pool tokens minted straight to the dead address (held before: PAPER side $${usd(hp)}, PLANK side $${usd(hk)}, $${usd(hs)} to spend)`);
+  check(as < 10n ** 16n && ap <= 100n * 10n ** 18n && ak <= 100n * 10n ** 18n,
+    `after the run: $${usd(as)} left to spend, PAPER side $${usd(ap)}, PLANK side $${usd(ak)} (each at most the $100 cap)`);
+  const lt = await L.liquidityBurned();
+  check(!!lt && BigInt(lt.lp.raw) === lp && BigInt(lt.PAPER.raw) > 0n && BigInt(lt.PLANK.raw) > 0n,
+    `the burn tally's liquidity row: ${lt?.PAPER.text} PAPER and ${lt?.PLANK.text} PLANK held by the burned pool tokens`);
 
   console.log("\n== profiles (FireProfiles): a name and a card as the picture");
   const otherAcct = privateKeyToAccount(toHex(other.getHdKey().privateKey!));

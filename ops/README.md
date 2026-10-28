@@ -111,14 +111,15 @@ node deploy/record.mjs --rpc $RPC        # --dry-run to check only
 Two always-on Railway services in different regions, each with its own wallet: the main keeper and a backup that only
 acts on work left waiting 5 minutes (`KEEPER_ROLE=backup`). An optional GitHub Actions pass
 (`.github/workflows/keeper.yml`) is a best-effort extra. Setup, settings and alerts: `keeper/README.md`. Every call
-it makes is permissionless:
+it makes is permissionless except `LiquidityBurner.run()`, which only the keeper wallets the owner names may call:
 
 - `PlankUsdTwap.checkpoint()` when `due()` (every 30 minutes; FireSale pauses PLANK pricing when the window is over
   2 hours old) and `PaperUsdTwap.checkpoint()` when `due()`
 - drand numbers to the router for card opens and PDA grading (`OpenDrandRouter.fulfillMany`; `adapter.settle` if a
   callback didn't land), each request answered through the source that took it
 - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` (ids from the grading's `Protected` event)
-- `PaperBurner.flush(pay)` and `PlankBurner.flush(pay)` when they hold a backlog a flush can burn, worth the gas
+- `LiquidityBurner.run()` when it holds work worth $1 or more (at most every 15 minutes, at once from $25, smaller
+  amounts after 6 hours): it pairs PAPER and PLANK into the PAPER/PLANK pool and burns the pool tokens
 - `FireSale.close(fire)` once nothing can still sell (`status(fire).left` 0: a group's time ran out, or the unlimited
   "after sell-out" group idled out, with no purchase to close it); the backup 5 minutes after the last group ended
 - `FireSale.endDrop(fire)` for a drop that didn't sell out, once anyone may (`status(fire).endableAt` + 7 days)
@@ -153,8 +154,7 @@ LOCK). Drop-wide and per group; each rule is RED unless `--allow <rule>` names i
 | Rule | Bound |
 |---|---|
 | `price` | a group's `priceUsd` is $1 to $10; 0 only for a holders' group (NFT or snapshot: free or PAPER only) |
-| `burn-total` | a group's `plankBurnBps + paperBurnBps` is 10% to 100% (each group sets its own; checked for groups with a dollar price; over 100% is hard: the contract refuses it) |
-| `paper-burn` | a group's `paperBurnBps` is at least 10% (the goal is PAPER buy pressure; Standard is 20%). A PLANK group set to burn all its PLANK (`plankBurnBps` 10000, `paperBurnBps` 0) needs `--allow paper-burn` |
+| `burn-total` | a group's liquidity share (`plankBurnBps + paperBurnBps`: both go to LiquidityBurner, so only the sum matters) is 10% to 100% (each group sets its own; checked for groups with a dollar price; over 100% is hard: the contract refuses it) |
 | `paper-per-pack` | a group's `paper` is at least 0.1 PAPER |
 | `no-paper` | a group's `paper` is not 0 |
 | `paper-cap` | `paperCapUsd` is at least $0.10; 0 (no cap) is a warning |
@@ -164,9 +164,9 @@ LOCK). Drop-wide and per group; each rule is RED unless `--allow <rule>` names i
 | `idle` | warning: an unlimited group's `idle` is over 1 h |
 
 Hard (no `--allow`; the contract refuses them anyway): a snapshot group without a root at LOCK, an NFT group whose
-collection has no code, an open group with neither a price nor PAPER, a group whose two burn shares add up to more
-than 100%. `FireSale.revenueWallet`, `plankBurner` and
-`paperBurner` must equal the deployments file's `inputs.REVENUE_WALLET` and `contracts.PlankBurner` / `PaperBurner`,
+collection has no code, an open group with neither a price nor PAPER, a group whose two liquidity shares add up to more
+than 100%. `FireSale.revenueWallet` and `liquidity` must equal the deployments file's `inputs.REVENUE_WALLET` and
+`contracts.LiquidityBurner`,
 and `FireSale.GROUPS` the deployments file's `FireGroups` (whose `sale` is FireSale): RED otherwise (no `--allow`).
 
 ## Launch a Series (`series/launch.mjs`)
