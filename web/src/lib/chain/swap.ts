@@ -72,18 +72,22 @@ export const kyberSlipBps = (expectedOut: bigint, minOut: bigint): number =>
  *  The swap's minimum return is then `paperOut` itself (kyberSlipBps), so the buyer gets at least what they asked
  *  for, or nothing is spent. Undefined when KyberSwap has no route or it's dearer per PAPER than `poolsCost`. */
 export async function quoteKyber(from: PayCoin, paperOut: bigint, slippageBps = 100, poolsCost?: bigint): Promise<PaperBuy | undefined> {
+  // KyberSwap's answer never sets what you spend: without an on-chain pool price to check it against, no Kyber route,
+  // and the spend is capped at the pools' cost plus slippage (a lying or hijacked API can't ask for more)
+  if (!poolsCost) return undefined;
+  const cap = withSlip(poolsCost, slippageBps);
   const tIn = tokenOf(from), paper = input("PAPER")!, dec = await decimalsFor(from);
   const want = withSlip(paperOut, slippageBps);
   let amountIn = poolsCost ? withSlip(poolsCost, slippageBps) : 10n ** BigInt(Math.max(0, dec - 2));
   let r: KyberRoute | undefined;
   for (let i = 0; i < 3; i++) { // probe, then twice more to land on `want`
     r = await kyberRoute(tIn, paper, amountIn);
-    if (!r || r.amountOut === 0n) return undefined;
+    if (!r || r.amountOut === 0n || r.amountIn !== amountIn) return undefined; // it must price exactly what we asked
     if (i === 2) break;
     amountIn = (r.amountIn * want + r.amountOut - 1n) / r.amountOut;
   }
   if (!r || r.amountOut < paperOut) return undefined;
-  if (poolsCost && r.amountIn * paperOut > poolsCost * r.amountOut) return undefined; // dearer per PAPER than the pools
+  if (r.amountIn > cap || r.amountIn * paperOut > poolsCost * r.amountOut) return undefined; // over the cap, or dearer per PAPER than the pools
   return { from, paperOut, maxIn: r.amountIn, cost: amount(r.amountIn, dec, 8), via: "kyber", confirmations: from === "ETH" ? 1 : 2 };
 }
 

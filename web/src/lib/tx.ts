@@ -12,6 +12,8 @@
 
 import type { Abi, Address, Hex, TransactionReceipt } from "viem";
 import { explain, revertOf } from "./errors";
+import { checkCall } from "./guard";
+import { NET } from "./net";
 import { assertRobinhood } from "./network";
 import { getAccount, getPublicClient, getWalletClient, isNoFunds, robinhood, txUrl } from "./wallet";
 
@@ -186,6 +188,8 @@ export async function sendTx(call: TxCall, opts: TxOptions): Promise<Transaction
   const account = getAccount();
   try { assertRobinhood(account); } catch (e) { throw new TxError((e as Error).message, "check", e); }
   const from = account.address!;
+  // the wallet gate (guard.ts): nothing the site doesn't do ever reaches the wallet
+  try { checkCall(call, from, NET.deployment); } catch (e) { throw new TxError((e as Error).message, "check", e); }
 
   step("simulate");
   const pub = getPublicClient();

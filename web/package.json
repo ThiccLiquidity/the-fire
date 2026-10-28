@@ -13,6 +13,7 @@
     "test:forge": "npm run build:wallet && bash art/factory/sync_forge.sh && node scripts/forge-e2e/run.mjs",
     "test:press": "node scripts/press-e2e/run.mjs",
     "test:games": "node --test scripts/games-test/*.test.mjs",
+    "test:guard": "node --test scripts/guard-test/*.test.mjs",
     "lint": "oxlint",
     "gen:errors": "node scripts/gen-abi-errors.mjs",
     "preview": "vite preview"
