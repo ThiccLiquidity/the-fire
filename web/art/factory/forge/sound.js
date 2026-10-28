@@ -41,9 +41,9 @@
     bufs[name] = await new Promise((ok, no) => { const p = ctx.decodeAudioData(data, ok, no); if (p?.catch) p.catch(no); });
     return bufs[name];
   }
-  function load() { // the fire first, so the room comes alive fast; then the rest, a few at a time
+  function load() { // the short ones a first rip needs (tear, flip), then the fire, so a quick first pack never plays silent; then the rest
     if (loading) return loading;
-    const names = Object.keys(FILES), first = ['forge-fire-loop', 'ui-click', 'pack-rip', 'card-flip', 'card-slide'];
+    const names = Object.keys(FILES), first = ['pack-rip', 'card-flip', 'ui-click', 'card-slide', 'forge-fire-loop'];
     const rest = names.filter((n) => !first.includes(n));
     const run = async (list) => { for (const n of list) { try { await fetchOne(n); } catch { /* skip a missing file */ } if (n.endsWith('-loop')) ambience(); } };
     loading = Promise.all([run(first), run(rest.slice(0, 6)), run(rest.slice(6))]);

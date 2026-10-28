@@ -249,6 +249,7 @@
       zoomIn.value = st.crop.zoom;
     }
     const kick = () => { if (!raf) raf = requestAnimationFrame(place); };
+    box.addEventListener('click', () => { if (!st.card) $('[data-p=pick]').click(); }); // the empty slot is the way to pick one
     async function loadArt() {
       stage.replaceChildren(); art = null; box.classList.toggle('empty', !st.card); body.classList.toggle('no-card', !st.card);
       box.style.background = st.card ? '' : fallbackStyle(a);

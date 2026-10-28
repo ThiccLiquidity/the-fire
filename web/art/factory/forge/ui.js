@@ -18,6 +18,14 @@
     cards: '<rect x="3.5" y="6" width="11" height="15" rx="1.8"/><path d="M8.5 3.5l9.6 1.7a1.8 1.8 0 0 1 1.5 2.1l-2 11.1"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
     game: '<path d="M7 8h10a4.5 4.5 0 0 1 4.4 5.4l-.8 3.6a2.4 2.4 0 0 1-4.2 1l-1.9-2.5H9.5L7.6 18a2.4 2.4 0 0 1-4.2-1l-.8-3.6A4.5 4.5 0 0 1 7 8z"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.6" r=".6"/><circle cx="17.3" cy="13.4" r=".6"/>', // a game controller
+    spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/>',
+    book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/>',
+    star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
+    badge: '<circle cx="12" cy="9" r="5.5"/><path d="M8.5 13.5L7 21l5-2.5 5 2.5-1.5-7.5"/>',
+    flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+    map: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+    phone: '<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2M3 9v6M21 9v6"/>',
+    sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
   };
   const svg = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
   // big numbers compact, 3 significant digits: 22.9K, 1.25M, 1T (never "1000.00B")
@@ -28,7 +36,7 @@
 
   // ---------- markup
   $('#app').innerHTML = `
-  <div id="loading" class="loading"><div class="ld-row"><img class="ld-pal ld-plank" src="ui/brand/plank-256.webp" alt="" width="44" height="70"><img class="ld-mark" src="ui/omni-mark.webp" alt=""><img class="ld-pal ld-paper" src="ui/brand/paper-256.webp" alt="" width="48" height="62"></div><p>Lighting the furnace…</p><small class="demo-load">Demo: nothing here is real</small></div>
+  <!-- the loading screen (#loading) is in index.html: it paints before the scripts arrive -->
   <header class="topbar">
     <a class="brand" href="#" aria-label="Omni Cardworks"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">CARDWORKS</span><em class="tag">Wood and paper in, packs out.</em></a>${LIVE && Live.testnet ? '<span class="net-badge">Testnet</span>' : ''}
     <button class="chip series" id="seriesChip" type="button"></button>
@@ -87,7 +95,10 @@
   <div class="buybar" id="buybar"></div>`;
 
   // ---------- layout: desktop / phone portrait / phone landscape
-  const TOP = 54 + (LIVE ? 0 : 24); // the top bar plus the demo notice under it (CSS --top; live mode has no notice)
+  // the top bar plus the demo notice under it: CSS --top (78 px; 86 on touch screens, where the notice is 32 px tall; live
+  // mode has no notice; bigger on very large screens), read at each layout
+  let TOP = 54 + (LIVE ? 0 : 24);
+  const readTop = () => { TOP = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top')) || TOP; };
   const DEMO_LINE = '<p class="demo-line">Demo: nothing is charged</p>'; // the one demo line, at payment and burn buttons only
   let mode = 'desk', view = null;
   // The UI shows before the scene has loaded (slow networks): until it's ready, a small still of the workshop
@@ -103,15 +114,22 @@
     const l = lite();
     Object.assign(c.style, { backgroundImage: 'url(../build3/plate-640.webp)', backgroundRepeat: 'no-repeat', backgroundSize: `${SW * l.s}px ${SH * l.s}px`, backgroundPosition: `${l.ox}px ${l.oy}px` });
   }
+  // the screen's safe-area inset on the right (a phone's notch, held sideways): a probe element reads env() for us
+  const saProbe = document.createElement('div'); saProbe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;padding-right:env(safe-area-inset-right,0px)';
+  document.body.append(saProbe);
+  const safeRight = () => parseFloat(getComputedStyle(saProbe).paddingRight) || 0;
   function layout() {
+    readTop();
     const W = innerWidth, H = innerHeight, bar = TOP;
-    mode = W < 700 && H > W ? 'port' : H < 520 ? 'land' : 'desk';
+    // upright phones and upright tablets (under 1100 px wide) get the upright layout: the scene across the top, big
+    // station tiles under it, the Buy bar at the bottom (a tablet in the desktop layout was 40% black bars)
+    mode = W < 1100 && H > W ? 'port' : H < 520 ? 'land' : 'desk';
     document.body.dataset.mode = mode; document.documentElement.dataset.mode = mode;
     if (mode === 'port') portView();
-    else if (mode === 'land') {
-      view = { x: 0, y: bar, w: W - 240, h: H - bar, mode: 'contain', follow: false };
+    else if (mode === 'land') { // the buy rail grows by the notch's inset on that side (ui.css), so the scene leaves it that much more
+      view = { x: 0, y: bar, w: W - 240 - safeRight(), h: H - bar, mode: 'contain', follow: false };
     } else {
-      const strip = H < 760 ? 92 : 104; document.documentElement.style.setProperty('--stripH', strip + 'px');
+      const strip = W >= 2200 && H >= 1200 ? 130 : H < 760 ? 92 : 104; // very large screens: a taller strip (ui.css) document.documentElement.style.setProperty('--stripH', strip + 'px');
       view = { x: 0, y: bar, w: W, h: H - bar - strip, mode: 'contain', follow: false };
     }
     if (window.Scene) Scene.setView(view);
@@ -124,8 +142,11 @@
   function portView() {
     const W = innerWidth, H = innerHeight, bar = TOP;
     const bb = document.querySelector('.buybar:not(.open)')?.offsetHeight || parseFloat(document.documentElement.style.getPropertyValue('--bbH')) || 80;
-    const st = document.querySelector('.stations')?.offsetHeight || 220;
-    const sh = Math.round(Math.max(150, Math.min(H * 0.42, W * 0.9, H - bar - st - bb - 24)));
+    // the stations' own height: their bottom padding is the room they keep for the Buy bar (ui.css), which is already
+    // counted once as bb (counting it twice left a dead band over the bar and a smaller scene)
+    const stEl = document.querySelector('.stations');
+    const st = stEl ? stEl.offsetHeight - (parseFloat(getComputedStyle(stEl).paddingBottom) || 0) : 220;
+    const sh = Math.round(Math.max(150, Math.min(H * 0.52, W * 1.1, H - bar - st - bb - 28)));
     view = { x: 0, y: bar, w: W, h: sh, mode: 'cover', focus: 0.42, follow: true }; // the camera follows the action
     document.documentElement.style.setProperty('--sceneH', sh + 'px');
     document.documentElement.style.setProperty('--bbH', bb + 'px');
@@ -140,12 +161,12 @@
     const watchSt = () => { const el = document.querySelector('.stations'); if (el) ro.observe(el); }; watchSt(); }
   function placePills() {
     if (!view) return;
-    const k = window.Scene ? Scene.scale : lite().s, fs = Math.max(12, Math.min(14, 30 * k));
+    const k = window.Scene ? Scene.scale : lite().s, fs = Math.max(12, Math.min(innerWidth >= 2200 && innerHeight >= 1200 ? 17 : 14, 30 * k)); // very large screens: bigger pills
     document.documentElement.style.setProperty('--fs', fs + 'px'); document.documentElement.style.setProperty('--sk', k);
     for (const el of document.querySelectorAll('#pills [data-x]')) {
       let [x, y] = toScreen(+el.dataset.x, +el.dataset.y);
       if (el.id === 'spot') { el.style.left = x + 'px'; el.style.top = y + 'px'; continue; } // the light sits on the floor, wherever that is
-      const half = el.offsetWidth / 2 + 8; x = Math.max(half, Math.min(innerWidth - half, x)); // never off-screen
+      const half = el.offsetWidth / 2 + 8; x = Math.max(view.x + half, Math.min(view.x + view.w - half, x)); // never off the scene (sideways: never under the buy rail)
       el.style.left = x + 'px'; el.style.top = Math.max(TOP + el.offsetHeight / 2 + 6, y) + 'px';
     }
   }
@@ -341,8 +362,11 @@
     const wb = $('#walletBtn span');
     const nm = mode === 'port' || innerWidth < 1500 ? '' : S.wallet.name; // phones: the icon and the balance, so the button fits beside the brand
     // phones: the PAPER coin before the number says what it is, so the chip is just the avatar, the coin and "1.23M"
-    setText(wb, S.wallet.connected ? `${nm ? nm + ' · ' : ''}${fmtChip(S.wallet.balances.PAPER)}${mode === 'port' ? '' : ' PAPER'}` : 'Connect');
-    setAttr($('#walletBtn'), 'aria-label', S.wallet.connected ? `Wallet: ${fmt(S.wallet.balances.PAPER)} PAPER` : 'Connect a wallet');
+    // live: a wallet on another network says so on the button (a tap offers the switch)
+    const wrong = !S.wallet.connected && !!S.wallet.wrongNet;
+    setText(wb, S.wallet.connected ? `${nm ? nm + ' · ' : ''}${fmtChip(S.wallet.balances.PAPER)}${mode === 'port' ? '' : ' PAPER'}` : wrong ? 'Wrong network' : 'Connect');
+    setAttr($('#walletBtn'), 'aria-label', S.wallet.connected ? `Wallet: ${fmt(S.wallet.balances.PAPER)} PAPER` : wrong ? 'Wrong network: switch' : 'Connect a wallet');
+    $('#walletBtn').classList.toggle('wrong', wrong);
     renderStrip();
     if (LIVE) { // prices from the contracts
       document.querySelectorAll('[data-price=psa]').forEach((el) => setText(el, `from ${Wear.usd(P.CASE_USD)}`));
@@ -802,17 +826,18 @@
     const items = S.activity.length ? S.activity : [{ text: 'No activity yet' }];
     Sheet.open('feed', { title: 'Activity', body: `<ul class="feed">${items.map((a) => `<li>${esc(a.text)}</li>`).join('')}</ul>` });
   }
+  // the menu, in four groups with icons: Play, Wallet, Learn, Settings
   function openMenu() {
-    const d = Sheet.open('menu', { title: 'Menu', body: `<div class="menu">
-      <button class="btn" type="button" data-m="cards">${svg('cards')}My cards</button>${!LIVE || Stations.openableCount() ? `<button class="btn" type="button" data-m="open">${svg('pack')}Open packs${Stations.openableCount() ? ` (${Stations.openableCount()})` : ''}</button>` : ''}
-      <button class="btn" type="button" data-m="games">${svg('game')}Game room</button><button class="btn" type="button" data-m="paper">${svg('paper')}Get PAPER</button><button class="btn" type="button" data-m="info">${svg('info')}Info</button>
-      <button class="btn" type="button" data-m="feed">${svg('feed')}Activity</button><button class="btn" type="button" data-m="sound">${svg('sound')}Sound: ${window.Sound?.on ? 'On' : 'Off'}</button>
-      <button class="btn" type="button" data-m="start">New here?</button>${LIVE ? '' : '<button class="btn" type="button" data-m="demo">Demo controls</button>'}
-      <button class="btn" type="button" data-m="fun:practice">Practice pack</button><button class="btn" type="button" data-m="fun:binder">Binder</button>
-      <button class="btn" type="button" data-m="fun:showcase">Showcase</button><button class="btn" type="button" data-m="fun:badges">Badges</button>
-      <button class="btn" type="button" data-m="fun:tour">Workshop tour</button>${window.Fun?.haptics?.supported ? `<button class="btn" type="button" data-m="haptics">Vibration: ${Fun.haptics.on ? 'On' : 'Off'}</button>` : ''}</div>
+    const n = Stations.openableCount(), b = (k, icon, label) => `<button class="btn" type="button" data-m="${k}">${icon ? svg(icon) : ''}${label}</button>`;
+    const group = (title, items) => `<section class="menu-g" aria-label="${title}"><h3>${title}</h3><div class="menu">${items.filter(Boolean).join('')}</div></section>`;
+    const d = Sheet.open('menu', { title: 'Menu', body: `<div class="menu-groups">
+      ${group('Play', [!LIVE || n ? b('open', 'pack', `Open packs${n ? ` (${n})` : ''}`) : '', b('cards', 'cards', 'My cards'), b('games', 'game', 'Game room'), b('fun:practice', 'spark', 'Practice pack')])}
+      ${group('Wallet', [b('paper', 'paper', 'Get PAPER'), b('fun:binder', 'book', 'Binder'), b('fun:showcase', 'star', 'Showcase'), b('fun:badges', 'badge', 'Badges')])}
+      ${group('Learn', [b('start', 'flag', 'New here?'), b('info', 'info', 'Info'), b('fun:tour', 'map', 'Workshop tour'), b('feed', 'feed', 'Activity')])}
+      ${group('Settings', [b('sound', window.Sound?.on ? 'sound' : 'mute', `Sound: ${window.Sound?.on ? 'On' : 'Off'}`), window.Fun?.haptics?.supported ? b('haptics', 'phone', `Vibration: ${Fun.haptics.on ? 'On' : 'Off'}`) : '', LIVE ? '' : b('demo', 'sliders', 'Demo controls')])}
+      </div>
       <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>` });
-    d.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => { d.close(); go(b.dataset.m); });
+    d.querySelectorAll('[data-m]').forEach((x) => x.onclick = () => { d.close(); go(x.dataset.m); });
   }
   let auto = null;
   function openDemo() {
@@ -903,6 +928,14 @@
   if (!LIVE && new URLSearchParams(location.search).has('between')) Store.update(() => Store.demoStage('closed'));
   if (window.Scene) hookScene(); else addEventListener('scene-ready', hookScene, { once: true });
   layout(); render();
+  // deep links: ?go=cards|grade|burn|suggest|results|games opens that screen once the page is up (shares, the doors,
+  // a post). Unknown values do nothing.
+  {
+    const goTo = new URLSearchParams(location.search).get('go');
+    const DEEP = { cards: () => openStation('cards'), grade: () => Stations.open('grade'), burn: () => Stations.open('burn'), suggest: () => Stations.open('suggest'),
+      results: () => Stations.open('results'), games: () => openStation('games') };
+    if (DEEP[goTo]) setTimeout(() => { if (!Sheet.covering) DEEP[goTo](); }, 300);
+  }
   // the UI is ready: show it now, over a still of the workshop; the live scene fades in when it has loaded (slow networks
   // used to wait ~20 s on the loading screen)
   requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 120));

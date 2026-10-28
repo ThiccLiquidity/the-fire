@@ -116,14 +116,19 @@
     }
     place();
   }
+  // placed on the scene's floor once the scene is there (until then it stays hidden: never a shelf stuck in the corner),
+  // and again whenever the view changes (a resize, the phone turned)
   function place() {
-    if (shelf.hidden || !window.Scene) return;
+    if (shelf.hidden) return;
+    if (!window.Scene) { shelf.style.visibility = 'hidden'; return; }
     const port = document.body.dataset.mode === 'port';
     shelf.classList.toggle('port', port);
+    shelf.style.visibility = '';
     if (port) { shelf.style.transform = ''; return; }
     const [x, y] = Scene.toScreen(...SPOT), k = Math.max(1, Math.min(1.25, Scene.scale * 3.4)); // never below 1: the label stays 12px+, the slabs a 44px+ tap
     shelf.style.transform = `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px) translate(-50%, -100%) scale(${k.toFixed(3)})`;
   }
   Store.on(paint); addEventListener('resize', () => requestAnimationFrame(place));
+  if (!window.Scene) addEventListener('scene-ready', () => requestAnimationFrame(place), { once: true });
   paint();
 })();

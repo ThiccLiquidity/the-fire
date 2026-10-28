@@ -7,8 +7,8 @@ const load = (n) => new Promise((ok) => { const i = new Image(); i.onload = () =
 const PLATES = [1280, 1920, 2560, 3840], plateFile = (w) => (w >= 3840 ? 'plate' : 'plate-' + w);
 const plateFor = (px) => PLATES.find((w) => w >= px * 0.98) || 3840;
 const DPR = () => Math.min(innerWidth < 900 ? 1.25 : 2, devicePixelRatio || 1); // phones draw at 1.25x at most: the canvas is soft art anyway
-let plateW = plateFor(innerWidth < 700 && innerHeight > innerWidth
-  ? SW * Math.max(innerWidth / SW, Math.min(innerHeight * 0.42, innerWidth * 0.9) / SH) * DPR() * 1.6 // a phone held upright: the follow camera zooms 1.6x
+let plateW = plateFor(innerWidth < 1100 && innerHeight > innerWidth
+  ? SW * Math.max(innerWidth / SW, Math.min(innerHeight * 0.52, innerWidth * 1.1) / SH) * DPR() * 1.6 // a phone or tablet held upright (ui.js portView): the follow camera zooms 1.6x
   : SW * Math.min(innerWidth / SW, Math.max(200, innerHeight - 180) / SH) * DPR());
 const names = [plateFile(plateW), 'belt', 'chain-up', 'chain-lo', 'front-stand', 'roll-0', 'roll-1', 'pack', 's-flywheel', 's-gear-big-a', 's-gear-big-b',
   's-gear-small', 'belt-light', 'p-0', 'p-1', 'p-2', 'p-3', 'p-4', 'p-5', 's-rod', 's-conrod', 's-capsule', 's-padlock', 's-token', 's-log0', 's-log1', 's-log2', 's-paper0', 's-paper1', 's-paper2', 'card'];

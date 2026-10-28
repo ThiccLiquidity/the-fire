@@ -1,0 +1,191 @@
+/* polish.css: the polish pass (Oct 28, the look and smoothness audits), loaded after the other stylesheets (fun.css,
+   which loads later, is outranked with a "body" in front). Each rule says what it fixes; the review notes (CHANGES.md)
+   list them one by one. Motion is transform and opacity only. */
+
+/* touch screens: the demo notice is 32 px tall (an easier "New here?"), chips and quick pills 44 px, small buttons 40,
+   and pickers at 16 px (iOS zooms into a field under 16 px) */
+@media (pointer: coarse) {
+  :root { --top: 86px }
+  .demo-note { height: 32px }
+  .chip { min-height: 44px } .chip.round, .tools .chip:not(.round):not(.demo):not(.mycards) { width: 44px; min-width: 44px }
+  .btn.small { min-height: 40px }
+  select, .filters select { font-size: 16px }
+  .qp, .inf-jump { min-height: 44px }
+}
+.qbanner { top: var(--top) }
+
+/* the top bar: sideways phones and narrow desktops (under 900 px) put the tools in the Menu, so the wallet button
+   always fits; at 360 px the OMNI wordmark stays and CARDWORKS steps aside */
+body[data-mode=land] .brand .forge, body[data-mode=land] .tools { display: none }
+body[data-mode=land] .menu-btn { display: inline-flex }
+@media (max-width: 899px) { body[data-mode=desk] .tools { display: none } body[data-mode=desk] .menu-btn { display: inline-flex } }
+@media (max-width: 374px) { body[data-mode=port] .brand .word { display: block } body[data-mode=port] .brand .forge { display: none } }
+@media (max-width: 899px) { .types { border-spacing: 4px 2px } .types .mat { min-width: 0; padding: 4px 8px } }
+
+/* safe areas: the notch and the home bar on every side */
+.topbar { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)) }
+body[data-mode=port] .topbar { padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)) }
+.strip { padding-left: max(18px, env(safe-area-inset-left)); padding-right: max(18px, env(safe-area-inset-right)) }
+body[data-mode=port] .stations { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)) }
+body[data-mode=port] .buybar { padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)) }
+body[data-mode=land] .buybar { width: calc(240px + env(safe-area-inset-right, 0px)); padding-right: calc(10px + env(safe-area-inset-right, 0px)) }
+body[data-mode=land] .receipt { right: calc(252px + env(safe-area-inset-right, 0px)) }
+.toasts { right: max(12px, env(safe-area-inset-right)) }
+@media (max-width: 600px) { .sheet-body { padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)) } }
+
+/* upright tablets (ui.js: the upright layout under 1100 px): the stations centred, as bigger tiles */
+@media (min-width: 700px) {
+  body[data-mode=port] .stations { max-width: 760px; margin: 0 auto; gap: 12px }
+  body[data-mode=port] .station { min-height: 76px; padding: 12px 16px } body[data-mode=port] .station b { font-size: 18px } body[data-mode=port] .station small { font-size: 14px }
+  body[data-mode=port] .station.tool { min-height: 76px; row-gap: 4px } body[data-mode=port] .station.tool svg { width: 26px; height: 26px } body[data-mode=port] .station.tool b { font-size: 16px }
+  body[data-mode=port] .station.tool small { display: block; font-size: 13px }
+  body[data-mode=port] .openbtn { min-height: 78px } body[data-mode=port] .openbtn.hero b { font-size: 24px } body[data-mode=port] .openbtn.hero small { font-size: 15px }
+  body[data-mode=port] .stations .pitch { font-size: 16px }
+  body[data-mode=port] .buybar { padding-left: max(24px, calc(50vw - 380px)); padding-right: max(24px, calc(50vw - 380px)) }
+}
+
+/* upright: the burn tally sits in the scene's bottom right corner (it was pinned 156 px down, over the tagline), the
+   best slabs in the bottom left, the gauges along the top; it scrolls with the scene */
+body[data-mode=port] .burn-tally { position: absolute; top: calc(var(--top) + var(--sceneH, 300px) - 8px); transform: translateY(-100%); right: max(8px, env(safe-area-inset-right)) }
+/* the tally's small words: 11 px at least */
+.burn-tally .bt-h { font-size: 11px } .burn-tally .bt-lp-k { font-size: 11px; margin-top: -2px }
+body[data-mode=port] .burn-tally .bt-h, body[data-mode=port] .burn-tally .bt-lp-k { font-size: 11px } body[data-mode=port] .burn-tally .bt-usd { font-size: 12px }
+body[data-mode=port] .net-badge { font-size: 11px; padding: 2px 5px 1px }
+/* the Burn tile says how close the next free pack is ("12 / 42"), on phones too */
+body[data-mode=port] .station.tool small#sBurn { display: block; padding: 0 6px; border-radius: 999px; background: rgba(0,0,0,.32); font: 800 11px/1.45 var(--body); color: #fff1dc; font-variant-numeric: tabular-nums }
+@media (min-width: 700px) { body[data-mode=port] .station.tool small#sBurn { font-size: 13px } }
+
+/* sideways phones: one tidy workshop. The tally folds into a slim pill top left (the totals; its dollars are in
+   Info), the gauges move into the foot of the buy rail, so nothing sits on the pills */
+body[data-mode=land] .burn-tally { top: calc(var(--top) + 8px); left: max(8px, env(safe-area-inset-left)); transform: none; width: auto; flex-direction: row; gap: 8px; padding: 5px 12px; border-radius: 999px; font-size: 13px }
+body[data-mode=land] .burn-tally .bt-h { margin: 0; font-size: 11px } body[data-mode=land] .burn-tally .bt-h br { display: none }
+body[data-mode=land] .burn-tally .bt-coin { width: 15px; height: 15px }
+body[data-mode=land] .burn-tally .bt-lp, body[data-mode=land] .burn-tally .bt-lp-k, body[data-mode=land] .burn-tally .bt-usd { display: none !important }
+body .fun-sale.land { left: auto; right: 0; top: auto; bottom: 0; width: calc(240px + env(safe-area-inset-right, 0px)); box-sizing: border-box; padding: 8px calc(8px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) 10px;
+  background: linear-gradient(rgba(13,9,7,0), #0d0907 16px); z-index: 7 }
+body .fun-sale.land .gg-row { gap: 4px } body .fun-sale.land .gg { width: auto; flex: 1 1 0; min-width: 0; padding: 3px 0 4px; border-radius: 10px } body .fun-sale.land .gg-dial svg { width: 40px; height: 24px }
+body .fun-sale.land .gg-name, body .fun-sale.land .gg-sub { font-size: 11px }
+body[data-mode=land] .fun-shelf { display: none } /* the scene is small sideways: the best slabs are in My cards and the showcase */
+body .fun-sale.land .lc { margin: 0 auto; padding: 6px 12px 8px } body .fun-sale.land .lc-clock { font-size: 26px }
+body[data-mode=land]:has(.fun-sale.land:not([hidden])) .buybar { padding-bottom: 104px }
+
+/* sheets: on phones they're as tall as what's in them (they used to be 92% tall, mostly empty), come up from the
+   bottom with a handle, and a drag down on the header puts them away (core.js); desktops fade them in. Under 200 ms. */
+@keyframes sheet-up { from { transform: translateY(100%) } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(10px) } }
+@keyframes backdrop-in { from { opacity: 0 } }
+dialog.sheet[open] { animation: sheet-in .18s cubic-bezier(.2,.8,.2,1) }
+dialog.sheet[open]::backdrop { animation: backdrop-in .18s ease-out }
+.sheet-head h2:focus { outline: none } /* the title takes the focus when a sheet opens (no ring on its ×) */
+@media (max-width: 600px) {
+  dialog.sheet:not(.wide) { height: fit-content }
+  dialog.sheet[open] { animation: sheet-up .2s cubic-bezier(.2,.8,.2,1) }
+  .sheet-head { position: relative; padding-top: 18px; touch-action: none }
+  .sheet-head::before { content: ''; position: absolute; top: 7px; left: 50%; width: 38px; height: 4px; margin-left: -19px; border-radius: 2px; background: var(--line-2) }
+}
+
+/* the menu: four groups, each with its icons */
+.menu-groups { display: grid; gap: 16px }
+.menu-g h3 { margin: 0 0 7px; font: 800 12px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted) }
+@media (min-width: 601px) { #sheet-menu { width: min(720px, calc(100vw - 24px)) } }
+.menu-g .menu { grid-template-columns: repeat(4, minmax(0, 1fr)) } .menu-g .btn { padding: 0 .8em; font-size: 14px }
+@media (max-width: 680px) { .menu-g .menu { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
+
+/* rows of chips that scroll sideways: the side with more fades out (core.js sets fade-l / fade-r) */
+.fade-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent) }
+.fade-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px); mask-image: linear-gradient(90deg, transparent, #000 36px) }
+.fade-l.fade-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent) }
+/* Info's sections: one row that scrolls on phones (it was five rows of chips) */
+@media (max-width: 600px) {
+  .inf-index { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-left: -16px; margin-right: -16px; padding: 0 16px 2px }
+  .inf-index::-webkit-scrollbar { display: none } .inf-index .inf-jump { flex: none }
+}
+
+/* My cards: cards come sooner. The tools in the header's row, the count and floor in one line, the quick sort and
+   filters pinned to the top of the sheet as the cards scroll; the sealed-pack note steps aside on phones */
+.coll-h { align-items: center; margin-bottom: 2px }
+.coll-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto }
+.coll-sub { margin: 0 0 8px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px }
+.coll-sub .cfloor { margin-left: 0 }
+.qbar { position: sticky; top: -14px; z-index: 6; margin: 0 -16px 10px; padding: 8px 16px 6px; background: var(--panel); box-shadow: 0 8px 10px -10px rgba(0,0,0,.8) }
+.qbar .qpills { margin: 0 }
+@media (max-width: 600px) {
+  .coll-h h3 { font-size: 18px } .coll-tools .btn.small { padding: 0 .7em }
+  .packs-nft { display: none }
+}
+
+/* the card's detail on a big screen: two columns, the card bigger, and it stays in view while the details scroll */
+@media (min-width: 1100px) and (min-height: 760px) {
+  #sheet-card { width: min(1000px, calc(100vw - 48px)) }
+  .detail { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 32px }
+  .detail .big { position: sticky; top: 0; width: 100% }
+}
+/* Activity on a desktop: two columns of rows, not one row 1,000 px wide */
+@media (min-width: 900px) { #sheet-feed .fd-list { grid-template-columns: repeat(2, minmax(0, 1fr)) } #sheet-feed .fd-board { margin: 0 auto } }
+
+/* the profile with no picture yet: a card-shaped slot with a +, and tapping it picks a card */
+.pf-crop.empty { cursor: pointer }
+.pf-crop.empty::before { content: ''; position: absolute; left: 50%; top: 50%; width: 30%; aspect-ratio: 5 / 7; transform: translate(-50%, -50%); border: 2px dashed rgba(255,255,255,.78); border-radius: 9px; background: rgba(0,0,0,.2) }
+.pf-crop.empty::after { content: '+'; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -54%); font: 400 34px/1 var(--display); color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.5) }
+
+/* after an action: a small "what's next" card (grade: share it; suggest: when the picks come) */
+.next-step { display: grid; justify-items: center; gap: 8px; margin: 14px auto 0; padding: 12px 14px; max-width: 560px; border-radius: 14px; border: 1px dashed var(--line-2); background: rgba(255,210,122,.06); text-align: center }
+.next-step .ns-t { font: 800 14px var(--body); color: var(--gold) }
+.next-step .ns-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px }
+
+/* offline: one line under the top bar until the connection is back (core.js) */
+.offline-note { position: fixed; left: 50%; top: calc(var(--top) + 8px); transform: translateX(-50%); z-index: 46; margin: 0; max-width: calc(100vw - 24px); box-sizing: border-box; padding: 6px 14px; border-radius: 999px;
+  background: #3a1a0c; border: 1px solid #ff9a3c; color: #ffe2b0; font: 800 13px/1.3 var(--body); box-shadow: 0 6px 18px rgba(0,0,0,.5); pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+/* live: a wallet on another network says so on its button */
+.wallet.wrong { border-color: var(--bad); box-shadow: 0 0 14px rgba(255,107,90,.25); color: #ffd6cf } .wallet.wrong svg { color: var(--bad) }
+
+/* the tour: the scene's overlays step back while it talks; its card moves to the other side when it would cover the
+   stop (tour.js adds .alt) */
+body.touring .ui, body.touring .fun-sale, body.touring .burn-tally, body.touring .fun-shelf, body.touring .stations, body.touring .qbanner { opacity: .2; pointer-events: none; transition: opacity .3s }
+body[data-mode=desk] .ft-card.alt { right: auto; left: 24px }
+body[data-mode=port] .ft-card.alt { top: auto; bottom: calc(var(--bbH, 80px) + 12px + env(safe-area-inset-bottom, 0px)) }
+body[data-mode=land] .ft-card { left: auto; right: calc(8px + env(safe-area-inset-right, 0px)); bottom: 8px; transform: none; width: min(340px, calc(100vw - 24px)) }
+body[data-mode=land] .ft-card.alt { right: auto; left: max(8px, env(safe-area-inset-left)) }
+/* "look here": the main button pulses (the tour's Done) */
+.pill.nudge { animation: nudge-pill .5s ease-in-out 3 }
+@keyframes nudge-pill { 50% { transform: translate(-50%, -50%) scale(1.08) } }
+body[data-mode=port] .openbtn.nudge { animation: nudge .5s ease-in-out 3 }
+
+/* the games on a sideways phone: the bar to the left, the game as tall as the sheet allows (it was cut off) */
+@media (max-height: 520px) and (orientation: landscape) {
+  .gm { grid-template-columns: 124px minmax(0, 1fr); align-items: start; max-width: none }
+  .gm-bar { flex-direction: column; align-items: stretch; justify-content: flex-start }
+  .gm-bar .gm-note { flex: none; text-align: left }
+  .gm-stage, .gm-stage.sw-stage { aspect-ratio: auto; height: calc(100dvh - 96px); max-height: none }
+}
+
+/* the reveal on a short phone: the pack and its Skip both fit on the first screen */
+@media (max-width: 600px) { .op { --cw: min(300px, 70vw, 38dvh, calc((92dvh - 330px) / 1.4)) } }
+
+/* very large screens (2200 x 1200 and up): the top bar, the demo notice, the strip and the tally grow with the room */
+@media (min-width: 2200px) and (min-height: 1200px) {
+  :root { --top: 98px } :root.live { --top: 68px }
+  .topbar { height: 68px; gap: 14px } .brand .mark { height: 40px } .brand .word { height: 34px } .brand .forge { font-size: 29px } .brand .tag { font-size: 16px }
+  .chip { min-height: 46px; font-size: 16px; padding: 0 16px } .chip.round { width: 48px } .tools { gap: 10px } .wallet { min-height: 52px; font-size: 17px; padding: 0 18px }
+  .demo-note { top: 68px; height: 30px; font-size: 15px } .demo-note b { font-size: 14px } .start-link { font-size: 15px }
+  .what h3 { font-size: 19px } .what h3 span { font-size: 15px } .types th { font-size: 14px } .types td { font-size: 15px } .types .mat { font-size: 14px; min-width: 88px }
+  .strip .more { min-height: 48px; font-size: 15px }
+  .burn-tally { width: 116px; font-size: 17px; padding: 12px 8px 10px } .burn-tally .bt-h { font-size: 13px } .burn-tally .bt-coin { width: 22px; height: 22px } .burn-tally .bt-usd { font-size: 15px }
+  .toast { font-size: 16px; padding: 11px 16px }
+}
+
+/* small words: 11 px at least everywhere (binder headers, PDA chips, tier badges, Info's charts) */
+body .bd-head .mat, body .bd-slot .pda { font-size: 11px } body .bd-slot.empty .mat { font-size: 11px }
+body .fd-txt .tier-b { font-size: 11px } .sg-more dt { font-size: 11px }
+@media (max-width: 600px) { .inf-wear span { font-size: 11px } }
+
+/* phones: one main button at a time. While the hero is Open packs or See your cards, the Buy bar's option is in the
+   quiet style (it was a second bright orange button competing with it) */
+body[data-mode=port]:not(.hero-buy) .buybar .opt.main { background: linear-gradient(#3a2a1c, #241810); color: #f6e2b8; border-color: #b98a3e }
+body[data-mode=port]:not(.hero-buy) .buybar .opt.main::after { background: linear-gradient(#3a2a1c, #241810) }
+body[data-mode=port]:not(.hero-buy) .buybar .opt.main small { color: #d4bd98 }
+
+/* the pop report and Case & grade never scroll sideways on a 360 px phone: their grids keep to the sheet's width (a
+   wide table scrolls inside its own box) */
+.st-pop, .wz { grid-template-columns: minmax(0, 1fr) }
+.st-pop > *, .wz > * { min-width: 0 }

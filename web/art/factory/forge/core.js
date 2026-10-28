@@ -427,6 +427,15 @@
       return out;
     },
     bytes(text) { return new TextEncoder().encode(text).length; },
+    /** A link back to the site for a share: this wallet's showcase of these cards (?show=<address>&c=<ids>), or the
+     *  site itself; ?live= is kept so a testnet share opens the testnet. */
+    shareLink(ids = []) {
+      const u = new URL(location.href); u.search = ''; u.hash = '';
+      const live = new URLSearchParams(location.search).get('live'); if (live) u.searchParams.set('live', live);
+      const a = state.wallet.connected ? String(state.wallet.full || '') : '', mine = ids.filter((id) => Number.isFinite(id) && id > 0);
+      if (/^0x[0-9a-fA-F]{40}$/.test(a) && mine.length) { u.searchParams.set('show', a); u.searchParams.set('c', mine.join('.')); }
+      return u.href;
+    },
     noteBurned(c) { // a card this wallet burned counts toward its edition's and its look's burned numbers
       const ed = [c.series, c.character, c.material].join('|'), look = ed + '|' + (c.holo || 'none');
       state.burned[ed] = (state.burned[ed] || 0) + 1; state.burned[look] = (state.burned[look] || 0) + 1;
@@ -447,10 +456,20 @@
     try { matchMedia('(orientation: portrait)').addEventListener('change', settle); } catch { /* old Safari: resize still runs */ }
   }
 
-  // toasts: short, stacked under the top bar
+  // toasts: short, stacked under the top bar. An open dialog sits in the browser's top layer, over everything in the
+  // page, so while one is open the toasts live inside the top one (else "+10 PAPER" would show under the sheet)
   const toastHost = document.createElement('div'); toastHost.className = 'toasts'; toastHost.setAttribute('role', 'status'); toastHost.setAttribute('aria-live', 'polite');
+  const dlgOrder = []; // dialogs in the order they opened (the last open one is on top)
+  const topDialog = () => { for (let i = dlgOrder.length - 1; i >= 0; i--) if (dlgOrder[i].open && dlgOrder[i].isConnected) return dlgOrder[i]; return [...document.querySelectorAll('dialog[open]')].pop() || null; };
+  const hostToTop = () => { const home = topDialog() || document.body; if (home && toastHost.parentNode !== home) home.append(toastHost); };
+  const noteDialog = (d) => { const i = dlgOrder.indexOf(d); if (i >= 0) dlgOrder.splice(i, 1); if (d.open) dlgOrder.push(d); if (toastHost.childElementCount || d.open) hostToTop(); };
   document.addEventListener('DOMContentLoaded', () => document.body.append(toastHost));
+  // any dialog (the sheets, the card viewer): note its order when it opens; closing, the toasts move down with the page
+  document.addEventListener('close', (e) => { if (e.target?.tagName === 'DIALOG') noteDialog(e.target); }, true);
+  const showModal = HTMLDialogElement.prototype.showModal;
+  HTMLDialogElement.prototype.showModal = function (...a) { const r = showModal.apply(this, a); noteDialog(this); return r; };
   function toast(text, kind = '') {
+    hostToTop();
     const t = document.createElement('div'); t.className = 'toast ' + kind; t.textContent = text; toastHost.append(t);
     requestAnimationFrame(() => t.classList.add('on'));
     setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 400); }, 2600);
@@ -489,6 +508,28 @@
   });
   // CSS pauses what's under a sheet; the scene stops its frames until the last sheet closes ('sheets-change')
   const covered = () => { const on = openSheets().length > 0; document.body?.classList.toggle('covered', on); dispatchEvent(new CustomEvent('sheets-change', { detail: { covering: on } })); };
+  // phones: a sheet comes up from the bottom (ui.css), and a drag down on its header puts it away (transform only)
+  const phoneSheets = matchMedia('(max-width: 600px)');
+  function swipeDown(d) {
+    const head = d.querySelector('.sheet-head');
+    head.addEventListener('pointerdown', (e) => {
+      if (!phoneSheets.matches || e.pointerType === 'mouse' || e.button > 0 || e.target.closest('button, a, input')) return;
+      const y0 = e.clientY, t0 = performance.now(); let dy = 0, raf = 0;
+      const paint = () => { raf = 0; d.style.transform = dy ? `translateY(${dy}px)` : ''; };
+      const move = (ev) => { if (ev.pointerId !== e.pointerId) return; dy = Math.max(0, ev.clientY - y0); if (!raf) raf = requestAnimationFrame(paint); };
+      const up = (ev) => {
+        if (ev.pointerId !== e.pointerId) return;
+        removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); cancelAnimationFrame(raf);
+        const fast = dy / Math.max(1, performance.now() - t0) > 0.6;
+        const done = () => { d.style.transition = ''; d.style.transform = ''; };
+        if (ev.type === 'pointerup' && (dy > 110 || (fast && dy > 36))) {
+          d.style.transition = 'transform .16s ease-in'; d.style.transform = 'translateY(100%)';
+          setTimeout(() => { d.close(); done(); }, 160);
+        } else { d.style.transition = 'transform .18s ease-out'; d.style.transform = ''; setTimeout(done, 180); }
+      };
+      addEventListener('pointermove', move); addEventListener('pointerup', up); addEventListener('pointercancel', up);
+    });
+  }
   const Sheet = {
     open(id, { title, body, wide = false, onClose } = {}) {
       let d = document.getElementById('sheet-' + id);
@@ -498,6 +539,7 @@
         d.setAttribute('aria-labelledby', `sheet-${id}-t`);
         d.querySelector('.x').onclick = () => d.close();
         d.querySelector('.back').onclick = () => d.close();
+        swipeDown(d);
         d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
         d.addEventListener('close', () => {
           covered(); d._opener?.focus?.(); d._onClose?.();
@@ -514,6 +556,8 @@
         back.hidden = !under; d.classList.toggle('stacked', !!under);
         if (under) { const t = under.querySelector('.sheet-head h2')?.textContent || 'Back'; back.querySelector('span').textContent = t; back.setAttribute('aria-label', `Back to ${t}`); }
         d.showModal(); guard(); covered();
+        // the sheet's title takes the focus, not its × (no ring on the close button the moment it opens); Tab goes on from it
+        const t = d.querySelector('.sheet-head h2'); t.tabIndex = -1; t.focus({ preventScroll: true });
       }
       return d;
     },
@@ -538,5 +582,32 @@
   Store.IPFS = [location.origin + '/ipfs/', 'https://ipfs.filebase.io/ipfs/', 'https://dweb.link/ipfs/', 'https://ipfs.io/ipfs/'];
   Store.ipfs = (u) => (String(u || '').startsWith('ipfs://') ? Store.IPFS[0] + String(u).slice(7) : String(u || ''));
   Store.nextGateway = (src) => { const i = Store.IPFS.findIndex((g) => String(src).startsWith(g)); return i >= 0 && i < Store.IPFS.length - 1 ? Store.IPFS[i + 1] + src.slice(Store.IPFS[i].length) : null; };
+  // a picture that won't load (offline, a gateway down): the next IPFS gateway, then (a card) the card back, never a
+  // broken-image box. Demo and live alike.
+  addEventListener('error', (e) => {
+    const t = e.target; if (t?.tagName !== 'IMG') return;
+    const next = Store.nextGateway(t.src); if (next) { t.src = next; return; }
+    if (t.classList?.contains('cframe') && !t.src.endsWith('ui/card-back.webp')) t.src = 'ui/card-back.webp';
+  }, true);
+  // offline: one quiet line at the bottom of the page until the connection is back
+  {
+    const note = document.createElement('p'); note.className = 'offline-note'; note.setAttribute('role', 'status'); note.hidden = true;
+    note.textContent = 'You\'re offline. Some pictures and numbers may not load.';
+    const paint = () => { note.hidden = navigator.onLine !== false; };
+    addEventListener('online', () => { paint(); toast('Back online', 'good'); }); addEventListener('offline', paint);
+    const put = () => { document.body.append(note); paint(); };
+    if (document.body) put(); else document.addEventListener('DOMContentLoaded', put, { once: true });
+  }
+  // rows of chips that scroll sideways (My cards' quick filters, Info's sections, the Series tabs): the edge that has more
+  // past it fades out, so the row reads as "there's more this way"
+  {
+    const SEL = '.qpills, .inf-index, .bd-tabs, .fd-series, .hrow';
+    const upd = (el) => { const max = el.scrollWidth - el.clientWidth, l = max > 2 && el.scrollLeft > 2, r = max > 2 && el.scrollLeft < max - 2;
+      if (el.classList.contains('fade-l') !== l) el.classList.toggle('fade-l', l); if (el.classList.contains('fade-r') !== r) el.classList.toggle('fade-r', r); };
+    addEventListener('scroll', (e) => { const t = e.target; if (t?.matches?.(SEL)) upd(t); }, true);
+    let q = 0; const scan = () => { q = 0; document.querySelectorAll(SEL).forEach(upd); }, soon = () => { if (!q) q = requestAnimationFrame(scan); };
+    const start = () => { new MutationObserver(soon).observe(document.body, { childList: true, subtree: true }); addEventListener('resize', soon); soon(); };
+    if (document.body) start(); else document.addEventListener('DOMContentLoaded', start, { once: true });
+  }
   window.Store = Store; window.Sheet = Sheet; window.toast = toast;
 })();
