@@ -660,15 +660,21 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     const events = [];
     const [cardsSrc, psaSrc] = await Promise.all([read(C.cards, cardsAbi, "randomness"), read(C.psa, psaAbi, "randomness")]);
     for (const [name, src, deployed, address, abi] of [["FireCards", cardsSrc, cfg.optional?.cardsAdapter, C.cards, cardsAbi], ["FirePsa", psaSrc, cfg.optional?.psaAdapter, C.psa, psaAbi]]) {
-      // a switch the owner named waits 48 h in public: post it once, and apply it when it's due (anyone may)
+      // a switch the owner named waits 48 h in public: post it when first seen, again 24 h and 2 h before it can take
+      // effect, and apply it when it's due (anyone may). Start-up (apply false) posts nothing and marks nothing, so a
+      // switch proposed while the keeper was down is still posted on the first pass.
       const [next, at] = await Promise.all([read(address, abi, "pendingRandomness"), read(address, abi, "pendingRandomnessAt")]).catch(() => [zeroAddress, 0n]);
-      if (next !== zeroAddress) {
-        const key = `proposed:${name}:${next}:${at}`;
+      if (apply && next !== zeroAddress) {
+        const left = Number(BigInt(at) - BigInt(wall()));
+        const stage = left <= 2 * 3600 ? "2h" : left <= 24 * 3600 ? "24h" : "new";
+        const key = `proposed:${name}:${next}:${at}:${stage}`;
         if (!proposals.has(key)) {
           proposals.add(key);
-          events.push({ key, text: `${name}'s randomness source switch was PROPOSED by the owner: ${next}, taking effect after ${new Date(Number(at) * 1000).toISOString()}. If that wasn't you, call setRandomness(${src}) from the owner wallet to call it off.` });
+          const router = await routerOf(next);
+          events.push({ key, text: `${name}'s randomness source switch was PROPOSED by the owner: ${next} (${router ? `a drand adapter on router ${router}` : "NOT a drand adapter: the keeper won't apply it"}), taking effect after ${new Date(Number(at) * 1000).toISOString()}. If that wasn't you, call setRandomness(${src}) from the owner wallet to call it off.` });
         }
-        if (apply && BigInt(wall()) >= BigInt(at) && !(backup && BigInt(wall()) < BigInt(at) + cfg.actAfterSec)) {
+        // the keeper applies only a drand adapter it can deliver for; anything else waits for a person (anyone may)
+        if (left <= 0 && !(backup && -left < Number(cfg.actAfterSec)) && (await routerOf(next))) {
           await sender.send({ address, abi, functionName: "applyRandomness", args: [] }, { job: `applyRandomness:${address}` });
         }
       }

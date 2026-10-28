@@ -104,7 +104,8 @@ Do these in order. Each one closes a way someone could change what visitors see 
 7. **Know the alarms.** The keeper posts when:
    - FireSale is paused, or its wallets or price feeds change;
    - a randomness switch is proposed. It can only take effect 48 hours later, and naming the current source calls it
-     off. If you didn't propose it, your Ledger is compromised: move funds and call it off;
+     off. The keepers apply it automatically after 48 hours (only a drand adapter), and post it again 24 hours and 2
+     hours before. If you didn't propose it, your Ledger is compromised: move funds and call it off;
    - LiquidityBurner has work it can't do (a price guard or a missing price), or ETH/USDG piling up.
 8. **What can't be changed, even by you.** LiquidityBurner has no withdraw, and its tokens, router, pool and price
    feeds are fixed. A Series' odds, prices and groups lock when it opens. Grading odds and wear are fixed forever.

@@ -267,6 +267,9 @@ contract LiquidityBurner is Ownable2Step, ReentrancyGuard {
             emit Waiting(0, 0, 0); // no price: everything waits
             return false;
         }
+        // pair what's already here first, while the pool's price is the one the guard checked; then spend, even out
+        // and pair again (this run's own buys can move a thin pool past the 3% band: then that part waits)
+        _pair(p, k);
         _spend(p, k);
         _evenOut(p, k);
         _pair(p, k);

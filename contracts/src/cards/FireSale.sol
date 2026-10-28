@@ -512,7 +512,8 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         uint256 usd8 = t.usd8;
         if (pay == Pay.USDG && address(USDG) == address(0)) revert BadConfig();
         cost = pay == Pay.PLANK ? _plankFor(usd8) : pay == Pay.ETH ? _ethFor(usd8) : _usdgFor(usd8);
-        if (cost > maxCost || (pay == Pay.ETH && msg.value < cost)) revert PriceMoved();
+        // ETH: what's left of msg.value (buyWithEthAll has already bought the packs' PAPER with part of it)
+        if (cost > maxCost || (pay == Pay.ETH && address(this).balance < cost)) revert PriceMoved();
         // the base price splits by the group's shares (FireGroups keeps them at most 100% together); the tax is all
         // liquidity, so the two parts are exactly `cost`
         uint256 tax = cost * t.tax8 / usd8;

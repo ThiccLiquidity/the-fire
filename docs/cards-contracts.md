@@ -346,7 +346,7 @@ Per Series = set in `configureDrop` for that drop, locked at its start. Global =
 | Fresh PDA odds and wear rules | `FirePsa` constants (`FRESH_*`, `WEAR_*`; `freshOdds`, `oddsFor`) | constant | 7-10 table (`docs/grading.md`) | **fixed forever**, the same for every Series; no setter |
 | Revenue wallet and LiquidityBurner, feeds, router | `FireSale.setWallets(revenue, liquidity)`, `setFeeds` | global | - | only between drops (unchanged) |
 | Pause | `FireSale.setPaused`, `FirePsa.setPaused` | global | off | blocks every buy (every group), credit spending, paid suggestions (`FireSale`) and case/grading payments (`FirePsa`). Never opening, dealing, transfers, ending or closing a drop, burning cards, finishing or cancelling a grading, or keeper calls. No expiry. |
-| Randomness source | `FireCards.setRandomness`, `FirePsa.setRandomness` | global | the drand adapters | any time, no delay (announced first); only new requests use it, each pending request keeps its source (`docs/randomness.md`) |
+| Randomness source | `FireCards.setRandomness`, `FirePsa.setRandomness` | global | the drand adapters | 48 h after the owner names it (`RandomnessProposed`), then `applyRandomness` by anyone (the keepers do it); only new requests use it, each pending request keeps its source (`docs/randomness.md`) |
 | Collection metadata | `FirePacks.setContractURI`, `FireCards.setContractURI` | global | empty | any (ERC-7572) |
 
 **Suggestion text format.** `suggest` takes one string; the site packs the form into it as plain lines, only the

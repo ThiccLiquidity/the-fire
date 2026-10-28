@@ -147,7 +147,7 @@ from the owner):
 
 It alerts a Discord/Slack/Telegram webhook on stale feeds (PLANK price over 90 min old, a PAPER candidate pool not
 adopted in time), stuck opens or gradings, waiting fees, an unsold drop the owner can end, a close that didn't go through, drand lag, low keeper ETH
-(under 0.002), a pause turned on, a randomness switch, FireSale's wallets or price feeds changed (`WalletsSet` /
+(under 0.002), a pause turned on, a randomness switch proposed (48 h before it can take effect; the keepers apply it when due), FireSale's wallets or price feeds changed (`WalletsSet` /
 `FeedsSet`, once per event with the new addresses: if it wasn't you, pause the sale) and the backup having to step in, with a daily heartbeat; a keeper that can't start says so before it exits. None of these calls pause. The owner's pause (`FireSale.setPaused`,
 `FirePsa.setPaused`) stops only buying (every group), credit spending, paid suggestions and case/grading payments.
 
@@ -257,7 +257,7 @@ addresses from `deployments/<chainId>.json` (Vercel must include files outside t
 `FireProfiles` is in that network's deployments file; before that the site hides them.
 
 The site's wallet gate (`web/src/lib/guard.ts`) lets a wallet sign only calls to the contracts in that network's
-deployments file. Keep it current: after a randomness switch (`setRandomness`), put the new adapter (and router) in
+deployments file. Keep it current: after a switch takes effect (`applyRandomness`, 48 h after `setRandomness`), put the new adapter (and router) in
 the file as `CardsAdapter` / `PsaAdapter` / `OpenDrandRouter`, or opening and grading stop at "Blocked for your
 safety" (nothing is sent). A new contract the site calls needs its name in the gate's `ALLOWED` list too.
 

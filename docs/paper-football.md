@@ -17,7 +17,7 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
 5. **Where you touch the strike edge matters.** The centre hits clean and the paper tumbles end over end. Off-centre
    wobbles, curves toward that side and loses distance. A dashed line under the paper shows the edge, with the clean
    part in green.
-6. **Difficulty:** each make raises the next kick's difficulty. It is spent at random across distance (12-38 in),
+6. *(Replaced by 29, then 31.)* **Difficulty:** each make raises the next kick's difficulty. It is spent at random across distance (12-38 in),
    wind (±9 mph), post gap, post offset and, from streak 4, posts riding a little RC car. Every condition is shown
    before the kick; nothing changes unannounced.
 7. **Plank** stands behind the posts. A make bounces off his face with a wooden thunk. Misses fly past him. He has
@@ -48,7 +48,7 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
     curve.
 16. **Doink and in counts** ("DOINK… GOOD!").
 17. **The fold:** a 2 s fold animation starts every paid run. Free play can skip it.
-18. **Difficulty unlocks gradually** (distance, offset, wind, gap, then the car). Claude may pick another scheme if it
+18. *(Replaced by 29, then 31.)* **Difficulty unlocks gradually** (distance, offset, wind, gap, then the car). Claude may pick another scheme if it
     plays better.
 19. **Every run starts at level 0,** free or paid. The best streak sets the leaderboard place. (This replaces the
     plan's "paid starts at L3".)

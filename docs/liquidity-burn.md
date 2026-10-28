@@ -3,7 +3,8 @@
 Nothing on the site is burned outright any more. Everything that used to burn PAPER or PLANK goes to one new
 contract, the **liquidity contract** (working name `LiquidityBurner`). It pairs PAPER with PLANK, adds the pair to the
 PAPER/PLANK Uniswap V2 pool (the biggest PAPER pool) and burns the pool tokens: the liquidity is locked for good.
-The only coins still burned outright are a side's amount over its $100 limit.
+The only coins still burned outright are a side's amount over its $100 limit, and Morning Wood's own PAPER (copies and
+letters).
 
 The model: `ops/models/lp_model.py` (its runs are summarised at the end of this page).
 
@@ -31,12 +32,13 @@ liquidity contract. Revenue share and the liquidity share stay per-group setting
 Two sides, each valued in dollars at short price averages (see **Prices** below):
 
 1. **PAPER arrives as PAPER** (packs, suggestions, games): it joins the PAPER side.
-2. **Spendable money arrives** (ETH, USDG, PLANK: pack shares, the Extra-pack rise, case and grading fees):
-   - while the PAPER side holds under **$50**, **60%** of it buys PAPER (PLANK paid in is sold for it in the
-     PAPER/PLANK pool; ETH and USDG buy it);
-   - the rest, and all of it once the PAPER side holds $50 or more, goes to **whichever side is short** (PLANK paid
-     in simply stays PLANK).
-3. **Pair and burn:** whenever both sides hold at least **$1**, the matching dollar amount of each is added to the
+2. **PLANK arrives as PLANK** (pack shares paid in PLANK, fees paid in PLANK): it joins the PLANK side. While the
+   PLANK side is worth more than the PAPER side, a run sells half the gap for PAPER (PAPER is never sold).
+3. **ETH and USDG arrive** (pack shares, the Extra-pack rise, case and grading fees) and are spent at the next run:
+   - while the PAPER side holds under **$50**, **60%** buys PAPER;
+   - the rest, and all of it once the PAPER side holds $50 or more, buys **whichever side is short**, then half and
+     half.
+4. **Pair and burn:** whenever both sides hold at least **$1**, the matching dollar amount of each is added to the
    PAPER/PLANK pool and the pool tokens go to the dead address. The rest waits for the other side to come in
    (each side arrives in its own transactions; nothing waits for both at once).
 4. **The limit:** a side over **$100** burns its excess outright.
@@ -66,7 +68,10 @@ $10 of PLANK and burns as liquidity, $10 of PAPER keeps waiting.
 
 - No withdraw, no owner path to the coins, no upgrade. The only ways out: liquidity burned to the dead address, or
   a side's excess over $100 burned.
-- If adding liquidity ever fails, it falls back to waiting, and past $100 to burning: never stuck, never holding much.
+- If adding liquidity ever fails, it falls back to waiting, and past $100 to burning: never stuck. PAPER and PLANK
+  each wait at most $100; ETH and USDG waiting to be spent have no cap (the keeper alerts when they stay over $100
+  for 30 minutes).
+- Only the keepers the owner names can run it (an open run could be wrapped by a trader).
 - Before launch it is tested three ways: local tests on a real Uniswap V2 pool (lopsided amounts, tiny and huge
   amounts, price pushed before each run; after every run nothing over the limits is held and the pool tokens are
   at the dead address), the same tests on a copy of Robinhood Chain mainnet with the real PAPER/PLANK pool, and a

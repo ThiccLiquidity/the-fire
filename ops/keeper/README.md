@@ -89,7 +89,7 @@ while it lasts, and "resolved" when it clears:
 - **drand lag:** no relay answers, or drand is 20+ rounds (60 s) behind the clock; the chain's clock off real time by
   2+ min.
 - **The owner's switches:** FireSale or FirePsa paused (posted once, and when it ends); FireCards' or FirePsa's
-  randomness source switched (posted when it happens); FireSale's wallets or price feeds changed (`WalletsSet`,
+  randomness source switched (posted when it happens), or a switch proposed (posted when first seen, again 24 h and 2 h before it can take effect; the keeper applies a drand adapter once due); FireSale's wallets or price feeds changed (`WalletsSet`,
   `FeedsSet`: posted once per event with the new addresses, and whether LiquidityBurner or a feed isn't the deployed one).
   The always-on keepers watch these from their start; a one-pass run (`ONCE`) doesn't.
 - **Low keeper ETH:** under 0.002 ETH (`LOW_BALANCE_ETH`). Keep about 0.005-0.01 ETH in each keeper wallet.

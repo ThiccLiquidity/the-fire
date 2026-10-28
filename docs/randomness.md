@@ -34,7 +34,8 @@ the name is historical).
 - **No word for 24 hours** after the request (`CANCEL_AFTER`, randomness gone for good): anyone calls
   `FireCards.cancelOpen(fire, index)` (the packs go back, sealed) or `FirePsa.cancelGrading(index, ids)` (the cards
   unlock, still ungraded; the fee is not refunded: it went to LiquidityBurner). Both refuse while the request's source
-  holds a word: deliver it instead.
+  holds a word (deliver it instead), until 7 days after the request (`FORCE_CANCEL_AFTER`): then anyone can cancel
+  whatever the source says, so a word that never arrives can't hold packs or cards forever.
   - **Why 24 hours.** drand publishes each round before anyone delivers it, so a cancel only works while nobody has
     delivered the word, and the holder can see the word first. A holder who didn't like it could sit on it and cancel
     for a re-roll (packs back sealed, or the cards sent for grading again with fresh randomness). That can only happen
@@ -50,8 +51,13 @@ the name is historical).
   because it should only ever be needed for a dealer that can't deal.
 
 ## Switching the randomness source
-The owner can point FireCards and FirePsa at a new source at any time (`setRandomness`, no delay; the owner announces
-it publicly first). Every switch emits `RandomnessSet(source)`.
+The first source (at deploy) takes effect at once. After that, a switch waits **48 hours in public**: the owner names
+it (`setRandomness`, emits `RandomnessProposed(source, at)`), and once the 48 hours are up anyone applies it
+(`applyRandomness`, emits `RandomnessSet(source)`); the keepers do it for a drand adapter. Naming the current source
+calls a waiting switch off; naming another restarts the clock. The keeper posts a proposed switch when it first sees
+it, and again 24 hours and 2 hours before it can take effect.
+- If a source dies, a switch still takes 48 hours: opens and gradings in that time wait, and after 24 hours anyone can
+  cancel them (packs back sealed, cards ungraded).
 - Only **new** opens and gradings use the new source.
 - Each open and grading remembers the source that took its request (`source`, `requestId` in `openOf` /
   `gradingOf`). Only that source can answer it: an answer from any other address, or for a request it never took,

@@ -609,7 +609,7 @@ test("randomness: a proposed switch is posted once, and applied once it's due", 
   const NEXT = A(0xbb);
   let at = 2_000n;
   const chain = fakeChain({
-    reads: { randomness: () => A(0xaa), pendingRandomness: () => NEXT, pendingRandomnessAt: () => at, routers: () => undefined, "sim:applyRandomness": () => undefined },
+    reads: { randomness: () => A(0xaa), pendingRandomness: () => NEXT, pendingRandomnessAt: () => at, ROUTER: (addr) => (addr === NEXT ? A(0xcc) : undefined), "sim:applyRandomness": () => undefined },
   });
   let now = 1_000n;
   const k = createKeeper({
@@ -624,4 +624,26 @@ test("randomness: a proposed switch is posted once, and applied once it's due", 
   now = 2_000n;
   await k.jobs.watchSources(true);
   assert.equal(chain.writes.filter((w) => w.functionName === "applyRandomness").length, 2, "due: applied on both");
+});
+
+test("randomness: a switch proposed while the keeper was down is still posted; one that isn't a drand adapter isn't applied", async () => {
+  const NEXT = A(0xbd);
+  const chain = fakeChain({
+    reads: { randomness: () => A(0xaa), pendingRandomness: () => NEXT, pendingRandomnessAt: () => 200_000n, ROUTER: () => { throw new Error("not an adapter"); }, "sim:applyRandomness": () => undefined },
+  });
+  let now = 1_000n;
+  const k = createKeeper({
+    cfg: { label: "keeper", chainId: 4663, contracts: CON, drandUrls: ["https://drand"], actAfterSec: 0n, optional: {} },
+    pub: chain.pub, wallet: chain.wallet, account: { address: ME }, log: () => {}, fetchFn: async () => ({ ok: false }), wallNow: () => now,
+  });
+  await k.startup();
+  const ev = await k.jobs.watchSources(true);
+  assert.equal(ev.length, 2, "posted on the first pass after start-up");
+  assert.match(ev[0].text, /NOT a drand adapter/);
+  assert.equal((await k.jobs.watchSources(true)).length, 0, "once");
+  now = 200_000n - 3_600n;
+  assert.equal((await k.jobs.watchSources(true)).length, 2, "posted again within 2 h of taking effect");
+  now = 200_001n;
+  await k.jobs.watchSources(true);
+  assert.equal(chain.writes.length, 0, "never applied by the keeper");
 });

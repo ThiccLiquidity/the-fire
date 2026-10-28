@@ -56,7 +56,7 @@ const accessArg = (a?: Access) => ({ nftIds: (a?.nftIds ?? []).map(BigInt), allo
  *  when the group has no dollar price), and its PAPER per pack (burned). `access`: for a gated group (NFT ids, or the
  *  snapshot allowance and proof). PAPER is approved at the most it can be (the group's PAPER per pack x n); PLANK at
  *  the quote plus `slippageBps`, USDG at the quote (a dollar). `paperInEth`: ETH alone (buyWithEthAll: FireSale buys
- *  the PAPER on the market and burns it, for at most its quote + `slippageBps` of ETH; one confirmation, no approval).
+ *  the PAPER on the market for the liquidity fire, for at most its quote + `slippageBps` of ETH; one confirmation, no approval).
  *  `quote`: what the buyer was shown
  *  (reads.quoteGroup: the coin's cost.raw, and paperEth.raw for ETH alone): the cap is built from that + 3%, not from a
  *  new quote at the click, so a price that moved more (a taxed group's next pack after someone else bought) is
