@@ -1,25 +1,52 @@
-// Minimal JSON-RPC + ABI helpers (no dependencies). Selectors and topics are precomputed (cast sig / cast keccak).
+// Minimal JSON-RPC + ABI helpers (no dependencies). Selectors and topics are computed from their signatures
+// (keccak.mjs), so a changed event shows up here as a changed signature, never as a stale hash.
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { REPO, env, fetchText, readJson } from "./util.mjs";
+import { selectorOf, topicOf } from "./keccak.mjs";
 
-export const SEL = {
-  getReserves: "0x0902f1ac",
-  token0: "0x0dfe1681",
-  balanceOf: "0x70a08231",
-  totalSupply: "0x18160ddd",
-  latestRoundData: "0xfeaf968c",
-  getPair: "0xe6a43905",
-  profileOf: "0x2f8eb9cb",
+/** Function signatures the paper calls. */
+export const SIG = {
+  getReserves: "getReserves()",
+  token0: "token0()",
+  balanceOf: "balanceOf(address)",
+  totalSupply: "totalSupply()",
+  latestRoundData: "latestRoundData()",
+  getPair: "getPair(address,address)",
+  profileOf: "profileOf(address)", // FireProfiles
 };
+export const SEL = Object.fromEntries(Object.entries(SIG).map(([k, s]) => [k, selectorOf(s)]));
 
-export const TOPIC = {
-  Letter: "0x379b6f12f0662600b811133588e3244fa1d704ab76bd96a76617a0d29955cfce", // MorningWood.Letter(uint256,address,string)
-  Bought: "0x30d88f11437310f9fcd1ecd088e0cefb0042e7202e4935bd01cc1ddfd2009cef", // MorningWood.Bought(...)
-  Burned: "0x70843ddf930435e28d0c0954f526e247ef46e54d00bd8e93a58c8be65ac66566", // PaperBurner.Burned(uint8,uint256,uint256)
-  PacksBought: "0x773ad1776c35e76f6b682a79dbabe0c1643267e4f8abff42b5fbb343bc8ce838", // FireSale.PacksBought(...)
-  Swap: "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822", // UniswapV2Pair.Swap
+/** Event signatures the paper reads (as the contracts declare them; enums are uint8) and what each log's data holds
+ *  (its non-indexed fixed-size fields, one 32-byte word each, in order). */
+export const EVENT = {
+  // MorningWood.Letter(uint256 indexed issue, address indexed from, string text): data is the string (decodeString)
+  Letter: { sig: "Letter(uint256,address,string)", data: [] },
+  // MorningWood.Bought(uint256 indexed issue, address indexed buyer, uint256 qty, Pay pay, uint256 cost, uint256 paperBurned)
+  Bought: { sig: "Bought(uint256,address,uint256,uint8,uint256,uint256)", data: ["qty", "pay", "cost", "paperBurned"] },
+  // FireSale.PacksBought(uint256 indexed fire, uint256 indexed group, address indexed buyer, uint256 count, uint8 pay,
+  //   uint256 paid, uint256 toLiquidity)
+  PacksBought: { sig: "PacksBought(uint256,uint256,address,uint256,uint8,uint256,uint256)", data: ["count", "pay", "paid", "toLiquidity"] },
+  // LiquidityBurner.LiquidityBurned(uint256 paper, uint256 plank, uint256 lp): PAPER and PLANK locked in burned pool tokens
+  LiquidityBurned: { sig: "LiquidityBurned(uint256,uint256,uint256)", data: ["paper", "plank", "lp"] },
+  // LiquidityBurner.OverCap(Side indexed side, uint256 amount): a side's excess over $100 burned outright (side 0: PAPER)
+  OverCap: { sig: "OverCap(uint8,uint256)", data: ["amount"] },
+  // UniswapV2Pair.Swap(address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out,
+  //   uint256 amount1Out, address indexed to)
+  Swap: { sig: "Swap(address,uint256,uint256,uint256,uint256,address)", data: ["amount0In", "amount1In", "amount0Out", "amount1Out"] },
 };
+export const TOPIC = Object.fromEntries(Object.entries(EVENT).map(([k, e]) => [k, topicOf(e.sig)]));
+
+/** A log's fixed-size data fields by name (EVENT[name].data), checked: the log must be that event and carry every
+ *  word. Throws instead of reading a missing word as 0, so a changed event is noticed rather than counted as nothing. */
+export function decodeLog(name, log) {
+  const e = EVENT[name];
+  if (!e) throw new Error(`unknown event ${name}`);
+  if (String(log.topics?.[0] ?? "").toLowerCase() !== TOPIC[name]) throw new Error(`${name}: a log with topic ${log.topics?.[0]} isn't ${e.sig}`);
+  const h = String(log.data ?? "0x").replace(/^0x/, "");
+  if (h.length < e.data.length * 64) throw new Error(`${name}: ${h.length / 2} bytes of data, ${e.data.length * 32} expected (${e.sig})`);
+  return Object.fromEntries(e.data.map((f, i) => [f, BigInt("0x" + h.slice(i * 64, i * 64 + 64))]));
+}
 
 export const DEAD = "0x000000000000000000000000000000000000dEaD";
 

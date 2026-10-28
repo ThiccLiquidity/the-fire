@@ -1,6 +1,7 @@
-// Our own chain news: letters sent in for this issue (MorningWood.Letter), copies sold, packs sold, PAPER burned by
-// PaperBurner, with senders' profile names (FireProfiles). Last 24h unless told otherwise.
-import { SEL, TOPIC, addrWord, asAddr, blockAt, decodeString, logsChunked, rpc, toNum, u256Word, word } from "./chain.mjs";
+// Our own chain news: letters sent in for this issue (MorningWood.Letter), copies sold, packs sold, and the PAPER the
+// liquidity contract (LiquidityBurner, which replaced PaperBurner) locked in burned PAPER/PLANK liquidity or burned
+// outright over its cap, with senders' profile names (FireProfiles). Last 24h unless told otherwise.
+import { SEL, TOPIC, addrWord, asAddr, blockAt, decodeLog, decodeString, logsChunked, rpc, toNum, u256Word, word } from "./chain.mjs";
 import { soft } from "./util.mjs";
 
 async function profileName(r, profiles, who) {
@@ -32,15 +33,30 @@ export async function gatherSite(dep, { prevIssue }, notes) {
       letters.push({ from, name: await name(from), text, kind: /^\s*AD:/i.test(text) ? "classified" : "letter", tx: l.transactionHash });
     }
   }
-  const sum = (logs, i, d = 18) => logs.reduce((s, l) => s + toNum(word(l.data, i), d), 0);
-  const press = C.MorningWood ? await soft("press sales", () => logsChunked(r, { address: C.MorningWood, topics: [TOPIC.Bought], ...range }), [], notes) : [];
-  const packs = C.FireSale ? await soft("pack sales", () => logsChunked(r, { address: C.FireSale, topics: [TOPIC.PacksBought], ...range }), [], notes) : [];
-  const burns = C.PaperBurner ? await soft("burns", () => logsChunked(r, { address: C.PaperBurner, topics: [TOPIC.Burned], ...range }), [], notes) : [];
+  // each total reads its logs and decodes every one (decodeLog throws on a log that isn't the event it should be);
+  // a read or decode failure goes in the notes and the total is null (unknown), never a silent 0
+  const total = (label, address, event, field, decimals, topics = []) => (address
+    ? soft(label, async () => {
+      const logs = await logsChunked(r, { address, topics: [TOPIC[event], ...topics], ...range });
+      return logs.reduce((s, l) => s + toNum(decodeLog(event, l)[field], decimals), 0);
+    }, null, notes)
+    : null);
+  const L = C.LiquidityBurner;
+  const [copies, packs, paperLiquidity, paperOverCap] = await Promise.all([
+    total("press sales", C.MorningWood, "Bought", "qty", 0),
+    total("pack sales", C.FireSale, "PacksBought", "count", 0),
+    total("liquidity burned", L, "LiquidityBurned", "paper", 18),
+    total("PAPER over the cap", L, "OverCap", "amount", 18, ["0x" + u256Word(0)]), // side 0: PAPER
+  ]);
+  const both = paperLiquidity === null || paperOverCap === null ? null : +(paperLiquidity + paperOverCap).toFixed(4);
   return {
     letters,
-    copiesSold24h: sum(press, 0, 0), // Bought data: qty, pay, cost, paper
-    packsSold24h: sum(packs, 0, 0), // PacksBought data: count, pay, paid, burnShare, plankBurned
-    paperBurnedByBurner24h: +sum(burns, 1).toFixed(4), // Burned data: spent, paperOut
+    copiesSold24h: copies,
+    packsSold24h: packs,
+    // PAPER LiquidityBurner took out of circulation: locked in burned liquidity, plus any burned over its $100 cap
+    paperBurnedByBurner24h: L ? both : null,
+    paperToLiquidity24h: paperLiquidity === null ? null : +paperLiquidity.toFixed(4),
+    paperOverCap24h: paperOverCap === null ? null : +paperOverCap.toFixed(4),
   };
 }
 
