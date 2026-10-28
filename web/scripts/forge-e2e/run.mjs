@@ -403,7 +403,7 @@ try {
   {
     // the card images live on IPFS (aborted above): here a local card stands in, so the picture can be cut
     await page.unroute(/\/ipfs\//);
-    await page.route(/\/ipfs\//, (r) => r.fulfill({ contentType: "image/webp", body: readFileSync(join(FACTORY, "forge/cards/bowling/wood-plain.webp")) }));
+    await page.route(/\/ipfs\//, (r) => r.fulfill({ contentType: "image/webp", body: readFileSync(join(FACTORY, "forge/cards/toaster/wood-plain.webp")) }));
     check(await page.evaluate(async () => { await window.Live.chain; return window.Profiles.on && !!window.Live.chain.profilesOn(); }), "profiles are on (FireProfiles in the deployments file)");
     await page.waitForTimeout(1000); // anything the reveal opens after it (a recap) first
     await page.evaluate(() => { document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()); window.Live.openWallet(); });
@@ -464,7 +464,7 @@ try {
       const m = /\/ipfs\/bafyexampleimages\/c(\d+)-([a-z0-9-]+)-(none|frame|picture|full)-u\.webp$/.exec(r.request().url());
       if (!m) return r.abort();
       asked.push(r.request().url());
-      const mat = m[2] === "coal" ? "charcoal" : m[2], who = mat === "gold" || mat === "fullart" ? "bowling" : ["jellyfish", "cactus", "bowling"][+m[1] % 3];
+      const mat = m[2] === "coal" ? "charcoal" : m[2], who = ["jellyfish", "cactus", "toaster"][+m[1] % 3];
       return r.fulfill({ status: 200, contentType: "image/webp", body: readFileSync(join(FACTORY, `forge/cards/${who}/${mat}-plain.webp`)) });
     });
     await page.evaluate(() => Fun.go("practice"));
@@ -483,7 +483,7 @@ try {
       "still stamped PRACTICE");
     await shot("13e-live-practice");
     const fb = await page.evaluate(async () => { const no = Store.state.series.no; Store.state.series.no = 0; try { return (await Fun.practicePack()).map((c) => [c.character, !!c.image, Store.cardImg(c)]); } finally { Store.state.series.no = no; } });
-    check(fb.length === 6 && fb.every(([, img, src]) => !img && /^cards\/(bowling|cactus|jellyfish)\//.test(src)), `no Series to read: the demo cast stands in (${fb.map((x) => x[0]).join(", ")})`);
+    check(fb.length === 6 && fb.every(([, img, src]) => !img && /^cards\/(lobster|pigeon|toaster|cactus|jellyfish)\//.test(src)), `no Series to read: the demo cast stands in (${fb.map((x) => x[0]).join(", ")})`);
     await page.keyboard.press("Escape");
     // the live holo: a card's tilt layers from its Series' folder (c<i>-<slug>-plain.webp, -print-<state>.webp) draw it
     // moving, as in the demo

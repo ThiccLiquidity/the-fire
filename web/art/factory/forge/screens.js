@@ -11,7 +11,6 @@
   const GLOW = { paper: '#fff4dc', wood: '#ffc46b', fire: '#ff5a1c', charcoal: '#dcdcf0', diamond: '#9fd8ff', gold: '#ffd25a', fullart: '#ffe9a8' };
   const BURN_GOAL = 42; // fixed forever: every 42 cards burned is a free pack
   const maxBatch = () => Store.MAX_BATCH; // FirePsa.maxBatch(): the most cards one case & grade payment takes, cases and grades together
-  const FALLBACK_NAMES = Store.NAMES;
 
   // ---------- small helpers
   function h(tag, props, ...kids) {
@@ -238,7 +237,7 @@
     const W = 1080, H = 1350, [core, glow] = LEAK[c.material], tier = tierOf(c);
     await Promise.all(['400 64px "Russo One"', '800 36px Nunito', '600 30px Nunito'].map((f) => document.fonts.load(f).catch(() => {})));
     await document.fonts.ready;
-    const [strip, word] = await Promise.all([loadImg(Store.cardStrip?.(c) || Store.cardImg(c)), loadImg('ui/omni-wordmark.webp').catch(() => null)]); // the strip: the full-size card
+    const [strip, word] = await Promise.all([loadImg(Store.cardImg(c)), loadImg('ui/omni-wordmark.webp').catch(() => null)]); // the card as it is now (360 x 504)
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
     // the forge: warm planks, an ember glow behind the card, dark edges
     let gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#3b2614'); gr.addColorStop(0.55, '#22150b'); gr.addColorStop(1, '#0d0805');
@@ -304,14 +303,14 @@
 
   // ---------- pack contents: the pack's slots, each card rolled on its own at its slot's fixed odds (Store.rollPack), like the contract
   function makePack(series) {
-    const names = [...new Set(S().cards.map((c) => c.character))]; const pool = names.length ? names : FALLBACK_NAMES;
+    const pool = Store.castOf(series);
     let id = Math.max(999, ...S().cards.map((c) => c.id)), serial = Math.max(0, ...S().cards.map((c) => c.serial));
     const ser = S().series, cardsInSeries = Math.max(1, ser.total) * (ser.cardsPerPack || 6), cast = Math.max(1, ser.cast);
     return Store.rollPack().map(({ material: m, holo }) => {
       // DEMO DATA: a print number (#k: the k-th of this exact card pulled), somewhere up to what the odds give it in a full Series
       const w = (Store.CARD_ODDS.find(([x]) => x === m) || [m, 1])[1];
       const of = Math.max(1, Math.round((w / Store.ODDS_TOTAL) * cardsInSeries / cast * (m === 'gold' || m === 'fullart' ? 1 : window.Info?.holoP(m, holo) ?? 1)) + 2);
-      const character = m === 'gold' || m === 'fullart' ? Store.SPECIAL_CAST : pool[Math.floor(Math.random() * pool.length)];
+      const character = pool[Math.floor(Math.random() * pool.length)];
       return { id: ++id, serial: ++serial, series, character, material: m, holo,
         edition: String(1 + Math.floor(Math.random() * of)), grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
     });

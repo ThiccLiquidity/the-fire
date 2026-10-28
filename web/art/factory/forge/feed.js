@@ -28,7 +28,7 @@
     const m = [['fullart', 0.12], ['gold', 0.2], ['charcoal', 0.28], ['fire', 0.25], ['paper', 0.08], ['wood', 0.07]];
     let u = R(), mat = 'fire'; for (const [k, p] of m) { if ((u -= p) < 0) { mat = k; break; } }
     const holo = mat === 'gold' || mat === 'fullart' ? 'full' : mat === 'charcoal' ? (R() < 0.5 ? 'none' : 'full') : 'full';
-    const character = mat === 'gold' || mat === 'fullart' ? Store.SPECIAL_CAST : Store.NAMES[Math.floor(R() * Store.NAMES.length)];
+    const character = Store.NAMES[Math.floor(R() * Store.NAMES.length)];
     return { id: -100000 - Math.floor(R() * 1e6), series: 6, character, material: mat, holo, grade: null, cased: false, by: addr(), at };
   };
   const crowd = LIVE ? [] : Array.from({ length: 14 }, (_, i) => fake(Date.now() / 1000 - (i + 1) * (300 + R() * 2400)));

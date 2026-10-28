@@ -14,7 +14,7 @@
   async function castOf(no) {
     let base = casts[no];
     if (!base) {
-      base = Store.NAMES;
+      base = Store.castOf(no);
       if (LIVE) { const L = window.Live.chain; try { base = L ? await L.seriesCharacters(no) : []; casts[no] = base; } catch { base = []; } } else casts[no] = base;
     }
     const held = Store.state.cards.filter((c) => c.series === no).map((c) => c.character);

@@ -6,11 +6,10 @@
    names CardsRenderer gives real cards). If those reads fail or nothing is deployed yet, the demo cast stands in. */
 (() => {
   const { h } = Fun;
-  const CH = Store.CHARS, CAST = Object.keys(CH), SPECIAL = Store.SPECIAL_CAST;
-  const ART_SERIES = 6; // the sample card images print "Forged · Series 6"
+  const CH = Store.CHARS, ART_SERIES = 6, CAST = Store.castOf(ART_SERIES); // the sample card images print "Series 6"
   const special = (c) => c.material === 'gold' || c.material === 'fullart';
   const look = (c) => (special(c) ? 'full' : c.holo || 'none');
-  const artOf = (c) => (special(c) ? CH[SPECIAL] : CH[c.character] || CH[CAST[0]]).id;
+  const artOf = (c) => (CH[c.character] || CH[CAST[0]]).id;
   // live mode points the card images at the chain's metadata: a live practice card has its Series' own image; one
   // from the demo cast (the fallback) keeps the sample art
   if (window.Live?.on) {
@@ -39,7 +38,7 @@
   Fun.practicePack = () => (window.Live?.on ? livePack().catch(() => null).then((p) => p || demoPack()) : demoPack());
   const demoPack = () => {
     return Store.rollPack().map(({ material: m, holo }) => {
-      return { id: -(++n), serial: 0, series: ART_SERIES, practice: true, character: m === 'gold' || m === 'fullart' ? SPECIAL : CAST[Math.floor(Math.random() * CAST.length)],
+      return { id: -(++n), serial: 0, series: ART_SERIES, practice: true, character: CAST[Math.floor(Math.random() * CAST.length)],
         material: m, holo, edition: 'Practice', grade: null, pending: false, dealt: Date.now(), cased: false, frozenAge: 0, moves: 0 };
     });
   };

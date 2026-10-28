@@ -58,16 +58,22 @@
   /** One pack, slot by slot, each card its own roll from its slot's odds. The demo deals DEMO_PACK_SLOTS; `slots`
    *  overrides (e.g. the real PACK_SLOTS). */
   const rollPack = (rand = Math.random, slots = DEMO_PACK_SLOTS) => slots.flatMap((s) => Array.from({ length: s.count }, () => rollCard(rand, s.odds)));
-  // demo: only the Bowling Ball has Gold and Full Art art so far, so every Gold or Full Art pulled is a Bowling Ball
-  const SPECIAL_CAST = 'Bowling Ball';
-  // the demo cast: real card art, rendered by the Card Studio's own card builder into cards/<id>/<material>-<holo>-<grade|u>.webp
-  const CHARS = { 'Bowling Ball': { id: 'bowling', category: 'Sports' }, Jellyfish: { id: 'jellyfish', category: 'Animal' }, Cactus: { id: 'cactus', category: 'Plant' } };
-  const NAMES = Object.keys(CHARS);
+  // the demo cast: real card art (Jean Phil × Painted Cubism is Series 6, Renaissance Gym Bros × Fresco Painting is
+  // Series 7), rendered by the Card Studio's own renderer into cards/<id>/s/<material>-<holo>-<state>.webp
+  const CHARS = {
+    Lobster: { id: 'lobster', category: 'Sea Life', series: 6 }, Pigeon: { id: 'pigeon', category: 'Bird', series: 6 }, Toaster: { id: 'toaster', category: 'Appliance', series: 6 },
+    Cactus: { id: 'cactus', category: 'Plant', series: 6 }, Jellyfish: { id: 'jellyfish', category: 'Sea Life', series: 6 },
+    Frog: { id: 'frog', category: 'Amphibian', series: 7 }, Mushroom: { id: 'mushroom', category: 'Fungus', series: 7 }, 'Praying Mantis': { id: 'mantis', category: 'Insect', series: 7 },
+    Rooster: { id: 'rooster', category: 'Bird', series: 7 }, Sloth: { id: 'sloth', category: 'Mammal', series: 7 },
+  };
+  /** A Series' characters (demo): its own cast, else Series 6's (the collection's). */
+  const castOf = (no) => { const c = Object.keys(CHARS).filter((k) => CHARS[k].series === no); return c.length ? c : Object.keys(CHARS).filter((k) => CHARS[k].series === 6); };
+  const NAMES = castOf(6);
   const DAY = 86400000;
   const DEMO_ADDR = '0x7a3f2b9c41d0e5a6b8f9c0d1e2f3a4b5c6d7c91e'; // the demo wallet (its short form is shown)
   // demo prices: the pack, and the coins it can be paid in (cases and grades are priced in dollars too)
   const PRICES = { PACK_USD: 2.5, PAPER_USD: 0.08, ETH_USD: 2500, PLANK_USD: 0.0000021, CASE_USD: 0.05, GRADE_USD: 1, PACK_PAPER: 1, PRESS_PAPER: 1, SUGGEST_PAPER: 1 }; // this Series' settings (per drop)
-  // demo collection: cards from Series 6 (already closed; the card images print "Forged · Series 6"), with a spread of materials, holos and grades
+  // demo collection: cards from Series 6 (already closed; the card images print "Series 6"), with a spread of materials, holos and grades
   let seed = 7; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const mkR = (k) => () => (k = (k * 16807) % 2147483647) / 2147483647;
   const pickMat = () => { const u = R(); return u < 0.5 ? 'paper' : u < 0.8 ? 'wood' : u < 0.95 ? 'fire' : 'charcoal'; };
@@ -89,7 +95,7 @@
   }
   cards[5].material = 'paper'; cards[5].holo = 'full'; // a full-holo Paper, the rare one to show off
   // raw holo cards to show off the holo (tilt them on the site): one of every look, plus a Gold and a Full Art
-  [['gold', 'full', 'Bowling Ball'], ['fullart', 'full', 'Bowling Ball'], ['fire', 'full'], ['charcoal', 'frame'], ['wood', 'picture'], ['paper', 'full']]
+  [['gold', 'full', 'Toaster'], ['fullart', 'full', 'Pigeon'], ['fire', 'full'], ['charcoal', 'frame'], ['wood', 'picture'], ['paper', 'full']]
     .forEach(([material, holo, who], k) => Object.assign(cards[k], { material, holo, grade: null, cased: false, frozenAge: 0, dealt: Date.now() - (k + 1) * 3600e3, serial: 700 - k, ...(who ? { character: who } : {}) }));
   cards.forEach((c, i) => { if (i >= 6 && c.grade == null && i % 3 === 1) { c.cased = true; c.frozenAge = Math.round((0.2 + R() * 30) * DAY); } }); // some already cased
 
@@ -111,8 +117,8 @@
     },
     // Series teases: one character in every card type. Add one for any Series at any time: an entry here plus its six
     // cards in ui/announce/<id>-<type>.webp (paper, wood, fire, charcoal, gold, fullart), rendered for that Series (they
-    // print "Forged · Series N"). While a Series is on sale its tease shows what's in its packs; between Series the next one's sits on the main page.
-    teases: { 7: { id: 'bowling-s7', name: 'Bowling Ball' }, 8: { id: 'bowling-s8', name: 'Bowling Ball' } },
+    // print "Series N"). While a Series is on sale its tease shows what's in its packs; between Series the next one's sits on the main page.
+    teases: { 7: { id: 'frog-s7', name: 'Frog' } },
     sealed: { 7: 0, 6: 3 }, // sealed packs owned, by Series (6 is closed: it can be opened)
     cards,
     // suggestions: { text, at, picked }. text is exactly what goes on chain (FireCredits.suggest): Store.packSuggestion's lines
@@ -126,7 +132,7 @@
   };
   const listeners = new Set();
   const Store = {
-    state, MATS, MAT_LABEL, ALWAYS_HOLO, SPECIAL_CAST, CHARS, NAMES, DAY, PRICES,
+    state, MATS, MAT_LABEL, ALWAYS_HOLO, CHARS, NAMES, castOf, DAY, PRICES,
     LIVE_NET, // 'testnet' / 'mainnet' when the page runs live (live.js), else null
     // MAX_BATCH mirrors FirePsa.maxBatch() (an owner setting): the most cards one case & grade payment can take, cases and grades together
     MAX_BATCH: 20,
@@ -255,8 +261,7 @@
     CARD_ODDS, ODDS_TOTAL, HOLO_RATE, PACK_SLOTS, DEMO_PACK_SLOTS, MAT_ORDER, shareOf, rollCard, rollPack,
     log(text) { state.activity.unshift({ text, t: Date.now() }); state.activity.length = Math.min(state.activity.length, 30); },
     cardStrip(c) { // the finished card images for a look (character, material, holo): one strip, raw, cased, then slabbed PDA 1-10
-      // demo: only the Bowling Ball has Gold and Full Art art, so those always show it
-      const id = (c.material === 'gold' || c.material === 'fullart' ? CHARS[SPECIAL_CAST] : CHARS[c.character] || CHARS[NAMES[0]]).id;
+      const id = (CHARS[c.character] || CHARS[NAMES[0]]).id;
       const holo = (c.material === 'gold' || c.material === 'fullart') ? 'full' : c.material === 'diamond' && (c.holo || 'none') === 'none' ? 'full' : c.holo || 'none';
       return `cards/${id}/${c.material}-${holo}.webp`;
     },
@@ -268,11 +273,11 @@
     cardParts(c) {
       if (c.material === 'diamond') return null;
       const always = c.material === 'gold' || c.material === 'fullart', look = always ? 'full' : c.holo || 'none';
-      const id = (always ? CHARS[SPECIAL_CAST] : CHARS[c.character] || CHARS[NAMES[0]]).id;
+      const id = (CHARS[c.character] || CHARS[NAMES[0]]).id;
       const holoWord = { frame: 'Holo frame', picture: 'Holo picture', full: 'Full holo' }[look];
       // print: just this state's layer (720 x 1008, size_images.py), not the 8640 px strip of all 12
       return { look, holder: Store.holder(c), state: Store.stateIdx(c), plain: `cards/${id}/${c.material}-plain.webp`, print: `cards/${id}/p/${c.material}-print-${Store.stateIdx(c)}.webp`,
-        label: { name: always ? SPECIAL_CAST : c.character, sub: [`Series ${c.series}`, MAT_LABEL[c.material], holoWord].filter(Boolean).join(' · '), grade: c.grade } };
+        label: { name: c.character, sub: [`Series ${c.series}`, MAT_LABEL[c.material], holoWord].filter(Boolean).join(' · '), grade: c.grade } };
     },
     // which card in the strip: 0 raw, 1 cased, 2-11 slabbed PDA 1-10
     stateIdx(c) { return c.grade != null ? c.grade + 1 : c.cased ? 1 : 0; },
