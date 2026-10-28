@@ -165,6 +165,7 @@
     const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 
     // ---------- state
+    let lastTick = 0;
     let now = 0, round = 1, clock = ROUND, score = 0, total = 0, hits = 0, shots = 0, streak = 0, best = 0, apps = [], nextAt = 0.8, phase = 'intro';
     let pops = [], splats = [], drops = [], puffs = [], sparks = [], critters = [], banner = null, hitstop = 0, shakeT = 0, shake = { x: 0, y: 0 }, recent = [];
     let press = null, wads = [], kick = -9, tip = { x: 0, y: 0, dx: 0 }, leftThumb = false, lastShot = null, drawOrder = [];
@@ -173,7 +174,7 @@
     const goal = () => goalFor(round);
 
     function startRound(r) {
-      round = r; clock = ROUND; score = 0; apps = []; nextAt = now + 1.2; phase = 'play'; recent = [];
+      round = r; clock = ROUND; score = 0; apps = []; nextAt = now + 1.2; phase = 'play'; recent = []; lastTick = 0; sound('whistle');
       banner = { t: now, text: `ROUND ${r}`, sub: `goal ${goal()}` };
       // the critters: two roaches on the floor, and a cat along the catwalk behind its rail (x0 -> x1, inches)
       critters = [
@@ -201,6 +202,7 @@
       recent.push(s.id); if (recent.length > 5) recent.shift();
       const far = (s.z - 90) / 450, win = Math.max(minWin(s.z), (2.2 + 1.2 * far) - (ROUND - clock) * 0.01 - (round - 1) * 0.12);
       const dir = rnd() < 0.5 ? 1 : -1;
+      sound('spy');
       apps.push({ s, t0: now, win: moving(s) ? win + 1.2 : win, hit: false, rise: 0, x: moving(s) ? (dir > 0 ? s.x0 : s.x1) : s.cx, dir, face: 'idle', blinkAt: now + 0.8 + rnd() * 2, splats: [] });
       nextAt = now + Math.max(0.35, 0.9 - round * 0.05) + rnd() * 0.7;
     }
@@ -333,7 +335,7 @@
             if (!hitTest(c, p) && !(c.kind === 'plank' && w.rel.has(c.a) && inPlank({ ...c.a, x: w.rel.get(c.a) }, p, 2))) continue;
             w.done = true;
             if (c.kind === 'plank') hitPlank(c.a, p, w);
-            else if (c.kind === 'critter') { c.c.gag = now + 1.2; pop(p.x, p.y - 10, c.c.kind === 'cat' ? 'MREOW!' : 'eek!', '#9fd3ff'); sound('gag'); addSplat(p, c.z - 0.01); missed(w); }
+            else if (c.kind === 'critter') { c.c.gag = now + 1.2; pop(p.x, p.y - 10, c.c.kind === 'cat' ? 'MREOW!' : 'eek!', '#9fd3ff'); sound(c.c.kind === 'cat' ? 'cat' : 'squeak'); addSplat(p, c.z - 0.01); missed(w); }
             else { sound('tap'); addSplat(p, c.z - 0.01, scene.occ[c.name]); missed(w); }
             break;
           }
@@ -360,7 +362,7 @@
       const r = rectOf(a); a.splats.push({ dx: p.x - (r.x + r.w / 2), dy: p.y - (r.y + r.h / 2), r: Math.max(2.5, 1.4 * p.s) * 1.6, t: now });
       const pts = pointsOf(a.s); score += pts; total += pts;
       pop(p.x, p.y - 12, 'SPLAT!', '#fffaf0', true); pop(p.x, p.y + 6, `+${pts}`, '#ffd27a');
-      if (PRAISE[streak]) banner = { t: now, text: PRAISE[streak], sub: `${streak} in a row` };
+      if (PRAISE[streak]) { banner = { t: now, text: PRAISE[streak], sub: `${streak} in a row` }; sound('streak'); }
       hitstop = 0.07; shakeT = 0.28; sound('splat'); buzz([20, 40, 30]);
       for (let i = 0; i < 10; i++) { const an = rnd() * 6.28, s = 40 + rnd() * 90; sparks.push({ x: p.x, y: p.y, vx: Math.cos(an) * s, vy: Math.sin(an) * s - 40, t: now, col: '#fffaf0' }); }
       emit('make', { streak: total, score: total, round });
@@ -394,6 +396,7 @@
       if (phase !== 'play') return;
       clock = Math.max(0, clock - dt);
       if (clock <= 0) return endRound();
+      const sec = Math.ceil(clock); if (sec <= 10 && sec !== lastTick) { lastTick = sec; sound('tick', sec <= 3); }
       if (now >= nextAt) deal();
       for (const a of apps) {
         const age = now - a.t0, s = a.s;
@@ -428,7 +431,7 @@
     function endRound() {
       apps = []; wads = []; press = null;
       if (score >= goal()) { phase = 'between'; banner = { t: now, text: 'GOAL MET!', sub: `${score} points · round ${round + 1} next`, stay: true }; sound('win'); emit('round-won', { round, score }); setTimeout(() => alive && phase === 'between' && startRound(round + 1), 2200); }
-      else { phase = 'over'; banner = { t: now, text: 'TIME', sub: `${total} points · round ${round} · tap to play again`, stay: true }; sound('tap'); emit('over', { round, score: total, hits, shots }); }
+      else { phase = 'over'; banner = { t: now, text: 'TIME', sub: `${total} points · round ${round} · tap to play again`, stay: true }; sound('over'); emit('over', { round, score: total, hits, shots }); }
     }
 
     // ---------- drawing
@@ -682,15 +685,67 @@
     }
     load().then(() => { if (alive) { size(); requestAnimationFrame(frame); } }, (e) => console.warn('spitwad: the scene did not load', e));
 
-    // ---------- sounds (placeholders until the sound set comes in) and haptics
-    let ac = null;
-    function sound(kind) {
-      if (opts.mute?.()) return; try { ac = ac || new AudioContext(); } catch { return; }
-      const t = ac.currentTime, o = ac.createOscillator(), e = ac.createGain(); o.connect(e).connect(ac.destination);
-      const set = { in: [300, 260, 0.05, 0.05], puff: [180, 90, 0.08, 0.2], splat: [140, 50, 0.2, 0.4], tap: [600, 500, 0.05, 0.1], taunt: [520, 760, 0.12, 0.07], gag: [900, 1400, 0.1, 0.08], win: [400, 900, 0.4, 0.2] }[kind]; if (!set) return;
-      o.type = kind === 'taunt' ? 'square' : 'sine'; o.frequency.setValueAtTime(set[0], t); o.frequency.exponentialRampToValueAtTime(set[1], t + set[2]);
-      e.gain.setValueAtTime(set[3], t); e.gain.exponentialRampToValueAtTime(0.001, t + set[2] + 0.05); o.start(t); o.stop(t + set[2] + 0.06);
+    // ---------- sounds and haptics. All made here with WebAudio (no files): short noise and tone shapes, cartoon
+    // style. Decoration only: none of it carries timing (the ring does). Mute follows the site's sound switch.
+    let ac = null, out = null, noiseBuf = null;
+    function actx() {
+      if (opts.mute?.()) return null;
+      try {
+        if (!ac) {
+          ac = new AudioContext();
+          const comp = ac.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 4;
+          out = ac.createGain(); out.gain.value = 0.8; out.connect(comp).connect(ac.destination);
+          noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+          const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        }
+        if (ac.state === 'suspended') ac.resume();
+      } catch { return null; }
+      return ac;
     }
+    /** a tone: type, pitch from f0 to f1 over dur, peak gain, start offset, optional vibrato [rate, depth] and lowpass */
+    function tone(a, { type = 'sine', f0, f1 = f0, dur, gain, at = 0, attack = 0.005, vib, lp }) {
+      const t = a.currentTime + at, o = a.createOscillator(), e = a.createGain();
+      o.type = type; o.frequency.setValueAtTime(f0, t); if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      if (vib) { const l = a.createOscillator(), lg = a.createGain(); l.frequency.value = vib[0]; lg.gain.value = vib[1]; l.connect(lg).connect(o.frequency); l.start(t); l.stop(t + dur + 0.05); }
+      let node = o; if (lp) { const f = a.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; node.connect(f); node = f; }
+      e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(gain, t + attack); e.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      node.connect(e).connect(out); o.start(t); o.stop(t + dur + 0.05);
+    }
+    /** a noise burst through a filter whose frequency moves from f0 to f1 */
+    function noise(a, { type = 'bandpass', f0, f1 = f0, q = 1, dur, gain, at = 0, attack = 0.004 }) {
+      const t = a.currentTime + at, src = a.createBufferSource(), f = a.createBiquadFilter(), e = a.createGain();
+      src.buffer = noiseBuf; f.type = type; f.Q.value = q; f.frequency.setValueAtTime(f0, t); if (f1 !== f0) f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(gain, t + attack); e.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(f).connect(e).connect(out); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.05);
+    }
+    const SOUNDS = {
+      // a soft breath in as you start to aim
+      in: (a) => noise(a, { f0: 900, f1: 1400, q: 0.8, dur: 0.22, gain: 0.05, attack: 0.12 }),
+      // the spit: a "pft", a little thump, then the wad whistling away
+      puff: (a) => { noise(a, { f0: 1900, f1: 650, q: 1.4, dur: 0.1, gain: 0.32 }); tone(a, { f0: 130, f1: 60, dur: 0.08, gain: 0.25 }); noise(a, { f0: 3200, f1: 1100, q: 7, dur: 0.32, gain: 0.05, at: 0.04, attack: 0.05 }); },
+      // a hit on Plank: a wet splat and a cartoon boing
+      splat: (a) => { noise(a, { type: 'lowpass', f0: 1100, f1: 220, q: 0.7, dur: 0.24, gain: 0.5 }); tone(a, { f0: 170, f1: 55, dur: 0.2, gain: 0.35 }); tone(a, { f0: 190, f1: 280, dur: 0.38, gain: 0.12, at: 0.07, vib: [15, 35] }); },
+      // a miss that hits the scenery: a dull wooden tok
+      tap: (a) => { tone(a, { f0: 780, f1: 520, dur: 0.06, gain: 0.22 }); noise(a, { type: 'highpass', f0: 2200, dur: 0.025, gain: 0.1 }); },
+      // Plank pops up somewhere
+      spy: (a) => { tone(a, { f0: 320, f1: 900, dur: 0.07, gain: 0.1 }); noise(a, { f0: 2500, q: 2, dur: 0.03, gain: 0.05 }); },
+      // he got away: "nyah-nyah"
+      taunt: (a) => { tone(a, { type: 'square', f0: 540, dur: 0.12, gain: 0.05, lp: 1800, vib: [9, 12] }); tone(a, { type: 'square', f0: 450, dur: 0.2, gain: 0.05, at: 0.13, lp: 1800, vib: [9, 12] }); },
+      // a critter got hit: the cat's "mreow", or a mouse's squeak
+      cat: (a) => { tone(a, { type: 'sawtooth', f0: 620, f1: 980, dur: 0.18, gain: 0.07, lp: 2200 }); tone(a, { type: 'sawtooth', f0: 980, f1: 520, dur: 0.3, gain: 0.07, at: 0.16, lp: 1800 }); },
+      squeak: (a) => { tone(a, { f0: 2300, f1: 3300, dur: 0.07, gain: 0.06 }); tone(a, { f0: 2500, f1: 3600, dur: 0.08, gain: 0.06, at: 0.1 }); },
+      // a streak: a quick sparkle
+      streak: (a) => [1320, 1760, 2093, 2637].forEach((f, i) => tone(a, { type: 'triangle', f0: f, dur: 0.22, gain: 0.06, at: i * 0.05 })),
+      // the last ten seconds: a woodblock tick (higher for the last three)
+      tick: (a, hi) => tone(a, { f0: hi ? 1900 : 1450, f1: hi ? 1700 : 1300, dur: 0.04, gain: hi ? 0.1 : 0.06 }),
+      // a round starts: the foreman's whistle
+      whistle: (a) => tone(a, { f0: 2150, dur: 0.4, gain: 0.06, attack: 0.02, vib: [28, 110] }),
+      // goal met: a little bell run
+      win: (a) => [523, 659, 784, 1047].forEach((f, i) => { tone(a, { type: 'triangle', f0: f, dur: 0.55, gain: 0.12, at: i * 0.09 }); tone(a, { f0: f * 2, dur: 0.3, gain: 0.03, at: i * 0.09 }); }),
+      // time's up without the goal: a sad trombone "wah-wah"
+      over: (a) => [[233, 220], [220, 207], [207, 175]].forEach(([f0, f1], i) => tone(a, { type: 'sawtooth', f0, f1, dur: i === 2 ? 0.6 : 0.28, gain: 0.07, at: i * 0.3, lp: 900, vib: i === 2 ? [6, 5] : undefined })),
+    };
+    function sound(kind, arg) { const a = actx(); if (!a) return; try { SOUNDS[kind]?.(a, arg); } catch { /* no sound */ } }
     const buzz = (p) => { try { opts.haptic?.(p); } catch { /* no vibration */ } };
 
     return {

@@ -315,6 +315,13 @@ drawn from the game's own camera (`layout-guide.html`; `layout-guide-labelled.pn
 
 ## 13. Sound list
 
+**Now (Oct 29): synthesized in the game itself (spitwad.js, WebAudio, no files):** breath in, spit "pft" with the wad
+whistling off, splat + boing on a hit, wooden tok on a miss, a pop when Plank shows, "nyah-nyah" when he gets away,
+cat "mreow" and mouse squeak, a sparkle on a streak, ticks in the last 10 s, the round whistle, a bell run for the
+goal and a sad "wah-wah" at time. Any of them can be swapped for a recorded file later. The list below was the
+original plan with Pixabay files.
+
+
 - **WebAudio:** pressure hiss, heartbeat locked to the breath, last-10 s tick, slow-motion muffle. All of it is decoration; none of it carries timing.
 - **Pixabay** (`sw-`, credited in `credits.json`):
   - puff, whiz, splat, boing, dizzy, pop, duck, tap-wood, tink;
