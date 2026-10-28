@@ -1,4 +1,4 @@
-// Browser kicks replayed in Node: real pointer input (a desktop mouse pull and a phone touch flick) goes through the
+// Browser kicks replayed in Node: real pointer input (a desktop mouse flick and a phone touch flick) goes through the
 // actual game (paperfb-sim.js + paperfb.js) in Chromium; every kick's raw input, tick and verdict is recorded, then
 // Node maps and replays it with the same sim and must get the same kick (bit for bit) and the same result. A bulk
 // check compares whole flights (every tick's state) between the browser and Node.
@@ -50,13 +50,15 @@ async function edgeOnPage(page) {
 }
 let r = 99; const rnd = () => { r = (Math.imul(r, 1103515245) + 12345) >>> 0; return r / 4294967296; };
 
-async function pullKick(page) {
+async function mouseFlick(page, cdp) {
   const e = await edgeOnPage(page), x = e.x + (rnd() - 0.5) * 20, y = e.y - (rnd() - 0.6) * e.half * 1.4;
-  const len = 40 + rnd() * 260, slant = (rnd() - 0.5) * 0.6;
-  await page.mouse.move(x, y); await page.mouse.down();
-  for (let i = 1; i <= 8; i++) { await page.mouse.move(x + slant * len * i / 8, y + len * i / 8); await page.waitForTimeout(12); }
-  await page.waitForTimeout(rnd() * 400); // hold, then let go (the moving posts' timing)
-  await page.mouse.up();
+  const speed = 0.8 + rnd() * 3, slant = (rnd() - 0.5) * 0.7, steps = 4, gap = 16;
+  const at = (type, px, py, buttons) => cdp.send('Input.dispatchMouseEvent', { type, x: px, y: py, button: 'left', buttons, clickCount: 1 });
+  await at('mouseMoved', x, y, 0); await at('mousePressed', x, y, 1);
+  await page.waitForTimeout(rnd() * 300); // grab, wait for the moving posts, then snap it up
+  let px = x, py = y;
+  for (let i = 0; i < steps; i++) { px += slant * speed * gap; py -= speed * gap; await at('mouseMoved', px, py, 1); }
+  await at('mouseReleased', px, py, 0);
 }
 async function flickKick(page, cdp) {
   const e = await edgeOnPage(page), x = e.x + (rnd() - 0.5) * 20, y = e.y - (rnd() - 0.6) * e.half * 1.4;
@@ -85,18 +87,18 @@ function replayInNode(rec) {
   return moving;
 }
 
-test('desktop pulls in Chromium replay identically in Node', { skip: SKIP, timeout: 180000 }, async () => {
+test('desktop mouse flicks in Chromium replay identically in Node', { skip: SKIP, timeout: 180000 }, async () => {
   const browser = await launch();
   try {
-    const { page, errors } = await gamePage(browser, false);
-    for (let i = 0; i < 14; i++) { await waitReady(page); await pullKick(page); await page.waitForTimeout(30); }
+    const { page, errors } = await gamePage(browser, false), cdp = await page.context().newCDPSession(page);
+    for (let i = 0; i < 14; i++) { await waitReady(page); await mouseFlick(page, cdp); await page.waitForTimeout(30); }
     await waitReady(page);
     const rec = await page.evaluate(() => window.__rec);
     assert.deepEqual(errors, []);
     assert.ok(rec.length >= 10, `recorded ${rec.length} kicks`);
-    assert.ok(rec.every((k) => k.input.kind === 'pull'));
+    assert.ok(rec.every((k) => k.input.kind === 'flick'));
     const moving = replayInNode(rec);
-    console.log(`pull: ${rec.length} kicks, ${moving} with moving posts, results ${JSON.stringify(rec.map((k) => k.result))}`);
+    console.log(`mouse: ${rec.length} kicks, ${moving} with moving posts, results ${JSON.stringify(rec.map((k) => k.result))}`);
   } finally { await browser.close(); }
 });
 

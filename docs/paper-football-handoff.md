@@ -30,7 +30,7 @@ Omni Cards sells trading-card NFTs on Robinhood Chain.
 
 It's the lunch-table game from childhood, turned into a mini-game on the site.
 - **The kick:** you flick a folded paper triangle off a paperclip tee, through pencil goalposts, on a workbench.
-- **Controls:** phone players flick up; desktop players pull back and let go.
+- **Controls:** everyone flicks up (finger or mouse); the desktop pull-back was dropped Oct 28 (too easy).
 - **Streaks:** every make raises the difficulty. Distance, wind, a narrower goal, an offset goal and, from streak 4, goalposts riding a little toy car all come in. Every condition is shown before the kick. A miss ends the streak.
 - **Free play:** any time, including while a pack or grade waits on drand. The pack is never held up; a banner says when the cards are ready.
 - **Paid competitive runs (launch with the site; the owner can switch them off any time):**

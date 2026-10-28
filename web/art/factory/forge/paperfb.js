@@ -90,7 +90,7 @@
     if (opts.waitForShot) showShot(shotFor(seed, 0, 0, T)); else nextShot();
     const emit = (type, detail = {}) => opts.onEvent?.(type, { ...detail, streak, best, makes, kicks });
 
-    // ---------- input: phone flick (touch) and desktop pull-back (mouse); both produce { power, aim, contact }. The
+    // ---------- input: a flick, by finger or mouse alike (no desktop pull-back: it was much easier); it makes { power, aim, contact }. The
     // samples are quantized to integers and mapped by the sim (S.kickFromInput), exactly as the server maps them.
     const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, t: e.timeStamp || performance.now() }; };
     function ballScreen() {
@@ -104,7 +104,7 @@
       const p = pos(e), b = ballScreen(), stage = { w: Math.round(W), h: Math.round(H) };
       const edge = S.quantize(b.x, b.y, 0), start = S.quantize(p.x, p.y, 0);
       if (!S.onPaper(S.edgeScale(stage), (start[0] - edge[0]) / S.Q_XY, (start[1] - edge[1]) / S.Q_XY)) return; // start on the paper
-      press = { id: e.pointerId, mouse: e.pointerType === 'mouse', t0: p.t, stage, edge: { x: edge[0], y: edge[1] }, start, pts: [start] };
+      press = { id: e.pointerId, t0: p.t, stage, edge: { x: edge[0], y: edge[1] }, start, pts: [start] };
       cv.setPointerCapture(e.pointerId); e.preventDefault();
     });
     cv.addEventListener('pointermove', (e) => {
@@ -113,7 +113,7 @@
     const endPress = (e) => {
       if (!press || e.pointerId !== press.id) return; const pr = press; press = null;
       pr.pts.push(sample(pr, pos(e)));
-      const input = { kind: pr.mouse ? 'pull' : 'flick', stage: pr.stage, edge: pr.edge, start: pr.start, samples: pr.pts };
+      const input = { kind: 'flick', stage: pr.stage, edge: pr.edge, start: pr.start, samples: pr.pts };
       const m = S.kickFromInput(input, T); if (!m.kick) return;
       kick(m.kick, input);
     };
@@ -652,7 +652,7 @@
       g.textAlign = 'center';
       if (shot.move && !ball) { g.font = `400 ${Math.max(12, H * 0.024)}px ${DISP}`; g.fillStyle = '#ffb07a'; g.fillText('MOVING POSTS · TIME IT', W / 2, top + bh + 18); }
       if (note && clock - note.at < 3.5 && !ball) { const nw = Math.min(W - 40, 280); ironPlate(W / 2 - nw / 2, H * 0.17, nw, 34); g.font = `400 ${Math.max(11, H * 0.022)}px ${DISP}`; g.fillStyle = '#ffd27a'; g.textAlign = 'center'; g.fillText(note.text.toUpperCase(), W / 2, H * 0.17 + 22); }
-      if (hint && !ball && !press) { g.font = `800 ${Math.max(12, H * 0.03)}px Nunito, system-ui, sans-serif`; g.fillStyle = 'rgba(0,0,0,.5)'; const tx = matchMedia('(pointer: fine)').matches ? 'Press on the paper, pull back, let go' : 'Touch the paper and flick up'; g.fillText(tx, W / 2 + 1, H - 13); g.fillStyle = 'rgba(246,232,207,.95)'; g.fillText(tx, W / 2, H - 14); }
+      if (hint && !ball && !press) { g.font = `800 ${Math.max(12, H * 0.03)}px Nunito, system-ui, sans-serif`; g.fillStyle = 'rgba(0,0,0,.5)'; const tx = matchMedia('(pointer: fine)').matches ? 'Grab the paper and flick it up' : 'Touch the paper and flick up'; g.fillText(tx, W / 2 + 1, H - 13); g.fillStyle = 'rgba(246,232,207,.95)'; g.fillText(tx, W / 2, H - 14); }
     }
     // ---------- juice: chips and dust that fly off a hit, confetti at the big streaks, a comic burst behind POW
     const parts = [], confetti = [];

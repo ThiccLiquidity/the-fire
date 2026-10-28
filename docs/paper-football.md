@@ -80,6 +80,9 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
     small at first. Model make rates per kick: L0 61%, L4 52%, L8 51%, L10 50%, L12 45%, L14 42%, L16 35%, L18 29%,
     L20 22%. Shortest kick 12 in, longest 40 in (owner, Oct 27): on the longest kicks Plank stands closer behind the
     posts so he stays on the bench (`plankZ`).
+30. **One control everywhere: the flick (owner, Oct 28; replaces the desktop pull in 4).** The desktop pull-back set
+    power by its length and let you hold the aim, which made desktop much easier than a phone. Desktop now grabs the
+    paper with the mouse and flicks it up, the same mapping as a finger; the server rejects the old pull input.
 27. **Game room:** games are added to FireGames with a fixed entry each; prizes are capped at 6 per game per Series (replaced Oct 27: 6 packs, 50 cases and 20 gradings per Series across all games, any mix).
 
 ## On chain (game room added Oct 26, tests in `contracts/test/cards/Games.t.sol`)

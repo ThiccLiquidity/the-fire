@@ -67,8 +67,7 @@
     loftHit: 24,       // loft gained per half-edge lower you hit (degrees): low pops it up, high flies flat
     sweetAt: -0.25,    // the clean spot: a little below the middle of the strike edge (share of half the edge)
     aimMax: 22,        // widest aim (degrees either side)
-    flickFull: 2.6,    // phone: flick speed (CSS px/ms) that gives full power
-    pullFull: 0.38,    // desktop: pull-back length (share of the field's height) that gives full power
+    flickFull: 2.6,    // flick speed (CSS px/ms) that gives full power (finger or mouse: one control everywhere)
     sweet: 0.22,       // the clean band around that spot (share of half the edge), at low power
     sweetPower: 0.5,   // how much the clean middle shrinks at full power (share)
     offPenalty: 0.3,   // speed lost at the very end of the edge (share)
@@ -260,8 +259,9 @@
   }
   const snap = (f) => { const b = f.ball; return { tick: f.tick, x: b.x, y: b.y, z: b.z, vx: b.vx, vy: b.vy, vz: b.vz, pitch: b.pitch, yaw: b.yaw, roll: b.roll, wob: b.wob }; };
 
-  // ---------- input: raw pointer samples to a kick (phone flick and desktop pull make the same { power, aim, contact })
-  // An input is integers only: { kind: 'flick'|'pull', stage: { w, h } (CSS px), edge: { x, y } (the strike edge's
+  // ---------- input: raw pointer samples to a kick { power, aim, contact }. Phones and desktops both flick: the old
+  // desktop pull-back (power from its length, aim held steady) was much easier than a flick, so it's gone.
+  // An input is integers only: { kind: 'flick', stage: { w, h } (CSS px), edge: { x, y } (the strike edge's
   // middle on screen, 1/8 CSS px), start: [x, y, t] (the press), samples: [[x, y, t], ...] (the press's last points,
   // up to 48, ending with the release) }, x and y in 1/8 CSS px and t in 1/16 ms. Stage sizes match the canvas.
   const Q_XY = 8, Q_T = 16, MAX_SAMPLES = 64;
@@ -293,15 +293,10 @@
     const ex = input.edge.x / Q_XY, ey = input.edge.y / Q_XY, sx = st[0] / Q_XY, sy = st[1] / Q_XY;
     if (!onPaper(sc, sx - ex, sy - ey)) return { none: 'off-paper' };
     const contact = clamp((ey - sy) / sc.half, -1, 1), sweetMin = 22.5 / sc.half; // up the edge = +
-    const up = pts[pts.length - 1];
-    let power, aim;
-    if (input.kind === 'pull') { // pull back (down) and release: length is power, the opposite of the pull's slant is the aim
-      const dx = up[0] / Q_XY - sx, dy = up[1] / Q_XY - sy; if (dy < 8) return { none: 'pull' };
-      power = Math.min(1, (dy / sc.H) / T.pullFull); aim = atan2(-dx, dy);
-    } else { // flick up: a fast snap kicks, a slow push does nothing; the slant is the aim
-      const v = velocity(pts); if (!v || v.vy > -0.25) return { none: 'flick' };
-      power = Math.min(1, -v.vy / T.flickFull); aim = atan2(v.vx, -v.vy);
-    }
+    if (input.kind !== 'flick') return { none: 'kind' };
+    // flick up: a fast snap kicks, a slow push does nothing; the slant is the aim
+    const v = velocity(pts); if (!v || v.vy > -0.25) return { none: 'flick' };
+    const power = Math.min(1, -v.vy / T.flickFull), aim = atan2(v.vx, -v.vy);
     return { kick: { power, aim, contact, sweetMin } };
   }
   const isInt = (v) => Number.isSafeInteger(v);
@@ -310,7 +305,7 @@
    *  design: a rejected kick isn't a miss, the player just kicks again. */
   function checkInput(input) {
     if (!input || typeof input !== 'object') return 'no input';
-    if (input.kind !== 'flick' && input.kind !== 'pull') return 'kind';
+    if (input.kind !== 'flick') return 'kind';
     const sg = input.stage, e = input.edge, st = input.start, pts = input.samples;
     if (!sg || !isInt(sg.w) || !isInt(sg.h) || sg.w < 200 || sg.h < 200 || sg.w > 6000 || sg.h > 6000) return 'stage';
     if (!e || !isInt(e.x) || !isInt(e.y) || e.x < 0 || e.y < 0 || e.x > sg.w * Q_XY || e.y > sg.h * Q_XY) return 'edge';
@@ -327,7 +322,7 @@
       if (d > 20 * Math.max(dtm, 1)) return 'too fast';
       prev = q;
     }
-    if (input.kind === 'flick' && pts.length < 3) return 'samples';
+    if (pts.length < 3) return 'samples';
     return null;
   }
 

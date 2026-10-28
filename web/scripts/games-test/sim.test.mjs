@@ -1,5 +1,5 @@
 // Paper football's deterministic sim (web/art/factory/forge/paperfb-sim.js): its maths, golden results, and the input
-// mapping for the phone flick and the desktop pull. Run: npm run test:games (from web/).
+// mapping for the flick (phone and desktop alike). Run: npm run test:games (from web/).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -103,23 +103,13 @@ test('flick: speed is power, slant is aim, where you touch is contact', () => {
   assert.equal(S.kickFromInput(flick(195, 600, 0, 1.3)).none, 'flick');  // downward
 });
 
-test('pull: length is power, the opposite of the pull is aim', () => {
-  const H = stage.h, dy = 0.19 * H; // half of pullFull
-  let m = S.kickFromInput(pull(195, 600, 0, dy));
-  near(m.kick.power, 0.5, 1e-3); near(m.kick.aim, 0); near(m.kick.contact, 0);
-  m = S.kickFromInput(pull(195, 600, -dy * 0.1, dy)); near(m.kick.aim, Math.atan(0.1), 1e-3); // pulled left: aims right
-  m = S.kickFromInput(pull(195, 600, 0, H)); near(m.kick.power, 1);
-  assert.equal(S.kickFromInput(pull(195, 600, 0, 7)).none, 'pull');
-});
-
-test('flick and pull make the same kick for the same intent', () => {
-  const f = S.kickFromInput(flick(195, 590, 0.208, -2.08)).kick, p = S.kickFromInput(pull(195, 590, -0.0304 * stage.h, 0.304 * stage.h)).kick;
-  near(f.power, p.power, 2e-3); near(f.aim, p.aim, 2e-3); near(f.contact, p.contact, 1e-9);
+test('the old desktop pull-back is gone: one control everywhere', () => {
+  assert.equal(S.kickFromInput(pull(195, 600, 0, 0.19 * stage.h)).none, 'kind');
+  assert.equal(S.checkInput(pull(195, 600, 0, 0.19 * stage.h)), 'kind');
 });
 
 test('checkInput: shape and plausibility', () => {
   assert.equal(S.checkInput(flick(195, 600, 0, -1.3)), null);
-  assert.equal(S.checkInput(pull(195, 600, 0, 120)), null);
   const f = flick(195, 600, 0, -1.3);
   assert.equal(S.checkInput({ ...f, kind: 'tap' }), 'kind');
   assert.equal(S.checkInput({ ...f, stage: { w: 10, h: 10 } }), 'stage');

@@ -433,18 +433,6 @@
    "w": 34
   },
   {
-   "id": "truss",
-   "cx": 330,
-   "bottom": 44,
-   "z": 400,
-   "look": "drop",
-   "occ": [
-    "truss"
-   ],
-   "h": 66,
-   "w": 29
-  },
-  {
    "id": "pipe",
    "cx": 880,
    "bottom": 334,

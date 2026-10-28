@@ -194,11 +194,14 @@
       for (const [name, z] of Object.entries(scene.occZ)) out.push({ kind: 'occ', z, name });
       return out.sort((p, q) => p.z - q.z);
     }
+    /** the edge a Plank shows past: up from behind it (pop, and riding or walking along it), or down from a beam (drop) */
+    const edgeOf = (s) => (s.look === 'drop' ? { below: true } : s.look === 'pop' || s.look === 'ride' || s.look === 'walk' ? { below: false } : null);
     function hitTest(c, p) {
       if (c.kind === 'occ') { const o = scene.occ[c.name]; if (!o) return false; const ix = Math.floor(p.x - o.x), iy = Math.floor(p.y - o.y); return ix >= 0 && iy >= 0 && ix < o.w && iy < o.h && o.alpha[iy * o.w + ix] > 128; }
       if (c.kind === 'critter') { const q = proj(c.c.x, c.c.y + c.c.h / 2, c.c.z), r = Math.max(4, c.c.w / 2 * q.s); return Math.abs(p.x - q.x) < r && Math.abs(p.y - q.y) < Math.max(4, c.c.h / 2 * q.s) + 2; }
       const r = rectOf(c.a), m = 2;
       if (c.a.s.clip) { const [x0, y0, x1, y1] = c.a.s.clip; if (p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1) return false; }
+      const edge = edgeOf(c.a.s); if (edge && (edge.below ? p.y < c.a.s.bottom : p.y > c.a.s.bottom)) return false; // the hidden part
       if (r.tilt) { const cx = r.x + r.w / 2, cy = r.y + r.h / 2, an = -r.tilt * Math.PI / 180, dx = p.x - cx, dy = p.y - cy; const qx = dx * Math.cos(an) - dy * Math.sin(an), qy = dx * Math.sin(an) + dy * Math.cos(an); return Math.abs(qx) <= r.w / 2 + m && Math.abs(qy) <= r.h / 2 + m; }
       return p.x >= r.x - m && p.x <= r.x + r.w + m && p.y >= r.y - m && p.y <= r.y + r.h + m;
     }
@@ -303,6 +306,8 @@
       const r = rectOf(a), im = scene.faces[a.face] || scene.faces.idle; if (!im || a.rise <= 0) return;
       g.save();
       if (a.s.clip) { const [x0, y0, x1, y1] = a.s.clip; g.beginPath(); g.rect(sx(x0), sy(y0), (x1 - x0) * K, (y1 - y0) * K); g.clip(); }
+      const edge = edgeOf(a.s); // he comes up from behind an edge (or hangs down from a beam): nothing of him past it
+      if (edge) { g.beginPath(); if (edge.below) g.rect(sx(r.x - r.w), sy(a.s.bottom), r.w * 3 * K, r.h * 2 * K); else g.rect(sx(r.x - r.w), sy(a.s.bottom - r.h * 2), r.w * 3 * K, r.h * 2 * K); g.clip(); }
       if (a.s.id === 'arch') g.filter = 'brightness(0.25)'; // a silhouette against the lit doorway
       const cx = sx(r.x + r.w / 2), cy = sy(r.y + r.h / 2); g.translate(cx, cy); if (r.tilt) g.rotate(r.tilt * Math.PI / 180); if (r.flip) g.scale(1, -1);
       const haze = Math.max(0, (a.s.z - 200) / 700); g.globalAlpha = 1;
@@ -389,7 +394,9 @@
       const items = [];
       for (const a of apps) items.push({ z: a.s.z, d: () => drawPlank(a) });
       for (const c of critters) if (c.live) items.push({ z: c.z, d: () => drawCritter(c) });
-      for (const [name, z] of Object.entries(scene.occZ)) if (apps.some((a) => a.s.occ.includes(name))) items.push({ z, d: () => drawOcc(name) });
+      // a cut-out goes back over him when it's his spot's, or anything nearer that he overlaps (the flywheel's spokes in front of the far crates)
+      const overlaps = (o, r) => o && r.x < o.x + o.w && r.x + r.w > o.x && r.y < o.y + o.h && r.y + r.h > o.y;
+      for (const [name, z] of Object.entries(scene.occZ)) if (apps.some((a) => a.rise > 0 && (a.s.occ.includes(name) || (z < a.s.z && overlaps(scene.occ[name], rectOf(a)))))) items.push({ z, d: () => drawOcc(name) });
       items.sort((p, q) => q.z - p.z).forEach((i) => i.d());
       for (const p of puffs) { const q = (now - p.t) / 2.6; g.fillStyle = `rgba(230,225,215,${0.22 * (1 - q)})`; g.beginPath(); g.arc(sx(p.x + q * 30), sy(p.y - q * 120), (p.r + q * 40) * K, 0, 7); g.fill(); }
       for (const s of splats) splat(s); splats = splats.filter((s) => now - s.t < 2.5);
@@ -470,6 +477,11 @@
       /** tests: the state, and a shot fired from code at plate point (x, y) with breath p */
       state: () => ({ wad: wad && { x: wad.x, y: wad.y, z: wad.z, t: wad.t, vz: wad.vz }, phase, round, clock, score, total, hits, shots, streak, best, apps: apps.map((a) => ({ id: a.s.id, dir: a.dir, rise: a.rise, hit: a.hit, face: a.face, rect: rectOf(a), z: a.s.z })) }),
       start: () => { if (phase !== 'play') reset(); },
+      /** tests: Plank held still in one spot (fully out, or `rise` of the way), nothing else moving */
+      pose(id, rise = 1, x) {
+        const sp = scene.spots.find((q) => q.id === id); if (!sp) return false;
+        phase = 'pose'; apps = [{ s: sp, t0: now, win: 1e9, hit: false, rise, x: x ?? sp.cx, dir: 1, face: 'idle', blinkAt: 1e9 }]; return true;
+      },
       fireAt(x, y, p) { if (wad) return false; P = { x, y }; const b = press; press = null; fireP(p); press = b; return true; },
       setLeftThumb(v) { leftThumb = !!v; try { localStorage.setItem('omni.sw.leftThumb', v ? '1' : '0'); } catch { /* private window */ } },
       destroy() { alive = false; removeEventListener('resize', size); host.classList.remove('sw-stage'); cv.remove(); try { ac?.close(); } catch { /* fine */ } },
