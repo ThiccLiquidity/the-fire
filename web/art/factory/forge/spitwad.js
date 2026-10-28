@@ -459,7 +459,10 @@
       const r = rectOf(a), left = Math.max(0, 1 - (now - a.t0) / (a.win + 0.15));
       let tx = sx(r.x + r.w / 2), ty = sy(r.y) - 8;
       if (ring && Math.abs(tx - ring.x) < ring.R + 20 && ty > ring.y - ring.R - 22 && ty - 15 < ring.y + ring.R) ty = ring.y - ring.R - 8; // over the breath ring, not under it
-      if (ty < BAR + 16) { tx = sx(r.x + r.w) + 22; ty = Math.max(BAR + 16, sy(r.y) + 14); } // no room above him: beside him instead
+      if (ty < BAR + 16) { // no room above him: beside him instead (and outside the breath ring)
+        tx = sx(r.x + r.w) + 22; ty = Math.max(BAR + 16, sy(r.y) + 14);
+        if (ring && Math.abs(ty - ring.y) < ring.R + 8 && tx - 17 < ring.x + ring.R + 4) tx = ring.x + ring.R + 22;
+      }
       tx = Math.min(W - 20, Math.max(20, tx));
       g.fillStyle = 'rgba(18,12,8,.82)'; g.fillRect(tx - 17, ty - 15, 34, 15); g.fillStyle = '#ffd27a'; g.font = '800 10px system-ui'; g.textAlign = 'center'; g.fillText(`+${pointsOf(a.s)}`, tx, ty - 4);
       g.fillStyle = left > 0.35 ? '#6fcf7a' : '#ff6b5a'; g.fillRect(tx - 17, ty, 34 * left, 2.5);
