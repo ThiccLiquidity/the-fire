@@ -427,6 +427,36 @@ https://claude.ai/artifact/MQNgfGmWQYKVjd7dqgdoD1). The owner played both and ap
 - **Game room:** Spit-Wad is game 2, free play only (`comp: false`); Paper Football is now shown as **Fold and Flick**.
 - **Next:** the server's round judging and competitive runs (plan §9), the sound set, wait-panel tiles.
 
+## Fixes (Oct 28, 2026): dead hits, the look of the spots, the straw, the edges
+
+- **Cut-outs traced by hand.** The automatic cuts that went wrong (the flywheel's dark cut took the dark wall between
+  its spokes, the rail's took the gap between the paper rolls, the rects drew wall over Plank under the pipe and the
+  chest) are now polygons in `spots.json` (`"cut": "poly"`: polygons, ellipses and thick lines, drawn in order, `sub`
+  cuts a hole): crate, chest, cabinet, press, spool, flywheel, far crates, pipe, rail and the hanging crate.
+  `cut_layers.py --only a,b` rebuilds just those (GrabCut comes out a little different each run).
+- **`cut_layers.py --check`** (also run after every build): at every spot, with Plank fully out, every visible pixel on
+  a 2 px grid is shot with the breath in the green notch; at least 95% must hit him, or it fails. It is a port of the
+  game's flight and hit test. Every spot passes (lowest: the paper-roll gap 96.6%, the pipe 96.9%; the far crates went
+  from 39% to 100%). `web/scripts/games-test/spitwad.test.mjs` runs the same check in Chromium with the game's own code.
+- **Hits are judged against what is drawn.** A wad only stops on a cut-out the game is drawing over a Plank or a
+  critter right now (the same rule that draws it). Wads and splats are depth-sorted with everything else; a splat on
+  a cut-out stays on its pixels, a splat on Plank stays on him. A miss at the Plank you aimed at says OVER or SHORT.
+- **The shot goes where the crosshair is,** sway and all (the sway used to be dropped at the release), and a notch shot
+  lands on the crosshair: the launch speed is solved so the arc comes back onto the aim ray at his depth (it used to
+  land 1 to 5 px low). Releasing while a wad flies fires another one (it used to be ignored).
+- **The spots:** the crate and the cabinet hide him behind their whole shape; the hanging crate has him pop up out of
+  its top; the doorway's silhouette is lighter with a warm rim light; the cat walks the catwalk behind the rail.
+- **Edges:** once the scope is on, the view eases the target toward the middle (it may pan into the side wings); near
+  the screen's edge the thumb offset shrinks so the edge stays in reach; a Left/Right thumb button (phones) flips it;
+  the scope's drag is 1.25x the thumb as meant (it was 0.8x); points tags stay clear of the top bar.
+- **The straw** is a 3D striped paper straw (true perspective, helix stripes, shading), points more than halfway to
+  the crosshair, and fades while you aim low.
+- **Difficulty:** round 1 deals near spots (to 200 in), round 2 to 340 in, then all; points are 6 (near) to 26 (far
+  and peeking), so a far hit is no longer most of a goal (goals 60/70/85, then 5·round((40 + 12r + 0.6r²)/5)); a
+  Plank stays out at least long enough to aim, breathe to the notch and fly there.
+- **Speed:** the blurred side wings are drawn once per resize, and Plank's shadow, haze and rim light are made once
+  per face and spot instead of every frame. The desktop stage is 2:3 and as tall as the sheet allows.
+
 ## Critique notes
 
 - **Accepted in full or adapted:** points 1 to 35. Notes on the adapted ones:
