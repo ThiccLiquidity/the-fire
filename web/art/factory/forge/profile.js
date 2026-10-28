@@ -252,7 +252,7 @@
     box.addEventListener('click', () => { if (!st.card) $('[data-p=pick]').click(); }); // the empty slot is the way to pick one
     async function loadArt() {
       stage.replaceChildren(); art = null; box.classList.toggle('empty', !st.card); body.classList.toggle('no-card', !st.card);
-      box.style.background = st.card ? '' : fallbackStyle(a);
+      box.style.background = ''; // empty: a plain dashed slot (polish.css), not the big coloured identicon
       $('[data-p=pick]').textContent = st.card ? 'Change card' : 'Pick a card';
       if (!st.card) return check();
       box.classList.add('loading');

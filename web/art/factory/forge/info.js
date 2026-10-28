@@ -335,7 +335,7 @@
           <li>They stack and never expire. Use them in a future Series while its free-pack group is open${cg ? ` (${inS}, that's the ${esc(cg.name)} group)` : ''}. A free pack still takes its PAPER.</li>
           <li>To keep drops fair, each Series sets a limit on free packs. ${freeMax || freePer ? `${InS}: ${[freeMax ? `up to ${nf(freeMax)} in total${s.total ? ` (${Math.round(freeMax / s.total * 100)}% of its packs)` : ''}` : '', freePer ? `${nf(freePer)} per wallet` : ''].filter(Boolean).join(', ')}. Anything over that waits for the next Series.` : `Series ${no} has no limit.`}</li>
         </ul>`),
-      sec('open', 'Opening packs', 'Rip them once sales end. Nobody knows what\'s inside until then.', `
+      sec('open', 'Opening packs', 'Rip them once sales end. Nobody knows what\'s inside until you do.', `
         <ul>
           <li><b>When:</b> packs open once the Series' sales end, whether it sells out or its last group closes. Until then they stay sealed, and you can keep or trade them sealed (a sealed pack is an NFT too, even years from now).</li>
           <li><b>How:</b> opening burns the pack. About 90 seconds later, public randomness (drand) deals your cards.</li>
@@ -346,7 +346,7 @@
         <ul>
           <li><b>Every pack has the same shape, and each slot is its own roll.</b> The first pack and the last pack have exactly the same odds.</li>
           <li><b>Sales stalled?</b> We can end the sale once every group has had its turn. If we don't, anyone can end it 7 days later. Either way, your packs always open.</li>
-          <li><b>Stuck?</b> If the randomness never arrives within 24 hours, anyone can cancel and your packs come back sealed.</li>
+          <li><b>Stuck?</b> If the randomness never arrives within 24 hours, anyone can cancel (after 7 days, even if the draw says it's in) and your packs come back sealed.</li>
         </ul>`),
       sec('cards', 'The cards', 'Every card is its own roll: material, holo and character.', `
         <p>Each card is printed on a material. The higher the material, the rarer the card, and the likelier it is to come out holo. In Series ${no}, each card rolls:</p>
@@ -402,7 +402,7 @@
         <ul>
           <li><b>PLANK is the wood.</b> It's the workshop's fuel and its community coin. You can pay for packs, cases and grading in PLANK, and PLANK holders get their own early group in each Series${holdShort ? ` (${inS}: ${holdShort})` : ''}.</li>
           <li><b>PAPER is what everything is printed on.</b> Every pack takes PAPER to print (${inS}, ${F.paper}${F.cap ? `, never more than ${usd(F.cap)} worth` : ''}), and every idea you suggest takes PAPER to write on. That PAPER goes to the liquidity fire.</li>
-          <li><b>The liquidity fire.</b> ${F.burn.liqMax ? `${InS}, ${shareT(F.burn.liqMin, F.burn.liqMax)} of ${F.burn.same ? 'every' : 'a'} pack sale${F.burn.same ? '' : ' (it depends on the group)'}, ` : 'Pack sales, '}each pack's PAPER, case and grade fees, suggestions and game entries all go to one contract. It pairs PAPER with PLANK, adds them to the PAPER/PLANK pool and burns the pool tokens, so that liquidity is locked for good: nobody can ever pull it. While the PAPER side is low, most of the ETH and USDG that comes in buys PAPER; the rest goes to whichever side is short. Each side waits for the other to pair; if one side piles up past $100 waiting, the extra is burned outright.</li>
+          <li><b>The liquidity fire.</b> ${F.burn.liqMax ? `${InS}, ${shareT(F.burn.liqMin, F.burn.liqMax)} of ${F.burn.same ? 'every' : 'a'} pack sale${F.burn.same ? '' : ' (it depends on the group)'}, ` : 'Pack sales, '}each pack's PAPER, case and grade fees, suggestions and game entries all go to one contract. It pairs PAPER with PLANK, adds them to the PAPER/PLANK pool and burns the pool tokens, so that liquidity is locked for good: nobody can ever pull it. While the PAPER side is low, most of the ETH and USDG that comes in buys PAPER; the rest goes to whichever side is short. PAPER waits for PLANK to pair; extra PLANK is swapped for PAPER. A side past $100 burns the extra outright.</li>
           <li><b>The Paper Press makes PAPER.</b> Over 2,000 Presses were minted in a single seven-day window by locking up PLANK, and no more will ever be minted. Each Press lets its holder mint 1 PAPER a day. It isn't automatic: the holder has to mint it.<span class="inf-presses" hidden> (Presses today: <b data-presses></b>.)</span></li>
           <li><b>Burning a Press.</b> A holder can burn their Press at any time to get its locked PLANK back. That leaves fewer Presses, and so less PAPER that can be made in the future. It doesn't touch the PAPER that already exists.</li>
           <li><b>Press holders get first dibs.</b> Each Series gives them their own group${press ? ` (${inS}: ${nf(press.perNft || 1)} ${press.perNft > 1 ? 'packs' : 'pack'} per Press for ${press.priceUsd > 0 ? `${usd(press.priceUsd)} + ` : ''}${paperT(press.paper)})` : ''}.</li>
@@ -419,7 +419,7 @@
           <li><b>A competitive run costs 1 PAPER, or less:</b> never more than $0.10 of PAPER at its current price. The entry goes to the liquidity fire. Up to 3 practice kicks come first and don't count; then your first miss ends the run.</li>
           <li><b>The boards:</b> each game has one for this Series (from its launch to the next Series' launch) and an all-time one. Your best streak, one place per wallet. A tie goes to whoever reached that streak first. Only this Series' board wins prizes.</li>
           <li><b>Prizes:</b> when the Series ends, each game's top places win free packs, free gradings and free cases, as listed on its leaderboard for that Series. They're sent to the winners' wallets at the next Series' launch and never expire. Free gradings and cases are used first the next time you case or grade.</li>
-          <li><b>Skill, not luck:</b> every shot's distance, wind and goal are shown before you kick, and the same kick always lands the same way. Our game server replays each kick and its call is final. A kick it can't count (a timing or connection problem) is never a miss: you kick again.</li>
+          <li><b>Skill, not luck:</b> every shot's distance, wind and goal (and whether it moves) are shown before you kick, and the same kick always lands the same way. Our game server replays each kick and its call is final. A kick it can't count (a timing or connection problem) is never a miss: you kick again.</li>
           <li><b>Who can play for prizes:</b> 18 and older, outside the US states where it isn't allowed (Arizona, Arkansas, Connecticut, Delaware, Indiana, Louisiana, Maine, Montana, South Carolina, South Dakota and Tennessee). Free play is open to everyone.</li>
           <li><b>Lost connection?</b> Your paid run waits for you: open the Game room again to pick it up.</li>
           <li><b>What we can do:</b> pause competitive play at any time (runs already paid for can still finish), and review the top runs before prizes go out.</li>
@@ -430,10 +430,10 @@
           <li><b>Every pack has the same shape, and each slot is its own roll.</b> The first pack and the last pack have exactly the same odds, so nobody can tell what's left or what's coming.</li>
           <li><b>Locked before the sale.</b> A Series' odds, characters, prices and limits are set and locked before anyone can buy.</li>
           <li><b>No bot sweeps.</b> Holders get their turn first, and for the first part of a sale only regular wallets can buy${F.rwHours ? ` (${inS}: the first ${nf(F.rwHours)} hours)` : ''}.</li>
-          <li><b>Your money never sits in the contract.</b> Every payment is split and sent where it goes (the liquidity fire, and the rest) in the same transaction you sign. The liquidity fire holds at most $100 of each coin while it waits to pair. It can only buy PAPER and PLANK, add liquidity and burn it, or burn coins: it has no withdraw.</li>
-          <li><b>What we can do:</b> pause buying, casing and grading in an emergency, and switch the randomness source (announced first; only new requests use it).</li>
+          <li><b>Your money never sits in the contract.</b> Every payment is split and sent where it goes (the liquidity fire, and the rest) in the same transaction you sign. The liquidity fire keeps at most $100 of PAPER and $100 of PLANK while it waits to pair; the ETH and USDG it gets are spent on them. It can only buy PAPER and PLANK, add liquidity and burn it, or burn coins: it has no withdraw.</li>
+          <li><b>What we can do:</b> pause buying, casing and grading in an emergency, and switch the randomness source (it waits 48 hours in public first; only new requests use it).</li>
           <li><b>What we can't do:</b> stop opening, dealing or transfers. Those never pause.</li>
-          <li><b>Randomness never arrives?</b> After 24 hours, anyone can cancel: packs come back sealed, and cards sent for grading come back ungraded.</li>
+          <li><b>Randomness never arrives?</b> After 24 hours, anyone can cancel (after 7 days, even if the draw says it's in): packs come back sealed, and cards sent for grading come back ungraded.</li>
         </ul>`),
       sec('faq', 'FAQ', 'Short answers to the usual questions.', `
         <dl class="inf-faq">
@@ -444,7 +444,7 @@
           <dt>How rare is a PDA 10?</dt><dd>${Wear.TEN_FRESH} on a fresh card. After the first 24 hours raw, rarer every day. After ${Wear.NO_TEN_DAYS} days raw, never.</dd>
           <dt>Should I grade every card?</dt><dd>Up to you. Grades are final. Not sure? Case it now for ${usd(P.CASE_USD)} and grade it later.</dd>
           <dt>Do free packs expire?</dt><dd>No. They stack and wait for a future Series' free-pack group.</dd>
-          <dt>What if opening gets stuck?</dt><dd>Cards usually land in about 90 seconds. If the randomness never arrives within 24 hours, anyone can cancel and your packs come back sealed. <a href="help.html">More help</a></dd>
+          <dt>What if opening gets stuck?</dt><dd>Cards usually land in about 90 seconds. If the randomness never arrives within 24 hours, anyone can cancel (after 7 days, even if the draw says it's in) and your packs come back sealed. <a href="help.html">More help</a></dd>
           <dt>Is there a fee when I resell?</dt><dd>A royalty (5% today, never over 10%) on marketplaces that honor it.</dd>
         </dl>`),
     ];

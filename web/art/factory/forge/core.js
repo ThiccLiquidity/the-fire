@@ -461,8 +461,17 @@
   const toastHost = document.createElement('div'); toastHost.className = 'toasts'; toastHost.setAttribute('role', 'status'); toastHost.setAttribute('aria-live', 'polite');
   const dlgOrder = []; // dialogs in the order they opened (the last open one is on top)
   const topDialog = () => { for (let i = dlgOrder.length - 1; i >= 0; i--) if (dlgOrder[i].open && dlgOrder[i].isConnected) return dlgOrder[i]; return [...document.querySelectorAll('dialog[open]')].pop() || null; };
-  const hostToTop = () => { const home = topDialog() || document.body; if (home && toastHost.parentNode !== home) home.append(toastHost); };
-  const noteDialog = (d) => { const i = dlgOrder.indexOf(d); if (i >= 0) dlgOrder.splice(i, 1); if (d.open) dlgOrder.push(d); if (toastHost.childElementCount || d.open) hostToTop(); };
+  let offNote = null; // the offline line (below): it moves with the toasts, so a sheet never hides it
+  const hostToTop = () => { const home = topDialog() || document.body; if (!home) return; if (toastHost.parentNode !== home) home.append(toastHost); if (offNote && offNote.parentNode !== home) home.append(offNote); lift(); };
+  // in a sheet the toasts sit at the bottom (at the top they covered its x), over its sticky action bar and the
+  // offline line if either is showing
+  const lift = () => {
+    const home = toastHost.parentNode; let b = 0;
+    if (home?.tagName === 'DIALOG') for (const f of home.querySelectorAll('.foot, .bw-foot, .filter-act, .dacts')) { const r = f.getBoundingClientRect(); if (r.height && r.bottom > innerHeight - 40) b = Math.max(b, innerHeight - r.top); }
+    if (offNote) { offNote.style.bottom = b ? `${Math.round(b + 8)}px` : ''; if (!offNote.hidden && offNote.parentNode === home) b = Math.max(b, innerHeight - offNote.getBoundingClientRect().top); }
+    toastHost.style.bottom = b ? `${Math.round(b + 8)}px` : '';
+  };
+  const noteDialog = (d) => { const i = dlgOrder.indexOf(d); if (i >= 0) dlgOrder.splice(i, 1); if (d.open) dlgOrder.push(d); if (toastHost.childElementCount || d.open || (offNote && !offNote.hidden)) hostToTop(); };
   document.addEventListener('DOMContentLoaded', () => document.body.append(toastHost));
   // any dialog (the sheets, the card viewer): note its order when it opens; closing, the toasts move down with the page
   document.addEventListener('close', (e) => { if (e.target?.tagName === 'DIALOG') noteDialog(e.target); }, true);
@@ -470,7 +479,7 @@
   HTMLDialogElement.prototype.showModal = function (...a) { const r = showModal.apply(this, a); noteDialog(this); return r; };
   function toast(text, kind = '') {
     hostToTop();
-    const t = document.createElement('div'); t.className = 'toast ' + kind; t.textContent = text; toastHost.append(t);
+    const t = document.createElement('div'); t.className = 'toast ' + kind; t.textContent = text; toastHost.append(t); lift();
     requestAnimationFrame(() => t.classList.add('on'));
     setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 400); }, 2600);
   }
@@ -589,13 +598,14 @@
     const next = Store.nextGateway(t.src); if (next) { t.src = next; return; }
     if (t.classList?.contains('cframe') && !t.src.endsWith('ui/card-back.webp')) t.src = 'ui/card-back.webp';
   }, true);
-  // offline: one quiet line at the bottom of the page until the connection is back
+  // offline: one short line at the bottom (over the Buy bar, or in the open sheet, like the toasts) until the
+  // connection is back
   {
-    const note = document.createElement('p'); note.className = 'offline-note'; note.setAttribute('role', 'status'); note.hidden = true;
-    note.textContent = 'You\'re offline. Some pictures and numbers may not load.';
+    const note = offNote = document.createElement('p'); note.className = 'offline-note'; note.setAttribute('role', 'status'); note.hidden = true;
+    note.textContent = 'You\'re offline. Some things may not load.';
     const paint = () => { note.hidden = navigator.onLine !== false; };
-    addEventListener('online', () => { paint(); toast('Back online', 'good'); }); addEventListener('offline', paint);
-    const put = () => { document.body.append(note); paint(); };
+    addEventListener('online', () => { paint(); toast('Back online', 'good'); }); addEventListener('offline', () => { paint(); hostToTop(); });
+    const put = () => { (topDialog() || document.body).append(note); paint(); };
     if (document.body) put(); else document.addEventListener('DOMContentLoaded', put, { once: true });
   }
   // rows of chips that scroll sideways (My cards' quick filters, Info's sections, the Series tabs): the edge that has more

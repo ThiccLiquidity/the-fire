@@ -79,7 +79,7 @@
         const names = [short, short.split(/\s+/)[0]];
         const t = (at, k) => span(at - Fun.now(), k);
         const subs = g.state === 'ended' ? [g.left === 0 ? 'Sold out' : 'Ended']
-          : g.state === 'upcoming' ? (g.opensAt > Fun.now() ? ['Opens in ' + t(g.opensAt, 0), 'Opens in ' + t(g.opensAt, 1), 'Opens ' + t(g.opensAt, 1)] : ['Up next'])
+          : g.state === 'upcoming' ? (g.opensAt > Fun.now() ? ['Opens in ' + t(g.opensAt, 0), 'Opens in ' + t(g.opensAt, 1), 'Opens ' + t(g.opensAt, 1), 'In ' + t(g.opensAt, 1)] : ['Up next'])
           : g.unlimited ? (g.endsAt ? [t(g.endsAt, 0) + ' left', t(g.endsAt, 1) + ' left', 'Open'] : ['Open'])
           : g.endsAt ? [`${g.left ?? 0} left · ${t(g.endsAt, 0)}`, `${g.left ?? 0} left · ${t(g.endsAt, 1)}`, `${g.left ?? 0} left`] : [`${g.left ?? 0} left`];
         fit(el.querySelector('.gg-name'), names); fit(el.querySelector('.gg-sub'), subs);
@@ -95,7 +95,9 @@
     if (port || land) { box.style.transform = ''; return; }
     const b = document.getElementById('buybox'); if (!b || b.hidden) return;
     const r = b.getBoundingClientRect();
-    box.style.transform = `translate(${(r.left + r.width / 2).toFixed(0)}px, ${(r.bottom + 10).toFixed(0)}px) translateX(-50%)`;
+    const s = Math.max(1, Math.min(1.45, (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--fs')) || 14) / 14)); // big screens: the gauges grow with the Buy box
+    box.style.transformOrigin = '0 0';
+    box.style.transform = `translate(${(r.left + r.width / 2).toFixed(0)}px, ${(r.bottom + 10).toFixed(0)}px) scale(${s.toFixed(3)}) translateX(-50%)`;
   }
   Store.on(() => requestAnimationFrame(render)); addEventListener('resize', () => requestAnimationFrame(place));
   setInterval(tick, 1000);

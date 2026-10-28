@@ -362,6 +362,13 @@
     if (!L || me() || !a) return;
     try { orphan = L.pendingTxs(a).some((t) => Date.now() - t.at < 24 * 3600_000); } catch { orphan = false; }
     paintBar();
+    // still no wallet: look the saved ones up (read-only) and drop the ones that landed, so the bar clears; again each
+    // minute while it shows
+    if (orphan && L.prunePending) L.prunePending(a).then((n) => {
+      if (me() || !orphan) return;
+      orphan = n > 0 && L.pendingTxs(a).some((t) => Date.now() - t.at < 24 * 3600_000); paintBar();
+      if (orphan) setTimeout(orphans, 60_000);
+    }, () => setTimeout(orphans, 60_000));
   }
   function resume(a) {
     if (!L || !a) return;

@@ -56,10 +56,13 @@ export interface SaleGroup {
   rollTo: number
   /** Rising price: each pack costs this % more than the one before ('0' = off; at most 50). */
   taxPercent: string
-  /** Share of this group's dollar price that buys PLANK and burns it (the Standard 10%; 100 = all of it). */
+  /** Liquidity share: this % of the group's dollar price, in the coin paid, goes to LiquidityBurner (the liquidity
+   *  fire: it pairs PAPER with PLANK, adds them to the pool and burns the pool tokens). The Standard 10%. The name is
+   *  kept from when this share burned PLANK. */
   plankBurnPercent: string
-  /** Share sent to PaperBurner, which buys PAPER on the market and burns it (the Standard 20%). With the PLANK share at
-   *  most 100%; the rest goes to the revenue wallet, and a rising-price tax all buys PAPER. */
+  /** More to liquidity: added to the share above, also to LiquidityBurner (the Standard 20%). The two together at most
+   *  100%; the rest goes to the revenue wallet, and a rising-price tax all goes to liquidity too. The name is kept from
+   *  when this share went to PaperBurner. */
   paperBurnPercent: string
 }
 
@@ -68,7 +71,7 @@ export interface SaleSettings {
   start: number
   /** The base Series: the finite groups' packs add up to it (an unlimited group sells on top). */
   packs: number
-  /** Each with its own burn shares (plankBurnPercent, paperBurnPercent). */
+  /** Each with its own liquidity shares (plankBurnPercent, paperBurnPercent). */
   groups: SaleGroup[]
   /** Most a pack's PAPER may be worth, in dollars, at the PAPER price; 0 = no ceiling. */
   paperCapUsd: string
@@ -231,8 +234,8 @@ export const isOldSale = (sale: unknown): boolean => !!sale && typeof sale === '
  *  price), rolling its leftovers into "Everyone" (the paid packs at the old price and wallet limit, any coin). The
  *  PLANK-only share, holder window and wallet-limit lift have no group of their own (keep it simple: the owner adds a
  *  snapshot group if wanted). Free packs come from Everyone, the cap as before. The burn shares, PAPER ceiling,
- *  packs per purchase, bots window and start carry over. Saved before the PAPER share existed: the old Standard 30%
- *  PLANK burn becomes 10% PLANK + 20% PAPER; any other burn keeps its number with no PAPER share. */
+ *  packs per purchase, bots window and start carry over. Saved before the second share existed: the old Standard 30%
+ *  becomes 10% + 20% (the two liquidity shares); any other share keeps its number in the first, with 0 in the second. */
 export function saleFromOld(old: OldSaleSettings): SaleSettings {
   const std = standardSale()
   const num = (v: number | undefined, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d)

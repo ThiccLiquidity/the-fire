@@ -189,3 +189,111 @@ body[data-mode=port]:not(.hero-buy) .buybar .opt.main small { color: #d4bd98 }
    wide table scrolls inside its own box) */
 .st-pop, .wz { grid-template-columns: minmax(0, 1fr) }
 .st-pop > *, .wz > * { min-width: 0 }
+
+/* toasts in a sheet: at the bottom, centred (at the top they covered the sheet's x); core.js lifts them over a sticky
+   action bar or the offline line */
+body[data-mode] dialog .toasts, dialog .toasts { top: auto; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 50%; right: auto; transform: translateX(-50%); justify-items: center }
+
+/* offline: a short line at the bottom, over the Buy bar (upright), the strip (desktop) or the scene (sideways); in a
+   sheet it sits at the sheet's bottom like the toasts (it was cut off at the top, over the gauges, and hidden under
+   sheets) */
+.offline-note { top: auto; bottom: calc(16px + env(safe-area-inset-bottom, 0px)) }
+body[data-mode=port] > .offline-note { bottom: calc(var(--bbH, 80px) + 10px) }
+body[data-mode=desk] > .offline-note { bottom: calc(var(--stripH, 104px) + 12px) }
+body[data-mode=land] > .offline-note { left: calc((100vw - 240px) / 2); bottom: 10px }
+
+/* the card's full-screen button: just under the card's bottom right corner, beside its status pill (top right, it
+   covered a slab label's grade and a case's name bar; inside the bottom corner it covered the PDA seal) */
+.zv-open { top: calc(100% + 8px); bottom: auto; right: 0 }
+
+/* the celebration on a sideways phone: the best card on the left, sized to the height, with its name; the heading,
+   buttons, Share and the pulls beside it (the card was cut off and Share was below the fold). The best card's glow
+   gets room to spread (it was cut hard at the edges) */
+@media (max-height: 520px) and (orientation: landscape) {
+  .cel { grid-template-columns: auto minmax(0, 1fr); column-gap: 20px; row-gap: 8px; align-items: start; text-align: left }
+  .cel-k { grid-column: 2; grid-row: 1; justify-self: start }
+  .cel-best { grid-column: 1; grid-row: 1 / span 4; align-self: start; gap: 6px; padding: 16px 18px 4px }
+  .cel-big { width: min(170px, calc((100dvh - 210px) / 1.4)) }
+  .cel-name b { font-size: 18px } .cel-name > span { font-size: 13px }
+  .cel-acts { grid-column: 2; grid-row: 2; justify-content: flex-start } .cel-acts .cel-protect { text-align: left }
+  .cel-more { grid-column: 2; grid-row: 3; justify-content: flex-start }
+  .cel-pulls, .cel-pulls:has(li:nth-child(7)) { grid-column: 2; grid-row: 4; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 8px }
+  .cel .btn.big { min-height: 48px; font-size: 16px }
+  .op { --cw: min(300px, calc((100dvh - 190px) / 1.4)) }
+  .op-area { min-width: calc(var(--cw) + 64px); min-height: calc(var(--cw) * 1.4 + 44px) }
+}
+
+/* the last pack on a narrow phone: "Case & grade them" fits its half of the row (it was cramped at 360 px) */
+@media (max-width: 379px) { .cel-acts:has(.cel-grade) .btn.big { font-size: 15px; padding: 0 .45em; white-space: normal; line-height: 1.15 } }
+
+/* the games on a desktop or tablet: the game as big as the screen's height allows (it was 720 px in a sheet 1,100 px
+   wide), and the sheet as tall as what's in it. Spit-Wad keeps its portrait stage (as wide as before at 900 px tall,
+   taller screens get it bigger) */
+@media (min-width: 700px) and (min-height: 521px) {
+  .gm { max-width: min(1100px, calc((100dvh - 240px) * 4 / 3)) }
+  .gm:has(.sw-stage) { max-width: max(720px, calc((100dvh - 190px) * 2 / 3)) }
+  .gm-stage { max-height: none }
+}
+@media (min-width: 601px) and (min-height: 521px) { #sheet-games { height: fit-content; max-height: calc(100dvh - 40px) } }
+
+/* big screens: the burn tally stands against the scene's left edge, at its middle (ui.js sets --sceneL, --sceneMid);
+   it floated at the window's far left */
+body[data-mode=desk] .burn-tally { left: max(8px, calc(var(--sceneL, 0px) - 92px - 12px)); top: var(--sceneMid, 50%) }
+@media (min-width: 2200px) and (min-height: 1200px) { body[data-mode=desk] .burn-tally { left: max(8px, calc(var(--sceneL, 0px) - 116px - 14px)) } }
+
+/* 1800 px and wider: the sheets get wider and their words bigger (the sheets were 1,100 px with 14 px text on a
+   2560 px screen). Sizes, not zoom: the cards' holo stays sharp */
+@media (min-width: 1800px) and (min-height: 1000px) {
+  dialog.sheet { width: min(720px, calc(100vw - 48px)); font-size: 17px }
+  dialog.sheet.wide { width: min(1800px, calc(100vw - 120px)) }
+  #sheet-menu { width: min(900px, calc(100vw - 48px)) }
+  .sheet-head h2 { font-size: 26px } .sheet-head .x { width: 52px; height: 52px; font-size: 26px }
+  .sheet-body { padding: 18px 24px 24px }
+  dialog .btn { min-height: 50px; font-size: 17px } dialog .btn.small { min-height: 42px; font-size: 15px }
+  dialog .chip, dialog .qp { font-size: 16px }
+  dialog p, dialog li, dialog .muted, dialog .lead { font-size: 17px }
+  dialog h3 { font-size: 22px }
+}
+
+/* the profile editor with no picture yet: a plain dashed slot (it showed the big green-pink identicon) */
+.pf-crop.empty { background: var(--panel-2); border: 2px dashed var(--line-2); box-sizing: border-box }
+.pf-crop.empty .pf-ring { display: none }
+
+/* the reveal on a phone: the pack a little bigger, so the stage fills the sheet (a ~100 px empty band at 390 px);
+   it still fits with its Skip on short phones */
+@media (max-width: 600px) { .op { --cw: min(320px, 80vw, 44dvh, calc((92dvh - 320px) / 1.4)) } }
+
+/* the celebration's "Share this pack": the same size as Share best and My cards beside it (it was the small style) */
+.cel-more .fun-packshare { min-height: var(--tap); padding: 0 1.1em; font-size: 15px }
+
+/* off-palette blues to the workshop's brass and line colours: the "How it works" pill and its ?, its Case option, the last pack's "Case & grade them",
+   the lock-the-odds button and the wizard's total (they were slate and sky blue) */
+.how-pill { background: linear-gradient(#3a2a1c, #241810); color: #f6e2b8; border-color: var(--brass); box-shadow: 0 0 0 3px rgba(233,180,90,.16) }
+.how-pill:hover { background: linear-gradient(#4a3522, #2c1e13) }
+.how-q { background: var(--brass); color: #1b0f06 }
+.btn.cel-grade, .gclock-case { border-color: var(--brass); color: #f6e2b8; background: linear-gradient(#3a2a1c, #241810) }
+.wz-final { border-color: var(--line-2); background: rgba(233,180,90,.07) }
+.how-opt.case { border-color: var(--line-2) }
+
+/* the binder's material chips stay on one line ("Full Art" wrapped) */
+body .bd-head .mat { white-space: nowrap }
+
+/* the card's detail: its sticky action bar fades in over what scrolls under it (it cut the text off hard) */
+.detail .dacts::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 20px; background: linear-gradient(rgba(21,16,12,0), var(--panel)); pointer-events: none }
+
+/* short screens (under 700 px tall): the best slabs shelf steps aside; the scene is small and they are in My cards */
+@media (max-height: 699px) { .fun-shelf { display: none !important } }
+
+/* small words, 11 px at least (12 for the numbers people read): PDA chips on phones, the grade odds, badge
+   descriptions, the showcase captions, the wizard's odds and flags */
+@media (max-width: 600px) { .pda { font-size: 11px } }
+.odds .bar .pct { font-size: 12px }
+.fun-badges li small, .sc-slot, .gc-cards .small, .wz-thumbs .gt-odds, .bw-flag { font-size: 12px }
+.demo-line b { font-size: 11px } .sg-more dt { font-size: 11px }
+body[data-mode=port] .types .mat { font-size: 11px } body[data-mode=port] .burn-tally .bt-usd { font-size: 11px }
+@media (max-width: 600px) { body .inf-wear span { font-size: 11px } }
+
+/* the upright tablet: the gauges keep a gauge's size (they stretched to 250 px boxes), the scene takes the band that
+   was left black under the stations (ui.js), and More lines up with the Buy bar's option */
+@media (min-width: 700px) { body .fun-sale.port .gg { max-width: 160px } }
+body[data-mode=port] .buybar:not(.open) .bb-more { align-self: start }

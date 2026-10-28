@@ -983,8 +983,8 @@
         const od = Store.trueOdds(best), tier = tierOf(best), ids = cards.map((c) => c.id);
         // the last pack: Case & grade covers everything pulled this visit (a second main button); earlier packs: these
         // cards, one line right under the main button (on the first screen)
-        const last = !canNext, caseable = last ? fresh() : cards.filter((c) => c.grade == null && !c.pending && !c.cased), caseUsd = caseable.reduce((a, c) => a + Store.caseUsd(c), 0);
-        const priceLine = caseable.length ? h('span', { class: 'muted', text: `${last ? 'Case' : ' · case'} all ${caseable.length} for ${Wear.usd(caseUsd)}, grade ${Wear.usd(Store.PRICES.GRADE_USD)} each` }) : null;
+        const last = !canNext, caseable = last ? fresh() : cards.filter((c) => c.grade == null && !c.pending && !c.cased);
+        const priceLine = caseable.length ? h('span', { class: 'muted', text: `${last ? '' : ' · '}${Wear.usd(Store.caseUsd(caseable[0]))} to case, ${Wear.usd(Store.gradeUsd(caseable[0]))} to grade` }) : null;
         put(host, h('div', { class: 'cel' + (tier ? ' t-' + tier : '') },
           h('h3', { class: 'cel-k', text: CEL_HEAD[tier] || (cards.length > 6 ? `Your ${cards.length} cards` : 'Your pulls') }),
           h('div', { class: 'cel-best', style: `--glow:${GLOW[best.material]}` },
@@ -1583,7 +1583,7 @@
       else if (!n) act = h('div', { class: 'row' }, h('span', { class: 'why', text: 'Pick cards' }), btn('Burn', 'danger', null, { disabled: true, 'data-key': 'burn' }));
       else act = btn(`Burn ${n}`, 'danger', () => confirmBurn([...sel], go), { 'aria-haspopup': 'dialog', 'data-key': 'burn' });
       put(foot, h('div', { class: 'fsum' }, h('b', { text: n ? `${n} picked` : 'None picked' }),
-        h('span', { class: 'muted', text: packs ? `+${packs} free pack${packs > 1 ? 's' : ''}` : `${BURN_GOAL - b - n} to a free pack` })), act); // counts the picks, like the confirm window
+        h('span', { class: 'muted', text: packs ? `+${packs} free pack${packs > 1 ? 's' : ''}` : `${BURN_GOAL - b - n} more to a free pack` })), act); // counts the picks, like the confirm window
     }
     function toggle(c, el) { sel.has(c.id) ? sel.delete(c.id) : sel.add(c.id); el.setAttribute('aria-pressed', String(sel.has(c.id))); renderFoot(); }
     // a stack of exact copies: one tile with its count; tapping it picks how many of them to burn
@@ -1768,7 +1768,7 @@
       btn('Write another', '', () => { doneEl.hidden = true; formBits.forEach((el) => { el.hidden = false; }); paperEl.hidden = false; paperEl.style.visibility = ''; renderAct(); fields.forEach((f) => f.grow()); fields[0].ta.focus(); }));
     const act = h('div', { class: 'sg-act' }); const listEl = h('div', { class: 'sg-list' });
     const notes = h('div', { class: 'sg-notes' },
-      h('p', { class: 'sg-joke', text: 'Go weird. Jokes cost PAPER too, and the best ones can get picked.' }),
+      h('p', { class: 'sg-joke', text: 'Get weird. Jokes cost PAPER too, and the best ones can get picked.' }),
       h('p', { class: 'reward', text: 'Get picked, win a free pack.' }),
       Store.SUGGEST_RESULTS.length ? h('p', {}, btn('Last results', 'rs-link', () => { Sheet.close('suggest'); openResults(); })) : null);
     const stage = h('div', { class: 'sg-stage' }, paperEl, doneEl, h('img', { class: 'sg-mascot', src: 'ui/brand/paper-256.webp', alt: '', 'aria-hidden': 'true', width: 62, height: 80 }));
@@ -2014,6 +2014,7 @@
     const root = h('div', { class: 'st st-results' });
     const render = () => {
       const waves = Store.SUGGEST_RESULTS.slice().reverse();
+      root.closest('dialog')?.classList.toggle('wide', waves.length > 0); // empty: as tall as its few lines
       patch(root, JSON.stringify([waves.map(waveKey), connected(), S().wallet.credits, S().series.phase, Store.SUGGEST_WAVE.wave]), () => {
         if (!waves.length) return put(root, h('p', { class: 'slead', text: 'No results yet.' }),
           h('p', { class: 'muted', text: `Ideas for Series ${S().series.no + 1} are still coming in.` }),
@@ -2022,7 +2023,7 @@
       });
     };
     listen('results', render);
-    Sheet.open('results', { title: 'Idea results', body: root, wide: true, onClose: () => unlisten('results') });
+    Sheet.open('results', { title: 'Idea results', body: root, wide: Store.SUGGEST_RESULTS.length > 0, onClose: () => unlisten('results') });
     render(); markSeen();
   }
   // the reveal: new results, once per visitor (localStorage), when nothing else is open
