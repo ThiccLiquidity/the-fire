@@ -26,6 +26,7 @@ const ABI = {
   ownable: [{ type: "function", name: "owner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" }],
   setRandomness: [{ type: "function", name: "setRandomness", inputs: [{ name: "s", type: "address" }], outputs: [], stateMutability: "nonpayable" }],
   checkpoint: [{ type: "function", name: "checkpoint", inputs: [], outputs: [], stateMutability: "nonpayable" }],
+  applyRandomness: [{ type: "function", name: "applyRandomness", inputs: [], outputs: [], stateMutability: "nonpayable" }],
 };
 const artifact = (file, name) => {
   const j = JSON.parse(readFileSync(resolve(CONTRACTS, "out", `${file}.sol`, `${name}.json`), "utf8"));
@@ -126,10 +127,12 @@ export async function setupChain({ port = 8547, log = console.log, everyone = {}
   const pa = await deployC("OpenVRFAdapter", "OpenVRFAdapter", [devDrand, C.FirePsa]);
   await asOwner(C.FireCards, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [ca] }));
   await asOwner(C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [pa] }));
+  // a switch waits 48 hours in public, then anyone applies it
+  await warp(48 * 3600 + 1);
+  for (const c of [C.FireCards, C.FirePsa]) await tx(deployer, c, ABI.applyRandomness, "applyRandomness");
 
-  log("PLANK price: 31 minutes, then a checkpoint (PlankUsdTwap)");
-  await warp(31 * 60);
-  await tx(deployer, C.PlankUsdTwap, ABI.checkpoint, "checkpoint");
+  log("PLANK price: two checkpoints 31 minutes apart (PlankUsdTwap; a short window after the 48 hours)");
+  for (let i = 0; i < 2; i++) { await warp(31 * 60); await tx(deployer, C.PlankUsdTwap, ABI.checkpoint, "checkpoint"); }
 
   log(`Series ${FIRE}: ConfigureSeries batch A, then B (the drop opens in 10 minutes)`);
   const recipe = JSON.parse(readFileSync(resolve(CONTRACTS, "test/cards/recipe-standard.json"), "utf8"));

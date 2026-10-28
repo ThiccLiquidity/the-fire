@@ -123,7 +123,7 @@ export const ABI_ERRORS = {
   SafeERC20FailedOperation: { inputs: [{ name: "token", type: "address" }], contracts: ["fireGames", "firePsa", "fireSale", "liquidityBurner", "morningWood"] },
   SoldOut: { inputs: [], contracts: ["fireGroups"] },
   StringTooLong: { inputs: [{ name: "str", type: "string" }], contracts: ["fireGames"] },
-  TooEarly: { inputs: [], contracts: ["fireSale"] },
+  TooEarly: { inputs: [], contracts: ["fireCards", "firePsa", "fireSale"] },
   TooLate: { inputs: [], contracts: ["morningWood"] },
   TooMany: { inputs: [], contracts: ["firePacks"] },
   TransferFailed: { inputs: [], contracts: ["firePsa", "fireSale", "morningWood"] },

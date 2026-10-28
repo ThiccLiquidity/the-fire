@@ -115,6 +115,7 @@ const ABI = {
   liquidity: webAbi("liquidityBurner"),
   ownable: [{ type: "function", name: "owner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" }],
   setRandomness: [{ type: "function", name: "setRandomness", inputs: [{ name: "s", type: "address" }], outputs: [], stateMutability: "nonpayable" }],
+  applyRandomness: [{ type: "function", name: "applyRandomness", inputs: [], outputs: [], stateMutability: "nonpayable" }],
 };
 
 // ------------------------------------------------------------------ chain plumbing
@@ -565,13 +566,22 @@ async function main() {
   check(head === 1n, `open 0 delivered and dealt (sent: ${r.sent.map((s) => s.split(" ")[0]).join(", ")})`);
   if (!FORK) check(drand.served.includes(1000n), "the signature came from the (stand-in) drand relay: round 1000's real signature");
 
+  /** A randomness switch: the owner names it, it waits 48 h in public, then anyone applies it. */
+  const switchRandomness = async (pairs) => {
+    for (const [at, src] of pairs) await asImpersonated(owner, at, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [src] }));
+    await warp(48 * 3600 + 1);
+    for (const [at] of pairs) await tx(deployer, at, ABI.applyRandomness, "applyRandomness");
+    // the main keeper catches up on the price windows the 48 h skipped (two checkpoints: a short window again)
+    await pass(main, "main keeper catches up");
+    await warp(31 * 60);
+    await pass(main, "main keeper catches up");
+  };
   // ---------------- switch randomness (plain anvil only)
   if (!FORK) {
     step("the owner switches FireCards and FirePsa to DevDrandRouter adapters (only new requests use them)");
     const ca = await deploy(deployer, "OpenVRFAdapter", "OpenVRFAdapter", [dev.devDrand.address, C.FireCards]);
     const pa = await deploy(deployer, "OpenVRFAdapter", "OpenVRFAdapter", [dev.devDrand.address, C.FirePsa]);
-    await asImpersonated(owner, C.FireCards, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [ca.address] }));
-    await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [pa.address] }));
+    await switchRandomness([[C.FireCards, ca.address], [C.FirePsa, pa.address]]);
     say(`cards -> ${ca.address}, PDA -> ${pa.address}`);
     step("open: buyer 1 opens 2 packs, buyer 2 opens 3 packs");
     await tx(buyer1, C.FireCards, ABI.cards, "open", [FIRE, 2n]);
@@ -664,14 +674,14 @@ async function main() {
     r = await pass(backup2, "backup pass");
     check(r.sent.some((x) => /^checkpoint/.test(x)), `the backup checkpointed (sent: ${r.sent.map((x) => x.split(" ")[0]).join(", ")})`);
     check(hook.posts.some((p) => /had to step in/.test(p)), "the webhook heard that the backup stepped in");
-    step("the owner pauses FireSale, switches FirePsa's randomness back and sets FireSale's wallets: the keeper posts all three");
+    step("the owner pauses FireSale, proposes switching FirePsa's randomness back and sets FireSale's wallets: the keeper posts all three");
     await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setPaused", args: [true] }));
     await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setWallets", args: [revenue.address, C.LiquidityBurner] }));
     await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [C.PsaAdapter] }));
     step("the main keeper is back: PAPER pool adopted");
     r = await pass();
     check(hook.posts.some((p) => /FireSale is PAUSED/.test(p)), "the pause reached the webhook");
-    check(hook.posts.some((p) => /FirePsa's randomness source was SWITCHED/.test(p)), "the randomness switch reached the webhook");
+    check(hook.posts.some((p) => /FirePsa's randomness source switch was PROPOSED/.test(p)), "the proposed randomness switch reached the webhook (48 h before it can take effect)");
     check(hook.posts.filter((p) => new RegExp(`FireSale's wallets were CHANGED by the owner \\(WalletsSet\\): revenue ${revenue.address}`).test(p)).length === 1, "FireSale's WalletsSet reached the webhook, once");
     await asImpersonated(owner, C.FireSale, encodeFunctionData({ abi: ABI.sale, functionName: "setPaused", args: [false] }));
     step("another 20 hours: the PAPER feed reports its first price; the keeper runs LiquidityBurner");
@@ -713,7 +723,7 @@ async function main() {
     // FirePsa is back on the real drand router (the stand-in relay only has round 1000's real signature): this grading
     // takes its randomness through the stand-in router, then FirePsa goes back
     const pa2 = await deploy(deployer, "OpenVRFAdapter", "OpenVRFAdapter", [dev.devDrand.address, C.FirePsa]);
-    await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [pa2.address] }));
+    await switchRandomness([[C.FirePsa, pa2.address]]);
     const usdg0 = await bal(dev.usdg, C.LiquidityBurner);
     await tx(buyer2, C.FirePsa, ABI.psa, "protect", [[free[0]], [free[1]], payUsdg, costP]);
     const landed = (await bal(dev.usdg, C.LiquidityBurner)) - usdg0;
@@ -724,7 +734,8 @@ async function main() {
     check((await pub.readContract({ address: C.FirePsa, abi: ABI.psa, functionName: "gradingOf", args: [gp] })).done, "the USDG-paid grading finished");
     const cp = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "cardOf", args: [free[1]] });
     check(cp.grade > 0n, `card ${free[1]} graded PDA ${cp.grade}`);
-    await asImpersonated(owner, C.FirePsa, encodeFunctionData({ abi: ABI.setRandomness, functionName: "setRandomness", args: [C.PsaAdapter] }));
+    await switchRandomness([[C.FirePsa, C.PsaAdapter]]);
+    check(getAddress(await pub.readContract({ address: C.FirePsa, abi: [{ type: "function", name: "randomness", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" }], functionName: "randomness" })) === getAddress(C.PsaAdapter), "FirePsa is back on its drand adapter");
   }
 
   step("VerifyDeploy at the end");

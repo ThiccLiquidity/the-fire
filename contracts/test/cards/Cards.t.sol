@@ -330,17 +330,25 @@ contract CardsTest is SeriesHelper {
     /// one is answered by it (and only it), or cancelled after CANCEL_AFTER if it never answers.
     function test_randomnessSwitchKeepsEachOpensSource() public {
         _sellAndClose(1, 3);
-        vm.prank(_holder(0)); cards.open(1, 1); // old source, id 1
-        vm.prank(_holder(1)); cards.open(1, 1); // old source, id 2
         MockRandomness rng2 = new MockRandomness();
         rng2.setCards(cards);
         vm.prank(_holder(0));
         vm.expectRevert(); // not the owner
         cards.setRandomness(address(rng2));
+        // a switch waits 48 hours in public
+        vm.expectEmit(address(cards));
+        emit FireCards.RandomnessProposed(address(rng2), uint64(block.timestamp + 48 hours));
+        vm.prank(owner);
+        cards.setRandomness(address(rng2));
+        assertEq(address(cards.randomness()), address(rng), "nothing changes yet");
+        vm.expectRevert(FireCards.TooEarly.selector);
+        cards.applyRandomness();
+        vm.warp(block.timestamp + 48 hours);
+        vm.prank(_holder(0)); cards.open(1, 1); // old source, id 1
+        vm.prank(_holder(1)); cards.open(1, 1); // old source, id 2
         vm.expectEmit(address(cards));
         emit FireCards.RandomnessSet(address(rng2));
-        vm.prank(owner);
-        cards.setRandomness(address(rng2)); // no delay
+        cards.applyRandomness(); // anyone, once the 48 hours are up
         vm.prank(_holder(2)); cards.open(1, 1); // new source, id 1 (the same number as the old source's first)
         FireCards.Open memory o = cards.openOf(1, 2);
         assertEq(o.source, address(rng2));
@@ -1055,6 +1063,45 @@ contract CardsTest is SeriesHelper {
     /// M-1: a holder that refuses the returned packs used to make cancelOpen revert, so its open sat at the head of the
     /// queue forever and every later open of the Series (answered, packs already burned) could never be dealt. Packs
     /// now come back without the receiver hook: the cancel goes through and the queue moves on.
+    /// A randomness switch: the first source at once, every later one after 48 hours; naming the current source calls a
+    /// waiting switch off; a new name restarts the clock.
+    function test_randomnessSwitchWaits48Hours() public {
+        MockRandomness rng2 = new MockRandomness();
+        vm.prank(owner);
+        cards.setRandomness(address(rng2));
+        vm.prank(owner);
+        cards.setRandomness(address(rng)); // called off
+        assertEq(cards.pendingRandomness(), address(0));
+        vm.warp(block.timestamp + 48 hours);
+        vm.expectRevert(FireCards.TooEarly.selector);
+        cards.applyRandomness();
+        vm.prank(owner);
+        cards.setRandomness(address(rng2));
+        vm.warp(block.timestamp + 47 hours);
+        vm.prank(owner);
+        cards.setRandomness(address(rng2)); // named again: the clock restarts
+        vm.warp(block.timestamp + 2 hours);
+        vm.expectRevert(FireCards.TooEarly.selector);
+        cards.applyRandomness();
+        vm.warp(block.timestamp + 46 hours);
+        cards.applyRandomness();
+        assertEq(address(cards.randomness()), address(rng2));
+        assertEq(cards.pendingRandomness(), address(0));
+    }
+
+    /// A source that says it answered but never delivers: after FORCE_CANCEL_AFTER (7 days) anyone can cancel anyway.
+    function test_forceCancelAfter7DaysWhatever_answeredSays() public {
+        _sellAndClose(1, 1);
+        vm.prank(_holder(0)); cards.open(1, 1);
+        vm.mockCall(address(rng), abi.encodeWithSignature("answered(uint256)"), abi.encode(true));
+        vm.warp(block.timestamp + 6 days);
+        vm.expectRevert(FireCards.NotStuck.selector);
+        cards.cancelOpen(1, 0);
+        vm.warp(block.timestamp + 1 days);
+        cards.cancelOpen(1, 0);
+        assertEq(packs.balanceOf(_holder(0), 1), 1, "the pack is back, sealed");
+    }
+
     function test_audit8_refusedReturnDoesNotBrickTheQueue() public {
         _sellAndClose(1, 3);
         Toggle t = new Toggle();
@@ -1065,6 +1112,8 @@ contract CardsTest is SeriesHelper {
         rng2.setCards(cards);
         vm.prank(owner);
         cards.setRandomness(address(rng2)); // the owner switches away from the dead source
+        vm.warp(block.timestamp + 48 hours);
+        cards.applyRandomness();
         vm.prank(_holder(1));
         cards.open(1, 1); // new source
         rng2.deliver(1, 42); // answered

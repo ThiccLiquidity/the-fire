@@ -574,3 +574,24 @@ test("waiting opens and gradings: alert after STUCK_MIN, URGENT from 6 h without
   assert.deepEqual(keys(7n * H, { ...open, ready: true, readyAt: 7n * H - 60n }), [], "delivered: no cancel alert");
   assert.deepEqual(waitAlerts([open], 6n * H, { ...cfg, cancelWarnHours: 1 }).length, 2, "CANCEL_WARN_HOURS moves it");
 });
+
+test("randomness: a proposed switch is posted once, and applied once it's due", async () => {
+  const NEXT = A(0xbb);
+  let at = 2_000n;
+  const chain = fakeChain({
+    reads: { randomness: () => A(0xaa), pendingRandomness: () => NEXT, pendingRandomnessAt: () => at, routers: () => undefined, "sim:applyRandomness": () => undefined },
+  });
+  let now = 1_000n;
+  const k = createKeeper({
+    cfg: { label: "keeper", chainId: 4663, contracts: CON, drandUrls: ["https://drand"], actAfterSec: 0n, optional: {} },
+    pub: chain.pub, wallet: chain.wallet, account: { address: ME }, log: () => {}, fetchFn: async () => ({ ok: false }), wallNow: () => now,
+  });
+  const ev = await k.jobs.watchSources(true);
+  assert.equal(ev.length, 2, "both contracts' proposals posted");
+  assert.match(ev[0].text, /PROPOSED by the owner/);
+  assert.equal(chain.writes.length, 0, "not due yet");
+  assert.equal((await k.jobs.watchSources(true)).length, 0, "each proposal once");
+  now = 2_000n;
+  await k.jobs.watchSources(true);
+  assert.equal(chain.writes.filter((w) => w.functionName === "applyRandomness").length, 2, "due: applied on both");
+});

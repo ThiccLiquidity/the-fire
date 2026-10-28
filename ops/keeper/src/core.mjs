@@ -138,6 +138,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   const lastFlush = new Map(); // "LiquidityBurner" -> when this keeper last sent a run (ms)
   const stuckSince = new Map(); // "LiquidityBurner" -> since a run first left work behind (ms)
   const sources = new Map(); // "FireCards" | "FirePsa" -> randomness source last seen
+  const proposals = new Set(); // randomness switches already posted
   let saleLogFrom; // the next block to read FireSale's WalletsSet / FeedsSet from (set at the first pass)
 
   // ------------------------------------------------------------------ series and queues
@@ -579,7 +580,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     }
     const h = (await job("health", () => health({ now, opens, gradings: gradingsAfter, notes, waiting, failed }))) ?? { alerts: [{ key: "health", text: "health check failed" }] };
     h.alerts.push(...drop.alerts);
-    const events = [...drop.events, ...((await job("randomness sources", () => watchSources())) ?? []), ...((await job("sale settings", () => saleSettings(block.number))) ?? [])];
+    const events = [...drop.events, ...((await job("randomness sources", () => watchSources(true))) ?? []), ...((await job("sale settings", () => saleSettings(block.number))) ?? [])];
     const sent = sender.sent();
     if (backup && sent.length) {
       events.push({ key: "backup-acted", text: `the backup keeper had to step in (${sent.length} tx: ${sent.map((s) => s.split(" ")[0]).join(", ")}); is the main keeper down?` });
@@ -617,10 +618,22 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   // ------------------------------------------------------------------ randomness sources
   /** Events for a switch of FireCards' or FirePsa's randomness source since the last pass (the first look only
    *  records them, and logs a source that isn't the deployed adapter). */
-  async function watchSources() {
+  async function watchSources(apply = false) {
     const events = [];
     const [cardsSrc, psaSrc] = await Promise.all([read(C.cards, cardsAbi, "randomness"), read(C.psa, psaAbi, "randomness")]);
-    for (const [name, src, deployed] of [["FireCards", cardsSrc, cfg.optional?.cardsAdapter], ["FirePsa", psaSrc, cfg.optional?.psaAdapter]]) {
+    for (const [name, src, deployed, address, abi] of [["FireCards", cardsSrc, cfg.optional?.cardsAdapter, C.cards, cardsAbi], ["FirePsa", psaSrc, cfg.optional?.psaAdapter, C.psa, psaAbi]]) {
+      // a switch the owner named waits 48 h in public: post it once, and apply it when it's due (anyone may)
+      const [next, at] = await Promise.all([read(address, abi, "pendingRandomness"), read(address, abi, "pendingRandomnessAt")]).catch(() => [zeroAddress, 0n]);
+      if (next !== zeroAddress) {
+        const key = `proposed:${name}:${next}:${at}`;
+        if (!proposals.has(key)) {
+          proposals.add(key);
+          events.push({ key, text: `${name}'s randomness source switch was PROPOSED by the owner: ${next}, taking effect after ${new Date(Number(at) * 1000).toISOString()}. If that wasn't you, call setRandomness(${src}) from the owner wallet to call it off.` });
+        }
+        if (apply && BigInt(wall()) >= BigInt(at) && !(backup && BigInt(wall()) < BigInt(at) + cfg.actAfterSec)) {
+          await sender.send({ address, abi, functionName: "applyRandomness", args: [] }, { job: `applyRandomness:${address}` });
+        }
+      }
       const before = sources.get(name);
       sources.set(name, src);
       if (before === undefined) {
@@ -642,7 +655,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     return { filled, sources: Object.fromEntries(sources) };
   }
 
-  return { tick, startup, sender, notifier, drand, jobs: { gradingsWaiting, liquidity, drops, behindAlert, saleSettings } };
+  return { tick, startup, sender, notifier, drand, jobs: { gradingsWaiting, liquidity, drops, behindAlert, saleSettings, watchSources } };
 }
 
 const wallSec = (wall) => Number(wall());

@@ -476,6 +476,20 @@ contract PsaTest is SeriesHelper {
 
     // ================================================================ randomness
 
+    /// A source that says it answered but never delivers: after FORCE_CANCEL_AFTER (7 days) anyone can cancel anyway.
+    function test_forceCancelAfter7Days() public {
+        uint256 cost = psa.quote(0, 1, FirePsa.Pay.ETH);
+        vm.prank(alice);
+        uint256 index = psa.protect{value: cost}(_none(), _one(8), FirePsa.Pay.ETH, cost);
+        vm.mockCall(address(psaRng), abi.encodeWithSignature("answered(uint256)"), abi.encode(true));
+        vm.warp(block.timestamp + 6 days);
+        vm.expectRevert(FirePsa.NotStuck.selector);
+        psa.cancelGrading(index, _one(8));
+        vm.warp(block.timestamp + 1 days);
+        psa.cancelGrading(index, _one(8));
+        assertFalse(cards.gradePending(8));
+    }
+
     function test_cancelAfterADayFromTheRequestAndTheClockRunsOn() public {
         assertEq(psa.CANCEL_AFTER(), 24 hours);
         vm.warp(block.timestamp + 2 days);
@@ -531,10 +545,14 @@ contract PsaTest is SeriesHelper {
         uint256 first = psa.protect{value: cost}(_none(), _one(1), FirePsa.Pay.ETH, cost); // old source, id 1
         MockRandomness rng2 = new MockRandomness();
         rng2.setFire(address(psa));
-        vm.expectEmit(address(psa));
-        emit FirePsa.RandomnessSet(address(rng2));
         vm.prank(owner);
         psa.setRandomness(address(rng2));
+        vm.expectRevert(FirePsa.TooEarly.selector);
+        psa.applyRandomness();
+        vm.warp(block.timestamp + 48 hours);
+        vm.expectEmit(address(psa));
+        emit FirePsa.RandomnessSet(address(rng2));
+        psa.applyRandomness();
         vm.prank(alice);
         uint256 second = psa.protect{value: cost}(_none(), _one(2), FirePsa.Pay.ETH, cost); // new source, id 1
         assertEq(psa.gradingOf(first).source, address(psaRng));

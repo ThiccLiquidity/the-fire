@@ -50,8 +50,8 @@ interface ICardsRenderer {
  *         image folder locks at the first pack (the art people buy can never be swapped). Nobody can change a card
  *         once it is dealt.
  *
- *         Randomness source: the owner can switch it at any time (announced publicly first; `RandomnessSet` logs every
- *         switch). Only new opens use the new source. Each open remembers the source that took its request, only that
+ *         Randomness source: the owner can switch it, but a switch waits 48 hours in public (`RandomnessProposed`,
+ *         then `RandomnessSet` when anyone applies it). Only new opens use the new source. Each open remembers the source that took its request, only that
  *         source can answer it, and an open waiting on an old source can still be answered by it (or cancelled after
  *         CANCEL_AFTER). There is no re-request: one open, one request, one number.
  *
@@ -68,6 +68,11 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     ///      must outlast any keeper outage (two keepers, alerting long before it ends); 24 hours is the owner's
     ///      choice.
     uint256 public constant CANCEL_AFTER = 24 hours;
+    /// @dev A source that says it answered but never delivers can't hold a open forever: this long after the request,
+    ///      anyone can cancel it whatever the source says.
+    uint256 public constant FORCE_CANCEL_AFTER = 7 days;
+    /// @dev How long a randomness switch waits after the owner names it (the first source, at deploy, doesn't).
+    uint256 public constant RANDOMNESS_DELAY = 48 hours;
     /// @dev How long a ready open can sit at the head of its queue without being dealt (a dealer that can't deal
     ///      it) before anyone can skip it (`skipStuck`). Its word is known, so this too must outlast any keeper
     ///      outage; it stays long because it should only ever be needed for a dealer that can't deal.
@@ -97,6 +102,9 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
 
     IFirePacks public immutable PACKS;
     IRandomnessSource public randomness;
+    /// @notice A randomness switch waiting for RANDOMNESS_DELAY (0 = none), and when it can be applied.
+    address public pendingRandomness;
+    uint64 public pendingRandomnessAt;
     address public seller;
     /// @notice The grading contract (FirePsa): the only one that can case a card or set its grade, once.
     address public psa;
@@ -150,6 +158,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     mapping(uint256 tokenId => uint256) internal _dealtAt;
 
     event RandomnessSet(address source);
+    event RandomnessProposed(address source, uint64 at);
     event PsaSet(address psa);
     event RendererSet(address renderer);
     event OpenCancelled(uint256 indexed fire, uint256 indexed openIndex, address indexed holder, uint256 count);
@@ -179,6 +188,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     error NotConfigured();
     error BadCount();
     error NotStuck();
+    error TooEarly();
     error BadLength();
     error NotHolder();
     error NotPsa();
@@ -204,10 +214,29 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         revert RenounceDisabled();
     }
 
-    /// @notice The randomness source for new opens. The owner can switch it at any time (no delay; announced
-    ///         publicly first). Opens already waiting keep their own source.
+    /// @notice The randomness source for new opens. The first one (at deploy) takes effect at once; a switch after
+    ///         that waits RANDOMNESS_DELAY (48 h) from this call, so everyone sees it coming (`RandomnessProposed`),
+    ///         then anyone applies it (`applyRandomness`). Calling it again replaces the waiting switch and restarts
+    ///         the clock; naming the current source calls the switch off. Opens already waiting keep their own source.
     function setRandomness(address source) external onlyOwner {
         if (source == address(0)) revert ZeroAddress();
+        if (address(randomness) == address(0)) {
+            randomness = IRandomnessSource(source);
+            emit RandomnessSet(source);
+            return;
+        }
+        bool off = source == address(randomness);
+        pendingRandomness = off ? address(0) : source;
+        pendingRandomnessAt = off ? 0 : uint64(block.timestamp + RANDOMNESS_DELAY);
+        emit RandomnessProposed(pendingRandomness, pendingRandomnessAt);
+    }
+
+    /// @notice Anyone: put the waiting randomness switch into effect once RANDOMNESS_DELAY has passed.
+    function applyRandomness() external {
+        address source = pendingRandomness;
+        if (source == address(0) || block.timestamp < pendingRandomnessAt) revert TooEarly();
+        pendingRandomness = address(0);
+        pendingRandomnessAt = 0;
         randomness = IRandomnessSource(source);
         emit RandomnessSet(source);
     }
@@ -438,10 +467,12 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     }
 
     /// @notice If an open's randomness has had no answer for CANCEL_AFTER since it was asked for (randomness gone for
-    ///         good), anyone can cancel it: its packs go back to the holder, sealed.
+    ///         good), anyone can cancel it: its packs go back to the holder, sealed. After FORCE_CANCEL_AFTER it can be
+    ///         cancelled even if its source says it answered (a word that never arrives).
     function cancelOpen(uint256 fire, uint256 index) external nonReentrant {
         Open storage o = _opens[fire][index];
-        if (o.ready || block.timestamp < o.requestedAt + CANCEL_AFTER || _answered(o.source, o.requestId)) revert NotStuck();
+        if (o.ready || block.timestamp < o.requestedAt + CANCEL_AFTER) revert NotStuck();
+        if (block.timestamp < o.requestedAt + FORCE_CANCEL_AFTER && _answered(o.source, o.requestId)) revert NotStuck();
         delete _openOf[_reqKey(o.source, o.requestId)];
         uint256 count = o.count;
         o.count = 0; // dealt as nothing when the queue reaches it

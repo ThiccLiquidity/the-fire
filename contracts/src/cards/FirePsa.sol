@@ -45,7 +45,7 @@ interface IPsaBurner {
  *         Fresh: 10: 3%, 9: 30%, 8: 40%, 7: 27% (never below 7). Only the prices can change.
  *
  *         The owner can pause case and grading payments (`setPaused`); finishing and cancelling gradings never pause.
- *         The randomness source can be switched at any time (only new gradings use it; each grading remembers its
+ *         The randomness source can be switched, 48 hours after the owner names it in public (only new gradings use it; each grading remembers its
  *         source, and only that source can answer it). A grading stores a hash of its cards; `finish` and
  *         `cancelGrading` take the list (from the `Protected` event).
  */
@@ -63,6 +63,11 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     ///      word, cancel and send the cards again for a re-roll. The window must outlast any keeper outage (two
     ///      keepers, alerting long before it ends); 24 hours is the owner's choice.
     uint256 public constant CANCEL_AFTER = 24 hours;
+    /// @dev A source that says it answered but never delivers can't hold a grading forever: this long after the request,
+    ///      anyone can cancel it whatever the source says.
+    uint256 public constant FORCE_CANCEL_AFTER = 7 days;
+    /// @dev How long a randomness switch waits after the owner names it (the first source, at deploy, doesn't).
+    uint256 public constant RANDOMNESS_DELAY = 48 hours;
 
     // ---------------------------------------------------------------- fresh odds (fixed forever, every Series)
     /// @dev A fresh card's grade weights, out of ODDS_TOTAL. Grades 1-6 come only from wear.
@@ -97,6 +102,9 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     IERC20 public immutable USDG;
 
     IPsaRandomness public randomness;
+    /// @notice A randomness switch waiting for RANDOMNESS_DELAY (0 = none), and when it can be applied.
+    address public pendingRandomness;
+    uint64 public pendingRandomnessAt;
     /// @notice Most cards per batch (cases and grades together; 1 to MAX_BATCH_CAP).
     uint256 public maxBatch = 20;
     /// @notice Price per card in dollars (18 decimals): one case price and one grading price for every card.
@@ -130,6 +138,7 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     mapping(uint256 serial => bool) public pending;
 
     event RandomnessSet(address source);
+    event RandomnessProposed(address source, uint64 at);
     event PricesSet(uint256 caseUsd18, uint256 gradeUsd18);
     event MaxBatchSet(uint256 cards);
     event Protected(address indexed by, uint256[] cased, uint256[] graded, Pay pay, uint256 paid, uint256 gradingIndex);
@@ -149,6 +158,7 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
     error NotRandomness();
     error NotReady();
     error NotStuck();
+    error TooEarly();
     error PriceMoved();
     error TransferFailed();
     error IsPaused();
@@ -173,10 +183,29 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
         revert RenounceDisabled();
     }
 
-    /// @notice The randomness source for new gradings. The owner can switch it at any time (no delay; announced
-    ///         publicly first). Gradings already waiting keep their own source.
+    /// @notice The randomness source for new gradings. The first one (at deploy) takes effect at once; a switch after
+    ///         that waits RANDOMNESS_DELAY (48 h) from this call, so everyone sees it coming (`RandomnessProposed`),
+    ///         then anyone applies it (`applyRandomness`). Calling it again replaces the waiting switch and restarts
+    ///         the clock; naming the current source calls the switch off. Gradings already waiting keep their own source.
     function setRandomness(address source) external onlyOwner {
         if (source == address(0)) revert ZeroAddress();
+        if (address(randomness) == address(0)) {
+            randomness = IPsaRandomness(source);
+            emit RandomnessSet(source);
+            return;
+        }
+        bool off = source == address(randomness);
+        pendingRandomness = off ? address(0) : source;
+        pendingRandomnessAt = off ? 0 : uint64(block.timestamp + RANDOMNESS_DELAY);
+        emit RandomnessProposed(pendingRandomness, pendingRandomnessAt);
+    }
+
+    /// @notice Anyone: put the waiting randomness switch into effect once RANDOMNESS_DELAY has passed.
+    function applyRandomness() external {
+        address source = pendingRandomness;
+        if (source == address(0) || block.timestamp < pendingRandomnessAt) revert TooEarly();
+        pendingRandomness = address(0);
+        pendingRandomnessAt = 0;
         randomness = IPsaRandomness(source);
         emit RandomnessSet(source);
     }
@@ -332,12 +361,11 @@ contract FirePsa is Ownable2Step, ReentrancyGuard {
 
     /// @notice If a grading's randomness has had no answer for CANCEL_AFTER since it was asked for, anyone can cancel
     ///         it (`ids` as for `finish`): its cards unlock, still ungraded, and their wear clock runs again from where
-    ///         it stopped.
+    ///         it stopped. After FORCE_CANCEL_AFTER it can be cancelled even if its source says it answered.
     function cancelGrading(uint256 index, uint256[] calldata ids) external nonReentrant {
         Grading storage g = _gradings[index];
-        if (g.ready || g.done || block.timestamp < g.requestedAt + CANCEL_AFTER || _answered(g.source, g.requestId)) {
-            revert NotStuck();
-        }
+        if (g.ready || g.done || block.timestamp < g.requestedAt + CANCEL_AFTER) revert NotStuck();
+        if (block.timestamp < g.requestedAt + FORCE_CANCEL_AFTER && _answered(g.source, g.requestId)) revert NotStuck();
         if (keccak256(abi.encode(ids)) != g.idsHash) revert BadIds();
         g.done = true;
         delete _gradingOf[_reqKey(g.source, g.requestId)];

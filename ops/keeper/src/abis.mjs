@@ -55,6 +55,9 @@ export const cardsAbi = parseAbi([
   "function openOf(uint256 fire, uint256 index) view returns (Open)",
   "function process(uint256 fire, uint256 maxCards) returns (uint256)",
   "function randomness() view returns (address)",
+  "function pendingRandomness() view returns (address)",
+  "function pendingRandomnessAt() view returns (uint64)",
+  "function applyRandomness()",
 ]);
 
 export const psaAbi = parseAbi([
@@ -63,6 +66,9 @@ export const psaAbi = parseAbi([
   "function gradingCount() view returns (uint256)",
   "function finish(uint256 index, uint256[] ids)",
   "function randomness() view returns (address)",
+  "function pendingRandomness() view returns (address)",
+  "function pendingRandomnessAt() view returns (uint64)",
+  "function applyRandomness()",
 ]);
 
 export const protectedEvent = parseAbiItem(
