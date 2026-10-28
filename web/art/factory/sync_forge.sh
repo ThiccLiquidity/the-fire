@@ -13,5 +13,7 @@ cp "$here"/build3/*.webp "$here"/build3/scene.json "$out/a/"
 find "$out" -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' \) \
   -exec sed -i.bak 's#\.\./build3/#a/#g' {} +
 find "$out" -name '*.bak' -delete
+# the served copy is minified (the source stays readable): about 40% less to download before the page can start
+node "$here/../../scripts/minify-forge.mjs" "$out"
 
 echo "Synced $(find "$out" -type f | wc -l | tr -d ' ') files to web/public/forge"

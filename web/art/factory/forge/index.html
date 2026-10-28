@@ -21,6 +21,29 @@
 <meta name="site-doors" content="">
 <meta name="site-home" content="/doors/">
 <link rel="icon" href="ui/omni-mark.webp">
+<script src="boot.js"></script>
+<!-- the loading screen paints before the stylesheets and scripts arrive (a slow phone saw ~5 s of black) -->
+<style>
+  html, body { margin: 0; background: #000; color-scheme: dark }
+  .loading { position: fixed; inset: 0; z-index: 90; display: grid; place-content: center; justify-items: center; gap: 10px; background: #000; transition: opacity .6s; overflow: hidden }
+  .loading .ld-still { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .32; filter: blur(3px) saturate(.9) }
+  .loading > :not(.ld-still) { position: relative }
+  .loading .ld-row { display: flex; align-items: flex-end; gap: 14px }
+  .loading .ld-mark { width: 120px; animation: breathe 1.8s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,110,30,.5)) }
+  .loading .ld-pal { width: auto; filter: drop-shadow(0 0 12px rgba(255,110,30,.35)); animation: ld-bob 2.4s ease-in-out infinite }
+  .loading .ld-plank { height: 70px; --r: -8deg; transform: rotate(-8deg) } .loading .ld-paper { height: 62px; --r: 8deg; transform: rotate(8deg); animation-delay: -1.2s }
+  .loading p { margin: 0; font: 400 15px "Russo One", "Arial Black", sans-serif; letter-spacing: .08em; color: #b9a385 }
+  .loading .demo-load { font: 700 12px Nunito, system-ui, sans-serif; color: #8a775e; letter-spacing: .04em }
+  .live .loading .demo-load { display: none }
+  .loading.done { opacity: 0; pointer-events: none }
+  @keyframes breathe { 50% { transform: scale(1.06) } }
+  @keyframes ld-bob { 50% { transform: translateY(-4px) rotate(var(--r)) } }
+  @media (prefers-reduced-motion: reduce) { .loading .ld-mark, .loading .ld-pal { animation: none } }
+</style>
+
+<body>
+<div id="loading" class="loading"><img class="ld-still" src="../build3/plate-640.webp" alt="" fetchpriority="high"><div class="ld-row"><img class="ld-pal ld-plank" src="ui/brand/plank-256.webp" alt="" width="44" height="70"><img class="ld-mark" src="ui/omni-mark.webp" alt=""><img class="ld-pal ld-paper" src="ui/brand/paper-256.webp" alt="" width="48" height="62"></div><p>Lighting the furnace…</p><small class="demo-load">Demo: nothing here is real</small></div>
+<!-- the stylesheets come after the loading screen, so it paints first -->
 <link rel="stylesheet" href="ui/fonts.css">
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="ui.css">
@@ -28,30 +51,31 @@
 <link rel="stylesheet" href="info.css">
 <link rel="stylesheet" href="zoom.css">
 <link rel="stylesheet" href="profile.css">
+<link rel="stylesheet" href="polish.css">
 
 <canvas id="c" role="img" aria-label="The Cardworks: PLANK fuels the fire, PAPER becomes packs."></canvas>
 <div id="app"></div>
 
-<script src="keep-live.js"></script>
-<script src="core.js"></script>
-<script src="brand.js"></script>
-<script src="live.js"></script>
-<script src="sound.js"></script>
-<script src="wear.js"></script>
-<script src="scene.js"></script>
-<script src="screens.js"></script>
-<script src="holo.js"></script>
-<script src="paperfb-sim.js"></script>
-<script src="paperfb.js"></script>
-<script src="spitwad.js"></script>
-<script src="games.js"></script>
-<script src="wait.js"></script>
-<script src="clip.js"></script>
-<script src="rip.js"></script>
-<script src="zoom.js"></script>
-<script src="info.js"></script>
-<script src="announce.js"></script>
-<script src="ui.js"></script>
-<script src="profile.js"></script>
-<script src="home.js"></script>
-<script src="fun.js"></script>
+<script defer src="keep-live.js"></script>
+<script defer src="core.js"></script>
+<script defer src="brand.js"></script>
+<script defer src="live.js"></script>
+<script defer src="sound.js"></script>
+<script defer src="wear.js"></script>
+<script defer src="scene.js"></script>
+<script defer src="screens.js"></script>
+<script defer src="holo.js"></script>
+<script defer src="paperfb-sim.js"></script>
+<script defer src="paperfb.js"></script>
+<script defer src="spitwad.js"></script>
+<script defer src="games.js"></script>
+<script defer src="wait.js"></script>
+<script defer src="clip.js"></script>
+<script defer src="rip.js"></script>
+<script defer src="zoom.js"></script>
+<script defer src="info.js"></script>
+<script defer src="announce.js"></script>
+<script defer src="ui.js"></script>
+<script defer src="profile.js"></script>
+<script defer src="home.js"></script>
+<script defer src="fun.js"></script>
