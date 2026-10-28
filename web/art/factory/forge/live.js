@@ -16,7 +16,9 @@
   root.classList.add('live', net);
 
   // ---------- no demo data: an empty wallet and a Series still loading
-  Object.assign(S, { demo: false, cards: [], sealed: {}, suggestions: [], activity: [], burned: {}, teases: {} });
+  Object.assign(S, { demo: false, cards: [], sealed: {}, suggestions: [], activity: [], burned: {}, teases: {}, burnTally: {} }); // burnTally: hidden until the chain's totals are read
+  // the demo's coin prices: never shown live (the burn tally's dollars, the checkout's PAPER worth); the contracts' quotes fill them in
+  Store.PRICES.PLANK_USD = 0; Store.PRICES.PAPER_USD = 0;
   S.series = { no: 0, total: 0, cast: 0, phase: 3, closed: false, closing: false, groups: [], creditGroup: null, creditPacksLeft: 0, left: 0, note: 'Loading…' };
   S.wallet = { connected: false, address: '', full: '', name: '', isPressHolder: false, inSnapshot: false, isContract: false,
     balances: { ETH: 0, PLANK: 0, PAPER: 0, USDG: 0 }, credits: 0, burnCount: 0, boughtIn: {}, pending: [], allowance: { PAPER: 0, PLANK: 0, USDG: 0 }, unfinished: [] };
@@ -55,7 +57,7 @@
   Store.floor = () => 0;
   // the Paper Presses that exist now (Info › PLANK & PAPER): the Press contract's totalSupply, cached; null hides the line
   Store.pressSupply = () => ready.then(() => chainUp).then(() => (L ? L.pressSupply() : null)).catch(() => null);
-  addEventListener('error', (e) => { const t = e.target; if (t?.tagName !== 'IMG') return; const next = Store.nextGateway(t.src); if (next) t.src = next; else if (t.classList?.contains('cframe') && !t.src.endsWith('ui/card-back.webp')) t.src = 'ui/card-back.webp'; }, true);
+  // a card image that fails: core.js tries the next IPFS gateway, then shows the card back
 
   // ---------- the wallet bundle
   const vendor = document.createElement('script'); vendor.type = 'module'; vendor.src = 'vendor/wallet.js';
@@ -69,7 +71,7 @@
   function fail(text) { S.series.note = text; Store.update(() => {}); toast(text, 'bad'); }
   ready.then(() => {
     FW.onChange(onWallet);
-    chainUp = window.ForgeChain.lib().then((c) => { L = c; resume(me()); return sync({ cards: true }); });
+    chainUp = window.ForgeChain.lib().then((c) => { L = c; resume(me()); orphans(); return sync({ cards: true }); });
     chainUp.catch((e) => {
       if (e?.name !== 'NotDeployedError') return cantLoad(e); // the code didn't load (a network blip): say so, offer a retry
       if (net === 'mainnet') { // no card contracts on mainnet yet: the demo, as if ?live wasn't there
@@ -306,19 +308,27 @@
     return syncing;
   }
   setInterval(() => { if (!document.hidden && L && Date.now() >= nextAt) sync(); }, 15_000);
+  // back online, or back to this tab: read the chain at once (not up to 2 minutes later, after a backed-off failure)
+  let shownAt = 0;
+  const syncNow = (o) => { if (!L || document.hidden) return; nextAt = 0; sync(o); };
+  addEventListener('online', () => syncNow({ cards: true }));
+  document.addEventListener('visibilitychange', () => { if (document.hidden || Date.now() - shownAt < 5000) return; shownAt = Date.now(); syncNow(); });
 
   // ---------- the bar: "may be out of date" while syncing fails, and sent transactions still on their way
   const bar = document.createElement('div'); bar.className = 'live-bar'; bar.setAttribute('role', 'status'); bar.hidden = true;
   const onBody = () => document.body.append(bar);
   if (document.body) onBody(); else addEventListener('DOMContentLoaded', onBody, { once: true });
-  let stale = false; const pend = []; // pend: the PendingTx list shown (tx.ts), in the order sent
+  let stale = false, orphan = false; const pend = []; // pend: the PendingTx list shown (tx.ts), in the order sent
+  // orphan: a transaction this browser sent for its last wallet is still on its way, but no wallet is connected yet
   S.wallet.pending = pend;
   const txLink = (hash) => (L?.NET.explorer ? ` · <a href="${esc(L.NET.explorer)}/tx/${esc(hash)}" target="_blank" rel="noopener">View</a>` : '');
   function paintBar() {
     bar.innerHTML = (stale ? '<p class="stale">Offline? This may be out of date. <button class="btn small" type="button" data-bar="retry">Retry</button></p>' : '')
+      + (orphan && !pend.length ? '<p class="pend">A transaction is on its way. Connect to follow it. <button class="btn small" type="button" data-bar="connect">Connect</button></p>' : '')
       + pend.map((t) => `<p class="pend"><b>${esc(t.label)}</b> · pending${txLink(t.hash)}</p>`).join('');
-    bar.hidden = !stale && !pend.length;
+    bar.hidden = !stale && !pend.length && !orphan;
     bar.querySelector('[data-bar=retry]')?.addEventListener('click', () => { nextAt = 0; sync({ cards: true }); });
+    bar.querySelector('[data-bar=connect]')?.addEventListener('click', () => needWallet());
   }
   function setStale(on) { if (on !== stale) { stale = on; paintBar(); } }
 
@@ -334,8 +344,9 @@
   let lastAddr = null;
   function onWallet(st) {
     const on = st.connected && st.chainOk;
-    Object.assign(S.wallet, { connected: on, full: st.address || '', address: st.short || '', name: st.walletName || st.short || '' });
+    Object.assign(S.wallet, { connected: on, wrongNet: !!(st.connected && !st.chainOk), full: st.address || '', address: st.short || '', name: st.walletName || st.short || '' });
     if (st.address !== lastAddr) { lastAddr = st.address; S.cards = []; S.sealed = {}; sync({ cards: true }); resume(st.address); }
+    if (st.address) { store(LAST_ADDR, st.address); if (orphan) { orphan = false; paintBar(); } }
     Store.update(() => {});
   }
   // sent transactions that hadn't landed when the page closed (tx.ts keeps them): shown in the bar and followed until
@@ -343,6 +354,15 @@
   const following = new Set();
   const unpend = (t) => { const i = pend.findIndex((x) => x.at === t.at && x.from === t.from); if (i >= 0) pend.splice(i, 1); paintBar(); Store.update(() => {}); };
   const landed = (t, outcome) => (outcome === 'success' ? `${t.label}: done` : outcome === 'replaced' ? `${t.label} was cancelled in your wallet.` : `${t.label} failed. Only the network fee was spent.`);
+  /** After a reload with no wallet connected: this browser's last wallet still has a transaction on its way (tx.ts
+   *  keeps them): the bar says so, with Connect (connected, it's followed as usual). */
+  const LAST_ADDR = 'omni.lastWallet';
+  function orphans() {
+    const a = store(LAST_ADDR);
+    if (!L || me() || !a) return;
+    try { orphan = L.pendingTxs(a).some((t) => Date.now() - t.at < 24 * 3600_000); } catch { orphan = false; }
+    paintBar();
+  }
   function resume(a) {
     if (!L || !a) return;
     const list = L.pendingTxs(a).filter((t) => !following.has(t.hash)), these = new Set(list.map((t) => t.hash));
