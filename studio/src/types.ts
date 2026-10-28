@@ -74,6 +74,19 @@ export interface TextStyle {
   outlineWidth: number
   align: Align
   uppercase: boolean
+  /** When set, the letters fade from `color` at the top to this at the bottom. */
+  color2?: string
+  /** When set, a soft drop shadow in this colour lifts the text off the card. */
+  shadow?: string
+  /** Pencil: the letters are thinned by this many px and get a graphite grain (Paper). */
+  pencil?: number
+  /** Carved: a light edge in this colour just under the letters, so they look cut into the surface (Wood). */
+  carve?: string
+  /** Burned in: a charred core with a soft scorch bleeding into the surface around it (Wood). */
+  burn?: boolean
+  /** Raised: a crisp shadow in this colour just under the letters and a bright lip on top, so they stand up off the
+   *  surface (Gold). */
+  raise?: string
 }
 
 /** What's printed on the card image. Serial, print number and Series # are per card, so they live in the metadata (and the
@@ -222,6 +235,9 @@ export interface GlobalState {
   nextFireNumber: number
   /** Set once older fixed category ids (e.g. 'sports') have been turned into free-text labels ('Sports'). */
   categoriesFree?: boolean
+  /** The card text looks (fonts, colours, sizes, effects) are owner-approved and locked; true while unlocked to change
+   *  them in Frames & Layout. Missing = locked. */
+  textUnlocked?: boolean
 }
 
 export function fireStatus(f: FireRecord): FireStatus {

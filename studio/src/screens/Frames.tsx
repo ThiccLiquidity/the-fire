@@ -8,7 +8,7 @@ import { CardTextStyle, useFontOptions } from './TextStyle'
 import { cardView, drawCard, type CardFace } from '../render'
 import { CARD_H, CARD_W, wearLookOf, type WearLook } from '../rules'
 import {
-  addFont, deleteFont, effectiveKey, fontFamilyCss, getStudio, onBlobChanged, saveLayout, useFontsVersion, useStudio,
+  addFont, deleteFont, effectiveKey, fontFamilyCss, getStudio, onBlobChanged, saveGlobal, saveLayout, useFontsVersion, useStudio,
 } from '../store'
 import { TEXT_FIELDS, TEXT_FIELD_LABEL, type Layout, type PsaBox, type Rect, type TextBox, type TextField, type Variant } from '../types'
 
@@ -250,6 +250,14 @@ function LayoutEditor({ m }: { m: string }) {
           </div>
         </div>
         <div className="editor-props">
+          <div className="row wrap text-lock" data-testid="text-lock">
+            {s.global.textUnlocked
+              ? <><span className="warn-text small">Text look: <b>unlocked</b>. Changes here change every card of this type.</span>
+                <button onClick={() => void saveGlobal({ ...s.global, textUnlocked: false })} data-testid="text-lock-on">Lock</button></>
+              : <><span className="small">Text look: <b>locked</b> (the approved fonts, colours and sizes).</span>
+                <button onClick={() => { if (confirm('Unlock the card text look? Changes will apply to every card of a type.')) void saveGlobal({ ...s.global, textUnlocked: true }) }} data-testid="text-lock-off">Unlock</button></>}
+          </div>
+          <fieldset className="plain" disabled={!s.global.textUnlocked} data-testid="text-look-fields">
           <CardTextStyle m={m} layout={layout} setLayout={setLayout} sample={char?.name ?? 'Rabbit'} onFontToAll={fontToAll} />
           <details className="advanced" data-testid="advanced">
           <summary>Advanced: per-field font, size and colour</summary>
@@ -276,6 +284,7 @@ function LayoutEditor({ m }: { m: string }) {
             />
           )}
           </details>
+          </fieldset>
           <div className="row wrap sticky-actions">
             <button className="primary" disabled={!dirty || busy} onClick={() => run(async () => { await saveLayout(layout); setSavedMsg('Saved.') })} data-testid="save-layout">
               Save {frameSetLabel(m)} layout

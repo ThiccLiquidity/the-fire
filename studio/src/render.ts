@@ -7,7 +7,7 @@ import { CARD_H, CARD_W, GRADE_COLOR, HOLO_LABEL, wearLookOf, type WearLook } fr
 import type { Layout, OutputFormat, Placement, PsaBox, Rect, TextBox, TextStyle } from './types'
 import type { Ctx2D } from './wear'
 import { drawCase, drawSlab, type SlabLabel } from './protect'
-import { FRAMELESS_SETS } from './frames'
+import { FRAMELESS_SETS, FULL_CARD_ART_SETS } from './frames'
 import { cardHolo, frameHolo, goldFrameShine, goldPicture, pictureHolo } from './holoFx'
 
 export type ImgSrc = ImageBitmap | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas
@@ -123,7 +123,7 @@ function fontString(s: TextStyle, size: number): string {
 /** Largest size <= style.size (and >= style.minSize) at which the text fits the box width and height. */
 export function fitTextSize(ctx: Ctx2D, text: string, s: TextStyle, box: Rect): number {
   const pad = s.outlineWidth * 2
-  let size = Math.min(s.size, box.h)
+  let size = Math.min(s.size, box.h * ROOM)
   ctx.font = fontString(s, size)
   let width = ctx.measureText(text).width + pad
   if (width > box.w && width > 0) {
@@ -143,11 +143,11 @@ export function fitTextSize(ctx: Ctx2D, text: string, s: TextStyle, box: Rect): 
  *  the same whatever the font or size: vertically the capital height is centred in the box (every line of a field
  *  shares one baseline, descenders hang below); a centred line is centred on its ink left to right. `ink` centres a
  *  single mark (the seal's grade or "?") on its own shape both ways. */
-function drawText(ctx: Ctx2D, raw: string, tb: TextBox, ink = false): void {
+function drawText(ctx: Ctx2D, raw: string, tb: TextBox, ink = false, fill = false): void {
   if (!tb.visible || !raw) return
   const s = tb.style
   const text = s.uppercase ? raw.toUpperCase() : raw
-  const size = fitTextSize(ctx, text, s, tb.box)
+  const size = fill ? fillTextSize(ctx, text, s, tb.box) : fitTextSize(ctx, text, s, tb.box)
   ctx.save()
   ctx.font = fontString(s, size)
   ctx.textBaseline = 'alphabetic'
@@ -162,11 +162,157 @@ function drawText(ctx: Ctx2D, raw: string, tb: TextBox, ink = false): void {
     : s.align === 'right' ? tb.box.x + tb.box.w - pad - right
     : cx - (right - left) / 2
   let y: number
-  if (ink) {
+  if (fill || ink) {
     y = cy + ((m.actualBoundingBoxAscent || size * 0.7) - (m.actualBoundingBoxDescent || 0)) / 2
   } else {
     const cap = ctx.measureText('H').actualBoundingBoxAscent || size * 0.7
     y = cy + cap / 2
+  }
+  paintText(ctx, text, x, y, s, size)
+  ctx.restore()
+}
+
+/** The biggest size (up to the style's size) at which `text` fits its box both ways: the letters actually drawn, with
+ *  their outline, inside the box's width and height (drawn centred on those letters). */
+export function fillTextSize(ctx: Ctx2D, text: string, s: TextStyle, box: Rect): number {
+  const fits = (size: number) => {
+    ctx.font = fontString(s, size)
+    const m = ctx.measureText(text)
+    const w = (m.actualBoundingBoxRight || m.width) + (m.actualBoundingBoxLeft || 0)
+    return w + s.outlineWidth * 2 + 8 <= box.w && m.actualBoundingBoxAscent + m.actualBoundingBoxDescent + s.outlineWidth * 2 + 10 <= box.h
+  }
+  let size = Math.max(s.minSize, s.size)
+  while (size > s.minSize && !fits(size)) size -= size > 60 ? 2 : 1
+  return size
+}
+
+/** Pencil on paper: the letters drawn on their own canvas, thinned (their edge rubbed away by `pencil` px) and grained
+ *  (tiny specks where the graphite skipped the paper's tooth), then laid on the card. The grain is seeded by the text,
+ *  so the same card always prints the same. */
+function paintPencil(ctx: Ctx2D, text: string, x: number, y: number, s: TextStyle, size: number): void {
+  const m = ctx.measureText(text)
+  const pad = Math.ceil(size * 0.4)
+  const w = Math.ceil((m.actualBoundingBoxRight || m.width) + (m.actualBoundingBoxLeft || 0)) + pad * 2
+  const h = Math.ceil((m.actualBoundingBoxAscent || size) + (m.actualBoundingBoxDescent || 0)) + pad * 2
+  const oc = new OffscreenCanvas(w, h), o = oc.getContext('2d')!
+  const ox = pad + (m.actualBoundingBoxLeft || 0), oy = pad + (m.actualBoundingBoxAscent || size)
+  o.font = ctx.font
+  o.textBaseline = 'alphabetic'
+  o.fillStyle = s.color
+  o.fillText(text, ox, oy)
+  o.globalCompositeOperation = 'destination-out'
+  o.lineJoin = 'round'
+  o.lineWidth = s.pencil! * 2
+  o.strokeStyle = '#000'
+  o.strokeText(text, ox, oy)
+  // graphite grain: short faint strokes and specks, seeded by the text
+  let seed = 7
+  for (const ch of text) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296)
+  const n = Math.round((w * h) / 70)
+  for (let i = 0; i < n; i++) {
+    o.globalAlpha = 0.25 + rnd() * 0.55
+    const px = rnd() * w, py = rnd() * h, r = 0.6 + rnd() * 1.3
+    o.fillRect(px, py, r * (1 + rnd() * 2.5), r)
+  }
+  o.globalAlpha = 1
+  o.globalCompositeOperation = 'source-over'
+  ctx.save()
+  ctx.globalAlpha = 0.92
+  ctx.drawImage(oc, x - ox, y - oy)
+  ctx.restore()
+}
+
+/** Burned into wood: a wide faint scorch, a tighter brown burn at the edges, then the charred core (darkest at the
+ *  bottom, where the iron lingered), with fine grain where the char caught the wood's texture. Seeded by the text. */
+function paintBurn(ctx: Ctx2D, text: string, x: number, y: number, s: TextStyle, size: number): void {
+  ctx.save()
+  ctx.lineJoin = 'round'
+  // the scorch around the letters: soft, and close enough to each letter that neighbours stay apart
+  ctx.shadowColor = 'rgba(110,48,10,.45)'
+  ctx.shadowBlur = size * 0.07
+  ctx.fillStyle = 'rgba(110,48,10,.3)'
+  ctx.fillText(text, x, y)
+  ctx.shadowBlur = size * 0.025
+  ctx.shadowColor = 'rgba(80,30,6,.6)'
+  ctx.fillText(text, x, y)
+  ctx.restore()
+  // the charred core
+  ctx.save()
+  const g = ctx.createLinearGradient(0, y - size * 0.75, 0, y)
+  g.addColorStop(0, s.color)
+  g.addColorStop(1, s.color2 && s.color2 !== 'rainbow' ? s.color2 : s.color)
+  ctx.fillStyle = g
+  ctx.fillText(text, x, y)
+  ctx.restore()
+  if (typeof OffscreenCanvas === 'undefined') return
+  // grain: faint lighter streaks along the wood inside the char
+  const m = ctx.measureText(text)
+  const w = Math.ceil((m.actualBoundingBoxRight || m.width) + (m.actualBoundingBoxLeft || 0)) + 4
+  const h = Math.ceil((m.actualBoundingBoxAscent || size) + (m.actualBoundingBoxDescent || 0)) + 4
+  const oc = new OffscreenCanvas(w, h), o = oc.getContext('2d')!
+  const ox = 2 + (m.actualBoundingBoxLeft || 0), oy = 2 + (m.actualBoundingBoxAscent || size)
+  o.font = ctx.font
+  o.fillStyle = '#000'
+  o.fillText(text, ox, oy)
+  o.globalCompositeOperation = 'source-in'
+  let seed = 11
+  for (const ch of text) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296)
+  o.fillStyle = 'rgba(0,0,0,0)'
+  o.fillRect(0, 0, w, h)
+  for (let i = 0; i < Math.round(h / 3); i++) {
+    o.fillStyle = `rgba(150,80,30,${0.08 + rnd() * 0.14})`
+    o.fillRect(0, rnd() * h, w, 0.8 + rnd() * 1.6)
+  }
+  ctx.drawImage(oc, x - ox, y - oy)
+}
+
+/** Text a little taller than its box may still print (scripts and hand fonts have small letters for their size). */
+const ROOM = 1.3
+
+/** One run of text: its shadow, outline and fill (a top-to-bottom fade when the style has color2). */
+function paintText(ctx: Ctx2D, text: string, x: number, y: number, s: TextStyle, size: number): void {
+  if (s.pencil && typeof OffscreenCanvas !== 'undefined') return paintPencil(ctx, text, x, y, s, size)
+  if (s.burn) return paintBurn(ctx, text, x, y, s, size)
+  if (s.raise) { // standing up: a crisp shadow below, a bright lip above
+    ctx.save()
+    const d = Math.max(2, size * 0.04)
+    ctx.fillStyle = s.raise
+    ctx.fillText(text, x + d * 0.4, y + d)
+    ctx.globalAlpha = 0.9
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText(text, x - d * 0.2, y - d * 0.45)
+    ctx.restore()
+  }
+  if (s.carve) { // the cut's lit lower edge, then a darker top edge, under the letters
+    ctx.save()
+    ctx.fillStyle = s.carve
+    ctx.fillText(text, x, y + Math.max(2, size * 0.035))
+    ctx.globalAlpha = 0.5
+    ctx.fillStyle = '#000'
+    ctx.fillText(text, x, y - Math.max(1, size * 0.015))
+    ctx.restore()
+  }
+  if (s.shadow) {
+    ctx.save()
+    ctx.shadowColor = s.shadow
+    ctx.shadowBlur = size * 0.18
+    ctx.shadowOffsetY = size * 0.06
+    ctx.fillStyle = s.outlineWidth > 0 ? s.outlineColor : s.color
+    if (s.outlineWidth > 0) { ctx.lineJoin = 'round'; ctx.lineWidth = s.outlineWidth * 2; ctx.strokeStyle = s.outlineColor; ctx.strokeText(text, x, y) }
+    ctx.fillText(text, x, y)
+    ctx.restore()
+  }
+  if (s.color2 === 'rainbow') { // holo letters: a bright white rim with a glow, then a dark edge inside it
+    ctx.save()
+    ctx.lineJoin = 'round'
+    ctx.shadowColor = 'rgba(255,255,255,.95)'
+    ctx.shadowBlur = size * 0.22
+    ctx.lineWidth = s.outlineWidth * 2 + size * 0.14
+    ctx.strokeStyle = '#ffffff'
+    ctx.strokeText(text, x, y)
+    ctx.restore()
   }
   if (s.outlineWidth > 0) {
     ctx.lineJoin = 'round'
@@ -175,8 +321,63 @@ function drawText(ctx: Ctx2D, raw: string, tb: TextBox, ink = false): void {
     ctx.strokeStyle = s.outlineColor
     ctx.strokeText(text, x, y)
   }
-  ctx.fillStyle = s.color
+  if (s.color2 === 'rainbow') {
+    const w = ctx.measureText(text).width
+    const g = ctx.createLinearGradient(x, y - size, x + Math.max(w, size * 4), y)
+    ;['#ff3fa8', '#ffb627', '#3fe87a', '#22b8ff', '#9a5bff', '#ff4fb8'].forEach((c, i, l) => g.addColorStop(i / (l.length - 1), c))
+    ctx.fillStyle = g
+  } else if (s.color2) {
+    const g = ctx.createLinearGradient(0, y - size * 0.75, 0, y)
+    g.addColorStop(0, s.color)
+    g.addColorStop(1, s.color2)
+    ctx.fillStyle = g
+  } else ctx.fillStyle = s.color
   ctx.fillText(text, x, y)
+  if (s.color2 === 'rainbow') { // a glossy shine on the top half of the letters
+    const g = ctx.createLinearGradient(0, y - size * 0.8, 0, y - size * 0.3)
+    g.addColorStop(0, 'rgba(255,255,255,.75)')
+    g.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = g
+    ctx.fillText(text, x, y)
+  }
+}
+
+/** Full Art's text boxes: the art draws thin outlines where the name and the bottom text go; the print turns them into
+ *  holo foil (a see-through rainbow film, diagonal shimmer bands and glints) with a glowing rainbow edge, so they pop
+ *  without hiding the picture. */
+const FA_BOXES: Rect[] = [{ x: 96, y: 72, w: 1310, h: 174 }, { x: 96, y: 1612, w: 1310, h: 398 }]
+function rainbow(ctx: Ctx2D, r: Rect, a: number): CanvasGradient {
+  const g = ctx.createLinearGradient(r.x, r.y + r.h, r.x + r.w, r.y)
+  ;['255,120,200', '255,210,120', '150,255,190', '120,210,255', '190,150,255', '255,140,210'].forEach((c, i, l) => g.addColorStop(i / (l.length - 1), `rgba(${c},${a})`))
+  return g
+}
+/** A small four-point glint. */
+function glint(ctx: Ctx2D, x: number, y: number, s: number): void {
+  ctx.beginPath()
+  ctx.moveTo(x, y - s); ctx.quadraticCurveTo(x, y, x + s, y); ctx.quadraticCurveTo(x, y, x, y + s); ctx.quadraticCurveTo(x, y, x - s, y); ctx.quadraticCurveTo(x, y, x, y - s)
+  ctx.fill()
+}
+function drawHoloBoxes(ctx: Ctx2D): void {
+  ctx.save()
+  for (const r of FA_BOXES) {
+    const path = () => { ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 28) }
+    path(); ctx.fillStyle = rainbow(ctx, r, 0.42); ctx.fill()
+    ctx.save(); path(); ctx.clip()
+    for (let i = -2; i < 9; i++) { // diagonal shimmer bands
+      const x0 = r.x + i * 190
+      const g = ctx.createLinearGradient(x0, r.y + r.h, x0 + 160, r.y)
+      g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,.32)'); g.addColorStop(1, 'rgba(255,255,255,0)')
+      ctx.fillStyle = g
+      ctx.beginPath(); ctx.moveTo(x0, r.y + r.h); ctx.lineTo(x0 + 90, r.y + r.h); ctx.lineTo(x0 + 90 + r.h * 0.6, r.y); ctx.lineTo(x0 + r.h * 0.6, r.y); ctx.fill()
+    }
+    ctx.restore()
+    ctx.fillStyle = 'rgba(255,255,255,.95)'
+    for (const [fx, fy, fs] of [[0.05, 0.25, 16], [0.95, 0.72, 20], [0.62, 0.18, 11], [0.3, 0.82, 10], [0.82, 0.3, 9]]) glint(ctx, r.x + r.w * fx, r.y + r.h * fy, fs)
+    // the glowing rainbow edge, with a fine white line on top
+    path(); ctx.shadowColor = 'rgba(255,255,255,.9)'; ctx.shadowBlur = 20; ctx.lineWidth = 10; ctx.strokeStyle = rainbow(ctx, r, 1); ctx.stroke()
+    ctx.shadowColor = 'transparent'
+    path(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.stroke()
+  }
   ctx.restore()
 }
 
@@ -188,13 +389,13 @@ function drawRow(ctx: Ctx2D, parts: [string, TextBox][]): void {
   const row = shown[0][1].box
   const items = shown.map(([raw, b], i) => ({ text: (i ? '  ·  ' : '') + (b.style.uppercase ? raw.toUpperCase() : raw), s: b.style }))
   const widthAt = (k: number) => items.reduce((w, it) => {
-    ctx.font = fontString(it.s, Math.max(it.s.minSize, Math.min(it.s.size, row.h) * k))
+    ctx.font = fontString(it.s, Math.max(it.s.minSize, Math.min(it.s.size, row.h * ROOM) * k))
     return w + ctx.measureText(it.text).width
   }, 0)
   const pad = Math.max(...items.map((it) => it.s.outlineWidth)) * 2
   let k = 1
   for (let i = 0; i < 40 && widthAt(k) + pad > row.w && k > 0.3; i++) k *= 0.97
-  const sizeOf = (s: TextStyle) => Math.max(s.minSize, Math.min(s.size, row.h) * k)
+  const sizeOf = (s: TextStyle) => Math.max(s.minSize, Math.min(s.size, row.h * ROOM) * k)
   ctx.save()
   ctx.textBaseline = 'alphabetic'
   ctx.textAlign = 'left'
@@ -204,15 +405,7 @@ function drawRow(ctx: Ctx2D, parts: [string, TextBox][]): void {
   let x = row.x + pad / 2
   for (const it of items) {
     ctx.font = fontString(it.s, sizeOf(it.s))
-    if (it.s.outlineWidth > 0) {
-      ctx.lineJoin = 'round'
-      ctx.miterLimit = 2
-      ctx.lineWidth = it.s.outlineWidth * 2
-      ctx.strokeStyle = it.s.outlineColor
-      ctx.strokeText(it.text, x, y)
-    }
-    ctx.fillStyle = it.s.color
-    ctx.fillText(it.text, x, y)
+    paintText(ctx, it.text, x, y, it.s, sizeOf(it.s))
     x += ctx.measureText(it.text).width
   }
   ctx.restore()
@@ -479,7 +672,8 @@ function printLayers(ctx: Ctx2D, assets: CardAssets, layout: Layout, view: CardV
   // heavy wear (PDA 3-1) puts scorch and stains under the text: give un-outlined text its outline so it stays readable
   const worn = view.wear === 'L5' || view.wear === 'L6'
   const tb = (b: TextBox): TextBox => (worn && b.style.outlineWidth === 0 ? { ...b, style: { ...b.style, outlineWidth: 6 } } : b)
-  drawText(ctx, view.name, tb(layout.text.name))
+  if (FULL_CARD_ART_SETS.includes(view.frameSet)) drawHoloBoxes(ctx)
+  drawText(ctx, view.name, tb(layout.text.name), true, true) // the name fills its bar
   drawText(ctx, view.themeLabel, tb(layout.text.theme))
   drawText(ctx, view.styleLabel, tb(layout.text.style))
   drawRow(ctx, [[view.materialLabel, tb(layout.text.material)], [view.categoryLabel, tb(layout.text.category)], [view.forgedLabel, tb(layout.text.forged)]])

@@ -365,3 +365,20 @@ for preview and reference only.
 Arweave (one-time, permanent) suits shared images; IPFS (Pinata, Storacha, Filebase) is the alternative. Decided
 (review item 23): IPFS on two services, Pinata and Filebase, with the same CID, plus the CAR file kept offline. Check
 current prices before launch.
+
+## Card text looks (locked, Oct 2026)
+
+Approved one card type at a time, on the Jean Phil and Renaissance Gym Bros art. They are the built-in defaults
+(`layoutDefaults.ts`, INK) and locked in the studio: Frames & Layout shows "Text look: locked"; Unlock (with a confirm)
+to change them, Lock again after. Layout v6 moves saved layouts onto these looks (shown or hidden stays as saved).
+
+| Type | Name | Bottom (theme, art style, small row) |
+|---|---|---|
+| Paper | Permanent Marker drawn as graphite pencil (thinned, grained) | same, theme 100 / style 74 / row 60 |
+| Wood | Rye burned into the wood (charred core, tight scorch) | Rye; the small row in bold Roboto Slab |
+| Fire | Alfa Slab One, white-hot to gold, ember glow | bold Roboto Slab, same colours |
+| Coal | Bebas Neue, white to steel grey on a dark halo, no colour | Oswald, theme 112 / style 86 / row 68 |
+| Gold | Cinzel bold, ivory with a bronze rim and a deep shadow | same |
+| Full Art | Lilita One, gold with a purple edge and pink glow | Lilita One in white; the boxes are holo foil with a rainbow edge |
+
+Every name prints as big as fits its bar (`render.ts` fillTextSize, measured on its own letters).

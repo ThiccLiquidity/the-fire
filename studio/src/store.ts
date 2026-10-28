@@ -77,8 +77,8 @@ export async function loadStudio(): Promise<void> {
     }
     else if (k === 'global') {
       // older saves and backups also hold the rarity accumulators (no longer used: each Series stands alone); ignore them
-      const { nextSerial, nextFireNumber, categoriesFree } = v as GlobalState
-      d.global = { nextSerial: nextSerial ?? d.global.nextSerial, nextFireNumber: nextFireNumber ?? d.global.nextFireNumber, categoriesFree }
+      const { nextSerial, nextFireNumber, categoriesFree, textUnlocked } = v as GlobalState
+      d.global = { nextSerial: nextSerial ?? d.global.nextSerial, nextFireNumber: nextFireNumber ?? d.global.nextFireNumber, categoriesFree, textUnlocked }
     }
   }
   if (!d.global.categoriesFree) {

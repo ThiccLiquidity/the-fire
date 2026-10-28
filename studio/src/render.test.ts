@@ -125,17 +125,18 @@ describe('drawCard = drawBase (holo) + drawPrint', () => {
   })
 
   it('print: no art or frame on the card, but the texts, the seal, the wear and the PDA 10 glow', () => {
-    const layout = defaultLayout('wood')
-    const log = recording((ctx) => drawTiltPart(ctx, assets, layout, view('wood', 10), 'print'))
+    // Coal: its text draws straight on the card (Paper's pencil and Wood's burn use their own small canvases)
+    const layout = defaultLayout('charcoal')
+    const log = recording((ctx) => drawTiltPart(ctx, assets, layout, view('charcoal', 10), 'print'))
     const r = root(log)
     expect(r[0]).toBe(`ctx.clearRect(0,0,${CARD_W},${CARD_H})`)
     expect(r.some((l) => l.startsWith('ctx.drawImage(ART') || l.startsWith('ctx.drawImage(FRAME'))).toBe(false)
     expect(r.some((l) => l.startsWith('ctx.drawImage(WEAR'))).toBe(true)
     expect(r.some((l) => l.startsWith('ctx.drawImage(oc'))).toBe(true) // the PDA 10 glow
     const texts = r.filter((l) => l.startsWith('ctx.fillText(')).map((l) => l.slice('ctx.fillText('.length).split(',')[0].toUpperCase())
-    for (const t of ['RABBIT', 'HAUNTED CARNIVAL', 'INK WASH', 'WOOD', '  ·  ANIMALS', '  ·  SERIES 3', 'PDA', '10']) expect(texts).toContain(t)
-    expect(view('wood', 9).pda10).toBe(false)
-    const nine = recording((ctx) => drawTiltPart(ctx, assets, layout, view('wood', 9), 'print'))
+    for (const t of ['RABBIT', 'HAUNTED CARNIVAL', 'INK WASH', 'CHARCOAL', '  ·  ANIMALS', '  ·  SERIES 3', 'PDA', '10']) expect(texts).toContain(t)
+    expect(view('charcoal', 9).pda10).toBe(false)
+    const nine = recording((ctx) => drawTiltPart(ctx, assets, layout, view('charcoal', 9), 'print'))
     expect(root(nine).some((l) => l.startsWith('ctx.drawImage(oc'))).toBe(false)
   })
 })

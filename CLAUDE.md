@@ -25,5 +25,10 @@
   holo all over. The old holo frames (`*-holo.webp`, except Gold's) are retired. No holo pictures.
 - PDA wear is one set of wear layers over every card type (`studio/frames-src/wear_overlays.py`); no per-frame wear
   files. Full Art has no frame: the photo is the whole card.
+- **The card text looks are locked** (owner-approved Oct 2026, `studio/src/layoutDefaults.ts` INK, effects in
+  `studio/src/render.ts`): Paper hand lettering in graphite pencil; Wood western letters burned in; Fire heavy slab
+  white-hot to gold with an ember glow; Coal brushed steel, no colour; Gold ivory inlay with a bronze rim; Full Art
+  holo boxes, a gold chunky name, white text. Names fill their bar. Don't change them unless the owner asks; the studio
+  keeps them locked too (Frames & Layout, "Text look: locked").
 - The only thing the owner drops in per card is the character image: one per material (Paper, Wood, Fire, Coal) plus
   Full Art. Gold uses the Wood picture.
