@@ -303,8 +303,9 @@ body[data-mode=port] .buybar:not(.open) .bb-more { align-self: start }
 /* the "Case & grade them" link after a pack: brass like the rest (it was sky blue) */
 .cel-protect .linkish { color: #f6e2b8 }
 .cel-protect .linkish:hover { color: #fff3d6 }
-/* the Game room sheet hugs Spit-Wad's portrait stage on very wide screens (it left ~480px empty each side) */
-#sheet-games:has(.sw-stage) { width: fit-content; min-width: 720px }
+/* the Game room sheet hugs Spit-Wad's portrait stage on very wide screens (it left ~480px empty each side). Wide
+   screens only: on phones the 720px floor pushed the game past the right edge (only its left side showed) */
+@media (min-width: 1100px) { #sheet-games:has(.sw-stage) { width: fit-content; min-width: 720px } }
 
 /* the furnace gauge (owner, Oct 29): the burn tally lit like the furnace. Two parts, kept apart so nothing is counted
    twice: "Liquidity locked" (dollars, the headline, gold) and "Burned all time" (PLANK and PAPER actually burned). A
