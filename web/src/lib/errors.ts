@@ -33,7 +33,7 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   NotThisRound: "That idea isn't from this round.",
   PriceMoved: "Price changed. Check it and try again.",
   SoldOut: "Not enough packs left.",
-  TooEarly: "It's too early to end this Series.",
+  TooEarly: "Too early. Try again later.",
   TransferFailed: "A payment didn't go through. Nothing was charged.",
   WalletLimit: "Wallet limit reached for this group.",
 

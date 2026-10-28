@@ -9,4 +9,4 @@ export { NotDeployedError, amount, type Amount } from "./contracts";
 export { NET, isDeployed } from "../net";
 export * from "./swap";
 // Sent transactions that haven't landed yet (kept across reloads): the page shows and resumes them.
-export { pendingTxs, resumePending, TxStillPending, type PendingTx, type TxOutcome } from "../tx";
+export { pendingTxs, prunePending, resumePending, TxStillPending, type PendingTx, type TxOutcome } from "../tx";

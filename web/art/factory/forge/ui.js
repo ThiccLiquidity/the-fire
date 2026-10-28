@@ -129,7 +129,8 @@
     else if (mode === 'land') { // the buy rail grows by the notch's inset on that side (ui.css), so the scene leaves it that much more
       view = { x: 0, y: bar, w: W - 240 - safeRight(), h: H - bar, mode: 'contain', follow: false };
     } else {
-      const strip = W >= 2200 && H >= 1200 ? 130 : H < 760 ? 92 : 104; // very large screens: a taller strip (ui.css) document.documentElement.style.setProperty('--stripH', strip + 'px');
+      const strip = W >= 2200 && H >= 1200 ? 130 : H < 760 ? 92 : 104; // very large screens: a taller strip (ui.css)
+      document.documentElement.style.setProperty('--stripH', strip + 'px');
       view = { x: 0, y: bar, w: W, h: H - bar - strip, mode: 'contain', follow: false };
     }
     if (window.Scene) Scene.setView(view);
@@ -146,7 +147,7 @@
     // counted once as bb (counting it twice left a dead band over the bar and a smaller scene)
     const stEl = document.querySelector('.stations');
     const st = stEl ? stEl.offsetHeight - (parseFloat(getComputedStyle(stEl).paddingBottom) || 0) : 220;
-    const sh = Math.round(Math.max(150, Math.min(H * 0.52, W * 1.1, H - bar - st - bb - 28)));
+    const sh = Math.round(Math.max(150, Math.min(H * (W >= 700 ? 0.66 : 0.52), W * 1.1, H - bar - st - bb - 28))); // tablets: the scene takes the room under the stations (it was a black band)
     view = { x: 0, y: bar, w: W, h: sh, mode: 'cover', focus: 0.42, follow: true }; // the camera follows the action
     document.documentElement.style.setProperty('--sceneH', sh + 'px');
     document.documentElement.style.setProperty('--bbH', bb + 'px');
@@ -161,14 +162,40 @@
     const watchSt = () => { const el = document.querySelector('.stations'); if (el) ro.observe(el); }; watchSt(); }
   function placePills() {
     if (!view) return;
-    const k = window.Scene ? Scene.scale : lite().s, fs = Math.max(12, Math.min(innerWidth >= 2200 && innerHeight >= 1200 ? 17 : 14, 30 * k)); // very large screens: bigger pills
+    // very large screens: bigger pills, Buy box and gauges (they grow with the scene: 1920 x 1080 and up)
+    const big = innerWidth >= 1800 && innerHeight >= 1000, k = window.Scene ? Scene.scale : lite().s, fs = Math.max(12, Math.min(innerWidth >= 2200 && innerHeight >= 1200 ? 20 : big ? 16 : 14, (big ? 34 : 30) * k));
     document.documentElement.style.setProperty('--fs', fs + 'px'); document.documentElement.style.setProperty('--sk', k);
+    // the burn tally keeps to the scene's left edge (on a wide screen it floated at the window's far left)
+    if (mode === 'desk') { const [l, t0] = toScreen(0, 0), [, b0] = toScreen(SW, SH); document.documentElement.style.setProperty('--sceneL', Math.max(0, l) + 'px'); document.documentElement.style.setProperty('--sceneMid', ((Math.max(TOP, t0) + Math.min(innerHeight, b0)) / 2) + 'px'); }
     for (const el of document.querySelectorAll('#pills [data-x]')) {
       let [x, y] = toScreen(+el.dataset.x, +el.dataset.y);
       if (el.id === 'spot') { el.style.left = x + 'px'; el.style.top = y + 'px'; continue; } // the light sits on the floor, wherever that is
       const half = el.offsetWidth / 2 + 8; x = Math.max(view.x + half, Math.min(view.x + view.w - half, x)); // never off the scene (sideways: never under the buy rail)
       el.style.left = x + 'px'; el.style.top = Math.max(TOP + el.offsetHeight / 2 + 6, y) + 'px';
     }
+    separatePills();
+  }
+  // small scenes (a phone on its side): the pills can land on each other. Nudge any two that overlap apart up or down
+  // (whichever keeps both inside the scene), a few passes until none touch
+  function separatePills() {
+    const ps = [...document.querySelectorAll('#pills .pill[data-x]')].filter((el) => el.offsetWidth)
+      .map((el) => ({ el, x: parseFloat(el.style.left), y: parseFloat(el.style.top), w: el.offsetWidth, h: el.offsetHeight }));
+    const lo = (p) => TOP + p.h / 2 + 6, hi = (p) => view.y + view.h - p.h / 2 - 4, gap = 6;
+    for (let pass = 0; pass < 8; pass++) {
+      let moved = false;
+      for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
+        const a = ps[i], b = ps[j];
+        if (Math.abs(a.x - b.x) >= (a.w + b.w) / 2 + gap) continue;
+        const need = (a.h + b.h) / 2 + gap - Math.abs(a.y - b.y); if (need <= 0) continue;
+        const [up, dn] = a.y <= b.y ? [a, b] : [b, a]; // the higher one goes up, the lower one down, half each
+        let d = need / 2, u = need / 2;
+        if (dn.y + d > hi(dn)) { u += dn.y + d - hi(dn); d = hi(dn) - dn.y; }
+        if (up.y - u < lo(up)) { d += lo(up) - (up.y - u); u = up.y - lo(up); }
+        dn.y += Math.max(0, d); up.y -= Math.max(0, u); moved = true;
+      }
+      if (!moved) break;
+    }
+    for (const p of ps) p.el.style.top = p.y + 'px';
   }
   addEventListener('resize', layout);
 
@@ -826,13 +853,13 @@
     const items = S.activity.length ? S.activity : [{ text: 'No activity yet' }];
     Sheet.open('feed', { title: 'Activity', body: `<ul class="feed">${items.map((a) => `<li>${esc(a.text)}</li>`).join('')}</ul>` });
   }
-  // the menu, in four groups with icons: Play, Wallet, Learn, Settings
+  // the menu, in four groups with icons: Play, Collection, Learn, Settings
   function openMenu() {
     const n = Stations.openableCount(), b = (k, icon, label) => `<button class="btn" type="button" data-m="${k}">${icon ? svg(icon) : ''}${label}</button>`;
     const group = (title, items) => `<section class="menu-g" aria-label="${title}"><h3>${title}</h3><div class="menu">${items.filter(Boolean).join('')}</div></section>`;
     const d = Sheet.open('menu', { title: 'Menu', body: `<div class="menu-groups">
-      ${group('Play', [!LIVE || n ? b('open', 'pack', `Open packs${n ? ` (${n})` : ''}`) : '', b('cards', 'cards', 'My cards'), b('games', 'game', 'Game room'), b('fun:practice', 'spark', 'Practice pack')])}
-      ${group('Wallet', [b('paper', 'paper', 'Get PAPER'), b('fun:binder', 'book', 'Binder'), b('fun:showcase', 'star', 'Showcase'), b('fun:badges', 'badge', 'Badges')])}
+      ${group('Play', [!LIVE || n ? b('open', 'pack', `Open packs${n ? ` (${n})` : ''}`) : '', b('paper', 'paper', 'Get PAPER'), b('games', 'game', 'Game room'), b('fun:practice', 'spark', 'Practice pack')])}
+      ${group('Collection', [b('cards', 'cards', 'My cards'), b('fun:binder', 'book', 'Binder'), b('fun:showcase', 'star', 'Showcase'), b('fun:badges', 'badge', 'Badges')])}
       ${group('Learn', [b('start', 'flag', 'New here?'), b('info', 'info', 'Info'), b('fun:tour', 'map', 'Workshop tour'), b('feed', 'feed', 'Activity')])}
       ${group('Settings', [b('sound', window.Sound?.on ? 'sound' : 'mute', `Sound: ${window.Sound?.on ? 'On' : 'Off'}`), window.Fun?.haptics?.supported ? b('haptics', 'phone', `Vibration: ${Fun.haptics.on ? 'On' : 'Off'}`) : '', LIVE ? '' : b('demo', 'sliders', 'Demo controls')])}
       </div>

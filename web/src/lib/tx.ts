@@ -177,6 +177,17 @@ export function resumePending(onSettled: (tx: PendingTx, outcome: TxOutcome) => 
   return list.length;
 }
 
+/** Read-only, no wallet needed: one look at each saved transaction (of `from`); the ones that landed or were replaced
+ *  are forgotten. Resolves with how many are still on their way (an RPC that can't answer keeps them). */
+export async function prunePending(from?: Address): Promise<number> {
+  let left = 0;
+  for (const t of pendingTxs(from)) {
+    const ref = track(t);
+    try { const outcome = await check(ref); if (outcome) end(ref, outcome); else left++; } catch { left++; }
+  }
+  return left;
+}
+
 // ---------- the lifecycle
 
 /** Simulate, send and wait for one contract call. Resolves with the receipt of a successful transaction; throws a

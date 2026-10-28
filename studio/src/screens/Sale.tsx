@@ -244,8 +244,8 @@ function GroupCard({ s, i, packs, problems, busy, set, remove, move }: {
           </span>
         </GF>
         {priced && <>
-          <GF all={mine} gi={i} f="plankBurnPercent" label="To liquidity, part 1 (%)" hint="Of its dollar price, in the coin paid. With part 2: 100 = all of it."><Text value={g.plankBurnPercent} onChange={(v) => set({ plankBurnPercent: v })} testId={tid('burn')} width={60} /></GF>
-          <GF all={mine} gi={i} f="paperBurnPercent" label="To liquidity, part 2 (%)" hint="Plus any rising-price tax."><Text value={g.paperBurnPercent} onChange={(v) => set({ paperBurnPercent: v })} testId={tid('paper-burn')} width={60} /></GF>
+          <GF all={mine} gi={i} f="plankBurnPercent" label="Liquidity share (%)" hint="Of its dollar price, in the coin paid. With the next line, 100 = all of it."><Text value={g.plankBurnPercent} onChange={(v) => set({ plankBurnPercent: v })} testId={tid('burn')} width={60} /></GF>
+          <GF all={mine} gi={i} f="paperBurnPercent" label="More to liquidity (%)" hint="Added to the line above. Any rising-price tax goes to liquidity too."><Text value={g.paperBurnPercent} onChange={(v) => set({ paperBurnPercent: v })} testId={tid('paper-burn')} width={60} /></GF>
         </>}
         <GF all={mine} gi={i} f="perWallet" label="Per wallet" hint="0 = no limit."><Num value={g.perWallet} onChange={(v) => set({ perWallet: v })} testId={tid('per-wallet')} width={70} /></GF>
         {(g.perWallet > 0 || g.limitHours > 0) && (
