@@ -40,6 +40,7 @@ export const robinhood = defineChain({
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: [READ_RPC] } },
   ...(EXPLORER ? { blockExplorers: { default: { name: "Blockscout", url: EXPLORER } } } : {}),
+  ...(NET.multicall3 ? { contracts: { multicall3: { address: NET.multicall3 } } } : {}),
   testnet: TESTNET,
 });
 /** What we ever hand to a user's wallet (wallet_addEthereumChain): only the public RPC, never a private URL. */
@@ -264,9 +265,12 @@ function watchAfterConnect(config: Config) {
 let pub: PublicClient | undefined;
 /** Reads Robinhood Chain through the site's RPC, whatever chain the wallet is on. Needs no wallet. */
 export function getPublicClient(): PublicClient {
-  // one request per read unless VITE_RPC_BATCH is set (net.ts readBatch): the public testnet RPC refused big batches
+  // reads made within 16 ms of each other go as one eth_call through Multicall3 (net.ts multicall3; a page's reads
+  // fire together, so a screen is a request or two instead of dozens). JSON-RPC batching only if VITE_RPC_BATCH is
+  // set (net.ts readBatch): the public testnet RPC refused big batches.
   const batch = NET.readBatch > 0 ? { batch: { batchSize: NET.readBatch, wait: 16 } } : {};
-  return (pub ??= createPublicClient({ chain: robinhood, transport: http(READ_RPC, batch) }) as PublicClient);
+  const multicall = NET.multicall3 ? { batch: { multicall: { wait: 16 } } } : {};
+  return (pub ??= createPublicClient({ chain: robinhood, transport: http(READ_RPC, batch), ...multicall }) as PublicClient);
 }
 
 /** The connected wallet, on Robinhood Chain (for the live contract calls later). Throws if not connected. */

@@ -245,7 +245,7 @@ try {
   await page.locator("#sheet-buy[open] .go:not([disabled])").waitFor({ timeout: 30_000 });
   check(/Extra pack: \$2\.70/.test(await page.locator("#sheet-buy .xpanel").innerText()), "the next one: an extra pack at $2.70");
   const saleAbi = JSON.parse(readFileSync(resolve(here, "../../src/lib/abi/fireSaleAbi.json"), "utf8"));
-  await ctx.tx(acct(5), ctx.C.FireSale, saleAbi, "buyWithEthAll", [7n, 2n, 1n, { nftIds: [], allowance: 0n, proof: [] }], 10n ** 18n);
+  await ctx.tx(acct(5), ctx.C.FireSale, saleAbi, "buyWithEthAll", [7n, 2n, 1n, 10n ** 18n, { nftIds: [], allowance: 0n, proof: [] }], 10n ** 18n);
   await page.click("#sheet-buy .go");
   await page.click("#sheet-buy [data-ok]");
   await page.click("#sheet-buy .go:not([disabled])");

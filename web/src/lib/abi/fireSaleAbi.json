@@ -519,6 +519,11 @@
         "internalType": "uint256"
       },
       {
+        "name": "maxPaperEth",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
         "name": "access",
         "type": "tuple",
         "internalType": "struct FireGroups.Access",

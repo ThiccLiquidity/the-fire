@@ -56,7 +56,8 @@ const accessArg = (a?: Access) => ({ nftIds: (a?.nftIds ?? []).map(BigInt), allo
  *  when the group has no dollar price), and its PAPER per pack (burned). `access`: for a gated group (NFT ids, or the
  *  snapshot allowance and proof). PAPER is approved at the most it can be (the group's PAPER per pack x n); PLANK at
  *  the quote plus `slippageBps`, USDG at the quote (a dollar). `paperInEth`: ETH alone (buyWithEthAll: FireSale buys
- *  the PAPER on the market and burns it; one confirmation, no approval). `quote`: what the buyer was shown
+ *  the PAPER on the market and burns it, for at most its quote + `slippageBps` of ETH; one confirmation, no approval).
+ *  `quote`: what the buyer was shown
  *  (reads.quoteGroup: the coin's cost.raw, and paperEth.raw for ETH alone): the cap is built from that + 3%, not from a
  *  new quote at the click, so a price that moved more (a taxed group's next pack after someone else bought) is
  *  refused with PriceMoved and nothing is charged. */
@@ -76,7 +77,8 @@ export async function buyPacks(p: { fire: number; group: number; n: number; pay?
         return paper === 0n ? 0n : read<bigint>("FireSale", saleAbi, "quotePaperInEth", [paper]);
       }),
     ]);
-    return send(sale, saleAbi, "buyWithEthAll", [f, g, n, acc], label, "buy", o, withSlip(price + paperEth, slip)); // extra ETH comes back
+    // the PAPER's ETH is capped too (maxPaperEth): a pushed PAPER price reverts PriceMoved instead of using the padding
+    return send(sale, saleAbi, "buyWithEthAll", [f, g, n, withSlip(paperEth, slip), acc], label, "buy", o, withSlip(price + paperEth, slip)); // extra ETH comes back
   }
   const maxPaper = cfg.paper * n; // the group's PAPER per pack: the drop's dollar ceiling only ever takes less
   if (maxPaper > 0n) await approve(input("PAPER")!, sale, maxPaper, "Approve PAPER", o);

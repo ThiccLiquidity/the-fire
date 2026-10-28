@@ -1,6 +1,6 @@
 // The markets page's numbers, from the chain (Uniswap V2 pools on Robinhood Chain + Chainlink ETH/USD), the explorer
 // (holders) and CoinGecko (majors). Code only: the writers never type a number, they use {{tokens}} (see inject.mjs).
-import { DEAD, SEL, TOPIC, addrWord, asAddr, blockAt, logsChunked, rpc, toNum, word } from "./chain.mjs";
+import { DEAD, SEL, TOPIC, addrWord, asAddr, blockAt, decodeLog, logsChunked, rpc, toNum, word } from "./chain.mjs";
 import { env, fetchJson, soft } from "./util.mjs";
 
 const PLANK_PER_MILL = 88_842_006_942.0888; // docs/addresses.md: total supply / 10,000
@@ -52,8 +52,7 @@ async function poolView(r, { pair, token, quoteUsd, quoteDec = 18, oldBlock, old
     const logs = await logsChunked(r, { address: pair, topics: [TOPIC.Swap], fromBlock, toBlock });
     let q = 0;
     for (const l of logs) {
-      const d = l.data;
-      const [a0in, a1in, a0out, a1out] = [word(d, 0), word(d, 1), word(d, 2), word(d, 3)];
+      const { amount0In: a0in, amount1In: a1in, amount0Out: a0out, amount1Out: a1out } = decodeLog("Swap", l); // throws on a malformed log
       q += tokenIs0 ? toNum(a1in + a1out, quoteDec) : toNum(a0in + a0out, quoteDec);
     }
     return { usd: q * quoteUsd, trades: logs.length };

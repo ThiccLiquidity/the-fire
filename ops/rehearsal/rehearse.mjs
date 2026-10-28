@@ -485,7 +485,7 @@ async function main() {
     const [cost, paper] = await quote(group, n);
     if (FORK) {
       const extra = await pub.readContract({ address: C.FireSale, abi: ABI.sale, functionName: "quotePaperInEth", args: [paper] });
-      return tx(b, C.FireSale, ABI.sale, "buyWithEthAll", [FIRE, group, n, acc], ((cost + extra) * 105n) / 100n);
+      return tx(b, C.FireSale, ABI.sale, "buyWithEthAll", [FIRE, group, n, (extra * 103n) / 100n, acc], ((cost + extra) * 105n) / 100n);
     }
     await tx(deployer, dev.paper.address, dev.paper.abi, "mint", [b.address, paper]);
     await tx(b, dev.paper.address, dev.paper.abi, "approve", [C.FireSale, paper]);

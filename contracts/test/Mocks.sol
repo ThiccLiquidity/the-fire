@@ -95,6 +95,10 @@ contract MockPlankTwap {
 contract MockPair {
     address public token0; address public token1;
     constructor(address a, address b) { token0 = a; token1 = b; }
+    /// An empty pool (LiquidityBurner starts its PAPER average from it at deploy).
+    function getReserves() external pure returns (uint112, uint112, uint32) { return (0, 0, 0); }
+    function price0CumulativeLast() external pure returns (uint256) { return 0; }
+    function price1CumulativeLast() external pure returns (uint256) { return 0; }
 }
 
 /// @dev Just enough of a Uniswap V2 router and factory for the deploy checks.

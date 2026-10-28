@@ -117,7 +117,9 @@ nowhere). Setup is signed on the owner's hardware wallet; the public site has no
 - **ETH alone:** `buyWithEthAll` takes the price and the packs' PAPER in one ETH payment: FireSale buys that PAPER
   on the market (the cheaper of ETH -> PAPER and ETH -> PLANK -> PAPER, through the same V2 router) straight to
   `LiquidityBurner`. One confirmation, no approval, and every such pack's PAPER is a real market buy. The site offers
-  it whenever a buyer pays in ETH and is short of PAPER ("Pay the PAPER in ETH too"); `quotePaperInEth` says what it costs.
+  it whenever a buyer pays in ETH and is short of PAPER ("Pay the PAPER in ETH too"); `quotePaperInEth` says what it costs,
+  and the buyer caps it (`maxPaperEth`: the site sends that quote plus 3%), so a pushed PAPER price reverts with
+  `PriceMoved` instead of costing whatever the ETH sent covers.
 - **Getting PAPER on the site:** the Get PAPER sheet (and the "Get N PAPER" button wherever a buyer is short) buys
   exactly the PAPER asked for, paid in ETH, PLANK or USDG: on mainnet through KyberSwap (the best price across every
   Robinhood Chain pool; the transaction is checked before the wallet sees it), otherwise, or if KyberSwap doesn't

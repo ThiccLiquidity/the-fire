@@ -30,6 +30,42 @@
       ]
     },
     {
+      "source": "/forge/vendor/wallet/(.*)\\.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/((?!ipfs/).*)\\.(webp|png|jpg|jpeg|gif|svg|avif|ico|mp3|ogg|wav)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=604800"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)\\.(woff2|woff|ttf|otf)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=2592000, stale-while-revalidate=2592000"
+        }
+      ]
+    },
+    {
       "source": "/ipfs/:path*",
       "headers": [
         {

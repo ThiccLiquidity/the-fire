@@ -34,6 +34,7 @@ export async function runTest(ctx: Ctx): Promise<number> {
   globalThis.__FORGE_NET__ = {
     name: "local", chainId: 31337, label: "Local test chain", readRpc: ctx.RPC, publicRpc: ctx.RPC, explorer: "",
     deployment: ctx.deployment, drandUrls: [], testnet: true,
+    multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11", // setup.mjs puts DevMulticall3 there: reads batch as on the real chains
   };
   // a browser's localStorage (tx.ts keeps sent transactions there until they land)
   const mem = new Map<string, string>();
@@ -375,7 +376,10 @@ export async function runTest(ctx: Ctx): Promise<number> {
   const usd = (x: bigint) => (Number(x) / 1e18).toFixed(2);
   check(BigInt(await ctx.pub.getBalance({ address: LB })) > 0n && BigInt(await ctx.pub.readContract({ address: paperTok, abi: erc20Abi, functionName: "balanceOf", args: [LB] })) > 0n,
     "sales, fees and suggestions paid LiquidityBurner (ETH and PAPER held; nothing went to the dead address at sale time)");
-  // a short price window again (the run refuses a long one), as the keeper's checkpoints keep it
+  // a short price window again (the run refuses a long one), as the keeper's checkpoints keep it; LiquidityBurner's own
+  // 30-minute PAPER average (the PAPER/PLANK pool's) too: a checkpoint now, a run 31 minutes later
+  await ctx.tx(deployer, LB, cp, "checkpoint");
+  check(BigInt((await ctx.pub.readContract({ address: LB, abi: lbAbi, functionName: "held" }))[0]) === 0n, "LiquidityBurner's PAPER average is under 30 minutes old: held() shows no sides yet (a run would wait)");
   await ctx.warp(31 * 60);
   for (const t of [ctx.C.PlankUsdTwap, ctx.C.PaperUsdTwap]) await ctx.tx(deployer, t, cp, "checkpoint");
   const [hp, hk, hs] = await lbRead<[bigint, bigint, bigint]>("held");

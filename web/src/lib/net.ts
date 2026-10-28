@@ -23,6 +23,9 @@ export interface Net {
   /** Reads sent together go as one JSON-RPC batch of up to this many (VITE_RPC_BATCH); 0 = one request each. Off by
    *  default: the public testnet RPC refused big batches. Turn on with a paid RPC that takes them (try 10). */
   readBatch: number;
+  /** Multicall3 on this chain: reads made together (in the same few milliseconds) go as one eth_call through it.
+   *  Robinhood Chain and its testnet have it at the usual address; undefined = one eth_call per read. */
+  multicall3?: `0x${string}`;
   /** What the site reads through (may be a private RPC from VITE_RPC_URL). Never handed to a wallet. */
   readRpc: string;
   /** What a wallet is given (wallet_addEthereumChain): the public RPC only. */
@@ -37,16 +40,19 @@ export interface Net {
 
 const env = ((import.meta as { env?: Record<string, string | undefined> }).env ?? {}) as Record<string, string | undefined>;
 const DRAND = ["https://api.drand.sh", "https://api2.drand.sh", "https://api3.drand.sh"];
+/** Multicall3's address on nearly every EVM chain (Robinhood Chain and its testnet included). */
+export const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as const;
 
 export const MAINNET: Net = {
   name: "mainnet", chainId: 4663, label: "Robinhood Chain", readRpc: env.VITE_RPC_URL || "https://rpc.mainnet.chain.robinhood.com", readBatch: Math.max(0, Number(env.VITE_RPC_BATCH) || 0),
   publicRpc: "https://rpc.mainnet.chain.robinhood.com", explorer: "https://robinhoodchain.blockscout.com",
-  deployment: mainnetDeployment as Deployment, drandUrls: DRAND, testnet: false,
+  deployment: mainnetDeployment as Deployment, drandUrls: DRAND, testnet: false, multicall3: MULTICALL3,
 };
 export const TESTNET_NET: Net = {
   name: "testnet", chainId: 46630, label: "Robinhood Chain Testnet",
   readRpc: env.VITE_TESTNET_RPC_URL || "https://rpc.testnet.chain.robinhood.com/rpc", readBatch: Math.max(0, Number(env.VITE_RPC_BATCH) || 0), publicRpc: "https://rpc.testnet.chain.robinhood.com/rpc",
   explorer: "https://explorer.testnet.chain.robinhood.com", deployment: testnetDeployment as Deployment, drandUrls: DRAND, testnet: true,
+  multicall3: MULTICALL3,
 };
 
 declare global { var __FORGE_NET__: Net | undefined }

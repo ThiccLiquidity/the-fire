@@ -20,6 +20,7 @@ const SOLC = [resolve(process.env.HOME ?? "/root", ".foundry/solc/solc-0.8.28"),
 export const MNEMONIC = "test test test test test test test test test test test junk"; // anvil's public test accounts
 export const acct = (i) => mnemonicToAccount(MNEMONIC, { addressIndex: i });
 export const FIRE = 7n;
+export const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 export const OWNER = getAddress("0x1edfe11e1edfe11e1edfe11e1edfe11e1edfe11e"); // a stand-in hardware wallet: nobody holds its key
 
 const ABI = {
@@ -104,6 +105,9 @@ export async function setupChain({ port = 8547, log = console.log, everyone = {}
     return getAddress((await pub.waitForTransactionReceipt({ hash })).contractAddress);
   };
   const devDrand = await deployC("DevContracts", "DevDrandRouter", []);
+  // Multicall3 at its usual address (anvil has none), so the site's batched reads run as on Robinhood Chain
+  const mc = await deployC("DevContracts", "DevMulticall3", []);
+  await rpc("anvil_setCode", [MULTICALL3, await pub.getCode({ address: mc })]);
 
   log("deploy: DeployTwap, DeployInfra, DeployCards (the real scripts)");
   const env = {

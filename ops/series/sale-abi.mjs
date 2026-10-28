@@ -21,7 +21,7 @@ export const saleAbi = parseAbi([
   "function quote(uint256 fire, uint256 group, uint256 n, uint8 pay) view returns (uint256 cost, uint256 paper)",
   "function paperFor(uint256 fire, uint256 group, uint256 n) view returns (uint256)",
   "function buy(uint256 fire, uint256 group, uint256 n, uint8 pay, uint256 maxCost, uint256 maxPaper, Access access) payable",
-  "function buyWithEthAll(uint256 fire, uint256 group, uint256 n, Access access) payable",
+  "function buyWithEthAll(uint256 fire, uint256 group, uint256 n, uint256 maxPaperEth, Access access) payable",
   "function close(uint256 fire)",
   "function endDrop(uint256 fire)",
   "function configureDrop(uint256 fire, DropConfig c)",

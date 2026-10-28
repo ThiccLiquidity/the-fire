@@ -1,6 +1,7 @@
 // The keeper's work, one pass at a time (tick). Every call it makes is permissionless; it has no special powers, it is
 // just reliably awake. Order within a pass:
-//   1. feeds:       PlankUsdTwap.checkpoint() and PaperUsdTwap.checkpoint() when due()
+//   1. feeds:       PlankUsdTwap.checkpoint(), PaperUsdTwap.checkpoint() and LiquidityBurner.checkpoint() (its own
+//                   30-minute PAPER average) when due()
 //   2. randomness:  for every open (FireCards) and grading (FirePsa) still waiting: if its source (an OpenVRFAdapter)
 //                   already holds the word, adapter.settle(id); else, once drand has published the request's round,
 //                   router.fulfillMany(ids, signatures) (the router verifies each signature; it skips ones already
@@ -76,6 +77,14 @@ export function liquidityWork([paperSide, plankSide, toSpend]) {
   return sp + pair + even + over;
 }
 
+/** The alert for LiquidityBurner's ETH + USDG waiting to be spent (`w`: { name, work: dollars, since: ms }), once it
+ *  has stayed over SPEND_ALERT_USD for SPEND_ALERT_MIN (at once in one-pass mode, which can't time it); else null. */
+export function spendAlert(w, cfg, nowMs) {
+  const age = (nowMs - w.since) / 60_000;
+  if (!cfg.once && age < (cfg.spendAlertMin ?? 30)) return null;
+  return { key: "spend:LiquidityBurner", text: `${w.name} has $${w.work.toFixed(2)} of ETH + USDG waiting to be spent (over $${cfg.spendAlertUsd ?? 100} for ${Math.round(age)} min): its runs aren't spending it (a price guard, a missing price or route, or no run), and nothing caps it on chain. Check the runs` };
+}
+
 /** Whether to run LiquidityBurner now (flushPlan: named for the burner flushes it first paced). `usd`: what it's worth (undefined: no price to value it); `waitedMs`: since
  *  it was first seen; `sinceFlushMs`: since this keeper last sent a flush for it (undefined: never). */
 export function flushPlan({ usd, waitedMs, sinceFlushMs }, cfg) {
@@ -137,6 +146,8 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   const waitingSince = new Map(); // "LiquidityBurner" -> first seen with work (ms)
   const lastFlush = new Map(); // "LiquidityBurner" -> when this keeper last sent a run (ms)
   const stuckSince = new Map(); // "LiquidityBurner" -> since a run first left work behind (ms)
+  let spendOverSince; // since LiquidityBurner's ETH + USDG to spend went over SPEND_ALERT_USD (ms; undefined: under)
+  let spendUsd = 0; // that amount at the last read (dollars)
   const sources = new Map(); // "FireCards" | "FirePsa" -> randomness source last seen
   const proposals = new Set(); // randomness switches already posted
   let saleLogFrom; // the next block to read FireSale's WalletsSet / FeedsSet from (set at the first pass)
@@ -367,12 +378,26 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   // ------------------------------------------------------------------ liquidity
   /** LiquidityBurner.run() when its work is worth the gas (flushPlan: MIN_FLUSH_USD, at most once per FLUSH_EVERY_MIN,
    *  at once when large, small work once it has waited). Work a run left behind (the price guards, the pool's price
-   *  off, a missing price) goes on `waiting` for the alert. */
+   *  off, a missing price) goes on `waiting` for the alert. ETH + USDG still to spend over SPEND_ALERT_USD ($100) goes
+   *  on `waiting` too (`spendOver`), and alerts once it has stayed over for SPEND_ALERT_MIN: nothing caps what waits
+   *  to be spent, so it shouldn't pile up unnoticed. */
   async function liquidity(waiting) {
     const address = C.liquidity;
     if (!address) return;
     const key = "LiquidityBurner";
-    const held = () => read(address, liquidityAbi, "held");
+    const held = async () => {
+      const h = await read(address, liquidityAbi, "held");
+      const usd = Number(formatUnits(h[2], 18));
+      if (usd > (cfg.spendAlertUsd ?? 100)) { if (spendOverSince === undefined) spendOverSince = Date.now(); }
+      else spendOverSince = undefined;
+      spendUsd = usd;
+      return h;
+    };
+    try { return await liquidityRun(waiting, address, key, held); }
+    finally { if (spendOverSince !== undefined) waiting.push({ key: "spend", name: key, work: spendUsd, since: spendOverSince, spendOver: true }); }
+  }
+
+  async function liquidityRun(waiting, address, key, held) {
     const work = liquidityWork(await held());
     if (work === 0) { waitingSince.delete(key); stuckSince.delete(key); return; }
     if (!waitingSince.has(key)) waitingSince.set(key, Date.now());
@@ -453,7 +478,9 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
 
   // ------------------------------------------------------------------ feeds
   async function feeds(now) {
-    for (const [name, address] of [["PlankUsdTwap", C.plankTwap], ["PaperUsdTwap", C.paperTwap]]) {
+    // LiquidityBurner keeps its own 30-minute PAPER average (the PAPER/PLANK pool's): checkpointed like the feeds
+    for (const [name, address] of [["PlankUsdTwap", C.plankTwap], ["PaperUsdTwap", C.paperTwap], ["LiquidityBurner", C.liquidity]]) {
+      if (!address) continue;
       if (!(await read(address, twapAbi, "due", [], "pending"))) continue;
       if (backup) {
         // the backup only steps in when the main keeper is late rolling a window or adopting a candidate pool
@@ -492,6 +519,12 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
       const paperAge = ago(paperLast[1]);
       if (paperAge > cfg.paperStaleHours * 3600) alerts.push({ key: "feed:paper", text: `PAPER price stale: last checkpoint ${(paperAge / 3600).toFixed(1)} h ago (LiquidityBurner waits)` });
     }
+    if (C.liquidity) {
+      // LiquidityBurner's own PAPER average: runs wait while its window is over 2 h (a checkpoint, then 30 minutes)
+      const [, lbLast] = await read(C.liquidity, twapAbi, "last");
+      const lbAge = ago(lbLast);
+      if (lbAge > cfg.plankStaleMin * 60) alerts.push({ key: "feed:lbpaper", text: `LiquidityBurner's 30-minute PAPER average: last checkpoint ${min(lbAge)} ago (past 2 h its runs wait until 30 minutes after the next one): checkpoint LiquidityBurner now` });
+    }
     if (paperCand !== zeroAddress) {
       // a candidate pool is adopted by the first checkpoint MIN_WINDOW (20 h) after it was recorded
       const late = ago(paperSince) - Number(paperMin);
@@ -514,6 +547,11 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     // work waiting in LiquidityBurner
     for (const w of waiting) {
       const age = (Date.now() - w.since) / 60_000;
+      if (w.spendOver) {
+        const a = spendAlert(w, cfg, Date.now());
+        if (a) alerts.push(a);
+        continue;
+      }
       if (cfg.once || age >= cfg.waitingAlertMin) {
         const amt = `$${w.work.toFixed(2)} of work`;
         alerts.push({ key: `waiting:${w.key}`, text: w.notKeeper
@@ -655,7 +693,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     return { filled, sources: Object.fromEntries(sources) };
   }
 
-  return { tick, startup, sender, notifier, drand, jobs: { gradingsWaiting, liquidity, drops, behindAlert, saleSettings, watchSources } };
+  return { tick, startup, sender, notifier, drand, jobs: { gradingsWaiting, liquidity, drops, behindAlert, saleSettings, watchSources, feeds } };
 }
 
 const wallSec = (wall) => Number(wall());

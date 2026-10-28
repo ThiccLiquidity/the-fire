@@ -6,7 +6,8 @@
 //     FirePsa, FireGames) or a swap router, never "unlimited" (the site approves each call's own cap, approve.ts);
 //   - never more than MAX_ETH in one transaction;
 //   - a PAPER swap: Uniswap V2's router with the coins coming back to the buyer's own wallet, or KyberSwap's router
-//     checked the same way checkSwap checks it.
+//     checked the same way checkSwap checks it (and never without a minimum return);
+//   - FireSale.buyWithEthAll only with its PAPER purchase capped (maxPaperEth, at most the ETH sent).
 //
 // Everything else is refused before the wallet opens: transfers, "approve all" (setApprovalForAll), permits,
 // unknown contracts, ETH sent anywhere else. The site never asks for signatures (signMessage / signTypedData) at all,
@@ -66,6 +67,11 @@ export function checkCall(call: GuardCall, from: Address, dep: GuardDeployment):
   // 1. our own contracts: only the functions the site uses
   if (ours) {
     if (!(ALLOWED[ours] ?? []).includes(fn)) no(`${ours}.${fn} isn't something the site does`);
+    // ETH alone: the PAPER bought with it is capped (maxPaperEth), and never above the ETH sent
+    if (ours === "FireSale" && fn === "buyWithEthAll") {
+      const cap = args[3];
+      if (typeof cap !== "bigint" || cap < 0n || cap > value) no("the PAPER bought with ETH has no cap");
+    }
     return;
   }
   // 2. a coin: only a capped approve, for our contracts or a swap router
@@ -90,11 +96,13 @@ export function checkCall(call: GuardCall, from: Address, dep: GuardDeployment):
   }
   // 4. KyberSwap's router: a PAPER buy into the buyer's own wallet, fee only to the site's fee wallet
   if (eq(call.address, KYBER_ROUTER)) {
-    type Desc = { srcToken: string; dstToken: string; dstReceiver: string; feeReceivers: readonly string[]; amount: bigint };
+    type Desc = { srcToken: string; dstToken: string; dstReceiver: string; feeReceivers: readonly string[]; amount: bigint; minReturnAmount: bigint };
     if (!kyberFns.includes(fn)) no("a KyberSwap call we can't read");
     const d = (fn === "swapSimpleMode" ? args[1] : (args[0] as { desc?: Desc } | undefined)?.desc) as Desc | undefined;
     if (!d || typeof d.dstReceiver !== "string" || !Array.isArray(d.feeReceivers) || typeof d.amount !== "bigint") no("a KyberSwap call we can't read");
     const x = d!;
+    // a swap with no minimum return could be filled at any price
+    if (typeof x.minReturnAmount !== "bigint" || x.minReturnAmount <= 0n) no("the swap has no minimum return");
     if (!eq(x.dstToken, dep.inputs?.PAPER)) no("the swap doesn't buy PAPER");
     if (!eq(x.dstReceiver, from)) no("the coins would go to another wallet");
     if (x.feeReceivers.some((r) => !SWAP_FEE_WALLET || !eq(r, SWAP_FEE_WALLET))) no("it pays a fee to someone else");

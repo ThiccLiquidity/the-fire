@@ -11,10 +11,12 @@ contract LiqFeed {
     uint8 public immutable decimals;
     int256 public answer;
     uint256 public at;
+    uint256 public win = 30 minutes;
     constructor(uint8 d, int256 a) { decimals = d; answer = a; at = block.timestamp; }
     function set(int256 a) external { answer = a; at = block.timestamp; }
+    function setWindow(uint256 w) external { win = w; }
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) { return (1, answer, at, at, 1); }
-    function prev() external view returns (uint256, uint32) { return (0, uint32(at - 30 minutes)); }
+    function prev() external view returns (uint256, uint32) { return (0, uint32(at - win)); }
     function last() external view returns (uint256, uint32) { return (0, uint32(at)); }
 }
 
@@ -71,6 +73,15 @@ contract LiquidityBurnerTest is Test {
         lb.setRoutes(LiquidityBurner.Pay.USDG, LiquidityBurner.Side.PLANK, _r3(address(usdg), address(weth), address(plank)));
         lb.setRoutes(LiquidityBurner.Pay.PLANK, LiquidityBurner.Side.PAPER, _r2(address(plank), address(paper)));
         vm.stopPrank();
+        // the short PAPER average needs MIN_WINDOW of the pool's own prices
+        vm.warp(block.timestamp + 31 minutes);
+        _refreshFeeds();
+    }
+
+    function _refreshFeeds() internal {
+        ethFeed.set(ethFeed.answer());
+        plankFeed.set(plankFeed.answer());
+        paperFeed.set(paperFeed.answer());
     }
 
     // ---------------------------------------------------------------- helpers
@@ -299,6 +310,7 @@ contract LiquidityBurnerTest is Test {
             else if (kind == 2) _ethIn(usd);
             else _usdgIn(usd);
             if (i % 3 == 2) {
+                vm.warp(block.timestamp + 7 minutes); // runs come minutes apart: the short average moves on
                 _followMarket();
                 _run();
                 (uint256 vp, uint256 vk, uint256 vs) = _sides();
@@ -308,6 +320,165 @@ contract LiquidityBurnerTest is Test {
                 assertEq(pp.balanceOf(address(lb)), 0, "kept pool tokens");
             }
         }
+    }
+
+    // ---------------------------------------------------------------- the short PAPER average
+
+    /// The run's PAPER price is the PAPER/PLANK pool's own 30-minute average times PLANK, not the 20 h PaperUsdTwap.
+    function test_shortAverageIsThePoolsPrice() public view {
+        (uint256 p, uint256 k) = lb.prices();
+        assertTrue(_near(p, P, 1), "PAPER: the pool's average x PLANK");
+        assertEq(k, K);
+    }
+
+    /// checkpoint() moves the window on only once it is MIN_WINDOW old; calling often can't shorten it.
+    function test_checkpointRollsOnlyWhenDue() public {
+        assertTrue(lb.due(), "30 minutes since deploy");
+        lb.checkpoint();
+        (, uint32 lastTs) = lb.last();
+        (, uint32 prevTs) = lb.prev();
+        assertEq(lastTs, block.timestamp);
+        assertEq(lastTs - prevTs, 31 minutes);
+        assertFalse(lb.due());
+        vm.warp(block.timestamp + 10 minutes);
+        lb.checkpoint(); // too early: nothing
+        (, uint32 prevTs2) = lb.prev();
+        assertEq(prevTs2, prevTs, "an early checkpoint changes nothing");
+        (uint256 p,) = lb.prices();
+        assertGt(p, 0, "the average still spans at least 30 minutes (from prev)");
+        vm.warp(block.timestamp + 20 minutes);
+        assertTrue(lb.due());
+    }
+
+    /// The audit's proof of concept: PaperUsdTwap's 20 h average still says $0.10 after PAPER fell to $0.08. An
+    /// attacker pushes PAPER up on the WETH/PAPER pool just before a run, hoping the run buys there (95% of $0.10
+    /// let it pay up to ~$0.105), then sells back. Now the run prices PAPER at the pool's 30-minute average ($0.08): it
+    /// refuses to buy at the pushed price and the attacker's round trip only loses the pool fees.
+    function test_poc_staleLongAverageNoLongerPaysAnAttacker() public {
+        paperFeed.set(int256(0.10e18)); // the stale 20 h average
+        _paperIn(60e18);
+        _ethIn(1_000e18);
+        address attacker = address(0xBAD);
+        vm.deal(attacker, 500 ether);
+        vm.startPrank(attacker);
+        weth.deposit{value: 500 ether}();
+        IERC20(address(weth)).approve(address(router), type(uint256).max);
+        IERC20(address(paper)).approve(address(router), type(uint256).max);
+        uint256 wethIn = 0.43 ether;
+        uint256[] memory a = router.swapExactTokensForTokens(wethIn, 0, _r2(address(weth), address(paper))[0], attacker, block.timestamp);
+        vm.stopPrank();
+        address wp = factory.getPair(address(weth), address(paper));
+        uint256 wethInPool = weth.balanceOf(wp);
+        _run();
+        assertGt(lb.lpBurned(), 0, "the run still pairs what it can");
+        assertEq(weth.balanceOf(wp), wethInPool, "no ETH spent on PAPER at the pushed price");
+        assertLt(address(lb).balance, _amt(1_000e18, E), "the ETH for PLANK was spent");
+        vm.prank(attacker);
+        uint256[] memory b = router.swapExactTokensForTokens(a[1], 0, _r2(address(paper), address(weth))[0], attacker, block.timestamp);
+        assertLt(b[1], wethIn, "the attacker loses (only the pool fees moved)");
+    }
+
+    /// The same stale 20 h average used to stall pairing (the pool sat 20% off it, outside the 3% band); now the pool
+    /// is held to its own average and the sides pair.
+    function test_staleLongAverageNoLongerStalls() public {
+        paperFeed.set(int256(0.10e18));
+        _paperIn(30e18);
+        _plankIn(30e18);
+        _run();
+        assertGt(lb.lpBurned(), 0, "paired");
+        assertEq(lb.paperBurned() + lb.plankBurned(), 0, "nothing burned outright");
+    }
+
+    /// A pushed PAPER/PLANK pool held for a couple of minutes barely moves a 30-minute average: still no liquidity.
+    function test_pushHeldTwoMinutesStillRefused() public {
+        _paperIn(30e18);
+        _plankIn(30e18);
+        paper.mint(address(this), _amt(2_000e18, P));
+        router.swapExactTokensForTokens(_amt(2_000e18, P), 0, _r2(address(paper), address(plank))[0], address(this), block.timestamp);
+        vm.warp(block.timestamp + 2 minutes);
+        _refreshFeeds();
+        _run();
+        assertEq(lb.lpBurned(), 0, "no liquidity into a pushed pool");
+    }
+
+    /// A real move in the pool is followed within about an hour (two windows), while PaperUsdTwap still says the old price.
+    function test_followsARealMoveWithinTheHour() public {
+        paper.mint(address(this), _amt(2_000e18, P));
+        router.swapExactTokensForTokens(_amt(2_000e18, P), 0, _r2(address(paper), address(plank))[0], address(this), block.timestamp);
+        _paperIn(30e18);
+        _plankIn(30e18);
+        vm.warp(block.timestamp + 35 minutes);
+        _refreshFeeds();
+        _run();
+        assertEq(lb.lpBurned(), 0, "the average still mixes in the old price");
+        vm.warp(block.timestamp + 31 minutes);
+        _refreshFeeds();
+        _run();
+        assertGt(lb.lpBurned(), 0, "a window wholly at the new price: paired");
+        (uint256 p,) = lb.prices();
+        assertLt(p, P * 93 / 100, "PAPER priced at the pool's new level, about 10% down");
+    }
+
+    /// No short average (no checkpoint for over 2 h, or just deployed): runs wait and held() shows no sides, until
+    /// a window of 30 minutes to 2 hours is back.
+    function test_noShortAverageWaits() public {
+        _paperIn(20e18);
+        _plankIn(20e18);
+        vm.warp(block.timestamp + 3 hours);
+        _refreshFeeds();
+        (uint256 vp, uint256 vk,) = lb.held();
+        assertEq(vp + vk, 0, "held() reads no sides: a run would wait");
+        vm.prank(keeper);
+        assertFalse(lb.run(), "the window is over 2 h: waits");
+        assertEq(lb.lpBurned(), 0);
+        vm.warp(block.timestamp + 31 minutes); // the run checkpointed: a short window again
+        _refreshFeeds();
+        _run();
+        assertGt(lb.lpBurned(), 0);
+
+        LiquidityBurner fresh = new LiquidityBurner(owner, address(paper), address(plank), address(usdg), 6, address(weth), address(router), address(pp));
+        vm.prank(owner);
+        fresh.setFeeds(address(ethFeed), address(plankFeed), address(paperFeed));
+        (uint256 p,) = fresh.prices();
+        assertEq(p, 0, "just deployed: no PAPER price for 30 minutes");
+    }
+
+    /// PaperUsdTwap is a sanity bound: a short price more than 2x away from it either way waits.
+    function test_driftFromTheLongAverageWaits() public {
+        _paperIn(20e18);
+        _plankIn(20e18);
+        paperFeed.set(int256(P * 21 / 10));
+        (uint256 vp,,) = lb.held();
+        assertEq(vp, 0);
+        _run();
+        assertEq(lb.lpBurned(), 0, "over 2x apart: waits");
+        paperFeed.set(int256(P * 9 / 20));
+        _run();
+        assertEq(lb.lpBurned(), 0, "under half: waits");
+        paperFeed.set(int256(P * 19 / 10));
+        _run();
+        assertGt(lb.lpBurned(), 0, "within 2x: pairs");
+    }
+
+    /// held() treats a too-long PLANK or PAPER feed window as run() does: no price, no sides.
+    function test_heldMatchesRunOnLongWindows() public {
+        _paperIn(20e18);
+        _plankIn(20e18);
+        plankFeed.setWindow(3 hours);
+        (uint256 vp, uint256 vk,) = lb.held();
+        assertEq(vp + vk, 0, "PLANK window over 2 h");
+        vm.prank(keeper);
+        assertFalse(lb.run());
+        plankFeed.setWindow(30 minutes);
+        paperFeed.setWindow(31 hours);
+        (vp, vk,) = lb.held();
+        assertEq(vp + vk, 0, "PaperUsdTwap window over 30 h");
+        vm.prank(keeper);
+        assertFalse(lb.run());
+        paperFeed.setWindow(20 hours);
+        (vp, vk,) = lb.held();
+        assertGt(vp, 0);
+        assertGt(vk, 0);
     }
 
     receive() external payable {}

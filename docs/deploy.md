@@ -136,7 +136,7 @@ required). A GitHub Actions workflow can run a third, best-effort pass every 5 m
 Start them right after step 1 (the PLANK feed needs its checkpoints). Every call is permissionless except
 `LiquidityBurner.run()`, which only the keeper wallets may call (`KEEPERS` in step 3, or `LiquidityBurner.setKeeper`
 from the owner):
-- `PlankUsdTwap.checkpoint()` every 30 minutes; `PaperUsdTwap.checkpoint()` when `due()`
+- `PlankUsdTwap.checkpoint()` every 30 minutes; `PaperUsdTwap.checkpoint()` and `LiquidityBurner.checkpoint()` (its short PAPER average) when `due()`
 - drand numbers to the router (`OpenDrandRouter.fulfillMany`; `adapter.settle` if a callback didn't land)
 - `FireCards.process(fire, maxCards)` and `FirePsa.finish(index, ids)` (ids from the grading's `Protected` event)
 - `LiquidityBurner.run()` when it holds work worth the gas ($1 by default, at most every 15 min, at once from $25;

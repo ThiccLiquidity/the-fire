@@ -28,7 +28,7 @@ liquidity contract. Revenue share and the liquidity share stay per-group setting
 
 ## How it works
 
-Two sides, each valued in dollars at the 30-minute price averages (PaperUsdTwap, PlankUsdTwap, Chainlink ETH/USD):
+Two sides, each valued in dollars at short price averages (see **Prices** below):
 
 1. **PAPER arrives as PAPER** (packs, suggestions, games): it joins the PAPER side.
 2. **Spendable money arrives** (ETH, USDG, PLANK: pack shares, the Extra-pack rise, case and grading fees):
@@ -40,8 +40,24 @@ Two sides, each valued in dollars at the 30-minute price averages (PaperUsdTwap,
    PAPER/PLANK pool and the pool tokens go to the dead address. The rest waits for the other side to come in
    (each side arrives in its own transactions; nothing waits for both at once).
 4. **The limit:** a side over **$100** burns its excess outright.
-5. **Price guard:** every buy and every add is checked against the price averages (as the burners do today). If the
-   pool's price is off, nothing is bought or added; the coins wait (still never over $100 a side).
+5. **Price guard:** every buy must get at least 95% of what the averages say it is worth, and liquidity is added only
+   while the pool's price is within 3% of its own average. If the price is off, nothing is bought or added; the
+   coins wait (still never over $100 a side).
+
+### Prices (audit fix, Oct 28 2026)
+
+- **PLANK:** PlankUsdTwap, the PLANK/WETH pool's 30-minute average × Chainlink ETH/USD. **ETH:** Chainlink ETH/USD.
+- **PAPER:** a 30-minute average the contract keeps itself, of the PAPER/PLANK pool it adds to (Uniswap V2's
+  cumulative prices, like PlankUsdTwap), times the PLANK price. The average runs from a checkpoint 30 minutes to
+  2 hours back up to now. Anyone can call `checkpoint()`; the keepers do whenever `due()`, and every run does too.
+- **PaperUsdTwap** (FireSale's PAPER price) averages 20 hours or more: far too slow to guard a trade (a stale
+  average let an attacker push PAPER before a run and sell into it, or made runs stall while the pool sat off the
+  average). It stays only as a sanity bound: a run waits while the short PAPER price is more than 2× away from it,
+  either way, or while it is missing.
+- No short price (the first 30 minutes after deploy, or no checkpoint for over 2 hours): runs wait, and `held()`
+  shows no sides, until a checkpoint is 30 minutes old again.
+- A price pushed in the same block as a run doesn't reach the average at all; holding it there means holding the
+  pool off its price against arbitrage, and two minutes of a 10% push moves a 30-minute average under 1%.
 
 Example: the contract holds $20 of PAPER from gradings. Two $5 PLANK payments come in: $10 of PAPER pairs with the
 $10 of PLANK and burns as liquidity, $10 of PAPER keeps waiting.
