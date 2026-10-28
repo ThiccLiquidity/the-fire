@@ -76,6 +76,24 @@ test('a notch shot lands on the crosshair (the arc comes back onto the aim ray a
   });
 });
 
+test('a dead-centre notch shot at a moving Plank hits him (he stops while it flies)', { skip: SKIP, timeout: 60000 }, async () => {
+  await withGame(async (page) => {
+    for (const [id, x] of [['belt', 300], ['belt', 700], ['arch', 470], ['catwalk', 400]]) {
+      const r = await page.evaluate(async ([id, x]) => {
+        const g = window.__g, z = (await window.SpitWad.load()).spots.find((s) => s.id === id).z;
+        g.pose(id, 1, x, true); const x0 = g.state().apps[0].rect.x;
+        await new Promise((ok) => setTimeout(ok, 250));
+        const a = g.state().apps[0], moved = a.rect.x - x0, hits = g.state().hits;
+        g.fireAt(a.rect.x + a.rect.w / 2, a.rect.y + a.rect.h * 0.35, 0.3 + (z - 48) / 1440);
+        await new Promise((ok) => setTimeout(ok, 1000));
+        return { moved, hit: g.state().hits - hits };
+      }, [id, x]);
+      assert.ok(Math.abs(r.moved) > 2, `${id}: he was moving (${r.moved.toFixed(1)} px)`);
+      assert.equal(r.hit, 1, `${id} from ${x}: the dead-centre shot hits`);
+    }
+  });
+});
+
 test('the shot goes where the swaying crosshair is, not where it was before the sway', { skip: SKIP, timeout: 60000 }, async () => {
   await withGame(async (page) => {
     await page.evaluate(() => window.__g.pose('belt', 1));

@@ -21,6 +21,7 @@
   const WING = 0.3;                                    // the side wings: the plate's outer 30% mirrored past each edge
   const BACK = 560;                                    // the far wall's depth (inches)
   const ROUND = 60;
+  const BAR = 38;                                      // the top bar: the plate is shown below it
   // the round's goal: points are 6 (near) to 26 (far and small), so no single far hit makes much of it
   const goalFor = (r) => (r <= 3 ? [60, 70, 85][r - 1] : 5 * Math.round((40 + 12 * r + 0.6 * r * r) / 5));
   // how deep the dealer may go: near spots in round 1, the middle distance in round 2, everything after
@@ -88,29 +89,42 @@
     function size() {
       const r = host.getBoundingClientRect(); dpr = Math.min(2, devicePixelRatio || 1); W = Math.max(200, r.width); H = Math.max(200, r.height);
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      k = Math.min(W / PW, H / VIEW_H); ox = (W - PW * k) / 2; oy = 0; // fit the shown part; wide screens get side wings
+      k = Math.min(W / PW, (H - BAR) / VIEW_H); ox = (W - PW * k) / 2; oy = BAR; // fit the shown part under the top bar; wide screens get side wings
       makeWings();
     }
-    /** the side wings, blurred and dark, made once per size (a blur filter every frame was most of the frame time) */
+    /** the side wings, softly blurred and a little darker, made once per size (a blur filter every frame was most of
+     *  the frame time). They mirror the plate at its edge and darken only away from it, so there is no hard seam and
+     *  a Plank at the edge stays easy to see in the scope. */
     function makeWings() {
       wings = null; if (!scene?.plate) return;
-      const s = k * dpr, ww = Math.max(1, Math.ceil(PW * WING * s)), hh = Math.max(1, Math.ceil(PH * s));
-      const mk = (x0) => {
-        const c = document.createElement('canvas'); c.width = ww; c.height = hh; const x = c.getContext('2d');
-        x.fillStyle = '#120c08'; x.fillRect(0, 0, ww, hh); x.globalAlpha = 0.5; x.filter = `blur(${10 * dpr}px) brightness(0.45)`;
-        x.translate(ww, 0); x.scale(-1, 1); x.drawImage(scene.plate, x0, 0, PW * WING, PH, 0, 0, ww, hh); return c;
+      const s = k * dpr, M = 20, wpl = PW * WING + M, cw = Math.max(1, Math.ceil(wpl * s)), hh = Math.max(1, Math.ceil(PH * s));
+      // each wing runs M plate px over the plate's own edge (that part unmirrored, fading out), so the blur has no edge
+      // at the seam and the soft wing melts into the sharp plate
+      const mk = (left) => {
+        const t = document.createElement('canvas'); t.width = cw; t.height = hh; const y = t.getContext('2d'); y.scale(s, s);
+        if (left) { y.translate(PW * WING, 0); y.drawImage(scene.plate, 0, 0, M, PH, 0, 0, M, PH); y.scale(-1, 1); y.drawImage(scene.plate, 0, 0, PW * WING, PH, 0, 0, PW * WING, PH); }
+        else { y.translate(M - PW, 0); y.drawImage(scene.plate, PW - M, 0, M, PH, PW - M, 0, M, PH); y.translate(2 * PW, 0); y.scale(-1, 1); y.drawImage(scene.plate, PW * (1 - WING), 0, PW * WING, PH, PW * (1 - WING), 0, PW * WING, PH); }
+        const c = document.createElement('canvas'); c.width = cw; c.height = hh; const x = c.getContext('2d');
+        x.fillStyle = '#120c08'; x.fillRect(0, 0, cw, hh); x.filter = `blur(${4 * dpr}px) brightness(0.8)`; x.drawImage(t, 0, 0); x.filter = 'none';
+        const seam = (left ? PW * WING : M) * s, out = left ? 0 : cw, gr = x.createLinearGradient(seam, 0, out, 0); // darker only away from the plate
+        gr.addColorStop(0, 'rgba(18,12,8,0)'); gr.addColorStop(0.35, 'rgba(18,12,8,.12)'); gr.addColorStop(1, 'rgba(18,12,8,.6)');
+        x.fillStyle = gr; x.fillRect(0, 0, cw, hh);
+        const fe = x.createLinearGradient(seam, 0, left ? cw : 0, 0); fe.addColorStop(0, 'rgba(0,0,0,0)'); fe.addColorStop(1, 'rgba(0,0,0,1)');
+        x.globalCompositeOperation = 'destination-out'; x.fillStyle = fe; if (left) x.fillRect(seam, 0, cw - seam, hh); else x.fillRect(0, 0, seam, hh);
+        c.x0 = left ? -PW * WING : PW - M; c.wpl = wpl; return c;
       };
-      wings = { L: mk(0), R: mk(PW * (1 - WING)) };
+      wings = { L: mk(true), R: mk(false) };
     }
     addEventListener('resize', size); size();
     // the scope: while you hold, the view zooms in on what you aim at (ZMAX). Plate point P sits at screen point S;
     // dragging moves P (the world pans under a still crosshair), so a thumb never covers it. Once the scope is on, S
     // eases toward the middle of the view, so a Plank at the edge comes to the middle (the view may run into the wings).
-    const ZMAX = 2.2, SCOPE_Z = 320; // the scope zoom, and how far (inches) a Plank must be for it
+    const ZMAX = 2.2, ZFAR = 3, FAR_Z = 500, SCOPE_Z = 320; // the scope zoom (more for the back wall), and how far (inches) a Plank must be for it
+    let zTop = ZMAX;
     const near = (a, q) => { const r = rectOf(a); return Math.hypot(q.x - (r.x + r.w / 2), q.y - (r.y + r.h / 2)) < 70; };
     let zoom = 1, K = k, vx = 0, vy = 0, P = { x: PW / 2, y: 600 }, S = { x: 0, y: 0 };
     const baseX = (px) => ox + px * k, baseY = (py) => oy + py * k;
-    const zf = () => (zoom - 1) / (ZMAX - 1);
+    const zf = () => (zoom - 1) / (zTop - 1);
     function view() {
       K = k * zoom; const f = zf(); vx = baseX(P.x) + (S.x - baseX(P.x)) * f; vy = baseY(P.y) + (S.y - baseY(P.y)) * f;
       if (zoom > 1) { // never past the wings' outer edges, or the plate's top and bottom
@@ -218,10 +232,11 @@
       const p = pos(e), touch = e.pointerType !== 'mouse';
       if (coarse && inBox(p, thumbBtn())) { setLeftThumb(!leftThumb); e.preventDefault(); return; } // which thumb you play with
       if (phase === 'over' || phase === 'intro') { reset(); return; }
-      // the crosshair sits 55 px off the thumb (away from the hand), less near the screen's edge on that side so the
-      // edge stays in reach
+      // the crosshair sits 55 px off the thumb (away from the hand) and above it (95 px, 60 on a short landscape
+      // screen), less near the screen's edge on that side and near the bottom, so the edges stay in reach
       const side = leftThumb ? 1 : -1, edge = leftThumb ? p.x : W - p.x, off = 55 * Math.min(1, Math.max(0.15, edge / 60));
-      const q = { x: p.x + (touch ? side * off : 0), y: p.y - (touch ? 95 : 0) };
+      const up = H < 500 ? 60 : 95, offY = up * Math.min(1, Math.max(0.15, (H - p.y) / (1.5 * up)));
+      const q = { x: p.x + (touch ? side * off : 0), y: p.y - (touch ? offY : 0) };
       if (zoom <= 1.02) { // a fresh aim: the point under the crosshair
         P = clampP({ x: (q.x - ox) / k, y: (q.y - oy) / k }); S = { x: baseX(P.x), y: baseY(P.y) };
       } else { // still zoomed from the last shot: aim at what's under the crosshair now, and keep the view where it is
@@ -265,7 +280,9 @@
 
     function fire(held, a) {
       const p = breath(held), Z = Math.max(12, 48 + SPAN * (p - 0.3)), v = launch(a.x, a.y, Z);
-      wads.push({ x: 0, y: CAM_Y, z: 0, ...v, t: 0, done: false, trail: [], Z, target: nearestPlank(a, 60) });
+      const rel = new Map(); // the moving Planks near the aim, and where they were at the release
+      for (const ap of apps) { if (!moving(ap.s) || ap.hit) continue; const r = rectOf(ap); if (Math.hypot(r.x + r.w / 2 - a.x, r.y + r.h / 2 - a.y) - Math.max(r.w, r.h) / 2 < 60) rel.set(ap, ap.x); }
+      wads.push({ x: 0, y: CAM_Y, z: 0, ...v, t: 0, done: false, trail: [], Z, target: nearestPlank(a, 60), rel });
       lastShot = { aim: { ...a }, P: { ...P }, held, Z };
       shots++; kick = now; sound('puff'); buzz(10);
       for (let i = 0; i < 7; i++) { const an = -Math.PI / 2 + (rnd() - 0.5) * 1.4, s = 120 + rnd() * 180; drops.push({ x: tip.x, y: tip.y, vx: Math.cos(an) * s + tip.dx * 200, vy: Math.sin(an) * s, t: now, r: 1 + rnd() * 1.8 }); }
@@ -307,7 +324,7 @@
             if (!(z0 < c.z && w.z >= c.z)) continue;
             const p = proj(w.x, w.y, w.z);
             if (c.kind === 'plank' && c.a.hit) continue;
-            if (!hitTest(c, p)) continue;
+            if (!hitTest(c, p) && !(c.kind === 'plank' && w.rel.has(c.a) && inPlank({ ...c.a, x: w.rel.get(c.a) }, p, 2))) continue;
             w.done = true;
             if (c.kind === 'plank') hitPlank(c.a, p, w);
             else if (c.kind === 'critter') { c.c.gag = now + 1.2; pop(p.x, p.y - 10, c.c.kind === 'cat' ? 'MREOW!' : 'eek!', '#9fd3ff'); sound('gag'); addSplat(p, c.z - 0.01); missed(w); }
@@ -357,22 +374,24 @@
         const t = clampP({ x: press.P0.x + (press.last.x - press.x0) * g2 / k, y: press.P0.y + (press.last.y - press.y0) * g2 / k }), q = 1 - Math.exp(-30 * dt);
         P = { x: P.x + (t.x - P.x) * q, y: P.y + (t.y - P.y) * q };
         // the scope: only for long shots, once the crosshair rests near a far Plank (it stays on until you let go)
-        if (!press.scope && now - press.t0 > 0.12 && apps.some((a) => !a.hit && a.rise > 0.3 && a.s.z >= SCOPE_Z && near(a, P))) {
-          press.scope = true; S = { x: sx(P.x), y: sy(P.y) }; press.P0 = { ...P }; press.x0 = press.last.x; press.y0 = press.last.y;
+        const far = !press.scope && now - press.t0 > 0.12 && apps.find((a) => !a.hit && a.rise > 0.3 && a.s.z >= SCOPE_Z && near(a, P));
+        if (far) {
+          press.scope = true; if (zoom <= 1.02) zTop = far.s.z >= FAR_Z ? ZFAR : ZMAX; S = { x: sx(P.x), y: sy(P.y) }; press.P0 = { ...P }; press.x0 = press.last.x; press.y0 = press.last.y;
         }
         if (press.scope) { const e = 1 - Math.exp(-3 * dt); S = { x: S.x + (W / 2 - S.x) * e, y: S.y + (H * 0.46 - S.y) * e }; } // bring it to the middle
       }
       const flying = wads.some((w) => !w.done);
-      const zt = press?.scope ? ZMAX : flying ? zoom : 1; // stay in while a wad flies, then ease out
+      const zt = press?.scope ? zTop : flying ? zoom : 1; // stay in while a wad flies, then ease out
       zoom += (zt - zoom) * (1 - Math.exp(-(zt > zoom ? 10 : 5) * dt)); if (Math.abs(zoom - 1) < 0.002) zoom = 1;
       stepWads(dt);
+      if (phase === 'pose') for (const a of apps) if (a.posedMoving) movePlank(a, dt);
       if (phase !== 'play') return;
       clock = Math.max(0, clock - dt);
       if (clock <= 0) return endRound();
       if (now >= nextAt) deal();
       for (const a of apps) {
         const age = now - a.t0, s = a.s;
-        if (moving(s) && !a.hit) { a.x += a.dir * (s.look === 'ride' ? 90 : 60) * (scene.cam.F / s.z / 6.5) * dt; if (a.x < s.x0 || a.x > s.x1) { a.dir *= -1; a.x = Math.min(s.x1, Math.max(s.x0, a.x)); } }
+        movePlank(a, dt);
         a.rise = a.hit ? Math.max(0, a.rise - dt / 0.45) : age < 0.15 ? age / 0.15 : age < 0.15 + a.win ? 1 : Math.max(0, 1 - (age - 0.15 - a.win) / 0.2);
         if (a.hit && now - a.hitAt > 0.3) a.face = 'dizzy';
         if (!a.hit && !a.taunted && age > 0.15 + a.win) {
@@ -392,6 +411,14 @@
         if (c.live) { c.x += c.vx * dt * (c.gag > now ? 3 : 1); if ((c.x - c.x1) * Math.sign(c.vx) > 0) c.live = false; }
       }
     }
+    /** a riding or walking Plank moves along, but stops dead (and ducks) while a wad aimed at him is on its way: he
+     *  moved further during a flight than half his width, so a dead-centre shot used to miss him */
+    function movePlank(a, dt) {
+      const s = a.s; if (!moving(s) || a.hit) return;
+      if (wads.some((w) => !w.done && w.z < s.z && w.rel.has(a))) return;
+      a.x += a.dir * (s.look === 'ride' ? 80 : 60) * (scene.cam.F / s.z / 6.5) * dt;
+      if (a.x < s.x0 || a.x > s.x1) { a.dir *= -1; a.x = Math.min(s.x1, Math.max(s.x0, a.x)); }
+    }
     function endRound() {
       apps = []; wads = []; press = null;
       if (score >= goal()) { phase = 'between'; banner = { t: now, text: 'GOAL MET!', sub: `${score} points · round ${round + 1} next`, stay: true }; sound('win'); emit('round-won', { round, score }); setTimeout(() => alive && phase === 'between' && startRound(round + 1), 2200); }
@@ -401,11 +428,10 @@
     // ---------- drawing
     function drawPlate() {
       g.fillStyle = '#120c08'; g.fillRect(0, 0, W, H);
-      if (wings && (sx(0) > 0.5 || sx(PW) < W - 0.5)) { // the side wings (made once per size), panned and zoomed with the plate
-        g.drawImage(wings.L, sx(-WING * PW), sy(0), PW * WING * K, PH * K);
-        g.drawImage(wings.R, sx(PW), sy(0), PW * WING * K, PH * K);
-      }
       g.drawImage(scene.plate, 0, 0, PW, PH, sx(0), sy(0), PW * K, PH * K);
+      if (wings && (sx(0) > 0.5 || sx(PW) < W - 0.5)) { // the side wings (made once per size), panned and zoomed with the plate
+        for (const w of [wings.L, wings.R]) g.drawImage(w, sx(w.x0), sy(0), w.wpl * K, PH * K);
+      }
       // the lamp breathes a little
       const f = 0.06 + 0.04 * Math.sin(now * 7) * Math.sin(now * 2.3), gl = g.createRadialGradient(sx(190), sy(80), 2, sx(190), sy(80), 260 * K);
       gl.addColorStop(0, `rgba(255,190,110,${f})`); gl.addColorStop(1, 'rgba(255,190,110,0)'); g.fillStyle = gl; g.fillRect(sx(0), sy(0), PW * K, 400 * K);
@@ -428,11 +454,12 @@
         g.fillStyle = '#ffe680'; for (let i = 0; i < 3; i++) { const an = now * 8 + i * 2.1; g.beginPath(); g.arc(sx(r.x + r.w / 2) + Math.cos(an) * r.w * K * 0.55, sy(r.y) - 4 + Math.sin(an) * 4, Math.max(1.5, 3 * K), 0, 7); g.fill(); }
       }
     }
-    function drawTag(a) { // the points tag and his time left (kept clear of the top bar)
+    function drawTag(a, ring) { // the points tag and his time left (kept clear of the top bar and the breath ring)
       if (a.hit || a.taunted || a.rise <= 0.6) return;
       const r = rectOf(a), left = Math.max(0, 1 - (now - a.t0) / (a.win + 0.15));
       let tx = sx(r.x + r.w / 2), ty = sy(r.y) - 8;
-      if (ty < 50) { tx = sx(r.x + r.w) + 22; ty = Math.max(50, sy(r.y) + 14); } // no room above him: beside him instead
+      if (ring && Math.abs(tx - ring.x) < ring.R + 20 && ty > ring.y - ring.R - 22 && ty - 15 < ring.y + ring.R) ty = ring.y - ring.R - 8; // over the breath ring, not under it
+      if (ty < BAR + 16) { tx = sx(r.x + r.w) + 22; ty = Math.max(BAR + 16, sy(r.y) + 14); } // no room above him: beside him instead
       tx = Math.min(W - 20, Math.max(20, tx));
       g.fillStyle = 'rgba(18,12,8,.82)'; g.fillRect(tx - 17, ty - 15, 34, 15); g.fillStyle = '#ffd27a'; g.font = '800 10px system-ui'; g.textAlign = 'center'; g.fillText(`+${pointsOf(a.s)}`, tx, ty - 4);
       g.fillStyle = left > 0.35 ? '#6fcf7a' : '#ff6b5a'; g.fillRect(tx - 17, ty, 34 * left, 2.5);
@@ -456,22 +483,22 @@
       }
       g.restore();
     }
-    /** The straw, first person: a striped paper straw from just under your mouth, about 7 in long, seen in true
-     *  perspective (a cylinder: its width falls off only with distance). It points more than half way toward the
-     *  crosshair, kicks back a touch when you spit, and fades while you aim low (so it never hides the target).
+    /** The straw, first person: a striped paper straw from just under your mouth, about 5.5 in long (3.8 on a phone),
+     *  seen in true perspective (a cylinder: its width falls off only with distance). It points most of the way toward
+     *  the crosshair, kicks back a touch when you spit, and fades while you aim low (so it never hides the target).
      *  Returns its far end (where the wad comes out). */
     const STRAW = { len: 7.2, rad: 0.105, mouth: [0.25, -2.6, 2.4], stripes: 3, band: 0.2, pitch: 1.7 };
     function drawStraw(a, kick) {
-      const f = F() * k, c0x = baseX(PW / 2), c0y = baseY(PH / 2);
+      const f = F() * k, c0x = baseX(PW / 2), c0y = baseY(PH / 2), len = W < 600 ? 3.8 : 5.5;
       const M = [STRAW.mouth[0], STRAW.mouth[1], STRAW.mouth[2] - 0.6 * kick];
-      // the way it points: from straight ahead (a little up) 65% of the way toward the crosshair's ray, 40 in out
+      // the way it points: from straight ahead (a little up) 85% of the way toward the crosshair's ray, 40 in out
       let T = [(a.x - c0x) / f, -(a.y - c0y) / f, 1]; const tl = Math.hypot(...T); T = T.map((v) => v / tl * 40);
       const toT = [T[0] - M[0], T[1] - M[1], T[2] - M[2]], tn = Math.hypot(...toT), fw = [0, 0.04, 1];
-      let D = fw.map((v, i) => v + (toT[i] / tn - v) * 0.65); D[1] = Math.max(0.06, D[1]); // never down out of view
+      let D = fw.map((v, i) => v + (toT[i] / tn - v) * 0.85); D[1] = Math.max(0.06, D[1]); // never down out of view
       const dl = Math.hypot(...D); D = D.map((v) => v / dl);
       const N = 48, pts = [];
       for (let i = 0; i <= N; i++) {
-        const u = 0.12 + 0.88 * i / N, L = u * STRAW.len, x = M[0] + D[0] * L, y = M[1] + D[1] * L, z = M[2] + D[2] * L, s = f / z;
+        const u = 0.12 + 0.88 * i / N, L = u * len, x = M[0] + D[0] * L, y = M[1] + D[1] * L, z = M[2] + D[2] * L, s = f / z;
         pts.push({ x: c0x + x * s, y: c0y - y * s, r: STRAW.rad * s, L });
       }
       const p0 = pts[0], p1 = pts[N], ax = p1.x - p0.x, ay = p1.y - p0.y, al = Math.hypot(ax, ay) || 1, nx = -ay / al, ny = ax / al; // across the straw
@@ -552,6 +579,11 @@
       else splatShape(g, sx(s.x), sy(s.y), s.r * K, s.t, Math.min(1, age / 0.8));
       g.globalAlpha = 1;
     }
+    /** the reticle's size (screen px): an open middle wider than the Plank nearest the aim, the breath ring outside it */
+    function reticle(ap, a) {
+      const nr = nearestPlank(ap), on = nearestPlank(ap, 30), r = on && rectOf(on), gap = Math.min(30, Math.max(7, r ? r.w * K * 0.5 + 4 : 7));
+      return { x: a.x, y: a.y, nr, gap, R: gap + 19 };
+    }
     function draw() {
       view(); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.translate(shake.x, shake.y);
       drawPlate();
@@ -568,9 +600,10 @@
       splats = splats.filter((s) => now - s.t < 2.5);
       for (const p of puffs) { const q = (now - p.t) / 2.6; g.fillStyle = `rgba(230,225,215,${0.22 * (1 - q)})`; g.beginPath(); g.arc(sx(p.x + q * 30), sy(p.y - q * 120), (p.r + q * 40) * K, 0, 7); g.fill(); }
       for (const p of sparks) { g.fillStyle = p.col; g.fillRect(sx(p.x) - 1, sy(p.y) - 1, 2, 2); }
-      for (const a of apps) drawTag(a);
+      const ap = aim(), a = { x: sx(ap.x), y: sy(ap.y) }, ring = press && reticle(ap, a);
+      for (const q of apps) drawTag(q, ring);
       // the straw (decoration), the puff and spit at its tip, then a wad tumbling out
-      const ap = aim(), a = { x: sx(ap.x), y: sy(ap.y) }, kk = Math.max(0, 1 - (now - kick) / 0.18);
+      const kk = Math.max(0, 1 - (now - kick) / 0.18);
       tip = drawStraw(a, kk);
       if (kk > 0) { g.fillStyle = `rgba(240,235,225,${0.45 * kk})`; g.beginPath(); g.arc(tip.x, tip.y, 6 + 14 * (1 - kk), 0, 7); g.fill(); }
       for (const d of drops) { const q = now - d.t; if (q > 0.35) continue; g.fillStyle = `rgba(215,235,245,${0.8 * (1 - q / 0.35)})`; g.beginPath(); g.arc(d.x + d.vx * q, d.y + d.vy * q + 300 * q * q, d.r, 0, 7); g.fill(); }
@@ -580,11 +613,14 @@
       pops = pops.filter((t) => now - t.t < 1);
       // the crosshair and the breath ring, with the notch for the nearest Plank
       if (press) {
-        const t = now - press.t0, p = breath(t), R = 28;
-        g.strokeStyle = 'rgba(255,240,210,.95)'; g.lineWidth = 2; g.beginPath(); g.arc(a.x, a.y, 9, 0, 7); for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { g.moveTo(a.x + dx * 6, a.y + dy * 6); g.lineTo(a.x + dx * 18, a.y + dy * 18); } g.stroke();
+        // ticks only, with an open middle wider than the Plank you aim at (so he is never under the reticle), a tiny dot
+        // at the exact aim, and the breath ring outside the ticks
+        const t = now - press.t0, p = breath(t), { nr, gap, R } = ring;
+        g.lineCap = 'round'; g.beginPath(); for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { g.moveTo(a.x + dx * gap, a.y + dy * gap); g.lineTo(a.x + dx * (gap + 9), a.y + dy * (gap + 9)); }
+        g.strokeStyle = 'rgba(0,0,0,.5)'; g.lineWidth = 4; g.stroke(); g.strokeStyle = 'rgba(255,240,210,.95)'; g.lineWidth = 2; g.stroke(); g.lineCap = 'butt';
+        g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(a.x, a.y, 1.9, 0, 7); g.fill(); g.fillStyle = '#fff6e0'; g.beginPath(); g.arc(a.x, a.y, 1.1, 0, 7); g.fill();
         const A0 = Math.PI * 0.75, A1 = A0 + Math.PI * 1.5, an2 = (v) => A0 + (A1 - A0) * v;
         g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(a.x, a.y, R, A0, A1); g.stroke();
-        const nr = nearestPlank(ap);
         if (nr) { const ps = pStar(nr.s.z); g.strokeStyle = 'rgba(111,207,122,.95)'; g.beginPath(); g.arc(a.x, a.y, R, an2(Math.max(0, ps - NOTCH)), an2(Math.min(1, ps + NOTCH))); g.stroke(); }
         g.lineWidth = 4; g.strokeStyle = '#ffb347'; g.beginPath(); g.arc(a.x, a.y, R, A0, an2(p)); g.stroke();
         const an = an2(p); g.fillStyle = '#fff6e0'; g.beginPath(); g.arc(a.x + Math.cos(an) * R, a.y + Math.sin(an) * R, 4, 0, 7); g.fill();
@@ -644,11 +680,12 @@
       /** tests: the state, and a shot fired from code at plate point (x, y) with breath p */
       state: () => ({ wad: wads[0] && { x: wads[0].x, y: wads[0].y, z: wads[0].z, t: wads[0].t, vz: wads[0].vz }, wads: wads.length, phase, round, clock, score, total, hits, shots, streak, best, zoom, P: { ...P }, lastShot, drawOrder, apps: apps.map((a) => ({ id: a.s.id, dir: a.dir, rise: a.rise, hit: a.hit, face: a.face, rect: rectOf(a), z: a.s.z })) }),
       start: () => { if (phase !== 'play') reset(); },
-      /** tests: Plank held still in one spot (fully out, or `rise` of the way), nothing else moving */
-      pose(id, rise = 1, x) {
+      /** tests: Plank held still in one spot (fully out, or `rise` of the way), nothing else moving (move: a riding or
+       *  walking Plank keeps moving, as in play) */
+      pose(id, rise = 1, x, move = false) {
         const sp = scene.spots.find((q) => q.id === id); if (!sp) return false;
         phase = 'pose'; critters.forEach((c) => { c.live = false; });
-        apps = [{ s: sp, t0: now, win: 1e9, hit: false, rise, x: x ?? sp.cx, dir: 1, face: 'idle', blinkAt: 1e9, splats: [] }]; return true;
+        apps = [{ s: sp, t0: now, win: 1e9, hit: false, rise, x: x ?? sp.cx, dir: 1, face: 'idle', blinkAt: 1e9, splats: [], posedMoving: move }]; return true;
       },
       /** tests: the critters out where they walk (t: 0..1 along the way) */
       critters(t = 0.5) { if (!critters.length) startRound(1); phase = 'pose'; apps = []; for (const c of critters) { c.live = true; c.x = c.x0 + (c.x1 - c.x0) * t; } return true; },

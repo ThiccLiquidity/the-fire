@@ -457,6 +457,23 @@ https://claude.ai/artifact/MQNgfGmWQYKVjd7dqgdoD1). The owner played both and ap
 - **Speed:** the blurred side wings are drawn once per resize, and Plank's shadow, haze and rim light are made once
   per face and spot instead of every frame. The desktop stage is 2:3 and as tall as the sheet allows.
 
+## Re-audit fixes (Oct 28, 2026)
+
+- **The hanging crate:** its cut-out is the crate body only (the chain stays in the plate, behind him), so Plank pops
+  up out of the crate top in full instead of a yellow scrap behind the bottom chain link. `cut_layers.py --only
+  hungCrate` rebuilt it; the check says 100% hittable.
+- **The plate sits under the top bar** (38 px), so nothing up top (the hanging crate, his tag) hides under it.
+- **Moving Planks are fair:** a riding or walking Plank stops dead and ducks while a wad aimed near him is on its way
+  (he used to move further during a flight than half his width, so a dead-centre shot missed), and a wad also counts
+  where he was at the release. The belt is a little slower (80, was 90). Tested in `spitwad.test.mjs`.
+- **The scope at the edges:** the side wings are brighter and only lightly blurred, darken away from the plate, and
+  melt into it (no hard seam); the back wall (500 in and more) zooms 3x (2.2x before); the reticle is four ticks
+  around an open middle wider than the Plank you aim at, with a dot at the exact aim and the breath ring outside the
+  ticks; his points tag moves above the ring instead of under it.
+- **The straw** is shorter (3.8 in on a phone, 5.5 on a desktop) and points 85% of the way to the crosshair.
+- **Reaching the bottom:** the crosshair sits 60 px above the thumb on a short (landscape) screen, 95 px otherwise,
+  and less near the bottom edge, so the bottom of the view can be aimed at.
+
 ## Critique notes
 
 - **Accepted in full or adapted:** points 1 to 35. Notes on the adapted ones:
