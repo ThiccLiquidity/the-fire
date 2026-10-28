@@ -89,7 +89,11 @@
     function size() {
       const r = host.getBoundingClientRect(); dpr = Math.min(2, devicePixelRatio || 1); W = Math.max(200, r.width); H = Math.max(200, r.height);
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      k = Math.min(W / PW, (H - BAR) / VIEW_H); ox = (W - PW * k) / 2; oy = BAR; // fit the shown part under the top bar; wide screens get side wings
+      // fit the shown part under the top bar; wide screens get side wings. A sideways phone is too short to give up the
+      // bar's height: there the scene fills the height and only slides down as far as the room allows
+      if (H < 500) { k = Math.min(W / PW, H / VIEW_H); oy = Math.max(0, Math.min(BAR, H - VIEW_H * k)); }
+      else { k = Math.min(W / PW, (H - BAR) / VIEW_H); oy = BAR; }
+      ox = (W - PW * k) / 2;
       makeWings();
     }
     /** the side wings, softly blurred and a little darker, made once per size (a blur filter every frame was most of

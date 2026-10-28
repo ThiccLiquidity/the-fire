@@ -346,7 +346,7 @@
         <ul>
           <li><b>Every pack has the same shape, and each slot is its own roll.</b> The first pack and the last pack have exactly the same odds.</li>
           <li><b>Sales stalled?</b> We can end the sale once every group has had its turn. If we don't, anyone can end it 7 days later. Either way, your packs always open.</li>
-          <li><b>Stuck?</b> If the randomness never arrives within 24 hours, anyone can cancel (after 7 days, even if the draw says it's in) and your packs come back sealed.</li>
+          <li><b>Stuck?</b> If the randomness never arrives within 24 hours, anyone can cancel (7 days if the draw is in but the cards never come) and your packs come back sealed.</li>
         </ul>`),
       sec('cards', 'The cards', 'Every card is its own roll: material, holo and character.', `
         <p>Each card is printed on a material. The higher the material, the rarer the card, and the likelier it is to come out holo. In Series ${no}, each card rolls:</p>
@@ -402,7 +402,7 @@
         <ul>
           <li><b>PLANK is the wood.</b> It's the workshop's fuel and its community coin. You can pay for packs, cases and grading in PLANK, and PLANK holders get their own early group in each Series${holdShort ? ` (${inS}: ${holdShort})` : ''}.</li>
           <li><b>PAPER is what everything is printed on.</b> Every pack takes PAPER to print (${inS}, ${F.paper}${F.cap ? `, never more than ${usd(F.cap)} worth` : ''}), and every idea you suggest takes PAPER to write on. That PAPER goes to the liquidity fire.</li>
-          <li><b>The liquidity fire.</b> ${F.burn.liqMax ? `${InS}, ${shareT(F.burn.liqMin, F.burn.liqMax)} of ${F.burn.same ? 'every' : 'a'} pack sale${F.burn.same ? '' : ' (it depends on the group)'}, ` : 'Pack sales, '}each pack's PAPER, case and grade fees, suggestions and game entries all go to one contract. It pairs PAPER with PLANK, adds them to the PAPER/PLANK pool and burns the pool tokens, so that liquidity is locked for good: nobody can ever pull it. While the PAPER side is low, most of the ETH and USDG that comes in buys PAPER; the rest goes to whichever side is short. PAPER waits for PLANK to pair; extra PLANK is swapped for PAPER. A side past $100 burns the extra outright.</li>
+          <li><b>The liquidity fire.</b> ${F.burn.liqMax ? `${InS}, ${shareT(F.burn.liqMin, F.burn.liqMax)} of ${F.burn.same ? 'every' : 'a'} pack sale${F.burn.same ? '' : ' (it depends on the group)'}, ` : 'Pack sales, '}each pack's PAPER, case and grade fees, suggestions and game entries all go to one contract. It pairs PAPER with PLANK, adds them to the PAPER/PLANK pool and burns the pool tokens, so that liquidity is locked for good: nobody can ever pull it. While the PAPER side is low, most of the ETH and USDG that comes in buys PAPER; the rest goes to whichever side is short. PAPER waits for PLANK to pair; extra PLANK is swapped for PAPER. If either side passes $100, the extra is burned outright.</li>
           <li><b>The Paper Press makes PAPER.</b> Over 2,000 Presses were minted in a single seven-day window by locking up PLANK, and no more will ever be minted. Each Press lets its holder mint 1 PAPER a day. It isn't automatic: the holder has to mint it.<span class="inf-presses" hidden> (Presses today: <b data-presses></b>.)</span></li>
           <li><b>Burning a Press.</b> A holder can burn their Press at any time to get its locked PLANK back. That leaves fewer Presses, and so less PAPER that can be made in the future. It doesn't touch the PAPER that already exists.</li>
           <li><b>Press holders get first dibs.</b> Each Series gives them their own group${press ? ` (${inS}: ${nf(press.perNft || 1)} ${press.perNft > 1 ? 'packs' : 'pack'} per Press for ${press.priceUsd > 0 ? `${usd(press.priceUsd)} + ` : ''}${paperT(press.paper)})` : ''}.</li>
@@ -433,7 +433,7 @@
           <li><b>Your money never sits in the contract.</b> Every payment is split and sent where it goes (the liquidity fire, and the rest) in the same transaction you sign. The liquidity fire keeps at most $100 of PAPER and $100 of PLANK while it waits to pair; the ETH and USDG it gets are spent on them. It can only buy PAPER and PLANK, add liquidity and burn it, or burn coins: it has no withdraw.</li>
           <li><b>What we can do:</b> pause buying, casing and grading in an emergency, and switch the randomness source (it waits 48 hours in public first; only new requests use it).</li>
           <li><b>What we can't do:</b> stop opening, dealing or transfers. Those never pause.</li>
-          <li><b>Randomness never arrives?</b> After 24 hours, anyone can cancel (after 7 days, even if the draw says it's in): packs come back sealed, and cards sent for grading come back ungraded.</li>
+          <li><b>Randomness never arrives?</b> After 24 hours, anyone can cancel (7 days if the draw is in but the cards never come): packs come back sealed, and cards sent for grading come back ungraded.</li>
         </ul>`),
       sec('faq', 'FAQ', 'Short answers to the usual questions.', `
         <dl class="inf-faq">
@@ -444,7 +444,7 @@
           <dt>How rare is a PDA 10?</dt><dd>${Wear.TEN_FRESH} on a fresh card. After the first 24 hours raw, rarer every day. After ${Wear.NO_TEN_DAYS} days raw, never.</dd>
           <dt>Should I grade every card?</dt><dd>Up to you. Grades are final. Not sure? Case it now for ${usd(P.CASE_USD)} and grade it later.</dd>
           <dt>Do free packs expire?</dt><dd>No. They stack and wait for a future Series' free-pack group.</dd>
-          <dt>What if opening gets stuck?</dt><dd>Cards usually land in about 90 seconds. If the randomness never arrives within 24 hours, anyone can cancel (after 7 days, even if the draw says it's in) and your packs come back sealed. <a href="help.html">More help</a></dd>
+          <dt>What if opening gets stuck?</dt><dd>Cards usually land in about 90 seconds. If the randomness never arrives within 24 hours, anyone can cancel (7 days if the draw is in but the cards never come) and your packs come back sealed. <a href="help.html">More help</a></dd>
           <dt>Is there a fee when I resell?</dt><dd>A royalty (5% today, never over 10%) on marketplaces that honor it.</dd>
         </dl>`),
     ];

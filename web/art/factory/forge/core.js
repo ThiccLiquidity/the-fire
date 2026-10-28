@@ -467,6 +467,8 @@
   // offline line if either is showing
   const lift = () => {
     const home = toastHost.parentNode; let b = 0;
+    // a centred sheet (tablet, desktop) ends above the screen's bottom: keep the toasts inside it
+    if (home?.tagName === 'DIALOG') b = Math.max(0, innerHeight - home.getBoundingClientRect().bottom + 8);
     if (home?.tagName === 'DIALOG') for (const f of home.querySelectorAll('.foot, .bw-foot, .filter-act, .dacts')) { const r = f.getBoundingClientRect(); if (r.height && r.bottom > innerHeight - 40) b = Math.max(b, innerHeight - r.top); }
     if (offNote) { offNote.style.bottom = b ? `${Math.round(b + 8)}px` : ''; if (!offNote.hidden && offNote.parentNode === home) b = Math.max(b, innerHeight - offNote.getBoundingClientRect().top); }
     toastHost.style.bottom = b ? `${Math.round(b + 8)}px` : '';

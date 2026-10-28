@@ -198,9 +198,9 @@ body[data-mode] dialog .toasts, dialog .toasts { top: auto; bottom: calc(16px + 
    sheet it sits at the sheet's bottom like the toasts (it was cut off at the top, over the gauges, and hidden under
    sheets) */
 .offline-note { top: auto; bottom: calc(16px + env(safe-area-inset-bottom, 0px)) }
-body[data-mode=port] > .offline-note { bottom: calc(var(--bbH, 80px) + 10px) }
+body[data-mode=port] > .offline-note { bottom: auto; top: calc(var(--top) + var(--sceneH) + 4px) } /* just under the scene, over the tagline (above the Buy bar it covered the station labels) */
 body[data-mode=desk] > .offline-note { bottom: calc(var(--stripH, 104px) + 12px) }
-body[data-mode=land] > .offline-note { left: calc((100vw - 240px) / 2); bottom: 10px }
+body[data-mode=land] > .offline-note { left: auto; right: 8px; transform: none; width: 224px; white-space: normal; top: calc(var(--top) + 4px); bottom: auto } /* at the top of the buy rail (over the scene it covered a pill) */
 
 /* the card's full-screen button: just under the card's bottom right corner, beside its status pill (top right, it
    covered a slab label's grade and a case's name bar; inside the bottom corner it covered the PDA seal) */
@@ -297,3 +297,11 @@ body[data-mode=port] .types .mat { font-size: 11px } body[data-mode=port] .burn-
    was left black under the stations (ui.js), and More lines up with the Buy bar's option */
 @media (min-width: 700px) { body .fun-sale.port .gg { max-width: 160px } }
 body[data-mode=port] .buybar:not(.open) .bb-more { align-self: start }
+
+/* the narrow tiles' status badges at 11px on every screen (the container rule kept 10.5px on desktop and tablet) */
+@container tile (max-width: 139px) { .pda { font-size: 11px } }
+/* the "Case & grade them" link after a pack: brass like the rest (it was sky blue) */
+.cel-protect .linkish { color: #f6e2b8 }
+.cel-protect .linkish:hover { color: #fff3d6 }
+/* the Game room sheet hugs Spit-Wad's portrait stage on very wide screens (it left ~480px empty each side) */
+#sheet-games:has(.sw-stage) { width: fit-content; min-width: 720px }
