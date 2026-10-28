@@ -251,6 +251,11 @@ addresses from `deployments/<chainId>.json` (Vercel must include files outside t
 `web/vercel.json` or the browser blocks every read (the build refuses it). Profiles (names and pictures, `web/art/factory/forge/profile.js`) show once
 `FireProfiles` is in that network's deployments file; before that the site hides them.
 
+The site's wallet gate (`web/src/lib/guard.ts`) lets a wallet sign only calls to the contracts in that network's
+deployments file. Keep it current: after a randomness switch (`setRandomness`), put the new adapter (and router) in
+the file as `CardsAdapter` / `PsaAdapter` / `OpenDrandRouter`, or opening and grading stop at "Blocked for your
+safety" (nothing is sent). A new contract the site calls needs its name in the gate's `ALLOWED` list too.
+
 ## Rehearsal
 `ops/rehearsal/rehearse.mjs` runs everything above on a local chain with the real scripts and the real keeper code:
 DevStack (the testnet kit) → deploy, each step recorded with `ops/deploy/record.mjs` → VerifyDeploy → the owner accepts (AcceptOwnership, owner impersonated) → keeper checkpoints → batch A from

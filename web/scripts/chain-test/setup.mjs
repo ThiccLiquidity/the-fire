@@ -155,7 +155,9 @@ export async function setupChain({ port = 8547, log = console.log, everyone = {}
   const start = (await now()) + 600n;
   await asOwnerForge("script/ConfigureSeries.s.sol", { RECIPE_JSON: recipePath, BATCH: "B", DROP_START: String(start) });
 
-  const deployment = { ...dep, chainId: 31337, startBlock: 0 };
+  // the randomness stand-ins are the ones the site talks to here: recorded under the real names, so the site's wallet
+  // gate (src/lib/guard.ts) knows them as it knows the real CardsAdapter, PsaAdapter and OpenDrandRouter
+  const deployment = { ...dep, chainId: 31337, startBlock: 0, contracts: { ...dep.contracts, CardsAdapter: ca, PsaAdapter: pa, OpenDrandRouter: devDrand } };
   writeFileSync(DEP_FILE, JSON.stringify(deployment, null, 2));
   return { RPC, DEP_FILE, deployment, C, D, start, pub, rpc, warp, now, tx, asOwner, stop, chain };
 }

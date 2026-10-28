@@ -289,7 +289,8 @@
         const fires = await L.seriesNumbers(); // once per sync: the Series and the sealed packs both use it
         await Promise.all([readSeries(fires), readRules()]); Store.update(() => {}); // the Series shows before the wallet's reads
         await readWallet(o.cards, fires);
-        await L.burnedTotals().then((b) => { S.burnTally = { paper: b.PAPER ? num(b.PAPER) : null, plank: b.PLANK ? num(b.PLANK) : null }; }, () => {}); // the burn tally
+        // the burn tally: read alongside, never holding up the sync (or anything waiting on it, like the wallet sheet)
+        L.burnedTotals().then((b) => { S.burnTally = { paper: b.PAPER ? num(b.PAPER) : null, plank: b.PLANK ? num(b.PLANK) : null }; Store.update(() => {}); }, () => {});
         picks = await L.picks().catch(() => picks);
         fails = 0; nextAt = 0; setStale(false);
       } catch (e) {
@@ -395,12 +396,16 @@
     };
     Sheet.open('net', { title: 'Wrong network', body });
   }
+  let asked = 0; // each wallet action asked for; a newer one drops an older one still waiting on its connect
   async function needWallet(then) {
+    const me = ++asked;
     await ready;
     const st = FW.state();
     if (st.connected && st.chainOk) return then?.();
     if (st.connected) return wrongNet(then);
-    if (await connect()) { if (FW.state().chainOk) { toast('Wallet connected', 'good'); await sync({ cards: true }); then?.(); } else wrongNet(then); }
+    // after connecting, the follow-up (say, the wallet sheet) waits for the refresh; if something else was asked for
+    // meanwhile (the wallet button again, opened and closed), it's dropped instead of popping up late on top
+    if (await connect()) { if (FW.state().chainOk) { toast('Wallet connected', 'good'); await sync({ cards: true }); if (me === asked) then?.(); } else wrongNet(then); }
   }
   function openWallet() {
     const w = S.wallet, sealed = Object.values(S.sealed).reduce((a, n) => a + n, 0), fmt = show;

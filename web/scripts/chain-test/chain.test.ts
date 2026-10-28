@@ -437,7 +437,9 @@ export async function runTest(ctx: Ctx): Promise<number> {
     };
     try {
       const want = 5n * 10n ** 18n;
-      const kq = (await L.quoteKyber("ETH", want, 100))!;
+      const pools = (want + rate - 1n) / rate; // what the pools charge for `want` (the on-chain price it's held to)
+      check((await L.quoteKyber("ETH", want, 100)) === undefined, "no pool price to check it against: no KyberSwap route");
+      const kq = (await L.quoteKyber("ETH", want, 100, pools))!;
       const expected = BigInt(kq.maxIn) * rate;
       check(kq.via === "kyber" && expected >= want && expected <= (want * 10_101n) / 10_000n && expected >= (want * 10_099n) / 10_000n,
         `routed for about the PAPER asked + 1% (${Number(expected * 10_000n / want) / 100}% of it): room for the price to move`);
@@ -456,6 +458,15 @@ export async function runTest(ctx: Ctx): Promise<number> {
       check(moved === "Price changed. Try again.", `the price moved past the room: "${moved}", nothing built`);
       rate = 1000n;
       check((await L.quoteKyber("ETH", want, 100, BigInt(kq.maxIn) / 2n)) === undefined, "dearer per PAPER than the pools: not chosen");
+      // a lying API: it quotes a different (bigger) amount than asked, so the spend would be its number, not ours
+      const honest = kyberMock;
+      kyberMock = (url, init) => {
+        if (!url.includes("/routes?")) return honest!(url, init);
+        const asked = BigInt(new URL(url).searchParams.get("amountIn")!), amountIn = asked * 1000n;
+        return new Response(JSON.stringify({ data: { routerAddress: K.KYBER_ROUTER, routeSummary: { amountIn: amountIn.toString(), amountOut: (amountIn * rate).toString() } } }), { status: 200, headers: { "content-type": "application/json" } });
+      };
+      check((await L.quoteKyber("ETH", want, 100, pools)) === undefined, "the API quotes more than asked (1,000x): refused, it never sets what you spend");
+      kyberMock = honest;
       check(L.kyberSlipBps(1010n, 1000n) === 99 && L.kyberSlipBps(1000n, 1000n) === 0 && L.kyberSlipBps(900n, 1000n) === 0, "kyberSlipBps: the headroom, rounded down");
     } finally { kyberMock = null; }
   }

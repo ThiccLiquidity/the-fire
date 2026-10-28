@@ -743,7 +743,7 @@ try {
     await p.evaluate(() => Fun.go("binder", { series: 6 }));
     await p.locator("#sheet-binder .bd-row").first().waitFor();
     const bd = await p.evaluate(async () => { const f = await Fun.binderStats(6); return { rows: document.querySelectorAll("#sheet-binder .bd-row").length, slots: document.querySelectorAll("#sheet-binder .bd-slot").length, empty: document.querySelectorAll("#sheet-binder .bd-slot.empty").length, common: f.common, master: f.master, filled: f.slots.size }; });
-    check(bd.rows === 3 && bd.slots === 18 && bd.empty === 18 - bd.filled && bd.common > 0 && bd.master <= bd.common, `binder: Series 6, 3 characters x 6 types, ${bd.filled} filled, Common ${Math.round(bd.common * 100)}%, Master ${Math.round(bd.master * 100)}%`);
+    check(bd.rows === 5 && bd.slots === 30 && bd.empty === 30 - bd.filled && bd.common > 0 && bd.master <= bd.common, `binder: Series 6 (Jean Phil), 5 characters x 6 types, ${bd.filled} filled, Common ${Math.round(bd.common * 100)}%, Master ${Math.round(bd.master * 100)}%`);
     await p.keyboard.press("Escape");
 
     // a real open earns the first badge (and a practice one never does)
