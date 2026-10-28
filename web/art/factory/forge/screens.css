@@ -34,7 +34,7 @@ a.btn { text-decoration: none }
 /* holo: art shimmer for picture/full, a sweep over the frame for frame/full */
 .h-picture .cart::after, .h-full .cart::after { content: ''; position: absolute; inset: 0; z-index: 1; mix-blend-mode: overlay; opacity: .75;
   background: linear-gradient(125deg, #ff4fd8, #ffe14f 25%, #4fffb0 45%, #4fc3ff 65%, #b04fff 85%, #ff4fd8) 0 0 / 300% 300%; animation: holo-pan 4s linear infinite }
-.shine { position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: 4%; mix-blend-mode: screen;
+.shine { position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: var(--card-r); mix-blend-mode: screen;
   background: linear-gradient(110deg, transparent 38%, rgba(255,255,255,.22) 47%, rgba(170,230,255,.16) 52%, transparent 62%) -150% 0 / 250% 100% no-repeat; animation: sweep 3s ease-in-out infinite }
 .h-picture .shine { display: none }
 /* the live holo (holo.js): a canvas over the card image, drawn at the mouse or finger's tilt; fades in once its parts load */
@@ -98,9 +98,10 @@ a.btn { text-decoration: none }
   background: radial-gradient(80% 60% at 50% 35%, rgba(255,150,60,.16), transparent 70%), repeating-linear-gradient(90deg, rgba(0,0,0,.12) 0 2px, transparent 2px 90px), linear-gradient(#3b2614, #22150b) }
 .stage-msg { text-align: center; font: 700 22px/1.2 var(--chalk); color: var(--gold); min-height: 28px; margin-bottom: 10px !important }
 .stage-ctrls { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; min-height: var(--tap) }
-.face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden }
+.face { position: absolute; inset: 0; border-radius: var(--card-r); backface-visibility: hidden; -webkit-backface-visibility: hidden } /* round like the card: a glow or edge on it follows the corners */
 .face.front { transform: rotateY(180deg) }
 .op { --cw: min(300px, 70vw, 38dvh); display: grid; justify-items: center; user-select: none; -webkit-user-select: none }
+@media (min-width: 900px) and (min-height: 640px) { .op { --cw: min(440px, 52dvh, calc((100dvh - 320px) / 1.4)) } } /* a desktop's reveal: the card big, the way it's meant to be seen */
 .op .stage-msg { margin-bottom: 4px !important }
 .op-area { position: relative; display: grid; place-items: center; width: 100%; min-height: calc(var(--cw) * 1.4 + 44px) }
 .op-area > * { grid-area: 1 / 1 }
@@ -128,7 +129,7 @@ a.btn { text-decoration: none }
 .pk-body, .pk-strip { background: url(../build3/pack.webp) center / 100% 100% no-repeat }
 .pk-strip.torn { will-change: transform }
 .pk-cards { inset: auto; left: 12%; top: 4.6%; width: 76%; aspect-ratio: 480 / 672; transition: transform .55s cubic-bezier(.3,1.25,.5,1) }
-.pk-cards img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 4.2% / 3% }
+.pk-cards img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: var(--card-r) }
 .pk-cards img:nth-child(1) { transform: translate(-2.5%, 1.2%) rotate(-1.2deg) } .pk-cards img:nth-child(2) { transform: translate(2%, .6%) rotate(1deg) }
 .pk-cards.peek { transform: translateY(-8%) }
 .pk-edge svg { width: 100%; height: 100%; overflow: visible }
@@ -141,13 +142,13 @@ a.btn { text-decoration: none }
 
 /* the stack: one button per card, only the top one is live */
 .stk { position: relative; width: var(--cw); aspect-ratio: 480 / 672 }
-.sc { position: absolute; inset: 0; padding: 0; margin: 0; border: 0; background: none; border-radius: 4.2% / 3%; cursor: grab; touch-action: none; perspective: 1100px;
+.sc { position: absolute; inset: 0; padding: 0; margin: 0; border: 0; background: none; border-radius: var(--card-r); cursor: grab; touch-action: none; perspective: 1100px;
   transition: transform .3s cubic-bezier(.3,1.2,.5,1) }
 .sc:focus-visible { outline: 2px solid rgba(255,240,210,.7); outline-offset: 6px }
 .sc-tilt { position: absolute; inset: 0; transform-style: preserve-3d; --mx: .2; --my: .3 }
 .sc .inner { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .6s cubic-bezier(.3,.7,.3,1.12) }
 .sc.flipped .inner { transform: rotateY(180deg) }
-.back2 { border-radius: 4.2% / 3%; box-shadow: 0 8px 16px rgba(0,0,0,.55) }
+.back2 { border-radius: var(--card-r); box-shadow: 0 8px 16px rgba(0,0,0,.55) }
 .back2 img { display: block; width: 100%; height: 100% }
 .sc .face.front .cface { width: 100% }
 .tease-fx { position: absolute; inset: 0; border-radius: inherit; opacity: 0; pointer-events: none; transition: opacity .3s }
@@ -188,7 +189,7 @@ a.btn { text-decoration: none }
 @keyframes prism-spin { from { --tza: 0deg; background-position: -100% 0, 0 0 } to { --tza: 540deg; background-position: 200% 0, 0 0 } }
 
 /* holo you can tilt: a rainbow band and a glare follow the pointer (or the phone's tilt) */
-.sc .sheen { position: absolute; inset: 0; z-index: 4; pointer-events: none; border-radius: 4.2% / 3%; mix-blend-mode: soft-light; opacity: .55;
+.sc .sheen { position: absolute; inset: 0; z-index: 4; pointer-events: none; border-radius: var(--card-r); mix-blend-mode: soft-light; opacity: .55;
   background: radial-gradient(farthest-corner circle at calc(var(--mx) * 100%) calc(var(--my) * 100%), rgba(255,255,255,.5), rgba(255,255,255,.08) 22%, transparent 45%),
     linear-gradient(115deg, transparent 22%, rgba(255,140,220,.35) 32%, rgba(255,235,150,.35) 40%, rgba(150,255,210,.35) 48%, rgba(150,210,255,.35) 56%, rgba(200,160,255,.35) 64%, transparent 74%) calc(var(--mx) * 100%) calc(var(--my) * 100%) / 260% 260% no-repeat }
 .sc .h-frame ~ .sheen { opacity: .4 }
@@ -197,12 +198,15 @@ a.btn { text-decoration: none }
 @keyframes holo-glow { 0% { filter: drop-shadow(0 0 10px rgba(255,140,220,.75)) } 33% { filter: drop-shadow(0 0 12px rgba(255,235,150,.75)) }
   66% { filter: drop-shadow(0 0 12px rgba(150,255,210,.75)) } 100% { filter: drop-shadow(0 0 12px rgba(150,210,255,.8)) } }
 .sc.holo-glow.rare .face.front { box-shadow: 0 0 0 1.5px rgba(255,255,255,.35) }
+/* after it lands, a faint foil edge stays round the face (still: no repaint every frame) */
+.face.front .ho-ring.ho-keep { z-index: 5; inset: -1px; padding: 2px; opacity: .42; animation: none; --hoa: 210deg }
+@media (prefers-reduced-motion: reduce) { .face.front .ho-ring.ho-keep { opacity: .35 } }
 .op-odds { font: 800 13px var(--body); color: var(--gold); white-space: nowrap }
 /* a holo before it turns: a prismatic foil edge on the back (turns with it) and a rainbow halo round it, slowly shifting.
    --hp (0..1) is how close it is to turning: dragged toward the swipe threshold, or ramped up after a tap */
 @property --hp { syntax: '<number>'; inherits: true; initial-value: 0 }
 @property --hoa { syntax: '<angle>'; inherits: false; initial-value: 0deg }
-.ho-ring, .ho-halo { position: absolute; pointer-events: none; border-radius: 4.2% / 3%; animation: ho-spin 5s linear infinite;
+.ho-ring, .ho-halo { position: absolute; pointer-events: none; border-radius: var(--card-r); animation: ho-spin 5s linear infinite;
   background: conic-gradient(from var(--hoa), #ff6ad5, #ffd36a, #fff7c0, #6affc0, #6ad0ff, #b66aff, #ff6ad5) }
 .ho-ring { inset: 0; z-index: 2; padding: calc(2.5px + var(--hp) * 2.5px); opacity: calc(.75 + var(--hp) * .25);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude }
@@ -212,7 +216,7 @@ a.btn { text-decoration: none }
 @keyframes ho-spin { to { --hoa: 360deg } }
 /* ...and as it lands: a little slower than a plain turn (Epic's slow-mo is slower still), a prismatic sweep, a few sparkles */
 .sc.hslow .inner { transition-duration: .78s }
-.ho-sweep { position: absolute; inset: 0; z-index: 5; pointer-events: none; border-radius: 4.2% / 3%; mix-blend-mode: screen; opacity: 0;
+.ho-sweep { position: absolute; inset: 0; z-index: 5; pointer-events: none; border-radius: var(--card-r); mix-blend-mode: screen; opacity: 0;
   background: linear-gradient(105deg, transparent 37%, rgba(255,110,220,.45) 42%, rgba(255,230,130,.6) 46%, rgba(255,255,255,.8) 50%, rgba(130,255,205,.6) 54%,
     rgba(120,195,255,.5) 58%, rgba(185,130,255,.35) 62%, transparent 67%) 100% 0 / 260% 100% no-repeat }
 .ho-spk { position: absolute; z-index: 6; width: var(--s, 14px); aspect-ratio: 1; margin: calc(var(--s, 14px) / -2) 0 0 calc(var(--s, 14px) / -2); pointer-events: none; opacity: 0;
@@ -239,7 +243,7 @@ a.btn { text-decoration: none }
 @keyframes bm-pop { from { transform: scale(.3); opacity: 0 } to { transform: none; opacity: 1 } }
 
 /* the light leak (Epic, Legendary): light at the card's edges, jagged seams across the darkened back, then a burst */
-.lk-halo { position: absolute; inset: 0; z-index: -1; border-radius: 4.2% / 3%; pointer-events: none; opacity: 0;
+.lk-halo { position: absolute; inset: 0; z-index: -1; border-radius: var(--card-r); pointer-events: none; opacity: 0;
   box-shadow: 0 0 6px 2px var(--lkc), 0 0 26px 8px var(--lk), 0 0 70px 20px var(--lk) }
 .lk-leg .lk-halo { box-shadow: 0 0 8px 3px var(--lkc), 0 0 30px 10px var(--lk), 0 0 80px 22px var(--lk), 0 0 130px 30px color-mix(in srgb, var(--lk) 40%, transparent) }
 .sc.m-diamond .lk-halo { box-shadow: 0 0 8px 3px #fff, -14px -10px 40px 10px #ff8ae0, 14px -12px 44px 10px #ffe98a, 16px 12px 44px 12px #8affd0, -14px 14px 44px 12px #8ad8ff,
@@ -564,8 +568,8 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .cface.hd-case::after { content: ''; position: absolute; inset: 0; z-index: 3; border-radius: 4%; pointer-events: none;
   background: linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.34) 41%, rgba(255,255,255,.08) 47%, rgba(255,255,255,0) 52%, rgba(255,255,255,0) 70%, rgba(255,255,255,.16) 76%, rgba(255,255,255,0) 80%) }
 /* the holo shine sits on the card inside the case / slab, not on the plastic */
-.hd-case .shine { inset: 2.1% 2.1%; border-radius: 3.5% }
-.hd-slab .shine { inset: 11.6% 6.6% 1.6% 6.6%; border-radius: 3.5% }
+.hd-case .shine { inset: 2.1% 2.1%; border-radius: var(--card-r) }
+.hd-slab .shine { inset: 11.6% 6.6% 1.6% 6.6%; border-radius: var(--card-r) }
 .cface.hd-slab.g10 { box-shadow: 0 0 14px 2px rgba(255,200,90,.55) }
 .hold-seg { margin-bottom: 10px; max-width: 520px }
 .hold-seg small { opacity: .7; font-weight: 700 }
@@ -710,10 +714,10 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
   filter: drop-shadow(0 18px 26px rgba(0,0,0,.55)) }
 .fan::after { content: ''; position: absolute; left: 10%; right: 10%; bottom: -30px; height: 26px; border-radius: 50%;
   background: radial-gradient(closest-side, rgba(255,190,90,.28), transparent); pointer-events: none }
-.fan-card { position: absolute; inset: 0; transform-origin: 50% 96%; border-radius: 5%; overflow: visible;
+.fan-card { position: absolute; inset: 0; transform-origin: 50% 96%; border-radius: var(--card-r); overflow: visible;
   transform: translateY(var(--lift)) rotate(var(--rot)); animation: fan-float 4.6s ease-in-out var(--delay) infinite;
   transition: transform .45s cubic-bezier(.2,.8,.3,1) }
-.fan-card > img, .fan-card .fa { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 5%; user-select: none }
+.fan-card > img, .fan-card .fa { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: var(--card-r); user-select: none }
 .fan.open .fan-card, .fan:hover .fan-card, .fan:focus-visible .fan-card { --rot-extra: var(--spread) }
 .fan-card { rotate: var(--rot-extra, 0deg); transition: rotate .45s cubic-bezier(.2,.8,.3,1) }
 @keyframes fan-float { 0%, 100% { translate: 0 0 } 50% { translate: 0 -7px } }
@@ -722,7 +726,7 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .fan.open .fan-tag, .fan:hover .fan-tag, .fan:focus-visible .fan-tag { opacity: 1 }
 .fan-card.k-fullart .fan-tag { color: var(--gold); border-color: var(--brass) }
 /* Gold and Full Art get a moving foil sweep */
-.fan-shine { position: absolute; inset: 0; border-radius: 5%; overflow: hidden; pointer-events: none; mix-blend-mode: screen;
+.fan-shine { position: absolute; inset: 0; border-radius: var(--card-r); overflow: hidden; pointer-events: none; mix-blend-mode: screen;
   background: none } /* the sweep is a layer moved by transform (::before) */
 .fan-shine::before { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.4) 45%, transparent 60%); transform: translateX(100%); animation: fa-shine 3.8s ease-in-out infinite }
 .k-fullart .fan-shine::before { animation-delay: -1.9s }
@@ -870,7 +874,7 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .cel { display: grid; justify-items: center; gap: 14px; width: 100%; max-width: 860px; margin: 0 auto; text-align: center }
 .cel-k { margin: 0 !important; font: 400 22px var(--display) !important; color: var(--gold) !important }
 .cel-best { display: grid; justify-items: center; gap: 10px }
-.cel-big { position: relative; padding: 0; border: 0; background: none; cursor: pointer; width: min(240px, 58vw); border-radius: 5% }
+.cel-big { position: relative; padding: 0; border: 0; background: none; cursor: pointer; width: min(240px, 58vw); border-radius: var(--card-r) }
 .cel-big::before { content: ''; position: absolute; inset: -12%; z-index: -1; border-radius: 50%; background: radial-gradient(closest-side, var(--glow, #ffd27a), transparent); opacity: .45; animation: cel-glow 2.4s ease-in-out 3 alternate }
 @keyframes cel-glow { to { opacity: .8 } }
 .cel-big .cface { width: 100% }
@@ -946,7 +950,7 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 
 /* Burn: a stack of exact copies (two cards peek out behind it), its count, and how many of it are picked */
 .ctile.stack .cwrap { position: relative }
-.ctile.stack .cwrap::before, .ctile.stack .cwrap::after { content: ''; position: absolute; inset: 0; border-radius: 6%/4.3%; background: #2a1d12; border: 1px solid var(--line-2); z-index: -1 }
+.ctile.stack .cwrap::before, .ctile.stack .cwrap::after { content: ''; position: absolute; inset: 0; border-radius: var(--card-r); background: #2a1d12; border: 1px solid var(--line-2); z-index: -1 }
 .ctile.stack .cwrap::before { transform: translate(7px, 6px) rotate(3deg) } .ctile.stack .cwrap::after { transform: translate(3px, 3px) rotate(1.5deg) }
 .ctile.stack .cwrap { isolation: isolate }
 .stack-n { font: 800 13px var(--body); padding: 2px 9px; border-radius: 999px; background: var(--ink); color: #1a1209 }
@@ -960,3 +964,30 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .stk-b { min-height: 56px; font: 800 26px var(--body) }
 .stk-k { text-align: center; display: grid } .stk-k b { font: 400 40px var(--display); color: var(--ember) } .stk-k small { color: var(--muted); font-weight: 700 }
 .stk-quick { justify-content: center }
+
+/* ---------- card polish (Oct 2026)
+   a holo card shows it from outside the card too: a thin, still prismatic rim round a raw tile (a holo frame on
+   near-white Paper barely shows at a tile's size); cased and slabbed cards have their holder's edge instead */
+.cface.hd-raw.is-holo::before { content: ''; position: absolute; inset: -2.5px; z-index: 0; border-radius: var(--card-r); padding: 2px; pointer-events: none; opacity: .7;
+  background: conic-gradient(from 200deg, #ff6ad5, #ffd36a, #fff7c0, #6affc0, #6ad0ff, #b66aff, #ff6ad5);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude }
+.sc .cface.is-holo::before, .zv-card .cface.is-holo::before, .detail .big .cface.is-holo::before { content: none } /* the big card has its own light */
+/* a touch screen never hovers, so a live tile never moves there: a light sweep on its holo tiles instead (the .shine
+   layer: one shared transform-only animation), gone once the live card draws (a mouse brought it) */
+.shine.tshine { display: none }
+@media (pointer: coarse) { .cface .shine.tshine { display: block } }
+.cface.live.ready .shine.tshine { display: none }
+/* Rare and up: a small gem on the tile's corner, in the tier's colour (the reveal's tiers) */
+.gem { position: absolute; z-index: 4; left: -3px; top: -3px; width: 13px; height: 13px; border-radius: 3px; transform: rotate(45deg); pointer-events: none;
+  border: 1.5px solid rgba(255,255,255,.85); box-shadow: 0 1px 4px rgba(0,0,0,.65), inset 0 0 3px rgba(255,255,255,.5) }
+.gem.rare { background: linear-gradient(135deg, #bfe6ff, #4a7fe8 60%, #1d3f8f) }
+.gem.epic { background: linear-gradient(135deg, #f0d8ff, #9a64e8 60%, #4a2490) }
+.gem.legendary { background: linear-gradient(135deg, #fff6d6, var(--gold) 55%, #b07818); border-color: #fff3c4; box-shadow: 0 1px 4px rgba(0,0,0,.65), 0 0 7px rgba(255,210,122,.8) }
+.ctile.addable .gem { display: none } /* the "+" sits there */
+/* a narrow tile (a phone's three across): the badge in short words and a smaller type, so it never runs off the card */
+.ctile .cwrap { container: tile / inline-size }
+.pda .pda-s { display: none }
+@container tile (max-width: 139px) {
+  .pda { font-size: 10.5px; padding: 4px 6px }
+  .pda .pda-l { display: none } .pda .pda-s { display: inline }
+}

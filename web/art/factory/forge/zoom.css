@@ -5,7 +5,7 @@ dialog.zv::backdrop { background: transparent }
 dialog.zv:focus { outline: none }
 .zv-bd { position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 40%, #1c140d 0%, #070504 60%, #000 100%); opacity: 0; will-change: opacity }
 .zv-stage { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; cursor: zoom-in }
-.zv-card { position: absolute; transform-origin: 50% 50%; border-radius: 4% / 2.9%; box-shadow: 0 18px 50px rgba(0,0,0,.75) } /* a box shadow: drawn once, not every frame */
+.zv-card { position: absolute; transform-origin: 50% 50%; border-radius: var(--card-r); box-shadow: 0 18px 50px rgba(0,0,0,.75) } /* a box shadow: drawn once, not every frame */
 .zv-card.moving { will-change: transform }
 .zv-card .cface { width: 100% }
 .zv-card .cface .cholo { transition: none } /* the live card swaps in over the saved image in one frame */
@@ -48,5 +48,7 @@ dialog.zv:focus { outline: none }
 /* wide screens: the card fills the height, so the button sits in the corner beside it */
 @media (min-aspect-ratio: 1/1) { .zv-clip { left: auto; right: max(16px, env(safe-area-inset-right)); transform: none } }
 .zv-hint { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 58px) }
+/* wide screens: the card fills the height, so the hint sits in the corner beside it, clear of the card's text */
+@media (min-aspect-ratio: 1/1) { .zv-hint { left: max(16px, env(safe-area-inset-left)); bottom: max(16px, env(safe-area-inset-bottom)); transform: none; animation-name: zv-hint } }
 /* the card detail: a small Share clip under the card (below its grade badge) */
 .detail .big .big-clip { display: flex; margin: 22px auto 0; font-size: 13px }

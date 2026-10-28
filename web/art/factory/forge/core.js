@@ -276,9 +276,11 @@
       if (c.material === 'diamond') return null;
       const always = c.material === 'gold' || c.material === 'fullart', look = always ? 'full' : c.holo || 'none';
       const id = (CHARS[c.character] || CHARS[NAMES[0]]).id;
-      const holoWord = { frame: 'Holo frame', picture: 'Holo picture', full: 'Full holo' }[look];
-      // print: just this state's layer (720 x 1008, size_images.py), not the 8640 px strip of all 12
-      return { look, holder: Store.holder(c), state: Store.stateIdx(c), plain: `cards/${id}/${c.material}-plain.webp`, print: `cards/${id}/p/${c.material}-print-${Store.stateIdx(c)}.webp`,
+      const holoWord = { frame: 'Holo Frame', picture: 'Holo Picture', full: 'Full Holo' }[look]; // the slab label's words, as the studio prints them (render.ts)
+      // print: just this state's layer (720 x 1008, size_images.py), not the 8640 px strip of all 12. Raw and cased
+      // print the same (no wear on either): a cased card uses the raw layer, so it's never fetched twice
+      const st = Store.stateIdx(c), ps = st === 1 ? 0 : st;
+      return { look, holder: Store.holder(c), state: st, plain: `cards/${id}/${c.material}-plain.webp`, print: `cards/${id}/p/${c.material}-print-${ps}.webp`,
         label: { name: c.character, sub: [`Series ${c.series}`, MAT_LABEL[c.material], holoWord].filter(Boolean).join(' · '), grade: c.grade } };
     },
     // which card in the strip: 0 raw, 1 cased, 2-11 slabbed PDA 1-10
@@ -485,7 +487,8 @@
     top.close();
     if (openSheets().length) guard();
   });
-  const covered = () => document.body?.classList.toggle('covered', openSheets().length > 0); // CSS pauses what's under a sheet
+  // CSS pauses what's under a sheet; the scene stops its frames until the last sheet closes ('sheets-change')
+  const covered = () => { const on = openSheets().length > 0; document.body?.classList.toggle('covered', on); dispatchEvent(new CustomEvent('sheets-change', { detail: { covering: on } })); };
   const Sheet = {
     open(id, { title, body, wide = false, onClose } = {}) {
       let d = document.getElementById('sheet-' + id);

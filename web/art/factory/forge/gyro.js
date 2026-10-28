@@ -17,8 +17,8 @@
     return document.querySelector('#sheet-table[open] .sc.flipped:not([inert]) .cface.live');
   }
   function onTilt(e) {
-    if (e.gamma == null || reduced()) return;
-    pend = [Math.max(-1, Math.min(1, e.gamma / 30)), Math.max(-1, Math.min(1, (e.beta - 45) / 30))];
+    if (e.gamma == null || reduced() || !window.Holo?.tiltOf) return;
+    const t = Holo.tiltOf(e); if (!t) return; pend = [t.tx, t.ty]; // from how the phone is held, turned with the screen
     if (!raf) raf = requestAnimationFrame(() => { raf = 0; const f = target(); if (f && pend) window.Holo?.aim(f, pend[0], pend[1]); });
   }
   function listen() { if (listening || !has()) return; listening = true; addEventListener('deviceorientation', onTilt); }

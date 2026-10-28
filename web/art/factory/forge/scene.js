@@ -911,12 +911,13 @@ let last = performance.now();
 const FIXED = location.search.includes('fixed');
 window.__frames = 0; // test hook: frame counter
 document.addEventListener('visibilitychange', () => { last = performance.now(); });
-let lastDraw = 0;
+let lastDraw = 0, parked = false;
+addEventListener('sheets-change', () => { if (parked && !window.Sheet?.covering) { parked = false; last = performance.now(); requestAnimationFrame(frame); } });
 const idle = () => !queue && !packs.length && !caps.length && !items.length && !cardsIn.length && !tokens.length && !sparks.length && !dust.length
   && Math.abs(target - speed) < 0.02 && (finale < 0 || now - finale > 8) && (!cam.on || (Math.hypot(cam.vx, cam.vy) < 2 && Math.abs(cam.vz) < 0.01));
 function frame(tms) {
   if (document.hidden) { last = tms; requestAnimationFrame(frame); return; } // nothing drawn while the tab is hidden
-  if (window.Sheet?.covering) { last = tms; requestAnimationFrame(frame); return; } // ...or while a modal sheet covers the scene (it picks up where it was)
+  if (window.Sheet?.covering) { last = tms; parked = true; return; } // ...or while a modal sheet covers the scene: no frames at all until it closes ('sheets-change'), then it picks up where it was
   if (window.__paused && !(window.__steps > 0)) { last = tms; requestAnimationFrame(frame); return; } // test hook: step frame by frame
   // nothing happening (no packs, logs, capsules, burns or sparks, the camera at rest): about 30 frames a second is plenty
   if (!window.__steps && !FIXED && idle() && tms - lastDraw < 30) { requestAnimationFrame(frame); return; }

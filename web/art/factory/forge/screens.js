@@ -162,10 +162,13 @@
   // a raw holo card's holo moves with the mouse or finger wherever it's shown (holo.js); sway: it also drifts on its own
   // (the big card and the pack reveal)
   function cardFace(c, lazy = false, sway = false) { // lazy: grids and lists (off-screen tiles load as they scroll in)
-    const holo = c.holo || 'none', moving = !!Store.cardParts(c) && !!window.Holo;
-    const el = h('div', { class: `cface m-${c.material} h-${holo} hd-${Store.holder(c)}${c.grade === 10 ? ' g10' : ''}` },
+    const holo = c.holo || 'none', moving = !!Store.cardParts(c) && !!window.Holo, ho = isHolo(c);
+    // is-holo: a holo card shows it from outside the card too (a thin prismatic rim on tiles: a holo frame on near-white
+    // Paper barely shows at a tile's size). A tile that's live only under a mouse gets a light sweep on touch screens
+    // (tshine: CSS, one shared transform-only animation; the live card hides it once it's drawn)
+    const el = h('div', { class: `cface m-${c.material} h-${holo} hd-${Store.holder(c)}${c.grade === 10 ? ' g10' : ''}${ho ? ' is-holo' : ''}` },
       h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: `${c.character}, ${Store.MAT_LABEL[c.material]} card`, draggable: 'false', loading: lazy ? 'lazy' : null, decoding: 'async' }),
-      holo !== 'none' && !moving ? h('i', { class: 'shine', 'aria-hidden': 'true' }) : null);
+      holo !== 'none' && !moving ? h('i', { class: 'shine', 'aria-hidden': 'true' }) : ho && moving && lazy ? h('i', { class: 'shine tshine', 'aria-hidden': 'true' }) : null);
     // a tile in a grid or list is its saved image (one state, ~30 KB); the live holo (holo.js: its picture and print,
     // ~200 KB more) joins only when a mouse comes over it. A big card (detail, reveal, viewer) is live from the start.
     if (moving && !lazy) Holo.attach(el, c, sway);
@@ -184,7 +187,9 @@
     if (!f) return h('span', { class: 'pda none', text: 'Raw' });
     const moved = c.moves > 0, cls = 'pda fresh' + (moved ? ' moved' : '');
     if (noFresh) return h('span', { class: cls, title: freshTip(c, f), text: moved ? 'Fresh · moved' : 'Fresh' });
-    return h('span', { class: cls, title: freshTip(c, f), text: moved ? `Fresh ${Math.max(1, Math.floor(f / 3600e3))}h · moved` : 'Fresh ' + Wear.hhmm(f) });
+    if (!moved) return h('span', { class: cls, title: freshTip(c, f), text: 'Fresh ' + Wear.hhmm(f) });
+    // a narrow tile (a phone's 3 across) shows the short words (CSS container query on the tile); the tip has the time
+    return h('span', { class: cls, title: freshTip(c, f) }, h('span', { class: 'pda-l', text: `Fresh ${Math.max(1, Math.floor(f / 3600e3))}h · moved` }), h('span', { class: 'pda-s', text: 'Fresh · moved' }));
   };
   const HOLDER = { raw: 'Raw', case: 'Cased', slab: 'Slabbed' };
   const matChip = (m) => h('span', { class: 'mat ' + m, text: Store.MAT_LABEL[m] });
@@ -213,9 +218,10 @@
 
   // a tile used by the collection and by every picker (Series and floor live in the card's detail)
   function cardTile(c, { selectable = false, selected = false, onTap, tag, noFresh = false } = {}) {
-    const label = describe(c) + (canGradeNow(c) ? '. ' + saysOf(nowBands(c)) : ''); // the odds bar, for screen readers too
+    const tier = tierOf(c); // Rare and up: a small gem on the card's corner, in the tier's colour (the same tiers as the reveal)
+    const label = describe(c) + (tier ? '. ' + TIER_LABEL[tier] : '') + (canGradeNow(c) ? '. ' + saysOf(nowBands(c)) : ''); // the odds bar, for screen readers too
     const b = h('button', { type: 'button', class: 'ctile' + (selectable ? ' pick' : ''), 'data-id': c.id, 'aria-label': label, onclick: () => onTap?.(c, b) },
-      h('div', { class: 'cwrap' }, cardFace(c, true), gradeBadge(c, noFresh), selectable ? h('span', { class: 'tick', 'aria-hidden': 'true' }) : null),
+      h('div', { class: 'cwrap' }, cardFace(c, true), gradeBadge(c, noFresh), tier ? h('i', { class: 'gem ' + tier, title: TIER_LABEL[tier], 'aria-hidden': 'true' }) : null, selectable ? h('span', { class: 'tick', 'aria-hidden': 'true' }) : null),
       canGradeNow(c) ? nowBar(c) : null,
       h('div', { class: 'cmeta' }, tag || null, matChip(c.material), holoChip(c)));
     if (tag) b.setAttribute('aria-label', label + '. ' + tag.textContent);
@@ -237,7 +243,9 @@
     const W = 1080, H = 1350, [core, glow] = LEAK[c.material], tier = tierOf(c);
     await Promise.all(['400 64px "Russo One"', '800 36px Nunito', '600 30px Nunito'].map((f) => document.fonts.load(f).catch(() => {})));
     await document.fonts.ready;
-    const [strip, word] = await Promise.all([loadImg(Store.cardImg(c)), loadImg('ui/omni-wordmark.webp').catch(() => null)]); // the card as it is now (360 x 504)
+    // the card as it is now: drawn from its parts at the studio's still angle (sharp), else its saved image (360 x 504)
+    const [drawn, word] = await Promise.all([window.Holo?.picture?.(c, 720).catch(() => null), loadImg('ui/omni-wordmark.webp').catch(() => null)]);
+    const strip = drawn || await loadImg(Store.cardImg(c));
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
     // the forge: warm planks, an ember glow behind the card, dark edges
     let gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#3b2614'); gr.addColorStop(0.55, '#22150b'); gr.addColorStop(1, '#0d0805');
@@ -248,8 +256,10 @@
     gr = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.8); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.6)');
     g.fillStyle = gr; g.fillRect(0, 0, W, H);
     // the card: its slice of the strip (raw, cased, then slabbed PDA 1-10)
-    const n = strip.naturalWidth / strip.naturalHeight > 2 ? Store.STATES : 1, si = n > 1 ? Store.stateIdx(c) : 0; // a strip of 12 states, or one image (live)
-    const sw = strip.naturalWidth / n, sh = strip.naturalHeight, ch = 760, cw = Math.round(ch * sw / sh), cx = (W - cw) / 2, cy = 92;
+    const iw = strip.naturalWidth || strip.width, ih = strip.naturalHeight || strip.height;
+    const n = iw / ih > 2 ? Store.STATES : 1, si = n > 1 ? Store.stateIdx(c) : 0; // a strip of 12 states, or one image (live)
+    const sw = iw / n, sh = ih, ch = 760, cw = Math.round(ch * sw / sh), cx = (W - cw) / 2, cy = 92;
+    g.imageSmoothingQuality = 'high';
     g.save(); g.shadowColor = tier ? glow : 'rgba(0,0,0,.8)'; g.shadowBlur = tier ? 70 : 40; g.shadowOffsetY = tier ? 0 : 14;
     g.drawImage(strip, si * sw, 0, sw, sh, cx, cy, cw, ch); g.restore();
     g.drawImage(strip, si * sw, 0, sw, sh, cx, cy, cw, ch); // once more, crisp over its own glow
@@ -757,10 +767,10 @@
           if (big) { el.classList.remove('tease'); el._lk?.(); }
           if ((big || ho) && rm) el.querySelector('.face.front').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 350 });
           if (ho) holoLand(el, !tier, slow, rm);
-          const name = cardName(c);
+          const name = c.character; // what it is (material, holo, tier, odds) is in the chips under the card
           if (isHolo(c)) el.classList.add('holo-glow'); // every holo card, any material, glows on reveal
-          if (tier) { el.classList.add('rare', 'burst'); if (tier !== 'legendary') Sfx.hit(tier); msg.textContent = tier === 'legendary' ? `Legendary pull! ${name}` : tier === 'epic' ? `Epic pull! ${name}` : name + '!'; }
-          else msg.textContent = isHolo(c) ? name + '!' : last ? name : 'Swipe or tap for the next card';
+          if (tier) { el.classList.add('rare', 'burst'); if (tier !== 'legendary') Sfx.hit(tier); msg.textContent = `${{ legendary: 'Legendary', epic: 'Epic', rare: 'Rare' }[tier]} pull! ${name}`; }
+          else msg.textContent = isHolo(c) ? name + '!' : last ? name : matchMedia('(pointer: fine)').matches ? 'Tap for the next card' : 'Swipe or tap for the next card';
           const od = Store.trueOdds(c);
           put(meta, h('span', { class: 'op-n', text: `${i + 1} / ${order.length}` }), matChip(c.material), holoChip(c),
             tier ? h('span', { class: 'tier-b ' + tier, text: TIER_LABEL[tier] }) : null, tier ? h('span', { class: 'op-odds', text: od.label }) : null); // odds: Rare and up only
@@ -792,6 +802,7 @@
         // the holo lands: the halo fades as it turns, a prismatic sweep crosses the face; a plain holo (no tier) also
         // gets a few sparkles round the edge and a shimmer chime. Reduced motion: none of that, the face fades in.
         function holoLand(el, plain, slow, rm) {
+          el.querySelector('.face.front').append(h('i', { class: 'ho-ring ho-keep', 'aria-hidden': 'true' })); // a faint foil edge stays on the face (a holo frame on Paper barely shows otherwise)
           const halo = el.querySelector('.ho-halo');
           halo?.animate([{ opacity: getComputedStyle(halo).opacity }, { opacity: 0 }], { duration: 300, easing: 'ease-out', fill: 'forwards' }).finished.then(() => halo.remove(), () => {});
           const at = slow ? 720 : plain ? 380 : 300;
@@ -913,7 +924,7 @@
     function holoTilt(halted, signal) {
       let s = null;
       if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission !== 'function') // never prompt for motion access
-        addEventListener('deviceorientation', (e) => { if (e.gamma != null && s && !s.face) aim(0.5 + Math.max(-0.5, Math.min(0.5, e.gamma / 50)), 0.5 + Math.max(-0.5, Math.min(0.5, (e.beta - 45) / 50))); }, { signal });
+        addEventListener('deviceorientation', (e) => { const t = s && !s.face ? window.Holo?.tiltOf?.(e, 25) : null; if (t) aim(0.5 + t.tx / 2, 0.5 + t.ty / 2); }, { signal });
       function aim(x, y, drag = true) {
         if (!s) return;
         if (s.face) { if (drag) window.Holo?.aim(s.face, x * 2 - 1, y * 2 - 1); return; }
@@ -2029,6 +2040,7 @@
     openable, openableCount,
     open(name, opts) { (OPEN[name] || (() => toast('Unknown station', 'bad')))(opts); },
     openCard: openDetail,
+    cardFace, // the card face everywhere (showcase, binder): live holo, sharp at any size
     practice: () => openTable({ practice: true }), // a practice pack: no wallet, nothing saved
   };
 })();

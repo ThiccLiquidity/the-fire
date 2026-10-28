@@ -21,15 +21,18 @@
     gr = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.8); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.6)');
     g.fillStyle = gr; g.fillRect(0, 0, W, H);
   }
-  /** One card's picture from its image (a strip of 12 states in the demo art; one image live). */
+  /** One card's picture: drawn sharp from its parts at the studio's still angle (holo.js), else from its image (a strip
+   *  of 12 states in the old demo art; one image live). */
   async function cardPic(c) {
+    const cv = await window.Holo?.picture?.(c, 720).catch(() => null);
+    if (cv) return { im: cv, sx: 0, sw: cv.width, sh: cv.height };
     const im = await loadImg(Store.cardImg(c)).catch(() => loadImg('ui/card-back.webp'));
     const strip = im.naturalWidth / im.naturalHeight > 2, sw = strip ? im.naturalWidth / Store.STATES : im.naturalWidth;
     return { im, sx: strip ? Store.stateIdx(c) * sw : 0, sw, sh: im.naturalHeight };
   }
   function drawCard(g, p, cx, cy, hgt, rot = 0, glow = null) {
     const w = hgt * p.sw / p.sh;
-    g.save(); g.translate(cx, cy); g.rotate(rot);
+    g.save(); g.translate(cx, cy); g.rotate(rot); g.imageSmoothingQuality = 'high';
     g.shadowColor = glow || 'rgba(0,0,0,.8)'; g.shadowBlur = glow ? 60 : 30; g.shadowOffsetY = glow ? 0 : 12;
     g.drawImage(p.im, p.sx, 0, p.sw, p.sh, -w / 2, -hgt / 2, w, hgt); g.shadowColor = 'transparent';
     g.drawImage(p.im, p.sx, 0, p.sw, p.sh, -w / 2, -hgt / 2, w, hgt); g.restore();

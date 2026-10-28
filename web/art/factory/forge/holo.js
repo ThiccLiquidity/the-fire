@@ -30,6 +30,14 @@
     return gr; }
   const phaseOf = (tl) => (tl.tx + 1) * 0.9 + (tl.ty + 1) * 0.45;
   function pat(g, tile, tl, k) { const p = g.createPattern(tile, 'repeat'); if (p && p.setTransform) p.setTransform(new DOMMatrix().translate(-tl.tx * 60 * k, -tl.ty * 60 * k).scale(k)); return p; }
+  // a star's glow: the same radial gradient (hsla(inner hue, 90%) -> hsla(hue, 60%, 0)), drawn once per colour pair at
+  // full alpha and placed with globalAlpha (the same pixels), so a moving card makes no gradient per star per frame
+  const glowCache = new Map(), GS = 64;
+  function glowSprite(h1, h2, sat) { const key = `${Math.round(h1)}|${Math.round(h2)}|${sat}`; let c = glowCache.get(key);
+    if (!c) { if (glowCache.size >= 360) glowCache.delete(glowCache.keys().next().value);
+      c = mk(GS, GS); const q = c.getContext('2d'), rg = q.createRadialGradient(GS / 2, GS / 2, 0, GS / 2, GS / 2, GS / 2);
+      rg.addColorStop(0, `hsla(${Math.round(h1)},${sat}%,90%,1)`); rg.addColorStop(1, `hsla(${Math.round(h2)},${sat}%,60%,0)`); q.fillStyle = rg; q.fillRect(0, 0, GS, GS); glowCache.set(key, c); }
+    return c; }
   function specks(g, list, b, tl, k, strength, gold, S) {
     for (const s of list) { const L = Math.exp(-((s.ax - tl.tx) ** 2 + (s.ay - tl.ty) ** 2) * (s.star ? 3 : 4)) * strength; if (L < 0.03) continue;
       const x = b.x + s.x * b.w, y = b.y + s.y * b.h, z = s.size * k, a = Math.min(1, L);
@@ -38,8 +46,7 @@
       g.fillStyle = c; g.strokeStyle = c;
       if (s.star) { g.lineWidth = Math.max(0.7 * S, z * 0.13); g.beginPath(); g.moveTo(x - z, y); g.lineTo(x + z, y); g.moveTo(x, y - z); g.lineTo(x, y + z);
         g.moveTo(x - z * 0.4, y - z * 0.4); g.lineTo(x + z * 0.4, y + z * 0.4); g.moveTo(x + z * 0.4, y - z * 0.4); g.lineTo(x - z * 0.4, y + z * 0.4); g.stroke();
-        const rg = g.createRadialGradient(x, y, 0, x, y, z * 0.55); rg.addColorStop(0, `hsla(${hue + (gold ? 0 : 40)},${sat}%,90%,${a})`); rg.addColorStop(1, `hsla(${hue},${sat}%,60%,0)`);
-        g.fillStyle = rg; g.fillRect(x - z, y - z, z * 2, z * 2); }
+        const r = z * 0.55; g.globalAlpha = a; g.drawImage(glowSprite(hue + (gold ? 0 : 40), hue, sat), x - r, y - r, r * 2, r * 2); g.globalAlpha = 1; }
       else g.fillRect(x - z / 2, y - z / 2, Math.max(S, z), Math.max(S, z)); } }
   function foil(g, b, tl, list, gold, S, { k = 1, per = 0.9, sp = 1 } = {}) { const t = tiles(), [d, m, br, h] = GOLD.c;
     g.save(); g.globalCompositeOperation = 'color-dodge'; g.globalAlpha = (0.32 + tl.o * 0.4) * k;
@@ -57,6 +64,7 @@
     g.fillStyle = rg; g.fillRect(b.x, b.y, b.w, b.h); g.restore(); }
   const leafCache = new Map();
   function leaf(w, h) { const key = `${Math.round(w)}x${Math.round(h)}`; if (leafCache.has(key)) return leafCache.get(key);
+    if (leafCache.size >= 6) leafCache.delete(leafCache.keys().next().value); // a few sizes at most (zoom steps): oldest out
     const c = mk(w, h), q = c.getContext('2d'), r = rng(99); q.fillStyle = '#000';
     for (let f = 0; f < 320; f++) { const cx = r() * w, cy = r() * h, R = (r() < 0.08 ? 9 + r() * 9 : 1.5 + r() * 5.5) * (w / 597), k = 7 + Math.floor(r() * 6), rot = r() * 6.3;
       q.beginPath(); for (let v = 0; v < k; v++) { const a = rot + v / k * 6.283, rr = R * (0.45 + r() * 0.75); q[v ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * rr * 1.3, cy + Math.sin(a) * rr); } q.closePath(); q.fill(); }
@@ -64,9 +72,11 @@
   function cardPath(g, W, H, S) { const x = INSET * S, y = INSET * S, w = W - 2 * x, h = H - 2 * y, r = RADIUS * S;
     g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
   // run fx on a copy of the canvas so far and keep it only where `keep` paints
-  let scratch = null;
-  function within(g, fx, keep) { const W = g.canvas.width, H = g.canvas.height;
-    if (!scratch || scratch.width !== W || scratch.height !== H) scratch = mk(W, H);
+  // one scratch canvas per size (a tile, the big card and a holder's card each keep theirs: no reallocating every frame)
+  const scratches = new Map();
+  function within(g, fx, keep) { const W = g.canvas.width, H = g.canvas.height, key = W + 'x' + H;
+    let scratch = scratches.get(key);
+    if (!scratch) { if (scratches.size >= 6) scratches.delete(scratches.keys().next().value); scratch = mk(W, H); scratches.set(key, scratch); }
     const q = scratch.getContext('2d'); q.save(); q.globalCompositeOperation = 'copy'; q.drawImage(g.canvas, 0, 0); q.restore();
     fx(q); q.save(); q.globalCompositeOperation = 'destination-in'; q.globalAlpha = 1; keep(q); q.restore();
     g.drawImage(scratch, 0, 0); }
@@ -112,13 +122,20 @@
   function fill(g, b, r, color, blur, k) { g.save(); if (blur) g.filter = `blur(${blur * k}px)`; rr(g, b, r); g.fillStyle = color; g.fill(); g.restore(); }
   function rim(g, b, r, width, color, blur, k) { g.save(); if (blur) g.filter = `blur(${blur * k}px)`; const h = width / 2;
     rr(g, { x0: b.x0 + h, y0: b.y0 + h, x1: b.x1 - h, y1: b.y1 - h }, Math.max(0, r - h)); g.lineWidth = width; g.strokeStyle = color; g.stroke(); g.restore(); }
-  function plasticGlare(g, body, r, strength) { g.save(); rr(g, body, r); g.clip();
-    const K = 0.55 * HW + HH, d = K / (0.55 * 0.55 + 1), gr = g.createLinearGradient(0, 0, 0.55 * d, d);
+  // the plastic's glare: the studio's bands (protect.ts), slid along their diagonal with the tilt, and a thin highlight on
+  // the rim toward the light; both measured from the studio's still angle, so at rest it is the saved image
+  function plasticGlare(g, body, r, strength, tl = STILL) { g.save(); rr(g, body, r); g.clip();
+    const dx = tl.tx - STILL.tx, dy = tl.ty - STILL.ty, sh = 0.12 * dx + 0.06 * dy;
+    const K = 0.55 * HW + HH, d = K / (0.55 * 0.55 + 1), gr = g.createLinearGradient(sh * 0.55 * d, sh * d, (1 + sh) * 0.55 * d, (1 + sh) * d);
     const band = (t) => 38 * Math.exp(-(((t - 0.22) / 0.035) ** 2)) + 30 * Math.exp(-(((t - 0.3) / 0.012) ** 2)) + 18 * Math.exp(-(((t - 0.71) / 0.05) ** 2));
     for (let i = 0; i <= 200; i++) { const t = i / 200; gr.addColorStop(t, `rgba(255,255,255,${Math.min(1, band(t) * strength / 255).toFixed(4)})`); }
     g.fillStyle = gr; g.fillRect(0, 0, HW, HH);
     const top = g.createLinearGradient(0, 0, 0, HH * 0.35); top.addColorStop(0, `rgba(255,255,255,${(10 * strength / 255).toFixed(4)})`); top.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = top; g.fillRect(0, 0, HW, HH * 0.35); g.restore(); }
+    g.fillStyle = top; g.fillRect(0, 0, HW, HH * 0.35); g.restore();
+    const lit = Math.min(1, Math.hypot(dx, dy) / 0.6) * strength; if (lit < 0.03) return;
+    const mx = HW * (tl.tx + 1) / 2, my = HH * (tl.ty + 1) / 2, rg = g.createRadialGradient(mx, my, 0, mx, my, HW * 0.75);
+    rg.addColorStop(0, `rgba(255,255,255,${(0.55 * Math.min(1, lit)).toFixed(3)})`); rg.addColorStop(1, 'rgba(255,255,255,0)');
+    g.save(); rr(g, { x0: body.x0 + 3, y0: body.y0 + 3, x1: body.x1 - 3, y1: body.y1 - 3 }, Math.max(0, r - 3)); g.lineWidth = 5; g.strokeStyle = rg; g.stroke(); g.restore(); }
   function text(g, s, x, y, size, color, align = 'left') { g.font = `400 ${size}px ${LABEL_FONT}`; g.textBaseline = 'top'; g.textAlign = align; g.fillStyle = color; g.fillText(s, x, y); return g.measureText(s).width; }
   function fitText(g, s, x, y, size, maxW, color) { let px = size; g.font = `400 ${px}px ${LABEL_FONT}`;
     while (px > 12 && g.measureText(s).width > maxW) { px -= 1; g.font = `400 ${px}px ${LABEL_FONT}`; } text(g, s, x, y + (size - px) / 2, px, color); }
@@ -152,7 +169,7 @@
       label(g, SLAB.label, P.label, k);
       rim(g, win, 40, 4, 'rgba(70,90,110,0.67)'); rim(g, { x0: win.x0 + 5, y0: win.y0 + 5, x1: win.x1 - 5, y1: win.y1 - 5 }, 36, 3, 'rgba(255,255,255,0.67)');
       for (let i = 0; i < 5; i++) { const y = 214 + i * 2; g.beginPath(); g.moveTo(110, y + 1); g.lineTo(HW - 110, y + 1); g.lineWidth = 2; g.strokeStyle = `rgba(255,255,255,${i % 2 ? 0.24 : 0.1})`; g.stroke(); }
-      plasticGlare(g, body, R, 1.25);
+      plasticGlare(g, body, R, 1.25, tl);
       rim(g, body, R, 9, 'rgba(255,255,255,0.59)', 1.5, k); rim(g, { x0: body.x0 + 14, y0: body.y0 + 14, x1: body.x1 - 14, y1: body.y1 - 14 }, R - 12, 3, 'rgba(255,255,255,0.35)');
       rim(g, body, R, 2, 'rgba(50,70,90,0.78)');
     } else {
@@ -161,7 +178,7 @@
       g.drawImage(cardCanvas, cb.x0, cb.y0, cb.x1 - cb.x0, cb.y1 - cb.y0);
       rim(g, { x0: cb.x0 - 6, y0: cb.y0 - 6, x1: cb.x1 + 6, y1: cb.y1 + 6 }, 48, 3, 'rgba(255,255,255,0.47)');
       rim(g, { x0: cb.x0 - 9, y0: cb.y0 - 9, x1: cb.x1 + 9, y1: cb.y1 + 9 }, 50, 2, 'rgba(40,60,80,0.35)');
-      plasticGlare(g, body, R, 1);
+      plasticGlare(g, body, R, 1, tl);
       rim(g, body, R, 7, 'rgba(255,255,255,0.78)', 1.2, k); rim(g, { x0: body.x0 + 10, y0: body.y0 + 10, x1: body.x1 - 10, y1: body.y1 - 10 }, R - 10, 3, 'rgba(255,255,255,0.27)');
       rim(g, body, R, 2, 'rgba(60,80,100,0.63)');
     }
@@ -218,15 +235,15 @@
     if (L.active && Math.abs(x - L.tilt.tx) < 0.004 && Math.abs(y - L.tilt.ty) < 0.004) return false;
     L.tilt = { tx: x, ty: y, o: 1 }; return true;
   }
-  // a sized face (the viewer) draws its moving frames at a lower resolution while a frame takes too long here, so
-  // the light keeps up on a slow phone; a still or held frame is always drawn full size
+  // a face draws its moving frames at a lower resolution while a frame takes too long here, so the light keeps up on a
+  // slow phone; a still or held frame is always drawn full size
   const QUALITY = [1, 0.75, 0.55];
   function draw(el, t) {
     const L = el._holo; if (!L || !L.plain || L.defer) return;
     // a sized face (the full-screen viewer: Holo.size) knows its width, so the frame reads no layout; zoomed in, it draws sharper
     const bw = L.cssW || el.getBoundingClientRect().width; if (!bw) return;
     const tl = L.held || L.s; // held (zoomed in): the light stays where it was
-    const lively = !!L.cssW && !L.held && !!L.busy, q = lively ? QUALITY[L.qi || 0] : 1;
+    const lively = !L.held && !!L.busy, q = lively ? QUALITY[L.qi || 0] : 1;
     const dpr = Math.min(2, devicePixelRatio || 1), W = Math.min(L.cssW ? 1440 : 1100, Math.round(bw * dpr * (L.scale || 1) * q)), H = Math.round(W * 1008 / 720);
     if (L.canvas.width !== W || L.canvas.height !== H) { L.canvas.width = W; L.canvas.height = H; }
     lean(el, L);
@@ -238,7 +255,7 @@
       if (L.slow >= 3 && (L.qi || 0) < QUALITY.length - 1) { L.qi = (L.qi || 0) + 1; L.slow = 0; }
       else if (L.slow <= -30 && L.qi) { L.qi--; L.slow = 0; }
     }
-    L.drawnStill = !L.busy || !!L.held;
+    L.drawnStill = !L.busy || !!L.held; L.drawnAt = t;
   }
   let raf = 0;
   function loop(t) {
@@ -253,6 +270,8 @@
       // an aim that runs out (2.5 s after the last finger or device move) must still be noticed: keep looking until then
       const busy = step(L, t) || drifts(L) || (L.active && !L.hover && t - L.last < 2600);
       L.busy = busy;
+      // only drifting on its own (nothing aiming it): the light is redrawn about 30 times a second, the lean every frame
+      if (busy && L.drawnStill === false && drifts(L) && !engaged(L, t) && t - (L.drawnAt ?? -1e9) < 30) { lean(el, L); again = true; continue; }
       if (busy || !L.drawnStill) draw(el, t);
       if (busy) again = true;
     }
@@ -337,5 +356,34 @@
     L.drawnStill = !!on; kick(); } // held: what's drawn stays (no redraw)
   /** Fetch and decode a card's live parts ahead of time (the pack's cards, during the tear). */
   function preload(c) { const p = PARTS?.(c); return p ? Promise.all([loadImg(p.plain), loadImg(p.print)]).catch(() => null) : Promise.resolve(null); }
-  window.Holo = { render, renderHeld, attach, size, aim, hold, defer, preload, STILL };
+  // ---------- a card as a picture (share images): drawn from its parts at the studio's still angle, at any width (sharp,
+  // not the 360 px tile image). Its layers load with CORS so the canvas can be saved. null when it has no parts.
+  const corsImg = (src) => new Promise((ok, no) => { const i = new Image(); if (/^https?:/.test(src)) i.crossOrigin = 'anonymous';
+    i.onload = () => ok(i); i.onerror = () => { const n = window.Store?.nextGateway?.(i.src); if (n) i.src = n; else no(new Error('image')); }; i.src = src; });
+  async function picture(c, width = 720) {
+    const P = PARTS?.(c); if (!P) return null;
+    const fonts = P.holder === 'slab' && document.fonts ? document.fonts.load(`400 52px ${LABEL_FONT}`).catch(() => null) : null;
+    const [plain, print] = await Promise.all([corsImg(P.plain), corsImg(P.print), fonts]);
+    const cv = mk(width, width * 1008 / 720), g = cv.getContext('2d');
+    if (P.holder === 'raw') render(g, plain, print, c.material, P.look, STILL, P.state); else renderHeld(g, { ...P, plain, print }, c.material, P.look, STILL);
+    return cv;
+  }
+
+  // ---------- device tilt, the same everywhere (the viewer, the reveal, clips): the phone's own resting angle is the
+  // middle (its first reading, then a slow running average, so however it's held the card rests flat and a turn of the
+  // wrist moves the light), and in landscape the axes turn with the screen. -1..1 at `range` degrees from rest.
+  const TZ = { n: null, ang: null, t: 0 };
+  const wrap = (d) => ((d + 540) % 360) - 180;
+  function tiltOf(e, range = 30) {
+    if (e?.gamma == null || e.beta == null) return null;
+    const ang = (((screen.orientation?.angle ?? window.orientation ?? 0) % 360) + 360) % 360;
+    const [x, y] = ang === 90 ? [e.beta, -e.gamma] : ang === 270 ? [-e.beta, e.gamma] : ang === 180 ? [-e.gamma, -e.beta] : [e.gamma, e.beta];
+    const t = e.timeStamp || performance.now();
+    if (!TZ.n || TZ.ang !== ang || t - TZ.t > 4000) { TZ.n = { x, y }; TZ.ang = ang; } // first reading, a turn of the screen, or after a pause: rest here
+    else { const k = 1 - Math.exp(-Math.max(0, t - TZ.t) / 6000); TZ.n.x += wrap(x - TZ.n.x) * k; TZ.n.y += wrap(y - TZ.n.y) * k; } // eases toward how it's held over ~6 s
+    TZ.t = t;
+    const c = (v) => Math.max(-1, Math.min(1, v / range));
+    return { tx: c(wrap(x - TZ.n.x)), ty: c(wrap(y - TZ.n.y)) };
+  }
+  window.Holo = { render, renderHeld, attach, size, aim, hold, defer, preload, picture, tiltOf, STILL };
 })();

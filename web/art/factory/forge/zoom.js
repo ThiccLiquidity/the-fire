@@ -315,8 +315,8 @@
   function tiltByDevice(v, sig) {
     if (!window.DeviceOrientationEvent || typeof DeviceOrientationEvent.requestPermission === 'function') return;
     addEventListener('deviceorientation', (e) => {
-      if (e.gamma == null || v.P.size || v.s > 1.02 || v.closing || !window.Holo) return;
-      window.Holo.aim(v.f, clamp(e.gamma / 30, -1, 1), clamp((e.beta - 45) / 30, -1, 1));
+      if (e.gamma == null || v.P.size || v.s > 1.02 || v.closing || !window.Holo?.tiltOf) return;
+      const t = Holo.tiltOf(e); if (t) Holo.aim(v.f, t.tx, t.ty); // from how the phone is held, turned with the screen
     }, sig);
   }
 

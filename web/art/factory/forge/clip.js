@@ -113,7 +113,7 @@
     // a phone being tilted (where the browser gives tilt with no question, or it was allowed): blended into the sweep
     let user = null, seen = 0; const ac = new AbortController();
     const ask = typeof window.DeviceOrientationEvent?.requestPermission === 'function';
-    if (window.DeviceOrientationEvent && (!ask || window.Fun?.gyro?.on)) addEventListener('deviceorientation', (e) => { if (e.gamma == null) return; user = { tx: clamp(e.gamma / 30, -1, 1), ty: clamp((e.beta - 45) / 30, -1, 1) }; seen = performance.now(); }, { signal: ac.signal });
+    if (window.DeviceOrientationEvent && (!ask || window.Fun?.gyro?.on)) addEventListener('deviceorientation', (e) => { const t = window.Holo?.tiltOf?.(e); if (!t) return; user = t; seen = performance.now(); }, { signal: ac.signal });
     const done = new Promise((ok, no) => { rec.onstop = () => ok(); rec.onerror = (e) => no(e.error || new Error('recorder')); });
     rec.start(500);
     await new Promise((ok) => {
