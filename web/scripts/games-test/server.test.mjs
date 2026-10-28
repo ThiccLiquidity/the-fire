@@ -97,7 +97,7 @@ test('a full paid run: create, approval, confirm, practice, makes, the first mis
   // three practice kicks, then no more; they don't touch the streak
   for (let i = 0; i < 3; i++) {
     const { shot, kick } = await playShot(env, run, { practice: true, want: i === 1 ? 'short' : 'good' });
-    assert.equal(shot.n, -(i + 1)); assert.equal(shot.level, [3, 5, 7][i]); assert.equal(shot.practice, true);
+    assert.equal(shot.n, -(i + 1)); assert.equal(shot.level, [2, 4, 6][i]); assert.equal(shot.practice, true);
     assert.equal(kick.status, 200, JSON.stringify(kick.body)); assert.equal(kick.body.practice, true); assert.equal(kick.body.streak, 0);
     assert.equal(kick.body.result, i === 1 ? 'short' : 'good');
   }

@@ -11,7 +11,7 @@
    Units: inches and seconds. A kick is { power 0..1, aim (radians), contact -1..1, sweetMin }. */
 (function (root) {
   'use strict';
-  const VERSION = 1;
+  const VERSION = 2; // 2 (Oct 28): wind from level 2, movement from 6, a random mix per kick; a 0.3 in football
   const HZ = 480, DT = 1 / HZ;
 
   // ---------- maths on plain arithmetic (identical bits in every engine)
@@ -73,7 +73,7 @@
     offPenalty: 0.3,   // speed lost at the very end of the edge (share)
     drift: 30,         // sideways drift of a mishit at full power (in/s² at the end of the edge)
     windK: 7,          // sideways push per mph (in/s²)
-    ramp: 0.07,        // difficulty budget added per level (distance and movement share it)
+    ramp: 0.07,        // difficulty budget added per level (distance, wind and movement share it)
     curve: 0.0035,     // ...plus this times level²: gentle early, steep late
     start: 0.12,       // difficulty budget at level 0 (1 = a 40 in kick, or a 3 in swing at 12 in)
   });
@@ -82,7 +82,7 @@
   const G = 386;                       // gravity, in/s²
   // the goal: pencils sized like the finger goal, taller (full-length pencils) so a make reads at a glance
   const BAR = 2.5, POST_H = 7.5, PEN_R = 0.14, BLOCK_H = 0.9, PLANK_BACK = 4.5, PLANK_H = 6.8, PLANK_W = 2.2;
-  const TEE_Z = 0, TEE_Y = 0.22, BALL_R = 0.2;
+  const TEE_Z = 0, TEE_Y = 0.22, BALL_R = 0.3; // BALL_R: how close the football (a 1.6 in triangle) comes to a pencil before it touches
   // the bench's far end and the furnace behind it (MOUTH is the default door; the browser refits it to its painted plate)
   const TABLE_END = 44, FURN_Z = 46, FURN_W = 26, MOUTH = Object.freeze({ x: 6.5, y0: 1, y1: 9 });
   // the football: a right isosceles triangle flag-folded from a notebook strip. Long edge 1.6 in (toward the kicker,
@@ -103,29 +103,51 @@
   // ---------- a small seeded random stream (mulberry32): a shot's conditions are a function of (seed, shot number)
   function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
-  // the shot at a level (owner, Oct 27): difficulty is a trade between DISTANCE and MOVEMENT. A level's budget is spent
-  // on the two together, so a short kick at a swinging goal is as hard as a long kick at a still one. A 40 in kick
-  // counts the same as a 0.75 car (a 3 in swing): an average player makes each about half the time (measured with
-  // the sim and a wobbly-thumb player model). The budget grows slowly, then faster: past 1 both have to rise, and the
-  // last stretch is long kicks at fast, wide swings. Wind and a narrower gap come in late, as spice.
-  const LEVEL_NAMES = Object.freeze({ 1: 'Over here: the goal moves off centre', 8: "Fan's on: wind", 12: 'Squeeze it: the gap closes' });
-  const MOVE_PER_DIST = 0.75, MOVE_MAX = 1.5;
+  // the shot at a level (owner, Oct 28, decision 31; replaces the distance-vs-movement trade of Oct 27): a level has
+  // one difficulty budget, and each kick spends it on the factors unlocked so far, in a random mix. Distance is always
+  // in; wind comes in at level 2 and moving posts at level 6. Every kick draws its own weights for the unlocked
+  // factors from the shot's seed, so one kick is long and still, the next short in a crosswind, the next a swing: not
+  // everything harder every time. A factor full to its cap passes the rest of its share on to the others.
+  // The costs are matched with the sim and a wobbly-thumb player model (web/scripts/games-test/difficulty.mjs): one
+  // unit is the full 12 -> 40 in of distance, about 16 mph of wind (at mid range) or a 0.9 car (a 3.6 in swing);
+  // each costs an average player about the same share of makes. The budget grows slowly, then faster. The off-centre
+  // goal (from level 1) and a narrower gap (from level 12) stay small extras on top.
+  const LEVEL_NAMES = Object.freeze({ 1: 'Over here: the goal moves off centre', 2: "Fan's on: wind", 6: 'On the move: the posts slide', 12: 'Squeeze it: the gap closes' });
+  const WIND_FROM = 2, MOVE_FROM = 6;
+  const DIST_PER = 28, WIND_PER = 16, MOVE_PER = 0.9;   // inches, mph and car per unit of budget
+  const WIND_MAX = 9, MOVE_MAX = 1.5;                    // the caps: 40 in, 9 mph, a 1.5 car (a 6 in swing)
   function shotFor(seed, n, level, T) {
     T = T || DEFAULT_TUNING;
     const r = rng(seed * 7919 + n * 104729 + 13);
-    const budget = T.start + level * T.ramp + T.curve * level * level;
-    // how much of the budget goes to movement: anywhere the caps allow, chosen by the shot's seed
-    const moveCap = Math.min(MOVE_MAX / MOVE_PER_DIST, 1 + 0.06 * level); // movement can outgrow distance late on
-    const lo = Math.max(0, budget - 1), hi = Math.min(budget, moveCap);
-    const uMove = lo >= hi ? hi : lo + (hi - lo) * r(), uDist = Math.min(1, budget - uMove);
-    const car = uMove * MOVE_PER_DIST;
+    // the level's budget, give or take 15% so the early (distance-only) kicks aren't all the same length
+    const budget = (T.start + level * T.ramp + T.curve * level * level) * (0.85 + 0.3 * r());
+    // the unlocked factors and this kick's random weights for them
+    const fs = [{ k: 'dist', cap: 1, from: 0 }];
+    if (level >= WIND_FROM) fs.push({ k: 'wind', cap: WIND_MAX / WIND_PER, from: WIND_FROM });
+    if (level >= MOVE_FROM) fs.push({ k: 'move', cap: MOVE_MAX / MOVE_PER, from: MOVE_FROM });
+    for (const f of fs) { f.w = level === f.from && level > 0 ? 0.6 + 0.4 * r() : 0.05 + r(); f.u = 0; } // a factor's first level always shows it
+    // spend the budget by weight; a factor at its cap spills the rest over to the others (by their weights)
+    let left = budget;
+    for (let pass = 0; pass < fs.length && left > 1e-9; pass++) {
+      let open = 0; for (const f of fs) if (f.u < f.cap) open += f.w;
+      if (!(open > 0)) break;
+      let spill = 0;
+      for (const f of fs) {
+        if (f.u >= f.cap) continue;
+        const want = f.u + left * f.w / open;
+        if (want > f.cap) { spill += want - f.cap; f.u = f.cap; } else f.u = want;
+      }
+      left = spill;
+    }
+    const u = {}; for (const f of fs) u[f.k] = f.u;
+    const car = (u.move || 0) * MOVE_PER, windMph = Math.min(WIND_MAX, (u.wind || 0) * WIND_PER);
     const side = () => (r() < 0.5 ? -1 : 1);
     const spice = (from, per) => Math.min(1, Math.max(0, (level - from + 1) * per)) * (0.5 + 0.5 * r());
-    const off = level >= 1 ? Math.min(0.6, 0.06 * level) * r() : 0, wind = level >= 8 ? spice(8, 0.07) : 0, gap = level >= 12 ? spice(12, 0.08) : 0;
-    const dist = 12 + uDist * 28;                              // 12..40 in
+    const off = level >= 1 ? Math.min(0.6, 0.06 * level) * r() : 0, gap = level >= 12 ? spice(12, 0.08) : 0;
+    const dist = 12 + Math.min(1, u.dist) * DIST_PER;          // 12..40 in
     return {
       level, dist,
-      wind: side() * wind * 9 || 0,                            // ±9 mph (|| 0: never -0)
+      wind: windMph >= 0.5 ? side() * windMph : 0,             // ±9 mph (a breath under 0.5 mph is no wind)
       half: Math.max(1.2, 2.5 - gap * 1.1),                    // half the clear gap: 5.0 in .. 2.8 in
       offset: side() * off * TAN6 * (dist + 4) || 0,           // within a 6° turn of the head
       move: car > 0.02 ? { amp: car * 4, speed: 0.6 + car * 1.4, phase: r() * PI * 2 } : null,
@@ -330,7 +352,7 @@
     VERSION, HZ, DT, DEFAULT_TUNING,
     math: Object.freeze({ PI, sqrt, hypot, sin, cos, atan, atan2, clamp }),
     world: Object.freeze({ G, BAR, POST_H, PEN_R, BLOCK_H, PLANK_BACK, PLANK_H, PLANK_W, TEE_Z, TEE_Y, BALL_R, TABLE_END, FURN_Z, FURN_W, MOUTH, TRI, EDGE_MID, EDGE_HALF, REST_Y, YAW0, YAW_FLY, CAM_DB, TAN18 }),
-    LEVEL_NAMES, Q_XY, Q_T, MAX_SAMPLES,
+    LEVEL_NAMES, COSTS: Object.freeze({ WIND_FROM, MOVE_FROM, DIST_PER, WIND_PER, MOVE_PER, WIND_MAX, MOVE_MAX }), Q_XY, Q_T, MAX_SAMPLES,
     rng, shotFor, postX, plankZ, launch, createFlight, simulate,
     quantize, edgeScale, onPaper, velocity, kickFromInput, checkInput,
   });

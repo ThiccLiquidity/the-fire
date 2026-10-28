@@ -7,7 +7,7 @@ const paperfb = {
   slug: 'paperfb',
   name: 'Fold and Flick',
   version: Sim.VERSION,
-  practiceLevels: [3, 5, 7],
+  practiceLevels: [2, 4, 6], // practice shows wind (from 2) and the first moving posts (6); the same in games.js
   /** shot n's conditions at a level (n < 0: practice) */
   shot: (seed, n, level) => Sim.shotFor(seed, n, level, Sim.DEFAULT_TUNING),
   /** the release time matters only when the posts move */

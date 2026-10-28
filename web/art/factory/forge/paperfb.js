@@ -5,8 +5,9 @@
    the pencils, the bar, the oak block and Plank (who stands just behind the goal, so every make bounces off his face).
    Where you touch the strike edge sets loft and spin (a little below the middle: clean, end over end, with lift;
    lower: pops up and floats; dead centre and higher: flat, and knuckling); the swipe's slant sends it sideways. Kicking harder costs accuracy.
-   Levels unlock one factor at a time (distance, offset, wind, gap, then the RC car). Every condition is shown before
-   the kick and comes from a seeded stream, so a kick can be replayed exactly.
+   Levels unlock one factor at a time (distance, then wind at level 2 and the RC car at 6; an off-centre goal and a
+   narrower gap as extras), and each kick mixes them at random. Every condition is shown before the kick and comes
+   from a seeded stream, so a kick can be replayed exactly.
    Units are inches and seconds. A kick is { power 0..1, aim (radians), contact -1..1 }. The rules, the input mapping and
    the physics are the shared deterministic sim, paperfb-sim.js (load it first): the game server replays paid kicks with it.
    PaperFootball.mount(host, { art: { plank, backdrop }, onEvent }) returns { setTuning, tuning, stats, destroy, ... }. */
@@ -105,7 +106,8 @@
       const edge = S.quantize(b.x, b.y, 0), start = S.quantize(p.x, p.y, 0);
       if (!S.onPaper(S.edgeScale(stage), (start[0] - edge[0]) / S.Q_XY, (start[1] - edge[1]) / S.Q_XY)) return; // start on the paper
       press = { id: e.pointerId, t0: p.t, stage, edge: { x: edge[0], y: edge[1] }, start, pts: [start] };
-      cv.setPointerCapture(e.pointerId); e.preventDefault();
+      try { cv.setPointerCapture(e.pointerId); } catch { /* a synthetic or already-gone pointer */ }
+      e.preventDefault();
     });
     cv.addEventListener('pointermove', (e) => {
       if (!press || e.pointerId !== press.id) return; press.pts.push(sample(press, pos(e))); if (press.pts.length > 48) press.pts.shift();
@@ -579,7 +581,8 @@
       g.strokeStyle = 'rgba(255,210,122,.55)'; g.lineWidth = 1.5; g.setLineDash([3, 4]);
       g.beginPath(); g.moveTo(x, b.y - b.half); g.lineTo(x, b.y + b.half); g.stroke(); g.setLineDash([]);
       g.strokeStyle = 'rgba(111,207,122,.9)'; g.lineWidth = 3; g.beginPath(); g.moveTo(x, b.sweetY - b.sweet); g.lineTo(x, b.sweetY + b.sweet); g.stroke();
-      if (press) { const cy = b.y - press.contact * b.half, ok = Math.abs(cy - b.sweetY) <= b.sweet; g.fillStyle = ok ? 'rgba(111,207,122,.95)' : 'rgba(255,107,90,.95)'; g.beginPath(); g.arc(x, cy, 6, 0, Math.PI * 2); g.fill(); }
+      // where the press landed on the edge (its start point; contact is only worked out at the release)
+      if (press) { const cy = Math.min(b.y + b.half, Math.max(b.y - b.half, press.start[1] / S.Q_XY)), ok = Math.abs(cy - b.sweetY) <= b.sweet; g.fillStyle = ok ? 'rgba(111,207,122,.95)' : 'rgba(255,107,90,.95)'; g.beginPath(); g.arc(x, cy, 6, 0, Math.PI * 2); g.fill(); }
     }
     // ---------- the HUD: brass-and-iron scoreboards with flip digits (the factory's look) and a wind dial
     const DISP = 'Russo One, "Arial Black", system-ui, sans-serif';
@@ -650,7 +653,8 @@
       flipText('dist', dx + 10, top + 17, String(Math.round(shot.dist)).padStart(2, '0'), 19, 14);
       label('IN', dx + dw - 13, top + 32, 9);
       g.textAlign = 'center';
-      if (shot.move && !ball) { g.font = `400 ${Math.max(12, H * 0.024)}px ${DISP}`; g.fillStyle = '#ffb07a'; g.fillText('MOVING POSTS · TIME IT', W / 2, top + bh + 18); }
+      // moving posts: said at the bottom, clear of the goal (on a phone the goal fills the top of the view)
+      if (shot.move && !ball) { const fs = Math.max(12, H * 0.024), y = H - 14 - (hint && !press ? Math.max(12, H * 0.03) + 8 : 0); g.font = `400 ${fs}px ${DISP}`; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.55)'; g.strokeText('MOVING POSTS · TIME IT', W / 2, y); g.fillStyle = '#ffb07a'; g.fillText('MOVING POSTS · TIME IT', W / 2, y); }
       if (note && clock - note.at < 3.5 && !ball) { const nw = Math.min(W - 40, 280); ironPlate(W / 2 - nw / 2, H * 0.17, nw, 34); g.font = `400 ${Math.max(11, H * 0.022)}px ${DISP}`; g.fillStyle = '#ffd27a'; g.textAlign = 'center'; g.fillText(note.text.toUpperCase(), W / 2, H * 0.17 + 22); }
       if (hint && !ball && !press) { g.font = `800 ${Math.max(12, H * 0.03)}px Nunito, system-ui, sans-serif`; g.fillStyle = 'rgba(0,0,0,.5)'; const tx = matchMedia('(pointer: fine)').matches ? 'Grab the paper and flick it up' : 'Touch the paper and flick up'; g.fillText(tx, W / 2 + 1, H - 13); g.fillStyle = 'rgba(246,232,207,.95)'; g.fillText(tx, W / 2, H - 14); }
     }
