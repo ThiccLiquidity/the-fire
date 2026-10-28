@@ -14,7 +14,7 @@ can change the site is taken. Tick each box; anything you can't tick, ask.
 - [ ] Before signing on the Ledger, the screen's contract address matches `deployments/4663.json` (or `46630.json`
       on the testnet). If the address on the device isn't one of ours, reject.
 - [ ] The owner Ledger is used for nothing else (no airdrops, no mints on other sites, no token approvals).
-- [ ] **Revenue wallet** (gets 70% of sales): a hardware wallet address, not a hot wallet. It can be the same Ledger
+- [ ] **Revenue wallet** (gets what's left of each sale after its liquidity share): a hardware wallet address, not a hot wallet. It can be the same Ledger
       on a different account.
 - [ ] **Deployer** (throwaway hot wallet): after the deploy, move what's left of its ETH out. It has no powers once
       the owner accepts ownership; don't reuse it for anything.
@@ -83,7 +83,38 @@ passkey** (not SMS), and the recovery codes saved offline.
 Checked Oct 21, 2026: the repository's whole history holds no private keys, seed phrases or API keys (only public
 addresses, the published AWS example key in a test, and Anvil's public dev keys).
 
-## 5. On launch day
+## 5. Lock the site and contracts down (step by step, before mainnet)
+
+Do these in order. Each one closes a way someone could change what visitors see or sign.
+
+1. **GitHub: protect `main`.** Settings → Branches → Add rule for `main`: require a pull request, block force
+   pushes and deletion, and include administrators. Nothing reaches the live site without a reviewed merge.
+2. **Vercel: production builds only from `main`.** Project → Settings → Git: production branch `main`. Settings →
+   Deployment Protection: protect preview deployments (Vercel login) so the `wip/pending-approval` previews aren't
+   public. Settings → Environment Variables: nothing secret is needed by the site; delete anything you don't
+   recognise.
+3. **Vercel: lock the team.** Members: only you. Turn on "Require two-factor" for the team.
+4. **Domain registrar (when you buy the domain).** Registrar lock (transfer lock) on, 2FA on, auto-renew on, and
+   DNSSEC on if the registrar offers it. Point DNS only at Vercel. Add a CAA record allowing only Vercel's certificate
+   authority (Let's Encrypt), so nobody else can get a certificate for the domain.
+5. **Owner Ledger owns everything.** After the deploy, run `script/AcceptOwnership.s.sol` from the Ledger, then
+   `script/VerifyDeploy.s.sol` with `$env:KEEPERS` set: it must say `0 FAIL`.
+6. **Keepers.** Both keeper wallets are LiquidityBurner keepers (VerifyDeploy checks it) and hold gas only. Alerts
+   go to Telegram, and the heartbeat is set, so a dead keeper is noticed.
+7. **Know the alarms.** The keeper posts when:
+   - FireSale is paused, or its wallets or price feeds change;
+   - a randomness switch is proposed. It can only take effect 48 hours later, and naming the current source calls it
+     off. If you didn't propose it, your Ledger is compromised: move funds and call it off;
+   - LiquidityBurner has work it can't do (a price guard or a missing price), or ETH/USDG piling up.
+8. **What can't be changed, even by you.** LiquidityBurner has no withdraw, and its tokens, router, pool and price
+   feeds are fixed. A Series' odds, prices and groups lock when it opens. Grading odds and wear are fixed forever.
+9. **Site wallet gate.** The site refuses to ask a wallet to sign anything outside our own contracts and functions
+   (`web/src/lib/guard.ts`): no unlimited approvals, no approvals to anyone else, PAPER swaps only into the buyer's
+   own wallet, at most 0.5 ETH per transaction. Don't loosen it without a review.
+10. **Before announcing.** Open the live site in a fresh browser profile, connect a small wallet, buy one pack and
+    check every wallet prompt shows our contract address.
+
+## 6. On launch day
 
 - [ ] Announce only the real site address. Pin it. Expect fake "Omni Cards" accounts and sites: warn people that
       there is no early mint, no DMs, no "airdrop claim".
