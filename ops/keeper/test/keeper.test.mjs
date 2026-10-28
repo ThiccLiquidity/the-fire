@@ -8,7 +8,7 @@ import { DRAND_CHAIN, DRAND_GENESIS, drandClient, roundAt, roundTime } from "../
 import { createNotifier } from "../src/alerts.mjs";
 import { loadConfig, loadKey } from "../src/config.mjs";
 import { createSender } from "../src/tx.mjs";
-import { createKeeper, dropEndTimes, lastGroupEnd, flushPlan, liquidityWork, waitAlerts } from "../src/core.mjs";
+import { createKeeper, dropEndTimes, lastGroupEnd, flushPlan, liquidityWork, spendAlert, waitAlerts } from "../src/core.mjs";
 import { saleAbi, groupsAbi } from "../src/abis.mjs";
 import { existsSync, readFileSync } from "node:fs";
 
@@ -414,6 +414,36 @@ test("liquidity: the backup runs it only for work that has waited ACT_AFTER_SEC"
   t.mock.timers.tick(301_000);
   await k.jobs.liquidity([]);
   assert.equal(chain.writes.length, 1);
+});
+
+test("liquidity: ETH + USDG waiting over $100 is flagged, and alerts once it has stayed over 30 minutes", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_000_000_000_000 });
+  let held = [0n, 0n, $(150)];
+  const chain = fakeChain({ reads: { held: () => held, keeper: () => true, "sim:run": () => false } }); // runs can't spend it
+  const k = keeperOn(chain, { spendAlertUsd: 100, spendAlertMin: 30 });
+  const pass = async () => { const w = []; await k.jobs.liquidity(w); return w.find((x) => x.spendOver); };
+  const first = await pass();
+  assert.ok(first && first.work === 150, "over $100: flagged");
+  assert.equal(spendAlert(first, { spendAlertUsd: 100, spendAlertMin: 30 }, Date.now()), null, "not yet: a run may still spend it");
+  t.mock.timers.tick(31 * 60_000);
+  const later = await pass();
+  assert.equal(later.since, first.since, "the clock runs from when it first went over");
+  assert.match(spendAlert(later, { spendAlertUsd: 100, spendAlertMin: 30 }, Date.now()).text, /\$150\.00 of ETH \+ USDG waiting to be spent \(over \$100 for 31 min\)/);
+  held = [0n, 0n, $(40)];
+  assert.equal(await pass(), undefined, "back under $100: no flag");
+  held = [0n, 0n, $(120)];
+  assert.ok((await pass()).since === Date.now(), "over again: a new clock");
+  assert.ok(spendAlert({ name: "LiquidityBurner", work: 120, since: Date.now() }, { once: true }, Date.now()), "one-pass runs alert at once");
+});
+
+test("feeds: LiquidityBurner's own PAPER average is checkpointed when due, like PlankUsdTwap and PaperUsdTwap", async () => {
+  const due = new Set([CON.liquidity, CON.plankTwap]);
+  const chain = fakeChain({ reads: { due: (a) => due.has(a), "sim:checkpoint": () => undefined }, onWrite: (c) => due.delete(c.address) });
+  const k = keeperOn(chain);
+  await k.jobs.feeds(0n);
+  assert.deepEqual(chain.writes.map((w) => [w.address, w.functionName]), [[CON.plankTwap, "checkpoint"], [CON.liquidity, "checkpoint"]]);
+  await k.jobs.feeds(0n);
+  assert.equal(chain.writes.length, 2, "not due again: nothing sent");
 });
 
 /** A drop as FireSale.status shows it (left, endableAt) and its groups' ends; endDrop and close close it. */

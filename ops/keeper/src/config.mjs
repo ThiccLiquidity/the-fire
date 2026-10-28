@@ -127,6 +127,10 @@ export function loadConfig(env = process.env) {
     paperCandidateLateHours: num(e("PAPER_CANDIDATE_LATE_HOURS"), 3),
     ethStaleHours: num(e("ETH_STALE_HOURS"), 24),
     waitingAlertMin: num(e("WAITING_ALERT_MIN"), 60),
+    // LiquidityBurner's ETH + USDG waiting to be spent: an alert once it stays over SPEND_ALERT_USD for SPEND_ALERT_MIN
+    // (nothing on chain caps it; a working run spends it within minutes)
+    spendAlertUsd: num(e("SPEND_ALERT_USD"), 100),
+    spendAlertMin: num(e("SPEND_ALERT_MIN"), 30),
     drandLagRounds: BigInt(num(e("DRAND_LAG_ROUNDS"), 20)),
     clockSkewSec: num(e("CLOCK_SKEW_SEC"), 120),
     // keep about 0.005-0.01 ETH per keeper wallet: this fires only when it is really running low

@@ -8,7 +8,8 @@ reliably awake.
 Each pass (every 20 s for the main keeper, 30 s for the backup):
 
 1. **Feeds:** `PlankUsdTwap.checkpoint()` when `due()` (every 30 min) and `PaperUsdTwap.checkpoint()` when `due()`
-   (candidate pool, adoption, the 20 h window).
+   (candidate pool, adoption, the 20 h window), and `LiquidityBurner.checkpoint()` when `due()` (its own 30-minute
+   PAPER average, of the PAPER/PLANK pool, that its price guards use).
 2. **Randomness:** for every open (`FireCards`) and grading (`FirePsa`) still waiting, once drand has published the
    request's round, it fetches the signature from the drand relays and calls `OpenDrandRouter.fulfillMany(ids, sigs)`
    (several at once). If the router already holds the word but the callback didn't land, it calls `adapter.settle(id)`.
@@ -68,7 +69,8 @@ while it lasts, and "resolved" when it clears:
 - **Stale feeds:** the PLANK price over 90 min old (FireSale stops PLANK pricing at 2 h, and a buy can't heal a longer
   gap: its own checkpoint makes a window over 2 h, so pricing stays off until the next one); a PLANK window over 2 h;
   PAPER/USD not rolled for 22 h; a PAPER candidate pool still not adopted 3 h after its 20 h; Chainlink ETH/USD not
-  updated for 24 h (prices stop at 25 h).
+  updated for 24 h (prices stop at 25 h); LiquidityBurner's PAPER average not checkpointed for 90 min (its runs wait
+  once the window passes 2 h).
 - **Stuck opens and gradings:** drand published the round 10 min ago and it still isn't delivered; an open ready but
   not dealt, or a grading ready but not finished, for 10 min.
 - **Near the cancel window (URGENT):** an open or grading still without its word 6 h after the request
@@ -78,6 +80,8 @@ while it lasts, and "resolved" when it clears:
 - **Stuck opens and gradings** older than the 300 the keeper reads each pass: one alert with how many and the oldest.
 - **Waiting work:** LiquidityBurner has work a run couldn't do (a price guard, the pool's price off, or a missing
   price feed). Dust below the run minimum waits quietly.
+- **Money waiting to be spent:** LiquidityBurner holds over $100 of ETH + USDG (`SPEND_ALERT_USD`) for 30 min
+  (`SPEND_ALERT_MIN`): nothing caps that side on chain, so a run that keeps not spending it is worth a look.
 - **An unsold drop:** "Series N hasn't sold out; the owner can end it now with FireSale.endDrop(N), or anyone can after
   <date>"; after that date, only if the keeper's own `endDrop` didn't go through. Posted when the keeper ends it.
 - **A close that didn't go through:** "Series N: nothing can still sell, but this keeper's FireSale.close(N) didn't go
