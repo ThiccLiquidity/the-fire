@@ -40,6 +40,12 @@
         if (type === 'kick' || type === 'make') saveStats(id, st);
       },
     });
+    // the phone's Back while a game runs is the game's own ← Back (to the room), never the end of the whole sheet: one
+    // history entry of ours on top while it runs (core.js keeps the sheets' own entry under it)
+    let stepped = false;
+    try { history.pushState({ ...(history.state || {}), game: 1 }, ''); stepped = true; } catch { /* sandboxed: no history */ }
+    const pop = (e) => { if (!stepped) return; stepped = false; e.stopImmediatePropagation(); removeEventListener('popstate', pop, true); onBack?.(); };
+    addEventListener('popstate', pop, true); // capture: before the sheets' own Back (core.js)
     let status = {};
     return {
       game,
@@ -48,7 +54,7 @@
         note.textContent = s.text || ''; note.classList.toggle('ready', !!s.ready);
         go.hidden = !s.ready; if (s.ready) go.textContent = s.go;
       },
-      stop() { game?.destroy?.(); root.remove(); },
+      stop() { game?.destroy?.(); root.remove(); removeEventListener('popstate', pop, true); if (stepped && history.state?.game) { stepped = false; history.back(); } },
     };
   }
 

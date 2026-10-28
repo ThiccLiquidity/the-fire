@@ -885,7 +885,12 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .cel-c { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 6% }
 .cel-c.best { outline: 2px solid var(--gold); outline-offset: 3px }
 .cel-c .new-t { position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); z-index: 5 }
-.cel-acts { display: grid; justify-items: center; gap: 10px; width: 100% }
+.cel-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; width: 100% }
+.cel-acts .cel-protect { flex-basis: 100%; text-align: center }
+/* the last pack: Done and Case & grade them side by side, the two main ways on */
+.cel-acts:has(.cel-grade) .btn.big { flex: 1 1 140px; min-width: 0; max-width: 300px; font-size: 16px; padding: 0 .7em }
+.btn.cel-grade { border-color: var(--diamond); color: #e7f1ff; background: linear-gradient(#24303e, #161d26) }
+.cel-more { justify-content: center; width: 100% }
 .btn.big { min-height: 56px; min-width: min(320px, 100%); font-size: 18px; border-radius: 14px }
 .cel-acts .row { justify-content: center }
 .cel-protect { margin: 2px 0 0; font-size: 13px } .cel-protect .linkish { min-height: 44px }
@@ -907,8 +912,8 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
   .cel-k { grid-column: 1 / -1; justify-self: center }
   .cel-best { grid-column: 1; grid-row: 2 / span 3; align-self: start }
   .cel-big { width: 200px }
-  .cel-pulls, .cel-acts, .cel-protect { grid-column: 2 }
-  .cel-acts { justify-items: start } .cel-acts .row { justify-content: flex-start } .cel-protect { justify-self: start }
+  .cel-pulls, .cel-acts, .cel-protect, .cel-more { grid-column: 2 }
+  .cel-acts, .cel-more { justify-content: flex-start } .cel-acts .cel-protect { text-align: left }
 }
 
 /* a free pack earned by burning (screens.js freePackMoment): one pack flies to where free packs are kept, a "+1" lands there */

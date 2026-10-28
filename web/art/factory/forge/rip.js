@@ -420,7 +420,7 @@
     b.setAttribute('aria-label', 'Make a video of this pack opening to share');
     b.innerHTML = `${Clip.ICONS.FILM}${Clip.ICONS.RING}<span class="clip-t">Rip video</span>`;
     const best = [...cards].sort((a, c) => Store.trueOdds(c).n - Store.trueOdds(a).n)[0], od = Store.trueOdds(best);
-    const text = `Series ${series} pack at Omni Cardworks: ${best.character}, ${nameOf(best)}${od.label ? ' (' + od.label + ')' : ''}.`;
+    const text = `Series ${series} pack at Omni Cardworks: ${best.character}, ${nameOf(best)}${od.label ? ' (' + od.label + ')' : ''}. ${Store.shareLink(cards.map((c) => c.id))}`;
     b.addEventListener('click', async (e) => {
       e.stopPropagation();
       if (b._out) { const o = b._out; b._out = null; return send(o, b, text, true); }

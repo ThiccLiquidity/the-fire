@@ -40,6 +40,9 @@
     return true;
   }
   const btn = (label, cls, onclick, extra = {}) => h('button', { type: 'button', class: 'btn ' + (cls || ''), onclick, ...extra }, label);
+  /** A small "what's next" card after an action (grade: share it; burn: how close the free pack is; suggest: when results land). */
+  const nextStep = (title, ...acts) => h('div', { class: 'next-step', role: 'group', 'aria-label': title }, h('b', { class: 'ns-t', text: title }),
+    acts.filter(Boolean).length ? h('div', { class: 'ns-acts' }, acts) : null);
   /** A live wait's status line, with an optional action the buyer can choose (never pressed for them): a button and
    *  one plain line saying what it does. The same text and action again doesn't redraw (a poll repeats it). */
   const sayTo = (el, text, a) => {
@@ -284,7 +287,7 @@
   async function shareCard(c, from) {
     if (from) { if (from.getAttribute('aria-busy') === 'true') return; from.setAttribute('aria-busy', 'true'); }
     const kind = kindLine(c), odds = pullLine(c);
-    const title = `${c.character}, ${kind}`, text = `I pulled ${c.character} (${kind}${odds ? ', ' + odds : ''}) at Omni Cardworks.`;
+    const title = `${c.character}, ${kind}`, text = `I pulled ${c.character} (${kind}${odds ? ', ' + odds : ''}) at Omni Cardworks. ${Store.shareLink([c.id])}`; // a way back: the showcase of this card
     try {
       // the card's art couldn't be drawn (its host refused it): share the words alone where the device can
       const blob = await shareImage(c).catch(async (e) => {
@@ -466,7 +469,7 @@
       const pill = (t, on, fn, key) => h('button', { type: 'button', class: 'qp', 'aria-pressed': String(on), onclick: () => { fn(); renderColl(); }, 'data-q': key }, t);
       const pick = (k, v) => () => { Object.assign(filt, FILT0, { sort: filt.sort }); if (k) filt[k] = v; };
       const mats = Store.MATS.filter((m) => has((c) => c.material === m));
-      return h('div', { class: 'qpills', role: 'group', 'aria-label': 'Quick filters' },
+      return h('div', { class: 'qbar' }, h('div', { class: 'qpills', role: 'group', 'aria-label': 'Quick filters' },
         pill('Newest', filt.sort === 'serial', () => { filt.sort = 'serial'; }, 'newest'),
         pill('Best first', filt.sort === 'rarity', () => { filt.sort = 'rarity'; }, 'best'),
         h('span', { class: 'qp-gap', 'aria-hidden': 'true' }),
@@ -474,7 +477,7 @@
         has(isHolo) ? pill('Holo', only('holo', 'yes'), pick('holo', 'yes'), 'holo') : null,
         has((c) => c.grade != null) ? pill('Slabbed', only('hold', 'slab'), pick('hold', 'slab'), 'slab') : null,
         has((c) => Store.holder(c) === 'case') ? pill('Cased', only('hold', 'case'), pick('hold', 'case'), 'case') : null,
-        ...(mats.length > 1 ? mats.map((m) => pill(Store.MAT_LABEL[m], only('mat', m), pick('mat', m), m)) : []));
+        ...(mats.length > 1 ? mats.map((m) => pill(Store.MAT_LABEL[m], only('mat', m), pick('mat', m), m)) : [])));
     }
     // the filters and sort: one "Filter" button on the collection, the choices in their own sheet (cards come first)
     function filterControls(all, after) {
@@ -519,10 +522,16 @@
         : all.length ? h('div', { class: 'empty-state' }, h('p', { text: 'No cards match.' }),
           btn('Clear filters', 'small', () => { Object.assign(filt, FILT0); renderColl(); }, { 'data-key': 'clear' }))
         : emptyColl();
-      put(coll, h('div', { class: 'coll-h' }, h('h3', { id: 'coll-h', text: 'Your cards' }), h('span', { class: 'muted', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }),
-        btn(on ? `Filter · ${on}` : 'Filter', 'small filter-b' + (on ? ' on' : ''), openFilter, { 'data-key': 'filter', 'aria-haspopup': 'dialog', 'aria-label': on ? `Filter and sort (${on} on)` : 'Filter and sort' }),
-        h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) })),
-        btn('Pop report', 'small pop-b', () => openPop(), { 'data-key': 'pop' }), btn('Binder', 'small', () => window.Fun?.go('binder', { series: filt.series === 'all' ? null : +filt.series }), { 'data-key': 'binder' })), all.length ? quickPills(all) : null, freshNudge(all), grid);
+      // the header: the title and its tools on one row; the count and the floor in one small line under it; then the
+      // quick sort and filters, which stay pinned at the top of the sheet while the cards scroll (cards start sooner)
+      put(coll, h('div', { class: 'coll-h' }, h('h3', { id: 'coll-h', text: 'Your cards' }),
+        h('div', { class: 'coll-tools' },
+          btn(on ? `Filter · ${on}` : 'Filter', 'small filter-b' + (on ? ' on' : ''), openFilter, { 'data-key': 'filter', 'aria-haspopup': 'dialog', 'aria-label': on ? `Filter and sort (${on} on)` : 'Filter and sort' }),
+          btn('Binder', 'small', () => window.Fun?.go('binder', { series: filt.series === 'all' ? null : +filt.series }), { 'data-key': 'binder' }),
+          btn('Pop report', 'small pop-b', () => openPop(), { 'data-key': 'pop' }))),
+        h('p', { class: 'coll-sub' }, h('span', { class: 'muted', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }),
+          h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) }))),
+        all.length ? quickPills(all) : null, freshNudge(all), grid);
     }
     // no cards at all: PLANK, and the way to a first pack. Packs ready to open: open one (packs only open once their
     // Series sells out); a sale on: Get a pack (the Buy flow); neither: just the line.
@@ -967,26 +976,29 @@
       const canNext = left > 0 && connected();
       const next = () => { busy = false; openPacks(nextSeries, 1); };
       const closeAll = () => { close(); Sheet.close('table'); };
-      const finish = () => (!prompted && fresh().length ? wizard(true) : closeAll()); // the last pack done: Case & grade first
+      const finish = () => (canNext && !prompted && fresh().length ? wizard(true) : closeAll()); // Done with packs left: Case & grade first (the last pack shows its own button)
       const host = h('div', { class: 'op-sum' }); put(stage, host);
       const ps = window.Fun?.packShare?.(cards, series); // the whole pack as one image
       const celebrate = () => {
         const od = Store.trueOdds(best), tier = tierOf(best), ids = cards.map((c) => c.id);
-        const caseable = cards.filter((c) => c.grade == null && !c.pending && !c.cased), caseUsd = caseable.reduce((a, c) => a + Store.caseUsd(c), 0);
+        // the last pack: Case & grade covers everything pulled this visit (a second main button); earlier packs: these
+        // cards, one line right under the main button (on the first screen)
+        const last = !canNext, caseable = last ? fresh() : cards.filter((c) => c.grade == null && !c.pending && !c.cased), caseUsd = caseable.reduce((a, c) => a + Store.caseUsd(c), 0);
+        const priceLine = caseable.length ? h('span', { class: 'muted', text: `${last ? 'Case' : ' · case'} all ${caseable.length} for ${Wear.usd(caseUsd)}, grade ${Wear.usd(Store.PRICES.GRADE_USD)} each` }) : null;
         put(host, h('div', { class: 'cel' + (tier ? ' t-' + tier : '') },
           h('h3', { class: 'cel-k', text: CEL_HEAD[tier] || (cards.length > 6 ? `Your ${cards.length} cards` : 'Your pulls') }),
           h('div', { class: 'cel-best', style: `--glow:${GLOW[best.material]}` },
             h('button', { type: 'button', class: 'cel-big', 'aria-label': `Best: ${describe(best)}. See it`, onclick: () => openDetail(best.id, ids) }, cardFace(best, false, true)),
             h('div', { class: 'cel-name' }, h('small', { text: 'Best pull' }), h('b', { text: best.character }), h('span', { text: cardName(best) }),
               h('span', { class: 'row' }, tier ? h('span', { class: 'tier-b ' + tier, text: TIER_LABEL[tier] }) : null, od.label ? h('span', { class: 'op-odds', text: od.label }) : null))),
+          h('div', { class: 'cel-acts' },
+            canNext ? btn(`Open next (${left})`, 'gold big', next, { 'data-key': 'next' }) : btn('Done', 'primary big', finish, { 'data-key': 'done' }),
+            last && caseable.length ? btn('Case & grade them', 'big cel-grade', () => wizard(true), { 'data-key': 'protect' }) : null,
+            caseable.length ? h('p', { class: 'cel-protect' }, last ? null : btn('Case & grade them', 'linkish', () => wizard(), { 'data-key': 'protect' }), priceLine) : null),
           h('ul', { class: 'cel-pulls', 'aria-label': 'Everything you pulled' }, cards.map((c) => h('li', {},
             h('button', { type: 'button', class: 'cel-c' + (c === best ? ' best' : ''), 'aria-label': describe(c) + (tags.has(c.id) ? '. New' : ''), onclick: () => openDetail(c.id, ids) },
               cardFace(c, true), tags.get(c.id)?.cloneNode(true) || null)))),
-          h('div', { class: 'cel-acts' },
-            canNext ? btn(`Open next (${left})`, 'gold big', next, { 'data-key': 'next' }) : btn('Done', 'primary big', finish, { 'data-key': 'done' }),
-            h('div', { class: 'row' }, shareBtn(best, '', 'Share best'), clipBtn(best), window.Rip?.button(cards, series) || null, ps || null, btn('My cards', '', seeAll, { 'data-key': 'mycards' }), canNext ? btn('Done', '', finish, { 'data-key': 'done2' }) : null)),
-          caseable.length ? h('p', { class: 'cel-protect' }, btn('Case & grade them', 'linkish', wizard, { 'data-key': 'protect' }),
-            h('span', { class: 'muted', text: ` · case all ${caseable.length} for ${Wear.usd(caseUsd)}, grade for ${Wear.usd(Store.PRICES.GRADE_USD)} each` })) : null));
+          h('div', { class: 'cel-more row' }, shareBtn(best, '', 'Share best'), clipBtn(best), window.Rip?.button(cards, series) || null, ps || null, btn('My cards', '', seeAll, { 'data-key': 'mycards' }), canNext ? btn('Done', '', finish, { 'data-key': 'done2' }) : null)));
         host.querySelector('.cel-acts .btn.big')?.focus({ preventScroll: true });
       };
       // after: the last pack (how it works on top, and "Not now"), over everything pulled this visit; else this pack's cards
@@ -1000,8 +1012,7 @@
           canNext ? btn(`Open next (${left})`, 'gold', next) : null, btn('My cards', '', seeAll)] });
         root.closest('.sheet-body')?.scrollTo({ top: 0 });
       }
-      if (!canNext && fresh().length) wizard(true); // no packs left: straight to Case & grade (the pulls are a tap back)
-      else celebrate();
+      celebrate(); // always the pulls first (the last pack too: its best card gets its moment); Case & grade is the next button
       window.Fun?.emit('opened', { host, cards, series, packs: Math.max(1, Math.round(cards.length / (S().series.cardsPerPack || 6))) });
       Store.update(() => {}); // let the shell refresh counts
       root.closest('.sheet-body')?.scrollTo({ top: 0 });
@@ -1389,7 +1400,7 @@
         shell.remove(); w.classList.add('cased-done'); window.Sound?.play('case-snap', { gap: 60 }); window.Fun?.emit('case'); w.setAttribute('aria-label', `${c.character} cased`);
       }
       caseH.textContent = 'Cased';
-      const got = [];
+      const got = [], gotIds = [];
       if (gradeTiles.length) {
         msg.textContent = 'Grading…';
         gradeTiles.forEach((w) => w.classList.add('scanning'));
@@ -1421,7 +1432,7 @@
           // grade prints on the label. Reduced motion, or no fun layer: the slabbed card fades in over the card.
           const press = !reduced() && window.Fun?.slabPress;
           await (press ? press(w, slab.show) : slab.fade());
-          got.push(gr);
+          got.push(gr); gotIds.push(w._id);
           Store.update((s) => { const c = s.cards.find((x) => x.id === w._id); if (c) { c.grade = gr; c.pending = false; } });
           const c = byId(w._id) || { ...c0, grade: gr, pending: false };
           // the grade stays in view: a PDA pill and the slab's word
@@ -1442,9 +1453,9 @@
         // all revealed: the slabs settle best first, worst last (FLIP: transform only, ~300 ms; reduced motion: at once)
         if (many) await rankSlabs(order.map(({ w, gr }) => ({ w, c: { ...byId(w._id), grade: gr } })));
       }
-      finish(cs, got, msg, ctrls);
+      finish(cs, got, msg, ctrls, gotIds);
     }
-    function finish(cs, got, msg, ctrls) {
+    function finish(cs, got, msg, ctrls, gotIds = []) {
       step = 'work';
       if (!msg) { // nothing paid: straight to the end buttons
         msg = h('p', { class: 'stage-msg', text: 'All kept raw.' }); ctrls = h('div', { class: 'stage-ctrls' });
@@ -1456,6 +1467,10 @@
         if (got.length) toast(got.length === 1 ? `Graded: PDA ${got[0]} · ${Wear.WORD[got[0]]}!` : `${got.length} cards graded · best: PDA ${top} · ${Wear.WORD[top]}`, 'good');
       }
       put(ctrls, done());
+      // the next step: the best new slab, to share or see big (and the showcase it can go on)
+      const bestId = gotIds.length ? gotIds.reduce((a, id, k) => (got[k] > got[gotIds.indexOf(a)] ? id : a), gotIds[0]) : null, bc = bestId != null && byId(bestId);
+      if (bc) ctrls.after(nextStep(`Next: show off your PDA ${bc.grade ?? Math.max(...got)}`, shareBtn(bc, '', 'Share'), btn('View slab', '', () => openDetail(bc.id, gotIds), { 'data-key': 'viewslab' }),
+        window.Fun ? btn('Showcase', '', () => window.Fun.go('showcase'), { 'data-key': 'showcase' }) : null));
       ctrls.querySelector('.btn.primary')?.focus({ preventScroll: true });
     }
     render();
@@ -1488,6 +1503,7 @@
   // free packs are kept (the buy box's Free pack row, else the wallet), a "+1" there, and one toast.
   function freePackMoment(k = 1) {
     if (k < 1) return;
+    burnEarned = true; // this burn has its own moment: no progress line after it
     window.Scene?.popToken?.();
     toast(k === 1 ? '+1 free pack · in your wallet' : `+${k} free packs · in your wallet`, 'good');
     const vis = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.top < innerHeight ? el : null; };
@@ -1511,7 +1527,11 @@
     { duration: 1300, delay: 450, easing: 'cubic-bezier(.3,.6,.4,1)', fill: 'both' });
     a.onfinish = () => { pk.remove(); pip(); };
   }
-  const hookScene = () => window.Scene?.on?.('cardBurned', () => { if (burnQueue > 0) { burnQueue--; addBurn(); window.Sound?.play('fire-flare', { gap: 650 }); } });
+  // the last card of a burn landed: how close the next free pack is now ("34/42 · 8 more to a free pack"); a burn that
+  // just earned one has its own moment instead
+  let burnEarned = false;
+  const burnSaid = () => { if (burnQueue > 0) return; if (burnEarned) { burnEarned = false; return; } const b = S().wallet.burnCount % BURN_GOAL; if (b) toast(`Burned · ${b}/${BURN_GOAL} · ${BURN_GOAL - b} more to a free pack`); };
+  const hookScene = () => window.Scene?.on?.('cardBurned', () => { if (burnQueue > 0) { burnQueue--; addBurn(); window.Sound?.play('fire-flare', { gap: 650 }); if (!burnQueue) setTimeout(burnSaid, 400); } });
   if (window.Scene) hookScene(); else window.addEventListener('scene-ready', hookScene, { once: true });
 
   // Best to burn: spare copies first (never the best copy of a character+material), then least rare.
@@ -1643,12 +1663,13 @@
       const b0 = S().wallet.burnCount % BURN_GOAL; // live: what this burn earns, shown once as its last card lands
       if (LIVE && !(await Live.burn(ids))) return render();
       if (LIVE) liveEarned += Math.floor((b0 + ids.length) / BURN_GOAL);
+      burnEarned = false;
       Store.update((s) => { ids.forEach((id) => Store.noteBurned(byId(id))); s.cards = s.cards.filter((c) => !ids.includes(c.id)); Store.log(`Burned ${ids.length} card${ids.length > 1 ? 's' : ''}`); });
       window.Fun?.emit('burned', { n: ids.length });
       unlisten('burn'); Sheet.close('burn');
       toast(`Burning ${ids.length} card${ids.length > 1 ? 's' : ''}…`);
       if (window.Scene?.burn) burnQueue += ids.length; // counted up front: the moment waits for the last card in the queue
-      ids.forEach((_, i) => setTimeout(() => { if (window.Scene?.burn) window.Scene.burn(); else { addBurn(); window.Sound?.play('fire-flare', { gap: 650 }); } }, i * 350));
+      ids.forEach((_, i) => setTimeout(() => { if (window.Scene?.burn) window.Scene.burn(); else { addBurn(); window.Sound?.play('fire-flare', { gap: 650 }); if (i === ids.length - 1) setTimeout(burnSaid, 400); } }, i * 350));
     }
     listen('burn', render);
     Sheet.open('burn', { title: 'Burn', body: root, onClose: () => unlisten('burn') });
@@ -1741,6 +1762,9 @@
       h('span', { class: 'sg-done-box', 'aria-hidden': 'true', html: BOX_SVG }),
       h('p', { class: 'sg-done-t', text: 'In the box.' }),
       h('p', { class: 'muted', text: 'Picks are made before each Series.' }),
+      // the next step: when results land (the box's closing day where it's known), and the last ones
+      nextStep(Store.SUGGEST_WAVE.closes ? `Next: the box closes ${new Date(Store.SUGGEST_WAVE.closes).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}, then the picks` : 'Next: picks are announced in Results',
+        Store.SUGGEST_RESULTS.length ? btn('Last results', 'small', () => { Sheet.close('suggest'); openResults(); }, { 'data-key': 'results-next' }) : null),
       btn('Write another', '', () => { doneEl.hidden = true; formBits.forEach((el) => { el.hidden = false; }); paperEl.hidden = false; paperEl.style.visibility = ''; renderAct(); fields.forEach((f) => f.grow()); fields[0].ta.focus(); }));
     const act = h('div', { class: 'sg-act' }); const listEl = h('div', { class: 'sg-list' });
     const notes = h('div', { class: 'sg-notes' },

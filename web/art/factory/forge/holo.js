@@ -203,13 +203,17 @@
   const FOLLOW = 10, REST = 6.5, DEAD = 0.06, MARGIN = 6; // springs (rad/s: following ~0.45 s, easing back to rest ~0.7 s), dead zone (of the half-width), the mouse's grace past the edge (px)
   const shape = (u) => { const g = Math.max(0, Math.min(1, Math.abs(u)) - DEAD) / (1 - DEAD); return Math.sign(u) * g * (1.25 - 0.25 * g * g); }; // gentle in the middle, softer still at the edge
   const swayAt = (L, t) => ({ tx: Math.sin(t / 2400 + L.phase) * 0.64, ty: Math.cos((t / 2400 + L.phase) * 0.8) * 0.48, o: 0.55 });
-  const drifts = (L) => L.sway && !still.matches;
+  // touch screens (phones, tablets): the drift rests after CALM ms with nothing aiming the card (4 s after it appears or
+  // after the last touch or tilt let go): it eases to its still angle and stops drawing, so an idle screen costs nothing.
+  // A touch or a tilt starts it again. Mouse screens drift on.
+  const coarse = matchMedia('(pointer: coarse)'), CALM = 4000;
+  const drifts = (L, t = performance.now()) => L.sway && !still.matches && (!coarse.matches || t - Math.max(L.born || 0, L.last + 2500) < CALM);
   // engaged: the mouse is over it, or a finger / device tilt aimed it in the last 2.5 s
   const engaged = (L, t) => L.active && (L.hover || t - L.last < 2500);
   function goal(L, t) {
     if (engaged(L, t)) return { tx: L.tilt.tx, ty: L.tilt.ty, o: 1, w: 1 };
-    const s = drifts(L) ? swayAt(L, t) : STILL;
-    return { tx: s.tx, ty: s.ty, o: s.o, w: drifts(L) ? L.rock : 0 };
+    const d = drifts(L, t), s = d ? swayAt(L, t) : STILL;
+    return { tx: s.tx, ty: s.ty, o: s.o, w: d ? L.rock : 0 };
   }
   // advance the springs to time t (exact critically damped step, any frame length); true while anything still moves
   function step(L, t, keys = ['tx', 'ty', 'o', 'w'], g = goal(L, t)) {
@@ -244,7 +248,8 @@
     const bw = L.cssW || el.getBoundingClientRect().width; if (!bw) return;
     const tl = L.held || L.s; // held (zoomed in): the light stays where it was
     const lively = !L.held && !!L.busy, q = lively ? QUALITY[L.qi || 0] : 1;
-    const dpr = Math.min(2, devicePixelRatio || 1), W = Math.min(L.cssW ? 1440 : 1100, Math.round(bw * dpr * (L.scale || 1) * q)), H = Math.round(W * 1008 / 720);
+    // touch screens: a card in the page draws at most 900 px wide (the full-screen viewer keeps its 1440)
+    const dpr = Math.min(2, devicePixelRatio || 1), W = Math.min(L.cssW ? 1440 : coarse.matches ? 900 : 1100, Math.round(bw * dpr * (L.scale || 1) * q)), H = Math.round(W * 1008 / 720);
     if (L.canvas.width !== W || L.canvas.height !== H) { L.canvas.width = W; L.canvas.height = H; }
     lean(el, L);
     const t0 = performance.now();
@@ -268,10 +273,10 @@
         lean(el, L); continue;
       }
       // an aim that runs out (2.5 s after the last finger or device move) must still be noticed: keep looking until then
-      const busy = step(L, t) || drifts(L) || (L.active && !L.hover && t - L.last < 2600);
+      const busy = step(L, t) || drifts(L, t) || (L.active && !L.hover && t - L.last < 2600);
       L.busy = busy;
       // only drifting on its own (nothing aiming it): the light is redrawn about 30 times a second, the lean every frame
-      if (busy && L.drawnStill === false && drifts(L) && !engaged(L, t) && t - (L.drawnAt ?? -1e9) < 30) { lean(el, L); again = true; continue; }
+      if (busy && L.drawnStill === false && drifts(L, t) && !engaged(L, t) && t - (L.drawnAt ?? -1e9) < 30) { lean(el, L); again = true; continue; }
       if (busy || !L.drawnStill) draw(el, t);
       if (busy) again = true;
     }
@@ -316,7 +321,7 @@
     face.append(canvas); face.classList.add('live');
     // a card with no holo still draws here (sharp at any size, and it leans when moved), but never drifts on its own
     const L = face._holo = { canvas, material: c.material, look: parts.look, holder: parts.holder, state: parts.state, label: parts.label, sway: sway && parts.look !== 'none', rock,
-      plain: null, print: null, tilt: { ...STILL }, active: false, hover: false, last: -1e9, visible: true, drawnStill: false, phase: Math.random() * 6,
+      plain: null, print: null, tilt: { ...STILL }, active: false, hover: false, last: -1e9, born: performance.now(), visible: true, drawnStill: false, phase: Math.random() * 6,
       v: { tx: 0, ty: 0, o: 0, w: 0 } };
     L.s = { ...goal(L, performance.now()) }; // it starts where it rests: nothing moves until something does
     const fonts = parts.holder === 'slab' && document.fonts ? document.fonts.load(`400 52px ${LABEL_FONT}`).catch(() => null) : null;

@@ -80,7 +80,7 @@
       const blob = await packImage(cards, series);
       const top = [...cards].sort((x, y) => rarity(y) - rarity(x))[0]; // the same best card the image leads with
       const look = [{ frame: 'Holo frame', picture: 'Holo picture', full: 'Full holo' }[!Store.ALWAYS_HOLO[top.material] && top.holo] || '', Store.MAT_LABEL[top.material], top.character].filter(Boolean).join(' ');
-      await sharePng(blob, `omni-cardworks-series-${series}-pack.png`, `My Series ${series} pack`, `Ripped a Series ${series} pack at Omni Cardworks. Best pull: ${look}!`, b);
+      await sharePng(blob, `omni-cardworks-series-${series}-pack.png`, `My Series ${series} pack`, `Ripped a Series ${series} pack at Omni Cardworks. Best pull: ${look}! ${Store.shareLink(cards.map((c) => c.id))}`, b);
     }) });
     return b;
   };
@@ -121,7 +121,7 @@
     Sheet.open('recap', { title: `Series ${no} sold out`, body: root });
     let d; try { d = await recapData(no); } catch { Fun.put(root, h('p', { class: 'warn', text: 'Couldn’t load the numbers. Try again.' })); return; }
     const face = (c) => h('div', { class: `cface m-${c.material} hd-${Store.holder(c)}` }, h('img', { class: 'cframe', src: Store.cardImg(c), style: `object-position:${Store.cardPos(c)}`, alt: '', loading: 'lazy' }));
-    const b = h('button', { type: 'button', class: 'btn primary', text: 'Share', onclick: () => busyBtn(b, async () => sharePng(await recapImage(d), `omni-cardworks-series-${no}.png`, `Series ${no} sold out`, `Series ${no} sold out in ${dur(d.secs)}.`, b)) });
+    const b = h('button', { type: 'button', class: 'btn primary', text: 'Share', onclick: () => busyBtn(b, async () => sharePng(await recapImage(d), `omni-cardworks-series-${no}.png`, `Series ${no} sold out`, `Series ${no} sold out in ${dur(d.secs)}. ${Store.shareLink()}`, b)) });
     Fun.put(root, 
       h('p', { class: 'rc-big fun-noterms' }, `Series ${no} sold out in `, h('b', { text: dur(d.secs) })),
       h('dl', { class: 'rc-stats' }, h('div', {}, h('dt', { text: 'Packs' }), h('dd', { text: d.packs.toLocaleString('en-US') })), h('div', {}, h('dt', { text: 'Collectors' }), h('dd', { text: d.buyers.toLocaleString('en-US') }))),

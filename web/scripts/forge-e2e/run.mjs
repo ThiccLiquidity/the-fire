@@ -112,6 +112,9 @@ try {
   check(await page.locator(".net-badge").isVisible(), "the Testnet badge shows");
   check(!(await page.locator(".demo-note").isVisible()) && !(await page.locator(".chip.demo").isVisible()), "no demo notice, no Demo button");
   check(await page.evaluate(() => Store.state.cards.length === 0 && !Store.state.demo), "no demo cards");
+  check(await page.evaluate(() => { const t = document.querySelector("#burnTally"), txt = t && !t.hidden ? t.textContent : "";
+    return !/1\.25B|413K|8\.36K|44K/.test(txt) && Store.state.burnTally?.plank !== 1248300000 && Store.PRICES.PLANK_USD !== 0.0000021 && Store.PRICES.PAPER_USD !== 0.08; }),
+    "live never shows the demo's numbers (burn tally, PLANK and PAPER prices)");
   check(/Series 7 · Opens in/.test(await page.locator("#seriesChip").textContent()), "Series 7 from the chain: opens soon");
   await page.waitForFunction(() => Store.LIVE_ODDS?.slots?.length, null, { timeout: 30_000 });
   const shape = await page.evaluate(() => ({ line: Info.packLine(), fa: Info.shareOf("fullart"), paper: Info.shareOf("paper") }));
@@ -332,7 +335,12 @@ try {
   await page.waitForTimeout(2500);
   await shot("09-reveal");
   await page.click("#sheet-table .skip-b");
-  // no packs left: straight to Case & grade with every pull, "Fresh cards grade best." on top (no fund flows), Not now to skip
+  // no packs left: the pulls are celebrated first, with Case & grade them as the second main button; it opens Case &
+  // grade with every pull, "Fresh cards grade best." on top (no fund flows), Not now to skip
+  await page.locator("#sheet-table .op-sum .cel").waitFor({ timeout: 30_000 });
+  check(await page.locator('#sheet-table .cel-acts [data-key="done"]').isVisible() && await page.locator('#sheet-table .cel-acts [data-key="protect"]').isVisible(),
+    "the last pack: its best pull celebrated, Done and Case & grade them side by side");
+  await page.click('#sheet-table .cel-acts [data-key="protect"]');
   await page.locator("#sheet-table .op-sum .wz .non").waitFor({ timeout: 30_000 });
   const how = await page.locator("#sheet-table .non").innerText();
   check(/Fresh cards grade best/.test(how) && /wear a little every day/.test(how) && /1 in 33/.test(how) && /Day 14 is last call for a 10/.test(how) && /Case · \$0\.05/.test(how) && /Grade · \$1/.test(how)
@@ -818,7 +826,8 @@ try {
       const st = document.querySelector(".stations").getBoundingClientRect(), bb = document.querySelector("#buybar").getBoundingClientRect(), top = [...document.querySelectorAll("dialog[open]")].pop();
       const d = top?.getBoundingClientRect(), body = top?.querySelector(".sheet-body");
       return { mode: document.body.dataset.mode, W, iw: innerWidth, sw: document.scrollingElement.scrollWidth, cw: Math.round(r.width), canvasOk: Math.abs(c.height / dpr - r.height) <= 2,
-        port: document.body.dataset.mode !== "port" || st.bottom <= bb.top + 1, sheetIn: !d || (d.left >= -1 && d.right <= innerWidth + 1 && d.top >= -1 && d.bottom <= innerHeight + 1),
+        // the stations' last tile (their bottom padding is the room kept for the Buy bar, not content)
+        port: document.body.dataset.mode !== "port" || st.bottom - parseFloat(getComputedStyle(document.querySelector(".stations")).paddingBottom) <= bb.top + 1, sheetIn: !d || (d.left >= -1 && d.right <= innerWidth + 1 && d.top >= -1 && d.bottom <= innerHeight + 1),
         sheetX: !body || body.scrollWidth <= body.clientWidth + 2 }; });
     const ok = (f, mode) => f.mode === mode && f.sw <= f.iw && f.cw === f.iw && f.canvasOk && f.port && f.sheetIn && f.sheetX;
     let f = await fit(); check(ok(f, "land"), `rotation: phone on its side lays out (${JSON.stringify(f)})`);

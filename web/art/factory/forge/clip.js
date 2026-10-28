@@ -164,7 +164,7 @@
   async function send(out, c, b, tapped) {
     const file = new File([out.blob], out.name, { type: out.type });
     if (navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: c.character, text: `${c.character}, ${kindLine(c)} at Omni Cardworks.` }); said(b, 'Share clip', ''); }
+      try { await navigator.share({ files: [file], title: c.character, text: `${c.character}, ${kindLine(c)} at Omni Cardworks. ${Store.shareLink([c.id])}` }); said(b, 'Share clip', ''); }
       catch (e) {
         // the recording took longer than the tap's permission lasts (Safari): one more tap shares it
         if (e?.name === 'NotAllowedError' && !tapped) { b._clip = out; return said(b, 'Share', 'ready'); }
