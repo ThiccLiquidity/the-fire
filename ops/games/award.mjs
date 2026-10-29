@@ -1,4 +1,4 @@
-// The game room's prizes for a finished Series: the places on a game's board win what ops/games/prizes.json says for
+// The game room's prizes for a finished Series: the places on a game's board win what web/art/factory/forge/prizes.json says for
 // that game (free pack credits, free cases and free gradings, any mix), through
 // FireCredits.awardPrizes(series, gameId, winners, packs, cases, grades). On chain, all games together are capped at
 // 6 packs, 50 cases and 20 gradings per Series. Meant to run at each new Series launch, for the Series that just
@@ -14,7 +14,7 @@
 //   node ops\games\award.mjs --series 7 --site https://omnicardworks.com --send ; Remove-Item Env:GAME_AWARDER_KEY
 //
 // Options: --series N (the finished Series, required) · --game 1 (FireGames id; default 1, paper football) · --prizes
-// file.json (default ops/games/prizes.json) · --from-block N (where to look for this game's past prizes) · --site URL
+// file.json (default web/art/factory/forge/prizes.json) · --from-block N (where to look for this game's past prizes) · --site URL
 // (or env GAMES_SITE: the board is <site>/api/games/<game>/board?series=N) · --board file.json (a saved board instead)
 // · --exclude 0xa,0xb (wallets the owner's review took off; the next ones move up) · --chain 4663 · --credits 0x...
 // (default: deployments/<chain>.json's FireCredits) · --send.
@@ -38,8 +38,13 @@ const CREDITS_ABI = parseAbi([
 
 const KINDS = ['packs', 'cases', 'grades'];
 /** a game's prize table from the prizes file: one { packs, cases, grades } per place, each place winning something */
-export function prizeTable(file, gameId) {
-  const all = JSON.parse(readFileSync(file, 'utf8')), t = all[String(gameId)];
+/** The prizes file the site shows (web/art/factory/forge/prizes.json): one source for both. */
+export const PRIZES = new URL('../../web/art/factory/forge/prizes.json', import.meta.url);
+
+export function prizeTable(file, gameId, series) {
+  const all = JSON.parse(readFileSync(file, 'utf8'));
+  // { default: { game: [...] }, series: { N: { game: [...] } } }: a Series' own table, else the default
+  const t = all.default ? (all.series?.[String(series)]?.[String(gameId)] ?? all.default[String(gameId)]) : all[String(gameId)];
   if (!Array.isArray(t) || !t.length) throw new Error(`${file} has no prizes for game ${gameId}`);
   return t.map((p, i) => {
     const o = Object.fromEntries(KINDS.map((k) => [k, p[k] ?? 0]));
@@ -86,7 +91,7 @@ export async function award(argv, { env = process.env, out = console.log, fetchI
     if (!res.ok) throw new Error(`board: ${res.status} from ${url}`);
     rows = (await res.json()).rows;
   }
-  const table = prizeTable(o.prizes ?? new URL('./prizes.json', import.meta.url), gameId);
+  const table = prizeTable(o.prizes ?? PRIZES, gameId, series);
   const winners = winnersFrom(rows, { exclude: (o.exclude ?? '').split(',').filter(Boolean), table });
   out(`Series ${series}, game ${gameId}: ${rows.length} on the board`);
   if (!winners.length) { out('No winners (an empty board): nothing to send.'); return { winners, sent: false }; }

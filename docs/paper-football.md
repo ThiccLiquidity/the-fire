@@ -129,7 +129,7 @@ after this gets a numbered line under Decisions, so nothing settled is argued ag
   - Cases and gradings are coupons in FirePsa (`caseCoupons`, `gradeCoupons`). Only FireCredits can add them
     (`FirePsa.setCouponIssuer`, set once; `FireCredits.setPsa`, set once; the deploy wires both). `protect` uses a
     wallet's coupons first and charges only for the rest; nothing at all when they cover the batch.
-  - Which place wins what is set in `ops/games/prizes.json` before each award (`ops/games/award.mjs`).
+  - Which place wins what is set in `web/art/factory/forge/prizes.json` before each award (`ops/games/award.mjs`).
 - **Wired:** `DeployCards`, `AcceptOwnership` (FireGames is the eighth owned contract) and `VerifyDeploy`.
 - **Still to do:** the server (run ids, approvals, shot seeds, replaying kicks, the leaderboard); the site's paid-run
   flow; then the final audit covers them.

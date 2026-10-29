@@ -383,7 +383,7 @@ original plan with Pixabay files.
    - **Hard ceilings per Series, across all games, fixed in code:** 6 pack credits, 20 grading coupons, 50 cases.
    - **Prize split approved (Oct 27), per game, each Series:** 1st 2 packs + 4 gradings + 10 cases; 2nd 1 pack +
      3 gradings + 8 cases; 3rd 3 gradings + 7 cases. Both games together use the full 6 / 20 / 50. Set in
-     `ops/games/prizes.json` and shown from `places` in `games.js`.
+     `web/art/factory/forge/prizes.json` and shown from `places` in `games.js`.
 10. **Leaderboards (Oct 27), for every game:**
     - **This Series:** best score per wallet, **from one Series' launch to the next** (so it covers the quiet
       suggestion stretch when nothing is printing). Its places win the prizes.

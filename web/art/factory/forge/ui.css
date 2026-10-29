@@ -498,6 +498,12 @@ body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
 .gr-art { aspect-ratio: 3 / 2; border-radius: 10px; background: #2a1b10 center / cover no-repeat; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12) }
 .gr-info h3 { margin: 0 0 4px; font: 400 18px var(--display); color: var(--gold) }
 .gr-info p { margin: 0 0 6px }
+.gr-prize p { margin: 4px 0 2px }
+.gr-places { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px }
+.gr-places li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13px }
+.gr-places b { min-width: 30px; font: 400 14px var(--display); color: var(--gold) }
+.gr-places span { padding: 1px 8px; border: 1px solid var(--line-2); border-radius: 999px; background: rgba(255,255,255,.04) }
+.gm-rules .gr-places { margin: 6px 0 2px }
 .gr-stats b { color: var(--gold) }
 .gr-acts { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 6px }
 @media (max-width: 480px) { .gr-game { grid-template-columns: 1fr } }

@@ -1,7 +1,7 @@
 // ops/games/award.mjs: the winners from a board, and its dry run. Run: node --test games/award.test.mjs (from ops/).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { award, prizeTable, winnersFrom } from './award.mjs';
+import { PRIZES, award, prizeTable, winnersFrom } from './award.mjs';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -28,7 +28,7 @@ test('a dry run reads the board and sends nothing; --send without a key or RPC s
 });
 
 test('the prizes file sets each place; the shipped file stays within the Series caps for both games', () => {
-  const t1 = prizeTable(new URL('./prizes.json', import.meta.url), 1), t2 = prizeTable(new URL('./prizes.json', import.meta.url), 2);
+  const t1 = prizeTable(PRIZES, 1, 1), t2 = prizeTable(PRIZES, 2, 1);
   const sum = (k) => [...t1, ...t2].reduce((a, p) => a + p[k], 0);
   assert.ok(sum('packs') <= 6 && sum('cases') <= 50 && sum('grades') <= 20);
   const w = winnersFrom(rows, { table: t1 });
@@ -37,6 +37,9 @@ test('the prizes file sets each place; the shipped file stays within the Series 
   writeFileSync(f, JSON.stringify({ 1: [{ packs: 1 }, { cases: 0 }] }));
   assert.throws(() => prizeTable(f, 1), /at least one/);
   assert.throws(() => prizeTable(f, 3), /no prizes for game 3/);
+  writeFileSync(f, JSON.stringify({ default: { 1: [{ packs: 2 }] }, series: { 5: { 1: [{ packs: 1 }, { cases: 3 }] } } }));
+  assert.deepEqual(prizeTable(f, 1, 4).map((p) => p.packs), [2], 'a Series with no table of its own: the default');
+  assert.deepEqual(prizeTable(f, 1, 5).map((p) => [p.packs, p.cases]), [[1, 0], [0, 3]], 'Series 5 has its own');
   writeFileSync(f, JSON.stringify({ 1: [{ packs: 1.5 }] }));
   assert.throws(() => prizeTable(f, 1), /whole numbers/);
 });

@@ -15,6 +15,9 @@
     return el;
   };
   const list = [];
+  // the prizes, by game and place, for every Series or one Series (prizes.json: the award script reads the same file)
+  let PRIZES = null;
+  const prizesReady = fetch('prizes.json').then((r) => r.json()).then((j) => { PRIZES = j; }, () => {});
   const who = () => (window.Fun?.who?.() || window.Store?.state?.wallet?.full || 'guest').toLowerCase();
   const statsKey = (id) => `omni.game.${id}.${who()}`;
   const loadStats = (id) => { try { return { best: 0, makes: 0, kicks: 0, ...JSON.parse(localStorage.getItem(statsKey(id)) || '{}') }; } catch { return { best: 0, makes: 0, kicks: 0 }; } };
@@ -86,7 +89,8 @@
                 h('button', { type: 'button', class: 'btn primary', 'data-key': `game-free-${g.id}`, onclick: () => start(g, 'free') }, 'Free play'),
                 h('button', { type: 'button', class: 'btn', 'data-key': `game-paid-${g.id}`, disabled: !paid, onclick: () => start(g, 'paid') }, paid ? `Competitive · ${g.entry}` : 'Competitive · soon'),
                 h('button', { type: 'button', class: 'btn small ghost', 'data-key': `game-board-${g.id}`, onclick: () => Comp.board(g) }, 'Leaderboard')),
-              h('p', { class: 'muted small gr-prize', text: g.comp === false ? 'Prizes start with competitive play.' : `Each Series: ${placesText(g)}.` })));
+              g.comp === false ? h('p', { class: 'muted small gr-prize', text: 'Prizes start with competitive play.' })
+                : h('div', { class: 'gr-prize' }, h('p', { class: 'muted small', text: `Series ${series()} prizes` }), prizeList(g))));
         }));
     }
     render();
@@ -134,6 +138,7 @@
   const Comp = {
     /** live: whether FireGames is open for paid runs (and the Series it counts toward); the demo: always */
     async refresh() {
+      await prizesReady;
       const comp = list.filter((g) => g.comp !== false); // games whose competitive runs are built (Spit-Wad's come with its server judging)
       if (!LIVE) { Games.PAID = comp.map((g) => g.gameId); return; }
       const open = [];
@@ -158,7 +163,7 @@
           h('li', { text: 'Up to 3 practice kicks first. They don\'t count.' }),
           h('li', { text: 'Your first miss ends the run.' }),
           h('li', { text: 'Your best streak this Series is your place on the board. A tie goes to whoever got there first.' }),
-          h('li', { text: `When the Series ends: ${placesText(g)}.` }),
+          h('li', {}, 'When the Series ends, the top places win:', prizeList(g)),
           h('li', { text: 'Each kick is checked by our game server. Its call is final.' })),
         saved ? h('button', { type: 'button', class: 'btn', 'data-key': 'comp-resume', onclick: () => Comp.resume(g, saved, body, back, setCurrent).catch((e) => { msg.textContent = e.message; msg.hidden = false; }) }, 'Pick up your run') : null,
         h('label', { class: 'gm-adult', for: 'gm-adult' }, adult, ' I\'m 18 or older and competitive play is allowed where I live.'),
@@ -310,7 +315,7 @@
         rows.length ? h('ol', { class: 'gm-rows' }, rows.slice(0, 50).map((x) => h('li', { class: (x.me ? 'me ' : '') + (!all && x.rank <= 3 ? 'prize' : '') },
           h('span', { class: 'rk', text: String(x.rank) }), who(x), h('b', { text: String(x.streak) }),
           all ? (x.series ? h('small', { class: 'sub', text: `Series ${x.series}` }) : null)
-            : g.places?.[x.rank - 1] ? h('small', { text: prizeText(g.places[x.rank - 1]) }) : null)))
+            : placesOf(g)[x.rank - 1] ? h('small', { text: prizeText(placesOf(g)[x.rank - 1]) }) : null)))
           : h('p', { class: 'muted', text: all ? 'No runs yet.' : 'No runs yet this Series.' }),
         h('p', { class: 'muted small', text: !LIVE ? 'Demo: sample rows, and your runs from this browser.'
           : all ? 'Each wallet\'s best ever. A tie goes to whoever got there first. No prizes: just glory.'
@@ -320,15 +325,28 @@
   Games.competitive = Comp;
   let boardEl = null; // the open leaderboard (a tab switch swaps it in place)
 
-  /** A place's prizes ({ packs, grades, cases }, as in ops/games/prizes.json): "2 packs, 4 gradings, 10 cases". */
+  /** A game's prizes by place for the Series on now: its own table in prizes.json, else the default, else the game's
+   *  built-in list (prizes.json didn't load). */
+  function placesOf(g) {
+    const n = String(series()), id = String(g.gameId);
+    return PRIZES?.series?.[n]?.[id] ?? PRIZES?.default?.[id] ?? g.places ?? [];
+  }
+  /** The prizes as a short list, one place a row: "1st  2 packs · 4 gradings · 10 cases". */
+  function prizeList(g) {
+    const th = ['1st', '2nd', '3rd'], n = (k, w) => (k ? `${k} ${w}${k === 1 ? '' : 's'}` : null);
+    return h('ol', { class: 'gr-places' }, placesOf(g).map((p, i) => h('li', {},
+      h('b', { text: th[i] || `${i + 1}th` }),
+      [n(p.packs, 'pack'), n(p.grades, 'grading'), n(p.cases, 'case')].filter(Boolean).map((t) => h('span', { text: t })))));
+  }
+  /** A place's prizes ({ packs, grades, cases }, as in prizes.json): "2 packs, 4 gradings, 10 cases". */
   function prizeText(p) {
     const n = (k, w) => (k ? `${k} ${w}${k === 1 ? '' : 's'}` : '');
     return [n(p.packs, 'pack'), n(p.grades, 'grading'), n(p.cases, 'case')].filter(Boolean).join(', ');
   }
-  /** The prize list by place: "1st 2 packs, 4 gradings, 10 cases · 2nd …". */
+  /** The prize list by place in one line: "1st 2 packs, 4 gradings, 10 cases · 2nd …". */
   function placesText(g) {
     const th = ['1st', '2nd', '3rd'];
-    return (g.places || []).map((p, i) => `${th[i] || `${i + 1}th`} ${prizeText(p)}`).join(' · ');
+    return placesOf(g).map((p, i) => `${th[i] || `${i + 1}th`} ${prizeText(p)}`).join(' · ');
   }
   Games.prizeText = prizeText;
   Games.placesText = placesText;
@@ -338,7 +356,7 @@
   Games.add({
     id: 'paperfb', gameId: 1, name: 'Fold and Flick', entry: '1 PAPER', capUsd: 0.1, art: ART.bench, // FireGames: 1 PAPER, at most $0.10
     blurb: 'Flick the folded paper through the pencils. Every make moves the goal. Clear Plank and find the furnace.',
-    // what each place wins: kept the same as ops/games/prizes.json (the owner sets both before a Series)
+    // what each place wins if prizes.json can't load (the file is what counts)
     places: [{ packs: 2, grades: 4, cases: 10 }, { packs: 1, grades: 3, cases: 8 }, { packs: 0, grades: 3, cases: 7 }],
     mount: (host, opts) => window.PaperFootball?.mount(host, { art: ART, onEvent: opts.onEvent, waitForShot: opts.waitForShot, mute: () => !(window.Sound?.on ?? true), haptic: (p) => window.Fun?.haptics?.on !== false && navigator.vibrate?.(p) }),
   });

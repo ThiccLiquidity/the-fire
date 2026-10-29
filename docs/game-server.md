@@ -21,8 +21,10 @@ Nothing here is live until the owner sets it up and opens it (below). The live s
    **The server's verdict is final.**
 5. **Board.** Each wallet's best streak per Series and game; a tie goes to whoever reached it first.
 6. **Prizes.** At each Series launch, `ops/games/award.mjs` gives each game's places for the finished Series what
-   `ops/games/prizes.json` says (free packs, cases and gradings, any mix) through `FireCredits.awardPrizes`. On chain,
+   `web/art/factory/forge/prizes.json` says (free packs, cases and gradings, any mix) through `FireCredits.awardPrizes`. On chain,
    all games together are capped at 6 packs, 50 cases and 20 gradings per Series.
+   The site shows the same file (the Game room, the rules, the leaderboard). `default` is every Series; to change one
+   Series, add it under `series` (e.g. `"8": { "1": [ { "packs": 3 }, ... ] }`) before that Series launches.
 
 The browser and the server get the same result because the sim is deterministic: fixed 1/480 s ticks, integer inputs,
 and its own trig and square root (no engine maths that can differ by a bit). The tests check this in Chromium and
