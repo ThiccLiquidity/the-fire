@@ -13,6 +13,9 @@
 // An event ({ key, text }) is something that happened (a randomness switch, the backup stepping in): posted at once,
 // at most once per ALERT_REPEAT_MIN for the same key. A heartbeat message every HEARTBEAT_HOURS.
 //
+// A pass that couldn't see everything (`passFailed`, or `partial`: its health check failed) reports what it saw but
+// resolves nothing: the alerts it couldn't check stay open rather than flapping "resolved" and back.
+//
 // One-pass runs (ONCE=1, the optional GitHub Actions extra) keep that memory in STATE_FILE when it's set (the workflow
 // caches it between runs). Without it they post only in the first ONCE_ALERT_WINDOW_MIN (15) of each ALERT_REPEAT_MIN
 // period, which a scheduled run hits at least about once an hour even when GitHub delays it.
@@ -73,8 +76,9 @@ export function createNotifier({ cfg, log, fetchFn = globalThis.fetch, clock = D
   const post = (text) => (cfg.webhookUrl ? postWebhook(cfg.webhookUrl, text, { fetchFn, log }) : Promise.resolve(false));
 
   /** Called once per pass with this pass's alerts ({ key, text, quiet?, repeat? }) and events ({ key, text }).
-   *  `passFailed`: the pass itself threw (the dead-man's switch is pinged as failing). */
-  async function report(alerts, status, events = [], { passFailed = false } = {}) {
+   *  `passFailed`: the pass itself threw (the dead-man's switch is pinged as failing). `partial`: it couldn't check
+   *  everything. Either way nothing is resolved this pass. */
+  async function report(alerts, status, events = [], { passFailed = false, partial = false } = {}) {
     const now = clock();
     const repeatMs = cfg.alertRepeatMin * 60_000;
     const loud = alerts.filter((a) => !a.quiet);
@@ -101,7 +105,7 @@ export function createNotifier({ cfg, log, fetchFn = globalThis.fetch, clock = D
         }
       }
       for (const [k, o] of open) {
-        if (!seen.has(k)) {
+        if (!seen.has(k) && !passFailed && !partial) {
           open.delete(k);
           lines.push(`- resolved: ${o.text}`);
         }

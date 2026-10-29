@@ -9,7 +9,11 @@
   const net = v === 'off' ? '' : v || built;
   if (net === 'testnet' || net === 'mainnet') {
     const hide = () => document.querySelectorAll('[data-demo-only]').forEach((el) => { el.hidden = true; });
-    if (document.readyState === 'loading') addEventListener('DOMContentLoaded', hide); else hide();
+    // the testnet's explorer for explorer links (Help: "view it on the explorer")
+    const testnet = () => net === 'testnet' && document.querySelectorAll('a[href^="https://robinhoodchain.blockscout.com"]').forEach((a) => {
+      a.href = a.getAttribute('href').replace('https://robinhoodchain.blockscout.com', 'https://explorer.testnet.chain.robinhood.com');
+    });
+    if (document.readyState === 'loading') addEventListener('DOMContentLoaded', () => { hide(); testnet(); }); else { hide(); testnet(); }
   }
   if (!v) return;
   const own = /^(\.\/|index\.html|help\.html|terms\.html)([?#].*)?$/;

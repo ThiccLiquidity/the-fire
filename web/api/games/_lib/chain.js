@@ -26,7 +26,7 @@ export const RUN_TYPES = {
 };
 export const runDomain = (chainId, verifyingContract) => ({ name: 'FireGames', version: '1', chainId, verifyingContract: getAddress(verifyingContract) });
 
-const RPC = { 4663: 'https://rpc.mainnet.chain.robinhood.com', 46630: 'https://rpc.testnet.chain.robinhood.com' };
+const RPC = { 4663: 'https://rpc.mainnet.chain.robinhood.com', 46630: 'https://rpc.testnet.chain.robinhood.com/rpc' };
 
 /** The approval signer alone (no RPC needed): { address, signRun({ gameId, runId, player, series, deadline }) } */
 export function runSigner({ signerKey, chainId, gamesAddress }) {

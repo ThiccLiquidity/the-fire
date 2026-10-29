@@ -505,9 +505,9 @@ export async function card(serial: number): Promise<Card> {
 }
 
 /** The serials a wallet holds: the explorer's list when there is one (fast), else a scan of FireCards transfers
- *  since the deploy (any RPC). */
-export async function cardSerialsOf(owner: Address): Promise<number[]> {
-  if (NET.explorer) {
+ *  since the deploy (any RPC). o.scan: the chain scan even with an explorer (it can lag a just-dealt pack). */
+export async function cardSerialsOf(owner: Address, o: { scan?: boolean } = {}): Promise<number[]> {
+  if (NET.explorer && !o.scan) {
     try {
       const bs = new BlockscoutData({ packs: addr("FirePacks"), cards: addr("FireCards") }, NET.explorer);
       const out: number[] = [];
@@ -527,11 +527,15 @@ export async function cardSerialsOf(owner: Address): Promise<number[]> {
   return ids.filter((_, i) => owners[i] && getAddress(owners[i]!) === getAddress(owner)).map(Number).sort((a, b) => b - a);
 }
 
-/** A wallet's cards, newest first (all of them, read in parallel batches). */
-export async function cardsOf(owner: Address): Promise<Card[]> {
-  const serials = await cardSerialsOf(owner);
+/** A wallet's cards, newest first (all of them, read in parallel batches). A serial that won't read (the explorer
+ *  still lists a card just burned: cardOf needs an owner) is left out, never the whole list. */
+export async function cardsOf(owner: Address, o: { scan?: boolean } = {}): Promise<Card[]> {
+  const serials = await cardSerialsOf(owner, o);
   const out: Card[] = [];
-  for (let i = 0; i < serials.length; i += 20) out.push(...(await Promise.all(serials.slice(i, i + 20).map(card))));
+  for (let i = 0; i < serials.length; i += 20) {
+    const got = await Promise.allSettled(serials.slice(i, i + 20).map(card));
+    for (const r of got) if (r.status === "fulfilled") out.push(r.value);
+  }
   return out;
 }
 

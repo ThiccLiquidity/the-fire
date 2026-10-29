@@ -468,6 +468,18 @@ body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
 .wg-sub { margin: 0; max-width: 300px }
 .wg-grade .wg-dial { width: 140px; height: 140px } .wg-grade .wg-plate { font-size: 24px }
 .op-wait .wg-dial { animation: none }
+.wg-invite { display: grid; justify-items: center; gap: 4px; margin-top: 6px; padding: 14px 18px; max-width: 340px; border: 1px solid var(--line-2); border-radius: 14px; background: linear-gradient(#2f1a0bf0, #1c1008f0); box-shadow: 0 0 24px rgba(255,122,46,.25); animation: wg-pop .45s cubic-bezier(.2,1.4,.4,1) .9s both }
+.wg-invite-t { font: 400 22px var(--display); color: var(--gold) }
+.wg-invite p { margin: 0 }
+.wg-invite .gr-acts { justify-content: center; margin: 8px 0 0 }
+@keyframes wg-pop { from { opacity: 0; transform: translateY(10px) scale(.94) } to { opacity: 1; transform: none } }
+.wg-bar { position: sticky; top: 0; z-index: 3; width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; margin-bottom: 10px; border: 1px solid var(--line-2); border-radius: 12px; background: #1a0f08f2; font: 700 14px var(--body); color: var(--muted) }
+.wg-bar[hidden] { display: none }
+.wg-bar.ready { color: var(--good); border-color: var(--good); box-shadow: 0 0 18px rgba(120,220,140,.35); animation: wg-pop .4s ease-out both }
+.wg-games { width: 100% }
+.wg-host > .stage-msg { margin: -4px 0 10px; font-size: 14px } .wg-host > .stage-msg:not(:has(button)) { display: none } /* while playing: only when it offers a way out */
+.gr-leave { justify-self: start }
+@media (prefers-reduced-motion: reduce) { .wg-invite, .wg-bar.ready { animation: none } }
 @media (prefers-reduced-motion: reduce) { .wg.done .wg-steam { animation: none } }
 /* paper football */
 .pf { width: 100%; max-width: 640px; display: grid; gap: 8px }

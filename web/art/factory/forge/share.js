@@ -140,7 +140,7 @@
   let was = { no: S.series.no, phase: S.series.phase };
   Store.on(() => {
     const now = { no: S.series.no, phase: S.series.phase };
-    if (now.no && now.no === was.no && was.phase < 4 && now.phase >= 4 && (!LIVE || S.series.loaded) && !mem('omni.recap.' + now.no)) {
+    if (now.no && now.no === was.no && was.phase < 4 && now.phase >= 4 && !(S.series.left > 0) && (!LIVE || S.series.loaded) && !mem('omni.recap.' + now.no)) { // ended unsold: no sell-out recap
       closedAt[now.no] = Fun.now(); mem('omni.recap.' + now.no, 1);
       const show = () => (Sheet.covering ? setTimeout(show, 2000) : nudge(now.no));
       setTimeout(show, 7500);

@@ -132,6 +132,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
   };
   const wall = wallNow ?? (() => BigInt(Math.floor(Date.now() / 1000)));
   const backup = cfg.actAfterSec > 0n;
+  const jobStreak = new Map(); // job name -> passes in a row it failed
 
   // memory (lost on restart; a ONCE pass rebuilds what it needs)
   let series = cfg.series ? [...cfg.series] : [];
@@ -577,7 +578,12 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     // the keeper itself
     const bal = await pub.getBalance({ address: account.address });
     if (bal < BigInt(Math.round(cfg.lowBalanceEth * 1e18))) alerts.push({ key: "balance", text: `keeper ${account.address} is low on gas: ${formatEther(bal)} ETH (top it up)` });
-    for (const f of failed) alerts.push({ key: `job:${f.job}`, text: `job ${f.job} failed: ${f.error}` });
+    // a job that failed two passes in a row (one RPC hiccup heals by itself next pass)
+    for (const k of [...jobStreak.keys()]) if (!failed.some((f) => f.job === k)) jobStreak.delete(k);
+    for (const f of failed) {
+      const n = (jobStreak.get(f.job) ?? 0) + 1; jobStreak.set(f.job, n);
+      if (n >= 2) alerts.push({ key: `job:${f.job}`, text: `job ${f.job} failed ${n} passes in a row: ${f.error}` });
+    }
     for (const e of sender.inflight.values()) {
       const age = Date.now() - e.firstSentAt;
       if (age > 15 * 60_000) alerts.push({ key: `tx:${e.functionName}:${e.nonce}`, text: `${e.functionName} transaction in flight ${Math.round(age / 60_000)} min (nonce ${e.nonce})` });
@@ -616,14 +622,17 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
       const before = gradings.find((x) => x.index === g.index);
       if (before?.roundAt !== undefined) Object.assign(g, { round: before.round, roundAt: before.roundAt });
     }
-    const h = (await job("health", () => health({ now, opens, gradings: gradingsAfter, notes, waiting, failed }))) ?? { alerts: [{ key: "health", text: "health check failed" }] };
+    const h = (await job("health", () => health({ now, opens, gradings: gradingsAfter, notes, waiting, failed }))) ?? { alerts: [{ key: "health", text: "health check failed" }], partial: true };
+    // the backup posts only its own gas and what it did (events): the main keeper posts the health alerts, so they
+    // don't all come twice (if the main keeper dies, its dead-man's switch says so)
+    if (backup) for (const a of h.alerts) if (a.key !== "balance") a.quiet = true;
     h.alerts.push(...drop.alerts);
     const events = [...drop.events, ...((await job("randomness sources", () => watchSources(true))) ?? []), ...((await job("sale settings", () => saleSettings(block.number))) ?? [])];
     const sent = sender.sent();
     if (backup && sent.length) {
       events.push({ key: "backup-acted", text: `the backup keeper had to step in (${sent.length} tx: ${sent.map((s) => s.split(" ")[0]).join(", ")}); is the main keeper down?` });
     }
-    await notifier.report(h.alerts, { balance: h.balance, series, opens: opens.length, gradings: gradingsAfter.length, sent: sent.length, address: account.address, now: wallSec(wall) }, events);
+    await notifier.report(h.alerts, { balance: h.balance, series, opens: opens.length, gradings: gradingsAfter.length, sent: sent.length, address: account.address, now: wallSec(wall) }, events, { partial: !!h.partial });
     // seconds until the soonest drand round still to come is published (keeper.mjs wakes then rather than at the interval)
     const due = [...opens, ...gradingsAfter].filter((it) => !it.ready && it.roundAt !== undefined).map((it) => it.roundAt + cfg.actAfterSec - now).filter((s) => s >= 0n);
     const nextRoundIn = due.length ? Number(due.reduce((a, b) => (b < a ? b : a))) : undefined;

@@ -268,7 +268,7 @@
   // the cards a Series prints, per material: "about 1 in N cards", with a line of flavour
   const FLAVOR = { paper: 'The everyday stock.', fire: 'This is where the heat starts.', gold: 'Gold leaf and gold holo on the art, a gold shine on the frame.',
     fullart: 'The art takes over the whole card with no frame, always full holo.' };
-  const ONE_PER_LINE = 'Exactly one of each character in the whole Series, hidden in random packs. Only one exists, so keep track of which are still out there.';
+  const ONE_PER_LINE = 'Never more than one of each character in the whole Series, hidden in random packs. Only one can exist, so keep track of which are still out there.';
   function characterLine(no) {
     const chars = LIVE?.chars ? Object.entries(LIVE.chars).filter(([, p]) => p > 0) : [];
     const ps = chars.map(([, p]) => p), equal = !ps.length || Math.max(...ps) - Math.min(...ps) <= 1e-9 * Math.max(...ps);

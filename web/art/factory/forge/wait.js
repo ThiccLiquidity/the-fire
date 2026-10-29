@@ -1,7 +1,8 @@
 /* Omni Cardworks: the wait for a drand draw (opening packs, PDA grading), about 90 seconds.
    Wait.panel(): a brass pressure gauge that builds as the draw nears, a countdown plate, a steam puff when it's out,
-   and "Play while you wait": a game from the game room (games.js; paper football today). The game keeps going after
-   the draw is in; a button in it goes straight on to the rip or the reveal. */
+   and "Play while you wait!": an invite (Let's play / No thanks) that opens the game list (games.js) in place, each game
+   with free play or a competitive run. The games keep going after the draw is in: a bar over them says the cards (or
+   grades) are ready, with a button straight on to the rip or the reveal. */
 (() => {
   const h = (tag, attrs = {}, ...kids) => {
     const el = document.createElement(tag);
@@ -45,44 +46,78 @@
     let due = Date.now() + total * 1000, span = total * 1000, ready = false, playing = null, raf = 0, freeWaiters = [];
     const dial = gaugeSvg(), plate = h('div', { class: 'wg-plate', role: 'timer', 'aria-live': 'off' }), unit = h('div', { class: 'wg-unit', text: 'until the draw' });
     const sub = h('p', { class: 'wg-sub muted small', text: kind === 'open' ? 'Nobody knows what’s inside yet, not even us.' : 'Nobody knows the grades yet, not even us.' });
-    const play = h('button', { type: 'button', class: 'btn wg-play', 'data-key': 'wait-play', onclick: () => startGame() }, '🏈 Play while you wait');
+    const isOpen = kind === 'open', goLabel = isOpen ? 'Rip your cards →' : 'See your grades →';
+    const again = h('button', { type: 'button', class: 'btn small ghost wg-play', 'data-key': 'wait-play-again', onclick: () => startGame() }, '🎮 Play while you wait');
+    const invite = h('div', { class: 'wg-invite', role: 'group', 'aria-label': 'Play while you wait' },
+      h('b', { class: 'wg-invite-t', text: 'Play while you wait!' }),
+      h('p', { class: 'muted small', text: isOpen ? 'Your pack stays right here. We\u2019ll tell you the moment your cards are ready.' : 'Your cards stay right here. We\u2019ll tell you the moment your grades are in.' }),
+      h('div', { class: 'gr-acts' },
+        h('button', { type: 'button', class: 'btn primary', 'data-key': 'wait-play', onclick: () => startGame() }, 'Let\u2019s play'),
+        h('button', { type: 'button', class: 'btn ghost', 'data-key': 'wait-no', onclick: () => invite.replaceWith(again) }, 'No thanks')));
     const gauge = h('div', { class: 'wg' }, dial, plate, unit);
-    const wait = h('div', { class: 'wg-wait' }, msg, gauge, sub, window.Wait.GAME && window.Games ? play : null);
-    const el = h('div', { class: 'wg-host' + (kind === 'grade' ? ' wg-grade' : '') }, wait);
-    const goLabel = kind === 'open' ? 'Rip your cards →' : 'See your grades →';
+    const offer = window.Wait.GAME && window.Games?.lobby;
+    const wait = h('div', { class: 'wg-wait' }, msg, gauge, sub, offer ? invite : null);
+    // while playing: a bar over the games with the draw's countdown, then "ready" and the way back
+    const barText = h('span', { class: 'wg-bar-t' });
+    const barGo = h('button', { type: 'button', class: 'btn primary small', 'data-key': 'wait-go', hidden: true, onclick: () => goBack() }, goLabel);
+    const bar = h('div', { class: 'wg-bar', role: 'status', hidden: true }, barText, barGo);
+    const games = h('div', { class: 'wg-games' });
+    const el = h('div', { class: 'wg-host' + (kind === 'grade' ? ' wg-grade' : '') }, wait, bar, games);
+    let told = false;
     function paint() {
       raf = 0; if (!el.isConnected && playing == null) return;
       const left = (due - Date.now()) / 1000;
       setDial(dial, ready ? 1 : 1 - left * 1000 / span);
-      plate.textContent = ready ? (kind === 'open' ? 'OPEN!' : 'READY!') : left > 0 ? mmss(left) : '0:00';
+      plate.textContent = ready ? (isOpen ? 'OPEN!' : 'READY!') : left > 0 ? mmss(left) : '0:00';
       unit.textContent = ready ? '' : left > 0 ? 'until the draw' : 'any second now';
       gauge.classList.toggle('done', ready);
-      playing?.status(ready ? { ready: true, text: kind === 'open' ? 'Your cards are ready!' : 'Your grades are in!', go: goLabel } : { text: left > 0 ? `Draw in ${mmss(left)}` : 'Any second now…' });
+      const t = ready ? (isOpen ? 'Your cards are ready!' : 'Your grades are in!') : left > 0 ? `${isOpen ? 'Your cards' : 'Your grades'}: draw in ${mmss(left)}` : 'Any second now\u2026';
+      if (barText.textContent !== t) barText.textContent = t;
+      bar.classList.toggle('ready', ready); barGo.hidden = !ready;
+      if (ready && playing && !told) { // the moment it lands: say so even mid-game
+        told = true;
+        window.toast?.(isOpen ? 'Your cards are ready! Tap "Rip your cards" when you are.' : 'Your grades are in! Tap "See your grades" when you are.', 'good');
+        if (window.Fun?.haptics?.on !== false) navigator.vibrate?.([60, 40, 60]);
+      }
       if (!ready || playing) raf = requestAnimationFrame(paint);
     }
     const kick = () => { if (!raf) raf = requestAnimationFrame(paint); };
     function startGame() {
       if (playing) return;
-      wait.hidden = true;
-      playing = game(el, { onBack: stopGame, onGo: stopGame }); if (!playing) { wait.hidden = false; return; }
+      if (invite.isConnected) invite.replaceWith(again);
+      wait.hidden = true; bar.hidden = false;
+      if (msg) bar.after(msg); // the screen's own line comes along: a late draw's "Deal now" / "Get my packs back" stay in reach
+      playing = window.Games.lobby(games, { lead: 'Pick a game. It keeps going while the draw comes in.', leave: [isOpen ? '\u2190 Back to my pack' : '\u2190 Back to my cards', () => stopGame()] });
       window.Wait.current = playing; // tests and mocks
       kick();
     }
-    function stopGame() { playing?.stop(); playing = null; wait.hidden = false; freeWaiters.splice(0).forEach((f) => f()); kick(); }
+    function goBack() {
+      if (playing?.inRun() && !confirm('Your competitive run is still going. Leave it now and it ends here?')) return;
+      stopGame();
+    }
+    // in another tab or app: the tab's title says so (and a browser notification, if they've allowed them)
+    function tellAway() {
+      if (!document.hidden) return;
+      const text = isOpen ? 'Your cards are ready!' : 'Your grades are in!', was = document.title;
+      document.title = `\u{1F525} ${text}`;
+      const back = () => { if (document.hidden) return; document.title = was; document.removeEventListener('visibilitychange', back); };
+      document.addEventListener('visibilitychange', back);
+      try { if (window.Notification?.permission === 'granted') new Notification('Omni Cardworks', { body: text, icon: 'ui/omni-mark.webp', tag: 'omni-ready' }); } catch { /* not on this browser */ }
+    }
+    function stopGame() { playing?.stop(); playing = null; bar.hidden = true; if (msg) wait.prepend(msg); wait.hidden = false; if (ready) again.remove(); freeWaiters.splice(0).forEach((f) => f()); kick(); }
     paint();
     return {
       el,
       /** the draw is due in `sec` seconds (the chain's round time); the gauge keeps its full span from the first call */
       at(sec) { const t = Date.now() + Math.max(0, sec) * 1000; if (Math.abs(t - due) > 1500) { due = t; if (sec > total) span = sec * 1000; } kick(); },
-      arrived() { ready = true; window.Sound?.play('fire-flare', { gap: 600 }); kick(); },
+      arrived() { ready = true; window.Sound?.play('fire-flare', { gap: 600 }); if (!playing) { invite.remove(); again.remove(); } tellAway(); kick(); },
       free() { return playing ? new Promise((r) => freeWaiters.push(r)) : Promise.resolve(); },
       get playing() { return !!playing; },
     };
   }
 
-  // ---------- the games (games.js): the wait plays them in place; the draw going on never waits for them
+  // ---------- the games (games.js): the wait offers them in place; the draw going on never waits for them
   Object.assign(window.Wait = window.Wait || {}, { GAME: true });
-  const game = (host, o) => window.Games?.play('paperfb', host, { ...o, mode: 'free' });
 
   Object.assign(window.Wait, { panel });
 })();

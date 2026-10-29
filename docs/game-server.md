@@ -67,7 +67,7 @@ never into a chat, a file or a commit.
 | `GAME_SIGNER_KEY` | The private key that approves runs. Make a fresh wallet just for this (`cast wallet new` in PowerShell). It holds no money. | Yes |
 | `GAME_SEED_SECRET` | 32+ random characters; the secret behind every shot's conditions. In PowerShell: `$b = [byte[]]::new(48); [Security.Cryptography.RandomNumberGenerator]::Fill($b); [Convert]::ToBase64String($b) \| Set-Clipboard`, then paste. | Yes |
 | `DATABASE_URL` | Added by the Neon step. | Yes |
-| `FIRE_GAMES_ADDRESS` | FireGames' address (from `deployments/4663.json`). | No |
+| `FIRE_GAMES_ADDRESS` | FireGames' address (from `deployments/4663.json`). Required: without it paid runs stay closed. | No |
 | `GAME_CHAIN_ID` | `4663` (mainnet) or `46630` (testnet). Default 4663. | No |
 | `GAME_RPC_URL` | Optional: an RPC for receipts. Default: the public Robinhood Chain RPC. An Alchemy URL holds a key: mark it Sensitive. | If it has a key |
 | `GAMES_PAID_OPEN` | `1` lets new runs start. | No |

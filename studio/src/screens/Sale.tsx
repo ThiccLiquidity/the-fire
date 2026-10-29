@@ -257,7 +257,7 @@ function GroupCard({ s, i, packs, problems, busy, set, remove, move }: {
             {s.groups.map((_, k) => (k < i || k === g.afterGroup) && k !== i ? <option key={k} value={k}>after {groupName(s, k)}</option> : null)}
           </select>
         </GF>
-        <GF all={mine} gi={i} f="hours" label="Max time (hours)" hint={g.unlimited ? '0 = no limit.' : '0 = until sold.'}><Num value={g.hours} step={0.5} onChange={(v) => set({ hours: v })} testId={tid('hours')} width={70} /></GF>
+        <GF all={mine} gi={i} f="hours" label="Max time (hours)" hint={g.unlimited ? '0 = no limit.' : '0 = until sold.'}><Num value={g.hours} step={0.25} onChange={(v) => set({ hours: v })} testId={tid('hours')} width={70} /></GF>
         {!g.unlimited && (
           <GF all={mine} gi={i} f="rollTo" label="Leftovers to">
             <select value={g.rollTo} onChange={(e) => set({ rollTo: Number(e.target.value) })} data-testid={tid('roll')}>

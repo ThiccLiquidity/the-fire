@@ -204,6 +204,7 @@
   // Standard preset (Store.demoStage), the live site from the contracts (live.js). Store.groupAccess(g): can this
   // wallet buy there now, and how many (or why not).
   const sold = () => S.series.phase >= 4;
+  const unsold = () => sold() && S.series.left > 0; // closed with packs left (the owner ended the drop): ended, not sold out
   const groups = () => S.series.groups || [];
   const open = () => groups().filter((g) => g.state === 'open');
   const note = () => (LIVE ? S.series.note : null); // live: Loading…, Opens in 3h, Paused, No Series yet
@@ -251,7 +252,7 @@
   }
   function renderChip() {
     const c = $('#seriesChip'), x = Store.extraOpen();
-    const html = note() ? `${S.series.no ? `Series ${S.series.no} · ` : ''}<b>${esc(note())}</b>` : sold() ? `Series ${S.series.no} · <b>Sold out</b>`
+    const html = note() ? `${S.series.no ? `Series ${S.series.no} · ` : ''}<b>${esc(note())}</b>` : sold() ? `Series ${S.series.no} · <b>${unsold() ? 'Sales ended' : 'Sold out'}</b>`
       : S.series.closing ? `Series ${S.series.no} · <b>Closing…</b>` : x ? `Series ${S.series.no} · <b>Extra packs</b> · ${money(x.next?.usd ?? x.priceUsd)}`
       : `Series ${S.series.no} · <b>${Store.left()}</b> left${open().length ? '' : ' · <i>soon</i>'}`;
     if (c._html !== html) { c._html = html; c.innerHTML = html; } // only on a real change: a node swapped under a click eats it
@@ -261,7 +262,7 @@
   function buyButtons() {
     const w = S.wallet, out = [];
     if (note()) return { line: note(), opts: [], next: null };
-    if (sold()) return { line: `Series ${S.series.no} sold out`, opts: [], next: null }; // just the tease: Open packs is already on the scene / in the stations
+    if (sold()) return { line: `Series ${S.series.no} ${unsold() ? 'sales ended' : 'sold out'}`, opts: [], next: null }; // just the tease: Open packs is already on the scene / in the stations
     if (S.series.closing) return { line: 'Sales over', opts: [], next: null, sub: 'Packs open in a moment.' };
     let main = false;
     const rows = open().map((g) => {
@@ -804,18 +805,20 @@
     const opened = () => S.activity.some((a) => a.text.startsWith('Opened'));
     const open = ['Open your packs', () => (ready() ? `${ready()} ready to open now.` : 'Packs open when sales end.'), opened, 'Open packs', () => openStation('open')];
     const rest = [
-      ['Connect a wallet', 'Any wallet on Robinhood Chain.', () => S.wallet.connected, 'Connect', () => needWallet(() => openStart())],
+      ['Connect a wallet', LIVE && Live.testnet ? 'MetaMask, Rabby or Coinbase Wallet. On a phone, open this page in your wallet app\u2019s browser.' : 'Any wallet on Robinhood Chain.', () => S.wallet.connected, 'Connect', () => needWallet(() => openStart())],
       ['Get PAPER', () => `Every pack takes some PAPER to print (${paperTxt(P.PACK_PAPER)} a pack in Series ${S.series.no}).`, () => did.has('paper'), 'Get PAPER', () => openGetPaper()],
       ['Buy a pack', () => `${money(P.PACK_USD)} + ${paperTxt(P.PACK_PAPER)} in Series ${S.series.no}, paid in ${payCoins()}. Packs open when sales end, and until then they're collectibles you can hold or trade sealed.`, () => did.has('buy'), 'Buy', () => openGroup()],
       ['Case or grade', 'Case or grade new cards within 24 hours to keep fresh odds. A case stops wear any time.', () => S.activity.some((a) => a.text.startsWith('Paid')), 'Case & grade', () => Stations.open('grade')],
     ];
-    const steps = ready() && !opened() ? [open, ...rest] : [...rest.slice(0, 3), open, rest[3]];
+    // testers on the testnet: the free test ETH first (gas, and PAPER/PLANK/USDG come from it in Get PAPER)
+    if (LIVE && Live.testnet) rest.unshift(['Get test ETH', 'Free from the Robinhood Chain testnet faucet. A little covers every step.', () => S.wallet.connected && (S.wallet.balances.ETH || 0) > 0, 'Faucet', () => window.open('https://faucet.testnet.chain.robinhood.com/', '_blank', 'noopener')]);
+    const steps = ready() && !opened() ? [open, ...rest] : [...rest.slice(0, rest.length - 1), open, rest[rest.length - 1]];
     const body = document.createElement('div'); body.className = 'start';
     const draw = () => {
       const first = steps.findIndex(([, , done]) => !done()); // the next thing to do gets the main button
       body.innerHTML = `<ol class="start-list">${steps.map(([t, sub, done, b], i) => `<li class="${done() ? 'done' : ''}">
           <span class="start-n" aria-hidden="true">${done() ? '✓' : i + 1}</span><span class="start-t"><b>${t}</b><small>${typeof sub === 'function' ? sub() : sub}</small></span>
-          ${done() ? '<span class="sr">Done</span>' : `<button class="btn small${i === first ? ' primary' : ''}" type="button" data-s="${i}">${b}</button>`}</li>`).join('')}</ol>
+          ${done() ? '<span class="sr">Done</span>' : steps[i] === open && !ready() ? '' : `<button class="btn small${i === first ? ' primary' : ''}" type="button" data-s="${i}">${b}</button>`}</li>`).join('')}</ol>
         <p class="menu-links"><button class="inf-link" type="button" data-s="fun:practice">Rip a practice pack</button><button class="inf-link" type="button" data-s="fun:tour">Workshop tour</button><button class="inf-link" type="button" data-s="info">Info</button><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>`;
       body.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { Sheet.close('start'); if (b.dataset.s === 'info') return Info.open(); if (b.dataset.s.startsWith('fun:')) return window.Fun?.go(b.dataset.s.slice(4)); steps[+b.dataset.s][4](); });
     };
@@ -831,7 +834,7 @@
     const el = document.createElement('div'); el.className = 'receipt'; el.setAttribute('role', 'status');
     el.innerHTML = `<span class="rc-peek" aria-hidden="true"><img src="ui/brand/plank-256.webp" alt="" width="58" height="92"></span><button class="x" type="button" aria-label="Close">×</button>
       <p class="rc-t"><b>${n === 1 ? (free ? 'Free pack added' : 'Pack added') : `${n} ${free ? 'free ' : ''}packs added`}</b> · ${n === 1 ? 'opens' : 'they open'} when sales end</p>
-      <p class="rc-s">${x ? 'Extra packs on sale now' : sold() ? `Series ${S.series.no} is sold out` : `${left.toLocaleString('en-US')} ${left === 1 ? 'pack' : 'packs'} left`}</p>
+      <p class="rc-s">${x ? 'Extra packs on sale now' : sold() ? `Series ${S.series.no} ${unsold() ? 'sales have ended' : 'is sold out'}` : `${left.toLocaleString('en-US')} ${left === 1 ? 'pack' : 'packs'} left`}</p>
       ${ready ? `<p class="rc-r">You have ${ready} ${ready === 1 ? 'pack' : 'packs'} ready to open</p>` : ''}
       <div class="rc-a">${ready ? '<button class="btn small gold" type="button" data-r="open">Open one</button>' : ''}<button class="btn small" type="button" data-r="cards">My packs</button>${LIVE ? '' : '<button class="btn small ghost" type="button" data-r="skip">End sales <i>(demo)</i></button>'}</div>`;
     let t = 0; const close = () => { clearTimeout(t); el.classList.remove('on'); setTimeout(() => el.remove(), 250); };

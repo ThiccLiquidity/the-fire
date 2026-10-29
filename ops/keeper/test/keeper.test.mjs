@@ -85,6 +85,19 @@ test("alerts: new, repeated hourly, resolved; heartbeat once a day; dead-man's s
   assert.doesNotMatch(posts.at(-1).content, /just a note/, "quiet notes are logged only");
 });
 
+test("alerts: a pass that failed or couldn't check everything resolves nothing (no resolved/new flapping)", async () => {
+  const t = 1_000_000_000_000;
+  const { n, posts } = notifier({}, () => t);
+  const a = { key: "feed:plank", text: "PLANK price stale" };
+  await n.report([a], { address: "0xk" });
+  const before = posts.length;
+  await n.report([{ key: "pass", text: "pass failed: rpc down" }], undefined, [], { passFailed: true });
+  assert.doesNotMatch(posts.at(-1).content, /resolved/, "the stale price wasn't checked, so it isn't resolved");
+  await n.report([{ key: "health", text: "health check failed" }], undefined, [], { partial: true });
+  assert.ok(!posts.slice(before).some((p) => /resolved: PLANK/.test(p.content)));
+  assert.equal(n.open.has("feed:plank"), true);
+});
+
 test("alerts in one-pass mode without a state file: in the first 15 minutes of each hour (a late GitHub run still lands), events always", async () => {
   const hour = 3_600_000;
   let t = 10 * hour + 30 * 60_000; // half past

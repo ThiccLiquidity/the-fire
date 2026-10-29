@@ -189,9 +189,30 @@ export function giantSale(): SaleSettings {
   }
 }
 
+/** The testnet run (owner, Oct 29): the Standard's four groups, small and quick, so a few testers can go through every
+ *  group in an afternoon with no long waits. 12 packs: Paper Press holders 2 and PLANK holders 3 open together, each
+ *  ending when sold, 3 minutes after its last sale, or at 15 minutes; Everyone (the other 7, 3 per wallet) opens
+ *  when the PLANK group ends; After sell-out ends 5 minutes after its last sale. Free packs: 2, 1 per wallet. Bots
+ *  rule off, so testers on smart-contract wallets can buy. */
+export function testRunSale(): SaleSettings {
+  const s = standardSale()
+  const [press, plank, everyone, after] = s.groups
+  const quick = { hours: 0.25, idleMinutes: 3 }
+  return {
+    ...s, packs: 12, regularWalletsHours: 0, creditPacksPercent: '20', creditPacksPerWallet: 1,
+    groups: [
+      { ...press, packs: 2, ...quick },
+      { ...plank, packs: 3, perWallet: 3, ...quick },
+      { ...everyone, perWallet: 3, limitHours: 0 },
+      { ...after, idleMinutes: 5 },
+    ],
+  }
+}
+
 export const SALE_PRESETS: { name: string; make: () => SaleSettings }[] = [
   { name: 'Standard', make: standardSale },
   { name: 'Giant', make: giantSale },
+  { name: 'Test run', make: testRunSale },
 ]
 
 // ---------------------------------------------------------------- old saves

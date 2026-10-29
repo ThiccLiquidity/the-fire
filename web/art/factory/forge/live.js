@@ -385,7 +385,7 @@
   }
   /** A buy, free pack or suggestion of this wallet still on its way (sent from this browser in the last 30 minutes):
    *  starting another of the same kind could pay twice, so it waits. True (and says so) when blocked. */
-  const WAIT_FOR = { buy: 'Your last purchase', credits: 'Your last free pack', suggest: 'Your last idea' };
+  const WAIT_FOR = { buy: 'Your last purchase', credits: 'Your last free pack', suggest: 'Your last idea', open: 'Your last pack opening' };
   function stillSending(kind) {
     const a = me(), t = a && L ? L.pendingTxs(a).find((x) => x.kind === kind && Date.now() - x.at < 30 * 60_000) : null;
     if (!t) return false;
@@ -511,7 +511,7 @@
       close();
       if (t.kind === 'approve') { toast('Approved. Tap again to finish.', 'good'); return null; } // the step after it was never sent
       toast(ok || landed(t, outcome), 'good');
-      return { late: true };
+      return { late: true, hash: t.hash }; // a paid game run needs the hash to be credited
     }
   }
   const need = async () => { await ready; await chainUp; if (!L) throw new Error('Not connected'); };
@@ -597,7 +597,7 @@
     if (stillSending('credits')) return;
     let n = 1; const body = document.createElement('div'); body.className = 'checkout';
     const draw = () => {
-      const w = S.wallet; n = Math.max(1, Math.min(w.credits, S.series.creditPacksLeft ?? w.credits, n)); const paper = n * cg.paper, short = w.balances.PAPER < paper;
+      const w = S.wallet; n = Math.max(1, Math.min(w.credits, S.series.creditPacksLeft ?? w.credits, S.series.creditPacksPerWallet || w.credits, S.series.maxPerTx || 50, n)); const paper = n * cg.paper, short = w.balances.PAPER < paper;
       body.innerHTML = `<p class="lead">Free packs still cost ${cg.paper} PAPER each.</p>
         ${w.credits > 1 ? `<div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output>${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button><span class="muted">of ${w.credits}</span></div>` : ''}
         <dl class="sum"><dt>PAPER</dt><dd>${paper}</dd><dt>You have</dt><dd>${(+w.balances.PAPER.toFixed(2)).toLocaleString('en-US')} PAPER</dd></dl>
@@ -625,7 +625,7 @@
       const k = ++seq; q = null; err = ''; paint(); clearTimeout(t);
       if (!(amt > 0)) return;
       t = setTimeout(() => L.quotePaperBuy(tok, raw(amt), 100).then((r) => { if (k === seq) { q = r; paint(); } },
-        (e) => { if (k === seq) { err = net === 'testnet' ? 'No test pool for this coin. Ask the team for test PAPER.' : friendly(e); paint(); } }), 300);
+        (e) => { if (k === seq) { err = net === 'testnet' ? 'No test pool for this coin. Ask in the testers\u2019 chat for test PAPER.' : friendly(e); paint(); } }), 300);
     };
     const paint = () => {
       const have = S.wallet.balances[tok], cost = num(q?.cost), short = q && cost > have;
@@ -662,6 +662,7 @@
   const STUCK = 'No draw after 24 hours.';
   const sleep = (ms) => new Promise((k) => setTimeout(k, ms));
   async function openPacks(fire, n, say, alive, tick) {
+    if (stillSending('open')) return null;
     await need();
     const before = new Set(S.cards.map((c) => c.id));
     if (info?.fire === fire && !info.cards.closed) { toast(`Your Series ${fire} packs open when sales end.`, 'bad'); return null; }
@@ -676,10 +677,14 @@
    *  o.dealNow: the buyer already asked to deal it (My cards' "Deal now"). */
   async function followOpen(fire, index, say, alive, o = {}) {
     await need();
+    // the cards held before this open (after a reload My cards may not have loaded yet: read them first)
+    if (!o.before && !cardsAt) await L.cardsOf(me()).then((cs) => { S.cards = cs.map(toCard); cardsAt = Date.now(); }, () => {});
     const before = o.before || new Set(S.cards.map((c) => c.id));
     say(window.Wait ? 'Drawing your cards…' : 'Drawing your cards… about 90 seconds');
+    let packs = 0;
     for (let asked = !!o.dealNow, tried = false, cancel = false; alive();) {
       const op = await L.openStatus(fire, index).catch(() => null); // one open by its index: no log scan
+      if (op?.packs) packs = op.packs;
       if (op?.roundAt) o.tick?.(op.roundAt - op.now); // the wait's gauge: seconds until the draw
       if (op?.status === 'cancelled') { toast('The draw never came. Your packs are back.', 'bad'); sync(); return null; }
       if (op?.status === 'dealt') break;
@@ -702,12 +707,20 @@
     }
     if (!alive()) { toast('Your cards land in My cards soon.'); return null; }
     say('Here they come…');
-    // the new cards: read again a few times; if the reads keep failing, they're safe in My cards (never a stuck screen)
-    let all = null;
-    for (let i = 0; i < 3 && !all; i++) all = await L.cardsOf(me()).then((cs) => cs.map(toCard), (e) => { console.warn('cards read failed', e); return null; });
-    if (!all) { toast('Your cards are in your wallet. Open My cards to see them.', 'bad'); return null; }
-    S.cards = all; cardsAt = Date.now(); sync();
-    return all.filter((c) => !before.has(c.id) && c.series === fire).sort((a, b) => a.serial - b.serial);
+    // the new cards: read until they're all there (the explorer's list can lag a fresh deal: the last tries scan the
+    // chain); if they still aren't, they're safe in My cards (never a stuck or empty screen)
+    const want = packs * (S.series.cardsPerPack || 6);
+    let all = null, fresh = [];
+    for (let i = 0; i < 6; i++) {
+      if (i) await sleep(2500);
+      const got = await L.cardsOf(me(), { scan: i >= 3 }).then((cs) => cs.map(toCard), (e) => { console.warn('cards read failed', e); return null; });
+      if (!got) continue;
+      all = got; fresh = all.filter((c) => !before.has(c.id) && c.series === fire);
+      if (fresh.length && fresh.length >= want) break;
+    }
+    if (all) { S.cards = all; cardsAt = Date.now(); sync(); }
+    if (!fresh.length) { toast('Your cards are in your wallet. Open My cards to see them.', 'bad'); return null; }
+    return fresh.sort((a, b) => a.serial - b.serial);
   }
 
   // ---------- unfinished opens and gradings (reads.opensOf / gradingsOf, every sync): what My cards and Case & grade

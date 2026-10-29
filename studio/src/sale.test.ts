@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   EVERYONE_LIMIT_HOURS, GROUP_TEMPLATES, blankGroup, checkSale, creditPacksMax, dropPlan, giantSale, groupPacks, groupSummary, groupTimes, parseDecimal,
-  creditGroupOk, saleErrors, saleJson, saleOf, salePacks, saleWithPacks, standardSale, taxGrowthOk, taxedPrices,
+  creditGroupOk, saleErrors, saleJson, saleOf, salePacks, saleWithPacks, standardSale, taxGrowthOk, taxedPrices, testRunSale,
   type OldSaleSettings, type SaleGroup, type SaleSettings,
 } from './sale'
 import { salePolicy } from './salePolicy'
@@ -30,6 +30,15 @@ describe('the Standard and Giant presets', () => {
         { name: 'After sell-out', packs: 0, gate: 'open', priceUsd: '250000000', paper: '1000000000000000000', coins: 2, plankBurnBps: 1_000, paperBurnBps: 2_000, perWallet: 0, afterGroup: 2, startDelay: 0, duration: 0, rollTo: 255, taxBps: 400, idle: 900, perTx: 1, unlimited: true },
       ],
     })
+  })
+
+  it('Test run: valid, inside the policy, 12 packs with short group windows', () => {
+    const t = testRunSale()
+    expect(saleErrors({ ...t, start: NOW + 3600 }, NOW)).toEqual([])
+    expect(salePolicy({ ...t, start: NOW + 3600 })).toEqual([])
+    const j = saleJson(t)
+    expect(j).toMatchObject({ packs: 12, regularWalletsFor: 0, creditPacksMax: 2, creditPacksPerWallet: 1 })
+    expect(j.groups.map((x) => [x.packs, x.duration, x.idle ?? 0, x.limitFor ?? 0])).toEqual([[2, 900, 180, 0], [3, 900, 180, 0], [7, 0, 0, 0], [0, 0, 300, 0]])
   })
 
   it('exports only the keys ConfigureSeries reads, in its order', () => {

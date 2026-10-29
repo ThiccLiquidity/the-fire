@@ -58,10 +58,13 @@
     };
   }
 
-  /** The game room: every game, with free play and (when open) a competitive run. */
-  function room() {
+  /** The game list in a host: each game with free play and (when open) a competitive run. The room (a sheet) and the
+   *  pack/grade wait (wait.js) both use it. lead: the line above the list; leave: [label, fn] for a way out.
+   *  Returns { stop(), inRun() }: inRun is true while a paid run is still going (leaving would end it). */
+  function lobby(host, { lead = 'Games from the workshop floor. Free to play any time. Competitive runs play for free packs, gradings and cases.', leave } = {}) {
     let current = null;
     const body = h('div', { class: 'gr' });
+    host.append(body);
     const close = () => { current?.stop(); current = null; render(); };
     function start(g, mode) {
       if (mode === 'paid') return Comp.start(g, body, close, (c) => { current = c; });
@@ -69,7 +72,9 @@
       current?.status({ text: 'Free play' });
     }
     function render() {
-      body.replaceChildren(h('p', { class: 'muted gr-lead', text: 'Games from the workshop floor. Free to play any time. Competitive runs play for free packs, gradings and cases.' }),
+      body.replaceChildren(
+        leave ? h('button', { type: 'button', class: 'btn small gr-leave', 'data-key': 'games-leave', onclick: leave[1] }, leave[0]) : null,
+        h('p', { class: 'muted gr-lead', text: lead }),
         ...list.map((g) => {
           const st = loadStats(g.id), paid = Games.paidOpen(g);
           return h('article', { class: 'gr-game' },
@@ -85,15 +90,25 @@
         }));
     }
     render();
-    Comp.refresh().then(() => { if (!current) render(); }); // whether competitive runs are open now
-    window.Sheet.open('games', { title: 'Game room', body, wide: true, onClose: () => { current?.stop(); current = null; } });
+    Comp.refresh().then(() => { if (!current && body.isConnected) render(); }); // whether competitive runs are open now
+    return {
+      stop() { current?.stop(); current = null; body.remove(); },
+      inRun: () => !!current?.running?.(),
+    };
+  }
+
+  /** The game room: the game list in a sheet. */
+  function room() {
+    const host = h('div');
+    const l = lobby(host);
+    window.Sheet.open('games', { title: 'Game room', body: host, wide: true, onClose: () => l.stop() });
   }
 
   const Games = window.Games = {
     add(g) { if (!list.some((x) => x.id === g.id)) list.push(g); },
     get list() { return list.slice(); },
     get: (id) => list.find((g) => g.id === id),
-    play, room, stats: loadStats,
+    play, room, lobby, stats: loadStats,
     /** competitive runs: only once the game server and FireGames are live and the owner has opened them (live.js
      *  sets Games.PAID to the open game ids); never in the demo until then */
     PAID: [],
@@ -154,7 +169,7 @@
       const c = await api(g, 'create', { wallet: wallet(), adult: true, series: window.Store?.state?.series?.no });
       const rc = await window.Live.payRun({ gameId: c.gameId, runId: c.runId, series: c.series, deadline: c.deadline, sig: c.sig });
       if (!rc) throw new Error('Nothing was paid.');
-      const r = { runId: c.runId, cap: c.cap, series: c.series, txHash: rc.transactionHash || null };
+      const r = { runId: c.runId, cap: c.cap, series: c.series, txHash: rc.transactionHash || rc.hash || null };
       keepRun(g, r);
       if (!r.txHash) throw new Error('Your payment is still on its way. Open the Game room again in a minute to play.');
       await Comp.confirm(g, r);
@@ -181,6 +196,7 @@
       body.replaceChildren();
       const skip = h('button', { type: 'button', class: 'btn small', 'data-key': 'comp-skip' }, 'Start the run');
       const c = play(g.id, body, { mode: 'paid', onBack: () => { stop(); back(); }, onKick });
+      c.running = () => !over; // the wait asks before leaving a run that's still going
       setCurrent(c); Games.current = c; // tests and mocks
       c.game.hold();
       body.querySelector('.gm-bar').append(skip);
