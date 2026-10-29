@@ -145,9 +145,11 @@
       const saved = LIVE ? savedRun(g) : null;
       const adult = h('input', { type: 'checkbox', id: 'gm-adult' });
       const go = h('button', { type: 'button', class: 'btn primary', 'data-key': 'comp-pay', disabled: true }, LIVE ? `Pay ${g.entry} and play` : `Play (demo: nothing is charged)`);
-      adult.onchange = () => { go.disabled = !adult.checked; };
+      let lacking = false;
+      adult.onchange = () => { go.disabled = !adult.checked || lacking; };
       const msg = h('p', { class: 'warn small', hidden: true });
-      go.onclick = async () => { go.disabled = true; msg.hidden = true; try { await Comp.begin(g, body, back, setCurrent); } catch (e) { msg.textContent = e.message; msg.hidden = false; go.disabled = !adult.checked; } };
+      const short = h('div', { class: 'gm-short', hidden: true });
+      go.onclick = async () => { go.disabled = true; msg.hidden = true; try { await Comp.begin(g, body, back, setCurrent); } catch (e) { msg.textContent = e.message; msg.hidden = false; go.disabled = !adult.checked || lacking; } };
       body.replaceChildren(h('div', { class: 'gm-start' },
         h('button', { type: 'button', class: 'btn small', onclick: back }, '← Back'),
         h('h3', { text: `${g.name}: competitive` }),
@@ -160,8 +162,25 @@
           h('li', { text: 'Each kick is checked by our game server. Its call is final.' })),
         saved ? h('button', { type: 'button', class: 'btn', 'data-key': 'comp-resume', onclick: () => Comp.resume(g, saved, body, back, setCurrent).catch((e) => { msg.textContent = e.message; msg.hidden = false; }) }, 'Pick up your run') : null,
         h('label', { class: 'gm-adult', for: 'gm-adult' }, adult, ' I\'m 18 or older and competitive play is allowed where I live.'),
-        go, msg,
+        short, go, msg,
         h('p', { class: 'muted small' }, h('a', { href: '#', onclick: (e) => { e.preventDefault(); window.Info?.open?.('games'); } }, 'Official rules'))));
+      // live: a run is paid in PAPER only. Short of it: say how much, and Get PAPER (from ETH, PLANK or USDG) comes
+      // straight back here, so nobody approves a payment that can't go through
+      if (LIVE) Comp.need(g).then((more) => {
+        if (!(more > 0) || !body.contains(go)) return;
+        lacking = true; go.disabled = true;
+        short.replaceChildren(h('p', { class: 'warn small', text: `Each run takes its entry in PAPER. You need ${more} more PAPER.` }),
+          h('button', { type: 'button', class: 'btn', 'data-key': 'comp-getpaper', onclick: () => window.Live.getPaper(more, () => Comp.start(g, body, back, setCurrent)) }, 'Get PAPER'));
+        short.hidden = false;
+      }, () => {});
+    },
+    /** live: how much more PAPER this wallet needs for one run (its price + the 3% the payment allows), 0 if enough */
+    async need(g) {
+      const st = await window.Live.gameStatus(g.gameId);
+      const price = Number(BigInt(st.entry || '0')) / 1e18 * 1.03;
+      const have = window.Store?.state?.wallet?.connected ? window.Store.state.wallet.balances.PAPER || 0 : null;
+      if (!(price > 0) || have == null) return 0;
+      return have >= price ? 0 : Math.ceil((price - have) * 1e4) / 1e4;
     },
     async begin(g, body, back, setCurrent) {
       if (!LIVE) return Comp.play(g, { demo: true, series: series() }, body, back, setCurrent);
