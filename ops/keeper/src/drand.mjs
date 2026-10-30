@@ -18,7 +18,8 @@ const SIG = /^[0-9a-f]{128}$/i;
  * `fetchFn` is injectable for tests.
  */
 export function drandClient(urls = DEFAULT_DRAND_URLS, fetchFn = globalThis.fetch, timeoutMs = 10_000) {
-  const cache = new Map();
+  const cache = new Map(); // round -> { sig, relay }
+  const bad = new Map(); // round -> relays whose signature the chain refused (forget)
   const base = urls.map((u) => u.replace(/\/$/, ""));
   async function get(u) {
     const r = await fetchFn(u, { signal: AbortSignal.timeout(timeoutMs) });
@@ -30,18 +31,28 @@ export function drandClient(urls = DEFAULT_DRAND_URLS, fetchFn = globalThis.fetc
     /** The round's signature (0x + 64 bytes hex), or undefined if no relay has it (yet). */
     async signature(round) {
       const key = String(round);
-      if (cache.has(key)) return cache.get(key);
+      if (cache.has(key)) return cache.get(key).sig;
       for (const b of base) {
+        if (bad.get(key)?.has(b)) continue;
         try {
           const j = await get(`${b}/${DRAND_CHAIN}/public/${key}`);
           if (j && String(j.round) === key && SIG.test(j.signature)) {
             const sig = `0x${j.signature.toLowerCase()}`;
-            cache.set(key, sig);
+            cache.set(key, { sig, relay: b });
             return sig;
           }
         } catch { /* next relay */ }
       }
       return undefined;
+    },
+    /** The chain refused this round's signature: drop it, and ask the other relays next time (a relay that served a
+     *  bad signature is skipped for that round, so one bad relay can't stall opens and gradings until a restart). */
+    forget(round) {
+      const key = String(round), c = cache.get(key);
+      if (!c) return;
+      cache.delete(key);
+      if (!bad.has(key)) bad.set(key, new Set());
+      bad.get(key).add(c.relay);
     },
     /** The newest round any relay reports, or undefined if none answered. */
     async latest() {

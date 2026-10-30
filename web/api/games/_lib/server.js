@@ -112,7 +112,10 @@ export function createGameServer({ store, chain, config, now = Date.now, random 
       if (!run.scoredStarted) await store.updateRun(run.runId, { scoredStarted: true });
     }
     const conditions = game.shot(seedFor(secret, run.gameId, run.runId), n, level);
-    const t0 = now(), nonce = random(8).toString('hex');
+    // a shot asked for again gets one fresh clock (a resume after a crash); after that it keeps its clock, so asking
+    // again and again never buys time to study it
+    const prev = await store.getShot(run.runId, n);
+    const t0 = prev && prev.issued >= 2 ? prev.t0 : now(), nonce = random(8).toString('hex');
     await store.issueShot({ runId: run.runId, n, level, practice, t0, nonce, shot: conditions });
     const token = signToken(secret, { v: 1, g: game.gameId, r: run.runId, n, t0, nonce });
     return json(200, { n, practice, level, shot: conditions, token, t0, shotClockMs: L.shotClockMs, streak: run.streak });
@@ -187,12 +190,12 @@ export function createGameServer({ store, chain, config, now = Date.now, random 
   async function board(req, game) {
     const u = new URL(req.url), raw = u.searchParams.get('series'), all = raw === 'all', series = all ? 'all' : Number(raw);
     const limit = Math.max(1, Math.min(100, Number(u.searchParams.get('limit')) || 100));
-    if (!all && (!Number.isSafeInteger(series) || series < 1)) return bad(400, 'Which Series? ?series=N (or ?series=all)');
+    if (!all && (!Number.isSafeInteger(series) || series < 1 || series > 10_000)) return bad(400, 'Which Series? ?series=N (or ?series=all)');
     if (!store) return closed('storage');
     const key = `${series}:${game.gameId}:${limit}`, hit = boardCache.get(key), t = now();
     let rows;
     if (hit && t - hit.at < 5000) rows = hit.rows;
-    else { rows = await (all ? store.allTime({ gameId: game.gameId, limit }) : store.board({ series, gameId: game.gameId, limit })); boardCache.set(key, { at: t, rows }); }
+    else { rows = await (all ? store.allTime({ gameId: game.gameId, limit }) : store.board({ series, gameId: game.gameId, limit })); if (boardCache.size > 200) boardCache.clear(); boardCache.set(key, { at: t, rows }); } // bounded: odd ?series= values can't grow it
     return json(200, { series, gameId: game.gameId, rows: rows.map((r, i) => ({ rank: i + 1, ...r })) }, { 'cache-control': 'public, max-age=0, s-maxage=5, stale-while-revalidate=30' });
   }
 

@@ -157,7 +157,11 @@ test('a replayed or stale token gets no second verdict', async () => {
   assert.equal((await env.store.getRun(run.runId)).streak, 1);
   // a token for a shot that was issued again (resume) is stale
   const s2 = await env.call('shot', { runId: run.runId, cap: run.cap });
-  await env.call('shot', { runId: run.runId, cap: run.cap });
+  env.clock.t += 4000;
+  const s3 = await env.call('shot', { runId: run.runId, cap: run.cap }); // one fresh clock (a resume)
+  env.clock.t += 4000;
+  const s4 = await env.call('shot', { runId: run.runId, cap: run.cap });
+  assert.notEqual(s3.body.t0, s2.body.t0); assert.equal(s4.body.t0, s3.body.t0, 'asking again and again never resets the clock');
   env.clock.t += 900;
   const stale = await env.call('kick', { ...body, token: s2.body.token });
   assert.equal(stale.status, 409); assert.equal(stale.body.stale, true);

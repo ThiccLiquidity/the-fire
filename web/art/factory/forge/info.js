@@ -243,8 +243,8 @@
     if (!G.length) return '';
     const first = [press, ...holders].filter(Boolean).filter((g) => g.afterGroup == null);
     const holderLine = (g) => g.gate === 'nft'
-      ? `<li><b>${g.isPress ? 'Paper Press holders' : g.name}:</b> ${nf(g.perNft || 1)} ${g.perNft > 1 ? 'packs' : 'pack'} per ${g.isPress ? 'Press' : 'NFT'}${g.perWallet ? `, up to ${nf(g.perWallet)} per wallet,` : ''} for ${costOf(g, usd)}. ${g.capacity != null ? `${nf(g.capacity)} packs, ` : ''}${lenOf(g) ? `open for ${durT(lenOf(g))} or until they're claimed, whichever comes first` : 'open until they\'re claimed'}.</li>`
-      : `<li><b>${Store.holdersName(g)}</b>${Store.holdRule(g) ? ` (${Store.holdRule(g)})` : ''}: ${costOf(g, usd)}${g.coins?.length ? `, paid in ${orList(g.coins)}` : ''}${g.perWallet ? `, up to ${nf(g.perWallet)} each` : ''}. ${g.capacity != null ? `${nf(g.capacity)} packs, ` : ''}${lenOf(g) ? `open for ${durT(lenOf(g))} or until they're gone` : 'open until they\'re gone'}.</li>`;
+      ? `<li><b>${g.isPress ? 'Paper Press holders' : esc(g.name)}:</b> ${nf(g.perNft || 1)} ${g.perNft > 1 ? 'packs' : 'pack'} per ${g.isPress ? 'Press' : 'NFT'}${g.perWallet ? `, up to ${nf(g.perWallet)} per wallet,` : ''} for ${costOf(g, usd)}. ${g.capacity != null ? `${nf(g.capacity)} packs, ` : ''}${lenOf(g) ? `open for ${durT(lenOf(g))} or until they're claimed, whichever comes first` : 'open until they\'re claimed'}.</li>`
+      : `<li><b>${esc(Store.holdersName(g))}</b>${Store.holdRule(g) ? ` (${Store.holdRule(g)})` : ''}: ${costOf(g, usd)}${g.coins?.length ? `, paid in ${orList(g.coins)}` : ''}${g.perWallet ? `, up to ${nf(g.perWallet)} each` : ''}. ${g.capacity != null ? `${nf(g.capacity)} packs, ` : ''}${lenOf(g) ? `open for ${durT(lenOf(g))} or until they're gone` : 'open until they\'re gone'}.</li>`;
     const steps = [];
     if (first.length) {
       const names = first.map((g) => (g.isPress ? 'Paper Press holders' : Store.holdersName(g)));

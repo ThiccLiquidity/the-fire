@@ -294,7 +294,12 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
           { job: `fulfillMany:${router}:${ids.join(",")}`, precheck },
         );
         if (r.status === "done") log(`delivered drand to ${part.map((p) => `${p.it.kind} ${p.it.kind === "open" ? `${p.it.fire}/` : ""}${p.it.index}`).join(", ")}`);
-        else if (r.status !== "waiting") for (const p of part) notes.push({ it: p.it, why: `fulfillMany: ${r.reason ?? r.status}` });
+        else if (r.status !== "waiting") for (const p of part) {
+          notes.push({ it: p.it, why: `fulfillMany: ${r.reason ?? r.status}` });
+          // the chain refused the call (the simulation or the transaction itself), not "done already" or "the main keeper
+          // has it": the signatures may be bad, so fetch them again (another relay) next pass
+          if (r.status === "reverted" || (r.status === "skipped" && !/^(already done|precheck:|nothing to do|the main keeper|left to)/.test(r.reason ?? ""))) drand.forget?.(p.it.round);
+        }
       }
     }
   }

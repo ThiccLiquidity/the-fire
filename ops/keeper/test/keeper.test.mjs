@@ -98,6 +98,17 @@ test("alerts: a pass that failed or couldn't check everything resolves nothing (
   assert.equal(n.open.has("feed:plank"), true);
 });
 
+test("drand: a signature the chain refused is dropped, and that relay is skipped for the round", async () => {
+  const sig = (c) => c.repeat(128);
+  const answers = { "https://a": sig("a"), "https://b": sig("b") };
+  const fetchFn = async (u) => { const relay = u.match(/^https:\/\/\w/)[0]; return { ok: true, json: async () => ({ round: 7, signature: answers[relay] }) }; };
+  const d = drandClient(["https://a", "https://b"], fetchFn);
+  assert.equal(await d.signature(7), `0x${sig("a")}`);
+  assert.equal(await d.signature(7), `0x${sig("a")}`, "cached");
+  d.forget(7);
+  assert.equal(await d.signature(7), `0x${sig("b")}`, "the other relay");
+});
+
 test("alerts in one-pass mode without a state file: in the first 15 minutes of each hour (a late GitHub run still lands), events always", async () => {
   const hour = 3_600_000;
   let t = 10 * hour + 30 * 60_000; // half past
