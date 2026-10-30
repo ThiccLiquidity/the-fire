@@ -21,6 +21,13 @@
 <meta name="site-doors" content="">
 <meta name="site-home" content="/doors/">
 <link rel="icon" href="ui/omni-mark.webp">
+<!-- as an app (Add to Home Screen): manifest.webmanifest, sw.js; the install button is in the Menu (ui.js) -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="ui/app/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Omni">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script src="boot.js"></script>
 <!-- the loading screen paints before the stylesheets and scripts arrive (a slow phone saw ~5 s of black) -->
 <style>
@@ -70,6 +77,7 @@
 <script defer src="spitwad.js"></script>
 <script defer src="games.js"></script>
 <script defer src="wait.js"></script>
+<script defer src="app.js"></script>
 <script defer src="clip.js"></script>
 <script defer src="rip.js"></script>
 <script defer src="zoom.js"></script>

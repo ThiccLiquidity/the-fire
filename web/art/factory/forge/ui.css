@@ -543,3 +543,7 @@ body[data-mode=port] .station.peek { --c: var(--gold) }
 body[data-mode=port] .station:not([style*="--c"]):not(.peek) { --c: var(--wood) }
 body[data-mode=port].fresh .station.tool { border-style: solid; border-color: color-mix(in srgb, var(--c, var(--gold)) 60%, #000); opacity: .8 } /* until a first pack: dimmer, not dashed */
 body[data-mode=port].fresh .station.tool svg { color: #fff6e0 }
+
+/* Install the app (iPhone): the steps */
+.inst { margin: 0 0 12px; padding-left: 22px; display: grid; gap: 10px; font-size: 16px; line-height: 1.4 }
+.inst b { color: var(--gold) } .inst-ic { display: inline-block; padding: 0 6px; border: 1px solid var(--line-2); border-radius: 6px; font-size: 13px }

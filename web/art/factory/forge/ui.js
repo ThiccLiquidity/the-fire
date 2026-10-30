@@ -25,6 +25,7 @@
     flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
     map: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
     phone: '<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2M3 9v6M21 9v6"/>',
+    install: '<rect x="6" y="2.5" width="12" height="19" rx="2"/><path d="M12 7v7M9 11l3 3 3-3M10.5 18.5h3"/>',
     sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
   };
   const svg = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
@@ -866,7 +867,7 @@
     const d = Sheet.open('menu', { title: 'Menu', body: `<div class="menu-groups">
       ${group('Play', [!LIVE || n ? b('open', 'pack', `Open packs${n ? ` (${n})` : ''}`) : '', b('paper', 'paper', 'Get PAPER'), b('games', 'game', 'Game room'), b('fun:practice', 'spark', 'Practice pack')])}
       ${group('Collection', [b('cards', 'cards', 'My cards'), b('fun:binder', 'book', 'Binder'), b('fun:showcase', 'star', 'Showcase'), b('fun:badges', 'badge', 'Badges')])}
-      ${group('Learn', [b('start', 'flag', 'New here?'), b('info', 'info', 'Info'), b('fun:tour', 'map', 'Workshop tour'), b('feed', 'feed', 'Activity')])}
+      ${group('Learn', [b('start', 'flag', 'New here?'), b('info', 'info', 'Info'), b('fun:tour', 'map', 'Workshop tour'), b('feed', 'feed', 'Activity'), window.App?.canInstall ? b('install', 'install', 'Install app') : ''])}
       ${group('Settings', [b('sound', window.Sound?.on ? 'sound' : 'mute', `Sound: ${window.Sound?.on ? 'On' : 'Off'}`), window.Fun?.haptics?.supported ? b('haptics', 'phone', `Vibration: ${Fun.haptics.on ? 'On' : 'Off'}`) : '', LIVE ? '' : b('demo', 'sliders', 'Demo controls')])}
       </div>
       <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>` });
@@ -908,6 +909,7 @@
   $('#soundBtn').onclick = () => { const sound = window.Sound ? Sound.set(!Sound.on) : false; $('#soundBtn').setAttribute('aria-pressed', sound); $('#soundBtn').innerHTML = svg(sound ? 'sound' : 'mute'); toast(sound ? 'Sound: On' : 'Sound: Off'); };
   function go(k) {
     if (k.startsWith('fun:')) return window.Fun?.go(k.slice(4)); // the fun layer's screens (fun.js)
+    if (k === 'install') return window.App?.install();
     if (k === 'haptics' && window.Fun?.haptics) return toast(`Vibration: ${Fun.haptics.set(!Fun.haptics.on) ? 'On' : 'Off'}`);
     if (k === 'paper') openGetPaper(); if (k === 'info') Info.open(); if (k === 'info-cards') Info.open('cards'); if (k === 'feed') openFeed();
     if (k === 'menu') openMenu(); if (k === 'demo' && !LIVE) openDemo(); if (k === 'start') openStart(); if (k === 'sound') $('#soundBtn').click();

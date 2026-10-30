@@ -10,7 +10,7 @@
   // ---------- haptics
   const HKEY = 'omni.haptics';
   let hOn = mem(HKEY) !== false;
-  const can = () => 'vibrate' in navigator;
+  const can = () => 'vibrate' in navigator && matchMedia('(pointer: coarse)').matches; // phones and tablets (desktop Chrome has vibrate, but nothing buzzes)
   const buzz = (p) => { if (hOn && can()) try { navigator.vibrate(p); } catch { /* not allowed now */ } };
   const PAT = { tear: 18, case: 22, stamp: [14, 40, 70], rare: [30, 40, 30], epic: [40, 50, 40, 50, 60], legendary: [60, 40, 60, 40, 220], g10: [60, 40, 60, 40, 220] };
   Fun.haptics = { get on() { return hOn; }, get supported() { return can(); }, set(on) { hOn = !!on; mem(HKEY, hOn); if (hOn) buzz(20); return hOn; } };
