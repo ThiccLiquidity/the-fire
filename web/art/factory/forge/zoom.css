@@ -52,3 +52,7 @@ dialog.zv:focus { outline: none }
 @media (min-aspect-ratio: 1/1) { .zv-hint { left: max(16px, env(safe-area-inset-left)); bottom: max(16px, env(safe-area-inset-bottom)); transform: none; animation-name: zv-hint } }
 /* the card detail: a small Share clip under the card (below its grade badge) */
 .detail .big .big-clip { display: flex; margin: 22px auto 0; font-size: 13px }
+/* 3D (card3d.js): bottom-left, clear of Share clip */
+.zv-3d { position: absolute; z-index: 2; left: max(16px, env(safe-area-inset-left)); bottom: max(16px, env(safe-area-inset-bottom)); min-height: var(--tap); min-width: var(--tap); font: 400 16px var(--display); letter-spacing: .04em;
+  background: rgba(20,14,10,.7); border: 1px solid var(--line-2); color: var(--gold) }
+.zv-3d:hover { background: rgba(40,30,20,.8); border-color: var(--brass) }

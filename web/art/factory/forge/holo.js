@@ -390,5 +390,14 @@
     const c = (v) => Math.max(-1, Math.min(1, v / range));
     return { tx: c(wrap(x - TZ.n.x)), ty: c(wrap(y - TZ.n.y)) };
   }
-  window.Holo = { render, renderHeld, attach, size, aim, hold, defer, preload, picture, tiltOf, STILL };
+  /** The 3D viewer (card3d.js): card c's face drawn at any tilt into a 2D context, its parts loaded once (with CORS, so
+   *  it can be a WebGL texture). null when it has no parts. */
+  async function face(c) {
+    const P = PARTS?.(c); if (!P) return null;
+    const fonts = P.holder === 'slab' && document.fonts ? document.fonts.load(`400 52px ${LABEL_FONT}`).catch(() => null) : null;
+    const [plain, print] = await Promise.all([corsImg(P.plain), corsImg(P.print), fonts]);
+    const held = { ...P, plain, print };
+    return { holder: P.holder, look: P.look, draw: (g, tl) => (P.holder === 'raw' ? render(g, plain, print, c.material, P.look, tl, P.state) : renderHeld(g, held, c.material, P.look, tl)) };
+  }
+  window.Holo = { render, renderHeld, attach, size, aim, hold, defer, preload, picture, face, tiltOf, STILL };
 })();

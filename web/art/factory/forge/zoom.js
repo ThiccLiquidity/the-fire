@@ -28,7 +28,10 @@
     // Share clip (clip.js): records the card shown now; the viewer's own holo holds still while it records
     const clip = window.Clip ? Clip.button(() => V && V.d === d ? V.cards[V.i] : null, { cls: 'zv-clip',
       before: () => { if (V?.f) window.Holo?.hold(V.f, true); }, after: () => { if (V?.f && V.s <= 1.02) window.Holo?.hold(V.f, false); } }) : null;
-    stage.append(card); d.append(bd, stage, x, prev, next, said); if (clip) d.append(clip);
+    // 3D (card3d.js): pick the card up and turn it over
+    const turn = window.Card3D?.supported ? el('button', 'zv-3d btn small', { type: 'button', 'aria-label': 'Turn it in 3D', 'data-key': 'zv-3d' }) : null;
+    if (turn) { turn.textContent = '3D'; turn.addEventListener('click', () => { const c = V?.cards[V.i]; if (c) window.Card3D.open(c, V.name?.(c)); }); }
+    stage.append(card); d.append(bd, stage, x, prev, next, said); if (clip) d.append(clip); if (turn) d.append(turn);
     const v = V = { d, bd, stage, card, prev, next, said, cards, i: clamp(index, 0, cards.length - 1), face, name, from, onNav,
       s: 1, x: 0, y: 0, ox: 0, oy: 0, W: 0, H: 0, cw: 0, ch: 0, f: null, src: null, raf: 0, anim: null, P: new Map(), g: null,
       lastTap: null, drawnScale: 1, ac: new AbortController(), pushed: false, closing: false, opener: document.activeElement };
