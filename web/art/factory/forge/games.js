@@ -15,6 +15,16 @@
     return el;
   };
   const list = [];
+  // the games' own code (about 165 KB) isn't needed to show the page: it loads once the page is idle, or the moment
+  // someone starts a game, whichever is first
+  const LAZY = ['paperfb-sim.js', 'paperfb.js', 'spitwad.js'];
+  let loading = null;
+  const loadGames = () => (loading ??= Promise.all(LAZY.map((src) => new Promise((ok, no) => {
+    const s = document.createElement('script'); s.src = src; s.async = false; // in order: the sim before the game
+    s.onload = ok; s.onerror = () => { loading = null; no(new Error('The game didn\u2019t load. Check your connection and try again.')); };
+    document.head.append(s);
+  }))));
+  addEventListener('load', () => setTimeout(() => (window.requestIdleCallback || setTimeout)(() => loadGames().catch(() => {}), { timeout: 10000 }), 4000));
   // the prizes, by game and place, for every Series or one Series (prizes.json: the award script reads the same file)
   let PRIZES = null;
   const prizesReady = fetch('prizes.json').then((r) => r.json()).then((j) => { PRIZES = j; }, () => {});
@@ -69,7 +79,8 @@
     const body = h('div', { class: 'gr' });
     host.append(body);
     const close = () => { current?.stop(); current = null; render(); };
-    function start(g, mode) {
+    async function start(g, mode) {
+      try { await loadGames(); } catch (e) { window.toast?.(e.message, 'bad'); return; }
       if (mode === 'paid') return Comp.start(g, body, close, (c) => { current = c; });
       body.replaceChildren(); current = play(g.id, body, { mode, onBack: close });
       current?.status({ text: 'Free play' });
@@ -112,7 +123,7 @@
     add(g) { if (!list.some((x) => x.id === g.id)) list.push(g); },
     get list() { return list.slice(); },
     get: (id) => list.find((g) => g.id === id),
-    play, room, lobby, stats: loadStats,
+    play, room, lobby, stats: loadStats, load: loadGames,
     /** competitive runs: only once the game server and FireGames are live and the owner has opened them (live.js
      *  sets Games.PAID to the open game ids); never in the demo until then */
     PAID: [],
@@ -188,6 +199,7 @@
       return have >= price ? 0 : Math.ceil((price - have) * 1e4) / 1e4;
     },
     async begin(g, body, back, setCurrent) {
+      await loadGames();
       if (!LIVE) return Comp.play(g, { demo: true, series: series() }, body, back, setCurrent);
       await new Promise((ok) => window.Live.needWallet(() => ok()));
       const c = await api(g, 'create', { wallet: wallet(), adult: true, series: window.Store?.state?.series?.no });
@@ -206,6 +218,7 @@
       }
     },
     async resume(g, r, body, back, setCurrent) {
+      await loadGames();
       if (r.txHash) await Comp.confirm(g, r);
       const st = await api(g, 'run', { runId: r.runId, cap: r.cap });
       if (st.over) { keepRun(g, null); throw new Error(`That run is over: a streak of ${st.streak}.`); }
