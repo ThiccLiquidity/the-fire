@@ -21,10 +21,20 @@ test('a dry run reads the board and sends nothing; --send without a key or RPC s
   const r = await award(['--series', '7', '--site', 'https://example.test/'], { env: {}, out: (l) => lines.push(l), fetchImpl });
   assert.equal(r.sent, false); assert.equal(r.winners.length, 3);
   assert.ok(lines.some((l) => l.includes('awardPrizes(7, 1, [')));
-  await assert.rejects(award(['--series', '7', '--site', 'https://example.test', '--send'], { env: {}, out: () => {}, fetchImpl }), /RPC/);
+  await assert.rejects(award(['--series', '7', '--site', 'https://example.test', '--send', '--approve', [A, B, C].join(',')], { env: {}, out: () => {}, fetchImpl }), /RPC/);
   await assert.rejects(award([], { env: {}, out: () => {} }), /--series/);
   const empty = await award(['--series', '7', '--site', 'https://x.test'], { env: {}, out: () => {}, fetchImpl: async () => ({ ok: true, json: async () => ({ rows: [] }) }) });
   assert.deepEqual(empty.winners, []);
+});
+
+test('the owner approves every winner by name before anything is sent; high streaks are marked CHECK', async () => {
+  const lines = [], fetchImpl = async () => ({ ok: true, json: async () => ({ rows }) });
+  const env = { RPC: 'http://127.0.0.1:1' };
+  await assert.rejects(award(['--series', '7', '--site', 'https://x.test', '--send', '--flag-streak', '9'], { env, out: (l) => lines.push(l), fetchImpl }), /approve each by name/);
+  assert.ok(lines.some((l) => l.toLowerCase().includes(A) && /CHECK: a streak of 9/.test(l)), 'a streak at or over --flag-streak is marked');
+  assert.ok(!lines.some((l) => l.toLowerCase().includes(B) && /CHECK/.test(l)));
+  // approving only some of them still sends nothing
+  await assert.rejects(award(['--series', '7', '--site', 'https://x.test', '--send', '--approve', A], { env, out: () => {}, fetchImpl }), /approve each by name/);
 });
 
 test('the prizes file sets each place; the shipped file stays within the Series caps for both games', () => {

@@ -11,13 +11,17 @@
 //   $s = Read-Host "RPC URL" -AsSecureString; $env:RPC = [System.Net.NetworkCredential]::new("", $s).Password
 //   node ops\games\award.mjs --series 7 --site https://omnicardworks.com             (dry run)
 //   $k = Read-Host "Prize wallet key" -AsSecureString; $env:GAME_AWARDER_KEY = [System.Net.NetworkCredential]::new("", $k).Password
-//   node ops\games\award.mjs --series 7 --site https://omnicardworks.com --send ; Remove-Item Env:GAME_AWARDER_KEY
+//   node ops\games\award.mjs --series 7 --site https://omnicardworks.com --approve 0xa,0xb,0xc --send ; Remove-Item Env:GAME_AWARDER_KEY
 //
 // Options: --series N (the finished Series, required) · --game 1 (FireGames id; default 1, paper football) · --prizes
 // file.json (default web/art/factory/forge/prizes.json) · --from-block N (where to look for this game's past prizes) · --site URL
 // (or env GAMES_SITE: the board is <site>/api/games/<game>/board?series=N) · --board file.json (a saved board instead)
 // · --exclude 0xa,0xb (wallets the owner's review took off; the next ones move up) · --chain 4663 · --credits 0x...
-// (default: deployments/<chain>.json's FireCredits) · --send.
+// (default: deployments/<chain>.json's FireCredits) · --flag-streak 20 · --approve 0xa,0xb · --send.
+//
+// The owner's review (a script can play the game: the server judges the kick, not who made it): nothing is sent until
+// every winner is approved by name (--approve, each winning wallet), and a streak at or over --flag-streak (default 20)
+// is marked CHECK: look at that wallet's runs before approving it, or --exclude it.
 import { readFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { createPublicClient, createWalletClient, defineChain, getAddress, http, isAddress, parseAbi } from 'viem';
@@ -95,7 +99,11 @@ export async function award(argv, { env = process.env, out = console.log, fetchI
   const winners = winnersFrom(rows, { exclude: (o.exclude ?? '').split(',').filter(Boolean), table });
   out(`Series ${series}, game ${gameId}: ${rows.length} on the board`);
   if (!winners.length) { out('No winners (an empty board): nothing to send.'); return { winners, sent: false }; }
-  winners.forEach((w, i) => out(`  ${i + 1}. ${w.wallet}  streak ${w.streak}  -> ${say(w)}`));
+  const flagAt = Number(o['flag-streak'] ?? 20);
+  winners.forEach((w, i) => out(`  ${i + 1}. ${w.wallet}  streak ${w.streak}  -> ${say(w)}${w.streak >= flagAt ? `   CHECK: a streak of ${w.streak} is unusually high` : ''}`));
+  const approved = new Set((o.approve ?? '').split(',').filter(Boolean).map((a) => a.toLowerCase()));
+  const unapproved = winners.filter((w) => !approved.has(w.wallet.toLowerCase()));
+  if (o.send && unapproved.length) throw new Error(`review the winners first, then approve each by name: --approve ${winners.map((w) => w.wallet).join(',')} (or --exclude any you don't trust)`);
   const wallets = winners.map((w) => w.wallet), lists = KINDS.map((k) => winners.map((w) => w[k]));
   const sum = Object.fromEntries(KINDS.map((k, j) => [k, lists[j].reduce((a, b) => a + b, 0)]));
 

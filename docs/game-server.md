@@ -93,9 +93,14 @@ From the repo, in PowerShell (the key is typed hidden and cleared after):
 $s = Read-Host "RPC URL" -AsSecureString; $env:RPC = [System.Net.NetworkCredential]::new("", $s).Password
 node ops\games\award.mjs --series 7 --site https://<the site>          # dry run: shows the top three and the call
 $k = Read-Host "Prize wallet key" -AsSecureString; $env:GAME_AWARDER_KEY = [System.Net.NetworkCredential]::new("", $k).Password
-node ops\games\award.mjs --series 7 --site https://<the site> --send
+node ops\games\award.mjs --series 7 --site https://<the site> --approve <winner1>,<winner2>,<winner3> --send
 Remove-Item Env:GAME_AWARDER_KEY
 ```
+
+**Review before sending.** A script can play the game (the server judges each kick, not who made it), so nothing is
+sent until you approve every winner by name with `--approve` (the dry run prints the exact list). A streak of 20 or more
+is marked `CHECK`: look at that wallet's runs first (`--flag-streak N` changes the mark), and `--exclude` it if it
+looks like a bot. Before mainnet the shot conditions get a server-side secret part so the public code can't solve them.
 
 `--series` is the Series that just finished. `--exclude 0x...` takes a wallet off after review (the next one moves
 up). It never sends twice: if that Series already has prizes for the game, it stops.
