@@ -12,7 +12,7 @@ Nothing here is live until the owner sets it up and opens it (below). The live s
    in the list below get no approval), that they said they're 18+, and that every switch is open. It returns a run id
    and a signed approval.
 2. **Pay.** The player's wallet calls `FireGames.payRun(gameId, runId, series, deadline, sig)` within 10 minutes.
-   It burns the run's price (1 PAPER, or less: at most $0.10 of PAPER). The contract checks the server's signature.
+   It sends the run's price (1 PAPER, or less: at most $0.10 of PAPER) to LiquidityBurner. The contract checks the server's signature.
 3. **Confirm.** The site sends the transaction hash (`confirm`). The server reads `RunPaid` from the receipt and the
    run starts.
 4. **Play.** Up to 3 practice kicks, then scored kicks until the first miss. For each shot the server sends the
@@ -37,11 +37,11 @@ All under `/api/games/<game>/<action>`, where `<game>` is `paperfb` or `1`. POST
 | Action | In | Out |
 |---|---|---|
 | `create` (POST) | `{ wallet, adult: true }` | `{ runId, cap, gameId, series, deadline, sig }`. Keep `runId` and `cap`: they resume the run. |
-| `confirm` (POST) | `{ runId, cap, txHash }` | the run (`status: 'playing'`), plus `seedCommit` |
+| `confirm` (POST) | `{ runId, cap, txHash }` | the run (`status: 'playing'`), plus `seedCommit` = sha256(`runId:seed:salt`) |
 | `run` (POST) | `{ runId, cap }` | where the run stands (to resume) |
-| `shot` (POST) | `{ runId, cap, practice? }` | `{ n, level, shot, token, shotClockMs }`. Asking again re-sends the same shot with a fresh clock. |
+| `shot` (POST) | `{ runId, cap, practice? }` | `{ n, level, shot, token, shotClockMs }`. Asking again re-sends the same shot: one fresh clock (a resume after a crash), then it keeps its clock. |
 | `ping` (POST) | `{ token }` | right after a shot arrives: measures the round trip |
-| `kick` (POST) | `{ token, cap, input, kickTick }` | `{ result, made, streak, over, ... }`; on the run's end, `seed` |
+| `kick` (POST) | `{ token, cap, input, kickTick }` | `{ result, made, streak, over, ... }`; on the run's end, `seed` and `salt` (check them against `seedCommit`) |
 | `board` (GET) | `?series=N` | `{ rows: [{ rank, wallet, streak, reachedAt }] }`, cached for 5 s |
 
 - `input` and `kickTick` come straight from the game's `kick` event (`PaperFootball.mount(..., { onEvent })`). A paid

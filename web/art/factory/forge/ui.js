@@ -209,6 +209,9 @@
   const unsold = () => sold() && S.series.left > 0; // closed with packs left (the owner ended the drop): ended, not sold out
   const groups = () => S.series.groups || [];
   const open = () => groups().filter((g) => g.state === 'open');
+  // every group has ended but packs are left: the Series closes when the owner ends it (from endableAt), so say by when
+  const stalled = () => LIVE && !sold() && !S.series.closing && S.series.endableAt > 0 && groups().length > 0 && groups().every((g) => g.state === 'ended');
+  const endBy = () => new Date(S.series.endableAt * 1000).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const note = () => (LIVE ? S.series.note : null); // live: Loading…, Opens in 3h, Paused, No Series yet
   const nowS = () => Date.now() / 1000 + (Store.clockSkew || 0); // live: the chain's clock (live.js sets the skew)
   /** "3h 12m", "4m 05s": time until unix second `t`. */
@@ -256,6 +259,7 @@
     const c = $('#seriesChip'), x = Store.extraOpen();
     const html = note() ? `${S.series.no ? `Series ${S.series.no} · ` : ''}<b>${esc(note())}</b>` : sold() ? `Series ${S.series.no} · <b>${unsold() ? 'Sales ended' : 'Sold out'}</b>`
       : S.series.closing ? `Series ${S.series.no} · <b>Closing…</b>` : x ? `Series ${S.series.no} · <b>Extra packs</b> · ${money(x.next?.usd ?? x.priceUsd)}`
+      : stalled() ? `Series ${S.series.no} · <b>Sales end by ${endBy()}</b>`
       : `Series ${S.series.no} · <b>${Store.left()}</b> left${open().length ? '' : ' · <i>soon</i>'}`;
     if (c._html !== html) { c._html = html; c.innerHTML = html; } // only on a real change: a node swapped under a click eats it
   }
@@ -295,7 +299,7 @@
     const x = Store.extraOpen();
     const head = sold() || S.series.closing || x || note() ? line : `${Store.left()} left · ${line}`; // phones: no Series chip up top, so the bar's header says how many are left
     const strip = (h) => String(h).replace(/<span class="cd" data-until="(\d+)">[^<]*<\/span>/g, '<cd $1>'); // the key ignores the ticking text
-    const packArt = Store.packImg(S.series.no); // this Series' own pack (the generic one until it has loaded)
+    const packArt = Store.packThumb(S.series.no); // this Series' own pack, small (the generic one until it has loaded)
     const key = JSON.stringify([line, opts.map((o) => o.map(strip)), next && strip(next.html), sub, tease && [tease.no, tease.id, tease.line], sold(), packArt]);
     if (key === buyKey) { const ph = $('#buybar .phase'); if (ph && ph.textContent !== head) ph.textContent = head; return; }
     buyKey = key;

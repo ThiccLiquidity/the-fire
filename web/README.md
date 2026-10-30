@@ -3,8 +3,8 @@
 Vite project deployed on Vercel (Root Directory `web`). Needs Node.js 20.19+ or 22.12+ (Vite 8).
 
 - `public/forge/` is Cardworks: a static page (canvas workshop scene plus station screens) served at `/forge/`.
-  `/` redirects there (`index.html` and `vercel.json`). Purchases are still demo: a demo banner under the top bar,
-  demo balances and cards, no payments, and no wallet connection (Connect signs in a demo wallet).
+  `/` redirects there (`index.html` and `vercel.json`). It runs live on the chain with `VITE_LIVE` (testnet or
+  mainnet) or `?live=testnet`; otherwise it's the demo (a demo banner, demo balances and cards, nothing charged).
 - `src/lib/` holds the modules for the live version: chain and RPC config, the wallet connection (`wallet.ts`), the
   drand helper, the card contract ABIs (`abi/`, exported by `cards.ts`) and the KyberSwap swap guard. `npm run build`
   type-checks them.
@@ -20,7 +20,7 @@ npm run build:wallet  # the wallet bundle (not used by the site yet; see below)
 npm run lint          # oxlint
 ```
 
-## Live-site helpers (ready, not wired in)
+## Live-site helpers
 
 - `src/lib/data.ts` + `blockscout.ts`: the data adapter (`ForgeData`: packs and cards a wallet holds, recent
   activity) and its Blockscout v2 implementation (request timeout, 429 backoff, ERC-1155 batch transfers).
@@ -37,7 +37,7 @@ npm run lint          # oxlint
   list of errors is generated: after regenerating the ABIs, run `npm run gen:errors`, then `npx tsc -b` names any
   error that still needs a message. `node scripts/gen-abi-errors.mjs --check` fails if the generated list is out of date.
 
-## Wallet connection (ready, not wired in)
+## Wallet connection
 
 The wallet layer for the live site is built on the standard stack: [wagmi core](https://wagmi.sh/core) holds the
 connection (restored on reload), [viem](https://viem.sh) reads the chain and
@@ -46,7 +46,7 @@ installed extensions through EIP-6963, WalletConnect (QR code on desktop, deep l
 (regular wallet only). Robinhood Chain (mainnet, or testnet with `VITE_CHAIN=testnet`) is the only network; on
 connect the wallet is asked to add and switch to it (public RPC only).
 
-Cardworks does not load it yet: the site stays a demo with no wallet connection.
+Cardworks loads it in live mode (the Connect button opens it); the demo never does.
 
 - `src/lib/wallet.ts`: `initWallet()`, `connect()`, `disconnect()`, `getAccount()`, `watchAccount(cb)`,
   `switchToRobinhood()`, `getPublicClient()`, `getWalletClient()`, `readBalance(token, owner)`, `listWallets()` /
@@ -56,17 +56,14 @@ Cardworks does not load it yet: the site stays a demo with no wallet connection.
   `switchNetwork()`, `state()`, `onChange(cb)`); wagmi and AppKit load on the first click.
 - `vite.wallet.config.ts` (`npm run build:wallet`) builds it into `art/factory/forge/vendor/`.
 
-To wire it in later:
-1. Create a Reown project (free, [dashboard.reown.com](https://dashboard.reown.com)), allow the site's domain, and set
-   `VITE_REOWN_PROJECT_ID` in Vercel → Settings → Environment Variables (public, not a secret).
-2. Build the bundle into the deploy (`vite build --config vite.wallet.config.ts --outDir dist/forge/vendor` after the
-   main build), load `vendor/wallet.js` from `forge/index.html` as a module, and point the Connect button at
-   `ForgeWallet.open()`.
+Setup: create a Reown project (free, [dashboard.reown.com](https://dashboard.reown.com)), allow the site's domain, and
+set `VITE_REOWN_PROJECT_ID` in Vercel → Settings → Environment Variables (public, not a secret). `npm run build` builds
+the wallet bundle into `dist/forge/vendor` and the page loads it in live mode.
 
 The CSP in `vercel.json` already allows Reown/WalletConnect (`api.web3modal.org`, `rpc.walletconnect.org`,
 `pulse.walletconnect.org`, the relay, the Verify and secure frames, `fonts.reown.com`) and Coinbase Wallet.
 
-## Live chain layer (`src/lib/chain`, ready, not wired in)
+## Live chain layer (`src/lib/chain`)
 
 Reads and writes on the card contracts, for when the Forge goes live. Nothing chain-related loads unless the page
 asks for it:

@@ -447,7 +447,7 @@
           h('div', { class: 'pimg' }, h('img', { src: Store.packImg(no), alt: `Series ${no} pack`, width: 240, height: 336, decoding: 'async' }),
             live ? h('img', { class: 'padlock', src: '../build3/s-padlock.webp', alt: 'Locked' }) : null,
             n > 0 ? h('span', { class: 'pcount', text: '×' + n }) : null),
-          h('div', { class: 'pinfo' }, h('h4', { text: `Series ${no}` }), h('p', { class: 'muted', text: n ? `${n} sealed` : 'None sealed' }), act));
+          h('div', { class: 'pinfo' }, h('h3', { text: `Series ${no}` }), h('p', { class: 'muted', text: n ? `${n} sealed` : 'None sealed' }), act));
       });
       if (!tiles.length) return put(tilesEl);
       put(tilesEl, h('h3', { id: 'packs-h', text: 'Your packs' }), h('p', { class: 'muted small packs-nft', text: 'A sealed pack is an NFT too: keep it sealed, collect it, or trade it unopened.' }), h('div', { class: 'ptiles' }, tiles));

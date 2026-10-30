@@ -1,7 +1,7 @@
 /* screens.css: the station screens (workbench, PDA grading, ash bin, suggestion box). Tokens come from app.css. */
 .st { display: flex; flex-direction: column; gap: 16px }
 .st h3 { margin: 0 0 10px; font: 400 16px var(--display); letter-spacing: .04em; color: var(--ink) }
-.st h4 { margin: 0; font: 400 15px var(--display); letter-spacing: .03em }
+.st h4, .st .ptile h3 { margin: 0; font: 400 15px var(--display); letter-spacing: .03em } /* a pack tile's Series: a real h3 under the station's h2 */
 .st p { margin: 0 }
 .muted { color: var(--muted) } .small { font-size: 13px }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px }
@@ -859,7 +859,7 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 @media (max-width: 600px) {
   .coll-h { gap: 6px 10px } .coll-h .cfloor { order: 3; margin-left: 0 } .coll-h .pop-b { order: 4 }
   .ptiles { gap: 8px } .ptile { grid-template-columns: 44px 1fr; gap: 10px; padding: 6px 10px } .pimg img:first-child { width: 44px }
-  .ptile .pinfo { grid-template-columns: auto 1fr; align-items: center; justify-items: start; gap: 2px 10px } .ptile .pinfo h4 { grid-column: 1 } .ptile .pinfo > p.muted { grid-column: 2 } .ptile .pinfo > :last-child { grid-column: 1 / -1 }
+  .ptile .pinfo { grid-template-columns: auto 1fr; align-items: center; justify-items: start; gap: 2px 10px } .ptile .pinfo h3 { grid-column: 1 } .ptile .pinfo > p.muted { grid-column: 2 } .ptile .pinfo > :last-child { grid-column: 1 / -1 }
   .st-table > .packs h3:not(.ip-h) { display: none }
 }
 

@@ -8,10 +8,10 @@
 | Shared on-chain pieces | `contracts/src`: OpenDrandRouter, OpenVRFAdapter, PlankUsdTwap, PaperUsdTwap | Built and tested. Not deployed. |
 | Deploy scripts | `contracts/script`: DeployTwap, DeployInfra, DeployCards, AcceptOwnership, VerifyDeploy, ConfigureSeries, DevStack (testnet stand-ins) | Runbook in `docs/deploy.md` (mainnet, rehearsal, testnet). |
 | Card Studio | `studio/` | Working end to end (library, Series setup, sample deal, full 216-image-per-character WEBP build with cases and slabs, Pinata upload). Frames are built in, Gold included (holo only, every wear level); the Full Art frames are still to come. |
-| Cardworks site | Source `web/art/factory/forge`, served from `web/public/forge` | Demo mode (demo banner, demo data), no chain connection yet. Shows wear, cases and slabs (Case & grade). |
-| Site modules for the live version | `web/src/lib`: chain/RPC config, wallet connection, drand helper, card ABIs, KyberSwap guard | Type-checked, not wired into Cardworks yet. |
+| Cardworks site | Source `web/art/factory/forge`, served from `web/public/forge` | Live on the chain (`VITE_LIVE` or `?live=testnet`) and a demo by default: every flow (buy in each group, free packs, open, case and grade, burn, suggestions, profiles, games) runs against the contracts; tested end to end on a local chain (`npm run test:forge`, 170 checks). Installable as an app (Menu → Install app), notifications, 3D card viewer. |
+| Site's chain layer and servers | `web/src/lib` (chain, wallet, ABIs, KyberSwap guard); `web/api` (game server, notifications, indexer relay) | Wired in and tested. Setup: `docs/game-server.md`, `docs/push.md`, `docs/indexer.md`. |
 | Holder snapshot | `ops/snapshot` | Ready. |
-| Ops | `ops/keeper`, `ops/deploy/record.mjs`, `ops/series/verify-series.mjs`, `ops/rehearsal` | Built; the rehearsal runs every deploy step and the keepers on a local chain in CI. |
+| Ops | `ops/keeper`, `ops/indexer`, `ops/deploy/record.mjs`, `ops/series`, `ops/games`, `ops/rehearsal` | Built; the rehearsal runs every deploy step and the keepers on a local chain in CI. The indexer (Ponder) serves a wallet's cards and the feeds (`docs/indexer.md`). |
 | Economy sims | `sim/omni` | Done; recorded output in each folder. |
 
 Naming: the card contracts are named `Fire*` for historical reasons (`Fire*` is the card system). In identifiers
@@ -22,10 +22,9 @@ Naming: the card contracts are named `Fire*` for historical reasons (`Fire*` is 
 1. **Keeper bot.** Built (`ops/keeper`): two Railway services in different regions (main and backup), plus an
    optional GitHub Actions pass. Before the first drop: two funded gas-only wallets, the two services and their
    heartbeats (`ops/keeper/README.md`).
-2. **Real wallet connection on the site.** Wire Cardworks' buy, open, case and grade, burn and suggestion screens to the
-   deployed contracts through `web/src/lib`, replacing the demo store and the demo banner. Planned with it: loading
-   each buyer's holder-window proof automatically, the "Get PAPER" box (KyberSwap, 0.5% fee), and calling
-   `process(fire, maxCards)` and `finish(index, ids)` right after randomness arrives.
+2. **Real wallet connection on the site.** Done: every screen runs on the contracts in live mode (holder proofs, Get
+   PAPER, dealing and finishing right after the randomness). Before mainnet: the game server's anti-bot step (a
+   server-side part of each shot's conditions), and the testnet run with testers (`docs/test-run-playbook.md`).
 3. **Series content.** Characters, their categories (free text, set in the Card Studio) and their source images,
    built (216 WEBP images per character) and uploaded with the Card Studio; pack art per Series. The Full Art frames
    (the Gold frames are built). A Series' images lock when its drop is set up (`configureDrop`), so upload the

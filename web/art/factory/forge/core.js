@@ -621,7 +621,10 @@
     }
     return PACK_DEF;
   };
-  if (!LIVE_NET) Object.keys(DEMO_PACKS).forEach((n) => Store.packImg(+n)); // ready before the first rip
+  // a small pack for small places (the Buy bar's 27 px picture): the demo's own thumbnails; live, the Series' pack art
+  Store.packThumb = (no) => (!LIVE_NET && DEMO_PACKS[no] ? DEMO_PACKS[no].replace('.webp', '-mini.webp') : Store.packImg(no));
+  // ready before the first rip, without holding up the page's first paint
+  if (!LIVE_NET) addEventListener('load', () => (window.requestIdleCallback || setTimeout)(() => Object.keys(DEMO_PACKS).forEach((n) => Store.packImg(+n)), { timeout: 3000 }));
   Store.nextGateway = (src) => { const i = Store.IPFS.findIndex((g) => String(src).startsWith(g)); return i >= 0 && i < Store.IPFS.length - 1 ? Store.IPFS[i + 1] + src.slice(Store.IPFS[i].length) : null; };
   // a picture that won't load (offline, a gateway down): the next IPFS gateway, then (a card) the card back, never a
   // broken-image box. Demo and live alike.

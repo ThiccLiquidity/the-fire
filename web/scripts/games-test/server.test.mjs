@@ -111,7 +111,8 @@ test('a full paid run: create, approval, confirm, practice, makes, the first mis
   const miss = await playShot(env, run, { want: 'short' });
   assert.deepEqual([miss.kick.body.result, miss.kick.body.over, miss.kick.body.streak], ['short', true, 3]);
   // the seed is revealed at the end and matches the commitment made at confirm, and it made every shot
-  assert.equal(createHash('sha256').update(`${run.runId}:${miss.kick.body.seed}`).digest('hex'), f.body.seedCommit);
+  assert.equal(createHash('sha256').update(`${run.runId}:${miss.kick.body.seed}:${miss.kick.body.salt}`).digest('hex'), f.body.seedCommit);
+  assert.match(miss.kick.body.salt, /^[0-9a-f]{32}$/, 'a 128-bit salt: the commitment can\'t be brute-forced from a 31-bit seed');
   assert.deepEqual(S.shotFor(miss.kick.body.seed, 3, 3), miss.shot.shot);
   // no more shots, and no practice after the scored kicks began
   const after = await env.call('shot', { runId: run.runId, cap: run.cap });

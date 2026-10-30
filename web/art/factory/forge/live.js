@@ -149,7 +149,7 @@
       // the drop-wide settings the copy quotes ("in Series N"): read from the drop, never typed in
       maxPerTx: s.maxPerTx, regularWalletsFor: s.regularWalletsFor, paperCapUsd: +s.paperCapUsd,
       creditPacksMax: s.creditPacksMax, creditPacksPerWallet: s.creditPacksPerWallet,
-      groups: s.groups.map(toGroup), creditGroup: s.creditGroup, creditPacksLeft: s.status.creditPacksLeft, left: s.status.left,
+      groups: s.groups.map(toGroup), creditGroup: s.creditGroup, creditPacksLeft: s.status.creditPacksLeft, left: s.status.left, endableAt: s.status.endableAt,
       note: s.state === 'upcoming' ? `Opens in ${until(s.start)}` : s.status.paused ? 'Paused' : null,
     });
     if (was < 4 && ph === 4 && S.series.loaded) { window.Scene?.finale?.(); setTimeout(() => toast(`Series ${s.fire} is closed. Time to rip!`, 'good'), 600); }

@@ -10,7 +10,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { encodeAbiParameters, getAddress, isAddress, isHash, keccak256 } from 'viem';
 import { LIMITS } from './config.js';
 import { findGame } from './games.js';
-import { capFor, capOk, seedFor, signToken, verifyToken } from './token.js';
+import { capFor, capOk, saltFor, seedFor, signToken, verifyToken } from './token.js';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...NO_STORE, ...headers } });
@@ -45,7 +45,7 @@ export function createGameServer({ store, chain, config, now = Date.now, random 
     runId: run.runId, gameId: run.gameId, series: run.series, status: run.status, streak: run.streak, next: run.nextN,
     practiceLeft: run.scoredStarted ? 0 : Math.max(0, L.practice - run.practiceUsed), over: run.status === 'over',
   });
-  const seedReveal = (run) => ({ seed: seedFor(secret, run.gameId, run.runId) });
+  const seedReveal = (run) => ({ seed: seedFor(secret, run.gameId, run.runId), salt: saltFor(secret, run.gameId, run.runId) });
 
   // ---------------------------------------------------------------- create: geo, 18+, switches -> run id + approval
   async function create(req, game) {
@@ -74,7 +74,7 @@ export function createGameServer({ store, chain, config, now = Date.now, random 
   async function confirm(req, game) {
     if (!(await judging())) return closed('switch');
     const b = await body(req), { run, err } = await ownRun(b, game); if (err) return err;
-    const commit = createHash('sha256').update(`${run.runId}:${seedFor(secret, run.gameId, run.runId)}`).digest('hex');
+    const commit = createHash('sha256').update(`${run.runId}:${seedFor(secret, run.gameId, run.runId)}:${saltFor(secret, run.gameId, run.runId)}`).digest('hex'); // sha256(runId:seed:salt), both revealed at the end
     if (run.status !== 'created') return json(200, { ...runView(run), seedCommit: commit });
     if (now() - run.createdAt > L.claimMs) return bad(410, 'This run is too old to start. Ask for help if you paid for it.');
     if (!isHash(b.txHash || '')) return bad(400, 'Bad transaction hash.');

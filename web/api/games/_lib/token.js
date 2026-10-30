@@ -25,5 +25,7 @@ export function capOk(secret, runId, cap) {
   const want = Buffer.from(capFor(secret, runId)), got = Buffer.from(cap);
   return got.length === want.length && timingSafeEqual(got, want);
 }
+/** the salt in the seed's commitment (128 bits): a 31-bit seed alone could be found from its hash by trying them all */
+export const saltFor = (secret, gameId, runId) => mac(secret, 'salt', `${gameId}:${runId}`).toString('hex').slice(0, 32);
 /** the run's shot seed (31 bits), from which every shot's conditions follow; revealed when the run ends */
 export const seedFor = (secret, gameId, runId) => mac(secret, 'seed', `${gameId}:${runId}`).readUInt32BE(0) & 0x7fffffff;

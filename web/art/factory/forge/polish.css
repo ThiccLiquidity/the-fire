@@ -249,6 +249,7 @@ body[data-mode=desk] .burn-tally { left: max(8px, calc(var(--sceneL, 0px) - 92px
   #sheet-menu { width: min(900px, calc(100vw - 48px)) }
   .sheet-head h2 { font-size: 26px } .sheet-head .x { width: 52px; height: 52px; font-size: 26px }
   .sheet-body { padding: 18px 24px 24px }
+  .bw-foot, .foot { margin: 0 -24px -24px; bottom: -24px; padding-left: 24px; padding-right: 24px } /* the sticky footers reach the wider sheet's edges again */
   dialog .btn { min-height: 50px; font-size: 17px } dialog .btn.small { min-height: 42px; font-size: 15px }
   dialog .chip, dialog .qp { font-size: 16px }
   dialog p, dialog li, dialog .muted, dialog .lead { font-size: 17px }

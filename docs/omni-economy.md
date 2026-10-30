@@ -221,9 +221,9 @@ worth over $100 there burns outright).
   ceiling) and everything sent to `LiquidityBurner` waits there. If the feed later goes quiet, the sale's last good
   price holds. The owner can replace the sale's feed between drops (`FireSale.setFeeds`); `LiquidityBurner`'s feeds
   are set once.
-- **Get PAPER on the site (planned):** a small box where you type how many PAPER you want, see the ETH price, and
-  press one button. It would use the KyberSwap swap guard in `web/src/lib` with the 0.5% fee to the swap-fee wallet.
-  In the buy panel it would show up when someone is short ("You need 1 PAPER per pack. Get 3 PAPER for $0.15").
+- **Get PAPER on the site (built):** a small box where you type how many PAPER you want, see the price in ETH, PLANK or
+  USDG, and press one button. It uses the KyberSwap swap guard in `web/src/lib` (a 0.5% fee to the swap-fee wallet once
+  that's set). In the buy panel and before a competitive game run it shows up when someone is short ("You need 1 PAPER per pack. Get 3 PAPER for $0.15").
 - **Scale:** 167 packs × 2 drops a month send about 334 PAPER a month to `LiquidityBurner` as pack PAPER, against
   about 63,000 printed (about 2,080 presses). The model (`docs/liquidity-burn.md`): a Standard Series puts about $404
   into the contract, $355 of it burned as liquidity, with about $187 of PAPER bought. This is a reason to hold PAPER
