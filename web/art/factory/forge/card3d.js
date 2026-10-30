@@ -30,9 +30,9 @@
   // ---------- shaders: the face and back from their pictures, the edge a solid colour; a soft light, a moving glint,
   // and for a case or slab a clear-plastic rim
   const VS = `attribute vec3 p; attribute vec3 n; attribute vec2 t; attribute float part;
-    uniform mat4 M, VP; varying vec3 vn; varying vec3 vp; varying vec2 vt; varying float vpart;
-    void main(){ vec4 w = M * vec4(p, 1.0); vp = w.xyz; vn = mat3(M) * n; vt = t; vpart = part; gl_Position = VP * w; }`;
-  const FS = `precision mediump float; varying vec3 vn; varying vec3 vp; varying vec2 vt; varying float vpart;
+    uniform mat4 M, VP; uniform float halfDepth; varying vec3 vn; varying vec3 vp; varying vec2 vt; varying float vpart, vz;
+    void main(){ vec4 w = M * vec4(p, 1.0); vp = w.xyz; vn = mat3(M) * n; vt = t; vpart = part; vz = p.z / halfDepth; gl_Position = VP * w; }`;
+  const FS = `precision mediump float; varying vec3 vn; varying vec3 vp; varying vec2 vt; varying float vpart, vz;
     uniform sampler2D face, back; uniform vec3 edge, eye; uniform float gloss, plastic, edgeAlpha;
     void main(){
       vec4 c = vpart < 0.5 ? texture2D(face, vt) : vpart < 1.5 ? texture2D(back, vt) : vec4(edge, 1.0);
@@ -42,7 +42,9 @@
       bool side = vpart > 1.5;
       float spec = pow(max(dot(N, normalize(L + V)), 0.0), side ? (plastic > 0.0 ? 90.0 : 18.0) : 70.0) * (side ? (plastic > 0.0 ? 1.1 : 0.35) : gloss);
       float rim = plastic * pow(1.0 - max(dot(N, V), 0.0), 5.0) * 0.18; // a thin bright line at the plastic's edge, no haze
-      gl_FragColor = vec4(c.rgb * dif + vec3(spec) + vec3(rim), side ? max(edgeAlpha, spec) : 1.0);
+      // the plastic's two bevels, where the edge meets the front and the back: bright lines that tie them into one block
+      float bevel = side && plastic > 0.0 ? smoothstep(0.62, 0.98, abs(vz)) : 0.0;
+      gl_FragColor = vec4(c.rgb * dif + vec3(spec) + vec3(rim) + vec3(bevel * 0.45), side ? max(max(edgeAlpha, spec), bevel * 0.95) : 1.0);
     }`;
 
   // ---------- small matrix helpers (column-major, like WebGL)
@@ -70,8 +72,8 @@
 
   // what each holder looks like from the side: card stock, a case, a slab (thickness and edge colour, in card widths)
   const HOLDER = { raw: { r: 46.5 / 750, d: 0.012, edge: [0.93, 0.9, 0.84], gloss: 0.32, plastic: 0 },
-    case: { r: 58 / 1500, d: 0.032, edge: [0.62, 0.7, 0.76], gloss: 0.5, plastic: 1, alpha: 0.28 },
-    slab: { r: 50 / 1500, d: 0.06, edge: [0.6, 0.68, 0.74], gloss: 0.55, plastic: 1, alpha: 0.32 } }; // a real slab: ~6.5 mm of clear plastic
+    case: { r: 58 / 1500, d: 0.032, edge: [0.7, 0.78, 0.84], gloss: 0.5, plastic: 1, alpha: 0.55 },
+    slab: { r: 50 / 1500, d: 0.06, edge: [0.68, 0.76, 0.82], gloss: 0.55, plastic: 1, alpha: 0.6 } }; // a real slab: ~6.5 mm of clear plastic
 
   // the back: the card back; in a case or slab, the card back sits inside the clear plastic where the card is (the same
   // place holo.js draws the card on the front: CASE / SLAB there)
@@ -108,7 +110,7 @@
     const attr = (nm, size, off) => { const l = gl.getAttribLocation(prog, nm); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 9 * 4, off * 4); };
     attr('p', 3, 0); attr('n', 3, 3); attr('t', 2, 6); attr('part', 1, 8);
     const U = (nm) => gl.getUniformLocation(prog, nm);
-    gl.uniform3fv(U('edge'), look.edge); gl.uniform1f(U('gloss'), look.gloss); gl.uniform1f(U('plastic'), look.plastic); gl.uniform1f(U('edgeAlpha'), look.alpha ?? 1);
+    gl.uniform3fv(U('edge'), look.edge); gl.uniform1f(U('gloss'), look.gloss); gl.uniform1f(U('plastic'), look.plastic); gl.uniform1f(U('edgeAlpha'), look.alpha ?? 1); gl.uniform1f(U('halfDepth'), look.d / 2);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform1i(U('face'), 0); gl.uniform1i(U('back'), 1);
     gl.enable(gl.DEPTH_TEST);
