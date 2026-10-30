@@ -74,7 +74,7 @@ a.btn { text-decoration: none }
 .ctile.addable .cwrap::after { content: '+'; position: absolute; z-index: 4; left: -4px; top: -4px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
   font: 800 20px/1 var(--body); color: #2a1a05; background: var(--brass); border: 2px solid #fff0bf; box-shadow: 0 2px 6px rgba(0,0,0,.6) }
 /* selection */
-.ctile.pick .tick { position: absolute; z-index: 5; right: -8px; top: -8px; width: 30px; height: 30px; border-radius: 50%; border: 2px solid rgba(255,255,255,.8); background: rgba(0,0,0,.45) } /* top-right corner, clear of the name and the seal */
+.ctile.pick .tick { position: absolute; z-index: 5; right: 4px; top: 4px; width: 30px; height: 30px; border-radius: 50%; border: 2px solid rgba(255,255,255,.8); background: rgba(0,0,0,.45) } /* top-right corner, clear of the name and the seal */
 .ctile[aria-pressed="true"] { border-color: var(--brass); background: rgba(233,180,90,.12) }
 .ctile[aria-pressed="true"] .tick { background: var(--brass); border-color: #fff0bf }
 .ctile[aria-pressed="true"] .tick::after { content: ''; position: absolute; left: 9px; top: 4px; width: 7px; height: 13px; border: solid #2a1a05; border-width: 0 3px 3px 0; transform: rotate(45deg) }

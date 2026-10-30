@@ -27,7 +27,7 @@
     ['Series', 'Series', true], ['PAPER', 'PAPER', true], ['PLANK', 'PLANK', true]];
   const RE = new RegExp(`(?<![\\w-])(${FORMS.map(([f]) => f).join('|')})(?![\\w-])`);
   const keyOf = (w) => (FORMS.find(([f]) => new RegExp(`^${f}$`).test(w)) || [])[1];
-  const SKIP = 'button, a, label, select, option, input, textarea, code, [aria-live], .stage-msg, .st-table .stage, .op, .tier-b, .mat, .pda, .gl-term, .gl-pop, .sr, svg, .fun-noterms, h2, .bw-flag, .sum dt, .bal, .wmenu .rows, .fun-badges, .fd-board, .bd-head, .prac-sum, .rs-wins';
+  const SKIP = 'summary, button, a, label, select, option, input, textarea, code, [aria-live], .stage-msg, .st-table .stage, .op, .tier-b, .mat, .pda, .gl-term, .gl-pop, .sr, svg, .fun-noterms, h2, .bw-flag, .sum dt, .bal, .wmenu .rows, .fun-badges, .fd-board, .bd-head, .prac-sum, .rs-wins';
   const OK = 'p, li, dd, small, span, figcaption';
 
   function scan(root) {

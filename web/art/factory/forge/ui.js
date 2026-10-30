@@ -306,7 +306,7 @@
     // sold out, the stations' Open packs is enough
     // phones: the bar is one row (the main way to buy) with "More" for the rest, so it never covers the page (short
     // phones, browser toolbars); open, it lists everything over the page
-    $('#buybar').innerHTML = `<div class="phase"></div>${optsHtml(sold() ? [] : opts)}${sold() ? '' : extras}<button class="bb-more" type="button" aria-expanded="false" aria-controls="buybar" aria-label="All ways to buy"><span>More</span></button>`; $('#buybar .phase').textContent = head;
+    $('#buybar').innerHTML = `<div class="phase"></div>${optsHtml(sold() ? [] : opts)}${sold() ? '' : extras}<button class="bb-more" type="button" aria-expanded="false" aria-controls="buybar" aria-label="More ways to buy"><span>More</span></button>`; $('#buybar .phase').textContent = head;
     $('#buybar').classList.remove('open'); $('#buybar .bb-more').onclick = () => barOpen(!$('#buybar').classList.contains('open'));
     $('#buybox').classList.toggle('many', opts.length > 2);
     // between Series: the next Series' tease sits right here on the main page

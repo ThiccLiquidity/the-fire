@@ -532,7 +532,7 @@
           btn('Binder', 'small', () => window.Fun?.go('binder', { series: filt.series === 'all' ? null : +filt.series }), { 'data-key': 'binder' }),
           btn('Pop report', 'small pop-b', () => openPop(), { 'data-key': 'pop' }))),
         h('p', { class: 'coll-sub' }, h('span', { class: 'muted', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }),
-          h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) }))),
+          LIVE ? null : h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) }))), // live: no floor source yet
         all.length ? quickPills(all) : null, freshNudge(all), grid);
     }
     // no cards at all: PLANK, and the way to a first pack. Packs ready to open: open one (packs only open once their
@@ -1069,7 +1069,7 @@
         upside ? h('p', { class: 'upside-b' }, h('b', { text: 'Upside-down rare' }), ` · about 1 in ${Info.oneIn(upside.p)} cards`) : null,
         h('div', { class: 'dstats' },
           h('div', { class: 'dodds' }, h('small', { text: c.grade != null ? 'Odds with grade' : 'Pull odds' }), h('b', { text: od.label })),
-          h('div', { class: 'dfloor' }, h('small', { text: 'Floor (demo)' }), h('b', { text: floorTxt(c) }))),
+          LIVE ? null : h('div', { class: 'dfloor' }, h('small', { text: 'Floor (demo)' }), h('b', { text: floorTxt(c) }))),
         // the actions first, right under the card (they stick to the bottom of the sheet on a short screen); the traits fold away
         h('div', { class: 'row dacts' },
           c.grade == null ? btn(`Grade · ${Wear.usd(Store.PRICES.GRADE_USD)}`, 'primary', () => goto('grade', { as: 'grade' }), { disabled: !canGrade }) : null, // slabbed: final, nothing to do

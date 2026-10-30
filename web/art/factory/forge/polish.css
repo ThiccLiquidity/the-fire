@@ -8,7 +8,7 @@
   :root { --top: 86px }
   .demo-note { height: 32px }
   .chip { min-height: 44px } .chip.round, .tools .chip:not(.round):not(.demo):not(.mycards) { width: 44px; min-width: 44px }
-  .btn.small { min-height: 40px }
+  .btn.small { min-height: 44px }
   select, .filters select { font-size: 16px }
   .qp, .inf-jump { min-height: 44px }
 }

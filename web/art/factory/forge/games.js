@@ -76,7 +76,7 @@
     }
     function render() {
       body.replaceChildren(
-        leave ? h('button', { type: 'button', class: 'btn small gr-leave', 'data-key': 'games-leave', onclick: leave[1] }, leave[0]) : null,
+        ...(leave ? [h('button', { type: 'button', class: 'btn small gr-leave', 'data-key': 'games-leave', onclick: leave[1] }, leave[0])] : []),
         h('p', { class: 'muted gr-lead', text: lead }),
         ...list.map((g) => {
           const st = loadStats(g.id), paid = Games.paidOpen(g);

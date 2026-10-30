@@ -81,7 +81,7 @@
     const who = (a, you) => h('span', { class: 'fd-who' }, Fun.avatar(a, 26), h('b', { text: you ? 'You' : Fun.label(a) }));
     async function draw() {
       const k = ++seq;
-      Fun.put(tabs, ...[['pulls', 'Pulls'], ['board', 'Top stokers'], ['you', 'Yours']].map(([v, t]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(tab === v), 'aria-pressed': String(tab === v), 'data-v': v, onclick: () => { tab = v; draw(); } }, t)));
+      Fun.put(tabs, ...[['pulls', 'Pulls'], ['board', 'Top stokers'], ['you', 'Yours']].map(([v, t]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(tab === v), 'data-v': v, onclick: () => { tab = v; draw(); } }, t)));
       if (tab === 'pulls') {
         if (!panel.querySelector('.fd-list')) Fun.put(panel, h('p', { class: 'muted', text: 'Loading pulls…' }));
         const list = await pulls(); if (k !== seq) return;

@@ -481,6 +481,8 @@
     // a centred sheet (tablet, desktop) ends above the screen's bottom: keep the toasts inside it
     if (home?.tagName === 'DIALOG') b = Math.max(0, innerHeight - home.getBoundingClientRect().bottom + 8);
     if (home?.tagName === 'DIALOG') for (const f of home.querySelectorAll('.foot, .bw-foot, .filter-act, .dacts')) { const r = f.getBoundingClientRect(); if (r.height && r.bottom > innerHeight - 40) b = Math.max(b, innerHeight - r.top); }
+    // nor over the sheet's main button when it sits near the bottom of the screen (Buy's Approve / Buy, Open)
+    if (home?.tagName === 'DIALOG') for (const f of home.querySelectorAll('.btn.primary, .btn.gold')) { const r = f.getBoundingClientRect(); if (r.height && r.top < innerHeight && r.bottom > innerHeight - 150) b = Math.max(b, innerHeight - r.top); }
     if (offNote) { offNote.style.bottom = b ? `${Math.round(b + 8)}px` : ''; if (!offNote.hidden && offNote.parentNode === home) b = Math.max(b, innerHeight - offNote.getBoundingClientRect().top); }
     toastHost.style.bottom = b ? `${Math.round(b + 8)}px` : '';
   };
