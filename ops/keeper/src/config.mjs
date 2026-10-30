@@ -115,6 +115,9 @@ export function loadConfig(env = process.env) {
     maxFeeGwei: e("MAX_FEE_GWEI") ? Number(e("MAX_FEE_GWEI")) : undefined,
     // alerts
     webhookUrl: e("ALERT_WEBHOOK_URL"),
+    // players' notifications (docs/push.md): the site's /api/push/send and its secret; unset = off
+    pushUrl: e("PUSH_URL"),
+    pushSecret: e("PUSH_SEND_SECRET"),
     heartbeatUrl: e("HEARTBEAT_URL"),
     heartbeatHours: num(e("HEARTBEAT_HOURS"), 24),
     alertRepeatMin: num(e("ALERT_REPEAT_MIN"), 60),

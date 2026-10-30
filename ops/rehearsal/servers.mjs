@@ -58,15 +58,16 @@ export async function gatewayServer({ has = () => true, manifest } = {}) {
 
 /** Catches what the keeper posts to ALERT_WEBHOOK_URL. */
 export async function webhookServer() {
-  const posts = [];
+  const posts = [], pushes = []; // pushes: what the keeper asked the site's /api/push/send (path /push)
   const h = await listen((req, res) => {
     let body = "";
     req.on("data", (c) => { body += c; });
     req.on("end", () => {
-      try { posts.push(JSON.parse(body).content); } catch { posts.push(body); }
+      if (req.url.startsWith("/push")) { try { pushes.push({ auth: req.headers.authorization, ...JSON.parse(body) }); } catch { pushes.push({ bad: body }); } }
+      else try { posts.push(JSON.parse(body).content); } catch { posts.push(body); }
       res.writeHead(204);
       res.end();
     });
   });
-  return { ...h, posts };
+  return { ...h, posts, pushes };
 }

@@ -356,6 +356,7 @@ async function main() {
   const hook = await webhookServer();
   const keeperEnv = {
     RPC_URL: RPC, FALLBACK_RPC_URL: "none", CHAIN_ID: String(id), DEPLOYMENTS_FILE: DEP_FILE, ALERT_WEBHOOK_URL: hook.url,
+    PUSH_URL: `${hook.url}/push`, PUSH_SEND_SECRET: "rehearsal", // players' notifications (docs/push.md)
     DRAND_URLS: FORK ? "https://api.drand.sh,https://api2.drand.sh,https://api3.drand.sh" : drand.url, SERIES_SCAN: "8", WAITING_ALERT_MIN: "0",
     CLOCK_SKEW_SEC: FORK ? "120" : "0", ETH_STALE_HOURS: "24", LOW_BALANCE_ETH: "0.01",
     MIN_FLUSH_USD: "0.25", // the rehearsal's LiquidityBurner holds little (a pack's share is $0.75)
@@ -627,6 +628,8 @@ async function main() {
   check(head === openCount, `every open delivered and dealt (${openCount} opens)`);
   const next = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "nextSerial" });
   check(next - 1n === 36n, `${next - 1n} cards dealt (6 packs x 6)`);
+  const opensTold = hook.pushes.filter((p) => /^open-/.test(p.tag ?? ""));
+  check(opensTold.length >= 1 && opensTold.every((p) => p.auth === "Bearer rehearsal" && /^0x[0-9a-fA-F]{40}$/.test(p.to) && p.topic === "ready"), `the keeper asked the site to tell each buyer their cards are ready (${opensTold.length} notifications)`);
 
   // ---------------- case and grade
   step("buyer 2 cases one card and sends two for grading (pays ETH; the fee goes to LiquidityBurner)");
@@ -650,6 +653,7 @@ async function main() {
   }
   const g = await pub.readContract({ address: C.FirePsa, abi: ABI.psa, functionName: "gradingOf", args: [gi] });
   check(g.done, "grading finished");
+  check(hook.pushes.some((p) => /^grade-/.test(p.tag ?? "") && p.title === "Your grades are in"), "the keeper asked the site to tell the owner their grades are in");
   for (const s of gradeIds) {
     const c = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "cardOf", args: [s] });
     check(c.grade > 0n, `card ${s} graded PDA ${c.grade}`);

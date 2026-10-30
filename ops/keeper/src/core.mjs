@@ -609,6 +609,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     let opens = (await job("scan opens", opensWaiting)) ?? [];
     let gradings = (await job("scan gradings", () => gradingsWaiting(true))) ?? [];
     await job("randomness", () => deliver([...opens, ...gradings], now, notes));
+    const before = { opens, gradings };
     const dealt = (await job("deal", () => dealReady(now))) ?? 0;
     // re-read the gradings: some just became ready
     if (gradings.some((g) => !g.ready)) gradings = (await job("rescan gradings", () => gradingsWaiting())) ?? gradings;
@@ -627,6 +628,7 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
       const before = gradings.find((x) => x.index === g.index);
       if (before?.roundAt !== undefined) Object.assign(g, { round: before.round, roundAt: before.roundAt });
     }
+    await job("notify players", () => tellPlayers(before.opens, opens, before.gradings, gradingsAfter));
     const h = (await job("health", () => health({ now, opens, gradings: gradingsAfter, notes, waiting, failed }))) ?? { alerts: [{ key: "health", text: "health check failed" }], partial: true };
     // the backup posts only its own gas and what it did (events): the main keeper posts the health alerts, so they
     // don't all come twice (if the main keeper dies, its dead-man's switch says so)
@@ -642,6 +644,31 @@ export function createKeeper({ cfg, pub, wallet, account, log = console.log, fet
     const due = [...opens, ...gradingsAfter].filter((it) => !it.ready && it.roundAt !== undefined).map((it) => it.roundAt + cfg.actAfterSec - now).filter((s) => s >= 0n);
     const nextRoundIn = due.length ? Number(due.reduce((a, b) => (b < a ? b : a))) : undefined;
     return { now, sent, dealt, finished, alerts: h.alerts, opens, gradings: gradingsAfter, waiting, series, nextRoundIn };
+  }
+
+  // ------------------------------------------------------------------ players' notifications
+  /** An open that left the waiting list dealt (not cancelled) and a grading that finished: ask the site to notify that
+   *  wallet (/api/push/send). Each event has its own tag, so the main and the backup keeper asking both send it once. */
+  async function tellPlayers(opensBefore, opensNow, gradingsBefore, gradingsNow) {
+    if (!cfg.pushUrl || !cfg.pushSecret) return;
+    const post = (m) => fetchFn(cfg.pushUrl, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${cfg.pushSecret}` }, body: JSON.stringify(m), signal: AbortSignal.timeout(10_000) })
+      .then((r) => { if (!r.ok) log(`notify: the site answered ${r.status}`); }, (e) => log(`notify failed: ${errMsg(e)}`));
+    const still = new Set(opensNow.map((o) => `${o.fire}:${o.index}`));
+    for (const o of opensBefore) {
+      if (still.has(`${o.fire}:${o.index}`)) continue;
+      const x = await read(C.cards, cardsAbi, "openOf", [o.fire, o.index]);
+      if (!(x.count > 0n)) continue; // cancelled: the packs went back, nothing to rip
+      const n = Number(x.count);
+      await post({ tag: `open-${cfg.chainId}-${o.fire}-${o.index}`, to: x.to, topic: "ready", title: "Your cards are ready 🔥",
+        body: `Series ${o.fire}: your ${n === 1 ? "pack is" : `${n} packs are`} dealt. Tap to rip.`, url: "/forge/" });
+    }
+    const left = new Set(gradingsNow.map((g) => g.index));
+    for (const g of gradingsBefore) {
+      if (left.has(g.index)) continue;
+      const x = await read(C.psa, psaAbi, "gradingOf", [g.index]);
+      if (!x.done) continue;
+      await post({ tag: `grade-${cfg.chainId}-${g.index}`, to: x.by, topic: "ready", title: "Your grades are in", body: "PDA has graded your cards. Tap to see how they did.", url: "/forge/" });
+    }
   }
 
   // ------------------------------------------------------------------ FireSale's wallets and feeds

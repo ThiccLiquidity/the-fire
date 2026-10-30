@@ -54,9 +54,15 @@
       h('div', { class: 'gr-acts' },
         h('button', { type: 'button', class: 'btn primary', 'data-key': 'wait-play', onclick: () => startGame() }, 'Let\u2019s play'),
         h('button', { type: 'button', class: 'btn ghost', 'data-key': 'wait-no', onclick: () => invite.replaceWith(again) }, 'No thanks')));
+    // live, notifications off: one tap so leaving the page doesn't mean missing it
+    const pushOffer = window.Live?.on && window.App?.push?.supported && !window.App.push.on ? h('button', { type: 'button', class: 'inf-link wg-notify', 'data-key': 'wait-notify', onclick: (e) => {
+      const b = e.currentTarget; b.disabled = true;
+      window.App.push.enable().then(() => { b.replaceWith(h('p', { class: 'muted small', text: isOpen ? 'We\u2019ll notify you when your cards are ready.' : 'We\u2019ll notify you when your grades are in.' })); },
+        (err) => { b.disabled = false; window.toast?.(err.message, 'bad'); });
+    } }, '🔔 Notify me if I leave') : null;
     const gauge = h('div', { class: 'wg' }, dial, plate, unit);
     const offer = window.Wait.GAME && window.Games?.lobby;
-    const wait = h('div', { class: 'wg-wait' }, msg, gauge, sub, offer ? invite : null);
+    const wait = h('div', { class: 'wg-wait' }, msg, gauge, sub, offer ? invite : null, pushOffer);
     // while playing: a bar over the games with the draw's countdown, then "ready" and the way back
     const barText = h('span', { class: 'wg-bar-t' });
     const barGo = h('button', { type: 'button', class: 'btn primary small', 'data-key': 'wait-go', hidden: true, onclick: () => goBack() }, goLabel);

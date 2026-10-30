@@ -37,3 +37,22 @@ self.addEventListener('fetch', (e) => {
   // the page, code, styles and data (holders lists, prizes): network first, saved copy offline
   e.respondWith(fetch(req).then((r) => put(SHELL, req, r)).catch(async () => (await caches.match(req, { cacheName: SHELL, ignoreSearch: req.mode === 'navigate' })) || Response.error()));
 });
+
+// ---------- notifications (push.js subscribes; the keepers ask /api/push/send): show them, and open the site on a tap
+self.addEventListener('push', (e) => {
+  let m = {};
+  try { m = e.data ? e.data.json() : {}; } catch { m = { body: e.data?.text?.() || '' }; }
+  e.waitUntil(self.registration.showNotification(m.title || 'Omni Cardworks', {
+    body: m.body || '', tag: m.tag, icon: 'ui/app/icon-192.png', badge: 'ui/app/icon-192.png', data: { url: m.url || '/forge/' },
+  }));
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || '/forge/', self.location.origin).href;
+  e.waitUntil((async () => {
+    const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const here = open.find((c) => c.url.startsWith(self.location.origin + '/forge/'));
+    if (here) { await here.focus(); return here.navigate?.(url).catch(() => {}); }
+    return self.clients.openWindow(url);
+  })());
+});
