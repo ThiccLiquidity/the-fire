@@ -500,6 +500,37 @@ contract SaleTest is SaleBase {
         sale.buy{value: cost}(1, 0, 1, FireSale.Pay.ETH, cost - 1, type(uint256).max, _na());
     }
 
+    /// ETH forced into FireSale (selfdestruct, a block reward: it has no receive) never pays for a buyer: each pays
+    /// from its own msg.value, the stray ETH stays where it is, and buyWithEthAll refunds only the buyer's change.
+    function test_strayEthNeverPaysForABuyer() public {
+        _open();
+        vm.deal(address(sale), 1 ether);
+        uint256 cost = _cost(1, 0, 1, FireSale.Pay.ETH);
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.buy{value: 0}(1, 0, 1, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
+        vm.prank(alice, alice);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.buy{value: cost - 1}(1, 0, 1, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
+        uint256 before = alice.balance;
+        vm.prank(alice, alice);
+        sale.buy{value: cost}(1, 0, 1, FireSale.Pay.ETH, type(uint256).max, type(uint256).max, _na());
+        assertEq(before - alice.balance, cost, "paid its own price");
+        assertEq(address(sale).balance, 1 ether, "the stray ETH untouched");
+        // buyWithEthAll: short of the PAPER + price, refused; with enough, only the buyer's change comes back
+        address dave = address(0xDA7E);
+        router.setPaper(paper, 31_250, 0);
+        uint256 paperEth = sale.quotePaperInEth(sale.paperFor(1, 0, 1));
+        vm.deal(dave, 1 ether);
+        vm.prank(dave, dave);
+        vm.expectRevert(FireSale.PriceMoved.selector);
+        sale.buyWithEthAll{value: paperEth}(1, 0, 1, paperEth, _na());
+        vm.prank(dave, dave);
+        sale.buyWithEthAll{value: cost + paperEth + 0.01 ether}(1, 0, 1, paperEth, _na());
+        assertEq(dave.balance, 1 ether - cost - paperEth, "the buyer's change back, not the stray ETH");
+        assertEq(address(sale).balance, 1 ether, "the stray ETH still untouched");
+    }
+
     /// No swap happens at sale time: a broken or pumped router never blocks an ETH or USDG sale, and the whole
     /// liquidity share still reaches LiquidityBurner in the coin paid.
     function test_brokenOrPumpedRouterNeverBlocksASale() public {

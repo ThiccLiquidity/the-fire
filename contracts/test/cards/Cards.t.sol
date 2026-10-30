@@ -693,6 +693,12 @@ contract CardsTest is SeriesHelper {
         vm.expectRevert(RecipeDealer.BadText.selector);
         dealer.setCharacters(5, names, cats);
 
+        (names, cats) = _one("Food");
+        names[0] = ""; // a blank character name: refused like a blank category
+        vm.prank(owner);
+        vm.expectRevert(RecipeDealer.BadText.selector);
+        dealer.setCharacters(5, names, cats);
+
         (names, cats) = _one("123456789012345678901234567890123"); // 33 bytes
         vm.prank(owner);
         vm.expectRevert(RecipeDealer.BadText.selector);

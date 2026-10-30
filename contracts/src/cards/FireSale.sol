@@ -346,7 +346,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         uint256 toLiq;
         if (t.usd8 != 0) (cost, toLiq) = _collect(t, Pay.ETH, type(uint256).max);
         _finish(fire, d, group, n, Pay.ETH, cost, toLiq, t.left);
-        _sendEth(msg.sender, address(this).balance); // what's left of msg.value (this never holds ETH otherwise)
+        _sendEth(msg.sender, address(this).balance - t.stray); // what's left of msg.value (stray ETH stays put)
     }
 
     /// @notice ETH that buys `paper` PAPER wei on the cheaper route (what buyWithEthAll spends on it). Reverts with no route.
@@ -479,6 +479,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         uint256 left;
         uint256 plankBps;
         uint256 paperBps;
+        uint256 stray; // ETH this held before the purchase (forced in: it never takes any): never spent on a buyer's behalf
     }
 
     /// @dev Checks shared by every purchase, takes the packs from the group (FireGroups checks it's open, has them,
@@ -488,6 +489,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         returns (Drop storage d, Taken memory t)
     {
         _notPaused();
+        t.stray = address(this).balance - msg.value;
         d = _live(fire);
         if (n == 0 || n > d.maxPerTx) revert BadAmount();
         // While this is on, only regular wallets (MetaMask, Rabby, OKX...) can buy: a bot contract can't spin up
@@ -513,7 +515,7 @@ contract FireSale is Ownable2Step, ReentrancyGuard {
         if (pay == Pay.USDG && address(USDG) == address(0)) revert BadConfig();
         cost = pay == Pay.PLANK ? _plankFor(usd8) : pay == Pay.ETH ? _ethFor(usd8) : _usdgFor(usd8);
         // ETH: what's left of msg.value (buyWithEthAll has already bought the packs' PAPER with part of it)
-        if (cost > maxCost || (pay == Pay.ETH && address(this).balance < cost)) revert PriceMoved();
+        if (cost > maxCost || (pay == Pay.ETH && address(this).balance < t.stray + cost)) revert PriceMoved();
         // the base price splits by the group's shares (FireGroups keeps them at most 100% together); the tax is all
         // liquidity, so the two parts are exactly `cost`
         uint256 tax = cost * t.tax8 / usd8;

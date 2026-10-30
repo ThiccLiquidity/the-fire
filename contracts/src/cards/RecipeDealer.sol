@@ -473,7 +473,7 @@ contract RecipeDealer is IDealer, Ownable2Step {
         string[] storage cats = _categories(fire);
         if (list.length + names.length > type(uint32).max) revert BadLength(); // 32-bit character index
         for (uint256 i; i < names.length; i++) {
-            if (bytes(names[i]).length > MAX_NAME_BYTES) revert BadText();
+            if (bytes(names[i]).length == 0 || bytes(names[i]).length > MAX_NAME_BYTES) revert BadText();
             _checkText(bytes(names[i]));
             uint256 n = bytes(categories[i]).length;
             if (n == 0 || n > MAX_CATEGORY_BYTES) revert BadText();
