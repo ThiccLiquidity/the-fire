@@ -13,9 +13,9 @@
     const pts = [], hw = W / 2, hh = H / 2, r = radius;
     const corners = [[hw - r, hh - r, 0], [-hw + r, hh - r, Math.PI / 2], [-hw + r, -hh + r, Math.PI], [hw - r, -hh + r, Math.PI * 1.5]];
     for (const [cx, cy, a0] of corners) for (let i = 0; i <= seg; i++) { const a = a0 + (Math.PI / 2) * (i / seg); pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); }
-    const v = []; // x y z  nx ny nz  u v  part (0 face, 1 back, 2 edge)
+    const v = [], e = []; // x y z  nx ny nz  u v  part (0 face, 1 back, 2 edge): faces in v, the edge in e (drawn after)
     const z = depth / 2, uv = (x, y) => [x / W + 0.5, 0.5 - y / H];
-    const tri = (a, b, c, n, part, flipU = false) => { for (const p of [a, b, c]) { const [u, w] = uv(p[0], p[1]); v.push(p[0], p[1], p[2], ...n, flipU ? 1 - u : u, w, part); } };
+    const tri = (a, b, c, n, part, flipU = false) => { for (const p of [a, b, c]) { const [u, w] = uv(p[0], p[1]); (part === 2 ? e : v).push(p[0], p[1], p[2], ...n, flipU ? 1 - u : u, w, part); } };
     for (let i = 0; i < pts.length; i++) {
       const a = pts[i], b = pts[(i + 1) % pts.length];
       tri([0, 0, z], [a[0], a[1], z], [b[0], b[1], z], [0, 0, 1], 0); // the face (counter-clockwise from the front)
@@ -24,7 +24,7 @@
       tri([a[0], a[1], z], [a[0], a[1], -z], [b[0], b[1], -z], n, 2);
       tri([a[0], a[1], z], [b[0], b[1], -z], [b[0], b[1], z], n, 2);
     }
-    return new Float32Array(v);
+    return { data: new Float32Array([...v, ...e]), faces: v.length / 9, edges: e.length / 9 };
   }
 
   // ---------- shaders: the face and back from their pictures, the edge a solid colour; a soft light, a moving glint,
@@ -33,15 +33,16 @@
     uniform mat4 M, VP; varying vec3 vn; varying vec3 vp; varying vec2 vt; varying float vpart;
     void main(){ vec4 w = M * vec4(p, 1.0); vp = w.xyz; vn = mat3(M) * n; vt = t; vpart = part; gl_Position = VP * w; }`;
   const FS = `precision mediump float; varying vec3 vn; varying vec3 vp; varying vec2 vt; varying float vpart;
-    uniform sampler2D face, back; uniform vec3 edge, eye; uniform float gloss, plastic;
+    uniform sampler2D face, back; uniform vec3 edge, eye; uniform float gloss, plastic, edgeAlpha;
     void main(){
       vec4 c = vpart < 0.5 ? texture2D(face, vt) : vpart < 1.5 ? texture2D(back, vt) : vec4(edge, 1.0);
       if (c.a < 0.35) discard;
       vec3 N = normalize(vn), V = normalize(eye - vp), L = normalize(vec3(-0.45, 0.6, 0.9));
       float dif = 0.72 + 0.28 * max(dot(N, L), 0.0);
-      float spec = pow(max(dot(N, normalize(L + V)), 0.0), vpart > 1.5 ? 18.0 : 60.0) * (vpart > 1.5 ? 0.35 : gloss);
-      float rim = plastic * pow(1.0 - max(dot(N, V), 0.0), 3.0);
-      gl_FragColor = vec4(c.rgb * dif + vec3(spec) + vec3(rim * 0.5), 1.0);
+      bool side = vpart > 1.5;
+      float spec = pow(max(dot(N, normalize(L + V)), 0.0), side ? (plastic > 0.0 ? 90.0 : 18.0) : 70.0) * (side ? (plastic > 0.0 ? 1.1 : 0.35) : gloss);
+      float rim = plastic * pow(1.0 - max(dot(N, V), 0.0), 5.0) * 0.18; // a thin bright line at the plastic's edge, no haze
+      gl_FragColor = vec4(c.rgb * dif + vec3(spec) + vec3(rim), side ? max(edgeAlpha, spec) : 1.0);
     }`;
 
   // ---------- small matrix helpers (column-major, like WebGL)
@@ -69,8 +70,8 @@
 
   // what each holder looks like from the side: card stock, a case, a slab (thickness and edge colour, in card widths)
   const HOLDER = { raw: { r: 46.5 / 750, d: 0.012, edge: [0.93, 0.9, 0.84], gloss: 0.32, plastic: 0 },
-    case: { r: 58 / 1500, d: 0.05, edge: [0.78, 0.82, 0.86], gloss: 0.55, plastic: 0.9 },
-    slab: { r: 50 / 1500, d: 0.085, edge: [0.8, 0.84, 0.88], gloss: 0.6, plastic: 1 } };
+    case: { r: 58 / 1500, d: 0.032, edge: [0.62, 0.7, 0.76], gloss: 0.5, plastic: 1, alpha: 0.28 },
+    slab: { r: 50 / 1500, d: 0.06, edge: [0.6, 0.68, 0.74], gloss: 0.55, plastic: 1, alpha: 0.32 } }; // a real slab: ~6.5 mm of clear plastic
 
   // the back: the card back; in a case or slab, the card back sits inside the clear plastic where the card is (the same
   // place holo.js draws the card on the front: CASE / SLAB there)
@@ -103,11 +104,12 @@
     d.querySelector('.c3d-x').onclick = close; d.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
 
     const prog = program(gl); gl.useProgram(prog);
-    const data = body(look.r, look.d), buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    const geo = body(look.r, look.d), buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, geo.data, gl.STATIC_DRAW);
     const attr = (nm, size, off) => { const l = gl.getAttribLocation(prog, nm); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 9 * 4, off * 4); };
     attr('p', 3, 0); attr('n', 3, 3); attr('t', 2, 6); attr('part', 1, 8);
     const U = (nm) => gl.getUniformLocation(prog, nm);
-    gl.uniform3fv(U('edge'), look.edge); gl.uniform1f(U('gloss'), look.gloss); gl.uniform1f(U('plastic'), look.plastic);
+    gl.uniform3fv(U('edge'), look.edge); gl.uniform1f(U('gloss'), look.gloss); gl.uniform1f(U('plastic'), look.plastic); gl.uniform1f(U('edgeAlpha'), look.alpha ?? 1);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform1i(U('face'), 0); gl.uniform1i(U('back'), 1);
     gl.enable(gl.DEPTH_TEST);
 
@@ -162,7 +164,9 @@
       gl.uniformMatrix4fv(U('M'), false, mul(rotX(pitch), rotY(yaw)));
       gl.uniform3fv(U('eye'), [0, 0, dist]);
       gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      gl.drawArrays(gl.TRIANGLES, 0, data.length / 9);
+      gl.disable(gl.BLEND); gl.depthMask(true); gl.drawArrays(gl.TRIANGLES, 0, geo.faces); // the face and back
+      if (look.alpha) { gl.enable(gl.BLEND); gl.depthMask(false); } // a case's or slab's clear edge, over them
+      gl.drawArrays(gl.TRIANGLES, geo.faces, geo.edges);
       raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
