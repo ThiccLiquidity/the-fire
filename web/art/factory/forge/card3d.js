@@ -56,9 +56,14 @@
         vec4 c = texture2D(tex, vt); if (c.a < 0.35) discard;
         gl_FragColor = vec4(c.rgb * dif + vec3(pow(max(dot(N, Hh), 0.0), 70.0) * gloss), 1.0);
       } else if (kind < 1.5) {
+        // solid clear acrylic seen edge-on: lit like glass (brighter facing up), bright bevels at the front and back,
+        // and on a slab the seam down the middle where its two halves are sealed
         float spec = pow(max(dot(N, Hh), 0.0), 90.0) * 1.1;
         float bevel = smoothstep(0.80, 0.99, abs(vt.y * 2.0 - 1.0));
-        gl_FragColor = vec4(col * dif + vec3(spec + bevel * 0.5), max(max(alpha, spec), bevel * 0.9));
+        float seam = alpha < 0.99 ? 1.0 - smoothstep(0.0, 0.05, abs(vt.y - 0.5)) : 0.0;
+        float env = 0.78 + 0.22 * N.y + 0.12 * sin(vt.y * 18.0);
+        vec3 glass = col * dif * env - vec3(seam * 0.22) + vec3(spec + bevel * 0.5);
+        gl_FragColor = vec4(glass, max(max(alpha, spec), bevel * 0.95));
       } else if (kind < 2.5) {
         vec4 c = texture2D(tex, vt);
         float spec = pow(max(dot(N, Hh), 0.0), 140.0) * 1.3, sheen = pow(1.0 - facing, 4.0) * 0.35;
@@ -167,7 +172,7 @@
       // the clear plastic: its back, its edge, its front (see-through, drawn last, back to front)
       const shell = texture(gl, shellPicture(B, slab));
       add(sheet(bx0, by0, bx1, by1, br, -D / 2, false), { kind: 2, tex: shell, see: true });
-      add(band(bx0, by0, bx1, by1, br, -D / 2, D / 2), { kind: 1, col: [0.74, 0.8, 0.85], alpha: 0.42, see: true });
+      add(band(bx0, by0, bx1, by1, br, -D / 2, D / 2), { kind: 1, col: [0.8, 0.86, 0.88], alpha: slab ? 0.9 : 0.8, see: true });
       add(sheet(bx0, by0, bx1, by1, br, D / 2, true), { kind: 2, tex: shell, see: true });
     }
     const fg = faceCv.getContext('2d');
