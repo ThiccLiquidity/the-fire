@@ -396,8 +396,16 @@
     const P = PARTS?.(c); if (!P) return null;
     const fonts = P.holder === 'slab' && document.fonts ? document.fonts.load(`400 52px ${LABEL_FONT}`).catch(() => null) : null;
     const [plain, print] = await Promise.all([corsImg(P.plain), corsImg(P.print), fonts]);
-    const held = { ...P, plain, print };
-    return { holder: P.holder, look: P.look, draw: (g, tl) => (P.holder === 'raw' ? render(g, plain, print, c.material, P.look, tl, P.state) : renderHeld(g, held, c.material, P.look, tl)) };
+    const held = { ...P, plain, print }, D = P.holder === 'slab' ? SLAB : P.holder === 'case' ? CASE : null;
+    return {
+      holder: P.holder, look: P.look,
+      draw: (g, tl) => (P.holder === 'raw' ? render(g, plain, print, c.material, P.look, tl, P.state) : renderHeld(g, held, c.material, P.look, tl)),
+      // a case or slab in layers (the card inside, the label in its own pocket): the bare card at a tilt, and the label
+      drawCard: (g, tl) => render(g, plain, print, c.material, P.look, tl, P.state),
+      drawLabel: P.holder === 'slab' ? (g) => { const k = g.canvas.width / (SLAB.label.x1 - SLAB.label.x0); g.save(); g.scale(k, k); g.translate(-SLAB.label.x0, -SLAB.label.y0); label(g, SLAB.label, P.label, 1); g.restore(); } : null,
+      // where they sit, in the holder's own 1500 x 2100 units
+      box: D && { W: HW, H: HH, card: D.cb, label: P.holder === 'slab' ? SLAB.label : null, body: D.body, r: D.r },
+    };
   }
   window.Holo = { render, renderHeld, attach, size, aim, hold, defer, preload, picture, face, tiltOf, STILL };
 })();

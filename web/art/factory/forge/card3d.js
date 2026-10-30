@@ -1,50 +1,71 @@
 /* Omni Cardworks: the 3D card. A card you can pick up: drag to turn it all the way round (its back, its edge, the
-   thickness of the stock, or of the case or slab), flick to spin it, tilt the phone to rock it. The face is the live
-   holo (holo.js draws it at the card's angle every frame it moves, the same look as everywhere else), wrapped on a
-   real card body in WebGL with a light that glints off it as it turns. No library: one small shader pair.
-   Card3D.supported, Card3D.open(card, name). Reduced motion: no drift, no spin. */
+   thickness of the stock), flick to spin it, tilt the phone to rock it. The face is the live holo (holo.js draws it at
+   the card's angle every frame it moves, the same look as everywhere else), on a real card body in WebGL with a light
+   that glints off it as it turns. A case or a slab is built like the real thing: the card sits inside, a few
+   millimetres under clear plastic (a slab's label in its own pocket above it), and the light slides across the
+   plastic in front of it. No library: one small shader pair. Card3D.supported, Card3D.open(card, name).
+   Reduced motion: no drift, no spin. */
 (() => {
   const ASPECT = 1008 / 720, W = 1, H = ASPECT;
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   const gl1 = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl', { failIfMajorPerformanceCaveat: true }) || c.getContext('experimental-webgl')); } catch { return false; } })();
 
-  // ---------- geometry: a rounded rectangle, extruded: front (the face), back (the card back), the edge all round
-  function body(radius, depth, seg = 10) {
-    const pts = [], hw = W / 2, hh = H / 2, r = radius;
-    const corners = [[hw - r, hh - r, 0], [-hw + r, hh - r, Math.PI / 2], [-hw + r, -hh + r, Math.PI], [hw - r, -hh + r, Math.PI * 1.5]];
-    for (const [cx, cy, a0] of corners) for (let i = 0; i <= seg; i++) { const a = a0 + (Math.PI / 2) * (i / seg); pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); }
-    const v = [], e = []; // x y z  nx ny nz  u v  part (0 face, 1 back, 2 edge): faces in v, the edge in e (drawn after)
-    const z = depth / 2, uv = (x, y) => [x / W + 0.5, 0.5 - y / H];
-    const tri = (a, b, c, n, part, flipU = false) => { for (const p of [a, b, c]) { const [u, w] = uv(p[0], p[1]); (part === 2 ? e : v).push(p[0], p[1], p[2], ...n, flipU ? 1 - u : u, w, part); } };
+  // ---------- geometry. A vertex: x y z, normal, u v (8 floats). Shapes are rounded rectangles in the card's own
+  // units (W wide, H tall, centred), each with its own picture mapped across it.
+  const STRIDE = 8;
+  function outline(x0, y0, x1, y1, r, seg = 10) {
+    const pts = [], cs = [[x1 - r, y1 - r, 0], [x0 + r, y1 - r, Math.PI / 2], [x0 + r, y0 + r, Math.PI], [x1 - r, y0 + r, Math.PI * 1.5]];
+    for (const [cx, cy, a0] of cs) for (let i = 0; i <= seg; i++) { const a = a0 + (Math.PI / 2) * (i / seg); pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); }
+    return pts;
+  }
+  /** a flat rounded rectangle at depth z, facing +z (front) or -z (back, its picture mirrored so it reads right) */
+  function sheet(x0, y0, x1, y1, r, z, front = true) {
+    const out = [], pts = outline(x0, y0, x1, y1, r), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const uv = (x, y) => { const u = (x - x0) / (x1 - x0); return [front ? u : 1 - u, (y1 - y) / (y1 - y0)]; };
+    const push = (x, y) => out.push(x, y, z, 0, 0, front ? 1 : -1, ...uv(x, y));
     for (let i = 0; i < pts.length; i++) {
       const a = pts[i], b = pts[(i + 1) % pts.length];
-      tri([0, 0, z], [a[0], a[1], z], [b[0], b[1], z], [0, 0, 1], 0); // the face (counter-clockwise from the front)
-      tri([0, 0, -z], [b[0], b[1], -z], [a[0], a[1], -z], [0, 0, -1], 1, true); // the back (mirrored so it reads right)
-      const nx = (a[1] - b[1]), ny = (b[0] - a[0]), l = Math.hypot(nx, ny) || 1, n = [nx / l, ny / l, 0];
-      tri([a[0], a[1], z], [a[0], a[1], -z], [b[0], b[1], -z], n, 2);
-      tri([a[0], a[1], z], [b[0], b[1], -z], [b[0], b[1], z], n, 2);
+      if (front) { push(cx, cy); push(a[0], a[1]); push(b[0], b[1]); } else { push(cx, cy); push(b[0], b[1]); push(a[0], a[1]); }
     }
-    return { data: new Float32Array([...v, ...e]), faces: v.length / 9, edges: e.length / 9 };
+    return out;
+  }
+  /** the band all round a rounded rectangle, from z0 to z1 (its u runs round, v from back to front) */
+  function band(x0, y0, x1, y1, r, z0, z1) {
+    const out = [], pts = outline(x0, y0, x1, y1, r);
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length], nx = a[1] - b[1], ny = b[0] - a[0], l = Math.hypot(nx, ny) || 1, n = [nx / l, ny / l, 0];
+      const v = (x, y, z) => out.push(x, y, z, ...n, i / pts.length, (z - z0) / (z1 - z0));
+      v(a[0], a[1], z1); v(a[0], a[1], z0); v(b[0], b[1], z0);
+      v(a[0], a[1], z1); v(b[0], b[1], z0); v(b[0], b[1], z1);
+    }
+    return out;
   }
 
-  // ---------- shaders: the face and back from their pictures, the edge a solid colour; a soft light, a moving glint,
-  // and for a case or slab a clear-plastic rim
-  const VS = `attribute vec3 p; attribute vec3 n; attribute vec2 t; attribute float part;
-    uniform mat4 M, VP; uniform float halfDepth; varying vec3 vn; varying vec3 vp; varying vec2 vt; varying float vpart, vz;
-    void main(){ vec4 w = M * vec4(p, 1.0); vp = w.xyz; vn = mat3(M) * n; vt = t; vpart = part; vz = p.z / halfDepth; gl_Position = VP * w; }`;
-  const FS = `precision mediump float; varying vec3 vn; varying vec3 vp; varying vec2 vt; varying float vpart, vz;
-    uniform sampler2D face, back; uniform vec3 edge, eye; uniform float gloss, plastic, edgeAlpha;
+  // ---------- shaders. kind 0: a picture (the card's face or back, a label), lit; 1: an edge (a colour, its two
+  // bevels bright); 2: clear plastic (nearly invisible: its rims from the picture, and the light's glint and the
+  // grazing-angle sheen); 3: a plain colour (the back of a slab's label)
+  const VS = `attribute vec3 p; attribute vec3 n; attribute vec2 t;
+    uniform mat4 M, VP; varying vec3 vn; varying vec3 vp; varying vec2 vt;
+    void main(){ vec4 w = M * vec4(p, 1.0); vp = w.xyz; vn = mat3(M) * n; vt = t; gl_Position = VP * w; }`;
+  const FS = `precision mediump float; varying vec3 vn; varying vec3 vp; varying vec2 vt;
+    uniform sampler2D tex; uniform vec3 col, eye; uniform float kind, gloss, alpha;
     void main(){
-      vec4 c = vpart < 0.5 ? texture2D(face, vt) : vpart < 1.5 ? texture2D(back, vt) : vec4(edge, 1.0);
-      if (c.a < 0.35) discard;
-      vec3 N = normalize(vn), V = normalize(eye - vp), L = normalize(vec3(-0.45, 0.6, 0.9));
-      float dif = 0.72 + 0.28 * max(dot(N, L), 0.0);
-      bool side = vpart > 1.5;
-      float spec = pow(max(dot(N, normalize(L + V)), 0.0), side ? (plastic > 0.0 ? 90.0 : 18.0) : 70.0) * (side ? (plastic > 0.0 ? 1.1 : 0.35) : gloss);
-      float rim = plastic * pow(1.0 - max(dot(N, V), 0.0), 5.0) * 0.18; // a thin bright line at the plastic's edge, no haze
-      // the plastic's two bevels, where the edge meets the front and the back: bright lines that tie them into one block
-      float bevel = side && plastic > 0.0 ? smoothstep(0.62, 0.98, abs(vz)) : 0.0;
-      gl_FragColor = vec4(c.rgb * dif + vec3(spec) + vec3(rim) + vec3(bevel * 0.45), side ? max(max(edgeAlpha, spec), bevel * 0.95) : 1.0);
+      vec3 N = normalize(vn), V = normalize(eye - vp), L = normalize(vec3(-0.45, 0.6, 0.9)), Hh = normalize(L + V);
+      float facing = max(dot(N, V), 0.0), dif = 0.72 + 0.28 * max(dot(N, L), 0.0);
+      if (kind < 0.5) {
+        vec4 c = texture2D(tex, vt); if (c.a < 0.35) discard;
+        gl_FragColor = vec4(c.rgb * dif + vec3(pow(max(dot(N, Hh), 0.0), 70.0) * gloss), 1.0);
+      } else if (kind < 1.5) {
+        float spec = pow(max(dot(N, Hh), 0.0), 90.0) * 1.1;
+        float bevel = smoothstep(0.80, 0.99, abs(vt.y * 2.0 - 1.0));
+        gl_FragColor = vec4(col * dif + vec3(spec + bevel * 0.5), max(max(alpha, spec), bevel * 0.9));
+      } else if (kind < 2.5) {
+        vec4 c = texture2D(tex, vt);
+        float spec = pow(max(dot(N, Hh), 0.0), 140.0) * 1.3, sheen = pow(1.0 - facing, 4.0) * 0.35;
+        gl_FragColor = vec4(c.rgb + vec3(spec + sheen), clamp(c.a + spec + sheen + 0.03, 0.0, 1.0));
+      } else {
+        gl_FragColor = vec4(col * dif, 1.0);
+      }
     }`;
 
   // ---------- small matrix helpers (column-major, like WebGL)
@@ -69,31 +90,33 @@
     return t;
   }
   const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = no; i.src = src; });
+  const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 
-  // what each holder looks like from the side: card stock, a case, a slab (thickness and edge colour, in card widths)
-  const HOLDER = { raw: { r: 46.5 / 750, d: 0.012, edge: [0.93, 0.9, 0.84], gloss: 0.32, plastic: 0 },
-    case: { r: 58 / 1500, d: 0.032, edge: [0.7, 0.78, 0.84], gloss: 0.5, plastic: 1, alpha: 0.55 },
-    slab: { r: 50 / 1500, d: 0.06, edge: [0.68, 0.76, 0.82], gloss: 0.55, plastic: 1, alpha: 0.6 } }; // a real slab: ~6.5 mm of clear plastic
+  // depths, in card widths: a card's stock; a case's and a slab's plastic (a real slab is about 6.5 mm thick on 83 mm)
+  const STOCK = 0.012, CASE_D = 0.034, SLAB_D = 0.078;
 
-  // the back: the card back; in a case or slab, the card back sits inside the clear plastic where the card is (the same
-  // place holo.js draws the card on the front: CASE / SLAB there)
-  const CARD_IN = { case: { s: 0.958, top: 44 }, slab: { s: 0.868, top: 244 } };
-  function backOf(holder, img) {
-    const at = CARD_IN[holder];
-    if (!at || !img) return img;
-    const c = document.createElement('canvas'); c.width = 720; c.height = 1008;
-    const g = c.getContext('2d'), k = 720 / 1500, w = 1500 * at.s * k, h = 2100 * at.s * k, x = (720 - w) / 2, y = at.top * k;
-    const pl = g.createLinearGradient(0, 0, 720, 1008); pl.addColorStop(0, '#e8edf1'); pl.addColorStop(0.5, '#c9d0d6'); pl.addColorStop(1, '#e2e7eb');
-    g.fillStyle = pl; g.beginPath(); g.roundRect(3, 3, 714, 1002, holder === 'slab' ? 24 : 28); g.fill();
-    g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(16, 16, 688, holder === 'slab' ? y - 30 : 6); // the back of the label
-    g.save(); g.beginPath(); g.roundRect(x, y, w, h, 22); g.clip(); g.drawImage(img, x, y, w, h); g.restore();
+  /** The clear plastic's own marks (static): the rim round its edge and, in a slab, the well the card sits in. Mostly
+   *  transparent: the light does the rest. */
+  function shellPicture(box, slab) {
+    const c = canvas(720, 1008), g = c.getContext('2d'), k = 720 / box.W;
+    g.scale(k, k);
+    const rr = (b, r) => { g.beginPath(); g.roundRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0, r); };
+    g.fillStyle = 'rgba(225,235,245,0.05)'; rr(box.body, box.r); g.fill(); // the faintest tint
+    g.lineWidth = 10; g.strokeStyle = 'rgba(255,255,255,0.55)'; rr({ x0: box.body.x0 + 6, y0: box.body.y0 + 6, x1: box.body.x1 - 6, y1: box.body.y1 - 6 }, box.r - 4); g.stroke();
+    g.lineWidth = 3; g.strokeStyle = 'rgba(40,60,80,0.45)'; rr(box.body, box.r); g.stroke();
+    if (slab) {
+      const cb = box.card, win = { x0: cb.x0 - 16, y0: cb.y0 - 16, x1: cb.x1 + 16, y1: cb.y1 + 16 };
+      g.lineWidth = 5; g.strokeStyle = 'rgba(255,255,255,0.5)'; rr(win, 40); g.stroke();
+      g.lineWidth = 2; g.strokeStyle = 'rgba(40,60,80,0.4)'; rr({ x0: win.x0 - 4, y0: win.y0 - 4, x1: win.x1 + 4, y1: win.y1 + 4 }, 44); g.stroke();
+      const lb = box.label, lw = { x0: lb.x0 - 10, y0: lb.y0 - 10, x1: lb.x1 + 10, y1: lb.y1 + 10 };
+      g.lineWidth = 4; g.strokeStyle = 'rgba(255,255,255,0.45)'; rr(lw, 24); g.stroke();
+    }
     return c;
   }
 
   async function open(c, name = '') {
     const F = await window.Holo?.face(c).catch(() => null);
     if (!F) { window.toast?.('This card can’t be shown in 3D.', 'bad'); return; }
-    const look = HOLDER[F.holder] || HOLDER.raw;
     const d = document.createElement('dialog'); d.className = 'c3d';
     d.innerHTML = `<canvas class="c3d-cv" aria-label="${(name || 'Card').replace(/[&<>"]/g, '')} in 3D. Drag to turn it."></canvas>
       <button class="c3d-x btn round" type="button" aria-label="Close">✕</button>
@@ -106,22 +129,50 @@
     d.querySelector('.c3d-x').onclick = close; d.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
 
     const prog = program(gl); gl.useProgram(prog);
-    const geo = body(look.r, look.d), buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, geo.data, gl.STATIC_DRAW);
-    const attr = (nm, size, off) => { const l = gl.getAttribLocation(prog, nm); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 9 * 4, off * 4); };
-    attr('p', 3, 0); attr('n', 3, 3); attr('t', 2, 6); attr('part', 1, 8);
     const U = (nm) => gl.getUniformLocation(prog, nm);
-    gl.uniform3fv(U('edge'), look.edge); gl.uniform1f(U('gloss'), look.gloss); gl.uniform1f(U('plastic'), look.plastic); gl.uniform1f(U('edgeAlpha'), look.alpha ?? 1); gl.uniform1f(U('halfDepth'), look.d / 2);
+    const A = ['p', 'n', 't'].map((nm) => gl.getAttribLocation(prog, nm));
+    A.forEach((l) => gl.enableVertexAttribArray(l));
+    gl.uniform1i(U('tex'), 0);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.uniform1i(U('face'), 0); gl.uniform1i(U('back'), 1);
     gl.enable(gl.DEPTH_TEST);
+    const back = await loadImg('ui/card-back.webp').catch(() => null);
 
-    // the face: holo.js draws into this canvas at the card's angle; uploaded only when it changes
-    const faceCv = document.createElement('canvas'); faceCv.width = 720; faceCv.height = 1008;
+    // ---------- the parts: each { buf, n, kind, tex, col, gloss, alpha, see (see-through: drawn after the solid ones) }
+    const parts = [];
+    const add = (verts, o) => { const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW); parts.push({ buf, n: verts.length / STRIDE, ...o }); };
+    const faceTex = texture(gl, null), backTex = texture(gl, back);
+    const X = (x) => x * W - W / 2, Y = (y) => H / 2 - y * H; // 0..1 across and down the holder -> the card's units
+    let faceCv, drawFace;
+    if (F.holder === 'raw') {
+      const r = W * 46.5 / 750, z = STOCK / 2;
+      faceCv = canvas(720, 1008); drawFace = (g, tl) => F.draw(g, tl);
+      add(sheet(-W / 2, -H / 2, W / 2, H / 2, r, z, true), { kind: 0, tex: faceTex, gloss: 0.32 });
+      add(sheet(-W / 2, -H / 2, W / 2, H / 2, r, -z, false), { kind: 0, tex: backTex, gloss: 0.2 });
+      add(band(-W / 2, -H / 2, W / 2, H / 2, r, -z, z), { kind: 1, col: [0.93, 0.9, 0.84], alpha: 1 });
+    } else {
+      const B = F.box, slab = F.holder === 'slab', D = slab ? SLAB_D : CASE_D, cb = B.card, bd = B.body;
+      const cx0 = X(cb.x0 / B.W), cx1 = X(cb.x1 / B.W), cy0 = Y(cb.y1 / B.H), cy1 = Y(cb.y0 / B.H), cr = (cx1 - cx0) * 46.5 / 750;
+      const bx0 = X(bd.x0 / B.W), bx1 = X(bd.x1 / B.W), by0 = Y(bd.y1 / B.H), by1 = Y(bd.y0 / B.H), br = (bx1 - bx0) * B.r / (bd.x1 - bd.x0);
+      // the card inside, in the middle of the plastic
+      faceCv = canvas(640, Math.round(640 * (cb.y1 - cb.y0) / (cb.x1 - cb.x0))); drawFace = (g, tl) => F.drawCard(g, tl);
+      add(sheet(cx0, cy0, cx1, cy1, cr, 0.0015, true), { kind: 0, tex: faceTex, gloss: 0.3 });
+      add(sheet(cx0, cy0, cx1, cy1, cr, -0.0015, false), { kind: 0, tex: backTex, gloss: 0.2 });
+      // a slab's label in its pocket, a little behind the front
+      if (slab && F.drawLabel) {
+        const lb = B.label, lc = canvas(720, Math.round(720 * (lb.y1 - lb.y0) / (lb.x1 - lb.x0))); F.drawLabel(lc.getContext('2d'));
+        const lx0 = X(lb.x0 / B.W), lx1 = X(lb.x1 / B.W), ly0 = Y(lb.y1 / B.H), ly1 = Y(lb.y0 / B.H), lr = (lx1 - lx0) * 18 / (lb.x1 - lb.x0);
+        add(sheet(lx0, ly0, lx1, ly1, lr, D * 0.18, true), { kind: 0, tex: texture(gl, lc), gloss: 0.25 });
+        add(sheet(lx0, ly0, lx1, ly1, lr, D * 0.18 - 0.002, false), { kind: 3, col: [0.92, 0.88, 0.8] });
+      }
+      // the clear plastic: its back, its edge, its front (see-through, drawn last, back to front)
+      const shell = texture(gl, shellPicture(B, slab));
+      add(sheet(bx0, by0, bx1, by1, br, -D / 2, false), { kind: 2, tex: shell, see: true });
+      add(band(bx0, by0, bx1, by1, br, -D / 2, D / 2), { kind: 1, col: [0.74, 0.8, 0.85], alpha: 0.42, see: true });
+      add(sheet(bx0, by0, bx1, by1, br, D / 2, true), { kind: 2, tex: shell, see: true });
+    }
     const fg = faceCv.getContext('2d');
-    gl.activeTexture(gl.TEXTURE0); const faceTex = texture(gl, null);
-    gl.activeTexture(gl.TEXTURE1); texture(gl, backOf(F.holder, await loadImg('ui/card-back.webp').catch(() => null)));
 
-    // the angle: drag, a flick's spin, the phone's tilt, and (untouched) a slow drift
+    // ---------- the angle: drag, a flick's spin, the phone's tilt, and (untouched) a slow drift
     const S = { yaw: -0.35, pitch: 0.12, vy: 0, vp: 0, drag: null, last: performance.now(), touched: 0, tilt: { x: 0, y: 0 }, drawn: null };
     const down = (e) => { cv.setPointerCapture(e.pointerId); S.drag = { x: e.clientX, y: e.clientY, t: performance.now() }; S.vy = S.vp = 0; S.touched = performance.now(); };
     const moveTo = (e) => {
@@ -143,6 +194,13 @@
       gl.viewport(0, 0, cv.width, cv.height);
       return w / h;
     }
+    function draw(part) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, part.buf);
+      gl.vertexAttribPointer(A[0], 3, gl.FLOAT, false, STRIDE * 4, 0); gl.vertexAttribPointer(A[1], 3, gl.FLOAT, false, STRIDE * 4, 12); gl.vertexAttribPointer(A[2], 2, gl.FLOAT, false, STRIDE * 4, 24);
+      gl.uniform1f(U('kind'), part.kind); gl.uniform1f(U('gloss'), part.gloss ?? 0.3); gl.uniform1f(U('alpha'), part.alpha ?? 1); gl.uniform3fv(U('col'), part.col || [1, 1, 1]);
+      if (part.tex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, part.tex); }
+      gl.drawArrays(gl.TRIANGLES, 0, part.n);
+    }
     function frame(t) {
       if (!alive) return;
       const dt = Math.min(0.05, (t - S.last) / 1000); S.last = t;
@@ -156,19 +214,21 @@
       // the face, at this angle (the holo moves with the card); only while the face can be seen
       const tl = { tx: Math.max(-1, Math.min(1, Math.sin(yaw) * 1.8)), ty: Math.max(-1, Math.min(1, -Math.sin(pitch) * 1.8)), o: 1 };
       if (Math.cos(yaw) * Math.cos(pitch) > -0.05 && (!S.drawn || Math.abs(S.drawn.tx - tl.tx) > 0.006 || Math.abs(S.drawn.ty - tl.ty) > 0.006)) {
-        fg.clearRect(0, 0, 720, 1008); F.draw(fg, tl); S.drawn = tl;
+        fg.clearRect(0, 0, faceCv.width, faceCv.height); drawFace(fg, tl); S.drawn = tl;
         gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, faceTex);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, faceCv);
       }
       const asp = size(), dist = Math.max(2.5, 2.05 / Math.max(0.42, asp)); // the card (and its swing) fits with room round it
-      const VP = mul(persp(0.62, asp, 0.1, 20), move(0, 0, -dist));
-      gl.uniformMatrix4fv(U('VP'), false, VP);
+      gl.uniformMatrix4fv(U('VP'), false, mul(persp(0.62, asp, 0.1, 20), move(0, 0, -dist)));
       gl.uniformMatrix4fv(U('M'), false, mul(rotX(pitch), rotY(yaw)));
       gl.uniform3fv(U('eye'), [0, 0, dist]);
       gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      gl.disable(gl.BLEND); gl.depthMask(true); gl.drawArrays(gl.TRIANGLES, 0, geo.faces); // the face and back
-      if (look.alpha) { gl.enable(gl.BLEND); gl.depthMask(false); } // a case's or slab's clear edge, over them
-      gl.drawArrays(gl.TRIANGLES, geo.faces, geo.edges);
+      gl.disable(gl.BLEND); gl.depthMask(true);
+      for (const p of parts) if (!p.see) draw(p); // the card, its label, card stock
+      // the clear plastic over them, the far side first (seen from behind, the front sheet is the far one)
+      gl.enable(gl.BLEND); gl.depthMask(false);
+      const see = parts.filter((p) => p.see), facingFront = Math.cos(yaw) * Math.cos(pitch) >= 0;
+      for (const p of facingFront ? see : see.slice().reverse()) draw(p);
       raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
