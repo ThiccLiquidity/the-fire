@@ -1,6 +1,15 @@
-# Docker builds from the repository root (the keeper: ops/keeper/Dockerfile) see only what they need.
+# Docker builds from the repository root (the keeper: ops/keeper/Dockerfile; the indexer: ops/indexer/Dockerfile) see only what they need.
 *
 !ops/keeper/package.json
 !ops/keeper/package-lock.json
 !ops/keeper/src
 !deployments
+# the indexer (ops/indexer/Dockerfile)
+!ops/indexer/package.json
+!ops/indexer/package-lock.json
+!ops/indexer/ponder.config.ts
+!ops/indexer/ponder.schema.ts
+!ops/indexer/ponder-env.d.ts
+!ops/indexer/tsconfig.json
+!ops/indexer/abis
+!ops/indexer/src

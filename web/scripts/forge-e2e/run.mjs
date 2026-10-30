@@ -80,7 +80,7 @@ try {
 
   // ---------- live mode
   const net = { name: "local", chainId: 31337, label: "Local test chain", readRpc: ctx.RPC, publicRpc: ctx.RPC, explorer: "", deployment: ctx.deployment, drandUrls: [], testnet: true };
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const page = await browser.newPage({ serviceWorkers: "block", viewport: { width: 1280, height: 800 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   page.on("console", (m) => { if (m.type() === "warning" && !/WebGL|GL Driver/.test(m.text())) console.log(`  page warning: ${m.text()}`); if (m.type() === "error" && !/ipfs\.io|ERR_FAILED|Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -576,7 +576,7 @@ try {
 
   console.log("\n== the live switch and links");
   {
-    const p = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const p = await browser.newPage({ serviceWorkers: "block", viewport: { width: 1280, height: 800 } });
     await p.addInitScript(([n, k]) => { globalThis.__FORGE_NET__ = n; globalThis.__FORGE_TEST__ = { key: k }; }, [net, key]);
     await p.goto(`${SITE}help.html?live=testnet`);
     const back = await p.locator("header a.back").getAttribute("href");
@@ -604,7 +604,7 @@ try {
   // ---------- the plain page: the demo, untouched
   console.log("\n== no ?live: the demo");
   for (const [w, h, name] of [[1280, 800, "desktop"], [390, 844, "phone"]]) {
-    const p = await browser.newPage({ viewport: { width: w, height: h }, isMobile: w < 500, hasTouch: w < 500 });
+    const p = await browser.newPage({ serviceWorkers: "block", viewport: { width: w, height: h }, isMobile: w < 500, hasTouch: w < 500 });
     const errs = [], vendor = [];
     p.on("pageerror", (e) => errs.push(String(e)));
     p.on("console", (m) => { if (m.type() === "error") errs.push(m.text()); });
@@ -722,7 +722,7 @@ try {
   // ---------- the fun layer in the demo (fun.js): tour, practice pack, binder, badges, showcase link, feed
   console.log("\n== the fun layer (demo)");
   {
-    const p = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const p = await browser.newPage({ serviceWorkers: "block", viewport: { width: 1280, height: 800 } });
     const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
     await p.goto(SITE);
     await p.waitForFunction(() => window.Fun?.loaded, null, { timeout: 30_000 });
@@ -811,7 +811,7 @@ try {
   // and the suggestion reveal (no "guess the pick" before it)
   console.log("\n== owner fixes (demo, phone)");
   {
-    const ctx2 = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
+    const ctx2 = await browser.newContext({ serviceWorkers: "block", viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
     await ctx2.addInitScript(() => { try { localStorage.setItem("omni.tour", "1"); localStorage.setItem("omni.coached", "1"); } catch { /* */ } });
     const p = await ctx2.newPage();
     const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
@@ -882,7 +882,7 @@ try {
     await ctx2.close();
 
     // the suggestion results reveal shows straight away (no "guess the pick" first; guess.js is gone)
-    const p2 = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const p2 = await browser.newPage({ serviceWorkers: "block", viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     const reqs2 = []; p2.on("request", (r) => reqs2.push(r.url()));
     await p2.addInitScript(() => { try { localStorage.setItem("omni.tour", "1"); } catch { /* */ } });
     await p2.goto(`${SITE}?results=won`);
@@ -896,7 +896,7 @@ try {
   // PLANK and PAPER load and draw; My cards with no cards: PLANK and the way to a pack
   console.log("\n== PLANK and PAPER (demo)");
   {
-    const p = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const p = await browser.newPage({ serviceWorkers: "block", viewport: { width: 1280, height: 800 } });
     const errs = []; p.on("pageerror", (e) => errs.push(String(e)));
     const bad = []; p.on("response", (r) => { if (/\/ui\/brand\//.test(r.url()) && r.status() >= 400) bad.push(r.url()); }); p.on("requestfailed", (r) => { if (/\/ui\/brand\//.test(r.url())) bad.push(r.url()); });
     await p.addInitScript(() => { try { localStorage.setItem("omni.tour", "1"); localStorage.setItem("omni.coached", "1"); } catch { /* */ } });

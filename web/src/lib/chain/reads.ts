@@ -504,9 +504,19 @@ export async function card(serial: number): Promise<Card> {
   };
 }
 
-/** The serials a wallet holds: the explorer's list when there is one (fast), else a scan of FireCards transfers
+let indexerUp = typeof fetch === "function" && typeof location !== "undefined";
+
+/** The serials a wallet holds: our indexer's list (/api/idx), else the explorer's, else a scan of FireCards transfers
  *  since the deploy (any RPC). o.scan: the chain scan even with an explorer (it can lag a just-dealt pack). */
 export async function cardSerialsOf(owner: Address, o: { scan?: boolean } = {}): Promise<number[]> {
+  // our own indexer first (ops/indexer through /api/idx: instant and current), then the explorer, then the chain
+  if (indexerUp && !o.scan) {
+    try {
+      const r = await fetch(`/api/idx/cards/${owner}`, { signal: AbortSignal.timeout(6000) });
+      if (r.status === 503 || r.status === 404) indexerUp = false; // not set up on this site: don't ask again
+      else if (r.ok) return ((await r.json()) as { cards: { serial: string }[] }).cards.map((c) => Number(c.serial));
+    } catch { /* unreachable now: the explorer and the chain below */ }
+  }
   if (NET.explorer && !o.scan) {
     try {
       const bs = new BlockscoutData({ packs: addr("FirePacks"), cards: addr("FireCards") }, NET.explorer);
