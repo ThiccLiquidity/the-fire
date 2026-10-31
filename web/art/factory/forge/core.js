@@ -439,13 +439,20 @@
     },
     bytes(text) { return new TextEncoder().encode(text).length; },
     /** A link back to the site for a share: this wallet's showcase of these cards (?show=<address>&c=<ids>), or the
-     *  site itself; ?live= is kept so a testnet share opens the testnet. */
+     *  site itself; ?live= is kept so a testnet share opens the testnet. On the real site it goes through /s, the
+     *  share preview (api/share: the picture X, Discord and iMessage show), which sends people on to the same place. */
     shareLink(ids = []) {
-      const u = new URL(location.href); u.search = ''; u.hash = '';
+      const u = Store.shareBase();
       const live = new URLSearchParams(location.search).get('live'); if (live) u.searchParams.set('live', live);
       const a = state.wallet.connected ? String(state.wallet.full || '') : '', mine = ids.filter((id) => Number.isFinite(id) && id > 0);
       if (/^0x[0-9a-fA-F]{40}$/.test(a) && mine.length) { u.searchParams.set('show', a); u.searchParams.set('c', mine.join('.')); }
       return u.href;
+    },
+    /** Where share links start: /s on the real site (the preview page), the page itself when run locally. */
+    shareBase() {
+      const u = new URL(location.href); u.search = ''; u.hash = '';
+      if (!/^(localhost|127\.|\[::1\])/.test(location.hostname) && location.protocol === 'https:') u.pathname = '/s';
+      return u;
     },
     noteBurned(c) { // a card this wallet burned counts toward its edition's and its look's burned numbers
       const ed = [c.series, c.character, c.material].join('|'), look = ed + '|' + (c.holo || 'none');

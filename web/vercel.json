@@ -136,6 +136,10 @@
   ],
   "rewrites": [
     {
+      "source": "/s",
+      "destination": "/api/share/page"
+    },
+    {
       "source": "/ipfs/:cid/:file([A-Za-z0-9._-]+\\.webp)",
       "destination": "https://ipfs.filebase.io/ipfs/:cid/:file"
     }

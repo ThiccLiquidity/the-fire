@@ -21,7 +21,7 @@
   const myAddr = () => (LIVE ? S.wallet.full : S.wallet.full || '0xdemo');
   const pickKey = () => 'omni.showcase.' + (Fun.who() || 'none');
   function link(addr, ids) {
-    const u = new URL(location.href); u.search = '';
+    const u = Store.shareBase();
     const live = new URLSearchParams(location.search).get('live'); if (live) u.searchParams.set('live', live);
     u.searchParams.set('show', addr); if (ids.length) u.searchParams.set('c', ids.join('.'));
     return u.href;
