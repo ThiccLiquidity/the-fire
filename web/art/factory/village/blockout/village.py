@@ -10,7 +10,7 @@ def mat(name, rgb, emit=0.0):
     if emit: b.inputs['Emission Color'].default_value = (*rgb, 1); b.inputs['Emission Strength'].default_value = emit
     return m
 M = dict(ground=mat('ground', (0.20, 0.30, 0.14)), stone=mat('stone', (0.55, 0.50, 0.42)), bldg=mat('bldg', (0.78, 0.74, 0.68)),
-         roof=mat('roof', (0.35, 0.22, 0.16)), door=mat('door', (0.9, 0.08, 0.05), 2.0), water=mat('water', (0.10, 0.22, 0.35)),
+         roof=mat('roof', (0.35, 0.22, 0.16)), door=mat('door', (0.9, 0.08, 0.05), 2.0) if '--red' in sys.argv else mat('door', (0.12, 0.07, 0.04)), water=mat('water', (0.10, 0.22, 0.35)),
          tree=mat('tree', (0.08, 0.20, 0.08)), plot=mat('plot', (0.45, 0.38, 0.25)), bronze=mat('bronze', (0.55, 0.35, 0.12)), text=mat('text', (1, 0.95, 0.8), 3.0))
 def put(o, m): o.data.materials.append(m); return o
 def box(x, y, z, sx, sy, sz, m, rot=0):
@@ -23,8 +23,8 @@ def label(t, x, y, z, size=1.4):
 
 # ground, plaza, sculpture
 box(0, 0, -0.2, 220, 220, 0.2, M['ground'])
-cyl(0, 0, 7, 0.15, M['stone'])
-cyl(0, 0, 2, 0.8, M['stone'], z=0.15)
+cyl(0, 0, 9, 0.15, M['stone'])
+cyl(0, 0, 2.6, 0.8, M['stone'], z=0.15)
 bpy.ops.mesh.primitive_torus_add(major_radius=1.0, minor_radius=0.28, location=(-0.9, 0, 2.2), rotation=(math.radians(90), 0, 0)); put(bpy.context.object, M['bronze'])
 bpy.ops.mesh.primitive_torus_add(major_radius=1.0, minor_radius=0.28, location=(0.9, 0, 2.2), rotation=(math.radians(90), 0, 0)); put(bpy.context.object, M['bronze'])
 
@@ -33,12 +33,12 @@ def path(a, b, w=2.6):
     box((a.x + b.x) / 2, (a.y + b.y) / 2, 0, w, d.length, 0.12, M['stone'], rot=math.atan2(d.y, d.x) - math.pi / 2)
 
 # buildings: (name, angle from +y around the plaza (deg), distance, width, depth, height); each turned to face the plaza
-B = [('WORKSHOP', 0, 15, 13, 8, 7.5), ('ARCADE', 52, 15, 8, 6, 5), ('TROPHY HALL', -52, 15, 8, 6.5, 5.5),
-     ('MARKETPLACE', 92, 15.5, 9, 6.5, 5), ('MORNING WOOD', -92, 15, 6, 5, 6)]
+B = [('WORKSHOP', 0, 21, 16, 9, 8), ('ARCADE', 50, 23, 10, 7, 5.5), ('TROPHY HALL', -50, 23, 10, 7.5, 6),
+     ('MARKETPLACE', 95, 24, 11, 8, 5.5), ('MORNING WOOD', -95, 23, 7.5, 6, 6.5)]
 for name, ang, dist, w, d, h in B:
     a = math.radians(ang); cx, cy = dist * math.sin(a), dist * math.cos(a)
     # the side buildings face the front of the plaza (where the road comes in), so their doors turn toward the camera
-    tx, ty = (0, -7) if abs(ang) > 80 else (0, 0)
+    tx, ty = (0, -20) if abs(ang) > 80 else (0, 0)
     face = math.atan2(ty - cy, tx - cx)
     rot = face + math.pi / 2     # the box's -y face (its front) points at the plaza
     lift = 1.0 if name == 'WORKSHOP' else 0.0
@@ -50,26 +50,30 @@ for name, ang, dist, w, d, h in B:
     dx, dy = cx + fx * (d / 2 + 0.05), cy + fy * (d / 2 + 0.05)
     box(dx, dy, lift, 1.6, 0.3, 2.6, M['door'], rot=rot)
     # a path from the door to the plaza's edge
-    pc = Vector((tx, ty)) if abs(ang) > 80 else Vector((0, 0)); dv = (pc - Vector((dx, dy))); end = Vector((dx, dy)) + dv * max(0, (dv.length - 6.6) / dv.length) if pc.length == 0 else Vector((dx, dy)) + dv.normalized() * (Vector((dx, dy)).length - 6.6)
+    D = Vector((dx, dy))
+    if abs(ang) > 80:  # side buildings: their path runs to the main road (x = +-2)
+        u = (Vector((tx, ty)) - D).normalized(); t = (math.copysign(2.0, D.x) - D.x) / u.x; end = D + u * t
+    else:              # the rest: to the plaza's edge
+        end = D + (Vector((0, 0)) - D).normalized() * (D.length - 8.6)
     path((dx + fx * 0.3, dy + fy * 0.3), (end.x, end.y))
     label(name, cx, cy, lift + h * 1.5 + 1.5)
 
 # expansion plots up the hill (they face the plaza too)
-for x, y in [(-22, 20), (22, 20)]:
-    box(x, y, 0, 8, 6, 0.25, M['plot']); label('FUTURE PLOT', x, y, 1.0)
-    path((x * 0.62, y * 0.62), (x * 0.9, y * 0.9), 2)
+for x, y in [(-33, 26), (33, 26)]:
+    box(x, y, 0, 10, 8, 0.25, M['plot']); label('FUTURE PLOT', x, y, 1.0)
+    path((x * 0.62, y * 0.62), (x * 0.86, y * 0.86), 2.2)
 
 # main road, stream, bridge
-path((0, -7), (0, -30), 3.6)
-box(0, -19, -0.05, 220, 5, 0.1, M['water'])
-box(0, -19, 0.1, 5, 6.5, 0.6, M['stone'])
+path((0, -9), (0, -60), 4)
+box(0, -21, -0.05, 220, 6, 0.1, M['water'])
+box(0, -21, 0.1, 6, 8, 0.6, M['stone'])
 
 # forest at the edges only (never in front of a door or path)
 random.seed(4)
 for _ in range(700):
     x, y = random.uniform(-70, 70), random.uniform(-80, 75)
     r = math.hypot(x, y * 1.15)
-    if r < 27 or abs(y + 19) < 3.5 or (abs(x) < 4 and y < -6): continue
+    if r < 44 or abs(y + 21) < 4.5 or (abs(x) < 5 and y < -9): continue
     s = random.uniform(1.4, 2.6)
     bpy.ops.mesh.primitive_cone_add(vertices=8, radius1=s, depth=s * 3, location=(x, y, s * 1.5)); put(bpy.context.object, M['tree'])
 
@@ -94,7 +98,11 @@ def shot(name, w, h, scale, ty):
     bpy.context.view_layer.update()
     pts = [{'t': t, 'x': world_to_camera_view(S, cam, Vector((x, y, z))).x * w, 'y': (1 - world_to_camera_view(S, cam, Vector((x, y, z))).y) * h} for t, x, y, z in LABELS]
     json.dump(pts, open(f'{OUT}/{name}.json', 'w'))
-shot('plan-desktop', 1600, 900, 84, 7)
-shot('plan-phone', 720, 1280, 72, 1)
+if '--guide' in sys.argv:
+    S.cycles.samples = 48
+    shot('guide-red' if '--red' in sys.argv else 'guide-clean', 1536, 1024, 82, 8)
+else:
+    shot('plan-desktop', 1600, 900, 86, 9)
+    pass  # phone later
 bpy.ops.wm.save_as_mainfile(filepath=f'{OUT}/village-blockout.blend')
 print('done')

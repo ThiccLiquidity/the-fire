@@ -29,7 +29,9 @@ of the main road, everything else facing the middle.
 - **Two future plots** up the hill behind Trophy Hall and Arcade, drawn as dressed construction sites (scaffolding,
   crates), not "coming soon" signs. A later district can go across the stream with a second footbridge.
 - **Sizes by importance:** Workshop 1.0, Marketplace 0.65, Arcade and Trophy Hall 0.6, Morning Wood 0.45.
-- **Forest only at the edges,** as a frame. The village fills the picture.
+- **The village fills the screen.** The river and the bridge into town run along the bottom; you cross and the road
+  splits three ways (Morning Wood, the plaza and Workshop, the Marketplace). Scenery is minimal: a band of trees along
+  the top and a few at the corners. Approved by the owner (the render above).
 
 Door rules for this camera (from now on, for every building):
 1. Doors go only on walls that face the camera or the side.
