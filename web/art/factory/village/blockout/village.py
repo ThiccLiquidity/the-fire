@@ -58,10 +58,6 @@ for name, ang, dist, w, d, h in B:
     path((dx + fx * 0.3, dy + fy * 0.3), (end.x, end.y))
     label(name, cx, cy, lift + h * 1.5 + 1.5)
 
-# expansion plots up the hill (they face the plaza too)
-for x, y in [(-33, 26), (33, 26)]:
-    box(x, y, 0, 10, 8, 0.25, M['plot']); label('FUTURE PLOT', x, y, 1.0)
-    path((x * 0.62, y * 0.62), (x * 0.86, y * 0.86), 2.2)
 
 # main road, stream, bridge
 path((0, -9), (0, -60), 4)

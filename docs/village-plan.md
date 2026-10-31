@@ -26,8 +26,7 @@ of the main road, everything else facing the middle.
   road comes in. Their doors show clearly to the camera.
 - **The plaza** with the infinity sculpture in the middle. The burn tally sits on its plinth.
 - **Nothing with a door goes below the plaza.** That area is the road in, the bridge, the stream and trees.
-- **Two future plots** up the hill behind Trophy Hall and Arcade, drawn as dressed construction sites (scaffolding,
-  crates), not "coming soon" signs. A later district can go across the stream with a second footbridge.
+- **No empty plots.** A future building gets designed into the layout when it's needed, with its own path.
 - **Sizes by importance:** Workshop 1.0, Marketplace 0.65, Arcade and Trophy Hall 0.6, Morning Wood 0.45.
 - **The village fills the screen.** The river and the bridge into town run along the bottom; you cross and the road
   splits three ways (Morning Wood, the plaza and Workshop, the Marketplace). Scenery is minimal: a band of trees along
@@ -38,7 +37,7 @@ Door rules for this camera (from now on, for every building):
 2. Left of the main road: the door is on the building's right-front face. Right of it: on its left-front face.
 3. Every door has a path to the plaza, and nothing tall stands in front of it.
 4. Buildings further back sit higher (the terrace), so their doors clear the roofs in front.
-5. Future plots follow the same rules.
+5. Any building added later follows the same rules.
 
 ## The art pipeline
 
@@ -68,11 +67,11 @@ separately on grey and paste them in; that's what gave us mismatched light and g
 
 **Then Claude finishes it:**
 1. Cut each building out using the ID mask, with clean edges and no halos.
-2. Make the empty-ground version behind each building (that's also a future plot's look).
+2. Make the empty-ground version behind each building.
 3. Upscale, apply one colour grade to every layer, and export AVIF/WebP in screen-size tiers.
 4. Write a small data file: each building's outline, door point, sign position and link.
 
-**Adding a building later:** add a box on a plot in the blockout, render its masks, edit it into the current scene,
+**Adding a building later:** add a box to the blockout where it fits, with a path, render its masks, edit it into the current scene,
 grade it and cut it. One new layer and a few lines of data; nothing else changes.
 
 **Seasons (snow, festival):** a light edit over the finished village with the same guides. Outlines stay put, so the
