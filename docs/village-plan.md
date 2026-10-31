@@ -74,8 +74,13 @@ separately on grey and paste them in; that's what gave us mismatched light and g
 **Adding a building later:** add a box to the blockout where it fits, with a path, render its masks, edit it into the current scene,
 grade it and cut it. One new layer and a few lines of data; nothing else changes.
 
-**Seasons (snow, festival):** a light edit over the finished village with the same guides. Outlines stay put, so the
-click areas carry over.
+**Time of day (owner-approved):** the village matches the visitor's own clock. Four looks of the same picture:
+morning, day, dusk and night. The finished dusk scene is the master; the other three are edits of that exact picture
+("same picture at night", and so on), each laid over the layout to check nothing moved before it's used (redo or
+correct any that drift). Each building is cut from every version with the same masks.
+
+**Seasons (snow, festival):** a light edit over the finished village with the same guides, the same way. Outlines stay
+put, so the click areas carry over.
 
 ## The interactive page
 
@@ -87,6 +92,10 @@ click areas carry over.
 - **Live signs:** "On sale · 132 left", "2 offers on your cards", "Today's issue is out", "Prize run live".
 - **Going in:** the camera eases toward the building and zooms, the door glows, then the inner screen fades in. Back
   plays it in reverse.
+- **Time of day:** the page picks the look from the visitor's clock (no permission needed) and fades slowly into
+  the next one as time passes. A separate light layer (windows, lamp posts, the forge, bridge lanterns) turns on at
+  dusk and stays on through the night. By time: morning mist on the river, fireflies and lit lanterns at night,
+  stronger smoke by day. Calm mode and reduced motion keep the look but drop the effects.
 - **Alive, but cheap:** chimney smoke, lamp flicker, water shimmer, fireflies at dusk, a few swaying trees, one cart
   on the road, an occasional bird. Not a crowd of walking people (that's a known time sink).
 - **Phones:** the village fills the top two thirds, opening on the plaza, with drag and pinch to look around. A row
@@ -100,10 +109,11 @@ click areas carry over.
 
 1. **Owner approves the layout** (the blockout render above), or asks for changes. Claude re-renders in minutes.
 2. **Style frame:** one image of the whole village in the look we want, made from the clay render.
-3. **The final scene,** by route A or B, then building-by-building fixes in place.
+3. **The final scene (dusk),** by route A or B, then building-by-building fixes in place. Then the morning, day and
+   night versions as edits of it, each checked against the layout.
 4. **Claude cuts, grades and exports,** and builds the page in phases:
    - **1:** still picture, signs, click areas, glow, phone layout.
-   - **2:** PixiJS, pan and zoom, smoke, lamps, water.
+   - **2:** PixiJS, pan and zoom, smoke, lamps, water, time of day (the four looks and the light layer).
    - **3:** the zoom-into-building transition, sounds, fireflies, live badges.
    - **4:** seasons and new buildings.
 5. **Owner reviews each phase** on a phone and a computer before anything is pushed.
