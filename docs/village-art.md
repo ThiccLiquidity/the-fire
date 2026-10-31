@@ -53,9 +53,12 @@ names and live news go on top as site text.
 
 ## 3. The buildings (one picture each, square 2048 x 2048)
 
-Each one ends with this line:
-> Shown alone, centered, on its own square cobblestone foundation pad, filling about 70% of the picture, on a plain flat
-> light-grey background. Nothing else around it. Blank wooden signboard over the door. No text, letters or numbers.
+The background came out looking straight down the middle (not diagonal), with the pads already in it, so each building
+is front-facing with no pad of its own. Each one ends with this line:
+> Seen from the front and above, facing straight toward the viewer, camera looking down at about 45 degrees, perfectly
+> symmetrical framing. Shown alone and centered, standing on flat ground with no foundation pad and nothing around it,
+> filling about 80% of the picture, on a plain flat light-grey background. Blank wooden signboard over the door. No
+> text, letters or numbers.
 
 **Workshop:**
 > [Look] [Camera] A two-storey timber-and-brick workshop, the grandest building in the village: big copper boilers and
