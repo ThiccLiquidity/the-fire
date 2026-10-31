@@ -5,7 +5,8 @@
 //   - an approve on one of the site's coins (PAPER, PLANK, USDG, WETH) for a contract that takes payments (FireSale,
 //     FirePsa, FireGames) or a swap router, never "unlimited" (the site approves each call's own cap, approve.ts);
 //   - "approve all" (setApprovalForAll) on the cards or the packs only for FireMarket, the site's own market (it can
-//     move a listed card only when someone buys it at the seller's price);
+//     move a listed card only when someone buys it at the seller's price, or the holder accepts an offer);
+//   - WETH: wrapping and unwrapping (deposit / withdraw), and a capped approve for FireMarket (market offers);
 //   - never more than MAX_ETH in one transaction (MARKET_MAX_ETH for a market buy, and exactly the listed price);
 //   - a PAPER swap: Uniswap V2's router with the coins coming back to the buyer's own wallet, or KyberSwap's router
 //     checked the same way checkSwap checks it (and never without a minimum return);
@@ -25,7 +26,7 @@ export const ALLOWED: Readonly<Record<string, readonly string[]>> = {
   FireSale: ["buy", "buyWithEthAll", "close"],
   FireCards: ["open", "cancelOpen", "skipStuck", "process", "setApprovalForAll"],
   FirePacks: ["setApprovalForAll"],
-  FireMarket: ["listCard", "cancelCard", "buyCard", "listPacks", "cancelPacks", "buyPacks", "cancelAll", "withdraw"],
+  FireMarket: ["listCard", "cancelCard", "buyCard", "listPacks", "cancelPacks", "buyPacks", "cancelAll", "withdraw", "makeOffer", "cancelOffer", "acceptOffer"],
   FireCredits: ["burnCards", "useCredits", "suggest", "suggestMany"],
   FirePsa: ["protect", "cancelGrading", "finish", "settle"],
   FireGames: ["payRun"],
@@ -37,8 +38,9 @@ export const ALLOWED: Readonly<Record<string, readonly string[]>> = {
 /** The coins a wallet may approve (by deployment input name), and the most an approval may ever be (no "unlimited"). */
 export const COINS = ["PAPER", "PLANK", "USDG", "WETH"] as const;
 export const MAX_APPROVAL = 2n ** 128n;
-/** The only contracts the site ever approves coins for (plus the two swap routers): the ones that take payments. */
-export const SPENDERS = ["FireSale", "FirePsa", "FireGames"] as const;
+/** The only contracts the site ever approves coins for (plus the two swap routers): the ones that take payments
+ *  (FireMarket: WETH for offers, taken only when a seller accepts one). */
+export const SPENDERS = ["FireSale", "FirePsa", "FireGames", "FireMarket"] as const;
 /** The most ETH any one transaction may send: a hard ceiling whatever a price read says (50 packs at today's prices
  *  are well under it). Raise it here if pack prices ever need more. */
 export const MAX_ETH = 5n * 10n ** 17n; // 0.5 ETH
@@ -66,7 +68,8 @@ export function checkCall(call: GuardCall, from: Address, dep: GuardDeployment):
   const fn = call.functionName, args = call.args ?? [], value = call.value ?? 0n;
   if (value < 0n) no("a negative amount of ETH");
   const ours = nameOf(dep.contracts, call.address);
-  if (value > (ours === "FireMarket" ? MARKET_MAX_ETH : MAX_ETH)) no("more ETH than the site ever asks for in one go");
+  const wrap = eq(call.address, dep.inputs?.WETH) && fn === "deposit"; // ETH into WETH for a market offer
+  if (value > (ours === "FireMarket" || wrap ? MARKET_MAX_ETH : MAX_ETH)) no("more ETH than the site ever asks for in one go");
   const spenderOk = (s: unknown) => typeof s === "string" &&
     ((SPENDERS as readonly string[]).includes(nameOf(dep.contracts, s) ?? "") || eq(s, dep.inputs?.V2_ROUTER) || eq(s, KYBER_ROUTER));
 
@@ -93,6 +96,11 @@ export function checkCall(call: GuardCall, from: Address, dep: GuardDeployment):
   // 2. a coin: only a capped approve, for our contracts or a swap router
   const coin = nameOf(dep.inputs, call.address);
   if (coin && (COINS as readonly string[]).includes(coin)) {
+    // WETH (market offers): turn ETH into WETH and back, in the wallet's own account
+    if (coin === "WETH" && (fn === "deposit" || fn === "withdraw")) {
+      if (fn === "withdraw" && value !== 0n) no("ETH sent with an unwrap");
+      return;
+    }
     if (fn !== "approve") no(`${coin}.${fn}: the site only ever approves a coin`);
     if (value !== 0n) no("ETH sent to a coin");
     const [spender, amount] = args as [unknown, unknown];

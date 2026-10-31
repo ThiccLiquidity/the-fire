@@ -480,6 +480,46 @@ export async function runTest(ctx: Ctx): Promise<number> {
     await L.listCard({ serial: s2, priceEth: "0.05" }, o);
     await L.cancelAllListings(o);
     check((await L.offerOf(s2)) === null, "Take everything off sale: the listing is dead");
+
+    // offers: paid in WETH, which stays in the buyer's wallet until a holder accepts
+    const s3 = cards[15].serial, s4 = cards[16].serial;
+    W.setLocalSigner(mOther);
+    const before = await L.wethOf(other.address);
+    await L.makeOffer({ serial: s3, priceEth: "0.02", days: 7 }, o);
+    let w = await L.wethOf(other.address);
+    check(BigInt(w.balance) - BigInt(before.balance) === 2n * 10n ** 16n && BigInt(w.allowance) >= 2n * 10n ** 16n && BigInt(w.committed) === 2n * 10n ** 16n,
+      "an offer on one card: the ETH it needs is wrapped into WETH and approved to the market, still in the buyer's wallet");
+    const c4 = await L.card(s4);
+    await L.makeOffer({ rule: { fire, cardType: c4.cardType, character: c4.characterIndex, holo: "any", minGrade: 0 }, priceEth: "0.01", qty: 2, days: 30 }, o);
+    w = await L.wethOf(other.address);
+    check(BigInt(w.committed) === 4n * 10n ** 16n && BigInt(w.balance) - BigInt(before.balance) === 4n * 10n ** 16n, "a second offer (any card like #" + s4 + ", 2 wanted): only the new 0.02 is wrapped");
+    W.setLocalSigner(buyer);
+    ls = await L.listings();
+    const oCard = ls.offers.find((x) => x.kind === "card" && x.serial === s3)!, oMatch = ls.offers.find((x) => x.kind === "match")!;
+    check(!!oCard && !!oMatch && oMatch.qty === 2 && oMatch.rule?.character === c4.characterIndex, "both offers show, the match offer's rule read back");
+    check(await L.matchesOffer(oMatch, s4), `card #${s4} matches the "any like it" offer (FireMarket.matches)`);
+    const sb = await ctx.pub.getBalance({ address: me });
+    const ar = await L.acceptOffer({ id: oCard.id, kind: "card", serial: s3, price: oCard.price }, o);
+    const got3 = (await ctx.pub.getBalance({ address: me })) - sb + ar.gasUsed * ar.effectiveGasPrice; // the seller paid the gas
+    const own3 = await ctx.pub.readContract({ address: ctx.C.FireCards, abi: cardsAbi as never, functionName: "ownerOf", args: [BigInt(s3)] }) as Address;
+    check(own3 === other.address && got3 === 19n * 10n ** 15n, `accepted: card #${s3} went to the buyer and the seller got ${Number(got3) / 1e18} ETH (not WETH; 5% royalty)`);
+    let am = "";
+    try { await L.acceptOffer({ id: oMatch.id, kind: "match", serial: cards[17].serial, price: oMatch.price }, o); } catch (e) { am = (e as Error).message; }
+    const c17 = await L.card(cards[17].serial);
+    if (c17.cardType !== c4.cardType || c17.characterIndex !== c4.characterIndex) check(/doesn't match/i.test(am), `a card that doesn't match is refused: "${am}"`);
+    await L.acceptOffer({ id: oMatch.id, kind: "match", serial: s4, price: oMatch.price }, o);
+    const left = (await L.listings()).offers.find((x) => x.id === oMatch.id);
+    check(left?.qty === 1, "a match offer for 2: one filled, one still wanted");
+    W.setLocalSigner(mOther);
+    await L.cancelOffer({ id: oMatch.id }, o);
+    w = await L.wethOf(other.address);
+    check(BigInt(w.committed) === 0n, "cancelled: nothing committed");
+    const free = BigInt(w.balance) - BigInt(before.balance);
+    await L.unwrapWeth({ amount: free.toString() }, o);
+    check(BigInt((await L.wethOf(other.address)).balance) === BigInt(before.balance), "the leftover WETH turned back into ETH");
+    const sales = await L.recentSales(10);
+    check(sales.length >= 3 && sales[0].at > 0 && sales.some((x) => x.serial === s3), `Activity: ${sales.length} sales, newest first, with times (offers accepted included)`);
+    W.setLocalSigner(buyer);
   }
 
   console.log("\n== a grading whose draw never comes: after 24 hours, the cards come back ungraded");

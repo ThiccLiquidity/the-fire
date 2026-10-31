@@ -6,6 +6,7 @@ import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
 import {FireMarket} from "../../src/cards/FireMarket.sol";
+import {V2Weth} from "./V2Lite.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {CardsRenderer} from "../../src/cards/CardsRenderer.sol";
@@ -185,7 +186,8 @@ contract PsaTest is SeriesHelper {
     /// The market on the real FireCards: a sale is a move (wear), a card being graded can't be bought until the grading
     ///  ends, then it can; packs sell too (no royalty set: the seller gets it all).
     function test_marketSale_isAMove_andWaitsOutGrading() public {
-        FireMarket m = new FireMarket(address(cards), address(packs));
+        V2Weth weth = new V2Weth();
+        FireMarket m = new FireMarket(address(cards), address(packs), address(weth));
         vm.startPrank(alice);
         cards.setApprovalForAll(address(m), true);
         m.listCard(1, 1 ether);
@@ -222,6 +224,24 @@ contract PsaTest is SeriesHelper {
         assertEq(packs.balanceOf(bob, 1), 2);
         assertEq(alice.balance - before, 0.2 ether);
         assertEq(address(m).balance, 0);
+
+        // a match offer on the real cards: "any Series 1 card of card 3's type and character, graded or not"
+        FireCards.Card memory c3 = cards.cardOf(3);
+        uint256 key = m.matchKey(1, c3.cardType + 1, c3.character + 1, 0, 0);
+        assertTrue(m.matches(key, 3));
+        assertFalse(m.matches(m.matchKey(2, 0, 0, 0, 0), 3), "another Series");
+        vm.startPrank(bob);
+        weth.deposit{value: 1 ether}();
+        weth.approve(address(m), 1 ether);
+        uint256 oid = m.makeOffer(1, key, 0.3 ether, 1, block.timestamp + 1 days);
+        vm.stopPrank();
+        before = alice.balance;
+        vm.prank(alice);
+        m.acceptOffer(oid, 3, 1, 0.3 ether);
+        assertEq(cards.ownerOf(3), bob);
+        assertEq(alice.balance - before, 0.3 ether, "no royalty set here: all of it");
+        (,,,,, uint256 mv) = cards.wearOf(3);
+        assertEq(mv, 1, "an accepted offer is a move too");
     }
 
     function test_movesCountUntilCasedAndOnlyBetweenWallets() public {

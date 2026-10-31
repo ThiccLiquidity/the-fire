@@ -816,6 +816,22 @@ try {
     await p.locator('#sheet-card [data-key="sell"]').waitFor();
     check(/For sale/.test(await p.locator('#sheet-card [data-key="sell"]').innerText()), "Sell: the card's detail says For sale once listed");
     await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach((d) => d.close()));
+    // offers: sell to one (pick the card, get the ETH), make one
+    await p.evaluate(() => window.Fun.go("market", { tab: "offers" }));
+    await p.locator("#sheet-market .mk-offer.can .btn.primary").first().waitFor();
+    const n1 = await p.evaluate(() => Store.state.cards.length), e1 = await p.evaluate(() => Store.state.wallet.balances.ETH);
+    await p.locator("#sheet-market .mk-offer.can .btn.primary").first().click();
+    await p.locator("#sheet-accept .btn.primary").click();
+    await p.waitForFunction((n) => Store.state.cards.length === n - 1, n1);
+    check((await p.evaluate(() => Store.state.wallet.balances.ETH)) > e1, "Offers: selling to an offer hands the card over and pays the demo wallet");
+    await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach((d) => d.close()));
+    await p.evaluate(() => window.Fun.go("market", { tab: "offers" }));
+    await p.locator("#sheet-market .mk-ohead .btn.primary").click();
+    await p.locator("#sheet-offer .mk-input").first().fill("0.004");
+    await p.locator("#sheet-offer .row .btn.primary").click();
+    await p.locator("#sheet-market .mk-offers .mk-offer").first().waitFor();
+    check(/Your offer/.test(await p.locator("#sheet-market .mk-offers").innerText()), "Make an offer: it shows under Mine › Your offers");
+    await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach((d) => d.close()));
 
     await p.waitForTimeout(500); // the feed sheet's close steps history back: let it land before navigating
     await p.goto(`${SITE}?show=0x7a3f2b9c41d0e5a6b8f9c0d1e2f3a4b5c6d7c91e&c=1000.1001`);

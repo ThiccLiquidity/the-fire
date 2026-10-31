@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {console} from "forge-std/Script.sol";
 import {Deployments} from "./Deployments.sol";
-import {DevToken, DevFeed, DevFactory, DevPair, DevRouter, DevPress} from "./dev/DevContracts.sol";
+import {DevToken, DevWeth, DevFeed, DevFactory, DevPair, DevRouter, DevPress} from "./dev/DevContracts.sol";
 
 /**
  * The testnet kit (Robinhood Chain testnet, 46630; also the rehearsal on a local anvil): deploys the stand-ins for
@@ -54,7 +54,7 @@ contract DevStack is Deployments {
         s.paper = new DevToken("PAPER (test)", "PAPER", 18);
         s.plank = new DevToken("PLANK (test)", "PLANK", 18);
         s.usdg = new DevToken("Global Dollar (test)", "USDG", 6);
-        s.weth = new DevToken("Wrapped Ether (test)", "WETH", 18);
+        s.weth = new DevWeth(); // a DevToken that also wraps ETH (market offers)
         s.ethUsd = new DevFeed(ethUsd);
         s.factory = new DevFactory();
         s.plankPair = s.factory.createPair(address(s.plank), address(s.weth));

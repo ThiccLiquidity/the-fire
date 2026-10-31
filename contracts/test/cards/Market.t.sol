@@ -6,7 +6,8 @@ import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 import {ERC1155} from "openzeppelin-contracts/contracts/token/ERC1155/ERC1155.sol";
 import {ERC2981} from "openzeppelin-contracts/contracts/token/common/ERC2981.sol";
 import {IERC721Receiver} from "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
-import {FireMarket} from "../../src/cards/FireMarket.sol";
+import {FireMarket, MarketCardView} from "../../src/cards/FireMarket.sol";
+import {V2Weth} from "./V2Lite.sol";
 
 /// @dev Stands in for FireCards: an ERC-721 with a royalty, and a card can be locked (being graded: can't move).
 contract MarketCards is ERC721("Cards", "C"), ERC2981 {
@@ -16,8 +17,26 @@ contract MarketCards is ERC721("Cards", "C"), ERC2981 {
         _setDefaultRoyalty(royaltyTo, bps);
     }
 
+    mapping(uint256 => MarketCardView) internal _view;
+
     function mint(address to, uint256 id) external {
         _mint(to, id);
+    }
+
+    /// what cardOf says about a card (Series, type, character, holo, grade)
+    function setView(uint256 id, uint256 fire, uint256 cardType, uint256 character, bool frame, bool picture, uint256 grade) external {
+        MarketCardView storage v = _view[id];
+        v.fire = fire;
+        v.cardType = cardType;
+        v.character = character;
+        v.holoFrame = frame;
+        v.holoPicture = picture;
+        v.grade = grade;
+    }
+
+    function cardOf(uint256 id) external view returns (MarketCardView memory) {
+        _requireOwned(id);
+        return _view[id];
     }
 
     function burn(uint256 id) external {
@@ -114,6 +133,7 @@ contract MarketTest is Test {
 
     MarketCards cards;
     MarketPacks packs;
+    V2Weth weth;
     FireMarket m;
     address treasury = makeAddr("treasury");
     address alice = makeAddr("alice");
@@ -123,7 +143,8 @@ contract MarketTest is Test {
     function setUp() public {
         cards = new MarketCards(treasury, 500); // 5%
         packs = new MarketPacks(treasury, 500);
-        m = new FireMarket(address(cards), address(packs));
+        weth = new V2Weth();
+        m = new FireMarket(address(cards), address(packs), address(weth));
         cards.mint(alice, 1);
         cards.mint(alice, 2);
         packs.mint(alice, 7, 10);
@@ -145,8 +166,14 @@ contract MarketTest is Test {
     function test_constructor() public {
         assertEq(address(m.CARDS()), address(cards));
         assertEq(address(m.PACKS()), address(packs));
+        assertEq(address(m.WETH()), address(weth));
         vm.expectRevert(FireMarket.ZeroAddress.selector);
-        new FireMarket(address(0), address(packs));
+        new FireMarket(address(0), address(packs), address(weth));
+        vm.expectRevert(FireMarket.ZeroAddress.selector);
+        new FireMarket(address(cards), address(packs), address(0));
+        vm.deal(address(this), 1 ether);
+        (bool ok,) = address(m).call{value: 1}(""); // only WETH sends ETH here
+        assertFalse(ok);
     }
 
     function test_listAndBuyCard() public {
@@ -476,5 +503,210 @@ contract MarketTest is Test {
         assertEq(treasury.balance + alice.balance, total);
         assertEq(address(m).balance, 0);
         assertEq(packs.balanceOf(bob, 7), n);
+    }
+
+    // ---------- offers (paid in WETH, which stays in the buyer's wallet until accepted)
+
+    function _fund(address who, uint256 amount) internal {
+        vm.deal(who, amount);
+        vm.startPrank(who);
+        weth.deposit{value: amount}();
+        weth.approve(address(m), amount);
+        vm.stopPrank();
+    }
+
+    function _offer(address who, uint8 kind, uint256 target, uint256 price, uint256 qty) internal returns (uint256) {
+        vm.prank(who);
+        return m.makeOffer(kind, target, price, qty, block.timestamp + 7 days);
+    }
+
+    function test_offerOnACard_accepted() public {
+        _fund(carol, 1 ether);
+        uint256 id = _offer(carol, 0, 2, 0.4 ether, 1);
+        (FireMarket.Offer memory o, bool live) = m.offerOf(id);
+        assertTrue(live);
+        assertEq(o.buyer, carol);
+        assertEq(weth.balanceOf(carol), 1 ether, "nothing moves until accepted");
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        m.acceptOffer(id, 2, 1, 0.4 ether);
+        assertEq(cards.ownerOf(2), carol);
+        assertEq(weth.balanceOf(carol), 0.6 ether);
+        assertEq(alice.balance - before, 0.38 ether, "the seller gets ETH, less the 5% royalty");
+        assertEq(treasury.balance, 0.02 ether);
+        assertEq(address(m).balance, 0);
+        assertEq(weth.balanceOf(address(m)), 0, "the market keeps nothing");
+        (o,) = m.offerOf(id);
+        assertEq(o.buyer, address(0), "filled: gone");
+    }
+
+    function test_offer_checks() public {
+        _fund(carol, 1 ether);
+        vm.startPrank(carol);
+        vm.expectRevert(FireMarket.BadPrice.selector);
+        m.makeOffer(0, 2, 0, 1, block.timestamp + 1 days);
+        vm.expectRevert(FireMarket.BadOffer.selector);
+        m.makeOffer(0, 2, 1 ether, 2, block.timestamp + 1 days); // one card is one card
+        vm.expectRevert(FireMarket.BadOffer.selector);
+        m.makeOffer(3, 2, 1 ether, 1, block.timestamp + 1 days);
+        vm.expectRevert(FireMarket.BadExpiry.selector);
+        m.makeOffer(0, 2, 1 ether, 1, block.timestamp);
+        vm.expectRevert(FireMarket.BadExpiry.selector);
+        m.makeOffer(0, 2, 1 ether, 1, block.timestamp + 181 days);
+        vm.expectRevert(FireMarket.BadOffer.selector);
+        m.makeOffer(2, 0, 1 ether, 1, block.timestamp + 1 days); // packs of no Series
+        vm.stopPrank();
+        vm.prank(alice);
+        vm.expectRevert(FireMarket.OwnListing.selector);
+        m.makeOffer(0, 2, 1 ether, 1, block.timestamp + 1 days); // an offer on your own card
+        uint256 id = _offer(carol, 0, 2, 0.4 ether, 1);
+        vm.startPrank(alice);
+        vm.expectRevert(FireMarket.PriceChanged.selector);
+        m.acceptOffer(id, 2, 1, 0.5 ether);
+        vm.expectRevert(FireMarket.NoMatch.selector);
+        m.acceptOffer(id, 1, 1, 0.4 ether); // another card
+        vm.stopPrank();
+        vm.prank(bob);
+        vm.expectRevert(FireMarket.NotYours.selector);
+        m.acceptOffer(id, 2, 1, 0.4 ether);
+        vm.prank(carol);
+        vm.expectRevert(FireMarket.OwnListing.selector);
+        m.acceptOffer(id, 2, 1, 0.4 ether);
+        vm.prank(alice);
+        vm.expectRevert(FireMarket.OfferGone.selector);
+        m.acceptOffer(99, 2, 1, 0.4 ether);
+    }
+
+    function test_offer_buyerCantPay_staleAndClearable() public {
+        _fund(carol, 0.4 ether);
+        uint256 id = _offer(carol, 0, 2, 0.4 ether, 1);
+        vm.prank(carol);
+        weth.transfer(bob, 0.1 ether); // spent some of it
+        (, bool live) = m.offerOf(id);
+        assertFalse(live);
+        vm.prank(alice);
+        vm.expectRevert(FireMarket.Stale.selector);
+        m.acceptOffer(id, 2, 1, 0.4 ether);
+        vm.prank(bob);
+        m.cancelOffer(id); // anyone may clear it
+        // approval taken back: same
+        _fund(carol, 0.4 ether);
+        id = _offer(carol, 0, 2, 0.4 ether, 1);
+        vm.prank(bob);
+        vm.expectRevert(FireMarket.NotStale.selector);
+        m.cancelOffer(id);
+        vm.prank(carol);
+        weth.approve(address(m), 0);
+        vm.prank(alice);
+        vm.expectRevert(FireMarket.Stale.selector);
+        m.acceptOffer(id, 2, 1, 0.4 ether);
+    }
+
+    function test_offer_expiresAndCancelAll() public {
+        _fund(carol, 2 ether);
+        uint256 a = _offer(carol, 0, 2, 0.4 ether, 1);
+        vm.warp(block.timestamp + 7 days);
+        (, bool live) = m.offerOf(a);
+        assertFalse(live, "expired");
+        uint256 b = _offer(carol, 0, 2, 0.4 ether, 1);
+        uint256 c = _offer(carol, 2, 7, 0.01 ether, 3);
+        vm.prank(carol);
+        m.cancelAll();
+        (, live) = m.offerOf(b);
+        assertFalse(live);
+        (, live) = m.offerOf(c);
+        assertFalse(live);
+        vm.prank(carol);
+        m.cancelOffer(b);
+        vm.prank(bob);
+        vm.expectRevert(FireMarket.OfferGone.selector);
+        m.cancelOffer(b);
+    }
+
+    function test_matchOffer_criteria() public {
+        // card 1: Series 3, type 4 (Gold), character 2, full holo, PDA 9; card 2: Series 3, type 1, character 2, no holo
+        cards.setView(1, 3, 4, 2, true, true, 9);
+        cards.setView(2, 3, 1, 2, false, false, 0);
+        _fund(carol, 2 ether);
+        uint256 goldNine = _offer(carol, 1, m.matchKey(3, 5, 0, 4, 9), 0.5 ether, 2); // any Series 3 Gold, full holo, PDA 9+
+        vm.prank(alice);
+        vm.expectRevert(FireMarket.NoMatch.selector);
+        m.acceptOffer(goldNine, 2, 1, 0.5 ether);
+        vm.prank(alice);
+        m.acceptOffer(goldNine, 1, 99, 0.5 ether); // amount ignored for a card: one
+        assertEq(cards.ownerOf(1), carol);
+        (FireMarket.Offer memory o, bool live) = m.offerOf(goldNine);
+        assertEq(o.qty, 1, "one more wanted");
+        assertTrue(live);
+        // the holo rules and "any"
+        assertTrue(m.matches(m.matchKey(0, 0, 0, 0, 0), 2), "any card");
+        assertTrue(m.matches(m.matchKey(0, 0, 3, 1, 0), 2), "character 2, no holo");
+        assertFalse(m.matches(m.matchKey(0, 0, 3, 5, 0), 2), "any holo: not a plain card");
+        assertFalse(m.matches(m.matchKey(4, 0, 0, 0, 0), 2), "another Series");
+        assertFalse(m.matches(m.matchKey(0, 0, 0, 0, 1), 2), "graded: an ungraded card isn't");
+        cards.setView(2, 3, 1, 2, true, false, 0);
+        assertTrue(m.matches(m.matchKey(0, 0, 0, 2, 0), 2), "frame only");
+        assertFalse(m.matches(m.matchKey(0, 0, 0, 3, 0), 2), "not picture only");
+        assertFalse(m.matches(m.matchKey(0, 0, 0, 4, 0), 2), "not full");
+        vm.expectRevert(FireMarket.BadOffer.selector);
+        m.matchKey(0, 0, 0, 6, 0);
+        vm.expectRevert(FireMarket.BadOffer.selector);
+        m.matchKey(0, 0, 0, 0, 11);
+    }
+
+    function test_packOffer_partly() public {
+        _fund(carol, 1 ether);
+        uint256 id = _offer(carol, 2, 7, 0.01 ether, 5);
+        vm.prank(alice);
+        vm.expectRevert(FireMarket.BadAmount.selector);
+        m.acceptOffer(id, 0, 6, 0.01 ether);
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        m.acceptOffer(id, 0, 3, 0.01 ether);
+        assertEq(packs.balanceOf(carol, 7), 3);
+        assertEq(alice.balance - before, 0.0285 ether);
+        assertEq(treasury.balance, 0.0015 ether);
+        (FireMarket.Offer memory o,) = m.offerOf(id);
+        assertEq(o.qty, 2);
+        vm.prank(alice);
+        m.acceptOffer(id, 0, 2, 0.01 ether);
+        (o,) = m.offerOf(id);
+        assertEq(o.buyer, address(0));
+        assertEq(weth.balanceOf(carol), 0.95 ether);
+    }
+
+    function test_offer_cardBeingGraded_cantBeSold() public {
+        _fund(carol, 1 ether);
+        uint256 id = _offer(carol, 0, 2, 0.4 ether, 1);
+        cards.lock(2, true);
+        vm.prank(alice);
+        vm.expectRevert(bytes("GradingInProgress"));
+        m.acceptOffer(id, 2, 1, 0.4 ether);
+        assertEq(weth.balanceOf(carol), 1 ether, "nothing taken");
+    }
+
+    function test_offer_sellerRefusesEth_waitsInOwed() public {
+        Refuser r = new Refuser();
+        cards.mint(address(r), 9);
+        r.call(address(cards), abi.encodeCall(cards.setApprovalForAll, (address(m), true)));
+        _fund(carol, 1 ether);
+        uint256 id = _offer(carol, 0, 9, 1 ether, 1);
+        r.call(address(m), abi.encodeCall(m.acceptOffer, (id, 9, 1, 1 ether)));
+        assertEq(cards.ownerOf(9), carol);
+        assertEq(m.owed(address(r)), 0.95 ether);
+    }
+
+    function testFuzz_offerPayout(uint96 price, uint8 n) public {
+        price = uint96(bound(price, 1, 1e22));
+        n = uint8(bound(n, 1, 10));
+        uint256 total = uint256(price) * n;
+        _fund(carol, total);
+        uint256 id = _offer(carol, 2, 7, price, n);
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        m.acceptOffer(id, 0, n, price);
+        assertEq(alice.balance - before + treasury.balance, total);
+        assertEq(weth.balanceOf(carol), 0);
+        assertEq(address(m).balance + weth.balanceOf(address(m)), 0);
     }
 }

@@ -435,6 +435,8 @@ export type Card = {
    *  grading's frozen gap doesn't count). Read at the chain's latest block. */
   age: number;
   traits: Record<string, string | number>;
+  /** Its Series' type index and character index (what a market "any card like this" offer matches on). */
+  cardType: number; characterIndex: number;
 };
 // printNumber: FireCards' print number (#k of this exact card: Series, character, type, holo look, in the order dealt).
 type CardRaw = { fire: bigint; cardType: bigint; holoFrame: boolean; holoPicture: boolean; character: bigint; printNumber: bigint;
@@ -500,7 +502,7 @@ export async function card(serial: number): Promise<Card> {
     character: String(traits.Character ?? ""), category: String(traits.Category ?? ""), material: String(traits.Material ?? ""),
     holo, holoFrame: c.holoFrame, holoPicture: c.holoPicture, print, edition: String(print),
     grade: c.grade ? Number(c.grade) : null, cased: c.cased, moves: Number(c.moves), dealtAt: Number(c.dealtAt), gradePending: pending,
-    age: Number(c.age), traits,
+    age: Number(c.age), traits, cardType: Number(c.cardType), characterIndex: Number(c.character),
   };
 }
 

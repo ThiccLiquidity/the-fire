@@ -46,6 +46,7 @@
     <div class="grow"></div>
     <nav class="tools" aria-label="Tools">
       <button class="chip mycards" type="button" data-st="cards" aria-label="My cards">${svg('cards')}<span>My cards</span></button>
+      <button class="chip mk-entry" type="button" data-go="fun:market" aria-label="Market">${svg('tag')}<span>Market</span></button>
       <button class="chip" type="button" data-go="paper" aria-label="Get PAPER">${svg('paper')}<span>Get PAPER</span></button>
       <button class="chip" type="button" data-go="info" aria-label="Info">${svg('info')}<span>Info</span></button>
       <button class="chip round" type="button" data-go="feed" aria-label="Activity">${svg('feed')}</button>
@@ -71,6 +72,7 @@
     <button class="pill openp hero" type="button" data-hero data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
     <button class="pill tool" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small data-price="psa">from ${Wear.usd(Store.PRICES.CASE_USD)}</small></span></button>
     <button class="pill tool" type="button" data-st="games" data-x="1960" data-y="1640" style="--c: var(--gold)">${svg('game')}<span>Game room<small>Fold and Flick · Spit-Wad</small></span></button>
+    <button class="pill tool mk-entry" type="button" data-go="fun:market" data-x="900" data-y="1640" style="--c: var(--brass)">${svg('tag')}<span>Market<small>Buy, sell, make offers</small></span></button>
     <div class="spot" id="spot" data-x="3590" data-y="1750" aria-hidden="true"></div>
     <aside class="sdock" id="sdock" data-x="3040" data-y="930" aria-label="Suggestion box"></aside>
     <button class="pill tool" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></span></button>
@@ -85,6 +87,7 @@
     <button class="station tool" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small data-price="psa">from ${Wear.usd(Store.PRICES.CASE_USD)}</small></button>
     <button class="station tool" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></button>
     <button class="station tool" type="button" data-st="games" style="--c: var(--gold)">${svg('game')}<b>Game room</b><small>Fold and Flick · Spit-Wad</small></button>
+    <button class="station tool mk-entry" type="button" data-go="fun:market" style="--c: var(--brass)">${svg('tag')}<b>Market</b><small>Buy, sell, make offers</small></button>
   </section>
   <footer class="strip" aria-label="What's in a pack">
     <img class="packart" src="ui/omni-pack.webp" alt="Series 7 pack">
@@ -524,6 +527,7 @@
 
   function render() {
     renderBurned(); renderChip(); renderBuy(); renderPeek(); renderCounts(); renderQuiet(); syncScene(); placePills();
+    const mk = Store.marketOn(); document.querySelectorAll('.mk-entry').forEach((x) => { if (x.hidden === mk) x.hidden = !mk; }); // the market's ways in: only where there is one
     const h = mode === 'port' && !$('#buybar').classList.contains('open') ? $('#buybar').offsetHeight : bbH; if (h !== bbH) { bbH = h; if (h) layout(); } // the Buy bar changed height: keep the stations clear of it
   }
   Store.on(render);
@@ -872,7 +876,7 @@
     const group = (title, items) => `<section class="menu-g" aria-label="${title}"><h3>${title}</h3><div class="menu">${items.filter(Boolean).join('')}</div></section>`;
     const d = Sheet.open('menu', { title: 'Menu', body: `<div class="menu-groups">
       ${group('Play', [!LIVE || n ? b('open', 'pack', `Open packs${n ? ` (${n})` : ''}`) : '', b('paper', 'paper', 'Get PAPER'), b('games', 'game', 'Game room'), b('fun:practice', 'spark', 'Practice pack')])}
-      ${group('Collection', [b('cards', 'cards', 'My cards'), b('fun:binder', 'book', 'Binder'), Store.marketOn?.() !== false ? b('fun:market', 'tag', 'Market') : '', b('fun:showcase', 'star', 'Showcase'), b('fun:badges', 'badge', 'Badges')])}
+      ${group('Collection', [b('cards', 'cards', 'My cards'), b('fun:binder', 'book', 'Binder'), Store.marketOn() ? b('fun:market', 'tag', 'Market') : '', b('fun:showcase', 'star', 'Showcase'), b('fun:badges', 'badge', 'Badges')])}
       ${group('Learn', [b('start', 'flag', 'New here?'), b('info', 'info', 'Info'), b('fun:tour', 'map', 'Workshop tour'), b('feed', 'feed', 'Activity'), window.App?.canInstall ? b('install', 'install', 'Install app') : ''])}
       ${group('Settings', [b('sound', window.Sound?.on ? 'sound' : 'mute', `Sound: ${window.Sound?.on ? 'On' : 'Off'}`), LIVE && window.App?.push.supported ? b('push', 'bell', `Notifications: ${App.push.on ? 'On' : 'Off'}`) : '', window.Fun?.haptics?.supported ? b('haptics', 'phone', `Vibration: ${Fun.haptics.on ? 'On' : 'Off'}`) : '', LIVE ? '' : b('demo', 'sliders', 'Demo controls')])}
       </div>

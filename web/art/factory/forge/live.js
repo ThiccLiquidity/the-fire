@@ -111,7 +111,7 @@
       id: c.serial, serial: c.serial, series: c.fire, character: c.character || c.name, category: c.category,
       material: MAT[String(c.material).toLowerCase()] || 'paper', holo: c.holo || 'none', edition: String(c.print ?? c.edition), grade: c.grade, pending: !!c.gradePending,
       cased: !!c.cased, moves: c.moves, dealt: Date.now() - ageMs, dealtAt: Math.min(Date.now(), c.dealtAt * 1000), frozenAge: frozen ? ageMs : 0,
-      image: gateway(c.image), src: c.image, tokenId: c.serial,
+      image: gateway(c.image), src: c.image, tokenId: c.serial, cardType: c.cardType, characterIndex: c.characterIndex,
     };
   };
   const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, String(v)); } catch { /* private window */ } return null; };

@@ -107,6 +107,12 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   Stale: "That's no longer for sale (the seller moved it). Nothing was charged.",
   WithdrawFailed: "Your wallet refused the ETH. Try from another wallet.",
   WrongPayment: "The amount sent didn't match the price. Nothing was charged.",
+  BadOffer: "That offer isn't valid. Check what it's for and how many.",
+  BadExpiry: "Pick when the offer ends: up to 180 days from now.",
+  OfferGone: "That offer is gone. Someone may have filled it.",
+  NoMatch: "That card doesn't match the offer.",
+  NotFunded: "The buyer no longer has the WETH for that offer. Nothing was sent.",
+  NotWeth: INTERNAL,
 
   // the game room (FireGames) and its prizes (FireCredits)
   AlreadyAdded: "That game is already added.",

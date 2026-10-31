@@ -9,6 +9,30 @@ interface IMarketCards {
     function isApprovedForAll(address owner, address operator) external view returns (bool);
     function safeTransferFrom(address from, address to, uint256 id) external;
     function royaltyInfo(uint256 id, uint256 price) external view returns (address, uint256);
+    function cardOf(uint256 serial) external view returns (MarketCardView memory);
+}
+
+/// @dev FireCards.Card, as cardOf returns it.
+struct MarketCardView {
+    uint256 fire;
+    uint256 cardType;
+    bool holoFrame;
+    bool holoPicture;
+    uint256 character;
+    uint256 printNumber;
+    uint256 grade;
+    bool cased;
+    uint256 age;
+    uint256 moves;
+    uint256 dealtAt;
+    uint256 extra;
+}
+
+interface IMarketWeth {
+    function withdraw(uint256 amount) external;
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    function balanceOf(address owner) external view returns (uint256);
+    function allowance(address owner, address spender) external view returns (uint256);
 }
 
 interface IMarketPacks {
@@ -35,6 +59,14 @@ interface IMarketPacks {
  *         Stale listings (the card sold or moved elsewhere, the packs gone, the approval taken back, or ended by the
  *         seller's `cancelAll`) can't be bought; anyone may clear them. A card that comes back to its seller brings its
  *         old listing back to life: the site shows it on the card, and `cancelCard` / `cancelAll` end it.
+ *
+ *         Offers: a buyer offers a price (in WETH) for one card, for any card that matches (Series, card type,
+ *         character, holo, lowest grade), or for some of a Series' packs. The WETH stays in the buyer's wallet (the buyer
+ *         approves this contract for it) until a holder accepts: then, in one transaction, the WETH comes in, is turned
+ *         into ETH, the card or packs move to the buyer and the ETH is paid out like a sale (royalty, then the seller).
+ *         An offer ends at its expiry (at most 180 days), when it is filled, cancelled, or by the buyer's `cancelAll`;
+ *         one the buyer can no longer pay for (WETH spent or approval taken back) can't be accepted, and anyone may
+ *         clear an offer that can't be accepted.
  */
 contract FireMarket is ReentrancyGuard {
     IMarketCards public immutable CARDS;
@@ -63,6 +95,25 @@ contract FireMarket is ReentrancyGuard {
     /// @notice A seller's listing round: `cancelAll` moves it on, and every listing from an older round is dead.
     mapping(address => uint64) public round;
 
+    IMarketWeth public immutable WETH;
+    uint256 public constant MAX_OFFER_DAYS = 180;
+    uint8 public constant OFFER_CARD = 0; // target: the card's serial
+    uint8 public constant OFFER_MATCH = 1; // target: packed criteria (matchKey)
+    uint8 public constant OFFER_PACKS = 2; // target: the Series
+
+    struct Offer {
+        address buyer;
+        uint96 price; // wei (WETH) a card or a pack
+        uint8 kind;
+        uint32 qty; // cards or packs still wanted
+        uint40 expiry; // unix seconds
+        uint64 round; // the buyer's round when made (cancelAll ends it)
+        uint256 target;
+    }
+
+    mapping(uint256 => Offer) public offers;
+    uint256 public nextOffer = 1;
+
     event CardListed(uint256 indexed serial, address indexed seller, uint256 price);
     event CardUnlisted(uint256 indexed serial, address indexed seller);
     event CardSold(uint256 indexed serial, address indexed seller, address indexed buyer, uint256 price, uint256 royalty);
@@ -72,6 +123,9 @@ contract FireMarket is ReentrancyGuard {
     event Owed(address indexed to, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
     event AllCancelled(address indexed seller, uint64 round);
+    event OfferMade(uint256 indexed id, address indexed buyer, uint8 kind, uint256 indexed target, uint256 price, uint256 qty, uint256 expiry);
+    event OfferCancelled(uint256 indexed id, address indexed buyer);
+    event OfferAccepted(uint256 indexed id, address indexed seller, address indexed buyer, uint256 item, uint256 amount, uint256 price, uint256 royalty);
 
     error ZeroAddress();
     error NotYours();
@@ -86,11 +140,23 @@ contract FireMarket is ReentrancyGuard {
     error NotStale();
     error NothingOwed();
     error WithdrawFailed();
+    error BadOffer();
+    error BadExpiry();
+    error OfferGone();
+    error NoMatch();
+    error NotFunded();
+    error NotWeth();
 
-    constructor(address cards, address packs) {
-        if (cards == address(0) || packs == address(0)) revert ZeroAddress();
+    constructor(address cards, address packs, address weth) {
+        if (cards == address(0) || packs == address(0) || weth == address(0)) revert ZeroAddress();
         CARDS = IMarketCards(cards);
         PACKS = IMarketPacks(packs);
+        WETH = IMarketWeth(weth);
+    }
+
+    /// @dev Only WETH sends ETH here (an accepted offer's WETH, turned into ETH and paid straight out).
+    receive() external payable {
+        if (msg.sender != address(WETH)) revert NotWeth();
     }
 
     // ---------- cards
@@ -185,8 +251,114 @@ contract FireMarket is ReentrancyGuard {
         live = listing.seller == address(0) ? 0 : _packsLive(listing);
     }
 
-    /// @notice End every listing you have, cards and packs, in one go (the old ones can't be bought; anyone may clear
-    ///         them). New listings after this work as usual.
+    // ---------- offers
+
+    /// @notice Criteria for an "any matching card" offer, packed into its target. 0 = any, for each:
+    ///         fire: the Series; cardType: the Series' type index + 1; character: its index + 1;
+    ///         holo: 1 none, 2 frame only, 3 picture only, 4 full, 5 any holo; minGrade: graded at least this (1-10).
+    function matchKey(uint256 fire, uint256 cardTypePlus1, uint256 characterPlus1, uint256 holo, uint256 minGrade)
+        public
+        pure
+        returns (uint256)
+    {
+        if (fire > type(uint32).max || cardTypePlus1 > type(uint16).max || characterPlus1 > type(uint32).max || holo > 5 || minGrade > 10) {
+            revert BadOffer();
+        }
+        return fire | cardTypePlus1 << 32 | characterPlus1 << 48 | holo << 80 | minGrade << 88;
+    }
+
+    /// @notice Does card `serial` meet a match offer's criteria?
+    function matches(uint256 key, uint256 serial) public view returns (bool) {
+        MarketCardView memory c = CARDS.cardOf(serial);
+        uint256 fire = uint32(key);
+        uint256 t = uint16(key >> 32);
+        uint256 ch = uint32(key >> 48);
+        uint256 holo = uint8(key >> 80);
+        uint256 g = uint8(key >> 88);
+        if (fire != 0 && c.fire != fire) return false;
+        if (t != 0 && c.cardType + 1 != t) return false;
+        if (ch != 0 && c.character + 1 != ch) return false;
+        if (holo == 1 && (c.holoFrame || c.holoPicture)) return false;
+        if (holo == 2 && !(c.holoFrame && !c.holoPicture)) return false;
+        if (holo == 3 && !(c.holoPicture && !c.holoFrame)) return false;
+        if (holo == 4 && !(c.holoFrame && c.holoPicture)) return false;
+        if (holo == 5 && !(c.holoFrame || c.holoPicture)) return false;
+        if (g != 0 && c.grade < g) return false;
+        return true;
+    }
+
+    /// @notice Offer `price` (wei of WETH) each for `qty` of: one card (OFFER_CARD, target = serial, qty 1), any card
+    ///         matching (OFFER_MATCH, target = matchKey), or a Series' packs (OFFER_PACKS, target = the Series), until
+    ///         `expiry`. Approve this contract for the WETH (price x qty) and hold it; nothing moves until accepted.
+    function makeOffer(uint8 kind, uint256 target, uint256 price, uint256 qty, uint256 expiry) external returns (uint256 id) {
+        if (price == 0 || price > type(uint96).max) revert BadPrice();
+        if (kind > OFFER_PACKS || qty == 0 || qty > type(uint32).max || (kind == OFFER_CARD && qty != 1)) revert BadOffer();
+        if (expiry <= block.timestamp || expiry > block.timestamp + MAX_OFFER_DAYS * 1 days) revert BadExpiry();
+        if (kind == OFFER_CARD && CARDS.ownerOf(target) == msg.sender) revert OwnListing();
+        if (kind == OFFER_PACKS && (target == 0 || target > type(uint32).max)) revert BadOffer();
+        id = nextOffer++;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        offers[id] = Offer({buyer: msg.sender, price: uint96(price), kind: kind, qty: uint32(qty), expiry: uint40(expiry), round: round[msg.sender], target: target}); // checked above
+        emit OfferMade(id, msg.sender, kind, target, price, qty, expiry);
+    }
+
+    /// @notice Take an offer down: its buyer, or anyone once it can't be accepted (expired, ended by cancelAll, or the
+    ///         buyer can't pay one).
+    function cancelOffer(uint256 id) external {
+        Offer memory o = offers[id];
+        if (o.buyer == address(0)) revert OfferGone();
+        if (o.buyer != msg.sender && _offerLive(o)) revert NotStale();
+        delete offers[id];
+        emit OfferCancelled(id, o.buyer);
+    }
+
+    /// @notice Accept offer `id` at `price` each (the price you saw): sell it card `serial` (a card or match offer; for
+    ///         a card offer, its own card) or `amount` packs (a pack offer). You get the ETH, less the royalty.
+    function acceptOffer(uint256 id, uint256 serial, uint256 amount, uint256 price) external nonReentrant {
+        Offer memory o = offers[id];
+        if (o.buyer == address(0)) revert OfferGone();
+        if (o.price != price) revert PriceChanged();
+        if (!_offerLive(o)) revert Stale();
+        if (o.buyer == msg.sender) revert OwnListing();
+        uint256 item;
+        if (o.kind == OFFER_PACKS) {
+            if (amount == 0 || amount > o.qty) revert BadAmount();
+            if (!PACKS.isApprovedForAll(msg.sender, address(this))) revert NotApproved();
+            item = o.target;
+        } else {
+            amount = 1;
+            if (o.kind == OFFER_CARD ? serial != o.target : !matches(o.target, serial)) revert NoMatch();
+            if (CARDS.ownerOf(serial) != msg.sender) revert NotYours();
+            if (!_cardApproved(msg.sender, serial)) revert NotApproved();
+            item = serial;
+        }
+        if (amount == o.qty) delete offers[id];
+        // forge-lint: disable-next-line(unsafe-typecast)
+        else offers[id].qty = o.qty - uint32(amount); // amount < o.qty
+        uint256 total = amount * price;
+        if (!WETH.transferFrom(o.buyer, address(this), total)) revert NotFunded();
+        WETH.withdraw(total);
+        address receiver;
+        uint256 r;
+        if (o.kind == OFFER_PACKS) {
+            PACKS.safeTransferFrom(msg.sender, o.buyer, item, amount, "");
+            (receiver, r) = PACKS.royaltyInfo(item, total);
+        } else {
+            CARDS.safeTransferFrom(msg.sender, o.buyer, item);
+            (receiver, r) = CARDS.royaltyInfo(item, total);
+        }
+        uint256 royalty = _payOut(receiver, r, msg.sender, total);
+        emit OfferAccepted(id, msg.sender, o.buyer, item, amount, price, royalty);
+    }
+
+    /// @notice An offer and whether it can be accepted now (not expired or ended, and the buyer can pay for one).
+    function offerOf(uint256 id) external view returns (Offer memory offer, bool live) {
+        offer = offers[id];
+        live = offer.buyer != address(0) && _offerLive(offer);
+    }
+
+    /// @notice End every listing and offer you have, cards and packs, in one go (the old ones can't be bought or
+    ///         accepted; anyone may clear them). New ones after this work as usual.
     function cancelAll() external {
         uint64 r = ++round[msg.sender];
         emit AllCancelled(msg.sender, r);
@@ -217,6 +389,13 @@ contract FireMarket is ReentrancyGuard {
         } catch {
             return false; // burned
         }
+    }
+
+    /// @dev An offer can be accepted: not expired, not ended by cancelAll, and the buyer holds and approved the WETH for
+    ///      at least one.
+    function _offerLive(Offer memory o) internal view returns (bool) {
+        if (o.expiry <= block.timestamp || o.round != round[o.buyer]) return false;
+        return WETH.balanceOf(o.buyer) >= o.price && WETH.allowance(o.buyer, address(this)) >= o.price;
     }
 
     /// @dev How many of a listing's packs can be bought now: what's listed, up to what the seller holds, if approved.

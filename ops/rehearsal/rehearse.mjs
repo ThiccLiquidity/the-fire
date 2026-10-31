@@ -660,7 +660,7 @@ async function main() {
   }
 
   // ---------------- the market
-  step("the market: buyer 2 lists a graded card, buyer 1 buys it (5% royalty, the rest to the seller)");
+  step("the market: buyer 2 lists a graded card, buyer 1 buys it (5% royalty, the rest to the seller); then an offer in WETH, accepted");
   {
     const sold = gradeIds[0], price = 10n ** 16n; // 0.01 ETH
     await tx(buyer2, C.FireCards, ABI.cards, "setApprovalForAll", [C.FireMarket, true]);
@@ -675,6 +675,25 @@ async function main() {
     check(b2after - b2 === price * 95n / 100n && roy1 - roy0 === price * 5n / 100n && kept === 0n, `the seller got 0.0095 ETH, the royalty receiver 0.0005 (5%), the market kept nothing`);
     const c = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "cardOf", args: [sold] });
     check(c.grade > 0n, `still PDA ${c.grade} after the sale`);
+
+    // an offer: buyer 1 wraps ETH into the testnet's WETH and offers on another of buyer 2's cards; buyer 2 accepts
+    const wanted = owned[3], offer = 2n * 10n ** 16n;
+    const wethAbi = [{ type: "function", name: "deposit", inputs: [], outputs: [], stateMutability: "payable" },
+      { type: "function", name: "approve", inputs: [{ name: "s", type: "address" }, { name: "a", type: "uint256" }], outputs: [{ type: "bool" }], stateMutability: "nonpayable" },
+      { type: "function", name: "balanceOf", inputs: [{ name: "o", type: "address" }], outputs: [{ type: "uint256" }], stateMutability: "view" }];
+    await tx(buyer1, inputs.WETH, wethAbi, "deposit", [], offer);
+    await tx(buyer1, inputs.WETH, wethAbi, "approve", [C.FireMarket, offer]);
+    const expiry = (await chainNow()) + 7n * 86400n;
+    await tx(buyer1, C.FireMarket, ABI.market, "makeOffer", [0, wanted, offer, 1n, expiry]);
+    const oid = (await pub.readContract({ address: C.FireMarket, abi: ABI.market, functionName: "nextOffer" })) - 1n;
+    const s0 = await pub.getBalance({ address: buyer2.address });
+    const acc = await tx(buyer2, C.FireMarket, ABI.market, "acceptOffer", [oid, wanted, 1n, offer]);
+    const gas = acc?.gasUsed && acc?.effectiveGasPrice ? acc.gasUsed * acc.effectiveGasPrice : 0n;
+    const owner2 = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "ownerOf", args: [wanted] });
+    const s1 = (await pub.getBalance({ address: buyer2.address })) + gas - s0;
+    const w1 = await pub.readContract({ address: inputs.WETH, abi: wethAbi, functionName: "balanceOf", args: [buyer1.address] });
+    check(getAddress(owner2) === buyer1.address && w1 === 0n && (gas === 0n || s1 === offer * 95n / 100n),
+      `an offer in WETH accepted: card ${wanted} moved to buyer 1, their WETH was taken, buyer 2 got ${gas ? formatEther(s1) + " ETH" : "paid"}`);
   }
 
   // ---------------- burners

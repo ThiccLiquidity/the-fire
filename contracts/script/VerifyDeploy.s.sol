@@ -393,8 +393,10 @@ contract VerifyDeploy is Deployments {
             _wait("FireMarket not deployed: the site hides the market until script/DeployMarket.s.sol runs");
             return;
         }
-        _eq(address(FireMarket(a).CARDS()), deployed("FireCards"), "FireMarket.CARDS is FireCards");
-        _eq(address(FireMarket(a).PACKS()), deployed("FirePacks"), "FireMarket.PACKS is FirePacks");
+        FireMarket m = FireMarket(payable(a));
+        _eq(address(m.CARDS()), deployed("FireCards"), "FireMarket.CARDS is FireCards");
+        _eq(address(m.PACKS()), deployed("FirePacks"), "FireMarket.PACKS is FirePacks");
+        _eq(address(m.WETH()), deployedInput("WETH"), "FireMarket.WETH is WETH");
     }
 
     /// FireGames (the game room) and its prizes in FireCredits: paper football is game 1 at 1 PAPER, prizes allowed.

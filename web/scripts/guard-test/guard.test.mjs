@@ -52,6 +52,17 @@ test('the market: "approve all" only for the market, buys only at the listed pri
   blocked({ address: C.FireMarket, functionName: 'listCard', args: [1n, E], value: 1n }); // nothing sent with a listing
   ok({ address: C.FireMarket, functionName: 'cancelAll', args: [] });
   blocked({ address: C.FireSale, functionName: 'buy', args: [], value: 2n * E }); // the market's cap is only the market's
+  // offers: WETH wrapped and approved to the market (capped), nothing sent with an offer or an accept
+  ok({ address: I.WETH, functionName: 'deposit', args: [], value: 2n * E });
+  blocked({ address: I.WETH, functionName: 'deposit', args: [], value: 11n * E });
+  ok({ address: I.WETH, functionName: 'withdraw', args: [E] });
+  blocked({ address: I.WETH, functionName: 'transfer', args: [thief, E] });
+  ok({ address: I.WETH, functionName: 'approve', args: [C.FireMarket, 2n * E] });
+  blocked({ address: I.WETH, functionName: 'approve', args: [C.FireMarket, MAX_APPROVAL] });
+  ok({ address: C.FireMarket, functionName: 'makeOffer', args: [0, 1n, E, 1n, 1n] });
+  ok({ address: C.FireMarket, functionName: 'acceptOffer', args: [1n, 1n, 1n, E] });
+  blocked({ address: C.FireMarket, functionName: 'acceptOffer', args: [1n, 1n, 1n, E], value: 1n });
+  blocked({ address: I.PLANK, functionName: 'deposit', args: [], value: 1n }); // wrapping is WETH's alone
 });
 
 test('approvals: never unlimited, never for someone else, never "approve all"', () => {

@@ -274,7 +274,7 @@ contract DeployCards is Deployments {
         d.psaAdapter = new OpenVRFAdapter(p.router, address(d.psa));
         require(d.psaAdapter.FIRE() == address(d.psa), "PDA adapter points elsewhere");
         d.profiles = new FireProfiles(address(d.cards)); // names and profile pictures; no owner
-        d.market = new FireMarket(address(d.cards), address(d.packs)); // cards and packs for sale; no owner, no fees
+        d.market = new FireMarket(address(d.cards), address(d.packs), p.weth); // cards and packs for sale; no owner, no fees
         // the game room: paper football is game 1 at 1 PAPER a run (fixed forever), with prizes allowed in FireCredits.
         // signer and series stay 0, so paid play is closed until the owner sets both; the prizeAwarder stays unset.
         d.games = new FireGames(deployer, p.paper, address(d.liquidity));

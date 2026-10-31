@@ -418,6 +418,10 @@ Use a test wallet with test ETH. Tick each:
       let the market sell your cards, then to list); the card says "For sale". From a second wallet: Market › tap it ›
       Buy. It moves to the second wallet; the first gets the price less the 5% royalty. Also: Mine › Sell packs (before
       opening), buy them from the other wallet; change a price; Take off sale; Take everything off sale.
+- [ ] **Offers**: from the second wallet, Market › a listed card › Make offer › 0.001 (the wallet asks to wrap ETH into
+      WETH, to let the market use it, then the offer). From the first wallet: the card's page shows "Offer: 0.001 ETH" ›
+      Accept. Also: Offers › Make an offer › any Paper card of Series 1, 2 wanted; fill it from the first wallet (Sell
+      yours); Mine › cancel an offer; turn the leftover WETH back into ETH.
 - [ ] **Feed**: your rare pulls show in the feed; the Series board shows who fed the fire.
 - [ ] **Free pack**: the wallet whose suggestion you picked (step 14) claims its free pack while Everyone is open.
 - [ ] **Burn** 42 cards: the wallet gets a free pack credit (it can only be used in a later Series).

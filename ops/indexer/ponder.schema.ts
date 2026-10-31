@@ -73,3 +73,16 @@ export const sale = onchainTable("market_sale", (t) => ({
   royalty: t.bigint().notNull(),
   at: t.integer().notNull(),
 }), (t) => ({ atIdx: index().on(t.at) }));
+
+/** the market: buy offers (WETH, still in the buyer's wallet). kind 0 card (target = serial), 1 any matching card
+ *  (target = packed criteria), 2 packs (target = Series) */
+export const offer = onchainTable("market_offer", (t) => ({
+  id: t.bigint().primaryKey(),
+  buyer: t.hex().notNull(),
+  kind: t.integer().notNull(),
+  target: t.bigint().notNull(),
+  price: t.bigint().notNull(), // wei a card or a pack
+  qty: t.bigint().notNull(),
+  expiry: t.integer().notNull(),
+  at: t.integer().notNull(),
+}), (t) => ({ buyerIdx: index().on(t.buyer), targetIdx: index().on(t.target) }));

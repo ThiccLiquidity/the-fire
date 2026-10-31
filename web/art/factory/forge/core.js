@@ -629,6 +629,8 @@
     return PACK_DEF;
   };
   // a small pack for small places (the Buy bar's 27 px picture): the demo's own thumbnails; live, the Series' pack art
+  /** Is there a market on this network? (demo: yes; live: FireMarket deployed, read once the chain layer is in) */
+  Store.marketOn = () => !LIVE_NET || !!window.Live?.chain?.marketOn?.();
   Store.packThumb = (no) => (!LIVE_NET && DEMO_PACKS[no] ? DEMO_PACKS[no].replace('.webp', '-mini.webp') : Store.packImg(no));
   // ready before the first rip, without holding up the page's first paint
   if (!LIVE_NET) addEventListener('load', () => (window.requestIdleCallback || setTimeout)(() => Object.keys(DEMO_PACKS).forEach((n) => Store.packImg(+n)), { timeout: 3000 }));

@@ -49,6 +49,32 @@ contract DevToken is ERC20, DevOwned {
     }
 }
 
+/// The testnet's WETH: a DevToken the stand-in pools can mint, that also wraps and unwraps real ETH like WETH9
+/// (deposit, withdraw, sending ETH to it), so market offers (FireMarket, paid in WETH) work. Unwrapping pays out of
+/// the ETH deposited; minted WETH (the pools' seed) isn't backed.
+contract DevWeth is DevToken {
+    event Deposit(address indexed to, uint256 amount);
+    event Withdrawal(address indexed from, uint256 amount);
+
+    constructor() DevToken("Wrapped Ether (test)", "WETH", 18) {}
+
+    function deposit() public payable {
+        _mint(msg.sender, msg.value);
+        emit Deposit(msg.sender, msg.value);
+    }
+
+    function withdraw(uint256 amount) external {
+        _burn(msg.sender, amount);
+        emit Withdrawal(msg.sender, amount);
+        (bool ok,) = msg.sender.call{value: amount}("");
+        require(ok, "dev: ETH refused");
+    }
+
+    receive() external payable {
+        deposit();
+    }
+}
+
 /// Chainlink-style ETH/USD feed (8 decimals). Never stale: `updatedAt` is always now (a testnet has no Chainlink
 /// updates and no keeper for this), so the PLANK and PAPER feeds keep pricing. set() changes the price (owner only).
 contract DevFeed is DevOwned {
