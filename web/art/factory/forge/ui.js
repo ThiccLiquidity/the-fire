@@ -986,4 +986,10 @@
   // the UI is ready: show it now, over a still of the workshop; the live scene fades in when it has loaded (slow networks
   // used to wait ~20 s on the loading screen)
   requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 120));
+  // the village's buildings link here with ?open= (village.html): the market, the game room, the showcase
+  const openQ = new URLSearchParams(location.search).get('open');
+  if (openQ) setTimeout(() => {
+    if (openQ === 'games') Stations.open('games');
+    else if (['market', 'showcase', 'binder', 'badges'].includes(openQ)) window.Fun?.go(openQ);
+  }, 400);
 })();

@@ -1,0 +1,73 @@
+/* The village (village.html): the landing page. One picture per time of day, the buildings lit on hover, their names
+   on the painted signboards, a Places strip on phones and the Workshop button always at the bottom. */
+:root { --ink: #f6e8cf; --brass: #e9b45a; --wood: #3a2412; --night: #0d0805; --top: 56px }
+* { box-sizing: border-box }
+html, body { margin: 0; height: 100%; background: var(--night); color: var(--ink); font-family: Nunito, system-ui, sans-serif; overflow: hidden }
+.vg-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%) }
+
+.vg-top { position: fixed; z-index: 5; inset: 0 0 auto; height: var(--top); display: flex; align-items: center; padding: 0 16px;
+  background: linear-gradient(#0d0805e6, #0d080500); pointer-events: none }
+.vg-brand { pointer-events: auto; display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink) }
+.vg-brand img { height: 30px }
+.vg-brand span { font: 400 18px 'Russo One', sans-serif; letter-spacing: .04em; text-shadow: 0 2px 6px #000 }
+
+/* the scene: the picture covers the screen (desktop) or a pannable band (phones held upright) */
+.vg { position: fixed; inset: 0; overflow: hidden; background: #0d0805 url(ui/village/placeholder.webp) center / cover }
+.vg-world { position: absolute; left: 50%; top: 50%; container-type: inline-size; transform-origin: 0 0 }
+.vg-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; user-select: none; -webkit-user-drag: none; transition: opacity 2.5s ease }
+.vg-bg.out { opacity: 0 }
+
+/* a building lit: the same picture cut to its outline, lifted and brightened, with a warm glow around it */
+.vg-lift { position: absolute; inset: 0; pointer-events: none }
+.vg-lift > div { position: absolute; inset: 0; opacity: 0; transition: opacity .18s ease, transform .2s ease, filter .2s ease;
+  filter: drop-shadow(0 0 .35cqw #ffcf7a) drop-shadow(0 .5cqw .6cqw #0009) }
+.vg-lift > div > div { position: absolute; inset: 0; background-size: 100% 100%; filter: brightness(1.14) saturate(1.06) }
+.vg-lift > div.on { opacity: 1; transform: translateY(-.32cqw) }
+.vg-hit { position: absolute; inset: 0; width: 100%; height: 100% }
+.vg-hit polygon { fill: transparent; cursor: pointer; pointer-events: all }
+
+/* the nameplates: one over each building, upright and the same size on any screen (village.js keeps them unscaled) */
+.vg-signs { position: absolute; inset: 0; pointer-events: none }
+.vg-plate { position: absolute; transform: translate(-50%, -50%); transform-origin: 50% 50%; display: grid; justify-items: center; gap: 1px;
+  padding: 7px 16px 8px; border-radius: 14px; text-decoration: none; white-space: nowrap; pointer-events: auto; color: var(--ink);
+  background: linear-gradient(#3b2614f2, #1c1109f2); border: 2px solid var(--brass); box-shadow: 0 6px 16px #000a, inset 0 1px 0 #ffd99a55;
+  transition: transform .18s ease, box-shadow .18s ease, background .18s }
+.vg-plate b { font: 400 17px/1.1 'Russo One', sans-serif; letter-spacing: .03em; color: #ffe2a8; text-shadow: 0 2px 3px #000 }
+.vg-plate small { font: 700 12px/1.2 Nunito, sans-serif; color: #d9c3a0 }
+.vg-plate::after { content: ''; position: absolute; left: 50%; bottom: -8px; width: 12px; height: 12px; transform: translateX(-50%) rotate(45deg);
+  background: #1c1109; border: solid var(--brass); border-width: 0 2px 2px 0 }
+.vg-plate.on, .vg-plate:hover { transform: translate(-50%, calc(-50% - 4px)); background: linear-gradient(#5a3a1c, #2a190c); box-shadow: 0 10px 22px #000c, 0 0 18px #ffbf5c66 }
+.vg-plate.p-workshop { border-width: 3px; padding: 9px 22px 10px } .vg-plate.p-workshop b { font-size: 21px }
+.vg-plate:focus-visible { outline: 3px solid #fff; outline-offset: 3px }
+body.port .vg-plate { padding: 5px 11px 6px; border-radius: 11px } body.port .vg-plate b { font-size: 14px } body.port .vg-plate small { display: none }
+body.port .vg-plate.p-workshop b { font-size: 16px }
+
+/* always there: into the Workshop */
+.vg-cta { position: fixed; z-index: 6; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  display: grid; justify-items: center; gap: 2px; min-width: min(360px, calc(100vw - 32px)); padding: 12px 28px; border-radius: 16px; text-decoration: none;
+  background: linear-gradient(#f2c26a, #c98a2c); color: #2a1405; border: 2px solid #ffe2a3; box-shadow: 0 8px 24px #000a, inset 0 -3px 0 #0003 }
+.vg-cta b { font: 400 20px 'Russo One', sans-serif }
+.vg-cta small { font: 700 13px Nunito, sans-serif; opacity: .85 }
+.vg-cta:hover { filter: brightness(1.06) } .vg-cta:focus-visible { outline: 3px solid #fff; outline-offset: 3px }
+
+/* phones held upright: the village is a band you can drag sideways, with big Places buttons under it */
+.vg-places { display: none }
+body.port .vg { position: absolute; inset: var(--top) 0 auto; height: var(--band); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch }
+body.port .vg::-webkit-scrollbar { display: none }
+body.port .vg-world { left: 0; top: 0 }
+body.port .vg-places { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: max-content; align-content: start; gap: 10px; position: absolute; left: 0; right: 0; top: calc(var(--top) + var(--band) + 12px);
+  padding: 0 16px calc(120px + env(safe-area-inset-bottom, 0px)); bottom: 0; overflow-y: auto }
+.vg-places a { display: grid; gap: 2px; min-height: 56px; padding: 10px 14px; border-radius: 14px; text-decoration: none; color: var(--ink);
+  background: #1f1710; border: 1px solid #4a3626 }
+.vg-places a:first-child { display: none } /* the Workshop: the big button below */
+.vg-places b { font: 400 16px 'Russo One', sans-serif } .vg-places small { font: 600 13px Nunito, sans-serif; color: #b9a385 }
+body.port { overflow: hidden }
+.vg-hint { display: none }
+body.port .vg-hint { display: block; margin: 0; position: fixed; z-index: 7; left: 50%; top: calc(var(--top) + var(--band) - 40px); transform: translateX(-50%);
+  padding: 6px 14px; border-radius: 99px; background: #0d0805cc; color: var(--ink); font: 700 13px Nunito, sans-serif; pointer-events: none; transition: opacity .4s }
+body.port .vg-hint.gone { opacity: 0 }
+
+@media (prefers-reduced-motion: reduce) {
+  .vg-bg, .vg-lift > div { transition: none }
+  .vg-lift > div.on { transform: none }
+}
