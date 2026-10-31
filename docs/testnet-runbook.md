@@ -155,15 +155,16 @@ forge script script/DeployCards.s.sol --rpc-url $env:RPC --account testnet-deplo
 node ..\ops\deploy\record.mjs --rpc $env:RPC
 ```
 - Good: it lists FirePacks, FireCards, ... FireGroups, FireProfiles, ... and "Next: the OWNER hardware wallet
-  accepts"; no "KEEPERS not set" line; record OK. `deployments\46630.json` now has 17 contracts: all new except
+  accepts"; no "KEEPERS not set" line; record OK. `deployments\46630.json` now has 18 contracts: all new except
   `PlankUsdTwap`. Keep this window open: steps 8b-10 use `$env:KEEPERS` and `$env:ROYALTY_BPS`.
 - If not: "OWNER is the deployer" → `$env:OWNER` is wrong (run `Load-Inputs`). "V2_ROUTER" / "PLANK_USD_FEED"
   errors → `Load-Inputs` again after step 6. "V2_ROUTER's factory has no PAPER/PLANK pool for the liquidity" → step 6
   didn't run (or `Load-Inputs` didn't after it). Ran out of gas money → faucet, then delete the `.pending` only if record
   says nothing landed, and run again.
 
-**Profiles:** FireProfiles comes with DeployCards. Do **not** run `DeployProfiles.s.sol` here (it refuses: "FireProfiles
-is already in the deployments file"). It's only for adding profiles to a deploy made before it existed.
+**Profiles and the market:** FireProfiles and FireMarket come with DeployCards. Do **not** run `DeployProfiles.s.sol` or
+`DeployMarket.s.sol` here (they refuse: "... is already in the deployments file"). They're only for adding them to a
+deploy made before they existed.
 
 ## 8b. DeployPress: the Morning Wood
 
@@ -212,7 +213,8 @@ Run it in the **same window** as steps 8 and 8b: it checks the keepers, the roya
 `KEEPERS` it FAILs with "KEEPERS not set here").
 - Good: last line `0 FAIL`. Expected WAIT: `PAPER/USD: no PAPER pool with $10 found yet` (the new PAPER feed needs
   ~40 h after the keepers' first checkpoint), maybe `PLANK/USD not live yet` (the keepers checkpoint it every 30 min).
-  Lines `a keeper in KEEPERS may run LiquidityBurner` (twice), `FireProfiles.CARDS is FireCards`, `OpenDrandRouter is
+  Lines `a keeper in KEEPERS may run LiquidityBurner` (twice), `FireProfiles.CARDS is FireCards`, `FireMarket.CARDS is
+  FireCards`, `FireMarket.PACKS is FirePacks`, `OpenDrandRouter is
   the real one`, the token and USDG lines, `MorningWood owned by the hardware wallet`, `MorningWood.editor is EDITOR`
   and `MorningWood pays LiquidityBurner` say OK.
 - If not: any FAIL → stop and send me the FAIL lines. WAIT on `acceptOwnership` or `AcceptPress` → step 9 didn't
@@ -223,7 +225,7 @@ Run it in the **same window** as steps 8 and 8b: it checks the keepers, the roya
 ```powershell
 cd C:\Users\DubT1\the-fire
 git add deployments\46630.json
-git commit -m "Testnet redeploy: drand router, PAPER feed, card contracts, FireProfiles, Morning Wood"
+git commit -m "Testnet redeploy: drand router, PAPER feed, card contracts, FireProfiles, FireMarket, Morning Wood"
 git push origin wip/pending-approval
 git push origin wip/pending-approval:refs/heads/claude/practical-gates-va0gq1
 ```
@@ -412,6 +414,10 @@ Use a test wallet with test ETH. Tick each:
 - [ ] **One grading price**: every card shows the same grading price (`FirePsa.gradeUsd18`).
 - [ ] **Profiles**: set a name and a picture from a card you hold; it shows next to your pulls; sell or send the card
       and the picture goes away.
+- [ ] **Market**: Menu › Market. From one wallet: open a card › Sell › 0.001 › List for sale (the wallet asks once to
+      let the market sell your cards, then to list); the card says "For sale". From a second wallet: Market › tap it ›
+      Buy. It moves to the second wallet; the first gets the price less the 5% royalty. Also: Mine › Sell packs (before
+      opening), buy them from the other wallet; change a price; Take off sale; Take everything off sale.
 - [ ] **Feed**: your rare pulls show in the feed; the Series board shows who fed the fire.
 - [ ] **Free pack**: the wallet whose suggestion you picked (step 14) claims its free pack while Everyone is open.
 - [ ] **Burn** 42 cards: the wallet gets a free pack credit (it can only be used in a later Series).

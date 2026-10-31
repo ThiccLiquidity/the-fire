@@ -95,6 +95,19 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   NameTaken: "That name is taken.",
   NotYourCard: "That card isn't in your wallet.",
 
+  // the market (FireMarket)
+  BadPrice: "Enter a price above 0.",
+  NotApproved: "Let the market sell your cards first, then list again.",
+  NotListed: "That listing is gone. Someone may have bought it.",
+  NotStale: "Only the seller can take that off sale.",
+  NotYours: "That isn't in your wallet any more.",
+  NothingOwed: "Nothing to collect.",
+  OwnListing: "That's your own listing.",
+  PriceChanged: "The price just changed. Check the new price and try again. Nothing was charged.",
+  Stale: "That's no longer for sale (the seller moved it). Nothing was charged.",
+  WithdrawFailed: "Your wallet refused the ETH. Try from another wallet.",
+  WrongPayment: "The amount sent didn't match the price. Nothing was charged.",
+
   // the game room (FireGames) and its prizes (FireCredits)
   AlreadyAdded: "That game is already added.",
   AlreadyPaid: "This run is already paid. Start a new one.",

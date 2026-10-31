@@ -41,3 +41,35 @@ export const burner = onchainTable("burner", (t) => ({
   burned: t.integer().notNull(),
   credits: t.integer().notNull(),
 }));
+
+/** the market (FireMarket): a card for sale (the site checks each against the chain before showing it) */
+export const cardListing = onchainTable("card_listing", (t) => ({
+  serial: t.bigint().primaryKey(),
+  seller: t.hex().notNull(),
+  price: t.bigint().notNull(), // wei
+  at: t.integer().notNull(),
+}), (t) => ({ sellerIdx: index().on(t.seller) }));
+
+/** the market: packs for sale (one listing = some of one Series' packs at a price each) */
+export const packListing = onchainTable("pack_listing", (t) => ({
+  id: t.bigint().primaryKey(),
+  seller: t.hex().notNull(),
+  fire: t.integer().notNull(),
+  amount: t.bigint().notNull(), // packs left in it
+  pricePer: t.bigint().notNull(),
+  at: t.integer().notNull(),
+}), (t) => ({ sellerIdx: index().on(t.seller) }));
+
+/** every market sale (cards and packs) */
+export const sale = onchainTable("market_sale", (t) => ({
+  id: t.text().primaryKey(),
+  kind: t.text().notNull(), // "card" | "packs"
+  serial: t.bigint(), // a card's
+  fire: t.integer(), // packs': the Series
+  amount: t.integer().notNull(),
+  seller: t.hex().notNull(),
+  buyer: t.hex().notNull(),
+  price: t.bigint().notNull(), // wei, the whole sale
+  royalty: t.bigint().notNull(),
+  at: t.integer().notNull(),
+}), (t) => ({ atIdx: index().on(t.at) }));

@@ -17,6 +17,7 @@ const KYBER_ROUTER = '0x6131B5fae19EA4f9D964eAc0408E4408b66337b5'; // kyber.ts
 const dep = JSON.parse(readFileSync(join(web, '../deployments/46630.json'), 'utf8'));
 // the liquidity contract (LiquidityBurner), standing in until the testnet is redeployed with it
 dep.contracts.LiquidityBurner ??= '0x3333333333333333333333333333333333333333';
+dep.contracts.FireMarket ??= '0x4444444444444444444444444444444444444444'; // the market, until the redeploy
 const C = dep.contracts, I = dep.inputs;
 const me = '0x1111111111111111111111111111111111111111', thief = '0x2222222222222222222222222222222222222222';
 const ok = (call) => assert.doesNotThrow(() => checkCall(call, me, dep));
@@ -34,6 +35,23 @@ test('the site\'s own calls go through', () => {
   ok({ address: I.PLANK, functionName: 'approve', args: [I.V2_ROUTER, 10n ** 24n] });
   ok({ address: I.USDG, functionName: 'approve', args: [KYBER_ROUTER, 5n * 10n ** 6n] });
   ok({ address: I.V2_ROUTER, functionName: 'swapETHForExactTokens', args: [1n, [I.WETH, I.PAPER], me, 0n], value: 1n });
+});
+
+test('the market: "approve all" only for the market, buys only at the listed price', () => {
+  const E = 10n ** 18n;
+  ok({ address: C.FireCards, functionName: 'setApprovalForAll', args: [C.FireMarket, true] });
+  ok({ address: C.FirePacks, functionName: 'setApprovalForAll', args: [C.FireMarket, false] });
+  blocked({ address: C.FireCards, functionName: 'setApprovalForAll', args: [C.FireSale, true] }); // ours, but not the market
+  blocked({ address: C.FireCards, functionName: 'setApprovalForAll', args: [C.FireMarket, true], value: 1n });
+  ok({ address: C.FireMarket, functionName: 'listCard', args: [1n, E] });
+  ok({ address: C.FireMarket, functionName: 'buyCard', args: [1n, 2n * E], value: 2n * E }); // over MAX_ETH: a market buy may
+  blocked({ address: C.FireMarket, functionName: 'buyCard', args: [1n, E], value: 2n * E }); // not the listed price
+  blocked({ address: C.FireMarket, functionName: 'buyCard', args: [1n, 11n * E], value: 11n * E }); // over MARKET_MAX_ETH
+  ok({ address: C.FireMarket, functionName: 'buyPacks', args: [3n, 2n, E / 10n], value: E / 5n });
+  blocked({ address: C.FireMarket, functionName: 'buyPacks', args: [3n, 2n, E / 10n], value: E / 10n });
+  blocked({ address: C.FireMarket, functionName: 'listCard', args: [1n, E], value: 1n }); // nothing sent with a listing
+  ok({ address: C.FireMarket, functionName: 'cancelAll', args: [] });
+  blocked({ address: C.FireSale, functionName: 'buy', args: [], value: 2n * E }); // the market's cap is only the market's
 });
 
 test('approvals: never unlimited, never for someone else, never "approve all"', () => {

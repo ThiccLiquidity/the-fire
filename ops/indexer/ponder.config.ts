@@ -10,6 +10,7 @@ import { FireCreditsAbi } from "./abis/FireCredits";
 import { FirePacksAbi } from "./abis/FirePacks";
 import { FirePsaAbi } from "./abis/FirePsa";
 import { FireSaleAbi } from "./abis/FireSale";
+import { FireMarketAbi } from "./abis/FireMarket";
 
 const chainId = Number(process.env.CHAIN_ID ?? 46630);
 const file = process.env.DEPLOYMENTS_FILE || new URL(`../../deployments/${chainId}.json`, import.meta.url); // DEPLOYMENTS_FILE: a rehearsal's
@@ -32,5 +33,6 @@ export default createConfig({
     FirePsa: { ...chain, abi: FirePsaAbi, address: at("FirePsa") },
     FireSale: { ...chain, abi: FireSaleAbi, address: at("FireSale") },
     FireCredits: { ...chain, abi: FireCreditsAbi, address: at("FireCredits") },
+    FireMarket: { ...chain, abi: FireMarketAbi, address: at("FireMarket") },
   },
 });

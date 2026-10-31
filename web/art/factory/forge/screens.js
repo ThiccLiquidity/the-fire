@@ -1075,6 +1075,7 @@
           c.grade == null ? btn(`Grade · ${Wear.usd(Store.PRICES.GRADE_USD)}`, 'primary', () => goto('grade', { as: 'grade' }), { disabled: !canGrade }) : null, // slabbed: final, nothing to do
           c.grade == null ? btn(`Case · ${Wear.usd(Store.PRICES.CASE_USD)}`, '', () => goto('grade', { as: 'case' }), { disabled: !canCase }) : null,
           btn('Burn', '', () => goto('burn'), { disabled: c.pending }),
+          window.Fun && Store.marketOn?.() ? btn(Fun.sellLabel?.(c) || 'Sell', '', () => { Sheet.close('card'); Fun.go('sell', { id: c.id }); }, { disabled: c.pending, 'data-key': 'sell' }) : null,
           shareBtn(c)),
         canGradeNow(c) ? (c.cased ? nowBar(c, true, 'If graded now (cased)') : oddsClock(c, () => goto('grade', { as: 'case' }), canCase)) : null,
         h('details', { class: 'dmore' }, h('summary', { text: 'Details' }),

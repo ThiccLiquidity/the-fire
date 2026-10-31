@@ -112,7 +112,7 @@ const ABI = {
   // carries FireGroups' errors too: they come back through FireSale's calls.
   sale: [...saleArtifact, ...groupsArtifact.filter((x) => x.type === "error" && !saleArtifact.some((y) => y.type === "error" && y.name === x.name))],
   groups: groupsArtifact, cards: webAbi("fireCards"), psa: webAbi("firePsa"), packs: webAbi("firePacks"), dealer: webAbi("recipeDealer"),
-  liquidity: webAbi("liquidityBurner"),
+  liquidity: webAbi("liquidityBurner"), market: webAbi("fireMarket"),
   ownable: [{ type: "function", name: "owner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" }],
   setRandomness: [{ type: "function", name: "setRandomness", inputs: [{ name: "s", type: "address" }], outputs: [], stateMutability: "nonpayable" }],
   applyRandomness: [{ type: "function", name: "applyRandomness", inputs: [], outputs: [], stateMutability: "nonpayable" }],
@@ -330,7 +330,7 @@ async function main() {
   await forgeDeploy("script/DeployCards.s.sol", env);
   const dep = JSON.parse(readFileSync(DEP_FILE, "utf8"));
   const C = Object.fromEntries(Object.entries(dep.contracts).map(([k, v]) => [k, getAddress(v)]));
-  check(Object.keys(C).length === 17 && C.FireProfiles, `deployments file has all 17 contracts, FireProfiles included (${DEP_FILE.replace(REPO + "/", "")})`);
+  check(Object.keys(C).length === 18 && C.FireProfiles && C.FireMarket, `deployments file has all 18 contracts, FireProfiles and FireMarket included (${DEP_FILE.replace(REPO + "/", "")})`);
 
   step("VerifyDeploy before the owner accepts (expect WAIT on seven owners)");
   const verifyEnv = { KEEPERS: `${keeperA.address},${keeperB.address}`, ROYALTY_BPS: "500" }; // what DeployCards was given
@@ -657,6 +657,24 @@ async function main() {
   for (const s of gradeIds) {
     const c = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "cardOf", args: [s] });
     check(c.grade > 0n, `card ${s} graded PDA ${c.grade}`);
+  }
+
+  // ---------------- the market
+  step("the market: buyer 2 lists a graded card, buyer 1 buys it (5% royalty, the rest to the seller)");
+  {
+    const sold = gradeIds[0], price = 10n ** 16n; // 0.01 ETH
+    await tx(buyer2, C.FireCards, ABI.cards, "setApprovalForAll", [C.FireMarket, true]);
+    await tx(buyer2, C.FireMarket, ABI.market, "listCard", [sold, price]);
+    const [seller, , live] = await pub.readContract({ address: C.FireMarket, abi: ABI.market, functionName: "cardOffer", args: [sold] });
+    check(getAddress(seller) === buyer2.address && live, `card ${sold} listed at 0.01 ETH`);
+    const [b2, roy0] = await Promise.all([pub.getBalance({ address: buyer2.address }), pub.getBalance({ address: royalty.address })]);
+    await tx(buyer1, C.FireMarket, ABI.market, "buyCard", [sold, price], price);
+    const owner = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "ownerOf", args: [sold] });
+    check(getAddress(owner) === buyer1.address, `buyer 1 holds card ${sold} now`);
+    const [b2after, roy1, kept] = await Promise.all([pub.getBalance({ address: buyer2.address }), pub.getBalance({ address: royalty.address }), pub.getBalance({ address: C.FireMarket })]);
+    check(b2after - b2 === price * 95n / 100n && roy1 - roy0 === price * 5n / 100n && kept === 0n, `the seller got 0.0095 ETH, the royalty receiver 0.0005 (5%), the market kept nothing`);
+    const c = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "cardOf", args: [sold] });
+    check(c.grade > 0n, `still PDA ${c.grade} after the sale`);
   }
 
   // ---------------- burners

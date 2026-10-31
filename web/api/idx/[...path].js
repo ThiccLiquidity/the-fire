@@ -1,7 +1,7 @@
 // /api/idx/<path>: the site's way to the indexer (ops/indexer, docs/indexer.md), so the page stays same-origin.
-// Only the public read endpoints pass (cards, packs, pulls, board, burners); its SQL and GraphQL stay private.
+// Only the public read endpoints pass (cards, packs, pulls, board, burners, market, sales); its SQL and GraphQL stay private.
 // INDEXER_URL unset: 503, and the site falls back to the block explorer and the chain.
-const OK = /^(cards|packs)\/0x[0-9a-fA-F]{40}$|^pulls$|^board\/\d{1,7}$|^burners$/;
+const OK = /^(cards|packs)\/0x[0-9a-fA-F]{40}$|^pulls$|^board\/\d{1,7}$|^burners$|^market$|^sales$/;
 
 export async function GET(request) {
   const base = (process.env.INDEXER_URL || '').replace(/\/$/, '');

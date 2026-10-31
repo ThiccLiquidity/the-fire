@@ -12,6 +12,7 @@ import {FireCredits} from "../src/cards/FireCredits.sol";
 import {FireGroups} from "../src/cards/FireGroups.sol";
 import {FireProfiles} from "../src/cards/FireProfiles.sol";
 import {FireGames} from "../src/cards/FireGames.sol";
+import {FireMarket} from "../src/cards/FireMarket.sol";
 import {RecipeDealer} from "../src/cards/RecipeDealer.sol";
 import {CardsRenderer} from "../src/cards/CardsRenderer.sol";
 import {LiquidityBurner} from "../src/cards/LiquidityBurner.sol";
@@ -87,11 +88,12 @@ contract VerifyDeploy is Deployments {
     }
 
     function run() external {
-        string[17] memory names = _contractNames();
+        string[18] memory names = _contractNames();
         console.log(string.concat("deployments file: ", deploymentsFile()));
         for (uint256 i; i < names.length; i++) {
             address a = deployed(names[i]);
             if (a == address(0) && keccak256(bytes(names[i])) == keccak256("FireProfiles")) continue; // optional: _profiles()
+            if (a == address(0) && keccak256(bytes(names[i])) == keccak256("FireMarket")) continue; // optional: _market()
             _ok(a != address(0) && a.code.length > 0, string.concat(names[i], " has code at ", vm.toString(a)));
         }
         if (fails > 0) {
@@ -104,6 +106,7 @@ contract VerifyDeploy is Deployments {
         _feeds();
         _locks();
         _profiles();
+        _market();
         _games();
         _tokens();
         _twaps();
@@ -380,6 +383,18 @@ contract VerifyDeploy is Deployments {
             return;
         }
         _eq(address(FireProfiles(a).CARDS()), deployed("FireCards"), "FireProfiles.CARDS is FireCards");
+    }
+
+    /// FireMarket (cards and packs for sale, no owner): optional, a deploy made before it existed adds it with
+    /// script/DeployMarket.s.sol. Until then the site hides the market.
+    function _market() internal {
+        address a = deployed("FireMarket");
+        if (a == address(0)) {
+            _wait("FireMarket not deployed: the site hides the market until script/DeployMarket.s.sol runs");
+            return;
+        }
+        _eq(address(FireMarket(a).CARDS()), deployed("FireCards"), "FireMarket.CARDS is FireCards");
+        _eq(address(FireMarket(a).PACKS()), deployed("FirePacks"), "FireMarket.PACKS is FirePacks");
     }
 
     /// FireGames (the game room) and its prizes in FireCredits: paper football is game 1 at 1 PAPER, prizes allowed.

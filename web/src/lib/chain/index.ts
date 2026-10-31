@@ -5,6 +5,7 @@ export * from "./reads";
 export * from "./writes";
 export * from "./fun";
 export * from "./profiles";
+export * from "./market";
 export { NotDeployedError, amount, type Amount } from "./contracts";
 export { NET, isDeployed } from "../net";
 export * from "./swap";

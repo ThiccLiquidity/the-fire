@@ -5,6 +5,7 @@ import {stdJson} from "forge-std/StdJson.sol";
 import {FirePacks} from "../../src/cards/FirePacks.sol";
 import {FireCards} from "../../src/cards/FireCards.sol";
 import {FirePsa} from "../../src/cards/FirePsa.sol";
+import {FireMarket} from "../../src/cards/FireMarket.sol";
 import {RecipeDealer} from "../../src/cards/RecipeDealer.sol";
 import {RecipeCompiler} from "../../src/cards/RecipeCompiler.sol";
 import {CardsRenderer} from "../../src/cards/CardsRenderer.sol";
@@ -180,6 +181,48 @@ contract PsaTest is SeriesHelper {
     }
 
     // ================================================================ wear on the card
+
+    /// The market on the real FireCards: a sale is a move (wear), a card being graded can't be bought until the grading
+    ///  ends, then it can; packs sell too (no royalty set: the seller gets it all).
+    function test_marketSale_isAMove_andWaitsOutGrading() public {
+        FireMarket m = new FireMarket(address(cards), address(packs));
+        vm.startPrank(alice);
+        cards.setApprovalForAll(address(m), true);
+        m.listCard(1, 1 ether);
+        m.listCard(2, 1 ether);
+        vm.stopPrank();
+        vm.prank(bob);
+        m.buyCard{value: 1 ether}(1, 1 ether);
+        assertEq(cards.ownerOf(1), bob);
+        (,,,,, uint256 moves) = cards.wearOf(1);
+        assertEq(moves, 1, "a sale is a move");
+
+        uint256 cost = psa.quote(0, 1, FirePsa.Pay.ETH);
+        vm.prank(alice);
+        uint256 index = psa.protect{value: cost}(_none(), _one(2), FirePsa.Pay.ETH, cost);
+        assertTrue(cards.gradePending(2));
+        vm.prank(bob);
+        vm.expectRevert(FireCards.GradingInProgress.selector);
+        m.buyCard{value: 1 ether}(2, 1 ether);
+        psaRng.fulfill(psaRng.last(), 3);
+        psa.finish(index, _one(2));
+        vm.prank(bob);
+        m.buyCard{value: 1 ether}(2, 1 ether);
+        assertEq(cards.ownerOf(2), bob, "graded, then sold");
+
+        vm.prank(seller);
+        packs.mint(alice, 1, 3);
+        vm.startPrank(alice);
+        packs.setApprovalForAll(address(m), true);
+        uint256 id = m.listPacks(1, 3, 0.1 ether);
+        vm.stopPrank();
+        uint256 before = alice.balance;
+        vm.prank(bob);
+        m.buyPacks{value: 0.2 ether}(id, 2, 0.1 ether);
+        assertEq(packs.balanceOf(bob, 1), 2);
+        assertEq(alice.balance - before, 0.2 ether);
+        assertEq(address(m).balance, 0);
+    }
 
     function test_movesCountUntilCasedAndOnlyBetweenWallets() public {
         (,,,, uint256 age0, uint256 m0) = cards.wearOf(1);

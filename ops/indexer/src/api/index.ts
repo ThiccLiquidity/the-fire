@@ -4,6 +4,8 @@
 //   GET /pulls?fire=&min=&limit= the newest pulls (type index >= min), with who pulled them
 //   GET /board/:fire             who fed the fire in a Series (packs bought, by wallet)
 //   GET /burners?limit=          the biggest burners
+//   GET /market                  what's listed on the market (cards and packs; the site checks each against the chain)
+//   GET /sales?limit=            the newest market sales
 //   /graphql, /sql/*             everything else (read-only)
 import { db } from "ponder:api";
 import schema from "ponder:schema";
@@ -40,6 +42,17 @@ app.get("/board/:fire", async (c) => {
 });
 app.get("/burners", async (c) => {
   return out(c, { rows: await db.select().from(schema.burner).orderBy(desc(schema.burner.burned)).limit(int(c.req.query("limit"), 50, 200)) }, 10);
+});
+
+app.get("/market", async (c) => {
+  const [cards, packs] = await Promise.all([
+    db.select().from(schema.cardListing).orderBy(schema.cardListing.price).limit(2000),
+    db.select().from(schema.packListing).orderBy(schema.packListing.pricePer).limit(500),
+  ]);
+  return out(c, { cards, packs }, 3);
+});
+app.get("/sales", async (c) => {
+  return out(c, { sales: await db.select().from(schema.sale).orderBy(desc(schema.sale.at)).limit(int(c.req.query("limit"), 30, 200)) }, 5);
 });
 
 app.use("/sql/*", client({ db, schema }));

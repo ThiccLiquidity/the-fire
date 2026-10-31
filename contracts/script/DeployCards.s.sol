@@ -15,6 +15,7 @@ import {FireCredits} from "../src/cards/FireCredits.sol";
 import {FireGroups} from "../src/cards/FireGroups.sol";
 import {FireProfiles} from "../src/cards/FireProfiles.sol";
 import {FireGames} from "../src/cards/FireGames.sol";
+import {FireMarket} from "../src/cards/FireMarket.sol";
 import {OpenVRFAdapter} from "../src/OpenVRFAdapter.sol";
 import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
@@ -62,7 +63,8 @@ interface ICardsPair {
  *   only FireSale writes to it, no owner), FireCredits (free pack credits, card burning, suggestions),
  *   LiquidityBurner (every sale's liquidity share, each pack's PAPER, case and grading fees, suggestions and game
  *   entries: paired into PAPER/PLANK liquidity and burned, docs/liquidity-burn.md), FirePsa (cases and PDA grading),
- *   and a drand adapter for each of FireCards and FirePsa. Also FireProfiles (names and profile pictures; no owner). On a deploy made before it existed, add it
+ *   and a drand adapter for each of FireCards and FirePsa. Also FireProfiles (names and profile pictures; no owner) and FireMarket (cards and packs for sale; no owner, no fees;
+ *   on an older deploy, add it with script/DeployMarket.s.sol). On a deploy made before it existed, add it
  *   on its own with script/DeployProfiles.s.sol. And FireGames (the game room's run entries, docs/paper-football.md):
  *   it adds paper football as game 1 (1 PAPER a run, fixed forever) and FireCredits allows prizes for game 1, but
  *   leaves the server's `signer` and the `series` unset, so paid play stays closed until the owner sets both.
@@ -149,6 +151,7 @@ contract DeployCards is Deployments {
         FireGroups groups;
         FireProfiles profiles;
         FireGames games;
+        FireMarket market;
     }
 
     function run() external returns (Deployed memory d) {
@@ -190,6 +193,7 @@ contract DeployCards is Deployments {
         console.log("FireGroups ", address(d.groups));
         console.log("FireProfiles", address(d.profiles));
         console.log("FireGames  ", address(d.games));
+        console.log("FireMarket ", address(d.market));
         console.log("FirePsa    ", address(d.psa));
         console.log("LiquidityBurner", address(d.liquidity));
         console.log("CardsRenderer", address(d.renderer));
@@ -201,8 +205,8 @@ contract DeployCards is Deployments {
     }
 
     function _recordCards(Deployed memory d, Params memory p) internal {
-        string[] memory names = new string[](17);
-        address[] memory addrs = new address[](17);
+        string[] memory names = new string[](18);
+        address[] memory addrs = new address[](18);
         (names[0], addrs[0]) = ("FirePacks", address(d.packs));
         (names[1], addrs[1]) = ("FireCards", address(d.cards));
         (names[2], addrs[2]) = ("CardsRenderer", address(d.renderer));
@@ -220,6 +224,7 @@ contract DeployCards is Deployments {
         (names[14], addrs[14]) = ("FireGroups", address(d.groups));
         (names[15], addrs[15]) = ("FireProfiles", address(d.profiles));
         (names[16], addrs[16]) = ("FireGames", address(d.games));
+        (names[17], addrs[17]) = ("FireMarket", address(d.market));
         string[] memory inNames = new string[](11);
         address[] memory inAddrs = new address[](11);
         (inNames[0], inAddrs[0]) = ("PAPER", p.paper);
@@ -269,6 +274,7 @@ contract DeployCards is Deployments {
         d.psaAdapter = new OpenVRFAdapter(p.router, address(d.psa));
         require(d.psaAdapter.FIRE() == address(d.psa), "PDA adapter points elsewhere");
         d.profiles = new FireProfiles(address(d.cards)); // names and profile pictures; no owner
+        d.market = new FireMarket(address(d.cards), address(d.packs)); // cards and packs for sale; no owner, no fees
         // the game room: paper football is game 1 at 1 PAPER a run (fixed forever), with prizes allowed in FireCredits.
         // signer and series stay 0, so paid play is closed until the owner sets both; the prizeAwarder stays unset.
         d.games = new FireGames(deployer, p.paper, address(d.liquidity));

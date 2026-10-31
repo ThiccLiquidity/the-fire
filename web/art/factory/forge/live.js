@@ -846,7 +846,7 @@
 
   window.Live = {
     on: true, gameStatus, payRun, net, testnet: net === 'testnet', sync, needWallet, openWallet, run, groupApi, free, getPaper, openPacks, followOpen, progressAct, quoteProtect, protect, finishGrading, popReport, burn, suggest,
-    gateway, toMaterial: (name) => MAT[String(name).toLowerCase()] || null, // practice.js: a Series' own images and type names
+    gateway, toCard, toMaterial: (name) => MAT[String(name).toLowerCase()] || null, // practice.js: a Series' own images and type names
     walletNeeds: capOf, // what the wallet must hold to pay `amt` in a coin: the cap (+3%, not USDG) and gas for ETH
     rules: null, snapshot: null, get chain() { return L; },
   };

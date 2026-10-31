@@ -9,7 +9,7 @@
 import { concat, decodeFunctionData, encodeFunctionData, erc20Abi, keccak256, toHex, type Address, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
 import type { Net } from "../../src/lib/net";
-import { cardsAbi, creditsAbi } from "../../src/lib/cards";
+import { cardsAbi, creditsAbi, packsAbi } from "../../src/lib/cards";
 
 type Ctx = {
   RPC: string; deployment: Net["deployment"]; C: Record<string, Address>; start: bigint;
@@ -435,6 +435,52 @@ export async function runTest(ctx: Ctx): Promise<number> {
   check(pf?.name === "Ember" && pf.pfpCard === null && pf.storedPfp === pfp && pf.image === null, "the picture card sold: the name stays, the picture falls back");
   await L.clearProfile(o);
   check((await L.profile(me, true)) === null && (await L.nameOwner("ember")) === null, "cleared: no profile, the name is free");
+
+  console.log("\n== the market (FireMarket): list, buy, re-price, take off sale; packs too");
+  {
+    const mOther = privateKeyToAccount(toHex(other.getHdKey().privateKey!));
+    const s1 = cards[12].serial, s2 = cards[13].serial;
+    check(L.marketOn(), "FireMarket is deployed");
+    const lr = await L.listCard({ serial: s1, priceEth: "0.01" }, o);
+    check((await L.marketApproved(me)).cards, `listed card #${s1} at 0.01 ETH (${lr.gasUsed} gas), the market approved for cards once`);
+    await L.listCard({ serial: s2, priceEth: "0.02" }, o);
+    let ls = await L.listings();
+    const mine = ls.cards.filter((x) => x.seller === me).map((x) => x.serial).sort();
+    check(mine.length === 2 && mine.includes(s1) && mine.includes(s2) && ls.cards.find((x) => x.serial === s1)?.priceEth === "0.01", "both show in the listings, read from the market's events and checked on the chain");
+    await L.listCard({ serial: s2, priceEth: "0.03" }, o);
+    check((await L.offerOf(s2))?.priceEth === "0.03", "re-listed at a new price");
+    W.setLocalSigner(mOther);
+    const offer = (await L.offerOf(s1))!;
+    let mm = "";
+    try { await L.buyCard({ serial: s1, price: (BigInt(offer.price) / 2n).toString() }, o); } catch (e) { mm = (e as Error).message; }
+    check(/price just changed/i.test(mm), `a buy at a price that isn't the listing's is refused: "${mm}"`);
+    const sellerBefore = await ctx.pub.getBalance({ address: me });
+    const br = await L.buyCard({ serial: s1, price: offer.price }, o);
+    const owner = await ctx.pub.readContract({ address: ctx.C.FireCards, abi: cardsAbi as never, functionName: "ownerOf", args: [BigInt(s1)] }) as Address;
+    const got = (await ctx.pub.getBalance({ address: me })) - sellerBefore;
+    check(owner === other.address && got === 95n * 10n ** 14n, `bought by another wallet (${br.gasUsed} gas): the card moved, the seller got ${Number(got) / 1e18} ETH (5% royalty)`);
+    check((await L.offerOf(s1)) === null, "sold: no longer for sale");
+    try { await L.cancelCard({ serial: s2 }, o); mm = ""; } catch (e) { mm = (e as Error).message; }
+    check(/only the seller/i.test(mm), `someone else can't take a live listing down: "${mm}"`);
+    W.setLocalSigner(buyer);
+    await L.cancelCard({ serial: s2 }, o);
+    check((await L.offerOf(s2)) === null, "the seller took the other off sale");
+    const packsHeld = await ctx.pub.readContract({ address: ctx.C.FirePacks, abi: packsAbi as never, functionName: "balanceOf", args: [me, BigInt(fire)] }) as bigint;
+    if (packsHeld > 0n) {
+      await L.listPacks({ series: fire, amount: 1, pricePerEth: "0.004" }, o);
+      ls = await L.listings();
+      const pk = ls.packs.find((p) => p.seller === me)!;
+      check(!!pk && pk.amount === 1 && pk.series === fire, `listed 1 Series ${fire} pack at 0.004 ETH`);
+      W.setLocalSigner(mOther);
+      await L.buyMarketPacks({ id: pk.id, amount: 1, pricePer: pk.pricePer }, o);
+      const op = await ctx.pub.readContract({ address: ctx.C.FirePacks, abi: packsAbi as never, functionName: "balanceOf", args: [other.address, BigInt(fire)] }) as bigint;
+      check(op >= 1n, "another wallet bought the pack");
+      W.setLocalSigner(buyer);
+    } else console.log("  (no sealed packs left here to sell: pack listings are covered by the contract tests and the rehearsal)");
+    await L.listCard({ serial: s2, priceEth: "0.05" }, o);
+    await L.cancelAllListings(o);
+    check((await L.offerOf(s2)) === null, "Take everything off sale: the listing is dead");
+  }
 
   console.log("\n== a grading whose draw never comes: after 24 hours, the cards come back ungraded");
   const gc = cards[14].serial, gq = await L.quoteProtect([], [gc], "ETH");

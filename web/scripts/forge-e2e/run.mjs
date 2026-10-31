@@ -800,6 +800,23 @@ try {
     check((await p.locator("#sheet-feed .fd-board tbody tr").count()) >= 5, "Top stokers: a board per Series");
     await p.keyboard.press("Escape");
 
+    // the market (market.js, demo): buy a card, list one of yours
+    await p.waitForTimeout(500);
+    await p.evaluate(() => window.Fun.go("market"));
+    await p.locator("#sheet-market .mk-tile").first().waitFor();
+    const nCards = await p.evaluate(() => Store.state.cards.length), eth0 = await p.evaluate(() => Store.state.wallet.balances.ETH);
+    await p.locator("#sheet-market .mk-tile").first().click();
+    await p.locator("#sheet-mcard .btn.primary").click();
+    await p.waitForFunction((n) => Store.state.cards.length === n + 1, nCards);
+    check((await p.evaluate(() => Store.state.wallet.balances.ETH)) < eth0, "Market: buying a card adds it to My cards and spends the demo ETH");
+    await p.evaluate(() => { document.querySelectorAll("dialog[open]").forEach((d) => d.close()); Stations.openCard(Store.state.cards[2].id); });
+    await p.locator('#sheet-card [data-key="sell"]').click();
+    await p.fill("#sheet-sell .mk-input", "0.01");
+    await p.locator("#sheet-sell .btn.primary").click();
+    await p.locator('#sheet-card [data-key="sell"]').waitFor();
+    check(/For sale/.test(await p.locator('#sheet-card [data-key="sell"]').innerText()), "Sell: the card's detail says For sale once listed");
+    await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach((d) => d.close()));
+
     await p.waitForTimeout(500); // the feed sheet's close steps history back: let it land before navigating
     await p.goto(`${SITE}?show=0x7a3f2b9c41d0e5a6b8f9c0d1e2f3a4b5c6d7c91e&c=1000.1001`);
     await p.locator("#sheet-show .sv-shelf .sc-slot").first().waitFor({ timeout: 30_000 });

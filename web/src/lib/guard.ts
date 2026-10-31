@@ -4,12 +4,14 @@
 //   - one of our own contracts (deployments/<chain>.json), and only the functions the site uses on it;
 //   - an approve on one of the site's coins (PAPER, PLANK, USDG, WETH) for a contract that takes payments (FireSale,
 //     FirePsa, FireGames) or a swap router, never "unlimited" (the site approves each call's own cap, approve.ts);
-//   - never more than MAX_ETH in one transaction;
+//   - "approve all" (setApprovalForAll) on the cards or the packs only for FireMarket, the site's own market (it can
+//     move a listed card only when someone buys it at the seller's price);
+//   - never more than MAX_ETH in one transaction (MARKET_MAX_ETH for a market buy, and exactly the listed price);
 //   - a PAPER swap: Uniswap V2's router with the coins coming back to the buyer's own wallet, or KyberSwap's router
 //     checked the same way checkSwap checks it (and never without a minimum return);
 //   - FireSale.buyWithEthAll only with its PAPER purchase capped (maxPaperEth, at most the ETH sent).
 //
-// Everything else is refused before the wallet opens: transfers, "approve all" (setApprovalForAll), permits,
+// Everything else is refused before the wallet opens: transfers, any other "approve all", permits,
 // unknown contracts, ETH sent anywhere else. The site never asks for signatures (signMessage / signTypedData) at all,
 // so there is nothing to gate there. If a bug, a bad API answer or a changed deployments file ever tried more, the
 // wallet would never see it.
@@ -21,7 +23,9 @@ import { SWAP_FEE_WALLET } from "./config";
 /** The functions the site calls on each of its contracts (by deployment name). */
 export const ALLOWED: Readonly<Record<string, readonly string[]>> = {
   FireSale: ["buy", "buyWithEthAll", "close"],
-  FireCards: ["open", "cancelOpen", "skipStuck", "process"],
+  FireCards: ["open", "cancelOpen", "skipStuck", "process", "setApprovalForAll"],
+  FirePacks: ["setApprovalForAll"],
+  FireMarket: ["listCard", "cancelCard", "buyCard", "listPacks", "cancelPacks", "buyPacks", "cancelAll", "withdraw"],
   FireCredits: ["burnCards", "useCredits", "suggest", "suggestMany"],
   FirePsa: ["protect", "cancelGrading", "finish", "settle"],
   FireGames: ["payRun"],
@@ -38,6 +42,8 @@ export const SPENDERS = ["FireSale", "FirePsa", "FireGames"] as const;
 /** The most ETH any one transaction may send: a hard ceiling whatever a price read says (50 packs at today's prices
  *  are well under it). Raise it here if pack prices ever need more. */
 export const MAX_ETH = 5n * 10n ** 17n; // 0.5 ETH
+/** A market buy may send more (a rare card can sell for more than packs cost), but only exactly the listed price. */
+export const MARKET_MAX_ETH = 10n * 10n ** 18n; // 10 ETH
 const V2_SWAPS = ["swapETHForExactTokens", "swapTokensForExactTokens"];
 const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 const kyberFns = kyberRouterAbi.map((f) => f.name) as string[];
@@ -59,14 +65,24 @@ export function checkCall(call: GuardCall, from: Address, dep: GuardDeployment):
   const no = (why: string): never => { console.warn("Transaction blocked:", why); throw new Blocked(why); };
   const fn = call.functionName, args = call.args ?? [], value = call.value ?? 0n;
   if (value < 0n) no("a negative amount of ETH");
-  if (value > MAX_ETH) no("more ETH than the site ever asks for in one go");
   const ours = nameOf(dep.contracts, call.address);
+  if (value > (ours === "FireMarket" ? MARKET_MAX_ETH : MAX_ETH)) no("more ETH than the site ever asks for in one go");
   const spenderOk = (s: unknown) => typeof s === "string" &&
     ((SPENDERS as readonly string[]).includes(nameOf(dep.contracts, s) ?? "") || eq(s, dep.inputs?.V2_ROUTER) || eq(s, KYBER_ROUTER));
 
   // 1. our own contracts: only the functions the site uses
   if (ours) {
     if (!(ALLOWED[ours] ?? []).includes(fn)) no(`${ours}.${fn} isn't something the site does`);
+    // "approve all" only ever for the site's own market
+    if (fn === "setApprovalForAll") {
+      if (!eq(args[0] as string, dep.contracts?.FireMarket)) no(`${ours} "approve all" for something other than the market`);
+      if (value !== 0n) no("ETH sent with an approval");
+    }
+    // a market buy sends exactly the listed price the buyer saw
+    if (ours === "FireMarket") {
+      const want = fn === "buyCard" ? args[1] : fn === "buyPacks" ? (typeof args[1] === "bigint" && typeof args[2] === "bigint" ? args[1] * args[2] : null) : 0n;
+      if (typeof want !== "bigint" || value !== want) no("the ETH sent isn't the listed price");
+    }
     // ETH alone: the PAPER bought with it is capped (maxPaperEth), and never above the ETH sent
     if (ours === "FireSale" && fn === "buyWithEthAll") {
       const cap = args[3];

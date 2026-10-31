@@ -11,11 +11,14 @@ What it serves (through the site's `/api/idx/...`, so the browser only ever talk
 - `/pulls?fire=&min=&limit=`: the newest pulls (for the feed), with who pulled them.
 - `/board/<Series>`: who fed the fire (packs bought per wallet).
 - `/burners`: the biggest burners.
+- `/market`: what's listed on the market (docs/market.md); `/sales`: the newest market sales.
 
 Tested against the full local rehearsal (a whole Series: buys, opens, deals, cases, grades): every wallet's card count,
 grades and cases matched the chain exactly.
 
 ## Setup on Railway (once, about 10 minutes; after the testnet redeploy)
+
+It needs the redeploy first: it reads FireMarket's address from `deployments/46630.json` (the old deploy has none).
 
 1. Railway → the project → **New service → GitHub repo** → `the-fire`.
    - Settings → Source: branch `wip/pending-approval`; **Config file** `ops/indexer/railway.json`.
