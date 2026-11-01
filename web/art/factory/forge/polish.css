@@ -7,18 +7,17 @@
 @media (pointer: coarse) {
   :root { --top: 86px }
   .demo-note { height: 32px }
-  .chip { min-height: 44px } .chip.round, .tools .chip:not(.round):not(.demo):not(.mycards) { width: 44px; min-width: 44px }
+  .chip { min-height: 44px } .chip.round { width: 44px; min-width: 44px } .nav5 .nv { height: 44px }
   .btn.small { min-height: 44px }
   select, .filters select { font-size: 16px }
   .qp, .inf-jump { min-height: 44px }
 }
 .qbanner { top: var(--top) }
 
-/* the top bar: sideways phones and narrow desktops (under 900 px) put the tools in the Menu, so the wallet button
-   always fits; at 360 px the OMNI wordmark stays and CARDWORKS steps aside */
-body[data-mode=land] .brand .forge, body[data-mode=land] .tools { display: none }
-body[data-mode=land] .menu-btn { display: inline-flex }
-@media (max-width: 899px) { body[data-mode=desk] .tools { display: none } body[data-mode=desk] .menu-btn { display: inline-flex } }
+/* the top bar: sideways phones and narrow desktops show the five places as icons, so the wallet button always fits;
+   at 360 px the OMNI wordmark stays and CARDWORKS steps aside */
+body[data-mode=land] .brand .forge { display: none }
+@media (max-width: 760px) { body[data-mode=desk] .brand .forge { display: none } body[data-mode=desk] .nav5 { gap: 5px } body[data-mode=desk] .nav5 .nv { padding: 0 8px } }
 @media (max-width: 374px) { body[data-mode=port] .brand .word { display: block } body[data-mode=port] .brand .forge { display: none } }
 @media (max-width: 899px) { .types { border-spacing: 4px 2px } .types .mat { min-width: 0; padding: 4px 8px } }
 
@@ -166,7 +165,7 @@ body[data-mode=port] .openbtn.nudge { animation: nudge .5s ease-in-out 3 }
 @media (min-width: 2200px) and (min-height: 1200px) {
   :root { --top: 98px } :root.live { --top: 68px }
   .topbar { height: 68px; gap: 14px } .brand .mark { height: 40px } .brand .word { height: 34px } .brand .forge { font-size: 29px } .brand .tag { font-size: 16px }
-  .chip { min-height: 46px; font-size: 16px; padding: 0 16px } .chip.round { width: 48px } .tools { gap: 10px } .wallet { min-height: 52px; font-size: 17px; padding: 0 18px }
+  .chip { min-height: 46px; font-size: 16px; padding: 0 16px } .chip.round { width: 48px } .nav5 { gap: 10px } .nav5 .nv { height: 46px; font-size: 16px; padding: 0 18px 0 14px } .nav5 .nv svg { width: 21px; height: 21px } .wallet { min-height: 52px; font-size: 17px; padding: 0 18px }
   .demo-note { top: 68px; height: 30px; font-size: 15px } .demo-note b { font-size: 14px } .start-link { font-size: 15px }
   .what h3 { font-size: 19px } .what h3 span { font-size: 15px } .types th { font-size: 14px } .types td { font-size: 15px } .types .mat { font-size: 14px; min-width: 88px }
   .strip .more { min-height: 48px; font-size: 15px }

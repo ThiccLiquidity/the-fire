@@ -28,9 +28,18 @@
     tag: '<path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.4 1.4 0 0 1 0 2l-6.2 6.2a1.4 1.4 0 0 1-2 0z"/><circle cx="8" cy="8" r="1.6"/>',
     bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
     install: '<rect x="6" y="2.5" width="12" height="19" rx="2"/><path d="M12 7v7M9 11l3 3 3-3M10.5 18.5h3"/>',
+    workshop: '<path d="M12 3v2M12 19v2M4.2 7l1.7 1M18.1 16l1.7 1M4.2 17l1.7-1M18.1 8l1.7-1"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="1.4"/>',
+    news: '<path d="M5 4h12v15a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2V8h1"/><path d="M17 8h2v11a1 1 0 0 1-2 0M8 8h6M8 11h6M8 14h4"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
   };
   const svg = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
+  // the five places, one way into each: the top bar on computers, the tab bar on phones (the same buttons)
+  const PLACES = [['workshop', 'Workshop', 'workshop'], ['collection', 'Collection', 'cards'], ['market', 'Market', 'tag'], ['arcade', 'Arcade', 'game'], ['paper', 'Paper', 'news']];
+  const paperHref = () => { const l = new URLSearchParams(location.search).get('live'); return '/press/' + (l ? `?live=${encodeURIComponent(l)}` : ''); };
+  const navItems = () => PLACES.map(([k, label, icon]) => k === 'paper'
+    ? `<a class="nv n-${k}" data-nav="${k}" href="${paperHref()}" aria-label="${label}">${svg(icon)}<span>${label}</span></a>`
+    : `<button class="nv n-${k}${k === 'market' ? ' mk-entry' : ''}" type="button" data-nav="${k}" aria-label="${label}">${svg(icon)}<span>${label}</span>${k === 'market' ? '<b class="nbadge" hidden></b>' : ''}</button>`).join('');
   // big numbers compact, 3 significant digits: 22.9K, 1.25M, 1T (never "1000.00B")
   const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 });
   const fmt = (n) => (n >= 1e3 ? compact.format(n) : String(+n.toFixed(3)));
@@ -44,16 +53,9 @@
     <a class="brand" href="#" aria-label="Omni Cardworks"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">CARDWORKS</span><em class="tag">Wood and paper in, packs out.</em></a>${LIVE && Live.testnet ? '<span class="net-badge">Testnet</span>' : ''}
     <button class="chip series" id="seriesChip" type="button"></button>
     <div class="grow"></div>
-    <nav class="tools" aria-label="Tools">
-      <button class="chip mycards" type="button" data-st="cards" aria-label="My cards">${svg('cards')}<span>My cards</span></button>
-      <button class="chip mk-entry" type="button" data-go="fun:market" aria-label="Market">${svg('tag')}<span>Market</span></button>
-      <button class="chip" type="button" data-go="paper" aria-label="Get PAPER">${svg('paper')}<span>Get PAPER</span></button>
-      <button class="chip" type="button" data-go="info" aria-label="Info">${svg('info')}<span>Info</span></button>
-      <button class="chip round" type="button" data-go="feed" aria-label="Activity">${svg('feed')}</button>
-      <button class="chip round" type="button" id="soundBtn" aria-label="Sound" aria-pressed="${!!window.Sound?.on}">${svg(window.Sound?.on ? 'sound' : 'mute')}</button>
-      <button class="chip demo" type="button" data-go="demo">Demo</button>
-    </nav>
-    <button class="chip round menu-btn" type="button" data-go="menu" aria-label="Menu">${svg('menu')}</button>
+    <nav class="nav5" aria-label="Places">${navItems()}</nav>
+    <div class="grow"></div>
+    <button class="chip round gear" type="button" data-go="menu" aria-label="Help and settings">${svg('gear')}</button>
     <button class="wallet" id="walletBtn" type="button">${svg('wallet')}${Brand.coin('PAPER', 'wcoin').replace('<img ', '<img hidden ')}<span>Connect</span></button>
   </header>
   <div class="qbanner" id="qbanner" hidden></div>
@@ -71,8 +73,6 @@
     <button class="pill tool" type="button" data-st="burn" data-x="320" data-y="1035" style="--c: var(--fire)">${svg('fire')}<span>Burn<small id="pBurn"></small></span></button>
     <button class="pill openp hero" type="button" data-hero data-x="1385" data-y="1395" style="--c: var(--wood)">${svg('pack')}<span><b id="pOpenT">Open packs</b><small id="pOpen"></small></span></button>
     <button class="pill tool" type="button" data-st="grade" data-x="2390" data-y="1225" style="--c: var(--diamond)">${svg('lens')}<span>Case &amp; grade<small data-price="psa">from ${Wear.usd(Store.PRICES.CASE_USD)}</small></span></button>
-    <button class="pill tool" type="button" data-st="games" data-x="1960" data-y="1640" style="--c: var(--gold)">${svg('game')}<span>Game room<small>Fold and Flick · Spit-Wad</small></span></button>
-    <button class="pill tool mk-entry" type="button" data-go="fun:market" data-x="900" data-y="1640" style="--c: var(--brass)">${svg('tag')}<span>Market<small>Buy, sell, make offers</small></span></button>
     <div class="spot" id="spot" data-x="3590" data-y="1750" aria-hidden="true"></div>
     <aside class="sdock" id="sdock" data-x="3040" data-y="930" aria-label="Suggestion box"></aside>
     <button class="pill tool" type="button" data-st="suggest" data-x="3590" data-y="1185" style="--c: var(--paper)">${svg('mail')}<span>Suggest<small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></span></button>
@@ -81,13 +81,10 @@
   <section class="stations" aria-label="Stations">
     <p class="pitch">Rip packs, pull holo cards, grade the best.</p>
     <button class="openbtn hero" type="button" data-hero id="openBtn">${svg('pack')}<span><b id="sOpenT">Open packs</b><small id="sOpen"></small></span></button>
-    <button class="station" type="button" data-st="cards" style="--c: var(--wood)">${svg('cards')}<b>My cards</b><small id="sCards"></small></button>
     <button class="station peek" type="button" data-peek><span class="peek-fan" aria-hidden="true"><img alt=""><img alt=""></span><b id="sPeekT">Series 8</b><small id="sPeek"></small></button>
     <button class="station tool" type="button" data-st="burn" style="--c: var(--fire)">${svg('fire')}<b>Burn</b><small id="sBurn"></small></button>
     <button class="station tool" type="button" data-st="grade" style="--c: var(--diamond)">${svg('lens')}<b>Case &amp; grade</b><small data-price="psa">from ${Wear.usd(Store.PRICES.CASE_USD)}</small></button>
     <button class="station tool" type="button" data-st="suggest" style="--c: var(--paper)">${svg('mail')}<b>Suggest</b><small data-price="suggest">${Store.PRICES.SUGGEST_PAPER} PAPER</small></button>
-    <button class="station tool" type="button" data-st="games" style="--c: var(--gold)">${svg('game')}<b>Game room</b><small>Fold and Flick · Spit-Wad</small></button>
-    <button class="station tool mk-entry" type="button" data-go="fun:market" style="--c: var(--brass)">${svg('tag')}<b>Market</b><small>Buy, sell, make offers</small></button>
   </section>
   <footer class="strip" aria-label="What's in a pack">
     <img class="packart" src="ui/omni-pack.webp" alt="Series 7 pack">
@@ -97,7 +94,8 @@
     </div>
     <button class="btn small more" type="button" data-go="info-cards">Odds</button>
   </footer>
-  <div class="buybar" id="buybar"></div>`;
+  <div class="buybar" id="buybar"></div>
+  <nav class="tabbar" id="tabbar" aria-label="Places" hidden>${navItems()}</nav>`;
 
   // ---------- layout: desktop / phone portrait / phone landscape
   // the top bar plus the demo notice under it: CSS --top (78 px; 86 on touch screens, where the notice is 32 px tall; live
@@ -140,6 +138,7 @@
     }
     if (window.Scene) Scene.setView(view);
     poster(); placePills(); if (S.wallet) renderCounts();
+    raiseTabs();
     // upright: the scene's height is what the stations leave it, and they were measured before renderCounts rewrote
     // them for this mode (a phone turned upright from its side): measure again once they're final
     if (mode === 'port') refitPort();
@@ -388,7 +387,7 @@
   let hero = null;
   const fmtChip = (n) => (n >= 1000 ? fmt(n) : String(+(+n).toFixed(n < 10 ? 2 : 1))); // "22.9", not "22.919": the chip stays short
   function renderCounts() {
-    const sealed = Object.values(S.sealed).reduce((a, b) => a + b, 0), b = S.wallet.burnCount % 42;
+    const b = S.wallet.burnCount % 42;
     for (const id of ['pBurn', 'sBurn']) setText($('#' + id), `${b} / 42`);
     hero = heroOf();
     for (const [t, s, sel] of [['pOpenT', 'pOpen', '.pill.openp'], ['sOpenT', 'sOpen', '#openBtn']]) {
@@ -396,7 +395,6 @@
     }
     for (const k of ['open', 'buy', 'cards']) document.body.classList.toggle('hero-' + k, hero.kind === k);
     document.body.classList.toggle('fresh', !opened());
-    setText($('#sCards'), `${S.cards.length} ${S.cards.length === 1 ? 'card' : 'cards'} · ${sealed} ${sealed === 1 ? 'pack' : 'packs'}`);
     const wb = $('#walletBtn span');
     const nm = mode === 'port' || innerWidth < 1500 ? '' : S.wallet.name; // phones: the icon and the balance, so the button fits beside the brand
     // phones: the PAPER coin before the number says what it is, so the chip is just the avatar, the coin and "1.23M"
@@ -527,6 +525,7 @@
 
   function render() {
     renderBurned(); renderChip(); renderBuy(); renderPeek(); renderCounts(); renderQuiet(); syncScene(); placePills();
+    offerBadge(); markPlace();
     const mk = Store.marketOn(); document.querySelectorAll('.mk-entry').forEach((x) => { if (x.hidden === mk) x.hidden = !mk; }); // the market's ways in: only where there is one
     const h = mode === 'port' && !$('#buybar').classList.contains('open') ? $('#buybar').offsetHeight : bbH; if (h !== bbH) { bbH = h; if (h) layout(); } // the Buy bar changed height: keep the stations clear of it
   }
@@ -555,11 +554,9 @@
           <div><span>Cards</span><b>${S.cards.length}</b></div>
           ${w.pending.length ? `<div><span>Pending</span><b>${w.pending.length}</b></div>` : ''}
         </div>
-        <div class="acts"><button class="btn primary" type="button" data-w="cards">My cards</button><button class="btn" type="button" data-w="paper">Get PAPER</button></div>
+        <div class="acts"><button class="btn primary" type="button" data-w="paper">Get PAPER</button></div>
         <div class="acts"><button class="btn small" type="button" data-w="switch">Switch wallet</button><button class="btn small" type="button" data-w="out">Disconnect</button></div>
       </div>` });
-    d.querySelector('[data-w=cards]').onclick = () => { d.close(); openStation('cards'); };
-    window.Fun?.decorateWallet?.(d); // badges, showcase, binder (badges.js)
     d.querySelector('[data-w=paper]').onclick = () => { d.close(); openGetPaper(); };
     d.querySelector('[data-w=out]').onclick = () => { d.close(); Store.update((s) => { s.wallet.connected = false; }); };
     d.querySelector('[data-w=switch]').onclick = () => { d.close(); Store.update((s) => { s.wallet.connected = false; }); needWallet(openWallet); };
@@ -870,17 +867,16 @@
     const items = S.activity.length ? S.activity : [{ text: 'No activity yet' }];
     Sheet.open('feed', { title: 'Activity', body: `<ul class="feed">${items.map((a) => `<li>${esc(a.text)}</li>`).join('')}</ul>` });
   }
-  // the menu, in four groups with icons: Play, Collection, Learn, Settings
+  // the gear: help, your activity and settings (the five places are in the top bar / tab bar, the wallet has its own sheet)
   function openMenu() {
-    const n = Stations.openableCount(), b = (k, icon, label) => `<button class="btn" type="button" data-m="${k}">${icon ? svg(icon) : ''}${label}</button>`;
+    const b = (k, icon, label) => `<button class="btn" type="button" data-m="${k}">${icon ? svg(icon) : ''}${label}</button>`;
     const group = (title, items) => `<section class="menu-g" aria-label="${title}"><h3>${title}</h3><div class="menu">${items.filter(Boolean).join('')}</div></section>`;
-    const d = Sheet.open('menu', { title: 'Menu', body: `<div class="menu-groups">
-      ${group('Play', [!LIVE || n ? b('open', 'pack', `Open packs${n ? ` (${n})` : ''}`) : '', b('paper', 'paper', 'Get PAPER'), b('games', 'game', 'Game room'), b('fun:practice', 'spark', 'Practice pack')])}
-      ${group('Collection', [b('cards', 'cards', 'My cards'), b('fun:binder', 'book', 'Binder'), Store.marketOn() ? b('fun:market', 'tag', 'Market') : '', b('fun:showcase', 'star', 'Showcase'), b('fun:badges', 'badge', 'Badges')])}
-      ${group('Learn', [b('start', 'flag', 'New here?'), b('info', 'info', 'Info'), b('fun:tour', 'map', 'Workshop tour'), b('feed', 'feed', 'Activity'), window.App?.canInstall ? b('install', 'install', 'Install app') : ''])}
-      ${group('Settings', [b('sound', window.Sound?.on ? 'sound' : 'mute', `Sound: ${window.Sound?.on ? 'On' : 'Off'}`), LIVE && window.App?.push.supported ? b('push', 'bell', `Notifications: ${App.push.on ? 'On' : 'Off'}`) : '', window.Fun?.haptics?.supported ? b('haptics', 'phone', `Vibration: ${Fun.haptics.on ? 'On' : 'Off'}`) : '', LIVE ? '' : b('demo', 'sliders', 'Demo controls')])}
+    const d = Sheet.open('menu', { title: 'Help and settings', body: `<div class="menu-groups">
+      ${group('Help', [b('start', 'flag', 'New here?'), b('info', 'info', 'Info &amp; odds'), b('fun:tour', 'map', 'Workshop tour'), b('fun:practice', 'spark', 'Practice pack')])}
+      ${group('You', [b('feed', 'feed', 'Activity')])}
+      ${group('Settings', [b('sound', window.Sound?.on ? 'sound' : 'mute', `Sound: ${window.Sound?.on ? 'On' : 'Off'}`), LIVE && window.App?.push.supported ? b('push', 'bell', `Notifications: ${App.push.on ? 'On' : 'Off'}`) : '', window.Fun?.haptics?.supported ? b('haptics', 'phone', `Vibration: ${Fun.haptics.on ? 'On' : 'Off'}`) : '', window.App?.canInstall ? b('install', 'install', 'Install app') : ''])}
       </div>
-      <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>` });
+      <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a>${LIVE ? '' : '<button class="inf-link linkish" type="button" data-m="demo">Demo controls</button>'}</p>` });
     d.querySelectorAll('[data-m]').forEach((x) => x.onclick = () => { d.close(); go(x.dataset.m); });
   }
   let auto = null;
@@ -916,7 +912,7 @@
     });
   }
   // sound is on by default (it starts on the first tap anywhere); the speaker turns it off, remembered per visitor
-  $('#soundBtn').onclick = () => { const sound = window.Sound ? Sound.set(!Sound.on) : false; $('#soundBtn').setAttribute('aria-pressed', sound); $('#soundBtn').innerHTML = svg(sound ? 'sound' : 'mute'); toast(sound ? 'Sound: On' : 'Sound: Off'); };
+  const toggleSound = () => { const sound = window.Sound ? Sound.set(!Sound.on) : false; toast(sound ? 'Sound: On' : 'Sound: Off'); };
   function go(k) {
     if (k.startsWith('fun:')) return window.Fun?.go(k.slice(4)); // the fun layer's screens (fun.js)
     if (k === 'install') return window.App?.install();
@@ -924,7 +920,7 @@
       : App.push.enable().then(() => toast('Notifications: On. We\u2019ll tell you when your cards and grades are ready.', 'good'))).catch((e) => toast(e.message, 'bad'));
     if (k === 'haptics' && window.Fun?.haptics) return toast(`Vibration: ${Fun.haptics.set(!Fun.haptics.on) ? 'On' : 'Off'}`);
     if (k === 'paper') openGetPaper(); if (k === 'info') Info.open(); if (k === 'info-cards') Info.open('cards'); if (k === 'feed') openFeed();
-    if (k === 'menu') openMenu(); if (k === 'demo' && !LIVE) openDemo(); if (k === 'start') openStart(); if (k === 'sound') $('#soundBtn').click();
+    if (k === 'menu') openMenu(); if (k === 'demo' && !LIVE) openDemo(); if (k === 'start') openStart(); if (k === 'sound') toggleSound();
     if (k === 'cards' || k === 'open' || k === 'games') openStation(k);
   }
   // My cards opens the collection; Open packs goes straight to tearing the next pack, or (none to open) says why and points at Buy
@@ -938,7 +934,50 @@
     b.focus({ preventScroll: true }); b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge');
   }
   document.querySelectorAll('[data-go]').forEach((b) => b.onclick = () => go(b.dataset.go));
-  document.querySelectorAll('.tools .chip[aria-label], .menu-btn').forEach((b) => { b.title = b.getAttribute('aria-label'); }); // icon-only buttons say what they are on hover
+  document.querySelectorAll('.gear, .nav5 .nv').forEach((b) => { b.title = b.getAttribute('aria-label'); }); // icon-only buttons say what they are on hover
+  // ---------- the five places (top bar on computers, tab bar on phones): Workshop puts every sheet away; Paper is a link
+  const closeSheets = () => { for (let i = 0; i < 8; i++) { const top = [...document.querySelectorAll('dialog.sheet[open]')].pop(); if (!top) break; top.close(); } };
+  function goPlace(k) {
+    if (k === 'workshop') return closeSheets();
+    closeSheets();
+    if (k === 'collection') openStation('cards');
+    if (k === 'market') window.Fun?.go('market');
+    if (k === 'arcade') openStation('games');
+  }
+  document.querySelectorAll('[data-nav]:not(a)').forEach((b) => b.onclick = () => goPlace(b.dataset.nav));
+  // which place is showing: the top sheet that belongs to one says (My cards and its binder, showcase, badges = Collection)
+  function markPlace() {
+    const PLACE_OF = { table: 'collection', binder: 'collection', showcase: 'collection', badges: 'collection', pop: 'collection', market: 'market', games: 'arcade' };
+    const open = [...document.querySelectorAll('dialog.sheet[open]')].map((d) => PLACE_OF[d.id.replace(/^sheet-/, '')]).filter(Boolean);
+    const on = open.length ? open.pop() : document.querySelector('dialog.sheet[open]') ? '' : 'workshop';
+    document.querySelectorAll('[data-nav]').forEach((b) => { const v = b.dataset.nav === on; b.classList.toggle('on', v); if (v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  }
+  // the phone tab bar stays usable over open sheets: a sheet is modal (everything outside it is inert), so the bar moves
+  // into the top sheet (it stays fixed to the bottom of the screen; the sheet stops above it) and back out when the
+  // sheets close. It steps aside for full-screen moments (a pack being opened, the card viewer, a game).
+  const SOLO = ['reveal', 'results'];
+  function raiseTabs() {
+    const bar = $('#tabbar'); if (!bar) return;
+    const top = [...document.querySelectorAll('dialog[open]')].pop();
+    const want = mode === 'port' && !(top && (!top.classList.contains('sheet') || SOLO.includes(top.id.replace(/^sheet-/, ''))));
+    const home = want && top ? top : document.body;
+    // a sheet still sliding in has a transform, which would carry the fixed bar with it: move in once it has landed
+    const moving = home !== document.body && home.getAnimations?.().filter((x) => x.playState === 'running');
+    if (moving?.length) { Promise.all(moving.map((x) => x.finished)).then(raiseTabs, raiseTabs); return; }
+    if (bar.parentNode !== home) home.append(bar);
+    const was = document.body.classList.contains('tabs') + getComputedStyle(document.documentElement).getPropertyValue('--tabH');
+    bar.hidden = !want; document.body.classList.toggle('tabs', want);
+    if (want && bar.offsetHeight) document.documentElement.style.setProperty('--tabH', bar.offsetHeight + 'px'); // the buy bar and sheets sit on it
+    // the buy bar just grew or shrank by the tab bar: measure it again (render keeps the stations clear of it)
+    if (was !== document.body.classList.contains('tabs') + getComputedStyle(document.documentElement).getPropertyValue('--tabH')) requestAnimationFrame(() => { layout(); render(); });
+  }
+  addEventListener('sheets-change', () => { markPlace(); raiseTabs(); });
+  new MutationObserver(() => raiseTabs()).observe(document.body, { subtree: true, attributeFilter: ['open'] });
+  function offerBadge() {
+    const n = window.Fun?.offersForYou?.() || 0;
+    document.querySelectorAll('.nbadge').forEach((x) => { x.hidden = !n; x.textContent = n > 9 ? '9+' : String(n); });
+    document.querySelectorAll('.n-market').forEach((x) => x.setAttribute('aria-label', n ? `Market, ${n} ${n === 1 ? 'offer' : 'offers'} for your cards` : 'Market'));
+  }
   $('#seriesChip').onclick = () => Info.open('buy');
   document.querySelectorAll('[data-st]').forEach((b) => b.onclick = () => openStation(b.dataset.st));
   document.querySelectorAll('[data-peek]').forEach((b) => b.onclick = () => Announce.open());
@@ -986,7 +1025,7 @@
   // the UI is ready: show it now, over a still of the workshop; the live scene fades in when it has loaded (slow networks
   // used to wait ~20 s on the loading screen)
   requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 120));
-  // the village's buildings link here with ?open= (village.html): the market, the game room, the showcase
+  // deep links (?open=): the market, the game room, the showcase, the binder, the badges
   const openQ = new URLSearchParams(location.search).get('open');
   if (openQ) setTimeout(() => {
     if (openQ === 'games') Stations.open('games');

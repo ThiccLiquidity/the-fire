@@ -52,7 +52,7 @@
 
   function unlock(e) {
     if (!enabled) return;
-    if (e?.target?.closest?.('#soundBtn') && !unlocked) return; // the speaker button itself: let its toggle decide
+    if (e?.target?.closest?.('[data-m=sound]') && !unlocked) return; // the Sound switch itself (the gear menu): let its toggle decide
     if (!make()) return;
     if (ctx.state !== 'running' && !document.hidden) { session('playback'); ctx.resume().catch(() => {}); }
     if (!unlocked) { unlocked = true; load(); }

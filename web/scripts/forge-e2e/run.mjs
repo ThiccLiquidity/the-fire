@@ -91,9 +91,8 @@ try {
   const toastSeen = (re) => page.waitForFunction((src) => [...document.querySelectorAll(".toast")].some((t) => new RegExp(src).test(t.textContent)), re.source, { timeout: 60_000 });
   const txDone = () => page.waitForFunction(() => !document.querySelector("#sheet-tx[open]"), null, { timeout: 60_000 });
   const closeSheets = () => page.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
-  // the Menu's buttons (the menu button shows on phones; the sheet is the same everywhere)
-  const menuKeys = async () => { await page.evaluate(() => document.querySelector('[data-go="menu"]').click()); await page.locator("#sheet-menu[open]").waitFor();
-    const k = await page.evaluate(() => [...document.querySelectorAll("#sheet-menu [data-m]")].map((b) => `${b.dataset.m}:${b.textContent.trim()}`)); await closeSheets(); return k; };
+  // the workshop's big button (the scene's pill on computers, the hero tile on phones): "Open packs" only when some can open
+  const heroTitle = () => page.locator("#pOpenT").textContent();
   // a day goes by on the chain: the price windows move on as the keeper's checkpoints would (two: a short window again)
   const cpAbi = [{ type: "function", name: "checkpoint", inputs: [], outputs: [], stateMutability: "nonpayable" }];
   const aDay = async () => { await ctx.warp(24 * 3600 + 1); for (const w of [0, 1801]) { if (w) await ctx.warp(w); for (const t of [ctx.C.PlankUsdTwap, ctx.C.PaperUsdTwap]) await ctx.tx(acct(0), t, cpAbi, "checkpoint"); } };
@@ -135,7 +134,7 @@ try {
   await page.waitForTimeout(500); // the connect's own wallet sheet can open again just after: close whatever is open
   await page.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
 
-  check(!(await menuKeys()).some((k) => k.startsWith("open:")), "live, nothing that can open: the Menu has no Open packs");
+  check(!/^Open/.test(await heroTitle()), `live, nothing that can open: no Open packs (${await heroTitle()})`);
 
   console.log("\n== suggest a theme and an art style (one transaction)");
   await page.evaluate(() => Stations.open("suggest"));
@@ -270,7 +269,7 @@ try {
   await sync();
   check(await page.evaluate(() => Store.state.sealed[7] === 8 && Store.state.series.phase === 4), "8 sealed packs; Series 7 closed (closed by the keeper)");
   await shot("07-closed");
-  check((await menuKeys()).includes("open:Open packs (8)"), "packs that can open: the Menu shows Open packs (8)");
+  check(await heroTitle() === "Open packs (8)", "packs that can open: the big button says Open packs (8)");
 
   console.log("\n== an open in progress survives a reload; after 24 hours with no draw, the packs come back");
   await page.evaluate(() => Stations.open("cards"));
@@ -615,8 +614,13 @@ try {
     const demo = await p.evaluate(() => ({ live: window.Live?.on, demo: Store.state.demo, cards: Store.state.cards.length, note: !!document.querySelector(".demo-note") && getComputedStyle(document.querySelector(".demo-note")).display !== "none" }));
     check(demo.live === false && demo.demo && demo.cards === 46 && demo.note, `${name}: the demo (46 demo cards, the demo notice)`);
     check(vendor.length === 0, `${name}: no wallet or chain code loaded`);
+    check(/^Open your/.test(await p.locator(w < 500 ? "#sOpenT" : "#pOpenT").textContent()), `${name}: the demo's free packs: the big button says Open your packs`);
+    // the five places, one each (top bar on computers, tab bar on phones), and the gear's menu
+    const places = await p.evaluate((phone) => [...document.querySelectorAll(phone ? "#tabbar [data-nav]" : ".nav5 [data-nav]")].filter((x) => x.offsetParent || x.getClientRects().length).map((x) => x.dataset.nav).join(","), w < 500);
+    check(places === "workshop,collection,market,arcade,paper", `${name}: the five places: ${places}`);
     await p.evaluate(() => document.querySelector('[data-go="menu"]').click()); await p.locator("#sheet-menu[open]").waitFor();
-    check((await p.locator('#sheet-menu [data-m="open"]').count()) === 1, `${name}: the demo's Menu keeps Open packs`);
+    const gear = await p.evaluate(() => [...document.querySelectorAll("#sheet-menu [data-m]")].map((b) => b.dataset.m).join(","));
+    check(/start,info,fun:tour,fun:practice,feed,sound/.test(gear) && /demo$/.test(gear), `${name}: the gear: help, activity, settings, demo controls (${gear})`);
     await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
     const f = join(SHOTS, `16-demo-${name}.png`); await p.screenshot({ path: f }); console.log(`  shot ${f}`);
 

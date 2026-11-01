@@ -1,7 +1,7 @@
 /* Omni Cardworks (fun layer): the market. Cards and sealed packs for sale at a fixed price in ETH, and offers
    (FireMarket: no owner, no fees; a listed card stays in its seller's wallet until someone buys it, and an offer's
    WETH stays in the buyer's wallet until a holder accepts).
-     Market (top bar, the workshop's Market sign, Menu): Cards (floors by type, a grid; tap one to see it, buy it or
+     Market (the Market place: top bar on computers, tab bar on phones): Cards (floors by type, a grid; tap one to see it, buy it or
      make an offer), Packs, Offers (what people want: one card, any card like it, packs; "Sell yours" when you hold a
      match, and "Make an offer"), Activity (the newest sales), Mine (your listings, your offers, your WETH).
      A card's detail: Sell (or "For sale · 0.02 ETH"), and its best offer with Accept.
@@ -492,6 +492,12 @@
       h('p', { class: 'muted small', text: 'They stay in your wallet until someone buys them.' })) });
   }
 
+  // the tab bar's Market badge (ui.js): open offers someone else made that this wallet can fill now
+  Fun.offersForYou = () => {
+    if (!S.wallet.connected) return 0;
+    const os = (data?.offers || (LIVE ? S.offersSeen : demo?.offers) || []).filter((o) => o.qty > 0 && !mine(o.buyer) && (!o.expiry || o.expiry > nowS()));
+    return os.filter((o) => (o.kind === 'packs' ? (S.sealed[o.series] || 0) > 0 : myMatches(o).length > 0)).length;
+  };
   // the card detail (screens.js): "Sell" or "For sale · 0.02 ETH", and its best offer with Accept
   Fun.sellLabel = (c) => (S.listed[c.id] != null ? `For sale · ${ethTxt(S.listed[c.id])}` : 'Sell');
   Fun.offerLine = (c) => {

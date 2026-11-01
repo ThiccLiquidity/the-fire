@@ -48,14 +48,4 @@
     Sheet.open('badges', { title: 'Badges', body: h('div', { class: 'st' }, who ? row(who) : h('p', { class: 'muted', text: 'Connect a wallet to collect badges.' }),
       h('p', { class: 'muted small', text: 'Earned by doing, never by luck. Saved in this browser.' })) });
   };
-  // the wallet sheet shows them (ui.js / live.js call this after opening it)
-  Fun.decorateWallet = (d) => {
-    const who = Fun.who(); if (!d || !who || d.querySelector('.fun-wallet')) return;
-    const n = Fun.badgeCount(who);
-    const box = h('div', { class: 'fun-wallet' },
-      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn small', text: `Badges (${n})`, onclick: () => { d.close(); Fun.open.badges(); } }),
-        h('button', { type: 'button', class: 'btn small', text: 'Showcase', onclick: () => { d.close(); Fun.go('showcase'); } }),
-        h('button', { type: 'button', class: 'btn small', text: 'Binder', onclick: () => { d.close(); Fun.go('binder'); } })));
-    (d.querySelector('.wmenu') || d.querySelector('.sheet-body'))?.append(box);
-  };
 })();

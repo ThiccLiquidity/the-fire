@@ -451,15 +451,13 @@
           <div><span>Cards</span><b>${S.cards.length}</b></div>
           ${pend.length ? `<div><span>Pending</span><b>${pend.length}</b></div>` : ''}
         </div>
-        <div class="acts"><button class="btn primary" type="button" data-w="cards">My cards</button><button class="btn" type="button" data-w="paper">Get PAPER</button></div>
+        <div class="acts"><button class="btn primary" type="button" data-w="paper">Get PAPER</button></div>
         <div class="acts">${FW?.state().modal ? '<button class="btn small" type="button" data-w="acct">Manage wallet</button>' : ''}<button class="btn small" type="button" data-w="out">Disconnect</button></div>
       </div>` });
-    d.querySelector('[data-w=cards]').onclick = () => { d.close(); Stations.open('cards'); };
     d.querySelector('[data-w=paper]').onclick = () => { d.close(); getPaper(); };
     d.querySelector('[data-w=acct]')?.addEventListener('click', () => { d.close(); FW.open(); });
     d.querySelector('[data-w=out]').onclick = () => { d.close(); FW.disconnect().catch((e) => toast(friendly(e), 'bad')); };
     window.Profiles?.decorate(d); // profile.js: the avatar, the profile's name and Edit
-    window.Fun?.decorateWallet?.(d); // badges, showcase, binder (badges.js)
   }
 
   // ---------- sending: a step list while the wallet confirms, a toast when it lands, a plain reason when it fails

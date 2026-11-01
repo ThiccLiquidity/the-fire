@@ -280,7 +280,7 @@
 
   // ---- sections ----
   const SHORT = { about: 'About', buy: 'Buying', press: 'Press packs', free: 'Free packs', open: 'Opening', cards: 'Cards', pda: 'Cases & grading',
-    burn: 'Burning', suggest: 'Suggest', games: 'Game room', paper: 'PLANK & PAPER', fair: 'Fairness', faq: 'FAQ' };
+    burn: 'Burning', suggest: 'Suggest', games: 'Arcade', paper: 'PLANK & PAPER', fair: 'Fairness', faq: 'FAQ' };
   const sec = (id, title, sum, body, tag) => ({ id, title, sum, body, tag });
   function sections(no) {
     const F = facts(), { s, P, usd, press, everyone, extra, cg, cpp } = F;
@@ -424,7 +424,7 @@
           ${TOKENS.map(([t, a]) => `<button class="inf-link inf-ca" type="button" data-ca="${a}">${t} <code>${short(a)}</code> <span class="cp">Copy</span></button>`).join('')}
           <a class="inf-link" href="https://opensea.io/collection/the-plank-press" target="_blank" rel="noopener">Paper Press on OpenSea <span aria-hidden="true">↗</span></a>
         </div>`),
-      sec('games', 'Game room', 'Free play any time; competitive runs for free packs, gradings and cases. The official rules.', `
+      sec('games', 'Arcade', 'Free play any time; competitive runs for free packs, gradings and cases. The official rules.', `
         <ul>
           <li><b>Free play</b> is free, any time, and during pack and grade waits. No prizes.</li>
           <li><b>A competitive run costs 1 PAPER, or less:</b> never more than $0.10 of PAPER at its current price. The entry goes to the liquidity fire. Up to 3 practice kicks come first and don't count; then your first miss ends the run.</li>
@@ -432,7 +432,7 @@
           <li><b>Prizes:</b> when the Series ends, each game's top places win free packs, free gradings and free cases, as listed on its leaderboard for that Series. They're sent to the winners' wallets at the next Series' launch and never expire. Free gradings and cases are used first the next time you case or grade.</li>
           <li><b>Skill, not luck:</b> every shot's distance, wind and goal (and whether it moves) are shown before you kick, and the same kick always lands the same way. Our game server replays each kick and its call is final. A kick it can't count (a timing or connection problem) is never a miss: you kick again.</li>
           <li><b>Who can play for prizes:</b> 18 and older, outside the US states where it isn't allowed (Arizona, Arkansas, Connecticut, Delaware, Indiana, Louisiana, Maine, Montana, South Carolina, South Dakota and Tennessee). Free play is open to everyone.</li>
-          <li><b>Lost connection?</b> Your paid run waits for you: open the Game room again to pick it up.</li>
+          <li><b>Lost connection?</b> Your paid run waits for you: open the Arcade again to pick it up.</li>
           <li><b>What we can do:</b> pause competitive play at any time (runs already paid for can still finish), and review the top runs before prizes go out.</li>
         </ul>`),
       sec('fair', 'Fairness', 'Public randomness, fixed odds, no bot sweeps.', `

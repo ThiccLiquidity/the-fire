@@ -530,6 +530,8 @@
         h('div', { class: 'coll-tools' },
           btn(on ? `Filter · ${on}` : 'Filter', 'small filter-b' + (on ? ' on' : ''), openFilter, { 'data-key': 'filter', 'aria-haspopup': 'dialog', 'aria-label': on ? `Filter and sort (${on} on)` : 'Filter and sort' }),
           btn('Binder', 'small', () => window.Fun?.go('binder', { series: filt.series === 'all' ? null : +filt.series }), { 'data-key': 'binder' }),
+          btn('Showcase', 'small', () => window.Fun?.go('showcase'), { 'data-key': 'showcase' }),
+          btn('Badges', 'small', () => window.Fun?.go('badges'), { 'data-key': 'badges' }),
           btn('Pop report', 'small pop-b', () => openPop(), { 'data-key': 'pop' }))),
         h('p', { class: 'coll-sub' }, h('span', { class: 'muted', text: list.length === all.length ? `${all.length} cards` : `${list.length} of ${all.length}` }),
           LIVE ? null : h('span', { class: 'cfloor', title: 'Collection floor on OpenSea (demo number)' }, h('small', { text: 'Floor (demo)' }), h('b', { text: Store.eth(Store.collectionFloor()) }))), // live: no floor source yet

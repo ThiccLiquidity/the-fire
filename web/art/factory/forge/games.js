@@ -116,7 +116,7 @@
   function room() {
     const host = h('div');
     const l = lobby(host);
-    window.Sheet.open('games', { title: 'Game room', body: host, wide: true, onClose: () => l.stop() });
+    window.Sheet.open('games', { title: 'Arcade', body: host, wide: true, onClose: () => l.stop() });
   }
 
   const Games = window.Games = {
@@ -207,7 +207,7 @@
       if (!rc) throw new Error('Nothing was paid.');
       const r = { runId: c.runId, cap: c.cap, series: c.series, txHash: rc.transactionHash || rc.hash || null };
       keepRun(g, r);
-      if (!r.txHash) throw new Error('Your payment is still on its way. Open the Game room again in a minute to play.');
+      if (!r.txHash) throw new Error('Your payment is still on its way. Open the Arcade again in a minute to play.');
       await Comp.confirm(g, r);
       return Comp.play(g, r, body, back, setCurrent);
     },

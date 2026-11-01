@@ -2,7 +2,7 @@
 //
 // Serves web/dist the way Vercel does (vercel.json's headers, so the CSP applies, and its redirects: /cards), then
 // walks: the doors → the Printing Press door → /press/ → buy today's paper → open the reader → turn pages (keys, edge
-// clicks, a mouse drag) → contents → the back page's letters box → close → Home → the doors; on a phone (touch:
+// clicks, a mouse drag) → contents → the back page's letters box → close → the Workshop button → Cardworks; on a phone (touch:
 // swipe to turn, a drag held half-way) and a tablet in landscape (a two-page spread). No console errors anywhere,
 // no CSP violations. Screenshots of each step go to $SHOTS (default ./shots).
 import { createServer } from "node:http";
@@ -161,26 +161,26 @@ try {
     check(new URL(page.url()).search === "", "closed: back on /press/");
 
     await page.click(".topbar .home");
-    await page.waitForURL(/\/forge\/village\.html$/);
-    check(await page.locator(".vg-plate").count() === 5, "Village: back in the village (five buildings)");
+    await page.waitForURL(/\/forge\/$/);
+    check(true, "Workshop button: back to the Workshop");
 
-    // the card side: /cards goes to Cardworks, which has a Village button and logo back to the village
+    // the card side: /cards goes to Cardworks, whose top bar has the five places; Paper comes back here
     await page.goto(`${SITE}/cards`);
     await page.waitForURL(/\/forge\/$/);
-    await page.locator(".topbar .home-btn").waitFor({ timeout: 20_000 });
-    check(await page.locator(".topbar .home-btn").getAttribute("href") === "/forge/village.html", "/cards → Cardworks, with a Village button");
-    await page.click(".topbar .home-btn");
-    await page.waitForURL(/\/forge\/village\.html$/);
-    check(true, "Cardworks Village → the village");
+    await page.locator('.topbar .nav5 [data-nav="paper"]').waitFor({ timeout: 20_000 });
+    check(await page.locator('.topbar .nav5 [data-nav="paper"]').getAttribute("href") === "/press/", "/cards → Cardworks, with Paper in the top bar");
+    await page.click('.topbar .nav5 [data-nav="paper"]');
+    await page.waitForURL(/\/press\/$/);
+    check(true, "Cardworks Paper → the paper");
     check(errors.length === 0, `desktop: no console errors or CSP violations${errors.length ? ": " + errors.join(" | ") : ""}`);
     await ctx.close();
 
-    // a fresh visitor straight to Cardworks: no Home button (Cardworks unchanged until the doors are "/")
+    // a fresh visitor straight to Cardworks: no Village or Home button (the five places are the way around)
     const fresh = await newPage({ viewport: { width: 1280, height: 800 } });
     await fresh.page.goto(`${SITE}/forge/`);
     await fresh.page.locator(".topbar #walletBtn").waitFor();
     await fresh.page.waitForTimeout(300);
-    check(await fresh.page.locator(".home-btn").count() === 0, "Cardworks opened directly: no Home button yet");
+    check(await fresh.page.locator(".home-btn").count() === 0, "Cardworks opened directly: no Home button");
     await fresh.ctx.close();
   }
 
@@ -241,8 +241,8 @@ try {
     await page.locator('.reader [data-act="close"]').tap();
     await page.locator("dialog.reader").waitFor({ state: "detached" });
     await page.locator(".topbar .home").tap();
-    await page.waitForURL(/\/doors\/$/);
-    check(true, `${name}: Home → the doors`);
+    await page.waitForURL(/\/forge\/$/);
+    check(true, `${name}: Workshop → Cardworks`);
     check(errors.length === 0, `${name}: no console errors or CSP violations${errors.length ? ": " + errors.join(" | ") : ""}`);
     await ctx.close();
   }

@@ -99,7 +99,6 @@ body[data-mode=port] .ft-card { bottom: auto; top: calc(var(--top) + var(--scene
 .fun-badges li i { grid-row: span 2; font-style: normal; font-size: 20px }
 .fun-badges li b { font: 800 13.5px var(--body) } .fun-badges li small { font-size: 11.5px }
 .fun-badges li.on { border-style: solid; border-color: var(--brass); color: var(--ink); background: linear-gradient(#2c1f15, #1a120c) } .fun-badges li.on i { color: var(--gold) }
-.fun-wallet { margin-top: 10px } .fun-wallet .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center }
 
 /* avatars when profile.js isn't there (fun.js) */
 .fun-av { display: inline-grid; place-items: center; flex: none; width: var(--s); height: var(--s); border-radius: 50%; font: 400 calc(var(--s) * .45) var(--display);
