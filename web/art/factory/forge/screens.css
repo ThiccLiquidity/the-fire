@@ -996,3 +996,7 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
   .pda { font-size: 10.5px; padding: 4px 6px }
   .pda .pda-l { display: none } .pda .pda-s { display: inline }
 }
+/* the opening window never jumps when a card turns or is thrown: the 3D turn and the thrown card reach past its edges
+   for a moment, which flashed a desktop scrollbar on and off and shifted everything. Keep the scrollbar's room always,
+   and never scroll sideways (the thrown card just leaves). */
+#sheet-table .sheet-body { overflow-x: hidden; scrollbar-gutter: stable }

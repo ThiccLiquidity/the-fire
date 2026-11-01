@@ -239,5 +239,14 @@
     raf = requestAnimationFrame(frame);
   }
 
-  window.Card3D = { get supported() { return gl1 && !!window.Holo?.face; }, open };
+  /** The "Spin in 3D" button: a cube that turns, a holo rim. card(): the card it opens (read on click), name(c): what
+   *  it's called. */
+  const CUBE = '<svg class="c3d-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20 7.2v9.6L12 21.2 4 16.8V7.2Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M4 7.2 12 11.6 20 7.2M12 11.6v9.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>';
+  function button(card, name, cls = '') {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'btn c3d-b ' + cls; b.setAttribute('data-key', 'spin-3d');
+    b.setAttribute('aria-label', 'Spin it in 3D'); b.innerHTML = `${CUBE}<span>Spin in 3D</span>`;
+    b.addEventListener('click', () => { const c = card(); if (c) open(c, name?.(c)); });
+    return b;
+  }
+  window.Card3D = { get supported() { return gl1 && !!window.Holo?.face; }, open, button };
 })();

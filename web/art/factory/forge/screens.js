@@ -1073,7 +1073,8 @@
     const zoom = () => viewCard(c, ids);
     const body = h('div', { class: 'detail' },
       h('div', { class: 'big' }, h('div', { class: 'cwrap', onclick: (e) => { if (!e.target.closest('button')) zoom(); } }, face, gradeBadge(c),
-        window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null), clipBtn(c, 'small big-clip')),
+        window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null),
+        h('div', { class: 'big-acts' }, window.Card3D?.supported ? Card3D.button(() => c, () => c.character, 'small') : null, clipBtn(c, 'small big-clip'))),
       h('div', { class: 'traits' },
         h('div', { class: 'cmeta' }, matChip(c.material), holoChip(c), od.tier ? h('span', { class: 'tier-b ' + od.tier, text: TIER_LABEL[od.tier] }) : null),
         upside ? h('p', { class: 'upside-b' }, h('b', { text: 'Upside-down rare' }), ` · about 1 in ${Info.oneIn(upside.p)} cards`) : null,
