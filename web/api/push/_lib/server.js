@@ -58,7 +58,7 @@ export function createPushServer({ store, config, send, now = () => Date.now() }
     if (b.to !== 'all' && !isWallet(b.to)) return bad(400, 'Bad recipient.');
     if (!(await store.claim(b.tag, now()))) return json(200, { sent: 0, already: true });
     const subs = b.to === 'all' ? await store.forTopic(b.topic, LIMITS.broadcast) : await store.forWallet(b.to.toLowerCase(), b.topic);
-    const msg = JSON.stringify({ title: b.title.slice(0, 80), body: b.body.slice(0, 200), url: typeof b.url === 'string' && b.url.startsWith('/') ? b.url : '/forge/', tag: b.tag });
+    const msg = JSON.stringify({ title: b.title.slice(0, 80), body: b.body.slice(0, 200), url: typeof b.url === 'string' && /^\/(?![\/\\])/.test(b.url) ? b.url : '/forge/' /* this site only: never //other.site */, tag: b.tag });
     let sent = 0, gone = 0;
     for (const s of subs) {
       try { await send(s, msg); sent++; await store.ok(s.endpoint, now()); }

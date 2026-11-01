@@ -49,6 +49,9 @@ test("merge: keeps what's there, adds the new, keeps the first deployer and star
   assert.deepEqual(m.inputs, { PAPER: a(1), PLANK: a(3) });
   assert.deepEqual(m.contracts, { PlankUsdTwap: a(2), FireCards: a(4) });
   assert.equal(merge(undefined, { chainId: 1, startBlock: 9, contracts: {} }, 7n).startBlock, 7);
+  // a fresh start (DevStack: a new testnet kit) moves startBlock to the new deploy, so nothing scans the old one's blocks
+  assert.equal(merge({ chainId: 1, startBlock: 5, contracts: {} }, { chainId: 1, startBlock: 900, freshStart: true, contracts: {} }).startBlock, 900);
+  assert.ok(!("freshStart" in merge({ chainId: 1, startBlock: 5, contracts: {} }, { chainId: 1, startBlock: 900, freshStart: true, contracts: {} })));
 });
 
 test("record: a landed broadcast is merged and the .pending file removed", async () => {

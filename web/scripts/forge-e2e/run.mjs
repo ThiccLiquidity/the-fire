@@ -592,6 +592,8 @@ try {
     check(/faucet\.testnet\.chain\.robinhood\.com/.test(await tn.locator('a[href*="faucet"]').getAttribute("href")), "the Testnet badge opens it: a link to the Robinhood testnet faucet");
     const I = ctx.deployment.inputs;
     const bal = (t) => ctx.pub.readContract({ address: t, abi: erc20Abi, functionName: "balanceOf", args: [me] });
+    // the kit's details load just after the sheet opens
+    await page.waitForFunction(() => /plus 2 sealed Series 6 packs/.test(document.querySelector("#sheet-testnet .tn-steps li:nth-child(2) small")?.textContent || ""), null, { timeout: 15_000 }).catch(() => {});
     check(/plus 2 sealed Series 6 packs to open right away/.test(await tn.locator(".tn-steps li:nth-child(2) small").first().textContent()), "the kit says it brings 2 sealed warm-up packs");
     const packs6 = () => ctx.pub.readContract({ address: ctx.C.FirePacks, abi: [{ type: "function", name: "balanceOf", inputs: [{ type: "address" }, { type: "uint256" }], outputs: [{ type: "uint256" }], stateMutability: "view" }], functionName: "balanceOf", args: [me, 6n] });
     const before = await Promise.all([bal(I.PAPER), bal(I.USDG), bal(I.MILL)]);
@@ -603,7 +605,7 @@ try {
     await page.waitForFunction(() => /Open my packs/.test(document.querySelector('#sheet-testnet [data-t="open"]')?.textContent || ""), null, { timeout: 30_000 });
     check(true, `then "Open my packs" (the warm-up is closed, so they open now): ${(await tn.locator(".tn-steps li:nth-child(2) small").first().textContent()).trim()}`);
     const items = (await tn.locator(".tn-checks li label span").allTextContents()).map((t) => t.trim());
-    check(items.length === 10 && items[0] === "Open packs" && items.includes("Use the Market: sell, buy, make an offer") && items.includes("Buy PAPER"), `What to test: the big things (${items.join(" / ")})`);
+    check(items.length === 9 && items[0] === "Open packs" && !items.some((t) => /Morning Wood/.test(t)) && items.includes("Use the Market: sell, buy, make an offer") && items.includes("Buy PAPER"), `What to test: the big things (${items.join(" / ")})`);
     await shot("15c-testnet-kit");
     // a report from a checklist row: the form knows where, sends the page's details, the owner reads it
     await tn.locator('[data-rp="grade"]').click();

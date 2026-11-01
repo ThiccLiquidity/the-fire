@@ -244,6 +244,8 @@ contract DevRouter is DevOwned {
         external
         returns (uint256[] memory amounts)
     {
+        // WETH out would be minted, unbacked, and unwrapped for other testers' deposited ETH: never into WETH here
+        require(path[path.length - 1] != WETH, "dev: no swaps into WETH on the testnet");
         require(!fail, "router down");
         amounts = getAmountsIn(amountOut, path);
         require(amounts[0] <= maxIn, "EXCESSIVE_INPUT_AMOUNT");
@@ -267,6 +269,8 @@ contract DevRouter is DevOwned {
         external
         returns (uint256[] memory amounts)
     {
+        // WETH out would be minted, unbacked, and unwrapped for other testers' deposited ETH: never into WETH here
+        require(path[path.length - 1] != WETH, "dev: no swaps into WETH on the testnet");
         require(!fail, "router down");
         require(ERC20(path[0]).transferFrom(msg.sender, address(this), amountIn), "transferFrom");
         amounts = getAmountsOut(amountIn, path);
@@ -344,6 +348,7 @@ contract DevKit is DevOwned, ERC1155Holder {
     uint256 public packFire; // which Series' packs it hands out
     uint256 public packsPer; // how many per wallet
     mapping(address => bool) public gotPacks;
+    mapping(address => bool) public smartWallet; // smart-contract wallets the deployer lets claim
 
     event Claimed(address indexed to, bool press, uint256 packs);
     event PacksSet(address packs, uint256 fire, uint256 per);
@@ -363,6 +368,11 @@ contract DevKit is DevOwned, ERC1155Holder {
         emit PacksSet(address(packs_), fire, per);
     }
 
+    /// @notice Let a friend's smart-contract wallet claim (the deployer).
+    function setSmartWallet(address w, bool on) external onlyOwner {
+        smartWallet[w] = on;
+    }
+
     /// @notice Take packs back out of the kit (the deployer).
     function takePacks(address to, uint256 n) external onlyOwner {
         packs.safeTransferFrom(address(this), to, packFire, n, "");
@@ -380,6 +390,9 @@ contract DevKit is DevOwned, ERC1155Holder {
 
     /// @notice The test tokens (once a day) and, the first time, a Paper Press; the kit's packs once per wallet.
     function claim() external {
+        // people only: a contract could spin up throwaway claimers and take every pack in one transaction. A friend on a
+        // smart-contract wallet (no tx.origin of its own) is let in by the deployer (setSmartWallet)
+        require(msg.sender == tx.origin || smartWallet[msg.sender], "DevKit: from your own wallet");
         bool tokens = lastClaim[msg.sender] == 0 || block.timestamp >= lastClaim[msg.sender] + EVERY;
         uint256 n = packsFor(msg.sender);
         require(tokens || n > 0, "DevKit: once a day");

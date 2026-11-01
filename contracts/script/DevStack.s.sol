@@ -96,6 +96,7 @@ contract DevStack is Deployments {
             (inNames[i], inAddrs[i]) = (n[i], a[i]);
             console.log(string.concat(n[i], "=", vm.toString(a[i])));
         }
+        _freshStart = true; // a new testnet kit: everything after it is new, so scans start here
         _record(new string[](0), new address[](0), inNames, inAddrs, address(0), address(0));
     }
 }

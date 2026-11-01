@@ -147,7 +147,7 @@ export async function setupChain({ port = 8547, log = console.log, everyone = {}
     wr.fire = Number(W);
     // the studio's warmUpSale (studio/src/sale.ts), exported: $1 + 0.1 PAPER, one wallet can buy it all
     wr.sale = {
-      start: 0, packs: warmup, paperCapUsd: 100000000, maxPerTx: 50, regularWalletsFor: 0, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0, creditGroup: 0,
+      start: 0, packs: warmup, paperCapUsd: 100000000, maxPerTx: 50, regularWalletsFor: 0, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0, creditGroup: 255,
       groups: [{ name: "Warm-up", packs: warmup, gate: "open", priceUsd: "100000000", paper: "100000000000000000", coins: 7, plankBurnBps: 1000, paperBurnBps: 2000,
         perWallet: warmup, afterGroup: 255, startDelay: 0, duration: 0, rollTo: 255 }],
     };

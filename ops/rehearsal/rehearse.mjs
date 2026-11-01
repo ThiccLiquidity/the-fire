@@ -697,12 +697,20 @@ async function main() {
   }
 
   // ---------------- burners
-  step("LiquidityBurner waits for a PAPER price (a run would move nothing, so the keeper doesn't send one) and alerts");
   const liqAbi = ABI.liquidity;
   const lpRead = (fn) => pub.readContract({ address: C.LiquidityBurner, abi: liqAbi, functionName: fn });
-  const lbHeld = await pub.getBalance({ address: C.LiquidityBurner });
-  check(lbHeld > 0n && (await lpRead("lpBurned")) === 0n, `LiquidityBurner holds ${formatEther(lbHeld)} ETH, no liquidity burned yet`);
-  check(r.alerts.some((a) => /LiquidityBurner has .* couldn't do yet/.test(a.text)) && hook.posts.some((p) => /LiquidityBurner has/.test(p)), "the 'work waiting' alert reached the webhook");
+  // the PAPER price's window: 20 h, or 30 minutes on the testnet's chain id (46630), where the price is in within the hour
+  const paperWindow = await pub.readContract({ address: C.PaperUsdTwap, abi: [{ type: "function", name: "MIN_WINDOW", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" }], functionName: "MIN_WINDOW" });
+  const slowPaper = paperWindow >= 20n * 3600n;
+  if (slowPaper) {
+    step("LiquidityBurner waits for a PAPER price (a run would move nothing, so the keeper doesn't send one) and alerts");
+    const lbHeld = await pub.getBalance({ address: C.LiquidityBurner });
+    check(lbHeld > 0n && (await lpRead("lpBurned")) === 0n, `LiquidityBurner holds ${formatEther(lbHeld)} ETH, no liquidity burned yet`);
+    check(r.alerts.some((a) => /LiquidityBurner has .* couldn't do yet/.test(a.text)) && hook.posts.some((p) => /LiquidityBurner has/.test(p)), "the 'work waiting' alert reached the webhook");
+  } else {
+    step(`the testnet's PAPER price window is ${Number(paperWindow) / 60} minutes: the price came within the hour and the keeper already ran LiquidityBurner`);
+    check((await lpRead("lpBurned")) > 0n, `LiquidityBurner already burned ${await lpRead("lpBurned")} pool tokens`);
+  }
 
   if (!FORK) {
     step("20 hours pass with the main keeper down: a keeper that won't act still sees the stale PLANK price");
@@ -739,9 +747,16 @@ async function main() {
     const deadLp = await pub.readContract({ address: pool, abi: erc20Abi, functionName: "balanceOf", args: ["0x000000000000000000000000000000000000dEaD"] });
     check(lp > 0n && deadLp === lp, `LiquidityBurner run by the keeper: ${lp} PAPER/PLANK pool tokens minted to the dead address`);
     const [hp, hk, hs] = await lpRead("held");
-    check(hs === 0n && hp <= 100n * 10n ** 18n && hk <= 100n * 10n ** 18n, `after the run: nothing left to spend; PAPER side $${(Number(hp) / 1e18).toFixed(2)}, PLANK side $${(Number(hk) / 1e18).toFixed(2)}`);
+    // the testnet's fast price: the burner already ran earlier, so what came in since may sit under the keeper's minimum
+    // run (MIN_FLUSH_USD $0.25 here) and wait for more
+    // the testnet's fast price: the burner already ran earlier in this rehearsal, and the keeper runs it at most every
+    // 15 minutes of wall clock (FLUSH_EVERY_MIN; the rehearsal's passes are seconds apart), so what came in since waits for
+    // the next run: check a run would take it now
+    const runNow = slowPaper ? true : (await pub.simulateContract({ account: keeperA.address, address: C.LiquidityBurner, abi: liqAbi, functionName: "run" })).result;
+    const spendOk = slowPaper ? hs === 0n : runNow === true;
+    check(spendOk && hp <= 100n * 10n ** 18n && hk <= 100n * 10n ** 18n, `after the run: ${hs === 0n ? "nothing" : `$${(Number(hs) / 1e18).toFixed(2)} (under the minimum run)`} left to spend; PAPER side $${(Number(hp) / 1e18).toFixed(2)}, PLANK side $${(Number(hk) / 1e18).toFixed(2)}`);
     r = await pass();
-    check(hook.posts.some((p) => /resolved: LiquidityBurner has/.test(p)), "the webhook got the 'resolved' line");
+    if (slowPaper) check(hook.posts.some((p) => /resolved: LiquidityBurner has/.test(p)), "the webhook got the 'resolved' line");
 
     step("buyer 2 cases one card and grades one paying in USDG (one grading price for every card; the fee goes to LiquidityBurner)");
     const free = [];

@@ -491,9 +491,14 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     /// @notice If the open at the head of a Series' queue has been ready for SKIP_AFTER and still isn't dealt (its
     ///         dealer can't deal it), anyone can skip it so the queue moves on: the packs it hadn't started go back to
     ///         the holder, sealed (cards already dealt stay theirs).
+    ///         Cancelled opens in front of it (dealt as nothing) are stepped past first, so one can't hide a stuck open
+    ///         behind it.
     function skipStuck(uint256 fire) external nonReentrant {
+        Open[] storage q = _opens[fire];
         uint256 h = headOf[fire];
-        Open storage o = _opens[fire][h];
+        while (h < q.length && q[h].ready && q[h].count == 0) h++;
+        if (h >= q.length) revert NotStuck();
+        Open storage o = q[h];
         if (!o.ready || o.count == 0 || block.timestamp < o.readyAt + SKIP_AFTER) revert NotStuck();
         uint256 back = o.count - o.packsDone - (o.cardInPack != 0 ? 1 : 0);
         if (o.cardInPack != 0) {

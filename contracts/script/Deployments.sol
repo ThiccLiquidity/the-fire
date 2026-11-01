@@ -47,6 +47,10 @@ abstract contract Deployments is Script {
         ];
     }
 
+    /// Set by a script that starts the deploy over (DevStack: a fresh testnet kit): the file's startBlock moves to now, so
+    /// the site, keepers and indexer don't scan the old deploy's blocks.
+    bool internal _freshStart;
+
     function deploymentsFile() public view returns (string memory) {
         return vm.envOr(
             "DEPLOYMENTS_FILE", string.concat(vm.projectRoot(), "/../deployments/", vm.toString(block.chainid), ".json")
@@ -121,7 +125,8 @@ abstract contract Deployments is Script {
         }
         string memory r = "root";
         vm.serializeUint(r, "chainId", block.chainid);
-        vm.serializeUint(r, "startBlock", old.readUintOr(".startBlock", block.number));
+        vm.serializeUint(r, "startBlock", _freshStart ? block.number : old.readUintOr(".startBlock", block.number));
+        if (_freshStart) vm.serializeBool(r, "freshStart", true); // record.mjs: take this startBlock, not the file's
         address d = old.readAddressOr(".deployer", deployer);
         if (d != address(0)) vm.serializeAddress(r, "deployer", d);
         address o = owner != address(0) ? owner : old.readAddressOr(".owner", address(0));

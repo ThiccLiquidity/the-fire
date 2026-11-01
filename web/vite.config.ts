@@ -11,15 +11,18 @@ export function launchChecks(mode: string): Plugin {
     apply: 'build',
     buildStart() {
       const env = loadEnv(mode, process.cwd(), 'VITE_')
-      if (env.VITE_RPC_URL) {
+      // the mainnet RPC and the testnet one (each, when set, must be one the CSP lets the page reach)
+      for (const name of ['VITE_RPC_URL', 'VITE_TESTNET_RPC_URL'] as const) {
+        const url = env[name]
+        if (!url) continue
         let host: string
-        try { host = new URL(env.VITE_RPC_URL).host } catch { throw new Error(`VITE_RPC_URL isn't a URL: ${env.VITE_RPC_URL}`) }
+        try { host = new URL(url).host } catch { throw new Error(`${name} isn't a URL: ${url}`) }
         const csp = (JSON.parse(readFileSync(new URL('./vercel.json', import.meta.url), 'utf8')) as { headers: { headers: { key: string; value: string }[] }[] })
           .headers.flatMap((h) => h.headers).find((h) => h.key === 'Content-Security-Policy')?.value ?? ''
         const allowed = (csp.split(';').map((d) => d.trim()).find((d) => d.startsWith('connect-src')) ?? '').split(/\s+/).slice(1)
           .filter((src) => src.startsWith('https://')).map((src) => new URL(src.replace('*.', 'wildcard.')).host)
         const ok = allowed.some((a) => a.startsWith('wildcard.') ? host.endsWith(a.slice('wildcard'.length)) : a === host)
-        if (!ok) throw new Error(`VITE_RPC_URL's host (${host}) isn't in vercel.json's connect-src, so the live site couldn't read the chain. Add https://${host} to connect-src, or leave VITE_RPC_URL empty.`)
+        if (!ok) throw new Error(`${name}'s host (${host}) isn't in vercel.json's connect-src, so the live site couldn't read the chain. Add https://${host} to connect-src, or leave ${name} empty.`)
       }
     },
   }

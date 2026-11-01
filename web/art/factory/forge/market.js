@@ -236,7 +236,9 @@
       sold(o.kind === 'packs' ? { kind: 'packs', series: o.series, amount: n, priceEth: total, seller: S.wallet.full, buyer: o.buyer } : { kind: 'card', card: c, priceEth: total, seller: S.wallet.full, buyer: o.buyer });
       toast(`Sold for ${ethTxt(total)}`, 'good'); celebrate(c); return true;
     }
-    const ok = !!(await Live.run(`Sell ${o.kind === 'packs' ? plural(n, 'pack') : `${c.character} · ${kind(c)}`} for ${ethTxt(total)}`, (w) => L().acceptOffer({ id: o.id, kind: o.kind, serial: c?.serial, amount: n, price: o.price }, w), `Sold for ${ethTxt(total)}`));
+    // old listings asleep (the market switched off): ask first, as listing does, or the wallet step would refuse
+    const wake = await sleepingFirst(); if (wake == null) return false;
+    const ok = !!(await Live.run(`Sell ${o.kind === 'packs' ? plural(n, 'pack') : `${c.character} · ${kind(c)}`} for ${ethTxt(total)}`, (w) => L().acceptOffer({ id: o.id, kind: o.kind, serial: c?.serial, amount: n, price: o.price }, { ...w, wakeOk: wake }), `Sold for ${ethTxt(total)}`));
     if (ok) celebrate(c);
     return ok;
   }

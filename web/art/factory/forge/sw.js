@@ -49,7 +49,10 @@ self.addEventListener('push', (e) => {
 });
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
-  const url = new URL(e.notification.data?.url || '/forge/', self.location.origin).href;
+  // this site only: a link that resolves to another site opens the workshop instead
+  let url = new URL(e.notification.data?.url || '/forge/', self.location.origin);
+  if (url.origin !== self.location.origin) url = new URL('/forge/', self.location.origin);
+  url = url.href;
   e.waitUntil((async () => {
     const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const here = open.find((c) => c.url.startsWith(self.location.origin + '/forge/'));

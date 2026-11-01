@@ -15,7 +15,7 @@ interface IUniswapV2Factory {
  *         It starts with no pool and reports 0. Once a PAPER/WETH, PAPER/USDG or PAPER/PLANK pool on the Uniswap V2
  *         factory holds at least MIN_LIQUIDITY_USD ($10) on its other side (PLANK valued by the PLANK feed) and at
  *         least MIN_PAPER_RESERVE (1,000 PAPER) on its PAPER side, a checkpoint starts that pool's run; if it still
- *         qualifies at every checkpoint for MIN_WINDOW (20h), it's adopted, and the first price appears one full
+ *         qualifies at every checkpoint for MIN_WINDOW (20h; 30 min on the testnet), it's adopted, and the first price appears one full
  *         window (>= 20h) after that: about 40h after the first checkpoint, even when a pool already exists at
  *         deploy. A pool in another currency takes over the same way once it holds twice the current pool's dollar
  *         liquidity for MIN_WINDOW. Each pool runs on its own clock: a pool that qualifies for a moment (a flash
@@ -54,7 +54,14 @@ contract PaperUsdTwap {
     address public immutable PLANK; // address(0) = don't look for a PLANK pool
     IEthUsdFeed public immutable PLANK_USD; // PlankUsdTwap (18 decimals)
     uint256 public constant PLANK_FEED_MAX_AGE = 2 hours;
-    uint256 public constant MIN_WINDOW = 20 hours;
+    /// @notice How long the price averages over, and how long a pool must qualify before it's adopted: 20 h. On the
+    ///         Robinhood Chain testnet (46630) only, TESTNET_WINDOW, so a test run has a PAPER price about an hour
+    ///         after the keepers start instead of ~40 h (owner, Nov 2026). Set by the chain itself at deploy: mainnet
+    ///         (4663) and every other chain get 20 h, whatever the deployer does.
+    uint256 public immutable MIN_WINDOW;
+    uint256 public constant MAINNET_WINDOW = 20 hours;
+    uint256 public constant TESTNET_WINDOW = 30 minutes;
+    uint256 public constant TESTNET_CHAIN_ID = 46630;
     uint256 public constant ETH_FEED_MAX_AGE = 25 hours;
     uint256 public constant SWITCH_FACTOR = 2; // another pool must hold 2x the dollar liquidity to take over
     uint256 public constant MIN_LIQUIDITY_USD = 10e8; // a pool needs $10 on its dollar side to be considered (ignores empty and dust pools)
@@ -104,6 +111,7 @@ contract PaperUsdTwap {
         ETH_USD = IEthUsdFeed(ethUsd);
         PLANK = plank;
         PLANK_USD = IEthUsdFeed(plankUsd);
+        MIN_WINDOW = block.chainid == TESTNET_CHAIN_ID ? TESTNET_WINDOW : MAINNET_WINDOW;
     }
 
     /// @notice Anyone. Rolls the window once the last checkpoint is at least MIN_WINDOW old, then (unless a feed is

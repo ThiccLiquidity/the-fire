@@ -55,6 +55,30 @@ contract PaperUsdTwapTest is Test {
         assertApproxEqRel(_price(), 0.1e18, 1e15);
     }
 
+    /// @dev The window is set by the chain at deploy: 20 h everywhere, 30 minutes on the Robinhood Chain testnet only,
+    ///      so a test run has a PAPER price about an hour after the keepers start. Mainnet can never get the short one.
+    function test_window_by_chain_testnet_fast_mainnet_20h() public {
+        assertEq(twap.MIN_WINDOW(), 20 hours, "this test chain: 20 h");
+        vm.chainId(4663);
+        PaperUsdTwap main = new PaperUsdTwap(address(factory), paper, weth, usdg, 6, address(eth), plank, address(plankUsd));
+        assertEq(main.MIN_WINDOW(), 20 hours, "mainnet: 20 h");
+        vm.chainId(46630);
+        PaperUsdTwap t = new PaperUsdTwap(address(factory), paper, weth, usdg, 6, address(eth), plank, address(plankUsd));
+        assertEq(t.MIN_WINDOW(), 30 minutes, "testnet: 30 min");
+        MockPair p = new MockPair(paper, weth);
+        p.set(1_000_000e18, 40e18); // $0.10 per PAPER
+        factory.add(paper, weth, address(p));
+        t.checkpoint();
+        for (uint256 i; i < 2; i++) {
+            vm.warp(block.timestamp + 31 minutes);
+            eth.set(eth.answer());
+            plankUsd.set(plankUsd.answer());
+            t.checkpoint();
+        }
+        (, int256 a,,,) = t.latestRoundData();
+        assertApproxEqRel(uint256(a), 0.1e18, 1e15, "a price about an hour in");
+    }
+
     function test_usdg_pool_priced_with_6_decimals() public {
         MockPair p = new MockPair(usdg, paper); // USDG is token0 here
         p.set(5_000e6, 1_000e18); // $5,000 / 1,000 PAPER -> $5 per PAPER

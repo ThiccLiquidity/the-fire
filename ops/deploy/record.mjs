@@ -60,7 +60,8 @@ export function broadcastIndex(dir, chainId) {
 export function merge(main, pending, startBlock) {
   const m = main ?? {};
   const out = { chainId: pending.chainId ?? m.chainId };
-  const sb = m.startBlock ?? startBlock ?? pending.startBlock;
+  // a fresh start (DevStack: a new testnet kit) moves startBlock to the new deploy; otherwise the first one stays
+  const sb = pending.freshStart ? (pending.startBlock ?? startBlock) : (m.startBlock ?? startBlock ?? pending.startBlock);
   if (sb !== undefined) out.startBlock = Number(sb);
   const deployer = m.deployer ?? pending.deployer;
   if (deployer) out.deployer = deployer;

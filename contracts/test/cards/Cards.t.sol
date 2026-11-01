@@ -947,6 +947,32 @@ contract CardsTest is SeriesHelper {
         assertEq(cards.balanceOf(_holder(1)), 6);
     }
 
+    /// A cancelled open at the head (dealt as nothing) in front of an open its dealer can't deal: skipStuck steps past
+    /// the cancelled one and skips the stuck one, so the queue never freezes (audit, Nov 2026).
+    function test_stuckOpenBehindACancelledOneCanBeSkipped() public {
+        _sellAndClose(1, 3);
+        uint256 first = rng.next();
+        vm.prank(_holder(0)); cards.open(1, 1); // A: its randomness never comes
+        vm.prank(_holder(1)); cards.open(1, 1); // B: ready, but its dealer can't deal it
+        vm.prank(_holder(2)); cards.open(1, 1); // C: behind B
+        rng.deliver(first + 1, 2);
+        rng.deliver(first + 2, 3);
+        vm.warp(block.timestamp + 1 days + 1);
+        cards.cancelOpen(1, 0);
+        assertEq(packs.balanceOf(_holder(0), 1), 1, "A's pack is back");
+        vm.mockCallRevert(address(dealer), abi.encodeWithSelector(RecipeDealer.deal.selector), "dealer broke");
+        vm.expectRevert();
+        cards.process(1, 100);
+        assertEq(cards.headOf(1), 0, "the head is still the cancelled open");
+        vm.warp(block.timestamp + 7 days);
+        cards.skipStuck(1); // steps past A, skips B
+        assertEq(packs.balanceOf(_holder(1), 1), 1, "B's pack is back, sealed");
+        assertEq(cards.headOf(1), 2);
+        vm.clearMockedCalls();
+        assertEq(cards.process(1, 100), 6, "C deals");
+        assertEq(cards.balanceOf(_holder(2)), 6);
+    }
+
     /// A dealer whose packs are over MAX_CARDS_PER_PACK can't be chosen (and RecipeCompiler refuses such a recipe).
     function test_packSizeCapped() public {
         SizeDealer big = new SizeDealer();

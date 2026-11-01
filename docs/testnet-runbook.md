@@ -13,9 +13,10 @@ Dress-rehearsed on a local chain (chain id 46630) on Oct 29, 2026: `node rehears
 this exact order (DevStack, DeployTwap, DeployInfra, DeployCards, the owner's accept, a Series of four groups, buying,
 opening, grading, both keepers, LiquidityBurner) and ends `REHEARSAL PASSED`. It does not cover the Morning Wood.
 
-**Timing.** The PAPER price needs ~40 h after the keepers start (step 12). Packs, opening, cases and grading work
-before that; paid games and the first liquidity run don't. So: steps 1-13 one evening, then the friends' test (step 15)
-at least two days later. Step 14 (the Series launch) can be that day or the day before.
+**Timing.** On the testnet the PAPER price comes about an hour after the keepers start (step 12): PaperUsdTwap
+averages over 30 minutes there instead of 20 hours (set by the chain at deploy; mainnet always gets 20 h). Packs,
+opening, cases and grading work before that; paid games and the first liquidity run wait for it. So everything can
+happen the same day: steps 1-13, then step 14 (Series 1, the link, Series 2) once the price is in.
 
 ## What only you can supply
 
@@ -119,6 +120,7 @@ $env:PACK_IMAGE_BASE
 
 ```powershell
 $env:FROM_BLOCK = cast block-number --rpc-url $env:RPC     # the snapshot (step 14) scans from here
+$env:FROM_BLOCK                                             # WRITE THIS NUMBER DOWN: step 14 needs it, in a new window too
 forge script script/DevStack.s.sol --rpc-url $env:RPC --account testnet-deployer --sender $DEPLOYER --slow --broadcast
 node ..\ops\deploy\record.mjs --rpc $env:RPC
 Load-Inputs
@@ -157,8 +159,8 @@ forge script script/DeployCards.s.sol --rpc-url $env:RPC --account testnet-deplo
 node ..\ops\deploy\record.mjs --rpc $env:RPC
 ```
 - Good: it lists FirePacks, FireCards, ... FireGroups, FireProfiles, ... and "Next: the OWNER hardware wallet
-  accepts"; no "KEEPERS not set" line; record OK. `deployments\46630.json` now has 18 contracts: all new except
-  `PlankUsdTwap`. Keep this window open: steps 8b-10 use `$env:KEEPERS` and `$env:ROYALTY_BPS`.
+  accepts"; no "KEEPERS not set" line; record OK. Every contract in `deployments\46630.json` is new (DevStack also
+  moved its `startBlock` to today, so nothing scans the old deploy's blocks). Keep this window open: steps 8b-10 use `$env:KEEPERS` and `$env:ROYALTY_BPS`.
 - If not: "OWNER is the deployer" → `$env:OWNER` is wrong (run `Load-Inputs`). "V2_ROUTER" / "PLANK_USD_FEED"
   errors → `Load-Inputs` again after step 6. "V2_ROUTER's factory has no PAPER/PLANK pool for the liquidity" → step 6
   didn't run (or `Load-Inputs` didn't after it). Ran out of gas money → faucet, then delete the `.pending` only if record
@@ -180,7 +182,7 @@ forge script script/DeployPress.s.sol:DeployPress --rpc-url $env:RPC --account t
 node ..\ops\deploy\record.mjs --rpc $env:RPC
 ```
 - Good: forge prints `MorningWood 0x...` and `editor 0x...` (your `$env:EDITOR`); record OK. `deployments\46630.json`
-  now has 18 contracts (the 17 + `MorningWood`).
+  now lists `MorningWood` too.
 - If not: "Multiple contracts in the target path" → the `:DeployPress` after the file name is missing. "MorningWood is
   already in the deployments file" → it was deployed already: skip to step 9 (or `$env:REPLACE_PRESS = "true"` for a
   new one). "OWNER / ROYALTY_RECEIVER missing" or "have no code" → `Load-Inputs` (step 4). Pending file: as step 6.
@@ -214,7 +216,7 @@ Run it in the **same window** as steps 8 and 8b: it checks the keepers, the roya
 `$env:KEEPERS`, `$env:ROYALTY_BPS` and `$env:EDITOR`. In a new window, set those three again first (without
 `KEEPERS` it FAILs with "KEEPERS not set here").
 - Good: last line `0 FAIL`. Expected WAIT: `PAPER/USD: no PAPER pool with $10 found yet` (the new PAPER feed needs
-  ~40 h after the keepers' first checkpoint), maybe `PLANK/USD not live yet` (the keepers checkpoint it every 30 min).
+  ~1 h after the keepers' first checkpoint on the testnet), maybe `PLANK/USD not live yet` (the keepers checkpoint it every 30 min).
   Lines `a keeper in KEEPERS may run LiquidityBurner` (twice), `FireProfiles.CARDS is FireCards`, `FireMarket.CARDS is
   FireCards`, `FireMarket.PACKS is FirePacks`, `OpenDrandRouter is
   the real one`, the token and USDG lines, `MorningWood owned by the hardware wallet`, `MorningWood.editor is EDITOR`
@@ -259,14 +261,14 @@ In railway.com, for **each** testnet keeper service (main and backup):
 - If not: FireCards is the old address → step 3 above, or the service builds another branch. "expected 46630" → wrong
   RPC_URL. Low ETH alert → faucet.
 
-**The PAPER price comes ~40 h after this.** Until then: packs take the set PAPER (fine) and everything sent to
+**The PAPER price comes ~1 h after this** (on mainnet ~40 h). Until then: packs take the set PAPER (fine) and everything sent to
 LiquidityBurner (sale shares, pack PAPER, case and grading fees) waits there (fine). Check:
 ```powershell
 cd C:\Users\DubT1\the-fire\contracts
 $feed = (Get-Content ..\deployments\46630.json | ConvertFrom-Json).contracts.PaperUsdTwap
 cast call $feed "latestRoundData()(uint80,int256,uint256,uint256,uint80)" --rpc-url $env:RPC
 ```
-- Good (after ~40 h): the second number is above 0.
+- Good (after ~1 h): the second number is above 0.
 
 ## 13. Site: testnet preview
 
@@ -278,15 +280,22 @@ Vercel → the project → Settings → Environment Variables:
   only sees "No wallet found"). It's already in, from earlier: check it's ticked for Preview.
 - `REPORTS_KEY`: the key for reading tester reports (the site's **Report a bug** / **Send an idea**). Make one up,
   at least 16 characters, type it straight into Vercel (never into chat), Preview only. Reports go into the same Neon
-  database as push (`DATABASE_URL`, already there); the table makes itself. Read them at `<preview URL>/forge/reports.html`
+  database as push and the game server (`DATABASE_URL`). **There is no database in Vercel yet**: Storage → Create →
+  Neon (Postgres), connect it to the `web` project for Preview, which adds `DATABASE_URL`. The table makes itself. Read them at `<preview URL>/forge/reports.html`
   with that key (it stays in that browser tab only).
+
+Also, before sending anyone the link:
+- **Let friends in.** Settings → Deployment Protection → Vercel Authentication: **off** (or "Only Production
+  Deployments"). Right now every preview link asks visitors to log in to Vercel, so friends can't open it.
+- **Phones:** in Reown Cloud (the project behind `VITE_REOWN_PROJECT_ID`), add the preview's domain
+  (`web-git-wip-pending-approval-traitfolio.vercel.app`) to the allowed domains, or phone wallets can't connect.
 
 Then Deployments → the newest `wip/pending-approval` preview → Redeploy.
 - Good: the preview opens live on the testnet (no demo banner; Connect asks for Robinhood Chain Testnet). Without the
   variable, add `?live=testnet` to the preview URL: same thing.
 - If not: still the demo → the variable isn't on Preview, or the preview wasn't rebuilt after setting it.
 
-## 13b. Competitive games on the testnet (once; needs the PAPER price, so test them two days after step 12)
+## 13b. Competitive games on the testnet (once; needs the PAPER price, ~1 h after step 12)
 
 Follow `docs/game-server.md` sections 1-3 with these differences:
 - Environment **Preview** (not Production) for every variable.
@@ -315,14 +324,17 @@ number (1 and 2) before building, so the cards print the right Series.
 - **Series 1 is the warm-up.** You buy all 40 packs yourself the moment it starts, so it closes at once and its packs
   can open; they go into the test kit, 2 per tester. Friends open, case, grade and burn real cards from minute one.
 - **Series 2 is the sale they wait on**: the four groups (Press, PLANK snapshot, Everyone, After sell-out). Its burn
-  credits and free packs come from Series 1's cards.
+  free packs come from picked suggestions (a burn credit needs 42 cards; the kit gives each tester 12).
 
 Only one Series can be on sale at a time, so it goes in this order:
 
 **A. The day before (or the morning of): Series 1, the warm-up.**
 1. Studio, Series 1 (Jean Phil): Sale tab → **Start from: Testnet warm-up** (40 packs, one open group, $1 + 0.1 PAPER,
-   no free packs). More than 20 friends? Raise the packs (2 each). Export the recipe.
-2. Launch it like any Series (below), with a start ~10 minutes out. It has no snapshot group, so no snapshot file.
+   no free packs). More than 20 friends? Raise the packs (2 each) **and** the group's wallet limit to the same number
+   (50 at most, or WarmUp can't buy them all). Export the recipe.
+2. Move the old Series 1 files out of the way first (done in the repo: they're in `contracts\series\old-2026-10`).
+   Launch it like any Series (below), with a start **45-60 minutes out** (launch refuses under 15 minutes, and its
+   checks take a while). It has no snapshot group, so no snapshot file.
 3. After the start, fill the kit (the deployer pays in test tokens it mints; 2 per wallet):
    ```powershell
    cd C:\Users\DubT1\the-fire\contracts
@@ -334,6 +346,16 @@ Only one Series can be on sale at a time, so it goes in this order:
      closed (then just `cast send <TESTKIT> "setPacks(address,uint256,uint256)" <FirePacks> 1 2` from the deployer
      after sending the packs to the kit).
    - Ran out of packs? A closed Series can't sell more: once they're gone, the kit hands out tokens only.
+
+**Before the link: pack art and holo layers.** Studio → Export → **Pack art** with Jean Phil's pack as Series 1 and Gym
+Bros' as Series 2, upload, `setPackImageBase` (below). The old Series 1's art is still in the old folder until you do.
+
+**Friends on a smart-contract wallet** (e.g. Coinbase Smart Wallet) can't claim the kit until you let that address in
+(the kit only takes claims from ordinary wallets, so nobody can drain it with a contract):
+`cast send <TESTKIT> "setSmartWallet(address,bool)" <their address> true --account testnet-deployer --rpc-url $env:RPC`.
+
+**Arcade:** free play works for everyone. Competitive (paid) play needs step 13b done in full; skip it and tell friends
+"free play only" if there's no time.
 
 **B. Send the link.** The testnet preview URL. Their first visit opens the **Testnet** sheet: faucet → **Get the test
 kit** (test tokens, a Paper Press and 2 Series 1 packs, one confirmation) → **Open my packs** → the checklist, with
@@ -364,7 +386,7 @@ the start (`endDrop`, below). So if only one or two people are buying, buy the r
 wallet with the kit).
 ```powershell
 $sale = (Get-Content ..\deployments\46630.json | ConvertFrom-Json).contracts.FireSale
-cast send $sale "endDrop(uint256)" 1 --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC   # only 24 h after the start
+cast send $sale "endDrop(uint256)" 2 --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC   # only 24 h after the start
 ```
 
 **Pack art.** The site shows `fire<N>.webp` from FirePacks' pack art folder. In the studio, Export → **Pack art** with
@@ -379,7 +401,8 @@ the PLANK through its window) to be in the PLANK and Press groups. The mint comm
 can't use the button.
 
 **Full Art is one per character (Oct 29).** In the studio's Recipe tab, Full Art must show **1 per character** (the
-Standard has it). With 5 characters and 12 packs, all five Full Arts come out of each Series, one each.
+Standard has it). With 5 characters, all five Full Arts come out of each Series, one each (40 packs in Series 1, 8
+in Series 2).
 
 **Free packs this run: suggestions, picked before the start.** A burn credit (step 15) only works in a *later*
 Series (cards exist only after this one closes), so test free packs with a picked suggestion:
@@ -401,7 +424,7 @@ run the launch with `RPC` = Alchemy (it keeps past balances; the public node doe
 RPC (big log searches), and start the scan at this deploy (`fromBlock`: the deployments
 file's `startBlock`; the test PLANK goes out after it). For a practice run, `days` can be a fraction (0.02 = ~30 min).
 ```json
-{ "1": { "token": "plank", "minUsd": 69, "tiers": "69:1,300:2", "days": 1, "fromBlock": <the FROM_BLOCK from step 6> } }
+{ "1": { "token": "plank", "minUsd": 69, "tiers": "69:1,300:2", "days": 0.02, "fromBlock": <the FROM_BLOCK from step 6>, "step": 5000 } }
 ```
 Test wallets must hold the PLANK through that window (`days` 1 = the last day). Mint them PLANK and a Paper Press a day
 before (deployer pays; amounts in wei; on the testnet kit 10^27 wei of PLANK is about $1, so this is about $1,000):
@@ -416,11 +439,11 @@ Launch (Ledger: batch A, then one confirmation for batch B). `$env:RPC` is alrea
 ```powershell
 cd C:\Users\DubT1\the-fire
 $env:LOGS_RPC = "https://rpc.testnet.chain.robinhood.com/rpc"   # big log searches (the snapshot)
-node ops\series\launch.mjs --recipe contracts\series\recipe-fire-<N>.json --start "2026-10-25 18:00" --chain 46630
+node ops\series\launch.mjs --recipe contracts\series\recipe-fire-<N>.json --start "<today, 45-60 min from now, e.g. 2026-11-01 18:00>" --chain 46630
 ```
 - Good: one OK line per check; a PLANK snapshot line like `2 wallets hold $69+ of PLANK`; `GREEN`; you type `LOCK`;
   `Series locked`; `7  Done`. It writes `web\art\factory\forge\holders\series-<N>.json`. Expected WARN: `PAPER price
-  feed isn't live yet` (before 40 h).
+  feed isn't live yet` (in its first hour).
 - If not: read the STOP line, fix that one thing, run the **same command** again (done steps are skipped, nothing is
   sent twice). Snapshot can't read old blocks → archive RPC (Alchemy). RED on images → re-pin on Filebase, run again.
   `FirePacks has no pack art folder` → `cast send <FirePacks> "setPackImageBase(string)" "ipfs://<CID>/" --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC`.
@@ -473,7 +496,8 @@ Use a test wallet with test ETH. Tick each:
       yours); Mine › cancel an offer; turn the leftover WETH back into ETH.
 - [ ] **Feed**: your rare pulls show in the feed; the Series board shows who fed the fire.
 - [ ] **Free pack**: the wallet whose suggestion you picked (step 14) claims its free pack while Everyone is open.
-- [ ] **Burn** 42 cards: the wallet gets a free pack credit (it can only be used in a later Series).
+- [ ] **Burn** cards: the burn count goes up (a free pack credit needs 42; testers only have 12 or so, so credits
+      aren't tested this run).
 - [ ] **Suggest** a theme and style in one transaction; suggest a character.
 - [ ] **Pause** and unpause the sale from the Ledger (`cast send <FireSale> "setPaused(bool)" true --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC`, then `false`): buying stops, then works.
 - [ ] **Backup keeper**: stop the main keeper in Railway for 10 min while a pack opens; the backup steps in (webhook
@@ -498,7 +522,7 @@ Use a test wallet with test ETH. Tick each:
       `cast call (Get-Content C:\Users\DubT1\the-fire\deployments\46630.json | ConvertFrom-Json).contracts.RecipeDealer "onePerCharacterOwed(uint256)(uint256[])" <N> --rpc-url $env:RPC`
       gives `[]` when all are out.
 - [ ] **Liquidity on the home page**: after the keeper's first LiquidityBurner run that adds liquidity (it needs the
-      PAPER price, ~40 h after step 12), the burn gauge shows "Liquidity locked" in dollars next to the burned PLANK and
+      PAPER price, ~1 h after step 12), the burn gauge shows "Liquidity locked" in dollars next to the burned PLANK and
       PAPER.
 
 Anything that fails: write down what you did, what you saw, and the time. Send it to me; I fix it, you redo that line.

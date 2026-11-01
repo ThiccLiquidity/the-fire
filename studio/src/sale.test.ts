@@ -46,7 +46,7 @@ describe('the Standard and Giant presets', () => {
     expect(saleErrors({ ...t, start: NOW + 3600 }, NOW)).toEqual([])
     expect(salePolicy({ ...t, start: NOW + 3600 })).toEqual([])
     const j = saleJson(t)
-    expect(j).toMatchObject({ packs: 40, regularWalletsFor: 0, creditPacksMax: 0 })
+    expect(j).toMatchObject({ packs: 40, regularWalletsFor: 0, creditPacksMax: 0, creditGroup: 255 })
     expect(j.groups.map((x) => [x.packs, x.gate, x.perWallet, x.priceUsd, x.paper, x.unlimited ?? false])).toEqual([[40, 'open', 40, '100000000', '100000000000000000', false]])
   })
 

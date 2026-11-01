@@ -217,7 +217,7 @@ export function testRunSale(): SaleSettings {
 export function warmUpSale(): SaleSettings {
   const s = standardSale()
   return {
-    ...s, packs: 40, maxPerTx: 50, regularWalletsHours: 0, creditPacksPercent: '0', creditPacksPerWallet: 0, creditGroup: 0,
+    ...s, packs: 40, maxPerTx: 50, regularWalletsHours: 0, creditPacksPercent: '0', creditPacksPerWallet: 0, creditGroup: -1,
     groups: [{ ...blankGroup(), name: 'Warm-up', packsAs: 'rest', priceUsd: '1', paper: '0.1', coins: 7, perWallet: 40 }],
   }
 }
