@@ -15,7 +15,7 @@ export interface Deployment {
   startBlock?: number;
   owner?: string;
   deployer?: string;
-  inputs: Partial<Record<"PAPER" | "PLANK" | "USDG" | "WETH" | "MILL" | "ETH_USD_FEED" | "PLANK_WETH_V2_PAIR" | "UNIV2_FACTORY" | "V2_ROUTER" | "OWNER" | "REVENUE_WALLET" | "ROYALTY_RECEIVER", string>>;
+  inputs: Partial<Record<"PAPER" | "PLANK" | "USDG" | "WETH" | "MILL" | "ETH_USD_FEED" | "PLANK_WETH_V2_PAIR" | "UNIV2_FACTORY" | "V2_ROUTER" | "TESTKIT" | "OWNER" | "REVENUE_WALLET" | "ROYALTY_RECEIVER", string>>;
   contracts: Partial<Record<ContractName, string>>;
 }
 export type ContractName =

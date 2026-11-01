@@ -448,6 +448,26 @@ export async function runTest(ctx: Ctx): Promise<number> {
   await L.clearProfile(o);
   check((await L.profile(me, true)) === null && (await L.nameOwner("ember")) === null, "cleared: no profile, the name is free");
 
+  console.log("\n== the testnet's test kit (DevKit): one claim, test tokens and a Paper Press");
+  {
+    const kitter = mnemonicToAccount(MNEMONIC, { addressIndex: 7 });
+    W.setLocalSigner(privateKeyToAccount(toHex(kitter.getHdKey().privateKey!)));
+    check(L.testKitOn(), "the test kit is set up (deployments: TESTKIT)");
+    const bal = (t: Address) => ctx.pub.readContract({ address: t, abi: erc20Abi, functionName: "balanceOf", args: [kitter.address] }) as Promise<bigint>;
+    const I = ctx.deployment.inputs as Record<string, Address>;
+    const before = await Promise.all([bal(I.PAPER), bal(I.PLANK), bal(I.USDG)]);
+    await L.claimTestKit(o);
+    const after = await Promise.all([bal(I.PAPER), bal(I.PLANK), bal(I.USDG)]);
+    const press = await ctx.pub.readContract({ address: I.MILL, abi: erc20Abi, functionName: "balanceOf", args: [kitter.address] }) as bigint;
+    const st = await L.testKitState(kitter.address);
+    check(after[0] - before[0] === 25n * 10n ** 18n && after[1] - before[1] === 10n ** 30n && after[2] - before[2] === 50n * 10n ** 6n && press === 1n && st.next > 0 && st.hasPress,
+      "one claim: 25 PAPER, 10^30 PLANK, 50 USDG and a Paper Press; the next one tomorrow");
+    let km = "";
+    try { await L.claimTestKit(o); } catch (e) { km = (e as Error).message; }
+    check(!!km, `a second claim the same day is refused before the wallet ("${km}")`);
+    W.setLocalSigner(buyer);
+  }
+
   console.log("\n== the market (FireMarket): list, buy, re-price, take off sale; packs too");
   {
     const mOther = privateKeyToAccount(toHex(other.getHdKey().privateKey!));

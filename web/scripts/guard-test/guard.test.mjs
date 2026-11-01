@@ -73,6 +73,15 @@ test('the market: "approve all" only for the market, buys only at the listed pri
   blocked({ address: I.PLANK, functionName: 'deposit', args: [], value: 1n }); // wrapping is WETH's alone
 });
 
+test('the testnet test kit: only its claim, nothing sent; no kit on mainnet', () => {
+  const kit = '0x5555555555555555555555555555555555555555', d = { ...dep, inputs: { ...dep.inputs, TESTKIT: kit } };
+  const okK = (c) => assert.doesNotThrow(() => checkCall(c, me, d)), noK = (c) => assert.throws(() => checkCall(c, me, d), /Blocked/);
+  okK({ address: kit, functionName: 'claim', args: [] });
+  noK({ address: kit, functionName: 'claim', args: [], value: 1n });
+  noK({ address: kit, functionName: 'transferOwnership', args: [thief] });
+  assert.throws(() => checkCall({ address: kit, functionName: 'claim', args: [] }, me, { ...dep, inputs: { ...dep.inputs } }), /Blocked/); // a deployment without a kit (mainnet)
+});
+
 test('approvals: never unlimited, never for someone else, never "approve all"', () => {
   blocked({ address: I.PAPER, functionName: 'approve', args: [C.FireSale, MAX_APPROVAL] });
   blocked({ address: I.PAPER, functionName: 'approve', args: [C.FireSale, 2n ** 256n - 1n] });

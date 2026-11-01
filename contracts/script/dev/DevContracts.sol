@@ -301,15 +301,67 @@ contract DevRouter is DevOwned {
     }
 }
 
-/// Paper Press stand-in (FireSale only needs an ERC-721 for press packs).
+/// Paper Press stand-in (FireSale only needs an ERC-721 for press packs). The owner mints, and lets DevKit mint.
 contract DevPress is ERC721, DevOwned {
     uint256 public next = 1;
+    mapping(address => bool) public minter;
 
     constructor() ERC721("Paper Press (dev)", "MILL") DevOwned(msg.sender) {}
 
-    function mint(address to) external onlyOwner returns (uint256 id) {
+    function setMinter(address m, bool on) external onlyOwner {
+        minter[m] = on;
+    }
+
+    function mint(address to) external returns (uint256 id) {
+        require(msg.sender == owner || minter[msg.sender], "dev: owner only");
         id = next++;
         _mint(to, id);
+    }
+}
+
+/// The testnet's test kit (the site's "Get the test kit" button): anyone can claim test PAPER, PLANK and USDG once a
+/// day, and a Paper Press once per wallet, in one transaction. Testnet stand-ins only (DevStack refuses mainnet); a
+/// minter of the three tokens and of the press. Nothing here is worth anything.
+contract DevKit {
+    DevToken public immutable PAPER;
+    DevToken public immutable PLANK;
+    DevToken public immutable USDG;
+    DevPress public immutable PRESS;
+    uint256 public constant PAPER_AMOUNT = 25 ether; // 25 PAPER: a pack is 1
+    uint256 public constant PLANK_AMOUNT = 1e30; // about $1,000 of test PLANK at the kit's price (enough for the PLANK group)
+    uint256 public constant USDG_AMOUNT = 50e6; // $50 (6 decimals)
+    uint256 public constant EVERY = 1 days;
+    mapping(address => uint256) public lastClaim;
+    mapping(address => bool) public hasPress;
+
+    event Claimed(address indexed to, bool press);
+
+    constructor(DevToken paper, DevToken plank, DevToken usdg, DevPress press) {
+        PAPER = paper;
+        PLANK = plank;
+        USDG = usdg;
+        PRESS = press;
+    }
+
+    /// @notice The test tokens (once a day) and, the first time, a Paper Press.
+    function claim() external {
+        require(lastClaim[msg.sender] == 0 || block.timestamp >= lastClaim[msg.sender] + EVERY, "DevKit: once a day");
+        lastClaim[msg.sender] = block.timestamp;
+        PAPER.mint(msg.sender, PAPER_AMOUNT);
+        PLANK.mint(msg.sender, PLANK_AMOUNT);
+        USDG.mint(msg.sender, USDG_AMOUNT);
+        bool press = !hasPress[msg.sender];
+        if (press) {
+            hasPress[msg.sender] = true;
+            PRESS.mint(msg.sender);
+        }
+        emit Claimed(msg.sender, press);
+    }
+
+    /// @notice When `who` can claim again (0: now).
+    function nextClaim(address who) external view returns (uint256) {
+        uint256 t = lastClaim[who];
+        return t == 0 || block.timestamp >= t + EVERY ? 0 : t + EVERY;
     }
 }
 

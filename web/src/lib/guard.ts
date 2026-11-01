@@ -98,6 +98,12 @@ export function checkCall(call: GuardCall, from: Address, dep: GuardDeployment):
     }
     return;
   }
+  // the testnet's test kit (DevKit: free test tokens and a Paper Press; it only exists on the testnet, DevStack refuses
+  // mainnet): only its claim, with nothing sent
+  if (dep.inputs?.TESTKIT && eq(call.address, dep.inputs.TESTKIT)) {
+    if (fn !== "claim" || value !== 0n) no("the test kit only hands out test tokens");
+    return;
+  }
   // 2. a coin: only a capped approve, for our contracts or a swap router
   const coin = nameOf(dep.inputs, call.address);
   if (coin && (COINS as readonly string[]).includes(coin)) {

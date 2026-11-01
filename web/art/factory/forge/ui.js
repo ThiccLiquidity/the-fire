@@ -50,7 +50,7 @@
   $('#app').innerHTML = `
   <!-- the loading screen (#loading) is in index.html: it paints before the scripts arrive -->
   <header class="topbar">
-    <a class="brand" href="#" aria-label="Omni Cardworks"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">CARDWORKS</span><em class="tag">Wood and paper in, packs out.</em></a>${LIVE && Live.testnet ? '<span class="net-badge">Testnet</span>' : ''}
+    <a class="brand" href="#" aria-label="Omni Cardworks"><img class="mark" src="ui/omni-mark.webp" alt=""><img class="word" src="ui/omni-wordmark.webp" alt="Omni"><span class="forge">CARDWORKS</span><em class="tag">Wood and paper in, packs out.</em></a>${LIVE && Live.testnet ? '<button class="net-badge" type="button" data-go="testnet" aria-label="Testnet: test kit and what to test">Testnet</button>' : ''}
     <button class="chip series" id="seriesChip" type="button"></button>
     <div class="grow"></div>
     <nav class="nav5" aria-label="Places">${navItems()}</nav>
@@ -807,6 +807,52 @@
   const did = new Set(); // 'paper', 'buy' this visit (connect, open and grade are read from the state)
   // the coins this Series' paid groups take, for people: "PLANK, ETH or USDG"
   const payCoins = () => { const all = ['PLANK', 'ETH', 'USDG'].filter((c) => groups().some((g) => g.priceUsd > 0 && g.coins.includes(c))); return (all.length ? all : ['PLANK', 'ETH', 'USDG']).join(', ').replace(/, ([^,]*)$/, ' or $1'); };
+  // ---------- the testnet: test ETH (the faucet), the test kit (one button), and what to test. Testnet only.
+  const FAUCET = 'https://faucet.testnet.chain.robinhood.com/';
+  const CHECKS = [
+    ['buy', 'Buy a pack (with PAPER, PLANK or USDG)'], ['open', 'Open your packs once the Series sells out'], ['grade', 'Case and grade a card'],
+    ['burn', 'Burn cards toward a free pack'], ['suggest', 'Suggest a theme or a character'], ['sell', 'Market: list a card for sale'],
+    ['mbuy', 'Market: buy a card from someone'], ['offer', 'Market: make an offer, and accept one'], ['arcade', 'Play a game in the Arcade'],
+    ['paper', 'Read today\u2019s Morning Wood'], ['profile', 'Set a profile name and picture'], ['phone', 'Try it on your phone too'],
+  ];
+  const CKEY = 'omni.testnet.checks';
+  const checked = () => { try { return JSON.parse(localStorage.getItem(CKEY) || '{}'); } catch { return {}; } };
+  function openTestnet() {
+    if (!LIVE || !Live.testnet) return;
+    const body = document.createElement('div'); body.className = 'st tn';
+    const kitOn = () => !!Live.chain?.testKitOn?.();
+    const draw = (state) => {
+      const ck = checked(), nd = state?.next ? new Date(state.next * 1000) : null, when = nd ? (nd.toDateString() === new Date().toDateString() ? '' : 'tomorrow ') + nd.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+      body.innerHTML = `<p class="lead">Play money, real wallets. Three steps, then try everything.</p>
+        <ol class="start-list tn-steps">
+          <li><span class="start-n" aria-hidden="true">1</span><span class="start-t"><b>Get test ETH</b><small>For the network fee. Paste your wallet address on the faucet page.</small></span>
+            <span class="row"><a class="btn small" href="${FAUCET}" target="_blank" rel="noopener">Faucet ↗</a>${S.wallet.full ? '<button class="btn small" type="button" data-t="copy">Copy my address</button>' : ''}</span></li>
+          <li><span class="start-n" aria-hidden="true">2</span><span class="start-t"><b>Get the test kit</b><small>25 PAPER, about $1,000 of PLANK, $50 USDG and a Paper Press (the Press once; the rest once a day).${when ? ` Next one ${esc(when)}.` : ''}</small></span>
+            ${kitOn() ? `<button class="btn small primary" type="button" data-t="kit"${state?.next ? ' disabled' : ''}>${state?.next ? 'Claimed' : 'Get the test kit'}</button>` : '<small class="muted">Not set up on this testnet yet</small>'}</li>
+          <li><span class="start-n" aria-hidden="true">3</span><span class="start-t"><b>Play</b><small>The PLANK and Press groups use a snapshot taken before a sale starts: get the kit early.</small></span></li>
+        </ol>
+        <h3>What to test</h3>
+        <ul class="tn-checks">${CHECKS.map(([k, t]) => `<li><label><input type="checkbox" data-c="${k}"${ck[k] ? ' checked' : ''}> <span>${esc(t)}</span></label></li>`).join('')}</ul>
+        <p class="muted small">Something broke? Take a screenshot and send it to whoever invited you. <a class="inf-link" href="help.html">Stuck transaction?</a></p>`;
+      body.querySelector('[data-t=copy]')?.addEventListener('click', () => navigator.clipboard?.writeText(S.wallet.full).then(() => toast('Address copied', 'good'), () => toast(S.wallet.full)));
+      body.querySelector('[data-t=kit]')?.addEventListener('click', () => needWallet(async () => {
+        const ok = await Live.run('Get the test kit', (o) => Live.chain.claimTestKit(o), 'The test kit is in your wallet');
+        if (ok) { did.add('kit'); Live.sync?.({ cards: false }); refreshState(); }
+      }));
+      body.querySelectorAll('[data-c]').forEach((x) => x.addEventListener('change', () => { const c = checked(); c[x.dataset.c] = x.checked; try { localStorage.setItem(CKEY, JSON.stringify(c)); } catch { /* private window */ } }));
+    };
+    const refreshState = () => { if (kitOn() && S.wallet.full) Live.chain.testKitState(S.wallet.full).then(draw, () => draw()); else draw(); };
+    draw(); refreshState();
+    Sheet.open('testnet', { title: 'Testnet', body });
+  }
+  // the testnet: the first visit opens the testnet sheet once (after anything else that's showing)
+  if (LIVE && Live.testnet) {
+    let seen = false; try { seen = !!localStorage.getItem('omni.testnetSeen'); } catch { /* private window */ }
+    if (!seen) {
+      const once = (n = 0) => { if (document.querySelector('dialog[open]') && n < 40) return setTimeout(() => once(n + 1), 1500); try { localStorage.setItem('omni.testnetSeen', '1'); } catch { /* private window */ } openTestnet(); };
+      setTimeout(once, 3000);
+    }
+  }
   function openStart() {
     const ready = () => Stations.openableCount();
     const opened = () => S.activity.some((a) => a.text.startsWith('Opened'));
@@ -818,7 +864,10 @@
       ['Case or grade', 'Case or grade new cards within 24 hours to keep fresh odds. A case stops wear any time.', () => S.activity.some((a) => a.text.startsWith('Paid')), 'Case & grade', () => Stations.open('grade')],
     ];
     // testers on the testnet: the free test ETH first (gas, and PAPER/PLANK/USDG come from it in Get PAPER)
-    if (LIVE && Live.testnet) rest.unshift(['Get test ETH', 'Free from the Robinhood Chain testnet faucet. A little covers every step.', () => S.wallet.connected && (S.wallet.balances.ETH || 0) > 0, 'Faucet', () => window.open('https://faucet.testnet.chain.robinhood.com/', '_blank', 'noopener')]);
+    if (LIVE && Live.testnet) {
+      rest.splice(1, 0, ['Get the test kit', 'Free test PAPER, PLANK and USDG, and a Paper Press: one button, one confirmation.', () => did.has('kit'), 'Test kit', () => openTestnet()]);
+      rest.unshift(['Get test ETH', 'Free from the Robinhood Chain testnet faucet. A little covers every step.', () => S.wallet.connected && (S.wallet.balances.ETH || 0) > 0, 'Faucet', () => window.open(FAUCET, '_blank', 'noopener')]);
+    }
     const steps = ready() && !opened() ? [open, ...rest] : [...rest.slice(0, rest.length - 1), open, rest[rest.length - 1]];
     const body = document.createElement('div'); body.className = 'start';
     const draw = () => {
@@ -871,7 +920,7 @@
     const b = (k, icon, label) => `<button class="btn" type="button" data-m="${k}">${icon ? svg(icon) : ''}${label}</button>`;
     const group = (title, items) => `<section class="menu-g" aria-label="${title}"><h3>${title}</h3><div class="menu">${items.filter(Boolean).join('')}</div></section>`;
     const d = Sheet.open('menu', { title: 'Help and settings', body: `<div class="menu-groups">
-      ${group('Help', [b('start', 'flag', 'New here?'), b('info', 'info', 'Info &amp; odds'), b('fun:tour', 'map', 'Workshop tour'), b('fun:practice', 'spark', 'Practice pack')])}
+      ${group('Help', [LIVE && Live.testnet ? b('testnet', 'spark', 'Testnet: test kit') : '', b('start', 'flag', 'New here?'), b('info', 'info', 'Info &amp; odds'), b('fun:tour', 'map', 'Workshop tour'), b('fun:practice', 'spark', 'Practice pack')])}
       ${group('You', [b('feed', 'feed', 'Activity')])}
       ${group('Settings', [b('sound', window.Sound?.on ? 'sound' : 'mute', `Sound: ${window.Sound?.on ? 'On' : 'Off'}`), LIVE && window.App?.push.supported ? b('push', 'bell', `Notifications: ${App.push.on ? 'On' : 'Off'}`) : '', window.Fun?.haptics?.supported ? b('haptics', 'phone', `Vibration: ${Fun.haptics.on ? 'On' : 'Off'}`) : '', window.App?.canInstall ? b('install', 'install', 'Install app') : ''])}
       </div>
@@ -920,6 +969,7 @@
       : App.push.enable().then(() => toast('Notifications: On. We\u2019ll tell you when your cards and grades are ready.', 'good'))).catch((e) => toast(e.message, 'bad'));
     if (k === 'haptics' && window.Fun?.haptics) return toast(`Vibration: ${Fun.haptics.set(!Fun.haptics.on) ? 'On' : 'Off'}`);
     if (k === 'paper') openGetPaper(); if (k === 'info') Info.open(); if (k === 'info-cards') Info.open('cards'); if (k === 'feed') openFeed();
+    if (k === 'testnet') openTestnet();
     if (k === 'menu') openMenu(); if (k === 'demo' && !LIVE) openDemo(); if (k === 'start') openStart(); if (k === 'sound') toggleSound();
     if (k === 'cards' || k === 'open' || k === 'games') openStation(k);
   }

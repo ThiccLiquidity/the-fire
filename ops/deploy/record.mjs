@@ -25,7 +25,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(here, "../..");
 
 /** Inputs that must be contracts (the others are wallets). */
-export const CONTRACT_INPUTS = ["PAPER", "PLANK", "USDG", "WETH", "MILL", "ETH_USD_FEED", "PLANK_WETH_V2_PAIR", "UNIV2_FACTORY", "V2_ROUTER"];
+export const CONTRACT_INPUTS = ["PAPER", "PLANK", "USDG", "WETH", "MILL", "ETH_USD_FEED", "PLANK_WETH_V2_PAIR", "UNIV2_FACTORY", "V2_ROUTER", "TESTKIT"];
 
 /** address (lowercase) -> { hash, script, all } for every contract the broadcasts on this chain created: { hash, script }
  *  from the newest broadcast file, and in `all` every broadcast that names it, newest first (a stale broadcast file from

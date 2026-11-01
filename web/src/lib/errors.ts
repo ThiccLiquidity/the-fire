@@ -194,6 +194,12 @@ const words = (name: string) => {
 
 /** The message for a contract error by name, with its decoded arguments. */
 export function errorMessage(name: string, args: readonly unknown[] = []): string {
+  // a plain require() reason (Error(string)): only the testnet stand-ins use these
+  if (name === "Error") {
+    const why = String(args[0] ?? "");
+    if (/once a day/.test(why)) return "You've had today's test kit. Come back tomorrow.";
+    return why ? why.replace(/^\w+: /, "").replace(/^./, (c) => c.toUpperCase()) + (/[.!?]$/.test(why) ? "" : ".") : "That didn't go through.";
+  }
   const m = (MESSAGES as Record<string, Msg | undefined>)[name];
   return m === undefined ? words(name) : typeof m === "function" ? m(args) : m;
 }

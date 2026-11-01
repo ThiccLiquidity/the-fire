@@ -19,7 +19,7 @@ import { readFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { encodeFunctionData, toHex } from "viem";
+import { encodeFunctionData, erc20Abi, toHex } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { setupChain, MNEMONIC, acct } from "../chain-test/setup.mjs";
 
@@ -85,7 +85,8 @@ try {
   page.on("pageerror", (e) => errors.push(String(e)));
   page.on("console", (m) => { if (m.type() === "warning" && !/WebGL|GL Driver/.test(m.text())) console.log(`  page warning: ${m.text()}`); if (m.type() === "error" && !/ipfs\.io|ERR_FAILED|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   await page.route(/\/ipfs\//, (r) => r.abort()); // card images: no IPFS here (the page falls back to the card back)
-  await page.addInitScript(([n, k]) => { globalThis.__FORGE_NET__ = n; globalThis.__FORGE_TEST__ = { key: k }; }, [net, key]);
+  // omni.testnetSeen: the testnet sheet opens by itself on a first visit; the flow below tests it on its own ("the testnet sheet")
+  await page.addInitScript(([n, k]) => { globalThis.__FORGE_NET__ = n; globalThis.__FORGE_TEST__ = { key: k }; try { localStorage.setItem("omni.testnetSeen", "1"); } catch { /* */ } }, [net, key]);
   const shot = async (name) => { const f = join(SHOTS, `${name}.png`); await page.screenshot({ path: f }); console.log(`  shot ${f}`); };
   const sync = () => page.evaluate(() => window.Live.sync({ cards: true }));
   const toastSeen = (re) => page.waitForFunction((src) => [...document.querySelectorAll(".toast")].some((t) => new RegExp(src).test(t.textContent)), re.source, { timeout: 60_000 });
@@ -571,13 +572,45 @@ try {
   await sync();
   check(await page.locator(".live-bar").isHidden(), "the next sync works: the notice is gone");
   check(await page.evaluate(() => Store.state.wallet.pending.length === 0), "nothing left waiting for the network");
+
+  console.log("\n== the testnet sheet: the faucet, the test kit (one button), what to test");
+  {
+    await closeSheets();
+    await page.click(".net-badge");
+    await page.locator("#sheet-testnet[open]").waitFor();
+    const tn = page.locator("#sheet-testnet");
+    check(/faucet\.testnet\.chain\.robinhood\.com/.test(await tn.locator('a[href*="faucet"]').getAttribute("href")), "the Testnet badge opens it: a link to the Robinhood testnet faucet");
+    check((await tn.locator(".tn-checks input[type=checkbox]").count()) >= 10, "a What to test checklist");
+    const I = ctx.deployment.inputs;
+    const bal = (t) => ctx.pub.readContract({ address: t, abi: erc20Abi, functionName: "balanceOf", args: [me] });
+    const before = await Promise.all([bal(I.PAPER), bal(I.USDG), bal(I.MILL)]);
+    await tn.locator('[data-t="kit"]').click();
+    await toastSeen(/test kit is in your wallet/);
+    const after = await Promise.all([bal(I.PAPER), bal(I.USDG), bal(I.MILL)]);
+    check(after[0] - before[0] === 25n * 10n ** 18n && after[1] - before[1] === 50n * 10n ** 6n && after[2] - before[2] === 1n,
+      "Get the test kit: one confirmation, 25 PAPER, 50 USDG and a Paper Press arrive");
+    await page.waitForFunction(() => /Claimed/.test(document.querySelector('#sheet-testnet [data-t="kit"]')?.textContent || ""), null, { timeout: 15_000 });
+    check(await tn.locator('[data-t="kit"]').isDisabled(), `then "Claimed" until tomorrow (${(await tn.locator(".tn-steps li:nth-child(2) small").first().textContent()).trim()})`);
+    await shot("15c-testnet-kit");
+    await closeSheets();
+  }
+  {
+    // a first visit opens it by itself, once
+    const p = await browser.newPage({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
+    await p.addInitScript(([n, k]) => { globalThis.__FORGE_NET__ = n; globalThis.__FORGE_TEST__ = { key: k }; }, [net, key]);
+    await p.goto(`${SITE}?live=testnet`);
+    await p.locator("#sheet-testnet[open]").waitFor({ timeout: 30_000 });
+    check(await p.evaluate(() => localStorage.getItem("omni.testnetSeen") === "1"), "a first testnet visit opens the testnet sheet by itself, once");
+    await p.screenshot({ path: join(SHOTS, "15d-testnet-first-visit.png") });
+    await p.close();
+  }
   check(errors.length === 0, `no page errors in live mode${errors.length ? ": " + errors.join(" | ") : ""}`);
   await page.close();
 
   console.log("\n== the live switch and links");
   {
     const p = await browser.newPage({ serviceWorkers: "block", viewport: { width: 1280, height: 800 } });
-    await p.addInitScript(([n, k]) => { globalThis.__FORGE_NET__ = n; globalThis.__FORGE_TEST__ = { key: k }; }, [net, key]);
+    await p.addInitScript(([n, k]) => { globalThis.__FORGE_NET__ = n; globalThis.__FORGE_TEST__ = { key: k }; try { localStorage.setItem("omni.testnetSeen", "1"); } catch { /* */ } }, [net, key]);
     await p.goto(`${SITE}help.html?live=testnet`);
     const back = await p.locator("header a.back").getAttribute("href");
     check(/live=testnet/.test(back) && /live=testnet/.test(await p.locator('.page-foot a[href^="terms"]').getAttribute("href")), `Help keeps ?live on its links (${back})`);

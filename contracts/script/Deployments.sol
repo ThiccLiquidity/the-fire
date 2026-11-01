@@ -40,10 +40,10 @@ abstract contract Deployments is Script {
     }
 
     /// Every input name the file can hold (the .env settings that are addresses).
-    function _inputNames() internal pure returns (string[12] memory) {
+    function _inputNames() internal pure returns (string[13] memory) {
         return [
             "PAPER", "PLANK", "USDG", "WETH", "MILL", "ETH_USD_FEED", "PLANK_WETH_V2_PAIR", "UNIV2_FACTORY", "V2_ROUTER",
-            "REVENUE_WALLET", "ROYALTY_RECEIVER", "OWNER"
+            "REVENUE_WALLET", "ROYALTY_RECEIVER", "OWNER", "TESTKIT" // TESTKIT: the testnet's test kit (DevStack only)
         ];
     }
 
@@ -113,7 +113,7 @@ abstract contract Deployments is Script {
         }
         string memory n = "inputs";
         string memory ij = "{}";
-        string[12] memory inn = _inputNames();
+        string[13] memory inn = _inputNames();
         for (uint256 i; i < inn.length; i++) {
             address a = old.readAddressOr(string.concat(".inputs.", inn[i]), address(0));
             for (uint256 k; k < inNames.length; k++) if (keccak256(bytes(inNames[k])) == keccak256(bytes(inn[i]))) a = inAddrs[k];

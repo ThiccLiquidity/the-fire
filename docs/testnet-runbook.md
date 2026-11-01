@@ -4,10 +4,10 @@ One page, top to bottom, on your PC in PowerShell. Every step: what it does, the
 what to do if not. Play tokens only; nothing here touches mainnet or `main`.
 
 What goes again: everything. A fresh testnet kit (DevStack: stand-in PAPER, PLANK, USDG, WETH, the pools and the
-router, with the PAPER/PLANK pool LiquidityBurner needs) and its PLANK price feed (DeployTwap), the drand router + PAPER
+router, with the PAPER/PLANK pool LiquidityBurner needs, and the test kit DevKit) and its PLANK price feed (DeployTwap), the drand router + PAPER
 price feed (DeployInfra), every card contract (DeployCards, FireProfiles and FireGames included) and the Morning Wood
 (DeployPress). The old stand-ins can't take liquidity, so they're replaced, not reused. Test wallets need new test
-PLANK and Paper Presses afterwards (step 14).
+PLANK and Paper Presses afterwards: they get them themselves with the site's test kit (step 14).
 
 Dress-rehearsed on a local chain (chain id 46630) on Oct 29, 2026: `node rehearsal\rehearse.mjs --chain-id 46630` runs
 this exact order (DevStack, DeployTwap, DeployInfra, DeployCards, the owner's accept, a Series of four groups, buying,
@@ -130,6 +130,8 @@ $env:PAPER; $env:V2_ROUTER
 - Good: DevStack prints the new PAPER, PLANK, USDG, WETH, pools, router and Paper Press (`MILL`); DeployTwap prints
   `PlankUsdTwap`; both records OK; the last line shows the NEW PAPER and router (different from before).
   DevStack's router already has the exact-output swaps: no DevRouter step any more.
+  It also prints `TESTKIT` (DevKit): the site's **Get the test kit** button. Any wallet claims 25 PAPER, 10^30
+  PLANK (about $1,000) and 50 USDG once a day, plus one Paper Press per wallet. Testnet only: DevStack refuses mainnet.
 - If not: "refuses to start while an unrecorded .pending file is there" → a broadcast before didn't get recorded:
   run `record.mjs`; if record says it didn't land, delete `..\deployments\46630.json.pending` and run the step again.
   Only "verify" failed (Blockscout)? It's deployed: run `record.mjs` and go on. "not the testnet" →
@@ -327,9 +329,12 @@ cast send $sale "endDrop(uint256)" 1 --ledger --hd-path $env:OWNER_HD_PATH --fro
 Jean Phil's pack as Series 1 and Gym Bros' as Series 2, upload the folder, then (Ledger)
 `cast send <FirePacks> "setPackImageBase(string)" "ipfs://<CID>/" --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC`.
 
-**Friends' wallets, a day before.** Ask each tester for their wallet address. Send each a little test ETH if they
-can't get it from the faucet (https://faucet.testnet.chain.robinhood.com). Mint PLANK to the ones who'll test the PLANK
-group and Paper Presses to the ones who'll test the Press group (commands below), **before** the launch's snapshot.
+**Friends' wallets, a day before.** Send testers the testnet link. The site's **Testnet** badge (top left, it also
+opens by itself on a first visit) walks them through it: test ETH from the faucet
+(https://faucet.testnet.chain.robinhood.com), then **Get the test kit** (test PAPER, PLANK, USDG and a Paper Press in
+one confirmation), then a "What to test" checklist. They must claim the kit **before** the launch's snapshot (and keep
+the PLANK through its window) to be in the PLANK and Press groups. The mint commands below still work for anyone who
+can't use the button.
 
 **Full Art is one per character (Oct 29).** In the studio's Recipe tab, Full Art must show **1 per character** (the
 Standard has it). With 5 characters and 12 packs, all five Full Arts come out of each Series, one each.

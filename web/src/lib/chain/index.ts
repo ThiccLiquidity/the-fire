@@ -11,3 +11,4 @@ export { NET, isDeployed } from "../net";
 export * from "./swap";
 // Sent transactions that haven't landed yet (kept across reloads): the page shows and resumes them.
 export { pendingTxs, prunePending, resumePending, TxStillPending, type PendingTx, type TxOutcome } from "../tx";
+export * from "./testkit";

@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {console} from "forge-std/Script.sol";
 import {Deployments} from "./Deployments.sol";
-import {DevToken, DevWeth, DevFeed, DevFactory, DevPair, DevRouter, DevPress} from "./dev/DevContracts.sol";
+import {DevToken, DevWeth, DevFeed, DevFactory, DevPair, DevRouter, DevPress, DevKit} from "./dev/DevContracts.sol";
 
 /**
  * The testnet kit (Robinhood Chain testnet, 46630; also the rehearsal on a local anvil): deploys the stand-ins for
@@ -16,6 +16,8 @@ import {DevToken, DevWeth, DevFeed, DevFactory, DevPair, DevRouter, DevPress} fr
  *     router that trades on their reserves (it mints what it pays out, so it's a minter of every token) and adds
  *     liquidity
  *   - a Paper Press NFT (press packs)
+ *   - the test kit (DevKit): anyone claims test PAPER, PLANK and USDG once a day and a Paper Press once (the site's
+ *     "Get the test kit" button)
  * Every setter is the deployer's only (mint, set, setReserves, setFail, createPair). The randomness is NOT a stand-in:
  * DeployInfra deploys the real OpenDrandRouter (real drand).
  *
@@ -43,6 +45,7 @@ contract DevStack is Deployments {
         address usdgPair;
         DevRouter router;
         DevPress press;
+        DevKit kit;
     }
 
     function run() external returns (Stack memory s) {
@@ -74,18 +77,22 @@ contract DevStack is Deployments {
         s.usdg.setMinter(address(s.router), true);
         s.weth.setMinter(address(s.router), true);
         s.press = new DevPress();
+        s.kit = new DevKit(s.paper, s.plank, s.usdg, s.press);
+        s.paper.setMinter(address(s.kit), true);
+        s.plank.setMinter(address(s.kit), true);
+        s.usdg.setMinter(address(s.kit), true);
+        s.press.setMinter(address(s.kit), true);
         vm.stopBroadcast();
 
-        string[9] memory n =
-            ["PAPER", "PLANK", "USDG", "WETH", "MILL", "ETH_USD_FEED", "PLANK_WETH_V2_PAIR", "UNIV2_FACTORY", "V2_ROUTER"];
-        address[9] memory a = [
+        string[10] memory n = ["PAPER", "PLANK", "USDG", "WETH", "MILL", "ETH_USD_FEED", "PLANK_WETH_V2_PAIR", "UNIV2_FACTORY", "V2_ROUTER", "TESTKIT"];
+        address[10] memory a = [
             address(s.paper), address(s.plank), address(s.usdg), address(s.weth), address(s.press), address(s.ethUsd),
-            s.plankPair, address(s.factory), address(s.router)
+            s.plankPair, address(s.factory), address(s.router), address(s.kit)
         ];
-        string[] memory inNames = new string[](9);
-        address[] memory inAddrs = new address[](9);
+        string[] memory inNames = new string[](10);
+        address[] memory inAddrs = new address[](10);
         console.log("Stand-ins (owner %s). For contracts/.env:", msg.sender);
-        for (uint256 i; i < 9; i++) {
+        for (uint256 i; i < 10; i++) {
             (inNames[i], inAddrs[i]) = (n[i], a[i]);
             console.log(string.concat(n[i], "=", vm.toString(a[i])));
         }
