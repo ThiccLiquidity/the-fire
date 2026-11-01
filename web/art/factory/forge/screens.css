@@ -133,7 +133,7 @@ a.btn { text-decoration: none }
 .pk-cards img:nth-child(1) { transform: translate(-2.5%, 1.2%) rotate(-1.2deg) } .pk-cards img:nth-child(2) { transform: translate(2%, .6%) rotate(1deg) }
 .pk-cards.peek { transform: translateY(-8%) }
 .pk-edge svg { width: 100%; height: 100%; overflow: visible }
-.pk-edge polyline { fill: none; stroke: #fffaf0; stroke-width: 2.4; stroke-linejoin: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 3px rgba(255,179,87,.95)) }
+.pk-edge polyline { fill: none; stroke: rgba(255,246,228,.75); stroke-width: 1.3; stroke-linejoin: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 1px 1px rgba(0,0,0,.45)) } /* the foil's torn edge: a thin pale line with a little shadow, not a glowing scribble */
 .pk-hint { inset: auto 7% auto 7% !important; top: 13.7% !important; height: 0; border-top: 2px dashed rgba(255,250,235,.9); overflow-x: clip } /* the swiping dot never widens the sheet */
 /* the dot that shows where to drag: a layer as wide as the line, moved by transform (no layout every frame) */
 .pk-hint::after { content: ''; position: absolute; top: -18px; left: 0; right: 0; height: 36px; background: radial-gradient(circle 18px at 8px 50%, #fff 0 7px, rgba(255,210,122,.85) 9px, rgba(255,210,122,0) 18px); animation: hint-swipe 1.8s ease-in-out infinite }
@@ -146,7 +146,7 @@ a.btn { text-decoration: none }
   transition: transform .3s cubic-bezier(.3,1.2,.5,1) }
 .sc:focus-visible { outline: 2px solid rgba(255,240,210,.7); outline-offset: 6px }
 .sc-tilt { position: absolute; inset: 0; transform-style: preserve-3d; --mx: .2; --my: .3 }
-.sc .inner { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .6s cubic-bezier(.3,.7,.3,1.12) }
+.sc .inner { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .6s cubic-bezier(.3,.7,.25,1) } /* lands flat: no overshoot (it read as a twitch) */
 .sc.flipped .inner { transform: rotateY(180deg) }
 .back2 { border-radius: var(--card-r); box-shadow: 0 8px 16px rgba(0,0,0,.55) }
 .back2 img { display: block; width: 100%; height: 100% }
@@ -258,7 +258,7 @@ a.btn { text-decoration: none }
 .lk-leg .lk-seams .g { stroke-width: 3.4 } .lk-leg .lk-seams .c { stroke-width: 1.2; stroke: #fff }
 .lk-flash { position: absolute; inset: -30%; z-index: 6; pointer-events: none; border-radius: 50%; opacity: 0;
   background: radial-gradient(closest-side, #fff 0%, var(--lkc) 30%, var(--lk) 55%, transparent 100%) }
-.sc.slow .inner { transition-duration: 1.2s; transition-timing-function: cubic-bezier(.25,.55,.25,1.06) }
+.sc.slow .inner { transition-duration: 1.2s; transition-timing-function: cubic-bezier(.25,.55,.25,1) }
 /* reduced motion: no seams, no slow-mo, just a steady glow */
 @media (prefers-reduced-motion: reduce) { .sc.leak .lk-halo { opacity: .9 } .sc.leak .lk-edge { opacity: 1 } }
 .stage-ctrls .share-b { order: -1 }

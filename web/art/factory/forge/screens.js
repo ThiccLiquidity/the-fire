@@ -652,8 +652,14 @@
     // the pack: drag across the top and the foil strip follows the pointer; tap / Enter tears it for you
     function ripPack({ area, msg, label, tag, halted, pause, art }) {
       return new Promise((resolve) => {
-        const Y = 46, steps = 24, pts = []; // tear line in pack pixels (240 x 336), just under the crimp
-        for (let k = 0; k <= steps; k++) pts.push([(k / steps) * 240, Y + (k % 2 ? -3.5 : 3.5) + (k % 3 ? (Math.random() - 0.5) * 3 : 0)]);
+        // tear line in pack pixels (240 x 336), just under the crimp: a ragged rip, not an even zig-zag (small teeth of
+        // uneven size on a line that wanders a little)
+        const Y = 46, steps = 34, pts = []; let drift = 0;
+        for (let k = 0; k <= steps; k++) {
+          drift = Math.max(-3, Math.min(3, drift + (Math.random() - 0.5) * 1.6));
+          const x = k === 0 || k === steps ? (k / steps) * 240 : (k / steps) * 240 + (Math.random() - 0.5) * 3;
+          pts.push([x, Y + drift + (k % 2 ? -1 : 1) * (1 + Math.random() * 2.6)]);
+        }
         const yAt = (x) => { const i = Math.min(steps - 1, Math.floor(x / 240 * steps)); const [x0, y0] = pts[i], [x1, y1] = pts[i + 1]; return y0 + (y1 - y0) * ((x - x0) / (x1 - x0)); };
         const P = ([x, y]) => `${(x / 2.4).toFixed(2)}% ${(y / 3.36).toFixed(2)}%`;
         const region = (x0, x1) => `polygon(${[[x0, 0], [x1, 0], [x1, yAt(x1)], ...pts.filter(([x]) => x > x0 && x < x1).reverse(), [x0, yAt(x0)]].map(P).join(', ')})`;
@@ -675,7 +681,8 @@
           torn.style.clipPath = prog ? (dir > 0 ? region(0, px) : region(px, 240)) : 'polygon(0 0, 0 0, 0 0)';
           keep.style.clipPath = prog >= 1 ? 'polygon(0 0, 0 0, 0 0)' : dir > 0 ? region(px, 240) : region(0, px);
           torn.style.transformOrigin = P([px, yAt(px)]);
-          torn.style.transform = reduced() ? '' : `translateY(${-prog * 5}px) rotate(${-dir * (3 + prog * 24)}deg)`;
+          // the torn strip peels up and away from the rip (it hinges where the tear has got to), never down over the pack
+          torn.style.transform = reduced() ? '' : `translateY(${-prog * 6}px) rotate(${dir * (2 + prog * 16)}deg)`;
           if (reduced()) torn.style.opacity = 0; // reduced motion: the torn piece doesn't lift away, it's simply gone, so the cards show inside
           const seg = pts.filter(([x]) => (dir > 0 ? x < px : x > px));
           edge.querySelector('polyline').setAttribute('points', [...seg, [px, yAt(px)]].filter(([x]) => x >= 11 && x <= 229).map((q) => q.join(',')).join(' ')); // inside the crimped sides
@@ -692,7 +699,7 @@
           pk.classList.add('open'); pk.setAttribute('aria-label', `${label}, torn open`);
           msg.textContent = 'Here they come';
           if (reduced()) torn.style.opacity = 0;
-          else torn.animate([{ transform: torn.style.transform, opacity: 1 }, { transform: `translate(${dir * 70}px, -110px) rotate(${-dir * 70}deg)`, opacity: 0 }],
+          else torn.animate([{ transform: torn.style.transform, opacity: 1 }, { transform: `translate(${-dir * 40}px, -120px) rotate(${dir * 48}deg)`, opacity: 0 }],
             { duration: 650, easing: 'cubic-bezier(.3,.6,.4,1)', fill: 'forwards' });
           await pause(260); if (halted()) return;
           inside.classList.add('peek'); // the tops of the cards show above the torn edge
@@ -742,7 +749,8 @@
         const stk = h('div', { class: 'stk' }, [...els].reverse());
         put(area, stk);
         const rest = [...els]; let ready = false, drag = null, dragged = false, arm = null;
-        const layout = () => rest.forEach((el, k) => { el.style.zIndex = 50 - k; el.style.transform = k ? `translate(${Math.min(k, 4) * 3}px, ${Math.min(k, 4) * 4}px)` : ''; });
+        // glide: the cards below slide up a step when the top one goes (not a jump)
+        const layout = (glide) => rest.forEach((el, k) => { el.style.zIndex = 50 - k; if (glide && !reduced()) el.style.transition = 'transform .32s cubic-bezier(.2,.8,.3,1)'; el.style.transform = k ? `translate(${Math.min(k, 4) * 3}px, ${Math.min(k, 4) * 4}px)` : ''; });
         layout();
         if (from && !reduced()) {
           const r = stk.getBoundingClientRect(), s = from.width / r.width;
@@ -838,7 +846,7 @@
           el.style.transition = reduced() ? 'opacity .25s' : 'transform .4s cubic-bezier(.4,.1,.7,.7), opacity .4s .05s';
           if (!reduced()) el.style.transform = `translate(${sign * 125}%, -10%) rotate(${sign * 22}deg)`;
           el.style.opacity = 0;
-          layout();
+          layout(true);
           await pause(reduced() ? 250 : 360); el.remove(); if (halted()) return;
           if (!rest.length) return resolve();
           reveal();
