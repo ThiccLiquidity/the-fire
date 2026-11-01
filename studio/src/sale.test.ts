@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   EVERYONE_LIMIT_HOURS, GROUP_TEMPLATES, blankGroup, checkSale, creditPacksMax, dropPlan, giantSale, groupPacks, groupSummary, groupTimes, parseDecimal,
-  creditGroupOk, saleErrors, saleJson, saleOf, salePacks, saleWithPacks, standardSale, taxGrowthOk, taxedPrices, testRunSale,
+  creditGroupOk, saleErrors, saleJson, saleOf, salePacks, saleWithPacks, standardSale, taxGrowthOk, taxedPrices, testRunSale, warmUpSale,
   type OldSaleSettings, type SaleGroup, type SaleSettings,
 } from './sale'
 import { salePolicy } from './salePolicy'
@@ -32,13 +32,22 @@ describe('the Standard and Giant presets', () => {
     })
   })
 
-  it('Test run: valid, inside the policy, 12 packs with short group windows', () => {
+  it('Test run: valid, inside the policy, 8 packs with short group windows, one person can finish it', () => {
     const t = testRunSale()
     expect(saleErrors({ ...t, start: NOW + 3600 }, NOW)).toEqual([])
     expect(salePolicy({ ...t, start: NOW + 3600 })).toEqual([])
     const j = saleJson(t)
-    expect(j).toMatchObject({ packs: 12, regularWalletsFor: 0, creditPacksMax: 2, creditPacksPerWallet: 1 })
-    expect(j.groups.map((x) => [x.packs, x.duration, x.idle ?? 0, x.limitFor ?? 0])).toEqual([[2, 900, 180, 0], [3, 900, 180, 0], [7, 0, 0, 0], [0, 0, 300, 0]])
+    expect(j).toMatchObject({ packs: 8, regularWalletsFor: 0, creditPacksMax: 2, creditPacksPerWallet: 1 })
+    expect(j.groups.map((x) => [x.packs, x.duration, x.idle ?? 0, x.limitFor ?? 0, x.perWallet])).toEqual([[2, 900, 180, 0, 1], [2, 900, 180, 0, 2], [4, 0, 0, 0, 8], [0, 0, 300, 0, 0]])
+  })
+
+  it('Testnet warm-up: valid, inside the policy, 40 packs in one open group, one wallet can buy it all, no free packs', () => {
+    const t = warmUpSale()
+    expect(saleErrors({ ...t, start: NOW + 3600 }, NOW)).toEqual([])
+    expect(salePolicy({ ...t, start: NOW + 3600 })).toEqual([])
+    const j = saleJson(t)
+    expect(j).toMatchObject({ packs: 40, regularWalletsFor: 0, creditPacksMax: 0 })
+    expect(j.groups.map((x) => [x.packs, x.gate, x.perWallet, x.priceUsd, x.paper, x.unlimited ?? false])).toEqual([[40, 'open', 40, '100000000', '100000000000000000', false]])
   })
 
   it('exports only the keys ConfigureSeries reads, in its order', () => {

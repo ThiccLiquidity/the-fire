@@ -809,37 +809,88 @@
   const payCoins = () => { const all = ['PLANK', 'ETH', 'USDG'].filter((c) => groups().some((g) => g.priceUsd > 0 && g.coins.includes(c))); return (all.length ? all : ['PLANK', 'ETH', 'USDG']).join(', ').replace(/, ([^,]*)$/, ' or $1'); };
   // ---------- the testnet: test ETH (the faucet), the test kit (one button), and what to test. Testnet only.
   const FAUCET = 'https://faucet.testnet.chain.robinhood.com/';
+  // what to test: the big things, one line each [key, label]; each can be ticked (kept in this browser) and reported
   const CHECKS = [
-    ['buy', 'Buy a pack (with PAPER, PLANK or USDG)'], ['open', 'Open your packs once the Series sells out'], ['grade', 'Case and grade a card'],
-    ['burn', 'Burn cards toward a free pack'], ['suggest', 'Suggest a theme or a character'], ['sell', 'Market: list a card for sale'],
-    ['mbuy', 'Market: buy a card from someone'], ['offer', 'Market: make an offer, and accept one'], ['arcade', 'Play a game in the Arcade'],
-    ['paper', 'Read today\u2019s Morning Wood'], ['profile', 'Set a profile name and picture'], ['phone', 'Try it on your phone too'],
+    ['open', 'Open packs'], ['grade', 'Case and grade cards'], ['burn', 'Burn cards'], ['getpaper', 'Buy PAPER'],
+    ['buy', 'Buy packs in the sale'], ['market', 'Use the Market: sell, buy, make an offer'], ['arcade', 'Play the Arcade games'],
+    ['suggest', 'Suggest a theme or a character'], ['profile', 'Set up your profile'], ['paper', 'Read the Morning Wood'],
   ];
   const CKEY = 'omni.testnet.checks';
   const checked = () => { try { return JSON.parse(localStorage.getItem(CKEY) || '{}'); } catch { return {}; } };
+  // the last few page errors, sent with a bug report (so a tester doesn't have to find them)
+  const recentErrors = [];
+  if (LIVE) {
+    const keep = (m) => { recentErrors.push(String(m || '').slice(0, 300)); if (recentErrors.length > 5) recentErrors.shift(); };
+    addEventListener('error', (e) => { if (e.message) keep(`${e.message} (${String(e.filename || '').split('/').pop()}:${e.lineno || 0})`); });
+    addEventListener('unhandledrejection', (e) => keep(e.reason?.shortMessage || e.reason?.message || e.reason));
+  }
+  // a bug or an idea, to the owner (api/report): what, where, and the page's own details (wallet, page, browser)
+  function openReport(kind = 'bug', area = '') {
+    const body = document.createElement('div'); body.className = 'st tn-report';
+    const opts = CHECKS.map(([k, t]) => `<option value="${k}"${k === area ? ' selected' : ''}>${esc(t)}</option>`).join('');
+    body.innerHTML = `<div class="seg" role="group" aria-label="Bug or idea"><button type="button" data-k="bug">Something broke</button><button type="button" data-k="idea">An idea</button></div>
+      <label class="fld"><span>Where</span><select id="rp-area"><option value="other"${area ? '' : ' selected'}>Somewhere else</option>${opts}</select></label>
+      <label class="fld"><span id="rp-what">What happened?</span><textarea id="rp-text" rows="5" maxlength="2000"></textarea></label>
+      <p class="muted small">Sent with it: your wallet address, this page, your browser and screen size, and any errors the page saw. Nothing else.</p>
+      <div class="row"><button class="btn primary" type="button" data-r="send">Send</button></div>`;
+    const ta = body.querySelector('#rp-text'), what = body.querySelector('#rp-what');
+    const pick = (k) => { kind = k; body.querySelectorAll('[data-k]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.k === k)));
+      what.textContent = k === 'bug' ? 'What happened? What did you expect?' : 'Your idea'; ta.placeholder = k === 'bug' ? 'I tapped Open and nothing happened...' : 'It would be cool if...'; };
+    body.querySelectorAll('[data-k]').forEach((b) => b.addEventListener('click', () => pick(b.dataset.k)));
+    pick(kind);
+    const btn = body.querySelector('[data-r=send]');
+    btn.addEventListener('click', async () => {
+      const text = ta.value.trim();
+      if (text.length < 3) { toast('Write a few words first'); ta.focus(); return; }
+      btn.disabled = true; btn.textContent = 'Sending…';
+      try {
+        const r = await fetch('/api/report/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+          kind, area: body.querySelector('#rp-area').value, text, wallet: S.wallet.full || undefined, page: location.pathname + location.search,
+          net: LIVE ? (Live.testnet ? 'testnet' : 'mainnet') : 'demo', ua: navigator.userAgent, screen: `${innerWidth}x${innerHeight}`, errors: kind === 'bug' ? recentErrors : [] }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'Couldn’t send it. Try again.');
+        Sheet.close('report');
+        toast(kind === 'bug' ? 'Thanks. Bug sent.' : 'Thanks. Idea sent.', 'good');
+      } catch (e) { toast(e.message || 'Couldn’t send it. Try again.'); btn.disabled = false; btn.textContent = 'Send'; }
+    });
+    Sheet.open('report', { title: kind === 'bug' ? 'Report a bug' : 'Send an idea', body });
+    setTimeout(() => ta.focus(), 50);
+  }
   function openTestnet() {
     if (!LIVE || !Live.testnet) return;
     const body = document.createElement('div'); body.className = 'st tn';
     const kitOn = () => !!Live.chain?.testKitOn?.();
     const draw = (state) => {
       const ck = checked(), nd = state?.next ? new Date(state.next * 1000) : null, when = nd ? (nd.toDateString() === new Date().toDateString() ? '' : 'tomorrow ') + nd.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+      const per = state?.packsPer || 0, packsGone = per && !state.gotPacks && state.packsLeft < per, canOpen = window.Stations?.openableCount?.() > 0;
+      const kitText = `25 PAPER, about $1,000 of PLANK, $50 USDG and a Paper Press${per ? `, plus ${per} sealed Series ${state.packFire} packs to open right away` : ''}. ${per ? 'The Press and the packs once' : 'The Press once'}; the rest once a day.${packsGone ? ' The kit\u2019s packs are all handed out.' : ''}${when ? ` Next one ${esc(when)}.` : ''}`;
+      const kitBtn = !kitOn() ? '<small class="muted">Not set up on this testnet yet</small>'
+        : state?.next && canOpen ? '<button class="btn small primary" type="button" data-t="open">Open my packs</button>'
+          : `<button class="btn small primary" type="button" data-t="kit"${state?.next ? ' disabled' : ''}>${state?.next ? 'Claimed' : 'Get the test kit'}</button>`;
+      const done = CHECKS.filter(([k]) => ck[k]).length;
       body.innerHTML = `<p class="lead">Play money, real wallets. Three steps, then try everything.</p>
         <ol class="start-list tn-steps">
           <li><span class="start-n" aria-hidden="true">1</span><span class="start-t"><b>Get test ETH</b><small>For the network fee. Paste your wallet address on the faucet page.</small></span>
             <span class="row"><a class="btn small" href="${FAUCET}" target="_blank" rel="noopener">Faucet ↗</a>${S.wallet.full ? '<button class="btn small" type="button" data-t="copy">Copy my address</button>' : ''}</span></li>
-          <li><span class="start-n" aria-hidden="true">2</span><span class="start-t"><b>Get the test kit</b><small>25 PAPER, about $1,000 of PLANK, $50 USDG and a Paper Press (the Press once; the rest once a day).${when ? ` Next one ${esc(when)}.` : ''}</small></span>
-            ${kitOn() ? `<button class="btn small primary" type="button" data-t="kit"${state?.next ? ' disabled' : ''}>${state?.next ? 'Claimed' : 'Get the test kit'}</button>` : '<small class="muted">Not set up on this testnet yet</small>'}</li>
-          <li><span class="start-n" aria-hidden="true">3</span><span class="start-t"><b>Play</b><small>The PLANK and Press groups use a snapshot taken before a sale starts: get the kit early.</small></span></li>
+          <li><span class="start-n" aria-hidden="true">2</span><span class="start-t"><b>Get the test kit</b><small>${kitText}</small></span>
+            ${kitBtn}</li>
+          <li><span class="start-n" aria-hidden="true">3</span><span class="start-t"><b>Play</b><small>Open your kit packs now. The sale\u2019s PLANK and Press groups use a snapshot taken before it starts: get the kit early.</small></span></li>
         </ol>
-        <h3>What to test</h3>
-        <ul class="tn-checks">${CHECKS.map(([k, t]) => `<li><label><input type="checkbox" data-c="${k}"${ck[k] ? ' checked' : ''}> <span>${esc(t)}</span></label></li>`).join('')}</ul>
-        <p class="muted small">Something broke? Take a screenshot and send it to whoever invited you. <a class="inf-link" href="help.html">Stuck transaction?</a></p>`;
+        <div class="tn-head"><h3>What to test</h3><span class="muted small" aria-live="polite">${done} of ${CHECKS.length} tried</span></div>
+        <ul class="tn-checks">${CHECKS.map(([k, t]) => `<li><label><input type="checkbox" data-c="${k}"${ck[k] ? ' checked' : ''}> <span>${esc(t)}</span></label><button class="linkish small" type="button" data-rp="${k}" aria-label="Report a problem: ${esc(t)}">Report</button></li>`).join('')}</ul>
+        <div class="row tn-report-row"><button class="btn" type="button" data-t="bug">Report a bug</button><button class="btn" type="button" data-t="idea">Send an idea</button></div>
+        <p class="muted small">Stuck on a transaction? <a class="inf-link" href="help.html">Here\u2019s what to do</a>.</p>`;
+      body.querySelector('[data-t=open]')?.addEventListener('click', () => { document.getElementById('sheet-testnet')?.close(); openStation('open'); });
+      body.querySelector('[data-t=bug]').addEventListener('click', () => openReport('bug'));
+      body.querySelector('[data-t=idea]').addEventListener('click', () => openReport('idea'));
+      body.querySelectorAll('[data-rp]').forEach((x) => x.addEventListener('click', () => openReport('bug', x.dataset.rp)));
       body.querySelector('[data-t=copy]')?.addEventListener('click', () => navigator.clipboard?.writeText(S.wallet.full).then(() => toast('Address copied', 'good'), () => toast(S.wallet.full)));
       body.querySelector('[data-t=kit]')?.addEventListener('click', () => needWallet(async () => {
         const ok = await Live.run('Get the test kit', (o) => Live.chain.claimTestKit(o), 'The test kit is in your wallet');
-        if (ok) { did.add('kit'); Live.sync?.({ cards: false }); refreshState(); }
+        if (ok) { did.add('kit'); await Live.sync?.(); refreshState(); }
       }));
-      body.querySelectorAll('[data-c]').forEach((x) => x.addEventListener('change', () => { const c = checked(); c[x.dataset.c] = x.checked; try { localStorage.setItem(CKEY, JSON.stringify(c)); } catch { /* private window */ } }));
+      body.querySelectorAll('[data-c]').forEach((x) => x.addEventListener('change', () => { const c = checked(); c[x.dataset.c] = x.checked; try { localStorage.setItem(CKEY, JSON.stringify(c)); } catch { /* private window */ }
+        const n = body.querySelector('.tn-head .muted'); if (n) n.textContent = `${CHECKS.filter(([k]) => c[k]).length} of ${CHECKS.length} tried`; }));
     };
     const refreshState = () => { if (kitOn() && S.wallet.full) Live.chain.testKitState(S.wallet.full).then(draw, () => draw()); else draw(); };
     draw(); refreshState();
@@ -920,7 +971,7 @@
     const b = (k, icon, label) => `<button class="btn" type="button" data-m="${k}">${icon ? svg(icon) : ''}${label}</button>`;
     const group = (title, items) => `<section class="menu-g" aria-label="${title}"><h3>${title}</h3><div class="menu">${items.filter(Boolean).join('')}</div></section>`;
     const d = Sheet.open('menu', { title: 'Help and settings', body: `<div class="menu-groups">
-      ${group('Help', [LIVE && Live.testnet ? b('testnet', 'spark', 'Testnet: test kit') : '', b('start', 'flag', 'New here?'), b('info', 'info', 'Info &amp; odds'), b('fun:tour', 'map', 'Workshop tour'), b('fun:practice', 'spark', 'Practice pack')])}
+      ${group('Help', [LIVE && Live.testnet ? b('testnet', 'spark', 'Testnet: test kit') : '', LIVE && Live.testnet ? b('report', 'flag', 'Report a bug or idea') : '', b('start', 'flag', 'New here?'), b('info', 'info', 'Info &amp; odds'), b('fun:tour', 'map', 'Workshop tour'), b('fun:practice', 'spark', 'Practice pack')])}
       ${group('You', [b('feed', 'feed', 'Activity')])}
       ${group('Settings', [b('sound', window.Sound?.on ? 'sound' : 'mute', `Sound: ${window.Sound?.on ? 'On' : 'Off'}`), LIVE && window.App?.push.supported ? b('push', 'bell', `Notifications: ${App.push.on ? 'On' : 'Off'}`) : '', window.Fun?.haptics?.supported ? b('haptics', 'phone', `Vibration: ${Fun.haptics.on ? 'On' : 'Off'}`) : '', window.App?.canInstall ? b('install', 'install', 'Install app') : ''])}
       </div>
@@ -970,6 +1021,7 @@
     if (k === 'haptics' && window.Fun?.haptics) return toast(`Vibration: ${Fun.haptics.set(!Fun.haptics.on) ? 'On' : 'Off'}`);
     if (k === 'paper') openGetPaper(); if (k === 'info') Info.open(); if (k === 'info-cards') Info.open('cards'); if (k === 'feed') openFeed();
     if (k === 'testnet') openTestnet();
+    if (k === 'report') openReport('bug');
     if (k === 'menu') openMenu(); if (k === 'demo' && !LIVE) openDemo(); if (k === 'start') openStart(); if (k === 'sound') toggleSound();
     if (k === 'cards' || k === 'open' || k === 'games') openStation(k);
   }

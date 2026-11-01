@@ -36,7 +36,9 @@ const artifact = (file, name) => {
 
 /** Start anvil and deploy everything. Returns the RPC, the deployments file and helpers; stop() ends anvil. */
 // everyone: extra settings for the Everyone group (chain.test.ts: a per-wallet limit that lifts on a timer)
-export async function setupChain({ port = 8547, log = console.log, everyone = {} } = {}) {
+// warmup: a number of packs: first a testnet warm-up Series (FIRE - 1; the studio's "Testnet warm-up" sale), bought out
+// and loaded into the test kit by the real WarmUp.s.sol, as on the testnet the day of the friends' test
+export async function setupChain({ port = 8547, log = console.log, everyone = {}, warmup = 0 } = {}) {
   const RPC = `http://127.0.0.1:${port}`;
   const DEP_FILE = resolve(REPO, "deployments", "rehearsal-chaintest.json") /* gitignored */;
   const OUT = resolve(here, "out");
@@ -137,6 +139,25 @@ export async function setupChain({ port = 8547, log = console.log, everyone = {}
 
   log("PLANK price: two checkpoints 31 minutes apart (PlankUsdTwap; a short window after the 48 hours)");
   for (let i = 0; i < 2; i++) { await warp(31 * 60); await tx(deployer, C.PlankUsdTwap, ABI.checkpoint, "checkpoint"); }
+
+  if (warmup) {
+    const W = FIRE - 1n;
+    log(`warm-up Series ${W}: ${warmup} packs, one open group; WarmUp.s.sol buys it out, closes it and fills the test kit`);
+    const wr = JSON.parse(readFileSync(resolve(CONTRACTS, "test/cards/recipe-standard.json"), "utf8"));
+    wr.fire = Number(W);
+    // the studio's warmUpSale (studio/src/sale.ts), exported: $1 + 0.1 PAPER, one wallet can buy it all
+    wr.sale = {
+      start: 0, packs: warmup, paperCapUsd: 100000000, maxPerTx: 50, regularWalletsFor: 0, creditsPerPick: 1, creditPacksMax: 0, creditPacksPerWallet: 0, creditGroup: 0,
+      groups: [{ name: "Warm-up", packs: warmup, gate: "open", priceUsd: "100000000", paper: "100000000000000000", coins: 7, plankBurnBps: 1000, paperBurnBps: 2000,
+        perWallet: warmup, afterGroup: 255, startDelay: 0, duration: 0, rollTo: 255 }],
+    };
+    const wp = resolve(CONTRACTS, "series", `rehearsal-chaintest-fire-${W}.json`);
+    writeFileSync(wp, JSON.stringify(wr, null, 1));
+    await asOwnerForge("script/ConfigureSeries.s.sol", { RECIPE_JSON: wp, BATCH: "A" });
+    await asOwnerForge("script/ConfigureSeries.s.sol", { RECIPE_JSON: wp, BATCH: "B", DROP_START: String((await now()) + 60n) });
+    await warp(61);
+    forge("script/WarmUp.s.sol", { FIRE: String(W), PER: "2" });
+  }
 
   log(`Series ${FIRE}: ConfigureSeries batch A, then B (the drop opens in 10 minutes)`);
   const recipe = JSON.parse(readFileSync(resolve(CONTRACTS, "test/cards/recipe-standard.json"), "utf8"));

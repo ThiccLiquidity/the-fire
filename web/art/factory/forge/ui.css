@@ -596,3 +596,13 @@ button.net-badge { border: 0; cursor: pointer } button.net-badge:hover { filter:
 .tn-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px }
 .tn-checks label { display: flex; align-items: center; gap: 10px; min-height: 40px; font: 700 14px var(--body); cursor: pointer }
 .tn-checks input { width: 20px; height: 20px; flex: none } .tn-checks input:checked + span { color: var(--muted); text-decoration: line-through }
+
+/* the testnet sheet's checklist by part of the site, and the report form */
+.tn-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px }
+.tn-checks li { display: flex; align-items: center; gap: 8px } .tn-checks li label { flex: 1 }
+.tn-checks .linkish { color: var(--muted); font-size: 12px; font-weight: 700; padding: 8px 4px }
+.tn-report-row { margin: 16px 0 6px; gap: 10px; flex-wrap: wrap } .tn-report-row .btn { flex: 1 }
+.tn-report { display: grid; gap: 14px }
+.tn-report .fld { display: grid; gap: 6px; font: 700 14px var(--body) }
+.tn-report select, .tn-report textarea { width: 100%; box-sizing: border-box; min-height: var(--tap); padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); font: 500 15px/1.4 var(--body) }
+.tn-report textarea { resize: vertical; min-height: 120px }

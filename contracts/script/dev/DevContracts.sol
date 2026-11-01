@@ -10,6 +10,8 @@ pragma solidity ^0.8.28;
 
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
+import {IERC1155} from "openzeppelin-contracts/contracts/token/ERC1155/IERC1155.sol";
+import {ERC1155Holder} from "openzeppelin-contracts/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import {Math} from "openzeppelin-contracts/contracts/utils/math/Math.sol";
 
 /// The deployer, and only the deployer, can change a stand-in.
@@ -322,7 +324,11 @@ contract DevPress is ERC721, DevOwned {
 /// The testnet's test kit (the site's "Get the test kit" button): anyone can claim test PAPER, PLANK and USDG once a
 /// day, and a Paper Press once per wallet, in one transaction. Testnet stand-ins only (DevStack refuses mainnet); a
 /// minter of the three tokens and of the press. Nothing here is worth anything.
-contract DevKit {
+///
+/// Packs to open while a Series is on sale: the deployer buys out a small warm-up Series (WarmUp.s.sol), sends its
+/// sealed packs here and calls setPacks; then every wallet's claim also brings PACKS_PER sealed packs, once per wallet,
+/// while they last. A wallet that claimed before the packs came gets them on its next claim, even the same day.
+contract DevKit is DevOwned, ERC1155Holder {
     DevToken public immutable PAPER;
     DevToken public immutable PLANK;
     DevToken public immutable USDG;
@@ -334,34 +340,72 @@ contract DevKit {
     mapping(address => uint256) public lastClaim;
     mapping(address => bool) public hasPress;
 
-    event Claimed(address indexed to, bool press);
+    IERC1155 public packs; // FirePacks (address(0): no packs in the kit)
+    uint256 public packFire; // which Series' packs it hands out
+    uint256 public packsPer; // how many per wallet
+    mapping(address => bool) public gotPacks;
 
-    constructor(DevToken paper, DevToken plank, DevToken usdg, DevPress press) {
+    event Claimed(address indexed to, bool press, uint256 packs);
+    event PacksSet(address packs, uint256 fire, uint256 per);
+
+    constructor(DevToken paper, DevToken plank, DevToken usdg, DevPress press) DevOwned(msg.sender) {
         PAPER = paper;
         PLANK = plank;
         USDG = usdg;
         PRESS = press;
     }
 
-    /// @notice The test tokens (once a day) and, the first time, a Paper Press.
+    /// @notice Which packs the kit hands out (the deployer: after sending them here). per 0 stops it.
+    function setPacks(IERC1155 packs_, uint256 fire, uint256 per) external onlyOwner {
+        packs = packs_;
+        packFire = fire;
+        packsPer = per;
+        emit PacksSet(address(packs_), fire, per);
+    }
+
+    /// @notice Take packs back out of the kit (the deployer).
+    function takePacks(address to, uint256 n) external onlyOwner {
+        packs.safeTransferFrom(address(this), to, packFire, n, "");
+    }
+
+    /// @notice How many sealed packs are left in the kit.
+    function packsLeft() public view returns (uint256) {
+        return address(packs) == address(0) ? 0 : packs.balanceOf(address(this), packFire);
+    }
+
+    /// @notice How many packs `who`'s next claim brings (0: none left, or it already got them).
+    function packsFor(address who) public view returns (uint256) {
+        return packsPer == 0 || gotPacks[who] || packsLeft() < packsPer ? 0 : packsPer;
+    }
+
+    /// @notice The test tokens (once a day) and, the first time, a Paper Press; the kit's packs once per wallet.
     function claim() external {
-        require(lastClaim[msg.sender] == 0 || block.timestamp >= lastClaim[msg.sender] + EVERY, "DevKit: once a day");
-        lastClaim[msg.sender] = block.timestamp;
-        PAPER.mint(msg.sender, PAPER_AMOUNT);
-        PLANK.mint(msg.sender, PLANK_AMOUNT);
-        USDG.mint(msg.sender, USDG_AMOUNT);
-        bool press = !hasPress[msg.sender];
-        if (press) {
-            hasPress[msg.sender] = true;
-            PRESS.mint(msg.sender);
+        bool tokens = lastClaim[msg.sender] == 0 || block.timestamp >= lastClaim[msg.sender] + EVERY;
+        uint256 n = packsFor(msg.sender);
+        require(tokens || n > 0, "DevKit: once a day");
+        bool press;
+        if (tokens) {
+            lastClaim[msg.sender] = block.timestamp;
+            PAPER.mint(msg.sender, PAPER_AMOUNT);
+            PLANK.mint(msg.sender, PLANK_AMOUNT);
+            USDG.mint(msg.sender, USDG_AMOUNT);
+            press = !hasPress[msg.sender];
+            if (press) {
+                hasPress[msg.sender] = true;
+                PRESS.mint(msg.sender);
+            }
         }
-        emit Claimed(msg.sender, press);
+        if (n > 0) {
+            gotPacks[msg.sender] = true;
+            packs.safeTransferFrom(address(this), msg.sender, packFire, n, "");
+        }
+        emit Claimed(msg.sender, press, n);
     }
 
     /// @notice When `who` can claim again (0: now).
     function nextClaim(address who) external view returns (uint256) {
         uint256 t = lastClaim[who];
-        return t == 0 || block.timestamp >= t + EVERY ? 0 : t + EVERY;
+        return t == 0 || block.timestamp >= t + EVERY || packsFor(who) > 0 ? 0 : t + EVERY;
     }
 }
 

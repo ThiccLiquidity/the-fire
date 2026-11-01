@@ -189,23 +189,36 @@ export function giantSale(): SaleSettings {
   }
 }
 
-/** The testnet run (owner, Oct 29): the Standard's four groups, small and quick, so a few testers can go through every
- *  group in an afternoon with no long waits. 12 packs: Paper Press holders 2 and PLANK holders 3 open together, each
- *  ending when sold, 3 minutes after its last sale, or at 15 minutes; Everyone (the other 7, 3 per wallet) opens
- *  when the PLANK group ends; After sell-out ends 5 minutes after its last sale. Free packs: 2, 1 per wallet. Bots
- *  rule off, so testers on smart-contract wallets can buy. */
+/** The testnet run (owner, Nov 2026): the Standard's four groups, small and quick, so even one or two testers can go
+ *  through every group and sell it out in an hour or so. 8 packs: Paper Press holders 2 (1 per Press; every tester
+ *  gets a Press in the test kit) and PLANK holders 2 open together, each ending when sold, 3 minutes after its last
+ *  sale, or at 15 minutes; Everyone (the other 4, plus leftovers) opens when the PLANK group ends, up to 8 per wallet
+ *  so one person can finish it; After sell-out ends 5 minutes after it opens or its last sale. Free packs: 2, 1 per
+ *  wallet. Bots rule off, so testers on smart-contract wallets can buy. */
 export function testRunSale(): SaleSettings {
   const s = standardSale()
   const [press, plank, everyone, after] = s.groups
   const quick = { hours: 0.25, idleMinutes: 3 }
   return {
-    ...s, packs: 12, regularWalletsHours: 0, creditPacksPercent: '20', creditPacksPerWallet: 1,
+    ...s, packs: 8, regularWalletsHours: 0, creditPacksPercent: '25', creditPacksPerWallet: 1,
     groups: [
-      { ...press, packs: 2, ...quick },
-      { ...plank, packs: 3, perWallet: 3, ...quick },
-      { ...everyone, perWallet: 3, limitHours: 0 },
+      { ...press, packs: 2, perWallet: 1, ...quick },
+      { ...plank, packs: 2, perWallet: 2, ...quick },
+      { ...everyone, perWallet: 8, limitHours: 0 },
       { ...after, idleMinutes: 5 },
     ],
+  }
+}
+
+/** The testnet warm-up (owner, Nov 2026): a small Series the deployer buys out at once (contracts/script/WarmUp.s.sol),
+ *  so it closes and its packs can open straight away; its sealed packs go into the test kit, 2 per tester, to open,
+ *  case, grade and burn while the main Series is on sale. One open group, $1 + 0.1 PAPER (the policy's least), a
+ *  wallet limit of the whole Series (40, so the deployer can buy it all), no free packs, no After sell-out (the Series closes the moment it sells out). 40 packs: 20 testers. */
+export function warmUpSale(): SaleSettings {
+  const s = standardSale()
+  return {
+    ...s, packs: 40, maxPerTx: 50, regularWalletsHours: 0, creditPacksPercent: '0', creditPacksPerWallet: 0, creditGroup: 0,
+    groups: [{ ...blankGroup(), name: 'Warm-up', packsAs: 'rest', priceUsd: '1', paper: '0.1', coins: 7, perWallet: 40 }],
   }
 }
 
@@ -213,6 +226,7 @@ export const SALE_PRESETS: { name: string; make: () => SaleSettings }[] = [
   { name: 'Standard', make: standardSale },
   { name: 'Giant', make: giantSale },
   { name: 'Test run', make: testRunSale },
+  { name: 'Testnet warm-up', make: warmUpSale },
 ]
 
 // ---------------------------------------------------------------- old saves

@@ -6,7 +6,7 @@
 // (delivered and finished), burning, the liquidity fire (a keeper's LiquidityBurner run burning real pool tokens), profiles (FireProfiles: set, rename, a name unique in any case, the picture falling back once its
 // card is sold, clear), and every read the site uses. Run by run.mjs.
 
-import { concat, decodeFunctionData, encodeFunctionData, erc20Abi, keccak256, toHex, type Address, type Hex, type PublicClient } from "viem";
+import { concat, decodeFunctionData, encodeFunctionData, erc20Abi, keccak256, parseAbi, toHex, type Address, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
 import type { Net } from "../../src/lib/net";
 import { cardsAbi, creditsAbi, packsAbi } from "../../src/lib/cards";
@@ -91,7 +91,7 @@ export async function runTest(ctx: Ctx): Promise<number> {
   check(bal.PAPER && bal.PLANK && bal.USDG && BigInt(bal.USDG.raw) === 10_000n * 10n ** 6n, `balances: ETH ${bal.ETH?.text}, PAPER ${bal.PAPER?.text}, PLANK ${bal.PLANK?.text}, USDG ${bal.USDG?.text} (6 decimals read from the token)`);
 
   console.log("\n== the Series before it opens: its groups");
-  check(JSON.stringify(await L.seriesNumbers()) === "[7]", "Series list from DropConfigured: [7]");
+  check(JSON.stringify(await L.seriesNumbers()) === "[6,7]", "Series list from DropConfigured: [6,7] (6: the warm-up, closed)");
   let s = (await L.currentSeries())!;
   check(s.fire === fire && s.state === "upcoming" && s.packs === 7 && s.groups.length === 3, `current Series 7: upcoming, 7 packs in ${s.groups.length} groups`);
   const [gp, ge, gx] = s.groups;
@@ -455,13 +455,23 @@ export async function runTest(ctx: Ctx): Promise<number> {
     check(L.testKitOn(), "the test kit is set up (deployments: TESTKIT)");
     const bal = (t: Address) => ctx.pub.readContract({ address: t, abi: erc20Abi, functionName: "balanceOf", args: [kitter.address] }) as Promise<bigint>;
     const I = ctx.deployment.inputs as Record<string, Address>;
+    const W6 = fire - 1;
+    const st0 = await L.testKitState(kitter.address);
+    check(st0.packs === 2 && st0.packFire === W6 && st0.packsLeft === 6 && !st0.gotPacks, `the warm-up's sealed packs are in the kit (WarmUp.s.sol): ${st0.packsLeft} of Series ${st0.packFire}, 2 per wallet`);
+    const packsOf = () => ctx.pub.readContract({ address: ctx.C.FirePacks, abi: parseAbi(["function balanceOf(address, uint256) view returns (uint256)"]), functionName: "balanceOf", args: [kitter.address, BigInt(W6)] }) as Promise<bigint>;
     const before = await Promise.all([bal(I.PAPER), bal(I.PLANK), bal(I.USDG)]);
     await L.claimTestKit(o);
     const after = await Promise.all([bal(I.PAPER), bal(I.PLANK), bal(I.USDG)]);
     const press = await ctx.pub.readContract({ address: I.MILL, abi: erc20Abi, functionName: "balanceOf", args: [kitter.address] }) as bigint;
     const st = await L.testKitState(kitter.address);
-    check(after[0] - before[0] === 25n * 10n ** 18n && after[1] - before[1] === 10n ** 30n && after[2] - before[2] === 50n * 10n ** 6n && press === 1n && st.next > 0 && st.hasPress,
-      "one claim: 25 PAPER, 10^30 PLANK, 50 USDG and a Paper Press; the next one tomorrow");
+    check(after[0] - before[0] === 25n * 10n ** 18n && after[1] - before[1] === 10n ** 30n && after[2] - before[2] === 50n * 10n ** 6n && press === 1n && st.next > 0 && st.hasPress && (await packsOf()) === 2n && st.gotPacks && st.packsLeft === 4,
+      "one claim: 25 PAPER, 10^30 PLANK, 50 USDG, a Paper Press and 2 sealed warm-up packs; the next one tomorrow");
+    // the warm-up is closed (sold out), so its packs open now
+    const wo = await L.openPacks({ fire: W6, n: 1 }, o);
+    await ctx.warp(100);
+    const wd = await L.deliverAndDeal({ fire: W6, index: wo.index }, o);
+    const wc = (await L.cardsOf(kitter.address)).filter((c) => Number(c.traits.Series) === W6);
+    check(wd.dealt && wc.length === 6 && (await packsOf()) === 1n, `a kit pack opens straight away: ${wc.length} Series ${W6} cards to case, grade and burn`);
     let km = "";
     try { await L.claimTestKit(o); } catch (e) { km = (e as Error).message; }
     check(!!km, `a second claim the same day is refused before the wallet ("${km}")`);

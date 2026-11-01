@@ -276,6 +276,10 @@ Vercel → the project → Settings → Environment Variables:
   host would be blocked in the browser.
 - `VITE_REOWN_PROJECT_ID`: needed for the test (phones connect through it; without it a phone browser with no wallet
   only sees "No wallet found"). It's already in, from earlier: check it's ticked for Preview.
+- `REPORTS_KEY`: the key for reading tester reports (the site's **Report a bug** / **Send an idea**). Make one up,
+  at least 16 characters, type it straight into Vercel (never into chat), Preview only. Reports go into the same Neon
+  database as push (`DATABASE_URL`, already there); the table makes itself. Read them at `<preview URL>/forge/reports.html`
+  with that key (it stays in that browser tab only).
 
 Then Deployments → the newest `wip/pending-approval` preview → Redeploy.
 - Good: the preview opens live on the testnet (no demo banner; Connect asks for Robinhood Chain Testnet). Without the
@@ -302,24 +306,62 @@ Follow `docs/game-server.md` sections 1-3 with these differences:
   isn't open": wait for it. Friends in AZ, AR, CT, DE, LA, MT, SC, SD, TN, IN or ME can't play competitive (the
   server blocks those states); free play works everywhere.
 
-## 14. Series 1 = Jean Phil, Series 2 = Gym Bros (the Test run preset)
+## 14. Series 1 = the warm-up (Jean Phil), Series 2 = the sale (Gym Bros)
 
 The two practice Series are the collections already in the Card Studio: **Jean Phil × Painted Cubism** as **Series 1**
 and **Renaissance Gym Bros × Fresco Painting** as **Series 2** (5 characters each). In the studio, set each one's Series
-number (1 and 2) before building, so the cards print the right Series. Series 2 is what tests burn credits (a credit
-earned in Series 1 is spent in Series 2) and a second pack art.
+number (1 and 2) before building, so the cards print the right Series.
 
-Sale tab → **Start from: Test run**. It's the Standard's four groups, small and quick, with no long waits:
-- 12 packs. **Paper Press holders** (2) and **PLANK holders** (3, snapshot) open together at the start. Each ends when
-  it's sold, **3 minutes after its last sale**, or at **15 minutes**, whichever is first; leftovers go to Everyone.
-- **Everyone** (the other 7, 3 per wallet) opens the moment the PLANK group ends.
-- **After sell-out**: extra packs at a rising price, ending **5 minutes** after its last sale. Then the keeper closes
-  the Series and packs can open.
+- **Series 1 is the warm-up.** You buy all 40 packs yourself the moment it starts, so it closes at once and its packs
+  can open; they go into the test kit, 2 per tester. Friends open, case, grade and burn real cards from minute one.
+- **Series 2 is the sale they wait on**: the four groups (Press, PLANK snapshot, Everyone, After sell-out). Its burn
+  credits and free packs come from Series 1's cards.
+
+Only one Series can be on sale at a time, so it goes in this order:
+
+**A. The day before (or the morning of): Series 1, the warm-up.**
+1. Studio, Series 1 (Jean Phil): Sale tab → **Start from: Testnet warm-up** (40 packs, one open group, $1 + 0.1 PAPER,
+   no free packs). More than 20 friends? Raise the packs (2 each). Export the recipe.
+2. Launch it like any Series (below), with a start ~10 minutes out. It has no snapshot group, so no snapshot file.
+3. After the start, fill the kit (the deployer pays in test tokens it mints; 2 per wallet):
+   ```powershell
+   cd C:\Users\DubT1\the-fire\contracts
+   $env:FIRE = "1"; $env:PER = "2"
+   forge script script/WarmUp.s.sol --rpc-url $env:RPC --account testnet-deployer --sender $DEPLOYER --slow --broadcast
+   ```
+   - Good: `warm-up Series 1 bought out and closed; 40 sealed packs in the test kit, 2 per wallet`.
+   - If not: "hasn't started yet" → wait for the start. "no drop on sale" → the launch didn't finish, or it's already
+     closed (then just `cast send <TESTKIT> "setPacks(address,uint256,uint256)" <FirePacks> 1 2` from the deployer
+     after sending the packs to the kit).
+   - Ran out of packs? A closed Series can't sell more: once they're gone, the kit hands out tokens only.
+
+**B. Send the link.** The testnet preview URL. Their first visit opens the **Testnet** sheet: faucet → **Get the test
+kit** (test tokens, a Paper Press and 2 Series 1 packs, one confirmation) → **Open my packs** → the checklist, with
+**Report** on every row. Tell them: claim the kit **today**, and keep the PLANK, or they miss the PLANK group.
+
+**C. Series 2, the sale (once most friends have claimed).** Studio, Series 2 (Gym Bros): Sale tab → **Start from:
+Test run** (below), snapshot side file as below, launch with the start a few hours out (the snapshot is taken at the
+launch, so anyone who claims the kit after it isn't in the PLANK group; they can still buy in Everyone).
+
+**D. During the test.** Read reports at `/forge/reports.html` (step 13's key). Mark each done when fixed.
+
+**The Test run preset (Series 2).** Sale tab → **Start from: Test run**. The Standard's four groups, small and quick:
+one or two friends can go through every group and sell it out in about an hour.
+- 8 packs. **Paper Press holders** (2, 1 per Press; everyone's kit has a Press) and **PLANK holders** (2, snapshot)
+  open together at the start. Each ends when it's sold, **3 minutes after its last sale**, or at **15 minutes**,
+  whichever is first; leftovers go to Everyone.
+- **Everyone** (the other 4, plus leftovers) opens the moment the PLANK group ends, up to 8 per wallet, so even one
+  person can finish it.
+- **After sell-out**: extra packs at a rising price, ending **5 minutes** after it opens or its last sale. Then the
+  keeper closes the Series and packs can open.
 - Free packs: 2 (1 per wallet), from Everyone. Bots rule off (0 h), so friends on smart wallets can buy too.
+- Snapshot window: use `"days": 0.02` (about 30 minutes) in the snapshot file below, so friends only need to hold the
+  kit's PLANK for half an hour before the launch.
 Nothing is outside the policy, so no `--allow` is needed.
 
-**Sell it out.** Packs only open once the Series closes. If the 12 don't sell, the owner can end it only 24 h after
-the start (`endDrop`, below). So count your testers: if fewer than ~6 people, buy the rest yourself near the end.
+**Sell it out.** Packs only open once the Series closes. If the 8 don't sell, the owner can end it only 24 h after
+the start (`endDrop`, below). So if only one or two people are buying, buy the rest yourself in Everyone (any test
+wallet with the kit).
 ```powershell
 $sale = (Get-Content ..\deployments\46630.json | ConvertFrom-Json).contracts.FireSale
 cast send $sale "endDrop(uint256)" 1 --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC   # only 24 h after the start
@@ -332,7 +374,7 @@ Jean Phil's pack as Series 1 and Gym Bros' as Series 2, upload the folder, then 
 **Friends' wallets, a day before.** Send testers the testnet link. The site's **Testnet** badge (top left, it also
 opens by itself on a first visit) walks them through it: test ETH from the faucet
 (https://faucet.testnet.chain.robinhood.com), then **Get the test kit** (test PAPER, PLANK, USDG and a Paper Press in
-one confirmation), then a "What to test" checklist. They must claim the kit **before** the launch's snapshot (and keep
+one confirmation, plus 2 Series 1 packs), then a "What to test" checklist. They must claim the kit **before** Series 2's snapshot (and keep
 the PLANK through its window) to be in the PLANK and Press groups. The mint commands below still work for anyone who
 can't use the button.
 

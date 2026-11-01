@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Tester reports · Omni Cardworks</title>
+<link rel="icon" href="ui/omni-mark.webp">
+<link rel="stylesheet" href="ui/fonts.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="page.css">
+<style>
+  .rp-key { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0 }
+  .rp-key input, .rp-bar select { min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line-2, #4a3a2a); background: var(--panel-2, #1f1712); color: inherit; font: 500 15px var(--body, sans-serif) }
+  .rp-key input { flex: 1; min-width: 200px }
+  .rp-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 12px 0 }
+  .rp-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px }
+  .rp-list li { border: 1px solid var(--line-2, #4a3a2a); border-radius: 14px; padding: 14px; background: rgba(255,255,255,.03) }
+  .rp-list .meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px; opacity: .8; margin-bottom: 8px }
+  .rp-list .tag { font-weight: 800; text-transform: uppercase; letter-spacing: .06em }
+  .rp-list .tag.bug { color: #ff9a7a } .rp-list .tag.idea { color: #9fd0ff }
+  .rp-list .text { white-space: pre-wrap; word-break: break-word; font-size: 16px; margin: 0 0 8px }
+  .rp-list details { font-size: 13px; opacity: .85 } .rp-list pre { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0 }
+  .rp-list .done { opacity: .55 }
+</style>
+</head>
+<body class="page">
+<header class="page-top"><a href="./"><img src="ui/omni-mark.webp" alt=""><span>CARDWORKS</span></a><a class="back" href="./">Back to Cardworks</a></header>
+<main class="page-main">
+  <h1>Tester reports</h1>
+  <p class="lead">Bugs and ideas sent from the Testnet sheet. Only you can read them: type the reports key you set in Vercel (REPORTS_KEY).</p>
+  <form class="rp-key" id="keyForm" autocomplete="off">
+    <input id="key" type="password" placeholder="Reports key" aria-label="Reports key" autocomplete="off">
+    <button class="btn primary" type="submit">Show reports</button>
+  </form>
+  <div class="rp-bar" hidden id="bar">
+    <select id="status" aria-label="Which reports"><option value="open">Open</option><option value="done">Done</option><option value="all">All</option></select>
+    <select id="kind" aria-label="Bugs or ideas"><option value="">Bugs and ideas</option><option value="bug">Bugs</option><option value="idea">Ideas</option></select>
+    <button class="btn" type="button" id="reload">Refresh</button>
+    <span id="count" class="muted"></span>
+  </div>
+  <p id="msg" role="status"></p>
+  <ul class="rp-list" id="list"></ul>
+</main>
+<script src="reports.js"></script>
+</body>
+</html>

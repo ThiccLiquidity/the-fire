@@ -22,6 +22,8 @@ import { fileURLToPath } from "node:url";
 import { encodeFunctionData, erc20Abi, toHex } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { setupChain, MNEMONIC, acct } from "../chain-test/setup.mjs";
+import { createReportServer } from "../../api/report/_lib/server.js";
+import { memoryStore } from "../../api/report/_lib/store.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FACTORY = resolve(here, "../../art/factory");
@@ -34,8 +36,16 @@ if (!existsSync(join(FACTORY, "forge/vendor/wallet.js"))) throw new Error("No wa
 // ---------- a static server for web/art/factory (the page at /forge/, its scene art at /build3/)
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".webp": "image/webp", ".json": "application/json", ".woff2": "font/woff2", ".jpg": "image/jpeg", ".png": "image/png", ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".svg": "image/svg+xml" };
 // ?build-live=testnet: the page as a live build writes it (<meta name="forge-live" content="testnet">, vite.wallet.config.ts)
-const server = createServer((req, res) => {
+// /api/report: the real tester-report server (api/report), on a memory store, so the Report form is tested end to end
+const reports = memoryStore(), REPORTS_KEY = "e2e-reports-key-0123456789";
+const reportServer = createReportServer({ store: reports, key: REPORTS_KEY });
+const server = createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
+  if (u.pathname.startsWith("/api/report/")) {
+    const chunks = []; for await (const c of req) chunks.push(c);
+    const r = await reportServer.handle(new Request(`http://x${req.url}`, { method: req.method, headers: req.headers, body: req.method === "POST" ? Buffer.concat(chunks) : undefined }));
+    res.writeHead(r.status, { "content-type": "application/json" }); return res.end(await r.text());
+  }
   let p = decodeURIComponent(u.pathname);
   if (p.endsWith("/")) p += "index.html";
   const f = normalize(join(FACTORY, p));
@@ -67,7 +77,7 @@ async function pickBurn(pg, n) {
 const check = (cond, what) => { if (!cond) throw new Error(`CHECK FAILED: ${what}`); checks++; console.log(`  ok  ${what}`); };
 
 console.log("local chain: deploying");
-const ctx = await setupChain({ port: 8548, log: (m) => console.log(`  ${m}`) });
+const ctx = await setupChain({ port: 8548, log: (m) => console.log(`  ${m}`), warmup: 4 }); // warm-up Series 6 in the test kit
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
 let code = 0;
 try {
@@ -488,7 +498,7 @@ try {
     await page.waitForFunction(() => [...document.querySelectorAll("#sheet-table .prac-c .cframe")].every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 15_000 }).catch(() => {});
     const pr = await page.evaluate(() => [...document.querySelectorAll("#sheet-table .prac-c .cframe")].map((i) => ({ src: i.src, alt: i.alt, ok: i.complete && i.naturalWidth > 0 })));
     const names = ["Ember Fox", "Ash Wolf", "Cinder Queen"];
-    check(pr.length === 6 && pr.every((x) => /\/ipfs\/bafyexampleimages\/c[0-2]-(paper|wood|fire|coal|gold|fullart)-(none|frame|picture|full)-u\.webp$/.test(x.src) && x.ok && names.some((n) => x.alt.startsWith(n + ","))) && asked.length >= 6,
+    check(pr.length === 6 && pr.every((x) => /\/ipfs\/bafyexampleimages\/c[0-2]-(paper|wood|fire|coal|gold|fullart)-(none|frame|picture|full)-u\.webp$/.test(x.src) && x.ok && names.some((n) => x.alt.startsWith(n + ","))) && asked.length >= new Set(pr.map((x) => x.src)).size, // one request per distinct picture (a repeat card is cached)
       `live practice uses Series 7's own card art and cast, not the demo's (${pr.map((x) => `${x.src.split("/").pop()}${x.ok ? "" : " NOT LOADED"} "${x.alt.split(",")[0]}"`).join(", ")}; ${asked.length} image requests)`);
     check(await page.locator("#sheet-table .st-table.practice").count() === 1 && /PRACTICE/.test(await page.evaluate(() => getComputedStyle(document.querySelector("#sheet-table .prac-c .cface"), "::after").content)),
       "still stamped PRACTICE");
@@ -580,18 +590,60 @@ try {
     await page.locator("#sheet-testnet[open]").waitFor();
     const tn = page.locator("#sheet-testnet");
     check(/faucet\.testnet\.chain\.robinhood\.com/.test(await tn.locator('a[href*="faucet"]').getAttribute("href")), "the Testnet badge opens it: a link to the Robinhood testnet faucet");
-    check((await tn.locator(".tn-checks input[type=checkbox]").count()) >= 10, "a What to test checklist");
     const I = ctx.deployment.inputs;
     const bal = (t) => ctx.pub.readContract({ address: t, abi: erc20Abi, functionName: "balanceOf", args: [me] });
+    check(/plus 2 sealed Series 6 packs to open right away/.test(await tn.locator(".tn-steps li:nth-child(2) small").first().textContent()), "the kit says it brings 2 sealed warm-up packs");
+    const packs6 = () => ctx.pub.readContract({ address: ctx.C.FirePacks, abi: [{ type: "function", name: "balanceOf", inputs: [{ type: "address" }, { type: "uint256" }], outputs: [{ type: "uint256" }], stateMutability: "view" }], functionName: "balanceOf", args: [me, 6n] });
     const before = await Promise.all([bal(I.PAPER), bal(I.USDG), bal(I.MILL)]);
     await tn.locator('[data-t="kit"]').click();
     await toastSeen(/test kit is in your wallet/);
     const after = await Promise.all([bal(I.PAPER), bal(I.USDG), bal(I.MILL)]);
-    check(after[0] - before[0] === 25n * 10n ** 18n && after[1] - before[1] === 50n * 10n ** 6n && after[2] - before[2] === 1n,
-      "Get the test kit: one confirmation, 25 PAPER, 50 USDG and a Paper Press arrive");
-    await page.waitForFunction(() => /Claimed/.test(document.querySelector('#sheet-testnet [data-t="kit"]')?.textContent || ""), null, { timeout: 15_000 });
-    check(await tn.locator('[data-t="kit"]').isDisabled(), `then "Claimed" until tomorrow (${(await tn.locator(".tn-steps li:nth-child(2) small").first().textContent()).trim()})`);
+    check(after[0] - before[0] === 25n * 10n ** 18n && after[1] - before[1] === 50n * 10n ** 6n && after[2] - before[2] === 1n && (await packs6()) === 2n,
+      "Get the test kit: one confirmation, 25 PAPER, 50 USDG, a Paper Press and 2 sealed packs arrive");
+    await page.waitForFunction(() => /Open my packs/.test(document.querySelector('#sheet-testnet [data-t="open"]')?.textContent || ""), null, { timeout: 30_000 });
+    check(true, `then "Open my packs" (the warm-up is closed, so they open now): ${(await tn.locator(".tn-steps li:nth-child(2) small").first().textContent()).trim()}`);
+    const items = (await tn.locator(".tn-checks li label span").allTextContents()).map((t) => t.trim());
+    check(items.length === 10 && items[0] === "Open packs" && items.includes("Use the Market: sell, buy, make an offer") && items.includes("Buy PAPER"), `What to test: the big things (${items.join(" / ")})`);
     await shot("15c-testnet-kit");
+    // a report from a checklist row: the form knows where, sends the page's details, the owner reads it
+    await tn.locator('[data-rp="grade"]').click();
+    await page.locator("#sheet-report[open]").waitFor();
+    check(await page.evaluate(() => document.querySelector("#rp-area").value === "grade" && document.querySelector('#sheet-report [data-k="bug"]').getAttribute("aria-pressed") === "true"), "Report on a checklist row: a bug, about that part (Case and grade cards)");
+    await page.fill("#rp-text", "The grade sheet says <b>Waiting</b> forever");
+    await page.waitForTimeout(800); // the sheet slides in
+    await shot("15e-report");
+    await page.click('#sheet-report [data-r="send"]');
+    await toastSeen(/Bug sent/);
+    const rows = reports.rows;
+    check(rows.length === 1 && rows[0].kind === "bug" && rows[0].area === "grade" && rows[0].text === "The grade sheet says <b>Waiting</b> forever" && rows[0].wallet === me.toLowerCase() && rows[0].net === "testnet" && /live=testnet/.test(rows[0].page),
+      `sent: a bug about grading, with the wallet, the network and the page (${rows[0]?.page})`);
+    await closeSheets();
+    // an idea from the gear menu
+    await page.evaluate(() => document.querySelector('.topbar [data-go="menu"], .topbar .gear, [aria-label="Help and settings"]')?.click());
+    await page.locator("#sheet-menu[open]").waitFor();
+    await page.click('#sheet-menu [data-m="report"]');
+    await page.locator("#sheet-report[open]").waitFor();
+    await page.click('#sheet-report [data-k="idea"]');
+    await page.fill("#rp-text", "A trade button between friends");
+    await page.click('#sheet-report [data-r="send"]');
+    await toastSeen(/Idea sent/);
+    check(reports.rows.length === 2 && reports.rows[1].kind === "idea" && reports.rows[1].area === "other", "an idea from the gear menu (Report a bug or idea)");
+    // the owner's page: the key reads them, shown as text (the <b> stays text)
+    const rp = await browser.newPage({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
+    await rp.goto(`${SITE}reports.html`);
+    await rp.fill("#key", "wrong-key-wrong-key-wrong");
+    await rp.click("#keyForm button");
+    await rp.waitForFunction(() => /Wrong key/.test(document.querySelector("#msg").textContent));
+    check(await rp.locator("#list li").count() === 0, "the reports page: a wrong key shows nothing");
+    await rp.fill("#key", REPORTS_KEY);
+    await rp.click("#keyForm button");
+    await rp.locator("#list li").nth(1).waitFor();
+    check(await rp.evaluate(() => document.querySelector("#list li .text").textContent === "A trade button between friends" && !document.querySelector("#list b")), "the reports page: the right key shows both, newest first, as plain text");
+    await rp.screenshot({ path: join(SHOTS, "15f-reports-page.png") });
+    await rp.locator("#list li").nth(0).locator("button").click();
+    await rp.waitForFunction(() => document.querySelectorAll("#list li").length === 1);
+    check(reports.rows[1].status === "done", "Mark done: it leaves the open list");
+    await rp.close();
     await closeSheets();
   }
   {
