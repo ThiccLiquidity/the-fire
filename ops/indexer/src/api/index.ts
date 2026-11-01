@@ -9,7 +9,7 @@
 //   /graphql, /sql/*             everything else (read-only)
 import { db } from "ponder:api";
 import schema from "ponder:schema";
-import { and, desc, eq, gte, sql } from "ponder";
+import { and, desc, eq, gt, gte, sql } from "ponder";
 import { Hono } from "hono";
 import { client, graphql } from "ponder";
 
@@ -47,8 +47,8 @@ app.get("/burners", async (c) => {
 app.get("/market", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const [cards, packs, offers] = await Promise.all([
-    db.select().from(schema.cardListing).orderBy(schema.cardListing.price).limit(2000),
-    db.select().from(schema.packListing).orderBy(schema.packListing.pricePer).limit(500),
+    db.select().from(schema.cardListing).where(gt(schema.cardListing.expiry, now)).orderBy(schema.cardListing.price).limit(2000),
+    db.select().from(schema.packListing).where(gt(schema.packListing.expiry, now)).orderBy(schema.packListing.pricePer).limit(500),
     db.select().from(schema.offer).where(gte(schema.offer.expiry, now)).orderBy(desc(schema.offer.price)).limit(1000),
   ]);
   return out(c, { cards, packs, offers }, 3);

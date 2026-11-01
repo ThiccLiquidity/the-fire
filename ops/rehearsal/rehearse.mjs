@@ -664,11 +664,11 @@ async function main() {
   {
     const sold = gradeIds[0], price = 10n ** 16n; // 0.01 ETH
     await tx(buyer2, C.FireCards, ABI.cards, "setApprovalForAll", [C.FireMarket, true]);
-    await tx(buyer2, C.FireMarket, ABI.market, "listCard", [sold, price]);
-    const [seller, , live] = await pub.readContract({ address: C.FireMarket, abi: ABI.market, functionName: "cardOffer", args: [sold] });
+    await tx(buyer2, C.FireMarket, ABI.market, "listCard", [sold, price, (await chainNow()) + 30n * 86400n]);
+    const [seller, , live, , changes] = await pub.readContract({ address: C.FireMarket, abi: ABI.market, functionName: "cardOffer", args: [sold] });
     check(getAddress(seller) === buyer2.address && live, `card ${sold} listed at 0.01 ETH`);
     const [b2, roy0] = await Promise.all([pub.getBalance({ address: buyer2.address }), pub.getBalance({ address: royalty.address })]);
-    await tx(buyer1, C.FireMarket, ABI.market, "buyCard", [sold, price], price);
+    await tx(buyer1, C.FireMarket, ABI.market, "buyCard", [sold, price, changes], price);
     const owner = await pub.readContract({ address: C.FireCards, abi: ABI.cards, functionName: "ownerOf", args: [sold] });
     check(getAddress(owner) === buyer1.address, `buyer 1 holds card ${sold} now`);
     const [b2after, roy1, kept] = await Promise.all([pub.getBalance({ address: buyer2.address }), pub.getBalance({ address: royalty.address }), pub.getBalance({ address: C.FireMarket })]);

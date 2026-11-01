@@ -1,5 +1,6 @@
-// The market (FireMarket): what's listed and every sale. Listings here are what was listed and not yet sold or taken
-// down; the site still checks each against the chain (the seller may have moved the card since).
+// The market (FireMarket): what's listed and every sale. Listings here are what was listed and not yet sold, taken
+// down, moved or changed (index.ts drops a card's listing when it moves, is cased or goes for grading); the site still
+// checks each against the chain before showing it.
 import { ponder } from "ponder:registry";
 import { cardListing, offer, packListing, sale } from "ponder:schema";
 import { eq } from "ponder";
@@ -9,7 +10,8 @@ const id = (e: { transaction: { hash: string }; log: { logIndex: number } }) => 
 
 ponder.on("FireMarket:CardListed", async ({ event, context }) => {
   const { serial, seller, price } = event.args, at = Number(event.block.timestamp);
-  await context.db.insert(cardListing).values({ serial, seller: lower(seller), price, at }).onConflictDoUpdate({ seller: lower(seller), price, at });
+  const expiry = Number(event.args.expiry), changes = event.args.changes;
+  await context.db.insert(cardListing).values({ serial, seller: lower(seller), price, expiry, changes, at }).onConflictDoUpdate({ seller: lower(seller), price, expiry, changes, at });
 });
 ponder.on("FireMarket:CardUnlisted", async ({ event, context }) => {
   await context.db.delete(cardListing, { serial: event.args.serial });
@@ -21,7 +23,7 @@ ponder.on("FireMarket:CardSold", async ({ event, context }) => {
 });
 ponder.on("FireMarket:PacksListed", async ({ event, context }) => {
   const a = event.args;
-  await context.db.insert(packListing).values({ id: a.id, seller: lower(a.seller), fire: Number(a.series), amount: a.amount, pricePer: a.pricePer, at: Number(event.block.timestamp) });
+  await context.db.insert(packListing).values({ id: a.id, seller: lower(a.seller), fire: Number(a.series), amount: a.amount, pricePer: a.pricePer, expiry: Number(a.expiry), at: Number(event.block.timestamp) });
 });
 ponder.on("FireMarket:PacksUnlisted", async ({ event, context }) => {
   await context.db.delete(packListing, { id: event.args.id });

@@ -156,6 +156,10 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     /// @dev When a card was dealt, kept once its clock first freezes (cased or sent for grading); until then the
     ///      card's clock is its deal time.
     mapping(uint256 tokenId => uint256) internal _dealtAt;
+    /// @notice How many times a card changed: every move to another wallet, and every casing, grading start, grading
+    ///         cancel or grade. Never capped, never frozen. A market listing or offer remembers it, so a card that
+    ///         moved or changed since can't be bought or sold at an old price (FireMarket).
+    mapping(uint256 tokenId => uint256) public changes;
 
     event RandomnessSet(address source);
     event RandomnessProposed(address source, uint64 at);
@@ -360,6 +364,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         if ((d >> B_CASED) & 1 != 0) revert AlreadyCased();
         d = _freeze(serial, d) | (1 << B_CASED);
         _card[serial] = d;
+        changes[serial]++;
         emit Cased(serial, (d >> B_CLOCK) & M40, (d >> B_MOVES) & 15);
         emit MetadataUpdate(serial);
     }
@@ -378,6 +383,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
             _card[serial] = d | ((block.timestamp - age) << B_CLOCK);
         }
         gradePending[serial] = pending_;
+        changes[serial]++;
         emit GradePending(serial, pending_);
     }
 
@@ -393,6 +399,7 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
         uint256 d = _card[serial];
         if ((d >> B_GRADE) & 15 != 0) revert AlreadyGraded();
         _card[serial] = _freeze(serial, d) | (grade << B_GRADE);
+        changes[serial]++;
         emit MetadataUpdate(serial);
     }
 
@@ -731,11 +738,13 @@ contract FireCards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard {
     }
 
     /// @dev A card being graded can be burned but not transferred. Every wallet-to-wallet move of an uncased,
-    ///      ungraded card counts toward its wear (up to MAX_MOVES; the sender pays the few thousand gas).
+    ///      ungraded card counts toward its wear (up to MAX_MOVES; the sender pays the few thousand gas), and every
+    ///      move of any card counts in `changes`.
     function _update(address to, uint256 tokenId, address auth) internal override returns (address from) {
         from = super._update(to, tokenId, auth);
         if (from != address(0) && to != address(0)) {
             if (gradePending[tokenId]) revert GradingInProgress();
+            if (from != to) changes[tokenId]++;
             uint256 d = _card[tokenId];
             uint256 moves = (d >> B_MOVES) & 15;
             // sending a card to its own wallet isn't a move

@@ -484,7 +484,8 @@
           <summary><span class="inf-st">${s.id === 'paper' ? `<span class="coin-pair">${Brand.coin('PLANK')}${Brand.coin('PAPER')}</span>` : ''}${s.title}${s.tag ? `<em>${s.tag}</em>` : ''}</span><span class="inf-ss">${s.sum}</span></summary>
           <div class="inf-body">${s.body}</div>
         </details>`).join('')}
-      <p class="menu-links"><button class="inf-link" type="button" data-fun="tour">Workshop tour</button><button class="inf-link" type="button" data-fun="practice">Practice pack</button><button class="inf-link" type="button" data-fun="feed">Top stokers</button><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>`;
+      <p class="menu-links"><button class="inf-link" type="button" data-fun="tour">Workshop tour</button><button class="inf-link" type="button" data-fun="practice">Practice pack</button><button class="inf-link" type="button" data-fun="feed">Top stokers</button><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a></p>
+      <p class="inf-promise">We never ask you to sign a message, we never airdrop cards, and we never message you first. If a site or account that looks like us does, it isn\u2019t us.</p>`;
     root.addEventListener('click', (e) => {
       const b = e.target.closest('[data-go]'); if (b) go(root, b.dataset.go, b.hasAttribute('data-upside') ? '#info-upside' : null);
     });

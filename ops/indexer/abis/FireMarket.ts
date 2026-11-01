@@ -40,6 +40,18 @@ export const FireMarketAbi = [
     "type": "uint256",
     "indexed": false,
     "internalType": "uint256"
+   },
+   {
+    "name": "expiry",
+    "type": "uint256",
+    "indexed": false,
+    "internalType": "uint256"
+   },
+   {
+    "name": "changes",
+    "type": "uint256",
+    "indexed": false,
+    "internalType": "uint256"
    }
   ],
   "anonymous": false
@@ -266,6 +278,12 @@ export const FireMarketAbi = [
    },
    {
     "name": "pricePer",
+    "type": "uint256",
+    "indexed": false,
+    "internalType": "uint256"
+   },
+   {
+    "name": "expiry",
     "type": "uint256",
     "indexed": false,
     "internalType": "uint256"

@@ -43,14 +43,21 @@ test('the market: "approve all" only for the market, buys only at the listed pri
   ok({ address: C.FirePacks, functionName: 'setApprovalForAll', args: [C.FireMarket, false] });
   blocked({ address: C.FireCards, functionName: 'setApprovalForAll', args: [C.FireSale, true] }); // ours, but not the market
   blocked({ address: C.FireCards, functionName: 'setApprovalForAll', args: [C.FireMarket, true], value: 1n });
-  ok({ address: C.FireMarket, functionName: 'listCard', args: [1n, E] });
-  ok({ address: C.FireMarket, functionName: 'buyCard', args: [1n, 2n * E], value: 2n * E }); // over MAX_ETH: a market buy may
-  blocked({ address: C.FireMarket, functionName: 'buyCard', args: [1n, E], value: 2n * E }); // not the listed price
-  blocked({ address: C.FireMarket, functionName: 'buyCard', args: [1n, 11n * E], value: 11n * E }); // over MARKET_MAX_ETH
+  ok({ address: C.FireMarket, functionName: 'listCard', args: [1n, E, 1n] });
+  ok({ address: C.FireMarket, functionName: 'buyCard', args: [1n, 2n * E, 0n], value: 2n * E }); // over MAX_ETH: a market buy may
+  blocked({ address: C.FireMarket, functionName: 'buyCard', args: [1n, E, 0n], value: 2n * E }); // not the listed price
+  blocked({ address: C.FireMarket, functionName: 'buyCard', args: [1n, 11n * E, 0n], value: 11n * E }); // over MARKET_MAX_ETH
   ok({ address: C.FireMarket, functionName: 'buyPacks', args: [3n, 2n, E / 10n], value: E / 5n });
   blocked({ address: C.FireMarket, functionName: 'buyPacks', args: [3n, 2n, E / 10n], value: E / 10n });
-  blocked({ address: C.FireMarket, functionName: 'listCard', args: [1n, E], value: 1n }); // nothing sent with a listing
+  blocked({ address: C.FireMarket, functionName: 'listCard', args: [1n, E, 1n], value: 1n }); // nothing sent with a listing
   ok({ address: C.FireMarket, functionName: 'cancelAll', args: [] });
+  // several cards at once: exactly the sum of their prices, 1 to 20 cards, under the market's cap
+  ok({ address: C.FireMarket, functionName: 'buyCards', args: [[1n, 2n], [E, 2n * E], [0n, 0n]], value: 3n * E });
+  blocked({ address: C.FireMarket, functionName: 'buyCards', args: [[1n, 2n], [E, 2n * E], [0n, 0n]], value: 4n * E });
+  blocked({ address: C.FireMarket, functionName: 'buyCards', args: [[], [], []], value: 0n });
+  blocked({ address: C.FireMarket, functionName: 'buyCards', args: [[1n, 2n], [6n * E, 6n * E], [0n, 0n]], value: 12n * E });
+  ok({ address: C.FireMarket, functionName: 'listCards', args: [[1n, 2n], [E, E], 1n] });
+  ok({ address: C.FireMarket, functionName: 'cancelCards', args: [[1n, 2n]] });
   blocked({ address: C.FireSale, functionName: 'buy', args: [], value: 2n * E }); // the market's cap is only the market's
   // offers: WETH wrapped and approved to the market (capped), nothing sent with an offer or an accept
   ok({ address: I.WETH, functionName: 'deposit', args: [], value: 2n * E });
@@ -59,6 +66,7 @@ test('the market: "approve all" only for the market, buys only at the listed pri
   blocked({ address: I.WETH, functionName: 'transfer', args: [thief, E] });
   ok({ address: I.WETH, functionName: 'approve', args: [C.FireMarket, 2n * E] });
   blocked({ address: I.WETH, functionName: 'approve', args: [C.FireMarket, MAX_APPROVAL] });
+  blocked({ address: I.WETH, functionName: 'approve', args: [C.FireMarket, 1001n * E] }); // more than any offers need
   ok({ address: C.FireMarket, functionName: 'makeOffer', args: [0, 1n, E, 1n, 1n] });
   ok({ address: C.FireMarket, functionName: 'acceptOffer', args: [1n, 1n, 1n, E] });
   blocked({ address: C.FireMarket, functionName: 'acceptOffer', args: [1n, 1n, 1n, E], value: 1n });

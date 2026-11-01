@@ -454,6 +454,7 @@ try {
     check(others === 2, `the board lists both buyers of Series 7 (${others})`);
     await page.evaluate(() => Fun.go("feed", { tab: "pulls" }));
     await page.locator("#sheet-feed .fd-row, #sheet-feed .fd-panel p.muted").first().waitFor({ timeout: 30_000 });
+    check(!(await page.locator("#sheet-feed .demo-line").count()) && !/Demo pulls/.test(await page.locator("#sheet-feed").innerText()), "live: the feed has no made-up demo pulls");
     await page.click('#sheet-feed [data-v="board"]');
     await page.locator("#sheet-feed .fd-board tbody tr").first().waitFor({ timeout: 30_000 });
     check((await page.locator("#sheet-feed .fd-board tbody tr").count()) === 2 && (await page.locator("#sheet-feed .fd-board tr.you").count()) === 1, "Top stokers: 2 wallets, this one marked as you");

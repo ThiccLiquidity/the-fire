@@ -127,6 +127,8 @@ const ForgeWallet = {
     await w.disconnect();
   },
   async switchNetwork(): Promise<void> { await (await load()).switchToRobinhood(); },
+  /** The contract an EIP-7702 delegated wallet runs (its code says so), or null: the page warns when it isn't null. */
+  async delegatedTo(address: string): Promise<string | null> { return (await load()).delegatedTo(address as `0x${string}`); },
   /** A short, human reason for a failed wallet action. */
   friendly: (e: unknown): string => { if (lib) return lib.friendly(e); console.warn(e); return "Something went wrong. Try again."; },
   refresh: () => refreshPaper(),

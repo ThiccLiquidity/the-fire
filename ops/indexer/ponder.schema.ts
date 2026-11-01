@@ -42,13 +42,16 @@ export const burner = onchainTable("burner", (t) => ({
   credits: t.integer().notNull(),
 }));
 
-/** the market (FireMarket): a card for sale (the site checks each against the chain before showing it) */
+/** the market (FireMarket): a card for sale (the site checks each against the chain before showing it). Gone for good
+ *  once the card moves, is cased or goes for grading (FireCards.changes: the listing can never be bought again). */
 export const cardListing = onchainTable("card_listing", (t) => ({
   serial: t.bigint().primaryKey(),
   seller: t.hex().notNull(),
   price: t.bigint().notNull(), // wei
+  expiry: t.integer().notNull(), // unix seconds: when the listing ends
+  changes: t.bigint().notNull(), // the card's FireCards.changes when listed (a buy passes it)
   at: t.integer().notNull(),
-}), (t) => ({ sellerIdx: index().on(t.seller) }));
+}), (t) => ({ sellerIdx: index().on(t.seller), expiryIdx: index().on(t.expiry) }));
 
 /** the market: packs for sale (one listing = some of one Series' packs at a price each) */
 export const packListing = onchainTable("pack_listing", (t) => ({
@@ -57,6 +60,7 @@ export const packListing = onchainTable("pack_listing", (t) => ({
   fire: t.integer().notNull(),
   amount: t.bigint().notNull(), // packs left in it
   pricePer: t.bigint().notNull(),
+  expiry: t.integer().notNull(), // unix seconds: when the listing ends
   at: t.integer().notNull(),
 }), (t) => ({ sellerIdx: index().on(t.seller) }));
 

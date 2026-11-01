@@ -875,7 +875,8 @@
       ${group('You', [b('feed', 'feed', 'Activity')])}
       ${group('Settings', [b('sound', window.Sound?.on ? 'sound' : 'mute', `Sound: ${window.Sound?.on ? 'On' : 'Off'}`), LIVE && window.App?.push.supported ? b('push', 'bell', `Notifications: ${App.push.on ? 'On' : 'Off'}`) : '', window.Fun?.haptics?.supported ? b('haptics', 'phone', `Vibration: ${Fun.haptics.on ? 'On' : 'Off'}`) : '', window.App?.canInstall ? b('install', 'install', 'Install app') : ''])}
       </div>
-      <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a>${LIVE ? '' : '<button class="inf-link linkish" type="button" data-m="demo">Demo controls</button>'}</p>` });
+      <p class="menu-links"><a class="inf-link" href="terms.html">Terms &amp; risks</a><a class="inf-link" href="help.html">Stuck transaction?</a>${LIVE ? '' : '<button class="inf-link linkish" type="button" data-m="demo">Demo controls</button>'}</p>
+      <p class="inf-promise">We never ask you to sign a message. If a site that looks like us does, close it.</p>` });
     d.querySelectorAll('[data-m]').forEach((x) => x.onclick = () => { d.close(); go(x.dataset.m); });
   }
   let auto = null;

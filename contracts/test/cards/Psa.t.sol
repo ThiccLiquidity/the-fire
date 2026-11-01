@@ -190,12 +190,14 @@ contract PsaTest is SeriesHelper {
         FireMarket m = new FireMarket(address(cards), address(packs), address(weth));
         vm.startPrank(alice);
         cards.setApprovalForAll(address(m), true);
-        m.listCard(1, 1 ether);
-        m.listCard(2, 1 ether);
+        m.listCard(1, 1 ether, block.timestamp + 30 days);
+        m.listCard(2, 1 ether, block.timestamp + 30 days);
         vm.stopPrank();
+        assertEq(cards.changes(1), 0);
         vm.prank(bob);
-        m.buyCard{value: 1 ether}(1, 1 ether);
+        m.buyCard{value: 1 ether}(1, 1 ether, 0);
         assertEq(cards.ownerOf(1), bob);
+        assertEq(cards.changes(1), 1, "a sale counts in changes");
         (,,,,, uint256 moves) = cards.wearOf(1);
         assertEq(moves, 1, "a sale is a move");
 
@@ -203,20 +205,28 @@ contract PsaTest is SeriesHelper {
         vm.prank(alice);
         uint256 index = psa.protect{value: cost}(_none(), _one(2), FirePsa.Pay.ETH, cost);
         assertTrue(cards.gradePending(2));
+        (,, bool live,,) = m.cardOffer(2);
+        assertFalse(live, "sent for grading: the listing is dead");
         vm.prank(bob);
-        vm.expectRevert(FireCards.GradingInProgress.selector);
-        m.buyCard{value: 1 ether}(2, 1 ether);
+        vm.expectRevert(FireMarket.Stale.selector);
+        m.buyCard{value: 1 ether}(2, 1 ether, 0);
         psaRng.fulfill(psaRng.last(), 3);
         psa.finish(index, _one(2));
         vm.prank(bob);
-        m.buyCard{value: 1 ether}(2, 1 ether);
-        assertEq(cards.ownerOf(2), bob, "graded, then sold");
+        vm.expectRevert(FireMarket.Stale.selector); // graded since: never at the old listing
+        m.buyCard{value: 1 ether}(2, 1 ether, 0);
+        vm.prank(alice);
+        m.listCard(2, 2 ether, block.timestamp + 30 days); // listed again, as the graded card
+        uint256 ch = cards.changes(2);
+        vm.prank(bob);
+        m.buyCard{value: 2 ether}(2, 2 ether, ch);
+        assertEq(cards.ownerOf(2), bob, "graded, listed again, then sold");
 
         vm.prank(seller);
         packs.mint(alice, 1, 3);
         vm.startPrank(alice);
         packs.setApprovalForAll(address(m), true);
-        uint256 id = m.listPacks(1, 3, 0.1 ether);
+        uint256 id = m.listPacks(1, 3, 0.1 ether, block.timestamp + 30 days);
         vm.stopPrank();
         uint256 before = alice.balance;
         vm.prank(bob);
@@ -227,9 +237,9 @@ contract PsaTest is SeriesHelper {
 
         // a match offer on the real cards: "any Series 1 card of card 3's type and character, graded or not"
         FireCards.Card memory c3 = cards.cardOf(3);
-        uint256 key = m.matchKey(1, c3.cardType + 1, c3.character + 1, 0, 0);
+        uint256 key = m.matchKey(1, c3.cardType + 1, c3.character + 1, 0, 0, 0, 0);
         assertTrue(m.matches(key, 3));
-        assertFalse(m.matches(m.matchKey(2, 0, 0, 0, 0), 3), "another Series");
+        assertFalse(m.matches(m.matchKey(2, 0, 0, 0, 0, 0, 0), 3), "another Series");
         vm.startPrank(bob);
         weth.deposit{value: 1 ether}();
         weth.approve(address(m), 1 ether);

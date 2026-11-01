@@ -33,6 +33,8 @@ export type Profile = {
 };
 
 export const MAX_NAME = 20;
+/** Names kept for the site: the site won't set them, and never shows one (anyone could write it to the contract). */
+export const RESERVED_NAME = /^(the ?)?(omni|omni ?cardworks|cardworks|morning ?wood|support|admin|official|moderator|mod|team|staff|help ?desk|security)$/i;
 export const ZOOM_MAX = 4;
 
 /** Is FireProfiles deployed on this network? */
@@ -43,6 +45,7 @@ const at = (): Address => getAddress(NET.deployment.contracts!.FireProfiles!);
 export function validName(name: string): boolean {
   if (name.length < 1 || name.length > MAX_NAME) return false;
   if (!/^[\x21-\x7e]+( [\x21-\x7e]+)*$/.test(name)) return false;
+  if (RESERVED_NAME.test(name.replace(/[^a-z ]/gi, "").trim())) return false; // kept for the site (profile.js shows the address instead)
   return true;
 }
 

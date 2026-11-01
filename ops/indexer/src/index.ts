@@ -1,5 +1,5 @@
 import { ponder } from "ponder:registry";
-import { burner, card, packBalance, purchase } from "ponder:schema";
+import { burner, card, cardListing, packBalance, purchase } from "ponder:schema";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const lower = (a: string) => a.toLowerCase() as `0x${string}`;
@@ -21,10 +21,17 @@ ponder.on("FireCards:Transfer", async ({ event, context }) => {
     serial: tokenId, owner: lower(to), fire: 0, cardType: 0, character: 0, holoFrame: false, holoPicture: false, openIndex: 0,
     dealtAt: Number(event.block.timestamp), burned,
   }).onConflictDoUpdate((row) => ({ owner: lower(to), burned, moves: from !== ZERO && !burned ? row.moves + 1 : row.moves }));
+  // a card that moved (or burned) can never be bought at its old listing (FireMarket checks FireCards.changes)
+  if (from !== ZERO && from !== to) await context.db.delete(cardListing, { serial: tokenId });
 });
 
 ponder.on("FireCards:Cased", async ({ event, context }) => {
   await context.db.update(card, { serial: event.args.tokenId }).set({ cased: true });
+  await context.db.delete(cardListing, { serial: event.args.tokenId }); // changed: its listing is dead
+});
+// sent for grading (or the grading ended or was cancelled): changed, so its listing is dead
+ponder.on("FireCards:GradePending", async ({ event, context }) => {
+  await context.db.delete(cardListing, { serial: event.args.tokenId });
 });
 ponder.on("FirePsa:Graded", async ({ event, context }) => {
   await context.db.update(card, { serial: event.args.serial }).set({ grade: Number(event.args.grade) });

@@ -183,3 +183,5 @@
 .inf-upside ul { margin: 0 0 8px; padding-left: 1.1em; display: grid; gap: 4px }
 .inf-upside li b { color: var(--gold) }
 .inf-upside-k { font: 700 15px var(--chalk); color: var(--gold) }
+/* the safety promise (Info, the gear menu) */
+.inf-promise { margin: 12px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted, #b9a88c); text-align: center }

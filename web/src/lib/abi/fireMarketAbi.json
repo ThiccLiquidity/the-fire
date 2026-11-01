@@ -39,6 +39,32 @@
   },
   {
     "type": "function",
+    "name": "MAX_BATCH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_LIST_DAYS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_OFFER_DAYS",
     "inputs": [],
     "outputs": [
@@ -53,6 +79,19 @@
   {
     "type": "function",
     "name": "MAX_ROYALTY_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MIN_OFFER",
     "inputs": [],
     "outputs": [
       {
@@ -169,9 +208,43 @@
         "name": "price",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "changes",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "buyCards",
+    "inputs": [
+      {
+        "name": "serials",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "prices",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "changes_",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "bought",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "stateMutability": "payable"
   },
   {
@@ -212,6 +285,19 @@
         "name": "serial",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "cancelCards",
+    "inputs": [
+      {
+        "name": "serials",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
     "outputs": [],
@@ -268,6 +354,16 @@
         "name": "round",
         "type": "uint64",
         "internalType": "uint64"
+      },
+      {
+        "name": "expiry",
+        "type": "uint40",
+        "internalType": "uint40"
+      },
+      {
+        "name": "changes",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -297,6 +393,16 @@
         "name": "live",
         "type": "bool",
         "internalType": "bool"
+      },
+      {
+        "name": "expiry",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "changes",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -312,6 +418,34 @@
       },
       {
         "name": "price",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expiry",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "listCards",
+    "inputs": [
+      {
+        "name": "serials",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "prices",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "expiry",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -335,6 +469,11 @@
       },
       {
         "name": "pricePer",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expiry",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -413,6 +552,16 @@
       },
       {
         "name": "minGrade",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxMovesPlus1",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "cased",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -523,6 +672,16 @@
             "internalType": "uint64"
           },
           {
+            "name": "grade",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "cased",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
             "name": "target",
             "type": "uint256",
             "internalType": "uint256"
@@ -577,6 +736,16 @@
         "name": "round",
         "type": "uint64",
         "internalType": "uint64"
+      },
+      {
+        "name": "grade",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "cased",
+        "type": "bool",
+        "internalType": "bool"
       },
       {
         "name": "target",
@@ -640,6 +809,11 @@
         "name": "round",
         "type": "uint64",
         "internalType": "uint64"
+      },
+      {
+        "name": "expiry",
+        "type": "uint40",
+        "internalType": "uint40"
       }
     ],
     "stateMutability": "view"
@@ -684,6 +858,11 @@
             "name": "round",
             "type": "uint64",
             "internalType": "uint64"
+          },
+          {
+            "name": "expiry",
+            "type": "uint40",
+            "internalType": "uint40"
           }
         ]
       },
@@ -758,6 +937,18 @@
       },
       {
         "name": "price",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "expiry",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "changes",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -990,6 +1181,12 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      },
+      {
+        "name": "expiry",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1103,6 +1300,11 @@
   },
   {
     "type": "error",
+    "name": "CardChanged",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NoMatch",
     "inputs": []
   },
@@ -1164,6 +1366,11 @@
   {
     "type": "error",
     "name": "Stale",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooMany",
     "inputs": []
   },
   {

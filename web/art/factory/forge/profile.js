@@ -23,11 +23,14 @@
   const rawUrl = (u) => gateway(u).replace(/-(c|\d+)\.webp(\?.*)?$/, '-u.webp');
 
   // ---------- name rules (FireProfiles): 1-20 printable ASCII, single spaces between words; unique ignoring case
+  // names kept for the site: nobody can take them here, and one written to the contract another way is never shown
+  const RESERVED = /^(the ?)?(omni|omni ?cardworks|cardworks|morning ?wood|support|admin|official|moderator|mod|team|staff|help ?desk|security)$/i;
   function nameProblem(n) {
     if (!n) return 'empty';
     if (n.length > 20) return 'Too long';
     if (/[^\x20-\x7e]/.test(n)) return 'Plain letters, numbers and symbols only';
     if (/^ | $| {2}/.test(n)) return 'One space between words';
+    if (RESERVED.test(n.replace(/[^a-z ]/gi, '').trim())) return 'That name is kept for the site';
     return '';
   }
 
@@ -128,7 +131,9 @@
     p.catch(() => { if (cache.get(a)?.p === p) cache.delete(a); });
     return p;
   }
-  const label = (addr) => { const a = low(addr), p = known.get(a); if (!known.has(a)) get(a).catch(() => {}); return p?.name || short(addr); };
+  // names that pretend to be us are never shown (anyone can write any name to the contract): the address instead
+  const named = (p) => (p?.name && !RESERVED.test(p.name.replace(/[^a-z ]/gi, '').trim()) ? p.name : '');
+  const label = (addr) => { const a = low(addr), p = known.get(a); if (!known.has(a)) get(a).catch(() => {}); return named(p) || short(addr); };
 
   // ---------- avatars
   /** A gradient from the address: the same wallet always gets the same one. */
@@ -150,7 +155,7 @@
       el.style.background = fallbackStyle(a);
       el.textContent = p?.name ? p.name[0].toUpperCase() : '';
     }
-    el.setAttribute('aria-label', p?.name || short(a));
+    el.setAttribute('aria-label', named(p) || short(a));
   }
   function avatar(addr, size = 32, tag = 'span') {
     const a = low(addr), el = document.createElement(tag);
@@ -200,7 +205,7 @@
     if (!enabled) return; // live, before FireProfiles is deployed: no profiles
     if (!btn) { btn = document.createElement('button'); btn.className = 'btn small'; btn.type = 'button'; btn.dataset.w = 'name'; btn.textContent = 'Edit'; who.append(btn); }
     btn.onclick = (e) => { e.stopImmediatePropagation(); d.close(); edit(); };
-    get(a).then((p) => { if (!p?.name || !d.open) return; who.querySelector('b').textContent = p.name; d.querySelector('h2').textContent = p.name; }, () => {});
+    get(a).then((p) => { if (!named(p) || !d.open) return; who.querySelector('b').textContent = named(p); d.querySelector('h2').textContent = named(p); }, () => {});
   }
 
   // ---------- the editor

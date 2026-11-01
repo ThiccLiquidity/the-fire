@@ -343,10 +343,22 @@
 
   // ---------- the wallet
   let lastAddr = null;
+  // a wallet set to run outside code (EIP-7702): almost always a "sweeper" that empties it. Say so, plainly, once a visit.
+  const warnedDelegated = new Set();
+  function checkDelegated(addr) {
+    if (warnedDelegated.has(addr)) return;
+    warnedDelegated.add(addr);
+    FW?.delegatedTo?.(addr).then((to) => {
+      if (!to) return;
+      Sheet.open('delegated', { title: 'Check your wallet', body: `<div class="st"><p class="lead">This wallet is set to run outside code (a 7702 delegation to ${esc(to.slice(0, 6) + '…' + to.slice(-4))}).</p>
+        <p>If you didn’t set this up yourself, stop: don’t send anything from this wallet, move what you can to a new wallet, and get help from your wallet’s support.</p>
+        <p class="muted small">Omni Cardworks never asks you to sign a message or to change how your wallet works.</p></div>` });
+    }).catch(() => {});
+  }
   function onWallet(st) {
     const on = st.connected && st.chainOk;
     Object.assign(S.wallet, { connected: on, wrongNet: !!(st.connected && !st.chainOk), full: st.address || '', address: st.short || '', name: st.walletName || st.short || '' });
-    if (st.address !== lastAddr) { lastAddr = st.address; S.cards = []; S.sealed = {}; sync({ cards: true }); resume(st.address); }
+    if (st.address !== lastAddr) { lastAddr = st.address; S.cards = []; S.sealed = {}; sync({ cards: true }); resume(st.address); if (st.address) checkDelegated(st.address); }
     if (st.address) { store(LAST_ADDR, st.address); if (orphan) { orphan = false; paintBar(); } }
     Store.update(() => {});
   }

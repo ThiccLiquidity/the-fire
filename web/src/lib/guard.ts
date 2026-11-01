@@ -7,7 +7,8 @@
 //   - "approve all" (setApprovalForAll) on the cards or the packs only for FireMarket, the site's own market (it can
 //     move a listed card only when someone buys it at the seller's price, or the holder accepts an offer);
 //   - WETH: wrapping and unwrapping (deposit / withdraw), and a capped approve for FireMarket (market offers);
-//   - never more than MAX_ETH in one transaction (MARKET_MAX_ETH for a market buy, and exactly the listed price);
+//   - never more than MAX_ETH in one transaction (MARKET_MAX_ETH for a market buy, and exactly the listed price, or for
+//     several cards at once exactly the sum of their prices);
 //   - a PAPER swap: Uniswap V2's router with the coins coming back to the buyer's own wallet, or KyberSwap's router
 //     checked the same way checkSwap checks it (and never without a minimum return);
 //   - FireSale.buyWithEthAll only with its PAPER purchase capped (maxPaperEth, at most the ETH sent).
@@ -26,7 +27,7 @@ export const ALLOWED: Readonly<Record<string, readonly string[]>> = {
   FireSale: ["buy", "buyWithEthAll", "close"],
   FireCards: ["open", "cancelOpen", "skipStuck", "process", "setApprovalForAll"],
   FirePacks: ["setApprovalForAll"],
-  FireMarket: ["listCard", "cancelCard", "buyCard", "listPacks", "cancelPacks", "buyPacks", "cancelAll", "withdraw", "makeOffer", "cancelOffer", "acceptOffer"],
+  FireMarket: ["listCard", "listCards", "cancelCard", "cancelCards", "buyCard", "buyCards", "listPacks", "cancelPacks", "buyPacks", "cancelAll", "withdraw", "makeOffer", "cancelOffer", "acceptOffer"],
   FireCredits: ["burnCards", "useCredits", "suggest", "suggestMany"],
   FirePsa: ["protect", "cancelGrading", "finish", "settle"],
   FireGames: ["payRun"],
@@ -38,6 +39,8 @@ export const ALLOWED: Readonly<Record<string, readonly string[]>> = {
 /** The coins a wallet may approve (by deployment input name), and the most an approval may ever be (no "unlimited"). */
 export const COINS = ["PAPER", "PLANK", "USDG", "WETH"] as const;
 export const MAX_APPROVAL = 2n ** 128n;
+/** WETH the market may be approved for (all of a wallet's open offers together): a real cap, not "unlimited". */
+export const MAX_WETH_APPROVAL = 1000n * 10n ** 18n; // 1,000 WETH
 /** The only contracts the site ever approves coins for (plus the two swap routers): the ones that take payments
  *  (FireMarket: WETH for offers, taken only when a seller accepts one). */
 export const SPENDERS = ["FireSale", "FirePsa", "FireGames", "FireMarket"] as const;
@@ -83,7 +86,9 @@ export function checkCall(call: GuardCall, from: Address, dep: GuardDeployment):
     }
     // a market buy sends exactly the listed price the buyer saw
     if (ours === "FireMarket") {
-      const want = fn === "buyCard" ? args[1] : fn === "buyPacks" ? (typeof args[1] === "bigint" && typeof args[2] === "bigint" ? args[1] * args[2] : null) : 0n;
+      const sum = (xs: unknown) => (Array.isArray(xs) && xs.length > 0 && xs.length <= 20 && xs.every((x) => typeof x === "bigint" && x > 0n) ? (xs as bigint[]).reduce((a, b) => a + b, 0n) : null);
+      const want = fn === "buyCard" ? args[1] : fn === "buyCards" ? sum(args[1])
+        : fn === "buyPacks" ? (typeof args[1] === "bigint" && typeof args[2] === "bigint" ? args[1] * args[2] : null) : 0n;
       if (typeof want !== "bigint" || value !== want) no("the ETH sent isn't the listed price");
     }
     // ETH alone: the PAPER bought with it is capped (maxPaperEth), and never above the ETH sent
@@ -106,6 +111,7 @@ export function checkCall(call: GuardCall, from: Address, dep: GuardDeployment):
     const [spender, amount] = args as [unknown, unknown];
     if (!spenderOk(spender)) no(`${coin} approval for an unknown contract`);
     if (typeof amount !== "bigint" || amount >= MAX_APPROVAL) no(`an unlimited ${coin} approval`);
+    if (coin === "WETH" && amount > MAX_WETH_APPROVAL) no("a WETH approval bigger than any offers need");
     return;
   }
   // 3. Uniswap V2's router: buy exact PAPER, into the buyer's own wallet

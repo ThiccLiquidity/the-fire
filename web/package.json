@@ -21,23 +21,23 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.2.0",
+    "@neondatabase/serverless": "1.2.0",
     "@reown/appkit": "1.8.24",
     "@reown/appkit-adapter-wagmi": "1.8.24",
     "@reown/appkit-controllers": "1.8.24",
-    "@wagmi/connectors": "^6.2.0",
-    "@wagmi/core": "^2.22.1",
+    "@wagmi/connectors": "6.2.0",
+    "@wagmi/core": "2.22.1",
     "sharp": "0.34.4",
-    "viem": "^2.56.9",
+    "viem": "2.56.9",
     "web-push": "3.6.7"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
+    "@types/node": "24.19.0",
     "lightningcss": "1.33.0",
-    "oxlint": "^1.81.0",
+    "oxlint": "1.85.0",
     "rolldown": "1.2.15",
-    "typescript": "~6.0.2",
-    "vite": "^8.3.0"
+    "typescript": "6.0.3",
+    "vite": "8.3.5"
   },
   "overrides": {
     "ws@^8": "^8.21.0",

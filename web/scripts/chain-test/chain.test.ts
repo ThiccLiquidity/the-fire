@@ -15,7 +15,7 @@ type Ctx = {
   RPC: string; deployment: Net["deployment"]; C: Record<string, Address>; start: bigint;
   D: Record<string, { address: Address; abi: unknown[] }>;
   warp: (sec: number) => Promise<void>; now: () => Promise<bigint>;
-  tx: (account: unknown, address: Address, abi: unknown[], fn: string, args?: unknown[]) => Promise<{ logs: { topics: Hex[]; data: Hex; address: Address }[] }>;
+  tx: (account: unknown, address: Address, abi: unknown[], fn: string, args?: unknown[], value?: bigint) => Promise<{ logs: { topics: Hex[]; data: Hex; address: Address }[]; gasUsed: bigint; effectiveGasPrice: bigint }>;
   asOwner: (to: Address, data: Hex) => Promise<unknown>;
   rpc: (method: string, params?: unknown[]) => Promise<unknown>;
   pub: PublicClient;
@@ -71,6 +71,18 @@ export async function runTest(ctx: Ctx): Promise<number> {
   console.log("\n== wallet");
   W.setLocalSigner(buyer);
   check(W.getAccount().address === me && W.getAccount().onRobinhood, "the test account stands in for a connected wallet");
+  {
+    // the site never asks a wallet to sign anything: such a request stops before the wallet (wallet.ts guarded)
+    const wc = await W.getWalletClient();
+    const refused: string[] = [];
+    for (const method of ["personal_sign", "eth_sign", "eth_signTypedData_v4", "wallet_sendCalls", "wallet_grantPermissions"]) {
+      try { await wc.request({ method, params: [] } as never); } catch (e) { if (W.isNeverAsked(e)) refused.push(method); }
+    }
+    let auth = "";
+    try { await wc.request({ method: "eth_sendTransaction", params: [{ from: me, to: me, authorizationList: [{}] }] } as never); } catch (e) { auth = W.isNeverAsked(e) ? "NeverAsked" : (e as Error).name; }
+    check(refused.length === 5 && auth === "NeverAsked" && /never asks/.test(W.friendly(new W.NeverAsked("x"))), `signing, batches, permissions and 7702 authorizations are refused before the wallet (${refused.length}/5, ${auth})`);
+    check((await W.delegatedTo(me)) === null, "a plain wallet isn't flagged as delegated (7702)");
+  }
   // play money for the buyer (the stand-in tokens mint to anyone, by the deployer)
   for (const t of ["paper", "plank", "usdg"] as const) await ctx.tx(deployer, ctx.D[t].address, ctx.D[t].abi, "mint", [me, t === "usdg" ? 10_000n * 10n ** 6n : 10n ** 30n]);
   const pressMint = await ctx.tx(deployer, ctx.D.press.address, ctx.D.press.abi, "mint", [me]);
@@ -452,10 +464,11 @@ export async function runTest(ctx: Ctx): Promise<number> {
     W.setLocalSigner(mOther);
     const offer = (await L.offerOf(s1))!;
     let mm = "";
-    try { await L.buyCard({ serial: s1, price: (BigInt(offer.price) / 2n).toString() }, o); } catch (e) { mm = (e as Error).message; }
+    try { await L.buyCard({ serial: s1, price: (BigInt(offer.price) / 2n).toString(), changes: offer.changes }, o); } catch (e) { mm = (e as Error).message; }
     check(/price just changed/i.test(mm), `a buy at a price that isn't the listing's is refused: "${mm}"`);
     const sellerBefore = await ctx.pub.getBalance({ address: me });
-    const br = await L.buyCard({ serial: s1, price: offer.price }, o);
+    check(offer.expiry > Number(await ctx.now()) + 29 * 86400, "a listing lasts 30 days by default");
+    const br = await L.buyCard({ serial: s1, price: offer.price, changes: offer.changes }, o);
     const owner = await ctx.pub.readContract({ address: ctx.C.FireCards, abi: cardsAbi as never, functionName: "ownerOf", args: [BigInt(s1)] }) as Address;
     const got = (await ctx.pub.getBalance({ address: me })) - sellerBefore;
     check(owner === other.address && got === 95n * 10n ** 14n, `bought by another wallet (${br.gasUsed} gas): the card moved, the seller got ${Number(got) / 1e18} ETH (5% royalty)`);
@@ -481,6 +494,42 @@ export async function runTest(ctx: Ctx): Promise<number> {
     await L.cancelAllListings(o);
     check((await L.offerOf(s2)) === null, "Take everything off sale: the listing is dead");
 
+    // a card that leaves and comes back never brings its old price back (FireCards.changes); a buyer gets the card they saw
+    await L.listCard({ serial: s2, priceEth: "0.05" }, o);
+    const seen = (await L.offerOf(s2))!;
+    await ctx.tx(buyer, ctx.C.FireCards, cardsAbi as unknown[], "transferFrom", [me, other.address, BigInt(s2)]);
+    W.setLocalSigner(mOther);
+    await ctx.tx(other, ctx.C.FireCards, cardsAbi as unknown[], "transferFrom", [other.address, me, BigInt(s2)]);
+    check((await L.offerOf(s2)) === null, `card #${s2} went away and came back: its old 0.05 listing stays dead`);
+    try { await L.buyCard({ serial: s2, price: seen.price, changes: seen.changes }, o); mm = ""; } catch (e) { mm = (e as Error).message; }
+    check(/no longer for sale/i.test(mm), `buying it at the old listing is refused: "${mm}"`);
+    W.setLocalSigner(buyer);
+
+    // turning the market off for your cards puts listings to sleep; turning it on again asks first (they'd wake up)
+    await L.listCard({ serial: s2, priceEth: "0.06" }, o);
+    await ctx.tx(buyer, ctx.C.FireCards, cardsAbi as unknown[], "setApprovalForAll", [ctx.C.FireMarket, false]);
+    const asleep = await L.sleepingListings(me);
+    check(asleep.length === 1 && asleep[0].serial === s2, `approval taken back: card #${s2}'s listing is asleep, and the site knows it would wake`);
+    try { await L.listCard({ serial: s1 === s2 ? s2 : cards[14].serial, priceEth: "0.07" }, o); mm = ""; } catch (e) { mm = (e as Error).message; }
+    check(/old listings/i.test(mm), `listing again first asks about the old ones: "${mm}"`);
+    await L.cancelCards({ serials: [s2] }, o);
+    check((await L.sleepingListings(me)).length === 0, "the old listing taken off sale (several at once: cancelCards)");
+    await L.listCards({ items: [{ serial: s2, priceEth: "0.08" }, { serial: cards[14].serial, priceEth: "0.09" }], days: 7 }, o);
+    const two = await Promise.all([L.offerOf(s2), L.offerOf(cards[14].serial)]);
+    check(two.every(Boolean) && two[0]!.expiry < Number(await ctx.now()) + 8 * 86400, "two cards listed at once, for 7 days (listCards)");
+
+    // buy several at once: one of them gone by the time the buy lands is skipped and its ETH comes back
+    await ctx.tx(buyer, ctx.C.FireCards, cardsAbi as unknown[], "transferFrom", [me, other.address, BigInt(cards[14].serial)]);
+    W.setLocalSigner(mOther);
+    const bal0 = await ctx.pub.getBalance({ address: other.address });
+    const mr = await ctx.tx(other, ctx.C.FireMarket, L.marketAbi as unknown[], "buyCards", [[BigInt(s2), BigInt(cards[14].serial)], [BigInt(two[0]!.price), BigInt(two[1]!.price)], [BigInt(two[0]!.changes), BigInt(two[1]!.changes)]],
+      BigInt(two[0]!.price) + BigInt(two[1]!.price));
+    const spent = bal0 - (await ctx.pub.getBalance({ address: other.address })) - (mr?.gasUsed ?? 0n) * (mr?.effectiveGasPrice ?? 0n);
+    const own2 = await ctx.pub.readContract({ address: ctx.C.FireCards, abi: cardsAbi as never, functionName: "ownerOf", args: [BigInt(s2)] }) as Address;
+    check(own2 === other.address && spent === BigInt(two[0]!.price), `bought 2 at once (buyCards): got card #${s2}, the gone one was skipped and its ${two[1]!.priceEth} ETH came back`);
+    await ctx.tx(other, ctx.C.FireCards, cardsAbi as unknown[], "transferFrom", [other.address, me, BigInt(cards[14].serial)]); // back for the grading test below
+    W.setLocalSigner(buyer);
+
     // offers: paid in WETH, which stays in the buyer's wallet until a holder accepts
     const s3 = cards[15].serial, s4 = cards[16].serial;
     W.setLocalSigner(mOther);
@@ -490,7 +539,7 @@ export async function runTest(ctx: Ctx): Promise<number> {
     check(BigInt(w.balance) - BigInt(before.balance) === 2n * 10n ** 16n && BigInt(w.allowance) >= 2n * 10n ** 16n && BigInt(w.committed) === 2n * 10n ** 16n,
       "an offer on one card: the ETH it needs is wrapped into WETH and approved to the market, still in the buyer's wallet");
     const c4 = await L.card(s4);
-    await L.makeOffer({ rule: { fire, cardType: c4.cardType, character: c4.characterIndex, holo: "any", minGrade: 0 }, priceEth: "0.01", qty: 2, days: 30 }, o);
+    await L.makeOffer({ rule: { fire, cardType: c4.cardType, character: c4.characterIndex, holo: "any", minGrade: 0, maxMoves: 15, cased: "any" }, priceEth: "0.01", qty: 2, days: 30 }, o);
     w = await L.wethOf(other.address);
     check(BigInt(w.committed) === 4n * 10n ** 16n && BigInt(w.balance) - BigInt(before.balance) === 4n * 10n ** 16n, "a second offer (any card like #" + s4 + ", 2 wanted): only the new 0.02 is wrapped");
     W.setLocalSigner(buyer);
@@ -504,16 +553,18 @@ export async function runTest(ctx: Ctx): Promise<number> {
     const own3 = await ctx.pub.readContract({ address: ctx.C.FireCards, abi: cardsAbi as never, functionName: "ownerOf", args: [BigInt(s3)] }) as Address;
     check(own3 === other.address && got3 === 19n * 10n ** 15n, `accepted: card #${s3} went to the buyer and the seller got ${Number(got3) / 1e18} ETH (not WETH; 5% royalty)`);
     let am = "";
-    try { await L.acceptOffer({ id: oMatch.id, kind: "match", serial: cards[17].serial, price: oMatch.price }, o); } catch (e) { am = (e as Error).message; }
     const c17 = await L.card(cards[17].serial);
-    if (c17.cardType !== c4.cardType || c17.characterIndex !== c4.characterIndex) check(/doesn't match/i.test(am), `a card that doesn't match is refused: "${am}"`);
+    if (c17.cardType !== c4.cardType || c17.characterIndex !== c4.characterIndex) { // only a card that really doesn't match (one that does would fill it)
+      try { await L.acceptOffer({ id: oMatch.id, kind: "match", serial: cards[17].serial, price: oMatch.price }, o); } catch (e) { am = (e as Error).message; }
+      check(/doesn't match/i.test(am), `a card that doesn't match is refused: "${am}"`);
+    }
     await L.acceptOffer({ id: oMatch.id, kind: "match", serial: s4, price: oMatch.price }, o);
     const left = (await L.listings()).offers.find((x) => x.id === oMatch.id);
     check(left?.qty === 1, "a match offer for 2: one filled, one still wanted");
     W.setLocalSigner(mOther);
     await L.cancelOffer({ id: oMatch.id }, o);
     w = await L.wethOf(other.address);
-    check(BigInt(w.committed) === 0n, "cancelled: nothing committed");
+    check(BigInt(w.committed) === 0n && w.unbacked === 0, "cancelled: nothing committed");
     const free = BigInt(w.balance) - BigInt(before.balance);
     await L.unwrapWeth({ amount: free.toString() }, o);
     check(BigInt((await L.wethOf(other.address)).balance) === BigInt(before.balance), "the leftover WETH turned back into ETH");

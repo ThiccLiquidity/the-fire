@@ -3,20 +3,26 @@
 Cards and sealed packs for sale on our own site, at a fixed price in ETH, and offers on them. Nobody can pull a
 listing or an offer but the person who made it.
 
-Ways in: the **Market** button in the top bar, the **Market** sign in the workshop (by the best slabs; a station on
-phones), and Menu › Market.
+Way in: **Market**, one of the five places (the top bar on computers, the tab bar on phones). Its badge counts the
+offers you can accept now.
 
 ## How it works
 
 - **Sell a card:** My cards › open a card › **Sell** › price › **List for sale**. The first time, the wallet asks to let
   the market sell your cards (once per wallet; packs ask once too). The card stays in your wallet until someone buys it;
-  its detail says "For sale · 0.02 ETH" and opens the same screen to change the price or take it off sale.
+  its detail says "For sale · 0.02 ETH" and opens the same screen to change the price or take it off sale. A listing
+  lasts 30 days (at most 180), and it ends for good the moment the card moves, is cased or goes for grading: a card
+  that comes back never brings its old price back. List again to sell it as it is now.
+- **Old listings:** if you switched the market off for your cards (the approval), your listings sleep; switching it on
+  again would wake the ones that haven't ended, so the site lists them first: **Take them off sale first** or **Keep
+  them for sale**.
 - **Sell packs:** Market › Mine › **Sell packs**: the Series, how many, the price each.
 - **Buy:** Menu › **Market**. Cards (filter by type, sort by price or grade; tap one to see it big) and Packs (pick how
   many). One confirmation in the wallet; the card or packs arrive in the same transaction.
 - **Offers:** what people want, best first; the ones you can fill are lit, with **Sell yours**. **Make an offer**:
   - on one card (a listed card › **Make offer**), or "Or any card like this";
-  - on any card that matches: Series, type, character, holo (none, frame, picture, full, any holo), lowest grade;
+  - on any card that matches: Series, type, character, holo (none, frame, picture, full, any holo), lowest grade, most
+    moves, cased or not;
   - on packs: a Series, how many, the price each.
   How many you want, and how long it lasts (1, 7, 30 or 90 days). Your ETH stays in your wallet as WETH (the wallet
   asks to wrap just what your open offers don't already cover, and to let the market use it) until someone accepts.
@@ -32,14 +38,23 @@ phones), and Menu › Market.
 
 No owner, no fees, no admin, no pause, no upgrade (`contracts/src/cards/FireMarket.sol`, `docs/cards-contracts.md`).
 
-- It never holds cards or packs: a listing is a price, and the seller approves the market once (`setApprovalForAll`).
+- It never holds cards or packs: a listing is a price, an end date and the card's change count, and the seller
+  approves the market once (`setApprovalForAll`).
+- **FireCards.changes(serial)** counts every move to another wallet and every casing, grading start, grading cancel
+  and grade, never capped. A listing stores it; `buyCard(serial, price, changes)` needs the listing's count to equal
+  the card's now and the buyer's to equal the listing's. So a card that moved or changed can't be bought at an old
+  listing, and the buyer gets exactly the card they looked at. Packs (ERC-1155) rely on the end date.
+- `listCard(serial, price, expiry)`, `listCards(serials, prices, expiry)` (up to 20), `cancelCards(serials)`;
+  `listPacks(series, amount, pricePer, expiry)`. Expiry: at most 180 days out, from the chain's clock.
+- `buyCards(serials, prices, changes)` buys up to 20 at once: send the sum; a card gone by then is skipped and its ETH
+  comes back (or waits in `owed` if the wallet refuses it).
   The site's wallet gate (`web/src/lib/guard.ts`) allows that approval only for FireMarket.
 - A buy pays exactly the listed price (the buyer's transaction carries the price they saw; a changed price fails, nothing
   charged), moves the card, pays the royalty (ERC-2981, the collection's 5%; at most 10% is ever paid) and the rest to
   the seller, all in one transaction. The market keeps nothing. If a seller's wallet refuses ETH, its money waits in
   the market (`owed`) and Market › Mine shows **Collect**.
-- Offers: `makeOffer(kind, target, price, qty, expiry)`: kind 0 one card (target = serial), 1 any matching card
-  (target = `matchKey(Series, type + 1, character + 1, holo, lowest grade)`, 0 = any), 2 packs (target = Series);
+- Offers: `makeOffer(kind, target, price, qty, expiry)`: at least `MIN_OFFER` (0.00001 ETH) each; kind 0 one card (target = serial; it records the card's grade and cased state, and accepting needs them unchanged), 1 any matching card
+  (target = `matchKey(Series, type + 1, character + 1, holo, lowest grade, most moves + 1, cased: 1 only / 2 not)`, 0 = any), 2 packs (target = Series);
   at most 180 days. `acceptOffer(id, serial, amount, price)`: the WETH comes from the buyer, is turned into ETH and paid
   out like a sale; the card or packs go to the buyer. An offer whose buyer no longer has the WETH (or took the approval
   back), that expired or was ended by `cancelAll` can't be accepted, and anyone may clear it.
@@ -47,12 +62,13 @@ No owner, no fees, no admin, no pause, no upgrade (`contracts/src/cards/FireMark
   anyone may clear it. A card that comes back to its seller brings its old listing back: **Take off sale** or **Take
   everything off sale** (`cancelAll`) ends it.
 - The wallet gate also allows wrapping and unwrapping WETH and a capped WETH approval for FireMarket (offers).
+- The wallet gate: `buyCards` must send exactly the sum of its prices; WETH approvals for offers are capped at 1,000 WETH.
 - The wallet gate caps one market buy at 10 ETH (other site transactions: 0.5 ETH). Raise `MARKET_MAX_ETH` in
   `guard.ts` if cards ever sell for more.
 
 ## Where it's checked
 
-- `contracts/test/cards/Market.t.sol`: 29 tests (listing, buying, stale listings, grading lock, cancelAll, refused
+- `contracts/test/cards/Market.t.sol`: 40 tests (the six cases the research flagged: a card coming back with its old listing, a listing surviving grading, a re-granted approval, an offer filled after the card was graded, an unfunded offer coming back, a buyer who saw an older card; `buyCards`, bulk, expiry, minimum offer); `test/invariant/MarketInvariant.t.sol`: the market's ETH always equals what it owes, it never keeps WETH, a listing it called dead is never bought. Before those: (listing, buying, stale listings, grading lock, cancelAll, refused
   payouts, re-entry, royalty cap, offers on a card / any matching card / packs, unfunded and expired offers, fuzzed
   payouts); `Psa.t.sol` `test_marketSale_isAMove_andWaitsOutGrading` on the real FireCards (a sale, a grading lock, packs,
   a match offer).

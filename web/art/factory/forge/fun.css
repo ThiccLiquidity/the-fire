@@ -210,6 +210,9 @@ body[data-mode=port] .fun-nudge { bottom: auto; top: calc(var(--top) + 8px) }
 .mk-pinfo { display: grid; gap: 2px; min-width: 0 }
 .mk-pinfo h3 { margin: 0; font-size: 16px }
 .mk-seller { font-size: 13px; color: var(--muted, #b9a88c) }
+.mk-under { font-size: 12.5px; font-weight: 700; color: #f0a35b } /* an offer well under what's listed */
+.mk-warn { margin: 4px 0 0; padding: 9px 11px; border-radius: 10px; border: 1px solid #f0a35b; background: rgba(240,163,91,.12); color: #ffd6ad; font-size: 14px }
+.mk-warn[hidden] { display: none }
 .mk-buy { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end }
 .mk-step { display: inline-flex; align-items: center; gap: 8px }
 .mk-step .btn { min-width: 44px; min-height: 44px }
@@ -258,3 +261,6 @@ body[data-mode=port] .fun-nudge { bottom: auto; top: calc(var(--top) + 8px) }
   .mk-opic { width: 44px }
   .mk-offer > .btn, .mk-act li > .mk-price { grid-column: 1 / -1; justify-self: end }
 }
+/* Mine: the market switch and the promise */
+.mk-switch { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; padding: 10px 12px; border: 1px solid var(--line-2, #4a3626); border-radius: 12px; font-size: 14px }
+.mk-promise { margin: 16px 0 4px; font-size: 13px; color: var(--muted, #b9a88c); text-align: center }

@@ -10,6 +10,7 @@ interface IMarketCards {
     function safeTransferFrom(address from, address to, uint256 id) external;
     function royaltyInfo(uint256 id, uint256 price) external view returns (address, uint256);
     function cardOf(uint256 serial) external view returns (MarketCardView memory);
+    function changes(uint256 serial) external view returns (uint256);
 }
 
 /// @dev FireCards.Card, as cardOf returns it.
@@ -50,18 +51,21 @@ interface IMarketPacks {
  *         once). A buy moves the card and pays out in the same transaction: the collection's royalty (ERC-2981, at most
  *         10% here) to its receiver, the rest to the seller. A payout a wallet refuses waits in `owed` for `withdraw`.
  *
- *         Cards: one listing per card (listing again changes the price). A buy checks the seller still holds the card
- *         and the price is the one the buyer saw. A card being graded can't move (FireCards), so its buy fails until the
- *         grading ends. A sale counts as a move toward an uncased card's wear, like any transfer.
+ *         Cards: one listing per card (listing again changes the price). A listing remembers the card's `changes`
+ *         count (FireCards: every move to another wallet, casing, grading): once the card moves or changes, the listing
+ *         is dead for good, even if the card comes back. A buy also carries the count the buyer saw, so the buyer gets
+ *         exactly the card they looked at. A card being graded can't move (FireCards). A sale counts as a move toward
+ *         an uncased card's wear, like any transfer.
  *         Packs: a listing is a number of one Series' packs at a price each; buy any number of them. A buy checks the
  *         seller still holds them.
+ *         Every listing ends at its expiry (at most 180 days).
  *
- *         Stale listings (the card sold or moved elsewhere, the packs gone, the approval taken back, or ended by the
- *         seller's `cancelAll`) can't be bought; anyone may clear them. A card that comes back to its seller brings its
- *         old listing back to life: the site shows it on the card, and `cancelCard` / `cancelAll` end it.
+ *         Stale listings (expired, the card moved or changed, the packs gone, the approval taken back, or ended by the
+ *         seller's `cancelAll`) can't be bought; anyone may clear them.
  *
- *         Offers: a buyer offers a price (in WETH) for one card, for any card that matches (Series, card type,
- *         character, holo, lowest grade), or for some of a Series' packs. The WETH stays in the buyer's wallet (the buyer
+ *         Offers: a buyer offers a price (in WETH) for one card (as it is now: its grade and whether it is cased), for
+ *         any card that matches (Series, card type, character, holo, lowest grade, most moves, cased or not), or for
+ *         some of a Series' packs. The WETH stays in the buyer's wallet (the buyer
  *         approves this contract for it) until a holder accepts: then, in one transaction, the WETH comes in, is turned
  *         into ETH, the card or packs move to the buyer and the ETH is paid out like a sale (royalty, then the seller).
  *         An offer ends at its expiry (at most 180 days), when it is filled, cancelled, or by the buyer's `cancelAll`;
@@ -78,6 +82,8 @@ contract FireMarket is ReentrancyGuard {
         address seller;
         uint96 price; // wei
         uint64 round; // the seller's round when listed (cancelAll ends a round)
+        uint40 expiry; // unix seconds
+        uint64 changes; // the card's FireCards.changes when listed: any move or change since ends the listing
     }
     struct PackListing {
         address seller;
@@ -85,7 +91,14 @@ contract FireMarket is ReentrancyGuard {
         uint32 amount; // packs left in it
         uint96 pricePer; // wei a pack
         uint64 round;
+        uint40 expiry; // unix seconds
     }
+    /// @notice The longest a listing lasts.
+    uint256 public constant MAX_LIST_DAYS = 180;
+    /// @notice The most cards one `buyCards` buys.
+    uint256 public constant MAX_BATCH = 20;
+    /// @notice The least an offer can be for one card or pack (no dust offers).
+    uint256 public constant MIN_OFFER = 0.00001 ether;
 
     mapping(uint256 => CardListing) public cardListing;
     mapping(uint256 => PackListing) public packListing;
@@ -108,16 +121,18 @@ contract FireMarket is ReentrancyGuard {
         uint32 qty; // cards or packs still wanted
         uint40 expiry; // unix seconds
         uint64 round; // the buyer's round when made (cancelAll ends it)
+        uint8 grade; // a card offer: the card's grade when made (0 ungraded); it must still have it
+        bool cased; // a card offer: whether the card was cased when made; it must still be
         uint256 target;
     }
 
     mapping(uint256 => Offer) public offers;
     uint256 public nextOffer = 1;
 
-    event CardListed(uint256 indexed serial, address indexed seller, uint256 price);
+    event CardListed(uint256 indexed serial, address indexed seller, uint256 price, uint256 expiry, uint256 changes);
     event CardUnlisted(uint256 indexed serial, address indexed seller);
     event CardSold(uint256 indexed serial, address indexed seller, address indexed buyer, uint256 price, uint256 royalty);
-    event PacksListed(uint256 indexed id, address indexed seller, uint256 indexed series, uint256 amount, uint256 pricePer);
+    event PacksListed(uint256 indexed id, address indexed seller, uint256 indexed series, uint256 amount, uint256 pricePer, uint256 expiry);
     event PacksUnlisted(uint256 indexed id, address indexed seller);
     event PacksSold(uint256 indexed id, address indexed seller, address indexed buyer, uint256 series, uint256 amount, uint256 pricePer, uint256 royalty);
     event Owed(address indexed to, uint256 amount);
@@ -146,6 +161,8 @@ contract FireMarket is ReentrancyGuard {
     error NoMatch();
     error NotFunded();
     error NotWeth();
+    error CardChanged();
+    error TooMany();
 
     constructor(address cards, address packs, address weth) {
         if (cards == address(0) || packs == address(0) || weth == address(0)) revert ZeroAddress();
@@ -161,19 +178,29 @@ contract FireMarket is ReentrancyGuard {
 
     // ---------- cards
 
-    /// @notice List (or re-price) a card you hold. Approve this contract on FireCards first.
-    function listCard(uint256 serial, uint256 price) external {
+    /// @notice List (or re-price) a card you hold until `expiry` (unix seconds, at most 180 days out). Approve this
+    ///         contract on FireCards first.
+    function listCard(uint256 serial, uint256 price, uint256 expiry) public {
         if (price == 0 || price > type(uint96).max) revert BadPrice();
+        _checkExpiry(expiry, MAX_LIST_DAYS);
         if (CARDS.ownerOf(serial) != msg.sender) revert NotYours();
         if (!_cardApproved(msg.sender, serial)) revert NotApproved();
+        uint256 ch = CARDS.changes(serial);
         // forge-lint: disable-next-line(unsafe-typecast)
-        cardListing[serial] = CardListing({seller: msg.sender, price: uint96(price), round: round[msg.sender]}); // checked above
-        emit CardListed(serial, msg.sender, price);
+        cardListing[serial] = CardListing({seller: msg.sender, price: uint96(price), round: round[msg.sender], expiry: uint40(expiry), changes: uint64(ch)}); // checked above; changes can't reach 2^64
+        emit CardListed(serial, msg.sender, price, expiry, ch);
     }
 
-    /// @notice Take a card off sale: its seller, or anyone once the listing is stale (the seller no longer holds it or
-    ///         took the approval back).
-    function cancelCard(uint256 serial) external {
+    /// @notice List (or re-price) several cards at once, each at its own price, all until `expiry`.
+    function listCards(uint256[] calldata serials, uint256[] calldata prices, uint256 expiry) external {
+        if (serials.length != prices.length || serials.length == 0) revert BadAmount();
+        if (serials.length > MAX_BATCH) revert TooMany();
+        for (uint256 i; i < serials.length; i++) listCard(serials[i], prices[i], expiry);
+    }
+
+    /// @notice Take a card off sale: its seller, or anyone once the listing is stale (expired, the card moved or
+    ///         changed, or the approval taken back).
+    function cancelCard(uint256 serial) public {
         CardListing memory l = cardListing[serial];
         if (l.seller == address(0)) revert NotListed();
         if (l.seller != msg.sender && _cardLive(l, serial)) revert NotStale();
@@ -181,43 +208,70 @@ contract FireMarket is ReentrancyGuard {
         emit CardUnlisted(serial, l.seller);
     }
 
-    /// @notice Buy a listed card. `price` is the price you saw; send exactly that.
-    function buyCard(uint256 serial, uint256 price) external payable nonReentrant {
-        CardListing memory l = cardListing[serial];
-        if (l.seller == address(0)) revert NotListed();
-        if (l.price != price) revert PriceChanged();
-        if (msg.value != price) revert WrongPayment();
-        if (l.seller == msg.sender) revert OwnListing();
-        if (!_cardLive(l, serial)) revert Stale();
-        delete cardListing[serial];
-        CARDS.safeTransferFrom(l.seller, msg.sender, serial);
-        (address receiver, uint256 r) = CARDS.royaltyInfo(serial, price);
-        uint256 royalty = _payOut(receiver, r, l.seller, price);
-        emit CardSold(serial, l.seller, msg.sender, price, royalty);
+    /// @notice Take several cards off sale (each as `cancelCard`).
+    function cancelCards(uint256[] calldata serials) external {
+        if (serials.length > MAX_BATCH) revert TooMany();
+        for (uint256 i; i < serials.length; i++) cancelCard(serials[i]);
     }
 
-    /// @notice A card's listing and whether it can be bought now (the seller holds it and the approval stands).
-    function cardOffer(uint256 serial) external view returns (address seller, uint256 price, bool live) {
+    /// @notice Buy a listed card. `price` is the price you saw and `changes` the card's count you saw (cardOffer);
+    ///         send exactly the price.
+    function buyCard(uint256 serial, uint256 price, uint256 changes) external payable nonReentrant {
+        if (msg.value != price) revert WrongPayment();
+        _buyCard(serial, price, changes);
+    }
+
+    /// @notice Buy several listed cards in one go, each at the price and count you saw. Send the sum of the prices.
+    ///         A card that can't be bought any more (sold, re-priced, changed) is skipped, and its ETH comes back to you
+    ///         (or waits in `owed` if your wallet refuses it). Returns how many were bought.
+    function buyCards(uint256[] calldata serials, uint256[] calldata prices, uint256[] calldata changes_)
+        external
+        payable
+        nonReentrant
+        returns (uint256 bought)
+    {
+        uint256 n = serials.length;
+        if (n == 0 || n != prices.length || n != changes_.length) revert BadAmount();
+        if (n > MAX_BATCH) revert TooMany();
+        uint256 total;
+        for (uint256 i; i < n; i++) total += prices[i];
+        if (msg.value != total) revert WrongPayment();
+        uint256 spent;
+        for (uint256 i; i < n; i++) {
+            if (!_canBuy(serials[i], prices[i], changes_[i])) continue;
+            _buyCard(serials[i], prices[i], changes_[i]);
+            spent += prices[i];
+            bought++;
+        }
+        if (bought == 0) revert Stale();
+        if (total > spent) _send(msg.sender, total - spent);
+    }
+
+    /// @notice A card's listing and whether it can be bought now (not expired, the card unchanged and still with the
+    ///         seller, the approval standing). `changes` and `price` are what a buy passes.
+    function cardOffer(uint256 serial) external view returns (address seller, uint256 price, bool live, uint256 expiry, uint256 changes) {
         CardListing memory l = cardListing[serial];
-        return (l.seller, l.price, l.seller != address(0) && _cardLive(l, serial));
+        return (l.seller, l.price, l.seller != address(0) && _cardLive(l, serial), l.expiry, l.changes);
     }
 
     // ---------- packs
 
-    /// @notice List `amount` of your Series `series` packs at `pricePer` each. Approve this contract on FirePacks first.
-    function listPacks(uint256 series, uint256 amount, uint256 pricePer) external returns (uint256 id) {
+    /// @notice List `amount` of your Series `series` packs at `pricePer` each until `expiry` (at most 180 days out).
+    ///         Approve this contract on FirePacks first.
+    function listPacks(uint256 series, uint256 amount, uint256 pricePer, uint256 expiry) external returns (uint256 id) {
         if (pricePer == 0 || pricePer > type(uint96).max) revert BadPrice();
+        _checkExpiry(expiry, MAX_LIST_DAYS);
         if (amount == 0 || amount > type(uint32).max || series > type(uint32).max) revert BadAmount();
         if (PACKS.balanceOf(msg.sender, series) < amount) revert NotYours();
         if (!PACKS.isApprovedForAll(msg.sender, address(this))) revert NotApproved();
         id = nextPackListing++;
         // forge-lint: disable-next-line(unsafe-typecast)
-        packListing[id] = PackListing({seller: msg.sender, series: uint32(series), amount: uint32(amount), pricePer: uint96(pricePer), round: round[msg.sender]}); // checked above
-        emit PacksListed(id, msg.sender, series, amount, pricePer);
+        packListing[id] = PackListing({seller: msg.sender, series: uint32(series), amount: uint32(amount), pricePer: uint96(pricePer), round: round[msg.sender], expiry: uint40(expiry)}); // checked above
+        emit PacksListed(id, msg.sender, series, amount, pricePer, expiry);
     }
 
-    /// @notice Take packs off sale: their seller, or anyone once the listing is stale (no packs left to sell or the
-    ///         approval taken back).
+    /// @notice Take packs off sale: their seller, or anyone once the listing is stale (expired, no packs left to sell
+    ///         or the approval taken back).
     function cancelPacks(uint256 id) external {
         PackListing memory l = packListing[id];
         if (l.seller == address(0)) revert NotListed();
@@ -255,16 +309,23 @@ contract FireMarket is ReentrancyGuard {
 
     /// @notice Criteria for an "any matching card" offer, packed into its target. 0 = any, for each:
     ///         fire: the Series; cardType: the Series' type index + 1; character: its index + 1;
-    ///         holo: 1 none, 2 frame only, 3 picture only, 4 full, 5 any holo; minGrade: graded at least this (1-10).
-    function matchKey(uint256 fire, uint256 cardTypePlus1, uint256 characterPlus1, uint256 holo, uint256 minGrade)
-        public
-        pure
-        returns (uint256)
-    {
-        if (fire > type(uint32).max || cardTypePlus1 > type(uint16).max || characterPlus1 > type(uint32).max || holo > 5 || minGrade > 10) {
-            revert BadOffer();
-        }
-        return fire | cardTypePlus1 << 32 | characterPlus1 << 48 | holo << 80 | minGrade << 88;
+    ///         holo: 1 none, 2 frame only, 3 picture only, 4 full, 5 any holo; minGrade: graded at least this (1-10);
+    ///         maxMovesPlus1: moved at most this - 1 times (1 = never moved, up to 16); cased: 1 cased only, 2 uncased only.
+    function matchKey(
+        uint256 fire,
+        uint256 cardTypePlus1,
+        uint256 characterPlus1,
+        uint256 holo,
+        uint256 minGrade,
+        uint256 maxMovesPlus1,
+        uint256 cased
+    ) public pure returns (uint256) {
+        if (
+            fire > type(uint32).max || cardTypePlus1 > type(uint16).max || characterPlus1 > type(uint32).max || holo > 5
+                || minGrade > 10 || maxMovesPlus1 > 16 || cased > 2
+        ) revert BadOffer();
+        return fire | cardTypePlus1 << 32 | characterPlus1 << 48 | holo << 80 | minGrade << 88 | maxMovesPlus1 << 96
+            | cased << 104;
     }
 
     /// @notice Does card `serial` meet a match offer's criteria?
@@ -275,6 +336,8 @@ contract FireMarket is ReentrancyGuard {
         uint256 ch = uint32(key >> 48);
         uint256 holo = uint8(key >> 80);
         uint256 g = uint8(key >> 88);
+        uint256 mv = uint8(key >> 96);
+        uint256 cs = uint8(key >> 104);
         if (fire != 0 && c.fire != fire) return false;
         if (t != 0 && c.cardType + 1 != t) return false;
         if (ch != 0 && c.character + 1 != ch) return false;
@@ -284,21 +347,33 @@ contract FireMarket is ReentrancyGuard {
         if (holo == 4 && !(c.holoFrame && c.holoPicture)) return false;
         if (holo == 5 && !(c.holoFrame || c.holoPicture)) return false;
         if (g != 0 && c.grade < g) return false;
+        if (mv != 0 && c.moves > mv - 1) return false;
+        if (cs == 1 && !c.cased) return false;
+        if (cs == 2 && c.cased) return false;
         return true;
     }
 
     /// @notice Offer `price` (wei of WETH) each for `qty` of: one card (OFFER_CARD, target = serial, qty 1), any card
     ///         matching (OFFER_MATCH, target = matchKey), or a Series' packs (OFFER_PACKS, target = the Series), until
     ///         `expiry`. Approve this contract for the WETH (price x qty) and hold it; nothing moves until accepted.
+    ///         A card offer is for the card as it is now: its grade and whether it is cased.
     function makeOffer(uint8 kind, uint256 target, uint256 price, uint256 qty, uint256 expiry) external returns (uint256 id) {
-        if (price == 0 || price > type(uint96).max) revert BadPrice();
+        if (price < MIN_OFFER || price > type(uint96).max) revert BadPrice();
         if (kind > OFFER_PACKS || qty == 0 || qty > type(uint32).max || (kind == OFFER_CARD && qty != 1)) revert BadOffer();
-        if (expiry <= block.timestamp || expiry > block.timestamp + MAX_OFFER_DAYS * 1 days) revert BadExpiry();
-        if (kind == OFFER_CARD && CARDS.ownerOf(target) == msg.sender) revert OwnListing();
+        _checkExpiry(expiry, MAX_OFFER_DAYS);
+        uint8 grade;
+        bool cased;
+        if (kind == OFFER_CARD) {
+            if (CARDS.ownerOf(target) == msg.sender) revert OwnListing();
+            MarketCardView memory c = CARDS.cardOf(target);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            grade = uint8(c.grade); // 0-10
+            cased = c.cased;
+        }
         if (kind == OFFER_PACKS && (target == 0 || target > type(uint32).max)) revert BadOffer();
         id = nextOffer++;
         // forge-lint: disable-next-line(unsafe-typecast)
-        offers[id] = Offer({buyer: msg.sender, price: uint96(price), kind: kind, qty: uint32(qty), expiry: uint40(expiry), round: round[msg.sender], target: target}); // checked above
+        offers[id] = Offer({buyer: msg.sender, price: uint96(price), kind: kind, qty: uint32(qty), expiry: uint40(expiry), round: round[msg.sender], grade: grade, cased: cased, target: target}); // checked above
         emit OfferMade(id, msg.sender, kind, target, price, qty, expiry);
     }
 
@@ -328,6 +403,10 @@ contract FireMarket is ReentrancyGuard {
         } else {
             amount = 1;
             if (o.kind == OFFER_CARD ? serial != o.target : !matches(o.target, serial)) revert NoMatch();
+            if (o.kind == OFFER_CARD) {
+                MarketCardView memory c = CARDS.cardOf(serial);
+                if (c.grade != o.grade || c.cased != o.cased) revert CardChanged();
+            }
             if (CARDS.ownerOf(serial) != msg.sender) revert NotYours();
             if (!_cardApproved(msg.sender, serial)) revert NotApproved();
             item = serial;
@@ -383,12 +462,37 @@ contract FireMarket is ReentrancyGuard {
     }
 
     function _cardLive(CardListing memory l, uint256 serial) internal view returns (bool) {
-        if (l.round != round[l.seller]) return false;
+        if (l.round != round[l.seller] || l.expiry <= block.timestamp) return false;
         try CARDS.ownerOf(serial) returns (address o) {
-            return o == l.seller && _cardApproved(l.seller, serial);
+            return o == l.seller && CARDS.changes(serial) == l.changes && _cardApproved(l.seller, serial);
         } catch {
             return false; // burned
         }
+    }
+
+    /// @dev Can card `serial` be bought now at `price`, as the buyer saw it (`changes`), by the caller?
+    function _canBuy(uint256 serial, uint256 price, uint256 changes_) internal view returns (bool) {
+        CardListing memory l = cardListing[serial];
+        return l.seller != address(0) && l.price == price && l.changes == changes_ && l.seller != msg.sender && _cardLive(l, serial);
+    }
+
+    /// @dev Buy one card (the ETH is already here): the checks, the move and the payout.
+    function _buyCard(uint256 serial, uint256 price, uint256 changes_) internal {
+        CardListing memory l = cardListing[serial];
+        if (l.seller == address(0)) revert NotListed();
+        if (l.price != price) revert PriceChanged();
+        if (l.changes != changes_) revert CardChanged();
+        if (l.seller == msg.sender) revert OwnListing();
+        if (!_cardLive(l, serial)) revert Stale();
+        delete cardListing[serial];
+        CARDS.safeTransferFrom(l.seller, msg.sender, serial);
+        (address receiver, uint256 r) = CARDS.royaltyInfo(serial, price);
+        uint256 royalty = _payOut(receiver, r, l.seller, price);
+        emit CardSold(serial, l.seller, msg.sender, price, royalty);
+    }
+
+    function _checkExpiry(uint256 expiry, uint256 maxDays) internal view {
+        if (expiry <= block.timestamp || expiry > block.timestamp + maxDays * 1 days) revert BadExpiry();
     }
 
     /// @dev An offer can be accepted: not expired, not ended by cancelAll, and the buyer holds and approved the WETH for
@@ -400,7 +504,7 @@ contract FireMarket is ReentrancyGuard {
 
     /// @dev How many of a listing's packs can be bought now: what's listed, up to what the seller holds, if approved.
     function _packsLive(PackListing memory l) internal view returns (uint256) {
-        if (l.round != round[l.seller] || !PACKS.isApprovedForAll(l.seller, address(this))) return 0;
+        if (l.round != round[l.seller] || l.expiry <= block.timestamp || !PACKS.isApprovedForAll(l.seller, address(this))) return 0;
         uint256 bal = PACKS.balanceOf(l.seller, l.series);
         return bal < l.amount ? bal : l.amount;
     }

@@ -13,7 +13,7 @@
   const LIVE = window.Live?.on;
   const S = Store.state;
   const L = () => window.Live?.chain;
-  const ROYALTY_BPS = 500; // the collection's resale royalty (ERC-2981, set at deploy); for "You get about"
+  let royaltyRead = false, ROYALTY_BPS = 500; // the collection's resale royalty (ERC-2981), for "You get about"; live: read from the chain
   const DAY_S = 86400;
   const trim = (x) => { const n = +x; if (!(n > 0)) return '0'; return n >= 1 ? n.toLocaleString('en-US', { maximumFractionDigits: 4 }) : n.toLocaleString('en-US', { maximumSignificantDigits: 4 }); };
   const ethTxt = (x) => `${trim(x)} ETH`;
@@ -25,7 +25,8 @@
   const face = (c, lazy = true) => (window.Stations?.cardFace ? Stations.cardFace(c, lazy) : h('div', { class: `cface m-${c.material}` }, h('img', { class: 'cframe', src: Store.cardImg(c), alt: '', loading: 'lazy' })));
   const me = () => String(S.wallet.full || '').toLowerCase();
   const mine = (a) => !!a && String(a).toLowerCase() === me();
-  const okPrice = (t) => /^\d*\.?\d+$/.test(String(t).trim()) && +t > 0 && +t < 1e6;
+  // a price: digits, at most 6 decimals (smaller amounts break on the way to the wallet), above 0
+  const okPrice = (t) => /^\d*\.?\d+$/.test(String(t).trim()) && !/\.\d{7,}$/.test(String(t).trim()) && +t > 0 && +t < 1e6;
   const nowS = () => Math.floor(Date.now() / 1000);
   const ago = (t) => { const s = Math.max(1, nowS() - t); return s < 3600 ? `${Math.max(1, Math.round(s / 60))} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
   const ends = (t) => { const s = t - nowS(); return s < 3600 ? 'ends within the hour' : s < 86400 ? `ends in ${Math.round(s / 3600)} h` : `ends in ${Math.round(s / 86400)} days`; };
@@ -35,11 +36,14 @@
 
   // ---------- what a "match" offer asks for, in words; and whether a card meets it
   // rule: { fire (0 any), cardType (index | null), mat (the type's id, for words and the demo), character (index | null),
-  //         charName, holo: any | none | frame | picture | full | anyHolo, minGrade (0 any) }
+  //         charName, holo: any | none | frame | picture | full | anyHolo, minGrade (0 any), maxMoves (null any),
+  //         cased: any | cased | uncased }
   const HOLO_RULE = { any: '', none: 'no holo', frame: 'holo frame', picture: 'holo picture', full: 'full holo', anyHolo: 'any holo' };
   function ruleText(r) {
     const what = [r.fire ? `Series ${r.fire}` : '', r.mat ? Store.MAT_LABEL[r.mat] || r.mat : '', r.charName || ''].filter(Boolean).join(' ');
-    return `Any ${what || 'card'}${what && !r.charName ? ' card' : ''}${HOLO_RULE[r.holo] ? ', ' + HOLO_RULE[r.holo] : ''}${r.minGrade ? `, PDA ${r.minGrade}+` : ''}`;
+    const moves = r.maxMoves == null ? '' : r.maxMoves === 0 ? ', never moved' : `, moved ${r.maxMoves} times or fewer`;
+    const cased = r.cased === 'cased' ? ', cased' : r.cased === 'uncased' ? ', not cased' : '';
+    return `Any ${what || 'card'}${what && !r.charName ? ' card' : ''}${HOLO_RULE[r.holo] ? ', ' + HOLO_RULE[r.holo] : ''}${r.minGrade ? `, PDA ${r.minGrade}+` : ''}${cased}${moves}`;
   }
   function fits(r, c) {
     if (r.fire && c.series !== r.fire) return false;
@@ -50,10 +54,14 @@
     if (['frame', 'picture', 'full'].includes(r.holo) && hl !== r.holo) return false;
     if (r.holo === 'anyHolo' && hl === 'none') return false;
     if (r.minGrade && !(c.grade >= r.minGrade)) return false;
+    if (r.maxMoves != null && (c.moves || 0) > r.maxMoves) return false;
+    if (r.cased === 'cased' && !c.cased) return false;
+    if (r.cased === 'uncased' && c.cased) return false;
     return true;
   }
-  /** Does offer `o` want card `c`? */
-  const wants = (o, c) => !c.pending && (o.kind === 'card' ? o.serial === (c.serial ?? c.id) || o.cardId === c.id : o.kind === 'match' ? fits(o.rule, c) : false);
+  /** Does offer `o` want card `c`? A one-card offer is for the card as it was when made (its grade, cased or not). */
+  const sameCard = (o, c) => (o.grade == null || (c.grade || 0) === o.grade) && (o.cased == null || !!c.cased === o.cased);
+  const wants = (o, c) => !c.pending && (o.kind === 'card' ? (o.serial === (c.serial ?? c.id) || o.cardId === c.id) && sameCard(o, c) : o.kind === 'match' ? fits(o.rule, c) : false);
   // live: the words for a Series' types and characters (its recipe), read once per Series
   const sets = {};
   const setOf = (fire) => (LIVE && fire ? (sets[fire] ||= L().practiceSet(fire).catch(() => null)) : Promise.resolve(null));
@@ -105,8 +113,9 @@
         offers: demo.offers.filter((o) => o.qty > 0 && o.expiry > nowS()).map((o) => ({ ...o, mine: mine(o.buyer) })),
       };
     }
+    if (!royaltyRead) { royaltyRead = true; L().royaltyBps().then((b) => { if (Number.isFinite(b) && b >= 0) ROYALTY_BPS = b; }, () => { royaltyRead = false; }); }
     const r = await L().listings();
-    const cards = r.cards.map((x) => ({ card: Live.toCard(x.card), seller: x.seller, priceEth: +x.priceEth, price: x.price, mine: mine(x.seller) }));
+    const cards = r.cards.map((x) => ({ card: Live.toCard(x.card), seller: x.seller, priceEth: +x.priceEth, price: x.price, changes: x.changes, expiry: x.expiry, mine: mine(x.seller) }));
     S.listed = {}; for (const x of cards) if (x.mine) S.listed[x.card.id] = x.priceEth;
     const offers = await Promise.all(r.offers.map(async (o) => ({ ...o, priceEth: +o.priceEth, mine: mine(o.buyer), rule: o.rule ? await named(o.rule) : undefined })));
     S.offersSeen = offers;
@@ -130,7 +139,7 @@
       demo.cards = demo.cards.filter((y) => y.card.id !== x.card.id); sold({ kind: 'card', card: x.card, priceEth: x.priceEth, seller: x.seller, buyer: S.wallet.full });
       toast(`${x.card.character} is in My cards`, 'good'); return true;
     }
-    return !!(await Live.run(`Buy ${x.card.character}`, (o) => L().buyCard({ serial: x.card.serial, price: x.price }, o), `${x.card.character} is in My cards`));
+    return !!(await Live.run(`Buy ${x.card.character} · ${kind(x.card)} for ${ethTxt(x.priceEth)}`, (o) => L().buyCard({ serial: x.card.serial, price: x.price, changes: x.changes }, o), `${x.card.character} is in My cards`));
   }
   async function buyPacks(p, n) {
     const total = +(p.pricePerEth * n).toFixed(8);
@@ -143,9 +152,29 @@
     }
     return !!(await Live.run(`Buy ${plural(n, 'pack')}`, (o) => L().buyMarketPacks({ id: p.id, amount: n, pricePer: p.pricePer }, o), `${plural(n, 'pack')} added`));
   }
-  async function listCard(c, priceEth) {
+  // live: old listings asleep only because the market was switched off for your cards would go back on sale when it is
+  // switched on again. Ask first: take them off sale (one transaction), or keep them. null: the seller backed out.
+  async function sleepingFirst() {
+    const old = await L().sleepingListings(S.wallet.full).catch(() => []);
+    if (!old.length) return false;
+    return new Promise((done) => {
+      const d = Sheet.open('mk-wake', { title: 'Old listings', body: h('div', { class: 'st' },
+        h('p', { class: 'lead', text: `Letting the market sell your cards again would put ${plural(old.length, 'old listing')} back on sale:` }),
+        h('ul', { class: 'mk-wake' }, old.slice(0, 8).map((x) => h('li', { text: `${x.card.character || 'Card #' + x.serial} · ${ethTxt(x.priceEth)}` }))),
+        h('div', { class: 'row' },
+          h('button', { type: 'button', class: 'btn primary', text: 'Take them off sale first', onclick: async () => {
+            d.close();
+            const ok = await Live.run('Take old listings off sale', (o) => L().cancelCards({ serials: old.map((x) => x.serial) }, o), 'Old listings are off sale');
+            done(ok ? false : null);
+          } }),
+          h('button', { type: 'button', class: 'btn', text: 'Keep them for sale', onclick: () => { d.close(); done(true); } }))) });
+      d.addEventListener('close', () => done(null), { once: true });
+    });
+  }
+  async function listCard(c, priceEth, days = 30) {
     if (!LIVE) { Store.update((s) => { s.listed[c.id] = +priceEth; }); toast(`${c.character} is for sale at ${ethTxt(priceEth)}`, 'good'); demoBuyer(c.id); return true; }
-    const ok = await Live.run(`List ${c.character}`, (o) => L().listCard({ serial: c.serial, priceEth: String(priceEth) }, o), `${c.character} is for sale at ${ethTxt(priceEth)}`);
+    const wake = await sleepingFirst(); if (wake == null) return false;
+    const ok = await Live.run(`List ${c.character}`, (o) => L().listCard({ serial: c.serial, priceEth: String(priceEth), days }, { ...o, wakeOk: wake }), `${c.character} is for sale at ${ethTxt(priceEth)}`);
     if (ok) Store.update((s) => { s.listed[c.id] = +priceEth; });
     return !!ok;
   }
@@ -155,14 +184,14 @@
     if (ok) Store.update((s) => { delete s.listed[c.id]; });
     return !!ok;
   }
-  async function listPacks(series, n, priceEth) {
+  async function listPacks(series, n, priceEth, days = 30) {
     if (!LIVE) {
       const held = (S.sealed[series] || 0) - demo.mine.packs.filter((p) => p.series === series).reduce((a, p) => a + p.amount, 0);
       if (n > held) { toast(`You have ${plural(held, 'pack')} to sell`, 'bad'); return false; }
       demo.mine.packs.push({ id: demo.nextPack++, seller: S.wallet.full, series, amount: n, pricePerEth: +priceEth });
       toast(`${plural(n, 'pack')} for sale`, 'good'); return true;
     }
-    return !!(await Live.run(`List ${plural(n, 'pack')}`, (o) => L().listPacks({ series, amount: n, pricePerEth: String(priceEth) }, o), `${plural(n, 'pack')} for sale`));
+    return !!(await Live.run(`List ${plural(n, 'pack')}`, (o) => L().listPacks({ series, amount: n, pricePerEth: String(priceEth), days }, o), `${plural(n, 'pack')} for sale`));
   }
   async function unlistPacks(p) {
     if (!LIVE) { demo.mine.packs = demo.mine.packs.filter((y) => y.id !== p.id); toast('Taken off sale', 'good'); return true; }
@@ -182,7 +211,7 @@
       demo.offers.push({ id: demo.nextOffer++, buyer: S.wallet.full, kind: o.kind, cardId: o.card?.id, serial: o.card?.serial, card: o.card, rule: o.rule, series: o.series, priceEth: +o.priceEth, qty: o.qty, expiry: nowS() + o.days * DAY_S });
       toast(`Offer made: ${ethTxt(o.priceEth)}${o.qty > 1 ? ' each' : ''}`, 'good'); return true;
     }
-    const p = { priceEth: String(o.priceEth), qty: o.qty, days: o.days, ...(o.kind === 'card' ? { serial: o.card.serial } : o.kind === 'packs' ? { series: o.series } : { rule: { fire: o.rule.fire, cardType: o.rule.cardType, character: o.rule.character, holo: o.rule.holo, minGrade: o.rule.minGrade } }) };
+    const p = { priceEth: String(o.priceEth), qty: o.qty, days: o.days, ...(o.kind === 'card' ? { serial: o.card.serial } : o.kind === 'packs' ? { series: o.series } : { rule: { fire: o.rule.fire, cardType: o.rule.cardType, character: o.rule.character, holo: o.rule.holo, minGrade: o.rule.minGrade, maxMoves: o.rule.maxMoves ?? null, cased: o.rule.cased || 'any' } }) };
     return !!(await Live.run('Make an offer', (w) => L().makeOffer(p, w), `Offer made: ${ethTxt(o.priceEth)}${o.qty > 1 ? ' each' : ''}`));
   }
   async function cancelOffer(o) {
@@ -200,7 +229,7 @@
       sold(o.kind === 'packs' ? { kind: 'packs', series: o.series, amount: n, priceEth: total, seller: S.wallet.full, buyer: o.buyer } : { kind: 'card', card: c, priceEth: total, seller: S.wallet.full, buyer: o.buyer });
       toast(`Sold for ${ethTxt(total)}`, 'good'); return true;
     }
-    return !!(await Live.run(`Sell for ${ethTxt(total)}`, (w) => L().acceptOffer({ id: o.id, kind: o.kind, serial: c?.serial, amount: n, price: o.price }, w), `Sold for ${ethTxt(total)}`));
+    return !!(await Live.run(`Sell ${o.kind === 'packs' ? plural(n, 'pack') : `${c.character} · ${kind(c)}`} for ${ethTxt(total)}`, (w) => L().acceptOffer({ id: o.id, kind: o.kind, serial: c?.serial, amount: n, price: o.price }, w), `Sold for ${ethTxt(total)}`));
   }
   // DEMO: someone buys what you list, a little later (so the whole flow can be tried)
   function demoBuyer(id) {
@@ -281,6 +310,36 @@
     return os.sort((a, b) => b.priceEth - a.priceEth)[0] || null;
   }
   const myMatches = (o) => (o.kind === 'packs' ? [] : S.cards.filter((c) => wants(o, c)).sort((a, b) => Store.trueOdds(a).n - Store.trueOdds(b).n));
+
+  // ---------- price guide: the lowest listed of the same type (Series, material, graded or not), from what's on sale
+  // now. A guide only: it warns, it never sets or changes a price (the listings it reads could be wrong).
+  const MARKET_CAP_ETH = 10; // the wallet gate's most for one market buy (guard.ts MARKET_MAX_ETH)
+  function floorFor(c) {
+    if (!c) return null;
+    const same = (data?.cards || []).filter((x) => !x.mine && x.card.material === c.material && (!c.series || x.card.series === c.series) && (x.card.grade != null) === (c.grade != null));
+    return same.length ? Math.min(...same.map((x) => x.priceEth)) : null;
+  }
+  const floorForRule = (r) => {
+    const same = (data?.cards || []).filter((x) => !x.mine && fits(r, x.card));
+    return same.length ? Math.min(...same.map((x) => x.priceEth)) : null;
+  };
+  const offerFloor = (o) => (o.kind === 'match' ? floorForRule(o.rule) : o.kind === 'card' ? floorFor(o.card || S.cards.find((x) => x.id === o.cardId || x.serial === o.serial)) : null);
+  /** Something to look at twice before listing at `t` ETH (or null): far under the lowest listed, or more than a buyer
+   *  can pay here in one go. */
+  function sellCheck(t, c) {
+    const p = +t, f = floorFor(c);
+    if (p > MARKET_CAP_ETH) return `Buyers can pay at most ${MARKET_CAP_ETH} ETH here in one go. At ${ethTxt(p)} nobody can buy it.`;
+    if (f && p < f * 0.5) return `That's less than half the lowest ${Store.MAT_LABEL[c.material] || ''} listed (${ethTxt(f)}). Check the decimals.`;
+    return null;
+  }
+  /** How an offer compares with what's listed: "62% under the lowest listed" (or null). */
+  function underFloor(o) {
+    const f = offerFloor(o);
+    if (!f || o.priceEth >= f) return null;
+    return `${Math.round((1 - o.priceEth / f) * 100)}% under the lowest listed`;
+  }
+  // an offer far under what's listed (under a quarter) doesn't light the Market badge or "Sell yours" first
+  const lowball = (o) => { const f = offerFloor(o); return !!f && o.priceEth < f * 0.25; };
   function offerWhat(o) {
     if (o.kind === 'packs') return `Series ${o.series} packs`;
     if (o.kind === 'match') return ruleText(o.rule);
@@ -295,6 +354,7 @@
     return h('div', { class: 'mk-offer' + (have && !o.mine ? ' can' : '') }, pic,
       h('div', { class: 'mk-pinfo' }, h('b', { text: offerWhat(o) }),
         h('span', { class: 'mk-oprice', text: `${ethTxt(o.priceEth)}${o.qty > 1 ? ` each · ${o.qty} wanted` : ''}` }),
+        underFloor(o) ? h('span', { class: 'mk-under', text: underFloor(o) }) : null,
         h('span', { class: 'mk-seller', text: `${o.mine ? 'Your offer' : Fun.label(o.buyer)} · ${ends(o.expiry)}` })),
       o.mine ? h('button', { type: 'button', class: 'btn small', text: 'Cancel', onclick: async () => { if (await cancelOffer(o)) refresh(); } })
         : have ? h('button', { type: 'button', class: 'btn small primary', text: `Sell yours · ${ethTxt(o.priceEth)}`, onclick: () => acceptSheet(o) }) : null);
@@ -316,14 +376,26 @@
       put(body, h('p', { class: 'mk-big' }, `Series ${o.series} packs at `, h('b', { text: ethTxt(o.priceEth) }), ' each'), st.el, h('p', { class: 'muted' }, 'You get about ', tot), h('div', { class: 'row' }, go));
     } else {
       const cs = myMatches(o);
-      let pick = cs[0];
+      // never pre-pick a card you have listed for more than this offer: you choose
+      let pick = cs.find((c) => S.listed[c.id] == null || S.listed[c.id] <= o.priceEth) || null;
       const grid = h('div', { class: 'mk-grid' });
       const paint = () => put(grid, cs.map((c) => { const b = tile(c, null, () => { pick = c; paint(); }, S.listed[c.id] != null ? `For sale · ${ethTxt(S.listed[c.id])}` : ''); b.setAttribute('aria-pressed', String(c === pick)); return b; }));
       paint();
-      const go = h('button', { type: 'button', class: 'btn primary', text: `Sell for ${ethTxt(o.priceEth)}`, onclick: () => need(async () => { if (!pick) return; go.disabled = true; if (await accept(o, pick)) { Sheet.close('accept'); Sheet.close('card'); refresh(); } else go.disabled = false; }) });
+      const warn = h('p', { class: 'mk-warn', hidden: true });
+      let warned = false;
+      const go = h('button', { type: 'button', class: 'btn primary', text: `Sell for ${ethTxt(o.priceEth)}`, onclick: () => need(async () => {
+        if (!pick) { toast('Pick which card to sell', 'bad'); return; }
+        const f = floorFor(pick);
+        if (!warned && f && o.priceEth < f * 0.5) { // a second look: far under what that card lists for
+          warned = true; warn.hidden = false; warn.textContent = `This offer is ${Math.round((1 - o.priceEth / f) * 100)}% under the lowest listed for that kind of card (${ethTxt(f)}). Tap again to sell anyway.`;
+          go.textContent = `Sell anyway for ${ethTxt(o.priceEth)}`; return;
+        }
+        go.disabled = true; if (await accept(o, pick)) { Sheet.close('accept'); Sheet.close('card'); refresh(); } else go.disabled = false;
+      }) });
       put(body, h('p', { class: 'mk-big' }, offerWhat(o), ': ', h('b', { text: ethTxt(o.priceEth) })),
+        o.kind === 'match' ? h('p', { class: 'muted small', text: 'An offer for any card like this: the price is the same whichever you pick.' }) : null,
         cs.length > 1 ? h('p', { class: 'muted', text: 'Pick which of yours to sell.' }) : null, grid,
-        h('p', { class: 'muted', text: `You get about ${ethTxt(net(o.priceEth))}` }), h('div', { class: 'row' }, go));
+        h('p', { class: 'muted', text: `You get about ${ethTxt(net(o.priceEth))}` }), warn, h('div', { class: 'row' }, go));
     }
     Sheet.open('accept', { title: 'Sell to this offer', body });
   }
@@ -396,10 +468,25 @@
         const free = w ? (BigInt(w.balance) - BigInt(w.committed)) : 0n;
         put(extra,
           +owed > 0 ? h('p', { class: 'mk-owed' }, `${ethTxt(owed)} from a sale is waiting for you. `, h('button', { type: 'button', class: 'btn small primary', text: 'Collect', onclick: () => Live.run('Collect', (o) => L().withdrawOwed(o), 'Collected').then(refresh) })) : null,
-          w && BigInt(w.balance) > 0n ? h('p', { class: 'mk-owed' }, `WETH in your wallet: ${ethTxt(Number(w.balance) / 1e18)}${BigInt(w.committed) > 0n ? ` (${ethTxt(Number(w.committed) / 1e18)} for your offers)` : ''}. `,
+          w && BigInt(w.balance) > 0n ? h('p', { class: 'mk-owed' }, `WETH in your wallet: ${ethTxt(Number(w.balance) / 1e18)}${BigInt(w.committed) > 0n ? ` (your open offers could take up to ${ethTxt(Number(w.committed) / 1e18)})` : ''}. `,
             free > 0n ? h('button', { type: 'button', class: 'btn small', text: `Turn ${ethTxt(Number(free) / 1e18)} back into ETH`, onclick: () => Live.run('Unwrap', (o) => L().unwrapWeth({ amount: free.toString() }, o), 'Done').then(refresh) }) : null) : null);
       }, () => {});
+      // offers that can't be accepted now (their WETH isn't there) but come back the moment it is; listings asleep
+      // because the market is off for your cards (they'd come back if you switch it on); and the switch itself
+      Promise.all([L().myOffers(S.wallet.full).catch(() => []), L().sleepingListings(S.wallet.full).catch(() => []), L().marketApproved(S.wallet.full).catch(() => null)]).then(([mo, asleep, ap]) => {
+        const old = mo.filter((o) => !o.live);
+        put(safety,
+          old.length ? [h('h3', { text: 'Offers waiting for WETH' }), h('p', { class: 'muted small', text: 'These can\u2019t be accepted now, but they come back the moment your wallet has the WETH again. Cancel any you don\u2019t want.' }),
+            h('ul', { class: 'mk-mine' }, old.map((o) => h('li', {}, h('span', { text: `${o.kind === 'packs' ? `Series ${o.series} packs` : o.kind === 'card' ? `Card #${o.serial}` : 'Any card like one'} · ${ethTxt(o.priceEth)}${o.qty > 1 ? ` each, ${o.qty} wanted` : ''}` }),
+              h('button', { type: 'button', class: 'btn small', text: 'Cancel', onclick: async () => { if (await cancelOffer(o)) refresh(); } }))))] : null,
+          asleep.length ? [h('h3', { text: 'Listings asleep' }), h('p', { class: 'muted small', text: 'The market is off for your cards, so these can\u2019t be bought. Switching it on again would put them back on sale.' }),
+            h('ul', { class: 'mk-mine' }, asleep.map((x) => h('li', {}, h('span', { text: `${x.card.character || 'Card #' + x.serial} · ${ethTxt(x.priceEth)}` }),
+              h('button', { type: 'button', class: 'btn small', text: 'Take off sale', onclick: () => Live.run('Take off sale', (o) => L().cancelCard({ serial: x.serial }, o), 'Taken off sale').then(refresh) }))))] : null,
+          ap ? h('div', { class: 'mk-switch' }, h('span', { text: ap.cards || ap.packs ? 'The market can move your cards when someone buys them or you accept an offer: On' : 'The market can move your cards: Off' }),
+            ap.cards || ap.packs ? h('button', { type: 'button', class: 'btn small', text: 'Turn off', onclick: () => Live.run('Turn the market off', (o) => L().revokeMarket(o), 'The market is off for your wallet').then(refresh) }) : null) : null);
+      }, () => {});
     }
+    const safety = h('div', { class: 'mk-safety' });
     return [
       extra,
       h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', text: 'Sell packs', onclick: sellPacks }), h('button', { type: 'button', class: 'btn', text: 'Sell a card', onclick: () => { Sheet.close('market'); Stations.open('cards'); toast('Open a card, then tap Sell', 'good'); } }),
@@ -412,6 +499,8 @@
       h('h3', { text: 'Your offers' }),
       offers.length ? h('div', { class: 'mk-offers' }, offers.map(offerRow)) : h('p', { class: 'muted', text: 'None.' }),
       cards.length + packs.length + offers.length > 1 ? h('button', { type: 'button', class: 'btn', text: 'Take everything off sale and cancel my offers', onclick: async () => { if (await cancelAll()) refresh(); } }) : null,
+      safety,
+      h('p', { class: 'mk-promise', text: 'We never ask you to sign a message. If a site that looks like us does, close it.' }),
     ];
   }
 
@@ -451,9 +540,14 @@
     const get = h('p', { class: 'muted small mk-get' });
     const upd = () => { const t = input.value.trim(); get.textContent = okPrice(t) ? `You get about ${ethTxt(net(t))} ${usd(net(t))}` : ' '; };
     input.addEventListener('input', upd); upd();
+    const warn = h('p', { class: 'mk-warn', hidden: true });
+    let okFor = null; // the price already looked at twice
+    input.addEventListener('input', () => { okFor = null; warn.hidden = true; go.textContent = listed != null ? 'Change price' : 'List for sale'; });
     const go = h('button', { type: 'button', class: 'btn primary', text: listed != null ? 'Change price' : 'List for sale', onclick: () => need(async () => {
       const t = input.value.trim();
-      if (!okPrice(t)) { toast('Enter a price in ETH, like 0.01', 'bad'); input.focus(); return; }
+      if (!okPrice(t)) { toast('Enter a price in ETH, like 0.01 (up to 6 decimals)', 'bad'); input.focus(); return; }
+      const w = sellCheck(t, c);
+      if (w && okFor !== t) { okFor = t; warn.hidden = false; warn.textContent = `${w} Tap again to list at ${ethTxt(+t)}.`; go.textContent = 'List anyway'; return; }
       go.disabled = true;
       if (await listCard(c, +t)) { Sheet.close('sell'); window.Stations?.openCard(c.id); } else go.disabled = false;
     }) });
@@ -462,8 +556,9 @@
         h('div', {}, h('h3', { text: c.character }), h('p', { class: 'muted', text: kind(c) }), listed != null ? h('p', { class: 'mk-big' }, 'For sale at ', h('b', { text: ethTxt(listed) })) : null)),
       best ? h('p', { class: 'mk-owed' }, `Someone offers ${ethTxt(best.priceEth)} for it. `, h('button', { type: 'button', class: 'btn small primary', text: 'Accept', onclick: () => { Sheet.close('sell'); acceptSheet(best); } })) : null,
       h('label', { class: 'mk-field' }, h('span', { text: 'Price (ETH)' }), input), get,
+      floorFor(c) ? h('p', { class: 'muted small', text: `Lowest listed like it: ${ethTxt(floorFor(c))}` }) : null, warn,
       h('div', { class: 'row' }, go, listed != null ? h('button', { type: 'button', class: 'btn', text: 'Take off sale', onclick: async () => { if (await unlistCard(c)) { Sheet.close('sell'); window.Stations?.openCard(c.id); } } }) : null),
-      h('p', { class: 'muted small', text: 'It stays in your wallet until someone buys it. You can change the price or take it off sale any time.' }),
+      h('p', { class: 'muted small', text: 'It stays in your wallet until someone buys it, for up to 30 days. You can change the price or take it off sale any time; if it moves, is cased or is graded, the listing ends.' }),
       LIVE ? null : h('p', { class: 'demo-line', text: 'Demo: a buyer turns up in a little while' }));
     Sheet.open('sell', { title: listed != null ? 'For sale' : 'Sell', body });
     setTimeout(() => input.focus({ preventScroll: true }), 50);
@@ -480,7 +575,8 @@
     const input = h('input', { type: 'text', inputmode: 'decimal', class: 'mk-input', placeholder: '0.002', 'aria-label': 'Price per pack in ETH' });
     const go = h('button', { type: 'button', class: 'btn primary', text: 'List for sale', onclick: () => need(async () => {
       const t = input.value.trim();
-      if (!okPrice(t)) { toast('Enter a price in ETH, like 0.002', 'bad'); input.focus(); return; }
+      if (!okPrice(t)) { toast('Enter a price in ETH, like 0.002 (up to 6 decimals)', 'bad'); input.focus(); return; }
+      if (+t * n > MARKET_CAP_ETH) { toast(`Buyers can pay at most ${MARKET_CAP_ETH} ETH here in one go. Lower the price or list fewer.`, 'bad'); return; }
       go.disabled = true;
       if (await listPacks(series, n, +t)) { Sheet.close('sellpacks'); tab = 'mine'; if (document.getElementById('sheet-market')?.open) refresh(); else Fun.open.market({ tab: 'mine' }); } else go.disabled = false;
     }) });
@@ -496,13 +592,14 @@
   Fun.offersForYou = () => {
     if (!S.wallet.connected) return 0;
     const os = (data?.offers || (LIVE ? S.offersSeen : demo?.offers) || []).filter((o) => o.qty > 0 && !mine(o.buyer) && (!o.expiry || o.expiry > nowS()));
-    return os.filter((o) => (o.kind === 'packs' ? (S.sealed[o.series] || 0) > 0 : myMatches(o).length > 0)).length;
+    return os.filter((o) => !lowball(o) && (o.kind === 'packs' ? (S.sealed[o.series] || 0) > 0 : myMatches(o).length > 0)).length;
   };
   // the card detail (screens.js): "Sell" or "For sale · 0.02 ETH", and its best offer with Accept
   Fun.sellLabel = (c) => (S.listed[c.id] != null ? `For sale · ${ethTxt(S.listed[c.id])}` : 'Sell');
   Fun.offerLine = (c) => {
     const o = bestFor(c); if (!o) return null;
-    return h('p', { class: 'mk-owed mk-offerline' }, 'Offer: ', h('b', { text: ethTxt(o.priceEth) }), ` from ${Fun.label(o.buyer)} `,
+    const u = underFloor(o);
+    return h('p', { class: 'mk-owed mk-offerline' }, o.kind === 'match' ? 'Offer for any card like it: ' : 'Offer: ', h('b', { text: ethTxt(o.priceEth) }), u ? ` (${u})` : '', ` from ${Fun.label(o.buyer)} `,
       h('button', { type: 'button', class: 'btn small primary', text: 'Accept', 'data-key': 'accept', onclick: () => acceptSheet(o) }));
   };
   // live: your listings and the offers are read when the wallet connects (the detail's lines)

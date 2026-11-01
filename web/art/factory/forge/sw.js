@@ -2,7 +2,8 @@
    - The page, code and styles: the network first (every visit gets the newest build), the saved copy when offline.
    - Pictures, fonts and sounds: the saved copy at once, refreshed in the background; at most MAX of them.
    - Never touched: other sites (RPCs, IPFS, wallets), /api/, anything but GET, and partial (range) requests.
-   Nothing here holds wallet data: the chain is always read live. */
+   Nothing here holds wallet data: the chain is always read live. Market listings, offers, prices and balances come
+   from /api/ and the chain, never from here, so a saved page can never show a sold card as for sale. */
 const SHELL = 'omni-shell-v1', MEDIA = 'omni-media-v1', MAX = 400;
 const MEDIA_RE = /\.(webp|png|jpe?g|svg|woff2?|mp3|ogg)$/i;
 

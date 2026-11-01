@@ -10,7 +10,7 @@
 // Nothing in this module sends a transaction or asks for a signature: it connects, reads, and switches chain.
 
 import {
-  createPublicClient, createWalletClient, defineChain, erc20Abi, formatUnits, http, BaseError, ChainMismatchError, InsufficientFundsError,
+  createPublicClient, createWalletClient, custom, defineChain, erc20Abi, formatUnits, http, BaseError, ChainMismatchError, InsufficientFundsError,
   UserRejectedRequestError, type Account, type Address, type PublicClient, type Transport, type WalletClient,
 } from "viem";
 import {
@@ -273,10 +273,43 @@ export function getPublicClient(): PublicClient {
   return (pub ??= createPublicClient({ chain: robinhood, transport: http(READ_RPC, batch), ...multicall }) as PublicClient);
 }
 
+/** What the site never asks a wallet for: any signature (messages, typed data, permits, raw transactions), batches and
+ *  permissions (wallet_sendCalls, wallet_grantPermissions) and EIP-7702 authorizations. Off-chain signatures are the
+ *  main tool of wallet drainers; the site doesn't need one, so none can ever leave through it. */
+export const NEVER_ASK = /sign|authoriz|sendcalls|preparecalls|permission|wallet_invoke/i;
+export class NeverAsked extends Error {
+  constructor(method: string) { super("Blocked for your safety: this site never asks your wallet to sign anything. Nothing was sent."); this.name = "NeverAsked"; this.method = method; }
+  method: string;
+}
+/** The wallet client every transaction goes through, with its requests checked: a signing request, a batch or an
+ *  authorization is refused before the wallet sees it, and so is a transaction carrying an EIP-7702 authorization
+ *  list. Plain transactions (eth_sendTransaction, already checked by guard.ts) and chain switching pass. */
+function guarded(c: WalletClient): WalletClient {
+  const request = ((args: { method: string; params?: unknown }) => {
+    const m = String(args?.method ?? "");
+    if (NEVER_ASK.test(m)) throw new NeverAsked(m);
+    if (m === "eth_sendTransaction") {
+      const t = (Array.isArray(args.params) ? args.params[0] : null) as { authorizationList?: unknown[]; type?: string } | null;
+      if (t && (t.authorizationList?.length || t.type === "0x4")) throw new NeverAsked("authorizationList");
+    }
+    return c.request(args as never);
+  }) as WalletClient["request"];
+  return createWalletClient({ account: c.account, chain: c.chain ?? robinhood, transport: custom({ request }) }) as WalletClient;
+}
+
 /** The connected wallet, on Robinhood Chain (for the live contract calls later). Throws if not connected. */
 export async function getWalletClient(): Promise<WalletClient> {
-  if (localSigner) return createWalletClient({ account: localSigner, chain: robinhood, transport: http(READ_RPC) });
-  return (await wagmiGetWalletClient((await ready()).config, { chainId: robinhood.id })) as WalletClient;
+  if (localSigner) return guarded(createWalletClient({ account: localSigner, chain: robinhood, transport: http(READ_RPC) }));
+  return guarded((await wagmiGetWalletClient((await ready()).config, { chainId: robinhood.id })) as WalletClient);
+}
+
+/** Is `who` an EIP-7702 delegated account (its code is 0xef0100 + an address)? Returns the contract it runs, or null.
+ *  Most delegations seen in the wild point to "sweeper" contracts that empty the wallet: the site warns. */
+export async function delegatedTo(who: Address): Promise<Address | null> {
+  try {
+    const code = await getPublicClient().getCode({ address: who });
+    return code && /^0xef0100[0-9a-f]{40}$/i.test(code) ? (`0x${code.slice(8)}` as Address) : null;
+  } catch { return null; }
 }
 
 /** An ERC-20 balance on Robinhood Chain (raw units). */
@@ -307,6 +340,9 @@ const is = (e: unknown, name: string, code?: number) => e instanceof BaseError
   ? !!e.walk((x) => (x as Error)?.name === name || (code !== undefined && (x as { code?: unknown })?.code === code))
   : (e as Error)?.name === name || (code !== undefined && hasCode(e, code));
 
+/** A request the site never makes was stopped before the wallet (NeverAsked, maybe wrapped by viem). */
+export const isNeverAsked = (e: unknown): boolean => is(e, "NeverAsked") || /never asks your wallet to sign/.test(String((e as Error)?.message ?? ""));
+
 /** The wallet or node said there isn't enough ETH (for the value sent plus the network fee). */
 export const isNoFunds = (e: unknown): boolean => is(e, InsufficientFundsError.name);
 
@@ -320,6 +356,7 @@ export function friendly(e: unknown): string {
   if (is(e, InsufficientFundsError.name)) return `Not enough ETH on ${robinhood.name} to pay the network fee.`;
   if (is(e, "ConnectorNotConnectedError") || is(e, "ConnectorAccountNotFoundError") || hasCode(e, 4100)) return "Connect your wallet first.";
   if (hasCode(e, -32002)) return "Your wallet already has a request open. Check the wallet window.";
+  if (isNeverAsked(e)) return new NeverAsked("").message;
   // the site's own errors (a plain Error or TxError we threw, already in plain words) keep their message
   if (ours(e)) return (e as Error).message;
   // anything else: never the raw message on screen (it's in the console for whoever's debugging)
