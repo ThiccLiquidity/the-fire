@@ -17,8 +17,14 @@ offers you can accept now.
   again would wake the ones that haven't ended, so the site lists them first: **Take them off sale first** or **Keep
   them for sale**.
 - **Sell packs:** Market › Mine › **Sell packs**: the Series, how many, the price each.
-- **Buy:** Menu › **Market**. Cards (filter by type, sort by price or grade; tap one to see it big) and Packs (pick how
-  many). One confirmation in the wallet; the card or packs arrive in the same transaction.
+- **Buy:** Market › Cards: a search box that understands card words ("fire pda 9", "gold", "pigeon", "s7", "holo",
+  "ungraded", "missing"; each word it knows becomes a filter chip, the rest searches names); **Filter** (Series, type,
+  character, holo, grade, cased, wear for ungraded cards, a top price, and "only cards missing from my binder"; each
+  value shows how many are for sale and the lowest price, choices in one filter are OR, filters together are AND, with a
+  live "Show N cards"); All / Graded / Ungraded; sorts (newly listed, price both ways, best grade, lowest print #, least
+  worn; remembered per visitor). The link keeps the filters. 40 at a time. Nothing matching offers a next step: drop a
+  filter (with how many it would show) or ask for one with an offer. An empty binder slot opens the market filtered to
+  that card. Packs: pick how many. One confirmation in the wallet; the card or packs arrive in the same transaction.
 - **Offers:** what people want, best first; the ones you can fill are lit, with **Sell yours**. **Make an offer**:
   - on one card (a listed card › **Make offer**), or "Or any card like this";
   - on any card that matches: Series, type, character, holo (none, frame, picture, full, any holo), lowest grade, most

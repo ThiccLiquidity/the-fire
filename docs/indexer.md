@@ -11,7 +11,17 @@ What it serves (through the site's `/api/idx/...`, so the browser only ever talk
 - `/pulls?fire=&min=&limit=`: the newest pulls (for the feed), with who pulled them.
 - `/board/<Series>`: who fed the fire (packs bought per wallet).
 - `/burners`: the biggest burners.
-- `/market`: what's listed on the market (docs/market.md); `/sales`: the newest market sales.
+- `/market`: what can be bought on the market now (docs/market.md): card listings whose card is still with its seller
+  (unmoved and unchanged), not ended, with the market allowed to move the seller's cards (`market_approval`), each with
+  the card's traits (Series, type, character, holo, grade, cased, moves); packs the seller still holds; offers not
+  expired. The site still re-reads a listing from the chain before any buy.
+- `/market/stats`: per Series, type and graded or not, how many are listed and the lowest price; per Series, type,
+  character, holo look and grade, the median of the clean card sales in the last 60 days and how many it's based on
+  (no median under 3 sales). A sale is flagged `wash` (left out of the numbers, still in Activity, never shown as a
+  label) when the same wallet is on both sides or the card went A to B and back to A within 30 days.
+- `/sales`: the newest market sales. `/status` (Ponder's own): the last block indexed; the site shows "Live prices may
+  be a few minutes out of date" when it's more than 2 minutes behind, and "Robinhood Chain is paused" when the chain's
+  newest block is more than 2 minutes old.
 
 Tested against the full local rehearsal (a whole Series: buys, opens, deals, cases, grades): every wallet's card count,
 grades and cases matched the chain exactly.

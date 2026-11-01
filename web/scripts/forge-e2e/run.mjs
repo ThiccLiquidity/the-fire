@@ -625,6 +625,24 @@ try {
     await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
     const f = join(SHOTS, `16-demo-${name}.png`); await p.screenshot({ path: f }); console.log(`  shot ${f}`);
 
+    // finding cards (market.js): search words become filters, counts per value, a link keeps the filters, gaps lead there
+    if (name === "desktop") {
+      await p.evaluate(() => Fun.go("market")); await p.locator("#sheet-market .mk-search").waitFor();
+      const total = await p.evaluate(() => +document.querySelector("#sheet-market .mk-count").textContent.match(/\d+/)[0]);
+      await p.fill("#sheet-market .mk-search", "fire holo"); await p.press("#sheet-market .mk-search", "Enter");
+      const chips = await p.locator("#sheet-market .mk-chip:not(.clear)").allInnerTexts();
+      const after = await p.evaluate(() => +document.querySelector("#sheet-market .mk-count").textContent.match(/\d+/)[0]);
+      check(chips.map((t) => t.replace(/\s*×$/, "")).join(",") === "Fire,Any holo" && after <= total && /mf=/.test(await p.evaluate(() => location.search)),
+        `market search: "fire holo" became the chips Fire and Any holo (${after} of ${total} cards), kept in the link`);
+      await p.click("#sheet-market .mk-filterb"); await p.locator("#sheet-mkfilter[open]").waitFor();
+      const vals = await p.locator("#sheet-mkfilter .mk-fv small").allInnerTexts();
+      check(vals.some((t) => /^\d+ · from \d/.test(t)), `the filter sheet: each value with its count and lowest price (${vals.slice(0, 3).join(" | ")})`);
+      await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
+      await p.evaluate(() => Fun.go("market", { filter: { type: ["gold"], graded: "graded", gradeMin: 10 } })); await p.waitForTimeout(300);
+      check(await p.locator("#sheet-market .mk-empty button:has-text('make an offer')").count() === 1, "nothing matches: a next step (drop a filter, or ask for one with an offer)");
+      await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
+    }
+
     // a profile (profile.js): the demo keeps it in this browser. Edit from the wallet, pick a card, frame it, save
     await p.click("#walletBtn"); await p.waitForTimeout(400);
     await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));

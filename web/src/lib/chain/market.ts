@@ -159,6 +159,49 @@ export async function listings(): Promise<{ cards: CardOffer[]; packs: PackOffer
   return { cards: cards.sort(byPrice()), packs: packs.sort(byPrice()), offers: offers.sort(byPrice(true)) };
 }
 
+/** How fresh the market's numbers are. `indexer`: seconds our indexer is behind the chain (null: no indexer, the site
+ *  reads the chain itself); `chainPaused`: the chain's newest block is more than 2 minutes old (Robinhood Chain stopped
+ *  making blocks; nothing sent goes through until it's back). */
+export async function marketHealth(): Promise<{ indexer: number | null; chainPaused: boolean }> {
+  const head = await pub().getBlock().catch(() => null);
+  const chainAt = head ? Number(head.timestamp) : 0, now = Math.floor(Date.now() / 1000);
+  const chainPaused = !!head && now - chainAt > 120 && now - chainAt < 30 * 86400; // a device clock days off isn't a pause
+  let indexer: number | null = null;
+  if (indexerUp) {
+    try {
+      const r = await fetch("/api/idx/status", { signal: AbortSignal.timeout(5000) });
+      if (r.ok) {
+        const j = (await r.json()) as Record<string, { block?: { timestamp?: number } }>;
+        const t = Object.values(j)[0]?.block?.timestamp;
+        if (t) indexer = Math.max(0, (chainAt || now) - t);
+      }
+    } catch { /* no indexer: null */ }
+  }
+  return { indexer, chainPaused };
+}
+
+/** Price guide numbers from our indexer (prices only, null without it). `groups`: per Series, type and graded or not:
+ *  how many are listed and the lowest price. `sold`: per Series, type, character, holo look and grade (0 = ungraded):
+ *  the median of the clean sales in the last 60 days (wash trades left out) and how many it's based on; no median
+ *  under 3 sales. */
+export type GroupStat = { fire: number; cardType: number; graded: boolean; listed: number; floorEth: string };
+export type SoldStat = { fire: number; cardType: number; character: number; holo: "none" | "frame" | "picture" | "full"; grade: number; sales: number; medianEth: string | null };
+export async function marketStats(): Promise<{ groups: GroupStat[]; sold: SoldStat[] } | null> {
+  if (!marketOn() || !indexerUp) return null;
+  try {
+    const r = await fetch("/api/idx/market/stats", { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return null;
+    type G = { fire: number; cardType: number; graded: boolean; listed: number; floor: string };
+    type Sx = { fire: number; cardType: number; character: number; holoFrame: boolean; holoPicture: boolean; grade: number; sales: number; median: string | null };
+    const j = (await r.json()) as { groups: G[]; sold: Sx[] };
+    return {
+      groups: j.groups.map((g) => ({ fire: g.fire, cardType: g.cardType, graded: g.graded, listed: g.listed, floorEth: eth(BigInt(g.floor)) })),
+      sold: j.sold.map((x) => ({ fire: x.fire, cardType: x.cardType, character: x.character, holo: x.holoFrame && x.holoPicture ? "full" : x.holoFrame ? "frame" : x.holoPicture ? "picture" : "none",
+        grade: x.grade, sales: x.sales, medianEth: x.median ? eth(BigInt(x.median)) : null })),
+    };
+  } catch { return null; }
+}
+
 /** Does a card meet a match offer? (FireMarket.matches, read on the chain) */
 export const matchesOffer = (o: BuyOffer, serial: number): Promise<boolean> =>
   o.kind === "card" ? Promise.resolve(o.serial === serial) : o.kind === "match" ? read<boolean>("FireMarket", marketAbi, "matches", [matchKey(o.rule!), BigInt(serial)]).catch(() => false) : Promise.resolve(false);

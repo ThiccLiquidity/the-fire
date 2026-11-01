@@ -244,11 +244,14 @@
   }
 
   // ---------- the market screen
-  let tab = 'cards', sort = 'low', mat = 'all', root = null, data = null, act = null;
+  let tab = 'cards', root = null, data = null, act = null, health = null, shown = 40;
+  const SORT_KEY = 'omni.mkSort';
+  let sort = (() => { try { return localStorage.getItem(SORT_KEY) || ''; } catch { return ''; } })(); // '' = the default for the view
   const TABS = [['cards', 'Cards'], ['packs', 'Packs'], ['offers', 'Offers'], ['activity', 'Activity'], ['mine', 'Mine']];
   const MATS = ['all', 'paper', 'wood', 'fire', 'charcoal', 'gold', 'fullart'];
   function refresh() {
     listings().then((d) => { data = d; draw(); }, (e) => { console.warn('market', e); data = null; draw('Couldn’t load the market. Try again.'); });
+    if (LIVE) L().marketHealth?.().then((x) => { health = x; draw(); }, () => {});
     if (tab === 'activity') act = null;
     draw();
   }
@@ -265,22 +268,197 @@
     h('div', { class: 'cwrap' }, face(c)), h('span', { class: 'mk-name', text: c.character }), h('span', { class: 'mk-kind', text: kind(c) }),
     price != null ? h('b', { class: 'mk-price', text: ethTxt(price) }) : null, sub ? h('span', { class: 'mk-sub', text: sub }) : null);
 
+  // ---------- finding cards: filters (each value with its count and lowest price), chips, words, sorts, pages
+  // f: what's filtered. Inside one filter the choices are OR (Fire or Gold); different filters are AND.
+  const F0 = () => ({ series: [], type: [], char: [], holo: [], graded: 'all', gradeMin: 0, cased: 'any', wear: [], max: '', missing: false, text: '' });
+  let f = F0();
+  const HOLO_OPTS = [['anyHolo', 'Any holo'], ['none', 'No holo'], ['frame', 'Holo frame'], ['picture', 'Holo picture'], ['full', 'Full holo']];
+  const holoIs = (c, v) => (v === 'anyHolo' ? holoOf(c) !== 'none' : holoOf(c) === v);
+  const WEAR = [['fresh', 'Fresh'], ['light', 'Light wear'], ['played', 'Played'], ['heavy', 'Heavy wear']];
+  const SORTS = [['new', 'Newly listed'], ['low', 'Price: low to high'], ['high', 'Price: high to low'], ['grade', 'Best grade'], ['print', 'Lowest print #'], ['worn', 'Least worn']];
+  const printOf = (c) => +(Store.printNo?.(c) ?? c.edition ?? 0) || 0;
+  // ungraded cards: a wear band from how they've aged and moved (the grade they'd likely get now); graded: none
+  const expGrade = (c) => { try { return Wear.avg(Wear.odds(Wear.ageSecOf(c), c.moves || 0)); } catch { return 7; } };
+  const wearOf = (c) => { if (c.grade != null) return null; const g = expGrade(c); return g >= 8.3 ? 'fresh' : g >= 7 ? 'light' : g >= 5 ? 'played' : 'heavy'; };
+  const owned = () => new Set(S.cards.map((c) => `${c.series}|${c.character}|${c.material}`));
+  const filterCount = () => f.series.length + f.type.length + f.char.length + f.holo.length + f.wear.length + (f.graded !== 'all') + (f.gradeMin > 0) + (f.cased !== 'any') + !!f.max + f.missing + !!f.text;
+  /** Does listing x pass every filter (but `skip`: counting a filter's own values ignores that filter)? */
+  function pass(x, skip, have) {
+    const c = x.card;
+    if (skip !== 'series' && f.series.length && !f.series.includes(c.series)) return false;
+    if (skip !== 'type' && f.type.length && !f.type.includes(c.material)) return false;
+    if (skip !== 'char' && f.char.length && !f.char.includes(c.character)) return false;
+    if (skip !== 'holo' && f.holo.length && !f.holo.some((v) => holoIs(c, v))) return false;
+    if (skip !== 'graded' && f.graded === 'graded' && c.grade == null) return false;
+    if (skip !== 'graded' && f.graded === 'ungraded' && c.grade != null) return false;
+    if (skip !== 'gradeMin' && f.gradeMin && !(c.grade >= f.gradeMin)) return false;
+    if (skip !== 'cased' && f.cased === 'cased' && !c.cased) return false;
+    if (skip !== 'cased' && f.cased === 'uncased' && c.cased) return false;
+    if (skip !== 'wear' && f.wear.length && !f.wear.includes(wearOf(c))) return false;
+    if (skip !== 'max' && f.max && !(x.priceEth <= +f.max)) return false;
+    if (skip !== 'missing' && f.missing && have.has(`${c.series}|${c.character}|${c.material}`)) return false;
+    if (skip !== 'text' && f.text && !`${c.character} ${c.category || ''} #${printOf(c)} ${c.serial ?? ''}`.toLowerCase().includes(f.text.toLowerCase())) return false;
+    return true;
+  }
+  /** A filter's values with how many listings each would show and the lowest price, given the other filters. */
+  function facet(all, key, values, pick, have) {
+    const pool = all.filter((x) => pass(x, key, have)), is = pick.length > 1 ? pick : (c, v) => pick(c) === v;
+    return values.map(([v, label]) => { const xs = pool.filter((x) => is(x.card, v)); return { v, label, n: xs.length, floor: xs.length ? Math.min(...xs.map((x) => x.priceEth)) : null }; });
+  }
+  // the search box: each word it knows becomes a filter (a chip); anything else searches names
+  function parseWords(q) {
+    const all = (data?.cards || []).filter((x) => !x.mine), chars = [...new Set(all.map((x) => x.card.character))];
+    const words = String(q).toLowerCase().replace(/full art/g, 'fullart').replace(/full holo/g, 'fullholo').split(/\s+/).filter(Boolean);
+    const rest = [];
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i], next = words[i + 1];
+      const mat = Object.entries(Store.MAT_LABEL).find(([k, l]) => w === k || w === l.toLowerCase().replace(' ', ''))?.[0];
+      if (mat && !f.type.includes(mat)) { f.type.push(mat); continue; }
+      const ch = chars.find((c) => c.toLowerCase() === w); if (ch) { if (!f.char.includes(ch)) f.char.push(ch); continue; }
+      if (/^(s|series)(\d+)$/.test(w) || (w === 'series' && /^\d+$/.test(next || ''))) { const n = +(w.match(/\d+/)?.[0] || next); if (w === 'series') i++; if (!f.series.includes(n)) f.series.push(n); continue; }
+      if (/^pda(\d+)\+?$/.test(w) || (w === 'pda' && /^\d+\+?$/.test(next || ''))) { const n = +(w.match(/\d+/)?.[0] || parseInt(next, 10)); if (w === 'pda') i++; f.gradeMin = Math.max(1, Math.min(10, n)); f.graded = 'graded'; continue; }
+      if (/^\d{1,2}\+$/.test(w)) { f.gradeMin = Math.min(10, parseInt(w, 10)); f.graded = 'graded'; continue; }
+      if (w === 'graded' || w === 'slab' || w === 'slabbed') { f.graded = 'graded'; continue; }
+      if (w === 'ungraded' || w === 'raw') { f.graded = 'ungraded'; continue; }
+      if (w === 'cased') { f.cased = 'cased'; continue; }
+      if (w === 'holo') { if (!f.holo.includes('anyHolo')) f.holo.push('anyHolo'); continue; }
+      if (w === 'fullholo') { if (!f.holo.includes('full')) f.holo.push('full'); continue; }
+      if (w === 'frame' || w === 'picture') { if (!f.holo.includes(w)) f.holo.push(w); continue; }
+      if (w === 'fresh' || w === 'played') { if (!f.wear.includes(w)) f.wear.push(w); continue; }
+      if (w === 'missing') { f.missing = true; continue; }
+      if (/^(under|<)?\d*\.\d+$/.test(w) && /^(under|<)/.test(w)) { f.max = w.replace(/^(under|<)/, ''); continue; }
+      rest.push(w);
+    }
+    f.text = rest.join(' ');
+  }
+  // the URL keeps what's filtered (a link to it opens the same view; Back is unaffected)
+  function saveUrl() {
+    try {
+      const u = new URL(location.href), d = F0(), out = {};
+      for (const k of Object.keys(f)) if (JSON.stringify(f[k]) !== JSON.stringify(d[k])) out[k] = f[k];
+      if (Object.keys(out).length) u.searchParams.set('mf', JSON.stringify(out)); else u.searchParams.delete('mf');
+      history.replaceState(history.state, '', u);
+    } catch { /* sandboxed */ }
+  }
+  function loadUrl() {
+    try { const v = new URLSearchParams(location.search).get('mf'); if (v) f = { ...F0(), ...JSON.parse(v) }; } catch { /* a bad link: no filters */ }
+  }
+  // the filters on, as chips: [words, what removing it does to f]
+  const chipsOf = () => {
+    const out = [];
+    f.series.forEach((n) => out.push([`Series ${n}`, () => { f.series = f.series.filter((x) => x !== n); }]));
+    f.type.forEach((m) => out.push([Store.MAT_LABEL[m] || m, () => { f.type = f.type.filter((x) => x !== m); }]));
+    f.char.forEach((ch) => out.push([ch, () => { f.char = f.char.filter((x) => x !== ch); }]));
+    f.holo.forEach((v) => out.push([HOLO_OPTS.find(([k]) => k === v)?.[1] || v, () => { f.holo = f.holo.filter((x) => x !== v); }]));
+    if (f.graded !== 'all') out.push([f.graded === 'graded' ? 'Graded' : 'Ungraded', () => { f.graded = 'all'; f.gradeMin = 0; }]);
+    if (f.gradeMin) out.push([`PDA ${f.gradeMin}+`, () => { f.gradeMin = 0; }]);
+    if (f.cased !== 'any') out.push([f.cased === 'cased' ? 'Cased' : 'Not cased', () => { f.cased = 'any'; }]);
+    f.wear.forEach((v) => out.push([WEAR.find(([k]) => k === v)?.[1] || v, () => { f.wear = f.wear.filter((x) => x !== v); }]));
+    if (f.max) out.push([`Up to ${ethTxt(+f.max)}`, () => { f.max = ''; }]);
+    if (f.missing) out.push(['Missing from my binder', () => { f.missing = false; }]);
+    if (f.text) out.push([`"${f.text}"`, () => { f.text = ''; }]);
+    return out;
+  };
+  const apply = (fn) => () => { fn(); shown = 40; saveUrl(); draw(); };
+  const sortNow = () => sort || (filterCount() ? 'low' : 'new');
+  function sorted(xs) {
+    const s0 = sortNow();
+    const by = { new: (a, b) => (b.expiry || b.at || 0) - (a.expiry || a.at || 0) || a.priceEth - b.priceEth, low: (a, b) => a.priceEth - b.priceEth, high: (a, b) => b.priceEth - a.priceEth,
+      grade: (a, b) => (b.card.grade ?? -1) - (a.card.grade ?? -1) || a.priceEth - b.priceEth, print: (a, b) => printOf(a.card) - printOf(b.card) || a.priceEth - b.priceEth,
+      worn: (a, b) => (b.card.grade != null) - (a.card.grade != null) || expGrade(b.card) - expGrade(a.card) || a.priceEth - b.priceEth }[s0];
+    return [...xs].sort(by);
+  }
+
   function cardsTab() {
-    const all = data.cards.filter((x) => !x.mine);
-    // floors: the cheapest of each type
-    const floors = MATS.slice(1).map((m) => [m, Math.min(...all.filter((x) => x.card.material === m).map((x) => x.priceEth))]).filter(([, p]) => Number.isFinite(p));
-    let xs = all.filter((x) => mat === 'all' || x.card.material === mat);
-    xs = xs.sort((a, b) => (sort === 'high' ? b.priceEth - a.priceEth : sort === 'grade' ? (b.card.grade ?? -1) - (a.card.grade ?? -1) || a.priceEth - b.priceEth : a.priceEth - b.priceEth));
+    const all = data.cards.filter((x) => !x.mine), have = owned();
+    const xs = sorted(all.filter((x) => pass(x, null, have)));
+    const chips = chipsOf();
+    const search = h('input', { type: 'search', class: 'mk-search', placeholder: 'Search: fire pda 9, gold, pigeon, s7…', 'aria-label': 'Search the market', enterkeyhint: 'search' });
+    search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { parseWords(search.value); search.value = ''; shown = 40; saveUrl(); draw(); } });
+    const seg = h('div', { class: 'seg mk-graded', role: 'group', 'aria-label': 'Graded or not' }, [['all', 'All'], ['graded', 'Graded'], ['ungraded', 'Ungraded']].map(([v, t]) =>
+      h('button', { type: 'button', class: 'btn small' + (f.graded === v ? ' on' : ''), 'aria-pressed': String(f.graded === v), text: t, onclick: () => { f.graded = v; if (v !== 'graded') f.gradeMin = 0; shown = 40; saveUrl(); draw(); } })));
+    const sortSel = h('select', { 'aria-label': 'Sort', class: 'mk-sortsel', onchange: (e) => { sort = e.target.value; try { localStorage.setItem(SORT_KEY, sort); } catch { /* private */ } draw(); } },
+      SORTS.map(([v, t]) => h('option', { value: v, text: t, selected: sortNow() === v || null })));
+    const page = xs.slice(0, shown);
     return [
-      floors.length ? h('div', { class: 'mk-floors', 'aria-label': 'Floor prices' }, floors.map(([m, p]) => h('button', { type: 'button', class: 'mk-floor' + (mat === m ? ' on' : ''), onclick: () => { mat = mat === m ? 'all' : m; draw(); } },
-        h('span', { text: Store.MAT_LABEL[m] }), h('b', { text: `from ${ethTxt(p)}` })))) : null,
-      h('div', { class: 'mk-bar' },
-        sel('Type', mat, MATS.map((m) => [m, m === 'all' ? 'All' : Store.MAT_LABEL[m]]), (v) => { mat = v; draw(); }),
-        sel('Sort', sort, [['low', 'Price: low to high'], ['high', 'Price: high to low'], ['grade', 'Best grade']], (v) => { sort = v; draw(); })),
-      xs.length ? h('div', { class: 'mk-grid' }, xs.map((x) => tile(x.card, x.priceEth, () => openListing(x), bestFor(x.card) ? `Best offer ${ethTxt(bestFor(x.card).priceEth)}` : '')))
-        : h('p', { class: 'muted', text: mat === 'all' ? 'No cards for sale right now. Make an offer in Offers.' : `No ${Store.MAT_LABEL[mat]} cards for sale right now.` }),
+      healthLine(),
+      h('div', { class: 'mk-find' }, search,
+        h('div', { class: 'mk-bar2' }, h('button', { type: 'button', class: 'btn small mk-filterb' + (filterCount() ? ' on' : ''), 'aria-haspopup': 'dialog', text: filterCount() ? `Filter · ${filterCount()}` : 'Filter', onclick: () => filterSheet() }), seg, sortSel)),
+      chips.length ? h('div', { class: 'mk-chips', 'aria-label': 'Filters on' }, chips.map(([t, off]) => h('button', { type: 'button', class: 'mk-chip', 'aria-label': `Remove ${t}`, onclick: apply(off) }, h('span', { text: t }), h('b', { 'aria-hidden': 'true', text: '×' }))),
+        h('button', { type: 'button', class: 'mk-chip clear', text: 'Clear all', onclick: () => { f = F0(); shown = 40; saveUrl(); draw(); } })) : null,
+      h('p', { class: 'muted small mk-count', 'aria-live': 'polite', text: `${xs.length} ${xs.length === 1 ? 'card' : 'cards'} for sale${xs.length > shown ? `, showing ${shown}` : ''}` }),
+      xs.length ? h('div', { class: 'mk-grid' }, page.map((x) => tile(x.card, x.priceEth, () => openListing(x), bestFor(x.card) ? `Best offer ${ethTxt(bestFor(x.card).priceEth)}` : '')))
+        : emptyCards(all, have),
+      xs.length > shown ? h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', text: `Show ${Math.min(40, xs.length - shown)} more`, onclick: () => { shown += 40; draw(); } })) : null,
     ];
   }
+  // nothing matches: say what's close, and offer a next step (drop a filter, see the nearest, or ask for one)
+  function emptyCards(all, have) {
+    if (!all.length) return h('div', { class: 'empty-state' }, h('p', { text: 'No cards for sale right now.' }), h('button', { type: 'button', class: 'btn', text: 'Make an offer', onclick: () => offerSheet({ kind: 'match' }) }));
+    // what dropping each filter would show
+    const keep = JSON.stringify(f), near = [];
+    for (const [t, off] of chipsOf()) {
+      f = JSON.parse(keep); off();
+      const n = all.filter((x) => pass(x, null, have)).length;
+      if (n) near.push([t, n, JSON.parse(JSON.stringify(f))]);
+    }
+    f = JSON.parse(keep);
+    // the offer starts from what was searched (the sheet lets them change it); live type and character indexes come from
+    // a listed card of that kind when there is one
+    const like = all.find((x) => (!f.type.length || f.type.includes(x.card.material)) && (!f.char.length || f.char.includes(x.card.character)) && (!f.series.length || f.series.includes(x.card.series)))?.card;
+    const rule = { fire: f.series[0] || like?.series || 0, cardType: f.type.length === 1 ? (LIVE ? like?.cardType ?? null : MATS.indexOf(f.type[0]) - 1) : null, mat: f.type.length === 1 ? f.type[0] : null,
+      character: f.char.length === 1 && LIVE ? like?.characterIndex ?? null : null, charName: f.char.length === 1 ? f.char[0] : null, holo: f.holo.length === 1 ? f.holo[0] : 'any', minGrade: f.gradeMin || 0 };
+    return h('div', { class: 'empty-state mk-empty' }, h('p', { text: 'Nothing for sale matches that.' }),
+      near.length ? h('div', { class: 'row' }, near.slice(0, 3).map(([t, n, nf]) => h('button', { type: 'button', class: 'btn small', text: `Without ${t}: ${n}`, onclick: () => { f = nf; shown = 40; saveUrl(); draw(); } }))) : null,
+      h('button', { type: 'button', class: 'btn primary', text: 'Ask for one: make an offer', onclick: () => offerSheet({ kind: 'match', rule }) }));
+  }
+  // the filter sheet (from the bottom on phones): every value with its count and lowest price; a live "Show N" button
+  function filterSheet() {
+    const all = data.cards.filter((x) => !x.mine), have = owned();
+    const body = h('div', { class: 'st mk-filters' });
+    const paint = () => {
+      const n = all.filter((x) => pass(x, null, have)).length;
+      const group = (title, key, values, pick, arr) => {
+        const vals = facet(all, key, values, pick, have);
+        if (vals.length < 2 && !arr.length) return null;
+        return h('section', { class: 'mk-fg', 'aria-label': title }, h('h3', { text: title }), h('div', { class: 'mk-fvals' }, vals.map((o) => {
+          const on = arr.includes(o.v);
+          return h('button', { type: 'button', class: 'mk-fv' + (on ? ' on' : ''), 'aria-pressed': String(on), disabled: !o.n && !on ? true : null,
+            onclick: () => { const i = arr.indexOf(o.v); if (i >= 0) arr.splice(i, 1); else arr.push(o.v); paint(); } },
+          h('span', { text: o.label }), h('small', { text: o.n ? `${o.n} · from ${ethTxt(o.floor)}` : '0' }));
+        })));
+      };
+      const seriesV = [...new Set(all.map((x) => x.card.series))].sort((a, b) => b - a).map((n) => [n, `Series ${n}`]);
+      const typeV = Object.keys(Store.MAT_LABEL).filter((m) => all.some((x) => x.card.material === m)).map((m) => [m, Store.MAT_LABEL[m]]);
+      const charV = [...new Set(all.map((x) => x.card.character))].sort().map((c) => [c, c]);
+      const grades = [0, 5, 7, 8, 9, 10];
+      put(body,
+        group('Series', 'series', seriesV, (c) => c.series, f.series),
+        group('Type', 'type', typeV, (c) => c.material, f.type),
+        group('Character', 'char', charV, (c) => c.character, f.char),
+        group('Holo', 'holo', HOLO_OPTS, holoIs, f.holo),
+        h('section', { class: 'mk-fg' }, h('h3', { text: 'Grade' }), h('div', { class: 'mk-fvals' }, grades.map((g) => h('button', { type: 'button', class: 'mk-fv' + (f.gradeMin === g ? ' on' : ''), 'aria-pressed': String(f.gradeMin === g),
+          onclick: () => { f.gradeMin = g; if (g) f.graded = 'graded'; paint(); } }, h('span', { text: g ? `PDA ${g}+` : 'Any' }))))),
+        h('section', { class: 'mk-fg' }, h('h3', { text: 'Cased' }), h('div', { class: 'mk-fvals' }, [['any', 'Any'], ['cased', 'Cased'], ['uncased', 'Not cased']].map(([v, t]) => h('button', { type: 'button', class: 'mk-fv' + (f.cased === v ? ' on' : ''), 'aria-pressed': String(f.cased === v),
+          onclick: () => { f.cased = v; paint(); } }, h('span', { text: t }))))),
+        group('Wear (ungraded)', 'wear', WEAR, (c) => wearOf(c), f.wear),
+        h('section', { class: 'mk-fg' }, h('h3', { text: 'Price' }), h('label', { class: 'mk-field' }, h('span', { text: 'Up to (ETH)' }),
+          (() => { const i = h('input', { type: 'text', inputmode: 'decimal', class: 'mk-input', value: f.max, placeholder: 'Any' }); i.addEventListener('change', () => { f.max = okPrice(i.value) ? i.value.trim() : ''; paint(); }); return i; })())),
+        S.cards.length ? h('label', { class: 'mk-check' }, (() => { const i = h('input', { type: 'checkbox' }); i.checked = f.missing; i.addEventListener('change', () => { f.missing = i.checked; paint(); }); return i; })(), h('span', { text: 'Only cards missing from my binder' })) : null,
+        h('div', { class: 'row mk-fgo' }, h('button', { type: 'button', class: 'btn', text: 'Clear', onclick: () => { const t = f.text; f = F0(); f.text = t; paint(); } }),
+          h('button', { type: 'button', class: 'btn primary', text: `Show ${n} ${n === 1 ? 'card' : 'cards'}`, onclick: () => { Sheet.close('mkfilter'); shown = 40; saveUrl(); draw(); } })));
+    };
+    paint();
+    Sheet.open('mkfilter', { title: 'Filter', body, onClose: () => { shown = 40; saveUrl(); draw(); } });
+  }
+  // live: how fresh the numbers are (our indexer behind; the chain paused)
+  function healthLine() {
+    if (!LIVE || !health) return null;
+    if (health.chainPaused) return h('p', { class: 'mk-warn', text: 'Robinhood Chain is paused. Nothing you send will go through until it’s back. Try again in a few minutes.' });
+    if (health.indexer != null && health.indexer > 120) return h('p', { class: 'mk-note', text: `Live prices may be a few minutes out of date (as of ${Math.round(health.indexer / 60)} min ago). Every buy is checked on the chain first.` });
+    return null;
+  }
+
   function stepper(max, onChange) {
     let n = 1; const cnt = h('b', { class: 'mk-n', text: '1' });
     const set = (v) => { n = Math.max(1, Math.min(max, v)); cnt.textContent = String(n); onChange(n); };
@@ -525,8 +703,9 @@
   Fun.open.market = (o = {}) => {
     if (LIVE && !Store.marketOn()) { toast('The market isn’t open on this network yet', 'bad'); return; }
     if (o.tab) tab = o.tab;
+    if (o.filter) { f = { ...F0(), ...o.filter }; tab = 'cards'; shown = 40; saveUrl(); } else loadUrl();
     root = h('div', { class: 'st market' });
-    Sheet.open('market', { title: 'Market', body: root, wide: true });
+    Sheet.open('market', { title: 'Market', body: root, wide: true, onClose: () => { try { const u = new URL(location.href); u.searchParams.delete('mf'); history.replaceState(history.state, '', u); } catch { /* sandboxed */ } } });
     refresh();
   };
   Fun.open.offer = (o) => offerSheet(o);

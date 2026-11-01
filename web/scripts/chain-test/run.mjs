@@ -27,6 +27,8 @@ try {
   console.error(`\nFAIL: ${e?.stack ?? e}`);
   code = 1;
 } finally {
-  ctx.stop();
+  // KEEP_CHAIN=1: leave the chain running afterwards (e.g. to point the indexer at it: deployments/rehearsal-chaintest.json)
+  if (process.env.KEEP_CHAIN) console.log(`chain left running at ${ctx.RPC} (deployments/rehearsal-chaintest.json); stop it with: pkill anvil`);
+  else ctx.stop();
 }
-process.exit(code);
+if (!process.env.KEEP_CHAIN) process.exit(code);

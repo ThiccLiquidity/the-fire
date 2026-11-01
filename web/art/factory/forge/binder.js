@@ -58,7 +58,10 @@
       const rows = cast.map((ch) => h('div', { class: 'bd-row' }, h('span', { class: 'bd-name', text: ch }),
         h('div', { class: 'bd-slots' }, MASTER.map((m) => {
           const c = f.slots.get(ch + '|' + m);
-          if (!c) return h('div', { class: 'bd-slot empty' + (COMMON.includes(m) ? '' : ' master'), 'aria-label': `${ch}, ${Store.MAT_LABEL[m]}: missing` }, h('img', { src: 'ui/card-back.webp', alt: '', loading: 'lazy' }), h('span', { class: 'mat ' + m, text: Store.MAT_LABEL[m] }));
+          // a gap: find one on the market (already filtered to this card), where there's a market
+          if (!c) return h(Store.marketOn() ? 'button' : 'div', { ...(Store.marketOn() ? { type: 'button', onclick: () => Fun.go('market', { filter: { series: [no], char: [ch], type: [m] } }) } : {}),
+            class: 'bd-slot empty' + (COMMON.includes(m) ? '' : ' master'), 'aria-label': `${ch}, ${Store.MAT_LABEL[m]}: missing${Store.marketOn() ? '. Find one on the market' : ''}` },
+            h('img', { src: 'ui/card-back.webp', alt: '', loading: 'lazy' }), h('span', { class: 'mat ' + m, text: Store.MAT_LABEL[m] }));
           return h('button', { type: 'button', class: 'bd-slot' + (c.id === at ? ' at' : ''), 'data-id': c.id, 'aria-label': `${ch}, ${Store.MAT_LABEL[m]}${c.grade != null ? ', PDA ' + c.grade : ''}. Open it`,
             onclick: () => window.Stations?.openCard(c.id, ids) }, face(c), c.grade != null ? h('span', { class: 'pda g' + c.grade, text: 'PDA ' + c.grade }) : null);
         }))));

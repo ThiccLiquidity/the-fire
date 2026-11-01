@@ -76,7 +76,18 @@ export const sale = onchainTable("market_sale", (t) => ({
   price: t.bigint().notNull(), // wei, the whole sale
   royalty: t.bigint().notNull(),
   at: t.integer().notNull(),
-}), (t) => ({ atIdx: index().on(t.at) }));
+  // internal only: a sale that looks like trading with yourself (the same wallet both sides, or a card going A to B and
+  // back to A within 30 days). Shown in Activity, left out of every price number. Never shown as a label on a wallet.
+  wash: t.boolean().notNull().default(false),
+}), (t) => ({ atIdx: index().on(t.at), serialIdx: index().on(t.serial) }));
+
+/** whether a wallet lets the market move its cards / packs (FireCards / FirePacks ApprovalForAll to FireMarket): a
+ *  listing can be bought only while it does */
+export const marketApproval = onchainTable("market_approval", (t) => ({
+  owner: t.hex().primaryKey(),
+  cards: t.boolean().notNull().default(false),
+  packs: t.boolean().notNull().default(false),
+}));
 
 /** the market: buy offers (WETH, still in the buyer's wallet). kind 0 card (target = serial), 1 any matching card
  *  (target = packed criteria), 2 packs (target = Series) */
