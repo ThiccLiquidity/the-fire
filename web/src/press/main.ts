@@ -27,7 +27,7 @@ let saleEnd = 0;
 // ---------- shell
 app.innerHTML = `
 <header class="topbar">
-  <a class="home" href="${esc(withMode(homeUrl()))}" aria-label="Home: the two doors"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10"/></svg><span>Home</span></a>
+  <a class="home" href="${esc(withMode(homeUrl()))}" aria-label="Back to the village"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10"/></svg><span>Village</span></a>
   <div class="brand"><b>The Printing Press</b><small>The Morning Wood</small></div>
   <div class="grow"></div>
   <button class="chip" type="button" data-act="info" aria-haspopup="dialog">Info</button>

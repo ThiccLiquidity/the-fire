@@ -161,17 +161,17 @@ try {
     check(new URL(page.url()).search === "", "closed: back on /press/");
 
     await page.click(".topbar .home");
-    await page.waitForURL(/\/doors\/$/);
-    check(await page.locator(".door").count() === 2, "Home: back at the doors");
+    await page.waitForURL(/\/forge\/village\.html$/);
+    check(await page.locator(".vg-plate").count() === 5, "Village: back in the village (five buildings)");
 
-    // the card side: /cards goes to Cardworks, which has a Home button for visitors who came through the doors
+    // the card side: /cards goes to Cardworks, which has a Village button and logo back to the village
     await page.goto(`${SITE}/cards`);
     await page.waitForURL(/\/forge\/$/);
     await page.locator(".topbar .home-btn").waitFor({ timeout: 20_000 });
-    check(await page.locator(".topbar .home-btn").getAttribute("href") === "/doors/", "/cards → Cardworks, with a Home button to the doors");
+    check(await page.locator(".topbar .home-btn").getAttribute("href") === "/forge/village.html", "/cards → Cardworks, with a Village button");
     await page.click(".topbar .home-btn");
-    await page.waitForURL(/\/doors\/$/);
-    check(true, "Cardworks Home → the doors");
+    await page.waitForURL(/\/forge\/village\.html$/);
+    check(true, "Cardworks Village → the village");
     check(errors.length === 0, `desktop: no console errors or CSP violations${errors.length ? ": " + errors.join(" | ") : ""}`);
     await ctx.close();
 

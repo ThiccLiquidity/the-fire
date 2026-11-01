@@ -26,6 +26,7 @@
     if (t === time) return;
     time = t; document.body.dataset.time = t;
     const a = $('#bgA'), b = $('#bgB'), url = src(t);
+    $('#bgBlur').src = `ui/village/${t}-1536.webp`;
     if (!fade) { a.src = url; paintLifts(url); return; }
     const img = new Image(); img.onload = () => { // fade the new hour in over the old one, then swap
       b.src = url; b.hidden = false; b.classList.add('out'); void b.offsetWidth; b.classList.remove('out');
@@ -66,6 +67,7 @@
   // ---------- fit: cover the screen (desktop), or a sideways band (phones held upright)
   function fit() {
     const W = innerWidth, H = innerHeight, port = W < 760 && H > W;
+    let s = 1;
     const was = mode; mode = port ? 'port' : 'desk';
     document.body.classList.toggle('port', port);
     const world = $('#world');
@@ -75,12 +77,16 @@
       Object.assign(world.style, { width: `${w}px`, height: `${band}px`, transform: 'none' });
       if (was !== 'port') { const vg = $('#vg'); vg.scrollLeft = (w - W) / 2; }
     } else {
-      const s = Math.max(W / SZ[0], H / SZ[1]); // cover; the edges are scenery
-      Object.assign(world.style, { width: `${SZ[0]}px`, height: `${SZ[1]}px`, transform: `scale(${s}) translate(-50%, -50%)` });
+      // the whole village (V.focus: the box from the top of the Workshop to the front of the buildings) always fits
+      // between the top bar and the Workshop button; spare room at the sides shows the blurred scene behind
+      const [fx, fy, fw, fh] = V.focus, top = 56, bottom = 110;
+      s = Math.min(Math.max(W / SZ[0], H / SZ[1]), (H - top - bottom) / fh, W / fw);
+      const ox = W / 2 - (fx + fw / 2) * s, oy = top + (H - top - bottom - fh * s) / 2 - fy * s;
+      Object.assign(world.style, { left: '0', top: '0', width: `${SZ[0]}px`, height: `${SZ[1]}px`, transform: `translate(${ox}px, ${oy}px) scale(${s})` });
     }
     // the nameplates stay the same size on any screen; only their spot follows the picture
-    const k = parseFloat(world.style.width) / SZ[0], s = port ? 1 : Math.max(W / SZ[0], H / SZ[1]);
-    for (const a of $('#signs').children) { a.style.left = `${a.dataset.x * k}px`; a.style.top = `${a.dataset.y * k}px`; a.style.scale = String(1 / (port ? 1 : s)); }
+    const k = parseFloat(world.style.width) / SZ[0];
+    for (const a of $('#signs').children) { a.style.left = `${a.dataset.x * k}px`; a.style.top = `${a.dataset.y * k}px`; a.style.scale = String(1 / s); }
     // phones: the signs are decoration (the Places buttons are the links); desktop: the signs are the links
     for (const a of $('#signs').children) { a.tabIndex = port ? -1 : 0; a.toggleAttribute('aria-hidden', port); }
     $('#signs').toggleAttribute('aria-hidden', port);
