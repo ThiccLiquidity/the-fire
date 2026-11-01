@@ -488,7 +488,7 @@ try {
     const pr = await page.evaluate(() => [...document.querySelectorAll("#sheet-table .prac-c .cframe")].map((i) => ({ src: i.src, alt: i.alt, ok: i.complete && i.naturalWidth > 0 })));
     const names = ["Ember Fox", "Ash Wolf", "Cinder Queen"];
     check(pr.length === 6 && pr.every((x) => /\/ipfs\/bafyexampleimages\/c[0-2]-(paper|wood|fire|coal|gold|fullart)-(none|frame|picture|full)-u\.webp$/.test(x.src) && x.ok && names.some((n) => x.alt.startsWith(n + ","))) && asked.length >= 6,
-      `live practice uses Series 7's own card art and cast, not the demo's (${pr.map((x) => x.src.split("/").pop()).join(", ")})`);
+      `live practice uses Series 7's own card art and cast, not the demo's (${pr.map((x) => `${x.src.split("/").pop()}${x.ok ? "" : " NOT LOADED"} "${x.alt.split(",")[0]}"`).join(", ")}; ${asked.length} image requests)`);
     check(await page.locator("#sheet-table .st-table.practice").count() === 1 && /PRACTICE/.test(await page.evaluate(() => getComputedStyle(document.querySelector("#sheet-table .prac-c .cface"), "::after").content)),
       "still stamped PRACTICE");
     await shot("13e-live-practice");
@@ -664,6 +664,19 @@ try {
       await p.waitForTimeout(300);
       check(await p.evaluate(() => Object.keys(Store.state.listed).length) === listed0 + 2, "List several: two cards listed in one go");
       await p.evaluate(() => { Store.update((s) => { s.listed = {}; }); document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()); });
+      // the fun layer (market.js, feed.js): the sales ticker, Want one, a seller's stall, the want list, the feed's Sales
+      await p.evaluate(() => Fun.go("market")); await p.locator("#sheet-market .mk-ticker").waitFor();
+      check(await p.locator("#sheet-market .mk-ticker .mk-tick").count() > 0, "the market's front: a ticker of the newest sales");
+      await p.locator("#sheet-market .mk-grid .mk-tile").first().click(); await p.locator("#sheet-mcard [data-key=want]").click();
+      await p.click("#sheet-mcard .mk-seller .linkish"); await p.locator("#sheet-stall[open]").waitFor();
+      check(await p.locator("#sheet-stall .mk-tile").count() >= 1, "a seller's name opens their stall: what they have for sale");
+      await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
+      await p.evaluate(() => Fun.go("market", { tab: "mine" })); await p.locator("#sheet-market .mk-wants li").first().waitFor();
+      check(/for sale|none for sale/.test(await p.locator("#sheet-market .mk-wants li").first().innerText()), "Want one: on the want list in Mine, with how many are for sale");
+      await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
+      await p.evaluate(() => Fun.go("feed", { tab: "sales" })); await p.locator("#sheet-feed .fd-row").first().waitFor();
+      check(/bought/.test(await p.locator("#sheet-feed .fd-row").first().innerText()), "the feed's Sales tab: the market's newest sales");
+      await p.evaluate(() => { localStorage.removeItem("omni.wants." + (Fun.who() || "guest")); document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()); });
     }
 
     // a profile (profile.js): the demo keeps it in this browser. Edit from the wallet, pick a card, frame it, save

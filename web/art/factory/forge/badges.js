@@ -10,13 +10,15 @@
     ['fresh-case', 'Fresh keeper', 'Case a card in its first 24h.', (s) => s.fresh >= 1],
     ['first-slab', 'First slab', 'Grade a card.', (s) => s.slabs >= 1],
     ['common-set', 'Common set', 'Fill a Series’ Common set in the Binder.', (s) => s.sets >= 1],
+    ['master-set', 'Master set', 'Fill a Series’ Master set: every character in all six types.', (s) => s.masters >= 1],
+    ['want-list', 'On the hunt', 'Put a card on your want list.', (s) => s.wants >= 1],
     ['first-burn', 'Stoker', 'Burn a card.', (s) => s.burned >= 1],
     ['burn-42', '42 club', 'Burn 42 cards.', (s) => s.burned >= 42],
     ['first-idea', 'Idea box', 'Send an idea.', (s) => s.ideas >= 1],
     ['showcase', 'On show', 'Share your showcase.', (s) => s.shared >= 1],
   ];
   const keyOf = (who) => who && { s: 'omni.stats.' + who, b: 'omni.badges.' + who };
-  const stats = (who = Fun.who()) => ({ packs: 0, cased: 0, fresh: 0, slabs: 0, sets: 0, burned: 0, ideas: 0, shared: 0, ...(mem(keyOf(who)?.s || '') || {}) });
+  const stats = (who = Fun.who()) => ({ packs: 0, cased: 0, fresh: 0, slabs: 0, sets: 0, masters: 0, wants: 0, burned: 0, ideas: 0, shared: 0, ...(mem(keyOf(who)?.s || '') || {}) });
   const earned = (who = Fun.who()) => (who ? mem(keyOf(who).b) || {} : {});
   function add(field, n = 1, set = false) {
     const who = Fun.who(), k = keyOf(who); if (!k) return;
@@ -29,6 +31,7 @@
   Fun.on('opened', async ({ packs = 1, practice }) => {
     if (practice) return; add('packs', packs);
     if (Fun.commonSets) { const sets = await Fun.commonSets(); if (sets.length) add('sets', sets.length, true); }
+    if (Fun.masterSets) { const sets = await Fun.masterSets(); if (sets.length) add('masters', sets.length, true); }
   });
   Fun.on('paid', ({ cased = 0, graded = 0, fresh = 0 }) => { if (cased) add('cased', cased); if (fresh) add('fresh', fresh); if (graded) add('slabs', graded); });
   Fun.on('burned', ({ n = 1 }) => add('burned', n));

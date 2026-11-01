@@ -81,7 +81,7 @@
     const who = (a, you) => h('span', { class: 'fd-who' }, Fun.avatar(a, 26), h('b', { text: you ? 'You' : Fun.label(a) }));
     async function draw() {
       const k = ++seq;
-      Fun.put(tabs, ...[['pulls', 'Pulls'], ['board', 'Top stokers'], ['you', 'Yours']].map(([v, t]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(tab === v), 'data-v': v, onclick: () => { tab = v; draw(); } }, t)));
+      Fun.put(tabs, ...[['pulls', 'Pulls'], ...(Store.marketOn() && Fun.marketSales ? [['sales', 'Sales']] : []), ['board', 'Top stokers'], ['you', 'Yours']].map(([v, t]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(tab === v), 'data-v': v, onclick: () => { tab = v; draw(); } }, t)));
       if (tab === 'pulls') {
         if (!panel.querySelector('.fd-list')) Fun.put(panel, h('p', { class: 'muted', text: 'Loading pulls…' }));
         const list = await pulls(); if (k !== seq) return;
@@ -93,6 +93,17 @@
             h('div', { class: 'fd-txt' }, who(p.by, p.you), h('span', {}, ' pulled ', h('b', { text: `${kind(p)} ${p.character}` })),
               h('small', { class: 'muted' }, t ? h('span', { class: 'tier-b ' + t, text: TIER[t] }) : null, ` ${Store.trueOdds(p).label} · ${ago(p.at)}`)));
         })), LIVE ? null : h('p', { class: 'demo-line', text: 'Demo pulls' }));
+      } else if (tab === 'sales') { // the market's newest sales: prices only, real sales only
+        if (!panel.querySelector('.fd-list')) Fun.put(panel, h('p', { class: 'muted', text: 'Loading sales…' }));
+        let rows; try { rows = await Fun.marketSales(); } catch { rows = null; }
+        if (k !== seq) return;
+        if (!rows) return Fun.put(panel, h('p', { class: 'warn', text: 'Couldn’t load the sales. Try again.' }));
+        if (!rows.length) return Fun.put(panel, h('p', { class: 'muted', text: 'No sales yet.' }));
+        Fun.put(panel, h('ul', { class: 'fd-list' }, rows.slice(0, 30).map((x) => h('li', { class: 'fd-row' },
+          x.card ? h('span', { class: 'fd-card' }, face(x.card)) : h('img', { class: 'fd-card', src: Store.packThumb(x.series), alt: '' }),
+          h('div', { class: 'fd-txt' }, who(x.buyer, (S.wallet.full || '').toLowerCase() === String(x.buyer).toLowerCase()), h('span', {}, ' bought ', h('b', { text: x.card ? `${kind(x.card)} ${x.card.character}` : `${x.amount} Series ${x.series} pack${x.amount === 1 ? '' : 's'}` })),
+            h('small', { class: 'muted', text: ` ${Number(x.priceEth).toLocaleString('en-US', { maximumSignificantDigits: 4 })} ETH${x.at ? ' · ' + ago(x.at) : ''}` }))))),
+          LIVE ? null : h('p', { class: 'demo-line', text: 'Demo sales' }));
       } else if (tab === 'board') {
         const nos = [...new Set([S.series.no, S.series.no - 1, ...S.cards.map((c) => c.series)])].filter((x) => x > 0).sort((a, b) => b - a).slice(0, 4);
         const pick = h('div', { class: 'seg fd-series', role: 'group', 'aria-label': 'Series' }, nos.map((x) => h('button', { type: 'button', 'aria-pressed': String(x === boardNo), 'data-v': 's' + x, onclick: () => { boardNo = x; draw(); } }, `Series ${x}`)));

@@ -23,6 +23,14 @@ offers you can accept now.
 - **List several:** Market › Mine › **List several**: pick up to 20 (copies you have more of come first), a price each
   (or "Use suggested prices" for the empty ones), how long; one confirmation (`listCards`). The same price checks run on
   every row.
+- **Fun:** the market's front shows a ticker of the newest sales (real sales, prices only); the feed has a Sales tab.
+  **Want one** (on a listed card, or "Add to my want list" when a search finds nothing) keeps a want list on this
+  device (up to 20): it says in the app when one is for sale (once per listing), Mine shows each want with how many are
+  for sale, and **Back it with an offer** turns it into a real match offer. A seller's name opens their **stall** (what
+  they have for sale, and their showcase). **Share** on a listed card shares a link that opens it here (`?mk=<serial>`).
+  A trade that lands gets a short celebration (the furnace flares in the card's colour; a buzz on phones that allow it).
+  Badges: Master set (every character in all six types) and On the hunt (a first want); never for buying or trading.
+  Opening Market always lands on Cards, with no filters (a shared link with filters opens with them, once).
 - **Old listings:** if you switched the market off for your cards (the approval), your listings sleep; switching it on
   again would wake the ones that haven't ended, so the site lists them first: **Take them off sale first** or **Keep
   them for sale**.

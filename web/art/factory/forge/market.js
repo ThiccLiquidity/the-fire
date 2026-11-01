@@ -9,7 +9,7 @@
    Demo: made-up sellers and buyers, the demo wallet's ETH; a buyer turns up for what you list. Buy screens show prices
    only (where the money goes is for Info). */
 (() => {
-  const { h, put } = Fun;
+  const { h, put, mem } = Fun;
   const LIVE = window.Live?.on;
   const S = Store.state;
   const L = () => window.Live?.chain;
@@ -142,9 +142,11 @@
       if (!spend(x.priceEth)) return false;
       Store.update((s) => { s.cards.push({ ...x.card, id: Date.now() % 1e9, moves: (x.card.moves || 0) + 1 }); Store.log(`Bought ${x.card.character} for ${ethTxt(x.priceEth)}`); });
       demo.cards = demo.cards.filter((y) => y.card.id !== x.card.id); sold({ kind: 'card', card: x.card, priceEth: x.priceEth, seller: x.seller, buyer: S.wallet.full });
-      toast(`${x.card.character} is in My cards`, 'good'); return true;
+      toast(`${x.card.character} is in My cards`, 'good'); celebrate(x.card); return true;
     }
-    return !!(await Live.run(`Buy ${x.card.character} · ${kind(x.card)} for ${ethTxt(x.priceEth)}`, (o) => L().buyCard({ serial: x.card.serial, price: x.price, changes: x.changes }, o), `${x.card.character} is in My cards`));
+    const ok = !!(await Live.run(`Buy ${x.card.character} · ${kind(x.card)} for ${ethTxt(x.priceEth)}`, (o) => L().buyCard({ serial: x.card.serial, price: x.price, changes: x.changes }, o), `${x.card.character} is in My cards`));
+    if (ok) celebrate(x.card);
+    return ok;
   }
   async function buyPacks(p, n) {
     const total = +(p.pricePerEth * n).toFixed(8);
@@ -232,9 +234,11 @@
       const d = demo.offers.find((x) => x.id === o.id); if (d) d.qty -= n;
       Store.log(`Sold ${o.kind === 'packs' ? plural(n, 'pack') : c.character} for ${ethTxt(total)}`);
       sold(o.kind === 'packs' ? { kind: 'packs', series: o.series, amount: n, priceEth: total, seller: S.wallet.full, buyer: o.buyer } : { kind: 'card', card: c, priceEth: total, seller: S.wallet.full, buyer: o.buyer });
-      toast(`Sold for ${ethTxt(total)}`, 'good'); return true;
+      toast(`Sold for ${ethTxt(total)}`, 'good'); celebrate(c); return true;
     }
-    return !!(await Live.run(`Sell ${o.kind === 'packs' ? plural(n, 'pack') : `${c.character} · ${kind(c)}`} for ${ethTxt(total)}`, (w) => L().acceptOffer({ id: o.id, kind: o.kind, serial: c?.serial, amount: n, price: o.price }, w), `Sold for ${ethTxt(total)}`));
+    const ok = !!(await Live.run(`Sell ${o.kind === 'packs' ? plural(n, 'pack') : `${c.character} · ${kind(c)}`} for ${ethTxt(total)}`, (w) => L().acceptOffer({ id: o.id, kind: o.kind, serial: c?.serial, amount: n, price: o.price }, w), `Sold for ${ethTxt(total)}`));
+    if (ok) celebrate(c);
+    return ok;
   }
   // DEMO: someone buys what you list, a little later (so the whole flow can be tried)
   function demoBuyer(id) {
@@ -255,7 +259,7 @@
   const TABS = [['cards', 'Cards'], ['packs', 'Packs'], ['offers', 'Offers'], ['activity', 'Activity'], ['mine', 'Mine']];
   const MATS = ['all', 'paper', 'wood', 'fire', 'charcoal', 'gold', 'fullart'];
   function refresh() {
-    listings().then((d) => { data = d; draw(); }, (e) => { console.warn('market', e); data = null; draw('Couldn’t load the market. Try again.'); });
+    listings().then((d) => { data = d; draw(); wantAlerts(); }, (e) => { console.warn('market', e); data = null; draw('Couldn’t load the market. Try again.'); });
     if (LIVE) L().marketHealth?.().then((x) => { health = x; draw(); }, () => {});
     if (tab === 'activity') act = null;
     draw();
@@ -345,8 +349,11 @@
       history.replaceState(history.state, '', u);
     } catch { /* sandboxed */ }
   }
+  let urlRead = false;
   function loadUrl() {
-    f = F0(); shown = 40; // a plain open starts clean; a link with filters opens with them
+    f = F0(); shown = 40; // a plain open starts clean; a shared link with filters opens with them, the first time only
+    if (urlRead) return; // (after a close the old link can linger a moment while the browser steps back)
+    urlRead = true;
     try { const v = new URLSearchParams(location.search).get('mf'); if (v) f = { ...F0(), ...JSON.parse(v) }; } catch { /* a bad link: no filters */ }
   }
   // the filters on, as chips: [words, what removing it does to f]
@@ -387,7 +394,7 @@
       SORTS.map(([v, t]) => h('option', { value: v, text: t, selected: sortNow() === v || null })));
     const page = xs.slice(0, shown);
     return [
-      healthLine(),
+      healthLine(), filterCount() ? null : ticker(),
       h('div', { class: 'mk-find' }, search,
         h('div', { class: 'mk-bar2' }, h('button', { type: 'button', class: 'btn small mk-filterb' + (filterCount() ? ' on' : ''), 'aria-haspopup': 'dialog', text: filterCount() ? `Filter · ${filterCount()}` : 'Filter', onclick: () => filterSheet() }), seg, sortSel)),
       chips.length ? h('div', { class: 'mk-chips', 'aria-label': 'Filters on' }, chips.map(([t, off]) => h('button', { type: 'button', class: 'mk-chip', 'aria-label': `Remove ${t}`, onclick: apply(off) }, h('span', { text: t }), h('b', { 'aria-hidden': 'true', text: '×' }))),
@@ -416,7 +423,8 @@
       character: f.char.length === 1 && LIVE ? like?.characterIndex ?? null : null, charName: f.char.length === 1 ? f.char[0] : null, holo: f.holo.length === 1 ? f.holo[0] : 'any', minGrade: f.gradeMin || 0 };
     return h('div', { class: 'empty-state mk-empty' }, h('p', { text: 'Nothing for sale matches that.' }),
       near.length ? h('div', { class: 'row' }, near.slice(0, 3).map(([t, n, nf]) => h('button', { type: 'button', class: 'btn small', text: `Without ${t}: ${n}`, onclick: () => { f = nf; shown = 40; saveUrl(); draw(); } }))) : null,
-      h('button', { type: 'button', class: 'btn primary', text: 'Ask for one: make an offer', onclick: () => offerSheet({ kind: 'match', rule }) }));
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', text: 'Ask for one: make an offer', onclick: () => offerSheet({ kind: 'match', rule }) }),
+        h('button', { type: 'button', class: 'btn', text: 'Add to my want list', 'data-key': 'want', onclick: () => { if (addWant({ series: f.series[0] || 0, material: f.type.length === 1 ? f.type[0] : null, character: f.char.length === 1 ? f.char[0] : null, holo: f.holo.length === 1 ? f.holo[0] : 'any', minGrade: f.gradeMin || 0 })) draw(); } })));
   }
   // the filter sheet (from the bottom on phones): every value with its count and lowest price; a live "Show N" button
   function filterSheet() {
@@ -761,6 +769,7 @@
         h('button', { type: 'button', class: 'btn small', text: 'Take off sale', onclick: async () => { if (await unlistPacks(p)) refresh(); } })))) : h('p', { class: 'muted', text: 'None.' }),
       h('h3', { text: 'Your offers' }),
       offers.length ? h('div', { class: 'mk-offers' }, offers.map(offerRow)) : h('p', { class: 'muted', text: 'None.' }),
+      wantsBlock(),
       cards.length + packs.length + offers.length > 1 ? h('button', { type: 'button', class: 'btn', text: 'Take everything off sale and cancel my offers', onclick: async () => { if (await cancelAll()) refresh(); } }) : null,
       safety,
       h('p', { class: 'mk-promise', text: 'We never ask you to sign a message. If a site that looks like us does, close it.' }),
@@ -803,7 +812,8 @@
         best ? h('p', { class: 'muted', text: `Best offer: ${ethTxt(best.priceEth)}` }) : null,
         h('div', { class: 'row dacts' }, buy, h('button', { type: 'button', class: 'btn', text: 'Make offer', onclick: () => offerSheet({ kind: 'card', card: c }) })),
         c.grade == null ? h('p', { class: 'muted small', text: `${c.cased ? 'Cased' : 'Not cased'} · ${plural(Math.min(c.moves || 0, 10), 'move')} so far. Buying it adds one more.` }) : null,
-        h('p', { class: 'mk-seller', text: `Sold by ${Fun.label(x.seller)}` }),
+        h('p', { class: 'mk-seller' }, 'Sold by ', h('button', { type: 'button', class: 'linkish', text: Fun.label(x.seller), onclick: () => Fun.open.stall({ addr: x.seller }) })),
+        h('div', { class: 'row' }, wantButton(c), h('button', { type: 'button', class: 'btn small', 'data-key': 'share', text: 'Share', onclick: () => shareListing(x) })),
         priceStrip(c), popLine(c),
         compareCopies(c, (y) => { Sheet.close('mcard'); openListing(y); }),
         soldBlock(c),
@@ -813,7 +823,7 @@
 
   Fun.open.market = (o = {}) => {
     if (LIVE && !Store.marketOn()) { toast('The market isn’t open on this network yet', 'bad'); return; }
-    if (o.tab) tab = o.tab;
+    tab = o.tab || 'cards'; // the front (Cards) unless asked for a tab
     if (o.filter) { f = { ...F0(), ...o.filter }; tab = 'cards'; shown = 40; } else loadUrl();
     root = h('div', { class: 'st market' });
     Sheet.open('market', { title: 'Market', body: root, wide: true, onClose: () => { try { const u = new URL(location.href); u.searchParams.delete('mf'); history.replaceState(history.state, '', u); } catch { /* sandboxed */ } } });
@@ -940,6 +950,111 @@
       h('p', { class: 'muted small', text: 'They stay in your wallet until someone buys them.' })) });
   }
 
+  // ---------- the want list: free, kept on this device (up to 20). It tells you in the app when one is for sale, and
+  // "Back it with an offer" turns a want into a real offer (the only public "someone wants this": it costs WETH).
+  const WANT_MAX = 20;
+  const wantKey = () => 'omni.wants.' + (Fun.who() || 'guest');
+  const wants0 = () => (Array.isArray(mem(wantKey())) ? mem(wantKey()) : []);
+  const wantWords = (w) => [w.series ? `Series ${w.series}` : '', w.material ? Store.MAT_LABEL[w.material] : '', w.character || 'any card', w.holo && w.holo !== 'any' ? (HOLO_OPTS.find(([k]) => k === w.holo)?.[1] || '') : '', w.minGrade ? `PDA ${w.minGrade}+` : ''].filter(Boolean).join(' · ');
+  const wantFits = (w, c) => (!w.series || c.series === w.series) && (!w.material || c.material === w.material) && (!w.character || c.character === w.character)
+    && (!w.holo || w.holo === 'any' || holoIs(c, w.holo)) && (!w.minGrade || c.grade >= w.minGrade);
+  const wantFor = (c) => ({ series: c.series, material: c.material, character: c.character, holo: holoOf(c), minGrade: c.grade || 0 });
+  function addWant(w) {
+    const list = wants0();
+    if (list.some((x) => wantWords(x) === wantWords(w))) { toast('Already on your want list'); return false; }
+    if (list.length >= WANT_MAX) { toast(`Your want list is full (${WANT_MAX}). Remove one first.`, 'bad'); return false; }
+    list.push({ ...w, at: Date.now() }); mem(wantKey(), list);
+    Fun.badge?.('wants'); toast('On your want list. We’ll tell you here when one is for sale.', 'good');
+    return true;
+  }
+  const removeWant = (i) => { const list = wants0(); list.splice(i, 1); mem(wantKey(), list); };
+  const wantFilter = (w) => ({ series: w.series ? [w.series] : [], type: w.material ? [w.material] : [], char: w.character ? [w.character] : [], holo: w.holo && w.holo !== 'any' ? [w.holo] : [], gradeMin: w.minGrade || 0, graded: w.minGrade ? 'graded' : 'all' });
+  const wantRule = (w) => {
+    const like = (data?.cards || []).find((x) => wantFits(w, x.card))?.card;
+    return { fire: w.series || 0, cardType: w.material ? (LIVE ? like?.cardType ?? null : MATS.indexOf(w.material) - 1) : null, mat: w.material || null,
+      character: w.character && LIVE ? like?.characterIndex ?? null : null, charName: w.character || null, holo: w.holo || 'any', minGrade: w.minGrade || 0 };
+  };
+  const wantButton = (c) => h('button', { type: 'button', class: 'btn small', 'data-key': 'want', text: 'Want one', onclick: () => addWant(wantFor(c)) });
+  // a want that's for sale now: said once per listing (not on every look)
+  function wantAlerts() {
+    const list = wants0(); if (!list.length || !data) return;
+    const seenKey = wantKey() + '.seen', seen = new Set(mem(seenKey) || []);
+    for (const w of list) {
+      const hit = data.cards.find((x) => !x.mine && wantFits(w, x.card) && !seen.has(String(x.card.serial ?? x.card.id)));
+      if (hit) { seen.add(String(hit.card.serial ?? hit.card.id)); toast(`On your want list and for sale: ${hit.card.character} · ${kind(hit.card)}, ${ethTxt(hit.priceEth)}`, 'good'); }
+    }
+    mem(seenKey, [...seen].slice(-200));
+  }
+  function wantsBlock() {
+    const list = wants0();
+    return h('section', { class: 'mk-wants' }, h('h3', { text: 'Your want list' }),
+      list.length ? h('ul', { class: 'mk-mine' }, list.map((w, i) => {
+        const xs = (data?.cards || []).filter((x) => !x.mine && wantFits(w, x.card)), low = xs.length ? Math.min(...xs.map((x) => x.priceEth)) : null;
+        return h('li', {}, h('span', {}, h('b', { text: wantWords(w) }), h('small', { class: 'muted', text: xs.length ? ` · ${xs.length} for sale from ${ethTxt(low)}` : ' · none for sale' })),
+          h('span', { class: 'row' },
+            xs.length ? h('button', { type: 'button', class: 'btn small primary', text: 'See them', onclick: () => { f = { ...F0(), ...wantFilter(w) }; tab = 'cards'; shown = 40; saveUrl(); draw(); } }) : null,
+            h('button', { type: 'button', class: 'btn small', text: 'Back it with an offer', onclick: () => offerSheet({ kind: 'match', rule: wantRule(w) }) }),
+            h('button', { type: 'button', class: 'btn small', 'aria-label': `Remove ${wantWords(w)}`, text: 'Remove', onclick: () => { removeWant(i); draw(); } })));
+      })) : h('p', { class: 'muted small', text: 'Nothing yet. Tap Want one on a card, or Add to my want list when a search finds nothing. Kept on this device.' }));
+  }
+
+  // ---------- the newest sales, as a ticker on the market's front (real sales only, prices only) and for the feed
+  function ticker() {
+    if (!act) { sales().then((r) => { act = r; draw(); }, () => { act = []; }); return null; }
+    const xs = act.filter((x) => x.priceEth > 0).slice(0, 10);
+    if (!xs.length) return null;
+    return h('div', { class: 'mk-ticker', role: 'region', 'aria-label': 'Newest sales' }, h('b', { class: 'mk-tick-h', text: 'Just sold' }),
+      h('div', { class: 'mk-tick-row' }, xs.map((x) => h('span', { class: 'mk-tick' }, x.card ? h('span', { class: 'mk-tick-n', text: `${x.card.character} · ${kind(x.card)}` }) : h('span', { class: 'mk-tick-n', text: plural(x.amount || 1, `Series ${x.series} pack`) }),
+        h('b', { text: ethTxt(x.priceEth) }), x.at ? h('small', { text: ago(x.at) }) : null))));
+  }
+  Fun.marketSales = () => (act ? Promise.resolve(act) : sales().then((r) => (act = r)));
+
+  // ---------- a seller's stall: what they have for sale, their showcase, and a way to make an offer on any of it
+  Fun.open.stall = ({ addr }) => {
+    const me0 = mine(addr);
+    const cards = (data?.cards || []).filter((x) => String(x.seller).toLowerCase() === String(addr).toLowerCase());
+    const packs = (data?.packs || []).filter((p) => String(p.seller).toLowerCase() === String(addr).toLowerCase());
+    const name = h('b', { class: 'sv-name', text: me0 ? 'Your stall' : `${Fun.label(addr)}’s stall` });
+    Sheet.open('stall', { title: 'Stall', wide: true, body: h('div', { class: 'st mk-stall' },
+      h('div', { class: 'sv-head' }, Fun.avatar?.(addr, 48), h('div', {}, name, h('small', { class: 'muted', text: `${Fun.short(addr)} · ${plural(cards.length, 'card')} and ${plural(packs.reduce((a, p) => a + p.amount, 0), 'pack')} for sale` }))),
+      cards.length ? h('div', { class: 'mk-grid' }, cards.map((x) => tile(x.card, x.priceEth, () => { Sheet.close('stall'); openListing(x); }))) : h('p', { class: 'muted', text: 'No cards for sale here right now.' }),
+      packs.length ? h('ul', { class: 'mk-mine' }, packs.map((p) => h('li', {}, h('span', { text: `Series ${p.series}: ${plural(p.amount, 'pack')} at ${ethTxt(p.pricePerEth)} each` })))) : null,
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', text: 'Their showcase', onclick: () => Fun.go('showView', { addr }) }),
+        !me0 && cards.length ? h('p', { class: 'muted small', text: 'Tap a card to buy it or make an offer.' }) : null)) });
+  };
+
+  // ---------- share a listing: a link that opens it here (prices only; never "investment" words)
+  function shareListing(x) {
+    const c = x.card, u = new URL(location.origin + location.pathname);
+    const live = new URLSearchParams(location.search).get('live'); if (live) u.searchParams.set('live', live);
+    u.searchParams.set('mk', String(c.serial ?? c.id));
+    const text = `${c.character} · ${kind(c)} for ${ethTxt(x.priceEth)} on the Omni Cardworks market`;
+    if (navigator.share) navigator.share({ title: `${c.character} · ${kind(c)}`, text, url: u.href }).catch(() => {});
+    else navigator.clipboard?.writeText(`${text} ${u.href}`).then(() => toast('Link copied', 'good'), () => toast(u.href));
+  }
+  // a shared listing's link: open the market at it (or say it's gone)
+  const mkQ = new URLSearchParams(location.search).get('mk');
+  if (mkQ && /^\d{1,12}$/.test(mkQ)) {
+    const openIt = async () => {
+      if (LIVE && !L()) return setTimeout(openIt, 600);
+      if (LIVE && !Store.marketOn()) return;
+      Fun.open.market({});
+      for (let i = 0; i < 40 && !data; i++) await new Promise((r) => setTimeout(r, 250));
+      const x = data?.cards.find((y) => String(y.card.serial ?? y.card.id) === mkQ);
+      if (x) openListing(x); else toast('That card isn’t for sale any more', 'bad');
+    };
+    setTimeout(openIt, 1200);
+  }
+
+  // ---------- a trade that landed: a short celebration (the furnace flares in the card's colour once the sheets close,
+  // a buzz on phones that allow it). Only after the chain confirmed it; reduced motion keeps it to a glow.
+  function celebrate(c) {
+    try { if (Fun.haptics?.on && 'vibrate' in navigator) navigator.vibrate([24, 40, 24]); } catch { /* not allowed now */ }
+    let n = 0; const go = () => { if (document.querySelector('dialog.sheet[open]') && n++ < 120) return setTimeout(go, 500); Fun.flare?.(c?.material || 'fire', false); };
+    setTimeout(go, 300);
+    if (c) Promise.all([Fun.commonSets?.(), Fun.masterSets?.()]).then(([a, b]) => { if (a?.length) Fun.badge?.('sets', a.length, true); if (b?.length) Fun.badge?.('masters', b.length, true); }, () => {});
+  }
+
   // the tab bar's Market badge (ui.js): open offers someone else made that this wallet can fill now
   Fun.offersForYou = () => {
     if (!S.wallet.connected) return 0;
@@ -957,6 +1072,6 @@
   // live: your listings and the offers are read when the wallet connects (the detail's lines)
   if (LIVE) {
     let who = '';
-    Store.on(() => { const w = me(); if (w && w !== who && Store.marketOn()) { who = w; listings().then((d) => { data = d; Store.update(() => {}); }, () => {}); } });
+    Store.on(() => { const w = me(); if (w && w !== who && Store.marketOn()) { who = w; listings().then((d) => { data = d; Store.update(() => {}); wantAlerts(); }, () => {}); } });
   }
 })();

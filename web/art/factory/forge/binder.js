@@ -30,6 +30,12 @@
   }
   Fun.binderStats = async (no, cards = Store.state.cards) => fill(cards, no, await castOf(no));
   /** Every Series with a complete Common set (for the badge). */
+  /** The Series whose Master set (every character in all six types) this wallet has filled. */
+  Fun.masterSets = async (cards = Store.state.cards) => {
+    const out = [];
+    for (const no of [...new Set(cards.map((c) => c.series))]) { const f = fill(cards, no, await castOf(no)); if (f.cast.length && f.masterN === f.cast.length * 6) out.push(no); }
+    return out;
+  };
   Fun.commonSets = async (cards = Store.state.cards) => {
     const out = [];
     for (const no of [...new Set(cards.map((c) => c.series))]) { const f = fill(cards, no, await castOf(no)); if (f.cast.length && f.commonN === f.cast.length * 4) out.push(no); }

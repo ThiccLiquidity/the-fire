@@ -312,3 +312,12 @@ body[data-mode=port] .fun-nudge { bottom: auto; top: calc(var(--top) + 8px) }
 .mk-bulkrows { display: grid; gap: 6px }
 .mk-bulkrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line) } .mk-bulkrow small { color: var(--muted) }
 @media (max-width: 420px) { .mk-sc b { font-size: 14.5px } .mk-cmp th, .mk-cmp td { padding: 6px 7px } }
+
+/* ---------- fun layer: the sales ticker, the want list, stalls */
+.mk-ticker { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 7px 10px; border: 1px solid var(--line-2); border-radius: 12px; background: linear-gradient(90deg, rgba(233,180,90,.12), transparent 70%) }
+.mk-tick-h { flex: none; font: 800 12px var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--gold) }
+.mk-tick-row { display: flex; gap: 14px; overflow-x: auto; scrollbar-width: none; min-width: 0 } .mk-tick-row::-webkit-scrollbar { display: none }
+.mk-tick { flex: none; display: inline-flex; align-items: baseline; gap: 6px; font-size: 13px; white-space: nowrap }
+.mk-tick-n { color: var(--ink) } .mk-tick b { color: var(--gold) } .mk-tick small { color: var(--muted) }
+.mk-wants { margin-top: 14px } .mk-wants li { flex-wrap: wrap; gap: 6px }
+.mk-stall .sv-head { margin-bottom: 12px }
