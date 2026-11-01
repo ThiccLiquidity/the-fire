@@ -66,7 +66,8 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   NotHolder: "That card isn't in your wallet.",
   NotStuck: "Can't cancel: the draw came in, or 24 hours haven't passed.",
   RoyaltyTooHigh: "The royalty can be at most 10%.",
-  TooMany: "Too many packs for this Series.",
+  // FirePacks (more packs than the Series has) and FireMarket (over 20 in one go) share the name
+  TooMany: "That's too many: more packs than this Series has, or over 20 at once on the market.",
   BadWeights: "Character odds need one weight per character, each at least 1.",
 
   // cases and grading (FirePsa, LiquidityBurner)
@@ -106,7 +107,6 @@ export const MESSAGES: { readonly [K in AbiErrorName]: Msg } = {
   PriceChanged: "The price just changed. Check the new price and try again. Nothing was charged.",
   Stale: "That's no longer for sale (sold, moved, changed or ended). Nothing was charged.",
   CardChanged: "That card changed since you looked (moved, cased or graded). Check it again. Nothing was charged.",
-  TooMany: "That's too many at once: up to 20.",
   WithdrawFailed: "Your wallet refused the ETH. Try from another wallet.",
   WrongPayment: "The amount sent didn't match the price. Nothing was charged.",
   BadOffer: "That offer isn't valid. Check what it's for and how many.",

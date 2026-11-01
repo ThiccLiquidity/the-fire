@@ -37,7 +37,10 @@
   // the five places, one way into each: the top bar on computers, the tab bar on phones (the same buttons)
   const PLACES = [['workshop', 'Workshop', 'workshop'], ['collection', 'Collection', 'cards'], ['market', 'Market', 'tag'], ['arcade', 'Arcade', 'game'], ['paper', 'Morning Wood', 'news']];
   const paperHref = () => { const l = new URLSearchParams(location.search).get('live'); return '/press/' + (l ? `?live=${encodeURIComponent(l)}` : ''); };
-  const navItems = () => PLACES.map(([k, label, icon]) => k === 'paper'
+  // the Morning Wood isn't ready yet (owner, Nov 2026): its tab stays, says "Coming soon", and /press/ isn't linked.
+  // Flip PRESS_OPEN to true when it is.
+  const PRESS_OPEN = false;
+  const navItems = () => PLACES.map(([k, label, icon]) => k === 'paper' && PRESS_OPEN
     ? `<a class="nv n-${k}" data-nav="${k}" href="${paperHref()}" aria-label="${label}">${svg(icon)}<span>${label}</span></a>`
     : `<button class="nv n-${k}" type="button" data-nav="${k}" aria-label="${label}">${svg(icon)}<span>${label}</span>${k === 'market' ? '<b class="nbadge" hidden></b>' : ''}</button>`).join('');
   // big numbers compact, 3 significant digits: 22.9K, 1.25M, 1T (never "1000.00B")
@@ -813,7 +816,7 @@
   const CHECKS = [
     ['open', 'Open packs'], ['grade', 'Case and grade cards'], ['burn', 'Burn cards'], ['getpaper', 'Buy PAPER'],
     ['buy', 'Buy packs in the sale'], ['market', 'Use the Market: sell, buy, make an offer'], ['arcade', 'Play the Arcade games'],
-    ['suggest', 'Suggest a theme or a character'], ['profile', 'Set up your profile'], ['paper', 'Read the Morning Wood'],
+    ['suggest', 'Suggest a theme or a character'], ['profile', 'Set up your profile'],
   ];
   const CKEY = 'omni.testnet.checks';
   const checked = () => { try { return JSON.parse(localStorage.getItem(CKEY) || '{}'); } catch { return {}; } };
@@ -1048,6 +1051,7 @@
       else Sheet.open('mk-soon', { title: 'Market', body: '<p class="lead">The market isn\u2019t open yet. Soon you\u2019ll buy and sell cards and sealed packs here, and make offers.</p>' });
     }
     if (k === 'arcade') openStation('games');
+    if (k === 'paper' && !PRESS_OPEN) Sheet.open('press-soon', { title: 'The Morning Wood', body: '<p class="lead">Coming soon. A satirical paper from the Printing Press next door, every morning.</p>' });
   }
   document.querySelectorAll('[data-nav]:not(a)').forEach((b) => b.onclick = () => goPlace(b.dataset.nav));
   // which place is showing: the top sheet that belongs to one says (My cards and its binder, showcase, badges = Collection)

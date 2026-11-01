@@ -309,7 +309,7 @@
           <li><b>Shape</b> the next Series. Suggest its theme, art style or characters. Every idea costs a little PAPER, because you need paper to write it on, just like the cards. Get picked, win a free pack.</li>
           <li><b>Trade</b> anything, any time. Sealed packs, raw cards and slabs all sell like any other NFT.</li>
         </ul>
-        <p>Next door, the Printing Press puts out <i>The Morning Wood</i>, a satirical paper, every morning. Same PAPER, same fire.</p>`),
+        <p>Coming soon next door: the Printing Press and <i>The Morning Wood</i>, a satirical paper every morning. Same PAPER, same fire.</p>`),
       sec('buy', 'Buying packs', `In Series ${no}: ${F.price} + ${F.paper} a pack, paid in ${F.coins}.`, `
         <p>${run}${extra ? ` Once those sell out, extra packs go on sale${extra.perTx === 1 ? ' one at a time' : ''}, each with a pack tax that rises with every sale.` : ''}</p>
         <ul>

@@ -117,7 +117,7 @@ export function checkCall(call: GuardCall, from: Address, dep: GuardDeployment):
     const [spender, amount] = args as [unknown, unknown];
     if (!spenderOk(spender)) no(`${coin} approval for an unknown contract`);
     if (typeof amount !== "bigint" || amount >= MAX_APPROVAL) no(`an unlimited ${coin} approval`);
-    if (coin === "WETH" && amount > MAX_WETH_APPROVAL) no("a WETH approval bigger than any offers need");
+    if (coin === "WETH" && (amount as bigint) > MAX_WETH_APPROVAL) no("a WETH approval bigger than any offers need");
     return;
   }
   // 3. Uniswap V2's router: buy exact PAPER, into the buyer's own wallet

@@ -119,6 +119,16 @@
   ],
   "redirects": [
     {
+      "source": "/press",
+      "destination": "/forge/",
+      "permanent": false
+    },
+    {
+      "source": "/press/:path*",
+      "destination": "/forge/",
+      "permanent": false
+    },
+    {
       "source": "/",
       "destination": "/forge/",
       "permanent": false
