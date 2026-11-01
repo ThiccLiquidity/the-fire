@@ -13,6 +13,16 @@ offers you can accept now.
   its detail says "For sale · 0.02 ETH" and opens the same screen to change the price or take it off sale. A listing
   lasts 30 days (at most 180), and it ends for good the moment the card moves, is cased or goes for grading: a card
   that comes back never brings its old price back. List again to sell it as it is now.
+- **Prices (a guide, never set for you):** a card's page, a listed card and Sell show a strip: the lowest ask of the same
+  kind (Series, type, character, holo look, grade or ungraded), the median of the clean sales of that kind in the last
+  60 days (live: the indexer's numbers, trades with yourself left out; under 3 sales it says there's no guide yet), and
+  the best offer. Sell has quick prices (Match lowest, Suggested, Best offer +5%) that fill the box only when tapped,
+  and **Sell now** when there's an offer that fits (a preview, then the wallet). A listed card also shows its other
+  copies for sale in a table you can sort (print #, holo, grade, wear, price), the pop for its grade, and its recent
+  sales as a dot chart and a list.
+- **List several:** Market › Mine › **List several**: pick up to 20 (copies you have more of come first), a price each
+  (or "Use suggested prices" for the empty ones), how long; one confirmation (`listCards`). The same price checks run on
+  every row.
 - **Old listings:** if you switched the market off for your cards (the approval), your listings sleep; switching it on
   again would wake the ones that haven't ended, so the site lists them first: **Take them off sale first** or **Keep
   them for sale**.
@@ -30,7 +40,7 @@ offers you can accept now.
   - on any card that matches: Series, type, character, holo (none, frame, picture, full, any holo), lowest grade, most
     moves, cased or not;
   - on packs: a Series, how many, the price each.
-  How many you want, and how long it lasts (1, 7, 30 or 90 days). Your ETH stays in your wallet as WETH (the wallet
+  How many you want, and how long it lasts (1, 3, 7 or 30 days; 7 by default). Your ETH stays in your wallet as WETH (the wallet
   asks to wrap just what your open offers don't already cover, and to let the market use it) until someone accepts.
 - **A card's page** shows its best offer with **Accept**; **Sell** shows it too.
 - **Activity:** the newest sales (listings bought and offers accepted). **Cards** starts with each type's floor price.

@@ -100,6 +100,11 @@
     ];
     const sales = []; for (let i = 0; i < 9; i++) { const x = mk(40 + i); sales.push({ kind: 'card', card: x.card, priceEth: x.price, seller: people[i % 4], buyer: people[(i + 1) % 4], at: t - Math.round((0.2 + i * i * 0.7) * 3600) }); }
     sales.splice(3, 0, { kind: 'packs', series: 6, amount: 2, priceEth: 0.0031, seller: people[2], buyer: people[0], at: t - 5 * 3600 });
+    // a few kinds sold several times, so the demo's price guide has something to show (a median needs 3 clean sales)
+    for (const x of cards) for (let k = 0; k < 3 + (x.card.id % 2); k++) {
+      sales.push({ kind: 'card', card: { ...x.card, id: 7000 + x.card.id * 10 + k }, priceEth: +(x.priceEth * (0.82 + R() * 0.3)).toPrecision(2), seller: people[(k + 1) % 4], buyer: people[(k + 2) % 4], at: t - Math.round((1 + k * 4 + R() * 3) * DAY_S) });
+    }
+    sales.sort((a, b) => b.at - a.at);
     return { cards, packs, offers, sales, mine: { packs: [] }, nextPack: 4, nextOffer: 6 };
   })();
 
@@ -341,6 +346,7 @@
     } catch { /* sandboxed */ }
   }
   function loadUrl() {
+    f = F0(); shown = 40; // a plain open starts clean; a link with filters opens with them
     try { const v = new URLSearchParams(location.search).get('mf'); if (v) f = { ...F0(), ...JSON.parse(v) }; } catch { /* a bad link: no filters */ }
   }
   // the filters on, as chips: [words, what removing it does to f]
@@ -516,6 +522,84 @@
     if (!f || o.priceEth >= f) return null;
     return `${Math.round((1 - o.priceEth / f) * 100)}% under the lowest listed`;
   }
+  // ---------- the price guide for one card: prices only (where money goes is for Info)
+  //   lowest ask: the cheapest listing of the same kind (Series, type, character, holo look, grade or ungraded)
+  //   recent sales: the median of the clean sales of the same kind in the last 60 days (live: our indexer's numbers,
+  //     wash trades left out); under 3 sales there is no guide, and it says so
+  //   best offer: the best open offer that this card could fill
+  // The suggested price is the median, else the lowest ask; it never fills a price by itself (the seller taps it).
+  const DAY_60 = 60 * DAY_S;
+  let stats = null; // live: L().marketStats() (null until read, or without our indexer)
+  const loadStats = () => { if (LIVE && stats == null) { stats = false; L().marketStats?.().then((x) => { stats = x || { groups: [], sold: [] }; Store.update(() => {}); }, () => { stats = { groups: [], sold: [] }; }); } };
+  const sameKind = (a, b) => a.series === b.series && a.material === b.material && a.character === b.character && holoOf(a) === holoOf(b) && (a.grade ?? 0) === (b.grade ?? 0);
+  // live: the recent sales of each kind, from our indexer (read once per kind); demo: the made-up Activity
+  const kindSales = new Map();
+  const kindKey = (c) => `${c.series}|${c.cardType}|${c.characterIndex}`;
+  function salesOf(c, then) { // the recent sales of this kind, newest first (wash trades left out)
+    if (LIVE) {
+      const k = kindKey(c);
+      if (!kindSales.has(k)) { kindSales.set(k, null); L().salesOfKind?.({ fire: c.series, cardType: c.cardType, character: c.characterIndex }).then((r) => { kindSales.set(k, r); then?.(); }, () => kindSales.set(k, [])); }
+      return (kindSales.get(k) || []).filter((x) => !x.wash && x.holo === holoOf(c) && (x.grade ?? 0) === (c.grade ?? 0) && x.at > nowS() - DAY_60).map((x) => ({ ...x, priceEth: +x.priceEth }));
+    }
+    return (demo?.sales || []).filter((x) => x.kind === 'card' && x.card && sameKind(x.card, c) && (!x.at || x.at > nowS() - DAY_60));
+  }
+  function medianOf(c) {
+    if (LIVE && stats) {
+      const g = stats.sold.find((x) => x.fire === c.series && x.cardType === c.cardType && x.character === c.characterIndex && x.holo === holoOf(c) && x.grade === (c.grade ?? 0));
+      if (g) return { eth: g.medianEth != null ? +g.medianEth : null, n: g.sales };
+    }
+    const xs = salesOf(c).map((x) => x.priceEth).sort((a, b) => a - b);
+    return { eth: xs.length >= 3 ? xs[Math.floor((xs.length - 1) / 2)] : null, n: xs.length };
+  }
+  const askOf = (c) => { const xs = (data?.cards || []).filter((x) => !x.mine && sameKind(x.card, c)); return xs.length ? Math.min(...xs.map((x) => x.priceEth)) : null; };
+  function guide(c) {
+    loadStats();
+    const m = medianOf(c), ask = askOf(c), best = bestFor(c), floor = floorFor(c);
+    const suggested = m.eth ?? ask ?? null;
+    const conf = m.eth != null ? `Recent sales: median of ${m.n} in 60 days` : m.n ? `${plural(m.n, 'sale')} so far: not enough for a price guide` : 'No sales of this kind yet: no price guide';
+    return { ask, floor, median: m.eth, n: m.n, best: best && !lowball(best) ? best : null, suggested, conf };
+  }
+  /** The price strip: lowest ask, recent sales, best offer (and how sure the sales number is). */
+  function priceStrip(c) {
+    const g = guide(c), cell = (label, v, sub) => h('div', { class: 'mk-sc' }, h('small', { text: label }), h('b', { text: v != null ? ethTxt(v) : '—' }), sub ? h('span', { text: sub }) : null);
+    return h('div', { class: 'mk-strip', role: 'group', 'aria-label': 'Prices for this kind of card' },
+      h('div', { class: 'mk-cells' }, cell('Lowest ask', g.ask ?? null, g.ask == null && g.floor != null ? `type from ${ethTxt(g.floor)}` : ''), cell('Recent sales', g.median, g.n ? plural(g.n, 'sale') : ''), cell('Best offer', g.best?.priceEth ?? null)),
+      h('p', { class: 'mk-conf', text: g.conf }));
+  }
+  Fun.priceStrip = (c) => (Store.marketOn() ? priceStrip(c) : null);
+  // a tiny chart of the recent sales of a kind: one dot per sale (no smoothed line: a few sales are just dots)
+  function soldChart(rows) {
+    const xs = rows.filter((x) => x.at).slice(0, 40);
+    if (xs.length < 2) return null;
+    const W = 300, H = 90, P = 8, t0 = Math.min(...xs.map((x) => x.at)), t1 = Math.max(...xs.map((x) => x.at)), p0 = Math.min(...xs.map((x) => x.priceEth)), p1 = Math.max(...xs.map((x) => x.priceEth));
+    const X = (t) => P + (t1 === t0 ? (W - 2 * P) / 2 : (t - t0) / (t1 - t0) * (W - 2 * P)), Y = (v) => H - P - (p1 === p0 ? (H - 2 * P) / 2 : (v - p0) / (p1 - p0) * (H - 2 * P));
+    const svgNS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'mk-chart'); svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', `${xs.length} recent sales from ${ethTxt(p0)} to ${ethTxt(p1)}`);
+    for (const x of xs) { const c0 = document.createElementNS(svgNS, 'circle'); c0.setAttribute('cx', X(x.at).toFixed(1)); c0.setAttribute('cy', Y(x.priceEth).toFixed(1)); c0.setAttribute('r', '4'); svg.append(c0); }
+    return h('figure', { class: 'mk-fig' }, svg, h('figcaption', { class: 'muted small', text: `${ethTxt(p0)} to ${ethTxt(p1)} · last ${xs.length} sales` }));
+  }
+  // the other copies of this card for sale (same Series, type and character), to compare: print #, holo, grade, wear
+  function compareCopies(c, onPick) {
+    const rows = (data?.cards || []).filter((x) => !x.mine && x.card.series === c.series && x.card.material === c.material && x.card.character === c.character);
+    if (rows.length < 2) return null;
+    let by = 'price', dir = 1;
+    const wrap = h('div', { class: 'mk-cmp-wrap', role: 'region', tabindex: '0', 'aria-label': 'Copies for sale' });
+    const COLS = [['print', 'Print #', (x) => printOf(x.card)], ['holo', 'Holo', (x) => holoOf(x.card)], ['grade', 'Grade', (x) => x.card.grade ?? -1], ['wear', 'Wear', (x) => (x.card.grade != null ? 99 : expGrade(x.card))], ['price', 'Price', (x) => x.priceEth]];
+    const paint = () => {
+      const key = COLS.find(([k]) => k === by)[2], xs = [...rows].sort((a, b) => (key(a) > key(b) ? 1 : key(a) < key(b) ? -1 : 0) * dir);
+      put(wrap, h('table', { class: 'mk-cmp' },
+        h('thead', {}, h('tr', {}, COLS.map(([k, t]) => h('th', { scope: 'col', 'aria-sort': by === k ? (dir > 0 ? 'ascending' : 'descending') : 'none' },
+          h('button', { type: 'button', text: t + (by === k ? (dir > 0 ? ' ▲' : ' ▼') : ''), onclick: () => { if (by === k) dir = -dir; else { by = k; dir = 1; } paint(); } }))))),
+        h('tbody', {}, xs.map((x) => h('tr', { class: x.card.id === c.id ? 'at' : '' },
+          h('td', { text: `#${printOf(x.card) || '?'}` }), h('td', { text: HOLO_WORD[holoOf(x.card)] || 'None' }), h('td', { text: x.card.grade != null ? `PDA ${x.card.grade}` : x.card.cased ? 'Cased' : 'Raw' }),
+          h('td', { text: x.card.grade != null ? '—' : WEAR.find(([k]) => k === wearOf(x.card))?.[1] || '' }),
+          h('td', {}, x.card.id === c.id ? h('b', { text: ethTxt(x.priceEth) }) : h('button', { type: 'button', class: 'linkish', text: ethTxt(x.priceEth), onclick: () => onPick(x) })))))));
+    };
+    paint();
+    return h('section', { class: 'mk-cmpsec' }, h('h3', { text: `${rows.length} copies for sale` }), wrap);
+  }
+
   // an offer far under what's listed (under a quarter) doesn't light the Market badge or "Sell yours" first
   const lowball = (o) => { const f = offerFloor(o); return !!f && o.priceEth < f * 0.25; };
   function offerWhat(o) {
@@ -580,7 +664,7 @@
   // make an offer: on one card, on any card like one, from scratch (Series, type, character, holo, grade), or for packs
   async function offerSheet(pre) {
     const r = { fire: 0, cardType: null, mat: null, character: null, charName: null, holo: 'any', minGrade: 0, ...(pre.rule || {}) };
-    let k = pre.kind, series = pre.series || S.series.no, qty = 1, days = 30;
+    let k = pre.kind, series = pre.series || S.series.no, qty = 1, days = 7;
     const body = h('div', { class: 'st sell mk-make' });
     const price = h('input', { type: 'text', inputmode: 'decimal', class: 'mk-input', placeholder: '0.01', 'aria-label': 'Price in ETH', value: pre.priceEth || '' });
     const total = h('p', { class: 'muted small mk-get' });
@@ -608,7 +692,7 @@
               sel('Grade', r.minGrade, [[0, 'Any'], ...[10, 9, 8, 7, 6, 5].map((g) => [g, `PDA ${g}+`])], (v) => { r.minGrade = +v; paint(); }))],
         h('label', { class: 'mk-field' }, h('span', { text: k === 'card' ? 'Your offer (ETH)' : 'Your offer each (ETH)' }), price),
         qtyEl,
-        h('div', { class: 'mk-bar' }, sel('Lasts', days, [[1, '1 day'], [7, '7 days'], [30, '30 days'], [90, '90 days']], (v) => { days = +v; })),
+        h('div', { class: 'mk-bar' }, sel('Lasts', days, [[1, '1 day'], [3, '3 days'], [7, '7 days'], [30, '30 days']], (v) => { days = +v; })),
         total,
         h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', text: 'Make offer', onclick: (e) => need(async () => {
           const t = price.value.trim();
@@ -668,6 +752,7 @@
     return [
       extra,
       h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', text: 'Sell packs', onclick: sellPacks }), h('button', { type: 'button', class: 'btn', text: 'Sell a card', onclick: () => { Sheet.close('market'); Stations.open('cards'); toast('Open a card, then tap Sell', 'good'); } }),
+        h('button', { type: 'button', class: 'btn', text: 'List several', 'data-key': 'bulk', onclick: () => need(() => bulkSheet()) }),
         h('button', { type: 'button', class: 'btn', text: 'Make an offer', onclick: () => offerSheet({ kind: 'match' }) })),
       h('h3', { text: 'Your cards for sale' }),
       cards.length ? h('div', { class: 'mk-grid' }, cards.map((x) => tile(x.card, x.priceEth, () => Fun.open.sell({ id: x.card.id })))) : h('p', { class: 'muted', text: 'None. Open a card in My cards and tap Sell.' }),
@@ -683,6 +768,29 @@
   }
 
   // one listed card, big: Buy, Make offer, and its best offer
+  // how many of this Series and type are graded, and how many grade above this copy (exact: it's all on-chain)
+  function popLine(c) {
+    if (c.grade == null) return null;
+    const el = h('p', { class: 'muted small mk-pop' });
+    Store.popReport?.().then((pop) => {
+      const per = pop?.[c.series]?.[c.material]; if (!per) return;
+      const all = Object.values(per).reduce((a, n) => a + n, 0), same = per[c.grade] || 0, higher = Object.entries(per).reduce((a, [g, n]) => a + (+g > c.grade ? n : 0), 0);
+      el.textContent = `Pop: ${same} at PDA ${c.grade}, ${higher} higher · ${all} Series ${c.series} ${Store.MAT_LABEL[c.material]} slabs in all`;
+    }, () => {});
+    return el;
+  }
+  // the recent sales of this kind: a dot chart and the list (grades never mixed: the same grade or ungraded only)
+  function soldBlock(c) {
+    const box = h('section', { class: 'mk-sold' });
+    const paint = (rows) => {
+      put(box, h('h3', { text: 'Sold recently' }),
+        rows.length ? [soldChart(rows), h('ul', { class: 'mk-soldl' }, rows.slice(0, 6).map((x) => h('li', {}, h('span', { text: x.at ? ago(x.at) : '' }), h('b', { text: ethTxt(x.priceEth) }))))]
+          : h('p', { class: 'muted small', text: `No sales of this kind yet (${kind(c)}).` }));
+    };
+    const paint2 = () => { const rows = salesOf(c, paint2); paint(rows); };
+    paint2();
+    return box;
+  }
   function openListing(x) {
     const c = x.card, zoom = () => window.Zoom?.open({ cards: [c], index: 0, face: (y) => face(y, false), name: (y) => `${y.character}, ${kind(y)}`, from: () => document.querySelector('#sheet-mcard .cface') });
     const buy = h('button', { type: 'button', class: 'btn primary', text: `Buy · ${ethTxt(x.priceEth)}`, onclick: () => need(async () => { buy.disabled = true; if (await buyCard(x)) { Sheet.close('mcard'); refresh(); } else buy.disabled = false; }) });
@@ -696,6 +804,9 @@
         h('div', { class: 'row dacts' }, buy, h('button', { type: 'button', class: 'btn', text: 'Make offer', onclick: () => offerSheet({ kind: 'card', card: c }) })),
         c.grade == null ? h('p', { class: 'muted small', text: `${c.cased ? 'Cased' : 'Not cased'} · ${plural(Math.min(c.moves || 0, 10), 'move')} so far. Buying it adds one more.` }) : null,
         h('p', { class: 'mk-seller', text: `Sold by ${Fun.label(x.seller)}` }),
+        priceStrip(c), popLine(c),
+        compareCopies(c, (y) => { Sheet.close('mcard'); openListing(y); }),
+        soldBlock(c),
         Wear.howPill?.()));
     Sheet.open('mcard', { title: c.character, body });
   }
@@ -703,12 +814,23 @@
   Fun.open.market = (o = {}) => {
     if (LIVE && !Store.marketOn()) { toast('The market isn’t open on this network yet', 'bad'); return; }
     if (o.tab) tab = o.tab;
-    if (o.filter) { f = { ...F0(), ...o.filter }; tab = 'cards'; shown = 40; saveUrl(); } else loadUrl();
+    if (o.filter) { f = { ...F0(), ...o.filter }; tab = 'cards'; shown = 40; } else loadUrl();
     root = h('div', { class: 'st market' });
     Sheet.open('market', { title: 'Market', body: root, wide: true, onClose: () => { try { const u = new URL(location.href); u.searchParams.delete('mf'); history.replaceState(history.state, '', u); } catch { /* sandboxed */ } } });
+    if (o.filter) saveUrl(); // after the sheet's own history step, so closing it leaves the page's link as it was
     refresh();
   };
   Fun.open.offer = (o) => offerSheet(o);
+
+  // quick prices for the sell box: match the lowest ask, the suggested price, or the best offer + 5% (a tap fills it in;
+  // nothing is filled in by itself)
+  function quickPrices(c, input, upd) {
+    const g = guide(c), round6 = (v) => String(+v.toPrecision(3)).replace(/^(\d*\.\d{6})\d+$/, '$1');
+    const opts = [g.ask != null ? ['Match lowest', g.ask] : null, g.suggested != null && g.suggested !== g.ask ? ['Suggested', g.suggested] : null, g.best ? ['Best offer +5%', g.best.priceEth * 1.05] : null].filter(Boolean);
+    if (!opts.length) return null;
+    return h('div', { class: 'mk-quick', role: 'group', 'aria-label': 'Quick prices' }, opts.map(([t, v]) => h('button', { type: 'button', class: 'btn small', text: `${t} · ${ethTxt(round6(v))}`,
+      onclick: () => { input.value = round6(v); input.dispatchEvent(new Event('input')); upd(); input.focus(); } })));
+  }
 
   // ---------- selling a card (from its detail)
   Fun.open.sell = ({ id }) => {
@@ -733,15 +855,66 @@
     const body = h('div', { class: 'st sell' },
       h('div', { class: 'mk-sellcard' }, h('div', { class: 'cwrap' }, face(c, false)),
         h('div', {}, h('h3', { text: c.character }), h('p', { class: 'muted', text: kind(c) }), listed != null ? h('p', { class: 'mk-big' }, 'For sale at ', h('b', { text: ethTxt(listed) })) : null)),
-      best ? h('p', { class: 'mk-owed' }, `Someone offers ${ethTxt(best.priceEth)} for it. `, h('button', { type: 'button', class: 'btn small primary', text: 'Accept', onclick: () => { Sheet.close('sell'); acceptSheet(best); } })) : null,
+      // sell now: the best offer that fits it (a preview first: what you sell, what you get; then the wallet)
+      best && !lowball(best) ? h('div', { class: 'mk-owed mk-sellnow' }, h('span', {}, 'Sell now for ', h('b', { text: ethTxt(best.priceEth) }), ` (you get about ${ethTxt(net(best.priceEth))})`),
+        h('button', { type: 'button', class: 'btn small primary', text: 'Sell now', 'data-key': 'sellnow', onclick: () => { Sheet.close('sell'); acceptSheet(best); } })) : null,
+      priceStrip(c),
       h('label', { class: 'mk-field' }, h('span', { text: 'Price (ETH)' }), input), get,
-      floorFor(c) ? h('p', { class: 'muted small', text: `Lowest listed like it: ${ethTxt(floorFor(c))}` }) : null, warn,
+      quickPrices(c, input, upd), warn,
       h('div', { class: 'row' }, go, listed != null ? h('button', { type: 'button', class: 'btn', text: 'Take off sale', onclick: async () => { if (await unlistCard(c)) { Sheet.close('sell'); window.Stations?.openCard(c.id); } } }) : null),
       h('p', { class: 'muted small', text: 'It stays in your wallet until someone buys it, for up to 30 days. You can change the price or take it off sale any time; if it moves, is cased or is graded, the listing ends.' }),
       LIVE ? null : h('p', { class: 'demo-line', text: 'Demo: a buyer turns up in a little while' }));
     Sheet.open('sell', { title: listed != null ? 'For sale' : 'Sell', body });
     setTimeout(() => input.focus({ preventScroll: true }), 50);
   };
+
+  // ---------- listing several cards at once (up to 20): pick, price each (or use the suggested prices), one confirmation
+  function bulkSheet() {
+    const pool = S.cards.filter((c) => !c.pending && S.listed[c.id] == null).sort((a, b) => (dupCount(b) - dupCount(a)) || a.character.localeCompare(b.character));
+    if (!pool.length) { toast('Nothing to list: your cards are all for sale or being graded', 'bad'); return; }
+    const picked = new Map(); // id -> price text
+    let days = 30, warned = '';
+    const grid = h('div', { class: 'mk-grid mk-bulkgrid' }), rows = h('div', { class: 'mk-bulkrows' }), note = h('p', { class: 'mk-warn', hidden: true });
+    const go = h('button', { type: 'button', class: 'btn primary', 'data-key': 'bulkgo' });
+    const paint = () => {
+      put(grid, pool.map((c) => { const b = tile(c, null, () => { if (picked.has(c.id)) picked.delete(c.id); else if (picked.size < 20) picked.set(c.id, ''); else toast('Up to 20 at a time', 'bad'); warned = ''; paint(); }, dupCount(c) > 1 ? `×${dupCount(c)}` : ''); b.setAttribute('aria-pressed', String(picked.has(c.id))); return b; }));
+      put(rows, [...picked.keys()].map((id) => {
+        const c = S.cards.find((x) => x.id === id), g = guide(c);
+        const inp = h('input', { type: 'text', inputmode: 'decimal', class: 'mk-input small', value: picked.get(id), placeholder: g.suggested != null ? String(+g.suggested.toPrecision(3)) : '0.01', 'aria-label': `Price for ${c.character} in ETH` });
+        inp.addEventListener('input', () => { picked.set(id, inp.value.trim()); warned = ''; note.hidden = true; count(); });
+        return h('div', { class: 'mk-bulkrow' }, h('span', {}, h('b', { text: c.character }), h('small', { text: ` ${kind(c)}` })), inp);
+      }));
+      count();
+    };
+    const count = () => { go.textContent = picked.size ? `List ${plural(picked.size, 'card')}` : 'Pick cards to list'; go.disabled = !picked.size; };
+    const useSuggested = () => { for (const [id, v] of picked) if (!v) { const g = guide(S.cards.find((x) => x.id === id)); if (g.suggested != null) picked.set(id, String(+g.suggested.toPrecision(3))); } paint(); };
+    go.onclick = () => need(async () => {
+      const items = [...picked].map(([id, t]) => ({ c: S.cards.find((x) => x.id === id), t }));
+      const bad = items.find((x) => !okPrice(x.t));
+      if (bad) { toast(`Enter a price for ${bad.c.character} (up to 6 decimals)`, 'bad'); return; }
+      const checks = items.map((x) => [x.c, sellCheck(x.t, x.c)]).filter(([, w]) => w);
+      const key = items.map((x) => x.c.id + ':' + x.t).join(',');
+      if (checks.length && warned !== key) { warned = key; note.hidden = false; note.textContent = `Look again at ${checks.map(([c]) => c.character).join(', ')}: ${checks[0][1]} Tap again to list anyway.`; go.textContent = 'List anyway'; return; }
+      go.disabled = true;
+      if (await listMany(items.map((x) => ({ c: x.c, priceEth: +x.t })), days)) { Sheet.close('bulk'); refresh(); } else go.disabled = false;
+    });
+    paint();
+    Sheet.open('bulk', { title: 'List several', wide: true, body: h('div', { class: 'st sell mk-bulk' },
+      h('p', { class: 'muted', text: 'Pick up to 20 cards (copies you have more than one of come first), give each a price, and list them all in one go.' }),
+      grid, h('h3', { text: 'Prices' }), rows,
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn small', text: 'Use suggested prices for the empty ones', onclick: useSuggested }),
+        sel('For sale for', days, [[7, '7 days'], [30, '30 days'], [90, '90 days']], (v) => { days = +v; })),
+      note, h('div', { class: 'row mk-fgo' }, go),
+      h('p', { class: 'muted small', text: 'They stay in your wallet until someone buys them. A listing ends if the card moves, is cased or is graded.' })) });
+  }
+  const dupCount = (c) => S.cards.filter((x) => x.series === c.series && x.material === c.material && x.character === c.character).length;
+  async function listMany(items, days) {
+    if (!LIVE) { Store.update((s) => { for (const x of items) s.listed[x.c.id] = x.priceEth; }); toast(`${plural(items.length, 'card')} for sale`, 'good'); items.forEach((x) => demoBuyer(x.c.id)); return true; }
+    const wake = await sleepingFirst(); if (wake == null) return false;
+    const ok = await Live.run(`List ${plural(items.length, 'card')}`, (o) => L().listCards({ items: items.map((x) => ({ serial: x.c.serial, priceEth: String(x.priceEth) })), days }, { ...o, wakeOk: wake }), `${plural(items.length, 'card')} for sale`);
+    if (ok) Store.update((s) => { for (const x of items) s.listed[x.c.id] = x.priceEth; });
+    return !!ok;
+  }
 
   // ---------- selling packs
   function sellPacks() {
@@ -779,7 +952,7 @@
     const o = bestFor(c); if (!o) return null;
     const u = underFloor(o);
     return h('p', { class: 'mk-owed mk-offerline' }, o.kind === 'match' ? 'Offer for any card like it: ' : 'Offer: ', h('b', { text: ethTxt(o.priceEth) }), u ? ` (${u})` : '', ` from ${Fun.label(o.buyer)} `,
-      h('button', { type: 'button', class: 'btn small primary', text: 'Accept', 'data-key': 'accept', onclick: () => acceptSheet(o) }));
+      h('button', { type: 'button', class: 'btn small primary', text: 'Sell now', 'data-key': 'accept', onclick: () => acceptSheet(o) }));
   };
   // live: your listings and the offers are read when the wallet connects (the detail's lines)
   if (LIVE) {

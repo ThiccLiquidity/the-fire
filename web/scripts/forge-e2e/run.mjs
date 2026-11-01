@@ -641,6 +641,29 @@ try {
       await p.evaluate(() => Fun.go("market", { filter: { type: ["gold"], graded: "graded", gradeMin: 10 } })); await p.waitForTimeout(300);
       check(await p.locator("#sheet-market .mk-empty button:has-text('make an offer')").count() === 1, "nothing matches: a next step (drop a filter, or ask for one with an offer)");
       await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
+      // prices (market.js): a listed card's price strip, its other copies, its sales; Sell's quick prices; list several
+      await p.evaluate(() => Fun.go("market")); await p.locator("#sheet-market .mk-grid .mk-tile").first().waitFor();
+      await p.locator("#sheet-market .mk-grid .mk-tile").first().click(); await p.locator("#sheet-mcard .mk-strip").waitFor();
+      const strip = await p.locator("#sheet-mcard .mk-strip").innerText();
+      check(/Lowest ask/i.test(strip) && /Recent sales/i.test(strip) && /Best offer/i.test(strip) && /median of \d+|not enough|no price guide/i.test(strip), `a listed card: its price strip (${strip.replace(/\s+/g, " ").slice(0, 90)})`);
+      check(await p.locator("#sheet-mcard .mk-sold h3").count() === 1, "a listed card: its recent sales of the same kind");
+      await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
+      await p.evaluate(() => { Store.update((s) => { s.wallet.connected = true; }); Fun.open.sell({ id: Store.state.cards.find((c) => c.material === "gold").id }); });
+      await p.locator("#sheet-sell .mk-strip").waitFor();
+      check(await p.locator("#sheet-sell [data-key=sellnow]").count() === 1 && await p.locator("#sheet-sell .mk-quick button").count() >= 1, "Sell: Sell now (the best offer) and quick prices");
+      await p.locator("#sheet-sell .mk-quick button").first().click();
+      check(/^\d*\.\d+$/.test(await p.locator("#sheet-sell .mk-input").inputValue()), "a quick price fills the price only when tapped");
+      await p.evaluate(() => document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()));
+      await p.evaluate(() => Fun.go("market", { tab: "mine" })); await p.locator("#sheet-market [data-key=bulk]").click(); await p.locator("#sheet-bulk[open]").waitFor();
+      for (const i of [0, 1]) await p.locator("#sheet-bulk .mk-tile").nth(i).click();
+      await p.click("#sheet-bulk button:has-text('Use suggested')");
+      for (const inp of await p.locator("#sheet-bulk .mk-bulkrow input").all()) if (!(await inp.inputValue())) await inp.fill("0.004");
+      const listed0 = await p.evaluate(() => Object.keys(Store.state.listed).length);
+      await p.click("#sheet-bulk [data-key=bulkgo]"); await p.waitForTimeout(200);
+      if (await p.locator("#sheet-bulk[open]").count()) await p.click("#sheet-bulk [data-key=bulkgo]"); // a second look for a low price
+      await p.waitForTimeout(300);
+      check(await p.evaluate(() => Object.keys(Store.state.listed).length) === listed0 + 2, "List several: two cards listed in one go");
+      await p.evaluate(() => { Store.update((s) => { s.listed = {}; }); document.querySelectorAll("dialog.sheet[open]").forEach((d) => d.close()); });
     }
 
     // a profile (profile.js): the demo keeps it in this browser. Edit from the wallet, pick a card, frame it, save

@@ -7,7 +7,7 @@
 //   GET /market                  what can be bought on the market now (cards with their traits, packs) and open offers
 //   GET /market/stats            per kind of card: listed count and lowest price; median of clean recent sales
 //   GET /status                  (Ponder's own) the last block indexed: the site's "as of" and out-of-date banner
-//   GET /sales?limit=            the newest market sales
+//   GET /sales?limit=&fire=&type=&char=  the newest market sales (with fire/type/char: card sales of that kind, with holo and grade)
 //   /graphql, /sql/*             everything else (read-only)
 import { db } from "ponder:api";
 import schema from "ponder:schema";
@@ -91,8 +91,17 @@ app.get("/market/stats", async (c) => {
   ]);
   return out(c, { groups, sold: sold.map((x) => (x.sales >= 3 ? x : { ...x, median: null })) }, 10);
 });
+// the newest sales; with ?fire=&type=&char= only the card sales of that kind, each with the card's holo and grade
 app.get("/sales", async (c) => {
-  return out(c, { sales: await db.select().from(schema.sale).orderBy(desc(schema.sale.at)).limit(int(c.req.query("limit"), 30, 200)) }, 5);
+  const limit = int(c.req.query("limit"), 30, 200), fire = c.req.query("fire"), type = c.req.query("type"), ch = c.req.query("char");
+  if (fire == null && type == null && ch == null) return out(c, { sales: await db.select().from(schema.sale).orderBy(desc(schema.sale.at)).limit(limit) }, 5);
+  const S = schema.sale, C = schema.card, conds = [eq(S.kind, "card")];
+  if (fire != null) conds.push(eq(C.fire, int(fire, 0, 1e6)));
+  if (type != null) conds.push(eq(C.cardType, int(type, 0, 99)));
+  if (ch != null) conds.push(eq(C.character, int(ch, 0, 1e6)));
+  const rows = await db.select({ id: S.id, serial: S.serial, price: S.price, at: S.at, wash: S.wash, holoFrame: C.holoFrame, holoPicture: C.holoPicture, grade: C.grade })
+    .from(S).innerJoin(C, eq(C.serial, S.serial)).where(and(...conds)).orderBy(desc(S.at)).limit(limit);
+  return out(c, { sales: rows }, 10);
 });
 
 app.use("/sql/*", client({ db, schema }));

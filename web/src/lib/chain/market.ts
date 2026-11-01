@@ -202,6 +202,19 @@ export async function marketStats(): Promise<{ groups: GroupStat[]; sold: SoldSt
   } catch { return null; }
 }
 
+/** The recent card sales of one kind (Series, type index, character index), newest first, from our indexer: price, time,
+ *  holo look, grade, and whether it was flagged as trading with yourself. [] without the indexer. */
+export async function salesOfKind(k: { fire: number; cardType: number; character: number; limit?: number }): Promise<{ serial: number; priceEth: string; at: number; holo: "none" | "frame" | "picture" | "full"; grade: number | null; wash: boolean }[]> {
+  if (!marketOn() || !indexerUp) return [];
+  try {
+    const r = await fetch(`/api/idx/sales?fire=${k.fire}&type=${k.cardType}&char=${k.character}&limit=${k.limit ?? 60}`, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return [];
+    const j = (await r.json()) as { sales: { serial: string; price: string; at: number; wash: boolean; holoFrame: boolean; holoPicture: boolean; grade: number | null }[] };
+    return j.sales.map((x) => ({ serial: Number(x.serial), priceEth: eth(BigInt(x.price)), at: x.at, wash: x.wash, grade: x.grade ?? null,
+      holo: x.holoFrame && x.holoPicture ? "full" : x.holoFrame ? "frame" : x.holoPicture ? "picture" : "none" }));
+  } catch { return []; }
+}
+
 /** Does a card meet a match offer? (FireMarket.matches, read on the chain) */
 export const matchesOffer = (o: BuyOffer, serial: number): Promise<boolean> =>
   o.kind === "card" ? Promise.resolve(o.serial === serial) : o.kind === "match" ? read<boolean>("FireMarket", marketAbi, "matches", [matchKey(o.rule!), BigInt(serial)]).catch(() => false) : Promise.resolve(false);

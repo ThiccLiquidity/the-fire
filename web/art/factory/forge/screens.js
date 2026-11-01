@@ -1073,6 +1073,7 @@
           h('div', { class: 'dodds' }, h('small', { text: c.grade != null ? 'Odds with grade' : 'Pull odds' }), h('b', { text: od.label })),
           LIVE ? null : h('div', { class: 'dfloor' }, h('small', { text: 'Floor (demo)' }), h('b', { text: floorTxt(c) }))),
         window.Fun?.offerLine?.(c), // someone wants it: the best offer, with Accept (market.js)
+        window.Fun?.priceStrip?.(c), // what this kind of card goes for: lowest ask, recent sales, best offer (market.js)
         // the actions first, right under the card (they stick to the bottom of the sheet on a short screen); the traits fold away
         h('div', { class: 'row dacts' },
           c.grade == null ? btn(`Grade · ${Wear.usd(Store.PRICES.GRADE_USD)}`, 'primary', () => goto('grade', { as: 'grade' }), { disabled: !canGrade }) : null, // slabbed: final, nothing to do

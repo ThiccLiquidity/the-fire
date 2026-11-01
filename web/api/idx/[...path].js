@@ -9,7 +9,7 @@ export async function GET(request) {
   if (!base) return new Response('{"error":"no indexer"}', { status: 503, headers: { 'content-type': 'application/json' } });
   const u = new URL(request.url), path = u.pathname.replace(/^\/api\/idx\//, '');
   if (!OK.test(path)) return new Response('{"error":"not found"}', { status: 404, headers: { 'content-type': 'application/json' } });
-  const q = new URLSearchParams([...u.searchParams].filter(([k]) => ['fire', 'min', 'limit'].includes(k)));
+  const q = new URLSearchParams([...u.searchParams].filter(([k]) => ['fire', 'min', 'limit', 'type', 'char'].includes(k)));
   try {
     const r = await fetch(`${base}/${path}${q.size ? `?${q}` : ''}`, { signal: AbortSignal.timeout(8000) });
     return new Response(await r.text(), { status: r.status, headers: { 'content-type': 'application/json', 'cache-control': r.headers.get('cache-control') || 'no-store' } });
