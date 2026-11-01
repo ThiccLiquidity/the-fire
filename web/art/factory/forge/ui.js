@@ -35,11 +35,11 @@
   };
   const svg = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
   // the five places, one way into each: the top bar on computers, the tab bar on phones (the same buttons)
-  const PLACES = [['workshop', 'Workshop', 'workshop'], ['collection', 'Collection', 'cards'], ['market', 'Market', 'tag'], ['arcade', 'Arcade', 'game'], ['paper', 'Paper', 'news']];
+  const PLACES = [['workshop', 'Workshop', 'workshop'], ['collection', 'Collection', 'cards'], ['market', 'Market', 'tag'], ['arcade', 'Arcade', 'game'], ['paper', 'Morning Wood', 'news']];
   const paperHref = () => { const l = new URLSearchParams(location.search).get('live'); return '/press/' + (l ? `?live=${encodeURIComponent(l)}` : ''); };
   const navItems = () => PLACES.map(([k, label, icon]) => k === 'paper'
     ? `<a class="nv n-${k}" data-nav="${k}" href="${paperHref()}" aria-label="${label}">${svg(icon)}<span>${label}</span></a>`
-    : `<button class="nv n-${k}${k === 'market' ? ' mk-entry' : ''}" type="button" data-nav="${k}" aria-label="${label}">${svg(icon)}<span>${label}</span>${k === 'market' ? '<b class="nbadge" hidden></b>' : ''}</button>`).join('');
+    : `<button class="nv n-${k}" type="button" data-nav="${k}" aria-label="${label}">${svg(icon)}<span>${label}</span>${k === 'market' ? '<b class="nbadge" hidden></b>' : ''}</button>`).join('');
   // big numbers compact, 3 significant digits: 22.9K, 1.25M, 1T (never "1000.00B")
   const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 });
   const fmt = (n) => (n >= 1e3 ? compact.format(n) : String(+n.toFixed(3)));
@@ -526,7 +526,6 @@
   function render() {
     renderBurned(); renderChip(); renderBuy(); renderPeek(); renderCounts(); renderQuiet(); syncScene(); placePills();
     offerBadge(); markPlace();
-    const mk = Store.marketOn(); document.querySelectorAll('.mk-entry').forEach((x) => { if (x.hidden === mk) x.hidden = !mk; }); // the market's ways in: only where there is one
     const h = mode === 'port' && !$('#buybar').classList.contains('open') ? $('#buybar').offsetHeight : bbH; if (h !== bbH) { bbH = h; if (h) layout(); } // the Buy bar changed height: keep the stations clear of it
   }
   Store.on(render);
@@ -941,13 +940,16 @@
     if (k === 'workshop') return closeSheets();
     closeSheets();
     if (k === 'collection') openStation('cards');
-    if (k === 'market') window.Fun?.go('market');
+    if (k === 'market') { // always in the bar; until this network has a market, it says so
+      if (Store.marketOn()) window.Fun?.go('market');
+      else Sheet.open('mk-soon', { title: 'Market', body: '<p class="lead">The market isn\u2019t open yet. Soon you\u2019ll buy and sell cards and sealed packs here, and make offers.</p>' });
+    }
     if (k === 'arcade') openStation('games');
   }
   document.querySelectorAll('[data-nav]:not(a)').forEach((b) => b.onclick = () => goPlace(b.dataset.nav));
   // which place is showing: the top sheet that belongs to one says (My cards and its binder, showcase, badges = Collection)
   function markPlace() {
-    const PLACE_OF = { table: 'collection', binder: 'collection', showcase: 'collection', badges: 'collection', pop: 'collection', market: 'market', games: 'arcade' };
+    const PLACE_OF = { table: 'collection', binder: 'collection', showcase: 'collection', badges: 'collection', pop: 'collection', market: 'market', 'mk-soon': 'market', games: 'arcade' };
     const open = [...document.querySelectorAll('dialog.sheet[open]')].map((d) => PLACE_OF[d.id.replace(/^sheet-/, '')]).filter(Boolean);
     const on = open.length ? open.pop() : document.querySelector('dialog.sheet[open]') ? '' : 'workshop';
     document.querySelectorAll('[data-nav]').forEach((b) => { const v = b.dataset.nav === on; b.classList.toggle('on', v); if (v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });

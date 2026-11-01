@@ -137,8 +137,9 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 
 /* narrower desktops */
 @media (max-width: 1640px) { .brand .tag { display: none } } /* room for the five places */
-@media (max-width: 1340px) { .chip.series { display: none } }
-@media (max-width: 1100px) { .nav5 .nv span { display: none } .nav5 .nv { padding: 0 11px } } /* the places go icon-only before anything overlaps */
+@media (max-width: 1480px) { .chip.series { display: none } }
+@media (max-width: 1240px) { .nav5 .nv span { display: none } .nav5 .nv { padding: 0 11px } } /* the places go icon-only before anything overlaps */
+body[data-mode=desk] .wallet, body[data-mode=land] .wallet { flex-shrink: 0 } /* the wallet never cuts "Connect" short */
 
 /* phones held upright: scene on top, four big station buttons, the buy bar pinned to the bottom */
 body[data-mode=port] { overflow: auto }
@@ -586,3 +587,5 @@ body.tabs[data-mode=port] .buybar { padding-bottom: calc(8px + var(--tabH, 64px)
 body.tabs[data-mode=port] dialog.sheet[open] { margin-bottom: var(--tabH, 64px); max-height: calc(100dvh - 12px - var(--tabH, 64px)) }
 body.tabs[data-mode=port] dialog.sheet.wide[open] { height: calc(100dvh - 12px - var(--tabH, 64px)) }
 body.tabs[data-mode=port] .receipt { bottom: calc(var(--bbH, 80px) + 10px) }
+/* the paper's tab: "Morning Wood" in a touch smaller type so it fits a phone's fifth of the bar */
+.tabbar .n-paper span { font-size: 10.5px; letter-spacing: -.01em; white-space: nowrap }

@@ -168,10 +168,10 @@ try {
     await page.goto(`${SITE}/cards`);
     await page.waitForURL(/\/forge\/$/);
     await page.locator('.topbar .nav5 [data-nav="paper"]').waitFor({ timeout: 20_000 });
-    check(await page.locator('.topbar .nav5 [data-nav="paper"]').getAttribute("href") === "/press/", "/cards → Cardworks, with Paper in the top bar");
+    check(await page.locator('.topbar .nav5 [data-nav="paper"]').getAttribute("href") === "/press/", "/cards → Cardworks, with Morning Wood in the top bar");
     await page.click('.topbar .nav5 [data-nav="paper"]');
     await page.waitForURL(/\/press\/$/);
-    check(true, "Cardworks Paper → the paper");
+    check(true, "Cardworks Morning Wood → the paper");
     check(errors.length === 0, `desktop: no console errors or CSP violations${errors.length ? ": " + errors.join(" | ") : ""}`);
     await ctx.close();
 
