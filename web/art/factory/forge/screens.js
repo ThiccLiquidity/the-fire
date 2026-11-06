@@ -1078,9 +1078,9 @@
           window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null)),
       h('div', { class: 'traits' },
         h('div', { class: 'cmeta' }, matChip(c.material), holoChip(c), od.tier ? h('span', { class: 'tier-b ' + od.tier, text: TIER_LABEL[od.tier] }) : null),
-        upside ? h('p', { class: 'upside-b' }, h('b', { text: 'Upside-down rare' }), ` · about 1 in ${Info.oneIn(upside.p)} cards`) : null,
+        upside ? h('p', { class: 'upside-b' }, h('b', { text: 'Upside-down rare' }), ` · any character: about 1 in ${Info.oneIn(upside.p)} cards`) : null,
         h('div', { class: 'dstats' },
-          h('div', { class: 'dodds' }, h('small', { text: c.grade != null ? 'Odds with grade' : 'Pull odds' }), h('b', { text: od.label })),
+          h('div', { class: 'dodds' }, h('small', { text: c.grade != null ? 'Odds with grade · this card' : 'Pull odds · this card' }), h('b', { text: od.label })),
           LIVE ? null : h('div', { class: 'dfloor' }, h('small', { text: 'Floor (demo)' }), h('b', { text: floorTxt(c) }))),
         window.Fun?.offerLine?.(c), // someone wants it: the best offer, with Accept (market.js)
         window.Fun?.priceStrip?.(c), // what this kind of card goes for: lowest ask, recent sales, best offer (market.js)

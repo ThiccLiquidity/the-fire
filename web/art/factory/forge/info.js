@@ -476,7 +476,7 @@
       </nav>
       <div class="inf-glance" aria-label="Rarity at a glance">
         <button type="button" data-go="pda"><b>${Wear.TEN_FRESH}</b><span>PDA 10 on a fresh card</span></button>
-        ${(() => { const u = upsideDown()[0]; return u ? `<button type="button" data-go="cards" data-upside><b>1 in ${oneIn(u.p)}</b><span>${u.label}. Rarer than a Full Art.</span></button>` : ''; })()}
+        ${(() => { const u = upsideDown()[0]; return u ? `<button type="button" data-go="cards" data-upside><b>1 in ${oneIn(u.p)}</b><span>${u.label}, any character. Rarer than a Full Art.</span></button>` : ''; })()}
         ${M.fullart?.share ? (M.fullart.onePer ? `<button type="button" data-go="cards"><b>${nf(Math.round(M.fullart.count))} Full Arts</b><span>One per character in Series ${no}</span></button>` : `<button type="button" data-go="cards"><b>1 in ${oneIn(M.fullart.share)}</b><span>Full Art in Series ${no}</span></button>`) : ''}
       </div>
       ${list.map((s, i) => `

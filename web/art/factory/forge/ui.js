@@ -58,8 +58,8 @@
     <div class="grow"></div>
     <nav class="nav5" aria-label="Places">${navItems()}</nav>
     <div class="grow"></div>
-    <button class="chip round gear" type="button" data-go="menu" aria-label="Help and settings">${svg('gear')}</button>
-    <button class="wallet" id="walletBtn" type="button">${svg('wallet')}${Brand.coin('PAPER', 'wcoin').replace('<img ', '<img hidden ')}<span>Connect</span></button>
+    <div class="wslot"><button class="chip round gear" type="button" data-go="menu" aria-label="Help and settings">${svg('gear')}</button>
+    <button class="wallet" id="walletBtn" type="button">${svg('wallet')}${Brand.coin('PAPER', 'wcoin').replace('<img ', '<img hidden ')}<span>Connect</span></button></div>
   </header>
   <div class="qbanner" id="qbanner" hidden></div>
   <button class="burn-tally" id="burnTally" type="button" aria-label="Burned all time" hidden>

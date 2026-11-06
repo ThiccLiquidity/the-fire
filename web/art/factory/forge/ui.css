@@ -141,6 +141,12 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 @media (max-width: 1480px) { .chip.series { display: none } }
 @media (max-width: 1240px) { .nav5 .nv span { display: none } .nav5 .nv { padding: 0 11px } } /* the places go icon-only before anything overlaps */
 body[data-mode=desk] .wallet, body[data-mode=land] .wallet { flex-shrink: 0 } /* the wallet never cuts "Connect" short */
+/* the wallet's slot keeps the room its connected label takes ("24 PAPER"; from 1500 px wide "Demo wallet · 24 PAPER"),
+   the button at its right end, so connecting doesn't push the places along the bar */
+.wslot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-shrink: 0; min-width: 0 }
+body[data-mode=desk] .wslot, body[data-mode=land] .wslot { min-width: 200px } /* the gear, the gap, the wallet */
+body[data-mode=port] .wslot { gap: 6px }
+@media (min-width: 1500px) { body[data-mode=desk] .wslot { min-width: 300px } }
 
 /* phones held upright: scene on top, four big station buttons, the buy bar pinned to the bottom */
 body[data-mode=port] { overflow: auto }
