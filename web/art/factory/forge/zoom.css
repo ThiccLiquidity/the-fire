@@ -54,6 +54,7 @@ dialog.zv:focus { outline: none }
 .detail .big .big-clip { display: flex; margin: 22px auto 0; font-size: 13px }
 .detail .big .big-acts { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; margin: 22px auto 0 }
 .detail .big .big-acts .big-clip { margin: 0 }
+.detail .big .big-acts .zv-open { position: relative; top: auto; right: auto; bottom: auto; width: 40px; height: 40px; flex: none }
 /* the card's actions: Spin in 3D and Share clip, centred under the card (tall screens) or beside it on the right (wide) */
 .zv-acts { position: absolute; z-index: 2; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 10px;
   align-items: center; opacity: var(--ui); transition: opacity .2s }

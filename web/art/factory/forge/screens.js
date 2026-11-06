@@ -29,8 +29,8 @@
   const put = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((x) => x != null && x !== false));
   // Background Store updates (other buyers, burns landing, timers) must never swap nodes under a click or the keyboard
   // focus. patch() rebuilds a part only when what it shows changed (its key); a rebuild puts focus back on the same
-  // control, found again by its data-id / data-k / data-v / data-key.
-  const focusSel = (el) => { for (const k of ['data-id', 'data-k', 'data-v', 'data-key']) if (el?.hasAttribute?.(k)) return `[${k}="${CSS.escape(el.getAttribute(k))}"]`; return null; };
+  // control, found again by its data-id / data-k / data-v / data-key / data-q.
+  const focusSel = (el) => { for (const k of ['data-id', 'data-k', 'data-v', 'data-key', 'data-q']) if (el?.hasAttribute?.(k)) return `[${k}="${CSS.escape(el.getAttribute(k))}"]`; return null; };
   function patch(host, key, build) {
     if (host._key === key) return false;
     host._key = key;
@@ -493,7 +493,7 @@
           h('button', { type: 'button', 'aria-pressed': String(filt.hold === v), onclick: () => { filt.hold = v; renderColl(); after(); }, 'data-v': v }, t, h('small', { text: ' ' + n }))));
       const filters = h('div', { class: 'filters' },
         sel('series', 'Series', [['all', 'All'], ...seriesList.map((n) => [n, 'Series ' + n])]),
-        sel('mat', 'Material', [['all', 'All'], ...Store.MATS.map((m) => [m, Store.MAT_LABEL[m]])]),
+        sel('mat', 'Material', [['all', 'All'], ...Store.MATS.filter((m) => m !== 'diamond').map((m) => [m, Store.MAT_LABEL[m]])]),
         sel('holo', 'Holo', [['any', 'Any'], ['yes', 'Any holo'], ['none', 'None'], ['frame', 'Frame'], ['picture', 'Picture'], ['full', 'Full']]),
         sel('grade', 'Grade', [['all', 'All'], ['none', 'Not graded'], ['10', 'PDA 10'], ['9-8', 'PDA 9–8'], ['7-6', 'PDA 7–6'], ['5-4', 'PDA 5–4'], ['3-2', 'PDA 3–2'], ['1', 'PDA 1']]),
         sel('sort', 'Sort', [['serial', 'Newest'], ['rarity', 'Rarity'], ['grade', 'Grade'], ['edition', 'Print #']]));
@@ -1072,9 +1072,10 @@
     const upside = window.Info?.upsideDown?.(c.material, c.holo || 'none'); // a full holo Paper, a plain Coal…
     const zoom = () => viewCard(c, ids);
     const body = h('div', { class: 'detail' },
-      h('div', { class: 'big' }, h('div', { class: 'cwrap', onclick: (e) => { if (!e.target.closest('button')) zoom(); } }, face, gradeBadge(c),
-        window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null),
-        h('div', { class: 'big-acts' }, window.Card3D?.supported ? Card3D.button(() => c, () => c.character, 'small') : null, clipBtn(c, 'small big-clip'))),
+      // the full-screen button sits in the row under the card, beside Spin in 3D (under the card's corner it overlapped the pill)
+      h('div', { class: 'big' }, h('div', { class: 'cwrap', onclick: (e) => { if (!e.target.closest('button')) zoom(); } }, face, gradeBadge(c)),
+        h('div', { class: 'big-acts' }, window.Card3D?.supported ? Card3D.button(() => c, () => c.character, 'small') : null, clipBtn(c, 'small big-clip'),
+          window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null)),
       h('div', { class: 'traits' },
         h('div', { class: 'cmeta' }, matChip(c.material), holoChip(c), od.tier ? h('span', { class: 'tier-b ' + od.tier, text: TIER_LABEL[od.tier] }) : null),
         upside ? h('p', { class: 'upside-b' }, h('b', { text: 'Upside-down rare' }), ` · about 1 in ${Info.oneIn(upside.p)} cards`) : null,
@@ -1084,12 +1085,16 @@
         window.Fun?.offerLine?.(c), // someone wants it: the best offer, with Accept (market.js)
         window.Fun?.priceStrip?.(c), // what this kind of card goes for: lowest ask, recent sales, best offer (market.js)
         // the actions first, right under the card (they stick to the bottom of the sheet on a short screen); the traits fold away
-        h('div', { class: 'row dacts' },
-          c.grade == null ? btn(`Grade · ${Wear.usd(Store.PRICES.GRADE_USD)}`, 'primary', () => goto('grade', { as: 'grade' }), { disabled: !canGrade }) : null, // slabbed: final, nothing to do
-          c.grade == null ? btn(`Case · ${Wear.usd(Store.PRICES.CASE_USD)}`, '', () => goto('grade', { as: 'case' }), { disabled: !canCase }) : null,
-          btn('Burn', '', () => goto('burn'), { disabled: c.pending }),
-          window.Fun && Store.marketOn() ? btn(Fun.sellLabel?.(c) || 'Sell', '', () => { Sheet.close('card'); Fun.go('sell', { id: c.id }); }, { disabled: c.pending, 'data-key': 'sell' }) : null,
-          shareBtn(c)),
+        // (a small phone: only the main pair sticks, Grade / Case, or a slab's Sell / Share; the rest scroll with the page)
+        (() => {
+          const grade = c.grade == null ? btn(`Grade · ${Wear.usd(Store.PRICES.GRADE_USD)}`, 'primary', () => goto('grade', { as: 'grade' }), { disabled: !canGrade }) : null; // slabbed: final, nothing to do
+          const cas = c.grade == null ? btn(`Case · ${Wear.usd(Store.PRICES.CASE_USD)}`, '', () => goto('grade', { as: 'case' }), { disabled: !canCase }) : null;
+          const burn = btn('Burn', '', () => goto('burn'), { disabled: c.pending });
+          const sell = window.Fun && Store.marketOn() ? btn(Fun.sellLabel?.(c) || 'Sell', '', () => { Sheet.close('card'); Fun.go('sell', { id: c.id }); }, { disabled: c.pending, 'data-key': 'sell' }) : null;
+          const share = shareBtn(c);
+          const [main, more] = grade ? [[grade, cas], [burn, sell, share]] : [[burn, sell, share].filter(Boolean).slice(-2), [burn, sell, share].filter(Boolean).slice(0, -2)];
+          return h('div', { class: 'row dacts' }, h('div', { class: 'dacts-main' }, main), more.length ? h('div', { class: 'dacts-more' }, more) : null);
+        })(),
         canGradeNow(c) ? (c.cased ? nowBar(c, true, 'If graded now (cased)') : oddsClock(c, () => goto('grade', { as: 'case' }), canCase)) : null,
         h('details', { class: 'dmore' }, h('summary', { text: 'Details' }),
           h('dl', {}, traits.map(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })]), popDd ? [h('dt', { text: 'Pop' }), popDd] : null)),
@@ -1650,7 +1655,7 @@
           opts.map(([v, t]) => h('option', { value: v, selected: String(bfilt[key]) === String(v) }, t))));
       const filters = h('div', { class: 'filters' },
         sel_('series', 'Series', [['all', 'All'], ...seriesList.map((n) => [n, 'Series ' + n])]),
-        sel_('mat', 'Material', [['all', 'All'], ...Store.MATS.map((m) => [m, Store.MAT_LABEL[m]])]),
+        sel_('mat', 'Material', [['all', 'All'], ...Store.MATS.filter((m) => m !== 'diamond').map((m) => [m, Store.MAT_LABEL[m]])]),
         sel_('holo', 'Holo', [['any', 'Any'], ['none', 'None'], ['frame', 'Frame'], ['picture', 'Picture'], ['full', 'Full']]),
         sel_('grade', 'Grade', [['all', 'All'], ['none', 'Not graded'], ['10', 'PDA 10'], ['9-8', 'PDA 9–8'], ['7-6', 'PDA 7–6'], ['5-4', 'PDA 5–4'], ['3-2', 'PDA 3–2'], ['1', 'PDA 1']]),
         sel_('sort', 'Sort', [['best', 'Best to burn'], ['serial', 'Newest'], ['rarity', 'Rarity'], ['grade', 'Grade']]));
