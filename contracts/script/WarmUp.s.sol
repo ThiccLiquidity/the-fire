@@ -10,19 +10,21 @@ import {FireGroups} from "../src/cards/FireGroups.sol";
 
 /**
  * Testnet only: fill the test kit with sealed packs testers can open straight away. Buys out the warm-up Series (the
- * studio's "Testnet warm-up" sale: one open group, 40 packs), closes it (sold out, so its packs can open), sends every
- * pack to the test kit (DevKit, TESTKIT) and sets it to hand out PER (default 2) per wallet. Pays in test USDG and
+ * studio's "Testnet warm-up" sale: one open group, 150 packs), closes it (sold out, so its packs can open), sends every
+ * pack to the test kit (DevKit, TESTKIT) and sets it to hand out FIRST (default 3) on a wallet's first claim and
+ * DAILY (default 1) on each later day's. Pays in test USDG and
  * test PAPER it mints itself, so run it from the wallet that ran DevStack (it owns the stand-ins and the kit), after
  * the warm-up's start.
  *
- *   $env:FIRE = 1; forge script script/WarmUp.s.sol --rpc-url $env:RPC --account testnet-deployer --sender $DEPLOYER --slow --broadcast
+ *   $env:FIRE = 1; $env:FIRST = 3; $env:DAILY = 1; forge script script/WarmUp.s.sol --rpc-url $env:RPC --account testnet-deployer --sender $DEPLOYER --slow --broadcast
  */
 contract WarmUpScript is Deployments {
     function run() external {
         require(block.chainid != 4663, "WarmUp: never on Robinhood Chain mainnet (4663)");
         require(block.chainid == vm.envOr("EXPECTED_CHAIN_ID", uint256(46630)), "WarmUp: not the testnet (46630)");
         uint256 fire = vm.envOr("FIRE", uint256(1));
-        uint256 per = vm.envOr("PER", uint256(2));
+        uint256 first = vm.envOr("FIRST", uint256(3)); // a wallet's first claim
+        uint256 daily = vm.envOr("DAILY", uint256(1)); // then each later day
         FireSale sale = FireSale(payable(deployed("FireSale")));
         DevKit kit = DevKit(deployedInput("TESTKIT"));
         IERC1155 packs = IERC1155(deployed("FirePacks"));
@@ -37,11 +39,11 @@ contract WarmUpScript is Deployments {
         if (!sale.dropOf(fire).closed) sale.close(fire); // the last pack usually closes it already
         uint256 bought = packs.balanceOf(msg.sender, fire);
         packs.safeTransferFrom(msg.sender, address(kit), fire, bought, "");
-        kit.setPacks(packs, fire, per);
+        kit.setPacks(packs, fire, first, daily);
         vm.stopBroadcast();
 
         console.log(string.concat("warm-up Series ", vm.toString(fire), " bought out and closed; ", vm.toString(bought),
-            " sealed packs in the test kit, ", vm.toString(per), " per wallet"));
+            " sealed packs in the test kit: ", vm.toString(first), " on a first claim, then ", vm.toString(daily), " a day"));
     }
 
     /// Every pack left, in test USDG and test PAPER minted for it (the deployer owns the stand-ins).

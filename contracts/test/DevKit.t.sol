@@ -92,46 +92,52 @@ contract DevKitPacksTest is Test {
         packs = new TestPacks();
     }
 
-    function test_packs_twoPerWallet_once_whileTheyLast() public {
+    function test_packs_firstThenDaily_whileTheyLast() public {
         // alice claims before there are packs: tokens only
         vm.prank(alice, alice);
         kit.claim();
         assertEq(kit.packsFor(alice), 0);
-        packs.mint(address(kit), 1, 5);
-        kit.setPacks(packs, 1, 2);
-        // the packs came: alice gets them the same day (no tokens again)
+        packs.mint(address(kit), 1, 6);
+        kit.setPacks(packs, 1, 3, 1);
+        // the packs came: alice gets her first 3 the same day (no tokens again)
         assertEq(kit.nextClaim(alice), 0);
-        assertEq(kit.packsFor(alice), 2);
+        assertEq(kit.packsFor(alice), 3);
         vm.prank(alice, alice);
         kit.claim();
-        assertEq(packs.balanceOf(alice, 1), 2);
+        assertEq(packs.balanceOf(alice, 1), 3);
         assertEq(paper.balanceOf(alice), 25 ether, "no second day of tokens");
         vm.prank(alice, alice);
         vm.expectRevert(bytes("DevKit: once a day"));
         kit.claim();
-        // bob: tokens, press and packs in one claim
+        // bob: tokens, press and 3 packs in one claim
         vm.prank(bob, bob);
         kit.claim();
-        assertEq(packs.balanceOf(bob, 1), 2);
+        assertEq(packs.balanceOf(bob, 1), 3);
         assertEq(press.balanceOf(bob), 1);
-        // 1 left: carol gets tokens, no packs
-        assertEq(kit.packsLeft(), 1);
-        assertEq(kit.packsFor(carol), 0);
+        assertEq(kit.packsLeft(), 0);
+        // the kit is empty: carol gets tokens only
         vm.prank(carol, carol);
         kit.claim();
         assertEq(packs.balanceOf(carol, 1), 0);
-        assertEq(paper.balanceOf(carol), 25 ether);
-        // a day later alice gets tokens but never packs again
+        // a day later, refilled: alice gets tokens and a day's pack; carol her first (what's left: 2 of 3)
         vm.warp(block.timestamp + 1 days);
-        packs.mint(address(kit), 1, 10);
+        packs.mint(address(kit), 1, 3);
+        assertEq(kit.packsFor(alice), 1);
         vm.prank(alice, alice);
         kit.claim();
-        assertEq(packs.balanceOf(alice, 1), 2, "packs once per wallet");
+        assertEq(packs.balanceOf(alice, 1), 4, "a pack a day");
+        assertEq(paper.balanceOf(alice), 50 ether);
+        vm.prank(carol, carol);
+        kit.claim();
+        assertEq(packs.balanceOf(carol, 1), 2, "the last ones go out even if fewer");
+        // the same day again: nothing due
+        assertEq(kit.packsFor(alice), 0);
+        assertGt(kit.nextClaim(alice), block.timestamp);
     }
 
     function test_claim_fromWalletsOnly() public {
         packs.mint(address(kit), 1, 4);
-        kit.setPacks(packs, 1, 2);
+        kit.setPacks(packs, 1, 2, 1);
         vm.expectRevert(bytes("DevKit: from your own wallet"));
         kit.claim(); // this test contract is not tx.origin
         vm.prank(alice, alice);
@@ -155,9 +161,9 @@ contract DevKitPacksTest is Test {
         packs.mint(address(kit), 1, 4);
         vm.startPrank(alice);
         vm.expectRevert(bytes("dev: owner only"));
-        kit.setPacks(packs, 1, 4);
+        kit.setPacks(packs, 1, 4, 1);
         vm.stopPrank();
-        kit.setPacks(packs, 1, 2);
+        kit.setPacks(packs, 1, 2, 1);
         vm.prank(alice);
         vm.expectRevert(bytes("dev: owner only"));
         kit.takePacks(alice, 4);

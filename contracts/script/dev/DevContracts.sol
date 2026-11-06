@@ -329,9 +329,10 @@ contract DevPress is ERC721, DevOwned {
 /// day, and a Paper Press once per wallet, in one transaction. Testnet stand-ins only (DevStack refuses mainnet); a
 /// minter of the three tokens and of the press. Nothing here is worth anything.
 ///
-/// Packs to open while a Series is on sale: the deployer buys out a small warm-up Series (WarmUp.s.sol), sends its
-/// sealed packs here and calls setPacks; then every wallet's claim also brings PACKS_PER sealed packs, once per wallet,
-/// while they last. A wallet that claimed before the packs came gets them on its next claim, even the same day.
+/// Packs to open any time (a drop-in test: friends play whenever they like): the deployer buys out a warm-up Series
+/// (WarmUp.s.sol), sends its sealed packs here and calls setPacks; then a wallet's first claim brings `packsFirst`
+/// sealed packs and each later day's claim `packsDaily` more, while they last. A wallet that claimed before the packs
+/// came gets its first ones on its next claim, even the same day.
 contract DevKit is DevOwned, ERC1155Holder {
     DevToken public immutable PAPER;
     DevToken public immutable PLANK;
@@ -346,12 +347,14 @@ contract DevKit is DevOwned, ERC1155Holder {
 
     IERC1155 public packs; // FirePacks (address(0): no packs in the kit)
     uint256 public packFire; // which Series' packs it hands out
-    uint256 public packsPer; // how many per wallet
-    mapping(address => bool) public gotPacks;
+    uint256 public packsFirst; // a wallet's first packs
+    uint256 public packsDaily; // then this many on each later day
+    mapping(address => bool) public gotPacks; // had its first packs
+    mapping(address => uint256) public lastPacks; // when it last got packs
     mapping(address => bool) public smartWallet; // smart-contract wallets the deployer lets claim
 
     event Claimed(address indexed to, bool press, uint256 packs);
-    event PacksSet(address packs, uint256 fire, uint256 per);
+    event PacksSet(address packs, uint256 fire, uint256 first, uint256 daily);
 
     constructor(DevToken paper, DevToken plank, DevToken usdg, DevPress press) DevOwned(msg.sender) {
         PAPER = paper;
@@ -360,12 +363,14 @@ contract DevKit is DevOwned, ERC1155Holder {
         PRESS = press;
     }
 
-    /// @notice Which packs the kit hands out (the deployer: after sending them here). per 0 stops it.
-    function setPacks(IERC1155 packs_, uint256 fire, uint256 per) external onlyOwner {
+    /// @notice Which packs the kit hands out and how many (the deployer: after sending them here): `first` on a
+    ///         wallet's first claim, `daily` on each later day's. Both 0 stops it.
+    function setPacks(IERC1155 packs_, uint256 fire, uint256 first, uint256 daily) external onlyOwner {
         packs = packs_;
         packFire = fire;
-        packsPer = per;
-        emit PacksSet(address(packs_), fire, per);
+        packsFirst = first;
+        packsDaily = daily;
+        emit PacksSet(address(packs_), fire, first, daily);
     }
 
     /// @notice Let a friend's smart-contract wallet claim (the deployer).
@@ -383,12 +388,17 @@ contract DevKit is DevOwned, ERC1155Holder {
         return address(packs) == address(0) ? 0 : packs.balanceOf(address(this), packFire);
     }
 
-    /// @notice How many packs `who`'s next claim brings (0: none left, or it already got them).
-    function packsFor(address who) public view returns (uint256) {
-        return packsPer == 0 || gotPacks[who] || packsLeft() < packsPer ? 0 : packsPer;
+    /// @notice How many packs `who`'s claim now brings: its first packs, or a day's (0: none due, or none left). The
+    ///         last few in the kit go out even if fewer than that.
+    function packsFor(address who) public view returns (uint256 n) {
+        if (!gotPacks[who]) n = packsFirst;
+        else if (block.timestamp >= lastPacks[who] + EVERY) n = packsDaily;
+        uint256 left = packsLeft();
+        if (n > left) n = left;
     }
 
-    /// @notice The test tokens (once a day) and, the first time, a Paper Press; the kit's packs once per wallet.
+    /// @notice The test tokens (once a day) and, the first time, a Paper Press; the kit's packs (the first ones, then
+    ///         a day's).
     function claim() external {
         // people only: a contract could spin up throwaway claimers and take every pack in one transaction. A friend on a
         // smart-contract wallet (no tx.origin of its own) is let in by the deployer (setSmartWallet)
@@ -410,6 +420,7 @@ contract DevKit is DevOwned, ERC1155Holder {
         }
         if (n > 0) {
             gotPacks[msg.sender] = true;
+            lastPacks[msg.sender] = block.timestamp;
             packs.safeTransferFrom(address(this), msg.sender, packFire, n, "");
         }
         emit Claimed(msg.sender, press, n);

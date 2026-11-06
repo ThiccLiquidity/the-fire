@@ -457,24 +457,30 @@ export async function runTest(ctx: Ctx): Promise<number> {
     const I = ctx.deployment.inputs as Record<string, Address>;
     const W6 = fire - 1;
     const st0 = await L.testKitState(kitter.address);
-    check(st0.packs === 2 && st0.packFire === W6 && st0.packsLeft === 6 && !st0.gotPacks, `the warm-up's sealed packs are in the kit (WarmUp.s.sol): ${st0.packsLeft} of Series ${st0.packFire}, 2 per wallet`);
+    check(st0.packs === 3 && st0.packsFirst === 3 && st0.packsDaily === 1 && st0.packFire === W6 && st0.packsLeft === 6 && !st0.gotPacks, `the warm-up's sealed packs are in the kit (WarmUp.s.sol): ${st0.packsLeft} of Series ${st0.packFire}, 3 on a first claim, then 1 a day`);
     const packsOf = () => ctx.pub.readContract({ address: ctx.C.FirePacks, abi: parseAbi(["function balanceOf(address, uint256) view returns (uint256)"]), functionName: "balanceOf", args: [kitter.address, BigInt(W6)] }) as Promise<bigint>;
     const before = await Promise.all([bal(I.PAPER), bal(I.PLANK), bal(I.USDG)]);
     await L.claimTestKit(o);
     const after = await Promise.all([bal(I.PAPER), bal(I.PLANK), bal(I.USDG)]);
     const press = await ctx.pub.readContract({ address: I.MILL, abi: erc20Abi, functionName: "balanceOf", args: [kitter.address] }) as bigint;
     const st = await L.testKitState(kitter.address);
-    check(after[0] - before[0] === 25n * 10n ** 18n && after[1] - before[1] === 10n ** 30n && after[2] - before[2] === 50n * 10n ** 6n && press === 1n && st.next > 0 && st.hasPress && (await packsOf()) === 2n && st.gotPacks && st.packsLeft === 4,
-      "one claim: 25 PAPER, 10^30 PLANK, 50 USDG, a Paper Press and 2 sealed warm-up packs; the next one tomorrow");
+    check(after[0] - before[0] === 25n * 10n ** 18n && after[1] - before[1] === 10n ** 30n && after[2] - before[2] === 50n * 10n ** 6n && press === 1n && st.next > 0 && st.hasPress && (await packsOf()) === 3n && st.gotPacks && st.packsLeft === 3 && st.packs === 0,
+      "one claim: 25 PAPER, 10^30 PLANK, 50 USDG, a Paper Press and 3 sealed warm-up packs; the next one (a pack) tomorrow");
     // the warm-up is closed (sold out), so its packs open now
     const wo = await L.openPacks({ fire: W6, n: 1 }, o);
     await ctx.warp(100);
     const wd = await L.deliverAndDeal({ fire: W6, index: wo.index }, o);
     const wc = (await L.cardsOf(kitter.address)).filter((c) => Number(c.traits.Series) === W6);
-    check(wd.dealt && wc.length === 6 && (await packsOf()) === 1n, `a kit pack opens straight away: ${wc.length} Series ${W6} cards to case, grade and burn`);
+    check(wd.dealt && wc.length === 6 && (await packsOf()) === 2n, `a kit pack opens straight away: ${wc.length} Series ${W6} cards to case, grade and burn`);
     let km = "";
     try { await L.claimTestKit(o); } catch (e) { km = (e as Error).message; }
     check(!!km, `a second claim the same day is refused before the wallet ("${km}")`);
+    // a drop-in tester comes back the next day: tokens again and a day's sealed pack
+    await ctx.warp(24 * 3600 + 1);
+    const p0 = await packsOf();
+    check((await L.testKitState(kitter.address)).packs === 1, "the next day the kit has a pack for them");
+    await L.claimTestKit(o);
+    check((await packsOf()) === p0 + 1n, `back the next day: one more sealed pack (${await packsOf()} now)`);
     W.setLocalSigner(buyer);
   }
 

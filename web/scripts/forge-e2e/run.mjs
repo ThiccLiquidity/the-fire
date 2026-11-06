@@ -593,15 +593,15 @@ try {
     const I = ctx.deployment.inputs;
     const bal = (t) => ctx.pub.readContract({ address: t, abi: erc20Abi, functionName: "balanceOf", args: [me] });
     // the kit's details load just after the sheet opens
-    await page.waitForFunction(() => /plus 2 sealed Series 6 packs/.test(document.querySelector("#sheet-testnet .tn-steps li:nth-child(2) small")?.textContent || ""), null, { timeout: 15_000 }).catch(() => {});
-    check(/plus 2 sealed Series 6 packs to open right away/.test(await tn.locator(".tn-steps li:nth-child(2) small").first().textContent()), "the kit says it brings 2 sealed warm-up packs");
+    await page.waitForFunction(() => /3 sealed Series 6 packs to open right away/.test(document.querySelector("#sheet-testnet .tn-steps li:nth-child(2) small")?.textContent || ""), null, { timeout: 15_000 }).catch(() => {});
+    check(/3 sealed Series 6 packs to open right away\. Then come back each day for a sealed pack/.test(await tn.locator(".tn-steps li:nth-child(2) small").first().textContent()), "the kit says it brings 3 sealed warm-up packs, then one a day");
     const packs6 = () => ctx.pub.readContract({ address: ctx.C.FirePacks, abi: [{ type: "function", name: "balanceOf", inputs: [{ type: "address" }, { type: "uint256" }], outputs: [{ type: "uint256" }], stateMutability: "view" }], functionName: "balanceOf", args: [me, 6n] });
     const before = await Promise.all([bal(I.PAPER), bal(I.USDG), bal(I.MILL)]);
     await tn.locator('[data-t="kit"]').click();
     await toastSeen(/test kit is in your wallet/);
     const after = await Promise.all([bal(I.PAPER), bal(I.USDG), bal(I.MILL)]);
-    check(after[0] - before[0] === 25n * 10n ** 18n && after[1] - before[1] === 50n * 10n ** 6n && after[2] - before[2] === 1n && (await packs6()) === 2n,
-      "Get the test kit: one confirmation, 25 PAPER, 50 USDG, a Paper Press and 2 sealed packs arrive");
+    check(after[0] - before[0] === 25n * 10n ** 18n && after[1] - before[1] === 50n * 10n ** 6n && after[2] - before[2] === 1n && (await packs6()) === 3n,
+      "Get the test kit: one confirmation, 25 PAPER, 50 USDG, a Paper Press and 3 sealed packs arrive");
     await page.waitForFunction(() => /Open my packs/.test(document.querySelector('#sheet-testnet [data-t="open"]')?.textContent || ""), null, { timeout: 30_000 });
     check(true, `then "Open my packs" (the warm-up is closed, so they open now): ${(await tn.locator(".tn-steps li:nth-child(2) small").first().textContent()).trim()}`);
     const items = (await tn.locator(".tn-checks li label span").allTextContents()).map((t) => t.trim());

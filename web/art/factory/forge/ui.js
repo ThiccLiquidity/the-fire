@@ -865,19 +865,23 @@
     const kitOn = () => !!Live.chain?.testKitOn?.();
     const draw = (state) => {
       const ck = checked(), nd = state?.next ? new Date(state.next * 1000) : null, when = nd ? (nd.toDateString() === new Date().toDateString() ? '' : 'tomorrow ') + nd.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
-      const per = state?.packsPer || 0, packsGone = per && !state.gotPacks && state.packsLeft < per, canOpen = window.Stations?.openableCount?.() > 0;
-      const kitText = `25 PAPER, about $1,000 of PLANK, $50 USDG and a Paper Press${per ? `, plus ${per} sealed Series ${state.packFire} packs to open right away` : ''}. ${per ? 'The Press and the packs once' : 'The Press once'}; the rest once a day.${packsGone ? ' The kit\u2019s packs are all handed out.' : ''}${when ? ` Next one ${esc(when)}.` : ''}`;
+      const first = state?.packsFirst || 0, daily = state?.packsDaily || 0, left = state?.packsLeft || 0, canOpen = window.Stations?.openableCount?.() > 0;
+      const day = daily === 1 ? 'a sealed pack' : `${daily} sealed packs`, nextTxt = when ? ` Next one ${esc(when)}.` : '';
+      const kitText = !state?.gotPacks && first && left
+        ? `25 PAPER, about $1,000 of PLANK, $50 USDG, a Paper Press and ${first} sealed Series ${state.packFire} packs to open right away. Then come back each day for ${day} and more tokens.`
+        : first && left ? `Come back each day for ${day} and more tokens.${nextTxt}`
+          : `25 PAPER, about $1,000 of PLANK, $50 USDG and a Paper Press (once), then more tokens each day.${first ? ' The kit\u2019s packs are all handed out.' : ''}${nextTxt}`;
       const kitBtn = !kitOn() ? '<small class="muted">Not set up on this testnet yet</small>'
         : state?.next && canOpen ? '<button class="btn small primary" type="button" data-t="open">Open my packs</button>'
           : `<button class="btn small primary" type="button" data-t="kit"${state?.next ? ' disabled' : ''}>${state?.next ? 'Claimed' : 'Get the test kit'}</button>`;
       const done = CHECKS.filter(([k]) => ck[k]).length;
-      body.innerHTML = `<p class="lead">Play money, real wallets. Three steps, then try everything.</p>
+      body.innerHTML = `<p class="lead">Play money, real wallets. Three steps, then try everything, whenever you like.</p>
         <ol class="start-list tn-steps">
           <li><span class="start-n" aria-hidden="true">1</span><span class="start-t"><b>Get test ETH</b><small>For the network fee. Paste your wallet address on the faucet page.</small></span>
             <span class="row"><a class="btn small" href="${FAUCET}" target="_blank" rel="noopener">Faucet ↗</a>${S.wallet.full ? '<button class="btn small" type="button" data-t="copy">Copy my address</button>' : ''}</span></li>
           <li><span class="start-n" aria-hidden="true">2</span><span class="start-t"><b>Get the test kit</b><small>${kitText}</small></span>
             ${kitBtn}</li>
-          <li><span class="start-n" aria-hidden="true">3</span><span class="start-t"><b>Play</b><small>Open your kit packs now. The sale\u2019s PLANK and Press groups use a snapshot taken before it starts: get the kit early.</small></span></li>
+          <li><span class="start-n" aria-hidden="true">3</span><span class="start-t"><b>Play</b><small>Open packs, case, grade, trade and play whenever you like. There\u2019s no schedule: drop in any time this week.</small></span></li>
         </ol>
         <div class="tn-head"><h3>What to test</h3><span class="muted small" aria-live="polite">${done} of ${CHECKS.length} tried</span></div>
         <ul class="tn-checks">${CHECKS.map(([k, t]) => `<li><label><input type="checkbox" data-c="${k}"${ck[k] ? ' checked' : ''}> <span>${esc(t)}</span></label><button class="linkish small" type="button" data-rp="${k}" aria-label="Report a problem: ${esc(t)}">Report</button></li>`).join('')}</ul>

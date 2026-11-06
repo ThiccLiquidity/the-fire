@@ -210,15 +210,33 @@ export function testRunSale(): SaleSettings {
   }
 }
 
-/** The testnet warm-up (owner, Nov 2026): a small Series the deployer buys out at once (contracts/script/WarmUp.s.sol),
- *  so it closes and its packs can open straight away; its sealed packs go into the test kit, 2 per tester, to open,
- *  case, grade and burn while the main Series is on sale. One open group, $1 + 0.1 PAPER (the policy's least), a
- *  wallet limit of the whole Series (40, so the deployer can buy it all), no free packs, no After sell-out (the Series closes the moment it sells out). 40 packs: 20 testers. */
+/** The testnet warm-up (owner, Nov 2026): a Series the deployer buys out at once (contracts/script/WarmUp.s.sol), so
+ *  it closes and its packs can open straight away; its sealed packs go into the test kit (3 on a tester's first claim,
+ *  then 1 a day) to open, case, grade and burn whenever they drop in. One open group, $1 + 0.1 PAPER (the policy's
+ *  least), no wallet limit (only the deployer buys: the policy just warns), no free packs, no After sell-out (the
+ *  Series closes the moment it sells out). 150 packs: about 15 testers for a week. */
 export function warmUpSale(): SaleSettings {
   const s = standardSale()
   return {
-    ...s, packs: 40, maxPerTx: 50, regularWalletsHours: 0, creditPacksPercent: '0', creditPacksPerWallet: 0, creditGroup: -1,
-    groups: [{ ...blankGroup(), name: 'Warm-up', packsAs: 'rest', priceUsd: '1', paper: '0.1', coins: 7, perWallet: 40 }],
+    ...s, packs: 150, maxPerTx: 50, regularWalletsHours: 0, creditPacksPercent: '0', creditPacksPerWallet: 0, creditGroup: -1,
+    groups: [{ ...blankGroup(), name: 'Warm-up', packsAs: 'rest', priceUsd: '1', paper: '0.1', coins: 7, perWallet: 0 }],
+  }
+}
+
+/** The testnet drop-in sale (owner, Nov 2026): no schedule, so friends buy whenever they drop in. Paper Press holders
+ *  (1 PAPER, 1 per Press: every tester's kit has a Press) and Everyone ($2.50 + 1 PAPER, any coin, 10 per wallet) both
+ *  open at the start and sell until sold out; nothing is timed, so the owner can end it with FireSale.endDrop any time
+ *  from a day after the start (then its packs open). Free packs: 4 (1 per wallet), from Everyone, for picked
+ *  suggestions. 60 packs. */
+export function dropInSale(): SaleSettings {
+  const s = standardSale()
+  const [press, , everyone] = s.groups
+  return {
+    ...s, packs: 60, regularWalletsHours: 0, creditPacksPercent: '6.67', creditPacksPerWallet: 1, creditGroup: 1,
+    groups: [
+      { ...press, packs: 20, hours: 0, rollTo: 1 },
+      { ...everyone, packsAs: 'rest', perWallet: 10, limitHours: 0, afterGroup: -1 },
+    ],
   }
 }
 
@@ -227,6 +245,7 @@ export const SALE_PRESETS: { name: string; make: () => SaleSettings }[] = [
   { name: 'Giant', make: giantSale },
   { name: 'Test run', make: testRunSale },
   { name: 'Testnet warm-up', make: warmUpSale },
+  { name: 'Testnet drop-in', make: dropInSale },
 ]
 
 // ---------------------------------------------------------------- old saves

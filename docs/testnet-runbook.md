@@ -315,37 +315,42 @@ Follow `docs/game-server.md` sections 1-3 with these differences:
   isn't open": wait for it. Friends in AZ, AR, CT, DE, LA, MT, SC, SD, TN, IN or ME can't play competitive (the
   server blocks those states); free play works everywhere.
 
-## 14. Series 1 = the warm-up (Jean Phil), Series 2 = the sale (Gym Bros)
+## 14. A drop-in test week: Series 1 = the warm-up (Jean Phil), Series 2 = the drop-in sale (Gym Bros)
 
 The two practice Series are the collections already in the Card Studio: **Jean Phil × Painted Cubism** as **Series 1**
 and **Renaissance Gym Bros × Fresco Painting** as **Series 2** (5 characters each). In the studio, set each one's Series
 number (1 and 2) before building, so the cards print the right Series.
 
-- **Series 1 is the warm-up.** You buy all 40 packs yourself the moment it starts, so it closes at once and its packs
-  can open; they go into the test kit, 2 per tester. Friends open, case, grade and burn real cards from minute one.
-- **Series 2 is the sale they wait on**: the four groups (Press, PLANK snapshot, Everyone, After sell-out). Its burn
-  free packs come from picked suggestions (a burn credit needs 42 cards; the kit gives each tester 12).
+**Nothing is scheduled** (owner, Nov 2026): friends open the link whenever they get the chance, all week.
+- **Series 1 is the warm-up.** You buy all 150 packs yourself the moment it starts, so it closes at once and its packs
+  can open; they go into the test kit. A tester's first claim brings **3 sealed packs**, then **1 more every day** they
+  come back (plus the day's test tokens). Friends open, case, grade, burn and trade real cards any time.
+- **Series 2 is the drop-in sale**: Paper Press holders (1 PAPER, 1 per Press; every kit has a Press) and Everyone
+  ($2.50 + 1 PAPER, any coin, 10 per wallet), both open from the start, nothing timed, no snapshot. You end it near the
+  end of the week (or it sells out); then its packs open. Free packs come from picked suggestions (a burn credit
+  needs 42 burned cards, which a tester reaches after about a week of daily packs).
 
 Only one Series can be on sale at a time, so it goes in this order:
 
-**A. The day before (or the morning of): Series 1, the warm-up.**
-1. Studio, Series 1 (Jean Phil): Sale tab → **Start from: Testnet warm-up** (40 packs, one open group, $1 + 0.1 PAPER,
-   no free packs). More than 20 friends? Raise the packs (2 each) **and** the group's wallet limit to the same number
-   (50 at most, or WarmUp can't buy them all). Export the recipe.
-2. Move the old Series 1 files out of the way first (done in the repo: they're in `contracts\series\old-2026-10`).
-   Launch it like any Series (below), with a start **45-60 minutes out** (launch refuses under 15 minutes, and its
-   checks take a while). It has no snapshot group, so no snapshot file.
-3. After the start, fill the kit (the deployer pays in test tokens it mints; 2 per wallet):
+**A. Day 0 (one evening): Series 1, the warm-up.**
+1. Studio, Series 1 (Jean Phil): Sale tab → **Start from: Testnet warm-up** (150 packs, one open group, $1 + 0.1 PAPER,
+   no wallet limit: only you buy, the launch just warns; no free packs). Export the recipe.
+2. The old Series 1 files are already out of the way (in `contracts\series\old-2026-10`). Launch it like any Series
+   (below), with a start **45-60 minutes out** (launch refuses under 15 minutes, and its checks take a while). It has no
+   snapshot group, so no snapshot file. Expected WARN: `Warm-up: no wallet limit` (meant).
+3. After the start, fill the kit (the deployer pays in test tokens it mints; it buys 50 per transaction):
    ```powershell
    cd C:\Users\DubT1\the-fire\contracts
-   $env:FIRE = "1"; $env:PER = "2"
+   $env:FIRE = "1"; $env:FIRST = "3"; $env:DAILY = "1"
    forge script script/WarmUp.s.sol --rpc-url $env:RPC --account testnet-deployer --sender $DEPLOYER --slow --broadcast
    ```
-   - Good: `warm-up Series 1 bought out and closed; 40 sealed packs in the test kit, 2 per wallet`.
+   - Good: `warm-up Series 1 bought out and closed; 150 sealed packs in the test kit: 3 on a first claim, then 1 a day`.
    - If not: "hasn't started yet" → wait for the start. "no drop on sale" → the launch didn't finish, or it's already
-     closed (then just `cast send <TESTKIT> "setPacks(address,uint256,uint256)" <FirePacks> 1 2` from the deployer
-     after sending the packs to the kit).
-   - Ran out of packs? A closed Series can't sell more: once they're gone, the kit hands out tokens only.
+     closed (then send the packs to the kit and run `cast send <TESTKIT> "setPacks(address,uint256,uint256,uint256)"
+     <FirePacks> 1 3 1` from the deployer).
+   - Running low? A closed Series can't sell more: once they're gone, the kit hands out tokens only. Fewer friends than
+     expected and plenty left? `cast send <TESTKIT> "setPacks(address,uint256,uint256,uint256)" <FirePacks> 1 3 2` makes
+     it 2 a day.
 
 **Before the link: pack art and holo layers.** Studio → Export → **Pack art** with Jean Phil's pack as Series 1 and Gym
 Bros' as Series 2, upload, `setPackImageBase` (below). The old Series 1's art is still in the old folder until you do.
@@ -357,36 +362,29 @@ Bros' as Series 2, upload, `setPackImageBase` (below). The old Series 1's art is
 **Arcade:** free play works for everyone. Competitive (paid) play needs step 13b done in full; skip it and tell friends
 "free play only" if there's no time.
 
-**B. Send the link.** The testnet preview URL. Their first visit opens the **Testnet** sheet: faucet → **Get the test
-kit** (test tokens, a Paper Press and 2 Series 1 packs, one confirmation) → **Open my packs** → the checklist, with
-**Report** on every row. Tell them: claim the kit **today**, and keep the PLANK, or they miss the PLANK group.
+**B. Day 1: Series 2 and the link.** Studio, Series 2 (Gym Bros): Sale tab → **Start from: Testnet drop-in** (below),
+no snapshot file, launch with the start 45-60 minutes out. Then send the testnet preview URL. Their first visit opens
+the **Testnet** sheet: faucet → **Get the test kit** (test tokens, a Paper Press and 3 Series 1 packs, one
+confirmation) → **Open my packs** → the checklist, with **Report** on every row. Tell them: "drop in whenever you
+like this week; come back each day for a free pack".
 
-**C. Series 2, the sale (once most friends have claimed).** Studio, Series 2 (Gym Bros): Sale tab → **Start from:
-Test run** (below), snapshot side file as below, launch with the start a few hours out (the snapshot is taken at the
-launch, so anyone who claims the kit after it isn't in the PLANK group; they can still buy in Everyone).
+**C. During the week.** Read reports at `/forge/reports.html` (step 13's key) and mark each done when fixed. Pick a few
+suggestions (they become free Series 2 packs only if picked before Series 2's start, so do it in step B, or skip).
 
-**D. During the test.** Read reports at `/forge/reports.html` (step 13's key). Mark each done when fixed.
+**D. End of the week: end Series 2** so its packs open (`endDrop`, below; any time from a day after its start).
 
-**The Test run preset (Series 2).** Sale tab → **Start from: Test run**. The Standard's four groups, small and quick:
-one or two friends can go through every group and sell it out in about an hour.
-- 8 packs. **Paper Press holders** (2, 1 per Press; everyone's kit has a Press) and **PLANK holders** (2, snapshot)
-  open together at the start. Each ends when it's sold, **3 minutes after its last sale**, or at **15 minutes**,
-  whichever is first; leftovers go to Everyone.
-- **Everyone** (the other 4, plus leftovers) opens the moment the PLANK group ends, up to 8 per wallet, so even one
-  person can finish it.
-- **After sell-out**: extra packs at a rising price, ending **5 minutes** after it opens or its last sale. Then the
-  keeper closes the Series and packs can open.
-- Free packs: 2 (1 per wallet), from Everyone. Bots rule off (0 h), so friends on smart wallets can buy too.
-- Snapshot window: use `"days": 0.02` (about 30 minutes) in the snapshot file below, so friends only need to hold the
-  kit's PLANK for half an hour before the launch.
-Nothing is outside the policy, so no `--allow` is needed.
+**The Testnet drop-in preset (Series 2).** Sale tab → **Start from: Testnet drop-in**. 60 packs:
+- **Paper Press holders** 20: 1 PAPER, 1 per Press (2 per wallet), until sold; leftovers go to Everyone.
+- **Everyone** 40 + leftovers: $2.50 + 1 PAPER, PLANK, ETH or USDG, 10 per wallet, until sold.
+- Both open at the start; nothing is timed and there's no snapshot. Free packs: 4 (1 per wallet), from Everyone.
+Nothing is outside the policy, so no `--allow` is needed. (The quick 8-pack **Test run** preset is still there for a
+same-day run.)
 
-**Sell it out.** Packs only open once the Series closes. If the 8 don't sell, the owner can end it only 24 h after
-the start (`endDrop`, below). So if only one or two people are buying, buy the rest yourself in Everyone (any test
-wallet with the kit).
+**End it.** Packs only open once the Series closes. A drop-in Series rarely sells out, so end it yourself near the end
+of the week (any time from 24 h after the start); packs nobody bought are simply never made.
 ```powershell
 $sale = (Get-Content ..\deployments\46630.json | ConvertFrom-Json).contracts.FireSale
-cast send $sale "endDrop(uint256)" 2 --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC   # only 24 h after the start
+cast send $sale "endDrop(uint256)" 2 --ledger --hd-path $env:OWNER_HD_PATH --from $env:OWNER --rpc-url $env:RPC   # from 24 h after the start
 ```
 
 **Pack art.** The site shows `fire<N>.webp` from FirePacks' pack art folder. In the studio, Export → **Pack art** with

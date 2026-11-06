@@ -156,7 +156,7 @@ export async function setupChain({ port = 8547, log = console.log, everyone = {}
     await asOwnerForge("script/ConfigureSeries.s.sol", { RECIPE_JSON: wp, BATCH: "A" });
     await asOwnerForge("script/ConfigureSeries.s.sol", { RECIPE_JSON: wp, BATCH: "B", DROP_START: String((await now()) + 60n) });
     await warp(61);
-    forge("script/WarmUp.s.sol", { FIRE: String(W), PER: "2" });
+    forge("script/WarmUp.s.sol", { FIRE: String(W), FIRST: "3", DAILY: "1" });
   }
 
   log(`Series ${FIRE}: ConfigureSeries batch A, then B (the drop opens in 10 minutes)`);
