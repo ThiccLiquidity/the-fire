@@ -879,7 +879,7 @@
         : state?.next && canOpen ? '<button class="btn small primary" type="button" data-t="open">Open my packs</button>'
           : `<button class="btn small primary" type="button" data-t="kit"${state?.next ? ' disabled' : ''}>${state?.next ? 'Claimed' : 'Get the test kit'}</button>`;
       const done = CHECKS.filter(([k]) => ck[k]).length;
-      body.innerHTML = `<p class="lead">Play money, real wallets. Three steps, then try everything, whenever you like.</p>
+      body.innerHTML = `<p class="lead">Play money, real wallets. Three steps, then try everything, whenever you like. Nothing here is worth anything or carries over to the launch.</p>
         <ol class="start-list tn-steps">
           <li><span class="start-n" aria-hidden="true">1</span><span class="start-t"><b>Get test ETH</b><small>For the network fee. Paste your wallet address on the faucet page.</small></span>
             <span class="row"><a class="btn small" href="${FAUCET}" target="_blank" rel="noopener">Faucet ↗</a>${S.wallet.full ? '<button class="btn small" type="button" data-t="copy">Copy my address</button>' : ''}</span></li>
