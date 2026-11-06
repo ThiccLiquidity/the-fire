@@ -78,12 +78,18 @@
     let current = null;
     const body = h('div', { class: 'gr' });
     host.append(body);
-    const close = () => { current?.stop(); current = null; render(); };
+    // the keyboard focus follows: into the game (its ← Back) when one starts, back to its button when it ends (the
+    // button that had it is gone, and focus fell to the page)
+    let last = null;
+    const refocus = (sel) => requestAnimationFrame(() => { const a = document.activeElement; if (body.isConnected && (!a || a === document.body || !a.isConnected)) body.querySelector(sel)?.focus({ preventScroll: true }); });
+    const close = () => { current?.stop(); current = null; render(); if (last) refocus(`[data-key="${last}"]`); };
     async function start(g, mode) {
       try { await loadGames(); } catch (e) { window.toast?.(e.message, 'bad'); return; }
-      if (mode === 'paid') return Comp.start(g, body, close, (c) => { current = c; });
+      last = `game-${mode === 'paid' ? 'paid' : 'free'}-${g.id}`;
+      if (mode === 'paid') { const r = Comp.start(g, body, close, (c) => { current = c; }); refocus('[data-key="game-back"], .gm-stage, button'); return r; }
       body.replaceChildren(); current = play(g.id, body, { mode, onBack: close });
       current?.status({ text: 'Free play' });
+      refocus('[data-key="game-back"]');
     }
     function render() {
       body.replaceChildren(
