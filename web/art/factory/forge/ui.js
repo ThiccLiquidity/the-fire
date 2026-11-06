@@ -1137,7 +1137,13 @@
   }
   // the UI is ready: show it now, over a still of the workshop; the live scene fades in when it has loaded (slow networks
   // used to wait ~20 s on the loading screen)
-  requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 120));
+  // after its fade it goes for good (hidden): screen readers don't read it, its animations stop
+  requestAnimationFrame(() => setTimeout(() => {
+    const ld = $('#loading'); if (!ld) return;
+    ld.setAttribute('aria-hidden', 'true'); ld.classList.add('done');
+    const gone = () => { ld.hidden = true; };
+    ld.addEventListener('transitionend', gone, { once: true }); setTimeout(gone, 900); // (no transition with reduced motion)
+  }, 120));
   // deep links (?open=): the market, the game room, the showcase, the binder, the badges
   const openQ = new URLSearchParams(location.search).get('open');
   if (openQ) setTimeout(() => {

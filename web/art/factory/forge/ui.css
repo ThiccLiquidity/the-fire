@@ -7,7 +7,8 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 .loading .ld-mark { width: 120px; animation: breathe 1.8s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,110,30,.5)) }
 .loading p { margin: 0; font: 400 15px var(--display); letter-spacing: .08em; color: var(--muted) }
 .loading .demo-load { font: 700 12px var(--body); color: var(--dim); letter-spacing: .04em }
-.loading.done { opacity: 0; pointer-events: none }
+.loading.done { opacity: 0; pointer-events: none; visibility: hidden; transition: opacity .6s, visibility 0s .6s }
+.loading[hidden] { display: none }
 @keyframes breathe { 50% { transform: scale(1.06) } } /* transform only: no filter repaint every frame */
 
 /* top bar: black, with the five-material stripe. --top = top bar + the demo notice under it */
@@ -315,7 +316,9 @@ body[data-mode=port] .qbanner { font-size: 13px; gap: 8px; flex-wrap: wrap; text
 .buybox.calm::after, .buybox.second::after, .pill.openp.none::after { display: none }
 body.quiet .pill[data-st="suggest"]::after { box-shadow: 0 0 0 5px rgba(255,210,122,.3), 0 0 34px rgba(255,200,110,.7); animation-duration: 2.6s }
 /* under a sheet, nothing on the page keeps animating */
-body.covered .ui *, body.covered .ui *::after, body.covered .ui *::before, body.covered .stations *, body.covered .stations *::after, body.covered .buybar *, body.covered .buybar *::before, body.covered .buybar *::after { animation-play-state: paused !important }
+body.covered > :not(dialog) *, body.covered > :not(dialog) *::after, body.covered > :not(dialog) *::before { animation-play-state: paused !important }
+/* (the whole page: the burn tally's embers, the material chips' glints, the Best Slabs shelf's PDA 10 spin; the sheets
+   are the body's own dialogs, so what's in an open sheet keeps moving) */
 /* the flames: their own WebGL canvas over the scene (scene.js) */
 .flamebox { position: fixed; overflow: hidden; pointer-events: none; z-index: 0 }
 .flamebox[hidden] { display: none }
@@ -548,6 +551,7 @@ body[data-mode=port].fresh .station.tool svg { color: #fff6e0 }
 .c3d { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: radial-gradient(80% 60% at 50% 45%, #2a1609 0%, #0d0704 70%, #050302 100%) }
 .c3d::backdrop { background: #000 }
 .c3d-cv { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab } .c3d-cv:active { cursor: grabbing }
+.c3d-cv:focus { outline: none } .c3d-cv:focus-visible { outline: 2px solid rgba(255,255,255,.55); outline-offset: -6px }
 .c3d-x { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; width: 48px; height: 48px }
 .c3d-hint { position: absolute; left: 0; right: 0; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); margin: 0; text-align: center; font: 700 13px var(--body); color: var(--muted); pointer-events: none }
 
