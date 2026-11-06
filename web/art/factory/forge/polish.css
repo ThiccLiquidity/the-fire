@@ -115,7 +115,7 @@ dialog.sheet[open]::backdrop { animation: backdrop-in .18s ease-out }
 
 /* the card's detail on a big screen: two columns, the card bigger, and it stays in view while the details scroll */
 @media (min-width: 1100px) and (min-height: 760px) {
-  #sheet-card { width: min(1000px, calc(100vw - 48px)) }
+  #sheet-card, #sheet-mcard { width: min(1000px, calc(100vw - 48px)) }
   .detail { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 32px }
   .detail .big { position: sticky; top: 0; width: 100% }
 }

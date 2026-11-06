@@ -227,7 +227,7 @@ body[data-mode=port] .fun-nudge { bottom: auto; top: calc(var(--top) + 8px) }
 .sell .mk-sellcard { display: grid; grid-template-columns: 120px 1fr; gap: 14px; align-items: center; margin-bottom: 14px }
 .sell .mk-sellcard h3 { margin: 0 }
 .mk-field { display: grid; gap: 4px; margin: 10px 0 4px; font-weight: 700 }
-.mk-input, .mk-field select { min-height: 48px; padding: 0 12px; border-radius: 12px; background: var(--panel-2); color: inherit; border: 1px solid var(--line); font: 600 18px/1 inherit; width: 100%; max-width: 260px; box-sizing: border-box }
+.mk-input, .mk-field select { min-height: 48px; padding: 0 12px; border-radius: 12px; background: var(--panel-2); color: inherit; border: 1px solid var(--line); font: 600 18px/1 var(--body); width: 100%; max-width: 260px; box-sizing: border-box }
 .mk-get { min-height: 1.3em }
 @media (max-width: 520px) {
   .mk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px }
@@ -288,6 +288,11 @@ body[data-mode=port] .fun-nudge { bottom: auto; top: calc(var(--top) + 8px) }
 .mk-fv[disabled] { opacity: .45; cursor: default }
 .mk-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font: 700 14px var(--body) } .mk-check input { width: 20px; height: 20px }
 .mk-fgo { position: sticky; bottom: 0; padding: 10px 0 2px; background: var(--panel); justify-content: space-between }
+/* the filter sheet: the Clear / Show bar sits on the sheet's very bottom (its padding inside the bar), so nothing peeks out below it */
+#sheet-mkfilter .sheet-body { padding-bottom: 0 }
+#sheet-mkfilter .mk-fgo { z-index: 2; margin-top: -4px; padding: 10px 0 calc(14px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -10px 14px -10px rgba(0,0,0,.6) }
+.mk-yours { margin: 4px 0; font-weight: 700; color: #ffd27a }
+.mk-want.on { border-color: var(--brass); background: rgba(233,180,90,.16) }
 @media (max-width: 600px) { .mk-sortsel { margin-left: 0; flex: 1 } }
 
 /* ---------- price guide: the strip, the sales chart, compare copies, sell now, quick prices, list several */
@@ -300,7 +305,7 @@ body[data-mode=port] .fun-nudge { bottom: auto; top: calc(var(--top) + 8px) }
 .mk-chart circle { fill: var(--gold); stroke: #1b0f06; stroke-width: 1.5 }
 .mk-sold h3, .mk-cmpsec h3 { margin: 14px 0 6px; font-size: 16px }
 .mk-soldl { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; max-width: 360px } .mk-soldl li { display: flex; justify-content: space-between; font-size: 13.5px; color: var(--muted) } .mk-soldl b { color: var(--ink) }
-.mk-cmp-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px }
+.mk-cmp-wrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 10px }
 .mk-cmp { width: 100%; border-collapse: collapse; font-size: 13.5px }
 .mk-cmp th, .mk-cmp td { padding: 7px 9px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line) }
 .mk-cmp th button { background: none; border: 0; color: var(--muted); font: 800 12px var(--body); letter-spacing: .04em; text-transform: uppercase; cursor: pointer; padding: 4px 0; min-height: 28px }
