@@ -451,6 +451,10 @@ body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
 .receipt .rc-peek { position: absolute; right: 52px; bottom: 100%; width: 66px; height: 74px; overflow: hidden; pointer-events: none } /* he stands behind the top edge */
 .receipt .rc-peek img { position: absolute; left: 4px; top: 10px; height: 92px; width: auto; filter: drop-shadow(0 2px 3px rgba(0,0,0,.65)); transform: translateY(66px); transition: transform .5s cubic-bezier(.3,1.4,.5,1) .2s }
 .receipt.on .rc-peek img { transform: none }
+/* a phone: the receipt sits right under the big Open button, so he only peeks his head over its edge, beside the
+   button's second line (standing tall he covered its words: 'Open your 3 p') */
+body[data-mode=port] .receipt .rc-peek { height: 36px } body[data-mode=port] .receipt .rc-peek img { top: -2px; transform: translateY(38px) }
+body[data-mode=port] .receipt.on .rc-peek img { transform: none }
 @media (prefers-reduced-motion: reduce) { .loading .ld-pal { animation: none } .receipt .rc-peek img { transition: none } }
 
 /* the wait for a drand draw (wait.js): a brass gauge, a countdown plate, a steam puff when it's out */

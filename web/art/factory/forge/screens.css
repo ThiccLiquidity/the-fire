@@ -101,7 +101,7 @@ a.btn { text-decoration: none }
 .face { position: absolute; inset: 0; border-radius: var(--card-r); backface-visibility: hidden; -webkit-backface-visibility: hidden } /* round like the card: a glow or edge on it follows the corners */
 .face.front { transform: rotateY(180deg) }
 .op { --cw: min(300px, 70vw, 38dvh); display: grid; justify-items: center; user-select: none; -webkit-user-select: none }
-@media (min-width: 900px) and (min-height: 640px) { .op { --cw: min(440px, 52dvh, calc((100dvh - 320px) / 1.4)) } } /* a desktop's reveal: the card big, the way it's meant to be seen */
+@media (min-width: 900px) and (min-height: 640px) { .op { --cw: min(440px, 52dvh, calc((100dvh - 332px) / 1.4)) } } /* a desktop's reveal: the card big, the way it's meant to be seen */
 .op .stage-msg { margin-bottom: 4px !important }
 .op-area { position: relative; display: grid; place-items: center; width: 100%; min-height: calc(var(--cw) * 1.4 + 44px) }
 .op-area > * { grid-area: 1 / 1 }

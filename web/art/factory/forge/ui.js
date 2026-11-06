@@ -392,6 +392,8 @@
   function renderCounts() {
     const b = S.wallet.burnCount % 42;
     for (const id of ['pBurn', 'sBurn']) setText($('#' + id), `${b} / 42`);
+    // what 12 / 42 means, for screen readers (starting with the visible words) and on hover
+    document.querySelectorAll('[data-st="burn"]').forEach((x) => { setAttr(x, 'aria-label', `Burn ${b} / 42: ${b} of 42 cards burned toward a free pack`); setAttr(x, 'title', `${b} of 42 cards burned toward a free pack`); });
     hero = heroOf();
     for (const [t, s, sel] of [['pOpenT', 'pOpen', '.pill.openp'], ['sOpenT', 'sOpen', '#openBtn']]) {
       setText($('#' + t), hero.title); setText($('#' + s), hero.sub); setAttr($(sel), 'aria-label', hero.label);

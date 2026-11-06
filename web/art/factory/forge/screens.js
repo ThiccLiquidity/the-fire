@@ -1739,7 +1739,7 @@
         h('span', { class: 'bw-icon', 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2.5 1.4-4 2.5-5 .2 1.7 1 2.8 2 3.2C11 8.6 11 5 12 2z" fill="currentColor"/></svg>' }),
         h('div', {}, h('p', { class: 'bw-big', text: 'Burned cards are gone forever.' }),
           h('p', { text: (flagged ? `${flagged === n ? (n === 1 ? 'This one is' : 'All of these are') : flagged + ' of these ' + (flagged === 1 ? 'is' : 'are')} worth a second look. ` : '')
-            + (LIVE ? '' : `Floor about ${Store.eth(+worth.toPrecision(2))} (demo).`) }))),
+            + (LIVE ? '' : `${n === 1 ? 'Its floor is' : 'Together they floor at'} about ${Store.eth(+worth.toPrecision(2))} (demo).`) }))),
       h('div', { class: 'bw-gain' },
         h('div', { class: 'bb-top' }, h('b', { text: 'You get' }),
           h('span', { class: 'bw-ft' }, h('span', { class: 'muted', text: `${b}/${BURN_GOAL}` }), h('span', { 'aria-hidden': 'true', text: ' → ' }), h('span', { class: 'sr', text: ' to ' }),
@@ -1882,7 +1882,8 @@
         det?.addEventListener('toggle', () => { if (det.open) opened.add(key); else opened.delete(key); });
         return h('li', {},
           h('div', { class: 'sg-main' }, h('span', { class: 'sg-t', text: p.kind === 'character' ? p.character || sg.text : (p.kind === 'theme' ? 'Theme: ' : 'Art style: ') + p.value }), det),
-          h('span', { class: 'muted', text: sg.at }),
+          // sg.at is the Series it was sent in; it's an idea for the next one
+          h('span', { class: 'muted', text: /^Series \d+$/.test(sg.at || '') ? `For Series ${+sg.at.slice(7) + 1}` : sg.at }),
           h('span', { class: 'sgp ' + (sg.picked ? 'yes' : 'wait'), text: sg.picked ? 'Picked' : sg.at === 'Series ' + S().series.no && !decided(p.kind) ? 'Waiting' : 'Not picked' })); // past rounds and decided waves: not picked
       })) : h('p', { class: 'muted', text: 'Nothing yet.' })));
     }
