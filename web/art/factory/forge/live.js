@@ -61,7 +61,10 @@
 
   // ---------- the wallet bundle
   const vendor = document.createElement('script'); vendor.type = 'module'; vendor.src = 'vendor/wallet.js';
-  vendor.onerror = () => cantLoad(new Error('vendor/wallet.js did not load'));
+  // chainReady: the chain layer is loaded (Live.chain is there), before the first read finishes; rejects if it can't load
+  let chainSet, chainFail;
+  const chainReady = new Promise((ok, no) => { chainSet = ok; chainFail = no; }); chainReady.catch(() => {});
+  vendor.onerror = () => { chainFail(new Error('vendor/wallet.js did not load')); cantLoad(new Error('vendor/wallet.js did not load')); };
   document.head.append(vendor);
   let FW = null, L = null, chainUp = null;
   const ready = new Promise((ok) => {
@@ -71,8 +74,9 @@
   function fail(text) { S.series.note = text; Store.update(() => {}); toast(text, 'bad'); }
   ready.then(() => {
     FW.onChange(onWallet);
-    chainUp = window.ForgeChain.lib().then((c) => { L = c; resume(me()); orphans(); return sync({ cards: true }); });
+    chainUp = window.ForgeChain.lib().then((c) => { L = c; chainSet(c); resume(me()); orphans(); return sync({ cards: true }); });
     chainUp.catch((e) => {
+      chainFail(e);
       if (e?.name !== 'NotDeployedError') return cantLoad(e); // the code didn't load (a network blip): say so, offer a retry
       if (net === 'mainnet') { // no card contracts on mainnet yet: the demo, as if ?live wasn't there
         const u = new URL(location.href); u.searchParams.delete('live');
@@ -125,7 +129,7 @@
   // ---------- reading the chain into the Store
   // info: the Series now (reads.currentSeries: its drop, status and groups). gate[i]: this wallet's way into NFT group i
   // (the ids it holds or typed in, and what each has used there).
-  let info = null, gate = {}, picks = [], syncing = null, cardsAt = 0;
+  let info = null, gate = {}, picks = [], cardsAt = 0;
   const snapGroups = (s) => (s?.groups || []).filter((g) => g.gate === 'snapshot' && g.state !== 'ended' && g.root);
   /** A group as the screens use it (ui.js): plain numbers. */
   const toGroup = (g) => {
@@ -280,18 +284,31 @@
     if (max <= 0) return { ok: false, why: g.left === 0 ? 'Sold out' : Store.limitWhy(g) };
     return { ok: true, max, access };
   };
-  /** Re-read the chain (cards too with { cards: true }). Calls made while one runs wait for it, then run once more.
+  /** Re-read the chain (cards too with { cards: true }). Calls made while one runs wait for it, then run once more:
+   *  all of them share that one follow-up (cards if any of them asked), so at most one runs and one waits however
+   *  many calls come in (the timer skips its tick while one is out).
    *  The log scans behind it are incremental (chain/contracts.ts), so this costs a handful of calls, not the history.
    *  When it fails (the RPC is down or rate-limits), the bar says the data may be out of date and the timer backs off
    *  (15 s, 30 s, 1 min, 2 min); the next success clears it. */
-  let fails = 0, nextAt = 0;
+  let fails = 0, nextAt = 0, syncRunning = null, syncQueued = null, syncCards = false;
   function sync(o = {}) {
     if (!L) return chainUp || Promise.resolve();
-    const run = async () => {
+    if (o.cards) syncCards = true;
+    if (syncQueued) return syncQueued; // a follow-up is already waiting: this call rides on it
+    const q = (syncRunning || Promise.resolve()).then(() => {
+      syncQueued = null; const cards = syncCards; syncCards = false; // calls from now on queue the next follow-up
+      const r = readAll(cards); syncRunning = r;
+      r.finally(() => { if (syncRunning === r) syncRunning = null; });
+      return r;
+    });
+    syncQueued = q;
+    return q;
+    async function readAll(cards) {
       try {
         const fires = await L.seriesNumbers(); // once per sync: the Series and the sealed packs both use it
         await Promise.all([readSeries(fires), readRules()]); Store.update(() => {}); // the Series shows before the wallet's reads
-        await readWallet(o.cards, fires);
+        await readWallet(cards, fires);
+        await refreshSending(); // "sending" markers (tx.ts) whose nonce has passed: dropped
         // the burn tally: read alongside, never holding up the sync (or anything waiting on it, like the wallet sheet)
         Promise.all([L.burnedTotals(), L.liquidityBurned().catch(() => null)]).then(([b, lq]) => {
           S.burnTally = { paper: b.PAPER ? num(b.PAPER) : null, plank: b.PLANK ? num(b.PLANK) : null, lp: lq ? { paper: num(lq.PAPER), plank: num(lq.PLANK) } : null };
@@ -304,11 +321,9 @@
         console.warn('Live sync failed', e); setStale(true);
       }
       Store.update(() => {});
-    };
-    syncing = (syncing || Promise.resolve()).then(run);
-    return syncing;
+    }
   }
-  setInterval(() => { if (!document.hidden && L && Date.now() >= nextAt) sync(); }, 15_000);
+  setInterval(() => { if (!document.hidden && L && !syncRunning && !syncQueued && Date.now() >= nextAt) sync(); }, 15_000);
   // back online, or back to this tab: read the chain at once (not up to 2 minutes later, after a backed-off failure)
   let shownAt = 0;
   const syncNow = (o) => { if (!L || document.hidden) return; nextAt = 0; sync(o); };
@@ -322,12 +337,25 @@
   let stale = false, orphan = false; const pend = []; // pend: the PendingTx list shown (tx.ts), in the order sent
   // orphan: a transaction this browser sent for its last wallet is still on its way, but no wallet is connected yet
   S.wallet.pending = pend;
+  // sending: tx.ts "sending" markers of this wallet from before this page loaded (the wallet was asked, then the tab
+  // reloaded before its hash came back): it may still be on its way. Dropped once the account's nonce passes it, or
+  // after 10 minutes. (This tab's own markers are its open step list, not the bar.)
+  const loadedAt = Date.now();
+  let sending = [];
+  async function refreshSending() {
+    const a = me();
+    if (!L?.sendingTxs || !a) { if (sending.length) { sending = []; paintBar(); } return; }
+    if (L.sendingTxs(a).length) await L.pruneSending(a).catch(() => {});
+    const now = L.sendingTxs(a).filter((t) => t.at < loadedAt);
+    if (now.length !== sending.length) { sending = now; paintBar(); }
+  }
   const txLink = (hash) => (L?.NET.explorer ? ` · <a href="${esc(L.NET.explorer)}/tx/${esc(hash)}" target="_blank" rel="noopener">View</a>` : '');
   function paintBar() {
     bar.innerHTML = (stale ? '<p class="stale">Offline? This may be out of date. <button class="btn small" type="button" data-bar="retry">Retry</button></p>' : '')
       + (orphan && !pend.length ? '<p class="pend">A transaction is on its way. Connect to follow it. <button class="btn small" type="button" data-bar="connect">Connect</button></p>' : '')
-      + pend.map((t) => `<p class="pend"><b>${esc(t.label)}</b> · pending${txLink(t.hash)}</p>`).join('');
-    bar.hidden = !stale && !pend.length && !orphan;
+      + pend.map((t) => `<p class="pend"><b>${esc(t.label)}</b> · pending${txLink(t.hash)}</p>`).join('')
+      + sending.map((t) => `<p class="pend"><b>${esc(t.label)}</b> · may still be on its way</p>`).join('');
+    bar.hidden = !stale && !pend.length && !orphan && !sending.length;
     bar.querySelector('[data-bar=retry]')?.addEventListener('click', () => { nextAt = 0; sync({ cards: true }); });
     bar.querySelector('[data-bar=connect]')?.addEventListener('click', () => needWallet());
   }
@@ -355,10 +383,41 @@
         <p class="muted small">Omni Cardworks never asks you to sign a message or to change how your wallet works.</p></div>` });
     }).catch(() => {});
   }
+  // a smart-contract wallet (a Safe and the like: code that isn't a 7702 delegation): the sale, the test kit and the
+  // regular-wallets window refuse contracts, and its wallet hands back an id that isn't a transaction. Read once per
+  // address; isContract blocks every action (run) with a short sheet. A read that fails is tried again next time.
+  const kinds = new Map(); // address -> Promise<boolean | null>
+  const contractWallet = (addr) => {
+    const k = String(addr).toLowerCase();
+    let p = kinds.get(k);
+    if (!p) { p = ready.then(() => chainUp).then(() => L.isContractWallet(addr)).catch(() => null); kinds.set(k, p); p.then((v) => { if (v == null) kinds.delete(k); }); }
+    return p;
+  };
+  const CONTRACT_MSG = () => L?.CONTRACT_WALLET || 'Smart-contract wallets (like Safe) don’t work on the testnet yet. Use a regular wallet.';
+  const contractSheet = () => Sheet.open('contract', { title: 'Use a regular wallet', body: `<div class="st"><p class="lead">${esc(CONTRACT_MSG())}</p></div>` });
+  function checkContract(addr) {
+    contractWallet(addr).then((yes) => {
+      if (me() !== addr) return;
+      S.wallet.isContract = yes === true; Store.update(() => {});
+      if (yes) contractSheet();
+    });
+  }
+  /** Blocked as a smart-contract wallet (says so). Waits for the code read if it's still out. */
+  async function blockedContract() {
+    const a = me();
+    if (!a || (await contractWallet(a)) !== true) return false;
+    contractSheet();
+    return true;
+  }
   function onWallet(st) {
     const on = st.connected && st.chainOk;
     Object.assign(S.wallet, { connected: on, wrongNet: !!(st.connected && !st.chainOk), full: st.address || '', address: st.short || '', name: st.walletName || st.short || '' });
-    if (st.address !== lastAddr) { lastAddr = st.address; S.cards = []; S.sealed = {}; sync({ cards: true }); resume(st.address); if (st.address) checkDelegated(st.address); }
+    if (st.address !== lastAddr) {
+      lastAddr = st.address; S.cards = []; S.sealed = {}; S.wallet.isContract = false; sending = [];
+      sync({ cards: true }); resume(st.address);
+      if (st.address) { checkDelegated(st.address); checkContract(st.address); }
+      paintBar();
+    }
     if (st.address) { store(LAST_ADDR, st.address); if (orphan) { orphan = false; paintBar(); } }
     Store.update(() => {});
   }
@@ -366,20 +425,23 @@
   // they land, then a toast and a fresh read. `following`: the ones this tab already follows (never twice).
   const following = new Set();
   const unpend = (t) => { const i = pend.findIndex((x) => x.at === t.at && x.from === t.from); if (i >= 0) pend.splice(i, 1); paintBar(); Store.update(() => {}); };
-  const landed = (t, outcome) => (outcome === 'success' ? `${t.label}: done` : outcome === 'replaced' ? `${t.label} was cancelled in your wallet.` : `${t.label} failed. Only the network fee was spent.`);
+  const landed = (t, outcome) => (outcome === 'success' ? `${t.label}: done` : outcome === 'replaced' ? `${t.label} was cancelled in your wallet.`
+    : outcome === 'unsupported' ? CONTRACT_MSG() : `${t.label} failed. Only the network fee was spent.`);
   /** After a reload with no wallet connected: this browser's last wallet still has a transaction on its way (tx.ts
    *  keeps them): the bar says so, with Connect (connected, it's followed as usual). */
   const LAST_ADDR = 'omni.lastWallet';
   function orphans() {
     const a = store(LAST_ADDR);
     if (!L || me() || !a) return;
-    try { orphan = L.pendingTxs(a).some((t) => Date.now() - t.at < 24 * 3600_000); } catch { orphan = false; }
+    // a saved transaction, or a send whose hash never came back (tx.ts "sending" markers, the last 10 minutes)
+    const any = () => L.pendingTxs(a).some((t) => Date.now() - t.at < 24 * 3600_000) || !!L.sendingTxs?.(a).length;
+    try { orphan = any(); } catch { orphan = false; }
     paintBar();
     // still no wallet: look the saved ones up (read-only) and drop the ones that landed, so the bar clears; again each
     // minute while it shows
-    if (orphan && L.prunePending) L.prunePending(a).then((n) => {
+    if (orphan && L.prunePending) Promise.all([L.prunePending(a), L.pruneSending?.(a)]).then(() => {
       if (me() || !orphan) return;
-      orphan = n > 0 && L.pendingTxs(a).some((t) => Date.now() - t.at < 24 * 3600_000); paintBar();
+      orphan = any(); paintBar();
       if (orphan) setTimeout(orphans, 60_000);
     }, () => setTimeout(orphans, 60_000));
   }
@@ -395,13 +457,22 @@
       toast(t.kind === 'approve' && outcome === 'success' ? 'Approved. Tap Buy to finish.' : landed(t, outcome), outcome === 'success' ? 'good' : 'bad');
     }, a, (t) => these.has(t.hash));
   }
-  /** A buy, free pack or suggestion of this wallet still on its way (sent from this browser in the last 30 minutes):
-   *  starting another of the same kind could pay twice, so it waits. True (and says so) when blocked. */
+  /** A buy, free pack or suggestion of this wallet still on its way (sent from this browser in the last 30 minutes,
+   *  or asked of the wallet in the last 10 with no hash back yet: tx.ts "sending" markers, e.g. the tab reloaded while
+   *  a phone's wallet app confirmed): starting another of the same kind could pay twice, so it waits. Resolves true
+   *  (and says so) when blocked. */
   const WAIT_FOR = { buy: 'Your last purchase', credits: 'Your last free pack', suggest: 'Your last idea', open: 'Your last pack opening' };
-  function stillSending(kind) {
-    const a = me(), t = a && L ? L.pendingTxs(a).find((x) => x.kind === kind && Date.now() - x.at < 30 * 60_000) : null;
-    if (!t) return false;
-    toast(`${WAIT_FOR[kind]} is still pending. Wait for it to finish.`, 'bad');
+  async function stillSending(kind) {
+    const a = me();
+    if (!a || !L) return false;
+    if (L.pendingTxs(a).some((x) => x.kind === kind && Date.now() - x.at < 30 * 60_000)) {
+      toast(`${WAIT_FOR[kind]} is still pending. Wait for it to finish.`, 'bad');
+      return true;
+    }
+    const marked = () => (L.sendingTxs?.(a) || []).some((x) => x.kind === kind);
+    if (marked()) await L.pruneSending(a).catch(() => {}); // the account's nonce moved past it: it landed (or was replaced)
+    if (!marked()) return false;
+    toast(`${WAIT_FOR[kind]} may still be on its way. Wait a minute, then check again.`, 'bad');
     return true;
   }
   function waitConnected(ms = 180_000) {
@@ -422,8 +493,15 @@
   async function walletList() {
     const list = await FW.wallets().catch(() => []);
     const body = document.createElement('div'); body.className = 'wlist';
-    body.innerHTML = list.length ? list.map((w, i) => `<button class="btn" type="button" data-i="${i}">${w.icon ? `<img src="${esc(w.icon)}" alt="" width="24" height="24">` : ''}${esc(w.name)}</button>`).join('')
-      : '<p class="lead">No wallet found. Install MetaMask, Rabby or Coinbase Wallet, then reload.</p>';
+    // a phone with no wallet in this browser (Safari or Chrome, the wallet installed as an app): the wallet app's own
+    // browser has it. A link the user taps, never opened by itself.
+    const phone = !!window.matchMedia?.('(pointer: coarse)')?.matches || innerWidth < 700;
+    const injected = list.some((w) => w.installed);
+    const inApp = `https://metamask.app.link/dapp/${location.host}${location.pathname}${location.search}`;
+    const phoneHint = phone && !injected ? `<p class="lead">On a phone, open this page in your wallet app’s browser.</p>
+      <a class="btn primary" href="${esc(inApp)}" rel="noopener">Open in MetaMask</a>` : '';
+    body.innerHTML = phoneHint + (list.length ? list.map((w, i) => `<button class="btn" type="button" data-i="${i}">${w.icon ? `<img src="${esc(w.icon)}" alt="" width="24" height="24">` : ''}${esc(w.name)}</button>`).join('')
+      : phoneHint ? '' : '<p class="lead">No wallet found. Install MetaMask, Rabby or Coinbase Wallet, then reload.</p>');
     body.querySelectorAll('[data-i]').forEach((b) => b.onclick = async () => {
       b.disabled = true;
       try { await FW.connectWith(list[+b.dataset.i].id); Sheet.close('wallets'); } catch (e) { toast(friendly(e), 'bad'); b.disabled = false; }
@@ -477,6 +555,7 @@
   const STEP = { check: 'Checking…', simulate: 'Checking…', confirm: 'Confirm in your wallet', pending: 'Sending…', late: 'Pending', done: 'Done' };
   // onFail(e): a known refusal the caller shows its own way (true: handled, the step list just closes)
   async function run(title, fn, ok, onFail) {
+    if (await blockedContract()) return null; // a smart-contract wallet: nothing it sends could work (it says why)
     const el = document.createElement('div'); el.className = 'txs';
     const steps = []; let err = null, late = false;
     const close = () => { if (el.isConnected) Sheet.close('tx'); }; // not another action's sheet opened since
@@ -567,7 +646,8 @@
     async prepare(g) {
       await need(); if (!info) { toast(S.series.note || 'No Series on sale', 'bad'); return null; }
       await requireWallet();
-      if (stillSending('buy')) return null;
+      if (await blockedContract()) return null;
+      if (await stillSending('buy')) return null;
       if (info.state !== 'live') { Sheet.open('nope', { title: `Series ${info.fire}`, body: `<p class="lead">${info.state === 'upcoming' ? `Opens in ${until(info.start)}.` : 'Sold out.'}</p>` }); return null; }
       if (info.status.paused) { Sheet.open('nope', { title: 'Paused', body: '<p class="lead">Sales are paused.</p>' }); return null; }
       let a = Store.groupAccess(g);
@@ -588,7 +668,7 @@
     },
     /** Send it: the shown quote caps it. 'moved': refused because the price moved past the cap (nothing charged). */
     async buy({ g, n, coin, all, q }) {
-      if (stillSending('buy')) return false;
+      if (await stillSending('buy')) return false;
       const a = Store.groupAccess(g), quote = { cost: coin ? q.coins.find((c) => c.pay === coin)?.raw : null, paperEth: all ? q.paperEthRaw : null };
       let moved = false;
       const r = await run(`Buy ${plural(n, 'pack')}`, (o) => L.buyPacks({ fire: info.fire, group: g.index, n, pay: coin, access: a.access, paperInEth: all, quote }, o),
@@ -604,7 +684,7 @@
     const cg = S.series.groups[S.series.creditGroup];
     if (!info || info.state !== 'live' || cg?.state !== 'open') return toast(Store.FREE_CLOSED, 'bad');
     if (S.series.creditPacksLeft === 0) return toast(Store.FREE_GONE, 'bad');
-    if (stillSending('credits')) return;
+    if (await stillSending('credits')) return;
     let n = 1; const body = document.createElement('div'); body.className = 'checkout';
     const draw = () => {
       const w = S.wallet; n = Math.max(1, Math.min(w.credits, S.series.creditPacksLeft ?? w.credits, S.series.creditPacksPerWallet || w.credits, S.series.maxPerTx || 50, n)); const paper = n * cg.paper, short = w.balances.PAPER < paper;
@@ -616,7 +696,7 @@
       body.querySelector('[data-getpaper]')?.addEventListener('click', () => { Sheet.close('free'); getPaper(Math.ceil((paper - S.wallet.balances.PAPER) * 1e4) / 1e4, () => free()); });
       body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { n += +b.dataset.q; draw(); });
       body.querySelector('.go').onclick = async () => {
-        const k = n; if (stillSending('credits')) return;
+        const k = n; if (await stillSending('credits')) return;
         Sheet.close('free');
         if (await run(`Use ${plural(k, 'free pack')}`, (o) => L.spendCredits({ fire: info.fire, n: k }, o), k === 1 ? 'Free pack on its way' : `${k} free packs on their way`)) { window.Scene?.buy?.(k); window.Sound?.play('pack-drop'); window.UI?.afterBuy?.(k, true); window.Fun?.emit('bought', { n: k }); }
       };
@@ -672,7 +752,7 @@
   const STUCK = 'No draw after 24 hours.';
   const sleep = (ms) => new Promise((k) => setTimeout(k, ms));
   async function openPacks(fire, n, say, alive, tick) {
-    if (stillSending('open')) return null;
+    if (await stillSending('open')) return null;
     await need();
     const before = new Set(S.cards.map((c) => c.id));
     if (info?.fire === fire && !info.cards.closed) { toast(`Your Series ${fire} packs open when sales end.`, 'bad'); return null; }
@@ -848,7 +928,7 @@
 
   // ---------- burning, suggestions
   const burn = async (ids) => { await need(); return run(`Burn ${plural(ids.length, 'card')}`, (o) => L.burnCards({ ids }, o), `Burned ${plural(ids.length, 'card')}`); };
-  const suggest = async (texts) => { await need(); if (stillSending('suggest')) return null; return run(texts.length > 1 ? `Send ${texts.length} ideas` : 'Send your idea', (o) => L.suggest({ texts }, o)); };
+  const suggest = async (texts) => { await need(); if (await stillSending('suggest')) return null; return run(texts.length > 1 ? `Send ${texts.length} ideas` : 'Send your idea', (o) => L.suggest({ texts }, o)); };
 
   // ---------- the game room (games.js): FireGames' switches, and paying for a competitive run
   const gameStatus = async (gameId) => { await need(); return L.gameStatus(gameId); };
@@ -858,6 +938,6 @@
     on: true, gameStatus, payRun, net, testnet: net === 'testnet', sync, needWallet, openWallet, run, groupApi, free, getPaper, openPacks, followOpen, progressAct, quoteProtect, protect, finishGrading, popReport, burn, suggest,
     gateway, toCard, toMaterial: (name) => MAT[String(name).toLowerCase()] || null, // practice.js: a Series' own images and type names
     walletNeeds: capOf, // what the wallet must hold to pay `amt` in a coin: the cap (+3%, not USDG) and gas for ETH
-    rules: null, snapshot: null, get chain() { return L; },
+    rules: null, snapshot: null, chainReady, get chain() { return L; },
   };
 })();

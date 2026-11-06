@@ -863,6 +863,7 @@
     if (!LIVE || !Live.testnet) return;
     const body = document.createElement('div'); body.className = 'st tn';
     const kitOn = () => !!Live.chain?.testKitOn?.();
+    let noChain = !Live.chainReady; // the chain layer failed to load (or there's none to wait for): not "Loading…"
     const draw = (state) => {
       const ck = checked(), nd = state?.next ? new Date(state.next * 1000) : null, when = nd ? (nd.toDateString() === new Date().toDateString() ? '' : 'tomorrow ') + nd.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
       const first = state?.packsFirst || 0, daily = state?.packsDaily || 0, left = state?.packsLeft || 0, canOpen = window.Stations?.openableCount?.() > 0;
@@ -871,7 +872,7 @@
         ? `25 PAPER, about $1,000 of PLANK, $50 USDG, a Paper Press and ${first} sealed Series ${state.packFire} packs to open right away. Then come back each day for ${day} and more tokens.`
         : first && left ? `Come back each day for ${day} and more tokens.${nextTxt}`
           : `25 PAPER, about $1,000 of PLANK, $50 USDG and a Paper Press (once), then more tokens each day.${first ? ' The kit\u2019s packs are all handed out.' : ''}${nextTxt}`;
-      const kitBtn = !kitOn() ? '<small class="muted">Not set up on this testnet yet</small>'
+      const kitBtn = !Live.chain && !noChain ? '<small class="muted">Loading…</small>' : !kitOn() ? '<small class="muted">Not set up on this testnet yet</small>'
         : state?.next && canOpen ? '<button class="btn small primary" type="button" data-t="open">Open my packs</button>'
           : `<button class="btn small primary" type="button" data-t="kit"${state?.next ? ' disabled' : ''}>${state?.next ? 'Claimed' : 'Get the test kit'}</button>`;
       const done = CHECKS.filter(([k]) => ck[k]).length;
@@ -901,6 +902,8 @@
     };
     const refreshState = () => { if (kitOn() && S.wallet.full) Live.chain.testKitState(S.wallet.full).then(draw, () => draw()); else draw(); };
     draw(); refreshState();
+    // a slow phone: the chain layer isn't loaded yet (Live.sync hands back its loading): draw again once it is
+    if (!Live.chain) Promise.resolve(Live.chainReady).catch(() => { noChain = true; }).then(() => { if (body.isConnected) refreshState(); });
     Sheet.open('testnet', { title: 'Testnet', body });
   }
   // the testnet: the first visit opens the testnet sheet once (after anything else that's showing)
