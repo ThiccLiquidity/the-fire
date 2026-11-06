@@ -344,7 +344,7 @@ a.btn { text-decoration: none }
 .intro > div:first-child { display: grid; gap: 6px }
 .gnote { font-size: 13px; color: var(--muted); border-left: 3px solid var(--line-2); padding-left: 8px }
 .odds { margin: 0; padding: 10px 12px 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2) }
-.odds .bars { display: grid; grid-template-columns: repeat(6, 40px); gap: 4px; align-items: end; justify-content: center }
+.odds .bars { display: grid; grid-template-columns: repeat(var(--n, 6), 48px); gap: 4px; align-items: end; justify-content: center }
 .odds .odds-t { margin: 0 0 6px; text-align: center; font: 400 14px var(--display); letter-spacing: .03em; color: var(--ink) }
 .odds .odds-cap { margin: 6px 0 0; width: 0; min-width: 100%; text-align: center; font: 700 14px/1.3 var(--chalk); color: var(--gold) }
 .odds .bar i { background: var(--c) !important } .odds .bar.nil .pct { color: var(--dim) }
@@ -491,7 +491,7 @@ a.btn { text-decoration: none }
   .detail .big { width: 200px }
   .traits { width: 100% }
   .intro { grid-template-columns: 1fr }
-  .odds .bars { grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px }
+  .odds .bars { grid-template-columns: repeat(var(--n, 6), minmax(0, 72px)); gap: 3px }
   .odds .pct { font-size: 11px }
   .ggrid { grid-template-columns: repeat(3, minmax(0, 1fr)) }
   .sg-list li { grid-template-columns: 1fr auto; } .sg-list li > .muted { grid-row: 2 }
@@ -637,6 +637,9 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
 .wz-final { margin: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid #8fc3ea; background: rgba(143,195,234,.1); color: var(--ink) }
 .wz-final b { color: #cfe8fb }
 .wz-picks { padding: 0 } .wz-picks > p { margin: 0 } .wz-picks .gnow + p { margin: 6px 2px 0 }
+/* nothing picked yet: the same box, its bar empty, its key and PDA 10 line kept invisible for their height */
+.wz-ph .gnow-bar i { background: rgba(255,255,255,.07) !important } .wz-ph .gnow-key, .wz-picks > .wz-ph-p { visibility: hidden }
+#sheet-grade .sheet-body { scrollbar-gutter: stable }
 .fpay { display: inline-flex; flex-wrap: wrap; gap: 0 4px; align-items: baseline }
 .linkish { padding: 0; border: 0; background: none; color: #9fd0ff; font: inherit; font-weight: 800; text-decoration: underline; cursor: pointer; min-height: 0 }
 .linkish:hover { color: #cfe8fb }
@@ -680,7 +683,7 @@ dialog.sheet.burnwarn::backdrop { background: rgba(20,4,0,.78) }
   .wz-bar .how-pill { padding: 0; width: var(--tap); justify-content: center; flex: none }
   .wz-bar .how-pill .how-txt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
   .wz-steps li:not(.now) { font-size: 0; gap: 0; padding: 4px } .wz-steps li:not(.now) .wz-n { font-size: 13px }
-  .odds .bars { grid-template-columns: repeat(6, minmax(0, 1fr)) }
+  .odds .bars { grid-template-columns: repeat(var(--n, 6), minmax(0, 72px)) }
 }
 
 /* the "How does this work?" window */

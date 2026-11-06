@@ -1165,10 +1165,16 @@
   // the fresh odds by band (FirePsa, fixed forever for every Series: 10 to 7 only), titled for what they are: a card in
   // its first 24 hours. Older cards have their own odds (the bar under each card, and "Your picks" below).
   function oddsChart() {
-    const bands = Wear.bandOdds(Wear.FRESH), max = Math.max(...bands.map((b) => b.p));
+    // only the grades a fresh card can get (7 to 10, as the caption says): a band is labelled by the grades in it that
+    // can happen ("7", not "7–6"), and the empty lower bands are left off
+    const can = (g) => Wear.FRESH[g - 1] > 0;
+    const bands = Wear.bandOdds(Wear.FRESH).filter((b) => b.p > 0).map((b) => {
+      const gs = []; for (let g = b.hi; g >= b.lo; g--) if (can(g)) gs.push(g);
+      return { ...b, g: gs.length > 1 ? `${gs[0]}–${gs[gs.length - 1]}` : String(gs[0]) };
+    }), max = Math.max(...bands.map((b) => b.p));
     return h('figure', { class: 'odds' },
       h('figcaption', { class: 'odds-t', text: 'Fresh card odds' }),
-      h('div', { class: 'bars', role: 'img', 'aria-label': 'Grade odds for a fresh card, its first 24 hours: ' + bands.map((b) => `PDA ${b.g} ${b.p ? Wear.pct(b.p) : 'never'}`).join(', ') },
+      h('div', { class: 'bars', style: `--n:${bands.length}`, role: 'img', 'aria-label': 'Grade odds for a fresh card, its first 24 hours: ' + bands.map((b) => `PDA ${b.g} ${Wear.pct(b.p)}`).join(', ') + '. Never below 7.' },
         bands.map((b) => h('div', { class: 'bar' + (b.g === '10' ? ' top' : '') + (b.p ? '' : ' nil'), style: `--c:${b.c}` },
           h('span', { class: 'pct', text: b.p ? Wear.pct(b.p) : '—' }), h('i', { style: `height:${b.p ? Math.max(3, b.p / max * 56) : 0}px` }), h('span', { class: 'lbl', text: b.g })))),
       h('p', { class: 'odds-cap', text: Wear.FRESH_ODDS }));
@@ -1281,7 +1287,12 @@
     function paintPicks() {
       if (!picksEl) return;
       const ids = [...gSel];
-      if (!ids.length) return put(picksEl, h('p', { class: 'muted small', text: 'Pick cards to see their odds.' }));
+      // nothing picked: the same bar, hidden, holds its space (picking only fills it in, the grid never jumps)
+      if (!ids.length) {
+        const ph = bandBar(bandsOf(Wear.odds(0, 0)), { full: true, caption: 'Pick cards to see their odds.' }); ph.classList.add('wz-ph');
+        ph.querySelectorAll('.gnow-bar, .gnow-key').forEach((x) => { x.removeAttribute('role'); x.removeAttribute('aria-label'); x.setAttribute('aria-hidden', 'true'); });
+        return put(picksEl, ph, h('p', { class: 'small wz-ph-p', 'aria-hidden': 'true', text: 'PDA 10' }));
+      }
       const os = ids.map((id) => oddsNow(byId(id))), share = (o, i) => o[i] / (o.reduce((a, b) => a + b, 0) || 1);
       const any10 = 1 - os.reduce((a, o) => a * (1 - share(o, 9)), 1);
       put(picksEl, bandBar(bandsOf(Wear.mixOdds(os)), { full: true, caption: ids.length === 1 ? 'Your pick, if graded now' : 'Your picks, if graded now (average)' }),
